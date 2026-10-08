@@ -1538,7 +1538,39 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 			launchErr = run.launchErr
 		}
 		output.Write(run.output.Bytes())
-		executions = append(executions, goPackageExecutions(index+1, run.reason, run.output.Bytes())...)
+		var selected []NativeTestIdentity
+		for _, item := range expected {
+			if slices.Contains(partitions[index].Names, item.Name) || item.Name == goPackageBuildIdentity && slices.Contains(partitions[index].Packages, item.Classname) {
+				selected = append(selected, item)
+			}
+		}
+		_, missing, unexpected, _ := parseGoJSON(run.output.Bytes(), selected)
+		shardExecutions := goPackageExecutions(index+1, run.reason, run.output.Bytes())
+		for _, pkg := range partitions[index].Packages {
+			found := false
+			for at := range shardExecutions {
+				if shardExecutions[at].Package == pkg {
+					found = true
+					for _, item := range missing {
+						if item.Classname == pkg {
+							shardExecutions[at].Status = "missing"
+						}
+					}
+					for _, item := range unexpected {
+						if item.Classname == pkg {
+							shardExecutions[at].Status = "fail"
+						}
+					}
+					if run.outcome.Verdict != "" {
+						shardExecutions[at].Status = "fail"
+					}
+				}
+			}
+			if !found {
+				shardExecutions = append(shardExecutions, PackageExecution{Shard: index + 1, Package: pkg, Status: "missing"})
+			}
+		}
+		executions = append(executions, shardExecutions...)
 	}
 	// The merged percentages are appended to the group's diagnostic output,
 	// while the separate return remains the only coverage-authority channel.

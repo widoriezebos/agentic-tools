@@ -4,6 +4,7 @@ package repoproof
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,12 +13,20 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
+
+type HostRunners struct {
+	Native      func(proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error)
+	Groups      func([]string) ([]proofrun.NamedGroupResult, error)
+	Environment func() (string, error)
+}
 
 type Command func([]string, io.Writer, io.Writer) error
 
@@ -27,8 +36,8 @@ func Execute(argv []string, stdout, stderr io.Writer) error {
 	return command.Run()
 }
 
-func Run(stdout, stderr io.Writer, getenv func(string) string, command Command) int {
-	return run(stdout, stderr, getenv, command, "testing.json")
+func Run(stdout, stderr io.Writer, getenv func(string) string, command Command, runners ...HostRunners) int {
+	return run(stdout, stderr, getenv, command, "testing.json", runners...)
 }
 
 func notRun(stdout, stderr io.Writer, err error) int {
@@ -37,7 +46,7 @@ func notRun(stdout, stderr io.Writer, err error) int {
 	return 1
 }
 
-func run(stdout, stderr io.Writer, getenv func(string) string, command Command, contractPath string) int {
+func run(stdout, stderr io.Writer, getenv func(string) string, command Command, contractPath string, runners ...HostRunners) int {
 	notRun := func(err error) int {
 		return notRun(stdout, stderr, err)
 	}
@@ -70,39 +79,65 @@ func run(stdout, stderr io.Writer, getenv func(string) string, command Command, 
 	if vm := fact.Data.Settings[0].Value; vm != "" {
 		return runVM(stdout, stderr, getenv, command, vm)
 	}
-	return runHost(stdout, stderr, getenv, command, contractPath)
+	return runHost(stdout, stderr, getenv, command, contractPath, runners...)
 }
 
 // RunHost proves the extracted candidate without consulting the host lane again.
-func RunHost(stdout, stderr io.Writer, getenv func(string) string, command Command) int {
-	return runHost(stdout, stderr, getenv, command, "testing.json")
+func RunHost(stdout, stderr io.Writer, getenv func(string) string, command Command, runners ...HostRunners) int {
+	return runHost(stdout, stderr, getenv, command, "testing.json", runners...)
 }
 
-func runHost(stdout, stderr io.Writer, getenv func(string) string, command Command, contractPath string) int {
+func runHost(stdout, stderr io.Writer, getenv func(string) string, command Command, contractPath string, runners ...HostRunners) int {
 	failed := map[string][]string{}
 	notRun := func(err error) int { return notRun(stdout, stderr, err) }
-	packages := "./..."
-	if only := getenv("LANDING_ONLY"); only != "" {
-		packages = only
-		if relative, ok := strings.CutPrefix(only, "metasystem/"); ok {
-			packages = "./" + relative
-		}
-	}
-	if err := packageSuite(stdout, stderr, command, []string{"go", "test", "-json", "-count=1", "-timeout", "30m", packages}, failed); err != nil {
+	root, err := filepath.Abs(filepath.Dir(contractPath))
+	if err != nil {
 		return notRun(err)
 	}
-	if getenv("LANDING_ONLY") == "" {
-		batchFailed := map[string][]string{}
-		if err := packageSuite(stdout, stderr, command, []string{"go", "test", "-json", "-count=1", "-timeout", "30m", "-tags", "batchtest", "./cmd/metasystem/", "./internal/landing/..."}, batchFailed); err != nil {
-			return notRun(err)
+	ctx, environment := context.Background(), os.Environ()
+	hooks := HostRunners{}
+	if len(runners) > 0 {
+		hooks = runners[0]
+	}
+	if hooks.Native == nil {
+		hooks.Native = func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+			return proofrun.RunNativeInventory(ctx, r)
 		}
-		if len(batchFailed) > 0 {
-			failed["go-batchtest"] = nil
-			for _, tests := range batchFailed {
-				failed["go-batchtest"] = append(failed["go-batchtest"], tests...)
+	}
+	if hooks.Environment == nil {
+		hooks.Environment = func() (string, error) { return proofrun.LandingEnvironment(ctx, root, environment) }
+	}
+	text, err := hooks.Environment()
+	if err != nil {
+		return notRun(err)
+	}
+	fmt.Fprintln(stdout, "landing environment "+text)
+	contract, err := testpolicy.Load(contractPath)
+	if err != nil {
+		return notRun(err)
+	}
+	if hooks.Groups == nil {
+		hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
+			return proofrun.RunNamedGroups(ctx, root, contract, ids, environment)
+		}
+	}
+	only, scoped := getenv("LANDING_ONLY"), getenv("LANDING_PROOF_SCOPE") == "scoped"
+	var groups []string
+	selections := []string{"./..."}
+	if scoped {
+		groups, selections = strings.Fields(getenv("LANDING_PROOF_GROUPS")), strings.Fields(getenv("LANDING_PROOF_PACKAGES"))
+	}
+	if only != "" {
+		groups, selections = nil, []string{only}
+		for _, group := range contract.Groups {
+			if group.ID == only {
+				groups, selections = []string{only}, nil
+				break
 			}
-			sort.Strings(failed["go-batchtest"])
 		}
+	}
+	full := !scoped && only == ""
+	if full {
 		if err := command([]string{"go", "run", "./cmd/devgate", "static"}, stdout, stderr); err != nil {
 			var exit *exec.ExitError
 			if !errors.As(err, &exit) || exit.ExitCode() == 126 || exit.ExitCode() == 127 {
@@ -110,8 +145,86 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 			}
 			failed["fast-static-build"] = nil
 		}
-		contract, err := testpolicy.Load(contractPath)
+	}
+	if len(groups) > 0 {
+		results, err := hooks.Groups(groups)
 		if err != nil {
+			return notRun(err)
+		}
+		for _, group := range results {
+			fmt.Fprintf(stdout, "landing group %s %s %d\n", group.ID, group.Status, group.DurationMS)
+			if group.Status != "green" {
+				failed[group.ID] = nil
+				fmt.Fprintln(stderr, group.Output)
+			}
+		}
+	}
+	logRoot, release, err := diskstore.ScratchDir("metasystem-landing-native-")
+	if err != nil {
+		return notRun(err)
+	}
+	defer release()
+	native := func(packages, tests, tags []string) error {
+		result, err := hooks.Native(proofrun.NativeInventoryRequest{Root: root, LogRoot: logRoot, Environment: environment, Packages: packages, Tests: tests, BuildTags: tags})
+		if err != nil {
+			return err
+		}
+		stdout.Write(result.Output)
+		if len(result.Execution) == 0 {
+			return fmt.Errorf("the package suite reported no completed packages")
+		}
+		for _, execution := range result.Execution {
+			unit := packageUnit(execution.Package)
+			ms := int64(0)
+			if execution.ElapsedMS != nil {
+				ms = *execution.ElapsedMS
+			}
+			fmt.Fprintf(stdout, "landing package %s %d %s %d\n", unit, execution.Shard, execution.Status, ms)
+			if slices.Contains(tags, "batchtest") {
+				unit = "go-batchtest"
+			}
+			if execution.Status != "ok" {
+				if _, ok := failed[unit]; !ok {
+					failed[unit] = nil
+				}
+			}
+		}
+		for index, identities := range [][]proofrun.NativeTestIdentity{result.Observed, result.Missing, result.Unexpected} {
+			for _, identity := range identities {
+				if index != 2 && (identity.Status == "passed" || identity.Status == "skipped") {
+					continue
+				}
+				name := identity.Name
+				if strings.HasPrefix(identity.Status, "missing") {
+					name += "(did not report)"
+				}
+				unit := packageUnit(identity.Classname)
+				if slices.Contains(tags, "batchtest") {
+					unit = "go-batchtest"
+				}
+				failed[unit] = append(failed[unit], name)
+			}
+		}
+		return nil
+	}
+	for _, selection := range selections {
+		pkg, names, _ := strings.Cut(selection, "=")
+		pkg = strings.TrimPrefix(pkg, "metasystem/")
+		var tests []string
+		if names != "" {
+			tests = strings.Split(names, ",")
+		}
+		if err := native([]string{pkg}, tests, nil); err != nil {
+			return notRun(err)
+		}
+		if only == "" && !full && (pkg == "cmd/metasystem" || strings.HasPrefix(pkg, "internal/landing/")) {
+			if err := native([]string{pkg}, tests, []string{"batchtest"}); err != nil {
+				return notRun(err)
+			}
+		}
+	}
+	if full {
+		if err := native([]string{"cmd/metasystem", "internal/landing/..."}, nil, []string{"batchtest"}); err != nil {
 			return notRun(err)
 		}
 		for _, group := range contract.Groups {
@@ -155,48 +268,14 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	}
 	sort.Strings(units)
 	for _, unit := range units {
-		fmt.Fprintf(stdout, "LANDING-FAILED\t%s\t%s\n", unit, strings.Join(failed[unit], " "))
+		sort.Strings(failed[unit])
+		fmt.Fprintf(stdout, "LANDING-FAILED\t%s\t%s\n", unit, strings.Join(slices.Compact(failed[unit]), " "))
 	}
 	fmt.Fprintf(stdout, "LANDING-CHECKED\t%d\n", len(units))
 	if len(units) > 0 {
 		return 1
 	}
 	return 0
-}
-
-func packageSuite(stdout, stderr io.Writer, command Command, argv []string, failed map[string][]string) error {
-	var native bytes.Buffer
-	err := command(argv, io.MultiWriter(stdout, &native), stderr)
-	completed := 0
-	legFailed := false
-	decoder := json.NewDecoder(&native)
-	for decoder.More() {
-		var event struct{ Action, Package, Test string }
-		if decodeErr := decoder.Decode(&event); decodeErr != nil {
-			return fmt.Errorf("the package suite's report could not be read: %w", decodeErr)
-		}
-		// Landing's units are paths from the checkout root, also used by its
-		// Git readers; Go reports import paths from the module instead.
-		event.Package = packageUnit(event.Package)
-		if event.Action == "fail" && event.Package != "" {
-			legFailed = true
-			if event.Test != "" {
-				failed[event.Package] = append(failed[event.Package], event.Test)
-			} else if _, exists := failed[event.Package]; !exists {
-				failed[event.Package] = nil
-			}
-		}
-		if event.Package != "" && event.Test == "" && (event.Action == "pass" || event.Action == "fail" || event.Action == "skip") {
-			completed++
-		}
-	}
-	if completed == 0 {
-		return fmt.Errorf("the package suite reported no completed packages: %v", err)
-	}
-	if err != nil && !legFailed {
-		return err
-	}
-	return nil
 }
 
 func shellQuote(value string) string { return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'" }

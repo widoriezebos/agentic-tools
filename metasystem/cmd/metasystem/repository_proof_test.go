@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -124,6 +125,60 @@ func TestRepositoryLandingProofRunsHostSuiteAndReports(t *testing.T) {
 	}
 }
 
+func TestRepositoryBatchtestFailureReplaysAndStaysRed(t *testing.T) {
+	t.Parallel()
+	for _, failure := range []string{"test", "package", "missing"} {
+		t.Run(failure, func(t *testing.T) {
+			t.Parallel()
+			b := newReplayVerbBed(t)
+			if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.full=sh proof/full.sh\n"), 0644); err != nil {
+				t.Fatal(err)
+			}
+			git := b.owners.landing.plainProve.Git
+			b.owners.landing.plainProve.Git = func(root string, args ...string) (string, error) {
+				output, err := git(root, args...)
+				if err == nil && len(args) == 5 && args[0] == "worktree" && args[1] == "add" {
+					for _, file := range []string{"proof/full.sh", "testing.json"} {
+						data, readErr := os.ReadFile(filepath.Join("../..", file))
+						if readErr != nil {
+							return "", readErr
+						}
+						path := filepath.Join(args[3], "metasystem", file)
+						if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+							return "", err
+						}
+						if err := os.WriteFile(path, data, 0644); err != nil {
+							return "", err
+						}
+					}
+				}
+				return output, err
+			}
+			tools, binary := repositoryProofTools(t)
+			b.fail = func(command *exec.Cmd, _ string) (string, error) {
+				command.Env = append(command.Env, "PATH="+tools+":/usr/bin:/bin", "REPOSITORY_PROOF_TEST_BINARY="+binary, "REPOSITORY_PROOF_TEST_PROCESS=1", "REPOSITORY_PROOF_BATCH_FAILURE="+failure)
+				var output bytes.Buffer
+				stdout := command.Stdout
+				defer func() { command.Stdout = stdout }()
+				command.Stdout = &output
+				err := command.Run()
+				return output.String(), err
+			}
+			result := b.prove(t)
+			if result.Cause == nil || result.Cause.Kind != "main" || result.Repeat != "" || !result.CountedFull || len(result.Failed) != 1 || result.Failed[0].Unit != "go-batchtest" {
+				t.Fatalf("batchtest classification: %+v runs=%v", result, b.runs)
+			}
+			if !reflect.DeepEqual(b.runs, []string{"merge-b:", "main:go-batchtest"}) {
+				t.Fatalf("batchtest replay ran the wrong selection: %v", b.runs)
+			}
+			log, err := os.ReadFile(result.Cause.Evidence)
+			if err != nil || !strings.Contains(string(log), "landing group go-batchtest red") || !strings.HasSuffix(string(log), "LANDING-FAILED\tgo-batchtest\t\nLANDING-CHECKED\t1\n") {
+				t.Fatalf("batchtest replay lost its red: %s, %v", log, err)
+			}
+		})
+	}
+}
+
 func repositoryProofTools(t *testing.T) (string, string) {
 	t.Helper()
 	dir := t.TempDir()
@@ -219,7 +274,7 @@ func TestRepositoryProofProcess(t *testing.T) {
 	}
 	switch {
 	case reflect.DeepEqual(args, []string{"proof", "--host"}):
-		os.Exit(repoproof.RunHost(os.Stdout, os.Stderr, os.Getenv, repoproof.Execute))
+		os.Exit(repoproof.RunHost(os.Stdout, os.Stderr, os.Getenv, repoproof.Execute, repositoryProofRunners()))
 	case len(args) == 5 && reflect.DeepEqual(args[:3], []string{"go", "build", "-o"}) && args[4] == "./proof":
 		body := "#!/bin/sh\nexec \"$REPOSITORY_PROOF_TEST_BINARY\" -test.run '^TestRepositoryProofProcess$' -- proof \"$@\"\n"
 		if err := testexec.WriteFile(args[3], []byte(body), 0o755); err != nil {
@@ -231,7 +286,7 @@ func TestRepositoryProofProcess(t *testing.T) {
 			os.Exit(1)
 		}
 	case reflect.DeepEqual(args, []string{"proof"}):
-		os.Exit(repoproof.Run(os.Stdout, os.Stderr, os.Getenv, repoproof.Execute))
+		os.Exit(repoproof.Run(os.Stdout, os.Stderr, os.Getenv, repoproof.Execute, repositoryProofRunners()))
 	case reflect.DeepEqual(args, []string{"go", "test", "-json", "-count=1", "-timeout", "30m", "./..."}):
 		if os.Getenv("REPOSITORY_PROOF_TEST_RED") == "1" {
 			fmt.Println("{\"Action\":\"fail\",\"Package\":\"fixture/package\",\"Test\":\"TestBroken\"}\n{\"Action\":\"fail\",\"Package\":\"fixture/package\"}")
@@ -253,4 +308,36 @@ func TestRepositoryProofProcess(t *testing.T) {
 		os.Exit(2)
 	}
 	os.Exit(0)
+}
+
+func repositoryProofRunners() repoproof.HostRunners {
+	return repoproof.HostRunners{Environment: func() (string, error) { return "fixture toolchain", nil }, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+		result := proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "fixture/package", Shard: 1, Status: "ok"}}, Output: []byte(`{"Action":"pass","Package":"fixture/package"}` + "\n")}
+		if failure := os.Getenv("REPOSITORY_PROOF_BATCH_FAILURE"); failure != "" && len(request.BuildTags) > 0 {
+			const pkg = "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem"
+			result.Failed = true
+			result.Execution[0].Package, result.Execution[0].Status = pkg, "fail"
+			result.Output = []byte(fmt.Sprintf("{\"Action\":\"fail\",\"Package\":%q}\n", pkg))
+			if failure == "test" {
+				result.Observed = []proofrun.NativeTestIdentity{{Classname: pkg, Name: "TestBatchBroken", Status: "failed"}}
+				result.Output = append([]byte(fmt.Sprintf("{\"Action\":\"fail\",\"Package\":%q,\"Test\":\"TestBatchBroken\"}\n", pkg)), result.Output...)
+			}
+			if failure == "missing" {
+				result.Execution[0].Status = "missing"
+				result.Missing = []proofrun.NativeTestIdentity{{Classname: pkg, Name: "TestBatchBroken", Status: "missing"}}
+			}
+		}
+		if os.Getenv("REPOSITORY_PROOF_TEST_RED") == "1" && len(request.BuildTags) == 0 {
+			result.Failed = true
+			result.Output = []byte("{\"Action\":\"fail\",\"Package\":\"fixture/package\",\"Test\":\"TestBroken\"}\n{\"Action\":\"fail\",\"Package\":\"fixture/package\"}\n")
+			result.Execution[0].Status = "fail"
+			result.Observed = []proofrun.NativeTestIdentity{{Classname: "fixture/package", Name: "TestBroken", Status: "failed"}}
+		}
+		return result, nil
+	}, Groups: func(ids []string) ([]proofrun.NamedGroupResult, error) {
+		if os.Getenv("REPOSITORY_PROOF_BATCH_FAILURE") == "" || !reflect.DeepEqual(ids, []string{"go-batchtest"}) {
+			return nil, fmt.Errorf("unexpected replay groups: %v", ids)
+		}
+		return []proofrun.NamedGroupResult{{ID: "go-batchtest", Status: "red", Output: "batchtest failure"}}, nil
+	}}
 }

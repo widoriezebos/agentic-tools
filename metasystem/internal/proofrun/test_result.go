@@ -43,6 +43,7 @@ type NativeTestIdentity struct {
 // "(cached)" and the original execution time is unknown. Reason is the
 // shard's reusePolicy reason.
 type PackageExecution struct {
+	Status    string `json:"status,omitempty"`
 	Shard     int    `json:"shard"`
 	Package   string `json:"package"`
 	Mode      string `json:"mode"`

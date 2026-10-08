@@ -67,14 +67,20 @@ type goListPackage struct {
 	EmbedFiles, TestEmbedFiles, XTestEmbedFiles                                    []string
 }
 
-type GoGateTestRequest struct {
-	Root        string
-	LogRoot     string
-	Environment []string
-	Workers     int
+type NativeInventoryRequest struct {
+	Packages, BuildTags, Tests []string
+	Race, Coverage             bool
+	Root                       string
+	LogRoot                    string
+	Environment                []string
+	Workers                    int
 }
 
-type GoGateTestResult struct {
+type GoGateTestRequest = NativeInventoryRequest
+
+type NativeInventoryResult struct {
+	Execution  []PackageExecution
+	Failed     bool
 	LogPath    string
 	Output     []byte
 	Observed   []NativeTestIdentity
@@ -83,23 +89,59 @@ type GoGateTestResult struct {
 	Reruns     []RerunFinding
 }
 
+type GoGateTestResult = NativeInventoryResult
+
 // RunGoGateTests runs the full gate's native Go selection through the same
 // discovery, partition, supervision, terminal, coverage, and diagnostic
 // owners used by testing-contract groups. It does not claim proof authority;
 // the full-gate wrapper authenticates and publishes the resulting coverage.
 func RunGoGateTests(ctx context.Context, request GoGateTestRequest) (GoGateTestResult, int, error) {
+	if request.Workers < 1 {
+		return GoGateTestResult{}, 2, fmt.Errorf("go gate test workers must be positive")
+	}
+	request.Packages, request.Race, request.Coverage = []string{"internal/...", "cmd/..."}, true, true
+	return runNativeInventory(ctx, request)
+}
+
+// RunNativeInventory discovers and proves this tree's selected packages and tests.
+// Code failures are returned in the result; discovery and launch errors are errors.
+func RunNativeInventory(ctx context.Context, request NativeInventoryRequest) (NativeInventoryResult, error) {
+	result, _, err := runNativeInventory(ctx, request)
+	if result.Failed {
+		return result, nil
+	}
+	return result, err
+}
+
+func runNativeInventory(ctx context.Context, request NativeInventoryRequest) (NativeInventoryResult, int, error) {
 	result := GoGateTestResult{}
 	if request.Root == "" || request.LogRoot == "" {
 		return result, 2, fmt.Errorf("go gate test root and log root are required")
 	}
-	if request.Workers < 1 {
-		return result, 2, fmt.Errorf("go gate test workers must be positive")
-	}
 	if len(request.Environment) == 0 {
 		request.Environment = os.Environ()
 	}
-	group := testpolicy.Group{ID: "go-gate-native", Adapter: "go", CWD: ".", Packages: []string{"internal/...", "cmd/..."},
-		Tests: json.RawMessage(`"all"`), Race: true, Coverage: true}
+	if request.Workers < 1 {
+		request.Workers = runtime.GOMAXPROCS(0)
+		for _, name := range []string{"METASYSTEM_TESTING_WORKERS", TestWorkersEnvironment} {
+			for _, entry := range request.Environment {
+				if value, ok := strings.CutPrefix(entry, name+"="); ok && value != "" {
+					workers, err := strconv.Atoi(value)
+					if err != nil || workers < 1 {
+						return result, 2, fmt.Errorf("%s must be positive", name)
+					}
+					if name == "METASYSTEM_TESTING_WORKERS" || workers < request.Workers {
+						request.Workers = workers
+					}
+				}
+			}
+		}
+	}
+	group := testpolicy.Group{ID: "go-gate-native", Adapter: "go", CWD: ".", Packages: request.Packages, BuildTags: request.BuildTags,
+		Tests: json.RawMessage(`"all"`), Race: request.Race, Coverage: request.Coverage}
+	if len(request.Tests) > 0 {
+		group.Tests, _ = json.Marshal(request.Tests)
+	}
 	environment := overlayTestEnvironment(request.Environment, map[string]string{"GOMAXPROCS": "1", TestWorkersEnvironment: "1"})
 	_, expected, discovery, _, err := goArgumentsForSchema(ctx, group, request.Root, environment, testpolicy.ExecutionContractSchemaVersion)
 	if err != nil {
@@ -113,14 +155,18 @@ func RunGoGateTests(ctx context.Context, request GoGateTestRequest) (GoGateTestR
 	ctx = withTestWorkerPool(ctx, request.Workers)
 	limits, sampleInterval := groupSupervisorSettings(nil)
 	var output synchronizedBuffer
-	outcome, closeErr, coverageMerge, _, launchErr := runShardedGoGroup(ctx, nativeRequest, group, request.Root, environment, expected,
+	outcome, closeErr, coverageMerge, executions, launchErr := runShardedGoGroup(ctx, nativeRequest, group, request.Root, environment, expected,
 		discovery.Inventory, discovery.ModulePrefix, limits, sampleInterval, result.LogPath, &output, goCacheFacts{})
-	result.Output = goNativePlainOutput(output.Bytes())
+	result.Execution = executions
+	result.Output = output.Bytes()
 	if launchErr != nil {
 		return result, 1, launchErr
 	}
 	if closeErr != nil {
 		return result, 1, fmt.Errorf("close Go gate partition log: %w", closeErr)
+	}
+	if len(goPackageExecutions(0, "", output.Bytes())) == 0 {
+		return result, 1, fmt.Errorf("the package suite reported no completed packages")
 	}
 	var complete bool
 	result.Observed, result.Missing, result.Unexpected, complete = parseGoJSON(output.Bytes(), expected)
@@ -128,13 +174,22 @@ func RunGoGateTests(ctx context.Context, request GoGateTestRequest) (GoGateTestR
 	for _, identity := range result.Observed {
 		failed = failed || identity.Status == "failed"
 	}
+	for _, execution := range executions {
+		failed = failed || execution.Status != "ok"
+	}
+	result.Failed = failed
 	if failed {
-		groupResult := GroupResult{ID: group.ID, Status: "failed", Observed: result.Observed}
-		rerunFailedTests(ctx, nativeRequest, group, request.Root, environment, limits, sampleInterval, &groupResult)
-		result.Reruns = groupResult.Reruns
+		if request.Coverage {
+			groupResult := GroupResult{ID: group.ID, Status: "failed", Observed: result.Observed}
+			rerunFailedTests(ctx, nativeRequest, group, request.Root, environment, limits, sampleInterval, &groupResult)
+			result.Reruns = groupResult.Reruns
+			result.Output = goNativePlainOutput(output.Bytes())
+		}
 		return result, 1, goGateNativeFailure(outcome, result)
 	}
-	result.Output = []byte(coverageMerge)
+	if request.Coverage {
+		result.Output = []byte(coverageMerge)
+	}
 	return result, 0, nil
 }
 
@@ -277,6 +332,7 @@ func goNativeTestArguments(group testpolicy.Group, coverage, countOne bool) []st
 func goPackageExecutions(shard int, reason string, output []byte) []PackageExecution {
 	cached := map[string]bool{}
 	elapsed := map[string]*int64{}
+	statuses := map[string]string{}
 	var order []string
 	scanner := bufio.NewScanner(bytes.NewReader(output))
 	scanner.Buffer(make([]byte, 0, 64*1024), 16*1024*1024)
@@ -304,12 +360,13 @@ func goPackageExecutions(shard int, reason string, output []byte) []PackageExecu
 				ms = &value
 			}
 			elapsed[event.Package] = ms
+			statuses[event.Package] = map[string]string{"pass": "ok", "fail": "fail", "skip": "ok"}[event.Action]
 		}
 	}
 	sort.Strings(order)
 	executions := make([]PackageExecution, 0, len(order))
 	for _, pkg := range order {
-		execution := PackageExecution{Shard: shard, Package: pkg, Mode: PackageExecuted, ElapsedMS: elapsed[pkg], Reason: reason}
+		execution := PackageExecution{Shard: shard, Package: pkg, Mode: PackageExecuted, ElapsedMS: elapsed[pkg], Reason: reason, Status: statuses[pkg]}
 		if cached[pkg] {
 			execution.Mode, execution.ElapsedMS = PackageGoTestCache, nil
 		}

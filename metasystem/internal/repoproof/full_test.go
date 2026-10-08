@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -22,80 +23,58 @@ import (
 func TestFullReportsPackageFailuresAndRunsOnlyRequestedPackage(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name, native, only, suffix string
-		failure                    error
-		exit                       int
-		full                       bool
+		name, status, suffix string
+		fault                bool
 	}{
-		{"green", `{"Action":"pass","Package":"example/unit"}`, "", "LANDING-CHECKED\t0\n", nil, 0, true},
-		{"red", "{\"Action\":\"fail\",\"Package\":\"example/unit\",\"Test\":\"TestBroken\"}\n{\"Action\":\"fail\",\"Package\":\"example/unit\"}", "example/unit", "LANDING-FAILED\texample/unit\tTestBroken\nLANDING-CHECKED\t1\n", errors.New("exit status 1"), 1, false},
-		{"build failure", `{"Action":"fail","Package":"example/unit"}`, "", "LANDING-FAILED\texample/unit\t\nLANDING-CHECKED\t1\n", errors.New("exit status 1"), 1, true},
-		{"repository path", "{\"Action\":\"fail\",\"Package\":\"github.com/widoriezebos/agentic-tools/metasystem/internal/config\",\"Test\":\"TestBroken\"}\n{\"Action\":\"fail\",\"Package\":\"github.com/widoriezebos/agentic-tools/metasystem/internal/config\"}", "metasystem/internal/config", "LANDING-FAILED\tmetasystem/internal/config\tTestBroken\nLANDING-CHECKED\t1\n", errors.New("exit status 1"), 1, false},
-		{"lost process", "", "", "LANDING-NOT-RUN\tenvironment\n", errors.New("cannot start"), 1, false},
-		{"empty green", "", "", "LANDING-NOT-RUN\tenvironment\n", nil, 1, false},
-		{"malformed report", "broken", "", "LANDING-NOT-RUN\tenvironment\n", nil, 1, false},
+		{"green", "ok", "LANDING-CHECKED\t0\n", false},
+		{"red", "fail", "LANDING-FAILED\tmetasystem/internal/config\tTestBroken\nLANDING-CHECKED\t1\n", false},
+		{"missing package", "missing", "LANDING-FAILED\tmetasystem/internal/config\t\nLANDING-CHECKED\t1\n", false},
+		{"lost process", "", "LANDING-NOT-RUN\tenvironment\n", true},
+		{"empty green", "", "LANDING-NOT-RUN\tenvironment\n", false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			var out, stderr bytes.Buffer
+			hooks := HostRunners{Environment: func() (string, error) { return "fixture", nil }, Native: func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+				if !reflect.DeepEqual(r.Packages, []string{"internal/config"}) || len(r.BuildTags) != 0 {
+					t.Fatalf("selection: %+v", r)
+				}
+				if tc.fault {
+					return proofrun.NativeInventoryResult{}, errors.New("cannot start")
+				}
+				result := proofrun.NativeInventoryResult{}
+				if tc.status != "" {
+					result.Execution = []proofrun.PackageExecution{{Package: "github.com/widoriezebos/agentic-tools/metasystem/internal/config", Shard: 1, Status: tc.status}}
+				}
+				if tc.status == "fail" {
+					result.Observed = []proofrun.NativeTestIdentity{{Classname: result.Execution[0].Package, Name: "TestBroken", Status: "failed"}}
+				}
+				return result, nil
+			}}
 			calls := 0
-			command := func(argv []string, stdout, _ io.Writer) error {
+			command := func(argv []string, stdout, stderr io.Writer) error {
 				calls++
-				switch calls {
-				case 1:
-					if !reflect.DeepEqual(argv, []string{"metasystem", "landing", "status", "--json"}) {
-						t.Fatalf("status: %v", argv)
-					}
+				if calls == 1 {
 					fmt.Fprint(stdout, `{"data":{"root":"/lane"}}`)
-				case 2:
-					if !reflect.DeepEqual(argv, []string{"metasystem", "settings", "show", "host.proof-vm", "--repo", "/lane", "--json"}) {
-						t.Fatalf("settings: %v", argv)
-					}
+				} else if calls == 2 {
 					fmt.Fprint(stdout, `{"data":{"settings":[{"Key":"host.proof-vm","Value":""}]}}`)
-				case 3:
-					pkg := tc.only
-					if pkg == "" {
-						pkg = "./..."
-					}
-					if relative, ok := strings.CutPrefix(pkg, "metasystem/"); ok {
-						pkg = "./" + relative
-					}
-					if !reflect.DeepEqual(argv, []string{"go", "test", "-json", "-count=1", "-timeout", "30m", pkg}) {
-						t.Fatalf("suite: %v", argv)
-					}
-					fmt.Fprintln(stdout, tc.native)
-					return tc.failure
-				default:
-					if argv[1] == "test" {
-						fmt.Fprintln(stdout, `{"Action":"pass","Package":"batch/unit"}`)
-					}
-					if argv[0] == "proof/.full-reporter" {
-						fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":"passed","nativeLaunched":true,"nativeExitStatus":0}]}}`, argv[2])
-					}
+				} else {
+					t.Fatalf("unexpected command %v", argv)
 				}
 				return nil
 			}
 			exit := run(&out, &stderr, func(key string) string {
 				if key == "LANDING_ONLY" {
-					return tc.only
+					return "metasystem/internal/config"
 				}
 				return ""
-			}, command, "../../testing.json")
-			expectedCalls := 3
-			if tc.full {
-				contract, err := testpolicy.Load("../../testing.json")
-				if err != nil {
-					t.Fatal(err)
-				}
-				expectedCalls += 2
-				for _, group := range contract.Groups {
-					if group.Adapter == "section" {
-						expectedCalls++
-					}
-				}
+			}, command, "../../testing.json", hooks)
+			want := 1
+			if tc.status == "ok" {
+				want = 0
 			}
-			if exit != tc.exit || calls != expectedCalls || !strings.HasSuffix(out.String(), tc.suffix) {
-				t.Fatalf("exit=%d calls=%d output=%s stderr=%s", exit, calls, &out, &stderr)
+			if exit != want || calls != 2 || !strings.HasPrefix(out.String(), "landing environment fixture\n") || !strings.HasSuffix(out.String(), tc.suffix) {
+				t.Fatalf("exit=%d calls=%d out=%s err=%s", exit, calls, &out, &stderr)
 			}
 		})
 	}
@@ -183,61 +162,52 @@ func TestFullVMTransfersCommitAndKeepsReportLast(t *testing.T) {
 func TestFullRunsBatchStaticAndSectionsBeforeReporting(t *testing.T) {
 	t.Parallel()
 	var out, stderr bytes.Buffer
-	var calls [][]string
+	static := false
+	batches := 0
+	hooks := HostRunners{Environment: func() (string, error) { return "fixture", nil }, Native: func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+		if !static {
+			t.Fatal("tests preceded static")
+		}
+		if len(r.BuildTags) > 0 {
+			batches++
+			if !reflect.DeepEqual(r.Packages, []string{"cmd/metasystem", "internal/landing/..."}) {
+				t.Fatalf("batch %+v", r)
+			}
+		}
+		return proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "fixture/package", Shard: 1, Status: "ok"}}}, nil
+	}}
+	sections := map[string]int{}
 	command := func(argv []string, stdout, _ io.Writer) error {
-		calls = append(calls, argv)
-		switch {
-		case argv[0] == "metasystem" && argv[1] == "landing":
-			fmt.Fprint(stdout, `{"data":{"root":"/lane"}}`)
-		case argv[0] == "metasystem":
-			fmt.Fprint(stdout, `{"data":{"settings":[{"Key":"host.proof-vm","Value":""}]}}`)
-		case argv[1] == "test":
-			fmt.Fprintln(stdout, `{"Action":"pass","Package":"fixture/package"}`)
-		case argv[0] == "proof/.full-reporter":
-			id := argv[2]
-			status, exit := "passed", 0
-			if id == "section/gate-fail-open-tripwire" {
-				status, exit = "failed", 1
-			}
-			fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":%q,"nativeLaunched":true,"nativeExitStatus":%d}]}}`, id, status, exit)
-			if exit != 0 {
-				return errors.New("exit status 1")
-			}
+		if reflect.DeepEqual(argv, []string{"go", "run", "./cmd/devgate", "static"}) {
+			static = true
+			return nil
+		}
+		if argv[0] != "proof/.full-reporter" {
+			t.Fatalf("unexpected %v", argv)
+		}
+		id := argv[2]
+		sections[id]++
+		status, exit := "passed", 0
+		if id == "section/gate-fail-open-tripwire" {
+			status, exit = "failed", 1
+		}
+		fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":%q,"nativeLaunched":true,"nativeExitStatus":%d}]}}`, id, status, exit)
+		if exit != 0 {
+			return errors.New("exit status 1")
 		}
 		return nil
 	}
-	exit := run(&out, &stderr, func(string) string { return "" }, command, "../../testing.json")
-	if exit != 1 || !strings.HasSuffix(out.String(), "LANDING-FAILED\tsection/gate-fail-open-tripwire\t\nLANDING-CHECKED\t1\n") {
-		t.Fatalf("exit=%d output=%s stderr=%s calls=%v", exit, &out, &stderr, calls)
+	exit := runHost(&out, &stderr, func(string) string { return "" }, command, "../../testing.json", hooks)
+	if exit != 1 || batches != 1 || !strings.HasSuffix(out.String(), "LANDING-FAILED\tsection/gate-fail-open-tripwire\t\nLANDING-CHECKED\t1\n") {
+		t.Fatalf("exit=%d batch=%d out=%s err=%s", exit, batches, &out, &stderr)
 	}
 	contract, err := testpolicy.Load("../../testing.json")
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, group := range contract.Groups {
-		if group.Adapter != "section" {
-			continue
-		}
-		count := 0
-		for _, call := range calls {
-			if reflect.DeepEqual(call, []string{"proof/.full-reporter", "--section", group.ID}) {
-				count++
-			}
-		}
-		if count != 1 {
-			t.Fatalf("section %s executed %d times", group.ID, count)
-		}
-	}
-	for _, want := range [][]string{
-		{"go", "test", "-json", "-count=1", "-timeout", "30m", "-tags", "batchtest", "./cmd/metasystem/", "./internal/landing/..."},
-		{"go", "run", "./cmd/devgate", "static"},
-	} {
-		found := false
-		for _, call := range calls {
-			found = found || reflect.DeepEqual(call, want)
-		}
-		if !found {
-			t.Fatalf("missing command: %v in %v", want, calls)
+		if group.Adapter == "section" && sections[group.ID] != 1 {
+			t.Fatalf("section %s runs %d", group.ID, sections[group.ID])
 		}
 	}
 }
@@ -337,50 +307,52 @@ func TestMain(m *testing.M) {
 
 func TestFullLegFailuresKeepTheirGroupAndEnvironmentVerdicts(t *testing.T) {
 	t.Parallel()
-	for _, tc := range []struct{ name, fault, suffix string }{
-		{"batch failure", "batch-red", "LANDING-FAILED\tgo-batchtest\tTestBatch\nLANDING-CHECKED\t1\n"},
-		{"static failure", "static-red", "LANDING-FAILED\tfast-static-build\t\nLANDING-CHECKED\t1\n"},
-		{"batch environment after failed packages", "batch-environment", "LANDING-NOT-RUN\tenvironment\n"},
-		{"static environment", "static-environment", "LANDING-NOT-RUN\tenvironment\n"},
-		{"section environment", "section-environment", "LANDING-NOT-RUN\tenvironment\n"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+	for _, fault := range []string{"batch-red", "batch-environment", "static-red", "static-environment", "section-environment", "environment"} {
+		t.Run(fault, func(t *testing.T) {
 			t.Parallel()
 			var out, stderr bytes.Buffer
+			hooks := HostRunners{Environment: func() (string, error) {
+				if fault == "environment" {
+					return "", errors.New("no toolchain")
+				}
+				return "fixture", nil
+			}, Native: func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+				if len(r.BuildTags) > 0 && fault == "batch-environment" {
+					return proofrun.NativeInventoryResult{}, errors.New("not started")
+				}
+				status := "ok"
+				if len(r.BuildTags) > 0 && fault == "batch-red" {
+					status = "fail"
+				}
+				return proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "fixture/unit", Shard: 1, Status: status}}}, nil
+			}}
 			command := func(argv []string, stdout, _ io.Writer) error {
-				switch {
-				case argv[0] == "proof/.full-reporter":
-					if tc.fault == "section-environment" {
-						fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":"unavailable","nativeLaunched":false}]}}`, argv[2])
+				if argv[0] == "go" {
+					if fault == "static-environment" {
 						return errors.New("not started")
 					}
-					fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":"passed","nativeLaunched":true,"nativeExitStatus":0}]}}`, argv[2])
-				case argv[1] == "test":
-					batch := len(argv) > 7
-					if batch && tc.fault == "batch-environment" {
-						return errors.New("batch process did not start")
-					}
-					if (batch && tc.fault == "batch-red") || (!batch && tc.fault == "batch-environment") {
-						fmt.Fprintln(stdout, `{"Action":"fail","Package":"fixture/unit","Test":"TestBatch"}`)
-						fmt.Fprintln(stdout, `{"Action":"fail","Package":"fixture/unit"}`)
-						return errors.New("exit status 1")
-					}
-					fmt.Fprintln(stdout, `{"Action":"pass","Package":"fixture/unit"}`)
-				case argv[1] == "run":
-					if tc.fault == "static-environment" {
-						return errors.New("static process did not start")
-					}
-					if tc.fault == "static-red" {
+					if fault == "static-red" {
 						return exec.Command("/bin/sh", "-c", "exit 1").Run()
 					}
-				default:
-					t.Fatalf("unexpected command: %v", argv)
+					return nil
 				}
+				if fault == "section-environment" {
+					fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":"unavailable","nativeLaunched":false}]}}`, argv[2])
+					return errors.New("not started")
+				}
+				fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":"passed","nativeLaunched":true,"nativeExitStatus":0}]}}`, argv[2])
 				return nil
 			}
-			exit := runHost(&out, &stderr, func(string) string { return "" }, command, "../../testing.json")
-			if exit != 1 || !strings.HasSuffix(out.String(), tc.suffix) {
-				t.Fatalf("exit=%d output=%s stderr=%s", exit, &out, &stderr)
+			suffix := "LANDING-NOT-RUN\tenvironment\n"
+			if fault == "batch-red" {
+				suffix = "LANDING-FAILED\tgo-batchtest\t\nLANDING-CHECKED\t1\n"
+			}
+			if fault == "static-red" {
+				suffix = "LANDING-FAILED\tfast-static-build\t\nLANDING-CHECKED\t1\n"
+			}
+			exit := runHost(&out, &stderr, func(string) string { return "" }, command, "../../testing.json", hooks)
+			if exit != 1 || !strings.HasSuffix(out.String(), suffix) {
+				t.Fatalf("exit=%d out=%s err=%s", exit, &out, &stderr)
 			}
 		})
 	}

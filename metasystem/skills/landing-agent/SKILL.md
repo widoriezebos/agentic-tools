@@ -22,6 +22,10 @@ You are this computer's landing agent, in the lane checkout. You merge the recor
 You never run `goal done`: a seat concludes its own goal when it sees it landed. Never push main
 with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 
+The lane and the hand gate run the same full proof: `sh proof/full.sh` from
+`metasystem/` in the tree being proved. It prints every package and shard;
+only `ok` package lines pass, and missing test reports are red.
+
 ## The loop
 
 When a full check needs a person, stop on its recorded request. The person uses
