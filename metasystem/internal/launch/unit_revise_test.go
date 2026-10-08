@@ -446,6 +446,27 @@ func TestRevisionRequestReplay(t *testing.T) {
 	if len(fixture.starter.order) != launched {
 		t.Fatalf("a replayed or refused request launched: %v", fixture.starter.order[launched:])
 	}
+
+	// A crash between frozen composition and the revision record leaves
+	// the original decisions as the only lawful input on retry.
+	fixture.runner.ComposeUnitBrief = func(plan UnitPlan, _ string, _ *UnitRevisionRequest) (UnitPlan, error) {
+		t.Fatal("a frozen round was recomposed")
+		return plan, nil
+	}
+	if err := fixture.runner.save(first.Record); err != nil {
+		t.Fatal(err)
+	}
+	decisionsPath := filepath.Join(fixture.runner.runDir(run), "revisions", "after-1-decisions.md")
+	fixture.runner.Git = &hookGit{inner: fixture.git, change: func() {
+		t.Fatal("a conflicting frozen correction reached branch verification")
+	}}
+	_, revisionErr := fixture.runner.Revise(UnitRevisionRequest{Run: run, After: 1, Brief: brief, Decisions: []byte("changed decisions\n")})
+	if _, err := os.Stat(decisionsPath); !os.IsNotExist(err) || len(fixture.starter.order) != launched {
+		t.Fatalf("a conflicting retry wrote decisions or launched: %v %v", err, fixture.starter.order[launched:])
+	}
+	if revisionErr == nil || !strings.HasPrefix(ErrorDetail(revisionErr), "UNIT_REVISION_CONFLICT") {
+		t.Fatalf("changed decisions replaced frozen composition: %v", revisionErr)
+	}
 }
 
 // TestRevisionRetainsReviewedFindingsAfterFailure: the reviewed findings and

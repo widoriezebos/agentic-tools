@@ -138,7 +138,14 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 		if err != nil {
 			return UnitRevisionResult{}, err
 		}
-		request.Brief = append(original, request.Brief...)
+		if runner.ComposeUnitBrief != nil {
+			originalPlan, err := ReadUnitPlan(filepath.Join(record.Rounds[0].Directory, "plan.json"))
+			if err != nil {
+				return UnitRevisionResult{}, err
+			}
+			plan.BriefSuppliedByPerson = originalPlan.BriefSuppliedByPerson
+		}
+		request.Brief = []byte(string(original) + "\n\n> " + strings.ReplaceAll(string(request.Brief), "\n", "\n> "))
 		briefDigest = digestHex(request.Brief)
 	}
 	decisionsDigest := ""
@@ -210,12 +217,33 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 			return UnitRevisionResult{}, err
 		}
 		revision.Brief = filepath.Join(directory, fmt.Sprintf("after-%d-brief.md", after))
+		if _, err := os.Stat(filepath.Join(runner.runDir(record.ID), fmt.Sprintf("round-%d/plan.json", after+1))); err == nil && runner.ComposeUnitBrief != nil {
+			frozen, briefErr := os.ReadFile(revision.Brief)
+			decisions, decisionsErr := os.ReadFile(filepath.Join(directory, fmt.Sprintf("after-%d-decisions.md", after)))
+			if briefErr != nil || digestHex(frozen) != briefDigest || string(decisions) != string(request.Decisions) || decisionsErr != nil && !os.IsNotExist(decisionsErr) {
+				return UnitRevisionResult{}, coded("UNIT_REVISION_CONFLICT", "", fmt.Errorf("attempt %d already has a frozen correction; repeat its original request", after))
+			}
+		}
 		if _, err := atomicfile.WriteText(revision.Brief, string(request.Brief), runner.root()); err != nil {
 			return UnitRevisionResult{}, err
 		}
 		if decisionsDigest != "" {
 			revision.Decisions = filepath.Join(directory, fmt.Sprintf("after-%d-decisions.md", after))
 			if _, err := atomicfile.WriteText(revision.Decisions, string(request.Decisions), runner.root()); err != nil {
+				return UnitRevisionResult{}, err
+			}
+		}
+		if runner.ComposeUnitBrief != nil {
+			candidate := plan
+			if request.Rebase != nil {
+				candidate, err = runner.rebasePlan(candidate, request.Rebase)
+				if err != nil {
+					return UnitRevisionResult{}, err
+				}
+			}
+			candidate.Build.Brief = revision.Brief
+			request.After = after
+			if _, err := runner.roundProofPlan(candidate, filepath.Join(runner.runDir(record.ID), fmt.Sprintf("round-%d", after+1)), true, &request); err != nil {
 				return UnitRevisionResult{}, err
 			}
 		}

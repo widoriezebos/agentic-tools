@@ -467,6 +467,12 @@ func (b *workBed) workOwners() intentOwners {
 					cheap = shellCommand(workArgv)
 				}
 				return []byte("proof.cheap=" + cheap + "\nproof.audits=true\nproof.deadline=15\n"), nil
+			// Accepted design references are resolved at the fixture's current base
+			// (plans/designs/briefs-carry-their-rules.md:66).
+			case joined == "rev-parse --show-prefix", strings.HasPrefix(joined, "ls-tree "):
+				return nil, nil
+			case joined == "rev-parse --verify HEAD^{commit}":
+				return []byte(b.head + "\n"), nil
 			case joined == "rev-parse HEAD" && dir == b.worktree:
 				return []byte(b.head + "\n"), nil
 			case strings.HasPrefix(joined, "rev-parse --verify -q refs/heads/goal/"):
@@ -903,7 +909,9 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 			t.Fatalf("read brief lacks %q:\n%s", want, readBrief)
 		}
 	}
-	if !strings.HasPrefix(string(buildBrief), "Before returning, run: metasystem test run --unit-run "+data["run"].(string)+"\n") || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
+	// Supplementary prose is quoted inside the owned brief
+	// (plans/designs/briefs-carry-their-rules.md:66).
+	if !strings.HasPrefix(string(buildBrief), "Before returning, run: metasystem test run --unit-run "+data["run"].(string)+"\n") || !strings.Contains(string(buildBrief), "\n> Read each round: yes\n> Build the unit.\n> \n[end supplementary brief]") {
 		t.Fatalf("build brief:\n%s", buildBrief)
 	}
 	before := map[string][]byte{}

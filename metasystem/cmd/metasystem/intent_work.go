@@ -251,6 +251,8 @@ func intentWorkCommands() []intentCommand {
 				"A work name is the caller's name for one part of the goal; without --work the first build is main, and a goal with one",
 				"work item continues it. The same goal, work and request reach the same attempt again; a different request is refused",
 				"and is sent as a correction with work revise.",
+				"Build and revise retain your brief in one non-executable quote beside the current accepted Decision and owned Check.",
+				"An agent’s conflicting Check is refused; a proven person’s text is retained. To change execution use --check --reason --by.",
 				"Committed proof.cheap, proof.audits and proof.deadline are frozen before the builder starts; its brief calls test run --unit-run RUN.",
 				"The size is the work's row in the brief's or the accepted design's units table; without a row give --lines N.",
 				"The first read may use the tool calls the brief names (Maximum reader tool calls: N), --read-tool-calls N, or else",
@@ -482,6 +484,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return fix != nil && plan.Base == fix.Parent && plan.Unit == fmt.Sprintf("lane-fix-%d", fix.Round) && fix.Commit == "" && fix.Job == ""
 	}
 	runner.FreezeCheck = inv.resolveUnitCheck
+	runner.ComposeUnitBrief = inv.composeUnitBrief
 	if inv.input.has("check") {
 		runner.ReviewPolicy = func() (string, error) { return "person", nil }
 	}
@@ -1147,6 +1150,12 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	}
 	git := inv.work().git
 	prepare := func(directory string) (string, error) {
+		for _, expected := range append([]unitRequestFile{identity.Brief}, identity.Designs...) {
+			current, err := fileIdentity(expected.Path)
+			if err != nil || current != expected {
+				return "", fmt.Errorf("input %s changed before admission; repeat the build with current inputs", expected.Path)
+			}
+		}
 		head, err := git(worktree, "rev-parse", "HEAD")
 		if err != nil {
 			return "", fmt.Errorf("cannot read the goal branch's commit: %w", err)
@@ -1770,12 +1779,16 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 		}
 		return inv.render(inv.unitOutcome(runner, result.UnitResult, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
 	}
-	result, err := runner.Continue(launch.UnitRequest{Resume: run, FollowUp: brief})
+	data, err := os.ReadFile(brief)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the correction brief cannot be read", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "once the brief is readable"})
+	}
+	result, err := runner.Revise(launch.UnitRevisionRequest{Run: run, Brief: data})
 	again := inv.publicArgv("work", "wait", unitRunPrefix+run)
 	if launch.IsCode(err, "LAUNCH_BUILD_CAPACITY") || launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
 		again = inv.publicArgv("work", "build", unitRunPrefix+run)
 	}
-	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, again))
+	return inv.render(inv.unitOutcome(runner, result.UnitResult, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, again))
 }
 
 // wait
@@ -2652,7 +2665,7 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 	if done == "" && len(acceptance) == 0 {
 		text.WriteString(mark("observable, machine-checkable criteria; neither the goal nor an accepted design states them") + "\n")
 	}
-	text.WriteString("\n# Gap Rule\n\nstop and report a gap; never fill it silently.\n")
+	text.WriteString("\n# Check\n\nPending: committed proof.cheap, proof.audits and proof.deadline; the unit runner allocates the run id.\n\n# Gap Rule\n\nstop and report a gap; never fill it silently.\n")
 	unit := inv.input.text("work")
 	if unit == "" && len(units) == 1 {
 		unit = units[0].Name

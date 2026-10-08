@@ -274,6 +274,11 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 		if err != nil {
 			return UnitResult{}, err
 		}
+		if runner.ComposeUnitBrief != nil {
+			if _, err := runner.roundProofPlan(plan, filepath.Join(runner.runDir(id), "round-1"), true); err != nil {
+				return UnitResult{}, err
+			}
+		}
 		entry = namedUnitEntry{Worktree: worktree, Goal: plan.Goal, Unit: plan.Unit, Digest: digest, Run: id, State: namedReserved}
 		if err := runner.writeNamed(key, entry); err != nil {
 			return UnitResult{}, err

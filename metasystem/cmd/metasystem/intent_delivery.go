@@ -127,6 +127,7 @@ func intentDeliveryCommands() []intentCommand {
 			object: "work", action: "revise", laidOut: true, audience: "agent", summary: "correct a goal's work with a brief: one new attempt, reviewed again",
 			usage: []string{"metasystem work revise G [--work NAME] [--after N] --brief FILE [--dispositions FILE]", "metasystem work revise j2:R --dispositions FILE --brief FILE", "metasystem work revise run:RUN --brief FILE"},
 			details: []string{
+				"Your --brief text stays in a non-executable quote; composition owns the current Decision, bound dispositions and sole Check.",
 				"Every attempt of a work item has a number N, whether it passed or failed; --after N names the attempt being corrected.",
 				"The request (work, N and the brief's exact bytes) is kept before anything starts, so repeating it, even after a lost",
 				"response or a failure, reaches the same new attempt and never spends another. Without --after an identical earlier",
@@ -991,7 +992,7 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		drafts.pageCopy,
 		fmt.Sprintf("design page %s, SHA-256 %s", gitRel, hex.EncodeToString(digest[:])),
 		filepath.Join(dir, "findings.md"),
-		[]string{fmt.Sprintf("`%s:1-%d` — the whole design under skills/design-critique/SKILL.md: missing work, false premises and first-use failures", gitRel, lineCount)}) +
+		[]string{fmt.Sprintf("`%s` — the whole frozen design (%d lines) under skills/design-critique/SKILL.md: missing work, false premises and first-use failures", gitRel, lineCount)}) +
 		drafts.section()
 	designPath := filepath.Join(git, filepath.FromSlash(gitRel))
 	inputs := map[string]string{brief: briefText, outputs: gitRel + "\n"}

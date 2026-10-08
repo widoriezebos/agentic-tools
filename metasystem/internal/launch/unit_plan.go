@@ -13,6 +13,9 @@ import (
 )
 
 type UnitPlan struct {
+	// BriefSuppliedByPerson records the original text's provenance, not authority for later invocations.
+	BriefSuppliedByPerson bool `json:"briefSuppliedByPerson,omitempty"`
+
 	FullArgv []string       `json:"fullArgv,omitempty"`
 	Estimate *UnitEstimate  `json:"estimate,omitempty"`
 	Check    *UnitCheck     `json:"check,omitempty"`
@@ -76,6 +79,8 @@ type ProofCommand struct {
 }
 
 type rawUnitPlan struct {
+	BriefSuppliedByPerson bool `json:"briefSuppliedByPerson,omitempty"`
+
 	Check    *UnitCheck    `json:"check,omitempty"`
 	Whole    bool          `json:"whole"`
 	Unit     *string       `json:"unit"`
@@ -183,7 +188,7 @@ func readUnitPlanInput(path, relativeRoot string, retained bool) (UnitPlan, erro
 			return UnitPlan{}, planInvalid(item.name, nil)
 		}
 	}
-	plan := UnitPlan{Check: raw.Check, Unit: *raw.Unit, Goal: *raw.Goal, Worktree: *raw.Worktree, Base: *raw.Base, Whole: raw.Whole,
+	plan := UnitPlan{BriefSuppliedByPerson: raw.BriefSuppliedByPerson, Check: raw.Check, Unit: *raw.Unit, Goal: *raw.Goal, Worktree: *raw.Worktree, Base: *raw.Base, Whole: raw.Whole,
 		Estimate: raw.Estimate, FullArgv: raw.FullArgv,
 		Build: UnitBuildPlan{*build.Brief, *build.Inputs, *build.Outputs, *build.UnitsPage, *build.Units},
 		Path:  abs}

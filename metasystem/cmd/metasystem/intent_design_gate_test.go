@@ -52,7 +52,8 @@ func newDesignGateBed(t *testing.T, tier uint8) *workBed {
 func designGatePage(t *testing.T, bed *workBed, critique string, sections ...string) (string, []byte) {
 	t.Helper()
 	path := filepath.Join(bed.stateRoot(), "plans", "designs", "gate.md")
-	data := []byte("# Gate design\n\n- Kind: design\n- Id: gate-design\n- Status: accepted\n- Goals: " + bed.id + "\n" + strings.TrimRight(critique, "\n") + "\n\nBuild the gate.\n")
+	// Each admitted fixture unit owns a Decision.
+	data := []byte("# Gate design\n\n- Kind: design\n- Id: gate-design\n- Status: accepted\n- Goals: " + bed.id + "\n" + strings.TrimRight(critique, "\n") + "\n\n## u — Gate\n\nBuild the gate.\n\n## main — Gate\n\nBuild the gate.\n\n## ../other-goal/main — Gate\n\nBuild the gate.\n")
 	data = append(data, []byte(strings.Join(sections, ""))...)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)

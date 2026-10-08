@@ -25,7 +25,7 @@ type briefObservation struct {
 
 // BriefEvidence observes local completed reads once. History is advice;
 // correction decisions remain subject to the revision owner's completeness gate.
-func (runner *UnitRunner) BriefEvidence(repository, worktree, goal, unit string, after int, dispositions []byte) (string, error) {
+func (runner *UnitRunner) BriefEvidence(repository, worktree, goal, unit string, after int, dispositions []byte, correction ...[]byte) (string, error) {
 	var out strings.Builder
 	if after != 0 {
 		works, err := runner.NamedWork(worktree, goal)
@@ -47,10 +47,17 @@ func (runner *UnitRunner) BriefEvidence(repository, worktree, goal, unit string,
 			// A headed file supplies its own section; adding a header would empty it.
 			section = decisionsSection(dispositions, after) + "\n"
 		}
+		checked, supplied := []byte(section), [][]byte(nil)
+		if len(correction) > 0 && len(correction[0]) > 0 {
+			checked, supplied = correction[0], [][]byte{dispositions}
+		}
 		if len(round.Reads) > 0 {
-			if err := runner.reviseDecided(*record, round, []byte(section)); err != nil {
+			if err := runner.reviseDecided(*record, round, checked, supplied...); err != nil {
 				return "", err
 			}
+		}
+		if len(correction) > 0 {
+			section += "\n> " + strings.ReplaceAll(strings.TrimPrefix(decisionsSection(correction[0], after), fmt.Sprintf("## Decisions on round %d", after)), "\n", "\n> ")
 		}
 		fmt.Fprintf(&out, "\n%s\nPredecessor run: %s, round %d.\n", section, record.ID, after)
 		evidence, _ := json.MarshalIndent(round.Reads, "", "  ")

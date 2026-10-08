@@ -155,9 +155,10 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
-	AdmitDetached func(UnitPlan) bool
-	Actor         string
-	FreezeCheck   func(UnitPlan, string) (UnitPlan, error)
+	AdmitDetached    func(UnitPlan) bool
+	Actor            string
+	FreezeCheck      func(UnitPlan, string) (UnitPlan, error)
+	ComposeUnitBrief func(UnitPlan, string, *UnitRevisionRequest) (UnitPlan, error)
 	// CriticCustody observes or cancels every committed examination of this run.
 	CriticCustody func(UnitRunRecord, bool) (bool, error)
 	recoverRun    string
@@ -451,7 +452,7 @@ func (runner *UnitRunner) addRound(record *UnitRunRecord, plan UnitPlan, followU
 
 func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, deadline time.Time) (UnitResult, error) {
 	round := &record.Rounds[len(record.Rounds)-1]
-	if runner.FreezeCheck != nil {
+	if runner.FreezeCheck != nil || runner.ComposeUnitBrief != nil {
 		var err error
 		plan.Build.Brief = choose(round.FollowUp, plan.Build.Brief)
 		plan, err = runner.roundProofPlan(plan, round.Directory, true)
@@ -681,19 +682,34 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	return runner.finish(record, round, outcome)
 }
 
-func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofPlanned bool) (UnitPlan, error) {
+func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofPlanned bool, revision ...*UnitRevisionRequest) (UnitPlan, error) {
 	path := filepath.Join(directory, "plan.json")
 	if _, err := os.Stat(path); err == nil {
 		return ReadUnitPlan(path)
 	} else if !os.IsNotExist(err) {
 		return plan, err
 	}
+	briefSizes := plan.Build.UnitsPage == plan.Build.Brief
 	if runner.FreezeCheck != nil {
 		var err error
 		plan, err = runner.FreezeCheck(plan, directory)
 		if err != nil {
 			return plan, err
 		}
+	}
+	if runner.ComposeUnitBrief != nil {
+		var request *UnitRevisionRequest
+		if len(revision) > 0 {
+			request = revision[0]
+		}
+		var err error
+		plan, err = runner.ComposeUnitBrief(plan, directory, request)
+		if err != nil {
+			return plan, err
+		}
+	}
+	if briefSizes && runner.ComposeUnitBrief != nil {
+		plan.Build.UnitsPage = plan.Build.Brief
 	}
 	if plan.Check == nil && runner.PlanProof != nil && !proofPlanned {
 		commands, err := runner.PlanProof(plan)

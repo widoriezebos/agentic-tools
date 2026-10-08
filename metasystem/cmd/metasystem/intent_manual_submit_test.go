@@ -604,16 +604,17 @@ func TestIntentBriefBeforeFirstWorkspaceBuilds(t *testing.T) {
 	c := newConnectionBed(t)
 	designs := filepath.Join(c.stateRoot(), "plans", "designs")
 	os.MkdirAll(designs, 0o700)
+	// A unit maps to its accepted Decision (plans/designs/briefs-carry-their-rules.md:58).
 	design := "# Standing validation\n\n- Kind: design\n- Id: 01M3CGR7CNZTS2NNTQCYRCF4JZ\n- Status: accepted\n- Goals: " + c.id + "\n\n" +
 		"## Non-goals\n\nNo new ledger schema.\n\n## Units\n\n| Unit | Lines |\n| --- | ---: |\n| u1 | 40 |\n\n" +
-		"## Return\n\nThe diff and the proof log.\n\n## Acceptance\n\nThe validator refuses a stale box.\n"
+		"## u1 — Standing validation\n\nBuild the validator.\n\n## Return\n\nThe diff and the proof log.\n\n## Acceptance\n\nThe validator refuses a stale box.\n"
 	os.WriteFile(filepath.Join(designs, c.id+".md"), []byte(design), 0o600)
 	connectionGit(t, c.root(), "add", "-A")
 	connectionGit(t, c.root(), "commit", "-q", "-m", "accepted design")
 	if _, err := os.Stat(c.worktree); !os.IsNotExist(err) {
 		t.Fatalf("the goal must have no workspace yet: %v", err)
 	}
-	code, result := c.do("work", "brief", c.id, "--out", "brief.md")
+	code, result := c.do("work", "brief", c.id, "--work", "u1", "--out", "brief.md")
 	written, _ := os.ReadFile(filepath.Join(c.root(), "brief.md"))
 	missing, _ := resultData(t, result)["missingDecisions"].([]any)
 	if code != 0 || len(missing) != 0 || strings.Contains(string(written), "MISSING DECISION") || !strings.Contains(string(written), "metasystem work build prepares it") ||

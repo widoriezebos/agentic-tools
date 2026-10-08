@@ -303,7 +303,10 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 		t.Fatalf("second round: code=%d %+v", code, result)
 	}
 	launched := len(bed.starter.launched())
-	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp)
+	// A distinct request tests the cap; identical input rejoins its frozen round
+	// (plans/designs/briefs-carry-their-rules.md:66).
+	third := bed.brief("third.md", "Correct another defect.\n")
+	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", third)
 	// The goal's approved cap is frozen into the collection decision;
 	// its stop is consumed before another round can be admitted.
 	if code != 1 || result.Outcome != intentRefused || !strings.Contains(resultWords(result), "UNIT_STOPPED") ||
@@ -377,13 +380,14 @@ func TestIntentBriefCarriesAcceptedDesign(t *testing.T) {
 	bed := newWorkBed(t)
 	designs := filepath.Join(bed.stateRoot(), "plans", "designs")
 	os.MkdirAll(designs, 0o700)
+	// A unit maps to its accepted Decision (plans/designs/briefs-carry-their-rules.md:58).
 	design := "# Standing validation\n\n- Kind: design\n- Id: 01M3CGR7CNZTS2NNTQCYRCF4JZ\n- Status: accepted\n- Goals: standing-validation\n\n" +
 		"## Non-goals\n\nNo new ledger schema.\n\n## Units\n\n| Unit | Lines |\n| --- | ---: |\n| u1 | 40 |\n\n" +
-		"## Return\n\nThe diff and the proof log.\n\n## Acceptance\n\nThe validator refuses a stale box.\n"
+		"## u1 — Standing validation\n\nBuild the validator.\n\n## Return\n\nThe diff and the proof log.\n\n## Acceptance\n\nThe validator refuses a stale box.\n"
 	if err := os.WriteFile(filepath.Join(designs, "standing-validation.md"), []byte(design), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	code, result, _ := bed.work("work", "brief", bed.id, "--out", "brief.md")
+	code, result, _ := bed.work("work", "brief", bed.id, "--work", "u1", "--out", "brief.md")
 	written, _ := os.ReadFile(filepath.Join(bed.root(), "brief.md"))
 	if code != 0 {
 		t.Fatalf("brief: code=%d %+v", code, result)

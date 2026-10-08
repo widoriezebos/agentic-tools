@@ -127,8 +127,10 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	if code != 0 || resultData(t, result)["round"].(float64) != 2 || resultData(t, result)["maxRounds"].(float64) != 2 {
 		t.Fatalf("fold with its own brief: code=%d %+v", code, result)
 	}
-	// The allowance is consumed by read collection, before another correction request.
-	if code, refused, _ := bed.work("work", "revise", "run:"+run, "--brief", followUp); code != 1 || !strings.Contains(resultWords(refused), "UNIT_STOPPED") {
+	// A repeated correction rejoins; a distinct request tests the spent allowance
+	// (plans/designs/briefs-carry-their-rules.md:66).
+	third := bed.brief("third.md", "Correct another defect.\n")
+	if code, refused, _ := bed.work("work", "revise", "run:"+run, "--brief", third); code != 1 || !strings.Contains(resultWords(refused), "UNIT_STOPPED") {
 		t.Fatalf("round past the limit: code=%d %+v", code, refused)
 	}
 

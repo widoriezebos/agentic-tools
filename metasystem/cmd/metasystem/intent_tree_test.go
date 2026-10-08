@@ -749,6 +749,17 @@ func TestIntentTreeRebaseCorrectionStaysInOperationCustody(t *testing.T) {
 	if code != 0 || err != nil || len(record.Rounds) != 2 || !slices.Equal(b.starter.launched(), []string{"build", "proof", "build", "proof"}) {
 		t.Fatalf("rebase correction waited on itself: %d %+v %+v %v", code, rebased, record, err)
 	}
+	// The conflict correction keeps its own composition and Check
+	// (plans/designs/briefs-carry-their-rules.md:66).
+	plan, err := launch.ReadUnitPlan(filepath.Join(record.Rounds[1].Directory, "plan.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	composed, err := os.ReadFile(plan.Build.Brief)
+	if err != nil || !strings.Contains(string(composed), "> Resolve the conflict.") || strings.Count(string(composed), "\n# Check\n") != 1 ||
+		!strings.Contains(string(composed), "# Check\n\nmetasystem test run --unit-run "+run) {
+		t.Fatalf("rebase lost its quoted correction or sole Check: %s %v", composed, err)
+	}
 	code, ended, _ := b.work("work", "wait", "run:"+operation)
 	if code != 0 {
 		t.Fatalf("rebase wait after correction: %d %+v", code, ended)

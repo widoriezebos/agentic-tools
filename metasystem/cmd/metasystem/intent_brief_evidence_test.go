@@ -61,6 +61,16 @@ func newEvidenceBed(t *testing.T) *workBed {
 		t.Fatal(err)
 	}
 	design := "# Evidence design\n\n- Kind: design\n- Id: evidence-design\n- Status: accepted\n- Goals: " + bed.id + "\n\n## Units\n\n| Unit | Lines |\n| --- | ---: |\n| u1 | 20 |\n\n## u1 — Evidence\n\nBuild the declared behavior.\n\n## Constraints\n\nOnly the declared behavior.\n\n## Acceptance\n\nObserve the declared behavior.\n"
+	// Composition admits each sampled unit from its own accepted Decision.
+	for _, unit := range append([]string{"u2"}, func() []string {
+		var units []string
+		for index := 0; index < 22; index++ {
+			units = append(units, fmt.Sprintf("sample-%02d", index))
+		}
+		return units
+	}()...) {
+		design += "\n## " + unit + " — Evidence\n\nBuild the declared behavior.\n"
+	}
 	if err := os.WriteFile(filepath.Join(home, "evidence.md"), []byte(design), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +96,14 @@ func evidenceBuild(t *testing.T, bed *workBed, unit string, findings []readsubje
 	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(resultData(t, built)["run"].(string))
 	if err != nil || len(record.Rounds[0].Reads) != 1 {
 		t.Fatalf("real collector: %+v %v", record, err)
+	}
+	plan, err := launch.ReadUnitPlan(filepath.Join(record.Rounds[0].Directory, "plan.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	composed, err := os.ReadFile(plan.Build.Brief)
+	if err != nil || !bytes.Contains(composed, []byte("## "+unit+" — Evidence")) {
+		t.Fatalf("sample unit lost its own accepted Decision: %s %v", composed, err)
 	}
 	bed.manager.Sleep(time.Second)
 	return record
