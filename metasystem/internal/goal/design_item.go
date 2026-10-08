@@ -5,14 +5,19 @@ import (
 	"reflect"
 	"slices"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 type DesignItem struct {
-	Exit, DesignID, BodySHA256, Unit, Decision string
-	Tests                                      []string
+	Read, Finding, Passage, Checklist, Requirement, Class string
+	Evidence                                              readsubject.Finding
+	Exit, DesignID, BodySHA256, Unit, Decision            string
+	Tests                                                 []string
 }
 
 type DesignExit struct {
+	Obligations                                     []ReviewObligation
 	Operation, DesignID, BodySHA256                 string
 	Units, Items                                    []string
 	Destination, OpenCommand                        string
@@ -60,6 +65,12 @@ func PublishDesignExit(r VerbRequest, id string, exit DesignExit, admit func() e
 				return nil, err
 			}
 			exit.Revision = f.Revision
+			for _, item := range exit.Obligations {
+				if item.DesignItem == nil || item.DesignItem.Exit != exit.Operation || item.DesignItem.BodySHA256 != exit.BodySHA256 || !slices.Contains(exit.Items, item.Finding) {
+					return nil, fmt.Errorf("the prepared acceptance item is incomplete")
+				}
+				f.ReviewObligations = append(f.ReviewObligations, item)
+			}
 			f.DesignExits = append(f.DesignExits, exit)
 			touch(f, r, "design-exit", []string{id})
 			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil

@@ -182,14 +182,17 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		runner.tree.owner.Children = append(runner.tree.owner.Children, id)
 		return writeUnitJSON(runner.tree.path, *runner.tree.owner, runner.root())
 	}
-	plan, err := readUnitPlan(record.Plan, record.PlanDirectory)
+	plan, err := readUnitPlan(filepath.Join(round.Directory, "plan.json"), record.PlanDirectory)
+	if errors.Is(err, os.ErrNotExist) {
+		plan, err = readUnitPlan(record.Plan, record.PlanDirectory)
+	}
 	if err != nil {
 		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the plan of run %s cannot be read: %v", id, err))
 	}
 	review.BuildBrief, review.Base = plan.Build.Brief, plan.Base
 	review.Whole = plan.Whole
 	review.BuildBriefSHA256 = round.BuildBriefSHA256
-	if round.FollowUp != "" {
+	if round.FollowUp != "" && plan.Check == nil {
 		// A corrected attempt was built from its correction brief alone, so
 		// it is reviewed against that brief.
 		review.BuildBrief = round.FollowUp

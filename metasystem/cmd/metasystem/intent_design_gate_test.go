@@ -22,6 +22,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
 
+// Gate tests use the configured proof contract; a manual check is a separate person act.
+var designGateCheck = []string{"--read-tool-calls", "12"}
+
 func newDesignGateBed(t *testing.T, tier uint8) *workBed {
 	t.Helper()
 	bed := newWorkBedWith(t, func(f *goal.GoalFile) {
@@ -33,6 +36,12 @@ func newDesignGateBed(t *testing.T, tier uint8) *workBed {
 	bed.workOwnersHook = func(o *intentWorkOwners) {
 		fallback := o.git
 		o.git = func(root string, args ...string) ([]byte, error) {
+			if strings.Join(args, " ") == "rev-parse base-commit^{tree}" {
+				return []byte(strings.Repeat("b", 40)), nil
+			}
+			if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem.conf") {
+				return []byte("proof.cheap=true\nproof.audits=true\nproof.deadline=15\n"), nil
+			}
 			if args[0] == "log" {
 				return []byte("historical-declaration\n"), nil
 			}
@@ -80,7 +89,7 @@ func designGatePage(t *testing.T, bed *workBed, critique string, sections ...str
 func designGateBuild(t *testing.T, bed *workBed, unit string) (intentResult, string) {
 	t.Helper()
 	brief := bed.brief("gate-brief.md", "Build the gate.\n")
-	code, result, output := bed.work(append([]string{"work", "build", bed.id, unit, "--brief", brief, "--lines", "40"}, workCheck...)...)
+	code, result, output := bed.work(append([]string{"work", "build", bed.id, unit, "--brief", brief, "--lines", "40"}, designGateCheck...)...)
 	if code != 0 || !slices.Contains(bed.starter.launched(), "build") {
 		t.Fatalf("the build did not start: code=%d result=%+v output=%s", code, result, output)
 	}

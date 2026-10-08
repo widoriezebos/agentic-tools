@@ -195,7 +195,8 @@ func testDesignReviewConcreteFoldPublishesExit(t *testing.T) {
 	b.writeJSON(filepath.Join(dir, "return.json"), returned)
 	b.writeFile(filepath.Join(dir, "return.md"), "VERDICT: REVISE material=1\n")
 	template := b.decide(b.review(), map[string]string{"F1": "accepted | concrete requirement | ## Collection:1"})
-	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Decision: retain unknown evidence; TestUnknownEvidence verifies it.", 1))
+	// Decision 4 requires the supplied Decision passage and its unit test/checklist mapping.
+	b.writeFile(b.design, suppliedFoldPage(t, string(mustRead(t, b.design)), concreteFoldMapping()))
 	expected := mustRead(t, b.design)
 	closed := b.review("--dispositions", template)
 	file := b.goalFile(bedGoal)
@@ -203,7 +204,7 @@ func testDesignReviewConcreteFoldPublishesExit(t *testing.T) {
 		t.Fatalf("concrete fold did not publish its exit: %+v exits=%+v", closed, file.DesignExits)
 	}
 	exit := file.DesignExits[0]
-	if exit.Expected != string(expected) || exit.Page != string(mustRead(t, b.design)) || !strings.Contains(exit.Page, "on 1 material findings folded into the written Decisions") {
+	if exit.Expected != string(expected) || exit.Page != string(mustRead(t, b.design)) || !strings.Contains(exit.Page, "on 1 material findings folded as 1 unit acceptance items") {
 		t.Fatalf("fold exit lost exact candidate/count: %+v", exit)
 	}
 	acceptanceBuild(t, b, true)

@@ -282,7 +282,7 @@ func TestDesignReviewValidatesWholePageEvidence(t *testing.T) {
 			if scenario == "malformed-inventory" {
 				inventory = "\n" + readsubject.DesignInventoryHeading + "\n\n| broken | table |\n"
 			}
-			b, dir, raw := designEvidenceBed(t, inventory)
+			b, dir, raw := designEvidenceBed(t, inventory, acceptanceUnits)
 			coverage := raw["coverage"].([]readsubject.DesignCoverage)
 			if scenario == "whole-page" || scenario == "same-section" || scenario == "missing-class" || scenario == "raw-count" || scenario == "unmapped-heading" {
 				raw["findings"] = []any{evidenceFinding("F1", "## Collection:1", ""), evidenceFinding("F2", "## Publication", "")}
@@ -404,7 +404,14 @@ func TestDesignReviewValidatesWholePageEvidence(t *testing.T) {
 			}
 			if scenario == "repair-cell" {
 				decided := b.decide(result, map[string]string{read.Findings[0].ID: "accepted | specify unreadable input | ## Publication: retain unknown evidence"})
-				b.writeFile(b.design, string(mustRead(t, b.design))+"\nThe validator retains unknown evidence.\n")
+				// A repair is written in its owning Decision and unit acceptance mappings.
+				m := concreteFoldMapping()
+				m.Finding, m.Decision, m.Passage = read.Findings[0].ID, read.Findings[0].Where, read.Findings[0].Change+". Retain unknown evidence."
+				b.lineage = b.goalFile(bedGoal).Claimed.Lineage
+				if err := os.MkdirAll(filepath.Join(b.root(), ".git"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				b.writeFile(b.design, suppliedFoldPage(t, string(mustRead(t, b.design)), m))
 				closed := b.review("--dispositions", decided)
 				if closed.Outcome != intentConfirmed || b.closes != 1 || len(b.followUps) != 0 || b.job("rev1")["chainClosed"] != true {
 					t.Fatalf("known defect has no successful repair: %+v", closed)
@@ -461,7 +468,7 @@ func TestDesignReviewFailedAdvanceWritesNoDecisions(t *testing.T) {
 
 func TestDesignReviewEditedPageUsesDerivedFindings(t *testing.T) {
 	t.Parallel()
-	b, dir, returned := designEvidenceBed(t, evidenceInventory)
+	b, dir, returned := designEvidenceBed(t, evidenceInventory, acceptanceUnits)
 	returned["findings"], returned["rigor"], returned["verdictMaterialCount"] = []any{evidenceFinding("F1", "## Collection:1", "")}, []any{evidenceRigor("F1")}, 1
 	coverage := returned["coverage"].([]readsubject.DesignCoverage)
 	coverage[0].Answers[4] = readsubject.DesignAnswer{Question: 5, Unanswered: true}
@@ -482,9 +489,28 @@ func TestDesignReviewEditedPageUsesDerivedFindings(t *testing.T) {
 	}
 	retained := mustRead(t, filepath.Join(dir, "read.json"))
 	decided := b.decide(result, map[string]string{"F1": "accepted | specified collection | ## Collection:1", derivedID: "accepted | retains unknown input | ## Collection:1"})
+	// Raw and synthetic requirements retain their owning Decision passages.
+	var read readsubject.Read
+	if err := json.Unmarshal(retained, &read); err != nil {
+		t.Fatal(err)
+	}
+	mappings := []designFoldMapping{}
+	for _, finding := range read.Findings {
+		m := concreteFoldMapping()
+		m.Finding, m.Decision, m.Passage = finding.ID, finding.Where, finding.Change+". Retain unknown input."
+		mappings = append(mappings, m)
+	}
+	b.lineage = b.goalFile(bedGoal).Claimed.Lineage
+	if err := os.MkdirAll(filepath.Join(b.root(), ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	b.writeFile(b.design, suppliedFoldPage(t, read.Subject.DesignPage, mappings...))
 	closed := b.review("--dispositions", decided)
 	if closed.Outcome != intentConfirmed || b.closes != 1 || b.job("rev1")["chainClosed"] != true || len(b.followUps) != 0 {
 		t.Fatalf("edited page dispositions cannot close: %+v", closed)
+	}
+	if file := b.goalFile(bedGoal); len(file.ReviewObligations) != len(mappings) {
+		t.Fatalf("the exit lost raw or synthetic acceptance items: %+v", file.ReviewObligations)
 	}
 	if !bytes.Equal(raw, mustRead(t, filepath.Join(dir, "return.json"))) || !bytes.Equal(retained, mustRead(t, filepath.Join(dir, "read.json"))) {
 		t.Fatal("closing rewrote examination evidence")

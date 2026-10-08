@@ -99,6 +99,9 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	}
 	var result intentResult
 	err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		if inv.reviewWork == nil {
+			inv.reviewWork = &reviewWorkContext{goal: review.Record.Goal, work: review.Record.Unit, run: run}
+		}
 		result = inv.reviewUnitRound(runner, targets, review, retain)
 		return nil
 	})

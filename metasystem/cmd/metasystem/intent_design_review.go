@@ -39,6 +39,7 @@ type designReviewRequest struct {
 }
 
 type designReviewEntry struct {
+	Fold     *goal.DesignExit      `json:"fold,omitempty"`
 	Goal     string                `json:"goal"`
 	Design   string                `json:"design"`
 	Subjects map[string]string     `json:"subjects"` // examined round -> subject digest
@@ -236,8 +237,13 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 			next: inv.typedArgvLess("dispositions", "after"), nextReason: "shows the current findings and writes their decisions file"}
 	}
 	if bound.Round < chain.NewestRound {
+		for _, request := range entry.Requests {
+			if request.Kind == "continue" && request.AfterRound == bound.Round && request.DecisionsSHA256 == digestText(content) && request.SubjectSHA256 == plan.subject {
+				return inv.designFollowUp(plan, chain, entry, request)
+			}
+		}
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
-			Summary: fmt.Sprintf("review %d already has examination %d; its decisions are frozen with that follow-up and cannot be replaced; nothing was retained or requested", bound.Round, chain.NewestRound),
+			Summary: fmt.Sprintf("review %d already has examination %d; its decisions are frozen; nothing was changed", bound.Round, chain.NewestRound),
 			next:    inv.typedArgvLess("dispositions", "after"), nextReason: "shows the newest examination and its own decisions file"}
 	}
 	returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), chain.Root, bound.Round)
@@ -473,6 +479,11 @@ func (inv *intentInvocation) closeDesignCritique(plan designReviewPlan, chain di
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Data: map[string]any{"accepted": accepted},
 			Summary: fmt.Sprintf("design %s is unchanged, but you accepted finding(s) %s; nothing was closed", plan.recordID, strings.Join(accepted, ", ")),
 			next:    inv.sameCommand(), nextReason: "after changing the design to address them; the critique then reviews the new version"}
+	}
+	if required, err := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), chain.Root, round); final && err == nil && required {
+		if err := inv.prepareDesignFold(plan, chain, decisions); err != nil {
+			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the final design revision is incomplete: " + err.Error(), next: inv.sameCommand(), nextReason: "correct the retained proposal, then collect the same revision"}
+		}
 	}
 	if published := inv.finishDesignAcceptance(plan, chain, true); published != nil {
 		return published

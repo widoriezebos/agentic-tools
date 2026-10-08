@@ -431,3 +431,16 @@ func DeclaredUnits(page string) ([]UnitSize, error) {
 	units, _, err := sizesFromTable(string(data), nil)
 	return units, err
 }
+
+func CheckDesignSize(page string) ([]UnitSize, error) {
+	units, _, err := sizesFromTable(page, nil)
+	if err != nil || len(units) == 0 || len(units) > 5 {
+		return nil, fmt.Errorf("the unit table needs one to five units; reshape or split it: %v", err)
+	}
+	for _, unit := range units {
+		if unit.Lines > 250 {
+			return nil, fmt.Errorf("unit %s estimates %d production lines; reshape or split it before acceptance", unit.Name, unit.Lines)
+		}
+	}
+	return units, nil
+}

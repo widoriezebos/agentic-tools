@@ -57,7 +57,7 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 					continue
 				}
 				if entry.Exit != nil && entry.Exit.Operation == exit.Operation {
-					entry.Exit = nil
+					entry.Exit, entry.Fold = nil, nil
 					if err := inv.writeDesignReviewEntry(plan.recordID, entry); err != nil {
 						return fail(err)
 					}
@@ -93,32 +93,29 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		if readErr != nil {
 			return fail(readErr)
 		}
-		if read.Material != 0 {
-			if plan.subject == read.Subject.ContentDigest {
-				return nil
-			}
-			if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, inv.registerDecisions(chain.Root, chain.NewestRound)); err != nil {
+		if read.Material != 0 && entry.Fold == nil {
+			return fail(fmt.Errorf("supply the bound final Decision revision and acceptance mappings"))
+		}
+		if read.Material == 0 {
+			root, err := inv.jobRecord(chain.Root)
+			if err != nil {
 				return fail(err)
 			}
-		}
-		root, err := inv.jobRecord(chain.Root)
-		if err != nil {
-			return fail(err)
-		}
-		if clean, err := readsubject.CleanRegister(root["findingRegister"]); err != nil || !clean {
-			return fail(fmt.Errorf("the critique has unresolved findings: %v", err))
+			if clean, err := readsubject.CleanRegister(root["findingRegister"]); err != nil || !clean {
+				return fail(fmt.Errorf("the critique has unresolved findings: %v", err))
+			}
 		}
 		if read.Material == 0 && plan.subject != read.Subject.ContentDigest {
 			return fail(project.ErrDesignChanged)
 		}
 		page := []byte(read.Subject.DesignPage)
 		if read.Material != 0 {
-			page, err = os.ReadFile(plan.design)
-			if err != nil || digestText(page) != plan.subject {
+			page = []byte(entry.Fold.Page)
+			if digestText([]byte(entry.Fold.Expected)) != plan.subject {
 				return fail(project.ErrDesignChanged)
 			}
 		}
-		units, err := launch.DeclaredUnits(plan.design)
+		units, err := launch.CheckDesignSize(string(page))
 		if err != nil || len(units) == 0 {
 			return fail(fmt.Errorf("the accepted design needs declared source units: %v", err))
 		}
@@ -136,6 +133,12 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		}
 		exit := goal.DesignExit{Operation: operation, DesignID: plan.recordID, Root: chain.Root, Round: chain.NewestRound, Revision: file.Revision,
 			ExaminedSHA256: read.Subject.ContentDigest, DispositionsSHA256: digestText(decisions), Dispositions: string(decisions), Expected: string(page), State: "prepared"}
+		if read.Material != 0 {
+			exit.Obligations, exit.Expected = entry.Fold.Obligations, entry.Fold.Expected
+			for _, item := range exit.Obligations {
+				exit.Items = append(exit.Items, item.Finding)
+			}
+		}
 		for _, unit := range units {
 			exit.Units = append(exit.Units, unit.Name)
 		}
@@ -149,11 +152,14 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		}
 		head = append(head, "- Status: accepted\n", fmt.Sprintf("- Critique: closed at round %d on 0 material findings folded as 0 unit acceptance items (convergence %s)\n", exit.Round, operation))
 		if read.Material != 0 {
-			head[len(head)-1] = fmt.Sprintf("- Critique: closed at round %d on %d material findings folded into the written Decisions (convergence %s)\n", exit.Round, read.Material, operation)
+			head[len(head)-1] = fmt.Sprintf("- Critique: closed at round %d on %d material findings folded as %d unit acceptance items (convergence %s)\n", exit.Round, read.Material, len(exit.Items), operation)
 		}
 		exit.Page = strings.Join(lines[:record.HeadLine-1], "") + strings.Join(head, "") + strings.Join(lines[record.Head[len(record.Head)-1].Line:], "")
 		exit.BodySHA256, err = project.DesignBodyDigest(plan.design, []byte(exit.Page))
 		if err == nil {
+			for _, item := range exit.Obligations {
+				item.DesignItem.BodySHA256, item.DesignItem.Exit = exit.BodySHA256, exit.Operation
+			}
 			entry.Exit = &exit
 			err = inv.writeDesignReviewEntry(plan.recordID, entry)
 		}
@@ -221,6 +227,13 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 	if err != nil {
 		return fail(err)
 	}
+	decided := inv.registerDecisions(chain.Root, exit.Round)
+	for _, item := range exit.Obligations {
+		decided[item.DesignItem.Finding] = "accepted"
+	}
+	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, decided); err != nil {
+		return fail(err)
+	}
 	closed := inv.closeChain(chain.Root)
 	if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
 		return &closed
@@ -239,7 +252,7 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		return fail(err)
 	}
 	if entry.Exit != nil && entry.Exit.Operation == exit.Operation {
-		entry.Exit = nil
+		entry.Exit, entry.Fold = nil, nil
 		if err := inv.writeDesignReviewEntry(plan.recordID, entry); err != nil {
 			return fail(err)
 		}
