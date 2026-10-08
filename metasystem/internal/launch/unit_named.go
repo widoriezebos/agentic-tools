@@ -567,3 +567,26 @@ func (runner *UnitRunner) RetainedRequest(worktree, goal, unit string) ([]byte, 
 	}
 	return data, err == nil, err
 }
+
+// GoalRuns reads retained runs across worktrees and names unreadable records.
+func (runner *UnitRunner) GoalRuns(goal string) (work []NamedWork, unknown []string, err error) {
+	entries, err := os.ReadDir(runner.root())
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !idPattern.MatchString(entry.Name()) {
+			continue
+		}
+		record, err := runner.read(entry.Name())
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil || record.ID != entry.Name() {
+			unknown = append(unknown, "run "+entry.Name()+" unavailable")
+		} else if record.Goal == goal {
+			work = append(work, NamedWork{Unit: record.Unit, Run: record.ID, Record: &record})
+		}
+	}
+	return work, unknown, nil
+}

@@ -142,7 +142,7 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		stage := workStage(one, inv.work().inspectRead)
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
 		if one.Record != nil {
-			view["state"] = one.Record.State
+			view["state"], view["run"] = one.Record.State, one.Run
 		}
 		views = append(views, view)
 		next, _ := inv.workContinuation(id, one, true)
@@ -208,7 +208,12 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 	if inv.input.has("work") && len(work) == 1 {
 		m := inv.unitMeasures(work[0])
 		views[0]["measures"] = m
-		result.text = append(result.text, fmt.Sprintf("  hours: build %s, check %s, read %s, correction %s; estimate %s minutes; job pending %s, collection %s; person %s (lower bound %t); input/cache-read/cache-creation/output tokens %s (%d/%d usage records); full suite minutes %s; elapsed finish unavailable", measureNumber(m.Hours["build"]), measureNumber(m.Hours["attest"]), measureNumber(m.Hours["read"]), measureNumber(m.Hours["correction"]), measureNumber(m.EstimateMinutes), measureNumber(m.Hours["pending"]), measureNumber(m.Hours["collection"]), measureNumber(m.Hours["person"]), m.PersonLowerBound, measureNumber(m.Tokens), m.UsageKnown, m.UsageExpected, measureNumber(m.SuiteMinutes)))
+		result.text = append(result.text, "  "+measureLine(m))
+	}
+	if !inv.input.has("work") {
+		if err := inv.goalCosts(id, work, &result); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "goal cost unavailable: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnoses the saved work"})
+		}
 	}
 	// The goal's own card line (D14-r2, R23).
 	if line, ok := inv.hostBoardView(inv.boardNow()).GoalLine(id, inv.boardNow(), time.Local); ok {

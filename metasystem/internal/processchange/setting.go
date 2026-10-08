@@ -162,3 +162,24 @@ func save(root, path string, act ProcessAct) error {
 	_, err = channel.Withdraw(root, q.ID, "process act "+act.ID+" "+act.Status, nil, channel.DestinationConfig{})
 	return err
 }
+
+// ReadActs reads a goal's process changes and names unreadable records.
+func ReadActs(root, goal string) (acts []ProcessAct, unknown []string, err error) {
+	entries, err := os.ReadDir(filepath.Join(root, "process", "acts"))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, nil, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
+			continue
+		}
+		body, err := os.ReadFile(filepath.Join(root, "process", "acts", entry.Name()))
+		var act ProcessAct
+		if err != nil || json.Unmarshal(body, &act) != nil {
+			unknown = append(unknown, "process act "+entry.Name()+" unavailable")
+		} else if act.Goal == goal {
+			acts = append(acts, act)
+		}
+	}
+	return acts, unknown, nil
+}

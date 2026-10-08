@@ -1,6 +1,7 @@
 package processmeasure
 
 import (
+	"fmt"
 	"slices"
 	"time"
 )
@@ -10,10 +11,15 @@ type Interval struct{ Start, End time.Time }
 type Step struct {
 	ID, Kind, Pending, Start, End, Collected string
 	Argv                                     []string
+	FullArgv                                 []string
 	Terminal                                 bool
 	Usage                                    *Tokens
 }
 type Input struct {
+	Unit, PublishedAt string
+	Current, GoalOpen bool
+	Runs              []Input
+
 	Now             time.Time
 	Run             string
 	Steps           []Step
@@ -39,14 +45,70 @@ type Measures struct {
 	UsageKnown       int
 	UsageExpected    int
 	Unknown          []string
+
+	ElapsedHours      *float64
+	ElapsedLowerBound bool
 }
 
 func Read(in Input) Measures {
+	suiteUnknown := len(in.FullArgv) == 0
+	if len(in.Runs) > 0 {
+		suiteUnknown = false
+		latest := map[string]Input{}
+		starts := map[string]time.Time{}
+		revisions := map[string]bool{}
+		for _, run := range in.Runs {
+			var start time.Time
+			for _, step := range run.Steps {
+				step.FullArgv = run.FullArgv
+				in.Steps = append(in.Steps, step)
+				at, _ := time.Parse(time.RFC3339Nano, step.Start)
+				if !at.IsZero() && (start.IsZero() || at.Before(start)) {
+					start = at
+				}
+			}
+			previous, found := latest[run.Unit]
+			if !found || run.Current || (!previous.Current && start.After(starts[run.Unit])) {
+				latest[run.Unit], starts[run.Unit] = run, start
+			}
+			for _, revision := range run.Revisions {
+				revisions[fmt.Sprintf("%s/%d", run.Run, revision)] = true
+			}
+			in.Questions = append(in.Questions, run.Questions...)
+			in.Unknown = append(in.Unknown, run.Unknown...)
+			suiteUnknown = suiteUnknown || len(run.FullArgv) == 0
+		}
+		for range revisions {
+			in.Revisions = append(in.Revisions, len(in.Revisions))
+		}
+		estimate, known, published := 0.0, true, true
+		var finish time.Time
+		for _, run := range latest {
+			if run.EstimateMinutes == nil {
+				known = false
+			} else {
+				estimate += *run.EstimateMinutes
+			}
+			at, err := time.Parse(time.RFC3339Nano, run.PublishedAt)
+			published = published && err == nil && !at.Before(starts[run.Unit]) && !at.After(in.Now)
+			if at.After(finish) {
+				finish = at
+			}
+		}
+		if known {
+			in.EstimateMinutes = &estimate
+		}
+		if published {
+			in.PublishedAt = finish.Format(time.RFC3339Nano)
+		}
+	}
+
 	m := Measures{ObservedAt: in.Now, Run: in.Run, EstimateMinutes: in.EstimateMinutes, Hours: map[string]*float64{}, Unknown: slices.Clone(in.Unknown)}
 	seen := map[string]bool{}
 	bad := map[string]bool{"person": len(in.Unknown) > 0}
 	values := map[string]float64{"build": 0, "attest": 0, "read": 0, "correction": 0, "pending": 0, "collection": 0, "person": 0, "suite": 0}
-	bad["suite"] = len(in.FullArgv) == 0
+	bad["suite"] = suiteUnknown
+	var firstBuild time.Time
 	revisions := slices.Clone(in.Revisions)
 	slices.Sort(revisions)
 	m.Corrections = len(slices.Compact(revisions))
@@ -61,10 +123,13 @@ func Read(in Input) Measures {
 		if step.End == "" && !step.Terminal {
 			end, m.WorkLowerBound = in.Now, true
 		}
+		if (step.Kind == "build" || step.Kind == "correction") && !start.IsZero() && (firstBuild.IsZero() || start.Before(firstBuild)) {
+			firstBuild = start
+		}
 		hours, valid := duration(Interval{start, end}, in.Now)
 		values[step.Kind] += hours
 		bad[step.Kind] = bad[step.Kind] || !valid
-		if len(in.FullArgv) > 0 && slices.Equal(step.Argv, in.FullArgv) {
+		if len(step.FullArgv) > 0 && slices.Equal(step.Argv, step.FullArgv) {
 			values["suite"] += hours * 60
 			bad["suite"] = bad["suite"] || !valid
 		}
@@ -130,7 +195,21 @@ func Read(in Input) Measures {
 	if m.UsageExpected > 0 && m.UsageKnown == m.UsageExpected {
 		m.Tokens = &m.ReportedTokens
 	}
-	m.Unknown = append(m.Unknown, "elapsed finish unavailable", "nested checks unavailable", "fix units unavailable", "load waits unavailable")
+	finish, err := time.Parse(time.RFC3339Nano, in.PublishedAt)
+	if !in.GoalOpen && err == nil && !firstBuild.IsZero() && !finish.Before(firstBuild) && !finish.After(in.Now) {
+		m.ElapsedFinish = &finish
+	}
+	end := in.Now
+	if m.ElapsedFinish != nil {
+		end = *m.ElapsedFinish
+	} else {
+		m.Unknown = append(m.Unknown, "elapsed finish unavailable")
+		m.ElapsedLowerBound = true
+	}
+	if hours, valid := duration(Interval{firstBuild, end}, in.Now); valid {
+		m.ElapsedHours = &hours
+	}
+	m.Unknown = append(m.Unknown, "nested checks unavailable", "fix units unavailable", "load waits unavailable")
 	slices.Sort(m.Unknown)
 	return m
 }

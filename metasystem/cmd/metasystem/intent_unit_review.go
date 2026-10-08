@@ -11,6 +11,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -393,6 +394,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		result.Data = data
 	}
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+		if err := inv.retainPublication(subject, result, retain); err != nil {
+			return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data, Summary: "the read is published, but its publication time could not be retained: " + err.Error(), next: retry, nextReason: "rechecks the published read; a missing publication time stays unavailable"}
+		}
 		if bundle != nil {
 			result.Summary = fmt.Sprintf("the build's clean read %s by %s is the unit's read and is published", bundle.ReadLaunch, bundle.ReadModel)
 		}
@@ -872,4 +876,15 @@ func (inv *intentInvocation) cleanExaminationJoin(root, goalID, unit, rootJob st
 		return "", false
 	}
 	return join, true
+}
+
+// retainPublication timestamps only a push made by this review call.
+func (inv *intentInvocation) retainPublication(subject *launch.UnitSubject, result intentResult, retain func(launch.UnitSubject) error) error {
+	data, _ := result.Data.(map[string]any)
+	published, ok := data["publication"].(branch.PublishReadResult)
+	if subject == nil || subject.PublishedAt != "" || !ok || published.State == "current" {
+		return nil
+	}
+	subject.PublishedAt = inv.unitRunner().Manager.Now().UTC().Format(time.RFC3339Nano)
+	return retain(*subject)
 }

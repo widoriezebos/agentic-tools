@@ -16,7 +16,7 @@ import (
 // as revision 7's section 3.4 leaves it (R12: every public action states an
 // intent), with the top-level status: the complete public surface.
 var publicPairs = []string{
-	"goal list", "goal show", "goal approve", "goal budget", "goal pause", "goal resume", "goal done", "goal open", "goal edit",
+	"goal list", "goal show", "goal status", "goal approve", "goal budget", "goal pause", "goal resume", "goal done", "goal open", "goal edit",
 	"goal claim", "goal release", "goal accept-risk", "goal pin", "goal prioritize", "goal reopen", "goal abandon", "goal review", "goal land-without-sitting", "goal block",
 	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal sync", "goal allow", "goal disallow",
 	"grant add", "grant revoke", "grant list",

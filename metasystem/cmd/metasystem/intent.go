@@ -174,6 +174,11 @@ func goalIntentCommands() []intentCommand {
 			run:      runIntentGoalViews,
 		},
 		{
+			object: "goal", action: "status", audience: "both", laidOut: true, summary: "a goal's work and measured process cost across all runs",
+			usage: []string{"metasystem goal status G"}, maxArgs: 1,
+			examples: []string{"metasystem goal status verbs-match-intent"}, run: runIntentTopStatus,
+		},
+		{
 			object: "goal", action: "show", audience: "both", laidOut: true, summary: "one goal's record: intent, next step, budget and designs",
 			usage:    []string{"metasystem goal show G [--history]"},
 			details:  []string{"goal show G is the goal's record; status G is its live work."},
@@ -1508,7 +1513,7 @@ var intentActionIntents = map[string][]struct {
 	actions []string
 }{
 	"goal": {
-		{"Read", []string{"list", "show", "notes"}},
+		{"Read", []string{"list", "show", "status", "notes"}},
 		{"Decide", []string{"open", "approve", "unapprove", "budget", "prioritize", "pin", "allow", "disallow", "accept-risk", "review", "land-without-sitting"}},
 		{"Work", []string{"claim", "release", "pause", "resume", "done", "reopen", "abandon"}},
 		{"Shape", []string{"edit", "split", "group", "ungroup", "block", "unblock", "sync"}},

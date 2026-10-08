@@ -1246,7 +1246,17 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	if inv.input.has("retry") {
 		args = append(args, "--retry", inv.input.text("retry"))
 	}
-	return inv.commitReview(targets, root, goalID, unit, args)
+	result := inv.commitReview(targets, root, goalID, unit, args)
+	if work := inv.workOfCommit(goalID, unit); work != nil && (result.Outcome == intentConfirmed || result.Outcome == intentUnchanged) {
+		err := inv.unitRunner().ReviewSubject(work.Run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+			return inv.retainPublication(review.Subject, result, retain)
+		})
+		if err != nil {
+			result.Outcome, result.code, result.Summary = intentPartial, 1, "the read is published, but its publication time could not be retained: "+err.Error()
+			result.next, result.nextReason = inv.sameCommand(), "rechecks the published read; a missing publication time stays unavailable"
+		}
+	}
+	return result
 }
 
 // goalBranchInstallation is the installation a goal's branch work runs in:
