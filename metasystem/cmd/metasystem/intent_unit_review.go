@@ -225,7 +225,8 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	subject := review.Subject
 	if inv.reviewWork != nil && subject != nil && subject.Commit != "" {
 		inv.reviewWork.run, inv.reviewWork.attempt, inv.reviewWork.subject, inv.reviewWork.retain, inv.reviewWork.review = record.ID, review.Round.Number, subject, retain, &review
-		if subject.Drop != nil || subject.Examination != "" && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" {
+		// The stop arm needs a decisions file: a bare --retry of a stopped unit must reach its fresh examination.
+		if subject.Drop != nil || inv.input.has("dispositions") && subject.Examination != "" && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" {
 			if stopped := inv.reviewStoppedUnit(targets, install, subject.Examination, subject.ExaminationReturnPath, inv.reviewWork); stopped != nil {
 				return *stopped
 			}
