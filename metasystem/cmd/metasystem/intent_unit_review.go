@@ -355,6 +355,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			if errors.As(gateErr, &pending) {
 				if !pending.Running {
 					subject.GateWorktree = ""
+					subject.GateSnapshot, subject.GateLaunches = nil, nil
 					_ = retain(*subject)
 				}
 				return intentResult{Targets: targets, Outcome: intentInProgress, code: 3, Data: data, Summary: pending.Error(), next: retry, nextReason: "resumes the recorded publication check"}
@@ -362,7 +363,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			if _, err := os.Stat(subject.GateWorktree); subject.GateWorktree == "" || os.IsNotExist(err) {
 				subject.GateWorktree = ""
 			}
-			if commitErr != nil && gateErr == nil && subject.GateWorktree == "" {
+			if commitErr != nil && subject.GateWorktree == "" {
 				subject.GateSnapshot = nil
 				subject.GateLaunches = nil
 			}
@@ -385,9 +386,16 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			commit, conflict := resolveUnitCommit(git, install, base, goalID, unit, *subject, installed)
 			if conflict != nil {
 				data["subject"] = subject
-				if gateErr != nil {
+				if launch.IsCode(gateErr, "PUBLICATION_CHECK_RED") {
 					correction := append(slices.Clone(revise), "--reason", "correct the retained publication check failure", "--by", "NAME")
 					return refuse(correction, "a person admits a correction of this retained round", "the publication checks failed; nothing was committed", "%v", gateErr)
+				}
+				if gateErr != nil {
+					next, reason := retry, "repeats the same publication after the cause is fixed"
+					if launch.IsCode(gateErr, "BUDGET_REFUSED") || launch.IsCode(gateErr, "BUDGET_UNKNOWN") {
+						next, reason = inv.publicArgv("goal", "budget", goalID, "BOX"), "a person sets the budget; then repeat this command"
+					}
+					return refuse(next, reason, gateErr.Error(), "%v", gateErr)
 				}
 				summary := fmt.Sprintf("the branch commit owner's result for unit %s does not bind round %d: %v", unit, review.Round.Number, conflict)
 				if commitErr != nil {

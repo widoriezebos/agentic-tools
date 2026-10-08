@@ -1,7 +1,6 @@
 package launch
 
 import (
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -20,13 +19,7 @@ type RoundResult struct {
 // ProveRoundResult runs the retained cheap checks on the publication tree.
 // Output is retained with the round; checks may not change the candidate.
 func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree string, subject *UnitSubject, retain func(UnitSubject) error) (string, error) {
-	planPath := filepath.Join(review.Round.Directory, "plan.json")
-	planRoot := review.Round.Directory
-	if _, err := os.Stat(planPath); os.IsNotExist(err) {
-		planPath = review.Record.Plan
-		planRoot = review.Record.PlanDirectory
-	}
-	plan, err := readUnitPlan(planPath, planRoot)
+	plan, err := readUnitPlan(filepath.Join(review.Round.Directory, "plan.json"), review.Round.Directory)
 	if err != nil {
 		return "", err
 	}
@@ -39,7 +32,6 @@ func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree string, s
 	}
 	if subject.GateSnapshot == nil {
 		subject.GateSnapshot = &before
-
 	} else if before != *subject.GateSnapshot {
 		return "", fmt.Errorf("the publication checks changed the result tree")
 	}
@@ -57,27 +49,19 @@ func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree string, s
 				return "", fmt.Errorf("the retained check %s runs outside the result tree", command.Name)
 			}
 			command.Dir = filepath.Join(worktree, rel)
-			file, err := os.CreateTemp(review.Round.Directory, "publication-check-*.json")
+			id, err := newID(runner.Manager.Now())
 			if err != nil {
 				return "", err
 			}
-			body, err := json.Marshal(PlainBrief{command.Argv, command.Dir, command.Env})
-			if err == nil {
-				_, err = file.Write(body)
-			}
-			closeErr := file.Close()
-			if err != nil || closeErr != nil {
-				return "", fmt.Errorf("the publication check could not be recorded: %v %v", err, closeErr)
-			}
-			id, err := newID(runner.Manager.Now())
-			if err != nil {
+			brief := filepath.Join(review.Round.Directory, "publication-check-"+id+".json")
+			if err := writeUnitJSON(brief, PlainBrief{command.Argv, command.Dir, command.Env}, runner.root()); err != nil {
 				return "", err
 			}
 			if err := review.AdmitChild(id); err != nil {
 				return "", err
 			}
 			spec := StartSpec{ID: id, Kind: "proof", Goal: plan.Goal, Tag: plan.Unit,
-				WorkingDirectory: worktree, Brief: file.Name(), Round: review.Round.Number, MaxRounds: review.Record.MaxRounds}
+				WorkingDirectory: worktree, Brief: brief, Round: review.Round.Number, MaxRounds: review.Record.MaxRounds}
 			spec.wait = review.Wait
 			if runner.BeforeModelLaunch != nil {
 				if err := runner.BeforeModelLaunch(review.Record, spec); err != nil {
@@ -88,12 +72,25 @@ func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree string, s
 			if err := retain(*subject); err != nil {
 				return "", err
 			}
+			startedAt := runner.Manager.Now().UTC().Format(time.RFC3339Nano)
 			launch, err := runner.Manager.Start(spec)
+			if launch.ID == "" && err != nil && !IsCode(err, "UNIT_WAIT_RETRY") {
+				if current, readErr := runner.Manager.Store.Read(id); readErr == nil {
+					launch = current
+				} else if os.IsNotExist(readErr) {
+					launch = Record{ID: id, State: Failed, StartedAt: startedAt, FinishedAt: runner.Manager.Now().UTC().Format(time.RFC3339Nano)}
+				}
+			}
+			if launch.State.Terminal() && runner.CollectLaunch != nil {
+				if collectErr := runner.CollectLaunch(review.Record, launch, failedStepCause(launch)); collectErr != nil {
+					return "", collectErr
+				}
+			}
 			if IsCode(err, "UNIT_WAIT_RETRY") {
 				current, statusErr := runner.Manager.Status(id)
 				return "", &PublicationPending{Running: statusErr != nil || !current.State.Terminal(), Cause: err}
 			}
-			if err != nil {
+			if err != nil && (launch.State != Failed || launch.ExitCode == nil || *launch.ExitCode == 0) {
 				return "", fmt.Errorf("the publication check %s did not start or pass (launch %s): %w", command.Name, id, err)
 			}
 			launchID = launch.ID
@@ -108,6 +105,14 @@ func (runner *UnitRunner) ProveRoundResult(review UnitReview, worktree string, s
 		if IsCode(err, "UNIT_WAIT_RETRY") || err == nil && !terminal {
 			current, statusErr := runner.Manager.Status(launchID)
 			return "", &PublicationPending{Running: statusErr != nil || !current.State.Terminal(), Cause: err}
+		}
+		if err == nil && terminal && runner.CollectLaunch != nil {
+			if err := runner.CollectLaunch(review.Record, completed, failedStepCause(completed)); err != nil {
+				return "", err
+			}
+		}
+		if err == nil && terminal && completed.State == Failed && completed.ExitCode != nil && *completed.ExitCode != 0 {
+			return "", coded("PUBLICATION_CHECK_RED", "launch="+launchID, fmt.Errorf("the publication check %s did not pass (launch %s)", command.Name, launchID))
 		}
 		if err != nil || !terminal || completed.State != Completed || completed.ExitCode == nil || *completed.ExitCode != 0 {
 			return "", fmt.Errorf("the publication check %s did not pass (launch %s): %v", command.Name, launchID, err)

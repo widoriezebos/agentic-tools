@@ -658,14 +658,15 @@ func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofP
 	} else if !os.IsNotExist(err) {
 		return plan, err
 	}
-	if runner.PlanProof == nil || proofPlanned {
-		return plan, nil
+	if runner.PlanProof != nil && !proofPlanned {
+		commands, err := runner.PlanProof(plan)
+		if err != nil {
+			return plan, err
+		}
+		if commands != nil {
+			plan.Proof = commands
+		}
 	}
-	commands, err := runner.PlanProof(plan)
-	if err != nil || commands == nil {
-		return plan, err
-	}
-	plan.Proof = commands
 	if err := plan.resolveAndValidate(directory); err != nil {
 		return plan, err
 	}

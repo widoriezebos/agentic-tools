@@ -34,11 +34,7 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 		if _, err := atomicfile.WriteText(filepath.Join(round.Directory, "result.patch"), string(patch), runner.root()); err != nil {
 			return false, err
 		}
-		commands, err := json.Marshal(proofCommands(plan))
-		if err != nil {
-			return false, err
-		}
-		round.Result = &RoundResult{Tree: snapshot.TreeID, Parent: strings.TrimSpace(snapshot.Head), PatchDigest: digestHex(patch), ProofIdentity: digestHex(commands)}
+		round.Result = &RoundResult{Tree: snapshot.TreeID, Parent: strings.TrimSpace(snapshot.Head), PatchDigest: digestHex(patch)}
 	}
 	gap := false
 	if round.DeclaredLines == 0 {

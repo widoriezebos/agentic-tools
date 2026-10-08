@@ -1,10 +1,10 @@
 package main
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,9 +13,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
 )
 
 // This adapter fixture observes actual Git replay, conflicts, trees and
@@ -169,10 +172,28 @@ func TestRoundResultReplayGitAdapter(t *testing.T) {
 			t.Parallel()
 			c := roundResultBed(t)
 			starter := &roundResultStarter{c: c}
+			plannedCheck := filepath.Join(t.TempDir(), "planned-check")
+			if err := testexec.WriteFile(plannedCheck, []byte("#!/bin/sh\ntest \"$(cat unit.txt)\" = built\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			planner := fakeadapter.New()
+			planner.Steps = []adapter.GateStep{{Name: "planned", Args: []string{plannedCheck}}}
+			c.testingAdapter = planner
 			run, base := buildRoundResult(t, c, starter)
 			round := c.runRecord(run).Rounds[0]
 			if round.Result == nil || round.Result.Parent != base || len(round.Result.Tree) != 40 || len(round.Result.PatchDigest) != 64 || len(round.Result.ProofIdentity) != 64 {
 				t.Fatalf("builder result not recorded: %+v", round.Result)
+			}
+			initial, err := launch.ReadUnitPlan(c.runRecord(run).Plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commands, err := json.Marshal(append([]launch.ProofCommand{{Name: "planned", Dir: c.worktree, Argv: []string{plannedCheck}, Env: []string{}}}, initial.Proof...))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if round.Result.ProofIdentity != fmt.Sprintf("%x", sha256.Sum256(commands)) {
+				t.Fatalf("result identity does not name the planned proof: %+v", round.Result)
 			}
 			tip := advanceRoundResult(t, c, base, "advance.txt", "unrelated\n", local)
 			c.loseCommit, c.failPushes = true, 1
@@ -184,11 +205,11 @@ func TestRoundResultReplayGitAdapter(t *testing.T) {
 				t.Fatal("the review result hid the current publication parent")
 			}
 			subject := c.runRecord(run).Subjects[0]
-			if subject.ExpectedParent != tip || subject.GateRunID == "" || len(starter.proofTrees) != 2 || starter.proofTrees[1] != subject.StagedTree || subject.StagedTree == round.Result.Tree {
+			if subject.ExpectedParent != tip || subject.GateRunID == "" || len(starter.proofTrees) != 4 || (starter.proofTrees[2] != subject.StagedTree || starter.proofTrees[3] != subject.StagedTree) || subject.StagedTree == round.Result.Tree {
 				t.Fatalf("exact replay was not gated: %+v proof trees=%v", subject, starter.proofTrees)
 			}
 			code, result = roundResultReview(t, c)
-			if result.Outcome != intentInProgress || c.commits != 1 || len(starter.proofTrees) != 2 || len(c.runRecord(run).Rounds) != 1 {
+			if result.Outcome != intentInProgress || c.commits != 1 || len(starter.proofTrees) != 4 || len(c.runRecord(run).Rounds) != 1 {
 				t.Fatalf("repeat rebuilt or recommitted: exit=%d commits=%d %+v", code, c.commits, result)
 			}
 			if len(c.delegates) != 1 || slices.Contains(c.reads[0], "--unit-read") {
@@ -196,7 +217,7 @@ func TestRoundResultReplayGitAdapter(t *testing.T) {
 			}
 			c.writeCritic(c.worktree, "crit1", subject.Commit, "completed", true)
 			code, result = roundResultReview(t, c)
-			if code != 0 || c.commits != 1 || len(c.delegates) != 1 || len(starter.proofTrees) != 2 {
+			if code != 0 || c.commits != 1 || len(c.delegates) != 1 || len(starter.proofTrees) != 4 {
 				t.Fatalf("critic collection repeated the publication: exit=%d %+v", code, result)
 			}
 			published := connectionGit(t, c.origin, "rev-parse", "refs/heads/goal/"+c.id)
@@ -247,7 +268,7 @@ func TestRoundResultGateRedGitAdapter(t *testing.T) {
 	run, base := buildRoundResult(t, c, starter)
 	tip := advanceRoundResult(t, c, base, "fail-replay", "fails only in replay\n", false)
 	code, result := roundResultReview(t, c)
-	if code == 0 || c.commits != 0 || len(starter.proofTrees) != 2 || !strings.Contains(result.Summary, "publication checks failed") || result.Next == nil || flagValue(result.Next.Argv, "--after") != "1" || !slices.Contains(result.Next.Argv, "revise") {
+	if code == 0 || c.commits != 0 || len(starter.proofTrees) != 2 || !strings.Contains(result.Summary, "publication checks failed") || result.Next == nil || flagValue(result.Next.Argv, "--after") != "1" || !slices.Contains(result.Next.Argv, "revise") || flagValue(result.Next.Argv, "--by") != "NAME" || flagValue(result.Next.Argv, "--reason") != "correct the retained publication check failure" {
 		t.Fatalf("red replay published: exit=%d commits=%d %+v", code, c.commits, result)
 	}
 	if len(c.runRecord(run).Rounds) != 1 || connectionGit(t, c.worktree, "rev-parse", "HEAD") != base || connectionGit(t, c.origin, "rev-parse", "refs/heads/goal/"+c.id) != tip {
@@ -347,7 +368,7 @@ func TestRoundResultWaitResumeGitAdapter(t *testing.T) {
 			c := roundResultBed(t)
 			starter := &roundResultStarter{c: c}
 			run, base := buildRoundResult(t, c, starter)
-			advanceRoundResult(t, c, base, "advance.txt", "advance\n", false)
+			tip := advanceRoundResult(t, c, base, "advance.txt", "advance\n", false)
 			starter.holdProof = boundary != "terminal-retake"
 			changeRun := func() {
 				record := c.runRecord(run)
@@ -381,17 +402,25 @@ func TestRoundResultWaitResumeGitAdapter(t *testing.T) {
 			}
 			code, result := roundResultReview(t, c)
 			subject := c.runRecord(run).Subjects[0]
-			if result.Outcome != intentInProgress || code != 3 || result.Next == nil || slices.Contains(result.Next.Argv, "revise") || subject.GateWorktree == "" && boundary != "terminal-retake" || len(subject.GateLaunches) != 1 || subject.GateLaunches[0] != starter.pending {
+			if result.Outcome != intentInProgress || code != 3 || result.Next == nil || slices.Contains(result.Next.Argv, "revise") {
 				t.Fatalf("wait cap lost its check: exit=%d %+v subject=%+v", code, result, subject)
 			}
 			scratch := subject.GateWorktree
 			if boundary == "terminal-retake" {
+				if subject.GateWorktree != "" {
+					t.Fatalf("terminal wait retained scratch: %+v", subject)
+				}
 				scratch = terminalScratch
 				if _, err := os.Stat(scratch); !errors.Is(err, os.ErrNotExist) {
 					t.Fatalf("terminal wait kept scratch: %v", err)
 				}
-			} else if _, err := os.Stat(scratch); err != nil {
-				t.Fatal(err)
+			} else {
+				if scratch == "" || subject.GateSnapshot == nil || len(subject.GateLaunches) != 1 || subject.GateLaunches[0] != starter.pending {
+					t.Fatalf("live scratch lost its proof: %+v", subject)
+				}
+				if _, err := os.Stat(scratch); err != nil {
+					t.Fatal(err)
+				}
 			}
 			pending, err := c.manager.Store.Read(starter.pending)
 			if err != nil {
@@ -408,6 +437,10 @@ func TestRoundResultWaitResumeGitAdapter(t *testing.T) {
 				}
 			}
 			launches := len(starter.proofTrees)
+			if boundary == "terminal-retake" {
+				advanceRoundResult(t, c, base, "second.txt", "unrelated move after the check\n", false, tip)
+				launches++
+			}
 			code, result = roundResultReview(t, c)
 			subject = c.runRecord(run).Subjects[0]
 			if result.Outcome != intentInProgress || subject.Published == "" || c.commits != 1 || len(starter.proofTrees) != launches || len(subject.GateLaunches) != 1 {
@@ -421,6 +454,52 @@ func TestRoundResultWaitResumeGitAdapter(t *testing.T) {
 			}
 
 		})
+	}
+}
+
+func TestRoundResultGateBudgetRemedyGitAdapter(t *testing.T) {
+	t.Parallel()
+	c := roundResultBed(t)
+	starter := &roundResultStarter{c: c}
+	run, base := buildRoundResult(t, c, starter)
+	tip := advanceRoundResult(t, c, base, "advance.txt", "advance\n", false)
+	if code, result := c.runJSON(c.owners(), "goal", "budget", c.id, "4h/4/119m/2/2", "--by", "Wido", "--fixture-human-authority", "--lineage", "m1"); code != 0 {
+		t.Fatalf("set budget: exit=%d %+v", code, result)
+	}
+	code, refused := roundResultReview(t, c)
+	if code != 1 || refused.Next == nil || !slices.Equal(refused.Next.Argv, []string{"metasystem", "goal", "budget", c.id, "BOX"}) || !strings.Contains(refused.Summary, "no budget for this launch") || strings.Contains(refused.Summary, "publication checks failed") {
+		t.Fatalf("gate budget refusal became a correction: exit=%d %+v", code, refused)
+	}
+	if c.commits != 0 || len(starter.proofTrees) != 1 || connectionGit(t, c.worktree, "rev-parse", "HEAD") != base || connectionGit(t, c.origin, "rev-parse", "refs/heads/goal/"+c.id) != tip {
+		t.Fatal("budget refusal launched a check or changed the branch")
+	}
+	remedy := append(slices.Clone(refused.Next.Argv[1:4]), "4h/4/240m/2/2", "--by", "Wido", "--fixture-human-authority", "--lineage", "m1")
+	if code, result := c.runJSON(c.owners(), remedy...); code != 0 {
+		t.Fatalf("printed budget remedy: exit=%d %+v", code, result)
+	}
+	code, result := roundResultReview(t, c)
+	record := c.runRecord(run)
+	if result.Outcome != intentInProgress || record.Subjects[0].Published == "" || c.commits != 1 || len(record.Rounds) != 1 || len(record.Revisions) != 0 || len(starter.proofTrees) != 2 {
+		t.Fatalf("repeat did not publish the retained result: exit=%d %+v run=%+v", code, result, record)
+	}
+}
+
+func TestRoundResultGateStartRefusalGitAdapter(t *testing.T) {
+	t.Parallel()
+	c := roundResultBed(t)
+	starter := &roundResultStarter{c: c}
+	run, base := buildRoundResult(t, c, starter)
+	advanceRoundResult(t, c, base, "advance.txt", "advance\n", false)
+	c.manager.Supervisor = nil
+	code, refused := roundResultReview(t, c)
+	if code != 1 || refused.Next == nil || !slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "review", c.id, "--work", "result", "--json"}) || !strings.Contains(refused.Summary, "supervisor is unavailable") || strings.Contains(refused.Summary, "publication checks failed") || c.commits != 0 {
+		t.Fatalf("start refusal became a correction: exit=%d %+v next=%+v", code, refused, refused.Next)
+	}
+	c.manager.Supervisor = starter
+	code, result := roundResultReview(t, c)
+	record := c.runRecord(run)
+	if result.Outcome != intentInProgress || record.Subjects[0].Published == "" || c.commits != 1 || len(record.Rounds) != 1 || len(record.Revisions) != 0 || len(starter.proofTrees) != 2 {
+		t.Fatalf("repaired start could not repeat publication: exit=%d %+v run=%+v", code, result, record)
 	}
 }
 

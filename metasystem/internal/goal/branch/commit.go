@@ -390,11 +390,7 @@ func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchS
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if req.KeepWorktree == nil || !req.KeepWorktree() {
-			close()
-		}
-	}()
+	defer req.closeWorktree(close)
 	if req.ResumeWorktree == "" {
 		if err := r.effects.Apply(worktree, patch); err != nil {
 			return "", operationRefusal(ReplayConflictCode, "the staged change doesn't apply to goal %s's branch as origin holds it (%s): %v\nrun: metasystem work status %s", req.GoalID, state.baseTip, err, req.GoalID)
@@ -611,11 +607,7 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 	if err != nil {
 		return "", err
 	}
-	defer func() {
-		if req.KeepWorktree == nil || !req.KeepWorktree() {
-			close()
-		}
-	}()
+	defer req.closeWorktree(close)
 	if req.ResumeWorktree == "" {
 		if err := r.effects.Apply(worktree, patch); err != nil {
 			return "", operationRefusal(RangeCode, "the staged fix doesn't apply to build %s: %v\nrun: metasystem work status %s", list, err, req.GoalID)
@@ -684,6 +676,12 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 		return "", err
 	}
 	return newTip, nil
+}
+
+func (req CommitRequest) closeWorktree(close func()) {
+	if req.KeepWorktree == nil || !req.KeepWorktree() {
+		close()
+	}
 }
 
 // CloseCommitWorktree removes the exact scratch tree created for publication.
