@@ -362,7 +362,7 @@ func validateSplitMembers(t *TreeGoals, parentID string, members []MemberDraft) 
 		}
 		memberSet[member.ID] = true
 		if t.Exists(member.ID) {
-			return fmt.Errorf("split member id %s collides with an existing goal", member.ID)
+			return fmt.Errorf("split member %s collides with an existing goal; rename the members in FILE\nrun: metasystem goal split %s --plan FILE", member.ID, parentID)
 		}
 		if retired, ok := rootDecomposed(t.Root, member.ID); ok {
 			return fmt.Errorf("split member id %s is retired by decomposition %s", member.ID, retired.Opid)

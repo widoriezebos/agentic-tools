@@ -472,6 +472,9 @@ func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimE
 		return errors.New("only the session that holds this checkout can claim; start one with metasystem session start")
 	}
 	f.Claimed = newClaimRecord(machine, lineage, at, revision)
+	if f.FirstClaimAt == "" {
+		f.FirstClaimAt = at
+	}
 	f.Claimed.EpisodeAt = at
 	f.Claimed.EpisodeRevision = revision
 	f.StopCapability = &StopCapability{

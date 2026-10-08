@@ -71,6 +71,9 @@ type GoalFile struct {
 	SplitFrom string       `json:"SplitFrom,omitempty"`
 	Ratified  *SplitRatification
 	Claimed   *ClaimRecord
+	// FirstClaimAt survives release and membership changes: a goal that held
+	// a claim has started work even when it no longer has an accounting episode.
+	FirstClaimAt string `json:"FirstClaimAt,omitempty"`
 	// Obligation is the human-governed recurrence bound to this goal's
 	// existing budget. Its revision changes only by replacing the whole record.
 	Obligation        *GovernedObligation
@@ -668,6 +671,9 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Claimed != nil && !validStamp(f.Claimed.At) {
 		addProblem("Claimed at=%q is not an RFC3339 timestamp", f.Claimed.At)
 	}
+	if f.FirstClaimAt != "" && !validStamp(f.FirstClaimAt) {
+		addProblem("FirstClaimAt %q is not an RFC3339 timestamp", f.FirstClaimAt)
+	}
 	if f.Claimed != nil && f.Claimed.By != "" && !f.PersonalReservation() {
 		addProblem("Claimed by has no matching person-origin history")
 	}
@@ -752,7 +758,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Obligation != nil {
 		riskRaise := f.Claimed != nil && f.Claimed.Revision > 0 && f.Claimed.Revision <= uint64(len(f.History)) && misclassificationRaises(f.History[f.Claimed.Revision-1].Reason)
 		claim := f.Claimed
-		if f.State == StateSplit && f.Split != nil && f.Split.PriorState == StateClaimed && f.Episode != nil {
+		if claim == nil && f.Split != nil && f.Episode != nil {
 			claim = &ClaimRecord{Revision: f.Obligation.BudgetRevision}
 		}
 		if err := validateGovernedObligation(f.Obligation, f.Revision, claim, f.Budget, riskRaise); err != nil {
@@ -1266,6 +1272,8 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		f.Conclude = value
 	case "OpenedAt":
 		f.OpenedAt = value
+	case "FirstClaimAt":
+		f.FirstClaimAt = value
 	case "Revision":
 		n, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
@@ -1866,6 +1874,9 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- Concluded: %s\n", f.Conclude)
 	}
 	fmt.Fprintf(&b, "- OpenedAt: %s\n", f.OpenedAt)
+	if f.FirstClaimAt != "" {
+		fmt.Fprintf(&b, "- FirstClaimAt: %s\n", f.FirstClaimAt)
+	}
 	fmt.Fprintf(&b, "- Revision: %d\n", f.Revision)
 	if len(f.Blocked) > 0 {
 		fmt.Fprintf(&b, "- BlockedBy: %s\n", strings.Join(f.Blocked, ", "))

@@ -339,7 +339,14 @@ func ValidateTree(t *TreeGoals) []Problem {
 			}
 		}
 		if f.SplitFrom != "" {
-			if parent := lookup(f.SplitFrom); parent == nil || parent.Split == nil || !contains(parent.Split.Children, f.Id) {
+			parent := lookup(f.SplitFrom)
+			linked := parent != nil && parent.Split != nil && contains(parent.Split.Children, f.Id)
+			if parent != nil && len(f.History) > 0 {
+				for _, h := range parent.History {
+					linked = linked || h.Verb == "split" && h.Opid == f.History[0].Opid && contains(h.Targets, f.Id)
+				}
+			}
+			if !linked {
 				addf("%s: SplitFrom parent %s does not link back to its child", where, f.SplitFrom)
 			}
 		}
