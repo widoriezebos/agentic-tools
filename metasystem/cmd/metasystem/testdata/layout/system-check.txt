@@ -16,4 +16,4 @@ This checkout
   disk: no pass has run for this checkout yet; metasystem disk clean --preview shows what one would
     do
 
-→ metasystem session start  the first public remedy check found
+→ metasystem system start  the first public remedy check found

@@ -99,9 +99,9 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 		stopped bool
 		want    []string
 	}{
-		{steward.RoleStewardRunner, false, []string{"metasystem", "session", "start"}},
+		{steward.RoleStewardRunner, false, []string{"metasystem", "system", "start"}},
 		{steward.RoleSupervisionOwner, true, []string{"metasystem", "system", "start"}},
-		{steward.RoleTrunkRed, false, []string{"metasystem", "incident", "list"}},
+		{steward.RoleTrunkRed, false, nil},
 		{steward.RoleProofAttempts, false, []string{"metasystem", "test", "run"}},
 	} {
 		public, _ := publicHealthRemedy(steward.RoleVerdict{Role: row.role, Remedy: "metasystem session start --repo /x"}, row.stopped)
@@ -116,8 +116,8 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 	}{
 		{steward.RemedyFact{Cause: steward.CauseBudgetMissing, Goal: "g1"}, []string{"metasystem", "goal", "budget", "g1", "BOX"}},
 		{steward.RemedyFact{Cause: steward.CauseBudgetBreach, Goal: "g1"}, []string{"metasystem", "goal", "budget", "g1", "BOX"}},
-		{steward.RemedyFact{Cause: steward.CauseEpochMismatch, Goal: "g1"}, []string{"metasystem", "session", "start"}},
-		{steward.RemedyFact{Cause: steward.CauseForeignLineage, Goal: "g1"}, []string{"metasystem", "goal", "release", "g1"}},
+		{steward.RemedyFact{Cause: steward.CauseEpochMismatch, Goal: "g1"}, nil},
+		{steward.RemedyFact{Cause: steward.CauseForeignLineage, Goal: "g1"}, []string{"metasystem", "goal", "claim", "g1", "--take-over", "--reason", "TEXT"}},
 		{steward.RemedyFact{Cause: steward.CauseBudgetUnknown, Record: "artifacts/agents/jobs/x.json"}, nil},
 		{steward.RemedyFact{Cause: steward.CauseBreachStopUnresolved, Goal: "g1", Stop: "s1"}, nil},
 	} {

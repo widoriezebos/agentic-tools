@@ -42,8 +42,10 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 		}
 	}
 	if len(unowned) > 0 {
-		return roleDead(RoleTrunkRed, "open trunk red without an owner: "+strings.Join(unowned, ", "),
+		verdict := roleDead(RoleTrunkRed, "open trunk red without an owner: "+strings.Join(unowned, ", "),
 			"metasystem incident claim "+unowned[0]+" --goal <goal>")
+		verdict.RemedyFacts = []RemedyFact{{Cause: CauseTrunkRedUnowned, Incident: unowned[0]}}
+		return verdict
 	}
 	defects := ""
 	if tracked > 0 {

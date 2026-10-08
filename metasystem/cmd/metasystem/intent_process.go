@@ -36,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -1692,6 +1693,10 @@ func runIntentDoctor(inv *intentInvocation) int {
 	}
 	verdict := owners.health(scope.Root.Path(), scope.Installation.Path(), now)
 	stopped, _, _ := stopfence.Closed(scope.Installation.Path())
+	audience := "human"
+	if class, err := owners.process.classify(scope.Root.Path(), scope.Installation.Path(), int64(os.Getppid())); err == nil && (class.Class == lease.ClassMain || class.Class == lease.ClassDelegate) && !stopped {
+		audience = "agent"
+	}
 	lines, remedies := []string{}, []map[string]any{}
 	var first []string
 	var problems []doctorProblem
@@ -1700,7 +1705,7 @@ func runIntentDoctor(inv *intentInvocation) int {
 			continue
 		}
 		line := fmt.Sprintf("%s %s: %s", role.Role, role.Status, role.Reason)
-		public, instruction := publicHealthRemedy(role, stopped)
+		public, instruction := publicHealthRemedy(role, stopped, audience)
 		problem := doctorProblem{role: string(role.Role), status: string(role.Status), reason: role.Reason, fix: public, instruction: instruction}
 		switch {
 		case len(public) > 0:
@@ -1966,17 +1971,15 @@ func checkCovenantEvidence(root string) ([]string, *evidencetable.Report, bool) 
 // publicHealthRemedy is the public command, or the plain instruction, for
 // one unhealthy role, chosen from the role and its typed remedy facts; the
 // owner's own remedy is kept only as diagnostic data.
-func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, string) {
-	if len(role.RemedyFacts) > 0 {
-		return publicRemedyForFact(role.RemedyFacts[0])
+func publicHealthRemedy(role steward.RoleVerdict, stopped bool, audiences ...string) ([]string, string) {
+	audience := "human"
+	if len(audiences) > 0 && !stopped {
+		audience = audiences[0]
+	}
+	if act, plain := role.PublicRemedy(audience, healthRemedyAudience); len(act) > 0 || plain != "" {
+		return act, plain
 	}
 	switch role.Role {
-	case steward.RoleStewardRunner, steward.RoleSupervisionOwner, steward.RoleRepoWatcher, steward.RoleNarratorFreshness,
-		steward.RoleCensusFreshness, steward.RoleHookFreshness, steward.RoleSessionMain:
-		if stopped {
-			return []string{"metasystem", "system", "start"}, ""
-		}
-		return []string{"metasystem", "session", "start"}, ""
 	case steward.RoleLedgerAttention:
 		if role.FailureEscalation == steward.AutoHealEnded {
 			return strings.Fields(role.Remedy), ""
@@ -1986,13 +1989,6 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 		return nil, "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
 	case steward.RoleRetroDebt:
 		return nil, "run the retro and record its receipt"
-	case steward.RoleTrunkRed:
-		if strings.Contains(role.Reason, "cadence") {
-			// The landing lane records the deep validation cadence when its
-			// validation is due.
-			return []string{"metasystem", "system", "start"}, ""
-		}
-		return []string{"metasystem", "incident", "list"}, ""
 	case steward.RoleCapabilitySnapshots:
 		if role.FailureEscalation == steward.AutoHealEnded {
 			return nil, role.Remedy
@@ -2011,6 +2007,11 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, strin
 	return nil, reasonRemedy(role.Reason)
 }
 
+func healthRemedyAudience(object, action string) string {
+	command, _ := findIntentAction(object, action)
+	return command.audience
+}
+
 // reasonRemedy is the instruction for a role whose reason is its own
 // remedy: the command it names, or the change it names.
 func reasonRemedy(reason string) string {
@@ -2018,29 +2019,6 @@ func reasonRemedy(reason string) string {
 		return "run the command the reason above names"
 	}
 	return "a person changes what the reason above names; no metasystem command does it"
-}
-
-// publicRemedyForFact is the public act for one typed cause.
-func publicRemedyForFact(fact steward.RemedyFact) ([]string, string) {
-	switch fact.Cause {
-	case steward.CauseBudgetMissing, steward.CauseBudgetMalformed:
-		return []string{"metasystem", "goal", "budget", fact.Goal, "BOX"}, ""
-	case steward.CauseBudgetBreach:
-		return []string{"metasystem", "goal", "budget", fact.Goal, "BOX"}, "goal " + fact.Goal + " is over its box; its stop runs by itself, and a person may give it a larger box"
-	case steward.CauseBudgetUnknown:
-		return nil, "a person repairs record " + fact.Record + ", which cannot be read as a budget, then runs metasystem system check"
-	case steward.CauseBreachStopOpen:
-		return nil, "goal " + fact.Goal + "'s budget stop " + fact.Stop + " completes by itself on the steward's next pass; nothing needs doing"
-	case steward.CauseBreachStopUnresolved:
-		return nil, "a person inspects budget stop " + fact.Stop + " of goal " + fact.Goal + " and its job records; new work stays fenced until it resolves"
-	case steward.CauseEpochMismatch:
-		return []string{"metasystem", "session", "start"}, ""
-	case steward.CauseForeignLineage:
-		return []string{"metasystem", "goal", "release", fact.Goal}, "the session that claimed goal " + fact.Goal + " releases it, or a person takes it over: metasystem goal claim " + fact.Goal + " --take-over --reason TEXT"
-	case steward.CauseStopCapabilityMissing:
-		return nil, "a person repairs goal " + fact.Goal + "'s record (" + fact.Record + "), which has no stop capability"
-	}
-	return nil, "a person changes what the reason above names; no metasystem command does it"
 }
 
 // runUIVerb runs the interface's status or restart through its lifecycle

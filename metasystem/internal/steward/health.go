@@ -129,16 +129,20 @@ type RoleVerdict struct {
 
 // RemedyFact is one typed cause of an unhealthy role.
 type RemedyFact struct {
-	Cause  RemedyCause `json:"cause"`
-	Goal   string      `json:"goal,omitempty"`
-	Record string      `json:"record,omitempty"`
-	Stop   string      `json:"stop,omitempty"`
+	Cause    RemedyCause `json:"cause"`
+	Goal     string      `json:"goal,omitempty"`
+	Record   string      `json:"record,omitempty"`
+	Stop     string      `json:"stop,omitempty"`
+	Job      string      `json:"job,omitempty"`
+	Incident string      `json:"incident,omitempty"`
 }
 
 // RemedyCause names one actionable cause a health role reports.
 type RemedyCause string
 
 const (
+	CauseJobProcessDead        RemedyCause = "job-process-dead"
+	CauseTrunkRedUnowned       RemedyCause = "trunk-red-unowned"
 	CauseBudgetMissing         RemedyCause = "budget-missing"
 	CauseBudgetMalformed       RemedyCause = "budget-malformed"
 	CauseBudgetUnknown         RemedyCause = "budget-unknown"
@@ -1764,7 +1768,9 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 	}
 	remedy := "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
 	if len(dead) > 0 {
-		return roleDead(RoleNonterminalJobs, "non-terminal jobs with dead recorded processes: "+strings.Join(dead, ","), remedy)
+		verdict := roleDead(RoleNonterminalJobs, "non-terminal jobs with dead recorded processes: "+strings.Join(dead, ","), remedy)
+		verdict.RemedyFacts = []RemedyFact{{Cause: CauseJobProcessDead, Job: dead[0]}}
+		return verdict
 	}
 	if len(unknown) > 0 {
 		return roleUnknown(RoleNonterminalJobs, "non-terminal jobs with unreadable process evidence: "+strings.Join(unknown, ","), remedy)
