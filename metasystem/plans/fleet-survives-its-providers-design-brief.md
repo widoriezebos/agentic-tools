@@ -22,3 +22,7 @@ The driver itself (goal 4). The flake register (machinery-housekeeping). Budget 
 ## Shape
 
 As the accepted designs: header, Wido's binding words, what it delivers, Decisions with code sites read on the current tree, Units table with production lines and areas, estimates, one public-verb test per unit failing under its mutation, readers; the five questions for every new function, record and act; the four defect classes.
+
+## Added 2026-10-07 23:15 (from machinery-measures-its-own-process)
+
+The unloaded host comparison (suite minutes against the unloaded baseline, per host) and integration observations (merge conflicts at integration) are built here as the measure of item 5, consumed by machinery-measures-its-own-process's cost reader.

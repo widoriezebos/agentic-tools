@@ -47,6 +47,10 @@ All six remaining units build without the follow-up: `unit-stop` retains prepare
 5. Retain `--check` as a person's explicit manual check for repairing missing declarations. An agent cannot replace the declared rung with it. The verb prints and records the impact before the exception takes effect, then records its check result; it never calls missing proof green.
 6. The goal-2 design covers finding 6 in full. Roster audit, effort selection, Readers scaffolding and citation validation remain goal 6; provider coordination and general launch deadlines remain the fleet goal. The cheap-rung deadline belongs here because this goal executes it.
 
+- 2026-10-08 03:50 CEST, tree-boundaries ends after its third part (about 750 production lines across three parts against the 210 estimate: builders read Decision 4 as maximally as they can; plans/handoff-review-chain-stops-and-records-tree-boundaries-3.md). The remainder moves to the units that own those paths: committed-critic custody across commands and person recovery through damaged advisory ownership records go to round-result; the other tree-writing entries (manual and commit-form read publication) go to read-publication. No new unit is opened for them. Reversible by Wido.
+
+- 2026-10-08 09:35 CEST, declared-check ends after its second part (the frozen check, test run --unit-run, builder and runner on one executor, the publication replay and the rebase carry's subject-commit check). Its remaining items move to process-changes-cover-declarations-and-interventions, which owns declarations and checks: the 10-07 acceptance items (the cheap check stays cheap: test plan preview, measured minutes, the deep or one-third-of-full hold with its setting and a person's decision; the changed-assertion audit with design citation) and candidate declarations taking effect the next round. Goal 2 then integrates; three goals are stacked on it. Reversible by Wido.
+
 ## Decisions, with sites
 
 ### 1. Record what the stop actually reads

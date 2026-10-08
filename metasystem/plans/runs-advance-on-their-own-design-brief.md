@@ -22,3 +22,13 @@ Host state and the limit marks (goal 3). The stop rules and the round records (g
 ## Shape
 
 As the accepted designs (see plans/fleet-survives-its-providers-design-brief.md, "Shape").
+
+## Added 2026-10-08: pending capacity steps, resume and recovery
+
+Destination of the pending-step part of old U4 in [fleet-survives-its-providers](designs/fleet-survives-its-providers.md), **decided by m1e for Wido, 2026-10-08, reversible**. The fleet design retains P4's minimal completed-unit event and its headless `session handoff` consumer, and P5's `Manager.Start` admission from current load, `host.builds=auto|N|person` and declared `host.load-max`. This goal consumes those results; it does not rebuild provider state, load policy, the boundary or the session end.
+
+Extend the existing step record/driver at `internal/launch/read_sequence.go:37` with retained capacity waiting: operation/goal/unit identity, original exact command/target/authority, wait start/end and reason. Today a start error before a launch record exists leaves StepStarting; it must not become a completed unit, failed execution, correction round or spent command deadline. Own the pending-step queue, public work status/re-entry, automatic resume and cancellation/recovery here. One operation has one effect; after a wait, re-read current policy/load, registration and exact target/authority before asking Manager.Start to reserve it. Cancelled or completed work cannot launch again; an unknown process cannot be reaped as dead. Keep queue minutes separate from executed build/suite minutes for the process-cost reader.
+
+The boundary is keyed by seat/session/goal/unit/completed outcome and bound to its durable handoff. Consume it once, after the predecessor handoff/end and the applicable settings/engine/budget owners have completed their boundary actions; do not make a generic acknowledgement framework. A queued step is pending, never a boundary. Reuse existing launch/step reconciliation and bounded waiting, including crash between reservation and supervisor start, rather than adding a poller to the fleet goal. Under `seat.driver=person`, prepare the exact next act and wait; a person's explicit act retains its existing authority.
+
+Acceptance drives public work build/status with interleaved capacity refusal, later capacity, repeated delivery, changed target, revoked authority, cancellation and restart. It proves one start, no lost pending work, no false completed boundary and no correction charged for environment waiting. Removing the real retained-step adapter must fail that test. Re-estimate this transferred work with the rest of the driver design within five units of at most 250 production lines.

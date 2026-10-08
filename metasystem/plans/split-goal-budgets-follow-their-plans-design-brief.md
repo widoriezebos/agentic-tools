@@ -1,0 +1,26 @@
+# Design brief: split goal budgets follow their plans
+
+Working Mode: Design. Proposed follow-up of `goals-are-shaped-small-with-a-person`; no goal is opened or budget changed here. Read finding 10 of `machinery-open-findings-plan-2026-10-06.md`, the source draft, its effects follow-up, the actual `goal-budget-follows-its-plan`/driver design and code, and the accepted fleet clock design. Maximum five units, 250 production lines per unit; new/changed tests and mutations per unit, full suite once when this goal lands.
+
+## Intent and owner
+
+A split child gets a budget calculated from its own plan and risk, not a copy of its parent's allowance or a fresh zero-cost history. The budget owner supplies the calculation at claim and any existing permitted raise. This goal only connects split-child plan provenance and user-visible estimates to it. If plan derivation has not shipped, design that dependency first; never invent a second per-unit formula here.
+
+Read source sites: `internal/goalbudget/budget.go:83` has elapsed, attempts, reserved job minutes, active jobs and review rounds; `internal/goal/file.go:118`, `:141` validates four risk answers and derives tier from severity/novelty. `internal/goal/split.go:282` currently creates children without plan-derived risk/budget. `internal/goal/verbs.go` owns claim/approval/budget changes. There is **no token member** in the current five-member box: the plan's reference to tokens is measurement input until the actual budget owner defines an approved representation. Do not silently add a sixth budget member.
+
+## Requirements to preserve
+
+- The child's ordinary brief/design carries its risk answers with basis, planned units, production estimates, elapsed estimate and source identity. The source goal's 2026-10-08 step 1 uses the existing Markdown member file and committed lineage; it does not require a proposal store. Rich proposal data later belongs to people-shape-goal-splits-in-the-app-design-brief.md and may expose the same information without becoming a prerequisite for this calculation. Missing answers stay unknown and are shown; copying parent approval or guessing a lower tier is forbidden. Shared narrative context does not count as another unit.
+- At child claim, read its current accepted design/plan, committed per-tier allowances and the same authority/approval facts as ordinary claim. Call the one plan-budget derivation owner. A changed proposal or plan cannot reuse an old displayed box without a fresh observation. Show the basis beside the box and whether it is an estimate or an approved allowance.
+- Parent attempts, completed reviews, actual spend, transferred findings and original stop history remain attributed to their original work. Child allowance is future work authority; opening or reversing a split never erases consumption, grants free extra design rounds or pretends transferred items are proved. Do not charge identical historical executions twice across lineage views.
+- A child's approval stays a distinct person's act, including when R-148 opened it automatically. Dependency clearance and approval both precede automatic work. Whole-goal landing uses that child's complete accepted units and obligations; a shared parent budget cannot excuse missing child completion.
+- Reuse the fleet provider-dependent clock exclusions and existing union of waiting intervals. No second provider pause, timer, token counter or automatic raise is introduced. A person may set a different box through the existing budget act with impact recorded, never by changing the proposal's estimate alone.
+- Unknown derivation holds automatic claim/admission with the exact existing person budget/repair route. The person can supply an explicit box without having to repair advisory plan data first. An unreadable source is reported as unknown, never a zero-unit free budget.
+
+## First slice, estimate and tests
+
+Step 1 is the public `goal show CHILD` budget explanation using the plan-budget owner's read-only calculation and explicit unknowns. The second slice wires the same data to ordinary claim after approval, with the existing owner revalidating it inside its transaction. Estimated adapter scope is 180–350 production lines across two units; include all record serialization, source mapping and status readers when counting, and recut if the existing derivation owner needs work of its own.
+
+One public scenario per unit: show two children with different unit counts/risk and observe distinct explained estimates; approve/claim each through real goal verbs and observe the same fresh derived box. Interleave a plan/setting edit, provider wait and source reversal; preserve parent spending and inherited findings. Mutations must fail when parent budget is copied, stale plan reused, unknown treated as zero, child approved automatically, historic execution counted twice, or a provider interval subtracted twice. Inject clock/Git/provider boundaries, retaining actual goal and budget owners.
+
+The new design must answer the five questions for each adapter, record and act, enumerate all budget and completion readers, and test the four recurring defect classes. It must name the actual prerequisite calculation and declarations before implementation; this brief provides no new spending authority or formula.
