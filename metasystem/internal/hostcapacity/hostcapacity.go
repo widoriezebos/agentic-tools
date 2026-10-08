@@ -7,7 +7,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // Snapshot is a read-time observation, never permission to start work.
@@ -25,11 +24,11 @@ type Snapshot struct {
 
 // Build identifies a reservation or running build in the global launch store.
 type Build struct {
-	ID               string       `json:"id"`
-	Goal             string       `json:"goal"`
-	Runtime          string       `json:"runtime"`
-	State            launch.State `json:"state"`
-	WorkingDirectory string       `json:"workingDirectory"`
+	ID               string `json:"id"`
+	Goal             string `json:"goal"`
+	Runtime          string `json:"runtime"`
+	State            string `json:"state"`
+	WorkingDirectory string `json:"workingDirectory"`
 }
 
 // ProviderCoverage names the shared provider evidence that is not yet available.
@@ -46,7 +45,7 @@ type Sources struct {
 
 // Read samples the host and reconciles global launches between two registration reads.
 // Changed or unreadable ownership keeps facts visible but ownership unknown.
-func Read(home string, manager *launch.Manager, now time.Time, sources Sources) Snapshot {
+func Read(home string, manager interface{ CapacityBuilds() ([]Build, error) }, now time.Time, sources Sources) Snapshot {
 	if sources.Load == nil {
 		sources.Load = hostload.Read
 	}
@@ -67,18 +66,16 @@ func Read(home string, manager *launch.Manager, now time.Time, sources Sources) 
 	if !s.Load.Available {
 		s.Errors = append(s.Errors, "host load: "+s.Load.Detail)
 	}
-	records, err := manager.List()
+	records, err := manager.CapacityBuilds()
 	s.BuildsKnown = err == nil
 	if err != nil {
 		s.Errors = append(s.Errors, "builds: "+err.Error())
 	}
 	goals := map[string]bool{}
-	for _, record := range records {
-		if record.Kind == "build" && (record.State == launch.Starting || record.State == launch.Running) {
-			s.Builds = append(s.Builds, Build{ID: record.ID, Goal: record.Goal, Runtime: record.Adapter, State: record.State, WorkingDirectory: record.WorkingDirectory})
-			if record.Goal != "" {
-				goals[record.Goal] = true
-			}
+	for _, build := range records {
+		s.Builds = append(s.Builds, build)
+		if build.Goal != "" {
+			goals[build.Goal] = true
 		}
 	}
 	for goal := range goals {

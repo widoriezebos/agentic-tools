@@ -14,6 +14,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostcapacity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
@@ -48,6 +50,8 @@ type SupervisorStarter interface {
 	StartSupervisor(id, stateDir string) (identity.Ref, error)
 }
 type StartSpec struct {
+	// Actor is proven for this invocation and is never retained in a launch.
+	Actor                                              string
 	ID, Kind, Goal, Tag, WorkingDirectory, Brief, Page string
 	Model, Effort, UnitsPage, DiffFile, Package, File  string
 	Wide                                               bool
@@ -62,8 +66,12 @@ type StartSpec struct {
 	FenceRoot string
 }
 type Manager struct {
-	Store    Store
-	Adapters map[string]Adapter
+	BuildPolicy      config.GetParams
+	BuildPolicyError error
+	CapacityHome     string
+	CapacitySources  hostcapacity.Sources
+	Store            Store
+	Adapters         map[string]Adapter
 	// Templates holds the brief templates; nil is the engine's own.
 	Templates     fs.FS
 	Processes     ProcessSystem
@@ -235,7 +243,7 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 			return Record{}, err
 		}
 	}
-	if err := m.Store.Create(record); err != nil {
+	if err := m.createAdmitted(spec, record); err != nil {
 		return Record{}, err
 	}
 	stateDir, _ := m.Store.StateDir(id)

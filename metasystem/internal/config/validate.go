@@ -77,7 +77,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	// The keys the file itself names, before the defaults fill the rest: a
 	// rule about what a person set must not fire on a compiled default.
 	for _, setting := range compiledSettings {
-		if scope := PolicyScope(setting.Key); scope != "" && scope != "committed" {
+		if scope := PolicyScope(setting.Key); scope != "" && scope != "committed" || setting.Key == "host.load-max" {
 			if value, present := os.LookupEnv(EnvName(setting.Key)); present {
 				if err := SettingValueProblem(setting.Key, value); err != nil {
 					add("environment: %v", err)
@@ -86,7 +86,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 		}
 	}
 	for key, value := range values {
-		if PolicyScope(key) != "" {
+		if PolicyScope(key) != "" || key == "host.load-max" {
 			if err := SettingValueProblem(key, value); err != nil {
 				add("%v", err)
 			}
@@ -138,7 +138,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 				if problem := SettingKeyProblem(key); problem != nil {
 					add("%s: %v", localPath, problem)
 				}
-				if PolicyScope(key) != "" {
+				if PolicyScope(key) != "" || key == "host.load-max" {
 					if err := SettingValueProblem(key, value); err != nil {
 						add("%s: %v", localPath, err)
 					}

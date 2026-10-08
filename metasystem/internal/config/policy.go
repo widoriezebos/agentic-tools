@@ -60,7 +60,7 @@ func PolicyScope(key string) string {
 	switch key {
 	case "landing.batch", "landing.proof", "landing.on-red", "landing.trunk-red":
 		return "lane"
-	case "seat.driver", "review.stop", "goal.raise":
+	case "host.builds", "seat.driver", "review.stop", "goal.raise":
 		return "seat"
 	case "question.route":
 		return "coordinator"
@@ -76,7 +76,7 @@ func policyValueProblem(key, value string) error {
 	switch key {
 	case "settings.apply":
 		grammar, valid = "boundary or now", value == "boundary" || value == "now"
-	case "landing.batch", "review.stop":
+	case "host.builds", "landing.batch", "review.stop":
 		grammar = "auto, person, or a decimal integer at least 1"
 		if key == "review.stop" {
 			grammar = "auto, person, or a decimal integer at least 0"
