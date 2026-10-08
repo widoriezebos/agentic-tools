@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/sha256"
 	"fmt"
 	"path/filepath"
 	"slices"
@@ -120,12 +121,9 @@ func (owners laneVerbOwners) landingFlakeRecorder(installation string) func(plai
 		if err != nil {
 			return plain.FlakeRecorded{}, err
 		}
-		ulid, err := goalUlid()
-		if err != nil {
-			return plain.FlakeRecorded{}, err
-		}
+		ulid := strings.ToUpper(fmt.Sprintf("%x", sha256.Sum256([]byte(f.Tree+"\x00"+f.Attempt+"\x00"+f.Unit)))[:26])
 		result, err := record(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()},
-			goal.FlakeRecordArgs{Unit: f.Unit, Tests: f.Tests, Surfaces: f.Surfaces, Commit: f.Commit, Tree: f.Tree, Attempt: f.Attempt, LogPath: f.Log, Load: f.Load, Repeat: f.Repeat, Where: f.Where,
+			goal.FlakeRecordArgs{Unit: f.Unit, Tests: f.Tests, Surfaces: f.Surfaces, Commit: f.Commit, Tree: f.Tree, Attempt: f.Attempt, LogPath: f.Log, Load: f.Load, Repeat: f.Repeat, Where: f.Where, Outputs: f.Outputs, RepeatOutputs: f.RepeatOutputs,
 				Rerun: goal.TrunkRedRerun{Attempt: f.RepeatAttempt, LogPath: f.RepeatLog}})
 		if err != nil {
 			return plain.FlakeRecorded{}, err

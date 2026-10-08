@@ -57,6 +57,16 @@ func observeRed(seams ProveSeams, install string, running Running, decision scop
 // continueRed uses the recorded report; it never repeats the original full admission.
 func continueRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, output io.Writer, result, previous Result, replay func(Result, Result) Result) Result {
 	result.ClassificationPending = false
+	// Only a flake repeat (it carries FlakeRepeats) is held here; a whole-check,
+	// environment or person re-proof is also "started" and keeps the lane's attribution.
+	if result.Repeat == "started" && len(result.FlakeRepeats) > 0 {
+		if !result.RepeatComplete {
+			return result
+		}
+		green := result
+		green.Result, green.Failed, green.Cause = Green, nil, nil
+		return recordFlakes(seams, result, green, "alone", result.FlakeRepeats)
+	}
 	if result.Cause.Kind == "environment" || len(result.Failed) == 0 {
 		return result
 	}
@@ -76,15 +86,39 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 	if !known || previous.Result != "" {
 		return replay(result, previous)
 	}
+	ordinary, ordinaryRepeat := *result.Cause, result.Repeat
+	result.FlakeRepeats = make([]Running, len(result.Failed))
+	for i := range result.Failed {
+		repeat := running
+		repeat.Attempt = fmt.Sprintf("%s-repeat-%d", running.Attempt, i+1)
+		repeat.Log = filepath.Join(Dir(install), "proofs", repeat.Attempt+".log")
+		result.FlakeRepeats[i] = repeat
+	}
 	result.Repeat = "started"
 	result.Cause.Kind = "flake"
 	result.Cause.Name = strings.Join(result.Cause.Tests, ", ")
 	if err := withLock(install, func() error {
+		history, err := readLines[Result](seams.resultsPath(install))
+		if err != nil {
+			return err
+		}
+		for _, prior := range history {
+			if prior.Tree == result.Tree && prior.Repeat == "started" {
+				return &NoRepeat{}
+			}
+		}
 		if err := recordProofStop(install, result); err != nil {
 			return err
 		}
 		return appendLine(seams.resultsPath(install), result)
 	}); err != nil {
+		var refused *NoRepeat
+		if errors.As(err, &refused) {
+			// The tree's one repeat is spent: the red keeps its ordinary cause.
+			result.FlakeRepeats, result.Repeat = nil, ordinaryRepeat
+			*result.Cause = ordinary
+			return replay(result, previous)
+		}
 		result.Reason = "the repeat could not be recorded: " + err.Error()
 		return result
 	}
@@ -92,29 +126,36 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 		result.Reason = "the repeat's log folder could not be made: " + err.Error()
 		return result
 	}
-	repeats := make([]Running, len(result.Failed))
+	repeats := result.FlakeRepeats
 	var failures []string
 	for i, unit := range result.Failed {
-		repeat := running
-		repeat.Attempt = fmt.Sprintf("%s-repeat-%d", running.Attempt, i+1)
-		repeat.Log = filepath.Join(Dir(install), "proofs", repeat.Attempt+".log")
-		repeats[i] = repeat
+		repeat := repeats[i]
+		var report checkReport
 		file, err := os.OpenFile(repeat.Log, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 		if err == nil {
-			_, err = runCheck(seams, dir, command, repeat, unit.Unit, decision, file, &proofOutput{output: io.Discard})
-			if info, statErr := file.Stat(); statErr == nil {
-				_, copyErr := io.Copy(output, io.NewSectionReader(file, 0, info.Size()))
-				err = errors.Join(err, copyErr)
+			report, err = runCheck(seams, dir, command, repeat, unit.Unit, decision, file, &proofOutput{output: io.Discard})
+			if err == nil && (report.kind != "complete" || len(report.failed) != 0) {
+				err = fmt.Errorf("the repeat has no complete passing report")
 			}
+
 			err = errors.Join(err, file.Close())
 		}
 		if err != nil {
+			result.Cause.Kind = "unclassified"
+			if report.kind != "complete" {
+				result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
+			}
 			failures = append(failures, unit.Unit+": "+err.Error())
 		}
 	}
 	if len(failures) > 0 {
 		result.Reason = strings.Join(failures, "; ")
-		return replay(result, result)
+		return recordFlakes(seams, result, result, "alone", repeats)
+	}
+	result.RepeatComplete = true
+	if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result) }); err != nil {
+		result.Reason = "the repeat's outcome could not be recorded: " + err.Error()
+		return result
 	}
 	green := result
 	green.Result, green.Repeat, green.Failed, green.Load, green.Reason, green.Cause = Green, "", nil, 0, "", nil

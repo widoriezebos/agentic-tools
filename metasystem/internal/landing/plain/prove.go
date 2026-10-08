@@ -28,6 +28,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
@@ -62,6 +63,10 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
+	FlakeRepeats          []Running            `json:"flake-repeats,omitempty"`
+	RepeatComplete        bool                 `json:"repeat-complete,omitempty"`
+	FlakePublished        bool                 `json:"flake-published,omitempty"`
+	Flakes                []FlakeRecord        `json:"flakes,omitempty"`
 	ClassificationOf      string               `json:"classification-of,omitempty"`
 	NextFull              *Result              `json:"next-full,omitempty"`
 	ClassificationPolicy  PolicyValue          `json:"classification-policy,omitempty"`
@@ -123,6 +128,7 @@ type FlakeRecord struct {
 	Commit, Tree, Attempt, Log, Where string
 	Load                              float64
 	Repeat, RepeatAttempt, RepeatLog  string
+	Outputs, RepeatOutputs            map[string]repoproof.TestOutput
 }
 
 // FlakeRecorded is the confirmed record's fix goal and sighting count.
@@ -314,6 +320,12 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 // checkBound reads the newest line under the lane lock before any check starts.
 func (s ProveSeams) checkBound(install, tree string) (Result, bool, error) {
 	result, found, err := resultFor(s.resultsPath(install), tree)
+	if err == nil && found && result.Result == Red && result.RepeatComplete && len(result.FlakeRepeats) > 0 {
+		green := result
+		green.Result, green.Failed, green.Cause = Green, nil, nil
+		result = recordFlakes(s, result, green, "alone", result.FlakeRepeats)
+		err = appendLine(s.resultsPath(install), result)
+	}
 	if err == nil && found && result.Result == Red && s.Person == nil && (result.ClassificationPending || result.ClassificationPerson == nil && result.ClassificationOf == "") {
 		err = redContinuationLocked(install, result, s)
 	}
@@ -1108,7 +1120,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		result.Repeat = "started"
 	}
 	if runErr == nil {
-		if previous.Result == Red && len(previous.Failed) > 0 && (previous.Cause == nil || previous.Cause.Kind != "environment") {
+		if previous.Result == Red && len(previous.FlakeRepeats) == 0 && len(previous.Failed) > 0 && (previous.Cause == nil || previous.Cause.Kind != "environment") {
 			return recordFlakes(seams, previous, result, "whole", []Running{running})
 		}
 		return result

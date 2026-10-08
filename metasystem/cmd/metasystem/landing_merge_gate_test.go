@@ -212,12 +212,12 @@ func TestLandingMergeGateRegisteredFlakeRepeatsAlone(t *testing.T) {
 	}
 	b.fail = func(cmd *exec.Cmd, only string) (string, error) {
 		if commandEnv(cmd, "LANDING_COMMIT") == "merge-b" && only == "" {
-			return replayFailure, exec.Command("false").Run()
+			return flakeTestEvents([]string{"TestBroken"}, "fail") + replayFailure, exec.Command("false").Run()
 		}
-		return "LANDING-CHECKED\t0\n", nil
+		return flakeTestEvents([]string{"TestBroken"}, "pass") + "LANDING-CHECKED\t0\n", nil
 	}
 	green := gateResult(t, b, 0)
-	if !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-b:u/a"}) || len(records) != 1 || records[0].Repeat != "alone" || records[0].Commit != "merge-b" || records[0].RepeatLog == records[0].Log || !strings.Contains(green.Reason, "fix-flaky-u-a") {
+	if !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-b:u/a"}) || len(records) != 1 || len(records[0].Outputs) != 1 || len(records[0].RepeatOutputs) != 1 || records[0].Repeat != "alone" || records[0].Commit != "merge-b" || records[0].RepeatLog == records[0].Log || !strings.Contains(green.Reason, "fix-flaky-u-a") {
 		t.Fatalf("flake: %+v records=%+v runs=%v", green, records, b.runs)
 	}
 	if _, err := os.Stat(records[0].RepeatLog); err != nil {

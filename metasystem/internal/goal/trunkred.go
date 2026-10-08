@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 )
 
 const (
@@ -40,6 +42,8 @@ type TrunkRedRerun struct {
 	LogPath   string `json:"logPath"`
 	LogDigest string `json:"logDigest"`
 	Sample    string `json:"sample"`
+
+	Output *repoproof.TestOutput `json:"output,omitempty"`
 }
 
 // TrunkRedHang is the watchdog's evidence of a stalled group.
@@ -90,6 +94,8 @@ type TrunkRedSighting struct {
 	Sample string         `json:"sample,omitempty"`
 	Rerun  *TrunkRedRerun `json:"rerun,omitempty"`
 	Hang   *TrunkRedHang  `json:"hang,omitempty"`
+
+	Output *repoproof.TestOutput `json:"output,omitempty"`
 
 	Load     float64  `json:"load,omitempty"`
 	Surfaces []string `json:"surfaces,omitempty"`
@@ -475,7 +481,7 @@ func cleanTrunkRedEntry(entry TrunkRedEntry) TrunkRedEntry {
 		sighting.Where, sighting.Tree, sighting.Sample = clean(sighting.Where), clean(sighting.Tree), clean(sighting.Sample)
 		if sighting.Rerun != nil {
 			rerun := TrunkRedRerun{Attempt: clean(sighting.Rerun.Attempt), LogPath: clean(sighting.Rerun.LogPath),
-				LogDigest: clean(sighting.Rerun.LogDigest), Sample: clean(sighting.Rerun.Sample)}
+				LogDigest: clean(sighting.Rerun.LogDigest), Sample: clean(sighting.Rerun.Sample), Output: sighting.Rerun.Output}
 			sighting.Rerun = &rerun
 		}
 		if sighting.Hang != nil {

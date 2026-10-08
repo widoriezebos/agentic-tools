@@ -26,7 +26,7 @@ func TestProofCauseRecordsExistingDecisions(t *testing.T) {
 				// The classifier proves an unknown red on main by replay.
 				command, b.seams.Judge, kind = failedReport, nil, "main"
 			case "flake record failed":
-				command = "if [ -z \"$LANDING_ONLY\" ]; then " + failedReport + "; fi; exit 0"
+				command = "if [ -z \"$LANDING_ONLY\" ]; then " + failedReport + "; fi; printf 'LANDING-CHECKED\\t0\\n'"
 				b.seams.RecordFlake, kind = nil, "flake"
 			}
 			proof := b.run(command)

@@ -6,6 +6,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 )
 
 // FlakeRecordArgs describes a failed check followed by a passing repeat on one tree.
@@ -15,6 +17,7 @@ type FlakeRecordArgs struct {
 	Load                                                   float64
 	Repeat, Where                                          string
 	Rerun                                                  TrunkRedRerun
+	Outputs, RepeatOutputs                                 map[string]repoproof.TestOutput
 }
 
 // FlakeRecordResult names the fix and the number of sightings in the register.
@@ -132,6 +135,14 @@ func flakeRecordRequest(r VerbRequest, args FlakeRecordArgs) (PublishRequest, er
 			current := openTrunkRedByIdentity(entries, group.Identity)
 			sighting := &current.Sightings[len(current.Sightings)-1]
 			sighting.Load, sighting.Surfaces, sighting.Repeat = args.Load, args.Surfaces, args.Repeat
+			if output, ok := args.Outputs[current.TestName]; ok {
+				sighting.Output = &output
+			}
+			if output, ok := args.RepeatOutputs[current.TestName]; ok {
+				rerun := *sighting.Rerun
+				rerun.Output = &output
+				sighting.Rerun = &rerun
+			}
 		}
 		count := len(entry.Sightings)
 		for _, prior := range tree.TrunkRed {

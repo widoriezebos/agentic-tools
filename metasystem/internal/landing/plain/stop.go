@@ -289,6 +289,9 @@ func recordProofStop(install string, result Result) error {
 	}
 	s.Attempt = len(attempts)
 	s.Decision, s.Handoff = "stop", "ask lane"
+	if result.Repeat == "started" && len(result.FlakeRepeats) > 0 {
+		s.Required = strings.Fields(proofCommand(mode.Gate, result.Trunk))
+	}
 	switch result.Cause.Kind {
 	case "flake":
 		s.Decision, s.Handoff = "repeat", "landing prove"

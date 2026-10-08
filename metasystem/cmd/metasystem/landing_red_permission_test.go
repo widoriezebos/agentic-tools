@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -845,6 +846,9 @@ func TestLandingClassifyRetainsSavedScopedAdmission(t *testing.T) {
 	helmMust(t, err)
 	_, err = file.Write(append(raw, '\n'))
 	helmMust(t, err, file.Close())
+	events := flakeTestEvents([]string{"TestA"}, "fail")
+	rawLog, err := os.ReadFile(saved.Log)
+	helmMust(t, err, os.WriteFile(saved.Log, append([]byte(events), rawLog...), 0600))
 	script := filepath.Join(filepath.Dir(b.checkout), "check")
 	body := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$LANDING_COMMIT\" \"$LANDING_TREE\" \"$LANDING_PROOF_SCOPE\" >> " + shellCommand([]string{b.trace}) + "\nprintf 'LANDING-CHECKED\\t0\\n'\n"
 	helmMust(t, testexec.WriteFile(script, []byte(body), 0755))
@@ -858,6 +862,7 @@ func TestLandingClassifyRetainsSavedScopedAdmission(t *testing.T) {
 		if commandEnv(cmd, "LANDING_ONLY") != "u/a" || commandEnv(cmd, "LANDING_COMMIT") != saved.Commit || commandEnv(cmd, "LANDING_PROOF_SCOPE") != "scoped" || commandEnv(cmd, "LANDING_PROOF_BASE") != saved.Base || commandEnv(cmd, "LANDING_PROOF_GROUPS") != "records rules" {
 			t.Fatalf("classification changed saved scope: unit=%q commit=%q scope=%q base=%q groups=%q", commandEnv(cmd, "LANDING_ONLY"), commandEnv(cmd, "LANDING_COMMIT"), commandEnv(cmd, "LANDING_PROOF_SCOPE"), commandEnv(cmd, "LANDING_PROOF_BASE"), commandEnv(cmd, "LANDING_PROOF_GROUPS"))
 		}
+		fmt.Fprint(cmd.Stdout, flakeTestEvents([]string{"TestA"}, "pass"))
 		return cmd.Run()
 	}
 	b.success(t, "landing", "prove", "--classify", saved.Attempt)

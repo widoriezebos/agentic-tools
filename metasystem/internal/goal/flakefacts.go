@@ -47,10 +47,13 @@ func FlakeFacts(entries []TrunkRedEntry) []FlakeFact {
 				if sighting.SeenAt > at {
 					at = sighting.SeenAt
 				}
-				if !slices.ContainsFunc(sightings, func(prior TrunkRedSighting) bool {
+				index := slices.IndexFunc(sightings, func(prior TrunkRedSighting) bool {
 					return prior.Opid == sighting.Opid || prior.Attempt == sighting.Attempt
-				}) {
+				})
+				if index < 0 {
 					sightings = append(sightings, sighting)
+				} else if class == TrunkRedClassFlake {
+					sightings[index] = sighting
 				}
 			}
 			if entry.Closed != nil && entry.Closed.At >= at {

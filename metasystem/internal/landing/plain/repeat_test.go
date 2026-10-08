@@ -1,6 +1,7 @@
 package plain
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -365,7 +366,8 @@ func TestRepeatKnownUnitsAloneAndRecordsBeforeGreen(t *testing.T) {
 		}
 		return recorded, err
 	}
-	command := fmt.Sprintf("if [ -z \"$LANDING_ONLY\" ]; then %s; fi; /usr/bin/grep -q '\"repeat\":\"started\"' %q", failedReport, resultsPath(b.install))
+	command := fmt.Sprintf("if [ -z \"$LANDING_ONLY\" ]; then %s; fi; /usr/bin/grep -q '\"repeat\":\"started\"' %q", failedEvidenceReport(), resultsPath(b.install))
+	command += "; " + passingEvidenceReport()
 	green := b.run(command)
 	if green.Result != Green || len(b.records) != 2 {
 		t.Fatalf("unit repeats: %+v records %+v", green, b.records)
@@ -383,7 +385,7 @@ func TestRepeatKnownUnitsAloneAndRecordsBeforeGreen(t *testing.T) {
 		t.Fatalf("worktree remains: %v", err)
 	}
 	for i, r := range b.records {
-		if r.Repeat != "alone" || r.Load != 2.75 || r.Attempt != "a1" || r.Tree != "tree" || r.Commit != "commit" || r.Log != green.Log || r.RepeatAttempt == r.Attempt || r.RepeatLog == r.Log || !reflect.DeepEqual(r.Surfaces, []string{fmt.Sprintf("surface-%c", 'a'+i)}) {
+		if len(r.Outputs) != len(r.Tests) || len(r.RepeatOutputs) != len(r.Tests) || r.Repeat != "alone" || r.Load != 2.75 || r.Attempt != "a1" || r.Tree != "tree" || r.Commit != "commit" || r.Log != green.Log || r.RepeatAttempt == r.Attempt || r.RepeatLog == r.Log || !reflect.DeepEqual(r.Surfaces, []string{fmt.Sprintf("surface-%c", 'a'+i)}) {
 			t.Fatalf("sighting: %+v", r)
 		}
 		if _, err := os.Stat(r.RepeatLog); err != nil {
@@ -394,7 +396,7 @@ func TestRepeatKnownUnitsAloneAndRecordsBeforeGreen(t *testing.T) {
 			t.Fatalf("reason: %s", green.Reason)
 		}
 	}
-	if lines := b.lines(); len(lines) != 3 || !lines[0].ClassificationPending || lines[0].Result != Red || lines[1].Repeat != "started" {
+	if lines := b.lines(); len(lines) != 4 || !lines[0].ClassificationPending || lines[0].Result != Red || lines[1].Repeat != "started" {
 		t.Fatalf("results: %+v", lines)
 	}
 }
@@ -411,21 +413,100 @@ func TestRepeatNewTestAllowsOneWholeCheck(t *testing.T) {
 		return m, e
 	}
 	// A whole repeat requires isolated greens on every replay tree.
-	red := b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedReport)
+	red := b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedEvidenceReport())
 	if red.Result != Red || red.Repeat != "allowed" || len(b.records) != 0 {
 		t.Fatalf("new test: %+v records %+v", red, b.records)
 	}
-	green := b.run(fmt.Sprintf("/usr/bin/grep -q '\"repeat\":\"started\"' %q", resultsPath(b.install)))
+	green := b.run(fmt.Sprintf("/usr/bin/grep -q '\"repeat\":\"started\"' %q; %s", resultsPath(b.install), passingEvidenceReport()))
 	if green.Result != Green || len(b.records) != 2 {
 		t.Fatalf("whole repeat: %+v records %+v", green, b.records)
 	}
 	for _, r := range b.records {
-		if r.Repeat != "whole" || r.Attempt != red.Attempt || r.RepeatAttempt != green.Attempt || r.Log != red.Log || len(r.Surfaces) != 1 || r.Load != 2.75 || !strings.Contains(green.Reason, "again in a whole check") {
+		if len(r.Outputs) != len(r.Tests) || len(r.RepeatOutputs) != len(r.Tests) || r.Repeat != "whole" || r.Attempt != red.Attempt || r.RepeatAttempt != green.Attempt || r.Log != red.Log || len(r.Surfaces) != 1 || r.Load != 2.75 || !strings.Contains(green.Reason, "again in a whole check") {
 			t.Fatalf("whole sighting: %+v reason %s", r, green.Reason)
 		}
 	}
 	if lines := b.lines(); len(lines) != 4 || !lines[0].ClassificationPending || lines[2].Repeat != "started" {
 		t.Fatalf("results: %+v", lines)
+	}
+}
+
+func TestRepeatKnownRedWholeCheckFailureReplaysOnMain(t *testing.T) {
+	t.Parallel()
+	b := newRepeatBed(t)
+	failed := []FailedUnit{{Unit: "u/a", Tests: []string{"TestA"}}}
+	previous := Result{Tree: "tree", Commit: "commit", Result: Red, Repeat: "allowed", Attempt: "first", Failed: failed,
+		Cause: &Cause{Kind: "unclassified", Tests: failingTests(failed), Evidence: "first.log"}}
+	if err := withLock(b.install, func() error { return appendLine(resultsPath(b.install), previous) }); err != nil {
+		t.Fatal(err)
+	}
+	judgements := 0
+	b.seams.Judge = func(checkout, commit string, units []FailedUnit) (map[string]UnitJudgement, error) {
+		judgements++
+		if checkout != b.checkout || commit != "commit" || !reflect.DeepEqual(units, failed) {
+			t.Fatalf("judge input: %s %s %+v", checkout, commit, units)
+		}
+		return map[string]UnitJudgement{"u/a": {Known: true}}, nil
+	}
+	var calls []*exec.Cmd
+	b.seams.Command = func(cmd *exec.Cmd) error {
+		calls = append(calls, cmd)
+		fmt.Fprint(cmd.Stdout, plainTestEvents("u/a", []string{"TestA"}, "fail"), "LANDING-FAILED\tu/a\tTestA\nLANDING-CHECKED\t1\n")
+		return errors.New("red")
+	}
+	red := b.run("fixture")
+	if red.Result != Red || red.Cause == nil || red.Cause.Kind != "main" || red.Cause.Name != "red:u/a:TestA" || red.Repeat != "started" || len(red.FlakeRepeats) != 0 || len(b.records) != 0 {
+		t.Fatalf("whole repeat lost main attribution: %+v cause=%+v records=%+v", red, red.Cause, b.records)
+	}
+	if judgements != 1 || len(calls) != 2 {
+		t.Fatalf("want one judgement, one whole repeat and one main replay: judgements=%d calls=%d", judgements, len(calls))
+	}
+	for i, only := range []string{"", "u/a"} {
+		attempt := "a1"
+		if i == 1 {
+			attempt += "-replay-1"
+		}
+		wantDir := filepath.Join(proofTrees(b.install), attempt, "metasystem")
+		if commandEnv(calls[i], "LANDING_ONLY") != only || commandEnv(calls[i], "LANDING_COMMIT") != "commit" || calls[i].Dir != wantDir {
+			t.Fatalf("check %d: only=%q commit=%q dir=%q; want only=%q commit=commit dir=%q", i, commandEnv(calls[i], "LANDING_ONLY"), commandEnv(calls[i], "LANDING_COMMIT"), calls[i].Dir, only, wantDir)
+		}
+	}
+	lines := b.lines()
+	if len(lines) != 4 || lines[1].Repeat != "started" || !reflect.DeepEqual(lines[len(lines)-1], red) {
+		t.Fatalf("whole repeat and its attributed result were not recorded: %+v", lines)
+	}
+	b.refused()
+}
+
+func TestFlakeRepeatHistoryRefusalPreservesOrdinaryCause(t *testing.T) {
+	t.Parallel()
+	b := newRepeatBed(t)
+	prior := Result{Tree: "tree", Commit: "commit", Result: Red, Repeat: "started", Attempt: "first"}
+	if err := withLock(b.install, func() error { return appendLine(resultsPath(b.install), prior) }); err != nil {
+		t.Fatal(err)
+	}
+	failed := []FailedUnit{{Unit: "u/a", Tests: []string{"TestA"}}}
+	ordinary := Cause{Kind: "unclassified", Tests: failingTests(failed), Evidence: "red.log"}
+	red := Result{Tree: "tree", Commit: "commit", Result: Red, Attempt: "second", Failed: failed, Cause: &Cause{Kind: ordinary.Kind, Tests: ordinary.Tests, Evidence: ordinary.Evidence}}
+	b.seams.Judge = func(string, string, []FailedUnit) (map[string]UnitJudgement, error) {
+		return map[string]UnitJudgement{"u/a": {Known: true}}, nil
+	}
+	b.seams.Command = func(*exec.Cmd) error {
+		t.Fatal("a spent repeat executed another check")
+		return nil
+	}
+	replays := 0
+	result := continueRed(b.seams, b.install, b.checkout, "fixture", b.install,
+		Running{Attempt: red.Attempt, Tree: red.Tree, Commit: red.Commit}, scopeDecision{}, io.Discard, red, Result{},
+		func(result, previous Result) Result {
+			replays++
+			if result.Cause == nil || !reflect.DeepEqual(*result.Cause, ordinary) || result.Repeat != "" || len(result.FlakeRepeats) != 0 || previous.Result != "" {
+				t.Fatalf("spent repeat reached replay with a flake cause or allowance: %+v cause=%+v previous=%+v", result, result.Cause, previous)
+			}
+			return result
+		})
+	if replays != 1 || result.Result != Red || len(b.records) != 0 || !reflect.DeepEqual(b.lines(), []Result{prior}) {
+		t.Fatalf("spent repeat changed history or skipped replay: %+v replays=%d records=%+v history=%+v", result, replays, b.records, b.lines())
 	}
 }
 
@@ -441,7 +522,7 @@ func TestRepeatFailureAndUnconfirmedRecordStayRed(t *testing.T) {
 					return map[string]UnitJudgement{"u/a": {}, "u/b": {}}, nil
 				}
 				// The repeat rule requires isolated greens before the whole retry.
-				b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedReport)
+				b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedEvidenceReport())
 			}
 			if strings.Contains(name, "record error") {
 				b.seams.RecordFlake = func(FlakeRecord) (FlakeRecorded, error) { return FlakeRecorded{}, errors.New("record not confirmed") }
@@ -449,14 +530,14 @@ func TestRepeatFailureAndUnconfirmedRecordStayRed(t *testing.T) {
 			if name == "nil record" {
 				b.seams.RecordFlake = nil
 			}
-			command := "if [ -z \"$LANDING_ONLY\" ]; then " + failedReport + "; fi; exit 0"
+			command := "if [ -z \"$LANDING_ONLY\" ]; then " + failedEvidenceReport() + "; fi; " + passingEvidenceReport()
 			if name == "unit fails" {
-				command = "if [ -z \"$LANDING_ONLY\" ]; then " + failedReport + "; fi; exit 2"
+				command = "if [ -z \"$LANDING_ONLY\" ]; then " + failedEvidenceReport() + "; fi; exit 2"
 			}
 			if whole {
-				command = "exit 0"
+				command = passingEvidenceReport()
 				if name == "whole fails" {
-					command = failedReport
+					command = failedEvidenceReport()
 				}
 			}
 			red := b.run(command)
@@ -465,8 +546,8 @@ func TestRepeatFailureAndUnconfirmedRecordStayRed(t *testing.T) {
 			}
 			if name == "unit fails" {
 				trace, _ := os.ReadFile(b.trace)
-				if strings.Count(string(trace), "|tree|commit\n") != 4 {
-					t.Fatalf("did not repeat every unit and replay its failure: %s", trace)
+				if strings.Count(string(trace), "|tree|commit\n") != 3 {
+					t.Fatalf("did not repeat every unit exactly once: %s", trace)
 				}
 			}
 			b.refused()
@@ -584,4 +665,27 @@ func TestRepeatRedCannotBorrowInheritedGreenPermission(t *testing.T) {
 			}
 		})
 	}
+}
+
+func plainTestEvents(unit string, tests []string, action string) string {
+	var out strings.Builder
+	for _, test := range tests {
+		event, _ := json.Marshal(map[string]string{"Action": action, "Package": unit, "Test": test})
+		out.Write(event)
+		out.WriteByte('\n')
+	}
+	event, _ := json.Marshal(map[string]string{"Action": action, "Package": unit})
+	out.Write(event)
+	out.WriteByte('\n')
+	return out.String()
+}
+
+func failedEvidenceReport() string {
+	events := plainTestEvents("u/a", []string{"TestA", "TestB"}, "fail") + plainTestEvents("u/b", []string{"TestC"}, "fail")
+	return "printf '%s' '" + events + "'; " + failedReport
+}
+
+func passingEvidenceReport() string {
+	events := plainTestEvents("u/a", []string{"TestA", "TestB"}, "pass") + plainTestEvents("u/b", []string{"TestC"}, "pass")
+	return "printf '%s' '" + events + "'; printf 'LANDING-CHECKED\\t0\\n'"
 }

@@ -645,6 +645,7 @@ func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 			fmt.Fprint(command.Stdout, "LANDING-CHECKED\t0\n")
 			return nil
 		}
+		fmt.Fprint(command.Stdout, plainTestEvents("u/a", []string{"TestA"}, "fail"))
 		fmt.Fprint(command.Stdout, "landing environment image toolchain\nlanding group unrelated failed 7\nLANDING-FAILED\tu/a\tTestA\nLANDING-LOAD\t2.75\nLANDING-CHECKED\t1\n")
 		return errors.New("check failed")
 	}
@@ -661,6 +662,7 @@ func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 	b.seams.NewID = func() string { return "whole-repeat" }
 	b.seams.Command = func(command *exec.Cmd) error {
 		b.calls = append(b.calls, command)
+		fmt.Fprint(command.Stdout, plainTestEvents("u/a", []string{"TestA"}, "pass"))
 		fmt.Fprint(command.Stdout, "landing environment image toolchain\nlanding group unrelated passed 8\n")
 		return nil
 	}
@@ -669,8 +671,17 @@ func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 		records = append(records, record)
 		return FlakeRecorded{Goal: "fix-flaky-a", Seen: 1}, nil
 	}
+	if err := b.output.Close(); err != nil {
+		t.Fatal(err)
+	}
+	repeatLog, err := os.Create(filepath.Join(b.install, "repeat-proof.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.output = repeatLog
+	t.Cleanup(func() { repeatLog.Close() })
 	green := b.run(t)
-	if green.Result != Green || green.Scope != "scoped" || green.FullAt != b.base.FullAt || len(records) != 1 || records[0].Repeat != "whole" || records[0].RepeatAttempt != green.Attempt || !strings.Contains(green.Reason, "goal fix-flaky-a") || len(b.calls) != 3 {
+	if green.Result != Green || green.Scope != "scoped" || green.FullAt != b.base.FullAt || len(records) != 1 || len(records[0].Outputs) != 1 || len(records[0].RepeatOutputs) != 1 || records[0].Repeat != "whole" || records[0].RepeatAttempt != green.Attempt || !strings.Contains(green.Reason, "goal fix-flaky-a") || len(b.calls) != 3 {
 		t.Fatalf("scoped whole repeat: %+v, records %+v", green, records)
 	}
 }
@@ -693,8 +704,10 @@ func TestAScopedFlakeRepeatsWithTheEffectiveScope(t *testing.T) {
 				}
 				fmt.Fprintln(log, "landing environment "+environment)
 				if commandEnv(command, "LANDING_ONLY") != "" {
+					fmt.Fprint(log, plainTestEvents("u/a", []string{"TestA"}, "pass")+"LANDING-CHECKED\t0\n")
 					return nil
 				}
+				fmt.Fprint(log, plainTestEvents("u/a", []string{"TestA"}, "fail"))
 				fmt.Fprint(log, "landing group plans failed 9\nLANDING-FAILED\tu/a\tTestA\nLANDING-LOAD\t1.5\nLANDING-CHECKED\t1\n")
 				return errors.New("failed check")
 			}
@@ -713,7 +726,7 @@ func TestAScopedFlakeRepeatsWithTheEffectiveScope(t *testing.T) {
 			if changedEnvironment {
 				wantScope, wantCalls, wantGroups = "full", 3, ""
 			}
-			if result.Result != Green || result.Scope != wantScope || len(b.calls) != wantCalls || judgements != 1 || len(records) != 1 || records[0].Repeat != "alone" || records[0].Load != 1.5 || !strings.Contains(result.Reason, "goal fix-flaky-a") {
+			if result.Result != Green || result.Scope != wantScope || len(b.calls) != wantCalls || judgements != 1 || len(records) != 1 || len(records[0].Outputs) != 1 || len(records[0].RepeatOutputs) != 1 || records[0].Repeat != "alone" || records[0].Load != 1.5 || !strings.Contains(result.Reason, "goal fix-flaky-a") {
 				t.Fatalf("effective flake proof: %+v, calls %d, judgements %d, records %+v", result, len(b.calls), judgements, records)
 			}
 			last := b.calls[len(b.calls)-1]
@@ -721,7 +734,7 @@ func TestAScopedFlakeRepeatsWithTheEffectiveScope(t *testing.T) {
 				t.Fatal("unit repeat lost the effective scope")
 			}
 			lines, err := Results(b.install)
-			wantLines := 4
+			wantLines := 5
 			if changedEnvironment {
 				wantLines++
 			}

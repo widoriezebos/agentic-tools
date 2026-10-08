@@ -113,9 +113,9 @@ func TestLandingProveRecordsEachFlakeOnce(t *testing.T) {
 			failure := &exec.ExitError{ProcessState: replayFalseState(t)}
 			b.fail = func(_ *exec.Cmd, only string) (string, error) {
 				if only == "" {
-					return "LANDING-FAILED\tu/a\t" + strings.Join(names, " ") + "\nLANDING-CHECKED\t1\n", failure
+					return flakeTestEvents(names, "fail") + "LANDING-FAILED\tu/a\t" + strings.Join(names, " ") + "\nLANDING-CHECKED\t1\n", failure
 				}
-				return "LANDING-CHECKED\t0\n", nil
+				return flakeTestEvents(names, "pass") + "LANDING-CHECKED\t0\n", nil
 			}
 			if !main {
 				b.prepareBatch(t)
@@ -145,6 +145,9 @@ func TestLandingProveRecordsEachFlakeOnce(t *testing.T) {
 					t.Fatalf("test entry: %+v", entry)
 				}
 				s := entry.Sightings[0]
+				if s.Output == nil || s.Rerun == nil || s.Rerun.Output == nil {
+					t.Fatalf("sighting lost output: %+v", s)
+				}
 				if (s.Where == "") != main || s.BaseTree != proof.Data.Tree || s.Attempt != observation.Attempt || s.LogPath != observation.LogPath || s.Rerun == nil || s.Rerun.Attempt != observation.Rerun.Attempt || s.Rerun.LogPath != observation.Rerun.LogPath || s.Rerun.LogPath == s.LogPath {
 					t.Fatalf("captured attempts and location: %+v observation=%+v", s, observation)
 				}
