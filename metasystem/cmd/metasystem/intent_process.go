@@ -1272,14 +1272,14 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 		if runner.Manager.Now != nil {
 			now = runner.Manager.Now()
 		} else {
-			now, err = inv.owners.commandNow(inv.stateRoot)
+			now, err = inv.owners.commandNow(inv.layout.InstallationRoot.Path())
 			if err != nil {
 				return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the status clock could not be read",
 					next: inv.publicArgv("work", "status", ref.qualified()), nextReason: "reads the run again", Details: []string{err.Error()}})
 			}
 			runner.Manager = &launch.Manager{Store: runner.Manager.Store, Now: func() time.Time { return now }}
 		}
-		report := readProcessReport(inv.stateRoot, record.Goal, record.Unit, runner, now, nil)
+		report := readProcessReport(inv.stateRoot, inv.layout.InstallationRoot.Path(), record.Goal, record.Unit, runner, now, nil)
 		lines := report.Lines
 		for _, round := range record.Rounds {
 			line := fmt.Sprintf("round %d: %s", round.Number, round.Outcome)

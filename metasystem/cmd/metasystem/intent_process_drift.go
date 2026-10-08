@@ -111,7 +111,7 @@ func (inv *intentInvocation) observeProcessDrift(unit launch.UnitRunRecord) erro
 	if len(drift.Unknown) > 0 {
 		return fmt.Errorf("process measurement unavailable: %v", drift.Unknown)
 	}
-	return processchange.Observe(inv.stateRoot, unit.Goal, episode, drift)
+	return processchange.Observe(inv.stateRoot, inv.layout.InstallationRoot, unit.Goal, episode, drift)
 }
 
 func (inv *intentInvocation) refreshProcessDrift(goal string) error {

@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 )
 
@@ -64,8 +65,9 @@ func ReadState(root, goal string) (state State, err error) {
 	return state, err
 }
 
-// Observe keeps one unresolved stop per goal and unit under the settings process lock.
-func Observe(root, goal, episode string, drift processmeasure.Drift) error {
+// Observe keeps one unresolved stop per goal and unit under the settings process
+// lock in project state, and asks the person through the serving installation.
+func Observe(root string, installation roots.Installation, goal, episode string, drift processmeasure.Drift) error {
 	if len(drift.Stops) == 0 {
 		return nil
 	}
@@ -133,7 +135,7 @@ func Observe(root, goal, episode string, drift processmeasure.Drift) error {
 		}
 	}
 	s.Impact = impact
-	q, _, err := channel.AskOrFind(channel.AskRequest{RepoRoot: root, Goal: goal, Kind: "other", Now: driftTime, Facts: []string{"Process drift " + id + ": " + s.Stop.Class, "Observed " + fmt.Sprint(s.Stop.Measure.Now) + "; allowance " + fmt.Sprint(s.Stop.Measure.Previous), impact}, Wants: wants})
+	q, _, err := channel.AskOrFind(channel.AskRequest{RepoRoot: installation.Path(), Goal: goal, Kind: "other", Now: driftTime, Facts: []string{"Process drift " + id + ": " + s.Stop.Class, "Observed " + fmt.Sprint(s.Stop.Measure.Now) + "; allowance " + fmt.Sprint(s.Stop.Measure.Previous), impact}, Wants: wants})
 	if err != nil {
 		return err
 	}
@@ -153,7 +155,7 @@ func settingReverse(act ProcessAct) string {
 }
 
 // resolveUndo removes only the hold attributed to the successfully reversed act.
-func resolveUndo(root string, act ProcessAct) error {
+func resolveUndo(root string, installation roots.Installation, act ProcessAct) error {
 	if act.Undo == "" {
 		return nil
 	}
@@ -174,7 +176,7 @@ func resolveUndo(root string, act ProcessAct) error {
 			}
 		}
 		if stop.Question != "" {
-			if _, err := channel.Withdraw(root, stop.Question, stop.Resolution, nil, channel.DestinationConfig{}); err != nil {
+			if _, err := channel.Withdraw(installation.Path(), stop.Question, stop.Resolution, nil, channel.DestinationConfig{}); err != nil {
 				return err
 			}
 		}

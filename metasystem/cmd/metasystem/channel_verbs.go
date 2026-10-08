@@ -89,7 +89,7 @@ func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, reso
 		machine = "this machine"
 	}
 	read := func(root string, at time.Time, boundary processmeasure.Watermark) processmeasure.Projection {
-		return readProcessReport(root, "", "", nil, at, boundary)
+		return readProcessReport(root, root, "", "", nil, at, boundary)
 	}
 	if len(processReads) > 0 {
 		read = processReads[0]

@@ -551,9 +551,10 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		})
 		plan.FullArgv = strings.Fields(full)
 		person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
-		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
-		if err == nil {
-			inv.stateRoot = root.Path()
+		var err error
+		if problem := inv.selectLayoutRoot(); problem != nil {
+			err = fmt.Errorf("the estimate's goal state cannot be read: %s", problem.Summary)
+		} else {
 			err = inv.freezeUnitEstimate(plan, inv.designGateFacts(inv.layout.InstallationRoot.Path(), plan.Goal), person)
 		}
 		if err != nil {
@@ -2781,12 +2782,16 @@ var authoritySettings = map[string]bool{"metasystem.runtimes": true, "landing.ba
 // directPersonProof refuses unless this shell is the person at the enrolled
 // terminal, proven by the walk itself.
 func (inv *intentInvocation) directPersonProof(act string) *intentResult {
+	if problem := inv.resolveLayout(); problem != nil {
+		return problem
+	}
+	authorityRoot := checkoutAuthorityRoot(inv.layout)
 	// refused says, in plain words, that only the person at the enrolled
 	// terminal sets this, why this shell is not that, and the one command
 	// that resolves it (the enrollment, the name filled in, or the same
 	// command in a terminal the person opened).
 	refused := func(reason string, err error) *intentResult {
-		remedy := humanauthority.RemedyFor(inv.stateRoot, err, inv.personName(""), inv.typedArgv())
+		remedy := humanauthority.RemedyFor(authorityRoot, err, inv.personName(""), inv.typedArgv())
 		if err != nil && remedy.Reason != "" {
 			reason = remedy.Reason
 		}
@@ -2811,16 +2816,16 @@ func (inv *intentInvocation) directPersonProof(act string) *intentResult {
 	if inv.owners.prove == nil || inv.owners.commandNow == nil {
 		return refused("who is at this terminal can't be checked here", nil)
 	}
-	now, err := inv.owners.commandNow(inv.stateRoot)
+	now, err := inv.owners.commandNow(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return refused("the clock can't be read", err)
 	}
-	proof, err := inv.owners.prove(inv.stateRoot, int64(os.Getppid()), nil, "", "", now)
+	proof, err := inv.owners.prove(authorityRoot, int64(os.Getppid()), nil, "", "", now)
 	if err != nil {
 		return refused(humanauthority.PlainReason(err), err)
 	}
-	if proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
-		_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, proof, act, "set only by the person's own proof", now)
+	if proof.Helm != nil || !proof.EnrolledTerminalFor(authorityRoot) {
+		_ = humanauthority.RecordAttorneyRefusal(inv.layout.InstallationRoot.Path(), proof, act, "set only by the person's own proof", now)
 		return refused("this shell acts under the helm or a grant", nil)
 	}
 	return nil

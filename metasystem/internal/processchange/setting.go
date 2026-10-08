@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -162,7 +163,7 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 		if err := save(s.Root, path, act); err != nil {
 			return err
 		}
-		return resolveUndo(s.Root, act)
+		return resolveUndo(s.Root, roots.Installation(filepath.Dir(s.Conf)), act)
 	})
 	return
 }

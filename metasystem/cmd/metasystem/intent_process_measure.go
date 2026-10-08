@@ -16,7 +16,7 @@ import (
 )
 
 func (inv *intentInvocation) unitMeasureInput(work launch.NamedWork) processmeasure.Input {
-	return unitMeasureInput(work, inv.unitRunner(), inv.stateRoot)
+	return unitMeasureInput(work, inv.unitRunner(), inv.layout.InstallationRoot.Path())
 }
 
 func unitMeasureInput(work launch.NamedWork, runner *launch.UnitRunner, root string) processmeasure.Input {

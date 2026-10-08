@@ -11,7 +11,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 )
 
-func readProcessReport(root, goal, unit string, runner *launch.UnitRunner, now time.Time, boundary processmeasure.Watermark) processmeasure.Projection {
+// Process history belongs to project state; channel wait evidence belongs to
+// the installation that served the run.
+func readProcessReport(root, installation, goal, unit string, runner *launch.UnitRunner, now time.Time, boundary processmeasure.Watermark) processmeasure.Projection {
 	if runner == nil {
 		runner = &launch.UnitRunner{Manager: &launch.Manager{Store: launch.Store{}, Now: func() time.Time { return now }}}
 	}
@@ -32,7 +34,7 @@ func readProcessReport(root, goal, unit string, runner *launch.UnitRunner, now t
 		if unit != "" && run.Unit != unit {
 			continue
 		}
-		input := unitMeasureInput(run, runner, root)
+		input := unitMeasureInput(run, runner, installation)
 		all.Runs = append(all.Runs, input)
 		all.Steps = append(all.Steps, input.Steps...)
 	}
@@ -65,7 +67,7 @@ func runIntentChannelStatus(inv *intentInvocation) int {
 	}
 	var out, problem bytes.Buffer
 	code := channelStatus(inv.stateRoot, inv.input.switched("post"), &out, &problem, inv.owners.dependencies.machine, inv.owners.dependencies.endpoint, nil, func(root string, _ time.Time, boundary processmeasure.Watermark) processmeasure.Projection {
-		return readProcessReport(root, "", "", inv.unitRunner(), inv.unitRunner().Manager.Now(), boundary)
+		return readProcessReport(root, inv.layout.InstallationRoot.Path(), "", "", inv.unitRunner(), inv.unitRunner().Manager.Now(), boundary)
 	})
 	result := intentResult{Outcome: intentConfirmed, code: code, Summary: "this seat's status", text: strings.Split(strings.TrimSpace(out.String()), "\n"), Details: strings.Split(strings.TrimSpace(problem.String()), "\n")}
 	if code != 0 {
