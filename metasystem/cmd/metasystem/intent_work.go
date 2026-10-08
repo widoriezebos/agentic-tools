@@ -78,6 +78,7 @@ type intentWorkOwners struct {
 	adapter      func(string) (adapter.Adapter, error)
 	units        func(layout stateroot.Layout) *launch.UnitRunner
 	git          func(dir string, args ...string) ([]byte, error)
+	gitInput     func(dir string, input []byte, args ...string) ([]byte, error)
 	wait         func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
 	// testRun is the testing runner, reached with the argv its former child
 	// carried; it returns the structured result it prints and its exit.
@@ -136,9 +137,10 @@ func (inv *intentInvocation) work() intentWorkOwners {
 			return &launch.UnitRunner{Manager: manager, Git: launch.OSGitRunner{}}
 		}
 	}
-	if owners.git == nil {
-		owners.git = func(dir string, args ...string) ([]byte, error) {
+	if owners.gitInput == nil {
+		owners.gitInput = func(dir string, input []byte, args ...string) ([]byte, error) {
 			command := exec.Command("git", append([]string{"-C", dir}, args...)...)
+			command.Stdin = bytes.NewReader(input)
 			var stderr bytes.Buffer
 			command.Stderr = &stderr
 			output, err := command.Output()
@@ -147,6 +149,9 @@ func (inv *intentInvocation) work() intentWorkOwners {
 			}
 			return output, nil
 		}
+	}
+	if owners.git == nil {
+		owners.git = func(dir string, args ...string) ([]byte, error) { return owners.gitInput(dir, nil, args...) }
 	}
 	if owners.wait == nil {
 		clock := owners.waitClock
@@ -228,7 +233,7 @@ func intentWorkCommands() []intentCommand {
 				"units, constraints, return and acceptance sections. A decision neither record holds is written as a MISSING DECISION",
 				"line, and work build refuses the brief until each is filled. An existing different FILE is never overwritten.",
 			},
-			flags:    []intentFlag{intentTargetFlag, {name: "out", value: "FILE", usage: "where to write the brief"}},
+			flags:    []intentFlag{intentTargetFlag, {name: "out", value: "FILE", usage: "where to write the brief"}, {name: "work", value: "NAME", usage: "the unit whose readers to inspect"}},
 			maxArgs:  1,
 			examples: []string{"metasystem work brief verbs-match-intent --out /tmp/work-brief.md"},
 			run:      runIntentBrief,
@@ -2532,16 +2537,19 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 	var constraints, returns, acceptance []designSection
 	var units []launch.UnitSize
 	unitsFrom := ""
+	var readerDesigns [][]byte
+	var readerBase string
 	for _, design := range designs {
 		data, err := os.ReadFile(design)
 		if err != nil {
 			return "", nil, &intentResult{Outcome: intentFailed, code: 1, Summary: fileProblem("accepted design", design, err) + "; no brief was written",
 				next: inv.sameCommand(), nextReason: "once the design is readable"}
 		}
-		if problem := inv.checkBriefCitations(&data, design); problem != nil {
+		if problem := inv.checkBriefCitations(&data, design, &readerBase); problem != nil {
 			return "", nil, problem
 		}
 		c, r, a := designSections(design, data)
+		readerDesigns = append(readerDesigns, data)
 		constraints, returns, acceptance = append(constraints, c...), append(returns, r...), append(acceptance, a...)
 		if rows, err := launch.DeclaredUnits(design); err == nil && len(rows) > 0 && len(units) == 0 {
 			units, unitsFrom = rows, design
@@ -2603,6 +2611,27 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 		text.WriteString(fmt.Sprintf("\nThe independent read's tool-call budget (the configured allowance; change it here if this work needs another):\nMaximum reader tool calls: %d\n", allowance))
 	} else {
 		text.WriteString("\nThe independent read's tool-call budget:\n" + mark("the read's tool-call budget, written as the line 'Maximum reader tool calls: N'") + "\n")
+	}
+	if len(readerDesigns) > 0 {
+		unit := inv.input.text("work")
+		if unit == "" && len(units) == 1 {
+			unit = units[0].Name
+		}
+		var decision, readers, limits string
+		for _, data := range readerDesigns {
+			d, r := readerSpec(data, unit)
+			decision, readers = decision+d, readers+r
+		}
+		for _, constraint := range constraints {
+			limits += constraint.text + "\n"
+		}
+		if unit == "" || decision == "" {
+			text.WriteString("\n# Readers\n\n" + mark("select a unit with --work NAME whose accepted Decision names its readers") + "\n")
+		} else {
+			sections := inv.briefReaderSections(decision, readers, limits, readerBase)
+			missing = append(missing, missingDecisionLines([]byte(sections))...)
+			text.WriteString(sections)
+		}
 	}
 	text.WriteString("\n# Expected Return\n\n")
 	if len(returns) > 0 {
@@ -2912,9 +2941,16 @@ func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bo
 	return nil
 }
 
-func (inv *intentInvocation) checkBriefCitations(data *[]byte, document string) *intentResult {
+func (inv *intentInvocation) checkBriefCitations(data *[]byte, document string, retainedBase ...*string) *intentResult {
 	err := dispatchcore.ValidateBriefCitations(*data, document, inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, inv.cwd, func(root string, args ...string) (string, error) {
+		resolvingBase := strings.Join(args, " ") == "rev-parse --verify HEAD^{commit}" && len(retainedBase) == 1
+		if resolvingBase && *retainedBase[0] != "" {
+			return *retainedBase[0], nil
+		}
 		output, err := inv.work().git(root, args...)
+		if resolvingBase && err == nil {
+			*retainedBase[0] = strings.TrimSpace(string(output))
+		}
 		return string(output), err
 	})
 	if err != nil && inv.directPersonProof("unchecked brief citations") != nil {
