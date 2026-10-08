@@ -153,6 +153,7 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 			view["state"] = one.Record.State
 			if len(one.Record.Rounds) > 0 {
 				r := one.Record.Rounds[len(one.Record.Rounds)-1]
+				view["subjects"] = one.Record.Subjects
 				view["stop"], view["reads"] = r.Stop, r.Reads
 			}
 		}

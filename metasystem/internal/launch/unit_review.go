@@ -15,7 +15,15 @@ import (
 // request reaches the same operation, commit and publication instead of
 // creating a second subject. A prior round's subject stays for diagnosis
 // after a later round amends it.
+type UnitDrop struct {
+	Decisions, Requirements, Phase string
+	Revision                       uint64
+	Covered                        []string
+	Subject                        UnitSubject
+}
+
 type UnitSubject struct {
+	Drop         *UnitDrop           `json:"drop,omitempty"`
 	GateWorktree string              `json:"gateWorktree,omitempty"`
 	GateSnapshot *repositorySnapshot `json:"gateSnapshot,omitempty"`
 	GateLaunches []string            `json:"gateLaunches,omitempty"`

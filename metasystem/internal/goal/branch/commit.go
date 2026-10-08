@@ -249,6 +249,11 @@ func commitMessage(req CommitRequest, subjectCommit string) (string, string, err
 			trailers += "\nGoal-Whole: " + req.GoalID
 		}
 		return "goal " + req.GoalID + " units " + list, trailers, nil
+	case Drop:
+		if len(units) != 1 || req.Amend || req.Whole || !validName(req.OpID) || req.BeforeCommit == nil {
+			return "", "", fmt.Errorf("a drop needs one unit, its saved operation and checks, without amend or whole")
+		}
+		return "goal " + req.GoalID + " drop " + list, "Goal-Drop: " + req.GoalID + "/" + list + " " + req.OpID, nil
 	case Plan:
 		if len(units) != 0 || req.Amend {
 			return "", "", fmt.Errorf("plan commits take neither --unit nor --amend")
@@ -291,7 +296,7 @@ func validateCommitPaths(kind Kind, paths []string, goalID string) error {
 		}
 		seen[path] = true
 		class := PathClass(path)
-		allowed := kind == Unit && class == ClassUnit ||
+		allowed := (kind == Unit || kind == Drop) && class == ClassUnit ||
 			kind == Plan && (class == ClassPlan || path == landingRecordPath(goalID))
 		if kind == Read {
 			allowed = class == ClassRead || class == ClassReadClosure || class == ClassReadProse
@@ -338,7 +343,7 @@ func (r commitRepository) commitPreparedState(req CommitRequest, subjectCommit s
 	if err != nil {
 		return "", err
 	}
-	if len(paths) == 0 {
+	if len(paths) == 0 && req.Kind != Drop {
 		return "", fmt.Errorf("the staged tree has no change to commit")
 	}
 	if err := validateCommitPaths(req.Kind, paths, req.GoalID); err != nil {
@@ -391,7 +396,7 @@ func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchS
 		return "", err
 	}
 	defer req.closeWorktree(close)
-	if req.ResumeWorktree == "" {
+	if req.ResumeWorktree == "" && req.Kind != Drop {
 		if err := r.effects.Apply(worktree, patch); err != nil {
 			return "", operationRefusal(ReplayConflictCode, "the staged change doesn't apply to goal %s's branch as origin holds it (%s): %v\nrun: metasystem work status %s", req.GoalID, state.baseTip, err, req.GoalID)
 		}
@@ -567,7 +572,7 @@ func (r commitRepository) amendUnit(req CommitRequest, state commitBranchState) 
 	if err != nil {
 		return "", err
 	}
-	if len(paths) == 0 {
+	if len(paths) == 0 && req.Kind != Drop {
 		return "", fmt.Errorf("the staged tree has no change to commit")
 	}
 	for _, path := range paths {

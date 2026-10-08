@@ -89,6 +89,11 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 		if err != nil {
 			return &intentResult{Outcome: intentRefused, code: 1, Summary: "the accepted unit requirements cannot be read; the unit stays open", Details: []string{err.Error()}}
 		}
+		body, readErr := os.ReadFile(page)
+		if readErr != nil {
+			return &intentResult{Outcome: intentFailed, code: 1, Summary: readErr.Error()}
+		}
+		work.dropRequirements += page + "\x00" + string(body)
 		declared = true
 		for _, unit := range units {
 			required = required || unit.Name == record.Unit
@@ -104,13 +109,18 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 	}
 	inherited := false
 	for _, obligation := range file.ReviewObligations {
-		if obligation.TargetUnit == record.Unit {
+		if obligation.TargetUnit == record.Unit || obligation.SourceUnit == record.Unit {
 			required = true
 			inherited = true
 		}
 	}
 	if !declared && !required {
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: "the goal has no accepted Units table; requiredness is unknown, so this unit stays open"}
+	}
+	work.dropRevision = file.Revision
+	work.dropRequirements = launch.UnitResultDigest(work.dropRequirements)
+	if required {
+		work.dropRequirements = ""
 	}
 	destination := strings.TrimPrefix(stop.Handoff, "split ")
 	generated := filepath.Join(round.Directory, "stop-dispositions.md")
@@ -135,7 +145,7 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 		}
 		for _, decision := range decisions {
 			if strings.HasPrefix(decision, "dropped:") {
-				return inv.refuseReviewDrop(targets, work)
+				return inv.applyUnitDrop(targets, work)
 			}
 		}
 		if required && !inherited {
@@ -263,7 +273,7 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 			if required && !inherited {
 				decision = "split: " + destination
 			} else {
-				decision = "dropped: prepared proposal; code retained"
+				decision = "dropped: remove this optional unit"
 			}
 		}
 		proposal = strings.Replace(proposal, "| "+f.ID+" | DECIDE |", "| "+f.ID+" | "+decision+" |", 1)
@@ -275,6 +285,10 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 	}
 	needs := inv.workArgv(record, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")
 	acts := []string{"work-revise", "goal-done"}
+	if !required {
+		needs = append(again, "--dispositions", generated)
+		acts = append(acts, "work-drop")
+	}
 	if required && !inherited {
 		needs = append(again, "--dispositions", generated)
 		if policy == "person" {
@@ -293,7 +307,6 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 		findingNeeds := slices.Clone(needs)
 		findingActs := slices.Clone(acts)
 		if _, err := dispatchcore.CritiqueRegisterDecisionFinding(inv.layout.InstallationRoot.Path(), reviewRoot, f.ID, record.Goal); !required && err == nil {
-			findingNeeds = inv.publicArgv("goal", "accept-risk", record.Goal, "--finding", f.ID, "--review", reviewRoot, "--reason", "Accept the remaining finding for extra unit "+record.Unit)
 			findingActs = append(findingActs, "goal-accept-risk")
 		}
 		for i, value := range findingNeeds {

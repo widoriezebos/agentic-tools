@@ -51,7 +51,7 @@ func TestIntentContinuingUnitRefusesDropAndSplitBeforeRetention(t *testing.T) {
 			if code == 0 || refused.Outcome != intentRefused {
 				t.Fatalf("unsupported decision retained: %d %+v", code, refused)
 			}
-			if strings.HasPrefix(decision, "dropped:") && (!strings.Contains(strings.ToLower(refused.Summary), "drop effects are not built yet") || refused.Next == nil || !strings.Contains(strings.Join(refused.Next.Argv, " "), "work revise")) {
+			if strings.HasPrefix(decision, "dropped:") && (!strings.Contains(strings.ToLower(refused.Summary), "cannot be dropped yet") || refused.Next == nil || !strings.Contains(strings.Join(refused.Next.Argv, " "), "work revise")) {
 				t.Fatalf("drop refusal lacks working act: %+v", refused)
 			}
 			if strings.HasPrefix(decision, "split:") && !strings.Contains(refused.Summary, "recorded stop") {
@@ -66,6 +66,44 @@ func TestIntentContinuingUnitRefusesDropAndSplitBeforeRetention(t *testing.T) {
 				t.Fatalf("refusal changed source or completion debt: %v", err)
 			}
 		})
+	}
+}
+
+func TestIntentRoundTwoCloseWithDispositionsCollectsExamination(t *testing.T) {
+	t.Parallel()
+	fixture := newTransferScenarioFixture(t, true)
+	b, owners := fixture.bed, fixture.owners
+	record, err := fixture.runner.Status(fixture.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The committed examination has finished but has not been collected.
+	record.Rounds[0].Reads[0].Findings = nil
+	record.Rounds[1].Stop = nil
+	transferWriteJSON(t, filepath.Join(b.unitRoot, fixture.run, "run.json"), record)
+	returnPath := filepath.Join(fixture.agents, fixture.critic, "rounds", "1", "return.json")
+	digest, _, err := reviewReturnDigest(returnPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings, _, err := readIntentFindings(returnPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := reviewBinding{Goal: b.id, Work: "stopped", Attempt: 2, Subject: fixture.commit, Examination: fixture.critic, Round: 1, Return: digest}
+	decisions := strings.ReplaceAll(decisionsDocument(binding, findings), "DECIDE", "accepted")
+	path := b.brief("close-decisions.md", decisions)
+	code, result := transferPublic(t, b, owners, "work", "review", b.id, "--work", "stopped", "--dispositions", path)
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "need a fix") || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "work revise") {
+		t.Fatalf("first close did not decide the accepted findings: %d %+v", code, result)
+	}
+	after, err := fixture.runner.Status(fixture.run)
+	if err != nil || after.Rounds[1].Stop == nil || after.Rounds[1].Stop.Decision != "continue" || len(after.Subjects) != 1 || after.Subjects[0].Examination != fixture.critic || after.Subjects[0].ExaminationReturnPath != returnPath || after.Subjects[0].Drop != nil {
+		t.Fatalf("first close did not collect the examination: %+v %v", after, err)
+	}
+	saved, err := os.ReadFile(filepath.Join(filepath.Dir(returnPath), "decisions.md"))
+	if err != nil || string(saved) != decisions || fixture.observer.publications != 0 || len(b.goalFile(b.id).ReviewObligations) != 0 {
+		t.Fatalf("ordinary decisions were not retained without a transfer: %q %v", saved, err)
 	}
 }
 

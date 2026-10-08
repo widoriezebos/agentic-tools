@@ -609,6 +609,11 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 	if err != nil {
 		return LandResult{}, err
 	}
+	for _, commit := range status.Commits {
+		if commit.Kind == Drop {
+			return LandResult{}, operationRefusal(LandUnprovenCode, "goal %s has a pending drop; reconcile its outcome before landing\nrun: metasystem work status %s", req.GoalID, req.GoalID)
+		}
+	}
 	landable := status.Prefix
 	if req.ReadsWaived {
 		landable = len(status.Units)

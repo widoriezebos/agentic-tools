@@ -14,6 +14,7 @@ const (
 	Unit Kind = "unit"
 	Plan Kind = "plan"
 	Read Kind = "read"
+	Drop Kind = "drop"
 )
 
 type Class string
@@ -33,6 +34,8 @@ type KindInfo struct {
 	Units    []string
 	Unit     string
 	CommitID string
+
+	Operation string
 }
 type Commit struct {
 	Whole  bool
@@ -144,7 +147,7 @@ func kindOfWithGit(repo, commit, goalID string, gitRead func(string, ...string) 
 		if ok && key == "Goal-Whole" && strings.TrimSpace(value) == goalID {
 			whole = true
 		}
-		if ok && (key == "Goal-Unit" || key == "Goal-Plan" || key == "Goal-Read") {
+		if ok && (key == "Goal-Unit" || key == "Goal-Plan" || key == "Goal-Read" || key == "Goal-Drop") {
 			trailers = append(trailers, [2]string{key, strings.TrimSpace(value)})
 		}
 	}
@@ -162,11 +165,11 @@ func kindOfWithGit(repo, commit, goalID string, gitRead func(string, ...string) 
 		return KindInfo{Kind: Plan}, nil
 	}
 	fields := strings.Fields(value)
-	if key == "Goal-Read" && len(fields) != 2 {
+	if (key == "Goal-Read" || key == "Goal-Drop") && len(fields) != 2 {
 		return KindInfo{}, rangeRefusal(goalID, commit, "its review line is damaged")
 	}
 	first := value
-	if key == "Goal-Read" {
+	if key == "Goal-Read" || key == "Goal-Drop" {
 		first = fields[0]
 	}
 	goal, units, ok := splitGoalUnits(first)
@@ -178,6 +181,12 @@ func kindOfWithGit(repo, commit, goalID string, gitRead func(string, ...string) 
 	}
 	if key == "Goal-Unit" {
 		return KindInfo{Kind: Unit, Units: units, Unit: unitList(units), Whole: whole}, nil
+	}
+	if key == "Goal-Drop" {
+		if len(units) != 1 || whole || !validName(fields[1]) {
+			return KindInfo{}, rangeRefusal(goalID, commit, "a drop names one unit and takes no whole option")
+		}
+		return KindInfo{Kind: Drop, Units: units, Unit: units[0], Operation: fields[1]}, nil
 	}
 	if !hex40(fields[1]) {
 		return KindInfo{}, rangeRefusal(goalID, commit, "its review line names the reviewed commit by a short id")
@@ -301,7 +310,7 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 		}
 		for _, entry := range entries {
 			class := PathClass(entry.Path)
-			allowed := kind.Kind == Unit && class == ClassUnit ||
+			allowed := (kind.Kind == Unit || kind.Kind == Drop) && class == ClassUnit ||
 				kind.Kind == Plan && (class == ClassPlan || entry.Path == landingRecordPath(goalID))
 			if kind.Kind == Read {
 				switch class {

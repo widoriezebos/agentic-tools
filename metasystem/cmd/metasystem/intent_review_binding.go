@@ -34,6 +34,10 @@ type reviewWorkContext struct {
 	attempt    int
 	retain     func(launch.UnitSubject) error
 	subject    *launch.UnitSubject
+
+	dropRequirements string
+	dropRevision     uint64
+	review           *launch.UnitReview
 }
 
 // reviewBinding names one examination's return exactly.
@@ -113,12 +117,6 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 	returnPath := inv.returnPathAt(root, rootJob, round)
 	digest, _, readErr := reviewReturnDigest(returnPath)
 	findings, verdict, parseErr := readIntentFindings(returnPath)
-	decisions, _ := validate.Dispositions(inv.flagPath("dispositions"))
-	for _, decision := range decisions {
-		if strings.HasPrefix(decision, "dropped:") {
-			return inv.refuseReviewDrop(targets, work)
-		}
-	}
 	if work.subject != nil && (status == "completed" || status == "failed") && (work.subject.Examination != rootJob || work.subject.ExaminationRound != round || work.subject.ExaminationReturnPath != returnPath) {
 		work.subject.Examination, work.subject.ExaminationRound, work.subject.ExaminationReturnPath = rootJob, round, returnPath
 		work.subject.ExaminationJob = recordText(newest, "jobId")
@@ -134,7 +132,11 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 			return stopped
 		}
 	}
+	decisions, _ := validate.Dispositions(inv.flagPath("dispositions"))
 	for _, decision := range decisions {
+		if strings.HasPrefix(decision, "dropped:") {
+			return inv.refuseReviewDrop(targets, work)
+		}
 		if strings.HasPrefix(decision, "split:") {
 			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "split: needs a recorded stop; nothing was retained or closed", next: again, nextReason: "decide the current findings without a split"}
 		}
@@ -308,7 +310,7 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 
 func (inv *intentInvocation) refuseReviewDrop(targets []intentTarget, work *reviewWorkContext) *intentResult {
 	return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-		Summary: "Drop effects are not built yet; goal review-drops-and-design-convergence owns them. Use work revise.",
+		Summary: "Required work and uncommitted changes cannot be dropped yet; use work revise.",
 		next:    inv.publicArgv("work", "revise", work.goal, "--work", work.work, "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), nextReason: "requests a reasoned correction while retaining this unit's code"}
 }
 

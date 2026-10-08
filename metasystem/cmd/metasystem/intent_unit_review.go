@@ -223,6 +223,14 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		return endpointTip, nil
 	}
 	subject := review.Subject
+	if inv.reviewWork != nil && subject != nil && subject.Commit != "" {
+		inv.reviewWork.run, inv.reviewWork.attempt, inv.reviewWork.subject, inv.reviewWork.retain, inv.reviewWork.review = record.ID, review.Round.Number, subject, retain, &review
+		if subject.Drop != nil || subject.Examination != "" && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" {
+			if stopped := inv.reviewStoppedUnit(targets, install, subject.Examination, subject.ExaminationReturnPath, inv.reviewWork); stopped != nil {
+				return *stopped
+			}
+		}
+	}
 	if subject == nil || subject.Commit == "" {
 		base, err := tip()
 		if err != nil {
@@ -471,7 +479,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	}
 	if inv.reviewWork != nil {
 		inv.reviewWork.attempt, inv.reviewWork.retain, inv.reviewWork.subject = review.Round.Number, retain, subject
-		inv.reviewWork.run = record.ID
+		inv.reviewWork.run, inv.reviewWork.review = record.ID, &review
 	}
 	if inv.reviewWork != nil && inv.reviewWork.retry > 0 {
 		args = append(args, "--retry", strconv.FormatInt(inv.reviewWork.retry, 10))
@@ -836,7 +844,7 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 		runner := inv.unitRunner()
 		err := runner.ReviewSubject(work.Run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 			caller := *inv
-			caller.reviewWork = &reviewWorkContext{goal: goalID, work: work.Unit, run: work.Run, attempt: review.Round.Number, subject: review.Subject, retain: retain}
+			caller.reviewWork = &reviewWorkContext{goal: goalID, work: work.Unit, run: work.Run, attempt: review.Round.Number, subject: review.Subject, retain: retain, review: &review}
 			out = caller.commitReviewChecked(targets, root, goalID, unit, args, func(read branch.BranchReadResult) error {
 				head, dirty, err := runner.WorktreeResult(root)
 				if err != nil {
