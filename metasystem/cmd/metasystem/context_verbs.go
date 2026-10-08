@@ -24,10 +24,12 @@ import (
 )
 
 type contextStatusOutput struct {
-	Diagnostic bool                `json:"diagnostic"`
-	Role       steward.RoleVerdict `json:"role"`
-	Reading    contextReadingView  `json:"reading"`
-	Window     contextWindowView   `json:"window"`
+	Diagnostic    bool                   `json:"diagnostic"`
+	Role          steward.RoleVerdict    `json:"role"`
+	Reading       contextReadingView     `json:"reading"`
+	Window        contextWindowView      `json:"window"`
+	Boundaries    []steward.UnitBoundary `json:"unitBoundaries,omitempty"`
+	BoundaryError string                 `json:"unitBoundaryError,omitempty"`
 }
 
 type contextWindowView struct {
@@ -112,8 +114,24 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 		Runtime: *runtimeName, Session: *session, Transcript: *transcript,
 	})
 	window, windowErr := contextWindow(installation)
+	boundaries, boundaryErr := steward.ReadUnitBoundaries(installation.Path())
+	boundaryRoot := installation.Path()
+	if resolved, pathErr := filepath.EvalSymlinks(boundaryRoot); pathErr == nil {
+		boundaryRoot = resolved
+	}
+	localBoundaries := boundaries[:0]
+	for _, boundary := range boundaries {
+		if boundary.Seat == boundaryRoot {
+			localBoundaries = append(localBoundaries, boundary)
+		}
+	}
+	boundaries = localBoundaries
+	boundaryProblem := ""
+	if boundaryErr != nil {
+		boundaryProblem = boundaryErr.Error()
+	}
 	if *asJSON {
-		writeJSONLine(stdout, stderr, contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading), Window: window})
+		writeJSONLine(stdout, stderr, contextStatusOutput{Diagnostic: transcriptSupplied, Role: role, Reading: projectContextReading(reading), Window: window, Boundaries: boundaries, BoundaryError: boundaryProblem})
 	} else {
 		page := passthroughPage(stdout, stateRoot, *verbose)
 		page.Headline(fmt.Sprintf("The context budget is %s: %s", role.Status, role.Reason))
@@ -123,6 +141,12 @@ func runContextStatus(args []string, stdout, stderr io.Writer) int {
 		}
 		if windowErr == nil {
 			section.Text(windowLine(window))
+		}
+		if boundaryProblem != "" {
+			section.Text("Unit boundary history: " + boundaryProblem)
+		}
+		for _, boundary := range boundaries {
+			section.Text(fmt.Sprintf("Completed unit %s for goal %s in session %s: %s", boundary.Unit, boundary.Goal, boundary.Session, boundary.Outcome))
 		}
 		printPage(stdout, page)
 	}
@@ -206,15 +230,23 @@ func windowLine(window contextWindowView) string {
 }
 
 func runContextHandoff(args []string, stdout, stderr io.Writer) int {
-	return runContextHandoffWithInputs(args, contextHandoffInputs{goal.ResolveMachine, goal.ReadClaimableBudgetedWork}, stdout, stderr)
+	return runContextHandoffWithInputs(args, contextHandoffInputs{resolveMachine: goal.ResolveMachine, readWork: goal.ReadClaimableBudgetedWork}, stdout, stderr)
 }
 
 type contextHandoffInputs struct {
 	resolveMachine func(string) (string, error)
 	readWork       func(string, time.Time) (goal.ClaimableBudgetedWork, error)
+	caller         func(stateroot.Installation, string, func(string) (string, error)) (steward.HandoffCaller, error)
+	now            func() time.Time
 }
 
 func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, stdout, stderr io.Writer) int {
+	if inputs.caller == nil {
+		inputs.caller = contextHandoffCallerWithMachine
+	}
+	if inputs.now == nil {
+		inputs.now = contextHandoffNow
+	}
 	flags := newFlagSet("session handoff", stdout, stderr)
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	cancel := flags.String("cancel", "", "live handoff nonce to cancel")
@@ -259,7 +291,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	if cancelSupplied {
-		caller, err := contextHandoffCallerWithMachine(installation, stateRoot, inputs.resolveMachine)
+		caller, err := inputs.caller(installation, stateRoot, inputs.resolveMachine)
 		if err != nil {
 			return contextVerbError(stderr, "handoff", err, *verbose)
 		}
@@ -308,7 +340,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	if *note == "" {
 		return contextVerbError(stderr, "handoff", &steward.HandoffRefusal{Code: "HANDOFF_NOTE_MISSING"}, *verbose)
 	}
-	caller, err := contextHandoffCallerWithMachine(installation, stateRoot, inputs.resolveMachine)
+	caller, err := inputs.caller(installation, stateRoot, inputs.resolveMachine)
 	if err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
@@ -335,7 +367,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	for _, notice := range notices {
 		fmt.Fprintln(stderr, notice.Text)
 	}
-	now := contextHandoffNow()
+	now := inputs.now()
 	delegates, err := contextHandoffDelegates(declarations, *noDelegates, transcriptResolved, tasks, now)
 	if err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
@@ -348,6 +380,9 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 		Scratch: scratch, Delegates: delegates, NotePath: *note, NoteDirectory: noteDirectory,
 	}, now, filepath.Join(stateRoot, "memory", "receipts.log"), inputs.readWork)
 	if err != nil {
+		return contextVerbError(stderr, "handoff", err, *verbose)
+	}
+	if err := steward.BindUnitHandoff(installation.Path(), caller.Session); err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	if *asJSON {

@@ -11,9 +11,80 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
+
+func TestRevivalUnknownProviderNamesRegistrationRepair(t *testing.T) {
+	t.Parallel()
+	for _, handoff := range []bool{false, true} {
+		name := "seat idle"
+		if handoff {
+			name = "handoff"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			var revival *revivalFixture
+			var intent Intent
+			if handoff {
+				revival, intent = stagedRevivalFixture(t, "6000000000000001")
+				revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, func() {
+					if err := os.Remove(lane.RecordPath(testprovider.Home(revival.root))); err != nil {
+						t.Fatal(err)
+					}
+				})
+			} else {
+				revival = newRevivalFixture(t, 1, 2)
+				intent = testIntent("6000000000000002")
+				intent.Reason = "seatIdle"
+				read := revival.dependencies.ReadClaimableBudgetedWork
+				revival.dependencies.ReadClaimableBudgetedWork = func(root string, now time.Time) (goal.ClaimableBudgetedWork, error) {
+					work, err := read(root, now)
+					if revival.workReads.Load() == 2 {
+						if err := os.Remove(lane.RecordPath(testprovider.Home(root))); err != nil {
+							t.Fatal(err)
+						}
+					}
+					return work, err
+				}
+			}
+			root := revival.root
+			if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), intent); err != nil {
+				t.Fatal(err)
+			}
+			launched := false
+			outcome, err := revival.complete(TickConfig{Now: time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)}, deadCensus(), intent.Nonce, func(Intent) error {
+				launched = true
+				return nil
+			})
+			if err != nil || launched || outcome.Launched || outcome.Escalate || outcome.Held != handoff ||
+				!strings.Contains(outcome.Reason, "metasystem landing set PATH") || strings.Contains(outcome.Reason, "overloaded") {
+				t.Fatalf("registration loss before launch must name its repair: %+v %v launched=%t", outcome, err, launched)
+			}
+			live, err := LiveIntents(root)
+			if err != nil || len(live) != map[bool]int{false: 0, true: 1}[handoff] {
+				t.Fatalf("ordinary revivals cancel; handoffs remain resumable: %+v %v", live, err)
+			}
+			if evidence, err := LoadEvidence(EvidencePath(root)); err != nil || evidence.DryRevivals != 0 {
+				t.Fatalf("provider uncertainty must spend no revival attempt: %+v %v", evidence, err)
+			}
+			if handoff {
+				pending, err := PendingNotifications(root)
+				if err != nil || len(pending) != 1 || !strings.Contains(pending[0].Message, "metasystem landing set PATH") || strings.Contains(pending[0].Message, "overloaded") {
+					t.Fatalf("the handoff notice must name the registration repair: %+v %v", pending, err)
+				}
+			} else {
+				data, err := os.ReadFile(filepath.Join(cancelledDir(root), intent.Nonce+".json"))
+				if err != nil || !strings.Contains(string(data), "metasystem landing set PATH") || strings.Contains(string(data), "overloaded") {
+					t.Fatalf("the cancellation must record the registration repair: %s %v", data, err)
+				}
+			}
+		})
+	}
+}
 
 type handoffProbeFunc func(int64) (identity.Exact, identity.Liveness, error)
 
@@ -38,6 +109,10 @@ func handoffProbe(binding HandoffBinding, state identity.Liveness, includeTag bo
 func stagedRevivalHandoff(t *testing.T, nonce string) (string, Intent) {
 	t.Helper()
 	root := stagedRepo(t)
+	testprovider.Register(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.runtime=claude\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	fixture := writeStagedHandoffFixture(t, root, nonce)
 	intent, err := StageHandoffIntent(root, nonce, "fix-it", "steward-"+nonce, "fake", "fixture", fixture.binding)
 	if err != nil {
@@ -430,6 +505,7 @@ func TestSeatIdleIntentStillHonorsOneActiveContinuationGuard(t *testing.T) {
 }
 
 func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
+	t.Parallel()
 	t.Run("alive predecessor", func(t *testing.T) {
 		revival, intent := stagedRevivalFixture(t, "3000000000000001")
 		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Alive, true, nil)
@@ -586,19 +662,22 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		}
 	})
 
-	t.Run("dry revival cap", func(t *testing.T) {
+	t.Run("planned handoff ignores dry revival cap", func(t *testing.T) {
+		t.Parallel()
 		revival, intent := stagedRevivalFixture(t, "3000000000000007")
 		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{MaxRevivals: 2}, deadCensus(), Evidence{DryRevivals: 2}, intent)
-		if err != nil || decision.Action != ActNotify || !strings.Contains(decision.Reason, "2 revivals produced no progress") {
-			t.Fatalf("the existing dry cap must terminate a dead-predecessor handoff: %+v %v", decision, err)
+		if err != nil || decision.Action != ActRevive || !strings.Contains(decision.Reason, "may replace observed-dead predecessor") {
+			t.Fatalf("a planned handoff must not spend or be stopped by the abnormal cap: %+v %v", decision, err)
 		}
 	})
 
 	t.Run("provider outage", func(t *testing.T) {
+		t.Parallel()
 		revival, intent := stagedRevivalFixture(t, "3000000000000008")
+		intent.Runtime = "claude"
 		root := revival.root
-		if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
+		if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
@@ -609,9 +688,11 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 	})
 
 	t.Run("alive predecessor dominates later guards", func(t *testing.T) {
+		t.Parallel()
 		revival, intent := stagedRevivalFixture(t, "300000000000000d")
+		intent.Runtime = "claude"
 		root := revival.root
-		if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
+		if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		if err := MintIntent(root, testIntent("other-while-predecessor-lives")); err != nil {
@@ -624,16 +705,18 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 		}
 	})
 
-	t.Run("dry cap precedes outage after death", func(t *testing.T) {
+	t.Run("provider hold survives spent dry cap", func(t *testing.T) {
+		t.Parallel()
 		revival, intent := stagedRevivalFixture(t, "300000000000000e")
+		intent.Runtime = "claude"
 		root := revival.root
-		if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
+		if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 			t.Fatal(err)
 		}
 		revival.dependencies.HandoffProber = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 		decision, _, err := revival.decide(TickConfig{MaxRevivals: 1}, deadCensus(), Evidence{DryRevivals: 1}, intent)
-		if err != nil || decision.Action != ActNotify || !strings.Contains(decision.Reason, "revivals produced no progress") {
-			t.Fatalf("the existing dry cap must terminate even during an outage: %+v %v", decision, err)
+		if err != nil || decision.Action != ActHold || !strings.Contains(decision.Reason, "provider is overloaded") {
+			t.Fatalf("an outage must hold a planned handoff without spending the abnormal cap: %+v %v", decision, err)
 		}
 	})
 
@@ -686,11 +769,12 @@ func TestDecideForRevivalHoldsUntilThePredecessorIsDead(t *testing.T) {
 }
 
 func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
+	t.Parallel()
 	root, intent := prepareRevivalHandoff(t, "4000000000000001")
 	prober := handoffProbe(*intent.Handoff, identity.Alive, true, nil)
 
 	for attempt := 0; attempt < 2; attempt++ {
-		outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: testprovider.Register(t, root)}, deadCensus(), intent.Nonce, func(Intent) error {
 			t.Fatal("a live predecessor launched its successor")
 			return nil
 		})
@@ -719,7 +803,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	results := make(chan result, 2)
 	var launches atomic.Int32
 	go func() {
-		outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: testprovider.Register(t, root)}, deadCensus(), intent.Nonce, func(Intent) error {
 			launches.Add(1)
 			close(launchEntered)
 			<-releaseLaunch
@@ -729,7 +813,7 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	}()
 	<-launchEntered
 	go func() {
-		outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+		outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: testprovider.Register(t, root)}, deadCensus(), intent.Nonce, func(Intent) error {
 			launches.Add(1)
 			return nil
 		})
@@ -756,8 +840,8 @@ func TestCompleteRevivalHoldsThenLaunchesAHandoff(t *testing.T) {
 	if pending, err := PendingNotifications(root); err != nil || len(pending) != 0 {
 		t.Fatalf("a launched handoff must leave no stale hold notice: %+v %v", pending, err)
 	}
-	if evidence, err := LoadEvidence(EvidencePath(root)); err != nil || evidence.DryRevivals != 1 {
-		t.Fatalf("only the irreversible launch spends one dry revival: %+v %v", evidence, err)
+	if evidence, err := LoadEvidence(EvidencePath(root)); err != nil || evidence.DryRevivals != 0 || evidence.AbnormalCount != 0 {
+		t.Fatalf("a planned handoff must not spend an abnormal attempt: %+v %v", evidence, err)
 	}
 }
 
@@ -765,7 +849,7 @@ func TestHandoffLaunchTreatsAMissingHoldNoticeAsClean(t *testing.T) {
 	root, intent := prepareRevivalHandoff(t, "4000000000000002")
 	prober := handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 	launches := 0
-	outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: testprovider.Register(t, root)}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -963,43 +1047,67 @@ func TestFailedHandoffTombstoneReportsPartialCancellation(t *testing.T) {
 }
 
 func TestHandoffHoldsOnTheFinalOutageCheck(t *testing.T) {
-	root, intent := prepareRevivalHandoff(t, "4000000000000006")
-	var recordErr error
-	var observations atomic.Int32
-	prober := handoffProbe(*intent.Handoff, identity.Dead, false, func() {
-		if observations.Add(1) == 1 {
-			_, recordErr = outage.Record(root, "overloaded", "API Error: 529", "test", time.Now())
-		}
-	})
-	launches := 0
-	outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
-		launches++
-		return nil
-	})
-	if recordErr != nil {
-		t.Fatal(recordErr)
-	}
-	if err != nil || !outcome.Held || outcome.Launched || launches != 0 || !strings.Contains(outcome.Reason, "became overloaded before launch") {
-		t.Fatalf("an outage at the final check must keep the handoff live: %+v %v launches=%d", outcome, err, launches)
-	}
-	if live, liveErr := LiveIntents(root); liveErr != nil || len(live) != 1 || live[0].Nonce != intent.Nonce {
-		t.Fatalf("the final outage check cancelled the handoff: %+v %v", live, liveErr)
-	}
-	if pending, pendingErr := PendingNotifications(root); pendingErr != nil || len(pending) != 1 || pending[0].Nonce != handoffNoticeNonce(intent.Nonce) {
-		t.Fatalf("the final outage hold did not leave one notice: %+v %v", pending, pendingErr)
-	}
-	if evidence, evidenceErr := LoadEvidence(EvidencePath(root)); evidenceErr != nil || evidence.DryRevivals != 0 {
-		t.Fatalf("the final outage hold spent a launch: %+v %v", evidence, evidenceErr)
+	t.Parallel()
+	for _, runtime := range []string{"codex", "claude"} {
+		t.Run(runtime, func(t *testing.T) {
+			t.Parallel()
+			root, intent := stagedRevivalHandoff(t, "4000000000000006")
+			intent.Runtime = "codex"
+			if intent.Handoff.Runtime != "claude" {
+				t.Fatalf("the predecessor must use a different provider: %+v", intent.Handoff)
+			}
+			if err := PrepareIntent(root, filepath.Join(root, "receipt.log"), intent); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)
+			before := Evidence{DryRevivals: 1, AbnormalCount: 1}
+			before.Abnormal[0] = AbnormalRestart{At: now.Add(-time.Minute), Class: "failed", Marks: Marks{HeadOid: "old-head"}}
+			if err := SaveEvidence(root, EvidencePath(root), before); err != nil {
+				t.Fatal(err)
+			}
+			var recordErr error
+			var observations atomic.Int32
+			prober := handoffProbe(*intent.Handoff, identity.Dead, false, func() {
+				if observations.Add(1) == 1 {
+					_, recordErr = outage.Observe(testprovider.Home(root), runtime, "fixture-model", outage.ProviderLimit, "HTTP 429 Too Many Requests", "limited-call", now)
+				}
+			})
+			launches := 0
+			outcome, err := completeHandoffRevival(root, prober, TickConfig{Now: now, ProviderHome: testprovider.Home(root)}, deadCensus(), intent.Nonce, func(Intent) error {
+				launches++
+				return nil
+			})
+			if recordErr != nil {
+				t.Fatal(recordErr)
+			}
+			held := runtime == "codex"
+			if err != nil || outcome.Held != held || outcome.Launched == held || launches != map[bool]int{true: 0, false: 1}[held] {
+				t.Fatalf("the final provider check must use the continuation runtime: %+v %v launches=%d", outcome, err, launches)
+			}
+			if live, liveErr := LiveIntents(root); liveErr != nil || len(live) != map[bool]int{true: 1, false: 0}[held] {
+				t.Fatalf("only the dependent provider hold keeps the handoff live: %+v %v", live, liveErr)
+			}
+			pending, pendingErr := PendingNotifications(root)
+			if pendingErr != nil || len(pending) != map[bool]int{true: 1, false: 0}[held] || held && pending[0].Nonce != handoffNoticeNonce(intent.Nonce) {
+				t.Fatalf("the final provider hold must retain exactly its notice: %+v %v", pending, pendingErr)
+			}
+			if evidence, evidenceErr := LoadEvidence(EvidencePath(root)); evidenceErr != nil || evidence.DryRevivals != before.DryRevivals || evidence.AbnormalCount != before.AbnormalCount || evidence.Abnormal != before.Abnormal {
+				t.Fatalf("provider holds and planned handoffs must preserve restart history: %+v %v", evidence, evidenceErr)
+			}
+		})
 	}
 }
 
 func TestProviderOutageArrivingBeforeLaunchCancelsTheRevival(t *testing.T) {
+	t.Parallel()
 	revival := newRevivalFixture(t, 1, 1)
 	root := revival.root
-	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("rev-outage")); err != nil {
+	intent := testIntent("rev-outage")
+	intent.Runtime = "claude"
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), intent); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
+	if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {
 		t.Fatal(err)
 	}
 	launched := 0

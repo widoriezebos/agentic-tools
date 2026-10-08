@@ -17,9 +17,17 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
-func holdRefreshKeeper(b *resolveVerbFixture) (*lane.AgentKeeper, *int) {
+func holdRefreshKeeper(t *testing.T, b *resolveVerbFixture) (*lane.AgentKeeper, *int) {
+	t.Helper()
+	// The nested installation must be discoverable when the keeper reads
+	// its launch settings from the lane checkout.
+	if err := os.WriteFile(filepath.Join(b.install, "go.mod"), []byte("module fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	starts := 0
-	keeper := newLandingAgentKeeper(b.root, b.home, landingAgent{now: func() time.Time { return laneTestNow }})
+	keeper := newLandingAgentKeeper(b.root, b.home, newTestLandingAgent(func(agent *landingAgent) {
+		agent.now = func() time.Time { return laneTestNow }
+	}))
 	// Keep the production selection owner and the fixture's bounded Git reader.
 	keeper.Prepare = func(record lane.Record) error {
 		_, err := plain.SelectBatch(record.Install, record.Root, record, b.owners.landing.plainProve)
@@ -93,7 +101,7 @@ func TestWorkLandIncidentFixWakesWithoutPush(t *testing.T) {
 	if err != nil || json.Unmarshal(data, &line) != nil || line["fix"] != holdIncidentID {
 		t.Fatalf("fix incident missing from hand-in: %s %v", data, err)
 	}
-	_, starts := holdRefreshKeeper(l)
+	_, starts := holdRefreshKeeper(t, l)
 	code, words := l.run(t, l.root, "run", "--json")
 	if code != 0 || *starts != 1 || len(state.pushes) != 0 {
 		t.Fatalf("fix hand-in failed to wake without a push: %d starts=%d pushes=%v %s", code, *starts, state.pushes, words)
@@ -167,7 +175,7 @@ func TestLandingKeeperRefreshesIncidentClosure(t *testing.T) {
 				}
 				writeHoldLines(t, l.install, plain.Line{Goal: bedGoal, SHA: entries[0].SHA}, plain.Line{Goal: "before", SHA: "before"}, plain.Line{Goal: bedGoal, SHA: entries[0].SHA, Outcome: plain.StateWaiting, Held: true, After: []plain.GoalSHA{{Goal: "before", SHA: "before"}}, Reason: "waits for before"})
 			}
-			keeper, starts := holdRefreshKeeper(l)
+			keeper, starts := holdRefreshKeeper(t, l)
 			run := keeper.Run()
 			wantFetch, wantStarts := 1, 0
 			if mode == "still open" {
@@ -215,7 +223,7 @@ func TestLandingKeeperBoundsBlockingFetchAndReportsIt(t *testing.T) {
 		// Replace only the executable; the production runner still owns its deadline.
 		cmd.Path, cmd.Args = "/bin/sleep", []string{"sleep", "5"}
 	}
-	keeper, starts := holdRefreshKeeper(l)
+	keeper, starts := holdRefreshKeeper(t, l)
 	run := keeper.Run()
 	if fetches != 1 || *starts != 0 || run.Outcome == lane.AgentStarted {
 		t.Fatalf("blocking fetch escaped its deadline: fetches=%d starts=%d run=%+v", fetches, *starts, run)

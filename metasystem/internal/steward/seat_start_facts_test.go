@@ -85,7 +85,10 @@ func TestTheSeatPromptIsWrittenFromTheGoalsRecord(t *testing.T) {
 					t.Fatalf("missing %q in %s", text, prompt)
 				}
 			}
-			require(seatBrief(SeatSelection{Goal: "alpha"}))
+			require(seatBrief(SeatSelection{Goal: "alpha"}, true))
+			for _, instruction := range []string{"stop advancing at that boundary", "--note <that note> --no-delegates", "repeat the same handoff command to confirm durable binding", "End your turn once the binding is durable", "remain alive, report the exact error"} {
+				require(instruction)
+			}
 			if scenario == "reader failures" {
 				for _, fact := range []string{"Units unavailable; metasystem work status alpha"} {
 					require(fact)

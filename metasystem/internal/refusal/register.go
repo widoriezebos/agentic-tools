@@ -70,6 +70,8 @@ var Rows = []Row{
 	{Code: "LAUNCH_BRIEF_PACK_DRIFTED", Owner: "internal/launch", Site: "pack.go#packDrift", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_BUILD_UNSIZED", Owner: "internal/launch", Site: "admit.go#buildSize", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_BUILD_OVERSIZE", Owner: "internal/launch", Site: "admit.go#Manager.admit", Shape: Question, H1: StandingInput},
+	{Code: "LAUNCH_BUILD_CAPACITY", Owner: "internal/launch", Site: "hostcapacity.go#Manager.createAdmitted", Shape: Agent, Override: "the original work build command, typed at the person's enrolled terminal", Commands: 1},
+	{Code: "LAUNCH_BUILD_PERSON", Owner: "internal/launch", Site: "hostcapacity.go#Manager.createAdmitted", Shape: Agent, Override: "the original work build command, typed at the person's enrolled terminal", Commands: 1},
 	{Code: "LAUNCH_READ_UNSIZED", Owner: "internal/launch", Site: "admit.go#Manager.admit", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_READ_UNSPLIT", Owner: "internal/launch", Site: "admit.go#Manager.admit", Shape: Question, H1: StandingInput},
 	{Code: "LAUNCH_UNIT_GOAL_BRANCH_REQUIRED", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.requireGoalBranch", Shape: Question, H1: StandingInput},

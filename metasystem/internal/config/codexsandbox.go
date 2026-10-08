@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -46,6 +47,12 @@ func CodexSandbox(confPath string, lookupEnv func(string) (string, bool)) (strin
 // written: a key with a closed set of values refuses one outside it. Every
 // other key is written as given and judged by settings check.
 func SettingValueProblem(key, value string) error {
+	if key == "host.load-max" {
+		limit, err := strconv.ParseFloat(value, 64)
+		if err != nil || math.IsNaN(limit) || math.IsInf(limit, 0) || limit <= 0 {
+			return fmt.Errorf("host.load-max must be a positive finite number")
+		}
+	}
 	if key == "proof.deadline" {
 		minutes, err := strconv.ParseInt(value, 10, 64)
 		if err != nil || minutes <= 0 || minutes > int64((1<<63-1)/time.Minute) {

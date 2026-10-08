@@ -325,19 +325,24 @@ func TestReserveAndFinalizeRecordTheHostLoad(t *testing.T) {
 }
 
 func TestOldRecordsFinalizeWithoutAFabricatedStartSample(t *testing.T) {
+	t.Parallel()
 	crowded := fakeLoadReaders(hostload.Sample{Available: true, Cores: 18, Load1m: 30}, 2, true)
 	root, identity := proofAttemptFixture(t, "old-record")
+	conf := filepath.Join(root, "admission.conf")
+	if err := os.WriteFile(conf, []byte("proof.admission.top-level-max=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
-	attempt, _, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now,
+	attempt, admission, err := reserveLocked(candidateAdmission(AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now, ConfPath: conf,
 		loadOptions: []loadSampleOption{withLoadReaders(crowded)}}))
 
-	if err != nil {
-		t.Fatal(err)
+	if err != nil || attempt.AttemptID == "" {
+		t.Fatalf("reserve old record: admission=%+v err=%v", admission, err)
 	}
 	// The record as an engine before the attribution wrote it: no load block.
 	attempt.Load = nil
@@ -352,19 +357,24 @@ func TestOldRecordsFinalizeWithoutAFabricatedStartSample(t *testing.T) {
 }
 
 func TestRetryDecisionNamesThePriorAttemptsLoad(t *testing.T) {
+	t.Parallel()
 	crowded := fakeLoadReaders(hostload.Sample{Available: true, Cores: 18, Load1m: 25.2, Load5m: 21.8, Load15m: 17.8}, 2, true)
 	root, identity := proofAttemptFixture(t, "retry-under-load")
+	conf := filepath.Join(root, "admission.conf")
+	if err := os.WriteFile(conf, []byte("proof.admission.top-level-max=0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	launcher, err := CurrentProcessIdentity(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
 	now := time.Date(2026, 9, 12, 17, 0, 0, 0, time.UTC)
 	request := AdmissionRequest{ControlRoot: root, ExecutionRoot: root, GoalID: "goal-a", GoalRevision: 3,
-		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now,
+		AccountingRevision: 2, ReservedMinutes: 4, Identity: identity, Launcher: launcher, Now: now, ConfPath: conf,
 		loadOptions: []loadSampleOption{withLoadReaders(crowded)}}
-	failed, _, err := reserveLocked(candidateAdmission(request))
-	if err != nil {
-		t.Fatal(err)
+	failed, admission, err := reserveLocked(candidateAdmission(request))
+	if err != nil || failed.AttemptID == "" {
+		t.Fatalf("reserve prior attempt: admission=%+v err=%v", admission, err)
 	}
 	if _, err := finalizeWithReaders(t, crowded, root, failed.AttemptID, TerminalFailed, 23, "gate failed", now.Add(2*time.Minute)); err != nil {
 		t.Fatal(err)

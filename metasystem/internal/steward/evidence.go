@@ -2,16 +2,16 @@ package steward
 
 // Progress evidence as durable high-water marks: the checkout HEAD
 // object id and the digest of this machine's claim-History opid set.
-// No wall clock participates — staleness is ticks since either mark
-// advanced, so identical marks age monotonically and nothing the
-// steward writes (receipts, logs, continuation records) can refresh
-// them. The dry-revival count resets only on a mark advance.
+// Only either progress mark resets age and the dry-revival count. Sample
+// times measure elapsed age after excluding evidenced provider waits; writes
+// to the steward stores never count as progress.
 
 import (
 	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 )
@@ -24,9 +24,16 @@ type Marks struct {
 
 // Evidence is the persisted state between ticks.
 type Evidence struct {
-	Marks             Marks `json:"marks"`
-	TicksSinceAdvance int   `json:"ticksSinceAdvance"`
-	DryRevivals       int   `json:"dryRevivals"`
+	Marks               Marks              `json:"marks"`
+	TicksSinceAdvance   int                `json:"ticksSinceAdvance"`
+	DryRevivals         int                `json:"dryRevivals"`
+	Abnormal            [2]AbnormalRestart `json:"abnormal,omitempty"`
+	CurrentSeat         string             `json:"currentSeat,omitempty"`
+	CurrentContinuation string             `json:"currentContinuation,omitempty"`
+	AbnormalCount       int                `json:"abnormalCount,omitempty"`
+
+	SampledAt string        `json:"sampledAt,omitempty"`
+	Age       time.Duration `json:"age,omitempty"`
 	// Degraded counts the ticks in a row whose verdict was degraded.
 	Degraded int `json:"degraded,omitempty"`
 }
@@ -36,7 +43,9 @@ type Evidence struct {
 // identical marks age by one tick.
 func Observe(prev Evidence, cur Marks) Evidence {
 	if cur != prev.Marks {
-		return Evidence{Marks: cur}
+		prev.Marks, prev.TicksSinceAdvance, prev.DryRevivals, prev.Degraded = cur, 0, 0, 0
+		prev.SampledAt, prev.Age = "", 0
+		return prev
 	}
 	prev.TicksSinceAdvance++
 	return prev

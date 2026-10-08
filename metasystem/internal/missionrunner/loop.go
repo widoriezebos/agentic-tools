@@ -2101,7 +2101,7 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 	}
 	var overloadMark outage.Mark
 	if overloaded {
-		mark, merr := outage.Record(e.installation(), overloadClass, overloadEvidence, "mission-runner", time.Now())
+		mark, merr := outage.Observe(e.ProviderHome, TurnRecordOf(c.turn).Runtime(), TurnRecordOf(c.turn).text("model"), overloadClass, overloadEvidence, c.turnID, e.now())
 		if merr != nil {
 			mark = outage.Mark{ConsecutiveFailures: 1}
 		}
@@ -2160,7 +2160,7 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 		// reported in the envelope and judged at adjudication. The CLI
 		// exited zero with no overload evidence: the provider answered,
 		// so a standing outage mark clears.
-		_ = outage.Clear(e.installation())
+		_, _ = outage.Observe(e.ProviderHome, TurnRecordOf(c.turn).Runtime(), TurnRecordOf(c.turn).text("model"), "", "", c.turnID, e.now())
 		if _, err := patchTurn(c.turnPath, map[string]any{
 			"status": "failed", "outcome": "unresumable", "error": "unresumable",
 			"detail": "host session is not resumable", "endedAt": nowISO(),
@@ -2193,7 +2193,7 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 	}
 	// A clean exit with no overload evidence is a proven provider
 	// conversation: a standing outage mark clears.
-	_ = outage.Clear(e.installation())
+	_, _ = outage.Observe(e.ProviderHome, TurnRecordOf(c.turn).Runtime(), TurnRecordOf(c.turn).text("model"), "", "", c.turnID, e.now())
 	return nil, false, nil
 }
 

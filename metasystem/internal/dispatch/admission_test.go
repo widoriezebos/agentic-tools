@@ -126,7 +126,7 @@ func TestEveryBudgetRefusalNamesObservedAndOpenCaps(t *testing.T) {
 		bed := newBudgetReceiptBed(t, 10, 240, 10)
 		root := bed.root
 		writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "revisionless.json"), map[string]any{
-			"jobId": "revisionless", "operationId": "reserve-revisionless", "goalId": "bounded", "capMin": 120, "status": "running",
+			"runtime": "local", "jobId": "revisionless", "operationId": "reserve-revisionless", "goalId": "bounded", "capMin": 120, "status": "running",
 		})
 		verdict, err := bed.revisionAdmission("bounded", 3, 120, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
 		if err != nil || verdict.Refusal == nil || verdict.Refusal.Unknown == nil || verdict.Refusal.Reserved != nil {
@@ -183,7 +183,7 @@ func TestProofAdmissionEvaluatesAuthorityAndCandidateLenses(t *testing.T) {
 		root := bed.root
 		bed.setReceipt(t, "", 1)
 		writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "candidate-spent.json"), map[string]any{
-			"jobId": "candidate-spent", "operationId": "candidate-spent", "goalId": "candidate", "goalRevision": 2,
+			"runtime": "local", "jobId": "candidate-spent", "operationId": "candidate-spent", "goalId": "candidate", "goalRevision": 2,
 			"capMin": 1, "status": "completed", "startedAt": "2026-08-28T09:40:00Z", "endedAt": "2026-08-28T09:41:00Z", "pid": 43,
 		})
 		verdict, err := evaluateProofAdmissionForDispatchWithReads(root, "bounded", 3, candidate(), 2, 1, now, "implementer", "fresh", bed.reads, HazardMechanical)
@@ -197,7 +197,7 @@ func TestProofAdmissionEvaluatesAuthorityAndCandidateLenses(t *testing.T) {
 func writeCountedCriticRootAtRevision(t *testing.T, root, job, role string, revision uint64) {
 	t.Helper()
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", job+".json"), map[string]any{
-		"jobId": job, "operationId": job, "role": role, "parentJob": nil,
+		"runtime": "local", "jobId": job, "operationId": job, "role": role, "parentJob": nil,
 		"goalId": "bounded", "goalRevision": revision, "capMin": 1, "status": "completed",
 		reviewChainCountedField: true,
 	})
@@ -268,7 +268,7 @@ func TestGoalRevisionAdmissionDoesNotChargeFollowUpOrLegacyRootsAsNewChains(t *t
 	writeCountedCriticRoot(t, root, "code-two", "code-critic")
 	legacy := filepath.Join(root, "artifacts", "agents", "jobs", "legacy-code.json")
 	writeJSON(t, legacy, map[string]any{
-		"jobId": "legacy-code", "operationId": "legacy-code", "role": "code-critic", "parentJob": nil,
+		"runtime": "local", "jobId": "legacy-code", "operationId": "legacy-code", "role": "code-critic", "parentJob": nil,
 		"goalId": "bounded", "goalRevision": 2, "capMin": 1, "status": "completed",
 	})
 	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
@@ -284,7 +284,7 @@ func TestGoalRevisionAdmissionDoesNotChargeSetupRefusedCriticRoot(t *testing.T) 
 	bed.reviewChain(t)
 	root := bed.root
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "setup-refused.json"), map[string]any{
-		"jobId": "setup-refused", "operationId": "setup-refused", "role": "code-critic", "parentJob": nil,
+		"runtime": "local", "jobId": "setup-refused", "operationId": "setup-refused", "role": "code-critic", "parentJob": nil,
 		"goalId": "bounded", "goalRevision": 2, "capMin": 1, "status": "failed", "phase": "setup", "refusalClass": "setup",
 		reviewChainCountedField: true,
 	})
@@ -369,7 +369,7 @@ func TestBudgetProjectionCountsFollowUpAsAttemptButNotCriticChain(t *testing.T) 
 	root := bed.root
 	writeCountedCriticRoot(t, root, "code-one", "code-critic")
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "code-one-r2.json"), map[string]any{
-		"jobId": "code-one-r2", "operationId": "code-one-r2", "role": "code-critic", "parentJob": "code-one",
+		"runtime": "local", "jobId": "code-one-r2", "operationId": "code-one-r2", "role": "code-critic", "parentJob": "code-one",
 		"goalId": "bounded", "goalRevision": 2, "capMin": 1, "status": "completed",
 	})
 	projection := ProjectBudget(root, loadReviewChainGoal(t, root), time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))
@@ -383,7 +383,7 @@ func TestBudgetProjectionRejectsCountedMarkerOnFollowUp(t *testing.T) {
 	bed.reviewChain(t)
 	root := bed.root
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "code-one-r2.json"), map[string]any{
-		"jobId": "code-one-r2", "operationId": "code-one-r2", "role": "code-critic", "parentJob": "code-one",
+		"runtime": "local", "jobId": "code-one-r2", "operationId": "code-one-r2", "role": "code-critic", "parentJob": "code-one",
 		"goalId": "bounded", "goalRevision": 2, "capMin": 1, "status": "completed", reviewChainCountedField: true,
 	})
 	projection := ProjectBudget(root, loadReviewChainGoal(t, root), time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))

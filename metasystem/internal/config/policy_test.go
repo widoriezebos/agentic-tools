@@ -9,6 +9,27 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 )
 
+func TestFleetAndProcessPoliciesCoexist(t *testing.T) {
+	t.Parallel()
+	for key, fallback := range map[string]string{"host.builds": "auto", "process.change": "person"} {
+		if scope := PolicyScope(key); scope != "seat" {
+			t.Fatalf("PolicyScope(%s) = %q; want seat", key, scope)
+		}
+		params := GetParams{Key: key, LookupEnv: noEnv}
+		value, err := ResolvePolicy(params)
+		if err != nil || value.Value != fallback || value.Source != "built-in" {
+			t.Fatalf("default %s: %+v %v", key, value, err)
+		}
+		for _, choice := range []string{"auto", "person"} {
+			params.Flag, params.FlagSet = choice, true
+			value, err = ResolvePolicy(params)
+			if err != nil || value.Value != choice || value.Source != "flag" {
+				t.Fatalf("explicit %s=%s: %+v %v", key, choice, value, err)
+			}
+		}
+	}
+}
+
 func TestPolicyReaderPrecedenceAndFreshness(t *testing.T) {
 	t.Parallel()
 	checkout, coordinator := t.TempDir(), t.TempDir()

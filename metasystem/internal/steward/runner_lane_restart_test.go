@@ -3,6 +3,7 @@ package steward
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,7 +32,7 @@ func TestRunnerLogsProviderHoldOnceAndStartsOnNextKeeperTick(t *testing.T) {
 				t.Fatal(err)
 			}
 			now := time.Date(2026, 10, 4, 16, 0, 0, 0, time.UTC)
-			if _, err := outage.Record(root, "overloaded", "fixture", "fixture", now); err != nil {
+			if _, err := testprovider.Record(root, "overloaded", "fixture", "fixture", now); err != nil {
 				t.Fatal(err)
 			}
 			starts, alive := 0, false
@@ -47,7 +48,7 @@ func TestRunnerLogsProviderHoldOnceAndStartsOnNextKeeperTick(t *testing.T) {
 				Start:   func(string, lane.Wake) (string, error) { starts++; alive = true; return "fixture-agent", nil },
 				Waiting: func(install, _ string) (int, error) { entries, err := plain.Waiting(install); return len(entries), err },
 				Holds: []func(string) (string, error){func(string) (string, error) {
-					if _, held := outage.StandingAt(root, now); held {
+					if _, held := testprovider.StandingAt(root, now); held {
 						return "the model provider is held", nil
 					}
 					return "", nil
@@ -63,7 +64,7 @@ func TestRunnerLogsProviderHoldOnceAndStartsOnNextKeeperTick(t *testing.T) {
 				t.Fatalf("held: starts=%d, log=%q", starts, log.String())
 			}
 			if clears {
-				if err := outage.Clear(root); err != nil {
+				if err := testprovider.Clear(root); err != nil {
 					t.Fatal(err)
 				}
 			} else {

@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 // seatTickCensus proves no worker alive and the census complete.
@@ -157,13 +158,14 @@ func TestStewardTickStartsASeatLaunch(t *testing.T) {
 	// metasystem.conf turned its seat on (Amendment 1).
 	launcher.laneRoot = func() (string, bool, error) { return filepath.Join(t.TempDir(), "landing"), true, nil }
 	workStateRoot := t.TempDir()
-	config := steward.TickConfig{Now: now, Seat: launcher, WorkStateRoot: workStateRoot}
+	providerHome := testprovider.Register(t, install)
+	config := steward.TickConfig{Now: now, Seat: launcher, WorkStateRoot: workStateRoot, ProviderHome: providerHome}
 
 	// The same checkout registered as the host's landing lane starts no
 	// seat: the tick keeps today's notification (Amendment 1).
 	asLane := launcher
 	asLane.laneRoot = func() (string, bool, error) { return top, true, nil }
-	if held, err := steward.RunTick(install, steward.TickConfig{Now: now, Seat: asLane, WorkStateRoot: workStateRoot}, seatTickCensus{}); err != nil ||
+	if held, err := steward.RunTick(install, steward.TickConfig{Now: now, Seat: asLane, WorkStateRoot: workStateRoot, ProviderHome: providerHome}, seatTickCensus{}); err != nil ||
 		held.Seat != nil || held.Decision.Action != steward.ActNotify {
 		t.Fatalf("the landing lane's tick starts no seat: %+v %+v %v", held.Decision, held.Seat, err)
 	}

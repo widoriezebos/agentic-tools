@@ -36,6 +36,7 @@ func init() {
 	registerIdempotency("system completion", idemRead, "prints the shell's completion script from constants; reads and writes nothing", nil)
 	registerIdempotency("system check", idemRead, "the health preview; it writes no observation record (TestIntentProcessAndAnswerTargets)", nil)
 	registerIdempotency("machine list", idemRead, "reads every machine's presence and each checkout of this computer as system status reads it; --refresh fetches a newer copy of that derived state, which a repeat fetches again with the same effect", nil)
+	registerIdempotency("machine clear-provider", idemStateful, "an absent hold is success and a repeated clear closes no additional interval", func(t *testing.T) { t.Run("provider clear", fleetProviderClearPublic) })
 	registerIdempotency("ui status", idemRead, "reads the interface record; removing a dead server's stale record is repair of derived state", nil)
 	registerIdempotency("settings show", idemRead, "reads settings", nil)
 	registerIdempotency("settings keys", idemRead, "reads settings", nil)

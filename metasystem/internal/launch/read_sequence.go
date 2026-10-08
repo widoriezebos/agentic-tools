@@ -108,7 +108,7 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 		}
 		launchRecord, err = driver.start(spec)
 	}
-	if IsCode(err, "UNIT_WAIT_RETRY") {
+	if IsCode(err, "UNIT_WAIT_RETRY") || IsCode(err, "LAUNCH_BUILD_CAPACITY") || IsCode(err, "LAUNCH_BUILD_PERSON") {
 		return launchRecord, err
 	}
 	if err != nil && launchRecord.ID == "" {

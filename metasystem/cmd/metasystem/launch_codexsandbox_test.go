@@ -6,12 +6,15 @@ import (
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 // supervisorStart stands in for the supervisor process the launcher starts.
@@ -40,7 +43,7 @@ func TestUnitCodexSandboxFollowsTheSelectedInstallation(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	conf := "metasystem.runtimes=codex\nlaunch.build.runtime=codex\n"
+	conf := "metasystem.runtimes=codex\nlaunch.build.runtime=codex\nhost.builds=auto\nhost.load-max=8\n"
 	for _, shape := range []string{"bin-control", "pinned-engine", "separate-selected-installation"} {
 		t.Run(shape, func(t *testing.T) {
 			installation := t.TempDir()
@@ -61,6 +64,9 @@ func TestUnitCodexSandboxFollowsTheSelectedInstallation(t *testing.T) {
 			store := launch.Store{Root: t.TempDir()}
 			admitting := (&intentInvocation{}).work().units(stateroot.Layout{InstallationRoot: stateroottest.Installation(t, installation)}).Manager
 			admitting.Store = store
+			admitting.BuildPolicy = config.GetParams{ConfPath: filepath.Join(installation, "metasystem.conf"), LookupEnv: launchLookupEnv}
+			admitting.CapacityHome = testprovider.Register(t, installation)
+			admitting.CapacitySources.Load = func(time.Time) hostload.Sample { return hostload.Sample{Available: true} }
 			var argv []string
 			admitting.Supervisor = supervisorStart(func(id, stateDir string) (identity.Ref, error) {
 				supervisor := launchManager()

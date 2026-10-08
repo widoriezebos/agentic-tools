@@ -220,7 +220,7 @@ func TestGoalCLIBudgetEarnedExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeJob := func(id, started, ended string) {
-		record := `{"jobId":"` + id + `","operationId":"` + id + `","goalId":"earned-extension","goalRevision":` + match[1] +
+		record := `{"jobId":"` + id + `","operationId":"` + id + `","runtime":"local","goalId":"earned-extension","goalRevision":` + match[1] +
 			`,"capMin":1,"status":"completed","startedAt":"` + started + `","endedAt":"` + ended + `"}` + "\n"
 		if err := os.WriteFile(filepath.Join(jobs, id+".json"), []byte(record), 0o644); err != nil {
 			t.Fatal(err)
@@ -236,9 +236,12 @@ func TestGoalCLIBudgetEarnedExtension(t *testing.T) {
 	args := []string{"--root", bed.root, "--id", "earned-extension", "--revision", match[1], "--proposed-cap", "1",
 		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "DESIGN-BEARING", "--lineage", bed.lineage}
 	extend := func() int {
-		code, _, _ := bed.owner(func(dependencies syncRequestDependencies) int {
+		code, out, errOut := bed.owner(func(dependencies syncRequestDependencies) int {
 			return goalExtendBudgetTo(args, bed.commandNow, dependencies, reads, dependencies.outStream(), dependencies.errStream())
 		})
+		if code != 0 {
+			t.Logf("extend-budget: code=%d out=%q err=%q", code, out, errOut)
+		}
 		return code
 	}
 	if code := extend(); code != 0 {
