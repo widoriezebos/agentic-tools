@@ -8,6 +8,7 @@ package dispatch
 import (
 	"crypto/sha256"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -457,6 +458,12 @@ func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionRea
 // matching local jobs as pending and reports foreign custody without trying
 // to cancel it.
 func ReconcileStopBatch(root, stopID string, now time.Time) (goal.StopBatch, error) {
+	return ReconcileStopBatchWithLaunchStatus(root, stopID, now, nil)
+}
+
+// ReconcileStopBatchWithLaunchStatus reads each unit execution from its launch
+// store. A cancelled reservation alone proves nothing about its live processes.
+func ReconcileStopBatchWithLaunchStatus(root, stopID string, now time.Time, launchStatus func(string) (string, error)) (goal.StopBatch, error) {
 	batch, err := goal.ReadStopBatch(root, stopID)
 	if err != nil {
 		return goal.StopBatch{}, err
@@ -510,12 +517,43 @@ func ReconcileStopBatch(root, stopID string, now time.Time) (goal.StopBatch, err
 			continue
 		}
 		revision, ok := lens.GoalRevision()
+		if ok && revision != batch.GoalRevision {
+			continue
+		}
+		status := lens.Status()
+		epoch, epochOK := lens.ClaimEpoch()
+		machine := lens.MachineID()
+		foreignCustody := machine != "" && machine != batch.Machine || epochOK && epoch != batch.ClaimEpoch
+		if !foreignCustody && asString(record["unitRun"]) != "" && lens.OperationID() == "unit-launch:"+lens.JobID() && lens.JobID()+".json" == entry.Name() {
+			if launchStatus == nil {
+				failure = fmt.Sprintf("unit launch %s has no launch-store reader", lens.JobID())
+				break
+			}
+			current, readErr := launchStatus(lens.JobID())
+			if errors.Is(readErr, fs.ErrNotExist) {
+				// A reservation whose launch never started: its own status decides,
+				// so a cancel settles it instead of freezing the batch.
+				current, readErr = status, nil
+				if current == "" {
+					current = "pending"
+				}
+			}
+			if readErr != nil {
+				failure = fmt.Sprintf("unit launch %s is unreadable: %v", lens.JobID(), readErr)
+				break
+			}
+			if TerminalStatus(current) && TerminalStatus(status) && (!ok || machine == "" || !epochOK) {
+				// Ended history may predate reservation custody coordinates.
+				continue
+			}
+			status = current
+			if status == "starting" {
+				status = "pending"
+			}
+		}
 		if !ok {
 			failure = fmt.Sprintf("goal-bound job record %s is revisionless", entry.Name())
 			break
-		}
-		if revision != batch.GoalRevision {
-			continue
 		}
 		jobID := lens.JobID()
 		if jobID == "" || jobID+".json" != entry.Name() {
@@ -527,13 +565,10 @@ func ReconcileStopBatch(root, stopID string, now time.Time) (goal.StopBatch, err
 			failure = fmt.Sprintf("goal-bound job record %s has no operation generation", entry.Name())
 			break
 		}
-		epoch, epochOK := lens.ClaimEpoch()
-		machine := lens.MachineID()
 		if machine == "" || !epochOK {
 			failure = fmt.Sprintf("goal-bound job record %s has unproven custody coordinates", entry.Name())
 			break
 		}
-		status := lens.Status()
 		disposition := stopLocalPending
 		if machine != batch.Machine || epoch != batch.ClaimEpoch {
 			disposition = stopForeignReportOnly

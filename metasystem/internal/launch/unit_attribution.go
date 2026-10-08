@@ -22,6 +22,8 @@ type unitComparison struct {
 	Before       *repositorySnapshot `json:"before,omitempty"`
 	Verified     bool                `json:"verified,omitempty"`
 	MainRecorded bool                `json:"mainRecorded,omitempty"`
+	StartedAt    string              `json:"startedAt,omitempty"`
+	FinishedAt   string              `json:"finishedAt,omitempty"`
 }
 
 // Attribution reads retained executions; it never rebuilds a completed step.
@@ -32,6 +34,9 @@ func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound
 	}
 	capped, err := runner.compareProof(record, round, index, base, deadline)
 	if err != nil {
+		if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
+			return false, err
+		}
 		step.Cause, step.Reason = "unclassified", "the failed command cannot be attributed: "+err.Error()
 		return false, runner.save(*record)
 	}
@@ -154,11 +159,21 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 				return false, err
 			}
 		}
+		startedAt := runner.Manager.Now().UTC().Format(time.RFC3339Nano)
 		started, startErr := runner.Manager.Start(spec)
 		if started.ID != "" {
 			cleanup = false
 		}
 		if startErr != nil && started.ID == "" {
+			comparison.StartedAt, comparison.FinishedAt = startedAt, runner.Manager.Now().UTC().Format(time.RFC3339Nano)
+			if err := runner.save(*record); err != nil {
+				return false, err
+			}
+			if runner.CollectLaunch != nil {
+				if err := runner.CollectLaunch(*record, Record{ID: comparison.LaunchID, State: Failed, StartedAt: comparison.StartedAt, FinishedAt: comparison.FinishedAt}, "unclassified"); err != nil {
+					return false, err
+				}
+			}
 			return false, startErr
 		}
 		baseline = started

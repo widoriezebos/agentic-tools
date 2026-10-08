@@ -491,7 +491,19 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 			}
 			inv.stateRoot = root.Path()
 		}
-		return dispatchcore.ReconcileUnitLaunch(inv.stateRoot, execution.ID, unit.ID, unit.Goal, string(execution.State), cause,
+		projection, _, problem := inv.projection()
+		if problem != nil {
+			return fmt.Errorf("the execution's goal revision cannot be read: %s", problem.Summary)
+		}
+		file, _ := goalRecord(projection, unit.Goal)
+		if file == nil {
+			return fmt.Errorf("the execution's goal %s cannot be read", unit.Goal)
+		}
+		revision := file.Revision
+		if file.Claimed != nil {
+			revision = file.Claimed.Revision
+		}
+		return dispatchcore.ReconcileUnitLaunch(inv.stateRoot, execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
 			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil)
 	}
 	runner.PlanProof = inv.unitProof

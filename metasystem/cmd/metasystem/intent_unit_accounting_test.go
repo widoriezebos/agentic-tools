@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -156,13 +157,122 @@ func TestIntentUnitLaunchAccountingUnaccountedMigration(t *testing.T) {
 		if err := json.Unmarshal(data, &recorded); err != nil {
 			t.Fatal(err)
 		}
-		if recorded["unitUnaccounted"] != true || recorded["status"] != "completed" {
+		if recorded["unitUnaccounted"] != true || recorded["status"] != "completed" || recorded["goalRevision"] != float64(bed.goalFile(bed.id).Claimed.Revision) {
 			t.Fatalf("legacy outcome not recorded as unaccounted: %s", data)
 		}
 		projection := dispatchcore.ProjectBudget(bed.root(), bed.goalFile(bed.id), bed.manager.Now())
 		if projection.Status != dispatchcore.BudgetKnown || projection.ReservedJobMinutes != 1 || projection.ActiveJobs != 0 || len(starter.ids) != 2 {
 			t.Fatalf("legacy execution charged or collection replay launched work: %+v ids=%v", projection, starter.ids)
 		}
+	}
+	// Older terminal history has no revision or custody coordinates.
+	data, err := os.ReadFile(reservation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var legacy map[string]any
+	if err := json.Unmarshal(data, &legacy); err != nil {
+		t.Fatal(err)
+	}
+	delete(legacy, "goalRevision")
+	transferWriteJSON(t, reservation, legacy)
+	unitAccountingPersonStop(t, bed)
+}
+
+func TestIntentUnitLaunchAccountingStop(t *testing.T) {
+	t.Parallel()
+	for _, legacy := range []bool{false, true} {
+		t.Run(fmt.Sprint(legacy), func(t *testing.T) {
+			t.Parallel()
+			bed := newWorkBed(t)
+			bed.starter.hold = "build"
+			brief := bed.brief("stop.md", "Build the unit.\n")
+			code, result, _ := bed.work(append([]string{"work", "build", bed.id, "stop", "--brief", brief, "--lines", "5"}, workCheck...)...)
+			if code != 3 {
+				t.Fatalf("pending build: %d %+v", code, result)
+			}
+			run := resultData(t, result)["run"].(string)
+			unit, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			id := unit.Rounds[0].Steps[0].LaunchID
+			reservation := filepath.Join(bed.root(), "artifacts", "agents", "jobs", id+".json")
+			data, err := os.ReadFile(reservation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var recorded map[string]any
+			if err := json.Unmarshal(data, &recorded); err != nil {
+				t.Fatal(err)
+			}
+			file := bed.goalFile(bed.id)
+			if recorded["machineId"] != file.Claimed.Machine || recorded["claimEpoch"] != float64(file.StopCapability.ClaimEpoch) {
+				t.Fatalf("open unit launch has no custody: %s", data)
+			}
+			if _, err := bed.manager.Store.Update(id, func(record *launch.Record) error {
+				exit := 0
+				record.State, record.ExitCode, record.FinishedAt = launch.Completed, &exit, bed.manager.Now().UTC().Format(time.RFC3339Nano)
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			bed.starter.hold = ""
+			code, result, _ = bed.work("work", "build", "run:"+run)
+			if code != 0 {
+				t.Fatalf("completed build: %d %+v", code, result)
+			}
+			if legacy {
+				data, err = os.ReadFile(reservation)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := json.Unmarshal(data, &recorded); err != nil {
+					t.Fatal(err)
+				}
+				delete(recorded, "machineId")
+				delete(recorded, "claimEpoch")
+				transferWriteJSON(t, reservation, recorded)
+			}
+			unitAccountingPersonStop(t, bed)
+		})
+	}
+}
+
+func unitAccountingPersonStop(t *testing.T, bed *workBed) {
+	t.Helper()
+	file := bed.goalFile(bed.id)
+	capability := *file.StopCapability
+	now := bed.manager.Now()
+	endpoint, err := bed.dependencies().endpoint(bed.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	stopID := fmt.Sprintf("stop-%s-r%d-f%d", bed.id, file.Claimed.Revision, capability.FenceEpoch+1)
+	closed, err := goal.CloseStop(goal.CloseStopRequest{
+		VerbRequest: goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: "goal-stop-custodian", Human: "Wido"},
+			Ulid: "01ARZ3NDEKTSV4RRFFQ69G7S03", Now: now, ClaimEpoch: capability.ClaimEpoch},
+		GoalID: bed.id, StopID: stopID, Reason: goal.StopReasonElapsedLimit, Capability: capability,
+	})
+	if err != nil || closed.Outcome != goal.OutcomeConfirmed {
+		t.Fatalf("person's stop did not close its fence: %+v %v", closed, err)
+	}
+	fenced := bed.goalFile(bed.id)
+	stamp := now.UTC().Format(time.RFC3339)
+	if err := goal.WriteStopBatch(bed.root(), goal.StopBatch{
+		StopID: stopID, GoalID: bed.id, GoalRevision: file.Claimed.Revision, FenceEpoch: fenced.StopFence.Epoch,
+		CapabilityGeneration: capability.Generation, Machine: capability.Machine, ClaimEpoch: capability.ClaimEpoch,
+		Reason: fenced.StopFence.Reason, State: goal.StopBatchOpen, OpenedAt: stamp, UpdatedAt: stamp,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	owners := bed.workOwners()
+	owners.processes.launches = func() *launch.Manager { return bed.manager }
+	owners.commandNow = func(string) (time.Time, error) { return bed.manager.Now(), nil }
+	code, result := bed.runJSON(owners, "work", "stop", bed.id)
+	batch, err := goal.ReadStopBatch(bed.root(), stopID)
+	if code != 0 || err != nil || batch.State != goal.StopBatchComplete {
+		t.Fatalf("person's stop did not complete: %d %+v batch=%+v err=%v", code, result, batch, err)
 	}
 }
 

@@ -1323,7 +1323,11 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 	if file.StopFence != nil {
 		// The recorded stop's bookkeeping, as the steward's pass does it.
 		stopID := file.StopFence.StopID
-		if batch, err := dispatchcore.ReconcileStopBatch(inv.stateRoot, stopID, now); err == nil {
+		host := engineHost{}
+		if inv.owners.processes.launches != nil {
+			host.launches = inv.owners.processes.launches()
+		}
+		if batch, err := dispatchcore.ReconcileStopBatchWithLaunchStatus(inv.stateRoot, stopID, now, host.UnitLaunchStatus); err == nil {
 			data["stop"], data["stopState"] = stopID, string(batch.State)
 			if batch.State == goal.StopBatchComplete {
 				stopLine = "its budget stop " + stopID + " is complete; metasystem goal resume " + id + " lifts it"

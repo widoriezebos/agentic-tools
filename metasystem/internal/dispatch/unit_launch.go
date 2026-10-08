@@ -15,6 +15,9 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 	if file == nil || file.Claimed == nil {
 		return fmt.Errorf("the unit launch has no claimed goal")
 	}
+	if file.StopCapability == nil || file.StopCapability.Machine != file.Claimed.Machine || file.StopCapability.Revision != file.Claimed.Revision || file.StopCapability.ClaimEpoch < 1 {
+		return fmt.Errorf("the unit launch has no proven claim custody; resume or re-claim it before dispatch")
+	}
 	goal, revision := file.Id, file.Claimed.Revision
 	if id == "" || run == "" || goal == "" || revision == 0 || round < 1 || cap < 1 {
 		return fmt.Errorf("the unit launch has no complete reservation identity or cap")
@@ -69,22 +72,26 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 			return nil
 		}
 		return writeRecord(path, map[string]any{"jobId": id, "operationId": "unit-launch:" + id, "unitRun": run, "unitRound": round,
-			"goalId": goal, "goalRevision": revision, "capMin": cap, "status": "pending", "createdAt": now.UTC().Format(time.RFC3339Nano)})
+			"goalId": goal, "goalRevision": revision, "machineId": file.Claimed.Machine, "claimEpoch": file.StopCapability.ClaimEpoch,
+			"capMin": cap, "status": "pending", "createdAt": now.UTC().Format(time.RFC3339Nano)})
 	})
 }
 
 // ReconcileUnitLaunch replaces the reservation's charge evidence, rather than
 // subtracting a refund. An environment exclusion survives every later collection.
-func ReconcileUnitLaunch(root, id, run, goal, status, cause, started, ended string, executed bool) error {
+func ReconcileUnitLaunch(root, id, run, goal string, revision uint64, status, cause, started, ended string, executed bool) error {
 	if !TerminalStatus(status) {
 		return fmt.Errorf("the unit execution %s has no terminal outcome", id)
 	}
 	return withRecordLock(root, id, func(path string) error {
 		record, err := readObject(path)
 		if os.IsNotExist(err) {
-			// An execution admitted without a reservation supplies history,
-			// but cannot supply a goal revision or an approved spending cap.
-			record = map[string]any{"jobId": id, "operationId": "unit-launch:" + id, "unitRun": run, "goalId": goal, "unitUnaccounted": true}
+			// Unreserved history is bound to the observed goal revision, but
+			// supplies no approved spending cap or live process custody.
+			if revision == 0 {
+				return fmt.Errorf("the unreserved unit execution %s has no observed goal revision", id)
+			}
+			record = map[string]any{"jobId": id, "operationId": "unit-launch:" + id, "unitRun": run, "goalId": goal, "goalRevision": revision, "unitUnaccounted": true}
 		} else if err != nil {
 			return err
 		}

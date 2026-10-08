@@ -326,6 +326,9 @@ func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	t.Helper()
 	bed := &workBed{intentBed: newIntentBed(t, false, func(file *goal.GoalFile) {
 		if file.Claimed != nil {
+			if file.StopCapability == nil {
+				file.StopCapability = &goal.StopCapability{Generation: file.Claimed.Revision, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+			}
 			claim, _ := time.Parse(time.RFC3339, file.Claimed.At)
 			shift := time.Date(2026, 9, 1, 9, 55, 0, 0, time.UTC).Sub(claim)
 			move := func(at string) string {

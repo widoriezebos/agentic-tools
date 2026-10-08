@@ -15,6 +15,13 @@ func (runner *UnitRunner) collectLaunches(record UnitRunRecord, round UnitRound)
 		}
 		for _, id := range ids {
 			execution, err := runner.Manager.Store.Read(id)
+			if os.IsNotExist(err) && step.Comparison != nil && id == step.Comparison.LaunchID {
+				if step.Comparison.FinishedAt == "" {
+					continue
+				}
+				execution = Record{ID: id, State: Failed, StartedAt: step.Comparison.StartedAt, FinishedAt: step.Comparison.FinishedAt}
+				err = nil
+			}
 			if os.IsNotExist(err) && id == step.LaunchID && step.State == StepStarting {
 				continue
 			}
