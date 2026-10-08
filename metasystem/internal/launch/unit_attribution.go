@@ -160,6 +160,7 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 			}
 		}
 		startedAt := runner.Manager.Now().UTC().Format(time.RFC3339Nano)
+		spec.wait = runner.CommandWait
 		started, startErr := runner.Manager.Start(spec)
 		if started.ID != "" {
 			cleanup = false

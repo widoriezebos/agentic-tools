@@ -62,8 +62,11 @@ func (runner *UnitRunner) treeLocked(worktree string, act func(string, *treeRese
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	held, err := lock.File(path+".lock", 0600, lock.Exclusive)
+	held, err := lock.File(path+".lock", 0600, lock.TryExclusive)
 	if err != nil {
+		if lock.Busy(err) {
+			return coded("UNIT_RUN_BUSY", "tree="+real, errors.New("another command is changing this worktree; repeat the same command when it finishes"))
+		}
 		return err
 	}
 	defer held.Release()
@@ -286,9 +289,11 @@ func treeCall[T any](runner *UnitRunner, worktree string, act func(*UnitRunner) 
 	return result, err
 }
 
-func (runner *UnitRunner) waitLaunch(id string, timeout time.Duration) (Record, bool, error) {
+// CommandWait releases command locks while another actor works, then validates
+// the retained run before this command may write again.
+func (runner *UnitRunner) CommandWait(act func() error) error {
 	if runner.tree == nil {
-		return runner.Manager.Wait(id, timeout)
+		return act()
 	}
 	files := []*os.File{}
 	retained := map[string][]byte{}
@@ -301,7 +306,7 @@ func (runner *UnitRunner) waitLaunch(id string, timeout time.Duration) (Record, 
 			path := filepath.Join(filepath.Dir(file.Name()), "run.json")
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return Record{}, false, err
+				return err
 			}
 			retained[path] = data
 		}
@@ -309,29 +314,42 @@ func (runner *UnitRunner) waitLaunch(id string, timeout time.Duration) (Record, 
 	for i := len(files) - 1; i >= 0; i-- {
 		_ = unix.Flock(int(files[i].Fd()), unix.LOCK_UN)
 	}
-	record, terminal, waitErr := runner.Manager.Wait(id, timeout)
+	ownerRun := runner.tree.owner.Run
+	waitErr := act()
 	for i, file := range files {
 		mode := unix.LOCK_EX | unix.LOCK_NB
 		if i == 0 {
 			mode = unix.LOCK_EX
 		}
 		if err := unix.Flock(int(file.Fd()), mode); err != nil {
-			return record, terminal, err
+			return coded("UNIT_WAIT_RETRY", "", fmt.Errorf("the command locks could not be reacquired; repeat the same command to follow the current run: %w", err))
 		}
 	}
 	if err := readJSONFile(runner.tree.path, runner.tree.owner); err != nil {
-		return record, terminal, err
+		return coded("UNIT_WAIT_RETRY", "", fmt.Errorf("the worktree ownership changed during the wait; repeat the same command to follow the current run: %w", err))
+	}
+	if runner.tree.owner.Run != ownerRun {
+		return coded("UNIT_WAIT_RETRY", "", errors.New("the worktree owner changed during the wait; repeat the same command to follow its current state"))
 	}
 	for path, data := range retained {
 		current, err := os.ReadFile(path)
 		if err != nil {
-			return record, terminal, err
+			return coded("UNIT_WAIT_RETRY", "", fmt.Errorf("the run cannot be reread after the wait; repeat the same command: %w", err))
 		}
 		if !bytes.Equal(data, current) {
-			return record, terminal, errors.New("the run changed during the wait; repeat the command to follow its current state")
+			return coded("UNIT_WAIT_RETRY", "", errors.New("the run changed during the wait; repeat the command to follow its current state"))
 		}
 	}
-	return record, terminal, waitErr
+	return waitErr
+}
+
+func (runner *UnitRunner) waitLaunch(id string, timeout time.Duration) (record Record, terminal bool, err error) {
+	err = runner.CommandWait(func() error {
+		var waitErr error
+		record, terminal, waitErr = runner.Manager.Wait(id, timeout)
+		return waitErr
+	})
+	return
 }
 
 // ReserveMutation gives a branch operation real run custody across remote

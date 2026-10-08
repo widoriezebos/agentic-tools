@@ -56,6 +56,7 @@ type StartSpec struct {
 	Inputs, Outputs, Units                             []string
 	AdapterData                                        map[string]json.RawMessage
 	readMode                                           string
+	wait                                               func(func() error) error
 	// Round and MaxRounds are the unit round this launch serves and the
 	// run's approved ceiling; the board card carries them (D14, R24).
 	Round, MaxRounds int
@@ -272,6 +273,19 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 			return Record{}, err
 		}
 	}
+	if spec.wait == nil {
+		return m.startSupervisor(id, stateDir)
+	}
+	var started Record
+	err = spec.wait(func() error {
+		var startErr error
+		started, startErr = m.startSupervisor(id, stateDir)
+		return startErr
+	})
+	return started, err
+}
+
+func (m *Manager) startSupervisor(id, stateDir string) (Record, error) {
 	supervisor, err := m.Supervisor.StartSupervisor(id, stateDir)
 	if err != nil {
 		failed, writeErr := m.fail(id, "supervisor-start: "+err.Error(), nil)

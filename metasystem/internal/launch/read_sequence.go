@@ -102,6 +102,9 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 		}
 		launchRecord, err = driver.start(spec)
 	}
+	if IsCode(err, "UNIT_WAIT_RETRY") {
+		return launchRecord, err
+	}
 	if err != nil && launchRecord.ID == "" {
 		if driver.unit {
 			step.State, step.Cause, step.Reason = StepFailed, "unclassified", err.Error()

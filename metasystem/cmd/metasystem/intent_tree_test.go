@@ -734,3 +734,300 @@ func TestIntentTreeRebaseCorrectionStaysInOperationCustody(t *testing.T) {
 		t.Fatalf("rebase wait after correction: %d %+v", code, ended)
 	}
 }
+
+func publicationLockPaths(t *testing.T, b *workBed, run string) []string {
+	t.Helper()
+	paths := treeLockPaths(t, b)
+	named, err := filepath.Glob(filepath.Join(b.unitRoot, ".named", "*.lock"))
+	if err != nil || len(named) != 1 {
+		t.Fatalf("named locks: %v %v", named, err)
+	}
+	return append(append(paths, named...), filepath.Join(b.unitRoot, run, ".lock"))
+}
+
+func TestIntentTreePublicationComparesFreshBytesUnderOwnerLocks(t *testing.T) {
+	t.Parallel()
+	for _, movement := range []string{"bytes", "head"} {
+		t.Run(movement, func(t *testing.T) {
+			t.Parallel()
+
+			b, owners, run, _ := unitCarryIntentBed(t, false)
+			tree := new(string)
+			b.head = "replayed-tip"
+			owners.work.units = func(stateroot.Layout) *launch.UnitRunner {
+				return &launch.UnitRunner{Manager: b.manager, Root: b.unitRoot, Git: boundaryGit{b, tree}}
+			}
+			paths := publicationLockPaths(t, b, run)
+			remoteReads := 0
+			owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) {
+				remoteReads++
+				assertTreeLocksFree(t, paths)
+				code, waiting := treeBuild(t, b, "competitor", false)
+				if code != 3 || waiting.Next == nil || waiting.Next.Argv[3] != "run:"+run {
+					t.Fatalf("remote read lost the reservation: %d %+v", code, waiting)
+				}
+				return strings.Repeat("a", 40), nil
+			}
+			owners.connection.push = func(branch.PushRequest) (branch.PushResult, error) {
+				assertTreeLocksFree(t, paths)
+				return branch.PushResult{Tip: b.head}, nil
+			}
+			reads, published := 0, 0
+			owners.delivery.branchRead = func([]string) (branch.BranchReadResult, int, error) {
+				reads++
+				code, competing := b.runJSON(owners, "work", "rebase", b.id)
+				if code != 3 || competing.Next == nil || !strings.Contains(competing.Summary, "another command") {
+					t.Fatalf("a locked publication did not give rebase a retry: %d %+v", code, competing)
+				}
+				for _, path := range paths {
+					held, err := lock.File(path, 0600, lock.TryExclusive)
+					if held != nil {
+						held.Release()
+					}
+					if !lock.Busy(err) {
+						t.Fatalf("publication did not hold %s: %v", path, err)
+					}
+				}
+				if movement == "bytes" {
+					*tree = ":100644 100644 " + strings.Repeat("a", 40) + " " + strings.Repeat("b", 40) + " M\x00unit.go\x00"
+				} else {
+					b.head = "another-commit"
+				}
+				return branch.BranchReadResult{State: "collected", AttestationCommit: "read-commit"}, 0, nil
+			}
+			owners.delivery.publishRead = func(string, string, string) (branch.PublishReadResult, error) {
+				published++
+				return branch.PublishReadResult{State: "current"}, nil
+			}
+			code, result := b.runJSON(owners, "work", "review", "run:"+run)
+			if code != 1 || reads != 1 || published != 0 || remoteReads != 1 || !strings.Contains(result.Summary, "changed after the read") || resultData(t, result)["cause"] != "environment" {
+				t.Fatalf("changed bytes published clean: %d %+v reads=%d publications=%d remote=%d", code, result, reads, published, remoteReads)
+			}
+			*tree, b.head = "", "replayed-tip"
+			owners.delivery.branchRead = func([]string) (branch.BranchReadResult, int, error) {
+				return branch.BranchReadResult{State: "already-collected", AttestationCommit: "read-commit"}, 0, nil
+			}
+			code, result = b.runJSON(owners, "work", "review", "run:"+run)
+			if code != 0 || published != 1 {
+				t.Fatalf("restoring the result did not permit publication: %d %+v", code, result)
+			}
+			assertTreeLocksFree(t, paths)
+		})
+	}
+}
+
+func TestIntentTreeCollectedReadPushReleasesCommandLocks(t *testing.T) {
+	t.Parallel()
+	b, owners, run, _ := unitCarryIntentBed(t, false)
+	b.head = "replayed-tip"
+	owners.work.units = func(stateroot.Layout) *launch.UnitRunner {
+		return &launch.UnitRunner{Manager: b.manager, Root: b.unitRoot, Git: boundaryGit{b, new(string)}}
+	}
+	paths := publicationLockPaths(t, b, run)
+	publications := 0
+	owners.delivery.publishRead = func(root, goalID, unit string) (branch.PublishReadResult, error) {
+		publications++
+		if !sameDirectory(root, b.worktree) || goalID != b.id || unit != "corrected-commit" {
+			t.Fatalf("publication subject: root=%s goal=%s unit=%s", root, goalID, unit)
+		}
+		code, waiting := treeBuild(t, b, "competitor", false)
+		if code != 3 || waiting.Outcome != intentInProgress || waiting.Next == nil ||
+			!slices.Equal(waiting.Next.Argv, []string{"metasystem", "work", "wait", "run:" + run}) ||
+			strings.Contains(resultWords(waiting), "UNIT_RUN_BUSY") {
+			t.Fatalf("competing writer did not wait for the publication's owner: %d %+v", code, waiting)
+		}
+		assertTreeLocksFree(t, paths)
+		return branch.PublishReadResult{State: "current"}, nil
+	}
+	code, result := b.runJSON(owners, "work", "review", "run:"+run)
+	if code != 0 || result.Outcome != intentConfirmed || publications != 1 || len(b.starter.launched()) != 2 {
+		t.Fatalf("publication did not complete without starting competing work: %d %+v publications=%d launches=%v", code, result, publications, b.starter.launched())
+	}
+	assertTreeLocksFree(t, paths)
+}
+
+func TestIntentTreeSupervisorStartupReleasesCommandLocks(t *testing.T) {
+	t.Parallel()
+	b := newWorkBed(t)
+	b.manager.StartCap = 10 * time.Second
+	var child, run string
+	slept := false
+	sleep := b.manager.Sleep
+	b.manager.Supervisor = supervisorStart(func(id, state string) (identity.Ref, error) {
+		record, err := b.manager.Store.Read(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if record.Kind != "build" {
+			return b.starter.StartSupervisor(id, state)
+		}
+		child = id
+		rows, err := filepath.Glob(filepath.Join(b.unitRoot, "*", "run.json"))
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("runs: %v %v", rows, err)
+		}
+		run = filepath.Base(filepath.Dir(rows[0]))
+		assertTreeLocksFree(t, publicationLockPaths(t, b, run))
+		return workProcessRef(10), nil
+	})
+	b.manager.Sleep = func(d time.Duration) {
+		if !slept {
+			slept = true
+			assertTreeLocksFree(t, publicationLockPaths(t, b, run))
+			code, waiting := treeBuild(t, b, "competitor", false)
+			if code != 3 || waiting.Next == nil || waiting.Next.Argv[3] != "run:"+run || len(b.starter.launched()) != 0 {
+				t.Fatalf("competing command blocked or started during startup: %d %+v", code, waiting)
+			}
+			if _, err := b.starter.StartSupervisor(child, ""); err != nil {
+				t.Fatal(err)
+			}
+		}
+		sleep(d)
+	}
+	code, built := treeBuild(t, b, "owner", false)
+	if code != 0 || !slept || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+		t.Fatalf("startup did not complete: %d %+v %v", code, built, b.starter.launched())
+	}
+}
+
+func TestIntentTreeLiveRebaseWaitPollsCustodyAndDeadline(t *testing.T) {
+	t.Parallel()
+	for _, completes := range []bool{false, true} {
+		name := "deadline"
+		if completes {
+			name = "completion"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b, owners, _ := rebaseIntentBed(t)
+			owners.connection.rebase = func(branch.RebaseRequest) (branch.RebaseResult, error) {
+				code, waiting := treeBuild(t, b, "competitor", false)
+				if code != 3 || waiting.Next == nil {
+					t.Fatalf("rebase reservation: %d %+v", code, waiting)
+				}
+				run := strings.TrimPrefix(waiting.Next.Argv[3], "run:")
+				sleeps := 0
+				sleep := b.manager.Sleep
+				b.manager.Sleep = func(d time.Duration) {
+					sleeps++
+					assertTreeLocksFree(t, treeLockPaths(t, b))
+					if completes {
+						record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+						if err != nil {
+							t.Fatal(err)
+						}
+						record.State = "completed"
+						data, err := json.Marshal(record)
+						if err != nil {
+							t.Fatal(err)
+						}
+						if err := os.WriteFile(filepath.Join(b.unitRoot, run, "run.json"), data, 0600); err != nil {
+							t.Fatal(err)
+						}
+					}
+					sleep(d)
+				}
+				defer func() { b.manager.Sleep = sleep }()
+				code, result, _ := b.work("work", "wait", "run:"+run, "--timeout", "2s")
+				expected := 3
+				if completes {
+					expected = 0
+				}
+				if code != expected || sleeps == 0 || len(b.starter.launched()) != 0 {
+					t.Fatalf("wait did not observe live rebase: %d %+v sleeps=%d", code, result, sleeps)
+				}
+				if !completes && (result.Next == nil || result.Next.Argv[3] != "run:"+run) {
+					t.Fatalf("no continuation: %+v", result)
+				}
+				return branch.RebaseResult{State: "held"}, nil
+			}
+			if code, result := b.runJSON(owners, "work", "rebase", b.id); code != 0 {
+				t.Fatalf("rebase: %d %+v", code, result)
+			}
+		})
+	}
+}
+
+func TestIntentTreeStartupLockRetakePrintsRetryWithoutSaving(t *testing.T) {
+	t.Parallel()
+	b := newWorkBed(t)
+	var held *lock.FileLock
+	var run string
+	b.manager.Supervisor = supervisorStart(func(id, state string) (identity.Ref, error) {
+		child, err := b.manager.Store.Read(id)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if child.Kind != "build" {
+			return b.starter.StartSupervisor(id, state)
+		}
+		rows, err := filepath.Glob(filepath.Join(b.unitRoot, "*", "run.json"))
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("runs: %v %v", rows, err)
+		}
+		run = filepath.Base(filepath.Dir(rows[0]))
+		paths := publicationLockPaths(t, b, run)
+		assertTreeLocksFree(t, paths)
+		held, err = lock.File(paths[1], 0600, lock.TryExclusive)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return b.starter.StartSupervisor(id, state)
+	})
+	code, result := treeBuild(t, b, "owner", false)
+	if held != nil {
+		held.Release()
+	}
+	record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	if code != 1 || err != nil || !strings.Contains(resultWords(result), "repeat the same command") || record.Rounds[0].Steps[0].State != launch.StepStarting {
+		t.Fatalf("lock retake failed without a safe retry: %d %+v %+v %v", code, result, record, err)
+	}
+	b.manager.Supervisor = b.starter
+	code, result, _ = b.work("work", "wait", "run:"+run)
+	if code != 0 || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+		t.Fatalf("retry repeated the build: %d %+v", code, result)
+	}
+}
+
+func TestIntentTreeStartupCannotOverwriteReleasedCancellation(t *testing.T) {
+	t.Parallel()
+	b := newWorkBedWith(t, func(file *goal.GoalFile) {
+		workApprovedBox(file)
+		file.Budget.ReservedJobMinutesLimit = 600
+		file.NormApproval = &goal.GoalNormApprovalClaim{ApprovedRef: "R-fixture", Minutes: 600, ReviewRounds: 2, GoalRevision: file.Revision}
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	var run string
+	b.manager.Supervisor = supervisorStart(func(id, state string) (identity.Ref, error) {
+		rows, err := filepath.Glob(filepath.Join(b.unitRoot, "*", "run.json"))
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("runs: %v %v", rows, err)
+		}
+		run = filepath.Base(filepath.Dir(rows[0]))
+		assertTreeLocksFree(t, publicationLockPaths(t, b, run))
+		if _, err := b.starter.StartSupervisor(id, state); err != nil {
+			t.Fatal(err)
+		}
+		owners := b.workOwners()
+		now, err := b.commandNow(b.root())
+		if err != nil {
+			t.Fatal(err)
+		}
+		owners.prove = enrolledPersonProver(t, b.root(), now)
+		code, stopped := b.runJSON(owners, "work", "stop", "run:"+run)
+		if code != 0 {
+			t.Fatalf("person could not cancel quiescent startup: %d %+v", code, stopped)
+		}
+		return workProcessRef(30), nil
+	})
+	code, built := treeBuild(t, b, "owner", false)
+	record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	if code != 1 || err != nil || record.State != "cancelled" || !strings.Contains(resultWords(built), "repeat the same command") || len(b.starter.launched()) != 1 {
+		t.Fatalf("startup overwrote the person's cancellation: %d %+v %+v %v", code, built, record, err)
+	}
+	b.manager.Supervisor = b.starter
+	code, result := treeBuild(t, b, "competitor", false)
+	if code != 0 || !slices.Equal(b.starter.launched(), []string{"build", "build", "proof"}) {
+		t.Fatalf("cancelled custody did not release: %d %+v", code, result)
+	}
+}

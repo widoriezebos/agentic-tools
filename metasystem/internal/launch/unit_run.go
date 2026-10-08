@@ -679,7 +679,10 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 // driver starts a unit round's launches under the run's own launch ids,
 // its launch gate and its named reservation.
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
-	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: runner.Manager.Start,
+	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: func(spec StartSpec) (Record, error) {
+		spec.wait = runner.CommandWait
+		return runner.Manager.Start(spec)
+	},
 		save: func() error {
 			if err := runner.collectLaunches(*record, *round); err != nil {
 				return err

@@ -6,6 +6,11 @@ import (
 )
 
 func (inv *intentInvocation) treeFailure(err error) intentResult {
+	if launch.IsCode(err, "UNIT_RUN_BUSY") {
+		plain, details := launchAccount(err)
+		return intentResult{Outcome: intentInProgress, code: 3, Summary: plain, Details: details,
+			next: inv.sameCommand(), nextReason: "continues when the command changing the worktree finishes"}
+	}
 	var waiting *launch.TreeWaitingError
 	if errors.As(err, &waiting) {
 		return intentResult{Outcome: intentInProgress, code: 3, Summary: waiting.Error(), next: inv.publicArgv("work", "wait", "run:"+waiting.Run)}

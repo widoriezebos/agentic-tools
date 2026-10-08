@@ -1934,14 +1934,30 @@ func (inv *intentInvocation) waitUnit(run string, timeout time.Duration, targets
 		runner.Manager.Settings = settings
 	}
 	if record, err := runner.Status(run); err == nil && record.Mutation != nil {
-		finished, err := runner.MutationFinished(record)
-		if err != nil {
-			return inv.treeFailure(err)
+		if timeout <= 0 {
+			timeout = time.Duration(runner.Manager.Settings.WaitCapSeconds) * time.Second
+			if timeout <= 0 {
+				timeout = launch.DefaultWaitTimeout
+			}
 		}
-		if !finished {
-			return inv.treeFailure(&launch.TreeWaitingError{Run: run})
+		limit := runner.Manager.Now().Add(timeout)
+		for {
+			current, err := runner.Status(run)
+			if err != nil {
+				return inv.treeFailure(err)
+			}
+			finished, err := runner.MutationFinished(current)
+			if err != nil {
+				return inv.treeFailure(err)
+			}
+			if finished {
+				return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the branch operation ended; repeat the command that was waiting"}
+			}
+			if timeout > 0 && !runner.Manager.Now().Before(limit) {
+				return inv.treeFailure(&launch.TreeWaitingError{Run: run})
+			}
+			runner.Manager.Sleep(runner.Manager.Poll)
 		}
-		return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the branch operation ended; repeat the command that was waiting"}
 	}
 
 	result, err := runner.Continue(launch.UnitRequest{Resume: run})

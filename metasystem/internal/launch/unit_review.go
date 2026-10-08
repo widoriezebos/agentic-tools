@@ -51,6 +51,7 @@ type UnitSubject struct {
 
 // UnitReview is a completed round as a committed review consumes it.
 type UnitReview struct {
+	Wait   func(func() error) error
 	Whole  bool
 	Record UnitRunRecord
 	Round  UnitRound
@@ -101,10 +102,27 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 	if err != nil {
 		return coded("UNIT_RUN_UNKNOWN", "run="+id, fmt.Errorf("there is no work run %s: %v", id, err))
 	}
+	if runner.Manager != nil && runner.tree == nil {
+		_, err := treeCall(runner, current.Worktree, func(bound *UnitRunner) (struct{}, error) {
+			return struct{}{}, bound.ReviewSubject(id, bind)
+		})
+		return err
+	}
 	if runner.Manager != nil {
 		if err := runner.GateTree(current.Worktree, id, nil); err != nil {
 			return err
 		}
+	}
+	if runner.Manager != nil {
+		_, key, err := namedUnitIdentity(UnitPlan{Worktree: current.Worktree, Goal: current.Goal, Unit: current.Unit})
+		if err != nil {
+			return err
+		}
+		held, err := runner.namedLock(key, UnitPlan{Goal: current.Goal, Unit: current.Unit})
+		if err != nil {
+			return err
+		}
+		defer releaseUnitLock(held)
 	}
 	lock, err := runner.lock(id)
 	if err != nil {
@@ -135,7 +153,7 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 	if err != nil {
 		return coded("UNIT_REVIEW_NOT_READY", fmt.Sprintf("run=%s round=%d", id, round.Number), fmt.Errorf("the changes of attempt %d were not kept, so they cannot be reviewed: %v", round.Number, err))
 	}
-	review := UnitReview{Record: record, Round: round, Head: strings.TrimSpace(after.Head), Result: after.Tree,
+	review := UnitReview{Wait: runner.CommandWait, Record: record, Round: round, Head: strings.TrimSpace(after.Head), Result: after.Tree,
 		Diff: diff, DiffDigest: digestHex(diff), Legacy: after.Tree != "" && !strings.Contains(after.Tree, "\x00")}
 	plan, err := readUnitPlan(record.Plan, record.PlanDirectory)
 	if err != nil {

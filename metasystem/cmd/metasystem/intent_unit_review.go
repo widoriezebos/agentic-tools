@@ -208,7 +208,11 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	tip := func() (string, error) {
 		if endpointTip == "" {
 			var tipErr error
-			endpointTip, tipErr = conn.endpointTip(original.Path(), endpoint)
+			tipErr = review.Wait(func() error {
+				var err error
+				endpointTip, err = conn.endpointTip(original.Path(), endpoint)
+				return err
+			})
 			if tipErr != nil {
 				return "", tipErr
 			}
@@ -347,8 +351,12 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		}
 		if err == nil {
 			var pushed branch.PushResult
-			pushed, err = conn.push(branch.PushRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
-				GoalID: goalID, OpID: subject.Operation + "-push", CheckClaim: check, Transport: conn.transport})
+			err = review.Wait(func() error {
+				var pushErr error
+				pushed, pushErr = conn.push(branch.PushRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
+					GoalID: goalID, OpID: subject.Operation + "-push", CheckClaim: check, Transport: conn.transport})
+				return pushErr
+			})
 			if err == nil {
 				subject.Published = pushed.Tip
 				err = retain(*subject)
@@ -436,7 +444,16 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		args = criticArgs
 		data["readNotPromoted"] = reason
 	}
-	result := inv.commitReview(targets, install, goalID, subject.Commit, args, criticArgs)
+	result := inv.commitReviewChecked(targets, install, goalID, subject.Commit, args, func(read branch.BranchReadResult) error {
+		head, current, err := runner.WorktreeResult(worktree)
+		if err != nil {
+			return err
+		}
+		if current != "" || head != subject.Tip && head != read.AttestationCommit {
+			return fmt.Errorf("the worktree changed after the read; restore its committed result or revise this work before publishing")
+		}
+		return nil
+	}, review.Wait, criticArgs)
 	result.text = append(result.text, carriedLines...)
 	if merged, ok := result.Data.(map[string]any); ok && merged["readNotPromoted"] != nil {
 		bundle = nil
@@ -719,6 +736,10 @@ func (inv *intentInvocation) closerAt(targets []intentTarget, root string) (*int
 // commit and review run share it. A refused unit read uses the supplied
 // critic arguments; if that start also fails, the same review continues it.
 func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, unit string, args []string, fallback ...[]string) (out intentResult) {
+	return inv.commitReviewChecked(targets, root, goalID, unit, args, nil, nil, fallback...)
+}
+
+func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, goalID, unit string, args []string, check func(branch.BranchReadResult) error, wait func(func() error) error, fallback ...[]string) (out intentResult) {
 	owners := inv.delivery()
 	result, code, err := owners.branchRead(args)
 	if err != nil && slices.Contains(args, "--unit-read") && len(fallback) > 0 {
@@ -849,7 +870,24 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 			Summary: "the review of this work is in progress",
 			next:    inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "continues this review and publishes its result when ready"}
 	}
-	published, err := owners.publishRead(root, goalID, unit)
+	if check != nil {
+		if err := check(result); err != nil {
+			data["cause"] = "environment"
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
+				Summary: err.Error(), next: inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "publishes once the committed result is restored or corrected"}
+		}
+	}
+	var published branch.PublishReadResult
+	publish := func() error {
+		var err error
+		published, err = owners.publishRead(root, goalID, unit)
+		return err
+	}
+	if wait != nil {
+		err = wait(publish)
+	} else {
+		err = publish()
+	}
 	data["publication"] = published
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
