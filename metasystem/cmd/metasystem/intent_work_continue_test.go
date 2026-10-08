@@ -10,6 +10,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -28,6 +29,9 @@ func (b *workBed) releaseHeldBuild(result intentResult) {
 	if _, err := b.manager.Store.Update(launchID, func(record *launch.Record) error {
 		exit := 0
 		record.State, record.ExitCode = launch.Completed, &exit
+		record.FinishedAt = b.manager.Now().UTC().Format(time.RFC3339Nano)
+		dead := workProcessRef(99)
+		record.Supervisor, record.Child, record.ProcessGroup = &dead, &dead, &dead
 		return nil
 	}); err != nil {
 		b.t.Fatal(err)
@@ -134,6 +138,9 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	legacyPlan := filepath.Join(bed.root(), "legacy-plan.json")
 	os.WriteFile(legacyPlan, []byte(strings.Replace(string(data), `"unit": "guarded"`, `"unit": "legacy"`, 1)), 0o600)
 	runner := &launch.UnitRunner{Manager: bed.manager, Git: workGit{bed}, Root: bed.unitRoot}
+	if _, err := runner.CancelRun(run); err != nil {
+		t.Fatal(err)
+	}
 	legacy, err := runner.Advance(launch.UnitRequest{Plan: legacyPlan})
 	if err != nil || plan.Unit != "guarded" {
 		t.Fatalf("legacy plan: %v", err)

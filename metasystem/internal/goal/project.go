@@ -47,11 +47,12 @@ const (
 )
 
 type projectionDependencies struct {
-	fetch          func(Endpoint) (AdvanceResult, error)
-	timeout        time.Duration
-	processTimeout time.Duration
-	deadline       <-chan time.Time
-	source         *projectionSource
+	fetch           func(Endpoint) (AdvanceResult, error)
+	timeout         time.Duration
+	processTimeout  time.Duration
+	deadline        <-chan time.Time
+	processDeadline func(time.Duration) <-chan time.Time
+	source          *projectionSource
 }
 
 // projectionSource binds one accepted repository and machine to a read. The
@@ -104,7 +105,7 @@ func acceptedGoalWorldFor(endpoint Endpoint) (bool, error) {
 func (dependencies projectionDependencies) withDefaults() projectionDependencies {
 	if dependencies.fetch == nil {
 		dependencies.fetch = func(endpoint Endpoint) (AdvanceResult, error) {
-			return boundedFetchAdvance(endpoint, dependencies.processTimeout)
+			return boundedFetchAdvanceWithDeadline(endpoint, dependencies.processTimeout, dependencies.processDeadline)
 		}
 	}
 	if dependencies.timeout <= 0 {
@@ -124,7 +125,17 @@ func (dependencies projectionDependencies) withDefaults() projectionDependencies
 var ErrLedgerNotFetched = errors.New("this checkout has not fetched the goal ledger yet; metasystem goal list --fetch fetches it")
 
 func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
-	return project(e, fetchFirst, now, projectionDependencies{})
+	return ProjectWithDeadline(e, fetchFirst, now, nil)
+}
+
+// ProjectWithDeadline uses one deadline source for the projection and its fetch
+// process. A nil source keeps the production bounds and timers.
+func ProjectWithDeadline(e Endpoint, fetchFirst bool, now time.Time, deadline func(time.Duration) <-chan time.Time) (Projection, error) {
+	dependencies := projectionDependencies{processDeadline: deadline}
+	if deadline != nil && fetchFirst {
+		dependencies.deadline = deadline(defaultFreshProjectionTimeout)
+	}
+	return project(e, fetchFirst, now, dependencies)
 }
 
 func project(e Endpoint, fetchFirst bool, now time.Time, dependencies projectionDependencies) (Projection, error) {
@@ -215,6 +226,10 @@ func fetchProjectionWithinDeadline(e Endpoint, dependencies projectionDependenci
 // sixty-second Stop budget shipped under metasystem/internal/runtimes/enforcement and
 // owned by the hook's deadline parent.
 func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResult, error) {
+	return boundedFetchAdvanceWithDeadline(e, processTimeout, nil)
+}
+
+func boundedFetchAdvanceWithDeadline(e Endpoint, processTimeout time.Duration, deadline func(time.Duration) <-chan time.Time) (AdvanceResult, error) {
 	if e.Repository != nil {
 		return FetchAdvance(e)
 	}
@@ -232,7 +247,7 @@ func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResul
 	// ignores whether they existed, so arming it early costs nothing on the
 	// paths that never create one.
 	defer CleanupRefs(e, nonce)
-	fetched, err := captureRemoteTipWithinDeadline(e, nonce, processTimeout)
+	fetched, err := captureRemoteTipWithinDeadline(e, nonce, processTimeout, deadline)
 	if err != nil {
 		return AdvanceResult{}, err
 	}
@@ -267,7 +282,10 @@ func boundedFetchAdvance(e Endpoint, processTimeout time.Duration) (AdvanceResul
 	return AdvanceResult{Tip: fetched, Advanced: true, Detail: detail}, nil
 }
 
-func captureRemoteTipWithinDeadline(e Endpoint, nonce string, processTimeout time.Duration) (string, error) {
+func captureRemoteTipWithinDeadline(e Endpoint, nonce string, processTimeout time.Duration, deadline func(time.Duration) <-chan time.Time) (string, error) {
+	if deadline == nil {
+		deadline = time.After
+	}
 	ref := fetchRefFor(nonce)
 	args := []string{
 		"-C", e.Root, "-c", "core.logAllRefUpdates=false",
@@ -277,7 +295,7 @@ func captureRemoteTipWithinDeadline(e Endpoint, nonce string, processTimeout tim
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := boundedexec.Run(cmd, boundedexec.FixedBound(processTimeout, "Stop-hook fresh-ledger fetch"), "fresh canonical ledger fetch"); err != nil {
+	if err := boundedexec.RunWithDeadline(cmd, boundedexec.FixedBound(processTimeout, "Stop-hook fresh-ledger fetch"), "fresh canonical ledger fetch", deadline); err != nil {
 		return "", fmt.Errorf("git fetch: %w (%s)", err, strings.TrimSpace(stderr.String()))
 	}
 	out, err := goalGit(e.Root, nil, "rev-parse", "--verify", ref)

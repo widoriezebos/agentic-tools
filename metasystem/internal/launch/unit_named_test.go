@@ -96,7 +96,7 @@ func TestNamedUnitConcurrentRepeatLaunchesOnce(t *testing.T) {
 	run := ""
 	for index, err := range errs {
 		if err != nil {
-			if !strings.Contains(ErrorDetail(err), "UNIT_RUN_BUSY") || !strings.Contains(err.Error(), "run the same command again") {
+			if !strings.Contains(ErrorDetail(err), "UNIT_RUN_BUSY") || !strings.Contains(err.Error(), "repeat the same command when it finishes") {
 				t.Fatalf("err=%v", err)
 			}
 			continue
@@ -450,6 +450,9 @@ func TestLegacyPlanAdvanceKeepsItsBehaviour(t *testing.T) {
 	fixture := newUnitFixture(t, "", "branch", "round", "new", "branch", "round")
 	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.runner.CancelRun(first.Record.ID); err != nil {
 		t.Fatal(err)
 	}
 	second, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})

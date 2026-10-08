@@ -42,7 +42,7 @@ func TestReadAdoptionRefusalsLeaveCheckoutUntouched(t *testing.T) {
 		remoteRead     bool
 		claimMoves     bool
 	}{
-		{name: "staged change conflicts with remote", wantCode: branch.StaleCode, remoteRead: true},
+		{name: "staged change conflicts with remote", wantCode: branch.ReplayConflictCode, remoteRead: true},
 		{name: "claim moves during preparation", wantCode: branch.NotHolderCode, claimMoves: true},
 	} {
 		test := test

@@ -177,9 +177,7 @@ func packageSuite(stdout, stderr io.Writer, command Command, argv []string, fail
 		}
 		// Landing's units are paths from the checkout root, also used by its
 		// Git readers; Go reports import paths from the module instead.
-		if relative, ok := strings.CutPrefix(event.Package, "github.com/widoriezebos/agentic-tools/metasystem/"); ok {
-			event.Package = "metasystem/" + relative
-		}
+		event.Package = packageUnit(event.Package)
 		if event.Action == "fail" && event.Package != "" {
 			legFailed = true
 			if event.Test != "" {

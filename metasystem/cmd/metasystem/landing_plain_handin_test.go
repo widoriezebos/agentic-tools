@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,9 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -63,6 +66,9 @@ func testHandInUnitRounds(t *testing.T, state intentBranchState, reads [2]string
 			record.Rounds[0].Steps = nil
 		}
 		writeQuestionFixture(t, filepath.Join(w.unitRoot, run, "run.json"), record)
+		if _, err := (&launch.UnitRunner{Manager: w.manager, Root: w.unitRoot, Git: workGit{w}}).CancelRun(run); err != nil {
+			t.Fatal(err)
+		}
 	}
 	if state.ReadsWaived {
 		file := w.goalFile(w.id)
@@ -84,6 +90,14 @@ func testHandInUnitRounds(t *testing.T, state intentBranchState, reads [2]string
 	b.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "the bed's landing", nil }
 	owners := w.workOwners()
 	owners.delivery = b.owners
+	owners.landing = l.owners().landing
+	owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		return "main", nil
+	}
+	owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }
+	owners.policies = config.PolicyReaders{Registry: func(string) (config.PolicyRegistry, error) {
+		return config.PolicyRegistry{Lane: l.landingA}, nil
+	}, Helm: func(string) helm.State { return helm.State{} }, ConfPath: func(string) (string, error) { return filepath.Join(install, "metasystem.conf"), nil }}
 	// The hand-in now runs through the goal's connection: endpoint, claim
 	// check, section and rebase are the bed's facts, never Git.
 	tip := state.BranchTip
@@ -147,7 +161,7 @@ func TestLandingStatusSaysRecords(t *testing.T) {
 	}
 	for _, state := range []string{plain.StateWaiting, plain.StateLanded, plain.StateReturned} {
 		if state == plain.StateReturned {
-			if _, _, err := plain.Return(install, "design", "records check failed", time.Time{}); err != nil {
+			if _, _, err := plain.ReturnProven(install, "design", "unclassified", "records check failed", true, "fixture", time.Time{}, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -190,6 +204,14 @@ func plainLaneBedWith(t *testing.T, withoutGit bool, sources ...string) (*delive
 	owners := &landingOwners{status: readBranch(2, sources...)}
 	owners.install(b)
 	b.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "/landing", true, nil }
+	b.owners.laneContains = func(sha, main string) (bool, error) { return sha == main, nil }
+	b.owners.laneLatest = func(install, id, main string) (plain.Entry, bool, error) {
+		entry, known, err := plain.Latest(install, id)
+		if known && entry.State != plain.StateReturned && entry.SHA == main {
+			entry.State = plain.StateLanded
+		}
+		return entry, known, err
+	}
 	// The bed exposes a goal worktree and keeps explicit rebase isolated from Git.
 	root := b.root()
 	b.work.git = func(_ string, args ...string) ([]byte, error) {
@@ -213,6 +235,51 @@ func plainLaneBedWith(t *testing.T, withoutGit bool, sources ...string) (*delive
 			t.Errorf("the lane installation was asked for %q", root)
 		}
 		return install, nil
+	}
+	provedPerson := enrolledPersonProver(t, b.root(), syncRequestTestNow)
+	notAncestor := exec.Command("/usr/bin/false").Run()
+	home := t.TempDir()
+	b.laneInputs = func(invOwners *intentOwners) {
+		root, configured, err := b.owners.laneRoot(b.root(), laneTestNow)
+		helmMust(t, err)
+		// Only registered lanes supply lane-policy inputs (lane-reads-its-policies.md:45).
+		if !configured {
+			return
+		}
+		currentInstall, err := b.owners.laneInstall(root)
+		helmMust(t, err)
+		b.writeFile(filepath.Join(currentInstall, "metasystem.conf"), "metasystem.template=true\nlanding.trunk-red=auto\n")
+		b.writeJSON(lane.RecordPath(home), lane.Record{Root: filepath.Dir(currentInstall), Install: currentInstall, CustodyEpoch: 1, RegisteredBy: "Wido", At: laneTestNow.Format(time.RFC3339)})
+		invOwners.commandNow = func(string) (time.Time, error) { return syncRequestTestNow, nil }
+		invOwners.landing.home = func() (string, error) { return home, nil }
+		invOwners.landing.machine = func(string) (string, error) { return "fixture", nil }
+		invOwners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+			if args[0] == "fetch" {
+				return "", nil
+			}
+			if args[0] == "rev-parse" {
+				return "main", nil
+			}
+			if args[0] == "merge-base" {
+				return "", notAncestor
+			}
+			return "", nil
+		}
+		invOwners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
+			data, exists := b.repo.commit(b.repo.accepted).files["plans/goals/trunk-red.json"]
+			if !exists {
+				return nil, nil
+			}
+			entries, problems := goal.ParseTrunkRed(data)
+			if len(problems) > 0 {
+				return nil, fmt.Errorf("%v", problems)
+			}
+			return entries, nil
+		}
+		invOwners.policies = config.PolicyReaders{Registry: func(string) (config.PolicyRegistry, error) {
+			return config.PolicyRegistry{Lane: filepath.Dir(currentInstall)}, nil
+		}, Helm: func(string) helm.State { return helm.State{} }, ConfPath: func(string) (string, error) { return filepath.Join(currentInstall, "metasystem.conf"), nil }}
+		invOwners.prove = provedPerson
 	}
 	return b, owners, install
 }
@@ -337,7 +404,7 @@ func TestWorkLandHandsInToThePlainLane(t *testing.T) {
 		t.Fatalf("a repeat appends nothing: %q", data)
 	}
 
-	if _, _, err := plain.Return(install, "standing-validation", "app-standard fails since it joined", time.Now()); err != nil {
+	if _, _, err := plain.ReturnProven(install, "standing-validation", "unclassified", "app-standard fails since it joined", true, "fixture", time.Now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result = b.do("work", "land", "standing-validation")

@@ -37,7 +37,7 @@ func comparisonAccountingBed(t *testing.T, limit uint64, dropSupervisor bool) (*
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
 	bed.manager.Adapters["plain-exec"] = launch.PlainExec{}
-	bed.manager.Supervisor = &comparisonAccountingStarter{unitProofStarter: unitProofStarter{bed}, dropSupervisor: dropSupervisor}
+	bed.manager.Supervisor = &comparisonAccountingStarter{unitProofStarter: unitProofStarter{bed: bed, t: t}, dropSupervisor: dropSupervisor}
 	bed.workOwnersHook = func(owners *intentWorkOwners) {
 		units := owners.units
 		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
@@ -54,7 +54,8 @@ func comparisonAccountingBed(t *testing.T, limit uint64, dropSupervisor bool) (*
 		t.Fatal(err)
 	}
 	brief := bed.brief("comparison.md", "Build the unit.\n")
-	return bed, []string{"work", "build", bed.id, "comparison", "--brief", brief, "--lines", "5", "--check", check}
+	bed.declaredCheap = shellCommand([]string{check})
+	return bed, []string{"work", "build", bed.id, "comparison", "--brief", brief, "--lines", "5"}
 }
 
 func TestIntentUnitComparisonStartRefusalSettlesReservation(t *testing.T) {

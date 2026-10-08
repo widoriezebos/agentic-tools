@@ -77,6 +77,8 @@ func TestIntentTreeGhostChildCanBeStoppedAndReleasesTree(t *testing.T) {
 		t.Errorf("never-started owner has no executable recovery: %d %+v", code, waiting)
 	}
 	owners := b.workOwners()
+	owners.processes = defaultProcessIntentOwners()
+	owners.processes.process.repositoryTop = fakeTop(b.root())
 	now, err := b.commandNow(b.root())
 	if err != nil {
 		t.Fatal(err)
@@ -347,6 +349,8 @@ func TestIntentTreeStoppedChildKeepsOwnerForPersonRevision(t *testing.T) {
 		t.Fatal(err)
 	}
 	owners := b.workOwners()
+	owners.processes = defaultProcessIntentOwners()
+	owners.processes.process.repositoryTop = fakeTop(b.root())
 	owners.processes.launches = func() *launch.Manager { return b.manager }
 	now, err := b.commandNow(b.root())
 	if err != nil {
@@ -1025,6 +1029,8 @@ func TestIntentTreeStartupCannotOverwriteReleasedCancellation(t *testing.T) {
 			t.Fatal(err)
 		}
 		owners := b.workOwners()
+		owners.processes = defaultProcessIntentOwners()
+		owners.processes.process.repositoryTop = fakeTop(b.root())
 		now, err := b.commandNow(b.root())
 		if err != nil {
 			t.Fatal(err)

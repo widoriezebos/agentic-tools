@@ -94,6 +94,10 @@ type linuxProcessEvent struct {
 }
 
 func armWitnessDeathEvent(t *testing.T, ref Ref) witnessEventSource {
+	return armWitnessDeathEventOwned(t, ref, t.Cleanup)
+}
+
+func armWitnessDeathEventOwned(t *testing.T, ref Ref, register func(func())) witnessEventSource {
 	t.Helper()
 	descriptor, err := unix.PidfdOpen(int(ref.Pid), 0)
 	if err != nil {
@@ -105,7 +109,7 @@ func armWitnessDeathEvent(t *testing.T, ref Ref) witnessEventSource {
 		t.Fatalf("pidfd_open for pid %d: %v", ref.Pid, err)
 	}
 	event := &linuxProcessEvent{descriptor: descriptor}
-	t.Cleanup(event.close)
+	register(event.close)
 	return event
 }
 

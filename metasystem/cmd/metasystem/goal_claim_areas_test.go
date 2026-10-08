@@ -169,7 +169,7 @@ func TestGoalClaimAreasQueueLifecycle(t *testing.T) {
 			}
 			switch scenario {
 			case "returned":
-				if _, _, err := plain.Return(lane.install, bedGoal, "needs correction", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)); err != nil {
+				if _, _, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "needs correction", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 					t.Fatal(err)
 				}
 			case "records":
@@ -200,7 +200,7 @@ func TestGoalClaimAreasQueueLifecycle(t *testing.T) {
 				first := bed.goalFile(bedGoal)
 				first.State, first.Claimed = goal.StateApproved, nil
 				bed.addGoal(first)
-				if _, _, err := plain.Return(lane.install, bedGoal, "dropped", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC)); err != nil {
+				if _, _, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "dropped", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -369,7 +369,7 @@ func releasedAreasHandInBed(t *testing.T, overlap bool) (*deliveryBed, string, s
 	if _, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: strings.Repeat("2", 40)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := plain.Return(install, bedGoal, "needs another hand-in", bed.owners.now()); err != nil {
+	if _, _, err := plain.ReturnProven(install, bedGoal, "unclassified", "needs another hand-in", true, "fixture", bed.owners.now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	first := bed.goalFile(bedGoal)
@@ -405,6 +405,7 @@ func TestWorkLandReleasedAreasAdmission(t *testing.T) {
 			_, reader := enrollGoalSyncTerminal(t, bed.root(), "ttys:hand_in")
 			owners := bed.intentBed.owners()
 			owners.delivery, owners.connection, owners.work = bed.owners, bed.connection, bed.work
+			bed.laneInputs(&owners)
 			owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, now time.Time) (humanauthority.Proof, error) {
 				if root != bed.root() {
 					t.Fatalf("terminal proof root = %q, want %q", root, bed.root())
@@ -457,6 +458,9 @@ func TestWorkLandReleasedAreasAgentRetry(t *testing.T) {
 	}
 	owners := bed.intentBed.owners()
 	owners.delivery, owners.connection, owners.work = bed.owners, bed.connection, bed.work
+	// Decision 5 in plans/designs/lane-reads-its-policies.md checks trunk
+	// permission at the registered lane before the hand-in's area admission.
+	bed.laneInputs(&owners)
 	code, stdout, stderr := bed.run(owners, "work", "land", bedGoal, "--again")
 	if code == 0 || !strings.Contains(stdout+stderr, shellCommand(want[:len(want)-1])) || strings.Contains(stdout+stderr, "goal claim") {
 		t.Fatalf("printed refusal does not retry the hand-in: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
@@ -485,7 +489,10 @@ func TestWorkLandReleasedAreasNeedsTerminalProof(t *testing.T) {
 	reader.terminalID = "ttys:another"
 	owners := bed.intentBed.owners()
 	owners.delivery, owners.connection, owners.work = bed.owners, bed.connection, bed.work
+	bed.laneInputs(&owners)
+	proofCalls := 0
 	owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, now time.Time) (humanauthority.Proof, error) {
+		proofCalls++
 		if root != bed.root() {
 			t.Fatalf("terminal proof root = %q, want %q", root, bed.root())
 		}
@@ -493,8 +500,8 @@ func TestWorkLandReleasedAreasNeedsTerminalProof(t *testing.T) {
 	}
 	code, result := bed.runJSON(owners, "work", "land", bedGoal, "--again")
 	entries, err := plain.Entries(install)
-	if code == 0 || result.Outcome != intentRefused || err != nil || len(entries) != 1 || entries[0].State != plain.StateReturned {
-		t.Fatalf("empty lineage bypassed terminal proof: exit=%d %+v entries=%+v err=%v", code, result, entries, err)
+	if code == 0 || result.Outcome != intentRefused || proofCalls == 0 || err != nil || len(entries) != 1 || entries[0].State != plain.StateReturned {
+		t.Fatalf("empty lineage bypassed terminal proof: exit=%d %+v proof calls=%d entries=%+v err=%v", code, result, proofCalls, entries, err)
 	}
 }
 

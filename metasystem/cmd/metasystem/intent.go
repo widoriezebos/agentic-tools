@@ -647,7 +647,8 @@ type intentInvocation struct {
 	entrants []*diskstore.Entrant
 	// notices holds the helm and grant admission notices until the result
 	// says whether the act proceeded; nil prints them at once.
-	notices *admissionNotices
+	notices       *admissionNotices
+	laneException *lanePersonObservation
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -1521,7 +1522,7 @@ var intentActionIntents = map[string][]struct {
 	},
 	"work": {
 		{"Read", []string{"status", "wait"}},
-		{"Work", []string{"brief", "build", "workspace", "review", "revise", "rebase", "land", "finish", "stop"}},
+		{"Work", []string{"brief", "build", "workspace", "commit", "review", "revise", "rebase", "land", "finish", "stop"}},
 	},
 	"test": {
 		{"Read", []string{"plan", "list", "status", "wait"}},

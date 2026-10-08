@@ -6,16 +6,19 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -141,7 +144,7 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	if code != 0 {
 		t.Fatalf("first correction: %d %+v", code, revised)
 	}
-	runner := &launch.UnitRunner{Root: b.unitRoot, Manager: b.manager}
+	runner := &launch.UnitRunner{Root: b.unitRoot, Manager: b.manager, Git: workGit{b}}
 	before, err := runner.Status(run)
 	if err != nil || len(before.Rounds) != 2 || before.Rounds[1].Stop == nil || before.Rounds[1].Stop.Decision != "stop" || before.Rounds[1].Material != 2 {
 		t.Fatalf("repeated regression did not stop the source: %+v %v", before, err)
@@ -153,6 +156,7 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	}); err != nil {
 		t.Fatal(err)
 	}
+	b.head = commit
 	// The model transport completes a canonical examination. Immutable
 	// repository facts bind the real register to the source commit.
 	agents := filepath.Join(b.worktree, "artifacts", "agents")
@@ -171,7 +175,16 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	if err := os.WriteFile(filepath.Join(roundDir, "return.md"), []byte("VERDICT: REVISE material=2\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	transferWriteJSON(t, filepath.Join(agents, "jobs", critic+".json"), map[string]any{"jobId": critic, "role": "code-critic", "status": "completed", "round": 1, "goalId": b.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-read-model", "findingRegister": []any{}, "reviews": "commit:" + commit, "findingRegisterRound": 0, "reviewRoundLimit": 6, "criticRoundsConsumed": 0})
+	readerRecord := map[string]any{"jobId": critic, "role": "code-critic", "status": "completed", "round": 1, "goalId": b.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-read-model", "findingRegister": []any{}, "reviews": "commit:" + commit, "findingRegisterRound": 0, "reviewRoundLimit": 6, "criticRoundsConsumed": 0,
+		"operationId": "fixture-critic:" + critic, "goalRevision": b.goalFile(b.id).Claimed.Revision, "capMin": 1,
+		"startedAt": b.manager.Now().UTC().Format(time.RFC3339Nano), "endedAt": b.manager.Now().UTC().Format(time.RFC3339Nano),
+		"instanceTag": "fixture-critic-" + critic, "pid": int64(20), "pgid": int64(20), "pidStartedAt": int64(400)}
+	if runtime.GOOS == "darwin" {
+		readerRecord["pidStartedAtExactMicro"] = int64(400_000_001)
+	} else {
+		readerRecord["pidStartTicks"], readerRecord["bootId"] = int64(400), "fixture-boot"
+	}
+	transferWriteJSON(t, filepath.Join(agents, "jobs", critic+".json"), readerRecord)
 	if outcome, err := dispatchcore.CritiqueRegisterAdvanceWithFacts(b.worktree, critic, critic, transferCritiqueFacts{paths: []string{"metasystem/newfile.go", "metasystem/reader.go"}, tree: tree}); err != nil || outcome != "advanced" {
 		t.Fatalf("canonical register: %s %v", outcome, err)
 	}
@@ -183,6 +196,13 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	entries, _ := admitted["findingRegister"].([]any)
 	if len(entries) != 2 {
 		t.Fatalf("source examination did not enter register: %+v", admitted)
+	}
+	b.workOwnersHook = func(o *intentWorkOwners) {
+		o.criticDeath = dispatchcore.CustodyDeathDependencies{
+			Reader: &criticCustodyReader{dead: true}, Processes: identity.FixedProcessTable{},
+			MatchesTag: func([]string, string) bool { return true },
+			TaggedScan: func(string) census.TaggedProcessCensus { return census.TaggedProcessCensus{} },
+		}
 	}
 	owners := b.workOwners()
 	units := owners.work.units
@@ -274,8 +294,8 @@ func TestIntentRequiredStoppedUnitPublishesTransferOnce(t *testing.T) {
 	if err != nil || destination.Unit != o.TargetUnit || destination.Rounds[0].Stop == nil || destination.Rounds[0].Stop.Decision != "close" {
 		t.Fatalf("destination inherited resolution: %+v %v", destination, err)
 	}
-	plan, err := launch.ReadUnitPlan(destination.Plan)
-	if err != nil || len(plan.Proof) != 1 || !slices.Equal(plan.Proof[0].Argv, []string{"go", "test", "-count=1", "-timeout", "30m", "-run", "TestA|TestB", "./..."}) {
+	plan, err := launch.ReadUnitPlan(filepath.Join(destination.Rounds[0].Directory, "plan.json"))
+	if err != nil || slices.Contains(result.Next.Argv, "--check") || plan.Check == nil || plan.Check.Cheap != shellCommand(workArgv) || plan.Check.Audits != "true" || plan.Check.Minutes != 15 || len(plan.Proof) != 1 || plan.Proof[0].Name != "unit-check" {
 		t.Fatalf("generated destination lost proof: %+v %v", plan, err)
 	}
 	for _, step := range destination.Rounds[0].Steps {
@@ -337,6 +357,7 @@ func TestIntentRequiredStoppedUnitPublishesTransferOnce(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	b.head = repository.unit
 	owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) { return collected, nil }
 	owners.delivery.branchRead = func(args []string) (branch.BranchReadResult, int, error) {
 		request := readRequest

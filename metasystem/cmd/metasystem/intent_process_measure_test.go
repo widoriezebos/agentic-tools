@@ -58,7 +58,7 @@ func TestProcessStepCostPublicStatus(t *testing.T) {
 		git := owners.git
 		owners.git = func(root string, args ...string) ([]byte, error) {
 			if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem.conf") {
-				return []byte("proof.full=" + declaredFull + "\n"), nil
+				return []byte("proof.full=" + declaredFull + "\nproof.cheap=" + shellCommand(workArgv) + "\nproof.audits=true\nproof.deadline=15\n"), nil
 			}
 			return git(root, args...)
 		}
@@ -68,11 +68,13 @@ func TestProcessStepCostPublicStatus(t *testing.T) {
 	fake.Scripted.Root = t.TempDir()
 	bed.testingAdapter = workTestingAdapter{fake, func(string, string, string) (adapter.Closure, error) { return fake.Scripted, nil }}
 	brief := bed.brief("cost.md", "Read each round: yes\nBuild the unit.\n")
-	check := slices.Insert(workArgv, 2, "-timeout", "30m")
-	args := append([]string{"work", "build", bed.id, "--work", "evidence", "--brief", brief, "--lines", "250", "--read-tool-calls", "12", "--check"}, check...)
+	args := []string{"work", "build", bed.id, "--work", "evidence", "--brief", brief, "--lines", "250", "--read-tool-calls", "12"}
 	code, built, output := bed.work(args...)
 	if code != 0 {
 		t.Fatalf("build exit %d: %+v %s", code, built, output)
+	}
+	if len(*fake.Calls) != 0 {
+		t.Fatal("the declared unit check dispatched adapter gates")
 	}
 	run := resultData(t, built)["run"].(string)
 	declaredFull = "different-tool --full"
@@ -123,12 +125,12 @@ func TestProcessStepCostPublicStatus(t *testing.T) {
 	// question is clipped there and the person time is exact, not a lower bound.
 	for repeat := 0; repeat < 2; repeat++ {
 		m := status()
-		for kind, minutes := range map[string]float64{"build": 1, "attest": 4, "read": 2, "correction": 1, "pending": 16, "collection": 160, "person": 179} {
+		for kind, minutes := range map[string]float64{"build": 1, "attest": 2, "read": 2, "correction": 1, "pending": 12, "collection": 120, "person": 133} {
 			if m.Hours[kind] == nil || fmt.Sprintf("%.6f", *m.Hours[kind]) != fmt.Sprintf("%.6f", minutes/60) {
 				t.Fatalf("%s time: %+v, want %g hours", kind, m, minutes/60)
 			}
 		}
-		if m.SuiteMinutes == nil || *m.SuiteMinutes != 2 || m.Run != run || m.Corrections != 1 || m.PersonLowerBound || m.WorkLowerBound || m.EstimateMinutes == nil || *m.EstimateMinutes != 70 || m.ElapsedFinish != nil || len(m.Sources) != 8 || m.UsageKnown != 4 || m.UsageExpected != 4 || m.Tokens == nil || *m.Tokens != (processmeasure.Tokens{Input: 40, CacheRead: 80, CacheCreation: 120, Output: 160}) {
+		if m.SuiteMinutes == nil || *m.SuiteMinutes != 0 || m.Run != run || m.Corrections != 1 || m.PersonLowerBound || m.WorkLowerBound || m.EstimateMinutes == nil || *m.EstimateMinutes != 70 || m.ElapsedFinish != nil || len(m.Sources) != 6 || m.UsageKnown != 4 || m.UsageExpected != 4 || m.Tokens == nil || *m.Tokens != (processmeasure.Tokens{Input: 40, CacheRead: 80, CacheCreation: 120, Output: 160}) {
 			t.Fatalf("cost/coverage: %+v", m)
 		}
 	}
@@ -148,7 +150,7 @@ func TestProcessStepCostPublicStatus(t *testing.T) {
 	if code := runIntentIn(command, rest, &stdout, &stderr, bed.root(), bed.workOwners()); code != 0 {
 		t.Fatalf("text status exit %d: %s %s", code, stdout.String(), stderr.String())
 	}
-	for _, fragment := range []string{"hours: build", "estimate 70 minutes", "tokens unavailable", "full suite minutes 2", "elapsed finish unavailable"} {
+	for _, fragment := range []string{"hours: build", "estimate 70 minutes", "tokens unavailable", "full suite minutes 0", "elapsed finish unavailable"} {
 		if !strings.Contains(strings.Join(strings.Fields(stdout.String()), " "), fragment) {
 			t.Fatalf("text status missing %q: %s", fragment, stdout.String())
 		}
@@ -167,7 +169,7 @@ func TestProcessStepCostPublicStatus(t *testing.T) {
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if got := status(); len(got.Sources) != 8 || *got.Hours["build"] != *m.Hours["build"] {
+	if got := status(); len(got.Sources) != 6 || *got.Hours["build"] != *m.Hours["build"] {
 		t.Fatalf("duplicate execution grew cost: %+v", got)
 	}
 	if _, err := bed.manager.Store.Update(m.Sources[0], func(record *launch.Record) error {

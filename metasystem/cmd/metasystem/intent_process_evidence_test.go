@@ -51,8 +51,7 @@ func processCommittedPage(t *testing.T, bed *workBed, path string, data []byte) 
 
 func processEvidenceBuild(bed *workBed) (int, intentResult, string) {
 	brief := bed.brief("estimate.md", "Build the unit.\n\n| Unit | Lines |\n| --- | --- |\n| evidence | 40 |\n")
-	check := append([]string{"--check"}, slices.Insert(workArgv, 2, "-timeout", "30m")...)
-	return bed.work(append([]string{"work", "build", bed.id, "evidence", "--brief", brief}, check...)...)
+	return bed.work(append([]string{"work", "build", bed.id, "evidence", "--brief", brief}, workCheck...)...)
 }
 
 func TestProcessEstimatePublicBuild(t *testing.T) {
@@ -332,13 +331,15 @@ func TestProcessStepEvidencePublicBuild(t *testing.T) {
 	fake.Scripted.Root = t.TempDir()
 	bed.testingAdapter = workTestingAdapter{fake, func(string, string, string) (adapter.Closure, error) { return fake.Scripted, nil }}
 	brief := bed.brief("evidence.md", "Read each round: yes\nBuild the unit.\n")
-	selectedArgv := slices.Insert(workArgv, 2, "-timeout", "30m")
-	args := append([]string{"work", "build", bed.id, "evidence", "--brief", brief, "--lines", "40", "--read-tool-calls", "12", "--check"}, selectedArgv...)
+	args := []string{"work", "build", bed.id, "evidence", "--brief", brief, "--lines", "40", "--read-tool-calls", "12"}
 	code, built, output := bed.work(args...)
 	if code != 0 {
 		t.Fatalf("build exit %d: %+v %s", code, built, output)
 	}
 	run := resultData(t, built)["run"].(string)
+	if len(*fake.Calls) != 0 {
+		t.Fatal("the declared unit check dispatched adapter gates")
+	}
 	runner := &launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot}
 	check := func(roundNumber int) {
 		t.Helper()
@@ -347,11 +348,11 @@ func TestProcessStepEvidencePublicBuild(t *testing.T) {
 			t.Fatal(err)
 		}
 		round := record.Rounds[roundNumber-1]
-		if len(round.Steps) != 4 {
+		if len(round.Steps) != 3 {
 			t.Fatalf("step count: %+v", round.Steps)
 		}
 		for index, step := range round.Steps {
-			kind := []string{"build", "attest", "attest", "read"}[index]
+			kind := []string{"build", "attest", "read"}[index]
 			if roundNumber == 2 && index == 0 {
 				kind = "correction"
 				if step.RevisionAfter != 1 {
@@ -361,12 +362,8 @@ func TestProcessStepEvidencePublicBuild(t *testing.T) {
 			if step.Kind != kind || step.ExecutionStartedAt != stamp(start) || step.ExecutionEndedAt != stamp(end) || step.FinishedAt != stamp(collected) {
 				t.Fatalf("step lost execution or collection evidence: %+v", step)
 			}
-			if index == 1 || index == 2 {
-				want := fake.Steps[0].Args
-				if index == 2 {
-					want = selectedArgv
-				}
-				if step.Command == nil || !slices.Equal(step.Command.Argv, want) || "proof:"+step.Command.Name != step.Name || step.Command.Dir != []string{fake.Scripted.Root, bed.worktree}[index-1] {
+			if index == 1 {
+				if step.Command == nil || len(step.Command.Argv) != 7 || !slices.Equal(step.Command.Argv[1:6], []string{"test", "run", "--unit-run", run, "--repo"}) || step.Command.Name != "unit-check" || step.Name != "proof:unit-check" || step.Command.Dir != bed.worktree {
 					t.Fatalf("selected command identity: %+v", step)
 				}
 			}

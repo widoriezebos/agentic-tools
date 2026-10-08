@@ -168,6 +168,11 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 					}}
 			},
 		}}
+		// These layout samples have no configuration checkout. Supply their
+		// original record snapshot; policy resolution has its own public tests.
+		owners.landing.status = func(home string, record lane.Record, view lane.View) plain.Status {
+			return plain.ReadStatus(home, record, view, owners.landing.plainProve)
+		}
 		return layoutBed{owners: owners, cwd: cwd, now: now, replace: layoutPaths(cwd, cwd, "/Users/wido/GitHub/agentic-tools-m1e",
 			home, "/Users/wido/.metasystem-home", landing, "/Users/wido/GitHub/agentic-tools-landing",
 			"~/agentic-tools-landing", "~/GitHub/agentic-tools-landing")}

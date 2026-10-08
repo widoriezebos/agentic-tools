@@ -1,0 +1,15 @@
+# Brief: lane-reads-its-policies U3, correction 1
+
+Working Mode: Implement
+U3 is uncommitted in this worktree. One Opus read found six material defects; fix exactly these. Scratch tests that reproduced M1 and M2 are in the critic's copy (internal/landing/plain/zz_critic_test.go in the scratchpad's u3 copy): write equivalent tests here.
+
+M1. internal/landing/plain/stop.go:102-107: stopKey now includes At (StoppedAt for close lines); close lines written before U3 have no stopped-at, so every already-closed stop reopens (NewestStop, SyncPolicyQuestion policy_question.go:100, the barren read batch.go:151). A close line without StoppedAt matches on loop/subject/attempt as before. Test: a legacy close still closes (mutation: key on At only, red).
+M2. internal/landing/plain/prove.go:320 ReadRunning: a pending admission is alive whether or not its parent lives; a parent that died between writing pending (:442) and Launch blocks every later prove, a person's included. Pending is alive only while the recorded parent process is alive; otherwise it is failed and reconciled per Decision 4. Test: pending with a dead parent is not alive and a person's prove proceeds.
+M3. internal/landing/plain/proof_admission.go:156-158: stops now always record Tree, so closure needs an exact tree; after main moves the printed `landing prove --trunk` runs but leaves the stop and question open. Trunk stops match on loop, scope and subject "main"; batch stops on batch or subject. Test: stop, main moves, follow the printed command, the stop and question close.
+M4. cmd/metasystem/intent_landing_prove.go:181-184, 222 and prove.go:589-592: `--attempt X --wait` drops FenceCheck and U2b's OwnProcess check and claims any launched admission, so an agent replaying the exact child argv runs the person-admitted check. Restore the child-identity check (decided by m1e for Wido on the design page: the binding stays), and restore landing_proof_identity_test.go:67-71 to replay the EXACT child argv and expect refusal (mutation: drop the identity check, red).
+M5. intent_landing_prove.go:345-364 with status.go:400-403: a failed or pending admission shows as "proving tree X ... since". Give failed and pending their own wording with the retry act.
+M6. prove.go:1047-1061: a held scoped-to-full escalation records the scoped result as Red with no cause, so checkBound answers NoRepeat. Record a held, non-red outcome (the "full check pending" scope reason). Test: a held escalation leaves no red and a later admitted full check runs.
+Also remove the unreachable ProofBudget branch in landingProveRefusal.
+
+Check: go build ./... && go vet ./... && go test -count=1 -timeout 30m ./internal/landing/... ./internal/steward/ && go test -count=1 -timeout 60m -run 'TestLanding|TestWork|TestIntent|TestGoal|TestKeeper|TestIncident|TestHelm|TestPolicy|TestQuestion|TestPlainLane|TestEvery|TestAudit|TestInstruction' ./cmd/metasystem/ && go run ./cmd/devgate static
+Never open any metasystem.conf.local; do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat of the correction, each test with its mutation.

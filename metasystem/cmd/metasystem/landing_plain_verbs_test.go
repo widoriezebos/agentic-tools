@@ -92,12 +92,23 @@ func (bed *plainVerbBed) script(t *testing.T, name string, code int) string {
 
 func (bed *plainVerbBed) setCommand(t *testing.T, command string) {
 	t.Helper()
-	// Proof commands belong to the repository configuration, not the seat's local settings.
-	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), []byte("metasystem.template=true\nproof.full="+command+"\n"), 0o644); err != nil {
+	bed.advanceMain(t, "metasystem/metasystem.conf", "metasystem.template=true\nproof.full="+command+"\n")
+}
+
+// Main's fixture changes arrive through a main merge, keeping hand-in commits pinned.
+func (bed *plainVerbBed) advanceMain(t *testing.T, path, text string) {
+	t.Helper()
+	writer := filepath.Join(t.TempDir(), "main-writer")
+	bed.git(t, filepath.Dir(bed.checkout), "clone", "--quiet", bed.origin, writer)
+	if err := os.WriteFile(filepath.Join(writer, path), []byte(text), 0644); err != nil {
 		t.Fatal(err)
 	}
-	bed.git(t, bed.checkout, "add", "metasystem/metasystem.conf")
-	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "declare the proof command")
+	bed.git(t, writer, "add", path)
+	bed.git(t, writer, "commit", "--quiet", "-m", "advance main fixture")
+	bed.git(t, writer, "push", "--quiet", "origin", "HEAD:main")
+	bed.main = bed.git(t, writer, "rev-parse", "HEAD")
+	bed.git(t, bed.checkout, "fetch", "--quiet", "origin")
+	bed.git(t, bed.checkout, "merge", "--quiet", "--no-ff", "--no-edit", "origin/main")
 }
 
 // seat pushes goal/G from a seat clone and hands it in, as work land does.
@@ -123,6 +134,13 @@ func (bed *plainVerbBed) seat(t *testing.T, goal string) string {
 func (bed *plainVerbBed) merge(t *testing.T, shas ...string) string {
 	t.Helper()
 	bed.git(t, bed.checkout, "fetch", "--quiet", "origin")
+	record, present, err := lane.Read(bed.home)
+	if err != nil || !present {
+		t.Fatalf("fixture registration: %v %v", present, err)
+	}
+	if _, err := plain.SelectBatch(bed.installation, bed.checkout, record, plain.ProveSeams{}); err != nil {
+		t.Fatalf("prepare fixture selection: %v", err)
+	}
 	bed.git(t, bed.checkout, "checkout", "--quiet", "--detach", "origin/main")
 	for _, sha := range shas {
 		bed.git(t, bed.checkout, "merge", "--quiet", "--no-ff", "--no-edit", sha)
@@ -262,20 +280,12 @@ func TestPlainLanePushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T)
 		t.Fatalf("a red prove = %d\n%s", code, text)
 	}
 	refused("red", "not green")
-	if err := os.WriteFile(filepath.Join(bed.installation, "fix.txt"), []byte("fix\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	bed.git(t, bed.checkout, "add", "-A")
-	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "fix red tree")
+	bed.advanceMain(t, "metasystem/fix.txt", "fix\n")
 	bed.setCommand(t, bed.script(t, "prove-green.sh", 0))
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 {
 		t.Fatalf("a green prove = %d\n%s", code, text)
 	}
-	if err := os.WriteFile(filepath.Join(bed.installation, "fix.txt"), []byte("another fix\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	bed.git(t, bed.checkout, "add", "-A")
-	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "another tree")
+	bed.advanceMain(t, "metasystem/fix.txt", "another fix\n")
 	refused("other tree", "never proven")
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 0 {
 		t.Fatalf("a green prove = %d\n%s", code, text)
@@ -292,6 +302,8 @@ func TestPlainLanePushRefusesRedUnprovenOtherTreeAndNonFastForward(t *testing.T)
 func TestPlainLaneRedIsReturnedToItsSeat(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
+	bed.cwd = bed.checkout
+	bed.owners.prove = enrolledPersonProver(t, bed.installation, laneTestNow)
 	bed.merge(t, bed.seat(t, "goal-a"))
 	bed.setCommand(t, bed.script(t, "prove-red.sh", 1))
 	if code, text := bed.run(t, "landing", "prove", "--wait"); code != 1 || !strings.Contains(text, "red") {
@@ -318,8 +330,8 @@ func TestPlainLaneRedIsReturnedToItsSeat(t *testing.T) {
 // landing prove without a proof command refuses in two lines naming the
 // setting; without --wait it starts the proof detached and returns; a
 // repeat while that tree's proof runs starts nothing; another tree is
-// refused while it runs; status shows the running proof; a paused lane
-// refuses prove and push.
+// refused while it runs; status shows the running proof; a pause holds push
+// while the active proof keeps ownership of its tree.
 func TestPlainLaneProveStartsDetachedOnce(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
@@ -363,7 +375,12 @@ func TestPlainLaneProveStartsDetachedOnce(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, verb := range []string{"prove", "push"} {
-		if code, text := bed.run(t, "landing", verb); code != 1 || !strings.Contains(text, "stopped") {
+		want := "stopped"
+		if verb == "prove" {
+			// Decision 4 admits direct checks through a pause, but never over a live tree owner.
+			want = "is being proven"
+		}
+		if code, text := bed.run(t, "landing", verb); code != 1 || !strings.Contains(text, want) || len(launched) != 1 {
 			t.Fatalf("a paused %s = %d\n%s", verb, code, text)
 		}
 	}
@@ -426,6 +443,8 @@ func witnessLandingPushRepeat(t *testing.T) {
 // success and leaves the lane's records as they were.
 func witnessLandingReturnRepeat(t *testing.T) {
 	bed := newPlainVerbBed(t)
+	bed.cwd = bed.checkout
+	bed.owners.prove = enrolledPersonProver(t, bed.installation, laneTestNow)
 	bed.seat(t, "goal-a")
 	if code, text := bed.run(t, "landing", "return", "goal-a", "--cause", "unclassified", "--by", "Wido", "--reason", "red"); code != 0 {
 		t.Fatalf("first return = %d\n%s", code, text)

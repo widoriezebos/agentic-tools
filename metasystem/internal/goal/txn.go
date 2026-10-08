@@ -573,8 +573,8 @@ func CleanupRefs(e Endpoint, opid string) {
 		_ = e.Repository.Release(opid)
 		return
 	}
-	_, _ = goalGit(e.Root, nil, "update-ref", "-d", fetchRefFor(opid))
-	_, _ = goalGit(e.Root, nil, "update-ref", "-d", txnRefFor(opid))
+	_, _ = goalGitWithEnvironment(e.Root, e.commandEnv, nil, "update-ref", "-d", fetchRefFor(opid))
+	_, _ = goalGitWithEnvironment(e.Root, e.commandEnv, nil, "update-ref", "-d", txnRefFor(opid))
 }
 
 // LostToCompetitor is the mutation callback's way of classifying a

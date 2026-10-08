@@ -32,7 +32,7 @@ func TestDrainHandInAdmission(t *testing.T) {
 	if _, _, err := HandIn(install, Line{Goal: "returned", SHA: "r1"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Return(install, "returned", "own", bedNow); err != nil {
+	if _, _, err := ReturnProven(install, "returned", "unclassified", "own", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	first := drainFixture(t, install)
@@ -53,7 +53,7 @@ func TestDrainHandInAdmission(t *testing.T) {
 			t.Fatalf("admitted new work: %+v %v", proposed, err)
 		}
 	}
-	if _, _, err := Return(install, "a", "done", bedNow); err != nil {
+	if _, _, err := ReturnProven(install, "a", "unclassified", "done", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	seams := ProveSeams{Git: func(string, ...string) (string, error) { return "main", nil }}
@@ -140,7 +140,7 @@ func TestDrainMembershipIncludesHeldAndDamage(t *testing.T) {
 	if err != nil || p.Waiting != 1 || p.Drain.State != DrainDraining {
 		t.Fatalf("held work disappeared: %+v %v", p, err)
 	}
-	if _, _, err := Return(install, "held", "returned", bedNow); err != nil {
+	if _, _, err := ReturnProven(install, "held", "unclassified", "returned", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(queuePath(install), []byte("{broken\n{}\n"), 0600); err != nil {
@@ -261,7 +261,7 @@ func TestDrainProofAdmissionAndTimer(t *testing.T) {
 			return "", nil
 		}
 		return "main", nil
-	}, Executable: func() (string, error) { return "engine", nil }, Launch: func([]string, string, string) (int64, error) { launches++; return 42, nil }, Alive: func(Running) bool { return false }}
+	}, Executable: func() (string, error) { return "engine", nil }, Launch: func([]string, string, string) (int64, error) { launches++; return int64(os.Getpid()), nil }, Alive: func(Running) bool { return false }}
 	if _, _, err := Start(install, "checkout", seams); err == nil || launches != 0 {
 		t.Fatal("idle proof was admitted", err, launches)
 	}
@@ -280,7 +280,7 @@ func TestDrainProofAdmissionAndTimer(t *testing.T) {
 	if err := os.Remove(runningPath(install)); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := Return(install, "g", "own", bedNow); err != nil {
+	if _, _, err := ReturnProven(install, "g", "unclassified", "own", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	reasons, err := WakeReasons(install, "checkout", time.Time{}, bedNow, seams)

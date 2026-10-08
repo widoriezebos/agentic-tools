@@ -95,12 +95,30 @@ func reviewReturnDigest(path string) (string, []byte, error) {
 	return fmt.Sprintf("%x", sha256.Sum256(data)), data, nil
 }
 
+func retainWorkExamination(work *reviewWorkContext, rootJob string, newest map[string]any, returnPath string) error {
+	round, status := recordRound(newest), recordText(newest, "status")
+	if work.subject != nil && (status == "completed" || status == "failed") && (work.subject.Examination != rootJob || work.subject.ExaminationRound != round || work.subject.ExaminationReturnPath != returnPath) {
+		work.subject.Examination, work.subject.ExaminationRound, work.subject.ExaminationReturnPath = rootJob, round, returnPath
+		work.subject.ExaminationJob = recordText(newest, "jobId")
+		if work.retry > 0 {
+			work.subject.UnknownRetries = 1
+		}
+		if err := work.retain(*work.subject); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // closeWorkReview decides and closes the finished examination of the work's
 // subject. It returns nil once the chain is closed, so the caller collects;
 // otherwise the result says what is still needed.
 func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commit, rootJob string) *intentResult {
 	work := inv.reviewWork
 	again := inv.publicArgv(append(reviewGoalWords(work.goal), "--work", work.work)...)
+	if work.run != "" {
+		again = inv.canonicalReviewArgv(targets, work.goal, commit)
+	}
 	data := map[string]any{"goal": work.goal, "work": work.work, "attempt": work.attempt, "examination": rootJob}
 	newest, err := inv.newestRoundAt(root, rootJob)
 	if err != nil {
@@ -119,15 +137,8 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 			return inv.refuseReviewDrop(targets, work)
 		}
 	}
-	if work.subject != nil && (status == "completed" || status == "failed") && (work.subject.Examination != rootJob || work.subject.ExaminationRound != round || work.subject.ExaminationReturnPath != returnPath) {
-		work.subject.Examination, work.subject.ExaminationRound, work.subject.ExaminationReturnPath = rootJob, round, returnPath
-		work.subject.ExaminationJob = recordText(newest, "jobId")
-		if work.retry > 0 {
-			work.subject.UnknownRetries = 1
-		}
-		if err := work.retain(*work.subject); err != nil {
-			return &intentResult{Outcome: intentFailed, code: 1, Summary: "the review decision could not be retained", Details: []string{err.Error()}, next: again}
-		}
+	if err := retainWorkExamination(work, rootJob, newest, returnPath); err != nil {
+		return &intentResult{Outcome: intentFailed, code: 1, Summary: "the review decision could not be retained", Details: []string{err.Error()}, next: again}
 	}
 	if work.run != "" {
 		if stopped := inv.reviewStoppedUnit(targets, root, rootJob, returnPath, work); stopped != nil {

@@ -47,7 +47,7 @@ func productionIntentLandingGate(inv *intentInvocation, goalID, tip string) (str
 // admission, the hand route's push and every push of the landing path make,
 // as the batch's publication authority makes it over its own fresh projection.
 func freshLandingGate(stateRoot, installationRoot, goalID, tip string, dependencies syncRequestDependencies, commandNow func(string) (time.Time, error)) (string, error) {
-	endpoint, err := dependencies.endpoint(stateRoot)
+	endpoint, err := dependencies.endpoint(installationRoot)
 	if err != nil {
 		return "", err
 	}

@@ -58,11 +58,17 @@ func runIntentWorkRebase(inv *intentInvocation) int {
 		summary = fmt.Sprintf("goal %s is %d commits behind current remote main; its branch was %s", id, result.Behind, result.State)
 	}
 	lines := append(inv.rebaseReviewLines(id, result), warning...)
+	for _, unit := range result.NeedsReview {
+		if why := result.ReviewReasons[unit]; why != "" {
+			lines = append(lines, "work "+unit+" needs a read: "+why,
+				"person repair: metasystem work build "+id+" --work declaration-repair --brief FILE --reason TEXT --by NAME --check COMMAND")
+		}
+	}
 	return inv.render(intentResult{Targets: targets, Outcome: outcome, Summary: summary, Data: result, text: lines})
 }
 
 // rebaseGoal is the shared branch operation for rebase and land.
-func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []string, *intentResult) {
+func (inv *intentInvocation) rebaseGoal(id string) (out branch.RebaseResult, warnings []string, problem *intentResult) {
 	targets := []intentTarget{{Kind: "goal", ID: id}}
 	refused := func(err error) (branch.RebaseResult, []string, *intentResult) {
 		var conflict *branch.RebaseConflict
@@ -101,7 +107,11 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 
 	defer func() {
 		if err := releaseTree(); err != nil {
-			fmt.Fprintln(inv.stderr, err)
+			if problem != nil {
+				problem.Details = append(problem.Details, err.Error())
+			} else {
+				_, _, problem = refused(err)
+			}
 		}
 	}()
 
@@ -122,7 +132,7 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 	err = conn.section(root, func(_ func(func() error) error) error {
 		var err error
 		result, err = conn.rebase(branch.RebaseRequest{Repo: root, Remote: endpoint.Remote, EndpointTip: mainTip,
-			GoalID: id, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport, Resolve: inv.resolveRebaseRound(id, runner),
+			GoalID: id, CheckClaim: check, Gate: conn.rebaseGate, SubjectCheck: conn.subjectCheck, Transport: conn.transport, Resolve: inv.resolveRebaseRound(id, runner),
 			Answer: func(question string) (string, error) {
 				q, err := channel.ReadQuestion(inv.layout.InstallationRoot.Path(), question)
 				if err != nil {

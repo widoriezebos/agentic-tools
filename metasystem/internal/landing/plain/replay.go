@@ -9,13 +9,20 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"time"
 )
 
 // classifyRed applies the first-match cause table. The caller supplies the
 // isolated replay over its subject's trees; every repeat uses its existing
 // allowance, including a registered flake's repeat in the current worktree.
 func classifyRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, output io.Writer, observed *proofOutput, result, previous Result, report checkReport, runErr error, replay func(Result, Result) Result) Result {
+	result = observeRed(seams, install, running, decision, observed, result, previous, report, runErr)
+	if result.executionErr != nil {
+		return result
+	}
+	return continueRed(seams, install, checkout, command, dir, running, decision, output, result, previous, replay)
+}
+
+func observeRed(seams ProveSeams, install string, running Running, decision scopeDecision, observed *proofOutput, result, previous Result, report checkReport, runErr error) Result {
 	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
 	result.Cause = &Cause{Kind: "unclassified", Evidence: running.Log}
 	var exit *exec.ExitError
@@ -29,14 +36,40 @@ func classifyRed(seams ProveSeams, install, checkout, command, dir string, runni
 	if result.Cause.Kind == "environment" && previous.Result == "" {
 		result.Repeat = "allowed"
 	}
-	if report.kind != "complete" {
-		return result
-	}
-	if result.Cause.Kind == "environment" {
-		return result
-	}
 	result.Failed = report.failed
 	result.Cause.Tests = failingTests(result.Failed)
+	result.Person, result.Executions = running.Person, running.Executions
+	result.ClassificationOf = running.ClassificationOf
+	result.ClassificationPending = true
+	if err := withLock(install, func() error {
+		if err := appendLine(seams.resultsPath(install), result); err != nil {
+			return err
+		}
+		return redContinuationLocked(install, result, seams)
+	}); err != nil {
+		result.Reason += "; " + err.Error()
+		result.executionErr = err
+		return result
+	}
+	return result
+}
+
+// continueRed uses the recorded report; it never repeats the original full admission.
+func continueRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, output io.Writer, result, previous Result, replay func(Result, Result) Result) Result {
+	result.ClassificationPending = false
+	// Only a flake repeat (it carries FlakeRepeats) is held here; a whole-check,
+	// environment or person re-proof is also "started" and keeps the lane's attribution.
+	if result.Repeat == "started" && len(result.FlakeRepeats) > 0 {
+		if !result.RepeatComplete {
+			return result
+		}
+		green := result
+		green.Result, green.Failed, green.Cause = Green, nil, nil
+		return recordFlakes(seams, result, green, "alone", result.FlakeRepeats)
+	}
+	if result.Cause.Kind == "environment" || len(result.Failed) == 0 {
+		return result
+	}
 	known := len(result.Failed) > 0
 	if seams.Judge != nil {
 		judged, err := seams.Judge(checkout, running.Commit, result.Failed)
@@ -53,15 +86,39 @@ func classifyRed(seams ProveSeams, install, checkout, command, dir string, runni
 	if !known || previous.Result != "" {
 		return replay(result, previous)
 	}
+	ordinary, ordinaryRepeat := *result.Cause, result.Repeat
+	result.FlakeRepeats = make([]Running, len(result.Failed))
+	for i := range result.Failed {
+		repeat := running
+		repeat.Attempt = fmt.Sprintf("%s-repeat-%d", running.Attempt, i+1)
+		repeat.Log = filepath.Join(Dir(install), "proofs", repeat.Attempt+".log")
+		result.FlakeRepeats[i] = repeat
+	}
 	result.Repeat = "started"
 	result.Cause.Kind = "flake"
 	result.Cause.Name = strings.Join(result.Cause.Tests, ", ")
 	if err := withLock(install, func() error {
+		history, err := readLines[Result](seams.resultsPath(install))
+		if err != nil {
+			return err
+		}
+		for _, prior := range history {
+			if prior.Tree == result.Tree && prior.Repeat == "started" {
+				return &NoRepeat{}
+			}
+		}
 		if err := recordProofStop(install, result); err != nil {
 			return err
 		}
 		return appendLine(seams.resultsPath(install), result)
 	}); err != nil {
+		var refused *NoRepeat
+		if errors.As(err, &refused) {
+			// The tree's one repeat is spent: the red keeps its ordinary cause.
+			result.FlakeRepeats, result.Repeat = nil, ordinaryRepeat
+			*result.Cause = ordinary
+			return replay(result, previous)
+		}
 		result.Reason = "the repeat could not be recorded: " + err.Error()
 		return result
 	}
@@ -69,29 +126,36 @@ func classifyRed(seams ProveSeams, install, checkout, command, dir string, runni
 		result.Reason = "the repeat's log folder could not be made: " + err.Error()
 		return result
 	}
-	repeats := make([]Running, len(result.Failed))
+	repeats := result.FlakeRepeats
 	var failures []string
 	for i, unit := range result.Failed {
-		repeat := running
-		repeat.Attempt = fmt.Sprintf("%s-repeat-%d", running.Attempt, i+1)
-		repeat.Log = filepath.Join(Dir(install), "proofs", repeat.Attempt+".log")
-		repeats[i] = repeat
+		repeat := repeats[i]
+		var report checkReport
 		file, err := os.OpenFile(repeat.Log, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 		if err == nil {
-			_, err = runCheck(seams, dir, command, repeat, unit.Unit, decision, file, &proofOutput{output: io.Discard})
-			if info, statErr := file.Stat(); statErr == nil {
-				_, copyErr := io.Copy(output, io.NewSectionReader(file, 0, info.Size()))
-				err = errors.Join(err, copyErr)
+			report, err = runCheck(seams, dir, command, repeat, unit.Unit, decision, file, &proofOutput{output: io.Discard})
+			if err == nil && (report.kind != "complete" || len(report.failed) != 0) {
+				err = fmt.Errorf("the repeat has no complete passing report")
 			}
+
 			err = errors.Join(err, file.Close())
 		}
 		if err != nil {
+			result.Cause.Kind = "unclassified"
+			if report.kind != "complete" {
+				result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
+			}
 			failures = append(failures, unit.Unit+": "+err.Error())
 		}
 	}
 	if len(failures) > 0 {
 		result.Reason = strings.Join(failures, "; ")
-		return replay(result, result)
+		return recordFlakes(seams, result, result, "alone", repeats)
+	}
+	result.RepeatComplete = true
+	if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result) }); err != nil {
+		result.Reason = "the repeat's outcome could not be recorded: " + err.Error()
+		return result
 	}
 	green := result
 	green.Result, green.Repeat, green.Failed, green.Load, green.Reason, green.Cause = Green, "", nil, 0, "", nil
@@ -147,6 +211,13 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 // isolated green. It neither turns the full red green nor spends a repeat.
 func classifyReplay(seams ProveSeams, install, checkout, command string, running Running, result, previous Result, trees []replayTree) Result {
 	for i, prefix := range trees {
+		if !running.Trunk && result.ClassificationPerson == nil {
+			if _, err := CheckBatch(install, checkout, prefix.Commit, "", true, seams); err != nil {
+				result.Reason += "; " + err.Error()
+				return result
+			}
+		}
+		prefix.BatchID, prefix.BatchMembers = running.BatchID, running.BatchMembers
 		prefix.Attempt = fmt.Sprintf("%s-replay-%d", running.Attempt, i+1)
 		var err error
 		prefix.Tree, err = seams.git(checkout, "rev-parse", "--verify", prefix.Commit+"^{tree}")
@@ -257,9 +328,12 @@ func subsetGoals(goals, first []GoalSHA) bool {
 
 // checkProofBudget runs under the lane lock, before a start or repeat marker.
 func checkProofBudget(install, checkout, commit string, seams ProveSeams) error {
-	results, err := Results(install)
+	results, skipped, err := countedLines[Result](resultsPath(install))
 	if err != nil {
 		return err
+	}
+	if skipped != 0 {
+		return fmt.Errorf("the full-check history contains unreadable lines; a person may request one fresh check")
 	}
 	var first []GoalSHA
 	firstRed := false
@@ -294,16 +368,6 @@ func checkProofBudget(install, checkout, commit string, seams ProveSeams) error 
 		return &ProofBudget{}
 	}
 	return nil
-}
-
-// CloseProofLoop closes the batch budget while preserving its newest proof.
-func CloseProofLoop(install string) error {
-	return withLock(install, func() error {
-		if err := closeProofLoop(install); err != nil {
-			return err
-		}
-		return closeStopsLocked(install, "", "landing run", time.Now())
-	})
 }
 
 func closeProofLoop(install string) error {

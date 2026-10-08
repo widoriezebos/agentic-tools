@@ -2438,7 +2438,10 @@ func runIntentIncidents(inv *intentInvocation) int {
 		if entry.Closed != nil && !inv.input.switched("all") {
 			continue
 		}
-		if entry.EntryClass() != goal.TrunkRedClassTrunkRed {
+		if entry.EntryClass() == goal.TrunkRedClassFlake && !slices.ContainsFunc(entry.Sightings, func(s goal.TrunkRedSighting) bool { return s.Where == "" }) {
+			continue
+		}
+		if entry.EntryClass() != goal.TrunkRedClassTrunkRed && entry.EntryClass() != goal.TrunkRedClassFlake {
 			tracked = append(tracked, entry)
 			continue
 		}
@@ -2460,7 +2463,7 @@ func runIntentIncidents(inv *intentInvocation) int {
 			if entry.Closed != nil {
 				state = "closed"
 			}
-			lines = append(lines, fmt.Sprintf("  %s  %s  %s, %s", entry.ID, entry.Group, trackedDefectLabel(entry.EntryClass()), state))
+			lines = append(lines, fmt.Sprintf("  %s  %s  %s, %s%s", entry.ID, entry.Group, trackedDefectLabel(entry.EntryClass()), state, incidentEvidence(entry)))
 		}
 		summary += fmt.Sprintf("; %d tracked flake or hang entr%s", len(tracked), map[bool]string{true: "y", false: "ies"}[len(tracked) == 1])
 	}

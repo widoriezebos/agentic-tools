@@ -195,7 +195,7 @@ func TestLandingMovedScriptIsFullAndMovedRecordIsScoped(t *testing.T) {
 				if args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/testing.json") {
 					return string(encoded), nil
 				}
-				if args[0] == "rev-list" {
+				if args[0] == "rev-list" && !(len(args) == 5 && args[1] == "--first-parent") {
 					return "sha-a\nsha-b", nil
 				}
 				if args[0] == "diff" && moved {
@@ -211,6 +211,7 @@ func TestLandingMovedScriptIsFullAndMovedRecordIsScoped(t *testing.T) {
 				return "landing environment fixture\nlanding group cover passed 1\nLANDING-CHECKED\t0\n", nil
 			}
 			for i := 0; i < 2; i++ {
+				b.prepareBatch(t)
 				code, out := b.run(t, b.root, "prove", "--wait", "--json")
 				var data struct{ Data plain.Result }
 				if err := json.Unmarshal([]byte(out), &data); err != nil || code != 0 {

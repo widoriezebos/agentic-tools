@@ -36,14 +36,23 @@ func runIntentLandingReturn(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	goalID := inv.input.args[0]
 	targets = append(targets, intentTarget{Kind: "goal", ID: goalID})
-	by, proofErr := admitted.owners.person(admitted.installation)
-	person := proofErr == nil
-	if !person && strings.TrimSpace(inv.input.text("by")) != "" {
-		refused := inv.personRefusal("", proofErr, inv.input.text("by"))
-		refused.Targets = targets
-		return inv.render(*refused)
+	observed, problem := inv.lanePerson("return this goal", admitted.record.Root)
+	person := problem == nil
+	if !person && inv.input.has("by") {
+		return inv.render(*problem)
 	}
-	entry, changed, err := plain.ReturnProven(admitted.installation, goalID, kind, reason, person, by, admitted.owners.now())
+	seams := inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))
+	by := ""
+	if person {
+		by = observed.Name
+		seams.Person = &plain.ActProvenance{Kind: "return", Person: observed.Name, Root: observed.Root, CheckedAt: observed.At.UTC(), TerminalGeneration: observed.Proof.TerminalGeneration, TerminalRef: observed.Proof.TerminalRef, Destination: admitted.record}
+	}
+	entry, changed, err := plain.ReturnProven(admitted.installation, goalID, kind, reason, person, by, admitted.owners.now(), seams)
+	_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
+	var policyHold *plain.Refusal
+	if errors.As(err, &policyHold) {
+		return inv.render(landingProveRefusal(inv, targets, err))
+	}
 	var refused *plain.ReturnRefused
 	switch {
 	case errors.As(err, &refused):

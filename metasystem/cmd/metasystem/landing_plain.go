@@ -90,11 +90,11 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 	if !ok || (sha != "" && entry.SHA != sha) {
 		return nil
 	}
-	if entry.State == plain.StateWaiting && entry.Exception == nil && inv.input.text("exception") == branch.LandTrunkRedCode {
+	if entry.State == plain.StateWaiting && inv.input.text("exception") == branch.LandTrunkRedCode {
 		return nil
 	}
-	if entry.State == plain.StateWaiting && entry.Exception == nil {
-		if refused := inv.landIncidentHold(goalID); refused != nil {
+	if entry.State == plain.StateWaiting {
+		if refused := inv.landIncidentHold(goalID, sha); refused != nil {
 			return refused
 		}
 	}
@@ -133,19 +133,65 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 		Summary: fmt.Sprintf("%s at %s is waiting in the landing lane; its landing agent proves and pushes it", subject, plain.Short(entry.SHA))}
 }
 
-func (inv *intentInvocation) landIncidentHold(goalID string) *intentResult {
-	if inv.input.text("exception") == branch.LandTrunkRedCode {
+func (inv *intentInvocation) handInTrunkInputs() (lane.Record, plain.ProveSeams, []goal.TrunkRedEntry, *intentResult, error) {
+	owners, home, record, problem := inv.laneContext(true)
+	if problem != nil {
+		return record, plain.ProveSeams{}, nil, problem, nil
+	}
+	seams := inv.laneBatchSeams(home, record, owners.plainProve)
+	incidents, err := plain.TrunkInputs(record, seams)
+	return record, seams, incidents, nil, err
+}
+
+func (inv *intentInvocation) landIncidentHold(goalID string, tips ...string) *intentResult {
+	if inv.laneException != nil {
 		return nil
 	}
-	projection, _, problem := inv.projection()
+	_, configured, problem := inv.laneCheck(inv.targets(goalID))
 	if problem != nil {
 		return problem
 	}
-	if red, held := goal.LandingIncident(projection.Tree.TrunkRed, goalID); held {
-		return &intentResult{Targets: inv.targets(goalID), Outcome: intentRefused, code: 1, Data: map[string]any{"code": branch.LandTrunkRedCode},
-			Summary: plain.IncidentReason(red) + ". Nothing was handed in.", next: inv.publicArgv("incident", "list")}
+	if !configured {
+		projection, _, problem := inv.projection()
+		if problem != nil {
+			return problem
+		}
+		if red, held := goal.LandingIncident(projection.Tree.TrunkRed, goalID); held {
+			return &intentResult{Targets: inv.targets(goalID), Outcome: intentRefused, code: 1, Summary: plain.IncidentReason(red) + ". Nothing was handed in.", next: inv.publicArgv("incident", "list")}
+		}
+		return nil
 	}
-	return nil
+	record, seams, incidents, problem, readErr := inv.handInTrunkInputs()
+	if problem != nil {
+		return problem
+	}
+	value := plain.PolicyValue{Value: "auto"}
+	var policyErr error
+	if seams.Policy != nil {
+		value, policyErr = seams.Policy("landing.trunk-red")
+	}
+	entry := plain.Entry{Goal: goalID}
+	if current, known, err := plain.Latest(record.Install, goalID); err == nil && known && current.State == plain.StateWaiting {
+		entry = current
+		if len(tips) > 0 && tips[0] != "" && tips[0] != entry.SHA {
+			tip := tips[0]
+			entry.SHA, entry.Exception = tip, nil
+		}
+	}
+	err := readErr
+	if err == nil {
+		err = plain.TrunkDecision(entry, incidents, value, policyErr, record)
+	}
+	if err == nil {
+		return nil
+	}
+	syncErr := plain.SyncPolicyQuestion(record.Install, inv.landing().machine, inv.delivery().now(), seams)
+	details := []string{}
+	if syncErr != nil {
+		details = append(details, "question sync pending: "+syncErr.Error())
+	}
+	return &intentResult{Targets: inv.targets(goalID), Outcome: intentRefused, code: 1, Data: map[string]any{"code": branch.LandTrunkRedCode},
+		Summary: err.Error() + ". Nothing was handed in.", next: inv.publicArgv(plain.ExceptionCommand(goalID, "", inv.personName(""))[1:]...), Details: details}
 }
 
 // handIn appends the goal's branch at sha to the lane's queue: the seat's
@@ -159,8 +205,33 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	}
 	line := plain.Line{Goal: goalID, Branch: "goal/" + goalID, SHA: sha, Seat: registrant(inv.layout.InstallationRoot.Path()), At: now.UTC().Format(time.RFC3339),
 		Records: inv.input.has("records"), Delivered: strings.TrimSpace(inv.input.text("delivered")), Again: inv.input.has("again")}
-	if inv.input.text("exception") == branch.LandTrunkRedCode {
-		line.Exception = &plain.Exception{Code: branch.LandTrunkRedCode, Reason: inv.input.text("reason"), By: strings.TrimPrefix(inv.input.text("by"), "human:")}
+	previous, seen, err := plain.Latest(install, goalID)
+	if err != nil {
+		return intentResult{Outcome: intentFailed, code: 1, Summary: "the landing queue cannot be read: " + err.Error(), next: inv.sameCommand(), nextReason: "retry after the queue can be read"}
+	}
+	var exceptionSeams plain.ProveSeams
+	exceptionWarnings := []string{}
+	if inv.laneException != nil {
+		record, seams, incidents, problem, readErr := inv.handInTrunkInputs()
+		if problem != nil {
+			return *problem
+		}
+		if record.Install != install {
+			return intentResult{Outcome: intentRefused, code: 1, Summary: "the registered lane changed; repeat this exception for the current lane", next: inv.sameCommand()}
+		}
+		person := inv.laneException
+		var err error
+		line.Exception, err = plain.BindException(plain.GoalSHA{Goal: goalID, SHA: sha}, record, person.Proof, person.Root, person.Name, inv.input.text("reason"), person.At, incidents, readErr)
+		if err != nil {
+			return intentResult{Outcome: intentRefused, code: 1, Summary: err.Error(), next: inv.sameCommand()}
+		}
+		exceptionSeams = seams
+		if readErr != nil {
+			exceptionWarnings = append(exceptionWarnings, "incident binding unknown: "+readErr.Error())
+		}
+		if _, err := seams.Policy("landing.trunk-red"); err != nil {
+			exceptionWarnings = append(exceptionWarnings, "advisory trunk-red policy unreadable: "+err.Error())
+		}
 	}
 	projection, _, problem := inv.projection()
 	if problem != nil {
@@ -228,11 +299,19 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 		}
 		line.Units = append(line.Units, unit)
 	}
-	previous, seen, err := plain.Latest(install, goalID)
 	added := false
 	if err == nil {
 		by, _ := inv.landing().person(inv.layout.InstallationRoot.Path())
-		_, added, err = plain.HandIn(install, line, by)
+		if inv.laneException != nil {
+			if seen {
+				line.Previous = &previous
+			} else {
+				line.ExpectEmpty = true
+			}
+			_, added, err = plain.HandInChecked(install, line, by, exceptionSeams)
+		} else {
+			_, added, err = plain.HandIn(install, line, by)
+		}
 	}
 	if err != nil {
 		var closed *plain.AdmissionClosed
@@ -244,9 +323,18 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 			Summary: "the landing lane's queue can't be written, so nothing was handed in",
 			next:    inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
-	if !added {
+	if !added && inv.laneException == nil {
 		if result := inv.laneQueueState(targets, install, goalID, sha, state.EndpointTip); result != nil {
 			return *result
+		}
+	}
+	var details []string
+	if added || inv.laneException != nil {
+		details = inv.writeJoinedCard(goalID)
+	}
+	if inv.laneException != nil {
+		if err := plain.SyncPolicyQuestion(install, inv.landing().machine, now, exceptionSeams); err != nil {
+			details = append(details, "exception recorded; question sync pending: "+err.Error())
 		}
 	}
 	entry, _, _ := plain.Latest(install, goalID)
@@ -255,17 +343,33 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 		subject += "'s records"
 	}
 	summary := fmt.Sprintf("%s at %s handed to the lane; its landing agent proves and pushes it", subject, plain.Short(sha))
+	if line.Exception != nil {
+		summary += "; exception bound to " + goalID + " at " + sha
+		if line.Exception.BindingUnknown {
+			summary += "; incident binding unknown"
+		} else {
+			identities := []string{}
+			for _, incident := range line.Exception.Incidents.Open {
+				identities = append(identities, incident.Identity)
+			}
+			summary += " for incidents " + strings.Join(identities, ", ")
+		}
+	}
 	if entry.DrainBy != "" {
 		summary += "; " + entry.DrainBy + " extended the drain with this hand-in"
 	}
 	if line.Again && seen && previous.SHA == sha && previous.State == plain.StateReturned {
 		summary += "; re-queued after a return that needed no change"
 	}
-	if len(line.Warnings) > 0 {
-		summary += "; warning: " + strings.Join(line.Warnings, "; ")
+	if warnings := append(line.Warnings, exceptionWarnings...); len(warnings) > 0 {
+		summary += "; warning: " + strings.Join(warnings, "; ")
 	}
-	return intentResult{Targets: targets, Outcome: intentConfirmed, Data: map[string]any{"route": "lane", "queue": entry},
-		Details: inv.writeJoinedCard(goalID),
+	outcome := intentConfirmed
+	if !added {
+		outcome = intentUnchanged
+	}
+	return intentResult{Targets: targets, Outcome: outcome, Data: map[string]any{"route": "lane", "queue": entry},
+		Details: details,
 		Summary: summary,
 		next:    inv.sameCommand(), nextReason: "shows whether it waits, landed or was returned"}
 }

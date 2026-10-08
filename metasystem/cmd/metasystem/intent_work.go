@@ -236,7 +236,7 @@ func intentWorkCommands() []intentCommand {
 		{
 			object: "work", action: "build", laidOut: true, primary: true, audience: "agent", summary: "build and test a goal's work, ready for independent review",
 			usage: []string{
-				"metasystem work build G [--work NAME] --brief FILE --check COMMAND...",
+				"metasystem work build G [--work NAME] --brief FILE",
 				"metasystem work build run:RUN",
 			},
 			details: []string{
@@ -245,7 +245,7 @@ func intentWorkCommands() []intentCommand {
 				"A work name is the caller's name for one part of the goal; without --work the first build is main, and a goal with one",
 				"work item continues it. The same goal, work and request reach the same attempt again; a different request is refused",
 				"and is sent as a correction with work revise.",
-				"--check ends the options: every later word is the proof command's argument vector, run without a shell.",
+				"Committed proof.cheap, proof.audits and proof.deadline are frozen before the builder starts; its brief calls test run --unit-run RUN.",
 				"The size is the work's row in the brief's or the accepted design's units table; without a row give --lines N.",
 				"The first read may use the tool calls the brief names (Maximum reader tool calls: N), --read-tool-calls N, or else",
 				"the configured intent.review.tool-calls allowance (48 unless metasystem.conf says otherwise).",
@@ -263,13 +263,15 @@ func intentWorkCommands() []intentCommand {
 				{name: "model", value: "MODEL", advanced: true, usage: "the build model for this unit instead of launch.build.model"},
 				{name: "effort", value: "EFFORT", advanced: true, usage: "the build effort for this unit instead of launch.build.effort"},
 				{name: "plan", value: "FILE", advanced: true, hidden: true, usage: "an existing unit plan (the unit run plan format)"},
-				{name: "check", value: "COMMAND...", rest: true, usage: "the proof command, run in the goal worktree's copy of this folder; it ends the options"},
+				{name: "reason", value: "TEXT", usage: "why the person chooses an explicit repair check"},
+				{name: "by", value: "NAME", usage: "the proven person choosing the repair check"},
+				{name: "check", value: "COMMAND...", rest: true, usage: "a person's explicit repair command; ends the options"},
 			},
 			maxArgs: 2,
 			accepts: []string{refGoal, refRun},
 			examples: []string{
-				"metasystem work build verbs-match-intent --brief work-brief.md --check go test -count=1 -run 'TestIntent' ./cmd/metasystem/",
-				"metasystem work build verbs-match-intent --work discovery --brief discovery.md --check go test ./cmd/metasystem/",
+				"metasystem work build verbs-match-intent --brief work-brief.md",
+				"metasystem work build verbs-match-intent --work discovery --brief discovery.md",
 				"metasystem work build run:20260925T101500Z-abc123",
 			},
 			run: runIntentBuild,
@@ -326,6 +328,7 @@ func intentWorkCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "goal", value: "G", usage: "the accepted goal owning the delivery"},
+				{name: "unit-run", value: "RUN", usage: "execute the run's frozen cheap check and audits"},
 				{name: "authority", value: "H", advanced: true, usage: "the claimed goal authorizing the proof reservation"},
 				{name: "mode", value: "MODE", usage: "auto (default), standard or deep"},
 				testVerboseFlag,
@@ -455,6 +458,10 @@ func (inv *intentInvocation) resolveLayout() *intentResult {
 func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	_ = inv.resolveLayout()
 	runner := inv.work().units(inv.layout)
+	runner.FreezeCheck = inv.resolveUnitCheck
+	if inv.input.has("check") {
+		runner.ReviewPolicy = func() (string, error) { return "person", nil }
+	}
 	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
 	runner.ExaminationRead = dispatchcore.CollectExamination
 	runner.CriticCustody = inv.criticCustody
@@ -492,19 +499,28 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	}
 	runner.Manager.SandboxAct = inv.consumedSandboxAct
 	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
-		if inv.stateRoot == "" {
-			if inv.layout.InstallationRoot == "" {
-				layout, err := inv.owners.resolver.ResolveLayout(unit.Worktree)
-				if err != nil {
-					return err
-				}
-				inv.layout = layout
-			}
-			root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+		if len(unit.Rounds) > 0 && execution.Kind == "build" && execution.Round == unit.Rounds[len(unit.Rounds)-1].Number {
+			round := unit.Rounds[len(unit.Rounds)-1]
+			results, err := filepath.Glob(filepath.Join(unit.Worktree, "artifacts", "unit-checks", unit.ID, filepath.Base(round.Directory), "check-*", "result.json"))
 			if err != nil {
 				return err
 			}
-			inv.stateRoot = root.Path()
+			for _, result := range results {
+				target := filepath.Join(round.Directory, "builder-"+filepath.Base(filepath.Dir(result)), "result.json")
+				if _, err := os.Stat(target); err == nil {
+					continue
+				} else if !os.IsNotExist(err) {
+					return err
+				}
+				if _, err := atomicfile.CopyFile(result, target, round.Directory); err != nil {
+					return err
+				}
+			}
+		}
+		if inv.stateRoot == "" {
+			if problem := inv.selectRoot(); problem != nil {
+				return fmt.Errorf("the execution installation cannot be read: %s", problem.Summary)
+			}
 		}
 		projection, _, problem := inv.projection()
 		if problem != nil {
@@ -518,7 +534,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if file.Claimed != nil {
 			revision = file.Claimed.Revision
 		}
-		if err := dispatchcore.ReconcileUnitLaunch(inv.stateRoot, execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
+		if err := dispatchcore.ReconcileUnitLaunch(inv.layout.InstallationRoot.Path(), execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
 			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil); err != nil {
 			return err
 		}
@@ -670,7 +686,7 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	if err != nil {
 		return err
 	}
-	return dispatchcore.ReserveUnitLaunch(inv.stateRoot, spec.ID, record.ID, file, record.Rounds[len(record.Rounds)-1].Number, cap, now)
+	return dispatchcore.ReserveUnitLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, record.Rounds[len(record.Rounds)-1].Number, cap, now)
 }
 
 // build
@@ -787,7 +803,7 @@ var (
 )
 
 func runIntentBuildUnit(inv *intentInvocation) int {
-	if len(inv.input.args) < 1 || len(inv.input.args) > 2 || !inv.input.has("brief") || !inv.input.has("check") {
+	if len(inv.input.args) < 1 || len(inv.input.args) > 2 || !inv.input.has("brief") {
 		retry := inv.sameCommand()
 		if len(inv.input.args) == 0 {
 			retry = inv.typedArgvFor("GOAL")
@@ -795,12 +811,9 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		if !inv.input.has("brief") {
 			retry = append(retry, "--brief", "FILE")
 		}
-		if !inv.input.has("check") {
-			retry = append(retry, "--check", "COMMAND")
-		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
-			Summary: "work build needs one goal, a brief and the checks to run; nothing was done",
-			next:    retry, nextReason: "FILE is the brief; COMMAND is the check that must pass (metasystem work build --help)"})
+			Summary: "work build needs one goal and a brief; nothing was done",
+			next:    retry, nextReason: "FILE is the brief; committed settings select the checks"})
 	}
 	if len(inv.input.args) == 2 && inv.input.has("work") && inv.input.args[1] != inv.input.text("work") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2,
@@ -1014,6 +1027,9 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 		}
 	}
 	check := inv.input.values["check"]
+	if len(check) == 0 {
+		check = []string{"/usr/bin/true"}
+	}
 	worktree, problem := inv.prepareGoalWorktree(id)
 	if problem != nil {
 		return unitRequest{}, problem
@@ -1362,8 +1378,7 @@ func (b unitBinding) buildBrief(brief []byte) string {
 	} else {
 		fmt.Fprintf(&text, "- Size: the %s row of the units table in %s (%d changed lines)\n", b.unit, b.unitsPage, b.lines)
 	}
-	argv, _ := json.Marshal(b.check)
-	fmt.Fprintf(&text, "- Proof after the build, run without a shell as this argument vector: %s\n", argv)
+	text.WriteString("- Check: run the frozen command at the start of this round's brief before returning.\n")
 	fmt.Fprintf(&text, "- Rounds: at most %d, the goal's approved review-round limit\n", b.rounds)
 	fmt.Fprintf(&text, "- Caller's brief: %s\n\nLeave the change in the worktree, uncommitted. The run ends awaiting judgement; it is not approved or landed by the build.\n\n---\n\n", b.brief)
 	text.Write(brief)
@@ -1431,6 +1446,9 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		}
 		plain, details := launchAccount(err)
 		switch {
+		case errors.Is(err, errProofDeclaration):
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Data: unitData(record, runner.Manager),
+				next: inv.publicArgv("work", "build", record.Goal, "--work", "declaration-repair", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME", "--check", "COMMAND"), nextReason: "a person supplies the repair's exact check without reading the broken declaration"}
 		case launch.IsCode(err, "BUDGET_REFUSED") || launch.IsCode(err, "BUDGET_UNKNOWN"):
 			goalID := targetID(targets, "goal", record.Goal)
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
@@ -2034,6 +2052,9 @@ var testVerboseFlag = intentFlag{name: "verbose", usage: "also print the details
 // and reports the structured result it prints; its progress goes to standard
 // error unchanged.
 func runIntentTest(inv *intentInvocation) int {
+	if inv.input.has("unit-run") {
+		return runIntentUnitCheck(inv)
+	}
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}

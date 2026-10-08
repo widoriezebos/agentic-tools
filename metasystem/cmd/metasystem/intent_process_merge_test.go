@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 func TestProcessStoppedStepRetainsCostsAndStatus(t *testing.T) {
 	t.Parallel()
 	bed, processes := failedCommandBed(t, 2)
+	want := []string{"go", "test", "-timeout", "30m", "-run", "^TestDeclared$", "./..."}
+	bed.declaredCheap = shellCommand(want)
 	unitHook := bed.workOwnersHook
 	page, accepted := processEstimatePage(t, bed, "70", "10")
 	accepted = []byte(strings.ReplaceAll(strings.ReplaceAll(string(accepted), "| evidence |", "| outcome |"), "| 250 |", "| 1 |"))
@@ -30,13 +33,12 @@ func TestProcessStoppedStepRetainsCostsAndStatus(t *testing.T) {
 	if code != 1 || round.Stop == nil || round.Stop.Cause.Kind != "environment" || round.Result == nil || round.Result.Tree == "" || round.Result.ProofIdentity == "" || len(processes.commands) != 2 {
 		t.Fatalf("stopped round lost its result or retry: exit=%d round=%+v", code, round)
 	}
-	plan, err := launch.ReadUnitPlan(record.Plan)
+	plan, err := launch.ReadUnitPlan(filepath.Join(round.Directory, "plan.json"))
 	if err != nil || plan.Estimate == nil || plan.Estimate.ElapsedMinutes != 70 {
 		t.Fatalf("stopped run lost the frozen estimate: %+v %v", plan.Estimate, err)
 	}
 	step := round.Steps[1]
-	want := []string{"go", "test", "-timeout", "30m", "-run", "^TestDeclared$", "./..."}
-	if step.Kind != "attest" || step.Command == nil || !slices.Equal(step.Command.Argv, want) || step.Retained == nil || len(step.LaunchIDs) != 2 {
+	if plan.Check == nil || plan.Check.Cheap != shellCommand(want) || step.Kind != "attest" || step.Command == nil || len(step.Command.Argv) != 7 || !slices.Equal(step.Command.Argv[1:6], []string{"test", "run", "--unit-run", record.ID, "--repo"}) || step.Command.Name != "unit-check" || step.Retained == nil || len(step.LaunchIDs) != 2 {
 		t.Fatalf("step lost command evidence or retained retry inputs: %+v", step)
 	}
 	execution, err := bed.manager.Store.Read(step.LaunchID)

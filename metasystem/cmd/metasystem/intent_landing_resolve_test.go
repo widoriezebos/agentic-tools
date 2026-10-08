@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -57,6 +59,12 @@ func newResolveVerbFixture(t *testing.T) *resolveVerbFixture {
 		t.Fatal(err)
 	}
 	b.owners = (&laneVerbBed{home: b.home}).owners()
+	// The fixture declares its lane policy without consulting host registrations.
+	b.owners.policies = config.PolicyReaders{
+		Registry: func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{Lane: b.root}, nil },
+		ConfPath: func(string) (string, error) { return filepath.Join(b.install, "metasystem.conf"), nil },
+		Helm:     func(string) helm.State { return helm.State{} },
+	}
 	return b
 }
 
@@ -312,5 +320,26 @@ func TestLandingStopEndsRegenerationAfterPausingLane(t *testing.T) {
 	}
 	if _, paused := lane.ReadPause(b.home); !paused {
 		t.Fatal("stop failure resumed the lane")
+	}
+}
+
+// prepareBatch gives proof fixtures the same recorded selection that the
+// keeper prepares before an agent assembles goals. Proof and replay assertions
+// remain about the selected goals, not an unrecorded candidate.
+func (b *resolveVerbFixture) prepareBatch(t *testing.T) {
+	t.Helper()
+	selected, err := plain.ReadBatch(b.install)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if selected != nil {
+		return
+	}
+	record, present, err := lane.Read(b.home)
+	if err != nil || !present {
+		t.Fatalf("fixture registration: %v %v", present, err)
+	}
+	if _, err := plain.SelectBatch(b.install, b.root, record, b.owners.landing.plainProve); err != nil {
+		t.Fatalf("prepare fixture selection: %v", err)
 	}
 }

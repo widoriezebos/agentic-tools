@@ -92,20 +92,21 @@ func TestProcessCostPublicReport(t *testing.T) {
 	clock := &workClock{now: start}
 	bed.manager.Now = clock.Now
 	bed.manager.Supervisor = processCostStarter{bed.starter, clock}
-	page, accepted := processEstimatePage(t, bed, "70", "10")
-	accepted = []byte(strings.ReplaceAll(string(accepted), "| other | 999 |", "| other | 20 |"))
+	// Keep elapsed costs in band so the report contains only the declared person wait.
+	page, accepted := processEstimatePage(t, bed, "200", "10")
+	accepted = []byte(strings.ReplaceAll(string(accepted), "| other | 999 |", "| other | 100 |"))
 	if err := os.WriteFile(page, accepted, 0600); err != nil {
 		t.Fatal(err)
 	}
 	processCommittedPage(t, bed, page, accepted)
-	check := slices.Insert(workArgv, 2, "-timeout", "30m")
+	check := workArgv
 	gitHook := bed.workOwnersHook
 	bed.workOwnersHook = func(owners *intentWorkOwners) {
 		gitHook(owners)
 		git := owners.git
 		owners.git = func(root string, args ...string) ([]byte, error) {
 			if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem.conf") {
-				return []byte("proof.full=" + strings.Join(check, " ") + "\n"), nil
+				return []byte("proof.full=" + strings.Join(check, " ") + "\nproof.cheap=" + shellCommand(check) + "\nproof.audits=true\nproof.deadline=15\n"), nil
 			}
 			return git(root, args...)
 		}
@@ -113,7 +114,7 @@ func TestProcessCostPublicReport(t *testing.T) {
 	build := func(unit string) string {
 		t.Helper()
 		brief := bed.brief(unit+".md", "Build the unit.\n")
-		code, built, output := bed.work(append([]string{"work", "build", bed.id, "--work", unit, "--brief", brief, "--check"}, check...)...)
+		code, built, output := bed.work("work", "build", bed.id, "--work", unit, "--brief", brief)
 		if code != 0 {
 			t.Fatalf("build: %d %+v %s", code, built, output)
 		}
@@ -194,7 +195,7 @@ func TestProcessCostPublicReport(t *testing.T) {
 	if len(units) != 2 || units["evidence"].Hours["build"] == nil || *units["evidence"].Hours["build"] != (2*time.Minute).Hours() || *units["other"].Hours["build"] != (time.Minute).Hours() {
 		t.Fatalf("unit costs: %+v", units)
 	}
-	if total.EstimateMinutes == nil || *total.EstimateMinutes != 90 || total.Corrections != 1 || total.SuiteMinutes == nil || *total.SuiteMinutes != 4 || total.ElapsedFinish != nil || total.ElapsedHours == nil || *total.ElapsedHours != clock.Now().Sub(start.Add(2*time.Minute)).Hours() || !total.ElapsedLowerBound || units["evidence"].ElapsedFinish == nil || !units["evidence"].ElapsedFinish.Equal(finish) || !slices.Contains(total.Unknown, "fix units unavailable") {
+	if total.EstimateMinutes == nil || *total.EstimateMinutes != 300 || total.Corrections != 1 || total.SuiteMinutes == nil || *total.SuiteMinutes != 0 || total.ElapsedFinish != nil || total.ElapsedHours == nil || *total.ElapsedHours != clock.Now().Sub(start.Add(2*time.Minute)).Hours() || !total.ElapsedLowerBound || units["evidence"].ElapsedFinish == nil || !units["evidence"].ElapsedFinish.Equal(finish) || !slices.Contains(total.Unknown, "fix units unavailable") {
 		t.Fatalf("goal cost: %+v", total)
 	}
 	acts := data["processActs"].([]any)
@@ -218,7 +219,7 @@ func TestProcessCostPublicReport(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("text status: %d %s %s", code, text, stderr)
 	}
-	for _, fragment := range []string{"process act own-act: own-caused agent", "process act grant-act: own-caused agent", "evidence: hours:", "other: hours:", "goal total:", "estimate 90 minutes", "fix units unavailable", "elapsed finish " + finish.In(time.Local).Format(time.RFC3339)} {
+	for _, fragment := range []string{"process act own-act: own-caused agent", "process act grant-act: own-caused agent", "evidence: hours:", "other: hours:", "goal total:", "estimate 300 minutes", "fix units unavailable", "elapsed finish " + finish.In(time.Local).Format(time.RFC3339)} {
 		if !strings.Contains(strings.Join(strings.Fields(text), " "), fragment) {
 			t.Fatalf("missing %q: %s", fragment, text)
 		}

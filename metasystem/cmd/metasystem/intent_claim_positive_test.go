@@ -39,7 +39,7 @@ func claimFixtureBuild(t *testing.T, bed *workBed, owners intentOwners) intentRe
 	brief := filepath.Join(bed.root(), "claim-brief.md")
 	os.WriteFile(brief, []byte("Build it.\n\nMaximum reader tool calls: 5\n"), 0o644)
 	var stdout, stderr bytes.Buffer
-	runIntentIn(mustIntentCommand(t, "work build"), append([]string{bed.id, "--work", "main", "--brief", brief, "--lines", "5", "--json", "--check"}, workArgv...),
+	runIntentIn(mustIntentCommand(t, "work build"), []string{bed.id, "--work", "main", "--brief", brief, "--lines", "5", "--json"},
 		&stdout, &stderr, bed.root(), owners)
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {

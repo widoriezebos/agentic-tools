@@ -27,7 +27,7 @@ func validateRepo(t *testing.T, confBody string, localBody ...string) []string {
 	evidence := t.TempDir()
 	batch := t.TempDir()
 	// Validation fixtures supply the required repository proof declarations.
-	body := "proof.full=true\nproof.cheap=true\n" + strings.ReplaceAll(confBody, "@EVIDENCE@", evidence)
+	body := "proof.full=true\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\n" + strings.ReplaceAll(confBody, "@EVIDENCE@", evidence)
 	body = strings.ReplaceAll(body, "@REPO@", repo)
 	body = strings.ReplaceAll(body, "@BATCH@", batch)
 	if !strings.Contains(body, "testing.contract=") {
@@ -212,7 +212,7 @@ func TestValidateTiersAbsentInfo(t *testing.T) {
 	evidence := t.TempDir()
 	conf := filepath.Join(repo, "metasystem.conf")
 	putFile(t, filepath.Join(repo, "testing.json"), minimalTestingContract)
-	putFile(t, conf, "proof.full=true\nproof.cheap=true\nmetasystem.template=true\nmetasystem.runtimes=fake\n"+
+	putFile(t, conf, "proof.full=true\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\nmetasystem.template=true\nmetasystem.runtimes=fake\n"+
 		"testing.contract=testing.json\n"+
 		"evidence.root="+evidence+"\n"+
 		"role.default.runtime=fake\n"+

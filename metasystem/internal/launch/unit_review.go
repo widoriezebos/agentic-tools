@@ -181,6 +181,13 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		// it is reviewed against that brief.
 		review.BuildBrief = round.FollowUp
 	}
+	if frozen, frozenErr := readUnitPlan(filepath.Join(round.Directory, "plan.json"), record.PlanDirectory); frozenErr == nil && frozen.Check != nil {
+		// The declared-check instructions are part of the brief the builder
+		// received; review uses the same complete brief and its digest.
+		review.BuildBrief = frozen.Build.Brief
+	} else if frozenErr != nil && !errors.Is(frozenErr, os.ErrNotExist) {
+		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the frozen plan of attempt %d cannot be read: %v", round.Number, frozenErr))
+	}
 	for index := range record.Subjects {
 		subject := record.Subjects[index]
 		if subject.Round == round.Number {

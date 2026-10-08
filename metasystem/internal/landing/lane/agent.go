@@ -93,11 +93,19 @@ type AgentKeeper struct {
 	BarrenStop func(record Record, state AgentState) error
 	// Observe advances progress and synchronizes the stop question after releasing the home lock.
 	Observe func(Record) error
+	// Prepare records the work selection before launch, outside the home lock.
+	Prepare func(Record) error
 	// AdmitWake rereads execution fences under the home lock, without taking the install lock.
 	AdmitWake func(string, Wake) (Wake, error)
 	// Explicit is a start asked for by name (landing run), not the keeper's
-	// own: barren runs do not hold it, and it clears their count.
+	// own. Only a recorded person selection may clear a barren count.
 	Explicit bool
+	// PersonSelection reads an atomic selection snapshot without taking the queue lock.
+	PersonSelection func(Record) bool
+	// Continuation names a recorded batch admitted through the current fences.
+	// It reads snapshots only; the home lock must never acquire the queue lock.
+	Continuation func(Record) string
+	Helmed       func(string) bool
 	// Waiting counts waiting lines in the registered installation for the start log.
 	Waiting func(install, checkout string) (int, error)
 }
@@ -203,12 +211,20 @@ func (k AgentKeeper) Run() (out AgentRun) {
 				if observation.StopQuestion != nil {
 					observations = append(observations, observation.StopQuestion.Error())
 				}
-				if observation.StopQuestion != nil && !k.Explicit {
+				if observation.StopQuestion != nil && !(k.Explicit && k.PersonSelection != nil && k.PersonSelection(registered)) {
 					return agentRun(AgentHeld, root, "the lane's stop question synchronization failed")
 				}
-			} else if !k.Explicit {
+			} else if !(k.Explicit && k.PersonSelection != nil && k.PersonSelection(registered)) {
 				return agentRun(AgentHeld, root, "the lane observation failed: "+err.Error())
 			}
+		}
+	}
+	if k.own(registered) && !gone(root) && k.Prepare != nil {
+		if err := k.Prepare(registered); err != nil {
+			if k.Observe != nil {
+				_ = k.Observe(registered)
+			}
+			return agentRun(AgentHeld, root, err.Error())
 		}
 	}
 	if !proceed {
@@ -217,7 +233,9 @@ func (k AgentKeeper) Run() (out AgentRun) {
 	if reason, held := k.held(root); held {
 		return agentRun(AgentHeld, root, reason)
 	}
+	scope := k.scope(registered)
 	wake := ReadWake(registered, k.Sources)
+	wake.BatchID = scope
 	if len(wake.Reasons) == 0 {
 		line := "the landing lane at " + root + " is idle; no landing agent runs"
 		if len(wake.Unread) > 0 {
@@ -238,18 +256,22 @@ func (k AgentKeeper) Run() (out AgentRun) {
 	claimed := false
 	if err := withLock(k.Home, func() error {
 		record, ok, err := Read(k.Home)
-		if err != nil || !ok || record.Root != root {
+		if err != nil || !ok || record != registered {
 			result = agentRun(AgentHeld, root, "the landing agent at "+root+" is not started: the lane changed while its wake was read")
 			return err
 		}
 		// The holds are read again and the claim is recorded under the
 		// flock, so two stewards never both start an agent.
-		if stopped, stop := k.recheck(root); stop {
+		if stopped, stop := k.recheck(record); stop {
 			result = stopped
 			return nil
 		}
 		if reason, held := k.held(root); held {
 			result = agentRun(AgentHeld, root, reason)
+			return nil
+		}
+		if k.scope(record) != scope {
+			result = agentRun(AgentHeld, root, "the recorded selection changed before launch")
 			return nil
 		}
 		if k.AdmitWake != nil {
@@ -296,14 +318,24 @@ func (k AgentKeeper) Run() (out AgentRun) {
 			Barren: current.Barren, BarrenLaunches: current.BarrenLaunches, BarrenFingerprint: current.BarrenFingerprint}
 		result = AgentRun{Outcome: AgentStarted, Launch: id, Root: root, Reasons: wake.Reasons,
 			Line: fmt.Sprintf("lane agent started by the keeper: %d waiting line(s); %s at %s: %s", waiting, id, root, strings.Join(wake.Reasons, ", "))}
-		// A pause that came while it started ends it at once.
-		if by, paused := pausedClosed(k.Home); paused && k.Cancel != nil {
+		// A changed fence, registration or selection stops the new launch.
+		fresh, present, readErr := Read(k.Home)
+		changedLane := readErr != nil || !present || fresh != registered
+		currentScope := k.scope(registered)
+		if by, paused := pausedClosed(k.Home); (paused && currentScope == "" || currentScope != scope || changedLane) && k.Cancel != nil {
 			result.Outcome = AgentPaused
 			if err := k.Cancel(id); err != nil {
 				result.Outcome = AgentFailed
 				result.Line = fmt.Sprintf("the landing agent %s started at %s as the lane was paused by %s, and could not be stopped: %v; run: metasystem work stop %s", id, root, by, err, id)
+				if changedLane || !paused {
+					result.Line = fmt.Sprintf("the landing agent %s changed its registered lane or selected work while starting and could not be stopped: %v; run: metasystem work stop %s", id, err, id)
+				}
 			} else {
 				result.Line = fmt.Sprintf("the landing agent %s started at %s as the lane was paused by %s, and was stopped again", id, root, by)
+				if changedLane || !paused {
+					result.Outcome = AgentHeld
+					result.Line = "the landing agent " + id + " was stopped because its registered lane or selected work changed while it started"
+				}
 			}
 		}
 		return written(writeJSON(k.Home, agentStatePath(k.Home), current))
@@ -313,15 +345,26 @@ func (k AgentKeeper) Run() (out AgentRun) {
 	return result
 }
 
+func (k AgentKeeper) scope(record Record) string {
+	if k.Continuation == nil {
+		return ""
+	}
+	return k.Continuation(record)
+}
+
 func pausedLine(root, by string) string {
 	return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by)
 }
 
 // recheck is what may stop a start between the decision and the launch: the
 // pause, and an agent that runs or is being started.
-func (k AgentKeeper) recheck(root string) (AgentRun, bool) {
-	if by, paused := pausedClosed(k.Home); paused {
+func (k AgentKeeper) recheck(record Record) (AgentRun, bool) {
+	root := record.Root
+	if by, paused := pausedClosed(k.Home); paused && k.scope(record) == "" {
 		return agentRun(AgentPaused, root, pausedLine(root, by)), true
+	}
+	if k.Helmed != nil && k.Helmed(root) && k.scope(record) == "" {
+		return agentRun(AgentHeld, root, "the landing checkout is at the helm; only a recorded person selection may continue"), true
 	}
 	id, running, err := k.Running()
 	if err != nil {
@@ -367,7 +410,7 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 			return agentRun(AgentFailed, root, "the landing agent's keeper can't write its record: "+err.Error()), false
 		}
 	}
-	if by, paused := pausedClosed(k.Home); paused {
+	if by, paused := pausedClosed(k.Home); paused && k.scope(record) == "" {
 		return agentRun(AgentPaused, root, pausedLine(root, by)), false
 	}
 	if reason, held, err := k.barrenHold(record); err != nil {
@@ -375,7 +418,7 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 	} else if held {
 		return agentRun(AgentHeld, root, reason), false
 	}
-	if stopped, stop := k.recheck(root); stop {
+	if stopped, stop := k.recheck(record); stop {
 		return stopped, false
 	}
 	return AgentRun{}, true
@@ -398,15 +441,14 @@ func (k AgentKeeper) countBarren(state *AgentState, root string) {
 }
 
 // barrenHold holds the keeper's own start after barrenLimit launches in a
-// row ended with the lane unchanged, until the lane changes (a new hand-in,
-// a result) or a start is asked for by name; either clears the count.
+// row ended with the lane unchanged, until the lane changes or an explicit run retries a recorded person selection.
 func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 	root := record.Root
 	state, _ := ReadAgentState(k.Home)
 	if k.Fingerprint == nil || state.Barren == 0 {
 		return "", false, nil
 	}
-	clear := k.Explicit
+	clear := k.Explicit && k.PersonSelection != nil && k.PersonSelection(record)
 	if !clear && state.Barren >= barrenLimit {
 		now, err := k.Fingerprint(root)
 		clear = err == nil && now != state.BarrenFingerprint
@@ -428,7 +470,7 @@ func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 			return "", true, err
 		}
 	}
-	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs (%s) ended with the lane unchanged; a person's metasystem landing run starts it, or a new hand-in",
+	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs (%s) ended with the lane unchanged; a person must select waiting goals with metasystem landing run --goals GOALS, or prove main with metasystem landing prove --trunk when none is eligible",
 		root, state.Barren, strings.Join(state.BarrenLaunches, ", ")), true, nil
 }
 

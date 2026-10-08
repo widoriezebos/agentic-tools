@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type outcomeGit struct {
@@ -142,18 +143,16 @@ func TestIntentBuildEmptyStopsBeforeProofAndRetainsGap(t *testing.T) {
 	}
 	current, _ := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
 	build, _ := b.manager.Store.Read(current.Rounds[1].Steps[0].LaunchID)
-	var inputs [][]byte
+	var inputs []string
 	for _, input := range build.Inputs {
-		data, err := os.ReadFile(input.Path)
-		if err != nil {
-			t.Fatal(err)
-		}
-		inputs = append(inputs, data)
+		inputs = append(inputs, input.Path)
 	}
 	for _, source := range []string{r.Plan, filepath.Join(r.Rounds[0].Directory, "worktree.diff"), r.Rounds[0].GapMessage} {
-		data, err := os.ReadFile(source)
-		if err != nil || !slices.ContainsFunc(inputs, func(input []byte) bool { return bytes.Equal(input, data) }) {
-			t.Fatalf("gap correction lost the retained bytes of %s: %v", source, err)
+		found := slices.ContainsFunc(inputs, func(input string) bool {
+			return strings.HasSuffix(filepath.Base(input), "-"+filepath.Base(source)) && bytes.Equal(mustRead(t, input), mustRead(t, source))
+		})
+		if !found {
+			t.Fatalf("gap correction lost the bytes of %s: %v", source, inputs)
 		}
 	}
 }
@@ -272,10 +271,10 @@ func TestIntentBuildSizeImpactWriteFailureKeepsHoldUntilRetry(t *testing.T) {
 	if err := os.MkdirAll(overrides, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(overrides, 0500); err != nil {
+	if err := testexec.Locked(func() error { return os.Chmod(overrides, 0500) }); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(overrides, 0700) })
+	t.Cleanup(func() { _ = testexec.Locked(func() error { return os.Chmod(overrides, 0700) }) })
 	// A privileged process bypasses permissions, so obstruct the directory
 	// itself to exercise the same production write failure on those hosts.
 	if os.Geteuid() == 0 {
@@ -304,7 +303,7 @@ func TestIntentBuildSizeImpactWriteFailureKeepsHoldUntilRetry(t *testing.T) {
 		if err := os.Mkdir(overrides, 0700); err != nil {
 			t.Fatal(err)
 		}
-	} else if err := os.Chmod(overrides, 0700); err != nil {
+	} else if err := testexec.Locked(func() error { return os.Chmod(overrides, 0700) }); err != nil {
 		t.Fatal(err)
 	}
 	b.manager.Supervisor = outcomeStarter{bed: b, proof: func() {

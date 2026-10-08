@@ -176,15 +176,19 @@ func TestCustodianObservesAPlatformBinaryChild(t *testing.T) {
 }
 
 func TestLauncherDeathKillsTheTest(t *testing.T) {
+	t.Parallel()
 	if !runLauncherWitnessMode(t) {
+		assertLauncherWitnessCleanupOrder(t)
 		runLauncherDeathWitness(t, false)
 	}
 }
 
 func TestCustodianWatchesTheExportedLauncher(t *testing.T) {
+	t.Parallel()
 	if runLauncherWitnessMode(t) {
 		return
 	}
+	assertLauncherWitnessCleanupOrder(t)
 	dead, err := EncodeRef(fixtureExact(1<<30, 1).Ref())
 	checkWitness(t, err)
 	for _, value := range []string{"malformed", dead, launcherProcessRef(t)} {
@@ -245,8 +249,207 @@ func runLauncherWitnessMode(t *testing.T) bool {
 	return true
 }
 
+// launcherWitnessCleanup keeps files until every owned process and log writer
+// is terminal. Empty stages cover setup that stopped before capturing children.
+type launcherWitnessCleanup struct {
+	stop, children, files []func() error
+	writers               []launcherWitnessWriter
+	watchers              []func()
+	directory             func() error
+}
+
+type launcherWitnessWriter struct {
+	ref  Ref
+	join func() error
+}
+
+func (cleanup *launcherWitnessCleanup) run() error {
+	var problems []error
+	for _, stage := range [][]func() error{cleanup.stop, cleanup.children} {
+		for _, action := range stage {
+			problems = append(problems, action())
+		}
+	}
+	for _, writer := range cleanup.writers {
+		problems = append(problems, writer.join())
+	}
+	if err := errors.Join(problems...); err != nil {
+		return err // Keep files when an owned process could not be joined.
+	}
+	for _, close := range cleanup.watchers {
+		close()
+	}
+	for _, release := range cleanup.files {
+		problems = append(problems, release())
+	}
+	if cleanup.directory != nil {
+		problems = append(problems, cleanup.directory())
+	}
+	return errors.Join(problems...)
+}
+
+// joinLauncherWitnessProcess returns observation failures to the cleanup owner
+// so it can keep the directory while a writer's terminal state is unknown.
+func joinLauncherWitnessProcess(dir string, death witnessDeath) error {
+	var failure error
+	waitForWitnessEvent(fmt.Sprintf("process %d to die", death.ref.Pid), func() witnessEventSource { return death.event },
+		func() (bool, string) { return witnessIdentityReleased(death.ref) }, func() time.Duration { return 0 },
+		func(name string, observations []string, elapsed time.Duration) {
+			writeWitnessSnapshot(os.Stderr, dir, name, observations, elapsed)
+		},
+		func(message string) { failure = errors.New(message) })
+	return failure
+}
+
+func assertLauncherWitnessCleanupOrder(t *testing.T) {
+	t.Helper()
+	for _, partial := range []bool{false, true} {
+		t.Run(fmt.Sprint("setup-incomplete=", partial), func(t *testing.T) {
+			t.Parallel()
+			joining, release := make(chan struct{}), make(chan struct{})
+			joined, watchersClosed, filesReleased := false, false, false
+			cleanup := &launcherWitnessCleanup{
+				writers: []launcherWitnessWriter{{join: func() error { close(joining); <-release; joined = true; return nil }}},
+				watchers: []func(){func() {
+					if !joined {
+						t.Error("watchers closed before writer exit")
+					}
+					watchersClosed = true
+				}},
+				files: []func() error{func() error {
+					if !joined || !watchersClosed {
+						return errors.New("files released with a live writer or watcher")
+					}
+					filesReleased = true
+					return nil
+				}},
+			}
+			if !partial {
+				cleanup.children = []func() error{func() error { return nil }}
+			}
+			directoryReleased := false
+			cleanup.directory = func() error {
+				if !filesReleased {
+					return errors.New("directory released before files")
+				}
+				directoryReleased = true
+				return nil
+			}
+			done := make(chan error, 1)
+			go func() { done <- cleanup.run() }()
+			select {
+			case <-joining:
+			case err := <-done:
+				t.Fatalf("cleanup bypassed writer join: %v", err)
+			}
+			select {
+			case err := <-done:
+				t.Fatalf("cleanup released a barrier-held writer: %v", err)
+			default:
+			}
+			close(release)
+			if err := <-done; err != nil || !filesReleased || !directoryReleased {
+				t.Fatalf("cleanup: files released=%t directory released=%t error=%v", filesReleased, directoryReleased, err)
+			}
+		})
+	}
+	t.Run("unreadable-writer-exit", func(t *testing.T) {
+		t.Parallel()
+		unknown := errors.New("writer exit could not be observed")
+		cleanup := &launcherWitnessCleanup{
+			writers:   []launcherWitnessWriter{{join: func() error { return unknown }}},
+			files:     []func() error{func() error { t.Error("files released without terminal writer evidence"); return nil }},
+			directory: func() error { t.Error("directory released without terminal writer evidence"); return nil },
+		}
+		if err := cleanup.run(); !errors.Is(err, unknown) {
+			t.Fatalf("cleanup hid unknown writer state: %v", err)
+		}
+	})
+
+}
+
+func TestLauncherWitnessSetupCleanupKillsProcessGroup(t *testing.T) {
+	t.Parallel()
+	for _, reaped := range []bool{false, true} {
+		t.Run(fmt.Sprint("launcher-reaped=", reaped), func(t *testing.T) {
+			t.Parallel()
+			var child *exec.Cmd
+			t.Cleanup(func() {
+				if child != nil && child.Process != nil && child.ProcessState == nil {
+					_ = child.Process.Kill()
+					_ = child.Wait()
+				}
+			})
+			dir, err := os.MkdirTemp("", "launcher-setup-witness.")
+			checkWitness(t, err)
+			command := exec.Command("/usr/bin/tail", "-f", "/dev/null")
+			command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+			cleanup := startLauncherWitnessCommand(t, dir, command)
+			// A group member remains uncaptured when setup stops before own().
+			// Its direct parent can observe which signal terminated it.
+			child = exec.Command("/usr/bin/tail", "-f", "/dev/null")
+			child.SysProcAttr = &syscall.SysProcAttr{Setpgid: true, Pgid: command.Process.Pid}
+			checkWitness(t, child.Start())
+			cleanup.files = append(cleanup.files, func() error {
+				// SIGKILL already sent to the group wins over this fallback;
+				// SIGTERM ends an overlooked member without a timed wait.
+				_ = child.Process.Signal(syscall.SIGTERM)
+				err := child.Wait()
+				var exit *exec.ExitError
+				if !errors.As(err, &exit) || exit.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL {
+					return fmt.Errorf("uncaptured group member survived launcher stop: %v", err)
+				}
+				return nil
+			})
+			if reaped {
+				checkWitness(t, command.Process.Kill())
+				var exit *exec.ExitError
+				if err := command.Wait(); !errors.As(err, &exit) {
+					t.Fatalf("reap launcher: %v", err)
+				}
+			}
+		})
+	}
+}
+
+func startLauncherWitnessCommand(t *testing.T, dir string, command *exec.Cmd) *launcherWitnessCleanup {
+	t.Helper()
+	cleanup := &launcherWitnessCleanup{}
+	t.Cleanup(func() {
+		if err := cleanup.run(); err != nil {
+			t.Errorf("owned launcher cleanup: %v", err)
+		}
+	})
+	cleanup.directory = func() error { return os.RemoveAll(dir) }
+	stderr, err := os.OpenFile(filepath.Join(dir, "launcher.stderr"), os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o600)
+	checkWitness(t, err)
+	cleanup.files = append(cleanup.files, stderr.Close)
+	command.Stderr = stderr
+	checkWitness(t, command.Start())
+	cleanup.stop = append(cleanup.stop, func() error {
+		err := syscall.Kill(-command.Process.Pid, syscall.SIGKILL)
+		if errors.Is(err, syscall.ESRCH) {
+			return nil
+		}
+		return err
+	})
+	cleanup.children = append(cleanup.children, func() error {
+		if command.ProcessState != nil {
+			return nil
+		}
+		err := command.Wait()
+		var exit *exec.ExitError
+		if errors.As(err, &exit) {
+			return nil
+		}
+		return err
+	})
+	return cleanup
+}
+
 func runLauncherDeathWitness(t *testing.T, exported bool) {
-	dir := t.TempDir()
+	dir, err := os.MkdirTemp("", "launcher-death-witness.")
+	checkWitness(t, err)
 	var command *exec.Cmd
 	if exported {
 		command = exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
@@ -256,34 +459,59 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 		command.Env = witnessEnvironment([]string{launcherBasePath, launcherWitnessMode + "=owner|" + dir})
 	}
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	startWitnessCommand(t, command, filepath.Join(dir, "launcher.stderr"), false)
-	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() })
+	cleanup := startLauncherWitnessCommand(t, dir, command)
+	own := func(ref Ref, writer bool) witnessDeath {
+		death := witnessDeath{ref: ref, event: armWitnessDeathEventOwned(t, ref, func(close func()) { cleanup.watchers = append(cleanup.watchers, close) })}
+		stopAndJoin := func() error {
+			if released, _ := witnessIdentityReleased(ref); !released {
+				if err := SignalExact(KernelProber{}, ref, syscall.SIGKILL); err != nil {
+					return err
+				}
+			}
+			return joinLauncherWitnessProcess(dir, death)
+		}
+		if writer {
+			cleanup.writers = append(cleanup.writers, launcherWitnessWriter{ref: ref, join: stopAndJoin})
+		} else {
+			cleanup.children = append(cleanup.children, stopAndJoin)
+		}
+		return death
+	}
 	owner := waitWitnessRef(t, dir, filepath.Join(dir, "ownerpid"), filepath.Join(dir, "launcher.stderr"))
+	ownerDeath := own(owner, false)
 	child := waitWitnessRef(t, dir, filepath.Join(dir, "pid0"), filepath.Join(dir, "launcher.stderr"))
-	t.Cleanup(func() { _ = SignalExact(KernelProber{}, child, syscall.SIGKILL) })
+	childDeath := own(child, false)
 	logPath, _ := os.ReadFile(filepath.Join(dir, "logpath"))
-	t.Cleanup(func() { _ = os.Remove(string(logPath)) })
+	cleanup.files = append(cleanup.files, func() error { return os.Remove(string(logPath)) })
 	other := waitWitnessRef(t, dir, filepath.Join(dir, "pid1"), filepath.Join(dir, "launcher.stderr"))
-	t.Cleanup(func() { _ = SignalExact(KernelProber{}, other, syscall.SIGKILL) })
+	otherDeath := own(other, false)
 	custodian := waitWitnessCustodian(t, dir, owner)
-	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
+	own(custodian, true)
+	if len(cleanup.writers) != 1 || cleanup.writers[0].ref != custodian {
+		t.Fatal("custodian exit join missing from launcher cleanup")
+	}
 	waitWitnessCustodianObserved(t, dir, string(logPath), child, other)
+	third := waitWitnessRef(t, dir, filepath.Join(dir, "pid2"), filepath.Join(dir, "launcher.stderr"))
+	thirdDeath := own(third, false)
+	var shellDeath witnessDeath
 	var shell Ref
 	if exported {
 		shell = waitWitnessRef(t, dir, filepath.Join(dir, "shellpid"), filepath.Join(dir, "launcher.stderr"))
+		shellDeath = own(shell, false)
+		launcherRef, err := ParseRef(liveWitnessProcessRef(t, int64(command.Process.Pid), owner.Pid))
+		checkWitness(t, err)
+		own(waitWitnessCustodian(t, dir, launcherRef), true)
 		launcherLog, err := os.ReadFile(filepath.Join(dir, "launcher-logpath"))
 		checkWitness(t, err)
-		t.Cleanup(func() { _ = os.Remove(string(launcherLog)) })
+		cleanup.files = append(cleanup.files, func() error { return os.Remove(string(launcherLog)) })
 		waitWitnessCustodianObserved(t, dir, string(launcherLog), shell)
 	}
 	launcherValue := liveWitnessProcessRef(t, int64(command.Process.Pid), owner.Pid)
 	deaths := []witnessDeath{
-		armWitnessDeath(t, owner),
-		armWitnessDeath(t, child),
-		armWitnessDeath(t, other),
+		ownerDeath, childDeath, otherDeath, thirdDeath,
 	}
 	if exported {
-		deaths = append(deaths, armWitnessDeath(t, shell))
+		deaths = append(deaths, shellDeath)
 	}
 	_ = command.Process.Kill()
 	_ = command.Wait()

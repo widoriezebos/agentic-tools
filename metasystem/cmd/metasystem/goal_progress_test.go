@@ -236,7 +236,7 @@ func TestWorkLandReturnedRecordsDoNotHideTheGoalsLanding(t *testing.T) {
 	if _, added, err := plain.HandIn(install, plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: records, Records: true}); err != nil || !added {
 		t.Fatalf("records hand-in: added=%v err=%v", added, err)
 	}
-	if entry, changed, err := plain.Return(install, "standing-validation", "the records check failed", b.owners.now()); err != nil || !changed || !entry.Records || entry.SHA != records {
+	if entry, changed, err := plain.ReturnProven(install, "standing-validation", "unclassified", "the records check failed", true, "fixture", b.owners.now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed || !entry.Records || entry.SHA != records {
 		t.Fatalf("records return: entry=%+v changed=%v err=%v", entry, changed, err)
 	}
 

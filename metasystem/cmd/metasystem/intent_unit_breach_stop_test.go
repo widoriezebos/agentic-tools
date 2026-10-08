@@ -255,8 +255,8 @@ func TestIntentUnitLaunchCustodyRefusalNamesRecovery(t *testing.T) {
 	})
 	brief := bed.brief("custody.md", "Build the unit.\n")
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "custody", "--brief", brief, "--lines", "5"}, workCheck...)...)
-	if code != 1 || !strings.Contains(resultWords(result), "no proven claim custody") ||
-		!strings.Contains(resultWords(result), "resume or re-claim it before dispatch") || len(bed.starter.launched()) != 0 {
+	if code != 1 || !strings.Contains(resultWords(result), "claim has no stop capability") ||
+		!strings.Contains(resultWords(result), "repair its claim authority") || len(bed.starter.launched()) != 0 {
 		t.Fatalf("custody refusal has no dispatch recovery or starts work: %d %+v", code, result)
 	}
 }

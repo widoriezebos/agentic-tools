@@ -511,6 +511,10 @@ func sessionHandoffRoute(args []string) (command, []string) {
 // runTestStatus reads whether retained proof covers an exact tree, or with
 // --result the measured cost of one recorded result; neither runs a test.
 func runTestStatus(args []string, stdout, stderr io.Writer) int {
+	return runTestStatusWithInputs(args, stdout, stderr, testStatusInputs{})
+}
+
+func runTestStatusWithInputs(args []string, stdout, stderr io.Writer, inputs testStatusInputs) int {
 	route := testStatusRoute(args)
 	if _, result, _ := takeIntentFlag(args, "result", true); result {
 		// A recorded result is read on its own; the installation found for
@@ -518,7 +522,7 @@ func runTestStatus(args []string, stdout, stderr io.Writer) int {
 		_, _, args = takeIntentFlag(args, "root", true)
 		return route(args, stdout, stderr)
 	}
-	return runTestVerifyAs("test status", args, stdout, stderr)
+	return runTestVerifyAsWithStatus("test status", args, stdout, stderr, inputs)
 }
 
 // testStatusRoute is the owner a test status's words reach: the result

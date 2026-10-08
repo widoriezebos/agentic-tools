@@ -29,11 +29,14 @@ func (git *rebaseFixtureGit) Run(dir string, env []string, args ...string) ([]by
 		dir = git.source
 	}
 	if len(args) > 3 && args[0] == "diff" && args[1] == "--cached" && args[2] == "--binary" {
-		if args[3] != "previous-tree" {
+		if args[3] == "new-base" {
 			git.baseSeen = git.baseSeen || args[3] == "new-base"
 			args = append([]string(nil), args...)
 			args[3] = "base"
 		}
+	}
+	if slices.Equal(args, []string{"rev-parse", "--verify", "new-base^{tree}"}) {
+		return nil, os.ErrNotExist
 	}
 	if slices.Equal(args, []string{"read-tree", "new-base"}) {
 		args = []string{"read-tree", "base"}
@@ -85,6 +88,14 @@ func TestRevisionOnStoppedRebase(t *testing.T) {
 	got, err := fixture.runner.Continue(UnitRequest{Resume: first.Record.ID})
 	if err != nil || got.Round != 2 || got.Record.Rounds[1].Outcome != "green" || !git.baseSeen {
 		t.Fatalf("resolve %+v %v base seen %v", got, err, git.baseSeen)
+	}
+	retained, err := fixture.runner.Status(first.Record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resolvePlan, err := ReadUnitPlan(filepath.Join(retained.Rounds[1].Directory, "plan.json"))
+	if err != nil || resolvePlan.Build.Inputs == nil || resolvePlan.Build.Outputs == nil {
+		t.Fatalf("resolve plan lost its declared empty input/output lists: %+v %v", resolvePlan.Build, err)
 	}
 	launched := len(fixture.starter.order)
 	again, err := fixture.runner.Revise(request)

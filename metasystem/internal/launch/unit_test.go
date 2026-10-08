@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -32,25 +33,37 @@ type stubGit struct {
 	snapshotStub *testgit.Stub
 	snapshotNext int
 	reporter     testgit.Reporter
+	worktree     string
 }
 
 func (git *stubGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
 	git.once.Do(func() { git.stub = git.makeStub() })
+	if git.worktree != "" {
+		actual, err := filepath.EvalSymlinks(directory)
+		expected, expectedErr := filepath.EvalSymlinks(git.worktree)
+		if err == nil && expectedErr == nil && actual == expected {
+			directory = git.worktree
+		}
+		if slices.Equal(args, []string{"rev-parse", "--verify", "base^{tree}"}) {
+			if directory != git.worktree || len(environment) != 0 {
+				return nil, fmt.Errorf("invalid baseline lookup: %s %v", directory, environment)
+			}
+			return nil, os.ErrNotExist
+		}
+		if slices.Equal(args, []string{"rev-parse", "--show-toplevel"}) {
+			if directory != git.worktree || len(environment) != 0 {
+				return nil, fmt.Errorf("invalid tree custody query: %s %v", directory, environment)
+			}
+			return []byte(git.worktree + "\n"), nil
+		}
+	}
 	if git.normalize != nil {
 		args = git.normalize(args)
 	}
-	if len(git.snapshot) > 0 && git.snapshotNext == 0 && slices.Equal(args, []string{"rev-parse", "--show-toplevel"}) {
-		root := git.snapshot[0]
-		if directory != root.Call.Dir || len(environment) != 0 {
-			git.reporter.Errorf("unexpected repository root lookup: directory=%q environment=%v", directory, environment)
-		}
-		return root.Result.Stdout, root.Result.Err
-	}
 	if len(git.snapshot) > 0 && (git.snapshotNext > 0 || slices.Equal(args, []string{"rev-parse", "HEAD"})) {
 		if git.snapshotNext == 0 {
-			git.snapshotNext = 1
 			expected := slices.Clone(git.snapshot[1:])
-			check := isolatedGitEnvironment(git.snapshot[0].Call.Dir, strings.TrimSpace(string(git.snapshot[4].Result.Stdout)), true)
+			check := isolatedGitEnvironment(expected[0].Call.Dir, strings.TrimSpace(string(expected[3].Result.Stdout)), true)
 			for i := range expected {
 				if expected[i].Check != nil {
 					expected[i].Check = check
@@ -59,7 +72,7 @@ func (git *stubGit) Run(directory string, environment []string, args ...string) 
 			git.snapshotStub = testgit.New(git.reporter, expected...)
 		}
 		result := git.snapshotStub.Run(testgit.Call{Dir: directory, Env: environment, Args: args})
-		git.snapshotNext = (git.snapshotNext + 1) % len(git.snapshot)
+		git.snapshotNext = (git.snapshotNext + 1) % (len(git.snapshot) - 1)
 		return result.Stdout, result.Err
 	}
 	result := git.stub.Run(testgit.Call{Dir: directory, Env: environment, Args: args})
@@ -244,8 +257,16 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	os.MkdirAll(objects, 0o700)
 	defaultEvents := events == nil
 	if defaultEvents {
-		events = []string{"branch", "round"}
+		events = []string{"branch", "branch", "round"}
 	}
+	var admission []string
+	for i, event := range events {
+		admission = append(admission, event)
+		if event == "branch" && (i == 0 || events[i-1] == "new") && (i+1 == len(events) || events[i+1] != "branch") {
+			admission = append(admission, "branch")
+		}
+	}
+	events = admission
 	var expanded []string
 	rounds := 0
 	beforePending := false
@@ -298,11 +319,6 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
 			add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "base", "--", ".")
-			patchCheck := isolatedGitEnvironment(fixture.worktree, objects, false)
-			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
-			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
-			add(fixture.worktree, "", patchCheck, "add", "-A", "--sparse", "--", ".")
-			add(fixture.worktree, diff, patchCheck, "diff", "--cached", "--binary", "head", "--", ".")
 			foldVerify := isolatedGitEnvironment(fixture.worktree, objects, false)
 			foldCheck := func(call testgit.Call) error {
 				if call.Args[0] == "read-tree" {
@@ -312,6 +328,11 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 				}
 				return foldVerify(call)
 			}
+			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
+			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+			patchCheck := isolatedGitEnvironment(fixture.worktree, objects, false)
+			add(fixture.worktree, "", patchCheck, "add", "-A", "--sparse", "--", ".")
+			add(fixture.worktree, diff, patchCheck, "diff", "--cached", "--binary", "head", "--", ".")
 			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			add(fixture.worktree, "", foldCheck, "read-tree", "base")
 			add(fixture.worktree, "previous-tree\n", foldCheck, "write-tree")
@@ -335,7 +356,7 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 				add(fixture.worktree, "", check, "ls-files", "--resolve-undo", "-z", "--full-name", "--", ".")
 				add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
 				add(fixture.worktree, "", check, "diff", "--cached", "--raw", "-z", "--no-abbrev", "HEAD", "--", ".")
-				add(fixture.worktree, "previous-tree\n", check, "write-tree")
+				add(fixture.worktree, "round-tree\n", check, "write-tree")
 				snapshot = append([]testgit.Expectation(nil), expected[snapshotStart:]...)
 				expected = expected[:snapshotStart]
 			}
@@ -366,9 +387,9 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	}
 	// Each physical proof/read execution takes fresh snapshots, including a
 	// retained step retry. Every snapshot must complete this strict Git sequence.
-	fixture.git = &stubGit{snapshot: snapshot, reporter: t, makeStub: func() *testgit.Stub {
+	fixture.git = &stubGit{worktree: fixture.worktree, snapshot: snapshot, reporter: t, makeStub: func() *testgit.Stub {
 		if defaultEvents && fixture.starter.failKind == "build" {
-			return testgit.New(t, expected[:5]...)
+			return testgit.New(t, expected[:6]...)
 		}
 		return testgit.New(t, expected...)
 	}}
@@ -427,6 +448,71 @@ func isolatedGitEnvironment(worktree, alternate string, optionalLocks bool) func
 			return fmt.Errorf("optional locks mismatch: %q", call.Env[3])
 		}
 		return nil
+	}
+}
+
+func TestUnitPlanRetainsDeclaredCheckAndEstimate(t *testing.T) {
+	t.Parallel()
+	fixture := baseUnitFixture(t)
+	plan, err := ReadUnitPlan(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Check = &UnitCheck{SourceTree: "declaration-tree", Cheap: "true", Audits: "true", Minutes: 15,
+		Directory: fixture.worktree, Environment: []string{"A=B"}}
+	checkMinutes := 2.0
+	plan.Estimate = &UnitEstimate{DesignID: "design", SourceSHA256: strings.Repeat("a", 64), BodySHA256: strings.Repeat("b", 64),
+		Unit: plan.Unit, ElapsedMinutes: 10, CheckMinutes: &checkMinutes}
+	plan.FullArgv = []string{"go", "run", "./cmd/devgate", "full"}
+	data, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.plan, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := ReadUnitPlan(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(retained.Check, plan.Check) || !reflect.DeepEqual(retained.Estimate, plan.Estimate) || !slices.Equal(retained.FullArgv, plan.FullArgv) {
+		t.Fatalf("retained plan lost declared checks or telemetry: %+v", retained)
+	}
+	for _, field := range []string{"estimate", "fullArgv"} {
+		t.Run(field, func(t *testing.T) {
+			t.Parallel()
+			input := retained
+			if field == "estimate" {
+				input.FullArgv = nil
+			} else {
+				input.Estimate = nil
+			}
+			path := filepath.Join(t.TempDir(), "plan.json")
+			data, err := json.Marshal(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err = ReadUnitPlanInput(path)
+			var problem *CodedError
+			if !errors.As(err, &problem) || problem.Code != "UNIT_PLAN_INVALID" || problem.Facts != "field="+field {
+				t.Fatalf("caller supplied retained %s: %v", field, err)
+			}
+		})
+	}
+	plan.Estimate, plan.FullArgv = nil, nil
+	data, err = json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.plan, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input, err := ReadUnitPlanInput(fixture.plan)
+	if err != nil || !reflect.DeepEqual(input.Check, plan.Check) {
+		t.Fatalf("caller plan lost its declared check: %+v %v", input.Check, err)
 	}
 }
 
@@ -670,7 +756,14 @@ func TestRoundCauseOnlyWhenNothingWasJudged(t *testing.T) {
 }
 
 func TestRefusedBuildLeavesNoRunRecord(t *testing.T) {
-	fixture := newUnitFixture(t, "", "branch")
+	t.Parallel()
+	fixture := baseUnitFixture(t)
+	fixture.runner.Git = &stubGit{makeStub: func() *testgit.Stub {
+		return testgit.New(t, testgit.Expectation{
+			Call:   testgit.Call{Dir: fixture.worktree, Args: []string{"symbolic-ref", "--short", "HEAD"}},
+			Result: testgit.Result{Stdout: []byte("goal/goal\n")},
+		})
+	}}
 	fixture.manager.Settings.BuildLinesCap = 1
 	_, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	entries, _ := os.ReadDir(fixture.runner.Root)
@@ -693,8 +786,11 @@ func TestResumeAfterAKillStartsNoSecondLaunch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected interruption")
 	}
-	entries, _ := os.ReadDir(fixture.runner.Root)
-	id := entries[0].Name()
+	entries := unitRunDirectories(t, fixture.runner.Root)
+	if len(entries) != 1 {
+		t.Fatalf("run directories=%v", entries)
+	}
+	id := entries[0]
 	fixture.runner.AfterWrite = nil
 	if _, err := fixture.runner.Advance(UnitRequest{Resume: id}); err != nil {
 		t.Fatal(err)
@@ -1062,8 +1158,8 @@ func TestProofThatMovesTheRepositoryRetriesTheStep(t *testing.T) {
 			}
 			round := result.Record.Rounds[0]
 			proof := stepNamed(t, round, "proof:check")
-			if round.Outcome != "green" || len(proof.LaunchIDs) != 2 || stepNamed(t, round, "read").State != StepPassed {
-				t.Fatalf("tree movement did not retry only proof before reading: %+v", round)
+			if round.Outcome != "proof-wrote" || round.Cause != "environment" || round.Stop == nil || len(proof.LaunchIDs) != 2 || stepNamed(t, round, "read").State != StepSkipped {
+				t.Fatalf("tree movement did not hold the changed result after one proof retry: %+v", round)
 			}
 		})
 	}
@@ -1151,7 +1247,7 @@ func TestNestedWorktreeProtectsRepositoryWideIndexState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if row.moved && (result.Record.Rounds[0].Outcome != "green" || len(stepNamed(t, result.Record.Rounds[0], "proof:check").LaunchIDs) != 2) {
+			if row.moved && (result.Record.Rounds[0].Outcome != "proof-wrote" || result.Record.Rounds[0].Cause != "environment" || result.Record.Rounds[0].Stop == nil || stepNamed(t, result.Record.Rounds[0], "read").State != StepSkipped || len(stepNamed(t, result.Record.Rounds[0], "proof:check").LaunchIDs) != 2) {
 				t.Fatalf("repository-wide index mutation was not detected: %+v", result.Record)
 			}
 			if !row.moved && (result.Record.Rounds[0].Outcome != "green" || len(stepNamed(t, result.Record.Rounds[0], "proof:check").LaunchIDs) != 1) {
@@ -1570,7 +1666,7 @@ func TestRoundMaterialAndJudgement(t *testing.T) {
 	t.Parallel()
 	fixture := newUnitFixture(t, "", []string{}...)
 	yes, no := true, false
-	record := UnitRunRecord{ID: "round-material", CountedCap: 6, MaxRounds: 20, Rounds: []UnitRound{{Number: 1, Cause: "provider-limit"}, {Number: 2, Directory: filepath.Join(fixture.runner.Root, "round-material", "round-2")}}}
+	record := UnitRunRecord{ID: "round-material", Worktree: fixture.worktree, Goal: "goal", Unit: "U", CountedCap: 6, MaxRounds: 20, Rounds: []UnitRound{{Number: 1, Cause: "provider-limit"}, {Number: 2, Directory: filepath.Join(fixture.runner.Root, "round-material", "round-2")}}}
 	os.MkdirAll(record.Rounds[1].Directory, 0700)
 	for _, item := range []struct {
 		id       string

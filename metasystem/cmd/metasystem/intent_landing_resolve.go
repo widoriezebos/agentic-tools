@@ -39,6 +39,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(landingLaneFailure(targets, "the lane installation cannot be placed", err))
 	}
 	seams := admitted.owners.plainResolve
+	seams.Proof = inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))
 	git := seams.Git
 	if git == nil {
 		git = plain.Git
@@ -51,6 +52,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 	if err != nil {
 		return inv.render(landingLaneFailure(targets, "main's testing contract is invalid", err))
 	}
+	defer plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 	out, err := plain.Resolve(admitted.home, admitted.installation, string(admitted.layout.Checkout), contract, seams)
 	if out.Held && out.Goal == "" {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: out, Summary: "the lane tree has no unresolved paths; nothing was changed"})

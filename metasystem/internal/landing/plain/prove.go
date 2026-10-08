@@ -18,13 +18,17 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
 
@@ -32,18 +36,26 @@ import (
 const (
 	Green = "green"
 	Red   = "red"
+	Held  = "held"
 )
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
-	Trunk   bool   `json:"trunk,omitempty"`
-	Gate    bool   `json:"gate,omitempty"`
-	Attempt string `json:"attempt"`
-	Tree    string `json:"tree"`
-	Commit  string `json:"commit"`
-	Log     string `json:"log"`
-	Since   string `json:"since"`
-	Pid     int64  `json:"pid"`
+	ClassificationOf  string               `json:"classification-of,omitempty"`
+	ObservedIncidents []goal.TrunkRedEntry `json:"observed-incidents,omitempty"`
+	Admission         *ExecutionAdmission  `json:"admission,omitempty"`
+	Executions        []ExecutionAdmission `json:"executions,omitempty"`
+	Person            *ActProvenance       `json:"person,omitempty"`
+	BatchID           string               `json:"batch-id,omitempty"`
+	BatchMembers      []GoalSHA            `json:"batch-members,omitempty"`
+	Trunk             bool                 `json:"trunk,omitempty"`
+	Gate              bool                 `json:"gate,omitempty"`
+	Attempt           string               `json:"attempt"`
+	Tree              string               `json:"tree"`
+	Commit            string               `json:"commit"`
+	Log               string               `json:"log"`
+	Since             string               `json:"since"`
+	Pid               int64                `json:"pid"`
 	// Process is the exact identity of Pid, so a reused pid is not read as
 	// the proof.
 	Process string `json:"process,omitempty"`
@@ -51,7 +63,23 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
-	Trunk bool `json:"trunk,omitempty"`
+	FlakeRepeats          []Running            `json:"flake-repeats,omitempty"`
+	RepeatComplete        bool                 `json:"repeat-complete,omitempty"`
+	FlakePublished        bool                 `json:"flake-published,omitempty"`
+	Flakes                []FlakeRecord        `json:"flakes,omitempty"`
+	ClassificationOf      string               `json:"classification-of,omitempty"`
+	NextFull              *Result              `json:"next-full,omitempty"`
+	ClassificationPolicy  PolicyValue          `json:"classification-policy,omitempty"`
+	ClassificationWarning string               `json:"classification-warning,omitempty"`
+	ClassificationPending bool                 `json:"classification-pending,omitempty"`
+	ClassificationPerson  *ActProvenance       `json:"classification-person,omitempty"`
+	ObservedIncidents     []goal.TrunkRedEntry `json:"observed-incidents,omitempty"`
+	Person                *ActProvenance       `json:"person,omitempty"`
+	Executions            []ExecutionAdmission `json:"executions,omitempty"`
+	executionErr          error
+	BatchID               string    `json:"batch-id,omitempty"`
+	BatchMembers          []GoalSHA `json:"batch-members,omitempty"`
+	Trunk                 bool      `json:"trunk,omitempty"`
 	// CountedFull identifies a whole execution with a complete report.
 	CountedFull bool `json:"countedFull,omitempty"`
 	// LoopClosed ends the batch budget without changing the proof verdict.
@@ -97,9 +125,10 @@ type UnitJudgement struct {
 // FlakeRecord carries both checks of a unit to its register and fix goal.
 type FlakeRecord struct {
 	FailedUnit
-	Commit, Tree, Attempt, Log       string
-	Load                             float64
-	Repeat, RepeatAttempt, RepeatLog string
+	Commit, Tree, Attempt, Log, Where string
+	Load                              float64
+	Repeat, RepeatAttempt, RepeatLog  string
+	Outputs, RepeatOutputs            map[string]repoproof.TestOutput
 }
 
 // FlakeRecorded is the confirmed record's fix goal and sighting count.
@@ -110,8 +139,20 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
-	// Person is verified by the command owner, never supplied queue metadata.
-	Person bool
+	ClassificationOf string
+	// Person admits one direct proof; Start binds its provenance to the attempt.
+	Person *ActProvenance
+	// FenceCheck rechecks execution admission under the owning queue lock.
+	FenceCheck func() error
+	// Pause observes the standing maintenance fence at selection.
+	Pause func() (lane.Pause, bool)
+	// TimerHeld suppresses periodic trunk checks while a fence stands.
+	TimerHeld func() bool
+	// Policy resolves only the policy requested at its effect boundary.
+	Policy func(string) (PolicyValue, error)
+	// Lane reads the host registration again before a selection or admission.
+	Lane         func() (lane.Record, error)
+	AgentRunning func() (bool, error)
 	// FetchCommand prepares the bounded fetch process; nil runs Git unchanged.
 	FetchCommand func(*exec.Cmd)
 	// FetchTimeout overrides the fetch deadline for isolated tests.
@@ -147,7 +188,8 @@ type ProveSeams struct {
 	Command func(*exec.Cmd) error
 	// CommandForCommit resolves the proof declaration for the exact commit
 	// selected under the lane lock, including a detached attempt's commit.
-	CommandForCommit func(commit string) (string, error)
+	CommandForCommit     func(commit string) (string, error)
+	GateCommandForCommit func(commit string) (string, error)
 }
 
 func (s ProveSeams) git(dir string, args ...string) (string, error) {
@@ -198,6 +240,11 @@ func processRef(pid int64) string {
 	return encoded
 }
 
+// OwnProcess reports whether this process is the recorded proof child.
+func (r Running) OwnProcess() bool {
+	return r.Pid == int64(os.Getpid()) && r.Process != "" && r.Process == processRef(int64(os.Getpid()))
+}
+
 // Busy is a prove refused because another tree's proof runs.
 type Busy struct{ Running Running }
 
@@ -219,6 +266,18 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	if err != nil || !recorded || alive {
 		return running, recorded, alive, err
 	}
+	if running.Admission != nil {
+		if running.Admission.State == "pending" {
+			running.setAdmissionState("failed")
+			if err := writeRunning(install, running); err != nil {
+				return running, recorded, alive, err
+			}
+		}
+		if running.Admission.State == "failed" {
+			return Running{}, false, false, nil
+		}
+	}
+
 	mode := seams
 	mode.Gate = running.Gate
 	results, err := readLines[Result](mode.resultsPath(install))
@@ -232,11 +291,13 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 		}
 		exists = exists || result.Tree == running.Tree
 	}
-	if attempt != "" && running.Attempt == attempt {
+	if attempt != "" && running.Attempt == attempt && running.OwnProcess() {
 		return running, recorded, alive, nil
 	}
 	red := Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
 		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended", Cause: &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}}
+	red.BatchID, red.BatchMembers = running.BatchID, running.BatchMembers
+	red.Person, red.Executions, red.ClassificationOf = running.Person, running.Executions, running.ClassificationOf
 	if running.Gate {
 		red.Scope = "gate"
 	}
@@ -259,8 +320,20 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 // checkBound reads the newest line under the lane lock before any check starts.
 func (s ProveSeams) checkBound(install, tree string) (Result, bool, error) {
 	result, found, err := resultFor(s.resultsPath(install), tree)
-	if err == nil && found && result.Result != Green && result.Repeat != "allowed" {
+	if err == nil && found && result.Result == Red && result.RepeatComplete && len(result.FlakeRepeats) > 0 {
+		green := result
+		green.Result, green.Failed, green.Cause = Green, nil, nil
+		result = recordFlakes(s, result, green, "alone", result.FlakeRepeats)
+		err = appendLine(s.resultsPath(install), result)
+	}
+	if err == nil && found && result.Result == Red && s.Person == nil && (result.ClassificationPending || result.ClassificationPerson == nil && result.ClassificationOf == "") {
+		err = redContinuationLocked(install, result, s)
+	}
+	if err == nil && found && result.Result != Green && result.Result != Held && result.Repeat != "allowed" && s.Person == nil {
 		err = &NoRepeat{}
+	}
+	if err != nil && s.Person != nil {
+		return Result{}, false, nil
 	}
 	return result, found, err
 }
@@ -277,10 +350,9 @@ func ReadRunning(install string, seams ProveSeams) (Running, bool, bool, error) 
 	}
 	var running Running
 	if err := json.Unmarshal(data, &running); err != nil {
-		// A torn record is a proof that died mid-start.
-		return Running{}, true, false, nil
+		return Running{}, true, false, fmt.Errorf("the running check cannot be decoded: %w", err)
 	}
-	return running, true, seams.alive(running), nil
+	return running, true, (running.Admission == nil || running.Admission.State != "failed") && seams.alive(running), nil
 }
 
 func head(git func(string, ...string) (string, error), checkout string) (commit, tree string, err error) {
@@ -319,6 +391,14 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 	var started Running
 	already := false
 	err = withLock(install, func() error {
+		currentCommit, currentTree, subjectErr := seams.subject(checkout)
+		if subjectErr != nil {
+			return subjectErr
+		}
+		if currentCommit != commit || currentTree != tree {
+			return &Refusal{Code: "LANE_PROOF_SUBJECT", Reason: "the check target changed before admission", Next: proofCommand(seams.Gate, seams.Trunk)}
+		}
+
 		running, recorded, alive, err := checkState(install, checkout, "", seams)
 		if err != nil {
 			return err
@@ -330,6 +410,13 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			}
 			return &Busy{Running: running}
 		}
+		var batch *Batch
+		if !seams.Trunk {
+			batch, err = checkBatchLocked(install, checkout, commit, "", seams.Gate, true, seams)
+			if err != nil {
+				return err
+			}
+		}
 		if !seams.Trunk {
 			result, found, err := seams.checkBound(install, tree)
 			if err != nil {
@@ -339,8 +426,19 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 				started, already = Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At}, true
 				return nil
 			}
-			if err := seams.checkBudget(install, checkout, commit); err != nil {
+		}
+		if seams.FenceCheck != nil {
+			if err := seams.FenceCheck(); err != nil {
 				return err
+			}
+		}
+		if seams.Trunk {
+			prior, found, err := resultFor(seams.resultsPath(install), tree)
+			if err != nil && seams.Person == nil {
+				return err
+			}
+			if found && prior.Cause != nil && prior.Cause.Kind == "environment" && prior.Repeat != "allowed" && seams.Person == nil {
+				return &NoRepeat{}
 			}
 		}
 		if err := proofAdmission(install, checkout, commit, seams); err != nil {
@@ -363,12 +461,59 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if seams.Trunk {
 			argv = append(argv, "--trunk")
 		}
+		started = Running{Person: seams.Person, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: int64(os.Getpid()), Process: processRef(int64(os.Getpid()))}
+		if batch != nil {
+			started.BatchID, started.BatchMembers = batch.ID, batch.Members
+		}
+		command := ""
+		if seams.CommandForCommit != nil {
+			command, err = seams.CommandForCommit(commit)
+			if err != nil {
+				return err
+			}
+		}
+		if err := admitExecutionLocked(install, checkout, command, &started, proofScope(install, checkout, started, seams), seams); err != nil {
+			return err
+		}
+		started.setAdmissionState("pending")
+		if err := writeRunning(install, started); err != nil {
+			return err
+		}
 		pid, err := seams.Launch(argv, checkout, log)
 		if err != nil {
+			started.setAdmissionState("failed")
+			if writeErr := writeRunning(install, started); writeErr != nil {
+				return errors.Join(err, writeErr)
+			}
 			return fmt.Errorf("start proving tree %s: %w", Short(tree), err)
 		}
-		started = Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: pid, Process: processRef(pid)}
-		return writeRunning(install, started)
+		process := processRef(pid)
+		if pid <= 0 || process == "" {
+			started.setAdmissionState("failed")
+			if err := writeRunning(install, started); err != nil {
+				return err
+			}
+			reason := "the check process has no readable identity (environment cause); its admission failed"
+			if pid > 0 {
+				if err := syscall.Kill(int(pid), syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+					reason += "; stopping the child failed: " + err.Error()
+				}
+			}
+			retry := "metasystem landing prove"
+			if seams.Gate {
+				retry += " --gate"
+			}
+			if seams.Trunk {
+				retry += " --trunk"
+			}
+			return fmt.Errorf("start proving tree %s: %s; retry: %s", Short(tree), reason, retry)
+		}
+		started.Pid, started.Process = pid, process
+		started.setAdmissionState("launched")
+		if err := writeRunning(install, started); err != nil {
+			return err
+		}
+		return closeProofAdmissionStopsLocked(install, started, seams.now())
 	})
 	return started, already, err
 }
@@ -398,6 +543,9 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		}
 		if result, ok, err := seams.checkBound(install, tree); err != nil || ok {
 			settled, found = result, ok && result.reusableGreen(seams.now())
+			if found {
+				_, err = checkBatchLocked(install, checkout, commit, "", seams.Gate, true, seams)
+			}
 			return err
 		}
 		if recorded && alive || seams.Gate {
@@ -409,6 +557,13 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		}
 		settled = Result{Tree: tree, Commit: commit, Result: Green, At: seams.now().Format(time.RFC3339), Attempt: seams.newID(),
 			Reason: inheritedReason(from)}
+		batch, err := checkBatchLocked(install, checkout, commit, "", false, true, seams)
+		if err != nil {
+			return err
+		}
+		if batch != nil {
+			settled.BatchID, settled.BatchMembers = batch.ID, batch.Members
+		}
 		settled, err = inheritScope(install, settled, from)
 		if err != nil {
 			return err
@@ -441,23 +596,70 @@ func writeRunning(install string, running Running) error {
 // it); empty records this process as the running proof first, refusing
 // while another tree's proof runs. The command's output goes to output.
 func Run(install, checkout, command, attempt string, output io.Writer, seams ProveSeams) (Result, error) {
-	commit, tree, err := seams.subject(checkout)
-	if err != nil {
-		return Result{}, err
+	var commit, tree string
+	var err error
+	if attempt == "" {
+		commit, tree, err = seams.subject(checkout)
+		if err != nil {
+			return Result{}, err
+		}
 	}
-	running := Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: attempt, Tree: tree, Commit: commit}
+	running := Running{Person: seams.Person, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: attempt, Tree: tree, Commit: commit}
 	var previous, result Result
 	already := false
 	err = withLock(install, func() error {
-		current, recorded, alive, err := checkState(install, checkout, attempt, seams)
+		if attempt == "" {
+			currentCommit, currentTree, subjectErr := seams.subject(checkout)
+			if subjectErr != nil {
+				return subjectErr
+			}
+			if currentCommit != commit || currentTree != tree {
+				return &Refusal{Code: "LANE_PROOF_SUBJECT", Reason: "the check target changed before admission", Next: proofCommand(seams.Gate, seams.Trunk)}
+			}
+		}
+
+		var current Running
+		var recorded, alive bool
+		var err error
+		if attempt != "" {
+			current, recorded, alive, err = ReadRunning(install, seams)
+			if err == nil && recorded && (current.Gate != seams.Gate || current.Trunk != seams.Trunk) {
+				return &Busy{Running: current}
+			}
+
+			if err == nil && (!recorded || current.Attempt != attempt || current.Admission == nil || current.Admission.State != "launched" || !current.OwnProcess() || len(current.Executions) == 0 || !current.Admission.matches(current)) {
+				err = &Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "this background check has no matching unclaimed admission", Next: proofCommand(seams.Gate, seams.Trunk)}
+			}
+		} else {
+			current, recorded, alive, err = checkState(install, checkout, attempt, seams)
+		}
 		if err != nil {
 			return err
 		}
+
 		if attempt != "" && recorded && current.Attempt == attempt {
+			if current.Admission.Lane != nil && seams.Lane != nil {
+				registered, err := seams.Lane()
+				if err != nil {
+					return err
+				}
+				if registered != *current.Admission.Lane {
+					return fmt.Errorf("the admitted landing lane registration changed")
+				}
+			}
 			running = current
 		}
 		if recorded && alive && (current.Attempt != attempt || current.Gate != seams.Gate || current.Trunk != seams.Trunk) {
 			return &Busy{Running: current}
+		}
+		if !running.Trunk {
+			batch, err := checkBatchLocked(install, checkout, running.Commit, "", seams.Gate, true, seams)
+			if err != nil {
+				return err
+			}
+			if batch != nil {
+				running.BatchID, running.BatchMembers = batch.ID, batch.Members
+			}
 		}
 		if seams.CommandForCommit != nil {
 			command, err = seams.CommandForCommit(running.Commit)
@@ -466,8 +668,19 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			}
 		}
 		var found bool
-		if !running.Trunk {
+		if !running.Trunk && attempt == "" {
 			previous, found, err = seams.checkBound(install, running.Tree)
+		} else {
+			previous, found, err = resultFor(seams.resultsPath(install), running.Tree)
+			if err != nil && running.Person != nil {
+				previous, found, err = Result{}, false, nil
+			}
+			if running.Trunk && (previous.Cause == nil || previous.Cause.Kind != "environment") {
+				previous, found = Result{}, false
+			}
+			if running.Trunk && found && previous.Repeat != "allowed" && seams.Person == nil && attempt == "" {
+				return &NoRepeat{}
+			}
 		}
 		if err != nil {
 			return err
@@ -476,10 +689,61 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			result, already = previous, true
 			return nil
 		}
-		if !running.Trunk {
-			if err := seams.checkBudget(install, checkout, running.Commit); err != nil {
+		if seams.FenceCheck != nil {
+			if err := seams.FenceCheck(); err != nil {
 				return err
 			}
+		}
+		if attempt == "" {
+			if err := proofAdmission(install, checkout, running.Commit, seams); err != nil {
+				return err
+			}
+		}
+		if previous.Result == Held {
+			previous, found = Result{}, false
+		} else if previous.Result == Green {
+			previous = Result{}
+		}
+		if attempt != "" {
+			if running.Admission.Command != "" && running.Admission.Command != command {
+				return fmt.Errorf("the admitted check declaration changed")
+			}
+			running.setAdmissionState("claimed")
+			running.Pid, running.Process = int64(os.Getpid()), processRef(int64(os.Getpid()))
+			if err := writeRunning(install, running); err != nil {
+				return err
+			}
+			if found && previous.Result != Green {
+				if previous.Cause == nil {
+					previous.Cause = &Cause{Kind: "unclassified", Tests: failingTests(previous.Failed), Evidence: previous.Log}
+				}
+				if previous.Goals == nil {
+					previous.Goals, err = goalsInCommit(install, checkout, previous.Commit, seams.git)
+					if err != nil {
+						return err
+					}
+				}
+				previous.Repeat, previous.LoopClosed = "started", false
+				if err := appendLine(seams.resultsPath(install), previous); err != nil {
+					return err
+				}
+			}
+			return nil
+		}
+		if running.Attempt == "" {
+			running.Attempt = seams.newID()
+		}
+		pid := int64(os.Getpid())
+		running.Since, running.Pid, running.Process = seams.now().Format(time.RFC3339), pid, processRef(pid)
+		if file, ok := output.(*os.File); ok {
+			running.Log = file.Name()
+		}
+		if err := admitExecutionLocked(install, checkout, command, &running, proofScope(install, checkout, running, seams), seams); err != nil {
+			return err
+		}
+		running.setAdmissionState("claimed")
+		if err := writeRunning(install, running); err != nil {
+			return err
 		}
 		if found && previous.Result != Green {
 			if previous.Cause == nil {
@@ -496,29 +760,13 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 				return err
 			}
 		}
-		if previous.Result == Green {
-			previous = Result{}
-		}
-		if attempt != "" && recorded && current.Attempt == attempt {
-			return nil
-		}
-		if err := proofAdmission(install, checkout, running.Commit, seams); err != nil {
-			return err
-		}
-		if running.Attempt == "" {
-			running.Attempt = seams.newID()
-		}
-		pid := int64(os.Getpid())
-		running.Since, running.Pid, running.Process = seams.now().Format(time.RFC3339), pid, processRef(pid)
-		if file, ok := output.(*os.File); ok {
-			running.Log = file.Name()
-		}
-		return writeRunning(install, running)
+		return closeProofAdmissionStopsLocked(install, running, seams.now())
 	})
 	if err != nil || already {
 		return result, err
 	}
 	result = Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
+	result.BatchID, result.BatchMembers = running.BatchID, running.BatchMembers
 	result.Goals, err = goalsInCommit(install, checkout, running.Commit, seams.git)
 	if err != nil {
 		return result, err
@@ -543,7 +791,10 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		} else if running.Trunk {
 			decision = scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check of main"}}
 		} else {
-			decision = decideScope(install, checkout, running, seams)
+			decision = proofScope(install, checkout, running, seams)
+		}
+		if running.Admission != nil && (running.Admission.Scope != decision.Scope || running.Admission.Base != decision.Base || !slices.Equal(running.Admission.Groups, decision.groupIDs())) {
+			return result, fmt.Errorf("the admitted check scope changed; request a fresh check")
 		}
 		result = proveInWorktree(seams, install, checkout, command, running, &decision, output, observed, result, previous)
 		result.At = seams.now().Format(time.RFC3339)
@@ -552,10 +803,10 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if result.Reason != "" {
 		fmt.Fprintf(output, "\nlanding prove: %s\n", result.Reason)
 	}
-	if result.Trunk && result.Result == Red && len(result.Failed) > 0 {
+	if result.Trunk && result.Result == Red && len(result.Failed) > 0 && (result.Cause == nil || result.Cause.Kind != "environment") {
 		result = recordMainFailures(seams, result, []Result{result})
 	}
-	if !result.Trunk && result.Result == Red && len(result.Failed) > 0 && seams.RecordMain != nil {
+	if !result.Trunk && result.Result == Red && len(result.Failed) > 0 && (result.Cause == nil || result.Cause.Kind != "environment") && seams.RecordMain != nil {
 		main, mainErr := checkoutGit(checkout, seams).main()
 		if mainErr == nil {
 			mainTree, treeErr := seams.git(checkout, "rev-parse", "--verify", main+"^{tree}")
@@ -565,6 +816,11 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 				result = recordMainFailures(seams, result, []Result{check})
 			}
 		}
+	}
+	result.ClassificationOf = running.ClassificationOf
+	result.Person, result.Executions, result.ObservedIncidents = running.Person, running.Executions, running.ObservedIncidents
+	if current, recorded, _, readErr := ReadRunning(install, seams); readErr == nil && recorded && current.Attempt == running.Attempt {
+		result.Executions = current.Executions
 	}
 	err = withLock(install, func() error {
 		if !inherited && !seams.Gate {
@@ -583,7 +839,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		}
 		return nil
 	})
-	return result, err
+	return result, errors.Join(err, result.executionErr)
 }
 
 // ledgerPaths are the goal ledger paths goal verbs rewrite, which
@@ -727,6 +983,12 @@ func boundedFetch(dir string, timeout time.Duration, prepare func(*exec.Cmd), ar
 // runCheck gives the shell files, so a descendant holding its output open
 // cannot delay its exit. Both protocols are read from this run's log bytes.
 func runCheck(seams ProveSeams, dir, command string, running Running, only string, decision scopeDecision, output io.Writer, observed *proofOutput) (checkReport, error) {
+	if only == "" && (decision.Scope == "full" || decision.Scope == "scoped") {
+		if running.Admission == nil || running.Admission.State != "claimed" || !running.Admission.matches(running) || running.Admission.Scope != decision.Scope || (running.Admission.Command != "" && running.Admission.Command != command) {
+			return checkReport{}, fmt.Errorf("this execution has no matching claimed check admission")
+		}
+	}
+
 	log, ok := output.(*os.File)
 	offset := int64(-1)
 	if ok {
@@ -826,6 +1088,28 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		runErr = fmt.Errorf("the cheap check reported that it did not run")
 	}
 	if (runErr == nil || report.kind == "complete") && decision.Scope == "scoped" && (observed.environment == "" || decision.base.Environment == "" || observed.environment != decision.base.Environment) {
+		if runErr != nil {
+			result = observeRed(seams, install, running, *decision, observed, result, previous, report, runErr)
+			if result.executionErr != nil {
+				return result
+			}
+		}
+		full := *decision
+		full.Scope, full.Base = "full", ""
+		next := seams
+		next.Person = nil
+		err := withLock(install, func() error {
+			if err := admitExecutionLocked(install, checkout, command, &running, full, next); err != nil {
+				return err
+			}
+			running.setAdmissionState("claimed")
+			return writeRunning(install, running)
+		})
+		if err != nil {
+			decision.ScopeReason = "full check pending: the proof environment changed"
+			result.Result, result.Reason, result.executionErr = Held, err.Error(), err
+			return result
+		}
 		decision.Scope, decision.ScopeReason = "full", fmt.Sprintf("the proof environment changed from %q to %q", decision.base.Environment, observed.environment)
 		decision.Base = ""
 		*observed = proofOutput{output: io.Discard}
@@ -836,7 +1120,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		result.Repeat = "started"
 	}
 	if runErr == nil {
-		if previous.Result == Red && len(previous.Failed) > 0 {
+		if previous.Result == Red && len(previous.FlakeRepeats) == 0 && len(previous.Failed) > 0 && (previous.Cause == nil || previous.Cause.Kind != "environment") {
 			return recordFlakes(seams, previous, result, "whole", []Running{running})
 		}
 		return result

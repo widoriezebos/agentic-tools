@@ -96,6 +96,11 @@ func TestProcessSettingRecoveryAndPreservation(t *testing.T) {
 	if err := os.Remove(local); err != nil {
 		t.Fatal(err)
 	}
+	// A missing-layer proposal requires readable process history.
+	b, local = processSettingBed(t)
+	if err := os.Remove(local); err != nil {
+		t.Fatal(err)
+	}
 	b.owners.prove = fixedFixtureGoalAuthority
 	_, result, _ = b.run(t, b.seat, "set", act.Key, "workspace-write")
 	absent := processAct(t, result)
@@ -119,13 +124,14 @@ func TestProcessOrdinaryCheckPublicBuild(t *testing.T) {
 		bed.lineage = "builder"
 		brief := bed.brief("ordinary.md", "Build this unit.\n")
 		check := []string{"go", "test", "-timeout", "30m", "-run", selection, "./fixture"}
-		args := append([]string{"work", "build", bed.id, "--work", strings.Trim(selection, "^$"), "--brief", brief, "--lines", "5", "--check"}, check...)
+		bed.declaredCheap = shellCommand(check)
+		args := []string{"work", "build", bed.id, "--work", strings.Trim(selection, "^$"), "--brief", brief, "--lines", "5"}
 		code, result, output := bed.work(args...)
 		if code != 0 {
 			t.Fatalf("ordinary check was held: exit %d %+v %s", code, result, output)
 		}
 		plan, err := launch.ReadUnitPlan(resultData(t, result)["plan"].(string))
-		if err != nil || len(plan.Proof) == 0 || shellCommand(plan.Proof[0].Argv) != shellCommand(check) {
+		if err != nil || plan.Check == nil || plan.Check.Cheap != shellCommand(check) || len(plan.Proof) != 1 || plan.Proof[0].Name != "unit-check" {
 			t.Fatalf("ordinary check was not retained: %+v %v", plan, err)
 		}
 	}

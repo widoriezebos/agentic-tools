@@ -87,7 +87,7 @@ func TestRealPartnerPublicCatalogue(t *testing.T) {
 	t.Parallel()
 	readers := uitools.Readers{Kit: uitools.Kit{Commands: commandCatalogue}}
 	build := readers.Answer(uitools.OpKit, uitools.Args{"topic": "work build"}).Text()
-	if !strings.Contains(build, "metasystem work build") || !strings.Contains(build, "metasystem work build G [--work NAME] --brief FILE --check COMMAND...") {
+	if !strings.Contains(build, "metasystem work build") || !strings.Contains(build, "metasystem work build G [--work NAME] --brief FILE") {
 		t.Errorf("kit build = %q", build)
 	}
 	status := readers.Answer(uitools.OpKit, uitools.Args{"topic": "metasystem system status"}).Text()

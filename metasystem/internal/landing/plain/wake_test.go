@@ -91,3 +91,24 @@ func TestAScopedPushOwesAFullProofWithinTheHour(t *testing.T) {
 		})
 	}
 }
+
+func TestWakeReasonsSuppressTimerUnderStandingFence(t *testing.T) {
+	t.Parallel()
+	for _, held := range []bool{false, true} {
+		t.Run(map[bool]string{false: "open", true: "held"}[held], func(t *testing.T) {
+			t.Parallel()
+			install := t.TempDir()
+			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=1h\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			reasons, err := WakeReasons(install, install, time.Time{}, bedNow, ProveSeams{TimerHeld: func() bool { return held }})
+			want := []string{WakeFullDue}
+			if held {
+				want = []string{}
+			}
+			if err != nil || !reflect.DeepEqual(reasons, want) {
+				t.Fatalf("timer wake: %v %v want %v", reasons, err, want)
+			}
+		})
+	}
+}

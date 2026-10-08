@@ -47,6 +47,9 @@ type AttestationSource struct {
 }
 
 type GateObservation struct {
+	Evidence      string `json:"evidence,omitempty"`
+	CommandDigest string `json:"commandDigest,omitempty"`
+
 	Kind  string `json:"kind"`
 	Tree  string `json:"tree"`
 	RunID string `json:"runId"`
@@ -117,6 +120,7 @@ type UnitReadBundle struct {
 }
 
 type CommitReadRequest struct {
+	GateObservation                               *GateObservation
 	CanonicalRead                                 json.RawMessage
 	ReadDigest                                    string
 	Repo, Remote, EndpointTip, GoalID, Unit, OpID string
@@ -558,7 +562,7 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 	if err != nil || !foldsMatchWithReads(r, repo, endpointTip, att.Folds, folds) {
 		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record of %s no longer matches the goal branch below it\nrun: metasystem work review %s", commit, goalID)
 	}
-	if att.Gate.Kind != "go-gate-fast" || att.Gate.RunID == "" || att.Gate.Tree != subject.Tree {
+	if !validGateObservation(att.Gate, subject.Tree) {
 		return Attestation{}, operationRefusal(ReadUngatedCode, "the review of %s has no passing quick check of tree %s\nrun: metasystem work review %s", commit, subject.Tree, goalID)
 	}
 	if err := validateTestChangesWithReads(r, repo, goalID, commit, att.TestsChanged); err != nil {
@@ -931,6 +935,12 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		Verdict: "LAND", Gate: GateObservation{Kind: "go-gate-fast", Tree: req.GateTree, RunID: req.GateRunID},
 		Folds: folds, TestsChanged: append([]TestChange(nil), req.TestsChanged...),
 		CoversFindings: append([]string(nil), req.CoversFindings...), CoversCommits: append([]string(nil), req.CoversCommits...),
+	}
+	if req.GateObservation != nil && req.GateObservation.Kind == "unit-check" {
+		if req.GateObservation.RunID != req.GateRunID || !validGateObservation(*req.GateObservation, subject.Tree) {
+			return "", Attestation{}, operationRefusal(ReadUngatedCode, "the declared check has no passing execution of this build\nrun: metasystem work rebase %s", req.GoalID)
+		}
+		att.Gate = *req.GateObservation
 	}
 	var bundleData []byte
 	sort.Slice(att.TestsChanged, func(i, j int) bool { return att.TestsChanged[i].Path < att.TestsChanged[j].Path })

@@ -277,7 +277,7 @@ func TestPendingIsWhatMainDoesNotHoldAndNotReturned(t *testing.T) {
 	}
 	b.merge("goal-a")
 	b.git(b.checkout, "push", "--quiet", "origin", "HEAD:refs/heads/main")
-	if _, _, err := Return(b.install, "goal-b", "red", bedNow); err != nil {
+	if _, _, err := ReturnProven(b.install, "goal-b", "unclassified", "red", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	if got := pending(); strings.Join(got, ",") != "goal-c" {
@@ -302,18 +302,18 @@ func TestHandInRepeatIsOneLineAndReturnShowsAtTheSeat(t *testing.T) {
 	if strings.Count(string(data), "\n") != 1 {
 		t.Fatalf("one line: %q", data)
 	}
-	entry, changed, err := Return(b.install, "goal-a", "app-standard fails since it joined", bedNow)
+	entry, changed, err := ReturnProven(b.install, "goal-a", "unclassified", "app-standard fails since it joined", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}})
 	if err != nil || !changed || entry.State != StateReturned {
 		t.Fatalf("return: %+v %v %v", entry, changed, err)
 	}
-	if _, changed, err := Return(b.install, "goal-a", "again", bedNow); err != nil || changed {
+	if _, changed, err := ReturnProven(b.install, "goal-a", "unclassified", "again", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || changed {
 		t.Fatalf("repeat return: %v %v", changed, err)
 	}
 	latest, ok, err := Latest(b.install, "goal-a")
 	if err != nil || !ok || latest.State != StateReturned || latest.Reason != "app-standard fails since it joined" {
 		t.Fatalf("the seat reads its return: %+v", latest)
 	}
-	if _, _, err := Return(b.install, "goal-z", "x", bedNow); !errors.Is(err, ErrNotWaiting) {
+	if _, _, err := ReturnProven(b.install, "goal-z", "unclassified", "x", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); !errors.Is(err, ErrNotWaiting) {
 		t.Fatalf("nothing waiting: %v", err)
 	}
 	// The seat fixes and hands in again: a new waiting line.
@@ -336,7 +336,7 @@ func TestHandInAgainRequeuesReturnedTipAndKeepsWaitingMetadata(t *testing.T) {
 		t.Fatal(err)
 	}
 	for round := 0; round < 2; round++ {
-		if _, _, err := Return(install, line.Goal, "merge conflict", bedNow); err != nil {
+		if _, _, err := ReturnProven(install, line.Goal, "unclassified", "merge conflict", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 			t.Fatal(err)
 		}
 		if entry, added, err := HandIn(install, line); err != nil || added || entry.State != StateReturned {
@@ -625,7 +625,7 @@ func TestANewHandInSupersedesTheOlderWaitingLine(t *testing.T) {
 	if len(entries) != 2 || entries[0].State != StateSuperseded || entries[1].State != StateWaiting {
 		t.Fatalf("entries: %+v", entries)
 	}
-	if _, _, err := Return(b.install, "goal-a", "red", bedNow); err != nil {
+	if _, _, err := ReturnProven(b.install, "goal-a", "unclassified", "red", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	if pending, _ := Pending(b.install, b.checkout); len(pending) != 0 {

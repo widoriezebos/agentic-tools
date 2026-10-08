@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -19,6 +20,11 @@ import (
 func holdRefreshKeeper(b *resolveVerbFixture) (*lane.AgentKeeper, *int) {
 	starts := 0
 	keeper := newLandingAgentKeeper(b.root, b.home, landingAgent{now: func() time.Time { return laneTestNow }})
+	// Keep the production selection owner and the fixture's bounded Git reader.
+	keeper.Prepare = func(record lane.Record) error {
+		_, err := plain.SelectBatch(record.Install, record.Root, record, b.owners.landing.plainProve)
+		return err
+	}
 	keeper.Sources = b.owners.landing.wake(b.home)
 	keeper.Running = func() (string, bool, error) { return "", false, nil }
 	keeper.Start = func(string, lane.Wake) (string, error) { starts++; return "hold-launch", nil }
@@ -63,14 +69,23 @@ func TestWorkLandIncidentFixWakesWithoutPush(t *testing.T) {
 	l, _ := holdLaneFixture(t, register)
 	git := l.owners.landing.plainProve.Git
 	l.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
-		if args[0] == "fetch" {
-			t.Fatal("a fix hand-in should wake without fetching its claim")
+		if args[0] == "fetch" && strings.Join(args, " ") != "fetch --quiet origin +refs/heads/main:refs/remotes/origin/main" {
+			t.Fatal("selection may fetch main, but must not fetch the fix claim")
 		}
 		return git(dir, args...)
 	}
 	b.owners.laneInstall = func(string) (string, error) { return l.install, nil }
 	code, result := b.do("incident", "claim", holdIncidentID, "--goal", bedGoal, "--by", "Wido")
 	expectOutcome(t, "claim", code, result, intentConfirmed)
+	// The lane observes the claim from main's current register, rather than
+	// the register from before the claim (lane-reads-its-policies, Decision 5).
+	l.owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
+		entries, problems := goal.ParseTrunkRed(b.repo.commit(b.repo.accepted).files["plans/goals/trunk-red.json"])
+		if len(problems) != 0 {
+			return nil, fmt.Errorf("incident register: %v", problems)
+		}
+		return entries, nil
+	}
 	code, result = b.do("work", "land", bedGoal)
 	expectOutcome(t, "fix hand-in", code, result, intentConfirmed)
 	data, err := os.ReadFile(filepath.Join(plain.Dir(l.install), "queue.jsonl"))
@@ -85,7 +100,7 @@ func TestWorkLandIncidentFixWakesWithoutPush(t *testing.T) {
 	}
 	code, words = l.run(t, l.root, "status", "--json")
 	var status struct{ Data plain.Status }
-	if code != 0 || json.Unmarshal([]byte(words), &status) != nil || len(status.Data.Queue) != 1 || status.Data.Queue[0].Held || !slices.Contains(status.Data.Wake.Reasons, plain.WakeQueued) {
+	if code != 0 || json.Unmarshal([]byte(words), &status) != nil || len(status.Data.Queue) != 1 || status.Data.Queue[0].Held || len(status.Data.PendingActions) != 0 || !slices.Contains(status.Data.Wake.Reasons, plain.WakeQueued) {
 		t.Fatalf("fix remains held in status: %d %s", code, words)
 	}
 }
@@ -155,6 +170,10 @@ func TestLandingKeeperRefreshesIncidentClosure(t *testing.T) {
 			keeper, starts := holdRefreshKeeper(l)
 			run := keeper.Run()
 			wantFetch, wantStarts := 1, 0
+			if mode == "still open" {
+				// Selection fetches once; the wake then refreshes the incident hold once.
+				wantFetch = 2
+			}
 			if mode == "closed" {
 				wantStarts = 1
 			}

@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 )
 
@@ -174,7 +174,7 @@ func TestProcessDriftCheckBandsPublicStatus(t *testing.T) {
 					git := owners.git
 					owners.git = func(root string, args ...string) ([]byte, error) {
 						if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem.conf") {
-							return []byte("proof.full=" + strings.Join(slices.Insert(workArgv, 2, "-timeout", "30m"), " ") + "\n"), nil
+							return []byte("proof.full=" + strings.Join(workArgv, " ") + "\nproof.cheap=" + shellCommand(workArgv) + "\nproof.audits=true\nproof.deadline=15\n"), nil
 						}
 						return git(root, args...)
 					}
@@ -183,6 +183,25 @@ func TestProcessDriftCheckBandsPublicStatus(t *testing.T) {
 			code, built, output := processEvidenceBuild(bed)
 			if code != 0 {
 				t.Fatalf("build: %d %+v %s", code, built, output)
+			}
+			if full {
+				// Retained direct full-suite executions have their own argv; nested checks remain unavailable.
+				run := resultData(t, built)["run"].(string)
+				record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+				if err != nil {
+					t.Fatal(err)
+				}
+				record.Rounds[0].Steps[1].Command.Argv = workArgv
+				body, err := json.Marshal(record)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(bed.unitRoot, run, "run.json"), body, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if code, result, _ := driftSettings(t, bed, false); code != 1 {
+					t.Fatalf("full-suite history did not hold the process change: %d %+v", code, result)
+				}
 			}
 
 			stops, bands := driftStatus(t, bed)
@@ -243,7 +262,7 @@ func TestProcessDriftFreshEpisodePublicCollection(t *testing.T) {
 			if err := os.MkdirAll(bed.worktree, 0700); err != nil {
 				t.Fatal(err)
 			}
-			args := append([]string{"work", "build", "--json", bed.id, "evidence", "--brief", "estimate.md", "--check"}, slices.Insert(workArgv, 2, "-timeout", "30m")...)
+			args := append([]string{"work", "build", "--json", bed.id, "evidence", "--brief", "estimate.md"}, workCheck...)
 			code, stdout, stderr := bed.run(owners, args...)
 			var result intentResult
 			if err := json.Unmarshal([]byte(stdout), &result); err != nil {
