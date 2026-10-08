@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
@@ -360,6 +361,14 @@ func declaredCheckAt(t *testing.T, b *workBed, directory, kind string, args ...s
 					return []byte(tree), nil
 				}
 			}
+			for candidate := directory; ; candidate = filepath.Dir(candidate) {
+				if _, err := os.Stat(filepath.Join(candidate, ".git")); err == nil {
+					return []byte(candidate), nil
+				}
+				if filepath.Dir(candidate) == candidate {
+					break
+				}
+			}
 			return []byte(directory), nil
 		}
 		return git(root, args...)
@@ -604,5 +613,66 @@ func TestIntentDeclaredCheckLaterBuilderCannotReplaceRetainedEvidence(t *testing
 		if _, err := os.Stat(filepath.Join(round, "builder-"+name, "result.json")); !os.IsNotExist(err) {
 			t.Fatalf("later builder's old-round record was collected: %s %v", name, err)
 		}
+	}
+}
+
+func TestIntentDeclaredCheckFindsRetainedRunFromBaseline(t *testing.T) {
+	t.Parallel()
+	bed := declaredCheckBed(t, "proof.cheap=pwd\nproof.audits=true\nproof.deadline=15\n")
+	code, built, _ := bed.work("work", "build", bed.id, "baseline-lookup", "--brief", bed.brief("baseline.md", "Build the unit.\n"), "--lines", "5")
+	if code != 0 {
+		t.Fatalf("build: %d %+v", code, built)
+	}
+	plan, err := launch.ReadUnitPlan(resultData(t, built)["plan"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	command := plan.Proof[0]
+	if index := slices.Index(command.Argv, "--repo"); index < 0 || index+1 >= len(command.Argv) || command.Argv[index+1] != bed.root() {
+		t.Fatalf("proof does not retain its run store: %v", command.Argv)
+	}
+	baseline := t.TempDir()
+	code, checked := declaredCheckAt(t, bed, baseline, "proof", command.Argv[1:]...)
+	if code != 0 {
+		t.Fatalf("check in baseline: %d %+v", code, checked)
+	}
+	exits := resultData(t, checked)["exits"].([]any)
+	if len(exits) != 2 || exits[0].(map[string]any)["exit"] != float64(0) || exits[1].(map[string]any)["exit"] != float64(0) ||
+		strings.TrimSpace(exits[0].(map[string]any)["output"].(string)) != realpath.ResolveExisting(baseline) {
+		t.Fatalf("frozen checks did not execute in the baseline: %+v", checked)
+	}
+}
+
+func TestIntentDeclaredCheckEmitsFailureOutputForAttribution(t *testing.T) {
+	t.Parallel()
+	bed := declaredCheckBed(t, "proof.cheap=printf 'FAIL: TestBroken\\n'; exit 7\nproof.audits=printf 'audit-ran\\n'\nproof.deadline=15\n")
+	code, built, _ := bed.work("work", "build", bed.id, "failure-output", "--brief", bed.brief("failure.md", "Build the unit.\n"), "--lines", "5")
+	if code != 0 {
+		t.Fatalf("build: %d %+v", code, built)
+	}
+	owners := bed.workOwners()
+	git := owners.work.git
+	owners.work.git = func(root string, args ...string) ([]byte, error) {
+		if root == bed.worktree && slices.Equal(args, []string{"rev-parse", "--show-toplevel"}) {
+			return []byte(bed.worktree), nil
+		}
+		return git(root, args...)
+	}
+	command, rest, ok := resolveIntentArgv([]string{"test", "run", "--unit-run", resultData(t, built)["run"].(string), "--repo", bed.root(), "--json"})
+	if !ok {
+		t.Fatal("public unit check is unavailable")
+	}
+	var stdout, stderr bytes.Buffer
+	code = runIntentIn(command, rest, &stdout, &stderr, bed.worktree, owners)
+	var result intentResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if code != 1 || result.Outcome != intentFailed || !strings.Contains(stderr.String(), "FAIL: TestBroken\n") || !strings.Contains(stderr.String(), "audit-ran\n") {
+		t.Fatalf("check failure output cannot be attributed: %d %+v stderr=%q", code, result, stderr.String())
+	}
+	exits := resultData(t, result)["exits"].([]any)
+	if len(exits) != 2 || exits[0].(map[string]any)["exit"] != float64(7) || exits[1].(map[string]any)["exit"] != float64(0) {
+		t.Fatalf("command exits were lost: %+v", result)
 	}
 }

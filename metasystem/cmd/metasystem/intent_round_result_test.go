@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -94,23 +93,21 @@ func (s *roundResultStarter) finishProof(record launch.Record, state string) (id
 	if err != nil {
 		return identity.Ref{}, err
 	}
-	command := exec.Command(spec.Program, spec.Args...)
-	command.Dir, command.Env = spec.Directory, spec.Environment
-	output, runErr := command.CombinedOutput()
-	var exit *exec.ExitError
-	if runErr != nil && !errors.As(runErr, &exit) {
-		return identity.Ref{}, runErr
+	code, result := declaredCheckAt(s.c.t, s.c.workBed, spec.Directory, "proof", spec.Args...)
+	var output []byte
+	for _, raw := range resultData(s.c.t, result)["exits"].([]any) {
+		command := raw.(map[string]any)
+		output = append(output, []byte(command["output"].(string))...)
 	}
 	if err := os.WriteFile(spec.LogPath, output, 0600); err != nil {
 		return identity.Ref{}, err
 	}
 	s.proofTrees = append(s.proofTrees, connectionGit(s.c.t, record.WorkingDirectory, "write-tree"))
 	_, err = s.c.manager.Store.Update(id, func(current *launch.Record) error {
-		code := 0
 		current.State = launch.Completed
-		if runErr != nil {
-			code, current.State = exit.ExitCode(), launch.Failed
-			current.Reason = runErr.Error() + ": " + string(output)
+		if code != 0 {
+			current.State = launch.Failed
+			current.Reason = result.Summary + ": " + string(output)
 		}
 		current.ExitCode = &code
 		current.FinishedAt = s.c.manager.Now().UTC().Format(time.RFC3339Nano)
@@ -130,7 +127,16 @@ func buildRoundResult(t *testing.T, c *connectionBed, starter *roundResultStarte
 	if err := testexec.WriteFile(check, []byte(body), 0700); err != nil {
 		t.Fatal(err)
 	}
-	code, result := c.do("work", "build", c.id, "result", "--brief", c.brief("brief.md", "Build the result.\n"), "--lines", "5", "--read-tool-calls", "12", "--check", check)
+	conf := filepath.Join(c.root(), "metasystem.conf")
+	declarations, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeUnitCarryFile(t, conf, string(declarations)+"\nproof.cheap="+shellCommand([]string{check})+"\nproof.audits=true\nproof.deadline=15\n")
+	connectionGit(t, c.root(), "add", "metasystem.conf")
+	connectionGit(t, c.root(), "commit", "-qm", "fixture check declarations")
+	connectionGit(t, c.root(), "push", "-q", "origin", "main")
+	code, result := c.do("work", "build", c.id, "result", "--brief", c.brief("brief.md", "Build the result.\n"), "--lines", "5", "--read-tool-calls", "12")
 	if code != 0 {
 		t.Fatalf("build exit=%d: %+v", code, result)
 	}
@@ -188,11 +194,11 @@ func TestRoundResultReplayGitAdapter(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			commands, err := json.Marshal(append([]launch.ProofCommand{{Name: "planned", Dir: c.worktree, Argv: []string{plannedCheck}, Env: []string{}}}, initial.Proof...))
+			commands, err := json.Marshal(initial.Proof)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if round.Result.ProofIdentity != fmt.Sprintf("%x", sha256.Sum256(commands)) {
+			if round.Result.ProofIdentity != fmt.Sprintf("%x", sha256.Sum256(commands)) || len(*planner.Calls) != 0 {
 				t.Fatalf("result identity does not name the planned proof: %+v", round.Result)
 			}
 			tip := advanceRoundResult(t, c, base, "advance.txt", "unrelated\n", local)
@@ -205,11 +211,11 @@ func TestRoundResultReplayGitAdapter(t *testing.T) {
 				t.Fatal("the review result hid the current publication parent")
 			}
 			subject := c.runRecord(run).Subjects[0]
-			if subject.ExpectedParent != tip || subject.GateRunID == "" || len(starter.proofTrees) != 4 || (starter.proofTrees[2] != subject.StagedTree || starter.proofTrees[3] != subject.StagedTree) || subject.StagedTree == round.Result.Tree {
+			if subject.ExpectedParent != tip || subject.GateRunID == "" || len(starter.proofTrees) != 2 || starter.proofTrees[1] != subject.StagedTree || subject.StagedTree == round.Result.Tree {
 				t.Fatalf("exact replay was not gated: %+v proof trees=%v", subject, starter.proofTrees)
 			}
 			code, result = roundResultReview(t, c)
-			if result.Outcome != intentInProgress || c.commits != 1 || len(starter.proofTrees) != 4 || len(c.runRecord(run).Rounds) != 1 {
+			if result.Outcome != intentInProgress || c.commits != 1 || len(starter.proofTrees) != 2 || len(c.runRecord(run).Rounds) != 1 {
 				t.Fatalf("repeat rebuilt or recommitted: exit=%d commits=%d %+v", code, c.commits, result)
 			}
 			if len(c.delegates) != 1 || slices.Contains(c.reads[0], "--unit-read") {
@@ -217,7 +223,7 @@ func TestRoundResultReplayGitAdapter(t *testing.T) {
 			}
 			c.writeCritic(c.worktree, "crit1", subject.Commit, "completed", true)
 			code, result = roundResultReview(t, c)
-			if code != 0 || c.commits != 1 || len(c.delegates) != 1 || len(starter.proofTrees) != 4 {
+			if code != 0 || c.commits != 1 || len(c.delegates) != 1 || len(starter.proofTrees) != 2 {
 				t.Fatalf("critic collection repeated the publication: exit=%d %+v", code, result)
 			}
 			published := connectionGit(t, c.origin, "rev-parse", "refs/heads/goal/"+c.id)

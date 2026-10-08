@@ -220,6 +220,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	if _, result = c.do(append([]string{"work", "build", c.id, "--work", "later", "--brief", c.brief("later.md", "Later.\n"), "--lines", "5"}, workCheck...)...); result.Outcome != intentConfirmed {
 		t.Fatalf("later build: %+v", result)
 	}
+	laterRun := resultData(t, result)["run"].(string)
 	if _, result = c.do("work", "review", c.id); result.Outcome != intentInProgress || len(c.delegates) != 3 {
 		t.Fatalf("review without --work picks the one unreviewed item: %+v delegates=%v", result, c.delegates)
 	}
@@ -227,9 +228,16 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	if _, result = c.do("work", "revise", c.id, "--work", "connect", "--brief", fix, "--dispositions", decided); result.Outcome != intentRefused || !strings.Contains(result.Summary, "supersedes") {
 		t.Fatalf("superseded decisions: %+v", result)
 	}
-	// Repeating the completed review changes nothing.
+	// An unrelated unit owns the tree until its review ends.
+	if code, result = c.do("work", "review", c.id, "--work", "connect"); code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "worktree belongs to run") || len(c.closes) != 2 || c.commitReads != 1 {
+		t.Fatalf("repeat during later review: code=%d %+v", code, result)
+	}
+	c.writeCritic(install, "crit3", c.delegates[2], "cancelled", false)
+	if _, err := (&launch.UnitRunner{Root: c.unitRoot, Manager: c.manager, Git: launch.OSGitRunner{}}).CancelRun(laterRun); err != nil {
+		t.Fatal(err)
+	}
 	if code, result = c.do("work", "review", c.id, "--work", "connect"); code != 0 || len(c.closes) != 2 || c.commitReads != 1 {
-		t.Fatalf("repeat: code=%d %+v", code, result)
+		t.Fatalf("completed review repeated after release: code=%d %+v", code, result)
 	}
 }
 

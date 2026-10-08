@@ -565,10 +565,8 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
-		if plan.Check == nil {
-			if capped, err := runner.attributeProof(record, round, index, plan.Base, deadline); err != nil || capped {
-				return runner.result(*record, round, &round.Steps[index], capped), err
-			}
+		if capped, err := runner.attributeProof(record, round, index, plan.Base, deadline); err != nil || capped {
+			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
 		red = red || round.Steps[index].State != StepPassed
 		if red {

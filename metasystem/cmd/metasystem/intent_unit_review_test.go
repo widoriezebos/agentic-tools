@@ -8,12 +8,15 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -96,6 +99,15 @@ func newConnectionBedWith(t *testing.T, amend func(*goal.GoalFile)) *connectionB
 	connectionGit(t, root, "config", "user.name", "Fixture")
 	connectionGit(t, root, "config", "user.email", "fixture@example.invalid")
 	os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/\n.claude/settings.local.json\nmetasystem.conf.local\n"), 0o600)
+	conf := filepath.Join(root, "metasystem.conf")
+	declarations, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	declarations = append(declarations, []byte("\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\n")...)
+	if err := os.WriteFile(conf, declarations, 0600); err != nil {
+		t.Fatal(err)
+	}
 	connectionGit(t, root, "add", "-A")
 	connectionGit(t, root, "commit", "-q", "-m", "fixture base")
 	c.origin = filepath.Join(t.TempDir(), "origin.git")
@@ -127,7 +139,7 @@ func (c *connectionBed) StartSupervisor(id, state string) (identity.Ref, error) 
 	c.mu.Unlock()
 	c.manager.Store.Update(id, func(current *launch.Record) error {
 		code := 0
-		current.State, current.ExitCode = launch.Completed, &code
+		current.State, current.ExitCode, current.FinishedAt = launch.Completed, &code, c.manager.Now().UTC().Format(time.RFC3339Nano)
 		if record.Kind == "read" && c.readFails {
 			failed := 1
 			current.State, current.Reason, current.ExitCode = launch.Failed, "fixture-read-failed", &failed
@@ -149,7 +161,7 @@ func (c *connectionBed) StartSupervisor(id, state string) (identity.Ref, error) 
 		}
 		return nil
 	})
-	return workProcessRef(10), nil
+	return workProcessRef(99), nil
 }
 
 type connectionTransport struct{ c *connectionBed }
@@ -187,6 +199,11 @@ func (c *connectionBed) endpointTip() string {
 
 func (c *connectionBed) connectionOwners() intentOwners {
 	owners := c.workOwners()
+	owners.work.criticDeath = dispatchcore.CustodyDeathDependencies{
+		Reader: &criticCustodyReader{dead: true}, Processes: identity.FixedProcessTable{},
+		MatchesTag: func([]string, string) bool { return true },
+		TaggedScan: func(string) census.TaggedProcessCensus { return census.TaggedProcessCensus{} },
+	}
 	root, worktree := c.root(), c.worktree
 	owners.resolver = stateroot.NewResolver(func(path string) (string, error) {
 		if withinPath(path, worktree) {
@@ -216,7 +233,8 @@ func (c *connectionBed) connectionOwners() intentOwners {
 			c.mu.Unlock()
 			return commit()
 		},
-		transport: connectionTransport{c},
+		transport:  connectionTransport{c},
+		rebaseGate: func(string) (string, error) { return "fixture-static-green", nil },
 		commit: func(request branch.CommitRequest) (string, error) {
 			commit, err := branch.CommitStaged(request)
 			c.mu.Lock()
@@ -332,6 +350,15 @@ func (c *connectionBed) writeCritic(install, job, commit, status string, closed 
 		"reviews": "commit:" + commit, "goalId": c.id, "goalRevision": 1, "findingRegister": []any{},
 		// A dispatched critic root carries its register round and round limit.
 		"findingRegisterRound": 0, "reviewRoundLimit": 3, "criticRoundsConsumed": 0}
+	record["operationId"], record["capMin"] = "fixture-critic:"+job, 1
+	record["instanceTag"], record["pid"], record["pgid"] = "fixture-critic-"+job, int64(20), int64(20)
+	record["pidStartedAt"] = int64(400)
+	record["startedAt"], record["endedAt"] = c.manager.Now().UTC().Format(time.RFC3339Nano), c.manager.Now().UTC().Format(time.RFC3339Nano)
+	if runtime.GOOS == "darwin" {
+		record["pidStartedAtExactMicro"] = int64(400_000_001)
+	} else {
+		record["pidStartTicks"], record["bootId"] = int64(400), "fixture-boot"
+	}
 	if closed || status == "completed" {
 		subject, present, err := dispatchcore.ComputeReadSubject(dispatchcore.ReadSubjectRequest{RepoRoot: install, Role: "code-critic", Reviews: "commit:" + commit})
 		if err != nil || !present {
@@ -460,7 +487,12 @@ func (c *connectionBed) adapterFixture() string {
 // fixtures) and are not claimed by this test. Landing is observed through
 // the landing admission reader on the published branch only.
 func TestIntentBuiltUnitToLanding(t *testing.T) {
-	c := newConnectionBed(t)
+	c := newConnectionBedWith(t, func(file *goal.GoalFile) {
+		workApprovedBox(file)
+		// This journey builds four units and corrects one of them.
+		file.Budget.AttemptLimit = 5
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
 	settings := c.adapterFixture()
 	base := c.endpointTip()
 	brief := c.brief("brief.md", "Build the connection.\n")
@@ -546,7 +578,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// Finished but unclosed: the author's close is named, nothing collected.
 	c.writeCritic(install, "crit1", first, "completed", false)
 	_, result = c.do("work", "review", "run:"+run)
-	if result.Outcome != intentInProgress || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "work review run:"+run+" --dispositions FILE") ||
+	if result.Outcome != intentInProgress || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "work review run:"+run+" --dispositions "+resultData(t, result)["template"].(string)) ||
 		len(c.unitCommits("goal/"+c.id)) != 1 || c.commitReads != 0 {
 		t.Fatalf("unclosed critic: %+v", result)
 	}
@@ -582,6 +614,9 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("landing admission must see the one read unit: %+v", status)
 	}
 
+	if finished := c.runRecord(run); finished.Rounds[0].Stop == nil || finished.Rounds[0].Stop.Decision != "close" {
+		t.Fatalf("published round must release its tree: round=%+v subjects=%+v", finished.Rounds[0], finished.Subjects)
+	}
 	// A later unit survives on the branch after the first unit's read.
 	c.edits = map[string]string{"later.txt": "a later unit\n"}
 	_, result = c.do(append([]string{"work", "build", c.id, "later", "--brief", c.brief("later.md", "A later unit.\n"), "--lines", "5"}, workCheck...)...)
@@ -590,6 +625,10 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("later unit: code=%d %+v", code, result)
 	}
 
+	c.writeCritic(install, "crit2", c.delegates[1], "cancelled", false)
+	if _, err := (&launch.UnitRunner{Root: c.unitRoot, Manager: c.manager, Git: launch.OSGitRunner{}}).CancelRun(later); err != nil {
+		t.Fatal(err)
+	}
 	// The clean read ends automatic corrections; a person requests this amend.
 	// Same-unit follow-up: the finding is folded and the unit's commit is
 	// amended with a lost commit response. The replacement unit (not the
@@ -644,15 +683,19 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("read-failed round requests committed review: code=%d %+v", code, result)
 	}
 
+	c.writeCritic(install, "crit4", c.delegates[3], "cancelled", false)
+	if _, err := (&launch.UnitRunner{Root: c.unitRoot, Manager: c.manager, Git: launch.OSGitRunner{}}).CancelRun(readFailed); err != nil {
+		t.Fatal(err)
+	}
 	// A proof that writes the worktree refuses committed review before
 	// staging.
 	c.edits, c.proofWrites = map[string]string{"other.txt": "another unit\n"}, true
-	_, result = c.do(append([]string{"work", "build", c.id, "wrote", "--brief", c.brief("wrote.md", "Another unit.\n"), "--lines", "5"}, workCheck...)...)
+	code, result = c.do(append([]string{"work", "build", c.id, "wrote", "--brief", c.brief("wrote.md", "Another unit.\n"), "--lines", "5"}, workCheck...)...)
 	wrote := resultData(t, result)["run"].(string)
 	code, result = c.do("work", "review", "run:"+wrote)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "checks changed its files") || !strings.Contains(strings.Join(result.Details, " "), "proof-wrote") ||
-		connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" {
-		t.Fatalf("proof-wrote: code=%d %+v", code, result)
+	wroteRound := c.runRecord(wrote).Rounds[0]
+	if code != 1 || result.Outcome != intentRefused || wroteRound.Cause != "environment" || wroteRound.Outcome != "proof-wrote" || wroteRound.Stop == nil || wroteRound.Stop.Decision != "stop" || len(wroteRound.Steps) != 2 || len(wroteRound.Steps[1].LaunchIDs) != 2 || len(wroteRound.Reads) != 0 || connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" {
+		t.Fatalf("proof-wrote: code=%d result=%+v round=%+v", code, result, wroteRound)
 	}
 	c.proofWrites = false
 
@@ -880,7 +923,16 @@ func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
 	err = runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 		subject := launch.UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest, Commit: strings.Repeat("c", 40)}
 		inv.reviewWork.subject, inv.reviewWork.retain = &subject, retain
-		closed := inv.commitReview(nil, b.install, w.id, subject.Commit, nil)
+		closed := inv.commitReviewChecked(nil, b.install, w.id, subject.Commit, nil, func(branch.BranchReadResult) error {
+			head, current, err := runner.WorktreeResult(w.worktree)
+			if err != nil {
+				return err
+			}
+			if head != review.Head || current != review.Result {
+				return errors.New("the retained worktree changed during its examination")
+			}
+			return nil
+		}, review.Wait)
 		if closed.Outcome != intentInProgress || resultData(t, closed)["template"] != filepath.Join(filepath.Dir(path), "decisions.md") {
 			t.Fatalf("review close must retain the examination before asking for decisions: %+v", closed)
 		}
@@ -983,6 +1035,7 @@ func newUnitPromotionReview(t *testing.T, clean bool) (*workBed, *intentInvocati
 	}
 	review, subject, build, read, report, _ := promotionFacts()
 	review.Record.Goal, review.Record.Unit, review.Record.Worktree = bed.id, "promote", bed.worktree
+	subject.Tip, bed.head = "commit", "commit"
 	review.Subject = &subject
 	review.Round.Directory = filepath.Join(t.TempDir(), "round-1")
 	build.AdapterData["model"], read.AdapterData["model"] = json.RawMessage(`"builder-alias"`), json.RawMessage(`"reader-alias"`)
@@ -1001,7 +1054,7 @@ func newUnitPromotionReview(t *testing.T, clean bool) (*workBed, *intentInvocati
 
 func runUnitPromotionReview(t *testing.T, bed *workBed, inv *intentInvocation, review launch.UnitReview) intentResult {
 	t.Helper()
-	return inv.reviewUnitRound(&launch.UnitRunner{Manager: bed.manager}, nil, review, func(launch.UnitSubject) error {
+	return inv.reviewUnitRound(&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}, nil, review, func(launch.UnitSubject) error {
 		t.Fatal("a published subject was rewritten")
 		return nil
 	})
@@ -1239,7 +1292,7 @@ func TestUnitReviewRecordsThePromotedReadAlreadyInstalled(t *testing.T) {
 		},
 	}
 	result := runUnitPromotionReview(t, bed, inv, review)
-	if result.Outcome != intentUnchanged || inspections != 2 || reads != 1 || publications != 1 || resultData(t, result)["attestation"] != "attestation" {
+	if result.Outcome != intentUnchanged || inspections != 4 || reads != 1 || publications != 1 || resultData(t, result)["attestation"] != "attestation" {
 		t.Fatalf("result=%+v inspections=%d reads=%d publications=%d", result, inspections, reads, publications)
 	}
 }

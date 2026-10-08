@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -19,7 +18,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-type unitProofStarter struct{ bed *workBed }
+type unitProofStarter struct {
+	bed *workBed
+	t   *testing.T
+}
 
 func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error) {
 	record, err := s.bed.manager.Store.Read(id)
@@ -31,14 +33,13 @@ func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 		if err != nil {
 			return identity.Ref{}, err
 		}
-		command := exec.Command(spec.Program, spec.Args...)
-		command.Dir = spec.Directory
-		data, err := command.CombinedOutput()
-		var exit *exec.ExitError
-		if err != nil && !errors.As(err, &exit) {
-			return identity.Ref{}, err
+		code, result := declaredCheckAt(s.t, s.bed, spec.Directory, "proof", spec.Args...)
+		var data []byte
+		for _, raw := range resultData(s.t, result)["exits"].([]any) {
+			command := raw.(map[string]any)
+			data = append(data, []byte(command["output"].(string))...)
 		}
-		s.bed.starter.fail["proof"] = err != nil
+		s.bed.starter.fail["proof"] = code != 0
 		if err := os.WriteFile(spec.LogPath, data, 0600); err != nil {
 			return identity.Ref{}, err
 		}
@@ -68,7 +69,7 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain bool) *workBed {
 	t.Helper()
 	bed := newWorkBed(t)
 	bed.manager.Adapters["plain-exec"] = launch.PlainExec{}
-	bed.manager.Supervisor = unitProofStarter{bed}
+	bed.manager.Supervisor = unitProofStarter{bed: bed, t: t}
 	if err := os.WriteFile(filepath.Join(bed.root(), "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +147,8 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain bool) *workBed {
 		t.Fatal(err)
 	}
 	brief := filepath.Join(bed.root(), bed.brief("flake.md", "Build the unit.\n"))
-	command, rest, ok := resolveIntentArgv([]string{"work", "build", bed.id, "flake", "--brief", brief, "--lines", "5", "--check", check})
+	bed.declaredCheap = shellCommand([]string{check})
+	command, rest, ok := resolveIntentArgv([]string{"work", "build", bed.id, "flake", "--brief", brief, "--lines", "5"})
 	if !ok {
 		t.Fatal("build command unavailable")
 	}

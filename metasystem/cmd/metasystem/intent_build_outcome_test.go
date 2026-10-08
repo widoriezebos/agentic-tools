@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type outcomeGit struct {
@@ -265,10 +266,10 @@ func TestIntentBuildSizeImpactWriteFailureKeepsHoldUntilRetry(t *testing.T) {
 	if err := os.MkdirAll(overrides, 0700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chmod(overrides, 0500); err != nil {
+	if err := testexec.Locked(func() error { return os.Chmod(overrides, 0500) }); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = os.Chmod(overrides, 0700) })
+	t.Cleanup(func() { _ = testexec.Locked(func() error { return os.Chmod(overrides, 0700) }) })
 	// A privileged process bypasses permissions, so obstruct the directory
 	// itself to exercise the same production write failure on those hosts.
 	if os.Geteuid() == 0 {
@@ -297,7 +298,7 @@ func TestIntentBuildSizeImpactWriteFailureKeepsHoldUntilRetry(t *testing.T) {
 		if err := os.Mkdir(overrides, 0700); err != nil {
 			t.Fatal(err)
 		}
-	} else if err := os.Chmod(overrides, 0700); err != nil {
+	} else if err := testexec.Locked(func() error { return os.Chmod(overrides, 0700) }); err != nil {
 		t.Fatal(err)
 	}
 	b.manager.Supervisor = outcomeStarter{bed: b, proof: func() {

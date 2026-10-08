@@ -39,13 +39,14 @@ import (
 // retry entry and its judgement state are the real ones.
 type workBed struct {
 	*intentBed
-	id, worktree string
-	manager      *launch.Manager
-	starter      *workStarter
-	unitRoot     string
-	branchListed bool
-	head         string
-	ledger       sync.Mutex
+	id, worktree  string
+	declaredCheap string
+	manager       *launch.Manager
+	starter       *workStarter
+	unitRoot      string
+	branchListed  bool
+	head          string
+	ledger        sync.Mutex
 	// readDirs are the read-findings directories this bed's builds created
 	// under the temporary root, found through each result's plan.
 	readDirsMu     sync.Mutex
@@ -430,6 +431,14 @@ func (b *workBed) workOwners() intentOwners {
 					listing += "\nworktree " + b.worktree + "\nHEAD " + b.head + "\nbranch refs/heads/goal/" + b.id + "\n"
 				}
 				return []byte(listing), nil
+			case len(args) == 2 && args[0] == "rev-parse" && strings.HasSuffix(args[1], "^{tree}"):
+				return []byte("declaration-tree\n"), nil
+			case len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem.conf"):
+				cheap := b.declaredCheap
+				if cheap == "" {
+					cheap = shellCommand(workArgv)
+				}
+				return []byte("proof.cheap=" + cheap + "\nproof.audits=true\nproof.deadline=15\n"), nil
 			case joined == "rev-parse HEAD" && dir == b.worktree:
 				return []byte(b.head + "\n"), nil
 			case strings.HasPrefix(joined, "rev-parse --verify -q refs/heads/goal/"):
@@ -482,15 +491,13 @@ func TestAdapterStepsComeBeforeTheCheck(t *testing.T) {
 					}
 					data := resultData(t, result)
 					plan, err := launch.ReadUnitPlan(data["plan"].(string))
-					want := []launch.ProofCommand{}
-					if withAdapter {
-						for _, step := range fake.Steps {
-							want = append(want, launch.ProofCommand{Name: step.Name, Dir: fake.Scripted.Root, Argv: step.Args, Env: []string{}})
-						}
+					if err != nil || plan.Check == nil || plan.Check.Cheap != shellCommand(workArgv) || plan.Check.Audits != "true" || plan.Check.Minutes != 15 || plan.Check.SourceTree != "declaration-tree" || calls != 0 || len(*fake.Calls) != 0 || len(plan.Proof) != 1 || plan.Proof[0].Name != "unit-check" {
+						t.Fatalf("round %d: check=%+v proof=%+v adapter calls=%d/%v err=%v", round, plan.Check, plan.Proof, calls, *fake.Calls, err)
 					}
-					want = append(want, launch.ProofCommand{Name: "check", Dir: bed.worktree, Argv: workArgv, Env: []string{}})
-					if err != nil || !reflect.DeepEqual(plan.Proof, want) || withAdapter && calls != round {
-						t.Fatalf("round %d: proof=%+v want=%+v calls=%d err=%v", round, plan.Proof, want, calls, err)
+					executable, err := os.Executable()
+					want := []launch.ProofCommand{{Name: "unit-check", Dir: bed.worktree, Argv: []string{executable, "test", "run", "--unit-run", data["run"].(string), "--repo", bed.root()}, Env: plan.Check.Environment}}
+					if err != nil || !reflect.DeepEqual(plan.Proof, want) {
+						t.Fatalf("round %d: executor=%+v want=%+v err=%v", round, plan.Proof, want, err)
 					}
 					steps := data["steps"].([]any)
 					for index, command := range want {
@@ -541,7 +548,7 @@ func TestIntentWorkAdapterProofRetainedOnResume(t *testing.T) {
 	step := data["steps"].([]any)[1].(map[string]any)
 	if _, err := bed.manager.Store.Update(step["launchId"].(string), func(record *launch.Record) error {
 		code := 0
-		record.State, record.ExitCode = launch.Completed, &code
+		record.State, record.ExitCode, record.FinishedAt = launch.Completed, &code, bed.manager.Now().UTC().Format(time.RFC3339Nano)
 		return nil
 	}); err != nil {
 		t.Fatal(err)
@@ -550,8 +557,8 @@ func TestIntentWorkAdapterProofRetainedOnResume(t *testing.T) {
 	fake.Steps = []adapter.GateStep{{Name: "changed", Args: []string{"different"}}}
 	code, resumed, _ := bed.work("work", "wait", "run:"+data["run"].(string))
 	steps := resultData(t, resumed)["steps"].([]any)
-	if code != 0 || resultData(t, resumed)["outcome"] != "proof-red" || !slices.Equal(*fake.Calls, []string{"Closure", "TestSteps"}) ||
-		steps[1].(map[string]any)["name"] != "proof:whole" || steps[1].(map[string]any)["state"] != "passed" || steps[2].(map[string]any)["state"] != "failed" {
+	if code != 0 || resultData(t, resumed)["outcome"] != "green" || len(*fake.Calls) != 0 || len(steps) != 2 ||
+		steps[1].(map[string]any)["name"] != "proof:unit-check" || steps[1].(map[string]any)["state"] != "passed" {
 		t.Fatalf("resume: %d %+v calls=%v", code, resumed, *fake.Calls)
 	}
 }
@@ -578,32 +585,22 @@ func TestIntentWorkAdapterPlanningFailureEndsRoundRed(t *testing.T) {
 			brief := bed.brief("proof.md", "Read each round: yes\nBuild the unit.\n")
 			code, failed, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
 			data := resultData(t, failed)
-			if code != 0 || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" {
-				t.Fatalf("planning failure: %d %+v", code, failed)
+			if code != 0 || data["state"] != "awaiting-judgement" || data["outcome"] != "green" || len(*fake.Calls) != 0 {
+				t.Fatalf("adapter selected the declared proof: %d %+v calls=%v", code, failed, *fake.Calls)
 			}
 			steps := data["steps"].([]any)
-			if len(steps) != 4 || steps[0].(map[string]any)["state"] != "passed" ||
-				steps[1].(map[string]any)["name"] != "proof:plan" || steps[1].(map[string]any)["state"] != "failed" ||
-				!strings.Contains(steps[1].(map[string]any)["reason"].(string), row.reason) ||
-				steps[2].(map[string]any)["name"] != "proof:check" || steps[2].(map[string]any)["state"] != "skipped" ||
-				steps[3].(map[string]any)["name"] != "read" || steps[3].(map[string]any)["state"] != "skipped" {
-				t.Fatalf("round report: %+v", failed)
+			if len(steps) != 3 || steps[0].(map[string]any)["state"] != "passed" || steps[1].(map[string]any)["name"] != "proof:unit-check" || steps[1].(map[string]any)["state"] != "passed" || steps[2].(map[string]any)["state"] != "passed" {
+				t.Fatalf("declared round report: %+v", failed)
 			}
 			run := data["run"].(string)
 			code, waited, _ := bed.work("work", "wait", "run:"+run)
-			if code != 0 || !reflect.DeepEqual(resultData(t, waited)["steps"], steps) || !slices.Equal(bed.starter.launched(), []string{"build"}) {
-				t.Fatalf("wait repeated planning: %d %+v launches=%v", code, waited, bed.starter.launched())
-			}
-			command, rest, _ := resolveIntentArgv([]string{"work", "build", "run:" + run})
-			var output bytes.Buffer
-			if code := runIntentIn(command, rest, &output, io.Discard, bed.root(), bed.workOwners()); code != 0 || !strings.Contains(strings.Join(strings.Fields(output.String()), " "), row.reason) {
-				t.Fatalf("plain round report: %d %s", code, &output)
+			if code != 0 || !reflect.DeepEqual(resultData(t, waited)["steps"], steps) || !slices.Equal(bed.starter.launched(), []string{"build", "proof", "read"}) || len(*fake.Calls) != 0 {
+				t.Fatalf("wait replanned proof: %d %+v launches=%v", code, waited, bed.starter.launched())
 			}
 			correction := bed.brief("correction.md", "Correct the unit.\n")
 			code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
-			if code != 0 || resultData(t, revised)["run"] != run || resultData(t, revised)["round"] != float64(2) ||
-				resultData(t, revised)["outcome"] != "proof-red" || !slices.Equal(bed.starter.launched(), []string{"build", "build"}) {
-				t.Fatalf("revision refused or stranded: %d %+v launches=%v", code, revised, bed.starter.launched())
+			if code != 0 || resultData(t, revised)["run"] != run || resultData(t, revised)["round"] != float64(2) || resultData(t, revised)["outcome"] != "green" || !slices.Equal(bed.starter.launched(), []string{"build", "proof", "read", "build", "proof", "read"}) || len(*fake.Calls) != 0 {
+				t.Fatalf("revision changed the check owner: %d %+v launches=%v", code, revised, bed.starter.launched())
 			}
 		})
 	}
@@ -621,7 +618,7 @@ func TestIntentWorkAdapterClosureFailureAdmitsRevise(t *testing.T) {
 	code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
 	data := resultData(t, revised)
 	if code != 0 || data["run"] != resultData(t, failed)["run"] || data["round"] != float64(2) ||
-		data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" || !slices.Equal(bed.starter.launched(), []string{"build", "build"}) {
+		data["state"] != "awaiting-judgement" || data["outcome"] != "green" || !slices.Equal(bed.starter.launched(), []string{"build", "proof", "build", "proof"}) {
 		t.Fatalf("revision refused or stranded: %d %+v launches=%v", code, revised, bed.starter.launched())
 	}
 }
@@ -726,8 +723,8 @@ func (b *workBed) runDirectories() []string {
 }
 
 var (
-	workArgv  = []string{"go", "test", "-count=1", "-run", "TestA|TestB", "./..."}
-	workCheck = append([]string{"--read-tool-calls", "12", "--check"}, workArgv...)
+	workArgv  = []string{"go", "test", "-timeout", "30m", "-count=1", "-run", "TestA|TestB", "./..."}
+	workCheck = []string{"--read-tool-calls", "12"}
 )
 
 // workApprovedBox gives the fixture goal an approved box with two review
@@ -843,33 +840,8 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 		!slices.Equal(plan.Build.Units, []string{"planned"}) || plan.Read.Model != "fixture-read-model" {
 		t.Fatalf("plan=%+v", plan)
 	}
-	if len(plan.Proof) != 1 || !slices.Equal(plan.Proof[0].Argv, workArgv) || plan.Proof[0].Dir != bed.worktree {
+	if plan.Check == nil || plan.Check.Cheap != shellCommand(workArgv) || plan.Check.Audits != "true" || plan.Check.Minutes != 15 || plan.Check.SourceTree != "declaration-tree" || len(plan.Proof) != 1 || plan.Proof[0].Name != "unit-check" || plan.Proof[0].Dir != bed.worktree {
 		t.Fatalf("proof=%+v, want the exact argv %v", plan.Proof, workArgv)
-	}
-	// From a folder below the checkout's top, the check runs in the goal
-	// worktree's copy of that folder, where a module below the top is found.
-	for _, dir := range []string{filepath.Join(bed.root(), "module"), filepath.Join(bed.worktree, "module")} {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			t.Fatal(err)
-		}
-	}
-	nestedBrief := brief
-	if !filepath.IsAbs(nestedBrief) {
-		nestedBrief = filepath.Join(bed.root(), nestedBrief)
-	}
-	command, rest, _ := resolveIntentArgv(append([]string{"work", "build", bed.id, "nested", "--brief", nestedBrief, "--lines", "30"}, workCheck...))
-	var stdout, stderr bytes.Buffer
-	if code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, filepath.Join(bed.root(), "module"), bed.workOwners()); code != 0 {
-		t.Fatalf("build from a folder below the top = %d %s %s", code, stdout.String(), stderr.String())
-	}
-	var nested intentResult
-	if err := json.Unmarshal(stdout.Bytes(), &nested); err != nil {
-		t.Fatal(err)
-	}
-	bed.recordReadDirs(nested)
-	if nestedPlan, err := launch.ReadUnitPlan(resultData(t, nested)["plan"].(string)); err != nil || len(nestedPlan.Proof) != 1 ||
-		nestedPlan.Proof[0].Dir != filepath.Join(bed.worktree, "module") {
-		t.Fatalf("the check from a folder below the top runs in the worktree's copy of it: %+v %v", nestedPlan.Proof, err)
 	}
 	// The read's findings directory outlives the command, so it is a
 	// registered temporary store the unit's named inputs own (Part B R1).
@@ -900,7 +872,7 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 			t.Fatalf("read brief lacks %q:\n%s", want, readBrief)
 		}
 	}
-	if !strings.Contains(string(buildBrief), `["go","test","-count=1","-run","TestA|TestB","./..."]`) || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
+	if !strings.HasPrefix(string(buildBrief), "Before returning, run: metasystem test run --unit-run "+data["run"].(string)+"\n") || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
 		t.Fatalf("build brief:\n%s", buildBrief)
 	}
 	before := map[string][]byte{}
@@ -915,6 +887,35 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 			t.Fatalf("%s changed on repeat", path)
 		}
 	}
+	// From a folder below the checkout's top, the check runs in the goal
+	// worktree's copy of that folder, where a module below the top is found.
+	for _, dir := range []string{filepath.Join(bed.root(), "module"), filepath.Join(bed.worktree, "module")} {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(data["run"].(string)); err != nil {
+		t.Fatal(err)
+	}
+	nestedBrief := brief
+	if !filepath.IsAbs(nestedBrief) {
+		nestedBrief = filepath.Join(bed.root(), nestedBrief)
+	}
+	command, rest, _ := resolveIntentArgv(append([]string{"work", "build", bed.id, "nested", "--brief", nestedBrief, "--lines", "30"}, workCheck...))
+	var stdout, stderr bytes.Buffer
+	if code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, filepath.Join(bed.root(), "module"), bed.workOwners()); code != 0 {
+		t.Fatalf("build from a folder below the top = %d %s %s", code, stdout.String(), stderr.String())
+	}
+	var nested intentResult
+	if err := json.Unmarshal(stdout.Bytes(), &nested); err != nil {
+		t.Fatal(err)
+	}
+	bed.recordReadDirs(nested)
+	if nestedPlan, err := launch.ReadUnitPlan(resultData(t, nested)["plan"].(string)); err != nil || len(nestedPlan.Proof) != 1 ||
+		nestedPlan.Proof[0].Dir != filepath.Join(bed.worktree, "module") {
+		t.Fatalf("the check from a folder below the top runs in the worktree's copy of it: %+v %v", nestedPlan.Proof, err)
+	}
+
 }
 
 func TestBriefLineAsksForTheRead(t *testing.T) {
@@ -972,7 +973,7 @@ func TestIntentBuildResume(t *testing.T) {
 	code, result, _ := bed.work(args...)
 	data := resultData(t, result)
 	run := data["run"].(string)
-	if code != 0 || result.Outcome != intentConfirmed || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" {
+	if code != 1 || result.Outcome != intentRefused || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" {
 		t.Fatalf("red proof: code=%d %+v", code, result)
 	}
 	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"build", "proof"}) {
@@ -980,7 +981,7 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 	for _, again := range [][]string{args, {"work", "build", "run:" + run}, {"work", "wait", "run:" + run}} {
 		code, repeat, _ := bed.work(again...)
-		if code != 0 || resultData(t, repeat)["run"] != run || resultData(t, repeat)["outcome"] != "proof-red" || len(bed.starter.launched()) != 2 {
+		if code != 1 || resultData(t, repeat)["run"] != run || resultData(t, repeat)["outcome"] != "proof-red" || len(bed.starter.launched()) != 2 {
 			t.Fatalf("%v: code=%d %+v launches=%v", again, code, repeat, bed.starter.launched())
 		}
 	}
@@ -991,7 +992,7 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 	delete(bed.starter.fail, "proof")
 	followUp := bed.brief("follow-up.md", "Fix the red proof.\n")
-	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp)
+	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp, "--reason", "Repair the unclassified proof", "--by", "Wido")
 	data = resultData(t, result)
 	if code != 0 || result.Outcome != intentConfirmed || data["run"] != run || data["round"].(float64) != 2 || data["outcome"] != "green" || data["state"] != "awaiting-judgement" {
 		t.Fatalf("follow-up: code=%d %+v", code, result)
@@ -1000,6 +1001,9 @@ func TestIntentBuildResume(t *testing.T) {
 		t.Fatalf("follow-up launches=%v", launched)
 	}
 
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(run); err != nil {
+		t.Fatal(err)
+	}
 	bed.starter.hold = "build"
 	held := append([]string{"work", "build", bed.id, "held", "--brief", brief, "--lines", "20"}, workCheck...)
 	code, result, _ = bed.work(held...)
@@ -1011,7 +1015,7 @@ func TestIntentBuildResume(t *testing.T) {
 	buildLaunch := resultData(t, result)["steps"].([]any)[0].(map[string]any)["launchId"].(string)
 	bed.manager.Store.Update(buildLaunch, func(record *launch.Record) error {
 		exit := 0
-		record.State, record.ExitCode = launch.Completed, &exit
+		record.State, record.ExitCode, record.FinishedAt = launch.Completed, &exit, bed.manager.Now().UTC().Format(time.RFC3339Nano)
 		return nil
 	})
 	bed.manager.Settings.ReadRuntime = "codex"

@@ -63,7 +63,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 	plan.Build.Brief = filepath.Join(directory, "checked-build.md")
 	_, err = atomicfile.WriteText(plan.Build.Brief, fmt.Sprintf("Before returning, run: metasystem test run --unit-run %s\n\n%s", run, brief), directory)
 	plan.Check = check
-	plan.Proof = []launch.ProofCommand{{Name: "unit-check", Dir: check.Directory, Argv: []string{executable, "test", "run", "--unit-run", run}, Env: check.Environment}}
+	plan.Proof = []launch.ProofCommand{{Name: "unit-check", Dir: check.Directory, Argv: []string{executable, "test", "run", "--unit-run", run, "--repo", inv.layout.InstallationRoot.Path()}, Env: check.Environment}}
 	return plan, err
 }
 
@@ -96,6 +96,12 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 				}
 				execution, exits, err = plan.Check.Run(filepath.Join(strings.TrimSpace(string(top)), relative), records)
 			}
+		}
+	}
+	for _, command := range exits {
+		if _, writeErr := fmt.Fprint(inv.stderr, command.Output); writeErr != nil {
+			err = writeErr
+			break
 		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: "the frozen cheap check and audits passed", Data: map[string]any{"execution": execution, "exits": exits}}

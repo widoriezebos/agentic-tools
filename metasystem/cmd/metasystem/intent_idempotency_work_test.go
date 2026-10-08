@@ -102,7 +102,7 @@ func witnessWorkBriefRepeat(t *testing.T) {
 func witnessWorkBuildRepeat(t *testing.T) {
 	bed := newWorkBed(t)
 	brief := bed.brief("a.md", "Build part a.\n\nMaximum reader tool calls: 5\n")
-	args := append([]string{"work", "build", bed.id, "--work", "a", "--brief", brief, "--lines", "5", "--check"}, workArgv...)
+	args := []string{"work", "build", bed.id, "--work", "a", "--brief", brief, "--lines", "5"}
 	code, first, _ := bed.work(args...)
 	if code != 0 || first.Outcome != intentConfirmed {
 		t.Fatalf("first build: code=%d %+v", code, first)

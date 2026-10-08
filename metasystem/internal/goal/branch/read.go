@@ -898,8 +898,10 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		}
 		return result, failure
 	}
-	if err := dispatch.CritiqueInheritFindings(CriticStore(request.Repo, job), job, inherited); err != nil {
-		return result, err
+	if len(inherited) > 0 {
+		if err := dispatch.CritiqueInheritFindings(CriticStore(request.Repo, job), job, inherited); err != nil {
+			return result, err
+		}
 	}
 	record.RootJob, record.DispatchPending, record.DispatchRetryable = job, false, false
 	if err := saveBranchReadRecord(common, recordPath, record); err != nil {

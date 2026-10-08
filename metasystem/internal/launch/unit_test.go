@@ -32,17 +32,37 @@ type stubGit struct {
 	snapshotStub *testgit.Stub
 	snapshotNext int
 	reporter     testgit.Reporter
+	worktree     string
 }
 
 func (git *stubGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
 	git.once.Do(func() { git.stub = git.makeStub() })
+	if git.worktree != "" {
+		actual, err := filepath.EvalSymlinks(directory)
+		expected, expectedErr := filepath.EvalSymlinks(git.worktree)
+		if err == nil && expectedErr == nil && actual == expected {
+			directory = git.worktree
+		}
+		if slices.Equal(args, []string{"rev-parse", "--verify", "base^{tree}"}) {
+			if directory != git.worktree || len(environment) != 0 {
+				return nil, fmt.Errorf("invalid baseline lookup: %s %v", directory, environment)
+			}
+			return nil, os.ErrNotExist
+		}
+		if slices.Equal(args, []string{"rev-parse", "--show-toplevel"}) {
+			if directory != git.worktree || len(environment) != 0 {
+				return nil, fmt.Errorf("invalid tree custody query: %s %v", directory, environment)
+			}
+			return []byte(git.worktree + "\n"), nil
+		}
+	}
 	if git.normalize != nil {
 		args = git.normalize(args)
 	}
-	if len(git.snapshot) > 0 && (git.snapshotNext > 0 || slices.Equal(args, []string{"rev-parse", "--show-toplevel"})) {
+	if len(git.snapshot) > 0 && (git.snapshotNext > 0 || slices.Equal(args, []string{"rev-parse", "HEAD"})) {
 		if git.snapshotNext == 0 {
-			expected := slices.Clone(git.snapshot)
-			check := isolatedGitEnvironment(expected[0].Call.Dir, strings.TrimSpace(string(expected[4].Result.Stdout)), true)
+			expected := slices.Clone(git.snapshot[1:])
+			check := isolatedGitEnvironment(expected[0].Call.Dir, strings.TrimSpace(string(expected[3].Result.Stdout)), true)
 			for i := range expected {
 				if expected[i].Check != nil {
 					expected[i].Check = check
@@ -51,7 +71,7 @@ func (git *stubGit) Run(directory string, environment []string, args ...string) 
 			git.snapshotStub = testgit.New(git.reporter, expected...)
 		}
 		result := git.snapshotStub.Run(testgit.Call{Dir: directory, Env: environment, Args: args})
-		git.snapshotNext = (git.snapshotNext + 1) % len(git.snapshot)
+		git.snapshotNext = (git.snapshotNext + 1) % (len(git.snapshot) - 1)
 		return result.Stdout, result.Err
 	}
 	result := git.stub.Run(testgit.Call{Dir: directory, Env: environment, Args: args})
@@ -236,8 +256,16 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	os.MkdirAll(objects, 0o700)
 	defaultEvents := events == nil
 	if defaultEvents {
-		events = []string{"branch", "round"}
+		events = []string{"branch", "branch", "round"}
 	}
+	var admission []string
+	for i, event := range events {
+		admission = append(admission, event)
+		if event == "branch" && (i == 0 || events[i-1] == "new") && (i+1 == len(events) || events[i+1] != "branch") {
+			admission = append(admission, "branch")
+		}
+	}
+	events = admission
 	var expanded []string
 	rounds := 0
 	beforePending := false
@@ -299,6 +327,11 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 				}
 				return foldVerify(call)
 			}
+			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
+			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+			patchCheck := isolatedGitEnvironment(fixture.worktree, objects, false)
+			add(fixture.worktree, "", patchCheck, "add", "-A", "--sparse", "--", ".")
+			add(fixture.worktree, diff, patchCheck, "diff", "--cached", "--binary", "head", "--", ".")
 			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			add(fixture.worktree, "", foldCheck, "read-tree", "base")
 			add(fixture.worktree, "previous-tree\n", foldCheck, "write-tree")
@@ -322,6 +355,7 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 				add(fixture.worktree, "", check, "ls-files", "--resolve-undo", "-z", "--full-name", "--", ".")
 				add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
 				add(fixture.worktree, "", check, "diff", "--cached", "--raw", "-z", "--no-abbrev", "HEAD", "--", ".")
+				add(fixture.worktree, "round-tree\n", check, "write-tree")
 				snapshot = append([]testgit.Expectation(nil), expected[snapshotStart:]...)
 				expected = expected[:snapshotStart]
 			}
@@ -352,9 +386,9 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	}
 	// Each physical proof/read execution takes fresh snapshots, including a
 	// retained step retry. Every snapshot must complete this strict Git sequence.
-	fixture.git = &stubGit{snapshot: snapshot, reporter: t, makeStub: func() *testgit.Stub {
+	fixture.git = &stubGit{worktree: fixture.worktree, snapshot: snapshot, reporter: t, makeStub: func() *testgit.Stub {
 		if defaultEvents && fixture.starter.failKind == "build" {
-			return testgit.New(t, expected[:5]...)
+			return testgit.New(t, expected[:6]...)
 		}
 		return testgit.New(t, expected...)
 	}}
@@ -679,8 +713,11 @@ func TestResumeAfterAKillStartsNoSecondLaunch(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected interruption")
 	}
-	entries, _ := os.ReadDir(fixture.runner.Root)
-	id := entries[0].Name()
+	entries := unitRunDirectories(t, fixture.runner.Root)
+	if len(entries) != 1 {
+		t.Fatalf("run directories=%v", entries)
+	}
+	id := entries[0]
 	fixture.runner.AfterWrite = nil
 	if _, err := fixture.runner.Advance(UnitRequest{Resume: id}); err != nil {
 		t.Fatal(err)
@@ -1048,8 +1085,8 @@ func TestProofThatMovesTheRepositoryRetriesTheStep(t *testing.T) {
 			}
 			round := result.Record.Rounds[0]
 			proof := stepNamed(t, round, "proof:check")
-			if round.Outcome != "green" || len(proof.LaunchIDs) != 2 || stepNamed(t, round, "read").State != StepPassed {
-				t.Fatalf("tree movement did not retry only proof before reading: %+v", round)
+			if round.Outcome != "proof-wrote" || round.Cause != "environment" || round.Stop == nil || len(proof.LaunchIDs) != 2 || stepNamed(t, round, "read").State != StepSkipped {
+				t.Fatalf("tree movement did not hold the changed result after one proof retry: %+v", round)
 			}
 		})
 	}
@@ -1137,7 +1174,7 @@ func TestNestedWorktreeProtectsRepositoryWideIndexState(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if row.moved && (result.Record.Rounds[0].Outcome != "green" || len(stepNamed(t, result.Record.Rounds[0], "proof:check").LaunchIDs) != 2) {
+			if row.moved && (result.Record.Rounds[0].Outcome != "proof-wrote" || result.Record.Rounds[0].Cause != "environment" || result.Record.Rounds[0].Stop == nil || stepNamed(t, result.Record.Rounds[0], "read").State != StepSkipped || len(stepNamed(t, result.Record.Rounds[0], "proof:check").LaunchIDs) != 2) {
 				t.Fatalf("repository-wide index mutation was not detected: %+v", result.Record)
 			}
 			if !row.moved && (result.Record.Rounds[0].Outcome != "green" || len(stepNamed(t, result.Record.Rounds[0], "proof:check").LaunchIDs) != 1) {
@@ -1556,7 +1593,7 @@ func TestRoundMaterialAndJudgement(t *testing.T) {
 	t.Parallel()
 	fixture := newUnitFixture(t, "", []string{}...)
 	yes, no := true, false
-	record := UnitRunRecord{ID: "round-material", CountedCap: 6, MaxRounds: 20, Rounds: []UnitRound{{Number: 1, Cause: "provider-limit"}, {Number: 2, Directory: filepath.Join(fixture.runner.Root, "round-material", "round-2")}}}
+	record := UnitRunRecord{ID: "round-material", Worktree: fixture.worktree, Goal: "goal", Unit: "U", CountedCap: 6, MaxRounds: 20, Rounds: []UnitRound{{Number: 1, Cause: "provider-limit"}, {Number: 2, Directory: filepath.Join(fixture.runner.Root, "round-material", "round-2")}}}
 	os.MkdirAll(record.Rounds[1].Directory, 0700)
 	for _, item := range []struct {
 		id       string

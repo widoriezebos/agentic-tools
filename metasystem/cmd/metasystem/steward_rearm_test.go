@@ -190,6 +190,9 @@ func TestHousekeepingFixtureOwnership(t *testing.T) {
 			_, err := bed.manager.Store.Update(readID, func(record *launch.Record) error {
 				code, yes := 0, true
 				record.State, record.ExitCode, record.VerdictCounts, record.Measurement.Verdict = launch.Completed, &code, &yes, "pass"
+				record.FinishedAt = bed.manager.Now().UTC().Format(time.RFC3339Nano)
+				dead := workProcessRef(99)
+				record.Supervisor, record.Child, record.ProcessGroup = &dead, &dead, &dead
 				return nil
 			})
 			if err != nil {

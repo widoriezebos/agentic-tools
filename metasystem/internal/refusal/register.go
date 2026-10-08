@@ -198,6 +198,8 @@ var Rows = []Row{
 	{Code: "GOAL_BRANCH_LEASE_MOVED", Owner: "internal/goal/branch", Site: "push.go#reconcilePushTransactionsWithRepository", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_BRANCH_CLAIM_LOST", Owner: "internal/goal/branch", Site: "push.go#reconcilePushTransactionsWithRepository", Shape: Question, H1: StandingAgent},
 	{Code: "GOAL_BRANCH_PUSH_UNKNOWN", Owner: "internal/goal/branch", Site: "push.go#reconcilePushTransactionsWithRepository", Shape: Question, H1: StandingInput},
+	{Code: "GOAL_BRANCH_REPLAY_CONFLICT", Owner: "internal/goal/branch", Site: "commit.go#commitStaged", Shape: Question, H1: StandingInput},
+	{Code: "PUBLICATION_CHECK_RED", Owner: "internal/launch", Site: "round_result.go#UnitRunner.ProveRoundResult", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_BRANCH_STALE", Owner: "internal/goal/branch", Site: "push.go#adoptRemoteTipWithRepository", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_PARK_UNPUSHED", Owner: "internal/goal/branch", Site: "status.go#checkParkBranch", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_LAND_PARTIAL", Owner: "internal/goal/branch", Site: "land.go#prepareLanding", Shape: Question, H1: StandingInput},

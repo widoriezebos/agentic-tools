@@ -15,6 +15,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
@@ -610,7 +611,7 @@ func TestIntentBriefBeforeFirstWorkspaceBuilds(t *testing.T) {
 		t.Fatalf("brief before the first workspace: code=%d %+v\n%s", code, result, written)
 	}
 	c.edits = map[string]string{"built.txt": "built\n"}
-	code, result = c.do(append([]string{"work", "build", c.id, "u1", "--brief", "brief.md", "--check"}, workArgv...)...)
+	code, result = c.do([]string{"work", "build", c.id, "u1", "--brief", "brief.md"}...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("build with the generated brief: code=%d %+v", code, result)
 	}
@@ -744,7 +745,7 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 	// printed continuation asks for its decision, and the decided review is
 	// closed by the whole close owner, collected and published.
 	alphaCommit, _ := resultData(t, submitted)["commit"].(string)
-	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{map[string]any{"id": "F1", "material": false}})
+	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{journeyCleanFinding()})
 	code, decide := manualDo(t, j, root, retried.Next.Argv[1:]...)
 	if decide.Outcome != intentInProgress || decide.Next == nil || !strings.Contains(shellCommand(decide.Next.Argv), "review "+c.id+" --work alpha --dispositions FILE") || strings.Contains(shellCommand(decide.Next.Argv), "--retry") {
 		t.Fatalf("the completed retried round: code=%d %+v", code, decide)
@@ -831,7 +832,7 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 	if _, retried := manualDo(t, j, root, printed(shellCommand(failed.Next.Argv), "metasystem work review")...); len(c.followUps) != 1 || retried.Next == nil {
 		t.Fatalf("the retry: %+v followUps=%v", retried, c.followUps)
 	}
-	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{map[string]any{"id": "F1", "material": false}})
+	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{journeyCleanFinding()})
 	_, decide := manualDo(t, j, root, "work", "review", c.id, "--work", "alpha")
 	decided := slices.DeleteFunc(printed(shellCommand(decide.Next.Argv), "metasystem work review"), func(word string) bool { return word == "FILE" })
 	decided = append(decided, j.dispositions)
@@ -903,13 +904,14 @@ func TestIntentReviewSelectionMixedProducers(t *testing.T) {
 	}
 	os.Remove(filepath.Join(root, "hand.txt"))
 	c.edits = map[string]string{"built.txt": "built\n"}
-	if code, built := do(append([]string{"work", "build", c.id, "built-unit", "--brief", brief, "--lines", "5"}, workCheck...)...); code != 0 || built.Outcome != intentConfirmed {
+	code, built := do(append([]string{"work", "build", c.id, "built-unit", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 || built.Outcome != intentConfirmed {
 		t.Fatalf("build: code=%d %+v", code, built)
 	}
 	// While the build's result is uncommitted, the goal worktree receives no
 	// other hand-written work.
 	os.WriteFile(filepath.Join(root, "late.txt"), []byte("late\n"), 0o644)
-	if _, late := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "late"); late.Outcome != intentRefused || !strings.Contains(late.Summary, "built.txt") {
+	if _, late := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "late"); late.Outcome != intentInProgress || !strings.Contains(late.Summary, "the worktree belongs to run") {
 		t.Fatalf("a submission onto an uncommitted build result: %+v", late)
 	}
 	os.Remove(filepath.Join(root, "late.txt"))
@@ -931,6 +933,10 @@ func TestIntentReviewSelectionMixedProducers(t *testing.T) {
 	if _, selected := manualDo(t, j, root, "work", "review", c.id, "--work", "built-unit"); !slices.Contains(works(selected), "built-unit") || len(c.delegates) != delegates+1 {
 		t.Fatalf("review --work built-unit: %+v", selected)
 	}
+	c.writeCritic(c.worktree, "crit2", c.delegates[1], "cancelled", false)
+	if _, err := (&launch.UnitRunner{Root: c.unitRoot, Manager: c.manager, Git: launch.OSGitRunner{}}).CancelRun(resultData(t, built)["run"].(string)); err != nil {
+		t.Fatal(err)
+	}
 	if _, selected := manualDo(t, j, root, "work", "review", c.id, "--work", "hand"); !slices.Contains(works(selected), "hand") {
 		t.Fatalf("review --work hand: %+v", selected)
 	}
@@ -944,7 +950,11 @@ func TestIntentReviewSelectionMixedProducers(t *testing.T) {
 	if code, done := manualDo(t, j, root, "work", "review", c.id, "--work", "hand", "--dispositions", j.dispositions); code != 0 || done.Outcome != intentConfirmed {
 		t.Fatalf("the hand-written item's decisions: code=%d %+v", code, done)
 	}
-	if _, inferred := manualDo(t, j, root, "work", "review", c.id); inferred.Outcome == intentRefused || !slices.Contains(works(inferred), "built-unit") {
+	c.edits = map[string]string{"remaining.txt": "the remaining unit\n"}
+	if code, built := do("work", "build", c.id, "remaining-unit", "--brief", brief, "--lines", "5"); code != 0 || built.Outcome != intentConfirmed {
+		t.Fatalf("remaining build: %d %+v", code, built)
+	}
+	if _, inferred := manualDo(t, j, root, "work", "review", c.id); inferred.Outcome == intentRefused || !slices.Contains(works(inferred), "remaining-unit") {
 		t.Fatalf("bare review once the manual item is published: %+v", inferred)
 	}
 }

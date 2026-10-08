@@ -59,7 +59,8 @@ func unitCarryIntentBed(t *testing.T, amended bool) (*workBed, intentOwners, str
 		return "", nil
 	}
 	owners.connection.push = func(branch.PushRequest) (branch.PushResult, error) {
-		return branch.PushResult{Tip: "published-tip"}, nil
+		b.head = "published-tip"
+		return branch.PushResult{Tip: b.head}, nil
 	}
 	owners.delivery = &intentDeliveryOwners{
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
@@ -110,7 +111,8 @@ func TestUnitReviewAmendCarriesReviews(t *testing.T) {
 		if carried != 1 || inside || req.Repo != b.worktree {
 			t.Fatalf("push before carry = %+v, calls = %d", req, carried)
 		}
-		return branch.PushResult{Tip: "carried-tip"}, nil
+		b.head = "carried-tip"
+		return branch.PushResult{Tip: b.head}, nil
 	}
 	code, result := b.runJSON(owners, "work", "review", "run:"+run)
 	if code != 0 || carried != 1 || tokens != 1 || gates != 1 || !slices.Equal(resultData(t, result)["carried"].([]any), []any{"u2", "u3"}) {
@@ -149,7 +151,8 @@ func TestUnitReviewCarryFailureRetriesBeforePush(t *testing.T) {
 	}
 	owners.connection.push = func(branch.PushRequest) (branch.PushResult, error) {
 		pushed++
-		return branch.PushResult{Tip: "carried-tip"}, nil
+		b.head = "carried-tip"
+		return branch.PushResult{Tip: b.head}, nil
 	}
 	code, failed := b.runJSON(owners, "work", "review", "run:"+run)
 	if code == 0 || failed.Outcome != intentPartial || carried != 1 || pushed != 0 || failed.Next == nil || !slices.Contains(failed.Next.Argv, "run:"+run) {
@@ -328,6 +331,7 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 		}
 		var err error
 		carried, err = branch.CarryReviews(req)
+		b.head = connectionGit(t, repo, "rev-parse", "HEAD")
 		return carried, err
 	}
 	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return base, nil }
