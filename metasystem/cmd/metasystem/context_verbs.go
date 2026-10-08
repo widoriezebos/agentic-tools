@@ -230,15 +230,23 @@ func windowLine(window contextWindowView) string {
 }
 
 func runContextHandoff(args []string, stdout, stderr io.Writer) int {
-	return runContextHandoffWithInputs(args, contextHandoffInputs{goal.ResolveMachine, goal.ReadClaimableBudgetedWork}, stdout, stderr)
+	return runContextHandoffWithInputs(args, contextHandoffInputs{resolveMachine: goal.ResolveMachine, readWork: goal.ReadClaimableBudgetedWork}, stdout, stderr)
 }
 
 type contextHandoffInputs struct {
 	resolveMachine func(string) (string, error)
 	readWork       func(string, time.Time) (goal.ClaimableBudgetedWork, error)
+	caller         func(stateroot.Installation, string, func(string) (string, error)) (steward.HandoffCaller, error)
+	now            func() time.Time
 }
 
 func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, stdout, stderr io.Writer) int {
+	if inputs.caller == nil {
+		inputs.caller = contextHandoffCallerWithMachine
+	}
+	if inputs.now == nil {
+		inputs.now = contextHandoffNow
+	}
 	flags := newFlagSet("session handoff", stdout, stderr)
 	root := pathFlag(flags, "root", "", "installation or containing template root")
 	cancel := flags.String("cancel", "", "live handoff nonce to cancel")
@@ -283,7 +291,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	if cancelSupplied {
-		caller, err := contextHandoffCallerWithMachine(installation, stateRoot, inputs.resolveMachine)
+		caller, err := inputs.caller(installation, stateRoot, inputs.resolveMachine)
 		if err != nil {
 			return contextVerbError(stderr, "handoff", err, *verbose)
 		}
@@ -332,7 +340,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	if *note == "" {
 		return contextVerbError(stderr, "handoff", &steward.HandoffRefusal{Code: "HANDOFF_NOTE_MISSING"}, *verbose)
 	}
-	caller, err := contextHandoffCallerWithMachine(installation, stateRoot, inputs.resolveMachine)
+	caller, err := inputs.caller(installation, stateRoot, inputs.resolveMachine)
 	if err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
@@ -359,7 +367,7 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 	for _, notice := range notices {
 		fmt.Fprintln(stderr, notice.Text)
 	}
-	now := contextHandoffNow()
+	now := inputs.now()
 	delegates, err := contextHandoffDelegates(declarations, *noDelegates, transcriptResolved, tasks, now)
 	if err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
@@ -372,6 +380,9 @@ func runContextHandoffWithInputs(args []string, inputs contextHandoffInputs, std
 		Scratch: scratch, Delegates: delegates, NotePath: *note, NoteDirectory: noteDirectory,
 	}, now, filepath.Join(stateRoot, "memory", "receipts.log"), inputs.readWork)
 	if err != nil {
+		return contextVerbError(stderr, "handoff", err, *verbose)
+	}
+	if err := steward.BindUnitHandoff(stateRoot, caller.Session); err != nil {
 		return contextVerbError(stderr, "handoff", err, *verbose)
 	}
 	if *asJSON {

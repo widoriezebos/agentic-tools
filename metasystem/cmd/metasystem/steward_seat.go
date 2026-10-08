@@ -230,7 +230,10 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 		if err != nil {
 			return err
 		}
-		return steward.ObserveUnitBoundary(root, home, holder.SessionId, started, work, config.Units, now)
+		if err := steward.ObserveUnitBoundary(root, home, holder.SessionId, started, work, config.Units, now); err != nil {
+			return err
+		}
+		return steward.FinishUnitHandoff(root, holder.SessionId)
 	}
 }
 

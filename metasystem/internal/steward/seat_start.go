@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -511,16 +512,20 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 }
 
 // seatBrief is what the seat main reads on stdin.
-func seatBrief(selection SeatSelection, facts ...string) string {
+func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) string {
 	why := "it is approved and ready"
 	if selection.Held {
 		why = "this seat already holds it; the main before you ended"
 	}
+	boundary, handoff := "", ""
+	if automaticHandoff {
+		boundary = "; stop advancing at that boundary"
+		handoff = "Nobody sits at this terminal: your process ends when your turn ends.\nEvery background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `metasystem work wait` (bounded by --timeout) and carry on. At the completed unit boundary, write your lessons note in your runtime's configured context.handoff.note-directory, then run `metasystem session handoff --root <installation> --note <that note> --no-delegates`. Read `metasystem session handoff --status --root <installation> --json` until this session's completed boundary carries that handoff nonce; then repeat the same handoff command to confirm durable binding. The steward persists that binding before ending your session. End your turn once the binding is durable. If capture or binding fails, remain alive, report the exact error, repair its cause and retry the same handoff. Otherwise end only when blocked on a person's answer you asked with `metasystem question ask`, or nothing is claimable.\n"
+	}
 	return fmt.Sprintf("# Seat session\n\n"+
-		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork it and land it; stop when nothing is claimable.\n\n"+
-		"The steward started you for goal %s: %s.\n\n"+
-		"Nobody sits at this terminal: your process ends when your turn ends, and every background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `metasystem work wait` (bounded by --timeout) and carry on. End your turn only when the goal is handed in to land, it is blocked on a person's answer you asked with `metasystem question ask`, or nothing is claimable.\n",
-		selection.Goal, selection.Goal, why) + strings.Join(facts, "")
+		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork one unit through its completed outcome and collected, published read%s.\n\n"+
+		"The steward started you for goal %s: %s.\n\n",
+		selection.Goal, boundary, selection.Goal, why) + handoff + strings.Join(facts, "")
 }
 
 func startSeatWithDependencies(repoRoot string, selection SeatSelection, dependencies seatDependencies) (SeatRecord, error) {
@@ -584,11 +589,16 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	for _, id := range goals {
 		tips[id] = read[id]
 	}
+	policy, policyErr := config.ResolvePolicy(config.GetParams{Key: "seat.driver", ConfPath: filepath.Join(repoRoot, "metasystem.conf")})
+	automaticHandoff := policyErr != nil || policy.Value != "person"
 	facts := seatFacts(repoRoot, selection, machine, tips, dependencies)
+	if policyErr != nil {
+		facts += "Seat driver unavailable: " + policyErr.Error() + "\n"
+	}
 	if tipsError != nil {
 		facts += "Goal tips unavailable; metasystem work status " + selection.Goal + "\n"
 	}
-	if err := writeExclusiveBrief(briefPath, seatBrief(selection, facts)); err != nil {
+	if err := writeExclusiveBrief(briefPath, seatBrief(selection, automaticHandoff, facts)); err != nil {
 		return SeatRecord{}, err
 	}
 	record := SeatRecord{Schema: 1, LaunchID: id, Goal: selection.Goal, Held: selection.Held, ApprovalOpid: selection.ApprovalOpid,
@@ -886,7 +896,7 @@ func seatFacts(root string, selection SeatSelection, machine string, tips map[st
 				messageLines = append(messageLines, seatFactLine{text, "messages with " + counterpart, at})
 			}
 		}
-		facts.WriteString("Messages:\n" + seatList(messageLines, retained, 12000-len(seatBrief(selection))-facts.Len()-128, inbox))
+		facts.WriteString("Messages:\n" + seatList(messageLines, retained, 12000-len(seatBrief(selection, true))-facts.Len()-128, inbox))
 	}
 	return facts.String()
 }

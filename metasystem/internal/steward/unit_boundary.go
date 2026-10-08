@@ -17,11 +17,13 @@ import (
 
 // UnitBoundary is a completed unit's durable identity.
 type UnitBoundary struct {
-	Seat    string `json:"seat"`
-	Session string `json:"session"`
-	Goal    string `json:"goal"`
-	Unit    string `json:"unit"`
-	Outcome string `json:"outcome"`
+	Seat      string `json:"seat"`
+	Session   string `json:"session"`
+	Goal      string `json:"goal"`
+	Unit      string `json:"unit"`
+	Outcome   string `json:"outcome"`
+	Handoff   string `json:"handoff,omitempty"`
+	Signalled bool   `json:"signalled,omitempty"`
 }
 
 func ReadUnitBoundaries(root string) ([]UnitBoundary, error) {
