@@ -3,6 +3,7 @@ package validate
 import (
 	"encoding/json"
 	"fmt"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"sort"
@@ -125,6 +126,9 @@ func readFindings(path string, violation func(string, ...any)) ([]string, map[st
 	if !ok {
 		violation("return JSON is unjoinable: root must be an object")
 		return nil, materialByID, false
+	}
+	if object["wholePageDigest"] != nil {
+		return readFindings(filepath.Join(filepath.Dir(path), "read.json"), violation)
 	}
 	raw, present := object["findings"]
 	if !present {

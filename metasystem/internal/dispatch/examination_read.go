@@ -10,7 +10,9 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/returnschema"
 )
 
 // executingEngineIdentity reads this executable's own build provenance. It
@@ -31,12 +33,19 @@ func executingEngineIdentity() string {
 	return ""
 }
 
+// DesignEvidenceRequired distinguishes frozen whole-page examinations from
+// legacy rounds whose collection uses the original structured findings.
+func DesignEvidenceRequired(repoRoot, rootJob string, round int64) (bool, error) {
+	subject, present, err := readsubject.ReadRoundSubject(filepath.Join(repoRoot, "artifacts", "agents"), rootJob, round)
+	return present && subject.DesignPage != "", err
+}
+
 // CollectExamination reads the immutable evidence of the actual examination
 // job, including its recorded engine and resolved dispatch model.
 func CollectExamination(repoRoot, jobID string) (readsubject.Read, error) {
 	state := loadCritiqueState(repoRoot)
 	record, present := state.records[jobID]
-	if !present || asString(record["role"]) != "code-critic" {
+	if !present || (asString(record["role"]) != "code-critic" && asString(record["role"]) != "design-critic") {
 		return readsubject.Read{}, fmt.Errorf("code examination %s is unreadable", jobID)
 	}
 	round, ok := numInt(record["round"])
@@ -82,6 +91,16 @@ func CollectExamination(repoRoot, jobID string) (readsubject.Read, error) {
 			}
 			verdict = strings.TrimSpace(line)
 		}
+	}
+	if subject.Kind == readsubject.SubjectDesign {
+		if violations := returnschema.ReturnCompleteRole(repoRoot, "design-critic", filepath.Join(dir, "return.json")); len(violations) > 0 {
+			return readsubject.Read{}, fmt.Errorf("design evidence unknown: %s", strings.Join(violations, "; "))
+		}
+		page, problems, present := project.ParseRecord(subject.DesignPath, subject.DesignPage)
+		if !present || len(problems) != 0 || page.Kind != project.KindDesign {
+			return readsubject.Read{}, fmt.Errorf("frozen design record is unavailable or malformed")
+		}
+		return readsubject.CollectDesignRead(jobID, root, page.ID, page.Goals, subject, engine, model, output, data, verdict)
 	}
 	return readsubject.Collect(jobID, subject, engine, model, output, data, verdict)
 }

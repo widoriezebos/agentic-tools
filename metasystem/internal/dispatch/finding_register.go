@@ -278,6 +278,11 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 					}
 					root[findingRegisterSubjectDigestField] = persisted.Digest()
 				}
+				if role == "design-critic" && persisted.DesignPage != "" {
+					if _, err := CollectExamination(repoRoot, roundJob); err != nil {
+						return err
+					}
+				}
 				completedSubject = persisted
 				completedSubjectPresent = subjectPresent
 				completedSubjectBound = subjectPresent && readsubject.ReturnBindsSubject(persisted, result)
@@ -287,7 +292,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 				} else {
 					var demotions []any
 					version, _ := numInt(result["schemaVersion"])
-					if role == "code-critic" && version == 6 {
+					if role == "code-critic" && version == 6 || role == "design-critic" && persisted.DesignPage != "" {
 						read, err := CollectExamination(repoRoot, roundJob)
 						if err != nil {
 							return err
@@ -307,6 +312,18 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 							return err
 						} else if _, err := atomicWriteText(readPath, data); err != nil {
 							return err
+						}
+						if role == "design-critic" {
+							encoded, _ := json.Marshal(read.Findings)
+							json.Unmarshal(encoded, &findings)
+							rows := rigorRowsByID(result["rigor"])
+							rigor := []any{}
+							for _, finding := range read.Findings {
+								row := takeRigorRow(rows, finding.ID)
+								row["findingId"], row["artifact"] = finding.ID, persisted.DesignPath
+								rigor = append(rigor, row)
+							}
+							result["rigor"] = rigor
 						}
 						for i, raw := range findings {
 							f := raw.(map[string]any)

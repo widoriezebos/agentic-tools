@@ -123,6 +123,15 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 			nextReason: "decides and closes a critique that no longer applies; the others are listed above"}
 	}
 	chain := chains[0]
+	if recordText(chain.Newest, "status") == "completed" && !chain.Closed {
+		required, err := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
+		if err == nil && required {
+			_, err = dispatchcore.CollectExamination(inv.layout.InstallationRoot.Path(), chain.NewestJob)
+		}
+		if err != nil {
+			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the design evidence is unknown; nothing was closed or requested", Details: []string{err.Error()}, next: inv.typedArgvLess("dispositions", "after"), nextReason: "recollect the retained evidence once the named return, prose or frozen page is readable and complete"}
+		}
+	}
 	entry := inv.readDesignReviewEntry(plan.recordID)
 	entry.Goal, entry.Design = plan.goalID, plan.design
 	status := recordText(chain.Newest, "status")
@@ -486,7 +495,9 @@ func (inv *intentInvocation) designCritiqueClosed(plan designReviewPlan, chain d
 // design complete the critique through review design FILE --dispositions.
 func (inv *intentInvocation) collectDesignExamination(plan designReviewPlan, chain dispatchcore.DesignCritiqueChain, examined string) *intentResult {
 	result := inv.collectReview(plan.targets, delegateOutcome{Outcome: "REJOINED", JobID: chain.NewestJob})
-	if recordText(chain.Newest, "status") != "completed" {
+	data, _ := result.Data.(map[string]any)
+	findings, present := data["findings"].([]intentFinding)
+	if recordText(chain.Newest, "status") != "completed" || result.Outcome == intentFailed || !present {
 		return &result
 	}
 	returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
@@ -494,16 +505,11 @@ func (inv *intentInvocation) collectDesignExamination(plan designReviewPlan, cha
 	if err != nil {
 		return &result
 	}
-	findings, _, _ := readIntentFindings(returnPath)
 	binding := reviewBinding{Goal: plan.goalID, Work: "design:" + plan.recordID, Attempt: int(chain.NewestRound), Subject: examined,
 		Examination: chain.Root, Round: chain.NewestRound, Return: digest}
 	template := filepath.Join(filepath.Dir(returnPath), "decisions.md")
 	if _, statErr := os.Stat(template); statErr != nil {
 		os.WriteFile(template, []byte(decisionsDocument(binding, findings)), 0o600)
-	}
-	data, _ := result.Data.(map[string]any)
-	if data == nil {
-		data = map[string]any{}
 	}
 	data["template"], data["examination"] = template, chain.NewestRound
 	result.Data = data

@@ -574,6 +574,11 @@ func readIntentFindings(path string) ([]intentFinding, string, error) {
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, "", err
 	}
+	var derived readsubject.Read
+	if retained, err := os.ReadFile(filepath.Join(filepath.Dir(path), "read.json")); err == nil && json.Unmarshal(retained, &derived) == nil && derived.Design != nil {
+		encoded, _ := json.Marshal(derived.Findings)
+		json.Unmarshal(encoded, &result.Findings)
+	}
 	if result.SchemaVersion >= 6 {
 		for index := range result.Findings {
 			result.Findings[index].ID = result.JobID + ":" + fmt.Sprint(index+1)
@@ -989,7 +994,7 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		fmt.Sprintf("design page %s, SHA-256 %s", gitRel, hex.EncodeToString(digest[:])),
 		filepath.Join(dir, "findings.md"),
 		[]string{fmt.Sprintf("`%s:1-%d` — the whole design under skills/design-critique/SKILL.md: missing work, false premises and first-use failures", gitRel, lineCount)}) +
-		drafts.section()
+		drafts.section() + "\n## Whole-page evidence\n\nReview the entire frozen page, including every section beyond earlier findings. Return wholePageDigest matching its SHA-256. Return coverage for every row beneath `## The five questions, for every new owner and record`, plus omitted functions, records and acts. Each row names its exact declaration in row and owning heading in where, with five answers numbered 1–5: the function that invokes it, freshness, person/agent authority, executable remedy, unreadable input. Every answer carries answer and evidence, or unanswered=true; never silently omit a cell. Findings name class, exact heading in where, implementation/test change, and coverage (row:question for a missing answer, otherwise empty). A missing decision names the decision and affected dependencies in change.\n"
 	designPath := filepath.Join(git, filepath.FromSlash(gitRel))
 	inputs := map[string]string{brief: briefText, outputs: gitRel + "\n"}
 	for path, content := range drafts.files {
@@ -1216,6 +1221,23 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 	}
 	path := inv.returnPath(root, recordRound(record))
 	findings, verdict, err := readIntentFindings(path)
+	if recordText(record, "role") == "design-critic" {
+		required, subjectErr := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), root, recordRound(record))
+		if subjectErr != nil {
+			err = subjectErr
+		} else if required {
+			var read readsubject.Read
+			read, err = dispatchcore.CollectExamination(inv.layout.InstallationRoot.Path(), job)
+			if err == nil {
+				_, err = dispatchcore.CritiqueRegisterAdvance(inv.layout.InstallationRoot.Path(), root, job)
+			}
+			if err == nil {
+				encoded, _ := json.Marshal(read.Findings)
+				json.Unmarshal(encoded, &findings)
+				data["read"], data["rawMaterial"] = read, read.Design.RawMaterial
+			}
+		}
+	}
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, Summary: fmt.Sprintf("review job %s finished, but its findings can't be read", job), Data: data,
 			next: inv.publicArgv("work", "status", qualifiedJob(job)), nextReason: "shows the job", Details: []string{err.Error()}}
