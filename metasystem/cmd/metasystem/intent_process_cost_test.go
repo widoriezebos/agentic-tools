@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
@@ -141,6 +142,16 @@ func TestProcessCostPublicReport(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(actsDir, "own-act.json"), body, 0600); err != nil {
 		t.Fatal(err)
 	}
+	grantAct := act
+	grantAct.ID, grantAct.Actor = "grant-act", "direct-person"
+	grantAct.Proof.Helm = &humanauthority.HelmGrant{By: "Wido", Grant: "process-choice"}
+	grantBody, err := json.Marshal(grantAct)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(actsDir, "grant-act.json"), grantBody, 0600); err != nil {
+		t.Fatal(err)
+	}
 	report := func() (processmeasure.Measures, map[string]processmeasure.Measures, map[string]any) {
 		t.Helper()
 		code, result, _ := bed.work("goal", "status", bed.id)
@@ -170,7 +181,8 @@ func TestProcessCostPublicReport(t *testing.T) {
 	if total.EstimateMinutes == nil || *total.EstimateMinutes != 90 || total.Corrections != 1 || total.SuiteMinutes == nil || *total.SuiteMinutes != 4 || total.ElapsedFinish != nil || total.ElapsedHours == nil || *total.ElapsedHours != clock.Now().Sub(start.Add(2*time.Minute)).Hours() || !total.ElapsedLowerBound || units["evidence"].ElapsedFinish == nil || !units["evidence"].ElapsedFinish.Equal(finish) || !slices.Contains(total.Unknown, "fix units unavailable") {
 		t.Fatalf("goal cost: %+v", total)
 	}
-	if len(data["processActs"].([]any)) != 1 || data["processActs"].([]any)[0].(map[string]any)["ID"] != "own-act" {
+	acts := data["processActs"].([]any)
+	if len(acts) != 2 || !slices.ContainsFunc(acts, func(raw any) bool { return raw.(map[string]any)["ID"] == "own-act" }) || !slices.ContainsFunc(acts, func(raw any) bool { return raw.(map[string]any)["ID"] == "grant-act" }) {
 		t.Fatalf("process acts: %+v", data)
 	}
 	// A status read cannot retain derived totals. New execution evidence changes it.
@@ -190,7 +202,7 @@ func TestProcessCostPublicReport(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("text status: %d %s %s", code, text, stderr)
 	}
-	for _, fragment := range []string{"own-caused agent", "evidence: hours:", "other: hours:", "goal total:", "estimate 90 minutes", "fix units unavailable", "elapsed finish " + finish.In(time.Local).Format(time.RFC3339)} {
+	for _, fragment := range []string{"process act own-act: own-caused agent", "process act grant-act: own-caused agent", "evidence: hours:", "other: hours:", "goal total:", "estimate 90 minutes", "fix units unavailable", "elapsed finish " + finish.In(time.Local).Format(time.RFC3339)} {
 		if !strings.Contains(strings.Join(strings.Fields(text), " "), fragment) {
 			t.Fatalf("missing %q: %s", fragment, text)
 		}
@@ -231,7 +243,7 @@ func TestProcessCostPublicReport(t *testing.T) {
 func TestProcessPublicationPublicReview(t *testing.T) {
 	t.Parallel()
 	for _, verb := range []string{"run", "commit"} {
-		for _, publication := range []string{"current", "pushed"} {
+		for _, publication := range []string{"current", "reconciled", "adopted", "pushed"} {
 			t.Run(verb+"/"+publication, func(t *testing.T) {
 				t.Parallel()
 				bed := newWorkBed(t)
@@ -273,7 +285,7 @@ func TestProcessPublicationPublicReview(t *testing.T) {
 					t.Fatalf("publication time: %d %+v got %s want %s", code, result, stamp(), want)
 				}
 				clock.Sleep(time.Hour)
-				if code, result := bed.runJSON(processReadOwners(bed, &fail), replay...); code != 0 || stamp() != want {
+				if code, result := bed.runJSON(processReadOwners(bed, &fail, publication), replay...); code != 0 || stamp() != want {
 					t.Fatalf("publication replay changed time: %d %+v %s", code, result, stamp())
 				}
 				code, result, _ := bed.work("work", "status", bed.id, "--work", "evidence")

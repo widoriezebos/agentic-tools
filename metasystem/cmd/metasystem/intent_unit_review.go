@@ -882,7 +882,7 @@ func (inv *intentInvocation) cleanExaminationJoin(root, goalID, unit, rootJob st
 func (inv *intentInvocation) retainPublication(subject *launch.UnitSubject, result intentResult, retain func(launch.UnitSubject) error) error {
 	data, _ := result.Data.(map[string]any)
 	published, ok := data["publication"].(branch.PublishReadResult)
-	if subject == nil || subject.PublishedAt != "" || !ok || published.State == "current" {
+	if subject == nil || subject.PublishedAt != "" || !ok || published.State != "pushed" {
 		return nil
 	}
 	subject.PublishedAt = inv.unitRunner().Manager.Now().UTC().Format(time.RFC3339Nano)
