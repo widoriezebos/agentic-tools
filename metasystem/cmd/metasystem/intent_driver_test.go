@@ -368,6 +368,116 @@ func TestDriverPublicStewardCollection(t *testing.T) {
 
 }
 
+func TestDriverPublicStewardContinuationError(t *testing.T) {
+	t.Parallel()
+	for _, afterLaunch := range []bool{true, false} {
+		name := "before-launch-input-refusal"
+		if afterLaunch {
+			name = "after-launch-save-error"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			bed := driverBed(t)
+			file := bed.goalFile(bed.id)
+			workApprovedBox(file)
+			file.Budget.ActiveJobLimit, file.Budget.ReservedJobMinutesLimit = 4, 3000
+			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+			bed.addGoal(file)
+			bed.starter.hold = "build"
+			first := driverBuild(t, bed, "z-oldest")
+			bed.manager.Sleep(time.Second)
+			other := &workBed{intentBed: bed.intentBed, id: bed.id, worktree: filepath.Join(filepath.Dir(bed.worktree), "other-work"), manager: bed.manager, starter: bed.starter,
+				unitRoot: bed.unitRoot, branchListed: true, head: bed.head, designGate: bed.designGate, workOwnersHook: bed.workOwnersHook, readDirs: map[string]bool{}}
+			if err := os.MkdirAll(other.worktree, 0700); err != nil {
+				t.Fatal(err)
+			}
+			second := driverBuild(t, other, "a-newest")
+			driverFinish(t, bed, "build")
+			bed.starter.hold = "proof"
+			atHelm := false
+			owners := driverOwners(t, bed, "auto", &atHelm)
+			saveErr := errors.New("fixture: save failed after the proof launched")
+			injected := false
+			units := owners.work.units
+			owners.work.units = func(layout stateroot.Layout) *launch.UnitRunner {
+				runner := units(layout)
+				runner.Git = driverGit{bed, other}
+				if afterLaunch {
+					runner.AfterWrite = func(record launch.UnitRunRecord) error {
+						if !injected && record.ID == first && len(record.Rounds) == 1 && len(record.Rounds[0].Steps) == 2 && record.Rounds[0].Steps[1].State == launch.StepRunning {
+							injected = true
+							return saveErr
+						}
+						return nil
+					}
+				}
+				return runner
+			}
+			git := owners.work.git
+			owners.work.git = func(root string, args ...string) ([]byte, error) {
+				data, err := git(root, args...)
+				if slices.Equal(args, []string{"worktree", "list", "--porcelain"}) && err == nil {
+					data = append(data, []byte("\nworktree "+other.worktree+"\nHEAD "+other.head+"\nbranch refs/heads/goal/"+other.id+"\n")...)
+				}
+				return data, err
+			}
+			if !afterLaunch {
+				record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(first)
+				if err != nil {
+					t.Fatal(err)
+				}
+				plan, err := launch.ReadUnitPlan(record.Plan)
+				if err != nil {
+					t.Fatal(err)
+				}
+				brief := plan.Build.Brief
+				if !filepath.IsAbs(brief) {
+					brief = filepath.Join(record.PlanDirectory, brief)
+				}
+				if err := os.WriteFile(brief, append(mustRead(t, brief), []byte("\nedited after start\n")...), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before := len(bed.starter.launched())
+			driveErr := driverStewardCycleResult(t, bed, owners)
+			if afterLaunch {
+				if !injected || !errors.Is(driveErr, saveErr) {
+					t.Fatalf("post-launch save error not returned: injected=%t error=%v", injected, driveErr)
+				}
+			} else if !launch.IsCode(driveErr, "UNIT_NAMED_INPUT_CHANGED") {
+				t.Fatalf("pre-launch input refusal not returned: %v", driveErr)
+			}
+			if started := bed.starter.launched()[before:]; !slices.Equal(started, []string{"proof"}) {
+				t.Fatalf("one tick must start exactly one proof: %v", started)
+			}
+			for _, run := range []string{first, second} {
+				record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if record.State != "running" || len(record.Rounds) != 1 || len(record.Rounds[0].Steps) == 0 || record.Rounds[0].Steps[0].State != launch.StepPassed {
+					t.Fatalf("build not collected: %+v", record)
+				}
+				steps := record.Rounds[0].Steps
+				wantStart := (run == first) == afterLaunch
+				if !wantStart {
+					if len(steps) != 1 {
+						t.Fatalf("run %s must not start a proof in this tick: %+v", run, steps)
+					}
+					continue
+				}
+				if len(steps) != 2 || steps[1].State != launch.StepRunning {
+					t.Fatalf("run %s must start its proof in this tick: %+v", run, steps)
+				}
+				started, err := bed.manager.Store.Read(steps[1].LaunchID)
+				if err != nil || started.State != launch.Running || started.Kind != "proof" || started.WorkingDirectory != record.Worktree {
+					t.Fatalf("proof launch not running for run %s: %+v error=%v", run, started, err)
+				}
+			}
+		})
+	}
+}
+
 func TestDriverPublicWaitDeadline(t *testing.T) {
 	t.Parallel()
 	bed := driverBed(t)
