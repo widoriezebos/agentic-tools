@@ -10,6 +10,7 @@ Deliver
   work         a goal's work: brief, build, review, revise, land, finish, wait and stop
   test         risk-selected tests and their proof
   question     questions for a person, and their answers
+  channel      this seat's status report and its delivery
   agent        messages between the agents on this host: ask, reply and read, never a person
   incident     failures on main that someone must own
 

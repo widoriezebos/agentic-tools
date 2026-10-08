@@ -269,6 +269,9 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	}
 	plainRun := resultData(t, result)["run"].(string)
 	budgeted := bed.brief("budgeted.md", "Read each round: yes\nBuild the unit.\n\nMaximum reader tool calls: 25\n")
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(resultData(t, result)["run"].(string)); err != nil {
+		t.Fatal(err)
+	}
 	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "budget", "--brief", budgeted, "--lines", "5", "--read-tool-calls", "30"}, check...)...)
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "25") {
 		t.Fatalf("conflicting read budget: code=%d %+v", code, result)

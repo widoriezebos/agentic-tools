@@ -589,6 +589,9 @@ func runIntentTopStatus(inv *intentInvocation) int {
 		}
 		return runIntentStatusGoal(inv, inv.input.args[0])
 	}
+	if inv.command.object == "goal" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "goal status needs a goal; nothing was read", next: inv.publicArgv("goal", "list"), nextReason: "lists the goal ids"})
+	}
 	if inv.input.has("work") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--work needs the goal whose work it names; nothing was done",
 			next: inv.typedArgvFor("GOAL"), nextReason: "names the goal"})

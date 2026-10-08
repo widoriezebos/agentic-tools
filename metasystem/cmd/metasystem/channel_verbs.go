@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
 
@@ -73,7 +74,7 @@ func postLanded(root, text, sha string, now time.Time) error {
 
 // channelStatus composes the checkout's status report, printing it and, with
 // post, publishing it to the configured channel and the brain's status.
-func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), landingLog func(string, time.Time) ([]byte, error)) int {
+func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, resolveMachine func(string) (string, error), resolveEndpoint func(string) (goal.Endpoint, error), landingLog func(string, time.Time) ([]byte, error), processReads ...func(string, time.Time, processmeasure.Watermark) processmeasure.Projection) int {
 	root, post := &checkout, &postNow
 	now, err := goalCommandNow(*root)
 	if err != nil {
@@ -87,7 +88,16 @@ func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, reso
 	if err != nil {
 		machine = "this machine"
 	}
-	config := channel.ReportConfig{RepoRoot: *root, Machine: machine, Now: now}
+	read := func(root string, at time.Time, boundary processmeasure.Watermark) processmeasure.Projection {
+		return readProcessReport(root, root, "", "", nil, at, boundary)
+	}
+	if len(processReads) > 0 {
+		read = processReads[0]
+	}
+	state := channel.LoadStatusState(*root)
+	process := read(*root, now, state.ProcessWatermark)
+	now = process.Measures.ObservedAt
+	config := channel.ReportConfig{RepoRoot: *root, Machine: machine, Now: now, Process: process}
 	var text, approvalGoal string
 	var endpoint goal.Endpoint
 	if resolveEndpoint == nil && landingLog == nil {
@@ -105,6 +115,9 @@ func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, reso
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	if *post && state.Pending != nil {
+		text, approvalGoal = state.Pending.Text, state.Pending.GoalID
+	}
 	fmt.Fprintln(stdout, text)
 	if *post {
 		l, e := phase.Load(*root, false)
@@ -121,12 +134,19 @@ func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, reso
 			return 1
 		}
 		defer cancel()
+		if state.Pending == nil {
+			state.Pending = &channel.StatusDelivery{Text: text, GoalID: approvalGoal, At: now, Watermark: process.Watermark}
+			if e = channel.SaveStatusState(*root, state); e != nil {
+				fmt.Fprintln(stderr, e)
+				return 1
+			}
+		}
 		ref, e := l.Provider.Post(ctx, l.Destination, text, nil)
 		if e != nil {
 			fmt.Fprintln(stderr, e)
 			return 1
 		}
-		state := channel.StatusState{LastPost: now.UTC(), ContentDigest: channel.Digest(text), Ref: ref, GoalID: approvalGoal}
+		state = channel.StatusState{LastPost: state.Pending.At.UTC(), ContentDigest: channel.Digest(text), Ref: ref, GoalID: approvalGoal, ProcessWatermark: state.Pending.Watermark}
 		if e = channel.SaveStatusState(*root, state); e != nil {
 			fmt.Fprintln(stderr, e)
 			return 1

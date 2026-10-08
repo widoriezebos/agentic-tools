@@ -65,6 +65,7 @@ func diskCompiledSettings() []Setting {
 var coreSettings = []Setting{
 	{Key: "host.builds", Default: "auto", Meaning: "build admission: auto, a positive distinct-goal cap, or person"},
 	{Key: "host.load-max", Default: "8", Meaning: "automatic builds require current one-minute host load below this positive declaration"},
+	{Key: "process.change", Default: "person", Meaning: "whether an agent may apply a cited process setting or needs a person to execute the exact proposal"},
 	{Key: "landing.batch", Default: "auto", Meaning: "batch selection cap, distinct from landing.batch-root; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.proof", Default: "auto", Meaning: "full-proof decisions; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.on-red", Default: "auto", Meaning: "red decisions; consumption deferred to lane-reads-its-policies"},

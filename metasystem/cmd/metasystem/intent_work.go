@@ -377,6 +377,7 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentSettingsKeys,
 		},
 		{
+			flags:  processSettingFlags,
 			object: "settings", action: "set", laidOut: true, audience: "both", summary: "set one configuration key for this checkout's seat",
 			usage: []string{"metasystem settings set KEY VALUE"},
 			details: []string{"Writes seat settings into metasystem.conf.local, the seat's own layer over metasystem.conf.",
@@ -386,6 +387,11 @@ func intentWorkCommands() []intentCommand {
 			maxArgs:  2,
 			examples: []string{"metasystem settings set role.default.model.claude claude-opus-5-5"},
 			run:      runIntentSettingsSet,
+		},
+		{
+			object: "settings", action: "unset", laidOut: true, audience: "both", summary: "restore an inherited setting by undoing a process act",
+			usage: []string{"metasystem settings unset KEY --undo ID"}, flags: processSettingFlags, maxArgs: 1,
+			examples: []string{"metasystem settings unset launch.codex.sandbox --undo ID"}, run: runIntentSettingsUnset,
 		},
 		{
 			object: "settings", action: "check", laidOut: true, audience: "both", summary: "validate every setting and the testing contract, changing nothing",
@@ -504,6 +510,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		}
 		return inv.unitLaunchAuthority(record, spec, settings)
 	}
+	runner.Manager.SandboxAct = inv.consumedSandboxAct
 	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
 		if len(unit.Rounds) > 0 && execution.Kind == "build" && execution.Round == unit.Rounds[len(unit.Rounds)-1].Number {
 			round := unit.Rounds[len(unit.Rounds)-1]
@@ -540,10 +547,44 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if file.Claimed != nil {
 			revision = file.Claimed.Revision
 		}
-		return dispatchcore.ReconcileUnitLaunch(inv.layout.InstallationRoot.Path(), execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
-			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil)
+		if err := dispatchcore.ReconcileUnitLaunch(inv.layout.InstallationRoot.Path(), execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
+			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil); err != nil {
+			return err
+		}
+		if err := inv.observeProcessDrift(unit); err != nil {
+			fmt.Fprintf(inv.stderr, "warning: process drift unavailable: %s\n", err)
+		}
+		return nil
 	}
 	runner.PlanProof = inv.unitProof
+	runner.AdmitEstimate = func(plan *launch.UnitPlan) error {
+		// A manual repair must work without readable check declarations.
+		if !inv.input.has("check") {
+			full, _ := landingProofCommand(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, "origin/main", "proof.full", func(root string, args ...string) (string, error) {
+				data, err := inv.work().git(root, args...)
+				return string(data), err
+			})
+			plan.FullArgv = strings.Fields(full)
+		}
+		person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
+		var err error
+		if problem := inv.selectLayoutRoot(); problem != nil {
+			err = fmt.Errorf("the estimate's goal state cannot be read: %s", problem.Summary)
+		} else {
+			err = inv.freezeUnitEstimate(plan, inv.designGateFacts(inv.layout.InstallationRoot.Path(), plan.Goal), person)
+		}
+		if err != nil {
+			if !person && errors.Is(err, errEstimateChanged) {
+				return fmt.Errorf("estimate unavailable: %w; restore the accepted design page before building", err)
+			}
+			plan.Estimate = nil
+			fmt.Fprintf(inv.stderr, "warning: estimate unavailable (%s); the build goes on at your word\n", err)
+		}
+		if err == nil && plan.Estimate == nil {
+			fmt.Fprintln(inv.stderr, "warning: estimate unavailable; the build goes on")
+		}
+		return nil
+	}
 	judge := landingFlakeJudge(inv.layout.InstallationRoot.Path(), func(root string, args ...string) (string, error) {
 		data, err := inv.work().git(root, args...)
 		return string(data), err
@@ -757,7 +798,7 @@ func runIntentBuildPlan(inv *intentInvocation) int {
 		}
 	}
 	path := inv.callerPath(inv.input.text("plan"))
-	plan, err := launch.ReadUnitPlan(path)
+	plan, err := launch.ReadUnitPlanInput(path)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, Summary: err.Error() + "; nothing was built", code: 1,
 			next: inv.sameCommand(), nextReason: "once --plan names a readable plan"})
@@ -2623,7 +2664,7 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: problem.Error(),
 			next: inv.publicArgv("settings", "keys"), nextReason: "lists the settings"})
 	}
-	if problem := config.SettingValueProblem(key, value); problem != nil {
+	if problem := config.SettingValueProblem(key, value); problem != nil && inv.command.action != "unset" {
 		retryValue := "VALUE"
 		if config.PolicyScope(key) != "" {
 			retryValue = "auto"
@@ -2635,6 +2676,15 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
+	if key == "process.change" {
+		if _, _, problem := inv.settingsPerson(inv.layout, "settings set "+key); problem != nil {
+			return inv.render(*problem)
+		}
+		return inv.runProcessSetting(key, value)
+	}
+	if inv.input.text("undo") != "" {
+		return inv.runProcessSetting(key, value)
+	}
 	if config.PolicyScope(key) != "" && authoritySettings[key] {
 		return inv.runPolicySet(key, value)
 	}
@@ -2642,6 +2692,9 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 		if problem := inv.directPersonProof("settings set " + key); problem != nil {
 			return inv.render(*problem)
 		}
+	}
+	if strings.HasPrefix(key, "proof.") || strings.HasPrefix(key, "review.") || strings.HasPrefix(key, "landing.") || strings.HasPrefix(key, "launch.") {
+		return inv.runProcessSetting(key, value)
 	}
 	local := intentConfPath(inv.layout) + ".local"
 	targets := []intentTarget{{Kind: "setting", ID: key}}
@@ -2761,7 +2814,7 @@ func (inv *intentInvocation) resumeChannelWait(id string, row metarun.Waiter, ti
 // and an environment-supplied clock. Only
 // the person's own proof at the enrolled terminal sets them, never the helm
 // and never a power of attorney.
-var authoritySettings = map[string]bool{"host.builds": true, "host.load-max": true, "metasystem.runtimes": true, "landing.batch": true, "landing.proof": true, "landing.on-red": true, "landing.trunk-red": true, "seat.driver": true, "review.stop": true, "goal.raise": true, "question.route": true}
+var authoritySettings = map[string]bool{"host.builds": true, "host.load-max": true, "metasystem.runtimes": true, "landing.batch": true, "landing.proof": true, "landing.on-red": true, "landing.trunk-red": true, "seat.driver": true, "review.stop": true, "goal.raise": true, "question.route": true, "process.change": true}
 
 // directPersonProof refuses unless this shell is the person at the enrolled
 // terminal, proven by the walk itself.

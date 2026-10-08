@@ -1,9 +1,12 @@
 package launch
 
 import (
+	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -69,6 +72,7 @@ type ShippedSeatWindow struct {
 }
 
 type Settings struct {
+	LocalSHA256                                       string
 	SeatWindow, BuildWindow, DesignWindow, ReadWindow int64
 	BuildModel, BuildEffort, DesignModel, ReadModel   string
 	CritiqueModel                                     string
@@ -162,6 +166,10 @@ var laneModelOrder = []string{BuildRuntimeKey, CritiqueRuntimeKey, DesignRuntime
 var boundModelPrefix = map[string]string{SeatModelKey: BuildModelKey, LandingModelKey: BuildModelKey}
 
 func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Settings, error) {
+	local, readErr := os.ReadFile(confPath + ".local")
+	if readErr != nil && !os.IsNotExist(readErr) {
+		return Settings{}, readErr
+	}
 	resolve := func(key string) (string, string, error) {
 		params := config.GetParams{Key: key, ConfPath: confPath, LookupEnv: lookupEnv}
 		value, _, err := config.Get(params)
@@ -312,6 +320,13 @@ func resolveSettings(confPath string, lookupEnv func(string) (string, bool)) (Se
 		if *targets[offset], err = number(offset + 8); err != nil {
 			return Settings{}, err
 		}
+	}
+	current, readErr := os.ReadFile(confPath + ".local")
+	if (readErr != nil && !os.IsNotExist(readErr)) || !bytes.Equal(local, current) {
+		return Settings{}, fmt.Errorf("local settings changed during resolution or are unavailable")
+	}
+	if readErr == nil {
+		result.LocalSHA256 = fmt.Sprintf("%x", sha256.Sum256(current))
 	}
 	return result, nil
 }

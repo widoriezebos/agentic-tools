@@ -120,6 +120,7 @@ func init() {
 
 	read("goal list", "lists the goals")
 	read("goal show", "shows one goal's record")
+	read("goal status", "shows the goal's recorded process cost")
 	read("decision list", "lists the recorded decisions")
 	read("decision show", "shows one record")
 	read("grant list", "lists the powers of attorney")

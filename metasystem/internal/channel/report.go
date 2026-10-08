@@ -16,10 +16,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 )
 
 type ReportConfig struct {
 	RepoRoot, Machine string
+	Process           processmeasure.Projection
 	Now, WindowStart  time.Time
 	// Location is the IANA time zone used for the human-readable status time.
 	// It defaults to the posting machine's zone. Supplying the same Location
@@ -40,6 +42,9 @@ func ComposeStatusReport(c ReportConfig) (string, string, error) {
 }
 
 func ComposeStatusReportAtEndpoint(c ReportConfig, endpoint goal.Endpoint, landingLog func(string, time.Time) ([]byte, error)) (string, string, error) {
+	if landingLog == nil {
+		landingLog = defaultLandingLogBytes
+	}
 	return composeStatusReportWithReads(c, reportGoalReads{
 		resolveEndpoint: func(root string) (goal.Endpoint, error) {
 			actual, err := filepath.EvalSymlinks(root)
@@ -152,6 +157,16 @@ func composeStatusReportWithReads(c ReportConfig, reads reportGoalReads) (string
 	}
 	lineLimit -= len(backlog)
 	lines := []string{}
+	var stops, processProblems, processLines []string
+	for _, line := range c.Process.Lines {
+		if strings.HasPrefix(line, "Automatic process changes are held:") {
+			stops = append(stops, line)
+		} else if strings.HasPrefix(line, "Unknown: process ") {
+			processProblems = append(processProblems, line)
+		} else {
+			processLines = append(processLines, line)
+		}
+	}
 	brainState := brain.Read(c.RepoRoot, reads.ledgerIdentity(c.RepoRoot))
 	if brainState.State == brain.Declared {
 		if status, statusErr := brain.ReadStatus(c.RepoRoot); statusErr == nil && status.Line == brain.StatusLine(*brainState.Record) {
@@ -159,9 +174,10 @@ func composeStatusReportWithReads(c ReportConfig, reads reportGoalReads) (string
 		}
 	}
 	lines = append(lines, fmt.Sprintf("%s status %s", c.Machine, c.Now.In(c.Location).Format("2006-01-02 15:04 -0700")))
-	for _, part := range [][]string{needs, delivered, next} {
+	lines = append(stops[:min(len(stops), lineLimit-len(lines))], lines...)
+	for _, part := range [][]string{needs, processProblems, processLines, delivered, next} {
 		for _, line := range part {
-			if len(lines) == lineLimit {
+			if len(lines) >= lineLimit {
 				break
 			}
 			lines = append(lines, line)
@@ -355,11 +371,19 @@ func isStatusTimestamp(value string) bool {
 	return false
 }
 
+type StatusDelivery struct {
+	Text, GoalID string
+	At           time.Time
+	Watermark    processmeasure.Watermark
+}
+
 type StatusState struct {
-	LastPost      time.Time  `json:"lastPost"`
-	ContentDigest string     `json:"contentDigest"`
-	Ref           MessageRef `json:"ref"`
-	GoalID        string     `json:"goalId,omitempty"`
+	ProcessWatermark processmeasure.Watermark `json:"processWatermark"`
+	Pending          *StatusDelivery          `json:"pending,omitempty"`
+	LastPost         time.Time                `json:"lastPost"`
+	ContentDigest    string                   `json:"contentDigest"`
+	Ref              MessageRef               `json:"ref"`
+	GoalID           string                   `json:"goalId,omitempty"`
 }
 
 func LoadStatusState(repo string) StatusState {

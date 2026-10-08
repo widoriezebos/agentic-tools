@@ -88,6 +88,7 @@ type Manager struct {
 	StartCap      time.Duration
 	Settings      Settings
 	SettingsError error
+	SandboxAct    func(Record, Settings) string
 	// CompressAbove is disk.compress-above-mib in bytes: a launch's log
 	// that large is gzipped when the launch ends; 0 compresses nothing.
 	CompressAbove int64
@@ -230,6 +231,9 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 		// supervisor process's engine may sit in another installation or a
 		// steward pin, so it reads the mode from the record, never its own.
 		setString(record.AdapterData, "sandbox", settings.CodexSandbox)
+		if m.SandboxAct != nil {
+			setString(record.AdapterData, "sandboxAct", m.SandboxAct(record, settings))
+		}
 	}
 	if spec.Page != "" {
 		setString(record.AdapterData, "page", spec.Page)

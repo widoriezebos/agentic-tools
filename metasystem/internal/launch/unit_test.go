@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strconv"
@@ -447,6 +448,71 @@ func isolatedGitEnvironment(worktree, alternate string, optionalLocks bool) func
 			return fmt.Errorf("optional locks mismatch: %q", call.Env[3])
 		}
 		return nil
+	}
+}
+
+func TestUnitPlanRetainsDeclaredCheckAndEstimate(t *testing.T) {
+	t.Parallel()
+	fixture := baseUnitFixture(t)
+	plan, err := ReadUnitPlan(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Check = &UnitCheck{SourceTree: "declaration-tree", Cheap: "true", Audits: "true", Minutes: 15,
+		Directory: fixture.worktree, Environment: []string{"A=B"}}
+	checkMinutes := 2.0
+	plan.Estimate = &UnitEstimate{DesignID: "design", SourceSHA256: strings.Repeat("a", 64), BodySHA256: strings.Repeat("b", 64),
+		Unit: plan.Unit, ElapsedMinutes: 10, CheckMinutes: &checkMinutes}
+	plan.FullArgv = []string{"go", "run", "./cmd/devgate", "full"}
+	data, err := json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.plan, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	retained, err := ReadUnitPlan(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(retained.Check, plan.Check) || !reflect.DeepEqual(retained.Estimate, plan.Estimate) || !slices.Equal(retained.FullArgv, plan.FullArgv) {
+		t.Fatalf("retained plan lost declared checks or telemetry: %+v", retained)
+	}
+	for _, field := range []string{"estimate", "fullArgv"} {
+		t.Run(field, func(t *testing.T) {
+			t.Parallel()
+			input := retained
+			if field == "estimate" {
+				input.FullArgv = nil
+			} else {
+				input.Estimate = nil
+			}
+			path := filepath.Join(t.TempDir(), "plan.json")
+			data, err := json.Marshal(input)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(path, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err = ReadUnitPlanInput(path)
+			var problem *CodedError
+			if !errors.As(err, &problem) || problem.Code != "UNIT_PLAN_INVALID" || problem.Facts != "field="+field {
+				t.Fatalf("caller supplied retained %s: %v", field, err)
+			}
+		})
+	}
+	plan.Estimate, plan.FullArgv = nil, nil
+	data, err = json.Marshal(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(fixture.plan, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	input, err := ReadUnitPlanInput(fixture.plan)
+	if err != nil || !reflect.DeepEqual(input.Check, plan.Check) {
+		t.Fatalf("caller plan lost its declared check: %+v %v", input.Check, err)
 	}
 }
 

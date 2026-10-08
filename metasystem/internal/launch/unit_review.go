@@ -52,6 +52,7 @@ type UnitSubject struct {
 	ExaminationRound int64    `json:"examinationRound,omitempty"`
 	// ExaminationReturnPath is the return in the store the review resolved.
 	ExaminationReturnPath string `json:"examinationReturnPath,omitempty"`
+	PublishedAt           string `json:"publishedAt,omitempty"`
 }
 
 // UnitReview is a completed round as a committed review consumes it.
