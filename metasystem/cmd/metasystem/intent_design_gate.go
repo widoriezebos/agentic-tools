@@ -158,6 +158,11 @@ func (inv *intentInvocation) designGateFacts(root, id string, size ...bool) desi
 				}
 				if ref.Status == "accepted" {
 					_, marked, found := strings.Cut(d.Critique, "(convergence ")
+					if !found {
+						if index := strings.LastIndex(d.Critique, "(ruling "); index >= 0 {
+							marked, found = d.Critique[index+len("(ruling "):], true
+						}
+					}
 					hasExit := false
 					if file != nil {
 						for _, exit := range file.DesignExits {

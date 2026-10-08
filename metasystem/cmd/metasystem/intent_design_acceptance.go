@@ -89,12 +89,17 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		if !required {
 			return nil
 		}
-		read, readErr := dispatchcore.CollectExamination(inv.layout.InstallationRoot.Path(), chain.NewestJob)
+		read, readErr := inv.delivery().examinationRead(inv.layout.InstallationRoot.Path(), chain.NewestJob)
 		if readErr != nil {
 			return fail(readErr)
 		}
 		if read.Material != 0 {
-			return nil
+			if plan.subject == read.Subject.ContentDigest {
+				return nil
+			}
+			if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, inv.registerDecisions(chain.Root, chain.NewestRound)); err != nil {
+				return fail(err)
+			}
 		}
 		root, err := inv.jobRecord(chain.Root)
 		if err != nil {
@@ -103,10 +108,16 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		if clean, err := readsubject.CleanRegister(root["findingRegister"]); err != nil || !clean {
 			return fail(fmt.Errorf("the critique has unresolved findings: %v", err))
 		}
-		if plan.subject != read.Subject.ContentDigest {
+		if read.Material == 0 && plan.subject != read.Subject.ContentDigest {
 			return fail(project.ErrDesignChanged)
 		}
 		page := []byte(read.Subject.DesignPage)
+		if read.Material != 0 {
+			page, err = os.ReadFile(plan.design)
+			if err != nil || digestText(page) != plan.subject {
+				return fail(project.ErrDesignChanged)
+			}
+		}
 		units, err := launch.DeclaredUnits(plan.design)
 		if err != nil || len(units) == 0 {
 			return fail(fmt.Errorf("the accepted design needs declared source units: %v", err))
@@ -137,6 +148,9 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 			}
 		}
 		head = append(head, "- Status: accepted\n", fmt.Sprintf("- Critique: closed at round %d on 0 material findings folded as 0 unit acceptance items (convergence %s)\n", exit.Round, operation))
+		if read.Material != 0 {
+			head[len(head)-1] = fmt.Sprintf("- Critique: closed at round %d on %d material findings folded into the written Decisions (convergence %s)\n", exit.Round, read.Material, operation)
+		}
 		exit.Page = strings.Join(lines[:record.HeadLine-1], "") + strings.Join(head, "") + strings.Join(lines[record.Head[len(record.Head)-1].Line:], "")
 		exit.BodySHA256, err = project.DesignBodyDigest(plan.design, []byte(exit.Page))
 		if err == nil {

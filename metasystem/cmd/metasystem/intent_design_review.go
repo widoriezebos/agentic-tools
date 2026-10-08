@@ -139,7 +139,7 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 	if recordText(chain.Newest, "status") == "completed" && !chain.Closed {
 		required, err := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
 		if err == nil && required {
-			_, err = dispatchcore.CollectExamination(inv.layout.InstallationRoot.Path(), chain.NewestJob)
+			_, err = inv.delivery().examinationRead(inv.layout.InstallationRoot.Path(), chain.NewestJob)
 			if err == nil {
 				_, err = dispatchcore.CritiqueRegisterAdvance(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestJob)
 			}

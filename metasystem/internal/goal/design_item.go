@@ -20,6 +20,7 @@ type DesignExit struct {
 	Round                                           int64
 	Revision                                        uint64
 	Expected, Page, Dispositions                    string
+	Who, Ruling, Reason, Impact, At                 string
 }
 
 // PublishDesignExit commits acceptance before any document can expose it.
@@ -38,13 +39,21 @@ func PublishDesignExit(r VerbRequest, id string, exit DesignExit, admit func() e
 			}
 			for _, existing := range f.DesignExits {
 				if existing.Operation == exit.Operation {
+					exit.Revision = existing.Revision
 					if !reflect.DeepEqual(existing, exit) {
 						return nil, fmt.Errorf("design exit %s conflicts with its committed acceptance", exit.Operation)
 					}
 					return nil, AlreadyHolds{Reason: "the design acceptance is committed"}
 				}
 			}
-			if f.State != StateClaimed || !ownPair(f.Claimed, r.Actor) || f.Approved == nil || f.StopFence != nil {
+			if exit.Who != "" {
+				if r.Authority == nil || r.Authority.Helm != nil || !r.Authority.EnrolledTerminalFor(r.Endpoint.Root) {
+					return nil, fmt.Errorf("only the person at their own terminal can rule on a design")
+				}
+				if exit.Who != r.Actor.Human {
+					return nil, fmt.Errorf("the design ruling names another person")
+				}
+			} else if f.State != StateClaimed || !ownPair(f.Claimed, r.Actor) || f.Approved == nil || f.StopFence != nil {
 				return nil, fmt.Errorf("goal %s changed or is not held by this session; acceptance remains pending", id)
 			}
 			if err := admit(); err != nil {

@@ -128,6 +128,8 @@ func TestDesignReviewAcceptanceKeepsUnresolvedHistoryPending(t *testing.T) {
 
 func TestDesignReviewPublishesAcceptance(t *testing.T) {
 	t.Parallel()
+	t.Run("person forms", testDesignReviewPersonActs)
+	t.Run("concrete fold", testDesignReviewConcreteFoldPublishesExit)
 	b, _, _ := designEvidenceBed(t, evidenceInventory, acceptanceUnits)
 	if err := os.MkdirAll(filepath.Join(b.root(), ".git"), 0700); err != nil {
 		t.Fatal(err)

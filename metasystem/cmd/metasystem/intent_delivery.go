@@ -234,8 +234,11 @@ type intentProcessResult struct {
 // intentDeliveryOwners are the owners the delivery commands call. Production
 // uses defaultIntentDeliveryOwners; tests give each invocation its own.
 type intentDeliveryOwners struct {
-	rebindBudget   func(string, string) *intentResult
-	laneRegistrant func(string) string
+	designRecord    func(string) (intentDesignRecord, []byte, error)
+	designChains    func(string, string, string) []dispatchcore.DesignCritiqueChain
+	examinationRead func(string, string) (readsubject.Read, error)
+	rebindBudget    func(string, string) *intentResult
+	laneRegistrant  func(string) string
 	// draftPaths finds cited files missing from the design's source tree;
 	// nil reads Git through the dispatch owner.
 	draftPaths func([]byte, string) ([]string, error)
@@ -388,6 +391,15 @@ func defaultIntentDeliveryOwners(options ...goalBranchSweepOptions) *intentDeliv
 func (inv *intentInvocation) delivery() *intentDeliveryOwners {
 	if inv.owners.delivery == nil {
 		inv.owners.delivery = defaultIntentDeliveryOwners()
+	}
+	if inv.owners.delivery.designRecord == nil {
+		inv.owners.delivery.designRecord = readIntentDesignRecord
+	}
+	if inv.owners.delivery.designChains == nil {
+		inv.owners.delivery.designChains = dispatchcore.DesignCritiqueChains
+	}
+	if inv.owners.delivery.examinationRead == nil {
+		inv.owners.delivery.examinationRead = dispatchcore.CollectExamination
 	}
 	return inv.owners.delivery
 }
