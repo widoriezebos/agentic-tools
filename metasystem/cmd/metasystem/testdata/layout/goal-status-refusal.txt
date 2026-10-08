@@ -1,0 +1,2 @@
+✗ goal status needs a goal; nothing was read
+  → metasystem goal list  lists the goal ids

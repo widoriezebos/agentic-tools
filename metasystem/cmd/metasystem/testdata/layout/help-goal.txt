@@ -3,6 +3,7 @@ metasystem goal · the backlog: open, approve, budget, claim and conclude goals
 Read
   list                   list the open goals
   show                   one goal's record: intent, next step, budget and designs
+  status                 a goal's work and measured process cost across all runs
   notes                  read, add or close a goal's non-breaking read findings
 
 Decide

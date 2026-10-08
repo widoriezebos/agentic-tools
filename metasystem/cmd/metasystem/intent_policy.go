@@ -242,7 +242,7 @@ func (inv *intentInvocation) runPolicyShow(key string) int {
 
 // settingsPerson tries the calling worktree, its primary checkout, then the
 // destination. Roster writes retain their separate, destination-only gate.
-func (inv *intentInvocation) settingsPerson(destination stateroot.Layout, act string) (string, time.Time, *intentResult) {
+func (inv *intentInvocation) settingsPerson(destination stateroot.Layout, act string, observed ...*humanauthority.Proof) (string, time.Time, *intentResult) {
 	layouts := []stateroot.Layout{}
 	if calling, err := inv.owners.resolver.ResolveLayout(inv.cwd); err == nil {
 		layouts = append(layouts, calling)
@@ -272,6 +272,9 @@ func (inv *intentInvocation) settingsPerson(destination stateroot.Layout, act st
 		proof, err := inv.owners.prove(rootPath, int64(os.Getppid()), nil, "", "", now)
 		if err != nil {
 			continue
+		}
+		if len(observed) > 0 {
+			*observed[0] = proof
 		}
 		if proof.Helm != nil || !proof.EnrolledTerminalFor(rootPath) {
 			_ = humanauthority.RecordAttorneyRefusal(rootPath, proof, act, "set only by the person's own proof", now)

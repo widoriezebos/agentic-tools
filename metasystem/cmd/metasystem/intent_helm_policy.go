@@ -18,7 +18,7 @@ import (
 // policies at that owner. Recorded keys keep an existing helm's scope visible
 // when an advisory registry can no longer be read.
 func (inv *intentInvocation) helmPolicyKeys(checkout string, state helm.State) []string {
-	keys := map[string]bool{"seat.driver": true, "review.stop": true, "goal.raise": true}
+	keys := map[string]bool{"process.change": true, "seat.driver": true, "review.stop": true, "goal.raise": true}
 	registry, _ := inv.policyReaders().Registry(checkout)
 	same := func(path string) bool {
 		if path == "" {

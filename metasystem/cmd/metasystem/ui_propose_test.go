@@ -197,7 +197,7 @@ func TestNoProposableFieldIsAnAuthorityAndEveryRefusalIsARealFlag(t *testing.T) 
 
 // Every goal action the tool refuses by name is a public action of the goal
 // object with a usage line, and the nine and the refused ones together are every
-// public action the object has but its two reads.
+// public action the object has but its reads.
 //
 // The usage line is what the refusal quotes, so a Partner asked for `goal done`
 // is told the form to type rather than a form this build invented; and the
@@ -219,9 +219,9 @@ func TestEveryGoalActionIsProposableOrRefusedWithItsUsageLine(t *testing.T) {
 	}
 
 	// Every public action of the goal object is one of the three: one of the
-	// nine, one the refusal names, or a read (goal list, goal show), which is
+	// nine, one the refusal names, or a read, which is
 	// not an act at all.
-	reads := []string{"list", "show"}
+	reads := []string{"list", "show", "status"}
 	for action := range described {
 		_, proposable := uitools.ProposedActionOf(action)
 		named := false

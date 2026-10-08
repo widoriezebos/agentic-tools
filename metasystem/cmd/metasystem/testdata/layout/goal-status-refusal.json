@@ -1,0 +1,19 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "goal status",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "goal status needs a goal; nothing was read",
+  "next": {
+    "argv": [
+      "metasystem",
+      "goal",
+      "list"
+    ],
+    "reason": "lists the goal ids"
+  }
+}
+
+--
