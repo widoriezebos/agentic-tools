@@ -13,24 +13,39 @@ import (
 type UnitDrop struct {
 	Unit, Operation, Loop, Subject, Commit, Tree, Proof string
 	Decisions, Requirements, Actor, Reason, Impact, At  string
+	PatchDigest, CommitTree                             string
 	Revision                                            uint64
 	Attempt                                             int
 	Covered, Findings                                   []string
 }
 
 func (d UnitDrop) validate() error {
-	if !bareReviewID(d.Unit) || !bareReviewID(d.Operation) || !bareReviewID(d.Loop) || !bareReviewID(d.Subject) || d.Attempt < 1 || d.Revision == 0 || len(d.Covered) == 0 || len(d.Findings) == 0 || d.Proof == "" || d.Actor == "" || strings.TrimSpace(d.Reason) == "" {
+	if !bareReviewID(d.Unit) || !bareReviewID(d.Operation) || !bareReviewID(d.Loop) || !bareReviewID(d.Subject) || d.Attempt < 1 || d.Revision == 0 || (len(d.Covered) == 0 && d.PatchDigest == "") || len(d.Findings) == 0 || d.Proof == "" || d.Actor == "" || strings.TrimSpace(d.Reason) == "" {
 		return fmt.Errorf("a drop needs its exact unit, stopped read, covered commits, successful checks and reason")
 	}
 	if _, err := time.Parse(time.RFC3339Nano, d.At); err != nil {
 		return err
 	}
-	for _, value := range append([]string{d.Commit, d.Tree}, d.Covered...) {
+	identities := append([]string{d.Tree}, d.Covered...)
+	if d.Commit != "" {
+		identities = append(identities, d.Commit)
+	}
+	if d.CommitTree != "" {
+		identities = append(identities, d.CommitTree)
+	}
+	if (len(d.Covered) > 0) != (d.Commit != "") {
+		return fmt.Errorf("covered commits need their inverse commit")
+	}
+	for _, value := range identities {
 		if raw, err := hex.DecodeString(value); err != nil || len(raw) != 20 {
 			return fmt.Errorf("a drop needs full commit and tree identities")
 		}
 	}
-	for _, value := range []string{d.Decisions, d.Requirements} {
+	digests := []string{d.Decisions, d.Requirements}
+	if d.PatchDigest != "" {
+		digests = append(digests, d.PatchDigest)
+	}
+	for _, value := range digests {
 		if raw, err := hex.DecodeString(value); err != nil || len(raw) != 32 {
 			return fmt.Errorf("a drop needs its bound decisions and requirements")
 		}

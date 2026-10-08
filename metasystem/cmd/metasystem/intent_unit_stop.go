@@ -132,7 +132,7 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 			findings = append(findings, intentFinding{ID: f.ID, Title: f.Claim, Claim: f.Claim, Material: f.Material})
 		}
 	}
-	binding := reviewBinding{Goal: record.Goal, Work: record.Unit, Attempt: round.Number, Subject: work.subject.Commit, Examination: reviewRoot, Round: work.subject.ExaminationRound}
+	binding := reviewBinding{Goal: record.Goal, Work: record.Unit, Attempt: round.Number, Subject: reviewSubjectIdentity(*work.subject), Examination: reviewRoot, Round: work.subject.ExaminationRound}
 	binding.Return, _, err = reviewReturnDigest(returnPath)
 	if err != nil {
 		return &intentResult{Outcome: intentFailed, code: 1, Summary: err.Error()}

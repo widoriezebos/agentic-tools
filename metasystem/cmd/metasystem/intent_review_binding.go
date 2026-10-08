@@ -365,7 +365,7 @@ func (inv *intentInvocation) reviseDecisions(id string, work launch.NamedWork, a
 	for index := range work.Record.Subjects {
 		subject := work.Record.Subjects[index]
 		switch {
-		case subject.Round == bound.Attempt && subject.Commit == bound.Subject && subject.Examination == bound.Examination && subject.ExaminationRound == bound.Round:
+		case subject.Round == bound.Attempt && reviewSubjectIdentity(subject) == bound.Subject && subject.Examination == bound.Examination && subject.ExaminationRound == bound.Round:
 			examined = &subject
 		case subject.Round > bound.Attempt && subject.Examination != "":
 			return refuse("the decisions file answers attempt %d, but attempt %d has a later completed examination (%s) that supersedes it", bound.Attempt, subject.Round, subject.Examination)
@@ -376,6 +376,9 @@ func (inv *intentInvocation) reviseDecisions(id string, work launch.NamedWork, a
 	}
 	install := branch.CriticStore(inv.goalWorktreeInstallation(work.Record.Worktree), bound.Examination)
 	returnPath := inv.returnPathAt(install, bound.Examination, bound.Round)
+	if examined.Commit == "" {
+		returnPath = examined.ExaminationReturnPath
+	}
 	digest, findings, err := reviewReturnDigest(returnPath)
 	if err != nil || digest != bound.Return {
 		return refuse("the findings return of examination %s round %d is missing or no longer the one the decisions answer", bound.Examination, bound.Round)

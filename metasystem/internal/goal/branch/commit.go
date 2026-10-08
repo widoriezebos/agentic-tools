@@ -58,6 +58,8 @@ var pushProtocolAvailable bool
 
 type CommitRequest struct {
 	BeforeCommit                                  func(dir, parent, tree string) error
+	BeforeInstall                                 func() (func() error, error)
+	PrepareOnly                                   bool
 	ResumeWorktree                                string
 	KeepWorktree                                  func() bool
 	FrozenPatch                                   []byte
@@ -401,23 +403,66 @@ func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchS
 			return "", operationRefusal(ReplayConflictCode, "the staged change doesn't apply to goal %s's branch as origin holds it (%s): %v\nrun: metasystem work status %s", req.GoalID, state.baseTip, err, req.GoalID)
 		}
 	}
+
+	parent, err := r.facts.Head(worktree)
+	if err != nil {
+		return "", err
+	}
+	resumedCommit := req.ResumeWorktree != "" && req.Kind == Drop && !req.PrepareOnly && parent != state.baseTip
+	if resumedCommit {
+		// An interrupted install can leave the inverse committed only in scratch.
+		suffix, err := r.facts.Suffix(worktree, state.baseTip, parent)
+		if err != nil {
+			return "", err
+		}
+		ancestor, err := r.facts.Ancestor(worktree, state.baseTip, parent)
+		if err != nil {
+			return "", err
+		}
+		kind, err := r.facts.Kind(worktree, parent, req.GoalID)
+		if err != nil || !ancestor || len(suffix) != 1 || suffix[0] != parent || kind.Kind != Drop || kind.Operation != req.OpID || kind.Unit != req.Unit {
+			return "", operationRefusal(StaleCode, "the branch moved while its publication check ran\nrun: metasystem work review %s --work %s", req.GoalID, unitList(req.Units))
+		}
+	}
 	if req.BeforeCommit != nil {
 		tree, err := r.facts.Index(worktree)
 		if err != nil {
 			return "", err
 		}
-		parent, err := r.facts.Head(worktree)
-		if err != nil {
-			return "", err
+		expectedParent := parent
+		if resumedCommit {
+			expectedParent = state.baseTip
 		}
-		if err := req.BeforeCommit(worktree, parent, tree); err != nil {
+		if err := req.BeforeCommit(worktree, expectedParent, tree); err != nil {
 			return "", err
 		}
 	}
-	if req.ResumeWorktree != "" {
-		if parent, err := r.facts.Head(worktree); err != nil || parent != state.baseTip {
-			return "", operationRefusal(StaleCode, "the branch moved while its publication check ran\nrun: metasystem work review %s --work %s", req.GoalID, unitList(req.Units))
+	current, err := r.facts.Head(worktree)
+	if err != nil {
+		return "", err
+	}
+	if req.ResumeWorktree != "" && (current != parent || !resumedCommit && current != state.baseTip) {
+		return "", operationRefusal(StaleCode, "the branch moved while its publication check ran\nrun: metasystem work review %s --work %s", req.GoalID, unitList(req.Units))
+	}
+	if resumedCommit {
+		index, err := r.facts.Index(worktree)
+		if err != nil {
+			return "", err
 		}
+		tree, err := r.facts.Tree(worktree)
+		if err != nil || index != tree {
+			return "", fmt.Errorf("the retained drop commit changed: %v", err)
+		}
+		if _, err := r.facts.Range(worktree, req.EndpointTip, parent, req.GoalID); err != nil {
+			return "", err
+		}
+		if err := checkClaim(req.CheckClaim); err != nil {
+			return "", err
+		}
+		return parent, nil
+	}
+	if req.PrepareOnly {
+		return r.facts.Index(worktree)
 	}
 	if err := r.effects.Commit(worktree, subject, trailer, false); err != nil {
 		return "", err
@@ -534,7 +579,22 @@ func (r commitRepository) commitStagedOnto(req CommitRequest, state commitBranch
 	if err != nil {
 		return "", err
 	}
+	var undo func() error
+	if req.BeforeInstall != nil {
+		undo, err = req.BeforeInstall()
+		if err != nil {
+			return "", err
+		}
+	}
+	if req.PrepareOnly {
+		return newTip, nil
+	}
 	if err := r.installCommitOnto(req, state, newTip); err != nil {
+		if undo != nil {
+			if rollback := undo(); rollback != nil {
+				return "", fmt.Errorf("%v; patch restoration failed: %w", err, rollback)
+			}
+		}
 		return "", err
 	}
 	return newTip, nil

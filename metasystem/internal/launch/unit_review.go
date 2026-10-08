@@ -20,6 +20,10 @@ type UnitDrop struct {
 	Actor, Reason, Impact, At      string
 	Revision                       uint64
 	Covered                        []string
+	PatchDigest, StartingResult    string
+	ResultTree, CommitTree         string
+	PendingPatch                   []byte
+	ConflictTrees                  []string
 	Subject                        UnitSubject
 }
 

@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"time"
@@ -14,9 +15,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
-// applyUnitDrop reverses a committed optional unit under its source reservation.
+// applyUnitDrop removes an optional unit under its source reservation.
 func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewWorkContext) *intentResult {
-	if work.review == nil || work.subject == nil || work.subject.Commit == "" {
+	if work.review == nil || work.subject == nil {
 		return inv.refuseReviewDrop(targets, work)
 	}
 	review, source := *work.review, work.subject
@@ -53,7 +54,17 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 		return fail(err)
 	}
 	head, dirty, err := runner.WorktreeResult(review.Record.Worktree)
-	if err != nil || dirty != "" {
+	if err != nil {
+		return fail(err)
+	}
+	pendingPatch := source.Drop != nil && source.Drop.PatchDigest != ""
+	if source.Drop == nil {
+		pendingPatch, err = inv.roundPatchPending(work, head)
+		if err != nil {
+			return fail(err)
+		}
+	}
+	if dirty != "" && !pendingPatch {
 		return fail(fmt.Errorf("the owned tree must be clean before a committed drop: %v", err))
 	}
 	body, err := os.ReadFile(inv.flagPath("dispositions"))
@@ -80,8 +91,22 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 				source.Drop.Covered = append(source.Drop.Covered, id)
 			}
 		}
-		if len(source.Drop.Covered) == 0 {
+		if len(source.Drop.Covered) == 0 && source.Commit != "" && dirty == "" {
 			return fail(fmt.Errorf("no effective commits of this unit remain"))
+		}
+		if pendingPatch {
+			if review.Round.Result == nil {
+				return fail(fmt.Errorf("the exact pending patch was not retained"))
+			}
+			patch, err := os.ReadFile(filepath.Join(review.Round.Directory, "result.patch"))
+			if err != nil || launch.UnitResultDigest(string(patch)) != review.Round.Result.PatchDigest || len(patch) == 0 {
+				return fail(fmt.Errorf("the retained pending patch cannot be verified: %v", err))
+			}
+			source.Drop.PatchDigest, source.Drop.StartingResult = review.Round.Result.PatchDigest, dirty
+			source.Drop.PendingPatch, err = runner.WorktreeDiff(review.Record.Worktree, head)
+			if err != nil {
+				return fail(err)
+			}
 		}
 		if err := work.retain(*source); err != nil {
 			return fail(err)
@@ -133,7 +158,18 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 		}
 	}
 	retain := func(subject launch.UnitSubject) error { drop.Subject = subject; return work.retain(*source) }
-	if drop.Subject.Commit == "" {
+	if drop.PatchDigest != "" && drop.Subject.Conflict != "" {
+		drop.ConflictTrees = append(drop.ConflictTrees, drop.Subject.GateWorktree)
+		drop.PendingPatch, err = runner.WorktreeDiff(review.Record.Worktree, head)
+		if err != nil {
+			return fail(err)
+		}
+		drop.StartingResult, drop.Subject = dirty, launch.UnitSubject{Operation: drop.Subject.Operation, ExpectedParent: head}
+		if err := retain(drop.Subject); err != nil {
+			return fail(err)
+		}
+	}
+	if drop.Subject.Commit == "" && drop.Phase != "tree-applied" && drop.Phase != "recorded" && drop.Phase != "closed" {
 		ids, err := git(install, "log", "--format=%H %P %T", "--fixed-strings", "--grep=Goal-Drop: "+work.goal+"/"+work.work+" "+drop.Subject.Operation, base+".."+head)
 		if err != nil {
 			return fail(err)
@@ -153,8 +189,12 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 				return fail(fmt.Errorf("the branch moved; retained inverse and proof need reconciliation"))
 			}
 			err = conn.commitToken(install, func() error {
-				var err error
-				drop.Subject.Commit, err = conn.commit(branch.CommitRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base, GoalID: work.goal, Unit: work.work, OpID: drop.Subject.Operation, Kind: branch.Drop, FrozenPatch: []byte{}, CheckClaim: check, Transport: conn.transport, ResumeWorktree: drop.Subject.GateWorktree, KeepWorktree: func() bool { return true }, BeforeCommit: func(dir, parent, tree string) error {
+				candidate, err := conn.commit(branch.CommitRequest{PrepareOnly: len(drop.Covered) == 0, Repo: install, Remote: endpoint.Remote, EndpointTip: base, GoalID: work.goal, Unit: work.work, OpID: drop.Subject.Operation, Kind: branch.Drop, FrozenPatch: []byte{}, CheckClaim: check, Transport: conn.transport, ResumeWorktree: drop.Subject.GateWorktree, KeepWorktree: func() bool { return true }, BeforeInstall: func() (func() error, error) {
+					if drop.PatchDigest == "" {
+						return nil, nil
+					}
+					return inv.installPendingRemoval(work, check)
+				}, BeforeCommit: func(dir, parent, tree string) error {
 					if parent != head {
 						return fmt.Errorf("the branch moved before inverse preparation")
 					}
@@ -163,14 +203,29 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 						if err := retain(drop.Subject); err != nil {
 							return err
 						}
-						if _, err := git(dir, append([]string{"revert", "--no-commit"}, drop.Covered...)...); err != nil {
-							drop.Subject.Conflict = err.Error()
-							_ = retain(drop.Subject)
-							return err
+						if drop.PatchDigest != "" {
+							if err := inv.preparePendingRemoval(work, dir); err != nil {
+								return err
+							}
+						}
+						if len(drop.Covered) > 0 {
+							if _, err := git(dir, append([]string{"revert", "--no-commit"}, drop.Covered...)...); err != nil {
+								drop.Subject.Conflict = err.Error()
+								_ = retain(drop.Subject)
+								return err
+							}
 						}
 					}
 					if drop.Subject.Conflict != "" {
 						return fmt.Errorf("inverse conflict retained in %s: %s; scratch recovery remains pending", dir, drop.Subject.Conflict)
+					}
+					if drop.ResultTree != "" {
+						staged, err := git(dir, "write-tree")
+						if err != nil || strings.TrimSpace(string(staged)) != drop.Subject.StagedTree {
+							return fmt.Errorf("the retained candidate changed: %v", err)
+						}
+						_, err = git(dir, "diff", "--exit-code")
+						return err
 					}
 					proof, err := runner.ProveRoundResult(review, dir, &drop.Subject, retain)
 					if err != nil {
@@ -178,7 +233,7 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 					}
 					drop.Subject.GateRunID = proof
 					current, dirty, err := runner.WorktreeResult(review.Record.Worktree)
-					if err != nil || current != head || dirty != "" {
+					if err != nil || current != head || dirty != drop.StartingResult {
 						return fmt.Errorf("the owned tree moved after proof: %v", err)
 					}
 					result, err := git(dir, "write-tree")
@@ -186,9 +241,31 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 						return err
 					}
 					drop.Subject.StagedTree = strings.TrimSpace(string(result))
+					if drop.PatchDigest != "" && len(drop.Covered) > 0 {
+						resultTree := drop.Subject.StagedTree
+						remaining := filepath.Join(review.Round.Directory, drop.Subject.Operation+"-remaining.patch")
+						_, err := git(dir, "apply", "--reverse", "--index", "--binary", "--allow-empty", remaining)
+						if err != nil {
+							drop.Subject.Conflict = err.Error()
+							_ = retain(drop.Subject)
+							return err
+						}
+						result, err = git(dir, "write-tree")
+						if err != nil {
+							return err
+						}
+						drop.ResultTree = resultTree
+						drop.CommitTree, drop.Subject.StagedTree = strings.TrimSpace(string(result)), strings.TrimSpace(string(result))
+					}
+					if len(drop.Covered) == 0 {
+						drop.ResultTree = drop.Subject.StagedTree
+					}
 					drop.Phase, drop.Subject.Conflict = "proved", ""
 					return retain(drop.Subject)
 				}})
+				if err == nil && len(drop.Covered) > 0 {
+					drop.Subject.Commit = candidate
+				}
 				return err
 			})
 			if err != nil {
@@ -200,7 +277,7 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 			return fail(err)
 		}
 	}
-	if drop.Subject.Published == "" {
+	if len(drop.Covered) > 0 && drop.Subject.Published == "" {
 		pushed, err := conn.push(branch.PushRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base, GoalID: work.goal, OpID: drop.Subject.Operation + "-push", CheckClaim: check, Transport: conn.transport})
 		if err != nil {
 			return fail(err)
@@ -224,6 +301,9 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 		}
 	}
 	outcome := goal.UnitDrop{Unit: work.work, Operation: drop.Subject.Operation, Loop: stop.Loop, Subject: stop.Subject, Attempt: stop.Attempt, Covered: drop.Covered, Findings: findings, Commit: drop.Subject.Commit, Tree: drop.Subject.StagedTree, Proof: drop.Subject.GateRunID, Decisions: drop.Decisions, Requirements: drop.Requirements, Revision: work.dropRevision, Actor: drop.Actor, Reason: drop.Reason, Impact: drop.Impact, At: drop.At}
+	if drop.ResultTree != "" {
+		outcome.Tree, outcome.PatchDigest, outcome.CommitTree = drop.ResultTree, drop.PatchDigest, drop.CommitTree
+	}
 	result := inv.goalAct(work.goal, "drop unit", inv.syncOwner("work-drop", []string{"--root", inv.stateRoot, "--id", work.goal}, nil, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
 		return goal.RecordUnitDrop(req, work.goal, outcome)
 	}, "id"))

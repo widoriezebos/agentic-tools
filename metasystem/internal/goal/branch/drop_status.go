@@ -50,7 +50,11 @@ func applyDrops(status *Status, repo, endpoint, id string, deps statusDependenci
 			if err != nil {
 				return err
 			}
-			if tree != drop.Tree {
+			expected := drop.Tree
+			if drop.CommitTree != "" {
+				expected = drop.CommitTree
+			}
+			if tree != expected {
 				return fmt.Errorf("the drop's resulting tree differs from its published outcome")
 			}
 			covered := 0

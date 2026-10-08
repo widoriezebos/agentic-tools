@@ -223,10 +223,17 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		return endpointTip, nil
 	}
 	subject := review.Subject
-	if inv.reviewWork != nil && subject != nil && subject.Commit != "" {
+	if subject == nil && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" && len(review.Round.Reads) > 0 {
+		read := review.Round.Reads[len(review.Round.Reads)-1]
+		subject = &launch.UnitSubject{Round: review.Round.Number, Operation: record.ID + "-pending", ExpectedParent: review.Head, DiffDigest: review.DiffDigest, Examination: read.ID, ExaminationRound: int64(review.Round.Number), ExaminationReturnPath: read.Output}
+		if err := retain(*subject); err != nil {
+			return refuse(retry, "retains the stopped patch review", "the stopped review could not be retained", "%v", err)
+		}
+	}
+	if inv.reviewWork != nil && subject != nil {
 		inv.reviewWork.run, inv.reviewWork.attempt, inv.reviewWork.subject, inv.reviewWork.retain, inv.reviewWork.review = record.ID, review.Round.Number, subject, retain, &review
 		// The stop arm needs a decisions file: a bare --retry of a stopped unit must reach its fresh examination.
-		if subject.Drop != nil || inv.input.has("dispositions") && subject.Examination != "" && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" {
+		if subject.Drop != nil || subject.Commit == "" && subject.Examination != "" || inv.input.has("dispositions") && subject.Examination != "" && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" {
 			if stopped := inv.reviewStoppedUnit(targets, install, subject.Examination, subject.ExaminationReturnPath, inv.reviewWork); stopped != nil {
 				return *stopped
 			}
