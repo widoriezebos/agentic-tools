@@ -23,11 +23,18 @@ func (c Cause) Valid() bool {
 }
 
 type Stop struct {
-	Loop    string `json:"loop"`
-	Subject string `json:"subject"`
-	Attempt int    `json:"attempt"`
-	Budget  int    `json:"budget"`
-	Measure struct {
+	ProofAttempt string   `json:"proof-attempt,omitempty"`
+	Tree         string   `json:"tree,omitempty"`
+	BatchID      string   `json:"batch-id,omitempty"`
+	Scope        string   `json:"scope,omitempty"`
+	Trunk        bool     `json:"trunk,omitempty"`
+	StoppedAt    *string  `json:"stopped-at,omitempty"`
+	Required     []string `json:"required,omitempty"`
+	Loop         string   `json:"loop"`
+	Subject      string   `json:"subject"`
+	Attempt      int      `json:"attempt"`
+	Budget       int      `json:"budget"`
+	Measure      struct {
 		Name     string   `json:"name"`
 		Previous []string `json:"previous"`
 		Now      []string `json:"now"`
@@ -137,22 +144,41 @@ func Decide(in Input) Stop {
 }
 
 func (s Stop) Command() string {
+	if len(s.Required) > 0 {
+		return strings.Join(s.Required, " ")
+	}
 	if strings.HasPrefix(s.Handoff, "hold ") {
 		return "metasystem incident list"
 	}
-	if s.Loop == "lane-return" || s.Cause != nil && s.Cause.Kind == "environment" {
+	if (s.Loop == "lane-proof" || s.Loop == "lane-gate") && s.Cause != nil && s.Cause.Kind == "environment" {
+		if s.Scope == "regeneration" {
+			return "metasystem landing run"
+		}
+		command := "metasystem landing prove"
+		if s.Loop == "lane-gate" {
+			command += " --gate"
+		} else if s.Trunk {
+			command += " --trunk"
+		}
+		return command
+	}
+	if s.Loop == "lane-return" && s.Subject == "lane" {
 		return "metasystem landing run"
 	}
 	goal := "GOAL"
 	if s.Cause != nil && s.Cause.Goal != "" {
 		goal = s.Cause.Goal
 	}
-	return "metasystem landing return " + goal + " --cause own --reason TEXT"
+	kind := "unclassified"
+	if s.Cause != nil && s.Cause.Valid() {
+		kind = s.Cause.Kind
+	}
+	return "metasystem landing return " + goal + " --cause " + kind + " --reason TEXT"
 }
 
 func (s Stop) Words() string {
 	why := s.Class
-	if s.Loop == "lane-return" {
+	if s.Loop == "lane-return" && s.Subject == "lane" {
 		why = fmt.Sprintf("%d launches left the lane unchanged", s.Attempt)
 	} else if s.Cause != nil && s.Cause.Kind == "environment" {
 		why = "the check could not complete twice"

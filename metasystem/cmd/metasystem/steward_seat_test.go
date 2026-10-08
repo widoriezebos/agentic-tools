@@ -123,7 +123,10 @@ func noProgressSeats(id, opid string, n int) []steward.SeatRecord {
 // starts seats again and keeps the goal's claim.
 func TestSeatCapResetsOnApproveKeepingTheClaim(t *testing.T) {
 	t.Parallel()
-	bed := newIntentBed(t, false, func(file *goal.GoalFile) { file.Claimed.Lineage = steward.SeatLineage })
+	bed := newIntentBed(t, false, func(file *goal.GoalFile) {
+		file.Claimed.Lineage = steward.SeatLineage
+		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+	})
 	bed.lineage = steward.SeatLineage
 	human := []string{"--fixture-human-authority", "--lineage", "m1"}
 	var records []steward.SeatRecord
@@ -168,6 +171,9 @@ func seatLandingBed(t *testing.T) *intentBed {
 	bed := newIntentBed(t, false, func(file *goal.GoalFile) {
 		waitingToLandBed(file)
 		file.Claimed.Lineage = steward.SeatLineage
+		// A landing successor needs the stop capability of a session-bound claim.
+		file.StopCapability = &goal.StopCapability{Generation: file.Claimed.Revision,
+			Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1}
 	})
 	bed.lineage = steward.SeatLineage
 	return bed

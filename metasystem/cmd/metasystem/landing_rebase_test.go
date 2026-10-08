@@ -31,12 +31,10 @@ type landRebaseBed struct {
 // bed never invokes Git, including during its setup.
 func newLandRebaseBed(t *testing.T) *landRebaseBed {
 	t.Helper()
-	b := &landRebaseBed{deliveryBed: newDeliveryBedWith(t, nil, true), registered: true}
-	b.landing = &landingOwners{status: readBranch(2, "critic-root", "critic-root")}
-	b.landing.install(b.deliveryBed)
-	b.lane = filepath.Join(t.TempDir(), "lane")
-	b.deliveryBed.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "/lane", true, nil }
-	b.deliveryBed.owners.laneInstall = func(string) (string, error) { return b.lane, nil }
+	// Hand-in reads the registered lane and its trunk policy even when a
+	// records line is already queued (lane-reads-its-policies, Decision 5).
+	delivery, landing, install := plainLaneBedWith(t, true, "critic-root", "critic-root")
+	b := &landRebaseBed{deliveryBed: delivery, landing: landing, lane: install, registered: true}
 	b.deliveryBed.owners.landingGate = func(*intentInvocation, string, string) (string, error) { return "admitted", nil }
 	b.deliveryBed.owners.recordLanded = func(*intentInvocation, string) error { return nil }
 	b.deliveryBed.owners.laneLatest = func(install, id, main string) (plain.Entry, bool, error) {
@@ -90,6 +88,7 @@ func newLandRebaseBed(t *testing.T) *landRebaseBed {
 			return b.recordErr
 		},
 	}
+	b.laneInputs(&b.owners)
 	return b
 }
 

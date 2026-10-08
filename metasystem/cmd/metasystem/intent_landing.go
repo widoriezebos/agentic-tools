@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -96,7 +97,11 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.now = func() time.Time { return time.Now().UTC() }
 	}
 	if owners.wake == nil {
-		owners.wake = plain.KeeperWake
+		owners.wake = func(home string) lane.WakeSources {
+			record, _, _ := lane.Read(home)
+			seams := inv.laneBatchSeams(home, record, owners.plainProve)
+			return plain.KeeperWake(home, seams)
+		}
 	}
 	if owners.person == nil {
 		owners.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, goalCommandNow)
@@ -131,7 +136,15 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.push == nil {
 		owners.push = func(install, checkout string, now time.Time, before func(string, string) error) (plain.PushOutcome, error) {
-			return plain.PushChecked(install, checkout, now, before)
+			home, err := owners.home()
+			if err != nil {
+				return plain.PushOutcome{}, err
+			}
+			record, _, err := lane.Read(home)
+			if err != nil {
+				return plain.PushOutcome{}, err
+			}
+			return plain.PushChecked(install, checkout, now, before, inv.laneBatchSeams(home, record, owners.plainProve))
 		}
 	}
 	if owners.pause == nil {
@@ -204,10 +217,12 @@ func landingIntentCommands() []intentCommand {
 		},
 		{
 			object: "landing", action: "run", audience: "both", summary: "start the landing agent now when the lane has queued work, instead of at the steward's next tick",
-			usage: []string{"metasystem landing run [--json]"},
+			usage: []string{"metasystem landing run [--goals G1,G2] [--by NAME] [--json]"},
 			details: []string{"Takes the same decision the lane checkout's steward takes each tick, under the lane's lock: it starts the landing agent when work is queued, the lane is not stopped and no landing agent runs.",
 				"A landing agent already running, or a lane with nothing queued, changes nothing. A stopped lane, a lane checkout at the helm, or a lane that can't run is refused with the one command that resumes it.",
+				"--goals records an enrolled person's ordered selection at the registered lane before execution is requested; generic run retries that record without reopening proof allowance.",
 				"--json prints the outcome (started, running, idle, paused, held, failed) and the landing agent's session."},
+			flags:    []intentFlag{{name: "goals", value: "G1,G2", usage: "the waiting goals the enrolled person selects, in order"}, byFlag, {name: "batch", value: "ID", hidden: true, usage: "continue the matching recorded person selection"}},
 			maxArgs:  0,
 			examples: []string{"metasystem landing run"},
 			run:      runIntentLandingRun,
@@ -305,7 +320,10 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	}
 	view := inv.laneView(owners, home)
 	record, _, unreadable := lane.Read(home)
+	owners.plainProve = inv.laneBatchSeams(home, record, owners.plainProve)
 	data := landingStatus(owners, home, record, view)
+	view = data.View
+	view.Batch = data.Batch
 	waiting := slices.ContainsFunc(data.Queue, func(entry plain.Entry) bool { return entry.State == plain.StateWaiting })
 	if view.Root != nil && view.Owner.State == lane.OwnerIdle {
 		view.Summary = view.SummaryWithWaiting(waiting)
@@ -363,6 +381,22 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		view(page)
 		if data.Root == nil {
 			return
+		}
+		if policy := data.BatchPolicy; policy != nil {
+			page.Section("Batch policy", "").Text(policy.Value + " from " + policy.Source)
+		}
+		for _, request := range data.PendingActions {
+			page.Section("Person act", "").Text("run: " + shellCommand(request.Required))
+		}
+		if batch, ok := data.Batch.(*plain.Batch); ok && batch != nil {
+			section := page.Section("Selected batch", "")
+			section.Text(batch.ID + ": " + batch.State + "; base main " + shortLandingID(batch.Base))
+			for _, member := range batch.Members {
+				section.Text(member.Goal + " at " + shortLandingID(member.SHA))
+			}
+			if batch.ClosureReason != "" {
+				section.Text(batch.ClosureReason)
+			}
 		}
 		if data.Admission != "" {
 			section := page.Section("Admission", "")
@@ -434,6 +468,12 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		section := page.Section("Last", "")
 		if proof := data.LastProof; proof != nil {
 			section.KV("proven", textui.Plain(proof.Result+landingRedReason(proof.Reason)+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
+			if len(proof.FlakeRepeats) > 0 {
+				section.KV("original", textui.Plain(proof.Attempt+"; evidence: "+proof.Log))
+				for _, repeat := range proof.FlakeRepeats {
+					section.KV("repeat", textui.Plain(repeat.Attempt+"; evidence: "+repeat.Log))
+				}
+			}
 		}
 		if gate := data.LastGate; gate != nil {
 			words := gate.Result + landingRedReason(gate.Reason) + " for " + provedWords(gate.Commit, gate.Tree)
@@ -844,6 +884,8 @@ type landingRunData struct {
 	Launch   string            `json:"launch,omitempty"`
 	Root     string            `json:"root"`
 	Reasons  []string          `json:"reasons,omitempty"`
+	BatchID  string            `json:"batch-id,omitempty"`
+	Members  []plain.GoalSHA   `json:"members,omitempty"`
 	Problems []string          `json:"problems,omitempty"`
 }
 
@@ -872,15 +914,71 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	}
 	root := record.Root
 	targets := laneTargets(root)
-	// Outside the lane checkout the lane's own engine runs the step, so the
-	// landing agent is always supervised by the lane's engine, as on a
-	// steward tick, and no seat's restart takes its supervisor down.
+	seams := inv.laneBatchSeams(home, record, owners.plainProve)
+	keeper := owners.keeper(home, root)
+	seams.AgentRunning = func() (bool, error) {
+		_, running, err := keeper.Running()
+		if err != nil || running {
+			return running, err
+		}
+		_, starting, err := lane.AgentStarting(home, owners.now())
+		return starting, err
+	}
+	var selected *plain.Batch
+	var selectionErr error
+	if inv.input.has("goals") || inv.input.has("by") {
+		person, problem := inv.lanePerson("select the landing batch", root)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		if !inv.input.has("goals") {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "--by requires an explicit --goals selection; nothing was recorded", next: inv.publicArgv("landing", "run", "--goals", "GOALS")})
+		}
+		goals := strings.Split(inv.input.text("goals"), ",")
+		for i := range goals {
+			goals[i] = strings.TrimSpace(goals[i])
+		}
+		selected, selectionErr = plain.SelectPersonBatch(record.Install, root, record, goals, person.Proof, person.Root, person.Name, person.At, seams)
+	} else if inv.input.has("batch") {
+		selected, selectionErr = plain.RecordedPersonBatch(record.Install, record, inv.input.text("batch"))
+	} else {
+		selected, selectionErr = plain.SelectBatch(record.Install, root, record, seams)
+	}
+	syncErr := plain.SyncPolicyQuestion(record.Install, owners.machine, owners.now())
+	if selectionErr != nil {
+		if selected != nil && selected.Person != nil {
+			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "selection recorded, execution not started", Data: selected, Details: []string{selectionErr.Error()}, next: inv.publicArgv("landing", "run"), nextReason: "retries only the recorded selection"})
+		}
+		result := landingLaneFailure(targets, "no landing selection was admitted", selectionErr)
+		requests, _ := plain.PolicyRequests(record.Install)
+		if len(requests) > 0 {
+			result.next = requests[0].Required
+			result.nextReason = "records the person's choice at the enrolled calling terminal"
+		}
+		return inv.render(result)
+	}
+	recorded := selected != nil && selected.Person != nil && selected.State != plain.BatchClosed
+	// Recording the choice succeeds independently of execution readiness.
+	// Its continuation uses only the durable batch identity at the destination.
 	if !inv.insideLaneCheckout(root) {
+		if recorded {
+			inv.input.values["batch"] = []string{selected.ID}
+		}
 		return inv.handOffLandingRun(record)
 	}
-	// The steward skips the keeper while the lane checkout is at the helm;
-	// landing run does the same.
-	if owners.helm(root).Active {
+	pendingSelection := func(reason string, remedy ...*intentResult) int {
+		details := []string{reason}
+		if syncErr != nil {
+			details = append(details, "question sync pending: "+syncErr.Error())
+		}
+		next, why := inv.publicArgv("landing", "run"), "retries only the recorded selection"
+		if len(remedy) > 0 && len(remedy[0].next) > 0 {
+			next, why = remedy[0].next, remedy[0].nextReason+"; then landing run retries only the recorded selection"
+			details = append(details, remedy[0].Details...)
+		}
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "selection recorded, execution not started", Data: selected, Details: details, next: next, nextReason: why})
+	}
+	if owners.helm(root).Active && !recorded {
 		result := intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary: "the landing checkout " + root + " is at the helm, so no landing agent was started",
 			next:    []string{"metasystem", "helm", "return", "--repo", root}}
@@ -888,23 +986,52 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.render(result)
 	}
 	if refused := inv.laneNotReady(owners, root); refused != nil {
+		if recorded {
+			return pendingSelection(refused.Summary, refused)
+		}
 		return inv.render(*refused)
 	}
-	if inv.claimLineage() != lane.AgentLineage {
-		layout, err := record.Layout()
-		if err == nil {
-			err = plain.CloseProofLoop(string(layout.Install))
+	keeper.Prepare = func(current lane.Record) error {
+		if selected != nil && selected.State != plain.BatchClosed {
+			if recorded {
+				_, err := plain.RecordedPersonBatch(current.Install, current, selected.ID)
+				return err
+			}
+			fresh, err := plain.ReadBatch(current.Install)
+			if err != nil {
+				return err
+			}
+			if fresh == nil || fresh.ID != selected.ID || fresh.Lane != current {
+				return errors.New("the selection changed before launch")
+			}
+			return nil
 		}
-		if err != nil {
-			return inv.render(landingLaneFailure(targets, "the batch's allowance for full checks could not be reopened", err))
-		}
+		_, err := plain.SelectBatch(current.Install, current.Root, current, seams)
+		return err
 	}
-	// A start asked for by name is not held by the agent's barren runs.
-	keeper := owners.keeper(home, root)
+	keeper.PersonSelection = func(current lane.Record) bool {
+		_, err := plain.RecordedPersonBatch(current.Install, current, "")
+		return err == nil
+	}
+	keeper.Helmed = func(root string) bool { return owners.helm(root).Active }
+	keeper.Continuation = func(current lane.Record) string { return plain.PersonBatchContinuation(current.Install, current, home) }
 	keeper.Explicit = true
 	run := keeper.Run()
 	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons, Problems: run.Problems}
 	details := []string{run.Line}
+	if recorded {
+		data.BatchID, data.Members = selected.ID, selected.Members
+		details = append(details, "recorded batch "+selected.ID)
+		if selected.Selector.Value == "unknown" {
+			details = append(details, "advisory batch policy unreadable: "+selected.Selector.Source)
+		}
+		for _, member := range selected.Members {
+			details = append(details, member.Goal+" at "+member.SHA)
+		}
+	}
+	if syncErr != nil {
+		details = append(details, "question sync pending: "+syncErr.Error())
+	}
 	observation := ""
 	if len(run.Problems) > 0 {
 		observation = "; " + strings.Join(run.Problems, "; ")
@@ -912,6 +1039,13 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	switch run.Outcome {
 	case lane.AgentStarted:
 		summary := "started the landing agent " + run.Launch + " for " + wakeWords(run.Reasons) + observation
+		if recorded {
+			members := []string{}
+			for _, member := range selected.Members {
+				members = append(members, member.Goal+" at "+shortLandingID(member.SHA))
+			}
+			summary += "; recorded batch " + selected.ID + ": " + strings.Join(members, ", ")
+		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: data, Summary: summary, Details: details,
 			next: inv.publicArgv("landing", "status"), nextReason: "shows what it lands",
 			view: func(page *textui.Page) { page.Done(summary) }})
@@ -936,6 +1070,9 @@ func runIntentLandingRun(inv *intentInvocation) int {
 				page.Hint(textui.Hint{Reason: why})
 			}})
 	case lane.AgentPaused:
+		if recorded {
+			return pendingSelection(run.Line, &intentResult{next: inv.publicArgv("landing", "start"), nextReason: "a person resumes the lane"})
+		}
 		summary := run.Line
 		if pause, paused := lane.ReadPause(home); paused {
 			summary = "the landing lane is stopped by " + pause.Who() + ", so no landing agent was started"
@@ -943,7 +1080,13 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: summary, Details: details,
 			next: inv.publicArgv("landing", "start"), nextReason: "resumes the lane; then run metasystem landing run again"})
 	default:
+		if recorded {
+			return pendingSelection(run.Line)
+		}
 		summary := run.Line
+		if stop, err := plain.NewestStop(record.Install); err == nil && stop != nil && stop.Loop == "lane-return" && stop.Subject == "lane" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: stop.Words(), next: stop.Required, nextReason: "performs the person act for this stopped subject"})
+		}
 		if summary == "" {
 			summary = "the landing agent at " + root + " was not started"
 		}
@@ -952,14 +1095,84 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	}
 }
 
-// insideLaneCheckout says whether landing run was called in the lane
-// checkout: its working directory, or its --repo, is in it.
-func (inv *intentInvocation) insideLaneCheckout(root string) bool {
-	path := inv.cwd
-	if inv.input.has("repo") {
-		path = inv.callerPath(inv.input.text("repo"))
+// laneBatchSeams supplies the registered owner and the original caller to
+// policy resolution. Selection never borrows a seat's configuration.
+func (inv *intentInvocation) laneBatchSeams(home string, record lane.Record, seams plain.ProveSeams) plain.ProveSeams {
+	seams.Pause = func() (lane.Pause, bool) { return lane.ReadPause(home) }
+	seams.FenceCheck = func() error {
+		if _, paused := lane.ReadPause(home); !paused {
+			return nil
+		}
+		if inv.command.action == "prove" && inv.input.switched("wait") && inv.input.text("attempt") != "" {
+			running, recorded, _, err := plain.ReadRunning(record.Install, seams)
+			if err != nil {
+				return err
+			}
+			if recorded && running.Attempt == inv.input.text("attempt") && running.Gate == inv.input.switched("gate") && running.Trunk == inv.input.switched("trunk") &&
+				running.Person != nil && running.Person.Kind == "proof" && running.Person.Destination == record && running.OwnProcess() {
+				return nil
+			}
+		}
+		if !inv.input.switched("trunk") && plain.PersonBatchContinuation(record.Install, record, home) != "" {
+			return nil
+		}
+		command := inv.publicArgv("landing", "prove")
+		if inv.input.switched("gate") {
+			command = append(command, "--gate")
+		}
+		if inv.input.switched("trunk") {
+			command = append(command, "--trunk")
+		}
+		if inv.command.action == "push" || inv.command.action == "resolve" {
+			if batch, err := plain.ReadBatch(record.Install); err == nil && batch != nil && len(batch.Members) > 0 {
+				goals := []string{}
+				for _, member := range batch.Members {
+					goals = append(goals, member.Goal)
+				}
+				command = inv.publicArgv("landing", "run", "--goals", strings.Join(goals, ","))
+			}
+		}
+		return &plain.Refusal{Code: plain.CodeBatch, Reason: "the landing lane was stopped before this operation started", Next: shellCommand(command)}
 	}
-	here, checkout := realpath.Resolve(path), realpath.Resolve(root)
+	seams.TimerHeld = func() bool {
+		_, paused := lane.ReadPause(home)
+		return paused || inv.landing().helm(record.Root).Active
+	}
+	seams.Lane = func() (lane.Record, error) {
+		current, present, err := lane.Read(home)
+		if err == nil && !present {
+			err = errors.New("the landing lane is no longer registered")
+		}
+		return current, err
+	}
+	seams.Policy = func(key string) (plain.PolicyValue, error) {
+		params, err := inv.policyParams(key)
+		if err != nil {
+			// Outside every checkout, the registered target is the calling
+			// checkout for this lane act. A failing in-checkout read still holds.
+			if _, callingErr := helm.Locate(inv.cwd); callingErr != nil {
+				params = config.GetParams{Key: key, LookupEnv: inv.owners.lookupEnv, Policy: &config.PolicyContext{Checkout: record.Root, CallingCheckout: record.Root, Readers: inv.policyReaders()}}
+				err = nil
+			}
+		}
+		if err != nil {
+			return plain.PolicyValue{}, err
+		}
+		params.Policy.Checkout = record.Root
+		params.ConfPath, err = params.Policy.Readers.ConfPath(record.Root)
+		if err != nil {
+			return plain.PolicyValue{}, err
+		}
+		value, err := config.ResolvePolicy(params)
+		return plain.PolicyValue{Value: value.Value, Source: value.Source, Checkout: value.Checkout, SetBy: value.SetBy, At: value.At}, err
+	}
+	return seams
+}
+
+// insideLaneCheckout says whether landing run was called in the lane
+// checkout: its original working directory is in it.
+func (inv *intentInvocation) insideLaneCheckout(root string) bool {
+	here, checkout := realpath.Resolve(inv.cwd), realpath.Resolve(root)
 	return here == checkout || strings.HasPrefix(here, checkout+string(filepath.Separator))
 }
 
@@ -991,6 +1204,13 @@ func (inv *intentInvocation) handOffLandingRun(record lane.Record) int {
 			return "cd " + shellCommand([]string{path}) + " && go run ./cmd/devgate build"
 		}
 		summary := "the landing lane's engine bin/metasystem " + cause + ", so no landing agent was started"
+		if inv.input.has("batch") {
+			selected, err := plain.RecordedPersonBatch(install, record, inv.input.text("batch"))
+			if err == nil {
+				return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "selection recorded, execution not started; " + summary, Data: selected,
+					next: []string{"sh", "-c", build(install)}, nextReason: "builds the lane's engine; then landing run retries the recorded selection"})
+			}
+		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: summary,
 			next: []string{"sh", "-c", build(install)}, nextReason: "builds the lane's engine; then run metasystem landing run again",
 			Details: []string{"the lane's engine " + binary + " " + cause}, viewsRefusal: true,
@@ -999,6 +1219,9 @@ func (inv *intentInvocation) handOffLandingRun(record lane.Record) int {
 			}})
 	}
 	args := []string{"landing", "run"}
+	if inv.input.has("batch") {
+		args = append(args, "--batch", inv.input.text("batch"))
+	}
 	for _, flag := range []string{"json", "verbose"} {
 		if inv.input.switched(flag) {
 			args = append(args, "--"+flag)

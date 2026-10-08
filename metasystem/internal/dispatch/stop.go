@@ -32,15 +32,16 @@ const (
 )
 
 type GoalBinding struct {
-	GoalID     string
-	Revision   uint64
-	Tier       uint8
-	GateWidth  string
-	Machine    string
-	Lineage    string
-	Capability goal.StopCapability
-	Fence      *goal.StopFence
-	File       *goal.GoalFile
+	GoalID      string
+	Revision    uint64
+	Tier        uint8
+	GateWidth   string
+	Machine     string
+	Lineage     string
+	Capability  goal.StopCapability
+	Fence       *goal.StopFence
+	File        *goal.GoalFile
+	Eligibility goal.ClaimEligibility
 }
 
 func effectiveGoalTier(tree *goal.TreeGoals, file *goal.GoalFile) (uint8, error) {
@@ -83,6 +84,9 @@ func resolveGoalBindingWithReads(root, id string, now time.Time, reads goalAdmis
 	if file.StopCapability == nil {
 		return GoalBinding{}, fmt.Errorf("goal %s revision %d predates breach-stop authority; resume or re-claim it before dispatch", id, file.Claimed.Revision)
 	}
+	if file.StopCapability.ClaimEpoch == 0 {
+		return GoalBinding{}, fmt.Errorf("goal %s is reserved, awaiting session start\nrun: metasystem session start", id)
+	}
 	tier, err := effectiveGoalTier(projection.Tree, file)
 	if err != nil {
 		return GoalBinding{}, err
@@ -91,9 +95,16 @@ func resolveGoalBindingWithReads(root, id string, now time.Time, reads goalAdmis
 	if file.Risk != nil {
 		gateWidth = file.Risk.GateWidth()
 	}
+	// Ordinary claims that predate approval records retain budget admission.
+	// A personal reservation needs approval, and an existing approval must
+	// cover the current execution, including its tier norm.
+	eligibility := goal.ClaimEligibility{Ready: true}
+	if file.PersonalReservation() || file.Approved != nil {
+		eligibility = goal.ClaimExecutionEligibility(root, projection.Tree, file, now)
+	}
 	return GoalBinding{
 		GoalID: id, Revision: file.Claimed.Revision, Tier: tier, GateWidth: gateWidth, Machine: file.Claimed.Machine,
-		Lineage: file.Claimed.Lineage, Capability: *file.StopCapability, Fence: file.StopFence, File: file,
+		Lineage: file.Claimed.Lineage, Capability: *file.StopCapability, Fence: file.StopFence, File: file, Eligibility: eligibility,
 	}, nil
 }
 

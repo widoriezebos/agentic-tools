@@ -1924,7 +1924,9 @@ func proofExtensionGoalFixtureAt(t *testing.T, now time.Time) (string, time.Time
 	amendSyncedGoalFixture(t, root, "proof extension fixture", func(file *goal.GoalFile) {
 		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
 		file.Budget.AttemptLimit = 1
-		file.Budget.ReservedJobMinutesLimit = 10000
+		// Execution needs a budget within the configured goal norm
+		// (docs/backlog-mechanism.md, Split before slicing).
+		file.Budget.ReservedJobMinutesLimit = 1200
 		file.Budget.ActiveJobLimit = 10
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})

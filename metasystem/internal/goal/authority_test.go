@@ -137,18 +137,16 @@ func TestClaimRequiresAuthorityAndKeepsPair(t *testing.T) {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 
-	// A name alone grants no person authority at publication.
 	humanClaim := verbReqFor(a, "01J5X00000000000000000AK10", "mac-a")
 	humanClaim.Actor.Human = "wido"
-	if result, err := Claim(humanClaim, "pair-keyed"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "no human authority proof") {
-		t.Fatalf("unproved person claim passed: %+v %v", result, err)
+	if _, err := Claim(humanClaim, "pair-keyed"); err == nil || !strings.Contains(err.Error(), "only a person") {
+		t.Fatalf("a bare human name reserved work: %v", err)
+	}
+	if _, err := ClaimArc(humanClaim, "pair-keyed"); err == nil || !strings.Contains(err.Error(), "only a person") {
+		t.Fatalf("a bare human name reserved an arc: %v", err)
 	}
 	if _, err := OpenClaim(humanClaim, "other", "X.", "main", "Go.", testBudget()); err == nil || !strings.Contains(err.Error(), "open --claim is gone") {
-		t.Fatalf("open --claim passed: %v", err)
-	}
-	humanClaim.Ulid = "01J5X00000000000000000AK11"
-	if result, err := ClaimArc(humanClaim, "pair-keyed"); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "no human authority proof") {
-		t.Fatalf("unproved person arc claim passed: %+v %v", result, err)
+		t.Fatalf("retired open --claim was accepted: %v", err)
 	}
 
 	if res, err := claimApprovedForTest(t, verbReqFor(a, "01J5X00000000000000000AK20", "mac-a"), "pair-keyed", testBudget()); err != nil || res.Outcome != OutcomeConfirmed {
@@ -309,6 +307,7 @@ func TestStealCascadesAcrossTheArc(t *testing.T) {
 
 	steal := verbReqFor(b, "01J5X00000000000000000SC00", "mac-b")
 	steal.Actor.Human = "wido"
+	steal.Authority = testHumanAuthority(t, steal.Endpoint.Root, steal.Now)
 	res, err := Steal(steal, "st-one")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("steal: %+v %v", res, err)
@@ -596,6 +595,7 @@ func TestForeignClaimMakesTheWholeMixedArcCascadeAHumanAct(t *testing.T) {
 	// the pinned, parked, budgetless sibling cannot veto or move.
 	steal := verbReqFor(a, "01J5X00000000000000000MC90", "mac-c")
 	steal.Actor.Human = "wido"
+	steal.Authority = testHumanAuthority(t, steal.Endpoint.Root, steal.Now)
 	if res, err := Steal(steal, "mixed-two"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("mover-scoped steal: %+v %v", res, err)
 	}

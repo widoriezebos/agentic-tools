@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -40,6 +41,7 @@ func newMergeGateBed(t *testing.T) *replayVerbBed {
 
 func gateResult(t *testing.T, b *replayVerbBed, want int) plain.Result {
 	t.Helper()
+	b.prepareBatch(t)
 	code, out := b.run(t, b.root, "prove", "--gate", "--wait", "--json")
 	var result struct{ Data plain.Result }
 	if err := json.Unmarshal([]byte(out), &result); err != nil || code != want || result.Data.Result == "" {
@@ -58,6 +60,41 @@ func commandEnv(cmd *exec.Cmd, key string) string {
 		}
 	}
 	return ""
+}
+
+func TestLandingPausedPersonProofUnreadableLaunchRetainsFailedAdmission(t *testing.T) {
+	t.Parallel()
+	b := newMergeGateBed(t)
+	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0600))
+	b.owners.resolver = stateroot.NewResolver(func(string) (string, error) { return b.root, nil }, os.Executable)
+	b.prepareBatch(t)
+	_, err := lane.SetPause(b.home, "Wido", laneTestNow)
+	helmMust(t, err)
+	b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)
+	b.owners.landing.plainProve.Executable = func() (string, error) { return "/fixture/engine", nil }
+	b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) {
+		child := exec.Command("/usr/bin/true")
+		if err := child.Run(); err != nil {
+			return 0, err
+		}
+		return int64(child.Process.Pid), nil
+	}
+	code, text := b.run(t, b.root, "prove")
+	if code != 1 || !strings.Contains(text, "environment") || !strings.Contains(text, "metasystem landing prove") {
+		t.Fatalf("unreadable launch lacks its environment refusal and retry: exit=%d output=%s", code, text)
+	}
+	// Decision 4 keeps failed admission visible without spending an execution.
+	failed, recorded, alive, err := plain.ReadRunning(b.install, b.owners.landing.plainProve)
+	if err != nil || !recorded || alive || failed.Admission == nil || failed.Admission.State != "failed" {
+		t.Fatalf("unreadable launch lost its failed admission: %+v alive=%v err=%v", failed, alive, err)
+	}
+	results, err := plain.Results(b.install)
+	if err != nil || len(results) != 0 || len(b.runs) != 0 || b.full != 0 {
+		t.Fatalf("launch failure ran a proof or used its allowance: results=%+v runs=%v full=%d err=%v", results, b.runs, b.full, err)
+	}
+	if _, paused := lane.ReadPause(b.home); !paused {
+		t.Fatal("launch failure removed the person's pause")
+	}
 }
 
 func TestLandingMergeGateBaselineAndLostProcessRepeat(t *testing.T) {
@@ -96,8 +133,9 @@ func TestLandingMergeGateBaselineAndLostProcessRepeat(t *testing.T) {
 					if !strings.Contains(strings.Join(argv, " "), "--gate") {
 						t.Fatalf("detached gate lost its mode: %v", argv)
 					}
-					return 999999, nil
+					return int64(os.Getppid()), nil
 				}
+				b.prepareBatch(t)
 				if code, out := b.run(t, b.root, "prove", "--gate"); code != 0 {
 					t.Fatalf("start gate = %d %s", code, out)
 				}
@@ -174,12 +212,12 @@ func TestLandingMergeGateRegisteredFlakeRepeatsAlone(t *testing.T) {
 	}
 	b.fail = func(cmd *exec.Cmd, only string) (string, error) {
 		if commandEnv(cmd, "LANDING_COMMIT") == "merge-b" && only == "" {
-			return replayFailure, exec.Command("false").Run()
+			return flakeTestEvents([]string{"TestBroken"}, "fail") + replayFailure, exec.Command("false").Run()
 		}
-		return "LANDING-CHECKED\t0\n", nil
+		return flakeTestEvents([]string{"TestBroken"}, "pass") + "LANDING-CHECKED\t0\n", nil
 	}
 	green := gateResult(t, b, 0)
-	if !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-b:u/a"}) || len(records) != 1 || records[0].Repeat != "alone" || records[0].Commit != "merge-b" || records[0].RepeatLog == records[0].Log || !strings.Contains(green.Reason, "fix-flaky-u-a") {
+	if !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-b:u/a"}) || len(records) != 1 || len(records[0].Outputs) != 1 || len(records[0].RepeatOutputs) != 1 || records[0].Repeat != "alone" || records[0].Commit != "merge-b" || records[0].RepeatLog == records[0].Log || !strings.Contains(green.Reason, "fix-flaky-u-a") {
 		t.Fatalf("flake: %+v records=%+v runs=%v", green, records, b.runs)
 	}
 	if _, err := os.Stat(records[0].RepeatLog); err != nil {
@@ -309,6 +347,8 @@ func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	}
 	bed.git(t, bed.checkout, "add", "metasystem/metasystem.conf")
 	bed.git(t, bed.checkout, "commit", "--quiet", "-m", "proof declarations")
+	bed.git(t, bed.checkout, "push", "--quiet", "origin", "main")
+	bed.main = bed.git(t, bed.checkout, "rev-parse", "HEAD")
 	bed.git(t, bed.checkout, "checkout", "--quiet", "-b", "goal/g")
 	if err := os.WriteFile(filepath.Join(bed.installation, "goal.go"), []byte("package fixture\n"), 0o644); err != nil {
 		t.Fatal(err)
@@ -320,6 +360,13 @@ func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	bed.git(t, bed.checkout, "merge", "--quiet", "--no-ff", "-m", "merge goal", sha)
 	if _, _, err := plain.HandIn(bed.installation, plain.Line{Goal: "g", SHA: sha}); err != nil {
 		t.Fatal(err)
+	}
+	record, present, err := lane.Read(bed.home)
+	if err != nil || !present {
+		t.Fatalf("fixture registration: %v %v", present, err)
+	}
+	if _, err := plain.SelectBatch(bed.installation, bed.checkout, record, plain.ProveSeams{}); err != nil {
+		t.Fatalf("prepare fixture selection: %v", err)
 	}
 	var stdout, stderr strings.Builder
 	code := runIntentIn(mustIntentCommand(t, "landing prove"), []string{"--gate", "--wait", "--json"}, &stdout, &stderr, bed.checkout, bed.owners)

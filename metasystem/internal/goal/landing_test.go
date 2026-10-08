@@ -906,6 +906,7 @@ func TestReleaseStealAndSetArcClearTheLandingSlot(t *testing.T) {
 	enter("built-f", "01J5X00000000000000000NR10", "01J5X00000000000000000NR11", "01J5X00000000000000000NR12", t0.Add(10*time.Minute))
 	steal := landingReqFor(b, "01J5X00000000000000000NR13", "mac-b", t0.Add(13*time.Minute))
 	steal.Actor.Human = "Wido"
+	steal.Authority = testHumanAuthority(t, steal.Endpoint.Root, steal.Now)
 	if res, err := Steal(steal, "built-f"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("steal: %+v %v", res, err)
 	}

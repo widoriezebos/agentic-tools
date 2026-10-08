@@ -19,12 +19,15 @@ import (
 // proof, the last proof and the last push. An absent value is null.
 type Status struct {
 	lane.View
-	Drain        *Drain `json:"drain,omitempty"`
-	Admission    string `json:"admission,omitempty"`
-	DrainWaiting int    `json:"drain_waiting,omitempty"`
-	DrainUnknown string `json:"drain_unknown,omitempty"`
-	Paused       bool   `json:"paused"`
-	AgentAlive   bool   `json:"agent_alive"`
+	PendingActions []PolicyRequest `json:"pending-actions,omitempty"`
+	BatchPolicy    *PolicyValue    `json:"batch-policy,omitempty"`
+	AdmittedBatch  string          `json:"admitted-batch,omitempty"`
+	Paused         bool            `json:"paused"`
+	AgentAlive     bool            `json:"agent_alive"`
+	Drain          *Drain          `json:"drain,omitempty"`
+	Admission      string          `json:"admission,omitempty"`
+	DrainWaiting   int             `json:"drain_waiting,omitempty"`
+	DrainUnknown   string          `json:"drain_unknown,omitempty"`
 	// Queue is every hand-in of queue.jsonl, oldest first, with its state:
 	// waiting, returned, superseded by a newer hand-in of its goal, or
 	// landed when origin's main (as the lane checkout last fetched it)
@@ -49,10 +52,15 @@ type Status struct {
 
 // RunningProof is the lane's proof recorded running.
 type RunningProof struct {
-	Gate   bool   `json:"gate,omitempty"`
-	Tree   string `json:"tree"`
-	Commit string `json:"commit,omitempty"`
-	Since  string `json:"since"`
+	Admission    *ExecutionAdmission `json:"admission,omitempty"`
+	Person       *ActProvenance      `json:"person,omitempty"`
+	Trunk        bool                `json:"trunk,omitempty"`
+	BatchID      string              `json:"batch-id,omitempty"`
+	BatchMembers []GoalSHA           `json:"batch-members,omitempty"`
+	Gate         bool                `json:"gate,omitempty"`
+	Tree         string              `json:"tree"`
+	Commit       string              `json:"commit,omitempty"`
+	Since        string              `json:"since"`
 	// Attempt and Log name the run; State is running while its process
 	// runs, died when it ended without a result (the next prove runs it
 	// again).
@@ -117,12 +125,15 @@ func checkoutGit(dir string, seams ProveSeams) laneGit {
 // check and its clock).
 func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeams) Status {
 	layout, _ := record.Layout()
+	if seams.Lane == nil {
+		seams.Lane = func() (lane.Record, error) { return record, nil }
+	}
 	return readStatus(home, record, view, seams, checkoutGit(string(layout.Checkout), seams))
 }
 
 func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit) (status Status) {
 	pause, paused := lane.ReadPause(home)
-	status = Status{View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
+	status = Status{AdmittedBatch: PersonBatchContinuation(record.Install, record, home), View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
 	if view.Root == nil {
 		// A registration that can't be read is a lane this read could not
 		// read, not a lane that is not there.
@@ -170,6 +181,20 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			status.Problems = append(status.Problems, what+" can't be read: "+err.Error())
 		}
 	}
+	selected, err := ReadBatch(install)
+	if selected != nil {
+		status.Batch = selected
+	}
+	unread("the batch selection", err)
+	status.PendingActions, err = PolicyRequests(install, seams)
+	unread("pending policy actions", err)
+	if seams.Policy != nil {
+		policy, err := seams.batchPolicy()
+		unread("the batch policy", err)
+		if err == nil {
+			status.BatchPolicy = &policy
+		}
+	}
 	// damaged says the lines of a record file that do not decode: the lane's
 	// own readers skip them, and the status says them (fix round 4).
 	damaged := func(what string, skipped int, path string) {
@@ -183,6 +208,19 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	}
 	status.Stop, err = NewestStop(install)
 	unread("the stop record", err)
+	openStops, readErr := OpenStops(install)
+	unread("the pending red actions", readErr)
+	for _, stop := range openStops {
+		if (stop.Loop != "lane-classify" && !(stop.Loop == "lane-return" && stop.Subject != "lane")) || status.Stop != nil && stopKey(stop) == stopKey(*status.Stop) {
+			continue
+		}
+		status.PendingActions = append(status.PendingActions, PolicyRequest{Required: stop.Required, Evidence: stop.Evidence, Subject: PolicySubject{Lane: record, Policy: "landing.on-red", Act: stop.Loop, BatchID: stop.BatchID, ProofAttempt: stop.ProofAttempt, Tree: stop.Tree, Members: []GoalSHA{{Goal: stop.Subject, SHA: stop.Tree}}}})
+	}
+	if status.Stop != nil && status.Stop.Loop == "lane-return" && status.Stop.Subject == "lane" && status.Owner.State == lane.OwnerHeld {
+		command := status.Stop.Command()
+		status.Owner.RetryHint = &command
+		status.Summary += "; run: " + command
+	}
 	if status.Stop != nil && strings.HasPrefix(status.Stop.Handoff, "hold ") {
 		main, readErr := git.main()
 		if readErr == nil {
@@ -223,7 +261,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			incidents, readErr := seams.incidents(install, string(layout.Checkout), main)
 			unread("main's incidents", readErr)
 			if readErr == nil {
-				status.Queue = HoldEntries(status.Queue, incidents)
+				status.Queue = HoldEntries(status.Queue, incidents, seams)
 			}
 			status.Queue, again = landedBeforeAgain(status.Queue, seams.now().Add(-landedWindow), contains)
 			err = errors.Join(err, again)
@@ -402,5 +440,11 @@ func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 	if !alive {
 		state = "died"
 	}
-	return &RunningProof{Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
+	if running.Admission != nil && (running.Admission.State == "pending" || running.Admission.State == "failed") {
+		state = running.Admission.State
+		if state == "pending" && !alive {
+			state = "failed"
+		}
+	}
+	return &RunningProof{Admission: running.Admission, Person: running.Person, Trunk: running.Trunk, BatchID: running.BatchID, BatchMembers: running.BatchMembers, Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
 }

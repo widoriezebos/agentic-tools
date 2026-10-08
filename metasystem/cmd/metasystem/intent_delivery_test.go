@@ -33,6 +33,7 @@ import (
 // through the public delivery commands. Each owner process is a per-test
 // fake that performs its owner's recorded transition.
 type deliveryBed struct {
+	laneInputs func(*intentOwners)
 	*intentBed
 	install string
 	calls   [][]string
@@ -113,6 +114,9 @@ func (b *deliveryBed) do(args ...string) (int, intentResult) {
 	owners.delivery = b.owners
 	owners.connection = b.connection
 	owners.work = b.work
+	if b.laneInputs != nil {
+		b.laneInputs(&owners)
+	}
 	return b.runJSON(owners, args...)
 }
 

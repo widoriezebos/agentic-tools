@@ -27,6 +27,7 @@ func seedFlake(t *testing.T, e Endpoint, goalID string, archived ...*GoalFile) {
 	client := e.Repository.(*fakeGoalRepository)
 	seed := client.store.commits[client.store.canonical]
 	entry := testTrunkRedEntry("flaky:"+flakeFixture().Unit, "flaky:"+flakeFixture().Unit, "2026-10-04T10:00:00Z")
+	entry.Group, entry.Failures = flakeFixture().Unit, []TrunkRedFailure{{Report: "legacy.log", Classname: flakeFixture().Unit, Name: "TestOne"}}
 	entry.Class, entry.FixGoal, entry.Owner, entry.Holds = TrunkRedClassPendingFlake, goalID, TrunkRedOwner{}, []string{}
 	seed.files[trunkRedPath] = RenderTrunkRed([]TrunkRedEntry{entry})
 	for _, f := range archived {
@@ -51,7 +52,7 @@ func TestRecordFlakeOpensOnceAndAddsNewTestOnce(t *testing.T) {
 	if f.NextStep != want {
 		t.Fatalf("first next step: got %q, want %q", f.NextStep, want)
 	}
-	if len(tree.Live) != 1 || len(tree.TrunkRed) != 1 || f.State != StateQueued || f.Tier != 1 || f.Priority != 1 || f.Sequence != 1 || f.Approved != nil || f.Origin != OriginMain || entry.FixGoal != id || entry.Class != TrunkRedClassPendingFlake || len(entry.Holds) != 0 {
+	if len(tree.Live) != 1 || len(tree.TrunkRed) != 1 || f.State != StateQueued || f.Tier != 1 || f.Priority != 1 || f.Sequence != 1 || f.Approved != nil || f.Origin != OriginMain || entry.FixGoal != id || entry.Class != TrunkRedClassFlake || len(entry.Holds) != 0 {
 		t.Fatalf("new fix and register: goal=%+v entry=%+v", f, entry)
 	}
 	s := entry.Sightings[0]
@@ -65,15 +66,30 @@ func TestRecordFlakeOpensOnceAndAddsNewTestOnce(t *testing.T) {
 	if err != nil || replay.FixGoal != id || replay.Action != "opened" || replay.Sightings != 1 || acceptedTipForEndpoint(t, e) != first.Publish.Tip {
 		t.Fatalf("replay: %+v %v", replay, err)
 	}
+	journal, err := ReadEntry(e.Root, r.opid())
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, err := requestForEntry(e, journal)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = decoded.Mutate(first.Publish.Tip)
+	var applied AlreadyApplied
+	if !errors.As(err, &applied) {
+		t.Fatalf("the replay decoder counted the operation again: %v", err)
+	}
 	args.Tests = []string{"TestOne", "TestTwo", "TestTwo"}
 	for _, n := range []int{2, 3} {
+		args.Attempt, args.Rerun.Attempt = fmt.Sprintf("red-%d", n), fmt.Sprintf("green-%d", n)
 		got, err := RecordFlake(flakeRequest(e, n), args)
 		if err != nil || got.FixGoal != id || got.Action != "extended" || got.Sightings != n {
 			t.Fatalf("recurrence: %+v %v", got, err)
 		}
 	}
 	tree, _ = acceptedTreeForEndpoint(t, e)
-	if len(tree.Live) != 1 || len(tree.TrunkRed) != 1 || len(tree.TrunkRed[0].Failures) != 2 || tree.TrunkRed[0].Failures[1].Name != "TestTwo" || strings.Count(tree.Live[id].NextStep, "Flaky:") != 3 || !strings.HasSuffix(tree.Live[id].NextStep, "seen 3 times.") {
+	facts := FlakeFacts(tree.TrunkRed)
+	if len(tree.Live) != 1 || len(tree.TrunkRed) != 2 || len(facts) != 2 || len(facts[0].Failures) != 1 || len(facts[1].Failures) != 1 || strings.Count(tree.Live[id].NextStep, "Flaky:") != 3 || !strings.HasSuffix(tree.Live[id].NextStep, "seen 3 times.") {
 		t.Fatalf("recurrence duplicated a fix or test: %+v %+v", tree.Live, tree.TrunkRed)
 	}
 }
@@ -108,7 +124,7 @@ func TestRecordFlakeReusesGeneratedFixAfterEntryClosed(t *testing.T) {
 			client.store.commits[client.store.canonical] = seed
 			r := flakeRequest(e, 1)
 			result, err := RecordFlake(r, flakeFixture())
-			if err != nil || result.Action != action || result.FixGoal != id || result.Sightings != 1 {
+			if err != nil || result.Action != action || result.FixGoal != id || result.Sightings != 2 {
 				t.Fatalf("record after closure: %+v %v", result, err)
 			}
 			after, _ := acceptedTreeForEndpoint(t, e)
@@ -116,11 +132,11 @@ func TestRecordFlakeReusesGeneratedFixAfterEntryClosed(t *testing.T) {
 			if len(after.Live) != 1 || len(after.Done) != 0 || len(after.Abandoned) != 0 || got == nil {
 				t.Fatalf("expected exactly one live fix: %+v", after)
 			}
-			entry := openTrunkRedByIdentity(after.TrunkRed, closed.Identity)
-			if len(after.TrunkRed) != 2 || !reflect.DeepEqual(after.TrunkRed[0], *closed) || entry == nil || entry.ID != closed.ID+"-2" || entry.FixGoal != id {
+			entry := openTrunkRedByIdentity(after.TrunkRed, FlakeIdentity(flakeFixture().Unit, "TestOne"))
+			if len(after.TrunkRed) != 2 || !reflect.DeepEqual(after.TrunkRed[0], *closed) || entry == nil || entry.ID != FlakeIdentity(flakeFixture().Unit, "TestOne") || entry.FixGoal != id {
 				t.Fatalf("closed and new entries: %+v", after.TrunkRed)
 			}
-			if !strings.HasPrefix(got.NextStep, "Keep this step. Flaky:") || !strings.HasSuffix(got.NextStep, "seen once.") {
+			if !strings.HasPrefix(got.NextStep, "Keep this step. Flaky:") || !strings.HasSuffix(got.NextStep, "seen 2 times.") {
 				t.Fatalf("next step: %q", got.NextStep)
 			}
 			if state == StateClaimed {
@@ -130,7 +146,7 @@ func TestRecordFlakeReusesGeneratedFixAfterEntryClosed(t *testing.T) {
 			} else if got.State != StateQueued || got.Approved != nil || got.Claimed != nil {
 				t.Fatalf("reopened fix: %+v", got)
 			}
-			if replay, err := RecordFlake(r, flakeFixture()); err != nil || replay.Action != action || replay.FixGoal != id || replay.Sightings != 1 || acceptedTipForEndpoint(t, e) != result.Publish.Tip {
+			if replay, err := RecordFlake(r, flakeFixture()); err != nil || replay.Action != action || replay.FixGoal != id || replay.Sightings != 2 || acceptedTipForEndpoint(t, e) != result.Publish.Tip {
 				t.Fatalf("replayed closure recurrence: %+v %v", replay, err)
 			}
 		})
@@ -193,7 +209,9 @@ func TestRecordFlakeReopensGeneratedFix(t *testing.T) {
 	if got, err := Done(flakeRequest(e, 3), first.FixGoal, "Fixed the intermittent failure."); err != nil || got.Outcome != OutcomeConfirmed {
 		t.Fatalf("conclude: %+v %v", got, err)
 	}
-	result, err := RecordFlake(flakeRequest(e, 4), flakeFixture())
+	args := flakeFixture()
+	args.Attempt, args.Rerun.Attempt = "red-2", "green-2"
+	result, err := RecordFlake(flakeRequest(e, 4), args)
 	if err != nil || result.FixGoal != first.FixGoal || result.Action != "reopened" || result.Sightings != 2 {
 		t.Fatalf("reopen: %+v %v", result, err)
 	}

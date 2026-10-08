@@ -1,10 +1,12 @@
 package plain
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -120,7 +122,7 @@ func TestRepeatNoTestsRan(t *testing.T) {
 		t.Fatalf("no tests ran: %+v", red)
 	}
 	// A detached start must still consume the same allowance in Run.
-	b.seams.Launch = func([]string, string, string) (int64, error) { return 42, nil }
+	b.seams.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
 	b.seams.Alive = func(Running) bool { return true }
 	running, _, err := Start(b.install, b.checkout, b.seams)
 	if err != nil {
@@ -130,7 +132,7 @@ func TestRepeatNoTestsRan(t *testing.T) {
 	if err != nil || green.Result != Green || len(b.records) != 0 {
 		t.Fatalf("whole repeat: %+v %v records %+v", green, err, b.records)
 	}
-	if lines := b.lines(); len(lines) != 3 || lines[1].Repeat != "started" {
+	if lines := b.lines(); len(lines) != 4 || !lines[0].ClassificationPending || lines[2].Repeat != "started" {
 		t.Fatalf("allowance was not consumed: %+v", lines)
 	}
 }
@@ -146,7 +148,7 @@ func TestRepeatDeadCheck(t *testing.T) {
 				t.Fatal(err)
 			}
 			if entry == "start" {
-				b.seams.Launch = func([]string, string, string) (int64, error) { return 42, nil }
+				b.seams.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
 				if _, _, err := Start(b.install, b.checkout, b.seams); err != nil {
 					t.Fatal(err)
 				}
@@ -175,17 +177,73 @@ func TestRepeatDeadCheck(t *testing.T) {
 	}
 }
 
+func TestRepeatDetachedUnreadableIdentityKeepsAllowance(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"full", "gate", "trunk"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			for _, zero := range []bool{false, true} {
+				t.Run(fmt.Sprintf("zero pid %v", zero), func(t *testing.T) {
+					t.Parallel()
+					b := newRepeatBed(t)
+					b.seams.Gate, b.seams.Trunk = mode == "gate", mode == "trunk"
+					git := b.seams.Git
+					b.seams.Git = func(dir string, args ...string) (string, error) {
+						if strings.Join(args, " ") == "rev-parse --verify origin/main^{commit}" {
+							return "commit", nil
+						}
+						return git(dir, args...)
+					}
+					// An environment failure has left the one repeat available.
+					before := Result{Tree: "tree", Commit: "commit", Result: Red, Repeat: "allowed", Attempt: "first"}
+					if err := withLock(b.install, func() error { return appendLine(b.seams.resultsPath(b.install), before) }); err != nil {
+						t.Fatal(err)
+					}
+					pid := int64(0)
+					if !zero {
+						child := exec.Command("/usr/bin/true")
+						if err := child.Run(); err != nil {
+							t.Fatal(err)
+						}
+						pid = int64(child.Process.Pid)
+						if processRef(pid) != "" {
+							t.Fatal("exited child still has a readable identity")
+						}
+					}
+					b.seams.Launch = func([]string, string, string) (int64, error) { return pid, nil }
+					running, already, err := Start(b.install, b.checkout, b.seams)
+					retry := "metasystem landing prove"
+					if mode != "full" {
+						retry += " --" + mode
+					}
+					if err == nil || !strings.Contains(err.Error(), "environment") || !strings.HasSuffix(err.Error(), "retry: "+retry) || already || running.Admission == nil || running.Admission.State != "failed" {
+						t.Errorf("unreadable launch was not refused with its retry: %+v already=%v err=%v", running, already, err)
+					}
+					failed, recorded, alive, readErr := ReadRunning(b.install, b.seams)
+					if readErr != nil || !recorded || alive || failed.Admission == nil || failed.Admission.State != "failed" {
+						t.Errorf("unreadable launch lost its failed admission: %+v %v", failed, readErr)
+					}
+					lines, err := readLines[Result](b.seams.resultsPath(b.install))
+					if err != nil || !reflect.DeepEqual(lines, []Result{before}) {
+						t.Fatalf("launch failure changed the repeat allowance: %+v err=%v", lines, err)
+					}
+				})
+			}
+		})
+	}
+}
+
 func TestRepeatDetachedOwnAttemptKeepsAllowance(t *testing.T) {
 	t.Parallel()
 	b := newRepeatBed(t)
-	b.seams.Launch = func([]string, string, string) (int64, error) { return 0, nil }
+	b.seams.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
 	b.seams.Alive = func(Running) bool { return false }
 	running, _, err := Start(b.install, b.checkout, b.seams)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if running.Process != "" {
-		t.Fatalf("expected an unreadable process: %+v", running)
+	if running.Process == "" || running.Pid != int64(os.Getpid()) {
+		t.Fatalf("expected this process's detached attempt: %+v", running)
 	}
 	command := fmt.Sprintf("printf 'check\\n' >> %q; printf 'LANDING-NOT-RUN\\tdisk full\\n'; exit 2", b.trace)
 	red, err := Run(b.install, b.checkout, command, running.Attempt, io.Discard, b.seams)
@@ -196,13 +254,13 @@ func TestRepeatDetachedOwnAttemptKeepsAllowance(t *testing.T) {
 	if err != nil || string(trace) != "check\n" {
 		t.Fatalf("detached check did not run once: %q %v", trace, err)
 	}
-	if lines := b.lines(); len(lines) != 1 || !reflect.DeepEqual(lines[0], red) || red.Attempt != running.Attempt || red.Result != Red || red.Repeat != "allowed" || red.Reason != "the proving command exited 2" {
+	if lines := b.lines(); len(lines) != 2 || !lines[0].ClassificationPending || !reflect.DeepEqual(lines[1], red) || red.Attempt != running.Attempt || red.Result != Red || red.Repeat != "allowed" || red.Reason != "the proving command exited 2" {
 		t.Fatalf("own attempt consumed its allowance: %+v", lines)
 	}
 	if green := b.run("exit 0"); green.Result != Green || len(b.records) != 0 {
 		t.Fatalf("whole repeat: %+v records %+v", green, b.records)
 	}
-	if lines := b.lines(); len(lines) != 3 || lines[1].Repeat != "started" {
+	if lines := b.lines(); len(lines) != 4 || !lines[0].ClassificationPending || lines[2].Repeat != "started" {
 		t.Fatalf("whole repeat did not consume the allowance: %+v", lines)
 	}
 }
@@ -308,7 +366,8 @@ func TestRepeatKnownUnitsAloneAndRecordsBeforeGreen(t *testing.T) {
 		}
 		return recorded, err
 	}
-	command := fmt.Sprintf("if [ -z \"$LANDING_ONLY\" ]; then %s; fi; /usr/bin/grep -q '\"repeat\":\"started\"' %q", failedReport, resultsPath(b.install))
+	command := fmt.Sprintf("if [ -z \"$LANDING_ONLY\" ]; then %s; fi; /usr/bin/grep -q '\"repeat\":\"started\"' %q", failedEvidenceReport(), resultsPath(b.install))
+	command += "; " + passingEvidenceReport()
 	green := b.run(command)
 	if green.Result != Green || len(b.records) != 2 {
 		t.Fatalf("unit repeats: %+v records %+v", green, b.records)
@@ -326,7 +385,7 @@ func TestRepeatKnownUnitsAloneAndRecordsBeforeGreen(t *testing.T) {
 		t.Fatalf("worktree remains: %v", err)
 	}
 	for i, r := range b.records {
-		if r.Repeat != "alone" || r.Load != 2.75 || r.Attempt != "a1" || r.Tree != "tree" || r.Commit != "commit" || r.Log != green.Log || r.RepeatAttempt == r.Attempt || r.RepeatLog == r.Log || !reflect.DeepEqual(r.Surfaces, []string{fmt.Sprintf("surface-%c", 'a'+i)}) {
+		if len(r.Outputs) != len(r.Tests) || len(r.RepeatOutputs) != len(r.Tests) || r.Repeat != "alone" || r.Load != 2.75 || r.Attempt != "a1" || r.Tree != "tree" || r.Commit != "commit" || r.Log != green.Log || r.RepeatAttempt == r.Attempt || r.RepeatLog == r.Log || !reflect.DeepEqual(r.Surfaces, []string{fmt.Sprintf("surface-%c", 'a'+i)}) {
 			t.Fatalf("sighting: %+v", r)
 		}
 		if _, err := os.Stat(r.RepeatLog); err != nil {
@@ -337,7 +396,7 @@ func TestRepeatKnownUnitsAloneAndRecordsBeforeGreen(t *testing.T) {
 			t.Fatalf("reason: %s", green.Reason)
 		}
 	}
-	if lines := b.lines(); len(lines) != 2 || lines[0].Result != Red || lines[0].Repeat != "started" {
+	if lines := b.lines(); len(lines) != 4 || !lines[0].ClassificationPending || lines[0].Result != Red || lines[1].Repeat != "started" {
 		t.Fatalf("results: %+v", lines)
 	}
 }
@@ -354,21 +413,100 @@ func TestRepeatNewTestAllowsOneWholeCheck(t *testing.T) {
 		return m, e
 	}
 	// A whole repeat requires isolated greens on every replay tree.
-	red := b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedReport)
+	red := b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedEvidenceReport())
 	if red.Result != Red || red.Repeat != "allowed" || len(b.records) != 0 {
 		t.Fatalf("new test: %+v records %+v", red, b.records)
 	}
-	green := b.run(fmt.Sprintf("/usr/bin/grep -q '\"repeat\":\"started\"' %q", resultsPath(b.install)))
+	green := b.run(fmt.Sprintf("/usr/bin/grep -q '\"repeat\":\"started\"' %q; %s", resultsPath(b.install), passingEvidenceReport()))
 	if green.Result != Green || len(b.records) != 2 {
 		t.Fatalf("whole repeat: %+v records %+v", green, b.records)
 	}
 	for _, r := range b.records {
-		if r.Repeat != "whole" || r.Attempt != red.Attempt || r.RepeatAttempt != green.Attempt || r.Log != red.Log || len(r.Surfaces) != 1 || r.Load != 2.75 || !strings.Contains(green.Reason, "again in a whole check") {
+		if len(r.Outputs) != len(r.Tests) || len(r.RepeatOutputs) != len(r.Tests) || r.Repeat != "whole" || r.Attempt != red.Attempt || r.RepeatAttempt != green.Attempt || r.Log != red.Log || len(r.Surfaces) != 1 || r.Load != 2.75 || !strings.Contains(green.Reason, "again in a whole check") {
 			t.Fatalf("whole sighting: %+v reason %s", r, green.Reason)
 		}
 	}
-	if lines := b.lines(); len(lines) != 3 || lines[1].Repeat != "started" {
+	if lines := b.lines(); len(lines) != 4 || !lines[0].ClassificationPending || lines[2].Repeat != "started" {
 		t.Fatalf("results: %+v", lines)
+	}
+}
+
+func TestRepeatKnownRedWholeCheckFailureReplaysOnMain(t *testing.T) {
+	t.Parallel()
+	b := newRepeatBed(t)
+	failed := []FailedUnit{{Unit: "u/a", Tests: []string{"TestA"}}}
+	previous := Result{Tree: "tree", Commit: "commit", Result: Red, Repeat: "allowed", Attempt: "first", Failed: failed,
+		Cause: &Cause{Kind: "unclassified", Tests: failingTests(failed), Evidence: "first.log"}}
+	if err := withLock(b.install, func() error { return appendLine(resultsPath(b.install), previous) }); err != nil {
+		t.Fatal(err)
+	}
+	judgements := 0
+	b.seams.Judge = func(checkout, commit string, units []FailedUnit) (map[string]UnitJudgement, error) {
+		judgements++
+		if checkout != b.checkout || commit != "commit" || !reflect.DeepEqual(units, failed) {
+			t.Fatalf("judge input: %s %s %+v", checkout, commit, units)
+		}
+		return map[string]UnitJudgement{"u/a": {Known: true}}, nil
+	}
+	var calls []*exec.Cmd
+	b.seams.Command = func(cmd *exec.Cmd) error {
+		calls = append(calls, cmd)
+		fmt.Fprint(cmd.Stdout, plainTestEvents("u/a", []string{"TestA"}, "fail"), "LANDING-FAILED\tu/a\tTestA\nLANDING-CHECKED\t1\n")
+		return errors.New("red")
+	}
+	red := b.run("fixture")
+	if red.Result != Red || red.Cause == nil || red.Cause.Kind != "main" || red.Cause.Name != "red:u/a:TestA" || red.Repeat != "started" || len(red.FlakeRepeats) != 0 || len(b.records) != 0 {
+		t.Fatalf("whole repeat lost main attribution: %+v cause=%+v records=%+v", red, red.Cause, b.records)
+	}
+	if judgements != 1 || len(calls) != 2 {
+		t.Fatalf("want one judgement, one whole repeat and one main replay: judgements=%d calls=%d", judgements, len(calls))
+	}
+	for i, only := range []string{"", "u/a"} {
+		attempt := "a1"
+		if i == 1 {
+			attempt += "-replay-1"
+		}
+		wantDir := filepath.Join(proofTrees(b.install), attempt, "metasystem")
+		if commandEnv(calls[i], "LANDING_ONLY") != only || commandEnv(calls[i], "LANDING_COMMIT") != "commit" || calls[i].Dir != wantDir {
+			t.Fatalf("check %d: only=%q commit=%q dir=%q; want only=%q commit=commit dir=%q", i, commandEnv(calls[i], "LANDING_ONLY"), commandEnv(calls[i], "LANDING_COMMIT"), calls[i].Dir, only, wantDir)
+		}
+	}
+	lines := b.lines()
+	if len(lines) != 4 || lines[1].Repeat != "started" || !reflect.DeepEqual(lines[len(lines)-1], red) {
+		t.Fatalf("whole repeat and its attributed result were not recorded: %+v", lines)
+	}
+	b.refused()
+}
+
+func TestFlakeRepeatHistoryRefusalPreservesOrdinaryCause(t *testing.T) {
+	t.Parallel()
+	b := newRepeatBed(t)
+	prior := Result{Tree: "tree", Commit: "commit", Result: Red, Repeat: "started", Attempt: "first"}
+	if err := withLock(b.install, func() error { return appendLine(resultsPath(b.install), prior) }); err != nil {
+		t.Fatal(err)
+	}
+	failed := []FailedUnit{{Unit: "u/a", Tests: []string{"TestA"}}}
+	ordinary := Cause{Kind: "unclassified", Tests: failingTests(failed), Evidence: "red.log"}
+	red := Result{Tree: "tree", Commit: "commit", Result: Red, Attempt: "second", Failed: failed, Cause: &Cause{Kind: ordinary.Kind, Tests: ordinary.Tests, Evidence: ordinary.Evidence}}
+	b.seams.Judge = func(string, string, []FailedUnit) (map[string]UnitJudgement, error) {
+		return map[string]UnitJudgement{"u/a": {Known: true}}, nil
+	}
+	b.seams.Command = func(*exec.Cmd) error {
+		t.Fatal("a spent repeat executed another check")
+		return nil
+	}
+	replays := 0
+	result := continueRed(b.seams, b.install, b.checkout, "fixture", b.install,
+		Running{Attempt: red.Attempt, Tree: red.Tree, Commit: red.Commit}, scopeDecision{}, io.Discard, red, Result{},
+		func(result, previous Result) Result {
+			replays++
+			if result.Cause == nil || !reflect.DeepEqual(*result.Cause, ordinary) || result.Repeat != "" || len(result.FlakeRepeats) != 0 || previous.Result != "" {
+				t.Fatalf("spent repeat reached replay with a flake cause or allowance: %+v cause=%+v previous=%+v", result, result.Cause, previous)
+			}
+			return result
+		})
+	if replays != 1 || result.Result != Red || len(b.records) != 0 || !reflect.DeepEqual(b.lines(), []Result{prior}) {
+		t.Fatalf("spent repeat changed history or skipped replay: %+v replays=%d records=%+v history=%+v", result, replays, b.records, b.lines())
 	}
 }
 
@@ -384,7 +522,7 @@ func TestRepeatFailureAndUnconfirmedRecordStayRed(t *testing.T) {
 					return map[string]UnitJudgement{"u/a": {}, "u/b": {}}, nil
 				}
 				// The repeat rule requires isolated greens before the whole retry.
-				b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedReport)
+				b.run("if [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi; " + failedEvidenceReport())
 			}
 			if strings.Contains(name, "record error") {
 				b.seams.RecordFlake = func(FlakeRecord) (FlakeRecorded, error) { return FlakeRecorded{}, errors.New("record not confirmed") }
@@ -392,14 +530,14 @@ func TestRepeatFailureAndUnconfirmedRecordStayRed(t *testing.T) {
 			if name == "nil record" {
 				b.seams.RecordFlake = nil
 			}
-			command := "if [ -z \"$LANDING_ONLY\" ]; then " + failedReport + "; fi; exit 0"
+			command := "if [ -z \"$LANDING_ONLY\" ]; then " + failedEvidenceReport() + "; fi; " + passingEvidenceReport()
 			if name == "unit fails" {
-				command = "if [ -z \"$LANDING_ONLY\" ]; then " + failedReport + "; fi; exit 2"
+				command = "if [ -z \"$LANDING_ONLY\" ]; then " + failedEvidenceReport() + "; fi; exit 2"
 			}
 			if whole {
-				command = "exit 0"
+				command = passingEvidenceReport()
 				if name == "whole fails" {
-					command = failedReport
+					command = failedEvidenceReport()
 				}
 			}
 			red := b.run(command)
@@ -408,8 +546,8 @@ func TestRepeatFailureAndUnconfirmedRecordStayRed(t *testing.T) {
 			}
 			if name == "unit fails" {
 				trace, _ := os.ReadFile(b.trace)
-				if strings.Count(string(trace), "|tree|commit\n") != 4 {
-					t.Fatalf("did not repeat every unit and replay its failure: %s", trace)
+				if strings.Count(string(trace), "|tree|commit\n") != 3 {
+					t.Fatalf("did not repeat every unit exactly once: %s", trace)
 				}
 			}
 			b.refused()
@@ -479,4 +617,75 @@ func TestRepeatInheritedGreenIncludesFlakeReason(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRepeatRedCannotBorrowInheritedGreenPermission(t *testing.T) {
+	t.Parallel()
+	for _, entry := range []string{"run", "start"} {
+		t.Run(entry, func(t *testing.T) {
+			t.Parallel()
+			b := newRepeatBed(t)
+			green := Result{Tree: "old", Commit: "old", Result: Green}
+			red := Result{Tree: "tree", Commit: "commit", Result: Red, Repeat: "allowed", Cause: &Cause{Kind: "environment"}}
+			if err := withLock(b.install, func() error {
+				if err := appendLine(resultsPath(b.install), green); err != nil {
+					return err
+				}
+				return appendLine(resultsPath(b.install), red)
+			}); err != nil {
+				t.Fatal(err)
+			}
+			git := b.seams.Git
+			b.seams.Git = func(dir string, args ...string) (string, error) {
+				if strings.Join(args, " ") == "diff --name-only --no-renames old tree" {
+					return "metasystem/plans/goals/fix.md", nil
+				}
+				return git(dir, args...)
+			}
+			b.seams.Policy = func(key string) (PolicyValue, error) {
+				if key == "landing.proof" {
+					return PolicyValue{Value: "person"}, nil
+				}
+				return PolicyValue{Value: "auto"}, nil
+			}
+			b.seams.Command = func(*exec.Cmd) error { t.Error("a red tree borrowed permission from an older green"); return nil }
+			b.seams.Launch = func([]string, string, string) (int64, error) {
+				t.Error("a red tree launched without fresh full-check permission")
+				return int64(os.Getpid()), nil
+			}
+			var err error
+			if entry == "run" {
+				_, err = Run(b.install, b.checkout, "exit 0", "", io.Discard, b.seams)
+			} else {
+				_, _, err = Start(b.install, b.checkout, b.seams)
+			}
+			var refusal *Refusal
+			if !errors.As(err, &refusal) || refusal.Code != "LANE_PROOF_PERSON" || len(b.lines()) != 2 {
+				t.Fatalf("repeat bypassed full-check permission or changed history: %v %+v", err, b.lines())
+			}
+		})
+	}
+}
+
+func plainTestEvents(unit string, tests []string, action string) string {
+	var out strings.Builder
+	for _, test := range tests {
+		event, _ := json.Marshal(map[string]string{"Action": action, "Package": unit, "Test": test})
+		out.Write(event)
+		out.WriteByte('\n')
+	}
+	event, _ := json.Marshal(map[string]string{"Action": action, "Package": unit})
+	out.Write(event)
+	out.WriteByte('\n')
+	return out.String()
+}
+
+func failedEvidenceReport() string {
+	events := plainTestEvents("u/a", []string{"TestA", "TestB"}, "fail") + plainTestEvents("u/b", []string{"TestC"}, "fail")
+	return "printf '%s' '" + events + "'; " + failedReport
+}
+
+func passingEvidenceReport() string {
+	events := plainTestEvents("u/a", []string{"TestA", "TestB"}, "pass") + plainTestEvents("u/b", []string{"TestC"}, "pass")
+	return "printf '%s' '" + events + "'; printf 'LANDING-CHECKED\\t0\\n'"
 }

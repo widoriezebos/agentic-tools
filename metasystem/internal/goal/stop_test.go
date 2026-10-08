@@ -412,6 +412,7 @@ func TestAbandonOfABreachStoppedClaimKeepsTheFenceFreesTheQuotaAndEnforcesTheDep
 		{"steal", func() (PublishResult, error) {
 			request := verbReqFor(endpoint, "01J5X00000000000000001T035", "mac-b")
 			request.Actor.Human = "Wido"
+			request.Authority = testHumanAuthority(t, request.Endpoint.Root, request.Now)
 			return Steal(request, "stop-me")
 		}},
 	}

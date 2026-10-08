@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,8 +11,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -168,6 +172,25 @@ func newRecordsBed(t *testing.T) *recordsBed {
 			return intentBranchState{BranchTip: b.published, Status: branch.Status{Commits: []branch.Commit{{ID: b.published, Kind: branch.Plan}}}}, nil
 		},
 	}
+	home := t.TempDir()
+	helmMust(t, os.MkdirAll(filepath.Dir(lane.RecordPath(home)), 0755))
+	register, err := json.Marshal(lane.Record{Root: b.lane, Install: b.lane, CustodyEpoch: 1, RegisteredBy: "Wido"})
+	helmMust(t, err, os.WriteFile(lane.RecordPath(home), register, 0600))
+	laneConf := filepath.Join(b.lane, "metasystem.conf")
+	helmMust(t, os.WriteFile(laneConf, []byte("landing.trunk-red=auto\n"), 0600))
+	b.owners.landing.home = func() (string, error) { return home, nil }
+	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		switch args[0] {
+		case "fetch", "ls-tree":
+			return "", nil
+		case "rev-parse":
+			return "main", nil
+		default:
+			t.Fatalf("records hand-in queried Git %v", args)
+			return "", nil
+		}
+	}
+	b.owners.policies = config.PolicyReaders{Registry: func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{Lane: b.lane}, nil }, Helm: func(string) helm.State { return helm.State{} }, ConfPath: func(string) (string, error) { return laneConf, nil }}
 	return b
 }
 
@@ -319,7 +342,7 @@ func TestRecordsHandInSummaryKeepsItsSubject(t *testing.T) {
 	if code != 0 || !strings.HasPrefix(result.Summary, want+" handed to the lane;") {
 		t.Fatalf("records hand-in summary: %d %+v", code, result)
 	}
-	if _, _, err := plain.Return(b.lane, "standing-validation", "records check failed", time.Time{}); err != nil {
+	if _, _, err := plain.ReturnProven(b.lane, "standing-validation", "unclassified", "records check failed", true, "fixture", time.Time{}, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result = b.runJSON(b.owners, "work", "land", "standing-validation", "--records", recordsPath, "--again", "--delivered", "The design is accepted")
@@ -400,7 +423,7 @@ func TestRecordsAlreadyOnTheBranchMakeNoSecondCommit(t *testing.T) {
 	if code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "goal standing-validation's records at bbbbbbbbbbbb is waiting") || len(b.requests) != 0 || err != nil || len(entries) != 1 {
 		t.Fatalf("queued repeat stays one hand-in: %d %+v entries=%v %v", code, result, entries, err)
 	}
-	if _, _, err := plain.Return(b.lane, "standing-validation", "records check failed", time.Time{}); err != nil {
+	if _, _, err := plain.ReturnProven(b.lane, "standing-validation", "unclassified", "records check failed", true, "fixture", time.Time{}, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result = b.runJSON(b.owners, "work", "land", "standing-validation")

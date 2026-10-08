@@ -9,6 +9,7 @@ package lane
 // lane. Unread names each source that could not be read and why: an unread
 // source is never a reason, and it is shown, never hidden.
 type Wake struct {
+	BatchID string   `json:"batch-id,omitempty"`
 	Reasons []string `json:"reasons"`
 	Unread  []string `json:"unread"`
 }

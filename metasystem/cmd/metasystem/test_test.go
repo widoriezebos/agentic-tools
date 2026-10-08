@@ -2330,7 +2330,9 @@ func prepareFrozenPublicVersionOneCorpus(t *testing.T, sourceRoot string, layout
 	// Six frozen cases through a real worker take about two and a half
 	// minutes under the race detector on a loaded box; a one-minute cap made
 	// this a wall-clock test that failed only inside the race gate.
-	budget := &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 6, ActiveJobLimit: 1, ReviewRoundLimit: 2}
+	// Tier one has no review rounds (docs/orchestration.md, Part One's
+	// review-round member); the corpus exercises testing, not review.
+	budget := &goal.Budget{ElapsedLimit: "1h", AttemptLimit: 2, ReservedJobMinutesLimit: 6, ActiveJobLimit: 1, ReviewRoundLimit: 0}
 	intent := "Run the frozen policy corpus through the first testing transition."
 	rootRecord := frozenCorpusRootRecord()
 	goalFile := &goal.GoalFile{Id: "policy-corpus", State: goal.StateClaimed, Tier: 1, Risk: risk, Intent: intent, Origin: goal.OriginMain,

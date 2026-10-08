@@ -29,11 +29,10 @@ type SeatHeld struct {
 	Lineage string
 	// Landing is a claim waiting to land.
 	Landing bool
-	// StepDue says the holder has a step to take on it: always for a working
-	// claim; for a landing claim only when HolderStepsDue names one and no
-	// review hold stands on the goal.
+	// StepDue requires current execution authority and a step the holder may
+	// take. Landing also requires a due holder step and no review hold.
 	StepDue bool
-	// Wait is why a landing claim is not due.
+	// Wait is why the held claim is not due.
 	Wait         string
 	ApprovalOpid string
 }
@@ -74,8 +73,13 @@ func SeatWorldFrom(work goal.ClaimableBudgetedWork, live map[string]*goal.GoalFi
 	var world SeatWorld
 	for _, id := range work.Claimed {
 		file, _ := work.OwnedClaim(id)
-		held := SeatHeld{Goal: id, Lineage: claimLineage(file), StepDue: true, ApprovalOpid: approvalOpid(file)}
-		if facts := work.GoalFacts[id]; facts.AskedOpen {
+		eligible := work.Eligibility[id]
+		held := SeatHeld{Goal: id, Lineage: claimLineage(file), StepDue: eligible.Ready, Wait: eligible.Wait, ApprovalOpid: approvalOpid(file)}
+		if facts := work.GoalFacts[id]; !eligible.Ready {
+			if held.Wait == "" {
+				held.Wait = "execution eligibility has not been established"
+			}
+		} else if facts.AskedOpen {
 			held.StepDue, held.Wait = false, "an open question on it waits on a person's answer"
 		} else if goal.NextStepNamesAPendingHumanWord(facts.NextStep) {
 			held.StepDue, held.Wait = false, "its next step waits on a human word"
@@ -88,6 +92,11 @@ func SeatWorldFrom(work goal.ClaimableBudgetedWork, live map[string]*goal.GoalFi
 		holds := goal.HoldsOf(file)
 		steps := goal.HolderStepsDue([]*goal.GoalFile{file}, settings, now)
 		switch {
+		case !work.Eligibility[id].Ready:
+			held.Wait = work.Eligibility[id].Wait
+			if held.Wait == "" {
+				held.Wait = "execution eligibility has not been established"
+			}
 		case file == nil:
 			held.Wait = "its record is not in this reading"
 		case len(holds) > 0:

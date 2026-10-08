@@ -460,6 +460,7 @@ func TestOverNormApprovalComposesWithClaimAndSteal(t *testing.T) {
 	}
 	steal := verbReqFor(b, "01J5X00000000000000000NS40", "mac-b")
 	steal.Actor.Human = "wido"
+	steal.Authority = testHumanAuthority(t, steal.Endpoint.Root, steal.Now)
 	if res, err := Steal(steal, "over-steal"); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the bound over-norm approval did not compose with steal: %+v %v", res, err)
 	}

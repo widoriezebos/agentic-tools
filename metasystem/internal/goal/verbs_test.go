@@ -799,6 +799,7 @@ func TestStealStartsNewEpisode(t *testing.T) {
 	first := *before.Live["steal-episode"].Claimed
 	steal := verbReqFor(endpoint, "01J5X00000000000000000ES01", "mac-b")
 	steal.Actor.Human = "Wido"
+	steal.Authority = testHumanAuthority(t, steal.Endpoint.Root, steal.Now)
 	steal.Now = claim.Now.Add(time.Hour)
 	if result, err := Steal(steal, "steal-episode"); err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("steal: %+v %v", result, err)
@@ -1364,6 +1365,7 @@ func TestStealNeedsItsHumanAndRecordsIt(t *testing.T) {
 	}
 	humanReq := verbReqFor(bEndpoint, "01J5X0000000000000000000F8", "mac-b")
 	humanReq.Actor.Human = "wido"
+	humanReq.Authority = testHumanAuthority(t, humanReq.Endpoint.Root, humanReq.Now)
 	res, err := Steal(humanReq, "wanted")
 	if err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("the attributed steal proceeds: %+v %v", res, err)
@@ -1869,6 +1871,7 @@ func TestFreshNoOpsAbandonHonestly(t *testing.T) {
 	// A fresh steal of an already-ours goal abandons the same way.
 	humanReq := verbReqFor(aEndpoint, "01J5X00000000000000000F920", "mac-a")
 	humanReq.Actor.Human = "wido"
+	humanReq.Authority = testHumanAuthority(t, humanReq.Endpoint.Root, humanReq.Now)
 	res, err = Steal(humanReq, "held-fast")
 	if err != nil || res.Outcome != OutcomeAbandoned {
 		t.Fatalf("steal-already-ours abandons: %+v %v", res, err)
@@ -1945,15 +1948,22 @@ func TestMachinePinning(t *testing.T) {
 		t.Fatalf("re-pin over a foreign claim rejects: %+v %v", res, err)
 	}
 
-	// Even a human steal honors the pin: the stealing machine is not
-	// the pinned one.
 	stealReq := verbReqFor(aEndpoint, "01J5X0000000000000000000P7", "mac-a")
 	stealReq.Actor.Human = "wido"
-	if res, err := Steal(stealReq, "gpu-work"); err != nil || res.Outcome != OutcomeRejected ||
-		!strings.Contains(res.Detail, "metasystem goal pin gpu-work --clear") {
-		t.Fatalf("a steal onto a foreign machine rejects: %+v %v", res, err)
+	stealReq.Authority = testHumanAuthority(t, aEndpoint.Root, stealReq.Now)
+	if res, err := Steal(stealReq, "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("proved takeover was refused by pin advice: %+v %v", res, err)
+	}
+	restore := verbReqFor(bEndpoint, "01J5X0000000000000000000PZ", "mac-b")
+	restore.Actor.Human = "wido"
+	restore.Authority = testHumanAuthority(t, bEndpoint.Root, restore.Now)
+	if res, err := Steal(restore, "gpu-work"); err != nil || res.Outcome != OutcomeConfirmed {
+		t.Fatalf("return takeover: %+v %v", res, err)
 	}
 
+	if _, err := FetchAdvance(aEndpoint); err != nil {
+		t.Fatal(err)
+	}
 	// While pinned to mac-b, the goal is invisible to mac-a's frontier
 	// and ready on mac-b's.
 	frontierTree, err := loadTreeFor(aEndpoint, acceptedTipForEndpoint(t, aEndpoint))
@@ -1974,13 +1984,13 @@ func TestMachinePinning(t *testing.T) {
 		t.Fatal(err)
 	}
 	readyOnB := false
-	for _, id := range frontierB.Ready {
+	for _, id := range frontierB.Claimed {
 		if id == "gpu-work" {
 			readyOnB = true
 		}
 	}
 	if !readyOnB {
-		t.Fatal("the pinned machine's frontier must list the goal ready")
+		t.Fatal("the pinned machine's frontier must retain its claim")
 	}
 
 	// A released pin TRANSFERS whole: mac-b's pin moves to mac-a, and

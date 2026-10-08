@@ -105,10 +105,9 @@ func TestRunnerProviderRecoveryStartsTheNextCycle(t *testing.T) {
 	}
 }
 
-// TestRunnerKeepsTheLandingLaneOutsideTheHelm (U12): every cycle outside the
-// helm the runner gives the landing lane's keeper one step; at the helm the
-// machinery acts on nothing, so the keeper does not run.
-func TestRunnerKeepsTheLandingLaneOutsideTheHelm(t *testing.T) {
+// The runner observes the landing lane each cycle, including at the helm.
+// The keeper admits only a recorded person selection through that fence.
+func TestRunnerKeepsTheLandingLaneAcrossTheHelm(t *testing.T) {
 	t.Parallel()
 	loop := newHelmLoop(t)
 	now := time.Date(2026, 9, 29, 10, 0, 0, 0, time.UTC)
@@ -139,8 +138,8 @@ func TestRunnerKeepsTheLandingLaneOutsideTheHelm(t *testing.T) {
 	if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, 200*time.Millisecond, config, deps); err != nil {
 		t.Fatal(err)
 	}
-	if steps != 3 {
-		t.Fatalf("keeper steps = %d; want one per cycle outside the helm (3) and none at it", steps)
+	if steps != 4 {
+		t.Fatalf("keeper steps = %d; want one per cycle, including the cycle at the helm (4)", steps)
 	}
 }
 

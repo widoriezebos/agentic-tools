@@ -7,6 +7,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
 
 // seatClaimBed is the intent bed with its held goal released to approved and,
@@ -61,10 +62,14 @@ func TestSeatClaimOfATakenGoalTakesTheNextReady(t *testing.T) {
 	bed := seatClaimBed(t, true)
 	claimTakenFirst(t, bed)
 	bed.lineage = launch.SeatOwnerLineage
+	holder, err := lease.CurrentHolder(bed.root())
+	if err != nil || holder.OwnerLineage == "" {
+		t.Fatalf("the original owning session is unreadable: %+v %v", holder, err)
+	}
 	code, result := bed.runJSON(bed.owners(), "goal", "claim", bedGoal)
 	next := bed.goalFile("next-ready")
 	if code != 0 || result.Outcome != intentConfirmed || next.State != goal.StateClaimed || next.Claimed == nil ||
-		next.Claimed.Machine != "mac-cli" || next.Claimed.Lineage != launch.SeatOwnerLineage {
+		next.Claimed.Machine != "mac-cli" || next.Claimed.Lineage != holder.OwnerLineage {
 		t.Fatalf("the seat's claim of a taken goal = %d %+v; next-ready %+v", code, result, next.Claimed)
 	}
 	if want := bedGoal + " was taken by mac-other; claimed next-ready instead"; strings.Split(result.Summary, "\n")[0] != want {

@@ -5,11 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
@@ -70,7 +74,7 @@ func TestLandingKeeperStatusShowsBarrenHold(t *testing.T) {
 		return landingStatusData{View: view, Queue: waiting}
 	}
 	command, _ := findIntentAction("landing", "status")
-	const want = "held after 2 runs that left the lane unchanged; a person's metasystem landing run starts it"
+	const want = "held after 2 runs that left the lane unchanged; a person's recorded selection or a fresh proof of main is needed"
 	for _, args := range [][]string{{"--json"}, {}} {
 		var stdout, stderr bytes.Buffer
 		code := runIntentIn(command, args, &stdout, &stderr, bed.cwd, owners)
@@ -106,6 +110,15 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 	root := resolvedPath(t.TempDir())
 	home := resolvedPath(t.TempDir())
 	bed := &laneVerbBed{cwd: root, home: home, landingA: root}
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(root, "scripts", "agents"), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.MkdirAll(lane.HostDir(home), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -113,10 +126,42 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 	if err := os.WriteFile(filepath.Join(lane.HostDir(home), "landing-lane.json"), record, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	// Keeper launches prepare a selection from these queue and main facts;
+	// no external Git repository or host policy participates in this fixture.
+	bed.policies = config.PolicyReaders{
+		Registry: func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{}, nil },
+		ConfPath: func(string) (string, error) { return filepath.Join(root, "metasystem.conf"), nil },
+		Helm:     func(string) helm.State { return helm.State{} },
+	}
+	falseState := replayFalseState(t)
+	bed.plainProve = plain.ProveSeams{Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }, Now: func() time.Time { return laneTestNow }, Git: func(_ string, args ...string) (string, error) {
+		switch args[0] {
+		case "fetch":
+			return "", nil
+		case "rev-parse":
+			return "main", nil
+		case "cat-file":
+			return "", nil
+		case "merge-base":
+			return "", &exec.ExitError{ProcessState: falseState}
+		default:
+			t.Fatalf("unstubbed selection Git: %v", args)
+			return "", nil
+		}
+	}}
 	now, starts, proofAlive := laneTestNow, 0, false
-	keeper := newLandingAgentKeeper(root, home, landingAgent{now: func() time.Time { return now }, machine: func(string) (string, error) { return "lane-fixture", nil }})
+	// Lane policy observation reads the same main and incident facts as selection
+	// (plans/designs/lane-reads-its-policies.md, Decisions 3 and 5).
+	keeper := newLandingAgentKeeper(root, home, landingAgent{proofEffects: bed.plainProve, now: func() time.Time { return now }, machine: func(string) (string, error) { return "lane-fixture", nil }})
+	keeper.Prepare = func(record lane.Record) error {
+		_, err := plain.SelectBatch(record.Install, record.Root, record, bed.plainProve)
+		return err
+	}
 	if keeper.Fingerprint == nil {
 		t.Fatal("the landing keeper has no lane fingerprint, so barren runs cannot hold it")
+	}
+	keeper.BarrenStop = func(record lane.Record, state lane.AgentState) error {
+		return plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(home), now, bed.plainProve)
 	}
 	keeper.Fingerprint = func(string) (string, error) {
 		entries, err := plain.Entries(root)
@@ -192,7 +237,8 @@ func TestLandingKeeperPublicRunLiftsBarrenHold(t *testing.T) {
 	if run := keeper.Run(); run.Outcome != lane.AgentHeld || *starts != 2 {
 		t.Fatalf("unchanged work: %+v, starts=%d; want two starts then a hold", run, *starts)
 	}
-	if code, stdout, stderr := bed.run(t, "landing", "run", "--json"); code != 0 || *starts != 3 || !strings.Contains(oneSpaced(stdout), `"outcome": "started"`) {
+	bed.prove = enrolledPersonProver(t, bed.landingA, *now)
+	if code, stdout, stderr := bed.run(t, "landing", "run", "--goals", "first,second", "--json"); code != 0 || *starts != 3 || !strings.Contains(oneSpaced(stdout), `"outcome": "started"`) {
 		t.Fatalf("public run with barren hold: %d %q %q, starts=%d; want a third start", code, stdout, stderr, *starts)
 	}
 }

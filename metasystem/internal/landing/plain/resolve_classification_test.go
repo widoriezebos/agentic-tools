@@ -9,6 +9,72 @@ import (
 	"testing"
 )
 
+func TestResolveRegenerationReturnLimitHoldsWaitingEntry(t *testing.T) {
+	t.Parallel()
+	b := newResolveFixture(t)
+	if err := os.Remove(queuePath(b.install)); err != nil {
+		t.Fatal(err)
+	}
+	b.seams.Proof.Policy = func(key string) (PolicyValue, error) {
+		if key != "landing.on-red" {
+			t.Fatalf("unexpected policy %q", key)
+		}
+		return PolicyValue{Value: "auto"}, nil
+	}
+	for index, sha := range []string{"first-sha", "second-sha"} {
+		if _, _, err := HandIn(b.install, Line{Goal: "goal", SHA: sha}); err != nil {
+			t.Fatal(err)
+		}
+		failures := []string{"first-test", "second-test"}
+		if index == 1 {
+			failures = []string{"third-test"}
+		}
+		if err := withLock(b.install, func() error {
+			entry, changed, err := returnLocked(b.install, "goal", "own test failure", &Cause{Kind: "own", Goal: "goal", SHA: sha, Tests: failures}, nil, bedNow, b.seams.Proof)
+			if err == nil && (!changed || entry.State != StateReturned || entry.ReturnOrigin == nil || entry.ReturnOrigin.Person != nil) {
+				t.Fatalf("automatic return=%+v changed=%v", entry, changed)
+			}
+			return err
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := HandIn(b.install, Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+		t.Fatal(err)
+	}
+	runs, aborted := 0, false
+	git := b.seams.Git
+	b.seams.Git = func(dir string, args ...string) (string, error) {
+		if strings.Join(args, " ") == "merge --abort" {
+			aborted = true
+		}
+		return git(dir, args...)
+	}
+	b.seams.Run = func([]string, string, *os.File, func(int64) error) error {
+		runs++
+		if !aborted {
+			return exec.Command("/usr/bin/false").Run()
+		}
+		return nil
+	}
+	out, err := b.resolve()
+	var refusal *Refusal
+	if !errors.As(err, &refusal) || refusal.Code != "LANE_RETURN_PERSON" || !strings.Contains(refusal.Reason, "two automatic returns") {
+		t.Fatalf("return limit was not enforced: out=%+v err=%v", out, err)
+	}
+	if out.Outcome != "held" || !out.Held || out.Exit != 1 || out.Entry == nil || out.Entry.State != StateWaiting || !out.Entry.Held || out.Cause == nil || out.Cause.Kind != "own" || runs != 3 {
+		t.Errorf("refused regeneration return=%+v runs=%d", out, runs)
+	}
+	entry, ok, err := Latest(b.install, "goal")
+	if err != nil || !ok || entry.SHA != "goal-sha" || entry.State != StateWaiting || !entry.Held {
+		t.Errorf("queue did not retain the hold: entry=%+v found=%v err=%v", entry, ok, err)
+	}
+	second, err := b.resolve()
+	if err != nil || second.Outcome != "held" || !second.Held || runs != 3 {
+		t.Fatalf("held regeneration ran again: out=%+v runs=%d err=%v", second, runs, err)
+	}
+}
+
 func TestResolveKilledRegenerationRetriesOnceAndNeverReplaysOrReturns(t *testing.T) {
 	t.Parallel()
 	b := newResolveFixture(t)
@@ -110,7 +176,7 @@ func TestConflictDependencyHoldTracksExactHandInAndPendingSkipsHeld(t *testing.T
 				t.Fatal(err)
 			}
 			if outcome == "returned" {
-				if _, _, err := Return(install, "A", "own", bedNow); err != nil {
+				if _, _, err := ReturnProven(install, "A", "unclassified", "own", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 					t.Fatal(err)
 				}
 			}

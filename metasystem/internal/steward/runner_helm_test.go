@@ -174,3 +174,36 @@ func TestRunnerLoopHelmTakenDuringTickSkipsPostTick(t *testing.T) {
 		})
 	}
 }
+
+func TestRunnerLoopUnderHelmKeepsLaneWithoutOtherPostTickActs(t *testing.T) {
+	t.Parallel()
+	loop := newHelmLoop(t)
+	takeHelmFixture(t, loop.root)
+	now := time.Date(2026, 10, 4, 8, 0, 0, 0, time.UTC)
+	keeps, rearms, starts, revives, delivers, channels, trims, resumes := 0, 0, 0, 0, 0, 0, 0, 0
+	deps := idleRunnerDependencies(&now)
+	deps.Tick = func(string, TickConfig, WorkerCensus) (TickResult, error) {
+		return TickResult{Decision: Decision{Action: ActRevive}, Seat: &SeatSelection{}}, nil
+	}
+	deps.StartSeat = func(string, TickConfig, WorkerCensus, SeatSelection) (SeatRecord, error) {
+		starts++
+		return SeatRecord{}, nil
+	}
+	deps.Resumable = func(string) (string, bool, error) { resumes++; return "prepared", true, nil }
+	deps.DeliverPending = func(string) (int, error) { delivers++; return 0, nil }
+	deps.Channel = func(context.Context, string) (int, error) { channels++; return 0, nil }
+	deps.TrimCaches = func(context.Context, string, TickConfig) error { trims++; return nil }
+	cfg := TickConfig{Now: now, KeepLandingLane: func() lane.AgentRun { keeps++; loop.stop(t); return lane.AgentRun{Outcome: lane.AgentIdle} }, RearmAtBoundary: func() (bool, error) { rearms++; return false, nil }}
+	// A skipped keeper still terminates deterministically on the injected clock.
+	sleep := deps.Sleep
+	deps.Sleep = func(d time.Duration) { sleep(d); loop.stop(t) }
+	if err := runLoopWithDependencies(loop.root, fakeCensus{}, func() error { revives++; return nil }, time.Second, cfg, deps); err != nil {
+		t.Fatal(err)
+	}
+	if keeps != 1 || [7]int{rearms, starts, revives, delivers, channels, trims, resumes} != [7]int{} {
+		t.Fatalf("helm post-tick: keeper=%d others=%v", keeps, [7]int{rearms, starts, revives, delivers, channels, trims, resumes})
+	}
+	if !helm.Active(loop.root).Active {
+		t.Fatal("keeper returned helm")
+	}
+}

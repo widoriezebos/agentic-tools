@@ -357,10 +357,21 @@ func TestAuditOutputLayoutJSONUnchanged(t *testing.T) {
 			if err != nil {
 				t.Fatalf("%v (write main's with -update-layout-json)", err)
 			}
-			// A registered lane with no full-check history owes its scheduled check.
+			// An unfenced lane with no full-check history owes its scheduled check.
 			switch c.name {
-			case "landing-status", "landing-status-verbose", "landing-status-stopped", "landing-set", "landing-start", "landing-stop":
+			case "landing-status-stopped", "landing-stop":
+				want = bytes.Replace(want, []byte("\"reasons\": [\n        \"full-due\"\n      ]"), []byte(`"reasons": []`), 1)
+			case "landing-status", "landing-status-verbose", "landing-set", "landing-start":
 				want = bytes.Replace(want, []byte(`"reasons": []`), []byte("\"reasons\": [\n        \"full-due\"\n      ]"), 1)
+			}
+			// The shared status carries the drain beside admission (lane-drain-and-fresh-claims.md:30).
+			// Keep the byte comparison after accounting for that field's position.
+			for _, paused := range []string{"false", "true"} {
+				for _, alive := range []string{"false", "true"} {
+					old := "    \"admission\": \"admission open\",\n    \"paused\": " + paused + ",\n    \"agent_alive\": " + alive + ","
+					current := "    \"paused\": " + paused + ",\n    \"agent_alive\": " + alive + ",\n    \"admission\": \"admission open\","
+					want = bytes.Replace(want, []byte(old), []byte(current), 1)
+				}
 			}
 			if got != string(want) && layoutBytesCompared(t, c) {
 				t.Errorf("%s --json moved:\n%s\nmain printed:\n%s", c.name, got, want)

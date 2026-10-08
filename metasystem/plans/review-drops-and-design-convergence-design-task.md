@@ -1,0 +1,10 @@
+# Task: write the design for review-drops-and-design-convergence
+
+Working Mode: Design
+Write plans/designs/review-drops-and-design-convergence.md from the brief plans/review-drops-and-design-convergence-design-brief.md (read it in full first; it carries Wido's binding words, the split-off sections of goal 2 and the size-cap section). Read plans/designs/review-chain-stops-and-records.md (accepted; this goal consumes its stop record, ask and transfer, and builds what it deferred: drop effects and design-round convergence), plans/designs/machinery-mechanisms.md mechanism 2, and plans/machinery-open-findings-plan-2026-10-06.md (stop table's design row, the five fixed questions, "Practices tried by hand").
+
+SIZE (Wido 2026-10-07, applied now): each unit at most 250 production lines (tests excluded), the goal at most 5 units. If the brief's scope does not fit, split it into a follow-up goal BEFORE writing the units table and name what moved. Production callers only; no function only tests call.
+
+Shape as the accepted designs: header (Kind: design, Id: a new ULID, Status: draft, Goals: review-drops-and-design-convergence), Wido's binding words, what it delivers, Decisions with code sites read on the current tree (cite file:line you read), Units table (unit, intent, production lines, areas), Estimates, one public-verb test per unit failing under its mutation, readers. Answer the five questions for every new function, record and act: who calls it in production; how fresh is every state a decision reads; person or agent; can every refusal's remedy succeed when followed without undoing the gate; does every unreadable input fail safe for the agent and never block a person. Name the four defect classes ((1) remedy fails or undoes the gate; (2) agent/person power; (3) an older entry hides current state; (4) a seam hides production behaviour) and how each unit avoids them.
+
+Do not touch code, memory/, records/ or the ledger. Never open any metasystem.conf.local. Return: page path, units with production-line estimates, anything split off.

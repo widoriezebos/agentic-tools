@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
 
 // The public command surface is object then action: "goal approve G",
@@ -628,6 +629,9 @@ type intentInvocation struct {
 	owners    intentOwners
 	layout    stateroot.Layout
 	stateRoot string
+	// claimPreparation retains preparation facts when an acquired claim lets
+	// work proceed despite another reservation awaiting adoption.
+	claimPreparation *up.Result
 	// reviewWork is set while review G examines one work item's subject.
 	reviewWork *reviewWorkContext
 	// inferredChain is the one examination root inferred from the goal's
@@ -638,7 +642,8 @@ type intentInvocation struct {
 	entrants []*diskstore.Entrant
 	// notices holds the helm and grant admission notices until the result
 	// says whether the act proceeded; nil prints them at once.
-	notices *admissionNotices
+	notices       *admissionNotices
+	laneException *lanePersonObservation
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -840,6 +845,7 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
+	result = result.withClaimPreparation(inv.claimPreparation)
 	result.SchemaVersion = 1
 	result.Verb = inv.command.name
 	if result.Targets == nil {

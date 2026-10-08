@@ -15,6 +15,9 @@ func restampFixture(t *testing.T, id string) (Endpoint, VerbRequest) {
 	}
 	request.CallerClass = "MAIN"
 	request.EpochAuthority = EpochAuthorityHolder
+	request.Endpoint.ClaimHolder = func(string) (ClaimHolderFacts, error) {
+		return ClaimHolderFacts{Lineage: "lin-1", Epoch: 5, LiveMain: true}, nil
+	}
 	return endpoint, request
 }
 
@@ -128,6 +131,9 @@ func TestRestampRefusesAForeignPairALowerEpochAndAnUnclaimedGoal(t *testing.T) {
 func TestRestampIsANoOpWhenTheEpochsAgree(t *testing.T) {
 	t.Parallel()
 	endpoint, request := restampFixture(t, "already-current")
+	request.Endpoint.ClaimHolder = func(string) (ClaimHolderFacts, error) {
+		return ClaimHolderFacts{Lineage: "lin-1", Epoch: 1, LiveMain: true}, nil
+	}
 	before := acceptedTipForEndpoint(t, endpoint)
 	request.Ulid = "01J5X00000000000000000CN10"
 	opid := request.opid()

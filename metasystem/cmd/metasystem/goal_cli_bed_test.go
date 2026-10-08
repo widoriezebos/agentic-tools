@@ -48,6 +48,8 @@ type goalCLIBed struct {
 var goalCLISeedNow = time.Date(2026, 8, 20, 0, 0, 0, 0, time.UTC)
 
 type goalCLISeed struct {
+	// checkout is an externally created worktree; empty uses a temporary root.
+	checkout string
 	// remote is the endpoint's sync remote; "origin" (two-machine mode) by default.
 	remote string
 	// config is appended to metasystem.conf after metasystem.runtimes=fake.
@@ -66,7 +68,10 @@ type goalCLISeed struct {
 
 func newGoalCLIBed(t *testing.T, seed goalCLISeed) *goalCLIBed {
 	t.Helper()
-	root := t.TempDir()
+	root := seed.checkout
+	if root == "" {
+		root = t.TempDir()
+	}
 	if resolved, err := filepath.EvalSymlinks(root); err == nil {
 		root = resolved
 	}

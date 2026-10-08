@@ -111,6 +111,150 @@ func answerUp(result up.Result, asJSON bool, stdout, stderr io.Writer) int {
 	return result.ExitCode()
 }
 
+// claimAdoptionReads supplies transport, process facts and time to the shared
+// callback. Both interactive starts and offline hooks use the same adoption owner.
+type claimAdoptionReads struct {
+	dependencies syncRequestDependencies
+	clock        func(string) (time.Time, error)
+	project      func(goal.Endpoint, bool, time.Time) (goal.Projection, error)
+}
+
+func (r *claimAdoptionReads) Restamp(root, lineage string, epoch int64) (up.StopCapabilityRestampResult, error) {
+	if r == nil {
+		return restampStopCapabilityForUp(root, lineage, epoch)
+	}
+	return restampStopCapabilityWithReads(root, lineage, epoch, r.dependencies, r.clock, r.project)
+}
+
+func restampStopCapabilityForUp(root, lineage string, claimEpoch int64) (up.StopCapabilityRestampResult, error) {
+	if !goal.NewWorld(root) {
+		return up.StopCapabilityRestampResult{}, nil
+	}
+	return restampStopCapabilityWithReads(root, lineage, claimEpoch, defaultSyncRequestDependencies(), goalCommandNow, goal.Project)
+}
+
+// restampStopCapabilityWithReads makes one pass over one accepted projection.
+// Lease authority is read again inside every publication attempt.
+func restampStopCapabilityWithReads(root, lineage string, claimEpoch int64, readers syncRequestDependencies,
+	clock func(string) (time.Time, error), project func(goal.Endpoint, bool, time.Time) (goal.Projection, error)) (up.StopCapabilityRestampResult, error) {
+	result := up.StopCapabilityRestampResult{Pending: true}
+	endpoint, err := readers.endpoint(root)
+	if err != nil {
+		return result, err
+	}
+	now, err := clock(root)
+	if err != nil {
+		return result, err
+	}
+	projection, err := project(endpoint, false, now)
+	if err != nil {
+		return result, err
+	}
+	return adoptClaimProjection(root, lineage, claimEpoch, readers, clock, projection, &goal.Observation{Tip: projection.Tip, ObservedAt: projection.Horizon.Now, Outcome: "offline"})
+}
+
+func adoptClaimProjection(root, lineage string, claimEpoch int64, readers syncRequestDependencies,
+	clock func(string) (time.Time, error), projection goal.Projection, observation *goal.Observation) (result up.StopCapabilityRestampResult, err error) {
+	result.Observation = observation
+	result.Status = "complete"
+	defer func() {
+		if err != nil || result.Pending {
+			result.Status, result.Pending, result.Remedy = "pending", true, "metasystem session start"
+			if err != nil {
+				result.Cause = err.Error()
+			} else {
+				for _, outcome := range result.Goals {
+					if outcome.Outcome == "pending" {
+						result.Cause = outcome.Cause
+						break
+					}
+				}
+			}
+		}
+	}()
+	machine, err := readers.machine(root)
+	if err != nil {
+		return result, err
+	}
+	stopped := ""
+	result.Pending = false
+	for _, id := range goal.SortedGoalIds(projection.Tree.Live) {
+		file := projection.Tree.Live[id]
+		if file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine != machine || file.IsFencedClaim() || file.Claimed.HandedOver.FromMachine != "" {
+			continue
+		}
+		match := file.Claimed.Lineage == lineage
+		if !match && !file.PersonalReservation() {
+			continue
+		}
+		outcome := up.GoalAdoptionOutcome{GoalID: id, ToEpoch: claimEpoch, Outcome: "pending", Remedy: "metasystem session start"}
+		if file.StopCapability != nil {
+			outcome.FromEpoch = file.StopCapability.ClaimEpoch
+		}
+		switch {
+		case !match:
+			outcome.Cause = fmt.Sprintf("reserved lineage %s differs from the actual session lineage %s", file.Claimed.Lineage, lineage)
+			holder, holderErr := readers.claimHolder.ReadHolder(root)
+			if holderErr == nil && holder.OwnerLineage == holder.MainId {
+				outcome.Remedy = "metasystem session start --lineage " + file.Claimed.Lineage
+			} else {
+				outcome.Remedy = "start a fresh matching session with metasystem session start --lineage " + file.Claimed.Lineage
+			}
+		case stopped != "":
+			outcome.Cause = stopped
+		case file.StopCapability == nil:
+			outcome.Cause = "claimed goal has no stop capability; repair its claim authority before session start"
+		case outcome.FromEpoch == claimEpoch:
+			outcome.Outcome = "current"
+		default:
+			holder, holderErr := readers.claimHolder.ReadHolder(root)
+			if holderErr != nil {
+				stopped = holderErr.Error()
+				outcome.Cause = stopped
+				break
+			}
+			actual, holderErr := readers.claimHolder.Classify(root, holder.Pid)
+			if holderErr != nil || !actual.Holder || actual.Class != lease.ClassMain || actual.MainId != holder.MainId || actual.ClaimEpoch == nil || *actual.ClaimEpoch != claimEpoch || holder.OwnerLineage != lineage {
+				stopped = "the live checkout holder changed; run metasystem session start"
+				if holderErr != nil {
+					stopped += ": " + holderErr.Error()
+				}
+				outcome.Cause = stopped
+				break
+			}
+			request, requestErr := syncReqClassifiedWithTerminalGradeAtWithDependencies(root, "", lineage, nil, actual, false, clock, readers)
+			if requestErr != nil {
+				stopped = requestErr.Error()
+				outcome.Cause = stopped
+				break
+			}
+			outcome.Operation = goal.Opid(request.Ulid, request.Actor.Machine, request.Actor.Lineage)
+			published, publishErr := goal.Restamp(request, id)
+			if publishErr != nil {
+				stopped = publishErr.Error()
+				outcome.Cause = stopped
+				break
+			}
+			if published.Outcome == goal.OutcomeConfirmed || published.Outcome == goal.OutcomeConfirmedLate || published.Unchanged {
+				outcome.Outcome = "restamped"
+				outcome.Operation = ""
+			} else {
+				outcome.Cause = fmt.Sprintf("goal restamp ended %s: %s", published.Outcome, published.Detail)
+				if published.Code == "REBIND_EPOCH_UNAUTHENTICATED" || published.Outcome != goal.OutcomeRejected && published.Outcome != goal.OutcomeLost && published.Outcome != goal.OutcomeAbandoned {
+					stopped = outcome.Cause
+				}
+			}
+		}
+		if outcome.Outcome == "pending" {
+			result.Pending = true
+		}
+		result.Goals = append(result.Goals, outcome)
+	}
+	return result, nil
+}
+
+// restampStopCapabilityWith selects the projection for one adoption pass.
+// Explicit commands observe the remote ledger; lifecycle hooks stay offline.
 func restampStopCapabilityWith(dependencies syncRequestDependencies, clock func(string) (time.Time, error), fresh bool) func(string, string, int64) (up.StopCapabilityRestampResult, error) {
 	return func(root, lineage string, claimEpoch int64) (up.StopCapabilityRestampResult, error) {
 		endpoint, err := dependencies.endpoint(root)
@@ -120,60 +264,22 @@ func restampStopCapabilityWith(dependencies syncRequestDependencies, clock func(
 		if !fresh && !goal.NewWorldAtEndpoint(endpoint) {
 			return up.StopCapabilityRestampResult{}, nil
 		}
-		var projection goal.Projection
-		var observation *goal.Observation
-		if fresh {
-			var observed goal.Observation
-			projection, observed, err = goal.FreshProjection(dependencies.readContext(), endpoint, func() (time.Time, error) { return clock(root) })
-			observation = &observed
-		} else {
-			now, clockErr := clock(root)
-			if clockErr != nil {
-				return up.StopCapabilityRestampResult{}, clockErr
-			}
-			projection, err = goal.Project(endpoint, false, now)
+		if !fresh {
+			return restampStopCapabilityWithReads(root, lineage, claimEpoch, dependencies, clock, goal.Project)
 		}
+		projection, observation, err := goal.FreshProjection(dependencies.readContext(), endpoint, func() (time.Time, error) { return clock(root) })
 		if err != nil {
-			return up.StopCapabilityRestampResult{Observation: observation}, err
+			return up.StopCapabilityRestampResult{Observation: &observation, Status: "pending", Pending: true}, err
 		}
-		machine, err := dependencies.machine(root)
-		if err != nil {
-			return up.StopCapabilityRestampResult{}, err
-		}
-		for _, id := range goal.SortedGoalIds(projection.Tree.Live) {
-			file := projection.Tree.Live[id]
-			if file.State != goal.StateClaimed || file.Claimed == nil ||
-				file.Claimed.Machine != machine || file.Claimed.Lineage != lineage {
-				continue
-			}
-			result := up.StopCapabilityRestampResult{GoalID: id, ToEpoch: claimEpoch, Observation: observation}
-			if file.StopCapability == nil {
-				return result, fmt.Errorf("claimed goal %s has no stop capability", id)
-			}
-			result.FromEpoch = file.StopCapability.ClaimEpoch
-			if result.FromEpoch == claimEpoch {
-				return result, nil
-			}
-			if result.FromEpoch > claimEpoch {
-				return result, fmt.Errorf("the stop permission is newer (%d) than this checkout's claim (%d)", result.FromEpoch, claimEpoch)
-			}
-			classification := lease.ClassifyResult{Class: lease.ClassMain, Holder: true, ClaimEpoch: &claimEpoch}
-			request, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(root, "", lineage, nil, classification, false, clock, dependencies)
-			if err != nil {
-				return result, err
-			}
-			published, err := goal.Restamp(request, id)
-			if err != nil {
-				return result, err
-			}
-			if published.Outcome != goal.OutcomeConfirmed {
-				return result, fmt.Errorf("goal restamp ended %s: %s", published.Outcome, published.Detail)
-			}
-			result.Restamped = true
-			return result, nil
-		}
-		return up.StopCapabilityRestampResult{Observation: observation}, nil
+		return adoptClaimProjection(root, lineage, claimEpoch, dependencies, clock, projection, &observation)
 	}
+}
+
+func (r *claimAdoptionReads) RestampFresh(root, lineage string, epoch int64) (up.StopCapabilityRestampResult, error) {
+	if r == nil {
+		return restampStopCapabilityWith(defaultSyncRequestDependencies(), goalCommandNow, true)(root, lineage, epoch)
+	}
+	return restampStopCapabilityWith(r.dependencies, r.clock, true)(root, lineage, epoch)
 }
 
 type upCommandInputs struct {
@@ -199,12 +305,22 @@ func (inputs upCommandInputs) defaults() upCommandInputs {
 	return inputs
 }
 
-func runUpWith(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer) int {
-	return runUpWithInputs(args, repositoryTop, stdout, stderr, upCommandInputs{})
-}
-
 func runUpWithInputs(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer, inputs upCommandInputs) int {
 	inputs = inputs.defaults()
+	owners := defaultProcessIntentOwners()
+	owners.process.repositoryTop = repositoryTop
+	owners.up, owners.executable = inputs.run, inputs.executable
+	owners.adoptionReads = &claimAdoptionReads{dependencies: inputs.dependencies, clock: inputs.clock, project: goal.Project}
+	return runUpWithProcessOwners(args, owners, stdout, stderr)
+}
+
+func runUpWith(args []string, repositoryTop func(string) (string, error), stdout, stderr io.Writer) int {
+	owners := defaultProcessIntentOwners()
+	owners.process.repositoryTop = repositoryTop
+	return runUpWithProcessOwners(args, owners, stdout, stderr)
+}
+
+func runUpWithProcessOwners(args []string, owners processIntentOwners, stdout, stderr io.Writer) int {
 	flags := newFlagSet("up", stdout, stderr)
 	repo := pathFlag(flags, "repo", ".", "repository or path inside it")
 	metasystemRoot := flags.String("metasystem-root", "", "metasystem checkout root (internal compatibility option)")
@@ -253,11 +369,11 @@ func runUpWithInputs(args []string, repositoryTop func(string) (string, error), 
 	if err != nil {
 		return refuse(2, "up: "+err.Error())
 	}
-	scope, err := upRepositoryScopeWith(*repo, repositoryTop)
+	scope, err := upRepositoryScopeWith(*repo, owners.process.repositoryTop)
 	if err != nil {
 		return refuse(2, "up: "+err.Error())
 	}
-	binary, err := inputs.executable()
+	binary, err := owners.executable()
 	if err != nil {
 		return refuse(1, "up: "+err.Error())
 	}
@@ -275,7 +391,7 @@ func runUpWithInputs(args []string, repositoryTop func(string) (string, error), 
 		RuntimeSession: *runtimeSession, NoRuntimeSession: *noRuntimeSession, StartSource: *startSource,
 		MaxCap: *maxCap, RecoverOnly: *recoverOnly, IfDown: *ifDown, WaitScaleMilli: scale,
 		CallerPid:             int64(os.Getppid()),
-		RestampStopCapability: restampStopCapabilityWith(inputs.dependencies, inputs.clock, true), AdoptionRemedy: "metasystem internal up",
+		RestampStopCapability: owners.adoptionReads.RestampFresh, AdoptionRemedy: "metasystem internal up",
 	}
 	if *printScheduler {
 		fmt.Fprintln(stdout, up.SchedulerEntry(options))
@@ -291,5 +407,5 @@ func runUpWithInputs(args []string, repositoryTop func(string) (string, error), 
 	if *shutdown {
 		return answerUp(up.Shutdown(options), *asJSON, stdout, stderr)
 	}
-	return answerUp(inputs.run(options), *asJSON, stdout, stderr)
+	return answerUp(owners.up(options), *asJSON, stdout, stderr)
 }

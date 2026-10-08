@@ -564,6 +564,9 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 			{At: now.Add(-time.Minute).Format(time.RFC3339), Opid: goal.Opid("01J5X0000000000000000000C0", "race-node", "race-lineage"), Verb: "approve", Actor: "human:fixture", Targets: []string{"landing-goal"}, Keep: -1},
 		},
 	}
+	// Receipt admission checks review-round coverage as well as the budget;
+	// this fixture's rounds exceed the tier-one default.
+	goalFile.NormApproval = &goal.GoalNormApprovalClaim{ApprovedRef: "fixture-terminal", Minutes: budget.ReservedJobMinutesLimit, ReviewRounds: budget.ReviewRoundLimit, GoalRevision: goalFile.Approved.Revision}
 	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "backlog.md"), goal.RenderRoot(rootRecord), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -1718,6 +1721,9 @@ func runSharedTestingReceiptRecovery(t *testing.T, prefix string) {
 		History: []goal.HistoryLine{{At: now.Add(-2 * time.Minute).Format(time.RFC3339), Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FBA", "fixture-machine", "receipt-canary"), Verb: "open", Actor: "fixture-machine+receipt-canary", Keep: -1},
 			{At: now.Add(-time.Minute).Format(time.RFC3339), Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FBB", "fixture-machine", "receipt-canary"), Verb: "claim", Actor: "fixture-machine+receipt-canary", Keep: -1},
 			{At: now.Add(-30 * time.Second).Format(time.RFC3339), Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FBZ", "fixture-machine", "receipt-canary"), Verb: "approve", Actor: "human:fixture", Keep: -1}}}
+	// Receipt admission requires an explicit exception for this fixture's
+	// review rounds, which exceed the tier-one default of zero.
+	goalFile.NormApproval = &goal.GoalNormApprovalClaim{ApprovedRef: "fixture-terminal", Minutes: budget.ReservedJobMinutesLimit, ReviewRounds: budget.ReviewRoundLimit, GoalRevision: goalFile.Approved.Revision}
 	for path, data := range map[string][]byte{
 		filepath.Join(root, "plans", "goals", "backlog.md"):      goal.RenderRoot(rootRecord),
 		filepath.Join(root, "plans", "goals", "receipt-goal.md"): goal.RenderFile(goalFile),

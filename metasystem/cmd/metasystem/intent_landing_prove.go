@@ -100,10 +100,10 @@ func (inv *intentInvocation) admitLane() (laneAdmitted, *intentResult) {
 	return laneAdmitted{owners: owners, home: home, record: record, layout: layout, installation: string(layout.Install)}, nil
 }
 
-// lanePaused is the refusal of a lane verb while a person stopped the lane.
+// lanePaused holds automation outside the recorded selection under a pause.
 func (inv *intentInvocation) lanePaused(admitted laneAdmitted, what string) *intentResult {
 	pause, paused := lane.ReadPause(admitted.home)
-	if !paused {
+	if !paused || (!inv.input.switched("trunk") && plain.PersonBatchContinuation(admitted.installation, admitted.record, admitted.home) != "") {
 		return nil
 	}
 	return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
@@ -146,9 +146,10 @@ func landingProveCommand() intentCommand {
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
 			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full proof no more than an hour old. After record or ledger changes under a proven batch, the proof runs only the groups whose declared inputs cover what main gained, while that batch's full proof is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
-			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. Refused while the lane is stopped.",
+			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. A recorded selection may continue through its standing pause; a direct person may request one proof while it stays stopped.",
 			"--trunk fetches origin/main and runs a fresh full check there, even after a green or red; the lane checkout stays where it is. --gate and --trunk cannot be used together."},
 		flags: []intentFlag{{name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "prove here and wait for the result"},
+			{name: "classify", value: "ATTEMPT", usage: "classify one saved red; a person supplies this act"},
 			{name: "attempt", value: "ID", hidden: true, usage: "the attempt id a background start chose"}},
 		maxArgs:  0,
 		examples: []string{"metasystem landing prove"},
@@ -161,13 +162,33 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary: "--gate and --trunk cannot be used together, so nothing was proven"})
 	}
-	if refused := inv.lanePaused(admitted, "proven"); refused != nil {
-		return inv.render(*refused)
+	var person *plain.ActProvenance
+	// The detached child claims the recorded admission; only a fresh public
+	// invocation observes direct authority at the original calling checkout.
+	if inv.input.text("attempt") == "" {
+		observed, problem := inv.lanePerson("request this check", admitted.record.Root)
+		if problem == nil {
+			person = &plain.ActProvenance{Kind: "proof", Person: observed.Name, Root: observed.Root, CheckedAt: observed.At.UTC(),
+				TerminalGeneration: observed.Proof.TerminalGeneration, TerminalRef: observed.Proof.TerminalRef, Destination: admitted.record}
+		}
+	} else if !inv.input.switched("wait") {
+		return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "a background attempt must claim its admission with --wait", Next: "metasystem landing prove"}))
+	}
+
+	if inv.input.text("classify") != "" && (inv.input.switched("gate") || inv.input.switched("trunk") || inv.input.text("attempt") != "") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--classify names a saved red and cannot be combined with another proof subject"})
+	}
+	if inv.input.text("classify") != "" && person == nil {
+		_, problem := inv.lanePerson("classify this saved red", admitted.record.Root)
+		return inv.render(*problem)
 	}
 	seams := admitted.owners.proveSeams(admitted.installation)
+	seams = inv.laneBatchSeams(admitted.home, admitted.record, seams)
+	if person != nil {
+		seams.Person = person
+		seams.FenceCheck = nil
+	}
 	seams.Trunk = inv.input.switched("trunk")
-	_, personErr := admitted.owners.person(admitted.installation)
-	seams.Person = personErr == nil
 	checkout := string(admitted.layout.Checkout)
 	seams.Gate = inv.input.switched("gate")
 	key := proveCommandKey
@@ -183,6 +204,29 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	seams.CommandForCommit = func(commit string) (string, error) {
 		return landingProofCommand(admitted.installation, checkout, commit, key, git)
+	}
+	if classify := inv.input.text("classify"); classify != "" {
+		seams.GateCommandForCommit = func(commit string) (string, error) {
+			return landingProofCommand(admitted.installation, checkout, commit, "proof.cheap", git)
+		}
+		result, err := plain.ClassifyAttempt(admitted.installation, checkout, classify, seams)
+		_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
+		if err != nil {
+			return inv.render(landingProveRefusal(inv, targets, err))
+		}
+		summary := "classified saved red " + classify + " at " + shortLandingID(result.Commit)
+		if result.Cause != nil {
+			summary += "; cause: " + result.Cause.Kind
+		}
+		if full := result.NextFull; full != nil {
+			summary += "; its next full check is " + string(full.Result)
+			if full.Trunk && full.Result == plain.Green {
+				if err := admitted.owners.clearLandingIncidents(admitted.installation, *full); err != nil {
+					return inv.render(landingLaneFailure(targets, "main passed its full check, but its incidents could not be cleared", err))
+				}
+			}
+		}
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, next: inv.publicArgv("landing", "status"), nextReason: "shows the separate return or proof act"})
 	}
 	ref := "HEAD"
 	if seams.Trunk {
@@ -203,9 +247,10 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		if err != nil {
 			return inv.render(landingProveRefusal(inv, targets, err))
 		}
-		if recorded && running.Attempt == attempt {
-			commit = running.Commit
+		if !recorded || running.Attempt != attempt || running.Admission == nil || (running.Admission.State != "launched" && running.Admission.State != "pending") || running.Gate != seams.Gate || running.Trunk != seams.Trunk {
+			return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "this background check has no matching unclaimed admission", Next: "metasystem landing prove"}))
 		}
+		commit = running.Commit
 	}
 	command, err := seams.CommandForCommit(commit)
 	if err != nil {
@@ -230,6 +275,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 				next: next, nextReason: reason})
 		}
 		running, already, err := plain.Start(admitted.installation, checkout, seams)
+		_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 		if err != nil {
 			return inv.render(landingProveRefusal(inv, targets, err))
 		}
@@ -257,6 +303,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		output = file
 	}
 	result, err := plain.Run(admitted.installation, checkout, command, attempt, output, seams)
+	_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 	if err != nil {
 		return inv.render(landingProveRefusal(inv, targets, err))
 	}
@@ -282,10 +329,9 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 
 // landingProveRefusal renders a prove that could not start or run.
 func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err error) intentResult {
-	var budget *plain.ProofBudget
-	if errors.As(err, &budget) {
-		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "this batch has used its two full checks; the waiting goals hold",
-			next: inv.publicArgv("landing", "run"), nextReason: "only a person's call reopens the batch's allowance for full checks"}
+	var batch *plain.Refusal
+	if errors.As(err, &batch) {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: batch.Reason, Decision: batch.Next, Details: []string{batch.Code}}
 	}
 	if errors.Is(err, errProofDeclaration) {
 		key := proveCommandKey
@@ -299,7 +345,7 @@ func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err erro
 	var noRepeat *plain.NoRepeat
 	if errors.As(err, &noRepeat) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: noRepeat.Error(),
-			next: inv.publicArgv("landing", "status"), nextReason: "shows the cause and the waiting goals"}
+			next: proofRetryArgv(inv), nextReason: "a person requests one execution while the prior allowance stays spent"}
 	}
 	var busy *plain.Busy
 	if errors.As(err, &busy) {
@@ -330,13 +376,21 @@ func withRunningProof(view func(*textui.Page), running *plain.RunningProof) func
 			since = page.Env().Since(at)
 		}
 		words := "proving tree " + shortLandingID(running.Tree) + " as attempt " + running.Attempt + ", " + since
-		if running.State == "died" {
-			command := "landing prove"
-			if running.Gate {
-				command += " --gate"
-			}
-			words = "proving tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + ") died without a result; the next " + command + " runs it again"
+		command := "metasystem landing prove"
+		if running.Gate {
+			command += " --gate"
+		} else if running.Trunk {
+			command += " --trunk"
 		}
+		switch running.State {
+		case "died":
+			words = "check of tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + ") died without a result; retry: " + command
+		case "pending":
+			words = "check admission pending for tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + "); retry: " + command + " after admission ends"
+		case "failed":
+			words = "check admission failed for tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + "); retry: " + command
+		}
+
 		page.Section("Proving", "").Text(words)
 	}
 }
@@ -348,4 +402,15 @@ func landingRedReason(reason string) string {
 		return ""
 	}
 	return " (" + reason + ")"
+}
+
+func proofRetryArgv(inv *intentInvocation) []string {
+	argv := inv.publicArgv("landing", "prove")
+	if inv.input.switched("gate") {
+		argv = append(argv, "--gate")
+	}
+	if inv.input.switched("trunk") {
+		argv = append(argv, "--trunk")
+	}
+	return argv
 }

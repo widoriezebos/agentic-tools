@@ -176,7 +176,21 @@ func AdvanceDrain(install, checkout string, seams ProveSeams) (progress DrainPro
 			}
 		}
 		unfinished, executionErr := drainExecution(install, seams)
-		unknown := errors.Join(memberErr, executionErr)
+		batch, batchErr := ReadBatch(install)
+		if batchErr == nil && batch != nil && batch.State != BatchClosed {
+			var terminal, idle bool
+			terminal, batchErr = batchTerminal(install, checkout, main, batch, seams)
+			if batchErr == nil {
+				idle, batchErr = batchIdle(install, seams)
+			}
+			if batchErr == nil && terminal && idle && !unfinished {
+				batch.State, batch.ClosureReason = BatchClosed, "drain accounts for all selected members and their operations have ended"
+				batchErr = writeBatch(install, batch)
+			} else {
+				unfinished = true
+			}
+		}
+		unknown := errors.Join(memberErr, executionErr, batchErr)
 		if unknown != nil {
 			progress.Unknown = "drain membership/progress cannot be read: " + unknown.Error()
 			return nil
@@ -244,7 +258,7 @@ func KeeperDrainHold(install string) (string, error) {
 // proofAdmission allows admitted work and incident recovery, but suppresses idle timer proofs.
 func proofAdmission(install, checkout, commit string, seams ProveSeams) error {
 	drain, err := ReadDrain(install)
-	if seams.Person || drain == nil && err == nil {
+	if seams.Person != nil || drain == nil && err == nil {
 		return nil
 	}
 	if err != nil {

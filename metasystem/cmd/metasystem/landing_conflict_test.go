@@ -184,7 +184,7 @@ func TestLandingResolveRegenerationHoldsByCauseAndShowsStatus(t *testing.T) {
 					var status struct{ Data plain.Status }
 					command := "metasystem landing run"
 					if wantCause == "unclassified" {
-						command = "metasystem landing return goal --cause own --reason TEXT"
+						command = "metasystem landing return goal --cause unclassified --reason TEXT"
 					}
 					if code != 0 || json.Unmarshal([]byte(output), &status) != nil || status.Data.Stop == nil || status.Data.Stop.Attempt != 0 || status.Data.Stop.Cause.Kind != wantCause || status.Data.Stop.Command() != command || status.Data.Stop.Evidence == "" {
 						t.Fatalf("held regeneration has no uncounted stop and command: %d %s", code, output)

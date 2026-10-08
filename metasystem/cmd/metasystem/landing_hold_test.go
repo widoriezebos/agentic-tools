@@ -35,7 +35,7 @@ func TestWorkLandTrunkRedRefusesUntilIncidentClaim(t *testing.T) {
 	holdIncidentFixture(t, b.intentBed)
 	code, result := b.do("work", "land", bedGoal)
 	expectOutcome(t, "main red", code, result, intentRefused)
-	if !strings.Contains(result.Summary, holdIncidentID) || !strings.Contains(result.Summary, "Nothing was handed in") || resultData(t, result)["code"] != goal.LandTrunkRedCode || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem incident list" {
+	if !strings.Contains(result.Summary, holdIncidentID) || !strings.Contains(result.Summary, "Nothing was handed in") || resultData(t, result)["code"] != goal.LandTrunkRedCode || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "work land "+bedGoal+" --exception "+goal.LandTrunkRedCode) {
 		t.Fatalf("incident refusal: %+v", result)
 	}
 	if entries, err := plain.Entries(install); err != nil || len(entries) != 0 {
@@ -59,7 +59,7 @@ func TestExceptionWorkLandTrunkRedBelongsToOneQueueLine(t *testing.T) {
 	code, result := b.do(args...)
 	expectOutcome(t, "exception hand-in", code, result, intentConfirmed)
 	entries, err := plain.Entries(install)
-	if err != nil || len(entries) != 1 || entries[0].Exception == nil || *entries[0].Exception != (plain.Exception{Code: goal.LandTrunkRedCode, Reason: "Ship the independent fix", By: "Wido"}) || len(state.pushes) != 0 || state.candidates != 0 {
+	if err != nil || len(entries) != 1 || entries[0].Exception == nil || entries[0].Exception.Code != goal.LandTrunkRedCode || entries[0].Exception.Reason != "Ship the independent fix" || entries[0].Exception.By != "Wido" || entries[0].Exception.Person == nil || entries[0].Exception.Goal != bedGoal || entries[0].Exception.SHA != state.status.BranchTip || entries[0].Exception.Incidents == nil || len(state.pushes) != 0 || state.candidates != 0 {
 		t.Fatalf("exception did not hand in: %+v %v %+v", entries, err, result)
 	}
 	queue := filepath.Join(plain.Dir(install), "queue.jsonl")
@@ -73,7 +73,7 @@ func TestExceptionWorkLandTrunkRedBelongsToOneQueueLine(t *testing.T) {
 	if err != nil || string(before) != string(after) {
 		t.Fatalf("repeat wrote queue: %v", err)
 	}
-	if _, _, err := plain.Return(install, bedGoal, "own failure", time.Now()); err != nil {
+	if _, _, err := plain.ReturnProven(install, bedGoal, "unclassified", "own failure", true, "fixture", time.Now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result = b.do("work", "land", bedGoal, "--again")
@@ -184,7 +184,7 @@ func TestLandingStatusTrunkRedHoldsAndWake(t *testing.T) {
 			if len(result.Data.Problems) != 0 || result.Data.Wake != nil && len(result.Data.Wake.Unread) != 0 {
 				t.Fatalf("healthy register unreadable: %s", text)
 			}
-			held := name == "red" || name == "conflict"
+			held := name == "red" || name == "conflict" || name == "exception"
 			if len(result.Data.Queue) == 0 || result.Data.Queue[0].Held != held || result.Data.Wake == nil || slices.Contains(result.Data.Wake.Reasons, plain.WakeQueued) == held {
 				t.Fatalf("status holds/wake: %s", text)
 			}
@@ -237,13 +237,17 @@ func TestLandingPushRefusesHeldGoal(t *testing.T) {
 				}
 			}
 			code, text := b.run(t, b.root, "push", "--json")
-			refused := name == "red" || name == "conflict" || name == "records after code" || name == "read error"
+			refused := name == "red" || name == "exception" || name == "conflict" || name == "records after code" || name == "read error"
 			if (code != 0) != refused || *pushes != map[bool]int{true: 0, false: 1}[refused] {
 				t.Fatalf("push crossed hold: %s: %d pushes=%d %s", name, code, *pushes, text)
 			}
 			if name == "red" || name == "conflict" {
 				var result intentResult
-				if json.Unmarshal([]byte(text), &result) != nil || !strings.Contains(result.Summary, "held goal goal") || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "checkout --detach origin/main") {
+				remedy := "work land goal --exception " + goal.LandTrunkRedCode
+				if name == "conflict" {
+					remedy = "checkout --detach origin/main"
+				}
+				if json.Unmarshal([]byte(text), &result) != nil || !strings.Contains(result.Summary, "held goal goal") || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), remedy) {
 					t.Fatalf("hold remedy: %s", text)
 				}
 			}

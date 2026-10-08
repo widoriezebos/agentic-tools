@@ -1,0 +1,7 @@
+# Brief: person-claims U1, finish the build (landing tests)
+
+Working Mode: Implement
+U1 (with its correction) is uncommitted in this worktree. These five cmd tests fail on it and pass on its base 3b1e86b7f: TestLandingTestReceiptModeWithoutTreePublishesIndexReceipt, TestLandingSharedTestingReceiptPublicRecoveryKeepsExactOuterAuthority, TestLandingBatchBinaryIgnoresAmbientProofHostLoad ("34 declared Git reads consumed by the built CLI"; "ambient variable changed built-binary admission"), TestLandingTestReceiptPublicSemanticDeadlineBoundaries ("owned public deadline fixture: exit status 1", landing_verbs_test.go:1075), TestLandingReceiptPublicSemanticClockBoundariesAndDelayedCompletion. Find what U1 changed that these reach (likely the claim/admission eligibility or a new git read in the built CLI's admission path) and fix the code, or the fixture only where the design changed the pinned behavior (comment why). Do not weaken intent.
+
+Check: go build ./... && go vet ./... && go test -count=1 -timeout 60m -run 'TestLanding|TestGoal|TestClaim|TestSession|TestUp|TestWork|TestPerson|TestIntent|TestSeat|TestSteward|TestAudit|TestInstruction|TestEvery' ./cmd/metasystem/ && go test -count=1 -timeout 30m ./internal/goal/... ./internal/steward/ ./internal/up/ && go run ./cmd/devgate static
+Never open any metasystem.conf.local; do not touch memory/ or records/. Leave uncommitted. Return the exits and the cause.

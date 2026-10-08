@@ -743,7 +743,7 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	}
 
 	workers := Workers{}
-	if work == WorkOwned || work == WorkClaimable {
+	if work == WorkOwned || work == WorkClaimable || work == WorkWaiting {
 		w, err := census.Workers(repoRoot)
 		if err != nil {
 			// An unreadable census can never prove death.
@@ -756,6 +756,10 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 		if d, selection, ok := decideSeat(repoRoot, cfg, work, *shared, workers, providerOutage, *dependencies.Seat, *seat); ok {
 			return d, selection, workReason, nil
 		}
+	}
+
+	if work == WorkWaiting {
+		return Decision{VerdictStalledDead, ActNotify, workReason}, nil, workReason, nil
 	}
 
 	live, err := LiveIntents(repoRoot)

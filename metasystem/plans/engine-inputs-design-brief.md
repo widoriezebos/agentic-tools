@@ -10,3 +10,7 @@ What the reads proved the design must decide first (each with its evidence):
 3. Dispatch preflight keeps fail-open where a rebuild cannot help (internal/delegation/infra.go:57-64).
 4. One owner for "landed base" and one for "equal inputs", with a test matrix over: equal/different inputs x HEAD behind/equal/ahead/diverged of the landing ref x witness/commit stamp; each cell names the outcome and the remedy, and the remedy followed must succeed without a person.
 The five design questions apply. Run the design critique to convergence before any build.
+
+## Found 10-07: findings-store registration under parallel tests
+
+Under `go test -parallel` the cmd tests that use the unit read's findings store (TestIntentReadVerdictFromRetainedFindings, TestIntentGeneratedUnitPlan, TestIntentBuildRoundLimitAndReadBudget, TestIntentBuildRetainedRequest, TestIntentBuildConcurrentRepeat) fail with "release the read's findings store ...: no store record of this owner names the path" or "is not a registered store of the unit" (intent_work_test.go:664, :859); each passes alone; reproduced on goal/person-claims base 28601997d with -count=5 -parallel 64 (Opus read, 10-07). Likely a shared store registry and TMPDIR swept by a real steward serving in the test registry home. Fix the isolation (per-test registry/TMPDIR or the sweep honouring live owners), with a test that runs the pair in parallel -count=5.

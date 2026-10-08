@@ -844,6 +844,9 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 			Summary:  fmt.Sprintf("goal %s is %s; nothing was built", id, where),
 			Decision: "nothing to do; only an open goal is built"})
 	}
+	if file.StopCapability != nil && file.StopCapability.ClaimEpoch == 0 {
+		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: "goal " + id + " is reserved, awaiting session start; nothing was built", next: inv.publicArgv("session", "start"), nextReason: "the owning session adopts the reservation; then repeat this command"})
+	}
 	if file.Budget == nil || file.Budget.ReviewRoundLimit <= 0 {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1,
 			Summary: fmt.Sprintf("goal %s is not approved with a budget yet; nothing was built", id),
@@ -853,10 +856,17 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		// An approved goal nobody holds is claimed through the claim owner,
 		// with its readiness, quota and elapsed checks; its refusal is the
 		// build's answer.
-		if claimed := inv.acquireClaim(id); claimed.Outcome != intentConfirmed {
+		if claimed, granted := inv.acquireClaim(id); !granted {
 			claimed.Summary = fmt.Sprintf("build claims goal %s first, and the claim was not granted: %s; nothing was built", id, strings.TrimSpace(claimed.Summary))
 			return inv.render(claimed)
 		}
+	}
+	if file.State != goal.StateClaimed {
+		projection, _, problem = inv.projection()
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		file, _ = goalRecord(projection, id)
 	}
 	// The goal must be this session's before anything is reserved: a goal
 	// another session holds is refused with the claim owner's own reason.
@@ -868,6 +878,10 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was built",
 			next: inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes the goal over; or the session holding it builds",
 			Details: refusalCodeDetails(goal.RefusalCode(err))})
+	}
+
+	if eligible := goal.ClaimApprovalEligibility(projection.Tree, file, projection.Horizon.Now); !eligible.Ready {
+		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: "goal " + id + " cannot execute: " + eligible.Wait + "; nothing was built", Decision: eligible.Wait})
 	}
 	designs, problem := inv.acceptedDesignPaths(id)
 	if problem != nil {

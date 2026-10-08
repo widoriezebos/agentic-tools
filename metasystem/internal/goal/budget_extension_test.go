@@ -280,6 +280,7 @@ func TestBudgetExtensionMarkerSurvivesHumanActsStealAndSplit(t *testing.T) {
 		next.Actor = Actor{Machine: "mac-b", Lineage: "lin-2"}
 		if human {
 			next.Actor.Human = "Wido"
+			next.Authority = testHumanAuthority(t, endpoint.Root, next.Now)
 		}
 		return next
 	}

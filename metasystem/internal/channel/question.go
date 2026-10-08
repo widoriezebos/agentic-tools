@@ -59,6 +59,7 @@ type Question struct {
 	Budget         *goal.Budget      `json:"budget,omitempty"`
 	Thread         *MessageRef       `json:"thread"`
 	State          string            `json:"state"`
+	ClosedBecause  string            `json:"closedBecause,omitempty"`
 	Undelivered    int               `json:"undelivered"`
 	Answer         *Answer           `json:"answer"`
 	Rejected       []Rejection       `json:"rejected"`
@@ -491,7 +492,7 @@ func questionHead(q Question) string {
 
 // LaneStopCommand recognizes the lane's own stop question in its existing facts.
 func LaneStopCommand(q Question) string {
-	if q.About == "lane" && q.Goal == "" && q.Lineage == "landing-agent" && len(q.Facts) == 3 && strings.HasPrefix(q.Facts[1], "lane stop: ") {
+	if q.About == "lane" && q.Goal == "" && q.Lineage == "landing-agent" && len(q.Facts) == 3 && (strings.HasPrefix(q.Facts[1], "lane stop: ") || strings.HasPrefix(q.Facts[1], "lane policy: ")) {
 		return q.Facts[0]
 	}
 	return ""
@@ -604,6 +605,9 @@ func Close(repo, id, because string, p Provider, d DestinationConfig) error {
 		_, _ = p.Post(contextBackground{}, d, "closed: "+because, q.Thread)
 	}
 	q.State = "closed"
+	if LaneStopCommand(q) != "" {
+		q.ClosedBecause = because
+	}
 	if q.Answer != nil {
 		q.Answer.Phase = "closed"
 	}

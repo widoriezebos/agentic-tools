@@ -1,0 +1,9 @@
+# Brief: person-claims U2, finish the build (its own check missed these)
+
+Working Mode: Implement
+U2 is uncommitted in this worktree (U1 committed; main with ledger-reads-are-fresh merged at 28601997d). Two cmd tests from ledger-reads-are-fresh fail on U2 and passed on 28601997d:
+1. TestStewardStartedMainClaimsAndBuildsAsHolder (seat_authority_test.go:111): `goal claim` WITHOUT the seat lineage now succeeds (code 0, proved=false). plans/designs/ledger-reads-are-fresh.md (claim classifies the actor): an agent claims only from a fresh read by a classified session; a person claims by name with proof. U2 must not open a path where an unclassified, unproved caller gets a claim. Find which U2 change admits it (likely the person-claim route accepting an unproved caller, or adoption treating any caller as the reserving person) and close it; a person's claim still needs the proof U1 checks. Class (2) agent/person power.
+2. TestGoalNextNonHolderGetsFreshAdviceButCannotClaim (ledger_fresh_test.go:243, both transport cases): the claim attempt now fails with "this installation has no built engine yet" instead of the expected refusal; find whether U2 moved the engine-presence check ahead of the actor refusal (the refusal for a non-holder must come first and need no engine) or changed the fixture's path, and fix the code, not the test.
+
+Check: go build ./... && go vet ./... && go test -count=1 -timeout 30m ./internal/goal/... ./internal/up/ ./internal/steward/ ./internal/hooks/ && go test -count=1 -timeout 60m -run 'TestGoal|TestClaim|TestSession|TestUp|TestHook|TestLedgerFresh|TestPerson|TestWork|TestIntent|TestLanding|TestSeat|TestSteward|TestEvery|TestAudit|TestInstruction' ./cmd/metasystem/ && go run ./cmd/devgate static
+Never open any metasystem.conf.local; do not touch memory/, records/ or plans/. Leave uncommitted. Return the exits and the cause of each.

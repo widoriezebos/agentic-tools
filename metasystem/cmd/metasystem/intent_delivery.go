@@ -398,6 +398,10 @@ func runIntentOwnerEnvelope(process intentProcess, verb string) (verbresult.Resu
 }
 
 func productionIntentBranchState(root, goalID string) (intentBranchState, error) {
+	return intentBranchStateWithDeadline(root, goalID, nil)
+}
+
+func intentBranchStateWithDeadline(root, goalID string, deadline func(time.Duration) <-chan time.Time) (intentBranchState, error) {
 	endpoint, err := branch.MainEndpoint(root)
 	if err != nil {
 		return intentBranchState{}, err
@@ -418,7 +422,7 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 		// The tips read so far say whether a refused commit is the tip.
 		return intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip}, err
 	}
-	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	projection, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), deadline)
 	if err != nil {
 		return intentBranchState{}, err
 	}
@@ -1790,9 +1794,11 @@ func runIntentLand(inv *intentInvocation) int {
 				return inv.render(*problem)
 			}
 			if configured {
-				if _, _, problem := inv.actingAs("work land --exception", args[0], actorHuman); problem != nil {
+				observed, problem := inv.lanePerson("admit this trunk-red hand-in", inv.layout.InstallationRoot.Path())
+				if problem != nil {
 					return inv.render(*problem)
 				}
+				inv.laneException = &observed
 				return inv.render(inv.landGoal(args[0], ""))
 			}
 		}
@@ -2076,7 +2082,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("origin has no goal/%s to land", goalID),
 			next: inv.publicArgv("status", goalID), nextReason: "shows the goal's work"}
 	}
-	if refused := inv.landIncidentHold(goalID); refused != nil {
+	if refused := inv.landIncidentHold(goalID, subject); refused != nil {
 		return *refused
 	}
 	if refused := inv.admitLanding(targets, goalID, state.BranchTip); refused != nil {
