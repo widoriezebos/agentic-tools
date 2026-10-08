@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"os"
@@ -202,6 +203,12 @@ func TestWorkBriefResolvesAndChecksBaseCitations(t *testing.T) {
 				t.Fatal(err)
 			}
 			owners := bed.workOwners()
+			owners.dependencies.endpoint = func(selected string) (goal.Endpoint, error) {
+				if selected != install {
+					t.Fatalf("endpoint root = %q, want installation %q", selected, install)
+				}
+				return goal.Endpoint{Root: selected, Remote: "local", Branch: "refs/heads/main", Repository: bed.repo}, nil
+			}
 			layout, err := owners.resolver.ResolveLayout(install)
 			if err != nil || layout.InstallationRoot.Path() != install || layout.GitRoot != root {
 				t.Fatalf("nested installation: %+v, %v", layout, err)

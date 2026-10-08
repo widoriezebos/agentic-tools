@@ -233,7 +233,8 @@ func intentWorkCommands() []intentCommand {
 				"units, constraints, return and acceptance sections. A decision neither record holds is written as a MISSING DECISION",
 				"line, and work build refuses the brief until each is filled. An existing different FILE is never overwritten.",
 			},
-			flags:    []intentFlag{intentTargetFlag, {name: "out", value: "FILE", usage: "where to write the brief"}, {name: "work", value: "NAME", usage: "the unit whose readers to inspect"}},
+			flags: []intentFlag{intentTargetFlag, {name: "out", value: "FILE", usage: "where to write the brief"}, {name: "work", value: "NAME", usage: "the unit whose readers to inspect"},
+				{name: "after", value: "N", usage: "the current retained round to correct"}, {name: "dispositions", value: "FILE", usage: "decisions bound to that round's finding ids"}},
 			maxArgs:  1,
 			examples: []string{"metasystem work brief verbs-match-intent --out /tmp/work-brief.md"},
 			run:      runIntentBrief,
@@ -2652,6 +2653,35 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 		text.WriteString(mark("observable, machine-checkable criteria; neither the goal nor an accepted design states them") + "\n")
 	}
 	text.WriteString("\n# Gap Rule\n\nstop and report a gap; never fill it silently.\n")
+	unit := inv.input.text("work")
+	if unit == "" && len(units) == 1 {
+		unit = units[0].Name
+	}
+	after := 0
+	var dispositions []byte
+	var evidenceErr error
+	if inv.input.has("after") {
+		after, evidenceErr = strconv.Atoi(inv.input.text("after"))
+		if evidenceErr == nil && (after < 1 || unit == "") {
+			evidenceErr = fmt.Errorf("a correction needs a selected unit and a positive --after round")
+		}
+	}
+	if evidenceErr == nil && inv.input.has("dispositions") {
+		if after == 0 {
+			evidenceErr = fmt.Errorf("--dispositions needs the current --after round")
+		} else {
+			dispositions, evidenceErr = os.ReadFile(inv.callerPath(inv.input.text("dispositions")))
+		}
+	}
+	if evidenceErr == nil {
+		var evidence string
+		evidence, evidenceErr = inv.work().units(inv.layout).BriefEvidence(inv.layout.GitRoot, worktree, file.Id, unit, after, dispositions)
+		text.WriteString(evidence)
+	}
+	if evidenceErr != nil {
+		return "", nil, &intentResult{Outcome: intentRefused, code: 1, Summary: "correction evidence is unavailable; no brief was written", Details: []string{evidenceErr.Error()},
+			next: inv.sameCommand(), nextReason: "select the current unit round with --after N and supply readable --dispositions FILE for its finding ids"}
+	}
 	return text.String(), missing, nil
 }
 

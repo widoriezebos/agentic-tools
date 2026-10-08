@@ -257,6 +257,11 @@ func TestWorkBriefShowsReadersDeletionAndEffort(t *testing.T) {
 				return
 			}
 			for index, effort := range []string{launch.DefaultSettings().BuildEffort, "high", "low"} {
+				// Each independent build owns its worktree until judgement.
+				bed.worktree = filepath.Join(filepath.Dir(bed.worktree), fmt.Sprintf("effort-%d", index))
+				if err := os.MkdirAll(bed.worktree, 0700); err != nil {
+					t.Fatal(err)
+				}
 				bed.manager.Settings.BuildEffort = effort
 				args := []string{"work", "build", bed.id, "--work", fmt.Sprintf("build-%d", index), "--brief", "composed.md", "--lines", "20"}
 				want := effort
