@@ -167,6 +167,11 @@ func (h *handler) boardView(source *BoardSource) boardPayload {
 	}
 	bridge := view.Bridge
 	view = board.NewView(seats, picture)
+	if observable {
+		view.ProjectScope(func(id, unit string) bool {
+			return observed.Tree.Live[id].ExcludesScope(unit, "")
+		})
+	}
 	view.Readable, view.Bridge = true, bridge
 	if source.Stuck != nil {
 		standings, stuckErr := source.Stuck(now)

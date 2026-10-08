@@ -600,10 +600,25 @@ func (inv *intentInvocation) hostBoardView(now time.Time) board.View {
 	if ledgerRoot == "" {
 		ledgerRoot = inv.layout.GitRoot
 	}
+	var view board.View
 	if inv.owners.delivery != nil && inv.owners.delivery.boardView != nil {
-		return inv.owners.delivery.boardView(ledgerRoot, now)
+		view = inv.owners.delivery.boardView(ledgerRoot, now)
+	} else {
+		view = batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot.Path()), batchowner.AcceptedClaims(ledgerRoot)).View(now)
 	}
-	return batchowner.ProductionPipeline(batchowner.PipelineStall(inv.layout.InstallationRoot.Path()), batchowner.AcceptedClaims(ledgerRoot)).View(now)
+	if !slices.ContainsFunc(view.Seats, func(seat board.SeatView) bool {
+		return slices.ContainsFunc(seat.Goals, func(entry board.GoalView) bool { return entry.Drop != nil })
+	}) {
+		return view
+	}
+	projection, _, problem := inv.projection()
+	if problem == nil {
+		view.ProjectScope(func(id, unit string) bool {
+			file, _ := goalRecord(projection, id)
+			return file.ExcludesScope(unit, "")
+		})
+	}
+	return view
 }
 
 func (inv *intentInvocation) boardNow() time.Time {

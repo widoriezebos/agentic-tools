@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -63,6 +64,9 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 		return "starting"
 	case work.Running():
 		return "running"
+	}
+	if subject := currentSubject(work); subject != nil && subject.Drop != nil {
+		return (board.UnitDrop{Unit: work.Unit, Phase: subject.Drop.Phase}).Text()
 	}
 	outcome := ""
 	if rounds := work.Record.Rounds; len(rounds) > 0 {
@@ -146,8 +150,16 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		return
 	}
 	views, lines, units = []map[string]any{}, []string{}, []steward.UnitStage{}
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return work, manual, views, lines, units, problem
+	}
+	file, _ := goalRecord(projection, id)
 	for _, one := range work {
 		stage := workStage(one, inv.work().inspectRead)
+		if file.ExcludesScope(one.Unit, "") {
+			stage += "; " + board.PersonExcludedRequiredScope
+		}
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
 		if one.Record != nil {
 			view["state"] = one.Record.State
