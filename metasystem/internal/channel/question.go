@@ -591,7 +591,7 @@ func renderProposedBox(b goal.Budget) string {
 	return fmt.Sprintf("%s, %d attempts, %d reserved minutes, %d active job, %d review rounds", b.ElapsedLimit, b.AttemptLimit, b.ReservedJobMinutesLimit, b.ActiveJobLimit, b.ReviewRoundLimit)
 }
 
-func Close(repo, id, because string, p Provider, d DestinationConfig) error {
+func Close(repo, id, because string, p Provider, d DestinationConfig, successfulAct ...string) error {
 	q, err := ReadQuestion(repo, id)
 	if err != nil {
 		return err
@@ -604,6 +604,9 @@ func Close(repo, id, because string, p Provider, d DestinationConfig) error {
 		_, _ = p.Post(contextBackground{}, d, "closed: "+because, q.Thread)
 	}
 	q.State = "closed"
+	if q.UnitStop != nil && len(successfulAct) > 0 {
+		q.UnitStop.ClosedBy = successfulAct[0]
+	}
 	if q.Answer != nil {
 		q.Answer.Phase = "closed"
 	}

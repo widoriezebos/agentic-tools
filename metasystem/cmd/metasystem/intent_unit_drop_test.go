@@ -6,11 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -25,6 +28,186 @@ type dropFixture struct {
 	base, v, inverse, tree, scratch, trailer string
 	inversions, commits, checks, cleanups    int
 	conflict, move, person, shared, lose     bool
+}
+
+type lostDropOutcome struct {
+	goal.Repository
+	lost bool
+}
+
+func (r *lostDropOutcome) Publish(parent, commit string) (goal.CASOutcome, error) {
+	outcome, err := r.Repository.Publish(parent, commit)
+	if err == nil && !r.lost {
+		r.lost = true
+		return goal.CASUnknown, errors.New("connection ended before the publication response")
+	}
+	return outcome, err
+}
+
+func TestWorkReviewDropPublicationRecovery(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"branch-unavailable", "branch-response-lost", "goal-response-lost", "question-repair", "goal-moved"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			f := newDropFixture(t)
+			f.connect()
+			code, result := f.review(t)
+			if code != 1 {
+				t.Fatalf("prepare: %d %+v", code, result)
+			}
+			questions, bad := channel.WalkOpenQuestions(f.bed.stateRoot())
+			if len(bad) != 0 || len(questions) != 2 {
+				t.Fatalf("prepared asks: %v %v", questions, bad)
+			}
+			stop := *questions[0].UnitStop
+			var unrelated []string
+			for _, variation := range []string{"earlier", "later", "subject", "loop", "finding"} {
+				other := stop
+				switch variation {
+				case "earlier":
+					other.Attempt--
+				case "later":
+					other.Attempt++
+				case "subject":
+					other.Subject += "-other"
+				case "loop":
+					other.Loop += "-other"
+				case "finding":
+					other.Finding += "-other"
+
+				}
+				// Each unmatched stop retains its own question.
+				other.Review += "-" + variation
+				q, err := channel.Ask(channel.AskRequest{RepoRoot: f.bed.stateRoot(), Goal: f.bed.id, Kind: "other", Machine: "fixture", Facts: []string{variation}, UnitStop: &other, Now: f.bed.manager.Now()})
+				if err != nil {
+					t.Fatal(err)
+				}
+				unrelated = append(unrelated, q.ID)
+			}
+			f.bed.head = f.v
+			path := filepath.Join(f.retained(t).Rounds[1].Directory, "stop-dispositions.md")
+			push := f.owners.connection.push
+			pushes, remotePresent := 0, false
+			f.owners.connection.push = func(req branch.PushRequest) (branch.PushResult, error) {
+				pushes++
+				if name == "branch-unavailable" && pushes == 1 {
+					return branch.PushResult{}, errors.New("origin cannot be reached")
+				}
+				if name == "branch-response-lost" && pushes == 1 {
+					remotePresent = true
+					return branch.PushResult{}, errors.New("origin read-back failed after push")
+				}
+				if remotePresent {
+					return branch.PushResult{State: "reconciled", Tip: f.inverse}, nil
+				}
+				remotePresent = true
+				if name == "goal-moved" {
+					current := f.bed.repo.commit(f.bed.repo.canonical)
+					files := obligationFilesCopy(current.files)
+					file, problems := goal.ParseFile(files["plans/goals/"+f.bed.id+".md"])
+					if len(problems) != 0 {
+						t.Fatal(problems)
+					}
+					file.NextStep = "a newer instruction"
+					file.Revision++
+					file.History = append(file.History, goal.HistoryLine{At: file.History[len(file.History)-1].At, Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAD", "mac-cli", f.bed.lineage), Verb: "edit", Actor: "human:Wido", Targets: []string{f.bed.id}, Keep: -1})
+					files["plans/goals/"+f.bed.id+".md"] = goal.RenderFile(file)
+					f.bed.repo.serial++
+					id := fmt.Sprintf("%040x", f.bed.repo.serial)
+					f.bed.repo.commits[id] = obligationCommit{parent: f.bed.repo.canonical, files: files, at: current.at}
+					f.bed.repo.canonical, f.bed.repo.accepted = id, id
+				}
+				return push(req)
+			}
+			if name == "goal-response-lost" {
+				endpoint := f.owners.dependencies.endpoint
+				lost := &lostDropOutcome{Repository: f.bed.repo}
+				f.owners.dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+					e, err := endpoint(root)
+					e.Repository = lost
+					return e, err
+				}
+			}
+			questionPath := filepath.Join(f.bed.stateRoot(), "artifacts", "agents", "channel", "questions", questions[0].ID+".json")
+			var saved []byte
+			if name == "question-repair" {
+				var err error
+				// Damage notification state only after the inverse proof succeeds.
+				saved, err = os.ReadFile(questionPath)
+				if err != nil {
+					t.Fatal(err)
+				}
+				f.owners.connection.push = func(req branch.PushRequest) (branch.PushResult, error) {
+					result, err := push(req)
+					if err == nil {
+						if err := os.WriteFile(questionPath, []byte("{"), 0600); err != nil {
+							t.Fatal(err)
+						}
+					}
+					return result, err
+				}
+			}
+			var retry []string
+			code, result = f.review(t, "--dispositions", path)
+			if code == 0 || f.commits != 1 || f.inversions != 1 || f.checks != 1 {
+				t.Fatalf("interrupted publication: %d %+v", code, result)
+			}
+			if name == "goal-moved" {
+				if len(f.bed.goalFile(f.bed.id).UnitDrops) != 0 {
+					t.Fatal("a stale goal revision admitted the outcome")
+				}
+				if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "review", "--json", f.bed.id, "--work", "stopped", "--dispositions", path}) {
+					t.Fatalf("goal movement recovery remedy: %+v next=%+v", result, result.Next)
+				}
+				retry = result.Next.Argv[1:]
+			}
+			if name == "question-repair" {
+				if len(f.bed.goalFile(f.bed.id).UnitDrops) != 1 || f.retained(t).Subjects[0].Drop.Phase != "recorded" {
+					t.Fatal("notification damage vetoed the successful drop")
+				}
+				if err := os.WriteFile(questionPath, saved, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if name == "goal-response-lost" {
+				if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "goal", "sync", "--recover"}) {
+					t.Fatalf("publication recovery remedy: %+v", result)
+				}
+				syncCode, synced := transferPublic(t, f.bed, f.owners, "goal", "sync", "--recover")
+				if syncCode != 0 {
+					t.Fatalf("publication recovery remedy failed: %d %+v", syncCode, synced)
+				}
+			}
+			if retry != nil {
+				code, result = transferPublic(t, f.bed, f.owners, retry...)
+			} else {
+				code, result = f.review(t, "--dispositions", path)
+			}
+			if code != 0 || result.Outcome != intentConfirmed || f.commits != 1 || f.inversions != 1 || f.checks != 1 || f.retained(t).Subjects[0].Drop.Phase != "closed" {
+				t.Fatalf("publication recovery repeated effects: %d %+v", code, result)
+			}
+			drops := f.bed.goalFile(f.bed.id).UnitDrops
+			if len(drops) != 1 || drops[0].Operation != f.retained(t).Subjects[0].Drop.Subject.Operation {
+				t.Fatalf("outcome replay: %+v", drops)
+			}
+			if name == "goal-moved" {
+				file := f.bed.goalFile(f.bed.id)
+				if drops[0].Revision+1 != file.Revision || drops[0].Revision <= f.retained(t).Subjects[0].Drop.Revision || file.NextStep != "a newer instruction" {
+					t.Fatalf("recovery lost the current goal: %+v", file)
+				}
+				code, result = f.review(t, "--dispositions", path)
+				if code != 0 || result.Outcome != intentConfirmed || len(f.bed.goalFile(f.bed.id).UnitDrops) != 1 || f.bed.goalFile(f.bed.id).Revision != file.Revision || f.commits != 1 || f.inversions != 1 || f.checks != 1 {
+					t.Fatalf("confirmed outcome replay: %d %+v", code, result)
+				}
+			}
+			for _, id := range unrelated {
+				q, err := channel.ReadQuestion(f.bed.stateRoot(), id)
+				if err != nil || q.State != "open" || q.UnitStop.ClosedBy != "" {
+					t.Fatalf("unmatched ask closed: %+v %v", q, err)
+				}
+			}
+		})
+	}
 }
 
 type dropTransport struct{}
@@ -184,6 +367,16 @@ func newDropFixture(t *testing.T) *dropFixture {
 	t.Helper()
 	f := &dropFixture{transferScenarioFixture: newTransferScenarioFixture(t, false), t: t, base: branchRawID("b"), v: branchRawID("d"), inverse: branchRawID("f"), tree: branchRawID("c"), scratch: t.TempDir()}
 	f.bed.head = f.commit
+	f.admitted["instanceTag"] = "metasystem-job-" + f.critic + "-fixture"
+	f.admitted["pidStartedAt"] = int64(400)
+	if runtime.GOOS == "darwin" {
+		f.admitted["pidStartedAtExactMicro"] = int64(400_000_001)
+	} else {
+		f.admitted["pidStartTicks"] = int64(400)
+		f.admitted["bootId"] = "fixture-boot"
+	}
+	f.admitted["pgid"] = int64(20)
+	transferWriteJSON(t, filepath.Join(f.agents, "jobs", f.critic+".json"), f.admitted)
 	transferWriteJSON(t, filepath.Join(f.bed.root(), "artifacts", "agents", "jobs", f.critic+".json"), f.admitted)
 	for name, body := range map[string]string{"unit.go": "base plus original and correction\n", "other.go": "V remains unread\n"} {
 		if err := os.WriteFile(filepath.Join(f.scratch, name), []byte(body), 0600); err != nil {
@@ -205,6 +398,12 @@ func newDropFixture(t *testing.T) *dropFixture {
 func (f *dropFixture) connect() {
 	f.owners.connection.commitToken = func(_ string, body func() error) error { return body() }
 	f.owners.connection.transport = dropTransport{}
+	f.owners.connection.push = func(req branch.PushRequest) (branch.PushResult, error) {
+		if req.Repo != f.bed.worktree || req.GoalID != f.bed.id || req.OpID == "" || f.bed.head != f.inverse || f.commits != 1 || f.checks != 1 {
+			f.t.Fatalf("wrong publication request: %+v", req)
+		}
+		return branch.PushResult{State: "pushed", Tip: f.inverse}, nil
+	}
 	facts := branch.CommitFacts{
 		Tip: func(_, ref string) (string, bool, error) {
 			if strings.HasPrefix(ref, "refs/heads/goal/") {
@@ -346,7 +545,7 @@ func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 			r := f.retained(t)
 			successful := name == "inverse" || name == "person" || name == "stale-design"
 			if successful {
-				if code != 1 || result.Outcome != intentPartial || r.Subjects[0].Drop == nil || r.Subjects[0].Drop.Phase != "tree-applied" || r.Subjects[0].Drop.Subject.Commit != f.inverse || r.Subjects[0].Drop.Subject.GateRunID == "" || f.inversions != 1 || f.commits != 1 || f.checks != 1 {
+				if code != 0 || result.Outcome != intentConfirmed || r.Subjects[0].Drop == nil || r.Subjects[0].Drop.Phase != "closed" || r.Subjects[0].Drop.Subject.Commit != f.inverse || r.Subjects[0].Drop.Subject.GateRunID == "" || f.inversions != 1 || f.commits != 1 || f.checks != 1 {
 					t.Fatalf("inverse outcome: %d %+v retained=%+v inverse=%d commits=%d proof=%d", code, result, r.Subjects, f.inversions, f.commits, f.checks)
 				}
 				if !slices.Equal(r.Subjects[0].Drop.Covered, []string{f.commit}) || r.Subjects[0].Commit != f.commit || r.Rounds[1].Transferred || r.Rounds[1].Stop.Decision != "stop" {
@@ -370,10 +569,10 @@ func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 					}
 				}
 				code, result = f.review(t, args...)
-				if code != 1 || f.inversions != 1 || f.commits != 1 || f.checks != 1 {
+				if (code != 0 && name != "stale-design") || f.inversions != 1 || f.commits != 1 || f.checks != 1 {
 					t.Fatalf("replay duplicated effect: %d %+v", code, result)
 				}
-				if name == "stale-design" && (!strings.Contains(result.Summary, "requirements changed") || result.Outcome != intentInProgress) {
+				if name == "stale-design" && (!slices.ContainsFunc(result.Details, func(detail string) bool { return strings.Contains(detail, "requirements changed") }) || result.Outcome != intentInProgress) {
 					t.Fatalf("stale scope rejoined: %+v", result)
 				}
 			} else if name == "lost-response" {
@@ -382,7 +581,7 @@ func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 				}
 				f.lose = false
 				code, result = f.review(t, args...)
-				if code != 1 || result.Outcome != intentPartial || f.inversions != 1 || f.commits != 1 || f.checks != 1 || f.retained(t).Subjects[0].Drop.Subject.Commit != f.inverse {
+				if code != 0 || result.Outcome != intentConfirmed || f.inversions != 1 || f.commits != 1 || f.checks != 1 || f.retained(t).Subjects[0].Drop.Subject.Commit != f.inverse {
 					t.Fatalf("response recovery: %d %+v", code, result)
 				}
 			} else {
@@ -400,6 +599,26 @@ func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 					}
 				}
 			}
+			if successful || name == "lost-response" {
+				drops := f.bed.goalFile(f.bed.id).UnitDrops
+				if len(drops) != 1 || drops[0].Operation != r.Subjects[0].Drop.Subject.Operation || drops[0].Commit != f.inverse || drops[0].Tree != f.tree || drops[0].Proof != r.Subjects[0].Drop.Subject.GateRunID || !slices.Equal(drops[0].Covered, []string{f.commit}) {
+					t.Fatalf("published goal outcome: %+v", drops)
+				}
+				if f.person && (drops[0].Actor != "Wido" || drops[0].Reason != "Remove the extra behavior" || drops[0].Impact == "") {
+					t.Fatalf("person reason and impact lost: %+v", drops)
+				}
+				questions, damaged := channel.WalkQuestions(f.bed.stateRoot())
+				if len(damaged) != 0 || len(questions) != 2 {
+					t.Fatalf("question evidence: %+v %v", questions, damaged)
+				}
+				for _, q := range questions {
+					if q.State != "closed" || q.UnitStop.ClosedBy != drops[0].Operation {
+						t.Fatalf("question lacks the exact drop act: %+v", q)
+					}
+				}
+			} else if len(f.bed.goalFile(f.bed.id).UnitDrops) != 0 {
+				t.Fatal("pending inverse recorded a successful goal outcome")
+			}
 			statusCode, status := transferPublic(t, f.bed, f.owners, "work", "status", f.bed.id, "--work", "stopped")
 			if statusCode != 0 || resultData(t, status)["work"].([]any)[0].(map[string]any)["subjects"] == nil {
 				t.Fatalf("current status hides retained subjects: %d %+v", statusCode, status)
@@ -416,13 +635,22 @@ func TestWorkReviewDropsOptionalCommittedUnit(t *testing.T) {
 				t.Fatalf("unrelated bytes lost: %q %v", body, err)
 			}
 			qs, bad = channel.WalkOpenQuestions(f.bed.stateRoot())
-			if len(bad) != 0 || len(qs) != 2 {
-				t.Fatalf("pending outcome closed asks: %+v %v", qs, bad)
+			wantOpen := 2
+			if successful || name == "lost-response" {
+				wantOpen = 0
 			}
-			// The retained source still owns the tree until publication and closure.
+			if len(bad) != 0 || len(qs) != wantOpen {
+				t.Fatalf("drop question outcome: %+v %v", qs, bad)
+			}
+			// Only a completed drop with every child ended releases the reservation.
+			f.bed.manager.Prober = &treeProber{dead: true}
+			f.bed.workOwnersHook = func(owners *intentWorkOwners) {
+				owners.criticDeath = dispatchcore.CustodyDeathDependencies{Reader: &criticCustodyReader{dead: true}, Processes: identity.FixedProcessTable{}, TaggedScan: func(string) census.TaggedProcessCensus { return census.TaggedProcessCensus{} }, MatchesTag: func([]string, string) bool { return true }}
+			}
+			f.bed.manager.Supervisor = f.bed.starter
 			code, waiting := treeBuild(t, f.bed, "another", false)
-			if code != 3 || waiting.Next == nil {
-				t.Fatalf("another writer entered pending drop: %d %+v", code, waiting)
+			if (wantOpen == 2 && (code != 3 || waiting.Next == nil)) || (wantOpen == 0 && code == 3) {
+				t.Fatalf("drop reservation outcome: %d %+v", code, waiting)
 			}
 		})
 	}

@@ -74,6 +74,7 @@ type GoalFile struct {
 	// existing budget. Its revision changes only by replacing the whole record.
 	Obligation        *GovernedObligation
 	ReviewObligations []ReviewObligation
+	UnitDrops         []UnitDrop `json:"UnitDrops,omitempty"`
 	AcceptedRisks     []AcceptedRiskRecord
 	ReadItems         []ReadItem
 	// StopCapability is the narrow authority minted with one claimed
@@ -718,6 +719,16 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 			addProblem("%v", err)
 		}
 	}
+	dropOperations := map[string]bool{}
+	for _, drop := range f.UnitDrops {
+		if dropOperations[drop.Operation] {
+			addProblem("UnitDrop repeats operation %s", drop.Operation)
+		}
+		dropOperations[drop.Operation] = true
+		if err := drop.validate(); err != nil {
+			addProblem("UnitDrop: %v", err)
+		}
+	}
 	for _, obligation := range f.ReviewObligations {
 		if err := validateTransfer(obligation); err != nil {
 			addProblem("ReviewObligation: %v", err)
@@ -1096,13 +1107,20 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		addProblem("field without colon: %q", field)
 		return
 	}
-	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" && key != "ReadItem" {
+	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" && key != "ReadItem" && key != "UnitDrop" {
 		addProblem("duplicate field %q — the last write would silently win", key)
 		return
 	}
 	seen[key] = true
 	value = strings.TrimSpace(value)
 	switch key {
+	case "UnitDrop":
+		var drop UnitDrop
+		if err := json.Unmarshal([]byte(value), &drop); err != nil {
+			addProblem("UnitDrop: %v", err)
+			return
+		}
+		f.UnitDrops = append(f.UnitDrops, drop)
 	case "Priority":
 		n, err := parseUnsignedDecimal(value, 8)
 		if err != nil || n < 1 || n > 3 {
@@ -1911,6 +1929,10 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- ObligationTriggers: valueJudgment=%s reversibility=%s severeHarm=%s unfamiliarApproach=%s testDiscrimination=%s correlatedAssumptionRisk=%s authorityScopeChange=%s destructiveReach=%s\n",
 			o.Triggers.ValueJudgment, o.Triggers.Reversibility, o.Triggers.SevereHarm, o.Triggers.UnfamiliarApproach,
 			o.Triggers.TestDiscrimination, o.Triggers.CorrelatedAssumptionRisk, o.Triggers.AuthorityScopeChange, o.Triggers.DestructiveReach)
+	}
+	for _, drop := range f.UnitDrops {
+		data, _ := json.Marshal(drop)
+		fmt.Fprintf(&b, "- UnitDrop: %s\n", data)
 	}
 	for _, obligation := range f.ReviewObligations {
 		fmt.Fprintf(&b, "- ReviewObligation: finding=%s chain=%s artifact=%s test=%s", obligation.Finding, obligation.Chain, strconv.Quote(obligation.Artifact), strconv.Quote(obligation.Test))

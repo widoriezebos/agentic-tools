@@ -229,6 +229,7 @@ func (runner *UnitRunner) treeQuiescent(owner treeReservation) (released, ended 
 		round := record.Rounds[len(record.Rounds)-1]
 		closed = closed || round.Transferred
 		for _, subject := range record.Subjects {
+			closed = closed || subject.Round == round.Number && subject.Drop != nil && subject.Drop.Phase == "closed"
 			closed = closed || subject.Round == round.Number && subject.Published != "" && round.Stop != nil && round.Stop.Decision == "close"
 		}
 	}

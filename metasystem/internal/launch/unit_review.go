@@ -17,6 +17,7 @@ import (
 // after a later round amends it.
 type UnitDrop struct {
 	Decisions, Requirements, Phase string
+	Actor, Reason, Impact, At      string
 	Revision                       uint64
 	Covered                        []string
 	Subject                        UnitSubject

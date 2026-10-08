@@ -5,9 +5,13 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
 // applyUnitDrop reverses a committed optional unit under its source reservation.
@@ -17,7 +21,11 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 	}
 	review, source := *work.review, work.subject
 	fail := func(err error) *intentResult {
-		return &intentResult{Targets: targets, Outcome: intentInProgress, code: 1, Summary: "the drop remains pending: " + err.Error(), Data: source.Drop, next: inv.publicArgv("work", "status", work.goal, "--work", work.work)}
+		summary := "the drop remains pending"
+		if source.Drop != nil && (source.Drop.Phase == "recorded" || source.Drop.Phase == "closed") {
+			summary = "the unit is dropped; its question repair remains pending"
+		}
+		return &intentResult{Targets: targets, Outcome: intentInProgress, code: 1, Summary: summary, Details: []string{err.Error()}, Data: source.Drop, next: inv.sameCommand()}
 	}
 	actor, _, problem := inv.actingAs("work drop", work.goal, actorEither)
 	if problem != nil {
@@ -75,11 +83,6 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 		if len(source.Drop.Covered) == 0 {
 			return fail(fmt.Errorf("no effective commits of this unit remain"))
 		}
-		if who := unitStopActor(actor); who != "" {
-			if err := inv.recordUnitStopOverride(work.goal, "work-drop", inv.input.text("reason"), "Impact: remove this optional unit's changes after checks pass.\nOther work remains. Restore the saved changes to undo the drop.\nThe prior read stays available.", who); err != nil {
-				return fail(err)
-			}
-		}
 		if err := work.retain(*source); err != nil {
 			return fail(err)
 		}
@@ -87,6 +90,42 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 	drop := source.Drop
 	if drop.Decisions != digest || drop.Requirements != scope {
 		return fail(fmt.Errorf("the bound decisions or accepted requirements changed; code is retained"))
+	}
+	if drop.At == "" {
+		drop.Actor, drop.Reason = unitStopActor(actor), inv.input.text("reason")
+		if drop.Actor == "" {
+			projection, _, problem := inv.projection()
+			if problem != nil {
+				return problem
+			}
+			file, _ := goalRecord(projection, work.goal)
+			if file == nil || file.Claimed == nil {
+				return fail(fmt.Errorf("the drop's claim holder cannot be read"))
+			}
+			drop.Actor = file.Claimed.Machine + "+" + file.Claimed.Lineage
+		}
+		if drop.Reason == "" {
+			decisions, violations := validate.Dispositions(inv.flagPath("dispositions"))
+			if len(violations) != 0 {
+				return fail(fmt.Errorf("the bound dispositions cannot be read: %s", strings.Join(violations, "; ")))
+			}
+			for _, decision := range decisions {
+				if strings.HasPrefix(decision, "dropped:") {
+					drop.Reason = strings.TrimSpace(strings.TrimPrefix(decision, "dropped:"))
+					break
+				}
+			}
+		}
+		drop.At = inv.unitStopNow().UTC().Format(time.RFC3339Nano)
+		if who := unitStopActor(actor); who != "" {
+			drop.Impact = "Impact: remove this optional unit's changes after checks pass.\nOther work remains. Restore the saved changes to undo the drop.\nThe prior read stays available."
+			if err := inv.recordUnitStopOverride(work.goal, "work-drop", drop.Reason, drop.Impact, who); err != nil {
+				return fail(err)
+			}
+		}
+		if err := work.retain(*source); err != nil {
+			return fail(err)
+		}
 	}
 	retain := func(subject launch.UnitSubject) error { drop.Subject = subject; return work.retain(*source) }
 	if drop.Subject.Commit == "" {
@@ -156,5 +195,55 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 			return fail(err)
 		}
 	}
-	return &intentResult{Targets: targets, Outcome: intentPartial, code: 1, Summary: "the committed inverse is applied and proved; durable goal outcome, read exemption, landing and question closure remain pending", Data: drop, next: inv.publicArgv("work", "status", work.goal, "--work", work.work)}
+	if drop.Subject.Published == "" {
+		pushed, err := conn.push(branch.PushRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base, GoalID: work.goal, OpID: drop.Subject.Operation + "-push", CheckClaim: check, Transport: conn.transport})
+		if err != nil {
+			return fail(err)
+		}
+		if pushed.Tip != drop.Subject.Commit {
+			return fail(fmt.Errorf("publication returned a different branch tip"))
+		}
+		drop.Subject.Published = pushed.Tip
+		if err := work.retain(*source); err != nil {
+			return fail(err)
+		}
+	}
+	stop := current.Rounds[len(current.Rounds)-1].Stop
+	if stop == nil {
+		return fail(fmt.Errorf("the exact stopped read is unavailable"))
+	}
+	var findings []string
+	for _, read := range current.Rounds[len(current.Rounds)-1].Reads {
+		for _, finding := range read.Findings {
+			findings = append(findings, finding.ID)
+		}
+	}
+	outcome := goal.UnitDrop{Unit: work.work, Operation: drop.Subject.Operation, Loop: stop.Loop, Subject: stop.Subject, Attempt: stop.Attempt, Covered: drop.Covered, Findings: findings, Commit: drop.Subject.Commit, Tree: drop.Subject.StagedTree, Proof: drop.Subject.GateRunID, Decisions: drop.Decisions, Requirements: drop.Requirements, Revision: work.dropRevision, Actor: drop.Actor, Reason: drop.Reason, Impact: drop.Impact, At: drop.At}
+	result := inv.goalAct(work.goal, "drop unit", inv.syncOwner("work-drop", []string{"--root", inv.stateRoot, "--id", work.goal}, nil, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
+		return goal.RecordUnitDrop(req, work.goal, outcome)
+	}, "id"))
+	if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
+		if _, blocked, err := goal.PushedBlocking(inv.stateRoot); err == nil && blocked {
+			result.next = inv.publicArgv("goal", "sync", "--recover")
+		} else {
+			result.next = inv.sameCommand()
+		}
+		return &result
+	}
+	drop.Phase = "recorded"
+	if err := work.retain(*source); err != nil {
+		return fail(err)
+	}
+	at, err := time.Parse(time.RFC3339Nano, drop.At)
+	if err != nil {
+		return fail(err)
+	}
+	if err := channel.RecordUnitStopAct(inv.layout.InstallationRoot.Path(), channel.UnitStopAct{ID: drop.Subject.Operation, Goal: work.goal, Loop: stop.Loop, Subject: stop.Subject, Attempt: stop.Attempt, Findings: findings, Kind: "work-drop", Reason: drop.Reason, At: at, UnitClosed: true}); err != nil {
+		return fail(err)
+	}
+	drop.Phase = "closed"
+	if err := work.retain(*source); err != nil {
+		return fail(err)
+	}
+	return &intentResult{Targets: targets, Outcome: intentConfirmed, Summary: "the optional unit is dropped; its matching questions are closed", Data: drop, next: inv.publicArgv("work", "status", work.goal, "--work", work.work)}
 }
