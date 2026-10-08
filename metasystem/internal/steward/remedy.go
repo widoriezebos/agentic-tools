@@ -35,6 +35,9 @@ func (r Remedy) Render(audience string, commandAudience func(string, string) str
 // PublicRemedy selects fresh typed facts before a role's general remedy.
 // An empty result leaves the roles without table entries to their renderer.
 func (v RoleVerdict) PublicRemedy(audience string, commandAudience func(string, string) string) ([]string, string) {
+	if v.FailureEscalation == AutoHealEnded && (v.Role == RoleLedgerAttention || v.Role == RoleCapabilitySnapshots) {
+		return nil, v.Remedy
+	}
 	if len(v.RemedyFacts) > 0 {
 		return remedyFor(v.Role, v.RemedyFacts[0]).Render(audience, commandAudience)
 	}
@@ -73,8 +76,42 @@ func remedyFor(role HealthRole, fact RemedyFact) Remedy {
 	switch role {
 	case RoleStewardRunner, RoleSupervisionOwner, RoleRepoWatcher, RoleNarratorFreshness, RoleCensusFreshness, RoleHookFreshness, RoleSessionMain:
 		return Remedy{Act: []string{"metasystem", "system", "start"}, Clears: "starting the checkout restores its process roles"}
+	case RoleLedgerAttention:
+		return Remedy{Plain: "nothing to do: the armed steward examines the move on its next tick", Clears: "the armed steward examines the move on its next tick"}
 	case RoleTrunkRed:
 		return Remedy{Plain: "nothing to do: the armed landing lane records the cadence at its next validation; metasystem system start arms it", Clears: "the armed landing lane records the cadence at its next validation"}
 	}
 	return Remedy{}
+}
+
+// WithAlertRemedies uses the newest health episode of the current finding,
+// including a suppressed episode whose clear can retry another exhaustion.
+func (v HealthVerdict) WithAlertRemedies(root string) HealthVerdict {
+	episodes, _ := AlertEpisodes(root)
+	var newest AlertEpisode
+	for _, episode := range episodes {
+		if episode.Digest == v.FindingDigest && episode.Owner == "" && (newest.EpisodeID == "" || !episode.OpenedAt.Before(newest.OpenedAt)) {
+			newest = episode
+		}
+	}
+	v.Roles = append([]RoleVerdict(nil), v.Roles...)
+	for i, role := range v.Roles {
+		if role.FailureEscalation == AutoHealEnded && (role.Role == RoleLedgerAttention || role.Role == RoleCapabilitySnapshots) {
+			v.Roles[i].Remedy = healthClearRemedy(role.Role, newest.EpisodeID, role.Reason).Plain
+		}
+	}
+	return v
+}
+
+func healthClearRemedy(role HealthRole, episode, reason string) Remedy {
+	plain := "a person makes the health alert store readable, then clears its newest health alert to retry healing"
+	if episode != "" {
+		plain = "metasystem alert clear here/" + episode
+	}
+	if role == RoleCapabilitySnapshots {
+		plain = "run the affected runtime's login (for Claude: claude auth login), then " + plain
+	} else if strings.Contains(reason, "--accept-remote-history") {
+		plain = "a person runs metasystem goal sync --accept-remote-history --by NAME, then " + plain
+	}
+	return Remedy{Plain: plain, Clears: "clearing the health alert retries the steward's ended healing"}
 }

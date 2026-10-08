@@ -933,11 +933,8 @@ func standingRoles(state HealthObservationState, roles []RoleVerdict) []RoleVerd
 			role.Standing = role.ConsecutiveFailures >= healthFailureLimit
 		case role.ConsecutiveFailures >= healthFailureLimit:
 			role.FailureEscalation = AutoHealEnded
-			switch role.Role {
-			case RoleCapabilitySnapshots:
-				role.Remedy = "run the affected runtime's login (for Claude: claude auth login), then retry its adapter probe"
-			case RoleLedgerAttention:
-				role.Remedy = "metasystem goal sync"
+			if role.Role == RoleCapabilitySnapshots || role.Role == RoleLedgerAttention {
+				role.Remedy = healthClearRemedy(role.Role, "", role.Reason).Plain
 			}
 		case len(state.FailureEpisodes[role.Role]) >= healthFlapLimit:
 			role.FailureEscalation = HealingFlapping

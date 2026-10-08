@@ -1691,7 +1691,7 @@ func runIntentDoctor(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 2, Summary: "the test clock of this installation cannot be read, so nothing was checked",
 			retry: "once the test clock file is fixed or removed", Details: []string{"fixture clock: " + err.Error()}})
 	}
-	verdict := owners.health(scope.Root.Path(), scope.Installation.Path(), now)
+	verdict := owners.health(scope.Root.Path(), scope.Installation.Path(), now).WithAlertRemedies(scope.Root.Path())
 	stopped, _, _ := stopfence.Closed(scope.Installation.Path())
 	audience := "human"
 	if class, err := owners.process.classify(scope.Root.Path(), scope.Installation.Path(), int64(os.Getppid())); err == nil && (class.Class == lease.ClassMain || class.Class == lease.ClassDelegate) && !stopped {
@@ -1980,11 +1980,6 @@ func publicHealthRemedy(role steward.RoleVerdict, stopped bool, audiences ...str
 		return act, plain
 	}
 	switch role.Role {
-	case steward.RoleLedgerAttention:
-		if role.FailureEscalation == steward.AutoHealEnded {
-			return strings.Fields(role.Remedy), ""
-		}
-		return []string{"metasystem", "goal", "list"}, ""
 	case steward.RoleNonterminalJobs:
 		return nil, "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
 	case steward.RoleRetroDebt:

@@ -126,10 +126,13 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 			t.Errorf("%+v = %v %q", row.fact, public, instruction)
 		}
 	}
-	for _, role := range []steward.HealthRole{steward.RoleCensusFreshness, steward.RoleHookFreshness, steward.RoleLedgerAttention} {
+	for _, role := range []steward.HealthRole{steward.RoleCensusFreshness, steward.RoleHookFreshness} {
 		if public, _ := publicHealthRemedy(steward.RoleVerdict{Role: role, Remedy: "x"}, false); len(public) == 0 || slices.Equal(public, []string{"metasystem", "system", "check"}) {
 			t.Errorf("%s sends check back to itself: %v", role, public)
 		}
+	}
+	if public, instruction := publicHealthRemedy(steward.RoleVerdict{Role: steward.RoleLedgerAttention}, false); len(public) != 0 || instruction != "nothing to do: the armed steward examines the move on its next tick" {
+		t.Errorf("ledger attention must name its automatic clearing act: %v %q", public, instruction)
 	}
 	for _, role := range []steward.HealthRole{steward.RoleNonterminalJobs, steward.RoleRetroDebt, steward.RoleSpendFence, "unlisted-role"} {
 		public, instruction := publicHealthRemedy(steward.RoleVerdict{Role: role, Remedy: `"/x/bin/metasystem" internal delegate reap`}, false)

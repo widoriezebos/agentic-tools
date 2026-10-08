@@ -459,8 +459,8 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			t.Fatalf("unknown doctor = %d %+v", code, result)
 		}
 		_, stdout, _ := b.run(owners, "system", "check")
-		if !strings.Contains(stdout, "steward-runner   unknown   no tick yet") || !strings.Contains(stdout, "→ metasystem session start") {
-			t.Fatalf("doctor text dropped the owner remedy: %q", stdout)
+		if !strings.Contains(stdout, "steward-runner   unknown   no tick yet") || !strings.Contains(stdout, "→ metasystem system start") {
+			t.Fatalf("doctor text dropped the person's public remedy: %q", stdout)
 		}
 		missing := filepath.Join(t.TempDir(), "a dir", "x")
 		code, result = b.runJSON(owners, "status", "--repo", missing)

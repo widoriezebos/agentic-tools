@@ -324,10 +324,26 @@ func examineLedgerMove(repoRoot string, now time.Time) error {
 	return examineLedgerMoveWithRepositoryAndWriter(repoRoot, now, defaultLedgerAttentionRepository(), atomicfile.WriteText)
 }
 
+type errNothingToExamine struct{ remote, examined, failure string }
+
+func (e errNothingToExamine) Error() string {
+	return fmt.Sprintf("nothing to examine: remote %s, examined %s; last failure: %s", e.remote, e.examined, e.failure)
+}
+
 func examineLedgerMoveWithRepositoryAndWriter(repoRoot string, now time.Time, repository *ledgerAttentionRepository, writer ledgerAttentionStateWriter) error {
 	state, exists, err := loadLedgerAttentionState(repoRoot)
-	if err != nil || !exists || state.DiffedTip == "" || state.DiffedTip == state.ExaminedTip {
+	if err != nil || !exists {
 		return err
+	}
+	// Acknowledging the current remote tip also covers an older accepted diff.
+	if state.RemoteTip != "" && state.RemoteTip == state.ExaminedTip {
+		return nil
+	}
+	if state.DiffedTip == "" || state.DiffedTip == state.ExaminedTip {
+		if state.RemoteTip != state.ExaminedTip {
+			return errNothingToExamine{state.RemoteTip, state.ExaminedTip, state.LastFailure}
+		}
+		return nil
 	}
 	if err := examineLedgerState(repoRoot, &state, nil, now, repository); err != nil {
 		return err
@@ -753,7 +769,7 @@ func checkLedgerAttention(repoRoot string, now time.Time) RoleVerdict {
 	// A coordinator-turn timestamp is intentionally not a remedy: the
 	// human-reserved accepted-ref repair can rewind after remoteTip was held,
 	// so hook timing cannot prove that the turn examined this stored tip.
-	remedy := "the steward examines the canonical tip and names its moved goals in the narrator digest"
+	remedy := remedyFor(RoleLedgerAttention, RemedyFact{}).Plain
 	if err != nil {
 		return roleUnknown(RoleLedgerAttention, "the ledger-attention state is unreadable: "+err.Error(), remedy)
 	}
