@@ -320,12 +320,19 @@ func (runner *UnitRunner) CollectExamination(record *UnitRunRecord, round *UnitR
 
 // RetryUnknownRead permits one new transport execution in the same attempt.
 func (runner *UnitRunner) RetryUnknownRead(id string) (UnitResult, error) {
+	record, err := runner.read(id)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if runner.tree == nil {
+		return treeCall(runner, record.Worktree, func(r *UnitRunner) (UnitResult, error) { return r.RetryUnknownRead(id) })
+	}
 	lock, err := runner.lock(id)
 	if err != nil {
 		return UnitResult{}, err
 	}
 	defer releaseUnitLock(lock)
-	record, err := runner.read(id)
+	record, err = runner.read(id)
 	if err != nil {
 		return UnitResult{}, err
 	}

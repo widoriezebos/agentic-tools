@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -8,6 +9,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"golang.org/x/sys/unix"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -36,8 +41,11 @@ type treeReservation struct {
 	Children []string     `json:"children"`
 }
 
-// treeLocked serializes only ownership changes, never child or remote waits.
+// treeLocked serializes tree transitions and command mutations.
 func (runner *UnitRunner) treeLocked(worktree string, act func(string, *treeReservation) error) error {
+	if runner.tree != nil && runner.tree.path != "" {
+		return act(runner.tree.path, runner.tree.owner)
+	}
 	git := runner.Git
 	if git == nil {
 		git = OSGitRunner{}
@@ -54,7 +62,7 @@ func (runner *UnitRunner) treeLocked(worktree string, act func(string, *treeRese
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		return err
 	}
-	held, err := lock.File(path+".lock", 0600, lock.TryExclusive)
+	held, err := lock.File(path+".lock", 0600, lock.Exclusive)
 	if err != nil {
 		return err
 	}
@@ -68,6 +76,10 @@ func (runner *UnitRunner) treeLocked(worktree string, act func(string, *treeRese
 		return fmt.Errorf("the worktree ownership record is damaged: %s", path)
 	}
 	owner.Worktree = real
+	if runner.tree != nil {
+		runner.tree.path, runner.tree.owner = path, &owner
+		runner.tree.files = append(runner.tree.files, held.File())
+	}
 	return act(path, &owner)
 }
 
@@ -75,7 +87,7 @@ func (runner *UnitRunner) treeLocked(worktree string, act func(string, *treeRese
 // transition runs while ownership is locked.
 func (runner *UnitRunner) GateTree(worktree, run string, act func(string, *treeReservation) error) error {
 	return runner.treeLocked(worktree, func(path string, owner *treeReservation) error {
-		if owner.Run != "" && owner.Run != run {
+		if owner.Run != "" && owner.Run != run && (run == "" || owner.Run != runner.mutation) {
 			if released, ended := runner.treeQuiescent(*owner); !released {
 				return &TreeWaitingError{Run: owner.Run, CanCancel: ended}
 			}
@@ -102,7 +114,9 @@ func writeUnitJSON(path string, record any, root string) error {
 
 func (runner *UnitRunner) reserveTree(record UnitRunRecord) error {
 	return runner.GateTree(record.Worktree, record.ID, func(path string, owner *treeReservation) error {
-		owner.Run, owner.Round, owner.Phase = record.ID, len(record.Rounds), record.State
+		if owner.Run != runner.mutation || runner.mutation == "" {
+			owner.Run, owner.Round, owner.Phase = record.ID, len(record.Rounds), record.State
+		}
 		owner.Children = unitChildren(record, owner.Children)
 		for _, subject := range record.Subjects {
 			if subject.Round == owner.Round {
@@ -155,6 +169,11 @@ func (runner *UnitRunner) treeQuiescent(owner treeReservation) (released, ended 
 	if err != nil {
 		return false, false
 	}
+	if record.Mutation != nil {
+		ended = identity.LiveRef(runner.Manager.Prober, *record.Mutation) == identity.Dead
+		childrenEnded := runner.treeChildrenEnded(owner.Children)
+		return (record.State != "running" || ended) && childrenEnded, ended && childrenEnded
+	}
 	closed := record.State == "cancelled"
 	if len(record.Rounds) > 0 {
 		round := record.Rounds[len(record.Rounds)-1]
@@ -173,6 +192,9 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 	record, err := runner.read(id)
 	if err != nil {
 		return record, err
+	}
+	if record.Mutation != nil && record.State == "running" && identity.LiveRef(runner.Manager.Prober, *record.Mutation) != identity.Dead {
+		return record, &TreeWaitingError{Run: id}
 	}
 	var children []string
 	err = runner.treeLocked(record.Worktree, func(_ string, owner *treeReservation) error {
@@ -242,4 +264,121 @@ func (runner *UnitRunner) treeMoved(record *UnitRunRecord, round *UnitRound) (Un
 		}
 	}
 	return runner.finish(record, round, "proof-wrote")
+}
+
+// A command takes the tree before its named unit and run locks. Saves reuse
+// that boundary; waits for child results release the locks and validate the run.
+type treeCommand struct {
+	path  string
+	owner *treeReservation
+	files []*os.File
+}
+
+func treeCall[T any](runner *UnitRunner, worktree string, act func(*UnitRunner) (T, error)) (T, error) {
+	bound := *runner
+	bound.tree = &treeCommand{}
+	var result T
+	err := bound.treeLocked(worktree, func(string, *treeReservation) error {
+		var err error
+		result, err = act(&bound)
+		return err
+	})
+	return result, err
+}
+
+func (runner *UnitRunner) waitLaunch(id string, timeout time.Duration) (Record, bool, error) {
+	if runner.tree == nil {
+		return runner.Manager.Wait(id, timeout)
+	}
+	files := []*os.File{}
+	retained := map[string][]byte{}
+	for _, file := range runner.tree.files {
+		if _, err := file.Stat(); err != nil {
+			continue
+		}
+		files = append(files, file)
+		if idPattern.MatchString(filepath.Base(filepath.Dir(file.Name()))) {
+			path := filepath.Join(filepath.Dir(file.Name()), "run.json")
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return Record{}, false, err
+			}
+			retained[path] = data
+		}
+	}
+	for i := len(files) - 1; i >= 0; i-- {
+		_ = unix.Flock(int(files[i].Fd()), unix.LOCK_UN)
+	}
+	record, terminal, waitErr := runner.Manager.Wait(id, timeout)
+	for i, file := range files {
+		mode := unix.LOCK_EX | unix.LOCK_NB
+		if i == 0 {
+			mode = unix.LOCK_EX
+		}
+		if err := unix.Flock(int(file.Fd()), mode); err != nil {
+			return record, terminal, err
+		}
+	}
+	if err := readJSONFile(runner.tree.path, runner.tree.owner); err != nil {
+		return record, terminal, err
+	}
+	for path, data := range retained {
+		current, err := os.ReadFile(path)
+		if err != nil {
+			return record, terminal, err
+		}
+		if !bytes.Equal(data, current) {
+			return record, terminal, errors.New("the run changed during the wait; repeat the command to follow its current state")
+		}
+	}
+	return record, terminal, waitErr
+}
+
+// ReserveMutation gives a branch operation real run custody across remote
+// calls. Its wait observes that command; it never starts another mutation.
+func (runner *UnitRunner) ReserveMutation(worktree, goal, operation string) (func() error, error) {
+	self, err := runner.Manager.Processes.SelfRef()
+	if err != nil {
+		return nil, err
+	}
+	id, err := newID(runner.Manager.Now())
+	if err != nil {
+		return nil, err
+	}
+	record := UnitRunRecord{ID: id, Worktree: worktree, Goal: goal, Unit: operation, State: "running", Mutation: &self}
+	err = runner.GateTree(worktree, "", func(path string, owner *treeReservation) error {
+		if err := writeUnitJSON(filepath.Join(runner.runDir(id), "run.json"), record, runner.root()); err != nil {
+			return err
+		}
+		owner.Run, owner.Phase = id, operation
+		return writeUnitJSON(path, *owner, runner.root())
+	})
+	if err != nil {
+		return nil, err
+	}
+	runner.mutation = id
+	return func() error {
+		err := runner.treeLocked(worktree, func(_ string, owner *treeReservation) error {
+			if owner.Run != id {
+				return errors.New("the branch operation no longer owns the worktree")
+			}
+			record.State = "completed"
+			return writeUnitJSON(filepath.Join(runner.runDir(id), "run.json"), record, runner.root())
+		})
+		return err
+	}, nil
+}
+
+// MutationFinished observes custody without advancing the branch operation.
+func (runner *UnitRunner) MutationFinished(record UnitRunRecord) (bool, error) {
+	finished := false
+	err := runner.treeLocked(record.Worktree, func(_ string, owner *treeReservation) error {
+		if owner.Run == record.ID {
+			finished, _ = runner.treeQuiescent(*owner)
+		} else {
+			finished = record.State != "running" || identity.LiveRef(runner.Manager.Prober, *record.Mutation) == identity.Dead
+		}
+		return nil
+	})
+	return finished, err
 }

@@ -87,12 +87,19 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 // AcceptBuildSize validates the retained builder change and records the
 // person's impact under the run lock before clearing its hold.
 func (runner *UnitRunner) AcceptBuildSize(id, person string, recordImpact func() error) (UnitResult, error) {
+	record, err := runner.read(id)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if runner.tree == nil {
+		return treeCall(runner, record.Worktree, func(r *UnitRunner) (UnitResult, error) { return r.AcceptBuildSize(id, person, recordImpact) })
+	}
 	held, err := runner.lock(id)
 	if err != nil {
 		return UnitResult{}, err
 	}
 	defer releaseUnitLock(held)
-	record, err := runner.read(id)
+	record, err = runner.read(id)
 	if err != nil {
 		return UnitResult{}, err
 	}

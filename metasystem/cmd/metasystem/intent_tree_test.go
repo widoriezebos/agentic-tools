@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -436,5 +438,299 @@ func TestIntentTreeEndedOwnerCanBeCancelledOnlyByPerson(t *testing.T) {
 				t.Fatalf("repeat cancellation touched new owner: %d %+v", code, repeat)
 			}
 		})
+	}
+}
+
+func treeLockPaths(t *testing.T, b *workBed) []string {
+	t.Helper()
+	trees, err := filepath.Glob(filepath.Join(b.unitRoot, ".trees", "*.json.lock"))
+	if err != nil || len(trees) != 1 {
+		t.Fatalf("tree transition locks: %v %v", trees, err)
+	}
+	return trees
+}
+
+func assertTreeLocksFree(t *testing.T, paths []string) {
+	t.Helper()
+	for _, path := range paths {
+		held, err := lock.File(path, 0600, lock.TryExclusive)
+		if err != nil {
+			t.Fatalf("command waited while holding %s: %v", path, err)
+		}
+		if err := held.Release(); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func TestIntentTreeLockOrderAndWaitAllowOwnerToContinue(t *testing.T) {
+	t.Parallel()
+	b, rebaseOwners, _ := rebaseIntentBed(t)
+	b.starter.hold = "build"
+	var run string
+	saves := 0
+	b.workOwnersHook = func(owners *intentWorkOwners) {
+		units := owners.units
+		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
+			runner := units(layout)
+			runner.AfterWrite = func(record launch.UnitRunRecord) error {
+				run = record.ID
+				saves++
+				// Saving a unit cannot acquire the tree after its lower locks.
+				for _, path := range treeLockPaths(t, b) {
+					held, err := lock.File(path, 0600, lock.TryExclusive)
+					if held != nil {
+						held.Release()
+					}
+					if !lock.Busy(err) {
+						t.Fatalf("unit saved without first holding the tree: %v", err)
+					}
+				}
+				return nil
+			}
+			return runner
+		}
+	}
+	sleep := b.manager.Sleep
+	observed := false
+	b.manager.Sleep = func(d time.Duration) {
+		if !observed {
+			observed = true
+			paths := treeLockPaths(t, b)
+			names, _ := filepath.Glob(filepath.Join(b.unitRoot, ".named", "*.lock"))
+			paths = append(paths, names...)
+			paths = append(paths, filepath.Join(b.unitRoot, run, ".lock"))
+			assertTreeLocksFree(t, paths)
+			code, waiting := b.runJSON(rebaseOwners, "work", "rebase", b.id)
+			if code != 3 || waiting.Next == nil || !slices.Equal(waiting.Next.Argv, []string{"metasystem", "work", "wait", "run:" + run}) {
+				t.Fatalf("competing rebase did not wait for the unit: %d %+v", code, waiting)
+			}
+		}
+		sleep(d)
+	}
+	code, started := treeBuild(t, b, "u", false)
+	if code != 3 || !observed || saves == 0 {
+		t.Fatalf("build did not exercise waiting: %d %+v", code, started)
+	}
+	b.manager.Sleep = sleep
+	record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := b.manager.Store.Update(record.Rounds[0].Steps[0].LaunchID, func(r *launch.Record) error {
+		zero := 0
+		r.State, r.ExitCode, r.Supervisor, r.Child = launch.Completed, &zero, nil, nil
+		r.FinishedAt = b.manager.Now().UTC().Format(time.RFC3339Nano)
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b.starter.hold = ""
+	code, continued, _ := b.work("work", "wait", "run:"+run)
+	if code != 0 || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+		t.Fatalf("owner's next command failed: %d %+v %v", code, continued, b.starter.launched())
+	}
+}
+
+func TestIntentTreeBranchMutationsReserveWholeOperation(t *testing.T) {
+	t.Parallel()
+	treeMutationScenario(t, "rebase")
+}
+
+// Manual submission captures its source through Git subprocesses with no
+// injectable capture seam. This adapter test follows that capture into the
+// reservation and checks custody during the remote read and after its failure.
+func TestIntentTreeSubmissionGitAdapterReservesThroughRemoteRead(t *testing.T) {
+	t.Parallel()
+	treeMutationScenario(t, "submission")
+}
+
+func treeMutationScenario(t *testing.T, operation string) {
+	t.Helper()
+	b, owners, _ := rebaseIntentBed(t)
+	invoked := false
+	var owner string
+	inspect := func() {
+		invoked = true
+		assertTreeLocksFree(t, treeLockPaths(t, b))
+		code, waiting := treeBuild(t, b, "v", false)
+		if code != 3 || waiting.Next == nil || len(waiting.Next.Argv) != 4 || !strings.HasPrefix(waiting.Next.Argv[3], "run:") {
+			t.Fatalf("build entered an ongoing %s: %d %+v", operation, code, waiting)
+		}
+		owner = strings.TrimPrefix(waiting.Next.Argv[3], "run:")
+		// Releasing a live branch command would admit a second writer.
+		person := b.workOwners()
+		now, err := b.commandNow(b.root())
+		if err != nil {
+			t.Fatal(err)
+		}
+		person.prove = enrolledPersonProver(t, b.root(), now)
+		stopCode, stopped := b.runJSON(person, "work", "stop", "run:"+owner)
+		if stopCode != 1 || !strings.Contains(resultWords(stopped), "remains reserved") {
+			t.Fatalf("live branch command was released: %d %+v", stopCode, stopped)
+		}
+		if len(b.starter.launched()) != 0 {
+			t.Fatal("waiting build launched a child")
+		}
+		code, pending, _ := b.work(waiting.Next.Argv[1:]...)
+		if code != 3 || pending.Next == nil || !slices.Equal(pending.Next.Argv, waiting.Next.Argv) {
+			t.Fatalf("operation wait cannot be followed: %d %+v", code, pending)
+		}
+	}
+	if operation == "rebase" {
+		owners.connection.rebase = func(branch.RebaseRequest) (branch.RebaseResult, error) {
+			inspect()
+			return branch.RebaseResult{State: "held"}, nil
+		}
+		code, result := b.runJSON(owners, "work", "rebase", b.id)
+		if code != 0 {
+			t.Fatalf("rebase failed: %d %+v", code, result)
+		}
+	} else {
+		// Manual capture reads a real temporary checkout before admission.
+		connectionGit(t, b.root(), "init", "-q")
+		connectionGit(t, b.root(), "-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-qm", "fixture base")
+		owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) {
+			inspect()
+			return "", errors.New("the remote is unavailable")
+		}
+		code, result := b.runJSON(owners, "work", "review", b.id, "--work", "manual", "--changes", "--brief", b.brief("manual.md", "Submit manual work.\n"))
+		if code != 1 || !strings.Contains(resultWords(result), "remote is unavailable") {
+			t.Fatalf("submission did not reach its remote boundary: %d %+v", code, result)
+		}
+	}
+	if !invoked {
+		t.Fatalf("%s did not reach its operation boundary", operation)
+	}
+	code, ended, _ := b.work("work", "wait", "run:"+owner)
+	if code != 0 || len(b.starter.launched()) != 0 {
+		t.Fatalf("ended operation wait started work: %d %+v", code, ended)
+	}
+	code, next := treeBuild(t, b, "v", false)
+	if code != 0 || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+		t.Fatalf("operation did not release after return: %d %+v %v", code, next, b.starter.launched())
+	}
+}
+
+func TestIntentTreeWaitDoesNotOverwritePersonCancellation(t *testing.T) {
+	t.Parallel()
+	b := newWorkBed(t)
+	b.starter.hold = "build"
+	var run string
+	b.workOwnersHook = func(owners *intentWorkOwners) {
+		units := owners.units
+		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
+			r := units(layout)
+			r.AfterWrite = func(record launch.UnitRunRecord) error { run = record.ID; return nil }
+			return r
+		}
+	}
+	sleep := b.manager.Sleep
+	cancelled := false
+	b.manager.Sleep = func(d time.Duration) {
+		if !cancelled {
+			cancelled = true
+			owners := b.workOwners()
+			now, err := b.commandNow(b.root())
+			if err != nil {
+				t.Fatal(err)
+			}
+			owners.prove = enrolledPersonProver(t, b.root(), now)
+			code, result := b.runJSON(owners, "work", "stop", "run:"+run)
+			if code != 1 || !strings.Contains(resultWords(result), "remains reserved") {
+				t.Fatalf("live-child cancellation released custody: %d %+v", code, result)
+			}
+		}
+		sleep(d)
+	}
+	code, result := treeBuild(t, b, "u", false)
+	record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	if code != 1 || !cancelled || err != nil || record.State != "cancelled" || len(b.starter.launched()) != 1 {
+		t.Fatalf("wait overwrote cancellation: %d %+v %+v %v", code, result, record, err)
+	}
+}
+
+type resolvingTreeGit struct{ workGit }
+
+func (g resolvingTreeGit) Run(dir string, env []string, args ...string) ([]byte, error) {
+	if slices.Equal(args, []string{"rev-parse", "--verify", "HEAD"}) {
+		return []byte(g.bed.head), nil
+	}
+	if slices.Equal(args, []string{"rev-parse", "--verify", "REBASE_HEAD"}) {
+		return []byte(strings.Repeat("c", 40)), nil
+	}
+	return g.workGit.Run(dir, env, args...)
+}
+
+func TestIntentTreeRebaseCorrectionStaysInOperationCustody(t *testing.T) {
+	t.Parallel()
+	b, owners, _ := rebaseIntentBed(t)
+	b.head = strings.Repeat("b", 40)
+	b.workOwnersHook = func(owners *intentWorkOwners) {
+		units := owners.units
+		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
+			r := units(layout)
+			r.Git = resolvingTreeGit{workGit{b}}
+			return r
+		}
+	}
+	code, built := treeBuild(t, b, "u", false)
+	if code != 0 {
+		t.Fatalf("build: %d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A completed transfer is a lawful closed owner before branch mutation.
+	record.Rounds[0].Transferred = true
+	data, err := json.Marshal(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.unitRoot, run, "run.json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	owners = b.workOwners()
+	owners.delivery = &intentDeliveryOwners{laneRoot: func(string, time.Time) (string, bool, error) { return "", false, nil }, now: b.manager.Now}
+	owners.connection.recordRebase = func(*intentInvocation, string, branch.RebaseResult) error { return nil }
+	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return strings.Repeat("a", 40), nil }
+	owners.connection.section = func(_ string, body func(func(func() error) error) error) error {
+		return body(func(fn func() error) error { return fn() })
+	}
+	var operation string
+	owners.connection.rebase = func(req branch.RebaseRequest) (branch.RebaseResult, error) {
+		paths, _ := filepath.Glob(filepath.Join(b.unitRoot, ".trees", "*.json"))
+		data, err := os.ReadFile(paths[0])
+		var owner struct {
+			Run      string
+			Children []string
+		}
+		if err != nil || json.Unmarshal(data, &owner) != nil {
+			t.Fatalf("operation owner: %s %v", data, err)
+		}
+		operation = owner.Run
+		if _, err := req.Resolve(branch.RebaseResolution{Unit: "u", Worktree: b.worktree, Base: b.head, Commit: strings.Repeat("c", 40), Conflicts: "Resolve the conflict."}); err != nil {
+			return branch.RebaseResult{}, err
+		}
+		data, err = os.ReadFile(paths[0])
+		if err != nil || json.Unmarshal(data, &owner) != nil || owner.Run != operation || len(owner.Children) < 2 {
+			t.Fatalf("correction displaced operation custody: %s %v", data, err)
+		}
+		code, waiting := treeBuild(t, b, "v", false)
+		if code != 3 || waiting.Next == nil || waiting.Next.Argv[3] != "run:"+operation {
+			t.Fatalf("competing build did not wait for rebase: %d %+v", code, waiting)
+		}
+		return branch.RebaseResult{State: "held"}, nil
+	}
+	code, rebased := b.runJSON(owners, "work", "rebase", b.id)
+	record, err = (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	if code != 0 || err != nil || len(record.Rounds) != 2 || !slices.Equal(b.starter.launched(), []string{"build", "proof", "build", "proof"}) {
+		t.Fatalf("rebase correction waited on itself: %d %+v %+v %v", code, rebased, record, err)
+	}
+	code, ended, _ := b.work("work", "wait", "run:"+operation)
+	if code != 0 {
+		t.Fatalf("rebase wait after correction: %d %+v", code, ended)
 	}
 }

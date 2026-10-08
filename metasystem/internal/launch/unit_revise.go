@@ -82,6 +82,9 @@ func (runner *UnitRunner) Revise(request UnitRevisionRequest) (UnitRevisionResul
 	if err != nil {
 		return UnitRevisionResult{}, err
 	}
+	if runner.tree == nil {
+		return treeCall(runner, record.Worktree, func(r *UnitRunner) (UnitRevisionResult, error) { return r.Revise(request) })
+	}
 	bound := *runner
 	worktree, key, identityErr := namedUnitIdentity(UnitPlan{Worktree: record.Worktree, Goal: record.Goal, Unit: record.Unit})
 	if identityErr == nil {

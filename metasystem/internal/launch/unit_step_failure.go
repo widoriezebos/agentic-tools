@@ -100,12 +100,19 @@ func (runner *UnitRunner) holdFailedStep(record *UnitRunRecord, round *UnitRound
 // RetryFailedStep records a person's admission and resumes the retained step.
 // The completed steps and the autonomous correction allowance are preserved.
 func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpact func() error) (UnitResult, error) {
+	record, err := runner.read(id)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if runner.tree == nil {
+		return treeCall(runner, record.Worktree, func(r *UnitRunner) (UnitResult, error) { return r.RetryFailedStep(id, person, reason, recordImpact) })
+	}
 	held, err := runner.lock(id)
 	if err != nil {
 		return UnitResult{}, err
 	}
 	defer releaseUnitLock(held)
-	record, err := runner.read(id)
+	record, err = runner.read(id)
 	if err != nil {
 		return UnitResult{}, err
 	}

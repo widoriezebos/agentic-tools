@@ -178,7 +178,7 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 		}
 		baseline = started
 	}
-	baseline, terminal, err := runner.Manager.Wait(baseline.ID, max(time.Duration(0), deadline.Sub(runner.Manager.Now())))
+	baseline, terminal, err := runner.waitLaunch(baseline.ID, max(time.Duration(0), deadline.Sub(runner.Manager.Now())))
 	if err != nil {
 		cleanup = false
 		return false, err

@@ -17,6 +17,7 @@ import (
 // it starts, started and saved; the step states and their recording are the
 // same for both.
 type stepDriver struct {
+	wait     func(string, time.Duration) (Record, bool, error)
 	manager  *Manager
 	round    *UnitRound
 	launchID func(index int) string
@@ -129,7 +130,11 @@ func (driver stepDriver) waitStep(index int, deadline time.Time) (bool, error) {
 	if remaining < 0 {
 		remaining = 0
 	}
-	launchRecord, terminal, err := driver.manager.Wait(step.LaunchID, remaining)
+	wait := driver.wait
+	if wait == nil {
+		wait = driver.manager.Wait
+	}
+	launchRecord, terminal, err := wait(step.LaunchID, remaining)
 	if err != nil {
 		return false, err
 	}

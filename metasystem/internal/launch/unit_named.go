@@ -59,6 +59,9 @@ func (runner *UnitRunner) AdvanceNamed(planPath string) (UnitResult, error) {
 	if err != nil {
 		return UnitResult{}, err
 	}
+	if runner.tree == nil {
+		return treeCall(runner, worktree, func(r *UnitRunner) (UnitResult, error) { return r.AdvanceNamed(planPath) })
+	}
 	entry, _, err := runner.readNamed(key)
 	if err != nil {
 		return UnitResult{}, err
@@ -102,6 +105,9 @@ func (runner *UnitRunner) Continue(request UnitRequest) (UnitResult, error) {
 			return UnitResult{Record: record, Round: len(record.Rounds)}, nil
 		}
 		return UnitResult{}, err
+	}
+	if runner.tree == nil {
+		return treeCall(runner, worktree, func(r *UnitRunner) (UnitResult, error) { return r.Continue(request) })
 	}
 	entry, found, err := runner.readNamed(key)
 	if err != nil {
@@ -150,6 +156,11 @@ func (runner *UnitRunner) AdvancePrepared(worktree, goal, unit string, request [
 	real, key, err := namedUnitIdentity(UnitPlan{Worktree: worktree, Goal: goal, Unit: unit})
 	if err != nil {
 		return UnitResult{}, err
+	}
+	if runner.tree == nil {
+		return treeCall(runner, real, func(r *UnitRunner) (UnitResult, error) {
+			return r.AdvancePrepared(worktree, goal, unit, request, options, prepare)
+		})
 	}
 	entry, _, err := runner.readNamed(key)
 	if err != nil {
@@ -447,6 +458,9 @@ func (runner *UnitRunner) namedLock(key string, plan UnitPlan) (*os.File, error)
 			run = entry.Run
 		}
 		return nil, coded("UNIT_RUN_BUSY", unitFacts(plan.Unit, plan.Goal, "run="+run), fmt.Errorf("another command is advancing unit %s; run the same command again to follow it", plan.Unit))
+	}
+	if runner.tree != nil {
+		runner.tree.files = append(runner.tree.files, held.File())
 	}
 	return held.File(), nil
 }

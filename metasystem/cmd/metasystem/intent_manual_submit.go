@@ -156,9 +156,16 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	if problem != nil {
 		return *problem
 	}
-	if err := inv.unitRunner().GateTree(worktree, "", nil); err != nil {
+	releaseTree, err := inv.unitRunner().ReserveMutation(worktree, id, "submission")
+	if err != nil {
 		return inv.treeFailure(err)
 	}
+	defer func() {
+		if err := releaseTree(); err != nil {
+			fmt.Fprintln(inv.stderr, err)
+		}
+	}()
+
 	install := inv.goalWorktreeInstallation(worktree)
 	data["worktree"] = worktree
 	base, err := conn.endpointTip(original.Path(), endpoint)

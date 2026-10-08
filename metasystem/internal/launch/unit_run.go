@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -65,6 +66,7 @@ type UnitRunRecord struct {
 	// Revisions are the retained correction requests; Revise is their only
 	// writer.
 	Revisions []UnitRevision `json:"revisions,omitempty"`
+	Mutation  *identity.Ref  `json:"mutation,omitempty"`
 }
 
 type UnitRound struct {
@@ -171,6 +173,8 @@ type UnitRunner struct {
 	// run records it.
 	options   UnitOptions
 	resolving bool
+	tree      *treeCommand
+	mutation  string
 }
 
 func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
@@ -197,6 +201,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		if err = runner.admitRound(plan, plan.Build.Brief, nil); err != nil {
 			return UnitResult{}, err
 		}
+		if runner.tree == nil {
+			return treeCall(runner, plan.Worktree, func(r *UnitRunner) (UnitResult, error) { return r.Advance(request) })
+		}
 		record, err = runner.newRun(plan)
 		if err != nil {
 			return UnitResult{}, err
@@ -205,6 +212,9 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		record, err = runner.read(request.Resume)
 		if err != nil {
 			return UnitResult{}, err
+		}
+		if runner.tree == nil {
+			return treeCall(runner, record.Worktree, func(r *UnitRunner) (UnitResult, error) { return r.Advance(request) })
 		}
 		plan, err = readUnitPlan(record.Plan, record.PlanDirectory)
 		if err != nil {
@@ -675,7 +685,7 @@ func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDr
 				return err
 			}
 			return runner.save(*record)
-		}, unit: true, snapshot: runner.snapshotRepository,
+		}, unit: true, snapshot: runner.snapshotRepository, wait: runner.waitLaunch,
 		before: func(spec StartSpec) error {
 			if runner.BeforeModelLaunch != nil {
 				if err := runner.BeforeModelLaunch(*record, spec); err != nil {
@@ -1196,6 +1206,9 @@ func (runner *UnitRunner) lock(id string) (*os.File, error) {
 			return nil, coded("UNIT_LOCK_FAILED", "run="+id, fmt.Errorf("run %s cannot be locked for this command: %w", id, err))
 		}
 		return nil, coded("UNIT_RUN_BUSY", "run="+id, errors.New("another command is advancing this work; run the same command again to follow it"))
+	}
+	if runner.tree != nil {
+		runner.tree.files = append(runner.tree.files, held.File())
 	}
 	return held.File(), nil
 }

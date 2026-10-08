@@ -1933,6 +1933,17 @@ func (inv *intentInvocation) waitUnit(run string, timeout time.Duration, targets
 		settings.WaitCapSeconds = int64(timeout / time.Second)
 		runner.Manager.Settings = settings
 	}
+	if record, err := runner.Status(run); err == nil && record.Mutation != nil {
+		finished, err := runner.MutationFinished(record)
+		if err != nil {
+			return inv.treeFailure(err)
+		}
+		if !finished {
+			return inv.treeFailure(&launch.TreeWaitingError{Run: run})
+		}
+		return intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the branch operation ended; repeat the command that was waiting"}
+	}
+
 	result, err := runner.Continue(launch.UnitRequest{Resume: run})
 	return inv.unitOutcome(runner, result, err, targets, again)
 }
