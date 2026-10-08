@@ -27,6 +27,7 @@ type RebaseRequest struct {
 	Transport                         PushTransport
 	Resolve                           func(RebaseResolution) (string, error)
 	Answer                            func(string) (string, error)
+	RecordDrop                        func(goal.UnitDrop, goal.UnitDrop) error
 }
 
 // RebaseResolution asks the unit runner to correct one stopped replay.
@@ -201,7 +202,11 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 		result.NewTip, result.State, result.Regenerated = next, "rebased", regenerated
 		result.Resolved = resolved
 	}
-	carried, err := carryReviewsWith(CarryRequest(req), d)
+	drops, covered, err := rebaseDrops(req, result.NewTip, d)
+	if err != nil {
+		return result, err
+	}
+	carried, err := carryReviewsWith(CarryRequest(req), d, covered)
 	if carried.NewTip != "" {
 		result.NewTip = carried.NewTip
 	}
@@ -224,6 +229,14 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 		result.NewTip = pushed.Tip
 		if result.State == "" {
 			result.State = "pushed"
+		}
+	}
+	for _, drop := range drops {
+		if err := checkClaim(req.CheckClaim); err != nil {
+			return result, err
+		}
+		if err := req.RecordDrop(drop.before, drop.after); err != nil {
+			return result, fmt.Errorf("the rebased drop was not recorded: %w", err)
 		}
 	}
 	if result.State == "" {
@@ -272,7 +285,7 @@ func CarryReviews(req CarryRequest) (CarryResult, error) {
 	return carryReviewsWith(req, gitRebaseDependencies())
 }
 
-func carryReviewsWith(req CarryRequest, d rebaseDependencies) (CarryResult, error) {
+func carryReviewsWith(req CarryRequest, d rebaseDependencies, dropped ...map[string]bool) (CarryResult, error) {
 	result := CarryResult{Carried: []string{}, NeedsReview: []string{}}
 	r := d.repository
 	tip, present, err := r.facts.Tip(req.Repo, goalBranchRef(req.GoalID))
@@ -298,7 +311,7 @@ func carryReviewsWith(req CarryRequest, d rebaseDependencies) (CarryResult, erro
 		result.Unknown = append(result.Unknown, unit.Units...)
 	}
 	for _, unit := range commits {
-		if unit.Kind != Unit || reviewed[unit.ID] {
+		if unit.Kind != Unit || reviewed[unit.ID] || len(dropped) > 0 && dropped[0][unit.ID] {
 			continue
 		}
 		if !loaded {

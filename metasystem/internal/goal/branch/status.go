@@ -10,6 +10,8 @@ import (
 const ParkUnpushedCode = "GOAL_PARK_UNPUSHED"
 
 type UnitStatus struct {
+	Drop                            *goal.UnitDrop
+	PriorReadState                  string
 	Whole                           bool
 	Unit, Commit, Digest, ReadState string
 	Units                           []string
@@ -30,10 +32,16 @@ type statusDependencies struct {
 	localTip            func(repo, ref string) (string, bool, error)
 	gitOutput           func(repo string, args ...string) ([]byte, error)
 	transferObligations func(repo, endpoint, goalID string) []goal.ReviewObligation
+	drops               func(repo, endpoint, goalID string) ([]goal.UnitDrop, error)
+	dropTree            func(repo, commit string) (string, error)
 }
 
 func defaultStatusDependencies() statusDependencies {
 	return statusDependencies{validatedRange: ValidateRange, kind: KindOf, attestation: ValidateAttestationAt, localTip: localBranchTip, gitOutput: gitOutput,
+		drops: committedDrops, dropTree: func(repo, commit string) (string, error) {
+			out, err := gitOutput(repo, "rev-parse", commit+"^{tree}")
+			return strings.TrimSpace(string(out)), err
+		},
 		transferObligations: func(repo, endpoint, goalID string) []goal.ReviewObligation {
 			data, err := gitOutput(repo, "show", endpoint+":metasystem/plans/goals/"+goalID+".md")
 			if err != nil {
@@ -94,8 +102,11 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 			return deps.attestation(repo, tip, endpointTip, goalID, unit.Unit, unit.Commit)
 		})
 	}
+	if err := applyDrops(&result, repo, endpointTip, goalID, deps); err != nil {
+		return Status{}, err
+	}
 	for _, unit := range result.Units {
-		if unit.ReadState != "read clean" && unit.ReadState != "read transferred" {
+		if !unit.Resolved() {
 			break
 		}
 		result.Prefix++

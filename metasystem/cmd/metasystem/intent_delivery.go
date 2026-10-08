@@ -424,6 +424,10 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 	}
 	state := intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip, Status: status, ReadsWaived: goal.ReadsWaived(projection.Tree.Live[goalID])}
 	for _, unit := range status.Units[:status.Prefix] {
+		if unit.Drop != nil {
+			state.Sources = append(state.Sources, "dropped")
+			continue
+		}
 		if unit.ReadState == "read transferred" {
 			state.Sources = append(state.Sources, "transferred")
 			continue
@@ -2294,7 +2298,7 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 		}
 	}
 	clean := func(index int) bool {
-		return state.ReadsWaived || index < state.Status.Prefix || (state.Status.Units[index].ReadState == "read clean" || state.Status.Units[index].ReadState == "read transferred")
+		return state.ReadsWaived || index < state.Status.Prefix || state.Status.Units[index].Resolved()
 	}
 	covered := make([]bool, len(state.Status.Units))
 	for _, row := range declared {
@@ -2304,7 +2308,7 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 			if len(names) == 0 {
 				names = strings.Split(unit.Unit, "+")
 			}
-			if !slices.ContainsFunc(names, func(name string) bool {
+			if unit.Drop != nil || !slices.ContainsFunc(names, func(name string) bool {
 				return row.Name == name || strings.HasPrefix(row.Name, name+".") || strings.HasPrefix(row.Name, name+" ")
 			}) {
 				continue

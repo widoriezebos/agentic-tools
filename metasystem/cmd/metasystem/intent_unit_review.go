@@ -1188,6 +1188,9 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 	if result.RootJob != "" {
 		targets = append(targets, jobTarget(result.RootJob))
 	}
+	if result.State == "dropped" {
+		return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data, Summary: "the unit is dropped; no new read is needed"}
+	}
 	if result.State != "collected" && result.State != "already-collected" {
 		return intentResult{Targets: targets, Outcome: intentInProgress, Data: data,
 			Summary: "the review of this work is in progress",

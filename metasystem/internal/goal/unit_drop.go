@@ -40,9 +40,19 @@ func (d UnitDrop) validate() error {
 
 // RecordUnitDrop publishes the outcome only for the current claim and goal
 // revision. Repeating the operation joins the identical durable outcome.
-func RecordUnitDrop(r VerbRequest, id string, drop UnitDrop) (PublishResult, error) {
+func RecordUnitDrop(r VerbRequest, id string, drop UnitDrop, previous ...UnitDrop) (PublishResult, error) {
 	if err := drop.validate(); err != nil {
 		return PublishResult{}, err
+	}
+	if len(previous) > 1 {
+		return PublishResult{}, fmt.Errorf("a rebased drop replaces one published outcome")
+	}
+	if len(previous) == 1 {
+		prior := previous[0]
+		prior.Commit, prior.Tree, prior.Proof, prior.Covered, prior.Revision = drop.Commit, drop.Tree, drop.Proof, drop.Covered, drop.Revision
+		if !reflect.DeepEqual(prior, drop) {
+			return PublishResult{}, fmt.Errorf("a rebase preserves the drop's decision and authority")
+		}
 	}
 	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent: Intent{Verb: "work-drop", Targets: []string{id}}, Message: "goal drop " + id + " unit " + drop.Unit,
@@ -55,8 +65,13 @@ func RecordUnitDrop(r VerbRequest, id string, drop UnitDrop) (PublishResult, err
 			if f == nil || f.State != StateClaimed || !ownPair(f.Claimed, r.Actor) {
 				return nil, fmt.Errorf("goal %s drop requires its current claim holder", id)
 			}
-			for _, prior := range f.UnitDrops {
+			for index, prior := range f.UnitDrops {
 				if prior.Operation == drop.Operation {
+					if len(previous) == 1 && reflect.DeepEqual(prior, previous[0]) && f.Revision == drop.Revision {
+						f.UnitDrops[index] = drop
+						touch(f, r, "work-drop", []string{id})
+						return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+					}
 					// The revision guards publication, not the outcome's identity.
 					prior.Revision = drop.Revision
 					if !reflect.DeepEqual(prior, drop) {
@@ -64,6 +79,9 @@ func RecordUnitDrop(r VerbRequest, id string, drop UnitDrop) (PublishResult, err
 					}
 					return nil, AlreadyApplied{}
 				}
+			}
+			if len(previous) == 1 {
+				return nil, fmt.Errorf("the published drop changed before its rebase was recorded")
 			}
 			if f.Revision != drop.Revision {
 				return nil, fmt.Errorf("the goal changed before its drop outcome was recorded")

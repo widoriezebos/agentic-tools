@@ -10,6 +10,7 @@ import (
 	"net/mail"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -193,7 +194,7 @@ func landingUnits(status Status, count int) []landUnit {
 			continue
 		}
 		target := -1
-		if commit.Kind == Read {
+		if commit.Kind == Read || commit.Kind == Drop {
 			target = byUnit[commit.Unit]
 			if _, ok := byUnit[commit.Unit]; !ok {
 				target = -1
@@ -385,7 +386,13 @@ func commitCoAuthorsWith(r landingRepository, repo, commit string) ([]string, er
 }
 
 func landingMessageWith(r landingRepository, repo string, group landUnit, goalID, seat string, last bool) (string, []string, error) {
-	lines := []string{"Goal-Unit: " + goalID + "/" + group.status.Unit, "Goal-Digest: " + group.status.Digest,
+	kind, digest := "Goal-Unit: "+goalID+"/"+group.status.Unit, group.status.Digest
+	if group.status.Drop != nil {
+		kind = "Goal-Drop: " + goalID + "/" + group.status.Unit + " " + group.status.Drop.Operation
+		sum := sha256.Sum256(nil)
+		digest = hex.EncodeToString(sum[:])
+	}
+	lines := []string{kind, "Goal-Digest: " + digest,
 		"Goal-Source: " + group.status.Commit}
 	foldPaths := map[string]bool{}
 	for _, fold := range group.folds {
@@ -610,8 +617,8 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 		return LandResult{}, err
 	}
 	for _, commit := range status.Commits {
-		if commit.Kind == Drop {
-			return LandResult{}, operationRefusal(LandUnprovenCode, "goal %s has a pending drop; reconcile its outcome before landing\nrun: metasystem work status %s", req.GoalID, req.GoalID)
+		if commit.Kind == Drop && !slices.ContainsFunc(status.Units, func(u UnitStatus) bool { return u.Drop != nil && u.Drop.Commit == commit.ID }) {
+			return LandResult{}, operationRefusal(LandUnprovenCode, "goal %s has a pending drop; finish its retained review before landing\nrun: metasystem work status %s --work %s", req.GoalID, req.GoalID, commit.Unit)
 		}
 	}
 	landable := status.Prefix
@@ -672,6 +679,9 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 				return nil, nil, err
 			}
 			for _, fold := range group.folds {
+				if fold.Kind == Drop {
+					continue
+				}
 				foldTree, err := r.index(worktree)
 				if err != nil {
 					return nil, nil, err
@@ -703,6 +713,21 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 			}
 			if !matches {
 				return nil, nil, operationRefusal(UnitRereadCode, "build %s lands on main as other changes than were reviewed (%s, reviewed %s)\nrun: metasystem work rebase %s", group.status.Unit, digest, group.status.Digest, req.GoalID)
+			}
+			for _, fold := range group.folds {
+				if fold.Kind != Drop {
+					continue
+				}
+				tree, err := r.index(worktree)
+				if err != nil {
+					return nil, nil, err
+				}
+				if err := verifyFoldPreimagesWith(r, req.Repo, req.GoalID, tree, fold); err != nil {
+					return nil, nil, err
+				}
+				if err := applyCommitModeWith(r, worktree, fold.ID, false); err != nil {
+					return nil, nil, err
+				}
 			}
 			message, _, err := landingMessageWith(r, req.Repo, group, req.GoalID, req.Seat, req.Last && index == len(groups)-1)
 			if err != nil {

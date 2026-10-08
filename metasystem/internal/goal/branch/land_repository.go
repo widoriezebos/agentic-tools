@@ -1,6 +1,7 @@
 package branch
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -129,7 +130,11 @@ func gitLandingRepository() landingRepository {
 			env := []string{"GIT_AUTHOR_NAME=" + who.Name, "GIT_AUTHOR_EMAIL=" + who.Email,
 				"GIT_COMMITTER_NAME=" + who.Name, "GIT_COMMITTER_EMAIL=" + who.Email,
 				"GIT_AUTHOR_DATE=" + stamp, "GIT_COMMITTER_DATE=" + stamp}
-			_, err := gitInputEnv(dir, env, message, "-c", "core.hooksPath="+scratchHooks(filepath.Dir(dir)), "commit", "--quiet", "-F", "-")
+			args := []string{"-c", "core.hooksPath=" + scratchHooks(filepath.Dir(dir)), "commit", "--quiet", "-F", "-"}
+			if bytes.Contains(message, []byte("\nGoal-Drop: ")) {
+				args = append(args, "--allow-empty")
+			}
+			_, err := gitInputEnv(dir, env, message, args...)
 			return err
 		},
 		tree: func(dir string) (string, error) {
@@ -161,6 +166,11 @@ func gitLandingRepository() landingRepository {
 func (r landingRepository) status(repo, endpoint, tip, goal, goalPage string) (Status, error) {
 	return inspectStatus(repo, endpoint, tip, goal, statusDependencies{
 		validatedRange: r.reads.Range,
+		drops:          func(string, string, string) ([]goalfile.UnitDrop, error) { return dropsFromPage([]byte(goalPage)) },
+		dropTree: func(repo, commit string) (string, error) {
+			subject, err := r.reads.ReadSubject(repo, commit)
+			return subject.Tree, err
+		},
 		transferObligations: func(string, string, string) []goalfile.ReviewObligation {
 			return transferObligationsFromPage([]byte(goalPage))
 		},

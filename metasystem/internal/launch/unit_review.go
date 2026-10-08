@@ -242,7 +242,13 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 			}
 			record.Rounds[len(record.Rounds)-1].Material = material
 		}
-		return runner.save(record)
+		if err := runner.save(record); err != nil {
+			return err
+		}
+		if subject.Drop != nil {
+			runner.publishJudgement(record, round.Number)
+		}
+		return nil
 	}
 	return bind(review, retain)
 }

@@ -888,6 +888,15 @@ func (runner *UnitRunner) publishJudgement(record UnitRunRecord, number int) {
 			card.Stop = &board.ReviewStop{Decision: stop.Decision, Handoff: stop.Handoff, Class: stop.Class, Attempt: stop.Attempt, Budget: stop.Budget}
 		}
 	}
+	for _, subject := range record.Subjects {
+		if subject.Round == number && subject.Drop != nil {
+			card.Job.Phase = "drop " + subject.Drop.Phase
+			if subject.Drop.Phase == "recorded" || subject.Drop.Phase == "closed" {
+				card.Job.Phase = "dropped"
+				card.Stop = &board.ReviewStop{Decision: "dropped", Handoff: "optional unit removed", Class: record.Unit, Attempt: number, Budget: max(record.CountedCap, record.MaxRounds)}
+			}
+		}
+	}
 	if runner.Manager.Now != nil {
 		card.Writer.At = runner.Manager.Now()
 	}

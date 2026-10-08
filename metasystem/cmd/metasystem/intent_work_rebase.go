@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -123,6 +124,29 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 		var err error
 		result, err = conn.rebase(branch.RebaseRequest{Repo: root, Remote: endpoint.Remote, EndpointTip: mainTip,
 			GoalID: id, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport, Resolve: inv.resolveRebaseRound(id, runner),
+			RecordDrop: func(before, after goal.UnitDrop) error {
+				args := append([]string{"--root", inv.stateRoot, "--id", id}, inv.forward("lineage")...)
+				result := inv.goalAct(id, "drop unit", inv.syncOwner("work-drop", args, nil, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
+					projection, _, problem := inv.projection()
+					if problem != nil {
+						return goal.PublishResult{}, errors.New(problem.Summary)
+					}
+					file, _ := goalRecord(projection, id)
+					if file == nil {
+						return goal.PublishResult{}, fmt.Errorf("goal %s is no longer live", id)
+					}
+					after.Revision = file.Revision
+					return goal.RecordUnitDrop(req, id, after, before)
+				}, "id"))
+				if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
+					remedy := inv.publicArgv("work", "rebase", id)
+					if _, blocked, err := goal.PushedBlocking(inv.stateRoot); err == nil && blocked {
+						remedy = inv.publicArgv("goal", "sync", "--recover")
+					}
+					return fmt.Errorf("%s\nrun: %s", result.Summary, shellCommand(remedy))
+				}
+				return nil
+			},
 			Answer: func(question string) (string, error) {
 				q, err := channel.ReadQuestion(inv.layout.InstallationRoot.Path(), question)
 				if err != nil {
