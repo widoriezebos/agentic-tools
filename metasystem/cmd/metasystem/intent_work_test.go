@@ -112,6 +112,23 @@ func (s *workStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
 		}
 		return nil
 	})
+	if record.Kind == "read" && !hold && !red {
+		state, err := s.m.Store.StateDir(id)
+		if err != nil {
+			return identity.Ref{}, err
+		}
+		path := filepath.Join(state, "return.json")
+		report := filepath.Join(state, "report.md")
+		if err := os.WriteFile(path, []byte(`{"findings":[],"verdictMaterialCount":0}`), 0600); err != nil {
+			return identity.Ref{}, err
+		}
+		if err := os.WriteFile(report, []byte("VERDICT: LAND\n"), 0600); err != nil {
+			return identity.Ref{}, err
+		}
+		if _, err := s.m.Store.Update(id, func(r *launch.Record) error { r.Outputs = []launch.Output{{Path: path}, {Path: report}}; return nil }); err != nil {
+			return identity.Ref{}, err
+		}
+	}
 	return workProcessRef(10), nil
 }
 
@@ -208,13 +225,13 @@ func TestBuildRefusesAStaleEngine(t *testing.T) {
 				if verb != "build" {
 					bed.starter.fail["proof"] = true
 					code, built, _ := bed.work(args...)
-					if code != 0 || resultData(t, built)["outcome"] != "proof-red" {
+					if code != 1 || built.Outcome != intentRefused || resultData(t, built)["outcome"] != "proof-red" || !strings.Contains(built.Summary, "stopped unclassified") {
 						t.Fatalf("seed build: %d %+v", code, built)
 					}
 					delete(bed.starter.fail, "proof")
-					args = []string{"work", "revise", bed.id, "--work", "engine", "--brief", brief}
+					args = []string{"work", "revise", bed.id, "--work", "engine", "--brief", brief, "--reason", "Repair the retained failed proof", "--by", "Wido"}
 					if verb == "revise-run" {
-						args = []string{"work", "revise", "run:" + resultData(t, built)["run"].(string), "--brief", brief}
+						args = []string{"work", "revise", "run:" + resultData(t, built)["run"].(string), "--brief", brief, "--reason", "Repair the retained failed proof", "--by", "Wido"}
 					}
 				}
 				layout, err := bed.owners().resolver.ResolveLayout(bed.root())
@@ -260,6 +277,11 @@ func TestBuildRefusesAStaleEngine(t *testing.T) {
 				wantStderr := ""
 				if verb == "build" {
 					wantStderr = "warning: goal " + bed.id + " has no accepted design; this build runs on its brief alone\nmetasystem design write " + bed.id + " --brief FILE\n"
+				}
+				if verb == "revise-goal" {
+					wantStderr = "Impact: this admits one correction despite the recorded read.\nIts findings and automatic allowance remain. The result needs another read.\nCancel the admitted run to undo the request. Reason: Repair the retained failed proof\n"
+				} else if verb == "revise-run" {
+					wantStderr = "Impact: this admits one correction despite the recorded review.\nThe unit needs another read; its automatic allowance remains.\nCancel the admitted run to undo the request. Reason: Repair the retained failed proof\n"
 				}
 				if logCalls != row.logCalls || tipCalls != row.tipCalls {
 					t.Fatalf("Git calls: log=%d tip=%d, want %d %d", logCalls, tipCalls, row.logCalls, row.tipCalls)
@@ -521,9 +543,9 @@ func TestAdapterStepsComeBeforeTheCheck(t *testing.T) {
 					if round == 1 {
 						correction := bed.brief("correction.md", "Correct the unit.\n")
 						if reviseRun {
-							code, result, _ = bed.work("work", "revise", "run:"+data["run"].(string), "--brief", correction)
+							code, result, _ = bed.work("work", "revise", "run:"+data["run"].(string), "--brief", correction, "--reason", "Exercise the retained check on a chosen correction", "--by", "Wido")
 						} else {
-							code, result, _ = bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
+							code, result, _ = bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction, "--reason", "Exercise the retained check on a chosen correction", "--by", "Wido")
 						}
 					}
 				}
@@ -598,7 +620,7 @@ func TestIntentWorkAdapterPlanningFailureEndsRoundRed(t *testing.T) {
 				t.Fatalf("wait replanned proof: %d %+v launches=%v", code, waited, bed.starter.launched())
 			}
 			correction := bed.brief("correction.md", "Correct the unit.\n")
-			code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
+			code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction, "--reason", "Exercise the retained check on a chosen correction", "--by", "Wido")
 			if code != 0 || resultData(t, revised)["run"] != run || resultData(t, revised)["round"] != float64(2) || resultData(t, revised)["outcome"] != "green" || !slices.Equal(bed.starter.launched(), []string{"build", "proof", "read", "build", "proof", "read"}) || len(*fake.Calls) != 0 {
 				t.Fatalf("revision changed the check owner: %d %+v launches=%v", code, revised, bed.starter.launched())
 			}
@@ -615,7 +637,7 @@ func TestIntentWorkAdapterClosureFailureAdmitsRevise(t *testing.T) {
 	brief := bed.brief("proof.md", "Build the unit.\n")
 	_, failed, _ := bed.work(append([]string{"work", "build", bed.id, "proof", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	correction := bed.brief("correction.md", "Correct the unit.\n")
-	code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction)
+	code, revised, _ := bed.work("work", "revise", bed.id, "--work", "proof", "--after", "1", "--brief", correction, "--reason", "Exercise the retained check on a chosen correction", "--by", "Wido")
 	data := resultData(t, revised)
 	if code != 0 || data["run"] != resultData(t, failed)["run"] || data["round"] != float64(2) ||
 		data["state"] != "awaiting-judgement" || data["outcome"] != "green" || !slices.Equal(bed.starter.launched(), []string{"build", "proof", "build", "proof"}) {
@@ -798,12 +820,15 @@ func TestIntentBuildSizeInput(t *testing.T) {
 		t.Fatalf("--lines: code=%d %+v", code, result)
 	}
 	data := resultData(t, result)
-	if plan, _ := launch.ReadUnitPlan(data["plan"].(string)); plan.Build.UnitsPage != plan.Build.Brief {
+	if plan, err := launch.ReadUnitPlan(data["plan"].(string)); err != nil || !bytes.Contains(mustRead(t, plan.Build.Brief), mustRead(t, plan.Build.UnitsPage)) {
 		t.Fatalf("the estimate is not read from the generated build brief: %v", data)
 	}
 	buildLaunch := data["steps"].([]any)[0].(map[string]any)["launchId"].(string)
 	if record, err := bed.manager.Store.Read(buildLaunch); err != nil || record.DeclaredLines != 120 {
 		t.Fatalf("build admission size: %+v %v", record.DeclaredLines, err)
+	}
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(data["run"].(string)); err != nil {
+		t.Fatal(err)
 	}
 	rowed := bed.brief("rowed.md", "Build it.\n\n| Unit | Lines |\n| --- | --- |\n| rowed | 75 |\n")
 	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "rowed", "--brief", rowed}, workCheck...)...)

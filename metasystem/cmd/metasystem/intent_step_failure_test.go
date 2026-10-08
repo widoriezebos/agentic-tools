@@ -225,19 +225,34 @@ func TestIntentMovedTreeRetryUsesCurrentSnapshot(t *testing.T) {
 		t.Run(fmt.Sprintf("passing-retry=%t", pass), func(t *testing.T) {
 			t.Parallel()
 			b, p := failedCommandBed(t, 0)
+			originalHead := b.head
 			if pass {
 				p.passAfter = 1
 			}
 			p.moved = func() { b.head = "moved-head" }
 			code, result := failedCommandBuild(t, b)
 			r := failedCommandRecord(t, b, result)
-			want, outcome := "unclassified", "proof-red"
+			// A step retries against the current snapshot, while its round must
+			// still hold any movement away from the builder's frozen result.
+			step := r.Rounds[0].Steps[1]
+			wantState := launch.StepFailed
 			if pass {
-				want, outcome = "", "green"
+				wantState = launch.StepPassed
 			}
-			if code != map[bool]int{true: 0, false: 1}[pass] || len(p.commands) != 2 || len(b.starter.launched()) != 1 || r.Rounds[0].Cause != want || r.Rounds[0].Outcome != outcome {
-				t.Fatalf("retry judged against first tree: %d %+v executions=%d", code, r, len(p.commands))
+			if code != 1 || len(p.commands) != 2 || len(b.starter.launched()) != 1 || r.Rounds[0].Cause != "environment" || r.Rounds[0].Outcome != "proof-wrote" || r.Rounds[0].Stop == nil || step.State != wantState || len(step.Moved) != 0 || step.Before != nil {
+				t.Fatalf("retry or frozen round lost its tree boundary: %d %+v executions=%d", code, r, len(p.commands))
 			}
+			if r.Rounds[0].Result == nil || r.Rounds[0].Result.Parent != originalHead {
+				t.Fatalf("retry rewrote the builder's parent: %+v", r.Rounds[0].Result)
+			}
+			data, err := os.ReadFile(filepath.Join(r.Rounds[0].Directory, "proof-before.json"))
+			var retained struct {
+				Head string `json:"head"`
+			}
+			if err != nil || json.Unmarshal(data, &retained) != nil || strings.TrimSpace(retained.Head) != originalHead {
+				t.Fatalf("retry rewrote round baseline: %s %v", data, err)
+			}
+
 		})
 	}
 }

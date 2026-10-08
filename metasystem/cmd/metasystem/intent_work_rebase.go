@@ -68,7 +68,7 @@ func runIntentWorkRebase(inv *intentInvocation) int {
 }
 
 // rebaseGoal is the shared branch operation for rebase and land.
-func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []string, *intentResult) {
+func (inv *intentInvocation) rebaseGoal(id string) (out branch.RebaseResult, warnings []string, problem *intentResult) {
 	targets := []intentTarget{{Kind: "goal", ID: id}}
 	refused := func(err error) (branch.RebaseResult, []string, *intentResult) {
 		var conflict *branch.RebaseConflict
@@ -107,7 +107,11 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 
 	defer func() {
 		if err := releaseTree(); err != nil {
-			fmt.Fprintln(inv.stderr, err)
+			if problem != nil {
+				problem.Details = append(problem.Details, err.Error())
+			} else {
+				_, _, problem = refused(err)
+			}
 		}
 	}()
 

@@ -210,8 +210,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	endpointTip := ""
 	tip := func() (string, error) {
 		if endpointTip == "" {
-			var tipErr error
-			tipErr = review.Wait(func() error {
+			tipErr := review.Wait(func() error {
 				var err error
 				endpointTip, err = conn.endpointTip(original.Path(), endpoint)
 				return err
@@ -563,7 +562,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			}
 		}
 		if current != "" || head != subject.Tip && head != read.AttestationCommit {
-			return fmt.Errorf("the worktree changed after the read; restore its committed result or revise this work before publishing")
+			return fmt.Errorf("the worktree changed after the read; restore its result or revise before publishing")
 		}
 		return nil
 	}, review.Wait, criticArgs)
@@ -879,7 +878,7 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 
 func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, goalID, unit string, args []string, check func(branch.BranchReadResult) error, wait func(func() error) error, fallback ...[]string) (out intentResult) {
 	owners := inv.delivery()
-	branchRead := owners.branchRead
+	var branchRead func([]string) (branch.BranchReadResult, int, error)
 	installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
 	alreadyPublished := inspectErr == nil && installed.Published
 	changed, discardRecord := false, false

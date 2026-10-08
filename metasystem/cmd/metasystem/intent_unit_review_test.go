@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strconv"
@@ -691,6 +692,9 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// staging.
 	c.edits, c.proofWrites = map[string]string{"other.txt": "another unit\n"}, true
 	code, result = c.do(append([]string{"work", "build", c.id, "wrote", "--brief", c.brief("wrote.md", "Another unit.\n"), "--lines", "5"}, workCheck...)...)
+	if code != 1 || result.Outcome != intentRefused || resultData(t, result)["outcome"] != "proof-wrote" || !strings.Contains(result.Summary, "stopped environment") {
+		t.Fatalf("proof-writing build did not hold its result: code=%d %+v", code, result)
+	}
 	wrote := resultData(t, result)["run"].(string)
 	code, result = c.do("work", "review", "run:"+wrote)
 	wroteRound := c.runRecord(wrote).Rounds[0]
@@ -1054,8 +1058,13 @@ func newUnitPromotionReview(t *testing.T, clean bool) (*workBed, *intentInvocati
 
 func runUnitPromotionReview(t *testing.T, bed *workBed, inv *intentInvocation, review launch.UnitReview) intentResult {
 	t.Helper()
-	return inv.reviewUnitRound(&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}, nil, review, func(launch.UnitSubject) error {
-		t.Fatal("a published subject was rewritten")
+	want := *review.Subject
+	want.Examination, want.ExaminationJob, want.ExaminationRound = "critic-a", "critic-a", 1
+	want.ExaminationReturnPath = filepath.Join(bed.worktree, "artifacts", "agents", "critic-a", "rounds", "1", "return.json")
+	return inv.reviewUnitRound(&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}, nil, review, func(subject launch.UnitSubject) error {
+		if !reflect.DeepEqual(subject, want) {
+			t.Fatalf("publication rewrote its subject: %+v", subject)
+		}
 		return nil
 	})
 }
@@ -1122,6 +1131,7 @@ func TestUnitReviewRecordsThePromotedReadContinuesRecordedCritic(t *testing.T) {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			bed, inv, review := newUnitPromotionReview(t, true)
+			(&deliveryBed{intentBed: bed.intentBed, install: bed.worktree}).writeJob(map[string]any{"jobId": "critic-a", "role": "code-critic", "round": 1, "status": "completed", "chainClosed": true})
 			inspections, reads := 0, 0
 			inv.owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) {
 				inspections++
@@ -1146,7 +1156,7 @@ func TestUnitReviewRecordsThePromotedReadContinuesRecordedCritic(t *testing.T) {
 			if state == "already-collected" {
 				want = intentUnchanged
 			}
-			if result.Outcome != want || inspections != 1 || reads != 1 || data["rootJob"] != "critic-a" || !strings.Contains(fmt.Sprint(data["readNotPromoted"]), "critic") {
+			if result.Outcome != want || inspections != 3 || reads != 1 || data["rootJob"] != "critic-a" || !strings.Contains(fmt.Sprint(data["readNotPromoted"]), "critic") {
 				t.Fatalf("result=%+v inspections=%d reads=%d", result, inspections, reads)
 			}
 		})
@@ -1162,6 +1172,7 @@ func TestUnitReviewRecordsThePromotedReadFallsBackOnRefusal(t *testing.T) {
 		t.Run(refusal.Error(), func(t *testing.T) {
 			t.Parallel()
 			bed, inv, review := newUnitPromotionReview(t, true)
+			(&deliveryBed{intentBed: bed.intentBed, install: bed.worktree}).writeJob(map[string]any{"jobId": "critic-a", "role": "code-critic", "round": 1, "status": "completed", "chainClosed": true})
 			reads := 0
 			inv.owners.delivery = &intentDeliveryOwners{
 				branchState: func(string, string) (intentBranchState, error) { return intentBranchState{}, nil },

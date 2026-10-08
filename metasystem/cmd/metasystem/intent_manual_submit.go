@@ -86,6 +86,17 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 			Summary: fmt.Sprintf("the brief %s can't be read or is empty; nothing was done", briefPath),
 			next:    inv.sameCommand(), nextReason: "once the brief says what the work is meant to do"}
 	}
+	if found, err := inv.hasGoalWorktree(id); err != nil {
+		return inv.treeFailure(err)
+	} else if found {
+		worktree, problem := inv.goalWorktree(id)
+		if problem != nil {
+			return *problem
+		}
+		if err := inv.unitRunner().GateTree(worktree, "", nil); err != nil {
+			return inv.treeFailure(err)
+		}
+	}
 	capture, err := inv.captureManual(briefPath)
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2, Summary: fmt.Sprintf("%v; nothing was done", err),

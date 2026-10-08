@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -70,13 +71,13 @@ func TestIntentUnitOnlyDecidesAfterARead(t *testing.T) {
 			bed.starter.fail["proof"] = red
 			brief := bed.brief("pending.md", "Build the unit without a preliminary read.\n")
 			code, built, _ := bed.work(append([]string{"work", "build", bed.id, "pending", "--brief", brief, "--lines", "5"}, workCheck...)...)
-			if code != 0 {
+			if code != map[bool]int{false: 0, true: 1}[red] || red && !strings.Contains(built.Summary, "stopped unclassified") {
 				t.Fatalf("build: code=%d %+v", code, built)
 			}
 			run := resultData(t, built)["run"].(string)
 			if red {
 				delete(bed.starter.fail, "proof")
-				code, corrected, _ := bed.work("work", "revise", bed.id, "--work", "pending", "--after", "1", "--brief", bed.brief("corrected.md", "Correct the failed checks.\n"))
+				code, corrected, _ := bed.work("work", "revise", bed.id, "--work", "pending", "--after", "1", "--brief", bed.brief("corrected.md", "Correct the failed checks.\n"), "--reason", "Repair the retained failed check", "--by", "Wido")
 				if code != 0 || resultData(t, corrected)["round"] != float64(2) || resultData(t, corrected)["outcome"] != "green" {
 					t.Fatalf("failed checks could not be corrected: code=%d %+v", code, corrected)
 				}
@@ -86,8 +87,23 @@ func TestIntentUnitOnlyDecidesAfterARead(t *testing.T) {
 				t.Fatal(err)
 			}
 			for _, round := range record.Rounds {
-				if round.Stop != nil || len(round.Reads) != 0 || round.Material != -1 {
+				if round.Stop != nil && (round.Stop.Loop != "unit-build" || round.Cause != "unclassified") || len(round.Reads) != 0 || round.Material != -1 {
 					t.Fatalf("an unexamined unit acquired a read decision: %+v", round)
+				}
+				if round.Stop != nil {
+					var decision struct {
+						Stop struct {
+							Loop  string `json:"loop"`
+							Cause struct {
+								Kind string `json:"kind"`
+							} `json:"cause"`
+						} `json:"stop"`
+					}
+					data, err := os.ReadFile(filepath.Join(round.Directory, "stop-register.json"))
+					if err != nil || json.Unmarshal(data, &decision) != nil || decision.Stop.Loop != "unit-build" || decision.Stop.Cause.Kind != "unclassified" {
+						t.Fatalf("unexamined failure lost its build stop: %s %v", data, err)
+					}
+					continue
 				}
 				for _, name := range []string{"read-decision.json", "stop-register.json"} {
 					if _, err := os.Stat(filepath.Join(round.Directory, name)); !os.IsNotExist(err) {

@@ -24,6 +24,7 @@ func init() {
 		registerIdempotency(name, idemRead, "reads or waits on recorded state and changes nothing", nil)
 	}
 	registerIdempotency("test groups", idemRead, "writes no record; a second call runs the same groups again", nil)
+	registerIdempotency("work commit", idemCreation, "each staged change creates a new named unit commit; --amend corrects that unit, while an empty index has nothing to commit", nil)
 	registerIdempotency("work review", idemCreation,
 		"each examination is a new review round of its subject; the same request rejoins the round it started (a repeat reads its progress and findings), and a closed chain's repeated close is unchanged", nil)
 	registerIdempotency("work revise", idemCreation,

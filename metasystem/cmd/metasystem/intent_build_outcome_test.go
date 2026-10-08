@@ -147,8 +147,13 @@ func TestIntentBuildEmptyStopsBeforeProofAndRetainsGap(t *testing.T) {
 	for _, input := range build.Inputs {
 		inputs = append(inputs, input.Path)
 	}
-	if !slices.Contains(inputs, r.Plan) || !slices.Contains(inputs, filepath.Join(r.Rounds[0].Directory, "worktree.diff")) || !slices.Contains(inputs, r.Rounds[0].GapMessage) {
-		t.Fatalf("gap correction lost its retained plan or gap: %v", inputs)
+	for _, source := range []string{r.Plan, filepath.Join(r.Rounds[0].Directory, "worktree.diff"), r.Rounds[0].GapMessage} {
+		found := slices.ContainsFunc(inputs, func(input string) bool {
+			return strings.HasSuffix(filepath.Base(input), "-"+filepath.Base(source)) && bytes.Equal(mustRead(t, input), mustRead(t, source))
+		})
+		if !found {
+			t.Fatalf("gap correction lost the bytes of %s: %v", source, inputs)
+		}
 	}
 }
 

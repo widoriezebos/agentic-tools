@@ -11,8 +11,9 @@ import (
 
 func intentWorkCommitCommand() intentCommand {
 	return intentCommand{object: "work", action: "commit", laidOut: true, audience: "both",
-		summary: "commit staged hand changes as a named unit on the goal branch",
-		usage:   []string{"metasystem work commit G --work U [--amend]"}, maxArgs: 1, accepts: []string{refGoal},
+		summary:  "commit staged hand changes as a named unit on the goal branch",
+		usage:    []string{"metasystem work commit G --work U [--amend]"},
+		examples: []string{"metasystem work commit verbs-match-intent --work discovery"}, maxArgs: 1, accepts: []string{refGoal},
 		flags:   []intentFlag{{name: "work", value: "U", usage: "the unit whose staged changes are committed"}, {name: "amend", usage: "correct the existing unit, preserving later work"}},
 		details: []string{"Uses the current goal worktree's staged changes, supplies its Goal-Unit trailer and runs the static and committed cheap checks on the commit candidate. Publish and read it with work review --commit SHA --goal G."},
 		run:     runIntentWorkCommit}

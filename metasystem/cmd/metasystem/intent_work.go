@@ -511,18 +511,9 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 			}
 		}
 		if inv.stateRoot == "" {
-			if inv.layout.InstallationRoot == "" {
-				layout, err := inv.owners.resolver.ResolveLayout(unit.Worktree)
-				if err != nil {
-					return err
-				}
-				inv.layout = layout
+			if problem := inv.selectRoot(); problem != nil {
+				return fmt.Errorf("the execution installation cannot be read: %s", problem.Summary)
 			}
-			root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
-			if err != nil {
-				return err
-			}
-			inv.stateRoot = root.Path()
 		}
 		projection, _, problem := inv.projection()
 		if problem != nil {
@@ -536,7 +527,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if file.Claimed != nil {
 			revision = file.Claimed.Revision
 		}
-		return dispatchcore.ReconcileUnitLaunch(inv.stateRoot, execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
+		return dispatchcore.ReconcileUnitLaunch(inv.layout.InstallationRoot.Path(), execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
 			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil)
 	}
 	runner.PlanProof = inv.unitProof
@@ -658,7 +649,7 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	if err != nil {
 		return err
 	}
-	return dispatchcore.ReserveUnitLaunch(inv.stateRoot, spec.ID, record.ID, file, record.Rounds[len(record.Rounds)-1].Number, cap, now)
+	return dispatchcore.ReserveUnitLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, record.Rounds[len(record.Rounds)-1].Number, cap, now)
 }
 
 // build

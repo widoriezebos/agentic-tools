@@ -324,7 +324,7 @@ func TestIntentProcessAndAnswerTargets(t *testing.T) {
 			t.Fatalf("status job j2:job-a = %d %+v", code, result)
 		}
 		code, unknown := b.runJSON(owners, "work", "stop", "job")
-		if code != 1 || unknown.Outcome != intentRefused || !strings.HasPrefix(unknown.Summary, "no launch or dispatch job or diagnostic read names job;") || unknown.Next == nil ||
+		if code != 1 || unknown.Outcome != intentRefused || !strings.HasPrefix(unknown.Summary, "no launch or dispatch job or unit run or diagnostic read names job;") || unknown.Next == nil ||
 			!slices.Equal(unknown.Next.Argv, []string{"metasystem", "work", "status", "--all"}) {
 			t.Fatalf("unknown job = %d %+v", code, unknown)
 		}

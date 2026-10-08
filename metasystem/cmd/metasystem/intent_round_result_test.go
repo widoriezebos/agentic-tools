@@ -190,7 +190,7 @@ func TestRoundResultReplayGitAdapter(t *testing.T) {
 			if round.Result == nil || round.Result.Parent != base || len(round.Result.Tree) != 40 || len(round.Result.PatchDigest) != 64 || len(round.Result.ProofIdentity) != 64 {
 				t.Fatalf("builder result not recorded: %+v", round.Result)
 			}
-			initial, err := launch.ReadUnitPlan(c.runRecord(run).Plan)
+			initial, err := launch.ReadUnitPlan(filepath.Join(round.Directory, "plan.json"))
 			if err != nil {
 				t.Fatal(err)
 			}
