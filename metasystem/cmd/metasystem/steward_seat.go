@@ -191,14 +191,14 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 			return err
 		}
 		var work []launch.NamedWork
+		var failures error
 		for tree := range trees {
 			units, err := runner.NamedWork(tree, "")
 			if err != nil {
-				return err
+				failures = errors.Join(failures, fmt.Errorf("worktree %s: %w", tree, err))
 			}
 			work = append(work, units...)
 		}
-		var failures error
 		var ready []launch.NamedWork
 		for _, one := range work {
 			if one.Record == nil || !one.Running() || one.Record.State == "cancelled" {
@@ -240,11 +240,25 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 			}
 			return left.Before(right)
 		})
-		_, err = runner.Continue(launch.UnitRequest{Resume: ready[0].Run, NonBlocking: true})
-		if err != nil && !errors.Is(err, launch.ErrUnitObserving) {
-			failures = errors.Join(failures, fmt.Errorf("run %s: %w", ready[0].Run, err))
+		for _, one := range ready {
+			before := activeUnitSteps(one.Record)
+			_, err = runner.Continue(launch.UnitRequest{Resume: one.Run, NonBlocking: true})
+			if err != nil && !errors.Is(err, launch.ErrUnitObserving) {
+				failures = errors.Join(failures, fmt.Errorf("run %s: %w", one.Run, err))
+				// An error after a launch still started a step: one start per tick.
+				after, observeErr := runner.Continue(launch.UnitRequest{Resume: one.Run, NonBlocking: true, ObserveOnly: true})
+				if observeErr != nil && !errors.Is(observeErr, launch.ErrUnitObserving) || activeUnitSteps(&after.Record) != before {
+					break
+				}
+				continue
+			}
+			break
 		}
 		return failures
+	}
+	config.ReviewWork = func(root string) error {
+		inv := &intentInvocation{cwd: root, owners: owners}
+		return inv.driveUnitReviews()
 	}
 	config.Units = func(root, id string) ([]steward.UnitStage, error) {
 		inv := &intentInvocation{cwd: root, owners: owners}
@@ -359,4 +373,18 @@ func hostSeatCapped(id, approvalOpid string) bool {
 		}
 	}
 	return false
+}
+
+// activeUnitSteps counts the latest round's steps that are starting or running.
+func activeUnitSteps(record *launch.UnitRunRecord) int {
+	if record == nil || len(record.Rounds) == 0 {
+		return 0
+	}
+	count := 0
+	for _, step := range record.Rounds[len(record.Rounds)-1].Steps {
+		if step.State == launch.StepStarting || step.State == launch.StepRunning {
+			count++
+		}
+	}
+	return count
 }

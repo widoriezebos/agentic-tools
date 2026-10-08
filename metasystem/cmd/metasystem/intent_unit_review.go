@@ -771,7 +771,7 @@ func resolveUnitCommit(git func(string, ...string) ([]byte, error), install, end
 	if tip == "" || tip == subject.ExpectedParent {
 		return "", fmt.Errorf("no unit commit was installed")
 	}
-	commits, err := branch.ValidateRange(install, endpointTip, tip, goalID)
+	commits, err := branch.ValidateRangeWithGit(install, endpointTip, tip, goalID, git)
 	if err != nil {
 		return "", err
 	}
@@ -814,7 +814,7 @@ func resolveUnitCommit(git func(string, ...string) ([]byte, error), install, end
 		return "", err
 	}
 	for _, commit := range strings.Fields(old) {
-		kind, err := branch.KindOf(install, commit, goalID)
+		kind, err := branch.KindOfWithRaw(install, commit, goalID, git)
 		if err != nil {
 			return "", err
 		}

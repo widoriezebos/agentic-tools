@@ -69,6 +69,7 @@ type UnitRunRecord struct {
 	// writer.
 	Revisions []UnitRevision `json:"revisions,omitempty"`
 	Mutation  *identity.Ref  `json:"mutation,omitempty"`
+	ReviewAct *UnitReviewAct `json:"reviewAct,omitempty"`
 }
 
 type UnitRound struct {

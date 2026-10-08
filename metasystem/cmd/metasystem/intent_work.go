@@ -1582,6 +1582,9 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	}
 	targets = append(targets, intentTarget{Kind: "unit", ID: record.ID})
 	data := unitData(record, runner.Manager)
+	if act := record.ReviewAct; inv.command.name != "work review" && !result.Capped && act != nil && act.Key == launch.ReviewActKey(record) && act.State != "satisfied" {
+		return intentResult{Outcome: intentInProgress, code: 3, Targets: targets, Data: data, Summary: act.Summary, next: act.Command, nextReason: "the worker prepares the bound decisions and correction brief"}
+	}
 	if result.Capped {
 		return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Data: data,
 			Summary: fmt.Sprintf("run %s round %d is still running step %s (launch %s)", record.ID, result.Round, result.Step, result.Launch),

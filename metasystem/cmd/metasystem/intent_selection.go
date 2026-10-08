@@ -169,12 +169,20 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 	file, _ := goalRecord(projection, id)
 	for _, one := range work {
 		stage := workStage(one, inv.work().inspectRead)
+		if one.Record != nil && one.Running() {
+			if err := inv.unitRunner().CheckContinuationInputs(*one.Record); err != nil {
+				stage = "continuation refused: " + launch.ErrorDetail(err)
+			}
+		}
 		if file.ExcludesScope(one.Unit, "") {
 			stage += "; " + board.PersonExcludedRequiredScope
 		}
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
 		if one.Record != nil {
 			view["state"], view["run"] = one.Record.State, one.Run
+			if act := one.Record.ReviewAct; act != nil && act.Key == launch.ReviewActKey(*one.Record) {
+				view["reviewAct"] = act
+			}
 			if len(one.Record.Rounds) > 0 {
 				r := one.Record.Rounds[len(one.Record.Rounds)-1]
 				view["subjects"] = one.Record.Subjects
@@ -448,6 +456,11 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 		}
 		path := filepath.Join(work.Record.Rounds[len(work.Record.Rounds)-1].Directory, "stop-dispositions.md")
 		return inv.workArgv(*work.Record, "review", "--dispositions", path), "continues the retained drop and repairs its matching questions"
+	}
+	if inv.command.name != "work review" && work.Record != nil && !work.Running() {
+		if act := work.Record.ReviewAct; act != nil && act.Key == launch.ReviewActKey(*work.Record) && act.State != "satisfied" {
+			return act.Command, act.Summary
+		}
 	}
 	read := branch.BranchReadResult{}
 	gapPerson := work.Record != nil && work.Record.MaxRounds > 0 && workAttempt(work) >= work.Record.MaxRounds

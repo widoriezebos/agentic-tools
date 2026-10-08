@@ -599,6 +599,32 @@ func (runner *UnitRunner) RetainedRequest(worktree, goal, unit string) ([]byte, 
 	return data, err == nil, err
 }
 
+// CheckContinuationInputs reports the current input refusal without advancing
+// the run. Status uses the same retained digest as the next launch's check.
+func (runner *UnitRunner) CheckContinuationInputs(record UnitRunRecord) error {
+	if record.State == "awaiting-judgement" || record.State == "cancelled" {
+		return nil
+	}
+	worktree, key, err := namedUnitIdentity(UnitPlan{Worktree: record.Worktree, Goal: record.Goal, Unit: record.Unit})
+	if err != nil {
+		return err
+	}
+	entry, found, err := runner.readNamed(key)
+	if err != nil || !found {
+		return err
+	}
+	if entry.Run != record.ID || entry.Digest == "" {
+		return coded("UNIT_NAMED_ENTRY_CORRUPT", "run="+record.ID, errors.New("the saved unit entry does not match this run"))
+	}
+	plan, err := readUnitPlan(record.Plan, record.PlanDirectory)
+	if err != nil {
+		return err
+	}
+	binding := namedBinding{unit: record.Unit, goal: record.Goal, worktree: worktree, digest: entry.Digest, run: record.ID, plan: plan,
+		options: UnitOptions{BuildModel: record.BuildModel, BuildEffort: record.BuildEffort}}
+	return binding.verify(runner)
+}
+
 // GoalRuns reads retained runs across worktrees and names unreadable records.
 func (runner *UnitRunner) GoalRuns(goal string) (work []NamedWork, unknown []string, err error) {
 	entries, err := os.ReadDir(runner.root())
