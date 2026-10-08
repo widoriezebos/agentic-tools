@@ -471,8 +471,14 @@ func defaultProcessIntentOwners() processIntentOwners {
 // cancelDispatchJob cancels one dispatch job through its delegate owner and
 // returns that owner's typed JSON outcome.
 func cancelDispatchJob(checkout, job string) (map[string]any, int, error) {
+	return cancelDispatchJobWith(func(request delegateRequest, stdout, stderr io.Writer) int {
+		return runDelegateIn(request.args, checkout, stdout, stderr)
+	}, checkout, job)
+}
+
+func cancelDispatchJobWith(delegate delegateCaller, installation, job string) (map[string]any, int, error) {
 	var stdout, stderr bytes.Buffer
-	code := runDelegateIn([]string{"--cancel", job}, checkout, &stdout, &stderr)
+	code := delegate(delegateRequest{rootOverride: installation, args: []string{"--cancel", job}}, &stdout, &stderr)
 	var outcome map[string]any
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &outcome); err != nil {
 		return nil, code, fmt.Errorf("the delegate owner returned no typed outcome: %v; %s", err, strings.TrimSpace(stderr.String()))

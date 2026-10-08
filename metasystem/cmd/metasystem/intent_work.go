@@ -71,12 +71,14 @@ var intentReadEachRound = regexp.MustCompile(`(?m)^Read each round: yes[\t \r]*$
 // intentWorkOwners are the owners the work commands call. Tests give each
 // invocation its own runner, Git, wait, test runner and settings readers.
 type intentWorkOwners struct {
-	engineStamp string
-	designGate  designGateOwners
-	adapter     func(string) (adapter.Adapter, error)
-	units       func(layout stateroot.Layout) *launch.UnitRunner
-	git         func(dir string, args ...string) ([]byte, error)
-	wait        func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
+	criticDeath  dispatchcore.CustodyDeathDependencies
+	cancelCritic func(string, string) (map[string]any, int, error)
+	engineStamp  string
+	designGate   designGateOwners
+	adapter      func(string) (adapter.Adapter, error)
+	units        func(layout stateroot.Layout) *launch.UnitRunner
+	git          func(dir string, args ...string) ([]byte, error)
+	wait         func(args []string, print func(metarun.WaitResult, bool), stdout, stderr io.Writer) int
 	// testRun is the testing runner, reached with the argv its former child
 	// carried; it returns the structured result it prints and its exit.
 	testRun  func(dir string, argv []string, stderr io.Writer) ([]byte, int, error)
@@ -112,6 +114,11 @@ func unitLaunchSettings(layout stateroot.Layout, serving func(string) (string, s
 
 func (inv *intentInvocation) work() intentWorkOwners {
 	owners := inv.owners.work
+	if owners.cancelCritic == nil {
+		owners.cancelCritic = func(root, job string) (map[string]any, int, error) {
+			return cancelDispatchJobWith(runDelegateWith, root, job)
+		}
+	}
 	if owners.adapter == nil {
 		owners.adapter = adapter.Detect
 	}
@@ -444,6 +451,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	runner := inv.work().units(inv.layout)
 	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
 	runner.ExaminationRead = dispatchcore.CollectExamination
+	runner.CriticCustody = inv.criticCustody
 	runner.InheritedFindings = func(id, unit string) ([]readsubject.Finding, error) {
 		if id == "" {
 			return nil, nil
@@ -1366,7 +1374,8 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	record := result.Record
 	if err != nil {
 		var treeWait *launch.TreeWaitingError
-		if errors.As(err, &treeWait) {
+		var damagedTree *launch.TreeOwnershipError
+		if errors.As(err, &treeWait) || errors.As(err, &damagedTree) {
 			return inv.treeFailure(err)
 		}
 		plain, details := launchAccount(err)

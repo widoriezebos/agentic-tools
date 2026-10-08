@@ -32,6 +32,16 @@ func (e *TreeWaitingError) Error() string {
 	return message
 }
 
+// TreeOwnershipError holds a damaged reservation and a run a person can stop.
+// The run is read from this tree's retained runs, never the damaged record.
+type TreeOwnershipError struct {
+	Run string
+	Err error
+}
+
+func (e *TreeOwnershipError) Error() string { return e.Err.Error() }
+func (e *TreeOwnershipError) Unwrap() error { return e.Err }
+
 type treeReservation struct {
 	Worktree string       `json:"worktree"`
 	Run      string       `json:"run"`
@@ -72,11 +82,34 @@ func (runner *UnitRunner) treeLocked(worktree string, act func(string, *treeRese
 	defer held.Release()
 	var owner treeReservation
 	err = readJSONFile(path, &owner)
+	if err == nil && (owner.Worktree != real || !idPattern.MatchString(owner.Run)) {
+		err = fmt.Errorf("the worktree ownership record is damaged: %s", path)
+	}
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		if runner.recoverRun != "" {
+			owner, err = runner.recoverTree(real)
+			if err == nil {
+				err = writeUnitJSON(path, owner, runner.root())
+			}
+		} else {
+			damaged := &TreeOwnershipError{Err: err}
+			runs, scanErr := runner.treeRuns(real)
+			if scanErr == nil {
+				for _, record := range runs {
+					if damaged.Run == "" {
+						damaged.Run = record.ID
+					}
+					if released, _ := runner.treeQuiescent(treeReservation{Run: record.ID}); !released {
+						damaged.Run = record.ID
+						break
+					}
+				}
+			}
+			return damaged
+		}
+	}
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
-	}
-	if err == nil && (owner.Worktree != real || !idPattern.MatchString(owner.Run)) {
-		return fmt.Errorf("the worktree ownership record is damaged: %s", path)
 	}
 	owner.Worktree = real
 	if runner.tree != nil {
@@ -132,6 +165,13 @@ func (runner *UnitRunner) reserveTree(record UnitRunRecord) error {
 }
 
 func unitChildren(record UnitRunRecord, children []string) []string {
+	for _, subject := range record.Subjects {
+		for _, id := range subject.GateLaunches {
+			if !slices.Contains(children, id) {
+				children = append(children, id)
+			}
+		}
+	}
 	for _, round := range record.Rounds {
 		for _, step := range round.Steps {
 			for _, id := range append(append([]string{}, step.LaunchIDs...), step.LaunchID) {
@@ -172,6 +212,13 @@ func (runner *UnitRunner) treeQuiescent(owner treeReservation) (released, ended 
 	if err != nil {
 		return false, false
 	}
+	if runner.CriticCustody != nil {
+		dead, err := runner.CriticCustody(record, false)
+		if err != nil || !dead {
+			return false, false
+		}
+	}
+	owner.Children = unitChildren(record, owner.Children)
 	if record.Mutation != nil {
 		ended = identity.LiveRef(runner.Manager.Prober, *record.Mutation) == identity.Dead
 		childrenEnded := runner.treeChildrenEnded(owner.Children)
@@ -192,6 +239,9 @@ func (runner *UnitRunner) treeQuiescent(owner treeReservation) (released, ended 
 // CancelRun records the person's stop before signalling, so no new step can
 // start. Ownership remains until every retained child's exact custody ends.
 func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
+	bound := *runner
+	bound.recoverRun = id
+	runner = &bound
 	record, err := runner.read(id)
 	if err != nil {
 		return record, err
@@ -242,6 +292,15 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 			return record, err
 		}
 	}
+	if runner.CriticCustody != nil {
+		dead, err := runner.CriticCustody(record, true)
+		if err != nil {
+			return record, err
+		}
+		if !dead {
+			return record, errors.New("the run's critics are not proven dead; its worktree remains reserved")
+		}
+	}
 	if !runner.treeChildrenEnded(children) {
 		return record, errors.New("the run's children are not proven dead; its worktree remains reserved")
 	}
@@ -249,12 +308,62 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		if owner.Run != id {
 			return nil
 		}
+		if released, _ := runner.treeQuiescent(*owner); !released {
+			return errors.New("the run still has live or unreadable custody; its worktree remains reserved")
+		}
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
 		return nil
 	})
 	return record, err
+}
+
+// treeRuns reads only runs whose current canonical worktree names this tree.
+// Unreadable records and removed worktrees cannot identify its owner.
+func (runner *UnitRunner) treeRuns(real string) ([]UnitRunRecord, error) {
+	paths, err := filepath.Glob(filepath.Join(runner.root(), "*", "run.json"))
+	if err != nil {
+		return nil, err
+	}
+	var runs []UnitRunRecord
+	for _, path := range paths {
+		var record UnitRunRecord
+		if err := readJSONFile(path, &record); err != nil {
+			continue
+		}
+		tree, err := filepath.EvalSymlinks(record.Worktree)
+		if err != nil || tree != real {
+			continue
+		}
+		if record.ID != filepath.Base(filepath.Dir(path)) || !idPattern.MatchString(record.ID) {
+			return nil, errors.New("a retained run has no exact ownership identity")
+		}
+		runs = append(runs, record)
+	}
+	return runs, nil
+}
+
+// recoverTree rebuilds advisory ownership from retained runs under the tree
+// lock. Another unclosed owner must be stopped by name before replacement.
+func (runner *UnitRunner) recoverTree(real string) (treeReservation, error) {
+	runs, err := runner.treeRuns(real)
+	if err != nil {
+		return treeReservation{}, err
+	}
+	var owner treeReservation
+	for _, record := range runs {
+		candidate := treeReservation{Worktree: real, Run: record.ID, Round: len(record.Rounds), Phase: record.State, Children: unitChildren(record, nil)}
+		if record.ID == runner.recoverRun {
+			owner = candidate
+		} else if released, ended := runner.treeQuiescent(candidate); !released {
+			return owner, &TreeWaitingError{Run: record.ID, CanCancel: ended}
+		}
+	}
+	if owner.Run == "" {
+		return owner, errors.New("the requested run does not prove ownership of this worktree")
+	}
+	return owner, nil
 }
 
 func (runner *UnitRunner) treeMoved(record *UnitRunRecord, round *UnitRound) (UnitResult, error) {

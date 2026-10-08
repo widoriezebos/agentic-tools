@@ -148,9 +148,12 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
-	Manager *Manager
-	Git     GitRunner
-	Root    string
+	// CriticCustody observes or cancels every committed examination of this run.
+	CriticCustody func(UnitRunRecord, bool) (bool, error)
+	recoverRun    string
+	Manager       *Manager
+	Git           GitRunner
+	Root          string
 	// ExaminationRoot is the caller's installation; each examination carries its own return path.
 	ExaminationRoot string
 	AfterWrite      func(UnitRunRecord) error
