@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -532,12 +533,23 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	if dependencies.Seat != nil {
 		log = dependencies.Seat.Log
 	}
-	outageMark, providerOutage := standingProviderOutage(repoRoot, cfg.now(), log, cfg.ProviderHome)
-	if providerOutage && marks == prev.Marks {
-		ev = prev
+	providers, providerErr := outage.ReadProviders(cfg.ProviderHome)
+	var outageMark outage.Mark
+	var providerOutage bool
+	// The selected launch runtime governs the hold and its patience clock.
+	providerCheck := func(runtime string, err error) (outage.Mark, bool) {
+		if err == nil {
+			err = providerErr
+		}
+		outageMark, providerOutage = providerOutageFrom(providers, err, runtime, cfg.now(), log)
+		ev = Observe(prev, marks)
+		if providerOutage && marks == prev.Marks {
+			ev = prev
+		}
+		return outageMark, providerOutage
 	}
 
-	d, selection, workReason, err := decideNowWithSeat(repoRoot, cfg, census, ev, providerOutage, dependencies, seat)
+	d, selection, workReason, err := decideNowWithSeat(repoRoot, cfg, census, &ev, providerCheck, dependencies, seat)
 	if err != nil {
 		return TickResult{}, err
 	}
@@ -736,7 +748,7 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 // census is read for claimable work as for owned work, and with the seat
 // wiring present claimable work, and owned work under the seat lineage, are
 // the seat ladder's to decide.
-func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies, seat *seatTickState) (Decision, *SeatSelection, string, error) {
+func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev *Evidence, providerCheck func(string, error) (outage.Mark, bool), dependencies openWorkDependencies, seat *seatTickState) (Decision, *SeatSelection, string, error) {
 	cfg = cfg.withDefaults()
 	dependencies.Now = cfg.now
 	if cfg.WorkStateRoot != "" {
@@ -758,7 +770,7 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	}
 
 	if dependencies.Seat != nil && seat != nil && shared != nil {
-		if d, selection, ok := decideSeat(repoRoot, cfg, work, *shared, workers, providerOutage, *dependencies.Seat, *seat); ok {
+		if d, selection, ok := decideSeat(repoRoot, cfg, work, *shared, workers, providerCheck, *dependencies.Seat, *seat); ok {
 			return d, selection, workReason, nil
 		}
 	}
@@ -776,7 +788,19 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, workReason, nil
 	}
 
-	return Decide(Snapshot{
+	runtime := ""
+	var runtimeErr error
+	if len(live) > 0 {
+		runtime = revivalRuntime(live[0])
+	} else {
+		roster, err := dispatch.ResolveRoster(dispatch.RosterParams{
+			ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Role: "steward-continuation", Mode: "build",
+		})
+		runtime, runtimeErr = roster.Runtime, err
+	}
+	_, providerOutage := providerCheck(runtime, nil)
+
+	d := Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
 		TicksSinceProgress: ev.TicksSinceAdvance,
@@ -785,5 +809,11 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 		MaxRevivals:        cfg.MaxRevivals,
 		ActiveContinuation: len(live) > 0 || len(activeConsumed) > 0,
 		ProviderOutage:     providerOutage,
-	}), nil, workReason, nil
+	})
+	if runtimeErr != nil && d.Action == ActRevive {
+		// A broken roster is a configuration error, not an outage: waiting cannot clear it,
+		// and only the revival that needs the roster is affected.
+		d = Decision{VerdictDegraded, ActNotify, "revival cannot choose its provider: " + runtimeErr.Error() + "; repair role.steward-continuation in metasystem.conf"}
+	}
+	return d, nil, workReason, nil
 }

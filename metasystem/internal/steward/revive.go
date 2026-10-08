@@ -165,8 +165,8 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	// consume-and-launch calls themselves; an outage beginning inside
 	// it costs at most one dry revival, which the hint's contract
 	// accepts.
-	if _, standing := standingProviderOutage(repoRoot, cfg.now(), nil, cfg.ProviderHome); standing {
-		reason := providerWaitReason(repoRoot, cfg.now(), cfg.ProviderHome)
+	if _, standing := standingProviderOutage(revivalRuntime(*it), cfg.now(), nil, cfg.ProviderHome); standing {
+		reason := providerWaitReason(revivalRuntime(*it), cfg.now(), cfg.ProviderHome)
 		if it.Reason == seatHandoffReason {
 			reason = fmt.Sprintf("handoff %s waits: %s (session pid %d ended)", it.Nonce, reason, it.Handoff.Predecessor.Pid)
 			return holdHandoff(repoRoot, *it, reason)
@@ -308,8 +308,13 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 			others++
 		}
 	}
-	now := revivalNow()
-	_, providerOutage := standingProviderOutage(repoRoot, now, nil, cfg.ProviderHome)
+	now := cfg.Now
+	if now.IsZero() {
+		now = revivalNow()
+	} else {
+		now = cfg.now()
+	}
+	_, providerOutage := standingProviderOutage(revivalRuntime(intent), now, nil, cfg.ProviderHome)
 	decision := Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
@@ -356,7 +361,7 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 	case ev.DryRevivals >= cfg.MaxRevivals:
 		return Decision{VerdictStalledIdle, ActNotify, fmt.Sprintf("seatIdle handoff is blocked because %d revivals produced no progress", ev.DryRevivals)}, workReason, nil
 	case providerOutage:
-		return Decision{VerdictStalledIdle, ActNotify, "seatIdle handoff is blocked: " + providerWaitReason(repoRoot, now, cfg.ProviderHome)}, workReason, nil
+		return Decision{VerdictStalledIdle, ActNotify, "seatIdle handoff is blocked: " + providerWaitReason(revivalRuntime(intent), now, cfg.ProviderHome)}, workReason, nil
 	default:
 		return Decision{VerdictStalledIdle, ActRevive, "the live seat handed its claimed goal to a steward continuation through seatIdle"}, workReason, nil
 	}
@@ -374,4 +379,11 @@ func ResumableIntent(repoRoot string) (string, bool, error) {
 		return it.Nonce, true, nil
 	}
 	return "", false, nil
+}
+
+// revivalRuntime is the runtime the authorization will actually launch.
+// A handoff launches on the intent's runtime too (AuthorizeDispatch passes
+// it.Runtime), not on the seat runtime recorded in its binding.
+func revivalRuntime(intent Intent) string {
+	return intent.Runtime
 }

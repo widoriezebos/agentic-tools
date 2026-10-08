@@ -21,7 +21,6 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -380,13 +379,13 @@ func seatProgress(repoRoot string, record SeatRecord, projection goal.Projection
 // decideSeat is D-ladder over claimable work, and over owned work whose claim
 // is the seat lineage's. ok is false when the decision is not the seat
 // ladder's: today's ladder decides.
-func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerOutage bool,
+func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerCheck func(string, error) (outage.Mark, bool),
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
-	return seatDecision(repoRoot, cfg, work, shared, workers, providerOutage, dependencies, state)
+	return seatDecision(repoRoot, cfg, work, shared, workers, providerCheck, dependencies, state)
 }
 
 // seatDecision owns the start guards for both the tick and its health reading.
-func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerOutage bool,
+func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerCheck func(string, error) (outage.Mark, bool),
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
 	owned := work == WorkOwned || work == WorkWaiting
 	if work != WorkClaimable && !owned {
@@ -454,8 +453,9 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 				workers.CensusComplete, workers.Untracked, workers.Unprovable)}, nil, true
 		}
 	}
-	if providerOutage {
-		return Decision{verdict, ActNotify, providerWaitReason(repoRoot, cfg.now(), cfg.ProviderHome)}, nil, true
+	settingsForLaunch, settingsErr := launch.ResolveSettings(filepath.Join(repoRoot, "metasystem.conf"), nil)
+	if mark, standing := providerCheck(settingsForLaunch.SeatRuntime, settingsErr); standing {
+		return Decision{verdict, ActNotify, providerMarkWaitReason(mark)}, nil, true
 	}
 	closed, reason, err := dependencies.Fence(repoRoot)
 	if err != nil {
@@ -661,24 +661,27 @@ type seatDependencies struct {
 // census, the outage mark and the ladder over the ledger read now. The
 // records are the seat records the start just read, none unreaped.
 func seatRecheck(repoRoot string, cfg TickConfig, census WorkerCensus, openWork openWorkDependencies, records []SeatRecord) (Decision, *SeatSelection, error) {
-	_, providerOutage := standingProviderOutage(repoRoot, cfg.now(), nil, cfg.ProviderHome)
-	d, selection, _, err := decideNowWithSeat(repoRoot, cfg, census, Evidence{}, providerOutage, openWork, &seatTickState{Records: records})
+	providerCheck := func(runtime string, err error) (outage.Mark, bool) {
+		if err != nil {
+			return providerOutageFrom(outage.Providers{}, err, runtime, cfg.now(), nil)
+		}
+		return standingProviderOutage(runtime, cfg.now(), nil, cfg.ProviderHome)
+	}
+	d, selection, _, err := decideNowWithSeat(repoRoot, cfg, census, &Evidence{}, providerCheck, openWork, &seatTickState{Records: records})
 	return d, selection, err
 }
 
-func standingProviderOutage(repoRoot string, now time.Time, log func(string), homes ...string) (outage.Mark, bool) {
-	roster, err := dispatch.ResolveRoster(dispatch.RosterParams{
-		ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Role: "steward-continuation", Mode: "build",
-	})
+func standingProviderOutage(runtime string, now time.Time, log func(string), homes ...string) (outage.Mark, bool) {
 	home := ""
 	if len(homes) > 0 {
 		home = homes[0]
 	}
-	providers, readErr := outage.ReadProviders(home)
-	mark, standing := providers.Standing(roster.Runtime, now)
-	if err == nil {
-		err = readErr
-	}
+	providers, err := outage.ReadProviders(home)
+	return providerOutageFrom(providers, err, runtime, now, log)
+}
+
+// providerOutageFrom selects a dependent provider from one host observation.
+func providerOutageFrom(providers outage.Providers, err error, runtime string, now time.Time, log func(string)) (outage.Mark, bool) {
 	if err != nil {
 		if log != nil {
 			log("provider state is unknown: " + err.Error())
@@ -687,7 +690,7 @@ func standingProviderOutage(repoRoot string, now time.Time, log func(string), ho
 		}
 		return outage.Mark{LastClass: "unknown", LastDetail: "provider state is unknown: " + err.Error()}, true
 	}
-	return mark, standing
+	return providers.Standing(runtime, now)
 }
 
 // UnitStage is one unit as the public status reader describes it.
@@ -966,8 +969,12 @@ func seatJSONLines(path string) ([]map[string]any, error) {
 }
 
 // providerWaitReason distinguishes provider failures from unavailable host evidence.
-func providerWaitReason(repoRoot string, now time.Time, homes ...string) string {
-	mark, _ := standingProviderOutage(repoRoot, now, nil, homes...)
+func providerWaitReason(runtime string, now time.Time, homes ...string) string {
+	mark, _ := standingProviderOutage(runtime, now, nil, homes...)
+	return providerMarkWaitReason(mark)
+}
+
+func providerMarkWaitReason(mark outage.Mark) string {
 	if mark.LastClass == "unknown" {
 		return mark.LastDetail
 	}

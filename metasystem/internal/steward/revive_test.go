@@ -1037,6 +1037,7 @@ func TestFailedHandoffTombstoneReportsPartialCancellation(t *testing.T) {
 }
 
 func TestHandoffHoldsOnTheFinalOutageCheck(t *testing.T) {
+	t.Parallel()
 	root, intent := prepareRevivalHandoff(t, "4000000000000006")
 	var recordErr error
 	var observations atomic.Int32
@@ -1053,7 +1054,7 @@ func TestHandoffHoldsOnTheFinalOutageCheck(t *testing.T) {
 	if recordErr != nil {
 		t.Fatal(recordErr)
 	}
-	if err != nil || !outcome.Held || outcome.Launched || launches != 0 || !strings.Contains(outcome.Reason, "became overloaded before launch") {
+	if err != nil || !outcome.Held || outcome.Launched || launches != 0 || !strings.Contains(outcome.Reason, "overloaded or limited") {
 		t.Fatalf("an outage at the final check must keep the handoff live: %+v %v launches=%d", outcome, err, launches)
 	}
 	if live, liveErr := LiveIntents(root); liveErr != nil || len(live) != 1 || live[0].Nonce != intent.Nonce {
@@ -1068,9 +1069,12 @@ func TestHandoffHoldsOnTheFinalOutageCheck(t *testing.T) {
 }
 
 func TestProviderOutageArrivingBeforeLaunchCancelsTheRevival(t *testing.T) {
+	t.Parallel()
 	revival := newRevivalFixture(t, 1, 1)
 	root := revival.root
-	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), testIntent("rev-outage")); err != nil {
+	intent := testIntent("rev-outage")
+	intent.Runtime = "claude"
+	if err := PrepareIntent(root, filepath.Join(root, "memory", "receipts.log"), intent); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", time.Now()); err != nil {

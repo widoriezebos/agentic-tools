@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -498,7 +499,11 @@ func (k *laneKeeping) run() {
 func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping, probe func(string) (bool, error)) bool {
 	start := deps.Now()
 	deadline, recheck, probeAt := start.Add(interval), start.Add(laneRecheck), start.Add(limitProbe)
-	mark, standing := standingProviderOutage(top, start, nil, deps.ProviderHome)
+	settings, settingsErr := launch.ResolveSettings(filepath.Join(top, "metasystem.conf"), nil)
+	mark, standing := standingProviderOutage(settings.SeatRuntime, start, nil, deps.ProviderHome)
+	if settingsErr != nil {
+		mark, standing = providerOutageFrom(outage.Providers{}, settingsErr, settings.SeatRuntime, start, nil)
+	}
 	watching := probe != nil && standing && mark.LastClass == outage.ProviderLimit
 	probeLine := ""
 	for deps.Now().Before(deadline) {
@@ -511,7 +516,7 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 			}
 			if !helm.Active(top).Active {
 				if watching {
-					mark, standing = standingProviderOutage(top, deps.Now(), nil, deps.ProviderHome)
+					mark, standing = standingProviderOutage(settings.SeatRuntime, deps.Now(), nil, deps.ProviderHome)
 					if !standing || mark.LastClass != outage.ProviderLimit {
 						return false
 					}
