@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +28,10 @@ type UnitRevision struct {
 	Decisions          string          `json:"decisions,omitempty"`
 	RequestedAtUnixSec int64           `json:"requestedAt"`
 	Rebase             *UnitRebasePlan `json:"rebase,omitempty"`
+	Person             string          `json:"person,omitempty"`
+	Reason             string          `json:"reason,omitempty"`
+	Impact             string          `json:"impact,omitempty"`
+	Findings           []string        `json:"findings,omitempty"`
 }
 
 // UnitRebasePlan binds a correction to a stopped replay, whose HEAD is its base.
@@ -39,11 +42,12 @@ type UnitRebasePlan struct{ Worktree, Base, Commit string }
 // retained requests and otherwise binds the current attempt. Brief and
 // Decisions are the caller's bytes; they are frozen with the request.
 type UnitRevisionRequest struct {
-	Run       string
-	After     int
-	Brief     []byte
-	Decisions []byte
-	Rebase    *UnitRebasePlan
+	Run                    string
+	After                  int
+	Brief                  []byte
+	Decisions              []byte
+	Rebase                 *UnitRebasePlan
+	Person, Reason, Impact string
 }
 
 // UnitRevisionResult is the attempt a request reached. Rejoined is true when
@@ -77,6 +81,9 @@ func (runner *UnitRunner) Revise(request UnitRevisionRequest) (UnitRevisionResul
 	record, err := runner.read(request.Run)
 	if err != nil {
 		return UnitRevisionResult{}, err
+	}
+	if runner.tree == nil {
+		return treeCall(runner, record.Worktree, func(r *UnitRunner) (UnitRevisionResult, error) { return r.Revise(request) })
 	}
 	bound := *runner
 	worktree, key, identityErr := namedUnitIdentity(UnitPlan{Worktree: record.Worktree, Goal: record.Goal, Unit: record.Unit})
@@ -139,7 +146,7 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 	}
 	current := len(record.Rounds)
 	same := func(revision UnitRevision) bool {
-		return revision.BriefSHA256 == briefDigest && revision.DecisionsSHA256 == decisionsDigest &&
+		return revision.Person == request.Person && revision.Reason == request.Reason && revision.BriefSHA256 == briefDigest && revision.DecisionsSHA256 == decisionsDigest &&
 			(revision.Rebase == nil && request.Rebase == nil || revision.Rebase != nil && request.Rebase != nil && *revision.Rebase == *request.Rebase)
 	}
 	var retained *UnitRevision
@@ -167,20 +174,36 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 		if record.State != "awaiting-judgement" {
 			return UnitRevisionResult{Current: current}, coded("UNIT_RUN_NOT_AWAITING", unitFacts(record.Unit, record.Goal, "state="+string(record.State)), fmt.Errorf("attempt %d is still running", current))
 		}
-		if record.MaxRounds > 0 && current >= record.MaxRounds {
-			return UnitRevisionResult{Current: current}, roundLimit(record, current)
+		if request.Person == "" {
+			if request.Rebase == nil || record.Rounds[after-1].Stop != nil && record.Rounds[after-1].Stop.Loop == "unit-build" {
+				if err := runner.allowCorrection(record); err != nil {
+					return UnitRevisionResult{UnitResult: UnitResult{Record: record}, Current: current}, err
+				}
+			}
+			if record.MaxRounds > 0 && current >= record.MaxRounds {
+				return UnitRevisionResult{Current: current}, roundLimit(record, current)
+			}
+			if err := runner.countedCap(record); err != nil {
+				return UnitRevisionResult{Current: current}, err
+			}
+			if err := runner.roundDivergent(record); err != nil {
+				return UnitRevisionResult{UnitResult: UnitResult{Record: record}, Current: current}, err
+			}
+			if request.Rebase == nil {
+				if err := runner.reviseDecided(record, record.Rounds[after-1], request.Brief, request.Decisions); err != nil {
+					return UnitRevisionResult{Current: current, Revision: UnitRevision{After: after}}, err
+				}
+			}
 		}
-		if err := runner.countedCap(record); err != nil {
-			return UnitRevisionResult{Current: current}, err
-		}
-		if err := runner.roundDivergent(record); err != nil {
-			return UnitRevisionResult{UnitResult: UnitResult{Record: record}, Current: current}, err
-		}
-		if err := runner.reviseDecided(record, record.Rounds[after-1], request.Brief); err != nil {
-			return UnitRevisionResult{Current: current, Revision: UnitRevision{After: after}}, err
-		}
-		revision := UnitRevision{After: after, Attempt: after + 1, BriefSHA256: briefDigest, DecisionsSHA256: decisionsDigest,
+		revision := UnitRevision{Person: request.Person, Reason: request.Reason, Impact: request.Impact, After: after, Attempt: after + 1, BriefSHA256: briefDigest, DecisionsSHA256: decisionsDigest,
 			RequestedAtUnixSec: runner.Manager.Now().Unix(), Rebase: request.Rebase}
+		for _, read := range record.Rounds[after-1].Reads {
+			for _, f := range read.Findings {
+				if f.Material {
+					revision.Findings = append(revision.Findings, f.ID)
+				}
+			}
+		}
 		directory := filepath.Join(runner.runDir(record.ID), "revisions")
 		if err := os.MkdirAll(directory, 0o700); err != nil {
 			return UnitRevisionResult{}, err
@@ -289,72 +312,58 @@ func decisionsSection(brief []byte, round int) string {
 var fixedLocation = regexp.MustCompile(`\S+:[0-9]+(?:-[0-9]+)?`)
 
 func (runner *UnitRunner) readFindings(record UnitRunRecord, round UnitRound) (string, []string, error) {
-	for _, subject := range record.Subjects {
-		if subject.Round == round.Number && subject.ExaminationReturnPath != "" {
-			data, err := os.ReadFile(subject.ExaminationReturnPath)
-			if err != nil {
-				return "", nil, err
-			}
-			var result struct {
-				Findings []struct {
-					ID       string
-					Material bool
-				}
-			}
-			if err := json.Unmarshal(data, &result); err != nil {
-				return "", nil, err
-			}
-			var ids []string
-			for index, finding := range result.Findings {
-				if finding.Material {
-					id := choose(finding.ID, strconv.Itoa(index+1))
-					ids = append(ids, id)
-				}
-			}
-			return string(data), ids, nil
-		}
+	if len(round.Reads) == 0 {
+		return "", nil, nil
 	}
-	var text string
 	var ids []string
-	for _, step := range round.Steps {
-		if !strings.HasPrefix(step.Name, "read") || !unitStepVerdictCounts(step) || step.LaunchID == "" {
-			continue
-		}
-		launch, err := runner.Manager.Store.Read(step.LaunchID)
-		if err != nil {
-			return "", nil, err
-		}
-		count := measuredMaterialCount(launch)
-		for _, output := range launch.Outputs {
-			data, err := os.ReadFile(output.Path)
-			if err != nil {
-				return "", nil, err
-			}
-			text += string(data)
-		}
-		if count != nil {
-			for number := 1; number <= *count; number++ {
-				ids = append(ids, strconv.Itoa(number))
+	for _, read := range round.Reads {
+		for _, f := range read.Findings {
+			if f.Material {
+				ids = append(ids, f.ID)
 			}
 		}
 	}
-	return text, ids, nil
+	data, err := json.Marshal(round.Reads)
+	return string(data), ids, err
 }
 
-func (runner *UnitRunner) reviseDecided(record UnitRunRecord, round UnitRound, brief []byte) error {
+func (runner *UnitRunner) reviseDecided(record UnitRunRecord, round UnitRound, brief []byte, supplied ...[]byte) error {
+	if round.Outcome == "build-gap" {
+		return nil
+	}
+	if round.Stop == nil && (strings.HasPrefix(round.Outcome, "proof-") || strings.HasPrefix(round.Outcome, "build-")) {
+		return nil
+	}
 	_, findings, err := runner.readFindings(record, round)
 	if err != nil {
 		return err
 	}
+	if len(findings) == 0 {
+		return coded("UNIT_REVISE_CLEAN", "", fmt.Errorf("a clean or unavailable read admits no automatic correction; nothing was started"))
+	}
 	decided := map[string]int{}
-	for _, row := range strings.Split(decisionsSection(brief, round.Number), "\n") {
-		cells := strings.Split(strings.Trim(row, " |\t"), "|")
-		if len(cells) < 3 {
-			continue
+	documents := []string{decisionsSection(brief, round.Number)}
+	for _, document := range supplied {
+		documents = append(documents, string(document))
+	}
+	for _, document := range documents {
+		joined := map[string]int{}
+		for _, row := range strings.Split(document, "\n") {
+			cells := strings.Split(strings.Trim(row, " |\t"), "|")
+			if len(cells) < 3 {
+				continue
+			}
+			id, decision, evidence := strings.Trim(cells[0], " `\t"), strings.TrimSpace(cells[1]), strings.TrimSpace(strings.Join(cells[2:], "|"))
+			if decision == "fixed" && fixedLocation.MatchString(evidence) || (decision == "accepted" || decision == "refuted" || decision == "follow-up") && evidence != "" {
+				joined[id]++
+			}
 		}
-		id, decision, evidence := strings.Trim(cells[0], " `\t"), strings.TrimSpace(cells[1]), strings.TrimSpace(strings.Join(cells[2:], "|"))
-		if decision == "fixed" && fixedLocation.MatchString(evidence) || (decision == "refuted" || decision == "follow-up") && evidence != "" {
-			decided[id]++
+		for id, count := range joined {
+			// The correction's result supersedes its earlier review decision.
+			// Bound review decisions cover findings absent from the correction section.
+			if count > 1 || decided[id] == 0 {
+				decided[id] = count
+			}
 		}
 	}
 	for _, finding := range findings {
@@ -408,7 +417,7 @@ func (runner *UnitRunner) warmRead(record UnitRunRecord, round UnitRound) (strin
 	return "", nil
 }
 
-func (runner *UnitRunner) diffSince(record UnitRunRecord, previous, current UnitRound) ([]byte, error) {
+func (runner *UnitRunner) diffSince(record UnitRunRecord, previous, current UnitRound, excluded ...string) ([]byte, error) {
 	directory, done, err := diskstore.ScratchDir("metasystem-unit-fold.")
 	if err != nil {
 		return nil, err
@@ -448,7 +457,11 @@ func (runner *UnitRunner) diffSince(record UnitRunRecord, previous, current Unit
 			}
 		}
 	}
-	return git.Run(record.Worktree, env, "diff", "--cached", "--binary", strings.TrimSpace(string(tree)), "--", ".")
+	args := []string{"diff", "--cached", "--binary", strings.TrimSpace(string(tree)), "--", "."}
+	for _, path := range excluded {
+		args = append(args, ":(exclude,literal)"+path)
+	}
+	return git.Run(record.Worktree, env, args...)
 }
 
 // rebasePlan keeps every continuation on the stopped replay's tree and base.

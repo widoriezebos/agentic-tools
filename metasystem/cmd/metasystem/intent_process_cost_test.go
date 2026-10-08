@@ -21,12 +21,24 @@ import (
 
 func processPublishedSubject(t *testing.T, bed *workBed, run string) string {
 	t.Helper()
-	runner := &launch.UnitRunner{Root: bed.unitRoot, Manager: bed.manager}
+	runner := &launch.UnitRunner{Root: bed.unitRoot, Manager: bed.manager, Git: workGit{bed}}
 	commit := "subject-" + run
+	returnPath := filepath.Join(t.TempDir(), "return.json")
+	if err := os.WriteFile(returnPath, []byte(`{"findings":[],"verdictMaterialCount":0}`), 0600); err != nil {
+		t.Fatal(err)
+	}
 	err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
-		return retain(launch.UnitSubject{Round: review.Round.Number, ExpectedParent: review.Head, DiffDigest: review.DiffDigest, Commit: commit, Published: "unit-tip"})
+		return retain(launch.UnitSubject{Round: review.Round.Number, ExpectedParent: review.Head, DiffDigest: review.DiffDigest, Commit: commit, Tip: bed.head, Published: "unit-tip"})
 	})
 	if err != nil {
+		t.Fatal(err)
+	}
+	record, err := runner.Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runner.CollectExamination(&record, &record.Rounds[len(record.Rounds)-1], launch.UnitSubject{Commit: commit,
+		Examination: "fixture-examination", ExaminationRound: 1, ExaminationReturnPath: returnPath}); err != nil {
 		t.Fatal(err)
 	}
 	return commit
@@ -51,7 +63,7 @@ func processReadOwners(bed *workBed, fail *bool, state ...string) intentOwners {
 		},
 	}
 	owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) {
-		return branch.BranchReadResult{State: "collected", Published: !*fail}, nil
+		return branch.BranchReadResult{State: "collected"}, nil
 	}
 	return owners
 }
@@ -71,7 +83,11 @@ func processReportMeasures(t *testing.T, value any) processmeasure.Measures {
 
 func TestProcessCostPublicReport(t *testing.T) {
 	t.Parallel()
-	bed := newWorkBed(t)
+	bed := newWorkBedWith(t, func(file *goal.GoalFile) {
+		workApprovedBox(file)
+		file.Budget.AttemptLimit = 6
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
 	start := time.Date(2026, 10, 7, 10, 0, 0, 0, time.UTC)
 	clock := &workClock{now: start}
 	bed.manager.Now = clock.Now
@@ -105,7 +121,7 @@ func TestProcessCostPublicReport(t *testing.T) {
 	}
 	first := build("evidence")
 	fix := bed.brief("fix.md", "Correct the unit.\n")
-	if code, result, output := bed.work("work", "revise", bed.id, "--work", "evidence", "--after", "1", "--brief", fix); code != 0 {
+	if code, result, output := bed.work("work", "revise", bed.id, "--work", "evidence", "--after", "1", "--brief", fix, "--reason", "Correct the unit", "--by", "Wido"); code != 0 {
 		t.Fatalf("revise: %d %+v %s", code, result, output)
 	}
 	fail := false
@@ -212,7 +228,7 @@ func TestProcessCostPublicReport(t *testing.T) {
 	}
 	// A newer revision has no published read; an older publication cannot finish it.
 	fix = bed.brief("next-fix.md", "Correct the current unit.\n")
-	if code, result, output := bed.work("work", "revise", bed.id, "--work", "evidence", "--after", "1", "--brief", fix); code != 0 {
+	if code, result, output := bed.work("work", "revise", bed.id, "--work", "evidence", "--after", "1", "--brief", fix, "--reason", "Correct the published unit", "--by", "Wido"); code != 0 {
 		t.Fatalf("new revision: %d %+v %s", code, result, output)
 	}
 	open, _, _ := report()

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"os"
 	"path/filepath"
 	"slices"
@@ -28,16 +29,21 @@ func (git *rebaseFixtureGit) Run(dir string, env []string, args ...string) ([]by
 		dir = git.source
 	}
 	if len(args) > 3 && args[0] == "diff" && args[1] == "--cached" && args[2] == "--binary" {
-		git.baseSeen = args[3] == "new-base"
-		args = append([]string(nil), args...)
-		args[3] = "base"
+		if args[3] != "previous-tree" {
+			git.baseSeen = git.baseSeen || args[3] == "new-base"
+			args = append([]string(nil), args...)
+			args[3] = "base"
+		}
+	}
+	if slices.Equal(args, []string{"read-tree", "new-base"}) {
+		args = []string{"read-tree", "base"}
 	}
 	return git.GitRunner.Run(dir, env, args...)
 }
 
 func TestRevisionOnStoppedRebase(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch", "round", "round", "round")
+	fixture := newUnitFixture(t, "", "branch", "branch", "round", "resolve", "before", "resolve", "round", "resolve", "round")
 	first, err := fixture.runner.AdvanceNamed(fixture.plan)
 	if err != nil {
 		t.Fatal(err)
@@ -95,47 +101,105 @@ func TestRevisionOnStoppedRebase(t *testing.T) {
 
 func TestReviseRefusesUndecidedFindings(t *testing.T) {
 	t.Parallel()
-	for _, source := range []string{"markdown", "committed", "unread"} {
+	for _, source := range []string{"launch", "committed", "unread"} {
 		t.Run(source, func(t *testing.T) {
 			t.Parallel()
-			events := []string{"branch", "round", "branch", "round"}
+			events := []string{"branch", "round"}
 			if source != "unread" {
-				events = append(events, "warm")
+				events = append(events, "branch", "round")
 			}
 			fixture := newUnitFixture(t, "", events...)
-			fixture.starter.readVerdict = "VERDICT: fix first (2 material findings)"
+			fixture.starter.readVerdict = "fix first (2 material findings)"
+			fixture.starter.skipStructured = source == "unread"
 			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
-			require(t, err != nil, "%v", err)
-			read := filepath.Join(t.TempDir(), "findings.md")
-			writeFile(t, read, "1. Broken fold\n2. Lost result\n3. Non-gating observation\n")
-			if source == "markdown" {
-				_, err = fixture.manager.Store.Update(first.Record.Rounds[0].Steps[2].LaunchID, func(record *Record) error { record.Outputs = []Output{{Path: read}}; return nil })
-				require(t, err != nil, "%v", err)
-			} else if source == "committed" {
-				writeFile(t, read, `{"findings":[{"id":"1","material":true},{"id":"2","material":true},{"id":"3","material":false}]}`)
-				first.Record.Subjects = []UnitSubject{{Round: 1, Examination: "critic", ExaminationReturnPath: read}}
-			} else {
-				first.Record.Rounds[0].Steps = first.Record.Rounds[0].Steps[:2]
-			}
-			require(t, fixture.runner.save(first.Record) != nil, "save run")
-			brief := "Declared size: 1 changed lines\n## Decisions on round 1\n| 1 | fixed | file.go:12 |\n"
-			if source != "unread" {
-				before, _ := os.ReadFile(filepath.Join(fixture.runner.runDir(first.Record.ID), "run.json"))
-				launched := len(fixture.starter.order)
-				_, err = fixture.runner.Revise(UnitRevisionRequest{Run: first.Record.ID, After: 1, Brief: []byte(brief)})
-				if !IsCode(err, "UNIT_REVISE_UNDECIDED") || ErrorDetail(err) != fmt.Sprintf("UNIT_REVISE_UNDECIDED run=%s round=1 finding=2: finding 2 of round 1 has no decision; nothing was started", first.Record.ID) || err.Error() != "finding 2 of round 1 has no decision; nothing was started" {
-					t.Fatalf("refusal: %v", err)
-				}
-				after, _ := os.ReadFile(filepath.Join(fixture.runner.runDir(first.Record.ID), "run.json"))
-				if string(before) != string(after) || len(fixture.starter.order) != launched {
-					t.Fatal("undecided correction changed the run or launched")
-				}
-				brief += "| 2 | refuted | result is retained |\n"
-			} else {
-				brief = "Declared size: 1 changed lines\nretry\n"
-			}
-			if _, err := fixture.runner.Revise(UnitRevisionRequest{Run: first.Record.ID, After: 1, Brief: []byte(brief)}); err != nil {
+			if err != nil {
 				t.Fatal(err)
+			}
+			if source == "committed" {
+				path := filepath.Join(t.TempDir(), "return.json")
+				writeFile(t, path, structuredUnitReturn(2, "regression", "code.go"))
+				if err := fixture.runner.ReviewSubject(first.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
+					return retain(UnitSubject{Round: 1, DiffDigest: review.DiffDigest, Examination: "critic", ExaminationRound: 1, ExaminationReturnPath: path})
+				}); err != nil {
+					t.Fatal(err)
+				}
+				first.Record, err = fixture.runner.Status(first.Record.ID)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, _ := os.ReadFile(filepath.Join(fixture.runner.runDir(first.Record.ID), "run.json"))
+			launched := len(fixture.starter.order)
+			brief := []byte("Declared size: 1 changed lines\n")
+			want := "UNIT_STOPPED"
+			if source != "unread" {
+				findings := first.Record.Rounds[0].Reads[0].Findings
+				brief = []byte(fmt.Sprintf("Declared size: 1 changed lines\n## Decisions on round 1\n| %s | fixed | file.go:12 |\n", findings[0].ID))
+				want = "UNIT_REVISE_UNDECIDED"
+			}
+			_, err = fixture.runner.Revise(UnitRevisionRequest{Run: first.Record.ID, After: 1, Brief: brief})
+			if !IsCode(err, want) {
+				t.Fatalf("refusal: %v want %s", err, want)
+			}
+			if source != "unread" && !strings.Contains(err.Error(), first.Record.Rounds[0].Reads[0].Findings[1].ID) {
+				t.Fatalf("missing canonical unresolved finding: %v", err)
+			}
+			after, _ := os.ReadFile(filepath.Join(fixture.runner.runDir(first.Record.ID), "run.json"))
+			if string(before) != string(after) || len(fixture.starter.order) != launched {
+				t.Fatal("undecided correction changed the run or launched")
+			}
+			if source != "unread" {
+				if _, err := fixture.runner.Revise(UnitRevisionRequest{Run: first.Record.ID, After: 1, Brief: correctionBrief(first.Record, "Declared size: 1 changed lines\n")}); err != nil {
+					t.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func TestReviseJoinsSuppliedDispositions(t *testing.T) {
+	t.Parallel()
+	for _, complete := range []bool{true, false} {
+		t.Run(fmt.Sprintf("complete=%t", complete), func(t *testing.T) {
+			t.Parallel()
+			events := []string{"branch", "round"}
+			if complete {
+				events = append(events, "branch", "round")
+			}
+			fixture := newUnitFixture(t, "", events...)
+			fixture.starter.readVerdict = "fix first (2 material findings)"
+			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			findings := first.Record.Rounds[0].Reads[0].Findings
+			dispositions := fmt.Sprintf("| %s | fixed | file.go:12 |\n", findings[0].ID)
+			if complete {
+				dispositions += fmt.Sprintf("| %s | fixed | file.go:20 |\n", findings[1].ID)
+			}
+			before, err := os.ReadFile(filepath.Join(fixture.runner.runDir(first.Record.ID), "run.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			launched := len(fixture.starter.order)
+			fixture.starter.readVerdict = "fix first (1 material findings)"
+			corrected, err := fixture.runner.Revise(UnitRevisionRequest{Run: first.Record.ID, After: 1, Brief: []byte("Declared size: 1 changed lines\nPreserve the result\n"), Decisions: []byte(dispositions)})
+			if !complete {
+				if !IsCode(err, "UNIT_REVISE_UNDECIDED") || !strings.Contains(err.Error(), findings[1].ID) {
+					t.Fatalf("incomplete supplied dispositions admitted: %v", err)
+				}
+				after, readErr := os.ReadFile(filepath.Join(fixture.runner.runDir(first.Record.ID), "run.json"))
+				if readErr != nil || string(after) != string(before) || len(fixture.starter.order) != launched {
+					t.Fatalf("refused supplied dispositions changed the run: %v", readErr)
+				}
+				return
+			}
+			if err != nil || corrected.Round != 2 || len(corrected.Record.Rounds) != 2 || len(fixture.starter.order) != launched+3 {
+				t.Fatalf("complete supplied dispositions did not launch one correction: %+v %v", corrected, err)
+			}
+			kept, err := os.ReadFile(corrected.Revision.Decisions)
+			if err != nil || string(kept) != dispositions {
+				t.Fatalf("supplied dispositions were not retained: %s %v", kept, err)
 			}
 		})
 	}
@@ -150,14 +214,14 @@ func TestFollowUpReadIsToldThePreviousDecisions(t *testing.T) {
 	fixture.starter.readVerdict = "VERDICT: fix first (1 material findings)"
 	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	require(t, err != nil, "%v", err)
-	decisions := "## Decisions on round 1\n| 1 | follow-up | tracked in goal notes |\n"
+	decisions := string(correctionBrief(first.Record, ""))
 	second, err := fixture.runner.Revise(UnitRevisionRequest{Run: first.Record.ID, After: 1, Brief: []byte("Declared size: 1 changed lines\n" + decisions)})
 	require(t, err != nil, "%v", err)
 	read, err := fixture.manager.Store.Read(second.Record.Rounds[1].Steps[2].LaunchID)
 	require(t, err != nil, "%v", err)
 	brief, err := os.ReadFile(readString(read.AdapterData, "brief"))
 	require(t, err != nil, "%v", err)
-	for _, want := range []string{findings, decisions, "Check every fold first, citing the line", "Never re-raise a refuted finding without new evidence", "changed lines only", "fold-not-holding", "same-rule-as N", "Diff since round 1's tree", "+fixed line", "Proof result of round 2", `"state": "passed"`} {
+	for _, want := range []string{"Finding 1", "The result is discarded", decisions, "Check every fold first, citing the line", "Never re-raise a refuted finding without new evidence", "changed lines only", "fold-not-holding", "same-rule-as N", "Diff since round 1's tree", "+fixed line", "Proof result of round 2", `"state": "passed"`} {
 		if !strings.Contains(string(brief), want) {
 			t.Errorf("read brief lacks %q: %s", want, brief)
 		}
@@ -202,11 +266,15 @@ func TestReviseNeverDivergentOnNonMaterialOrOneRead(t *testing.T) {
 
 func TestRoundDivergenceSkipsUnreadRounds(t *testing.T) {
 	t.Parallel()
-	yes, no := true, false
-	read := UnitStep{Name: "read", VerdictCounts: &yes, Verdict: "VERDICT: fix first (3 material findings)"}
-	record := UnitRunRecord{ID: "run", Unit: "U", Goal: "goal", Rounds: []UnitRound{
-		{Number: 1, Steps: []UnitStep{read}}, {Number: 2, Steps: []UnitStep{{Name: "read", VerdictCounts: &no, Verdict: read.Verdict}}},
-		{Number: 3}, {Number: 4, Steps: []UnitStep{read}}}}
+	first, err := readsubject.Collect("first", readsubject.ReadSubject{}, "engine", "model", "return.json", []byte(structuredUnitReturn(3, "regression", "first.go")), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	last, err := readsubject.Collect("last", readsubject.ReadSubject{}, "engine", "model", "return.json", []byte(structuredUnitReturn(3, "scope", "last.go")), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	record := UnitRunRecord{ID: "run", Unit: "U", Goal: "goal", Rounds: []UnitRound{{Number: 1, Reads: []readsubject.Read{first}}, {Number: 2, Cause: "provider-limit"}, {Number: 3}, {Number: 4, Reads: []readsubject.Read{last}}}}
 	if err := (&UnitRunner{}).roundDivergent(record); !IsCode(err, "UNIT_ROUND_DIVERGENT") {
 		t.Fatalf("the last two reads must compare across unread rounds: %v", err)
 	}
@@ -220,26 +288,36 @@ func checkDivergenceAdmissions(t *testing.T, counts []int, relation, source stri
 	t.Helper()
 	for _, admission := range []string{"revise", "follow-up"} {
 		t.Run(admission, func(t *testing.T) {
+			counts := append([]int(nil), counts...)
 			t.Parallel()
-			var events []string
-			for index := range counts {
-				events = append(events, "branch", "round")
-				if index > 0 {
-					events = append(events, "warm")
-				}
+			// A clean read closes immediately; another automatic attempt cannot be started.
+			if counts[0] == 0 {
+				counts = counts[:1]
 			}
-			if admission == "follow-up" || !refused {
+			closed := counts[len(counts)-1] == 0
+			var events []string
+			for range counts {
+				events = append(events, "branch", "round")
+			}
+			if admission == "follow-up" || !refused && !closed {
 				events = append(events, "branch")
 			}
-			if !refused {
-				events = append(events, "round", "warm")
+			if !refused && !closed {
+				events = append(events, "round")
 			}
 			fixture := newUnitFixture(t, "", events...)
-			fixture.starter.readOutput = filepath.Join(t.TempDir(), "findings.md")
 			var result UnitResult
 			for index, material := range counts {
-				fixture.starter.readVerdict = fmt.Sprintf("VERDICT: fix first (%d material findings)", material)
-				writeFile(t, fixture.starter.readOutput, "1. Finding\nRELATION: "+relation+"\n2. Observation\n")
+				fixture.starter.readVerdict = fmt.Sprintf("fix first (%d material findings)", material)
+				fixture.starter.readWhere = fmt.Sprintf("round-%d.go", index)
+				fixture.starter.readClass = []string{"regression", "scope", "incomplete-item"}[index%3]
+				if relation != "" && len(counts) > 1 {
+					fixture.starter.readWhere = "repeated.go"
+					fixture.starter.readClass = "regression"
+					if index > 0 && relation == "same-rule-as 1" {
+						fixture.starter.readWhere = "other.go"
+					}
+				}
 				request := UnitRequest{Plan: fixture.plan}
 				if index > 0 {
 					request = UnitRequest{Resume: result.Record.ID, FollowUp: writeFollowUp(t)}
@@ -250,57 +328,40 @@ func checkDivergenceAdmissions(t *testing.T, counts []int, relation, source stri
 					t.Fatal(err)
 				}
 				if source == "committed" || source == "mixed" && index == 1 {
-					findings := []map[string]any{{"material": false}, {"material": false}}
-					for n := 0; n < material; n++ {
-						findings = append(findings, map[string]any{"material": true})
-					}
-					if relation != "" {
-						findings[0]["relation"] = relation
-					}
-					data, _ := json.Marshal(map[string]any{"findings": findings})
 					path := filepath.Join(t.TempDir(), "return.json")
-					writeFile(t, path, string(data))
-					result.Record.Subjects = append(result.Record.Subjects, UnitSubject{Round: index + 1,
-						Examination: "critic", ExaminationRound: 1, ExaminationReturnPath: path})
-					if err := fixture.runner.save(result.Record); err != nil {
+					writeFile(t, path, structuredUnitReturn(material, fixture.starter.readClass, fixture.starter.readWhere))
+					if err := fixture.runner.ReviewSubject(result.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
+						return retain(UnitSubject{Round: index + 1, DiffDigest: review.DiffDigest, Examination: fmt.Sprintf("critic-%d", index), ExaminationRound: 1, ExaminationReturnPath: path})
+					}); err != nil {
+						t.Fatal(err)
+					}
+					result.Record, err = fixture.runner.Status(result.Record.ID)
+					if err != nil {
 						t.Fatal(err)
 					}
 				}
 			}
-			// The kept relation must survive replacement of the shared report.
-			writeFile(t, fixture.starter.readOutput, "RELATION: new\n")
 			run := result.Record.ID
 			before, _ := os.ReadFile(filepath.Join(fixture.runner.runDir(run), "run.json"))
 			launched := len(fixture.starter.order)
 			var err error
 			if admission == "revise" {
-				brief := fmt.Sprintf("Declared size: 1 changed lines\n## Decisions on round %d\n", len(counts))
-				for finding := 1; finding <= 5; finding++ {
-					brief += fmt.Sprintf("| %d | follow-up | tracked |\n", finding)
-				}
-				_, err = fixture.runner.Revise(UnitRevisionRequest{Run: run, Brief: []byte(brief)})
+				_, err = fixture.runner.Revise(UnitRevisionRequest{Run: run, Brief: correctionBrief(result.Record, "Declared size: 1 changed lines\n")})
 			} else {
 				_, err = fixture.runner.Advance(UnitRequest{Resume: run, FollowUp: writeFollowUp(t)})
 			}
-			if !refused {
+			if !refused && !closed {
 				if err != nil || len(fixture.starter.order) <= launched {
-					t.Fatalf("admission: %v; launches=%v", err, fixture.starter.order)
+					t.Fatalf("admission: %v; launches=%v; stop=%+v", err, fixture.starter.order, result.Record.Rounds[len(result.Record.Rounds)-1].Stop)
 				}
 				return
 			}
-			repeats := 0
-			if relation != "" && relation != "new" {
-				repeats = 1
-			}
-			facts := fmt.Sprintf("run=%s previous=%d newest=%d repeats=%d", run, counts[0], counts[1], repeats)
-			if !IsCode(err, "UNIT_ROUND_DIVERGENT") || !strings.Contains(ErrorDetail(err), facts) ||
-				!strings.Contains(err.Error(), fmt.Sprintf("the last two reads of U found %d, then %d material findings, %d of them repeats; nothing was started", counts[0], counts[1], repeats)) {
+			if !IsCode(err, "UNIT_STOPPED") {
 				t.Fatalf("refusal: %v; detail=%s", err, ErrorDetail(err))
 			}
-			for _, next := range []string{"take-a-step-back", "work review goal --work U", "work build goal --work NEW --brief FILE --check ..."} {
-				if !strings.Contains(ErrorDetail(err)+err.Error(), next) {
-					t.Errorf("refusal lacks %q: %v", next, err)
-				}
+			stop := result.Record.Rounds[len(result.Record.Rounds)-1].Stop
+			if stop == nil || closed && stop.Decision != "close" || refused && stop.Decision != "stop" {
+				t.Fatalf("wrong decision: %+v", stop)
 			}
 			after, _ := os.ReadFile(filepath.Join(fixture.runner.runDir(run), "run.json"))
 			if string(after) != string(before) || len(fixture.starter.order) != launched {
@@ -316,13 +377,13 @@ func checkDivergenceAdmissions(t *testing.T, counts []int, relation, source stri
 // attempt and a request against an older attempt launch nothing.
 func TestRevisionRequestReplay(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "branch", "round")
+	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "before", "branch", "round")
 	first, err := fixture.runner.AdvanceNamed(fixture.plan)
 	if err != nil || first.Record.State != "awaiting-judgement" {
 		t.Fatalf("first attempt: %+v %v", first, err)
 	}
 	run := first.Record.ID
-	brief := []byte("Declared size: 1 changed lines\nfix the finding\n")
+	brief := correctionBrief(first.Record, "Declared size: 1 changed lines\nfix the finding\n")
 
 	// Interrupted after the request is retained and the attempt added,
 	// before any launch.
@@ -382,13 +443,13 @@ func TestRevisionRequestReplay(t *testing.T) {
 // empty.
 func TestRevisionRetainsReviewedFindingsAfterFailure(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "branch", "round")
+	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "before", "branch", "before", "round")
 	first, err := fixture.runner.AdvanceNamed(fixture.plan)
 	if err != nil {
 		t.Fatal(err)
 	}
 	run := first.Record.ID
-	brief := []byte("Declared size: 1 changed lines\nfix F-1\n")
+	brief := correctionBrief(first.Record, "Declared size: 1 changed lines\nfix F-1\n")
 	decisions := []byte("| Finding id | Disposition |\n| F-1 | accepted |\n")
 	fixture.starter.failKind = "build"
 	failed, err := fixture.runner.Revise(UnitRevisionRequest{Run: run, Brief: brief, Decisions: decisions})
@@ -396,7 +457,7 @@ func TestRevisionRetainsReviewedFindingsAfterFailure(t *testing.T) {
 		t.Fatalf("failed correction: %+v %v", failed, err)
 	}
 	fixture.starter.failKind = ""
-	retried, err := fixture.runner.Revise(UnitRevisionRequest{Run: run, After: 2, Brief: brief, Decisions: decisions})
+	retried, err := fixture.runner.Revise(UnitRevisionRequest{Run: run, After: 2, Brief: brief, Decisions: decisions, Person: "Wido", Reason: "Retry the failed builder with the retained decisions", Impact: "Start a new correction after a failed build with no read"})
 	if err != nil || retried.Rejoined || retried.Revision.Attempt != 3 {
 		t.Fatalf("deliberate retry after 2: %+v %v", retried, err)
 	}
@@ -413,8 +474,11 @@ func TestRevisionRetainsReviewedFindingsAfterFailure(t *testing.T) {
 	for _, input := range launched.Inputs {
 		inputs = append(inputs, input.Path)
 	}
-	if !slices.ContainsFunc(inputs, func(path string) bool { return filepath.Clean(path) == filepath.Clean(frozen) }) {
-		t.Fatalf("attempt 3's build inputs %v lack the frozen findings and decisions %s", inputs, frozen)
+	if !slices.ContainsFunc(inputs, func(path string) bool {
+		got, err := os.ReadFile(path)
+		return err == nil && string(got) == string(decisions)
+	}) {
+		t.Fatalf("attempt 3's build inputs %v lack the retained findings and decisions %s", inputs, frozen)
 	}
 }
 

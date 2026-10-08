@@ -175,6 +175,9 @@ func Load(root string, withHuman bool) (Loaded, error) {
 
 // Run performs the bounded channel duty after every other tick duty.
 func Run(ctx context.Context, root string) (int, error) {
+	if err := channel.ReconcileUnitStopQuestions(root); err != nil {
+		return 1, err
+	}
 	loaded, err := Load(root, true)
 	if loaded.Provider == nil && err == nil {
 		return 0, nil

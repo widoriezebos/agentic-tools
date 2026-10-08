@@ -77,7 +77,7 @@ func TestProcessStepCostPublicStatus(t *testing.T) {
 	run := resultData(t, built)["run"].(string)
 	declaredFull = "different-tool --full"
 	fix := bed.brief("cost-fix.md", "Correct the unit.\n")
-	if code, result, output := bed.work("work", "revise", bed.id, "--work", "evidence", "--after", "1", "--brief", filepath.Join(bed.root(), fix)); code != 0 {
+	if code, result, output := bed.work("work", "revise", bed.id, "--work", "evidence", "--after", "1", "--brief", filepath.Join(bed.root(), fix), "--reason", "Correct the unit", "--by", "Wido"); code != 0 {
 		t.Fatalf("correction exit %d: %+v %s", code, result, output)
 	}
 	for _, question := range []channel.Question{

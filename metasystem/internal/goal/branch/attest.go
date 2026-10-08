@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
@@ -69,17 +71,21 @@ type TestChange struct {
 }
 
 type Attestation struct {
-	SchemaVersion int                `json:"schemaVersion"`
-	Goal          string             `json:"goal"`
-	Unit          string             `json:"unit"`
-	Subject       AttestationSubject `json:"subject"`
-	Source        AttestationSource  `json:"source"`
-	Verdict       string             `json:"verdict"`
-	Gate          GateObservation    `json:"gate"`
-	Folds         []Fold             `json:"folds"`
-	Carry         *Carry             `json:"carry,omitempty"`
-	TestsChanged  []TestChange       `json:"testsChanged"`
-	SHA256        string             `json:"sha256"`
+	CanonicalRead  json.RawMessage    `json:"canonicalRead,omitempty"`
+	ReadDigest     string             `json:"readDigest,omitempty"`
+	SchemaVersion  int                `json:"schemaVersion"`
+	Goal           string             `json:"goal"`
+	Unit           string             `json:"unit"`
+	Subject        AttestationSubject `json:"subject"`
+	Source         AttestationSource  `json:"source"`
+	Verdict        string             `json:"verdict"`
+	Gate           GateObservation    `json:"gate"`
+	Folds          []Fold             `json:"folds"`
+	Carry          *Carry             `json:"carry,omitempty"`
+	TestsChanged   []TestChange       `json:"testsChanged"`
+	CoversFindings []string           `json:"coversFindings,omitempty"`
+	CoversCommits  []string           `json:"coversCommits,omitempty"`
+	SHA256         string             `json:"sha256"`
 }
 
 type closureBundle struct {
@@ -91,30 +97,35 @@ type closureBundle struct {
 // UnitReadBundle preserves the report and launch JSON verbatim as strings.
 // The examined base and tree bind the read to one commit's change.
 type UnitReadBundle struct {
-	SchemaVersion int    `json:"schemaVersion"`
-	Goal          string `json:"goal"`
-	Commit        string `json:"commit"`
-	UnitRun       string `json:"unitRun"`
-	Round         int    `json:"round"`
-	ReadLaunch    string `json:"readLaunch"`
-	ReadRuntime   string `json:"readRuntime"`
-	ReadModel     string `json:"readModel"`
-	BuildModel    string `json:"buildModel"`
-	ExaminedBase  string `json:"examinedBase"`
-	ExaminedTree  string `json:"examinedTree"`
-	GoalRevision  uint64 `json:"goalRevision"`
-	VerdictLine   string `json:"verdictLine"`
-	Report        string `json:"report"`
-	LaunchRecord  string `json:"launchRecord"`
+	CanonicalRead json.RawMessage `json:"canonicalRead,omitempty"`
+	ReadDigest    string          `json:"readDigest,omitempty"`
+	SchemaVersion int             `json:"schemaVersion"`
+	Goal          string          `json:"goal"`
+	Commit        string          `json:"commit"`
+	UnitRun       string          `json:"unitRun"`
+	Round         int             `json:"round"`
+	ReadLaunch    string          `json:"readLaunch"`
+	ReadRuntime   string          `json:"readRuntime"`
+	ReadModel     string          `json:"readModel"`
+	BuildModel    string          `json:"buildModel"`
+	ExaminedBase  string          `json:"examinedBase"`
+	ExaminedTree  string          `json:"examinedTree"`
+	GoalRevision  uint64          `json:"goalRevision"`
+	VerdictLine   string          `json:"verdictLine"`
+	Report        string          `json:"report"`
+	LaunchRecord  string          `json:"launchRecord"`
 }
 
 type CommitReadRequest struct {
+	CanonicalRead                                 json.RawMessage
+	ReadDigest                                    string
 	Repo, Remote, EndpointTip, GoalID, Unit, OpID string
 	Units                                         []string
 	CheckClaim                                    func() error
 	RootJob, ReaderRecord, Carry                  string
 	UnitRead                                      []byte
 	GateRunID, GateTree                           string
+	CoversFindings, CoversCommits                 []string
 	TestsChanged                                  []TestChange
 	Transport                                     PushTransport
 	Inputs                                        *ReadCommitInputs
@@ -382,6 +393,9 @@ func validateUnitReadBundle(data []byte, goalID string, subject AttestationSubje
 	if problem != "" {
 		return UnitReadBundle{}, operationRefusal(ReadInvalidCode, "the unit read of %s %s\nrun: metasystem work review %s", subject.Commit, problem, goalID)
 	}
+	if err := validateCanonicalRead(bundle.CanonicalRead, bundle.ReadDigest, bundle.ExaminedTree, subject.PatchDigest); err != nil {
+		return UnitReadBundle{}, err
+	}
 	return bundle, nil
 }
 
@@ -526,6 +540,9 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 	if err != nil {
 		return Attestation{}, err
 	}
+	if err := validateCanonicalRead(att.CanonicalRead, att.ReadDigest, att.Subject.Tree, att.Subject.PatchDigest); err != nil {
+		return Attestation{}, operationRefusal(ReadInvalidCode, "the canonical read of %s is unknown: %v\nrun: metasystem work review %s", commit, err, goalID)
+	}
 	if att.SchemaVersion != 1 || att.Goal != goalID || att.Unit != unit || att.Verdict != "LAND" || att.Subject.Commit != commit {
 		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record at %s is not a landing verdict for %s/%s\nrun: metasystem work review %s", commit, goalID, unit, goalID)
 	}
@@ -547,6 +564,9 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 	if err := validateTestChangesWithReads(r, repo, goalID, commit, att.TestsChanged); err != nil {
 		return Attestation{}, err
 	}
+	if err := validateCoverage(r, repo, att); err != nil {
+		return Attestation{}, err
+	}
 	if att.Carry != nil {
 		if err := r.CommitExists(repo, att.Carry.FromCommit); err != nil {
 			return Attestation{}, operationRefusal(ReadInvalidCode,
@@ -555,6 +575,10 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 		prior, err := validateAttestation(r, repo, snapshot, endpointTip, goalID, unit, att.Carry.FromCommit, seen)
 		if err != nil {
 			return Attestation{}, err
+		}
+		_, digest, err := carryCanonicalRead(prior.CanonicalRead, read)
+		if err != nil || digest != att.ReadDigest {
+			return Attestation{}, operationRefusal(ReadInvalidCode, "the carried read of %s changed its predecessor evidence\nrun: metasystem work review %s", commit, goalID)
 		}
 		priorChange, err := changeDigestWithReads(r, repo, att.Carry.FromCommit)
 		if err != nil {
@@ -565,7 +589,7 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 			return Attestation{}, err
 		}
 		if att.Carry.FromTree != prior.Subject.Tree || att.Carry.ToCommit != commit || att.Carry.ToTree != subject.Tree ||
-			priorChange != change || !sameFoldDigests(withoutReadFolds(prior.Folds), withoutReadFolds(folds)) || prior.Source != att.Source {
+			priorChange != change || !sameFoldDigests(withoutReadFolds(prior.Folds), withoutReadFolds(folds)) || prior.Source != att.Source || !slices.Equal(prior.CoversFindings, att.CoversFindings) || !slices.Equal(prior.CoversCommits, att.CoversCommits) {
 			return Attestation{}, operationRefusal(ReadStaleCode, "the review carried over from %s no longer fits: the changes moved since\nrun: metasystem work review %s", att.Carry.FromCommit, goalID)
 		}
 		return att, nil
@@ -689,7 +713,15 @@ func attestedGoalRevision(r attestationReads, repo, snapshot, goalID, commit str
 // BindLandedUnit validates the persisted evidence and binds one prospective
 // trunk transition to the exact branch contribution it certifies.
 func BindLandedUnit(repo, snapshot, endpointTip, goalID, commit, beforeTree, afterTree string) (LandedUnit, error) {
-	return bindLandedUnit(gitAttestationReads{}, repo, snapshot, endpointTip, goalID, commit, beforeTree, afterTree)
+	return BindLandedUnitWithReads(gitAttestationReads{}, repo, snapshot, endpointTip, goalID, commit, beforeTree, afterTree)
+}
+
+func BindLandedUnitWithReads(reads AttestationReads, repo, snapshot, endpointTip, goalID, commit, beforeTree, afterTree string) (LandedUnit, error) {
+	result, err := bindLandedUnit(reads, repo, snapshot, endpointTip, goalID, commit, beforeTree, afterTree)
+	if err == nil {
+		return result, nil
+	}
+	return bindTransferredLandedUnit(reads, repo, snapshot, endpointTip, goalID, commit, beforeTree, afterTree, err)
 }
 func bindLandedUnit(r attestationReads, repo, snapshot, endpointTip, goalID, commit, beforeTree, afterTree string) (LandedUnit, error) {
 	if err := r.CommitExists(repo, commit); err != nil {
@@ -731,6 +763,10 @@ func bindLandedUnit(r attestationReads, repo, snapshot, endpointTip, goalID, com
 	if err != nil {
 		return LandedUnit{}, &LandedUnitError{Code: "invalid", Err: err}
 	}
+	return bindLandedChange(r, repo, goalID, beforeTree, afterTree, att, result)
+}
+
+func bindLandedChange(r attestationReads, repo, goalID, beforeTree, afterTree string, att Attestation, result LandedUnit) (LandedUnit, error) {
 	prefix, err := r.Prefix(repo)
 	if err != nil {
 		return LandedUnit{}, &LandedUnitError{Code: "change-mismatch", Err: err}
@@ -890,9 +926,11 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		return "", Attestation{}, err
 	}
 	att := Attestation{
+		CanonicalRead: append(json.RawMessage(nil), req.CanonicalRead...), ReadDigest: req.ReadDigest,
 		SchemaVersion: 1, Goal: req.GoalID, Unit: list, Subject: subject,
 		Verdict: "LAND", Gate: GateObservation{Kind: "go-gate-fast", Tree: req.GateTree, RunID: req.GateRunID},
 		Folds: folds, TestsChanged: append([]TestChange(nil), req.TestsChanged...),
+		CoversFindings: append([]string(nil), req.CoversFindings...), CoversCommits: append([]string(nil), req.CoversCommits...),
 	}
 	var bundleData []byte
 	sort.Slice(att.TestsChanged, func(i, j int) bool { return att.TestsChanged[i].Path < att.TestsChanged[j].Path })
@@ -913,6 +951,12 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 			return "", Attestation{}, operationRefusal(ReadStaleCode, "the review carried over from %s no longer fits: the changes moved since\nrun: metasystem work review %s", req.Carry, req.GoalID)
 		}
 		att.Source = prior.Source
+		att.CanonicalRead, att.ReadDigest, err = carryCanonicalRead(prior.CanonicalRead, read)
+		if err != nil {
+			return "", Attestation{}, err
+		}
+		att.CoversFindings = append([]string(nil), prior.CoversFindings...)
+		att.CoversCommits = append([]string(nil), prior.CoversCommits...)
 		if prior.Source.ClosureSHA256 != "" {
 			bundleData, err = attestationFileAt(r, req.Repo, "", closureBundlePath(req.GoalID, req.Carry))
 			if err != nil {
@@ -925,6 +969,33 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		if err != nil {
 			return "", Attestation{}, err
 		}
+	}
+	if att.Source.Kind == "critic-root" && len(att.CanonicalRead) == 0 && len(bundleData) > 0 {
+		var saved closureBundle
+		if err := json.Unmarshal(bundleData, &saved); err != nil {
+			return "", Attestation{}, err
+		}
+		var record struct {
+			Read       json.RawMessage `json:"read"`
+			ReadDigest string          `json:"readDigest"`
+		}
+		if err := json.Unmarshal([]byte(saved.Files["jobs/"+att.Source.RootJob+".json"]), &record); err != nil {
+			return "", Attestation{}, err
+		}
+		att.CanonicalRead, att.ReadDigest = record.Read, record.ReadDigest
+	}
+	if len(req.UnitRead) > 0 && len(att.CanonicalRead) == 0 {
+		var bundle UnitReadBundle
+		if err := json.Unmarshal(req.UnitRead, &bundle); err != nil {
+			return "", Attestation{}, err
+		}
+		att.CanonicalRead, att.ReadDigest = append(json.RawMessage(nil), bundle.CanonicalRead...), bundle.ReadDigest
+	}
+	if err := validateCanonicalRead(att.CanonicalRead, att.ReadDigest, subject.Tree, subject.PatchDigest); err != nil {
+		return "", Attestation{}, err
+	}
+	if err := validateCoverage(r, req.Repo, att); err != nil {
+		return "", Attestation{}, err
 	}
 	att.SHA256, err = digestAttestation(att)
 	if err != nil {
@@ -1023,4 +1094,155 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		return "", Attestation{}, rollbackMaterialized(err)
 	}
 	return preparedTip, att, nil
+}
+
+// VerifyTransferCoverage reads the published destination evidence without
+// needing the source checkout's launch directory.
+func VerifyTransferCoverage(repo, snapshot, endpoint, goalID, unit, commit string) (goal.TransferCoverage, error) {
+	return VerifyTransferCoverageWithReads(gitAttestationReads{}, repo, snapshot, endpoint, goalID, unit, commit)
+}
+
+// VerifyTransferCoverageWithReads validates published coverage using one
+// repository's immutable facts, including the destination's source ancestry.
+func VerifyTransferCoverageWithReads(reads AttestationReads, repo, snapshot, endpoint, goalID, unit, commit string) (goal.TransferCoverage, error) {
+	att, err := validateAttestation(reads, repo, snapshot, endpoint, goalID, unit, commit, map[string]bool{})
+	if err != nil {
+		return goal.TransferCoverage{}, err
+	}
+	return coverageOf(att), nil
+}
+
+func coverageOf(att Attestation) goal.TransferCoverage {
+	var canonical readsubject.Read
+	_ = json.Unmarshal(att.CanonicalRead, &canonical)
+	readID := canonical.ID
+	if readID == "" {
+		readID = att.Source.ReadLaunch
+	}
+	if readID == "" {
+		readID = att.Source.RootJob
+	}
+	if readID == "" {
+		readID = att.Source.ReaderRecord
+	}
+	return goal.TransferCoverage{TargetUnit: att.Unit, ReadID: readID, Commit: att.Subject.Commit, Findings: append([]string(nil), att.CoversFindings...), SourceCommits: append([]string(nil), att.CoversCommits...)}
+}
+
+func validateCoverage(r attestationReads, repo string, att Attestation) error {
+	for _, commit := range att.CoversCommits {
+		prior, err := r.IsAncestor(repo, commit, att.Subject.Commit)
+		if err != nil || !prior || commit == att.Subject.Commit {
+			return operationRefusal(ReadInvalidCode, "destination %s does not retain source change %s\nrun: metasystem work review %s", att.Unit, commit, att.Goal)
+		}
+	}
+	return nil
+}
+
+// carryCanonicalRead binds the same examination to an equivalent commit. The
+// original bundle remains immutable; its provenance and evidence are retained.
+func carryCanonicalRead(data json.RawMessage, subject readsubject.ReadSubject) (json.RawMessage, string, error) {
+	if len(data) == 0 {
+		return nil, "", nil
+	}
+	var read readsubject.Read
+	if err := json.Unmarshal(data, &read); err != nil {
+		return nil, "", err
+	}
+	read.CarriedFrom, read.ID, read.Subject = read.ID, "carry:"+subject.Commit, subject
+	for i := range read.Findings {
+		_, number, _ := strings.Cut(read.Findings[i].ID, read.CarriedFrom+":")
+		read.Findings[i].ID = read.ID + ":" + number
+	}
+	canonical, digest := read.Canonical()
+	return canonical, digest, nil
+}
+
+func validateCanonicalRead(data json.RawMessage, digest, tree string, patchDigest ...string) error {
+	if len(data) == 0 && digest == "" {
+		return nil
+	}
+	var read readsubject.Read
+	if len(data) == 0 || digest == "" || json.Unmarshal(data, &read) != nil {
+		return fmt.Errorf("canonical read evidence is incomplete or malformed")
+	}
+	_, actual := read.Canonical()
+	subjectTree := read.Subject.Tree
+	if subjectTree == "" {
+		subjectTree = read.Subject.ReviewedProjectTree
+	}
+	material := 0
+	for _, finding := range read.Findings {
+		if !slices.Contains(readsubject.FindingClasses, finding.Class) || !slices.Contains([]string{"critical", "high", "medium", "low"}, finding.Severity) || !safeClosureBundlePath(finding.Where) || strings.TrimSpace(finding.Claim) == "" || strings.TrimSpace(finding.Evidence) == "" || strings.TrimSpace(finding.Change) == "" || !strings.HasPrefix(finding.ID, read.ID+":") {
+			return fmt.Errorf("canonical read finding has incomplete stop evidence")
+		}
+		if finding.Material {
+			material++
+		}
+	}
+	sameSubject := subjectTree == tree
+	if read.Subject.Kind == readsubject.SubjectLive && len(patchDigest) == 1 && patchDigest[0] != "" && read.Subject.DiffDigest == patchDigest[0] {
+		sameSubject = true
+	}
+	if actual != digest || read.ID == "" || read.Engine == "" || read.Model == "" || !sameSubject || read.Material != material || material != 0 {
+		return fmt.Errorf("canonical read evidence does not prove this clean subject")
+	}
+	return nil
+}
+
+func bindTransferredLandedUnit(r attestationReads, repo, snapshot, endpoint, goalID, commit, beforeTree, afterTree string, originalErr error) (LandedUnit, error) {
+	data, err := r.SnapshotFile(repo, endpoint, "metasystem/plans/goals/"+goalID+".md")
+	if err != nil {
+		return LandedUnit{}, originalErr
+	}
+	obligations := transferObligationsFromPage(data)
+	info, err := r.Kind(repo, commit, goalID)
+	if err != nil || info.Kind != Unit {
+		return LandedUnit{}, originalErr
+	}
+	found := false
+	var destination Attestation
+	for _, obligation := range obligations {
+		if obligation.SourceUnit != info.Unit || obligation.SourceCommit != commit {
+			continue
+		}
+		found = true
+		if obligation.State != "discharged" || obligation.CoverageRead == "" || obligation.CoverageCommit == "" {
+			return LandedUnit{}, originalErr
+		}
+		att, err := validateAttestation(r, repo, snapshot, endpoint, goalID, obligation.TargetUnit, obligation.CoverageCommit, map[string]bool{})
+		if err != nil {
+			return LandedUnit{}, err
+		}
+		coverage := coverageOf(att)
+		if coverage.ReadID != obligation.CoverageRead || !slices.Contains(coverage.Findings, obligation.OriginalFinding) || !slices.Contains(coverage.SourceCommits, commit) {
+			return LandedUnit{}, originalErr
+		}
+		destination = att
+	}
+	if !found {
+		return LandedUnit{}, originalErr
+	}
+	subject, _, err := computeSubjectWithReads(r, repo, commit)
+	if err != nil {
+		return LandedUnit{}, err
+	}
+	folds, err := foldRangeWithReads(r, repo, endpoint, commit, goalID)
+	if err != nil {
+		return LandedUnit{}, err
+	}
+	source := Attestation{Goal: goalID, Unit: info.Unit, Subject: subject, Folds: folds, Verdict: "transferred"}
+	result := LandedUnit{Goal: goalID, Unit: info.Unit, Digest: subject.UnitDigest, CriticRoot: destination.Source.RootJob, Round: destination.Source.Round, GateRunID: destination.Gate.RunID}
+	if destination.Source.Kind == "unit-read" {
+		_, bundle, err := unitReadBundleAt(r, repo, snapshot, goalID, destination.Subject.Commit, destination.Source)
+		if err != nil {
+			return LandedUnit{}, err
+		}
+		result.ReadLaunch, result.ReadModel, result.GoalRevision = bundle.ReadLaunch, bundle.ReadModel, bundle.GoalRevision
+	} else if destination.Source.Kind == "critic-root" {
+		result.GoalRevision, err = attestedGoalRevision(r, repo, snapshot, goalID, destination.Subject.Commit, destination.Source)
+		if err != nil {
+			return LandedUnit{}, err
+		}
+	}
+	return bindLandedChange(r, repo, goalID, beforeTree, afterTree, source, result)
 }

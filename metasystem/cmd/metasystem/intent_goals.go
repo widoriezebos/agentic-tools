@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -462,6 +463,8 @@ func runIntentShow(inv *intentInvocation) int {
 		Summary: fmt.Sprintf("%s  %s  tier %d", id, file.State, file.Tier), view: shown.view}
 	if where == "live" {
 		result.next, result.nextReason = inv.suggestedNext(file)
+	} else if where == "done" && inv.goalReviewCleanupPending(id) {
+		result.next, result.nextReason = inv.publicArgv("goal", "done", id, "--reason", file.Conclude), "as the person, finishes any interrupted review cleanup using this recorded conclusion"
 	}
 	return inv.render(result)
 }
@@ -914,11 +917,62 @@ func runIntentDone(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	var reviewTrees []string
+	var treeErr error
+	concluded, recorded := false, false
+	if slices.Contains(actor, "--by") {
+		flags := &syncFlags{root: inv.stateRoot, by: unitStopActor(actor)}
+		proof, err := proveGoalHumanAuthorityFor(inv.owners.dependencies.authorityFacts.caller, "done", flags, inv.owners.prove, inv.owners.commandNow)
+		if err == nil && !proof.ValidFor(inv.stateRoot) {
+			err = fmt.Errorf("this command has no proven person authority for this checkout")
+		}
+		if err != nil {
+			return inv.render(*inv.personRefusal(id, err, unitStopActor(actor)))
+		}
+		if projection, _, problem := inv.projection(); problem != nil {
+			return inv.render(*problem)
+		} else if file := projection.Tree.Done[id]; file != nil {
+			reason = file.Conclude
+			concluded = true
+		}
+		reviewTrees, recorded, treeErr = inv.goalReviewWorktrees(id)
+		impact := "Impact: this concludes the goal, then closes its review chains and questions with your reason.\nFindings and unfinished work stay recorded. This does not certify clean reads.\nTransferred work keeps its completion requirements. Later work needs its own review.\nReopen the goal to resume work; closed chains keep this reason, so request a fresh review.\nRepeat goal done if cleanup is pending."
+		if !concluded || !recorded {
+			if err := inv.recordUnitStopOverride(id, "goal-done", reason, impact, unitStopActor(actor), reviewTrees...); err != nil {
+				return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the conclusion impact could not be recorded", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "records the impact before concluding"})
+			}
+		}
+	}
 	args := append(append([]string{"--root", inv.stateRoot, "--id", id, "--conclude", reason}, actor...), inv.forward("force")...)
-	return inv.callOwner(inv.targets(id), func(dependencies syncRequestDependencies) int {
-		code, _ := trySyncMutationWithCompletion("done", args, inv.owners.commandNow, dependencies, inv.owners.parkBranchCheck, inv.owners.completion)
-		return code
-	}, func() intentResult { return inv.afterGoalAct(id, "done") })
+	var result intentResult
+	if concluded && recorded {
+		result = inv.afterGoalAct(id, "done")
+		result.Outcome, result.Targets = intentUnchanged, inv.targets(id)
+	} else {
+		result = inv.ownerCall(inv.targets(id), func(dependencies syncRequestDependencies) int {
+			code, _ := trySyncMutationWithCompletion("done", args, inv.owners.commandNow, dependencies, inv.owners.parkBranchCheck, inv.owners.completion)
+			return code
+		}, func() intentResult { return inv.afterGoalAct(id, "done") })
+	}
+	if slices.Contains(actor, "--by") || result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+		projection, _, problem := inv.projection()
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		if file := projection.Tree.Done[id]; file != nil {
+			root := inv.layout.InstallationRoot.Path()
+			var chainErr error
+			if slices.Contains(actor, "--by") {
+				chainErr = errors.Join(treeErr, dispatchcore.CloseGoalReviewChains(root, id, file.Conclude),
+					inv.work().units(inv.layout).CloseGoalReviewChains(id, file.Conclude, reviewTrees))
+			}
+			err := errors.Join(chainErr, channel.CloseGoalUnitStopQuestions(root, id, file.Conclude, inv.unitStopNow()))
+			if err != nil {
+				return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: inv.targets(id), Summary: "the goal concluded, but review cleanup is pending", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "finishes cleanup using the recorded conclusion without concluding again"})
+			}
+		}
+	}
+	return inv.render(result)
 }
 
 // runIntentDoneJob completes one finished job chain's records through the

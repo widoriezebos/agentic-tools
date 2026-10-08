@@ -108,11 +108,14 @@ func witnessWorkBuildRepeat(t *testing.T) {
 		t.Fatalf("first build: code=%d %+v", code, first)
 	}
 	launches, runs, publications := len(bed.starter.launched()), bed.runDirectories(), bed.publications()
+	files, unitFiles := workIdemSnapshot(t, bed.root()), workIdemSnapshot(t, bed.unitRoot)
 	code, again, _ := bed.work(args...)
 	if code != 0 || resultData(t, again)["run"] != resultData(t, first)["run"] || len(bed.starter.launched()) != launches ||
 		!slices.Equal(bed.runDirectories(), runs) || bed.publications() != publications {
 		t.Fatalf("repeated build: code=%d %+v launches=%d->%d", code, again, launches, len(bed.starter.launched()))
 	}
+	workIdemSameFiles(t, "work build checkout", files, workIdemSnapshot(t, bed.root()))
+	workIdemSameFiles(t, "work build unit records", unitFiles, workIdemSnapshot(t, bed.unitRoot))
 }
 
 func witnessWorkStopRepeat(t *testing.T) {

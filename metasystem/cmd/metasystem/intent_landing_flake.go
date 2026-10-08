@@ -14,11 +14,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-func landingFlakeJudge(installation string, git func(string, ...string) (string, error)) func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) {
-	return landingFlakeJudgeFor(installation, git, false)
+func landingFlakeJudge(installation string, git func(string, ...string) (string, error), installationRel ...string) func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) {
+	return landingFlakeJudgeFor(installation, git, false, installationRel...)
 }
 
-func landingFlakeJudgeFor(installation string, git func(string, ...string) (string, error), gate bool) func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) {
+func landingFlakeJudgeFor(installation string, git func(string, ...string) (string, error), gate bool, installationRel ...string) func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) {
 	return func(checkout, commit string, failed []plain.FailedUnit) (map[string]plain.UnitJudgement, error) {
 		out := map[string]plain.UnitJudgement{}
 		for _, unit := range failed {
@@ -28,9 +28,14 @@ func landingFlakeJudgeFor(installation string, git func(string, ...string) (stri
 		if err != nil || relative == "" {
 			return out, err
 		}
-		prefix, err := filepath.Rel(checkout, installation)
-		if err != nil {
-			return out, err
+		prefix := ""
+		if len(installationRel) > 0 {
+			prefix = installationRel[0]
+		} else {
+			prefix, err = filepath.Rel(checkout, installation)
+			if err != nil {
+				return out, err
+			}
 		}
 		data, err := git(checkout, "show", "origin/main:"+filepath.ToSlash(filepath.Join(prefix, relative)))
 		if err != nil {

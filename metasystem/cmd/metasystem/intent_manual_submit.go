@@ -156,6 +156,17 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	if problem != nil {
 		return *problem
 	}
+	runner := inv.unitRunner()
+	releaseTree, err := runner.ReserveMutation(worktree, id, "submission")
+	if err != nil {
+		return inv.treeFailure(err)
+	}
+	defer func() {
+		if err := releaseTree(); err != nil {
+			fmt.Fprintln(inv.stderr, err)
+		}
+	}()
+
 	install := inv.goalWorktreeInstallation(worktree)
 	data["worktree"] = worktree
 	base, err := conn.endpointTip(original.Path(), endpoint)
@@ -343,6 +354,10 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 	if install != original.Path() {
 		args = append(args, "--selected-installation", original.Path())
 	}
+	if err := releaseTree(); err != nil {
+		return inv.treeFailure(err)
+	}
+	releaseTree = func() error { return nil }
 	result := inv.commitReview(targets, install, id, commit, args)
 	if data, _ := result.Data.(map[string]any); result.Outcome == intentRefused && data["code"] == branch.ReadBriefChangedCode {
 		// The read owner binds a version's read to the brief it was first

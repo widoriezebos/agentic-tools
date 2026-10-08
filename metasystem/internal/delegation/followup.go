@@ -199,6 +199,12 @@ func (s *session) followUp(args []string) error {
 		}
 	}
 	s.dieChild = child
+	if fieldOr(rootRecord, "unknownExaminationRetryFrom") == fieldOr(latest, "jobId") {
+		if err := dispatch.ReservedUnknownExaminationRetry(s.root, fieldOr(latest, "jobId")); err != nil {
+			return s.die(1, err.Error())
+		}
+		s.unknownExaminationRetrySource = fieldOr(latest, "jobId")
+	}
 
 	rebase := &rebaseState{}
 	worktreePath := fieldOr(rootRecord, "workspaceRoot")

@@ -320,7 +320,7 @@ func TestNamedUnitRecoversAnInterruptedFirstCallOnce(t *testing.T) {
 		// Killed after the run record, before the entry said so.
 		{"recorded", []string{"branch", "branch", "round"}, func(UnitRunRecord) bool { return true }, nil},
 		// Killed after the build launch was marked starting.
-		{"launching", []string{"branch", "branch", "branch", "round"}, func(record UnitRunRecord) bool {
+		{"launching", []string{"branch", "branch", "before", "branch", "round"}, func(record UnitRunRecord) bool {
 			return slices.ContainsFunc(record.Rounds[0].Steps, func(step UnitStep) bool { return step.State == StepStarting })
 		}, nil},
 	} {
@@ -447,7 +447,7 @@ func TestNamedUnitCorruptOrStaleEntryFailsWithoutOverwrite(t *testing.T) {
 
 func TestLegacyPlanAdvanceKeepsItsBehaviour(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "round", "branch", "round")
+	fixture := newUnitFixture(t, "", "branch", "round", "new", "branch", "round")
 	first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil {
 		t.Fatal(err)
@@ -533,7 +533,7 @@ func TestNamedUnitRunsThePlanItReservedWhenThePlanIsRewritten(t *testing.T) {
 
 func TestNamedUnitRefusesATamperedRetainedPlanBeforeItsPendingStep(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch")
+	fixture := newUnitFixture(t, "", "branch", "branch", "before")
 	fixture.starter.holdKind = "build"
 	first, err := fixture.runner.AdvanceNamed(fixture.plan)
 	if err != nil || !first.Capped || first.Step != "build" {

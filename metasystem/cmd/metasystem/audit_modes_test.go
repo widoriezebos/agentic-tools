@@ -95,6 +95,7 @@ var auditModes = map[string]auditMode{
 	// G4 delivery.
 	"cmd/metasystem/intent_work.go":           {group: "G4"},
 	"cmd/metasystem/intent_delivery.go":       {group: "G4"},
+	"cmd/metasystem/intent_work_commit.go":    {group: "G4"},
 	"cmd/metasystem/intent_work_rebase.go":    {group: "G4", layout: auditEnforce, messages: auditEnforce},
 	"cmd/metasystem/intent_work_workspace.go": {group: "G4"},
 	"cmd/metasystem/intent_design.go":         {group: "G4"},

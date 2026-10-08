@@ -1,6 +1,9 @@
 package branch
 
-import "github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+)
 
 // BranchReadRepository supplies immutable branch facts and a disposable gate workspace.
 // Each read request uses one repository instance throughout its decision and journal flow.
@@ -44,4 +47,12 @@ func (defaultBranchReadRepository) Detached(repo, commit string) (string, func()
 		return "", nil, err
 	}
 	return detached.Workspace().Dir, detached.Close, nil
+}
+
+func (defaultBranchReadRepository) TransferObligations(repo, endpoint, goalID string) []goal.ReviewObligation {
+	data, err := gitOutput(repo, "show", endpoint+":metasystem/plans/goals/"+goalID+".md")
+	if err != nil {
+		return nil
+	}
+	return transferObligationsFromPage(data)
 }

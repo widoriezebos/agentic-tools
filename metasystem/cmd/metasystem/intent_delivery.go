@@ -54,6 +54,7 @@ func intentDeliveryCommands() []intentCommand {
 	goalFlag := intentFlag{name: "goal", value: "G", usage: "with --commit, or feedback on changes: the goal the subject serves"}
 	return []intentCommand{
 		intentWorkRebaseCommand(),
+		intentWorkCommitCommand(),
 		{
 			object: "work", action: "review", laidOut: true, primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
 			usage: []string{reviewGoalUsage, reviewSubmitUsage, reviewFindingUsage,
@@ -96,6 +97,7 @@ func intentDeliveryCommands() []intentCommand {
 				{name: "commit", value: "SHA", usage: "review one committed version of a goal's work, with --goal"},
 				{name: "dispositions", value: "FILE", usage: "the author's decisions, in the bound file the review wrote"},
 				{name: "retry", value: "N", usage: "examine the subject once more after examination N failed without findings"},
+				reasonFlag("because", "the reason a person accepts the builder's measured size"),
 				{name: "after", value: "COMMIT", usage: "with --changes or --patch: the version (commit) being corrected"},
 				{name: "finding", value: "F", usage: "with G: discharge this finding's obligation with --test (or the fixture proof)"},
 				{name: "test", value: "NAME", usage: "with --finding: the test that proves the finding resolved"},
@@ -142,6 +144,8 @@ func intentDeliveryCommands() []intentCommand {
 				{name: "work", value: "NAME", usage: "the goal's named work to correct"},
 				{name: "after", value: "N", usage: "the attempt being corrected (default: rejoin the same request, else the newest attempt)"},
 				intentBriefFlag,
+				reasonFlag("because", "the reason a person requests a correction despite the recorded review"),
+				{name: "by", value: "NAME", usage: "the proven person requesting the reasoned correction"},
 				{name: "dispositions", value: "FILE", usage: "the bound decisions file of the reviewed examination"},
 			},
 			maxArgs:  1,
@@ -250,13 +254,14 @@ type intentDeliveryOwners struct {
 	landCarried func(request landpath.LandRequest, gate func(root, goalID string) error, release carriedRelease) intentProcessResult
 	// closeOwner runs the delegate lifecycle's close command (the whole
 	// chain close) for an installation root.
-	closeOwner   func(root string, args []string) intentProcessResult
-	executable   func() (string, error)
-	branchRead   func([]string) (branch.BranchReadResult, int, error)
-	branchState  func(root, goalID string) (intentBranchState, error)
-	laneLatest   func(install, goalID, main string) (plain.Entry, bool, error)
-	laneContains func(sha, main string) (bool, error)
-	claimMain    func(root string) (string, error)
+	closeOwner       func(root string, args []string) intentProcessResult
+	executable       func() (string, error)
+	branchRead       func([]string) (branch.BranchReadResult, int, error)
+	branchState      func(root, goalID string) (intentBranchState, error)
+	transferCoverage func(repo, snapshot, endpoint, goalID, unit, commit string) (goal.TransferCoverage, error)
+	laneLatest       func(install, goalID, main string) (plain.Entry, bool, error)
+	laneContains     func(sha, main string) (bool, error)
+	claimMain        func(root string) (string, error)
 	// trailerWorktree is the goal worktree a missing kind trailer may be
 	// amended in (productionTrailerWorktree); nil offers no amend.
 	trailerWorktree func(root, goalID, commit, endpointTip string) string
@@ -348,8 +353,9 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 			return goalBranchReadRun(args, goalBranchReadDependencies{})
 		},
-		branchState:     productionIntentBranchState,
-		trailerWorktree: productionTrailerWorktree,
+		branchState:      productionIntentBranchState,
+		transferCoverage: branch.VerifyTransferCoverage,
+		trailerWorktree:  productionTrailerWorktree,
 		landPrep: func(args []string) (goalBranchLandPrepOutcome, int, error) {
 			return goalBranchLandPrepRun(args, goalBranchLandPrepDependencies{Prepare: branch.PrepareLanding,
 				LoadContract: func(root string) (testpolicy.Contract, error) {
@@ -418,6 +424,10 @@ func productionIntentBranchState(root, goalID string) (intentBranchState, error)
 	}
 	state := intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip, Status: status, ReadsWaived: goal.ReadsWaived(projection.Tree.Live[goalID])}
 	for _, unit := range status.Units[:status.Prefix] {
+		if unit.ReadState == "read transferred" {
+			state.Sources = append(state.Sources, "transferred")
+			continue
+		}
 		attestation, err := branch.ValidateAttestationAt(root, branchTip, endpointTip, goalID, unit.Unit, unit.Commit)
 		if err != nil {
 			return intentBranchState{}, fmt.Errorf("unit %s has no valid attestation: %w", unit.Unit, err)
@@ -519,6 +529,11 @@ func (inv *intentInvocation) returnPathAt(installation, root string, round int64
 }
 
 type intentFinding struct {
+	Class    string `json:"class,omitempty"`
+	Where    string `json:"where,omitempty"`
+	Change   string `json:"change,omitempty"`
+	Resolves string `json:"resolves,omitempty"`
+	Relation string `json:"relation,omitempty"`
 	ID       string `json:"id"`
 	Material bool   `json:"material"`
 	Title    string `json:"title,omitempty"`
@@ -531,11 +546,18 @@ func readIntentFindings(path string) ([]intentFinding, string, error) {
 		return nil, "", err
 	}
 	var result struct {
-		Findings []intentFinding `json:"findings"`
-		Verdict  string          `json:"verdict"`
+		SchemaVersion int             `json:"schemaVersion"`
+		JobID         string          `json:"jobId"`
+		Findings      []intentFinding `json:"findings"`
+		Verdict       string          `json:"verdict"`
 	}
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, "", err
+	}
+	if result.SchemaVersion >= 6 {
+		for index := range result.Findings {
+			result.Findings[index].ID = result.JobID + ":" + fmt.Sprint(index+1)
+		}
 	}
 	return result.Findings, result.Verdict, nil
 }
@@ -2268,6 +2290,11 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 		declared, progress.NoEnd = units, false
 		break
 	}
+	for _, obligation := range state.Status.ReviewObligations {
+		if obligation.TargetUnit != "" && !slices.ContainsFunc(declared, func(row launch.UnitSize) bool { return row.Name == obligation.TargetUnit }) {
+			declared = append(declared, launch.UnitSize{Name: obligation.TargetUnit})
+		}
+	}
 	progress.Declared = len(declared)
 	if progress.NoEnd {
 		for _, unit := range state.Status.Units {
@@ -2277,7 +2304,7 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 		}
 	}
 	clean := func(index int) bool {
-		return state.ReadsWaived || index < state.Status.Prefix || state.Status.Units[index].ReadState == "read clean"
+		return state.ReadsWaived || index < state.Status.Prefix || (state.Status.Units[index].ReadState == "read clean" || state.Status.Units[index].ReadState == "read transferred")
 	}
 	covered := make([]bool, len(state.Status.Units))
 	for _, row := range declared {

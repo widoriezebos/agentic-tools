@@ -22,7 +22,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -102,6 +104,7 @@ func (s *workStarter) StartSupervisor(id, _ string) (identity.Ref, error) {
 			current.State, current.Reason, code = launch.Failed, "fixture-red", 1
 		}
 		current.ExitCode = &code
+		current.FinishedAt = s.m.Now().UTC().Format(time.RFC3339Nano)
 		if record.Kind == "read" {
 			yes := true
 			current.VerdictCounts, current.Measurement.Verdict = &yes, "pass"
@@ -161,6 +164,10 @@ func (g workGit) Run(directory string, _ []string, args ...string) ([]byte, erro
 		return []byte(g.bed.head + "\n"), nil
 	case strings.HasPrefix(joined, "for-each-ref"):
 		return []byte("refs/heads/goal/" + g.bed.id + " " + g.bed.head + "\n"), nil
+	case joined == "write-tree":
+		return []byte("previous-tree\n"), nil
+	case strings.HasPrefix(joined, "diff --cached --binary"):
+		return []byte("diff --git a/unit.go b/unit.go\n--- a/unit.go\n+++ b/unit.go\n+implemented\n"), nil
 	case strings.HasSuffix(joined, "--git-path index"):
 		return []byte(filepath.Join(filepath.Dir(g.bed.worktree), "index") + "\n"), nil
 	case strings.HasSuffix(joined, "--git-path objects"):
@@ -198,10 +205,12 @@ func TestBuildRefusesAStaleEngine(t *testing.T) {
 				brief := bed.brief("engine.md", "Build the unit.\n")
 				args := append([]string{"work", "build", bed.id, "engine", "--brief", brief, "--lines", "5"}, workCheck...)
 				if verb != "build" {
+					bed.starter.fail["proof"] = true
 					code, built, _ := bed.work(args...)
-					if code != 0 {
+					if code != 0 || resultData(t, built)["outcome"] != "proof-red" {
 						t.Fatalf("seed build: %d %+v", code, built)
 					}
+					delete(bed.starter.fail, "proof")
 					args = []string{"work", "revise", bed.id, "--work", "engine", "--brief", brief}
 					if verb == "revise-run" {
 						args = []string{"work", "revise", "run:" + resultData(t, built)["run"].(string), "--brief", brief}
@@ -290,7 +299,10 @@ func TestReadBriefAsksForTheRule(t *testing.T) {
 func TestIntentReviseRefusesUndecidedFindings(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
-	brief := bed.brief("revise.md", "Build the unit.\n")
+	// Correction admission consumes the collected read, including its
+	// examination-qualified finding ids, rather than a prose count.
+	bed.manager.Supervisor = &stopReadStarter{bed: bed, reads: [][]readsubject.Finding{{stopFinding("regression", "a.go")}}}
+	brief := bed.brief("revise.md", "Read each round: yes\nBuild the unit.\n")
 	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "decisions", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	if code != 0 {
 		t.Fatalf("build: %+v", built)
@@ -300,12 +312,10 @@ func TestIntentReviseRefusesUndecidedFindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	report := bed.brief("return.json", `{"findings":[{"id":"F-1","material":true}]}`)
-	record.Subjects = []launch.UnitSubject{{Round: 1, Examination: "critic", ExaminationReturnPath: filepath.Join(bed.root(), report)}}
-	writeQuestionFixture(t, filepath.Join(bed.unitRoot, run, "run.json"), record)
+	finding := record.Rounds[0].Reads[0].Findings[0].ID
 	launched := len(bed.starter.launched())
 	code, refused, _ := bed.work("work", "revise", bed.id, "--work", "decisions", "--brief", brief)
-	if code != 1 || refused.Outcome != intentRefused || refused.Summary != "finding F-1 of round 1 has no decision; nothing was started" ||
+	if code != 1 || refused.Outcome != intentRefused || refused.Summary != "finding "+finding+" of round 1 has no decision; nothing was started" ||
 		!strings.Contains(resultWords(refused), "UNIT_REVISE_UNDECIDED") || refused.Next == nil || !slices.Contains(refused.Next.Argv, "1") || !strings.Contains(refused.Next.Reason, "Decisions on round") || len(bed.starter.launched()) != launched {
 		t.Fatalf("revise: %+v", refused)
 	}
@@ -315,7 +325,24 @@ func TestIntentReviseRefusesUndecidedFindings(t *testing.T) {
 func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	t.Helper()
 	bed := &workBed{intentBed: newIntentBed(t, false, func(file *goal.GoalFile) {
-		file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+		if file.Claimed != nil {
+			if file.StopCapability == nil {
+				file.StopCapability = &goal.StopCapability{Generation: file.Claimed.Revision, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+			}
+			claim, _ := time.Parse(time.RFC3339, file.Claimed.At)
+			shift := time.Date(2026, 9, 1, 9, 55, 0, 0, time.UTC).Sub(claim)
+			move := func(at string) string {
+				parsed, _ := time.Parse(time.RFC3339, at)
+				return parsed.Add(shift).UTC().Format(time.RFC3339)
+			}
+			file.Claimed.At, file.OpenedAt = move(file.Claimed.At), move(file.OpenedAt)
+			for index := range file.History {
+				file.History[index].At = move(file.History[index].At)
+			}
+			if file.Approved != nil {
+				file.Approved.At = move(file.Approved.At)
+			}
+		}
 		if amend != nil {
 			amend(file)
 		}
@@ -336,7 +363,7 @@ func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	}
 	os.WriteFile(filepath.Join(parent, "index"), []byte("index"), 0o600)
 	bed.branchListed = true
-	clock := &workClock{now: time.Date(2026, 9, 25, 12, 0, 0, 0, time.UTC)}
+	clock := &workClock{now: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)}
 	bed.manager = &launch.Manager{Store: launch.Store{Root: filepath.Join(parent, "launch")},
 		Adapters:  map[string]launch.Adapter{"codex-exec": workAdapter{}, "claude-headless": workAdapter{}, "plain-exec": workAdapter{}},
 		Processes: workProcesses{}, Prober: workProber{}, Now: clock.Now, Sleep: clock.Sleep, Grace: time.Second, Poll: time.Second}
@@ -385,7 +412,10 @@ func (b *workBed) workOwners() intentOwners {
 		designGate: b.designGate,
 		config:     b.config,
 		units: func(stateroot.Layout) *launch.UnitRunner {
-			return &launch.UnitRunner{Manager: b.manager, Git: workGit{b}, Root: b.unitRoot}
+			// Repository and policy observations belong to this fixture's
+			// unit owner; neither reads the machine's checkout state.
+			return &launch.UnitRunner{Manager: b.manager, Git: workGit{b}, Root: b.unitRoot,
+				ReviewPolicy: func() (string, error) { return "auto", nil }}
 		},
 		git: func(dir string, args ...string) ([]byte, error) {
 			joined := strings.Join(args, " ")
@@ -703,6 +733,7 @@ var (
 // workApprovedBox gives the fixture goal an approved box with two review
 // rounds, the limit a public build reads.
 func workApprovedBox(file *goal.GoalFile) {
+
 	if file.Budget == nil {
 		file.Budget = &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 1}
 	}
@@ -778,6 +809,10 @@ func TestIntentBuildSizeInput(t *testing.T) {
 		t.Fatalf("build admission size: %+v %v", record.DeclaredLines, err)
 	}
 	rowed := bed.brief("rowed.md", "Build it.\n\n| Unit | Lines |\n| --- | --- |\n| rowed | 75 |\n")
+	// Each admitted unit owns its tree until publication or cancellation.
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(data["run"].(string)); err != nil {
+		t.Fatal(err)
+	}
 	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "rowed", "--brief", rowed}, workCheck...)...)
 	if code != 0 || result.Outcome != intentConfirmed || !strings.Contains(string(must(os.ReadFile(filepath.Join(resultData(t, result)["inputs"].(string), "build-brief.md")))), "| rowed | 75 |") {
 		t.Fatalf("units row: code=%d %+v", code, result)
@@ -931,7 +966,8 @@ func TestBriefLineAsksForTheRead(t *testing.T) {
 
 // TestIntentBuildResume drives one unit from a red proof through a retry, a
 // resume, a refused changed input, a follow-up round, a capped wait and its
-// continuation, and checks it only ever ends awaiting judgement.
+// continuation, and checks it only ever ends awaiting judgement. A failed
+// command without attribution evidence holds for a reasoned revision.
 func TestIntentBuildResume(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
@@ -941,7 +977,8 @@ func TestIntentBuildResume(t *testing.T) {
 	code, result, _ := bed.work(args...)
 	data := resultData(t, result)
 	run := data["run"].(string)
-	if code != 0 || result.Outcome != intentConfirmed || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" {
+	if code != 1 || result.Outcome != intentRefused || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" ||
+		data["stop"].(map[string]any)["handoff"] != "stopped unclassified" {
 		t.Fatalf("red proof: code=%d %+v", code, result)
 	}
 	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"build", "proof"}) {
@@ -949,7 +986,7 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 	for _, again := range [][]string{args, {"work", "build", "run:" + run}, {"work", "wait", "run:" + run}} {
 		code, repeat, _ := bed.work(again...)
-		if code != 0 || resultData(t, repeat)["run"] != run || resultData(t, repeat)["outcome"] != "proof-red" || len(bed.starter.launched()) != 2 {
+		if code != 1 || resultData(t, repeat)["run"] != run || resultData(t, repeat)["outcome"] != "proof-red" || len(bed.starter.launched()) != 2 {
 			t.Fatalf("%v: code=%d %+v launches=%v", again, code, repeat, bed.starter.launched())
 		}
 	}
@@ -960,7 +997,7 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 	delete(bed.starter.fail, "proof")
 	followUp := bed.brief("follow-up.md", "Fix the red proof.\n")
-	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp)
+	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp, "--reason", "Correct the unclassified proof", "--by", "Wido")
 	data = resultData(t, result)
 	if code != 0 || result.Outcome != intentConfirmed || data["run"] != run || data["round"].(float64) != 2 || data["outcome"] != "green" || data["state"] != "awaiting-judgement" {
 		t.Fatalf("follow-up: code=%d %+v", code, result)
@@ -969,6 +1006,9 @@ func TestIntentBuildResume(t *testing.T) {
 		t.Fatalf("follow-up launches=%v", launched)
 	}
 
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(run); err != nil {
+		t.Fatal(err)
+	}
 	bed.starter.hold = "build"
 	held := append([]string{"work", "build", bed.id, "held", "--brief", brief, "--lines", "20"}, workCheck...)
 	code, result, _ = bed.work(held...)
@@ -981,6 +1021,7 @@ func TestIntentBuildResume(t *testing.T) {
 	bed.manager.Store.Update(buildLaunch, func(record *launch.Record) error {
 		exit := 0
 		record.State, record.ExitCode = launch.Completed, &exit
+		record.FinishedAt = bed.manager.Now().UTC().Format(time.RFC3339Nano)
 		return nil
 	})
 	bed.manager.Settings.ReadRuntime = "codex"
@@ -1209,7 +1250,8 @@ func TestIntentReviseHonoursCountedCap(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
 	bed.manager.Settings.UnitCountedRounds = 1
-	brief := bed.brief("cap.md", "Build the unit.\n")
+	bed.manager.Supervisor = &stopReadStarter{bed: bed, reads: [][]readsubject.Finding{{stopFinding("regression", "a.go")}}}
+	brief := bed.brief("cap.md", "Read each round: yes\nBuild the unit.\n")
 	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "capped unit", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	if code != 0 {
 		t.Fatalf("build: code=%d %+v", code, built)
@@ -1221,8 +1263,11 @@ func TestIntentReviseHonoursCountedCap(t *testing.T) {
 		{"work", "revise", "run:" + run, "--brief", brief},
 	} {
 		code, refused, _ := bed.work(args...)
-		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_ROUND_CAP") ||
-			!strings.Contains(refused.Summary, "unit capped unit has used its 1 counted rounds; nothing was started") ||
+		// The frozen allowance is decided when the read arrives, before
+		// another correction asks the runner for a round.
+		stop := resultData(t, refused)["stop"].(map[string]any)
+		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_STOPPED") ||
+			stop["class"] != "correction allowance spent" || stop["attempt"] != float64(1) || stop["budget"] != float64(1) ||
 			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "review", bed.id, "--work", "capped unit"}) || len(bed.starter.launched()) != launched {
 			t.Fatalf("cap refusal: code=%d %+v launches=%v", code, refused, bed.starter.launched())
 		}
@@ -1243,10 +1288,29 @@ func TestIntentReviseHonoursDivergence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	yes := true
 	record.MaxRounds = 20
-	record.Rounds = []launch.UnitRound{{Number: 1, Steps: []launch.UnitStep{{Name: "read", VerdictCounts: &yes, Verdict: "VERDICT: fix first (3 material findings)"}}},
-		{Number: 2, Steps: []launch.UnitStep{{Name: "read", VerdictCounts: &yes, Verdict: "VERDICT: fix first (3 material findings)"}}}}
+	// Structured completed reads own progress; prose verdicts cannot
+	// supply a missing count or replace their collection decision.
+	collect := func(id, class, prefix string) readsubject.Read {
+		var findings []readsubject.Finding
+		for index := range 3 {
+			findings = append(findings, stopFinding(class, fmt.Sprintf("%s%d.go", prefix, index)))
+		}
+		data, err := json.Marshal(map[string]any{"findings": findings, "verdictMaterialCount": 3})
+		if err != nil {
+			t.Fatal(err)
+		}
+		read, err := readsubject.Collect(id, readsubject.ReadSubject{}, "fixture-engine", "fixture-reader", "return.json", data, "material=3")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return read
+	}
+	prior := collect("read-1", "regression", "old")
+	current := collect("read-2", "scope", "new")
+	stop := loopstop.Decide(loopstop.Input{Stop: loopstop.Stop{Loop: "unit-round", Subject: bed.id + "/stopped unit/" + run, Attempt: 2, Budget: 3, Handoff: "split correction"}, Prior: []readsubject.Read{prior}, Read: &current, Policy: "auto"})
+	record.Rounds = []launch.UnitRound{{Number: 1, Reads: []readsubject.Read{prior}},
+		{Number: 2, Reads: []readsubject.Read{current}, Stop: &stop}}
 	data, _ := json.Marshal(record)
 	if err := os.WriteFile(filepath.Join(bed.unitRoot, run, "run.json"), data, 0o600); err != nil {
 		t.Fatal(err)
@@ -1254,9 +1318,12 @@ func TestIntentReviseHonoursDivergence(t *testing.T) {
 	launched := len(bed.starter.launched())
 	for _, args := range [][]string{{"work", "revise", bed.id, "--work", "stopped unit", "--brief", brief}, {"work", "revise", "run:" + run, "--brief", brief}} {
 		code, refused, _ := bed.work(args...)
-		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_ROUND_DIVERGENT") ||
-			refused.Summary != "the last two reads of stopped unit found 3, then 3 material findings, 0 of them repeats; nothing was started" ||
-			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "build", bed.id, "--work", "NEW", "--brief", "FILE", "--check", "..."}) || len(bed.starter.launched()) != launched {
+		decision := resultData(t, refused)["stop"].(map[string]any)
+		measure := decision["measure"].(map[string]any)
+		if code != 1 || refused.Outcome != intentRefused || !strings.Contains(resultWords(refused), "UNIT_STOPPED") ||
+			decision["class"] != "material findings did not fall" ||
+			!reflect.DeepEqual(measure["previous"], []any{"3"}) || !reflect.DeepEqual(measure["now"], []any{"3"}) ||
+			!slices.Equal(refused.Next.Argv, []string{"metasystem", "work", "review", bed.id, "--work", "stopped unit"}) || len(bed.starter.launched()) != launched {
 			t.Fatalf("divergence refusal: code=%d %+v", code, refused)
 		}
 	}

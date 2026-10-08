@@ -247,6 +247,9 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 	// Decision 7: the answer receipt is no longer posted; a recorded answer,
 	// or a receipted one from an older engine, closes locally.
 	if a.Phase == "recorded" || a.Phase == "receipted" {
+		if q.UnitStop != nil {
+			return nil
+		}
 		a.Phase = "closed"
 		q.State = "closed"
 		if err := writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {

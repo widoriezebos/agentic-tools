@@ -54,6 +54,9 @@ func runIntentWorkRebase(inv *intentInvocation) int {
 			summary = "goal " + id + " is on main; carried reviews and published its branch"
 		}
 	}
+	if result.Behind > 0 {
+		summary = fmt.Sprintf("goal %s is %d commits behind current remote main; its branch was %s", id, result.Behind, result.State)
+	}
 	lines := append(inv.rebaseReviewLines(id, result), warning...)
 	return inv.render(intentResult{Targets: targets, Outcome: outcome, Summary: summary, Data: result, text: lines})
 }
@@ -89,6 +92,19 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 			next:    inv.publicArgv("work", "build", id), nextReason: "prepares the goal's worktree"}
 	}
 	root := inv.goalBranchInstallation(id)
+	runner := inv.unitRunner()
+	releaseTree, err := runner.ReserveMutation(root, id, "rebase")
+	if err != nil {
+		result := inv.treeFailure(err)
+		return branch.RebaseResult{}, nil, &result
+	}
+
+	defer func() {
+		if err := releaseTree(); err != nil {
+			fmt.Fprintln(inv.stderr, err)
+		}
+	}()
+
 	conn := inv.connection()
 	endpoint, err := conn.endpoint(root)
 	if err != nil {
@@ -106,7 +122,7 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 	err = conn.section(root, func(_ func(func() error) error) error {
 		var err error
 		result, err = conn.rebase(branch.RebaseRequest{Repo: root, Remote: endpoint.Remote, EndpointTip: mainTip,
-			GoalID: id, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport, Resolve: inv.resolveRebaseRound(id),
+			GoalID: id, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport, Resolve: inv.resolveRebaseRound(id, runner),
 			Answer: func(question string) (string, error) {
 				q, err := channel.ReadQuestion(inv.layout.InstallationRoot.Path(), question)
 				if err != nil {
@@ -136,9 +152,8 @@ func (inv *intentInvocation) rebaseGoal(id string) (branch.RebaseResult, []strin
 	return result, nil, nil
 }
 
-func (inv *intentInvocation) resolveRebaseRound(id string) func(branch.RebaseResolution) (string, error) {
+func (inv *intentInvocation) resolveRebaseRound(id string, runner *launch.UnitRunner) func(branch.RebaseResolution) (string, error) {
 	return func(stop branch.RebaseResolution) (string, error) {
-		runner := inv.unitRunner()
 		work, problem := inv.goalWork(id)
 		if problem != nil {
 			return "", errors.New(problem.Summary)

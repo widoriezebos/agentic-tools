@@ -2,6 +2,8 @@ package branch
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"slices"
 	"strings"
 )
 
@@ -14,22 +16,31 @@ type UnitStatus struct {
 }
 
 type Status struct {
-	Tip     string
-	Commits []Commit
-	Units   []UnitStatus
-	Prefix  int
+	Tip               string
+	Commits           []Commit
+	Units             []UnitStatus
+	Prefix            int
+	ReviewObligations []goal.ReviewObligation
 }
 
 type statusDependencies struct {
-	validatedRange func(repo, endpointTip, tip, goalID string) ([]Commit, error)
-	kind           func(repo, commit, goalID string) (KindInfo, error)
-	attestation    func(repo, snapshot, endpointTip, goalID, unit, commit string) (Attestation, error)
-	localTip       func(repo, ref string) (string, bool, error)
-	gitOutput      func(repo string, args ...string) ([]byte, error)
+	validatedRange      func(repo, endpointTip, tip, goalID string) ([]Commit, error)
+	kind                func(repo, commit, goalID string) (KindInfo, error)
+	attestation         func(repo, snapshot, endpointTip, goalID, unit, commit string) (Attestation, error)
+	localTip            func(repo, ref string) (string, bool, error)
+	gitOutput           func(repo string, args ...string) ([]byte, error)
+	transferObligations func(repo, endpoint, goalID string) []goal.ReviewObligation
 }
 
 func defaultStatusDependencies() statusDependencies {
-	return statusDependencies{ValidateRange, KindOf, ValidateAttestationAt, localBranchTip, gitOutput}
+	return statusDependencies{validatedRange: ValidateRange, kind: KindOf, attestation: ValidateAttestationAt, localTip: localBranchTip, gitOutput: gitOutput,
+		transferObligations: func(repo, endpoint, goalID string) []goal.ReviewObligation {
+			data, err := gitOutput(repo, "show", endpoint+":metasystem/plans/goals/"+goalID+".md")
+			if err != nil {
+				return nil
+			}
+			return transferObligationsFromPage(data)
+		}}
 }
 
 func statusDependenciesWithRaw(read func(string, ...string) ([]byte, error)) statusDependencies {
@@ -77,8 +88,14 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 			}
 		}
 	}
+	if deps.transferObligations != nil {
+		result.ReviewObligations = deps.transferObligations(repo, endpointTip, goalID)
+		applyTransferCoverage(&result, func(unit UnitStatus) (Attestation, error) {
+			return deps.attestation(repo, tip, endpointTip, goalID, unit.Unit, unit.Commit)
+		})
+	}
 	for _, unit := range result.Units {
-		if unit.ReadState != "read clean" {
+		if unit.ReadState != "read clean" && unit.ReadState != "read transferred" {
 			break
 		}
 		result.Prefix++
@@ -168,4 +185,53 @@ func checkParkBranch(repo, goalID, next string, readRemote ParkBranchRemoteReade
 		}
 	}
 	return ParkBranchState{Branch: true, Summary: fmt.Sprintf("goal/%s at %s has no unit", goalID, originTip)}, nil
+}
+
+func transferObligationsFromPage(data []byte) []goal.ReviewObligation {
+	if !strings.Contains(string(data), "- ReviewObligation:") {
+		return nil
+	}
+	page, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		return nil
+	}
+	return page.ReviewObligations
+}
+
+func applyTransferCoverage(status *Status, read func(UnitStatus) (Attestation, error)) {
+	for index, source := range status.Units {
+		found, complete := false, true
+		for _, obligation := range status.ReviewObligations {
+			if obligation.SourceUnit != source.Unit || obligation.TargetUnit == "" {
+				continue
+			}
+			found = true
+			if obligation.State != "discharged" || obligation.CoverageRead == "" || obligation.CoverageCommit == "" || obligation.SourceCommit != source.Commit {
+				complete = false
+				break
+			}
+			destinationFound := false
+			for _, destination := range status.Units {
+				if destination.Unit != obligation.TargetUnit || destination.Commit != obligation.CoverageCommit || destination.ReadState != "read clean" {
+					continue
+				}
+				att, err := read(destination)
+				if err != nil {
+					continue
+				}
+				coverage := coverageOf(att)
+				if coverage.ReadID != obligation.CoverageRead || !slices.Contains(coverage.Findings, obligation.OriginalFinding) || !slices.Contains(coverage.SourceCommits, source.Commit) {
+					continue
+				}
+				destinationFound = true
+			}
+			if !destinationFound {
+				complete = false
+				break
+			}
+		}
+		if found && complete {
+			status.Units[index].ReadState = "read transferred"
+		}
+	}
 }

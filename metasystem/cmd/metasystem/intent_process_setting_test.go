@@ -114,10 +114,10 @@ func TestProcessSettingRecoveryAndPreservation(t *testing.T) {
 
 func TestProcessOrdinaryCheckPublicBuild(t *testing.T) {
 	t.Parallel()
-	bed := newWorkBed(t)
-	bed.lineage = "builder"
-	brief := bed.brief("ordinary.md", "Build this unit.\n")
 	for _, selection := range []string{"^One$", "^Two$"} {
+		bed := newWorkBed(t)
+		bed.lineage = "builder"
+		brief := bed.brief("ordinary.md", "Build this unit.\n")
 		check := []string{"go", "test", "-timeout", "30m", "-run", selection, "./fixture"}
 		args := append([]string{"work", "build", bed.id, "--work", strings.Trim(selection, "^$"), "--brief", brief, "--lines", "5", "--check"}, check...)
 		code, result, output := bed.work(args...)

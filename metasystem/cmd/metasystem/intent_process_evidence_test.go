@@ -90,7 +90,11 @@ func TestProcessEstimatePublicBuild(t *testing.T) {
 			t.Fatal("new worktree did not create a distinct run")
 		}
 	}
-	planPath := resultData(t, built)["plan"].(string)
+	record, err := (&launch.UnitRunner{Root: first.unitRoot}).Status(resultData(t, built)["run"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	planPath := record.Plan
 	planBytes := mustRead(t, planPath)
 	for _, damaged := range []string{
 		strings.Replace(string(planBytes), `"elapsedMinutes": 17.5`, `"elapsedMinutes": -1`, 1),
@@ -158,7 +162,10 @@ func TestProcessEstimateAdmissionPublicBuild(t *testing.T) {
 					if person {
 						// An older admission may have retained a null estimate.
 						key := fmt.Sprintf("%x", sha256.Sum256([]byte("01M4189Q0RH1NSPD3PNAS6G177\x00"+bed.id+"\x00evidence")))
-						path := filepath.Join(filepath.Dir(filepath.Dir(plan.Path)), ".estimates", key+".json")
+						path := filepath.Join(bed.unitRoot, ".estimates", key+".json")
+						if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+							t.Fatal(err)
+						}
 						if err := os.WriteFile(path, []byte("null\n"), 0o600); err != nil {
 							t.Fatal(err)
 						}
@@ -371,7 +378,7 @@ func TestProcessStepEvidencePublicBuild(t *testing.T) {
 	}
 	check(1)
 	fix := bed.brief("correction.md", "Correct the unit.\n")
-	if code, result, output := bed.work("work", "revise", bed.id, "--work", "evidence", "--after", "1", "--brief", filepath.Join(bed.root(), fix)); code != 0 {
+	if code, result, output := bed.work("work", "revise", bed.id, "--work", "evidence", "--after", "1", "--brief", filepath.Join(bed.root(), fix), "--reason", "Correct the unit", "--by", "Wido"); code != 0 {
 		t.Fatalf("correction exit %d: %+v %s", code, result, output)
 	}
 	check(2)

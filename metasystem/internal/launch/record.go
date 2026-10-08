@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -69,6 +70,8 @@ func (m Measurement) TotalTokens() int64 {
 }
 
 type Record struct {
+	Read                *readsubject.Read          `json:"read,omitempty"`
+	ReadError           string                     `json:"readError,omitempty"`
 	ID                  string                     `json:"id"`
 	Kind                string                     `json:"kind"`
 	Adapter             string                     `json:"adapter"`

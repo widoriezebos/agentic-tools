@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 // GoalFile is one parsed goal file.
@@ -175,7 +176,13 @@ func (r RiskRecord) scoreArgs() string {
 	return fmt.Sprintf("severity=%d,novelty=%d,exposure=%d,accumulation=%d", r.Severity, r.Novelty, r.Exposure, r.Accumulation)
 }
 
-type ReviewObligation struct{ Finding, Chain, Artifact, Test, Fixture, State string }
+type ReviewObligation struct {
+	OriginalEvidence                                                     readsubject.Finding
+	Finding, Chain, Artifact, Test, Fixture, State                       string
+	SourceUnit, TargetUnit, OriginalRead, OriginalFinding, StopReference string
+	SourceCommit, CoverageRead, CoverageCommit                           string
+	TransferredOnce                                                      bool
+}
 type AcceptedRiskRecord struct{ Finding, Chain, By, Opid string }
 
 // ReadItem is one non-breaking finding returned by an independent read.
@@ -716,9 +723,15 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		}
 	}
 	for _, obligation := range f.ReviewObligations {
+		if err := validateTransfer(obligation); err != nil {
+			addProblem("ReviewObligation: %v", err)
+		}
 		if !bareReviewID(obligation.Finding) || !bareReviewID(obligation.Chain) || obligation.Artifact == "" || obligation.Test == "" || (obligation.State != "open" && obligation.State != "discharged") {
 			addProblem("ReviewObligation is incomplete or malformed")
 		}
+	}
+	if err := validateTransferGraph(nil, f.ReviewObligations); err != nil {
+		addProblem("ReviewObligation: %v", err)
 	}
 	for _, risk := range f.AcceptedRisks {
 		if !bareReviewID(risk.Finding) || !bareReviewID(risk.Chain) || !bareReviewID(risk.By) || !bareReviewID(risk.Opid) {
@@ -1148,12 +1161,24 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			addProblem("ReviewObligation: fixture= %v", err)
 			return
 		}
-		rec, err := parseKVRecord(without, []string{"finding", "chain", "state"}, nil, "")
+		without, evidenceJSON, _, err := cutQuotedRecordField(without, "originalEvidence")
+		if err != nil {
+			addProblem("ReviewObligation: originalEvidence= %v", err)
+			return
+		}
+		var originalEvidence readsubject.Finding
+		if evidenceJSON != "" {
+			if err := json.Unmarshal([]byte(evidenceJSON), &originalEvidence); err != nil {
+				addProblem("ReviewObligation: originalEvidence= %v", err)
+				return
+			}
+		}
+		rec, err := parseKVRecord(without, []string{"finding", "chain", "state"}, []string{"sourceUnit", "targetUnit", "originalRead", "originalFinding", "stopReference", "sourceCommit", "coverageRead", "coverageCommit", "transferredOnce"}, "")
 		if err != nil {
 			addProblem("ReviewObligation: %v", err)
 			return
 		}
-		f.ReviewObligations = append(f.ReviewObligations, ReviewObligation{Finding: rec["finding"], Chain: rec["chain"], Artifact: artifact, Test: test, Fixture: fixture, State: rec["state"]})
+		f.ReviewObligations = append(f.ReviewObligations, ReviewObligation{OriginalEvidence: originalEvidence, Finding: rec["finding"], Chain: rec["chain"], Artifact: artifact, Test: test, Fixture: fixture, State: rec["state"], SourceUnit: rec["sourceUnit"], TargetUnit: rec["targetUnit"], OriginalRead: rec["originalRead"], OriginalFinding: rec["originalFinding"], StopReference: rec["stopReference"], SourceCommit: rec["sourceCommit"], CoverageRead: rec["coverageRead"], CoverageCommit: rec["coverageCommit"], TransferredOnce: rec["transferredOnce"] == "true"})
 	case "AcceptedRisk":
 		rec, err := parseKVRecord(value, []string{"finding", "chain", "by", "opid"}, nil, "")
 		if err != nil {
@@ -1895,6 +1920,16 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- ReviewObligation: finding=%s chain=%s artifact=%s test=%s", obligation.Finding, obligation.Chain, strconv.Quote(obligation.Artifact), strconv.Quote(obligation.Test))
 		if obligation.Fixture != "" {
 			fmt.Fprintf(&b, " fixture=%s", strconv.Quote(obligation.Fixture))
+		}
+		if obligation.TargetUnit != "" {
+			evidence, _ := json.Marshal(obligation.OriginalEvidence)
+			fmt.Fprintf(&b, " originalEvidence=%s", strconv.Quote(string(evidence)))
+			fmt.Fprintf(&b, " sourceUnit=%s targetUnit=%s originalRead=%s originalFinding=%s stopReference=%s transferredOnce=%t", obligation.SourceUnit, obligation.TargetUnit, obligation.OriginalRead, obligation.OriginalFinding, obligation.StopReference, obligation.TransferredOnce)
+			for _, field := range []struct{ name, value string }{{"sourceCommit", obligation.SourceCommit}, {"coverageRead", obligation.CoverageRead}, {"coverageCommit", obligation.CoverageCommit}} {
+				if field.value != "" {
+					fmt.Fprintf(&b, " %s=%s", field.name, field.value)
+				}
+			}
 		}
 		fmt.Fprintf(&b, " state=%s\n", obligation.State)
 	}

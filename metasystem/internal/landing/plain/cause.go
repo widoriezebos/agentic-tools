@@ -2,24 +2,13 @@ package plain
 
 import (
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"slices"
 	"strings"
 	"time"
 )
 
-// Cause records what a red check or return demonstrates and where its evidence lives.
-type Cause struct {
-	Kind     string   `json:"kind"`
-	Goal     string   `json:"goal,omitempty"`
-	SHA      string   `json:"sha,omitempty"`
-	Name     string   `json:"name,omitempty"`
-	Tests    []string `json:"tests,omitempty"`
-	Evidence string   `json:"evidence,omitempty"`
-}
-
-func (c Cause) Valid() bool {
-	return slices.Contains([]string{"own", "main", "other", "flake", "environment", "unclassified"}, c.Kind)
-}
+type Cause = loopstop.Cause
 
 // GoalSHA identifies a hand-in contained in the checked commit.
 type GoalSHA struct {

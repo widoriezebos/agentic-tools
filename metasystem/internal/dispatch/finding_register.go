@@ -37,6 +37,11 @@ func init() {
 	// These fields are written only by the locked finding-register owner.
 	// Register them here so generic record transitions cannot pre-seed proof.
 	dedicatedMetadataFields[closureField] = true
+	dedicatedMetadataFields["read"] = true
+	dedicatedMetadataFields["readDigest"] = true
+	dedicatedMetadataFields["unknownExaminationRetryFrom"] = true
+	dedicatedMetadataFields["inheritedFindings"] = true
+	dedicatedMetadataFields["examinationRetryOf"] = true
 	dedicatedMetadataFields[findingRegisterSubjectDigestField] = true
 	dedicatedMetadataFields[cleanReadRoundsField] = true
 	dedicatedMetadataFields[materialByRoundField] = true
@@ -49,6 +54,12 @@ type registerFinding struct {
 	RigorClass     critiqueModel.RigorClass
 	Grain          string
 	Fixture        string
+	Class          string
+	Where          string
+	Change         string
+	Resolves       string
+	Relation       string
+	TransferStop   string
 	FactsDigest    string
 	Facts          any
 	Artifact       string
@@ -140,7 +151,14 @@ func (subject reviewedSubject) String() string {
 // cross-root conflict check and the root-record write. A retry for an already
 // folded round returns unchanged without reading or publishing its return.
 func CritiqueRegisterAdvance(repoRoot, rootJob, roundJob string) (outcome string, err error) {
-	return critiqueRegisterAdvance(repoRoot, rootJob, roundJob, gitCritiqueSubjectFacts{})
+	return CritiqueRegisterAdvanceWithFacts(repoRoot, rootJob, roundJob, gitCritiqueSubjectFacts{})
+}
+
+// CritiqueRegisterAdvanceWithFacts folds a completed return against the
+// supplied repository subject facts. Collection and register ownership are
+// identical to CritiqueRegisterAdvance.
+func CritiqueRegisterAdvanceWithFacts(repoRoot, rootJob, roundJob string, facts CritiqueSubjectFacts) (string, error) {
+	return critiqueRegisterAdvance(repoRoot, rootJob, roundJob, facts)
 }
 
 func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueSubjectFacts) (outcome string, err error) {
@@ -269,6 +287,46 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 				} else {
 					var demotions []any
 					version, _ := numInt(result["schemaVersion"])
+					if role == "code-critic" && version == 6 {
+						read, err := CollectExamination(repoRoot, roundJob)
+						if err != nil {
+							return err
+						}
+						data, digest := read.Canonical()
+						var value any
+						if err := json.Unmarshal(data, &value); err != nil {
+							return err
+						}
+						root["read"], root["readDigest"] = value, digest
+						readPath := filepath.Join(filepath.Dir(resultPath), "read.json")
+						if prior, err := os.ReadFile(readPath); err == nil {
+							if string(prior) != string(data) {
+								return fmt.Errorf("examination %s immutable read changed", roundJob)
+							}
+						} else if !os.IsNotExist(err) {
+							return err
+						} else if _, err := atomicWriteText(readPath, data); err != nil {
+							return err
+						}
+						for i, raw := range findings {
+							f := raw.(map[string]any)
+							old := asString(f["id"])
+							f["id"] = read.Findings[i].ID
+							rigor, _ := result["rigor"].([]any)
+							for _, rawRow := range rigor {
+								row, _ := rawRow.(map[string]any)
+								if asString(row["findingId"]) == old {
+									row["findingId"] = read.Findings[i].ID
+								}
+							}
+						}
+					}
+					if role == "code-critic" && version == 6 {
+						register, registerErr = admitInheritedResolutions(register, root["inheritedFindings"], findings)
+						if registerErr != nil {
+							return registerErr
+						}
+					}
 					advanced, demotions, roundMaterial, registerErr = foldCritiqueFindingsVersioned(register, role, roundJob, findings, result["rigor"], version, subject, round)
 					if registerErr != nil {
 						return registerErr
@@ -299,7 +357,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 			if accountingErr != nil {
 				return malformedRoundAccounting(rootJob, accountingErr)
 			}
-			if !cancelledRound && !accounting.consumedMissing {
+			if !cancelledRound && !accounting.consumedMissing && asString(roundRecord["examinationRetryOf"]) == "" {
 				accounting.consumed++
 			}
 			root[reviewRoundLimitField] = accounting.limit
@@ -381,7 +439,7 @@ func critiqueRoundAccountingWithReads(repoRoot string, state critiqueState, root
 			continue
 		}
 		status := asString(record["status"])
-		if status == "completed" || status == "failed" {
+		if (status == "completed" || status == "failed") && jobID != asString(root["unknownExaminationRetryFrom"]) && asString(record["examinationRetryOf"]) == "" {
 			account.consumed++
 		}
 	}
@@ -1328,6 +1386,11 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 	for index, raw := range items {
 		entry, ok := raw.(map[string]any)
 		fieldCount := len(entry)
+		for _, extra := range []string{"class", "where", "change", "resolves", "relation", "transferStop"} {
+			if _, present := entry[extra]; present {
+				fieldCount--
+			}
+		}
 		var placeholderRound int64
 		if value, marked := entry["placeholderRound"]; marked {
 			var roundOK bool
@@ -1366,6 +1429,8 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			EvidenceDigest: asString(entry["evidenceDigest"]),
 			AcceptedDigest: asString(acceptedDigest),
 		}
+		finding.Class, finding.Where, finding.Change = asString(entry["class"]), asString(entry["where"]), asString(entry["change"])
+		finding.Resolves, finding.Relation, finding.TransferStop = asString(entry["resolves"]), asString(entry["relation"]), asString(entry["transferStop"])
 		finding.PlaceholderRound = placeholderRound
 		if fieldCount >= 14 {
 			finding.Grain = asString(entry["grain"])
@@ -1380,7 +1445,7 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 		if finding.FindingID == "" || finding.Critic == "" || !finding.RigorClass.Valid() || (finding.Grain != "mechanical" && finding.Grain != "invariant") ||
 			!hexDigest64.MatchString(finding.FactsDigest) || !hexDigest64.MatchString(finding.EvidenceDigest) ||
 			!ok || finding.Multiplicity < 1 ||
-			(finding.Status != "open" && finding.Status != "resolved" && finding.Status != "disputed" && finding.Status != "deferred" && finding.Status != "accepted-risk") {
+			(finding.Status != "open" && finding.Status != "resolved" && finding.Status != "disputed" && finding.Status != "deferred" && finding.Status != "accepted-risk" && finding.Status != "transferred") {
 			return nil, fmt.Errorf("entry %d has invalid canonical values", index)
 		}
 		if fieldCount >= 13 {
@@ -1391,7 +1456,7 @@ func decodeFindingRegister(value any) ([]registerFinding, error) {
 			if !unresolved && finding.Resolution == "" {
 				return nil, fmt.Errorf("entry %d is non-open without a resolution", index)
 			}
-			validResolution := finding.Status == "resolved" && (finding.Resolution == "withdrawn" || finding.Resolution == "out-of-scope" ||
+			validResolution := finding.Status == "transferred" && finding.Resolution == "transferred" && finding.TransferStop != "" || finding.Status == "resolved" && (finding.Resolution == "withdrawn" || finding.Resolution == "out-of-scope" ||
 				finding.Resolution == "refuted" || finding.Resolution == "accepted" || finding.Resolution == "folded" || readsubject.SupersededPlaceholder(entry)) ||
 				finding.Status == "deferred" && finding.Resolution == "deferred" && finding.DecisionOpID != "" ||
 				finding.Status == "accepted-risk" && finding.Resolution == "accepted-risk" && finding.DecisionOpID != ""
@@ -1444,6 +1509,12 @@ func encodeFindingRegister(register []registerFinding) []any {
 		if finding.PlaceholderRound > 0 {
 			entry["placeholderRound"] = finding.PlaceholderRound
 		}
+		if finding.Class != "" {
+			entry["class"], entry["where"], entry["change"], entry["resolves"], entry["relation"] = finding.Class, finding.Where, finding.Change, finding.Resolves, finding.Relation
+		}
+		if finding.TransferStop != "" {
+			entry["transferStop"] = finding.TransferStop
+		}
 		items[index] = entry
 	}
 	return items
@@ -1456,12 +1527,16 @@ type critiqueSubject struct {
 	facts          critiqueSubjectFacts
 }
 
-type critiqueSubjectFacts interface {
+// CritiqueSubjectFacts supplies the immutable repository facts used to bind
+// a critic's artifacts to its reviewed subject.
+type CritiqueSubjectFacts interface {
 	ChangedPaths(root, commit string) ([]string, error)
 	CommitTree(root, commit string) (string, error)
 	InstallPrefix(root string) (string, error)
 	ArtifactAbsent(root, tree, path string) bool
 }
+
+type critiqueSubjectFacts = CritiqueSubjectFacts
 
 type gitCritiqueSubjectFacts struct{}
 
@@ -1665,6 +1740,15 @@ func foldCritiqueFindingsVersioned(register []registerFinding, role, roundJob st
 		if !materialOK {
 			continue
 		}
+		if resolvedID := asString(finding["resolves"]); resolvedID != "" {
+			priorIndex, present := byID[resolvedID]
+			if !present || advanced[priorIndex].Class != asString(finding["class"]) || advanced[priorIndex].Where != asString(finding["where"]) {
+				return nil, nil, 0, fmt.Errorf("finding %s resolves unknown or different prior evidence %s", id, resolvedID)
+			}
+			if !material {
+				advanced[priorIndex].Status, advanced[priorIndex].Resolution = "resolved", "withdrawn"
+			}
+		}
 		existingIndex, exists := byID[id]
 		row := takeRigorRow(rigorRows, asString(finding["id"]))
 		artifact := asString(row["artifact"])
@@ -1708,6 +1792,7 @@ func foldCritiqueFindingsVersioned(register []registerFinding, role, roundJob st
 		title := strings.TrimSpace(strings.Split(strings.ReplaceAll(asString(finding["claim"]), "\r\n", "\n"), "\n")[0])
 		candidate := registerFinding{
 			FindingID: id, Critic: roundJob, RigorClass: class,
+			Class: asString(finding["class"]), Where: asString(finding["where"]), Change: asString(finding["change"]), Resolves: asString(finding["resolves"]), Relation: asString(finding["relation"]),
 			Grain:       grain,
 			Fixture:     fixture,
 			FactsDigest: factsDigest, Facts: row["facts"], Artifact: artifact, Title: title, Status: "open",

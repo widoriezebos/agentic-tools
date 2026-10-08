@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
 
+	dispatchlib "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -162,6 +167,21 @@ func TestUnitReviewCarryFailureRetriesBeforePush(t *testing.T) {
 // The public review uses the real carry and push owners to observe the Git records they publish.
 func TestUnitReviewAmendCarriesReviewsGitAdapter(t *testing.T) {
 	t.Parallel()
+	for _, source := range []string{"unit-read", "critic-root"} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			for _, state := range []string{"unchanged", "changed", "lost", "corrupt"} {
+				t.Run(state, func(t *testing.T) {
+					t.Parallel()
+					witnessCanonicalReviewCarry(t, source, state)
+				})
+			}
+		})
+	}
+}
+
+func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
+	t.Helper()
 	b, owners, run, runner := unitCarryIntentBed(t, true)
 	repo := b.worktree
 	connectionGit(t, repo, "init", "-q", "-b", "main")
@@ -173,9 +193,22 @@ func TestUnitReviewAmendCarriesReviewsGitAdapter(t *testing.T) {
 	connectionGit(t, filepath.Dir(remote), "init", "-q", "--bare", remote)
 	connectionGit(t, repo, "remote", "add", "origin", remote)
 	var first, later, previous string
+	var original branch.Attestation
+	var originalBundle []byte
+	shared := ""
+	for i := 1; i <= 20; i++ {
+		shared += fmt.Sprintf("line %d\n", i)
+	}
 	for _, unit := range []string{"u1", "u2"} {
-		writeUnitCarryFile(t, filepath.Join(repo, unit+".go"), "one\n")
-		connectionGit(t, repo, "add", unit+".go")
+		path, body := unit+".go", "one\n"
+		if state == "changed" {
+			path, body = "shared.go", shared
+			if unit == "u2" {
+				body = strings.Replace(body, "line 15\n", "second unit\n", 1)
+			}
+		}
+		writeUnitCarryFile(t, filepath.Join(repo, path), body)
+		connectionGit(t, repo, "add", path)
 		commit, err := branch.CommitStaged(branch.CommitRequest{Repo: repo, Remote: "origin", EndpointTip: base,
 			GoalID: b.id, Unit: unit, OpID: "commit-" + unit, Kind: branch.Unit, CheckClaim: func() error { return nil }})
 		if err != nil {
@@ -184,22 +217,54 @@ func TestUnitReviewAmendCarriesReviewsGitAdapter(t *testing.T) {
 		if unit == "u1" {
 			first = commit
 		}
-		change, err := branch.UnitDigest(repo, commit)
-		if err != nil {
-			t.Fatal(err)
+		subject, present, err := dispatchlib.ComputeReadSubject(dispatchlib.ReadSubjectRequest{RepoRoot: repo, Role: "code-critic", Reviews: "commit:" + commit})
+		if err != nil || !present {
+			t.Fatalf("subject: %+v %v", subject, err)
 		}
-		path := "metasystem/records/misc/" + unit + "-read.md"
-		writeUnitCarryFile(t, filepath.Join(repo, path), "Reviewed commit "+commit+".\nChange "+change+".\nFound it clean.\n")
-		read, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: repo, Remote: "origin", EndpointTip: base,
-			GoalID: b.id, Unit: unit, OpID: "read-" + unit, ReaderRecord: path, CheckClaim: func() error { return nil },
-			GateRunID: "first-gate", GateTree: connectionGit(t, repo, "rev-parse", commit+"^{tree}")})
+		canonical, digest := (readsubject.Read{ID: "read-" + unit, Subject: subject, Engine: "engine-at-examination", Model: "reader-model", Findings: []readsubject.Finding{}, Output: "immutable-report"}).Canonical()
+		req := branch.CommitReadRequest{Repo: repo, Remote: "origin", EndpointTip: base,
+			GoalID: b.id, Unit: unit, OpID: "read-" + unit, CheckClaim: func() error { return nil },
+			GateRunID: "first-gate", GateTree: subject.Tree}
+		encode := func(value any) string {
+			data, err := json.Marshal(value)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return string(data)
+		}
+		if source == "unit-read" {
+			req.UnitRead = []byte(encode(branch.UnitReadBundle{SchemaVersion: 1, Goal: b.id, Commit: commit,
+				UnitRun: "run-" + unit, Round: 1, ReadLaunch: "read-" + unit, ReadModel: "reader-model", BuildModel: "builder-model",
+				ExaminedTree: subject.Tree, ExaminedBase: subject.Parent, VerdictLine: "VERDICT: land", Report: "VERDICT: land\n",
+				LaunchRecord: `{"state":"completed","kind":"read","verdictCounts":true}`, CanonicalRead: canonical, ReadDigest: digest}))
+		} else {
+			req.RootJob = "critic-" + unit
+			writeUnitCarryFile(t, filepath.Join(repo, "artifacts/agents/jobs", req.RootJob+".json"), encode(map[string]any{
+				"jobId": req.RootJob, "role": "code-critic", "round": 1, "status": "completed", "reviews": "commit:" + commit,
+				"goalId": b.id, "goalRevision": 1, "findingRegister": []any{}, "findingRegisterRound": 1,
+				"findingRegisterSubjectDigest": subject.Digest(), "chainClosed": true,
+				"closure": readsubject.Closure{CriticRoot: req.RootJob, Round: 1, Subject: subject, Mechanism: "clean"}, "read": json.RawMessage(canonical), "readDigest": digest}))
+			writeUnitCarryFile(t, filepath.Join(repo, "artifacts/agents", req.RootJob, "rounds/1/subject.json"), encode(subject))
+			writeUnitCarryFile(t, filepath.Join(repo, "artifacts/agents", req.RootJob, "rounds/1/return.json"), encode(map[string]any{"jobId": req.RootJob, "round": 1, "reviewedTree": subject.Tree}))
+		}
+		read, att, err := branch.CommitRead(req)
 		if err != nil {
 			t.Fatal(err)
 		}
 		later, previous = commit, read
+		original = att
+		originalBundle, err = os.ReadFile(filepath.Join(repo, "metasystem/records/reads", b.id, commit+".closure.json"))
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
-	writeUnitCarryFile(t, filepath.Join(repo, "u1.go"), "corrected\n")
-	connectionGit(t, repo, "add", "u1.go")
+	path, correction := "u1.go", "corrected\n"
+	if state == "changed" {
+		path = "shared.go"
+		correction = strings.Replace(strings.Replace(shared, "line 15\n", "second unit\n", 1), "line 13\n", "corrected\n", 1)
+	}
+	writeUnitCarryFile(t, filepath.Join(repo, path), correction)
+	connectionGit(t, repo, "add", path)
 	tip, err := branch.CommitStaged(branch.CommitRequest{Repo: repo, Remote: "origin", EndpointTip: base,
 		GoalID: b.id, Unit: "u1", OpID: "correct-u1", Kind: branch.Unit, Amend: true, CheckClaim: func() error { return nil }})
 	if err != nil {
@@ -218,6 +283,20 @@ func TestUnitReviewAmendCarriesReviewsGitAdapter(t *testing.T) {
 		t.Fatal(err)
 	}
 	owners.connection.carry, owners.connection.push = nil, nil
+	var carried branch.CarryResult
+	owners.connection.carry = func(req branch.CarryRequest) (branch.CarryResult, error) {
+		path := filepath.Join(repo, "metasystem/records/reads", b.id, later+".closure.json")
+		if state == "lost" {
+			if err := os.Remove(path); err != nil {
+				t.Fatal(err)
+			}
+		} else if state == "corrupt" {
+			writeUnitCarryFile(t, path, "corrupt predecessor")
+		}
+		var err error
+		carried, err = branch.CarryReviews(req)
+		return carried, err
+	}
 	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return base, nil }
 	owners.connection.commitToken = func(_ string, fn func() error) error { return fn() }
 	owners.connection.rebaseGate = func(string) (string, error) { return "checks passed", nil }
@@ -230,17 +309,37 @@ func TestUnitReviewAmendCarriesReviewsGitAdapter(t *testing.T) {
 		return branch.BranchReadResult{}, 1, &branch.ReadNeverLaunchedError{Err: errors.New("critic requested")}
 	}
 	_, stdout, stderr := b.run(owners, "work", "review", "run:"+run)
-	if !strings.Contains(stdout+stderr, "review carried: u2") || critics != 1 {
+	if critics != 1 || state == "unchanged" && !strings.Contains(stdout+stderr, "review carried: u2") {
 		t.Fatalf("review output = %s%s, critics = %d", stdout, stderr, critics)
 	}
 	published := connectionGit(t, repo, "rev-parse", "HEAD")
 	status, err := branch.InspectStatus(repo, base, published, b.id)
+	if state != "unchanged" {
+		if err != nil || len(status.Units) != 2 || status.Units[1].ReadState == "read clean" || !slices.Contains(carried.NeedsReview, "u2") || len(carried.Carried) != 0 || !strings.Contains(stdout+stderr, "work review "+b.id+" --work u2") {
+			t.Fatalf("unread work was carried or lacks its remedy: status=%+v carry=%+v err=%v output=%s%s", status, carried, err, stdout, stderr)
+		}
+		if (state == "lost" || state == "corrupt") && !slices.Equal(carried.Unknown, []string{"u2"}) {
+			t.Fatalf("unknown evidence relabelled: %+v", carried)
+		}
+		return
+	}
 	if err != nil || len(status.Units) != 2 || status.Units[0].ReadState == "read clean" || status.Units[1].ReadState != "read clean" {
-		t.Fatalf("hand-in status = %+v, error = %v", status, err)
+		_, proofErr := branch.ValidateAttestationAt(repo, published, base, b.id, "u2", status.Units[1].Commit)
+		t.Fatalf("hand-in status = %+v, error = %v, proof = %v", status, err, proofErr)
 	}
 	att, err := branch.ValidateAttestationAt(repo, published, base, b.id, "u2", status.Units[1].Commit)
 	if err != nil || att.Carry == nil || att.Carry.FromCommit != later || att.Carry.ToCommit != status.Units[1].Commit {
 		t.Fatalf("carried review = %+v, error = %v", att, err)
+	}
+	var before, after readsubject.Read
+	if json.Unmarshal(original.CanonicalRead, &before) != nil || json.Unmarshal(att.CanonicalRead, &after) != nil || after.ID == before.ID || after.CarriedFrom != before.ID || after.Subject.Commit != att.Subject.Commit || after.Subject.Tree != att.Subject.Tree || after.Engine != before.Engine || after.Model != before.Model || after.Output != before.Output || att.Source != original.Source {
+		t.Fatalf("canonical carry: before=%+v after=%+v source=%+v", before, after, att.Source)
+	}
+	for _, commit := range []string{later, att.Subject.Commit} {
+		bundle, err := os.ReadFile(filepath.Join(repo, "metasystem/records/reads", b.id, commit+".closure.json"))
+		if err != nil || !bytes.Equal(bundle, originalBundle) {
+			t.Fatalf("source bundle changed: %s %v", commit, err)
+		}
 	}
 	if got := connectionGit(t, remote, "rev-parse", "refs/metasystem/goals/before/"+b.id+"/"+previous); got != previous {
 		t.Fatalf("published kept tip = %s, want %s", got, previous)

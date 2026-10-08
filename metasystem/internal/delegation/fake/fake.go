@@ -459,13 +459,31 @@ func (f *Clock) Sleep(d time.Duration) {
 
 // Host doubles delegation.HostOps.
 type Host struct {
-	Log          *Log
-	WaitFunc     func(root, job string, callerPid int64) delegation.WaitOutcome
-	WatchFunc    func(root, job string, callerPid int64, progressRoot string) int
-	ExtendFunc   func(delegation.ExtendBudgetRequest) (string, int)
-	ExtendCalled []delegation.ExtendBudgetRequest
+	UnitLaunchStatusFunc func(string) (string, error)
+	CancelUnitLaunchFunc func(string) error
+	Log                  *Log
+	WaitFunc             func(root, job string, callerPid int64) delegation.WaitOutcome
+	WatchFunc            func(root, job string, callerPid int64, progressRoot string) int
+	ExtendFunc           func(delegation.ExtendBudgetRequest) (string, int)
+	ExtendCalled         []delegation.ExtendBudgetRequest
 	// OrderingHumanFunc scripts the enrolled person's proof; nil proves none.
 	OrderingHumanFunc func(root string, callerPid int64, now time.Time) (string, error)
+}
+
+func (f *Host) UnitLaunchStatus(id string) (string, error) {
+	f.Log.add("host.UnitLaunchStatus id=%s", id)
+	if f.UnitLaunchStatusFunc == nil {
+		return "", fmt.Errorf("launch %s record is unavailable", id)
+	}
+	return f.UnitLaunchStatusFunc(id)
+}
+
+func (f *Host) CancelUnitLaunch(id string) error {
+	f.Log.add("host.CancelUnitLaunch id=%s", id)
+	if f.CancelUnitLaunchFunc == nil {
+		return fmt.Errorf("launch %s record is unavailable", id)
+	}
+	return f.CancelUnitLaunchFunc(id)
 }
 
 func (f *Host) BreachStopOrderingHuman(_ context.Context, root string, callerPid int64, now time.Time) (string, error) {

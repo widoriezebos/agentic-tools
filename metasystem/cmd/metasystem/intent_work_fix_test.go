@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -110,7 +112,7 @@ func TestIntentBuildRetainedRequest(t *testing.T) {
 // verdictAdapter stands in for a reader: while its child runs it writes the
 // findings file the read declares, and it measures the verdict from that
 // file, as the model adapters do.
-type verdictAdapter struct{ findings *string }
+type verdictAdapter struct{ findings, structured *string }
 
 func (a verdictAdapter) Command(record launch.Record, state string) (launch.Command, error) {
 	var declared []string
@@ -118,6 +120,11 @@ func (a verdictAdapter) Command(record launch.Record, state string) (launch.Comm
 	if *a.findings != "" && len(declared) > 0 {
 		if err := os.WriteFile(declared[0], []byte(*a.findings), 0o600); err != nil {
 			return launch.Command{}, err
+		}
+		if len(declared) > 1 && a.structured != nil {
+			if err := os.WriteFile(declared[1], []byte(*a.structured), 0o600); err != nil {
+				return launch.Command{}, err
+			}
 		}
 	}
 	return launch.Command{LogPath: filepath.Join(state, "log")}, nil
@@ -179,7 +186,10 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
 	findings := "1. witness.txt: wrong bytes\nVERDICT: fix first (1 material findings)\n"
-	adapter := verdictAdapter{findings: &findings}
+	// Collection requires structured findings as well as the declared
+	// prose output; the prose alone cannot authorize a correction.
+	structured := `{"findings":[{"class":"regression","where":"witness.txt","severity":"high","material":true,"claim":"wrong bytes","evidence":"witness.txt:1","change":"correct the bytes"}],"verdictMaterialCount":1}`
+	adapter := verdictAdapter{findings: &findings, structured: &structured}
 	for _, name := range []string{"codex-exec", "claude-headless"} {
 		bed.manager.Adapters[name] = adapter
 	}
@@ -192,12 +202,16 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 		t.Fatalf("fix-first read: code=%d %+v", code, result)
 	}
 	copies := data["readFindings"].([]any)
-	if len(copies) != 1 {
+	// Each read retains both its prose and its structured stop evidence.
+	if len(copies) != 2 {
 		t.Fatalf("read findings copies=%v", copies)
 	}
 	firstCopy := copies[0].(string)
 	if retained, _ := os.ReadFile(firstCopy); string(retained) != findings {
 		t.Fatalf("retained findings=%q", retained)
+	}
+	if retained, _ := os.ReadFile(copies[1].(string)); string(retained) != structured {
+		t.Fatalf("retained structured findings=%q", retained)
 	}
 	plan, _ := launch.ReadUnitPlan(data["plan"].(string))
 	if len(plan.Read.Outputs) != 1 {
@@ -205,7 +219,13 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 	}
 	findings = "No material findings.\nVERDICT: land\n"
 	run := data["run"].(string)
-	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", bed.brief("follow-up.md", "Fix the witness.\n"))
+	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+	if err != nil || len(record.Rounds[0].Reads) != 1 {
+		t.Fatalf("structured read was not collected: %+v %v", record, err)
+	}
+	structured = `{"findings":[],"verdictMaterialCount":0}`
+	correction := fmt.Sprintf("Fix the witness.\n\n## Decisions on round 1\n\n| Finding | Decision | Evidence |\n| --- | --- | --- |\n| %s | fixed | witness.txt:1 |\n", record.Rounds[0].Reads[0].Findings[0].ID)
+	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", bed.brief("follow-up.md", correction))
 	data = resultData(t, result)
 	if code != 0 || data["round"].(float64) != 2 || data["readClean"] != true || !strings.Contains(result.Summary, "read verdict: land") {
 		t.Fatalf("clean read after the fold: code=%d %+v", code, result)
@@ -228,6 +248,8 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
+	material := []readsubject.Finding{stopFinding("regression", "a.go"), stopFinding("incomplete-item", "b.go")}
+	bed.manager.Supervisor = &stopReadStarter{bed: bed, reads: [][]readsubject.Finding{material, material, {stopFinding("scope", "c.go")}}}
 	plain := bed.brief("plain.md", "Read each round: yes\nBuild the unit.\n")
 	check := append([]string{"--check"}, workArgv...)
 	// A brief that names no read budget uses the configured allowance.
@@ -241,6 +263,9 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 		t.Fatalf("the configured allowance is not the read's budget:\n%s", readBrief)
 	}
 	budgeted := bed.brief("budgeted.md", "Read each round: yes\nBuild the unit.\n\nMaximum reader tool calls: 25\n")
+	if _, err := (&launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}).CancelRun(resultData(t, result)["run"].(string)); err != nil {
+		t.Fatal(err)
+	}
 	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "budget", "--brief", budgeted, "--lines", "5", "--read-tool-calls", "30"}, check...)...)
 	if code != 2 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "25") {
 		t.Fatalf("conflicting read budget: code=%d %+v", code, result)
@@ -256,13 +281,24 @@ func TestIntentBuildRoundLimitAndReadBudget(t *testing.T) {
 		t.Fatalf("read brief budgets:\n%s", readBrief)
 	}
 	run := data["run"].(string)
-	followUp := bed.brief("follow-up.md", "Again.\n")
+	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	correction := "Again.\n\n## Decisions on round 1\n\n| Finding | Decision | Evidence |\n| --- | --- | --- |\n"
+	for _, finding := range record.Rounds[0].Reads[0].Findings {
+		correction += fmt.Sprintf("| %s | fixed | %s:1 |\n", finding.ID, finding.Where)
+	}
+	followUp := bed.brief("follow-up.md", correction)
 	if code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp); code != 0 || resultData(t, result)["round"].(float64) != 2 {
 		t.Fatalf("second round: code=%d %+v", code, result)
 	}
 	launched := len(bed.starter.launched())
 	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp)
-	if code != 1 || result.Outcome != intentRefused || !strings.Contains(resultWords(result), "UNIT_ROUND_LIMIT") || len(bed.starter.launched()) != launched {
+	// The goal's approved cap is frozen into the collection decision;
+	// its stop is consumed before another round can be admitted.
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(resultWords(result), "UNIT_STOPPED") ||
+		resultData(t, result)["stop"].(map[string]any)["class"] != "correction allowance spent" || len(bed.starter.launched()) != launched {
 		t.Fatalf("third round: code=%d %+v", code, result)
 	}
 

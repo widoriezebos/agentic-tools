@@ -79,6 +79,7 @@ var Rows = []Row{
 	{Code: "record-writer-refused", Owner: "cmd/metasystem", Site: "intent_delivery.go#recordWriterAdmits", Shape: Agent, Override: "review --dispositions", Commands: 1},
 	{Code: "UNIT_REVISION_CONFLICT", Owner: "cmd/metasystem", Site: "intent_selection.go#runIntentRevise", Shape: Question, H1: StandingInput},
 	{Code: "UNIT_REVISE_UNDECIDED", Owner: "internal/launch", Site: "unit_revise.go#UnitRunner.reviseDecided", Shape: Question, H1: StandingInput},
+	{Code: "UNIT_STOPPED", Owner: "internal/launch", Site: "unit_stop.go#UnitRunner.allowCorrection", Shape: Agent, Override: "work revise G --work U --brief FILE --reason TEXT --by NAME", Commands: 1, H1: StandingAgent},
 	{Code: "READ_INPUT_MISSING", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},
 	{Code: "READ_RETRY_RUNNING", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.rejoinRead", Shape: Question, H1: StandingInput},
 	{Code: "READ_RETRY_UNKNOWN", Owner: "internal/launch", Site: "standalone_read.go#UnitRunner.StartRead", Shape: Question, H1: StandingInput},

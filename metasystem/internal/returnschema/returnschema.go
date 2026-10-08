@@ -27,6 +27,7 @@ var VersionThreeRoles = map[string]bool{
 
 var VersionFourRoles = VersionThreeRoles
 var VersionFiveRoles = VersionThreeRoles
+var VersionSixRoles = map[string]bool{"code-critic": true}
 
 // VersionTwo returns the v2 form of a v1 schema: a version marker, the
 // schemaVersion and claimed members added to properties and required, and the
@@ -136,6 +137,29 @@ func VersionFive(schema map[string]any) (map[string]any, error) {
 	return value, nil
 }
 
+// VersionSix records the evidence that automatic unit stops inspect. Older
+// versions keep their original attestation contracts.
+func VersionSix(schema map[string]any) (map[string]any, error) {
+	value, err := VersionFour(schema)
+	if err != nil {
+		return nil, err
+	}
+	value["$comment"] = "metasystem.version=6"
+	title, _ := value["title"].(string)
+	value["title"] = strings.TrimSuffix(title, " version 4") + " version 6"
+	properties := value["properties"].(map[string]any)
+	properties["schemaVersion"] = map[string]any{"type": "integer", "enum": []any{6}}
+	items := properties["findings"].(map[string]any)["items"].(map[string]any)
+	row := items["properties"].(map[string]any)
+	items["required"] = append(items["required"].([]any), "class", "where", "change", "resolves", "relation")
+	row["class"] = map[string]any{"type": "string", "enum": []any{"regression", "weakened-test", "incomplete-item", "false-premise", "faked-seam", "missing-reader", "scope", "other"}}
+	row["where"] = map[string]any{"type": "string"}
+	row["change"] = map[string]any{"type": "string"}
+	row["resolves"] = map[string]any{"type": []any{"string", "null"}}
+	row["relation"] = map[string]any{"type": []any{"string", "null"}}
+	return value, nil
+}
+
 func rigorSchema() map[string]any {
 	boolean := func() map[string]any { return map[string]any{"type": "boolean"} }
 	factProperties := map[string]any{
@@ -213,6 +237,15 @@ func materialize(role, source string, data []byte, version int, outputPath strin
 			return err
 		}
 	}
+	if version == 6 {
+		if !VersionSixRoles[role] {
+			return fmt.Errorf("schema version 6 is only available for code critics")
+		}
+		schema, err = VersionSix(schema)
+		if err != nil {
+			return err
+		}
+	}
 	applyRoleMembers(role, int64(version), schema)
 	encoded, err := json.MarshalIndent(schema, "", "  ")
 	if err != nil {
@@ -228,7 +261,7 @@ func applyRoleMembers(role string, version int64, schema map[string]any) {
 	if schema == nil {
 		return
 	}
-	if role == "code-critic" && version >= 4 {
+	if role == "code-critic" && version >= 4 && version < 6 {
 		addFindingRelation(schema)
 	}
 }
