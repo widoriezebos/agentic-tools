@@ -12,9 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
@@ -344,6 +346,17 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 				return intentProcessResult{}
 			}
 			owners.delivery = delivery
+			// Hand-in reads the registered lane's trunk policy (lane-reads-its-policies.md:145).
+			home := t.TempDir()
+			registerLane(t, home, landingRoot, "Wido", laneTestNow)
+			owners.landing.home = func() (string, error) { return home, nil }
+			policyPath := filepath.Join(t.TempDir(), "lane-policy.conf")
+			helmMust(t, os.WriteFile(policyPath, []byte("landing.trunk-red=auto\n"), 0600))
+			owners.policies = config.PolicyReaders{
+				Registry: func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{Lane: landingRoot}, nil },
+				ConfPath: func(string) (string, error) { return policyPath, nil },
+				Helm:     func(string) helm.State { return helm.State{} },
+			}
 			command, _ := findIntentCommand("work land")
 			run := func() intentResult {
 				t.Helper()

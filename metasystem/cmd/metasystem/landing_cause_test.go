@@ -298,7 +298,18 @@ func TestLandingPushReturnedCommitBoundaries(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newResolveVerbFixture(t)
+			// Push reads fresh main and incident inputs before checking returns (lane-reads-its-policies.md:145).
+			notAncestor := replayFalseState(t)
 			b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+				if args[0] == "rev-parse" {
+					return "old", nil
+				}
+				if args[0] == "merge-base" {
+					return "", &exec.ExitError{ProcessState: notAncestor}
+				}
+				if args[0] == "cat-file" {
+					return "", nil
+				}
 				if args[0] == "ls-tree" {
 					return "", nil
 				}

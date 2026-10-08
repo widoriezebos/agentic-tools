@@ -405,6 +405,7 @@ func TestWorkLandReleasedAreasAdmission(t *testing.T) {
 			_, reader := enrollGoalSyncTerminal(t, bed.root(), "ttys:hand_in")
 			owners := bed.intentBed.owners()
 			owners.delivery, owners.connection, owners.work = bed.owners, bed.connection, bed.work
+			bed.laneInputs(&owners)
 			owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, now time.Time) (humanauthority.Proof, error) {
 				if root != bed.root() {
 					t.Fatalf("terminal proof root = %q, want %q", root, bed.root())

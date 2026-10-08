@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -72,7 +73,12 @@ func TestLandingPushChecksDesign(t *testing.T) {
 				var stdout, stderr bytes.Buffer
 				inv := &intentInvocation{command: landingPushCommand(), input: intentInput{values: map[string][]string{"json": {"true"}}},
 					owners: owners, layout: layout, stateRoot: bed.stateRoot(), stdout: &stdout, stderr: &stderr, cwd: layout.GitRoot}
-				record := lane.Record{Root: layout.GitRoot, Install: install}
+				// Push rechecks the registered lane and trunk policy (lane-reads-its-policies.md:145).
+				record := lane.Record{Root: layout.GitRoot, Install: install, CustodyEpoch: 1, RegisteredBy: "Wido"}
+				registration, err := json.Marshal(record)
+				helmMust(t, err)
+				helmMust(t, os.MkdirAll(lane.HostDir(laneHome), 0700))
+				helmMust(t, os.WriteFile(lane.RecordPath(laneHome), registration, 0600))
 				laneLayout, err := record.Layout()
 				if err != nil {
 					t.Fatal(err)
@@ -93,7 +99,17 @@ func TestLandingPushChecksDesign(t *testing.T) {
 					outcome.Changed = true
 					return outcome, nil
 				}
+				notAncestor := replayFalseState(t)
 				admitted := laneAdmitted{home: laneHome, record: record, layout: laneLayout, installation: install, owners: laneVerbOwners{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "fixture", nil }, push: push, plainProve: plain.ProveSeams{Git: func(_ string, args ...string) (string, error) {
+					if args[0] == "rev-parse" {
+						return "main", nil
+					}
+					if args[0] == "cat-file" {
+						return "", nil
+					}
+					if args[0] == "merge-base" {
+						return "", &exec.ExitError{ProcessState: notAncestor}
+					}
 					if args[0] == "ls-tree" {
 						return "", nil
 					}
