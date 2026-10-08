@@ -182,7 +182,8 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 			if code, out := b.run(t, b.root, "return", "b", "--cause", "own"); code != 1 || !strings.Contains(out, "the return needs a person") {
 				t.Fatalf("return request: %d %s", code, out)
 			}
-			agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
+			// The observer synchronizes requests from fresh lane inputs (lane-reads-its-policies.md:140).
+			agent := landingAgent{proofEffects: b.owners.landing.plainProve, now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
 			if _, err := syncStopQuestionHold(agent, b.install); err != nil {
 				t.Fatal(err)
 			}

@@ -71,7 +71,8 @@ func newSelectionBed(t *testing.T) *selectionBed {
 			}
 		},
 	}
-	b.keeper = newLandingAgentKeeper(b.lane, b.home, landingAgent{now: func() time.Time { return b.now }, machine: func(string) (string, error) { return "fixture", b.machineErr }})
+	// The observer reads fresh trunk inputs through the same fixture boundary (lane-reads-its-policies.md:145).
+	b.keeper = newLandingAgentKeeper(b.lane, b.home, landingAgent{proofEffects: seams, now: func() time.Time { return b.now }, machine: func(string) (string, error) { return "fixture", b.machineErr }})
 	b.keeper.Running = func() (string, bool, error) { return "", false, nil }
 	b.keeper.Fingerprint = nil
 	b.keeper.Holds[0] = func(string) (string, error) { return plain.ProofHold(b.lane, seams) }
@@ -213,8 +214,9 @@ func TestLandingSelectionAuthorityAndCrossCheckoutRecord(t *testing.T) {
 	if err != nil || strings.TrimSpace(string(seen)) != b.lane+"|landing run --batch "+selected.ID+" --json" {
 		t.Fatalf("handoff must carry only batch identity: %q %v", seen, err)
 	}
+	// The recorded effect answers the matching act request (lane-reads-its-policies.md:86).
 	ended, err := channel.ReadQuestion(b.lane, q.ID)
-	if err != nil || ended.State != "closed" || !strings.HasPrefix(ended.ClosedBecause, "answered by recorded person selection") {
+	if err != nil || ended.State != "closed" || !strings.HasPrefix(ended.ClosedBecause, "answered by the recorded person act") {
 		t.Fatalf("effect did not close matching subject: %+v %v", ended, err)
 	}
 	if _, err := humanauthority.ReadEnrollment(b.lane); err == nil {

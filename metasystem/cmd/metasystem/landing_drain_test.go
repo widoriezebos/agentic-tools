@@ -82,6 +82,19 @@ func newDrainVerbBed(t *testing.T) *drainVerbBed {
 	return b
 }
 
+// Selection needs a readable batch policy (plans/designs/lane-reads-its-policies.md:139).
+// The synthetic checkout supplies policy inputs at the existing selection seam.
+func (b *drainVerbBed) readableBatchPolicy() {
+	effects := b.owners.landing.plainProve
+	effects.Policy = func(string) (plain.PolicyValue, error) {
+		return plain.PolicyValue{Value: "auto", Source: "fixture"}, nil
+	}
+	b.keeper.Prepare = func(record lane.Record) error {
+		_, err := plain.SelectBatch(record.Install, record.Root, record, effects)
+		return err
+	}
+}
+
 func (b *drainVerbBed) verb(t *testing.T, words ...string) (int, intentResult) {
 	t.Helper()
 	command, ok := findIntentAction("landing", words[0])
@@ -184,6 +197,7 @@ func TestLandingDrainWorkLandRemedyAndPersonProvenance(t *testing.T) {
 			publicOwners.delivery = b.owners
 			publicOwners.connection = b.connection
 			publicOwners.work = b.work
+			b.laneInputs(&publicOwners)
 			publicOwners.landing.person = func(string) (string, error) {
 				if actor {
 					return "Wido", nil
@@ -264,6 +278,7 @@ func TestLandingDrainWorkLandRemedyAndPersonProvenance(t *testing.T) {
 func TestLandingDrainKeeperUnknownMembershipAndCompletion(t *testing.T) {
 	t.Parallel()
 	b := newDrainVerbBed(t)
+	b.readableBatchPolicy()
 	b.owners.landing.helm = func(string) helm.State { return helm.State{} }
 	seedDrainLine(t, b.install, "known", "known-sha")
 	code, result := b.verb(t, "drain")
@@ -277,21 +292,30 @@ func TestLandingDrainKeeperUnknownMembershipAndCompletion(t *testing.T) {
 		t.Fatal(err)
 	}
 	run := b.keeper.Run()
-	if run.Outcome != lane.AgentStarted {
-		t.Fatalf("eligible work stopped: %+v", run)
+	// Unknown membership cannot admit a new selection (lane-reads-its-policies.md:136).
+	if run.Outcome != lane.AgentHeld || b.launches != 0 || !strings.Contains(run.Line, "unreadable queue") {
+		t.Fatalf("unknown membership admitted work: %+v launches=%d", run, b.launches)
+	}
+	if batch, err := plain.ReadBatch(b.install); err != nil || batch != nil {
+		t.Fatalf("unknown membership wrote a selection: %+v %v", batch, err)
 	}
 	drain, _ := plain.ReadDrain(b.install)
 	status := b.readStatus(t)
-	if b.launches != 1 || drain.State != plain.DrainDraining || !strings.Contains(status.DrainUnknown, "drain membership") || !strings.Contains(status.DrainUnknown, "decoded") {
-		t.Fatalf("unknown membership stopped work or looked empty: launches=%d drain=%+v status=%+v", b.launches, drain, status)
+	if b.launches != 0 || drain.State != plain.DrainDraining || !strings.Contains(status.DrainUnknown, "drain membership") || !strings.Contains(status.DrainUnknown, "decoded") {
+		t.Fatalf("unknown membership launched work or looked empty: launches=%d drain=%+v status=%+v", b.launches, drain, status)
 	}
 	if err := os.WriteFile(queue, valid, 0600); err != nil {
 		t.Fatal(err)
 	}
+	run = b.keeper.Run()
+	if run.Outcome != lane.AgentStarted || b.launches != 1 {
+		t.Fatalf("repaired membership did not resume admitted work: %+v launches=%d", run, b.launches)
+	}
 	b.incidents = []goal.TrunkRedEntry{{Identity: "incident", Opened: laneTestNow.Format(time.RFC3339)}}
 	heldRun := b.keeper.Run()
 	drain, _ = plain.ReadDrain(b.install)
-	if heldRun.Outcome != lane.AgentIdle || drain.State != plain.DrainDraining || b.launches != 1 {
+	// Held entries require a person's exact exception act (lane-reads-its-policies.md:145).
+	if heldRun.Outcome != lane.AgentHeld || !strings.Contains(heldRun.Line, "--exception GOAL_LAND_TRUNK_RED") || drain.State != plain.DrainDraining || b.launches != 1 {
 		t.Fatalf("incident-held work disappeared or woke an agent: %+v %+v", heldRun, drain)
 	}
 	if status := b.readStatus(t); status.DrainWaiting != 1 || len(status.Queue) != 1 || !status.Queue[0].Held || status.Admission != "draining, 1 waiting" {
@@ -327,6 +351,7 @@ func TestLandingDrainKeeperFailuresStaySeparate(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			b := newDrainVerbBed(t)
+			b.readableBatchPolicy()
 			b.owners.landing.helm = func(string) helm.State { return helm.State{} }
 			seedDrainLine(t, b.install, "known", "known-sha")
 			code, result := b.verb(t, "drain")
@@ -337,6 +362,10 @@ func TestLandingDrainKeeperFailuresStaySeparate(t *testing.T) {
 				}
 			}
 			if kind == "question" || kind == "both" {
+				// A pending subject makes the derived question index writable (lane-reads-its-policies.md:140).
+				selectionLines(t, filepath.Join(plain.Dir(b.install), "stops.jsonl"), plain.Stop{
+					Loop: "lane-return", Subject: "known", Attempt: 2, Budget: 2, Decision: "stop", Handoff: "ask lane", At: laneTestNow.Format(time.RFC3339Nano),
+				})
 				if err := os.Mkdir(filepath.Join(plain.Dir(b.install), "stop-question"), 0700); err != nil {
 					t.Fatal(err)
 				}
@@ -476,6 +505,7 @@ func TestLandingStartRepairsUnreadableKeeperRecordForAgent(t *testing.T) {
 func TestLandingDrainObserverReleasesHomeLock(t *testing.T) {
 	t.Parallel()
 	b := newDrainVerbBed(t)
+	b.readableBatchPolicy()
 	seedDrainLine(t, b.install, "known", "known-sha")
 	code, result := b.verb(t, "drain")
 	expectOutcome(t, "drain", code, result, intentConfirmed)
@@ -506,13 +536,18 @@ func TestLandingDrainFinishesAdmittedProofAndPush(t *testing.T) {
 	publicOwners.delivery = delivery.owners
 	publicOwners.connection = delivery.connection
 	publicOwners.work = delivery.work
+	delivery.laneInputs(&publicOwners)
 	publicOwners.landing.person = func(string) (string, error) { return "", errors.New("agent terminal") }
 	code, result := delivery.runJSON(publicOwners, "work", "land", "standing-validation")
 	expectOutcome(t, "first hand-in", code, result, intentConfirmed)
+	firstTip := state.status.BranchTip
 	second := delivery.goalFile("standing-validation")
 	second.Id = "second"
 	delivery.addGoal(second)
 	delivery.writeFile(filepath.Join(delivery.root(), "plans", "designs", "second.md"), "# Second goal\n\n- Kind: design\n- Id: second-design\n- Status: accepted\n- Goals: second\n\n## Units\n\n| Unit | Lines |\n| --- | ---: |\n| u1 | 5 |\n| u2 | 5 |\n")
+	// Each goal has its own branch tip in the ordered selection (lane-reads-its-policies.md:37).
+	state.status.BranchTip = strings.Repeat("3", 40)
+	state.status.EndpointTip = state.status.BranchTip
 	code, result = delivery.runJSON(publicOwners, "work", "land", "second")
 	expectOutcome(t, "second hand-in", code, result, intentConfirmed)
 	b := newReplayVerbBed(t)
@@ -525,9 +560,13 @@ func TestLandingDrainFinishesAdmittedProofAndPush(t *testing.T) {
 	b.owners.resolver = stateroot.NewResolver(fakeTop(b.root), noExecutable)
 	falseState := replayFalseState(t)
 	main := "main"
+	var members []plain.GoalSHA
 	// All Git operations are injected; proof execution and push use their real owners.
 	git := b.owners.landing.plainProve.Git
 	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+		if args[0] == "log" || args[0] == "rev-list" && len(args) == 5 && args[1] == "--first-parent" {
+			return "merge-a main " + members[0].SHA + "\nmerge-b merge-a " + members[1].SHA, nil
+		}
 		if args[0] == "merge-base" {
 			if args[3] == "merge-b" || main == "merge-b" && args[3] == "main" {
 				return "", nil
@@ -561,10 +600,19 @@ func TestLandingDrainFinishesAdmittedProofAndPush(t *testing.T) {
 		return plain.PushChecked(install, checkout, now, before, effects)
 	}
 	b.fail = func(*exec.Cmd, string) (string, error) { return "LANDING-CHECKED\t0\n", nil }
+	// A proof must cover a recorded selection (lane-reads-its-policies.md:37).
+	selection := b.owners.landing.plainProve
+	selection.Policy = func(string) (plain.PolicyValue, error) { return plain.PolicyValue{Value: "auto"}, nil }
+	selected, err := plain.SelectBatch(install, b.root, lane.Record{Root: b.root, Install: install, CustodyEpoch: 1, RegisteredBy: "Wido"}, selection)
+	if err != nil || selected == nil || len(selected.Members) != 2 || selected.Members[0] != (plain.GoalSHA{Goal: "standing-validation", SHA: firstTip}) || selected.Members[1] != (plain.GoalSHA{Goal: "second", SHA: state.status.BranchTip}) {
+		t.Fatalf("admitted selection: %+v %v", selected, err)
+	}
+	members = selected.Members
 	// Start is the proof already admitted before drain closes; its detached child finishes afterward.
 	b.owners.landing.plainProve.Executable = func() (string, error) { return "engine", nil }
-	b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) { return 42, nil }
-	b.owners.landing.plainProve.Alive = func(r plain.Running) bool { return r.Pid == 42 }
+	// A launched admission needs a readable process identity (lane-reads-its-policies.md:142).
+	b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
+	b.owners.landing.plainProve.Alive = func(r plain.Running) bool { return r.Pid == int64(os.Getpid()) }
 	code, text := b.run(t, b.root, "prove", "--json")
 	if code != 0 {
 		t.Fatal(text)
@@ -614,6 +662,10 @@ func TestLandingDrainFinishesAdmittedProofAndPush(t *testing.T) {
 func TestLandingDrainExplicitPersonProof(t *testing.T) {
 	t.Parallel()
 	b := newReplayVerbBed(t)
+	// The enrolled terminal belongs to a resolvable checkout (lane-reads-its-policies.md:137).
+	b.owners.resolver = stateroot.NewResolver(fakeTop(b.root), noExecutable)
+	b.owners.commandNow = func(string) (time.Time, error) { return laneTestNow, nil }
+	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0600))
 	for _, g := range []string{"a", "b", "c"} {
 		if _, _, err := plain.ReturnProven(b.install, g, "unclassified", "done", true, "fixture", laneTestNow, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 			t.Fatal(err)
@@ -635,12 +687,14 @@ func TestLandingDrainExplicitPersonProof(t *testing.T) {
 	}
 	b.owners.landing.person = func(string) (string, error) { return "", errors.New("agent terminal") }
 	code, text = b.run(t, b.root, "prove", "--trunk", "--wait", "--json")
-	if code == 0 {
-		t.Fatal("automatic empty proof crossed drain", text)
+	if code == 0 || !strings.Contains(text, "admission was closed by Wido") {
+		t.Fatal("automatic empty proof did not preserve the drain hold", text)
 	}
 	if _, ok, err := plain.LastResult(b.install); err != nil || ok {
 		t.Fatal("refused proof wrote result", err)
 	}
+	// Direct proof of the enrolled terminal admits this act under a drain (lane-reads-its-policies.md:137).
+	b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)
 	b.owners.landing.person = func(string) (string, error) { return "Wido", nil }
 	b.fail = func(*exec.Cmd, string) (string, error) { return "LANDING-CHECKED\t0\n", nil }
 	ledger := newIntentBed(t, false, nil)

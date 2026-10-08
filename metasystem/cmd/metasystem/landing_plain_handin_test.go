@@ -237,8 +237,12 @@ func plainLaneBedWith(t *testing.T, withoutGit bool, sources ...string) (*delive
 	notAncestor := exec.Command("/usr/bin/false").Run()
 	home := t.TempDir()
 	b.laneInputs = func(invOwners *intentOwners) {
-		root, _, err := b.owners.laneRoot(b.root(), laneTestNow)
+		root, configured, err := b.owners.laneRoot(b.root(), laneTestNow)
 		helmMust(t, err)
+		// Only registered lanes supply lane-policy inputs (lane-reads-its-policies.md:45).
+		if !configured {
+			return
+		}
 		currentInstall, err := b.owners.laneInstall(root)
 		helmMust(t, err)
 		b.writeFile(filepath.Join(currentInstall, "metasystem.conf"), "metasystem.template=true\nlanding.trunk-red=auto\n")
