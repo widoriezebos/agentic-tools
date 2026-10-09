@@ -2148,7 +2148,11 @@ func (e *Engine) cycleRunHost(c *cycleContext) (map[string]any, bool, error) {
 					e.emit("provider-overloaded", fmt.Sprintf("%s; backing off %s", overloadClass, wait.Round(time.Millisecond)), map[string]string{
 						"missionId": e.Mission, "turnId": c.turnID, "outcome": "provider-overloaded",
 					})
-					runClock.sleep(wait)
+					if e.retrySleep != nil {
+						e.retrySleep(wait)
+					} else {
+						runClock.sleep(wait)
+					}
 				}
 			}
 		}

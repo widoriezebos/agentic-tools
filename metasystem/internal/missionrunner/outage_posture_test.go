@@ -15,18 +15,17 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
-func recordOverloadBackoffs(t *testing.T) *[]time.Duration {
+// Retry waits advance only this engine's clock; its real host process
+// runs without spending the turn cap on process scheduling.
+func recordOverloadBackoffs(t *testing.T, engine *Engine) *[]time.Duration {
 	t.Helper()
-	original := runClock
+	observed := engine.now()
+	engine.Now = func() time.Time { return observed }
 	backoffs := []time.Duration{}
-	runClock.sleep = func(wait time.Duration) {
-		if wait >= 150*time.Millisecond {
-			backoffs = append(backoffs, wait)
-			return
-		}
-		original.sleep(wait)
+	engine.retrySleep = func(wait time.Duration) {
+		backoffs = append(backoffs, wait)
+		observed = observed.Add(wait)
 	}
-	t.Cleanup(func() { runClock = original })
 	return &backoffs
 }
 
@@ -36,13 +35,14 @@ func recordOverloadBackoffs(t *testing.T) *[]time.Duration {
 // retrying instead of blaming the host.
 func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "10")
-	backoffs := recordOverloadBackoffs(t)
 	engine := buildGitFreeHostCycle(t, "FAKEHOST:exit-overloaded")
+	backoffs := recordOverloadBackoffs(t, engine)
 	engine.ProviderHome = testprovider.Register(t, engine.installation())
-	observed := engine.now()
-	engine.Now = func() time.Time { observed = observed.Add(time.Millisecond); return observed }
 	signal := filepath.Join(t.TempDir(), "start.json")
-	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	code := engine.RunLoopAtGeneration("start", "metasystem-mission-runner-alpha-fixture", signal, 0, false)
+	if code != 0 {
+		t.Fatalf("overload mission run failed: exit %d", code)
+	}
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
 	if err != nil {
 		t.Fatalf("no state (rc=%d): %v", code, err)
@@ -84,6 +84,9 @@ func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 	if len(*backoffs) < 2 || (*backoffs)[0] != 150*time.Millisecond || (*backoffs)[1] != 300*time.Millisecond {
 		t.Fatalf("overload backoffs = %v, want 150ms then 300ms", *backoffs)
 	}
+	if len(*backoffs) != 2 {
+		t.Fatalf("the terminal overload must not retry: backoffs = %v", *backoffs)
+	}
 	turns, _ := filepath.Glob(filepath.Join(engine.missionDir(), "turns", "*", "turn.json"))
 	if len(turns) == 0 {
 		t.Fatal("no turns ran")
@@ -99,13 +102,14 @@ func TestInternalRunOverloadedHostStaysOffTheBreaker(t *testing.T) {
 // or the missed shape feeds the breaker the ruling exempted.
 func TestInternalRunCleanExitOverloadDocumentStaysOffTheBreaker(t *testing.T) {
 	t.Setenv("METASYSTEM_FIXTURE_CAP_SCALE_MILLI", "10")
-	backoffs := recordOverloadBackoffs(t)
 	engine := buildGitFreeHostCycle(t, "FAKEHOST:overloaded-result")
+	backoffs := recordOverloadBackoffs(t, engine)
 	engine.ProviderHome = testprovider.Register(t, engine.installation())
-	observed := engine.now()
-	engine.Now = func() time.Time { observed = observed.Add(time.Millisecond); return observed }
 	signal := filepath.Join(t.TempDir(), "start.json")
-	code := engine.internalRun("start", "metasystem-mission-runner-alpha-fixture", signal)
+	code := engine.RunLoopAtGeneration("start", "metasystem-mission-runner-alpha-fixture", signal, 0, false)
+	if code != 0 {
+		t.Fatalf("clean-exit overload mission run failed: exit %d", code)
+	}
 	state, err := readJSONDoc(filepath.Join(engine.missionDir(), "state.json"))
 	if err != nil {
 		t.Fatalf("no state (rc=%d): %v", code, err)
@@ -126,6 +130,9 @@ func TestInternalRunCleanExitOverloadDocumentStaysOffTheBreaker(t *testing.T) {
 	}
 	if len(*backoffs) == 0 || (*backoffs)[0] != 150*time.Millisecond {
 		t.Fatalf("clean-exit overload backoff = %v, want first wait 150ms", *backoffs)
+	}
+	if len(*backoffs) != 2 || (*backoffs)[1] != 300*time.Millisecond {
+		t.Fatalf("clean-exit overload must retry twice then stop: backoffs = %v", *backoffs)
 	}
 }
 

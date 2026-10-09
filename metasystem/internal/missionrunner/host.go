@@ -604,12 +604,16 @@ func (e *Engine) superviseHostToExit(l *hostLaunch) (int, map[string]any, string
 		return 0, nil, "", err
 	}
 	capped := false
-	capDeadline := time.Now().Add(capDuration)
+	clock := runClock
+	if e.Now != nil {
+		clock.now = e.now
+	}
+	capDeadline := clock.now().Add(capDuration)
 	for !l.process.exited() {
 		if err := e.heartbeat(l.turnID); err != nil {
 			return 0, nil, "", err
 		}
-		if !time.Now().Before(capDeadline) {
+		if !clock.now().Before(capDeadline) {
 			if _, err := e.terminateGroup(l.pid, l.tag, l.fakeRuntime); err != nil {
 				return 0, nil, "", err
 			}
