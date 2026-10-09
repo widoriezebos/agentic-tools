@@ -51,7 +51,7 @@ export function inRankOrder(rows: readonly Row[]): Row[] {
       return ranked(left) ? -1 : 1;
     }
     if (!ranked(left)) {
-      return left.ref.id.localeCompare(right.ref.id);
+      return left.ref.id.localeCompare(right.ref.id, "en");
     }
     if (left.priority !== right.priority) {
       return left.priority - right.priority;
@@ -59,7 +59,7 @@ export function inRankOrder(rows: readonly Row[]): Row[] {
     if (left.sequence !== right.sequence) {
       return left.sequence - right.sequence;
     }
-    return left.ref.id.localeCompare(right.ref.id);
+    return left.ref.id.localeCompare(right.ref.id, "en");
   });
 }
 

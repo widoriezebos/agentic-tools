@@ -36,7 +36,7 @@ import (
 const engineStandIn = `#!/bin/sh
 if [ "$1" = util ] && [ "$2" = hold ]; then
   shift 2
-  printf '%s\n' "$@" >"$FAKE_HOLD_DIR/.$$" && mv "$FAKE_HOLD_DIR/.$$" "$FAKE_HOLD_DIR/$$"
+  printf '%s\n' "$@" >"$FAKE_HOLD_DIR/.$$"
   stopped= ready= ignore= observed=
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -51,8 +51,9 @@ if [ "$1" = util ] && [ "$2" = hold ]; then
   if [ -n "$ignore" ]; then
     trap '[ -z "$observed" ] || : >"$observed"' TERM
   else
-    trap '[ -z "$sleeper" ] || kill "$sleeper" 2>/dev/null; [ -z "$stopped" ] || : >"$stopped"; exit 0' TERM
+    trap '[ -z "$sleeper" ] || kill "$sleeper" 2>/dev/null; [ -z "$stopped" ] || : >"$stopped"; : >"$FAKE_HOLD_DIR/.exited.$$"; exit 0' TERM
   fi
+  mv "$FAKE_HOLD_DIR/.$$" "$FAKE_HOLD_DIR/$$"
   [ -z "$ready" ] || echo "$$" >"$ready"
   while :; do sleep 0.2 & sleeper=$!; wait "$sleeper"; done
 fi
@@ -92,10 +93,14 @@ type fakeRecordingDispatcher struct {
 	Log      string         `json:"log"`
 	Statuses map[string]int `json:"statuses"`
 	// KeepSession leaves the record's sessionId untouched on handshake.
-	KeepSession bool `json:"keepSession"`
+	KeepSession bool           `json:"keepSession"`
+	OnRun       func([]string) `json:"-"`
 }
 
 func (r fakeRecordingDispatcher) Run(stdout, _ io.Writer, args ...string) int {
+	if r.OnRun != nil {
+		r.OnRun(args)
+	}
 	line, _ := json.Marshal(args)
 	file, err := os.OpenFile(r.Log, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0o644)
 	if err == nil {

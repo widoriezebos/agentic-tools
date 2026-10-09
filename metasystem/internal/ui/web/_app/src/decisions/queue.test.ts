@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Need } from "./api";
 import {
@@ -288,4 +288,16 @@ describe("a run that stopped", () => {
     }
     expect(sent).toEqual([]);
   });
+});
+
+it("orders equally common label chips with an explicit English locale", () => {
+  const native = String.prototype.localeCompare;
+  const compare = vi.spyOn(String.prototype, "localeCompare").mockImplementation(function (this: string, other, locales, options) {
+    return native.call(this, other, locales ?? "sv", options);
+  });
+  try {
+    expect(labelsIn(["z", "ä", "a"].map((label) => need(label, { labels: [label] })))).toEqual([
+      { label: "a", count: 1 }, { label: "ä", count: 1 }, { label: "z", count: 1 },
+    ]);
+  } finally { compare.mockRestore(); }
 });

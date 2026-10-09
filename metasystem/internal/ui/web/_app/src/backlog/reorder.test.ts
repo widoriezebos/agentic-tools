@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Row } from "./api";
 import {
@@ -170,4 +170,16 @@ describe("a re-rank that needs confirming", () => {
     expect(needsConfirming({ ...one, lane: "review", claim: held })).toBe(true);
     expect(needsConfirming(one)).toBe(false);
   });
+});
+
+it("orders tied and unranked ids with an explicit English locale", () => {
+  const native = String.prototype.localeCompare;
+  const compare = vi.spyOn(String.prototype, "localeCompare").mockImplementation(function (this: string, other, locales, options) {
+    return native.call(this, other, locales ?? "sv", options);
+  });
+  try {
+    for (const rank of [{ priority: 0, sequence: 0 }, { priority: 2, sequence: 1 }]) {
+      expect(inRankOrder(["z", "ä", "a"].map((id) => row(id, rank))).map((one) => one.ref.id)).toEqual(["a", "ä", "z"]);
+    }
+  } finally { compare.mockRestore(); }
 });

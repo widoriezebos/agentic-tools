@@ -26,6 +26,7 @@ func main() {
 	readyFD := flag.Int("ready-fd", -1, "write the readiness answer to this descriptor")
 	dieAfterSpawn := flag.Bool("die-after-spawn", false, "die between the spawn and the child's ref write")
 	noReadyDeadline := flag.Bool("no-ready-deadline", false, "wait for readiness or the application's exit, with no deadline")
+	listenFD := flag.Int("listen-fd", -1, "inherited application listener")
 	flag.Parse()
 
 	contract, err := applaunch.Load(*contractPath)
@@ -59,6 +60,16 @@ func main() {
 		Seed:        applaunch.Record{Key: *key, Address: *address, StateRoot: *stateRoot},
 		Ready:       func(a string) { report("ready " + a) },
 		Failed:      func(m string) { report("failed " + m) },
+	}
+	if *listenFD >= 0 {
+		listener := os.NewFile(uintptr(*listenFD), "application listener")
+		options.Spawn = func(spec applaunch.ChildSpec) (applaunch.Child, error) {
+			spec.Argv = append(spec.Argv, "--listen-fd", "3")
+			spec.ExtraFiles = []*os.File{listener}
+			child, err := applaunch.ExecChild(spec)
+			_ = listener.Close()
+			return child, err
+		}
 	}
 	if *noReadyDeadline {
 		// Readiness is the application's own signal or its exit; a test's

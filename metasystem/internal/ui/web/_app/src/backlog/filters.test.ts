@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { Row } from "./api";
 import {
@@ -199,4 +199,16 @@ describe("the Done lane's reach", () => {
     expect(concludedWithin(at("not a date"), 1, now)).toBe(false);
     expect(concludedWithin(at("not a date"), null, now)).toBe(true);
   });
+});
+
+it("orders filter choices with an explicit English locale", () => {
+  const native = String.prototype.localeCompare;
+  const compare = vi.spyOn(String.prototype, "localeCompare").mockImplementation(function (this: string, other, locales, options) {
+    return native.call(this, other, locales ?? "sv", options);
+  });
+  try {
+    const rows = ["z", "ä", "a"].map((name) => row(name, { arc: name, claim: { machine: name, lineage: "seat", at: "", landingAt: "" } }));
+    expect(seatsOn(rows)).toEqual(["a", "ä", "z"]);
+    expect(arcsOn(rows)).toEqual(["a", "ä", "z"]);
+  } finally { compare.mockRestore(); }
 });

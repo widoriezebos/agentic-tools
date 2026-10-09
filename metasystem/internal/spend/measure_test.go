@@ -835,20 +835,24 @@ func TestSeatCodexRuntimeIsUnmeasured(t *testing.T) {
 func TestLedgerSkipsContentEqualRewrite(t *testing.T) {
 	bed, first := measureBed(t)
 	path := Path(bed.root, bed.now)
-	old := time.Date(2001, 2, 3, 4, 5, 6, 0, time.UTC)
-	if err := os.Chtimes(path, old, old); err != nil {
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	before = append(before, '\n')
+	if err := os.WriteFile(path, before, 0o644); err != nil {
 		t.Fatal(err)
 	}
 	second, err := Measure(bed.root, "bed-m1", bed.now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	info, err := os.Stat(path)
+	after, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !info.ModTime().Equal(old) || !second.ObservedAt.Equal(first.ObservedAt) {
-		t.Fatalf("content-equal measurement rewrote the ledger: mtime=%s first=%s second=%s", info.ModTime(), first.ObservedAt, second.ObservedAt)
+	if !bytes.Equal(before, after) || !second.ObservedAt.Equal(first.ObservedAt) {
+		t.Fatalf("content-equal measurement rewrote the ledger: before=%q after=%q first=%s second=%s", before, after, first.ObservedAt, second.ObservedAt)
 	}
 }
 

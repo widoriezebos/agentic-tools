@@ -146,7 +146,7 @@ func Tail(path string, lines int) ([]string, error) {
 // Follow prints the log from its end as it grows, until the context ends.
 // It is the reader of the file the engine captured or the file the contract
 // named; it never holds the writer open.
-func Follow(ctx context.Context, path string, out io.Writer, poll time.Duration) error {
+func Follow(ctx context.Context, path string, out io.Writer, poll time.Duration, positioned ...func()) error {
 	if poll <= 0 {
 		poll = 200 * time.Millisecond
 	}
@@ -157,6 +157,9 @@ func Follow(ctx context.Context, path string, out io.Writer, poll time.Duration)
 	defer file.Close()
 	if _, err := file.Seek(0, io.SeekEnd); err != nil {
 		return err
+	}
+	for _, ready := range positioned {
+		ready()
 	}
 	reader := bufio.NewReader(file)
 	for {

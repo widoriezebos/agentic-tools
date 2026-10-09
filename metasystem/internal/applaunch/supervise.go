@@ -22,6 +22,7 @@ type ChildSpec struct {
 	Dir         string
 	Environment []string
 	Log         *os.File
+	ExtraFiles  []*os.File
 }
 
 // Child is the application the supervisor owns for the run's life.
@@ -48,6 +49,7 @@ func ExecChild(spec ChildSpec) (Child, error) {
 	command := exec.Command(spec.Argv[0], spec.Argv[1:]...)
 	command.Dir = spec.Dir
 	command.Env = spec.Environment
+	command.ExtraFiles = spec.ExtraFiles
 	command.Stdin = nullInput
 	command.Stdout = spec.Log
 	command.Stderr = spec.Log

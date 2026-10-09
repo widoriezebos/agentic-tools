@@ -8,7 +8,6 @@ import (
 	"strconv"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -372,19 +371,19 @@ func TestEnsureLeavesAnEnrolledFenceAloneGitAdapter(t *testing.T) {
 	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatal(err)
 	}
-	before, err := os.Stat(hook)
+	before, err := os.ReadFile(hook)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Chtimes(hook, before.ModTime().Add(-time.Hour), before.ModTime().Add(-time.Hour)); err != nil {
+	before = append(before, []byte("# enrolled fixture\n")...)
+	if err := testexec.WriteFile(hook, before, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	before, _ = os.Stat(hook)
 	if err := Ensure(stateroottest.Installation(t, root)); err != nil {
 		t.Fatal(err)
 	}
-	if after, err := os.Stat(hook); err != nil || !after.ModTime().Equal(before.ModTime()) {
-		t.Fatalf("Ensure rewrote an enrolled composer: %v", err)
+	if after, err := os.ReadFile(hook); err != nil || string(after) != string(before) {
+		t.Fatalf("Ensure rewrote an enrolled composer: %v\nbefore %q\nafter %q", err, before, after)
 	}
 	// A person's own hook that runs the guard itself is enrolled as it is.
 	own := "#!/usr/bin/env bash\n\"$(git rev-parse --show-toplevel)/bin/metasystem\" internal pre-commit --root \"$(git rev-parse --show-toplevel)\" || exit $?\necho mine >/dev/null\n"
