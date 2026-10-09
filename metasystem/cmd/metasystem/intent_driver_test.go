@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -222,6 +223,14 @@ func TestDriverPublicUnknownReadAuthority(t *testing.T) {
 
 func driverStewardCycle(t *testing.T, bed *workBed, owners intentOwners, resident ...bool) {
 	t.Helper()
+	if err := driverStewardCycleResult(t, bed, owners, resident...); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func driverStewardCycleResult(t *testing.T, bed *workBed, owners intentOwners, resident ...bool) error {
+	var driveErr error
+	t.Helper()
 	var clock *steward.HandoffClock
 	if len(resident) > 0 && resident[0] {
 		start := bed.manager.Now()
@@ -252,7 +261,11 @@ func driverStewardCycle(t *testing.T, bed *workBed, owners intentOwners, residen
 						if cfg.DriveWork == nil {
 							return errors.New("steward has no work continuation")
 						}
-						return cfg.DriveWork(root)
+						driveErr = cfg.DriveWork(root)
+						if driveErr != nil {
+							fmt.Fprintln(stderr, driveErr)
+						}
+						return nil
 					}, nil, clock, func(string) int { return 1 }, nil, owners)
 			}
 		}
@@ -262,6 +275,7 @@ func driverStewardCycle(t *testing.T, bed *workBed, owners intentOwners, residen
 	if code != 0 {
 		t.Fatalf("steward cycle: %d %s %s", code, &stdout, &stderr)
 	}
+	return driveErr
 }
 
 type driverGit struct{ first, second *workBed }
@@ -394,5 +408,103 @@ func TestDriverPublicWaitDeadline(t *testing.T) {
 	code, result = driverVerb(t, bed, owners, "work", "wait", "run:"+run, "--timeout", "1s")
 	if code != 0 || resultData(t, result)["state"] != "awaiting-judgement" {
 		t.Fatalf("work didn't survive timeout: %d %+v", code, result)
+	}
+}
+
+func TestDriverPublicStewardSkipsBlockedWork(t *testing.T) {
+	t.Parallel()
+	for _, damage := range []string{"refusal", "entry", "worktree"} {
+		t.Run(damage, func(t *testing.T) {
+			t.Parallel()
+			bed := driverBed(t)
+			file := bed.goalFile(bed.id)
+			workApprovedBox(file)
+			file.Budget.ActiveJobLimit, file.Budget.ReservedJobMinutesLimit = 4, 3000
+			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+			bed.addGoal(file)
+			bed.starter.hold = "build"
+			first := driverBuild(t, bed, "z-oldest")
+			bed.manager.Sleep(time.Second)
+			other := &workBed{intentBed: bed.intentBed, id: bed.id, worktree: filepath.Join(filepath.Dir(bed.worktree), "other-work"), manager: bed.manager, starter: bed.starter,
+				unitRoot: bed.unitRoot, branchListed: true, head: bed.head, designGate: bed.designGate, workOwnersHook: bed.workOwnersHook, readDirs: map[string]bool{}}
+			if err := os.MkdirAll(other.worktree, 0700); err != nil {
+				t.Fatal(err)
+			}
+			second := driverBuild(t, other, "a-newest")
+			driverFinish(t, bed, "build")
+			bed.starter.hold = "proof"
+			atHelm := false
+			owners := driverOwners(t, bed, "auto", &atHelm)
+			units := owners.work.units
+			owners.work.units = func(layout stateroot.Layout) *launch.UnitRunner {
+				runner := units(layout)
+				runner.Git = driverGit{bed, other}
+				return runner
+			}
+			git := owners.work.git
+			owners.work.git = func(root string, args ...string) ([]byte, error) {
+				data, err := git(root, args...)
+				if slices.Equal(args, []string{"worktree", "list", "--porcelain"}) && err == nil {
+					data = append(data, []byte("\nworktree "+other.worktree+"\nHEAD "+other.head+"\nbranch refs/heads/goal/"+other.id+"\n")...)
+				}
+				return data, err
+			}
+			expectedReason := ""
+			switch damage {
+			case "refusal":
+				record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(first)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var plan struct{ Build struct{ Brief string } }
+				if err := json.Unmarshal(mustRead(t, record.Plan), &plan); err != nil {
+					t.Fatal(err)
+				}
+				brief := plan.Build.Brief
+				if !filepath.IsAbs(brief) {
+					brief = filepath.Join(record.PlanDirectory, brief)
+				}
+				if err := os.WriteFile(brief, append(mustRead(t, brief), []byte("\nedited after start\n")...), 0600); err != nil {
+					t.Fatal(err)
+				}
+				expectedReason = "inputs or settings"
+			case "entry":
+				entries, err := filepath.Glob(filepath.Join(bed.unitRoot, ".named", "*.json"))
+				if err != nil || len(entries) != 2 {
+					t.Fatalf("entries: %v %v", entries, err)
+				}
+				var entry map[string]any
+				if err := json.Unmarshal(mustRead(t, entries[0]), &entry); err != nil {
+					t.Fatal(err)
+				}
+				if entry["run"] != first {
+					entries[0] = entries[1]
+				}
+				if err := os.WriteFile(entries[0], []byte("damaged"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				expectedReason = "saved unit record is damaged"
+			case "worktree":
+				if err := os.RemoveAll(bed.worktree); err != nil {
+					t.Fatal(err)
+				}
+				expectedReason = bed.worktree
+			}
+			before := len(bed.starter.launched())
+			driveErr := driverStewardCycleResult(t, bed, owners)
+			if driveErr == nil || !strings.Contains(driveErr.Error(), expectedReason) {
+				t.Fatalf("damage unreported: %v", driveErr)
+			}
+			current, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(second)
+			if err != nil || current.Rounds[0].Steps[0].State != launch.StepPassed || len(current.Rounds[0].Steps) < 2 || current.Rounds[0].Steps[1].State != launch.StepRunning || len(bed.starter.launched()) != before+1 {
+				t.Fatalf("younger run not collected and started in one tick: %v steps=%+v launches=%v diagnostic=%v", err, current.Rounds[0].Steps, bed.starter.launched(), driveErr)
+			}
+			if damage == "refusal" {
+				code, status := driverVerb(t, bed, owners, "work", "status", bed.id, "--work", "z-oldest")
+				if code != 0 || !strings.Contains(resultWords(status), expectedReason) {
+					t.Fatalf("refusal invisible in status: %d %+v", code, status)
+				}
+			}
+		})
 	}
 }

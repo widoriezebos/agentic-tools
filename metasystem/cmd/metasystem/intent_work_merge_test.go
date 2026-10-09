@@ -11,6 +11,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 func TestBuildRetainsEngineAndHostAdmission(t *testing.T) {
@@ -63,6 +65,15 @@ func TestBuildRetainsEngineAndHostAdmission(t *testing.T) {
 func TestWorkBedRetainsClaimCapabilityAndClock(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
+	owners := bed.workOwners()
+	now, err := owners.commandNow(bed.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	proof, err := owners.prove(bed.root(), 20, nil, "", "", now)
+	if err != nil || !proof.EnrolledTerminalFor(bed.root()) {
+		t.Fatalf("work fixture lost its enrolled person: %+v %v", proof, err)
+	}
 	file, _ := bed.acceptedGoal()
 	claim := file.Claimed
 	capability := file.StopCapability
@@ -88,5 +99,46 @@ func TestWorkBedRetainsClaimCapabilityAndClock(t *testing.T) {
 		if err != nil || at.Sub(claimedAt) != row.offset {
 			t.Fatalf("%s time lost its relation to the claim: %q %v", row.name, row.at, err)
 		}
+	}
+}
+
+func TestWorkRunnerKeepsInvocationAuthorityLocal(t *testing.T) {
+	t.Parallel()
+	bed := driverBed(t)
+	atHelm := true
+	agent := driverOwners(t, bed, "person", &atHelm)
+	person := bed.workOwners()
+	source := agent.work.units(stateroot.Layout{})
+	source.Actor = "retained actor"
+	originalPolicy := source.Manager.BuildPolicy
+	for _, owners := range []*intentOwners{&agent, &person} {
+		owners.work.units = func(stateroot.Layout) *launch.UnitRunner { return source }
+	}
+	layout := stateroot.Layout{GitRoot: bed.root(), InstallationRoot: stateroot.Installation(bed.root())}
+	makeRunner := func(owners intentOwners) *launch.UnitRunner {
+		inv := &intentInvocation{cwd: bed.root(), stateRoot: bed.root(), layout: layout, owners: owners,
+			command: intentCommand{name: "work build", object: "work", action: "build"}}
+		return inv.unitRunner()
+	}
+	personRunner := makeRunner(person)
+	agentRunner := makeRunner(agent)
+	if personRunner == source || agentRunner == source || personRunner == agentRunner ||
+		personRunner.Manager == source.Manager || agentRunner.Manager == source.Manager || personRunner.Manager == agentRunner.Manager {
+		t.Fatal("invocations share mutable runner or admission authority")
+	}
+	if personRunner.Actor != "person" || agentRunner.Actor != "" || source.Actor != "retained actor" || source.ContinuePolicy != nil || source.Manager.BuildPolicy.ConfPath != originalPolicy.ConfPath {
+		t.Fatalf("actor or policy leaked between invocations: person=%q agent=%q source=%q", personRunner.Actor, agentRunner.Actor, source.Actor)
+	}
+	if allowed, err := personRunner.ContinuePolicy(); err != nil || !allowed {
+		t.Fatalf("current person cannot continue: %v %v", allowed, err)
+	}
+	if allowed, err := agentRunner.ContinuePolicy(); err != nil || allowed {
+		t.Fatalf("agent inherited the person's continuation authority: %v %v", allowed, err)
+	}
+	if allowed, err := personRunner.ContinuePolicy(); err != nil || !allowed {
+		t.Fatalf("later agent invocation replaced the person's policy: %v %v", allowed, err)
+	}
+	if _, err := os.Stat(humanauthority.AttorneyLogPath(bed.root())); !os.IsNotExist(err) {
+		t.Fatalf("admission probes wrote a refusal log: %v", err)
 	}
 }

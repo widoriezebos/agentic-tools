@@ -11,7 +11,7 @@ import (
 
 func TestSettingsResolveValueAndSource(t *testing.T) {
 	dir := t.TempDir()
-	conf := filepath.Join(dir, "metasystem.conf")
+	conf := filepath.Join(dir, "settings.conf")
 	if err := os.WriteFile(conf, []byte(BuildWindowKey+"=210000\n"+DesignModelKey+"=from-conf\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

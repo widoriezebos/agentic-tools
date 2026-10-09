@@ -348,6 +348,12 @@ func TestFleetBuildPolicyFallback(t *testing.T) {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
 			bed := newWorkBed(t)
+			bed.starter.hold = "build"
+			if !row.registry {
+				if err := os.Remove(filepath.Join(bed.root(), ".git")); err != nil {
+					t.Fatal(err)
+				}
+			}
 			bed.manager.CapacitySources.Load = func(time.Time) hostload.Sample {
 				return hostload.Sample{Available: true, Load1m: row.load}
 			}
@@ -395,8 +401,13 @@ func TestFleetBuildPolicyFallback(t *testing.T) {
 			brief := bed.brief("fallback.md", "Build this unit.\n")
 			code, result := fleetWorkJSON(t, bed, owners, "work", "build", bed.id, "fallback", "--brief", brief, "--lines", "5")
 			if row.allow {
-				if code != 0 || len(bed.starter.launched()) == 0 {
-					t.Fatalf("fallback did not launch: %d %+v", code, result)
+				launched := bed.starter.launched()
+				if code != 3 || result.Outcome != intentInProgress || len(launched) != 1 || launched[0] != "build" {
+					t.Fatalf("fallback did not admit exactly one running build: %d %+v", code, result)
+				}
+				record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(resultData(t, result)["run"].(string))
+				if err != nil || len(record.Rounds) != 1 || len(record.Rounds[0].Steps) == 0 || record.Rounds[0].Steps[0].State != launch.StepRunning || len(record.Rounds[0].Steps[0].LaunchIDs) != 1 {
+					t.Fatalf("fallback did not retain the admitted build: %+v %v", record, err)
 				}
 			} else if code != 1 || result.Outcome != intentRefused || len(bed.starter.launched()) != 0 {
 				t.Fatalf("fallback bypassed admission: %d %+v", code, result)

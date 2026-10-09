@@ -222,7 +222,7 @@ func TestLandingSettingsAreRosterKeys(t *testing.T) {
 		}
 		return "", false
 	}
-	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	conf := filepath.Join(t.TempDir(), "settings.conf")
 	if err := os.WriteFile(conf, []byte("# overrides only\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

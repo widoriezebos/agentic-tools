@@ -82,7 +82,11 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 				return inv.unitOutcome(runner, resumed, err, targets, inv.workArgv(current, "wait"))
 			}
 			resumed, err = runner.Continue(launch.UnitRequest{Resume: run})
-			return inv.unitOutcome(runner, resumed, err, targets, inv.workArgv(current, "wait"))
+			result := inv.unitOutcome(runner, resumed, err, targets, inv.workArgv(current, "wait"))
+			if errors.Is(err, launch.ErrUnitObserving) {
+				result.next = inv.publicArgv("work", "build", unitRunPrefix+run)
+			}
+			return result
 		}
 		if round.Stop != nil && strings.HasPrefix(round.Stop.Handoff, "stopped ") && round.Stop.Handoff != "stopped unreadable-policy" && len(current.Subjects) == 0 && round.ReadModel != "" {
 			if round.UnknownRetries == 0 {

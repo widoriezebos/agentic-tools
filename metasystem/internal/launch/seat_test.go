@@ -413,7 +413,7 @@ func TestSeatIsOffUntilASettingTurnsItOn(t *testing.T) {
 			return value, ok
 		}
 	}
-	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	conf := filepath.Join(t.TempDir(), "settings.conf")
 	if err := os.WriteFile(conf, []byte("# overrides only\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

@@ -189,6 +189,14 @@ func TestDirectPersonProofUsesCheckoutAuthorityAndInstallationClock(t *testing.T
 		return grantProof, nil
 	}
 	inv.owners = owners
+	if refusal := inv.checkDirectPersonProof("process setting", false); refusal == nil || refusal.Outcome != intentRefused {
+		t.Fatalf("grant admitted a direct-person probe: %+v", refusal)
+	}
+	for _, root := range []string{installation, projectState, b.root()} {
+		if _, err := os.Stat(humanauthority.AttorneyLogPath(root)); !os.IsNotExist(err) {
+			t.Fatalf("probe wrote a refusal log under %s: %v", root, err)
+		}
+	}
 	if refusal := inv.directPersonProof("process setting"); refusal == nil || refusal.Outcome != intentRefused {
 		t.Fatalf("grant admitted a direct-person act: %+v", refusal)
 	}

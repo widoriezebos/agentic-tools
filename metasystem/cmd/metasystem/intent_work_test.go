@@ -46,6 +46,7 @@ type workBed struct {
 	manager       *launch.Manager
 	starter       *workStarter
 	unitRoot      string
+	personProof   goalAuthorityProver
 	branchListed  bool
 	head          string
 	ledger        sync.Mutex
@@ -381,7 +382,7 @@ func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 	t.Cleanup(bed.removeReadDirs)
 	parent := t.TempDir()
 	bed.worktree = filepath.Join(parent, "work")
-	for _, dir := range []string{bed.worktree, filepath.Join(parent, "objects")} {
+	for _, dir := range []string{filepath.Join(bed.root(), ".git"), bed.worktree, filepath.Join(parent, "objects")} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
 		}
@@ -410,11 +411,15 @@ func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 		t.Fatal(err)
 	}
 	bed.manager.Templates = protocol.Templates()
+	bed.personProof = enrolledPersonProver(t, bed.root(), clock.Now())
 	return bed
 }
 
 func (b *workBed) workOwners() intentOwners {
 	owners := b.owners()
+	if b.personProof != nil {
+		owners.prove = b.personProof
+	}
 	// The shared goal-ledger fixture records its calls unguarded; concurrent
 	// invocations read the ledger one at a time and race only in the runner.
 	endpoint, commandNow := owners.dependencies.endpoint, owners.commandNow

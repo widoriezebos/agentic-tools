@@ -62,7 +62,9 @@ func (inv *intentInvocation) driveUnitReviews() error {
 					review.reviewWork.retry, _ = strconv.ParseInt(act.Command[i+1], 10, 64)
 				}
 			}
-			return review.driveUnitReview(record)
+			if err := review.driveUnitReview(record); err != nil {
+				return fmt.Errorf("run %s: %w", record.ID, err)
+			}
 		}
 	}
 	return nil

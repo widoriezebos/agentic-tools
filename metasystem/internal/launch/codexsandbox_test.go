@@ -60,7 +60,7 @@ func TestSettingsResolveTheCodexSandbox(t *testing.T) {
 		{"", "workspace-write", "default"},
 		{CodexSandboxKey + "=danger-full-access\n", "danger-full-access", "conf-local"},
 	} {
-		conf := filepath.Join(t.TempDir(), "metasystem.conf")
+		conf := filepath.Join(t.TempDir(), "settings.conf")
 		if err := os.WriteFile(conf, []byte("metasystem.runtimes=claude,codex\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -83,7 +83,7 @@ func TestSettingsResolveTheCodexSandbox(t *testing.T) {
 			t.Fatalf("local %q: sandbox = %q from %q, want %q from %q", test.local, settings.CodexSandbox, source, test.want, test.source)
 		}
 	}
-	conf := filepath.Join(t.TempDir(), "metasystem.conf")
+	conf := filepath.Join(t.TempDir(), "settings.conf")
 	if err := os.WriteFile(conf, []byte(CodexSandboxKey+"=other\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}

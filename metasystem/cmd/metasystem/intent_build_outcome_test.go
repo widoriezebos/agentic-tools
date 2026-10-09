@@ -662,3 +662,42 @@ func TestIntentBuildGapRevisionHonorsPolicy(t *testing.T) {
 		})
 	}
 }
+
+func TestDriverPublicSizeAcceptanceUnderHelm(t *testing.T) {
+	t.Parallel()
+	b := driverBed(t)
+	diff := "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n-old\n+new\n+extra\n"
+	hook := b.workOwnersHook
+	b.workOwnersHook = func(o *intentWorkOwners) {
+		hook(o)
+		units := o.units
+		o.units = func(layout stateroot.Layout) *launch.UnitRunner {
+			r := units(layout)
+			r.Git = outcomeGit{workGit{b}, diff}
+			return r
+		}
+	}
+	b.manager.Supervisor = outcomeStarter{bed: b}
+	code, built, _ := b.work("work", "build", b.id, "outcome", "--brief", b.brief("size.md", "Build the unit.\n"), "--lines", "1")
+	if code != 1 || resultData(t, built)["outcome"] != "build-size" {
+		t.Fatalf("size hold: %d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	atHelm := true
+	owners := driverOwners(t, b, "auto", &atHelm)
+	// Helm authority allows the person's decision, but grants no direct-terminal power to launch.
+	code, accepted := driverVerb(t, b, owners, "work", "review", "run:"+run, "--reason", "Accept the complete change", "--by", "Wido")
+	if code != 3 || accepted.Next == nil || len(b.starter.launched()) != 1 {
+		t.Fatalf("size decision: %d %+v", code, accepted)
+	}
+	current, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	if err != nil || current.Rounds[0].SizeAcceptedBy != "Wido" || current.Rounds[0].Stop != nil || current.Rounds[0].Outcome != "" {
+		t.Fatalf("size acceptance not retained: %+v %v", current, err)
+	}
+	owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+	code, resumed := driverVerb(t, b, owners, accepted.Next.Argv[1:]...)
+	current, err = (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+	if code != 0 || err != nil || current.Rounds[0].Outcome != "green" || len(current.Rounds) != 1 || !slices.Equal(b.starter.launched(), []string{"build", "proof"}) {
+		t.Fatalf("printed command did not continue the accepted build: %d %+v %+v %v", code, resumed, current, err)
+	}
+}

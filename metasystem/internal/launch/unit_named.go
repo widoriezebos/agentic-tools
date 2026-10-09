@@ -532,10 +532,10 @@ func (work NamedWork) Running() bool {
 
 // NamedWork lists the named units this store holds for one goal in one
 // worktree, ordered by name; an empty goal includes every goal. It reads
-// the named entries and the runs they reserved and writes nothing. An entry that cannot be read, or whose run
-// names another goal, unit or worktree, is refused rather than skipped, so a
-// caller never selects among a partial list. Entries of other worktrees and
-// goals are not this goal's work and are left out.
+// the named entries and the runs they reserved and writes nothing. Damaged
+// entries are reported alongside the readable entries; callers must handle
+// the error before selecting work. Entries of other worktrees and goals
+// are not this goal's work and are left out.
 func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) {
 	real, err := filepath.EvalSymlinks(worktree)
 	if err != nil {
@@ -550,6 +550,7 @@ func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) 
 		return nil, err
 	}
 	var work []NamedWork
+	var failures error
 	for _, name := range names {
 		key, isEntry := strings.CutSuffix(name.Name(), ".json")
 		if !isEntry || name.IsDir() {
@@ -557,13 +558,15 @@ func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) 
 		}
 		entry, found, err := runner.readNamed(key)
 		if err != nil {
-			return nil, err
+			failures = errors.Join(failures, err)
+			continue
 		}
 		if !found || entry.Worktree != real || goal != "" && entry.Goal != goal {
 			continue
 		}
 		if _, expected, err := namedUnitIdentity(UnitPlan{Worktree: real, Goal: entry.Goal, Unit: entry.Unit}); err != nil || expected != key {
-			return nil, coded("UNIT_NAMED_ENTRY_CORRUPT", "entry="+runner.namedPath(key, ".json"), errors.New("a saved unit record is damaged: its goal, unit and worktree do not match"))
+			failures = errors.Join(failures, coded("UNIT_NAMED_ENTRY_CORRUPT", "entry="+runner.namedPath(key, ".json"), errors.New("a saved unit record is damaged: its goal, unit and worktree do not match")))
+			continue
 		}
 		one := NamedWork{Unit: entry.Unit, Run: entry.Run}
 		if entry.Run != "" {
@@ -571,10 +574,12 @@ func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) 
 			switch {
 			case errors.Is(readErr, fs.ErrNotExist):
 			case readErr != nil:
-				return nil, readErr
+				failures = errors.Join(failures, readErr)
+				continue
 			case record.Goal != entry.Goal || record.Unit != entry.Unit:
-				return nil, coded("UNIT_NAMED_ENTRY_CORRUPT", "entry="+runner.namedPath(key, ".json")+" run="+entry.Run,
-					fmt.Errorf("a saved unit record points at run %s, which belongs to unit %s of goal %s", entry.Run, record.Unit, record.Goal))
+				failures = errors.Join(failures, coded("UNIT_NAMED_ENTRY_CORRUPT", "entry="+runner.namedPath(key, ".json")+" run="+entry.Run,
+					fmt.Errorf("a saved unit record points at run %s, which belongs to unit %s of goal %s", entry.Run, record.Unit, record.Goal)))
+				continue
 			default:
 				one.Record = &record
 			}
@@ -582,7 +587,7 @@ func (runner *UnitRunner) NamedWork(worktree, goal string) ([]NamedWork, error) 
 		work = append(work, one)
 	}
 	sort.Slice(work, func(i, j int) bool { return work[i].Unit < work[j].Unit })
-	return work, nil
+	return work, failures
 }
 
 // RetainedRequest is the request bytes a named unit's run started with, as

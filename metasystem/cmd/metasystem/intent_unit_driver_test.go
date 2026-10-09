@@ -49,10 +49,61 @@ func TestDriverPublicReviewPublication(t *testing.T) {
 		}
 		return
 	}
-	for _, scenario := range []string{"clean", "committed critic", "judgements", "stop", "person", "helm", "publication changes helm", "check reds"} {
+	for _, scenario := range []string{"clean", "committed critic", "judgements", "stop", "person", "helm", "publication changes helm", "check reds", "held proof", "held build"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			d := newDriverReviewFixture(t, scenario)
+			var heldRun string
+			if strings.HasPrefix(scenario, "held ") {
+				kind := strings.TrimPrefix(scenario, "held ")
+				file := *d.bed.goalFile(d.bed.id)
+				file.Id, file.Priority, file.Sequence = "a-held-goal", 1, 1
+				d.bed.addGoal(&file)
+				other := &workBed{intentBed: d.bed.intentBed, id: file.Id, worktree: filepath.Join(filepath.Dir(d.bed.worktree), "held-work"), manager: d.bed.manager, starter: d.bed.starter,
+					unitRoot: d.bed.unitRoot, branchListed: true, head: d.bed.head, designGate: d.bed.designGate, workOwnersHook: d.bed.workOwnersHook, readDirs: map[string]bool{}}
+				if err := os.MkdirAll(other.worktree, 0700); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(other.removeReadDirs)
+				other.starter.fail[kind] = true
+				other.manager.Supervisor = driverReviewStarter{d, &stopReadStarter{bed: other, reads: [][]readsubject.Finding{nil}}}
+				owners := other.workOwners()
+				owners.work.config = d.owners.work.config
+				otherGit := owners.work.git
+				owners.work.git = func(root string, args ...string) ([]byte, error) {
+					if data, ok := d.raw.responses[branchRawKey(args...)]; ok {
+						return data, nil
+					}
+					return otherGit(root, args...)
+				}
+				owners.binding = func(_ string, id string, _ time.Time) (dispatchcore.GoalBinding, error) {
+					binding := *d.bed.initialBinding
+					binding.GoalID, binding.File = id, &file
+					return binding, nil
+				}
+				brief := other.brief("held.md", "Build the held unit.\n")
+				code, held := other.runJSON(owners, "work", "build", other.id, "--work", "a-held", "--brief", brief, "--lines", "10")
+				if code != 1 || resultData(t, held)["state"] != "awaiting-judgement" {
+					t.Fatalf("unit not held: %d %+v", code, held)
+				}
+				heldRun = resultData(t, held)["run"].(string)
+				other.starter.fail[kind] = false
+				d.bed.manager.Supervisor = driverReviewStarter{d, &stopReadStarter{bed: d.bed, reads: [][]readsubject.Finding{nil}}}
+				units := d.owners.work.units
+				d.owners.work.units = func(layout stateroot.Layout) *launch.UnitRunner {
+					runner := units(layout)
+					runner.Git = driverHeldTreeGit{runner.Git, other}
+					return runner
+				}
+				git := d.owners.work.git
+				d.owners.work.git = func(root string, args ...string) ([]byte, error) {
+					data, err := git(root, args...)
+					if slices.Equal(args, []string{"worktree", "list", "--porcelain"}) && err == nil {
+						data = append(data, []byte("\nworktree "+other.worktree+"\nHEAD "+other.head+"\nbranch refs/heads/goal/"+other.id+"\n")...)
+					}
+					return data, err
+				}
+			}
 			brief := d.bed.brief("unit.md", "Read each round: yes\nBuild the unit.\n")
 			code, built := d.bed.runJSON(d.owners, "work", "build", d.bed.id, "--json", "--work", "u1", "--brief", brief, "--lines", "10", "--read-tool-calls", "12")
 			if code != 0 && scenario != "check reds" {
@@ -60,6 +111,15 @@ func TestDriverPublicReviewPublication(t *testing.T) {
 			}
 			run := resultData(t, built)["run"].(string)
 			d.run = run
+			if scenario == "helm" {
+				d.takeHelm(t)
+			}
+			if heldRun != "" {
+				held, err := (&launch.UnitRunner{Root: d.bed.unitRoot}).Status(heldRun)
+				if err != nil || held.State != "awaiting-judgement" {
+					t.Fatalf("held input moved: %+v %v", held, err)
+				}
+			}
 			d.cycle(t)
 			if scenario == "committed critic" || scenario == "judgements" || scenario == "stop" {
 				d.cycle(t)
@@ -67,6 +127,13 @@ func TestDriverPublicReviewPublication(t *testing.T) {
 			current := d.record(t)
 			if current.ReviewAct == nil {
 				t.Fatal("steward did not retain the next review act")
+			}
+			if heldRun != "" {
+				held, err := (&launch.UnitRunner{Root: d.bed.unitRoot}).Status(heldRun)
+				if err != nil || held.ReviewAct == nil || held.ReviewAct.State == "satisfied" || len(held.Revisions) != 0 || current.ReviewAct.State != "satisfied" || d.commits != 1 || d.readCommits != 1 {
+					t.Fatalf("held unit hid later publication: held=%+v clean=%+v commits=%d reads=%d err=%v", held, current.ReviewAct, d.commits, d.readCommits, err)
+				}
+				return
 			}
 			if scenario == "check reds" {
 				if current.Rounds[0].Outcome != "proof-red" || len(current.Revisions) != 0 || d.commits != 0 {
@@ -283,9 +350,6 @@ func newDriverReviewFixture(t *testing.T, scenario string) *driverReviewFixture 
 	bed.manager.Supervisor = driverReviewStarter{d, &stopReadStarter{bed: bed, reads: findings}}
 	if scenario == "person" {
 		d.policy = "person"
-	}
-	if scenario == "helm" {
-		d.takeHelm(t)
 	}
 	owners := bed.workOwners()
 	owners.work.config = func(key, _ string) (string, string, int, error) {
@@ -700,4 +764,19 @@ func (s driverReviewStarter) StartSupervisor(id, state string) (identity.Ref, er
 		return nil
 	})
 	return ref, err
+}
+
+// Each registered checkout reports its own Git top, so custody remains per worktree.
+type driverHeldTreeGit struct {
+	clean launch.GitRunner
+	held  *workBed
+}
+
+func (g driverHeldTreeGit) Run(directory string, environment []string, args ...string) ([]byte, error) {
+	actual, _ := filepath.EvalSymlinks(directory)
+	held, _ := filepath.EvalSymlinks(g.held.worktree)
+	if actual == held {
+		return (workGit{g.held}).Run(directory, environment, args...)
+	}
+	return g.clean.Run(directory, environment, args...)
 }

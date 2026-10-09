@@ -51,3 +51,54 @@ func TestStatusAndTheSeatPromptShareOneUnitList(t *testing.T) {
 		t.Fatal("the seat's unit reader must call the shared goalUnitStages owner")
 	}
 }
+
+func TestGoalStatusKeepsRunReviewActAndContinuationRefusal(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	bed.starter.hold = "build"
+	brief := bed.brief("status.md", "Build the unit.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "status-unit", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 3 {
+		t.Fatalf("held build: code=%d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	runner := &launch.UnitRunner{Manager: bed.manager, Root: bed.unitRoot, Git: workGit{bed}}
+	record, err := runner.Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	act := launch.UnitReviewAct{Key: launch.ReviewActKey(record), Round: len(record.Rounds), State: "prepared", Summary: "review the retained result"}
+	if err := runner.RetainReviewAct(run, act); err != nil {
+		t.Fatal(err)
+	}
+	plan, err := launch.ReadUnitPlan(record.Plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	restore := tamper(t, plan.Build.Brief)
+	defer restore()
+	launches := len(bed.starter.launched())
+	for _, argv := range [][]string{{"status", bed.id}, {"work", "status", bed.id}} {
+		code, status, _ := bed.work(argv...)
+		if code != 0 {
+			t.Fatalf("status: code=%d %+v", code, status)
+		}
+		views := resultData(t, status)["work"].([]any)
+		if len(views) != 1 {
+			t.Fatalf("unit views: %+v", views)
+		}
+		view := views[0].(map[string]any)
+		if view["run"] != run || view["state"] != record.State {
+			t.Fatalf("status lost the run identity: %+v", view)
+		}
+		if retained, ok := view["reviewAct"].(map[string]any); !ok || retained["key"] != act.Key || retained["state"] != act.State {
+			t.Fatalf("status lost the review action: %+v", view)
+		}
+		if stage, ok := view["stage"].(string); !ok || !strings.Contains(stage, "continuation refused:") || !strings.Contains(stage, "UNIT_NAMED_INPUT_CHANGED") {
+			t.Fatalf("status hid changed continuation inputs: %+v", view)
+		}
+	}
+	if len(bed.starter.launched()) != launches {
+		t.Fatalf("status launched work: %v", bed.starter.launched())
+	}
+}
