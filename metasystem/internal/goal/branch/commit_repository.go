@@ -46,17 +46,18 @@ func (f commitFacts) complete() bool {
 }
 
 type commitEffects struct {
-	KeepTip      func(repo, goal, tip string) error
-	ClearFetch   func(repo, ref string) error
-	Open         func(repo, base string, amend bool) (dir string, close func(), err error)
-	Apply        func(dir string, patch []byte) error
-	Commit       func(dir, subject, trailer string, amend bool) error
-	Replay       func(dir, commit string) error
-	WithoutPaths func(repo, tree string, paths []string) (string, error)
-	Checkout     func(repo, before, after string) error
-	Attach       func(repo, ref string) error
-	Restore      func(repo, ref, commit string) error
-	Publish      func(repo, goal, old, next, origin string) error
+	PatchCheckout func(repo, base, index, next string) error
+	KeepTip       func(repo, goal, tip string) error
+	ClearFetch    func(repo, ref string) error
+	Open          func(repo, base string, amend bool) (dir string, close func(), err error)
+	Apply         func(dir string, patch []byte) error
+	Commit        func(dir, subject, trailer string, amend bool) error
+	Replay        func(dir, commit string) error
+	WithoutPaths  func(repo, tree string, paths []string) (string, error)
+	Checkout      func(repo, before, after string) error
+	Attach        func(repo, ref string) error
+	Restore       func(repo, ref, commit string) error
+	Publish       func(repo, goal, old, next, origin string) error
 }
 
 type CommitEffects = commitEffects
@@ -136,6 +137,10 @@ func gitCommitRepository() commitRepository {
 			},
 		},
 		effects: commitEffects{
+			PatchCheckout: func(repo, base, index, next string) error {
+				_, err := gitOutput(repo, "read-tree", "-m", "-u", base, index, next)
+				return err
+			},
 			KeepTip: func(repo, goal, tip string) error {
 				_, err := gitOutput(repo, "update-ref", "refs/metasystem/goals/before/"+goal+"/"+tip, tip)
 				return err

@@ -110,6 +110,9 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		if problem != nil {
 			return branch.GateObservation{}, problem
 		}
+		if _, err := os.Stat(filepath.Join(records, entry.Name(), "result.json")); os.IsNotExist(err) {
+			continue
+		}
 		if newest == nil || info.ModTime().After(newest.ModTime()) {
 			newest, latest = info, filepath.Join(records, entry.Name())
 		}
@@ -128,9 +131,17 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		}
 		if prior.Check.ProcessAct == check.ProcessAct && prior.Check.Cheap == check.Cheap && prior.Check.Audits == check.Audits && prior.Check.SourceTree == subject.Tree {
 			if len(prior.Exits) != 2 || prior.Exits[0].Exit != 0 || prior.Exits[1].Exit != 0 {
-				return branch.GateObservation{}, fmt.Errorf("the retained subject check failed")
+				rerun := inv.publicArgv("work", "review", "--commit", subject.Commit, "--goal", goalID, "--repo", inv.layout.InstallationRoot.Path(), "--check-only", "--rerun")
+				if check.ProcessAct != "" {
+					rerun = append(rerun, "--act", check.ProcessAct)
+				}
+				if !inv.input.switched("rerun") {
+					return branch.GateObservation{}, fmt.Errorf("the retained subject check failed\nrun: %s", shellCommand(rerun))
+				}
 			}
-			execution = latest
+			if !inv.input.switched("rerun") {
+				execution = latest
+			}
 		}
 	}
 	if execution == "" {

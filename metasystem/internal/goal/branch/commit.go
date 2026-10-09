@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -57,6 +58,7 @@ func firstLine(err error) string {
 var pushProtocolAvailable bool
 
 type CommitRequest struct {
+	patchOnly                                     bool
 	BeforeCommit                                  func(dir, parent, tree string) error
 	BeforeInstall                                 func() (func() error, error)
 	PrepareOnly                                   bool
@@ -119,13 +121,7 @@ func stagedPaths(repo string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var paths []string
-	for _, item := range bytes.Split(out, []byte{0}) {
-		if len(item) != 0 {
-			paths = append(paths, string(item))
-		}
-	}
-	return paths, nil
+	return strings.FieldsFunc(string(out), func(r rune) bool { return r == 0 }), nil
 }
 
 func gitInput(repo string, input []byte, args ...string) ([]byte, error) {
@@ -147,10 +143,6 @@ func gitInputEnv(repo string, env []string, input []byte, args ...string) ([]byt
 		return nil, fmt.Errorf("git %s: %s: %w", strings.Join(args, " "), strings.TrimSpace(stderr.String()), err)
 	}
 	return out, nil
-}
-
-func inspectCommitBranch(req CommitRequest) (commitBranchState, error) {
-	return gitCommitRepository().inspectCommitBranch(req)
 }
 
 func (r commitRepository) inspectCommitBranch(req CommitRequest) (commitBranchState, error) {
@@ -341,15 +333,17 @@ func (r commitRepository) commitPreparedState(req CommitRequest, subjectCommit s
 	if req.Amend {
 		return r.amendUnit(req, state)
 	}
-	paths, err := r.facts.Staged(req.Repo)
-	if err != nil {
-		return "", err
-	}
-	if len(paths) == 0 && req.Kind != Drop {
-		return "", fmt.Errorf("the staged tree has no change to commit")
-	}
-	if err := validateCommitPaths(req.Kind, paths, req.GoalID); err != nil {
-		return "", err
+	if !req.patchOnly {
+		paths, err := r.facts.Staged(req.Repo)
+		if err != nil {
+			return "", err
+		}
+		if len(paths) == 0 && req.Kind != Drop {
+			return "", fmt.Errorf("the staged tree has no change to commit")
+		}
+		if err := validateCommitPaths(req.Kind, paths, req.GoalID); err != nil {
+			return "", err
+		}
 	}
 	subject, trailer, err := commitMessage(req, subjectCommit)
 	if err != nil {
@@ -367,29 +361,17 @@ func CommitStagedWithInputs(req CommitRequest, facts CommitFacts, effects Commit
 	return commitStaged(req, commitRepository{facts: facts, effects: effects})
 }
 
-func adoptionCheckoutClean(req CommitRequest, state commitBranchState, allowed []string) error {
-	return gitCommitRepository().adoptionCheckoutClean(req, state, allowed)
-}
-
 func (r commitRepository) adoptionCheckoutClean(req CommitRequest, state commitBranchState, allowed []string) error {
 	unstaged, err := r.facts.Unstaged(req.Repo)
 	if err != nil {
 		return err
 	}
-	allowedSet := map[string]bool{}
-	for _, path := range allowed {
-		allowedSet[path] = true
-	}
 	for _, item := range unstaged {
-		if !allowedSet[item] {
+		if !slices.Contains(allowed, item) {
 			return operationRefusal(StaleCode, "goal %s's branch moved on origin to %s, and this checkout has unstaged changes in its way\nrun: metasystem work status %s", req.GoalID, state.baseTip, req.GoalID)
 		}
 	}
 	return nil
-}
-
-func buildCommitOnto(req CommitRequest, state commitBranchState, subject, trailer string, patch []byte) (string, error) {
-	return gitCommitRepository().buildCommitOnto(req, state, subject, trailer, patch)
 }
 
 func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchState, subject, trailer string, patch []byte) (string, error) {
@@ -401,6 +383,26 @@ func (r commitRepository) buildCommitOnto(req CommitRequest, state commitBranchS
 	if req.ResumeWorktree == "" && req.Kind != Drop {
 		if err := r.effects.Apply(worktree, patch); err != nil {
 			return "", operationRefusal(ReplayConflictCode, "the staged change doesn't apply to goal %s's branch as origin holds it (%s): %v\nrun: metasystem work status %s", req.GoalID, state.baseTip, err, req.GoalID)
+		}
+	}
+	if req.patchOnly {
+		paths, err := r.facts.Staged(worktree)
+		if err != nil {
+			return "", err
+		}
+		prefix, err := gitOutput(req.Repo, "rev-parse", "--show-prefix")
+		if err != nil {
+			return "", err
+		}
+		if len(paths) != 1 || paths[0] != strings.TrimRight(string(prefix), "\n")+"metasystem.conf" {
+			return "", fmt.Errorf("a declaration inverse may change only metasystem.conf")
+		}
+		staged, err := r.facts.Staged(req.Repo)
+		if err != nil {
+			return "", err
+		}
+		if slices.Contains(staged, paths[0]) {
+			return "", fmt.Errorf("the inverse would overwrite staged content in %s", paths[0])
 		}
 	}
 
@@ -526,10 +528,6 @@ func restoreHead(repo, ref, commit string) error {
 	return err
 }
 
-func installCommitOnto(req CommitRequest, state commitBranchState, newTip string) error {
-	return gitCommitRepository().installCommitOnto(req, state, newTip)
-}
-
 func (r commitRepository) installCommitOnto(req CommitRequest, state commitBranchState, newTip string) error {
 	current, indexTree, err := r.checkoutInstallPreflight(req, newTip)
 	if err != nil {
@@ -539,11 +537,18 @@ func (r commitRepository) installCommitOnto(req CommitRequest, state commitBranc
 	if err != nil {
 		return err
 	}
-	if err := r.effects.Checkout(req.Repo, indexTree, newTip); err != nil {
+	checkout, checkoutBase := r.effects.Checkout, indexTree
+	if req.patchOnly {
+		if current != goalBranchRef(req.GoalID) {
+			return fmt.Errorf("inverse publication requires this goal's current worktree")
+		}
+		checkout, checkoutBase = func(repo, before, after string) error { return r.effects.PatchCheckout(repo, before, indexTree, after) }, state.baseTip
+	}
+	if err := checkout(req.Repo, checkoutBase, newTip); err != nil {
 		return operationRefusal(StaleCode, "the new commit %s couldn't be checked out here: %v\nrun: metasystem work status %s", newTip, err, req.GoalID)
 	}
 	rollbackCheckout := func(cause error) error {
-		if rollbackErr := r.effects.Checkout(req.Repo, newTip, indexTree); rollbackErr != nil {
+		if rollbackErr := checkout(req.Repo, newTip, indexTree); rollbackErr != nil {
 			return operationRefusal(StaleCode, "%s; putting the checkout back failed too (%v)\nrun: metasystem work status %s", firstLine(cause), rollbackErr, req.GoalID)
 		}
 		return cause
@@ -568,12 +573,13 @@ func (r commitRepository) commitStagedOnto(req CommitRequest, state commitBranch
 			return "", err
 		}
 	}
-	patch, err := r.facts.Patch(req.Repo)
-	if err != nil {
-		return "", err
-	}
-	if req.FrozenPatch != nil {
-		patch = req.FrozenPatch
+	patch := req.FrozenPatch
+	if patch == nil {
+		var err error
+		patch, err = r.facts.Patch(req.Repo)
+		if err != nil {
+			return "", err
+		}
 	}
 	newTip, err := r.buildCommitOnto(req, state, subject, trailer, patch)
 	if err != nil {
@@ -774,4 +780,37 @@ func (r commitRepository) openCommitWorktree(req CommitRequest, base string, ame
 		return "", nil, err
 	}
 	return req.ResumeWorktree, func() { _ = CloseCommitWorktree(req.Repo, req.ResumeWorktree) }, nil
+}
+
+// CommitFrozenPatch publishes only the supplied patch, preserving the caller's index.
+func CommitFrozenPatch(req CommitRequest) (string, error) {
+	r := gitCommitRepository()
+	return CommitFrozenPatchWithInputs(req, r.facts, r.effects)
+}
+func CommitFrozenPatchWithInputs(req CommitRequest, facts CommitFacts, effects CommitEffects) (string, error) {
+	r := commitRepository{facts, effects}
+	if req.Amend || req.Kind != Unit || len(req.FrozenPatch) == 0 {
+		return "", fmt.Errorf("inverse publication needs a new unit and a nonempty frozen patch")
+	}
+	if err := CheckCommitAccess(req.GoalID, req.CheckClaim); err != nil {
+		return "", err
+	}
+	state, err := r.inspectCommitBranch(req)
+	if err != nil {
+		return "", err
+	}
+	if state.adopt {
+		return "", fmt.Errorf("origin's goal branch differs from this checkout\nbring the local branch current first, preserving your changes, then repeat the inverse")
+	}
+	commits, err := r.facts.Range(req.Repo, req.EndpointTip, state.baseTip, req.GoalID)
+	if err != nil {
+		return "", err
+	}
+	for _, commit := range commits {
+		if commit.Kind == Unit && commit.Unit == req.Unit {
+			return commit.ID, nil
+		}
+	}
+	req.patchOnly = true
+	return r.commitPreparedState(req, "", state)
 }

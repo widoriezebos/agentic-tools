@@ -34,14 +34,11 @@ type checkSelection struct {
 
 // AdmitCheck retains the last admitted selection, never a pending proposal.
 func AdmitCheck(c Check) (act ProcessAct, err error) {
-	if err = os.MkdirAll(filepath.Join(c.Root, "process", "acts"), 0700); err != nil {
-		return
-	}
 	mode := lock.TryExclusive
 	if c.Observation {
 		mode = lock.Exclusive
 	}
-	held, err := lock.File(filepath.Join(c.Root, "process", "lock"), 0600, mode)
+	held, err := processLock(c.Root, mode)
 	if err != nil {
 		return
 	}
@@ -189,10 +186,7 @@ type declarationReference struct {
 // AdmitDeclaration owns each goal's committed declaration history and approval.
 func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 	directory := filepath.Join(c.Root, "process")
-	if err = os.MkdirAll(filepath.Join(directory, "acts"), 0700); err != nil {
-		return
-	}
-	held, err := lock.File(filepath.Join(directory, "lock"), 0600, lock.Exclusive)
+	held, err := processLock(c.Root, lock.Exclusive)
 	if err != nil {
 		return
 	}
@@ -230,7 +224,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 			return
 		}
 	}
-	act.BeforeDeclaration, act.AfterDeclaration = &previous.Snapshot, &candidate
+	act.BeforeDeclaration, act.AfterDeclaration, act.InheritedDeclaration = &previous.Snapshot, &candidate, &inherited
 	act.Predecessor, act.Class, act.Actor = previous.Act, "declaration", "unknown"
 	changed := false
 	for index, value := range candidate.Values {

@@ -140,13 +140,11 @@ type readCommitEffects struct {
 }
 
 func gitReadCommitEffects() readCommitEffects {
+	repo := gitCommitRepository()
 	return readCommitEffects{
-		Inspect: inspectCommitBranch, StagedPaths: stagedPaths, AdoptionClean: adoptionCheckoutClean,
-		Patch: prospectiveReadPatch, Build: buildCommitOnto,
-		IndexTree: func(repo string) (string, error) {
-			out, err := gitOutput(repo, "write-tree")
-			return strings.TrimSpace(string(out)), err
-		},
+		Inspect: repo.inspectCommitBranch, StagedPaths: repo.facts.Staged, AdoptionClean: repo.adoptionCheckoutClean,
+		Patch: prospectiveReadPatch, Build: repo.buildCommitOnto,
+		IndexTree: repo.facts.Index,
 		RestoreIndex: func(repo, tree string) error {
 			_, err := gitOutput(repo, "read-tree", tree)
 			return err
@@ -159,7 +157,7 @@ func gitReadCommitEffects() readCommitEffects {
 			_, err := gitOutput(repo, args...)
 			return err
 		},
-		Install: installCommitOnto,
+		Install: repo.installCommitOnto,
 	}
 }
 func attestationFileAt(r attestationReads, repo, snapshot, path string) ([]byte, error) {

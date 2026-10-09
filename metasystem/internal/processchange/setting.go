@@ -23,11 +23,13 @@ import (
 
 type ProcessAct struct {
 	SelectedArgv, FullArgv                                           []string
-	BeforeDeclaration, AfterDeclaration                              *Declaration
+	InheritedDeclaration, BeforeDeclaration, AfterDeclaration        *Declaration
 	Unit, Operation, Predecessor                                     string
 	BeforeArgv, AfterArgv, ApplicableArgv                            []string
 	SettingsSHA256                                                   string
 	Undo                                                             string
+	Patch                                                            []byte
+	PublishedCommit                                                  string
 	Unset                                                            bool
 	ID, Goal, Lineage, Actor, Checkout, Key, Layer, Class            string
 	Proof, AppliedProof                                              humanauthority.Proof
@@ -46,10 +48,7 @@ type Setting struct {
 
 // ApplySetting reconciles target bytes under process and settings locks.
 func ApplySetting(s Setting) (act ProcessAct, err error) {
-	if err = os.MkdirAll(filepath.Join(s.Root, "process", "acts"), 0700); err != nil {
-		return
-	}
-	held, err := lock.File(filepath.Join(s.Root, "process", "lock"), 0600, lock.TryExclusive)
+	held, err := processLock(s.Root, lock.TryExclusive)
 	if err != nil {
 		return
 	}
@@ -210,4 +209,11 @@ func ReadActs(root, goal string) (acts []ProcessAct, unknown []string, err error
 		}
 	}
 	return acts, unknown, nil
+}
+
+func processLock(root string, mode lock.Mode) (*lock.FileLock, error) {
+	if err := os.MkdirAll(filepath.Join(root, "process", "acts"), 0700); err != nil {
+		return nil, err
+	}
+	return lock.File(filepath.Join(root, "process", "lock"), 0600, mode)
 }

@@ -55,6 +55,7 @@ func intentDeliveryCommands() []intentCommand {
 	return []intentCommand{
 		intentWorkRebaseCommand(),
 		intentWorkCommitCommand(),
+		intentWorkRevertCommand(),
 		{
 			object: "work", action: "review", laidOut: true, primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
 			usage: []string{reviewGoalUsage, reviewSubmitUsage, reviewFindingUsage,
@@ -89,7 +90,7 @@ func intentDeliveryCommands() []intentCommand {
 				"--check-only asks no critic: j2:J --stage review|recertify|merge checks the job's review boundary, and --findings RETURN",
 				"--dispositions FILE checks that every finding of a round is decided (against the chain's register when j2:ROOT names it).",
 			},
-			flags: []intentFlag{
+			flags: []intentFlag{{name: "rerun", usage: "rerun the retained subject check under its admitted act"},
 				goalFlag,
 				{name: "work", value: "NAME", usage: "with G: the goal's named work to review"},
 				{name: "last", usage: "with --changes or --patch: marks this unit as the goal's last; for a goal whose design has no Units table"},
