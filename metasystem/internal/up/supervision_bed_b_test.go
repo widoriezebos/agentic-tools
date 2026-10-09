@@ -144,7 +144,7 @@ func TestSupBUpReportsAPostMintLaunchFailureAndTheNextUpConverges(t *testing.T) 
 	defer enrolled.Close()
 	components, runnerFailed := ensureStewardRunner(Options{
 		Root: root, WaitScaleMilli: 1,
-		EnsureStewardRunner: func(repoRoot string, got *steward.EnrolledBinary, _ int) (steward.EnsureRunnerResult, error) {
+		EnsureStewardRunner: func(repoRoot string, got *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
 			if repoRoot != root || got != enrolled {
 				t.Fatalf("runner owner asked for repo=%q enrolled=%p", repoRoot, got)
 			}

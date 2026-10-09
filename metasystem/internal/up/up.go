@@ -56,7 +56,7 @@ type Options struct {
 	// call. Production leaves them nil and uses the owners directly.
 	ReArmRebuiltEngine  func(repoRoot, installationRoot, invokingBinary string) (steward.ReArmOutcome, error)
 	EnsureArmed         func(supervise.EnsureOptions) (supervise.EnsureResult, error)
-	EnsureStewardRunner func(repoRoot string, enrolled *steward.EnrolledBinary, scaleMilli int) (steward.EnsureRunnerResult, error)
+	EnsureStewardRunner func(repoRoot string, enrolled *steward.EnrolledBinary) (steward.EnsureRunnerResult, error)
 }
 
 // StopCapabilityRestampResult reports the accepted claim inspected during
@@ -648,7 +648,7 @@ func ensureStewardRunner(options Options, enrolled *steward.EnrolledBinary, comp
 	if options.EnsureStewardRunner != nil {
 		ensureRunner = options.EnsureStewardRunner
 	}
-	result, err := ensureRunner(options.Root, enrolled, options.WaitScaleMilli)
+	result, err := ensureRunner(options.Root, enrolled)
 	if err != nil {
 		if errors.Is(err, steward.ErrEnrollmentDrift) {
 			drift := enrollmentDrift(components, fmt.Errorf("steward-runner launch: %w", err), installationRoot(options), options.Root)

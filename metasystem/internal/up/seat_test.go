@@ -39,7 +39,7 @@ func seatUpOptions(t *testing.T) Options {
 		EnsureArmed: func(armed supervise.EnsureOptions) (supervise.EnsureResult, error) {
 			return supervise.EnsureResult{Action: "verified", Owner: supervise.ArmingOwner{Pid: 6161}, Generation: armed.FenceGeneration}, nil
 		},
-		EnsureStewardRunner: func(string, *steward.EnrolledBinary, int) (steward.EnsureRunnerResult, error) {
+		EnsureStewardRunner: func(string, *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
 			return steward.EnsureRunnerResult{Action: "verified", Pid: 5151, Generation: 1}, nil
 		},
 	}

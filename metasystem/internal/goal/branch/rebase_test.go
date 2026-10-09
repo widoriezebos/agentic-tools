@@ -118,6 +118,9 @@ func newRebaseFixture(t *testing.T) *rebaseFixture {
 			},
 		},
 		git: func(_ string, args ...string) ([]byte, error) {
+			if len(args) == 4 && args[0] == "rev-list" && args[1] == "--merges" && args[2] == "--count" {
+				return []byte("0\n"), nil
+			}
 			if len(args) == 3 && args[0] == "rev-list" && args[1] == "--count" {
 				return []byte("0\n"), nil
 			}

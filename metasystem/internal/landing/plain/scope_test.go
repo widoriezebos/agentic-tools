@@ -749,3 +749,18 @@ func TestAScopedFlakeRepeatsWithTheEffectiveScope(t *testing.T) {
 		})
 	}
 }
+
+func TestProofOutputKeepsTheLastLinePerShard(t *testing.T) {
+	t.Parallel()
+	var p proofOutput
+	for _, line := range []string{
+		"landing package cmd/metasystem 3 ok 1200",
+		"landing package internal/x 0 ok 300",
+		"landing package cmd/metasystem 3 fail 1250",
+	} {
+		p.line(line)
+	}
+	if len(p.packages) != 2 || p.packages[0] != (PackageTiming{"cmd/metasystem", 3, "fail", 1250}) || p.packages[1].Unit != "internal/x" {
+		t.Fatalf("a corrected shard must replace its live line: %+v", p.packages)
+	}
+}

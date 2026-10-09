@@ -35,7 +35,7 @@ func TestRunnerCreationReadersReturnFencedWithoutCreating(t *testing.T) {
 	root := t.TempDir()
 	closeProcessFence(t, root, 3)
 
-	ensured, err := EnsureRunner(root, nil, 1000)
+	ensured, err := EnsureRunner(root, nil)
 	if err != nil || ensured.Action != "FENCED" || ensured.Generation != 3 {
 		t.Fatalf("ensure did not return FENCED: %+v %v", ensured, err)
 	}

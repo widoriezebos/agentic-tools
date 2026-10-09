@@ -53,8 +53,9 @@ const (
 )
 
 type TestRunRequest struct {
-	ProjectRoot   string
-	openCandidate func(projectRoot, candidateTree string) (candidateWorkspace, error)
+	nativeProgress func(planned int, completed []PackageExecution)
+	ProjectRoot    string
+	openCandidate  func(projectRoot, candidateTree string) (candidateWorkspace, error)
 	// cacheDomain decides the v2 run's cache pair for the installation
 	// root; nil resolves this process's own environment (which carries the
 	// delegate markers and the cache context the filtered Environment
@@ -1386,6 +1387,14 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 	output *synchronizedBuffer, facts goCacheFacts) (supervisorOutcome, error, string, []PackageExecution, error) {
 	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	partitions := partitionGoTests(expected, inventory, modulePrefix, goShardCeiling(request, group, facts))
+	if request.nativeProgress != nil {
+		total := 0
+		for _, partition := range partitions {
+			total += len(partition.Packages)
+		}
+		request.nativeProgress(total, nil)
+	}
+	var progressMu sync.Mutex
 	coverageRoot := strings.TrimSuffix(logPath, ".log") + ".coverage"
 	if group.Coverage {
 		if err := os.RemoveAll(coverageRoot); err != nil {
@@ -1489,6 +1498,17 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 			}
 			runs[index].outcome = superviseCommand(command, supervisorOptions{Context: shardCtx, Limits: limits, SampleInterval: sampleInterval, Activity: activity})
 			closeInherited()
+			if request.nativeProgress != nil {
+				completed := goPackageExecutions(index+1, runs[index].reason, runs[index].output.Bytes())
+				for _, pkg := range partitions[index].Packages {
+					if !slices.ContainsFunc(completed, func(e PackageExecution) bool { return e.Package == pkg }) {
+						completed = append(completed, PackageExecution{Package: pkg, Shard: index + 1, Status: "missing"})
+					}
+				}
+				progressMu.Lock()
+				request.nativeProgress(0, completed)
+				progressMu.Unlock()
+			}
 			runs[index].closeErr = logFile.Close()
 			if err := guardedOutput.Err(); err != nil {
 				runs[index].launchErr = fmt.Errorf("write Go test shard output: %w", err)
