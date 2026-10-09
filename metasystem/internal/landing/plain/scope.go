@@ -20,11 +20,13 @@ import (
 )
 
 type scopeRecord struct {
-	Scope        string       `json:"scope"`
-	ScopeReason  string       `json:"scopeReason"`
-	Base         string       `json:"base,omitempty"`
-	ChangedPaths []string     `json:"changedPaths"`
-	Groups       []scopeGroup `json:"groups,omitempty"`
+	Scope        string           `json:"scope"`
+	ScopeReason  string           `json:"scopeReason"`
+	Base         string           `json:"base,omitempty"`
+	ChangedPaths []string         `json:"changedPaths"`
+	Durations    map[string]int64 `json:"durations"`
+	Packages     []PackageTiming  `json:"packages"`
+	Groups       []scopeGroup     `json:"groups,omitempty"`
 }
 
 type scopeGroup struct {
@@ -265,6 +267,7 @@ func (d scopeDecision) writeRecord(install string, result Result, observed *proo
 			d.Groups = append(d.Groups, entry)
 		}
 	}
+	d.Packages, d.Durations = append([]PackageTiming{}, observed.packages...), observed.durations
 	data, err := json.MarshalIndent(d.scopeRecord, "", "  ")
 	if err != nil {
 		return err
@@ -286,6 +289,7 @@ type proofOutput struct {
 	envSeen     bool
 	ran         []string
 	durations   map[string]int64
+	packages    []PackageTiming
 	report      checkReport
 }
 
@@ -312,7 +316,7 @@ func (p *proofOutput) readLog(output io.Writer, offset int64) {
 	copied := &commandTail{output: io.Discard}
 	if _, err := io.Copy(io.MultiWriter(p, copied), io.LimitReader(log, info.Size()-offset)); err != nil {
 		p.environment, p.pending = "", ""
-		p.ran, p.durations = nil, nil
+		p.ran, p.durations, p.packages = nil, nil, nil
 		return
 	}
 	p.report = readReport(copied.tail)
@@ -344,6 +348,14 @@ func (p *proofOutput) line(line string) {
 		p.environment, p.envSeen = environment, true
 	}
 	fields := strings.Fields(line)
+	if len(fields) == 6 && fields[0] == "landing" && fields[1] == "package" {
+		shard, se := strconv.Atoi(fields[3])
+		ms, me := strconv.ParseInt(fields[5], 10, 64)
+		if se == nil && me == nil && shard >= 0 && ms >= 0 {
+			p.packages = append(p.packages, PackageTiming{fields[2], shard, fields[4], ms})
+		}
+		return
+	}
 	if len(fields) != 5 || fields[0] != "landing" || fields[1] != "group" {
 		return
 	}

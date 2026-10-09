@@ -405,8 +405,15 @@ func (inv *intentInvocation) latestLaneEntry(install, goalID, main string) (plai
 	entry, ok, err := plain.Latest(install, goalID)
 	if err == nil && ok && main != "" {
 		var derived []plain.Entry
-		derived, err = plain.Landed([]plain.Entry{entry}, plain.ContainedIn(inv.layout.InstallationRoot.Path(), main))
+		contains := plain.ContainedIn(inv.layout.InstallationRoot.Path(), main)
+		if read := inv.delivery().laneContains; read != nil {
+			contains = func(sha string) (bool, error) { return read(sha, main) }
+		}
+		derived, err = plain.Landed([]plain.Entry{entry}, contains)
 		entry = derived[0]
+	}
+	if err == nil && ok && entry.State == plain.StateLanded {
+		entry.Landing = plain.PushedClock(install, plain.GoalSHA{Goal: goalID, SHA: entry.SHA})
 	}
 	return entry, ok, err
 }

@@ -116,6 +116,7 @@ type Entry struct {
 	// that brought its commit, read from pushes.jsonl (LandingTimes); empty
 	// where no push of the lane's last day brought it.
 	LandedAt string `json:"landed_at,omitempty"`
+	Landing *Clock `json:"landing,omitempty"`
 }
 
 // withLock runs fn under the lane's file lock, creating its folder.

@@ -189,6 +189,16 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	if projection, _, problem := inv.projection(); problem == nil {
+		if file := projection.Tree.Live[id]; file != nil {
+			for i := len(file.History) - 1; i >= 0; i-- {
+				if h := file.History[i]; h.Verb == "landed" {
+					lines = append(lines, "last landing: "+strings.TrimPrefix(h.Reason, "landed under "))
+					break
+				}
+			}
+		}
+	}
 	if len(manual) > 0 && len(work) == 0 {
 		result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: lines, Data: map[string]any{"goal": id, "work": views}}
 		if len(manual) == 1 {

@@ -484,6 +484,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		}
 		if push := data.LastPush; push != nil {
 			section.KV("push", textui.Plain(shortLandingID(push.Commit)+" (from "+shortLandingID(push.Old)+"), "+lane.LocalText(push.At)))
+			page.Section("Last landing", "").Text(push.Clock.Words())
 		}
 	}
 }

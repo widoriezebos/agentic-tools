@@ -16,6 +16,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -26,6 +27,7 @@ type HostRunners struct {
 	Native      func(proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error)
 	Groups      func([]string) ([]proofrun.NamedGroupResult, error)
 	Environment func() (string, error)
+	Now         func() time.Time
 }
 
 type Command func([]string, io.Writer, io.Writer) error
@@ -89,16 +91,23 @@ func RunHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 
 func runHost(stdout, stderr io.Writer, getenv func(string) string, command Command, contractPath string, runners ...HostRunners) int {
 	failed := map[string][]string{}
-	notRun := func(err error) int { return notRun(stdout, stderr, err) }
+	hooks := HostRunners{}
+	if len(runners) > 0 {
+		hooks = runners[0]
+	}
+	if hooks.Now == nil {
+		hooks.Now = time.Now
+	}
+	started := hooks.Now()
+	notRun := func(err error) int {
+		fmt.Fprintf(stdout, "landing clock total %d\n", hooks.Now().Sub(started).Milliseconds())
+		return notRun(stdout, stderr, err)
+	}
 	root, err := filepath.Abs(filepath.Dir(contractPath))
 	if err != nil {
 		return notRun(err)
 	}
 	ctx, environment := context.Background(), os.Environ()
-	hooks := HostRunners{}
-	if len(runners) > 0 {
-		hooks = runners[0]
-	}
 	if hooks.Native == nil {
 		hooks.Native = func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
 			return proofrun.RunNativeInventory(ctx, r)
@@ -138,13 +147,16 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	}
 	full := !scoped && only == ""
 	if full {
+		staticStart, status := hooks.Now(), "green"
 		if err := command([]string{"go", "run", "./cmd/devgate", "static"}, stdout, stderr); err != nil {
 			var exit *exec.ExitError
 			if !errors.As(err, &exit) || exit.ExitCode() == 126 || exit.ExitCode() == 127 {
 				return notRun(err)
 			}
 			failed["fast-static-build"] = nil
+			status = "red"
 		}
+		fmt.Fprintf(stdout, "landing group fast-static-build %s %d\n", status, hooks.Now().Sub(staticStart).Milliseconds())
 	}
 	if len(groups) > 0 {
 		results, err := hooks.Groups(groups)
@@ -267,6 +279,7 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		units = append(units, unit)
 	}
 	sort.Strings(units)
+	fmt.Fprintf(stdout, "landing clock total %d\n", hooks.Now().Sub(started).Milliseconds())
 	for _, unit := range units {
 		sort.Strings(failed[unit])
 		fmt.Fprintf(stdout, "LANDING-FAILED\t%s\t%s\n", unit, strings.Join(slices.Compact(failed[unit]), " "))

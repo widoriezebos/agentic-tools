@@ -593,7 +593,14 @@ func TestLandingBatchAdapterReconcilesSuccessfulPushAfterRecordFailure(t *testin
 	if batch, err := plain.ReadBatch(b.installation); err != nil || batch.ID != selected.ID || batch.State != plain.BatchRunning {
 		t.Fatalf("unrecorded push lost selection: %+v %v", batch, err)
 	}
+	// Completion can retry once the push record is writable again.
+	if err := os.Remove(filepath.Join(plain.Dir(b.installation), "pushes.jsonl")); err != nil {
+		t.Fatal(err)
+	}
 	b.success(t, "landing", "push")
+	if push, ok, err := plain.LastPush(b.installation); err != nil || !ok || push.BatchID != selected.ID || push.Clock == nil {
+		t.Fatalf("reconciliation did not retain its push and clock: %+v %v", push, err)
+	}
 	if batch := b.batch(t); batch.ID != selected.ID || batch.State != plain.BatchClosed || pushes != 1 {
 		t.Fatalf("reconciliation republished or lost selection: %+v, pushes %d", batch, pushes)
 	}
