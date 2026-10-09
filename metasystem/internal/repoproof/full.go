@@ -178,12 +178,13 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	}
 	defer release()
 	native := func(packages, tests, tags []string) error {
-		result, err := hooks.Native(proofrun.NativeInventoryRequest{Root: root, LogRoot: logRoot, Environment: environment, Packages: packages, Tests: tests, BuildTags: tags})
+		batch, started := slices.Contains(tags, "batchtest"), hooks.Now()
+		result, err := hooks.Native(proofrun.NativeInventoryRequest{Root: root, LogRoot: logRoot, Environment: environment, Packages: packages, Tests: tests, BuildTags: tags, OnlyTaggedTests: batch})
 		if err != nil {
 			return err
 		}
 		stdout.Write(result.Output)
-		if len(result.Execution) == 0 {
+		if len(result.Execution) == 0 && !batch {
 			return fmt.Errorf("the package suite reported no completed packages")
 		}
 		for _, execution := range result.Execution {
@@ -217,6 +218,13 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 				}
 				failed[unit] = append(failed[unit], name)
 			}
+		}
+		if batch {
+			status := "green"
+			if _, bad := failed["go-batchtest"]; bad {
+				status = "red"
+			}
+			fmt.Fprintf(stdout, "landing group go-batchtest %s %d\n", status, hooks.Now().Sub(started).Milliseconds())
 		}
 		return nil
 	}

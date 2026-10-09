@@ -18,6 +18,88 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
+func TestBatchPassRunsOnlyTaggedTestsAndReportsEmptyPass(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"tagged", "empty", "failure"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			files := map[string]string{
+				"go.mod":                       "module example.com/batch\n\ngo 1.23\n",
+				"cmd/metasystem/plain_test.go": "package main\nimport \"testing\"\nfunc TestPlain(t *testing.T) { t.Parallel() }\n",
+			}
+			if mode != "empty" {
+				body := ""
+				if mode == "failure" {
+					body = `t.Fatal("tagged failure")`
+				}
+				files["cmd/metasystem/batch_test.go"] = "//go:build batchtest\n\npackage main\nimport \"testing\"\nfunc TestBatch(t *testing.T) { t.Parallel(); " + body + " }\n"
+			}
+			for name, source := range files {
+				path := filepath.Join(root, name)
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(source), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			calls := 0
+			hooks := HostRunners{Environment: func() (string, error) { return "fixture", nil }, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+				calls++
+				request.Root, request.Workers = root, 2
+				request.Environment = proofrun.TestingEnvironment(os.Environ(), map[string]string{"GOWORK": "off", "GOTOOLCHAIN": "local", "GOPROXY": "off", "GOSUMDB": "off"})
+				result, err := proofrun.RunNativeInventory(t.Context(), request)
+				if err != nil {
+					t.Fatal(err)
+				}
+				want := []proofrun.NativeTestIdentity{{Report: "go-test-json", Classname: "example.com/batch/cmd/metasystem", Name: "TestPlain", Status: "passed"}}
+				if len(request.BuildTags) > 0 {
+					if mode == "empty" {
+						if len(result.Execution) != 0 || len(result.Output) != 0 || result.LogPath != "" {
+							t.Fatalf("empty batch launched a process: %+v", result)
+						}
+						want = nil
+					} else {
+						want[0].Name = "TestBatch"
+						if mode == "failure" {
+							want[0].Status = "failed"
+						}
+						if len(result.Execution) != 1 {
+							t.Fatalf("batch execution=%+v", result.Execution)
+						}
+					}
+				}
+				if !reflect.DeepEqual(result.Observed, want) || len(result.Missing) != 0 || len(result.Unexpected) != 0 {
+					t.Fatalf("observed=%+v want=%+v missing=%+v unexpected=%+v", result.Observed, want, result.Missing, result.Unexpected)
+				}
+				return result, nil
+			}}
+			var out, problem bytes.Buffer
+			getenv := func(key string) string {
+				switch key {
+				case "LANDING_PROOF_SCOPE":
+					return "scoped"
+				case "LANDING_PROOF_PACKAGES":
+					return "metasystem/cmd/metasystem"
+				}
+				return ""
+			}
+			code := runHost(&out, &problem, getenv, func(argv []string, _, _ io.Writer) error { t.Fatalf("unexpected command %v", argv); return nil }, "../../testing.json", hooks)
+			wantExit, status := 0, "green"
+			if mode == "failure" {
+				wantExit, status = 1, "red"
+				if !strings.Contains(out.String(), "LANDING-FAILED\tgo-batchtest\tTestBatch\n") {
+					t.Fatal(out.String())
+				}
+			}
+			if code != wantExit || calls != 2 || !strings.Contains(out.String(), "landing group go-batchtest "+status+" ") {
+				t.Fatalf("exit=%d calls=%d output=%s error=%s", code, calls, &out, &problem)
+			}
+		})
+	}
+}
+
 func TestFullPartitionsRunEveryPackageOnceAndAPanicLosesOneUnit(t *testing.T) {
 	t.Parallel()
 	for _, panicTest := range []bool{false, true} {
@@ -36,6 +118,14 @@ func TestA(t *testing.T) { t.Parallel(); ` + panicBody + ` }
 func TestB(t *testing.T) { t.Parallel() }
 func TestC(t *testing.T) { t.Parallel() }
 func TestD(t *testing.T) { t.Parallel() }
+func TestE(t *testing.T) { t.Parallel() }
+func TestF(t *testing.T) { t.Parallel() }
+func TestG(t *testing.T) { t.Parallel() }
+func TestH(t *testing.T) { t.Parallel() }
+func TestI(t *testing.T) { t.Parallel() }
+func TestJ(t *testing.T) { t.Parallel() }
+func TestK(t *testing.T) { t.Parallel() }
+func TestL(t *testing.T) { t.Parallel() }
 `,
 				"internal/launch/launch_test.go": `package launch
 import "testing"
@@ -71,7 +161,7 @@ func TestB(t *testing.T) { t.Parallel() }
 					t.Fatal("static did not run first")
 				}
 				request.Root, request.Environment, request.Workers = root, environment, 2
-				// The same package partition applies to the ordinary and batch-tagged passes.
+				// The batch pass has no tagged-only tests in this fixture.
 				if len(request.BuildTags) > 0 {
 					request.Packages = []string{"cmd/metasystem", "internal/launch"}
 				}
@@ -86,7 +176,10 @@ func TestB(t *testing.T) { t.Parallel() }
 						t.Fatalf("panic lost another package: %+v", unit)
 					}
 				}
-				want := map[string]int{big: 2, "example.com/proof/internal/launch": 1}
+				want := map[string]int{}
+				if len(request.BuildTags) == 0 {
+					want = map[string]int{big: 6, "example.com/proof/internal/launch": 1}
+				}
 				if len(request.BuildTags) == 0 {
 					want["example.com/proof/internal/empty"] = 1
 				}
@@ -100,21 +193,29 @@ func TestB(t *testing.T) { t.Parallel() }
 						runs[event.Package+"/"+event.Test]++
 					}
 				}
-				for _, name := range []string{"TestA", "TestB", "TestC", "TestD"} {
-					want := 1
+				for _, name := range []string{"TestA", "TestB", "TestC", "TestD", "TestE", "TestF", "TestG", "TestH", "TestI", "TestJ", "TestK", "TestL"} {
+					want := 0
+					if len(request.BuildTags) == 0 {
+						want = 1
+					}
 					if runs[big+"/"+name] != want {
 						t.Fatalf("%s ran %d times, want %d", name, runs[big+"/"+name], want)
 					}
 				}
 				for _, name := range []string{"TestA", "TestB"} {
-					if runs["example.com/proof/internal/launch/"+name] != 1 {
+					want := 0
+					if len(request.BuildTags) == 0 {
+						want = 1
+					}
+					if runs["example.com/proof/internal/launch/"+name] != want {
 						t.Fatalf("small package test did not run exactly once: %v", runs)
 					}
 				}
-				if result.Failed != panicTest || len(result.Unexpected) != 0 || (!panicTest && len(result.Missing) != 0) {
+				wantFailure := panicTest && len(request.BuildTags) == 0
+				if result.Failed != wantFailure || len(result.Unexpected) != 0 || (!wantFailure && len(result.Missing) != 0) {
 					t.Fatalf("native result=%+v", result)
 				}
-				if panicTest && (len(result.Missing) != 1 || result.Missing[0].Name != "TestC") {
+				if wantFailure && (len(result.Missing) != 1 || result.Missing[0].Name != "TestG") {
 					t.Fatalf("panic must lose only its shard: %+v", result.Missing)
 				}
 				return result, nil
@@ -151,9 +252,8 @@ func TestB(t *testing.T) { t.Parallel() }
 			}
 			if panicTest {
 				for _, line := range []string{
-					"LANDING-FAILED\texample.com/proof/cmd/metasystem\tTestA TestC(did not report)\n",
-					"LANDING-FAILED\tgo-batchtest\tTestA TestC(did not report)\n",
-					"LANDING-CHECKED\t2\n",
+					"LANDING-FAILED\texample.com/proof/cmd/metasystem\tTestA TestG(did not report)\n",
+					"LANDING-CHECKED\t1\n",
 				} {
 					if !strings.Contains(out.String(), line) {
 						t.Fatalf("missing %q in %s", line, &out)
