@@ -25,17 +25,16 @@ func (inv *intentInvocation) designEffectPolicy(plan designReviewPlan, chain dis
 		result.nextReason = "repair the review.stop setting, then run the same command to resume"
 		return result
 	}
-	if plan.goalID != "" {
-		_, err = channel.Ask(channel.AskRequest{RepoRoot: inv.layout.InstallationRoot.Path(), Goal: plan.goalID, Kind: "other", Facts: []string{"The review policy holds the prepared design " + kind + "."}, Recommendation: "The holder runs the prepared act.", UnitStop: &channel.UnitStopQuestion{Loop: "design-round", Subject: chain.Root, Attempt: int(chain.NewestRound), Finding: kind, Needs: shellCommand(inv.sameCommand()), AcceptableActs: []string{"design-" + kind, "design-ruling"}}, Now: inv.unitStopNow()})
-		if err != nil {
-			result.Details = []string{err.Error()}
-		}
+	about := ""
+	if plan.goalID == "" {
+		about = "machine"
+	}
+	_, err = channel.Ask(channel.AskRequest{About: about, RepoRoot: inv.layout.InstallationRoot.Path(), Goal: plan.goalID, Kind: "other", Facts: []string{"The review policy holds the prepared design " + kind + "."}, Recommendation: "The holder runs the prepared act.", UnitStop: &channel.UnitStopQuestion{Loop: "design-round", Subject: chain.Root, Attempt: int(chain.NewestRound), Finding: kind, Needs: shellCommand(inv.sameCommand()), AcceptableActs: []string{"design-" + kind, "design-ruling"}}, Now: inv.unitStopNow()})
+	if err != nil {
+		result.Details = []string{err.Error()}
 	}
 	return result
 }
 func (inv *intentInvocation) recordDesignEffect(plan designReviewPlan, chain dispatchcore.DesignCritiqueChain, kind, operation string) error {
-	if plan.goalID == "" {
-		return nil
-	}
 	return channel.RecordUnitStopAct(inv.layout.InstallationRoot.Path(), channel.UnitStopAct{ID: operation + ":" + kind, Goal: plan.goalID, Loop: "design-round", Subject: chain.Root, Attempt: int(chain.NewestRound), Findings: []string{kind}, Kind: "design-" + kind, Reason: "the prepared design act succeeded", At: inv.unitStopNow()})
 }

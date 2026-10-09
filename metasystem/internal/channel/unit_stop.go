@@ -51,8 +51,8 @@ func withUnitStopLock(root string, fn func() error) error {
 
 func askUnitStop(r AskRequest) (q Question, found bool, err error) {
 	stop := r.UnitStop
-	if r.Goal == "" || stop.Loop == "" || stop.Subject == "" || stop.Attempt < 1 || stop.Finding == "" || strings.TrimSpace(stop.Needs) == "" || len(stop.AcceptableActs) == 0 {
-		return q, false, fmt.Errorf("a unit stop question needs its goal, loop, subject, attempt, finding and executable act")
+	if (r.Goal == "" && (r.About != "machine" || stop.Loop != "design-round")) || stop.Loop == "" || stop.Subject == "" || stop.Attempt < 1 || stop.Finding == "" || strings.TrimSpace(stop.Needs) == "" || len(stop.AcceptableActs) == 0 {
+		return q, false, fmt.Errorf("a unit stop question needs its goal or machine design, loop, subject, attempt, finding and executable act")
 	}
 	r.Facts = append(slices.Clone(r.Facts), "Acceptable acts: "+strings.Join(stop.AcceptableActs, ", ")+". Only a successful act addressing this finding and subject, or this unit's closure, closes this question; a text answer does not.")
 	err = withUnitStopLock(r.RepoRoot, func() error {
@@ -86,8 +86,8 @@ type UnitStopAct struct {
 }
 
 func RecordUnitStopAct(root string, act UnitStopAct) error {
-	if act.Goal == "" || act.Subject == "" || act.Loop == "" || act.Kind == "" || act.At.IsZero() || ((!act.UnitClosed || act.Kind == "work-drop") && (act.Attempt < 1 || len(act.Findings) == 0)) {
-		return fmt.Errorf("a successful unit act needs its goal, subject, loop, kind, time and addressed findings")
+	if (act.Goal == "" && act.Loop != "design-round") || act.Subject == "" || act.Loop == "" || act.Kind == "" || act.At.IsZero() || ((!act.UnitClosed || act.Kind == "work-drop") && (act.Attempt < 1 || len(act.Findings) == 0)) {
+		return fmt.Errorf("a successful unit act needs its goal or design, subject, loop, kind, time and addressed findings")
 	}
 	if act.ID == "" {
 		var err error

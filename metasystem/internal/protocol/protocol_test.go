@@ -42,6 +42,32 @@ func TestEmbeddedRolesAreComplete(t *testing.T) {
 	}
 }
 
+func TestDesignCriticInstructionsDescribeConvergence(t *testing.T) {
+	t.Parallel()
+	data, err := RoleInstructions("design-critic")
+	if err != nil {
+		t.Fatal(err)
+	}
+	instructions := string(data)
+	for _, rule := range []string{
+		"at most four completed whole-page examinations",
+		"material counts strictly fall",
+		"fixed class recurs in its stable section",
+		"No severity buys another examination",
+		"fold concrete requirements into their owning Decisions and unit acceptance items in one final revision",
+		"Transfer only unresolved choices and their dependent sections",
+	} {
+		if !strings.Contains(instructions, rule) {
+			t.Errorf("embedded design critic instructions omit convergence rule %q", rule)
+		}
+	}
+	for _, obsolete := range []string{"earns a second round", "Every other finding is folded and recorded after one examination"} {
+		if strings.Contains(instructions, obsolete) {
+			t.Errorf("embedded design critic instructions retain obsolete rule %q", obsolete)
+		}
+	}
+}
+
 func TestEmbeddedPermissionPresets(t *testing.T) {
 	t.Parallel()
 	for _, preset := range []string{"critic", "none", "workspace"} {

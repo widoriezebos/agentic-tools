@@ -26,6 +26,7 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 		{"equal", []int{3, 3}, false, true},
 		{"rising", []int{2, 3}, false, true},
 		{"fourth-positive", []int{5, 4, 3, 2}, false, true},
+		{"fourth-positive-goal-free", []int{5, 4, 3, 2}, false, true},
 		{"fixed-section", []int{3, 1}, true, true},
 		{"unchanged-section-author-mark", []int{3, 1}, false, false},
 		{"different-section", []int{3, 1}, true, false},
@@ -39,8 +40,9 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			t.Parallel()
+			goalFree := scenario.name == "configured-zero" || scenario.name == "fourth-positive-goal-free"
 			b, _, raw := designEvidenceBedConfigured(t, evidenceInventory, func(b *designLoopBed) {
-				if scenario.name == "configured-zero" {
+				if goalFree {
 					conf := filepath.Join(b.install, "metasystem.conf")
 					b.writeFile(conf, string(mustRead(t, conf))+"\nmetasystem.budget.review-round-max=0\n")
 					b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "- Goals: standing-validation\n", "", 1))
@@ -55,7 +57,7 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 				b.writeFile(conf, string(mustRead(t, conf))+"\nreview.stop=1\n")
 			}
 			root := b.job("rev1")
-			if scenario.name == "configured-zero" {
+			if goalFree {
 				if root["goalId"] != "" || root["reviewRoundLimit"] != float64(4) || root["designExaminationLimit"] != float64(4) {
 					t.Fatalf("goal-free public admission did not freeze four: %v", root)
 				}
@@ -73,7 +75,7 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 					if round > 2 {
 						child["parentJob"] = fmt.Sprintf("rev1-r%d", round-1)
 					}
-					if scenario.name == "configured-zero" {
+					if goalFree {
 						child["goalId"] = ""
 					}
 					child["engineBuild"], child["effectiveModel"] = "fixture-engine", "fixture-critic"
@@ -115,7 +117,7 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 							finding["relation"] = "rule B"
 						}
 					}
-					if scenario.name == "fourth-positive" {
+					if strings.HasPrefix(scenario.name, "fourth-positive") {
 						finding["severity"] = "critical"
 					}
 					findings = append(findings, finding)
@@ -180,6 +182,18 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 							t.Fatalf("missing %s: %v", field, root[field])
 						}
 					}
+					if strings.HasPrefix(scenario.name, "fourth-positive") {
+						if root["chainClosed"] == true || b.closes != 0 || decision.Class != "correction allowance spent" || count != 2 {
+							t.Fatal("positive fourth examination did not stop at the frozen cap on an open chain")
+						}
+						page := string(mustRead(t, b.design))
+						b.writeFile(b.design, strings.Replace(page, "First version.", "First version. Fifth candidate.", 1))
+						fifth := b.review("--dispositions", answer)
+						if fifth.Outcome != intentFailed || !strings.Contains(fifth.Summary, "final design revision is incomplete") || len(b.followUps) != 3 || b.closes != 0 || b.job("rev1")["chainClosed"] == true {
+							t.Fatalf("fifth candidate did not take the cap's final-revision path: %+v", fifth)
+						}
+						b.writeFile(b.design, page)
+					}
 					brief := filepath.Join(b.root(), "successor.md")
 					b.writeFile(brief, "No new allowance.\n")
 					if _, err := dispatchcore.CritiqueExhaustionAdvance(b.install, "rev1", "design-critic", brief, "fifth"); err == nil {
@@ -222,10 +236,10 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 					if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged || b.job("rev1")["chainClosed"] != true || b.closes != 1 {
 						t.Fatalf("durable exit: %+v; root=%v", closed, b.job("rev1"))
 					}
-					if scenario.name != "configured-zero" && len(b.goalFile(bedGoal).DesignExits) != 1 || b.fresh != 1 || len(b.followUps) != round-1 {
+					if !goalFree && len(b.goalFile(bedGoal).DesignExits) != 1 || b.fresh != 1 || len(b.followUps) != round-1 {
 						t.Fatal("exit or root duplicated")
 					}
-					if scenario.name == "configured-zero" {
+					if goalFree {
 						var entry designReviewEntry
 						path := filepath.Join(b.install, "artifacts", "agents", "intent-review", "design-01designreader", "chain.json")
 						if err := json.Unmarshal(mustRead(t, path), &entry); err != nil || entry.Exit == nil || entry.Exit.State != "committed" || entry.Exit.Page != string(mustRead(t, b.design)) || len(b.goalFile(bedGoal).DesignExits) != 0 {

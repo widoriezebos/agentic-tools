@@ -50,70 +50,19 @@ Require the critic's verdict line to count only material findings, and to say fo
 3. **Read the findings body, never just the verdict line.** A summary that says "no blocking findings" above a body that lists one is itself a finding; the body governs.
 4. Stop the loop the first round in which every remaining finding passes the works-without-it test, whatever their number: a round of ten findings that step 1 works and is safe without closes the loop, and those ten go to the deferred list. A round with no finding at all closes it too. Do not run another round for prose consistency, and never for rigor beyond step 1.
 
-## Declare the Failsafe Round at Loop Start
+## Round Budget and Convergence
 
-The loop's stop rule is fixed before round 1, never improvised mid-loop: the brief names a numbered failsafe round, and the loop also closes early the first round whose material findings are all fixture-expressible — those findings become obligation-matrix rows and implementation begins. After the failsafe round, only a demonstrated requirement failure or a shape-level defect reopens prose. A stop rule that depends on someone remembering the right ruling at the right round fails at exactly the rounds it exists for: the backlog-sync loop declared its failsafe only at round 10 because the operator's rulings happened to be remembered (D119), while the idle-watchdog loop declared it at start and closed in five rounds with the failsafe firing at round 3.
+Freeze the allowance before the first examination: at most four completed whole-page examinations, bounded by the goal's approved review-round member. Explicit approved zero, including tier 1, admits none. A goal-free review uses the configured positive `metasystem.budget.review-round-max` ceiling capped at four; configured zero means no ceiling and therefore four examinations. Goal-free designs gain no goal authority. Severity and a later budget raise never buy another examination. Paths are aliases of the retained design identity; renaming or unreadable history grants no fresh chain.
 
-## Round Budget and Exhaustion
+The first positive examination continues if allowance remains. Later positive examinations continue only when the whole-page material count strictly falls and no fixed class recurs in the same stable section. A class is fixed when a prior material finding was accepted and its section changed in the bound revision; an optional author mark proves nothing. Equal or rising counts, fixed-class recurrence, or the final allowed examination stop further critique. Zero material publishes automatic acceptance and closes after publication.
 
-Unknown whole-page evidence is never zero material. Recover the retained return, prose and frozen subject first. `metasystem design review FILE --retry N` reserves one fresh examination of that same candidate after the old execution is proven quiescent; it spends no completed-examination, correction or work allowance. An exhausted retry retains `stopped <cause>` on both the design round and finding register and prints the bound `design review FILE --ruling TEXT --reason TEXT --by NAME` and `--scope FILE --reason TEXT --by NAME` forms. An enrolled person can use either without repairing advisory evidence; the engine records impact before effect and never invents a clean read. A deadline does not retry. Paths are aliases of the retained design identity; a rename or unreadable history grants no fresh chain.
+At a known stop, retain clean sections and fold every concrete change into its owning unit's acceptance items. Write each folded change into its owning Decision text in one final revision, with named implementation and test evidence; that revision buys no examination. Evaluate buildability after folding. Transfer only unresolved choices and dependent sections into one follow-up queued immediately after the source. If every blocker has a concrete change and splitting leaves no buildable unit, fold and accept. Counts remain truthful: folded findings do not become a zero-material read. Commit the exit and mandatory items before projecting the accepted status and closed-critique head, then close the chain. Acceptance authorizes the design within approved scope; it supplies neither a person's implementation approval nor implementation proof.
 
-A design critique gets one round. Severity `critical` means the design cannot be built as written: a fold would change what step 1 builds beyond the finding's own lines; only a critical finding earns a second round. That second round is the last, and neither round exceeds the chain's frozen review budget. Without a critical finding, the author folds and records every decision and closes the chain; accepted material findings close as folded, including unproven rigor. Severe rigor still requires a person's `goal accept-risk`.
+Ordinary convergence never asks a person to choose an exit. Read the current `review.stop` policy before every autonomous effect: a numeric value may lower correction allowance, never raise the frozen examination cap; `person` holds the prepared act and asks its holder, including for a goal-free design. Only a successful matching act closes that ask; text, failed acts and unrelated acts do not.
 
-The round count is a backstop, not the stop criterion (Wido 2026-10-01). The loop ends when no remaining finding would change the implementation materially, judged against the brief's threat model (blank means the template's default: our own agents and operators make mistakes; nobody attacks) and step 1: a finding is material only when step 1 does not WORK or is not SAFE without it (R-124). Every real finding is fixed, by subtraction first. Stop on divergence: when the material findings are not falling, or half or more of them sit in what the last fold changed, step back and go to the human. The backstop: for design critique, code critique and the warden alike, Part One stores the review-round member in
-the goal's tier box: zero rounds for Tier 1 and five for Tiers 2 and 3, under
-the `metasystem.budget.review-round-max` ceiling (20 in this repository, five by compiled default). The tier derives from severity and novelty (exposure and accumulation
-weight the proof), never from the change's shape. Design critique exists at tiers 2 and 3 and not at tier 1. Its round cap is the goal's review-round member under `metasystem.budget.review-round-max`; design admission also requires a critical finding for a second round. Part Two accounts mechanically (design point STR2-ROUND-ACCOUNTING-05): dispatch freezes the applicable limit on the critic chain root (a goal-free root reads `metasystem.budget.review-round-max` alone), counts each follow-up round against it, refuses the round past it, and exhaustion opens no fresh budget. Start every chain from
-`internal/protocol/templates/review-brief.md` — budget, threat model, appetite,
-and scope declared BEFORE round one; a true finding outside the declared
-threat model closes as out-of-scope citing the brief. Record the goal's budget
-in the brief. As the reviewer's R-60-m1 rule, stop at the first round with no
-material finding. A finding keeps the chain open only when it changes what gets built
-and names the artifact it would change; a finding that fails the artifact
-test is demoted at registration.
+Unknown whole-page evidence is never zero material. Recover the retained return, prose and frozen subject first. `metasystem design review FILE --retry N` reserves one fresh execution of that same candidate after the old process is proven quiescent; it spends no completed-examination, correction or work allowance. Exhaustion retains `stopped <cause>` on both the design round and finding register and prints the bound `design review FILE --ruling TEXT --reason TEXT --by NAME` and `--scope FILE --reason TEXT --by NAME` forms. An enrolled person can use either without repairing advisory evidence; the engine records impact before effect and never invents a clean read or implementation proof. A deadline does not retry.
 
-The cap is a backstop, not the stop criterion: a loop that ends on materiality closes before it. The final round is 1, or 2 when the first return has a critical finding, within the frozen budget. At a one-round close, accepted findings fold as described above; other final-round residue follows these exits. The final round folded with no material finding closes the loop. The final round folded with only mechanical findings on a falling trajectory (its material count below the round before) closes with one review obligation per finding naming its fixture. The page header records the exit as `closed at round N on M fixture obligations`. Any other final-round residue refuses with `cap-exhausted-human-raise`, naming `metasystem goal accept-risk` and a re-scope by `metasystem goal edit`. There is no design round past the cap and none can be bought.
-
-For every critic, only an approved token raising the goal's
-five-member tuple can raise its stored review-round member, and the
-`metasystem.budget.review-round-max` ceiling still applies; the chain's next follow-up (`metasystem design review FILE --dispositions`, `metasystem work revise
-j2:<review>`) or close (`metasystem work review j2:<job> --dispositions`, `metasystem work finish`) first carries the raised
-member onto its root. When their rounds are spent, closing the review (inside `metasystem work review`)
-defers exhausted bounded findings into review obligations on the goal (`metasystem work review <goal> --review R --finding F --test NAME` discharges them later against the chain,
-artifact and test that carry them) or closes after a human records `metasystem goal accept-risk <goal> --finding F --review R --reason <text>`; whenever a severe or unproven finding remains, stop with the
-design waiting on the human. Never dispatch a silent round past the cap.
-
-Rounds must run as follow-ups on one critic chain. Dispatching a fresh critic
-job per round silently evades the budget — no exhaustion can ever fire — which
-is how a seven-round loop ran unbudgeted on this repository's own consolidation
-design (2026-08-12) before the human called it.
-
-## Fixtures as Arbiter: the Principled Exit
-
-When a chain's trajectory is FALLING and past its round budget, and
-every remaining material finding is MECHANICAL-GRAIN — it names a
-value, a format, or a bounded choice, never an invariant or a
-contract shape — prose review stops being the arbiter: fold the
-remaining findings and START implementation. All five conditions
-bind, or the exit is unavailable:
-
-1. The trajectory is falling and the budget is spent — this is an
-   exit from a converging chain, never an escape from a losing one.
-2. Every remaining finding is mechanical-grain. ONE invariant-grade
-   finding keeps the chain open.
-3. The fold is one-to-one: each finding becomes a NAMED fixture
-   obligation in the plan's Proof section — nothing dissolves into
-   prose.
-4. Code-critique of the implementation is MANDATORY, not the usual
-   per-batch judgement call: the fixtures and the code critic
-   together are the arbiter prose review stopped being.
-5. The switch is RECORDED in the plan header with the trajectory
-   that justified it.
-
-At mechanical grain, the implementation's own tests judge better
-and cheaper than another prose round — that is the rule's whole
-reason (human-ratified on the flight-recorder chain, six falling
-rounds: 21, 15, 10, 4, 3, 2).
+Start from `internal/protocol/templates/review-brief.md`, with budget, threat model, appetite and scope declared before examination one. A true finding outside the declared threat model closes as out-of-scope citing the brief. A material finding must change what gets built and name the artifact it changes. Continue on the same critic root with bound dispositions; a fresh critic per round evades the frozen allowance.
 
 ## Close a Round by Join, Not by Count
 
@@ -127,13 +76,13 @@ Refutations carry the same burden of proof as the findings they answer. Record t
 
 ## Fix the Generating Cause Once
 
-When the same class of finding recurs across rounds ("section X contradicts row Y", again and again), stop patching instances. Rewrite the accreted artifact in a single pass and let the next round attack the rewrite. A long design patched in place accumulates contradictions faster than a loop can remove them, and the loop degenerates into finding the previous round's patch seams.
+When a fixed class recurs in the same stable section, stop critique and prepare the fold/split exit. Rewrite its concrete changes into the owning Decisions in the single final revision; the rewrite earns no new examination. A long design patched in place accumulates contradictions faster than a loop can remove them, and the loop degenerates into finding the previous round's patch seams.
 
 The same discipline applies to machinery grown under critique pressure: when successive rounds add mechanism to satisfy the critic and the material count still rises, stop answering with machinery and invert the question — name the requirement the smaller design fails. Every mechanism added to appease a finding is itself new attack surface, so the loop can climb its own ladder indefinitely: the backlog-sync design accreted proof envelopes, semantic replay, and anchor chains across three rounds while findings rose from nine to fourteen, and converged three rounds after the scope reduction put the smaller design on the table (D118). The step-1 anchor above is the standing form of that inversion: when the count rises, ask what step 1 needs, not what the critic can imagine.
 
 ## Expect the Returns to Diminish
 
-Real refutations land early: deleted mechanisms, collapsed abstractions, false premises. After the architecture stops being challenged, watch for the loop becoming self-sustaining: when roughly half of a round's material findings were introduced by the previous round's own edits, the loop is critiquing itself. Stop there, record the judgment, and let implementation be the next source of truth: an ambiguity that survives into code becomes a failing test instead of another paragraph. Retain the final rounds verbatim so the loop can resume if implementation proves the stop premature, and never claim the design is perfect; claim that further critique stopped being worth its cost.
+Real refutations remove mechanisms and false premises. Judge later examinations by whole-page counts and mechanically fixed classes in stable sections. When either stops the chain, record the prepared fold/split exit and let implementation test the remaining concrete changes. Retain the final evidence and consumed allowance; an implementation defect supplies no fresh critique budget. Never claim the design is perfect; state the recorded reason critique stopped.
 
 ## Record
 
