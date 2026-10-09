@@ -388,7 +388,7 @@ func TestHealthBedNarratorRecovery(t *testing.T) {
 	if stalled.ExitCode() != 1 || !strings.Contains(stalled.Line(), "narrator-freshness=dead") {
 		t.Fatalf("narrator was not stale at exactly two producer intervals: exit %d %s", stalled.ExitCode(), stalled.Line())
 	}
-	if !strings.Contains(stalled.Line(), "metasystem session start --repo") {
+	if !strings.Contains(stalled.Line(), "metasystem system start") {
 		t.Fatalf("stale narrator omitted the up remedy: %s", stalled.Line())
 	}
 
@@ -478,7 +478,7 @@ func runHealthBedAlertEpisode(t *testing.T, b *healthBed, deliveries string) {
 	if dead.ExitCode() != 1 || !strings.Contains(dead.Line(), "steward-runner=dead") {
 		t.Fatalf("dead verdict did not name the killed runner: exit %d %s", dead.ExitCode(), dead.Line())
 	}
-	if !strings.Contains(dead.Line(), "metasystem session start --repo") {
+	if !strings.Contains(dead.Line(), "metasystem system start") {
 		t.Fatalf("dead verdict omitted the up remedy: %s", dead.Line())
 	}
 	initial := b.recordedDigest()

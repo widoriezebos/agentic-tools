@@ -874,11 +874,11 @@ func checkDiskAt(repoRoot, home string) RoleVerdict {
 			continue
 		}
 		if err != nil {
-			return roleUnknown(RoleDisk, err.Error(), "metasystem disk show")
+			return roleUnknown(RoleDisk, err.Error(), "", RemedyFact{Cause: CauseUnreadable})
 		}
 		read++
 		if report.Health.Status == diskstore.HealthAttention {
-			return roleDead(RoleDisk, report.Health.Reason, report.Health.Remedy)
+			return roleDead(RoleDisk, report.Health.Reason, "", RemedyFact{Cause: CauseUnavailable})
 		}
 	}
 	if read == 0 {

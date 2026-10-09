@@ -43,7 +43,7 @@ func TestHealthHookPreviewJSONMatchesTextFromOneEvaluation(t *testing.T) {
 		return stdout.String(), stderr.String(), code
 	}
 	plain, stderr, code := run(false)
-	if code != verdict.ExitCode() || stderr != "" || plain != verdict.Line()+"\n" || calls != 1 {
+	if code != verdict.ExitCode() || stderr != "" || plain != verdict.Line("agent")+"\n" || calls != 1 {
 		t.Fatalf("text preview = code %d calls %d stdout %q stderr %q", code, calls, plain, stderr)
 	}
 	encoded, stderr, code := run(true)
@@ -54,7 +54,7 @@ func TestHealthHookPreviewJSONMatchesTextFromOneEvaluation(t *testing.T) {
 	if err := json.Unmarshal([]byte(encoded), &preview); err != nil {
 		t.Fatalf("JSON preview did not decode: %q: %v", encoded, err)
 	}
-	if preview.SchemaVersion != 1 || preview.ExitCode != verdict.ExitCode() || preview.Line != verdict.Line() || len(preview.Verdict.Roles) != 4 || len(preview.Interventions) != 4 {
+	if preview.SchemaVersion != 1 || preview.ExitCode != verdict.ExitCode() || preview.Line != verdict.Line("agent") || len(preview.Verdict.Roles) != 4 || len(preview.Interventions) != 4 {
 		t.Fatalf("JSON preview lost health detail: %+v", preview)
 	}
 	if preview.Interventions[0].SupervisionRepair || preview.Interventions[1].HumanRequired || preview.Interventions[1].SupervisionRepair ||

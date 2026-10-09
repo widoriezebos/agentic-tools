@@ -93,7 +93,7 @@ func TestStewardFixtureRunnerNeverProbes(t *testing.T) {
 
 func TestHealthSystemCheckEndedLedgerExaminationNamesThePersonsAct(t *testing.T) {
 	t.Parallel()
-	testEndedHealthRemedy(t, "TestTickLedgerExaminationFailureStaysOnItsRole", steward.RoleLedgerAttention, "metasystem goal sync")
+	testEndedHealthRemedy(t, "TestTickLedgerExaminationFailureStaysOnItsRole", steward.RoleLedgerAttention, "metasystem alert clear here/")
 }
 
 func testEndedHealthRemedy(t *testing.T, producer string, want steward.HealthRole, act string) {
@@ -117,12 +117,12 @@ func testEndedHealthRemedy(t *testing.T, producer string, want steward.HealthRol
 			t.Fatalf("build steward fixture: %v\n%s", err, out)
 		}
 		env := fixtureCommandEnvironment(t, "PATH="+path)
-		produce := exec.Command(binary, "-test.run=^"+producer+"$", "-test.timeout=30m", "-remedy-health-root="+root, "-remedy-health-observations=5")
+		produce := exec.Command(binary, "-test.run=^TestAlertClearHealthBed$", "-test.timeout=30m", "-alert-clear-bed-root="+root, "-alert-clear-bed-count=5")
 		produce.Env = env
 		if out, err := produce.CombinedOutput(); err != nil {
 			t.Fatalf("failed remedy fixture: %v\n%s", err, out)
 		}
-		check := exec.Command(commandTestExecutable(t), "-test.run=^"+t.Name()+"$", "-test.timeout=30m", "-remedy-preview-root="+root)
+		check := exec.Command(commandTestExecutable(t), "-test.run=^"+t.Name()+"$", "-test.timeout=30m", "-remedy-preview-root="+root, "-remedy-clear-producer="+binary)
 		check.Env = env
 		if out, err := check.CombinedOutput(); err != nil {
 			t.Fatalf("public system check after the breaker: %v\n%s", err, out)
@@ -130,9 +130,21 @@ func testEndedHealthRemedy(t *testing.T, producer string, want steward.HealthRol
 		return
 	}
 	b := newProcessBed(t)
+	b.facts.root = *remedyPreviewRoot
+	b.writeEngine("engine build 1")
 	owners := b.owners()
-	owners.processes.health = func(_, _ string, now time.Time) steward.HealthVerdict {
-		return steward.PreviewInstalledHealth(*remedyPreviewRoot, *remedyPreviewRoot, now, remedyPreviewProbe{})
+	owners.processes.health = func(root, _ string, _ time.Time) steward.HealthVerdict {
+		output := filepath.Join(t.TempDir(), "preview.json")
+		alertClearProduce(t, root, "preview", 1, output)
+		data, err := os.ReadFile(output)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var verdict steward.HealthVerdict
+		if err := json.Unmarshal(data, &verdict); err != nil {
+			t.Fatal(err)
+		}
+		return verdict
 	}
 	owners.processes.healthNow = func(string) (time.Time, error) {
 		return time.Date(2026, 9, 20, 10, 0, 0, 500_000_000, time.UTC), nil
@@ -152,10 +164,10 @@ func testEndedHealthRemedy(t *testing.T, producer string, want steward.HealthRol
 			found = true
 			remedyMatches := strings.Contains(role.Remedy, act)
 			if want == steward.RoleLedgerAttention {
-				remedyMatches = role.Remedy == act
+				remedyMatches = role.Remedy == act+strings.TrimPrefix(alertClearEpisode(t, b.root()), "here/")
 			}
 			if role.Status != steward.HealthDead || role.FailureEscalation != steward.AutoHealEnded ||
-				role.ConsecutiveFailures != 5 || !remedyMatches || strings.Contains(role.Remedy, "the steward") {
+				role.ConsecutiveFailures != 5 || !remedyMatches || !strings.Contains(role.Remedy, "metasystem alert clear here/") || strings.Contains(role.Remedy, "the steward") {
 				t.Errorf("ended automatic remedy: %+v", role)
 			}
 		}

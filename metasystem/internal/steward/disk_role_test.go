@@ -248,13 +248,13 @@ func TestDiskRoleFollowsTheLastReport(t *testing.T) {
 		t.Fatalf("an ok report = %+v", role)
 	}
 	write(diskstore.Health{Status: diskstore.HealthAttention, Reason: "free space is below the floor", Remedy: "metasystem disk clean --preview"})
-	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthDead || role.Remedy != "metasystem disk clean --preview" {
+	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthDead || role.Remedy != "a person frees space or corrects the disk setting the reason above names; the next disk pass records the result" {
 		t.Fatalf("a floor breach = %+v", role)
 	}
 	if err := os.WriteFile(path, []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthUnknown || role.Remedy != "metasystem disk show" {
+	if role := checkDiskAt(root, filepath.Join(root, "home")); role.Status != HealthUnknown || role.Remedy != "a person repairs the unreadable evidence the reason above names, then runs metasystem system check" {
 		t.Fatalf("an unreadable report = %+v", role)
 	}
 }

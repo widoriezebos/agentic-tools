@@ -193,7 +193,7 @@ func TestStoppedHealthRemedyPrintsPathWithoutQuotes(t *testing.T) {
 	if err != nil || verdict == nil || len(verdict.Roles) != 1 {
 		t.Fatalf("stopped health = %#v err=%v", verdict, err)
 	}
-	want := "metasystem system start --repo " + root
+	want := "a person runs: metasystem system start --repo " + root
 	if got := verdict.Roles[0].Remedy; got != want || strings.Contains(got, `"`) {
 		t.Fatalf("stopped remedy = %q, want %q", got, want)
 	}

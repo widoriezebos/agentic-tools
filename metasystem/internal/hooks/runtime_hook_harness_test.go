@@ -428,7 +428,7 @@ func TestStopHealthPhaseReadsTheTickVerdict(t *testing.T) {
 				if test.cached {
 					captured, err := os.ReadFile(request.HealthFile)
 					var preview steward.HookHealthPreview
-					if err != nil || json.Unmarshal(captured, &preview) != nil || preview.Line != verdict.Line() || preview.ExitCode != 1 || preview.Verdict.Observation != 7 {
+					if err != nil || json.Unmarshal(captured, &preview) != nil || preview.Line != verdict.Line("agent") || preview.ExitCode != 1 || preview.Verdict.Observation != 7 {
 						t.Errorf("cached health capture = %s, error %v", captured, err)
 					}
 				}
@@ -438,7 +438,7 @@ func TestStopHealthPhaseReadsTheTickVerdict(t *testing.T) {
 				now: func() time.Time { return now }})
 			wantLine, wantChecks := "HEALTH healthy — evaluated fixture", 1
 			if test.cached {
-				wantLine, wantChecks = verdict.Line(), 0
+				wantLine, wantChecks = verdict.Line("agent"), 0
 			}
 			if run.status != 0 || ops.completion(t).HealthLine != wantLine || checks != wantChecks {
 				t.Fatalf("Stop status %d, health %q, evaluations %d; want %q, %d", run.status, ops.completion(t).HealthLine, checks, wantLine, wantChecks)

@@ -836,7 +836,7 @@ func validateStopPresentationInput(root string, input StopPresentationInput) err
 		if input.Health.SchemaVersion != 1 || input.Health.Verdict.Schema != 1 || input.Health.Interventions == nil || input.Health.Verdict.Roles == nil || len(input.Health.Interventions) != len(input.Health.Verdict.Roles) {
 			return invalid("health preview interventions do not match the health roles")
 		}
-		if input.Health.ExitCode != input.Health.Verdict.ExitCode() || input.Health.Line != input.Health.Verdict.Line() {
+		if input.Health.ExitCode != input.Health.Verdict.ExitCode() || input.Health.Line != input.Health.Verdict.Line("agent") {
 			return invalid("health preview line or exit code does not match its verdict")
 		}
 		seen := map[steward.HealthRole]bool{}

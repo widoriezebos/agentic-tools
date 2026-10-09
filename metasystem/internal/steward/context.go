@@ -66,22 +66,21 @@ func ContextBudgetLine(installation stateroot.Installation, now time.Time, opts 
 	// A named root that is not there has no holder to report on (EM-07).
 	if _, err := os.Stat(installation.Path()); errors.Is(err, fs.ErrNotExist) {
 		err = fmt.Errorf("%s does not exist, so there is no installation to read; nothing was read", installation.Path())
-		return roleUnknown(RoleContext, err.Error(), ""), usage.Reading{}, err
+		return roleUnknown(RoleContext, err.Error(), "", RemedyFact{Cause: CauseUnreadable}), usage.Reading{}, err
 	}
 	return contextBudgetLineWithProber(installation, now, opts, identity.KernelProber{})
 }
 
 func contextBudgetLineWithProber(installation stateroot.Installation, now time.Time, opts ContextOptions, prober identity.Prober) (RoleVerdict, usage.Reading, error) {
 	installationRoot := installation.Path()
-	remedy := "metasystem session handoff --status --root " + installationRoot
 	diagnostic := opts.Transcript != ""
 	budget, err := config.ContextBudget(installation)
 	if err != nil {
-		return roleUnknown(RoleContext, err.Error(), "metasystem settings check --repo "+installationRoot), usage.Reading{}, err
+		return roleUnknown(RoleContext, err.Error(), "", RemedyFact{Cause: CauseSettingsInvalid}), usage.Reading{}, err
 	}
 	holder, noHolderReason, unobservableReason, err := resolveContextIdentity(installationRoot, opts, prober)
 	if err != nil {
-		return labelContextDiagnostic(roleUnknown(RoleContext, err.Error(), remedy), diagnostic), usage.Reading{}, err
+		return labelContextDiagnostic(roleUnknown(RoleContext, err.Error(), "", RemedyFact{Cause: CauseUnreadable}), diagnostic), usage.Reading{}, err
 	}
 	if holder == nil {
 		return labelContextDiagnostic(roleAlive(RoleContext, noHolderReason), diagnostic), usage.Reading{}, nil
@@ -92,13 +91,13 @@ func contextBudgetLineWithProber(installation stateroot.Installation, now time.T
 		reason := fmt.Sprintf("unknown (runtime %s is not registered)", holder.runtime)
 		if holder.explicit {
 			err := fmt.Errorf("runtime %s is not registered", holder.runtime)
-			return labelContextDiagnostic(roleUnknown(RoleContext, err.Error(), remedy), diagnostic), usage.Reading{}, err
+			return labelContextDiagnostic(roleUnknown(RoleContext, err.Error(), "", RemedyFact{Cause: CauseSettingsInvalid}), diagnostic), usage.Reading{}, err
 		}
 		return labelContextDiagnostic(roleAlive(RoleContext, reason), diagnostic), usage.Reading{}, nil
 	}
 	capability := usage.Capability(declaration.ContextSample)
 	if unobservableReason != "" && capability == usage.PerCall {
-		return labelContextDiagnostic(roleUnknown(RoleContext, unobservableReason, remedy), diagnostic), usage.Reading{}, nil
+		return labelContextDiagnostic(roleUnknown(RoleContext, unobservableReason, "", RemedyFact{Cause: CauseUnavailable}), diagnostic), usage.Reading{}, nil
 	}
 	readOpts := usage.ReadOptions{
 		Capability:   capability,
@@ -112,13 +111,13 @@ func contextBudgetLineWithProber(installation stateroot.Installation, now time.T
 	if diagnostic {
 		reading, readErr := readContextTranscriptOverride(holder.runtime, holder.session, readOpts)
 		if readErr != nil {
-			return labelContextDiagnostic(roleUnknown(RoleContext, readErr.Error(), remedy), true), reading, readErr
+			return labelContextDiagnostic(roleUnknown(RoleContext, readErr.Error(), "", RemedyFact{Cause: CauseUnreadable}), true), reading, readErr
 		}
 		return contextVerdict(reading, budget, installationRoot, true), reading, nil
 	}
 	if !holder.explicit && unobservableReason == "" {
 		if err := usage.RegisterSessionNonBlocking(installationRoot, holder.runtime, holder.session, holder.process.Pid, holder.process.StartedAtSec); err != nil {
-			return roleUnknown(RoleContext, err.Error(), remedy), usage.Reading{}, err
+			return roleUnknown(RoleContext, err.Error(), "", RemedyFact{Cause: CauseUnreadable}), usage.Reading{}, err
 		}
 	}
 
@@ -126,13 +125,13 @@ func contextBudgetLineWithProber(installation stateroot.Installation, now time.T
 	if toplevel == "" && declaration.ContextSample == string(usage.PerCall) {
 		toplevel, err = contextGitToplevel(installationRoot)
 		if err != nil {
-			return roleUnknown(RoleContext, err.Error(), remedy), usage.Reading{}, err
+			return roleUnknown(RoleContext, err.Error(), "", RemedyFact{Cause: CauseUnreadable}), usage.Reading{}, err
 		}
 	}
 	readOpts.Toplevel = toplevel
 	reading, err := usage.LatestCall(installation, holder.runtime, holder.session, readOpts)
 	if err != nil {
-		return roleUnknown(RoleContext, err.Error(), remedy), reading, err
+		return roleUnknown(RoleContext, err.Error(), "", RemedyFact{Cause: CauseUnreadable}), reading, err
 	}
 
 	verdict := contextVerdict(reading, budget, installationRoot, false)
@@ -189,7 +188,7 @@ func checkContextBudget(installation stateroot.Installation, now time.Time, prob
 func checkInstalledContextBudget(metasystemRoot string, now time.Time, prober identity.Prober) RoleVerdict {
 	installation, err := stateroot.ParseInstallation(metasystemRoot)
 	if err != nil {
-		return roleUnknown(RoleContext, err.Error(), "metasystem settings check --repo "+metasystemRoot)
+		return roleUnknown(RoleContext, err.Error(), "", RemedyFact{Cause: CauseSettingsInvalid})
 	}
 	return checkContextBudget(installation, now, prober)
 }
@@ -335,7 +334,6 @@ func contextGitToplevel(installationRoot string) (string, error) {
 }
 
 func contextVerdict(reading usage.Reading, budget config.Budget, installationRoot string, diagnostic bool) RoleVerdict {
-	statusRemedy := "metasystem session handoff --status --root " + installationRoot
 	if reading.Latest == nil {
 		if contextBenignUnknown(reading.Capability, reading.Reason) {
 			return labelContextDiagnostic(roleAlive(RoleContext, reading.Reason), diagnostic)
@@ -346,7 +344,7 @@ func contextVerdict(reading usage.Reading, budget config.Budget, installationRoo
 		} else if !strings.HasPrefix(reason, "unknown (") {
 			reason = "unknown (" + reason + ")"
 		}
-		return labelContextDiagnostic(roleUnknown(RoleContext, reason, statusRemedy), diagnostic)
+		return labelContextDiagnostic(roleUnknown(RoleContext, reason, "", RemedyFact{Cause: CauseUnreadable}), diagnostic)
 	}
 
 	tokens := reading.Latest.PromptTokens

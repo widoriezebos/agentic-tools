@@ -385,6 +385,10 @@ func ClearAlert(repoRoot, episodeID string, invoker AlertInvoker, now time.Time)
 	if err != nil {
 		return AlertEpisode{}, false, err
 	}
+	return clearAlertEpisode(repoRoot, episode, invoker, now)
+}
+
+func clearAlertEpisode(repoRoot string, episode AlertEpisode, invoker AlertInvoker, now time.Time) (AlertEpisode, bool, error) {
 	if episode.Cleared {
 		return episode, false, nil
 	}

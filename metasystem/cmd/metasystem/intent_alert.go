@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -272,6 +273,8 @@ func runIntentAlertAct(inv *intentInvocation, act string) int {
 	qualified := store.name + "/" + id
 	var episode steward.AlertEpisode
 	changed := false
+	var rearmed []steward.HealthRole
+	acknowledged, healthClear := false, false
 	if act == "ack" {
 		var before steward.AlertEpisode
 		if before, err = alertEpisode(store.root, id); err == nil {
@@ -279,7 +282,15 @@ func runIntentAlertAct(inv *intentInvocation, act string) int {
 			changed = !before.Acknowledged
 		}
 	} else {
-		episode, changed, err = steward.ClearAlert(store.root, id, invoker, owners.now())
+		var before steward.AlertEpisode
+		before, err = alertEpisode(store.root, id)
+		here, _ := inv.alertRoot(inv.cwd)
+		healthClear = realpath.Resolve(here) == realpath.Resolve(store.root) && (before.Owner == "" || before.Owner == steward.PatternOwner("health-standing-red"))
+		if err == nil && healthClear {
+			episode, changed, rearmed, acknowledged, err = steward.ClearHealthAlert(store.root, id, invoker, inv.alertAcknowledgedBy(store.root, owners.now()), owners.now())
+		} else if err == nil {
+			episode, changed, err = steward.ClearAlert(store.root, id, invoker, owners.now())
+		}
 	}
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("alert %s could not be changed: %v", qualified, err),
@@ -300,7 +311,45 @@ func runIntentAlertAct(inv *intentInvocation, act string) int {
 	default:
 		result.Outcome, result.Summary = intentUnchanged, "alert "+qualified+" was already cleared"
 	}
+	if len(rearmed) > 0 || acknowledged {
+		result.Outcome = intentConfirmed
+		if len(rearmed) > 0 {
+			roles := make([]string, len(rearmed))
+			for i, role := range rearmed {
+				roles[i] = string(role)
+			}
+			result.Summary += "; re-armed: " + strings.Join(roles, ", ")
+		}
+		if acknowledged {
+			result.Summary += "; the ledger move is acknowledged"
+		}
+	}
+	if healthClear && !acknowledged {
+		for _, role := range rearmed {
+			if role == steward.RoleLedgerAttention {
+				result.next, result.nextReason = inv.publicArgv("alert", "clear", qualified), "the ledger move is not acknowledged yet; a person runs this in a terminal you opened yourself"
+			}
+		}
+	}
 	return inv.render(result)
+}
+
+func (inv *intentInvocation) alertAcknowledgedBy(root string, now time.Time) string {
+	owners := inv.owners.helm.withDefaults()
+	proof, err := humanauthority.ProveTerminal(root, owners.pid(), owners.reader, now)
+	if err != nil || !proof.TerminalValidFor(root) {
+		proof, err = humanauthority.Prove(root, owners.pid(), owners.reader, now)
+		if err != nil || proof.Helm == nil || !proof.TerminalValidFor(root) {
+			return ""
+		}
+	}
+	if proof.Helm != nil {
+		return proof.Helm.By
+	}
+	if enrollment, err := humanauthority.ReadEnrollment(root); err == nil && enrollment.Human != "" {
+		return enrollment.Human
+	}
+	return owners.account() + " (not enrolled)"
 }
 
 func alertEpisode(root, id string) (steward.AlertEpisode, error) {

@@ -317,7 +317,7 @@ func deliveryAge(now, evidence time.Time) time.Duration {
 }
 
 func deliveryDead(reason string) RoleVerdict {
-	role := roleDead(RoleClaimedGoalDelivery, reason, "inspect the named claim, receipt log, and job record; this health role takes no automatic action")
+	role := roleDead(RoleClaimedGoalDelivery, reason, "", RemedyFact{Cause: CauseUnavailable})
 	role.NoAutomaticRemedy = true
 	return role
 }
