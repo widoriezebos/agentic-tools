@@ -104,9 +104,9 @@ func declaredCheckBed(t *testing.T, body string) *workBed {
 			case slices.Equal(args, []string{"rev-parse", "candidate-commit^{tree}"}):
 				return []byte("candidate-tree"), nil
 			case len(args) == 2 && args[0] == "show" && strings.HasPrefix(args[1], "base-commit:"):
-				return []byte(body), nil
+				return []byte(body + "proof.full=true\n"), nil
 			case len(args) == 2 && args[0] == "show" && strings.HasPrefix(args[1], "candidate-commit:"):
-				return []byte("proof.cheap=true\nproof.audits=true\nproof.deadline=1\n"), nil
+				return []byte("proof.cheap=true\nproof.audits=true\nproof.deadline=1\nproof.full=true\n"), nil
 			}
 			return git(root, args...)
 		}
@@ -331,6 +331,12 @@ func TestIntentDeclaredCheckNextRoundUsesNewDeclarations(t *testing.T) {
 	}
 	followUp := b.brief("follow.md", "Use the next round's repaired declarations.\n")
 	code, result, _ = stopPublic(t, b, "broken-policy", "work", "revise", "run:"+run, "--brief", followUp, "--reason", "Repair the failed check", "--by", "Wido")
+	if code != 1 || processAct(t, result).Status != "proposed" {
+		t.Fatalf("changed declaration was not held: %d %+v", code, result)
+	}
+	owners := b.workOwners()
+	owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+	code, result = checkActBuild(t, b, owners, result.Next.Argv[1:]...)
 	if code != 0 || resultData(t, result)["outcome"] != "green" {
 		t.Fatalf("next round: %d %+v", code, result)
 	}
@@ -602,6 +608,12 @@ func TestIntentDeclaredCheckLaterBuilderCannotReplaceRetainedEvidence(t *testing
 		}
 	}
 	code, revised, _ := stopPublic(t, b, "broken-policy", "work", "revise", "run:"+run, "--brief", b.brief("custody-next.md", "Repair.\n"), "--reason", "Repair the failed check", "--by", "Wido")
+	if code != 1 || processAct(t, revised).Status != "proposed" {
+		t.Fatalf("changed declaration was not held: %d %+v", code, revised)
+	}
+	owners := b.workOwners()
+	owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+	code, revised = checkActBuild(t, b, owners, revised.Next.Argv[1:]...)
 	if code != 0 || resultData(t, revised)["outcome"] != "green" {
 		t.Fatalf("second round: %d %+v", code, revised)
 	}

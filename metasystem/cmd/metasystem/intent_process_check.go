@@ -64,7 +64,17 @@ func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory s
 	if person && inv.input.has("check") && inv.input.text("act") == "" && inv.input.text("reason") == "" {
 		return fmt.Errorf("a manual check needs --reason TEXT --by NAME before --check")
 	}
-	admitted, err := processchange.AdmitCheck(processchange.Check{Root: inv.stateRoot, Act: inv.input.text("act"), ProcessAct: act, Applicable: applicable, Person: person, Observation: !inv.input.has("check"), Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }})
+	if person && inv.input.has("check") && act.Reason != "" {
+		impact := "Impact: use your command with no audits and a 15-minute deadline.\nMissing declarations remain unproved; later rounds use committed declarations.\nCancel this run to stop the repair."
+		if err := inv.recordUnitStopOverride(plan.Goal, "work-build-check", act.Reason, impact, check.SelectedBy); err != nil {
+			return err
+		}
+	}
+	selectionAct := ""
+	if inv.input.has("check") {
+		selectionAct = inv.input.text("act")
+	}
+	admitted, err := processchange.AdmitCheck(processchange.Check{Root: inv.stateRoot, Act: selectionAct, ProcessAct: act, Applicable: applicable, Person: person, Observation: !inv.input.has("check"), Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }})
 	if err != nil && (inv.input.has("check") || admitted.Status != "observation-unknown") {
 		return &processCheckHeld{act: admitted, remedy: remedy, problem: err.Error()}
 	}
@@ -97,6 +107,8 @@ func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory s
 	if admitted.Status == "superseded" {
 		return &processCheckHeld{act: admitted, remedy: remedy, problem: "the earlier selection was superseded"}
 	}
-	check.ProcessAct = admitted.ID
+	if check.ProcessAct == "" {
+		check.ProcessAct = admitted.ID
+	}
 	return nil
 }

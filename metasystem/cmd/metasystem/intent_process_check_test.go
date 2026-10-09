@@ -343,7 +343,7 @@ waiting:
 		}
 		count := runtime.Stack(stack, true)
 		for _, goroutine := range strings.Split(string(stack[:count]), "\n\n") {
-			if strings.Contains(goroutine, "processchange.AdmitCheck") && strings.Contains(goroutine, "unix.Flock") {
+			if strings.Contains(goroutine, "processchange.AdmitDeclaration") && strings.Contains(goroutine, "unix.Flock") {
 				break waiting
 			}
 		}
@@ -383,10 +383,22 @@ func TestProcessCheckFailedObservationHoldsNextAgent(t *testing.T) {
 		t.Fatal(err)
 	}
 	process := filepath.Dir(paths[0])
-	// Reads and the existing lock remain usable, but selection publication
-	// cannot create its temporary file. The acts directory remains writable.
-	if err := os.Chmod(process, 0500); err != nil {
-		t.Fatal(err)
+	// Selection publication fails after the round's declaration is durable.
+	// Reads, the existing lock and the acts directory remain usable.
+	now := b.manager.Now
+	b.manager.Now = func() time.Time {
+		declarations, _ := filepath.Glob(filepath.Join(process, "declaration-*.json"))
+		for _, path := range declarations {
+			data, _ := os.ReadFile(path)
+			var reference struct{ Operation string }
+			if json.Unmarshal(data, &reference) == nil && reference.Operation != "" {
+				if err := os.Chmod(process, 0500); err != nil {
+					t.Fatal(err)
+				}
+				b.manager.Now = now
+			}
+		}
+		return now()
 	}
 	t.Cleanup(func() { _ = os.Chmod(process, 0700) })
 	b.declaredCheap = "false"

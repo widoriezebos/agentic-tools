@@ -142,6 +142,8 @@ func intentDeliveryCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "work", value: "NAME", usage: "the goal's named work to correct"},
+				{name: "act", value: "ID", usage: "approve this round's retained declaration proposal at your enrolled terminal"},
+				{name: "check", value: "COMMAND...", rest: true, usage: "explicit person repair check; ends the options"},
 				{name: "after", value: "N", usage: "the attempt being corrected (default: rejoin the same request, else the newest attempt)"},
 				intentBriefFlag,
 				reasonFlag("because", "the reason a person requests a correction despite the recorded review"),

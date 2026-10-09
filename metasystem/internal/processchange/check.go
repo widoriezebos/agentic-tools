@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -156,4 +158,139 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
 		return
 	}
 	return act, save(c.Root, filepath.Join(c.Root, "process", "acts", act.ID+".json"), act)
+}
+
+type Declaration = launch.UnitDeclaration
+type DeclarationAdmission struct {
+	Check
+	Resume  bool
+	Source  func() (candidate, main, inherited Declaration, err error)
+	Recheck func() error
+	Publish func(ProcessAct) error
+	Impact  func() error
+}
+type declarationReference struct {
+	Goal, Seed, Operation, Act string
+	Snapshot                   Declaration
+}
+
+// AdmitDeclaration owns each goal's committed declaration history and approval.
+func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
+	directory := filepath.Join(c.Root, "process")
+	if err = os.MkdirAll(filepath.Join(directory, "acts"), 0700); err != nil {
+		return
+	}
+	held, err := lock.File(filepath.Join(directory, "lock"), 0600, lock.Exclusive)
+	if err != nil {
+		return
+	}
+	defer held.Release()
+	path := filepath.Join(directory, fmt.Sprintf("declaration-%x.json", sha256.Sum256([]byte(c.Goal))))
+	write := func(target string, value any) error {
+		data, _ := json.Marshal(value)
+		_, err := atomicfile.WriteFile(target, append(data, '\n'), 0600, "")
+		return err
+	}
+	body, readErr := os.ReadFile(path)
+	var previous declarationReference
+	if readErr != nil && !os.IsNotExist(readErr) || readErr == nil && (json.Unmarshal(body, &previous) != nil || previous.Goal != c.Goal || previous.Seed == "" || previous.Snapshot.Commit == "" || slices.Contains(previous.Snapshot.Values[:], "")) {
+		return act, fmt.Errorf("the goal's declaration baseline is unavailable; a person can supply --reason TEXT --by NAME --check COMMAND")
+	}
+	act = c.ProcessAct
+	if c.Resume {
+		if previous.Operation != c.Operation || previous.Act == "" {
+			return act, nil
+		}
+		actPath := filepath.Join(directory, "acts", previous.Act+".json")
+		data, problem := os.ReadFile(actPath)
+		if problem != nil || json.Unmarshal(data, &act) != nil || act.Goal != c.Goal || act.ID != previous.Act || act.Class != "declaration" || act.Status != "applied" {
+			return act, fmt.Errorf("the admitted declaration act is unavailable")
+		}
+		return act, save(c.Root, actPath, act)
+	}
+	candidate, main, inherited, problem := c.Source()
+	if problem != nil {
+		return act, problem
+	}
+	if os.IsNotExist(readErr) {
+		previous = declarationReference{Goal: c.Goal, Seed: main.Commit, Snapshot: main}
+		if err = write(path, previous); err != nil {
+			return
+		}
+	}
+	act.BeforeDeclaration, act.AfterDeclaration = &previous.Snapshot, &candidate
+	act.Predecessor, act.Class, act.Actor = previous.Act, "declaration", "unknown"
+	changed := false
+	for index, value := range candidate.Values {
+		changed = changed || value != previous.Snapshot.Values[index] && value != inherited.Values[index]
+	}
+	defer func() {
+		if err != nil || act.Status == "proposed" || act.Status == "superseded" {
+			return
+		}
+		if err = c.Recheck(); err == nil {
+			err = write(path, declarationReference{c.Goal, previous.Seed, c.Operation, act.ID, candidate})
+		}
+		if err == nil {
+			err = c.Publish(act)
+		}
+		if err == nil && act.Status == "applied" {
+			err = save(c.Root, filepath.Join(directory, "acts", act.ID+".json"), act)
+		}
+	}()
+	if !changed && c.Act == "" {
+		if candidate.Values != previous.Snapshot.Values {
+			previous.Act = ""
+		}
+		act.ID, act.Status = previous.Act, "unchanged"
+		return act, nil
+	}
+	identity, _ := json.Marshal([]any{c.Goal, c.Unit, c.Operation, act.Predecessor, act.BeforeDeclaration, act.AfterDeclaration})
+	act.ID, act.Status, act.ProposedAt = fmt.Sprintf("%x", sha256.Sum256(identity)), "proposed", c.Now.UTC()
+	if c.Act != "" {
+		act.ID = c.Act
+	}
+	if filepath.Base(act.ID) != act.ID {
+		return act, fmt.Errorf("invalid declaration act id")
+	}
+	actPath := filepath.Join(directory, "acts", act.ID+".json")
+	retained, problem := os.ReadFile(actPath)
+	if problem == nil {
+		var proposal ProcessAct
+		if json.Unmarshal(retained, &proposal) != nil || proposal.Class != "declaration" || proposal.ID != act.ID || proposal.Goal != c.Goal || proposal.Unit != c.Unit || proposal.Operation != c.Operation || proposal.AfterDeclaration == nil || !reflect.DeepEqual(proposal.AfterDeclaration, act.AfterDeclaration) {
+			return act, fmt.Errorf("the act names a different declaration, tree or admission")
+		}
+		act = proposal
+	} else if !os.IsNotExist(problem) || c.Act != "" {
+		return act, fmt.Errorf("declaration act unavailable: %w", problem)
+	}
+	if previous.Operation != c.Operation && (act.BeforeDeclaration == nil || !reflect.DeepEqual(*act.BeforeDeclaration, previous.Snapshot) || act.Predecessor != previous.Act) {
+		act.Status = "superseded"
+		return act, save(c.Root, actPath, act)
+	}
+	if act.Status == "superseded" {
+		return act, nil
+	}
+	if act.Status != "applied" {
+		if err = save(c.Root, actPath, act); err != nil {
+			return
+		}
+		if !c.Person {
+			q, _, problem := channel.AskOrFind(channel.AskRequest{RepoRoot: c.Root, Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Committed checks from %q to %q", act.BeforeDeclaration.Values, act.AfterDeclaration.Values), act.Reason}, Wants: c.Remedy(act.ID)})
+			if problem != nil {
+				return act, problem
+			}
+			act.Question = q.ID
+			return act, save(c.Root, actPath, act)
+		}
+		if err = c.Impact(); err != nil {
+			return
+		}
+		act.AppliedProof = c.Proof
+		act.Status, act.AppliedAt = "applied", c.Now.UTC()
+		if err = write(actPath, act); err != nil {
+			return
+		}
+	}
+	return act, nil
 }

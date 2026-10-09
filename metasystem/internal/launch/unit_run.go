@@ -684,7 +684,11 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofPlanned bool) (UnitPlan, error) {
 	path := filepath.Join(directory, "plan.json")
 	if _, err := os.Stat(path); err == nil {
-		return ReadUnitPlan(path)
+		retained, err := ReadUnitPlan(path)
+		if err == nil && retained.Check != nil && retained.Check.Declaration != nil && runner.FreezeCheck != nil {
+			return runner.FreezeCheck(retained, directory)
+		}
+		return retained, err
 	} else if !os.IsNotExist(err) {
 		return plan, err
 	}

@@ -1,51 +1,34 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
 func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory string) (launch.UnitPlan, error) {
-	git := func(root string, args ...string) (string, error) {
-		data, err := inv.work().git(root, args...)
-		return strings.TrimSpace(string(data)), err
+	if problem := inv.selectLayoutRoot(); problem != nil {
+		return plan, fmt.Errorf("%s", problem.Summary)
 	}
-	check := &launch.UnitCheck{Base: plan.Base, Directory: plan.Proof[0].Dir, Environment: os.Environ()}
+	if plan.Check != nil && plan.Check.Declaration != nil && plan.Path == filepath.Join(directory, "plan.json") {
+		return plan, inv.admitUnitDeclaration(&plan, directory, nil)
+	}
+	check := &launch.UnitCheck{Base: plan.Base, Directory: plan.Proof[0].Dir, Environment: plan.Proof[0].Env}
 	if inv.input.has("check") {
 		check.SelectedBy, check.Reason = inv.input.text("by"), inv.input.text("reason")
 		check.Cheap, check.Audits, check.Minutes = shellCommand(inv.input.values["check"]), "true", 15
-	} else {
-		commit, err := git(plan.Worktree, "rev-parse", "HEAD")
-		if err != nil {
-			return plan, err
-		}
-		check.SourceTree, err = git(plan.Worktree, "rev-parse", commit+"^{tree}")
-		if err != nil {
-			return plan, err
-		}
-		var values [3]string
-		for i, key := range []string{"proof.cheap", "proof.audits", "proof.deadline"} {
-			values[i], err = landingProofCommand(filepath.Join(plan.Worktree, inv.layout.InstallationRel), plan.Worktree, commit, key, git)
-			if err != nil {
-				return plan, err
-			}
-		}
-		check.Cheap, check.Audits = values[0], values[1]
-		check.Minutes, _ = strconv.Atoi(values[2])
-	}
-	if err := inv.admitProcessCheck(plan, directory, check); err != nil {
-		return plan, err
-	}
-	if inv.input.has("check") && inv.input.text("act") == "" && check.Reason != "" {
-		impact := "Impact: use your command with no audits and a 15-minute deadline.\nMissing declarations remain unproved; later rounds use committed declarations.\nCancel this run to stop the repair."
-		if err := inv.recordUnitStopOverride(plan.Goal, "work-build-check", check.Reason, impact, check.SelectedBy); err != nil {
+		if err := inv.admitProcessCheck(plan, directory, check); err != nil {
 			return plan, err
 		}
 	}
@@ -59,10 +42,26 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		return plan, err
 	}
 	plan.Build.Brief = filepath.Join(directory, "checked-build.md")
-	_, err = atomicfile.WriteText(plan.Build.Brief, fmt.Sprintf("Before returning, run: metasystem test run --unit-run %s\n\n%s", run, brief), directory)
 	plan.Check = check
 	plan.Proof = []launch.ProofCommand{{Name: "unit-check", Dir: check.Directory, Argv: []string{executable, "test", "run", "--unit-run", run, "--repo", inv.layout.InstallationRoot.Path()}, Env: check.Environment}}
-	return plan, err
+	publish := func() error {
+		if _, err := atomicfile.WriteText(plan.Build.Brief, fmt.Sprintf("Before returning, run: metasystem test run --unit-run %s\n\n%s", run, brief), directory); err != nil {
+			return err
+		}
+		data, err := json.Marshal(plan)
+		if err == nil {
+			_, err = atomicfile.WriteFile(filepath.Join(directory, "plan.json"), append(data, '\n'), 0600, "")
+		}
+		return err
+	}
+	if !inv.input.has("check") {
+		err = inv.admitUnitDeclaration(&plan, directory, publish)
+		if err == nil {
+			err = inv.admitProcessCheck(plan, directory, check)
+		}
+		return plan, err
+	}
+	return plan, publish()
 }
 
 func runIntentUnitCheck(inv *intentInvocation) int {
@@ -107,4 +106,85 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 		result.Outcome, result.code, result.Summary = intentFailed, 1, "the unit check failed: "+err.Error()
 	}
 	return inv.render(result)
+}
+func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directory string, publish func() error) error {
+	check := plan.Check
+	act := processchange.ProcessAct{Goal: plan.Goal, Unit: plan.Unit, Operation: directory, Checkout: inv.stateRoot, Key: "declarations", Layer: "committed", Lineage: inv.claimLineage(), Reason: "Approve the committed unit checks"}
+	by, _, refusal := inv.settingsPerson(inv.layout, "committed unit checks", &act.Proof)
+	remedy := inv.typedArgvLess("act", "json", "verbose", "repo")
+	remedy = append(remedy, "--repo", inv.layout.InstallationRoot.Path())
+	withAct := func(id string) []string { return append(slices.Clone(remedy), "--act", id) }
+	git := func(args ...string) (string, error) {
+		data, err := inv.work().git(plan.Worktree, args...)
+		return strings.TrimSpace(string(data)), err
+	}
+	var candidateCommit, branch string
+	source := func() (candidate, main, inherited processchange.Declaration, err error) {
+		readGit := func(args ...string) string {
+			if err != nil {
+				return ""
+			}
+			data, problem := inv.work().git(plan.Worktree, args...)
+			err = problem
+			if args[0] == "show" {
+				return string(data)
+			}
+			return strings.TrimSpace(string(data))
+		}
+		candidateCommit, branch = readGit("rev-parse", "HEAD"), readGit("symbolic-ref", "--short", "HEAD")
+		if err == nil && branch != "goal/"+plan.Goal {
+			err = fmt.Errorf("the worktree is not this goal's branch: %s", branch)
+		}
+		mainCommit := readGit("rev-parse", "origin/main")
+		base := readGit("merge-base", candidateCommit, mainCommit)
+		read := func(commit string) (snapshot processchange.Declaration) {
+			snapshot.Commit, snapshot.Branch = commit, branch
+			snapshot.Tree = readGit("rev-parse", commit+"^{tree}")
+			snapshot.Directory, _ = filepath.Rel(plan.Worktree, check.Directory)
+			snapshot.EnvironmentSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(check.Environment, "\x00"))))
+			snapshot.Content = readGit("show", commit+":"+filepath.ToSlash(filepath.Join(inv.layout.InstallationRel, "metasystem.conf")))
+			snapshot.SourceSHA256 = fmt.Sprintf("%x", sha256.Sum256([]byte(snapshot.Content)))
+			for i, key := range []string{"proof.cheap", "proof.audits", "proof.deadline", "proof.full"} {
+				if err != nil {
+					break
+				}
+				snapshot.Values[i], _, err = config.CommittedContentLookup(snapshot.Content, key)
+				if err == nil {
+					err = config.SettingValueProblem(key, snapshot.Values[i])
+				}
+			}
+			snapshot.FullArgv = []string{"/bin/sh", "-c", snapshot.Values[3]}
+			return
+		}
+		candidate, main, inherited = read(candidateCommit), read(mainCommit), read(base)
+		check.Declaration = &candidate
+		check.Cheap, check.Audits, check.SourceTree = candidate.Values[0], candidate.Values[1], candidate.Tree
+		check.Minutes, _ = strconv.Atoi(candidate.Values[2])
+		plan.FullArgv = candidate.FullArgv
+		return
+	}
+	admitted, err := processchange.AdmitDeclaration(processchange.DeclarationAdmission{Check: processchange.Check{Root: inv.stateRoot, Act: inv.input.text("act"), ProcessAct: act, Person: refusal == nil, Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }}, Resume: publish == nil, Source: source,
+		Recheck: func() error {
+			tip, err := git("rev-parse", "HEAD")
+			currentBranch, branchErr := git("symbolic-ref", "--short", "HEAD")
+			if err != nil || branchErr != nil || tip != candidateCommit || currentBranch != branch {
+				return fmt.Errorf("the goal branch or tree moved before declaration admission")
+			}
+			return nil
+		},
+		Impact: func() error {
+			return inv.recordUnitStopOverride(plan.Goal, "work-declarations", act.Reason, "Impact: next round uses these committed checks, audits and deadline.\nEarlier rounds keep their frozen checks.", by)
+		},
+		Publish: func(admitted processchange.ProcessAct) error { check.ProcessAct = admitted.ID; return publish() },
+	})
+	if err != nil {
+		return &processCheckHeld{act: admitted, remedy: inv.publicArgv("work", "build", unitRunPrefix+filepath.Base(filepath.Dir(directory)), "--reason", "Repair unavailable declarations", "--by", "NAME", "--check", "COMMAND"), problem: err.Error()}
+	}
+	if admitted.Status == "superseded" {
+		return &processCheckHeld{act: admitted, remedy: remedy, problem: "the earlier declaration proposal was superseded"}
+	}
+	if admitted.Status == "proposed" {
+		return &processCheckHeld{act: admitted, remedy: withAct(admitted.ID), problem: ""}
+	}
+	return nil
 }

@@ -22,6 +22,7 @@ import (
 )
 
 type ProcessAct struct {
+	BeforeDeclaration, AfterDeclaration                              *Declaration
 	Unit, Operation, Predecessor                                     string
 	BeforeArgv, AfterArgv, ApplicableArgv                            []string
 	SettingsSHA256                                                   string

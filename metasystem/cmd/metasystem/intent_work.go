@@ -245,7 +245,7 @@ func intentWorkCommands() []intentCommand {
 				"A work name is the caller's name for one part of the goal; without --work the first build is main, and a goal with one",
 				"work item continues it. The same goal, work and request reach the same attempt again; a different request is refused",
 				"and is sent as a correction with work revise.",
-				"Committed proof.cheap, proof.audits and proof.deadline are frozen before the builder starts; its brief calls test run --unit-run RUN.",
+				"Committed checks are frozen per round; a declaration change asks a person to run the printed --act command before launch.",
 				"The size is the work's row in the brief's or the accepted design's units table; without a row give --lines N.",
 				"The first read may use the tool calls the brief names (Maximum reader tool calls: N), --read-tool-calls N, or else",
 				"the configured intent.review.tool-calls allowance (48 unless metasystem.conf says otherwise).",
@@ -265,7 +265,7 @@ func intentWorkCommands() []intentCommand {
 				{name: "plan", value: "FILE", advanced: true, hidden: true, usage: "an existing unit plan (the unit run plan format)"},
 				{name: "reason", value: "TEXT", usage: "why the person chooses an explicit repair check"},
 				{name: "by", value: "NAME", usage: "the proven person choosing the repair check"},
-				{name: "act", value: "ID", usage: "execute the retained check proposal with fresh person proof"},
+				{name: "act", value: "ID", usage: "execute the retained check or declaration proposal with fresh person proof"},
 				{name: "check", value: "COMMAND...", rest: true, usage: "an explicit check selection; changes ask a person; ends the options"},
 			},
 			maxArgs: 2,
@@ -716,7 +716,7 @@ func runIntentBuild(inv *intentInvocation) int {
 	if inv.input.has("plan") {
 		return runIntentBuildPlan(inv)
 	}
-	if len(inv.input.args) == 1 && !inv.input.has("brief") && !inv.input.has("check") {
+	if len(inv.input.args) == 1 && !inv.input.has("brief") && (!inv.input.has("check") || strings.HasPrefix(inv.input.args[0], unitRunPrefix)) {
 		// One word without a request continues a unit run it names.
 		ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 		if problem != nil {
@@ -741,7 +741,7 @@ func runIntentBuild(inv *intentInvocation) int {
 				return inv.render(*inv.refusedKind(inv.input.args[0], kind))
 			}
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
-				Summary: fmt.Sprintf("building %s continues a recorded run, which takes no brief, checks or work name; nothing was done", inv.input.args[0]),
+				Summary: fmt.Sprintf("building %s continues its recorded run; omit the brief and work name", inv.input.args[0]),
 				next:    inv.publicArgv("work", "build", inv.input.args[0]), nextReason: "continues the run"})
 		}
 	}
@@ -1002,10 +1002,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		return path, err
 	}
 	result, err := runner.AdvancePrepared(request.worktree, id, unit, request.bytes, request.options, request.prepare)
-	var held *processCheckHeld
-	if errors.As(err, &held) {
-		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: held.Error(), Data: held.act, next: held.remedy, nextReason: "run this at your enrolled terminal"})
-	}
+
 	outcome := inv.unitOutcome(runner, result, err, targets, inv.sameCommand())
 	if data, ok := outcome.Data.(map[string]any); ok {
 		data["inputs"] = request.directory
@@ -1159,7 +1156,7 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 			estimate: sizeSource == "lines", unitsPage: unitsPage, lines: lines, findings: findings, rounds: rounds, toolCalls: toolCalls}
 		plan := launch.UnitPlan{Unit: unit, Goal: id, Worktree: worktree, Base: base, Whole: identity.Whole,
 			Build: launch.UnitBuildPlan{Brief: buildBrief, Inputs: append([]string{}, designs...), Outputs: []string{}, UnitsPage: unitsPage, Units: []string{unit}},
-			Proof: []launch.ProofCommand{{Name: "check", Dir: checkDir, Argv: append([]string{}, check...), Env: []string{}}}}
+			Proof: []launch.ProofCommand{{Name: "check", Dir: checkDir, Argv: append([]string{}, check...), Env: os.Environ()}}}
 		if readEachRound {
 			plan.Read = launch.UnitReadPlan{Brief: readBrief, Inputs: append([]string{}, designs...), Outputs: []string{findings}, Model: readModel}
 			if _, err := atomicfile.WriteText(readBrief, binding.readBrief(template, buildBrief), directory); err != nil {
@@ -1472,6 +1469,11 @@ func (b unitBinding) readBrief(template []byte, buildBrief string) string {
 // wrote it, and only VERDICT: land is a clean read. A capped wait is work
 // still in progress with the command that continues it.
 func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launch.UnitResult, err error, targets []intentTarget, again []string) intentResult {
+	var held *processCheckHeld
+	if errors.As(err, &held) {
+		return intentResult{Outcome: intentRefused, code: 1, Summary: held.Error(), Data: held.act, next: held.remedy, nextReason: "run this at your enrolled terminal"}
+	}
+
 	record := result.Record
 	if err != nil {
 		var treeWait *launch.TreeWaitingError
@@ -1746,6 +1748,9 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 			}
 		}
 		return inv.render(inv.unitOutcome(runner, result.UnitResult, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
+	}
+	if inv.input.text("act") != "" {
+		brief = ""
 	}
 	result, err := runner.Continue(launch.UnitRequest{Resume: run, FollowUp: brief})
 	again := inv.publicArgv("work", "wait", unitRunPrefix+run)

@@ -105,7 +105,7 @@ func newConnectionBedWith(t *testing.T, amend func(*goal.GoalFile)) *connectionB
 	if err != nil {
 		t.Fatal(err)
 	}
-	declarations = append(declarations, []byte("\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\n")...)
+	declarations = append(declarations, []byte("\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\nproof.full=true\n")...)
 	if err := os.WriteFile(conf, declarations, 0600); err != nil {
 		t.Fatal(err)
 	}

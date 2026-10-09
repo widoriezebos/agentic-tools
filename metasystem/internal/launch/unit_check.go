@@ -12,6 +12,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
 )
 
+type UnitDeclaration struct {
+	Values                                                                    [4]string
+	Content, Commit, Tree, Branch, Directory, EnvironmentSHA256, SourceSHA256 string
+	FullArgv                                                                  []string
+}
+
 type UnitCheck struct {
 	ProcessAct  string   `json:"processAct,omitempty"`
 	SelectedBy  string   `json:"selectedBy,omitempty"`
@@ -23,6 +29,8 @@ type UnitCheck struct {
 	Minutes     int      `json:"minutes"`
 	Directory   string   `json:"directory"`
 	Environment []string `json:"environment"`
+
+	Declaration *UnitDeclaration `json:"declaration,omitempty"`
 }
 type CheckExit struct {
 	Name    string  `json:"name"`

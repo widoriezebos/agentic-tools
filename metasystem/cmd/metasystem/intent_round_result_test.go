@@ -132,7 +132,7 @@ func buildRoundResult(t *testing.T, c *connectionBed, starter *roundResultStarte
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeUnitCarryFile(t, conf, string(declarations)+"\nproof.cheap="+shellCommand([]string{check})+"\nproof.audits=true\nproof.deadline=15\n")
+	writeUnitCarryFile(t, conf, string(declarations)+"\nproof.cheap="+shellCommand([]string{check})+"\nproof.audits=true\nproof.deadline=15\nproof.full=true\n")
 	connectionGit(t, c.root(), "add", "metasystem.conf")
 	connectionGit(t, c.root(), "commit", "-qm", "fixture check declarations")
 	connectionGit(t, c.root(), "push", "-q", "origin", "main")
