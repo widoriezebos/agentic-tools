@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"sync"
@@ -240,7 +241,7 @@ func (c connectionReleasedChild) Wait() (int, error) {
 func TestIntentBuilderChildInGeneratedWorktree(t *testing.T) {
 	python, err := exec.LookPath("python3")
 	if err != nil {
-		t.Skip("python3 is required for the fixture builder child")
+		t.Fatal("python3 is required for the fixture builder child")
 	}
 	c := newConnectionBed(t)
 	settings := c.adapterFixture()
@@ -300,8 +301,12 @@ with open(os.environ["VMI_PROBE_RELEASE"]) as gate:
 	prober := identity.KernelProber{}
 	processes := launch.OSProcesses{Prober: prober}
 	m.Processes, m.Signaler, m.Prober = connectionReleasedProcesses{OSProcesses: processes, release: release}, processes, prober
-	m.Grace, m.Poll, m.StartCap = 100*time.Millisecond, 5*time.Millisecond, 5*time.Second
-	m.Settings.WaitCapSeconds = 5
+	clock := time.Unix(123, 0)
+	m.Now = func() time.Time { return clock }
+	m.Sleep = func(time.Duration) { runtime.Gosched() }
+	// The manager clock stays fixed; only the child's observed exit ends waits.
+	m.Grace, m.Poll = 100*time.Millisecond, 5*time.Millisecond
+	m.Settings.WaitCapSeconds = int64(m.StartCap/time.Second) + 1
 	m.Settings.BuildWindow = 12345
 	m.Adapters["claude-headless"] = launch.ClaudeHeadless{Binary: child, ProjectsRoot: projects}
 	starter := &connectionRuntimeBuilder{c: c}

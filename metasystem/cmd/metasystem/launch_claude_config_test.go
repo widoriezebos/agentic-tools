@@ -12,6 +12,7 @@ import (
 // adapter measures a session from the transcripts under CLAUDE_CONFIG_DIR
 // when it is set, as Claude Code writes them there, else under ~/.claude.
 func TestLaunchManagerReadsClaudeTranscriptsWhereClaudeKeepsThem(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
 	config := t.TempDir()
 	t.Setenv("CLAUDE_CONFIG_DIR", config)
 	adapter, ok := newLaunchManager().Adapters["claude-headless"].(launch.ClaudeHeadless)

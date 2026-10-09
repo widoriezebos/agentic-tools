@@ -942,7 +942,7 @@ func runGoGateCommandTestInOwnedProcess(t *testing.T) bool {
 	if os.Getenv("GO_WANT_GO_GATE_COMMAND_TEST") == "1" {
 		return false
 	}
-	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v")
+	command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^"+t.Name()+"$", "-test.v", "-test.timeout="+fixtureDeadlineRemaining(t).String())
 	command.Env = append(os.Environ(), "GO_WANT_GO_GATE_COMMAND_TEST=1")
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("owned go-gate command test failed: %v\n%s", err, output)
@@ -1809,23 +1809,16 @@ func TestCommitProofTerminalRefusesWithoutGoalRevisionAuthority(t *testing.T) {
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	watchdog := filepath.Join(artifactDir, "watchdog.sh")
-	if err := testexec.WriteFile(watchdog, []byte(`#!/usr/bin/env bash
-done_path=
-while (($#)); do
-  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
-done
-while [[ ! -e "$done_path" ]]; do sleep 0.005; done
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	watchdog, notify := terminalWatchdogFixture(t, artifactDir)
+	backstop := fixtureDeadlineRemaining(t, deadline)
+
 	var launcherErrors bytes.Buffer
 	result := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "deadline-finalization", Root: root, ControlRoot: root, ErrorOutput: &launcherErrors,
 		AttemptID: attempt.AttemptID, Deadline: deadline, ConfPath: filepath.Join(root, "metasystem.conf"),
 		ProgressPath: filepath.Join(artifactDir, "progress.jsonl"), LogPath: filepath.Join(artifactDir, "proof.log"),
-		Banner: "deadline finalization fixture", Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second,
-		EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second,
-		WatchdogExecutable: watchdog, Command: []string{"true"},
+		Banner: "deadline finalization fixture", Silence: backstop, SectionCap: backstop, EvidenceTimeout: backstop,
+		EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: backstop, KillGrace: backstop,
+		WatchdogExecutable: watchdog, NotifyWatchdogDone: notify, Command: []string{"true"},
 		PrepareSuccess: func(proofrun.CompletionContext) (json.RawMessage, error) {
 			return json.RawMessage(`{"preparedAt":"before-terminal-locks"}`), nil
 		}, CommitTerminal: func(completion proofrun.CompletionContext, receipt json.RawMessage) error {
@@ -3067,24 +3060,17 @@ func terminalCommitFixtureAt(t *testing.T, root string, existing ...proofrun.Att
 	if err := os.MkdirAll(artifactDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	watchdog := filepath.Join(artifactDir, "watchdog.sh")
-	if err := testexec.WriteFile(watchdog, []byte(`#!/usr/bin/env bash
-done_path=
-while (($#)); do
-  if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
-done
-while [[ ! -e "$done_path" ]]; do sleep 0.005; done
-`), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	watchdog, notify := terminalWatchdogFixture(t, artifactDir)
+
 	launch := func(command []string, commit func(proofrun.CompletionContext, json.RawMessage) error) (int, string) {
+		backstop := fixtureDeadlineRemaining(t, deadline)
 		var launcherErrors bytes.Buffer
 		result := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "terminal-commit", Root: root, ControlRoot: root, ErrorOutput: &launcherErrors,
 			AttemptID: attempt.AttemptID, Deadline: deadline, ConfPath: filepath.Join(root, "metasystem.conf"),
 			ProgressPath: filepath.Join(artifactDir, "progress.jsonl"), LogPath: filepath.Join(artifactDir, "proof.log"),
-			Banner: "terminal commit fixture", Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second,
-			EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second,
-			WatchdogExecutable: watchdog, Command: command,
+			Banner: "terminal commit fixture", Silence: backstop, SectionCap: backstop, EvidenceTimeout: backstop,
+			EvidenceMax: 1024, Poll: 5 * time.Millisecond, TermGrace: backstop, KillGrace: backstop,
+			WatchdogExecutable: watchdog, NotifyWatchdogDone: notify, Command: command,
 			PrepareSuccess: func(proofrun.CompletionContext) (json.RawMessage, error) {
 				return json.RawMessage(`{"prepared":true}`), nil
 			}, CommitTerminal: commit})
@@ -3616,4 +3602,21 @@ func TestTestingWorkerRetainsDrainedOperationalErrorResultAtTerminal(t *testing.
 		len(legacyStored.TestResult.Uncertainty) != 2 || strings.Contains(launcherErrors, "worker left no usable result") {
 		t.Fatalf("terminal did not retain the later-stage source failure: status=%d errors=%q retained=%+v stored=%+v read=%v", status, launcherErrors, legacyRetained, legacyStored, readErr)
 	}
+}
+
+// terminalWatchdogFixture waits for the launcher's completion event on a FIFO.
+func terminalWatchdogFixture(t *testing.T, dir string) (string, func() error) {
+	t.Helper()
+	gate := filepath.Join(dir, "watchdog-done")
+	makeFixtureFIFO(t, gate)
+	held, err := os.OpenFile(gate, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { held.Close() })
+	watchdog := filepath.Join(dir, "watchdog.sh")
+	if err := testexec.WriteFile(watchdog, []byte("#!/bin/sh\nread event < "+shellQuote(gate)+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return watchdog, func() error { _, err := held.Write([]byte("done\n")); return err }
 }

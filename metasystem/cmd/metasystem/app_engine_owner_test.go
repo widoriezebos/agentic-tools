@@ -12,7 +12,7 @@ import (
 // invocation was given.
 func TestAppStartLaunchesTheInvocationsOwnEngine(t *testing.T) {
 	t.Parallel()
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	missing := filepath.Join(t.TempDir(), "this-invocations-engine")
 	bed.engine = missing

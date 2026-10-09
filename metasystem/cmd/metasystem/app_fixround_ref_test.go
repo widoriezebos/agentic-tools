@@ -12,7 +12,7 @@ import (
 // A goal's candidate is origin's tip: a local goal branch that lags runs
 // nothing old, and a moved origin tip replaces the run.
 func TestAppGoalRunsOriginsTipBeforeALaggingLocalBranch(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	bed.withEvidenceRoot()
 	bed.git("branch", "goal/g1")

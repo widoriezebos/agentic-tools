@@ -43,7 +43,7 @@ func init() {
 // probe at its first read). readyMs is 1 so that any readiness clock left on
 // this path fails the witness every time instead of on a loaded host.
 func witnessAppStartRepeat(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	contract := appHTTPContract(appFixtureApp(t), address)
 	contract["ready"] = map[string]any{"kind": applaunch.ReadyNone}
 	contract["readyMs"] = 1
@@ -60,7 +60,7 @@ func witnessAppStartRepeat(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("a repeated start is success: %v", result)
 	}
-	if summary, _ := result["summary"].(string); !strings.Contains(summary, "already running at "+address) {
+	if summary, _ := result["summary"].(string); !strings.Contains(summary, "already running at "+address.address) {
 		t.Fatalf("a repeated start says the application already runs: %q", summary)
 	}
 	after, err := os.ReadFile(recordPath)
@@ -84,7 +84,7 @@ func witnessAppStartRepeat(t *testing.T) {
 // under load. readyMs is 1 so that any readiness clock left on this path
 // fails the witness every time instead of on a loaded host.
 func witnessAppStopRepeat(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	contract := appHTTPContract(appFixtureApp(t), address)
 	contract["ready"] = map[string]any{"kind": applaunch.ReadyNone}
 	contract["readyMs"] = 1

@@ -22,6 +22,7 @@ type fixtureLifetimeDependencies struct {
 	prober    identity.Prober
 	after     func(time.Duration) <-chan time.Time
 	openLeash func(string) (io.ReadCloser, error)
+	signals   <-chan os.Signal
 	ready     func()
 	// stdout receives a help request's usage and stderr every diagnostic:
 	// the invocation's own streams, so a refusal never lands in another
@@ -165,9 +166,13 @@ func runUtilHoldWithDependencies(args []string, deps fixtureLifetimeDependencies
 		return 2
 	}
 
-	signals := make(chan os.Signal, 1)
-	signal.Notify(signals, syscall.SIGTERM, os.Interrupt)
-	defer signal.Stop(signals)
+	signals := deps.signals
+	if signals == nil {
+		received := make(chan os.Signal, 1)
+		signal.Notify(received, syscall.SIGTERM, os.Interrupt)
+		defer signal.Stop(received)
+		signals = received
+	}
 	signalContext, stopSignal := context.WithCancel(context.Background())
 	defer stopSignal()
 	signalFailure := make(chan error, 1)

@@ -22,6 +22,8 @@ type ChildSpec struct {
 	Dir         string
 	Environment []string
 	Log         *os.File
+	// ExtraFiles carry listeners already owned by the launcher.
+	ExtraFiles []*os.File
 }
 
 // Child is the application the supervisor owns for the run's life.
@@ -49,6 +51,7 @@ func ExecChild(spec ChildSpec) (Child, error) {
 	command.Dir = spec.Dir
 	command.Env = spec.Environment
 	command.Stdin = nullInput
+	command.ExtraFiles = spec.ExtraFiles
 	command.Stdout = spec.Log
 	command.Stderr = spec.Log
 	if err := command.Start(); err != nil {

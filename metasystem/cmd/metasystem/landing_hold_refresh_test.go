@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func holdRefreshKeeper(t *testing.T, b *resolveVerbFixture) (*lane.AgentKeeper, *int) {
@@ -213,15 +214,40 @@ func TestLandingKeeperBoundsBlockingFetchAndReportsIt(t *testing.T) {
 	if _, _, err := plain.HandIn(l.install, plain.Line{Goal: "goal", SHA: "sha-goal"}); err != nil {
 		t.Fatal(err)
 	}
-	l.owners.landing.plainProve.FetchTimeout = 20 * time.Millisecond
+	expiry := make(chan time.Time)
+	leash := filepath.Join(t.TempDir(), "fetch-leash")
+	makeFixtureFIFO(t, leash)
+	held, err := os.OpenFile(leash, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { held.Close() })
+	child := filepath.Join(t.TempDir(), "fetch")
+	if err := testexec.WriteFile(child, []byte("#!/bin/sh\nread event < "+shellQuote(leash)+"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	fetchLimit := fixtureDeadlineRemaining(t)
+	l.owners.landing.plainProve.FetchTimeout = fetchLimit
+	close(expiry)
+	fetchBound := false
+	l.owners.landing.plainProve.FetchDeadline = func(time.Duration) <-chan time.Time {
+		if fetchBound {
+			fetchBound = false
+			return expiry
+		}
+		// Reaping follows the actual exit, bounded by the test binary.
+		return nil
+	}
+
 	fetches := 0
 	l.owners.landing.plainProve.FetchCommand = func(cmd *exec.Cmd) {
+		fetchBound = true
 		fetches++
 		if freshProofEnv(cmd, "GIT_TERMINAL_PROMPT") != "0" {
 			t.Fatal("the keeper fetch could prompt for credentials")
 		}
 		// Replace only the executable; the production runner still owns its deadline.
-		cmd.Path, cmd.Args = "/bin/sleep", []string{"sleep", "5"}
+		cmd.Path, cmd.Args = child, []string{child}
 	}
 	keeper, starts := holdRefreshKeeper(t, l)
 	run := keeper.Run()

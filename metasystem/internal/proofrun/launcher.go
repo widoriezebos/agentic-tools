@@ -68,6 +68,8 @@ type LaunchOptions struct {
 	CommitTerminal    func(CompletionContext, json.RawMessage) error
 	HintTerminal      func(root, attemptID, publicationID, bootID string, bootNanos int64)
 	BeforeProcessDone func(CompletionContext) error
+	// NotifyWatchdogDone reports suite completion after its marker is written.
+	NotifyWatchdogDone func() error
 	Now               func() time.Time
 }
 
@@ -609,6 +611,9 @@ func LaunchSuite(options LaunchOptions) int {
 	stopCard()
 	beforeLauncherDone(donePath)
 	doneErr := touchDone(donePath)
+	if doneErr == nil && options.NotifyWatchdogDone != nil {
+		doneErr = options.NotifyWatchdogDone()
+	}
 	if doneErr != nil {
 		fmt.Fprintln(combinedErr, "suite launcher: write watchdog done file:", doneErr)
 	}
