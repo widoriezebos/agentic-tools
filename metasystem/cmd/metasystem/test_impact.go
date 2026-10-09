@@ -21,7 +21,7 @@ func runTestImpact(args []string, stdout, stderr io.Writer) int {
 	flags := newFlagSet("test impact", stdout, stderr)
 	base := flags.String("base", os.Getenv("LANDING_PROOF_BASE"), "the unit's comparison base")
 	plan := flags.Bool("plan", false, "print the selection without running it")
-	root := flags.String("root", ".", "the Go module installation")
+	root := pathFlag(flags, "root", ".", "the Go module installation")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
