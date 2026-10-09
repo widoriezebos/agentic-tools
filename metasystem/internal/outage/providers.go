@@ -163,8 +163,7 @@ func Observe(home, runtime, model, class, detail, source string, at time.Time) (
 			if err != nil {
 				return Mark{}, fmt.Errorf("provider %s wait history is unreadable", key)
 			}
-			reset, _ := time.Parse(time.RFC3339Nano, interval.ResetAt)
-			if interval.FirstSuccessAt == "" && !at.Before(until) && !at.Before(reset) {
+			if interval.FirstSuccessAt == "" && !at.Before(until) {
 				interval.FirstSuccessAt = stamp
 			}
 		}

@@ -376,7 +376,9 @@ func (f *dropFixture) ownersWorkGit(dir string, args ...string) ([]byte, error) 
 
 func newDropFixture(t *testing.T) *dropFixture {
 	t.Helper()
-	f := &dropFixture{transferScenarioFixture: newTransferScenarioFixture(t, false), t: t, base: branchRawID("b"), v: branchRawID("d"), inverse: branchRawID("f"), tree: branchRawID("c"), scratch: t.TempDir()}
+	// Goal names are shared on the host board, so each drop owns a distinct goal.
+	goalID := "drop-" + launch.UnitResultDigest(t.TempDir())[:12]
+	f := &dropFixture{transferScenarioFixture: newTransferScenarioFixture(t, false, goalID), t: t, base: branchRawID("b"), v: branchRawID("d"), inverse: branchRawID("f"), tree: branchRawID("c"), scratch: t.TempDir()}
 	f.bed.head = f.commit
 	f.admitted["instanceTag"] = "metasystem-job-" + f.critic + "-fixture"
 	f.admitted["pidStartedAt"] = int64(400)
