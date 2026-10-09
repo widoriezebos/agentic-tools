@@ -168,10 +168,7 @@ func newProcessGitFixtureEnvironment(t *testing.T) (string, []string) {
 func TestStewardBoundaryRefreshUsesServedInstallation(t *testing.T) {
 	t.Parallel()
 	root, environment := newProcessGitFixtureEnvironment(t)
-	bin, err := filepath.Abs("../../bin/metasystem")
-	if err != nil {
-		t.Fatal(err)
-	}
+	bin := canonicalPath(testenv.Engine(t))
 	if filepath.Dir(filepath.Dir(bin)) == root {
 		t.Fatal("the enrolled binary must belong to a different installation")
 	}

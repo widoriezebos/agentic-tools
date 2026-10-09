@@ -22,6 +22,14 @@ import (
 // filled, so its verdict lands seconds after vet's.
 const staticcheckModule = "honnef.co/go/tools/cmd/staticcheck@v0.8.0"
 
+// staticcheckToolchain is the Go toolchain staticcheck analyses with. Since
+// 2026-10-09 the repository compiles with go1.27.2 (ten net/http
+// vulnerabilities fixed), whose export data (version 5) no staticcheck release
+// decodes yet; the analysis runs on the previous patch release's toolchain,
+// which compiles the same sources. Sunset: remove when honnef.co/go/tools
+// decodes export data version 5 (then the pin above moves too).
+const staticcheckToolchain = "go1.27.1"
+
 // govulncheckModule is pinned like staticcheck (Phase 0d). Version pins must
 // use parser and SSA tooling compatible with the repository compiler.
 const govulncheckModule = "golang.org/x/vuln/cmd/govulncheck@v1.2.0"
@@ -252,7 +260,7 @@ func (g *gateRun) collectStatic() int {
 		reds = append(reds, red)
 	} else {
 		var staticcheckOut bytes.Buffer
-		if d.goTool(g.ctx, g.root, g.env.with("GOPROXY="+proxy).list(), append([]string{"run", "-trimpath", "-p=" + g.workers, staticcheckModule}, g.judged()...), &staticcheckOut, &staticcheckOut) != nil {
+		if d.goTool(g.ctx, g.root, g.env.with("GOPROXY="+proxy).with("GOTOOLCHAIN="+staticcheckToolchain).list(), append([]string{"run", "-trimpath", "-p=" + g.workers, staticcheckModule}, g.judged()...), &staticcheckOut, &staticcheckOut) != nil {
 			output := strings.TrimRight(staticcheckOut.String(), "\n")
 			if notCached(output, proxy) {
 				reds = append(reds, notCachedRed("staticcheck 2026.2 (module v0.8.0)", output))

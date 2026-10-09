@@ -276,13 +276,10 @@ func TestArmRefusesWithoutANotifier(t *testing.T) {
 func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 	root := newProcessGitFixture(t)
 	reapStewardRunnerFixture(t, root)
-	bin, err := filepath.Abs("../../bin/metasystem")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, statErr := os.Stat(bin); statErr != nil {
-		t.Skipf("engine binary not built at %s", bin)
-	}
+	// The engine is built for the test (a skip on a missing checkout binary
+	// counts as red in a proof tree that has none); enrollment wants its
+	// canonical path.
+	bin := canonicalPath(testenv.Engine(t))
 	msg, err := Arm(root, bin)
 	if err != nil || !strings.Contains(msg, "armed") {
 		t.Fatalf("arm returns only once the repository is guarded: %q %v", msg, err)
@@ -329,13 +326,10 @@ func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 func TestKilledStewardIsRestoredByOneWatcherRepairPass(t *testing.T) {
 	root := newProcessGitFixture(t)
 	reapStewardRunnerFixture(t, root)
-	bin, err := filepath.Abs("../../bin/metasystem")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, statErr := os.Stat(bin); statErr != nil {
-		t.Skipf("engine binary not built at %s", bin)
-	}
+	// The engine is built for the test (a skip on a missing checkout binary
+	// counts as red in a proof tree that has none); enrollment wants its
+	// canonical path.
+	bin := canonicalPath(testenv.Engine(t))
 	if _, err := Arm(root, bin); err != nil {
 		t.Fatal(err)
 	}
@@ -445,13 +439,10 @@ func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
 func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
 	root := newProcessGitFixture(t)
 	reapStewardRunnerFixture(t, root)
-	bin, err := filepath.Abs("../../bin/metasystem")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, statErr := os.Stat(bin); statErr != nil {
-		t.Skipf("engine binary not built at %s", bin)
-	}
+	// The engine is built for the test (a skip on a missing checkout binary
+	// counts as red in a proof tree that has none); enrollment wants its
+	// canonical path.
+	bin := canonicalPath(testenv.Engine(t))
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("steward.tick-patience-sec=1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
