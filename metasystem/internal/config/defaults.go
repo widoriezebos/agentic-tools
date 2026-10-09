@@ -63,6 +63,7 @@ func diskCompiledSettings() []Setting {
 }
 
 var coreSettings = []Setting{
+	{Key: "provider.recovery-alert-after", Default: "6m", Meaning: "grace period after the first genuine provider success before asking to revive a dependent seat; bound when the episode begins"},
 	{Key: "host.builds", Default: "auto", Meaning: "build admission: auto, a positive distinct-goal cap, or person"},
 	{Key: "host.load-max", Default: "8", Meaning: "automatic builds require current one-minute host load below this positive declaration"},
 	{Key: "process.change", Default: "person", Meaning: "whether an agent may apply a cited process setting or needs a person to execute the exact proposal"},

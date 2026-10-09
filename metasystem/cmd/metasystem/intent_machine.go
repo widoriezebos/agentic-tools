@@ -120,6 +120,10 @@ func runIntentMachineRevive(inv *intentInvocation) int {
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), Data: record, next: inv.publicArgv("system", "status", "--repo", target.Checkout)})
 	}
+	owner, _, _ := lane.Read(home)
+	if err := steward.ReconcileRecoveryRequests(owner.Install, steward.TickConfig{Now: now, Seat: launcher, ProviderHome: home, RecoveryRegistry: reading.Registry}, census); err != nil {
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: "seat " + target.Name + ": session " + record.LaunchID + " started once despite holds; automatic policy and restart history stay unchanged", Details: []string{"Recovery questions remain pending: " + err.Error()}, Data: record, next: inv.typedArgv(), nextReason: "retry reconciliation of this same recovery"})
+	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "seat " + target.Name + ": session " + record.LaunchID + " started once despite holds; automatic policy and restart history stay unchanged", Details: []string{"This one act bypasses advisory holds."}, Data: record})
 }
 

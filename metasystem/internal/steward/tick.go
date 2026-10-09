@@ -36,6 +36,7 @@ type WorkerCensus interface {
 type TickConfig struct {
 	// GoalProjection supplies the accepted ledger read; nil uses the production repository.
 	GoalProjection func(string, time.Time) (goal.Projection, error)
+	RecoveryRegistry string
 	// ProviderHome selects the host registration; empty uses the registry home.
 	ProviderHome string
 	// WorkStateRoot selects the host unit and launch stores; empty uses the

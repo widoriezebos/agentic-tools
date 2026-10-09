@@ -429,6 +429,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				}
 			}
 		}
+		if recoveryErr := ReconcileRecoveryRequests(top, cfg, timed); recoveryErr != nil {
+			fmt.Fprintf(os.Stderr, "seat recovery requests: %v\n", recoveryErr)
+		}
 		// Recovery runs before delivery. A failed recovery queues its incident
 		// above and can reach the operator in this same pass; a successful one
 		// leaves only silent history.

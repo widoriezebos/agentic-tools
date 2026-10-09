@@ -10,10 +10,13 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
 type Interval struct {
+	RecoveryAfter  string `json:"recoveryAfter,omitempty"`
+	ResetAt        string `json:"resetAt,omitempty"`
 	Since, Until   string
 	FirstSuccessAt string `json:"firstSuccessAt,omitempty"`
 	Stale          bool   `json:"stale,omitempty"`
@@ -24,6 +27,20 @@ type Condition struct {
 	ClearedAt string
 	Intervals []Interval
 }
+
+// RecoveryDue never turns a reset, person clear or stale expiry into success.
+func (i Interval) RecoveryDue() (time.Time, error) {
+	delay, err := time.ParseDuration(i.RecoveryAfter)
+	if err != nil || delay <= 0 {
+		return time.Time{}, fmt.Errorf("provider episode %s lacks a readable recovery interval declaration", i.Since)
+	}
+	if i.FirstSuccessAt == "" {
+		return time.Time{}, nil
+	}
+	success, err := time.Parse(time.RFC3339Nano, i.FirstSuccessAt)
+	return success.Add(delay), err
+}
+
 type Providers struct {
 	Owner   lane.Record
 	Current map[string]Condition
@@ -146,13 +163,23 @@ func Observe(home, runtime, model, class, detail, source string, at time.Time) (
 			if err != nil {
 				return Mark{}, fmt.Errorf("provider %s wait history is unreadable", key)
 			}
-			if interval.FirstSuccessAt == "" && !at.Before(until) {
+			reset, _ := time.Parse(time.RFC3339Nano, interval.ResetAt)
+			if interval.FirstSuccessAt == "" && !at.Before(until) && !at.Before(reset) {
 				interval.FirstSuccessAt = stamp
 			}
 		}
 		c.Mark, c.ClearedAt = Mark{}, stamp
 	} else {
 		if c.Mark.ConsecutiveFailures == 0 {
+			conf := filepath.Join(owner.Install, "metasystem.conf")
+			if _, err := os.Stat(conf); os.IsNotExist(err) {
+				conf = ""
+			}
+			value, _, err := config.Get(config.GetParams{Key: "provider.recovery-alert-after", ConfPath: conf})
+			c.Mark.RecoveryAfter = ""
+			if delay, parseErr := time.ParseDuration(value); err == nil && parseErr == nil && delay > 0 {
+				c.Mark.RecoveryAfter = value
+			}
 			c.Mark.Since = stamp
 		}
 		c.Mark.ConsecutiveFailures++

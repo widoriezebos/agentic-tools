@@ -129,7 +129,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data}
 		var headline, fact string
 		switch {
-		case c.State == "closed" && channel.LaneStopCommand(c) != "" && c.ClosedBecause != "":
+		case c.State == "closed" && (channel.LaneStopCommand(c) != "" || c.Recovery != nil) && c.ClosedBecause != "":
 			result.Summary = fmt.Sprintf("channel question %s: %s", c.ID, c.ClosedBecause)
 			headline = result.Summary
 		case c.State == "closed":

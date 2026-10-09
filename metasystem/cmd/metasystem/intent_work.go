@@ -363,6 +363,7 @@ func intentWorkCommands() []intentCommand {
 			object: "settings", action: "show", laidOut: true, audience: "both", summary: "the launch settings, or one setting with its source",
 			usage: []string{"metasystem settings show [KEY]"},
 			details: []string{"Without KEY: the launch settings. With KEY: that launch setting or any metasystem.conf key.",
+				"provider.recovery-alert-after defaults to 6m, bound when a provider episode begins; its clock starts at the first genuine success, never at a reset or clear.",
 				"Read only. settings set changes one for this seat; proof.full and proof.cheap belong to metasystem.conf. settings check validates them all."},
 			maxArgs:  1,
 			examples: []string{"metasystem settings show", "metasystem settings show launch.read.model"},

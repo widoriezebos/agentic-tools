@@ -636,6 +636,17 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		return SeatRecord{}, err
 	}
 	if person {
+		owner, _, err := lane.Read(dependencies.ProviderHome)
+		host, _ := json.Marshal(owner)
+		questions, unreadable := channel.WalkQuestions(repoRoot)
+		if len(unreadable) > 0 {
+			return SeatRecord{}, fmt.Errorf("recovery questions unreadable: %v", unreadable)
+		}
+		for _, q := range questions {
+			if q.Recovery != nil && q.Recovery.Launch == dependencies.After && (err != nil || q.Recovery.Host != string(host)) {
+				return SeatRecord{}, fmt.Errorf("host registration changed; run metasystem machine revive %q without --after", q.Machine)
+			}
+		}
 		registered, err := registry.HostCheckouts(dependencies.RegistryPath)
 		known := false
 		for _, seat := range registered {
