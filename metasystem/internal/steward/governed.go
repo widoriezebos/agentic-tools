@@ -79,7 +79,7 @@ func checkGovernedObligations(repoRoot string) RoleVerdict {
 	if len(failures) > 0 {
 		sort.Strings(failures)
 		role := roleDead(RoleGovernedObligations, strings.Join(failures, "; "),
-			"Wido chooses one: reduce, redesign, retire, or extend with a fresh complete tuple and obligation revision")
+			"", RemedyFact{Cause: CauseUnavailable})
 		role.NoAutomaticRemedy = true
 		return role
 	}

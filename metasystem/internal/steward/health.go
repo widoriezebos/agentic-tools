@@ -135,12 +135,19 @@ type RemedyFact struct {
 	Stop     string      `json:"stop,omitempty"`
 	Job      string      `json:"job,omitempty"`
 	Incident string      `json:"incident,omitempty"`
+	Command  string      `json:"command,omitempty"`
 }
 
 // RemedyCause names one actionable cause a health role reports.
 type RemedyCause string
 
 const (
+	CauseUnavailable           RemedyCause = "unavailable"
+	CauseUnreadable            RemedyCause = "unreadable"
+	CauseSettingsInvalid       RemedyCause = "settings-invalid"
+	CauseClockRegressed        RemedyCause = "clock-regressed"
+	CauseObservationPending    RemedyCause = "observation-pending"
+	CauseStopFenceClosed       RemedyCause = "stop-fence-closed"
 	CauseJobProcessDead        RemedyCause = "job-process-dead"
 	CauseTrunkRedUnowned       RemedyCause = "trunk-red-unowned"
 	CauseBudgetMissing         RemedyCause = "budget-missing"
@@ -233,7 +240,7 @@ func NewHookHealthPreview(verdict HealthVerdict) HookHealthPreview {
 		interventions = append(interventions, item)
 	}
 	return HookHealthPreview{
-		SchemaVersion: 1, ExitCode: verdict.ExitCode(), Line: verdict.Line(),
+		SchemaVersion: 1, ExitCode: verdict.ExitCode(), Line: verdict.Line("agent"),
 		Interventions: interventions, Verdict: verdict,
 	}
 }
@@ -321,17 +328,20 @@ func (v HealthVerdict) ExitCode() int {
 
 // Line is the one-line operator view. Every role remains on the line so an
 // all-clear is self-evident rather than implied by silence.
-func (v HealthVerdict) Line() string { return v.line(true) }
+func (v HealthVerdict) Line(audience ...string) string { return v.line(true, audience...) }
 
 // LineWithoutRemedies is Line for a surface that lists its public remedies
 // on their own: each role with its reason, no owner remedy.
 func (v HealthVerdict) LineWithoutRemedies() string { return v.line(false) }
 
-func (v HealthVerdict) line(remedies bool) string {
+func (v HealthVerdict) line(remedies bool, audience ...string) string {
 	items := make([]string, 0, len(v.Roles))
 	for _, role := range v.Roles {
 		if !remedies {
 			role.Remedy = ""
+		} else if len(audience) > 0 && role.Status != HealthAlive {
+			act, plain := role.PublicRemedy(audience[0], nil, v.Stopped)
+			role.Remedy = strings.TrimSpace(strings.Join(act, " ") + " " + plain)
 		}
 		items = append(items, role.Line())
 	}
@@ -404,11 +414,10 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 		return *stopped, nil
 	}
 	if stateUnreadable {
-		remedy := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
 		for index := range roles {
 			if roles[index].Role != RoleSpendFence && roles[index].Status == HealthAlive {
 				durationMillis := roles[index].DurationMillis
-				roles[index] = roleUnknown(roles[index].Role, "the prior health observation state was unreadable", remedy)
+				roles[index] = roleUnknown(roles[index].Role, "the prior health observation state was unreadable", "", RemedyFact{Cause: CauseUnreadable})
 				roles[index].DurationMillis = durationMillis
 			}
 		}
@@ -483,8 +492,9 @@ func healthStopped(fenceRoot, repoRoot string, now time.Time, roles []RoleVerdic
 		return nil, err
 	}
 	for index := range roles {
-		if strings.Contains(roles[index].Remedy, "metasystem session start") {
-			roles[index].Remedy = remedy
+		if roles[index].Status != HealthAlive && processHealthRole(roles[index].Role) {
+			roles[index].RemedyFacts = []RemedyFact{{Cause: CauseStopFenceClosed, Command: remedy}}
+			roles[index].Remedy = remedyFor(roles[index].Role, roles[index].RemedyFacts[0]).Plain
 		}
 		roles[index].ConsecutiveUnknown = 0
 		roles[index].ConsecutiveFailures = 0
@@ -614,10 +624,9 @@ func checkSpendFenceWithMeasureAndMachine(repoRoot string, now time.Time, measur
 		machine = enrolled
 	}
 	ledger, err := measure(repoRoot, machine, now)
-	remedy := fmt.Sprintf("raise spend.ceiling.<scope>.<ceiling> in metasystem.conf on Wido's recorded word (R-60-m1); alert mode refuses nothing; see %s",
-		filepath.ToSlash(filepath.Join("artifacts", "agents", "steward", "spend", now.UTC().Format("2006-01-02")+".json")))
+	remedy := remedyFor(RoleSpendFence, RemedyFact{}).Plain
 	if err != nil {
-		return roleUnknown(RoleSpendFence, err.Error(), remedy), SpendObservation{Valid: false}
+		return roleUnknown(RoleSpendFence, err.Error(), "", RemedyFact{Cause: CauseUnreadable}), SpendObservation{Valid: false}
 	}
 	settings := ledger.Settings
 	crossings := make([]SpendCrossing, 0, 4+len(ledger.ClaimedGoals)*2)
@@ -683,47 +692,46 @@ func checkHookFreshness(repoRoot string, now time.Time) RoleVerdict {
 func checkHookFreshnessAt(repoRoot string, now time.Time, currentAttempt bool) RoleVerdict {
 	// A hook turn is recorded by the next agent turn the registered hooks
 	// see; registering them is the act a person can take.
-	remedy := fmt.Sprintf("the next agent turn in this checkout records one; if none does, register the hooks with metasystem system setup --repo %q", repoRoot)
 	record, durabilityPending, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
 		var busy *ComponentEvidenceBusyError
 		if errors.As(err, &busy) {
-			return roleUnknown(RoleHookFreshness, busy.Error(), remedy)
+			return roleUnknown(RoleHookFreshness, busy.Error(), "", RemedyFact{Cause: CauseObservationPending})
 		}
 		if os.IsNotExist(err) {
-			return roleDead(RoleHookFreshness, "no hook turn generation is recorded", remedy)
+			return roleDead(RoleHookFreshness, "no hook turn generation is recorded", "", RemedyFact{Cause: CauseUnavailable})
 		}
-		return roleUnknown(RoleHookFreshness, "the hook completion evidence is unreadable", remedy)
+		return roleUnknown(RoleHookFreshness, "the hook completion evidence is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	if record.Generation < 1 || record.TurnKeyDigest == "" {
-		return roleUnknown(RoleHookFreshness, "the hook turn generation is incomplete", remedy)
+		return roleUnknown(RoleHookFreshness, "the hook turn generation is incomplete", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	if record.LastAttempt.After(now) || record.LastCompletion.After(now) || record.LastSuccess.After(now) {
-		return roleUnknown(RoleHookFreshness, "CLOCK_REGRESSED: hook evidence is later than current UTC", remedy)
+		return roleUnknown(RoleHookFreshness, "CLOCK_REGRESSED: hook evidence is later than current UTC", "", RemedyFact{Cause: CauseClockRegressed})
 	}
 	if durabilityPending || record.Outcome == "DURABILITY_PENDING" {
-		return roleUnknown(RoleHookFreshness, "the hook completion is waiting for durability proof", remedy)
+		return roleUnknown(RoleHookFreshness, "the hook completion is waiting for durability proof", "", RemedyFact{Cause: CauseObservationPending})
 	}
 	openAttempt := record.Outcome == "ATTEMPTING" || record.LastCompletion.Before(record.LastAttempt)
 	if openAttempt && now.Sub(record.LastAttempt) >= stopHookBudgetSeconds*time.Second {
-		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d has an attempt without completion past the %ds Stop budget", record.Generation, stopHookBudgetSeconds), remedy)
+		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d has an attempt without completion past the %ds Stop budget", record.Generation, stopHookBudgetSeconds), "", RemedyFact{Cause: CauseUnavailable})
 	}
 	if currentAttempt && openAttempt {
 		if len(record.AttemptHistory) == 0 {
-			return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending with no prior completed turn", record.Generation), remedy)
+			return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending with no prior completed turn", record.Generation), "", RemedyFact{Cause: CauseObservationPending})
 		}
 		prior := record.AttemptHistory[len(record.AttemptHistory)-1]
 		if prior.Result == ComponentOK && prior.Outcome == "EMITTED" {
 			return roleAlive(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending; prior generation %d completed as OK/EMITTED", record.Generation, prior.Generation))
 		}
-		return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending after prior generation %d ended as %s/%s", record.Generation, prior.Generation, prior.Result, prior.Outcome), remedy)
+		return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending after prior generation %d ended as %s/%s", record.Generation, prior.Generation, prior.Result, prior.Outcome), "", RemedyFact{Cause: CauseObservationPending})
 	}
 	if openAttempt {
-		return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending within the %ds Stop budget", record.Generation, stopHookBudgetSeconds), remedy)
+		return roleUnknown(RoleHookFreshness, fmt.Sprintf("turn generation %d is pending within the %ds Stop budget", record.Generation, stopHookBudgetSeconds), "", RemedyFact{Cause: CauseObservationPending})
 	}
 	if record.Result != ComponentOK || record.Outcome != "EMITTED" ||
 		record.SuccessAttemptSeq != record.AttemptSeq || !record.LastSuccess.Equal(record.LastCompletion) {
-		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d did not complete as OK/EMITTED", record.Generation), remedy)
+		return roleDead(RoleHookFreshness, fmt.Sprintf("turn generation %d did not complete as OK/EMITTED", record.Generation), "", RemedyFact{Cause: CauseUnavailable})
 	}
 	return roleAlive(RoleHookFreshness, fmt.Sprintf("turn generation %d completed as OK/EMITTED", record.Generation))
 }
@@ -739,17 +747,16 @@ func checkStopHookDuration(repoRoot string) RoleVerdict {
 }
 
 func checkStopHookDurationWithMachine(repoRoot string, machineName func(string) (string, error)) RoleVerdict {
-	reread := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
 	record, _, err := loadComponentEvidenceForHealth(repoRoot, "supervision-hook")
 	if err != nil {
 		var busy *ComponentEvidenceBusyError
 		if errors.As(err, &busy) {
-			return roleUnknown(RoleStopHookDuration, busy.Error(), reread)
+			return roleUnknown(RoleStopHookDuration, busy.Error(), "", RemedyFact{Cause: CauseObservationPending})
 		}
 		if os.IsNotExist(err) {
 			return roleAlive(RoleStopHookDuration, "no Stop has been measured yet")
 		}
-		return roleUnknown(RoleStopHookDuration, "the Stop duration evidence is unreadable", reread)
+		return roleUnknown(RoleStopHookDuration, "the Stop duration evidence is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 
 	outcome := record.Outcome
@@ -776,19 +783,18 @@ func checkStopHookDurationWithMachine(repoRoot string, machineName func(string) 
 	if enrolled, machineErr := machineName(repoRoot); machineErr == nil {
 		machine = enrolled
 	}
-	remedy := fmt.Sprintf("fix the expensive hook under goal stop-hook-health-cost, then run %s to re-read", reread)
 	if outcome == "DEADLINE_EXPIRED" {
 		return roleDead(RoleStopHookDuration,
-			fmt.Sprintf("the last Stop expired its deadline after %ds of the %ds budget on %s", *elapsed, stopHookBudgetSeconds, machine), remedy)
+			fmt.Sprintf("the last Stop expired its deadline after %ds of the %ds budget on %s", *elapsed, stopHookBudgetSeconds, machine), "", RemedyFact{Cause: CauseUnavailable})
 	}
 
 	threshold, err := boundedConfig(repoRoot, "steward.stop-slow-sec", defaultStopHookSlowSeconds, 1)
 	if err != nil {
-		return roleUnknown(RoleStopHookDuration, "the Stop slow threshold is invalid: "+err.Error(), reread)
+		return roleUnknown(RoleStopHookDuration, "the Stop slow threshold is invalid: "+err.Error(), "", RemedyFact{Cause: CauseSettingsInvalid})
 	}
 	if *elapsed >= int64(threshold) {
 		return roleDead(RoleStopHookDuration,
-			fmt.Sprintf("the last Stop took %ds of the %ds budget on %s; the threshold is %ds", *elapsed, stopHookBudgetSeconds, machine, threshold), remedy)
+			fmt.Sprintf("the last Stop took %ds of the %ds budget on %s; the threshold is %ds", *elapsed, stopHookBudgetSeconds, machine, threshold), "", RemedyFact{Cause: CauseUnavailable})
 	}
 	return roleAlive(RoleStopHookDuration,
 		fmt.Sprintf("the last Stop took %ds of the %ds budget", *elapsed, stopHookBudgetSeconds))
@@ -839,12 +845,12 @@ func applyHealthObservation(repoRoot string, previous HealthObservationState, ro
 	observedAt := now.UTC()
 	if previous.ObservedAt.After(observedAt) {
 		observedAt = previous.ObservedAt.UTC()
-		remedy := fmt.Sprintf("metasystem system check --repo %q", repoRoot)
 		for index := range ordered {
 			if ordered[index].Status == HealthAlive {
 				ordered[index].Status = HealthUnknown
 				ordered[index].Reason = "CLOCK_REGRESSED: the prior health observation is later than current UTC"
-				ordered[index].Remedy = remedy
+				ordered[index].RemedyFacts = []RemedyFact{{Cause: CauseClockRegressed}}
+				ordered[index].Remedy = remedyFor(ordered[index].Role, ordered[index].RemedyFacts[0]).Plain
 			}
 		}
 	}
@@ -1030,7 +1036,6 @@ func checkStewardRunner(repoRoot string, now time.Time, prober identity.Prober) 
 }
 
 func checkStewardRunnerWithCadence(repoRoot string, now time.Time, prober identity.Prober, tickSeconds func(string) int) RoleVerdict {
-	remedy := fmt.Sprintf("metasystem session start --repo %q", repoRoot)
 	installed, durabilityPending, installationErr := installedEnrollment(repoRoot)
 	withEnrollment := func(verdict RoleVerdict) RoleVerdict {
 		if installationErr != nil {
@@ -1054,44 +1059,44 @@ func checkStewardRunnerWithCadence(repoRoot string, now time.Time, prober identi
 	var runner RunnerRecord
 	if err := readJSON(path, &runner); err != nil {
 		if os.IsNotExist(err) {
-			return withEnrollment(roleDead(RoleStewardRunner, "no steward runner is recorded", remedy))
+			return withEnrollment(roleDead(RoleStewardRunner, "no steward runner is recorded", "", RemedyFact{Cause: CauseUnavailable}))
 		}
-		return withEnrollment(roleUnknown(RoleStewardRunner, "the steward runner record is unreadable", remedy))
+		return withEnrollment(roleUnknown(RoleStewardRunner, "the steward runner record is unreadable", "", RemedyFact{Cause: CauseUnreadable}))
 	}
 	process := identity.Ref{Pid: runner.Pid, StartedAtSec: runner.PidStartedAt, StartTicks: runner.StartTicks, BootID: runner.BootID}
 	switch identity.AliveRef(prober, process) {
 	case identity.Dead:
-		return withEnrollment(roleDead(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d is dead", runner.Pid), remedy))
+		return withEnrollment(roleDead(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d is dead", runner.Pid), "", RemedyFact{Cause: CauseUnavailable}))
 	case identity.Unknown:
-		return withEnrollment(roleUnknown(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d cannot be inspected", runner.Pid), remedy))
+		return withEnrollment(roleUnknown(RoleStewardRunner, fmt.Sprintf("recorded runner pid %d cannot be inspected", runner.Pid), "", RemedyFact{Cause: CauseUnreadable}))
 	}
 	if installationErr != nil {
-		return roleUnknown(RoleStewardRunner, "the steward installation generation is unreadable", remedy)
+		return roleUnknown(RoleStewardRunner, "the steward installation generation is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	generation := installed.Generation
 	record, _, evidenceErr := loadComponentEvidenceForHealth(repoRoot, "steward-tick")
 	var busy *ComponentEvidenceBusyError
 	if errors.As(evidenceErr, &busy) {
-		return withEnrollment(roleUnknown(RoleStewardRunner, busy.Error(), remedy))
+		return withEnrollment(roleUnknown(RoleStewardRunner, busy.Error(), "", RemedyFact{Cause: CauseObservationPending}))
 	}
 	if evidenceErr == nil && record.Generation == generation && record.Outcome == "ATTEMPTING" {
 		attemptProcess := identity.Ref{Pid: record.Pid, StartedAtSec: record.PidStartedAt, StartTicks: record.PidStartTicks, BootID: record.BootID}
 		if sameComponentProcess(attemptProcess, process) {
 			if record.LastAttempt.After(now) {
-				return withEnrollment(roleUnknown(RoleStewardRunner, "CLOCK_REGRESSED: tick attempt evidence is later than current UTC", remedy))
+				return withEnrollment(roleUnknown(RoleStewardRunner, "CLOCK_REGRESSED: tick attempt evidence is later than current UTC", "", RemedyFact{Cause: CauseClockRegressed}))
 			}
 			patience, patienceErr := runnerTickPatience(repoRoot, record.LastDurationMillis)
 			if patienceErr != nil {
-				return withEnrollment(roleUnknown(RoleStewardRunner, "the steward tick patience is invalid: "+patienceErr.Error(), remedy))
+				return withEnrollment(roleUnknown(RoleStewardRunner, "the steward tick patience is invalid: "+patienceErr.Error(), "", RemedyFact{Cause: CauseSettingsInvalid}))
 			}
 			age := now.Sub(record.LastAttempt)
 			if age < patience {
 				return withEnrollment(roleAlive(RoleStewardRunner, fmt.Sprintf("runner pid %d is attempting generation %d (age %s, patience %s)", runner.Pid, generation, age.Round(time.Second), patience)))
 			}
-			return withEnrollment(roleDead(RoleStewardRunner, fmt.Sprintf("runner pid %d attempt is stuck at %s (patience %s)", runner.Pid, age.Round(time.Second), patience), remedy))
+			return withEnrollment(roleDead(RoleStewardRunner, fmt.Sprintf("runner pid %d attempt is stuck at %s (patience %s)", runner.Pid, age.Round(time.Second), patience), "", RemedyFact{Cause: CauseUnavailable}))
 		}
 	}
-	return withEnrollment(componentFreshness(repoRoot, "steward-tick", RoleStewardRunner, generation, time.Duration(2*tickSeconds(repoRoot))*time.Second, now, remedy, &process,
+	return withEnrollment(componentFreshness(repoRoot, "steward-tick", RoleStewardRunner, generation, time.Duration(2*tickSeconds(repoRoot))*time.Second, now, "", &process,
 		fmt.Sprintf("runner pid %d and generation %d success are current", runner.Pid, generation)))
 }
 
@@ -1124,100 +1129,97 @@ func runnerTickPatience(repoRoot string, lastDurationMillis int64) (time.Duratio
 }
 
 func checkSupervisionOwner(repoRoot string, prober identity.Prober) RoleVerdict {
-	remedy := supervisionRemedy(repoRoot)
 	owner, err := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "lock.d", "owner.json"))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return roleDead(RoleSupervisionOwner, "no supervision owner holds the repository lock", remedy)
+			return roleDead(RoleSupervisionOwner, "no supervision owner holds the repository lock", "", RemedyFact{Cause: CauseUnavailable})
 		}
-		return roleUnknown(RoleSupervisionOwner, "the supervision owner lock is unreadable", remedy)
+		return roleUnknown(RoleSupervisionOwner, "the supervision owner lock is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	ref, ok := processRef(owner)
 	if !ok {
-		return roleUnknown(RoleSupervisionOwner, "the lock owner's process identity is incomplete", remedy)
+		return roleUnknown(RoleSupervisionOwner, "the lock owner's process identity is incomplete", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	switch identity.AliveRef(prober, ref) {
 	case identity.Alive:
 		return roleAlive(RoleSupervisionOwner, fmt.Sprintf("lock owner pid %d is alive", ref.Pid))
 	case identity.Dead:
-		return roleDead(RoleSupervisionOwner, fmt.Sprintf("lock owner pid %d is dead", ref.Pid), remedy)
+		return roleDead(RoleSupervisionOwner, fmt.Sprintf("lock owner pid %d is dead", ref.Pid), "", RemedyFact{Cause: CauseUnavailable})
 	default:
-		return roleUnknown(RoleSupervisionOwner, fmt.Sprintf("lock owner pid %d cannot be inspected", ref.Pid), remedy)
+		return roleUnknown(RoleSupervisionOwner, fmt.Sprintf("lock owner pid %d cannot be inspected", ref.Pid), "", RemedyFact{Cause: CauseUnreadable})
 	}
 }
 
 func checkRepoWatcher(repoRoot string, now time.Time, state map[string]any, stateErr error, prober identity.Prober) RoleVerdict {
-	remedy := supervisionRemedy(repoRoot)
 	if stateErr != nil {
 		if os.IsNotExist(stateErr) {
-			return roleDead(RoleRepoWatcher, "no supervision state is recorded", remedy)
+			return roleDead(RoleRepoWatcher, "no supervision state is recorded", "", RemedyFact{Cause: CauseUnavailable})
 		}
-		return roleUnknown(RoleRepoWatcher, "the supervision state is unreadable", remedy)
+		return roleUnknown(RoleRepoWatcher, "the supervision state is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	var entry map[string]any
 	if components, ok := state["components"].(map[string]any); ok {
 		entry, _ = components["watcher"].(map[string]any)
 	}
 	if entry == nil {
-		return roleDead(RoleRepoWatcher, "the role has no recorded process", remedy)
+		return roleDead(RoleRepoWatcher, "the role has no recorded process", "", RemedyFact{Cause: CauseUnavailable})
 	}
 	ref, ok := processRef(entry)
 	if !ok {
-		return roleUnknown(RoleRepoWatcher, "the recorded process identity is incomplete", remedy)
+		return roleUnknown(RoleRepoWatcher, "the recorded process identity is incomplete", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	switch identity.AliveRef(prober, ref) {
 	case identity.Dead:
-		return roleDead(RoleRepoWatcher, fmt.Sprintf("recorded pid %d is dead", ref.Pid), remedy)
+		return roleDead(RoleRepoWatcher, fmt.Sprintf("recorded pid %d is dead", ref.Pid), "", RemedyFact{Cause: CauseUnavailable})
 	case identity.Unknown:
-		return roleUnknown(RoleRepoWatcher, fmt.Sprintf("recorded pid %d cannot be inspected", ref.Pid), remedy)
+		return roleUnknown(RoleRepoWatcher, fmt.Sprintf("recorded pid %d cannot be inspected", ref.Pid), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	generation, generationOK := healthInt(state["generation"])
 	interval, intervalOK := healthInt(state["intervalSec"])
 	if !generationOK || generation < 1 || !intervalOK || interval < 1 {
-		return roleUnknown(RoleRepoWatcher, "the watcher generation or producer interval is unreadable", remedy)
+		return roleUnknown(RoleRepoWatcher, "the watcher generation or producer interval is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	return componentFreshness(repoRoot, "repo-watcher", RoleRepoWatcher, int(generation), time.Duration(2*interval)*time.Second,
-		now, remedy, &ref, fmt.Sprintf("watcher pid %d and generation %d success are current", ref.Pid, generation))
+		now, "", &ref, fmt.Sprintf("watcher pid %d and generation %d success are current", ref.Pid, generation))
 }
 
 func checkCensusFreshness(repoRoot string, now time.Time, state map[string]any, stateErr error) RoleVerdict {
-	remedy := supervisionRemedy(repoRoot)
 	census, err := readHealthObject(filepath.Join(repoRoot, "artifacts", "agents", "supervision", "last-census.json"))
 	if err != nil {
 		if os.IsNotExist(err) {
-			return roleDead(RoleCensusFreshness, "no census success is recorded", remedy)
+			return roleDead(RoleCensusFreshness, "no census success is recorded", "", RemedyFact{Cause: CauseUnavailable})
 		}
-		return roleUnknown(RoleCensusFreshness, "the census evidence is unreadable", remedy)
+		return roleUnknown(RoleCensusFreshness, "the census evidence is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	if result, _ := census["verdict"].(string); result != "SUCCESS" {
-		return roleDead(RoleCensusFreshness, "the latest census did not succeed", remedy)
+		return roleDead(RoleCensusFreshness, "the latest census did not succeed", "", RemedyFact{Cause: CauseUnavailable})
 	}
 	if stateErr != nil {
-		return roleUnknown(RoleCensusFreshness, "the census generation cannot be compared with supervision", remedy)
+		return roleUnknown(RoleCensusFreshness, "the census generation cannot be compared with supervision", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	wantGeneration, wantOK := healthInt(state["generation"])
 	gotGeneration, gotOK := healthInt(census["generation"])
 	if !wantOK || !gotOK || wantGeneration < 1 || gotGeneration < 1 {
-		return roleUnknown(RoleCensusFreshness, "the census generation evidence is incomplete", remedy)
+		return roleUnknown(RoleCensusFreshness, "the census generation evidence is incomplete", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	if wantGeneration != gotGeneration {
-		return roleDead(RoleCensusFreshness, fmt.Sprintf("census generation %d does not match supervision generation %d", gotGeneration, wantGeneration), remedy)
+		return roleDead(RoleCensusFreshness, fmt.Sprintf("census generation %d does not match supervision generation %d", gotGeneration, wantGeneration), "", RemedyFact{Cause: CauseUnavailable})
 	}
 	lastSuccess, ok := evidenceSuccessTime(census)
 	if !ok {
-		return roleUnknown(RoleCensusFreshness, "the census has no readable lastSuccess", remedy)
+		return roleUnknown(RoleCensusFreshness, "the census has no readable lastSuccess", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	age := now.Sub(lastSuccess)
 	if age < 0 {
-		return roleUnknown(RoleCensusFreshness, "CLOCK_REGRESSED: census lastSuccess is later than current UTC", remedy)
+		return roleUnknown(RoleCensusFreshness, "CLOCK_REGRESSED: census lastSuccess is later than current UTC", "", RemedyFact{Cause: CauseClockRegressed})
 	}
 	intervalSeconds, ok := healthInt(census["intervalSec"])
 	if !ok || intervalSeconds < 1 {
-		return roleUnknown(RoleCensusFreshness, "the census producer interval is unreadable", remedy)
+		return roleUnknown(RoleCensusFreshness, "the census producer interval is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	window := time.Duration(2*intervalSeconds) * time.Second
 	if age >= window {
-		return roleDead(RoleCensusFreshness, fmt.Sprintf("census lastSuccess is stale at %s", age.Round(time.Second)), remedy)
+		return roleDead(RoleCensusFreshness, fmt.Sprintf("census lastSuccess is stale at %s", age.Round(time.Second)), "", RemedyFact{Cause: CauseUnavailable})
 	}
 	return roleAlive(RoleCensusFreshness, fmt.Sprintf("census generation %d succeeded %s ago", gotGeneration, age.Round(time.Second)))
 }
@@ -1227,57 +1229,59 @@ func checkNarratorFreshness(repoRoot string, now time.Time) RoleVerdict {
 }
 
 func checkNarratorFreshnessWithCadence(repoRoot string, now time.Time, tickSeconds func(string) int) RoleVerdict {
-	remedy := fmt.Sprintf("metasystem session start --repo %q", repoRoot)
 	generation, err := installedGeneration(repoRoot)
 	if err != nil {
-		return roleUnknown(RoleNarratorFreshness, "the steward installation generation is unreadable", remedy)
+		if errors.Is(err, os.ErrNotExist) {
+			return roleUnknown(RoleNarratorFreshness, "no steward installation generation is recorded", "", RemedyFact{Cause: CauseUnavailable})
+		}
+		return roleUnknown(RoleNarratorFreshness, "the steward installation generation is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
-	return componentFreshness(repoRoot, "narrator", RoleNarratorFreshness, generation, time.Duration(2*tickSeconds(repoRoot))*time.Second, now, remedy, nil,
+	return componentFreshness(repoRoot, "narrator", RoleNarratorFreshness, generation, time.Duration(2*tickSeconds(repoRoot))*time.Second, now, "", nil,
 		fmt.Sprintf("narrator generation %d success is current", generation))
 }
 
-func componentFreshness(repoRoot, component string, role HealthRole, generation int, window time.Duration, now time.Time, remedy string, expectedSuccess *identity.Ref, aliveReason string) RoleVerdict {
+func componentFreshness(repoRoot, component string, role HealthRole, generation int, window time.Duration, now time.Time, _ string, expectedSuccess *identity.Ref, aliveReason string) RoleVerdict {
 	record, durabilityPending, err := loadComponentEvidenceForHealth(repoRoot, component)
 	if err != nil {
 		var busy *ComponentEvidenceBusyError
 		if errors.As(err, &busy) {
-			return roleUnknown(role, busy.Error(), remedy)
+			return roleUnknown(role, busy.Error(), "", RemedyFact{Cause: CauseObservationPending})
 		}
 		if os.IsNotExist(err) {
-			return roleDead(role, "no successful component pass is recorded", remedy)
+			return roleDead(role, "no successful component pass is recorded", "", RemedyFact{Cause: CauseUnavailable})
 		}
-		return roleUnknown(role, "the component success evidence is unreadable", remedy)
+		return roleUnknown(role, "the component success evidence is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	if record.LastSuccess.After(now) || record.LastCompletion.After(now) || record.LastAttempt.After(now) {
-		return roleUnknown(role, "CLOCK_REGRESSED: component evidence is later than current UTC", remedy)
+		return roleUnknown(role, "CLOCK_REGRESSED: component evidence is later than current UTC", "", RemedyFact{Cause: CauseClockRegressed})
 	}
 	if durabilityPending || record.Outcome == "DURABILITY_PENDING" {
-		return roleUnknown(role, "the latest completion is waiting for durability proof", remedy)
+		return roleUnknown(role, "the latest completion is waiting for durability proof", "", RemedyFact{Cause: CauseObservationPending})
 	}
 	if role == RoleRepoWatcher && record.Outcome != "ATTEMPTING" && record.Result != ComponentOK {
 		reason := "the latest watcher pass failed: " + record.Outcome
 		if record.LastFailure != "" {
 			reason += ": " + record.LastFailure
 		}
-		return roleDead(role, reason, remedy)
+		return roleDead(role, reason, "", RemedyFact{Cause: CauseUnavailable})
 	}
 	if record.Generation != generation && role != RoleNarratorFreshness {
-		return roleDead(role, fmt.Sprintf("component generation %d does not match installation generation %d", record.Generation, generation), remedy)
+		return roleDead(role, fmt.Sprintf("component generation %d does not match installation generation %d", record.Generation, generation), "", RemedyFact{Cause: CauseUnavailable})
 	}
 	if record.LastSuccess.IsZero() {
-		return roleDead(role, "the current generation has no successful completion", remedy)
+		return roleDead(role, "the current generation has no successful completion", "", RemedyFact{Cause: CauseUnavailable})
 	}
 	if expectedSuccess != nil {
 		success := identity.Ref{Pid: record.SuccessPid, StartedAtSec: record.SuccessPidStartedAt, StartTicks: record.SuccessPidStartTicks, BootID: record.SuccessBootID}
 		if !sameComponentProcess(success, *expectedSuccess) {
-			return roleDead(role, fmt.Sprintf("lastSuccess belongs to pid %d, not resident runner pid %d", success.Pid, expectedSuccess.Pid), remedy)
+			return roleDead(role, fmt.Sprintf("lastSuccess belongs to pid %d, not resident runner pid %d", success.Pid, expectedSuccess.Pid), "", RemedyFact{Cause: CauseUnavailable})
 		}
 	}
 	if record.Outcome == "ATTEMPTING" && now.Sub(record.LastAttempt) >= window {
-		return roleDead(role, "the latest attempt passed its deadline without completion", remedy)
+		return roleDead(role, "the latest attempt passed its deadline without completion", "", RemedyFact{Cause: CauseUnavailable})
 	}
 	if now.Sub(record.LastSuccess) >= window {
-		return roleDead(role, fmt.Sprintf("lastSuccess is stale at %s", now.Sub(record.LastSuccess).Round(time.Second)), remedy)
+		return roleDead(role, fmt.Sprintf("lastSuccess is stale at %s", now.Sub(record.LastSuccess).Round(time.Second)), "", RemedyFact{Cause: CauseUnavailable})
 	}
 	if record.Generation != generation && role == RoleNarratorFreshness {
 		return roleAlive(role, fmt.Sprintf("narrator generation %d success is fresh; waiting for the first pass of installation generation %d", record.Generation, generation))
@@ -1334,27 +1338,26 @@ func checkSessionMainForSeat(runRoot string, prober identity.Prober, decide func
 	}
 	records, err := readSeatRecords(runRoot)
 	if err != nil {
-		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its launches: "+err.Error(), role.Remedy)
+		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its launches: "+err.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	decision, selection, err := decide(records)
 	if err != nil {
-		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its work: "+err.Error(), role.Remedy)
+		return roleUnknown(RoleSessionMain, "the seat ladder cannot read its work: "+err.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	if selection == nil {
 		return roleAlive(RoleSessionMain, "no seat step is due; "+decision.Reason)
 	}
-	return roleDead(RoleSessionMain, decision.Reason, role.Remedy)
+	return roleDead(RoleSessionMain, decision.Reason, "", RemedyFact{Cause: CauseUnavailable})
 }
 
 func checkSessionMain(repoRoot string, prober identity.Prober) RoleVerdict {
-	remedy := supervisionRemedy(repoRoot)
 	directory := filepath.Join(repoRoot, "artifacts", "agents", "mains")
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return roleDead(RoleSessionMain, "no session main is announced", remedy)
+			return roleDead(RoleSessionMain, "no session main is announced", "", RemedyFact{Cause: CauseUnavailable})
 		}
-		return roleUnknown(RoleSessionMain, "session announcements are unreadable", remedy)
+		return roleUnknown(RoleSessionMain, "session announcements are unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	unknown := false
 	dead := false
@@ -1390,12 +1393,12 @@ func checkSessionMain(repoRoot string, prober identity.Prober) RoleVerdict {
 		}
 	}
 	if unknown {
-		return roleUnknown(RoleSessionMain, "no announced main has readable liveness", remedy)
+		return roleUnknown(RoleSessionMain, "no announced main has readable liveness", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	if dead {
-		return roleDead(RoleSessionMain, "every announced session main is dead", remedy)
+		return roleDead(RoleSessionMain, "every announced session main is dead", "", RemedyFact{Cause: CauseUnavailable})
 	}
-	return roleDead(RoleSessionMain, "no session main is announced", remedy)
+	return roleDead(RoleSessionMain, "no session main is announced", "", RemedyFact{Cause: CauseUnavailable})
 }
 
 func checkClaimedGoalBudgetsWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {
@@ -1403,7 +1406,7 @@ func checkClaimedGoalBudgetsWith(repoRoot string, now time.Time, ledger *healthL
 		return roleAlive(RoleClaimedGoalBudget, "the bootstrap ledger has no claimed-goal records")
 	}
 	if ledger.endpointErr != nil {
-		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger endpoint is unreadable", "metasystem goal list --root "+strconv.Quote(repoRoot))
+		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger endpoint is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	return checkClaimedGoalBudgetsFromProjection(repoRoot, now, ledger.projection, ledger.endpoint.LocalMode(), ledger.projectionErr, nil)
 }
@@ -1412,24 +1415,20 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 	if projectionErr != nil {
 		if unknown, ok := dispatch.GoalRecordBudgetUnknown(projectionErr); ok {
 			role := roleDead(RoleClaimedGoalBudget,
-				fmt.Sprintf("BUDGET_UNKNOWN record=%s reason=%s", unknown.Record, unknown.Reason),
-				"repair the exact BUDGET_UNKNOWN record, then run metasystem system check --repo "+strconv.Quote(repoRoot))
+				fmt.Sprintf("BUDGET_UNKNOWN record=%s reason=%s", unknown.Record, unknown.Reason), "", RemedyFact{Cause: CauseBudgetUnknown, Record: unknown.Record})
 			role.NoAutomaticRemedy = true
-			role.RemedyFacts = []RemedyFact{{Cause: CauseBudgetUnknown, Record: unknown.Record}}
 			return role
 		}
 		if id, malformed := malformedBudgetGoal(projectionErr); malformed {
 			role := roleDead(RoleClaimedGoalBudget,
-				fmt.Sprintf("claimed goal %s has a malformed structured budget tuple", id), goalBudgetRemedy(id))
+				fmt.Sprintf("claimed goal %s has a malformed structured budget tuple", id), "", RemedyFact{Cause: CauseBudgetMalformed, Goal: id})
 			role.NoAutomaticRemedy = true
-			role.RemedyFacts = []RemedyFact{{Cause: CauseBudgetMalformed, Goal: id}}
 			return role
 		}
-		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger is unreadable", "metasystem goal list --root "+strconv.Quote(repoRoot))
+		return roleUnknown(RoleClaimedGoalBudget, "the claimed-goal ledger is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	type budgetFailure struct {
 		reason    string
-		remedy    string
 		automatic bool
 		fact      RemedyFact
 	}
@@ -1456,7 +1455,6 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 		if file.Budget == nil {
 			dead = append(dead, budgetFailure{
 				reason: fmt.Sprintf("%s BUDGET_MISSING record=plans/goals/%s.md: claimed goal has no structured budget", id, id),
-				remedy: goalBudgetRemedy(id),
 				fact:   RemedyFact{Cause: CauseBudgetMissing, Goal: id, Record: "plans/goals/" + id + ".md"},
 			})
 			continue
@@ -1467,8 +1465,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 				dead = append(dead, budgetFailure{
 					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_INDETERMINATE stop=%s reason=%s",
 						id, file.Claimed.Revision, file.StopFence.StopID, batchErr),
-					remedy: "inspect the named stop batch and exact job record; keep the launch fence closed",
-					fact:   RemedyFact{Cause: CauseBreachStopUnresolved, Goal: id, Stop: file.StopFence.StopID},
+					fact: RemedyFact{Cause: CauseBreachStopUnresolved, Goal: id, Stop: file.StopFence.StopID},
 				})
 				continue
 			}
@@ -1480,15 +1477,15 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 				dead = append(dead, budgetFailure{
 					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_INDETERMINATE stop=%s reason=%s%s",
 						id, file.Claimed.Revision, batch.StopID, batch.Failure, stopFiringEvidenceSummary(batch)),
-					remedy: "inspect the named stop batch and exact job record; keep the launch fence closed",
-					fact:   RemedyFact{Cause: CauseBreachStopUnresolved, Goal: id, Stop: batch.StopID},
+					fact: RemedyFact{Cause: CauseBreachStopUnresolved, Goal: id, Stop: batch.StopID},
 				})
 			default:
 				dead = append(dead, budgetFailure{
 					reason: fmt.Sprintf("%s revision=%d BREACH_STOP_OPEN stop=%s pendingJobs=%d%s",
 						id, file.Claimed.Revision, batch.StopID, len(batch.Pending), stopFiringEvidenceSummary(batch)),
-					remedy: breachStopRemedy(id, "completes this stop"), automatic: true,
-					fact: RemedyFact{Cause: CauseBreachStopOpen, Goal: id, Stop: batch.StopID},
+
+					automatic: true,
+					fact:      RemedyFact{Cause: CauseBreachStopOpen, Goal: id, Stop: batch.StopID},
 				})
 			}
 			continue
@@ -1498,8 +1495,7 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 			dead = append(dead, budgetFailure{
 				reason: fmt.Sprintf("%s BUDGET_UNKNOWN record=%s reason=%s",
 					id, budget.Unknown.Record, budget.Unknown.Reason),
-				remedy: "repair the exact BUDGET_UNKNOWN record, then run metasystem system check --repo " + strconv.Quote(repoRoot),
-				fact:   RemedyFact{Cause: CauseBudgetUnknown, Goal: id, Record: budget.Unknown.Record},
+				fact: RemedyFact{Cause: CauseBudgetUnknown, Goal: id, Record: budget.Unknown.Record},
 			})
 			continue
 		}
@@ -1515,8 +1511,9 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 			dead = append(dead, budgetFailure{
 				reason: fmt.Sprintf("%s revision=%d BREACH %s designCritiques=%d/%d codeCritiques=%d/%d", id, budget.GoalRevision, strings.Join(fields, ", "),
 					budget.DesignCritiques, budget.Limits.ReviewRoundLimit, budget.CodeCritiques, budget.Limits.ReviewRoundLimit),
-				remedy: breachStopRemedy(id, "stops this revision"), automatic: true,
-				fact: RemedyFact{Cause: CauseBudgetBreach, Goal: id},
+
+				automatic: true,
+				fact:      RemedyFact{Cause: CauseBudgetBreach, Goal: id},
 			})
 			continue
 		}
@@ -1545,25 +1542,23 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 	}
 	carryCounts, carryErr := goal.CountCarriesAtEndpoint(goal.Endpoint{Root: repoRoot, Repository: carryRepository}, projection.Tree, codeTip, now)
 	if carryErr != nil {
-		return roleUnknown(RoleClaimedGoalBudget, "the carried-landing counter is unreadable: "+carryErr.Error(), "repair the carried ledger or code history, then rerun metasystem system check")
+		return roleUnknown(RoleClaimedGoalBudget, "the carried-landing counter is unreadable: "+carryErr.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	known = append([]string{fmt.Sprintf("CARRIED today=%d open=%d inflight=%d debt=%d", carryCounts.Today, carryCounts.Open, carryCounts.Inflight, carryCounts.Debt)}, known...)
 	if len(dead) > 0 {
 		reasons := make([]string, 0, len(dead))
-		remedy := dead[0].remedy
 		noAutomaticRemedy := false
 		var facts []RemedyFact
 		for _, failure := range dead {
 			reasons = append(reasons, failure.reason)
 			facts = append(facts, failure.fact)
 			if !failure.automatic && !noAutomaticRemedy {
-				remedy = failure.remedy
 				noAutomaticRemedy = true
+				facts[0], facts[len(facts)-1] = facts[len(facts)-1], facts[0]
 			}
 		}
-		role := roleDead(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; %s", riskUnanswered, strings.Join(reasons, "; ")), remedy)
+		role := roleDead(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; %s", riskUnanswered, strings.Join(reasons, "; ")), "", facts...)
 		role.NoAutomaticRemedy = noAutomaticRemedy
-		role.RemedyFacts = facts
 		return role
 	}
 	if len(known) == 0 {
@@ -1572,34 +1567,23 @@ func checkClaimedGoalBudgetsFromProjection(repoRoot string, now time.Time, proje
 	return roleAlive(RoleClaimedGoalBudget, fmt.Sprintf("riskUnanswered=%d; %s", riskUnanswered, strings.Join(known, "; ")))
 }
 
-// breachStopRemedy is the remedy of a breach the steward heals itself: the
-// armed runner's own tick runs the stop custodian, so the text names what a
-// person can do meanwhile with public actions, never a manual tick.
-func breachStopRemedy(goalID, act string) string {
-	return fmt.Sprintf("the armed steward %s on its next tick (metasystem system start arms it); to hold the goal now, run metasystem goal pause %s --reason TEXT",
-		act, goalID)
-}
-
 func checkStopCapabilityEpochWith(repoRoot string, now time.Time, ledger *healthLedger) RoleVerdict {
 	if !ledger.read().newWorld {
 		return roleAlive(RoleStopCapabilityEpoch, "the goal store has no claimed goals")
 	}
 	if err := ledger.endpointErr; err != nil {
-		return roleUnknown(RoleStopCapabilityEpoch, "the goal store endpoint is unreadable: "+err.Error(),
-			"metasystem goal list --root "+strconv.Quote(repoRoot))
+		return roleUnknown(RoleStopCapabilityEpoch, "the goal store endpoint is unreadable: "+err.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	return checkStopCapabilityEpochFromProjection(repoRoot, now, ledger.projection, ledger.projectionErr, goal.ResolveMachine)
 }
 
 func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error, readMachine func(string) (string, error)) RoleVerdict {
 	if projectionErr != nil {
-		return roleUnknown(RoleStopCapabilityEpoch, "the goal store is unreadable: "+projectionErr.Error(),
-			"metasystem goal list --root "+strconv.Quote(repoRoot))
+		return roleUnknown(RoleStopCapabilityEpoch, "the goal store is unreadable: "+projectionErr.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	machine, err := readMachine(repoRoot)
 	if err != nil {
-		return roleUnknown(RoleStopCapabilityEpoch, "the enrolled machine is unreadable: "+err.Error(),
-			"repair the machine enrollment, then rerun metasystem system check")
+		return roleUnknown(RoleStopCapabilityEpoch, "the enrolled machine is unreadable: "+err.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	var claimed []*goal.GoalFile
 	for _, id := range goal.SortedGoalIds(projection.Tree.Live) {
@@ -1616,16 +1600,13 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 		return roleAlive(RoleStopCapabilityEpoch, "there is no live lease holder to compare")
 	}
 	if err != nil {
-		return roleUnknown(RoleStopCapabilityEpoch, "the checkout lease is unreadable: "+err.Error(),
-			"repair the checkout lease, then rerun metasystem system check")
+		return roleUnknown(RoleStopCapabilityEpoch, "the checkout lease is unreadable: "+err.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	var current []string
 	for _, file := range claimed {
 		if file.StopCapability == nil {
 			role := roleUnknown(RoleStopCapabilityEpoch,
-				fmt.Sprintf("claimed goal %s has no stop capability to compare", file.Id),
-				"repair the claimed goal record, then rerun metasystem system check")
-			role.RemedyFacts = []RemedyFact{{Cause: CauseStopCapabilityMissing, Goal: file.Id, Record: "plans/goals/" + file.Id + ".md"}}
+				fmt.Sprintf("claimed goal %s has no stop capability to compare", file.Id), "", RemedyFact{Cause: CauseStopCapabilityMissing, Goal: file.Id, Record: "plans/goals/" + file.Id + ".md"})
 			return role
 		}
 		capabilityEpoch := file.StopCapability.ClaimEpoch
@@ -1636,17 +1617,13 @@ func checkStopCapabilityEpochFromProjection(repoRoot string, now time.Time, proj
 		if file.Claimed.Lineage == holder.OwnerLineage {
 			role := roleDead(RoleStopCapabilityEpoch,
 				fmt.Sprintf("goal %s stop capability claim epoch %d differs from live lease claim epoch %d under owner lineage %s",
-					file.Id, capabilityEpoch, holder.ClaimEpoch, holder.OwnerLineage),
-				"metasystem session start (it restamps the claim to the live epoch)")
-			role.RemedyFacts = []RemedyFact{{Cause: CauseEpochMismatch, Goal: file.Id}}
+					file.Id, capabilityEpoch, holder.ClaimEpoch, holder.OwnerLineage), "", RemedyFact{Cause: CauseEpochMismatch, Goal: file.Id})
 			return role
 		}
 		role := roleDead(RoleStopCapabilityEpoch,
 			fmt.Sprintf("goal %s was claimed under owner lineage %s but the live lease belongs to owner lineage %s",
-				file.Id, file.Claimed.Lineage, holder.OwnerLineage),
-			"release the goal under the lineage that claimed it and claim it again (metasystem goal release, then metasystem goal claim)")
+				file.Id, file.Claimed.Lineage, holder.OwnerLineage), "", RemedyFact{Cause: CauseForeignLineage, Goal: file.Id})
 		role.NoAutomaticRemedy = true
-		role.RemedyFacts = []RemedyFact{{Cause: CauseForeignLineage, Goal: file.Id}}
 		return role
 	}
 	return roleAlive(RoleStopCapabilityEpoch, "stop capability epochs match the live lease: "+strings.Join(current, ", "))
@@ -1717,10 +1694,6 @@ func malformedBudgetGoal(err error) (string, bool) {
 	return "", false
 }
 
-func goalBudgetRemedy(id string) string {
-	return fmt.Sprintf("metasystem goal budget %s BOX (BOX is elapsed/attempts/reserved-minutes/active-jobs/review-rounds, for example 1d/10/720m/1/3)", id)
-}
-
 func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 	paths, _ := filepath.Glob(filepath.Join(repoRoot, "artifacts", "agents", "jobs", "*.json"))
 	sort.Strings(paths)
@@ -1763,14 +1736,12 @@ func checkNonterminalJobs(repoRoot string, prober identity.Prober) RoleVerdict {
 			unknown = append(unknown, jobID)
 		}
 	}
-	remedy := "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
 	if len(dead) > 0 {
-		verdict := roleDead(RoleNonterminalJobs, "non-terminal jobs with dead recorded processes: "+strings.Join(dead, ","), remedy)
-		verdict.RemedyFacts = []RemedyFact{{Cause: CauseJobProcessDead, Job: dead[0]}}
+		verdict := roleDead(RoleNonterminalJobs, "non-terminal jobs with dead recorded processes: "+strings.Join(dead, ","), "", RemedyFact{Cause: CauseJobProcessDead, Job: dead[0]})
 		return verdict
 	}
 	if len(unknown) > 0 {
-		return roleUnknown(RoleNonterminalJobs, "non-terminal jobs with unreadable process evidence: "+strings.Join(unknown, ","), remedy)
+		return roleUnknown(RoleNonterminalJobs, "non-terminal jobs with unreadable process evidence: "+strings.Join(unknown, ","), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	return roleAlive(RoleNonterminalJobs, "no non-terminal job has a provably dead recorded process")
 }
@@ -1785,14 +1756,14 @@ func capabilitySnapshotStatus(repoRoot, metasystemRoot string, now time.Time, lo
 		Key: "metasystem.runtimes", ConfPath: filepath.Join(metasystemRoot, "metasystem.conf"),
 	})
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot)), nil
+		return roleUnknown(RoleCapabilitySnapshots, "metasystem.runtimes is unreadable", "", RemedyFact{Cause: CauseSettingsInvalid}), nil
 	}
 	if runtimeValue == "none" {
 		return roleAlive(RoleCapabilitySnapshots, "no runtime capability snapshots are configured"), nil
 	}
 	maxAgeDays, err := nonnegativeConfig(metasystemRoot, "capability.snapshot-max-age-days", config.MustIntDefault("capability.snapshot-max-age-days"))
 	if err != nil {
-		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "metasystem settings check --repo "+strconv.Quote(metasystemRoot)), nil
+		return roleUnknown(RoleCapabilitySnapshots, "capability.snapshot-max-age-days is unreadable", "", RemedyFact{Cause: CauseSettingsInvalid}), nil
 	}
 	runtimes := strings.Split(runtimeValue, ",")
 	paths, _ := filepath.Glob(filepath.Join(repoRoot, "artifacts", "agents", "capabilities", "*.json"))
@@ -1866,33 +1837,29 @@ func capabilitySnapshotStatus(repoRoot, metasystemRoot string, now time.Time, lo
 			dead = append(dead, runtimeName)
 		}
 	}
-	remedyFor := func(names []string) string {
-		commands := make([]string, 0, len(names))
-		var probed []string
-		for _, name := range names {
-			name = strings.TrimSuffix(name, ":CLOCK_REGRESSED")
-			if name == "empty-runtime" || strings.HasSuffix(name, ":NO_ADAPTER") {
-				if settings := "metasystem settings check --repo " + strconv.Quote(metasystemRoot); !slices.Contains(commands, settings) {
-					commands = append(commands, settings)
-				}
-				continue
-			}
-			probed = append(probed, name)
-		}
-		if len(probed) > 0 {
-			commands = append(commands, "the steward tick probes "+strings.Join(probed, ", ")+" and records a fresh snapshot")
-		}
-		return strings.Join(commands, "; ")
-	}
 	if len(dead) > 0 {
 		reason := "missing or stale capability snapshots: " + strings.Join(dead, ",")
 		for _, runtime := range dead {
 			reason = healthRemedyReason(repoRoot, "capability-probe-"+runtime, reason)
 		}
-		return roleDead(RoleCapabilitySnapshots, reason, remedyFor(dead)), dead
+		return roleDead(RoleCapabilitySnapshots, reason, "", RemedyFact{Cause: CauseUnavailable}), dead
 	}
 	if len(unknown) > 0 {
-		return roleUnknown(RoleCapabilitySnapshots, "capability snapshot ages are unreadable: "+strings.Join(unknown, ","), remedyFor(unknown)), nil
+		fact := RemedyFact{Cause: CauseUnreadable}
+		for _, name := range unknown {
+			if strings.HasSuffix(name, ":CLOCK_REGRESSED") {
+				fact.Cause = CauseClockRegressed
+			}
+			if name == "empty-runtime" || strings.HasSuffix(name, ":NO_ADAPTER") {
+				fact.Cause = CauseSettingsInvalid
+				break
+			}
+		}
+		reason := "capability snapshot ages are unreadable: " + strings.Join(unknown, ",")
+		if fact.Cause == CauseSettingsInvalid {
+			reason += "; correct metasystem.runtimes"
+		}
+		return roleUnknown(RoleCapabilitySnapshots, reason, "", fact), nil
 	}
 	return roleAlive(RoleCapabilitySnapshots, "runtimes on PATH have fresh capability snapshots"), nil
 }
@@ -1926,12 +1893,18 @@ func roleAlive(role HealthRole, reason string) RoleVerdict {
 	return RoleVerdict{Role: role, Status: HealthAlive, Reason: reason}
 }
 
-func roleDead(role HealthRole, reason, remedy string) RoleVerdict {
-	return RoleVerdict{Role: role, Status: HealthDead, Reason: reason, Remedy: remedy}
+func roleDead(role HealthRole, reason, diagnostic string, facts ...RemedyFact) RoleVerdict {
+	verdict := roleUnknown(role, reason, diagnostic, facts...)
+	verdict.Status = HealthDead
+	return verdict
 }
 
-func roleUnknown(role HealthRole, reason, remedy string) RoleVerdict {
-	return RoleVerdict{Role: role, Status: HealthUnknown, Reason: reason, Remedy: remedy}
+func roleUnknown(role HealthRole, reason, diagnostic string, facts ...RemedyFact) RoleVerdict {
+	if len(facts) == 0 {
+		facts = []RemedyFact{{Cause: CauseUnavailable}}
+	}
+	act, plain := remedyFor(role, facts[0]).Render("human", nil)
+	return RoleVerdict{Role: role, Status: HealthUnknown, Reason: reason, RemedyFacts: facts, Remedy: strings.TrimSpace(strings.Join(act, " ") + " " + plain)}
 }
 
 func installedGeneration(repoRoot string) (int, error) {
@@ -2002,12 +1975,11 @@ func checkProofAttempts(repoRoot string, prober identity.Prober) RoleVerdict {
 			unknown = append(unknown, attemptID)
 		}
 	}
-	remedy := "the job reaper reconciles a dead launcher's attempt on its next pass; if the reaper is not running, metasystem session start --repo <checkout> re-arms it"
 	if len(dead) > 0 {
-		return roleDead(RoleProofAttempts, "live proof attempts whose launcher is dead: "+strings.Join(dead, ","), remedy)
+		return roleDead(RoleProofAttempts, "live proof attempts whose launcher is dead: "+strings.Join(dead, ","), "", RemedyFact{Cause: CauseUnavailable})
 	}
 	if len(unknown) > 0 {
-		return roleUnknown(RoleProofAttempts, "live proof attempts with unreadable launcher evidence: "+strings.Join(unknown, ","), remedy)
+		return roleUnknown(RoleProofAttempts, "live proof attempts with unreadable launcher evidence: "+strings.Join(unknown, ","), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	return roleAlive(RoleProofAttempts, "no live proof attempt has a dead launcher")
 }
@@ -2035,13 +2007,12 @@ var inspectHostLeases = proofrun.InspectHostLeases
 func checkProofAdmission(repoRoot string, now time.Time, inspect func(string) ([]proofrun.HostLeaseReport, error)) RoleVerdict {
 	minutes, err := boundedConfig(repoRoot, proofAdmissionRedKey, defaultProofAdmissionRedMinutes, 1)
 	if err != nil {
-		return roleUnknown(RoleProofAdmission, err.Error(), "set "+proofAdmissionRedKey+" to a positive number of minutes in metasystem.conf")
+		return roleUnknown(RoleProofAdmission, err.Error(), "", RemedyFact{Cause: CauseSettingsInvalid})
 	}
 	threshold := time.Duration(minutes) * time.Minute
 	reports, err := inspect(repoRoot)
 	if err != nil {
-		return roleUnknown(RoleProofAdmission, "heavy proof leases are unreadable: "+err.Error(),
-			"inspect ~/.metasystem/proof-admission by hand; no metasystem verb reads it")
+		return roleUnknown(RoleProofAdmission, "heavy proof leases are unreadable: "+err.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	var lines, red, remedies []string
 	for _, report := range reports {
@@ -2057,16 +2028,16 @@ func checkProofAdmission(repoRoot string, now time.Time, inspect func(string) ([
 	}
 	remedy := strings.Join(remedies, "; ")
 	if len(red) > 0 {
-		if remedy == "" {
-			remedy = "a waiting heavy proof reclaims a dead lease on its next admission pass"
-		}
-		return roleDead(RoleProofAdmission, fmt.Sprintf("heavy proof leases dead or unknown for over %d min: %s", minutes, strings.Join(red, "; ")), remedy)
+		return roleDead(RoleProofAdmission, fmt.Sprintf("heavy proof leases dead or unknown for over %d min: %s", minutes, strings.Join(red, "; ")), "", RemedyFact{Cause: CauseUnavailable, Command: remedy})
 	}
 	if len(lines) == 0 {
 		return roleAlive(RoleProofAdmission, "no dirty heavy proof lease")
 	}
 	verdict := roleAlive(RoleProofAdmission, "heavy proof leases: "+strings.Join(lines, "; "))
-	verdict.Remedy = remedy
+	if remedy != "" {
+		verdict.RemedyFacts = []RemedyFact{{Cause: CauseUnavailable, Command: remedy}}
+		_, verdict.Remedy = verdict.PublicRemedy("human", nil)
+	}
 	return verdict
 }
 
@@ -2120,10 +2091,6 @@ func boundedConfig(repoRoot, key string, fallback, minimum int) (int, error) {
 		return 0, fmt.Errorf("%s must be an integer of at least %d", key, minimum)
 	}
 	return number, nil
-}
-
-func supervisionRemedy(repoRoot string) string {
-	return fmt.Sprintf("metasystem session start --repo %q", repoRoot)
 }
 
 // readProofAttemptHead reads a proof attempt record only as far as the

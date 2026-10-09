@@ -1694,7 +1694,7 @@ func runIntentDoctor(inv *intentInvocation) int {
 	verdict := owners.health(scope.Root.Path(), scope.Installation.Path(), now).WithAlertRemedies(scope.Root.Path())
 	stopped, _, _ := stopfence.Closed(scope.Installation.Path())
 	audience := "human"
-	if class, err := owners.process.classify(scope.Root.Path(), scope.Installation.Path(), int64(os.Getppid())); err == nil && (class.Class == lease.ClassMain || class.Class == lease.ClassDelegate) && !stopped {
+	if class, err := owners.process.classify(scope.Root.Path(), scope.Installation.Path(), int64(os.Getppid())); err == nil && (class.Class == lease.ClassMain || class.Class == lease.ClassDelegate) {
 		audience = "agent"
 	}
 	lines, remedies := []string{}, []map[string]any{}
@@ -1973,47 +1973,15 @@ func checkCovenantEvidence(root string) ([]string, *evidencetable.Report, bool) 
 // owner's own remedy is kept only as diagnostic data.
 func publicHealthRemedy(role steward.RoleVerdict, stopped bool, audiences ...string) ([]string, string) {
 	audience := "human"
-	if len(audiences) > 0 && !stopped {
+	if len(audiences) > 0 {
 		audience = audiences[0]
 	}
-	if act, plain := role.PublicRemedy(audience, healthRemedyAudience); len(act) > 0 || plain != "" {
-		return act, plain
-	}
-	switch role.Role {
-	case steward.RoleNonterminalJobs:
-		return nil, "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
-	case steward.RoleRetroDebt:
-		return nil, "run the retro and record its receipt"
-	case steward.RoleCapabilitySnapshots:
-		if role.FailureEscalation == steward.AutoHealEnded {
-			return nil, role.Remedy
-		}
-		return nil, "the steward tick probes each runtime on PATH with a missing or stale snapshot and records a fresh snapshot"
-	case steward.RoleSpendFence:
-		return nil, "a person raises the spend ceiling in metasystem.conf"
-	case steward.RoleProofAttempts:
-		return []string{"metasystem", "test", "run"}, ""
-	case steward.RoleDisk:
-		if strings.HasPrefix(role.Remedy, "metasystem ") {
-			return strings.Fields(role.Remedy), ""
-		}
-		return []string{"metasystem", "disk", "show"}, ""
-	}
-	return nil, reasonRemedy(role.Reason)
+	return role.PublicRemedy(audience, healthRemedyAudience, stopped)
 }
 
 func healthRemedyAudience(object, action string) string {
 	command, _ := findIntentAction(object, action)
 	return command.audience
-}
-
-// reasonRemedy is the instruction for a role whose reason is its own
-// remedy: the command it names, or the change it names.
-func reasonRemedy(reason string) string {
-	if strings.Contains(reason, "run ") {
-		return "run the command the reason above names"
-	}
-	return "a person changes what the reason above names; no metasystem command does it"
 }
 
 // runUIVerb runs the interface's status or restart through its lifecycle

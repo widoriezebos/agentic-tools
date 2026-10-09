@@ -92,7 +92,7 @@ func TestSpendFenceHealthLineBytes(t *testing.T) {
 	role, observation = checkSpendFence(t.TempDir(), spendFenceNow)
 	line = (HealthVerdict{Aggregate: "healthy", Roles: []RoleVerdict{role}}).Line()
 	if role.Status != HealthAlive || !strings.Contains(line, "spend-fence=alive (CROSSED day-2026-09-02.tokensx2 mode=alert") ||
-		!strings.Contains(line, "; remedy: raise spend.ceiling.<scope>.<ceiling> in metasystem.conf on Wido's recorded word (R-60-m1); alert mode refuses nothing; see artifacts/agents/steward/spend/2026-09-02.json)") ||
+		!strings.Contains(line, "; remedy: a person raises the spend ceiling in metasystem.conf)") ||
 		len(observation.Crossings) != 1 || observation.Crossings[0].Multiple != 2 {
 		t.Fatalf("a crossing must stay healthy while carrying exact typed alert facts: %s role=%+v observation=%+v", line, role, observation)
 	}

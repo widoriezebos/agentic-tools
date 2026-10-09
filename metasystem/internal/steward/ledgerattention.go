@@ -769,16 +769,15 @@ func checkLedgerAttention(repoRoot string, now time.Time) RoleVerdict {
 	// A coordinator-turn timestamp is intentionally not a remedy: the
 	// human-reserved accepted-ref repair can rewind after remoteTip was held,
 	// so hook timing cannot prove that the turn examined this stored tip.
-	remedy := remedyFor(RoleLedgerAttention, RemedyFact{}).Plain
 	if err != nil {
-		return roleUnknown(RoleLedgerAttention, "the ledger-attention state is unreadable: "+err.Error(), remedy)
+		return roleUnknown(RoleLedgerAttention, "the ledger-attention state is unreadable: "+err.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	if !exists {
-		return roleUnknown(RoleLedgerAttention, "no ledger-attention pass is recorded", remedy)
+		return roleUnknown(RoleLedgerAttention, "no ledger-attention pass is recorded", "", RemedyFact{Cause: CauseUnavailable})
 	}
 	minutes, err := ledgerAttentionStaleMinutes(repoRoot)
 	if err != nil {
-		return roleUnknown(RoleLedgerAttention, "the ledger-attention threshold is invalid: "+err.Error(), remedy)
+		return roleUnknown(RoleLedgerAttention, "the ledger-attention threshold is invalid: "+err.Error(), "", RemedyFact{Cause: CauseSettingsInvalid})
 	}
 	threshold := time.Duration(minutes) * time.Minute
 	if state.LastOutcome == "local" {
@@ -790,19 +789,19 @@ func checkLedgerAttention(repoRoot string, now time.Time) RoleVerdict {
 	movedAt, movedErr := parseLedgerAttentionTime(state.MovedAt)
 	failingSince, failingErr := parseLedgerAttentionTime(state.FailingSince)
 	if movedErr != nil || failingErr != nil {
-		return roleUnknown(RoleLedgerAttention, "the ledger-attention clock is unreadable", remedy)
+		return roleUnknown(RoleLedgerAttention, "the ledger-attention clock is unreadable", "", RemedyFact{Cause: CauseUnreadable})
 	}
 	moveAge := ledgerAge(now, movedAt)
 	if state.RemoteTip != "" && state.RemoteTip != state.ExaminedTip && !movedAt.IsZero() && moveAge >= threshold {
 		role := roleDead(RoleLedgerAttention,
-			fmt.Sprintf("the shared ledger moved to %s %s ago and is unexamined past %dm", shortLedgerTip(state.RemoteTip), roundedLedgerAge(moveAge), minutes), remedy)
+			fmt.Sprintf("the shared ledger moved to %s %s ago and is unexamined past %dm", shortLedgerTip(state.RemoteTip), roundedLedgerAge(moveAge), minutes), "", RemedyFact{Cause: CauseUnavailable})
 		role.Reason = healthRemedyReason(repoRoot, "ledger-examination", role.Reason)
 		return role
 	}
 	failureAge := ledgerAge(now, failingSince)
 	if !failingSince.IsZero() && failureAge >= threshold {
 		return roleUnknown(RoleLedgerAttention,
-			fmt.Sprintf("the shared ledger has been unreachable for %s: %s", roundedLedgerAge(failureAge), state.LastFailure), remedy)
+			fmt.Sprintf("the shared ledger has been unreachable for %s: %s", roundedLedgerAge(failureAge), state.LastFailure), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	if state.RemoteTip != "" && state.RemoteTip == state.ExaminedTip {
 		return roleAlive(RoleLedgerAttention, "examined at the canonical tip "+shortLedgerTip(state.RemoteTip))
@@ -815,5 +814,5 @@ func checkLedgerAttention(repoRoot string, now time.Time) RoleVerdict {
 		return roleAlive(RoleLedgerAttention,
 			fmt.Sprintf("the last fetch failed %s ago; quiet until %dm", roundedLedgerAge(failureAge), minutes))
 	}
-	return roleUnknown(RoleLedgerAttention, "the ledger-attention state has no canonical tip", remedy)
+	return roleUnknown(RoleLedgerAttention, "the ledger-attention state has no canonical tip", "", RemedyFact{Cause: CauseUnavailable})
 }

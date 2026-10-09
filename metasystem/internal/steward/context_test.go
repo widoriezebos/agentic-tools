@@ -250,7 +250,7 @@ func TestContextVerdictReadsConfiguredBounds(t *testing.T) {
 	role, reading, err := contextBudgetLineWithProber(stateroottest.Installation(t, invalidRoot), time.Date(2026, 9, 15, 12, 0, 0, 0, time.UTC), ContextOptions{}, healthProbe{})
 	if err == nil || role.Status != HealthUnknown || role.Reason != err.Error() || !strings.Contains(role.Reason, "context.ceiling.tokens must be a positive integer") ||
 		strings.Contains(role.Reason, "CONTEXT_CONFIG_INVALID") || refusalpkg.CodeOf(err) != "CONTEXT_CONFIG_INVALID" ||
-		role.Remedy != "metasystem settings check --repo "+invalidRoot || !reflect.DeepEqual(reading, usagepkg.Reading{}) {
+		role.Remedy != "a person corrects the setting the reason above names in metasystem.conf, then runs metasystem system check" || !reflect.DeepEqual(reading, usagepkg.Reading{}) {
 		t.Fatalf("invalid budget = role %+v reading %+v err %v", role, reading, err)
 	}
 }

@@ -104,7 +104,7 @@ func TestHealthRemedyTableNamesNoRead(t *testing.T) {
 					case "list", "show", "check", "status":
 						t.Errorf("read is no remedy: %v", act)
 					}
-				} else if !strings.Contains(plain, "person") && !strings.Contains(plain, "steward's next pass") && !strings.Contains(plain, "lane records the cadence at its next validation") && !strings.Contains(plain, "claiming session refreshes its stop capability at its next") {
+				} else if !strings.Contains(plain, "person") && !strings.Contains(plain, "steward's next pass") && !strings.Contains(plain, "steward tick") && !strings.Contains(plain, "lane records the cadence at its next validation") && !strings.Contains(plain, "claiming session refreshes its stop capability at its next") {
 					t.Errorf("plain remedy names no actor and clearing time: %q", plain)
 				}
 			}

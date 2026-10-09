@@ -13,14 +13,14 @@ func checkTrunkRedWith(repoRoot string, now time.Time, ledger *healthLedger) Rol
 		return roleAlive(RoleTrunkRed, "the bootstrap ledger has no trunk-red register")
 	}
 	if err := ledger.endpointErr; err != nil {
-		return roleUnknown(RoleTrunkRed, "the trunk-red ledger endpoint is unreadable: "+err.Error(), "repair the goal sync configuration, then run metasystem system check")
+		return roleUnknown(RoleTrunkRed, "the trunk-red ledger endpoint is unreadable: "+err.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 	return checkTrunkRedFromProjection(repoRoot, now, ledger.projection, ledger.projectionErr)
 }
 
 func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal.Projection, projectionErr error) RoleVerdict {
 	if projectionErr != nil {
-		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+projectionErr.Error(), "repair or fetch the goal ledger, then run metasystem system check")
+		return roleUnknown(RoleTrunkRed, "the trunk-red ledger is unreadable: "+projectionErr.Error(), "", RemedyFact{Cause: CauseUnreadable})
 	}
 
 	var open []goal.TrunkRedEntry
@@ -42,9 +42,7 @@ func checkTrunkRedFromProjection(repoRoot string, now time.Time, projection goal
 		}
 	}
 	if len(unowned) > 0 {
-		verdict := roleDead(RoleTrunkRed, "open trunk red without an owner: "+strings.Join(unowned, ", "),
-			"metasystem incident claim "+unowned[0]+" --goal <goal>")
-		verdict.RemedyFacts = []RemedyFact{{Cause: CauseTrunkRedUnowned, Incident: unowned[0]}}
+		verdict := roleDead(RoleTrunkRed, "open trunk red without an owner: "+strings.Join(unowned, ", "), "", RemedyFact{Cause: CauseTrunkRedUnowned, Incident: unowned[0]})
 		return verdict
 	}
 	defects := ""
