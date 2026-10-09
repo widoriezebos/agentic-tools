@@ -8,6 +8,7 @@ Read
 
 Work
   run             run the risk-selected tests for this checkout
+  impact          run this unit's changed packages, named tests and affected contract groups
   groups          run named contract groups and their prerequisites for the proof command, without
                   recording proof
   declare-moves   record that this change moves or removes Stop test assertions on purpose

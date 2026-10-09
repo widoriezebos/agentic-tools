@@ -153,7 +153,7 @@ func TestIntentDeclaredCheckFrozenAcrossBuilderAndProof(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if plan.Check.SourceTree != "declaration-tree" || plan.Check.Minutes != 15 || !slices.Equal(plan.Check.Environment, os.Environ()) || len(plan.Proof) != 1 {
+			if plan.Check.Base != plan.Base || plan.Check.SourceTree != "declaration-tree" || plan.Check.Minutes != 15 || !slices.Equal(plan.Check.Environment, os.Environ()) || len(plan.Proof) != 1 {
 				t.Fatal("declaration tree, minutes, environment or commands were not frozen")
 			}
 			canonicalDirectory, err := filepath.EvalSymlinks(b.worktree)
@@ -303,7 +303,7 @@ func TestIntentDeclaredCheckManualRepairRequiresPerson(t *testing.T) {
 				}
 			}
 			plan, err := launch.ReadUnitPlan(resultData(t, result)["plan"].(string))
-			if err != nil || plan.Check.SelectedBy != "Wido" || plan.Check.Reason != row.reason || plan.Check.Audits != "true" {
+			if err != nil || plan.Check.Base != plan.Base || plan.Check.SelectedBy != "Wido" || plan.Check.Reason != row.reason || plan.Check.Audits != "true" {
 				t.Fatalf("manual check provenance missing: %v", err)
 			}
 		})

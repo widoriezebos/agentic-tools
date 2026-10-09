@@ -151,6 +151,7 @@ var auditModes = map[string]auditMode{
 	"cmd/metasystem/intent_questions.go#runIntentQuestionShow":         {layout: auditEnforce},
 	"cmd/metasystem/intent_questions.go#runIntentQuestionWait":         {layout: auditEnforce},
 	// G6 passthroughs.
+	"cmd/metasystem/test_impact.go":      {group: "G6"},
 	"cmd/metasystem/test.go":             {group: "G6"},
 	"cmd/metasystem/receipt_verbs.go":    {group: "G6"},
 	"cmd/metasystem/report.go":           {group: "G6"},

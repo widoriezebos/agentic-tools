@@ -145,6 +145,12 @@ func flattenLines(lines [][]byte) []byte {
 	return bytes.Join(lines, nil)
 }
 
+// DiffBlobs compares file bytes with Git's canonical zero-context diff.
+func (w Workspace) DiffBlobs(before, after []byte) ([]byte, error) {
+	diff, _, err := w.canonicalBlobDiff(before, after)
+	return diff, err
+}
+
 // canonicalBlobDiff invokes Git outside every worktree and with every
 // hunk-shaping input fixed. Exit one is the normal "different" result of
 // --no-index; every other nonzero result is a proof failure.

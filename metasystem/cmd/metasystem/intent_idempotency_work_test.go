@@ -23,6 +23,7 @@ func init() {
 	for _, name := range []string{"work status", "work wait", "design show", "design list", "test wait", "test plan", "test list", "test status"} {
 		registerIdempotency(name, idemRead, "reads or waits on recorded state and changes nothing", nil)
 	}
+	registerIdempotency("test impact", idemRead, "runs the unit selection without writing proof records", nil)
 	registerIdempotency("test groups", idemRead, "writes no record; a second call runs the same groups again", nil)
 	registerIdempotency("work commit", idemCreation, "each staged change creates a new named unit commit; --amend corrects that unit, while an empty index has nothing to commit", nil)
 	registerIdempotency("work review", idemCreation,

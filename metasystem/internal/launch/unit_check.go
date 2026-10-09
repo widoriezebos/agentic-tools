@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
@@ -14,6 +15,7 @@ import (
 type UnitCheck struct {
 	SelectedBy  string   `json:"selectedBy,omitempty"`
 	Reason      string   `json:"reason,omitempty"`
+	Base        string   `json:"base,omitempty"`
 	SourceTree  string   `json:"sourceTree"`
 	Cheap       string   `json:"cheap"`
 	Audits      string   `json:"audits"`
@@ -45,6 +47,9 @@ func (check UnitCheck) Run(directory, records string) (string, []CheckExit, erro
 	for _, command := range []struct{ name, text string }{{"cheap", check.Cheap}, {"audits", check.Audits}} {
 		process := exec.Command("/bin/sh", "-c", command.text)
 		process.Dir, process.Env = directory, check.Environment
+		if command.name == "cheap" && check.Base != "" {
+			process.Env = append(slices.Clone(check.Environment), "LANDING_PROOF_BASE="+check.Base)
+		}
 		var output bytes.Buffer
 		process.Stdout, process.Stderr = &output, &output
 		started := time.Now()

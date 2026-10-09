@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -268,5 +269,15 @@ func TestWorkRebaseDeclaredCheckEvidenceValidation(t *testing.T) {
 		if _, err := branch.ValidateAttestation(b.worktree, main, b.id, "u1", subject); err == nil || !strings.Contains(goal.RecordText(err), branch.ReadUngatedCode) {
 			t.Errorf("%s accepted or refused by another boundary: %v", damage, err)
 		}
+	}
+}
+
+func TestWorkRebaseParentlessSubjectNeedsReview(t *testing.T) {
+	t.Parallel()
+	inv := intentInvocation{}
+	_, err := inv.carrySubjectCheck(t.TempDir(), branch.AttestationSubject{})
+	var unavailable *branch.DeclarationUnavailableError
+	if !errors.As(err, &unavailable) || !strings.Contains(err.Error(), "no parent") {
+		t.Fatalf("parentless subject should require another review: %v", err)
 	}
 }

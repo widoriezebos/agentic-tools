@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // These adapter scenarios require Git's actual index, scratch commit and
@@ -436,6 +437,58 @@ func TestWorkCommitGatesGitAdapter(t *testing.T) {
 				t.Fatalf("correction: code=%d result=%+v gates=%d", code, result, gates)
 			}
 		})
+	}
+}
+
+func TestWorkCommitShippedImpactDeclarationGitAdapter(t *testing.T) {
+	t.Parallel()
+	c, owners := readPublicationAdapterBed(t)
+	fixture, _ := impactGitAdapterBed(t)
+	for _, path := range []string{"go.mod", "testing.json", "internal/launch/value.go", "internal/launch/value_test.go", "cmd/metasystem/main.go"} {
+		data, err := os.ReadFile(filepath.Join(fixture, path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		impactWrite(t, c.worktree, path, string(data))
+	}
+	shipped, err := os.ReadFile(filepath.Join("..", "..", "metasystem.conf"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	declaration := ""
+	for _, line := range strings.Split(string(shipped), "\n") {
+		if strings.HasPrefix(line, "proof.cheap=") {
+			declaration = strings.TrimPrefix(line, "proof.cheap=")
+		}
+	}
+	if declaration != "metasystem test impact" {
+		t.Fatalf("shipped cheap proof = %q", declaration)
+	}
+	bin := t.TempDir()
+	engine := os.Getenv("METASYSTEM_WAIT_BINARY")
+	if engine == "" {
+		t.Fatal("TestMain supplied no source-built executable")
+	}
+	if err := testexec.WriteFile(filepath.Join(bin, "metasystem"), []byte("#!/bin/sh\nexec "+shellCommand([]string{engine})+" \"$@\"\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	// Only command discovery is fixture-specific; the shipped proof has no base argument.
+	impactWrite(t, c.worktree, "metasystem.conf", "testing.contract=testing.json\nproof.cheap=PATH="+shellCommand([]string{bin})+":$PATH "+declaration+"\n")
+	connectionGit(t, c.worktree, "add", ".")
+	connectionGit(t, c.worktree, "commit", "-qm", "goal "+c.id+" units settings\n\nGoal-Unit: "+c.id+"/settings")
+	parent := connectionGit(t, c.worktree, "rev-parse", "HEAD")
+	owners.connection.rebaseGate = func(string) (string, error) { return "static-green", nil }
+	impactWrite(t, c.worktree, "internal/launch/value.go", "package launch\nconst Value = false\n")
+	connectionGit(t, c.worktree, "add", "internal/launch/value.go")
+	code, result := c.runJSON(owners, "work", "commit", c.id, "--work", "value")
+	if code == 0 || !strings.Contains(result.Summary, "cheap check failed") || connectionGit(t, c.worktree, "rev-parse", "HEAD") != parent || c.commits != 0 {
+		t.Fatalf("red proof committed: exit=%d %+v", code, result)
+	}
+	impactWrite(t, c.worktree, "internal/launch/value.go", "package launch\nconst Value = true // corrected\n")
+	connectionGit(t, c.worktree, "add", "internal/launch/value.go")
+	code, result = c.runJSON(owners, "work", "commit", c.id, "--work", "value")
+	if code != 0 || result.Outcome != intentConfirmed || c.commits != 1 || connectionGit(t, c.worktree, "rev-parse", "HEAD^") != parent {
+		t.Fatalf("shipped proof without --base refused: exit=%d %+v", code, result)
 	}
 }
 
