@@ -32,7 +32,7 @@ func runTestImpact(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	impact, err := goadapter.UnitImpact(installation, *base, "HEAD")
+	impact, err := goadapter.UnitImpact(installation, *base)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

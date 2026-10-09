@@ -1,12 +1,16 @@
 package goadapter
 
 import (
+	"bytes"
 	"encoding/json"
+	"fmt"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"io"
 	"maps"
 	"os"
+	"os/exec"
 	pathpkg "path"
 	"path/filepath"
 	"regexp"
@@ -25,14 +29,21 @@ type Impact struct {
 }
 
 // UnitImpact selects tests from the current working snapshot against the unit's base.
-func UnitImpact(moduleRoot, base, _ string) (impact Impact, err error) {
+func UnitImpact(moduleRoot, base string) (impact Impact, err error) {
 	workspace := gittree.Workspace{Dir: moduleRoot}
-	selection, err := SelectWorkingUnitPackages(moduleRoot, base)
+	commit, err := workspace.ResolveCommit(base)
+	if err != nil {
+		return impact, fmt.Errorf("unit check base %q is not a readable commit", base)
+	}
+	selection, err := SelectWorkingUnitPackages(moduleRoot, commit)
 	if err != nil {
 		return impact, err
 	}
 	base, impact.Paths = selection.base, selection.paths
 	files, imports, module := selection.files, selection.imports, selection.ModulePath
+	if err := impactPackageImports(moduleRoot, module, imports); err != nil {
+		return impact, err
+	}
 	for pkg := range imports {
 		if strings.Contains(pkg+"/", "/testdata/") {
 			delete(imports, pkg)
@@ -41,6 +52,11 @@ func UnitImpact(moduleRoot, base, _ string) (impact Impact, err error) {
 	changed, symbols := map[string]bool{}, map[string]bool{}
 	full := slices.Contains(impact.Paths, "go.mod") || slices.Contains(impact.Paths, "go.sum")
 	for _, path := range impact.Paths {
+		if strings.HasSuffix(path, "_test.go") && !strings.Contains("/"+path, "/testdata/") {
+			if _, err := impactFile(workspace, base, path, true, symbols); err != nil {
+				return impact, err
+			}
+		}
 		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") && !strings.Contains("/"+path, "/testdata/") {
 			changed[relativePackage(module, pathpkg.Join(module, filepath.ToSlash(filepath.Dir(path))))] = true
 			symbols["own/"+strings.TrimSuffix(path, ".go")+"_test.go"] = true
@@ -83,7 +99,7 @@ func UnitImpact(moduleRoot, base, _ string) (impact Impact, err error) {
 			maps.Copy(names, selected)
 		}
 		tests := slices.Sorted(maps.Keys(names))
-		whole := full || changed[pkg] && (strings.HasPrefix(pkg, "./internal/") || len(tests) == 0)
+		whole := full || strings.HasPrefix(pkg, "./internal/") && slices.Contains(dependents, pkg) || changed[pkg] && (strings.HasPrefix(pkg, "./internal/") || len(tests) == 0)
 		if !whole && len(tests) == 0 {
 			continue
 		}
@@ -146,7 +162,7 @@ func impactFile(workspace gittree.Workspace, base, path string, changed bool, sy
 		ast.Inspect(file, func(node ast.Node) bool {
 			switch node := node.(type) {
 			case *ast.FuncDecl:
-				if !isTest && overlaps(node) {
+				if overlaps(node) && (!isTest || node.Recv != nil || !strings.HasPrefix(node.Name.Name, "Test")) {
 					symbols[node.Name.Name] = true
 				} else if isTest && side == 1 && node.Recv == nil && strings.HasPrefix(node.Name.Name, "Test") {
 					all[node.Name.Name] = true
@@ -172,4 +188,37 @@ func impactFile(workspace gittree.Workspace, base, path string, changed bool, sy
 		tests = all
 	}
 	return tests, nil
+}
+
+// impactPackageImports adds the Go tool's build and test dependencies to the module graph.
+func impactPackageImports(root, module string, imports map[string]map[string]bool) error {
+	command := exec.Command("go", "list", "-e", "-json", "./...")
+	command.Dir = root
+	output, err := command.Output()
+	if err != nil {
+		return fmt.Errorf("unit check cannot discover Go dependencies: %w", err)
+	}
+	decoder := json.NewDecoder(bytes.NewReader(output))
+	for {
+		var pkg struct {
+			ImportPath                      string
+			Deps, TestImports, XTestImports []string
+		}
+		if err := decoder.Decode(&pkg); err == io.EOF {
+			return nil
+		} else if err != nil {
+			return fmt.Errorf("unit check cannot read Go dependencies: %w", err)
+		}
+		local := relativePackage(module, pkg.ImportPath)
+		if imports[local] == nil {
+			continue
+		}
+		for _, dependencies := range [][]string{pkg.Deps, pkg.TestImports, pkg.XTestImports} {
+			for _, imported := range dependencies {
+				if relativePackage(module, imported) != "" {
+					imports[local][imported] = true
+				}
+			}
+		}
+	}
 }
