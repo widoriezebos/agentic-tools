@@ -306,7 +306,7 @@ func requireCode(t *testing.T, err error, code string) {
 	}
 }
 func creationCalls(away bool) []string {
-	calls := []string{"claim", "tip-goal", "remote", "head-root", "tip-origin", "staged", "patch", "open", "apply", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref"}
+	calls := []string{"claim", "tip-goal", "remote", "head-root", "tip-origin", "staged", "patch", "open", "apply", "head-scratch", "head-scratch", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref"}
 	if away {
 		calls = append(calls, "worktrees")
 	}
@@ -328,7 +328,7 @@ func TestCommitRefusesNonHolder(t *testing.T) {
 	}
 	lost := newPolicyFixture(t)
 	lost.write("metasystem/code.go", "one")
-	lost.expect("claim", "tip-goal", "remote", "head-root", "tip-origin", "staged", "patch", "open", "apply", "commit", "head-scratch", "range-new", "claim-lost", "close")
+	lost.expect("claim", "tip-goal", "remote", "head-root", "tip-origin", "staged", "patch", "open", "apply", "head-scratch", "head-scratch", "commit", "head-scratch", "range-new", "claim-lost", "close")
 	_, err = commitStaged(lost.req("claim-recheck"), lost.repository())
 	requireCode(t, err, NotHolderCode)
 	lost.assertState(policyState{headRef: "refs/heads/main", headCommit: policyBase, index: policyIndex, status: "staged:metasystem/code.go"})
@@ -432,7 +432,7 @@ func TestAdoptionUntrackedCollisionRefusesStale(t *testing.T) {
 	f.staged = []string{"metasystem/next.go"}
 	f.state.status = "staged:metasystem/next.go;untracked:metasystem/collision.go"
 	f.checkoutErr = errors.New("Untracked working tree file would be overwritten")
-	f.expect("claim", "tip-goal", "range-local", "remote", "fetch", "range-remote", "clear", "tip-origin", "ancestor", "staged", "unstaged", "patch", "open", "apply", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref", "head-root", "checkout")
+	f.expect("claim", "tip-goal", "range-local", "remote", "fetch", "range-remote", "clear", "tip-origin", "ancestor", "staged", "unstaged", "patch", "open", "apply", "head-scratch", "head-scratch", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref", "head-root", "checkout")
 	_, err := commitStaged(f.req("collision-local"), f.repository())
 	requireCode(t, err, StaleCode)
 	if !strings.Contains(err.Error(), "Untracked working tree") {
@@ -456,7 +456,7 @@ func TestCommitAdoptsRemoteWithoutEndpointCheckout(t *testing.T) {
 	f.installedStatus = "untracked:unrelated-untracked.txt"
 	f.installPath = "metasystem/next.go"
 	f.installBody = "next"
-	f.expect("claim", "tip-goal", "remote", "fetch", "range-remote", "clear", "tip-origin", "staged", "unstaged", "patch", "open", "apply", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref", "worktrees", "head-root", "checkout", "attach", "publish")
+	f.expect("claim", "tip-goal", "remote", "fetch", "range-remote", "clear", "tip-origin", "staged", "unstaged", "patch", "open", "apply", "head-scratch", "head-scratch", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref", "worktrees", "head-root", "checkout", "attach", "publish")
 	tip, err := commitStaged(f.req("adopt-away-from-endpoint"), f.repository())
 	if err != nil || tip != policyNew {
 		t.Fatalf("adopt=%s err=%v", tip, err)
@@ -471,7 +471,7 @@ func TestFailedCommitLeavesCheckoutAndRefsUnchanged(t *testing.T) {
 	f := newPolicyFixture(t)
 	f.commitErr = errors.New("fixture hook refusal")
 	f.write("metasystem/code.go", "one")
-	f.expect("claim", "tip-goal", "remote", "head-root", "tip-origin", "staged", "patch", "open", "apply", "commit", "close")
+	f.expect("claim", "tip-goal", "remote", "head-root", "tip-origin", "staged", "patch", "open", "apply", "head-scratch", "head-scratch", "commit", "close")
 	_, err := commitStaged(f.req("hook-refusal"), f.repository())
 	if err == nil || !strings.Contains(err.Error(), "fixture hook refusal") {
 		t.Fatalf("hook refusal=%v", err)

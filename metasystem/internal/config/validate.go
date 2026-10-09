@@ -633,6 +633,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	// who fat-fingers exec.local-timeout-sec=300s silently runs on defaults
 	// and discovers it from the exact hang class the bound exists to prevent.
 	for _, knob := range []string{
+		"design.unit-lines-max", "design.goal-units-max",
 		ContextCeilingTokensKey, ContextHandoffMarginTokensKey,
 		"channel.http-timeout-sec", "channel.long-poll-sec", "channel.poll-timeout-sec", "exec.local-timeout-sec", "exec.network-timeout-sec", "landing.receipt-bound-min",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",

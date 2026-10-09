@@ -57,7 +57,7 @@ func TestWorkRebaseCarriesPublishedDropGitAdapter(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if _, err := goal.RecordUnitDrop(goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage}, Ulid: "01ARZ3NDEKTSV4RRFFQ69G5FAB", Now: b.manager.Now()}, b.id, before); err != nil {
+			if _, err := goal.RecordUnitDrop(goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage}, Ulid: "01ARZ3NDEKTSV4RRFFQ69G5FAB", Now: b.manager.Now()}, b.id, before, nil); err != nil {
 				t.Fatal(err)
 			}
 			git("checkout", "-q", "main")

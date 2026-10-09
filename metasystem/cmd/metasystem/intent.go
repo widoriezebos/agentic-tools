@@ -273,6 +273,7 @@ func goalIntentCommands() []intentCommand {
 			examples: []string{"metasystem goal done verbs-match-intent --reason 'all four slices landed'"},
 			run:      runIntentDone,
 		},
+		{object: "goal", action: "scope", audience: "human", summary: "restore a person's excluded required scope", usage: []string{"metasystem goal scope restore G UNIT --by NAME"}, flags: []intentFlag{intentByFlag}, maxArgs: 3, run: runIntentScopeRestore},
 	}
 }
 
@@ -1516,7 +1517,7 @@ var intentActionIntents = map[string][]struct {
 }{
 	"goal": {
 		{"Read", []string{"list", "show", "status", "notes"}},
-		{"Decide", []string{"open", "approve", "unapprove", "budget", "prioritize", "pin", "allow", "disallow", "accept-risk", "review", "land-without-sitting"}},
+		{"Decide", []string{"open", "approve", "unapprove", "budget", "prioritize", "pin", "allow", "disallow", "accept-risk", "review", "land-without-sitting", "scope"}},
 		{"Work", []string{"claim", "release", "pause", "resume", "done", "reopen", "abandon"}},
 		{"Shape", []string{"edit", "split", "group", "ungroup", "block", "unblock", "sync"}},
 	},

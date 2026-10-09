@@ -3,6 +3,7 @@ package goal
 import (
 	"encoding/hex"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"reflect"
 	"strings"
 	"time"
@@ -55,7 +56,14 @@ func (d UnitDrop) validate() error {
 
 // RecordUnitDrop publishes the outcome only for the current claim and goal
 // revision. Repeating the operation joins the identical durable outcome.
-func RecordUnitDrop(r VerbRequest, id string, drop UnitDrop, previous ...UnitDrop) (PublishResult, error) {
+func RecordUnitDrop(r VerbRequest, id string, drop UnitDrop, scope []ScopeExclusion, previous ...UnitDrop) (PublishResult, error) {
+	if len(scope) > 0 {
+		if err := r.requireHuman(humanAuthorityRow{Verb: "work-drop", Name: "required scope exclusion", Missing: "only a person excludes required scope: metasystem work review " + id + " --work " + drop.Unit + " --dispositions FILE --reason TEXT --by NAME"}, humanauthority.GradeEnrolled); err != nil {
+			return PublishResult{}, err
+		}
+		scope[0].Unit, scope[0].Operation, scope[0].Requirements, scope[0].Result, scope[0].Proof = drop.Unit, drop.Operation, drop.Requirements, drop.Commit, drop.Proof
+		scope[0].Actor, scope[0].Authority, scope[0].Reason, scope[0].Impact, scope[0].At = r.Actor.Human, r.Authority.Outcome, drop.Reason, drop.Impact, drop.At
+	}
 	if err := drop.validate(); err != nil {
 		return PublishResult{}, err
 	}
@@ -77,13 +85,19 @@ func RecordUnitDrop(r VerbRequest, id string, drop UnitDrop, previous ...UnitDro
 				return nil, err
 			}
 			f := t.Live[id]
-			if f == nil || f.State != StateClaimed || !ownPair(f.Claimed, r.Actor) {
+			if f == nil || f.State != StateClaimed || f.Claimed == nil || len(scope) == 0 && !ownPair(f.Claimed, r.Actor) {
 				return nil, fmt.Errorf("goal %s drop requires its current claim holder", id)
 			}
 			for index, prior := range f.UnitDrops {
 				if prior.Operation == drop.Operation {
 					if len(previous) == 1 && reflect.DeepEqual(prior, previous[0]) && f.Revision == drop.Revision {
 						f.UnitDrops[index] = drop
+						for i := range f.ScopeExclusions {
+							exclusion := &f.ScopeExclusions[i]
+							if exclusion.Unit == prior.Unit && exclusion.Operation == prior.Operation {
+								exclusion.Result, exclusion.Proof = drop.Commit, drop.Proof
+							}
+						}
 						touch(f, r, "work-drop", []string{id})
 						return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
 					}
@@ -102,7 +116,15 @@ func RecordUnitDrop(r VerbRequest, id string, drop UnitDrop, previous ...UnitDro
 				return nil, fmt.Errorf("the goal changed before its drop outcome was recorded")
 			}
 			f.UnitDrops = append(f.UnitDrops, drop)
-			touch(f, r, "work-drop", []string{id})
+			if len(scope) > 0 {
+				// Goal-file validation checks this exclusion before publication.
+				f.ScopeExclusions = append(f.ScopeExclusions, scope[0])
+			}
+			displaced := ""
+			if !ownPair(f.Claimed, r.Actor) {
+				displaced = pairMarker(f.Claimed)
+			}
+			touchDisplaced(f, r, "work-drop", []string{id}, displaced)
 			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
 		}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }})
 }

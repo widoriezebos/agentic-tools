@@ -321,7 +321,7 @@ func TestCommitCreatesBranchAndAmendsUnit(t *testing.T) {
 	f.installFiles = map[string]*string{"metasystem/code.go": strptr("one")}
 	f.write("metasystem/code.go", "one")
 	f.ranges[policyLocal] = []Commit{{ID: plan, Kind: Plan}, {ID: policyLocal, Kind: Unit, Unit: "u1", Units: []string{"u1"}}}
-	f.expect("claim", "tip-goal", "range-local", "remote", "tip-origin", "staged", "patch", "open", "apply", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref", "head-root", "checkout", "publish")
+	f.expect("claim", "tip-goal", "range-local", "remote", "tip-origin", "staged", "patch", "open", "apply", "head-scratch", "head-scratch", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref", "head-root", "checkout", "publish")
 	unit, e := f.run(f.req("commit-u1"))
 	if e != nil || unit != policyLocal {
 		t.Fatalf("unit=%s err=%v", unit, e)
@@ -350,7 +350,7 @@ func TestCommitCreatesBranchAndAmendsUnit(t *testing.T) {
 	f.state.status = "staged:tail"
 	f.installFiles = map[string]*string{"metasystem/plans/after.md": strptr("later plan")}
 	f.ranges[policyRemote] = []Commit{{ID: plan, Kind: Plan}, {ID: replacement, Kind: Unit, Unit: "u1", Units: []string{"u1"}}, {ID: policyRemote, Kind: Plan}}
-	f.expect("claim", "tip-goal", "range-local", "remote", "tip-origin", "staged", "patch", "open", "apply", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref", "head-root", "checkout", "publish")
+	f.expect("claim", "tip-goal", "range-local", "remote", "tip-origin", "staged", "patch", "open", "apply", "head-scratch", "head-scratch", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref", "head-root", "checkout", "publish")
 	tailReq := f.req("commit-tail")
 	tailReq.Kind = Plan
 	tailReq.Unit = ""

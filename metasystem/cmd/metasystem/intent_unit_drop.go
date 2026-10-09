@@ -28,15 +28,18 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 		}
 		return &intentResult{Targets: targets, Outcome: intentInProgress, code: 1, Summary: summary, Details: []string{err.Error()}, Data: source.Drop, next: inv.sameCommand()}
 	}
-	actor, _, problem := inv.actingAs("work drop", work.goal, actorEither)
+	actor, proof, problem := inv.actingAs("work drop", work.goal, actorEither)
 	if problem != nil {
 		return problem
+	}
+	if len(work.dropScope) > 0 && (proof == nil || !proof.ValidFor(inv.stateRoot)) {
+		return requiredDropRemedy(inv, work)
 	}
 	current, err := inv.unitRunner().Status(work.run)
 	if err != nil {
 		return fail(err)
 	}
-	if _, problem := inv.reviseDecisions(work.goal, launch.NamedWork{Unit: work.work, Record: &current}, 0); problem != nil {
+	if _, problem := inv.reviseDecisions(work.goal, launch.NamedWork{Unit: work.work, Record: &current}, 0); problem != nil && len(work.dropScope) == 0 {
 		return problem
 	}
 	if work.dropRequirements == "" {
@@ -149,6 +152,9 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 		drop.At = inv.unitStopNow().UTC().Format(time.RFC3339Nano)
 		if who := unitStopActor(actor); who != "" {
 			drop.Impact = "Impact: remove this optional unit's changes after checks pass.\nOther work remains. Restore the saved changes to undo the drop.\nThe prior read stays available."
+			if len(work.dropScope) > 0 {
+				drop.Impact = "Impact: remove this unit's code and required scope after proof and publication. Findings close as dropped, without a clean read. Dependent work remains required. Absence risk: the required behavior will be missing; unreadable advisory facts remain unknown. Undo: restore the retained changes, then metasystem goal scope restore " + work.goal + " " + work.work + " --by " + who + "."
+			}
 			if err := inv.recordUnitStopOverride(work.goal, "work-drop", drop.Reason, drop.Impact, who); err != nil {
 				return fail(err)
 			}
@@ -304,8 +310,8 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 	if drop.ResultTree != "" {
 		outcome.Tree, outcome.PatchDigest, outcome.CommitTree = drop.ResultTree, drop.PatchDigest, drop.CommitTree
 	}
-	result := inv.goalAct(work.goal, "drop unit", inv.syncOwner("work-drop", []string{"--root", inv.stateRoot, "--id", work.goal}, nil, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
-		return goal.RecordUnitDrop(req, work.goal, outcome)
+	result := inv.goalAct(work.goal, "drop unit", inv.syncOwner("work-drop", append([]string{"--root", inv.stateRoot, "--id", work.goal}, actor...), proof, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
+		return goal.RecordUnitDrop(req, work.goal, outcome, work.dropScope)
 	}, "id"))
 	if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
 		if _, blocked, err := goal.PushedBlocking(inv.layout.InstallationRoot.Path()); err == nil && blocked {
@@ -330,5 +336,9 @@ func (inv *intentInvocation) applyUnitDrop(targets []intentTarget, work *reviewW
 	if err := work.retain(*source); err != nil {
 		return fail(err)
 	}
-	return &intentResult{Targets: targets, Outcome: intentConfirmed, Summary: "the optional unit is dropped; its matching questions are closed", Data: drop, next: inv.publicArgv("work", "status", work.goal, "--work", work.work)}
+	return &intentResult{Targets: targets, Outcome: intentConfirmed, Summary: "the unit is dropped; its matching questions are closed", Data: drop, next: inv.publicArgv("work", "status", work.goal, "--work", work.work)}
+}
+
+func requiredDropRemedy(inv *intentInvocation, work *reviewWorkContext) *intentResult {
+	return &intentResult{Outcome: intentRefused, code: 1, Summary: "Required work needs a person's explicit scope exclusion; code and scope remain.", next: inv.publicArgv("work", "review", work.goal, "--work", work.work, "--dispositions", "FILE", "--reason", "TEXT", "--by", "NAME"), Details: []string{fmt.Sprintf("Only a proven person can exclude unit %s.", work.work)}}
 }

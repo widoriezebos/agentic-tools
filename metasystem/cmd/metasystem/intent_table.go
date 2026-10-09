@@ -636,6 +636,9 @@ func (inv *intentInvocation) hostBoardView(now time.Time) board.View {
 				entry.Reserved = file != nil && file.Claimed != nil && file.Claimed.Machine == view.Seats[i].Machine && file.StopCapability != nil && file.StopCapability.ClaimEpoch == 0
 			}
 		}
+		view.ProjectScope(func(id, unit string) bool {
+			return projection.Tree.Live[id].ExcludesScope(unit, "")
+		})
 	}
 	return view
 }

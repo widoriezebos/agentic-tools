@@ -916,6 +916,11 @@ func (runner *UnitRunner) publishJudgement(record UnitRunRecord, number int) {
 	}
 	card := board.Card{Seat: runner.Manager.Seat, Goal: record.Goal, Stage: board.StageJudgement,
 		Round: judgementRound(record, number), Job: &board.Job{ID: record.ID, Kind: "unit-run", Phase: record.State}, Writer: board.Writer{Component: "unit-run"}}
+	for _, subject := range record.Subjects {
+		if subject.Round == number && subject.Drop != nil {
+			card.Drop = &board.UnitDrop{Unit: record.Unit, Phase: subject.Drop.Phase}
+		}
+	}
 	if len(record.Rounds) > 0 {
 		stop := record.Rounds[len(record.Rounds)-1].Stop
 		if stop != nil {

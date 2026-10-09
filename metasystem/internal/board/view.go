@@ -105,6 +105,8 @@ type SeatView struct {
 // or the reason it is Unknown.
 type GoalView struct {
 	Reserved       bool        `json:"reserved,omitempty"`
+	Drop           *UnitDrop   `json:"drop,omitempty"`
+	ScopeExcluded  bool        `json:"scopeExcluded,omitempty"`
 	Stop           *ReviewStop `json:"stop,omitempty"`
 	Stuck          *StuckUnit  `json:"stuck,omitempty"`
 	Goal           string      `json:"goal"`
@@ -168,8 +170,18 @@ func NewView(seats []Seat, picture Picture) View {
 }
 
 func goalView(card Card, unknown string) GoalView {
-	return GoalView{Stop: card.Stop, Goal: card.Goal, Stage: card.Stage, Round: card.Round, Proof: card.Proof, Batch: card.Batch, Landed: card.Landed,
+	return GoalView{Drop: card.Drop, Stop: card.Stop, Goal: card.Goal, Stage: card.Stage, Round: card.Round, Proof: card.Proof, Batch: card.Batch, Landed: card.Landed,
 		Since: card.Since, LastProgressAt: card.LastProgressAt, Unknown: unknown}
+}
+
+// ProjectScope reads current goal authority; a saved card cannot retain an exclusion.
+func (view *View) ProjectScope(excludes func(string, string) bool) {
+	for i := range view.Seats {
+		for j := range view.Seats[i].Goals {
+			entry := &view.Seats[i].Goals[j]
+			entry.ScopeExcluded = entry.Drop != nil && excludes != nil && excludes(entry.Goal, entry.Drop.Unit)
+		}
+	}
 }
 
 // Lines renders the view for a person, in local time: a header with the
@@ -266,15 +278,22 @@ func (entry GoalView) Text(now time.Time, location *time.Location) string {
 // goalText is one goal as a person reads it: goal-x, review round 2 of 3
 // since 10:12; goal-z unknown: writer dead (pid 77) since 09:40.
 func goalText(entry GoalView, now time.Time, location *time.Location) string {
+	drop := ""
+	if entry.Drop != nil {
+		drop = "; " + entry.Drop.Unit + ": " + entry.Drop.Text()
+	}
+	if entry.ScopeExcluded {
+		drop += "; " + PersonExcludedRequiredScope
+	}
 	if entry.Reserved {
-		return entry.Goal + ", reserved, awaiting session start"
+		return entry.Goal + ", reserved, awaiting session start" + drop
 	}
 	if entry.Unknown != "" {
 		text := entry.Goal + " unknown: " + entry.Unknown
 		if !entry.LastProgressAt.IsZero() {
 			text += " since " + clock(entry.LastProgressAt, now, location)
 		}
-		return text
+		return text + drop
 	}
 	text := entry.Goal + ", " + StageText(entry.Stage, entry.Round, entry.Proof, entry.Landed)
 	if entry.Stop != nil {
@@ -286,7 +305,7 @@ func goalText(entry GoalView, now time.Time, location *time.Location) string {
 	if !entry.Since.IsZero() {
 		text += " since " + clock(entry.Since, now, location)
 	}
-	return text
+	return text + drop
 }
 
 // StageText is a stage as a person reads it: review round 2 of 3, unit

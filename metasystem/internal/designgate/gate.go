@@ -4,6 +4,8 @@ package designgate
 import (
 	"fmt"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 type Chain struct {
@@ -19,6 +21,9 @@ type Design struct {
 	Name     string  `json:"-"`
 	Status   string  `json:"-"`
 	Chains   []Chain `json:"-"`
+
+	Units      []launch.UnitSize `json:"units,omitempty"`
+	SizeExempt bool              `json:"sizeExempt,omitempty"`
 }
 
 type Facts struct {
@@ -28,6 +33,9 @@ type Facts struct {
 	Allowed bool
 	Designs []Design
 	Error   error
+
+	Limits      [2]int64
+	Declaration string
 }
 
 type Result struct {
@@ -35,6 +43,8 @@ type Result struct {
 	WouldRefuse bool      `json:"wouldRefuse"`
 	Mode        string    `json:"mode"`
 	Warning     [2]string `json:"-"`
+
+	Size *SizeResult `json:"size,omitempty"`
 }
 
 // Check reads no files or local state. A ruled critique stands on the
@@ -55,6 +65,13 @@ func Check(f Facts) Result {
 		r.Verdict = "unchecked"
 		r.Warning = [2]string{fmt.Sprintf("warning: the design check could not run (%s); this build was not checked", f.Error), "metasystem design list --goal " + f.Goal}
 		return r
+	}
+	if f.Limits[0] > 0 && f.Limits[1] > 0 {
+		r.Size = CheckDesignSize(f)
+		if r.Size.Verdict != "ok" {
+			r.Verdict, r.WouldRefuse, r.Warning = r.Size.Verdict, r.Size.WouldRefuse, r.Size.Warning
+			return r
+		}
 	}
 	var accepted []Design
 	var draft string

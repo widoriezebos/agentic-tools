@@ -18,7 +18,7 @@ func TestWorkDropStatusContinuesPendingPublication(t *testing.T) {
 	t.Parallel()
 	f := newDropFixture(t)
 	f.connect()
-	f.bed.manager.Seat = board.Seat{Machine: "drop-status-" + filepath.Base(t.TempDir()), Installation: f.bed.root()}
+	f.bed.manager.Seat = board.Seat{Machine: filepath.Base(filepath.Dir(t.TempDir())), Installation: f.bed.root()}
 	if code, result := f.review(t); code != 1 || result.Next == nil {
 		t.Fatalf("prepare: %d %+v", code, result)
 	}
@@ -70,9 +70,18 @@ func TestWorkDropStatusContinuesPendingPublication(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	card, ok := board.LiveCard(home, f.bed.id)
-	if !ok || card.Job == nil || card.Job.Phase != "dropped" || card.Stop == nil || card.Stop.Decision != "dropped" {
-		t.Fatalf("board retained an obsolete stop: %+v %v", card, ok)
+	picture, bad := board.Read(home, []board.Seat{f.bed.manager.Seat}, nil, f.bed.manager.Now(), time.Hour)
+	for _, unreadable := range bad {
+		if !unreadable.Stray {
+			t.Fatalf("the drop's seat could not be read: %+v", unreadable)
+		}
+	}
+	if len(picture.Cards) != 1 {
+		t.Fatalf("the drop's seat has no unique card: %+v %v", picture, bad)
+	}
+	card := picture.Cards[0]
+	if card.Job == nil || card.Job.Phase != "dropped" || card.Stop == nil || card.Stop.Decision != "dropped" {
+		t.Fatalf("board retained an obsolete stop: %+v", card)
 	}
 	view := board.NewView([]board.Seat{card.Seat}, board.Picture{Cards: []board.Card{card}})
 	if line, ok := view.GoalLine(f.bed.id, f.bed.manager.Now(), time.Local); !ok || !strings.Contains(line, "review dropped") {

@@ -18,6 +18,7 @@ Decide
   accept-risk            accept the risk of one severe or unproven review finding
   review                 record your verdict on a goal waiting to land
   land-without-sitting   let a goal that waits for your review land without a sitting
+  scope                  restore a person's excluded required scope
 
 Work
   claim                  reserve a named goal as a person, or claim work for this session

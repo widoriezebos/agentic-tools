@@ -146,7 +146,7 @@ func (inv *intentInvocation) rebaseGoal(id string) (out branch.RebaseResult, war
 						return goal.PublishResult{}, fmt.Errorf("goal %s is no longer live", id)
 					}
 					after.Revision = file.Revision
-					return goal.RecordUnitDrop(req, id, after, before)
+					return goal.RecordUnitDrop(req, id, after, nil, before)
 				}, "id"))
 				if result.Outcome != intentConfirmed && result.Outcome != intentUnchanged {
 					remedy := inv.publicArgv("work", "rebase", id)

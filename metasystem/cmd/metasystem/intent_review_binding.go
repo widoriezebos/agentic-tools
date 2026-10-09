@@ -12,6 +12,7 @@ import (
 
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -37,6 +38,7 @@ type reviewWorkContext struct {
 
 	dropRequirements string
 	dropRevision     uint64
+	dropScope        []goal.ScopeExclusion
 	review           *launch.UnitReview
 }
 

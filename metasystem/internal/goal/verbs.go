@@ -2803,7 +2803,7 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			}
 			var obligations []string
 			for index, obligation := range f.ReviewObligations {
-				if obligation.State == "open" {
+				if obligation.State == "open" && !f.ExcludesScope(obligation.TargetUnit, obligation.Chain+"/"+obligation.Finding) {
 					if r.ForceBy == "" {
 						return nil, fmt.Errorf("goal %s has open review obligation finding=%s chain=%s test=%s", id, obligation.Finding, obligation.Chain, obligation.Test)
 					}

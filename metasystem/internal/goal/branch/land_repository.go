@@ -164,7 +164,7 @@ func gitLandingRepository() landingRepository {
 }
 
 func (r landingRepository) status(repo, endpoint, tip, goal, goalPage string) (Status, error) {
-	return inspectStatus(repo, endpoint, tip, goal, statusDependencies{
+	status, err := inspectStatus(repo, endpoint, tip, goal, statusDependencies{
 		validatedRange: r.reads.Range,
 		drops:          func(string, string, string) ([]goalfile.UnitDrop, error) { return dropsFromPage([]byte(goalPage)) },
 		dropTree: func(repo, commit string) (string, error) {
@@ -182,6 +182,12 @@ func (r landingRepository) status(repo, endpoint, tip, goal, goalPage string) (S
 			return "", false, fmt.Errorf("landing status cannot read a local tip")
 		},
 	})
+	file, problems := goalfile.ParseFile([]byte(goalPage))
+	if strings.Contains(goalPage, "- ScopeExclusion:") && len(problems) > 0 {
+		return Status{}, fmt.Errorf("current scope exclusions cannot be read: %v", problems)
+	}
+	ApplyScope(&status, file)
+	return status, err
 }
 
 // scratchHooks is the empty hooks directory of one land-prep scratch.

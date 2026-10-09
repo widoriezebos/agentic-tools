@@ -10,7 +10,19 @@ import (
 
 // Resolved includes successful optional drops without treating them as reads.
 func (u UnitStatus) Resolved() bool {
-	return u.Drop != nil || u.ReadState == "read clean" || u.ReadState == "read transferred"
+	return u.ReadState == "dropped" && (u.Drop != nil || u.ScopeOperation != "") || u.ReadState == "read clean" || u.ReadState == "read transferred"
+}
+
+func committedScope(repo, endpoint, id string) (*goal.GoalFile, error) {
+	data, err := committedDropPage(repo, endpoint, id)
+	if err != nil || !strings.Contains(string(data), "- ScopeExclusion:") {
+		return nil, nil
+	}
+	file, problems := goal.ParseFile(data)
+	if len(problems) != 0 {
+		return nil, fmt.Errorf("the goal's scope exclusions cannot be read: %v", problems)
+	}
+	return file, nil
 }
 func dropsFromPage(data []byte) ([]goal.UnitDrop, error) {
 	if !strings.Contains(string(data), "- UnitDrop:") {
@@ -23,11 +35,19 @@ func dropsFromPage(data []byte) ([]goal.UnitDrop, error) {
 	return page.UnitDrops, nil
 }
 func committedDrops(repo, endpoint, id string) ([]goal.UnitDrop, error) {
-	data, err := gitOutput(repo, "show", endpoint+":metasystem/plans/goals/"+id+".md")
+	data, err := committedDropPage(repo, endpoint, id)
 	if err != nil {
 		return nil, nil
 	}
 	return dropsFromPage(data)
+}
+
+func committedDropPage(repo, endpoint, id string) ([]byte, error) {
+	data, err := gitOutput(repo, "show", endpoint+":metasystem/plans/goals/"+id+".md")
+	if err != nil {
+		return gitOutput(repo, "show", endpoint+":plans/goals/"+id+".md")
+	}
+	return data, nil
 }
 func applyDrops(status *Status, repo, endpoint, id string, deps statusDependencies) error {
 	for position, commit := range status.Commits {
@@ -83,7 +103,7 @@ func (defaultBranchReadRepository) DropRead(repo, endpoint, tip, id, commit stri
 		return BranchReadResult{}, false, err
 	}
 	for _, unit := range status.Units {
-		if unit.Drop != nil && (unit.Commit == commit || unit.Drop.Commit == commit) {
+		if unit.Drop != nil && (unit.Commit == commit && unit.Resolved() || unit.Drop.Commit == commit) {
 			return BranchReadResult{State: "dropped", GateRunID: unit.Drop.Proof, Published: true}, true, nil
 		}
 	}

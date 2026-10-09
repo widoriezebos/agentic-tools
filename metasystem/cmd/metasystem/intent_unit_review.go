@@ -898,6 +898,20 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 
 func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, goalID, unit string, args []string, check func(branch.BranchReadResult) error, wait func(func() error) error, fallback ...[]string) (out intentResult) {
 	owners := inv.delivery()
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return *problem
+	}
+	file, _ := goalRecord(projection, goalID)
+	if file != nil && slices.ContainsFunc(file.UnitDrops, func(drop goal.UnitDrop) bool {
+		return file.ExcludesScope(drop.Unit, "result:"+drop.Commit) && slices.Contains(drop.Covered, unit)
+	}) {
+		result, code, err := owners.branchRead(args)
+		if err != nil {
+			return intentResult{Targets: targets, Outcome: intentFailed, code: code, Summary: err.Error(), next: inv.sameCommand()}
+		}
+		return intentResult{Targets: targets, Outcome: intentConfirmed, Summary: "the covered build is dropped under the person's scope exclusion; its prior read remains", Data: result}
+	}
 	var branchRead func([]string) (branch.BranchReadResult, int, error)
 	installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
 	alreadyPublished := inspectErr == nil && installed.Published

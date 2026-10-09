@@ -912,6 +912,23 @@ func runIntentResume(inv *intentInvocation) int {
 		Summary: fmt.Sprintf("%s is already not paused (it is %s); an approved goal waits to be claimed", id, file.State)})
 }
 
+func runIntentScopeRestore(inv *intentInvocation) int {
+	if len(inv.input.args) != 3 || inv.input.args[0] != "restore" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "restore needs the goal and excluded unit", next: inv.publicArgv("goal", "scope", "restore", "GOAL", "UNIT", "--by", "NAME")})
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	id, unit := inv.input.args[1], inv.input.args[2]
+	actor, proof, problem := inv.actingAs("scope restore", id, actorHuman)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	return inv.render(inv.goalAct(id, "restore scope", inv.syncOwner("scope-restore", append([]string{"--root", inv.stateRoot, "--id", id}, actor...), proof, false, func(r goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
+		return goal.RestoreScope(r, id, unit)
+	}, "id")))
+}
+
 func runIntentDone(inv *intentInvocation) int {
 	id, problem := inv.singleTarget()
 	if problem != nil {
