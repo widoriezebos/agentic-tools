@@ -25,7 +25,7 @@ func runTestImpact(args []string, stdout, stderr io.Writer) int {
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
-	only, replay := os.LookupEnv("LANDING_ONLY")
+	only, replay := landingOnly()
 	if !replay && *base == "" {
 		fmt.Fprintln(stderr, "the unit check needs its comparison base\nrun: metasystem test impact --base COMMIT # or set LANDING_PROOF_BASE")
 		return 2
@@ -146,4 +146,12 @@ func runTestImpact(args []string, stdout, stderr io.Writer) int {
 		return 0
 	}
 	return runNamedTestGroups(installation, contract, ids, os.Environ(), units, stdout, stderr)
+}
+
+// landingOnly reads the replay selection: the lane's gate always sets
+// LANDING_ONLY, empty when it is not replaying, so only a non-empty value
+// is a replay.
+func landingOnly() (string, bool) {
+	only := os.Getenv("LANDING_ONLY")
+	return only, strings.TrimSpace(only) != ""
 }
