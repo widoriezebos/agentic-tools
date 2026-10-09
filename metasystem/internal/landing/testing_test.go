@@ -289,7 +289,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
 	episode, binding := strings.Repeat("1", 64), strings.Repeat("2", 64)
 	expires := now.Add(time.Hour)
 	request := candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root,
@@ -415,7 +415,7 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 		if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, whole, now, workspace); err != nil {
 			t.Fatalf("publication refused the accepted index tree: %v", err)
 		}
-		if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, time.Now().UTC(), workspace); err == nil {
+		if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, now, workspace); err == nil {
 			t.Fatal("publication accepted an index that moved after the reuse decision")
 		}
 	})
@@ -582,14 +582,14 @@ func TestSchemaTwoReceiptRequiresSuccessfulTerminalGroupOwners(t *testing.T) {
 	})
 	failed := result
 	failed.AttemptID = "missing-attempt"
-	if _, err := createTestingReceiptAtWithWorkspace(f.root, tree, failed, time.Now().UTC(), workspace); err == nil || !strings.Contains(err.Error(), "no successful terminal outer attempt") {
+	if _, err := createTestingReceiptAtWithWorkspace(f.root, tree, failed, now, workspace); err == nil || !strings.Contains(err.Error(), "no successful terminal outer attempt") {
 		t.Fatalf("receipt projection accepted a group without terminal outer authority: %v", err)
 	}
 	f.writeOutside("source/changed.go", "changed\n")
 	if _, _, err := prepareTestingReceiptPayloadWithWorkspace(f.root, tree, result, completedAt, workspace); err == nil {
 		t.Fatal("relevant source mutation accepted")
 	}
-	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, time.Now().UTC(), workspace); err == nil {
+	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, now, workspace); err == nil {
 		t.Fatal("recovery accepted relevant source mutation")
 	}
 }
@@ -717,7 +717,7 @@ func TestSchemaTwoReceiptAcceptsReuseFromAFailedDeliveryPredecessor(t *testing.T
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
 	// The retry is a new attempt with its own proof identity; the same
 	// identity after a failed terminal would answer retry-required instead.
 	reserve := func(identity proofrun.ProofIdentity) string {

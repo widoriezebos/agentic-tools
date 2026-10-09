@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
@@ -536,17 +537,44 @@ func TestResourceCustodyPublicWriterFailureStillDrainsAndReleasesCapacity(t *tes
 	defer lease.Close()
 	progress := filepath.Join(root, "progress.jsonl")
 	logPath := filepath.Join(root, "suite.log")
+	release := filepath.Join(root, "release")
 	command := `printf '{"suite":"writer-failure","section":"over-cap","event":"start","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"
-sleep 1
+while [ ! -e "$2" ]; do echo growing; sleep 0.05; done
 printf '{"suite":"writer-failure","section":"over-cap","event":"end","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"`
-	status := LaunchSuite(LaunchOptions{Suite: "writer-failure", Root: root, ConfPath: conf,
-		ProgressPath: progress, LogPath: logPath, Banner: "failed public writer fixture",
-		Silence: 2 * time.Second, SectionCap: 100 * time.Millisecond,
-		EvidenceTimeout: time.Second, EvidenceMax: 1024 * 1024, Poll: 25 * time.Millisecond,
-		TermGrace: 100 * time.Millisecond, KillGrace: 100 * time.Millisecond,
-		WatchdogExecutable: engine, Command: []string{"sh", "-c", command, "sh", progress},
-		ExpectedSections: []string{"over-cap"}, HostResourceFiles: lease.Files(),
-		Output: io.Discard, ErrorOutput: refusingCustodyWriter{}})
+	finished := make(chan int, 1)
+	ended := make(chan struct{})
+	go func() {
+		finished <- LaunchSuite(LaunchOptions{Suite: "writer-failure", Root: root, ConfPath: conf,
+			ProgressPath: progress, LogPath: logPath, Banner: "failed public writer fixture",
+			Silence: 2 * time.Second, SectionCap: 100 * time.Millisecond,
+			EvidenceTimeout: time.Second, EvidenceMax: 1024 * 1024, Poll: 25 * time.Millisecond,
+			TermGrace: 100 * time.Millisecond, KillGrace: 100 * time.Millisecond,
+			WatchdogExecutable: engine, Command: []string{"sh", "-c", command, "sh", progress, release},
+			ExpectedSections: []string{"over-cap"}, HostResourceFiles: lease.Files(),
+			Output: io.Discard, ErrorOutput: refusingCustodyWriter{}})
+		close(ended)
+	}()
+	t.Cleanup(func() {
+		_ = os.WriteFile(release, nil, 0o600)
+		<-ended
+	})
+	note := "section over-cap passed its 100ms cap"
+	testenv.Await(t, "the durable cap note before releasing the suite", func() bool {
+		data, _ := os.ReadFile(logPath)
+		if bytes.Contains(data, []byte(note)) {
+			return true
+		}
+		select {
+		case status := <-finished:
+			t.Fatalf("suite ended before its durable cap note: status=%d log=%s", status, data)
+		default:
+		}
+		return false
+	})
+	if err := os.WriteFile(release, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	status := <-finished
 	logData, err := os.ReadFile(logPath)
 	if status == 0 || err != nil || !strings.Contains(string(logData), "section over-cap passed its 100ms cap") ||
 		!strings.Contains(string(logData), "public output refused") {

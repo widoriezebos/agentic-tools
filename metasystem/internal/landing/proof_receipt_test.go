@@ -412,7 +412,7 @@ func newCanonicalReceiptFixture(t *testing.T) *canonicalReceiptFixture {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
 	request := candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root,
 		ExecutionRoot: executionRoot, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
 		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}, tree)
@@ -544,7 +544,7 @@ func newFileOnlyCanonicalReceiptFixtureWithBeforeComplete(t *testing.T, beforeCo
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
 	request := candidateProofAdmission(proofrun.AdmissionRequest{ControlRoot: f.root,
 		ExecutionRoot: frozen.Root, GoalID: "goal-a", GoalRevision: 2, AccountingRevision: 2,
 		ReservedMinutes: 5, Identity: identity, Launcher: launcher, Now: now}, f.tree)

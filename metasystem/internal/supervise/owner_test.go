@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 // fakeWorld implements Checkout, Components, Ledger, and Intents with
@@ -188,6 +189,7 @@ func TestWatcherRestartRequestReplacesOnlyTheEnrolledGenerationWithinOneCycle(t 
 }
 
 func TestKilledWatcherIsRestoredWithinOneOwnerPass(t *testing.T) {
+	t.Parallel()
 	world := newWorld()
 	components := &ProcComponents{
 		SupervisionDir: t.TempDir(), Prober: identity.KernelProber{}, StopCeiling: time.Second,
@@ -216,6 +218,10 @@ func TestKilledWatcherIsRestoredWithinOneOwnerPass(t *testing.T) {
 	if err := syscall.Kill(int(watcher.Pid), syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
+	testenv.Await(t, "the killed watcher's recorded identity to be dead", func() bool {
+		components.reap(watcher.Pid)
+		return identity.AliveRef(identity.KernelProber{}, watcher) == identity.Dead
+	})
 	world.watcherRestart = true
 	if exit := owner.Cycle(time.Now()); exit != nil {
 		t.Fatalf("watcher repair exited the owner: %+v", exit)
@@ -232,6 +238,41 @@ func TestKilledWatcherIsRestoredWithinOneOwnerPass(t *testing.T) {
 	if replacement.Generation != 7 || replacement.Identity.Pid == watcher.Pid ||
 		identity.AliveRef(identity.KernelProber{}, replacement.Identity) != identity.Alive {
 		t.Fatalf("one owner pass did not restore the killed watcher in generation 7: before=%+v after=%+v", watcher, replacement)
+	}
+}
+
+func TestWatcherRestartWaitsForProvenDeathBeforeReplacing(t *testing.T) {
+	t.Parallel()
+	world := newWorld()
+	owner := newOwner(world)
+	establish(t, owner, world)
+	heldBefore := append([]Held(nil), owner.held...)
+	launches, publications := len(world.launched), world.published
+	world.watcherRestart = true
+	world.stopProven = false
+	if exit := owner.Cycle(time.Unix(20, 0)); exit != nil {
+		t.Fatalf("unproven watcher stop exited the owner: %+v", exit)
+	}
+	if len(world.launched) != launches || world.published != publications || world.watcherRepaired || !world.watcherRestart {
+		t.Fatalf("unproven watcher death changed the running set or cleared its request: %+v", world)
+	}
+	if len(world.stopped) != 1 || world.stopped[0].Component != Watcher {
+		t.Fatalf("watcher repair must try to stop only its watcher: %+v", world.stopped)
+	}
+	if len(owner.held) != len(heldBefore) {
+		t.Fatalf("unproven watcher death changed held identities: before=%+v after=%+v", heldBefore, owner.held)
+	}
+	for index, held := range heldBefore {
+		if owner.held[index] != held {
+			t.Fatalf("unproven watcher death changed held identity: before=%+v after=%+v", held, owner.held[index])
+		}
+	}
+	world.stopProven = true
+	if exit := owner.Cycle(time.Unix(21, 0)); exit != nil {
+		t.Fatalf("proven watcher stop exited the owner: %+v", exit)
+	}
+	if len(world.launched) != launches+1 || world.published != publications+1 || !world.watcherRepaired || world.watcherRestart {
+		t.Fatalf("proven watcher death did not complete the pending repair: %+v", world)
 	}
 }
 
