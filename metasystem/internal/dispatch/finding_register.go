@@ -245,6 +245,14 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 				return nil
 			}
 			if retained, _ := root["read"].(map[string]any); asString(roundRecord["examinationRetryOf"]) != "" && asString(retained["id"]) == asString(roundRecord["examinationRetryOf"]) {
+				read, err := CollectExamination(repoRoot, roundJob)
+				if err != nil {
+					return err
+				}
+				data, _ := read.Canonical()
+				if _, err := atomicWriteText(filepath.Join(state.agents, rootJob, "rounds", fmt.Sprint(round), "read.json"), data); err != nil {
+					return err
+				}
 				root[findingRegisterRoundField] = round
 				outcome = "unchanged"
 				return writeRecord(recordPath, root)
@@ -481,6 +489,9 @@ func critiqueRoundAccountingWithReads(repoRoot string, state critiqueState, root
 		revision, _ := numInt(root["goalRevision"])
 		resolution, err := goalReviewRoundLimitWithReads(repoRoot, asString(root["goalId"]), uint64(max(revision, 0)), asString(root["role"]), reads)
 		if err != nil || resolution.roleLimit == 0 {
+			if err == nil {
+				err = fmt.Errorf("goal budget is zero; build without critique or ask a person to revise and approve it")
+			}
 			return account, fmt.Errorf("cannot resolve a positive goal review-round limit: %v", err)
 		}
 		account.limit = int64(resolution.roleLimit)

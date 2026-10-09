@@ -97,7 +97,7 @@ func TestDesignReviewRetainsAuthorDecisionsThroughCleanRead(t *testing.T) {
 	raw["findings"], raw["rigor"], raw["verdictMaterialCount"] = []any{}, []any{}, 0
 	b.writeJSON(filepath.Join(dir, "return.json"), raw)
 	b.writeFile(filepath.Join(dir, "return.md"), "VERDICT: REVISE material=0\n")
-	result := b.review()
+	result := b.collectHeld()
 	for _, entry := range b.job("rev1")["findingRegister"].([]any) {
 		f := entry.(map[string]any)
 		want := map[string]string{"A": "accepted", "B": "refuted"}[f["findingId"].(string)]
@@ -146,7 +146,7 @@ func TestDesignJobClosePublishesCanonicalExit(t *testing.T) {
 					rows["M1"] = "accepted | specified the requirement | ## Publication"
 				}
 			}
-			answer := b.decide(b.review(), rows)
+			answer := b.decide(b.collectHeld(), rows)
 			if route == "child" {
 				child := b.job("rev1")
 				child["jobId"], child["parentJob"], child["round"] = "rev1-r2", "rev1", 2
@@ -222,7 +222,7 @@ func TestDesignReviewHeldAcceptanceAdmitsPerson(t *testing.T) {
 			t.Parallel()
 			b, _, _ := designEvidenceBed(t, evidenceInventory, acceptanceUnits)
 			b.lineage = b.goalFile(bedGoal).Claimed.Lineage
-			answer := b.decide(b.review(), nil)
+			answer := b.decide(b.collectHeld(), nil)
 			conf := filepath.Join(b.install, "metasystem.conf")
 			b.writeFile(conf, string(mustRead(t, conf))+"\nreview.stop=person\n")
 			owners := b.intentBed.owners()
@@ -236,7 +236,7 @@ func TestDesignReviewHeldAcceptanceAdmitsPerson(t *testing.T) {
 				if code != 0 || result.Outcome != intentConfirmed || b.closes != 1 || len(b.goalFile(bedGoal).DesignExits) != 1 {
 					t.Fatalf("person's acceptance held: %+v", result)
 				}
-			} else if code == 0 || !strings.Contains(result.Summary, "release that hold to resume") || b.closes != 0 || len(b.goalFile(bedGoal).DesignExits) != 0 {
+			} else if result.Outcome != intentInProgress || result.Next == nil || !strings.Contains(result.Next.Reason, "release that hold to resume") || b.closes != 0 || len(b.goalFile(bedGoal).DesignExits) != 0 {
 				t.Fatalf("agent crossed acceptance hold: %+v", result)
 			}
 		})

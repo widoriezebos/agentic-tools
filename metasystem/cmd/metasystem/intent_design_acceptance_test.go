@@ -104,7 +104,7 @@ func TestDesignReviewAcceptanceKeepsUnresolvedHistoryPending(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(b.root(), ".git"), 0700); err != nil {
 				t.Fatal(err)
 			}
-			template := b.decide(b.review(), nil)
+			template := b.decide(b.collectHeld(), nil)
 			expected := mustRead(t, b.design)
 			owners := b.intentBed.owners()
 			owners.delivery = b.owners
@@ -119,7 +119,7 @@ func TestDesignReviewAcceptanceKeepsUnresolvedHistoryPending(t *testing.T) {
 				b.lineage = "another-session"
 			}
 			code, result := b.runJSON(owners, "design", "review", b.design, "--tool-calls", "30", "--dispositions", template)
-			if code == 0 || len(b.goalFile(bedGoal).DesignExits) != 0 || b.job("rev1")["chainClosed"] == true || !bytes.Equal(expected, mustRead(t, b.design)) {
+			if cause != "held policy" && code == 0 || len(b.goalFile(bedGoal).DesignExits) != 0 || b.job("rev1")["chainClosed"] == true || !bytes.Equal(expected, mustRead(t, b.design)) {
 				t.Fatalf("%s granted acceptance: %d %+v", cause, code, result)
 			}
 		})
@@ -136,7 +136,7 @@ func TestDesignReviewPublishesAcceptance(t *testing.T) {
 	}
 	b.lineage = b.goalFile(bedGoal).Claimed.Lineage
 	expected := mustRead(t, b.design)
-	template := b.decide(b.review(), nil)
+	template := b.decide(b.collectHeld(), nil)
 	result := b.review("--dispositions", template)
 	if result.Outcome != intentConfirmed || b.closes != 1 {
 		t.Fatalf("acceptance: %+v", result)
@@ -184,7 +184,7 @@ func TestDesignReviewAcceptanceRechecksCurrentGoal(t *testing.T) {
 				t.Fatal(err)
 			}
 			b.lineage = b.goalFile(bedGoal).Claimed.Lineage
-			template := b.decide(b.review(), nil)
+			template := b.decide(b.collectHeld(), nil)
 			expected := mustRead(t, b.design)
 			held := true
 			b.work = intentWorkOwners{units: func(stateroot.Layout) *launch.UnitRunner {
@@ -196,7 +196,7 @@ func TestDesignReviewAcceptanceRechecksCurrentGoal(t *testing.T) {
 				}}
 			}}
 			first := b.review("--dispositions", template)
-			if first.Outcome != intentFailed || !strings.Contains(first.Summary, "prepared") || len(b.goalFile(bedGoal).DesignExits) != 0 || !bytes.Equal(expected, mustRead(t, b.design)) {
+			if first.Outcome != intentInProgress || !strings.Contains(first.Summary, "prepared") || len(b.goalFile(bedGoal).DesignExits) != 0 || !bytes.Equal(expected, mustRead(t, b.design)) {
 				t.Fatalf("held acceptance: %+v", first)
 			}
 			file := b.goalFile(bedGoal)
@@ -234,7 +234,7 @@ func TestDesignReviewAcceptanceReleasesCompletedEntry(t *testing.T) {
 		t.Fatal(err)
 	}
 	b.lineage = b.goalFile(bedGoal).Claimed.Lineage
-	template := b.decide(b.review(), nil)
+	template := b.decide(b.collectHeld(), nil)
 	if result := b.review("--dispositions", template); result.Outcome != intentConfirmed {
 		t.Fatalf("acceptance: %+v", result)
 	}
@@ -289,7 +289,7 @@ func TestDesignReviewAcceptanceReplaysPersistenceFailures(t *testing.T) {
 			}
 			b.lineage = b.goalFile(bedGoal).Claimed.Lineage
 			expected := mustRead(t, b.design)
-			template := b.decide(b.review(), nil)
+			template := b.decide(b.collectHeld(), nil)
 			owners := b.intentBed.owners()
 			endpoint := owners.dependencies.endpoint
 			observer := &designAcceptanceRepository{Repository: b.repo}

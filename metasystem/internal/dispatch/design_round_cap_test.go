@@ -216,8 +216,8 @@ func TestDesignCriticAdmissionFreezesAllowance(t *testing.T) {
 			}
 			err := buildRecordWithReads(p, recordFacts(t, p.Workspace, 1, designPath), reads)
 			if c.want == 0 {
-				if err == nil {
-					t.Fatal("approved zero launched an examination")
+				if err == nil || strings.Contains(err.Error(), "<nil>") || !strings.Contains(err.Error(), "goal budget is zero") || !strings.Contains(err.Error(), "revise and approve") {
+					t.Fatalf("approved zero has no plain reason and remedy: %v", err)
 				}
 				if _, err := os.Stat(p.Output); !os.IsNotExist(err) {
 					t.Fatalf("zero wrote a record: %v", err)

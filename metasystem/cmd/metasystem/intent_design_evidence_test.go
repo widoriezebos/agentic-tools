@@ -22,8 +22,17 @@ const evidenceInventory = "\n" + readsubject.DesignInventoryHeading + "\n\n" +
 
 func designEvidenceBed(t *testing.T, inventory string, extra ...string) (*designLoopBed, string, map[string]any) {
 	t.Helper()
+	return designEvidenceBedConfigured(t, inventory, nil, extra...)
+}
+
+func designEvidenceBedConfigured(t *testing.T, inventory string, configure func(*designLoopBed), extra ...string) (*designLoopBed, string, map[string]any) {
+	t.Helper()
 	b := newDesignLoopBed(t)
+	b.lineage = b.goalFile(bedGoal).Claimed.Lineage
 	b.writeFile(b.design, "# Reader\n\n- Kind: design\n- Id: 01DESIGNREADER\n- Status: draft\n- Goals: standing-validation\n\n## Collection:1\nFirst version.\n\n## Publication\nPublish the result.\n"+inventory+strings.Join(extra, ""))
+	if configure != nil {
+		configure(b)
+	}
 	dispatch := b.handler
 	var subject readsubject.ReadSubject
 	b.handler = func(p intentProcess) intentProcessResult {
@@ -50,6 +59,18 @@ func designEvidenceBed(t *testing.T, inventory string, extra ...string) (*design
 			record["engineBuild"], record["effectiveModel"] = "fixture-engine", "fixture-critic"
 			// Decision 2: publication fixtures freeze a final examination of one.
 			record["reviewRoundLimit"], record["criticRoundsConsumed"] = 1, 0
+			if flagValue(p.argv, "--goal") == "" {
+				brief := string(mustRead(t, flagValue(p.argv, "--brief")))
+				_, budget, found := strings.Cut(brief, "Round budget: ")
+				var rounds int64
+				if !found {
+					t.Fatal("public goal-free dispatch did not supply its round budget")
+				}
+				if _, err := fmt.Sscanf(budget, "%d focused rounds", &rounds); err != nil {
+					t.Fatal(err)
+				}
+				record["goalId"], record["reviewRoundLimit"], record["designExaminationLimit"] = flagValue(p.argv, "--goal"), rounds, rounds
+			}
 			record["declaredOutputs"], record["declaredOutputsDigest"] = []string{subject.DesignPath}, subject.DeclaredOutputsDigest
 			b.writeJob(record)
 		}
@@ -325,8 +346,8 @@ func TestDesignReviewValidatesWholePageEvidence(t *testing.T) {
 			case "prose-count":
 				b.writeFile(filepath.Join(dir, "return.md"), "VERDICT: REVISE material=1\n")
 			case "damaged-after-fold":
-				if result := b.review(); result.Outcome != intentConfirmed {
-					t.Fatalf("initial valid read: %+v", result)
+				if result := b.collectHeld(); result.Outcome != intentInProgress {
+					t.Fatalf("initial held valid read: %+v", result)
 				}
 				raw["wholePageDigest"] = "changed"
 			case "wrong-job":
@@ -354,7 +375,7 @@ func TestDesignReviewValidatesWholePageEvidence(t *testing.T) {
 			result := b.review()
 			known := scenario == "clean" || scenario == "notes" || scenario == "repair-cell" || scenario == "same-section" || scenario == "whole-page" || scenario == "missing-inventory" || scenario == "malformed-inventory" || scenario == "unanswered" || scenario == "equivalent-finding"
 			if !known {
-				if result.Outcome != intentFailed || !strings.Contains(result.Summary, "unknown") {
+				if result.Outcome != intentFailed || scenario != "damaged-after-fold" && !strings.Contains(result.Summary, "unknown") || scenario == "damaged-after-fold" && !strings.Contains(result.Summary, "does not bind the frozen full page") {
 					t.Fatalf("unknown evidence became readable: %+v", result)
 				}
 				answer := filepath.Join(b.root(), "answer.md")
@@ -424,7 +445,7 @@ func TestDesignReviewValidatesWholePageEvidence(t *testing.T) {
 					t.Fatal("dispositions subtracted material from the immutable examination")
 				}
 			}
-			if !strings.Contains(result.Summary, fmt.Sprintf("%d material", want)) {
+			if want == 0 && !strings.Contains(string(mustRead(t, b.design)), "on 0 material findings") || want != 0 && !strings.Contains(result.Summary, fmt.Sprintf("%d material", want)) {
 				t.Fatalf("public count: %+v", result)
 			}
 		})

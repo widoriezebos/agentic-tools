@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"strings"
@@ -44,6 +45,9 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		closedRoot = entry.Exit.Root
 		isClosed, _ = root["chainClosed"].(bool)
 	}
+	if isClosed && inv.input.has("retry") {
+		return nil
+	}
 	if isClosed {
 		projection, _, problem := inv.projection()
 		if problem != nil {
@@ -59,6 +63,9 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 				exit := file.DesignExits[i]
 				if exit.Root != closedRoot || exit.State != "committed" || exit.Page != string(page) || exit.Destination == "" && file.CheckDesignAcceptance(exit.Operation, plan.recordID, exit.BodySHA256) != nil {
 					continue
+				}
+				if err := inv.recordDesignEffect(plan, dispatchcore.DesignCritiqueChain{Root: exit.Root, NewestRound: exit.Round}, "acceptance", exit.Operation); err != nil {
+					return fail(fmt.Errorf("acceptance committed; its held ask needs repair: %w", err))
 				}
 				if exit.Destination != "" {
 					guard.Release()
@@ -85,10 +92,23 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 	if entry.Exit == nil && !prepare {
 		return nil
 	}
-	if !inv.input.has("dispositions") {
-		return fail(fmt.Errorf("resume with --dispositions FILE for critique %s", chain.Root))
+	var decisions []byte
+	if inv.input.has("dispositions") {
+		decisions, err = os.ReadFile(inv.flagPath("dispositions"))
+	} else if entry.Exit != nil {
+		decisions = []byte(entry.Exit.Dispositions)
+	} else {
+		returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
+		digest, _, readErr := reviewReturnDigest(returnPath)
+		if readErr != nil {
+			return fail(readErr)
+		}
+		findings, _, readErr := readIntentFindings(returnPath)
+		if readErr != nil {
+			return fail(readErr)
+		}
+		decisions = []byte(strings.ReplaceAll(decisionsDocument(reviewBinding{Goal: plan.goalID, Work: "design:" + plan.recordID, Attempt: int(chain.NewestRound), Subject: plan.subject, Examination: chain.Root, Round: chain.NewestRound, Return: digest}, findings), "| DECIDE | | |", "| noted | non-material finding retained | |"))
 	}
-	decisions, err := os.ReadFile(inv.flagPath("dispositions"))
 	if err != nil {
 		return fail(err)
 	}
@@ -136,8 +156,11 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 			return problem
 		}
 		file, _ := goalRecord(projection, plan.goalID)
-		if file == nil {
+		if file == nil && plan.goalID != "" {
 			return fail(fmt.Errorf("goal %s is absent", plan.goalID))
+		}
+		if file == nil {
+			file = &goal.GoalFile{}
 		}
 		operation, err := goal.NewOperationULID()
 		if err != nil {
@@ -189,8 +212,36 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 			return fail(err)
 		}
 	}
+	if plan.goalID == "" && entry.Exit.State != "committed" {
+		if _, err := inv.delivery().examinationRead(inv.layout.InstallationRoot.Path(), chain.NewestJob); err != nil {
+			return fail(err)
+		}
+		if held := inv.designEffectPolicy(plan, chain, "acceptance"); held != nil {
+			return held
+		}
+		page, err := os.ReadFile(plan.design)
+		if err != nil {
+			return fail(err)
+		}
+		if string(page) != entry.Exit.Expected {
+			return fail(project.ErrDesignChanged)
+		}
+		entry.Exit.State = "committed"
+		if err := inv.writeDesignReviewEntry(plan.recordID, entry); err != nil {
+			return fail(err)
+		}
+	}
 	exit := *entry.Exit
 	guard.Release()
+	closer := *inv
+	if !inv.input.has("dispositions") {
+		path := inv.designReviewEntryPath(plan.recordID) + ".exit-decisions.md"
+		if _, err := atomicfile.WriteText(path, exit.Dispositions, inv.layout.InstallationRoot.Path()); err != nil {
+			return fail(err)
+		}
+		closer.input.values = maps.Clone(inv.input.values)
+		closer.input.values["dispositions"] = []string{path}
+	}
 	if exit.Destination != "" {
 		attempt, err := inv.designManager().RecordSuppliedDesign(launch.DesignRequest{Goal: plan.goalID, RecordID: plan.recordID, Destination: plan.design}, exit.Operation, []byte(exit.AuthorPrior), []byte(exit.Expected))
 		if err != nil {
@@ -201,14 +252,30 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 	if exit.Root != chain.Root || exit.DispositionsSHA256 != digestText(decisions) {
 		return fail(fmt.Errorf("the prepared acceptance belongs to another critique or decisions file"))
 	}
-	req, err := inv.requestBuilder(nil, false)("defer-findings", inv.stateRoot, "", inv.input.text("lineage"))
-	if err != nil {
-		return fail(err)
-	}
-	if _, err := goal.Recover(req.Endpoint); err != nil {
-		return fail(err)
+	var req goal.VerbRequest
+	if plan.goalID != "" {
+		req, err = inv.requestBuilder(nil, false)("defer-findings", inv.stateRoot, "", inv.input.text("lineage"))
+		if err != nil {
+			return fail(err)
+		}
+		if _, err := goal.Recover(req.Endpoint); err != nil {
+			return fail(err)
+		}
 	}
 	committed := func() (goal.DesignExit, error) {
+		if plan.goalID == "" {
+			actual, err := inv.readDesignReviewEntry(plan.recordID)
+			if err != nil {
+				return goal.DesignExit{}, err
+			}
+			if actual.Exit == nil || actual.Exit.Operation != exit.Operation || actual.Exit.Page != exit.Page {
+				return goal.DesignExit{}, fmt.Errorf("the retained goal-free exit disagrees with this acceptance")
+			}
+			if actual.Exit.State != "committed" {
+				return goal.DesignExit{}, os.ErrNotExist
+			}
+			return *actual.Exit, nil
+		}
 		projection, err := goal.Project(req.Endpoint, false, req.Now)
 		if err != nil {
 			return goal.DesignExit{}, err
@@ -230,20 +297,32 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		return goal.DesignExit{}, os.ErrNotExist
 	}
 	if _, err = committed(); os.IsNotExist(err) {
-		result, publishErr := goal.PublishDesignExit(req, plan.goalID, exit, func() error {
-			policy, err := inv.unitRunner().ReviewPolicy()
-			if err != nil {
+		if held := inv.designEffectPolicy(plan, chain, "acceptance"); held != nil {
+			return held
+		}
+		admit := func() error {
+			if held := inv.designEffectPolicy(plan, chain, "acceptance"); held != nil {
+				return fmt.Errorf("%s; %s", held.Summary, held.nextReason)
+			}
+			if _, err := inv.delivery().examinationRead(inv.layout.InstallationRoot.Path(), chain.NewestJob); err != nil {
 				return err
 			}
-			if policy == "person" && inv.directPersonProof("design acceptance") != nil {
-				return fmt.Errorf("acceptance is prepared for the review policy's holder; release that hold to resume")
+			if len(exit.Items) == 0 && exit.Destination == "" {
+				root, err := inv.jobRecord(chain.Root)
+				if err != nil {
+					return err
+				}
+				if clean, err := readsubject.CleanDesignRegister(root); err != nil || !clean {
+					return fmt.Errorf("the critique has unresolved findings")
+				}
 			}
 			page, err := os.ReadFile(plan.design)
 			if err == nil && string(page) != exit.Expected {
 				err = project.ErrDesignChanged
 			}
 			return err
-		})
+		}
+		result, publishErr := goal.PublishDesignExit(req, plan.goalID, exit, admit)
 		if publishErr != nil {
 			return fail(publishErr)
 		}
@@ -273,7 +352,7 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, decided); err != nil {
 		return fail(err)
 	}
-	closed := inv.closeChainRecords(chain.Root)
+	closed := closer.closeChainRecords(chain.Root)
 	if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
 		return &closed
 	}
@@ -290,7 +369,7 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 	if err != nil {
 		return fail(err)
 	}
-	if entry.Exit != nil && entry.Exit.Operation == exit.Operation {
+	if plan.goalID != "" && entry.Exit != nil && entry.Exit.Operation == exit.Operation {
 		entry.Exit, entry.Fold = nil, nil
 		if err := inv.writeDesignReviewEntry(plan.recordID, entry); err != nil {
 			return fail(err)
@@ -299,6 +378,9 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 	closed.Summary = "design " + plan.recordID + " is accepted; its committed page is projected and critique " + chain.Root + " is closed"
 	if exit.Destination != "" {
 		closed.Summary = "design " + plan.recordID + " is transferred to " + exit.Destination + "; its follow-up is open"
+	}
+	if err := inv.recordDesignEffect(plan, chain, "acceptance", exit.Operation); err != nil {
+		closed.Details = append(closed.Details, "acceptance committed; its held ask needs repair: "+err.Error())
 	}
 	closed.Data = map[string]any{"exit": exit.Operation, "bodySha256": exit.BodySHA256, "closedAt": exit.Round}
 	return &closed

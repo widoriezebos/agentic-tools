@@ -18,7 +18,10 @@ func TestDesignReviewKeepsCanonicalHistory(t *testing.T) {
 	for _, state := range []string{"running", "closed", "lost-entry", "broken-entry", "broken-index", "lost-subject", "unrelated-legacy", "broken-subject", "broken-subject-lost-entry", "broken-subject-uncollected"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
-			b, dir, _ := designEvidenceBed(t, evidenceInventory)
+			b, dir, raw := designEvidenceBed(t, evidenceInventory)
+			raw["findings"], raw["rigor"], raw["verdictMaterialCount"] = []any{evidenceFinding("F1", "## Publication", "")}, []any{evidenceRigor("F1")}, 1
+			b.writeJSON(filepath.Join(dir, "return.json"), raw)
+			b.writeFile(filepath.Join(dir, "return.md"), "VERDICT: REVISE material=1\n")
 			if result := b.review(); result.Outcome != intentConfirmed {
 				t.Fatalf("collection: %+v", result)
 			}
@@ -106,15 +109,19 @@ func TestDesignReviewRetriesUnknownEvidenceOnce(t *testing.T) {
 				return
 			}
 			if scenario == "reservation-recover" {
-				b.handler = func(intentProcess) intentProcessResult {
-					return intentProcessResult{stdout: []byte(`{"outcome":"RECONCILING"}`)}
+				dispatch := b.handler
+				b.handler = func(p intentProcess) intentProcessResult {
+					if flagValue(p.argv, "--follow-up") != "" {
+						return intentProcessResult{stdout: []byte(`{"outcome":"RECONCILING"}`)}
+					}
+					return dispatch(p)
 				}
 				if pending := b.review("--retry", "1"); pending.Outcome != intentInProgress || b.job("rev1")["unknownExaminationRetryFrom"] != "rev1" {
 					t.Fatalf("retry intent was not retained before dispatch: %+v", pending)
 				}
 				b.writeFile(filepath.Join(dir, "return.md"), string(prose))
 				recovered := b.review("--retry", "1")
-				if recovered.Outcome != intentConfirmed || recovered.Next == nil || strings.Contains(strings.Join(recovered.Next.Argv, " "), "--retry") || b.job("rev1")["findingRegisterStop"] != nil || b.job("rev1")["criticRoundsConsumed"] != float64(1) {
+				if recovered.Outcome != intentConfirmed || recovered.Next != nil || b.job("rev1")["chainClosed"] != true || b.job("rev1")["findingRegisterStop"] != nil || b.job("rev1")["criticRoundsConsumed"] != float64(1) {
 					t.Fatalf("reserved source recovery did not restore its read and executable decisions remedy: %+v", recovered)
 				}
 				if _, err := os.Stat(filepath.Join(dir, "read.json")); err != nil {

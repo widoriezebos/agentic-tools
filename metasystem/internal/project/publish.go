@@ -68,7 +68,7 @@ func PublishDesign(publication DesignPublication) (alreadyPublished bool, err er
 		return false, fmt.Errorf("%w: the proposal is a %s record, not a design", ErrDesignInvalid, record.Kind)
 	case record.ID != publication.RecordID:
 		return false, fmt.Errorf("%w: the proposal's id is %s, not %s", ErrDesignInvalid, record.ID, publication.RecordID)
-	case !slices.Contains(record.Goals, publication.Goal):
+	case publication.Goal == "" && len(record.Goals) != 0 || publication.Goal != "" && !slices.Contains(record.Goals, publication.Goal):
 		return false, fmt.Errorf("%w: the proposal does not name goal %s", ErrDesignInvalid, publication.Goal)
 	case record.Status != "draft" && (record.Status != "accepted" || publication.Commitment == nil):
 		return false, fmt.Errorf("%w: the proposal's status is %s, not draft", ErrDesignInvalid, record.Status)

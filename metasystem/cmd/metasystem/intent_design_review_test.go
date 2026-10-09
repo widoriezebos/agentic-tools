@@ -44,6 +44,9 @@ func newDesignReviewBed(t *testing.T) *designReviewBed {
 // newDesignReviewBedAmended is newDesignReviewBed over an amended goal file.
 func newDesignReviewBedAmended(t *testing.T, amend func(*goal.GoalFile)) *designReviewBed {
 	b := &designReviewBed{deliveryBed: &deliveryBed{intentBed: newIntentBed(t, false, amend)}}
+	if err := os.MkdirAll(filepath.Join(b.root(), ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	layout, err := b.intentBed.owners().resolver.ResolveLayout(b.root())
 	if err != nil {
 		t.Fatal(err)

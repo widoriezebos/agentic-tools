@@ -115,3 +115,32 @@ func designSectionBytes(read readsubject.Read) map[string]string {
 	}
 	return sections
 }
+
+// LimitDesignCorrections retains a lower correction bound without changing
+// the frozen examination allowance or reopening a stopped decision.
+func LimitDesignCorrections(repoRoot, rootID string, corrections int) error {
+	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
+		return "", withRecordLock(repoRoot, rootID, func(path string) error {
+			root, err := readObject(path)
+			if err != nil {
+				return err
+			}
+			data, err := json.Marshal(root["designDecision"])
+			if err != nil {
+				return err
+			}
+			var decision loopstop.Stop
+			if err := json.Unmarshal(data, &decision); err != nil {
+				return err
+			}
+			if decision.Decision != "continue" || decision.Attempt <= corrections {
+				return nil
+			}
+			decision.Decision, decision.Class, decision.Handoff = "stop", "review.stop correction allowance spent", "fold or split"
+			decision.Required = []string{fmt.Sprintf("metasystem design review %q --dispositions FILE", decision.Scope)}
+			root["designDecision"], root["designStop"], root["findingRegisterStop"] = decision, decision, decision
+			return writeRecord(path, root)
+		})
+	})
+	return err
+}

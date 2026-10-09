@@ -52,7 +52,7 @@ type reviewBinding struct {
 	Return      string
 }
 
-var reviewBindingLine = regexp.MustCompile(`(?m)^Review binding: goal=(\S+) work=(\S+) attempt=(\d+) subject=([0-9a-f]+) examination=(\S+) round=(\d+) return=([0-9a-f]{64})\s*$`)
+var reviewBindingLine = regexp.MustCompile(`(?m)^Review binding: goal=(\S*) work=(\S+) attempt=(\d+) subject=([0-9a-f]+) examination=(\S+) round=(\d+) return=([0-9a-f]{64})\s*$`)
 
 // line is the binding as the decisions file carries it: a machine line
 // reviewBindingLine parses back, one key=value field per bound fact.

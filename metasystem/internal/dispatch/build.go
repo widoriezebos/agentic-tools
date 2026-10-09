@@ -622,6 +622,9 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 		}
 		resolution, limitErr := goalReviewRoundLimitWithReads(p.Root, p.GoalID, p.GoalRevision, p.Role, reads)
 		if limitErr != nil || resolution.roleLimit == 0 {
+			if limitErr == nil {
+				limitErr = fmt.Errorf("goal budget is zero; build without critique or ask a person to revise and approve it")
+			}
 			return fmt.Errorf("cannot resolve a positive goal review-round limit: %v", limitErr)
 		}
 		record["findingRegister"] = []any{}

@@ -179,6 +179,11 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 			}
 			return inv.unknownDesignExamination(plan, chain, err)
 		}
+		if required {
+			if held := inv.designEffectPolicy(plan, chain, ""); held != nil {
+				return held
+			}
+		}
 		if required && inv.input.has("retry") {
 			return inv.collectDesignExamination(plan, chain, entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)])
 		}
@@ -327,15 +332,6 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, inv.registerDecisions(chain.Root, bound.Round+1)); err != nil {
 			return inv.unknownDesignExamination(plan, chain, err)
 		}
-		policy, err := inv.unitRunner().ReviewPolicy()
-		if err != nil || policy == "person" && inv.directPersonProof("design continuation") != nil {
-			result := &intentResult{Targets: plan.targets, Outcome: intentInProgress, Summary: "the review policy holds the prepared design continuation", next: inv.sameCommand(), nextReason: "release that hold to resume"}
-			if err != nil {
-				result.Details = []string{err.Error()}
-				result.nextReason = "repair the review.stop setting, then run the same command to resume"
-			}
-			return result
-		}
 	}
 	decisions := digestText(content)
 	operation := fmt.Sprintf("design-%s-after-%d-%s", strings.ToLower(plan.recordID), bound.Round, decisions[:12])
@@ -443,6 +439,11 @@ func (inv *intentInvocation) designFollowUp(plan designReviewPlan, chain dispatc
 		}
 	}
 	if request.Child == "" {
+		if request.Kind == "continue" {
+			if held := inv.designEffectPolicy(plan, chain, "continuation"); held != nil {
+				return held
+			}
+		}
 		outcome, problem := inv.delegate(plan.targets, []string{"--follow-up", request.Root, "--brief", request.Brief, "--op", request.OperationID})
 		if problem != nil {
 			return problem
@@ -466,6 +467,9 @@ func (inv *intentInvocation) designFollowUp(plan designReviewPlan, chain dispatc
 	// A continuation says which round it asked for, and when that round is
 	// the chain's last: its answer is the close.
 	if record, err := inv.jobRecord(request.Child); err == nil && request.Kind == "continue" {
+		if err := inv.recordDesignEffect(plan, dispatchcore.DesignCritiqueChain{Root: request.Root, NewestRound: request.AfterRound}, "continuation", request.OperationID); err != nil {
+			result.Details = append(result.Details, "the examination was requested; its held ask needs repair: "+err.Error())
+		}
 		round := recordRound(record)
 		said := fmt.Sprintf("round %d of critique %s requested", round, request.Root)
 		if round >= inv.designRoundLimit(request.Root) {
@@ -632,6 +636,19 @@ func (inv *intentInvocation) collectDesignExamination(plan designReviewPlan, cha
 	data["template"], data["examination"] = template, chain.NewestRound
 	result.Data = data
 	result.next, result.nextReason = append(inv.typedArgvLess("retry", "after", "dispositions"), "--dispositions", template), "after deciding every finding in "+template
+	if root, err := inv.jobRecord(chain.Root); err == nil {
+		if decision, ok := root["designDecision"].(map[string]any); ok && recordText(decision, "decision") == "close" && !inv.input.has("dispositions") {
+			if published := inv.finishDesignAcceptance(plan, chain, true); published != nil {
+				if projection, ok := published.Data.(map[string]any); ok {
+					for key, value := range projection {
+						data[key] = value
+					}
+				}
+				published.Data = data
+				return published
+			}
+		}
+	}
 	return &result
 }
 

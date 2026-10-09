@@ -20,6 +20,8 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 		changed bool
 		stop    bool
 	}{
+		{"numeric-one", []int{3, 2}, false, true},
+		{"configured-zero", []int{5, 3, 1, 0}, false, false},
 		{"converge", []int{5, 3, 1, 0}, false, false},
 		{"equal", []int{3, 3}, false, true},
 		{"rising", []int{2, 3}, false, true},
@@ -37,13 +39,29 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 	} {
 		t.Run(scenario.name, func(t *testing.T) {
 			t.Parallel()
-			b, _, raw := designEvidenceBed(t, evidenceInventory, acceptanceUnits)
+			b, _, raw := designEvidenceBedConfigured(t, evidenceInventory, func(b *designLoopBed) {
+				if scenario.name == "configured-zero" {
+					conf := filepath.Join(b.install, "metasystem.conf")
+					b.writeFile(conf, string(mustRead(t, conf))+"\nmetasystem.budget.review-round-max=0\n")
+					b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "- Goals: standing-validation\n", "", 1))
+				}
+			}, acceptanceUnits)
 			b.lineage = b.goalFile(bedGoal).Claimed.Lineage
 			if err := os.MkdirAll(filepath.Join(b.root(), ".git"), 0700); err != nil {
 				t.Fatal(err)
 			}
+			if scenario.name == "numeric-one" {
+				conf := filepath.Join(b.install, "metasystem.conf")
+				b.writeFile(conf, string(mustRead(t, conf))+"\nreview.stop=1\n")
+			}
 			root := b.job("rev1")
-			root["reviewRoundLimit"] = 4
+			if scenario.name == "configured-zero" {
+				if root["goalId"] != "" || root["reviewRoundLimit"] != float64(4) || root["designExaminationLimit"] != float64(4) {
+					t.Fatalf("goal-free public admission did not freeze four: %v", root)
+				}
+			} else {
+				root["reviewRoundLimit"] = 4
+			}
 			b.writeJob(root)
 			dispatch := b.handler
 			b.handler = func(p intentProcess) intentProcessResult {
@@ -54,6 +72,9 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 					child := b.job(job)
 					if round > 2 {
 						child["parentJob"] = fmt.Sprintf("rev1-r%d", round-1)
+					}
+					if scenario.name == "configured-zero" {
+						child["goalId"] = ""
 					}
 					child["engineBuild"], child["effectiveModel"] = "fixture-engine", "fixture-critic"
 					b.writeJob(child)
@@ -198,11 +219,21 @@ func TestDesignReviewConvergesAndStopsOnOneRoot(t *testing.T) {
 					}
 				} else if want != "continue" {
 					closed := b.review("--dispositions", answer)
-					if closed.Outcome != intentConfirmed || b.job("rev1")["chainClosed"] != true || b.closes != 1 {
+					if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged || b.job("rev1")["chainClosed"] != true || b.closes != 1 {
 						t.Fatalf("durable exit: %+v; root=%v", closed, b.job("rev1"))
 					}
-					if len(b.goalFile(bedGoal).DesignExits) != 1 || b.fresh != 1 || len(b.followUps) != round-1 {
+					if scenario.name != "configured-zero" && len(b.goalFile(bedGoal).DesignExits) != 1 || b.fresh != 1 || len(b.followUps) != round-1 {
 						t.Fatal("exit or root duplicated")
+					}
+					if scenario.name == "configured-zero" {
+						var entry designReviewEntry
+						path := filepath.Join(b.install, "artifacts", "agents", "intent-review", "design-01designreader", "chain.json")
+						if err := json.Unmarshal(mustRead(t, path), &entry); err != nil || entry.Exit == nil || entry.Exit.State != "committed" || entry.Exit.Page != string(mustRead(t, b.design)) || len(b.goalFile(bedGoal).DesignExits) != 0 {
+							t.Fatalf("goal-free acceptance has no committed entry, or gained goal authority: %+v %v", entry, err)
+						}
+						if fifth := b.review("--retry", "4"); fifth.Outcome != intentRefused || len(b.followUps) != 3 {
+							t.Fatalf("fifth goal-free examination admitted: %+v", fifth)
+						}
 					}
 					if replay := b.review("--dispositions", answer); replay.Outcome != intentUnchanged {
 						t.Fatalf("exit replay: %+v", replay)

@@ -858,6 +858,9 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 			Summary: "the review needs the critic's tool-call budget, and none is configured; nothing was done",
 			next:    append(inv.typedArgvLess("tool-calls"), "--tool-calls", "30"), nextReason: "30 is an example budget"}
 	}
+	if goalID == "" && len(targets) == 1 && targets[0].Kind == "design" {
+		return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), "", reviewRoundCeiling(inv.stateRoot)), calls, nil
+	}
 	projection, _, failed := inv.projection()
 	if failed != nil {
 		failed.Targets = targets
@@ -975,12 +978,12 @@ func (inv *intentInvocation) reviewDesign(file string, selectedRoot ...string) i
 	}
 	goalID := inv.input.text("goal")
 	if goalID == "" {
-		if len(record.Goals) != 1 {
+		if len(record.Goals) > 1 {
 			return intentResult{Targets: target, Outcome: intentRefused, code: 2,
 				Summary: fmt.Sprintf("design %s names %d goals, and a review serves one; nothing was reviewed", record.ID, len(record.Goals)),
 				next:    append(inv.typedArgvLess("goal"), "--goal", firstOr(record.Goals, "GOAL")), nextReason: "or another goal the design names"}
 		}
-		goalID = record.Goals[0]
+		goalID = firstOr(record.Goals, "")
 	}
 	rounds, calls, refused := inv.reviewBriefFacts(target, goalID)
 	if refused != nil {
@@ -1024,7 +1027,7 @@ func (inv *intentInvocation) reviewDesign(file string, selectedRoot ...string) i
 		return intentResult{Targets: target, Outcome: intentFailed, Summary: "the review's brief can't be written, so nothing was reviewed",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
-	if len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), goalID, designPath)) == 0 {
+	if goalID != "" && len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), goalID, designPath)) == 0 {
 		// The first paid critique needs the goal's claim; an approved goal
 		// nobody holds is claimed lawfully, with no build worktree.
 		if refused := inv.acquireDesignCritiqueClaim(goalID); refused != nil {
