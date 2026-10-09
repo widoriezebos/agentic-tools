@@ -72,9 +72,11 @@ type Engine struct {
 	wallReadFacts        wallReads
 	continuityFacts      missionContinuity
 	birthEffects         birthRepositoryEffects
-	// Now supplies this engine's artifact clock. Nil keeps wall-clock
+	// Now supplies this engine's artifact and host-cap clock. Nil keeps wall-clock
 	// behavior; fixtures set it without changing time for another engine.
 	Now func() time.Time
+	// retrySleep paces provider retries. Nil uses the runner's pacing clock.
+	retrySleep func(time.Duration)
 	// windDown is the wind-down ladder's clock and kernel; its zero value
 	// is the kernel's and the wall clock.
 	windDown windDownSeam
