@@ -1,0 +1,20 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "machine revive",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "name the existing seat to revive",
+  "next": {
+    "argv": [
+      "metasystem",
+      "machine",
+      "revive",
+      "SEAT"
+    ],
+    "reason": ""
+  }
+}
+
+--

@@ -29,7 +29,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
@@ -39,6 +42,7 @@ import (
 // the installation whose fence the seat binds to; the launcher runs the seat
 // at the top of the checkout that holds it.
 type SeatLaunchSpec struct {
+	Person    humanauthority.Proof
 	ID        string
 	StateRoot string
 	// Installation is the root whose metasystem.conf holds the seat's
@@ -77,8 +81,16 @@ const (
 	SeatStartFailed   = "start-failed"
 )
 
+// SeatRecovery names the failed launch and its provider episode.
+type SeatRecovery struct {
+	LaunchID string `json:"launchId"`
+	Provider string `json:"provider,omitempty"`
+	Episode  string `json:"episode,omitempty"`
+}
+
 // SeatRecord is one seat start under artifacts/agents/steward/seats.
 type SeatRecord struct {
+	RecoveryOf   *SeatRecovery     `json:"recoveryOf,omitempty"`
 	Schema       int               `json:"schema"`
 	LaunchID     string            `json:"launchId"`
 	Goal         string            `json:"goal"`
@@ -514,7 +526,7 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	}
 	root := canonicalPath(repoRoot)
 	dependencies := defaultSeatDependencies(cfg.Seat)
-	dependencies.Now = cfg.now
+	dependencies.Now, dependencies.ProviderHome = cfg.now, cfg.ProviderHome
 	if cfg.GoalProjection != nil {
 		dependencies.Project = cfg.GoalProjection
 	}
@@ -530,6 +542,56 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 		return seatRecheck(root, cfg, census, openWork, records)
 	}
 	return startSeatWithDependencies(root, selection, dependencies)
+}
+
+func ReviveSeat(root string, cfg TickConfig, census WorkerCensus, after string, person humanauthority.Proof, registryPath string) (SeatRecord, error) {
+	if person.Helm != nil || !person.EnrolledTerminalFor(root) || cfg.Seat == nil {
+		return SeatRecord{}, errors.New("seat revival needs the person's enrolled terminal and a seat launcher")
+	}
+	d := defaultSeatDependencies(cfg.Seat)
+	d.Now, d.ProviderHome, d.Person, d.After, d.RegistryPath, d.Census, d.WorkStateRoot = cfg.now, cfg.ProviderHome, person, after, registryPath, census, cfg.WorkStateRoot
+	return startSeatWithDependencies(root, SeatSelection{}, d)
+}
+
+func seatRecovery(records []SeatRecord, selected string, d seatDependencies) (*SeatRecovery, error) {
+	if len(records) == 0 || records[len(records)-1].Goal != selected || records[len(records)-1].Outcome != SeatProviderLimit {
+		return nil, nil
+	}
+	last := records[len(records)-1]
+	state, err := d.Launcher.SeatLaunch(last.LaunchID)
+	if err != nil || !state.Found {
+		return nil, nil
+	}
+	providers, err := outage.ReadProviders(d.ProviderHome)
+	if err != nil {
+		return nil, nil
+	}
+	condition := providers.Current[outage.Provider(state.Runtime)]
+	ended := seatTime(state.FinishedAt)
+	episode := ""
+	if since := seatTime(condition.Mark.Since); !since.IsZero() && !ended.Before(since) {
+		episode = condition.Mark.Since
+	}
+	for _, interval := range condition.Intervals {
+		since, until := seatTime(interval.Since), seatTime(interval.Until)
+		if !since.IsZero() && !until.IsZero() && !ended.Before(since) && !ended.After(until) {
+			episode = interval.Since
+		}
+	}
+	// Provider history describes recovery; admission keeps its own predicates.
+	if ended.IsZero() || episode == "" {
+		return nil, nil
+	}
+	return &SeatRecovery{LaunchID: last.LaunchID, Provider: outage.Provider(state.Runtime), Episode: episode}, nil
+}
+
+// confirmSeatStart uses the actual launch result; a reservation is not a session.
+func confirmSeatStart(record SeatRecord, launcher SeatLauncher) (SeatRecord, error) {
+	state, err := launcher.SeatLaunch(record.LaunchID)
+	if err != nil || !state.Found || state.State != "starting" && state.State != "running" && state.State != "completed" {
+		return record, fmt.Errorf("seat launch %s has no confirmed start (state %s, read error %v); inspect that launch before retrying", record.LaunchID, state.State, err)
+	}
+	return record, nil
 }
 
 // seatBrief is what the seat main reads on stdin.
@@ -550,10 +612,11 @@ func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) 
 }
 
 func startSeatWithDependencies(repoRoot string, selection SeatSelection, dependencies seatDependencies) (SeatRecord, error) {
-	if helm.Active(repoRoot).Active {
+	person := dependencies.Person.Helm == nil && dependencies.Person.EnrolledTerminalFor(repoRoot)
+	if !person && helm.Active(repoRoot).Active {
 		return SeatRecord{}, nil
 	}
-	if selection.Goal == "" {
+	if !person && selection.Goal == "" {
 		return SeatRecord{}, errors.New("a seat start names its goal")
 	}
 	arbitration, err := AcquireArbitration(repoRoot)
@@ -571,6 +634,74 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	records, err := readSeatRecords(repoRoot)
 	if err != nil {
 		return SeatRecord{}, err
+	}
+	if person {
+		registered, err := registry.HostCheckouts(dependencies.RegistryPath)
+		known := false
+		for _, seat := range registered {
+			known = known || canonicalPath(seat.Path) == repoRoot
+		}
+		if err != nil || !known {
+			return SeatRecord{}, fmt.Errorf("this seat's registration cannot be read again: %v", err)
+		}
+		if _, err := VerifyEnrolledBinary(repoRoot); err != nil {
+			return SeatRecord{}, fmt.Errorf("the seat's enrollment cannot be verified: %w", err)
+		}
+		if len(records) == 0 {
+			return SeatRecord{}, errors.New("this seat has no failed launch to revive")
+		}
+		last := records[len(records)-1]
+		state, err := dependencies.Launcher.SeatLaunch(last.LaunchID)
+		if err != nil {
+			return SeatRecord{}, fmt.Errorf("seat launch %s cannot be read: %w", last.LaunchID, err)
+		}
+		after := dependencies.After
+		if after == "" {
+			after = last.LaunchID
+			if last.RecoveryOf != nil && last.ReapedAt == "" && (!state.Found || !state.Terminal) {
+				after = last.RecoveryOf.LaunchID
+			}
+		}
+		if last.RecoveryOf != nil && last.RecoveryOf.LaunchID == after {
+			return confirmSeatStart(last, dependencies.Launcher)
+		}
+		if last.LaunchID != after {
+			return SeatRecord{}, fmt.Errorf("failed launch %s is stale; current seat launch is %s", after, last.LaunchID)
+		}
+		if state.Found && (!state.Terminal || state.State != "failed" && state.State != "cancelled") {
+			return SeatRecord{}, errors.New("the current seat launch is not a confirmed failed launch; no replacement starts")
+		}
+		w, err := dependencies.Census.Workers(repoRoot)
+		if err != nil || !w.CensusComplete || w.Live > 0 || w.Untracked > 0 || w.Unprovable > 0 {
+			return SeatRecord{}, errors.New("current process custody does not prove the seat is free")
+		}
+		projection, err := dependencies.Project(repoRoot, dependencies.Now())
+		if err != nil {
+			return SeatRecord{}, fmt.Errorf("held work cannot be read: %w", err)
+		}
+		machine, err := dependencies.Machine(repoRoot)
+		if err != nil {
+			return SeatRecord{}, err
+		}
+		work, err := goal.ClaimableWorkFromProjection(projection, machine, identity.KernelProber{})
+		if err != nil {
+			return SeatRecord{}, err
+		}
+		file, held := work.OwnedClaim(last.Goal)
+		if !held || claimLineage(file) != SeatLineage || file.Approved == nil || approvalOpid(file) != last.ApprovalOpid {
+			return SeatRecord{}, errors.New("the failed seat's approved held work is no longer held by this seat")
+		}
+		if busy, reason, _ := seatBusyReader(dependencies.WorkStateRoot)(repoRoot, work, dependencies.Now()); busy {
+			return SeatRecord{}, errors.New(reason)
+		}
+		selection = SeatSelection{Goal: last.Goal, Held: true, ApprovalOpid: last.ApprovalOpid}
+		if last.ReapedAt == "" {
+			state := reapSeatLaunches(repoRoot, dependencies, dependencies.Now())
+			if state.Err != nil {
+				return SeatRecord{}, state.Err
+			}
+			records = state.Records
+		}
 	}
 	for _, record := range records {
 		if record.ReapedAt == "" {
@@ -594,7 +725,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		return SeatRecord{}, err
 	}
 	class := ""
-	if len(records) > 0 || ev.AbnormalCount > 0 {
+	if !person && (len(records) > 0 || ev.AbnormalCount > 0) {
 		var reason string
 		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now())
 		if err != nil {
@@ -603,6 +734,13 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		if reason != "" {
 			return SeatRecord{}, errors.New(reason)
 		}
+	}
+	recovery, err := seatRecovery(records, selection.Goal, dependencies)
+	if err != nil {
+		return SeatRecord{}, err
+	}
+	if person && recovery == nil {
+		recovery = &SeatRecovery{LaunchID: records[len(records)-1].LaunchID}
 	}
 	raw := make([]byte, 8)
 	if _, err := rand.Read(raw); err != nil {
@@ -637,7 +775,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if err := writeExclusiveBrief(briefPath, seatBrief(selection, automaticHandoff, facts)); err != nil {
 		return SeatRecord{}, err
 	}
-	record := SeatRecord{Schema: 1, LaunchID: id, Goal: selection.Goal, Held: selection.Held, ApprovalOpid: selection.ApprovalOpid,
+	record := SeatRecord{RecoveryOf: recovery, Schema: 1, LaunchID: id, Goal: selection.Goal, Held: selection.Held, ApprovalOpid: selection.ApprovalOpid,
 		Machine: machine, Tips: tips, StartedAt: dependencies.Now().UTC().Format(seatStartedAtLayout)}
 	for i := len(records) - 1; i >= 0; i-- {
 		if records[i].Goal == selection.Goal {
@@ -657,13 +795,22 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
 		return record, err
 	}
-	if err := dependencies.Launcher.StartSeat(SeatLaunchSpec{ID: id, StateRoot: repoRoot, Installation: repoRoot, Brief: briefPath, Tag: nonce}); err != nil {
+	if err := dependencies.Launcher.StartSeat(SeatLaunchSpec{Person: dependencies.Person, ID: id, StateRoot: repoRoot, Installation: repoRoot, Brief: briefPath, Tag: nonce}); err != nil {
+		state, readErr := dependencies.Launcher.SeatLaunch(id)
+		if readErr != nil || !state.Terminal && (state.Found || !person) {
+			return record, fmt.Errorf("seat launch %s has an unknown launch outcome: %w", id, err)
+		}
 		record.ReapedAt = dependencies.Now().UTC().Format(time.RFC3339)
 		record.Outcome, record.Evidence = SeatStartFailed, err.Error()
 		if writeErr := writeSeatRecord(repoRoot, record); writeErr != nil {
 			return record, fmt.Errorf("seat launch %s did not start (%v), and its record could not close: %w", id, err, writeErr)
 		}
 		return record, fmt.Errorf("seat launch %s did not start: %w", id, err)
+	}
+	if recovery != nil {
+		if _, err := confirmSeatStart(record, dependencies.Launcher); err != nil {
+			return record, err
+		}
 	}
 	if class != "" {
 		ev.Abnormal[ev.AbnormalCount-1].Pending = false
@@ -683,6 +830,10 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 
 // seatDependencies are the seat ladder's readers and its launcher.
 type seatDependencies struct {
+	Person                             humanauthority.Proof
+	After, WorkStateRoot, RegistryPath string
+	Census                             WorkerCensus
+
 	ProviderHome string
 	Launcher     SeatLauncher
 	Units        func(root, goalID string) ([]UnitStage, error)

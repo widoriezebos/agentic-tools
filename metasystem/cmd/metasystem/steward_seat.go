@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -56,7 +57,7 @@ func (l stewardSeatLauncher) SeatAllowed(root string) (bool, string, error) {
 
 // seatAllowed reads the landing lane against the checkout that holds the
 // state root and the settings from the installation's metasystem.conf.
-func (l stewardSeatLauncher) seatAllowed(stateRoot, installationRoot string) (bool, string, error) {
+func (l stewardSeatLauncher) seatAllowed(stateRoot, installationRoot string, person ...humanauthority.Proof) (bool, string, error) {
 	top, err := l.repositoryTop(stateRoot)
 	if err != nil {
 		return false, "", fmt.Errorf("the checkout that holds %s cannot be read: %w", stateRoot, err)
@@ -75,7 +76,7 @@ func (l stewardSeatLauncher) seatAllowed(stateRoot, installationRoot string) (bo
 	if err != nil {
 		return false, "", err
 	}
-	if settings.SeatRuntime == launch.SeatRuntimeOff {
+	if settings.SeatRuntime == launch.SeatRuntimeOff && (len(person) == 0 || person[0].Helm != nil || !person[0].EnrolledTerminalFor(stateRoot)) {
 		return false, launch.SeatRuntimeKey + "=" + launch.SeatRuntimeOff + ": a seat is opt-in; set it to claude, codex or auto in metasystem.conf.local", nil
 	}
 	return true, "", nil
@@ -120,7 +121,7 @@ func init() { steward.HealthSeatLauncher = newStewardSeatLauncher() }
 // installation from there), and binds to the fence that state root keeps.
 // The launch names no goal, for a goal id names no checkout.
 func (l stewardSeatLauncher) StartSeat(spec steward.SeatLaunchSpec) error {
-	allowed, reason, err := l.seatAllowed(spec.StateRoot, spec.Installation)
+	allowed, reason, err := l.seatAllowed(spec.StateRoot, spec.Installation, spec.Person)
 	if err != nil {
 		return err
 	}
@@ -133,13 +134,15 @@ func (l stewardSeatLauncher) StartSeat(spec steward.SeatLaunchSpec) error {
 	}
 	start := l.start
 	if start == nil {
-		// The seat runs on the installation's own settings, which turned
-		// it on, not on those the engine binary's folder would resolve.
+		// The seat uses its installation's settings for this one launch.
 		settings, err := l.settings(spec.Installation)
 		if err != nil {
 			return err
 		}
 		manager := *l.manager()
+		if spec.Person.Helm == nil && spec.Person.EnrolledTerminalFor(spec.StateRoot) && settings.SeatRuntime == launch.SeatRuntimeOff {
+			settings.SeatRuntime, settings.SeatModel = settings.BuildRuntime, settings.BuildModel
+		}
 		manager.Settings, manager.SettingsError = settings, nil
 		start = manager.Start
 	}
@@ -164,7 +167,11 @@ func (l stewardSeatLauncher) SeatLaunch(id string) (steward.SeatLaunchState, err
 	if err != nil {
 		return steward.SeatLaunchState{}, err
 	}
-	return steward.SeatLaunchState{Found: true, Terminal: record.State.Terminal(), State: string(record.State),
+	state := string(record.State)
+	if record.State == launch.Starting && record.Child == nil {
+		state = "reserved"
+	}
+	return steward.SeatLaunchState{Found: true, Terminal: record.State.Terminal(), State: state,
 		ResultPath: filepath.Join(dir, "result.json"), FinishedAt: record.FinishedAt, Runtime: record.Adapter, Model: launchModel(record)}, nil
 }
 

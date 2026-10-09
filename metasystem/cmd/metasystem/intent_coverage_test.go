@@ -35,7 +35,7 @@ var publicPairs = []string{
 	"landing status", "landing set", "landing start", "landing drain", "landing stop", "landing unset", "landing run", "landing resolve", "landing prove", "landing push", "landing return",
 	"deploy status", "deploy now", "deploy rollback", "deploy pause", "deploy resume",
 	"alert list", "alert ack", "alert clear",
-	"machine list", "machine start", "machine stop", "machine clear-provider",
+	"machine list", "machine start", "machine stop", "machine clear-provider", "machine revive",
 	"disk show", "disk clean",
 	"evidence show", "evidence export", "evidence dispose",
 	"app start", "app stop", "app restart", "app status", "app log", "app reset", "app check",

@@ -300,6 +300,14 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentMachineStop,
 		},
 		{
+			object: "machine", action: "revive", audience: "human", summary: "start one session on an existing seat, keeping its automatic policy",
+			usage:   []string{"metasystem machine revive SEAT [--after LAUNCH]"},
+			details: []string{"Requires your own enrolled terminal. Starts one session despite advisory provider, restart, helm and seat-policy holds; automatic policy and restart history stay unchanged.", "An intentional system stop requires system start --repo CHECKOUT first. Without --after, binds the current failed seat launch under arbitration."},
+			flags:   []intentFlag{{name: "after", value: "LAUNCH", usage: "the failed seat launch whose held work continues"}},
+			maxArgs: 1, examples: []string{"metasystem machine revive m1e --after seat-123"},
+			run: runIntentMachineRevive,
+		},
+		{
 			object: "machine", action: "start", audience: "human", summary: "clone, build, configure, enroll and supervise one new machine of this fleet",
 			usage:   []string{"metasystem machine start NAME [--destination PATH] [--resume ID]"},
 			details: []string{"A person's act on this host; --resume ID continues an interrupted launch."},

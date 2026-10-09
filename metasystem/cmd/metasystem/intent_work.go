@@ -2831,13 +2831,13 @@ var authoritySettings = map[string]bool{"host.builds": true, "host.load-max": tr
 
 // directPersonProof refuses unless this shell is the person at the enrolled
 // terminal, proven by the walk itself.
-func (inv *intentInvocation) directPersonProof(act string) *intentResult {
-	return inv.checkDirectPersonProof(act, true)
+func (inv *intentInvocation) directPersonProof(act string, observed ...*humanauthority.Proof) *intentResult {
+	return inv.checkDirectPersonProof(act, true, observed...)
 }
 
 // checkDirectPersonProof can observe the actor without recording a refusal
 // when an agent is allowed to perform the act under its ordinary authority.
-func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bool) *intentResult {
+func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bool, observed ...*humanauthority.Proof) *intentResult {
 	if problem := inv.resolveLayout(); problem != nil {
 		return problem
 	}
@@ -2883,6 +2883,9 @@ func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bo
 			_ = humanauthority.RecordAttorneyRefusal(inv.layout.InstallationRoot.Path(), proof, act, "set only by the person's own proof", now)
 		}
 		return refused("this shell acts under the helm or a grant", nil)
+	}
+	for _, target := range observed {
+		*target = proof
 	}
 	return nil
 }

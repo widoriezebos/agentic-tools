@@ -183,7 +183,7 @@ func TestDiskObjectRoutesAndHelps(t *testing.T) {
 	for _, command := range objectActions("machine") {
 		machine = append(machine, command.action)
 	}
-	if !slices.Equal(machine, []string{"list", "clear-provider", "stop", "start"}) {
+	if !slices.Equal(machine, []string{"list", "clear-provider", "stop", "revive", "start"}) {
 		t.Fatalf("machine actions = %v", machine)
 	}
 	if _, _, ok := resolveIntentArgv([]string{"machine", "clean"}); ok {

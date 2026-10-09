@@ -447,7 +447,7 @@ type AbnormalRestart struct {
 }
 
 func abnormalRemedy(root, reason string) string {
-	return reason + fmt.Sprintf("; person's remedy: machine revive %s (unavailable until fleet-provider-and-session-recovery R2 lands)", root)
+	return reason + fmt.Sprintf("; person's remedy: metasystem machine revive %s", root)
 }
 
 // abnormalRestartState reads the latest death and retained progress, never

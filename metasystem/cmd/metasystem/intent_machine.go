@@ -22,12 +22,14 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostcapacity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -59,8 +61,72 @@ func runIntentMachineClearProvider(inv *intentInvocation) int {
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "provider " + outage.Provider(inv.input.args[0]) + ": the advisory hold is clear; this does not claim provider success"})
 }
 
+func runIntentMachineRevive(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "name the existing seat to revive", next: inv.publicArgv("machine", "revive", "SEAT")})
+	}
+	if problem := inv.selectLayoutRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	reading := inv.discoverHostMachines(map[string]bool{inv.input.args[0]: true})
+	var target *hostMachine
+	for _, machine := range reading.Machines {
+		if machine.Name == inv.input.args[0] || machine.Checkout == inv.input.args[0] {
+			target = machine
+		}
+	}
+	if target == nil || reading.RegistryProblem != "" {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the registered seat cannot be resolved: " + inv.input.args[0], Details: []string{reading.RegistryProblem}, next: inv.publicArgv("machine", "list")})
+	}
+	child := inv.checkoutInvocation(target.Checkout)
+	if problem := child.selectLayoutRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	var person humanauthority.Proof
+	if problem := child.directPersonProof("machine revive", &person); problem != nil {
+		return inv.render(*problem)
+	}
+	root, now := child.stateRoot, person.CheckedAt
+	closed, _, err := stopfence.Closed(root)
+	if closed {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this seat was intentionally stopped; start MetaSystem before reviving it", next: inv.publicArgv("system", "start", "--repo", target.Checkout)})
+	}
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the process-creation fence cannot be read: " + err.Error(), next: inv.publicArgv("system", "status", "--repo", target.Checkout)})
+	}
+	launcher := newStewardSeatLauncher()
+	if inv.owners.processes.launches != nil {
+		launcher.manager = inv.owners.processes.launches
+	}
+	if inv.owners.processes.process.repositoryTop != nil {
+		launcher.repositoryTop = inv.owners.processes.process.repositoryTop
+	}
+	launcher.laneRoot = laneRootAt(reading.laneHome)
+	home, err := inv.landing().home()
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), next: inv.publicArgv("landing", "status")})
+	}
+	census := inv.machineSeams().seatCensus
+	if census == nil {
+		census = steward.RuntimeWorkerCensus{MetasystemRoot: child.layout.InstallationRoot.Path()}
+	}
+	if supplied := inv.machineSeams().seatLauncher; supplied != nil {
+		launcher = *supplied
+	}
+	if _, err := steward.RepairEnrolledRunner(root); err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the enrolled runner could not be repaired: " + err.Error(), next: inv.publicArgv("system", "start", "--repo", target.Checkout)})
+	}
+	record, err := steward.ReviveSeat(root, steward.TickConfig{Now: now, Seat: launcher, ProviderHome: home}, census, inv.input.text("after"), person, reading.Registry)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), Data: record, next: inv.publicArgv("system", "status", "--repo", target.Checkout)})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "seat " + target.Name + ": session " + record.LaunchID + " started once despite holds; automatic policy and restart history stay unchanged", Details: []string{"This one act bypasses advisory holds."}, Data: record})
+}
+
 // machineOwners are the machine verbs' seams; the zero value is production.
 type machineOwners struct {
+	seatCensus      steward.WorkerCensus
+	seatLauncher    *stewardSeatLauncher
 	capacitySources hostcapacity.Sources
 	// registryPath is the host registry of armed checkouts.
 	registryPath func() (string, error)
@@ -258,7 +324,7 @@ func (inv *intentInvocation) discoverHostMachines(fleet map[string]bool) hostRea
 			machine.Name = filepath.Base(machine.Checkout)
 		}
 		armed := slices.Contains(machine.Sources, "registry: armed")
-		if machine.Lane || (machine.Nickname && (armed || fleet[machine.Name])) {
+		if machine.Lane || (machine.Nickname && (armed || fleet[machine.Name] || fleet[machine.Checkout])) {
 			machines = append(machines, machine)
 			continue
 		}

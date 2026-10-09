@@ -218,6 +218,11 @@ func TestFleetRearmPreservesContinuation(t *testing.T) {
 			if err := MintIdentity(RepoIdentityPath(root), id); err != nil {
 				t.Fatal(err)
 			}
+			id.Generation++
+			id.MintedBy = "machine-rebuild"
+			if err := MintIdentity(RepoIdentityPath(root), id); err != nil {
+				t.Fatal(err)
+			}
 		case "worker":
 			if err := BumpEnrollmentFence(root); err != nil {
 				t.Fatal(err)
