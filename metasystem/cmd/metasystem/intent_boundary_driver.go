@@ -25,11 +25,11 @@ func (inv *intentInvocation) advanceBoundary() error {
 	if err != nil || code != 0 || (policy != "auto" && policy != "person") {
 		return fmt.Errorf("the seat driver policy is unavailable (seat.driver=%q, exit %d): %v", policy, code, err)
 	}
-	if err := steward.RetainBoundary(inv.stateRoot, supervise.BuildStamp, nil); err != nil {
+	if err := steward.RetainBoundary(inv.layout.InstallationRoot.Path(), supervise.BuildStamp, nil); err != nil {
 		return err
 	}
-	err = steward.AdvanceBoundary(inv.stateRoot, policy == "person", identity.KernelProber{}, inv.prepareBoundary)
-	events, readErr := steward.ReadUnitBoundaries(inv.stateRoot)
+	err = steward.AdvanceBoundary(inv.layout.InstallationRoot.Path(), policy == "person", identity.KernelProber{}, inv.prepareBoundary)
+	events, readErr := steward.ReadUnitBoundaries(inv.layout.InstallationRoot.Path())
 	if readErr != nil {
 		return errors.Join(err, readErr)
 	}
@@ -104,7 +104,7 @@ func (inv *intentInvocation) prepareBoundary(event steward.UnitBoundary) (stewar
 		files = append(files, file)
 	}
 	claim := sha256.Sum256(goal.RenderFile(file))
-	directory, err := inv.unitRunner().NamedInputDirectory(inv.stateRoot, event.Goal, fmt.Sprintf("%s/%s/%v/%x/%s/%s/%s", progress.Unit, act.Tip, files, claim, event.Session, event.Unit, event.Outcome))
+	directory, err := inv.unitRunner().NamedInputDirectory(inv.layout.InstallationRoot.Path(), event.Goal, fmt.Sprintf("%s/%s/%v/%x/%s/%s/%s", progress.Unit, act.Tip, files, claim, event.Session, event.Unit, event.Outcome))
 	if err != nil {
 		return act, err
 	}
@@ -160,7 +160,7 @@ func (inv *intentInvocation) boundaryBuildAdmission(id, unit, base, brief string
 	if err != nil || code != 0 || (policy != "auto" && policy != "person") {
 		return fmt.Errorf("the seat driver policy is unavailable (seat.driver=%q, exit %d): %v", policy, code, err)
 	}
-	event, err := steward.BoundaryAdmission(inv.stateRoot, id, supervise.BuildStamp, policy == "person", identity.KernelProber{})
+	event, err := steward.BoundaryAdmission(inv.layout.InstallationRoot.Path(), id, supervise.BuildStamp, policy == "person", identity.KernelProber{})
 	if err != nil || event.Goal == "" {
 		return err
 	}
@@ -197,5 +197,5 @@ func (inv *intentInvocation) boundaryHandIn(event *steward.UnitBoundary) error {
 		return err
 	}
 	event.Next.Effect, event.Next.Summary = entry.SHA, "the whole goal is handed to the landing lane; the goal remains open"
-	return steward.RetainBoundary(inv.stateRoot, "", event)
+	return steward.RetainBoundary(inv.layout.InstallationRoot.Path(), "", event)
 }

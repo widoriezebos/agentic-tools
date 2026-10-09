@@ -38,7 +38,7 @@ type TickConfig struct {
 	GoalProjection func(string, time.Time) (goal.Projection, error)
 	// ProviderHome selects the host registration; empty uses the registry home.
 	ProviderHome string
-	ReviewWork func(string) error
+	ReviewWork   func(string) error
 	// WorkStateRoot selects the host unit and launch stores; empty uses the
 	// registry's production default.
 	WorkStateRoot string

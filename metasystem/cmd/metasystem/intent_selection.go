@@ -188,7 +188,7 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		}
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
 		lineStage := stage
-		events, boundaryErr := steward.ReadUnitBoundaries(inv.stateRoot)
+		events, boundaryErr := steward.ReadUnitBoundaries(inv.layout.InstallationRoot.Path())
 		if boundaryErr != nil {
 			lineStage += "; boundary preparation unavailable: " + boundaryErr.Error()
 		}

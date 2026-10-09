@@ -294,9 +294,17 @@ func (runner *UnitRunner) allowCorrection(record UnitRunRecord) error {
 }
 
 // CollectExamination runs under ReviewSubject's owner lock, retaining the
-// exact committed examination and its decision together with the subject.
+// exact examination and its decision together with the subject.
 func (runner *UnitRunner) CollectExamination(record *UnitRunRecord, round *UnitRound, subject UnitSubject) error {
 	round.Reads = nil
+	// A stopped patch read belongs to the round's launch store until a commit exists.
+	if subject.Commit == "" && subject.ExaminationJob == "" && runner.Manager != nil {
+		for _, step := range round.Steps {
+			if strings.HasPrefix(step.Name, "read") && step.LaunchID == subject.Examination {
+				return runner.collectRoundRead(record, round)
+			}
+		}
+	}
 	data, err := os.ReadFile(subject.ExaminationReturnPath)
 	unknown := ""
 	if err == nil {

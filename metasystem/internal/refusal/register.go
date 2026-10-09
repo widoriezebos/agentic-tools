@@ -55,6 +55,9 @@ type Prose struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
+	{Code: "UNIT_LAUNCH_UNAUTHORIZED", Owner: "internal/launch", Site: "unit_run.go#UnitRunner.driver", Shape: Question, H1: StandingInput},
+	{Code: "UNIT_LAUNCH_HELD", Owner: "internal/launch", Site: "read_sequence.go#stepDriver.startStep", Shape: Question, H1: StandingInput},
+	{Code: "UNIT_PENDING_INVALIDATED", Owner: "internal/launch", Site: "pending_recovery.go#UnitRunner.checkPendingIdentity", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_NOT_FINISHED", Owner: "cmd/metasystem", Site: "intent_delivery.go#handLandingSubject", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_NO_END", Owner: "cmd/metasystem", Site: "intent_delivery.go#handLandingSubject", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_PROGRESS_UNREADABLE", Owner: "cmd/metasystem", Site: "intent_delivery.go#handLandingSubject", Shape: Question, H1: StandingInput},
