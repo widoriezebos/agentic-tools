@@ -117,7 +117,11 @@ func runTestGroupsWithEnvironment(args, environment []string, stdout, stderr io.
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	results, runErr := proofrun.RunNamedGroups(ctx, installation, contract, ids, environment)
+	return runNamedTestGroups(installation, contract, ids, environment, stdout, stderr)
+}
+
+func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, environment []string, stdout, stderr io.Writer) int {
+	results, runErr := proofrun.RunNamedGroups(context.Background(), installation, contract, ids, environment)
 	exit := 0
 	for _, result := range results {
 		fmt.Fprintf(stdout, "landing group %s %s %d\n", result.ID, result.Status, result.DurationMS)

@@ -100,6 +100,7 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 							return err
 						}
 						proof := exec.Command("/bin/sh", "-c", command)
+						proof.Env = append(proof.Environ(), "LANDING_PROOF_BASE="+parent)
 						proof.Dir, proof.Stdout, proof.Stderr = installation, inv.stderr, inv.stderr
 						if err := proof.Run(); err != nil {
 							return fmt.Errorf("the cheap check failed; nothing was committed: %w", err)

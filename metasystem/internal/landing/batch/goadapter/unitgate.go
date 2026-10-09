@@ -21,6 +21,10 @@ type UnitPackages struct {
 	ModulePath string
 	Changed    []string
 	Dependents []string
+	base       string
+	paths      []string
+	files      map[string]bool
+	imports    map[string]map[string]bool
 }
 
 func unitGateModuleRoot(root string) string {
@@ -88,6 +92,7 @@ func selectWorkingUnitPackagesWithWorkspace(workspace gittree.Workspace, base st
 	}
 	return UnitPackages{
 		ModulePath: module,
+		base:       baseTree, paths: paths, files: goFiles, imports: imports,
 		Changed:    changed,
 		Dependents: reverseDependents(module, changed, imports),
 	}, nil

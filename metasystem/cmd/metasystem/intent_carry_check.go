@@ -16,11 +16,14 @@ import (
 // carrySubjectCheck freezes declarations from the detached subject before
 // running either command. Its retained execution survives the workspace.
 func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.AttestationSubject) (branch.GateObservation, error) {
+	if subject.Parent == "" {
+		return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: errors.New("the unit has no parent to compare its check against")}
+	}
 	top, err := goalBranchGit(directory, "rev-parse", "--show-toplevel")
 	if err != nil {
 		return branch.GateObservation{}, err
 	}
-	check := launch.UnitCheck{SourceTree: subject.Tree, Directory: directory, Environment: os.Environ()}
+	check := launch.UnitCheck{Base: subject.Parent, SourceTree: subject.Tree, Directory: directory, Environment: os.Environ()}
 	var values [3]string
 	for i, key := range []string{"proof.cheap", "proof.audits", "proof.deadline"} {
 		values[i], err = landingProofCommand(directory, top, subject.Commit, key, goalBranchGit)

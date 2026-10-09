@@ -17,7 +17,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		data, err := inv.work().git(root, args...)
 		return strings.TrimSpace(string(data)), err
 	}
-	check := &launch.UnitCheck{Directory: plan.Proof[0].Dir, Environment: os.Environ()}
+	check := &launch.UnitCheck{Base: plan.Base, Directory: plan.Proof[0].Dir, Environment: os.Environ()}
 	if inv.input.has("check") {
 		actor, _, problem := inv.actingAs("work build manual check", plan.Goal, actorHuman)
 		if problem != nil {

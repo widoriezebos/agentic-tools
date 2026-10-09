@@ -226,7 +226,7 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 		writeUnitCarryFile(t, filepath.Join(repo, path), body)
 		connectionGit(t, repo, "add", path)
 		if state == "cached gate" && unit == "u2" {
-			declaration = "proof.cheap=printf 'cheap subject check\\n'; test \"$(cat u1.go)\" = corrected\nproof.audits=printf 'audit subject check\\n'; test -f u2.go\nproof.deadline=15\n"
+			declaration = "proof.cheap=printf 'cheap subject check\\n'; test -n \"$LANDING_PROOF_BASE\"; test \"$(cat u1.go)\" = corrected\nproof.audits=printf 'audit subject check\\n'; test -f u2.go\nproof.deadline=15\n"
 			writeUnitCarryFile(t, filepath.Join(repo, "metasystem.conf"), declaration)
 			connectionGit(t, repo, "add", "metasystem.conf")
 		}
@@ -395,7 +395,7 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 		if err := json.Unmarshal(data, &execution); err != nil {
 			t.Fatal(err)
 		}
-		if execution.ExecutionID != att.Gate.RunID || execution.Check.SourceTree != carriedTree || len(execution.Exits) != 2 || execution.Exits[0].Exit != 0 || execution.Exits[1].Exit != 0 || !strings.Contains(execution.Exits[0].Output, "cheap subject check") || !strings.Contains(execution.Exits[1].Output, "audit subject check") {
+		if execution.ExecutionID != att.Gate.RunID || execution.Check.Base != att.Subject.Parent || execution.Check.SourceTree != carriedTree || len(execution.Exits) != 2 || execution.Exits[0].Exit != 0 || execution.Exits[1].Exit != 0 || !strings.Contains(execution.Exits[0].Output, "cheap subject check") || !strings.Contains(execution.Exits[1].Output, "audit subject check") {
 			t.Fatalf("attestation does not bind a passing subject execution: %+v", execution)
 		}
 		var committed struct {
@@ -403,7 +403,7 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 			Check       launch.UnitCheck
 			Exits       []launch.CheckExit
 		}
-		if err := json.Unmarshal([]byte(att.Gate.Evidence), &committed); err != nil || committed.ExecutionID != execution.ExecutionID || committed.Check.SourceTree != carriedTree || committed.Check.Cheap != execution.Check.Cheap || committed.Check.Audits != execution.Check.Audits || !slices.Equal(committed.Exits, execution.Exits) {
+		if err := json.Unmarshal([]byte(att.Gate.Evidence), &committed); err != nil || committed.ExecutionID != execution.ExecutionID || committed.Check.Base != att.Subject.Parent || committed.Check.SourceTree != carriedTree || committed.Check.Cheap != execution.Check.Cheap || committed.Check.Audits != execution.Check.Audits || !slices.Equal(committed.Exits, execution.Exits) {
 			t.Fatalf("committed subject execution=%+v error=%v", committed, err)
 		}
 		data, err = os.ReadFile(journalPath)
