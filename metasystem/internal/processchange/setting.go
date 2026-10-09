@@ -22,6 +22,8 @@ import (
 )
 
 type ProcessAct struct {
+	Unit, Operation, Predecessor                                     string
+	BeforeArgv, AfterArgv, ApplicableArgv                            []string
 	SettingsSHA256                                                   string
 	Undo                                                             string
 	Unset                                                            bool

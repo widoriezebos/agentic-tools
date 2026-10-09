@@ -489,6 +489,10 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return UnitResult{}, err
 		}
 	}
+	checkAct := map[string]json.RawMessage{}
+	if plan.Check != nil && plan.Check.ProcessAct != "" {
+		checkAct["checkAct"], _ = json.Marshal(plan.Check.ProcessAct)
+	}
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
 	if round.Steps[0].LaunchID == "" {
 		if err := runner.writeDiff(plan.Worktree, plan.Base, filepath.Join(round.Directory, "build-before", "worktree.diff")); err != nil {
@@ -499,7 +503,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		step := &round.Steps[index]
 		buildSpec := StartSpec{Kind: "build", Actor: runner.Actor, Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief, Model: record.BuildModel, Effort: record.BuildEffort,
 			Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: step.Units,
-			Round: round.Number, MaxRounds: record.MaxRounds}
+			Round: round.Number, MaxRounds: record.MaxRounds, AdapterData: checkAct}
 		if capped, stepErr := runner.advanceStep(record, round, index, buildSpec, deadline); stepErr != nil || capped {
 			return runner.result(*record, round, step, capped), stepErr
 		}
@@ -570,7 +574,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 				return UnitResult{}, err
 			}
 		}
-		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath, Round: round.Number, MaxRounds: record.MaxRounds}
+		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath, Round: round.Number, MaxRounds: record.MaxRounds, AdapterData: checkAct}
 		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}

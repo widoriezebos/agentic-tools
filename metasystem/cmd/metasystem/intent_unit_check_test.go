@@ -257,6 +257,10 @@ func TestIntentDeclaredCheckManualRepairRequiresPerson(t *testing.T) {
 				owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
 					return humanauthority.Proof{}, humanauthority.AgentRefused("codex")
 				}
+			} else {
+				// Check admission requires the person's enrolled terminal,
+				// independently of the name supplied with --by.
+				owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
 			}
 			var stdout, stderr bytes.Buffer
 			starter := &declaredCheckStarter{bed: b, t: t, beforeBuild: func() {

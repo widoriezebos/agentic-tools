@@ -13,6 +13,7 @@ import (
 )
 
 type UnitCheck struct {
+	ProcessAct  string   `json:"processAct,omitempty"`
 	SelectedBy  string   `json:"selectedBy,omitempty"`
 	Reason      string   `json:"reason,omitempty"`
 	Base        string   `json:"base,omitempty"`

@@ -265,7 +265,8 @@ func intentWorkCommands() []intentCommand {
 				{name: "plan", value: "FILE", advanced: true, hidden: true, usage: "an existing unit plan (the unit run plan format)"},
 				{name: "reason", value: "TEXT", usage: "why the person chooses an explicit repair check"},
 				{name: "by", value: "NAME", usage: "the proven person choosing the repair check"},
-				{name: "check", value: "COMMAND...", rest: true, usage: "a person's explicit repair command; ends the options"},
+				{name: "act", value: "ID", usage: "execute the retained check proposal with fresh person proof"},
+				{name: "check", value: "COMMAND...", rest: true, usage: "an explicit check selection; changes ask a person; ends the options"},
 			},
 			maxArgs: 2,
 			accepts: []string{refGoal, refRun},
@@ -1001,6 +1002,10 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		return path, err
 	}
 	result, err := runner.AdvancePrepared(request.worktree, id, unit, request.bytes, request.options, request.prepare)
+	var held *processCheckHeld
+	if errors.As(err, &held) {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: held.Error(), Data: held.act, next: held.remedy, nextReason: "run this at your enrolled terminal"})
+	}
 	outcome := inv.unitOutcome(runner, result, err, targets, inv.sameCommand())
 	if data, ok := outcome.Data.(map[string]any); ok {
 		data["inputs"] = request.directory

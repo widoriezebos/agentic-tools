@@ -19,19 +19,8 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 	}
 	check := &launch.UnitCheck{Base: plan.Base, Directory: plan.Proof[0].Dir, Environment: os.Environ()}
 	if inv.input.has("check") {
-		actor, _, problem := inv.actingAs("work build manual check", plan.Goal, actorHuman)
-		if problem != nil {
-			return plan, fmt.Errorf("%s", problem.Summary)
-		}
-		check.SelectedBy, check.Reason = unitStopActor(actor), inv.input.text("reason")
-		if check.Reason == "" {
-			return plan, fmt.Errorf("a manual check needs --reason TEXT --by NAME before --check")
-		}
+		check.SelectedBy, check.Reason = inv.input.text("by"), inv.input.text("reason")
 		check.Cheap, check.Audits, check.Minutes = shellCommand(inv.input.values["check"]), "true", 15
-		impact := "Impact: use your command with no audits and a 15-minute deadline.\nMissing declarations remain unproved; later rounds use committed declarations.\nCancel this run to stop the repair."
-		if err := inv.recordUnitStopOverride(plan.Goal, "work-build-check", check.Reason, impact, check.SelectedBy); err != nil {
-			return plan, err
-		}
 	} else {
 		commit, err := git(plan.Worktree, "rev-parse", "HEAD")
 		if err != nil {
@@ -50,6 +39,15 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		}
 		check.Cheap, check.Audits = values[0], values[1]
 		check.Minutes, _ = strconv.Atoi(values[2])
+	}
+	if err := inv.admitProcessCheck(plan, directory, check); err != nil {
+		return plan, err
+	}
+	if inv.input.has("check") && inv.input.text("act") == "" && check.Reason != "" {
+		impact := "Impact: use your command with no audits and a 15-minute deadline.\nMissing declarations remain unproved; later rounds use committed declarations.\nCancel this run to stop the repair."
+		if err := inv.recordUnitStopOverride(plan.Goal, "work-build-check", check.Reason, impact, check.SelectedBy); err != nil {
+			return plan, err
+		}
 	}
 	executable, err := os.Executable()
 	if err != nil {

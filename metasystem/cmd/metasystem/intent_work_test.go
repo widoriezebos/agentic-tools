@@ -43,12 +43,15 @@ type workBed struct {
 	*intentBed
 	id, worktree  string
 	declaredCheap string
-	manager       *launch.Manager
-	starter       *workStarter
-	unitRoot      string
-	branchListed  bool
-	head          string
-	ledger        sync.Mutex
+	// declaredAudits and declaredDeadline replace the default proof.audits=true
+	// and proof.deadline=15 when set.
+	declaredAudits, declaredDeadline string
+	manager                          *launch.Manager
+	starter                          *workStarter
+	unitRoot                         string
+	branchListed                     bool
+	head                             string
+	ledger                           sync.Mutex
 	// readDirs are the read-findings directories this bed's builds created
 	// under the temporary root, found through each result's plan.
 	readDirsMu     sync.Mutex
@@ -466,7 +469,11 @@ func (b *workBed) workOwners() intentOwners {
 				if cheap == "" {
 					cheap = shellCommand(workArgv)
 				}
-				return []byte("proof.cheap=" + cheap + "\nproof.audits=true\nproof.deadline=15\n"), nil
+				audits, deadline := b.declaredAudits, b.declaredDeadline
+				if audits == "" {
+					audits, deadline = "true", "15"
+				}
+				return []byte("proof.cheap=" + cheap + "\nproof.audits=" + audits + "\nproof.deadline=" + deadline + "\n"), nil
 			case joined == "rev-parse HEAD" && dir == b.worktree:
 				return []byte(b.head + "\n"), nil
 			case strings.HasPrefix(joined, "rev-parse --verify -q refs/heads/goal/"):
