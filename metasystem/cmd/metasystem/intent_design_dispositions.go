@@ -25,7 +25,8 @@ import (
 // the chain's frozen review budget.
 func (inv *intentInvocation) designRoundLimit(root string) int64 {
 	if record, err := inv.jobRecord(root); err == nil {
-		if limit := recordInt(record, "reviewRoundLimit"); limit >= 1 {
+		if _, present := record["reviewRoundLimit"]; present {
+			limit := recordInt(record, "reviewRoundLimit")
 			return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), root, limit)
 		}
 	}
@@ -141,8 +142,7 @@ func roundClaims(returnPath string) map[string]string {
 // A refutation and an out-of-scope stand from any round. An acceptance stands
 // only from an earlier round, whose amendment the follow-up examined without
 // raising the finding again; the answered round's own acceptances are left
-// open for classification, except acceptances at a one-examination close,
-// which are recorded as folded.
+// open for the final Decision revision and acceptance publication.
 func (inv *intentInvocation) registerDecisions(root string, answering int64) map[string]string {
 	latest := map[string]string{}
 	from := map[string]int64{}
@@ -160,8 +160,6 @@ func (inv *intentInvocation) registerDecisions(root string, answering int64) map
 		switch {
 		case disposition == "refuted" || disposition == "out-of-scope":
 			decisions[id] = disposition
-		case disposition == "accepted" && from[id] == answering && len(rounds) == 1 && inv.designRoundLimit(root) == answering:
-			decisions[id] = "folded"
 		case disposition == "accepted" && from[id] < answering:
 			decisions[id] = disposition
 		}

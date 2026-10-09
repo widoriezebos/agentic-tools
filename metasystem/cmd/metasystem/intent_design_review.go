@@ -191,8 +191,6 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 		// Dispositions section, if the first close could not write it, is
 		// written now.
 		return inv.designCritiqueClosed(plan, chain, intentResult{Targets: append(plan.targets, jobTarget(chain.Root)), Outcome: intentUnchanged})
-	case chain.Closed && chain.NewestRound == 1 && dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), chain.Root, 2) == 1:
-		return designRoundOneRefused(plan)
 	case chain.Closed && (inv.input.has("dispositions") || inv.input.has("retry")):
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary:  fmt.Sprintf("design %s's critique is closed and is never continued; nothing was requested", plan.recordID),
@@ -205,7 +203,7 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 		if entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)] != plan.subject {
 			return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 				Summary: fmt.Sprintf("design %s changed after its critique closed, and a change starts no new critique; nothing was done", plan.recordID),
-				next:    inv.publicArgv("goal", "budget", plan.goalID), nextReason: "a person decides whether it needs another critique and gives the goal a budget for it"}
+				next:    inv.publicArgv("design", "review", relativeOrSame(inv.layout.GitRoot, plan.design), "--scope", "FILE", "--reason", "TEXT", "--by", "NAME"), nextReason: "a person records an explicit scope change; the closed critique keeps its consumed allowance"}
 		}
 		return &intentResult{Targets: append(plan.targets, jobTarget(chain.Root)), Outcome: intentUnchanged, Summary: "the design's retained critique is closed; no new examination was requested"}
 	case !dispatchcore.TerminalStatus(status):
@@ -243,12 +241,6 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 	return &intentResult{Targets: plan.targets, Outcome: intentInProgress, code: 1, Data: map[string]any{"template": template, "examination": chain.NewestRound},
 		Summary: fmt.Sprintf("design %s changed since review %d; decide its %d finding(s) first", plan.recordID, chain.NewestRound, len(findings)),
 		next:    append(inv.sameCommand(), "--dispositions", template), nextReason: "after deciding every finding in " + template}
-}
-
-func designRoundOneRefused(plan designReviewPlan) *intentResult {
-	reason := fmt.Sprintf("round 1 of %s found no critical finding; its findings are folded and recorded; no second round was started", plan.recordID)
-	return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Data: map[string]any{"code": "DESIGN_ROUND_ONE", "reason": reason}, text: []string{reason},
-		Summary: "no second design examination was started", Decision: "nothing to do; the critique is complete"}
 }
 
 // continueDesignChain requests, or rejoins, the one follow-up examination of
@@ -340,6 +332,7 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 			result := &intentResult{Targets: plan.targets, Outcome: intentInProgress, Summary: "the review policy holds the prepared design continuation", next: inv.sameCommand(), nextReason: "release that hold to resume"}
 			if err != nil {
 				result.Details = []string{err.Error()}
+				result.nextReason = "repair the review.stop setting, then run the same command to resume"
 			}
 			return result
 		}

@@ -545,6 +545,8 @@ func TestDesignReviewCollectsLegacyEvidence(t *testing.T) {
 			returned["rigor"], returned["verdictMaterialCount"] = []any{evidenceRigor("F1")}, 1
 			b.writeJSON(filepath.Join(dir, "return.json"), returned)
 			record := b.job("rev1")
+			// Decision 2: legacy material gets no one-examination fold.
+			record["reviewRoundLimit"] = 4
 			delete(record, "engineBuild")
 			b.writeJob(record)
 			if scenario == "folded-without-page" {
@@ -561,8 +563,8 @@ func TestDesignReviewCollectsLegacyEvidence(t *testing.T) {
 			}
 			decided := b.decide(result, map[string]string{"F1": "accepted | specify the requirement | ## Collection:1"})
 			closed := b.review("--dispositions", decided)
-			if closed.Outcome != intentConfirmed || b.closes != 1 || b.job("rev1")["chainClosed"] != true {
-				t.Fatalf("legacy recovery cannot close: %+v", closed)
+			if closed.Outcome != intentRefused || b.closes != 0 || b.job("rev1")["chainClosed"] == true || closed.Next == nil || !strings.Contains(closed.Next.Reason, "after changing the design") {
+				t.Fatalf("legacy collection folded an unexamined amendment: %+v", closed)
 			}
 			if len(b.followUps) != 0 || b.fresh != 1 {
 				t.Fatal("legacy recovery requested another examination")

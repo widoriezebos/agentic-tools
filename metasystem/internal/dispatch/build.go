@@ -238,12 +238,17 @@ type reviewRoundLimitResolution struct {
 	transfers   []goal.ReviewObligation
 }
 
-// reviewRoundLimitForRole gives every critic role, design critics included,
-// the goal's review-round member clamped by metasystem.budget.review-round-max,
-// or that ceiling when no goal binds the chain (Wido 2026-10-02): the count is
-// a far-away backstop; the loop ends on materiality and divergence.
+// Design critics freeze at most four completed examinations. A goal's zero
+// budget admits none; configuration zero leaves the design cap at four.
 func reviewRoundLimitForRole(role string, goalBound bool, sourceLimit uint8) reviewRoundLimitResolution {
-	return reviewRoundLimitResolution{role: role, goalBound: goalBound, roleLimit: sourceLimit, sourceLimit: sourceLimit}
+	limit := sourceLimit
+	if role == "design-critic" {
+		if !goalBound && limit == 0 {
+			limit = 4
+		}
+		limit = min(4, limit)
+	}
+	return reviewRoundLimitResolution{role: role, goalBound: goalBound, roleLimit: limit, sourceLimit: sourceLimit}
 }
 
 func validateReviewRoundTier(role string, goalBound bool, tier uint8) error {
@@ -281,7 +286,7 @@ func goalReviewRoundLimitWithReads(repoRoot, goalID string, revision uint64, rol
 	if limit < 0 {
 		return zero, fmt.Errorf("goal %s revision %d has a negative review-round limit", goalID, revision)
 	}
-	if uint64(limit) > maximum {
+	if maximum > 0 && uint64(limit) > maximum {
 		limit = int64(maximum)
 	}
 	resolution := reviewRoundLimitForRole(role, true, uint8(limit))
@@ -290,6 +295,9 @@ func goalReviewRoundLimitWithReads(repoRoot, goalID string, revision uint64, rol
 }
 
 func (r reviewRoundLimitResolution) rebindLimit() uint8 {
+	if r.role == "design-critic" {
+		return r.roleLimit
+	}
 	return r.sourceLimit
 }
 
@@ -622,6 +630,9 @@ func buildRecordWithReads(p BuildRecordParams, facts buildWorkspaceFacts, reads 
 		}
 		record["findingRegisterRound"] = 0
 		record["reviewRoundLimit"] = resolution.roleLimit
+		if p.Role == "design-critic" {
+			record["designExaminationLimit"] = resolution.roleLimit
+		}
 		record["criticRoundsConsumed"] = 0
 		record["demotions"] = []any{}
 		if p.Role == "design-critic" || p.Role == "code-critic" {

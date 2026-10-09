@@ -536,7 +536,8 @@ func TestBuildRecordDesignCriticCarriesDeclaredOutputs(t *testing.T) {
 	if _, _, err := designBlobBinding(workspace, testHeadID, missing, reads); err == nil || !strings.Contains(err.Error(), "is not a blob") {
 		t.Fatalf("a design that is nowhere: %v", err)
 	}
-	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 5 {
+	// Decision 2 freezes the four-examination design cap at admission.
+	if limit, _ := numInt(record[reviewRoundLimitField]); limit != 4 {
 		t.Fatalf("review round limit = %v", record[reviewRoundLimitField])
 	}
 	if counted, _ := record[reviewChainCountedField].(bool); !counted {

@@ -912,11 +912,10 @@ func CritiqueRegisterResolveOutOfScope(repoRoot, rootJob string, findingIDs []st
 // open or disputed findings are decided here: one the critic withdrew or the
 // close deferred keeps its resolution, and an id the register does not carry
 // (a finding that was never material) has nothing to decide. The final round's
-// own accepted findings stay open for classification, except non-severe
-// acceptances folded at a one-examination design close.
+// own accepted findings stay open for the final Decision revision and publication.
 func CritiqueRegisterApplyDecisions(repoRoot, rootJob string, decisions map[string]string) error {
 	for id, resolution := range decisions {
-		if resolution != "refuted" && resolution != "accepted" && resolution != "out-of-scope" && resolution != "folded" {
+		if resolution != "refuted" && resolution != "accepted" && resolution != "out-of-scope" {
 			return fmt.Errorf("finding %s: %q is not a decision the register records; it records refuted, accepted and out-of-scope", id, resolution)
 		}
 	}
@@ -935,17 +934,6 @@ func CritiqueRegisterApplyDecisions(repoRoot, rootJob string, decisions map[stri
 				resolution, decided := decisions[register[i].FindingID]
 				if !decided || (register[i].Status != "open" && register[i].Status != "disputed") {
 					continue
-				}
-				if resolution == "folded" {
-					round, _ := numInt(root[findingRegisterRoundField])
-					limit, _ := numInt(root[reviewRoundLimitField])
-					first, _ := firstDesignReturn(repoRoot, rootJob, max(limit, round))
-					if asString(root["role"]) != "design-critic" || round != first || DesignRoundLimit(repoRoot, rootJob, limit) != round {
-						return fmt.Errorf("finding %s can only be folded at a one-examination design close", register[i].FindingID)
-					}
-					if register[i].RigorClass == critiqueModel.Severe {
-						continue
-					}
 				}
 				if resolution == "out-of-scope" && (register[i].RigorClass == critiqueModel.Severe || register[i].RigorClass == critiqueModel.Unproven) {
 					return fmt.Errorf("finding %s is %s and cannot be resolved out-of-scope", register[i].FindingID, register[i].RigorClass)
@@ -1020,8 +1008,8 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 			}
 			if len(blockers) > 0 {
 				foldedRound, roundOK := numInt(root[findingRegisterRoundField])
-				if roundOK && designFinalRound(repoRoot, state, rootJob, root, foldedRound) {
-					return designCapHumanRaise(asString(root["goalId"]), foldedRound, designCapHumanFindingIDs(root, register, unresolved, blockerIDs))
+				if roundOK && asString(root["role"]) == "design-critic" {
+					return fmt.Errorf("%s\n%w", strings.Join(blockers, "\n"), designCapHumanRaise(asString(root["design"]), foldedRound, designCapHumanFindingIDs(root, register, unresolved, blockerIDs)))
 				}
 				return fmt.Errorf("%s\na person accepts each risk with metasystem goal accept-risk, or raises the goal's budget with metasystem goal budget", strings.Join(blockers, "\n"))
 			}
@@ -1040,7 +1028,7 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 				// bullet 5 sends every other non-clean row to the human without another automatic round.
 				humanIDs := designCapHumanFindingIDs(root, register, unresolved, nil)
 				if len(humanIDs) > 0 {
-					return designCapHumanRaise(asString(root["goalId"]), foldedRound, humanIDs)
+					return designCapHumanRaise(asString(root["design"]), foldedRound, humanIDs)
 				}
 				useFixture = true
 			}
@@ -1150,23 +1138,22 @@ func reviewRoundCeiling(repoRoot string) int64 {
 	return int64(maximum)
 }
 
-func designCapHumanRaise(goalID string, round int64, findingIDs []string) error {
+func designCapHumanRaise(design string, round int64, findingIDs []string) error {
+	if design == "" {
+		return fmt.Errorf("the design's canonical page is missing; restore the design path on its retained root before closing")
+	}
 	unique := map[string]bool{}
 	for _, id := range findingIDs {
 		unique[id] = true
 	}
-	ids := make([]string, 0, len(unique))
+	findingIDs = nil
 	for id := range unique {
-		ids = append(ids, id)
+		findingIDs = append(findingIDs, id)
 	}
-	sort.Strings(ids)
-	first := "F"
-	if len(ids) > 0 {
-		first = ids[0]
-	}
+	sort.Strings(findingIDs)
 	return &OpError{Code: CritiqueCapExhaustedExitCode, Reason: CritiqueCapExhaustedReason,
-		Message: fmt.Sprintf("design round %d left findings %s for a person to decide\nrun: metasystem goal accept-risk %s --finding %s --reason TEXT, or re-scope it with metasystem goal edit %s",
-			round, strings.Join(ids, ", "), goalID, first, goalID)}
+		Message: fmt.Sprintf("design round %d left findings %s; complete their bound continuation or design exit\nrun: metasystem design review '%s' --dispositions FILE\nA person may record a ruling: metasystem design review '%s' --ruling TEXT --reason TEXT --by NAME",
+			round, strings.Join(findingIDs, ", "), strings.ReplaceAll(design, "'", "'\\''"), strings.ReplaceAll(design, "'", "'\\''"))}
 }
 
 func designCapHumanFindingIDs(root map[string]any, register []registerFinding, unresolved []int, ids []string) []string {

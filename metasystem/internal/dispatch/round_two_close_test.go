@@ -128,7 +128,7 @@ func writeCloseRoot(t *testing.T, role string, round int64, findings []registerF
 	path := filepath.Join(repo, "artifacts", "agents", "jobs", root+".json")
 	check(t, os.MkdirAll(filepath.Dir(path), 0o755) == nil, "cannot create test job directory")
 	record := map[string]any{"jobId": root, "role": role, "findingRegister": encodeFindingRegister(findings), "findingRegisterRound": round,
-		"reviewRoundLimit": limit, "criticRoundsConsumed": consumed, "goalId": "goal-1", "machineId": "machine-1", "mainId": "main-1", "claimEpoch": int64(1)}
+		"design": "plans/designs/reader.md", "reviewRoundLimit": limit, "criticRoundsConsumed": consumed, "goalId": "goal-1", "machineId": "machine-1", "mainId": "main-1", "claimEpoch": int64(1)}
 	if history != nil {
 		record[materialByRoundField] = history
 	}
@@ -146,8 +146,9 @@ func assertHumanRaise(t *testing.T, err error, findingIDs ...string) {
 	var opErr *OpError
 	check(t, errors.As(err, &opErr), "close did not return the cap-exhausted refusal: %T %v", err, err)
 	check(t, opErr.Code == CritiqueCapExhaustedExitCode && opErr.RefusalCode() == CritiqueCapExhaustedReason && !strings.Contains(err.Error(), CritiqueCapExhaustedReason), "close refusal carried code=%d reason=%q: %+v", opErr.Code, opErr.Reason, opErr)
+	// Decisions 2-3 retain the public design exit, without a severity budget ask.
 	message := err.Error()
-	for _, want := range append(findingIDs, "\nrun: metasystem goal accept-risk", "--finding", "metasystem goal edit") {
+	for _, want := range append(findingIDs, "\nrun: metasystem design review", "plans/designs/reader.md", "--dispositions FILE") {
 		check(t, strings.Contains(message, want), "human refusal did not name %q: %v", want, err)
 	}
 }

@@ -181,11 +181,14 @@ func finalRound(t *testing.T, b *designLoopBed, register func(), roundTwo []map[
 	return b.review("--dispositions", second, "--after", "2")
 }
 
-// A critical finding permits one final examination within the budget.
+// Decision 2: a frozen allowance of two makes examination two final.
 func TestDesignLoopRoundTwoOfFiveIsFinal(t *testing.T) {
 	t.Parallel()
 	b := newDesignLoopBed(t)
 	b.review()
+	root := b.job("rev1")
+	root["reviewRoundLimit"] = 2
+	b.writeJob(root)
 	critical := finding("F1", true, "the reader forgets the page")
 	critical["severity"] = "critical"
 	b.finish("rev1", 1, "completed", critical)
@@ -241,7 +244,7 @@ func TestDesignLoopFinalRoundExitsByTheEngine(t *testing.T) {
 		said := fmt.Sprint(result.Data.(map[string]any)["ownerMessage"])
 		if result.Outcome != intentRefused || b.closes != 1 || strings.Contains(said, dispatchcore.CritiqueCapExhaustedReason) ||
 			fmt.Sprint(result.Data.(map[string]any)["exitCode"]) != fmt.Sprint(dispatchcore.CritiqueCapExhaustedExitCode) ||
-			!strings.Contains(said, "findings I1 for a person to decide") {
+			!strings.Contains(said, "findings I1; complete their bound continuation or design exit") || !strings.Contains(said, "--dispositions FILE") || strings.Contains(said, "goal accept-risk") {
 			t.Fatalf("the human-required close: %+v", result)
 		}
 		if closed, _ := b.job("rev1")["chainClosed"].(bool); closed || strings.Contains(string(mustRead(t, b.design)), "## Dispositions") {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -54,6 +55,21 @@ func TestDesignReviewContinuationHoldHasReleaseAndAdmitsPerson(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestDesignReviewPolicyErrorNamesSettingRepair(t *testing.T) {
+	t.Parallel()
+	b, answer, _ := cutoverPositiveRead(t)
+	conf := filepath.Join(b.install, "metasystem.conf")
+	b.writeFile(conf, string(mustRead(t, conf))+"\nreview.stop=broken\n")
+	result := b.review("--dispositions", answer)
+	if result.Outcome != intentInProgress || len(b.followUps) != 0 || result.Next == nil || !strings.Contains(result.Next.Reason, "repair the review.stop setting") || strings.Contains(result.Next.Reason, "release") || len(result.Details) != 1 || !strings.Contains(result.Details[0], "review.stop") {
+		t.Fatalf("setting error offered an ineffective remedy: %+v", result)
+	}
+	b.writeFile(conf, strings.Replace(string(mustRead(t, conf)), "review.stop=broken", "review.stop=auto", 1))
+	if repaired := b.review("--dispositions", answer); repaired.Outcome != intentInProgress || len(b.followUps) != 1 {
+		t.Fatalf("printed repair did not resume the prepared continuation: %+v", repaired)
 	}
 }
 
@@ -224,5 +240,34 @@ func TestDesignReviewHeldAcceptanceAdmitsPerson(t *testing.T) {
 				t.Fatalf("agent crossed acceptance hold: %+v", result)
 			}
 		})
+	}
+}
+
+func TestDesignLegacyResidueOffersExecutableRuling(t *testing.T) {
+	t.Parallel()
+	b := newDesignLoopBed(t)
+	b.lineage = b.goalFile(bedGoal).Claimed.Lineage
+	b.writeFile(b.design, string(mustRead(t, b.design))+acceptanceUnits)
+	b.review()
+	b.finish("rev1", 1, "completed", finding("F1", true, "an unresolved requirement"))
+	b.register(1, 1, []int64{1}, map[string]any{"findingId": "F1", "rigorClass": "severe"})
+	answer := b.decide(b.review(), map[string]string{"F1": "accepted | specify the requirement | section 2"})
+	realCloseOwner(t, b.deliveryBed, func(ports *delegation.Ports) { ports.Git = designReviewGit{b.root()} })
+	held := b.review("--dispositions", answer)
+	message := fmt.Sprint(held.Data, held.Summary, held.Details)
+	command := "metasystem design review '" + b.design + "' --ruling TEXT --reason TEXT --by NAME"
+	if held.Outcome != intentRefused || !strings.Contains(message, command) || strings.Contains(message, "goal accept-risk") || b.job("rev1")["chainClosed"] == true || len(b.followUps) != 0 {
+		t.Fatalf("legacy residue gave no executable person exit: %+v", held)
+	}
+	owners := b.intentBed.owners()
+	owners.delivery = b.owners
+	now, _ := owners.commandNow(b.root())
+	owners.prove = enrolledPersonProver(t, b.root(), now)
+	code, ruled := b.runJSON(owners, "design", "review", b.design, "--ruling", "accept the retained candidate", "--reason", "legacy advisory evidence", "--by", "Wido")
+	if code != 0 || ruled.Outcome != intentConfirmed || len(b.goalFile(bedGoal).DesignExits) != 1 || len(b.followUps) != 0 || b.fresh != 1 {
+		t.Fatalf("printed ruling did not take effect: %+v", ruled)
+	}
+	if page := string(mustRead(t, b.design)); !strings.Contains(page, "Critique: ruled by") || strings.Contains(page, "on 0 material") {
+		t.Fatalf("ruling fabricated a clean examination: %s", page)
 	}
 }

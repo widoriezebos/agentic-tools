@@ -19,55 +19,26 @@ const (
 const secondExhaustionRefused = "the review-round limit is exhausted with a severe or unproven finding open; only a person can go on"
 const boundedExhaustionRefused = "the review-round limit is exhausted with bounded findings; close the critique register to defer them"
 
-// DesignRoundLimit admits a second examination only for a critical finding
-// in the first return, within the frozen review budget. Failed rounds without
-// a return do not consume an examination.
+// DesignRoundLimit reads the admission's frozen allowance. Legacy roots use
+// their retained review budget; severity never grants another examination.
 func DesignRoundLimit(repoRoot, rootJob string, frozenLimit int64) int64 {
 	if root, err := readObject(filepath.Join(repoRoot, "artifacts", "agents", "jobs", rootJob+".json")); err == nil {
-		if limit, ok := numInt(root["designExaminationLimit"]); ok {
-			return limit
-		}
-	}
-	if frozenLimit < 1 {
-		frozenLimit = reviewRoundCeiling(repoRoot)
-	}
-	first, result := firstDesignReturn(repoRoot, rootJob, frozenLimit)
-	if first == 0 {
-		return frozenLimit
-	}
-	limit := first
-	findings, _ := result["findings"].([]any)
-	for _, raw := range findings {
-		finding, _ := raw.(map[string]any)
-		if asString(finding["severity"]) == "critical" {
-			limit++
-			break
-		}
-	}
-	state := loadCritiqueState(repoRoot)
-	for round := first + 1; round <= limit && round < frozenLimit; round++ {
-		for id, record := range state.records {
-			if state.chainRoot(id) != rootJob || asString(record["status"]) == "completed" || !TerminalStatus(asString(record["status"])) {
-				continue
+		if value, present := root["designExaminationLimit"]; present {
+			if limit, ok := numInt(value); ok && limit >= 0 && limit <= 4 {
+				return limit
 			}
-			if n, _ := numInt(record["round"]); n == round {
-				if _, err := readObject(filepath.Join(state.agents, rootJob, "rounds", fmt.Sprint(round), "return.json")); os.IsNotExist(err) {
-					limit++
-					break
-				}
+			return 0
+		}
+		if limit, ok := numInt(root[reviewRoundLimitField]); ok {
+			if asString(root["goalId"]) != "" || limit > 0 {
+				return min(4, max(0, limit))
 			}
 		}
 	}
-	return min(limit, frozenLimit)
-}
-
-func firstDesignReturn(repoRoot, rootJob string, limit int64) (int64, map[string]any) {
-	for round := int64(1); round <= limit; round++ {
-		if result, err := readObject(filepath.Join(repoRoot, "artifacts", "agents", rootJob, "rounds", fmt.Sprint(round), "return.json")); err == nil {
-			return round, result
-		}
+	if frozenLimit <= 0 {
+		return 4
 	}
-	return 0, nil
+	return min(4, frozenLimit)
 }
 
 // critiqueState is the record table one critique decision reads: every
@@ -293,6 +264,9 @@ func CritiqueExhaustionAdvance(repoRoot, rootJob, role, messagePath, successor s
 				return "", inspectErr
 			}
 			if terminalErr := terminalCapError(capState); terminalErr != nil {
+				if role == "design-critic" {
+					return "", designCapHumanRaise(asString(state.records[rootJob]["design"]), capState.round, capState.openIDs)
+				}
 				return "", terminalErr
 			}
 			return "none", nil

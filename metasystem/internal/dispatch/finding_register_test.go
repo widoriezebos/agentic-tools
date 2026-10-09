@@ -26,7 +26,7 @@ func TestDesignRoundLimitBoundsAdmission(t *testing.T) {
 	for _, c := range []struct {
 		severity            string
 		budget, round, want int64
-	}{{"high", 20, 1, 1}, {"critical", 20, 1, 2}, {"critical", 1, 1, 1}, {"critical", 20, 2, 2}, {"", 20, 1, 1}} {
+	}{{"high", 20, 1, 4}, {"critical", 20, 1, 4}, {"critical", 1, 1, 1}, {"critical", 20, 4, 4}, {"", 20, 1, 4}} {
 		t.Run(fmt.Sprintf("%s/%d/%d", c.severity, c.budget, c.round), func(t *testing.T) {
 			t.Parallel()
 			repo, root, path := writeCloseRoot(t, "design-critic", c.round, []registerFinding{closeFinding("F1", "invariant", "", "gap", "bounded")}, nil, c.budget, c.round)
@@ -53,7 +53,7 @@ func TestDesignFailedRoundWithoutReturnDoesNotExhaust(t *testing.T) {
 	record := readJSONFile(t, path)
 	record["round"], record["status"] = 1, "failed"
 	check(t, writeRecord(path, record) == nil, "cannot write failed design round")
-	if limit := DesignRoundLimit(repo, root, 20); limit != 20 {
+	if limit := DesignRoundLimit(repo, root, 20); limit != 4 {
 		t.Errorf("a design without a return capped the retry at %d", limit)
 	}
 	record[reviewRoundLimitField] = 1
@@ -76,10 +76,11 @@ func TestDesignFoldUsesFallbackRoundLimit(t *testing.T) {
 	delete(record, reviewRoundLimitField)
 	check(t, writeRecord(path, record) == nil, "cannot write legacy design register")
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", root, "rounds", "1"), "return.json", map[string]any{"findings": []any{map[string]any{"severity": "high"}}})
-	if err := CritiqueRegisterApplyDecisions(repo, root, map[string]string{"F1": "folded"}); err != nil {
-		t.Fatalf("fold with the fallback review limit: %v", err)
+	// Decision 2 removes the legacy one-examination resolution.
+	if err := CritiqueRegisterApplyDecisions(repo, root, map[string]string{"F1": "folded"}); err == nil {
+		t.Fatal("legacy folded resolution was admitted")
 	}
-	if clean, err := readsubject.CleanRegister(readJSONFile(t, path)[findingRegisterField]); err != nil || !clean {
+	if clean, err := readsubject.CleanRegister(readJSONFile(t, path)[findingRegisterField]); err != nil || clean {
 		t.Fatalf("fallback-limit register = clean %v, error %v", clean, err)
 	}
 }
@@ -91,7 +92,7 @@ func TestDesignRoundLimitIgnoresFailedExaminations(t *testing.T) {
 		severity     string
 		failedSecond bool
 		want         int64
-	}{{2, "high", false, 2}, {2, "critical", false, 3}, {1, "critical", true, 3}} {
+	}{{2, "high", false, 4}, {2, "critical", false, 4}, {1, "critical", true, 4}} {
 		t.Run(fmt.Sprintf("%d/%s/%t", c.first, c.severity, c.failedSecond), func(t *testing.T) {
 			t.Parallel()
 			repo, root, path := writeCloseRoot(t, "design-critic", 1, nil, nil, 20, 1)

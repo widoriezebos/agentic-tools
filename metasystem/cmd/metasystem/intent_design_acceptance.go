@@ -265,8 +265,10 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		}
 	}
 	decided := inv.registerDecisions(chain.Root, exit.Round)
-	for _, item := range exit.Obligations {
-		decided[item.DesignItem.Finding] = "accepted"
+	for _, items := range [][]goal.ReviewObligation{exit.Obligations, exit.TransferObligations} {
+		for _, item := range items {
+			decided[item.DesignItem.Finding] = "accepted"
+		}
 	}
 	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, decided); err != nil {
 		return fail(err)

@@ -77,15 +77,11 @@ func recordDesignDecision(state critiqueState, rootID string, root, record map[s
 		}
 	}
 	limit, valid := numInt(root["designExaminationLimit"])
-	if _, present := root["designExaminationLimit"]; present && (!valid || limit < 1 || limit > 4) {
+	if _, present := root["designExaminationLimit"]; present && (!valid || limit < 0 || limit > 4) {
 		return fmt.Errorf("the frozen design examination allowance is unreadable")
 	}
 	if !valid {
-		limit, _ = numInt(root[reviewRoundLimitField])
-		if limit < 1 {
-			limit = 4
-		}
-		limit = min(4, limit)
+		limit = DesignRoundLimit(filepath.Dir(filepath.Dir(state.agents)), rootID, 4)
 		root["designExaminationLimit"] = limit
 	}
 	normalized := read
