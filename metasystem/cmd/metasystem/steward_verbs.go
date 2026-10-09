@@ -122,7 +122,7 @@ func writeHookHealthPreview(repo, metasystemRoot string, asJSON bool, stdout, st
 			return 2
 		}
 	} else {
-		fmt.Fprintln(stdout, verdict.Line())
+		fmt.Fprintln(stdout, verdict.Line("agent"))
 	}
 	return verdict.ExitCode()
 }
