@@ -397,17 +397,6 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 					}
 				}
 			}
-			if completedRead.Design != nil {
-				present := map[string]bool{}
-				for _, finding := range completedRead.Findings {
-					present[finding.ID] = true
-				}
-				for i := range advanced {
-					if advanced[i].Status == "resolved" && (advanced[i].Resolution == "accepted" || advanced[i].Resolution == "refuted") && !present[advanced[i].FindingID] {
-						advanced[i].Resolution = "withdrawn"
-					}
-				}
-			}
 			if completedSubjectBound {
 				if err := supersedePlaceholders(state, rootJob, advanced, completedSubject, round); err != nil {
 					return err
@@ -1230,6 +1219,12 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 	landable, risks, err := readsubject.LandableRegister(encodeFindingRegister(register))
 	if err != nil {
 		return Closure{}, false, err
+	}
+	if !landable && asString(root["role"]) == "design-critic" {
+		landable, err = readsubject.CleanDesignRegister(root)
+		if err != nil {
+			return Closure{}, false, err
+		}
 	}
 	if !landable {
 		return Closure{}, false, nil

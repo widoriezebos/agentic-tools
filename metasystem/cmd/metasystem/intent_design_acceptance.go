@@ -112,7 +112,7 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 			if err != nil {
 				return fail(err)
 			}
-			if clean, err := readsubject.CleanRegister(root["findingRegister"]); err != nil || !clean {
+			if clean, err := readsubject.CleanDesignRegister(root); err != nil || !clean {
 				return fail(fmt.Errorf("the critique has unresolved findings: %v", err))
 			}
 		}
@@ -235,7 +235,7 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 			if err != nil {
 				return err
 			}
-			if policy == "person" {
+			if policy == "person" && inv.directPersonProof("design acceptance") != nil {
 				return fmt.Errorf("acceptance is prepared for the review policy's holder; release that hold to resume")
 			}
 			page, err := os.ReadFile(plan.design)
@@ -271,7 +271,7 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, decided); err != nil {
 		return fail(err)
 	}
-	closed := inv.closeChain(chain.Root)
+	closed := inv.closeChainRecords(chain.Root)
 	if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
 		return &closed
 	}

@@ -1,11 +1,13 @@
 package dispatch
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -66,6 +68,14 @@ func designCritiqueChains(state critiqueState, repoRoot, goalID, designPath stri
 			designID = record.ID
 		}
 	}
+	aliases := map[string]bool{}
+	if designID != "" {
+		path := filepath.Join(state.agents, "intent-review", "design-"+strings.ToLower(designID), "chain.json")
+		var entry struct{ Goal, Design string }
+		if data, err := os.ReadFile(path); err == nil && json.Unmarshal(data, &entry) == nil && (anyGoal || entry.Goal == goalID) {
+			aliases[entry.Design] = true
+		}
+	}
 	canonical := designPath
 	if resolved, err := filepath.EvalSymlinks(designPath); err == nil {
 		canonical = resolved
@@ -95,7 +105,12 @@ func designCritiqueChains(state critiqueState, repoRoot, goalID, designPath stri
 			frozen, problems, present := project.ParseRecord(subject.DesignPath, subject.DesignPage)
 			sameRecord = present && len(problems) == 0 && frozen.ID == designID && designID != ""
 		}
-		if (!sameRecord && recorded != canonical) || !anyGoal && asString(record["goalId"]) != goalID {
+		if !sameRecord && designID != "" {
+			retained, _ := record["read"].(map[string]any)
+			identity, _ := retained["design"].(map[string]any)
+			sameRecord = asString(identity["recordId"]) == designID && asString(identity["root"]) == jobID
+		}
+		if (!sameRecord && recorded != canonical && !aliases[recorded]) || !anyGoal && asString(record["goalId"]) != goalID {
 			continue
 		}
 		chain := DesignCritiqueChain{Root: jobID, Goal: asString(record["goalId"])}

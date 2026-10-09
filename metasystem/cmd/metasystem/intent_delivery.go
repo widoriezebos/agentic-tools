@@ -928,7 +928,7 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 	return strings.Join(lines, "\n")
 }
 
-func (inv *intentInvocation) reviewDesign(file string) intentResult {
+func (inv *intentInvocation) reviewDesign(file string, selectedRoot ...string) intentResult {
 	path := file
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(inv.cwd, path)
@@ -1012,7 +1012,7 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	for path, content := range drafts.files {
 		inputs[path] = content
 	}
-	plan := designReviewPlan{targets: target, goalID: goalID, recordID: record.ID, design: designPath, subject: hex.EncodeToString(digest[:]), brief: brief,
+	plan := designReviewPlan{root: firstOr(selectedRoot, ""), targets: target, goalID: goalID, recordID: record.ID, design: designPath, subject: hex.EncodeToString(digest[:]), brief: brief,
 		inputs: inputs}
 	// An existing chain is decided before anything is written: a Send that
 	// rejoins a running examination writes nothing, so the brief it admitted,
@@ -1573,6 +1573,39 @@ func joinRefusal(targets []intentTarget, review string, violations []string, ret
 // ---- close
 
 func (inv *intentInvocation) closeChain(job string) intentResult {
+	store := branch.CriticStore(inv.layout.InstallationRoot.Path(), job)
+	if store != inv.layout.InstallationRoot.Path() {
+		closer, refused := inv.closerAt([]intentTarget{jobTarget(job)}, store)
+		if refused != nil {
+			return *refused
+		}
+		return closer.closeChain(job)
+	}
+	if root, err := inv.jobRecord(job); err == nil && recordText(root, "role") == "design-critic" {
+		if recordText(root, "parentJob") != "" {
+			return inv.closeChainRecords(job)
+		}
+		newest, err := inv.newestRound(job)
+		if err != nil {
+			return inv.closeDesignJob(job, recordText(root, "goalId"))
+		}
+		if err == nil {
+			required, err := dispatchcore.DesignEvidenceRequired(store, job, recordRound(newest))
+			if err != nil || required {
+				return inv.closeDesignJob(job, recordText(root, "goalId"))
+			}
+		}
+	}
+	closed := inv.closeChainRecords(job)
+	if root, err := inv.jobRecord(job); err == nil && recordText(root, "role") == "design-critic" && (closed.Outcome == intentConfirmed || closed.Outcome == intentUnchanged) {
+		closed.Summary += "; this ends that review only: it accepts no design, collects no goal read and does not permit landing"
+	}
+	return closed
+}
+
+// closeChainRecords retains the whole close checks. A whole-page design
+// reaches it only after its exit is committed and its page is projected.
+func (inv *intentInvocation) closeChainRecords(job string) intentResult {
 	// The chain's records are where its critic was dispatched: a goal
 	// worktree or the primary checkout that serves it (branch.CriticStore).
 	if store := branch.CriticStore(inv.layout.InstallationRoot.Path(), job); store != inv.layout.InstallationRoot.Path() {
@@ -1580,7 +1613,7 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		if refused != nil {
 			return *refused
 		}
-		return closer.closeChain(job)
+		return closer.closeChainRecords(job)
 	}
 	targets := []intentTarget{jobTarget(job)}
 	root, err := inv.jobRecord(job)
@@ -2636,13 +2669,13 @@ func recordWriterAdmits(caller lease.ClassifyResult, err error, job string) (str
 	return "", nil
 }
 
-// closeCriticJob completes an existing review chain named by its critic root
-// with the author's decisions, through the same whole close owner that
-// review G and review commit use: the join, record-writer authority, live
-// processes, caps and accepted findings are the owner's checks. A closed
-// chain is not an accepted design, a collected goal read or permission to
-// land; it only ends that review.
+// closeCriticJob completes a review named by its critic root. Whole-page
+// designs use their canonical publication owner; code and warden reviews
+// use the whole close checks and collect no goal read or landing permission.
 func (inv *intentInvocation) closeCriticJob(job string) intentResult {
+	if root, err := inv.jobRecord(job); err == nil && recordText(root, "role") == "design-critic" {
+		return inv.closeChain(job)
+	}
 	if !inv.input.has("dispositions") {
 		return intentResult{Targets: []intentTarget{jobTarget(job)}, Outcome: intentRefused, code: 2,
 			Summary: fmt.Sprintf("job %s is a review; its findings are decided, not reviewed again; nothing was done", job),

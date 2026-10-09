@@ -146,6 +146,33 @@ func CleanRegister(value any) (bool, error) {
 	return clean, err
 }
 
+// CleanDesignRegister preserves author decisions when a subsequent bound
+// whole-page examination has no material findings. A disposition alone is
+// never a clean examination.
+func CleanDesignRegister(root map[string]any) (bool, error) {
+	clean, err := CleanRegister(root["findingRegister"])
+	if err != nil || clean {
+		return clean, err
+	}
+	data, err := json.Marshal(root["read"])
+	var read Read
+	if err == nil {
+		err = json.Unmarshal(data, &read)
+	}
+	if err != nil || read.Design == nil || read.Design.Root != stringValue(root["jobId"]) || read.Material != 0 || read.Subject.Digest() != stringValue(root["findingRegisterSubjectDigest"]) {
+		return false, err
+	}
+	remaining := []any{}
+	for _, raw := range root["findingRegister"].([]any) {
+		entry := raw.(map[string]any)
+		if entry["status"] == "resolved" && (entry["resolution"] == "accepted" || entry["resolution"] == "refuted") {
+			continue
+		}
+		remaining = append(remaining, raw)
+	}
+	return CleanRegister(remaining)
+}
+
 // LandableRegister says whether a closed register yields the read a landing
 // takes: every entry is withdrawn, folded, a superseded placeholder, or ruled out-of-scope (never a severe or
 // unproven finding), or accepted as a risk by a person's recorded act whose
@@ -398,8 +425,11 @@ func ReadClosedClosure(agents string, root map[string]any, members []map[string]
 	if err != nil {
 		return closure, true, fmt.Errorf("closure root %s has malformed finding register: %w", rootID, err)
 	}
-	if !landable {
-		return closure, true, fmt.Errorf("closure root %s does not have a clean finding register", rootID)
+	if !landable && role == "design-critic" {
+		landable, err = CleanDesignRegister(root)
+	}
+	if err != nil || !landable {
+		return closure, true, fmt.Errorf("closure root %s does not have a clean finding register: %v", rootID, err)
 	}
 	if !RecordedAcceptedRisksHold(closure.AcceptedRisks, risks) {
 		return closure, true, fmt.Errorf("closure root %s records accepted risks %v, but its register holds %v", rootID, closure.AcceptedRisks, risks)

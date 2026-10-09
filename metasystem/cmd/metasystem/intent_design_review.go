@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
@@ -81,6 +82,7 @@ func (inv *intentInvocation) writeDesignReviewEntry(recordID string, entry desig
 
 // designReviewPlan is what reviewDesign resolved before any dispatch.
 type designReviewPlan struct {
+	root             string // an explicitly selected canonical job alias
 	targets          []intentTarget
 	goalID, recordID string
 	design           string // canonical absolute path
@@ -111,6 +113,15 @@ func (plan designReviewPlan) writeMissingInputs() error {
 func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentResult {
 	entry, err := inv.readDesignReviewEntry(plan.recordID)
 	chains, chainErr := dispatchcore.ReadDesignCritiqueChains(inv.layout.InstallationRoot.Path(), plan.goalID, plan.design)
+	if plan.root != "" {
+		selected := chains[:0]
+		for _, chain := range chains {
+			if chain.Root == plan.root {
+				selected = append(selected, chain)
+			}
+		}
+		chains = selected
+	}
 	if err != nil || chainErr != nil || len(chains) == 0 && len(entry.Subjects) != 0 {
 		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the design history is unknown; no new critique was requested", Details: []string{fmt.Sprint(err, chainErr)}, next: inv.sameCommand(), nextReason: "restore the retained chain entry, job index and frozen subject for this design"}
 	}
@@ -325,8 +336,12 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 			return inv.unknownDesignExamination(plan, chain, err)
 		}
 		policy, err := inv.unitRunner().ReviewPolicy()
-		if err != nil || policy == "person" {
-			return &intentResult{Targets: plan.targets, Outcome: intentInProgress, Summary: "the review policy holds the prepared design continuation", next: inv.sameCommand(), Details: []string{fmt.Sprint(err)}}
+		if err != nil || policy == "person" && inv.directPersonProof("design continuation") != nil {
+			result := &intentResult{Targets: plan.targets, Outcome: intentInProgress, Summary: "the review policy holds the prepared design continuation", next: inv.sameCommand(), nextReason: "release that hold to resume"}
+			if err != nil {
+				result.Details = []string{err.Error()}
+			}
+			return result
 		}
 	}
 	decisions := digestText(content)
@@ -691,4 +706,53 @@ func (drafts designDrafts) section() string {
 	}
 	return "\n## Frozen drafts\n\nThese files are frozen as the seat's checkout held them when the review was asked. Read each from its copy,\nnever from the checkout, which may have moved since:\n\n" +
 		strings.Join(drafts.lines, "\n") + "\n"
+}
+
+// closeDesignJob resolves a public job alias to its current design page,
+// retaining the canonical root and using the design publication owner.
+func (inv *intentInvocation) closeDesignJob(job, goalID string) intentResult {
+	fail := func(err error) intentResult {
+		return intentResult{Targets: []intentTarget{jobTarget(job)}, Outcome: intentFailed, code: 1, Summary: "the design history is unknown; nothing was closed", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "restore this design's retained identity, page and frozen subjects"}
+	}
+	state, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+	if err != nil {
+		return fail(err)
+	}
+	pages, err := project.Read(project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: state})
+	if err != nil {
+		return fail(err)
+	}
+	for _, page := range pages.List(project.KindDesign, project.ListOptions{Goal: goalID}) {
+		path := filepath.Join(inv.layout.GitRoot, filepath.FromSlash(page.Path))
+		chains, err := dispatchcore.ReadDesignCritiqueChains(inv.layout.InstallationRoot.Path(), goalID, path)
+		for _, chain := range chains {
+			if chain.Root == job {
+				if err != nil {
+					return fail(err)
+				}
+				root, _ := inv.jobRecord(job)
+				decision, _ := root["designDecision"].(map[string]any)
+				if chain.Closed || !inv.input.has("dispositions") || recordText(decision, "decision") == "close" || recordText(decision, "decision") == "stop" {
+					data, err := os.ReadFile(path)
+					if err != nil {
+						return fail(err)
+					}
+					plan := designReviewPlan{root: job, targets: []intentTarget{{Kind: "design", ID: path}}, goalID: goalID, recordID: page.ID, design: path, subject: digestText(data)}
+					if result := inv.reviewDesignChain(plan); result != nil {
+						return *result
+					}
+					return fail(fmt.Errorf("critique %s lost its canonical root", job))
+				}
+				closer := *inv
+				args := []string{"design", "review", path, "--dispositions", inv.flagPath("dispositions")}
+				if calls := inv.input.text("tool-calls"); calls != "" {
+					args = append(args, "--tool-calls", calls)
+				}
+				closer.command, _ = findIntentAction("design", "review")
+				closer.raw = args[2:]
+				return closer.reviewDesign(path, job)
+			}
+		}
+	}
+	return fail(fmt.Errorf("critique %s has no current design with its retained identity", job))
 }

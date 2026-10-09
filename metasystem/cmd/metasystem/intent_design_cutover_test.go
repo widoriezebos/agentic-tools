@@ -15,7 +15,7 @@ import (
 
 func TestDesignReviewKeepsCanonicalHistory(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{"running", "closed", "lost-entry", "broken-entry", "broken-index", "lost-subject", "unrelated-legacy"} {
+	for _, state := range []string{"running", "closed", "lost-entry", "broken-entry", "broken-index", "lost-subject", "unrelated-legacy", "broken-subject", "broken-subject-lost-entry", "broken-subject-uncollected"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			b, dir, _ := designEvidenceBed(t, evidenceInventory)
@@ -38,6 +38,16 @@ func TestDesignReviewKeepsCanonicalHistory(t *testing.T) {
 				b.writeFile(filepath.Join(b.install, "artifacts", "agents", "intent-review", "design-01designreader", "chain.json"), "{")
 			case "broken-index":
 				b.writeFile(filepath.Join(b.install, "artifacts", "agents", "jobs", "unknown.json"), "{")
+			case "broken-subject", "broken-subject-lost-entry", "broken-subject-uncollected":
+				if state == "broken-subject-uncollected" {
+					delete(root, "read")
+				}
+				b.writeFile(filepath.Join(dir, "subject.json"), "{")
+				if state == "broken-subject-lost-entry" {
+					if err := os.Remove(filepath.Join(b.install, "artifacts", "agents", "intent-review", "design-01designreader", "chain.json")); err != nil {
+						t.Fatal(err)
+					}
+				}
 			case "lost-subject":
 				if err := os.Remove(filepath.Join(dir, "subject.json")); err != nil {
 					t.Fatal(err)
