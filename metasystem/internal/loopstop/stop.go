@@ -50,6 +50,7 @@ type Stop struct {
 type Input struct {
 	Stop      Stop
 	Prior     []readsubject.Read
+	Fixed     []readsubject.Finding
 	Inherited []readsubject.Finding
 	Read      *readsubject.Read
 	Policy    string
@@ -65,7 +66,7 @@ func Decide(in Input) Stop {
 	if s.Decision == "repeat" {
 		s.Decision = "continue"
 	}
-	if s.Loop != "unit-round" {
+	if s.Loop != "unit-round" && s.Loop != "design-round" {
 		if in.Continue {
 			s.Decision = "continue"
 		} else if s.Decision == "" {
@@ -114,9 +115,13 @@ func Decide(in Input) Stop {
 		if !f.Material {
 			continue
 		}
-		for _, r := range in.Prior {
+		recurrence := in.Prior
+		if s.Loop == "design-round" {
+			recurrence = []readsubject.Read{{Findings: in.Fixed}}
+		}
+		for _, r := range recurrence {
 			for _, p := range r.Findings {
-				if !p.Material || p.Class != f.Class {
+				if !p.Material || p.Class != f.Class || s.Loop == "design-round" && p.Where != f.Where {
 					continue
 				}
 				if f.Class == "other" && p.Relation != f.Relation {

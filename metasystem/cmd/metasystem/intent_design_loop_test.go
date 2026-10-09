@@ -31,6 +31,10 @@ type designLoopBed struct {
 
 func newDesignLoopBed(t *testing.T) *designLoopBed {
 	b := &designLoopBed{designReviewBed: newDesignReviewBed(t)}
+	// Policy reads resolve the synthetic checkout; Git remains replaced.
+	if err := os.MkdirAll(filepath.Join(b.root(), ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	b.owners.rebind = func(string, string) (map[string]string, error) { return map[string]string{}, nil }
 	dispatch := b.handler
 	b.handler = func(process intentProcess) intentProcessResult {

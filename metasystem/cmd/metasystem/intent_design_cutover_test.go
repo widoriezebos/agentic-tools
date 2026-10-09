@@ -15,7 +15,7 @@ import (
 
 func TestDesignReviewKeepsCanonicalHistory(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{"running", "closed", "lost-entry", "broken-entry", "broken-index", "lost-subject"} {
+	for _, state := range []string{"running", "closed", "lost-entry", "broken-entry", "broken-index", "lost-subject", "unrelated-legacy"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			b, dir, _ := designEvidenceBed(t, evidenceInventory)
@@ -24,6 +24,8 @@ func TestDesignReviewKeepsCanonicalHistory(t *testing.T) {
 			}
 			root := b.job("rev1")
 			switch state {
+			case "unrelated-legacy":
+				b.writeJob(map[string]any{"jobId": "other-design", "role": "design-critic", "goalId": bedGoal, "design": "missing-other-design.md", "round": 1})
 			case "running":
 				root["status"] = "running"
 			case "closed":
@@ -57,7 +59,7 @@ func TestDesignReviewKeepsCanonicalHistory(t *testing.T) {
 			if state == "running" && (result.Outcome != intentInProgress || !strings.Contains(result.Summary, "running")) {
 				t.Fatalf("renamed page lost its live root: %+v", result)
 			}
-			if state == "lost-entry" && result.Outcome != intentConfirmed {
+			if (state == "lost-entry" || state == "unrelated-legacy") && result.Outcome != intentConfirmed {
 				t.Fatalf("retained canonical subject did not recover the entry: %+v", result)
 			}
 			if strings.HasPrefix(state, "broken") || state == "lost-subject" {
@@ -74,7 +76,7 @@ func TestDesignReviewKeepsCanonicalHistory(t *testing.T) {
 
 func TestDesignReviewRetriesUnknownEvidenceOnce(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"recover", "reservation-recover", "retry-recover", "retry-exhausted", "failed", "moved-candidate", "deadline"} {
+	for _, scenario := range []string{"recover", "reservation-recover", "retry-recover", "double-fill", "source-first", "retry-exhausted", "failed", "moved-candidate", "deadline"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			b, dir, returned := designEvidenceBed(t, evidenceInventory, acceptanceUnits)
@@ -156,19 +158,48 @@ func TestDesignReviewRetriesUnknownEvidenceOnce(t *testing.T) {
 			if replay := b.review("--retry", "1"); replay.Outcome != intentInProgress || len(b.followUps) != 1 {
 				t.Fatalf("retry replay launched twice: %+v", replay)
 			}
+			if scenario == "source-first" {
+				b.writeFile(filepath.Join(dir, "return.md"), string(prose))
+				if _, err := dispatchcore.CritiqueRegisterAdvance(b.install, "rev1", "rev1"); err != nil {
+					t.Fatal(err)
+				}
+				before = b.job("rev1")["criticRoundsConsumed"]
+			}
 			b.finish("rev1-r2", 2, "completed")
 			next := filepath.Join(b.install, "artifacts", "agents", "rev1", "rounds", "2")
 			returned["jobId"], returned["round"] = "rev1-r2", 2
 			b.writeJSON(filepath.Join(next, "return.json"), returned)
 			b.writeFile(filepath.Join(next, "return.md"), "unreadable advisory evidence\n")
-			if scenario == "retry-recover" {
+			if scenario == "retry-recover" || scenario == "double-fill" || scenario == "source-first" {
 				b.writeFile(filepath.Join(next, "return.md"), string(prose))
 				if result := b.review(); result.Outcome != intentConfirmed || b.job("rev1")["criticRoundsConsumed"] != before || b.job("rev1")["designStop"] != nil {
 					t.Fatalf("recovered retry charged a completed examination or lost original section history: %+v", result)
 				}
+				if scenario == "source-first" {
+					root := b.job("rev1")
+					if len(root["designExaminations"].([]any)) != 1 || root["read"].(map[string]any)["id"] != "rev1" || root["findingRegisterRound"] != float64(2) {
+						t.Fatalf("retry filled the recovered source twice: %v", root)
+					}
+					return
+				}
 				var read readsubject.Read
 				if err := json.Unmarshal(mustRead(t, filepath.Join(next, "read.json")), &read); err != nil || read.Design == nil || read.Design.Root != "rev1" || read.Subject.DesignPage != string(original) {
 					t.Fatalf("retry's immutable evidence: %+v %v", read, err)
+				}
+				if scenario == "double-fill" {
+					root := b.job("rev1")
+					before := mustRead(t, filepath.Join(b.install, "artifacts", "agents", "jobs", "rev1.json"))
+					b.writeFile(filepath.Join(dir, "return.md"), string(prose))
+					if err := dispatchcore.RecordDesignEvidenceStop(b.install, "rev1", loopstop.Stop{Loop: "design-round", Subject: "rev1", Decision: "stop", Class: "unknown design evidence", Handoff: "stopped unreadable-design-evidence"}); err != nil {
+						t.Fatal(err)
+					}
+					if _, err := dispatchcore.CritiqueRegisterAdvance(b.install, "rev1", "rev1"); err != nil {
+						t.Fatal(err)
+					}
+					after := b.job("rev1")
+					if after["findingRegisterRound"] != root["findingRegisterRound"] || len(after["designExaminations"].([]any)) != 1 || after["read"].(map[string]any)["id"] != "rev1-r2" {
+						t.Fatalf("recovered source filled the retry's examination twice: before=%s after=%v", before, after)
+					}
 				}
 				return
 			}

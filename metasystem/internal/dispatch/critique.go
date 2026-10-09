@@ -23,6 +23,11 @@ const boundedExhaustionRefused = "the review-round limit is exhausted with bound
 // in the first return, within the frozen review budget. Failed rounds without
 // a return do not consume an examination.
 func DesignRoundLimit(repoRoot, rootJob string, frozenLimit int64) int64 {
+	if root, err := readObject(filepath.Join(repoRoot, "artifacts", "agents", "jobs", rootJob+".json")); err == nil {
+		if limit, ok := numInt(root["designExaminationLimit"]); ok {
+			return limit
+		}
+	}
 	if frozenLimit < 1 {
 		frozenLimit = reviewRoundCeiling(repoRoot)
 	}
@@ -278,6 +283,11 @@ func CritiqueExhaustionAdvance(repoRoot, rootJob, role, messagePath, successor s
 
 		switch role {
 		case "design-critic", "code-critic", "warden":
+			if role == "design-critic" {
+				if decision, ok := state.records[rootJob]["designDecision"].(map[string]any); ok && asString(decision["decision"]) != "continue" {
+					return "", fmt.Errorf("the design examination cannot continue; run metasystem design review '%s' --dispositions FILE", strings.ReplaceAll(asString(decision["scope"]), "'", "'\\''"))
+				}
+			}
 			capState, inspectErr := inspect(rootJob)
 			if inspectErr != nil {
 				return "", inspectErr

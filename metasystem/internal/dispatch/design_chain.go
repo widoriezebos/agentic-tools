@@ -37,7 +37,9 @@ func DesignCritiqueChains(repoRoot, goalID, designPath string) []DesignCritiqueC
 // absent critique evidence from a broken check.
 func ReadDesignCritiqueChains(repoRoot, goalID, designPath string) ([]DesignCritiqueChain, error) {
 	state, err := readCritiqueStateAt(filepath.Join(repoRoot, "artifacts", "agents"))
-	for id, record := range state.records {
+	chains := designCritiqueChains(state, repoRoot, goalID, designPath, false)
+	for _, chain := range chains {
+		id, record := chain.Root, state.records[chain.Root]
 		if err != nil || state.chainRoot(id) != id || asString(record["role"]) != "design-critic" || asString(record["goalId"]) != goalID || NeverLaunched(record) {
 			continue
 		}
@@ -54,7 +56,7 @@ func ReadDesignCritiqueChains(repoRoot, goalID, designPath string) ([]DesignCrit
 			}
 		}
 	}
-	return designCritiqueChains(state, repoRoot, goalID, designPath, false), err
+	return chains, err
 }
 
 func designCritiqueChains(state critiqueState, repoRoot, goalID, designPath string, anyGoal bool) []DesignCritiqueChain {

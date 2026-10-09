@@ -103,6 +103,10 @@ func frozenDesignDecisions(agents, root, recordID, jobID, operation string, afte
 		}
 		marker := fmt.Sprintf("\n## The author's decisions on examination %d\n\nThe design changed since examination %d. Judge whether each accepted finding is addressed in the new version.\n\n", after, after)
 		_, answer, found := strings.Cut(string(brief), marker)
+		if !found {
+			marker = fmt.Sprintf("\n## The author's decisions on examination %d\n\nJudge the whole submitted page, including whether each accepted finding is addressed and each refutation is supported.\n\n", after)
+			_, answer, found = strings.Cut(string(brief), marker)
+		}
 		if found {
 			// A frozen-draft appendix may follow the answer. The digest
 			// identifies its exact boundary even when an answer cites drafts.

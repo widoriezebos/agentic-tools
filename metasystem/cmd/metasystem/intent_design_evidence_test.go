@@ -48,7 +48,8 @@ func designEvidenceBed(t *testing.T, inventory string, extra ...string) (*design
 			}
 			record := b.job("rev1")
 			record["engineBuild"], record["effectiveModel"] = "fixture-engine", "fixture-critic"
-			record["reviewRoundLimit"], record["criticRoundsConsumed"] = 2, 0
+			// Decision 2: publication fixtures freeze a final examination of one.
+			record["reviewRoundLimit"], record["criticRoundsConsumed"] = 1, 0
 			record["declaredOutputs"], record["declaredOutputsDigest"] = []string{subject.DesignPath}, subject.DeclaredOutputsDigest
 			b.writeJob(record)
 		}
@@ -84,6 +85,9 @@ func TestDesignReviewRetainsSectionIdentity(t *testing.T) {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			b, dir, returned := designEvidenceBed(t, evidenceInventory)
+			root := b.job("rev1")
+			root["reviewRoundLimit"] = 2
+			b.writeJob(root)
 			f := evidenceFinding("F1", "## Collection:1", "")
 			f["severity"] = "critical"
 			returned["findings"], returned["rigor"], returned["verdictMaterialCount"] = []any{f}, []any{evidenceRigor("F1")}, 1

@@ -300,8 +300,34 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 	// is no further round to examine the change, and the engine's own
 	// classification of what is left is the exit (g1-s66 D4).
 	final := bound.Round >= inv.designRoundLimit(chain.Root)
-	if bound.Subject == plan.subject || final {
+	modern := false
+	if root, err := inv.jobRecord(chain.Root); err == nil {
+		if decision, ok := root["designDecision"].(map[string]any); ok {
+			final = recordText(decision, "decision") != "continue"
+			modern = true
+		}
+	}
+	unchanged := bound.Subject == plan.subject
+	if modern && unchanged && !final {
+		decisions, _ := validate.Dispositions(path)
+		unchanged = false
+		for _, decision := range decisions {
+			if decision == "accepted" {
+				unchanged = true
+			}
+		}
+	}
+	if unchanged || final {
 		return inv.closeDesignCritique(plan, chain, returnPath, path, bound.Round, final)
+	}
+	if modern {
+		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, inv.registerDecisions(chain.Root, bound.Round+1)); err != nil {
+			return inv.unknownDesignExamination(plan, chain, err)
+		}
+		policy, err := inv.unitRunner().ReviewPolicy()
+		if err != nil || policy == "person" {
+			return &intentResult{Targets: plan.targets, Outcome: intentInProgress, Summary: "the review policy holds the prepared design continuation", next: inv.sameCommand(), Details: []string{fmt.Sprint(err)}}
+		}
 	}
 	decisions := digestText(content)
 	operation := fmt.Sprintf("design-%s-after-%d-%s", strings.ToLower(plan.recordID), bound.Round, decisions[:12])
@@ -320,7 +346,7 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 	if _, statErr := os.Stat(followUp); statErr != nil {
 		// Drafts the decisions cite are frozen as the page's were.
 		drafts := inv.freezeDesignDrafts(inv.layout.GitRoot, filepath.Dir(plan.brief), "", nil, content)
-		text := string(brief) + fmt.Sprintf("\n## The author's decisions on examination %d\n\nThe design changed since examination %d. Judge whether each accepted finding is addressed in the new version.\n\n", bound.Round, bound.Round) + string(content) + drafts.section()
+		text := string(brief) + fmt.Sprintf("\n## The author's decisions on examination %d\n\nJudge the whole submitted page, including whether each accepted finding is addressed and each refutation is supported.\n\n", bound.Round) + string(content) + drafts.section()
 		if err := writeIntentInputs(filepath.Dir(plan.brief), drafts.files); err != nil {
 			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the review's inputs can't be written, so nothing was requested",
 				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}

@@ -41,6 +41,10 @@ func init() {
 	dedicatedMetadataFields["read"] = true
 	dedicatedMetadataFields["readDigest"] = true
 	dedicatedMetadataFields["unknownExaminationRetryFrom"] = true
+	dedicatedMetadataFields["designExaminations"] = true
+	dedicatedMetadataFields["designFixedSections"] = true
+	dedicatedMetadataFields["designDecision"] = true
+	dedicatedMetadataFields["designExaminationLimit"] = true
 	dedicatedMetadataFields["designStop"] = true
 	dedicatedMetadataFields["findingRegisterStop"] = true
 	dedicatedMetadataFields["inheritedFindings"] = true
@@ -214,7 +218,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 			if roundErr != nil {
 				return fmt.Errorf("critique root record %s has malformed register round state: %v", rootJob, roundErr)
 			}
-			if role == "design-critic" && asString(root["unknownExaminationRetryFrom"]) == roundJob && root["designStop"] != nil && status == "completed" {
+			if role == "design-critic" && asString(root["unknownExaminationRetryFrom"]) == roundJob && root["designStop"] != nil && status == "completed" && foldedRound == round {
 				if _, err := CollectExamination(repoRoot, roundJob); err != nil {
 					outcome = "unchanged"
 					return nil
@@ -227,15 +231,23 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 			}
 			if round <= foldedRound {
 				outcome = "unchanged"
-				if role == "design-critic" && root["designStop"] != nil && status == "completed" {
+				if stop, _ := root["designStop"].(map[string]any); role == "design-critic" && asString(stop["class"]) == "unknown design evidence" && status == "completed" {
 					if _, err := CollectExamination(repoRoot, roundJob); err != nil {
 						return err
 					}
 					delete(root, "designStop")
 					delete(root, "findingRegisterStop")
+					if decision, _ := root["designDecision"].(map[string]any); asString(decision["decision"]) == "stop" {
+						root["designStop"], root["findingRegisterStop"] = decision, decision
+					}
 					return writeRecord(recordPath, root)
 				}
 				return nil
+			}
+			if retained, _ := root["read"].(map[string]any); asString(roundRecord["examinationRetryOf"]) != "" && asString(retained["id"]) == asString(roundRecord["examinationRetryOf"]) {
+				root[findingRegisterRoundField] = round
+				outcome = "unchanged"
+				return writeRecord(recordPath, root)
 			}
 			if round != foldedRound+1 {
 				return refuse(3, "critique register round %d cannot advance before round %d has been folded", round, foldedRound+1).withRun(jobStatusRun(rootJob))
@@ -258,6 +270,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 
 			advanced := register
 			var roundMaterial int64
+			var completedRead readsubject.Read
 			var completedSubject ReadSubject
 			completedSubjectPresent := false
 			completedSubjectBound := false
@@ -324,6 +337,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 						if err := json.Unmarshal(data, &value); err != nil {
 							return err
 						}
+						completedRead = read
 						root["read"], root["readDigest"] = value, digest
 						readPath := filepath.Join(filepath.Dir(resultPath), "read.json")
 						if prior, err := os.ReadFile(readPath); err == nil {
@@ -383,6 +397,17 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 					}
 				}
 			}
+			if completedRead.Design != nil {
+				present := map[string]bool{}
+				for _, finding := range completedRead.Findings {
+					present[finding.ID] = true
+				}
+				for i := range advanced {
+					if advanced[i].Status == "resolved" && (advanced[i].Resolution == "accepted" || advanced[i].Resolution == "refuted") && !present[advanced[i].FindingID] {
+						advanced[i].Resolution = "withdrawn"
+					}
+				}
+			}
 			if completedSubjectBound {
 				if err := supersedePlaceholders(state, rootJob, advanced, completedSubject, round); err != nil {
 					return err
@@ -429,6 +454,11 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 			}
 			if historyPresent || len(cleanReads) > 0 {
 				root[cleanReadRoundsField] = encodeCleanReadRounds(cleanReads)
+			}
+			if completedRead.Design != nil {
+				if err := recordDesignDecision(state, rootJob, root, roundRecord, completedRead); err != nil {
+					return err
+				}
 			}
 			if writeErr := writeRecord(recordPath, root); writeErr != nil {
 				return writeErr
@@ -969,9 +999,12 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 				data, _ := json.Marshal(root["findingRegisterStop"])
 				var stop loopstop.Stop
 				if err := json.Unmarshal(data, &stop); err != nil || len(stop.Required) == 0 {
-					return fmt.Errorf("the design stop has no readable person remedy")
+					return fmt.Errorf("the design stop has no readable remedy")
 				}
-				return fmt.Errorf("design evidence is unknown\nrun: %s", stop.Required[0])
+				register, _, err := critiqueFindingRegister(root)
+				if stop.Class == "unknown design evidence" || err != nil || len(openRegisterFindingIDs(register)) != 0 {
+					return fmt.Errorf("the design remains stopped\nrun: %s", stop.Required[0])
+				}
 			}
 			register, present, err := critiqueFindingRegister(root)
 			if err != nil {

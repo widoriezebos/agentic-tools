@@ -160,7 +160,7 @@ func (inv *intentInvocation) registerDecisions(root string, answering int64) map
 		switch {
 		case disposition == "refuted" || disposition == "out-of-scope":
 			decisions[id] = disposition
-		case disposition == "accepted" && len(rounds) == 1 && inv.designRoundLimit(root) == answering:
+		case disposition == "accepted" && from[id] == answering && len(rounds) == 1 && inv.designRoundLimit(root) == answering:
 			decisions[id] = "folded"
 		case disposition == "accepted" && from[id] < answering:
 			decisions[id] = disposition
