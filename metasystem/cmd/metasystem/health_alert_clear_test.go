@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -371,17 +372,29 @@ func TestAlertClearAndTickFinishTogether(t *testing.T) {
 	if !scanner.Scan() || scanner.Text() != "tick holds arbitration" {
 		t.Fatalf("tick did not start under arbitration: %s %s", scanner.Text(), stderr.String())
 	}
-	deadline := time.AfterFunc(8*time.Second, cancel)
-	defer deadline.Stop()
 	done := make(chan int, 1)
 	go func() { code, _ := b.runJSON(owners, "alert", "clear", id); done <- code }()
-	tickErr := tick.Wait()
-	select {
-	case code := <-done:
-		if code != 0 || tickErr != nil {
-			t.Fatalf("concurrent tick/clear: clear=%d tick=%v %s", code, tickErr, stderr.String())
+	tickDone := make(chan error, 1)
+	go func() { tickDone <- tick.Wait() }()
+	var tickErr error
+	testenv.Await(t, "the concurrent tick to finish", func() bool {
+		select {
+		case tickErr = <-tickDone:
+			return true
+		default:
+			return false
 		}
-	case <-ctx.Done():
-		t.Fatal("clear and tick did not both finish")
+	})
+	var code int
+	testenv.Await(t, "the concurrent alert clear to finish", func() bool {
+		select {
+		case code = <-done:
+			return true
+		default:
+			return false
+		}
+	})
+	if code != 0 || tickErr != nil {
+		t.Fatalf("concurrent tick/clear: clear=%d tick=%v %s", code, tickErr, stderr.String())
 	}
 }

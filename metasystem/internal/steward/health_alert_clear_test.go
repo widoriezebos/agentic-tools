@@ -6,13 +6,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"golang.org/x/sys/unix"
 )
 
@@ -69,25 +69,17 @@ func TestAlertClearHealthBed(t *testing.T) {
 	defer arbitration.Release()
 	if *alertClearBedAction == "concurrent" {
 		fmt.Println("tick holds arbitration")
-		deadline := time.NewTimer(5 * time.Second)
-		defer deadline.Stop()
-		// Wait for the clear's queued arbitration hold, never for elapsed time.
-		for {
-			select {
-			case <-deadline.C:
-				t.Fatal("clear never queued for arbitration")
-			default:
-			}
+		testenv.Await(t, "the clear's queued arbitration hold", func() bool {
 			file, err := os.OpenFile(arbitrationWantPath(root), os.O_RDONLY, 0)
 			if err == nil {
 				err = unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
 				unlockAndClose(file)
 				if errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN) {
-					break
+					return true
 				}
 			}
-			runtime.Gosched()
-		}
+			return false
+		})
 	}
 	deps := tickHealthDependencies{evaluate: evaluate, now: func() time.Time { return b.base }, lookPath: b.lookPath,
 		deliver: func(string, string) error { return nil }, examineLedger: func(root string, now time.Time) error {
