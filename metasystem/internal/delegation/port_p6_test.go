@@ -108,8 +108,7 @@ func (b *bed) p6CompleteReturn(root, job string, round int, value map[string]any
 	if _, err := dispatch.RecordCAS(b.root, job, "running", "completed", patch); err != nil {
 		b.t.Fatalf("complete %s: %v", job, err)
 	}
-	encoded, _ := json.Marshal(value)
-	b.writeFile(filepath.Join("artifacts", "agents", root, "rounds", itoa(round), "return.json"), string(encoded)+"\n")
+	b.p5WriteJSON(filepath.Join("artifacts", "agents", root, "rounds", itoa(round), "return.json"), value)
 }
 
 // p6DropField removes a record field (the fixture's json_remove_field): a
@@ -486,7 +485,8 @@ func TestFollowUpIntegrationDesignCriticReadsTheChangedPageAndHostCloseIsNotRunn
 	b := newDispatchBed(t)
 	b.writeFile("metasystem.conf", dispatchBedConfig+"evidence.root="+t.TempDir()+"\n")
 	page := "metasystem/fixture-admission/close-race.md"
-	commit := b.p6TrunkCommit("add close race fixture design", map[string]string{page: "# Close/follow-up race design\n"})
+	initial := designFixturePage("# Close/follow-up race design\n")
+	commit := b.p6TrunkCommit("add close race fixture design", map[string]string{page: initial})
 	outputs := b.writeFile("declared-outputs.txt", "metasystem/internal/dispatch/build.go\n")
 	brief := b.brief("design-brief.md", "design", "Review the design.")
 	result := b.runEnv(b.dispatchEnv("fresh"), "dispatch", "--role", "design-critic", "--outputs", outputs, "--design", page, "--brief", brief, "--job-id", "close-race")
@@ -501,12 +501,12 @@ func TestFollowUpIntegrationDesignCriticReadsTheChangedPageAndHostCloseIsNotRunn
 	}
 	first := subject(1)
 	if first["kind"] != "design" || first["designPath"] != page || first["reviewedCommit"] != commit ||
-		first["contentDigest"] != p6SHA256Hex("# Close/follow-up race design\n") {
+		first["contentDigest"] != p6SHA256Hex(initial) {
 		t.Fatalf("the design critic subject was not persisted from its reviewed workspace: %v", first)
 	}
 	b.p6CompleteReturn("close-race", "close-race", 1, b.criticalDesignReturn("close-race"))
 
-	changed := "# Close/follow-up race design\n\nFixture design revision for close-race.\n"
+	changed := designFixturePage("# Close/follow-up race design\n\nFixture design revision for close-race.\n")
 	b.writeFile(page, changed)
 	requireExit(t, b.p6FollowUp("close-race", b.writeFile("follow.md", "Working Mode: design\n\nReview again.\n")), 0, b.stderr.String())
 	second := subject(2)

@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 // p5LiveTree is the reviewed workspace's projection tree, the value a
@@ -38,11 +39,120 @@ func (b *bed) p5LiveTree() string {
 
 func (b *bed) p5WriteJSON(relative string, value any) {
 	b.t.Helper()
+	if result, ok := value.(map[string]any); ok && filepath.Base(relative) == "return.json" {
+		job, _ := result["jobId"].(string)
+		if job != "" && b.record(job)["role"] == "design-critic" {
+			b.designReturnEvidence(filepath.Dir(relative), result)
+		}
+	}
 	encoded, err := json.Marshal(value)
 	if err != nil {
 		b.t.Fatal(err)
 	}
 	b.writeFile(relative, string(encoded)+"\n")
+}
+
+func designFixturePage(content string) string {
+	title, body, _ := strings.Cut(strings.TrimSpace(content), "\n")
+	id := sha256.Sum256([]byte(title))
+	return fmt.Sprintf("%s\n\n- Kind: design\n- Id: fixture-%x\n- Status: draft\n\n%s\n\n%s\n"+
+		"| Function / record / act | Production caller | Freshness at the decision | Person or agent | Remedy that can succeed | Unreadable input |\n"+
+		"| --- | --- | --- | --- | --- | --- |\n"+
+		"| Fixture review | Dispatch | Frozen page | Agent | Follow-up | Refuse |\n", title, id[:8], body, readsubject.DesignInventoryHeading)
+}
+
+// A completed design examination carries both the structured return and its
+// prose verdict, bound to the exact page frozen for that round.
+func (b *bed) designReturnEvidence(relative string, result map[string]any) {
+	b.t.Helper()
+	data, err := os.ReadFile(filepath.Join(b.root, relative, "subject.json"))
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	var subject dispatch.ReadSubject
+	if err := json.Unmarshal(data, &subject); err != nil {
+		b.t.Fatal(err)
+	}
+	defaults := map[string]any{
+		"runtime": "fake", "sessionId": "fake-session", "mode": "design",
+		"claimed":  map[string]any{"sessionId": nil, "model": nil},
+		"model":    map[string]any{"requested": "fake-model", "effective": "fake-model"},
+		"evidence": []any{map[string]any{"command": "fixture page examination", "observed": "frozen page reviewed", "level": "read"}},
+		"gaps":     []any{}, "findings": []any{}, "rigor": []any{},
+	}
+	result["schemaVersion"] = 5
+	for key, value := range defaults {
+		if _, present := result[key]; !present {
+			result[key] = value
+		}
+	}
+	result["wholePageDigest"] = subject.ContentDigest
+	answers := []any{}
+	for question := 1; question <= 5; question++ {
+		answers = append(answers, map[string]any{"question": question, "answer": "The fixture review row declares this boundary", "evidence": "Frozen inventory table", "unanswered": false})
+	}
+	result["coverage"] = []any{map[string]any{"row": "Fixture review", "where": readsubject.DesignInventoryHeading, "answers": answers}}
+	count := 0
+	rigor := result["rigor"].([]any)
+	classified := map[any]bool{}
+	for _, entry := range rigor {
+		classified[entry.(map[string]any)["findingId"]] = true
+	}
+	for _, entry := range result["findings"].([]any) {
+		finding := entry.(map[string]any)
+		for key, value := range map[string]any{"class": "incomplete-item", "where": strings.Split(subject.DesignPage, "\n")[0], "change": "Supply the fixture's missing admission rule", "coverage": "", "relation": ""} {
+			if _, present := finding[key]; !present {
+				finding[key] = value
+			}
+		}
+		if finding["material"] == true {
+			count++
+			if !classified[finding["id"]] {
+				rigor = append(rigor, map[string]any{
+					"findingId": finding["id"], "rigorClass": "bounded", "reopeningTrigger": "The fixture admission rule is absent",
+					"artifact": "metasystem/internal/dispatch/build.go", "grain": "invariant", "behaviour": "", "fixture": "",
+					"facts": map[string]any{"local": true, "recoverable": true, "proofBoundaryCrossed": false, "authorityBoundaryCrossed": false,
+						"secretsBoundaryCrossed": false, "irreversibleDataBoundaryCrossed": false, "externalSideEffectBoundaryCrossed": false},
+				})
+			}
+		}
+	}
+	result["rigor"] = rigor
+	record := b.record(result["jobId"].(string))
+	if parent, _ := record["parentJob"].(string); parent != "" && record["examinationRetryOf"] == nil {
+		b.designRevisionDecisions(relative, result["jobId"].(string), parent)
+	}
+	if _, present := result["verdictMaterialCount"]; !present {
+		result["verdictMaterialCount"] = count
+	}
+	b.writeFile(filepath.Join(relative, "return.md"), fmt.Sprintf("VERDICT: REVISE material=%d\n", count))
+}
+
+func (b *bed) designRevisionDecisions(relative, job, parent string) {
+	b.t.Helper()
+	root := filepath.Base(filepath.Dir(filepath.Dir(relative)))
+	after, err := strconv.Atoi(fmt.Sprint(b.record(parent)["round"]))
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	dir := filepath.Join("artifacts", "agents", root, "rounds", strconv.Itoa(after))
+	var previous readsubject.Read
+	if err := json.Unmarshal([]byte(b.readFile(filepath.Join(dir, "read.json"))), &previous); err != nil {
+		b.t.Fatal(err)
+	}
+	returned := []byte(b.readFile(filepath.Join(dir, "return.json")))
+	answer := fmt.Sprintf("Review binding: fixture work=design:%s attempt=%d subject=%s examination=%s round=%d return=%x\n",
+		previous.Design.RecordID, after, previous.Subject.ContentDigest, root, after, sha256.Sum256(returned))
+	brief := b.writeFile("artifacts/briefs/section-decisions-"+job+".md", fmt.Sprintf("\n## The author's decisions on examination %d\n\nThe design changed since examination %d. Judge whether each accepted finding is addressed in the new version.\n\n", after, after)+answer)
+	path := filepath.Join("artifacts", "agents", "intent-review", "design-"+strings.ToLower(previous.Design.RecordID), "chain.json")
+	entry := map[string]any{"Requests": []any{}}
+	if b.exists(path) {
+		if err := json.Unmarshal([]byte(b.readFile(path)), &entry); err != nil {
+			b.t.Fatal(err)
+		}
+	}
+	entry["Requests"] = append(entry["Requests"].([]any), map[string]any{"Root": root, "Child": job, "AfterRound": after, "Brief": brief, "DecisionsSHA256": fmt.Sprintf("%x", sha256.Sum256([]byte(answer)))})
+	b.p5WriteJSON(path, entry)
 }
 
 // p5SeedImplementer writes a completed, conformance-reviewed implementer
@@ -258,7 +368,7 @@ func isDirP5(path string) bool {
 // p5DesignPage commits a design page and returns its path and the commit.
 func (b *bed) p5DesignPage(page, content string) string {
 	b.t.Helper()
-	b.writeFile(page, content)
+	b.writeFile(page, designFixturePage(content))
 	b.git("add", "--", page)
 	b.git("commit", "-qm", "add "+page)
 	return b.git("rev-parse", "HEAD")
@@ -551,23 +661,22 @@ func TestPortP5DispatchIntegrationTerminalExhaustionRefusesBeforeTheRoundPastThe
 	}
 }
 
-// A design critic admits a second examination only for a critical finding
-// in the first return. A critical second return admits no third examination,
-// and the chain never exceeds its frozen review budget.
-func TestPortP5DispatchIntegrationDesignRoundsRequireCriticalAndRespectTheFrozenLimit(t *testing.T) {
+// A design examination continues while material counts fall, regardless of
+// severity. Equal counts stop it, and the frozen allowance never exceeds four.
+func TestPortP5DispatchIntegrationDesignRoundsStopOnEqualCountsAndRespectTheFrozenLimit(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
-		name, severity string
-		frozen, rounds int
+		name, severity             string
+		configured, frozen, rounds int
 	}{
-		{"without-critical", "medium", 5, 1},
-		{"with-critical", "critical", 5, 2},
-		{"critical-with-one-round-budget", "critical", 1, 1},
+		{"without-critical", "medium", 5, 4, 2},
+		{"with-critical", "critical", 5, 4, 2},
+		{"critical-with-one-round-budget", "critical", 1, 1, 1},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
 			b := newDispatchBed(t)
-			b.setConf(fmt.Sprintf("metasystem.budget.review-round-max=%d\n", row.frozen))
+			b.setConf(fmt.Sprintf("metasystem.budget.review-round-max=%d\n", row.configured))
 			page := "metasystem/fixture-admission/design-round-two.md"
 			b.p5DesignPage(page, "# Design round two fixture\n")
 			outputs := b.writeFile("artifacts/briefs/outputs.md", p5Outputs)
@@ -600,28 +709,48 @@ func TestPortP5DispatchIntegrationDesignRoundsRequireCriticalAndRespectTheFrozen
 			message := b.writeFile("artifacts/briefs/follow.md", "Working Mode: design\n\nLook again.\n")
 			parent := root
 			trajectory := `[{"material":2,"round":1}]`
-			b.writeFileAbs(filepath.Join(workspace, page), "# Design round two fixture\n\nRound two changes the page.\n")
+			b.writeFileAbs(filepath.Join(workspace, page), designFixturePage("# Design round two fixture\n\nRound two changes the page.\n"))
 			if row.rounds == 2 {
 				requireExit(t, b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message), 0, b.stderr.String())
 				parent = root + "-r2"
 				b.p5Complete(parent, root, 2, map[string]any{
-					"reviewedCommit": commit, "verdictMaterialCount": 1,
-					"findings": []any{finding("ROUND1-A", "low", false), finding("ROUND1-B", "low", false), finding("ROUND2-FIXTURE", "critical", true)},
-					"rigor":    []any{bounded("ROUND2-FIXTURE", "go test -timeout 30m ./internal/dispatch/ -run TestRoundTwoCloseMechanicalFallingUsesOwnFixtures")},
+					"reviewedCommit": commit, "verdictMaterialCount": 2,
+					"findings": []any{finding("ROUND1-A", "low", false), finding("ROUND1-B", "low", false), finding("ROUND2-FIXTURE", "critical", true), finding("ROUND2-OTHER", "medium", true)},
+					"rigor":    []any{bounded("ROUND2-FIXTURE", "go test -timeout 30m ./internal/dispatch/ -run TestRoundTwoCloseMechanicalFallingUsesOwnFixtures"), bounded("ROUND2-OTHER", "go test -timeout 30m ./internal/dispatch/ -run TestDesignCriticLimitIsGoalMemberUnderCeiling")},
 				})
 				if _, err := dispatch.CritiqueRegisterAdvance(b.root, root, parent); err != nil {
 					t.Fatalf("fold round two: %v", err)
 				}
-				trajectory = `[{"material":2,"round":1},{"material":1,"round":2}]`
-				b.writeFileAbs(filepath.Join(workspace, page), "# Design round two fixture\n\nRound three changes the page.\n")
+				trajectory = `[{"material":2,"round":1},{"material":2,"round":2}]`
+				b.writeFileAbs(filepath.Join(workspace, page), designFixturePage("# Design round two fixture\n\nRound three changes the page.\n"))
 			}
-			if got, _ := json.Marshal(b.record(root)["materialByRound"]); string(got) != trajectory {
+			data, err := json.Marshal(b.record(root)["designExaminations"])
+			var examinations []readsubject.Read
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := json.Unmarshal(data, &examinations); err != nil {
+				t.Fatal(err)
+			}
+			var materials []map[string]int
+			for index, read := range examinations {
+				materials = append(materials, map[string]int{"round": index + 1, "material": read.Material})
+			}
+			if got, _ := json.Marshal(materials); string(got) != trajectory {
 				t.Fatalf("material trajectory %s, want %s", got, trajectory)
 			}
 			result := b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", parent, "--message", message)
-			requireExit(t, result, 10, b.stderr.String())
-			if strings.Contains(b.stderr.String(), "cap-exhausted-human-raise") || !strings.Contains(b.stderr.String(), "the review-round limit is exhausted") {
-				t.Fatalf("stderr %q", b.stderr.String())
+			requireExit(t, result, 1, b.stderr.String())
+			reason := "material findings did not fall"
+			if row.rounds == row.frozen {
+				reason = "correction allowance spent"
+			}
+			decision := b.record(root)["designDecision"].(map[string]any)
+			if decision["decision"] != "stop" || decision["class"] != reason {
+				t.Fatalf("design decision %v does not retain the stop reason %q", decision, reason)
+			}
+			if !strings.Contains(b.stderr.String(), "the design examination cannot continue; run metasystem design review '") || !strings.Contains(b.stderr.String(), "--dispositions FILE") {
+				t.Fatalf("the stopped design named no executable exit: %q", b.stderr.String())
 			}
 			next := strconv.Itoa(row.rounds + 1)
 			if exists(b.recordPath(root+"-r"+next)) || exists(filepath.Join(b.root, "artifacts", "agents", root, "rounds", next)) {
@@ -650,7 +779,7 @@ func TestPortP5DispatchIntegrationRepeatedFollowUpClaimsTheLiveRound(t *testing.
 	b := newDispatchBed(t)
 	page := "metasystem/fixture-admission/repeat-follow.md"
 	b.p5DesignPage(page, "# Repeat follow design\n")
-	outputs := b.writeFile("artifacts/briefs/outputs.md", p5Outputs)
+	outputs := b.writeFile("artifacts/briefs/outputs.md", page+"\n")
 	brief := b.brief("artifacts/briefs/design.md", "design", "Critique the design.")
 	root := "repeat-follow"
 	// The claim of a live round proves the recorded process by its tag in
@@ -666,8 +795,10 @@ func TestPortP5DispatchIntegrationRepeatedFollowUpClaimsTheLiveRound(t *testing.
 		"reviewedCommit": commit,
 		"findings":       []any{map[string]any{"id": "R-1", "severity": "critical", "material": true, "claim": "r1", "evidence": "read"}},
 		"rigor": []any{map[string]any{"findingId": "R-1", "rigorClass": "bounded", "facts": facts, "reopeningTrigger": "if it recurs",
-			"artifact": "metasystem/internal/dispatch/build.go"}},
+			"artifact": "metasystem/internal/dispatch/build.go", "grain": "invariant", "behaviour": "", "fixture": ""}},
 	})
+	workspace := b.record(root)["workspaceRoot"].(string)
+	b.writeFileAbs(filepath.Join(workspace, page), designFixturePage("# Repeat follow design\n\nThe admission rule is revised.\n"))
 	message := b.writeFile("artifacts/briefs/follow.md", "Working Mode: design\n\nLook again.\n"+strings.Repeat("filler line for the forty kibibyte referenced follow-up\n", 740))
 	requireExit(t, b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", root, "--message", message), 0, b.stderr.String())
 	child := b.record(root + "-r2")

@@ -218,9 +218,9 @@ func TestDesignReviewPersonInvalidUnits(t *testing.T) {
 	for _, tc := range []struct {
 		name, units, reason string
 	}{
-		{"missing table", "", "no units table"},
-		{"bad estimate", strings.Replace(acceptanceUnits, "40", "unknown", 1), "no number in its size column"},
-		{"empty table", "\n## Units\n\n| Unit | Production lines |\n| --- | --- |\n", "no declared units"},
+		{"missing table", "", "no sized units table"},
+		{"bad estimate", strings.Replace(acceptanceUnits, "40", "unknown", 1), "no number in its total size column"},
+		{"empty table", "\n## Units\n\n| Unit | Lines | Production lines |\n| --- | --- | --- |\n", "no sized units table"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
