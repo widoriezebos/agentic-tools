@@ -39,15 +39,22 @@ func readProcessReport(root, installation, goal, unit string, runner *launch.Uni
 		all.Steps = append(all.Steps, input.Steps...)
 	}
 	var acts []processmeasure.Act
+	checks, missing := carryMeasures(installation, goal)
+	all.Unknown = append(all.Unknown, missing...)
+	all.Steps = append(all.Steps, checks...)
 	for _, act := range state.Acts {
 		if act.AppliedAt.IsZero() {
 			continue
 		}
 		grant := ""
-		if act.Proof.Helm != nil {
-			grant = fmt.Sprintf("by %s; grant %s", act.Proof.Helm.By, act.Proof.Helm.Grant)
+		proof := act.Proof
+		if proof.Helm == nil {
+			proof = act.AppliedProof
 		}
-		acts = append(acts, processmeasure.Act{ID: act.ID, Actor: act.Actor, Lineage: act.Lineage, Grant: grant, Change: act.Key + " = " + act.After})
+		if proof.Helm != nil {
+			grant = fmt.Sprintf("by %s; grant %s", proof.Helm.By, proof.Helm.Grant)
+		}
+		acts = append(acts, processmeasure.Act{ID: act.ID, Actor: act.Actor, Lineage: act.Lineage, Grant: grant, Requester: act.Proof, Applier: act.AppliedProof, Change: act.Key + " = " + act.After})
 	}
 	var stops []string
 	for _, stop := range state.Stops {

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -85,22 +86,8 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: err}
 	}
 	gatePath := filepath.Join(records, "gate.json")
-	if data, err := os.ReadFile(gatePath); err == nil {
-		var gate branch.GateObservation
-		var consumed struct {
-			Check       launch.UnitCheck
-			ExecutionID string
-			Exits       []launch.CheckExit
-		}
-		gateErr := json.Unmarshal(data, &gate)
-		evidenceErr := json.Unmarshal([]byte(gate.Evidence), &consumed)
-		commands, _ := json.Marshal(consumed.Check)
-		if gateErr == nil && evidenceErr == nil && fmt.Sprintf("%x", sha256.Sum256(commands)) == gate.CommandDigest && consumed.ExecutionID == gate.RunID && len(consumed.Exits) == 2 && consumed.Exits[0].Exit == 0 && consumed.Exits[1].Exit == 0 && consumed.Check.ProcessAct == check.ProcessAct && consumed.Check.Cheap == check.Cheap && consumed.Check.Audits == check.Audits && gate.Tree == subject.Tree {
-			return gate, nil
-		}
-	}
 	var execution, latest string
-	var newest os.FileInfo
+	var newest time.Time
 	entries, _ := os.ReadDir(records)
 	for _, entry := range entries {
 		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "check-") {
@@ -110,11 +97,15 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		if problem != nil {
 			return branch.GateObservation{}, problem
 		}
-		if _, err := os.Stat(filepath.Join(records, entry.Name(), "result.json")); os.IsNotExist(err) {
-			continue
+		observations, _ := launch.ReadCheckExecutions(filepath.Join(records, entry.Name()))
+		at := info.ModTime()
+		if len(observations) > 0 {
+			if started, err := time.Parse(time.RFC3339Nano, observations[0].Steps[0].Start); err == nil {
+				at = started
+			}
 		}
-		if newest == nil || info.ModTime().After(newest.ModTime()) {
-			newest, latest = info, filepath.Join(records, entry.Name())
+		if latest == "" || at.After(newest) {
+			newest, latest = at, filepath.Join(records, entry.Name())
 		}
 	}
 	if latest != "" {
@@ -125,7 +116,7 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		}
 		if problem != nil || json.Unmarshal(data, &prior) != nil {
 			_, _, refusal := inv.settingsPerson(inv.layout, "repair the unavailable subject execution")
-			if !inv.input.has("check") || refusal != nil {
+			if (!inv.input.has("check") && !inv.input.has("act") && !inv.input.switched("rerun")) || refusal != nil {
 				return branch.GateObservation{}, &branch.DeclarationUnavailableError{Err: fmt.Errorf("the newest subject execution is unavailable\nrun: %s", repair)}
 			}
 		}
@@ -145,7 +136,7 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		}
 	}
 	if execution == "" {
-		execution, _, err = check.Run(directory, records)
+		execution, _, err = check.Run(directory, records, launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: goalID, Run: subject.Commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now})
 	}
 	if err != nil {
 		return branch.GateObservation{}, err

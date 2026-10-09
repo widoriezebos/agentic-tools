@@ -137,5 +137,6 @@ func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory s
 	if check.ProcessAct == "" {
 		check.ProcessAct = admitted.ID
 	}
+	check.FullArgv = slices.Clone(fullArgv)
 	return nil
 }

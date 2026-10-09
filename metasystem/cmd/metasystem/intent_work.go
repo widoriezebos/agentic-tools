@@ -526,6 +526,9 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 				} else if !os.IsNotExist(err) {
 					return err
 				}
+				if _, err := atomicfile.CopyFile(filepath.Join(filepath.Dir(result), "observation.json"), filepath.Join(filepath.Dir(target), "observation.json"), round.Directory); err != nil && !os.IsNotExist(err) {
+					return err
+				}
 				if _, err := atomicfile.CopyFile(result, target, round.Directory); err != nil {
 					return err
 				}

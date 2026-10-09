@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -17,6 +18,17 @@ import (
 
 func (inv *intentInvocation) unitMeasureInput(work launch.NamedWork) processmeasure.Input {
 	return unitMeasureInput(work, inv.unitRunner(), inv.layout.InstallationRoot.Path())
+}
+
+func carryMeasures(root, goalID string) ([]processmeasure.Step, []string) {
+	checks, unknown := launch.ReadCheckExecutions(filepath.Join(root, "artifacts", "unit-checks", "carry"))
+	var steps []processmeasure.Step
+	for _, check := range checks {
+		if goalID == "" || check.Goal == goalID {
+			steps = append(steps, check.Steps...)
+		}
+	}
+	return steps, unknown
 }
 
 func unitMeasureInput(work launch.NamedWork, runner *launch.UnitRunner, root string) processmeasure.Input {
@@ -39,6 +51,16 @@ func unitMeasureInput(work launch.NamedWork, runner *launch.UnitRunner, root str
 			in.Revisions = append(in.Revisions, revision.After)
 		}
 		for _, round := range work.Record.Rounds {
+			observations, unknown := launch.ReadCheckExecutions(round.Directory)
+			live, missing := launch.ReadCheckExecutions(filepath.Join(work.Record.Worktree, "artifacts", "unit-checks", work.Record.ID, filepath.Base(round.Directory)))
+			observations = append(observations, live...)
+			unknown = append(unknown, missing...)
+			in.Unknown = append(in.Unknown, unknown...)
+			for _, observation := range observations {
+				if observation.Run == work.Record.ID {
+					in.Steps = append(in.Steps, observation.Steps...)
+				}
+			}
 			for _, step := range round.Steps {
 				one := processmeasure.Step{ID: step.LaunchID, Kind: step.Kind, Pending: step.StartedAt, Collected: step.FinishedAt, FullArgv: in.FullArgv, Terminal: step.State == launch.StepPassed || step.State == launch.StepFailed}
 				if step.Command != nil {
@@ -47,6 +69,9 @@ func unitMeasureInput(work launch.NamedWork, runner *launch.UnitRunner, root str
 				if record, err := runner.Manager.Store.Read(step.LaunchID); err == nil {
 					one.Start, one.End, one.Terminal = record.StartedAt, record.FinishedAt, record.State.Terminal()
 					_ = json.Unmarshal(record.AdapterData["sandboxAct"], &one.Act)
+					if one.Act == "" {
+						_ = json.Unmarshal(record.AdapterData["checkAct"], &one.Act)
+					}
 					if usage := record.Measurement; usage.UsageRead {
 						one.Usage = &processmeasure.Tokens{Input: usage.InputTokens, CacheRead: usage.CacheReadTokens, CacheCreation: usage.CacheCreationTokens, Output: usage.OutputTokens}
 					}
@@ -156,12 +181,14 @@ func (inv *intentInvocation) goalCosts(id string, current []launch.NamedWork, re
 	}
 	for _, act := range acts {
 		actor := "own-caused agent"
-		if act.Actor == "direct-person" && act.Proof.Helm == nil {
+		if act.Actor == "direct-person" && act.Proof.Helm == nil && act.AppliedProof.Helm == nil {
 			actor = "person-directed"
 		}
 		result.text = append(result.text, fmt.Sprintf("  process act %s: %s, %s, %s; %s", act.ID, actor, act.Key, act.Status, act.Reason))
 	}
 	all := processmeasure.Input{Now: inv.unitRunner().Manager.Now(), GoalOpen: true, Unknown: append(unknown, missing...)}
+	all.Steps, missing = carryMeasures(inv.layout.InstallationRoot.Path(), id)
+	all.Unknown = append(all.Unknown, missing...)
 	if projection, _, problem := inv.projection(); problem == nil {
 		file, _ := goalRecord(projection, id)
 		all.GoalOpen = file == nil || file.State != goal.StateDone

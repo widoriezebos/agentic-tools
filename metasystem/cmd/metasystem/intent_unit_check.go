@@ -32,6 +32,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		if err := inv.admitProcessCheck(plan, directory, check); err != nil {
 			return plan, err
 		}
+		plan.FullArgv = check.FullArgv
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -84,15 +85,22 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 			err = relErr
 			if err == nil {
 				round := record.Rounds[len(record.Rounds)-1].Directory
+				parent, role, brief := launch.CheckParent(record.Rounds[len(record.Rounds)-1], inv.unitRunner().Manager.Store, inv.unitRunner().Manager.Prober)
 				records := filepath.Join(record.Worktree, "artifacts", "unit-checks", record.ID, filepath.Base(round))
 				lookup := inv.owners.lookupEnv
 				if lookup == nil {
 					lookup = os.LookupEnv
 				}
-				if kind, _ := lookup(launch.KindEnv); kind == "proof" {
+				kind, _ := lookup(launch.KindEnv)
+				if role == "attestation" || kind == "proof" {
 					records = round
 				}
-				execution, exits, err = plan.Check.Run(filepath.Join(strings.TrimSpace(string(top)), relative), records)
+				body, briefErr := os.ReadFile(brief)
+				context := launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: record.Goal, Run: record.ID, Round: filepath.Base(round), Role: role, BriefSHA256: fmt.Sprintf("%x", sha256.Sum256(body))}, Parent: parent, Now: inv.unitRunner().Manager.Now}
+				if briefErr != nil {
+					context.BriefSHA256 = ""
+				}
+				execution, exits, err = plan.Check.Run(filepath.Join(strings.TrimSpace(string(top)), relative), records, context)
 			}
 		}
 	}

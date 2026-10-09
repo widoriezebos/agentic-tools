@@ -6,9 +6,14 @@ import (
 	"fmt"
 	"slices"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 )
 
-type Act struct{ ID, Actor, Lineage, Grant, Change string }
+type Act struct {
+	ID, Actor, Lineage, Grant, Change string
+	Requester, Applier                humanauthority.Proof
+}
 type Observation struct {
 	Revision string
 	Hours    float64
@@ -16,6 +21,7 @@ type Observation struct {
 }
 type Watermark map[string]Observation
 type Projection struct {
+	Acts      []Act
 	Measures  *Measures
 	Lines     []string
 	Watermark Watermark
@@ -23,7 +29,7 @@ type Projection struct {
 
 // Report projects observed work under consumed acts; it makes no savings claim.
 func Report(m Measures, steps []Step, acts []Act, stops []string, boundary Watermark) Projection {
-	p := Projection{Measures: &m, Lines: slices.Clone(stops), Watermark: Watermark{}}
+	p := Projection{Measures: &m, Acts: slices.Clone(acts), Lines: slices.Clone(stops), Watermark: Watermark{}}
 	for id, observation := range boundary {
 		p.Watermark[id] = observation
 	}
@@ -48,12 +54,15 @@ func Report(m Measures, steps []Step, acts []Act, stops []string, boundary Water
 			end = m.ObservedAt
 		}
 		value, valid := duration(Interval{start, end}, m.ObservedAt)
+		if step.Kind == "build" || step.Kind == "correction" || (step.Kind == "attest" && step.Coverage == "") {
+			value -= nestedHours(step.ID, Interval{start, end}, steps, m.ObservedAt)
+		}
 		if !valid {
 			m.Unknown = append(slices.Clone(m.Unknown), "consumed work time unavailable: "+step.ID)
 			continue
 		}
 		observation := Observation{Hours: value}
-		if step.Usage != nil {
+		if step.Usage != nil && (step.Coverage == "" || step.Coverage == "separate") {
 			observation.Tokens = *step.Usage
 		}
 		previous := boundary[step.ID]
@@ -101,6 +110,16 @@ func Report(m Measures, steps []Step, acts []Act, stops []string, boundary Water
 			cost = fmt.Sprintf("%.6g", *value*scale) + unit
 		}
 		p.Lines = append(p.Lines, label+kind+" "+cost)
+	}
+	for _, child := range m.Children {
+		usage, outcome := "unavailable", child.Outcome
+		if child.Usage != nil {
+			usage = fmt.Sprint(*child.Usage)
+		}
+		if !child.Terminal {
+			outcome = "unfinished"
+		}
+		p.Lines = append(p.Lines, fmt.Sprintf("Check execution %s: %s; reported child input/cache-read/cache-creation/output tokens %s; token inclusion %s", child.ID, outcome, usage, child.Coverage))
 	}
 	if boundary == nil {
 		p.Lines = append(p.Lines, "Unknown: report boundary; all retained applied acts included")
