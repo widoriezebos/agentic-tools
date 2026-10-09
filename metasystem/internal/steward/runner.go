@@ -385,6 +385,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				fmt.Fprintf(os.Stderr, "unit boundary: %v\n", boundaryErr)
 			}
 		}
+		rearmed := false
 		if cfg.RearmAtBoundary != nil {
 			if replaced, refreshErr := cfg.RearmAtBoundary(); refreshErr != nil {
 				if logErr := NoteRearmFailure(top, refreshErr, deps.Now()); logErr != nil {
@@ -392,6 +393,13 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				}
 			} else if replaced {
 				return nil
+			} else {
+				rearmed = true
+			}
+		}
+		if rearmed && cfg.AdvanceBoundary != nil {
+			if advanceErr := cfg.AdvanceBoundary(top); advanceErr != nil {
+				fmt.Fprintf(os.Stderr, "boundary preparation: %v\n", advanceErr)
 			}
 		}
 		// The landing lane's keeper wakes the lane's landing agent when the

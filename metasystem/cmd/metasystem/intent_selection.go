@@ -187,6 +187,21 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 			stage += "; " + board.PersonExcludedRequiredScope
 		}
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
+		lineStage := stage
+		events, boundaryErr := steward.ReadUnitBoundaries(inv.stateRoot)
+		if boundaryErr != nil {
+			lineStage += "; boundary preparation unavailable: " + boundaryErr.Error()
+		}
+		for index := len(events) - 1; index >= 0; index-- {
+			event := events[index]
+			if event.Seat == inv.stateRoot && event.Goal == id {
+				if event.Next != nil {
+					view["boundaryAct"] = event.Next
+					lineStage += "; " + event.Next.Summary + "; next: " + shellCommand(event.Next.Command)
+				}
+				break
+			}
+		}
 		if one.Record != nil {
 			view["state"], view["run"] = one.Record.State, one.Run
 			for key, value := range unitData(*one.Record, inv.unitRunner().Manager) {
@@ -205,7 +220,7 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		}
 		views = append(views, view)
 		next, _ := inv.workContinuation(id, one, true)
-		lines = append(lines, fmt.Sprintf("  %s: %s, attempt %d; next: %s", one.Unit, stage, workAttempt(one), shellCommand(next)))
+		lines = append(lines, fmt.Sprintf("  %s: %s, attempt %d; next: %s", one.Unit, lineStage, workAttempt(one), shellCommand(next)))
 		at := ""
 		if one.Record != nil {
 			for _, round := range one.Record.Rounds {

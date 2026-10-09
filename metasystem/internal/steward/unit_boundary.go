@@ -17,13 +17,24 @@ import (
 
 // UnitBoundary is a completed unit's durable identity.
 type UnitBoundary struct {
-	Seat      string `json:"seat"`
-	Session   string `json:"session"`
-	Goal      string `json:"goal"`
-	Unit      string `json:"unit"`
-	Outcome   string `json:"outcome"`
-	Handoff   string `json:"handoff,omitempty"`
-	Signalled bool   `json:"signalled,omitempty"`
+	Seat      string       `json:"seat"`
+	Session   string       `json:"session"`
+	Goal      string       `json:"goal"`
+	Unit      string       `json:"unit"`
+	Outcome   string       `json:"outcome"`
+	Handoff   string       `json:"handoff,omitempty"`
+	Signalled bool         `json:"signalled,omitempty"`
+	Lineage   string       `json:"lineage,omitempty"`
+	Next      *BoundaryAct `json:"next,omitempty"`
+}
+
+// BoundaryAct is preparation for the worker, bound to the published goal tip.
+type BoundaryAct struct {
+	Unit    string   `json:"unit,omitempty"`
+	Tip     string   `json:"tip"`
+	Command []string `json:"command,omitempty"`
+	Summary string   `json:"summary"`
+	Effect  string   `json:"effect,omitempty"`
 }
 
 func ReadUnitBoundaries(root string) ([]UnitBoundary, error) {
@@ -85,6 +96,10 @@ func ObserveUnitBoundary(root, home, session string, started time.Time, work goa
 		return err
 	}
 	retained := len(events)
+	holder, present, err := readStopCapabilityHolder(root)
+	if err != nil {
+		return err
+	}
 	completed := map[string]bool{}
 	for _, id := range append(append([]string(nil), work.Claimed...), work.Landing...) {
 		stages, err := units(root, id)
@@ -144,6 +159,9 @@ func ObserveUnitBoundary(root, home, session string, started time.Time, work goa
 			continue
 		}
 		event := UnitBoundary{Seat: canonicalPath(root), Session: goal.NormalizeSession(session), Goal: run.Goal, Unit: fmt.Sprintf("%s/%d", run.ID, round.Number), Outcome: round.Outcome}
+		if present {
+			event.Lineage = holder.OwnerLineage
+		}
 		found := false
 		for _, previous := range events {
 			if previous.Seat == event.Seat && previous.Session == event.Session && previous.Goal == event.Goal && previous.Unit == event.Unit {

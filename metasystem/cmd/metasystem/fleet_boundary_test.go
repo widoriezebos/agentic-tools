@@ -204,6 +204,55 @@ func TestFleetBoundaryPublicReadWaivedGoal(t *testing.T) {
 			if events := bed.boundaries(t); len(events) != 1 || events[0].Goal != bed.id || events[0].Unit != bed.run.ID+"/1" {
 				t.Fatalf("read-waived goal hid the other goal's completed boundary: %+v", events)
 			}
+			// Retained preparation must stay visible without changing the stages
+			// used to observe a later completed unit.
+			events := bed.boundaries(t)
+			act := &steward.BoundaryAct{Tip: commit, Summary: "prepared next work", Command: []string{"metasystem", "work", "land", waived.Id}}
+			events[0].Next = act
+			events = append(events, steward.UnitBoundary{Seat: bed.root(), Session: bed.session, Goal: waived.Id, Unit: "hand/1", Outcome: "green", Next: act})
+			data, err := json.Marshal(events)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(bed.root(), "artifacts", "agents", "steward", "unit-boundaries.json"), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			if code, status := bed.runJSON(bed.owners, "status", waived.Id, "--work", "hand"); code != 0 || !strings.Contains(status.Summary, "committed, ready to land without a read") {
+				t.Fatalf("prepared read-waived stage: %d %+v", code, status)
+			}
+			var cfg steward.TickConfig
+			wireStewardSeat(&cfg, bed.owners)
+			for id, want := range map[string]string{
+				waived.Id: "committed, ready to land without a read",
+				bed.id:    "reviewed; its read is collected and published (attestation bbbbbbbbbbbb)",
+			} {
+				units, err := cfg.Units(bed.root(), id)
+				if err != nil || len(units) != 1 || units[0].Stage != want {
+					t.Fatalf("prepared unit stages for %s: %+v %v", id, units, err)
+				}
+			}
+			code, status := bed.runJSON(bed.owners, "work", "status", bed.id, "--work", "finished")
+			if code != 0 {
+				t.Fatalf("prepared public status: %d %+v", code, status)
+			}
+			view := resultData(t, status)["work"].([]any)[0].(map[string]any)
+			wantStage := "reviewed; its read is collected and published (attestation bbbbbbbbbbbb)"
+			if view["stage"] != wantStage || !strings.HasSuffix(status.Summary, wantStage) || view["boundaryAct"] == nil {
+				t.Fatalf("preparation changed the unit stage or disappeared: %+v", status)
+			}
+			round := bed.run.Rounds[0]
+			round.Number = 2
+			bed.run.Rounds = append(bed.run.Rounds, round)
+			subject := bed.run.Subjects[0]
+			subject.Round = 2
+			bed.run.Subjects = append(bed.run.Subjects, subject)
+			bed.saveRun(t, bed.run)
+			if code, problem := bed.observe(t); code != 0 {
+				t.Fatalf("next public boundary: %d %s", code, problem)
+			}
+			if events := bed.boundaries(t); len(events) != 3 || events[2].Goal != bed.id || events[2].Unit != bed.run.ID+"/2" {
+				t.Fatalf("prepared read-waived goal hid the next boundary: %+v", events)
+			}
 		})
 	}
 }
