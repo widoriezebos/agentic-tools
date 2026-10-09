@@ -83,7 +83,9 @@ func TestHealthSystemCheckAgentNamesPersonsBudgetAct(t *testing.T) {
 			Role        steward.HealthRole
 			Public      []string
 			Instruction string
-		}) bool { return remedy.Role == steward.RoleClaimedGoalBudget })
+		}) bool {
+			return remedy.Role == steward.RoleClaimedGoalBudget
+		})
 		want := "a person runs: metasystem goal budget " + bedGoal + " BOX"
 		if index < 0 || len(preview.PublicRemedies[index].Public) != 0 || preview.PublicRemedies[index].Instruction != want {
 			t.Fatalf("%s: agent must receive the person's budget instruction %q: %+v", class, want, preview.PublicRemedies)
