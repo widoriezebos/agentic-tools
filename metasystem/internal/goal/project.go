@@ -164,7 +164,7 @@ func projectTipClock(e Endpoint, tip string, clock func() (time.Time, error)) (P
 	if err != nil {
 		return Projection{}, err
 	}
-	if problems := ValidateTree(tree); len(problems) > 0 {
+	if problems := validateSplitLineage(tree); len(problems) > 0 {
 		return Projection{}, &TreeReadError{Tip: tip, Problems: problems}
 	}
 	now, err := clock()

@@ -13,6 +13,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func TestGoalSplitReversesUnstartedChildren(t *testing.T) {
@@ -22,6 +23,7 @@ func TestGoalSplitReversesUnstartedChildren(t *testing.T) {
 			t.Parallel()
 			bed := newGoalCLIBed(t, goalCLISeed{allowTerminalProof: true})
 			bed.announceHolder()
+			home := testprovider.Register(t, bed.root)
 			publicWith := func(args []string, configure func(*intentOwners)) (int, string, string) {
 				t.Helper()
 				command, rest, ok := resolveIntentArgv(args)
@@ -84,7 +86,7 @@ func TestGoalSplitReversesUnstartedChildren(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			spendBefore := dispatchcore.ProjectConsumption(bed.root, before, bed.clock())
+			spendBefore := dispatchcore.ProjectConsumption(bed.root, before, bed.clock(), home)
 
 			plan := "# split source\n\n## member child-one\n- Intent: Build one.\n- Next step: Write one.\n\n## member child-two\n- Intent: Build two.\n- Next step: Write two.\n- BlockedBy: child-one\n"
 			path := filepath.Join(bed.root, "members.md")
@@ -257,7 +259,7 @@ func TestGoalSplitReversesUnstartedChildren(t *testing.T) {
 				t.Fatalf("show omitted reversal date or person: want %q in %s", wantReversal, shown)
 			}
 			if scenario == "claimed parent" {
-				spendAfter := dispatchcore.ProjectConsumption(bed.root, after, bed.clock())
+				spendAfter := dispatchcore.ProjectConsumption(bed.root, after, bed.clock(), home)
 				if spendBefore.Status != dispatchcore.BudgetKnown || spendBefore.Attempts != 1 || spendBefore.ReservedJobMinutes == 0 || spendAfter.Attempts != spendBefore.Attempts || spendAfter.ReservedJobMinutes != spendBefore.ReservedJobMinutes {
 					t.Fatalf("spending lost: before=%+v after=%+v", spendBefore, spendAfter)
 				}

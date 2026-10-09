@@ -880,7 +880,8 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		projection.ReservedJobMinutes += attempt.ObservedCostMinutes
 		projection.ObservedJobMinutes += attempt.ObservedCostMinutes
 	}
-	if !budgetStartedAt.IsZero() {
+	// Splitting needs work reservations, not provider pauses in the elapsed budget clock.
+	if !working && !budgetStartedAt.IsZero() {
 		home := ""
 		if len(homes) > 0 {
 			home = homes[0]

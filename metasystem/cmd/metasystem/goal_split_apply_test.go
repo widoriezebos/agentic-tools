@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 // A failed confirming fetch is a transport failure after a real publication.
@@ -56,6 +57,7 @@ func TestGoalSplitAppliesExistingMarkdownPlan(t *testing.T) {
 			t.Parallel()
 			bed := newGoalCLIBed(t, goalCLISeed{allowTerminalProof: true})
 			bed.announceHolder()
+			home := testprovider.Register(t, bed.root)
 			gcliLedgerMust(t, bed, "goal", "release", "ship-widget", "--reason", "Free the seat.")
 			gcliBudgetOpen(t, bed, "source", gcliBudgetTierTwo, "Split the responsibility.")
 			gcliBudgetHumanMust(t, bed, "goal", "approve", "source", "--budget", "norm")
@@ -105,7 +107,7 @@ func TestGoalSplitAppliesExistingMarkdownPlan(t *testing.T) {
 			if scenario == "unclaimed active work" {
 				gcliLedgerMust(t, bed, "goal", "release", "source", "--reason", "Release while design work is running.")
 			}
-			beforeSpend := dispatchcore.ProjectConsumption(bed.root, source, bed.clock())
+			beforeSpend := dispatchcore.ProjectConsumption(bed.root, source, bed.clock(), home)
 			plan := "# split source\n\n## member child-one\n- Intent: Build the reader.\n- Next step: Write its brief.\n- BlockedBy: fix-docs\n\n## member child-two\n- Intent: Build the writer.\n- Next step: Write its brief.\n- BlockedBy: child-one\n"
 			if scenario == "cycle" {
 				plan = strings.Replace(plan, "- BlockedBy: fix-docs\n", "- BlockedBy: child-two\n", 1)
@@ -250,7 +252,7 @@ func TestGoalSplitAppliesExistingMarkdownPlan(t *testing.T) {
 				!reflect.DeepEqual(parent.Budget, source.Budget) || !reflect.DeepEqual(parent.Approved, source.Approved) || !reflect.DeepEqual(parent.ReviewObligations, source.ReviewObligations) || !reflect.DeepEqual(parent.Obligation, source.Obligation) || parent.Episode == nil {
 				t.Fatalf("source responsibility or allowance lost: %+v", parent)
 			}
-			afterSpend := dispatchcore.ProjectConsumption(bed.root, parent, bed.clock())
+			afterSpend := dispatchcore.ProjectConsumption(bed.root, parent, bed.clock(), home)
 			if beforeSpend.Status != dispatchcore.BudgetKnown || beforeSpend.Attempts != 1 || beforeSpend.ReservedJobMinutes == 0 || afterSpend.Attempts != beforeSpend.Attempts || afterSpend.ReservedJobMinutes != beforeSpend.ReservedJobMinutes {
 				t.Fatalf("spending lost: before=%+v after=%+v", beforeSpend, afterSpend)
 			}
