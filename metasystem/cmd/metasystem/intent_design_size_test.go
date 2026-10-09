@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -25,6 +26,15 @@ func sizePage(t *testing.T, bed *workBed, name, status, table string) string {
 	t.Helper()
 	path := filepath.Join(bed.stateRoot(), "plans", "designs", name+".md")
 	data := "# " + name + "\n\n- Kind: design\n- Id: " + name + "\n- Status: " + status + "\n- Goals: " + bed.id + "\n- Critique: closed at round 1 on 0 material findings (reader)\n\n" + table + "\n"
+	// Each sized unit has an exact Decision (plans/designs/briefs-carry-their-rules.md:51).
+	declared := map[string]bool{}
+	for _, unit := range launch.ParseUnitSizes(table) {
+		if !declared[unit.Name] {
+			data += "\n## " + unit.Name + " — Size\n\nBuild the admitted unit.\n"
+			declared[unit.Name] = true
+		}
+	}
+
 	if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
 		t.Fatal(err)
 	}

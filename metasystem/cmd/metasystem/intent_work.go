@@ -32,6 +32,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -2503,7 +2504,7 @@ type designSection struct {
 }
 
 var (
-	designConstraintHeading = regexp.MustCompile(`(?i)non-goal|constraint|scope|limit|out of scope`)
+	designConstraintHeading = regexp.MustCompile(`(?i)non-goal|constraint|scope|limit|out of scope|binding words`)
 	designReturnHeading     = regexp.MustCompile(`(?i)\breturn`)
 	designAcceptHeading     = regexp.MustCompile(`(?i)accept|proof|obligation|criteria|done`)
 )
@@ -2511,10 +2512,11 @@ var (
 // designSections splits a design record at every heading and sorts
 // the ones whose headings name constraints, the expected return or
 // acceptance. The record's own text is carried; nothing is inferred.
-func designSections(path string, data []byte) (constraints, returns, acceptance []designSection) {
+func designSections(path string, data []byte, unit ...project.UnitBriefSpec) (constraints, returns, acceptance []designSection) {
 	var current *designSection
+	tableUnit, excludedDepth, decisionsDepth := -1, 0, 0
 	flush := func() {
-		if current == nil || strings.TrimSpace(current.text) == "" {
+		if current == nil || excludedDepth > 0 || strings.TrimSpace(current.text) == "" {
 			return
 		}
 		switch {
@@ -2530,9 +2532,47 @@ func designSections(path string, data []byte) (constraints, returns, acceptance 
 		if strings.HasPrefix(line, "#") {
 			flush()
 			current = &designSection{path: path, heading: strings.TrimSpace(strings.TrimLeft(line, "#"))}
+			level := len(line) - len(strings.TrimLeft(line, "#"))
+			if level <= excludedDepth {
+				excludedDepth = 0
+			}
+			if level <= decisionsDepth {
+				decisionsDepth = 0
+			}
+			if regexp.MustCompile(`(?i)^(?:[0-9]+[.)]\s+)?Decisions\b`).MatchString(current.heading) {
+				decisionsDepth = level
+			}
+			if len(unit) > 0 && unit[0].Unit != "" {
+				local := regexp.MustCompile(`(?i)^Decision\s+[0-9]+`).MatchString(current.heading) || decisionsDepth > 0 && level > decisionsDepth && regexp.MustCompile(`^[0-9]+[.)](?:\s|$)`).MatchString(current.heading)
+				name := strings.ReplaceAll(current.heading, "`", "")
+				for _, row := range launch.ParseUnitSizes(string(data)) {
+					rowName := strings.Trim(row.Name, "`")
+					local = local || strings.HasPrefix(name, rowName+" ") || strings.HasPrefix(name, rowName+":") || name == rowName
+				}
+				if local && (unit[0].Path != path || !slices.Contains(unit[0].Headings, current.heading)) {
+					excludedDepth = level
+				}
+			}
+
 			continue
 		}
 		if current != nil {
+			cells := strings.Split(strings.Trim(line, " |\t"), "|")
+			if !strings.HasPrefix(strings.TrimSpace(line), "|") {
+				tableUnit = -1
+			}
+			for column, cell := range cells {
+				if strings.EqualFold(strings.TrimSpace(cell), "Unit") || strings.EqualFold(strings.TrimSpace(cell), "Unit / proposed test") {
+					tableUnit = column
+				}
+			}
+			if len(unit) > 0 && tableUnit >= 0 && tableUnit < len(cells) {
+				cell := strings.TrimSpace(cells[tableUnit])
+				if cell != "Unit" && cell != "Unit / proposed test" && !strings.HasPrefix(cell, "---") && strings.Trim(cell, "`") != unit[0].Unit && !strings.HasPrefix(cell, unit[0].Unit+" `") {
+					line = ""
+				}
+			}
+
 			current.text += line + "\n"
 		}
 	}
@@ -2551,7 +2591,7 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 	var constraints, returns, acceptance []designSection
 	var units []launch.UnitSize
 	unitsFrom := ""
-	var readerDesigns [][]byte
+	readerDesigns := map[string][]byte{}
 	var readerBase string
 	for _, design := range designs {
 		data, err := os.ReadFile(design)
@@ -2562,12 +2602,21 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 		if problem := inv.checkBriefCitations(&data, design, &readerBase); problem != nil {
 			return "", nil, problem
 		}
-		c, r, a := designSections(design, data)
-		readerDesigns = append(readerDesigns, data)
-		constraints, returns, acceptance = append(constraints, c...), append(returns, r...), append(acceptance, a...)
+		readerDesigns[design] = data
 		if rows, err := launch.DeclaredUnits(design); err == nil && len(rows) > 0 && len(units) == 0 {
 			units, unitsFrom = rows, design
 		}
+	}
+	spec, err := project.SelectUnitBrief(readerDesigns, designs, inv.input.text("work"))
+	if err != nil {
+		return "", nil, &intentResult{Outcome: intentRefused, code: 1, Summary: err.Error() + "; no brief was written", next: inv.sameCommand(), nextReason: "repair the named accepted ownership"}
+	}
+	for _, design := range designs {
+		c, r, a := designSections(design, readerDesigns[design], spec)
+		constraints, returns, acceptance = append(constraints, c...), append(returns, r...), append(acceptance, a...)
+	}
+	if spec.Path != "" {
+		units, unitsFrom = []launch.UnitSize{spec.Size}, spec.Path
 	}
 	section := func(text *strings.Builder, sections []designSection) {
 		for _, one := range sections {
@@ -2612,6 +2661,18 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 			fmt.Fprintf(&text, "| %s | %d |\n", unit.Name, unit.Lines)
 		}
 	}
+	text.WriteString("\n# What this unit builds\n\n" + spec.Source + spec.Decision)
+	for _, decision := range spec.Missing {
+		text.WriteString("\n" + mark(decision) + "\n")
+	}
+	if spec.Path != "" {
+		fmt.Fprintf(&text, "\nChanged-line allocation: %d.\n", spec.Size.Lines)
+		if spec.Size.Production != nil {
+			fmt.Fprintf(&text, "Production estimate: %d.\n", *spec.Size.Production)
+		} else {
+			text.WriteString("Production estimate: unknown.\n")
+		}
+	}
 	text.WriteString("\n# Constraints\n\n")
 	switch {
 	case len(constraints) > 0:
@@ -2627,15 +2688,9 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 		text.WriteString("\nThe independent read's tool-call budget:\n" + mark("the read's tool-call budget, written as the line 'Maximum reader tool calls: N'") + "\n")
 	}
 	if len(readerDesigns) > 0 {
-		unit := inv.input.text("work")
-		if unit == "" && len(units) == 1 {
-			unit = units[0].Name
-		}
-		var decision, readers, limits string
-		for _, data := range readerDesigns {
-			d, r := readerSpec(data, unit)
-			decision, readers = decision+d, readers+r
-		}
+		unit, decision := spec.Unit, spec.Decision
+		readers := readerSpec(readerDesigns[spec.Path], unit)
+		var limits string
 		for _, constraint := range constraints {
 			limits += constraint.text + "\n"
 		}
@@ -2662,14 +2717,12 @@ func (inv *intentInvocation) briefScaffold(file *goal.GoalFile, designs []string
 		fmt.Fprintf(&text, "The goal's own criteria: %s\n\n", done)
 	}
 	section(&text, acceptance)
+	text.WriteString(spec.Acceptance)
 	if done == "" && len(acceptance) == 0 {
 		text.WriteString(mark("observable, machine-checkable criteria; neither the goal nor an accepted design states them") + "\n")
 	}
 	text.WriteString("\n# Check\n\nPending: committed proof.cheap, proof.audits and proof.deadline; the unit runner allocates the run id.\n\n# Gap Rule\n\nstop and report a gap; never fill it silently.\n")
-	unit := inv.input.text("work")
-	if unit == "" && len(units) == 1 {
-		unit = units[0].Name
-	}
+	unit := spec.Unit
 	after := 0
 	var dispositions []byte
 	var evidenceErr error

@@ -8,10 +8,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
-// readerSpec selects only the Decision and Readers row needed for textual
-// evidence. The accepted unit row, rather than a similar name, owns selection.
-func readerSpec(data []byte, unit string) (decision, readers string) {
-	var headings []string
+// readerSpec reads the selected unit's Readers rows for textual evidence.
+func readerSpec(data []byte, unit string) (readers string) {
 	readerColumn := -1
 	for _, line := range strings.Split(string(data), "\n") {
 		cells := strings.Split(strings.Trim(line, " |\t"), "|")
@@ -27,24 +25,12 @@ func readerSpec(data []byte, unit string) (decision, readers string) {
 			if readerColumn >= 0 && readerColumn < len(cells) {
 				readers += cells[readerColumn] + "\n"
 			}
-			for _, ref := range regexp.MustCompile(`(?i)Decision\s+[0-9]+`).FindAllString(line, -1) {
-				headings = append(headings, strings.ToLower(ref))
-			}
 		}
 	}
 	var current string
-	selected := false
 	for _, line := range strings.Split(string(data), "\n") {
 		if strings.HasPrefix(line, "#") {
 			current = strings.TrimSpace(strings.TrimLeft(line, "#"))
-			words := strings.Fields(current)
-			selected = len(words) > 0 && (words[0] == unit || strings.HasPrefix(current, unit+" —"))
-			for _, heading := range headings {
-				selected = selected || strings.EqualFold(current, heading) || strings.HasPrefix(strings.ToLower(current), heading+" ") || strings.HasPrefix(strings.ToLower(current), heading+" —")
-			}
-		}
-		if selected {
-			decision += line + "\n"
 		}
 		if strings.EqualFold(current, "Readers") {
 			cells := strings.Split(strings.Trim(line, " |\t"), "|")
@@ -53,7 +39,7 @@ func readerSpec(data []byte, unit string) (decision, readers string) {
 			}
 		}
 	}
-	return decision, readers
+	return readers
 }
 
 func (inv *intentInvocation) briefReaderSections(decision, readers, constraints, base string) string {

@@ -202,7 +202,16 @@ func TestWorkBriefResolvesAndChecksBaseCitations(t *testing.T) {
 			if err := os.WriteFile(source, []byte(design), 0600); err != nil {
 				t.Fatal(err)
 			}
+			// Repository and installation roots share this fixture clock
+			// (plans/designs/briefs-carry-their-rules.md:55).
 			owners := bed.workOwners()
+			now := owners.commandNow
+			owners.commandNow = func(selected string) (time.Time, error) {
+				if selected == install {
+					selected = root
+				}
+				return now(selected)
+			}
 			owners.dependencies.endpoint = func(selected string) (goal.Endpoint, error) {
 				if selected != install {
 					t.Fatalf("endpoint root = %q, want installation %q", selected, install)

@@ -41,7 +41,9 @@ func TestLandingDesignCheckRecords(t *testing.T) {
 			designGateBuild(t, bed, "u")
 			identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 			_, record := designGateRead(t, bed, identity, "u")
-			wantBody := fmt.Sprintf("%x", sha256.Sum256([]byte("Build the gate.\n")))
+			// The accepted body includes its unit Decisions
+			// (plans/designs/briefs-carry-their-rules.md:51).
+			wantBody := fmt.Sprintf("%x", sha256.Sum256([]byte("## u — Gate\n\nBuild the gate.\n\n## main — Gate\n\nBuild the gate.\n\n## ../other-goal/main — Gate\n\nBuild the gate.\n")))
 			if len(record.Designs) != 1 || record.Designs[0].SHA256 != fmt.Sprintf("%x", sha256.Sum256(data)) || record.Designs[0].BodySHA256 != wantBody {
 				t.Fatalf("dispatch digests: %+v", record.Designs)
 			}
@@ -50,7 +52,7 @@ func TestLandingDesignCheckRecords(t *testing.T) {
 			case "head":
 				data = bytes.ReplaceAll(data, []byte("round 2"), []byte("round 4"))
 			case "adjacent body":
-				data = bytes.ReplaceAll(data, []byte("\n\nBuild"), []byte("\nBuild"))
+				data = bytes.ReplaceAll(data, []byte("\n\n## u"), []byte("\n## u"))
 			case "body":
 				data = bytes.ReplaceAll(data, []byte("Build the gate."), []byte("Build another approach."))
 				verdict = "design-changed"

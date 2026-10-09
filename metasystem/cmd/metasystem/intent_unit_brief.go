@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,14 +77,28 @@ func (inv *intentInvocation) composeUnitBrief(plan launch.UnitPlan, directory st
 				return plan, err
 			}
 		}
-		d, r := readerSpec(body, plan.Unit)
+		spec, selectErr := project.SelectUnitBrief(map[string][]byte{path: body}, []string{path}, plan.Unit)
+		if spec.Decision != "" && len(spec.Missing) > 0 {
+			selectErr = fmt.Errorf("%s", strings.Join(spec.Missing, "; "))
+		}
+		if selectErr != nil {
+			if err := fault(selectErr); err != nil {
+				return plan, err
+			}
+		}
+		d := spec.Decision
+		r := readerSpec(body, plan.Unit)
+		if spec.Size.Production != nil {
+			sources += fmt.Sprintf("Production estimate: %d.\n", *spec.Size.Production)
+		}
+		acceptance += spec.Acceptance
 		if d == "" {
 			continue
 		}
 		owners++
 		decision, readers = decision+d, readers+r
 		sources += fmt.Sprintf("Design: %s; body sha256: %x\n", path, bodyDigest)
-		c, ret, a := designSections(path, body)
+		c, ret, a := designSections(path, body, spec)
 		for _, section := range c {
 			limits += section.text + "\n"
 		}

@@ -246,7 +246,10 @@ func TestWorkBriefShowsReadersDeletionAndEffort(t *testing.T) {
 				}
 			}
 			if scenario == "identifier noise" {
-				if strings.Contains(text, "high →") || strings.Contains(text, "high: unresolved") || strings.Contains(text, "high, ") || strings.Contains(text, "xhigh") {
+				// The exact Decision includes configured values; only the reference search
+				// excludes them (plans/designs/briefs-carry-their-rules.md:51).
+				readerOutput := strings.SplitN(strings.SplitN(text, "# Readers", 2)[1], "# Deletion rules", 2)[0]
+				if strings.Contains(readerOutput, "high →") || strings.Contains(readerOutput, "high: unresolved") || strings.Contains(readerOutput, "high, ") || strings.Contains(readerOutput, "xhigh") {
 					t.Fatal("setting values searched as identifiers")
 				}
 				if strings.Count(text, "PurgeEntry → many.txt:") != 300 {
