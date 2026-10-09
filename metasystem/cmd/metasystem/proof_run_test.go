@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
@@ -3619,4 +3620,149 @@ func terminalWatchdogFixture(t *testing.T, dir string) (string, func() error) {
 		t.Fatal(err)
 	}
 	return watchdog, func() error { _, err := held.Write([]byte("done\n")); return err }
+}
+
+func TestProofRunStandaloneAgentStillRequiresGoal(t *testing.T) {
+	t.Parallel()
+	for _, class := range []string{lease.ClassDelegate, lease.ClassUntrusted, lease.ClassMain} {
+		_, _, _, err := admitProofLaunchWithReadsAndClassifier(proofLaunchAdmission{ControlRoot: t.TempDir(), Now: time.Now()}, nil,
+			func(string, int64) (lease.ClassifyResult, error) { return lease.ClassifyResult{Class: class}, nil })
+		if err == nil || !strings.Contains(err.Error(), "a test run started on its own needs --goal GOAL") {
+			t.Fatalf("%s standalone proof error=%v", class, err)
+		}
+	}
+}
+
+func TestAuthenticatedProofReporterRequiresItsLiveAncestorMarker(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	caller := int64(os.Getpid())
+	if authenticatedProofReporter(root, caller) {
+		t.Fatal("unregistered agent admitted as reporter")
+	}
+	marker, err := gaterun.Register(root, caller, "repository proof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !authenticatedProofReporter(root, caller) {
+		t.Fatal("live reporter's own section refused")
+	}
+	if authenticatedProofReporter(root, int64(os.Getppid())) {
+		t.Fatal("process outside reporter ancestry admitted")
+	}
+	if authenticatedProofReporter(t.TempDir(), caller) {
+		t.Fatal("another installation admitted")
+	}
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	if authenticatedProofReporter(root, caller) {
+		t.Fatal("retired reporter still admitted")
+	}
+	if _, err := gaterun.Register(root, caller, "devgate gate"); err != nil {
+		t.Fatal(err)
+	}
+	if authenticatedProofReporter(root, caller) {
+		t.Fatal("ordinary gate admitted as reporter")
+	}
+}
+
+func TestLegacyProofLaunchRealLauncherRequiresLiveReporter(t *testing.T) {
+	t.Parallel()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(root, "metasystem.conf")
+	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.runtimes=codex\n")
+	// Host resources are isolated by a separate synthetic authority root;
+	// the launch root itself is migrated and has a real runtime declaration.
+	authority := t.TempDir()
+	writeReceiptFixture(t, authority, "metasystem.conf", "metasystem.runtimes=fake\n")
+	gitDir := t.TempDir()
+	gitStub := `#!/bin/sh
+if [ "$PWD" = "$REPORTER_PROBE_ROOT" ] && [ "$#" -eq 4 ] &&
+   [ "$1" = rev-parse ] && [ "$2" = --verify ] && [ "$3" = --quiet ] &&
+   [ "$4" = refs/metasystem/goals/accepted ]; then
+    printf '%s\n' aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+    exit 0
+fi
+if [ "$PWD" = "$REPORTER_PROBE_ROOT" ] && [ "$#" -eq 3 ] &&
+   [ "$1" = cat-file ] && [ "$2" = -e ] &&
+   [ "$3" = aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:./plans/goals/backlog.md ]; then
+    exit 0
+fi
+if [ "$#" -eq 4 ] && [ "$1" = -C ] && [ "$2" = "$REPORTER_PROBE_ROOT" ] &&
+   [ "$3" = rev-parse ] && [ "$4" = --show-toplevel ]; then
+    printf '%s\n' "$REPORTER_PROBE_ROOT"
+    exit 0
+fi
+printf 'unexpected reporter probe git call: %s\n' "$*" >&2
+exit 97
+`
+	if err := testexec.WriteFile(filepath.Join(gitDir, "git"), []byte(gitStub), 0700); err != nil {
+		t.Fatal(err)
+	}
+	started, ok := lease.StartedAt(int64(os.Getpid()), nil)
+	if !ok {
+		t.Fatal("reporter probe process identity is unreadable")
+	}
+	if _, err := lease.Announce(root, "reporter-probe", int64(os.Getpid()), started, "reporter-probe", "codex", "reporter-probe"); err != nil {
+		t.Fatal(err)
+	}
+	// A reporter owns no checkout claim from which to infer a goal.
+	writeReceiptFixture(t, root, "artifacts/agents/mains/worktree-lease.json",
+		`{"holderMainId":"main-other","pid":1,"claimEpoch":1,"revision":1}`)
+	engine := testenv.Link(t, testenv.Engine(t), filepath.Join(t.TempDir(), "metasystem"))
+	environment := append(receiptCanaryEnvironment(),
+		"PATH="+gitDir+string(os.PathListSeparator)+os.Getenv("PATH"), "REPORTER_PROBE_ROOT="+root,
+		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+filepath.Join(t.TempDir(), "host-admission"),
+		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+authority)
+	marker, err := gaterun.Register(root, int64(os.Getpid()), "repository proof")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Remove(marker) })
+	for _, live := range []bool{true, false} {
+		if !live {
+			if err := os.Remove(marker); err != nil {
+				t.Fatal(err)
+			}
+		}
+		result := filepath.Join(t.TempDir(), "result.json")
+		command := (proofBinaryFixture{t: t}).command(environment, engine, "proof-run", "launch",
+			"--suite", "reporter-probe", "--root", root, "--conf", conf,
+			"--progress", result+".progress", "--log", result+".log", "--banner", "reporter probe",
+			"--result", result, "--", "/usr/bin/true")
+		command.Dir = root
+		output, runErr := command.CombinedOutput()
+		status := 0
+		if runErr != nil {
+			var exit *exec.ExitError
+			if !errors.As(runErr, &exit) {
+				t.Fatalf("start real launcher: %v\n%s", runErr, output)
+			}
+			status = exit.ExitCode()
+		}
+		want := 0
+		if !live {
+			want = proofrun.ExitAdmissionRefused
+		}
+		if status != want {
+			t.Fatalf("live reporter=%v launcher exit=%d want=%d\n%s", live, status, want, output)
+		}
+		data, err := os.ReadFile(result)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var decision proofrun.LaunchResult
+		if err := json.Unmarshal(data, &decision); err != nil {
+			t.Fatal(err)
+		}
+		if decision.ExitStatus != want || live && decision.Disposition != proofrun.DispositionExecuted ||
+			!live && (decision.Disposition != proofrun.DispositionAdmissionRefused || !strings.Contains(string(output), "needs --goal GOAL")) {
+			t.Fatalf("live reporter=%v decision=%+v output=%s", live, decision, output)
+		}
+		t.Logf("live reporter=%v real launcher exit=%d", live, status)
+	}
 }

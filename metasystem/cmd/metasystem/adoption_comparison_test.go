@@ -2,12 +2,15 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"reflect"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -153,7 +156,7 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		if copySkills {
 			argv = append(argv, "--copy-skills")
 		}
-		mustRun(source, argv...)
+		adoptComparisonTarget(t, target, name, func() { mustRun(source, argv...) })
 		fillAdoptionHarnessConf(t, filepath.Join(target, "metasystem.conf"), filepath.Join(bed, name+"-comparison-evidence"))
 		fillAdoptionHarnessTestingContract(t, filepath.Join(source, "testing.json"), filepath.Join(target, "testing.json"))
 		if name == "filled" {
@@ -206,14 +209,6 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		if err := steward.MintIdentity(steward.RepoIdentityPath(target), steward.InstallIdentity{RepoIdentity: target, Generation: 1, InstallPath: engine, InstallDigest: "sha256:" + digest, MintedAt: time.Now().UTC().Format(time.RFC3339), Enrollment: steward.EnrollmentFixture, EngineBuild: commit, LandedCommit: commit, LandingRef: "refs/remotes/origin/main"}); err != nil {
 			t.Fatal(err)
 		}
-		pid := int64(os.Getpid())
-		started, ok := lease.StartedAt(pid, nil)
-		if !ok {
-			t.Fatal("adoption fixture main identity is unreadable")
-		}
-		if _, err := lease.Announce(target, "adoption-"+name, pid, started, "adoption-"+name, "codex", "adoption-comparison"); err != nil {
-			t.Fatal(err)
-		}
 		if name != "filled" {
 			// The copied target's assertions are registration-only (setup,
 			// digest, drift, orphan) and use the built engine. The filled
@@ -246,11 +241,18 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 			len(original.Groups[0].Observed) != 1 || original.Groups[0].Observed[0].Name != "TestAdoptedAppGreeting" || original.Groups[0].Observed[0].Status != "passed" {
 			t.Fatalf("adopted app proof lacked one real passing Go test: %+v", original)
 		}
-		// Both real test runs removed their scratch roots and records.
-		for _, pattern := range []string{filepath.Join(target, "artifacts", "agents", "proof-runs", "scratch", "*"),
-			filepath.Join(target, "*", "artifacts", "agents", "proof-runs", "scratch", "*")} {
-			if left, _ := filepath.Glob(pattern); len(left) != 0 {
-				t.Fatalf("test run left scratch behind: %v", left)
+		// Completed runs remove their data and ownership, while reusable empty
+		// lease lock files stay so concurrent owners lock the same inode.
+		for _, pattern := range []string{filepath.Join(target, "artifacts", "agents", "proof-runs", "scratch"),
+			filepath.Join(target, "*", "artifacts", "agents", "proof-runs", "scratch")} {
+			roots, err := filepath.Glob(pattern)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, root := range roots {
+				if err := adoptionScratchClean(root); err != nil {
+					t.Fatal(err)
+				}
 			}
 		}
 		return target
@@ -408,8 +410,13 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// internal/adopt/adopt.go: dropTemplateProjectState removes the template's
+	// project homes and history, retaining the Stop protocol README.
+	// internal/adopt/adopt_git_integration_test.go:
+	// assertShipsNoTemplateProjectState records this adoption promise.
+	// Compare the promised source bytes against the complete target projection.
 	for _, projection := range []behaviorsurface.Projection{behaviorsurface.Engine, behaviorsurface.Payload} {
-		sourceDigest, sourceErr := surfacePolicy.DigestWithPrefix(source, projection, "")
+		sourceDigest, sourceErr := adoptionComparisonSourceDigest(surfacePolicy, source, projection)
 		targetDigest, targetErr := surfacePolicy.DigestWithPrefix(copied, projection, "")
 		if sourceErr != nil || targetErr != nil {
 			t.Fatalf("%s digest: source %v, target %v", projection, sourceErr, targetErr)
@@ -432,6 +439,72 @@ func TestAdoptionComparisonSelectedScenarios(t *testing.T) {
 		}
 		refusedRegistration(copied, "claude,codex", true, "a drifted copy at "+registration, registration+": existing copied skill differs from its source at SKILL.md")
 		if err := os.WriteFile(skill, original, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func adoptionComparisonSourceDigest(policy behaviorsurface.Policy, root string, projection behaviorsurface.Projection) (string, error) {
+	paths, err := policy.ListPaths(root, projection)
+	if err != nil {
+		return "", err
+	}
+	if projection == behaviorsurface.Payload {
+		paths = slices.DeleteFunc(paths, func(path string) bool {
+			for _, record := range []string{"docs/intent", "docs/doctrine", "docs/decisions", "docs/journey.md", "docs/reviews"} {
+				if path == record || strings.HasPrefix(path, record+"/") {
+					return true
+				}
+			}
+			return strings.HasPrefix(path, "docs/stop-decision-moves/") && path != "docs/stop-decision-moves/README.md"
+		})
+	}
+	return policy.DigestListed(root, projection, paths)
+}
+
+func TestAdoptionComparisonPayloadKeepsOnlyPromisedTemplateBytes(t *testing.T) {
+	t.Parallel()
+	policy, err := behaviorsurface.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, target := t.TempDir(), t.TempDir()
+	kept := []string{"docs/orchestration.md", "docs/stop-decision-moves/README.md", "docs/intent-guide.md", "docs/reviews-guide.md", "cmd/main.go"}
+	dropped := []string{"docs/intent/app.md", "docs/doctrine/app.md", "docs/decisions/app.md", "docs/journey.md", "docs/reviews/app.md", "docs/stop-decision-moves/goal.md", "docs/stop-decision-moves/goal/nested.md"}
+	for _, path := range kept {
+		writeReceiptFixture(t, source, path, "promised bytes\n")
+		writeReceiptFixture(t, target, path, "promised bytes\n")
+	}
+	for _, path := range dropped {
+		writeReceiptFixture(t, source, path, "template project record\n")
+	}
+	want, err := adoptionComparisonSourceDigest(policy, source, behaviorsurface.Payload)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := policy.Digest(target, behaviorsurface.Payload)
+	if err != nil || got != want {
+		t.Fatalf("promised adoption payload differs: source=%s target=%s err=%v", want, got, err)
+	}
+	for _, path := range kept {
+		writeReceiptFixture(t, target, path, "changed bytes\n")
+		if got, err := policy.Digest(target, behaviorsurface.Payload); err != nil || got == want {
+			t.Fatalf("changed promised file %s escaped comparison: digest=%s err=%v", path, got, err)
+		}
+		if err := os.Remove(filepath.Join(target, path)); err != nil {
+			t.Fatal(err)
+		}
+		if got, err := policy.Digest(target, behaviorsurface.Payload); err != nil || got == want {
+			t.Fatalf("missing promised file %s escaped comparison: digest=%s err=%v", path, got, err)
+		}
+		writeReceiptFixture(t, target, path, "promised bytes\n")
+	}
+	for _, path := range append(dropped, "docs/unexpected.md") {
+		writeReceiptFixture(t, target, path, "unexpected bytes\n")
+		if got, err := policy.Digest(target, behaviorsurface.Payload); err != nil || got == want {
+			t.Fatalf("unexpected target file %s escaped comparison: digest=%s err=%v", path, got, err)
+		}
+		if err := os.Remove(filepath.Join(target, path)); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -504,7 +577,10 @@ func fillAdoptionHarnessTestingContract(t *testing.T, source, target string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	text := strings.ReplaceAll(string(data), `"metasystem/`, `"`)
+	// The contract spells whole-tree coverage with separate root-file and
+	// descendant patterns; a bare ** is not a supported path.
+	text := strings.ReplaceAll(string(data), `"metasystem/**"`, `"*", "*/**"`)
+	text = strings.ReplaceAll(text, `"metasystem/`, `"`)
 	text = strings.ReplaceAll(text, `"cwd":"metasystem"`, `"cwd":"."`)
 	text = strings.ReplaceAll(text, `"cwd": "metasystem"`, `"cwd": "."`)
 	if err := os.WriteFile(target, []byte(text), 0o644); err != nil {
@@ -595,4 +671,124 @@ func seedAdoptionComparisonGoal(t *testing.T, root string) {
 	}
 	writeReceiptFixture(t, root, "plans/goals/backlog.md", string(goal.RenderRoot(&goal.RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1})))
 	writeReceiptFixture(t, root, "plans/goals/adoption-goal.md", string(goal.RenderFile(g)))
+}
+
+// adoptComparisonTarget announces the fixture before the adopting engine
+// creates the target's ledger. Later delivery commands keep that recognition.
+func adoptComparisonTarget(t *testing.T, target, name string, adopt func()) {
+	t.Helper()
+	pid := int64(os.Getpid())
+	started, ok := lease.StartedAt(pid, nil)
+	if !ok {
+		t.Fatal("adoption fixture main identity is unreadable")
+	}
+	if _, err := lease.Announce(target, "adoption-"+name, pid, started, "adoption-"+name, "codex", "adoption-comparison"); err != nil {
+		t.Fatal(err)
+	}
+	adopt()
+}
+
+func TestAdoptionComparisonAnnouncesBeforeGenesis(t *testing.T) {
+	t.Parallel()
+	target := t.TempDir()
+	called := false
+	adoptComparisonTarget(t, target, "genesis", func() {
+		called = true
+		classified, err := lease.ClassifyAt(target, target, int64(os.Getpid()))
+		if err != nil || classified.Class != lease.ClassMain || classified.Announcement == nil ||
+			classified.Announcement.OwnerLineage != "adoption-comparison" || classified.Announcement.SessionId != "adoption-genesis" {
+			t.Fatalf("adoption caller lacks its own target recognition: %+v err=%v", classified, err)
+		}
+	})
+	if !called {
+		t.Fatal("recognized fixture never launched adoption")
+	}
+}
+
+func adoptionScratchClean(root string) error {
+	return filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path == root {
+			return nil
+		}
+		relative, err := filepath.Rel(root, path)
+		if err != nil {
+			return err
+		}
+		if relative != "leases" && !strings.HasPrefix(relative, "leases"+string(filepath.Separator)) {
+			return fmt.Errorf("test run left scratch behind: %s", path)
+		}
+		if entry.IsDir() {
+			return nil
+		}
+		info, err := entry.Info()
+		if err != nil {
+			return err
+		}
+		if info.Mode().IsRegular() && strings.HasSuffix(entry.Name(), ".lease") && info.Size() == 0 {
+			return nil
+		}
+		return fmt.Errorf("test run left scratch ownership or data behind: %s", path)
+	})
+}
+
+func TestAdoptionComparisonScratchCleanupAllowsOnlyIdleLeaseLocks(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name, path, body string
+		directory, clean bool
+	}{
+		{name: "idle lock", path: "leases/policy/key/0.lease", clean: true},
+		{name: "occupied lock", path: "leases/policy/key/0.lease", body: "run-owner"},
+		{name: "run record", path: "run.json", body: "record"},
+		{name: "run directory", path: "run", directory: true},
+		{name: "slot worktree", path: "leases/policy/key/0/wt/input", body: "candidate"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			path := filepath.Join(root, test.path)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if test.directory {
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if err := os.WriteFile(path, []byte(test.body), 0600); err != nil {
+				t.Fatal(err)
+			}
+			err := adoptionScratchClean(root)
+			if (err == nil) != test.clean {
+				t.Fatalf("clean=%v error=%v", test.clean, err)
+			}
+			if err != nil && !strings.Contains(err.Error(), path) {
+				t.Fatalf("cleanup did not name leftover %s: %v", path, err)
+			}
+		})
+	}
+	if err := adoptionScratchClean(filepath.Join(t.TempDir(), "missing")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("unreadable scratch was accepted: %v", err)
+	}
+}
+
+func TestAdoptionHarnessTestingContractSupportsRootInputs(t *testing.T) {
+	t.Parallel()
+	target := filepath.Join(t.TempDir(), "testing.json")
+	fillAdoptionHarnessTestingContract(t, "../../testing.json", target)
+	contract, err := testpolicy.Load(target)
+	if err != nil {
+		t.Fatalf("tailored contract is invalid: %v", err)
+	}
+	for _, group := range contract.Groups {
+		if group.ID == "verb-ratchet" {
+			if !slices.Contains(group.Inputs, "*") || !slices.Contains(group.Inputs, "*/**") {
+				t.Fatalf("installation-root proof lost root or descendant inputs: %v", group.Inputs)
+			}
+			return
+		}
+	}
+	t.Fatal("tailored contract lost the verb-ratchet group")
 }
