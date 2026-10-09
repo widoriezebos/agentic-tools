@@ -171,7 +171,8 @@ func TestBriefAuthorityBoundedUsesTrunkTokenScanner(t *testing.T) {
 		name, line string
 		want       []string
 	}{
-		{"backticked-path-line", "Read `docs/missing.md:426`.", []string{"docs/missing.md"}},
+		// Expectations follow Decision B2 (briefs-carry-their-rules): a citation reports its original spelling with the line suffix; quoted spans with spaces are citations; tab and newline fall back to the trunk scanner.
+		{"backticked-path-line", "Read `docs/missing.md:426`.", []string{"docs/missing.md:426"}},
 		{"command-with-arguments", "Run `scripts/agents/go-gate.sh --fast`.", []string{"scripts/agents/go-gate.sh"}},
 		{"placeholder", "Read `records/<placeholder>.md`.", nil},
 		{"glob", "Read `records/**/*.md`.", nil},
@@ -218,8 +219,12 @@ func TestBriefAuthoritySpecialCharacterInput(t *testing.T) {
 			repo := newBriefAuthorityRepo(t)
 			line := "Read " + tc.citation + "."
 			requireAuthorityInRepo(t, repo, boundedAuthority([]string{tc.member}, line), []string{tc.member})
-			requireAuthorityInRepo(t, repo, boundedAuthority([]string{}, line), []string{"docs/a"})
-			requireAuthorityInRepo(t, repo, boundedAuthority([]string{"docs/other path.md"}, line), []string{"docs/a"})
+			want := []string{tc.member}
+			if strings.ContainsAny(tc.member, "\t\n") {
+				want = []string{"docs/a"}
+			}
+			requireAuthorityInRepo(t, repo, boundedAuthority([]string{}, line), want)
+			requireAuthorityInRepo(t, repo, boundedAuthority([]string{"docs/other path.md"}, line), want)
 			commitBriefAuthorityPath(t, repo, tc.member)
 			requireAuthorityInRepo(t, repo, boundedAuthority([]string{tc.member}, line), nil)
 		})
@@ -228,7 +233,7 @@ func TestBriefAuthoritySpecialCharacterInput(t *testing.T) {
 
 func TestBriefAuthorityNonConcreteBoundaryMembersUseTrunkScanner(t *testing.T) {
 	repo := newBriefAuthorityRepo(t)
-	commitBriefAuthorityPath(t, repo, "metasystem/internal/dispatch/brief.go")
+	commitBriefAuthorityPath(t, repo, "metasystem/internal/dispatch/brief.go", strings.Repeat("landed\n", 53))
 	for _, tc := range []struct {
 		name, member, line string
 		want               []string
@@ -294,7 +299,7 @@ func TestBriefAuthorityBoundedCitationCompatibility(t *testing.T) {
 		{"workspace", boundedAuthority([]string{"records/a b.md"}, "# Workspace", `May-write: "records/a b.md".`), "", nil},
 		{"create", boundedAuthority([]string{"records/a b.md"}, `Create "records/a b.md".`), "", nil},
 		{"artifact", boundedAuthority([]string{"artifacts/a b.json"}, `Read "artifacts/a b.json".`), "artifacts/a b.json", nil},
-		{"headerless", "Working Mode: implement\nRead \"docs/a b.md\".", "", []string{"docs/a"}},
+		{"headerless", "Working Mode: implement\nRead \"docs/a b.md\".", "", []string{"docs/a b.md"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			repo := newBriefAuthorityRepo(t)
@@ -312,11 +317,14 @@ func TestBriefAuthorityBoundedCitationCompatibility(t *testing.T) {
 	}
 }
 
+// Under Decision B2 the real brief is rewritten to repo-relative citations: a bare basename, an outside-repository absolute path and an ambiguous candidate (two scripts/agents copies) are refusals by design, so the fixture avoids those three and guards that a brief with repo-relative citations admits.
 func TestBriefAuthorityRealBriefRegression(t *testing.T) {
 	repo := newBriefAuthorityRepo(t)
+	repo.facts.prefix = "metasystem"
 	// These inputs are cited by the example brief; the snapshot is independent
 	// of the authority scanner's output.
-	repo.facts.commitPaths(
+	paths := []string{
+		"AGENTS.md",
 		"metasystem/plans/landing-receipt-survives-records-drift-design.md",
 		"metasystem/records/misc/landing-receipt-survives-records-drift-critique-r1.md",
 		"metasystem/records/misc/landing-receipt-survives-records-drift-critique-r2.md",
@@ -345,10 +353,26 @@ func TestBriefAuthorityRealBriefRegression(t *testing.T) {
 		"metasystem/scripts/agents/land-fixtures.sh",
 		"metasystem/scripts/agents/go-gate.sh",
 		"scripts/agents/dispatch-fixtures.sh",
-		"scripts/agents/go-gate.sh",
-		"scripts/agents/land-fixtures.sh",
 		"records/narrator-digest.log",
-	)
+	}
+	for _, name := range paths {
+		commitBriefAuthorityPath(t, repo, name, strings.Repeat("landed\n", 500))
+	}
+	fixture := strings.NewReplacer(
+		"`detached.go`", "`metasystem/internal/gittree/detached.go`",
+		"`receipt.go:210`", "`metasystem/internal/landing/receipt.go:210`",
+		"`observe.go`", "`metasystem/internal/landing/observe.go`",
+		"`land-fixtures.sh`", "`metasystem/scripts/agents/land-fixtures.sh`",
+		"`dispatch-fixtures.sh`", "`scripts/agents/dispatch-fixtures.sh`",
+	).Replace(realBriefFixture)
+	for _, external := range []string{
+		"/private/tmp/claude-501/-Users-wido-LocalStorage-GitHub-agentic-tools-m1e/36c93128-ec16-4146-8def-3f706ba4ef10/scratchpad/lrsrd/round3.diff.patch",
+		"/Users/wido/LocalStorage/GitHub/agentic-tools-m1b/metasystem/artifacts/agents/lrsrd-build1/rounds/3/diff.patch",
+	} {
+		local := "artifacts/agents/brief-regression/" + filepath.Base(external)
+		writeSeatFile(t, filepath.Join(repo.root, local), "retained patch\n")
+		fixture = strings.ReplaceAll(fixture, external, local)
+	}
 	for _, tc := range []struct {
 		name     string
 		boundary []string
@@ -358,7 +382,7 @@ func TestBriefAuthorityRealBriefRegression(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			encoded, _ := json.Marshal(tc.boundary)
-			brief := writeBriefAuthorityFile(t, t.TempDir(), "brief.md", realBriefFixture+"\nBoundary: "+string(encoded)+"\nCeiling: 1\n")
+			brief := writeBriefAuthorityFile(t, t.TempDir(), "brief.md", fixture+"\nBoundary: "+string(encoded)+"\nCeiling: 1\n")
 			if err := briefAuthorityError(brief, repo.root, repo.facts); err != nil {
 				t.Fatalf("real implementer brief changed authority result: %v", err)
 			}
@@ -378,13 +402,17 @@ func jsonString(value string) string {
 	return string(encoded)
 }
 
-func commitBriefAuthorityPath(t *testing.T, repo briefAuthorityFixture, name string) {
+func commitBriefAuthorityPath(t *testing.T, repo briefAuthorityFixture, name string, content ...string) {
 	t.Helper()
 	path := filepath.Join(repo.root, filepath.FromSlash(name))
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("landed\n"), 0o644); err != nil {
+	data := "landed\n"
+	if len(content) > 0 {
+		data = content[0]
+	}
+	if err := os.WriteFile(path, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	repo.facts.commitPaths(name)

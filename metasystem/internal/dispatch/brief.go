@@ -16,7 +16,6 @@ import (
 
 var (
 	briefPathTokenRun = regexp.MustCompile(`[A-Za-z0-9_.*\-/<>{}$:#]+`)
-	briefPathToken    = regexp.MustCompile(`^[A-Za-z0-9_.-]+(/[A-Za-z0-9_.*-]+)+$`)
 	briefPathLine     = regexp.MustCompile(`(?::|#L)([0-9]+)(?:-(?:L)?([0-9]+))?$`)
 	briefHeading      = regexp.MustCompile(`^\s*(#{1,6})\s+(.+?)\s*$`)
 	briefOutputLine   = regexp.MustCompile(`(?i)^\s*(?:[-*]\s*)?may[- ](?:write|touch)\s*:`)

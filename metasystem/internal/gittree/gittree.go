@@ -180,7 +180,7 @@ func ExitCode(err error) int {
 	if err == nil {
 		return 0
 	}
-	var exit *exec.ExitError
+	var exit interface{ ExitCode() int }
 	if errors.As(err, &exit) {
 		return exit.ExitCode()
 	}

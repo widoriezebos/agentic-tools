@@ -210,6 +210,8 @@ func (e *GitExitError) Error() string {
 	return fmt.Sprintf("git exited %d: %s", e.Code, e.Stderr)
 }
 
+func (e *GitExitError) ExitCode() int { return e.Code }
+
 // Clock is the lifecycle's time: every deadline, poll and stamp reads it.
 type Clock = wallclock.Clock
 

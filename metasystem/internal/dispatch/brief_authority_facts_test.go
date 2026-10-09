@@ -20,6 +20,7 @@ type fakeBriefTreeFacts struct {
 	current    string
 	nextCommit int
 	snapshots  map[string]map[string]bool
+	blobs      map[string][]byte
 }
 
 func newBriefAuthorityRepo(t *testing.T) briefAuthorityFixture {
@@ -34,7 +35,7 @@ func newBriefAuthorityRepo(t *testing.T) briefAuthorityFixture {
 			t.Fatal(err)
 		}
 	}
-	facts := &fakeBriefTreeFacts{root: root, current: "brief-commit-1", nextCommit: 1, snapshots: map[string]map[string]bool{}}
+	facts := &fakeBriefTreeFacts{root: root, current: "brief-commit-1", nextCommit: 1, snapshots: map[string]map[string]bool{}, blobs: map[string][]byte{}}
 	facts.snapshots[facts.current] = pathSet(paths)
 	return briefAuthorityFixture{root: root, facts: facts}
 }
@@ -48,6 +49,7 @@ func pathSet(paths []string) map[string]bool {
 }
 
 func (f *fakeBriefTreeFacts) commitPaths(names ...string) {
+	previousCommit := f.current
 	previous := f.snapshots[f.current]
 	next := make(map[string]bool, len(previous)+len(names))
 	for name := range previous {
@@ -59,6 +61,25 @@ func (f *fakeBriefTreeFacts) commitPaths(names ...string) {
 	f.nextCommit++
 	f.current = fmt.Sprintf("brief-commit-%d", f.nextCommit)
 	f.snapshots[f.current] = next
+	for name := range next {
+		f.blobs[f.current+":"+name] = f.blobs[previousCommit+":"+name]
+	}
+	for _, name := range names {
+		if data, err := os.ReadFile(filepath.Join(f.root, filepath.FromSlash(name))); err == nil {
+			f.blobs[f.current+":"+name] = data
+		}
+	}
+}
+
+func (f *fakeBriefTreeFacts) Blob(root, commit, name string) ([]byte, error) {
+	if err := f.checkRoot(root); err != nil {
+		return nil, err
+	}
+	data, ok := f.blobs[commit+":"+name]
+	if !ok {
+		return nil, fmt.Errorf("unsupported brief blob %s:%s", commit, name)
+	}
+	return data, nil
 }
 
 func (f *fakeBriefTreeFacts) checkRoot(root string) error {

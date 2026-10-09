@@ -458,6 +458,7 @@ func TestUnitPlanRetainsDeclaredCheckAndEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	plan.BriefSuppliedByPerson = true
 	plan.Check = &UnitCheck{SourceTree: "declaration-tree", Cheap: "true", Audits: "true", Minutes: 15,
 		Directory: fixture.worktree, Environment: []string{"A=B"}}
 	checkMinutes := 2.0
@@ -475,8 +476,8 @@ func TestUnitPlanRetainsDeclaredCheckAndEstimate(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(retained.Check, plan.Check) || !reflect.DeepEqual(retained.Estimate, plan.Estimate) || !slices.Equal(retained.FullArgv, plan.FullArgv) {
-		t.Fatalf("retained plan lost declared checks or telemetry: %+v", retained)
+	if !retained.BriefSuppliedByPerson || !reflect.DeepEqual(retained.Check, plan.Check) || !reflect.DeepEqual(retained.Estimate, plan.Estimate) || !slices.Equal(retained.FullArgv, plan.FullArgv) {
+		t.Fatalf("retained plan lost brief provenance, declared checks or telemetry: %+v", retained)
 	}
 	for _, field := range []string{"estimate", "fullArgv"} {
 		t.Run(field, func(t *testing.T) {
@@ -511,8 +512,8 @@ func TestUnitPlanRetainsDeclaredCheckAndEstimate(t *testing.T) {
 		t.Fatal(err)
 	}
 	input, err := ReadUnitPlanInput(fixture.plan)
-	if err != nil || !reflect.DeepEqual(input.Check, plan.Check) {
-		t.Fatalf("caller plan lost its declared check: %+v %v", input.Check, err)
+	if err != nil || !input.BriefSuppliedByPerson || !reflect.DeepEqual(input.Check, plan.Check) {
+		t.Fatalf("caller plan lost brief provenance or its declared check: %+v %v", input, err)
 	}
 }
 

@@ -25,7 +25,7 @@ func (g evidenceGit) Run(dir string, env []string, args ...string) ([]byte, erro
 		}
 		return []byte(filepath.Join(g.bed.root(), "shared.git")), nil
 	}
-	return (workGit{g.bed}).Run(dir, env, args...)
+	return workGit(g).Run(dir, env, args...)
 }
 
 func newEvidenceBed(t *testing.T) *workBed {

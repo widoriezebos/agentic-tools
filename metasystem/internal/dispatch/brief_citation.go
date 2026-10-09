@@ -11,10 +11,19 @@ import (
 
 func briefCitationPath(value string) bool {
 	bare := briefPathLine.ReplaceAllString(value, "")
+	if bare == "" {
+		return false
+	}
+	// A quoted span with a space is a citation when it carries a line suffix or
+	// ends in an extension (Decision B2: accept spaces when quoted); a sentence
+	// whose last word has none ("read a.md before continuing") is not.
+	if ext := filepath.Ext(bare); strings.Contains(bare, " ") && !briefPathLine.MatchString(value) && (ext == "" || strings.Contains(ext, " ")) {
+		return false
+	}
 	if filepath.Base(bare) == "metasystem.conf.local" && !briefPathLine.MatchString(value) {
 		return false
 	}
-	return !strings.ContainsAny(bare, "*<>${\t\n") && !strings.Contains(bare, "://") &&
+	return !strings.ContainsAny(bare, "*<>${\\\t\n") && !strings.Contains(bare, "://") &&
 		(briefPathLine.MatchString(value) || strings.Contains(bare, "/") || strings.Contains(" .go .md .json .txt .sh .conf .toml .yaml .yml .ts .tsx ", " "+filepath.Ext(bare)+" ")) && !strings.Contains(bare, " --") && !strings.HasSuffix(bare, "...") && !strings.HasSuffix(bare, "/")
 }
 func ResolveBriefCitation(original, root, base, prefix string, roots []string, facts briefTreeFacts) (string, bool, error) {

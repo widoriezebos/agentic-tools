@@ -58,6 +58,7 @@ func admittedBuildBriefSession(t *testing.T, before bool) (*session, string, str
 		"ls-tree -d --name-only head":                                 {stdout: "plans"},
 		"ls-tree -d --name-only " + commit:                            {stdout: "plans"},
 		"rev-parse --show-prefix":                                     {},
+		"ls-tree -rtz --name-only --full-tree " + commit:              {},
 	}}
 	s := rebaseSession(git)
 	s.ctx = context.Background()

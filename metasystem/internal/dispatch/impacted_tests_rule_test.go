@@ -23,12 +23,12 @@ func TestBuildBriefsCarryTheImpactedTestsRule(t *testing.T) {
 		}
 	}
 
-	path := "protocol:templates/brief.md"
-	data, err := protocol.Template("brief.md")
-	if err != nil {
-		t.Fatalf("%s cannot be read: %v", path, err)
-	}
-	if !strings.Contains(string(data), ImpactedTestsRule) {
-		t.Errorf("%s does not carry the impacted-tests rule", path)
+	// Decision B5 of briefs-carry-their-rules replaced the template's executable
+	// test instruction with the owned Check slot, so a second template cannot
+	// order a broad run: the rule lives in the testing requirement, not the template.
+	if data, err := protocol.Template("brief.md"); err != nil {
+		t.Fatalf("protocol:templates/brief.md cannot be read: %v", err)
+	} else if strings.Contains(string(data), "run only the frozen command") == false {
+		t.Errorf("protocol:templates/brief.md lost the owned Check instruction (Decision B5)")
 	}
 }
