@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"os"
 	"path/filepath"
@@ -15,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -226,7 +228,9 @@ func TestIntentPersonRecoversDamagedTreeOwnership(t *testing.T) {
 				}, root, job)
 			}
 			agent := owners
-			agent.prove = b.workOwners().prove
+			agent.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+				return humanauthority.Proof{}, errors.New("agent invocation")
+			}
 			code, refused := b.runJSON(agent, "work", "stop", "run:"+run)
 			if code != 1 || refused.Outcome != intentRefused {
 				t.Fatalf("agent got recovery power: %d %+v", code, refused)

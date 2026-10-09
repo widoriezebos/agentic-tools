@@ -40,7 +40,8 @@ const (
 )
 
 type UnitRunRecord struct {
-	ReviewCloseReason string `json:"reviewCloseReason,omitempty"`
+	Operation         *UnitOperation `json:"operation,omitempty"`
+	ReviewCloseReason string         `json:"reviewCloseReason,omitempty"`
 
 	CorrectionBudget *int        `json:"correctionBudget,omitempty"`
 	PolicyError      string      `json:"policyError,omitempty"`
@@ -97,27 +98,29 @@ type UnitRound struct {
 }
 
 type UnitStep struct {
-	Kind               string        `json:"kind,omitempty"`
-	ExecutionStartedAt string        `json:"executionStartedAt,omitempty"`
-	ExecutionEndedAt   string        `json:"executionEndedAt,omitempty"`
-	Command            *ProofCommand `json:"command,omitempty"`
-	RevisionAfter      int           `json:"revisionAfter,omitempty"`
-	Name               string        `json:"name"`
-	LaunchID           string        `json:"launchId"`
-	State              UnitStepState `json:"state"`
-	Reason             string        `json:"reason"`
-	Cause              string        `json:"cause,omitempty"`
-	StartedAt          string        `json:"startedAt"`
-	FinishedAt         string        `json:"finishedAt"`
-	Model              string        `json:"model"`
-	Mode               string        `json:"mode,omitempty"`
-	Package            string        `json:"package,omitempty"`
-	File               string        `json:"file,omitempty"`
-	Brief              string        `json:"brief,omitempty"`
-	Units              []string      `json:"units,omitempty"`
-	Rerun              bool          `json:"rerun,omitempty"`
-	Verdict            string        `json:"verdict,omitempty"`
-	VerdictCounts      *bool         `json:"verdictCounts,omitempty"`
+	PendingAct         *UnitPendingAct `json:"pendingAct,omitempty"`
+	CollectedAt        string          `json:"collectedAt,omitempty"`
+	Kind               string          `json:"kind,omitempty"`
+	ExecutionStartedAt string          `json:"executionStartedAt,omitempty"`
+	ExecutionEndedAt   string          `json:"executionEndedAt,omitempty"`
+	Command            *ProofCommand   `json:"command,omitempty"`
+	RevisionAfter      int             `json:"revisionAfter,omitempty"`
+	Name               string          `json:"name"`
+	LaunchID           string          `json:"launchId"`
+	State              UnitStepState   `json:"state"`
+	Reason             string          `json:"reason"`
+	Cause              string          `json:"cause,omitempty"`
+	StartedAt          string          `json:"startedAt"`
+	FinishedAt         string          `json:"finishedAt"`
+	Model              string          `json:"model"`
+	Mode               string          `json:"mode,omitempty"`
+	Package            string          `json:"package,omitempty"`
+	File               string          `json:"file,omitempty"`
+	Brief              string          `json:"brief,omitempty"`
+	Units              []string        `json:"units,omitempty"`
+	Rerun              bool            `json:"rerun,omitempty"`
+	Verdict            string          `json:"verdict,omitempty"`
+	VerdictCounts      *bool           `json:"verdictCounts,omitempty"`
 
 	Moved       []string            `json:"moved,omitempty"`
 	RetryBy     string              `json:"retryBy,omitempty"`
@@ -438,6 +441,7 @@ func (runner *UnitRunner) newRunWithID(plan UnitPlan, id, planDirectory string) 
 		return UnitRunRecord{}, err
 	}
 	record := UnitRunRecord{ID: id, Unit: plan.Unit, Goal: plan.Goal, Worktree: plan.Worktree, Base: plan.Base, Plan: copyPath, PlanDirectory: planDirectory, State: "running",
+		Operation:  runner.options.Operation,
 		BuildModel: runner.options.BuildModel, BuildEffort: runner.options.BuildEffort, MaxRounds: runner.options.MaxRounds, CountedCap: int(settings.UnitCountedRounds)}
 	policy := "auto"
 	if runner.ReviewPolicy != nil {
@@ -769,7 +773,7 @@ func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDr
 			return nil
 		}
 		return runner.continuationAllowed()
-	}, manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: func(spec StartSpec) (Record, error) {
+	}, manager: runner.Manager, record: record, round: round, launchID: unitLaunchID(record, round), start: func(spec StartSpec) (Record, error) {
 		spec.Actor = runner.Actor
 		spec.wait = runner.CommandWait
 		return runner.Manager.Start(spec)

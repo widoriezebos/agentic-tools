@@ -1266,7 +1266,10 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 		return runIntentReviewRef(inv, "show", ref.id)
 	case refRun:
 		targets := []intentTarget{{Kind: "run", ID: ref.qualified()}}
-		runner := &launch.UnitRunner{Manager: inv.owners.processes.launches()}
+		runner := inv.unitRunner()
+		if runner.Root == "" && inv.owners.processes.launches != nil {
+			runner.Manager = inv.owners.processes.launches()
+		}
 		record, err := runner.Status(ref.id)
 		if errors.Is(err, fs.ErrNotExist) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("you have no unit run %s; nothing was read", shellCommand([]string{ref.qualified()})),
@@ -1297,8 +1300,14 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			}
 			lines = append(lines, line)
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
-			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record, "processReport": report}})
+		result := intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
+			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: unitData(record, runner.Manager)}
+		result.Data.(map[string]any)["record"], result.Data.(map[string]any)["processReport"] = record, report
+		if act := launch.PendingWork(record); act != nil {
+			result.Summary = pendingWorkLine(act, now)
+			result.next, result.nextReason = inv.workContinuation(record.Goal, launch.NamedWork{Record: &record}, true)
+		}
+		return inv.render(result)
 	}
 	job := ref.job
 	targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}

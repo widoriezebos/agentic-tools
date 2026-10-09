@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -426,6 +427,9 @@ func TestIntentTreeEndedOwnerCanBeCancelledOnlyByPerson(t *testing.T) {
 				t.Fatalf("ended owner has no executable recovery: %d %+v", code, waiting)
 			}
 			owners := b.workOwners()
+			owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+				return humanauthority.Proof{}, errors.New("agent invocation")
+			}
 			code, refused := b.runJSON(owners, strings.Fields(act)[1:]...)
 			if code == 0 || refused.Outcome != intentRefused {
 				t.Fatalf("agent cancelled another owner: %d %+v", code, refused)

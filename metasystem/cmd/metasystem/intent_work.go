@@ -1030,6 +1030,10 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		}
 		return path, err
 	}
+	request.options.Operation = &launch.UnitOperation{Argv: inv.sameCommand(), CallerDirectory: inv.cwd, InputDigest: fmt.Sprintf("%x", sha256.Sum256(request.bytes)), Actor: chooseUnitValue(runner.Actor, "agent")}
+	if file.Claimed != nil && file.StopCapability != nil {
+		request.options.Operation.ClaimSubject = fmt.Sprintf("%s/%s/%d/%d", id, file.Claimed.Machine, file.Claimed.Revision, file.StopCapability.ClaimEpoch)
+	}
 	result, err := runner.AdvancePrepared(request.worktree, id, unit, request.bytes, request.options, request.prepare)
 	outcome := inv.unitOutcome(runner, result, err, targets, inv.sameCommand())
 	if data, ok := outcome.Data.(map[string]any); ok {
@@ -1511,7 +1515,11 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		switch {
 		case launch.IsCode(err, "LAUNCH_BUILD_CAPACITY"), launch.IsCode(err, "LAUNCH_BUILD_PERSON"):
 			held := intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + "; no build was launched", Details: details,
+				Data: unitData(record, nil),
 				next: again, nextReason: humanauthority.PersonActRemedy(shellCommand(again)) + "; settings stay in force"}
+			if runner != nil {
+				held.Data = unitData(record, runner.Manager)
+			}
 			if launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
 				q, warnings, code, askErr := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), channelAskInput{Goal: targetID(targets, "goal", record.Goal), Kind: "other",
 					Facts: []string{"Start this build at your enrolled terminal?", plain, shellCommand(again)}, Options: []string{"start: run the exact build command at your enrolled terminal", "wait: leave this build waiting"}})
@@ -1684,12 +1692,28 @@ func (inv *intentInvocation) workArgv(record launch.UnitRunRecord, verb string, 
 	return inv.publicArgv(append(words, extra...)...)
 }
 
+func pendingWorkLine(act *launch.UnitPendingAct, now time.Time) string {
+	if duration, known := act.QueueDuration(now); known {
+		return fmt.Sprintf("waiting %s: %s; this step has not started", duration.Round(time.Second), act.Reason)
+	}
+	return "waiting (timing unavailable): " + act.Reason + "; this step has not started"
+}
+
 // unitData is the run's current round as recorded, with each counting
 // read's verdict and its retained findings copies from the launch records,
 // and the retained plan and round directory a later review can freeze.
 func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]any {
 	data := map[string]any{"run": record.ID, "unit": record.Unit, "goal": record.Goal, "state": record.State, "worktree": record.Worktree,
 		"base": record.Base, "plan": record.Plan, "maxRounds": record.MaxRounds, "buildModel": record.BuildModel, "buildEffort": record.BuildEffort}
+	data["queueTiming"] = "unavailable"
+	if act := launch.PendingWork(record); act != nil {
+		data["pendingAct"] = act
+		if manager != nil && manager.Now != nil {
+			if duration, known := act.QueueDuration(manager.Now()); known {
+				data["queueTiming"], data["queueDurationMs"] = "known", duration.Milliseconds()
+			}
+		}
+	}
 	if len(record.Rounds) == 0 {
 		return data
 	}

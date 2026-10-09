@@ -20,6 +20,7 @@ type stepDriver struct {
 	mayStart func(int) error
 	wait     func(string, time.Duration) (Record, bool, error)
 	manager  *Manager
+	record   *UnitRunRecord
 	round    *UnitRound
 	launchID func(index int) string
 	// before is asked before a step's launch is created; its refusal
@@ -114,13 +115,28 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 		}
 		if driver.before != nil {
 			if err := driver.before(spec); err != nil {
+				driver.closeCapacityWait(index, "invalidated", driver.manager.Now().UTC().Format(time.RFC3339Nano))
+				if saveErr := driver.save(); saveErr != nil {
+					return Record{}, saveErr
+				}
 				return Record{}, err
 			}
 		}
 		launchRecord, err = driver.start(spec)
 	}
-	if IsCode(err, "UNIT_WAIT_RETRY") || IsCode(err, "LAUNCH_BUILD_CAPACITY") || IsCode(err, "LAUNCH_BUILD_PERSON") {
+	if driver.unit && capacityWaiting(err) {
+		if saveErr := driver.retainCapacityWait(index, err); saveErr != nil {
+			return launchRecord, saveErr
+		}
 		return launchRecord, err
+	}
+	if IsCode(err, "UNIT_WAIT_RETRY") || capacityWaiting(err) {
+		return launchRecord, err
+	}
+	if err != nil && launchRecord.ID == "" {
+		driver.closeCapacityWait(index, "invalidated", driver.manager.Now().UTC().Format(time.RFC3339Nano))
+	} else if launchRecord.ID != "" {
+		driver.closeCapacityWait(index, "admitted", launchRecord.StartedAt)
 	}
 	if err != nil && launchRecord.ID == "" {
 		if driver.unit {
@@ -184,6 +200,7 @@ func (driver stepDriver) endStep(index int, launchRecord Record) {
 	}
 	step.Cause = launchRecord.Cause
 	step.ExecutionStartedAt, step.ExecutionEndedAt = launchRecord.StartedAt, launchRecord.FinishedAt
+	step.CollectedAt = step.FinishedAt
 	step.Deadline = launchRecord.Cause == "deadline"
 	if driver.unit && launchRecord.State != Completed {
 		step.Cause = failedStepCause(launchRecord)

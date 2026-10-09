@@ -20,12 +20,13 @@ import (
 // goal and unit, holding the digest of what the run was asked to do and the
 // run id reserved for it.
 type namedUnitEntry struct {
-	Worktree string `json:"worktree"`
-	Goal     string `json:"goal"`
-	Unit     string `json:"unit"`
-	Digest   string `json:"digest"`
-	Run      string `json:"run"`
-	State    string `json:"state"`
+	Operation *UnitOperation `json:"operation,omitempty"`
+	Worktree  string         `json:"worktree"`
+	Goal      string         `json:"goal"`
+	Unit      string         `json:"unit"`
+	Digest    string         `json:"digest"`
+	Run       string         `json:"run"`
+	State     string         `json:"state"`
 }
 
 const (
@@ -140,6 +141,7 @@ func (runner *UnitRunner) Continue(request UnitRequest) (UnitResult, error) {
 // build model and effort chosen for this unit, and its approved ceiling on
 // rounds. A new run records them; later rounds and resumes use the record.
 type UnitOptions struct {
+	Operation               *UnitOperation
 	BuildModel, BuildEffort string
 	MaxRounds               int
 }
@@ -277,7 +279,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 		if err != nil {
 			return UnitResult{}, err
 		}
-		entry = namedUnitEntry{Worktree: worktree, Goal: plan.Goal, Unit: plan.Unit, Digest: digest, Run: id, State: namedReserved}
+		entry = namedUnitEntry{Worktree: worktree, Goal: plan.Goal, Unit: plan.Unit, Digest: digest, Run: id, State: namedReserved, Operation: runner.options.Operation}
 		if err := runner.writeNamed(key, entry); err != nil {
 			return UnitResult{}, err
 		}
@@ -295,6 +297,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 				return UnitResult{}, err
 			}
 		}
+		runner.options.Operation = entry.Operation
 		if record, err = runner.newRunWithID(plan, entry.Run, planDirectory); err != nil {
 			return UnitResult{}, err
 		}

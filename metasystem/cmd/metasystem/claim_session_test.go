@@ -617,6 +617,9 @@ func TestClaimSessionBuildProceedsWithPendingAdoption(t *testing.T) {
 	}
 	work := newWorkBed(t)
 	work.id = "ship-widget"
+	if err := os.MkdirAll(filepath.Join(b.root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	b.owners.work = work.workOwners().work
 	b.owners.connection = intentConnectionOwners{
 		endpoint: b.owners.dependencies.endpoint,

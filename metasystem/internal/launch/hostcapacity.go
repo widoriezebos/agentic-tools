@@ -75,7 +75,7 @@ func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
 	snapshot := hostcapacity.Read(m.CapacityHome, m, m.Now(), m.CapacitySources)
 	facts := fmt.Sprintf("load=%g limit=%s host.builds=%s host.load-max=%s", snapshot.Load.Load1m, raw, policy.Value, raw)
 	refuse := func(code, why string) error {
-		return coded(code, facts, fmt.Errorf("%s (%s); %s", why, facts, humanauthority.PersonActRemedy("the original work build command")))
+		return &CapacityRefusal{CodedError: &CodedError{Code: code, Facts: facts, Reason: fmt.Errorf("%s (%s); %s", why, facts, humanauthority.PersonActRemedy("the original work build command"))}, Registration: snapshot.Owner}
 	}
 	if policy.Value == "person" {
 		return refuse("LAUNCH_BUILD_PERSON", "host.builds=person requires the person's exact build act; ask through a question")

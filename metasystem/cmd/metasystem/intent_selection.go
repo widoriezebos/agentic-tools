@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -64,6 +65,9 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 	case work.Record == nil:
 		return "starting"
 	case work.Running():
+		if act := launch.PendingWork(*work.Record); act != nil {
+			return "waiting: " + act.Reason
+		}
 		return "running"
 	}
 	if subject := currentSubject(work); subject != nil && subject.Drop != nil {
@@ -169,6 +173,11 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 	file, _ := goalRecord(projection, id)
 	for _, one := range work {
 		stage := workStage(one, inv.work().inspectRead)
+		if one.Record != nil {
+			if act := launch.PendingWork(*one.Record); act != nil {
+				stage = pendingWorkLine(act, inv.unitRunner().Manager.Now())
+			}
+		}
 		if one.Record != nil && one.Running() {
 			if err := inv.unitRunner().CheckContinuationInputs(*one.Record); err != nil {
 				stage = "continuation refused: " + launch.ErrorDetail(err)
@@ -180,6 +189,11 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
 		if one.Record != nil {
 			view["state"], view["run"] = one.Record.State, one.Run
+			for key, value := range unitData(*one.Record, inv.unitRunner().Manager) {
+				if key == "pendingAct" || key == "queueTiming" || key == "queueDurationMs" {
+					view[key] = value
+				}
+			}
 			if act := one.Record.ReviewAct; act != nil && act.Key == launch.ReviewActKey(*one.Record) {
 				view["reviewAct"] = act
 			}
@@ -443,6 +457,15 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 
 // workContinuation is the public command that moves one work item on.
 func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, named bool) ([]string, string) {
+	if work.Record != nil {
+		if act := launch.PendingWork(*work.Record); act != nil && act.Request != nil && len(act.Request.Argv) > 0 {
+			directory := shellCommand([]string{act.Request.CallerDirectory})
+			if act.Code == "LAUNCH_BUILD_PERSON" {
+				return act.Request.Argv, humanauthority.PersonActRemedy(shellCommand(act.Request.Argv)) + "; run from " + directory + "; nothing starts for this wait"
+			}
+			return act.Request.Argv, "retry from " + directory + " when capacity is available; nothing starts for this wait"
+		}
+	}
 	suffix := []string{}
 	if named {
 		suffix = []string{"--work", work.Unit}
