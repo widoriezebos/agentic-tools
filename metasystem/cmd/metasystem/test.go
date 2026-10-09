@@ -531,6 +531,9 @@ func runTestRun(args []string, stdout, stderr io.Writer) (exit int) {
 type testRunInvocation struct {
 	callerPID      int64
 	stdout, stderr io.Writer
+	// Native waits share the invocation's cancellation and semantic clock.
+	nativeContext context.Context
+	nativeClock   func() time.Time
 	// name is the command it answers as (default: test run).
 	name string
 	// outcome collects what the --json envelope reports; nil without --json.
@@ -931,13 +934,55 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	runRequest.EvidenceTimeoutMS, runRequest.EvidenceMaxBytes = limits.evidenceTimeout.Milliseconds(), limits.evidenceMax
 	runRequest.Concurrency = limits.concurrency
 	packetPath, workerResultPath := filepath.Join(pathsRoot, "request.json"), filepath.Join(pathsRoot, "result.json")
-	deadline, deadlineCheck, err := proofDeadline(attempt.Deadline, commandClock)
-	if err != nil {
-		invocation.fail("metasystem test run: admit native testing:", err)
-		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+	nativeContext := invocation.nativeContext
+	if nativeContext == nil {
+		nativeContext = context.Background()
 	}
-	nativeContext, cancelNative := proofDeadlineContext(context.Background(), deadline, fixtureClock)
+	nativeContext, cancelNative := context.WithCancel(nativeContext)
 	defer cancelNative()
+	if invocation.nativeClock != nil {
+		commandClock, fixtureClock = invocation.nativeClock, true
+	}
+	checkAdmission := func() error {
+		if err := nativeContext.Err(); err != nil {
+			return err
+		}
+		current, err := proofrun.ReadAttempt(controlRoot, attempt.AttemptID)
+		if err != nil {
+			return err
+		}
+		if current.Terminal != nil || current.CancellationIntent != "" {
+			return fmt.Errorf("the test run ended or was cancelled before its command started")
+		}
+		binding, err := dispatchcore.ResolveGoalBinding(controlRoot, attempt.GoalID, commandClock())
+		if err != nil {
+			return err
+		}
+		accountingRevision := binding.File.Claimed.AccountingRevision
+		if accountingRevision == 0 {
+			accountingRevision = binding.Revision
+		}
+		if binding.Revision != attempt.GoalRevision || accountingRevision != attempt.AccountingRevision || binding.Fence != nil {
+			return fmt.Errorf("the goal changed before the test run's command started")
+		}
+		roles, err := resolveProofGoalRoles(controlRoot, attempt.AccountedGoal(), attempt.GoalID, commandClock())
+		if err != nil {
+			return err
+		}
+		if roles.CandidateRevision != attempt.AccountedRevision() || roles.Authority.Id != attempt.GoalID {
+			return fmt.Errorf("the goals this test run is charged to changed before its command started")
+		}
+		return nil
+	}
+	checkWait := func() error {
+		// A nested wait shares its owner's absolute execution limit.
+		if attempt.ReservationOwner != nil {
+			if _, _, err := proofDeadline(attempt.Deadline, commandClock); err != nil {
+				return err
+			}
+		}
+		return checkAdmission()
+	}
 	var retained *proofrun.TestResult
 	workerEnvironment, err := testingWorkerEnvironment(prepared.Environment)
 	if err != nil {
@@ -955,7 +1000,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		if attempt.TestWaits[id] == "" {
 			continue
 		}
-		if _, err := proofrun.WaitForTestProducerWithWaitCheck(nativeContext, controlRoot, attempt, id, deadlineCheck); err != nil {
+		if _, err := proofrun.WaitForTestProducerWithWaitCheck(nativeContext, controlRoot, attempt, id, checkWait); err != nil {
 			invocation.fail("metasystem test run: await shared producer:", err)
 			return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 		}
@@ -964,7 +1009,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	resourceClass, exclusive := testrun.OwnedResources(prepared, attempt)
 	var nativeLease *proofrun.HostResourceLease
 	if resourceClass != "" {
-		nativeLease, err = proofrun.AcquireHostResourcesWithWaitCheck(nativeContext, controlRoot, prepared.ConfPath, resourceClass, exclusive, deadlineCheck)
+		nativeLease, err = proofrun.AcquireHostResourcesWithWaitCheck(nativeContext, controlRoot, prepared.ConfPath, resourceClass, exclusive, checkWait)
 		if err != nil {
 			invocation.fail("metasystem test run: admit native testing:", err)
 			return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
@@ -972,6 +1017,24 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		defer nativeLease.Close()
 		runRequest.QueueDurationMS += nativeLease.Waited().Milliseconds()
 	}
+	// The admitted execution allowance starts after producer and capacity waits.
+	// A nested run still belongs to its reservation owner's absolute horizon.
+	admittedDeadline, deadlineErr := time.Parse(time.RFC3339Nano, attempt.Deadline)
+	admittedStart, startErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+	if deadlineErr != nil || startErr != nil || !admittedDeadline.After(admittedStart) {
+		invocation.fail("metasystem test run: the admitted execution timing is unreadable")
+		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+	}
+	if attempt.ReservationOwner == nil {
+		admittedDeadline = commandClock().Add(admittedDeadline.Sub(admittedStart))
+	}
+	deadline, deadlineCheck, err := proofDeadline(admittedDeadline.Format(time.RFC3339Nano), commandClock)
+	if err != nil {
+		invocation.fail("metasystem test run: admit native testing:", err)
+		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
+	}
+	executionContext, cancelExecution := proofDeadlineContext(nativeContext, deadline, fixtureClock)
+	defer cancelExecution()
 	// The worker sees the writer after the host lease files (LaunchSuite).
 	if err := testrun.BindScratch(&runRequest, scratch, scratch.Locator(proofrun.ScratchWriterFD(nativeLease.Files())), scratchEnvironment); err != nil {
 		invocation.fail("metasystem test run: scratch environment:", err)
@@ -985,6 +1048,10 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	if err != nil {
 		invocation.fail("metasystem test run:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
+	}
+	if err := errors.Join(executionContext.Err(), checkAdmission(), deadlineCheck()); err != nil {
+		invocation.fail("metasystem test run: admit native testing:", err)
+		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, proofrun.ExitAdmissionRefused)
 	}
 	launchStatus := proofrun.LaunchSuite(proofrun.LaunchOptions{Suite: "testing", Root: prepared.ProjectRoot,
 		ControlRoot: controlRoot, AttemptID: attempt.AttemptID, JoinedAttempt: joined, Deadline: deadline, ConfPath: prepared.ConfPath,
