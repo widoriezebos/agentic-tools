@@ -1,5 +1,4 @@
 cmd/metasystem/proof_run_test.go	1	The ticker polls for a real public proof child file; success requires the published file or the exact child result.
-cmd/metasystem/test_test.go	1	The frozen corpus phase deadline is the package deadline less a cleanup reserve, so a real engine build or worker that overruns fails naming its phase instead of the package timeout panicking in TempDir removal; it never paces a passing run.
 cmd/metasystem/wait_verb_test.go	2	Both deadlines are fixed in the past to test cancellation propagation and never wait.
 internal/adapter/fake.go	1	Support file: FakeGuardedNetwork's one-second dial context is the fake runtime's own probe of an allowed loopback port; the only caller sends a denied envelope, which returns before any dial, so no test waits on it.
 internal/adapter/supervisor/devin_test.go	1	The pause polls a real ACP stub's journal for the sent prompt before the signal; success requires the observed wire record.

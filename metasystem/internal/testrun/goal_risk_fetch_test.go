@@ -43,7 +43,12 @@ func laggingGoalLedger(t *testing.T, id string, now time.Time) goal.Endpoint {
 	if accepted, _, _ := repository.Accepted(); accepted != genesis {
 		t.Fatalf("fixture accepted ref moved to %s; it must lag the shared ledger", accepted)
 	}
-	return goal.Endpoint{Root: root, Remote: goal.SyncLocal, Branch: goal.LocalLedgerBranch, Repository: repository}
+	return goal.Endpoint{Root: root, Remote: goal.SyncLocal, Branch: goal.LocalLedgerBranch, Repository: repository, ProjectionDeadline: func(wait time.Duration) <-chan time.Time {
+		if wait != 4*time.Second {
+			t.Errorf("risk projection deadline=%s; want 4s", wait)
+		}
+		return make(chan time.Time)
+	}}
 }
 
 func TestGoalRiskFetchesOnceWhenTheAcceptedLedgerLagsTheGoal(t *testing.T) {
@@ -51,7 +56,13 @@ func TestGoalRiskFetchesOnceWhenTheAcceptedLedgerLagsTheGoal(t *testing.T) {
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	id := "fleet-card-follows-the-simple-lane"
 	endpoint := laggingGoalLedger(t, id, now)
+	deadlines := 0
+	clock := endpoint.ProjectionDeadline
+	endpoint.ProjectionDeadline = func(wait time.Duration) <-chan time.Time { deadlines++; return clock(wait) }
 	risk, revision, err := GoalRiskAt(endpoint, id, now)
+	if deadlines != 1 {
+		t.Fatalf("risk projection used %d fixture deadlines; want 1", deadlines)
+	}
 	if err != nil {
 		t.Fatalf("planning for a goal opened after the last fetch refused: %v", err)
 	}
@@ -67,7 +78,13 @@ func TestGoalRiskRefusesAGoalTheSharedLedgerDoesNotHold(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	endpoint := laggingGoalLedger(t, "fleet-card-follows-the-simple-lane", now)
+	deadlines := 0
+	clock := endpoint.ProjectionDeadline
+	endpoint.ProjectionDeadline = func(wait time.Duration) <-chan time.Time { deadlines++; return clock(wait) }
 	_, _, err := GoalRiskAt(endpoint, "no-such-goal", now)
+	if deadlines != 1 {
+		t.Fatalf("risk refusal used %d fixture deadlines; want 1", deadlines)
+	}
 	if err == nil {
 		t.Fatal("a goal in no ledger was planned")
 	}

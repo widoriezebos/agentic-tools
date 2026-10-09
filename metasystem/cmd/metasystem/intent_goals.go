@@ -53,7 +53,7 @@ func (inv *intentInvocation) projectionWithFetch(fetchFirst bool) (goal.Projecti
 			next: inv.typedArgv(), nextReason: "try again"}
 	}
 	// --fetch is the goal owner's explicit fetch and validation.
-	projection, err := goal.Project(endpoint, fetchFirst, now)
+	projection, err := goal.ProjectWithDeadline(endpoint, fetchFirst, now, inv.owners.dependencies.projectionDeadline)
 	if errors.Is(err, goal.ErrLedgerNotFetched) {
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1,
 			Summary: "this checkout has not fetched the goal ledger yet; nothing was read",

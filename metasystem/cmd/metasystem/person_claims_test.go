@@ -160,7 +160,7 @@ func TestPersonClaimBoardAndOfflineProjection(t *testing.T) {
 		if fetch {
 			t.Fatal("offline hook adoption fetched")
 		}
-		return goal.Project(endpoint, fetch, now)
+		return goal.Project(endpoint, false, now)
 	}
 	processes := defaultProcessIntentOwners()
 	processes.process.repositoryTop = fakeTop(bed.root())

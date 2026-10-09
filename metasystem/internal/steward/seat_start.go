@@ -515,10 +515,16 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	root := canonicalPath(repoRoot)
 	dependencies := defaultSeatDependencies(cfg.Seat)
 	dependencies.Now = cfg.now
+	if cfg.GoalProjection != nil {
+		dependencies.Project = cfg.GoalProjection
+	}
 	if cfg.Units != nil {
 		dependencies.Units = cfg.Units
 	}
 	openWork := defaultTickContinuationDependencies().openWork
+	if cfg.GoalProjection != nil {
+		openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
+	}
 	openWork.Seat = &dependencies
 	dependencies.Recheck = func(records []SeatRecord) (Decision, *SeatSelection, error) {
 		return seatRecheck(root, cfg, census, openWork, records)

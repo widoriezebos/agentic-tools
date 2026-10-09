@@ -234,8 +234,11 @@ func (a Actor) historyActor() string {
 
 // VerbRequest carries what every verb needs.
 type VerbRequest struct {
-	Endpoint Endpoint
-	Actor    Actor
+	// HandoverNow and HandoverSleep supply the claim-lock clock; nil uses wall time.
+	HandoverNow   func() time.Time
+	HandoverSleep func(time.Duration)
+	Endpoint      Endpoint
+	Actor         Actor
 	// Authority is the fresh in-process human proof carried by --by. A human
 	// name without this proof never authorizes a human-reserved transition.
 	Authority *humanauthority.Proof
@@ -1491,7 +1494,7 @@ func Handover(r VerbRequest, id, targetMachine, targetLineage string, targetClai
 		if err != nil {
 			return PublishResult{}, err
 		}
-		release, err := board.LockGoalHandover(home, id, wait)
+		release, err := board.LockGoalHandoverWithClock(home, id, wait, r.HandoverNow, r.HandoverSleep)
 		if err != nil {
 			return PublishResult{}, err
 		}

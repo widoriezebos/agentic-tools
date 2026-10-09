@@ -490,16 +490,17 @@ var (
 )
 
 type syncRequestDependencies struct {
-	ctx            context.Context
-	authorityFacts goalAuthorityReadFacts
-	endpoint       func(string) (goal.Endpoint, error)
-	machine        func(string) (string, error)
-	ensureGuard    func(string) error
-	ownerLineage   func() string
-	claimHolder    claimHolderReaders
-	proveHuman     func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
-	proveTerminal  func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
-	presence       func(string, goal.Endpoint) (seat.Copy, error)
+	projectionDeadline func(time.Duration) <-chan time.Time
+	ctx                context.Context
+	authorityFacts     goalAuthorityReadFacts
+	endpoint           func(string) (goal.Endpoint, error)
+	machine            func(string) (string, error)
+	ensureGuard        func(string) error
+	ownerLineage       func() string
+	claimHolder        claimHolderReaders
+	proveHuman         func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
+	proveTerminal      func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
+	presence           func(string, goal.Endpoint) (seat.Copy, error)
 	// helm reads whether the act's seat is at the helm; nil is helm.Active.
 	helm func(root string) helm.State
 	// seatCapped reads whether a steward has stopped starting seats for a
