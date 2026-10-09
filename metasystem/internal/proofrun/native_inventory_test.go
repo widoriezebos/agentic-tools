@@ -2,6 +2,7 @@ package proofrun
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -9,6 +10,36 @@ import (
 	"sync"
 	"testing"
 )
+
+func TestNativeCommandPartitionsUseThreeShardsPerWorker(t *testing.T) {
+	t.Parallel()
+	const prefix = "example.com/proof/"
+	var expected []NativeTestIdentity
+	for index := 0; index < 12; index++ {
+		expected = append(expected, NativeTestIdentity{Classname: prefix + "cmd/metasystem", Name: fmt.Sprintf("Test%02d", index)})
+	}
+	expected = append(expected, NativeTestIdentity{Classname: prefix + "internal/small", Name: "TestSmall"})
+	partitions := partitionNativePackages(expected, []string{"cmd/metasystem", "internal/small"}, prefix, 2)
+	if len(partitions) != 7 {
+		t.Fatalf("partitions=%+v; want six command shards and one small package", partitions)
+	}
+	seen := map[string]int{}
+	for index, partition := range partitions {
+		if index < 6 && (len(partition.Names) != 2 || partition.Names[0] != fmt.Sprintf("Test%02d", index) || partition.Names[1] != fmt.Sprintf("Test%02d", index+6)) {
+			t.Fatalf("shard %d did not deal sorted names round robin: %+v", index, partition)
+		}
+		for _, name := range partition.Names {
+			for _, pkg := range partition.Packages {
+				seen[pkg+"/"+name]++
+			}
+		}
+	}
+	for _, identity := range expected {
+		if seen[identity.Classname+"/"+identity.Name] != 1 {
+			t.Fatalf("test did not appear exactly once: %+v runs=%v", identity, seen)
+		}
+	}
+}
 
 // Both native workers must write before either output pipe can finish.
 type inventoryOverlapWriter struct {
@@ -32,6 +63,10 @@ import ("fmt"; "testing")
 func TestA(t *testing.T) { t.Parallel(); fmt.Println("native worker started"); panic("deliberate panic") }
 func TestB(t *testing.T) { t.Parallel(); fmt.Println("native worker started") }
 func TestC(t *testing.T) { t.Parallel() }
+func TestD(t *testing.T) { t.Parallel() }
+func TestE(t *testing.T) { t.Parallel() }
+func TestF(t *testing.T) { t.Parallel() }
+func TestG(t *testing.T) { t.Parallel() }
 `)
 	packageRoot := filepath.Join(root, "cmd", "metasystem")
 	if err := os.MkdirAll(packageRoot, 0700); err != nil {
@@ -42,6 +77,9 @@ func TestC(t *testing.T) { t.Parallel() }
 	}
 	started := []chan struct{}{make(chan struct{}), make(chan struct{})}
 	ctx := context.WithValue(t.Context(), goShardLifecycleHooksKey{}, goShardLifecycleHooks{wrapOutput: func(index int, w io.Writer) io.Writer {
+		if index > 1 {
+			return w
+		}
 		return &inventoryOverlapWriter{Writer: w, started: started[index], other: started[1-index]}
 	}})
 	planned := 0
@@ -50,16 +88,16 @@ func TestC(t *testing.T) { t.Parallel() }
 		if executions == nil {
 			planned = total
 		} else {
-			if planned != 2 {
+			if planned != 6 {
 				t.Errorf("completion before its plan: %d", planned)
 			}
 			completed = append(completed, executions...)
 		}
 	}})
-	if planned != 2 || len(completed) != 2 {
+	if planned != 6 || len(completed) != 6 {
 		t.Fatalf("live package progress planned=%d completed=%+v", planned, completed)
 	}
-	if err != nil || !result.Failed || len(result.Execution) != 2 {
+	if err != nil || !result.Failed || len(result.Execution) != 6 {
 		t.Fatalf("result=%+v error=%v", result, err)
 	}
 	for _, ch := range started {
@@ -69,7 +107,7 @@ func TestC(t *testing.T) { t.Parallel() }
 			t.Fatal("native workers did not overlap")
 		}
 	}
-	if !nativeIdentityStatus(result.Missing, "TestC", "missing-terminal") || !nativeIdentityStatus(result.Observed, "TestB", "passed") {
+	if !nativeIdentityStatus(result.Missing, "TestG", "missing-terminal") || !nativeIdentityStatus(result.Observed, "TestB", "passed") {
 		t.Fatalf("panic swallowed another shard or missing test: %+v", result)
 	}
 	statuses := map[string]bool{}

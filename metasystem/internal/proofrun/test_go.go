@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -70,6 +71,7 @@ type goListPackage struct {
 type NativeInventoryRequest struct {
 	Packages, BuildTags, Tests []string
 	Race, Coverage             bool
+	OnlyTaggedTests            bool
 	Root                       string
 	LogRoot                    string
 	Environment                []string
@@ -148,6 +150,29 @@ func runNativeInventory(ctx context.Context, request NativeInventoryRequest, byP
 	_, expected, discovery, _, err := goArgumentsForSchema(ctx, group, request.Root, environment, testpolicy.ExecutionContractSchemaVersion)
 	if err != nil {
 		return result, 1, err
+	}
+	// OnlyTaggedTests keeps the tests that exist only under the build tags
+	// (the batch pass proves those and nothing twice); with none, no tagged
+	// build is compiled at all, so a tag that changes an untagged test's
+	// behaviour is not covered here.
+	if request.OnlyTaggedTests {
+		plain, _, err := discoverGoTestsCached(ctx, request.Root, environment, []string{"./..."}, nil, request.Race, nil)
+		if err != nil {
+			return result, 1, err
+		}
+		selected := map[string]bool{}
+		taggedOnly := expected[:0]
+		for _, identity := range expected {
+			if identity.Name == goPackageBuildIdentity || identity.Classname == "" || slices.Contains(plain.Tests[identity.Name], identity.Classname) {
+				continue
+			}
+			taggedOnly = append(taggedOnly, identity)
+			selected[strings.TrimPrefix(identity.Classname, discovery.ModulePrefix)] = true
+		}
+		expected, discovery.Inventory = taggedOnly, sortedStringSet(selected)
+		if len(expected) == 0 {
+			return result, 0, nil
+		}
 	}
 	if err := os.MkdirAll(request.LogRoot, 0o700); err != nil {
 		return result, 1, fmt.Errorf("create Go gate log root: %w", err)
@@ -883,7 +908,7 @@ func partitionNativePackages(expected []NativeTestIdentity, inventory []string, 
 	for _, pkg := range goInventoryPackages(inventory, modulePrefix) {
 		ceiling := 1
 		if pkg == modulePrefix+"cmd/metasystem" {
-			ceiling = workers
+			ceiling = 3 * workers
 		}
 		partitions = append(partitions, partitionGoTests(byPackage[pkg], []string{pkg}, "", ceiling)...)
 	}
