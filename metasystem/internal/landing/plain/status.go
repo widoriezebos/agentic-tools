@@ -381,7 +381,7 @@ func LandingTimes(entries []Entry, pushes []Pushed, since time.Time, brought fun
 		}
 		for _, commit := range commits {
 			for _, index := range waiting[commit] {
-				out[index].LandedAt = push.At
+				out[index].LandedAt, out[index].Landing = push.At, push.Clock
 			}
 			delete(waiting, commit)
 		}

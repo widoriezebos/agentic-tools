@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 )
 
 // classifyRed applies the first-match cause table. The caller supplies the
@@ -23,6 +24,7 @@ func classifyRed(seams ProveSeams, install, checkout, command, dir string, runni
 }
 
 func observeRed(seams ProveSeams, install string, running Running, decision scopeDecision, observed *proofOutput, result, previous Result, report checkReport, runErr error) Result {
+	result = timedResult(result, running.Since, seams.now())
 	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
 	result.Cause = &Cause{Kind: "unclassified", Evidence: running.Log}
 	var exit *exec.ExitError
@@ -130,6 +132,7 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 	var failures []string
 	for i, unit := range result.Failed {
 		repeat := repeats[i]
+		repeat.Since = seams.now().UTC().Format(time.RFC3339)
 		var report checkReport
 		file, err := os.OpenFile(repeat.Log, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 		if err == nil {
@@ -140,6 +143,8 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 
 			err = errors.Join(err, file.Close())
 		}
+		repeat.Minutes = elapsedMinutes(repeat.Since, seams.now().UTC().Format(time.RFC3339))
+		repeats[i] = repeat
 		if err != nil {
 			result.Cause.Kind = "unclassified"
 			if report.kind != "complete" {
@@ -244,6 +249,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 				break
 			}
 			result.Cause.Evidence = prefix.Log
+			prefix.Since = seams.now().UTC().Format(time.RFC3339)
 			report, runErr := runCheck(seams, dir, command, prefix.Running, unit.Unit, scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, file, &proofOutput{output: io.Discard})
 			closeErr := file.Close()
 			var exit *exec.ExitError
@@ -257,8 +263,8 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 				result.Cause.Evidence = prefix.Log
 				if recordingMain {
 					units := slices.DeleteFunc(slices.Clone(report.failed), func(f FailedUnit) bool { return f.Unit != unit.Unit })
-					mainChecks = append(mainChecks, Result{Result: Red, Commit: prefix.Commit, Tree: prefix.Tree,
-						Attempt: prefix.Attempt, Log: prefix.Log, At: result.At, Failed: units})
+					mainChecks = append(mainChecks, timedResult(Result{Result: Red, Commit: prefix.Commit, Tree: prefix.Tree,
+						Attempt: prefix.Attempt, Log: prefix.Log, Failed: units}, prefix.Since, seams.now()))
 					continue
 				}
 				break

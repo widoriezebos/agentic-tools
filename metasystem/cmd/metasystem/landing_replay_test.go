@@ -55,6 +55,8 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 			// Main's trunk-red register is absent in this bed (no incident open).
 			case len(args) > 0 && args[0] == "ls-tree" && strings.HasSuffix(joined, "plans/goals/trunk-red.json"):
 				return "", nil
+			case joined == "show -s --format=%cI HEAD":
+				return laneTestNow.UTC().Format(time.RFC3339), nil
 			case joined == "rev-parse --verify HEAD^{commit}":
 				return b.head, nil
 			case joined == "rev-parse --verify HEAD^{tree}":

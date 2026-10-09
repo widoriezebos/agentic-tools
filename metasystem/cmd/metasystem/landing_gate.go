@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/landpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
 // The landing gate at every form of work land (g1-s70 D2).
@@ -186,12 +187,16 @@ func landed(result intentResult) bool {
 // confirmed, naming what it landed under. A seat that does not hold the goal
 // (a person landing by hand) records nothing; the landing stands either way.
 func (inv *intentInvocation) noteLanded(goalID string, result intentResult) intentResult {
-	if !landed(result) {
+	data, _ := result.Data.(map[string]any)
+	if entry, ok := data["queue"].(plain.Entry); ok && entry.State == plain.StateLanded && result.Outcome == intentUnchanged {
+		inv.landingWords = entry.Landing.Words()
+	}
+	if !landed(result) && inv.landingWords == "" {
 		return result
 	}
 	// A landing on main is the one piece of news the channel carries
 	// (Decision 7), once per sha; a failed post is kept for a retry.
-	if landing := result.Data.(map[string]any)["landing"].(intentLanded); landing.Landing != "" {
+	if landing, ok := data["landing"].(intentLanded); ok && landing.Landing != "" {
 		// The message is the plain sentence of what it delivered: this
 		// command's --delivered, else the one recorded with the landing.
 		text := strings.TrimSpace(inv.input.text("delivered"))
@@ -199,7 +204,7 @@ func (inv *intentInvocation) noteLanded(goalID string, result intentResult) inte
 			text = landing.Delivered
 		}
 		if err := postLanded(inv.layout.InstallationRoot.Path(), text, landing.Landing, inv.delivery().now()); err != nil {
-			result.Data.(map[string]any)["landedNotice"] = err.Error()
+			data["landedNotice"] = err.Error()
 		}
 	}
 	record := inv.delivery().recordLanded
@@ -231,7 +236,11 @@ func productionRecordLanded(inv *intentInvocation, goalID string) error {
 	if err != nil {
 		return err
 	}
-	result, err := goal.RecordLanded(request, goalID, goal.LandedUnder(file, settings))
+	under := goal.LandedUnder(file, settings)
+	if inv.landingWords != "" {
+		under += "; " + inv.landingWords
+	}
+	result, err := goal.RecordLanded(request, goalID, under)
 	if err == nil && result.Outcome != goal.OutcomeConfirmed && !result.Unchanged {
 		err = fmt.Errorf("%s", result.Detail)
 	}

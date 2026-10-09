@@ -258,6 +258,9 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 	}
 	if !outcome.Changed {
 		summary := "main already is " + shortLandingID(outcome.Commit) + "; nothing was pushed"
+		if push, ok, _ := plain.LastPush(admitted.installation); ok && push.Commit == outcome.Commit {
+			summary += "; already on main, recorded"
+		}
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: outcome, Summary: summary, view: landingDone(summary, root), Details: told})
 	}
 	summary := "pushed " + shortLandingID(outcome.Commit) + " to main (from " + shortLandingID(outcome.Old) + ")"

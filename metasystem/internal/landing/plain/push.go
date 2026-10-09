@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"slices"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -31,6 +32,7 @@ func (r *Refusal) Error() string { return r.Code + ": " + r.Reason }
 
 // Pushed is one line of pushes.jsonl.
 type Pushed struct {
+	Clock        *Clock    `json:"clock,omitempty"`
 	BatchID      string    `json:"batch-id,omitempty"`
 	BatchMembers []GoalSHA `json:"batch-members,omitempty"`
 	Old          string    `json:"old"`
@@ -87,25 +89,32 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 		outcome.Commit = old
 		return outcome, withLock(install, func() error {
 			batch, err := ReadBatch(install)
-			if err != nil || batch == nil {
-				return err
-			}
-			if err := seams.batchLane(batch); err != nil {
-				return err
-			}
-			terminal, err := batchTerminal(install, checkout, old, batch, seams)
 			if err != nil {
 				return err
 			}
-			idle, err := batchIdle(install, seams)
-			if err != nil {
+			if batch != nil {
+				if err := seams.batchLane(batch); err != nil {
+					return err
+				}
+				for _, member := range batch.Members {
+					onMain, err := batchContains(checkout, old, member.SHA, seams)
+					if err != nil || !onMain {
+						return err
+					}
+				}
+				old = batch.Base
+			} else if push, ok, err := LastPush(install); err != nil {
+				return err
+			} else if ok {
+				old = push.Commit
+			}
+			operation := seams
+			operation.AgentRunning = nil
+			idle, err := batchIdle(install, operation)
+			if err != nil || !idle || provenGreen(install, tree) != nil {
 				return err
 			}
-			if terminal && idle && batch.State != BatchClosed {
-				batch.State, batch.ClosureReason = BatchClosed, "fetched main accounts for the selected members"
-				return writeBatch(install, batch)
-			}
-			return nil
+			return completePush(install, checkout, batch, old, head, tree, now, seams)
 		})
 	}
 	if refusal := provenGreen(install, tree); refusal != nil {
@@ -156,30 +165,55 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 			return fmt.Errorf("push %s to main: %w", Short(head), err)
 		}
 		outcome.Changed = true
-		pushed := Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)}
-		if batch != nil {
-			pushed.BatchID, pushed.BatchMembers = batch.ID, batch.Members
+		return completePush(install, checkout, batch, old, head, tree, now, seams)
+	})
+	return outcome, err
+}
+
+// completePush finishes a confirmed publication; its commit identifies one record.
+func completePush(install, checkout string, batch *Batch, old, head, tree string, now time.Time, seams ProveSeams) error {
+	pushes, err := readLines[Pushed](pushesPath(install))
+	if err != nil {
+		return err
+	}
+	pushed := Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)}
+	clockBatch := batch
+	if batch != nil {
+		pushed.BatchID = batch.ID
+		for _, member := range batch.Members {
+			landed, err := batchContains(checkout, head, member.SHA, seams)
+			if err != nil {
+				return err
+			}
+			if landed {
+				pushed.BatchMembers = append(pushed.BatchMembers, member)
+			}
 		}
+		copy := *batch
+		copy.Members = pushed.BatchMembers
+		clockBatch = &copy
+	}
+	pushed.Clock = landingClock(install, checkout, clockBatch, now, seams)
+	if !slices.ContainsFunc(pushes, func(p Pushed) bool { return p.Commit == head }) {
 		if err := appendLine(pushesPath(install), pushed); err != nil {
 			return err
 		}
-		if batch != nil {
-			batch.State, batch.ClosureReason = BatchClosed, "confirmed push accounts for the selected members"
-			if err := writeBatch(install, batch); err != nil {
-				return err
-			}
-		}
-		if err := closeProofLoop(install); err != nil {
+	}
+	if batch != nil {
+		batch.State, batch.ClosureReason = BatchClosed, "confirmed push accounts for the selected members"
+		if err := writeBatch(install, batch); err != nil {
 			return err
 		}
-		for _, member := range pushed.BatchMembers {
-			if err := closeGoalStopsLocked(install, member.Goal, "push", now, member.SHA); err != nil {
-				return err
-			}
+	}
+	if err := closeProofLoop(install); err != nil {
+		return err
+	}
+	for _, member := range pushed.BatchMembers {
+		if err := closeGoalStopsLocked(install, member.Goal, "push", now, member.SHA); err != nil {
+			return err
 		}
-		return nil
-	})
-	return outcome, err
+	}
+	return nil
 }
 
 func (s ProveSeams) fetchMain(checkout string) error {

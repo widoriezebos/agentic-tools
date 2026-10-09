@@ -55,6 +55,7 @@ type Running struct {
 	Commit            string               `json:"commit"`
 	Log               string               `json:"log"`
 	Since             string               `json:"since"`
+	Minutes           *float64             `json:"minutes,omitempty"`
 	Pid               int64                `json:"pid"`
 	// Process is the exact identity of Pid, so a reused pid is not read as
 	// the proof.
@@ -91,6 +92,8 @@ type Result struct {
 	Result     string    `json:"result"`
 	Log        string    `json:"log"`
 	At         string    `json:"at"`
+	StartedAt  string    `json:"started_at,omitempty"`
+	Minutes    *float64  `json:"minutes"`
 	Attempt    string    `json:"attempt,omitempty"`
 	// Reason is why the result is what it is, in one sentence: for red,
 	// how the proving command ended ("the proving command exited 1") or why it
@@ -797,7 +800,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			return result, fmt.Errorf("the admitted check scope changed; request a fresh check")
 		}
 		result = proveInWorktree(seams, install, checkout, command, running, &decision, output, observed, result, previous)
-		result.At = seams.now().Format(time.RFC3339)
+		result = timedResult(result, running.Since, seams.now())
 		result = decision.describe(result, observed)
 	}
 	if result.Reason != "" {
