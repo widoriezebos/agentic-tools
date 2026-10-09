@@ -532,6 +532,7 @@ func TestRecycledSuiteIdentityAuthorizesNoKillAction(t *testing.T) {
 // watchdog without a single further poll; a zombie (launcher alive, about to
 // reap and publish done) and an unreadable process keep it polling.
 func TestRunWatchdogExitsWhenItsSuiteIsGone(t *testing.T) {
+	t.Parallel()
 	started := int64(1_700_000_000)
 	suite := identity.Ref{Pid: 424242, StartedAtSec: started}
 	for _, test := range []struct {
@@ -546,44 +547,45 @@ func TestRunWatchdogExitsWhenItsSuiteIsGone(t *testing.T) {
 		{name: "unreadable", probe: fixedProbe{state: identity.Unknown}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
 			root := t.TempDir()
 			done := filepath.Join(root, "done")
-			ticks := make(chan time.Time)
-			result := make(chan error, 1)
-			go func() {
-				result <- RunWatchdog(WatchdogOptions{
-					Suite: "fixture", Root: root, ProgressPath: filepath.Join(root, "progress"), DonePath: done,
-					LogPaths: []string{filepath.Join(root, "log")}, SuiteIdentity: suite,
-					Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1,
-					Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
-					ErrorOutput: os.Stderr, Prober: test.probe,
-					Signal:    func(int, syscall.Signal) error { t.Error("a gone suite was signalled"); return nil },
-					Shutdown:  func() error { t.Error("supervision was shut down"); return nil },
-					NewTicker: func(time.Duration) (<-chan time.Time, func()) { return ticks, func() {} },
-				})
-			}()
-			polledAgain := false
-			select {
-			case ticks <- time.Unix(1, 0):
-				polledAgain = true
-			case err := <-result:
-				if err != nil {
-					t.Fatalf("watchdog of a gone suite returned %v, want a quiet exit", err)
-				}
+			ticks := make(chan time.Time, 1)
+			ticks <- time.Unix(1, 0)
+			// The launcher publishes done after the first liveness observation.
+			// A suite that is still live must consume the queued tick to read it;
+			// a gone suite exits before that tick. Both paths finish synchronously.
+			probe := completingSuiteProbe{fixedProbe: test.probe, done: done}
+			err := RunWatchdog(WatchdogOptions{
+				Suite: "fixture", Root: root, ProgressPath: filepath.Join(root, "progress"), DonePath: done,
+				LogPaths: []string{filepath.Join(root, "log")}, SuiteIdentity: suite,
+				Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1,
+				Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+				ErrorOutput: os.Stderr, Prober: probe,
+				Now:       func() time.Time { return watchdogFixtureNow },
+				Signal:    func(int, syscall.Signal) error { t.Error("a gone suite was signalled"); return nil },
+				Shutdown:  func() error { t.Error("supervision was shut down"); return nil },
+				NewTicker: func(time.Duration) (<-chan time.Time, func()) { return ticks, func() {} },
+			})
+			if err != nil {
+				t.Fatalf("watchdog returned %v, want a quiet exit", err)
 			}
-			if polledAgain {
-				// Release the watchdog the way its launcher would.
-				if err := os.WriteFile(done, nil, 0o600); err != nil {
-					t.Fatal(err)
-				}
-				select {
-				case ticks <- time.Unix(2, 0):
-				case <-result:
-				}
-			}
+			polledAgain := len(ticks) == 0
 			if polledAgain == test.wantGone {
 				t.Fatalf("watchdog polled again = %t, want %t", polledAgain, !test.wantGone)
 			}
 		})
 	}
+}
+
+type completingSuiteProbe struct {
+	fixedProbe
+	done string
+}
+
+func (p completingSuiteProbe) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	if err := os.WriteFile(p.done, nil, 0o600); err != nil {
+		return identity.Exact{}, identity.Unknown, err
+	}
+	return p.fixedProbe.Probe(pid)
 }

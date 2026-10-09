@@ -19,8 +19,17 @@ import (
 func TestFullShardsRunEveryPackageAndAPanicLosesOneShard(t *testing.T) {
 	t.Parallel()
 	if os.Getenv("FULL_SHARD_BUILD") == "1" {
+		var output string
+		for index, arg := range os.Args {
+			if arg == "-o" && index+1 < len(os.Args) {
+				output = os.Args[index+1]
+			}
+		}
+		if output == "" {
+			t.Fatal("reporter build did not specify its output path")
+		}
 		body := "#!/bin/sh\nexec \"$FULL_SHARD_TEST_BINARY\" -test.run '^TestFullShardsRunEveryPackageAndAPanicLosesOneShard$' -- \"$@\"\n"
-		if err := testexec.WriteFile("proof/.full-reporter", []byte(body), 0755); err != nil {
+		if err := testexec.WriteFile(output, []byte(body), 0755); err != nil {
 			t.Fatal(err)
 		}
 		os.Exit(0)
@@ -92,6 +101,7 @@ func TestFullShardsRunEveryPackageAndAPanicLosesOneShard(t *testing.T) {
 			case "group replay":
 				env = map[string]string{"LANDING_PROOF_SCOPE": "scoped", "LANDING_PROOF_GROUPS": "fast-static-build verb-ratchet", "LANDING_ONLY": "verb-ratchet"}
 			}
+			env["METASYSTEM_FULL_REPORTER"] = os.Getenv("METASYSTEM_FULL_REPORTER")
 			static, natives, groups := false, 0, 0
 			hooks := HostRunners{Environment: func() (string, error) { return "stable toolchain", nil }, Native: func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
 				natives++
@@ -141,7 +151,7 @@ func TestFullShardsRunEveryPackageAndAPanicLosesOneShard(t *testing.T) {
 					static = true
 					return nil
 				}
-				if argv[0] != "proof/.full-reporter" {
+				if argv[0] != env["METASYSTEM_FULL_REPORTER"] {
 					t.Fatalf("unexpected command %v", argv)
 				}
 				fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":"passed","nativeLaunched":true,"nativeExitStatus":0}]}}`, argv[2])

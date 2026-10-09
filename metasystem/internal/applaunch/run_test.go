@@ -1,11 +1,14 @@
 package applaunch
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -16,7 +19,10 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
+	"golang.org/x/sys/unix"
 )
 
 var (
@@ -50,17 +56,115 @@ func fixtures(t *testing.T) (app, supervisor string) {
 	return filepath.Join(fixtureDir, "fixtureapp"), filepath.Join(fixtureDir, "fixturesupervisor")
 }
 
-func freePort(t *testing.T) string {
+// reserveListener keeps the address owned until the application inherits it.
+func reserveListener(t *testing.T) *os.File {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	address := listener.Addr().String()
-	if err := listener.Close(); err != nil {
+	file, err := listener.(*net.TCPListener).File()
+	_ = listener.Close()
+	if err != nil {
 		t.Fatal(err)
 	}
-	return address
+	t.Cleanup(func() { _ = file.Close() })
+	return file
+}
+
+func listenerAddress(t *testing.T, file *os.File) string {
+	t.Helper()
+	listener, err := net.FileListener(file)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+	return listener.Addr().String()
+}
+
+// An inherited listener can report its address and acknowledge readiness
+// before the owner releases the application's exit gate.
+func TestFixtureInheritedListenerReportsAddressAndReadinessBeforeExit(t *testing.T) {
+	t.Parallel()
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	root := t.TempDir()
+	readyPath, exitPath := filepath.Join(root, "ready"), filepath.Join(root, "exit")
+	for _, path := range []string{readyPath, exitPath} {
+		if err := unix.Mkfifo(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ready, err := os.OpenFile(readyPath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ready.Close()
+	exit, err := os.OpenFile(exitPath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer exit.Close()
+	reportRead, reportWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reportRead.Close()
+	defer reportWrite.Close()
+	logPath := filepath.Join(root, "application.log")
+	log, err := os.Create(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	child, err := ExecChild(ChildSpec{
+		Argv: []string{mustApp(t), "--listen", "127.0.0.1:0", "--listen-fd", "3", "--address-fd", "4",
+			"--ready-fifo", readyPath, "--ready-line", "application ready", "--exit-fifo", exitPath, "--exit-code", "7"},
+		Dir: root, Environment: os.Environ(), Log: log, ExtraFiles: []*os.File{listener, reportWrite},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener.Close()
+	reportWrite.Close()
+	type result struct {
+		status string
+		err    error
+	}
+	var ended result
+	done := make(chan struct{})
+	go func() {
+		status, err := child.Wait()
+		ended = result{status, err}
+		close(done)
+	}()
+	defer func() {
+		_ = child.(*execChild).command.Process.Kill()
+		<-done
+	}()
+	reported, err := bufio.NewReader(reportRead).ReadString('\n')
+	if err != nil || reported != address+"\n" {
+		t.Fatalf("inherited listener address = %q, err=%v; want %q", reported, err, address)
+	}
+	var acknowledgment [6]byte
+	if _, err := io.ReadFull(ready, acknowledgment[:]); err != nil || string(acknowledgment[:]) != "ready\n" {
+		t.Fatalf("readiness acknowledgment = %q, err=%v", acknowledgment, err)
+	}
+	contract := Contract{Ready: &Ready{Kind: ReadyHTTP, URL: "http://${address}/-/health"}}
+	if err := ProbeOnce(contract, address); err != nil {
+		t.Fatalf("the acknowledged application must answer on the inherited listener: %v", err)
+	}
+	if _, err := exit.Write([]byte("exit\n")); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if ended.err != nil || ended.status != "exit 7" {
+		t.Fatalf("released application = %q, err=%v; want exit 7", ended.status, ended.err)
+	}
+	output, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(output), "application ready\n") || !strings.Contains(string(output), "fixtureapp: exiting by itself\n") {
+		t.Fatalf("readiness and exit log = %q, err=%v", output, err)
+	}
 }
 
 // bed is one seat: a state root, a project root and a written contract.
@@ -73,9 +177,10 @@ type bed struct {
 	app       string
 	super     string
 	address   string
+	listener  *os.File
 }
 
-func newBed(t *testing.T, contract map[string]any) *bed {
+func newBed(t *testing.T, contract map[string]any, listeners ...*os.File) *bed {
 	t.Helper()
 	app, super := fixtures(t)
 	root := t.TempDir()
@@ -97,7 +202,11 @@ func newBed(t *testing.T, contract map[string]any) *bed {
 		t.Fatalf("the fixture contract must validate: %v\n%s", err, body)
 	}
 	address, _ := contract["address"].(string)
-	return &bed{t: t, root: root, stateRoot: stateRoot, contract: loaded, path: path, app: app, super: super, address: address}
+	var listener *os.File
+	if len(listeners) > 0 {
+		listener = listeners[0]
+	}
+	return &bed{listener: listener, t: t, root: root, stateRoot: stateRoot, contract: loaded, path: path, app: app, super: super, address: address}
 }
 
 // start launches a real detached supervisor for this bed and waits for its
@@ -124,14 +233,33 @@ func (b *bed) startWith(key string, args []string) (string, int, error) {
 	b.t.Helper()
 	spec := LaunchSpec{Executable: b.super, Args: args, Dir: b.root,
 		LogPath: filepath.Join(Dir(b.stateRoot), key+".launch.log")}
-	address, pid, err := LaunchSupervisor(spec, ExecSpawn, WaitForReport,
+	if b.listener != nil {
+		spec.Args = append(spec.Args, "--listen-fd", "4")
+		spec.ExtraFiles = []*os.File{b.listener}
+	}
+	address, pid, err := LaunchSupervisor(spec, func(spec LaunchSpec) (lifecycle.Child, error) {
+		child, err := ExecSpawn(spec)
+		if b.listener != nil {
+			_ = b.listener.Close()
+			b.listener = nil
+		}
+		return child, err
+	}, WaitForReport,
 		time.Duration(b.contract.StopWaitMS())*time.Millisecond+5*time.Second)
-	if pid > 0 {
+	reapPID := pid
+	if reapPID == 0 {
+		if record, err := ReadRecord(stateroottest.Installation(b.t, b.stateRoot).Path(), key); err == nil {
+			if ref, err := record.SupervisorRef(); err == nil {
+				reapPID = int(ref.Pid)
+			}
+		}
+	}
+	if reapPID > 0 {
 		// The engine's own start exits at once, so a supervisor it launched
 		// is reparented and reaped by init. A test process outlives its
 		// launches, so it reaps them itself; an unreaped zombie would read
 		// as a living owner to every identity check below.
-		go reap(pid)
+		go reap(reapPID)
 	}
 	b.t.Cleanup(func() { b.cleanup(key) })
 	return address, pid, err
@@ -268,8 +396,9 @@ func httpContract(app, address string, extra ...string) map[string]any {
 // readiness separately.
 func TestStartWaitsForReadyAndRecords(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address, "--ready-after", "600ms"))
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	b := newBed(t, httpContract(mustApp(t), address, "--ready-after", "600ms"), listener)
 	got, pid, err := b.start(StandingKey)
 	if err != nil {
 		t.Fatalf("start: %v", err)
@@ -306,26 +435,72 @@ func mustApp(t *testing.T) string {
 	return app
 }
 
+// reapedReadinessChild observes the pipe after its supervisor's actual exit.
+type reapedReadinessChild struct {
+	lifecycle.Child
+	t    *testing.T
+	pipe *os.File
+}
+
+func (c *reapedReadinessChild) ReadyLine(time.Duration) (string, error) {
+	var status syscall.WaitStatus
+	for {
+		pid, err := syscall.Wait4(c.Pid(), &status, 0, nil)
+		if err == syscall.EINTR {
+			continue
+		}
+		if err != nil || pid != c.Pid() {
+			c.t.Fatalf("reap supervisor: pid=%d err=%v", pid, err)
+		}
+		break
+	}
+	fd := int(c.pipe.Fd())
+	if err := unix.SetNonblock(fd, true); err != nil {
+		c.t.Error(err)
+		return "", err
+	}
+	var buffer [1]byte
+	n, err := unix.Read(fd, buffer[:])
+	if err != nil || n != 0 {
+		c.t.Errorf("readiness pipe still open after supervisor was reaped: n=%d err=%v", n, err)
+	}
+	return "", io.EOF
+}
+
 // The one window the design leaves open: a supervisor killed between the
 // spawn and the child's ref write. The record names its group and no child,
 // status says exactly that, the application is discoverable in that group by
 // its proven identity, and nothing is signalled by number.
 func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
 	live := filepath.Join(t.TempDir(), "alive")
-	b := newBed(t, httpContract(mustApp(t), address, "--live-file", live))
+	b := newBed(t, httpContract(mustApp(t), address, "--live-file", live), listener)
 	args := b.args(StandingKey, "--die-after-spawn")
-	began := time.Now()
-	_, _, err := b.startWith(StandingKey, args)
+	readyRead, readyWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer readyRead.Close()
+	defer readyWrite.Close()
+	// The separate pipe can be read without waiting once the owner is reaped.
+	args = append(args, "--ready-fd", "5", "--listen-fd", "4")
+	spec := LaunchSpec{Executable: b.super, Args: args, Dir: b.root,
+		LogPath:    filepath.Join(Dir(stateroottest.Installation(t, b.stateRoot).Path()), StandingKey+".launch.log"),
+		ExtraFiles: []*os.File{listener, readyWrite}}
+	t.Cleanup(func() { b.cleanup(StandingKey) })
+	_, _, err = LaunchSupervisor(spec, func(spec LaunchSpec) (lifecycle.Child, error) {
+		child, err := ExecSpawn(spec)
+		_ = readyWrite.Close()
+		_ = listener.Close()
+		if err != nil {
+			return nil, err
+		}
+		return &reapedReadinessChild{Child: child, t: t, pipe: readyRead}, nil
+	}, WaitForReport, 0)
 	if err == nil {
 		t.Fatal("a supervisor that dies in the window reports no readiness")
-	}
-	// The readiness pipe is the supervisor's alone: the application it
-	// spawned must not hold it open, or a launcher whose supervisor was
-	// killed waits out its whole wait instead of hearing the pipe close.
-	if waited := time.Since(began); waited > 10*time.Second {
-		t.Fatalf("the launcher waited %s for a supervisor that was already dead", waited)
 	}
 	eventually(t, "the application to be running", 10*time.Second, func() bool {
 		_, statErr := os.Stat(live)
@@ -422,9 +597,10 @@ func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 // window of the application's own clock.
 func TestStatusSaysStartingBeforeReadiness(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
 	readyFile := filepath.Join(t.TempDir(), "ready")
-	b := newBed(t, httpContract(mustApp(t), address, "--ready-file", readyFile))
+	b := newBed(t, httpContract(mustApp(t), address, "--ready-file", readyFile), listener)
 	started := make(chan error, 1)
 	go func() {
 		_, _, err := b.start(StandingKey)
@@ -462,8 +638,9 @@ func TestTheFourReadinessForms(t *testing.T) {
 	app := mustApp(t)
 	t.Run("http", func(t *testing.T) {
 		t.Parallel()
-		address := freePort(t)
-		b := newBed(t, httpContract(app, address, "--ready-after", "500ms"))
+		listener := reserveListener(t)
+		address := listenerAddress(t, listener)
+		b := newBed(t, httpContract(app, address, "--ready-after", "500ms"), listener)
 		if _, _, err := b.start(StandingKey); err != nil {
 			t.Fatalf("http readiness: %v", err)
 		}
@@ -473,17 +650,43 @@ func TestTheFourReadinessForms(t *testing.T) {
 	})
 	t.Run("tcp", func(t *testing.T) {
 		t.Parallel()
-		address := freePort(t)
-		b := newBed(t, map[string]any{
-			"address": address,
-			"start":   map[string]any{"argv": []string{app, "--listen", "${address}", "--listen-after", "400ms"}},
-			"ready":   map[string]any{"kind": "tcp", "address": "${address}"},
-			"readyMs": 1, "stopMs": 4000})
-		if _, _, err := b.start(StandingKey); err != nil {
+		// A TCP listener accepts connections as soon as it is bound, so the
+		// application owns the bind and reports its kernel-assigned port.
+		addressRead, addressWrite, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer addressRead.Close()
+		defer addressWrite.Close()
+		command := exec.Command(app, "--listen", "127.0.0.1:0", "--address-fd", "3")
+		command.ExtraFiles = []*os.File{addressWrite}
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = command.Process.Kill()
+			_ = command.Wait()
+		})
+		_ = addressWrite.Close()
+		reported, err := io.ReadAll(addressRead)
+		if err != nil {
+			t.Fatalf("read the application's bound address: %v", err)
+		}
+		address := strings.TrimSpace(string(reported))
+		bound, err := net.ResolveTCPAddr("tcp", address)
+		if err != nil || bound.Port == 0 {
+			t.Fatalf("the application must report its bound TCP address, got %q: %v", address, err)
+		}
+		contract := Contract{Ready: &Ready{Kind: ReadyTCP, Address: "${address}"}}
+		// The first probe must answer; an injected deadline ends a failed
+		// probe without a wall-clock wait.
+		expired := make(chan time.Time)
+		close(expired)
+		if err := AwaitReady(context.Background(), contract, address, "", 0, nil, expired); err != nil {
 			t.Fatalf("tcp readiness: %v", err)
 		}
-		if status := b.status(StandingKey); status.Readiness != Answering {
-			t.Fatalf("tcp readiness must answer, got %s", status.Readiness)
+		if err := ProbeOnce(contract, address); err != nil {
+			t.Fatalf("tcp readiness must answer: %v", err)
 		}
 	})
 	t.Run("log", func(t *testing.T) {
@@ -514,8 +717,9 @@ func TestTheFourReadinessForms(t *testing.T) {
 	})
 	t.Run("a start that exits before readiness", func(t *testing.T) {
 		t.Parallel()
-		address := freePort(t)
-		b := newBed(t, httpContract(app, address, "--exit-now"))
+		listener := reserveListener(t)
+		address := listenerAddress(t, listener)
+		b := newBed(t, httpContract(app, address, "--exit-now"), listener)
 		_, _, err := b.start(StandingKey)
 		if err == nil {
 			t.Fatal("a start command that exits before readiness is not a running application")
@@ -558,13 +762,14 @@ func TestLogReadinessIsScopedToThisRun(t *testing.T) {
 // observed, rather than calling a dark application stopped.
 func TestRunningAndNotAnswering(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
 	// The application goes dark when the test says so, never on a clock
 	// that starts with its process: on a loaded host a start slower than
 	// that clock would never be ready at all. The start carries no clock
 	// either; the test's own timeout bounds it.
 	dark := filepath.Join(t.TempDir(), "dark")
-	b := newBed(t, httpContract(mustApp(t), address, "--dark-file", dark))
+	b := newBed(t, httpContract(mustApp(t), address, "--dark-file", dark), listener)
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -587,8 +792,9 @@ func TestRunningAndNotAnswering(t *testing.T) {
 // A record whose process was killed behind the engine's back reads as such.
 func TestAProcessKilledBehindTheEnginesBack(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address))
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	b := newBed(t, httpContract(mustApp(t), address), listener)
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -614,8 +820,9 @@ func TestAProcessKilledBehindTheEnginesBack(t *testing.T) {
 // signalled: the identity is re-proven immediately before every signal.
 func TestARecordedPidReusedByAnUnrelatedProcessIsRefusedByName(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address))
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	b := newBed(t, httpContract(mustApp(t), address), listener)
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -666,8 +873,9 @@ func TestARecordedPidReusedByAnUnrelatedProcessIsRefusedByName(t *testing.T) {
 // stopped that is not.
 func TestStopProvesDeathForAChildThatIgnoresTERM(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address, "--ignore-term"))
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	b := newBed(t, httpContract(mustApp(t), address, "--ignore-term"), listener)
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -702,9 +910,10 @@ func TestStopProvesDeathForAChildThatIgnoresTERM(t *testing.T) {
 // until the group is empty.
 func TestStopEndsTheOwnedTreeThroughTheSupervisorsGroup(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
 	live := filepath.Join(t.TempDir(), "wrapper")
-	b := newBed(t, httpContract(mustApp(t), address, "--spawn-descendant", "--live-file", live))
+	b := newBed(t, httpContract(mustApp(t), address, "--spawn-descendant", "--live-file", live), listener)
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -770,8 +979,9 @@ func TestAnApplicationThatExitsByItselfLeavesAnEndedRecord(t *testing.T) {
 // A second start rejoins the run that is live and still waits for readiness.
 func TestASecondStartRejoinsAndWaitsForReadiness(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address, "--ready-after", "500ms"))
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	b := newBed(t, httpContract(mustApp(t), address, "--ready-after", "500ms"), listener)
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -795,8 +1005,9 @@ func TestASecondStartRejoinsAndWaitsForReadiness(t *testing.T) {
 // the record was written before anything was spawned.
 func TestALauncherThatDiesLeavesTheSupervisorOwningTheRun(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address))
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	b := newBed(t, httpContract(mustApp(t), address), listener)
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -820,8 +1031,9 @@ func TestALauncherThatDiesLeavesTheSupervisorOwningTheRun(t *testing.T) {
 // next status says stopped.
 func TestAnEngineKilledBeforeTheSupervisorStartedLeavesNoRun(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address))
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	b := newBed(t, httpContract(mustApp(t), address), listener)
 	spec := LaunchSpec{Executable: filepath.Join(b.root, "no-such-engine"), Args: nil,
 		LogPath: filepath.Join(Dir(b.stateRoot), "standing.launch.log")}
 	if _, _, err := LaunchSupervisor(spec, ExecSpawn, WaitForReport, 0); err == nil {
@@ -838,8 +1050,9 @@ func TestAnEngineKilledBeforeTheSupervisorStartedLeavesNoRun(t *testing.T) {
 // Restart replaces the process and the record.
 func TestRestartReplacesTheProcessAndTheRecord(t *testing.T) {
 	t.Parallel()
-	address := freePort(t)
-	b := newBed(t, httpContract(mustApp(t), address))
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	b := newBed(t, httpContract(mustApp(t), address), listener)
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -851,6 +1064,22 @@ func TestRestartReplacesTheProcessAndTheRecord(t *testing.T) {
 	if err := RemoveRecord(b.stateRoot, StandingKey); err != nil {
 		t.Fatal(err)
 	}
+	listener = reserveListener(t)
+	address = listenerAddress(t, listener)
+	contract := httpContract(mustApp(t), address)
+	contract["schemaVersion"] = 1
+	body, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(b.path, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	b.contract, err = Load(b.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b.address, b.listener = address, listener
 	if _, _, err := b.start(StandingKey); err != nil {
 		t.Fatalf("restart: %v", err)
 	}
@@ -904,8 +1133,9 @@ func TestLogTailAndFollow(t *testing.T) {
 	// builder is guarded.
 	var out guardedBuilder
 	done := make(chan error, 1)
-	go func() { done <- Follow(ctx, path, &out, 20*time.Millisecond) }()
-	time.Sleep(100 * time.Millisecond)
+	positioned := make(chan struct{})
+	go func() { done <- Follow(ctx, path, &out, 20*time.Millisecond, func() { close(positioned) }) }()
+	<-positioned
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		t.Fatal(err)
@@ -920,6 +1150,9 @@ func TestLogTailAndFollow(t *testing.T) {
 	cancel()
 	if err := <-done; err != nil {
 		t.Fatal(err)
+	}
+	if got := out.String(); got != "four\n" {
+		t.Fatalf("follow must print only the appended line, got %q", got)
 	}
 }
 

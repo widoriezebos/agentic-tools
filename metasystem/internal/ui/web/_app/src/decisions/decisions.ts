@@ -467,7 +467,7 @@ export function labelsIn(needs: readonly Need[]): { label: string; count: number
   }
   return [...counted.entries()]
     .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => (a.count === b.count ? a.label.localeCompare(b.label) : b.count - a.count));
+    .sort((a, b) => (a.count === b.count ? a.label.localeCompare(b.label, "en") : b.count - a.count));
 }
 
 /** The rows the tools leave on screen, in the order the toggle asks for. */

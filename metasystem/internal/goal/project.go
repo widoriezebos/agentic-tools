@@ -131,6 +131,9 @@ func Project(e Endpoint, fetchFirst bool, now time.Time) (Projection, error) {
 // ProjectWithDeadline uses one deadline source for the projection and its fetch
 // process. A nil source keeps the production bounds and timers.
 func ProjectWithDeadline(e Endpoint, fetchFirst bool, now time.Time, deadline func(time.Duration) <-chan time.Time) (Projection, error) {
+	if deadline == nil {
+		deadline = e.ProjectionDeadline
+	}
 	dependencies := projectionDependencies{processDeadline: deadline}
 	if deadline != nil && fetchFirst {
 		dependencies.deadline = deadline(defaultFreshProjectionTimeout)

@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
@@ -67,12 +66,19 @@ type appBed struct {
 	// engine is the engine this bed's starts launch as their supervisor: the
 	// one built for the purpose, given to each invocation as its owner. Under
 	// `go test` this process is the test binary, which is no engine.
-	engine string
+	engine        string
+	listener      *appListener
+	fixtureEngine string
 }
 
 func newAppBed(t *testing.T, contract map[string]any) *appBed {
 	t.Helper()
 	app := appFixtureApp(t)
+	var listener *appListener
+	if contract != nil {
+		listener, _ = contract["fixtureListener"].(*appListener)
+		delete(contract, "fixtureListener")
+	}
 	base, err := filepath.EvalSymlinks(t.TempDir())
 	if err != nil {
 		t.Fatal(err)
@@ -121,7 +127,8 @@ func newAppBed(t *testing.T, contract map[string]any) *appBed {
 	// A verb's start launches the engine's own `app serve`. Under `go test`
 	// this process is the test binary, so the tests supervise with the real
 	// engine this binary builds once.
-	bed := &appBed{t: t, root: root, installation: installation, app: app, reaping: map[int]bool{}, engine: testenv.Engine(t)}
+	bed := &appBed{t: t, root: root, installation: installation, app: app, reaping: map[int]bool{}, engine: testenv.Engine(t), listener: listener}
+	bed.fixtureEngine = bed.engine
 	bed.git("init", "--quiet", "--initial-branch=main")
 	bed.git("config", "user.email", "fixture@invalid")
 	bed.git("config", "user.name", "Fixture")
@@ -157,6 +164,7 @@ func (b *appBed) run(args ...string) (int, string) {
 	// clock: the supervisor reports ready or failed by the contract's own
 	// readiness, and the test's timeout bounds a supervisor that never does.
 	owners.appSupervisorWait = applaunch.WaitForReport
+	owners.appConfigure = b.configureRun
 	engine := b.engine
 	owners.appEngine = func() (string, error) { return engine, nil }
 	code := runIntentIn(command, rest, &stdout, &stderr, b.root, owners)
@@ -197,28 +205,38 @@ func (b *appBed) runJSON(args ...string) (int, map[string]any) {
 	return code, parsed
 }
 
-func appFreePort(t *testing.T) string {
+type appListener struct {
+	listener *net.TCPListener
+	address  string
+}
+
+func appHeldPort(t *testing.T) *appListener {
 	t.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
 	}
-	address := listener.Addr().String()
-	if err := listener.Close(); err != nil {
-		t.Fatal(err)
-	}
-	return address
+	held := &appListener{listener: listener.(*net.TCPListener), address: listener.Addr().String()}
+	t.Cleanup(func() { held.listener.Close() })
+	return held
 }
 
-func appHTTPContract(app, address string, extra ...string) map[string]any {
+func appHTTPContract(app string, address any, extra ...string) map[string]any {
+	var value string
+	var held *appListener
+	switch address := address.(type) {
+	case string:
+		value = address
+	case *appListener:
+		value, held = address.address, address
+	default:
+		panic("fixture address must be a string or held listener")
+	}
 	return map[string]any{
-		"name":      "fixture",
-		"address":   address,
-		"portRange": portRangeBeside(address),
+		"name": "fixture", "address": value, "fixtureListener": held,
+		"portRange": portRangeBeside(value),
 		"start":     map[string]any{"argv": append([]string{app, "--listen", "${address}"}, extra...)},
 		"ready":     map[string]any{"kind": "http", "url": "http://${address}/-/health"},
-		"readyMs":   20000,
-		"stopMs":    5000,
 	}
 }
 
@@ -258,10 +276,14 @@ func TestAppVerbsRefuseWithoutAContract(t *testing.T) {
 // separately and carries the data word; log reads what the engine captured;
 // stop proves death and the next status says stopped.
 func TestAppStartStatusLogAndStop(t *testing.T) {
-	address := appFreePort(t)
+	t.Parallel()
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address, "--ready-after", "400ms"))
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)
+	}
+	if !answered(address.address) {
+		t.Fatal("start returned before the application answered readiness")
 	}
 	code, out := bed.run("app", "status")
 	if code != 0 || !strings.Contains(out, "The application is running") || !appSays(out, "readiness", "answering") {
@@ -283,7 +305,7 @@ func TestAppStartStatusLogAndStop(t *testing.T) {
 	if code, out := bed.run("app", "status"); code != 0 || !strings.Contains(out, "No application run is recorded") {
 		t.Fatalf("after a proven stop the next status says stopped:\n%s", out)
 	}
-	if answered(address) {
+	if answered(address.address) {
 		t.Fatal("the application still answers after a proven stop")
 	}
 }
@@ -291,7 +313,7 @@ func TestAppStartStatusLogAndStop(t *testing.T) {
 // A second start rejoins the run that is live rather than starting a second
 // application, and still waits for readiness before it says so.
 func TestAppSecondStartRejoins(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)
@@ -300,7 +322,7 @@ func TestAppSecondStartRejoins(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("a second start must rejoin: %v", result)
 	}
-	if summary, _ := result["summary"].(string); !strings.Contains(summary, "already running at "+address) {
+	if summary, _ := result["summary"].(string); !strings.Contains(summary, "already running at "+address.address) {
 		t.Fatalf("a rejoin says so: %q", summary)
 	}
 	data, _ := result["data"].(map[string]any)
@@ -311,7 +333,7 @@ func TestAppSecondStartRejoins(t *testing.T) {
 
 // --at and --goal are two spellings of one thing.
 func TestAppAtAndGoalAreOneThing(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	code, out := bed.run("app", "status", "--at", "main", "--goal", "g1")
 	if code == 0 || !strings.Contains(out, "give one of them") {
@@ -329,27 +351,33 @@ func TestAppAtAndGoalAreOneThing(t *testing.T) {
 // A run at a commit gets a tree, an address and a state root of its own, and
 // the standing run's record is never touched by it.
 func TestAppRunAtARefRunsBesideTheStandingRun(t *testing.T) {
-	address := appFreePort(t)
-	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
+	t.Parallel()
+	ports := appAllocationPorts(t)
+	address := ports[0]
+	contract := appHTTPContract(appFixtureApp(t), address.address)
+	contract["portRange"] = appAllocationRange(ports)
+	bed := newAppBed(t, contract)
+	address.listener.Close()
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("standing start: %d\n%s", code, out)
 	}
 	t.Cleanup(func() { bed.run("app", "stop", "--at", "main", "--clean") })
+	ports[2].listener.Close()
 	code, candidate := bed.runJSON("app", "start", "--at", "main")
 	if code != 0 {
 		t.Fatalf("a run at a ref must start beside the standing run: %v", candidate)
 	}
 	candidateData, _ := candidate["data"].(map[string]any)
 	candidateAddress, _ := candidateData["address"].(string)
-	if candidateAddress == "" || candidateAddress == address {
-		t.Fatalf("a candidate takes an address of its own, got %q beside %q", candidateAddress, address)
+	if candidateAddress != ports[2].address {
+		t.Fatalf("a candidate takes an address of its own, got %q beside %q", candidateAddress, address.address)
 	}
-	if !answered(candidateAddress) || !answered(address) {
+	if !answered(candidateAddress) || !answered(address.address) {
 		t.Fatal("both runs must be answering")
 	}
 	_, standing := bed.runJSON("app", "status")
 	standingData, _ := standing["data"].(map[string]any)
-	if got, _ := standingData["address"].(string); got != address {
+	if got, _ := standingData["address"].(string); got != address.address {
 		t.Fatalf("the standing run's record was touched: %v", standingData)
 	}
 	if got, _ := standingData["state"].(string); got != "running" {
@@ -362,7 +390,7 @@ func TestAppRunAtARefRunsBesideTheStandingRun(t *testing.T) {
 
 // reset re-runs prepare; a contract with no prepare says reset is a restart.
 func TestAppResetRunsPrepareAgain(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	counter := filepath.Join(t.TempDir(), "prepared")
 	contract := appHTTPContract(appFixtureApp(t), address)
 	contract["prepare"] = map[string]any{"argv": []string{"sh", "-c", "echo run >> " + counter}}
@@ -387,7 +415,7 @@ func TestAppResetRunsPrepareAgain(t *testing.T) {
 }
 
 func TestAppResetWithoutPrepareIsARestart(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)
@@ -401,7 +429,7 @@ func TestAppResetWithoutPrepareIsARestart(t *testing.T) {
 // check answers that none is declared, and refuses a run that is not
 // answering rather than proving nothing.
 func TestAppCheckAnswersAndRefuses(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	// EM-09: nothing was checked, so it is not a success, and it names
 	// where a check is declared.
@@ -416,7 +444,7 @@ func TestAppCheckAnswersAndRefuses(t *testing.T) {
 		t.Fatalf("app log before any run: %d\n%s", code, out)
 	}
 
-	withCheck := appHTTPContract(appFixtureApp(t), appFreePort(t))
+	withCheck := appHTTPContract(appFixtureApp(t), appHeldPort(t))
 	withCheck["check"] = "app-smoke"
 	checked := newAppBed(t, withCheck)
 	code, out = checked.run("app", "check")
@@ -442,14 +470,16 @@ func TestAppCheckBridgesToTheTestingRunner(t *testing.T) {
 // An application that exits by itself leaves an ended record; log still
 // reads its log, and the next start closes that run before it begins.
 func TestAppRunThatEndsByItself(t *testing.T) {
+	exitGate, release := appExitGate(t)
 	bed := newAppBed(t, map[string]any{
 		"name":   "fixture",
-		"start":  map[string]any{"argv": []string{appFixtureApp(t), "--no-listen", "--exit-after", "600ms", "--exit-code", "4"}},
+		"start":  map[string]any{"argv": []string{appFixtureApp(t), "--no-listen", "--exit-fifo", exitGate, "--exit-code", "4"}},
 		"stopMs": 4000,
 	})
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)
 	}
+	release()
 	eventuallyTrue(t, "the run to end into an ended record", func() bool {
 		_, out := bed.run("app", "status")
 		return strings.Contains(out, "The application is ended")
@@ -478,7 +508,7 @@ func appSays(out, key, value string) bool {
 }
 
 func answered(address string) bool {
-	connection, err := net.DialTimeout("tcp", address, time.Second)
+	connection, err := net.Dial("tcp", address)
 	if err != nil {
 		return false
 	}
@@ -505,7 +535,7 @@ func eventuallyTrue(t *testing.T, what string, done func() bool) {
 // --goal G is sugar for the goal branch's tip, and a moved tip makes the
 // next start replace that run.
 func TestAppGoalRunFollowsItsBranchTip(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	// A goal run is closed only once its evidence is copied.
 	bed.withEvidenceRoot()
@@ -546,7 +576,7 @@ func TestAppGoalRunFollowsItsBranchTip(t *testing.T) {
 
 // --follow prints a stream, and a stream is not one JSON result.
 func TestAppLogFollowRefusesJSON(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)
@@ -565,7 +595,7 @@ func TestLaunchContractReadyValidatesWithItsTools(t *testing.T) {
 		t.Fatalf("a project with no contract is not a project with a problem: %v", err)
 	}
 
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	valid := appHTTPContract(appFixtureApp(t), address)
 	valid["tools"] = []any{map[string]any{"id": "git", "executable": "git", "versionArgs": []string{"--version"}}}
 	bed := newAppBed(t, valid)
@@ -580,7 +610,7 @@ func TestLaunchContractReadyValidatesWithItsTools(t *testing.T) {
 		t.Fatalf("unexpected contract %s %+v", path, contract)
 	}
 
-	missing := appHTTPContract(appFixtureApp(t), appFreePort(t))
+	missing := appHTTPContract(appFixtureApp(t), appHeldPort(t))
 	missing["tools"] = []any{map[string]any{"id": "nosuchjdk", "executable": "nosuchjdk-9999"}}
 	absentTool := newAppBed(t, missing)
 	if _, _, _, err := launchContractReady(absentTool.installation); err == nil || !strings.Contains(err.Error(), "nosuchjdk") {
@@ -599,7 +629,7 @@ func TestLaunchContractReadyValidatesWithItsTools(t *testing.T) {
 // executable found and its version line printed into the run's record.
 func TestAppStartPreflightsDeclaredTools(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "prepared")
-	missing := appHTTPContract(appFixtureApp(t), appFreePort(t))
+	missing := appHTTPContract(appFixtureApp(t), appHeldPort(t))
 	missing["prepare"] = map[string]any{"argv": []string{"sh", "-c", "echo run >> " + marker}}
 	missing["tools"] = []any{map[string]any{"id": "nosuchjdk", "executable": "nosuchjdk-9999", "versionArgs": []string{"-version"}}}
 	refused := newAppBed(t, missing)
@@ -614,7 +644,7 @@ func TestAppStartPreflightsDeclaredTools(t *testing.T) {
 		t.Fatalf("a refused preflight starts nothing:\n%s", status)
 	}
 
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	declared := appHTTPContract(appFixtureApp(t), address)
 	declared["tools"] = []any{map[string]any{"id": "git", "executable": "git", "versionArgs": []string{"--version"}}}
 	bed := newAppBed(t, declared)
@@ -674,8 +704,11 @@ func TestAppContractOfStartAloneWorksWithEveryVerb(t *testing.T) {
 // runs in each with that run's state root and address in its environment,
 // and the standing run's record is never touched.
 func TestAppAtMainBesideGoal(t *testing.T) {
-	address := appFreePort(t)
-	contract := appHTTPContract(appFixtureApp(t), address)
+	t.Parallel()
+	ports := appAllocationPorts(t)
+	address := ports[0]
+	contract := appHTTPContract(appFixtureApp(t), address.address)
+	contract["portRange"] = appAllocationRange(ports)
 	contract["build"] = map[string]any{"argv": []string{"sh", "-c", "git rev-parse HEAD > built.txt"}}
 	contract["prepare"] = map[string]any{"argv": []string{"sh", "-c",
 		`mkdir -p "$METASYSTEM_APP_STATE_ROOT" && echo "$METASYSTEM_APP_ADDRESS" >> "$METASYSTEM_APP_STATE_ROOT/prepared.txt"`}}
@@ -684,6 +717,7 @@ func TestAppAtMainBesideGoal(t *testing.T) {
 	// A goal run is closed only once its evidence is copied.
 	bed.withEvidenceRoot()
 	bed.git("branch", "goal/g1")
+	address.listener.Close()
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("standing start: %d\n%s", code, out)
 	}
@@ -693,9 +727,11 @@ func TestAppAtMainBesideGoal(t *testing.T) {
 	}
 	t.Cleanup(func() { bed.run("app", "stop", "--at", "main", "--clean") })
 	t.Cleanup(func() { bed.run("app", "stop", "--goal", "g1", "--clean") })
+	ports[2].listener.Close()
 	if code, out := bed.run("app", "start", "--at", "main"); code != 0 {
 		t.Fatalf("app start --at main: %d\n%s", code, out)
 	}
+	ports[3].listener.Close()
 	if code, out := bed.run("app", "start", "--goal", "g1"); code != 0 {
 		t.Fatalf("app start --goal g1: %d\n%s", code, out)
 	}
@@ -722,8 +758,11 @@ func TestAppAtMainBesideGoal(t *testing.T) {
 			t.Fatalf("run %s must answer at %s", record.Key, record.Address)
 		}
 	}
-	if main.Address == goal.Address || main.Address == address || goal.Address == address {
-		t.Fatalf("three runs, three addresses: standing %s, main %s, goal %s", address, main.Address, goal.Address)
+	if main.Address != ports[2].address || goal.Address != ports[3].address {
+		t.Fatalf("the production range walk chose main %s and goal %s; want %s and %s", main.Address, goal.Address, ports[2].address, ports[3].address)
+	}
+	if main.Address == goal.Address || main.Address == address.address || goal.Address == address.address {
+		t.Fatalf("three runs, three addresses: standing %s, main %s, goal %s", address.address, main.Address, goal.Address)
 	}
 	if main.StateRoot == goal.StateRoot || main.StateRoot == bed.installation || goal.StateRoot == bed.installation {
 		t.Fatalf("each run has a state root of its own: %s %s", main.StateRoot, goal.StateRoot)
@@ -735,7 +774,7 @@ func TestAppAtMainBesideGoal(t *testing.T) {
 	if err != nil || !bytes.Equal(standingBefore, standingAfter) {
 		t.Fatalf("the standing record was touched by another run's start:\n%s\n%s", standingBefore, standingAfter)
 	}
-	if !answered(address) {
+	if !answered(address.address) {
 		t.Fatal("the standing run still answers")
 	}
 }
@@ -767,7 +806,7 @@ func (turns *followTurns) Done() <-chan struct{} {
 // log --follow prints the captured tail and then what the application writes
 // after it, until it is interrupted.
 func TestAppLogFollow(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	if code, out := bed.run("app", "start"); code != 0 {
 		t.Fatalf("app start: %d\n%s", code, out)
@@ -799,7 +838,7 @@ func TestAppLogFollow(t *testing.T) {
 // run's address, and the verdict and its time are written on the run's
 // record; a run that is alive and not answering is refused in words.
 func TestAppCheckRecordsItsVerdict(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	contract := appHTTPContract(appFixtureApp(t), address)
 	contract["check"] = "app-smoke"
 	bed := newAppBed(t, contract)
@@ -816,14 +855,14 @@ func TestAppCheckRecordsItsVerdict(t *testing.T) {
 		t.Fatalf("app check: %d\n%s", code, out)
 	}
 	joined := strings.Join(handed, " ")
-	if !strings.Contains(joined, "internal test run") || !strings.Contains(joined, "--mode canary --groups app-smoke --no-reuse --app-address "+address) {
+	if !strings.Contains(joined, "internal test run") || !strings.Contains(joined, "--mode canary --groups app-smoke --no-reuse --app-address "+address.address) {
 		t.Fatalf("the check is the testing runner's named-group form with the run's address: %q", joined)
 	}
 	record, err := applaunch.ReadRecord(bed.installation, applaunch.StandingKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if record.Check == nil || record.Check.Group != "app-smoke" || record.Check.Verdict != "pass" || record.Check.At == "" || record.Check.Address != address {
+	if record.Check == nil || record.Check.Group != "app-smoke" || record.Check.Verdict != "pass" || record.Check.At == "" || record.Check.Address != address.address {
 		t.Fatalf("the verdict and its time are written on the run record: %+v", record.Check)
 	}
 	if _, status := bed.run("app", "status"); !appSays(status, "check", "app-smoke pass at ") {
@@ -834,7 +873,7 @@ func TestAppCheckRecordsItsVerdict(t *testing.T) {
 	// that starts with its process and could run out before a loaded host
 	// finished starting it.
 	darkFile := filepath.Join(t.TempDir(), "dark")
-	dark := appHTTPContract(appFixtureApp(t), appFreePort(t), "--dark-file", darkFile)
+	dark := appHTTPContract(appFixtureApp(t), appHeldPort(t), "--dark-file", darkFile)
 	dark["check"] = "app-smoke"
 	darkBed := newAppBed(t, dark)
 	darkBed.testRun = bed.testRun
@@ -859,9 +898,10 @@ func TestAppCheckRecordsItsVerdict(t *testing.T) {
 // evidence root under the goal: at stop, and at the next start of that ref
 // where the run had ended by itself, before the record is removed.
 func TestAppGoalRunEvidenceIsCopiedBeforeItsRecordIsRemoved(t *testing.T) {
+	exitGate, release := appExitGate(t)
 	bed := newAppBed(t, map[string]any{
 		"name":   "fixture",
-		"start":  map[string]any{"argv": []string{appFixtureApp(t), "--no-listen", "--exit-after", "600ms", "--exit-code", "5"}},
+		"start":  map[string]any{"argv": []string{appFixtureApp(t), "--no-listen", "--exit-fifo", exitGate, "--exit-code", "5"}},
 		"stopMs": 4000,
 	})
 	evidence := t.TempDir()
@@ -878,6 +918,7 @@ func TestAppGoalRunEvidenceIsCopiedBeforeItsRecordIsRemoved(t *testing.T) {
 	if code, out := bed.run("app", "start", "--goal", "g1"); code != 0 {
 		t.Fatalf("app start --goal g1: %d\n%s", code, out)
 	}
+	release()
 	eventuallyTrue(t, "the goal's run to end by itself", func() bool {
 		_, out := bed.run("app", "status", "--goal", "g1")
 		return strings.Contains(out, "The application is ended")
@@ -944,7 +985,7 @@ func TestAppAddressIsOneNamedDiagnosticGroupsInput(t *testing.T) {
 // A moved ref makes the next start replace the run even while the old one is
 // live: a review must never be shown the commit before the one it asked for.
 func TestAppStartReplacesALiveRunWhoseTipMoved(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	// A goal run is closed only once its evidence is copied.
 	bed.withEvidenceRoot()
@@ -988,7 +1029,7 @@ func TestAppStartReplacesALiveRunWhoseTipMoved(t *testing.T) {
 // the engine's installation: a prepare that clears its state root must not
 // be able to clear the engine.
 func TestAppStandingPrepareGetsAStateRootOfItsOwn(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	contract := appHTTPContract(appFixtureApp(t), address)
 	contract["prepare"] = map[string]any{"argv": []string{"sh", "-c",
 		`mkdir -p "$METASYSTEM_APP_STATE_ROOT" && echo "$METASYSTEM_APP_STATE_ROOT" > "$METASYSTEM_APP_STATE_ROOT/where.txt"`}}

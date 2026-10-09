@@ -11,8 +11,135 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
+
+type observerRepository struct {
+	goal.Repository
+	capture func() (string, error)
+	release func()
+	err     error
+}
+
+func (r observerRepository) Capture(string) (string, error)  { return r.capture() }
+func (r observerRepository) Accepted() (string, bool, error) { return "", false, r.err }
+func (r observerRepository) Release(string) error {
+	if r.release != nil {
+		r.release()
+	}
+	return nil
+}
+
+func TestGoalLedgerObserverUsesInjectedDeadline(t *testing.T) {
+	t.Parallel()
+	for _, fetch := range []bool{false, true} {
+		t.Run(map[bool]string{false: "offline", true: "fetch"}[fetch], func(t *testing.T) {
+			t.Parallel()
+			failure := errors.New("fixture ledger unavailable")
+			deadlines := make(chan time.Duration, 1)
+			endpoint := goal.Endpoint{Repository: observerRepository{
+				err: failure, capture: func() (string, error) {
+					if !fetch {
+						t.Error("offline observation fetched")
+					}
+					return "", failure
+				},
+			}, ProjectionDeadline: func(wait time.Duration) <-chan time.Time {
+				deadlines <- wait
+				return make(chan time.Time)
+			}}
+			observe := goalLedgerObserver(func() time.Time { return boundNow }, func(installation string) (goal.Endpoint, error) {
+				if installation != "fixture-installation" {
+					t.Errorf("installation=%q", installation)
+				}
+				return endpoint, nil
+			})
+			view, err := observe(context.Background(), "fixture-installation", fetch)
+			if !errors.Is(err, failure) || view.Tip != "" || len(view.States) != 0 {
+				t.Fatalf("failed observation view=%+v err=%v", view, err)
+			}
+			if fetch {
+				select {
+				case wait := <-deadlines:
+					if wait != 4*time.Second {
+						t.Fatalf("projection budget=%s; want 4s", wait)
+					}
+				default:
+					t.Fatal("fresh observation bypassed its injected deadline")
+				}
+			}
+			if len(deadlines) != 0 {
+				t.Fatal("observation armed an unexpected deadline")
+			}
+		})
+	}
+}
+
+func TestGoalLedgerObserverAbandonsProjectionOnDeadlineOrCancellation(t *testing.T) {
+	t.Parallel()
+	for _, cancelPass := range []bool{false, true} {
+		t.Run(map[bool]string{false: "projection deadline", true: "pass cancellation"}[cancelPass], func(t *testing.T) {
+			t.Parallel()
+			started, release, finished := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			deadline := make(chan time.Time)
+			deadlines := make(chan time.Duration, 1)
+			endpoint := goal.Endpoint{Repository: observerRepository{
+				capture: func() (string, error) {
+					close(started)
+					<-release
+					return "", errors.New("fixture fetch released")
+				}, release: func() { close(finished) },
+			}, ProjectionDeadline: func(wait time.Duration) <-chan time.Time {
+				deadlines <- wait
+				return deadline
+			}}
+			observe := goalLedgerObserver(func() time.Time { return boundNow }, func(string) (goal.Endpoint, error) { return endpoint, nil })
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			t.Cleanup(func() { close(release); <-finished })
+			type answer struct {
+				view LedgerView
+				err  error
+			}
+			done := make(chan answer, 1)
+			go func() {
+				view, err := observe(ctx, "fixture-installation", true)
+				done <- answer{view, err}
+			}()
+			<-started
+			select {
+			case wait := <-deadlines:
+				if wait != 4*time.Second {
+					t.Fatalf("projection budget=%s; want 4s", wait)
+				}
+			default:
+				t.Fatal("fresh observation bypassed its injected deadline")
+			}
+			select {
+			case result := <-done:
+				t.Fatalf("observation returned before its deadline or cancellation: %+v", result)
+			default:
+			}
+			if cancelPass {
+				cancel()
+			} else {
+				close(deadline)
+			}
+			result := <-done
+			if result.view.Tip != "" || len(result.view.States) != 0 {
+				t.Fatalf("abandoned observation returned ledger facts: %+v", result.view)
+			}
+			if cancelPass {
+				if !errors.Is(result.err, context.Canceled) {
+					t.Fatalf("pass cancellation error=%v", result.err)
+				}
+			} else if result.err == nil || !strings.Contains(result.err.Error(), "fetch timed out after 4s") {
+				t.Fatalf("projection deadline error=%v", result.err)
+			}
+		})
+	}
+}
 
 // noCitations answers the citation clause with nothing cited.
 type noCitations struct{}

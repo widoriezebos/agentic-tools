@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"io"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"syscall"
 	"testing"
@@ -134,17 +133,15 @@ func TestRunUtilHoldRefusesMismatchedExactOwner(t *testing.T) {
 // The verb must survive until its termination signal, then acknowledge the
 // orderly stop in the stopped file and exit 0.
 func TestRunUtilHoldWritesStoppedFileOnTerm(t *testing.T) {
-	// Registering our own handler first keeps an early SIGTERM from killing
-	// the test process before the verb has installed its handler.
-	guard := make(chan os.Signal, 1)
-	signal.Notify(guard, syscall.SIGTERM)
-	defer signal.Stop(guard)
+	t.Parallel()
+	signals := make(chan os.Signal, 1)
 
 	stopped := filepath.Join(t.TempDir(), "child.stopped")
 	ready := make(chan struct{})
 	expiry := make(chan time.Time, 1)
 	deps := fixtureLifetimeTestDependencies(nil, func(time.Duration) <-chan time.Time { return expiry }, nil)
 	deps.ready = func() { close(ready) }
+	deps.signals = signals
 	done := make(chan int, 1)
 	finished := false
 	go func() {
@@ -162,9 +159,7 @@ func TestRunUtilHoldWritesStoppedFileOnTerm(t *testing.T) {
 		finished = true
 		t.Fatalf("hold exited with %d before acknowledging signal readiness", code)
 	}
-	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
-		t.Fatal(err)
-	}
+	signals <- syscall.SIGTERM
 	code := <-done
 	finished = true
 	if code != 0 {

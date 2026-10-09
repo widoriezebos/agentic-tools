@@ -343,7 +343,12 @@ func landCarriedWithOwners(owners landpath.Owners, request landpath.LandRequest)
 	return intentProcessResult{stdout: stdout.Bytes(), stderr: stderr.Bytes(), code: code}
 }
 
-func defaultIntentDeliveryOwners() *intentDeliveryOwners {
+func defaultIntentDeliveryOwners(options ...goalBranchSweepOptions) *intentDeliveryOwners {
+	var dependencies goalBranchSweepOptions
+	if len(options) > 0 {
+		dependencies = options[0]
+	}
+	deadline := dependencies.Deadline
 	return &intentDeliveryOwners{
 		recordWriter:  recordWriterPreflight,
 		ownerEnvelope: runIntentOwnerEnvelope,
@@ -351,26 +356,32 @@ func defaultIntentDeliveryOwners() *intentDeliveryOwners {
 		closeOwner:    inProcessCloseOwner,
 		executable:    os.Executable,
 		branchRead: func(args []string) (branch.BranchReadResult, int, error) {
-			return goalBranchReadRun(args, goalBranchReadDependencies{})
+			return goalBranchReadRun(args, goalBranchReadDependencies{ProjectionDeadline: deadline})
 		},
-		branchState:      productionIntentBranchState,
+		branchState: func(root, id string) (intentBranchState, error) {
+			return intentBranchStateWithDeadline(root, id, deadline)
+		},
 		transferCoverage: branch.VerifyTransferCoverage,
 		trailerWorktree:  productionTrailerWorktree,
 		landPrep: func(args []string) (goalBranchLandPrepOutcome, int, error) {
-			return goalBranchLandPrepRun(args, goalBranchLandPrepDependencies{Prepare: branch.PrepareLanding,
+			return goalBranchLandPrepRun(args, goalBranchLandPrepDependencies{ProjectionDeadline: deadline, Prepare: branch.PrepareLanding,
 				LoadContract: func(root string) (testpolicy.Contract, error) {
 					_, contract, _, err := testrun.LoadContract(root)
 					return contract, err
 				}})
 		},
 		landCandidate: func(args []string) (goalBranchLandPrepOutcome, int, error) {
-			return goalBranchLandPrepRun(args, goalBranchLandPrepDependencies{CandidateOnly: true, Prepare: branch.PrepareLanding})
+			return goalBranchLandPrepRun(args, goalBranchLandPrepDependencies{ProjectionDeadline: deadline, CandidateOnly: true, Prepare: branch.PrepareLanding})
 		},
-		sweep:       goalBranchSweepLanded,
+		sweep: func(root, id, landing string) error {
+			return goalBranchSweepLanded(root, id, landing, dependencies)
+		},
 		publishRead: goalBranchPublishRead,
-		landPush:    goalBranchLandPushRun,
-		laneRoot:    productionIntentLaneRoot,
-		now:         func() time.Time { return time.Now().UTC() },
+		landPush: func(args []string) (branch.PreparedLanding, string, int, error) {
+			return goalBranchLandPushRun(args, dependencies)
+		},
+		laneRoot: productionIntentLaneRoot,
+		now:      func() time.Time { return time.Now().UTC() },
 	}
 }
 

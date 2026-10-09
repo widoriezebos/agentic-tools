@@ -171,6 +171,13 @@ type appRun struct {
 	// supervisorWait replaces the launcher's wait for the supervisor's
 	// answer; zero is the contract's readiness wait plus ten seconds.
 	supervisorWait time.Duration
+	// stopWait bounds stop and a failed supervisor's settlement.
+	stopWait time.Duration
+	// allocate and spawn keep listener custody with the invocation.
+	allocate   func(*appRun) error
+	spawn      applaunch.Spawn
+	extraFiles []*os.File
+	probe      func(applaunch.Contract, string) error
 	// engine names the engine that supervises this run; nil is this
 	// executable, as `ui start` launches this executable.
 	engine func() (string, error)
@@ -203,7 +210,11 @@ func resolveAppRun(roots lifecycle.Roots, contract applaunch.Contract, contractP
 func (r appRun) preparedMarker() string { return filepath.Join(r.runDir, "prepared") }
 
 func (r appRun) readOptions() applaunch.ReadOptions {
-	return applaunch.ReadOptions{Probe: applaunch.ProbeOnce}
+	probe := r.probe
+	if probe == nil {
+		probe = applaunch.ProbeOnce
+	}
+	return applaunch.ReadOptions{Probe: probe}
 }
 
 func (r appRun) status() (applaunch.Status, error) {
@@ -368,6 +379,9 @@ func (r appRun) prepareData(out io.Writer, force bool) error {
 // other run one of its own from the range. A port a contract cannot give, or
 // one another process holds, is named, not guessed.
 func (r *appRun) allocateAddress() error {
+	if r.allocate != nil {
+		return r.allocate(r)
+	}
 	if r.contract.Address == "" {
 		r.address = ""
 		return nil
@@ -516,13 +530,21 @@ func (r appRun) launchSupervisor() (string, error) {
 		Args:       applaunch.ServeArgs(r.roots.Checkout, r.roots.Installation.Path(), r.key, r.ref, r.goal, r.address),
 		Dir:        r.roots.Checkout,
 		LogPath:    filepath.Join(applaunch.Dir(r.roots.Installation.Path()), r.key+".launch.log"),
+		ExtraFiles: r.extraFiles,
 	}
 	wait := time.Duration(r.contract.ReadyWaitMS())*time.Millisecond + 10*time.Second
 	if r.supervisorWait != 0 {
 		wait = r.supervisorWait
 	}
-	address, _, err := applaunch.LaunchSupervisor(spec, applaunch.ExecSpawn, wait,
-		time.Duration(r.contract.StopWaitMS())*time.Millisecond+5*time.Second)
+	spawn := r.spawn
+	if spawn == nil {
+		spawn = applaunch.ExecSpawn
+	}
+	settle := time.Duration(r.contract.StopWaitMS())*time.Millisecond + 5*time.Second
+	if r.stopWait > 0 {
+		settle = r.stopWait
+	}
+	address, _, err := applaunch.LaunchSupervisor(spec, spawn, wait, settle)
 	return address, err
 }
 
@@ -530,6 +552,10 @@ func (r appRun) launchSupervisor() (string, error) {
 // application for its life. It is internal because a person never types it;
 // `app start` launches it the way `ui start` launches the interface.
 func runAppServe(args []string, stdout, stderr io.Writer) int {
+	return runAppServeWithDependencies(args, stdout, stderr, nil)
+}
+
+func runAppServeWithDependencies(args []string, stdout, stderr io.Writer, configure func(*applaunch.SuperviseOptions)) int {
 	flags := newFlagSet("app serve", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout path (default: the checkout that contains the installation)")
 	root := flags.String("metasystem-root", "", "metasystem installation")
@@ -592,7 +618,7 @@ func runAppServe(args []string, stdout, stderr io.Writer) int {
 	seed.Tools = tools
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
-	err = applaunch.Supervise(applaunch.SuperviseOptions{
+	options := applaunch.SuperviseOptions{
 		Context:     ctx,
 		StateRoot:   roots.Installation.Path(),
 		Seed:        seed,
@@ -601,7 +627,11 @@ func runAppServe(args []string, stdout, stderr io.Writer) int {
 		Environment: run.environment(),
 		Ready:       func(address string) { report("ready " + address) },
 		Failed:      func(message string) { report("failed " + message) },
-	})
+	}
+	if configure != nil {
+		configure(&options)
+	}
+	err = applaunch.Supervise(options)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

@@ -332,10 +332,8 @@ func TestSuperviseStaysTheOwnerWhileItsGroupHasMembers(t *testing.T) {
 	default:
 	}
 	cancel()
-	select {
-	case <-done:
-	case <-time.After(20 * time.Second):
-		t.Fatal("the supervisor did not finish")
+	if err := <-done; err != nil {
+		t.Fatal(err)
 	}
 	sending.Lock()
 	ended := append([]string(nil), sent...)

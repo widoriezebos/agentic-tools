@@ -34,7 +34,7 @@ func evidenceCopies(evidence, goal, ref string) []string {
 // --at goal/G is the same run as --goal G, so a stop through either spelling
 // copies the goal run's evidence: the record's own goal decides.
 func TestAppStopThroughTheAtSpellingCopiesTheGoalRunsEvidence(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	evidence := bed.withEvidenceRoot()
 	bed.git("branch", "goal/g1")
@@ -54,7 +54,7 @@ func TestAppStopThroughTheAtSpellingCopiesTheGoalRunsEvidence(t *testing.T) {
 // A run started through --at goal/G records the goal as --goal G does, so a
 // stop through the same spelling copies the goal run's evidence.
 func TestAppStartThroughTheAtSpellingRecordsTheGoal(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	evidence := bed.withEvidenceRoot()
 	bed.git("branch", "goal/g1")
@@ -79,7 +79,7 @@ func TestAppStartThroughTheAtSpellingRecordsTheGoal(t *testing.T) {
 // evidence root (a relative one; an unset root has a default) the process is
 // ended, the record survives, and the next stop with a valid root closes it.
 func TestAppGoalRunWithAnInvalidEvidenceRootIsNotClosed(t *testing.T) {
-	address := appFreePort(t)
+	address := appHeldPort(t)
 	bed := newAppBed(t, appHTTPContract(appFixtureApp(t), address))
 	bed.git("branch", "goal/g1")
 	t.Cleanup(func() { bed.run("app", "stop", "--goal", "g1", "--clean") })

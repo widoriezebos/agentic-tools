@@ -12,9 +12,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 )
@@ -515,10 +517,15 @@ func TestIntentManualWorkLandsOnEndpoint(t *testing.T) {
 		t.Fatalf("decisions, close, collection and publication: code=%d %+v", code, result)
 	}
 	owners := j.owners
+	owners.dependencies.projectionDeadline = neverProjectionDeadline
+	owners.disk.processes = identity.ListedProcessTable{}
 	owners.connection.rebase = func(branch.RebaseRequest) (branch.RebaseResult, error) {
 		return branch.RebaseResult{State: "held"}, nil
 	}
-	delivery := belowTheGate(defaultIntentDeliveryOwners())
+	sweepCensusCalls := 0
+	fixtureCensus := func() *diskstore.UseCensus { return &diskstore.UseCensus{Taken: true} }
+	delivery := belowTheGate(defaultIntentDeliveryOwners(goalBranchSweepOptions{Deadline: checkedProjectionDeadline(t), Census: func() *diskstore.UseCensus { sweepCensusCalls++; return fixtureCensus() }}))
+	owners.disk.census = fixtureCensus
 	delivery.branchRead = owners.delivery.branchRead
 	realProcess := owners.delivery.process
 	var proved []string
@@ -542,6 +549,9 @@ func TestIntentManualWorkLandsOnEndpoint(t *testing.T) {
 	var landed intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &landed); err != nil {
 		t.Fatalf("land printed no result: %v; %q %q", err, stdout.String(), stderr.String())
+	}
+	if sweepCensusCalls == 0 {
+		t.Fatal("manual landing did not use the fixture worktree census")
 	}
 	main := connectionGit(t, root, "--git-dir", c.origin, "rev-parse", "refs/heads/main")
 	if code != 0 || landed.Outcome != intentConfirmed || len(proved) == 0 || main == j.baseline {

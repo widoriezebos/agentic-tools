@@ -45,6 +45,8 @@ func (f PublicationCaptureFailure) Unwrap() error { return f.Cause }
 
 // Endpoint is the resolved synchronization endpoint.
 type Endpoint struct {
+	// ProjectionDeadline supplies fresh-read deadlines; nil uses production timers.
+	ProjectionDeadline func(time.Duration) <-chan time.Time
 	// SplitConfirmed requests child approval after a committed split; delivery
 	// failures belong to the channel owner and never undo goal publication.
 	SplitConfirmed         func(Endpoint, string, string, time.Time)

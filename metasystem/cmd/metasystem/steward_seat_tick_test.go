@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgoal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
@@ -159,13 +160,38 @@ func TestStewardTickStartsASeatLaunch(t *testing.T) {
 	launcher.laneRoot = func() (string, bool, error) { return filepath.Join(t.TempDir(), "landing"), true, nil }
 	workStateRoot := t.TempDir()
 	providerHome := testprovider.Register(t, install)
-	config := steward.TickConfig{Now: now, Seat: launcher, WorkStateRoot: workStateRoot, ProviderHome: providerHome}
+	files := map[string][]byte{}
+	for _, path := range []string{"plans/goals/backlog.md", "plans/goals/fix-docs.md"} {
+		data, err := os.ReadFile(filepath.Join(install, filepath.FromSlash(path)))
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[path] = data
+	}
+	repository := testgoal.New(files, now, strings.Repeat("a", 40))
+	var projections, deadlines int
+	endpoint := goal.Endpoint{Root: install, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: repository}
+	endpoint.ProjectionDeadline = func(wait time.Duration) <-chan time.Time {
+		deadlines++
+		if wait != 4*time.Second {
+			t.Errorf("seat ledger deadline=%s; want 4s", wait)
+		}
+		return make(chan time.Time)
+	}
+	project := func(root string, at time.Time) (goal.Projection, error) {
+		projections++
+		if root != install || !at.Equal(now) {
+			t.Errorf("seat ledger read=%s at %s; want %s at %s", root, at, install, now)
+		}
+		return goal.ProjectWithDeadline(endpoint, true, at, endpoint.ProjectionDeadline)
+	}
+	config := steward.TickConfig{Now: now, RunnerClock: &steward.HandoffClock{Now: func() time.Time { return now }, Sleep: func(d time.Duration) { now = now.Add(d) }}, GoalProjection: project, Seat: launcher, WorkStateRoot: workStateRoot, ProviderHome: providerHome}
 
 	// The same checkout registered as the host's landing lane starts no
 	// seat: the tick keeps today's notification (Amendment 1).
 	asLane := launcher
 	asLane.laneRoot = func() (string, bool, error) { return top, true, nil }
-	if held, err := steward.RunTick(install, steward.TickConfig{Now: now, Seat: asLane, WorkStateRoot: workStateRoot, ProviderHome: providerHome}, seatTickCensus{}); err != nil ||
+	if held, err := steward.RunTick(install, steward.TickConfig{Now: now, GoalProjection: project, Seat: asLane, WorkStateRoot: workStateRoot, ProviderHome: providerHome}, seatTickCensus{}); err != nil ||
 		held.Seat != nil || held.Decision.Action != steward.ActNotify {
 		t.Fatalf("the landing lane's tick starts no seat: %+v %+v %v", held.Decision, held.Seat, err)
 	}
@@ -212,6 +238,9 @@ func TestStewardTickStartsASeatLaunch(t *testing.T) {
 	}
 	if seat.Goal != "fix-docs" || seat.Machine != "m1" || seat.ApprovalOpid == "" {
 		t.Fatalf("the steward's seat record names the goal, the machine and the approval: %+v", seat)
+	}
+	if projections < 4 || deadlines != projections {
+		t.Fatalf("seat fixture ledger reads=%d deadlines=%d; want both ticks and start rechecks through the fixture", projections, deadlines)
 	}
 	if top, err := stateroot.RepositoryTop(install); err != nil || top != record.WorkingDirectory {
 		t.Fatalf("the working directory is the Git top of the installation: %q %v", top, err)

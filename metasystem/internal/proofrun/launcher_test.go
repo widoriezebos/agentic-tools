@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -112,6 +113,39 @@ func (c *testCreationClaim) isClosed() bool {
 }
 
 func TestLaunchSuiteWritesBannerProgressAndReapsWatchdog(t *testing.T) {
+	t.Parallel()
+	if done := os.Getenv("PROOFRUN_BANNER_WATCHDOG_DONE"); done != "" {
+		root := os.Getenv("PROOFRUN_BANNER_WATCHDOG_ROOT")
+		ticks := make(chan time.Time)
+		finished := make(chan error, 1)
+		go func() {
+			finished <- RunWatchdog(WatchdogOptions{
+				Suite: "fixture", Root: root, ProgressPath: filepath.Join(root, "progress.jsonl"), DonePath: done,
+				LogPaths: []string{strings.TrimSuffix(done, ".done")}, SuiteIdentity: identity.Ref{Pid: 7, StartedAtSec: 8},
+				Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+				Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+				Prober: pidProbe{started: 8}, Now: func() time.Time { return watchdogFixtureNow },
+				NewTicker: func(time.Duration) (<-chan time.Time, func()) { return ticks, func() {} },
+				Signal:    func(int, syscall.Signal) error { t.Error("the progressing suite was signalled"); return nil },
+				Shutdown:  func() error { t.Error("supervision was shut down"); return nil },
+			})
+		}()
+		testenv.Await(t, "the launcher’s watchdog done file", func() bool { return suiteDone(done) })
+		var result error
+		testenv.Await(t, "the watchdog to observe completion", func() bool {
+			select {
+			case result = <-finished:
+				return true
+			case ticks <- watchdogFixtureNow:
+			default:
+			}
+			return false
+		})
+		if result != nil {
+			t.Fatal(result)
+		}
+		return
+	}
 	root := t.TempDir()
 	watchdog := filepath.Join(root, "watchdog.sh")
 	writeExecutable(t, watchdog, `#!/usr/bin/env bash
@@ -119,16 +153,17 @@ done_path=
 while (($#)); do
   if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
 done
-while [[ ! -e "$done_path" ]]; do sleep 0.01; done
+export PROOFRUN_BANNER_WATCHDOG_DONE="$done_path"
+exec "$PROOFRUN_BANNER_TEST_BINARY" -test.run='^TestLaunchSuiteWritesBannerProgressAndReapsWatchdog$' -test.timeout=30m
 `)
 	progress := filepath.Join(root, "progress.jsonl")
 	ownerPath := filepath.Join(root, "run-owner")
 	logPath := filepath.Join(root, "logs", "suite.log")
 	banner := "suite-cost suite=fixture witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log"
-	sectionCommand := `printf '{"suite":"fixture","section":"only","event":"start","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"
+	sectionCommand := `printf '{"suite":"fixture","section":"only","event":"start","at":"%s","depth":0}\n' "$PROOFRUN_BANNER_AT" >>"$1"
 printf '%s' "$METASYSTEM_RUN_OWNER" >"$2"
 echo suite-output
-printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"`
+printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n' "$PROOFRUN_BANNER_AT" >>"$1"`
 	var output bytes.Buffer
 	var errors bytes.Buffer
 	result := LaunchSuite(LaunchOptions{
@@ -138,8 +173,10 @@ printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n
 		Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
 		Poll: 10 * time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
 		WatchdogExecutable: watchdog, Command: []string{"bash", "-c", sectionCommand, "fixture", progress, ownerPath},
-		Environment: []string{"PATH=" + os.Getenv("PATH")},
-		Output:      &output, ErrorOutput: &errors,
+		Environment: append(os.Environ(), "PROOFRUN_BANNER_TEST_BINARY="+os.Args[0],
+			"PROOFRUN_BANNER_WATCHDOG_ROOT="+root, "PROOFRUN_BANNER_AT="+watchdogFixtureNow.Format(time.RFC3339)),
+		Prober: pidProbe{started: watchdogFixtureNow.Unix()}, Now: func() time.Time { return watchdogFixtureNow },
+		Output: &output, ErrorOutput: &errors,
 	})
 	if result != 0 {
 		t.Fatalf("result = %d, output = %q, errors = %q", result, output.String(), errors.String())
@@ -513,6 +550,7 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 	var signals []syscall.Signal
 	var problems bytes.Buffer
 	fixed := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
+	stopClock := fixed
 	result := LaunchSuite(LaunchOptions{
 		Suite: "second-fence-error", Root: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		ProgressPath: filepath.Join(root, "progress.jsonl"), LogPath: filepath.Join(root, "suite.log"),
@@ -521,6 +559,10 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 		TermGrace: 5 * time.Millisecond, KillGrace: time.Second, WatchdogExecutable: watchdog,
 		Command:     []string{"bash", "-c", `trap '' TERM; printf 'ready\n' >"$1"; exec tail -f /dev/null`, "fixture", ready},
 		ErrorOutput: &problems, Now: func() time.Time { return fixed },
+		StopNow: func() time.Time {
+			stopClock = stopClock.Add(5 * time.Millisecond)
+			return stopClock
+		},
 		FenceReader: func(string) (stopfence.Record, error) {
 			reads++
 			if reads == 1 {
@@ -542,11 +584,33 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 		},
 		Signal: func(target int, signal syscall.Signal) error {
 			signals = append(signals, signal)
-			return syscall.Kill(target, signal)
+			var killedRef identity.Ref
+			if signal == syscall.SIGKILL && target < 0 {
+				exact, state, err := (identity.KernelProber{}).Probe(int64(-target))
+				if err != nil {
+					return err
+				}
+				if state == identity.Alive {
+					killedRef = exact.Ref()
+				}
+			}
+			if err := syscall.Kill(target, signal); err != nil {
+				return err
+			}
+			if killedRef.Pid > 0 {
+				// Signal delivery and reaping finish on kernel evidence, not a grace deadline.
+				testenv.Await(t, "the killed suite to be dead", func() bool {
+					return identity.AliveRef(identity.KernelProber{}, killedRef) == identity.Dead
+				})
+			}
+			return nil
 		},
 	})
 	if result != 1 || reads != 2 || !claim.isClosed() || !strings.Contains(problems.String(), "controlled second fence read failure") {
 		t.Fatalf("result=%d reads=%d claimClosed=%t signals=%v errors=%q", result, reads, claim.isClosed(), signals, problems.String())
+	}
+	if !stopClock.After(fixed) {
+		t.Fatal("cleanup did not use its independent grace clock")
 	}
 	termAt, killAt := -1, -1
 	for index, signal := range signals {

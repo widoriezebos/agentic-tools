@@ -73,3 +73,26 @@ func TestAwaitOrReportsWhatItsGiveUpGathers(t *testing.T) {
 		t.Fatalf("gathered=%d failures=%q, want the give-up's report in the one failure", gathered, recorder.failures)
 	}
 }
+
+type awaitDeadline struct {
+	deadline time.Time
+	bounded  bool
+}
+
+func (d awaitDeadline) Deadline() (time.Time, bool) { return d.deadline, d.bounded }
+
+func TestDeadlineRemainingPreservesExpiredDeadline(t *testing.T) {
+	t.Parallel()
+	remaining, bounded := DeadlineRemaining(awaitDeadline{bounded: true})
+	if !bounded || remaining >= 0 {
+		t.Fatalf("expired deadline remaining=%s bounded=%t, want a negative duration and a bound", remaining, bounded)
+	}
+}
+
+func TestDeadlineRemainingWithoutDeadlineIsUnbounded(t *testing.T) {
+	t.Parallel()
+	remaining, bounded := DeadlineRemaining(awaitDeadline{})
+	if bounded || remaining != 0 {
+		t.Fatalf("absent deadline remaining=%s bounded=%t, want zero and no bound", remaining, bounded)
+	}
+}

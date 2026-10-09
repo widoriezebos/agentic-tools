@@ -37,6 +37,8 @@ type LaunchSpec struct {
 	Args       []string
 	Dir        string
 	LogPath    string
+	// ExtraFiles follow the readiness descriptor in the detached child.
+	ExtraFiles []*os.File
 }
 
 type Child interface {
@@ -103,7 +105,7 @@ func ExecSpawn(spec LaunchSpec) (Child, error) {
 	command.Stdin = nullInput
 	command.Stdout = log
 	command.Stderr = log
-	command.ExtraFiles = []*os.File{readyWrite}
+	command.ExtraFiles = append([]*os.File{readyWrite}, spec.ExtraFiles...)
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	if err := command.Start(); err != nil {
 		_ = log.Close()

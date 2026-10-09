@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/snapshot"
 )
@@ -202,6 +203,9 @@ func TestANeverFetchedServerIsToldFromOneThatFetchedNothing(t *testing.T) {
 func TestTheOwnerRunsOnTheTicksItIsGiven(t *testing.T) {
 	t.Parallel()
 	drive := newDriver()
+	announced := make(chan struct{}, 2)
+	announce := drive.owner.Announce
+	drive.owner.Announce = func() { announce(); announced <- struct{}{} }
 	ticks := make(chan time.Time)
 	ctx, stop := context.WithCancel(context.Background())
 	done := make(chan struct{})
@@ -211,6 +215,15 @@ func TestTheOwnerRunsOnTheTicksItIsGiven(t *testing.T) {
 	}()
 
 	ticks <- now
+	// A tick being received does not mean its attempt has read the clock.
+	testenv.Await(t, "the first tick’s completed attempt", func() bool {
+		select {
+		case <-announced:
+			return true
+		default:
+			return false
+		}
+	})
 	drive.tick(time.Minute)
 	ticks <- drive.at
 	stop()

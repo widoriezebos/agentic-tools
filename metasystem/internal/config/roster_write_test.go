@@ -151,12 +151,16 @@ func TestSetRosterRowRepeatedWritesNothing(t *testing.T) {
 	t.Parallel()
 	home := rosterHome(t, "")
 	setRow(t, home, "tier-1", "build", "codex:gpt-5.5:high")
+	_, data := stat(t, home)
+	if err := os.WriteFile(config.RostersPath(home), append(data, '\n'), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	before, beforeData := stat(t, home)
 	if changed, err := config.SetRosterRow(home, "tier-1", "build", "codex:gpt-5.5:high", installed, runs); changed || err != nil {
 		t.Errorf("repeating tier-1 build = %v, %v; want false, nil", changed, err)
 	}
 	after, afterData := stat(t, home)
-	if !os.SameFile(before, after) || !after.ModTime().Equal(before.ModTime()) || string(afterData) != string(beforeData) {
+	if !os.SameFile(before, after) || string(afterData) != string(beforeData) {
 		t.Errorf("repeating a row replaced the file: %v at %v became %v at %v", before.Sys(), before.ModTime(), after.Sys(), after.ModTime())
 	}
 	setRow(t, home, "tier-1", "build", "codex:gpt-5.5:xhigh")

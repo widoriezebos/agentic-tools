@@ -56,7 +56,7 @@ func freshLandingGate(stateRoot, installationRoot, goalID, tip string, dependenc
 	if err != nil {
 		return "", err
 	}
-	projection, err := goal.Project(endpoint, true, now)
+	projection, err := goal.ProjectWithDeadline(endpoint, true, now, dependencies.projectionDeadline)
 	if err != nil {
 		return "", err
 	}

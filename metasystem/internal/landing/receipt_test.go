@@ -83,7 +83,7 @@ func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	now := time.Now().UTC()
+	now := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
 	// A private admission namespace: the default is the host's durable one,
 	// which concurrent processes on this machine hold.
 	attempt, decision, err := proofrun.ReserveLocked(proofrun.WithTestHostAdmissionDirectory(candidateProofAdmission(proofrun.AdmissionRequest{
@@ -129,7 +129,7 @@ func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
 	); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, time.Now().UTC(), workspace); err != nil {
+	if _, err := publishCommittedReceiptAtWithWorkspace(f.root, attempt.AttemptID, tree, now, workspace); err != nil {
 		t.Fatal(err)
 	}
 	register := "records/narrator-digest.log"
@@ -138,7 +138,7 @@ func TestReadSchemaTwoTestingReceiptSurvivesRegisterAppend(t *testing.T) {
 	f.nextPhase("register")
 
 	if _, err := readTestReceiptWithWorkspace(ObserveParams{
-		RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree),
+		RepoRoot: f.root, CandidateTree: subtree, TestReceipt: TestReceiptPath(f.root, tree), Now: now,
 	}, workspace); err != nil {
 		t.Fatalf("schema-2 testing receipt rejected register append: %v", err)
 	}

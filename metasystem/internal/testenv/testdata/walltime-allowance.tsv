@@ -1,13 +1,11 @@
 cmd/metasystem/proof_run_test.go	1	The ticker polls for a real public proof child file; success requires the published file or the exact child result.
-cmd/metasystem/test_test.go	1	The frozen corpus phase deadline is the package deadline less a cleanup reserve, so a real engine build or worker that overruns fails naming its phase instead of the package timeout panicking in TempDir removal; it never paces a passing run.
 cmd/metasystem/wait_verb_test.go	2	Both deadlines are fixed in the past to test cancellation propagation and never wait.
 internal/adapter/fake.go	1	Support file: FakeGuardedNetwork's one-second dial context is the fake runtime's own probe of an allowed loopback port; the only caller sends a denied envelope, which returns before any dial, so no test waits on it.
 internal/adapter/supervisor/devin_test.go	1	The pause polls a real ACP stub's journal for the sent prompt before the signal; success requires the observed wire record.
 internal/adapter/supervisor/fake_round.go	1	Support file: after the fake round sends itself SIGKILL it parks in a sleep loop so it cannot run on to a plain exit before the signal lands; nothing is timed and nothing is decided by the wait.
-internal/adapter/supervisor/fake_test.go	3	One pause paces a goroutine that waits for the hold's argv and ends with its run; one sleep is the artificial clock's yield to the supervisor's goroutines; one 50ms window is a negative check that only a supervisor exiting while its hold lives can fail, and a slow host can only make it pass.
+internal/adapter/supervisor/fake_test.go	2	One pause paces a goroutine that waits for the hold's argv and ends with its run; one sleep is the artificial clock's yield to the supervisor's goroutines.
 internal/adapter/supervisor/protocol_acpfixtures_test.go	2	Both pauses poll a real ACP stub's journal and outcome files; success requires the observed wire records.
-internal/applaunch/run_test.go	3	One pause paces reaping a released supervisor and one lets a real Follow reach the log's end before a line is appended; the elapsed check on a supervisor that died before readiness belongs to the readiness-as-event slice (cluster E part 2), which replaces it.
-internal/applaunch/supervise_test.go	1	The one deadline caps the join of an in-process supervisor owning a real fixture application, failing the test rather than hanging it; success requires the observed record, signals and group reads.
+internal/applaunch/run_test.go	1	One pause paces reaping a released supervisor.
 internal/channel/fake/fake.go	2	Support file: time.After is the default of the fake channel server's injectable long-poll clock, and the 100ms ticker paces a poll for a test's pause file that ends on the file or the request's context, never on elapsed time.
 internal/dispatch/proof_attempt_test.go	1	The sleeping child is the stop fixture's subject and is killed, never waited out.
 internal/identity/fixture_custodian.go	3	Support file: the custodian's system clock, the production side of the injected custodianClock seam (After, AfterFunc and Sleep); tests drive the custodian through a fake clock.

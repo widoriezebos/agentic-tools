@@ -61,8 +61,22 @@ func startHeldHostProcess(t *testing.T, command *exec.Cmd) *hostProcess {
 }
 
 func TestStartProcessLifecycle(t *testing.T) {
-	process, err := startProcess(exec.Command("sleep", "0.1"))
+	t.Parallel()
+	command := exec.Command("/bin/sh", "-c", "IFS= read -r _ || :")
+	release, err := command.StdinPipe()
 	if err != nil {
+		t.Fatal(err)
+	}
+	process, err := startProcess(command)
+	if err != nil {
+		_ = release.Close()
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = release.Close(); <-process.done })
+	if process.exited() {
+		t.Fatal("the child exited before its release")
+	}
+	if err := release.Close(); err != nil {
 		t.Fatal(err)
 	}
 	<-process.done

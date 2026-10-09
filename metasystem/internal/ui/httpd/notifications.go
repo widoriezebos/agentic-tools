@@ -173,8 +173,8 @@ func (h *handler) notificationStream(w http.ResponseWriter, r *http.Request) {
 	// the alternative to sharing it is a second one — which the cut guard
 	// refuses and which would be a second reconnection policy besides.
 	var partnerEvents <-chan partner.Event
-	if h.info.Partner != nil {
-		events, stop := h.info.Partner.Subscribe()
+	if h.subscribePartner != nil {
+		events, stop := h.subscribePartner()
 		defer stop()
 		partnerEvents = events
 	}
