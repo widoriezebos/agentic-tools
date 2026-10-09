@@ -21,11 +21,65 @@ type DesignExit struct {
 	Operation, DesignID, BodySHA256                 string
 	Units, Items                                    []string
 	Destination, OpenCommand                        string
+	DestinationBrief                                string
+	DestinationBriefPath                            string
+	TransferUnits                                   []string
+	TransferObligations                             []ReviewObligation
+	AuthorAttempt                                   int
+	AuthorPrior                                     string
 	Root, ExaminedSHA256, DispositionsSHA256, State string
 	Round                                           int64
 	Revision                                        uint64
 	Expected, Page, Dispositions                    string
 	Who, Ruling, Reason, Impact, At                 string
+}
+
+// OpenDesignDestination opens only the scope retained by a committed split.
+// The destination waits for the source and still needs a person's approval.
+func OpenDesignDestination(r VerbRequest, source, operation string) (PublishResult, error) {
+	req, err := designDestinationRequest(r, source, operation)
+	if err != nil {
+		return PublishResult{}, err
+	}
+	return Publish(r.Endpoint, req)
+}
+
+func designDestinationRequest(r VerbRequest, source, operation string) (PublishRequest, error) {
+	projection, err := Project(r.Endpoint, false, r.Now)
+	if err != nil {
+		return PublishRequest{}, err
+	}
+	f := projection.Tree.Live[source]
+	if f == nil {
+		return PublishRequest{}, fmt.Errorf("split source %s is not live", source)
+	}
+	var exit *DesignExit
+	for i := range f.DesignExits {
+		if f.DesignExits[i].Operation == operation {
+			exit = &f.DesignExits[i]
+		}
+	}
+	if exit == nil || exit.State != "committed" || exit.Destination == "" || exit.DestinationBrief == "" || exit.DestinationBriefPath == "" || f.Origin != OriginHuman || f.Approved == nil {
+		return PublishRequest{}, fmt.Errorf("the follow-up needs a committed split of a person-created, approved source")
+	}
+	req, err := openRequest(r, exit.Destination, "Reshape transferred design scope from "+source, OriginMain, "Reshape scope in "+exit.DestinationBriefPath, nil, []string{source}, f.Tier, nil, f.Risk, "", false, false, nil)
+	if err != nil {
+		return PublishRequest{}, err
+	}
+	req.Intent = Intent{Verb: "design-destination", Targets: []string{exit.Destination}, Args: intentArgs(r, map[string]string{"source": source, "operation": operation})}
+	mutate := req.Mutate
+	req.Mutate = func(tip string) ([]Change, error) {
+		tree, err := loadTreeFor(r.Endpoint, tip)
+		if err != nil {
+			return nil, err
+		}
+		current := tree.Live[source]
+		if current == nil || current.Origin != OriginHuman || current.Approved == nil || !slices.ContainsFunc(current.DesignExits, func(e DesignExit) bool { return reflect.DeepEqual(e, *exit) }) {
+			return nil, fmt.Errorf("the committed split changed; reconcile before opening its destination")
+		}
+		return mutate(tip)
+	}
+	return req, nil
 }
 
 // PublishDesignExit commits acceptance before any document can expose it.

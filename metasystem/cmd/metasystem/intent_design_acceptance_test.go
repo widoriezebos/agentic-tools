@@ -113,7 +113,7 @@ func TestDesignReviewAcceptanceKeepsUnresolvedHistoryPending(t *testing.T) {
 				b.register(1, 2, []int64{0}, map[string]any{"findingId": "earlier:F1"})
 			case "held policy":
 				owners.work = intentWorkOwners{units: func(stateroot.Layout) *launch.UnitRunner {
-					return &launch.UnitRunner{ReviewPolicy: func() (string, error) { return "person", nil }}
+					return &launch.UnitRunner{Manager: &launch.Manager{}, ReviewPolicy: func() (string, error) { return "person", nil }}
 				}}
 			case "wrong owner":
 				b.lineage = "another-session"
@@ -188,7 +188,7 @@ func TestDesignReviewAcceptanceRechecksCurrentGoal(t *testing.T) {
 			expected := mustRead(t, b.design)
 			held := true
 			b.work = intentWorkOwners{units: func(stateroot.Layout) *launch.UnitRunner {
-				return &launch.UnitRunner{ReviewPolicy: func() (string, error) {
+				return &launch.UnitRunner{Manager: &launch.Manager{}, ReviewPolicy: func() (string, error) {
 					if held {
 						return "person", nil
 					}

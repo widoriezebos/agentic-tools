@@ -428,12 +428,17 @@ func DeclaredUnits(page string) ([]UnitSize, error) {
 	if err != nil {
 		return nil, err
 	}
-	units, _, err := sizesFromTable(string(data), nil)
+	return DeclaredDesignUnits(string(data))
+}
+
+// DeclaredDesignUnits reads estimates from the exact candidate being checked.
+func DeclaredDesignUnits(page string) ([]UnitSize, error) {
+	units, _, err := sizesFromTable(page, nil)
 	return units, err
 }
 
 func CheckDesignSize(page string) ([]UnitSize, error) {
-	units, _, err := sizesFromTable(page, nil)
+	units, err := DeclaredDesignUnits(page)
 	if err != nil || len(units) == 0 || len(units) > 5 {
 		return nil, fmt.Errorf("the unit table needs one to five units; reshape or split it: %v", err)
 	}

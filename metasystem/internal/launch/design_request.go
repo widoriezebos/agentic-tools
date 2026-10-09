@@ -39,6 +39,7 @@ type DesignRequest struct {
 
 // DesignAttempt is one retained attempt.
 type DesignAttempt struct {
+	Operation       string `json:"operation,omitempty"`
 	Attempt         int    `json:"attempt"`
 	LaunchID        string `json:"launchId"`
 	BriefSHA256     string `json:"briefSha256"`
@@ -52,6 +53,55 @@ type DesignAttempt struct {
 	Outcome   string `json:"outcome,omitempty"`
 	Detail    string `json:"detail,omitempty"`
 	Published string `json:"publishedSha256,omitempty"`
+}
+
+// RecordSuppliedDesign retains a bound author proposal without a model launch.
+// Repeating its operation reuses the attempt and preserves its exact bytes.
+func (m *Manager) RecordSuppliedDesign(request DesignRequest, operation string, prior, page []byte) (DesignAttempt, error) {
+	if request.Goal == "" || request.RecordID == "" || !filepath.IsAbs(request.Destination) || operation == "" {
+		return DesignAttempt{}, errors.New("a supplied design needs its goal, record, destination and operation")
+	}
+	held, err := m.designLock(request.Destination)
+	if err != nil {
+		return DesignAttempt{}, err
+	}
+	defer releaseUnitLock(held)
+	entry, found, err := m.readDesignEntry(request.Destination)
+	if err != nil {
+		return DesignAttempt{}, err
+	}
+	if !found {
+		entry = designEntry{Goal: request.Goal, RecordID: request.RecordID, Destination: request.Destination}
+	}
+	if entry.Goal != request.Goal || entry.RecordID != request.RecordID {
+		return DesignAttempt{}, errors.New("the supplied design belongs to another goal or record")
+	}
+	for _, attempt := range entry.Attempts {
+		if attempt.Operation == operation {
+			if attempt.ExpectedSHA256 != digestHex(prior) || attempt.Published != digestHex(page) {
+				return DesignAttempt{}, errors.New("the supplied proposal conflicts with its retained attempt")
+			}
+			return attempt, nil
+		}
+	}
+	if len(entry.Attempts) > 0 {
+		last := entry.Attempts[len(entry.Attempts)-1]
+		if last.LaunchID != "" {
+			record, err := m.Store.Read(last.LaunchID)
+			if err != nil || !record.State.Terminal() {
+				return DesignAttempt{}, ErrDesignWriterRunning
+			}
+		}
+	}
+	base := filepath.Join(m.designDir(request.Destination), operation)
+	attempt := DesignAttempt{Attempt: len(entry.Attempts) + 1, Operation: operation, Prior: base + "-prior.md", Draft: base + "-draft.md", ExpectedPresent: true, ExpectedSHA256: digestHex(prior), Outcome: "supplied", Published: digestHex(page)}
+	for path, data := range map[string][]byte{attempt.Prior: prior, attempt.Draft: page} {
+		if _, err := atomicfile.WriteText(path, string(data), m.designDir(request.Destination)); err != nil {
+			return DesignAttempt{}, err
+		}
+	}
+	entry.Attempts = append(entry.Attempts, attempt)
+	return attempt, m.writeDesignEntry(entry)
 }
 
 type designEntry struct {

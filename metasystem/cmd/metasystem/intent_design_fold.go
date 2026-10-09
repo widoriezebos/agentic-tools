@@ -36,10 +36,14 @@ func (inv *intentInvocation) prepareDesignFold(plan designReviewPlan, chain disp
 		return err
 	}
 	entry, fold := inv.readDesignReviewEntry(plan.recordID), &goal.DesignExit{Expected: string(page), Page: string(page), ExaminedSHA256: read.Subject.ContentDigest}
-	units, err := launch.CheckDesignSize(string(page))
+	units, err := launch.DeclaredDesignUnits(string(page))
 	if err != nil {
 		return err
 	}
+	if len(units) == 0 {
+		return fmt.Errorf("the revision needs declared source units")
+	}
+	pageUnits := slices.Clone(units)
 	sections, allowed, mappings := designFoldSections(string(page)), map[string]bool{"## Units": true, "## Acceptance items": true}, map[string]designFoldMapping{}
 	for _, line := range strings.Split(sections["## Acceptance items"], "\n") {
 		if raw, present := strings.CutPrefix(line, "Fold item: "); present {
@@ -111,12 +115,41 @@ func (inv *intentInvocation) prepareDesignFold(plan designReviewPlan, chain disp
 		if err != nil {
 			return err
 		}
+		if slices.ContainsFunc(declared, func(u launch.UnitSize) bool { return u.Lines > 250 }) {
+			return fmt.Errorf("linked design %s still needs a bound size revision", other.ID)
+		}
 		units = append(units, declared...)
 	}
 	slices.SortFunc(units, func(a, b launch.UnitSize) int { return strings.Compare(a.Name, b.Name) })
 	units = slices.CompactFunc(units, func(a, b launch.UnitSize) bool { return a.Name == b.Name })
-	if len(units) > 5 {
+	if len(units) > 5 && len(units) != len(pageUnits) {
 		return fmt.Errorf("the resulting goal has %d units; excess scope needs a split before acceptance", len(units))
+	}
+	if _, sizeErr := launch.CheckDesignSize(string(page)); sizeErr != nil {
+		projection, _, problem := inv.projection()
+		if problem != nil {
+			return fmt.Errorf("%s", problem.Summary)
+		}
+		source, _ := goalRecord(projection, plan.goalID)
+		if source == nil || source.Origin != goal.OriginHuman {
+			return fmt.Errorf("only a person-created source authorizes this follow-up")
+		}
+		fold.Destination, err = goal.NewOperationULID()
+		if err != nil {
+			return err
+		}
+		fold.Destination = "design-split-" + strings.ToLower(fold.Destination)
+		fold.DestinationBriefPath = "plans/design-splits/" + fold.Destination + ".md"
+		fold.DestinationBrief = fmt.Sprintf("Transferred from goal %s, design %s, critique %s: %s\n\nReshape this complete scope before implementation; preserve its dependencies and finding history.\n\n%s", plan.goalID, plan.recordID, chain.Root, sizeErr, page)
+		for _, unit := range pageUnits {
+			fold.TransferUnits = append(fold.TransferUnits, unit.Name)
+		}
+		fold.TransferObligations, fold.Obligations = fold.Obligations, nil
+		if source.Risk == nil {
+			return fmt.Errorf("the source needs risk answers before its follow-up can open; classify it with metasystem goal edit %s --risk severity=S,novelty=N,exposure=E,accumulation=A --basis TEXT", plan.goalID)
+		}
+		risk := fmt.Sprintf("severity=%d,novelty=%d,exposure=%d,accumulation=%d", source.Risk.Severity, source.Risk.Novelty, source.Risk.Exposure, source.Risk.Accumulation)
+		fold.OpenCommand = shellCommand(inv.publicArgv("goal", "open", fold.Destination, "--intent", "Reshape transferred design scope from "+plan.goalID, "--tier", fmt.Sprint(source.Tier), "--blocked-by", plan.goalID, "--next", "Reshape scope in "+fold.DestinationBriefPath, "--risk", risk, "--basis", source.Risk.Basis, "--why", "Retain the source goal's tier for its transferred scope.", "--origin", "main", "--by", "NAME"))
 	}
 	entry.Fold = fold
 	return inv.writeDesignReviewEntry(plan.recordID, entry)

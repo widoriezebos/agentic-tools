@@ -1,11 +1,15 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -53,8 +57,15 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 			}
 			for i := len(file.DesignExits) - 1; i >= 0; i-- {
 				exit := file.DesignExits[i]
-				if exit.Root != closedRoot || exit.State != "committed" || exit.Page != string(page) || file.CheckDesignAcceptance(exit.Operation, plan.recordID, exit.BodySHA256) != nil {
+				if exit.Root != closedRoot || exit.State != "committed" || exit.Page != string(page) || exit.Destination == "" && file.CheckDesignAcceptance(exit.Operation, plan.recordID, exit.BodySHA256) != nil {
 					continue
+				}
+				if exit.Destination != "" {
+					guard.Release()
+					if err := inv.finishDesignSplit(plan, exit); err != nil {
+						return fail(err)
+					}
+					return &intentResult{Targets: plan.targets, Outcome: intentUnchanged, Summary: "design " + plan.recordID + " is transferred to " + exit.Destination + "; its follow-up is open"}
 				}
 				if entry.Exit != nil && entry.Exit.Operation == exit.Operation {
 					entry.Exit, entry.Fold = nil, nil
@@ -116,7 +127,8 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 			}
 		}
 		units, err := launch.CheckDesignSize(string(page))
-		if err != nil || len(units) == 0 {
+		split := entry.Fold != nil && entry.Fold.Destination != ""
+		if !split && (err != nil || len(units) == 0) {
 			return fail(fmt.Errorf("the accepted design needs declared source units: %v", err))
 		}
 		projection, _, problem := inv.projection()
@@ -139,6 +151,13 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 				exit.Items = append(exit.Items, item.Finding)
 			}
 		}
+		if split {
+			exit.AuthorPrior = read.Subject.DesignPage
+			exit.Destination, exit.DestinationBrief, exit.OpenCommand = entry.Fold.Destination, entry.Fold.DestinationBrief, entry.Fold.OpenCommand
+			exit.DestinationBriefPath = entry.Fold.DestinationBriefPath
+			exit.TransferUnits, exit.TransferObligations, exit.Expected = entry.Fold.TransferUnits, entry.Fold.TransferObligations, entry.Fold.Expected
+			units = nil
+		}
 		for _, unit := range units {
 			exit.Units = append(exit.Units, unit.Name)
 		}
@@ -153,6 +172,9 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		head = append(head, "- Status: accepted\n", fmt.Sprintf("- Critique: closed at round %d on 0 material findings folded as 0 unit acceptance items (convergence %s)\n", exit.Round, operation))
 		if read.Material != 0 {
 			head[len(head)-1] = fmt.Sprintf("- Critique: closed at round %d on %d material findings folded as %d unit acceptance items (convergence %s)\n", exit.Round, read.Material, len(exit.Items), operation)
+		}
+		if split {
+			head[len(head)-2], head[len(head)-1] = "- Status: draft\n", fmt.Sprintf("- Critique: split to %s at round %d (convergence %s)\n", exit.Destination, exit.Round, operation)
 		}
 		exit.Page = strings.Join(lines[:record.HeadLine-1], "") + strings.Join(head, "") + strings.Join(lines[record.Head[len(record.Head)-1].Line:], "")
 		exit.BodySHA256, err = project.DesignBodyDigest(plan.design, []byte(exit.Page))
@@ -169,6 +191,13 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 	}
 	exit := *entry.Exit
 	guard.Release()
+	if exit.Destination != "" {
+		attempt, err := inv.designManager().RecordSuppliedDesign(launch.DesignRequest{Goal: plan.goalID, RecordID: plan.recordID, Destination: plan.design}, exit.Operation, []byte(exit.AuthorPrior), []byte(exit.Expected))
+		if err != nil {
+			return fail(err)
+		}
+		exit.AuthorAttempt = attempt.Attempt
+	}
 	if exit.Root != chain.Root || exit.DispositionsSHA256 != digestText(decisions) {
 		return fail(fmt.Errorf("the prepared acceptance belongs to another critique or decisions file"))
 	}
@@ -190,6 +219,9 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 				if recorded.Operation == exit.Operation {
 					if recorded.State != "committed" || recorded.Page != exit.Page || recorded.BodySHA256 != exit.BodySHA256 {
 						return recorded, fmt.Errorf("the committed exit disagrees with its prepared page")
+					}
+					if recorded.Destination != "" && len(recorded.Units) == 0 {
+						return recorded, nil
 					}
 					return recorded, file.CheckDesignAcceptance(exit.Operation, plan.recordID, exit.BodySHA256)
 				}
@@ -227,6 +259,11 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 	if err != nil {
 		return fail(err)
 	}
+	if exit.Destination != "" {
+		if err := inv.finishDesignSplit(plan, exit); err != nil {
+			return fail(err)
+		}
+	}
 	decided := inv.registerDecisions(chain.Root, exit.Round)
 	for _, item := range exit.Obligations {
 		decided[item.DesignItem.Finding] = "accepted"
@@ -258,6 +295,37 @@ func (inv *intentInvocation) finishDesignAcceptance(plan designReviewPlan, chain
 		}
 	}
 	closed.Summary = "design " + plan.recordID + " is accepted; its committed page is projected and critique " + chain.Root + " is closed"
+	if exit.Destination != "" {
+		closed.Summary = "design " + plan.recordID + " is transferred to " + exit.Destination + "; its follow-up is open"
+	}
 	closed.Data = map[string]any{"exit": exit.Operation, "bodySha256": exit.BodySHA256, "closedAt": exit.Round}
 	return &closed
+}
+
+func (inv *intentInvocation) finishDesignSplit(plan designReviewPlan, exit goal.DesignExit) error {
+	path := filepath.Join(inv.stateRoot, exit.DestinationBriefPath)
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) {
+		if err = os.MkdirAll(filepath.Dir(path), 0755); err == nil {
+			_, err = atomicfile.WriteText(path, exit.DestinationBrief, inv.stateRoot)
+		}
+	} else if err == nil && string(data) != exit.DestinationBrief {
+		err = fmt.Errorf("destination brief %s changed; restore the retained split before replay", path)
+	}
+	if err != nil {
+		return err
+	}
+	req, err := inv.requestBuilder(nil, false)("open", inv.stateRoot, "", inv.input.text("lineage"))
+	if err != nil {
+		return err
+	}
+	opened, err := goal.OpenDesignDestination(req, plan.goalID, exit.Operation)
+	if err != nil || opened.Outcome != goal.OutcomeConfirmed && !opened.Unchanged {
+		return fmt.Errorf("destination opening remains pending (%s): %s %v; recovery: %s", opened.Outcome, opened.Detail, err, exit.OpenCommand)
+	}
+	text := fmt.Sprintf("Goal %s was split from %s because the design is too large.\nApprove: metasystem goal approve %s", exit.Destination, plan.goalID, exit.Destination)
+	if err := phase.NotifyLanded(context.Background(), inv.stateRoot, text, "design-split:"+exit.Destination, req.Now); err != nil {
+		fmt.Fprintln(inv.stderr, "follow-up is open; its approval message is retained for one retry: "+err.Error())
+	}
+	return nil
 }

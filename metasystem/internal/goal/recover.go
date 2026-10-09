@@ -426,6 +426,8 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 			return PublishRequest{}, fmt.Errorf("the stored answer intent is incomplete; close it by hand")
 		}
 		return answerRequest(r, target, in.Args["question"], in.Args["text"], in.Args["wants"], proof), nil
+	case "design-destination":
+		return designDestinationRequest(r, in.Args["source"], in.Args["operation"])
 	case "open":
 		tier := uint64(3)
 		if in.Args["tier"] != "" {

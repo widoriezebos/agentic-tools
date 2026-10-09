@@ -42,10 +42,12 @@ func TestDesignItemsBindBuildReadDoneAndLand(t *testing.T) {
 			file := bed.goalFile(bed.id)
 			file.DesignExits = []goal.DesignExit{{Operation: "exit-one", DesignID: "gate-design", BodySHA256: body, Units: []string{"u"}, Items: []string{"design-read:M1"}}}
 			file.ReviewObligations = []goal.ReviewObligation{{Finding: "design-read:M1", Chain: "design-read", Artifact: "gate.go", Test: "TestPublicGate", Fixture: "group:gate", State: "open", DesignItem: &goal.DesignItem{Exit: "exit-one", DesignID: "gate-design", BodySHA256: body, Unit: "u", Decision: "6", Tests: []string{"gate/TestPublicGate"}}}}
+			acceptedPage := append([]byte(nil), data...)
 			unit := "u"
 			switch scenario {
 			case "head edit":
 				data = []byte(strings.Replace(string(data), "- Id: gate-design", "- Id: gate-design\n- By: Wido", 1))
+				acceptedPage = append([]byte(nil), data...)
 			case "title edit":
 				data = []byte(strings.Replace(string(data), "# Gate design", "# Renamed design", 1))
 			case "line endings":
@@ -84,6 +86,19 @@ func TestDesignItemsBindBuildReadDoneAndLand(t *testing.T) {
 				setDesignGateMode(t, bed, "refuse")
 				path, _ = designGatePage(t, bed, "- Critique: closed at round 2 on 1 material finding folded as 1 unit acceptance item (convergence exit-one)")
 				bed.designGate.chains = nil
+			}
+			// Decision 5 projects the committed accepted page; its estimate
+			// reader sees those exact bytes, including published head metadata.
+			hook := bed.workOwnersHook
+			bed.workOwnersHook = func(owners *intentWorkOwners) {
+				hook(owners)
+				git := owners.git
+				owners.git = func(root string, args ...string) ([]byte, error) {
+					if len(args) == 2 && args[0] == "show" && args[1] == "origin/main:plans/designs/gate.md" {
+						return append([]byte(nil), acceptedPage...), nil
+					}
+					return git(root, args...)
+				}
 			}
 			bed.addGoal(file)
 			if err := os.WriteFile(path, data, 0o600); err != nil {
