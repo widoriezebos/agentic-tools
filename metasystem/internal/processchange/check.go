@@ -15,11 +15,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 )
 
 type Check struct {
-	Root, Act string
-	FullArgv  []string
+	Root, Act    string
+	Installation roots.Installation
+	FullArgv     []string
 	ProcessAct
 	Person, Observation bool
 	Now                 time.Time
@@ -130,19 +132,19 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
 		}
 		if act.Status == "superseded" || (previous.Act != act.ID && (!slices.Equal(previous.Argv, act.BeforeArgv) && len(previous.Argv) > 0 || previous.Act != act.Predecessor)) {
 			act.Status = "superseded"
-			return act, save(c.Root, actPath, act)
+			return act, save(c.Installation, actPath, act)
 		}
 		if act.Status != "applied" {
-			if err := save(c.Root, actPath, act); err != nil {
+			if err := save(c.Installation, actPath, act); err != nil {
 				return act, err
 			}
 			if !c.Person {
-				q, _, problem := channel.AskOrFind(channel.AskRequest{RepoRoot: c.Root, Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Check from %q to %q", act.BeforeArgv, act.AfterArgv), act.Reason}, Wants: c.Remedy(act.ID)})
+				q, _, problem := channel.AskOrFind(channel.AskRequest{RepoRoot: c.Installation.Path(), Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Check from %q to %q", act.BeforeArgv, act.AfterArgv), act.Reason}, Wants: c.Remedy(act.ID)})
 				if problem != nil {
 					return act, problem
 				}
 				act.Question = q.ID
-				return act, save(c.Root, actPath, act)
+				return act, save(c.Installation, actPath, act)
 			}
 			act.Status, act.AppliedAt, act.AppliedProof = "applied", c.Now.UTC(), c.Proof
 		}
@@ -166,7 +168,7 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
 		act.ID = previous.Act
 		return
 	}
-	return act, save(c.Root, filepath.Join(c.Root, "process", "acts", act.ID+".json"), act)
+	return act, save(c.Installation, filepath.Join(c.Root, "process", "acts", act.ID+".json"), act)
 }
 
 type Declaration = launch.UnitDeclaration
@@ -207,7 +209,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 		if filepath.Base(c.Act) != c.Act || problem != nil || json.Unmarshal(data, &act) != nil || act.Goal != c.Goal || act.ID != c.Act || act.Checkout != c.Checkout || (act.Class != "declaration" && (act.Unit != c.Unit || act.Operation != c.Operation)) || (act.Class == "declaration" && (act.AfterDeclaration == nil || c.AfterDeclaration == nil || act.AfterDeclaration.Values != c.AfterDeclaration.Values)) || (act.Class != "declaration" && act.Class != "full-suite-exception" && act.Class != "added-check" && act.Class != "widened-check") || (act.Class == "full-suite-exception" && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.After})) || (act.Class == "declaration" && act.AfterDeclaration.Values[0] != c.After) || ((act.Class == "added-check" || act.Class == "widened-check") && act.After != c.After) || act.Status != "applied" {
 			return act, fmt.Errorf("the admitted declaration act is unavailable")
 		}
-		return act, save(c.Root, actPath, act)
+		return act, save(c.Installation, actPath, act)
 	}
 	body, readErr := os.ReadFile(path)
 	var previous declarationReference
@@ -241,7 +243,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 			err = c.Publish(act)
 		}
 		if err == nil && act.Status == "applied" {
-			err = save(c.Root, filepath.Join(directory, "acts", act.ID+".json"), act)
+			err = save(c.Installation, filepath.Join(directory, "acts", act.ID+".json"), act)
 		}
 	}()
 	full := slices.Equal([]string{"/bin/sh", "-c", candidate.Values[0]}, candidate.FullArgv)
@@ -295,25 +297,25 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 	}
 	if previous.Operation != c.Operation && (act.BeforeDeclaration == nil || !reflect.DeepEqual(*act.BeforeDeclaration, previous.Snapshot) || act.Predecessor != previous.Act) {
 		act.Status = "superseded"
-		return act, save(c.Root, actPath, act)
+		return act, save(c.Installation, actPath, act)
 	}
 	if act.Status == "superseded" {
 		return act, nil
 	}
 	if act.Status != "applied" {
-		if err = save(c.Root, actPath, act); err != nil {
+		if err = save(c.Installation, actPath, act); err != nil {
 			return
 		}
 		if !c.Person {
 			if act.Question != "" {
 				return act, nil
 			}
-			q, _, problem := channel.AskOrFind(channel.AskRequest{RepoRoot: c.Root, Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Committed checks from %q to %q", act.BeforeDeclaration.Values, act.AfterDeclaration.Values), act.Reason}, Wants: c.Remedy(act.ID)})
+			q, _, problem := channel.AskOrFind(channel.AskRequest{RepoRoot: c.Installation.Path(), Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Committed checks from %q to %q", act.BeforeDeclaration.Values, act.AfterDeclaration.Values), act.Reason}, Wants: c.Remedy(act.ID)})
 			if problem != nil {
 				return act, problem
 			}
 			act.Question = q.ID
-			return act, save(c.Root, actPath, act)
+			return act, save(c.Installation, actPath, act)
 		}
 		if err = c.Impact(); err != nil {
 			return

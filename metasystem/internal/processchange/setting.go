@@ -125,9 +125,9 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 		}
 		if act.Status == "superseded" || (!matches(&act.After) && (act.Status == "applied" || !matches(act.Before))) {
 			act.Status = "superseded"
-			return save(s.Root, path, act)
+			return save(roots.Installation(s.Root), path, act)
 		}
-		if err := save(s.Root, path, act); err != nil {
+		if err := save(roots.Installation(s.Root), path, act); err != nil {
 			return err
 		}
 		if !s.Person {
@@ -141,7 +141,7 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 			if err != nil {
 				return err
 			}
-			return save(s.Root, path, act)
+			return save(roots.Installation(s.Root), path, act)
 		}
 		if (!act.Unset && !matches(&act.After)) || (act.Unset && before != nil) {
 			if _, err := os.Stat(s.Conf + ".local"); os.IsNotExist(err) {
@@ -163,7 +163,7 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 		if act.AppliedAt.IsZero() {
 			act.AppliedAt = s.Now.UTC()
 		}
-		if err := save(s.Root, path, act); err != nil {
+		if err := save(roots.Installation(s.Root), path, act); err != nil {
 			return err
 		}
 		return resolveUndo(s.Root, roots.Installation(filepath.Dir(s.Conf)), act)
@@ -171,7 +171,7 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 	return
 }
 
-func save(root, path string, act ProcessAct) error {
+func save(installation roots.Installation, path string, act ProcessAct) error {
 	data, _ := json.MarshalIndent(act, "", "  ")
 	if _, err := atomicfile.WriteFile(path, append(data, '\n'), 0600, ""); err != nil {
 		return err
@@ -179,14 +179,14 @@ func save(root, path string, act ProcessAct) error {
 	if act.Question == "" || (act.Status != "applied" && act.Status != "superseded") {
 		return nil
 	}
-	q, err := channel.ReadQuestion(root, act.Question)
+	q, err := channel.ReadQuestion(installation.Path(), act.Question)
 	if err != nil {
 		return err
 	}
 	if q.ProcessAct != act.ID || q.Goal != act.Goal || q.Kind != "other" {
 		return fmt.Errorf("the question belongs to a different process act")
 	}
-	_, err = channel.Withdraw(root, q.ID, "process act "+act.ID+" "+act.Status, nil, channel.DestinationConfig{})
+	_, err = channel.Withdraw(installation.Path(), q.ID, "process act "+act.ID+" "+act.Status, nil, channel.DestinationConfig{})
 	return err
 }
 

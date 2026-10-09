@@ -118,7 +118,7 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 }
 func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directory string, publish func() error, subject ...branch.AttestationSubject) error {
 	check := plan.Check
-	act := processchange.ProcessAct{Goal: plan.Goal, Unit: plan.Unit, Operation: directory, Checkout: inv.stateRoot, Key: "declarations", Layer: "committed", After: check.Cheap, AfterDeclaration: check.Declaration, Lineage: inv.claimLineage(), Reason: "Approve the committed unit checks"}
+	act := processchange.ProcessAct{Goal: plan.Goal, Unit: plan.Unit, Operation: directory, Checkout: checkoutAuthorityRoot(inv.layout), Key: "declarations", Layer: "committed", After: check.Cheap, AfterDeclaration: check.Declaration, Lineage: inv.claimLineage(), Reason: "Approve the committed unit checks"}
 	by, _, refusal := inv.settingsPerson(inv.layout, "committed unit checks", &act.Proof)
 	remedy := inv.typedArgvLess("act", "json", "verbose", "repo")
 	remedy = append(remedy, "--repo", inv.layout.InstallationRoot.Path())
@@ -188,7 +188,7 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
 	if publish == nil {
 		selectedAct = check.ProcessAct
 	}
-	admitted, err := processchange.AdmitDeclaration(processchange.DeclarationAdmission{Check: processchange.Check{Root: inv.stateRoot, Act: selectedAct, ProcessAct: act, Person: refusal == nil, Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }}, Resume: publish == nil, Source: source,
+	admitted, err := processchange.AdmitDeclaration(processchange.DeclarationAdmission{Check: processchange.Check{Root: inv.stateRoot, Installation: inv.layout.InstallationRoot, Act: selectedAct, ProcessAct: act, Person: refusal == nil, Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }}, Resume: publish == nil, Source: source,
 		Recheck: func() error {
 			tip, err := git("rev-parse", "HEAD")
 			currentBranch, branchErr := branch, error(nil)

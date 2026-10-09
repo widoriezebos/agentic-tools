@@ -187,7 +187,7 @@ func resolveUndo(root string, installation roots.Installation, act ProcessAct) e
 }
 
 // PrepareInverse freezes the person's delta before releasing process ownership.
-func PrepareInverse(root, original, branch, path, current string, explicit []byte, act ProcessAct, now time.Time) (ProcessAct, error) {
+func PrepareInverse(root string, installation roots.Installation, original, branch, path, current string, explicit []byte, act ProcessAct, now time.Time) (ProcessAct, error) {
 	if original == "" || filepath.Base(original) != original || strings.ContainsAny(original, `/\`) {
 		return act, fmt.Errorf("invalid original act id")
 	}
@@ -267,7 +267,7 @@ func PrepareInverse(root, original, branch, path, current string, explicit []byt
 	if !available || source.BeforeDeclaration == nil {
 		act.Citation = "inverse history unavailable; explicit person patch"
 	}
-	return act, save(root, target, act)
+	return act, save(installation, target, act)
 }
 
 // CompleteInverse closes only the original intervention after confirmed publication.
@@ -298,7 +298,7 @@ func CompleteInverse(root string, installation roots.Installation, act ProcessAc
 			return act, err
 		}
 	}
-	if err := save(root, filepath.Join(root, "process", "acts", act.ID+".json"), act); err != nil {
+	if err := save(installation, filepath.Join(root, "process", "acts", act.ID+".json"), act); err != nil {
 		return act, err
 	}
 	return act, resolveUndo(root, installation, act)

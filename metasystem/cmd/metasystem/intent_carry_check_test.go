@@ -313,7 +313,8 @@ func TestWorkRebaseDeclaredCheckEvidenceValidation(t *testing.T) {
 
 func TestWorkRebaseParentlessSubjectNeedsReview(t *testing.T) {
 	t.Parallel()
-	inv := intentInvocation{}
+	b := newWorkBed(t)
+	inv := intentInvocation{cwd: b.root(), owners: b.workOwners()}
 	_, err := inv.carrySubjectCheck(t.TempDir(), branch.AttestationSubject{})
 	var unavailable *branch.DeclarationUnavailableError
 	if !errors.As(err, &unavailable) || !strings.Contains(err.Error(), "no parent") {

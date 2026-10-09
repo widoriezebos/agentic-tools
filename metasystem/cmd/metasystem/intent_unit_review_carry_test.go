@@ -207,7 +207,7 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 	connectionGit(t, repo, "config", "user.email", "fixture@example.invalid")
 	declaration := "proof.cheap=true\nproof.audits=true\nproof.deadline=15\nproof.full=printf full-suite\n"
 	if state == "cached gate" {
-		declaration = "proof.cheap=printf 'cheap subject check\\n'; test \"$(cat u1.go)\" = corrected\nproof.audits=printf 'audit subject check\\n'; test -f u2.go\nproof.deadline=15\nproof.full=printf full-suite\n"
+		declaration = "proof.cheap=printf 'cheap subject check\\n'; test -n \"$LANDING_PROOF_BASE\"; test \"$(cat u1.go)\" = corrected\nproof.audits=printf 'audit subject check\\n'; test -f u2.go\nproof.deadline=15\nproof.full=printf full-suite\n"
 	}
 	writeUnitCarryFile(t, filepath.Join(repo, "metasystem.conf"), declaration)
 	connectionGit(t, repo, "add", "metasystem.conf")
@@ -235,7 +235,7 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 		writeUnitCarryFile(t, filepath.Join(repo, path), body)
 		connectionGit(t, repo, "add", path)
 		if state == "cached gate" && unit == "u2" {
-			declaration = "proof.cheap=printf 'cheap subject check\\n'; test -n \"$LANDING_PROOF_BASE\"; test \"$(cat u1.go)\" = corrected\nproof.audits=printf 'audit subject check\\n'; test -f u2.go\nproof.deadline=15\n"
+			declaration = "proof.cheap=printf 'cheap subject check\\n'; test -n \"$LANDING_PROOF_BASE\"; test \"$(cat u1.go)\" = corrected\nproof.audits=printf 'audit subject check\\n'; test -f u2.go\nproof.deadline=15\nproof.full=printf full-suite\n"
 			writeUnitCarryFile(t, filepath.Join(repo, "metasystem.conf"), declaration)
 			connectionGit(t, repo, "add", "metasystem.conf")
 		}

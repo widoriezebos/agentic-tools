@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -474,7 +475,7 @@ func TestProcessCheckPublicRechecksAppliedArgv(t *testing.T) {
 			}
 			// Retain an intervening observation and person admission for the
 			// same operation before its pending public request is retried.
-			c := processchange.Check{Root: b.root(), ProcessAct: pending, Observation: true, Now: b.manager.Now()}
+			c := processchange.Check{Root: b.root(), Installation: stateroot.Installation(b.root()), ProcessAct: pending, Observation: true, Now: b.manager.Now()}
 			c.ID, c.Question, c.AfterArgv = "", "", []string{"make", "d"}
 			if _, err := processchange.AdmitCheck(c); err != nil {
 				t.Fatal(err)
@@ -557,7 +558,7 @@ func TestProcessCheckAgentReusingAppliedActKeepsAudits(t *testing.T) {
 	if code != 1 || pending.Status != "proposed" {
 		t.Fatalf("agent proposal: %d %s", code, result.Summary)
 	}
-	c := processchange.Check{Root: b.root(), ProcessAct: pending, Person: true, Now: b.manager.Now()}
+	c := processchange.Check{Root: b.root(), Installation: stateroot.Installation(b.root()), ProcessAct: pending, Person: true, Now: b.manager.Now()}
 	c.ID, c.Question, c.Actor, c.AfterArgv = "", "", "direct-person", argv
 	if applied, err := processchange.AdmitCheck(c); err != nil || applied.Status != "applied" {
 		t.Fatalf("person admission: %+v %v", applied, err)

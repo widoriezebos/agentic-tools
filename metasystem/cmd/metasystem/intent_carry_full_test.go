@@ -136,7 +136,7 @@ func TestCarryAndFullSuitePublicAdmission(t *testing.T) {
 		content := func() string {
 			return "proof.cheap=" + cheap + "\nproof.audits=true\nproof.deadline=15\nproof.full=" + full + "\n"
 		}
-		subject := branch.AttestationSubject{Commit: strings.Repeat("c", 40), Tree: strings.Repeat("d", 40)}
+		subject := branch.AttestationSubject{Commit: strings.Repeat("c", 40), Tree: strings.Repeat("d", 40), Parent: "seed"}
 		owners.connection.readRepository = carryFullRepository{root: b.worktree, common: t.TempDir(), subject: subject}
 		original := owners.work.git
 		owners.work.git = func(root string, args ...string) ([]byte, error) {

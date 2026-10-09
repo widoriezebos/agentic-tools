@@ -170,7 +170,7 @@ func (inv *intentInvocation) prepareDeclarationInverse(id, worktree string) (act
 	if inv.input.text("act") == "" || inv.input.text("reason") == "" {
 		return act, inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "revert needs an original act and a reason"})
 	}
-	act = processchange.ProcessAct{Goal: id, Checkout: inv.stateRoot, Reason: inv.input.text("reason")}
+	act = processchange.ProcessAct{Goal: id, Checkout: checkoutAuthorityRoot(inv.layout), Reason: inv.input.text("reason")}
 	by, _, refusal := inv.settingsPerson(inv.layout, "reverse committed declarations", &act.Proof)
 	if refusal != nil {
 		return act, inv.render(*refusal)
@@ -193,7 +193,7 @@ func (inv *intentInvocation) prepareDeclarationInverse(id, worktree string) (act
 	if err != nil && patch == nil {
 		return refused(err)
 	}
-	act, err = processchange.PrepareInverse(inv.stateRoot, inv.input.text("act"), strings.TrimSpace(string(currentBranch)), path, string(content), patch, act, inv.unitRunner().Manager.Now())
+	act, err = processchange.PrepareInverse(inv.stateRoot, inv.layout.InstallationRoot, inv.input.text("act"), strings.TrimSpace(string(currentBranch)), path, string(content), patch, act, inv.unitRunner().Manager.Now())
 	if err != nil {
 		return refused(err)
 	}

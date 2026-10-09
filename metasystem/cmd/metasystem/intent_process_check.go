@@ -30,7 +30,7 @@ func (h *processCheckHeld) Error() string {
 func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory string, check *launch.UnitCheck) error {
 	act := processchange.ProcessAct{Goal: plan.Goal, Unit: plan.Unit, Operation: directory, Checkout: plan.Worktree, Key: "check", Layer: "unit-check", Lineage: inv.claimLineage(), Actor: "agent", Reason: inv.input.text("reason"), After: check.Cheap}
 	if inv.input.switched("check-only") {
-		act.Checkout = inv.stateRoot
+		act.Checkout = checkoutAuthorityRoot(inv.layout)
 	}
 	person := false
 	if inv.input.has("check") {
@@ -101,7 +101,7 @@ func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory s
 	if inv.input.has("check") {
 		selectionAct = inv.input.text("act")
 	}
-	admitted, err := processchange.AdmitCheck(processchange.Check{Root: inv.stateRoot, Act: selectionAct, FullArgv: fullArgv, ProcessAct: act, Applicable: applicable, Person: person, Observation: !inv.input.has("check"), Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }})
+	admitted, err := processchange.AdmitCheck(processchange.Check{Root: inv.stateRoot, Installation: inv.layout.InstallationRoot, Act: selectionAct, FullArgv: fullArgv, ProcessAct: act, Applicable: applicable, Person: person, Observation: !inv.input.has("check"), Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }})
 	if err != nil && (inv.input.has("check") || admitted.Status != "observation-unknown") {
 		return &processCheckHeld{act: admitted, remedy: remedy, problem: err.Error()}
 	}

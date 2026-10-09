@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -22,7 +21,7 @@ func carryRecoveryBed(t *testing.T) (*workBed, intentOwners, []string, string) {
 	if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf checked\nif test -f '"+marker+"'; then exit 9; fi\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
-	subject := branch.AttestationSubject{Commit: strings.Repeat("a", 40), Tree: strings.Repeat("b", 40)}
+	subject := branch.AttestationSubject{Commit: strings.Repeat("a", 40), Tree: strings.Repeat("b", 40), Parent: "seed"}
 	owners.connection.readRepository = carryFullRepository{root: b.worktree, common: t.TempDir(), subject: subject}
 	original := owners.work.git
 	owners.work.git = func(root string, args ...string) ([]byte, error) {
@@ -126,5 +125,5 @@ func TestCarryRetainedFailurePublicRerun(t *testing.T) {
 			t.Fatalf("wrong act: got %q want %q, error %v", retained.Check.ProcessAct, actID, err)
 		}
 	}
-	t.Log(fmt.Sprintf("same act retained by %d real check executions", len(results)))
+	t.Logf("same act retained by %d real check executions", len(results))
 }
