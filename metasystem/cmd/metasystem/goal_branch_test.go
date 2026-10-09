@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	dispatchmodel "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -54,6 +56,7 @@ func TestGLEGoalBranchReadPassesFrozenBriefAndSolOverrideToDelegate(t *testing.T
 	f := newBranchRawFixture(t, false, false)
 	worktree, unit := f.installation, f.unit
 	raw := f.dependencies()
+	var deadlineCalls atomic.Int32
 	code, stdout, stderr := 0, "", ""
 	input := filepath.Join(t.TempDir(), "accepted-design.md")
 	design := "Accepted implementation design: exact input identity and declared ownership.\n"
@@ -70,10 +73,19 @@ func TestGLEGoalBranchReadPassesFrozenBriefAndSolOverrideToDelegate(t *testing.T
 	t.Setenv("BRIEF_COPY", copyPath)
 	code, stdout, stderr = runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runGoalBranchReadWith([]string{"--root", worktree, "--goal", "standing-validation", "--unit", unit,
-			"--brief", input, "--runtime", "codex", "--model", "gpt-5.6-sol"}, goalBranchReadDependencies{
+			"--brief", input, "--runtime", "codex", "--model", "gpt-5.6-sol"}, goalBranchReadDependencies{ProjectionDeadline: func(wait time.Duration) <-chan time.Time {
+			deadlineCalls.Add(1)
+			if wait != 4*time.Second {
+				t.Errorf("branch read deadline=%s; want 4s", wait)
+			}
+			return make(chan time.Time)
+		},
 			Delegator: scriptDelegator(binary), Gate: func(string) (string, error) { return "green", nil }, Raw: raw,
 		}, stdout, stderr)
 	})
+	if deadlineCalls.Load() < 2 {
+		t.Fatalf("branch read used %d fixture deadlines; want the initial read and claim checks", deadlineCalls.Load())
+	}
 	if code != 0 || stderr != "" || !strings.Contains(stdout, "state=dispatched") {
 		t.Fatalf("branch read: code=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}

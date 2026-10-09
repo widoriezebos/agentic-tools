@@ -381,9 +381,13 @@ func (l *receiptLedger) recheck() error {
 }
 
 // GoalLedgerObserver observes a checkout's ledger through the goal owner:
-// goal.Project with fetchFirst, under the context (a projection that
+// ProjectWithDeadline with the endpoint's deadline, under the context (a projection that
 // outlives it is abandoned, never waited for).
 func GoalLedgerObserver(now func() time.Time) Observer {
+	return goalLedgerObserver(now, goal.ResolveEndpoint)
+}
+
+func goalLedgerObserver(now func() time.Time, resolve func(string) (goal.Endpoint, error)) Observer {
 	return func(ctx context.Context, installation string, fetch bool) (LedgerView, error) {
 		type answer struct {
 			view LedgerView
@@ -391,12 +395,12 @@ func GoalLedgerObserver(now func() time.Time) Observer {
 		}
 		done := make(chan answer, 1)
 		go func() {
-			endpoint, err := goal.ResolveEndpoint(installation)
+			endpoint, err := resolve(installation)
 			if err != nil {
 				done <- answer{err: err}
 				return
 			}
-			projection, err := goal.Project(endpoint, fetch, now())
+			projection, err := goal.ProjectWithDeadline(endpoint, fetch, now(), endpoint.ProjectionDeadline)
 			if err != nil {
 				done <- answer{err: err}
 				return

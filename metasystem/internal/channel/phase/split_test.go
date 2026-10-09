@@ -43,6 +43,15 @@ func TestSplitApprovalTickReconcilesHeldChildren(t *testing.T) {
 			record := &goal.RootRecord{Identity: "01J5X000000000000000000000", FormatVersion: "1", SyncMode: goal.SyncRemote, Revision: 1}
 			repository := testgoal.New(map[string][]byte{"plans/goals/backlog.md": goal.RenderRoot(record)}, now, strings.Repeat("1", 40))
 			endpoint := goal.Endpoint{Root: root, Remote: "origin", Branch: "refs/heads/main", Repository: repository}
+			deadlines := 0
+			endpoint.ProjectionDeadline = func(wait time.Duration) <-chan time.Time {
+				deadlines++
+				if wait != 4*time.Second {
+					t.Errorf("split retry deadline=%s; want 4s", wait)
+				}
+				return make(chan time.Time)
+			}
+
 			authorization, err := fixtureauth.New(root)
 			if err != nil {
 				t.Fatal(err)
@@ -118,6 +127,9 @@ func TestSplitApprovalTickReconcilesHeldChildren(t *testing.T) {
 				return run(ctx, root, now, func(string) (string, error) { return "test-machine", nil }, func(string) (goal.Endpoint, error) { return endpoint, nil })
 			}
 			undelivered, err := tick()
+			if deadlines != 1 {
+				t.Fatalf("split retry used %d fixture deadlines; want 1", deadlines)
+			}
 			if (err != nil) != (scenario != "unblocked") || (scenario == "unblocked" && undelivered != 0) {
 				t.Fatalf("first tick: undelivered=%d err=%v", undelivered, err)
 			}

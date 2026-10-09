@@ -175,7 +175,9 @@ func TestIntentGoalsReadFlags(t *testing.T) {
 	if code, result := bed.runJSON(bed.owners(), "goal", "list", "--pretty"); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("goals --json --pretty = %d %+v", code, result)
 	}
-	if code, result := bed.runJSON(bed.owners(), "goal", "list", "--fetch"); code != 0 || result.Outcome != intentConfirmed {
+	owners := bed.owners()
+	owners.dependencies.projectionDeadline = checkedProjectionDeadline(t)
+	if code, result := bed.runJSON(owners, "goal", "list", "--fetch"); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("goals --fetch = %d %+v", code, result)
 	}
 }

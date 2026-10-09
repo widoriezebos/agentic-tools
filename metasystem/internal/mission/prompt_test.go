@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -58,9 +59,20 @@ func TestAssemblePromptWithGoalSourceServesHeldGoal(t *testing.T) {
 		"plans/goals/held.md":    goal.RenderFile(held),
 	}}
 	source := &GoalSource{Endpoint: goal.Endpoint{Root: repo, Remote: "local", Branch: goal.LocalLedgerBranch, Repository: raw}, Machine: machine}
+	deadlines := 0
+	source.Endpoint.ProjectionDeadline = func(wait time.Duration) <-chan time.Time {
+		deadlines++
+		if wait != 4*time.Second {
+			t.Errorf("prompt deadline=%s; want 4s", wait)
+		}
+		return make(chan time.Time)
+	}
 	output := filepath.Join(t.TempDir(), "prompt.md")
 	if err := AssemblePromptWithGoalSource(repo, repo, "m1", "t1", output, source); err != nil {
 		t.Fatal(err)
+	}
+	if deadlines != 1 {
+		t.Fatalf("prompt used %d fixture deadlines; want 1", deadlines)
 	}
 	data, err := os.ReadFile(output)
 	if err != nil {
@@ -141,14 +153,26 @@ func promptSandbox(t *testing.T) string {
 
 func TestAssemblePromptByteStable(t *testing.T) {
 	repo := promptSandbox(t)
+	var deadlineCalls atomic.Int32
+	deadline := func(wait time.Duration) <-chan time.Time {
+		deadlineCalls.Add(1)
+		if wait != 4*time.Second && wait != 3*time.Second {
+			t.Errorf("prompt deadline=%s; want the projection or fetch bound", wait)
+		}
+		return make(chan time.Time)
+	}
+
 	out1 := filepath.Join(t.TempDir(), "prompt-1.txt")
 	out2 := filepath.Join(t.TempDir(), "prompt-2.txt")
 
-	if err := AssemblePrompt(repo, repo, "m1", "t1", out1); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out1, deadline); err != nil {
 		t.Fatal(err)
 	}
-	if err := AssemblePrompt(repo, repo, "m1", "t1", out2); err != nil {
+	if err := AssemblePrompt(repo, repo, "m1", "t1", out2, deadline); err != nil {
 		t.Fatal(err)
+	}
+	if deadlineCalls.Load() != 4 {
+		t.Fatalf("prompt assembly used %d fixture deadlines; want two projections and two fetches", deadlineCalls.Load())
 	}
 	first, err := os.ReadFile(out1)
 	if err != nil {

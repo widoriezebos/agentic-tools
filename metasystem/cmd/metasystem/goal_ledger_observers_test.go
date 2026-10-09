@@ -41,7 +41,7 @@ func runGoalListWithResolver(args []string, resolve func(string) (goal.Endpoint,
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	p, err := goal.Project(e, *fetch, time.Now())
+	p, err := goal.ProjectWithDeadline(e, *fetch, time.Now(), e.ProjectionDeadline)
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

@@ -429,9 +429,19 @@ func TestHandoverWaitsTheConfiguredClaimLockWait(t *testing.T) {
 	}
 	defer offer.Release()
 	req.Ulid, req.Now = "01J5X00000000000000000HW01", req.Now.Add(time.Minute)
+	clock := req.Now
+	var sleeps []time.Duration
+	req.HandoverNow = func() time.Time { return clock }
+	req.HandoverSleep = func(d time.Duration) {
+		sleeps = append(sleeps, d)
+		clock = clock.Add(d)
+	}
 	_, err = Handover(req, id, "landing", "landing-lineage", 11, "batch-a", func() (identity.Liveness, error) { return identity.Alive, nil })
 	if err == nil || !strings.Contains(err.Error(), "held its claim over 1s") {
 		t.Fatalf("handover under a held claim lock = %v; want the refusal after the configured 1s", err)
+	}
+	if clock.Sub(req.Now) != time.Second || len(sleeps) != 10 {
+		t.Fatalf("claim-lock wait advanced %s in %d steps; want 1s in ten steps", clock.Sub(req.Now), len(sleeps))
 	}
 }
 

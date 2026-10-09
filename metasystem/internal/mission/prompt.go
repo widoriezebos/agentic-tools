@@ -448,8 +448,8 @@ func promptTurnInt(v any) (int64, bool) {
 // The contract and the serving goal are read under the state root root; the
 // mission directory, job records and configuration under the installation
 // repo.
-func AssemblePrompt(root, repo, mission, turnID, output string) error {
-	return AssemblePromptWithGoalSource(root, repo, mission, turnID, output, nil)
+func AssemblePrompt(root, repo, mission, turnID, output string, deadlines ...func(time.Duration) <-chan time.Time) error {
+	return AssemblePromptWithGoalSource(root, repo, mission, turnID, output, nil, deadlines...)
 }
 
 // GoalSource binds one optional serving-goal read to a repository and machine.
@@ -459,7 +459,11 @@ type GoalSource struct {
 	Machine  string
 }
 
-func AssemblePromptWithGoalSource(root, repo, mission, turnID, output string, goalSource *GoalSource) error {
+func AssemblePromptWithGoalSource(root, repo, mission, turnID, output string, goalSource *GoalSource, deadlines ...func(time.Duration) <-chan time.Time) error {
+	var deadline func(time.Duration) <-chan time.Time
+	if len(deadlines) > 0 {
+		deadline = deadlines[0]
+	}
 	if !idRe.MatchString(mission) || !idRe.MatchString(turnID) {
 		return fmt.Errorf("mission and turn ids must match the lowercase metasystem id grammar")
 	}
@@ -634,12 +638,12 @@ func AssemblePromptWithGoalSource(root, repo, mission, turnID, output string, go
 	var goalOK bool
 	if goalSource == nil {
 		if endpoint, endpointErr := goal.ResolveEndpoint(root); endpointErr == nil {
-			_, _ = goal.Project(endpoint, true, time.Now())
+			_, _ = goal.ProjectWithDeadline(endpoint, true, time.Now(), deadline)
 		}
 		goalId, goalIntent, goalOK = (&goal.Store{Root: root}).ServingProjection()
 	} else {
 		if goalSource.Endpoint.Repository != nil && goalSource.Endpoint.Root == root {
-			_, _ = goal.Project(goalSource.Endpoint, true, time.Now())
+			_, _ = goal.ProjectWithDeadline(goalSource.Endpoint, true, time.Now(), deadline)
 		}
 		goalId, goalIntent, goalOK = (&goal.Store{Root: root}).ServingProjectionAtEndpoint(goalSource.Endpoint, goalSource.Machine)
 	}

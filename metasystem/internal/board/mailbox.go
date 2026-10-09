@@ -946,7 +946,18 @@ func holders(home, goal string) []string {
 // which the handover is refused naming the holders (N-2). A lock that
 // cannot be opened at all holds nothing and refuses nothing.
 func LockGoalHandover(home, goal string, wait time.Duration) (func(), error) {
-	return lockGoalHandover(home, goal, wait, time.Now, time.Sleep)
+	return LockGoalHandoverWithClock(home, goal, wait, nil, nil)
+}
+
+// LockGoalHandoverWithClock waits on the supplied clock; nil uses the system clock.
+func LockGoalHandoverWithClock(home, goal string, wait time.Duration, now func() time.Time, sleep func(time.Duration)) (func(), error) {
+	if now == nil {
+		now = time.Now
+	}
+	if sleep == nil {
+		sleep = time.Sleep
+	}
+	return lockGoalHandover(home, goal, wait, now, sleep)
 }
 
 func lockGoalHandover(home, goal string, wait time.Duration, now func() time.Time, sleep func(time.Duration)) (func(), error) {

@@ -79,7 +79,7 @@ func TestIntentWaitGoalEventGitAdapterObservesAPersonsAct(t *testing.T) {
 	if actCode != 0 || !strings.Contains(stdout, `"outcome":"confirmed"`) {
 		t.Fatalf("the person's act: code=%d stdout=%q stderr=%q", actCode, stdout, actErr)
 	}
-	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	projection, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), checkedProjectionDeadline(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	before, err := goal.Project(endpoint, true, time.Now().UTC())
+	before, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), checkedProjectionDeadline(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -255,7 +255,7 @@ func TestIntentWaitQuestionGitAdapterContinuesToTheRealAnswer(t *testing.T) {
 	if err != nil || recorded.Answer == nil || recorded.Answer.Text != "yes proceed" || recorded.Answer.UserID != "human-a" {
 		t.Fatalf("the owner's recorded answer: %+v %v", recorded, err)
 	}
-	after, err := goal.Project(endpoint, true, time.Now().UTC())
+	after, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), checkedProjectionDeadline(t))
 	if err != nil {
 		t.Fatal(err)
 	}

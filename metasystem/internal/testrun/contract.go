@@ -115,7 +115,7 @@ func GoalRiskAt(endpoint goal.Endpoint, id string, now time.Time) (testpolicy.Go
 	if err == nil {
 		return risk, revision, nil
 	}
-	fetched, fetchErr := goal.Project(endpoint, true, now)
+	fetched, fetchErr := goal.ProjectWithDeadline(endpoint, true, now, endpoint.ProjectionDeadline)
 	if fetchErr != nil {
 		reason, _, _ := strings.Cut(fetchErr.Error(), "\n")
 		return testpolicy.GoalRisk{}, 0, fmt.Errorf("goal %s is not in this checkout's goal list, and fetching the shared list failed: %s\nrun: metasystem goal list --fetch", id, reason)

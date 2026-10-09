@@ -1930,7 +1930,14 @@ func TestFrozenPublicVersionOneSelectionProbesRunAgainstCandidateExecutable(t *t
 func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker(t *testing.T) {
 	// Registered before the first TempDir, so it runs after the TempDir
 	// removal and times it; the phase log names where a slow run spent it.
-	phases := newFrozenCorpusPhases(t)
+	deadlineCalls := 0
+	phases := newFrozenCorpusPhases(t, func(wait time.Duration) <-chan time.Time {
+		deadlineCalls++
+		if wait != frozenCorpusPhaseBudget {
+			t.Errorf("corpus phase budget = %s; want %s", wait, frozenCorpusPhaseBudget)
+		}
+		return make(chan time.Time)
+	})
 	// The corpus source is the engine's compile closure, not a copy of the
 	// whole metasystem module: the six probes run the candidate engine and
 	// authenticate its stamp against the candidate commit, so the candidate
@@ -1973,6 +1980,9 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 	var executions frozenCorpusExecutions
 	buildFrozenPublicVersionOneCorpusEngine(t, phases, moduleRoot, inputs[0], engine, devgate, &executions)
 	runFrozenPublicVersionOneCorpusWorker(t, phases, inputs[0], engine, &executions)
+	if deadlineCalls != 2 {
+		t.Fatalf("corpus selected %d phase deadlines; want engine build and worker", deadlineCalls)
+	}
 	workerAttempts := 0
 	for _, input := range inputs {
 		attempts, err := proofrun.ReadAttempts(input.root)
@@ -1999,14 +2009,13 @@ func TestFrozenPublicVersionOneCorpusRunsAllSixCasesThroughFirstTransitionWorker
 // histories, for about 14.5k entries; whole-module copies left about 65.7k.
 const frozenCorpusEntryCeiling = 20000
 
-// frozenCorpusCleanupReserve is the part of the package deadline kept for
-// cleanup, so an overrunning phase fails by name instead of the package
-// timeout panicking inside TempDir removal.
-const frozenCorpusCleanupReserve = 90 * time.Second
+// Each corpus phase owns its deadline on the fixture clock.
+const frozenCorpusPhaseBudget = 5 * time.Minute
 
 type frozenCorpusPhases struct {
 	t              *testing.T
 	removalStarted time.Time
+	deadline       func(time.Duration) <-chan time.Time
 }
 
 type frozenCorpusPhase struct {
@@ -2015,9 +2024,9 @@ type frozenCorpusPhase struct {
 	started time.Time
 }
 
-func newFrozenCorpusPhases(t *testing.T) *frozenCorpusPhases {
+func newFrozenCorpusPhases(t *testing.T, deadline func(time.Duration) <-chan time.Time) *frozenCorpusPhases {
 	t.Helper()
-	phases := &frozenCorpusPhases{t: t}
+	phases := &frozenCorpusPhases{t: t, deadline: deadline}
 	t.Cleanup(func() {
 		if !phases.removalStarted.IsZero() {
 			t.Logf("frozen corpus phase TempDir removal took %s", time.Since(phases.removalStarted).Round(time.Millisecond))
@@ -2040,22 +2049,26 @@ func (phase frozenCorpusPhase) end() {
 	phase.phases.t.Logf("frozen corpus phase %s took %s", phase.name, time.Since(phase.started).Round(time.Millisecond))
 }
 
-// context bounds a child process by the package deadline less the cleanup
-// reserve. Without a package deadline the phase is unbounded.
+// context bounds a child process by its own deadline on the fixture clock.
 func (phase frozenCorpusPhase) context() (context.Context, context.CancelFunc) {
-	deadline, ok := phase.phases.t.Deadline()
-	if !ok {
-		return context.WithCancel(context.Background())
-	}
-	return context.WithDeadline(context.Background(), deadline.Add(-frozenCorpusCleanupReserve))
+	ctx, cancel := context.WithCancelCause(context.Background())
+	deadline := phase.phases.deadline(frozenCorpusPhaseBudget)
+	go func() {
+		select {
+		case <-deadline:
+			cancel(context.DeadlineExceeded)
+		case <-ctx.Done():
+		}
+	}()
+	return ctx, func() { cancel(context.Canceled) }
 }
 
 // fail names the phase and whether its deadline, not the child, ended it.
 func (phase frozenCorpusPhase) fail(ctx context.Context, err error, output []byte) {
 	phase.phases.t.Helper()
-	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-		phase.phases.t.Fatalf("frozen corpus phase %s overran its deadline (package timeout less %s cleanup reserve) after %s: %v\n%s",
-			phase.name, frozenCorpusCleanupReserve, time.Since(phase.started).Round(time.Millisecond), err, output)
+	if errors.Is(context.Cause(ctx), context.DeadlineExceeded) {
+		phase.phases.t.Fatalf("frozen corpus phase %s overran its deadline (%s on the fixture clock) after %s: %v\n%s",
+			phase.name, frozenCorpusPhaseBudget, time.Since(phase.started).Round(time.Millisecond), err, output)
 	}
 	phase.phases.t.Fatalf("frozen corpus phase %s failed after %s: %v\n%s", phase.name, time.Since(phase.started).Round(time.Millisecond), err, output)
 }

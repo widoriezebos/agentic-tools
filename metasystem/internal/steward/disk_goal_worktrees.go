@@ -174,7 +174,7 @@ func announcedMains(directory string) (bool, error) {
 // something still keeps, is left for the disk pass, which retries. The
 // registry is the one the goal's worktrees are recorded in: the state root
 // of root's installation.
-func SweepGoalWorktrees(root, goalID string, sweep func(context.Context) error) error {
+func SweepGoalWorktrees(root, goalID string, sweep func(context.Context) error, censuses ...func() *diskstore.UseCensus) error {
 	layout, err := stateroot.ResolveLayout(root)
 	if err != nil {
 		return err
@@ -191,14 +191,18 @@ func SweepGoalWorktrees(root, goalID string, sweep func(context.Context) error) 
 	for _, record := range records {
 		ids = append(ids, record.ID)
 	}
+	takeCensus := func() *diskstore.UseCensus {
+		home, _ := HomeStateRoot()
+		census := diskstore.TakeUseCensus(context.Background(), *KernelCensusReader(identity.KernelProcessTable{}, home, append(ArmedCheckouts(), root)))
+		return &census
+	}
+	if len(censuses) > 0 && censuses[0] != nil {
+		takeCensus = censuses[0]
+	}
 	outcome, err := diskstore.ReleaseLinkedWorktrees(context.Background(), registry, ids, diskstore.LinkedRelease{
 		GitRoot: layout.GitRoot, Git: ExecWorkspaceGit, Now: time.Now().UTC(), By: "the goal-branch sweep",
-		TakeCensus: func() *diskstore.UseCensus {
-			home, _ := HomeStateRoot()
-			census := diskstore.TakeUseCensus(context.Background(), *KernelCensusReader(identity.KernelProcessTable{}, home, append(ArmedCheckouts(), root)))
-			return &census
-		},
-		Remove: sweep})
+		TakeCensus: takeCensus,
+		Remove:     sweep})
 	switch {
 	case err != nil:
 		return err

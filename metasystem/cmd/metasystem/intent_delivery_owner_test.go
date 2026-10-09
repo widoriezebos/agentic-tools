@@ -113,7 +113,16 @@ func newWholeOwnerLanding(t *testing.T, declaredChecks ...bool) *wholeOwnerLandi
 func (f *wholeOwnerLanding) land(t *testing.T) (int, intentResult) {
 	t.Helper()
 	owners := defaultIntentOwners()
-	delivery := belowTheGate(defaultIntentDeliveryOwners())
+	owners.dependencies.projectionDeadline = neverProjectionDeadline
+	var deadlines atomic.Int32
+	deadline := func(wait time.Duration) <-chan time.Time {
+		deadlines.Add(1)
+		if wait != 4*time.Second && wait != 3*time.Second {
+			t.Errorf("landing projection deadline=%s", wait)
+		}
+		return make(chan time.Time)
+	}
+	delivery := belowTheGate(defaultIntentDeliveryOwners(goalBranchSweepOptions{Deadline: deadline}))
 	delivery.process = func(process intentProcess) intentProcessResult {
 		want := []string{"landing", "test-receipt", "--root", f.mainRoot, "--tree", flagValue(process.argv, "--tree"), "--mode", "auto", "--goal", "standing-validation"}
 		if len(process.argv) < 2 || !slices.Equal(process.argv[1:], want) {
@@ -135,6 +144,9 @@ func (f *wholeOwnerLanding) land(t *testing.T) (int, intentResult) {
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("land printed no result: %v; stdout=%q stderr=%q", err, stdout.String(), stderr.String())
+	}
+	if result.Outcome != intentUnchanged && deadlines.Load() == 0 {
+		t.Fatal("public landing bypassed its fixture projection deadlines")
 	}
 	return code, result
 }
@@ -189,7 +201,7 @@ func (f *wholeOwnerLanding) assertLanded(t *testing.T, prepared branch.PreparedL
 	if err != nil {
 		t.Fatal(err)
 	}
-	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	projection, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), checkedProjectionDeadline(t))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -287,7 +299,8 @@ func TestIntentLandProvesTheReceiptInThisProcess(t *testing.T) {
 	t.Parallel()
 	f := newWholeOwnerLanding(t)
 	owners := defaultIntentOwners()
-	delivery := belowTheGate(defaultIntentDeliveryOwners())
+	owners.dependencies.projectionDeadline = neverProjectionDeadline
+	delivery := belowTheGate(defaultIntentDeliveryOwners(goalBranchSweepOptions{Deadline: checkedProjectionDeadline(t)}))
 	delivery.process = func(process intentProcess) intentProcessResult {
 		t.Errorf("an engine child ran: %v", process.argv)
 		return intentProcessResult{code: 1}
@@ -346,9 +359,10 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 			landingRoot := filepath.Join(t.TempDir(), "landing")
 			goalSyncMutationGit(t, filepath.Dir(landingRoot), "clone", "-q", "-b", "main", f.upstream, landingRoot)
 			owners := defaultIntentOwners()
+			owners.dependencies.projectionDeadline = neverProjectionDeadline
 			owners.dependencies.ownerLineage = func() string { return "m1" }
 			// Real Git proves the published goal tip and main stay unchanged.
-			delivery := belowTheGate(defaultIntentDeliveryOwners())
+			delivery := belowTheGate(defaultIntentDeliveryOwners(goalBranchSweepOptions{Deadline: checkedProjectionDeadline(t)}))
 			delivery.laneRoot = func(string, time.Time) (string, bool, error) { return landingRoot, true, nil }
 			delivery.process = func(process intentProcess) intentProcessResult {
 				t.Fatalf("the hand-in ran a subprocess %v", process.argv)
@@ -386,7 +400,7 @@ func TestWorkLandHandsInOverRealGit(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			projection, err := goal.Project(endpoint, true, time.Now().UTC())
+			projection, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), checkedProjectionDeadline(t))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -439,9 +453,10 @@ func TestWorkRebaseGitAdapterHoldsAfterHistory(t *testing.T) {
 	laneRoot := filepath.Join(t.TempDir(), "landing")
 	goalSyncMutationGit(t, filepath.Dir(laneRoot), "clone", "-q", "-b", "main", f.upstream, laneRoot)
 	owners := defaultIntentOwners()
+	owners.dependencies.projectionDeadline = neverProjectionDeadline
 	owners.dependencies.ownerLineage = func() string { return "m1" }
 	owners.connection.rebaseGate = func(string) (string, error) { return "", nil }
-	delivery := belowTheGate(defaultIntentDeliveryOwners())
+	delivery := belowTheGate(defaultIntentDeliveryOwners(goalBranchSweepOptions{Deadline: neverProjectionDeadline}))
 	// Every projection uses both fixture deadlines, even inside repeated
 	// claim checks. Counts assert selection without relying on Git latency.
 	neverDeadline := func() (func(time.Duration) <-chan time.Time, func()) {

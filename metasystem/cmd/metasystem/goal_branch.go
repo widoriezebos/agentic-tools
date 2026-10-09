@@ -35,6 +35,7 @@ func goalBranchGit(root string, args ...string) (string, error) {
 }
 
 type goalBranchReadDependencies struct {
+	ProjectionDeadline func(time.Duration) <-chan time.Time
 	// Delegator is the delegate boundary the read calls in its own process
 	// (design 6.2); nil is the production boundary.
 	Delegator delegateCaller
@@ -299,10 +300,11 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 			return branch.BranchReadResult{}, 1, err
 		}
 	}
-	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	projection, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), dependencies.ProjectionDeadline)
 	if err != nil {
 		return branch.BranchReadResult{}, 1, err
 	}
+	endpoint.ProjectionDeadline = dependencies.ProjectionDeadline
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Scope: projection.Tree.Live[*goalID], Repo: *root, Remote: endpoint.Remote,
 		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect, Join: *join,
 		BriefPath: brief.value, BuildBriefSHA256: *buildDigest, Runtime: runtime.value, Model: model.value, Selected: *selected, UnitRead: bundle,
@@ -318,7 +320,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 
 // goalBranchLandPushRun pushes one prepared landing and sweeps a goal's last
 // landing, returning the pushed landing and the endpoint branch it moved.
-func goalBranchLandPushRun(args []string) (branch.PreparedLanding, string, int, error) {
+func goalBranchLandPushRun(args []string, options ...goalBranchSweepOptions) (branch.PreparedLanding, string, int, error) {
 	// A mistake in the words is returned, never printed.
 	var parseProblem strings.Builder
 	flags := newFlagSet("goal branch land-push", io.Discard, &parseProblem)
@@ -336,13 +338,18 @@ func goalBranchLandPushRun(args []string) (branch.PreparedLanding, string, int, 
 	if err != nil {
 		return branch.PreparedLanding{}, "", 1, err
 	}
+	var census func() *diskstore.UseCensus
+	if len(options) > 0 {
+		endpoint.ProjectionDeadline = options[0].Deadline
+		census = options[0].Census
+	}
 	result, err := branch.LandPush(branch.LandPushRequest{Repo: *root, Remote: endpoint.Remote, EndpointRef: endpoint.Branch,
 		GoalID: *goalID, Prepared: *prepared, CheckClaim: goalBranchClaimCheck(*root, *goalID, endpoint)})
 	if err != nil {
 		return branch.PreparedLanding{}, "", 1, err
 	}
 	if branch.IsLastLanding(*root, result.Landing, *goalID) {
-		if err := goalBranchSweepLandedAt(*root, *goalID, result.Landing, endpoint); err != nil {
+		if err := goalBranchSweepLandedAt(*root, *goalID, result.Landing, endpoint, census); err != nil {
 			return result, endpoint.Branch, 1, err
 		}
 	}
@@ -350,6 +357,7 @@ func goalBranchLandPushRun(args []string) (branch.PreparedLanding, string, int, 
 }
 
 type goalBranchLandPrepDependencies struct {
+	ProjectionDeadline func(time.Duration) <-chan time.Time
 	// CandidateOnly asks the owner for the landing candidate a receipt must
 	// prove; --out and --test-receipt are then not read.
 	CandidateOnly   bool
@@ -391,6 +399,7 @@ func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDepende
 	if err != nil {
 		return goalBranchLandPrepOutcome{}, 1, err
 	}
+	endpoint.ProjectionDeadline = dependencies.ProjectionDeadline
 	check := goalBranchClaimCheck(*root, *goalID, endpoint)
 	if err := branch.CheckHolder(check); err != nil {
 		return goalBranchLandPrepOutcome{}, 1, err
@@ -406,7 +415,7 @@ func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDepende
 		}
 		return goalBranchLandPrepOutcome{}, 1, err
 	}
-	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	projection, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), dependencies.ProjectionDeadline)
 	if err != nil {
 		return goalBranchLandPrepOutcome{}, 1, err
 	}
@@ -629,7 +638,12 @@ func branchOperationID() (string, error) { return branch.OperationID() }
 
 // goalBranchSweepLanded sweeps the merged goal branch after its last landing
 // was pushed: the sweep land-push runs, repeatable after it failed.
-func goalBranchSweepLanded(root, goalID, landing string) error {
+type goalBranchSweepOptions struct {
+	Deadline func(time.Duration) <-chan time.Time
+	Census   func() *diskstore.UseCensus
+}
+
+func goalBranchSweepLanded(root, goalID, landing string, options ...goalBranchSweepOptions) error {
 	endpoint, err := branch.MainEndpoint(root)
 	if err != nil {
 		return err
@@ -637,10 +651,15 @@ func goalBranchSweepLanded(root, goalID, landing string) error {
 	if !branch.IsLastLanding(root, landing, goalID) {
 		return nil
 	}
-	return goalBranchSweepLandedAt(root, goalID, landing, endpoint)
+	var census func() *diskstore.UseCensus
+	if len(options) > 0 {
+		endpoint.ProjectionDeadline = options[0].Deadline
+		census = options[0].Census
+	}
+	return goalBranchSweepLandedAt(root, goalID, landing, endpoint, census)
 }
 
-func goalBranchSweepLandedAt(root, goalID, landing string, endpoint goal.Endpoint) error {
+func goalBranchSweepLandedAt(root, goalID, landing string, endpoint goal.Endpoint, censuses ...func() *diskstore.UseCensus) error {
 	transport := ""
 	if _, remoteErr := goalBranchGit(root, "remote", "get-url", "transport"); remoteErr == nil {
 		transport = "transport"
@@ -651,7 +670,7 @@ func goalBranchSweepLandedAt(root, goalID, landing string, endpoint goal.Endpoin
 		_, err := branch.Sweep(branch.SweepRequest{Repo: root, Remote: endpoint.Remote, Transport: transport,
 			EndpointTip: landing, GoalID: goalID, CheckClaim: goalBranchClaimCheck(root, goalID, endpoint), Context: ctx})
 		return err
-	})
+	}, censuses...)
 }
 
 // goalBranchPublishRead publishes a collected read's attestation through the

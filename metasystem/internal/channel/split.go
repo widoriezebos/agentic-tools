@@ -57,7 +57,7 @@ func RetrySplitApproval(ctx context.Context, e goal.Endpoint, p Provider, d Dest
 		return nil
 	}
 	return withLandedState(e.Root, func(s *LandedState) error {
-		projection, err := goal.Project(e, true, now)
+		projection, err := goal.ProjectWithDeadline(e, true, now, e.ProjectionDeadline)
 		return retryPending(ctx, s, p, d, func(n LandedNotice) (string, error) {
 			if err != nil {
 				return "", err

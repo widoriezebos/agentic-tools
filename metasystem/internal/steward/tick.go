@@ -34,6 +34,8 @@ type WorkerCensus interface {
 
 // TickConfig carries the thresholds; zero values take the defaults.
 type TickConfig struct {
+	// GoalProjection supplies the accepted ledger read; nil uses the production repository.
+	GoalProjection func(string, time.Time) (goal.Projection, error)
 	// ProviderHome selects the host registration; empty uses the registry home.
 	ProviderHome string
 	// WorkStateRoot selects the host unit and launch stores; empty uses the
@@ -131,6 +133,18 @@ func (c TickConfig) progressTicks(repoRoot string, ev Evidence) int {
 		seconds = TickSeconds(repoRoot)
 	}
 	return int(ev.Age / (time.Duration(seconds) * time.Second))
+}
+
+func (c TickConfig) readClaimableBudgetedWork(root string, now time.Time) (goal.ClaimableBudgetedWork, error) {
+	projection, err := c.GoalProjection(root, now)
+	if err != nil {
+		return goal.ClaimableBudgetedWork{}, err
+	}
+	machine, err := goal.ResolveMachine(root)
+	if err != nil {
+		return goal.ClaimableBudgetedWork{}, err
+	}
+	return goal.ClaimableWorkFromProjection(projection, machine, identity.KernelProber{})
 }
 
 func (c TickConfig) now() time.Time {
@@ -443,6 +457,9 @@ func defaultTickContinuationDependencies() tickContinuationDependencies {
 }
 
 func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus, generation int, process identity.Ref, tickAttemptSeq int64, goalStops []BreachStopReport, dependencies tickContinuationDependencies) (TickResult, bool, error) {
+	if cfg.GoalProjection != nil {
+		dependencies.openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
+	}
 	dependencies.health.probeRuntime = cfg.ProbeRuntime
 	dependencies.health.examineLedger = func(root string, now time.Time) error {
 		return examineLedgerMoveWithRepositoryAndWriter(root, now, dependencies.ledgerRepository, dependencies.ledgerWriter)
@@ -491,6 +508,9 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	}
 	if cfg.Seat != nil {
 		seat := defaultSeatDependencies(cfg.Seat)
+		if cfg.GoalProjection != nil {
+			seat.Project = cfg.GoalProjection
+		}
 		dependencies.openWork.Seat = &seat
 	}
 	result, err := decideTickWithDependencies(repoRoot, cfg, census, prev, marks, dependencies.openWork)
