@@ -101,13 +101,23 @@ func CollectExamination(repoRoot, jobID string) (readsubject.Read, error) {
 			return readsubject.Read{}, fmt.Errorf("frozen design record is unavailable or malformed")
 		}
 		read, err := readsubject.CollectDesignRead(jobID, root, page.ID, page.Goals, subject, engine, model, output, data, verdict)
-		if err == nil && round > 1 {
-			parent := state.records[asString(record["parentJob"])]
+		sectionOwner := record
+		sectionRound := round
+		if source := asString(record["examinationRetryOf"]); source != "" {
+			sectionOwner = state.records[source]
+			sectionRound, _ = numInt(sectionOwner["round"])
+			original, present, problem := readsubject.ReadRoundSubject(state.agents, root, sectionRound)
+			if problem != nil || !present || !original.Equal(subject) || original.DesignPage != subject.DesignPage {
+				return read, fmt.Errorf("design retry does not bind its original frozen page: %v", problem)
+			}
+		}
+		if err == nil && sectionRound > 1 {
+			parent := state.records[asString(sectionOwner["parentJob"])]
 			previousRound, ok := numInt(parent["round"])
 			if !ok || previousRound < 1 || previousRound >= round {
 				return read, fmt.Errorf("section history has no preceding examination")
 			}
-			decisions, problem := frozenDesignDecisions(state.agents, root, page.ID, jobID, asString(record["operationId"]), previousRound)
+			decisions, problem := frozenDesignDecisions(state.agents, root, page.ID, asString(sectionOwner["jobId"]), asString(sectionOwner["operationId"]), previousRound)
 			if problem != nil {
 				return read, problem
 			}

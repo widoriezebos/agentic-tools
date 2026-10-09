@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -51,15 +52,18 @@ func (inv *intentInvocation) designReviewEntryPath(recordID string) string {
 	return inv.layout.InstallationRoot.Path("artifacts", "agents", "intent-review", "design-"+strings.ToLower(recordID), "chain.json")
 }
 
-func (inv *intentInvocation) readDesignReviewEntry(recordID string) designReviewEntry {
+func (inv *intentInvocation) readDesignReviewEntry(recordID string) (designReviewEntry, error) {
 	var entry designReviewEntry
-	if data, err := os.ReadFile(inv.designReviewEntryPath(recordID)); err == nil {
-		json.Unmarshal(data, &entry)
+	data, err := os.ReadFile(inv.designReviewEntryPath(recordID))
+	if err == nil {
+		err = json.Unmarshal(data, &entry)
+	} else if os.IsNotExist(err) {
+		err = nil
 	}
 	if entry.Subjects == nil {
 		entry.Subjects = map[string]string{}
 	}
-	return entry
+	return entry, err
 }
 
 func (inv *intentInvocation) writeDesignReviewEntry(recordID string, entry designReviewEntry) error {
@@ -105,7 +109,11 @@ func (plan designReviewPlan) writeMissingInputs() error {
 // existing critique chain; nil means no chain exists and the first review
 // is dispatched as before.
 func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentResult {
-	chains := dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), plan.goalID, plan.design)
+	entry, err := inv.readDesignReviewEntry(plan.recordID)
+	chains, chainErr := dispatchcore.ReadDesignCritiqueChains(inv.layout.InstallationRoot.Path(), plan.goalID, plan.design)
+	if err != nil || chainErr != nil || len(chains) == 0 && len(entry.Subjects) != 0 {
+		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the design history is unknown; no new critique was requested", Details: []string{fmt.Sprint(err, chainErr)}, next: inv.sameCommand(), nextReason: "restore the retained chain entry, job index and frozen subject for this design"}
+	}
 	var open []dispatchcore.DesignCritiqueChain
 	for _, chain := range chains {
 		if !chain.Closed {
@@ -134,6 +142,15 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 			nextReason: "decides and closes a critique that no longer applies; the others are listed above"}
 	}
 	chain := chains[0]
+	if entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)] == "" {
+		if subject, present, err := readsubject.ReadRoundSubject(inv.layout.InstallationRoot.Path("artifacts", "agents"), chain.Root, chain.NewestRound); err == nil && present {
+			entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)] = subject.ContentDigest
+			entry.Goal, entry.Design = plan.goalID, plan.design
+			if err := inv.writeDesignReviewEntry(plan.recordID, entry); err != nil {
+				return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the recovered design history could not be retained", Details: []string{err.Error()}, next: inv.sameCommand()}
+			}
+		}
+	}
 	if resumed := inv.finishDesignAcceptance(plan, chain, false); resumed != nil {
 		return resumed
 	}
@@ -146,10 +163,15 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 			}
 		}
 		if err != nil {
-			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the design evidence is unknown; nothing was closed or requested", Details: []string{err.Error()}, next: inv.typedArgvLess("dispositions", "after"), nextReason: "recollect the retained evidence once the named return, prose, frozen page, or follow-up request and brief are readable, complete and match their retained checksums"}
+			if inv.input.has("retry") {
+				return inv.retryDesignExamination(plan, chain, entry)
+			}
+			return inv.unknownDesignExamination(plan, chain, err)
+		}
+		if required && inv.input.has("retry") {
+			return inv.collectDesignExamination(plan, chain, entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)])
 		}
 	}
-	entry := inv.readDesignReviewEntry(plan.recordID)
 	entry.Goal, entry.Design = plan.goalID, plan.design
 	status := recordText(chain.Newest, "status")
 	switch {
@@ -174,10 +196,12 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 				Summary: fmt.Sprintf("design %s changed after its critique closed, and a change starts no new critique; nothing was done", plan.recordID),
 				next:    inv.publicArgv("goal", "budget", plan.goalID), nextReason: "a person decides whether it needs another critique and gives the goal a budget for it"}
 		}
-		return nil
+		return &intentResult{Targets: append(plan.targets, jobTarget(chain.Root)), Outcome: intentUnchanged, Summary: "the design's retained critique is closed; no new examination was requested"}
 	case !dispatchcore.TerminalStatus(status):
 		return &intentResult{Targets: append(plan.targets, jobTarget(chain.NewestJob)), Outcome: intentInProgress,
 			Summary: fmt.Sprintf("examination %d of design %s is %s", chain.NewestRound, plan.recordID, status), next: inv.sameCommand(), nextReason: "the same review shows its result"}
+	case status == "timeout":
+		return inv.unknownDesignExamination(plan, chain, fmt.Errorf("the design examination reached its deadline; no automatic retry is admitted"))
 	case status != "completed":
 		return &intentResult{Targets: append(plan.targets, jobTarget(chain.NewestJob)), Outcome: intentFailed, code: 1,
 			Summary:    fmt.Sprintf("examination %d of design %s ended %s without findings to decide", chain.NewestRound, plan.recordID, status),
@@ -334,6 +358,19 @@ func (inv *intentInvocation) retryDesignExamination(plan designReviewPlan, chain
 			Summary: fmt.Sprintf("review %d is not design %s's newest review (%d); nothing was requested", round, plan.recordID, chain.NewestRound),
 			next:    append(inv.typedArgvLess("retry"), "--retry", strconv.FormatInt(chain.NewestRound, 10)), nextReason: "retries the newest review"}
 	}
+	if status := recordText(chain.Newest, "status"); status == "completed" || status == "failed" {
+		if entry.Subjects[strconv.FormatInt(round, 10)] != plan.subject {
+			return inv.unknownDesignExamination(plan, chain, fmt.Errorf("restore the frozen candidate before retrying its examination"))
+		}
+		if err := dispatchcore.ReserveUnknownExaminationRetry(inv.layout.InstallationRoot.Path(), chain.NewestJob); err != nil {
+			root, _ := inv.jobRecord(chain.Root)
+			if recordText(root, "unknownExaminationRetryFrom") != chain.NewestJob {
+				return inv.unknownDesignExamination(plan, chain, err)
+			}
+		}
+	} else if err := dispatchcore.ExaminationRetryAdmissible(inv.layout.InstallationRoot.Path(), chain.Newest); err != nil {
+		return inv.unknownDesignExamination(plan, chain, err)
+	}
 	if err := plan.writeMissingInputs(); err != nil {
 		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the review's inputs can't be written, so nothing was requested",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
@@ -441,7 +478,10 @@ func (inv *intentInvocation) recordFirstDesignExamination(plan designReviewPlan)
 	if len(chains) != 1 {
 		return
 	}
-	entry := inv.readDesignReviewEntry(plan.recordID)
+	entry, err := inv.readDesignReviewEntry(plan.recordID)
+	if err != nil {
+		return
+	}
 	if _, known := entry.Subjects["1"]; known {
 		return
 	}
@@ -557,7 +597,7 @@ func (inv *intentInvocation) collectDesignExamination(plan designReviewPlan, cha
 	}
 	data["template"], data["examination"] = template, chain.NewestRound
 	result.Data = data
-	result.next, result.nextReason = append(inv.sameCommand(), "--dispositions", template), "after deciding every finding in "+template
+	result.next, result.nextReason = append(inv.typedArgvLess("retry", "after", "dispositions"), "--dispositions", template), "after deciding every finding in "+template
 	return &result
 }
 

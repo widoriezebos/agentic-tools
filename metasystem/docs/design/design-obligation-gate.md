@@ -33,6 +33,8 @@ A design a seat writes during a goal is a record, not a file in a directory: it 
 
 When setting `Status: accepted`, add a head line under `Goals`: `- Critique: closed at round N on 0 material findings (WHO)` when the critique closed, or `- Critique: ruled by NAME DATE, RULING` when a person accepted the design by ruling. `metasystem work build` checks that evidence for tier-2 and tier-3 goals; an open local critique chain contradicts a `closed` line. The check warns and the build goes on, recording its verdict and adding the warning to the narrator's digest.
 
+An unknown examination never supplies a zero-finding head. Retained collection can recover; after one reserved fresh examination the design round and register remain stopped with executable person ruling/scope commands bound to the candidate. A person's ruling retains prior impact and spent examinations and supplies no implementation-item proof. Renaming the page retains its critique history; an unreadable history holds admission rather than creating a new allowance.
+
 The home is `plans/designs/` **under the resolved state root**, subdirectories allowed. In the self-hosted layout that is the installation, `metasystem/plans/designs/`, with the checkout root's own `plans/designs/` read as a second home; in an adopted installation it is the application's own repository root, `plans/designs/`. It is never `vendor/metasystem/plans/designs/`: the state root of an adopted installation is the application, so a design written beneath the installation is read by nothing.
 
 Before calling a design done, run the boundary rather than trusting the file just written:

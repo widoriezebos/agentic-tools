@@ -517,7 +517,8 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if prior := asString(record["examinationRetryOf"]); prior != "" {
 			state := loadCritiqueState(repoRoot)
 			owner := state.records[state.chainRoot(prior)]
-			if asString(record["role"]) != "code-critic" || asString(record["parentJob"]) != prior || asString(owner["unknownExaminationRetryFrom"]) != prior {
+			role := asString(record["role"])
+			if (role != "code-critic" && role != "design-critic") || role != asString(owner["role"]) || asString(record["parentJob"]) != prior || asString(owner["unknownExaminationRetryFrom"]) != prior {
 				return unknownBudget(file.Id, revision, logicalPath, "the fresh examination does not match its recorded retry")
 			}
 			consumes = false

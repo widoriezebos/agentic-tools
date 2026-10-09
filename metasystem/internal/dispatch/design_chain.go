@@ -1,10 +1,14 @@
 package dispatch
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strconv"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 // DesignCritiqueChain is one design-critic chain of one design document, as
@@ -20,12 +24,12 @@ type DesignCritiqueChain struct {
 }
 
 // DesignCritiqueChains selects the design-critic chains of one goal and one
-// design document (its canonical path), oldest root first. The read is the
+// design record through its path aliases, oldest root first. The read is the
 // same job-record state the critique owner locks and folds; it writes
 // nothing.
 func DesignCritiqueChains(repoRoot, goalID, designPath string) []DesignCritiqueChain {
 	state := loadCritiqueState(repoRoot)
-	return designCritiqueChains(state, repoRoot, goalID, designPath)
+	return designCritiqueChains(state, repoRoot, goalID, designPath, goalID == "")
 }
 
 // ReadDesignCritiqueChains returns the readable chains and reports the first job
@@ -33,10 +37,33 @@ func DesignCritiqueChains(repoRoot, goalID, designPath string) []DesignCritiqueC
 // absent critique evidence from a broken check.
 func ReadDesignCritiqueChains(repoRoot, goalID, designPath string) ([]DesignCritiqueChain, error) {
 	state, err := readCritiqueStateAt(filepath.Join(repoRoot, "artifacts", "agents"))
-	return designCritiqueChains(state, repoRoot, goalID, designPath), err
+	for id, record := range state.records {
+		if err != nil || state.chainRoot(id) != id || asString(record["role"]) != "design-critic" || asString(record["goalId"]) != goalID || NeverLaunched(record) {
+			continue
+		}
+		_, present, subjectErr := readsubject.ReadRoundSubject(state.agents, id, 1)
+		if subjectErr != nil {
+			err = fmt.Errorf("design root %s has unreadable canonical subject: %w", id, subjectErr)
+		} else if !present {
+			recorded := asString(record["design"])
+			if !filepath.IsAbs(recorded) {
+				recorded = filepath.Join(checkoutTop(repoRoot), filepath.FromSlash(recorded))
+			}
+			if _, problem := os.Stat(recorded); problem != nil {
+				err = fmt.Errorf("design root %s has neither a frozen identity nor its original page: %w", id, problem)
+			}
+		}
+	}
+	return designCritiqueChains(state, repoRoot, goalID, designPath, false), err
 }
 
-func designCritiqueChains(state critiqueState, repoRoot, goalID, designPath string) []DesignCritiqueChain {
+func designCritiqueChains(state critiqueState, repoRoot, goalID, designPath string, anyGoal bool) []DesignCritiqueChain {
+	var designID string
+	if data, err := os.ReadFile(designPath); err == nil {
+		if record, problems, present := project.ParseRecord(designPath, string(data)); present && len(problems) == 0 && record.Kind == project.KindDesign {
+			designID = record.ID
+		}
+	}
 	canonical := designPath
 	if resolved, err := filepath.EvalSymlinks(designPath); err == nil {
 		canonical = resolved
@@ -61,7 +88,12 @@ func designCritiqueChains(state critiqueState, repoRoot, goalID, designPath stri
 		if resolved, err := filepath.EvalSymlinks(recorded); err == nil {
 			recorded = resolved
 		}
-		if recorded != canonical || goalID != "" && asString(record["goalId"]) != "" && asString(record["goalId"]) != goalID {
+		sameRecord := false
+		if subject, present, err := readsubject.ReadRoundSubject(state.agents, jobID, 1); err == nil && present && subject.DesignPage != "" {
+			frozen, problems, present := project.ParseRecord(subject.DesignPath, subject.DesignPage)
+			sameRecord = present && len(problems) == 0 && frozen.ID == designID && designID != ""
+		}
+		if (!sameRecord && recorded != canonical) || !anyGoal && asString(record["goalId"]) != goalID {
 			continue
 		}
 		chain := DesignCritiqueChain{Root: jobID, Goal: asString(record["goalId"])}

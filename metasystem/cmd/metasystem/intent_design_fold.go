@@ -35,7 +35,11 @@ func (inv *intentInvocation) prepareDesignFold(plan designReviewPlan, chain disp
 	if err != nil {
 		return err
 	}
-	entry, fold := inv.readDesignReviewEntry(plan.recordID), &goal.DesignExit{Expected: string(page), Page: string(page), ExaminedSHA256: read.Subject.ContentDigest}
+	entry, err := inv.readDesignReviewEntry(plan.recordID)
+	if err != nil {
+		return err
+	}
+	fold := &goal.DesignExit{Expected: string(page), Page: string(page), ExaminedSHA256: read.Subject.ContentDigest}
 	units, err := launch.DeclaredDesignUnits(string(page))
 	if err != nil {
 		return err

@@ -206,7 +206,8 @@ func TestDesignReviewRetriesFailedFirstExamination(t *testing.T) {
 	dispatch := b.handler
 	b.handler = func(p intentProcess) intentProcessResult {
 		if root := flagValue(p.argv, "--follow-up"); root != "" {
-			if err := dispatchcore.ExaminationRetryAdmissible(b.install, b.job(root)); err != nil {
+			// Decision 3 reserves the retry before dispatch admits that source.
+			if err := dispatchcore.ReservedUnknownExaminationRetry(b.install, root); err != nil {
 				return intentProcessResult{stderr: []byte(err.Error()), code: 1}
 			}
 			if _, err := dispatchcore.CritiqueExhaustionAdvance(b.install, root, "design-critic", flagValue(p.argv, "--brief"), "child"); err != nil {
@@ -309,7 +310,11 @@ func TestDesignCritiqueReplayAndCap(t *testing.T) {
 	}
 	// A failed examination: retried once; a lost response is recovered from
 	// the operation's own record; the replay rejoins even after it failed.
-	b.finish("rev1-r2", 2, "timeout")
+	// Decision 3 permits one failed-execution retry; deadlines never retry.
+	b.finish("rev1-r2", 2, "failed")
+	if err := os.Remove(filepath.Join(b.install, "artifacts", "agents", "rev1", "rounds", "2", "return.json")); err != nil {
+		t.Fatal(err)
+	}
 	b.lose = true
 	if result = review("--retry", "2"); len(b.followUps) != 2 {
 		t.Fatalf("retry request: %+v", result)
@@ -329,7 +334,8 @@ func TestDesignCritiqueReplayAndCap(t *testing.T) {
 	// never adopted.
 	b.writeJob(map[string]any{"jobId": "other-r2", "role": "design-critic", "status": "completed", "round": 2, "parentJob": "other", "operationId": "design-01designreader-retry-3"})
 	b.writeJob(map[string]any{"jobId": "other", "role": "code-critic", "status": "completed", "round": 1})
-	if result = review("--retry", "3"); result.Outcome != intentFailed || !strings.Contains(result.Summary, "belongs to another critique") || len(b.followUps) != 2 {
+	// Decision 3 stops before any third-execution operation can be adopted.
+	if result = review("--retry", "3"); result.Outcome != intentFailed || !strings.Contains(result.Summary, "stopped") || len(b.followUps) != 2 || b.job("rev1")["unknownExaminationRetryFrom"] != "rev1-r2" {
 		t.Fatalf("a foreign operation record: %+v", result)
 	}
 }

@@ -959,9 +959,12 @@ func BuildFollowRecord(p BuildFollowRecordParams) error {
 	if productRootsEmpty(record["productRoots"]) {
 		record["productRoots"] = []any{realpath.Resolve(asString(parent["workspaceRoot"]))}
 	}
-	if asString(parent["role"]) == "code-critic" {
+	if asString(parent["role"]) == "code-critic" || asString(parent["role"]) == "design-critic" {
 		state := loadCritiqueState(p.Root)
 		root := state.records[state.chainRoot(asString(parent["jobId"]))]
+		if asString(parent["role"]) == "design-critic" {
+			record["design"], record["declaredOutputs"], record["declaredOutputsDigest"] = root["design"], root["declaredOutputs"], root["declaredOutputsDigest"]
+		}
 		if asString(root["unknownExaminationRetryFrom"]) == asString(parent["jobId"]) {
 			record["examinationRetryOf"] = asString(parent["jobId"])
 		}

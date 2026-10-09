@@ -16,6 +16,16 @@ import (
 
 func TestUnknownExaminationFollowUpAdmitsFullGoalAllowanceOnce(t *testing.T) {
 	t.Parallel()
+	testUnknownExaminationFollowUp(t, "code-critic")
+}
+
+func TestUnknownDesignExaminationFollowUpAdmitsFullGoalAllowanceOnce(t *testing.T) {
+	t.Parallel()
+	testUnknownExaminationFollowUp(t, "design-critic")
+}
+
+func testUnknownExaminationFollowUp(t *testing.T, role string) {
+	t.Helper()
 	b := newDispatchBed(t)
 	home := testprovider.Register(t, b.root)
 	b.useRealGoalOwner()
@@ -27,9 +37,15 @@ func TestUnknownExaminationFollowUpAdmitsFullGoalAllowanceOnce(t *testing.T) {
 	b.goalWorld(file)
 	commit := b.git("rev-parse", "HEAD")
 	brief := b.brief("unknown-read.md", "implement", "Review the accepted commit.")
-	requireExit(t, b.runEnv(b.budgetEnv("fresh"), "dispatch", "--role", "code-critic", "--brief", brief,
-		"--reviews", "commit:"+commit, "--runtime", "fake", "--goal", file.Id,
-		"--destructive-reach", "MECHANICAL", "--job-id", "unknown-source", "--wait"), 0, b.stderr.String())
+	args := []string{"dispatch", "--role", role, "--brief", brief, "--runtime", "fake", "--goal", file.Id,
+		"--destructive-reach", "MECHANICAL", "--job-id", "unknown-source", "--wait"}
+	if role == "design-critic" {
+		outputs := b.designPage()
+		args = append(args, "--design", fixtureDesign, "--outputs", outputs)
+	} else {
+		args = append(args, "--reviews", "commit:"+commit)
+	}
+	requireExit(t, b.runEnv(b.budgetEnv("fresh"), args...), 0, b.stderr.String())
 	prior := b.record("unknown-source")
 	if pid, err := strconv.Atoi(fmt.Sprint(prior["pid"])); err == nil && pid > 0 {
 		process, err := os.FindProcess(pid)
@@ -59,7 +75,7 @@ func TestUnknownExaminationFollowUpAdmitsFullGoalAllowanceOnce(t *testing.T) {
 	result := b.runEnv(b.budgetEnv("follow-up"), "follow-up", "--job", "unknown-source", "--message", message)
 	requireExit(t, result, 0, b.stderr.String())
 	fresh := b.record("unknown-source-r2")
-	if fresh["examinationRetryOf"] != "unknown-source" || fresh["parentJob"] != "unknown-source" || fresh["reviews"] != "commit:"+commit {
+	if fresh["examinationRetryOf"] != "unknown-source" || fresh["parentJob"] != "unknown-source" || fresh["reviews"] != prior["reviews"] || fresh["design"] != prior["design"] || fresh["role"] != role {
 		t.Fatalf("fresh read lost its reserved original subject: %v", fresh)
 	}
 	after := dispatch.ProjectBudget(b.root, file, now, home)
