@@ -33,11 +33,18 @@ func TestA(t *testing.T) { t.Parallel(); fmt.Println("native worker started"); p
 func TestB(t *testing.T) { t.Parallel(); fmt.Println("native worker started") }
 func TestC(t *testing.T) { t.Parallel() }
 `)
+	packageRoot := filepath.Join(root, "cmd", "metasystem")
+	if err := os.MkdirAll(packageRoot, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(filepath.Join(root, "present_test.go"), filepath.Join(packageRoot, "present_test.go")); err != nil {
+		t.Fatal(err)
+	}
 	started := []chan struct{}{make(chan struct{}), make(chan struct{})}
 	ctx := context.WithValue(t.Context(), goShardLifecycleHooksKey{}, goShardLifecycleHooks{wrapOutput: func(index int, w io.Writer) io.Writer {
 		return &inventoryOverlapWriter{Writer: w, started: started[index], other: started[1-index]}
 	}})
-	result, err := RunNativeInventory(ctx, NativeInventoryRequest{Root: root, LogRoot: filepath.Join(t.TempDir(), "logs"), Environment: environment, Workers: 2, Packages: []string{"."}})
+	result, err := RunNativeInventory(ctx, NativeInventoryRequest{Root: root, LogRoot: filepath.Join(t.TempDir(), "logs"), Environment: environment, Workers: 2, Packages: []string{"cmd/metasystem"}})
 	if err != nil || !result.Failed || len(result.Execution) != 2 {
 		t.Fatalf("result=%+v error=%v", result, err)
 	}
@@ -58,7 +65,7 @@ func TestC(t *testing.T) { t.Parallel() }
 	if !statuses["missing"] || !statuses["ok"] {
 		t.Fatalf("shard verdicts %v", result.Execution)
 	}
-	if !strings.Contains(string(result.Output), `"Action":"fail","Package":"example.com/named"`) {
+	if !strings.Contains(string(result.Output), `"Action":"fail","Package":"example.com/named/cmd/metasystem"`) {
 		t.Fatalf("native package terminal lost: %s", result.Output)
 	}
 }

@@ -1384,8 +1384,14 @@ func goShardCeiling(request TestRunRequest, group testpolicy.Group, facts goCach
 func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpolicy.Group, cwd string, environment []string, expected []NativeTestIdentity,
 	inventory []string, modulePrefix string, limits supervisorLimits, sampleInterval time.Duration, logPath string,
 	output *synchronizedBuffer, facts goCacheFacts) (supervisorOutcome, error, string, []PackageExecution, error) {
-	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	partitions := partitionGoTests(expected, inventory, modulePrefix, goShardCeiling(request, group, facts))
+	return runGoPartitions(ctx, request, group, cwd, environment, expected, partitions, limits, sampleInterval, logPath, output, facts)
+}
+
+func runGoPartitions(ctx context.Context, request TestRunRequest, group testpolicy.Group, cwd string, environment []string, expected []NativeTestIdentity,
+	partitions []goTestPartition, limits supervisorLimits, sampleInterval time.Duration, logPath string,
+	output *synchronizedBuffer, facts goCacheFacts) (supervisorOutcome, error, string, []PackageExecution, error) {
+	ctx = withTestWorkerPool(ctx, EffectiveTestWorkers(request))
 	coverageRoot := strings.TrimSuffix(logPath, ".log") + ".coverage"
 	if group.Coverage {
 		if err := os.RemoveAll(coverageRoot); err != nil {
@@ -1540,7 +1546,7 @@ func runShardedGoGroup(ctx context.Context, request TestRunRequest, group testpo
 		output.Write(run.output.Bytes())
 		var selected []NativeTestIdentity
 		for _, item := range expected {
-			if slices.Contains(partitions[index].Names, item.Name) || item.Name == goPackageBuildIdentity && slices.Contains(partitions[index].Packages, item.Classname) {
+			if slices.Contains(partitions[index].Packages, item.Classname) && (slices.Contains(partitions[index].Names, item.Name) || item.Name == goPackageBuildIdentity) {
 				selected = append(selected, item)
 			}
 		}

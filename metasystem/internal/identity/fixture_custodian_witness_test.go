@@ -482,7 +482,7 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 	child := waitWitnessRef(t, dir, filepath.Join(dir, "pid0"), filepath.Join(dir, "launcher.stderr"))
 	childDeath := own(child, false)
 	logPath, _ := os.ReadFile(filepath.Join(dir, "logpath"))
-	cleanup.files = append(cleanup.files, func() error { return os.Remove(string(logPath)) })
+	cleanup.files = append(cleanup.files, func() error { return removeSettledWitnessFile(string(logPath)) })
 	other := waitWitnessRef(t, dir, filepath.Join(dir, "pid1"), filepath.Join(dir, "launcher.stderr"))
 	otherDeath := own(other, false)
 	custodian := waitWitnessCustodian(t, dir, owner)
@@ -503,7 +503,7 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 		own(waitWitnessCustodian(t, dir, launcherRef), true)
 		launcherLog, err := os.ReadFile(filepath.Join(dir, "launcher-logpath"))
 		checkWitness(t, err)
-		cleanup.files = append(cleanup.files, func() error { return os.Remove(string(launcherLog)) })
+		cleanup.files = append(cleanup.files, func() error { return removeSettledWitnessFile(string(launcherLog)) })
 		waitWitnessCustodianObserved(t, dir, string(launcherLog), shell)
 	}
 	launcherValue := liveWitnessProcessRef(t, int64(command.Process.Pid), owner.Pid)
@@ -1170,4 +1170,13 @@ func checkWitness(t *testing.T, err error) {
 	if err != nil {
 		t.Fatal(err)
 	}
+}
+
+// A settled custodian log lives under the shared test registry, which any
+// concurrent test process sweeps once its owner is dead; absent is settled.
+func removeSettledWitnessFile(path string) error {
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	return nil
 }
