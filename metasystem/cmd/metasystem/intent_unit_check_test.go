@@ -249,7 +249,7 @@ func TestIntentDeclaredCheckManualRepairRequiresPerson(t *testing.T) {
 			git := owners.work.git
 			owners.work.git = func(root string, args ...string) ([]byte, error) {
 				if len(args) > 0 && args[0] == "show" {
-					t.Fatal("manual repair read broken declarations")
+					return nil, errors.New("committed full-suite classification unavailable")
 				}
 				return git(root, args...)
 			}

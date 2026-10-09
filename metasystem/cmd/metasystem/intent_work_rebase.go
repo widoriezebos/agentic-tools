@@ -61,8 +61,7 @@ func runIntentWorkRebase(inv *intentInvocation) int {
 	lines := append(inv.rebaseReviewLines(id, result), warning...)
 	for _, unit := range result.NeedsReview {
 		if why := result.ReviewReasons[unit]; why != "" {
-			lines = append(lines, "work "+unit+" needs a read: "+why,
-				"person repair: metasystem work build "+id+" --work declaration-repair --brief FILE --reason TEXT --by NAME --check COMMAND")
+			lines = append(lines, "work "+unit+" needs a read: "+why)
 		}
 	}
 	return inv.render(intentResult{Targets: targets, Outcome: outcome, Summary: summary, Data: result, text: lines})

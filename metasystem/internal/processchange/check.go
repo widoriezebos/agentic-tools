@@ -19,6 +19,7 @@ import (
 
 type Check struct {
 	Root, Act string
+	FullArgv  []string
 	ProcessAct
 	Person, Observation bool
 	Now                 time.Time
@@ -87,18 +88,29 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
 	if !c.Person && !c.Observation && (unknown || (len(previous.Argv) == 0 && len(c.ApplicableArgv) == 0)) {
 		return act, fmt.Errorf("the previous check or its declaration is unavailable; a person can supply an explicit check")
 	}
+	if c.Observation && previous.Operation != c.Operation && slices.ContainsFunc(acts, func(a ProcessAct) bool { return a.ID == previous.Act && a.Class == "full-suite-exception" }) {
+		previous.Act = ""
+	}
 	act = c.ProcessAct
 	act.BeforeArgv, act.Predecessor, act.Status = previous.Argv, previous.Act, "unchanged"
 	if len(act.BeforeArgv) == 0 && !unknown {
 		act.BeforeArgv = c.ApplicableArgv
 	}
-	changed := !c.Observation && (unknown || !slices.Equal(act.BeforeArgv, c.AfterArgv))
+	full := !c.Observation && len(c.FullArgv) != 0 && slices.Equal([]string{"/bin/sh", "-c", c.After}, c.FullArgv)
+	changed := !c.Observation && (unknown || !slices.Equal(act.BeforeArgv, c.AfterArgv) || full)
 	if c.Act != "" || changed || (previous.Operation == c.Operation && previous.Act != "") {
 		act.Status, act.ProposedAt, act.Class = "proposed", c.Now.UTC(), "added-check"
 		if len(previous.Argv) > 0 {
 			act.Class = "widened-check"
 		}
-		identity, _ := json.Marshal([]any{c.Checkout, c.Goal, c.Unit, c.Operation, act.BeforeArgv, c.AfterArgv, act.Predecessor})
+		if full {
+			act.Class, act.ApplicableArgv = "full-suite-exception", c.FullArgv
+			act.SelectedArgv, act.FullArgv = []string{"/bin/sh", "-c", c.After}, c.FullArgv
+		}
+		if previous.Operation == c.Operation && previous.Act != "" && full {
+			c.Act = previous.Act
+		}
+		identity, _ := json.Marshal([]any{c.Checkout, c.Goal, c.Unit, c.Operation, act.BeforeArgv, c.AfterArgv, act.Predecessor, c.FullArgv})
 		act.ID = fmt.Sprintf("%x", sha256.Sum256(identity))
 		if c.Act != "" {
 			act.ID = c.Act
@@ -191,22 +203,22 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 		_, err := atomicfile.WriteFile(target, append(data, '\n'), 0600, "")
 		return err
 	}
+	act = c.ProcessAct
+	if c.Resume {
+		if c.Act == "" {
+			return act, nil
+		}
+		actPath := filepath.Join(directory, "acts", c.Act+".json")
+		data, problem := os.ReadFile(actPath)
+		if filepath.Base(c.Act) != c.Act || problem != nil || json.Unmarshal(data, &act) != nil || act.Goal != c.Goal || act.ID != c.Act || act.Checkout != c.Checkout || (act.Class != "declaration" && (act.Unit != c.Unit || act.Operation != c.Operation)) || (act.Class == "declaration" && (act.AfterDeclaration == nil || c.AfterDeclaration == nil || act.AfterDeclaration.Values != c.AfterDeclaration.Values)) || (act.Class != "declaration" && act.Class != "full-suite-exception" && act.Class != "added-check" && act.Class != "widened-check") || (act.Class == "full-suite-exception" && !slices.Equal(act.SelectedArgv, []string{"/bin/sh", "-c", c.After})) || (act.Class == "declaration" && act.AfterDeclaration.Values[0] != c.After) || ((act.Class == "added-check" || act.Class == "widened-check") && act.After != c.After) || act.Status != "applied" {
+			return act, fmt.Errorf("the admitted declaration act is unavailable")
+		}
+		return act, save(c.Root, actPath, act)
+	}
 	body, readErr := os.ReadFile(path)
 	var previous declarationReference
 	if readErr != nil && !os.IsNotExist(readErr) || readErr == nil && (json.Unmarshal(body, &previous) != nil || previous.Goal != c.Goal || previous.Seed == "" || previous.Snapshot.Commit == "" || slices.Contains(previous.Snapshot.Values[:], "")) {
 		return act, fmt.Errorf("the goal's declaration baseline is unavailable; a person can supply --reason TEXT --by NAME --check COMMAND")
-	}
-	act = c.ProcessAct
-	if c.Resume {
-		if previous.Operation != c.Operation || previous.Act == "" {
-			return act, nil
-		}
-		actPath := filepath.Join(directory, "acts", previous.Act+".json")
-		data, problem := os.ReadFile(actPath)
-		if problem != nil || json.Unmarshal(data, &act) != nil || act.Goal != c.Goal || act.ID != previous.Act || act.Class != "declaration" || act.Status != "applied" {
-			return act, fmt.Errorf("the admitted declaration act is unavailable")
-		}
-		return act, save(c.Root, actPath, act)
 	}
 	candidate, main, inherited, problem := c.Source()
 	if problem != nil {
@@ -238,12 +250,35 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 			err = save(c.Root, filepath.Join(directory, "acts", act.ID+".json"), act)
 		}
 	}()
-	if !changed && c.Act == "" {
+	full := slices.Equal([]string{"/bin/sh", "-c", candidate.Values[0]}, candidate.FullArgv)
+	if full {
+		if c.Act == "" {
+			c.Person = false
+		}
+		act.Class, act.ApplicableArgv = "full-suite-exception", candidate.FullArgv
+		act.AfterArgv = slices.Clone(candidate.FullArgv)
+		act.SelectedArgv, act.FullArgv = slices.Clone(candidate.FullArgv), slices.Clone(candidate.FullArgv)
+		act.Reason += "; run the full suite for this admission"
+	}
+	if !changed && !full && c.Act == "" {
 		if candidate.Values != previous.Snapshot.Values {
 			previous.Act = ""
 		}
 		act.ID, act.Status = previous.Act, "unchanged"
+		if previous.Act != "" {
+			data, problem := os.ReadFile(filepath.Join(directory, "acts", previous.Act+".json"))
+			var prior ProcessAct
+			if problem != nil || json.Unmarshal(data, &prior) != nil {
+				return act, fmt.Errorf("the admitted declaration act is unavailable")
+			}
+			if prior.Class == "full-suite-exception" {
+				act.ID = ""
+			}
+		}
 		return act, nil
+	}
+	if previous.Operation == c.Operation && previous.Act != "" && c.Act == "" {
+		c.Act = previous.Act
 	}
 	identity, _ := json.Marshal([]any{c.Goal, c.Unit, c.Operation, act.Predecessor, act.BeforeDeclaration, act.AfterDeclaration})
 	act.ID, act.Status, act.ProposedAt = fmt.Sprintf("%x", sha256.Sum256(identity)), "proposed", c.Now.UTC()
@@ -257,7 +292,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 	retained, problem := os.ReadFile(actPath)
 	if problem == nil {
 		var proposal ProcessAct
-		if json.Unmarshal(retained, &proposal) != nil || proposal.Class != "declaration" || proposal.ID != act.ID || proposal.Goal != c.Goal || proposal.Unit != c.Unit || proposal.Operation != c.Operation || proposal.AfterDeclaration == nil || !reflect.DeepEqual(proposal.AfterDeclaration, act.AfterDeclaration) {
+		if json.Unmarshal(retained, &proposal) != nil || proposal.Class != act.Class || proposal.ID != act.ID || proposal.Goal != c.Goal || proposal.Unit != c.Unit || proposal.Operation != c.Operation || proposal.AfterDeclaration == nil || !reflect.DeepEqual(proposal.AfterDeclaration, act.AfterDeclaration) {
 			return act, fmt.Errorf("the act names a different declaration, tree or admission")
 		}
 		act = proposal
@@ -276,6 +311,9 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 			return
 		}
 		if !c.Person {
+			if act.Question != "" {
+				return act, nil
+			}
 			q, _, problem := channel.AskOrFind(channel.AskRequest{RepoRoot: c.Root, Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Committed checks from %q to %q", act.BeforeDeclaration.Values, act.AfterDeclaration.Values), act.Reason}, Wants: c.Remedy(act.ID)})
 			if problem != nil {
 				return act, problem

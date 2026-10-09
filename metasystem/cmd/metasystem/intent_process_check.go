@@ -21,11 +21,17 @@ func (h *processCheckHeld) Error() string {
 	if h.problem != "" {
 		return "the check was not admitted: " + h.problem
 	}
+	if h.act.Class == "full-suite-exception" {
+		return "the full suite needs a person's exception for this admission; nothing was launched"
+	}
 	return "the changed check awaits a person's exact command; nothing was launched"
 }
 
 func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory string, check *launch.UnitCheck) error {
 	act := processchange.ProcessAct{Goal: plan.Goal, Unit: plan.Unit, Operation: directory, Checkout: plan.Worktree, Key: "check", Layer: "unit-check", Lineage: inv.claimLineage(), Actor: "agent", Reason: inv.input.text("reason"), After: check.Cheap}
+	if inv.input.switched("check-only") {
+		act.Checkout = inv.stateRoot
+	}
 	person := false
 	if inv.input.has("check") {
 		by, _, refusal := inv.settingsPerson(inv.layout, "work build check", &act.Proof)
@@ -36,6 +42,30 @@ func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory s
 		if person {
 			act.Actor, act.Citation = "direct-person", "person-directed"
 			check.SelectedBy = by
+		}
+	}
+	if person && inv.input.has("check") && inv.input.text("act") == "" && inv.input.text("reason") == "" {
+		return fmt.Errorf("a manual check needs --reason TEXT --by NAME before --check")
+	}
+	var fullArgv []string
+	if inv.input.has("check") {
+		if check.Declaration != nil {
+			fullArgv = check.Declaration.FullArgv
+		} else {
+			full, err := landingProofCommand(check.Directory, plan.Worktree, "HEAD", "proof.full", func(root string, args ...string) (string, error) {
+				data, err := inv.work().git(root, args...)
+				return string(data), err
+			})
+			if err == nil {
+				fullArgv = []string{"/bin/sh", "-c", full}
+			}
+		}
+		act.Measure = "full-suite classification unknown"
+		if len(fullArgv) != 0 {
+			act.Measure = "distinct from full suite"
+		}
+		if slices.Equal([]string{"/bin/sh", "-c", check.Cheap}, fullArgv) {
+			act.Measure = "exact full-suite exception for this admission"
 		}
 	}
 	act.AfterArgv = strings.Fields(check.Cheap)
@@ -61,11 +91,8 @@ func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory s
 		cheap, _ := landingProofCommand(filepath.Join(plan.Worktree, inv.layout.InstallationRel), plan.Worktree, "HEAD", "proof.cheap", git)
 		return strings.Fields(cheap)
 	}
-	if person && inv.input.has("check") && inv.input.text("act") == "" && inv.input.text("reason") == "" {
-		return fmt.Errorf("a manual check needs --reason TEXT --by NAME before --check")
-	}
 	if person && inv.input.has("check") && act.Reason != "" {
-		impact := "Impact: use your command with no audits and a 15-minute deadline.\nMissing declarations remain unproved; later rounds use committed declarations.\nCancel this run to stop the repair."
+		impact := "Impact: " + act.Measure + ".\nUse your command with no audits and a 15-minute deadline.\nMissing declarations remain unproved; later rounds use committed declarations.\nCancel this run to stop the repair."
 		if err := inv.recordUnitStopOverride(plan.Goal, "work-build-check", act.Reason, impact, check.SelectedBy); err != nil {
 			return err
 		}
@@ -74,7 +101,7 @@ func (inv *intentInvocation) admitProcessCheck(plan launch.UnitPlan, directory s
 	if inv.input.has("check") {
 		selectionAct = inv.input.text("act")
 	}
-	admitted, err := processchange.AdmitCheck(processchange.Check{Root: inv.stateRoot, Act: selectionAct, ProcessAct: act, Applicable: applicable, Person: person, Observation: !inv.input.has("check"), Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }})
+	admitted, err := processchange.AdmitCheck(processchange.Check{Root: inv.stateRoot, Act: selectionAct, FullArgv: fullArgv, ProcessAct: act, Applicable: applicable, Person: person, Observation: !inv.input.has("check"), Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }})
 	if err != nil && (inv.input.has("check") || admitted.Status != "observation-unknown") {
 		return &processCheckHeld{act: admitted, remedy: remedy, problem: err.Error()}
 	}

@@ -193,13 +193,21 @@ func TestUnitReviewAmendDeclaredCheckOverridesCachedGateGitAdapter(t *testing.T)
 func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 	t.Helper()
 	b, owners, run, runner := unitCarryIntentBed(t, true)
+	originalGit := owners.work.git
+	owners.work.git = func(root string, args ...string) ([]byte, error) {
+		if root == b.root() {
+			return originalGit(root, args...)
+		}
+		out, err := goalBranchGit(root, args...)
+		return []byte(out), err
+	}
 	repo := b.worktree
 	connectionGit(t, repo, "init", "-q", "-b", "main")
 	connectionGit(t, repo, "config", "user.name", "fixture")
 	connectionGit(t, repo, "config", "user.email", "fixture@example.invalid")
-	declaration := "proof.cheap=true\nproof.audits=true\nproof.deadline=15\n"
+	declaration := "proof.cheap=true\nproof.audits=true\nproof.deadline=15\nproof.full=printf full-suite\n"
 	if state == "cached gate" {
-		declaration = "proof.cheap=false\nproof.audits=false\nproof.deadline=15\n"
+		declaration = "proof.cheap=printf 'cheap subject check\\n'; test \"$(cat u1.go)\" = corrected\nproof.audits=printf 'audit subject check\\n'; test -f u2.go\nproof.deadline=15\nproof.full=printf full-suite\n"
 	}
 	writeUnitCarryFile(t, filepath.Join(repo, "metasystem.conf"), declaration)
 	connectionGit(t, repo, "add", "metasystem.conf")
@@ -208,6 +216,7 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 	remote := filepath.Join(t.TempDir(), "origin.git")
 	connectionGit(t, filepath.Dir(remote), "init", "-q", "--bare", remote)
 	connectionGit(t, repo, "remote", "add", "origin", remote)
+	connectionGit(t, repo, "push", "-q", "origin", base+":refs/heads/main")
 	var first, later, previous string
 	var original branch.Attestation
 	var originalBundle []byte
@@ -354,7 +363,7 @@ func witnessCanonicalReviewCarry(t *testing.T, source, state string) {
 	_, stdout, stderr := b.run(owners, "work", "review", "run:"+run)
 	unchanged := state == "unchanged" || state == "cached gate"
 	if critics != 1 || unchanged && !strings.Contains(stdout+stderr, "review carried: u2") {
-		t.Fatalf("review output = %s%s, critics = %d", stdout, stderr, critics)
+		t.Fatalf("review output = %s%s, critics = %d, carry = %+v", stdout, stderr, critics, carried)
 	}
 	published := connectionGit(t, repo, "rev-parse", "HEAD")
 	status, err := branch.InspectStatus(repo, base, published, b.id)

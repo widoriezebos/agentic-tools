@@ -18,7 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
-func declaredCarryBed(t *testing.T, declaration string, cached bool) (*workBed, intentOwners, string, string) {
+func declaredCarryBed(t *testing.T, declaration string, cached bool, candidate ...string) (*workBed, intentOwners, string, string) {
 	t.Helper()
 	b, owners, _ := rebaseIntentBed(t)
 	repo := b.worktree
@@ -27,6 +27,7 @@ func declaredCarryBed(t *testing.T, declaration string, cached bool) (*workBed, 
 	connectionGit(t, repo, "config", "user.email", "fixture@example.invalid")
 	writeUnitCarryFile(t, filepath.Join(repo, ".gitignore"), "artifacts/\n")
 	if declaration != "absent file" {
+		declaration += "proof.full=printf full-suite\n"
 		writeUnitCarryFile(t, filepath.Join(repo, "metasystem.conf"), declaration)
 		connectionGit(t, repo, "add", "metasystem.conf")
 	}
@@ -38,6 +39,10 @@ func declaredCarryBed(t *testing.T, declaration string, cached bool) (*workBed, 
 	connectionGit(t, repo, "remote", "add", "origin", remote)
 	connectionGit(t, repo, "push", "-q", "origin", "HEAD:main")
 	connectionGit(t, repo, "checkout", "-qb", "goal/"+b.id)
+	if len(candidate) != 0 {
+		writeUnitCarryFile(t, filepath.Join(repo, "metasystem.conf"), candidate[0])
+		connectionGit(t, repo, "add", "metasystem.conf")
+	}
 	writeUnitCarryFile(t, filepath.Join(repo, "unit.go"), "unit change\n")
 	connectionGit(t, repo, "add", "unit.go")
 	unit, err := branch.CommitStaged(branch.CommitRequest{Repo: repo, Remote: "origin", EndpointTip: base, GoalID: b.id, Unit: "u1", Kind: branch.Unit, OpID: "unit", CheckClaim: func() error { return nil }})
@@ -75,6 +80,14 @@ func declaredCarryBed(t *testing.T, declaration string, cached bool) (*workBed, 
 		connectionGit(t, repo, "cherry-pick", tip)
 		connectionGit(t, repo, "push", "-q", "--force", "origin", "HEAD:goal/"+b.id)
 	}
+	originalGit := owners.work.git
+	owners.work.git = func(root string, args ...string) ([]byte, error) {
+		if root == b.root() {
+			return originalGit(root, args...)
+		}
+		out, err := goalBranchGit(root, args...)
+		return []byte(out), err
+	}
 	owners.connection.rebase = branch.Rebase
 	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return main, nil }
 	owners.connection.rebaseGate = func(string) (string, error) { t.Fatal("carry ran the static gate"); return "", nil }
@@ -83,7 +96,7 @@ func declaredCarryBed(t *testing.T, declaration string, cached bool) (*workBed, 
 
 func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{"green", "cached gate", "cached missing", "missing", "unreadable", "bad deadline", "cheap red", "audit red", "edited tree", "committed edit", "record write failure"} {
+	for _, state := range []string{"green", "cached gate", "cached missing", "missing", "unreadable", "bad deadline", "cheap red", "audit red", "edited tree", "committed edit", "record write failure", "changed declaration"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			script := filepath.Join(t.TempDir(), "check")
@@ -114,7 +127,11 @@ func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 			if state == "unreadable" {
 				declaration = "absent file"
 			}
-			b, owners, main, original := declaredCarryBed(t, declaration, state == "cached gate" || state == "cached missing")
+			var candidate []string
+			if state == "changed declaration" {
+				candidate = []string{strings.Replace(declaration, shellCommand([]string{script, "cheap"}), shellCommand([]string{script, "changed"}), 1) + "proof.full=printf full-suite\n"}
+			}
+			b, owners, main, original := declaredCarryBed(t, declaration, state == "cached gate" || state == "cached missing", candidate...)
 
 			if state == "record write failure" {
 				writeUnitCarryFile(t, filepath.Join(b.root(), "artifacts", "unit-checks", "carry"), "blocks execution storage")
@@ -124,6 +141,28 @@ func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 			var rebased branch.RebaseResult
 			if err != nil || json.Unmarshal(data, &rebased) != nil {
 				t.Fatalf("result: %+v %v", result, err)
+			}
+			if state == "changed declaration" {
+				acts := checkActs(t, b)
+				executions, _ := filepath.Glob(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", "*", "check-*"))
+				if code != 0 || !slices.Equal(rebased.NeedsReview, []string{"u1"}) || len(acts) != 1 || acts[0].Status != "proposed" || len(executions) != 0 {
+					t.Fatalf("real carry admitted the changed declaration: code=%d carry=%+v acts=%+v", code, rebased, acts)
+				}
+				subject := acts[0].AfterDeclaration.Commit
+				owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+				if code, result := checkActBuild(t, b, owners, "work", "review", "--commit", subject, "--goal", b.id, "--repo", b.root(), "--check-only", "--act", acts[0].ID); code != 0 {
+					t.Fatalf("real carry remedy: %d %+v", code, result)
+				}
+				code, result = b.runJSON(owners, "work", "rebase", b.id)
+				data, _ = json.Marshal(result.Data)
+				if json.Unmarshal(data, &rebased) != nil || code != 0 || !slices.Equal(rebased.Carried, []string{"u1"}) || len(rebased.NeedsReview) != 0 {
+					t.Fatalf("real carry did not consume its admission: %d %+v", code, result)
+				}
+				executions, _ = filepath.Glob(filepath.Join(b.root(), "artifacts", "unit-checks", "carry", "*", "check-*", "result.json"))
+				if len(executions) != 1 {
+					t.Fatalf("real carry duplicated check: %v", executions)
+				}
+				return
 			}
 			if state == "cheap red" || state == "audit red" || state == "edited tree" || state == "committed edit" || state == "record write failure" {
 				if code == 0 {

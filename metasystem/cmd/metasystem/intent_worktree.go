@@ -32,6 +32,7 @@ type intentConnectionOwners struct {
 	rebase         func(branch.RebaseRequest) (branch.RebaseResult, error)
 	carry          func(branch.CarryRequest) (branch.CarryResult, error)
 	rebaseGate     func(string) (string, error)
+	readRepository branch.BranchReadRepository
 	subjectCheck   func(string, branch.AttestationSubject) (branch.GateObservation, error)
 	endpoint       func(root string) (goal.Endpoint, error)
 	endpointTip    func(root string, endpoint goal.Endpoint) (string, error)

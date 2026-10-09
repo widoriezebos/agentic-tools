@@ -22,6 +22,7 @@ import (
 )
 
 type ProcessAct struct {
+	SelectedArgv, FullArgv                                           []string
 	BeforeDeclaration, AfterDeclaration                              *Declaration
 	Unit, Operation, Predecessor                                     string
 	BeforeArgv, AfterArgv, ApplicableArgv                            []string

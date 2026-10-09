@@ -19,6 +19,23 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
+// These selection-history fixtures keep the full suite distinct from the cheap check.
+func checkSelectionBed(t *testing.T) *workBed {
+	t.Helper()
+	b := newWorkBed(t)
+	b.workOwnersHook = func(w *intentWorkOwners) {
+		original := w.git
+		w.git = func(root string, args ...string) ([]byte, error) {
+			data, err := original(root, args...)
+			if len(args) > 0 && args[0] == "show" {
+				data = []byte(strings.ReplaceAll(string(data), "proof.full=true", "proof.full=printf full-suite"))
+			}
+			return data, err
+		}
+	}
+	return b
+}
+
 func checkActBuild(t *testing.T, b *workBed, owners intentOwners, args ...string) (int, intentResult) {
 	t.Helper()
 	command, rest, ok := resolveIntentArgv(args)
@@ -93,7 +110,7 @@ func checkActLaunches(t *testing.T, b *workBed, result intentResult, id string) 
 
 func TestProcessCheckPublicRemedy(t *testing.T) {
 	t.Parallel()
-	b := newWorkBed(t)
+	b := checkSelectionBed(t)
 	b.lineage = "builder"
 	b.declaredCheap = "true"
 	brief := b.brief("check.md", "Build this unit.\n")
@@ -184,7 +201,7 @@ func TestProcessCheckFirstAndPersonSelection(t *testing.T) {
 	t.Parallel()
 	t.Run("person-first", func(t *testing.T) {
 		t.Parallel()
-		b := newWorkBed(t)
+		b := checkSelectionBed(t)
 		b.declaredCheap = "true"
 		owners := b.workOwners()
 		owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
@@ -200,7 +217,7 @@ func TestProcessCheckFirstAndPersonSelection(t *testing.T) {
 	for _, explicitAct := range []bool{true, false} {
 		t.Run(map[bool]string{true: "exact-act", false: "own-command"}[explicitAct], func(t *testing.T) {
 			t.Parallel()
-			b := newWorkBed(t)
+			b := checkSelectionBed(t)
 			b.lineage, b.declaredCheap = "builder", "true"
 			brief := b.brief("first.md", "Build.\n")
 			owners := b.workOwners()
@@ -233,7 +250,7 @@ func TestProcessCheckFirstAndPersonSelection(t *testing.T) {
 
 func TestProcessCheckHistoryAndRecovery(t *testing.T) {
 	t.Parallel()
-	b := newWorkBed(t)
+	b := checkSelectionBed(t)
 	b.lineage, b.declaredCheap = "builder", "true"
 	brief := b.brief("history.md", "Build.\n")
 	owners := b.workOwners()
@@ -311,7 +328,7 @@ func TestProcessCheckHistoryAndRecovery(t *testing.T) {
 
 func TestProcessCheckOrdinaryContentionUpdatesSelection(t *testing.T) {
 	t.Parallel()
-	b := newWorkBed(t)
+	b := checkSelectionBed(t)
 	b.declaredCheap = "true"
 	brief := b.brief("contention.md", "Build.\n")
 	owners := b.workOwners()
@@ -367,7 +384,7 @@ waiting:
 
 func TestProcessCheckFailedObservationHoldsNextAgent(t *testing.T) {
 	t.Parallel()
-	b := newWorkBed(t)
+	b := checkSelectionBed(t)
 	b.declaredCheap = "true"
 	brief := b.brief("failed-record.md", "Build.\n")
 	owners := b.workOwners()
@@ -441,7 +458,7 @@ func TestProcessCheckPublicRechecksAppliedArgv(t *testing.T) {
 	for _, person := range []bool{false, true} {
 		t.Run(map[bool]string{false: "changed-agent", true: "longer-person"}[person], func(t *testing.T) {
 			t.Parallel()
-			b := newWorkBed(t)
+			b := checkSelectionBed(t)
 			b.declaredCheap = "make d"
 			owners := b.workOwners()
 			argv := []string{"rm", "-rf", "/tmp/zzz"}
@@ -512,7 +529,7 @@ func TestProcessCheckPublicRechecksAppliedArgv(t *testing.T) {
 // no-audits repair; it runs with the declared audits and deadline instead.
 func TestProcessCheckAgentDeclaredCheckKeepsAudits(t *testing.T) {
 	t.Parallel()
-	b := newWorkBed(t)
+	b := checkSelectionBed(t)
 	b.declaredCheap, b.declaredAudits, b.declaredDeadline = "make d", "make audits", "40"
 	owners := b.workOwners()
 	args := checkBuildArgs(b, "declared", b.brief("declared.md", "Build.\n"), []string{"make", "d"})
@@ -530,7 +547,7 @@ func TestProcessCheckAgentDeclaredCheckKeepsAudits(t *testing.T) {
 // agent's later round with the same argv: committed declarations apply.
 func TestProcessCheckAgentReusingAppliedActKeepsAudits(t *testing.T) {
 	t.Parallel()
-	b := newWorkBed(t)
+	b := checkSelectionBed(t)
 	b.declaredCheap, b.declaredAudits, b.declaredDeadline = "make d", "make audits", "40"
 	owners := b.workOwners()
 	argv := []string{"go", "test", "./x"}
