@@ -178,7 +178,7 @@ func (s *connectionRuntimeBuilder) StartSupervisor(id, stateDir string) (identit
 	}
 	if record.Kind == "build" {
 		s.built++
-		result, err := s.c.manager.Supervise(id)
+		result, err := superviseUnitFixture(s.c.manager, s.c.connectionOwners(), id)
 		s.build = result
 		if err != nil {
 			return identity.Ref{}, err

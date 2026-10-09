@@ -23,7 +23,12 @@ func (runner *UnitRunner) collectLaunches(record UnitRunRecord, round UnitRound)
 				err = nil
 			}
 			if os.IsNotExist(err) && id == step.LaunchID && step.State == StepStarting {
-				continue
+				if record.State != "cancelled" {
+					continue
+				}
+				// A stopped request with no launch has no execution charge.
+				execution = Record{ID: id, Kind: step.Kind, State: Cancelled, StartedAt: step.StartedAt, FinishedAt: step.FinishedAt}
+				err = nil
 			}
 			if os.IsNotExist(err) && id == step.LaunchID && step.State == StepFailed && step.FinishedAt != "" {
 				execution = Record{ID: id, State: Failed, StartedAt: step.StartedAt, FinishedAt: step.FinishedAt}

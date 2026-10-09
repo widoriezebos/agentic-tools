@@ -288,6 +288,10 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		record.State = "cancelled"
 		for i := range record.Rounds {
 			for j := range record.Rounds[i].Steps {
+				step := &record.Rounds[i].Steps[j]
+				if step.State == StepStarting && step.FinishedAt == "" {
+					step.FinishedAt = runner.Manager.Now().UTC().Format(time.RFC3339Nano)
+				}
 				runner.driver(&record, &record.Rounds[i]).closeCapacityWait(j, "cancelled", runner.Manager.Now().UTC().Format(time.RFC3339Nano))
 			}
 		}

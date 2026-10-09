@@ -90,6 +90,8 @@ type Manager struct {
 	Settings      Settings
 	SettingsError error
 	SandboxAct    func(Record, Settings) string
+	// BeforeChild rechecks unit authority in the supervisor, under the creation gates.
+	BeforeChild func(Record) error
 	// CompressAbove is disk.compress-above-mib in bytes: a launch's log
 	// that large is gzipped when the launch ends; 0 compresses nothing.
 	CompressAbove int64
@@ -300,6 +302,10 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 
 func (m *Manager) startSupervisor(id, stateDir string) (Record, error) {
 	supervisor, err := m.Supervisor.StartSupervisor(id, stateDir)
+	if IsCode(err, "UNIT_LAUNCH_HELD") {
+		current, _ := m.Store.Read(id)
+		return current, err
+	}
 	if err != nil {
 		failed, writeErr := m.fail(id, "supervisor-start: "+err.Error(), nil)
 		if writeErr != nil {
@@ -312,6 +318,9 @@ func (m *Manager) startSupervisor(id, stateDir string) (Record, error) {
 		current, readErr := m.Store.Read(id)
 		if readErr != nil {
 			return Record{}, readErr
+		}
+		if current.Supervisor == nil && strings.HasPrefix(current.Reason, "authority-held: ") {
+			return current, coded("UNIT_LAUNCH_HELD", "launch="+id, errors.New(current.Reason))
 		}
 		if current.Child != nil || current.State.Terminal() && (m.Prober == nil || identity.AliveRef(m.Prober, supervisor) == identity.Dead) {
 			if current.State == Failed && current.Child == nil {
@@ -363,11 +372,18 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		return Record{}, err
 	}
+	var personInvocation json.RawMessage
 	record, err := m.update(id, func(record *Record) error {
 		if record.Supervisor != nil || record.State.Terminal() {
 			return coded("LAUNCH_ALREADY_SUPERVISED", "launch="+id, fmt.Errorf("launch %s is already watched by another process, or has ended", id))
 		}
+		// Only this supervisor claim consumes the invoking person's admission.
+		personInvocation = record.AdapterData["unitPersonInvocation"]
+		delete(record.AdapterData, "unitPersonInvocation")
 		record.Supervisor = &self
+		if strings.HasPrefix(record.Reason, "authority-held: ") {
+			record.Reason = ""
+		}
 		return nil
 	})
 	if err != nil {
@@ -452,6 +468,24 @@ func (m *Manager) Supervise(id string) (Record, error) {
 			return m.finishCancelledBeforeChild(id, err)
 		}
 		return Record{}, err
+	}
+	if _, requiresAuthority := record.AdapterData["unitAuthorityRoot"]; requiresAuthority {
+		authorityErr := errors.New("the unit's current authority cannot be checked")
+		if m.BeforeChild != nil {
+			record.AdapterData["unitPersonInvocation"] = personInvocation
+			authorityErr = m.BeforeChild(record)
+		}
+		if authorityErr != nil {
+			held, err := m.update(id, func(current *Record) error {
+				current.Supervisor, current.OutputOwnerUnproven = nil, false
+				current.Reason = "authority-held: " + authorityErr.Error()
+				return nil
+			})
+			if err != nil {
+				return Record{}, err
+			}
+			return held, coded("UNIT_LAUNCH_HELD", "launch="+id, authorityErr)
+		}
 	}
 	child, childRef, err := m.Processes.StartChild(command)
 	if err != nil {

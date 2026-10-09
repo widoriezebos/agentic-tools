@@ -299,6 +299,11 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	}
 	if runner.named != nil {
 		runner.named.plan = plan
+	}
+	if err := runner.checkPendingIdentity(&record); err != nil {
+		return UnitResult{Record: record}, err
+	}
+	if runner.named != nil {
 		if err := runner.named.verify(runner); err != nil {
 			return UnitResult{}, err
 		}

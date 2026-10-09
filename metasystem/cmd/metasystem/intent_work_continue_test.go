@@ -214,7 +214,7 @@ func TestIntentReadFindingsInSandboxTemp(t *testing.T) {
 		bed.manager.Adapters[name] = adapter
 	}
 	bed.manager.Processes = sandboxReader{mu: &mu, commands: &commands, findings: &findings, structured: &structured}
-	bed.manager.Supervisor = superviseReads{bed.starter}
+	bed.manager.Supervisor = superviseReads{workStarter: bed.starter, bed: bed}
 	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n")
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "sandboxed", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	data := resultData(t, result)

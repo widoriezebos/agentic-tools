@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -110,11 +112,17 @@ func launchSeatInstallation(executable string) string {
 var launchManager = newLaunchManager
 
 func runLaunchSupervise(args []string, stdout, stderr io.Writer) int {
+	return runLaunchSuperviseIn(args, stdout, stderr, launchManager, defaultIntentOwners())
+}
+
+func runLaunchSuperviseIn(args []string, stdout, stderr io.Writer, launches func() *launch.Manager, owners intentOwners) int {
 	id, ok := launchID(args, "supervise", stdout, stderr)
 	if !ok {
 		return 2
 	}
-	record, err := launchManager().Supervise(id)
+	manager := launches()
+	manager.BeforeChild = func(record launch.Record) error { return checkUnitChildAuthority(manager, record, owners) }
+	record, err := manager.Supervise(id)
 	if err != nil {
 		fmt.Fprintln(stderr, "launch supervise:", err)
 		return 1
@@ -196,4 +204,67 @@ func verdictCounts(record launch.Record) bool {
 func launchReport(record launch.Record) string {
 	root, _ := launch.DefaultRoot()
 	return launch.RecordLine(record, root)
+}
+
+func checkUnitChildAuthority(manager *launch.Manager, execution launch.Record, owners intentOwners) error {
+	var root, cancelled string
+	for key, target := range map[string]*string{"unitAuthorityRoot": &root, "unitCancellation": &cancelled} {
+		if err := json.Unmarshal(execution.AdapterData[key], target); err != nil {
+			return err
+		}
+	}
+	if root == "" || cancelled == "" {
+		return fmt.Errorf("the unit's authority context is unreadable")
+	}
+	personInvocation := false
+	if proof := execution.AdapterData["unitPersonInvocation"]; len(proof) > 0 {
+		if err := json.Unmarshal(proof, &personInvocation); err != nil {
+			return err
+		}
+	}
+	// A detached supervisor has no direct person invocation of its own.
+	owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Proof{}, fmt.Errorf("automatic continuation has no person's invocation")
+	}
+	inv := &intentInvocation{command: intentCommand{name: "work build", object: "work", action: "build"},
+		cwd: root, owners: owners, stdout: io.Discard, stderr: io.Discard, input: intentInput{values: map[string][]string{}}}
+	defer inv.leaveStores()
+	for _, resolve := range []func() *intentResult{inv.resolveLayout, inv.selectLayoutRoot} {
+		if problem := resolve(); problem != nil {
+			return fmt.Errorf("%s", problem.Summary)
+		}
+	}
+	runner := inv.unitRunner()
+	runner.Root = filepath.Dir(filepath.Dir(cancelled))
+	unit, err := runner.Status(filepath.Base(filepath.Dir(cancelled)))
+	if err != nil {
+		return err
+	}
+	belongs := false
+	for _, round := range unit.Rounds {
+		for _, step := range round.Steps {
+			if step.LaunchID == execution.ID && step.Retained != nil && step.Retained.WorkingDirectory == execution.WorkingDirectory {
+				belongs = true
+			}
+		}
+	}
+	if unit.Goal != execution.Goal || !belongs || unit.State != "running" {
+		return fmt.Errorf("the launch no longer belongs to a running unit")
+	}
+	if !personInvocation {
+		ready, err := runner.ContinuePolicy()
+		if err != nil {
+			return err
+		}
+		if !ready {
+			return fmt.Errorf("the next step awaits the person's current invocation")
+		}
+	}
+	var model string
+	_ = json.Unmarshal(execution.AdapterData["model"], &model)
+	settings := manager.Settings
+	if len(settings.Values) == 0 {
+		settings = launch.DefaultSettings()
+	}
+	return inv.unitLaunchAuthority(unit, launch.StartSpec{Model: model, ID: execution.ID, Kind: execution.Kind, AdapterData: execution.AdapterData}, settings, personInvocation)
 }

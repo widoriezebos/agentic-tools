@@ -121,6 +121,12 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 		}
 		if driver.before != nil {
 			if err := driver.before(spec); err != nil {
+				if driver.unit && IsCode(err, "UNIT_LAUNCH_UNAUTHORIZED") {
+					if saveErr := driver.retainCapacityWait(index, err); saveErr != nil {
+						return Record{}, saveErr
+					}
+					return Record{}, err
+				}
 				driver.closeCapacityWait(index, "invalidated", driver.manager.Now().UTC().Format(time.RFC3339Nano))
 				if saveErr := driver.save(); saveErr != nil {
 					return Record{}, saveErr
@@ -139,13 +145,21 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 		}
 		if driver.before != nil {
 			if err := driver.before(spec); err != nil {
+				if IsCode(err, "UNIT_LAUNCH_UNAUTHORIZED") {
+					if saveErr := driver.retainCapacityWait(index, err); saveErr != nil {
+						return launchRecord, saveErr
+					}
+				}
 				return launchRecord, err
 			}
 		}
 		spec.Actor, spec.wait = driver.actor, driver.commandWait
 		launchRecord, err = driver.manager.ResumePending(spec)
+		if err != nil && !capacityWaiting(err) && launchRecord.State == Starting && launchRecord.Supervisor == nil && launchRecord.Child == nil && launchRecord.ProcessGroup == nil {
+			err = coded("UNIT_LAUNCH_HELD", "launch="+step.LaunchID, err)
+		}
 	}
-	if driver.unit && capacityWaiting(err) {
+	if driver.unit && (capacityWaiting(err) || IsCode(err, "UNIT_LAUNCH_HELD")) {
 		if saveErr := driver.retainCapacityWait(index, err); saveErr != nil {
 			return launchRecord, saveErr
 		}

@@ -92,7 +92,7 @@ func (s failureSupervisor) StartSupervisor(id, state string) (identity.Ref, erro
 		return workProcessRef(99), err
 	}
 	// Supervise records the same process-start error production receives.
-	_, err = s.bed.manager.Supervise(id)
+	_, err = superviseUnitFixture(s.bed.manager, s.bed.workOwners(), id)
 	if err != nil {
 		r, readErr := s.bed.manager.Store.Read(id)
 		if readErr != nil || !r.State.Terminal() {

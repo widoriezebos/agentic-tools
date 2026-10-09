@@ -523,7 +523,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if len(settings.Values) == 0 {
 			settings = launch.DefaultSettings()
 		}
-		if err := inv.unitLaunchAuthority(record, spec, settings); err != nil {
+		if err := inv.unitLaunchAuthority(record, spec, settings, false); err != nil {
 			return err
 		}
 		if spec.Kind == "build" {
@@ -699,7 +699,7 @@ func (inv *intentInvocation) unitProof(plan launch.UnitPlan) ([]launch.ProofComm
 // run this command advances, new or continued: the goal must be claimed by
 // this session and the checkout lease held, resolved through the selected
 // installation's own configuration.
-func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, spec launch.StartSpec, settings launch.Settings) error {
+func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, spec launch.StartSpec, settings launch.Settings, personInvocation bool) error {
 	conn := inv.connection()
 	endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path())
 	if err != nil {
@@ -715,6 +715,14 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	file, _ := goalRecord(projection, record.Goal)
 	if file == nil {
 		return fmt.Errorf("the launch's goal %s cannot be read", record.Goal)
+	}
+	personInvocation = personInvocation || inv.checkDirectPersonProof("continue work", false) == nil
+	if eligible := goal.ClaimApprovalEligibility(projection.Tree, file, now); !personInvocation && !eligible.Ready {
+		return fmt.Errorf("goal %s cannot execute: %s", record.Goal, eligible.Wait)
+	}
+	if spec.AdapterData != nil {
+		spec.AdapterData["unitAuthorityRoot"], _ = json.Marshal(inv.layout.InstallationRoot.Path())
+		spec.AdapterData["unitPersonInvocation"], _ = json.Marshal(personInvocation)
 	}
 	role, runtime, model := "implementer", settings.BuildRuntime, settings.BuildModel
 	if spec.Kind == "proof" {
@@ -1573,6 +1581,12 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		case launch.IsCode(err, "UNIT_RUN_BUSY"):
 			return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Summary: "another command is advancing this work right now",
 				next: again, nextReason: "the same command continues it", Details: details}
+		case launch.IsCode(err, "UNIT_LAUNCH_HELD"), launch.IsCode(err, "UNIT_LAUNCH_UNAUTHORIZED"):
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Data: unitData(record, runner.Manager),
+				next: inv.publicArgv("work", "build", "run:"+record.ID), nextReason: "resumes this reservation with current authority; a person's recovery is proved for that invocation", Details: details}
+		case launch.IsCode(err, "UNIT_PENDING_INVALIDATED"):
+			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Data: unitData(record, runner.Manager),
+				next: inv.publicArgv("work", "stop", record.Goal), nextReason: "stops this goal's pending work and releases custody after proven quiescence; then prepare a fresh brief and use work build " + record.Goal + " --work NEW --brief FILE --check COMMAND", Details: details}
 		case launch.IsCode(err, "UNIT_NAMED_INPUT_CHANGED"):
 			goalID, unit := targetID(targets, "goal", "GOAL"), targetID(targets, "work", "NAME")
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + "; nothing was launched",

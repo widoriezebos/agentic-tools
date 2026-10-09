@@ -162,7 +162,10 @@ func (readProcesses) GroupAlive(int64) (bool, error)          { return false, ni
 
 // superviseReads runs every read launch through the launch owner's own
 // supervision: declared outputs, adapter measure and output copies.
-type superviseReads struct{ *workStarter }
+type superviseReads struct {
+	*workStarter
+	bed *workBed
+}
 
 func (s superviseReads) StartSupervisor(id, stateDir string) (identity.Ref, error) {
 	record, _ := s.m.Store.Read(id)
@@ -172,7 +175,7 @@ func (s superviseReads) StartSupervisor(id, stateDir string) (identity.Ref, erro
 	s.mu.Lock()
 	s.kinds = append(s.kinds, record.Kind)
 	s.mu.Unlock()
-	if _, err := s.m.Supervise(id); err != nil {
+	if _, err := superviseUnitFixture(s.m, s.bed.workOwners(), id); err != nil {
 		return identity.Ref{}, err
 	}
 	return workProcessRef(10), nil
@@ -194,7 +197,7 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 		bed.manager.Adapters[name] = adapter
 	}
 	bed.manager.Processes = readProcesses{}
-	bed.manager.Supervisor = superviseReads{bed.starter}
+	bed.manager.Supervisor = superviseReads{workStarter: bed.starter, bed: bed}
 	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n")
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "read", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	data := resultData(t, result)
