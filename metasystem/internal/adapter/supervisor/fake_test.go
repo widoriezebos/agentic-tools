@@ -710,21 +710,25 @@ func TestFakeHoldBehaviors(t *testing.T) {
 // TestFakeCancelRace: SIGTERM during the hold completes the round valid and
 // exits 0.
 //
-// The hold outliving the supervisor is the product contract, so nothing in
-// the supervisor's own process may reap it. A fixture custodian there (the
-// test binary's TestMain run in full inside the subprocess) observes its
-// owner's descendants every poll and kills them when the owner exits; under
-// suite load the subprocess lived past the default 250ms poll and the hold
-// died after this assertion's reading had become racy. The poll is set to
-// 1ms so any such custodian observes the hold at once, and its exit is
-// awaited before the hold is judged.
+// The hold belongs to the dispatcher and must outlive the supervisor.
+// The helper therefore runs without a fixture custodian of its own. The
+// test's cleanup kills the fixture group and waits for its exit before the
+// temporary installation can be removed.
 func TestFakeCancelRace(t *testing.T) {
 	t.Parallel()
 	f := newFakeInstall(t, installOptions{prompt: "FAKE:cancel-race\n"})
 	f.env["METASYSTEM_HEARTBEAT_INTERVAL_MS"] = "20"
 	f.env[identity.FixtureCustodianPollEnv] = "1ms"
+	var supervisorPID int
+	t.Cleanup(func() {
+		if err := syscall.Kill(-supervisorPID, 0); err != syscall.ESRCH {
+			t.Errorf("the fixture cleanup returned with its process group still present: %v", err)
+		}
+	})
 	command := f.startSubprocess()
-	f.waitPidFile("child.pid")
+	supervisorPID = command.Process.Pid
+	holdPID := f.waitPidFile("child.pid")
+	waitFor(t, "the hold’s argv record", func() bool { return len(f.holds()[holdPID]) > 0 })
 	custodians := fixtureCustodiansOf(t, command.Process.Pid)
 	syscall.Kill(command.Process.Pid, syscall.SIGTERM)
 	if err := command.Wait(); err != nil {

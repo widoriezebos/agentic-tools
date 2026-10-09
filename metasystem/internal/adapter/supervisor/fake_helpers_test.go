@@ -544,9 +544,13 @@ func (f *fakeInstall) startSubprocess() *exec.Cmd {
 	pid := command.Process.Pid
 	f.t.Cleanup(func() {
 		_ = syscall.Kill(-pid, syscall.SIGKILL)
-		for holdPid := range f.holds() {
-			_ = syscall.Kill(holdPid, syscall.SIGKILL)
+		if command.ProcessState == nil {
+			_ = command.Wait()
 		}
+		// The group includes holds that have not published their argv yet.
+		testenv.Await(f.t, "the supervisor fixture group to exit", func() bool {
+			return syscall.Kill(-pid, 0) == syscall.ESRCH
+		})
 	})
 	return command
 }

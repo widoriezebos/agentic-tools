@@ -748,6 +748,7 @@ func TestGoPlanCountsStartedShardWhenLaterCoverageSetupFails(t *testing.T) {
 		sources[pkg+"/"+pkg+"_test.go"] = testSnapshotFile(`package `+pkg+`
 import ("fmt"; "os"; "testing")
 func TestDiagnostic`+strings.ToUpper(pkg)+`(t *testing.T) {
+ t.Parallel()
  fmt.Fprintln(os.Stderr, "`+diagnostic+`")
  select {}
 }
@@ -759,7 +760,9 @@ func TestDiagnostic`+strings.ToUpper(pkg)+`(t *testing.T) {
 	hooks := goShardLifecycleHooks{
 		prepareCoverage: func(index int, directory, groupID string) error {
 			if index == 1 {
-				<-collected
+				if err := awaitCollectedDiagnostic(t, collected, diagnostic); err != nil {
+					return err
+				}
 				return errors.New("injected plan coverage setup failure")
 			}
 			if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -936,7 +939,9 @@ func testActiveShardFailureDrain(t *testing.T, failure string, coverage bool) {
 		collected := make(chan struct{})
 		hooks.prepareCoverage = func(index int, directory, groupID string) error {
 			if index == 1 {
-				<-collected
+				if err := awaitCollectedDiagnostic(t, collected, diagnostic); err != nil {
+					return err
+				}
 				return errors.New("injected later coverage marker failure")
 			}
 			if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -1027,6 +1032,84 @@ func testActiveShardFailureDrain(t *testing.T, failure string, coverage bool) {
 	_ = probe.Close()
 }
 
+// awaitCollectedDiagnostic returns errors to hooks running on worker goroutines
+// so their callers can cancel and join shards and deliver group completion.
+func awaitCollectedDiagnostic(t interface{ Deadline() (time.Time, bool) }, collected <-chan struct{}, diagnostic string) error {
+	return testenv.AwaitError(t, "collected diagnostic: "+diagnostic, func() bool {
+		select {
+		case <-collected:
+			return true
+		default:
+			return false
+		}
+	})
+}
+
+type collectedDiagnosticDeadline struct {
+	deadline time.Time
+	bounded  bool
+	read     chan struct{}
+}
+
+func (deadline collectedDiagnosticDeadline) Deadline() (time.Time, bool) {
+	if deadline.read != nil {
+		close(deadline.read)
+	}
+	return deadline.deadline, deadline.bounded
+}
+
+func TestCollectedDiagnosticWaitReturnsOnSignal(t *testing.T) {
+	t.Parallel()
+	collected := make(chan struct{})
+	close(collected)
+	// A collected diagnostic remains valid even when the cleanup reserve is reached.
+	deadline := collectedDiagnosticDeadline{bounded: true}
+	if err := awaitCollectedDiagnostic(deadline, collected, "already collected diagnostic"); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCollectedDiagnosticWaitTimeoutReturnsFromWorker(t *testing.T) {
+	t.Parallel()
+	const diagnostic = "missing first shard diagnostic"
+	deadline := collectedDiagnosticDeadline{bounded: true}
+	finished := make(chan struct{})
+	returned := make(chan error, 1)
+	go func() {
+		defer close(finished)
+		returned <- awaitCollectedDiagnostic(deadline, make(chan struct{}), diagnostic)
+	}()
+	testenv.Await(t, "the diagnostic wait worker to return", func() bool {
+		select {
+		case <-finished:
+			return true
+		default:
+			return false
+		}
+	})
+	select {
+	case err := <-returned:
+		if err == nil || !strings.Contains(err.Error(), diagnostic) || !strings.Contains(err.Error(), "deadline") {
+			t.Fatalf("missing diagnostic error = %v, want the diagnostic and deadline", err)
+		}
+	default:
+		t.Fatal("diagnostic timeout exited the worker without returning its error")
+	}
+}
+
+func TestCollectedDiagnosticWaitWithoutDeadlineReturnsOnSignal(t *testing.T) {
+	t.Parallel()
+	collected := make(chan struct{})
+	deadlineRead := make(chan struct{})
+	go func() {
+		<-deadlineRead
+		close(collected)
+	}()
+	if err := awaitCollectedDiagnostic(collectedDiagnosticDeadline{read: deadlineRead}, collected, "eventual diagnostic"); err != nil {
+		t.Fatal(err)
+	}
+}
+
 type collectedOutputWriter struct {
 	mu         sync.Mutex
 	writer     io.Writer
@@ -1105,12 +1188,25 @@ func readAcknowledgedShardProcesses(t *testing.T, root string) []acknowledgedSha
 	return processes
 }
 
+func TestGoWorkerOwnedProcessInheritsTestDeadline(t *testing.T) {
+	t.Parallel()
+	if runGoWorkerTestInOwnedProcess(t) {
+		return
+	}
+	if _, bounded := t.Deadline(); !bounded {
+		t.Fatal("owned Go-worker process has no test deadline to bound diagnostic waits")
+	}
+}
+
 func runGoWorkerTestInOwnedProcess(t *testing.T, childArguments ...string) bool {
 	t.Helper()
 	if os.Getenv("GO_WANT_GO_WORKER_OWNED_TEST") == "1" {
 		return false
 	}
 	arguments := append([]string{"-test.run=^" + regexp.QuoteMeta(t.Name()) + "$", "-test.v"}, childArguments...)
+	if remaining, bounded := testenv.DeadlineRemaining(t); bounded {
+		arguments = append(arguments, "-test.timeout="+remaining.String())
+	}
 	command := exec.CommandContext(t.Context(), os.Args[0], arguments...)
 	command.Env = append(os.Environ(), "GO_WANT_GO_WORKER_OWNED_TEST=1")
 	if output, err := command.CombinedOutput(); err != nil {
@@ -1148,7 +1244,9 @@ func TestCommandDiagnostic(t *testing.T) {
 	collected := make(chan struct{})
 	hooks := goShardLifecycleHooks{prepareCoverage: func(index int, directory, groupID string) error {
 		if index == 1 {
-			<-collected
+			if err := awaitCollectedDiagnostic(t, collected, diagnostic); err != nil {
+				return err
+			}
 			return errors.New("injected public second coverage setup failure")
 		}
 		if err := os.MkdirAll(directory, 0o700); err != nil {
