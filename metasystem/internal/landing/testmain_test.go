@@ -27,5 +27,19 @@ func TestMain(m *testing.M) {
 		}
 		os.Exit(0)
 	}
-	os.Exit(testenv.Main(m))
+	var declarations []testenv.Declaration
+	for _, helper := range []struct {
+		mode  string
+		names []string
+	}{
+		{"LANDING_RECEIPT_SIGNAL_HELPER", []string{"LANDING_RECEIPT_SIGNAL_HELPER", "LANDING_RECEIPT_SIGNAL_ROOT", "LANDING_RECEIPT_SIGNAL_TREE", "LANDING_RECEIPT_SIGNAL_PROBE", "LANDING_RECEIPT_SIGNAL_HOLD"}},
+		{"LANDING_PARK_CLOCK_HELPER", []string{"LANDING_PARK_CLOCK_HELPER", "LANDING_PARK_CLOCK_ROOT", "LANDING_PARK_CLOCK_CHAIN", "LANDING_PARK_CLOCK_TARGET"}},
+	} {
+		if os.Getenv(helper.mode) == "1" {
+			for _, name := range helper.names {
+				declarations = append(declarations, testenv.Declare(name))
+			}
+		}
+	}
+	os.Exit(testenv.Main(m, declarations...))
 }

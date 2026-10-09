@@ -58,7 +58,8 @@ func TestMain(m *testing.M) {
 	waitCandidate := os.Getenv("METASYSTEM_WAIT_BINARY")
 	buildWaitCandidate := !proofCommandChild && (waitCandidate == "" || os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE") != waitCandidate)
 	var declarations []testenv.Declaration
-	if os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD") != "" || proofCommandChild {
+	if os.Getenv("GO_WANT_FIXTURE_RECEIPT_CLOCK_CHILD") != "" || proofCommandChild ||
+		os.Getenv("LANDING_REPLAY_REPORTER") == "1" || os.Getenv("GO_WANT_FIXTURE_LANDING_ENVIRONMENT_CHILD") == "1" {
 		// The parent constructs this helper's private fixture selectors. Preserve
 		// only that child process's declared controls through the package scrub.
 		declarations = testenv.DeclareInheritedControls()

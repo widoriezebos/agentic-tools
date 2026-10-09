@@ -75,7 +75,7 @@ func fixtureCommandEnvironment(t *testing.T, values ...string) []string {
 	environment := make([]string, 0, len(os.Environ())+len(values)+1)
 	for _, value := range os.Environ() {
 		name, _, _ := strings.Cut(value, "=")
-		if !replacements[name] {
+		if !replacements[name] && !strings.HasPrefix(name, "LANDING_") {
 			environment = append(environment, value)
 		}
 	}
