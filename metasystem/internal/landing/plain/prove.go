@@ -1012,10 +1012,14 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 		defer log.Close()
 		offset = 0
 	}
+	base := decision.BaseCommit
+	if base == "" {
+		base = decision.Base
+	}
 	shell := exec.Command("/bin/sh", "-c", command)
 	shell.Dir = dir
 	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit, "LANDING_ONLY="+only,
-		"LANDING_PROOF_SCOPE="+decision.Scope, "LANDING_PROOF_BASE="+decision.Base, "LANDING_PROOF_GROUPS="+strings.Join(decision.groupIDs(), " "))
+		"LANDING_PROOF_SCOPE="+decision.Scope, "LANDING_PROOF_BASE="+base, "LANDING_PROOF_GROUPS="+strings.Join(decision.groupIDs(), " "))
 	shell.Stdout, shell.Stderr = log, log
 	run := seams.Command
 	if run == nil {

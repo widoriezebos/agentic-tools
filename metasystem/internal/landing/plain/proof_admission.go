@@ -100,7 +100,7 @@ func admitExecutionLocked(install, checkout, command string, running *Running, d
 		if !running.Trunk {
 			if err := seams.checkBudget(install, checkout, running.Commit); err != nil {
 				if !person || seams.ClassificationOf != "" {
-					return holdProofLocked(install, *running, seams, "LANE_PROOF_BUDGET", "this batch has used its two full checks; a person may request one more execution")
+					return holdProofLocked(install, *running, seams, "LANE_PROOF_BUDGET", "this batch used two full checks; goals hold; ask a person to run: metasystem landing prove")
 				}
 				admission.Override = true
 				admission.Warning += "; this one execution exceeds the automatic full-check allowance: " + err.Error()

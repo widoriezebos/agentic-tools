@@ -313,7 +313,7 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 			return nil, err
 		}
 		if len(eligible) == 0 {
-			return existing, nil
+			return nil, nil
 		}
 	}
 	if err := s.fetchMain(checkout); err != nil {
@@ -339,17 +339,56 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 			if err != nil {
 				return err
 			}
-			if batch.State != BatchClosed {
+			if batch.State != BatchClosed || idle && batch.ClosureReason == "all selected members are accounted for on main or by queue outcomes" {
 				terminal, err := batchTerminal(install, checkout, main, batch, s)
-				if err != nil {
+				if err != nil && batch.State != BatchClosed {
 					return err
 				}
 				if terminal && idle {
-					batch.State, batch.ClosureReason = BatchClosed, "all selected members are accounted for on main or by queue outcomes"
-					if err := writeBatch(install, batch); err != nil {
-						return err
+					landed := true
+					for _, member := range batch.Members {
+						contained, err := batchContains(checkout, main, member.SHA, s)
+						if err != nil {
+							if batch.State != BatchClosed {
+								return err
+							}
+							landed = false
+							break
+						}
+						landed = landed && contained
 					}
-				} else if batch.State == BatchRunning || !idle {
+					if landed && batch.ClosureReason != "confirmed push accounts for the selected members" {
+						results, err := readLines[Result](resultsPath(install))
+						if err != nil {
+							return err
+						}
+						for _, r := range slices.Backward(results) {
+							if r.Result != Green || !subsetGoals(batch.Members, r.Goals) || !subsetGoals(r.Goals, batch.Members) {
+								continue
+							}
+							contained, err := batchContains(checkout, main, r.Commit, s)
+							if err != nil {
+								if batch.State != BatchClosed {
+									return err
+								}
+								continue
+							}
+							if !contained {
+								continue
+							}
+							if err := completePush(install, checkout, batch, batch.Base, r.Commit, r.Tree, s.now(), s); err != nil {
+								return err
+							}
+							break
+						}
+					}
+					if batch.State != BatchClosed {
+						batch.State, batch.ClosureReason = BatchClosed, "all selected members are accounted for on main or by queue outcomes"
+						if err := writeBatch(install, batch); err != nil {
+							return err
+						}
+					}
+				} else if batch.State != BatchClosed && (batch.State == BatchRunning || !idle) {
 					selected = batch
 					return nil
 				}
@@ -372,7 +411,9 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 			}
 		}
 		if selected == nil {
-			selected = batch
+			if batch != nil && batch.State != BatchClosed {
+				selected = batch
+			}
 			return nil
 		}
 		return PolicyDecision(policy, nil)

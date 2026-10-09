@@ -116,8 +116,10 @@ func landingClock(install, checkout string, batch *Batch, now time.Time, seams P
 	if len(c.Unknown) > 0 {
 		c.TotalMinutes, c.MergeMinutes = nil, nil
 	}
+	gates, gateDamage, gateErr := countedLines[Result](gatesPath(install))
 	results, damaged, err := countedLines[Result](resultsPath(install))
-	if err != nil || damaged > 0 {
+	results = append(gates, results...)
+	if err != nil || damaged > 0 || gateErr != nil || gateDamage > 0 {
 		c.Unknown = append(c.Unknown, "proof history")
 	}
 	seen := map[string]bool{}
@@ -130,10 +132,11 @@ func landingClock(install, checkout string, batch *Batch, now time.Time, seams P
 		}
 		seen[r.Attempt] = true
 		p := ProofClock{Result: r}
-		if len(c.Proofs) == 0 {
-			c.PushMinutes = elapsedMinutes(r.At, c.PushAt)
-		}
 		var record scopeRecord
+		if r.Scope == "gate" {
+			c.Proofs = append(c.Proofs, p)
+			continue
+		}
 		data, readErr := os.ReadFile(scopePath(install, r.Attempt))
 		if readErr == nil && json.Unmarshal(data, &record) == nil && record.Packages != nil {
 			shards := len(record.Packages)
@@ -149,7 +152,10 @@ func landingClock(install, checkout string, batch *Batch, now time.Time, seams P
 		}
 		c.Proofs = append(c.Proofs, p)
 	}
-	slices.Reverse(c.Proofs)
+	slices.SortStableFunc(c.Proofs, func(a, b ProofClock) int { return strings.Compare(a.StartedAt, b.StartedAt) })
+	if len(c.Proofs) > 0 {
+		c.PushMinutes = elapsedMinutes(c.Proofs[len(c.Proofs)-1].At, c.PushAt)
+	}
 	return c
 }
 
@@ -160,21 +166,23 @@ func clockMinutes(minutes *float64) string {
 	return fmt.Sprintf("%.1f", *minutes)
 }
 
-// The pipeline's first tier will report its duration with this step name.
-// Until that reporter emits it, the clock names the missing measurement.
-const firstTierStep = "first-tier"
-
 func (c *Clock) Words() string {
 	if c == nil {
 		return "landing duration unknown"
 	}
 	parts := []string{"hand-in to merge " + clockMinutes(c.MergeMinutes)}
+	cheap := "cheap gate not run"
 	for _, p := range c.Proofs {
-		firstTier := "not measured until the pipeline's first tier"
-		if _, known := p.Steps[firstTierStep]; known {
-			firstTier = clockStep(p.Steps, firstTierStep)
+		if p.Scope == "gate" {
+			cheap = "cheap gate " + clockMinutes(p.Minutes) + " min"
 		}
-		words := p.Scope + " proof " + clockMinutes(p.Minutes) + " (static " + clockStep(p.Steps, "fast-static-build") + ", cheap tier " + firstTier + ", shards unknown"
+	}
+	parts = append(parts, cheap)
+	for _, p := range c.Proofs {
+		if p.Scope == "gate" {
+			continue
+		}
+		words := p.Scope + " proof " + clockMinutes(p.Minutes) + " (static " + clockStep(p.Steps, "fast-static-build") + ", shards unknown"
 		if p.Shards != nil {
 			words = strings.TrimSuffix(words, "shards unknown") + fmt.Sprintf("%d shards", *p.Shards)
 		}

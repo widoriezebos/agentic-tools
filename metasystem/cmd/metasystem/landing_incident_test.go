@@ -45,6 +45,7 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 	lane.owners.landing.mainEndpoint, lane.owners.landing.machine = owners.mainEndpoint, owners.machine
 	lane.owners.landing.now = owners.now
 	mainCommit, mainTree := "main", "main-tree"
+	falseState := replayFalseState(t)
 	git := lane.owners.landing.plainProve.Git
 	lane.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
 		joined := strings.Join(args, " ")
@@ -57,6 +58,19 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 			return mainTree, nil
 		case joined == "merge-base --is-ancestor main "+mainCommit:
 			return "", nil
+		case len(args) == 4 && args[0] == "merge-base" && strings.HasPrefix(args[2], "sha-"):
+			if args[2] == "sha-b" && args[3] == lane.head && !unchanged {
+				return "", nil
+			}
+			return "", fmt.Errorf("git merge-base: %w", &exec.ExitError{ProcessState: falseState})
+		case len(args) == 4 && strings.Join(args[:3], " ") == "show -s --format=%P" && args[3] == lane.head:
+			if unchanged {
+				if mainCommit == "main" {
+					return "main-parent sha-b", nil
+				}
+				return "main", nil
+			}
+			return mainCommit + " sha-b", nil
 		case args[0] == "log" || args[0] == "rev-list" && len(args) == 5 && args[1] == "--first-parent":
 			if unchanged {
 				return "", nil
@@ -67,13 +81,11 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 				}
 				return mainCommit + " main", nil
 			}
-			text, err := git(dir, args...)
-			text = strings.ReplaceAll(text, " main ", " "+mainCommit+" ")
+			text := lane.head + " " + mainCommit + " sha-b"
 			if args[0] == "rev-list" && mainCommit != "main" {
-				// The refreshed assembly keeps the original main as its ancestor.
 				text = mainCommit + " main\n" + text
 			}
-			return text, err
+			return text, nil
 		default:
 			return git(dir, args...)
 		}
@@ -90,19 +102,25 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 		lane.head = mainCommit
 	}
 	lane.fail = func(_ *exec.Cmd, only string) (string, error) {
-		switch only {
-		case "u/a":
-			return "LANDING-FAILED\tu/a\tTestOne TestTwo\nLANDING-CHECKED\t1\n", errors.New("red")
-		case "u/b":
-			return "LANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t1\n", errors.New("red")
-		case "u/green":
-			return "LANDING-CHECKED\t0\n", nil
-		default:
-			return "LANDING-FAILED\tu/a\tTestOne TestTwo\nLANDING-FAILED\tu/green\tTestBatchOnly\nLANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t3\n", errors.New("red")
+		if only != "" {
+			return "LANDING-FAILED\tu/a\tTestOne TestTwo\nLANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t2\n", errors.New("red")
 		}
+		return "LANDING-FAILED\tu/a\tTestOne TestTwo\nLANDING-FAILED\tu/green\tTestBatchOnly\nLANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t3\n", errors.New("red")
 	}
 	// A plain proof of main can follow a closed selection without --trunk.
 	lane.prepareBatch(t)
+	batch, err := plain.ReadBatch(lane.install)
+	if err != nil || batch == nil {
+		t.Fatalf("fixture selection: %+v %v", batch, err)
+	}
+	batch.Members = []plain.GoalSHA{{Goal: "b", SHA: "sha-b"}}
+	data, err := json.Marshal(batch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(lane.install), "batch.json"), data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	if unchanged {
 		for _, g := range []string{"a", "b", "c"} {
 			if _, _, err := plain.ReturnProven(lane.install, g, "unclassified", "not in this assembly", true, "fixture", laneTestNow, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
@@ -114,11 +132,33 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 			t.Fatalf("fixture selection: %+v %v", batch, err)
 		}
 		selected, err := plain.SelectBatch(lane.install, lane.root, batch.Lane, lane.owners.landing.plainProve)
-		if err != nil || selected == nil || selected.State != plain.BatchClosed {
+		if err != nil || selected != nil {
 			t.Fatalf("closed main batch: %+v %v", selected, err)
 		}
 	}
 	return lane, register, move
+}
+
+func TestIncidentPlainProofOfMainsMergeTipRecordsItsRed(t *testing.T) {
+	t.Parallel()
+	lane, register, _ := incidentProveFixture(t, true)
+	check := lane.prove(t)
+	if check.Trunk || check.Cause == nil || check.Cause.Kind != "main" || check.Cause.Evidence != check.Log || strings.Join(lane.runs, ",") != "main:" {
+		t.Fatalf("plain proof of main's merge tip: %+v runs=%v", check, lane.runs)
+	}
+	code, result := register.runJSON(register.owners(), "incident", "list")
+	data, err := json.Marshal(result.Data)
+	helmMust(t, err)
+	var listed struct{ Incidents []goal.TrunkRedEntry }
+	helmMust(t, json.Unmarshal(data, &listed))
+	if code != 0 || len(listed.Incidents) != 4 {
+		t.Fatalf("main's merge-tip red was not recorded: code=%d incidents=%s", code, data)
+	}
+	for _, incident := range listed.Incidents {
+		if len(incident.Sightings) != 1 || incident.Sightings[0].BaseCommit != check.Commit || incident.Sightings[0].BaseTree != check.Tree || incident.Failures[0].Report != check.Log {
+			t.Fatalf("incident did not use the proved tip: %+v", incident)
+		}
+	}
 }
 
 func TestIncidentLandingProveListsEachMainFailureAndKeepsMainUnchangedOnRepeat(t *testing.T) {
@@ -129,6 +169,13 @@ func TestIncidentLandingProveListsEachMainFailureAndKeepsMainUnchangedOnRepeat(t
 			lane, b, move := incidentProveFixture(t, unchanged)
 			before := b.repo.canonical
 			check := lane.prove(t)
+			wantRuns := "merge-b:,main:u/a u/green u/b"
+			if unchanged {
+				wantRuns = "main:"
+			}
+			if strings.Join(lane.runs, ",") != wantRuns {
+				t.Fatalf("main evidence did not use one reporter run: %v", lane.runs)
+			}
 			if unchanged && check.Trunk {
 				t.Fatal("unchanged main must use plain prove")
 			}
@@ -154,12 +201,8 @@ func TestIncidentLandingProveListsEachMainFailureAndKeepsMainUnchangedOnRepeat(t
 				log := check.Log
 				attempt := check.Attempt
 				if !unchanged {
-					index := 1
-					if unit == "u/b" {
-						index = 3
-					}
 					attempt += "-replay-1"
-					log = filepath.Join(plain.Dir(lane.install), "proofs", fmt.Sprintf("%s-%d.log", attempt, index))
+					log = filepath.Join(plain.Dir(lane.install), "proofs", attempt+".log")
 				}
 				contents, err := os.ReadFile(log)
 				if err != nil || !found || entry.Identity != "red:"+unit+":"+test || entry.Group != unit || entry.Failures[0].Report != log || entry.Owner != (goal.TrunkRedOwner{}) || entry.Sightings[0].BaseCommit != "main" || entry.Sightings[0].BaseTree != "main-tree" || entry.Sightings[0].Batch != attempt || entry.Sightings[0].LogPath != log || entry.Sightings[0].LogDigest != fmt.Sprintf("%x", sha256.Sum256(contents)) {
@@ -207,39 +250,28 @@ func TestIncidentLandingProveListsEachMainFailureAndKeepsMainUnchangedOnRepeat(t
 	}
 }
 
-func TestIncidentLandingProveKeepsMainFailureWhenLaterIsolationIsKilled(t *testing.T) {
+func TestIncidentLandingProveDoesNotRecordIncompleteMainReplay(t *testing.T) {
 	t.Parallel()
 	lane, b, _ := incidentProveFixture(t, false)
-	killed := exec.Command("sleep", "30")
-	if err := killed.Start(); err != nil {
-		t.Fatal(err)
-	}
-	if err := killed.Process.Kill(); err != nil {
-		t.Fatal(err)
-	}
-	if err := killed.Wait(); err == nil || killed.ProcessState.Exited() {
+	killed := exec.Command("/bin/sh", "-c", "kill -KILL $$")
+	if err := killed.Run(); err == nil || killed.ProcessState.Exited() {
 		t.Fatal("fixture was not killed")
 	}
-	firstReport := "LANDING-FAILED\tu/a\tTestOne\nLANDING-CHECKED\t1\n"
+	report := "LANDING-FAILED\tu/a\tTestOne\nLANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t2\n"
 	lane.fail = func(_ *exec.Cmd, only string) (string, error) {
-		switch only {
-		case "u/a":
-			return firstReport, errors.New("red")
-		case "u/b":
-			return "LANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t1\n", &exec.ExitError{ProcessState: killed.ProcessState}
-		default:
-			return "LANDING-FAILED\tu/a\tTestOne\nLANDING-FAILED\tu/b\tTestThree\nLANDING-CHECKED\t2\n", errors.New("red")
+		if only != "" {
+			return report, &exec.ExitError{ProcessState: killed.ProcessState}
 		}
+		return report, errors.New("red")
 	}
 	check := lane.prove(t)
-	log := filepath.Join(plain.Dir(lane.install), "proofs", check.Attempt+"-replay-1-1.log")
-	if check.Cause == nil || check.Cause.Kind != "main" || check.Cause.Evidence != log || !strings.Contains(check.Reason, "u/b") || check.Repeat != "" ||
-		strings.Join(lane.runs, ",") != "merge-b:,main:u/a,main:u/b" {
-		t.Fatalf("confirmed main failure lost after interruption: %+v runs=%v", check, lane.runs)
+	if check.Cause == nil || check.Cause.Kind != "unclassified" || !strings.Contains(check.Reason, "u/a u/b") || check.Repeat != "" ||
+		strings.Join(lane.runs, ",") != "merge-b:,main:u/a u/b" {
+		t.Fatalf("incomplete replay was attributed: %+v runs=%v", check, lane.runs)
 	}
 	stored, ok, err := plain.LastResult(lane.install)
-	if err != nil || !ok || stored.Cause == nil || stored.Cause.Kind != "main" || stored.Reason != check.Reason {
-		t.Fatalf("main cause or incomplete unit not retained: %+v %v %v", stored, ok, err)
+	if err != nil || !ok || stored.Cause == nil || stored.Cause.Kind != "unclassified" || stored.Reason != check.Reason {
+		t.Fatalf("incomplete replay not retained: %+v %v %v", stored, ok, err)
 	}
 	code, result := b.runJSON(b.owners(), "incident", "list")
 	data, err := json.Marshal(result.Data)
@@ -247,15 +279,8 @@ func TestIncidentLandingProveKeepsMainFailureWhenLaterIsolationIsKilled(t *testi
 		t.Fatal(err)
 	}
 	var listed struct{ Incidents []goal.TrunkRedEntry }
-	if err := json.Unmarshal(data, &listed); err != nil || code != 0 || len(listed.Incidents) != 1 {
-		t.Fatalf("list: code=%d data=%s err=%v", code, data, err)
-	}
-	entry := listed.Incidents[0]
-	contents, err := os.ReadFile(log)
-	if err != nil || string(contents) != firstReport || entry.Identity != "red:u/a:TestOne" || len(entry.Failures) != 1 || entry.Failures[0].Report != log ||
-		len(entry.Sightings) != 1 || entry.Sightings[0].BaseCommit != "main" || entry.Sightings[0].BaseTree != "main-tree" ||
-		entry.Sightings[0].LogPath != log || entry.Sightings[0].LogDigest != fmt.Sprintf("%x", sha256.Sum256(contents)) {
-		t.Fatalf("only the completed main failure should be recorded: %+v log=%s err=%v", entry, log, err)
+	if err := json.Unmarshal(data, &listed); err != nil || code != 0 || len(listed.Incidents) != 0 {
+		t.Fatalf("incomplete replay recorded an incident: code=%d data=%s err=%v", code, data, err)
 	}
 }
 
@@ -511,15 +536,7 @@ func TestLandingMainStopNamesIncidentInStatusAndQuestion(t *testing.T) {
 	b.owners.landing.view = func(string) lane.View {
 		return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}, Summary: "the landing lane is idle"}
 	}
-	mainRed := b.fail
-	b.fail = func(cmd *exec.Cmd, only string) (string, error) {
-		if only != "" {
-			return "LANDING-CHECKED\t0\n", nil
-		}
-		return mainRed(cmd, only)
-	}
-	b.prove(t)
-	b.fail = mainRed
+	seedAllowedWholeProof(t, b)
 	b.prove(t)
 	stop, err := plain.NewestStop(b.install)
 	identity := "red:u/a:TestOne"

@@ -168,7 +168,7 @@ func TestRepositoryBatchtestFailureReplaysAndStaysRed(t *testing.T) {
 			if result.Cause == nil || result.Cause.Kind != "main" || result.Repeat != "" || !result.CountedFull || len(result.Failed) != 1 || result.Failed[0].Unit != "go-batchtest" {
 				t.Fatalf("batchtest classification: %+v runs=%v", result, b.runs)
 			}
-			if !reflect.DeepEqual(b.runs, []string{"merge-b:", "main:go-batchtest"}) {
+			if !reflect.DeepEqual(b.runs, []string{"merge-b:", "merge-a:go-batchtest"}) {
 				t.Fatalf("batchtest replay ran the wrong selection: %v", b.runs)
 			}
 			log, err := os.ReadFile(result.Cause.Evidence)

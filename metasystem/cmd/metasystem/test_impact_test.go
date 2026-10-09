@@ -3,18 +3,22 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
-// These adapter fixtures need real Git to distinguish committed trees from
-// unstaged and untracked bytes through the public command.
-func impactGitAdapterBed(t *testing.T) (string, string) {
+func impactAdapterBed(t *testing.T) string {
 	t.Helper()
 	root := t.TempDir()
 	contract := testpolicy.Contract{SchemaVersion: 2,
@@ -41,6 +45,13 @@ func impactGitAdapterBed(t *testing.T) (string, string) {
 	impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = true\n")
 	impactWrite(t, root, "internal/launch/value_test.go", "package launch\nimport \"testing\"\nfunc TestValue(t *testing.T) { t.Parallel(); if !Value { t.Fatal(\"changed value\") } }\n")
 	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() {}\n")
+	return root
+}
+
+// The adapter fixtures use Git to compare committed trees with working bytes.
+func impactGitAdapterBed(t *testing.T) (string, string) {
+	t.Helper()
+	root := impactAdapterBed(t)
 	testingFixtureGit(t, root, "init", "-q", "-b", "main")
 	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "add", ".")
 	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "base")
@@ -71,14 +82,14 @@ func TestTestImpactWorkingSnapshotGoesRedGitAdapter(t *testing.T) {
 	impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = false\n")
 	impactWrite(t, root, "cmd/metasystem/new_test.go", "package main\nimport \"testing\"\nfunc TestNew(t *testing.T) { t.Parallel() }\n")
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || !strings.Contains(out, "whole: ./internal/launch") || !strings.Contains(out, "by name: ./cmd/metasystem 1 tests (TestNew)") || strings.Contains(out, "whole: ./cmd/metasystem") || strings.Contains(out, "landing group ") || strings.Contains(out, "standard") {
+	if code != 0 || !strings.Contains(out, "selection: internal/launch\n") || !strings.Contains(out, "selection: cmd/metasystem=TestNew") || strings.Contains(out, "selection: cmd/metasystem\n") || strings.Contains(out, "landing group ") || strings.Contains(out, "standard") {
 		t.Fatalf("plan exit=%d out=%s problem=%s", code, out, problem)
 	}
 	code, out, problem = impactPublic(t, root, "--base", base)
 	if code != 1 || !strings.Contains(out, "landing group unit/internal/launch red ") || !strings.Contains(problem, "TestValue") || strings.Contains(out, "landing group standard") {
 		t.Fatalf("check exit=%d out=%s problem=%s", code, out, problem)
 	}
-	if strings.Index(out, "whole: ./internal/launch") > strings.Index(out, "landing group ") {
+	if strings.Index(out, "selection: internal/launch\n") > strings.Index(out, "landing group ") {
 		t.Fatal("tests ran before the plan was printed")
 	}
 }
@@ -88,7 +99,7 @@ func TestTestImpactFixtureOnlySelectsOwnerGitAdapter(t *testing.T) {
 	root, base := impactGitAdapterBed(t)
 	impactWrite(t, root, "internal/launch/testdata/fixture.txt", "new fixture\n")
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || !strings.Contains(out, "whole: ./internal/launch") {
+	if code != 0 || !strings.Contains(out, "selection: internal/launch\n") {
 		t.Fatalf("untracked fixture exit=%d out=%s problem=%s", code, out, problem)
 	}
 	testingFixtureGit(t, root, "add", "internal/launch/testdata/fixture.txt")
@@ -96,7 +107,7 @@ func TestTestImpactFixtureOnlySelectsOwnerGitAdapter(t *testing.T) {
 	base = strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "internal/launch/testdata/fixture.txt", "modified fixture\n")
 	code, out, problem = impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || !strings.Contains(out, "whole: ./internal/launch") {
+	if code != 0 || !strings.Contains(out, "selection: internal/launch\n") {
 		t.Fatalf("modified fixture exit=%d out=%s problem=%s", code, out, problem)
 	}
 }
@@ -149,7 +160,7 @@ func TestTestImpactContractGroupsStayCheapGitAdapter(t *testing.T) {
 	impactWrite(t, root, "testing.json", string(data))
 	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() {} // edited\n")
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || out != "groups: canary, admission\nwhole: ./cmd/metasystem\n" {
+	if code != 0 || out != "plan: base "+base+" (base)\nselection: canary\nselection: admission\nselection: cmd/metasystem\n" {
 		t.Fatalf("cheap groups exit=%d out=%s problem=%s", code, out, problem)
 	}
 }
@@ -178,7 +189,7 @@ func TestTestImpactCmdDeclarationHunksGitAdapter(t *testing.T) {
 			base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 			impactWrite(t, root, "cmd/metasystem/changed.go", "package main\n"+tc.after+"func untouched() string { return \"untouched-message\" }\n")
 			code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-			if code != 0 || !strings.Contains(out, "by name: ./cmd/metasystem 2 tests (TestOwn, TestReader)") || strings.Contains(out, "TestNoise") || strings.Contains(out, "whole: ./cmd/") {
+			if code != 0 || !strings.Contains(out, "selection: cmd/metasystem=TestOwn,TestReader") || strings.Contains(out, "TestNoise") || strings.Contains(out, "selection: cmd/metasystem\n") {
 				t.Fatalf("declaration selection exit=%d out=%s problem=%s", code, out, problem)
 			}
 		})
@@ -195,7 +206,7 @@ func TestTestImpactCmdFixtureBasenameGitAdapter(t *testing.T) {
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "cmd/metasystem/testdata/layout/help-test.txt", "after\n")
 	code, out, problem := impactPublic(t, root, "--base", base)
-	if code != 1 || !strings.Contains(out, "by name: ./cmd/metasystem 1 tests (TestHelpFixture)") || !strings.Contains(out, "landing group unit/cmd/metasystem red") || !strings.Contains(problem, "TestHelpFixture") {
+	if code != 1 || !strings.Contains(out, "selection: cmd/metasystem=TestHelpFixture") || !strings.Contains(out, "landing group unit/cmd/metasystem red") || !strings.Contains(problem, "TestHelpFixture") {
 		t.Fatalf("fixture selection exit=%d out=%s problem=%s", code, out, problem)
 	}
 }
@@ -216,7 +227,7 @@ func TestTestImpactImportersAndDeletedSymbolsGitAdapter(t *testing.T) {
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "internal/launch/messages.go", "package launch\nfunc Added() string { return \"replacement-message\" }\nfunc Short() string { return \"ok\" }\nfunc Retained() string { return \"unchanged-message\" }\n")
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || !strings.Contains(out, "whole: ./internal/launch") || !strings.Contains(out, "by name: ./cmd/metasystem 3 tests (TestImporter, TestNewMessage, TestOldMessage)") || strings.Contains(out, "whole: ./cmd/metasystem") || !strings.Contains(out, "whole: ./internal/reader") || strings.Contains(out, "TestNoise") || strings.Contains(out, "TestUnrelated") {
+	if code != 0 || !strings.Contains(out, "selection: internal/launch\n") || !strings.Contains(out, "selection: cmd/metasystem=TestImporter,TestNewMessage,TestOldMessage") || strings.Contains(out, "selection: cmd/metasystem\n") || !strings.Contains(out, "selection: internal/reader\n") || strings.Contains(out, "TestNoise") || strings.Contains(out, "TestUnrelated") {
 		t.Fatalf("importer selection exit=%d out=%s problem=%s", code, out, problem)
 	}
 }
@@ -231,7 +242,7 @@ func TestTestImpactChangedTestHunksGitAdapter(t *testing.T) {
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "cmd/metasystem/shared_test.go", strings.Replace(before, "_ = 1", "_ = 2", 1))
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || !strings.Contains(out, "by name: ./cmd/metasystem 1 tests (TestEdited)") || strings.Contains(out, "TestUntouched") {
+	if code != 0 || !strings.Contains(out, "selection: cmd/metasystem=TestEdited") || strings.Contains(out, "TestUntouched") {
 		t.Fatalf("changed tests exit=%d out=%s problem=%s", code, out, problem)
 	}
 }
@@ -256,7 +267,7 @@ func TestTestImpactShippedCheapDeclarationGitAdapter(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	args := append(strings.Fields(declaration)[1:], "--root", root, "--base", base, "--plan")
 	code := dispatchWithFamilies(args, &stdout, &stderr, families())
-	if code != 0 || !strings.Contains(stdout.String(), "whole: ./internal/launch") {
+	if code != 0 || !strings.Contains(stdout.String(), "selection: internal/launch\n") {
 		t.Fatalf("shipped command exit=%d out=%s problem=%s", code, &stdout, &stderr)
 	}
 }
@@ -273,7 +284,7 @@ func TestTestImpactCmdCommentSelectsOwnTestsGitAdapter(t *testing.T) {
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "cmd/metasystem/carry.go", source+"// appended comment\n")
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || !strings.Contains(out, "by name: ./cmd/metasystem 1 tests (TestCarry)") || strings.Contains(out, "TestUnrelated") {
+	if code != 0 || !strings.Contains(out, "selection: cmd/metasystem=TestCarry") || strings.Contains(out, "TestUnrelated") {
 		t.Fatalf("own test selection exit=%d out=%s problem=%s", code, out, problem)
 	}
 }
@@ -289,7 +300,7 @@ func TestTestImpactChangedPackageWithoutSelectionRunsWholeGitAdapter(t *testing.
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "cmd/metasystem/app.go", strings.Replace(source, "return", "_ = 0; return", 1))
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || !strings.Contains(out, "whole: ./cmd/metasystem") {
+	if code != 0 || !strings.Contains(out, "selection: cmd/metasystem\n") {
 		t.Fatalf("unselected changed package exit=%d out=%s problem=%s", code, out, problem)
 	}
 	code, out, problem = impactPublic(t, root, "--base", base)
@@ -309,7 +320,7 @@ func TestTestImpactFixtureFolderSelectsNamedTestsGitAdapter(t *testing.T) {
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "cmd/metasystem/testdata/signedinlaunchgit/input.txt", "after\n")
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || !strings.Contains(out, "by name: ./cmd/metasystem 1 tests (TestSignedInLaunch)") || strings.Contains(out, "TestUnrelated") || strings.Contains(out, "whole: ./cmd/metasystem") {
+	if code != 0 || !strings.Contains(out, "selection: cmd/metasystem=TestSignedInLaunch") || strings.Contains(out, "TestUnrelated") || strings.Contains(out, "selection: cmd/metasystem\n") {
 		t.Fatalf("fixture folder exit=%d out=%s problem=%s", code, out, problem)
 	}
 	code, out, problem = impactPublic(t, root, "--base", base)
@@ -335,7 +346,7 @@ func TestTestImpactDeletedPackageSelectsImporterGitAdapter(t *testing.T) {
 				t.Fatal(err)
 			}
 			code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-			if code != 0 || !strings.Contains(out, "whole: ./internal/reader") {
+			if code != 0 || !strings.Contains(out, "selection: internal/reader\n") {
 				t.Fatalf("deleted package importer exit=%d out=%s problem=%s", code, out, problem)
 			}
 			code, out, problem = impactPublic(t, root, "--base", base)
@@ -373,7 +384,7 @@ func TestTestImpactReverseDependentsRunWholeGitAdapter(t *testing.T) {
 	impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = true // changed implementation\n")
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
 	for _, pkg := range []string{"internal/direct", "internal/transitive", "internal/testonly", "internal/external", "internal/throughmodule"} {
-		if code != 0 || !strings.Contains(out, "whole: ./"+pkg+"\n") {
+		if code != 0 || !strings.Contains(out, "selection: "+pkg+"\n") {
 			t.Fatalf("dependent %s exit=%d out=%s problem=%s", pkg, code, out, problem)
 		}
 	}
@@ -398,7 +409,7 @@ func TestTestImpactChangedHelperSelectsCallersGitAdapter(t *testing.T) {
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "cmd/metasystem/z_helper_test.go", strings.Replace(helper, "true", "false", 1))
 	code, out, problem := impactPublic(t, root, "--base", base)
-	if code != 1 || !strings.Contains(out, "by name: ./cmd/metasystem 1 tests (TestHelperCaller)") || !strings.Contains(out, "landing group unit/cmd/metasystem red ") || !strings.Contains(problem, "TestHelperCaller") || strings.Contains(out, "TestUnrelated") || strings.Contains(out, "whole: ./cmd/metasystem") {
+	if code != 1 || !strings.Contains(out, "selection: cmd/metasystem=TestHelperCaller") || !strings.Contains(out, "landing group unit/cmd/metasystem red ") || !strings.Contains(problem, "TestHelperCaller") || strings.Contains(out, "TestUnrelated") || strings.Contains(out, "selection: cmd/metasystem\n") {
 		t.Fatalf("helper caller exit=%d out=%s problem=%s", code, out, problem)
 	}
 }
@@ -408,7 +419,7 @@ func TestTestImpactNonCommitBaseRefusesGitAdapter(t *testing.T) {
 	root, _ := impactGitAdapterBed(t)
 	for _, base := range []string{"HEAD^{tree}", "HEAD:go.mod", "missing-commit"} {
 		code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-		if code != 1 || !strings.Contains(problem, "is not a readable commit") || !strings.Contains(problem, base) || out != "" {
+		if code != 2 || !strings.Contains(problem, "is not a commit in this repository") || !strings.Contains(problem, base) || !strings.Contains(problem, "rev-parse") || out != "" {
 			t.Fatalf("non-commit base %q exit=%d out=%s problem=%s", base, code, out, problem)
 		}
 	}
@@ -424,7 +435,211 @@ func TestTestImpactInternalImporterRunsWholeGitAdapter(t *testing.T) {
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = true // changed implementation\n")
 	code, out, problem := impactPublic(t, root, "--base", base)
-	if code != 1 || !strings.Contains(out, "whole: ./internal/reader\n") || !strings.Contains(out, "landing group unit/internal/reader red ") || !strings.Contains(problem, "TestInternalNoise") {
+	if code != 1 || !strings.Contains(out, "selection: internal/reader\n") || !strings.Contains(out, "landing group unit/internal/reader red ") || !strings.Contains(problem, "TestInternalNoise") {
 		t.Fatalf("internal importer exit=%d out=%s problem=%s", code, out, problem)
+	}
+}
+
+func TestTestImpactNonAncestorBaseRefusesGitAdapter(t *testing.T) {
+	t.Parallel()
+	root, base := impactGitAdapterBed(t)
+	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "--allow-empty", "-qm", "other")
+	other := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	testingFixtureGit(t, root, "checkout", "--detach", base)
+	code, out, problem := impactPublic(t, root, "--base", other, "--plan")
+	if code != 2 || out != "" || !strings.Contains(problem, other+" is not an ancestor of HEAD; nothing was selected") || !strings.Contains(problem, "--base <the round's base>") {
+		t.Fatalf("non-ancestor exit=%d out=%s problem=%s", code, out, problem)
+	}
+	code, out, problem = impactPublic(t, root, "--base", "HEAD", "--plan")
+	if code != 0 || !strings.HasPrefix(out, "plan: base "+base+" (base)\n") {
+		t.Fatalf("base plan exit=%d out=%s problem=%s", code, out, problem)
+	}
+}
+
+func TestTestImpactLandingOnlyAndReports(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"replay", "replay-no-base", "red", "green", "build", "not-run"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			root, base := impactAdapterBed(t), "ignored"
+			impactWrite(t, root, "internal/a/a_test.go", "package a\nimport \"testing\"\nfunc TestA(t *testing.T) { t.Parallel() }\n")
+			failure := ""
+			if mode == "red" {
+				failure = "t.Fatal(\"red\")"
+			}
+			impactWrite(t, root, "cmd/tool/tool_test.go", "package tool\nimport \"testing\"\nfunc TestOne(t *testing.T) { t.Parallel(); "+failure+" }\n")
+			if strings.HasPrefix(mode, "replay") {
+				impactWrite(t, root, "cmd/tool/other_test.go", "package tool\nimport \"testing\"\nfunc TestOther(t *testing.T) { t.Parallel(); t.Fatal(\"must not run\") }\n")
+				impactWrite(t, root, "internal/unselected/noise_test.go", "package unselected\nimport \"testing\"\nfunc TestNoise(t *testing.T) { t.Parallel(); t.Fatal(\"must not select\") }\n")
+				impactWrite(t, root, "cmd/metasystem/tag_test.go", "//go:build batchtest\n\npackage main\nimport \"testing\"\nfunc TestTagged(t *testing.T) { t.Parallel(); t.Fatal(\"tag selected\") }\n")
+			}
+			if mode == "build" {
+				impactWrite(t, root, "cmd/tool/broken.go", "package tool\nvar _ = missing\n")
+			}
+			if mode == "not-run" {
+				impactWrite(t, root, "cmd/tool/broken.go", "package tool\nfunc (\n")
+			}
+			args := []string{"test", "impact", "--root", root, "--base", base}
+			command := exec.Command(commandTestExecutable(t), args...)
+			command.Dir = root
+			command.Env = slices.DeleteFunc(fixtureCommandEnvironment(t), func(e string) bool {
+				return strings.HasPrefix(e, "LANDING_ONLY=") || strings.HasPrefix(e, "LANDING_PROOF_BASE=")
+			})
+			if mode == "red" || mode == "green" || mode == "build" {
+				command.Env = append(command.Env, "LANDING_ONLY=metasystem/internal/a metasystem/cmd/tool=TestOne")
+			}
+			if mode == "not-run" {
+				command.Env = append(command.Env, "LANDING_ONLY=metasystem/missing")
+			}
+			if strings.HasPrefix(mode, "replay") {
+				command.Args = append(command.Args, "--base", "missing", "--plan")
+				command.Env = append(command.Env, "LANDING_ONLY=metasystem/internal/a metasystem/cmd/tool=TestOne metasystem/cmd/metasystem=TestTagged", "LANDING_PROOF_BASE=missing")
+				if mode == "replay-no-base" {
+					command.Args = command.Args[:5]
+					command.Env = slices.DeleteFunc(command.Env, func(e string) bool { return strings.HasPrefix(e, "LANDING_PROOF_BASE=") })
+				}
+			}
+			var out, problem bytes.Buffer
+			command.Stdout, command.Stderr = &out, &problem
+			err := command.Run()
+			code := 0
+			if err != nil {
+				var exit *exec.ExitError
+				if !errors.As(err, &exit) {
+					t.Fatal(err)
+				}
+				code = exit.ExitCode()
+			}
+			text := out.String()
+			if mode == "not-run" {
+				if code != 1 || !strings.HasSuffix(text, "LANDING-NOT-RUN\tenvironment\n") {
+					t.Fatalf("not run exit=%d out=%s problem=%s", code, text, problem.String())
+				}
+				return
+			}
+			if strings.HasPrefix(mode, "replay") {
+				if code != 1 || strings.Contains(text, "plan:") || strings.Contains(text, "selection:") || strings.Contains(problem.String(), "TestOther") || strings.Contains(problem.String(), "TestNoise") || !strings.Contains(problem.String(), "TestTagged") || !strings.Contains(text, "replay selections ignore the comparison base from flags and environment") || !strings.Contains(text, "landing group unit/internal/a green") || !strings.Contains(text, "landing group unit/cmd/tool green") {
+					t.Fatalf("replay exit=%d out=%s problem=%s", code, text, problem.String())
+				}
+				return
+			}
+			want := []plain.FailedUnit(nil)
+			if mode == "red" {
+				want = []plain.FailedUnit{{Unit: "metasystem/cmd/tool", Tests: []string{"TestOne"}}}
+			}
+			if mode == "build" {
+				want = []plain.FailedUnit{{Unit: "metasystem/cmd/tool", Tests: []string{}}}
+			}
+			if !reflect.DeepEqual(plain.FailedChecks([]byte(text)), want) || !strings.HasSuffix(text, fmt.Sprintf("LANDING-CHECKED\t%d\n", len(want))) || strings.Count(text, "LANDING-FAILED\t") != len(want) || code != min(1, len(want)) {
+				t.Fatalf("report exit=%d out=%s problem=%s want=%+v", code, text, problem.String(), want)
+			}
+		})
+	}
+}
+
+// Git supplies the adapter's committed comparison base in the template layout.
+func TestImpactRunsInTheModuleAndRunsGroupsByIDGitAdapter(t *testing.T) {
+	t.Parallel()
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	helmMust(t, err)
+	installation := filepath.Join(root, "metasystem")
+	helmMust(t, os.Rename(impactAdapterBed(t), installation))
+	impactWrite(t, installation, "metasystem.conf", "metasystem.template=true\ntesting.contract=testing.json\n")
+	data, err := os.ReadFile(filepath.Join(installation, "testing.json"))
+	helmMust(t, err)
+	var contract testpolicy.Contract
+	helmMust(t, json.Unmarshal(data, &contract))
+	recorder := filepath.Join(t.TempDir(), "record-group")
+	helmMust(t, testexec.WriteFile(recorder, []byte("#!/bin/sh\nprintf '%s\\n' \"$PWD\" > \"$1\"\n"), 0700))
+	contract.Groups[0].ID = "fast-static-build"
+	contract.Groups[0].Inputs = []string{"metasystem/internal/**"}
+	contract.Groups[0].Argv = []string{recorder, filepath.Join(root, "group-ran")}
+	contract.Always.Canary = []string{"fast-static-build"}
+	contract.Groups[1].Inputs = []string{"outside/**"}
+	contract.Surfaces[0].Paths = []string{"metasystem/internal/**", "metasystem/cmd/**"}
+	data, err = json.Marshal(contract)
+	helmMust(t, err)
+	impactWrite(t, installation, "testing.json", string(data))
+	impactWrite(t, installation, "internal/a/a_test.go", `package a
+import ("testing"; "os")
+func TestA(t *testing.T) { t.Parallel(); cwd, err := os.Getwd(); if err != nil { t.Fatal(err) }; if err := os.WriteFile("`+filepath.Join(root, "package-ran")+`", []byte(cwd), 0600); err != nil { t.Fatal(err) } }
+`)
+	testingFixtureGit(t, root, "init", "-q", "-b", "main")
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "base")
+	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	impactWrite(t, installation, "internal/a/a.go", "package a\nconst Value = true\n")
+	run := func(only *string) (int, string) {
+		t.Helper()
+		cmd := exec.Command(commandTestExecutable(t), "test", "impact", "--root", installation, "--base", base)
+		cmd.Dir = installation
+		cmd.Env = slices.DeleteFunc(fixtureCommandEnvironment(t), func(e string) bool {
+			return strings.HasPrefix(e, "LANDING_ONLY=") || strings.HasPrefix(e, "LANDING_PROOF_BASE=")
+		})
+		if only != nil {
+			cmd.Env = append(cmd.Env, "LANDING_ONLY="+*only)
+		}
+		output, err := cmd.CombinedOutput()
+		code := 0
+		if err != nil {
+			var exit *exec.ExitError
+			if !errors.As(err, &exit) {
+				t.Fatal(err)
+			}
+			code = exit.ExitCode()
+		}
+		return code, string(output)
+	}
+	for _, only := range []*string{nil, new("fast-static-build metasystem/internal/a"), new("fast-static-build internal/a")} {
+		helmMust(t, os.RemoveAll(filepath.Join(root, "package-ran")))
+		helmMust(t, os.RemoveAll(filepath.Join(root, "group-ran")))
+		code, out := run(only)
+		if code != 0 || !strings.Contains(out, "landing group unit/internal/a green") || !strings.Contains(out, "landing group fast-static-build green") {
+			t.Fatalf("module proof exit=%d: %s", code, out)
+		}
+		data, err := os.ReadFile(filepath.Join(root, "package-ran"))
+		if err != nil || string(data) != filepath.Join(installation, "internal/a") {
+			t.Fatalf("package directory=%q, error=%v", data, err)
+		}
+		data, err = os.ReadFile(filepath.Join(root, "group-ran"))
+		if err != nil || strings.TrimSpace(string(data)) != root {
+			t.Fatalf("declared group directory=%q, error=%v", data, err)
+		}
+	}
+	code, out := run(new("no-such-thing"))
+	if code != 1 || !strings.Contains(out, "LANDING-NOT-RUN\tenvironment") {
+		t.Fatalf("unknown entry exit=%d: %s", code, out)
+	}
+}
+
+func TestTestImpactUsesInstallationPrefixAndTagsOnlyReplayGitAdapter(t *testing.T) {
+	t.Parallel()
+	root, _ := impactGitAdapterBed(t)
+	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() {}\nvar replayTagged bool\nfunc value() bool { return true }\n")
+	impactWrite(t, root, "cmd/metasystem/main_test.go", "package main\nimport \"testing\"\nfunc TestValue(t *testing.T) { t.Parallel(); if !value() || replayTagged { t.Fatal(\"value or replay tag\") } }\n")
+	impactWrite(t, root, "cmd/metasystem/tag_test.go", "//go:build batchtest\n\npackage main\nimport \"testing\"\nfunc init() { replayTagged = true }\nfunc TestTagged(t *testing.T) { t.Parallel(); t.Fatal(\"replay tag\") }\n")
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "tagged test fixture")
+	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() {}\nvar replayTagged bool\nfunc value() bool { return 1 == 1 }\n")
+	code, out, problem := impactPublic(t, root, "--base", base)
+	if code != 0 || !strings.Contains(out, "selection: cmd/metasystem=") || !strings.Contains(out, "landing group unit/cmd/metasystem green") || !strings.HasSuffix(out, "LANDING-CHECKED\t0\n") {
+		t.Fatalf("ordinary check must use installation paths without replay tags: code=%d out=%s problem=%s", code, out, problem)
+	}
+	// A normal red uses the same installation-relative unit in its report.
+	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() {}\nvar replayTagged bool\nfunc value() bool { return false }\n")
+	code, out, problem = impactPublic(t, root, "--base", base)
+	if code != 1 || !reflect.DeepEqual(plain.FailedChecks([]byte(out)), []plain.FailedUnit{{Unit: "cmd/metasystem", Tests: []string{"TestValue"}}}) {
+		t.Fatalf("ordinary red report: code=%d out=%s problem=%s", code, out, problem)
+	}
+	command := exec.Command(commandTestExecutable(t), "test", "impact", "--root", root)
+	command.Dir = root
+	command.Env = append(slices.DeleteFunc(fixtureCommandEnvironment(t), func(e string) bool {
+		return strings.HasPrefix(e, "LANDING_ONLY=") || strings.HasPrefix(e, "LANDING_PROOF_BASE=")
+	}), "LANDING_ONLY=cmd/metasystem=TestTagged")
+	data, err := command.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(data), "LANDING-FAILED\tcmd/metasystem\tTestTagged\n") {
+		t.Fatalf("replay must include tagged test: error=%v output=%s", err, data)
 	}
 }

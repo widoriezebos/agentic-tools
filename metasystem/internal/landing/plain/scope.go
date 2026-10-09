@@ -39,9 +39,10 @@ type scopeGroup struct {
 
 type scopeDecision struct {
 	scopeRecord
-	base     Result
-	contract testpolicy.Contract
-	affected testpolicy.AffectedResult
+	BaseCommit string
+	base       Result
+	contract   testpolicy.Contract
+	affected   testpolicy.AffectedResult
 }
 
 // decideScope keeps a batch's full green for at most an hour. Any unreadable

@@ -117,10 +117,10 @@ func runTestGroupsWithEnvironment(args, environment []string, stdout, stderr io.
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	return runNamedTestGroups(installation, contract, ids, environment, stdout, stderr)
+	return runNamedTestGroups(installation, contract, ids, environment, nil, stdout, stderr)
 }
 
-func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, environment []string, stdout, stderr io.Writer) int {
+func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, environment []string, units map[string]string, stdout, stderr io.Writer) int {
 	results, runErr := proofrun.RunNamedGroups(context.Background(), installation, contract, ids, environment)
 	exit := 0
 	for _, result := range results {
@@ -135,7 +135,34 @@ func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, 
 	}
 	if runErr != nil {
 		fmt.Fprintln(stderr, runErr)
+		if units != nil {
+			fmt.Fprintln(stdout, "LANDING-NOT-RUN\tenvironment")
+		}
 		return 1
+	}
+	if units != nil {
+		failed := 0
+		for _, result := range results {
+			if result.Status == "green" {
+				continue
+			}
+			unit := result.ID
+			if units[unit] != "" {
+				unit = units[unit]
+			}
+			names := []string{}
+			for _, reason := range result.Reasons {
+				if name, ok := strings.CutPrefix(reason, "failed test "); ok {
+					if i := strings.Index(name, ".Test"); units[result.ID] != "" && i >= 0 {
+						name = name[i+1:]
+					}
+					names = append(names, name)
+				}
+			}
+			fmt.Fprintf(stdout, "LANDING-FAILED\t%s\t%s\n", unit, strings.Join(names, " "))
+			failed++
+		}
+		fmt.Fprintf(stdout, "LANDING-CHECKED\t%d\n", failed)
 	}
 	return exit
 }

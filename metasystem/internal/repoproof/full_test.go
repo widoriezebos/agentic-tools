@@ -359,3 +359,55 @@ func TestFullLegFailuresKeepTheirGroupAndEnvironmentVerdicts(t *testing.T) {
 }
 
 func init() { runtime.LockOSThread() }
+
+func TestFullReplaySelectionsKeepGroupsAndPackagesSeparate(t *testing.T) {
+	t.Parallel()
+	for _, unknown := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unknown=%t", unknown), func(t *testing.T) {
+			t.Parallel()
+			var out, problem bytes.Buffer
+			selections := "fast-static-build go-batchtest section/gate-fail-open-tripwire metasystem/internal/config=TestA,TestB metasystem/internal/lease"
+			groups := []string{"fast-static-build", "go-batchtest", "section/gate-fail-open-tripwire"}
+			packages := []string{}
+			hooks := HostRunners{Environment: func() (string, error) { return "fixture", nil }, Groups: func(ids []string) ([]proofrun.NamedGroupResult, error) {
+				if !reflect.DeepEqual(ids, groups) {
+					t.Fatalf("group selections=%v", ids)
+				}
+				results := []proofrun.NamedGroupResult{}
+				for _, id := range ids {
+					results = append(results, proofrun.NamedGroupResult{ID: id, Status: "green"})
+				}
+				return results, nil
+			}, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+				if len(request.Packages) != 1 {
+					t.Fatalf("packages=%v", request.Packages)
+				}
+				pkg := request.Packages[0]
+				packages = append(packages, pkg)
+				if pkg == "internal/config" && !reflect.DeepEqual(request.Tests, []string{"TestA", "TestB"}) || pkg == "internal/lease" && len(request.Tests) != 0 || !strings.HasPrefix(pkg, "internal/") {
+					t.Fatalf("native selection=%+v", request)
+				}
+				return proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "github.com/widoriezebos/agentic-tools/metasystem/" + pkg, Status: "ok", Shard: 1}}}, nil
+			}}
+			if unknown {
+				selections = "no-such-thing"
+				hooks.Native = nil
+			}
+			code := runHost(&out, &problem, func(key string) string {
+				if key == "LANDING_ONLY" {
+					return selections
+				}
+				return ""
+			}, nil, "../../testing.json", hooks)
+			if unknown {
+				if code != 1 || !strings.HasSuffix(out.String(), "LANDING-NOT-RUN\tenvironment\n") {
+					t.Fatalf("unknown selection exit=%d out=%s error=%s", code, &out, &problem)
+				}
+				return
+			}
+			if code != 0 || !reflect.DeepEqual(packages, []string{"internal/config", "internal/lease"}) || !strings.HasSuffix(out.String(), "LANDING-CHECKED\t0\n") {
+				t.Fatalf("mixed selection exit=%d packages=%v out=%s error=%s", code, packages, &out, &problem)
+			}
+		})
+	}
+}

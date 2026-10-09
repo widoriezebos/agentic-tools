@@ -41,6 +41,23 @@ func syncStopQuestionHold(agent landingAgent, install string) (string, error) {
 	return agent.questionHold(install)
 }
 
+// A recorded whole-check allowance remains usable after the lane resumes.
+func seedAllowedWholeProof(t *testing.T, b *replayVerbBed) {
+	t.Helper()
+	b.prepareBatch(t)
+	batch, err := plain.ReadBatch(b.install)
+	if err != nil || batch == nil {
+		t.Fatalf("fixture selection: %+v %v", batch, err)
+	}
+	log := filepath.Join(t.TempDir(), "previous-whole.log")
+	if err := os.WriteFile(log, []byte(replayFailure), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	writeCauseProof(t, b.install, "results.jsonl", plain.Result{Result: plain.Red, Commit: b.head, Tree: b.head + "-tree", Attempt: "previous-whole", BatchID: batch.ID,
+		Goals: batch.Members, Scope: "full", CountedFull: true, Repeat: "allowed", Log: log, At: laneTestNow.Format(time.RFC3339),
+		Failed: []plain.FailedUnit{{Unit: "u/a", Tests: []string{"TestBroken"}}}, Cause: &plain.Cause{Kind: "unclassified", Evidence: log}})
+}
+
 func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *testing.T) {
 	t.Parallel()
 	b := newStopVerbBed(t)
@@ -48,12 +65,12 @@ func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *
 		if only == "" {
 			return replayFailure, errors.New("red")
 		}
-		return "LANDING-CHECKED\t0\n", nil
+		return "LANDING-NOT-RUN\tenvironment\n", errors.New("reporter did not complete")
 	}
 	b.owners.landing.view = func(string) lane.View {
 		return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}, Summary: "the landing lane is idle"}
 	}
-	b.prove(t)
+	seedAllowedWholeProof(t, b)
 	if questions, _ := channel.WalkQuestions(b.install); len(questions) != 0 {
 		t.Fatalf("the allowed repeat asked a question: %+v", questions)
 	}

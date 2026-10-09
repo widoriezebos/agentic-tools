@@ -96,6 +96,9 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 				if err := seams.batchLane(batch); err != nil {
 					return err
 				}
+				if batch.ClosureReason == "confirmed push accounts for the selected members" {
+					return nil
+				}
 				for _, member := range batch.Members {
 					onMain, err := batchContains(checkout, old, member.SHA, seams)
 					if err != nil || !onMain {
@@ -199,7 +202,7 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 			return err
 		}
 	}
-	if batch != nil {
+	if batch != nil && batch.ClosureReason != "confirmed push accounts for the selected members" {
 		batch.State, batch.ClosureReason = BatchClosed, "confirmed push accounts for the selected members"
 		if err := writeBatch(install, batch); err != nil {
 			return err

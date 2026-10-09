@@ -137,11 +137,12 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		groups, selections = strings.Fields(getenv("LANDING_PROOF_GROUPS")), strings.Fields(getenv("LANDING_PROOF_PACKAGES"))
 	}
 	if only != "" {
-		groups, selections = nil, []string{only}
-		for _, group := range contract.Groups {
-			if group.ID == only {
-				groups, selections = []string{only}, nil
-				break
+		groups, selections = nil, nil
+		for _, selection := range strings.Fields(only) {
+			if slices.ContainsFunc(contract.Groups, func(group testpolicy.Group) bool { return group.ID == selection }) {
+				groups = append(groups, selection)
+			} else {
+				selections = append(selections, selection)
 			}
 		}
 	}

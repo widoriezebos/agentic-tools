@@ -637,6 +637,7 @@ func TestALedgerInheritanceKeepsScopeAndOwesItsFullProof(t *testing.T) {
 func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 	t.Parallel()
 	b := newScopeBed(t)
+	b.git.main = "parent"
 	b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "metasystem/records/test-image.json"
 	// The repeat rule requires isolated greens before a whole retry.
 	b.seams.Command = func(command *exec.Cmd) error {

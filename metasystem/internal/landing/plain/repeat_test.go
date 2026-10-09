@@ -39,7 +39,7 @@ func newRepeatBed(t *testing.T) *repeatBed {
 		Git: func(dir string, args ...string) (string, error) {
 			switch strings.Join(args, " ") {
 			case "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
-				return "commit", nil
+				return "parent", nil
 			case "rev-parse --verify commit^{tree}":
 				return "tree", nil
 			case "log --first-parent --merges --reverse --format=%H %P origin/main..commit":
@@ -462,12 +462,16 @@ func TestRepeatKnownRedWholeCheckFailureReplaysOnMain(t *testing.T) {
 		t.Fatalf("want one judgement, one whole repeat and one main replay: judgements=%d calls=%d", judgements, len(calls))
 	}
 	for i, only := range []string{"", "u/a"} {
+		commit := "commit"
+		if i == 1 {
+			commit = "parent"
+		}
 		attempt := "a1"
 		if i == 1 {
 			attempt += "-replay-1"
 		}
 		wantDir := filepath.Join(proofTrees(b.install), attempt, "metasystem")
-		if commandEnv(calls[i], "LANDING_ONLY") != only || commandEnv(calls[i], "LANDING_COMMIT") != "commit" || calls[i].Dir != wantDir {
+		if commandEnv(calls[i], "LANDING_ONLY") != only || commandEnv(calls[i], "LANDING_COMMIT") != commit || calls[i].Dir != wantDir {
 			t.Fatalf("check %d: only=%q commit=%q dir=%q; want only=%q commit=commit dir=%q", i, commandEnv(calls[i], "LANDING_ONLY"), commandEnv(calls[i], "LANDING_COMMIT"), calls[i].Dir, only, wantDir)
 		}
 	}

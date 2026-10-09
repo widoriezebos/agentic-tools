@@ -168,7 +168,7 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 }
 
 // replayTree is a prefix of the check's subject, oldest first. Main is true
-// only for origin/main; Goal identifies the merge that ends a later prefix.
+// for the proved merge's main parent; Goal identifies the merge ending a later prefix.
 type replayTree struct {
 	Running
 	Main bool
@@ -180,16 +180,22 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 	if err := os.MkdirAll(filepath.Join(Dir(install), "proofs"), 0o755); err != nil {
 		return result
 	}
-	main, err := checkoutGit(checkout, seams).main()
-	if err != nil {
-		return result
-	}
-	merges := ""
+	main, merges := running.Commit, ""
+	var err error
 	if !running.Trunk {
-		merges, err = seams.git(checkout, "log", "--first-parent", "--merges", "--reverse", "--format=%H %P", "origin/main.."+running.Commit)
-	}
-	if running.Trunk {
-		main = running.Commit
+		fetchedMain, readErr := checkoutGit(checkout, seams).main()
+		if readErr != nil {
+			return result
+		}
+		if running.Commit != fetchedMain {
+			parents, readErr := seams.git(checkout, "show", "-s", "--format=%P", running.Commit)
+			fields := strings.Fields(parents)
+			if readErr != nil || len(fields) == 0 {
+				return result
+			}
+			main = fields[0]
+			merges, err = seams.git(checkout, "log", "--first-parent", "--merges", "--reverse", "--format=%H %P", main+".."+running.Commit)
+		}
 	}
 	if err != nil {
 		return result
@@ -222,6 +228,15 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 				return result
 			}
 		}
+		if prefix.Commit == running.Commit {
+			result.Cause.Evidence = result.Log
+			if prefix.Main {
+				result.Cause.Kind, result.Cause.Name = "main", mainFailureIdentity(result.Failed)
+			} else if prefix.Goal.Goal != "" {
+				result.Cause.Kind, result.Cause.Goal, result.Cause.SHA = "own", prefix.Goal.Goal, prefix.Goal.SHA
+			}
+			return result
+		}
 		prefix.BatchID, prefix.BatchMembers = running.BatchID, running.BatchMembers
 		prefix.Attempt = fmt.Sprintf("%s-replay-%d", running.Attempt, i+1)
 		var err error
@@ -240,40 +255,37 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 		failed, complete := false, true
 		var mainChecks []Result
 		recordingMain := i == 0 && prefix.Main && prefix.Tree != running.Tree && seams.RecordMain != nil
+		units := make([]string, len(result.Failed))
 		for j, unit := range result.Failed {
-			prefix.Log = filepath.Join(Dir(install), "proofs", fmt.Sprintf("%s-%d.log", prefix.Attempt, j+1))
-			file, err := os.Create(prefix.Log)
-			if err != nil {
-				complete = false
-				result.Reason += "; isolated check of " + unit.Unit + " on " + prefix.Commit + " did not complete"
-				break
-			}
+			units[j] = unit.Unit
+		}
+		prefix.Log = filepath.Join(Dir(install), "proofs", prefix.Attempt+".log")
+		file, err := os.Create(prefix.Log)
+		if err != nil {
+			complete = false
+		} else {
 			result.Cause.Evidence = prefix.Log
 			prefix.Since = seams.now().UTC().Format(time.RFC3339)
-			report, runErr := runCheck(seams, dir, command, prefix.Running, unit.Unit, scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, file, &proofOutput{output: io.Discard})
+			report, runErr := runCheck(seams, dir, command, prefix.Running, strings.Join(units, " "), scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, file, &proofOutput{output: io.Discard})
 			closeErr := file.Close()
 			var exit *exec.ExitError
-			if report.kind != "complete" || closeErr != nil || runErr != nil && (!slices.ContainsFunc(report.failed, func(f FailedUnit) bool { return f.Unit == unit.Unit }) || errors.As(runErr, &exit) && !exit.Exited()) {
-				complete = false
-				result.Reason += "; isolated check of " + unit.Unit + " on " + prefix.Commit + " did not complete"
-				break
+			complete = report.kind == "complete" && closeErr == nil && (runErr == nil || len(report.failed) > 0 && (!errors.As(runErr, &exit) || exit.Exited()))
+			failed = complete && len(report.failed) > 0
+			if complete && failed && recordingMain {
+				mainChecks = append(mainChecks, timedResult(Result{Result: Red, Commit: prefix.Commit, Tree: prefix.Tree,
+					Attempt: prefix.Attempt, Log: prefix.Log, Failed: report.failed}, prefix.Since, seams.now()))
 			}
-			if runErr != nil {
-				failed = true
-				result.Cause.Evidence = prefix.Log
-				if recordingMain {
-					units := slices.DeleteFunc(slices.Clone(report.failed), func(f FailedUnit) bool { return f.Unit != unit.Unit })
-					mainChecks = append(mainChecks, timedResult(Result{Result: Red, Commit: prefix.Commit, Tree: prefix.Tree,
-						Attempt: prefix.Attempt, Log: prefix.Log, Failed: units}, prefix.Since, seams.now()))
-					continue
-				}
-				break
+			if prefix.Main && failed {
+				result.Cause.Name = mainFailureIdentity(report.failed)
 			}
 		}
+		if !complete {
+			result.Reason += "; isolated check of " + strings.Join(units, " ") + " on " + prefix.Commit + " did not complete"
+		}
+
 		_, removeErr := seams.git(checkout, "worktree", "remove", "--force", tree)
 		if i == 0 && prefix.Main && failed {
 			result.Cause.Kind = "main"
-			result.Cause.Name = mainFailureIdentity(result.Failed)
 			if len(mainChecks) > 0 {
 				result.Cause.Evidence = mainChecks[0].Log
 				result = recordMainFailures(seams, result, mainChecks)
@@ -319,11 +331,11 @@ func mainFailureIdentity(failed []FailedUnit) string {
 	return identity
 }
 
-// ProofBudget refuses a third completed full check in the open batch loop.
+// ProofBudget holds an automatic full check after two completed red attempts.
 type ProofBudget struct{}
 
 func (*ProofBudget) Error() string {
-	return "this batch used two full checks; goals hold; ask a person to run: metasystem landing run"
+	return "this batch used two full checks; goals hold; ask a person to run: metasystem landing prove"
 }
 
 func subsetGoals(goals, first []GoalSHA) bool {
@@ -360,10 +372,16 @@ func checkProofBudget(install, checkout, commit string, seams ProveSeams) error 
 		}
 		firstRed = firstRed || r.Result == Red
 		if first != nil {
-			attempts[r.Attempt] = true
+			attempts[r.Attempt] = r.Result == Red
 		}
 	}
-	if len(attempts) < 2 {
+	reds := 0
+	for _, red := range attempts {
+		if red {
+			reds++
+		}
+	}
+	if reds < 2 {
 		return nil
 	}
 	goals, err := goalsInCommit(install, checkout, commit, seams.git)

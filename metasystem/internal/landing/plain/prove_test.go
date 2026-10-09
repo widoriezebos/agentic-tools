@@ -17,19 +17,28 @@ import (
 // fails with addErr), a remove deletes it, and a diff between two trees
 // answers the paths changed between them.
 type stubGit struct {
-	commit, tree     string
-	addErr           error
-	changed          map[[2]string]string
-	batches          map[string]string
-	onMain           map[string]bool
-	shows            map[string]string
-	diffErr, showErr error
-	installPrefix    string
+	commit, tree, main string
+	addErr             error
+	changed            map[[2]string]string
+	batches            map[string]string
+	onMain             map[string]bool
+	shows              map[string]string
+	diffErr, showErr   error
+	installPrefix      string
 }
 
 func (g stubGit) run(dir string, args ...string) (string, error) {
 	switch {
+	case strings.Join(args, " ") == "show -s --format=%P "+g.commit:
+		return "parent", nil
+	case strings.Join(args, " ") == "rev-parse --verify parent^{tree}":
+		return "parent-tree", nil
+	case strings.Join(args, " ") == "log --first-parent --merges --reverse --format=%H %P parent.."+g.commit:
+		return "", nil
 	case strings.Join(args, " ") == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
+		if g.main != "" {
+			return g.main, nil
+		}
 		return g.commit, nil
 	case strings.Join(args, " ") == "rev-parse --verify "+g.commit+"^{tree}":
 		return g.tree, nil

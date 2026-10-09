@@ -27,6 +27,9 @@ func goalsInCommit(install, checkout, commit string, git func(string, ...string)
 func failingTests(failed []FailedUnit) []string {
 	var tests []string
 	for _, unit := range failed {
+		if len(unit.Tests) == 0 {
+			tests = append(tests, unit.Unit+" (package)")
+		}
 		for _, test := range unit.Tests {
 			tests = append(tests, unit.Unit+" "+test)
 		}

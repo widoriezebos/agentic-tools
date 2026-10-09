@@ -114,7 +114,7 @@ func TestLandingMergeGateBaselineAndLostProcessRepeat(t *testing.T) {
 				t.Fatal("process was not killed")
 			}
 			b.fail = func(cmd *exec.Cmd, only string) (string, error) {
-				if cmd.Args[2] != "cheap-fixture" || commandEnv(cmd, "LANDING_PROOF_BASE") != "merge-a-tree" || only != "" {
+				if cmd.Args[2] != "cheap-fixture" || commandEnv(cmd, "LANDING_PROOF_BASE") != "merge-a" || only != "" {
 					t.Fatalf("gate command/environment: %v base=%q only=%q", cmd.Args, commandEnv(cmd, "LANDING_PROOF_BASE"), only)
 				}
 				if commandEnv(cmd, "LANDING_COMMIT") == "merge-a" {
@@ -258,20 +258,20 @@ func TestLandingMergeGateOwnReturnAndBaselineFailure(t *testing.T) {
 			}
 			red := gateResult(t, b, 1)
 			want := cause
-			if cause == "no report" || cause == "prior after baseline" {
+			if cause == "no report" {
 				want = "unclassified"
-			} else if cause == "main after baseline" {
+			} else if cause == "main after baseline" || cause == "prior after baseline" {
 				want = "main"
 			}
 			if red.Cause.Kind != want {
 				t.Fatalf("classification: %+v runs=%v", red, b.runs)
 			}
 			if cause == "own" {
-				if red.Cause.Goal != "b" || red.Cause.SHA != "sha-b" || !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-a:u/a", "merge-b:u/a"}) {
+				if red.Cause.Goal != "b" || red.Cause.SHA != "sha-b" || !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-a:u/a"}) {
 					t.Fatalf("gate replay: %+v runs=%v", red, b.runs)
 				}
 				data, err := os.ReadFile(red.Cause.Evidence)
-				if err != nil || string(data) != replayFailure || red.Cause.Evidence == red.Log {
+				if err != nil || string(data) != replayFailure+"\nlanding prove: the proving command exited 1\n" || red.Cause.Evidence != red.Log {
 					t.Fatalf("own evidence: %s %v", data, err)
 				}
 				b.head = "merge-a"
@@ -422,7 +422,7 @@ func TestLandingMergeGateStatusReadsItsResult(t *testing.T) {
 	}
 }
 
-func TestLandingMergeGateAllowanceIsSeparateFromFullProof(t *testing.T) {
+func TestLandingMergeGateUsesRecordedRedAndKeepsFullAllowance(t *testing.T) {
 	t.Parallel()
 	b := newMergeGateBed(t)
 	writeCauseProof(t, b.install, "results.jsonl",
@@ -435,12 +435,8 @@ func TestLandingMergeGateAllowanceIsSeparateFromFullProof(t *testing.T) {
 		return "LANDING-CHECKED\t0\n", nil
 	}
 	first := gateResult(t, b, 1)
-	if first.Repeat != "allowed" || first.Cause.Kind != "unclassified" || !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-a:u/a", "merge-b:u/a"}) {
+	if first.Repeat != "" || first.Cause.Kind != "own" || first.Cause.Goal != "b" || !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-a:u/a"}) {
 		t.Fatalf("full proof supplied gate baseline or spent its repeat: %+v runs=%v", first, b.runs)
-	}
-	second := gateResult(t, b, 1)
-	if second.Repeat != "started" || second.Cause.Kind != "unclassified" {
-		t.Fatalf("gate repeat: %+v", second)
 	}
 	before := len(b.runs)
 	if code, out := b.run(t, b.root, "prove", "--gate", "--wait"); code != 1 || !strings.Contains(out, "gets no other") || len(b.runs) != before {

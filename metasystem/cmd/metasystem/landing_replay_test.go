@@ -55,6 +55,14 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 			// Main's trunk-red register is absent in this bed (no incident open).
 			case len(args) > 0 && args[0] == "ls-tree" && strings.HasSuffix(joined, "plans/goals/trunk-red.json"):
 				return "", nil
+			case len(args) == 4 && strings.Join(args[:3], " ") == "show -s --format=%P":
+				if args[3] == "merge-b" {
+					return "merge-a sha-b", nil
+				}
+				if args[3] == "merge-c" {
+					return "merge-b sha-c", nil
+				}
+				return "main sha-a", nil
 			case joined == "show -s --format=%cI HEAD":
 				return laneTestNow.UTC().Format(time.RFC3339), nil
 			case joined == "rev-parse --verify HEAD^{commit}":
@@ -79,8 +87,11 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 				var lines []string
 				parent := "main"
 				for _, g := range []string{"a", "b", "c"} {
-					if "merge-"+g <= b.head {
+					base, _, _ := strings.Cut(args[len(args)-1], "..")
+					if "merge-"+g <= b.head && (args[0] != "log" || "merge-"+g > base) {
 						lines = append(lines, "merge-"+g+" "+parent+" sha-"+g)
+					}
+					if "merge-"+g <= b.head {
 						parent = "merge-" + g
 					}
 				}
@@ -204,41 +215,42 @@ func TestLandingReplayFindsOwnOrMainThroughProve(t *testing.T) {
 			if result.Cause == nil || result.Cause.Kind != kind || result.Repeat != "" || !result.CountedFull {
 				t.Fatalf("classification: %+v", result)
 			}
-			if kind == "own" && (result.Cause.Goal != "b" || result.Cause.SHA != "sha-b" || strings.Join(b.runs, ",") != "merge-b:,main:u/a,merge-a:u/a,merge-b:u/a") {
+			if kind == "own" && (result.Cause.Goal != "b" || result.Cause.SHA != "sha-b" || strings.Join(b.runs, ",") != "merge-b:,merge-a:u/a") {
 				t.Fatalf("merge attribution: %+v runs=%v", result.Cause, b.runs)
 			}
+			wantEvidence := replayFailure
+			if kind == "own" {
+				wantEvidence += "\nlanding prove: the proving command ended: red\n"
+			}
 			data, err := os.ReadFile(result.Cause.Evidence)
-			if err != nil || string(data) != replayFailure || filepath.Dir(result.Cause.Evidence) != filepath.Join(plain.Dir(b.install), "proofs") || result.Cause.Evidence == result.Log {
+			if err != nil || string(data) != wantEvidence || filepath.Dir(result.Cause.Evidence) != filepath.Join(plain.Dir(b.install), "proofs") || (kind == "main" && result.Cause.Evidence == result.Log || kind == "own" && result.Cause.Evidence != result.Log) {
 				t.Fatalf("isolated evidence: %q %v %s", result.Cause.Evidence, err, data)
 			}
 		})
 	}
 }
 
-func TestLandingReplayAllowsOnlyOneWholeRepeat(t *testing.T) {
+func TestLandingReplayUsesRecordedRedOfProvedCommit(t *testing.T) {
 	t.Parallel()
 	b := newReplayVerbBed(t)
 	b.fail = func(_ *exec.Cmd, only string) (string, error) {
 		if only == "" {
-			return replayFailure, errors.New("red")
+			return replayFailure, exec.Command("/usr/bin/false").Run()
 		}
 		return "LANDING-CHECKED\t0\n", nil
 	}
-	if first := b.prove(t); first.Repeat != "allowed" {
-		t.Fatalf("first: %+v", first)
-	}
-	if second := b.prove(t); second.Repeat != "started" || second.Cause.Kind != "unclassified" {
-		t.Fatalf("second: %+v", second)
+	if first := b.prove(t); first.Repeat != "" || first.Cause.Kind != "own" || first.Cause.Goal != "b" {
+		t.Fatalf("recorded red: %+v", first)
 	}
 	code, out := b.run(t, b.root, "prove", "--wait")
-	if code != 1 || !strings.Contains(out, "gets no other") || b.full != 2 {
-		t.Fatalf("third = %d %s, whole runs=%d", code, out, b.full)
+	if code != 1 || !strings.Contains(out, "gets no other") || b.full != 1 {
+		t.Fatalf("repeat = %d %s, whole runs=%d", code, out, b.full)
 	}
 }
 
 func TestLandingReplayIncompleteIsolationHolds(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"green without report", "red without report", "not run"} {
+	for _, name := range []string{"green without report", "red without report", "not run", "killed after report"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newReplayVerbBed(t)
@@ -249,6 +261,8 @@ func TestLandingReplayIncompleteIsolationHolds(t *testing.T) {
 				switch name {
 				case "green without report":
 					return "", nil
+				case "killed after report":
+					return replayFailure, exec.Command("/bin/sh", "-c", "kill -KILL $$").Run()
 				case "not run":
 					return "LANDING-NOT-RUN\tbusy\n", errors.New("busy")
 				default:

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
@@ -134,6 +135,20 @@ func TestLandingClockReachesStatusAndTheGoal(t *testing.T) {
 	now = start.Add(64 * time.Minute)
 	must("landing", "prove", "--wait")
 	now = start.Add(90 * time.Minute)
+	gateMinutes := 7.0
+	gates := []plain.Result{
+		{Attempt: "earlier-episode", Goals: []plain.GoalSHA{{Goal: bedGoal, SHA: state.status.BranchTip}}, Scope: "gate", StartedAt: start.Add(-10 * time.Minute).UTC().Format(time.RFC3339), At: start.Add(-3 * time.Minute).UTC().Format(time.RFC3339), Minutes: &gateMinutes},
+		{Attempt: "episode-gate", Goals: []plain.GoalSHA{{Goal: bedGoal, SHA: state.status.BranchTip}}, Scope: "gate", StartedAt: start.Add(time.Minute).UTC().Format(time.RFC3339), At: start.Add(8 * time.Minute).UTC().Format(time.RFC3339), Minutes: &gateMinutes},
+	}
+	// The push clock reads the gate's newest outcome, just as it reads proofs.
+	gatePath := filepath.Join(plain.Dir(lane.installation), "gates.jsonl")
+	var gateLines []byte
+	for _, g := range []plain.Result{gates[1], gates[0], gates[1]} {
+		data, err := json.Marshal(g)
+		helmMust(t, err)
+		gateLines = append(gateLines, append(data, '\n')...)
+	}
+	helmMust(t, os.WriteFile(gatePath, gateLines, 0644))
 	must("landing", "push")
 	if strings.Join(scopes, ",") != "full,scoped,full" {
 		t.Fatalf("proof scopes: %v", scopes)
@@ -144,17 +159,20 @@ func TestLandingClockReachesStatusAndTheGoal(t *testing.T) {
 	helmMust(t, err)
 	var clock plain.Clock
 	helmMust(t, json.Unmarshal(raw, &clock))
-	if clock.TotalMinutes == nil || *clock.TotalMinutes != 90 || clock.HandInAt[bedGoal] != start.UTC().Format(time.RFC3339) || len(clock.FixRounds) != 1 || clock.FixRounds[0].Minutes == nil || *clock.FixRounds[0].Minutes != 18 || len(clock.Proofs) != 3 {
+	if clock.TotalMinutes == nil || *clock.TotalMinutes != 90 || clock.HandInAt[bedGoal] != start.UTC().Format(time.RFC3339) || len(clock.FixRounds) != 1 || clock.FixRounds[0].Minutes == nil || *clock.FixRounds[0].Minutes != 18 || len(clock.Proofs) != 4 {
 		t.Fatalf("episode clock: %s", raw)
 	}
-	for i, p := range clock.Proofs {
+	if clock.Proofs[0].Scope != "gate" || clock.Proofs[0].Minutes == nil || *clock.Proofs[0].Minutes != 7 || clock.Proofs[0].Attempt != "episode-gate" {
+		t.Fatalf("gate clock: %s", raw)
+	}
+	for i, p := range clock.Proofs[1:] {
 		want := []float64{20, 6, 25}[i]
 		if p.Minutes == nil || *p.Minutes != want || p.StartedAt == "" || p.Shards == nil || *p.Shards != 2 || p.Longest == nil || p.Longest.Shard != 2 || p.Longest.MS != 240000 || p.Steps["fast-static-build"] != 60000 {
 			t.Fatalf("proof %d: %+v", i, p)
 		}
 	}
 	words := clock.Words()
-	for _, part := range []string{"landing took 90.0 min", "hand-in to merge 4.0", "static 1.0", "cheap tier not measured until the pipeline's first tier", "2 shards", "fix round 18.0", "push 1.0"} {
+	for _, part := range []string{"landing took 90.0 min", "hand-in to merge 4.0", "static 1.0", "cheap gate 7.0 min", "2 shards", "fix round 18.0", "push 1.0"} {
 		if !strings.Contains(words, part) {
 			t.Fatalf("clock lacks %q: %s", part, words)
 		}
@@ -192,67 +210,201 @@ func TestLandingClockReachesStatusAndTheGoal(t *testing.T) {
 
 func TestAPushRecordedOnceAfterALostResponse(t *testing.T) {
 	t.Parallel()
-	b := newPlainVerbBed(t)
-	b.cwd = b.checkout
-	b.setCommand(t, "fixture")
-	now := time.Date(2026, 10, 1, 20, 0, 0, 0, time.UTC)
-	b.owners.landing.now = func() time.Time { return now }
-	b.owners.landing.plainProve.Now = func() time.Time { return now }
-	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
-		if strings.Join(args, " ") == "show -s --format=%cI HEAD" {
-			return time.Date(2026, 10, 1, 20, 0, 0, 0, time.UTC).Format(time.RFC3339), nil
+	for _, confirmed := range []bool{true, false} {
+		t.Run(fmt.Sprintf("green-on-main=%t", confirmed), func(t *testing.T) {
+			t.Parallel()
+			b := newPlainVerbBed(t)
+			b.cwd = b.checkout
+			b.setCommand(t, "fixture")
+			now := time.Date(2026, 10, 1, 20, 0, 0, 0, time.UTC)
+			b.owners.landing.now = func() time.Time { return now }
+			b.owners.landing.plainProve.Now = func() time.Time { return now }
+			b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+				if strings.Join(args, " ") == "show -s --format=%cI HEAD" {
+					return time.Date(2026, 10, 1, 20, 0, 0, 0, time.UTC).Format(time.RFC3339), nil
+				}
+				return plain.Git(dir, args...)
+			}
+			b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+				now = now.Add(2 * time.Minute)
+				_, err := fmt.Fprint(cmd.Stdout, "landing environment fixture\nlanding package fixture/unit 1 ok 120000\nLANDING-CHECKED\t0\n")
+				return err
+			}
+			sha := b.seat(t, "goal-a")
+			head := b.merge(t, sha)
+			if code, text := b.run(t, "landing", "prove", "--wait"); code != 0 {
+				t.Fatalf("prove exit %d: %s", code, text)
+			}
+			batch, err := plain.ReadBatch(b.installation)
+			helmMust(t, err)
+			if batch == nil || batch.State != plain.BatchRunning {
+				t.Fatalf("running batch: %+v", batch)
+			}
+			stop := plain.Stop{Loop: "lane-return", Subject: "goal-a", Tree: sha, At: now.UTC().Format(time.RFC3339), Decision: "stop"}
+			data, err := json.Marshal(stop)
+			helmMust(t, err)
+			helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.installation), "stops.jsonl"), append(data, '\n'), 0644))
+			// Main received the proven commit, but the push's follow-up never ran.
+			published := head
+			if !confirmed {
+				published = sha
+			}
+			b.git(t, b.checkout, "push", "--quiet", "origin", published+":main")
+			now = now.Add(time.Minute)
+			waiting := b.seat(t, "goal-b")
+			b.git(t, b.checkout, "fetch", "--quiet", "origin")
+			registered, ok, err := lane.Read(b.home)
+			helmMust(t, err)
+			if !ok {
+				t.Fatal("lane registration missing")
+			}
+			selected, err := plain.SelectBatch(b.installation, b.checkout, registered, b.owners.landing.plainProve)
+			helmMust(t, err)
+			if selected == nil || selected.ID == batch.ID || selected.State != plain.BatchPrepared || len(selected.Members) != 1 || selected.Members[0].SHA != waiting {
+				t.Fatalf("replacement selection: %+v", selected)
+			}
+			if !confirmed {
+				if push, ok, err := plain.LastPush(b.installation); err != nil || ok {
+					t.Fatalf("unpublished green completed: %+v %v", push, err)
+				}
+				return
+			}
+			recovered, ok, err := plain.LastPush(b.installation)
+			helmMust(t, err)
+			if !ok || recovered.Commit != head || recovered.Old != batch.Base || recovered.Clock == nil || recovered.Clock.TotalMinutes == nil {
+				t.Fatalf("keeper recovery: %+v", recovered)
+			}
+			for i := 0; i < 2; i++ {
+				if code, text := b.run(t, "landing", "push"); code != 0 || !strings.Contains(text, "already on main, recorded") {
+					t.Fatalf("recover push %d exit %d: %s", i, code, text)
+				}
+			}
+			data, err = os.ReadFile(filepath.Join(plain.Dir(b.installation), "pushes.jsonl"))
+			helmMust(t, err)
+			if strings.Count(string(data), "\n") != 1 {
+				t.Fatalf("push records: %s", data)
+			}
+			var push plain.Pushed
+			helmMust(t, json.Unmarshal(data, &push))
+			if push.Commit != head || push.Old != batch.Base || push.Clock == nil || push.Clock.TotalMinutes == nil || len(push.Clock.Proofs) != 1 || !strings.Contains(push.Clock.Words(), "cheap gate not run") {
+				t.Fatalf("reconstructed push: %+v", push)
+			}
+			batch, err = plain.ReadBatch(b.installation)
+			helmMust(t, err)
+			proof, ok, err := plain.LastResult(b.installation)
+			helmMust(t, err)
+			stops, err := plain.OpenStops(b.installation)
+			helmMust(t, err)
+			if batch.State != plain.BatchPrepared || batch.ID != selected.ID || !ok || !proof.LoopClosed || len(stops) != 0 {
+				t.Fatalf("completion: batch=%s proof=%+v stops=%+v", batch.State, proof, stops)
+			}
+			if got := b.status(t)["last_push"].(map[string]any); got["commit"] != head || got["clock"] == nil {
+				t.Fatalf("status push: %v", got)
+			}
+		})
+	}
+	for _, caller := range []string{"keeper", "push"} {
+		for _, death := range []string{"after-line", "old-closure", "completed"} {
+			t.Run(caller+"/"+death, func(t *testing.T) {
+				t.Parallel()
+				b := newResolveVerbFixture(t)
+				registered, ok, err := lane.Read(b.home)
+				helmMust(t, err)
+				if !ok {
+					t.Fatal("missing registration")
+				}
+				member := plain.GoalSHA{Goal: "g", SHA: "goal-sha"}
+				_, _, err = plain.HandIn(b.install, plain.Line{Goal: member.Goal, SHA: member.SHA})
+				helmMust(t, err)
+				batch := plain.Batch{ID: "batch", Lane: registered, Base: "base", Members: []plain.GoalSHA{member}, State: plain.BatchRunning}
+				green := plain.Result{Result: plain.Green, Attempt: "proof", Commit: "merge", Tree: "merge-tree", Goals: batch.Members, BatchID: batch.ID, BatchMembers: batch.Members, CountedFull: true}
+				stop := plain.Stop{Loop: "lane-return", Subject: "g", Tree: member.SHA, At: laneTestNow.Format(time.RFC3339Nano), Decision: "stop"}
+				write := func(name string, value any, line bool) {
+					t.Helper()
+					data, err := json.Marshal(value)
+					helmMust(t, err)
+					if line {
+						data = append(data, '\n')
+					}
+					helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.install), name), data, 0600))
+				}
+				if death == "old-closure" {
+					batch.State, batch.ClosureReason = plain.BatchClosed, "all selected members are accounted for on main or by queue outcomes"
+				}
+				if death == "completed" {
+					batch.State, batch.ClosureReason, green.LoopClosed, stop.Decision = plain.BatchClosed, "confirmed push accounts for the selected members", true, "close"
+				}
+				write("batch.json", batch, false)
+				write("results.jsonl", green, true)
+				write("stops.jsonl", stop, true)
+				if death != "old-closure" {
+					write("pushes.jsonl", plain.Pushed{Commit: green.Commit, Tree: green.Tree, Old: batch.Base, BatchID: batch.ID, BatchMembers: batch.Members}, true)
+				}
+				projections := 0
+				seams := plain.ProveSeams{Now: func() time.Time { return laneTestNow }, Policy: func(string) (plain.PolicyValue, error) { return plain.PolicyValue{Value: "auto"}, nil }, Git: func(_ string, args ...string) (string, error) {
+					switch {
+					case args[0] == "fetch" || args[0] == "cat-file" || args[0] == "ls-tree":
+						return "", nil
+					case args[0] == "rev-parse" && strings.HasSuffix(args[len(args)-1], "^{tree}"):
+						return green.Tree, nil
+					case args[0] == "rev-parse":
+						return green.Commit, nil
+					case args[0] == "merge-base":
+						if args[2] == member.SHA && args[3] == green.Commit {
+							projections++
+						}
+						return "", nil
+					case args[0] == "show" && args[2] == "--format=%cI":
+						return laneTestNow.Format(time.RFC3339), nil
+					default:
+						t.Fatalf("unstubbed Git: %v", args)
+						return "", nil
+					}
+				}}
+				b.owners.landing.plainProve = seams
+				invoke := func() {
+					t.Helper()
+					if caller == "keeper" {
+						_, err := plain.SelectBatch(b.install, b.root, registered, seams)
+						helmMust(t, err)
+					} else if code, text := b.run(t, b.root, "push"); code != 0 {
+						t.Fatalf("push exit=%d: %s", code, text)
+					}
+				}
+				before := idemTreeDigest(t, plain.Dir(b.install))
+				invoke()
+				if death == "completed" {
+					idemSameTree(t, "completed publication", before, idemTreeDigest(t, plain.Dir(b.install)))
+					// A completed push needs no second projection of its published members.
+					want := 0
+					if caller == "keeper" {
+						want = 1
+					}
+					if projections != want {
+						t.Fatalf("completed push reconciled again: member projections=%d, want %d", projections, want)
+					}
+				}
+				got, err := plain.ReadBatch(b.install)
+				helmMust(t, err)
+				proof, ok, err := plain.LastResult(b.install)
+				helmMust(t, err)
+				stops, err := plain.OpenStops(b.install)
+				helmMust(t, err)
+				if got == nil || got.ClosureReason != "confirmed push accounts for the selected members" || !ok || !proof.LoopClosed || len(stops) != 0 {
+					t.Fatalf("unfinished effects: batch=%+v proof=%+v stops=%+v", got, proof, stops)
+				}
+				lines, err := os.ReadFile(filepath.Join(plain.Dir(b.install), "pushes.jsonl"))
+				helmMust(t, err)
+				if strings.Count(string(lines), "\n") != 1 {
+					t.Fatalf("push recorded twice: %s", lines)
+				}
+				after := idemTreeDigest(t, plain.Dir(b.install))
+				invoke()
+				idemSameTree(t, "repeated completion", after, idemTreeDigest(t, plain.Dir(b.install)))
+			})
 		}
-		return plain.Git(dir, args...)
 	}
-	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
-		now = now.Add(2 * time.Minute)
-		_, err := fmt.Fprint(cmd.Stdout, "landing environment fixture\nlanding package fixture/unit 1 ok 120000\nLANDING-CHECKED\t0\n")
-		return err
-	}
-	sha := b.seat(t, "goal-a")
-	head := b.merge(t, sha)
-	if code, text := b.run(t, "landing", "prove", "--wait"); code != 0 {
-		t.Fatalf("prove exit %d: %s", code, text)
-	}
-	batch, err := plain.ReadBatch(b.installation)
-	helmMust(t, err)
-	if batch == nil || batch.State != plain.BatchRunning {
-		t.Fatalf("running batch: %+v", batch)
-	}
-	stop := plain.Stop{Loop: "lane-return", Subject: "goal-a", Tree: sha, At: now.UTC().Format(time.RFC3339), Decision: "stop"}
-	data, err := json.Marshal(stop)
-	helmMust(t, err)
-	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.installation), "stops.jsonl"), append(data, '\n'), 0644))
-	// Main received the proven commit, but the push's follow-up never ran.
-	b.git(t, b.checkout, "push", "--quiet", "origin", head+":main")
-	now = now.Add(time.Minute)
-	for i := 0; i < 2; i++ {
-		if code, text := b.run(t, "landing", "push"); code != 0 || !strings.Contains(text, "already on main, recorded") {
-			t.Fatalf("recover push %d exit %d: %s", i, code, text)
-		}
-	}
-	data, err = os.ReadFile(filepath.Join(plain.Dir(b.installation), "pushes.jsonl"))
-	helmMust(t, err)
-	if strings.Count(string(data), "\n") != 1 {
-		t.Fatalf("push records: %s", data)
-	}
-	var push plain.Pushed
-	helmMust(t, json.Unmarshal(data, &push))
-	if push.Commit != head || push.Old != batch.Base || push.Clock == nil || push.Clock.TotalMinutes == nil || len(push.Clock.Proofs) != 1 {
-		t.Fatalf("reconstructed push: %+v", push)
-	}
-	batch, err = plain.ReadBatch(b.installation)
-	helmMust(t, err)
-	proof, ok, err := plain.LastResult(b.installation)
-	helmMust(t, err)
-	stops, err := plain.OpenStops(b.installation)
-	helmMust(t, err)
-	if batch.State != plain.BatchClosed || !ok || !proof.LoopClosed || len(stops) != 0 {
-		t.Fatalf("completion: batch=%s proof=%+v stops=%+v", batch.State, proof, stops)
-	}
-	if got := b.status(t)["last_push"].(map[string]any); got["commit"] != head || got["clock"] == nil {
-		t.Fatalf("status push: %v", got)
-	}
+
 }
 
 func TestLandingPushLeavesReturnedMembersUnlanded(t *testing.T) {

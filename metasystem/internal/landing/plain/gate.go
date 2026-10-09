@@ -60,7 +60,7 @@ func gateBaseline(seams ProveSeams, install, checkout, command string, running R
 		baseline.Reason = "the tree before the merge could not be read: " + err.Error()
 		return baseline, false, decision
 	}
-	decision.Base = tree
+	decision.Base, decision.BaseCommit = tree, parent
 	previous, found, err := seams.checkBound(install, tree)
 	if err != nil {
 		if found {
@@ -153,7 +153,7 @@ func replayGate(seams ProveSeams, install, checkout, command string, running Run
 		if index < 0 {
 			return result
 		}
-		trees = []replayTree{{Running: Running{Commit: fields[0]}, Main: fields[0] == main},
+		trees = []replayTree{{Running: Running{Commit: fields[0]}, Main: true},
 			{Running: Running{Commit: running.Commit}, Goal: result.Goals[index]}}
 	}
 	if err := os.MkdirAll(filepath.Join(Dir(install), "proofs"), 0o755); err != nil {

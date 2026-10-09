@@ -12,15 +12,19 @@ import (
 
 func TestProofBudgetCountsOnlyCompletedFullAttempts(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"two greens", "red and green", "duplicate repeat marker", "not run", "scoped", "unrelated batch", "changed hand-in", "closed"} {
+	for _, name := range []string{"two reds", "two greens", "red and green", "flake green", "duplicate repeat marker", "not run", "scoped", "unrelated batch", "changed hand-in", "closed"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
 			goals := []GoalSHA{{Goal: "a", SHA: "sha-a"}, {Goal: "b", SHA: "sha-b"}, {Goal: "c", SHA: "sha-c"}}
 			first := Result{Tree: "first", Commit: "first", Result: Red, Attempt: "first", Goals: goals, CountedFull: true}
 			second := Result{Tree: "second", Commit: "second", Result: Green, Attempt: "second", Goals: goals[:2], CountedFull: true}
-			refused := true
+			refused := false
 			switch name {
+			case "two reds":
+				second.Result, refused = Red, true
+			case "flake green":
+				second.Attempt = first.Attempt
 			case "two greens":
 				first.Result = Green
 			case "duplicate repeat marker":
@@ -30,6 +34,7 @@ func TestProofBudgetCountsOnlyCompletedFullAttempts(t *testing.T) {
 			case "unrelated batch":
 				second.Goals, refused = []GoalSHA{{Goal: "other", SHA: "other-sha"}}, false
 			case "changed hand-in":
+				second.Result, refused = Red, true
 				second.Goals = []GoalSHA{{Goal: "a", SHA: "new-sha"}}
 			case "closed":
 				second.LoopClosed, refused = true, false
@@ -41,13 +46,24 @@ func TestProofBudgetCountsOnlyCompletedFullAttempts(t *testing.T) {
 				if err := appendLine(resultsPath(install), first); err != nil {
 					return err
 				}
-				return appendLine(resultsPath(install), second)
+				if err := appendLine(resultsPath(install), second); err != nil {
+					return err
+				}
+				if name == "flake green" {
+					third := first
+					third.Attempt = "third"
+					return appendLine(resultsPath(install), third)
+				}
+				return nil
 			}); err != nil {
 				t.Fatal(err)
 			}
 			seams := ProveSeams{Git: func(string, ...string) (string, error) { return "", nil }}
 			err := withLock(install, func() error { return checkProofBudget(install, "checkout", "third", seams) })
 			var budget *ProofBudget
+			if errors.As(err, &budget) && err.Error() != "this batch used two full checks; goals hold; ask a person to run: metasystem landing prove" {
+				t.Fatalf("budget remedy: %v", err)
+			}
 			if errors.As(err, &budget) != refused || err != nil && !errors.As(err, &budget) {
 				t.Fatalf("%s: refused=%v err=%v", name, refused, err)
 			}
@@ -72,6 +88,8 @@ func TestReplayBatchRejectsMismatchedFirstParents(t *testing.T) {
 				switch {
 				case strings.Join(args, " ") == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
 					return "main", nil
+				case len(args) == 4 && strings.Join(args[:3], " ") == "show -s --format=%P":
+					return "main sha-b", nil
 				case args[0] == "log":
 					return fmt.Sprintf("merge-a %s sha-a\nmerge-b %s sha-b", firstParent, laterParent), nil
 				case len(args) == 3 && args[0] == "rev-parse" && strings.HasSuffix(args[2], "^{tree}"):
