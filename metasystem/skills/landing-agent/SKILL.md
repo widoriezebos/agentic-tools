@@ -70,7 +70,10 @@ human return restores no automatic allowance.
 1. **One waiting, green:** merge it, prove, push.
 2. **Several selected:** merge only those selected pairs, prove once, push once.
 3. **Red:** read `last_proof.cause`. For `own`, run `metasystem landing return GOAL --cause own`
-   for the goal it names, merge the remaining selected pairs on latest main, and prove. When `last_proof.repeat` is
+   for the goal it names, merge the remaining selected pairs on latest main, and prove. For `main`,
+   the batch holds: name main's failed units and the incident record. A person hot-fixes main,
+   then `metasystem landing prove --trunk` (case 8) clears the incident when green; continue with case 5.
+   When `last_proof.repeat` is
    `allowed`, run `metasystem landing prove` once more and end your turn. For any other cause,
    end your turn; the waiting goals hold. A red without the repeat allowance gets
    no other check of that tree.
