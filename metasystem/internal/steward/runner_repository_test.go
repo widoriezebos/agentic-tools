@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 // runnerTick uses the accepted goal projection and the runner's real evidence
@@ -19,6 +20,7 @@ func (b *decisionTickRepository) runnerTick() func(string, TickConfig, WorkerCen
 		if root != expectedRoot {
 			return TickResult{}, fmt.Errorf("tick root %q, want %q", root, expectedRoot)
 		}
+		cfg.ProviderHome = testprovider.Home(b.root)
 		path := EvidencePath(root)
 		prev, err := LoadEvidence(path)
 		if err != nil {

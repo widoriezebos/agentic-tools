@@ -17,6 +17,9 @@ import (
 type UnitSize struct {
 	Name  string
 	Lines int64
+
+	Production *int64
+	Row        string
 }
 type ReadChoice struct {
 	Mode        string
@@ -202,32 +205,9 @@ func UnsizedMissing(err error) string {
 }
 
 func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
-	lines := strings.Split(page, "\n")
-	header, sizeColumn := -1, -1
-	tableFound := false
-	for index, line := range lines {
-		cells := tableCells(line)
-		if len(cells) == 0 || !strings.EqualFold(strings.TrimSpace(cells[0]), "unit") {
-			continue
-		}
-		tableFound = true
-		for column, cell := range cells {
-			name := strings.ToLower(strings.TrimSpace(cell))
-			if strings.Contains(name, "line") || name == "size" || name == "alloc" || name == "cap" {
-				sizeColumn = column
-				break
-			}
-		}
-		if sizeColumn >= 0 {
-			header = index
-			break
-		}
-	}
-	if header < 0 {
-		if tableFound {
-			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=size-column", &UnsizedError{Missing: "size-column", Err: errors.New("the units table has no size column (lines, size, alloc or cap), so the build has no size")})
-		}
-		return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=units-table", &UnsizedError{Missing: "units-table", Err: errors.New("the page has no units table, so the build has no size")})
+	rows := parseUnitSizes(page, true)
+	if len(rows) == 0 {
+		return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=units-table", &UnsizedError{Missing: "units-table", Err: errors.New("the page has no sized units table")})
 	}
 	wants := map[string]bool{}
 	for _, name := range wanted {
@@ -235,15 +215,8 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 	}
 	seen := map[string]bool{}
 	var result []UnitSize
-	for _, line := range lines[header+1:] {
-		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
-			break
-		}
-		cells := tableCells(line)
-		if len(cells) <= sizeColumn || separatorRow(cells) {
-			continue
-		}
-		name := strings.TrimSpace(cells[0])
+	for _, row := range rows {
+		name := row.Name
 		matched := name
 		if len(wants) > 0 {
 			matched = ""
@@ -257,17 +230,12 @@ func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
 		if matched == "" || seen[matched] {
 			continue
 		}
-		cell := cells[sizeColumn]
-		first := firstInteger.FindString(cell)
-		if first == "" {
-			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "unit="+matched+" missing=integer", &UnsizedError{Missing: "integer", Err: fmt.Errorf("unit %s has no number in its size column, so the build has no size", matched)})
+		if row.Lines < 0 {
+			return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "unit="+matched+" missing=integer", &UnsizedError{Missing: "integer", Err: fmt.Errorf("unit %s has no number in its total size column", matched)})
 		}
-		lines, _ := strconv.ParseInt(first, 10, 64)
-		if witness := witnessInteger.FindStringSubmatch(cell); len(witness) == 2 {
-			extra, _ := strconv.ParseInt(witness[1], 10, 64)
-			lines += extra
-		}
-		result = append(result, UnitSize{Name: matched, Lines: lines})
+		row.Name = matched
+		row.Row = ""
+		result = append(result, row)
 		seen[matched] = true
 	}
 	for _, name := range wanted {

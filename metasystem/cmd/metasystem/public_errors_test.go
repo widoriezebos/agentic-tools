@@ -189,11 +189,11 @@ func TestSystemCheckRemediesArePublicActs(t *testing.T) {
 		argv        []string
 		instruction string
 	}{
-		{steward.RoleVerdict{Role: steward.RoleSessionMain, Reason: "no session main is announced"}, []string{"metasystem", "session", "start"}, ""},
+		{steward.RoleVerdict{Role: steward.RoleSessionMain, Reason: "no session main is announced"}, []string{"metasystem", "system", "start"}, ""},
 		{steward.RoleVerdict{Role: steward.RoleCapabilitySnapshots, Reason: "missing or stale capability snapshots: claude"}, nil, "the steward tick probes"},
-		{steward.RoleVerdict{Role: steward.RoleTrunkRed, Reason: "no deep validation cadence status is recorded"}, []string{"metasystem", "system", "start"}, ""},
-		{steward.RoleVerdict{Role: steward.RoleTrunkRed, Reason: "open trunk-red incident inc-1 has no owner"}, []string{"metasystem", "incident", "list"}, ""},
-		{steward.RoleVerdict{Role: steward.RoleStopCapabilityEpoch, Reason: "no machine nickname: run  git config metasystem.goal.machine <nickname>  once on this machine"}, nil, "run the command the reason above names"},
+		{steward.RoleVerdict{Role: steward.RoleTrunkRed, Reason: "no deep validation cadence status is recorded"}, nil, "nothing to do: the armed landing lane records the cadence at its next validation"},
+		{steward.RoleVerdict{Role: steward.RoleTrunkRed, Reason: "open trunk-red incident inc-1 has no owner", RemedyFacts: []steward.RemedyFact{{Cause: steward.CauseTrunkRedUnowned, Incident: "inc-1"}}}, []string{"metasystem", "incident", "claim", "inc-1", "--goal", "G"}, ""},
+		{steward.RoleVerdict{Role: steward.RoleStopCapabilityEpoch, Reason: "no machine nickname: run  git config metasystem.goal.machine <nickname>  once on this machine"}, nil, "a person changes what the reason above names; no metasystem command does it"},
 	} {
 		argv, instruction := publicHealthRemedy(row.role, false)
 		if !slices.Equal(argv, row.argv) || !strings.Contains(instruction, row.instruction) || strings.Contains(instruction, "no public command repairs this") {

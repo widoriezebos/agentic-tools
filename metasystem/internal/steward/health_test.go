@@ -16,9 +16,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 type healthProbe map[int64]struct {
@@ -117,7 +117,7 @@ func TestSessionMainReadsAliveWhenNoStepIsDue(t *testing.T) {
 			case "fenced":
 				bed.fence = "process creation is fenced"
 			case "provider outage":
-				if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "fixture", bed.now); err != nil {
+				if _, err := testprovider.Record(bed.root, "overloaded", "API Error: 529", "fixture", bed.now); err != nil {
 					t.Fatal(err)
 				}
 			case "revivals capped":
@@ -139,7 +139,7 @@ func TestSessionMainReadsAliveWhenNoStepIsDue(t *testing.T) {
 			if reason := map[string]string{"seats off": bed.launcher.off, "fenced": bed.fence, "provider outage": "provider", "landing waits": "the claims of this seat wait", "revivals capped": "without progress"}[test.name]; reason != "" && !strings.Contains(role.Reason, reason) {
 				t.Fatalf("health lost the seat guard's reason: %+v", role)
 			}
-			if test.want == HealthDead && (!hasLawfulAutomaticRemedy(role, []RoleVerdict{role}) || role.Remedy != supervisionRemedy(bed.root)) {
+			if test.want == HealthDead && (!hasLawfulAutomaticRemedy(role, []RoleVerdict{role}) || role.Remedy != "metasystem system start") {
 				t.Fatalf("a due step needs the lawful seat remedy: %+v", role)
 			}
 		})
@@ -427,7 +427,7 @@ func TestStopCapabilityEpochHealth(t *testing.T) {
 		role := bed.stopCapability("bed-m1")
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "coordinator") ||
 			!strings.Contains(role.Reason, "replacement-lineage") ||
-			role.Remedy != "release the goal under the lineage that claimed it and claim it again (metasystem goal release, then metasystem goal claim)" {
+			!strings.Contains(role.Remedy, "the session that claimed goal bounded-goal releases it") || !strings.HasPrefix(role.Remedy, "metasystem goal claim bounded-goal --take-over --reason TEXT") {
 			t.Fatalf("foreign-lineage divergence = %+v", role)
 		}
 		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseForeignLineage, Goal: "bounded-goal"}) {
@@ -514,12 +514,14 @@ func writeHealthJob(t *testing.T, root, name, body string) {
 }
 
 func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
 
 	t.Run("within budget", func(t *testing.T) {
+		t.Parallel()
 		root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
-		writeHealthJob(t, root, "design-one", `{"jobId":"design-one","operationId":"design-one","role":"design-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
-		writeHealthJob(t, root, "code-one", `{"jobId":"code-one","operationId":"code-one","role":"code-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
+		writeHealthJob(t, root, "design-one", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","endedAt":"2026-08-28T08:30:00Z","jobId":"design-one","operationId":"design-one","role":"design-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
+		writeHealthJob(t, root, "code-one", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","endedAt":"2026-08-28T08:30:00Z","jobId":"code-one","operationId":"code-one","role":"code-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
 		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "designCritiques=1/2 codeCritiques=1/2") {
 			t.Fatalf("known structured budget was not judged: %+v", role)
@@ -527,6 +529,7 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("elapsed admission closed", func(t *testing.T) {
+		t.Parallel()
 		caseNow := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 		root, projection, projectionErr := budgetHealthProjectionBed(t, caseNow, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		role := checkClaimedGoalBudgetsFromProjection(root, caseNow, projection, true, projectionErr, nil)
@@ -537,22 +540,24 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("elapsed breach", func(t *testing.T) {
+		t.Parallel()
 		caseNow := time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC)
 		root, projection, projectionErr := budgetHealthProjectionBed(t, caseNow, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		role := checkClaimedGoalBudgetsFromProjection(root, caseNow, projection, true, projectionErr, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "ELAPSED_BREACH") ||
-			!strings.Contains(role.Remedy, "the armed steward stops this revision on its next tick") || !strings.Contains(role.Remedy, "metasystem goal pause bounded-goal") {
+			!strings.Contains(role.Remedy, "goal bounded-goal is over its box; its stop runs by itself, and a person may give it a larger box") || !strings.Contains(role.Remedy, "metasystem goal budget bounded-goal BOX") {
 			t.Fatalf("the grace boundary was not typed breach-stop evidence: %+v", role)
 		}
 	})
 
 	t.Run("breach", func(t *testing.T) {
+		t.Parallel()
 		root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
-		writeHealthJob(t, root, "one", `{"jobId":"one","operationId":"reserve-one","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"running"}`)
-		writeHealthJob(t, root, "two", `{"jobId":"two","operationId":"reserve-two","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"pending"}`)
+		writeHealthJob(t, root, "one", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","jobId":"one","operationId":"reserve-one","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"running"}`)
+		writeHealthJob(t, root, "two", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","jobId":"two","operationId":"reserve-two","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"pending"}`)
 		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "reservedJobMinutesLimit") ||
-			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "the armed steward stops this revision on its next tick") || !strings.Contains(role.Remedy, "metasystem goal pause bounded-goal") {
+			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "goal bounded-goal is over its box; its stop runs by itself, and a person may give it a larger box") || !strings.Contains(role.Remedy, "metasystem goal budget bounded-goal BOX") {
 			t.Fatalf("structured breaches did not route to breach-stop healing: %+v", role)
 		}
 		if len(role.RemedyFacts) != 1 || role.RemedyFacts[0] != (RemedyFact{Cause: CauseBudgetBreach, Goal: "bounded-goal"}) {
@@ -561,8 +566,9 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("budget unknown", func(t *testing.T) {
+		t.Parallel()
 		root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
-		writeHealthJob(t, root, "revisionless", `{"jobId":"revisionless","operationId":"reserve-one","goalId":"bounded-goal","capMin":20,"status":"running"}`)
+		writeHealthJob(t, root, "revisionless", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","jobId":"revisionless","operationId":"reserve-one","goalId":"bounded-goal","capMin":20,"status":"running"}`)
 		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		verdict := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{role}, now)
 		if role.Status != HealthDead || !role.NoAutomaticRemedy ||
@@ -724,6 +730,7 @@ func TestHealthThresholdConfigurationUsesDefaultsAndRejectsInvalidBounds(t *test
 }
 
 func TestClaimedGoalRemedyIsJudgedPerGoal(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	breach := structuredHealthGoal()
 	breach.Id = "a-breach"
@@ -745,7 +752,7 @@ func TestClaimedGoalRemedyIsJudgedPerGoal(t *testing.T) {
 	root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{
 		breach.Id: breach, indeterminate.Id: indeterminate,
 	})
-	writeHealthJob(t, root, "over-limit", `{"jobId":"over-limit","operationId":"reserve-over-limit","goalId":"a-breach","goalRevision":2,"capMin":80,"status":"running"}`)
+	writeHealthJob(t, root, "over-limit", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","jobId":"over-limit","operationId":"reserve-over-limit","goalId":"a-breach","goalRevision":2,"capMin":80,"status":"running"}`)
 	stamp := now.Format(time.RFC3339)
 	batch := goal.StopBatch{
 		StopID: indeterminate.StopFence.StopID, GoalID: indeterminate.Id, GoalRevision: 2,
@@ -760,7 +767,7 @@ func TestClaimedGoalRemedyIsJudgedPerGoal(t *testing.T) {
 	verdict := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{role}, now)
 	if !strings.Contains(role.Reason, "a-breach revision=2 BREACH") ||
 		!strings.Contains(role.Reason, "z-indeterminate revision=2 BREACH_STOP_INDETERMINATE") ||
-		!role.NoAutomaticRemedy || !strings.Contains(role.Remedy, "keep the launch fence closed") ||
+		!role.NoAutomaticRemedy || !strings.Contains(role.Remedy, "new work stays fenced until it resolves") ||
 		!verdict.ShouldAlert || verdict.Roles[0].FailureEscalation != NoLawfulRemedy {
 		t.Fatalf("one healable goal must not mask another goal's indeterminate custody: role=%+v verdict=%+v", role, verdict)
 	}
@@ -804,7 +811,7 @@ func TestNonterminalJobWithProvablyDeadProcessIsNamed(t *testing.T) {
 	}
 	role := checkNonterminalJobs(root, healthProbe{44001: {state: identity.Dead}})
 	if role.Status != HealthDead || !strings.Contains(role.Reason, "dead-job") ||
-		!strings.Contains(role.Remedy, "metasystem work stop j2:JOB") {
+		!strings.Contains(role.Remedy, "metasystem work stop j2:dead-job") {
 		t.Fatalf("the dead-process job and its current remedy must be named: %+v", role)
 	}
 }

@@ -21,6 +21,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -49,11 +50,12 @@ type SeatLaunchSpec struct {
 
 // SeatLaunchState is one seat launch as its launch record says.
 type SeatLaunchState struct {
-	Found      bool
-	Terminal   bool
-	State      string
-	ResultPath string
-	FinishedAt string
+	Found                bool
+	Terminal             bool
+	State                string
+	ResultPath           string
+	FinishedAt           string
+	Home, Runtime, Model string
 }
 
 // SeatLauncher starts and reads seat launches; the command layer supplies the
@@ -297,10 +299,13 @@ func reapSeatLaunches(repoRoot string, dependencies seatDependencies, now time.T
 					}
 					break
 				}
-				if _, err := outage.Record(repoRoot, class, evidence, SeatLineage, seen); err != nil {
+				if _, err := outage.Observe(launch.Home, launch.Runtime, launch.Model, class, evidence, record.LaunchID, seen); err != nil {
 					record.Evidence += "; the outage mark was not fed: " + err.Error()
 				}
 				break
+			}
+			if seen, err := time.Parse(time.RFC3339Nano, launch.FinishedAt); err == nil && launch.State == "completed" {
+				_, _ = outage.Observe(launch.Home, launch.Runtime, launch.Model, "", "", record.LaunchID, seen)
 			}
 			if projection == nil {
 				read, err := dependencies.Project(repoRoot, now)
@@ -375,13 +380,13 @@ func seatProgress(repoRoot string, record SeatRecord, projection goal.Projection
 // decideSeat is D-ladder over claimable work, and over owned work whose claim
 // is the seat lineage's. ok is false when the decision is not the seat
 // ladder's: today's ladder decides.
-func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerOutage bool,
+func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerCheck func(string, error) (outage.Mark, bool),
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
-	return seatDecision(repoRoot, cfg, work, shared, workers, providerOutage, dependencies, state)
+	return seatDecision(repoRoot, cfg, work, shared, workers, providerCheck, dependencies, state)
 }
 
 // seatDecision owns the start guards for both the tick and its health reading.
-func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerOutage bool,
+func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerCheck func(string, error) (outage.Mark, bool),
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
 	owned := work == WorkOwned || work == WorkWaiting
 	if work != WorkClaimable && !owned {
@@ -449,8 +454,9 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 				workers.CensusComplete, workers.Untracked, workers.Unprovable)}, nil, true
 		}
 	}
-	if providerOutage {
-		return Decision{verdict, ActNotify, "the model provider is overloaded or limited; holding the seat start until the provider recovers"}, nil, true
+	settingsForLaunch, settingsErr := launch.ResolveSettings(filepath.Join(repoRoot, "metasystem.conf"), nil)
+	if mark, standing := providerCheck(settingsForLaunch.SeatRuntime, settingsErr); standing {
+		return Decision{verdict, ActNotify, providerMarkWaitReason(mark)}, nil, true
 	}
 	closed, reason, err := dependencies.Fence(repoRoot)
 	if err != nil {
@@ -458,6 +464,15 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	}
 	if closed {
 		return Decision{verdict, ActNone, reason}, nil, true
+	}
+	ev, err := LoadEvidence(EvidencePath(repoRoot))
+	if err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+	}
+	if _, reason, err := abnormalRestartState(repoRoot, ev, now); err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+	} else if reason != "" {
+		return Decision{verdict, ActNotify, reason}, nil, true
 	}
 	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned)
 	return d, selection, true
@@ -499,6 +514,7 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	}
 	root := canonicalPath(repoRoot)
 	dependencies := defaultSeatDependencies(cfg.Seat)
+	dependencies.Now = cfg.now
 	if cfg.Units != nil {
 		dependencies.Units = cfg.Units
 	}
@@ -511,16 +527,20 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 }
 
 // seatBrief is what the seat main reads on stdin.
-func seatBrief(selection SeatSelection, facts ...string) string {
+func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) string {
 	why := "it is approved and ready"
 	if selection.Held {
 		why = "this seat already holds it; the main before you ended"
 	}
+	boundary, handoff := "", ""
+	if automaticHandoff {
+		boundary = "; stop advancing at that boundary"
+		handoff = "Nobody sits at this terminal: your process ends when your turn ends.\nEvery background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `metasystem work wait` (bounded by --timeout) and carry on. At the completed unit boundary, write your lessons note in your runtime's configured context.handoff.note-directory, then run `metasystem session handoff --root <installation> --note <that note> --no-delegates`. Read `metasystem session handoff --status --root <installation> --json` until this session's completed boundary carries that handoff nonce; then repeat the same handoff command to confirm durable binding. The steward persists that binding before ending your session. End your turn once the binding is durable. If capture or binding fails, remain alive, report the exact error, repair its cause and retry the same handoff. Otherwise end only when blocked on a person's answer you asked with `metasystem question ask`, or nothing is claimable.\n"
+	}
 	return fmt.Sprintf("# Seat session\n\n"+
-		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork it and land it; stop when nothing is claimable.\n\n"+
-		"The steward started you for goal %s: %s.\n\n"+
-		"Nobody sits at this terminal: your process ends when your turn ends, and every background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `metasystem work wait` (bounded by --timeout) and carry on. End your turn only when the goal is handed in to land, it is blocked on a person's answer you asked with `metasystem question ask`, or nothing is claimable.\n",
-		selection.Goal, selection.Goal, why) + strings.Join(facts, "")
+		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork one unit through its completed outcome and collected, published read%s.\n\n"+
+		"The steward started you for goal %s: %s.\n\n",
+		selection.Goal, boundary, selection.Goal, why) + handoff + strings.Join(facts, "")
 }
 
 func startSeatWithDependencies(repoRoot string, selection SeatSelection, dependencies seatDependencies) (SeatRecord, error) {
@@ -563,6 +583,21 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return SeatRecord{}, fmt.Errorf("no seat starts for %s: its grounds changed since the tick: %s", selection.Goal, d.Reason)
 		}
 	}
+	ev, err := LoadEvidence(EvidencePath(repoRoot))
+	if err != nil {
+		return SeatRecord{}, err
+	}
+	class := ""
+	if len(records) > 0 || ev.AbnormalCount > 0 {
+		var reason string
+		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now())
+		if err != nil {
+			return SeatRecord{}, err
+		}
+		if reason != "" {
+			return SeatRecord{}, errors.New(reason)
+		}
+	}
 	raw := make([]byte, 8)
 	if _, err := rand.Read(raw); err != nil {
 		return SeatRecord{}, err
@@ -584,11 +619,16 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	for _, id := range goals {
 		tips[id] = read[id]
 	}
+	policy, policyErr := config.ResolvePolicy(config.GetParams{Key: "seat.driver", ConfPath: filepath.Join(repoRoot, "metasystem.conf")})
+	automaticHandoff := policyErr != nil || policy.Value != "person"
 	facts := seatFacts(repoRoot, selection, machine, tips, dependencies)
+	if policyErr != nil {
+		facts += "Seat driver unavailable: " + policyErr.Error() + "\n"
+	}
 	if tipsError != nil {
 		facts += "Goal tips unavailable; metasystem work status " + selection.Goal + "\n"
 	}
-	if err := writeExclusiveBrief(briefPath, seatBrief(selection, facts)); err != nil {
+	if err := writeExclusiveBrief(briefPath, seatBrief(selection, automaticHandoff, facts)); err != nil {
 		return SeatRecord{}, err
 	}
 	record := SeatRecord{Schema: 1, LaunchID: id, Goal: selection.Goal, Held: selection.Held, ApprovalOpid: selection.ApprovalOpid,
@@ -604,6 +644,13 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	}
 	// The steward's own root holds both its run state and the installation's
 	// settings, so it names that root as the seat's installation too.
+	ev.CurrentSeat, ev.CurrentContinuation = id, ""
+	if class != "" {
+		ev = reserveAbnormalRestart(ev, dependencies.Now(), class, "")
+	}
+	if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+		return record, err
+	}
 	if err := dependencies.Launcher.StartSeat(SeatLaunchSpec{ID: id, StateRoot: repoRoot, Installation: repoRoot, Brief: briefPath, Tag: nonce}); err != nil {
 		record.ReapedAt = dependencies.Now().UTC().Format(time.RFC3339)
 		record.Outcome, record.Evidence = SeatStartFailed, err.Error()
@@ -611,6 +658,12 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return record, fmt.Errorf("seat launch %s did not start (%v), and its record could not close: %w", id, err, writeErr)
 		}
 		return record, fmt.Errorf("seat launch %s did not start: %w", id, err)
+	}
+	if class != "" {
+		ev.Abnormal[ev.AbnormalCount-1].Pending = false
+		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+			return record, err
+		}
 	}
 	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce: "seat-start-" + id,
@@ -624,24 +677,25 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 
 // seatDependencies are the seat ladder's readers and its launcher.
 type seatDependencies struct {
-	Launcher SeatLauncher
-	Units    func(root, goalID string) ([]UnitStage, error)
-	Main     func(root string) (string, error)
-	Contains func(root, sha, main string) (bool, error)
-	Lane     func(root, goalID string) (plain.Entry, bool, error)
-	Jobs     func(root string) ([]map[string]any, error)
-	Refusals func() ([]launch.Refusal, error)
-	Launches func() ([]launch.Record, error)
-	Threads  func() ([]board.Thread, error)
-	Project  func(root string, now time.Time) (goal.Projection, error)
-	Tips     func(root string, goals []string) (map[string]string, error)
-	Machine  func(root string) (string, error)
-	Gate     func(root string) (goal.GateSettings, error)
-	Fence    func(root string) (closed bool, reason string, err error)
-	Classify func(path string) (class, evidence string, ok bool)
-	Now      func() time.Time
-	Sleep    func(time.Duration)
-	Log      func(string)
+	ProviderHome string
+	Launcher     SeatLauncher
+	Units        func(root, goalID string) ([]UnitStage, error)
+	Main         func(root string) (string, error)
+	Contains     func(root, sha, main string) (bool, error)
+	Lane         func(root, goalID string) (plain.Entry, bool, error)
+	Jobs         func(root string) ([]map[string]any, error)
+	Refusals     func() ([]launch.Refusal, error)
+	Launches     func() ([]launch.Record, error)
+	Threads      func() ([]board.Thread, error)
+	Project      func(root string, now time.Time) (goal.Projection, error)
+	Tips         func(root string, goals []string) (map[string]string, error)
+	Machine      func(root string) (string, error)
+	Gate         func(root string) (goal.GateSettings, error)
+	Fence        func(root string) (closed bool, reason string, err error)
+	Classify     func(path string) (class, evidence string, ok bool)
+	Now          func() time.Time
+	Sleep        func(time.Duration)
+	Log          func(string)
 	// OpenQuestions reads the open channel questions; a goal one names is
 	// left to the person, like a goal waiting on a human word. Nil reads none.
 	OpenQuestions func(root string) []goal.OpenQuestion
@@ -655,25 +709,40 @@ type seatDependencies struct {
 // census, the outage mark and the ladder over the ledger read now. The
 // records are the seat records the start just read, none unreaped.
 func seatRecheck(repoRoot string, cfg TickConfig, census WorkerCensus, openWork openWorkDependencies, records []SeatRecord) (Decision, *SeatSelection, error) {
-	_, providerOutage := standingProviderOutage(repoRoot, cfg.now(), nil)
-	d, selection, _, err := decideNowWithSeat(repoRoot, cfg, census, Evidence{}, providerOutage, openWork, &seatTickState{Records: records})
+	providerCheck := func(runtime string, err error) (outage.Mark, bool) {
+		if err != nil {
+			return providerOutageFrom(outage.Providers{}, err, runtime, cfg.now(), nil)
+		}
+		return standingProviderOutage(runtime, cfg.now(), nil, cfg.ProviderHome)
+	}
+	d, selection, _, err := decideNowWithSeat(repoRoot, cfg, census, &Evidence{}, providerCheck, openWork, &seatTickState{Records: records})
 	return d, selection, err
 }
 
-func standingProviderOutage(repoRoot string, now time.Time, log func(string)) (outage.Mark, bool) {
-	mark, standing := outage.StandingAt(repoRoot, now)
-	if defect := mark.ResetDefect(now); defect != "" {
-		if log != nil {
-			log(defect)
-		} else {
-			fmt.Fprintln(os.Stderr, defect)
-		}
+func standingProviderOutage(runtime string, now time.Time, log func(string), homes ...string) (outage.Mark, bool) {
+	home := ""
+	if len(homes) > 0 {
+		home = homes[0]
 	}
-	return mark, standing
+	providers, err := outage.ReadProviders(home)
+	return providerOutageFrom(providers, err, runtime, now, log)
+}
+
+// providerOutageFrom selects a dependent provider from one host observation.
+func providerOutageFrom(providers outage.Providers, err error, runtime string, now time.Time, log func(string)) (outage.Mark, bool) {
+	if err != nil {
+		if log != nil {
+			log("provider state is unknown: " + err.Error())
+		} else {
+			fmt.Fprintln(os.Stderr, "provider state is unknown:", err)
+		}
+		return outage.Mark{LastClass: "unknown", LastDetail: "provider state is unknown: " + err.Error()}, true
+	}
+	return providers.Standing(runtime, now)
 }
 
 // UnitStage is one unit as the public status reader describes it.
-type UnitStage struct{ Unit, Stage, Line, At string }
+type UnitStage struct{ Unit, Stage, Line, At, Run string }
 
 type seatFactLine struct {
 	text, omitted string
@@ -886,7 +955,7 @@ func seatFacts(root string, selection SeatSelection, machine string, tips map[st
 				messageLines = append(messageLines, seatFactLine{text, "messages with " + counterpart, at})
 			}
 		}
-		facts.WriteString("Messages:\n" + seatList(messageLines, retained, 12000-len(seatBrief(selection))-facts.Len()-128, inbox))
+		facts.WriteString("Messages:\n" + seatList(messageLines, retained, 12000-len(seatBrief(selection, true))-facts.Len()-128, inbox))
 	}
 	return facts.String()
 }
@@ -945,4 +1014,17 @@ func seatJSONLines(path string) ([]map[string]any, error) {
 		}
 		records = append(records, record)
 	}
+}
+
+// providerWaitReason distinguishes provider failures from unavailable host evidence.
+func providerWaitReason(runtime string, now time.Time, homes ...string) string {
+	mark, _ := standingProviderOutage(runtime, now, nil, homes...)
+	return providerMarkWaitReason(mark)
+}
+
+func providerMarkWaitReason(mark outage.Mark) string {
+	if mark.LastClass == "unknown" {
+		return mark.LastDetail
+	}
+	return "the model provider is overloaded or limited; holding the start until the provider recovers"
 }

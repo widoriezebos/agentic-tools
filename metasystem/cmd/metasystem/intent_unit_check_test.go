@@ -303,7 +303,7 @@ func TestIntentDeclaredCheckManualRepairRequiresPerson(t *testing.T) {
 				}
 			}
 			plan, err := launch.ReadUnitPlan(resultData(t, result)["plan"].(string))
-			if err != nil || plan.Check.Base != plan.Base || plan.Check.SelectedBy != "Wido" || plan.Check.Reason != row.reason || plan.Check.Audits != "true" {
+			if err != nil || plan.Check.Base != plan.Base || plan.Check.SelectedBy != "Wido" || plan.Check.Reason != row.reason || plan.Check.Audits != "true" || len(plan.FullArgv) != 0 {
 				t.Fatalf("manual check provenance missing: %v", err)
 			}
 		})

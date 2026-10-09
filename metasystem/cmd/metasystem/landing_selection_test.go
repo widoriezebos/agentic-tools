@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -72,7 +73,12 @@ func newSelectionBed(t *testing.T) *selectionBed {
 		},
 	}
 	// The observer reads fresh trunk inputs through the same fixture boundary (lane-reads-its-policies.md:145).
-	b.keeper = newLandingAgentKeeper(b.lane, b.home, landingAgent{proofEffects: seams, now: func() time.Time { return b.now }, machine: func(string) (string, error) { return "fixture", b.machineErr }})
+	b.keeper = newLandingAgentKeeper(b.lane, b.home, newTestLandingAgent(func(agent *landingAgent) {
+		agent.settings = func(string) (launch.Settings, error) { return launch.DefaultSettings(), nil }
+		agent.proofEffects = seams
+		agent.now = func() time.Time { return b.now }
+		agent.machine = func(string) (string, error) { return "fixture", b.machineErr }
+	}))
 	b.keeper.Running = func() (string, bool, error) { return "", false, nil }
 	b.keeper.Fingerprint = nil
 	b.keeper.Holds[0] = func(string) (string, error) { return plain.ProofHold(b.lane, seams) }
@@ -344,15 +350,19 @@ func TestLandingSelectionEffectFailureAndQuestionRecovery(t *testing.T) {
 				}
 				b.machineErr = nil
 				b.now = b.now.Add(time.Minute)
+				startProofs := 0
 				b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-					t.Fatal("question recovery repeated the person's act")
-					return humanauthority.Proof{}, errors.New("unexpected proof")
+					startProofs++
+					return humanauthority.Proof{}, errors.New("the retry is an agent act")
 				}
 				if code, out := b.run(t, b.lane, "landing", "run"); code != 0 {
 					t.Fatalf("public question recovery: %d %s", code, out)
 				}
 				if b.batch(t).Person.CheckedAt != selected.Person.CheckedAt {
 					t.Fatal("question recovery repeated the act")
+				}
+				if startProofs != 1 {
+					t.Fatalf("question recovery checked its invocation's actor %d times, want once", startProofs)
 				}
 			}
 			current, err := channel.ReadQuestion(b.lane, q.ID)

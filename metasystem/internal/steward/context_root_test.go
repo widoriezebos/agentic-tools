@@ -20,7 +20,7 @@ func TestContextBudgetOfAMissingRootIsAnError(t *testing.T) {
 	if err == nil || err.Error() != want {
 		t.Fatalf("missing root err = %v, want %q", err, want)
 	}
-	if role.Status != HealthUnknown || role.Reason != want || role.Remedy != "" {
+	if role.Status != HealthUnknown || role.Reason != want || role.Remedy != "a person repairs the unreadable evidence the reason above names, then runs metasystem system check" {
 		t.Fatalf("missing root role = %+v", role)
 	}
 }

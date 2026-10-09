@@ -1089,6 +1089,17 @@ func handoffWithGoalReader(stateRoot string, caller HandoffCaller, record Handof
 		return HandoffResult{}, err
 	}
 	defer arbitration.Release()
+	caller, err = admitHandoffCaller(root, caller)
+	if err != nil {
+		return HandoffResult{}, err
+	}
+	if _, _, intent, err := unitHandoff(root, caller.Session); err != nil {
+		return HandoffResult{}, err
+	} else if intent != nil && intent.Handoff.MainId == caller.MainId && intent.Handoff.Predecessor == caller.Ref {
+		binding := intent.Handoff
+		return HandoffResult{Nonce: intent.Nonce, StatePath: binding.StatePath, StateDigest: binding.StateDigest,
+			IntentPath: filepath.Join(intentsDir(root), intent.Nonce+".json"), Intent: *intent}, nil
+	}
 	capture, err := captureHandoffWithReader(root, caller, record, now, readGoal)
 	if err != nil {
 		return HandoffResult{}, err

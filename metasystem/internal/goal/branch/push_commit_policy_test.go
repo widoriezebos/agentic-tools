@@ -400,7 +400,7 @@ func (c *followonClient) runCommit(op, tip, base, unit, path, body string, amend
 		if base != a.local && base != policyBase {
 			calls = append(calls, "unstaged")
 		}
-		calls = append(calls, "patch", "open", "apply", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref")
+		calls = append(calls, "patch", "open", "apply", "head-scratch", "head-scratch", "commit", "head-scratch", "range-new", "claim", "close", "index", "unstaged", "changes", "headref")
 	}
 	if away {
 		calls = append(calls, "worktrees")

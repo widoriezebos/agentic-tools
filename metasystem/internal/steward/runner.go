@@ -31,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
@@ -159,6 +160,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 }
 
 type runnerLoopDependencies struct {
+	ProviderHome   string
 	Self           identity.Prober
 	ExamineLedger  func(string, time.Time) error
 	Tick           func(string, TickConfig, WorkerCensus) (TickResult, error)
@@ -209,6 +211,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		return fmt.Errorf("the steward tick interval must be positive")
 	}
 	top := canonicalPath(repoRoot)
+	if cfg.ProviderHome != "" {
+		deps.ProviderHome = cfg.ProviderHome
+	}
 	if deps.Resumable == nil {
 		deps.Resumable = ResumableIntent
 	}
@@ -365,6 +370,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			}
 			continue
 		}
+		if cfg.CompletedBoundary != nil {
+			if boundaryErr := cfg.CompletedBoundary(top, cfg.now()); boundaryErr != nil {
+				fmt.Fprintf(os.Stderr, "unit boundary: %v\n", boundaryErr)
+			}
+		}
 		if cfg.RearmAtBoundary != nil {
 			if replaced, refreshErr := cfg.RearmAtBoundary(); refreshErr != nil {
 				if logErr := NoteRearmFailure(top, refreshErr, deps.Now()); logErr != nil {
@@ -451,7 +461,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 const laneRecheck = lane.AgentTick
 
 // limitProbe is the cadence for checking whether a provider limit ended.
-const limitProbe = 2 * time.Minute
+const limitProbe = outage.ProbeInterval
 
 // laneKeeping is the runner's side of the landing lane's keeper: its step,
 // the line last printed, and whether the lane waits on a proof, a running
@@ -494,7 +504,11 @@ func (k *laneKeeping) run() {
 func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies, drain *runnerDrain, keeping *laneKeeping, probe func(string) (bool, error)) bool {
 	start := deps.Now()
 	deadline, recheck, probeAt := start.Add(interval), start.Add(laneRecheck), start.Add(limitProbe)
-	mark, standing := outage.StandingAt(top, start)
+	settings, settingsErr := launch.ResolveSettings(filepath.Join(top, "metasystem.conf"), nil)
+	mark, standing := standingProviderOutage(settings.SeatRuntime, start, nil, deps.ProviderHome)
+	if settingsErr != nil {
+		mark, standing = providerOutageFrom(outage.Providers{}, settingsErr, settings.SeatRuntime, start, nil)
+	}
 	watching := probe != nil && standing && mark.LastClass == outage.ProviderLimit
 	probeLine := ""
 	for deps.Now().Before(deadline) {
@@ -507,7 +521,7 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 			}
 			if !helm.Active(top).Active {
 				if watching {
-					mark, standing = outage.StandingAt(top, deps.Now())
+					mark, standing = standingProviderOutage(settings.SeatRuntime, deps.Now(), nil, deps.ProviderHome)
 					if !standing || mark.LastClass != outage.ProviderLimit {
 						return false
 					}
@@ -518,7 +532,7 @@ func runnerWait(top string, interval time.Duration, deps runnerLoopDependencies,
 		if watching && !deps.Now().Before(probeAt) && !helm.Active(top).Active {
 			answered, err := probe(top)
 			if answered {
-				if err := outage.Clear(top); err != nil {
+				if _, err := outage.Observe(deps.ProviderHome, mark.Runtime, mark.Model, "", "", "steward-probe", deps.Now()); err != nil {
 					fmt.Fprintf(os.Stderr, "the provider answered, but its outage mark could not be cleared\n%v\n", err)
 				} else {
 					fmt.Fprintln(os.Stderr, "the provider answered; its outage mark is cleared")

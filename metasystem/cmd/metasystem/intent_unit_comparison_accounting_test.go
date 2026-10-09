@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -17,19 +19,27 @@ import (
 
 type comparisonAccountingStarter struct {
 	unitProofStarter
-	dropSupervisor bool
+	holdComparison bool
 }
 
 func (s *comparisonAccountingStarter) StartSupervisor(id, state string) (identity.Ref, error) {
 	ref, err := s.unitProofStarter.StartSupervisor(id, state)
 	record, readErr := s.bed.manager.Store.Read(id)
-	if err == nil && readErr == nil && record.Kind == "proof" && s.dropSupervisor {
-		s.bed.manager.Supervisor = nil
+	if err == nil && readErr == nil && record.Kind == "proof" && s.holdComparison {
+		s.holdComparison = false
+		blocker := map[string]any{"runtime": "local", "jobId": "comparison-setup", "operationId": "comparison-setup", "goalId": record.Goal,
+			"goalRevision": s.bed.goalFile(record.Goal).Claimed.Revision, "status": "pending-setup", "phase": "setup", "capMin": 120,
+			"createdAt": s.bed.manager.Now().UTC().Format(time.RFC3339Nano)}
+		body, marshalErr := json.Marshal(blocker)
+		if marshalErr != nil {
+			return ref, marshalErr
+		}
+		err = os.WriteFile(filepath.Join(s.bed.root(), "artifacts", "agents", "jobs", "comparison-setup.json"), body, 0600)
 	}
 	return ref, err
 }
 
-func comparisonAccountingBed(t *testing.T, limit uint64, dropSupervisor bool) (*workBed, []string) {
+func comparisonAccountingBed(t *testing.T, limit uint64) (*workBed, []string) {
 	t.Helper()
 	bed := newWorkBedWith(t, func(file *goal.GoalFile) {
 		workApprovedBox(file)
@@ -37,7 +47,7 @@ func comparisonAccountingBed(t *testing.T, limit uint64, dropSupervisor bool) (*
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
 	bed.manager.Adapters["plain-exec"] = launch.PlainExec{}
-	bed.manager.Supervisor = &comparisonAccountingStarter{unitProofStarter: unitProofStarter{bed: bed, t: t}, dropSupervisor: dropSupervisor}
+	bed.manager.Supervisor = unitProofStarter{bed: bed, t: t}
 	bed.workOwnersHook = func(owners *intentWorkOwners) {
 		units := owners.units
 		owners.units = func(layout stateroot.Layout) *launch.UnitRunner {
@@ -60,12 +70,35 @@ func comparisonAccountingBed(t *testing.T, limit uint64, dropSupervisor bool) (*
 
 func TestIntentUnitComparisonStartRefusalSettlesReservation(t *testing.T) {
 	t.Parallel()
-	bed, args := comparisonAccountingBed(t, 240, true)
-	code, result, _ := bed.work(args...)
+	bed, args := comparisonAccountingBed(t, 240)
+	bed.manager.Supervisor = &comparisonAccountingStarter{unitProofStarter: unitProofStarter{bed: bed, t: t}, holdComparison: true}
+	code, held, _ := bed.work(args...)
+	if code != 1 || held.Next == nil || !strings.Contains(resultWords(held), "BUDGET_REFUSED") {
+		t.Fatalf("comparison did not hold before its start: %d %+v", code, held)
+	}
+	run := resultData(t, held)["run"].(string)
+	path := filepath.Join(bed.root(), "artifacts", "agents", "jobs", "comparison-setup.json")
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var blocker map[string]any
+	if err := json.Unmarshal(body, &blocker); err != nil {
+		t.Fatal(err)
+	}
+	blocker["status"], blocker["refusalClass"] = "failed", "setup"
+	body, err = json.Marshal(blocker)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, body, 0600); err != nil {
+		t.Fatal(err)
+	}
+	bed.manager.Supervisor = nil
+	code, result, _ := bed.work("work", "build", "run:"+run)
 	if code != 1 {
 		t.Fatalf("comparison start refusal: %d %+v", code, result)
 	}
-	run := resultData(t, result)["run"].(string)
 	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
 	if err != nil {
 		t.Fatal(err)
@@ -98,7 +131,7 @@ func TestIntentUnitComparisonStartRefusalSettlesReservation(t *testing.T) {
 
 func TestIntentUnitComparisonBudgetHoldResumesAfterPersonBudget(t *testing.T) {
 	t.Parallel()
-	bed, args := comparisonAccountingBed(t, 121, false)
+	bed, args := comparisonAccountingBed(t, 121)
 	code, refused, _ := bed.work(args...)
 	if code != 1 || refused.Next == nil || !slices.Equal(refused.Next.Argv, []string{"metasystem", "goal", "budget", bed.id, "BOX"}) || !strings.Contains(resultWords(refused), "BUDGET_REFUSED") {
 		t.Fatalf("comparison budget refusal became a correction: %d %+v", code, refused)

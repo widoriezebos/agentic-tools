@@ -25,7 +25,7 @@ import (
 // GoalFile is one parsed goal file.
 type GoalFile struct {
 	Id       string
-	State    string // queued | approved | claimed | parked | done | abandoned
+	State    string // queued | approved | claimed | parked | split | done | abandoned
 	Priority uint8  // 1 is highest, 3 is lowest; zero with Sequence zero is unranked
 	Sequence uint64 // one-based position within Priority; zero with Priority zero is unranked
 	Tier     uint8  // 1 | 2 | 3; zero is tolerated during the classification migration
@@ -67,13 +67,20 @@ type GoalFile struct {
 	Approved *ApprovalRecord
 	// Sliced is the irreversible pre-reservation boundary. Once present, the
 	// parent can only advance through Split.
-	Sliced   *SlicedRecord
-	Ratified *SplitRatification
-	Claimed  *ClaimRecord
+	Sliced    *SlicedRecord
+	Split     *SplitRecord `json:"Split,omitempty"`
+	SplitFrom string       `json:"SplitFrom,omitempty"`
+	Ratified  *SplitRatification
+	Claimed   *ClaimRecord
+	// FirstClaimAt survives release and membership changes: a goal that held
+	// a claim has started work even when it no longer has an accounting episode.
+	FirstClaimAt string `json:"FirstClaimAt,omitempty"`
 	// Obligation is the human-governed recurrence bound to this goal's
 	// existing budget. Its revision changes only by replacing the whole record.
 	Obligation        *GovernedObligation
 	ReviewObligations []ReviewObligation
+	UnitDrops         []UnitDrop       `json:"UnitDrops,omitempty"`
+	ScopeExclusions   []ScopeExclusion `json:"ScopeExclusions,omitempty"`
 	AcceptedRisks     []AcceptedRiskRecord
 	ReadItems         []ReadItem
 	// StopCapability is the narrow authority minted with one claimed
@@ -328,6 +335,15 @@ type SlicedRecord struct {
 	At       string
 }
 
+// SplitRecord keeps reciprocal lineage and the state a person can restore.
+// A split parent stays live until a person explicitly concludes it.
+type SplitRecord struct {
+	Children    []string    `json:"children"`
+	Transaction string      `json:"transaction"`
+	PriorState  string      `json:"priorState"`
+	PriorParked *ParkRecord `json:"priorParked,omitempty"`
+}
+
 // HandedOver keeps the source custody needed to return a batch member.
 // Its zero value means the claim has not been handed over.
 type HandedOver struct {
@@ -534,13 +550,14 @@ const (
 	StateApproved  = "approved"
 	StateClaimed   = "claimed"
 	StateParked    = "parked"
+	StateSplit     = "split"
 	StateDone      = "done"
 	StateAbandoned = "abandoned"
 )
 
 func validState(s string) bool {
 	switch s {
-	case StateQueued, StateApproved, StateClaimed, StateParked, StateDone, StateAbandoned:
+	case StateQueued, StateApproved, StateClaimed, StateParked, StateSplit, StateDone, StateAbandoned:
 		return true
 	}
 	return false
@@ -612,7 +629,7 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 		addProblem("missing goal heading")
 	}
 	if !validState(f.State) {
-		addProblem("state %q is not one of queued|approved|claimed|parked|done|abandoned", f.State)
+		addProblem("state %q is not one of queued|approved|claimed|parked|split|done|abandoned", f.State)
 	}
 	if f.Revision == 0 {
 		addProblem("missing or zero Revision")
@@ -663,6 +680,9 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	if f.Claimed != nil && !validStamp(f.Claimed.At) {
 		addProblem("Claimed at=%q is not an RFC3339 timestamp", f.Claimed.At)
 	}
+	if f.FirstClaimAt != "" && !validStamp(f.FirstClaimAt) {
+		addProblem("FirstClaimAt %q is not an RFC3339 timestamp", f.FirstClaimAt)
+	}
 	if f.Claimed != nil && f.Claimed.By != "" && !f.PersonalReservation() {
 		addProblem("Claimed by has no matching person-origin history")
 	}
@@ -711,6 +731,34 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 			addProblem("Sliced is incomplete")
 		}
 	}
+	if f.State == StateSplit && f.Split == nil {
+		addProblem("split without a Split record")
+	}
+	if f.Split != nil {
+		split := f.Split
+		if len(split.Children) == 0 || !validOpidShape(split.Transaction) {
+			addProblem("Split requires children and a valid transaction identity")
+		}
+		if split.PriorState != StateQueued && split.PriorState != StateApproved && split.PriorState != StateClaimed && split.PriorState != StateParked {
+			addProblem("Split has invalid prior state %q", split.PriorState)
+		}
+		if (split.PriorState == StateParked) != (split.PriorParked != nil) {
+			addProblem("Split prior park must agree with its prior state")
+		}
+		if park := split.PriorParked; park != nil && (!validStamp(park.At) || park.By == "" || strings.TrimSpace(park.Because) == "") {
+			addProblem("Split prior park is incomplete")
+		}
+		seen := map[string]bool{}
+		for _, child := range split.Children {
+			if !validId(child) || child == f.Id || seen[child] {
+				addProblem("Split child %q is invalid, repeated, or the parent itself", child)
+			}
+			seen[child] = true
+		}
+	}
+	if f.SplitFrom != "" && (!validId(f.SplitFrom) || f.SplitFrom == f.Id) {
+		addProblem("SplitFrom must name a different goal")
+	}
 	if f.Ratified != nil {
 		if err := f.Ratified.Validate(); err != nil {
 			addProblem("Ratified: %v", err)
@@ -718,8 +766,27 @@ func ParseFile(data []byte) (*GoalFile, []Problem) {
 	}
 	if f.Obligation != nil {
 		riskRaise := f.Claimed != nil && f.Claimed.Revision > 0 && f.Claimed.Revision <= uint64(len(f.History)) && misclassificationRaises(f.History[f.Claimed.Revision-1].Reason)
-		if err := validateGovernedObligation(f.Obligation, f.Revision, f.Claimed, f.Budget, riskRaise); err != nil {
+		claim := f.Claimed
+		if claim == nil && f.Split != nil && f.Episode != nil {
+			claim = &ClaimRecord{Revision: f.Obligation.BudgetRevision}
+		}
+		if err := validateGovernedObligation(f.Obligation, f.Revision, claim, f.Budget, riskRaise); err != nil {
 			addProblem("%v", err)
+		}
+	}
+	dropOperations := map[string]bool{}
+	for _, drop := range f.UnitDrops {
+		if dropOperations[drop.Operation] {
+			addProblem("UnitDrop repeats operation %s", drop.Operation)
+		}
+		dropOperations[drop.Operation] = true
+		if err := drop.validate(); err != nil {
+			addProblem("UnitDrop: %v", err)
+		}
+	}
+	for _, exclusion := range f.ScopeExclusions {
+		if err := f.validateScope(exclusion); err != nil {
+			addProblem("ScopeExclusion: %v", err)
 		}
 	}
 	for _, obligation := range f.ReviewObligations {
@@ -1100,13 +1167,27 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		addProblem("field without colon: %q", field)
 		return
 	}
-	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" && key != "ReadItem" {
+	if seen[key] && key != "ReviewObligation" && key != "AcceptedRisk" && key != "ReadItem" && key != "UnitDrop" && key != "ScopeExclusion" {
 		addProblem("duplicate field %q — the last write would silently win", key)
 		return
 	}
 	seen[key] = true
 	value = strings.TrimSpace(value)
 	switch key {
+	case "ScopeExclusion":
+		var exclusion ScopeExclusion
+		if err := json.Unmarshal([]byte(value), &exclusion); err != nil {
+			addProblem("ScopeExclusion: %v", err)
+			return
+		}
+		f.ScopeExclusions = append(f.ScopeExclusions, exclusion)
+	case "UnitDrop":
+		var drop UnitDrop
+		if err := json.Unmarshal([]byte(value), &drop); err != nil {
+			addProblem("UnitDrop: %v", err)
+			return
+		}
+		f.UnitDrops = append(f.UnitDrops, drop)
 	case "Priority":
 		n, err := parseUnsignedDecimal(value, 8)
 		if err != nil || n < 1 || n > 3 {
@@ -1247,6 +1328,8 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 		f.Conclude = value
 	case "OpenedAt":
 		f.OpenedAt = value
+	case "FirstClaimAt":
+		f.FirstClaimAt = value
 	case "Revision":
 		n, err := strconv.ParseUint(value, 10, 64)
 		if err != nil {
@@ -1358,6 +1441,13 @@ func parseFileField(f *GoalFile, field string, seen map[string]bool, addProblem 
 			return
 		}
 		f.Sliced = &SlicedRecord{Machine: rec["machine"], Lineage: rec["lineage"], Revision: revision, At: rec["at"]}
+	case "Split":
+		f.Split = &SplitRecord{}
+		if err := json.Unmarshal([]byte(value), f.Split); err != nil {
+			addProblem("Split: %v", err)
+		}
+	case "SplitFrom":
+		f.SplitFrom = value
 	case "Ratified":
 		rec, err := parseKVRecord(value, []string{"tier", "draftSha256"}, []string{"by", "mainId", "claimEpoch"}, "")
 		if err != nil {
@@ -1840,6 +1930,9 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- Concluded: %s\n", f.Conclude)
 	}
 	fmt.Fprintf(&b, "- OpenedAt: %s\n", f.OpenedAt)
+	if f.FirstClaimAt != "" {
+		fmt.Fprintf(&b, "- FirstClaimAt: %s\n", f.FirstClaimAt)
+	}
 	fmt.Fprintf(&b, "- Revision: %d\n", f.Revision)
 	if len(f.Blocked) > 0 {
 		fmt.Fprintf(&b, "- BlockedBy: %s\n", strings.Join(f.Blocked, ", "))
@@ -1882,6 +1975,13 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- Sliced: machine=%s lineage=%s revision=%d at=%s\n",
 			f.Sliced.Machine, f.Sliced.Lineage, f.Sliced.Revision, f.Sliced.At)
 	}
+	if f.Split != nil {
+		data, _ := json.Marshal(f.Split)
+		fmt.Fprintf(&b, "- Split: %s\n", data)
+	}
+	if f.SplitFrom != "" {
+		fmt.Fprintf(&b, "- SplitFrom: %s\n", f.SplitFrom)
+	}
 	if f.Ratified != nil {
 		fmt.Fprintf(&b, "- Ratified: tier=%s", f.Ratified.Tier)
 		if f.Ratified.Tier == RatifierHuman {
@@ -1915,6 +2015,14 @@ func RenderFile(f *GoalFile) []byte {
 		fmt.Fprintf(&b, "- ObligationTriggers: valueJudgment=%s reversibility=%s severeHarm=%s unfamiliarApproach=%s testDiscrimination=%s correlatedAssumptionRisk=%s authorityScopeChange=%s destructiveReach=%s\n",
 			o.Triggers.ValueJudgment, o.Triggers.Reversibility, o.Triggers.SevereHarm, o.Triggers.UnfamiliarApproach,
 			o.Triggers.TestDiscrimination, o.Triggers.CorrelatedAssumptionRisk, o.Triggers.AuthorityScopeChange, o.Triggers.DestructiveReach)
+	}
+	for _, drop := range f.UnitDrops {
+		data, _ := json.Marshal(drop)
+		fmt.Fprintf(&b, "- UnitDrop: %s\n", data)
+	}
+	for _, exclusion := range f.ScopeExclusions {
+		data, _ := json.Marshal(exclusion)
+		fmt.Fprintf(&b, "- ScopeExclusion: %s\n", data)
 	}
 	for _, obligation := range f.ReviewObligations {
 		fmt.Fprintf(&b, "- ReviewObligation: finding=%s chain=%s artifact=%s test=%s", obligation.Finding, obligation.Chain, strconv.Quote(obligation.Artifact), strconv.Quote(obligation.Test))

@@ -4,7 +4,40 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
+
+func TestFleetProgressResetsPausedAgePreservingRestartHistory(t *testing.T) {
+	t.Parallel()
+	for _, marks := range []Marks{{HeadOid: "new-head", OpidDigest: "old-claims"}, {HeadOid: "old-head", OpidDigest: "new-claims"}} {
+		t.Run(marks.HeadOid+"-"+marks.OpidDigest, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			now := time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)
+			before := Evidence{
+				Marks:             Marks{HeadOid: "old-head", OpidDigest: "old-claims"},
+				TicksSinceAdvance: 5, DryRevivals: 2, Degraded: 1,
+				SampledAt: now.Format(time.RFC3339Nano), Age: 4 * time.Minute,
+				AbnormalCount: 1, CurrentSeat: "seat-1", CurrentContinuation: "revival-1",
+			}
+			before.Abnormal[0] = AbnormalRestart{At: now.Add(-time.Minute), Class: "failed", Marks: before.Marks, Nonce: "revival-1", Pending: true}
+			if err := SaveEvidence(root, EvidencePath(root), before); err != nil {
+				t.Fatal(err)
+			}
+			retained, err := LoadEvidence(EvidencePath(root))
+			if err != nil {
+				t.Fatal(err)
+			}
+			advanced := Observe(retained, marks)
+			if advanced.Marks != marks || advanced.Age != 0 || advanced.SampledAt != "" || advanced.TicksSinceAdvance != 0 || advanced.DryRevivals != 0 || advanced.Degraded != 0 {
+				t.Fatalf("retained progress must reset its patience clocks: %+v", advanced)
+			}
+			if advanced.Abnormal != before.Abnormal || advanced.AbnormalCount != before.AbnormalCount || advanced.CurrentSeat != before.CurrentSeat || advanced.CurrentContinuation != before.CurrentContinuation {
+				t.Fatalf("progress must preserve restart reservations and current launches: %+v", advanced)
+			}
+		})
+	}
+}
 
 func TestIdenticalEvidenceStaysOld(t *testing.T) {
 	m := Marks{HeadOid: "aaa", OpidDigest: "d1"}

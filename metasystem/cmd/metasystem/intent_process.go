@@ -36,6 +36,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -275,6 +276,14 @@ func processIntentCommands() []intentCommand {
 			maxArgs:  0,
 			examples: []string{"metasystem machine list", "metasystem machine list --verbose", "metasystem machine list --refresh"},
 			run:      runIntentMachineList,
+		},
+		{
+			object: "machine", action: "clear-provider", audience: "human", summary: "clear one provider's advisory outage hold",
+			usage:    []string{"metasystem machine clear-provider PROVIDER"},
+			details:  []string{"A person's act at their enrolled terminal. This closes only that provider's wait; it does not claim the provider answered. An absent mark is success."},
+			maxArgs:  1,
+			examples: []string{"metasystem machine clear-provider anthropic"},
+			run:      runIntentMachineClearProvider,
 		},
 		{
 			object: "machine", action: "stop", audience: "human", summary: "stop MetaSystem on one machine of this computer, or on every one",
@@ -1267,7 +1276,20 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("unit run %s could not be read", ref.qualified()),
 				retry: "try again", Details: []string{"unit run: " + err.Error()}})
 		}
-		lines := []string{}
+		_ = inv.selectRoot()
+		var now time.Time
+		if runner.Manager.Now != nil {
+			now = runner.Manager.Now()
+		} else {
+			now, err = inv.owners.commandNow(inv.layout.InstallationRoot.Path())
+			if err != nil {
+				return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the status clock could not be read",
+					next: inv.publicArgv("work", "status", ref.qualified()), nextReason: "reads the run again", Details: []string{err.Error()}})
+			}
+			runner.Manager = &launch.Manager{Store: runner.Manager.Store, Now: func() time.Time { return now }}
+		}
+		report := readProcessReport(inv.stateRoot, inv.layout.InstallationRoot.Path(), record.Goal, record.Unit, runner, now, nil)
+		lines := report.Lines
 		for _, round := range record.Rounds {
 			line := fmt.Sprintf("round %d: %s", round.Number, round.Outcome)
 			if round.Cause != "" {
@@ -1276,7 +1298,7 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			lines = append(lines, line)
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
-			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record}})
+			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record, "processReport": report}})
 	}
 	job := ref.job
 	targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}
@@ -1571,7 +1593,7 @@ func runIntentAsk(inv *intentInvocation) int {
 			Summary: "a carry question needs --wants in its exact shape, so nothing was asked",
 			next:    inv.retryWith([]string{"wants"}, "--wants", "carry workspace=SHA goal="+id+" past=NAME"), nextReason: "the workspace's 40-character commit, and who it carries past"})
 	}
-	q, warnings, code, err := inv.owners.processes.ask(inv.stateRoot, in)
+	q, warnings, code, err := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), in)
 	if err != nil && q.ID == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: max(code, 1), Targets: askTargets, Summary: err.Error() + "; nothing was asked", text: warnings,
 			retry: "once the cause above is fixed"})
@@ -1703,8 +1725,12 @@ func runIntentDoctor(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 2, Summary: "the test clock of this installation cannot be read, so nothing was checked",
 			retry: "once the test clock file is fixed or removed", Details: []string{"fixture clock: " + err.Error()}})
 	}
-	verdict := owners.health(scope.Root.Path(), scope.Installation.Path(), now)
+	verdict := owners.health(scope.Root.Path(), scope.Installation.Path(), now).WithAlertRemedies(scope.Root.Path())
 	stopped, _, _ := stopfence.Closed(scope.Installation.Path())
+	audience := "human"
+	if class, err := owners.process.classify(scope.Root.Path(), scope.Installation.Path(), int64(os.Getppid())); err == nil && (class.Class == lease.ClassMain || class.Class == lease.ClassDelegate) {
+		audience = "agent"
+	}
 	lines, remedies := []string{}, []map[string]any{}
 	var first []string
 	var problems []doctorProblem
@@ -1713,7 +1739,7 @@ func runIntentDoctor(inv *intentInvocation) int {
 			continue
 		}
 		line := fmt.Sprintf("%s %s: %s", role.Role, role.Status, role.Reason)
-		public, instruction := publicHealthRemedy(role, stopped)
+		public, instruction := publicHealthRemedy(role, stopped, audience)
 		problem := doctorProblem{role: string(role.Role), status: string(role.Status), reason: role.Reason, fix: public, instruction: instruction}
 		switch {
 		case len(public) > 0:
@@ -1979,81 +2005,17 @@ func checkCovenantEvidence(root string) ([]string, *evidencetable.Report, bool) 
 // publicHealthRemedy is the public command, or the plain instruction, for
 // one unhealthy role, chosen from the role and its typed remedy facts; the
 // owner's own remedy is kept only as diagnostic data.
-func publicHealthRemedy(role steward.RoleVerdict, stopped bool) ([]string, string) {
-	if len(role.RemedyFacts) > 0 {
-		return publicRemedyForFact(role.RemedyFacts[0])
+func publicHealthRemedy(role steward.RoleVerdict, stopped bool, audiences ...string) ([]string, string) {
+	audience := "human"
+	if len(audiences) > 0 {
+		audience = audiences[0]
 	}
-	switch role.Role {
-	case steward.RoleStewardRunner, steward.RoleSupervisionOwner, steward.RoleRepoWatcher, steward.RoleNarratorFreshness,
-		steward.RoleCensusFreshness, steward.RoleHookFreshness, steward.RoleSessionMain:
-		if stopped {
-			return []string{"metasystem", "system", "start"}, ""
-		}
-		return []string{"metasystem", "session", "start"}, ""
-	case steward.RoleLedgerAttention:
-		if role.FailureEscalation == steward.AutoHealEnded {
-			return strings.Fields(role.Remedy), ""
-		}
-		return []string{"metasystem", "goal", "list"}, ""
-	case steward.RoleNonterminalJobs:
-		return nil, "metasystem work stop j2:JOB records a job whose process is gone as ended; metasystem status lists the work"
-	case steward.RoleRetroDebt:
-		return nil, "run the retro and record its receipt"
-	case steward.RoleTrunkRed:
-		if strings.Contains(role.Reason, "cadence") {
-			// The landing lane records the deep validation cadence when its
-			// validation is due.
-			return []string{"metasystem", "system", "start"}, ""
-		}
-		return []string{"metasystem", "incident", "list"}, ""
-	case steward.RoleCapabilitySnapshots:
-		if role.FailureEscalation == steward.AutoHealEnded {
-			return nil, role.Remedy
-		}
-		return nil, "the steward tick probes each runtime on PATH with a missing or stale snapshot and records a fresh snapshot"
-	case steward.RoleSpendFence:
-		return nil, "a person raises the spend ceiling in metasystem.conf"
-	case steward.RoleProofAttempts:
-		return []string{"metasystem", "test", "run"}, ""
-	case steward.RoleDisk:
-		if strings.HasPrefix(role.Remedy, "metasystem ") {
-			return strings.Fields(role.Remedy), ""
-		}
-		return []string{"metasystem", "disk", "show"}, ""
-	}
-	return nil, reasonRemedy(role.Reason)
+	return role.PublicRemedy(audience, healthRemedyAudience, stopped)
 }
 
-// reasonRemedy is the instruction for a role whose reason is its own
-// remedy: the command it names, or the change it names.
-func reasonRemedy(reason string) string {
-	if strings.Contains(reason, "run ") {
-		return "run the command the reason above names"
-	}
-	return "a person changes what the reason above names; no metasystem command does it"
-}
-
-// publicRemedyForFact is the public act for one typed cause.
-func publicRemedyForFact(fact steward.RemedyFact) ([]string, string) {
-	switch fact.Cause {
-	case steward.CauseBudgetMissing, steward.CauseBudgetMalformed:
-		return []string{"metasystem", "goal", "budget", fact.Goal, "BOX"}, ""
-	case steward.CauseBudgetBreach:
-		return []string{"metasystem", "goal", "budget", fact.Goal, "BOX"}, "goal " + fact.Goal + " is over its box; its stop runs by itself, and a person may give it a larger box"
-	case steward.CauseBudgetUnknown:
-		return nil, "a person repairs record " + fact.Record + ", which cannot be read as a budget, then runs metasystem system check"
-	case steward.CauseBreachStopOpen:
-		return nil, "goal " + fact.Goal + "'s budget stop " + fact.Stop + " completes by itself on the steward's next pass; nothing needs doing"
-	case steward.CauseBreachStopUnresolved:
-		return nil, "a person inspects budget stop " + fact.Stop + " of goal " + fact.Goal + " and its job records; new work stays fenced until it resolves"
-	case steward.CauseEpochMismatch:
-		return []string{"metasystem", "session", "start"}, ""
-	case steward.CauseForeignLineage:
-		return []string{"metasystem", "goal", "release", fact.Goal}, "the session that claimed goal " + fact.Goal + " releases it, or a person takes it over: metasystem goal claim " + fact.Goal + " --take-over --reason TEXT"
-	case steward.CauseStopCapabilityMissing:
-		return nil, "a person repairs goal " + fact.Goal + "'s record (" + fact.Record + "), which has no stop capability"
-	}
-	return nil, "a person changes what the reason above names; no metasystem command does it"
+func healthRemedyAudience(object, action string) string {
+	command, _ := findIntentAction(object, action)
+	return command.audience
 }
 
 // runUIVerb runs the interface's status or restart through its lifecycle

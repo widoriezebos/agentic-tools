@@ -84,7 +84,8 @@ type ObserveParams struct {
 // declarations can change without changing the approach the build followed.
 type DesignRecord struct {
 	designgate.Design
-	BodySHA256 string `json:"bodySHA256"`
+	BodySHA256 string                 `json:"bodySHA256"`
+	Size       *designgate.SizeResult `json:"size,omitempty"`
 }
 
 type DesignFacts struct {
@@ -128,6 +129,16 @@ func ObserveDesign(f DesignFacts, person bool) DesignObservation {
 				r.Warning = [2]string{fmt.Sprintf("warning: goal %s was built against %s, which changed after the build started", f.Goal, current.Name), "metasystem design review " + current.Path}
 			}
 			if r.WouldRefuse {
+				break
+			}
+		}
+	}
+	if r.Verdict == "ok" && !f.Allowed {
+		for _, recorded := range f.Recorded {
+			if recorded.Size != nil && recorded.Size.Verdict != "ok" {
+				r.Size = recorded.Size
+				r.Verdict, r.WouldRefuse = recorded.Size.Verdict, recorded.Size.WouldRefuse
+				r.Warning = [2]string{recorded.Size.Warning[0], "metasystem goal allow " + f.Goal + " build-without-design --reason TEXT"}
 				break
 			}
 		}

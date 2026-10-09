@@ -40,7 +40,7 @@ const (
 type Goal struct {
 	ID     string // the ledger's id, which is the file's own name
 	Title  string // the goal file's heading, or the id where it has none
-	State  string // queued | approved | claimed | parked | done | abandoned
+	State  string // queued | approved | claimed | parked | split | done | abandoned
 	Intent string // the goal's own Intent line
 	// Concluded is the goal's own Concluded line, in its own words, and empty
 	// while the goal is still worked under. A goal that concluded as done and
@@ -49,6 +49,8 @@ type Goal struct {
 	Concluded string
 	Where     string // GoalLive or GoalConcluded
 	Path      string // checkout-relative
+	Split     *goal.SplitRecord
+	SplitFrom string
 	// Sliced is the goal's own `- Sliced:` line, where it carries one.
 	Sliced *Slicing
 }
@@ -65,7 +67,7 @@ type Slicing struct {
 
 // LiveStates are the states a goal is still worked under, in the order the
 // ledger lives them. A goal in none of them is concluded.
-var LiveStates = []string{goal.StateQueued, goal.StateApproved, goal.StateClaimed, goal.StateParked}
+var LiveStates = []string{goal.StateQueued, goal.StateApproved, goal.StateClaimed, goal.StateParked, goal.StateSplit}
 
 // Live reports whether this goal is still worked under.
 func (g Goal) Live() bool { return contains(LiveStates, g.State) }
@@ -115,6 +117,8 @@ func (p *Project) goalsIn(relative, where string) []Goal {
 			ID:        id,
 			Title:     title,
 			State:     read.State,
+			Split:     read.Split,
+			SplitFrom: read.SplitFrom,
 			Intent:    normalizeSpace(read.Intent),
 			Concluded: normalizeSpace(read.Conclude),
 			Where:     where,

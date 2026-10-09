@@ -262,9 +262,9 @@ func checkSeatPresence(repoRoot string, now time.Time) RoleVerdict {
 	verdict := seat.Health(state, readable, err, now, seatPresenceWindow(repoRoot))
 	switch verdict.Status {
 	case seat.StatusDead:
-		return roleDead(RoleSeatPresence, verdict.Reason, verdict.Remedy)
+		return roleDead(RoleSeatPresence, verdict.Reason, "", RemedyFact{Cause: CauseUnavailable})
 	case seat.StatusUnknown:
-		return roleUnknown(RoleSeatPresence, verdict.Reason, verdict.Remedy)
+		return roleUnknown(RoleSeatPresence, verdict.Reason, "", RemedyFact{Cause: CauseUnreadable})
 	default:
 		return roleAlive(RoleSeatPresence, verdict.Reason)
 	}

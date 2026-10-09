@@ -38,6 +38,12 @@ func landedManifestWithGit(repo, commit string, gitRead landingGitReader) (goalI
 		switch key {
 		case "Goal-Unit":
 			unitValues = append(unitValues, value)
+		case "Goal-Drop":
+			fields := strings.Fields(value)
+			if len(fields) != 2 || !validName(fields[1]) {
+				return "", "", "", nil, fmt.Errorf("the landed drop has a damaged operation")
+			}
+			unitValues = append(unitValues, fields[0])
 		case "Goal-Digest":
 			digestValues = append(digestValues, value)
 		case "Goal-Fold":

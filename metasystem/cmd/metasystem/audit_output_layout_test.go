@@ -98,6 +98,7 @@ func layoutCases() []layoutCase {
 		{name: "status", args: []string{"status"}, bed: statusLayoutBed(true)},
 		{name: "status-verbose", args: []string{"status", "--verbose"}, bed: statusLayoutBed(true)},
 		{name: "status-quiet", args: []string{"status"}, bed: statusLayoutBed(false)},
+		{name: "goal-status-refusal", args: []string{"goal", "status"}, bed: helpLayoutBed},
 		{name: "status-refusal", args: []string{"status", "goal-a", "goal-b"}, bed: statusLayoutBed(false)},
 		{name: "grant-list", args: []string{"grant", "list"}, bed: grantListLayoutBed(1, false)},
 		{name: "grant-list-all", args: []string{"grant", "list", "--all"}, bed: grantListLayoutBed(2, true)},

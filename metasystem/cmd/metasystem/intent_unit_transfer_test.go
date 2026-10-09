@@ -121,15 +121,13 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	b := newStopWorkBed(t)
 	b.lineage = b.goalFile(b.id).Claimed.Lineage
 	b.manager.Supervisor = &stopReadStarter{bed: b, reads: [][]readsubject.Finding{{stopFinding("regression", "source.go"), stopFinding("weakened-test", "source_test.go"), stopFinding("incomplete-item", "requirement.go")}, {stopFinding("regression", "newfile.go"), stopFinding("missing-reader", "reader.go")}}}
-	page, data := designGatePage(t, b, "- Critique: closed at round 1 on 0 material findings (reader)")
 	declared := "stopped"
 	if !required {
 		declared = "required-other"
 	}
-	data = append(data, []byte("\n| Unit | Purpose | Estimated changed lines |\n| --- | --- | --- |\n| "+declared+" | Complete the required behavior | 5 |\n")...)
-	if err := os.WriteFile(page, data, 0600); err != nil {
-		t.Fatal(err)
-	}
+	page, data := designGatePage(t, b, "- Critique: closed at round 1 on 0 material findings (reader)",
+		"\n| Unit | Purpose | Estimated changed lines |\n| --- | --- | --- |\n| "+declared+" | Complete the required behavior | 5 |\n")
+	processCommittedPage(t, b, page, data)
 	run, before, _ := stopBuild(t, b, "auto")
 	if before.Rounds[0].Stop == nil || before.Rounds[0].Stop.Decision != "continue" {
 		t.Fatalf("source did not admit its first correction: %+v", before)
@@ -175,7 +173,7 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	if err := os.WriteFile(filepath.Join(roundDir, "return.md"), []byte("VERDICT: REVISE material=2\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	readerRecord := map[string]any{"jobId": critic, "role": "code-critic", "status": "completed", "round": 1, "goalId": b.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-read-model", "findingRegister": []any{}, "reviews": "commit:" + commit, "findingRegisterRound": 0, "reviewRoundLimit": 6, "criticRoundsConsumed": 0,
+	readerRecord := map[string]any{"runtime": "local", "jobId": critic, "role": "code-critic", "status": "completed", "round": 1, "goalId": b.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-read-model", "findingRegister": []any{}, "reviews": "commit:" + commit, "findingRegisterRound": 0, "reviewRoundLimit": 6, "criticRoundsConsumed": 0,
 		"operationId": "fixture-critic:" + critic, "goalRevision": b.goalFile(b.id).Claimed.Revision, "capMin": 1,
 		"startedAt": b.manager.Now().UTC().Format(time.RFC3339Nano), "endedAt": b.manager.Now().UTC().Format(time.RFC3339Nano),
 		"instanceTag": "fixture-critic-" + critic, "pid": int64(20), "pgid": int64(20), "pidStartedAt": int64(400)}
@@ -197,7 +195,9 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	if len(entries) != 2 {
 		t.Fatalf("source examination did not enter register: %+v", admitted)
 	}
+	hook := b.workOwnersHook
 	b.workOwnersHook = func(o *intentWorkOwners) {
+		hook(o)
 		o.criticDeath = dispatchcore.CustodyDeathDependencies{
 			Reader: &criticCustodyReader{dead: true}, Processes: identity.FixedProcessTable{},
 			MatchesTag: func([]string, string) bool { return true },
@@ -478,7 +478,7 @@ func TestIntentExtraStoppedUnitRetainsCodeAndAsksWorkingAct(t *testing.T) {
 		t.Fatalf("unrequired findings have no executable asks: %+v %v", questions, damaged)
 	}
 	for _, question := range questions {
-		if question.UnitStop == nil || !strings.Contains(question.UnitStop.Needs, "work revise "+b.id+" --work stopped") || !strings.Contains(question.UnitStop.Needs, "--brief FILE") || !strings.Contains(question.UnitStop.Needs, "--reason TEXT") || !strings.Contains(question.UnitStop.Needs, "--by NAME") || !slices.Contains(question.UnitStop.AcceptableActs, "work-revise") {
+		if question.UnitStop == nil || !strings.Contains(question.UnitStop.Needs, "work review "+b.id+" --work stopped") || !strings.Contains(question.UnitStop.Needs, "--dispositions") || !slices.Contains(question.UnitStop.AcceptableActs, "work-drop") || !slices.Contains(question.UnitStop.AcceptableActs, "work-revise") {
 			t.Fatalf("finding ask has no existing matching act: %+v", question)
 		}
 		owners.processes.question = channel.ReadQuestion
@@ -505,8 +505,9 @@ func TestIntentExtraStoppedUnitRetainsCodeAndAsksWorkingAct(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(before.Rounds[1].Directory, "stop-dispositions.md")
+	owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return "", fmt.Errorf("branch endpoint unavailable") }
 	code, dropped := transferPublic(t, b, owners, "work", "review", b.id, "--work", "stopped", "--dispositions", path)
-	if code != 1 || dropped.Outcome != intentRefused || !strings.Contains(dropped.Summary, "Drop effects are not built yet") || !strings.Contains(dropped.Summary, "review-drops-and-design-convergence") {
+	if code != 1 || dropped.Outcome != intentInProgress || dropped.Summary != "the drop remains pending" || !slices.Equal(dropped.Details, []string{"branch endpoint unavailable"}) {
 		t.Fatalf("extra drop silently changed retained work: %d %+v", code, dropped)
 	}
 	after, err := fixture.runner.Status(fixture.run)

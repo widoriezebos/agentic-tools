@@ -10,9 +10,9 @@ exit 0
     }
   ],
   "outcome": "unchanged",
-  "summary": "launch.read.model already holds that value in /Users/wido/GitHub/agentic-tools-m1e/metasystem.conf.local; nothing was changed",
+  "summary": "launch.read.model already holds that value in /Users/wido/GitHub/agentic-tools-m1e/settings.conf.local; nothing was changed",
   "data": {
-    "file": "/Users/wido/GitHub/agentic-tools-m1e/metasystem.conf.local",
+    "file": "/Users/wido/GitHub/agentic-tools-m1e/settings.conf.local",
     "key": "launch.read.model",
     "value": "fixture-model"
   }

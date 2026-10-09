@@ -21,8 +21,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostcapacity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -34,8 +36,32 @@ import (
 // does not run: only that computer's own system stop reaches its processes.
 const codeMachineOnAnotherComputer = "MACHINE_ON_ANOTHER_COMPUTER"
 
+func runIntentMachineClearProvider(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "name the provider to clear",
+			next: inv.publicArgv("machine", "clear-provider", "PROVIDER")})
+	}
+	if problem := inv.resolveLayout(); problem != nil {
+		return inv.render(*problem)
+	}
+	if problem := inv.directPersonProof("machine clear-provider"); problem != nil {
+		return inv.render(*problem)
+	}
+	owners := inv.landing()
+	home, err := owners.home()
+	if err == nil {
+		err = outage.Clear(home, inv.input.args[0], owners.now())
+	}
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the provider hold could not be cleared: " + err.Error(),
+			next: inv.typedArgv(), nextReason: "retry after repairing the reported state"})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "provider " + outage.Provider(inv.input.args[0]) + ": the advisory hold is clear; this does not claim provider success"})
+}
+
 // machineOwners are the machine verbs' seams; the zero value is production.
 type machineOwners struct {
+	capacitySources hostcapacity.Sources
 	// registryPath is the host registry of armed checkouts.
 	registryPath func() (string, error)
 	// nickname is a checkout's machine nickname, false when it has none.
@@ -102,9 +128,10 @@ type machineLaunch struct {
 
 // hostReading is every machine of this computer the sources name.
 type hostReading struct {
-	Machines        []*hostMachine `json:"machines"`
-	Registry        string         `json:"registry"`
-	RegistryProblem string         `json:"registryProblem,omitempty"`
+	Capacity        hostcapacity.Snapshot `json:"capacity"`
+	Machines        []*hostMachine        `json:"machines"`
+	Registry        string                `json:"registry"`
+	RegistryProblem string                `json:"registryProblem,omitempty"`
 	// OtherRegistered counts the host registry's checkouts that are not
 	// machines: no nickname, or neither armed nor in the fleet.
 	OtherRegistered int `json:"otherRegistered"`
@@ -255,6 +282,16 @@ func (inv *intentInvocation) discoverHostMachines(fleet map[string]bool) hostRea
 // in the checkout they work in, and the lane's landing agent.
 func (inv *intentInvocation) readHostMachines(fleet map[string]bool) hostReading {
 	reading := inv.discoverHostMachines(fleet)
+	home, homeErr := inv.landing().home()
+	sources := inv.machineSeams().capacitySources
+	if homeErr != nil {
+		sources.Registration = func(string) (lane.Record, bool, error) { return lane.Record{}, false, homeErr }
+	}
+	manager := &launch.Manager{}
+	if inv.owners.processes.launches != nil {
+		manager = inv.owners.processes.launches()
+	}
+	reading.Capacity = hostcapacity.Read(home, manager, inv.landing().now(), sources)
 	notOurs := map[int64]bool{}
 	for _, machine := range reading.Machines {
 		if machine.State == "unknown" {
@@ -494,7 +531,8 @@ func machineListSummary(reading hostReading, others int) string {
 // machineListDetail is --verbose: each machine of this computer, the
 // machines on other computers, and what is not ours.
 func machineListDetail(reading hostReading, others []otherComputerMachine, env textui.Env) []string {
-	lines := []string{"on this computer:"}
+	lines := append([]string{"host capacity:"}, hostCapacityLines(reading.Capacity, env)...)
+	lines = append(lines, "on this computer:")
 	for _, machine := range reading.Machines {
 		header := fmt.Sprintf("%s  %s  %s", machine.Name, machine.State, machine.Checkout)
 		var roles []string
@@ -640,6 +678,10 @@ func (inv *intentInvocation) machineListView(report seat.Report, reading hostRea
 		}
 		page.Headline(textui.Count(count, "machine on this computer", "machines on this computer"), states,
 			textui.Count(jobs, "job running", "jobs running"), elsewhere)
+		capacity := page.Section("Host capacity", "")
+		for _, line := range hostCapacityLines(reading.Capacity, env) {
+			capacity.Text(line)
+		}
 
 		local := map[string]*hostMachine{}
 		for _, machine := range reading.Machines {
@@ -1128,4 +1170,33 @@ func (inv *intentInvocation) machineStopTargetArgs() []string {
 		return []string{"--all"}
 	}
 	return inv.input.args
+}
+
+// hostCapacityLines renders the observation with local times and readable paths.
+func hostCapacityLines(s hostcapacity.Snapshot, env textui.Env) []string {
+	at, _ := time.Parse(time.RFC3339Nano, s.At)
+	lines := []string{"observed " + env.Time(at)}
+	if s.Load.Available {
+		lines = append(lines, fmt.Sprintf("load %.2f / %.2f / %.2f (1 / 5 / 15 minutes); %d cores", s.Load.Load1m, s.Load.Load5m, s.Load.Load15m, s.Load.Cores))
+	} else {
+		lines = append(lines, fmt.Sprintf("load unknown; %d cores", s.Load.Cores))
+	}
+	if s.OwnerKnown {
+		lines = append(lines, "registered owner "+env.Path(s.Owner.Root), fmt.Sprintf("installation %s; registration %d", env.Path(s.Owner.Install), s.Owner.CustodyEpoch))
+	} else {
+		lines = append(lines, "registered owner unknown; automatic capacity is unknown")
+	}
+	if s.BuildsKnown {
+		lines = append(lines, plural(len(s.Builds), "active build", "active builds")+" across "+plural(len(s.Goals), "goal", "goals"))
+	} else {
+		lines = append(lines, "active builds unknown")
+	}
+	for _, build := range s.Builds {
+		lines = append(lines, fmt.Sprintf("build %s: %s; goal %s; checkout %s", build.ID, build.State, build.Goal, env.Path(build.WorkingDirectory)))
+	}
+	lines = append(lines, "providers: "+s.Providers.Detail)
+	for _, mark := range s.Providers.Marks {
+		lines = append(lines, fmt.Sprintf("provider %s: %s; runtime %s; model %s; reset %s", mark.Provider, mark.LastClass, mark.Runtime, mark.Model, lane.LocalText(mark.ResetAt)))
+	}
+	return append(lines, s.Errors...)
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"os"
 	"path/filepath"
 	"strings"
@@ -11,8 +12,15 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
+
+// newTestLandingAgent keeps production defaults and replaces only the
+// dependencies whose behavior a fixture controls.
+func newTestLandingAgent(configure func(*landingAgent)) landingAgent {
+	agent := newLandingAgent()
+	configure(&agent)
+	return agent
+}
 
 // recordingSupervisor stands in for the detached launch supervisor: it
 // records the child as started, so Start returns with a running record.
@@ -45,9 +53,8 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 		}
 	}
 	files := map[string]string{
-		filepath.Join(module, "go.mod"):                "module fixture\n",
-		filepath.Join(module, "metasystem.conf"):       "# overrides only\n",
-		filepath.Join(module, "metasystem.conf.local"): "launch.landing.runtime=claude\nlaunch.landing.model=claude-roster-model\nlaunch.landing.effort=high\n",
+		filepath.Join(module, "go.mod"):          "module fixture\n",
+		filepath.Join(module, "metasystem.conf"): "launch.landing.runtime=claude\nlaunch.landing.model=claude-roster-model\nlaunch.landing.effort=high\n",
 	}
 	for path, content := range files {
 		if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -61,8 +68,11 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude", ProjectsRoot: filepath.Join(base, "projects")}},
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return home, nil })}
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
-		nonce: func() (string, error) { return "0011223344556677", nil }}
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.manager = func() *launch.Manager { return manager }
+		agent.now = func() time.Time { return now }
+		agent.nonce = func() (string, error) { return "0011223344556677", nil }
+	})
 	keeper := newLandingAgentKeeper(module, home, agent)
 	keeper.Sources.Reasons = func(string) ([]string, error) { return []string{"queued"}, nil }
 
@@ -98,7 +108,10 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 	// Another checkout's steward keeps no agent.
 	other := newLandingAgentKeeper(t.TempDir(), home, agent)
 	other.Sources.Reasons = keeper.Sources.Reasons
-	if _, err := store.Update(record.ID, func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
+	if _, err := store.Update(record.ID, func(r *launch.Record) error {
+		r.State, r.FinishedAt = launch.Completed, now.Format(time.RFC3339Nano)
+		return nil
+	}); err != nil {
 		t.Fatal(err)
 	}
 	other.Step()
@@ -113,7 +126,11 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 		t.Fatal(err)
 	}
 	line = keeper.Step()
-	if _, standing := outage.StandingAt(module, now); !standing || !strings.Contains(line, "provider") {
+	providers, err := outage.ReadProviders(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, standing := providers.Standing("claude", now); !standing || !strings.Contains(line, "provider") {
 		t.Fatalf("after a provider-limited end: line %q, outage standing %t; want the start held", line, standing)
 	}
 	if records, _ := store.List(); len(records) != 1 {

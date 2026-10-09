@@ -651,10 +651,10 @@ func TestLandingBatchAdapterNoSelectionForEmptyQueueOrTrunk(t *testing.T) {
 func TestLandingKeeperEmptyQueueNeedsNoSelectionPolicy(t *testing.T) {
 	t.Parallel()
 	b, _, _, starts, _ := landingRestartBed(t)
-	keeper := newLandingAgentKeeper(b.landingA, b.home, landingAgent{
-		now:     func() time.Time { return laneTestNow },
-		machine: func(string) (string, error) { return "lane-fixture", nil },
-	})
+	keeper := newLandingAgentKeeper(b.landingA, b.home, newTestLandingAgent(func(agent *landingAgent) {
+		agent.now = func() time.Time { return laneTestNow }
+		agent.machine = func(string) (string, error) { return "lane-fixture", nil }
+	}))
 	keeper.Running = func() (string, bool, error) { return "", false, nil }
 	keeper.Fingerprint = nil
 	keeper.Holds, keeper.Reap = nil, nil

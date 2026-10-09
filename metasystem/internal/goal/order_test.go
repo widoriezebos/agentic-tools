@@ -511,32 +511,28 @@ func TestPriorityLifecycle(t *testing.T) {
 		publishGoalFixturesForEndpoint(t, endpoint, files...)
 		members := testMembers("parent")
 		request := verbReqFor(endpoint, "01J5X000000000000000000S30", "mac-a")
-		result, err := Split(request, "parent", members, mainRatification("parent", members), nil)
+		result, err := splitAsPerson(t, request, "parent", members)
 		if err != nil || result.Outcome != OutcomeConfirmed {
 			t.Fatalf("split ranked parent: %+v %v", result, err)
 		}
 		tree, _ := loadTreeFor(endpoint, result.Tip)
-		assertPriorityOrder(t, tree, []string{"a", "c", "dependent", "parent-one", "parent-two"})
-		assertPair(t, tree.Done["parent"], 1, 2)
-		assertPair(t, tree.Live["c"], 1, 2)
-		assertPair(t, tree.Live["dependent"], 1, 3)
+		assertPriorityOrder(t, tree, []string{"a", "parent", "c", "dependent", "parent-one", "parent-two"})
+		assertPair(t, tree.Live["parent"], 1, 2)
+		assertPair(t, tree.Live["c"], 1, 3)
+		assertPair(t, tree.Live["dependent"], 1, 4)
 		for _, id := range []string{"parent-one", "parent-two"} {
 			if member := tree.Live[id]; member == nil || member.Priority != 0 || member.Sequence != 0 {
 				t.Fatalf("split member %s inherited a rank: %+v", id, member)
 			}
 		}
 		dependent := tree.Live["dependent"]
-		if dependent.Revision != 2 || len(dependent.History) != 2 {
-			t.Fatalf("dependent blocker and rank changes were not one touch: %+v", dependent)
+		if dependent.Revision != 1 || len(dependent.History) != 1 || !reflect.DeepEqual(dependent.Blocked, []string{"parent"}) {
+			t.Fatalf("split changed the dependent's rank, history or parent hold: %+v", dependent)
 		}
-		last := dependent.History[len(dependent.History)-1]
-		if last.Verb != "split" || !strings.Contains(last.Reason, "from=1:4 to=1:3") {
-			t.Fatalf("dependent's split event lacks its merged compaction: %+v", last)
-		}
-		parent := tree.Done["parent"]
+		parent := tree.Live["parent"]
 		parentLast := parent.History[len(parent.History)-1]
-		if parent.State != StateDone || parentLast.Verb != "split" {
-			t.Fatalf("split did not archive the parent with its split event: %+v", parent)
+		if parent.State != StateSplit || parentLast.Verb != "split" || tree.Done["parent"] != nil {
+			t.Fatalf("split did not keep the ranked parent live with its split event: %+v", parent)
 		}
 		for _, event := range parent.History {
 			if event.Verb == "done" {
@@ -544,16 +540,8 @@ func TestPriorityLifecycle(t *testing.T) {
 			}
 		}
 		survivor := tree.Live["c"]
-		survivorLast := survivor.History[len(survivor.History)-1]
-		if survivorLast.Verb != "split" || !strings.Contains(survivorLast.Reason, "from=1:3 to=1:2") {
-			t.Fatalf("survivor lacks the split compaction event: %+v", survivorLast)
-		}
-		if survivorLast.Opid != parentLast.Opid || survivorLast.At != parentLast.At || survivorLast.Verb != parentLast.Verb ||
-			survivorLast.Actor != parentLast.Actor || !reflect.DeepEqual(survivorLast.Targets, parentLast.Targets) {
-			t.Fatalf("survivor and parent events describe different acts: survivor=%+v parent=%+v", survivorLast, parentLast)
-		}
-		if survivor.State == StateDone {
-			t.Fatalf("split compaction concluded the survivor: %+v", survivor)
+		if survivor.Revision != 1 || len(survivor.History) != 1 || survivor.State != StateQueued {
+			t.Fatalf("split touched or concluded the survivor: %+v", survivor)
 		}
 	})
 
@@ -569,17 +557,18 @@ func TestPriorityLifecycle(t *testing.T) {
 		}
 		members := testMembers("c")
 		splitRequest := verbReqFor(endpoint, "01J5X000000000000000000S50", "mac-a")
-		split, err := Split(splitRequest, "c", members, mainRatification("c", members), nil)
+		split, err := splitAsPerson(t, splitRequest, "c", members)
 		if err != nil || split.Outcome != OutcomeConfirmed {
 			t.Fatalf("split survivor: %+v %v", split, err)
 		}
 		tree, _ := loadTreeFor(endpoint, split.Tip)
-		assertPriorityOrder(t, tree, []string{"a", "c-one", "c-two"})
-		parent := tree.Done["c"]
+		assertPriorityOrder(t, tree, []string{"a", "c", "c-one", "c-two"})
+		assertPair(t, tree.Live["c"], 1, 2)
+		parent := tree.Live["c"]
 		last := parent.History[len(parent.History)-1]
 		beforeLast := parent.History[len(parent.History)-2]
-		if parent.State != StateDone || last.Verb != "split" || last.Opid != splitRequest.opid() {
-			t.Fatalf("split did not archive the survivor at the final event: %+v", parent)
+		if parent.State != StateSplit || tree.Done["c"] != nil || last.Verb != "split" || last.Opid != splitRequest.opid() {
+			t.Fatalf("split did not keep the survivor live at the final event: %+v", parent)
 		}
 		if beforeLast.Verb != "done" || beforeLast.Opid != doneRequest.opid() || !strings.Contains(beforeLast.Reason, "from=1:3 to=1:2") {
 			t.Fatalf("split parent lacks the earlier done compaction event: %+v", parent.History)

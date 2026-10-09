@@ -99,10 +99,10 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 		stopped bool
 		want    []string
 	}{
-		{steward.RoleStewardRunner, false, []string{"metasystem", "session", "start"}},
+		{steward.RoleStewardRunner, false, []string{"metasystem", "system", "start"}},
 		{steward.RoleSupervisionOwner, true, []string{"metasystem", "system", "start"}},
-		{steward.RoleTrunkRed, false, []string{"metasystem", "incident", "list"}},
-		{steward.RoleProofAttempts, false, []string{"metasystem", "test", "run"}},
+		{steward.RoleTrunkRed, false, nil},
+		{steward.RoleProofAttempts, false, nil},
 	} {
 		public, _ := publicHealthRemedy(steward.RoleVerdict{Role: row.role, Remedy: "metasystem session start --repo /x"}, row.stopped)
 		if !slices.Equal(public, row.want) {
@@ -116,8 +116,8 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 	}{
 		{steward.RemedyFact{Cause: steward.CauseBudgetMissing, Goal: "g1"}, []string{"metasystem", "goal", "budget", "g1", "BOX"}},
 		{steward.RemedyFact{Cause: steward.CauseBudgetBreach, Goal: "g1"}, []string{"metasystem", "goal", "budget", "g1", "BOX"}},
-		{steward.RemedyFact{Cause: steward.CauseEpochMismatch, Goal: "g1"}, []string{"metasystem", "session", "start"}},
-		{steward.RemedyFact{Cause: steward.CauseForeignLineage, Goal: "g1"}, []string{"metasystem", "goal", "release", "g1"}},
+		{steward.RemedyFact{Cause: steward.CauseEpochMismatch, Goal: "g1"}, nil},
+		{steward.RemedyFact{Cause: steward.CauseForeignLineage, Goal: "g1"}, []string{"metasystem", "goal", "claim", "g1", "--take-over", "--reason", "TEXT"}},
 		{steward.RemedyFact{Cause: steward.CauseBudgetUnknown, Record: "artifacts/agents/jobs/x.json"}, nil},
 		{steward.RemedyFact{Cause: steward.CauseBreachStopUnresolved, Goal: "g1", Stop: "s1"}, nil},
 	} {
@@ -126,10 +126,13 @@ func TestIntentCheckPublicRemedies(t *testing.T) {
 			t.Errorf("%+v = %v %q", row.fact, public, instruction)
 		}
 	}
-	for _, role := range []steward.HealthRole{steward.RoleCensusFreshness, steward.RoleHookFreshness, steward.RoleLedgerAttention} {
+	for _, role := range []steward.HealthRole{steward.RoleCensusFreshness, steward.RoleHookFreshness} {
 		if public, _ := publicHealthRemedy(steward.RoleVerdict{Role: role, Remedy: "x"}, false); len(public) == 0 || slices.Equal(public, []string{"metasystem", "system", "check"}) {
 			t.Errorf("%s sends check back to itself: %v", role, public)
 		}
+	}
+	if public, instruction := publicHealthRemedy(steward.RoleVerdict{Role: steward.RoleLedgerAttention}, false); len(public) != 0 || instruction != "nothing to do: the armed steward examines the move on its next tick" {
+		t.Errorf("ledger attention must name its automatic clearing act: %v %q", public, instruction)
 	}
 	for _, role := range []steward.HealthRole{steward.RoleNonterminalJobs, steward.RoleRetroDebt, steward.RoleSpendFence, "unlisted-role"} {
 		public, instruction := publicHealthRemedy(steward.RoleVerdict{Role: role, Remedy: `"/x/bin/metasystem" internal delegate reap`}, false)

@@ -10,6 +10,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 type seatBusyDeadProber struct{}
@@ -54,7 +56,9 @@ func TestSeatBusyPreventsIdleVerdict(t *testing.T) {
 	bed, units, work, options := seatBusyFixture(t)
 	seatBusyRun(t, units, bed.now, 41)
 	deps := seatBusyDependencies(bed, units, work, options)
-	d, selection, _, err := decideNowWithSeat(bed.root, TickConfig{Now: bed.now}, fakeCensus{workers: deadWorkers}, Evidence{}, false, deps, &seatTickState{})
+	d, selection, _, err := decideNowWithSeat(bed.root, TickConfig{Now: bed.now}, fakeCensus{workers: deadWorkers}, &Evidence{}, func(runtime string, err error) (outage.Mark, bool) {
+		return standingProviderOutage(runtime, bed.now, nil, testprovider.Home(bed.root))
+	}, deps, &seatTickState{})
 	if err != nil || d.Verdict != VerdictHealthy || d.Action != ActNone || selection != nil {
 		t.Fatalf("live unit declared idle: %+v %v", d, err)
 	}
@@ -70,7 +74,9 @@ func TestSeatBusyOrphanDoesNotHoldTheSeat(t *testing.T) {
 	seatBusyRun(t, units, bed.now.Add(-time.Hour), 99)
 	deps := seatBusyDependencies(bed, units, work, options)
 	for tick := 0; tick < 2; tick++ {
-		d, selection, _, err := decideNowWithSeat(bed.root, TickConfig{Now: bed.now}, fakeCensus{workers: deadWorkers}, Evidence{}, false, deps, &seatTickState{})
+		d, selection, _, err := decideNowWithSeat(bed.root, TickConfig{Now: bed.now}, fakeCensus{workers: deadWorkers}, &Evidence{}, func(runtime string, err error) (outage.Mark, bool) {
+			return standingProviderOutage(runtime, bed.now, nil, testprovider.Home(bed.root))
+		}, deps, &seatTickState{})
 		if err != nil || d.Verdict == VerdictDegraded || selection == nil {
 			t.Fatalf("an orphan prevented a seat launch: %+v %+v %v", d, selection, err)
 		}

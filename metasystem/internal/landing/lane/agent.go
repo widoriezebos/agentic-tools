@@ -73,7 +73,9 @@ type AgentKeeper struct {
 	// Holds are the conditions besides the pause that hold a start: each
 	// returns why it holds, empty when it does not; an error holds too,
 	// because unknown is never a go.
-	Holds []func(root string) (string, error)
+	Holds        []func(root string) (string, error)
+	ProviderHold func(root string) (string, error)
+	PersonAct    bool
 	// Running names a landing launch that has not ended on this computer.
 	Running func() (id string, running bool, err error)
 	// Start starts the landing agent in the lane checkout for the wake and
@@ -477,7 +479,11 @@ func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 // held reads the holds: the first that holds, or cannot be read, stops the
 // start.
 func (k AgentKeeper) held(root string) (string, bool) {
-	for _, hold := range k.Holds {
+	holds := k.Holds
+	if k.ProviderHold != nil && !(k.Explicit && k.PersonAct) {
+		holds = append(append([]func(string) (string, error){}, holds...), k.ProviderHold)
+	}
+	for _, hold := range holds {
 		reason, err := hold(root)
 		if err != nil {
 			return fmt.Sprintf("the landing agent at %s is not started: whether it may start can't be read (%v)", root, err), true

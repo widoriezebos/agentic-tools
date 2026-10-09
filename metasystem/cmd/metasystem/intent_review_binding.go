@@ -12,6 +12,7 @@ import (
 
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
@@ -34,6 +35,11 @@ type reviewWorkContext struct {
 	attempt    int
 	retain     func(launch.UnitSubject) error
 	subject    *launch.UnitSubject
+
+	dropRequirements string
+	dropRevision     uint64
+	dropScope        []goal.ScopeExclusion
+	review           *launch.UnitReview
 }
 
 // reviewBinding names one examination's return exactly.
@@ -131,12 +137,6 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 	returnPath := inv.returnPathAt(root, rootJob, round)
 	digest, _, readErr := reviewReturnDigest(returnPath)
 	findings, verdict, parseErr := readIntentFindings(returnPath)
-	decisions, _ := validate.Dispositions(inv.flagPath("dispositions"))
-	for _, decision := range decisions {
-		if strings.HasPrefix(decision, "dropped:") {
-			return inv.refuseReviewDrop(targets, work)
-		}
-	}
 	if err := retainWorkExamination(work, rootJob, newest, returnPath); err != nil {
 		return &intentResult{Outcome: intentFailed, code: 1, Summary: "the review decision could not be retained", Details: []string{err.Error()}, next: again}
 	}
@@ -145,7 +145,11 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 			return stopped
 		}
 	}
+	decisions, _ := validate.Dispositions(inv.flagPath("dispositions"))
 	for _, decision := range decisions {
+		if strings.HasPrefix(decision, "dropped:") {
+			return inv.refuseReviewDrop(targets, work)
+		}
 		if strings.HasPrefix(decision, "split:") {
 			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: "split: needs a recorded stop; nothing was retained or closed", next: again, nextReason: "decide the current findings without a split"}
 		}
@@ -319,7 +323,7 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 
 func (inv *intentInvocation) refuseReviewDrop(targets []intentTarget, work *reviewWorkContext) *intentResult {
 	return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-		Summary: "Drop effects are not built yet; goal review-drops-and-design-convergence owns them. Use work revise.",
+		Summary: "Required work and uncommitted changes cannot be dropped yet; use work revise.",
 		next:    inv.publicArgv("work", "revise", work.goal, "--work", work.work, "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), nextReason: "requests a reasoned correction while retaining this unit's code"}
 }
 
@@ -374,7 +378,7 @@ func (inv *intentInvocation) reviseDecisions(id string, work launch.NamedWork, a
 	for index := range work.Record.Subjects {
 		subject := work.Record.Subjects[index]
 		switch {
-		case subject.Round == bound.Attempt && subject.Commit == bound.Subject && subject.Examination == bound.Examination && subject.ExaminationRound == bound.Round:
+		case subject.Round == bound.Attempt && reviewSubjectIdentity(subject) == bound.Subject && subject.Examination == bound.Examination && subject.ExaminationRound == bound.Round:
 			examined = &subject
 		case subject.Round > bound.Attempt && subject.Examination != "":
 			return refuse("the decisions file answers attempt %d, but attempt %d has a later completed examination (%s) that supersedes it", bound.Attempt, subject.Round, subject.Examination)
@@ -385,6 +389,9 @@ func (inv *intentInvocation) reviseDecisions(id string, work launch.NamedWork, a
 	}
 	install := branch.CriticStore(inv.goalWorktreeInstallation(work.Record.Worktree), bound.Examination)
 	returnPath := inv.returnPathAt(install, bound.Examination, bound.Round)
+	if examined.Commit == "" {
+		returnPath = examined.ExaminationReturnPath
+	}
 	digest, findings, err := reviewReturnDigest(returnPath)
 	if err != nil || digest != bound.Return {
 		return refuse("the findings return of examination %s round %d is missing or no longer the one the decisions answer", bound.Examination, bound.Round)

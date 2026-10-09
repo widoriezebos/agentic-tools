@@ -148,7 +148,28 @@ type ReviewStop struct {
 	Budget   int    `json:"budget"`
 }
 
+// UnitDrop is the unit owner's retained effect phase, without scope authority.
+type UnitDrop struct {
+	Unit  string `json:"unit"`
+	Phase string `json:"phase"`
+}
+
+const PersonExcludedRequiredScope = "person excluded required scope"
+
+// Text distinguishes a pending effect from a durable drop and its question repair.
+func (drop UnitDrop) Text() string {
+	switch drop.Phase {
+	case "closed":
+		return "dropped"
+	case "recorded":
+		return "dropped; question repair pending"
+	default:
+		return "drop pending (" + drop.Phase + ")"
+	}
+}
+
 type Card struct {
+	Drop           *UnitDrop   `json:"drop,omitempty"`
 	Stop           *ReviewStop `json:"stop,omitempty"`
 	SchemaVersion  int         `json:"schemaVersion"`
 	Seat           Seat        `json:"seat"`

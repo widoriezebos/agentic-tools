@@ -15,7 +15,20 @@ import (
 // request reaches the same operation, commit and publication instead of
 // creating a second subject. A prior round's subject stays for diagnosis
 // after a later round amends it.
+type UnitDrop struct {
+	Decisions, Requirements, Phase string
+	Actor, Reason, Impact, At      string
+	Revision                       uint64
+	Covered                        []string
+	PatchDigest, StartingResult    string
+	ResultTree, CommitTree         string
+	PendingPatch                   []byte
+	ConflictTrees                  []string
+	Subject                        UnitSubject
+}
+
 type UnitSubject struct {
+	Drop         *UnitDrop           `json:"drop,omitempty"`
 	GateWorktree string              `json:"gateWorktree,omitempty"`
 	GateSnapshot *repositorySnapshot `json:"gateSnapshot,omitempty"`
 	GateLaunches []string            `json:"gateLaunches,omitempty"`
@@ -52,6 +65,7 @@ type UnitSubject struct {
 	ExaminationRound int64    `json:"examinationRound,omitempty"`
 	// ExaminationReturnPath is the return in the store the review resolved.
 	ExaminationReturnPath string `json:"examinationReturnPath,omitempty"`
+	PublishedAt           string `json:"publishedAt,omitempty"`
 }
 
 // UnitReview is a completed round as a committed review consumes it.
@@ -240,7 +254,13 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 			}
 			record.Rounds[len(record.Rounds)-1].Material = material
 		}
-		return runner.save(record)
+		if err := runner.save(record); err != nil {
+			return err
+		}
+		if subject.Drop != nil {
+			runner.publishJudgement(record, round.Number)
+		}
+		return nil
 	}
 	return bind(review, retain)
 }

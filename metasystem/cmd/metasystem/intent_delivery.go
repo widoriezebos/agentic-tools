@@ -426,8 +426,13 @@ func intentBranchStateWithDeadline(root, goalID string, deadline func(time.Durat
 	if err != nil {
 		return intentBranchState{}, err
 	}
+	branch.ApplyScope(&status, projection.Tree.Live[goalID])
 	state := intentBranchState{EndpointTip: endpointTip, BranchTip: branchTip, Status: status, ReadsWaived: goal.ReadsWaived(projection.Tree.Live[goalID])}
 	for _, unit := range status.Units[:status.Prefix] {
+		if unit.Drop != nil || unit.ReadState == "dropped" && unit.ScopeOperation != "" {
+			state.Sources = append(state.Sources, "dropped")
+			continue
+		}
 		if unit.ReadState == "read transferred" {
 			state.Sources = append(state.Sources, "transferred")
 			continue
@@ -1272,7 +1277,17 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	if inv.input.has("retry") {
 		args = append(args, "--retry", inv.input.text("retry"))
 	}
-	return inv.commitReview(targets, root, goalID, unit, args)
+	result := inv.commitReview(targets, root, goalID, unit, args)
+	if work := inv.workOfCommit(goalID, unit); work != nil && (result.Outcome == intentConfirmed || result.Outcome == intentUnchanged) {
+		err := inv.unitRunner().ReviewSubject(work.Run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+			return inv.retainPublication(review.Subject, result, retain)
+		})
+		if err != nil {
+			result.Outcome, result.code, result.Summary = intentPartial, 1, "the read is published, but its publication time could not be retained: "+err.Error()
+			result.next, result.nextReason = inv.sameCommand(), "rechecks the published read; a missing publication time stays unavailable"
+		}
+	}
+	return result
 }
 
 // goalBranchInstallation is the installation a goal's branch work runs in:
@@ -2283,11 +2298,17 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 		if err != nil {
 			return progress, err
 		}
-		declared, progress.NoEnd = units, false
+		body, err := os.ReadFile(page)
+		if err != nil {
+			return progress, err
+		}
+		declared, progress.NoEnd = slices.DeleteFunc(units, func(unit launch.UnitSize) bool {
+			return state.Status.Scope.ExcludesScope(unit.Name, launch.UnitResultDigest(string(body)))
+		}), false
 		break
 	}
 	for _, obligation := range state.Status.ReviewObligations {
-		if obligation.TargetUnit != "" && !slices.ContainsFunc(declared, func(row launch.UnitSize) bool { return row.Name == obligation.TargetUnit }) {
+		if obligation.TargetUnit != "" && !state.Status.Scope.ExcludesScope(obligation.TargetUnit, obligation.Chain+"/"+obligation.Finding) && !slices.ContainsFunc(declared, func(row launch.UnitSize) bool { return row.Name == obligation.TargetUnit }) {
 			declared = append(declared, launch.UnitSize{Name: obligation.TargetUnit})
 		}
 	}
@@ -2300,7 +2321,7 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 		}
 	}
 	clean := func(index int) bool {
-		return state.ReadsWaived || index < state.Status.Prefix || (state.Status.Units[index].ReadState == "read clean" || state.Status.Units[index].ReadState == "read transferred")
+		return state.ReadsWaived || index < state.Status.Prefix || state.Status.Units[index].Resolved()
 	}
 	covered := make([]bool, len(state.Status.Units))
 	for _, row := range declared {
@@ -2310,7 +2331,7 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 			if len(names) == 0 {
 				names = strings.Split(unit.Unit, "+")
 			}
-			if !slices.ContainsFunc(names, func(name string) bool {
+			if unit.Drop != nil || !slices.ContainsFunc(names, func(name string) bool {
 				return row.Name == name || strings.HasPrefix(row.Name, name+".") || strings.HasPrefix(row.Name, name+" ")
 			}) {
 				continue

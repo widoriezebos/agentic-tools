@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
@@ -30,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
@@ -276,7 +278,7 @@ func TestBuildRefusesAStaleEngine(t *testing.T) {
 				code, result, stderr := bed.work(args...)
 				wantStderr := ""
 				if verb == "build" {
-					wantStderr = "warning: goal " + bed.id + " has no accepted design; this build runs on its brief alone\nmetasystem design write " + bed.id + " --brief FILE\n"
+					wantStderr = "warning: goal " + bed.id + " has no accepted design; this build runs on its brief alone\nmetasystem design write " + bed.id + " --brief FILE\nwarning: estimate unavailable; the build goes on\n"
 				}
 				if verb == "revise-goal" {
 					wantStderr = "Impact: this admits one correction despite the recorded read.\nIts findings and automatic allowance remain. The result needs another read.\nCancel the admitted run to undo the request. Reason: Repair the retained failed proof\n"
@@ -391,6 +393,10 @@ func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 		Adapters:  map[string]launch.Adapter{"codex-exec": workAdapter{}, "claude-headless": workAdapter{}, "plain-exec": workAdapter{}},
 		Processes: workProcesses{}, Prober: workProber{}, Now: clock.Now, Sleep: clock.Sleep, Grace: time.Second, Poll: time.Second}
 	bed.manager.Settings = launch.DefaultSettings()
+	bed.manager.CapacityHome = testprovider.Register(t, t.TempDir())
+	bed.manager.CapacitySources.Load = func(at time.Time) hostload.Sample {
+		return hostload.Sample{At: at.Format(time.RFC3339Nano), Available: true, Load1m: 0}
+	}
 	bed.manager.Settings.WaitCapSeconds = 2
 	for index, value := range bed.manager.Settings.Values {
 		if value.Key == launch.ReadModelKey {
@@ -988,7 +994,8 @@ func TestBriefLineAsksForTheRead(t *testing.T) {
 
 // TestIntentBuildResume drives one unit from a red proof through a retry, a
 // resume, a refused changed input, a follow-up round, a capped wait and its
-// continuation, and checks it only ever ends awaiting judgement.
+// continuation, and checks it only ever ends awaiting judgement. A failed
+// command without attribution evidence holds for a reasoned revision.
 func TestIntentBuildResume(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
@@ -998,7 +1005,8 @@ func TestIntentBuildResume(t *testing.T) {
 	code, result, _ := bed.work(args...)
 	data := resultData(t, result)
 	run := data["run"].(string)
-	if code != 1 || result.Outcome != intentRefused || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" {
+	if code != 1 || result.Outcome != intentRefused || data["state"] != "awaiting-judgement" || data["outcome"] != "proof-red" ||
+		data["stop"].(map[string]any)["handoff"] != "stopped unclassified" {
 		t.Fatalf("red proof: code=%d %+v", code, result)
 	}
 	if launched := bed.starter.launched(); !slices.Equal(launched, []string{"build", "proof"}) {
@@ -1017,7 +1025,7 @@ func TestIntentBuildResume(t *testing.T) {
 	}
 	delete(bed.starter.fail, "proof")
 	followUp := bed.brief("follow-up.md", "Fix the red proof.\n")
-	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp, "--reason", "Repair the unclassified proof", "--by", "Wido")
+	code, result, _ = bed.work("work", "revise", "run:"+run, "--brief", followUp, "--reason", "Correct the unclassified proof", "--by", "Wido")
 	data = resultData(t, result)
 	if code != 0 || result.Outcome != intentConfirmed || data["run"] != run || data["round"].(float64) != 2 || data["outcome"] != "green" || data["state"] != "awaiting-judgement" {
 		t.Fatalf("follow-up: code=%d %+v", code, result)
@@ -1040,7 +1048,8 @@ func TestIntentBuildResume(t *testing.T) {
 	buildLaunch := resultData(t, result)["steps"].([]any)[0].(map[string]any)["launchId"].(string)
 	bed.manager.Store.Update(buildLaunch, func(record *launch.Record) error {
 		exit := 0
-		record.State, record.ExitCode, record.FinishedAt = launch.Completed, &exit, bed.manager.Now().UTC().Format(time.RFC3339Nano)
+		record.State, record.ExitCode = launch.Completed, &exit
+		record.FinishedAt = bed.manager.Now().UTC().Format(time.RFC3339Nano)
 		return nil
 	})
 	bed.manager.Settings.ReadRuntime = "codex"

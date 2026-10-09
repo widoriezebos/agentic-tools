@@ -161,7 +161,7 @@ func TestHelmDrainPartialTakeRetry(t *testing.T) {
 				t.Fatalf("failed drain confirmed take: %d %s", code, raw)
 			}
 			signature := helm.Active(b.lane).Record
-			if !helm.Active(b.lane).Active || len(signature.Policies) != 7 {
+			if !helm.Active(b.lane).Active || len(signature.Policies) != 8 {
 				t.Fatal("partial take rolled back or skipped signature")
 			}
 			helmMust(t, os.Remove(blocked), os.Remove(plain.DrainPath(b.lane)))

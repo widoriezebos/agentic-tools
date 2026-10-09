@@ -95,7 +95,7 @@ func moduleRoot(t *testing.T) string {
 	return root
 }
 
-// copyModule links this module's working tree without runtime state: the
+// copyModule copies this module's working tree without runtime state: the
 // snapshot is the implementation under review, never a clone of HEAD. The
 // template's concluded history (plans/, records/) is represented by a few
 // entries only: adoption drops it, and the tests prove it is dropped.
@@ -125,9 +125,6 @@ func copyModule(from, to string) error {
 			return nil
 		}
 		destination := filepath.Join(to, rel)
-		if os.Link(path, destination) == nil {
-			return nil
-		}
 		info, err := entry.Info()
 		if err != nil {
 			return err

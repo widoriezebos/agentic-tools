@@ -210,11 +210,21 @@ func TestConcurrentSplitMembersClaimIndependently(t *testing.T) {
 		{ID: "concurrent-one", Intent: "First independent member.", NextStep: "Work one."},
 		{ID: "concurrent-two", Intent: "Second independent member.", NextStep: "Work two."},
 	}
-	if res, err := Split(verbReqFor(a, "01J5X00000000000000000CJ10", "mac-a"), "concurrent-parent", members, mainRatification("concurrent-parent", members), nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := splitAsPerson(t, verbReqFor(a, "01J5X00000000000000000CJ10", "mac-a"), "concurrent-parent", members); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", res, err)
 	}
 	approveGoalForTest(t, verbReqFor(a, "01J5X00000000000000000CJ15", "mac-a"), "concurrent-one", testBudget())
 	approveGoalForTest(t, verbReqFor(a, "01J5X00000000000000000CJ16", "mac-a"), "concurrent-two", testBudget())
+	release17 := verbReqFor(a, "01J5X00000000000000000CJ17", "mac-a")
+	release17.Actor.Human = "Wido"
+	if result, err := Unblock(release17, "concurrent-one", "concurrent-parent", testHumanAuthority(t, a.Root, release17.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("release parent hold: %+v %v", result, err)
+	}
+	release18 := verbReqFor(a, "01J5X00000000000000000CJ18", "mac-a")
+	release18.Actor.Human = "Wido"
+	if result, err := Unblock(release18, "concurrent-two", "concurrent-parent", testHumanAuthority(t, a.Root, release18.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("release parent hold: %+v %v", result, err)
+	}
 	if _, err := FetchAdvance(b); err != nil {
 		t.Fatal(err)
 	}
@@ -269,11 +279,21 @@ func TestSplitMemberDependencyStillOwnsClaimOrdering(t *testing.T) {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	members := testMembers("dependency-parent")
-	if res, err := Split(verbReqFor(a, "01J5X00000000000000000CD10", "mac-a"), "dependency-parent", members, mainRatification("dependency-parent", members), nil); err != nil || res.Outcome != OutcomeConfirmed {
+	if res, err := splitAsPerson(t, verbReqFor(a, "01J5X00000000000000000CD10", "mac-a"), "dependency-parent", members); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", res, err)
 	}
 	approveGoalForTest(t, verbReqFor(a, "01J5X00000000000000000CD15", "mac-a"), "dependency-parent-one", testBudget())
 	approveGoalForTest(t, verbReqFor(a, "01J5X00000000000000000CD16", "mac-a"), "dependency-parent-two", testBudget())
+	release17 := verbReqFor(a, "01J5X00000000000000000CD17", "mac-a")
+	release17.Actor.Human = "Wido"
+	if result, err := Unblock(release17, "dependency-parent-one", "dependency-parent", testHumanAuthority(t, a.Root, release17.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("release parent hold: %+v %v", result, err)
+	}
+	release18 := verbReqFor(a, "01J5X00000000000000000CD18", "mac-a")
+	release18.Actor.Human = "Wido"
+	if result, err := Unblock(release18, "dependency-parent-two", "dependency-parent", testHumanAuthority(t, a.Root, release18.Now)); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("release parent hold: %+v %v", result, err)
+	}
 	if _, err := FetchAdvance(b); err != nil {
 		t.Fatal(err)
 	}

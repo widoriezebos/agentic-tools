@@ -96,22 +96,27 @@ type UnitRound struct {
 }
 
 type UnitStep struct {
-	Name          string        `json:"name"`
-	LaunchID      string        `json:"launchId"`
-	State         UnitStepState `json:"state"`
-	Reason        string        `json:"reason"`
-	Cause         string        `json:"cause,omitempty"`
-	StartedAt     string        `json:"startedAt"`
-	FinishedAt    string        `json:"finishedAt"`
-	Model         string        `json:"model"`
-	Mode          string        `json:"mode,omitempty"`
-	Package       string        `json:"package,omitempty"`
-	File          string        `json:"file,omitempty"`
-	Brief         string        `json:"brief,omitempty"`
-	Units         []string      `json:"units,omitempty"`
-	Rerun         bool          `json:"rerun,omitempty"`
-	Verdict       string        `json:"verdict,omitempty"`
-	VerdictCounts *bool         `json:"verdictCounts,omitempty"`
+	Kind               string        `json:"kind,omitempty"`
+	ExecutionStartedAt string        `json:"executionStartedAt,omitempty"`
+	ExecutionEndedAt   string        `json:"executionEndedAt,omitempty"`
+	Command            *ProofCommand `json:"command,omitempty"`
+	RevisionAfter      int           `json:"revisionAfter,omitempty"`
+	Name               string        `json:"name"`
+	LaunchID           string        `json:"launchId"`
+	State              UnitStepState `json:"state"`
+	Reason             string        `json:"reason"`
+	Cause              string        `json:"cause,omitempty"`
+	StartedAt          string        `json:"startedAt"`
+	FinishedAt         string        `json:"finishedAt"`
+	Model              string        `json:"model"`
+	Mode               string        `json:"mode,omitempty"`
+	Package            string        `json:"package,omitempty"`
+	File               string        `json:"file,omitempty"`
+	Brief              string        `json:"brief,omitempty"`
+	Units              []string      `json:"units,omitempty"`
+	Rerun              bool          `json:"rerun,omitempty"`
+	Verdict            string        `json:"verdict,omitempty"`
+	VerdictCounts      *bool         `json:"verdictCounts,omitempty"`
 
 	Moved       []string            `json:"moved,omitempty"`
 	RetryBy     string              `json:"retryBy,omitempty"`
@@ -150,6 +155,7 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
+	Actor       string
 	FreezeCheck func(UnitPlan, string) (UnitPlan, error)
 	// CriticCustody observes or cancels every committed examination of this run.
 	CriticCustody func(UnitRunRecord, bool) (bool, error)
@@ -168,7 +174,9 @@ type UnitRunner struct {
 	CollectLaunch func(UnitRunRecord, Record, string) error
 	// PlanProof selects proof after the build. A nil result retains the
 	// caller's commands; selected commands are frozen for this round's retries.
-	PlanProof         func(UnitPlan) ([]ProofCommand, error)
+	PlanProof func(UnitPlan) ([]ProofCommand, error)
+	// AdmitEstimate retains telemetry after admission and before reserving a run.
+	AdmitEstimate     func(*UnitPlan) error
 	InheritedFindings func(string, string) ([]readsubject.Finding, error)
 	ReviewPolicy      func() (string, error)
 	ExaminationRead   func(string, string) (readsubject.Read, error)
@@ -198,7 +206,7 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 	var plan UnitPlan
 	var err error
 	if request.Plan != "" {
-		plan, err = ReadUnitPlan(request.Plan)
+		plan, err = ReadUnitPlanInput(request.Plan)
 		if err != nil {
 			return UnitResult{}, err
 		}
@@ -314,7 +322,7 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 
 func (runner *UnitRunner) admitRound(plan UnitPlan, buildBrief string, previous []string) error {
 	buildInputs := append(append([]string{}, plan.Build.Inputs...), previous...)
-	spec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree,
+	spec := StartSpec{Kind: "build", Actor: runner.Actor, Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree,
 		Brief: buildBrief, Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: plan.Build.Units}
 	settings, err := runner.Manager.resolvedSettings()
 	if err != nil {
@@ -489,7 +497,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	}
 	for index := 0; index < buildCount; index++ {
 		step := &round.Steps[index]
-		buildSpec := StartSpec{Kind: "build", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief, Model: record.BuildModel, Effort: record.BuildEffort,
+		buildSpec := StartSpec{Kind: "build", Actor: runner.Actor, Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: plan.Worktree, Brief: step.Brief, Model: record.BuildModel, Effort: record.BuildEffort,
 			Inputs: buildInputs, Outputs: plan.Build.Outputs, UnitsPage: plan.Build.UnitsPage, Units: step.Units,
 			Round: round.Number, MaxRounds: record.MaxRounds}
 		if capped, stepErr := runner.advanceStep(record, round, index, buildSpec, deadline); stepErr != nil || capped {
@@ -554,6 +562,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	red := false
 	for offset, command := range commands {
 		index := buildCount + offset
+		round.Steps[index].Command = &command
 		briefPath := filepath.Join(round.Directory, "proof-"+command.Name+".json")
 		if _, err := os.Stat(briefPath); os.IsNotExist(err) {
 			data, _ := json.Marshal(PlainBrief{command.Argv, command.Dir, command.Env})
@@ -713,6 +722,7 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 // its launch gate and its named reservation.
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
 	return stepDriver{manager: runner.Manager, round: round, launchID: unitLaunchID(record, round), start: func(spec StartSpec) (Record, error) {
+		spec.Actor = runner.Actor
 		spec.wait = runner.CommandWait
 		return runner.Manager.Start(spec)
 	},
@@ -842,6 +852,13 @@ func unitStepVerdictCounts(step UnitStep) bool {
 }
 
 func (runner *UnitRunner) advanceStep(record *UnitRunRecord, round *UnitRound, index int, spec StartSpec, deadline time.Time) (bool, error) {
+	if spec.Kind == "build" {
+		for _, revision := range record.Revisions {
+			if revision.Attempt == round.Number {
+				round.Steps[index].Kind, round.Steps[index].RevisionAfter = "correction", revision.After
+			}
+		}
+	}
 	return runner.driver(record, round).advanceStep(index, spec, deadline)
 }
 
@@ -901,10 +918,24 @@ func (runner *UnitRunner) publishJudgement(record UnitRunRecord, number int) {
 	}
 	card := board.Card{Seat: runner.Manager.Seat, Goal: record.Goal, Stage: board.StageJudgement,
 		Round: judgementRound(record, number), Job: &board.Job{ID: record.ID, Kind: "unit-run", Phase: record.State}, Writer: board.Writer{Component: "unit-run"}}
+	for _, subject := range record.Subjects {
+		if subject.Round == number && subject.Drop != nil {
+			card.Drop = &board.UnitDrop{Unit: record.Unit, Phase: subject.Drop.Phase}
+		}
+	}
 	if len(record.Rounds) > 0 {
 		stop := record.Rounds[len(record.Rounds)-1].Stop
 		if stop != nil {
 			card.Stop = &board.ReviewStop{Decision: stop.Decision, Handoff: stop.Handoff, Class: stop.Class, Attempt: stop.Attempt, Budget: stop.Budget}
+		}
+	}
+	for _, subject := range record.Subjects {
+		if subject.Round == number && subject.Drop != nil {
+			card.Job.Phase = "drop " + subject.Drop.Phase
+			if subject.Drop.Phase == "recorded" || subject.Drop.Phase == "closed" {
+				card.Job.Phase = "dropped"
+				card.Stop = &board.ReviewStop{Decision: "dropped", Handoff: "optional unit removed", Class: record.Unit, Attempt: number, Budget: max(record.CountedCap, record.MaxRounds)}
+			}
 		}
 	}
 	if runner.Manager.Now != nil {

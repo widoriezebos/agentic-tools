@@ -63,6 +63,9 @@ func diskCompiledSettings() []Setting {
 }
 
 var coreSettings = []Setting{
+	{Key: "host.builds", Default: "auto", Meaning: "build admission: auto, a positive distinct-goal cap, or person"},
+	{Key: "host.load-max", Default: "8", Meaning: "automatic builds require current one-minute host load below this positive declaration"},
+	{Key: "process.change", Default: "person", Meaning: "whether an agent may apply a cited process setting or needs a person to execute the exact proposal"},
 	{Key: "landing.batch", Default: "auto", Meaning: "batch selection cap, distinct from landing.batch-root; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.proof", Default: "auto", Meaning: "full-proof decisions; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.on-red", Default: "auto", Meaning: "red decisions; consumption deferred to lane-reads-its-policies"},
@@ -97,8 +100,8 @@ var coreSettings = []Setting{
 		Meaning: "true only in the template repository's committed metasystem.conf (read there alone); adoption never ships it"},
 	{Key: EvidenceRootKey, Computed: "config.ResolveEvidenceRoot", ProofInput: false,
 		Meaning: "where durable evidence is mirrored; defaults to ~/metasystem-evidence/<checkout name>, outside the repository"},
-	{Key: "proof.admission.top-level-max", Computed: "proofrun.ResolveAdmissionCap", ProofInput: false,
-		Meaning: "host-wide cap on concurrent top-level proof attempts (ruling R-111-m1e); unset is max(1, cores/6), 0 disables it"},
+	{Key: "proof.admission.top-level-max", Default: "1", ProofInput: false,
+		Meaning: "host-wide cap on concurrent top-level proof attempts; unset is one, 0 disables it"},
 
 	// The interface (ui.go). None is a proof input: the interface never
 	// changes what a proof proves, and ui.listen is a machine's own port.
@@ -276,6 +279,8 @@ var coreSettings = []Setting{
 		Meaning: "how long a goal below that tier waits in Review before it is eligible to land by itself"},
 	{Key: DesignGateModeKey, Default: "warn", ProofInput: true,
 		Meaning: "warn about missing accepted design evidence, or refuse an agent's build"},
+	{Key: "design.unit-lines-max", Default: "250", CommittedOnly: true, ProofInput: true, Meaning: "maximum production lines per design unit"},
+	{Key: "design.goal-units-max", Default: "5", CommittedOnly: true, ProofInput: true, Meaning: "maximum units across a goal's current designs"},
 	// The host board (batch-lane design D14-r2, R25), read by the steward's
 	// bridge role only.
 	{Key: BoardKeepHoursKey, Default: "24",

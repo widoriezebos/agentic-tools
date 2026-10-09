@@ -136,7 +136,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			return err
 		}
 		detail := &conflict.Return{Main: main, Paths: classified}
-		for range classified {
+		if len(classified) > 0 {
 			trunk, err := git("rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
 			if err != nil {
 				return err
@@ -386,16 +386,6 @@ func installationPrefix(install, checkout string) (string, error) {
 
 func nulPaths(list string) []string {
 	return strings.FieldsFunc(list, func(r rune) bool { return r == 0 })
-}
-
-// Regeneration records are deliberately independent of results.jsonl: only
-// landing prove can authorize pushing the regenerated tree.
-func LastRegeneration(install string) (*Regeneration, error) {
-	records, err := readLines[Regeneration](regeneratePath(install))
-	if err != nil || len(records) == 0 {
-		return nil, err
-	}
-	return &records[len(records)-1], nil
 }
 
 func writeRegeneration(install string, running RunningRegeneration) error {

@@ -15,6 +15,7 @@ import (
 
 // UnitStopQuestion binds one executable remedy to one finding in one read.
 type UnitStopQuestion struct {
+	ClosedBy       string   `json:"closedBy,omitempty"`
 	Loop           string   `json:"loop"`
 	Subject        string   `json:"subject"`
 	Attempt        int      `json:"attempt"`
@@ -85,7 +86,7 @@ type UnitStopAct struct {
 }
 
 func RecordUnitStopAct(root string, act UnitStopAct) error {
-	if act.Goal == "" || act.Subject == "" || act.Loop == "" || act.Kind == "" || act.At.IsZero() || (!act.UnitClosed && (act.Attempt < 1 || len(act.Findings) == 0)) {
+	if act.Goal == "" || act.Subject == "" || act.Loop == "" || act.Kind == "" || act.At.IsZero() || ((!act.UnitClosed || act.Kind == "work-drop") && (act.Attempt < 1 || len(act.Findings) == 0)) {
 		return fmt.Errorf("a successful unit act needs its goal, subject, loop, kind, time and addressed findings")
 	}
 	if act.ID == "" {
@@ -137,13 +138,16 @@ func reconcileUnitStopQuestions(root string) error {
 			if stop == nil || q.Goal != act.Goal || stop.Loop != act.Loop || stop.Subject != act.Subject {
 				continue
 			}
+			if act.Kind == "work-drop" && (stop.Attempt != act.Attempt || !slices.Contains(stop.AcceptableActs, act.Kind) || !slices.Contains(act.Findings, stop.Finding)) {
+				continue
+			}
 			if act.UnitClosed && ((act.Attempt > 0 && stop.Attempt > act.Attempt) || (act.Attempt == 0 && q.OpenedAt.After(act.At))) {
 				continue
 			}
 			if !act.UnitClosed && (stop.Attempt != act.Attempt || !slices.Contains(stop.AcceptableActs, act.Kind) || !slices.Contains(act.Findings, stop.Finding)) {
 				continue
 			}
-			if err := Close(root, q.ID, act.Kind+": "+act.Reason, nil, DestinationConfig{}); err != nil {
+			if err := Close(root, q.ID, act.Kind+": "+act.Reason, nil, DestinationConfig{}, act.ID); err != nil {
 				return err
 			}
 		}

@@ -197,14 +197,17 @@ func sortedUnique(values []string) []string {
 	return out
 }
 
-// Split atomically replaces a parent with a member arc and the permanent
-// decomposition record.
+// Split atomically holds a live parent and its unapproved children.
 func Split(r VerbRequest, parentID string, members []MemberDraft, ratification SplitRatification, proof *humanauthority.Proof) (PublishResult, error) {
 	req, err := splitRequest(r, parentID, members, ratification, proof)
 	if err != nil {
 		return PublishResult{}, err
 	}
-	return Publish(r.Endpoint, req)
+	res, err := Publish(r.Endpoint, req)
+	if err == nil && res.Unchanged {
+		err = splitAfterConfirmed(r.Endpoint, res.Tip, parentID, r.opid(), r.Now)
+	}
+	return res, err
 }
 
 func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratification SplitRatification, proof *humanauthority.Proof) (PublishRequest, error) {
@@ -251,8 +254,14 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 			if parent == nil {
 				return nil, fmt.Errorf("goal %s does not exist", parentID)
 			}
-			if err := refuseAllOpenReadItems(parentID, parent); err != nil {
+			if err := validateSplitRatification(r, parent, parsed, ratification, proof); err != nil {
 				return nil, err
+			}
+			if parent.State == StateSplit && parent.Split != nil {
+				if parent.Ratified != nil && parent.Ratified.DraftSHA256 == ratification.DraftSHA256 {
+					return nil, AlreadyHolds{Reason: fmt.Sprintf("goal %s is already split into %s", parentID, strings.Join(parent.Split.Children, ", "))}
+				}
+				return nil, fmt.Errorf("goal %s is already split; reverse it before applying a different plan\nrun: metasystem goal split %s --reverse --reason TEXT", parentID, parentID)
 			}
 			if parent.Sliced != nil {
 				return nil, coded("GOAL_SPLIT_REFUSED", fmt.Errorf("goal %s already has work on %s (%s), so it can't be split; finish it and open follow-ups\nrun: metasystem goal done %s --reason TEXT", parentID, parent.Sliced.Machine, parent.Sliced.At, parentID))
@@ -263,8 +272,10 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 			if err := validateSplitParent(parent, r); err != nil {
 				return nil, err
 			}
-			if err := validateSplitRatification(r, parent, parsed, ratification, proof); err != nil {
-				return nil, err
+			if r.SplitCheck != nil {
+				if err := r.SplitCheck(parent); err != nil {
+					return nil, err
+				}
 			}
 			if err := validateSplitMembers(t, parentID, parsed); err != nil {
 				return nil, err
@@ -281,101 +292,32 @@ func splitRequest(r VerbRequest, parentID string, members []MemberDraft, ratific
 				labels, _ := canonicalLabels(append(append([]string{}, parent.Labels...), draft.Labels...))
 				member := &GoalFile{
 					Id: draft.ID, State: StateQueued, Intent: draft.Intent, Origin: parent.Origin,
-					NextStep: draft.NextStep, OpenedAt: r.stamp(), Blocked: sortedUnique(append(append([]string{}, parent.Blocked...), draft.Blocked...)),
-					Labels: labels, Arc: parentID, Pinned: parent.Pinned,
+					NextStep: draft.NextStep, OpenedAt: r.stamp(), Blocked: sortedUnique(append(append([]string{parentID}, parent.Blocked...), draft.Blocked...)),
+					Labels: labels, SplitFrom: parentID, Pinned: parent.Pinned,
 				}
 				touch(member, r, "split", targets)
 				changes = append(changes, Change{Path: livePath(member.Id), Content: RenderFile(member)})
 			}
-			for _, id := range sortedGoalIds(t.Live) {
-				if id == parentID || !containsString(t.Live[id].Blocked, parentID) {
-					continue
-				}
-				dependent := t.Live[id]
-				rewritten := make([]string, 0, len(dependent.Blocked)+len(memberIDs))
-				for _, blocker := range dependent.Blocked {
-					if blocker != parentID {
-						rewritten = append(rewritten, blocker)
-					}
-				}
-				dependent.Blocked = sortedUnique(append(rewritten, memberIDs...))
-				// A park the parent's own open recorded now waits on the arc:
-				// the marker moves to the first member so it stays inside
-				// BlockedBy, and the return still needs every member done.
-				// The reason follows the list it is written from, or it would
-				// go on naming a parent that has just been retired.
-				if dependent.Parked != nil && dependent.Parked.Blocker == parentID {
-					dependent.Parked.Blocker = memberIDs[0]
-				}
-				refreshParkReason(t, dependent)
-				touch(dependent, r, "split", targets)
-				changes = append(changes, Change{Path: livePath(id), Content: RenderFile(dependent)})
+			parent.Split = &SplitRecord{Children: memberIDs, Transaction: r.opid(), PriorState: parent.State, PriorParked: parent.Parked}
+			leaveEpisode(parent, r.stamp())
+			if parent.StopFence != nil {
+				return nil, fmt.Errorf("goal %s is breach-stopped; resume it before splitting\nrun: metasystem goal resume %s", parentID, parentID)
 			}
-
-			parent.State = StateDone
-			parent.Conclude = "decomposed into arc " + parentID + ": " + goalPointers(memberIDs)
-			parent.Blocked = nil
-			parent.Parked = nil
-			parent.Episode = nil
-			if err := clearClaimBinding(parent); err != nil {
-				return nil, err
-			}
+			parent.State, parent.Parked, parent.Claimed = StateSplit, nil, nil
+			parent.StopCapability, parent.Landing = nil, nil
 			parent.Ratified = &SplitRatification{Tier: ratification.Tier, By: ratification.By, MainID: ratification.MainID, ClaimEpoch: ratification.ClaimEpoch, DraftSHA256: ratification.DraftSHA256}
 			touch(parent, r, "split", targets)
-			t.Done[parentID] = parent
-			delete(t.Live, parentID)
-			changes = append(changes, Change{Path: livePath(parentID), Delete: true}, Change{Path: donePath(parentID), Content: RenderFile(parent)})
-
-			compactions := compactDepartedPriorities(t.Live, []*GoalFile{parent})
-			allTargets := append([]string{}, targets...)
-			for _, compaction := range compactions {
-				allTargets = append(allTargets, compaction.Targets...)
-			}
-			allTargets = sortedUnique(allTargets)
-			for _, file := range t.Live {
-				if len(file.History) > 0 && file.History[len(file.History)-1].Opid == r.opid() {
-					file.History[len(file.History)-1].Targets = allTargets
-				}
-			}
-			parent.History[len(parent.History)-1].Targets = allTargets
-			for _, compaction := range compactions {
-				for _, priorityChange := range compaction.Changed {
-					mergePriorityEvent(priorityChange.File, r, "split", allTargets, priorityChange.Before, priorityChange.After)
-					path := livePath(priorityChange.File.Id)
-					present := false
-					for _, change := range changes {
-						if change.Path == path {
-							present = true
-							break
-						}
-					}
-					if !present {
-						changes = append(changes, Change{Path: path, Content: RenderFile(priorityChange.File)})
-					}
-				}
-			}
+			changes = append(changes, Change{Path: livePath(parentID), Content: RenderFile(parent)})
 
 			t.Root.Free = nil
-			t.Root.Decomposed = append(t.Root.Decomposed, DecomposedEntry{Id: parentID, Opid: r.opid(), At: r.stamp(), OldArc: parent.Arc})
 			t.Root.Revision++
-			t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "split", Actor: r.Actor.historyActor(), Targets: allTargets, Keep: -1})
+			t.Root.History = append(t.Root.History, HistoryLine{At: r.stamp(), Opid: r.opid(), Verb: "split", Actor: r.Actor.historyActor(), Targets: targets, Keep: -1})
 			changes = append(changes, Change{Path: goalsPrefix + "backlog.md", Content: RenderRoot(t.Root)})
-			for index, change := range changes {
-				if change.Delete || change.Path == goalsPrefix+"backlog.md" {
-					continue
-				}
-				id := goalIDFromPath(change.Path)
-				if file := t.Live[id]; file != nil {
-					changes[index].Content = RenderFile(file)
-				} else if file, found := t.Archived(id); found {
-					changes[index].Content = RenderFile(file)
-				}
-			}
 			return ackDisplacements(t, r, changes), nil
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 		AfterConfirmed: func(tip string) error {
-			return raiseSplitOldArcDebt(r.Endpoint, tip, parentID, r.opid(), r.Now)
+			return splitAfterConfirmed(r.Endpoint, tip, parentID, r.opid(), r.Now)
 		},
 	}, nil
 }
@@ -413,10 +355,7 @@ func validateSplitRatification(r VerbRequest, parent *GoalFile, members []Member
 		}
 		return nil
 	}
-	if parent.Origin != OriginMain {
-		return coded("SPLIT_RATIFY_REFUSED", fmt.Errorf("goal %s came from a person, so a person approves its split at their terminal", parent.Id))
-	}
-	return nil
+	return coded("SPLIT_RATIFY_REFUSED", fmt.Errorf("a person approves the split at their terminal\nrun: metasystem goal split %s --plan FILE --by <your name>", parent.Id))
 }
 
 func validateSplitMembers(t *TreeGoals, parentID string, members []MemberDraft) error {
@@ -427,7 +366,7 @@ func validateSplitMembers(t *TreeGoals, parentID string, members []MemberDraft) 
 		}
 		memberSet[member.ID] = true
 		if t.Exists(member.ID) {
-			return fmt.Errorf("split member id %s collides with an existing goal", member.ID)
+			return fmt.Errorf("split member %s collides with an existing goal; rename the members in FILE\nrun: metasystem goal split %s --plan FILE", member.ID, parentID)
 		}
 		if retired, ok := rootDecomposed(t.Root, member.ID); ok {
 			return fmt.Errorf("split member id %s is retired by decomposition %s", member.ID, retired.Opid)
@@ -475,18 +414,27 @@ func containsString(values []string, wanted string) bool {
 	return false
 }
 
-func goalPointers(ids []string) string {
-	pointers := make([]string, len(ids))
-	for i, id := range ids {
-		pointers[i] = "goal:" + id
+func splitAfterConfirmed(e Endpoint, tip, parentID, opid string, now time.Time) error {
+	tree, err := loadTreeFor(e, tip)
+	if err != nil {
+		return fmt.Errorf("classify split's old-arc retro debt: %w", err)
 	}
-	return strings.Join(pointers, ", ")
+	if parent := tree.Live[parentID]; parent != nil && parent.State == StateSplit && parent.Split != nil {
+		if e.SplitConfirmed != nil {
+			e.SplitConfirmed(e, tip, parentID, now)
+		}
+		return nil
+	}
+	return raiseSplitOldArcDebt(e, tip, parentID, opid, now)
 }
 
 func raiseSplitOldArcDebt(e Endpoint, tip, parentID, opid string, now time.Time) error {
 	tree, err := loadTreeFor(e, tip)
 	if err != nil {
 		return fmt.Errorf("classify split's old-arc retro debt: %w", err)
+	}
+	if parent := tree.Live[parentID]; parent != nil && parent.State == StateSplit && parent.Split != nil {
+		return nil
 	}
 	parent := tree.Done[parentID]
 	oldArc := ""

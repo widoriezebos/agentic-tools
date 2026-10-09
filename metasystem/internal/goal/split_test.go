@@ -1,7 +1,6 @@
 package goal
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -19,6 +18,12 @@ func testMembers(parent string) []MemberDraft {
 
 func mainRatification(parent string, members []MemberDraft) SplitRatification {
 	return SplitRatification{Tier: RatifierMain, MainID: "main-1", ClaimEpoch: 1, DraftSHA256: SplitDraftSHA256(parent, members)}
+}
+
+func splitAsPerson(t *testing.T, r VerbRequest, parent string, members []MemberDraft) (PublishResult, error) {
+	t.Helper()
+	r.Actor.Human = "wido"
+	return Split(r, parent, members, SplitRatification{Tier: RatifierHuman, By: "wido", DraftSHA256: SplitDraftSHA256(parent, members)}, testHumanAuthority(t, r.Endpoint.Root, r.Now))
 }
 
 func seedGoalNormConfig(t *testing.T, root string) {
@@ -47,7 +52,7 @@ func TestSplitDraftGrammarIsClosedAndCanonical(t *testing.T) {
 	}
 }
 
-func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
+func TestSplitIsAtomicAndKeepsParentDependencies(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	root := endpoint.Root
@@ -79,7 +84,7 @@ func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
 
 	members := testMembers("split-parent")
 	request := verbReqFor(endpoint, "01J5X00000000000000000S160", "mac-a")
-	result, err := Split(request, "split-parent", members, mainRatification("split-parent", members), nil)
+	result, err := splitAsPerson(t, request, "split-parent", members)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", result, err)
 	}
@@ -89,45 +94,45 @@ func TestSplitIsAtomicPermanentAndRewritesDependencies(t *testing.T) {
 	}
 	for _, id := range []string{"split-parent-one", "split-parent-two"} {
 		member := tree.Live[id]
-		if member == nil || member.Arc != "split-parent" || member.Origin != OriginMain || member.Pinned != "mac-a" || !containsString(member.Blocked, "old-blocker") || !containsString(member.Labels, "parent-label") {
+		if member == nil || member.Arc != "" || member.SplitFrom != "split-parent" || !containsString(member.Blocked, "split-parent") || member.Origin != OriginMain || member.Pinned != "mac-a" || !containsString(member.Blocked, "old-blocker") || !containsString(member.Labels, "parent-label") {
 			t.Fatalf("member %s did not inherit the parent envelope: %+v", id, member)
 		}
 	}
-	if got := strings.Join(tree.Live["dependent"].Blocked, ","); got != "split-parent-one,split-parent-two" {
-		t.Fatalf("inbound dependency did not expand to all members: %s", got)
+	if got := strings.Join(tree.Live["dependent"].Blocked, ","); got != "split-parent" {
+		t.Fatalf("inbound dependency was rewritten: %s", got)
 	}
-	parent := tree.Done["split-parent"]
-	if parent == nil || parent.Ratified == nil || parent.Ratified.DraftSHA256 != SplitDraftSHA256("split-parent", members) || !strings.Contains(parent.Conclude, "goal:split-parent-one") {
-		t.Fatalf("archived parent lacks ratification or pointers: %+v", parent)
+	parent := tree.Live["split-parent"]
+	if parent == nil || parent.Ratified == nil || parent.Ratified.DraftSHA256 != SplitDraftSHA256("split-parent", members) || parent.State != StateSplit || parent.Split == nil || parent.Conclude != "" {
+		t.Fatalf("live parent lacks ratification or lineage: %+v", parent)
 	}
-	if entry, ok := rootDecomposed(tree.Root, "split-parent"); !ok || entry.Opid != request.opid() {
-		t.Fatalf("root decomposition registry did not land with split: %+v", tree.Root.Decomposed)
+	if _, ok := rootDecomposed(tree.Root, "split-parent"); ok {
+		t.Fatalf("split permanently retired its parent: %+v", tree.Root.Decomposed)
 	}
 	// The same split again is a repeat whose effect already holds (R-129-ui):
 	// success, nothing written. Other members are a different split, refused.
-	repeated, err := Split(verbReqFor(endpoint, "01J5X00000000000000000S161", "mac-a"), "split-parent", members, mainRatification("split-parent", members), nil)
+	repeated, err := splitAsPerson(t, verbReqFor(endpoint, "01J5X00000000000000000S161", "mac-a"), "split-parent", members)
 	if err != nil || repeated.Outcome != OutcomeAbandoned || !repeated.Unchanged || repeated.Tip != result.Tip ||
 		!strings.Contains(repeated.Detail, "already split into split-parent-one, split-parent-two") {
 		t.Fatalf("a repeated split was not a no-op: %+v %v", repeated, err)
 	}
 	others := append(testMembers("split-parent"), MemberDraft{ID: "split-parent-three", Intent: "Deliver a third part.", NextStep: "Build part three."})
-	if different, err := Split(verbReqFor(endpoint, "01J5X00000000000000000S162", "mac-a"), "split-parent", others, mainRatification("split-parent", others), nil); err != nil || different.Outcome != OutcomeRejected || !strings.Contains(different.Detail, "already split") {
+	if different, err := splitAsPerson(t, verbReqFor(endpoint, "01J5X00000000000000000S162", "mac-a"), "split-parent", others); err != nil || different.Outcome != OutcomeRejected || !strings.Contains(different.Detail, "already split") {
 		t.Fatalf("a different split of a decomposed parent was not refused: %+v %v", different, err)
 	}
 	debts, err := retrodebt.Open(root)
-	if err != nil || len(debts) != 1 || !strings.HasPrefix(debts[0].Source, "old-arc:") {
-		t.Fatalf("last old-arc member split did not raise debt: %+v %v", debts, err)
+	if err != nil || len(debts) != 0 {
+		t.Fatalf("live parent raised old-arc debt: %+v %v", debts, err)
 	}
 
 	reopen, err := Reopen(verbReqFor(endpoint, "01J5X00000000000000000S170", "mac-a"), "split-parent")
-	if err != nil || reopen.Outcome != OutcomeRejected || !strings.Contains(reopen.Detail, "never comes back") {
+	if err != nil || reopen.Outcome != OutcomeRejected || !strings.Contains(reopen.Detail, "--reverse") {
 		t.Fatalf("decomposed parent reopen did not refuse: %+v %v", reopen, err)
 	}
 	if pruned, err := Prune(verbReqFor(endpoint, "01J5X00000000000000000S180", "mac-a"), 0); err != nil || pruned.Outcome != OutcomeConfirmed {
 		t.Fatalf("prune: %+v %v", pruned, err)
 	}
 	recreated, err := Open(verbReqFor(endpoint, "01J5X00000000000000000S190", "mac-a"), "split-parent", "Illicit resurrection.", OriginMain, "Stop.")
-	if err != nil || recreated.Outcome != OutcomeRejected || !strings.Contains(recreated.Detail, "was used by a goal that was split") {
+	if err != nil || recreated.Outcome != OutcomeLost {
 		t.Fatalf("prune must not reopen the identifier: %+v %v", recreated, err)
 	}
 }
@@ -149,14 +154,14 @@ func TestSliceStartIsImmutableAndBlocksSplit(t *testing.T) {
 		t.Fatalf("second marker must be a no-write no-op: %+v %v", second, err)
 	}
 	members := testMembers("sliced-parent")
-	split, err := Split(verbReqFor(endpoint, "01J5X00000000000000000SA30", "mac-a"), "sliced-parent", members, mainRatification("sliced-parent", members), nil)
+	split, err := splitAsPerson(t, verbReqFor(endpoint, "01J5X00000000000000000SA30", "mac-a"), "sliced-parent", members)
 	if err != nil || split.Outcome != OutcomeRejected || !strings.Contains(split.Detail, "already has work on") {
 		t.Fatalf("sliced parent must refuse split by its durable coordinates: %+v %v", split, err)
 	}
 	if released, err := Release(verbReqFor(endpoint, "01J5X00000000000000000SA40", "mac-a"), "sliced-parent"); err != nil || released.Outcome != OutcomeConfirmed {
 		t.Fatalf("release: %+v %v", released, err)
 	}
-	split, err = Split(verbReqFor(endpoint, "01J5X00000000000000000SA50", "mac-a"), "sliced-parent", members, mainRatification("sliced-parent", members), nil)
+	split, err = splitAsPerson(t, verbReqFor(endpoint, "01J5X00000000000000000SA50", "mac-a"), "sliced-parent", members)
 	if err != nil || split.Outcome != OutcomeRejected || !strings.Contains(split.Detail, "already has work on") {
 		t.Fatalf("release must not erase ever-sliced: %+v %v", split, err)
 	}
@@ -170,6 +175,11 @@ func TestHumanCanRatifyAMainOriginSplitWithFreshProof(t *testing.T) {
 		t.Fatalf("open: %+v %v", res, err)
 	}
 	members := testMembers("human-ratifies-main")
+	borrowed := verbReqFor(endpoint, "01J5X00000000000000000SH09", "mac-a")
+	refused, err := Split(borrowed, "human-ratifies-main", members, mainRatification("human-ratifies-main", members), nil)
+	if err != nil || refused.Outcome != OutcomeRejected || refused.Code != "SPLIT_RATIFY_REFUSED" {
+		t.Fatalf("main-origin gave an agent a person's split authority: %+v %v", refused, err)
+	}
 	request := verbReqFor(endpoint, "01J5X00000000000000000SH10", "mac-a")
 	request.Actor.Human = "wido"
 	proof := testHumanAuthority(t, root, request.Now)
@@ -179,8 +189,8 @@ func TestHumanCanRatifyAMainOriginSplitWithFreshProof(t *testing.T) {
 		t.Fatalf("fresh human proof did not ratify main-origin split: %+v %v", result, err)
 	}
 	tree, err := loadTreeFor(endpoint, result.Tip)
-	if err != nil || tree.Done["human-ratifies-main"].Ratified.Tier != RatifierHuman || tree.Done["human-ratifies-main"].Ratified.By != "wido" {
-		t.Fatalf("human ratification token did not publish: %+v %v", tree.Done["human-ratifies-main"], err)
+	if err != nil || tree.Live["human-ratifies-main"].Ratified.Tier != RatifierHuman || tree.Live["human-ratifies-main"].Ratified.By != "wido" {
+		t.Fatalf("human ratification token did not publish: %+v %v", tree.Live["human-ratifies-main"], err)
 	}
 }
 
@@ -200,7 +210,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 			t.Fatalf("other client did not observe the claimed parent: %+v", parent)
 		}
 		members := testMembers("foreign-parent")
-		result, err := Split(verbReqFor(b, "01J5X00000000000000000PF10", "mac-b"), "foreign-parent", members, mainRatification("foreign-parent", members), nil)
+		result, err := splitAsPerson(t, verbReqFor(b, "01J5X00000000000000000PF10", "mac-b"), "foreign-parent", members)
 		if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "run: metasystem goal pause foreign-parent --reason TEXT") {
 			t.Fatalf("foreign claim did not refuse toward the authority transition: %+v %v", result, err)
 		}
@@ -229,7 +239,7 @@ func TestSplitPreconditionsRefuseByNameAndHumanOriginInherits(t *testing.T) {
 				}
 			}
 			members := testMembers("collision-parent")
-			result, err := Split(verbReqFor(endpoint, "01J5X00000000000000000PC40", "mac-a"), "collision-parent", members, mainRatification("collision-parent", members), nil)
+			result, err := splitAsPerson(t, verbReqFor(endpoint, "01J5X00000000000000000PC40", "mac-a"), "collision-parent", members)
 			if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "already in use by arc-bearer") {
 				t.Fatalf("%s arc collision did not refuse by bearer: %+v %v", name, result, err)
 			}
@@ -280,7 +290,25 @@ func TestSplitDebtFailureStaysPushedAndRecoveryCompletesIt(t *testing.T) {
 	}
 	members := testMembers("debt-parent")
 	request := verbReqFor(endpoint, "01J5X00000000000000000SD20", "mac-a")
-	result, splitErr := Split(request, "debt-parent", members, mainRatification("debt-parent", members), nil)
+	result, splitErr := Publish(endpoint, PublishRequest{
+		Opid: request.opid(), Machine: request.Actor.Machine, Lineage: request.Actor.Lineage,
+		Intent: Intent{Verb: "split", Targets: []string{"debt-parent"}}, Message: "fixture legacy split",
+		Mutate: func(tip string) ([]Change, error) {
+			tree, err := loadTreeFor(endpoint, tip)
+			if err != nil {
+				return nil, err
+			}
+			parent := tree.Live["debt-parent"]
+			parent.State, parent.Conclude = StateDone, "Legacy decomposition."
+			parent.Ratified = func() *SplitRatification { r := mainRatification(parent.Id, members); return &r }()
+			touch(parent, request, "split", []string{parent.Id})
+			tree.Root.Decomposed = append(tree.Root.Decomposed, DecomposedEntry{Id: parent.Id, Opid: request.opid(), At: request.stamp(), OldArc: parent.Arc})
+			return []Change{{Path: livePath(parent.Id), Delete: true}, {Path: donePath(parent.Id), Content: RenderFile(parent)}, {Path: goalsPrefix + "backlog.md", Content: RenderRoot(tree.Root)}}, nil
+		},
+		AfterConfirmed: func(tip string) error {
+			return raiseSplitOldArcDebt(endpoint, tip, "debt-parent", request.opid(), request.Now)
+		},
+	})
 	if splitErr == nil || result.Outcome != "" || !strings.Contains(splitErr.Error(), "old-arc retro debt") {
 		t.Fatalf("debt failure did not leave confirmation unresolved: %+v %v", result, splitErr)
 	}
@@ -495,7 +523,8 @@ func TestSplitAndSliceStartRaceHasExactlyOneWinner(t *testing.T) {
 	}
 	members := testMembers("race-parent")
 	splitVerb := verbReqFor(a, "01J5X00000000000000000RC10", "mac-a")
-	req, err := splitRequest(splitVerb, "race-parent", members, mainRatification("race-parent", members), nil)
+	splitVerb.Actor.Human = "wido"
+	req, err := splitRequest(splitVerb, "race-parent", members, SplitRatification{Tier: RatifierHuman, By: "wido", DraftSHA256: SplitDraftSHA256("race-parent", members)}, testHumanAuthority(t, a.Root, splitVerb.Now))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,7 +571,7 @@ func TestParkedEverSlicedParentStillRefusesSplit(t *testing.T) {
 	members := testMembers("parked-sliced")
 	splitHuman := verbReqFor(endpoint, "01J5X00000000000000000PS30", "mac-a")
 	splitHuman.Actor.Human = "wido"
-	result, err := Split(splitHuman, "parked-sliced", members, mainRatification("parked-sliced", members), nil)
+	result, err := splitAsPerson(t, splitHuman, "parked-sliced", members)
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "already has work on") {
 		t.Fatalf("parked state bypassed the immutable sliced refusal: %+v %v", result, err)
 	}
@@ -638,11 +667,8 @@ func TestValidatorRefusesADecomposedParentMadeLiveAgain(t *testing.T) {
 	}
 }
 
-// A blocker that is split leaves its dependents waiting on the arc: the
-// edge expands to every member, the park marker moves to the first member
-// so it stays inside BlockedBy, and the park lifts only when the last
-// member is done.
-func TestSplitMovesABlockerParkToTheFirstMember(t *testing.T) {
+// A split source keeps the parked dependent waiting for its explicit conclusion.
+func TestSplitKeepsABlockerParkOnTheParent(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	risk := RiskRecord{Severity: 1, Novelty: 1, Exposure: 1, Accumulation: 1, Basis: "fixture"}
@@ -657,7 +683,7 @@ func TestSplitMovesABlockerParkToTheFirstMember(t *testing.T) {
 		t.Fatalf("open the blocker: %+v %v", res, err)
 	}
 	members := testMembers("split-parent")
-	result, err := Split(verbReqFor(endpoint, "01J5X00000000000000000SP03", "mac-a"), "split-parent", members, mainRatification("split-parent", members), nil)
+	result, err := splitAsPerson(t, verbReqFor(endpoint, "01J5X00000000000000000SP03", "mac-a"), "split-parent", members)
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", result, err)
 	}
@@ -666,20 +692,17 @@ func TestSplitMovesABlockerParkToTheFirstMember(t *testing.T) {
 		t.Fatal(err)
 	}
 	held := tree.Live["held"]
-	if held.State != StateParked || held.Parked == nil || held.Parked.Blocker != "split-parent-one" || strings.Join(held.Blocked, ",") != "split-parent-one,split-parent-two" {
+	if held.State != StateParked || held.Parked == nil || held.Parked.Blocker != "split-parent" || strings.Join(held.Blocked, ",") != "split-parent" {
 		t.Fatalf("the split moves the edge and the marker to the members: state=%s parked=%+v blocked=%v", held.State, held.Parked, held.Blocked)
 	}
-	for index, member := range []string{"split-parent-one", "split-parent-two"} {
-		claim := verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000SP%d0", index+1), "mac-a")
-		if res, err := claimApprovedForTest(t, claim, member, budget); err != nil || res.Outcome != OutcomeConfirmed {
-			t.Fatalf("claim %s: %+v %v", member, res, err)
-		}
-		result, err = Done(verbReqFor(endpoint, fmt.Sprintf("01J5X00000000000000000SP%d1", index+1), "mac-a"), member, "Done.")
-		if err != nil || result.Outcome != OutcomeConfirmed {
-			t.Fatalf("done %s: %+v %v", member, result, err)
-		}
+	human := verbReqFor(endpoint, "01J5X00000000000000000SP40", "mac-a")
+	human.Actor.Human = "wido"
+	human.Authority = testHumanAuthority(t, endpoint.Root, human.Now)
+	result, err = Done(human, "split-parent", "Person concluded the responsibility.")
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("done parent: %+v %v", result, err)
 	}
 	if tree, err = loadTreeFor(endpoint, result.Tip); err != nil || tree.Live["held"].State != StateApproved || tree.Live["held"].Parked != nil {
-		t.Fatalf("the last member's done returns the held goal: %v %+v", err, tree.Live["held"])
+		t.Fatalf("the parent's explicit done returns the held goal: %v %+v", err, tree.Live["held"])
 	}
 }

@@ -480,6 +480,9 @@ func confContentLookup(content, key string) (value string, found bool, err error
 // selection (defaults.go). It is strict on duplicates and on an unreadable
 // file, as ConfLookup is.
 func CommittedLookup(confPath, key string) (value string, found bool, err error) {
+	if confPath == "" {
+		return CommittedContentLookup("", key)
+	}
 	content, readErr := os.ReadFile(confPath)
 	if readErr != nil {
 		return "", false, fmt.Errorf("cannot read metasystem configuration: %s: %w", confPath, readErr)
@@ -604,11 +607,20 @@ func KeyOrigin(p GetParams) (string, error) {
 		return "", fmt.Errorf("invalid mode: %s", p.Mode)
 	}
 	if CommittedOnly(p.Key) {
-		source := "conf"
+		source := "default"
+		if p.ConfPath != "" {
+			_, found, err := ConfLookup(p.ConfPath, p.Key)
+			if err != nil {
+				return "", err
+			}
+			if found {
+				source = "conf"
+			}
+		}
 		if _, set := lookupEnv(EnvName(p.Key)); set {
 			source += "; environment value ignored"
 		}
-		if isFile(p.ConfPath + ".local") {
+		if p.ConfPath != "" && isFile(p.ConfPath+".local") {
 			_, found, err := ConfLookup(p.ConfPath+".local", p.Key)
 			if found || err != nil {
 				source += "; local value ignored"

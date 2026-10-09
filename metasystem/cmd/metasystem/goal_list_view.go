@@ -41,7 +41,7 @@ func goalRank(env textui.Env, file *goal.GoalFile) string {
 // priority 1, a parked one never.
 func goalListActive(file *goal.GoalFile) bool {
 	switch file.State {
-	case goal.StateClaimed, goal.StateApproved:
+	case goal.StateClaimed, goal.StateApproved, goal.StateSplit:
 		return true
 	case goal.StateQueued:
 		return file.Priority == 1

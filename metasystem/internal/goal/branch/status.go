@@ -10,9 +10,11 @@ import (
 const ParkUnpushedCode = "GOAL_PARK_UNPUSHED"
 
 type UnitStatus struct {
+	Drop                            *goal.UnitDrop
 	Whole                           bool
 	Unit, Commit, Digest, ReadState string
 	Units                           []string
+	PriorReadState, ScopeOperation  string
 }
 
 type Status struct {
@@ -21,6 +23,7 @@ type Status struct {
 	Units             []UnitStatus
 	Prefix            int
 	ReviewObligations []goal.ReviewObligation
+	Scope             *goal.GoalFile
 }
 
 type statusDependencies struct {
@@ -30,10 +33,17 @@ type statusDependencies struct {
 	localTip            func(repo, ref string) (string, bool, error)
 	gitOutput           func(repo string, args ...string) ([]byte, error)
 	transferObligations func(repo, endpoint, goalID string) []goal.ReviewObligation
+	drops               func(repo, endpoint, goalID string) ([]goal.UnitDrop, error)
+	dropTree            func(repo, commit string) (string, error)
+	scope               func(repo, endpoint, goalID string) (*goal.GoalFile, error)
 }
 
 func defaultStatusDependencies() statusDependencies {
 	return statusDependencies{validatedRange: ValidateRange, kind: KindOf, attestation: ValidateAttestationAt, localTip: localBranchTip, gitOutput: gitOutput,
+		drops: committedDrops, scope: committedScope, dropTree: func(repo, commit string) (string, error) {
+			out, err := gitOutput(repo, "rev-parse", commit+"^{tree}")
+			return strings.TrimSpace(string(out)), err
+		},
 		transferObligations: func(repo, endpoint, goalID string) []goal.ReviewObligation {
 			data, err := gitOutput(repo, "show", endpoint+":metasystem/plans/goals/"+goalID+".md")
 			if err != nil {
@@ -54,6 +64,39 @@ func statusDependenciesWithRaw(read func(string, ...string) ([]byte, error)) sta
 
 func InspectStatus(repo, endpointTip, tip, goalID string) (Status, error) {
 	return inspectStatus(repo, endpointTip, tip, goalID, defaultStatusDependencies())
+}
+
+// ApplyScope projects the current ledger's exclusion onto fresh branch status, preserving its prior read.
+func ApplyScope(status *Status, file *goal.GoalFile) {
+	status.Scope = file
+	if file == nil {
+		return
+	}
+	for i := range status.Units {
+		unit := &status.Units[i]
+		for _, drop := range file.UnitDrops {
+			if drop.Unit != unit.Unit || !slices.Contains(drop.Covered, unit.Commit) {
+				continue
+			}
+			if file.ExcludesScope(unit.Unit, "result:"+drop.Commit) {
+				if unit.ReadState != "dropped" {
+					unit.PriorReadState = unit.ReadState
+				}
+				unit.ReadState, unit.ScopeOperation = "dropped", drop.Operation
+			} else if slices.ContainsFunc(file.ScopeExclusions, func(e goal.ScopeExclusion) bool {
+				return e.Unit == unit.Unit && e.Operation == drop.Operation
+			}) {
+				if unit.ReadState == "dropped" {
+					unit.ReadState = unit.PriorReadState
+				}
+				unit.ScopeOperation = ""
+			}
+		}
+	}
+	status.Prefix = 0
+	for status.Prefix < len(status.Units) && status.Units[status.Prefix].Resolved() {
+		status.Prefix++
+	}
 }
 
 func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencies) (Status, error) {
@@ -94,8 +137,21 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 			return deps.attestation(repo, tip, endpointTip, goalID, unit.Unit, unit.Commit)
 		})
 	}
+	if err := applyDrops(&result, repo, endpointTip, goalID, deps); err != nil {
+		return Status{}, err
+	}
+	if deps.scope != nil {
+		file, err := deps.scope(repo, endpointTip, goalID)
+		if err != nil {
+			return Status{}, err
+		}
+		if file != nil {
+			ApplyScope(&result, file)
+			return result, nil
+		}
+	}
 	for _, unit := range result.Units {
-		if unit.ReadState != "read clean" && unit.ReadState != "read transferred" {
+		if !unit.Resolved() {
 			break
 		}
 		result.Prefix++

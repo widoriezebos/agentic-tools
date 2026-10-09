@@ -90,7 +90,10 @@ func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *
 		t.Fatalf("stop is not visible: %d %s", code, text)
 	}
 	// The keeper recovers the request already reconciled by check admission.
-	agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.now = func() time.Time { return laneTestNow }
+		agent.machine = func(string) (string, error) { return "lane-machine", nil }
+	})
 	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, command) {
 		t.Fatalf("keeper did not ask and hold: %q %v", hold, err)
 	}
@@ -155,7 +158,10 @@ func TestLandingStopCauseChoosesTheHandoff(t *testing.T) {
 			if err != nil || stop == nil || stop.Cause.Kind != kind {
 				t.Fatalf("no attributed stop: %+v %v", stop, err)
 			}
-			agent := landingAgent{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
+			agent := newTestLandingAgent(func(agent *landingAgent) {
+				agent.now = func() time.Time { return laneTestNow }
+				agent.machine = func(string) (string, error) { return "lane-machine", nil }
+			})
 			if _, err := syncStopQuestionHold(agent, b.install); err != nil {
 				t.Fatal(err)
 			}
@@ -200,7 +206,11 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 				t.Fatalf("return request: %d %s", code, out)
 			}
 			// The observer synchronizes requests from fresh lane inputs (lane-reads-its-policies.md:140).
-			agent := landingAgent{proofEffects: b.owners.landing.plainProve, now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }}
+			agent := newTestLandingAgent(func(agent *landingAgent) {
+				agent.proofEffects = b.owners.landing.plainProve
+				agent.now = func() time.Time { return laneTestNow }
+				agent.machine = func(string) (string, error) { return "lane-machine", nil }
+			})
 			if _, err := syncStopQuestionHold(agent, b.install); err != nil {
 				t.Fatal(err)
 			}

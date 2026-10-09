@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+func TestFleetAndProcessDefaultsCoexist(t *testing.T) {
+	t.Parallel()
+	for key, want := range map[string]string{"host.builds": "auto", "host.load-max": "8", "process.change": "person"} {
+		if got, ok := CompiledDefault(key); !ok || got != want {
+			t.Fatalf("CompiledDefault(%s) = %q, %t; want %q", key, got, ok, want)
+		}
+		if ProofInput(key) {
+			t.Fatalf("%s changed proof identity", key)
+		}
+	}
+}
+
 func TestRosterRuntimeNames(t *testing.T) {
 	t.Parallel()
 	for value, want := range map[string][]string{
@@ -30,6 +42,7 @@ func TestCompiledDefaultsAnswerEveryReader(t *testing.T) {
 	putFile(t, conf, "# overrides only\n")
 	for key, want := range map[string]string{
 		"watch.stale-min": "20", "suite.section-cap-min": "45", "metasystem.runtimes": "claude,codex,devin",
+		"design.unit-lines-max": "250", "design.goal-units-max": "5",
 		"testing.contract": "testing.json", "dispatch.max-inline-input-kb": "80", "dispatch.transport.devin": "acp",
 		"launch.build.model.claude": "claude-opus-5-5", "role.default.model.claude": "claude-opus-5-5",
 	} {
@@ -283,6 +296,14 @@ func TestNoConfigurationFileResolvesTheCompiledDefaults(t *testing.T) {
 	}
 	if origin, err := KeyOrigin(GetParams{Key: "watch.stale-min", LookupEnv: noEnv}); err != nil || origin != "default" {
 		t.Fatalf("KeyOrigin without a file = %q, %v", origin, err)
+	}
+	for key, want := range map[string]string{"design.unit-lines-max": "250", "design.goal-units-max": "5"} {
+		if value, code, err := Get(GetParams{Key: key, LookupEnv: noEnv}); err != nil || code != 0 || value != want {
+			t.Fatalf("Get(%s) without a file = %q, %d, %v; want %q", key, value, code, err, want)
+		}
+		if origin, err := KeyOrigin(GetParams{Key: key, LookupEnv: noEnv}); err != nil || origin != "default" {
+			t.Fatalf("KeyOrigin(%s) without a file = %q, %v; want default", key, origin, err)
+		}
 	}
 }
 

@@ -1,8 +1,12 @@
 package act
 
 import (
+	"context"
 	"fmt"
+	"os"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
@@ -48,6 +52,18 @@ func (r reads) reconcile(root string, endpoint goal.Endpoint) error {
 	}
 	if !blocked {
 		return nil
+	}
+	if endpoint.SplitConfirmed == nil {
+		endpoint.SplitConfirmed = func(e goal.Endpoint, tip, parent string, now time.Time) {
+			projection, err := goal.ProjectAtEndpoint(e, tip, now)
+			if err == nil {
+				split := projection.Tree.Live[parent].Split
+				err = phase.NotifySplitApproval(context.Background(), e, tip, parent, split.Transaction, split.Children, now)
+			}
+			if err != nil {
+				fmt.Fprintln(os.Stderr, err)
+			}
+		}
 	}
 	reports, recoverErr := goal.RecoverWithPolicy(endpoint, recovering{root: root, reads: r})
 	if recoverErr != nil {

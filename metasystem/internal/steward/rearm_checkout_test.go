@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 func TestRearmBehindCheckoutDefersOncePerPush(t *testing.T) {
@@ -62,11 +64,45 @@ func TestRunnerRearmsAtNextUnitBoundary(t *testing.T) {
 
 func TestUnitBoundaryHoldsALiveStepPastItsBudget(t *testing.T) {
 	t.Parallel()
-	bed, units, work, options := seatBusyFixture(t)
-	seatBusyRun(t, units, bed.now.Add(-24*time.Hour), 41)
-	options.AtBoundary = true
-	busy, _, skipped := SeatBusyAt(bed.root, units, work, options)
-	if !busy || skipped != 0 {
-		t.Fatalf("boundary allowed a running step: busy=%t skipped=%d", busy, skipped)
+	for _, scenario := range []string{"live", "orphan", "starting", "capacity-held"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			bed, units, work, _ := seatBusyFixture(t)
+			seatBusyRun(t, units, bed.now.Add(-24*time.Hour), 41)
+			store := launch.Store{Root: filepath.Join(filepath.Dir(units), "launch")}
+			record, err := store.Read("launch-1")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "live" {
+				exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+				if err != nil || state != identity.Alive {
+					t.Fatalf("fixture identity: %s %v", state, err)
+				}
+				ref := exact.Ref()
+				record.Supervisor = &ref
+			} else if scenario == "orphan" {
+				record.Supervisor = &identity.Ref{Pid: int64(os.Getpid()), StartedAtSec: 1}
+			} else {
+				record.Supervisor = nil
+			}
+			if scenario == "starting" {
+				record.State = launch.Starting
+			}
+			if _, err := store.Update(record.ID, func(saved *launch.Record) error { *saved = record; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "starting" || scenario == "capacity-held" {
+				step := launch.UnitStep{Name: "build", State: launch.StepStarting, LaunchID: "not-started", StartedAt: bed.now.Format(time.RFC3339Nano)}
+				if scenario == "starting" {
+					step.LaunchID = record.ID
+				}
+				writeStewardRecord(t, filepath.Join(units, "run-1", "run.json"), map[string]any{"id": "run-1", "goal": "held", "state": "running", "rounds": []launch.UnitRound{{Steps: []launch.UnitStep{step}}}})
+			}
+			ready, err := SeatAtUnitBoundary(bed.root, filepath.Dir(units), bed.now, work)
+			if err != nil || ready != (scenario == "orphan") {
+				t.Fatalf("%s boundary: ready=%t error=%v", scenario, ready, err)
+			}
+		})
 	}
 }

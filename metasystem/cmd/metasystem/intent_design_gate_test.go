@@ -24,22 +24,55 @@ import (
 
 func newDesignGateBed(t *testing.T, tier uint8) *workBed {
 	t.Helper()
-	return newWorkBedWith(t, func(f *goal.GoalFile) {
+	bed := newWorkBedWith(t, func(f *goal.GoalFile) {
 		f.Tier = tier
 		f.Risk = &goal.RiskRecord{Severity: tier, Novelty: tier, Exposure: 1, Accumulation: 1, Basis: "Exercise the design gate."}
 		workApprovedBox(f)
 	})
+	// These existing gate fixtures represent pages accepted before size declarations.
+	bed.workOwnersHook = func(o *intentWorkOwners) {
+		fallback := o.git
+		o.git = func(root string, args ...string) ([]byte, error) {
+			if args[0] == "log" {
+				return []byte("historical-declaration\n"), nil
+			}
+			if args[0] == "show" {
+				_, path, _ := strings.Cut(args[1], ":")
+				if strings.Contains(path, "plans/designs/") {
+					return os.ReadFile(filepath.Join(root, filepath.FromSlash(path)))
+				}
+			}
+			return fallback(root, args...)
+		}
+	}
+	return bed
+
 }
 
-func designGatePage(t *testing.T, bed *workBed, critique string) (string, []byte) {
+func designGatePage(t *testing.T, bed *workBed, critique string, sections ...string) (string, []byte) {
 	t.Helper()
 	path := filepath.Join(bed.stateRoot(), "plans", "designs", "gate.md")
-	data := []byte("# Gate design\n\n- Kind: design\n- Id: gate-design\n- Status: accepted\n- Goals: " + bed.id + "\n" + critique + "\nBuild the gate.\n")
+	data := []byte("# Gate design\n\n- Kind: design\n- Id: gate-design\n- Status: accepted\n- Goals: " + bed.id + "\n" + strings.TrimRight(critique, "\n") + "\n\nBuild the gate.\n")
+	data = append(data, []byte(strings.Join(sections, ""))...)
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
+	}
+	// Main retains the accepted bytes even when the working page changes.
+	hook := bed.workOwnersHook
+	bed.workOwnersHook = func(owners *intentWorkOwners) {
+		if hook != nil {
+			hook(owners)
+		}
+		git := owners.git
+		owners.git = func(root string, args ...string) ([]byte, error) {
+			if slices.Equal(args, []string{"show", "origin/main:plans/designs/gate.md"}) {
+				return append([]byte(nil), data...), nil
+			}
+			return git(root, args...)
+		}
 	}
 	return path, data
 }
@@ -157,7 +190,7 @@ func TestDesignGateWarnsAndStillBuilds(t *testing.T) {
 	t.Parallel()
 	bed := newDesignGateBed(t, 2)
 	result, output := designGateBuild(t, bed, "u")
-	want := "warning: goal " + bed.id + " has no accepted design; this build runs on its brief alone\nmetasystem design write " + bed.id + " --brief FILE\n"
+	want := "warning: goal " + bed.id + " has no accepted design; this build runs on its brief alone\nmetasystem design write " + bed.id + " --brief FILE\nwarning: estimate unavailable; the build goes on\n"
 	if output != want {
 		t.Fatalf("warning pair: got %q want %q", output, want)
 	}
@@ -240,7 +273,7 @@ func TestDesignGateStandingEvidence(t *testing.T) {
 			if tier == 1 {
 				want = "not-design-bearing"
 			}
-			if output != "" || record.Verdict != want || record.WouldRefuse {
+			if output != "warning: estimate unavailable; the build goes on\n" || record.Verdict != want || record.WouldRefuse {
 				t.Fatalf("standing evidence: record=%+v output=%q", record, output)
 			}
 			if tier > 1 {
@@ -326,8 +359,12 @@ func TestDesignGateMalformedJobStillBuilds(t *testing.T) {
 	}
 	result, output := designGateBuild(t, bed, "u")
 	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
-	if len(lines) != 2 || !strings.HasPrefix(lines[0], "warning: the design check could not run (") || !strings.Contains(lines[0], path) || !strings.HasSuffix(lines[0], "); this build was not checked") || lines[1] != "metasystem design list --goal "+bed.id {
+	if len(lines) != 3 || !strings.HasPrefix(lines[0], "warning: the design check could not run (") || !strings.Contains(lines[0], path) || !strings.HasSuffix(lines[0], "); this build was not checked") || lines[1] != "metasystem design list --goal "+bed.id {
 		t.Fatalf("broken job warning pair: %q", output)
+	}
+	problem := strings.TrimSuffix(strings.TrimPrefix(lines[0], "warning: the design check could not run ("), "); this build was not checked")
+	if lines[2] != "warning: estimate unavailable ("+problem+"); the build goes on at your word" {
+		t.Fatalf("broken job estimate warning: %q", lines[2])
 	}
 	identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 	_, record := designGateRead(t, bed, identity, "u")
@@ -417,7 +454,7 @@ func TestDesignGateRecordWorkNameCannotEscape(t *testing.T) {
 				return nil
 			}
 			_, output := designGateBuild(t, bed, "../other-goal/main")
-			want := "warning: the design check's record could not be written (the work name is not one plain path segment); the build goes on\nnothing to do: the landing check runs without it\n"
+			want := "warning: the design check's record could not be written (the work name is not one plain path segment); the build goes on\nnothing to do: the landing check runs without it\nwarning: estimate unavailable; the build goes on\n"
 			if output != want || lowlight != strings.Split(want, "\n")[0] || writes != 0 {
 				t.Fatalf("unsafe work name: writes=%d output=%q lowlight=%q", writes, output, lowlight)
 			}

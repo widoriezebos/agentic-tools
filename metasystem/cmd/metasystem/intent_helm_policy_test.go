@@ -113,10 +113,13 @@ func TestHelmPolicyHostAcceptance(t *testing.T) {
 	if len(envelope.Data.Checkouts) != 4 {
 		t.Fatalf("primary checkouts were not deduplicated: %s", raw)
 	}
-	for root, count := range map[string]int{b.seat: 3, b.second: 3, b.lane: 7, b.coordinator: 4} {
+	for root, count := range map[string]int{b.seat: 4, b.second: 4, b.lane: 8, b.coordinator: 5} {
 		state := helm.Active(root)
 		if !state.Active || len(state.Policies) != count {
 			t.Fatalf("%s signature: %+v", root, state)
+		}
+		if policy := state.Policies["process.change"]; policy.Name != "process.change" || policy.Value != "person" || policy.Previous.Value != "person" || policy.Previous.Source != "built-in" {
+			t.Fatalf("%s process-change hold: %+v", root, policy)
 		}
 		policies := b.policies(t, root)
 		if len(policies) != count {
@@ -310,7 +313,7 @@ func TestHelmPolicyLegacyAndOriginalHolder(t *testing.T) {
 	b := newHelmFleetBed(t)
 	_, err := helm.Write(b.lane, helm.Record{By: "Original", At: b.now.Format(time.RFC3339), Reason: "legacy", Checkout: b.lane})
 	helmMust(t, err)
-	if policies := b.policies(t, b.lane); len(policies) != 7 {
+	if policies := b.policies(t, b.lane); len(policies) != 8 {
 		t.Fatalf("legacy scope lost: %+v", policies)
 	} else {
 		for _, policy := range policies {
@@ -326,7 +329,7 @@ func TestHelmPolicyLegacyAndOriginalHolder(t *testing.T) {
 	if code, _, raw := b.helm(t, b.seat, "take", "--repo", b.lane, "--reason", "legacy"); code != 0 || !reflect.DeepEqual(original, helm.Active(b.lane).Record) {
 		t.Fatalf("implicit repeat changed the holder or did not refresh the terminal: %d %s", code, raw)
 	}
-	if code, _, raw := b.helm(t, b.seat, "take", "--repo", b.lane, "--reason", "replace", "--name", "Ann"); code != 0 || helm.Active(b.lane).By != "Ann" || len(helm.Active(b.lane).Policies) != 7 {
+	if code, _, raw := b.helm(t, b.seat, "take", "--repo", b.lane, "--reason", "replace", "--name", "Ann"); code != 0 || helm.Active(b.lane).By != "Ann" || len(helm.Active(b.lane).Policies) != 8 {
 		t.Fatalf("explicit replacement: %d %s", code, raw)
 	}
 }
@@ -346,7 +349,7 @@ func TestHelmPolicyHostReadsCoordinatorDeclaration(t *testing.T) {
 	}
 	_, err = brain.Declare(brain.DeclareOptions{StateRoot: b.coordinator, RegistryHome: filepath.Dir(b.home), LedgerIdentity: id, Machine: "fixture", DeclaredBy: "Wido", Now: b.now})
 	helmMust(t, err)
-	if code, _, raw := b.helm(t, b.seat, "take", "--all", "--reason", "declarations"); code != 0 || !helm.Active(b.coordinator).Active || len(helm.Active(b.coordinator).Policies) != 4 {
+	if code, _, raw := b.helm(t, b.seat, "take", "--all", "--reason", "declarations"); code != 0 || !helm.Active(b.coordinator).Active || len(helm.Active(b.coordinator).Policies) != 5 {
 		t.Fatalf("declaration was not enumerated: %d %s", code, raw)
 	}
 	// An unreadable lane must not hide the independently readable coordinator.

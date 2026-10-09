@@ -290,10 +290,11 @@ func intentPlanningCommands() []intentCommand {
 			run:      runIntentRevoke,
 		},
 		{
-			object: "goal", action: "split", audience: "both", summary: "split a goal into independently claimable related goals",
-			usage: []string{"metasystem goal split G --plan FILE"},
-			details: []string{"The parent concludes as decomposed and its members become a group of related goals. The same goal rules apply",
-				"to each member; splitting a person's goal is a person's act at the enrolled terminal. FILE, for goal big-goal:",
+			object: "goal", action: "split", audience: "both", summary: "hold a goal and open its unapproved children",
+			usage: []string{"metasystem goal split G --plan FILE", "metasystem goal split G --reverse --reason TEXT"},
+			details: []string{"The parent stays live as split; children need their own risk, budget and approval, and remain held by the parent.",
+				"After approval, deliberately release each hold with metasystem goal unblock CHILD --on G. Other prerequisites remain.",
+				"Splitting is a person's act at the enrolled terminal. FILE, for goal big-goal:",
 				"  # split big-goal",
 				"  ## member first",
 				"  - Intent: Build the reader.",
@@ -303,8 +304,8 @@ func intentPlanningCommands() []intentCommand {
 				"  - Next step: Write the writer's brief.",
 				"  - BlockedBy: first",
 				"  - Labels: io, writer",
-				"BlockedBy and Labels are optional comma-separated lists."},
-			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "plan", aliases: []string{"members"}, value: "FILE", usage: "the member draft"}}, intentHumanActFlags),
+				"BlockedBy and Labels are optional comma-separated lists.", "A person can reverse before any child work starts; children stay parked with their lineage and reason, without execution approval."},
+			flags:    withFlags([]intentFlag{intentTargetFlag, {name: "plan", aliases: []string{"members"}, value: "FILE", usage: "the member draft"}, {name: "reverse", usage: "restore the parent before child work starts"}, {name: "reason", value: "TEXT", usage: "why the split is reversed"}}, intentHumanActFlags),
 			maxArgs:  1,
 			examples: []string{"metasystem goal split big-goal --plan members.md"},
 			run:      runIntentSplit,
@@ -1778,6 +1779,10 @@ func runIntentReopen(inv *intentInvocation) int {
 	switch {
 	case file == nil:
 		return unknownGoal(inv, id)
+	case file.State == goal.StateSplit:
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
+			Summary: id + " is split; its work resumes through a person's reversal",
+			next:    inv.publicArgv("goal", "split", id, "--reverse", "--reason", "TEXT"), nextReason: "restores the parent before child work starts"})
 	case where == "live" && file.NextStep == next:
 		// Open with this next step is what a reopen asks for: a repeat,
 		// success with no record (R-129-ui, U-idem).
@@ -2053,6 +2058,12 @@ func runIntentSplit(inv *intentInvocation) int {
 		return code
 	}
 	plan := inv.input.text("plan")
+	if inv.input.switched("reverse") {
+		if plan != "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "--reverse and --plan are mutually exclusive; nothing was done", next: inv.typedArgvLess("plan"), nextReason: "reverses the split"})
+		}
+		return runIntentSplitReverse(inv, id)
+	}
 	if plan == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id), Summary: "a split needs the draft of its member goals; nothing was done",
 			next: inv.typedArgvWith("--plan", "FILE"), nextReason: "FILE lists the member goals in the draft format"})

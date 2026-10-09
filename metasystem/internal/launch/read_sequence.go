@@ -39,6 +39,12 @@ func (driver stepDriver) advanceStep(index int, spec StartSpec, deadline time.Ti
 
 func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 	step := &driver.round.Steps[index]
+	if step.Kind == "" {
+		step.Kind = spec.Kind
+		if spec.Kind == "proof" {
+			step.Kind = "attest"
+		}
+	}
 	if driver.unit && (step.State == StepPassed || step.State == StepFailed) {
 		return Record{}, nil
 	}
@@ -102,7 +108,7 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 		}
 		launchRecord, err = driver.start(spec)
 	}
-	if IsCode(err, "UNIT_WAIT_RETRY") {
+	if IsCode(err, "UNIT_WAIT_RETRY") || IsCode(err, "LAUNCH_BUILD_CAPACITY") || IsCode(err, "LAUNCH_BUILD_PERSON") {
 		return launchRecord, err
 	}
 	if err != nil && launchRecord.ID == "" {
@@ -113,6 +119,7 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 		}
 		return Record{}, err
 	}
+	step.ExecutionStartedAt = launchRecord.StartedAt
 	if launchRecord.State.Terminal() {
 		driver.endStep(index, launchRecord)
 		return launchRecord, driver.save()
@@ -160,8 +167,12 @@ func (driver stepDriver) waitStep(index int, deadline time.Time) (bool, error) {
 
 func (driver stepDriver) endStep(index int, launchRecord Record) {
 	step := &driver.round.Steps[index]
-	step.State, step.Reason, step.FinishedAt = StepFailed, launchRecord.Reason, driver.manager.Now().UTC().Format(time.RFC3339Nano)
+	step.State, step.Reason = StepFailed, launchRecord.Reason
+	if step.FinishedAt == "" {
+		step.FinishedAt = driver.manager.Now().UTC().Format(time.RFC3339Nano)
+	}
 	step.Cause = launchRecord.Cause
+	step.ExecutionStartedAt, step.ExecutionEndedAt = launchRecord.StartedAt, launchRecord.FinishedAt
 	step.Deadline = launchRecord.Cause == "deadline"
 	if driver.unit && launchRecord.State != Completed {
 		step.Cause = failedStepCause(launchRecord)

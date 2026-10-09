@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func adjudicateBed(t *testing.T) (AdjudicateParams, string) {
@@ -20,6 +20,7 @@ func adjudicateBed(t *testing.T) (AdjudicateParams, string) {
 	root := t.TempDir()
 	logPath := filepath.Join(root, "job.log")
 	return AdjudicateParams{
+		Home: testprovider.Register(t, root), Runtime: "claude", Model: "fixture-model", ObservedAt: time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC),
 		Stage:         "initial",
 		Root:          root,
 		Job:           "job-1",
@@ -43,8 +44,8 @@ func TestAdjudicateOverloadedCLIMarksTheOutage(t *testing.T) {
 	if err != nil || verdict != "fail-pending runtime_error handshake" {
 		t.Fatalf("the verdict must not change for an overload: %q %v", verdict, err)
 	}
-	mark, ok := outage.Read(p.Root)
-	if !ok || mark.LastClass != "overloaded" || mark.Source != "delegate-adapter" {
+	mark, ok := testprovider.Read(p.Root)
+	if !ok || mark.LastClass != "overloaded" || mark.Source != p.Job {
 		t.Fatalf("the overload must feed the mark: %+v ok=%v", mark, ok)
 	}
 }
@@ -59,7 +60,7 @@ func TestAdjudicateOrdinaryCrashMarksNothing(t *testing.T) {
 	if _, err := AdjudicateTurn(p); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := outage.Read(p.Root); ok {
+	if _, ok := testprovider.Read(p.Root); ok {
 		t.Fatal("an ordinary crash must not mark an outage")
 	}
 }
@@ -67,19 +68,17 @@ func TestAdjudicateOrdinaryCrashMarksNothing(t *testing.T) {
 // A completed adjudication clears a standing mark: any provider
 // success ends the outage.
 func TestAdjudicateCompletedClearsTheMark(t *testing.T) {
-	root := t.TempDir()
-	if _, err := outage.Record(root, "overloaded", "529", "mission-runner", time.Now()); err != nil {
+	t.Parallel()
+	p, _ := adjudicateBed(t)
+	if _, err := testprovider.Record(p.Root, "overloaded", "529", "mission-runner", p.ObservedAt.Add(-time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	verdict, err := AdjudicateTurn(AdjudicateParams{
-		Stage:    "settle-result",
-		Root:     root,
-		SettleOK: true,
-	})
+	p.Stage, p.SettleOK = "settle-result", true
+	verdict, err := AdjudicateTurn(p)
 	if err != nil || verdict != "finish completed null completed" {
 		t.Fatalf("the settle verdict: %q %v", verdict, err)
 	}
-	if _, ok := outage.Read(root); ok {
+	if _, ok := testprovider.Read(p.Root); ok {
 		t.Fatal("a completed turn must clear the outage mark")
 	}
 }
@@ -90,7 +89,7 @@ func TestAdjudicateCompletedClearsTheMark(t *testing.T) {
 // proves nothing and the mark stands.
 func TestAdjudicateProviderSuccessNeedsEvidence(t *testing.T) {
 	p, _ := adjudicateBed(t)
-	if _, err := outage.Record(p.Root, "overloaded", "529", "delegate-adapter", time.Now()); err != nil {
+	if _, err := testprovider.Record(p.Root, "overloaded", "529", "delegate-adapter", p.ObservedAt.Add(-time.Second)); err != nil {
 		t.Fatal(err)
 	}
 	p.CLIStatus = 0
@@ -98,16 +97,17 @@ func TestAdjudicateProviderSuccessNeedsEvidence(t *testing.T) {
 	if err != nil || verdict != "fail-pending handshake_missing_session_id handshake" {
 		t.Fatalf("the no-handshake verdict: %q %v", verdict, err)
 	}
-	if _, ok := outage.Read(p.Root); !ok {
+	if _, ok := testprovider.Read(p.Root); !ok {
 		t.Fatal("exit 0 without a handshake proves nothing; the mark must stand")
 	}
 	p.HandshakeDone = true
+	p.ObservedAt = p.ObservedAt.Add(time.Second)
 	// The candidate is absent, so validation fails — but the correlated
 	// handshake proves the provider answered.
 	if _, err := AdjudicateTurn(p); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := outage.Read(p.Root); ok {
+	if _, ok := testprovider.Read(p.Root); ok {
 		t.Fatal("a correlated conversation must clear the mark despite the task failing")
 	}
 }
@@ -126,7 +126,7 @@ func TestAdjudicateErrorDocumentOnZeroExitRecords(t *testing.T) {
 	if _, err := AdjudicateTurn(p); err != nil {
 		t.Fatal(err)
 	}
-	mark, ok := outage.Read(p.Root)
+	mark, ok := testprovider.Read(p.Root)
 	if !ok || mark.LastClass != "overloaded" {
 		t.Fatalf("the provider's error document on a zero exit must record: %+v ok=%v", mark, ok)
 	}
@@ -146,8 +146,8 @@ func TestAdjudicateOverloadedRepairMarksTheOutage(t *testing.T) {
 	if err != nil || verdict != "protocol-error" {
 		t.Fatalf("the failed-repair verdict: %q %v", verdict, err)
 	}
-	mark, ok := outage.Read(p.Root)
-	if !ok || mark.Source != "delegate-adapter" {
+	mark, ok := testprovider.Read(p.Root)
+	if !ok || mark.Source != p.Job {
 		t.Fatalf("a repair call dying on overload must feed the mark: %+v ok=%v", mark, ok)
 	}
 }

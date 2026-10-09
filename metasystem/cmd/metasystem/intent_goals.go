@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -26,6 +27,14 @@ import (
 // goal's recorded state and render the owner's typed result.
 
 func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentResult) {
+	return inv.projectionWithFetch(inv.input.switched("fetch"))
+}
+
+func (inv *intentInvocation) projectionWithFetch(fetchFirst bool) (goal.Projection, time.Time, *intentResult) {
+	if inv.owners.dependencies.endpoint == nil {
+		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1, Summary: "the goal list is unavailable: no endpoint reader is configured",
+			next: inv.publicArgv("system", "check"), nextReason: "shows how this checkout is set up"}
+	}
 	if inv.layout.InstallationRoot == "" {
 		layout, err := inv.owners.resolver.ResolveLayout(inv.stateRoot)
 		if err != nil {
@@ -44,7 +53,7 @@ func (inv *intentInvocation) projection() (goal.Projection, time.Time, *intentRe
 			next: inv.typedArgv(), nextReason: "try again"}
 	}
 	// --fetch is the goal owner's explicit fetch and validation.
-	projection, err := goal.Project(endpoint, inv.input.switched("fetch"), now)
+	projection, err := goal.Project(endpoint, fetchFirst, now)
 	if errors.Is(err, goal.ErrLedgerNotFetched) {
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, code: 1,
 			Summary: "this checkout has not fetched the goal ledger yet; nothing was read",
@@ -246,18 +255,26 @@ type intentBudgetView struct {
 	Projection *dispatchcore.BudgetProjection `json:"projection,omitempty"`
 }
 
-func budgetView(stateRoot string, file *goal.GoalFile, now time.Time) intentBudgetView {
+func (inv *intentInvocation) budgetView(file *goal.GoalFile, now time.Time) intentBudgetView {
 	if file == nil || file.Budget == nil {
 		return intentBudgetView{Lens: "none"}
 	}
 	view := intentBudgetView{Box: goalbudget.FormatBox(*file.Budget)}
+	lookup := inv.owners.lookupEnv
+	if lookup == nil {
+		lookup = os.LookupEnv
+	}
+	home, err := board.HomeWith(lookup)
+	if err != nil {
+		return intentBudgetView{Box: view.Box, Lens: "unknown", Projection: &dispatchcore.BudgetProjection{Status: dispatchcore.BudgetUnknown, Unknown: &dispatchcore.BudgetUnknownEvidence{Record: "provider home", Reason: err.Error()}}}
+	}
 	var projection dispatchcore.BudgetProjection
 	if file.State == goal.StateClaimed && file.Claimed != nil {
 		view.Lens = "claim"
-		projection = dispatchcore.ProjectBudget(stateRoot, file, now)
+		projection = dispatchcore.ProjectBudget(inv.layout.InstallationRoot.Path(), file, now, home)
 	} else {
 		view.Lens = "episode"
-		projection = dispatchcore.BudgetProjection(dispatchcore.ProjectConsumption(stateRoot, file, now))
+		projection = dispatchcore.BudgetProjection(dispatchcore.ProjectConsumption(inv.layout.InstallationRoot.Path(), file, now, home))
 	}
 	view.Projection = &projection
 	return view
@@ -440,7 +457,7 @@ func runIntentShow(inv *intentInvocation) int {
 	if file == nil {
 		return unknownGoal(inv, id)
 	}
-	view := budgetView(inv.stateRoot, file, now)
+	view := inv.budgetView(file, now)
 	designs, designProblem := inv.linkedDesigns(id)
 	data := map[string]any{"where": where, "tip": projection.Tip, "goal": goalDisplayRecord(file, inv.input.switched("history")), "budget": view, "designs": designs}
 	if designProblem != "" {
@@ -518,7 +535,7 @@ func runIntentBudget(inv *intentInvocation) int {
 		return unknownGoal(inv, id)
 	}
 	if box == "" {
-		view := budgetView(inv.stateRoot, file, now)
+		view := inv.budgetView(file, now)
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: view.lines()[1:],
 			Summary: view.lines()[0], Data: map[string]any{"where": where, "state": file.State, "budget": view}})
 	}
@@ -676,7 +693,7 @@ func (inv *intentInvocation) afterGoalAct(id, act string) intentResult {
 	if file == nil {
 		return intentResult{Summary: act + " confirmed for " + id}
 	}
-	view := budgetView(inv.stateRoot, file, now)
+	view := inv.budgetView(file, now)
 	summary := fmt.Sprintf("%s: %s is %s", act, id, file.State)
 	if view.Box != "" {
 		summary += " under " + view.Box
@@ -843,6 +860,10 @@ func runIntentResume(inv *intentInvocation) int {
 			Summary:  fmt.Sprintf("%s is %s; only a parked or stopped goal resumes; nothing was done", id, where),
 			Decision: "reopening an archived goal is its own act with a fresh next step",
 			next:     inv.publicArgv("goal", "reopen", id, "--next", "TEXT"), nextReason: "reopens the goal under its own authority with the next step it names"})
+	case file.State == goal.StateSplit:
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
+			Summary: id + " is split; its work resumes through a person's reversal",
+			next:    inv.publicArgv("goal", "split", id, "--reverse", "--reason", "TEXT"), nextReason: "restores the parent before child work starts"})
 	case file.State == goal.StateParked:
 		if inv.input.has("approved-ref") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: inv.targets(id),
@@ -902,6 +923,23 @@ func runIntentResume(inv *intentInvocation) int {
 	}
 	return inv.render(intentResult{Outcome: intentUnchanged, Targets: inv.targets(id),
 		Summary: fmt.Sprintf("%s is already not paused (it is %s); an approved goal waits to be claimed", id, file.State)})
+}
+
+func runIntentScopeRestore(inv *intentInvocation) int {
+	if len(inv.input.args) != 3 || inv.input.args[0] != "restore" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "restore needs the goal and excluded unit", next: inv.publicArgv("goal", "scope", "restore", "GOAL", "UNIT", "--by", "NAME")})
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	id, unit := inv.input.args[1], inv.input.args[2]
+	actor, proof, problem := inv.actingAs("scope restore", id, actorHuman)
+	if problem != nil {
+		return inv.render(*problem)
+	}
+	return inv.render(inv.goalAct(id, "restore scope", inv.syncOwner("scope-restore", append([]string{"--root", inv.stateRoot, "--id", id}, actor...), proof, false, func(r goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
+		return goal.RestoreScope(r, id, unit)
+	}, "id")))
 }
 
 func runIntentDone(inv *intentInvocation) int {

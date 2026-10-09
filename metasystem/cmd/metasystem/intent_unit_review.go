@@ -13,6 +13,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -222,6 +223,22 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		return endpointTip, nil
 	}
 	subject := review.Subject
+	if subject == nil && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" && len(review.Round.Reads) > 0 {
+		read := review.Round.Reads[len(review.Round.Reads)-1]
+		subject = &launch.UnitSubject{Round: review.Round.Number, Operation: record.ID + "-pending", ExpectedParent: review.Head, DiffDigest: review.DiffDigest, Examination: read.ID, ExaminationRound: int64(review.Round.Number), ExaminationReturnPath: read.Output}
+		if err := retain(*subject); err != nil {
+			return refuse(retry, "retains the stopped patch review", "the stopped review could not be retained", "%v", err)
+		}
+	}
+	if inv.reviewWork != nil && subject != nil {
+		inv.reviewWork.run, inv.reviewWork.attempt, inv.reviewWork.subject, inv.reviewWork.retain, inv.reviewWork.review = record.ID, review.Round.Number, subject, retain, &review
+		// The stop arm needs a decisions file: a bare --retry of a stopped unit must reach its fresh examination.
+		if subject.Drop != nil || subject.Commit == "" && subject.Examination != "" || inv.input.has("dispositions") && subject.Examination != "" && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" {
+			if stopped := inv.reviewStoppedUnit(targets, install, subject.Examination, subject.ExaminationReturnPath, inv.reviewWork); stopped != nil {
+				return *stopped
+			}
+		}
+	}
 	if subject == nil || subject.Commit == "" {
 		base, err := tip()
 		if err != nil {
@@ -475,7 +492,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	}
 	if inv.reviewWork != nil {
 		inv.reviewWork.attempt, inv.reviewWork.retain, inv.reviewWork.subject = review.Round.Number, retain, subject
-		inv.reviewWork.run = record.ID
+		inv.reviewWork.run, inv.reviewWork.review = record.ID, &review
 	}
 	if inv.reviewWork != nil && inv.reviewWork.retry > 0 {
 		args = append(args, "--retry", strconv.FormatInt(inv.reviewWork.retry, 10))
@@ -585,6 +602,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		result.Data = data
 	}
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+		if err := inv.retainPublication(subject, result, retain); err != nil {
+			return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data, Summary: "the read is published, but its publication time could not be retained: " + err.Error(), next: retry, nextReason: "rechecks the published read; a missing publication time stays unavailable"}
+		}
 		if bundle != nil {
 			result.Summary = fmt.Sprintf("the build's clean read %s by %s is the unit's read and is published", bundle.ReadLaunch, bundle.ReadModel)
 		}
@@ -855,7 +875,7 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 		runner := inv.unitRunner()
 		err := runner.ReviewSubject(work.Run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 			caller := *inv
-			caller.reviewWork = &reviewWorkContext{goal: goalID, work: work.Unit, run: work.Run, attempt: review.Round.Number, subject: review.Subject, retain: retain}
+			caller.reviewWork = &reviewWorkContext{goal: goalID, work: work.Unit, run: work.Run, attempt: review.Round.Number, subject: review.Subject, retain: retain, review: &review}
 			out = caller.commitReviewChecked(targets, root, goalID, unit, args, func(read branch.BranchReadResult) error {
 				head, dirty, err := runner.WorktreeResult(root)
 				if err != nil {
@@ -878,6 +898,20 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 
 func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, goalID, unit string, args []string, check func(branch.BranchReadResult) error, wait func(func() error) error, fallback ...[]string) (out intentResult) {
 	owners := inv.delivery()
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return *problem
+	}
+	file, _ := goalRecord(projection, goalID)
+	if file != nil && slices.ContainsFunc(file.UnitDrops, func(drop goal.UnitDrop) bool {
+		return file.ExcludesScope(drop.Unit, "result:"+drop.Commit) && slices.Contains(drop.Covered, unit)
+	}) {
+		result, code, err := owners.branchRead(args)
+		if err != nil {
+			return intentResult{Targets: targets, Outcome: intentFailed, code: code, Summary: err.Error(), next: inv.sameCommand()}
+		}
+		return intentResult{Targets: targets, Outcome: intentConfirmed, Summary: "the covered build is dropped under the person's scope exclusion; its prior read remains", Data: result}
+	}
 	var branchRead func([]string) (branch.BranchReadResult, int, error)
 	installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
 	alreadyPublished := inspectErr == nil && installed.Published
@@ -1215,6 +1249,9 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 	if result.RootJob != "" {
 		targets = append(targets, jobTarget(result.RootJob))
 	}
+	if result.State == "dropped" {
+		return intentResult{Targets: targets, Outcome: intentConfirmed, Data: data, Summary: "the unit is dropped; no new read is needed"}
+	}
 	if result.State != "collected" && result.State != "already-collected" {
 		return intentResult{Targets: targets, Outcome: intentInProgress, Data: data,
 			Summary: "the review of this work is in progress",
@@ -1365,4 +1402,15 @@ func (inv *intentInvocation) cleanExaminationJoin(root, goalID, unit, rootJob st
 		return "", false
 	}
 	return join, true
+}
+
+// retainPublication timestamps only a push made by this review call.
+func (inv *intentInvocation) retainPublication(subject *launch.UnitSubject, result intentResult, retain func(launch.UnitSubject) error) error {
+	data, _ := result.Data.(map[string]any)
+	published, ok := data["publication"].(branch.PublishReadResult)
+	if subject == nil || subject.PublishedAt != "" || !ok || published.State != "pushed" {
+		return nil
+	}
+	subject.PublishedAt = inv.unitRunner().Manager.Now().UTC().Format(time.RFC3339Nano)
+	return retain(*subject)
 }

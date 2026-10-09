@@ -28,7 +28,7 @@ import (
 // errorTextExceptions are the narrow file:function decisions on an error's
 // text that are not our own error's words. Each names its reason.
 var errorTextExceptions = map[string]string{
-	"internal/launch/unit_plan.go:readUnitPlan":                           "encoding/json names an unknown field only in its words; the field is shown, nothing is decided",
+	"internal/launch/unit_plan.go:readUnitPlanInput":                      "encoding/json names an unknown field only in its words; the field is shown, nothing is decided",
 	"cmd/metasystem/intent_exception.go:intentInvocation.landException":   "a child process's output, not an error of this process: the structured-output design's U2 reads its envelope",
 	"cmd/metasystem/test.go:printTestingRefusalAs":                        "splits a two-line message at its run: line to lay it out; decides no cause",
 	"cmd/metasystem/intent_unit_review.go:neverLaunchedCause":             "lays out the dispatch's own refusal lines for a person, dropping the read owner's heading; decides no cause",

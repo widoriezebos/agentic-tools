@@ -71,7 +71,7 @@ func PushedClock(install string, member GoalSHA) *Clock {
 // An episode retains hand-ins and returns after each member's last landing.
 func landingClock(install, checkout string, batch *Batch, now time.Time, seams ProveSeams) *Clock {
 	c := &Clock{HandInAt: map[string]string{}, PushAt: now.UTC().Format(time.RFC3339), Proofs: []ProofClock{}, FixRounds: []FixClock{}}
-	members := []GoalSHA{}
+	var members []GoalSHA
 	if batch != nil {
 		members = batch.Members
 	} else {

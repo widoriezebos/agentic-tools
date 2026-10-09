@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func TestSeatProviderLimitHoldEndsAtCappedReset(t *testing.T) {
@@ -56,8 +56,8 @@ func TestSeatProviderLimitHoldEndsAtCappedReset(t *testing.T) {
 			for _, tickAt := range []time.Time{bed.now, c.reset.Add(-time.Second)} {
 				bed.now = tickAt
 				result := bed.tick(deadWorkers)
-				mark, standing := outage.StandingAt(bed.root, bed.now)
-				if !standing || mark.LastClass != outage.ProviderLimit || mark.LastAt != c.seen.UTC().Format(time.RFC3339) || mark.ResetAt != c.reset.UTC().Format(time.RFC3339) {
+				mark, standing := testprovider.StandingAt(bed.root, bed.now)
+				if !standing || mark.LastClass != outage.ProviderLimit || mark.LastAt != c.seen.UTC().Format(time.RFC3339) || mark.ResetAt != observedReset(c.name, c.seen, c.reset).UTC().Format(time.RFC3339) {
 					t.Fatalf("message %q at %s: mark=%+v, standing=%v at %s, want reset %s", c.line, c.seen, mark, standing, bed.now, c.reset)
 				}
 				if !result.ProviderOutage || result.Seat != nil || len(bed.launcher.starts) != 1 {
@@ -105,24 +105,24 @@ func TestSeatResetRetryBeforeMark(t *testing.T) {
 			deps := bed.dependencies()
 			waited := time.Duration(0)
 			deps.Seat.Sleep = func(wait time.Duration) {
-				if _, err := os.Stat(outage.Path(bed.root)); !os.IsNotExist(err) {
+				if _, err := os.Stat(testprovider.Path(bed.root)); !os.IsNotExist(err) {
 					t.Fatalf("mark exists before retry: %v", err)
 				}
 				waited += wait
 				bed.now = bed.now.Add(wait)
 			}
-			result, err := decideTickWithDependencies(bed.root, TickConfig{Now: bed.now}, fakeCensus{workers: deadWorkers}, Evidence{}, Marks{}, deps)
+			result, err := decideTickWithDependencies(bed.root, TickConfig{Now: bed.now, ProviderHome: testprovider.Home(bed.root)}, fakeCensus{workers: deadWorkers}, Evidence{}, Marks{}, deps)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if minute == 53 {
-				mark, _ := outage.Read(bed.root)
-				if result.Seat != nil || mark.LastAt != "2026-10-04T18:53:00Z" || mark.ResetAt != "2026-10-04T23:53:00Z" || waited != 0 {
+				mark, _ := testprovider.Read(bed.root)
+				if result.Seat != nil || mark.LastAt != "2026-10-04T18:53:00Z" || mark.ResetAt != "2026-10-05T18:50:00Z" || waited != 0 {
 					t.Fatalf("non-edge failure: result=%+v, mark=%+v, wait=%v", result, mark, waited)
 				}
 				return
 			}
-			if _, err := os.Stat(outage.Path(bed.root)); !os.IsNotExist(err) {
+			if _, err := os.Stat(testprovider.Path(bed.root)); !os.IsNotExist(err) {
 				t.Fatalf("mark exists before retry launch: %v", err)
 			}
 			if minute == 49 && (waited != time.Minute || bed.now.Minute() != 50) || minute >= 50 && waited != 0 {
@@ -134,36 +134,46 @@ func TestSeatResetRetryBeforeMark(t *testing.T) {
 			}
 			end(retry.LaunchID)
 			result = bed.tick(deadWorkers)
-			if _, ok := outage.Read(bed.root); !ok || result.Seat != nil || len(bed.launcher.starts) != 2 {
+			if _, ok := testprovider.Read(bed.root); !ok || result.Seat != nil || len(bed.launcher.starts) != 2 {
 				t.Fatalf("failed retry must mark and hold: %+v", result)
 			}
 		})
 	}
 }
 
-func TestSeatIgnoresAndLogsDistantReset(t *testing.T) {
+func TestSeatRetainsDistantResetWithBoundedHold(t *testing.T) {
 	t.Parallel()
 	bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 	bed.now = time.Date(2026, 10, 4, 18, 49, 0, 0, time.UTC)
-	mark, err := outage.Record(bed.root, outage.ProviderLimit, "limited", "fixture", bed.now)
+	mark, err := testprovider.Record(bed.root, outage.ProviderLimit, "limited", "fixture", bed.now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	mark.ResetAt = bed.now.Add(24 * time.Hour).Format(time.RFC3339)
-	data, err := json.Marshal(mark)
-	if err != nil {
+	if err := testprovider.Write(bed.root, mark); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(outage.Path(bed.root), data, 0o644); err != nil {
-		t.Fatal(err)
+	result := bed.tick(deadWorkers)
+	if !result.ProviderOutage || result.Seat != nil {
+		t.Fatalf("distant observed reset lost its hold: %+v", result)
 	}
-	deps := bed.dependencies()
-	var lines []string
-	deps.Seat.Log = func(line string) { lines = append(lines, line) }
-	result, err := decideTickWithDependencies(bed.root, TickConfig{Now: bed.now}, fakeCensus{workers: deadWorkers}, Evidence{}, Marks{}, deps)
-	if err != nil || result.ProviderOutage || result.Seat == nil || len(lines) != 1 || !strings.Contains(lines[0], "mark resetAt 2026-10-05T18:49:00Z is more than 5h ahead of now; ignored") {
-		t.Fatalf("distant mark must be ignored and logged: %+v, log=%v, error=%v", result, lines, err)
+	bed.now = bed.now.Add(outage.MaxLimitHold)
+	result = bed.tick(deadWorkers)
+	if result.ProviderOutage || result.Seat == nil {
+		t.Fatalf("distant observed reset exceeded the hold bound: %+v", result)
 	}
+}
+
+func observedReset(name string, seen, bound time.Time) time.Time {
+	switch name {
+	case "usage-epoch":
+		return seen.Add(24 * time.Hour)
+	case "session-after-reset":
+		return time.Date(seen.Year(), seen.Month(), seen.Day(), 18, 50, 0, 0, time.UTC).AddDate(0, 0, 1)
+	case "5-hour-after-reset", "usage-after-reset", "weekly-after-reset", "rate-after-reset":
+		return time.Date(seen.Year(), seen.Month(), seen.Day(), 13, 0, 0, 0, time.UTC).AddDate(0, 0, 1)
+	}
+	return bound
 }
 
 func TestSeatResetRetryCanRecover(t *testing.T) {
@@ -178,8 +188,12 @@ func TestSeatResetRetryCanRecover(t *testing.T) {
 	bed.tips["alpha"] = "advanced"
 	bed.end(retry.LaunchID, "completed", `{"is_error":false,"result":"done"}`)
 	bed.tick(deadWorkers)
-	if _, err := os.Stat(outage.Path(bed.root)); !os.IsNotExist(err) {
-		t.Fatalf("a successful retry wrote an outage mark: %v", err)
+	if mark, exists := testprovider.Read(bed.root); exists {
+		t.Fatalf("a successful retry left an outage mark: %+v", mark)
+	}
+	providers, err := outage.ReadProviders(testprovider.Home(bed.root))
+	if err != nil || providers.Current["anthropic"].ClearedAt != bed.now.Format(time.RFC3339Nano) {
+		t.Fatalf("the retry success lost its watermark: %+v %v", providers, err)
 	}
 	if records := bed.records(); len(records) != 2 || !records[1].ResetRetry || records[1].Outcome != SeatProgress {
 		t.Fatalf("the retry did not retain progress: %+v", records)

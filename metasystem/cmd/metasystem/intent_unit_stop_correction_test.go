@@ -5,14 +5,17 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 func TestIntentContinuingUnitRefusesDropAndSplitBeforeRetention(t *testing.T) {
@@ -52,7 +55,7 @@ func TestIntentContinuingUnitRefusesDropAndSplitBeforeRetention(t *testing.T) {
 			if code == 0 || refused.Outcome != intentRefused {
 				t.Fatalf("unsupported decision retained: %d %+v", code, refused)
 			}
-			if strings.HasPrefix(decision, "dropped:") && (!strings.Contains(strings.ToLower(refused.Summary), "drop effects are not built yet") || refused.Next == nil || !strings.Contains(strings.Join(refused.Next.Argv, " "), "work revise")) {
+			if strings.HasPrefix(decision, "dropped:") && (!strings.Contains(strings.ToLower(refused.Summary), "cannot be dropped yet") || refused.Next == nil || !strings.Contains(strings.Join(refused.Next.Argv, " "), "work revise")) {
 				t.Fatalf("drop refusal lacks working act: %+v", refused)
 			}
 			if strings.HasPrefix(decision, "split:") && !strings.Contains(refused.Summary, "recorded stop") {
@@ -67,6 +70,150 @@ func TestIntentContinuingUnitRefusesDropAndSplitBeforeRetention(t *testing.T) {
 				t.Fatalf("refusal changed source or completion debt: %v", err)
 			}
 		})
+	}
+}
+
+func TestIntentRoundTwoCloseWithDispositionsCollectsExamination(t *testing.T) {
+	t.Parallel()
+	fixture := newTransferScenarioFixture(t, true)
+	b, owners := fixture.bed, fixture.owners
+	record, err := fixture.runner.Status(fixture.run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The committed examination has finished but has not been collected.
+	record.Rounds[0].Reads[0].Findings = nil
+	record.Rounds[1].Stop = nil
+	transferWriteJSON(t, filepath.Join(b.unitRoot, fixture.run, "run.json"), record)
+	returnPath := filepath.Join(fixture.agents, fixture.critic, "rounds", "1", "return.json")
+	digest, _, err := reviewReturnDigest(returnPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	findings, _, err := readIntentFindings(returnPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	binding := reviewBinding{Goal: b.id, Work: "stopped", Attempt: 2, Subject: fixture.commit, Examination: fixture.critic, Round: 1, Return: digest}
+	decisions := strings.ReplaceAll(decisionsDocument(binding, findings), "DECIDE", "accepted")
+	path := b.brief("close-decisions.md", decisions)
+	code, result := transferPublic(t, b, owners, "work", "review", b.id, "--work", "stopped", "--dispositions", path)
+	if code != 1 || result.Outcome != intentRefused || !strings.Contains(result.Summary, "need a fix") || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "work revise") {
+		t.Fatalf("first close did not decide the accepted findings: %d %+v", code, result)
+	}
+	after, err := fixture.runner.Status(fixture.run)
+	if err != nil || after.Rounds[1].Stop == nil || after.Rounds[1].Stop.Decision != "continue" || len(after.Subjects) != 1 || after.Subjects[0].Examination != fixture.critic || after.Subjects[0].ExaminationReturnPath != returnPath || after.Subjects[0].Drop != nil {
+		t.Fatalf("first close did not collect the examination: %+v %v", after, err)
+	}
+	saved, err := os.ReadFile(filepath.Join(filepath.Dir(returnPath), "decisions.md"))
+	if err != nil || string(saved) != decisions || fixture.observer.publications != 0 || len(b.goalFile(b.id).ReviewObligations) != 0 {
+		t.Fatalf("ordinary decisions were not retained without a transfer: %q %v", saved, err)
+	}
+}
+
+func TestWorkReviewUnknownCommittedUnitLaunchesFreshExamination(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	brief := bed.brief("build.md", "Build the unit.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "--work", "u1", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 || built.Outcome != intentConfirmed {
+		t.Fatalf("build: exit=%d result=%+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	unit := strings.Repeat("b", 40)
+	const critic = "unknown-committed-reader"
+	repository := correctedBriefRepository{root: bed.worktree, unit: unit, goal: bed.id}
+	subject, err := repository.Subject(bed.worktree, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundDir := filepath.Join(bed.worktree, "artifacts", "agents", critic, "rounds", "1")
+	returnPath := filepath.Join(roundDir, "return.json")
+	request := branch.BranchReadRequest{Repo: bed.worktree, Remote: "origin", EndpointTip: subject.Parent, BranchTip: unit,
+		GoalID: bed.id, UnitCommit: unit, Repository: repository, BriefPath: filepath.Join(bed.root(), brief),
+		CheckClaim: func() error { return nil }, Gate: func(string) (string, error) { return "green", nil },
+		Delegate: func(string, string, string, string, string) (string, error) {
+			transferWriteJSON(t, filepath.Join(bed.worktree, "artifacts", "agents", "jobs", critic+".json"), map[string]any{
+				"jobId": critic, "role": "code-critic", "round": 1, "status": "completed", "reviews": "commit:" + unit,
+				"goalId": bed.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-reader", "findingRegister": []any{},
+			})
+			transferWriteJSON(t, filepath.Join(roundDir, "subject.json"), readsubject.ReadSubject{
+				Kind: readsubject.SubjectCommit, Commit: unit, Parent: subject.Parent, Tree: subject.Tree, DiffDigest: subject.PatchDigest,
+			})
+			// A material finding without its class makes the stop inputs unknown.
+			finding := stopFinding("", "unit.go")
+			finding.ID = "F1"
+			transferWriteJSON(t, returnPath, map[string]any{"jobId": critic, "round": 1, "reviewedTree": subject.Tree,
+				"verdictMaterialCount": 1, "findings": []readsubject.Finding{finding}})
+			if err := os.WriteFile(filepath.Join(roundDir, "return.md"), []byte("VERDICT: REVISE material=1\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			return critic, nil
+		},
+	}
+	if result, err := branch.RunBranchRead(request); err != nil || result.State != "dispatched" {
+		t.Fatalf("initial examination: result=%+v err=%v", result, err)
+	}
+	runner := &launch.UnitRunner{Root: bed.unitRoot, Manager: bed.manager, Git: workGit{bed},
+		ReviewPolicy: func() (string, error) { return "auto", nil }}
+	if err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		return retain(launch.UnitSubject{Round: review.Round.Number, Commit: unit, Tip: unit, Published: unit,
+			StagedTree: subject.Tree, DiffDigest: review.DiffDigest, Examination: critic, ExaminationJob: critic,
+			ExaminationRound: 1, ExaminationReturnPath: returnPath})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	before, err := runner.Status(run)
+	if err != nil || len(before.Subjects) != 1 || before.Subjects[0].Commit != unit || before.Rounds[0].Stop == nil ||
+		before.Rounds[0].Stop.Decision != "stop" || before.Rounds[0].Stop.Handoff != "stopped unavailable-stop-inputs" || before.Rounds[0].UnknownRetries != 0 {
+		t.Fatalf("committed unit did not stop for unknown inputs: record=%+v err=%v", before, err)
+	}
+	bed.head = unit
+	launches := bed.starter.launched()
+	owners := bed.workOwners()
+	owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) {
+		return branch.BranchReadResult{RootJob: critic}, nil
+	}
+	fresh := 0
+	request.FollowUp = func(root, frozenBrief string) (string, error) {
+		if root != critic || len(mustRead(t, frozenBrief)) == 0 {
+			t.Fatalf("fresh examination has wrong chain or no brief: root=%q brief=%q", root, frozenBrief)
+		}
+		fresh++
+		child := critic + "-r2"
+		transferWriteJSON(t, filepath.Join(bed.worktree, "artifacts", "agents", "jobs", child+".json"), map[string]any{
+			"jobId": child, "role": "code-critic", "round": 2, "parentJob": critic, "status": "running", "reviews": "commit:" + unit,
+		})
+		return child, nil
+	}
+	owners.delivery = &intentDeliveryOwners{branchRead: func(args []string) (branch.BranchReadResult, int, error) {
+		if flagValue(args, "--unit") != unit || flagValue(args, "--goal") != bed.id || flagValue(args, "--root") != bed.worktree {
+			t.Fatalf("retry changed the committed subject: %v", args)
+		}
+		retried := request
+		retried.BriefPath = flagValue(args, "--brief")
+		retried.Join = slices.Contains(args, "--join")
+		retryRound, err := strconv.ParseInt(flagValue(args, "--retry"), 10, 64)
+		if err != nil || retryRound != 1 {
+			t.Fatalf("retry did not name examination round 1: args=%v err=%v", args, err)
+		}
+		retried.Retry = retryRound
+		result, err := branch.RunBranchRead(retried)
+		if err != nil {
+			return result, 1, err
+		}
+		return result, 0, nil
+	}}
+	for _, state := range []string{"dispatched", "retry-joined"} {
+		code, result := bed.runJSON(owners, "work", "review", bed.id, "--work", "u1", "--retry", "1")
+		if code != 1 || result.Outcome != intentInProgress || resultData(t, result)["state"] != state || fresh != 1 {
+			t.Fatalf("fresh examination %s: exit=%d result=%+v launches=%d", state, code, result, fresh)
+		}
+	}
+	after, err := runner.Status(run)
+	if err != nil || len(after.Rounds) != len(before.Rounds) || len(after.Revisions) != len(before.Revisions) ||
+		after.Subjects[0].Commit != unit || !slices.Equal(launches, bed.starter.launched()) {
+		t.Fatalf("examination retry changed the unit or launched another build: record=%+v err=%v", after, err)
 	}
 }
 

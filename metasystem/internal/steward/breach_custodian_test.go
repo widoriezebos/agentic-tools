@@ -51,8 +51,8 @@ func TestDeferredBreachStopPassScansNothingAndReportsNothing(t *testing.T) {
 // remedy names the public actions a person has meanwhile.
 func TestBreachRemediesNameThePublicActionsNotAManualTick(t *testing.T) {
 	t.Parallel()
-	remedy := breachStopRemedy("bounded-goal", "completes this stop")
-	for _, want := range []string{"metasystem goal pause bounded-goal --reason TEXT", "metasystem system start"} {
+	remedy := remedyFor(RoleClaimedGoalBudget, RemedyFact{Cause: CauseBreachStopOpen, Goal: "bounded-goal", Stop: "stop"}).Plain
+	for _, want := range []string{"goal bounded-goal's budget stop stop completes by itself on the steward's next pass", "nothing needs doing"} {
 		if !strings.Contains(remedy, want) {
 			t.Fatalf("breach remedy %q does not name %q", remedy, want)
 		}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 
@@ -47,6 +48,7 @@ type designGateRecord struct {
 	GovernedBy     string                 `json:"governedBy"`
 	Time           time.Time              `json:"time"`
 	Designs        []landing.DesignRecord `json:"designs"`
+	PersonImpact   string                 `json:"personImpact,omitempty"`
 }
 
 func (inv *intentInvocation) designGate() designGateOwners {
@@ -96,7 +98,7 @@ func (inv *intentInvocation) designGate() designGateOwners {
 	return o
 }
 
-func (inv *intentInvocation) designGateFacts(root, id string) designgate.Facts {
+func (inv *intentInvocation) designGateFacts(root, id string, size ...bool) designgate.Facts {
 	f := designgate.Facts{Goal: id}
 	projection, _, problem := inv.projection()
 	if problem != nil {
@@ -121,9 +123,26 @@ func (inv *intentInvocation) designGateFacts(root, id string) designgate.Facts {
 		f.Error = fmt.Errorf("%s", problemText)
 		return f
 	}
+	measure := len(size) == 0 || size[0]
+	conf := intentConfPath(inv.layout)
+	if measure {
+		data, err := os.ReadFile(conf)
+		f.Error = err
+		f.Declaration = fmt.Sprintf("%s (committed layer and compiled defaults) sha256:%x", conf, sha256.Sum256(data))
+		for i, key := range []string{"design.unit-lines-max", "design.goal-units-max"} {
+			value, _, readErr := config.CommittedContentLookup(string(data), key)
+			parsed, parseErr := strconv.ParseInt(value, 10, 64)
+			f.Limits[i] = parsed
+			if readErr != nil || parseErr != nil || parsed < 1 {
+				f.Error = fmt.Errorf("%s could not be read as a positive integer: %v", key, readErr)
+				return f
+			}
+		}
+	}
+
 	for _, ref := range designs {
 		d := designgate.Design{ID: ref.ID, Path: ref.Path, Name: ref.Title, Status: ref.Status, Critique: ref.Critique}
-		if ref.Status == "accepted" {
+		if ref.Status == "accepted" || measure && ref.Status == "draft" {
 			path := filepath.FromSlash(ref.Path)
 			if !filepath.IsAbs(path) {
 				path = filepath.Join(inv.layout.GitRoot, path)
@@ -131,7 +150,15 @@ func (inv *intentInvocation) designGateFacts(root, id string) designgate.Facts {
 			data, err := os.ReadFile(path)
 			if err == nil {
 				d.SHA256 = fmt.Sprintf("%x", sha256.Sum256(data))
-				d.Chains, err = inv.designGate().chains(root, id, path)
+				if measure {
+					d.Units = launch.ParseUnitSizes(string(data))
+					if ref.Status == "accepted" {
+						d.SizeExempt, err = inv.designSizeExempt(conf, path, ref.ID)
+					}
+				}
+				if err == nil && ref.Status == "accepted" {
+					d.Chains, err = inv.designGate().chains(root, id, path)
+				}
 			}
 			if err != nil {
 				f.Error = err
@@ -142,6 +169,39 @@ func (inv *intentInvocation) designGateFacts(root, id string) designgate.Facts {
 	return f
 }
 
+// A page accepted on main before main's size declaration keeps its exemption.
+func (inv *intentInvocation) designSizeExempt(conf, path, id string) (bool, error) {
+	root := inv.layout.GitRoot
+	declaration, err := inv.work().git(root, "log", "--first-parent", "--reverse", "--format=%H", "--diff-merges=first-parent", "-G", "^design[.](unit-lines-max|goal-units-max)=", "origin/main", "--", relativeOrSame(root, conf))
+	if err != nil {
+		return false, err
+	}
+	commits := strings.Fields(string(declaration))
+	boundary := "origin/main"
+	if len(commits) > 0 {
+		boundary = commits[0] + "^"
+	}
+	history, err := inv.work().git(root, "log", "--first-parent", "--format=%H", "--diff-merges=first-parent", boundary, "--", relativeOrSame(root, path))
+	if err != nil {
+		return false, err
+	}
+	for _, commit := range strings.Fields(string(history)) {
+		prior, err := inv.work().git(root, "show", commit+":"+relativeOrSame(root, path))
+		if err != nil {
+			exists, readErr := inv.work().git(root, "ls-tree", "--name-only", commit, "--", relativeOrSame(root, path))
+			if readErr == nil && len(strings.TrimSpace(string(exists))) == 0 {
+				continue
+			}
+			return false, err
+		}
+		record, _, declared := project.ParseRecord(path, string(prior))
+		if declared && record.ID == id && record.Status == "accepted" {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 var designGateIdentity = regexp.MustCompile(`^[0-9A-HJKMNP-TV-Z]{26}$`)
 
 func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f designgate.Facts, result designgate.Result, person bool) {
@@ -149,6 +209,9 @@ func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f de
 	now := time.Now().UTC()
 	r := designGateRecord{Schema: 1, Goal: f.Goal, Unit: unit, Worktree: worktree, Tier: f.Tier, Mode: result.Mode,
 		Verdict: result.Verdict, WouldRefuse: result.WouldRefuse, Person: person, GovernedBy: refusal.GovernedBy["BUILD_DESIGN_NOT_ACCEPTED"], Time: now, Designs: []landing.DesignRecord{}}
+	if person && result.Size != nil && result.WouldRefuse {
+		r.PersonImpact = "human terminal: " + result.Warning[0] + " " + result.Warning[1]
+	}
 	var bodyErr error
 	for _, d := range f.Designs {
 		if d.Status == "accepted" {
@@ -156,7 +219,7 @@ func (inv *intentInvocation) recordDesignGate(store, worktree, unit string, f de
 			if err != nil {
 				bodyErr = err
 			}
-			r.Designs = append(r.Designs, landing.DesignRecord{Design: d, BodySHA256: body})
+			r.Designs = append(r.Designs, landing.DesignRecord{Design: d, BodySHA256: body, Size: result.Size})
 		}
 	}
 	identity, err := o.identity(inv.layout.InstallationRoot)
@@ -266,7 +329,7 @@ func (inv *intentInvocation) landingDesignFacts(root, id string) landing.DesignF
 	if id == "" {
 		return landing.DesignFacts{Facts: designgate.Facts{Tier: 1}}
 	}
-	f := landing.DesignFacts{Facts: inv.designGateFacts(root, id), Digests: map[string]string{}}
+	f := landing.DesignFacts{Facts: inv.designGateFacts(root, id, false), Digests: map[string]string{}}
 	if designgate.Check(f.Facts).Verdict != "ok" {
 		return f
 	}

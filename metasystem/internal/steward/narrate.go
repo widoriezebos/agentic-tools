@@ -166,7 +166,11 @@ func narrationLineWithMachineReader(repoRoot string, result TickResult, cfg Tick
 	}
 	var notes []string
 	if result.ProviderOutage {
-		notes = append(notes, "the model provider is overloaded; local work continues; the clocks are paused")
+		if result.Outage.LastClass == "unknown" {
+			notes = append(notes, result.Outage.LastDetail)
+		} else {
+			notes = append(notes, "the model provider is overloaded; local work continues; the clocks are paused")
+		}
 	}
 	if len(result.Reaped) > 0 {
 		notes = append(notes, fmt.Sprintf("closed %d finished helper run(s)", len(result.Reaped)))

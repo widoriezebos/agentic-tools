@@ -32,6 +32,7 @@ const ReadDispatchPendingCode = "GOAL_READ_DISPATCH_PENDING"
 const ReadDispatchFailed = "goal branch read could not dispatch its critic"
 
 type BranchReadRequest struct {
+	Scope                                                    *goal.GoalFile
 	Repo, Remote, EndpointTip, BranchTip, GoalID, UnitCommit string
 	BriefPath, Runtime, Model                                string
 	BuildBriefSHA256                                         string
@@ -268,6 +269,20 @@ func resolveReadGate(request ReadGateRequest, common, recordPath string, record 
 }
 
 func ResolveReadGate(request ReadGateRequest) (GateObservation, error) {
+	if request.Repository == nil {
+		info, err := KindOf(request.Repo, request.UnitCommit, request.GoalID)
+		if err == nil && info.Kind == Drop {
+			dropped, done, err := droppedRead(defaultBranchReadRepository{}, BranchReadRequest{Repo: request.Repo, GoalID: request.GoalID, EndpointTip: goal.AcceptedRef, BranchTip: request.UnitCommit, UnitCommit: request.UnitCommit})
+			if err != nil {
+				return GateObservation{}, err
+			}
+			if !done {
+				return GateObservation{}, operationRefusal(ReadInvalidCode, "the drop outcome is pending\nrun: metasystem work status %s --work %s", request.GoalID, info.Unit)
+			}
+			subject, err := branchReadRepositoryFor(nil).Subject(request.Repo, request.UnitCommit)
+			return GateObservation{Kind: "unit-drop", Tree: subject.Tree, RunID: dropped.GateRunID}, err
+		}
+	}
 	repository := branchReadRepositoryFor(request.Repository)
 	subject, err := repository.Subject(request.Repo, request.UnitCommit)
 	if err != nil {
@@ -603,9 +618,17 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		return result, err
 	}
 	repository := branchReadRepositoryFor(request.Repository)
+	if dropped, done, err := droppedRead(repository, request); done || err != nil {
+		return dropped, err
+	}
 	info, err := branchUnitWithRepository(repository, request.Repo, request.EndpointTip, request.BranchTip, request.GoalID, request.UnitCommit)
 	if err != nil {
 		return result, err
+	}
+	status := Status{Units: []UnitStatus{{Unit: info.Unit, Commit: request.UnitCommit, ReadState: "built"}}}
+	ApplyScope(&status, request.Scope)
+	if status.Units[0].ReadState == "dropped" {
+		return BranchReadResult{State: "dropped"}, nil
 	}
 	subject, err := repository.Subject(request.Repo, request.UnitCommit)
 	if err != nil {
@@ -1049,6 +1072,17 @@ func retryBranchRead(request BranchReadRequest, common, recordPath string, recor
 // writing: its critic root and, once collected, its attestation. A unit with
 // no record yet has neither.
 func InspectBranchRead(repo, goalID, unitCommit string) (BranchReadResult, error) {
+	if info, err := KindOf(repo, unitCommit, goalID); err == nil && info.Kind == Drop {
+		tip, _, err := localBranchTip(repo, goalBranchRef(goalID))
+		if err != nil {
+			return BranchReadResult{}, err
+		}
+		read, done, err := droppedRead(defaultBranchReadRepository{}, BranchReadRequest{Repo: repo, GoalID: goalID, EndpointTip: goal.AcceptedRef, BranchTip: tip, UnitCommit: unitCommit})
+		if done || err != nil {
+			return read, err
+		}
+		return BranchReadResult{State: "drop pending"}, nil
+	}
 	_, recordPath, _, err := branchReadPathsWithRepository(branchReadRepositoryFor(nil), repo, goalID, unitCommit)
 	if err != nil {
 		return BranchReadResult{}, err

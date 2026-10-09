@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -63,6 +65,20 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 		return "starting"
 	case work.Running():
 		return "running"
+	}
+	if subject := currentSubject(work); subject != nil && subject.Drop != nil {
+		drop := subject.Drop
+		text := (board.UnitDrop{Unit: work.Unit, Phase: drop.Phase}).Text()
+		if drop.Phase != "recorded" && drop.Phase != "closed" {
+			return text
+		}
+		if drop.Subject.Commit == "" {
+			return text + "; prior reads retained"
+		}
+		if read, err := inspect(work.Record.Worktree, work.Record.Goal, drop.Subject.Commit); err == nil && read.State == "dropped" && read.Published {
+			return text + "; prior reads retained"
+		}
+		return "drop pending: " + drop.Phase
 	}
 	outcome := ""
 	if rounds := work.Record.Rounds; len(rounds) > 0 {
@@ -146,13 +162,22 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		return
 	}
 	views, lines, units = []map[string]any{}, []string{}, []steward.UnitStage{}
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return work, manual, views, lines, units, problem
+	}
+	file, _ := goalRecord(projection, id)
 	for _, one := range work {
 		stage := workStage(one, inv.work().inspectRead)
+		if file.ExcludesScope(one.Unit, "") {
+			stage += "; " + board.PersonExcludedRequiredScope
+		}
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
 		if one.Record != nil {
-			view["state"] = one.Record.State
+			view["state"], view["run"] = one.Record.State, one.Run
 			if len(one.Record.Rounds) > 0 {
 				r := one.Record.Rounds[len(one.Record.Rounds)-1]
+				view["subjects"] = one.Record.Subjects
 				view["stop"], view["reads"] = r.Stop, r.Reads
 			}
 		}
@@ -169,7 +194,11 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 				}
 			}
 		}
-		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at})
+		run := ""
+		if one.Record != nil {
+			run = one.Record.ID
+		}
+		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at, Run: run})
 	}
 	for _, item := range manual {
 		stage := item.stage(inv.work().inspectRead)
@@ -227,6 +256,16 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: lines, Data: map[string]any{"goal": id, "work": views, "designs": designs}}
+	if inv.input.has("work") && len(work) == 1 {
+		m := inv.unitMeasures(work[0])
+		views[0]["measures"] = m
+		result.text = append(result.text, "  "+measureLine(m))
+	}
+	if !inv.input.has("work") {
+		if err := inv.goalCosts(id, work, &result); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "goal cost unavailable: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnoses the saved work"})
+		}
+	}
 	// The goal's own card line (D14-r2, R23).
 	if line, ok := inv.hostBoardView(inv.boardNow()).GoalLine(id, inv.boardNow(), time.Local); ok {
 		result.text = append(result.text, "  "+line)
@@ -250,11 +289,19 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 
 // renderGoalUnitStatus keeps the shared unit lines whole in the status page.
 func (inv *intentInvocation) renderGoalUnitStatus(result intentResult, unitCount int) int {
-	if unitCount == 0 {
-		return inv.render(result)
+	id := result.Data.(map[string]any)["goal"].(string)
+	if projection, now, problem := inv.projection(); problem == nil {
+		if file, _ := goalRecord(projection, id); file != nil && file.Budget != nil {
+			view := inv.budgetView(file, now)
+			result.Data.(map[string]any)["budget"] = view
+			result.text = append(result.text, view.lines()...)
+		}
 	}
+	report := readProcessReport(inv.stateRoot, inv.layout.InstallationRoot.Path(), id, inv.input.text("work"), inv.unitRunner(), inv.unitRunner().Manager.Now(), nil)
+	result.Data.(map[string]any)["processReport"] = report
 	result.view = func(page *textui.Page) {
 		page.Headline(result.Summary)
+		page.Legacy(report.Lines...)
 		section := page.Section("", "")
 		for _, line := range result.text[:unitCount] {
 			section.Fixed(strings.TrimSpace(line))
@@ -271,6 +318,7 @@ type manualWorkItem struct {
 	Unit, Commit, Worktree, Goal string
 	// ReadsWaived says the goal lands its work without a read (tier 1).
 	ReadsWaived bool
+	Dropped     bool
 }
 
 func (item manualWorkItem) read() (branch.BranchReadResult, error) {
@@ -278,6 +326,9 @@ func (item manualWorkItem) read() (branch.BranchReadResult, error) {
 }
 
 func (item manualWorkItem) stage(readers ...func(string, string, string) (branch.BranchReadResult, error)) string {
+	if item.Dropped {
+		return "dropped; prior reads retained"
+	}
 	inspect := branch.InspectBranchRead
 	if len(readers) > 0 {
 		inspect = readers[0]
@@ -299,7 +350,7 @@ func (item manualWorkItem) stage(readers ...func(string, string, string) (branch
 }
 
 func (inv *intentInvocation) manualContinuation(id string, item manualWorkItem) ([]string, string) {
-	if item.ReadsWaived {
+	if item.ReadsWaived || item.Dropped {
 		return inv.goalNextStep(id)
 	}
 	read, err := inv.work().inspectRead(item.Worktree, item.Goal, item.Commit)
@@ -336,8 +387,27 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 		return work, nil
 	}
 	waived := false
+	dropped := map[string]bool{}
 	if projection, _, problem := inv.projection(); problem == nil && projection.Tree != nil {
-		waived = goal.ReadsWaived(projection.Tree.Live[id])
+		file := projection.Tree.Live[id]
+		waived = goal.ReadsWaived(file)
+		if file != nil {
+			for _, drop := range file.UnitDrops {
+				if !slices.ContainsFunc(commits, func(c branch.Commit) bool { return c.ID == drop.Commit && c.Kind == branch.Drop && c.Unit == drop.Unit }) {
+					continue
+				}
+				info, err := branch.KindOfWithRaw(inv.goalWorktreeInstallation(worktree), drop.Commit, id, inv.work().git)
+				tree, treeErr := inv.work().git(worktree, "rev-parse", drop.Commit+"^{tree}")
+				if err != nil || treeErr != nil || info.Operation != drop.Operation || strings.TrimSpace(string(tree)) != drop.Tree {
+					continue
+				}
+				for _, covered := range drop.Covered {
+					if slices.ContainsFunc(commits, func(c branch.Commit) bool { return c.ID == covered && c.Kind == branch.Unit && c.Unit == drop.Unit }) {
+						dropped[covered] = true
+					}
+				}
+			}
+		}
 	}
 	var manual []manualWorkItem
 	for _, commit := range commits {
@@ -347,7 +417,7 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 		name := commit.Units[0]
 		index := slices.IndexFunc(work, func(one launch.NamedWork) bool { return one.Unit == name })
 		if index >= 0 {
-			if subject := currentSubject(work[index]); subject != nil && subject.Commit == commit.ID {
+			if subject := currentSubject(work[index]); subject != nil && subject.Commit == commit.ID && !dropped[commit.ID] {
 				continue
 			}
 			if subject := currentSubject(work[index]); subject == nil || subject.Commit == "" {
@@ -355,7 +425,7 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 			}
 			work = slices.Delete(work, index, index+1)
 		}
-		manual = append(manual, manualWorkItem{Unit: name, Commit: commit.ID, Worktree: worktree, Goal: id, ReadsWaived: waived})
+		manual = append(manual, manualWorkItem{Unit: name, Commit: commit.ID, Worktree: worktree, Goal: id, ReadsWaived: waived, Dropped: dropped[commit.ID]})
 	}
 	return work, manual
 }
@@ -365,6 +435,16 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 	suffix := []string{}
 	if named {
 		suffix = []string{"--work", work.Unit}
+	}
+	if subject := currentSubject(work); subject != nil && subject.Drop != nil {
+		if subject.Drop.Phase == "closed" {
+			if read, err := inv.work().inspectRead(work.Record.Worktree, id, subject.Drop.Subject.Commit); err == nil && read.State == "dropped" && read.Published {
+				return inv.goalNextStep(id)
+			}
+			return inv.publicArgv("work", "rebase", id), "reconciles the dropped outcome with the current branch"
+		}
+		path := filepath.Join(work.Record.Rounds[len(work.Record.Rounds)-1].Directory, "stop-dispositions.md")
+		return inv.workArgv(*work.Record, "review", "--dispositions", path), "continues the retained drop and repairs its matching questions"
 	}
 	read := branch.BranchReadResult{}
 	gapPerson := work.Record != nil && work.Record.MaxRounds > 0 && workAttempt(work) >= work.Record.MaxRounds

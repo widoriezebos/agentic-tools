@@ -54,6 +54,7 @@ func (f *goalListRepositoryFixture) resolve(root string) (goal.Endpoint, error) 
 // keeps the table view's facts (a landing, a park's reason, a relayed
 // approval's standing), never prints a control character, and marks a cut.
 func TestGoalListSummaryCarriesMarkersDropsControlsAndMarksCuts(t *testing.T) {
+	t.Parallel()
 	// The temporary goal authority horizon (2026-09-06) has passed by the
 	// day this test was written, so the "fresh" relayed approval is read
 	// on a day before it; the stale one has a review date before that day.
@@ -84,7 +85,33 @@ func TestGoalListSummaryCarriesMarkersDropsControlsAndMarksCuts(t *testing.T) {
 	if strings.ContainsAny(output, "\x1b\x07") {
 		t.Fatalf("a control character reached the summary:\n%q", output)
 	}
-	if !strings.HasPrefix(output, "claimed=1 approved=2 queued=0 parked=1 done=0 tip=tip\n") {
+	if !strings.HasPrefix(output, "claimed=1 approved=2 queued=0 parked=1 split=0 done=0 tip=tip\n") {
 		t.Fatalf("header = %q", strings.SplitN(output, "\n", 2)[0])
+	}
+}
+
+// Legacy claims remain readable; publishing still checks the machine's claim quota.
+func TestGoalListReadsLegacyClaimsWithoutSplitMarkers(t *testing.T) {
+	t.Parallel()
+	bed := newGoalCLIBed(t, goalCLISeed{amend: func(files map[string]*goal.GoalFile) {
+		other := files["perf-pass"]
+		other.State, other.Parked = goal.StateClaimed, nil
+		claim := *files["ship-widget"].Claimed
+		claim.Revision = other.Revision
+		other.Claimed = &claim
+	}})
+	shown := gcliLedgerMust(t, bed, "goal", "list", "--json")
+	for _, id := range []string{"ship-widget", "perf-pass"} {
+		if !strings.Contains(shown, `"Id": "`+id+`"`) {
+			t.Fatalf("legacy claim %s disappeared: %s", id, shown)
+		}
+	}
+	if strings.Contains(shown, `"Split":`) || strings.Contains(shown, `"SplitFrom":`) {
+		t.Fatalf("absent split markers acquired values: %s", shown)
+	}
+	tip := bed.tip()
+	gcliLedgerRefused(t, bed, "quota is one claim", "goal", "edit", "fix-docs", "--next", "Read the documentation.", "--verbose")
+	if bed.tip() != tip {
+		t.Fatal("reading legacy claims allowed publishing an invalid claim quota")
 	}
 }

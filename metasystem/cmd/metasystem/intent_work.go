@@ -377,6 +377,7 @@ func intentWorkCommands() []intentCommand {
 			run:      runIntentSettingsKeys,
 		},
 		{
+			flags:  processSettingFlags,
 			object: "settings", action: "set", laidOut: true, audience: "both", summary: "set one configuration key for this checkout's seat",
 			usage: []string{"metasystem settings set KEY VALUE"},
 			details: []string{"Writes seat settings into metasystem.conf.local, the seat's own layer over metasystem.conf.",
@@ -386,6 +387,11 @@ func intentWorkCommands() []intentCommand {
 			maxArgs:  2,
 			examples: []string{"metasystem settings set role.default.model.claude claude-opus-5-5"},
 			run:      runIntentSettingsSet,
+		},
+		{
+			object: "settings", action: "unset", laidOut: true, audience: "both", summary: "restore an inherited setting by undoing a process act",
+			usage: []string{"metasystem settings unset KEY --undo ID"}, flags: processSettingFlags, maxArgs: 1,
+			examples: []string{"metasystem settings unset launch.codex.sandbox --undo ID"}, run: runIntentSettingsUnset,
 		},
 		{
 			object: "settings", action: "check", laidOut: true, audience: "both", summary: "validate every setting and the testing contract, changing nothing",
@@ -451,7 +457,20 @@ func (inv *intentInvocation) resolveLayout() *intentResult {
 // launch manager's own settings.
 func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	_ = inv.resolveLayout()
-	runner := inv.work().units(inv.layout)
+	source := inv.work().units(inv.layout)
+	runner := new(launch.UnitRunner)
+	*runner = *source
+	runner.Actor = ""
+	manager := *runner.Manager
+	params, err := inv.policyParams("host.builds")
+	if err != nil {
+		params = config.GetParams{Key: "host.builds", ConfPath: intentConfPath(inv.layout), LookupEnv: inv.owners.lookupEnv}
+	}
+	manager.BuildPolicy, manager.BuildPolicyError = params, nil
+	runner.Manager = &manager
+	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && inv.checkDirectPersonProof("work "+inv.command.action, false) == nil {
+		runner.Actor = "person"
+	}
 	runner.FreezeCheck = inv.resolveUnitCheck
 	if inv.input.has("check") {
 		runner.ReviewPolicy = func() (string, error) { return "person", nil }
@@ -491,6 +510,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		}
 		return inv.unitLaunchAuthority(record, spec, settings)
 	}
+	runner.Manager.SandboxAct = inv.consumedSandboxAct
 	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
 		if len(unit.Rounds) > 0 && execution.Kind == "build" && execution.Round == unit.Rounds[len(unit.Rounds)-1].Number {
 			round := unit.Rounds[len(unit.Rounds)-1]
@@ -527,10 +547,44 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if file.Claimed != nil {
 			revision = file.Claimed.Revision
 		}
-		return dispatchcore.ReconcileUnitLaunch(inv.layout.InstallationRoot.Path(), execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
-			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil)
+		if err := dispatchcore.ReconcileUnitLaunch(inv.layout.InstallationRoot.Path(), execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
+			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil); err != nil {
+			return err
+		}
+		if err := inv.observeProcessDrift(unit); err != nil {
+			fmt.Fprintf(inv.stderr, "warning: process drift unavailable: %s\n", err)
+		}
+		return nil
 	}
 	runner.PlanProof = inv.unitProof
+	runner.AdmitEstimate = func(plan *launch.UnitPlan) error {
+		// A manual repair must work without readable check declarations.
+		if !inv.input.has("check") {
+			full, _ := landingProofCommand(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, "origin/main", "proof.full", func(root string, args ...string) (string, error) {
+				data, err := inv.work().git(root, args...)
+				return string(data), err
+			})
+			plan.FullArgv = strings.Fields(full)
+		}
+		person := !inv.input.has("lineage") && (inv.owners.dependencies.ownerLineage == nil || inv.owners.dependencies.ownerLineage() == "")
+		var err error
+		if problem := inv.selectLayoutRoot(); problem != nil {
+			err = fmt.Errorf("the estimate's goal state cannot be read: %s", problem.Summary)
+		} else {
+			err = inv.freezeUnitEstimate(plan, inv.designGateFacts(inv.layout.InstallationRoot.Path(), plan.Goal), person)
+		}
+		if err != nil {
+			if !person && errors.Is(err, errEstimateChanged) {
+				return fmt.Errorf("estimate unavailable: %w; restore the accepted design page before building", err)
+			}
+			plan.Estimate = nil
+			fmt.Fprintf(inv.stderr, "warning: estimate unavailable (%s); the build goes on at your word\n", err)
+		}
+		if err == nil && plan.Estimate == nil {
+			fmt.Fprintln(inv.stderr, "warning: estimate unavailable; the build goes on")
+		}
+		return nil
+	}
 	judge := landingFlakeJudge(inv.layout.InstallationRoot.Path(), func(root string, args ...string) (string, error) {
 		data, err := inv.work().git(root, args...)
 		return string(data), err
@@ -744,7 +798,7 @@ func runIntentBuildPlan(inv *intentInvocation) int {
 		}
 	}
 	path := inv.callerPath(inv.input.text("plan"))
-	plan, err := launch.ReadUnitPlan(path)
+	plan, err := launch.ReadUnitPlanInput(path)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, Summary: err.Error() + "; nothing was built", code: 1,
 			next: inv.sameCommand(), nextReason: "once --plan names a readable plan"})
@@ -891,10 +945,13 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 			}
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 				Summary: reason + "; nothing was built", Data: map[string]any{"designGate": gateResult},
-				next:    inv.publicArgv("goal", "allow", id, goal.PermissionBuildWithoutDesign, "--reason", "TEXT"),
+				next: inv.publicArgv("goal", "allow", id, goal.PermissionBuildWithoutDesign, "--reason", "TEXT"), nextReason: gateResult.Warning[1],
 				Details: []string{detail}})
 		}
 		gateResult.Warning[0] = "warning: " + reason + "; it goes on at your word"
+		if gateResult.Size != nil {
+			gateResult.Warning[1] = "impact: building beyond the declared size can make review and dependent work harder; undo by revising the retained draft and rebuilding after human acceptance. " + gateResult.Warning[1]
+		}
 	}
 	if gateResult.Warning[0] != "" {
 		fmt.Fprintln(inv.stderr, gateResult.Warning[0]+"\n"+gateResult.Warning[1])
@@ -929,6 +986,16 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	request.prepare = func(directory string) (string, error) {
 		path, err := prepare(directory)
 		if err == nil {
+			gateFacts = inv.designGateFacts(string(inv.layout.InstallationRoot), id)
+			fresh := designgate.Check(gateFacts)
+			if !person && fresh.Mode == "refuse" && fresh.WouldRefuse {
+				return "", fmt.Errorf("%s; %s; retry the same work build after repair", fresh.Warning[0], fresh.Warning[1])
+			}
+			if person && fresh.Size != nil && fresh.Size.WouldRefuse {
+				fresh.Warning[1] = "impact: size limits are exceeded; review and dependent work may become harder; undo by revising the retained draft and rebuilding after human acceptance. " + fresh.Warning[1]
+				fmt.Fprintln(inv.stderr, fresh.Warning[0]+"\n"+fresh.Warning[1])
+			}
+			gateResult = fresh
 			inv.recordDesignGate(filepath.Dir(filepath.Dir(directory)), request.worktree, unit, gateFacts, gateResult, person)
 		}
 		return path, err
@@ -1409,6 +1476,23 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		}
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "LAUNCH_BUILD_CAPACITY"), launch.IsCode(err, "LAUNCH_BUILD_PERSON"):
+			held := intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + "; no build was launched", Details: details,
+				next: again, nextReason: humanauthority.PersonActRemedy(shellCommand(again)) + "; settings stay in force"}
+			if launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
+				q, warnings, code, askErr := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), channelAskInput{Goal: targetID(targets, "goal", record.Goal), Kind: "other",
+					Facts: []string{"Start this build at your enrolled terminal?", plain, shellCommand(again)}, Options: []string{"start: run the exact build command at your enrolled terminal", "wait: leave this build waiting"}})
+				held.text, held.code = warnings, max(code, 1)
+				if askErr != nil {
+					held.Details = append(held.Details, askErr.Error())
+				}
+				if q.ID != "" {
+					held.Targets = append(held.Targets, intentTarget{Kind: "question", ID: q.ID})
+					held.next = inv.publicArgv("question", "wait", "channel:"+q.ID)
+					held.nextReason = "wait for the person's answer; only their direct build command bypasses admission"
+				}
+			}
+			return held
 		case errors.Is(err, errProofDeclaration):
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Data: unitData(record, runner.Manager),
 				next: inv.publicArgv("work", "build", record.Goal, "--work", "declaration-repair", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME", "--check", "COMMAND"), nextReason: "a person supplies the repair's exact check without reading the broken declaration"}
@@ -1659,7 +1743,11 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 		return inv.render(inv.unitOutcome(runner, result.UnitResult, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
 	}
 	result, err := runner.Continue(launch.UnitRequest{Resume: run, FollowUp: brief})
-	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
+	again := inv.publicArgv("work", "wait", unitRunPrefix+run)
+	if launch.IsCode(err, "LAUNCH_BUILD_CAPACITY") || launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
+		again = inv.publicArgv("work", "build", unitRunPrefix+run)
+	}
+	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, again))
 }
 
 // wait
@@ -2589,7 +2677,7 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: problem.Error(),
 			next: inv.publicArgv("settings", "keys"), nextReason: "lists the settings"})
 	}
-	if problem := config.SettingValueProblem(key, value); problem != nil {
+	if problem := config.SettingValueProblem(key, value); problem != nil && inv.command.action != "unset" {
 		retryValue := "VALUE"
 		if config.PolicyScope(key) != "" {
 			retryValue = "auto"
@@ -2601,6 +2689,15 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 	if problem := inv.resolveLayout(); problem != nil {
 		return inv.render(*problem)
 	}
+	if key == "process.change" {
+		if _, _, problem := inv.settingsPerson(inv.layout, "settings set "+key); problem != nil {
+			return inv.render(*problem)
+		}
+		return inv.runProcessSetting(key, value)
+	}
+	if inv.input.text("undo") != "" {
+		return inv.runProcessSetting(key, value)
+	}
 	if config.PolicyScope(key) != "" && authoritySettings[key] {
 		return inv.runPolicySet(key, value)
 	}
@@ -2608,6 +2705,9 @@ func runIntentSettingsSet(inv *intentInvocation) int {
 		if problem := inv.directPersonProof("settings set " + key); problem != nil {
 			return inv.render(*problem)
 		}
+	}
+	if strings.HasPrefix(key, "proof.") || strings.HasPrefix(key, "review.") || strings.HasPrefix(key, "landing.") || strings.HasPrefix(key, "launch.") {
+		return inv.runProcessSetting(key, value)
 	}
 	local := intentConfPath(inv.layout) + ".local"
 	targets := []intentTarget{{Kind: "setting", ID: key}}
@@ -2727,17 +2827,32 @@ func (inv *intentInvocation) resumeChannelWait(id string, row metarun.Waiter, ti
 // and an environment-supplied clock. Only
 // the person's own proof at the enrolled terminal sets them, never the helm
 // and never a power of attorney.
-var authoritySettings = map[string]bool{"metasystem.runtimes": true, "landing.batch": true, "landing.proof": true, "landing.on-red": true, "landing.trunk-red": true, "seat.driver": true, "review.stop": true, "goal.raise": true, "question.route": true}
+var authoritySettings = map[string]bool{"host.builds": true, "host.load-max": true, "metasystem.runtimes": true, "landing.batch": true, "landing.proof": true, "landing.on-red": true, "landing.trunk-red": true, "seat.driver": true, "review.stop": true, "goal.raise": true, "question.route": true, "process.change": true}
 
 // directPersonProof refuses unless this shell is the person at the enrolled
 // terminal, proven by the walk itself.
 func (inv *intentInvocation) directPersonProof(act string) *intentResult {
+	return inv.checkDirectPersonProof(act, true)
+}
+
+// checkDirectPersonProof can observe the actor without recording a refusal
+// when an agent is allowed to perform the act under its ordinary authority.
+func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bool) *intentResult {
+	if problem := inv.resolveLayout(); problem != nil {
+		return problem
+	}
+	if inv.stateRoot == "" {
+		if problem := inv.selectLayoutRoot(); problem != nil {
+			return problem
+		}
+	}
+	authorityRoot := checkoutAuthorityRoot(inv.layout)
 	// refused says, in plain words, that only the person at the enrolled
 	// terminal sets this, why this shell is not that, and the one command
 	// that resolves it (the enrollment, the name filled in, or the same
 	// command in a terminal the person opened).
 	refused := func(reason string, err error) *intentResult {
-		remedy := humanauthority.RemedyFor(inv.stateRoot, err, inv.personName(""), inv.typedArgv())
+		remedy := humanauthority.RemedyFor(authorityRoot, err, inv.personName(""), inv.typedArgv())
 		if err != nil && remedy.Reason != "" {
 			reason = remedy.Reason
 		}
@@ -2752,26 +2867,21 @@ func (inv *intentInvocation) directPersonProof(act string) *intentResult {
 		}
 		return result
 	}
-	if inv.stateRoot == "" {
-		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
-		if err != nil {
-			return refused("this installation's state can't be found", err)
-		}
-		inv.stateRoot = root.Path()
-	}
 	if inv.owners.prove == nil || inv.owners.commandNow == nil {
 		return refused("who is at this terminal can't be checked here", nil)
 	}
-	now, err := inv.owners.commandNow(inv.stateRoot)
+	now, err := inv.owners.commandNow(inv.layout.InstallationRoot.Path())
 	if err != nil {
 		return refused("the clock can't be read", err)
 	}
-	proof, err := inv.owners.prove(inv.stateRoot, int64(os.Getppid()), nil, "", "", now)
+	proof, err := inv.owners.prove(authorityRoot, int64(os.Getppid()), nil, "", "", now)
 	if err != nil {
 		return refused(humanauthority.PlainReason(err), err)
 	}
-	if proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
-		_ = humanauthority.RecordAttorneyRefusal(inv.stateRoot, proof, act, "set only by the person's own proof", now)
+	if proof.Helm != nil || !proof.EnrolledTerminalFor(authorityRoot) {
+		if recordRefusal {
+			_ = humanauthority.RecordAttorneyRefusal(inv.layout.InstallationRoot.Path(), proof, act, "set only by the person's own proof", now)
+		}
 		return refused("this shell acts under the helm or a grant", nil)
 	}
 	return nil
