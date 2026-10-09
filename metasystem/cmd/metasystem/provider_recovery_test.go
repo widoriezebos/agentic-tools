@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -69,8 +71,19 @@ esac
 			}
 		}
 		command.Env = append(command.Env, "PATH="+tools+":"+os.Getenv("PATH"), "PROVIDER_RECOVERY_ISOLATED=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+home)
-		if out, err := command.CombinedOutput(); err != nil {
-			t.Fatalf("public machine revival: %v\n%s", err, out)
+		command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+		pid := 0
+		testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{{Verb: "isolated provider recovery", Resolve: func() (int, bool, error) {
+			return pid, pid != 0, nil
+		}}})
+		var output bytes.Buffer
+		command.Stdout, command.Stderr = &output, &output
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+		pid = command.Process.Pid
+		if err := command.Wait(); err != nil {
+			t.Fatalf("public machine revival: %v\n%s", err, &output)
 		}
 		return
 	}

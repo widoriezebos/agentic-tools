@@ -332,3 +332,28 @@ func TestFleetUsageDefaultSummary(t *testing.T) {
 		t.Fatalf("plain executions, old or empty sessions included: %d sessions", len(sessions))
 	}
 }
+
+func TestFleetUsageRegistryReadError(t *testing.T) {
+	t.Parallel()
+	bed := newMachineBed(t)
+	owners := bed.owners()
+	owners.machines.registryPath = func() (string, error) { return bed.home, nil }
+	command, args, _ := resolveIntentArgv([]string{"machine", "list", "--json"})
+	var out, errout bytes.Buffer
+	code := runIntentIn(command, args, &out, &errout, bed.this, owners)
+	var result struct {
+		Summary string
+		Data    struct {
+			ThisComputer struct{ Capacity hostcapacity.Snapshot }
+		}
+	}
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+		t.Fatalf("decode exit %d: %v %s %s", code, err, &out, &errout)
+	}
+	if code != 1 || !strings.Contains(result.Summary, "registry") {
+		t.Fatalf("unreadable registry exit %d: %s", code, &out)
+	}
+	if !strings.Contains(strings.Join(result.Data.ThisComputer.Capacity.Usage.Problems, " "), "working directory registry:") {
+		t.Fatalf("registry error is absent from usage coverage: %+v", result.Data.ThisComputer.Capacity.Usage)
+	}
+}

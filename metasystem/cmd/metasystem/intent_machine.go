@@ -87,7 +87,7 @@ func runIntentMachineRevive(inv *intentInvocation) int {
 	if problem := child.directPersonProof("machine revive", &person); problem != nil {
 		return inv.render(*problem)
 	}
-	root, now := child.stateRoot, person.CheckedAt
+	root, now := child.layout.InstallationRoot.Path(), person.CheckedAt
 	closed, _, err := stopfence.Closed(root)
 	if closed {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this seat was intentionally stopped; start MetaSystem before reviving it", next: inv.publicArgv("system", "start", "--repo", target.Checkout)})

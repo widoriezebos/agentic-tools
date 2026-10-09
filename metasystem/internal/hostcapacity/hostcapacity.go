@@ -87,10 +87,17 @@ func Read(home string, manager interface{ CapacityBuilds() ([]Build, error) }, n
 		}
 
 		path := sources.RegistryPath
+		var registryErr error
 		if path == "" {
-			path, err = registry.DefaultPath()
+			path, registryErr = registry.DefaultPath()
 		}
-		seats, registryErr := registry.HostCheckouts(path)
+		var seats []registry.HostCheckout
+		if registryErr == nil {
+			seats, registryErr = registry.HostCheckouts(path)
+		}
+		if registryErr != nil {
+			s.Usage.Problems = append(s.Usage.Problems, "working directory registry: "+registryErr.Error())
+		}
 		for i := range s.Usage.Sessions {
 			session := &s.Usage.Sessions[i]
 			known := s.OwnerKnown && (session.WorkingDirectory == owner.Root || strings.HasPrefix(session.WorkingDirectory, owner.Root+string(filepath.Separator)))
