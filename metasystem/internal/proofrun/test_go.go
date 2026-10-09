@@ -74,6 +74,8 @@ type NativeInventoryRequest struct {
 	LogRoot                    string
 	Environment                []string
 	Workers                    int
+	// Progress reports the selected package executions before and during the run.
+	Progress func(planned int, completed []PackageExecution)
 }
 
 type GoGateTestRequest = NativeInventoryRequest
@@ -151,7 +153,7 @@ func runNativeInventory(ctx context.Context, request NativeInventoryRequest, byP
 		return result, 1, fmt.Errorf("create Go gate log root: %w", err)
 	}
 	result.LogPath = filepath.Join(request.LogRoot, group.ID+".log")
-	nativeRequest := TestRunRequest{Workers: request.Workers, LogRoot: request.LogRoot}
+	nativeRequest := TestRunRequest{Workers: request.Workers, LogRoot: request.LogRoot, nativeProgress: request.Progress}
 	ctx = withTestWorkerPool(ctx, request.Workers)
 	limits, sampleInterval := groupSupervisorSettings(nil)
 	var output synchronizedBuffer

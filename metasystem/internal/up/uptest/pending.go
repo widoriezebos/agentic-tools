@@ -57,7 +57,7 @@ func Pending(t testing.TB) up.Result {
 		EnsureArmed: func(supervise.EnsureOptions) (supervise.EnsureResult, error) {
 			return supervise.EnsureResult{Action: "joined", Generation: 1}, nil
 		},
-		EnsureStewardRunner: func(string, *steward.EnrolledBinary, int) (steward.EnsureRunnerResult, error) {
+		EnsureStewardRunner: func(string, *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
 			return steward.EnsureRunnerResult{Action: "already-running", Generation: 1}, nil
 		},
 		RestampStopCapability: func(string, string, int64) (up.StopCapabilityRestampResult, error) {

@@ -498,7 +498,7 @@ func TestTypedDriftAtBothLaunchSitesRoutesToEnrollmentDrift(t *testing.T) {
 
 	t.Run("steward runner", func(t *testing.T) {
 		prior := stewardEnsureRunner
-		stewardEnsureRunner = func(string, *steward.EnrolledBinary, int) (steward.EnsureRunnerResult, error) {
+		stewardEnsureRunner = func(string, *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
 			return steward.EnsureRunnerResult{}, fmt.Errorf("%w: injected steward command drift", steward.ErrEnrollmentDrift)
 		}
 		t.Cleanup(func() { stewardEnsureRunner = prior })
@@ -512,7 +512,7 @@ func TestTypedDriftAtBothLaunchSitesRoutesToEnrollmentDrift(t *testing.T) {
 
 func TestPlainLaunchErrorsKeepTheirComponentFailures(t *testing.T) {
 	prior := stewardEnsureRunner
-	stewardEnsureRunner = func(string, *steward.EnrolledBinary, int) (steward.EnsureRunnerResult, error) {
+	stewardEnsureRunner = func(string, *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
 		return steward.EnsureRunnerResult{}, errors.New("plain launch failure")
 	}
 	t.Cleanup(func() { stewardEnsureRunner = prior })

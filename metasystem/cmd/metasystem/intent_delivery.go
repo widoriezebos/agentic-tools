@@ -2106,7 +2106,7 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 				Summary: fmt.Sprintf("goal %s landed %s on %s and its branch is swept", goalID, landed.Landing, landed.Endpoint)}
 		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fmt.Sprintf("origin has no goal/%s to land", goalID),
-			next: inv.publicArgv("status", goalID), nextReason: "shows the goal's work"}
+			next: []string{"git", "push", "origin", "goal/" + goalID}, nextReason: "publishes the goal branch before handing it in"}
 	}
 	if refused := inv.landIncidentHold(goalID, subject); refused != nil {
 		return *refused

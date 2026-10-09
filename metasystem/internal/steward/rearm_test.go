@@ -1274,7 +1274,7 @@ func TestCommandTimeDriftSurvivesTheStewardLaunchChain(t *testing.T) {
 	if err := os.Rename(replacement, pinned.execPath); err != nil {
 		t.Fatal(err)
 	}
-	_, err = repairPinnedRunner(bed.root, pinned, nil, time.Second)
+	_, err = repairPinnedRunner(bed.root, pinned, nil)
 	if !errors.Is(err, ErrEnrollmentDrift) {
 		t.Fatalf("command-time drift lost its typed cause: %v", err)
 	}

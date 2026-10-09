@@ -192,7 +192,9 @@ func (c *followonClient) publishCalls(op, tip string, outcome CASOutcome, pushEr
 	remote := p.remote[policyGoalRef]
 	calls := []pushExpectation{ev("claim"), ev("txn-refs"), remoteEvent(), tipEvent(policyGoalRef), rangeEvent(tip), tipEvent(originTipRef("goal-a"))}
 	if remote != "" {
-		calls = append(calls, fetchEvents(op, remote)...)
+		if p.refs[originTipRef("goal-a")] != remote {
+			calls = append(calls, fetchEvents(op, remote)...)
+		}
 		calls = append(calls, ancestryEvent(tip, remote))
 		calls = append(calls, ancestryEvent(remote, tip))
 	}
@@ -213,9 +215,15 @@ func (c *followonClient) adoptCalls(op, local, remote, relation string) []pushEx
 	if local != "" {
 		calls = append(calls, rangeEvent(local), tipEvent(originTipRef("goal-a")))
 	}
-	calls = append(calls, fetchEvents(op, remote)...)
+	knownOrigin := local != "" && c.push.refs[originTipRef("goal-a")] == remote
+	if !knownOrigin {
+		calls = append(calls, fetchEvents(op, remote)...)
+	}
 	if local != "" {
 		calls = append(calls, ancestryEvent(local, remote))
+		if knownOrigin {
+			calls = append(calls, fetchEvents(op, remote)...)
+		}
 		if relation == "replacement" {
 			calls = append(calls, ancestryEvent(remote, local))
 		}

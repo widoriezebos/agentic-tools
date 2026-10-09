@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -300,7 +301,7 @@ func TestArmConfirmsTheGuardAndDisarmEndsIt(t *testing.T) {
 	if err := pinned.PrepareForExecution(); err != nil {
 		t.Fatal(err)
 	}
-	ensured, err := EnsureRunner(root, pinned, 1000)
+	ensured, err := EnsureRunner(root, pinned)
 	if err != nil || ensured.Action != "verified" || ensured.Pid != beforeEnsure.Pid {
 		t.Fatalf("a second ensure must verify the live runner: %+v %v", ensured, err)
 	}
@@ -419,7 +420,7 @@ func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
 	clock := func() time.Time { return now }
 	noSleep := func(d time.Duration) { t.Fatalf("slow attempt waited for %s", d) }
 	deps := runnerPolicyDeps(t, root, &runnerPolicyNotify{output: "true\n"})
-	ensured, err := ensureRunnerWithDependencies(root, pinned, 1000, deps, clock, noSleep)
+	ensured, err := ensureRunnerWithDependencies(root, pinned, deps, clock, noSleep)
 	if err != nil || ensured.Action != "verified" || ensured.Pid != self.Pid || ensured.Generation != 1 {
 		t.Fatalf("a second up must verify the slow first attempt without replacement: %+v %v", ensured, err)
 	}
@@ -723,7 +724,7 @@ func TestRunnerLaunchWaitsForConfirmationOrExitNotTime(t *testing.T) {
 	polls, slept := 0, time.Duration(0)
 	sleep := func(interval time.Duration) { slept += interval }
 	record := RunnerRecord{Pid: 4242}
-	got, err := awaitRunnerConfirmation(root, func() (RunnerRecord, bool) {
+	got, err := AwaitRunnerStart(root, func() (RunnerRecord, bool) {
 		polls++
 		return record, polls > pollsBeforeConfirm
 	}, make(chan error), sleep)
@@ -736,7 +737,7 @@ func TestRunnerLaunchWaitsForConfirmationOrExitNotTime(t *testing.T) {
 
 	exited := make(chan error, 1)
 	polls = 0
-	_, err = awaitRunnerConfirmation(root, func() (RunnerRecord, bool) {
+	_, err = AwaitRunnerStart(root, func() (RunnerRecord, bool) {
 		polls++
 		if polls == 3 {
 			exited <- nil
@@ -795,5 +796,45 @@ func TestRunnerRunsTheBridgeRoleEveryCycleAndAtTheHelm(t *testing.T) {
 	}
 	if bridge.steps != 2 || bridge.helmAtStep[0] || !bridge.helmAtStep[1] || bridge.closes != 1 {
 		t.Fatalf("bridge steps %d at helm %v, closes %d; want one free step, one at the helm, and one close", bridge.steps, bridge.helmAtStep, bridge.closes)
+	}
+}
+
+func TestRunnerRepairAcceptsAnnouncementBeforeFirstTick(t *testing.T) {
+	t.Parallel()
+	root := canonicalPath(t.TempDir())
+	binary := filepath.Join(canonicalPath(t.TempDir()), "runner")
+	buildFakeRunner(t, binary, "0123456789012345678901234567890123456789")
+	digest, err := installDigest(binary)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{RepoIdentity: root, Generation: 1, InstallPath: binary, InstallDigest: digest, MintedAt: now.UTC().Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
+	reapStewardRunnerFixture(t, root)
+	outcome, err := repairEnrolledRunnerWithClock(root, nil, func() time.Time { return now }, func(d time.Duration) { now = now.Add(15 * time.Second); runtime.Gosched() })
+	if err != nil || outcome.Status != "RESTORED" || outcome.ReplacementPid == 0 {
+		t.Fatalf("announced runner without a tick: %+v %v", outcome, err)
+	}
+	if _, err := os.Stat(ComponentEvidencePath(root, "steward-tick")); !os.IsNotExist(err) {
+		t.Fatalf("fixture must have no first tick: %v", err)
+	}
+	record, alive := liveRunner(root)
+	if !alive {
+		t.Fatal("announcement is not live")
+	}
+	if _, err := beginComponentAttempt(root, "steward-tick", 0, identity.Ref{Pid: record.Pid, StartedAtSec: record.PidStartedAt, StartTicks: record.StartTicks, BootID: record.BootID}, now.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	pinned, err := OpenEnrolledBinary(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer pinned.Close()
+	deps := runnerPolicyDeps(t, root, &runnerPolicyNotify{output: "true\n"})
+	ensured, err := ensureRunnerWithDependencies(root, pinned, deps, func() time.Time { return now }, func(time.Duration) { t.Fatal("a current announcement waited for an old tick") })
+	if err != nil || ensured.Action != "verified" || ensured.Pid != record.Pid {
+		t.Fatalf("old tick hid the new announcement: %+v %v", ensured, err)
 	}
 }

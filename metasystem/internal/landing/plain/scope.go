@@ -353,7 +353,16 @@ func (p *proofOutput) line(line string) {
 		shard, se := strconv.Atoi(fields[3])
 		ms, me := strconv.ParseInt(fields[5], 10, 64)
 		if se == nil && me == nil && shard >= 0 && ms >= 0 {
-			p.packages = append(p.packages, PackageTiming{fields[2], shard, fields[4], ms})
+			timing := PackageTiming{fields[2], shard, fields[4], ms}
+			// The reporter prints a shard again when its final verdict differs
+			// from the live one; the last line is the shard's record.
+			for i, seen := range p.packages {
+				if seen.Unit == timing.Unit && seen.Shard == timing.Shard {
+					p.packages[i] = timing
+					return
+				}
+			}
+			p.packages = append(p.packages, timing)
 		}
 		return
 	}

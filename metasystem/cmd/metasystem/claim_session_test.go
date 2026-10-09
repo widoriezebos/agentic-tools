@@ -113,7 +113,7 @@ func newClaimSessionBedAt(t *testing.T, checkout string) *claimSessionBed {
 		options.EnsureArmed = func(supervise.EnsureOptions) (supervise.EnsureResult, error) {
 			return supervise.EnsureResult{Action: "joined", Generation: 1}, nil
 		}
-		options.EnsureStewardRunner = func(string, *steward.EnrolledBinary, int) (steward.EnsureRunnerResult, error) {
+		options.EnsureStewardRunner = func(string, *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
 			return steward.EnsureRunnerResult{Action: "already-running", Generation: 1}, nil
 		}
 		result := up.Run(options)

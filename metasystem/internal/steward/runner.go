@@ -791,36 +791,14 @@ func canonicalPath(path string) string {
 	return filepath.Clean(absolute)
 }
 
-const runnerConfirmationWait = 10 * time.Second
-
-func scaledRunnerWait(scaleMilli int) time.Duration {
-	if scaleMilli < 1 {
-		scaleMilli = 1000
-	}
-	seconds := (int(runnerConfirmationWait/time.Second)*scaleMilli + 999) / 1000
-	if seconds < 1 {
-		seconds = 1
-	}
-	return time.Duration(seconds) * time.Second
+// EnsureRunner consults the standing enrolled engine and its live startup
+// announcement, and restores the runner without minting a generation.
+// The watcher owns tick freshness after startup.
+func EnsureRunner(repoRoot string, enrolled *EnrolledBinary) (EnsureRunnerResult, error) {
+	return ensureRunnerWithDependencies(repoRoot, enrolled, defaultRearmResolverDeps(), runnerNow, runnerSleep)
 }
 
-func waitForRunnerSuccessWithClock(repoRoot string, wait time.Duration, now func() time.Time, sleep func(time.Duration)) RoleVerdict {
-	deadline := now().Add(wait)
-	verdict := checkStewardRunner(repoRoot, now(), identity.KernelProber{})
-	for verdict.Status != HealthAlive && now().Before(deadline) {
-		sleep(50 * time.Millisecond)
-		verdict = checkStewardRunner(repoRoot, now(), identity.KernelProber{})
-	}
-	return verdict
-}
-
-// EnsureRunner consults the standing enrolled engine, verifies a successful
-// generation-bound tick, and restores the runner without minting a generation.
-func EnsureRunner(repoRoot string, enrolled *EnrolledBinary, scaleMilli int) (EnsureRunnerResult, error) {
-	return ensureRunnerWithDependencies(repoRoot, enrolled, scaleMilli, defaultRearmResolverDeps(), runnerNow, runnerSleep)
-}
-
-func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, scaleMilli int, deps rearmResolverDeps, now func() time.Time, sleep func(time.Duration)) (EnsureRunnerResult, error) {
+func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, deps rearmResolverDeps, now func() time.Time, sleep func(time.Duration)) (EnsureRunnerResult, error) {
 	top := canonicalPath(repoRoot)
 	if fence, err := readOpenFence(top, "the steward runner"); err != nil {
 		var stopped *StoppedError
@@ -838,27 +816,29 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, sca
 	if enrolled == nil || enrolled.file == nil {
 		return EnsureRunnerResult{}, fmt.Errorf("the enrolled engine is not pinned")
 	}
-	wasAlive := false
-	if _, alive := liveRunner(top); alive {
-		wasAlive = true
-	}
+	record, wasAlive := liveRunner(top)
 	if wasAlive {
-		verdict := waitForRunnerSuccessWithClock(top, scaledRunnerWait(scaleMilli), now, sleep)
-		if verdict.Status == HealthAlive {
-			record, _ := liveRunner(top)
+		verdict := checkStewardRunner(top, now(), identity.KernelProber{})
+		evidence, evidenceErr := loadComponentEvidence(ComponentEvidencePath(top, "steward-tick"))
+		started, startErr := time.Parse(time.RFC3339, record.StartedAt)
+		minted, mintErr := time.Parse(time.RFC3339, enrolled.Install.MintedAt)
+		announced := startErr == nil && mintErr == nil && !started.Before(minted) && evidenceErr == nil &&
+			(evidence.Generation != enrolled.Install.Generation || evidence.LastAttempt.Before(started))
+		if verdict.Status == HealthAlive || errors.Is(evidenceErr, os.ErrNotExist) || announced {
 			return EnsureRunnerResult{Action: "verified", Pid: record.Pid, Generation: enrolled.Install.Generation}, nil
 		}
 		if verdict.Status == HealthUnknown {
 			return EnsureRunnerResult{}, fmt.Errorf("steward runner cannot be verified: %s", verdict.Reason)
 		}
 	}
-	repair, err := repairPinnedRunnerWithClock(top, enrolled, nil, scaledRunnerWait(scaleMilli), now, sleep)
+	repair, err := repairPinnedRunnerWithClock(top, enrolled, nil, now, sleep)
 	if err != nil {
 		return EnsureRunnerResult{}, err
 	}
 	if repair.Status != "RESTORED" && repair.Status != "CURRENT" {
 		return EnsureRunnerResult{}, fmt.Errorf("steward runner repair stopped with %s", repair.Status)
 	}
+
 	action := "verified"
 	if repair.Status == "RESTORED" {
 		action = "started"
@@ -868,7 +848,7 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, sca
 	}
 	record, alive := liveRunner(top)
 	if !alive {
-		return EnsureRunnerResult{}, fmt.Errorf("steward runner completed a pass but its process identity is no longer live")
+		return EnsureRunnerResult{}, fmt.Errorf("steward runner announced its start but its process identity is no longer live")
 	}
 	return EnsureRunnerResult{Action: action, Pid: record.Pid, Generation: enrolled.Install.Generation}, nil
 }
@@ -919,14 +899,14 @@ func repairEnrolledRunnerWithClock(repoRoot string, beforeLock func(), now func(
 	if err := pinned.PrepareForExecution(); err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	return repairPinnedRunnerWithClock(top, pinned, beforeLock, 10*time.Second, now, sleep)
+	return repairPinnedRunnerWithClock(top, pinned, beforeLock, now, sleep)
 }
 
-func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func(), wait time.Duration) (RunnerRepairOutcome, error) {
-	return repairPinnedRunnerWithClock(top, pinned, beforeLock, wait, runnerNow, runnerSleep)
+func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func()) (RunnerRepairOutcome, error) {
+	return repairPinnedRunnerWithClock(top, pinned, beforeLock, runnerNow, runnerSleep)
 }
 
-func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock func(), wait time.Duration, now func() time.Time, sleep func(time.Duration)) (RunnerRepairOutcome, error) {
+func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock func(), now func() time.Time, sleep func(time.Duration)) (RunnerRepairOutcome, error) {
 	installed := pinned.Install
 	if beforeLock != nil {
 		beforeLock()
@@ -978,21 +958,14 @@ func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock 
 	}
 	// A watcher repair relaunches without an arming caller, so the
 	// replacement runner reports no-lease until the next arm.
-	replacement, err := launchRunner(top, pinned, "")
+	replacement, err := launchRunner(top, pinned, "", sleep)
 	if err != nil {
 		return RunnerRepairOutcome{}, err
 	}
-	deadline := now().Add(wait)
-	for now().Before(deadline) {
-		if current := checkStewardRunner(top, now(), identity.KernelProber{}); current.Status == HealthAlive {
-			return RunnerRepairOutcome{
-				Status: "RESTORED", Generation: installed.Generation,
-				PreviousPid: previous.Pid, ReplacementPid: replacement.Pid,
-			}, nil
-		}
-		sleep(50 * time.Millisecond)
-	}
-	return RunnerRepairOutcome{}, fmt.Errorf("the new steward (pid %d) did not finish starting on install %d within %s", replacement.Pid, installed.Generation, wait)
+	return RunnerRepairOutcome{
+		Status: "RESTORED", Generation: installed.Generation,
+		PreviousPid: previous.Pid, ReplacementPid: replacement.Pid,
+	}, nil
 }
 
 func runnerExclusion(top string, allowFixture bool) (string, bool) {
@@ -1195,7 +1168,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	return outcome, nil
 }
 
-func launchRunner(repoRoot string, binary *EnrolledBinary, lineage string) (RunnerRecord, error) {
+func launchRunner(repoRoot string, binary *EnrolledBinary, lineage string, clocks ...func(time.Duration)) (RunnerRecord, error) {
 	logFile, err := os.OpenFile(runnerLogPath(repoRoot), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return RunnerRecord{}, err
@@ -1213,16 +1186,17 @@ func launchRunner(repoRoot string, binary *EnrolledBinary, lineage string) (Runn
 	// The runner is detached on purpose: it must outlive this launch.
 	waited := make(chan error, 1)
 	go func() { waited <- cmd.Wait() }()
-	return awaitRunnerConfirmation(repoRoot, func() (RunnerRecord, bool) { return liveRunner(repoRoot) }, waited, runnerSleep)
+	sleep := runnerSleep
+	if len(clocks) > 0 {
+		sleep = clocks[0]
+	}
+	return AwaitRunnerStart(repoRoot, func() (RunnerRecord, bool) { return liveRunner(repoRoot) }, waited, sleep)
 }
 
-// awaitRunnerConfirmation ends a launch on one of the two facts that decide
-// it: the runner published its live record, or it exited. Elapsed time
-// decides nothing. A fresh runner's start (exec of a newly pinned engine,
-// its identity and enrollment reads) has no bound under host load, and a
-// wall-clock limit here reported a failed arm while the detached runner went
-// on to publish its record and guard the repository.
-func awaitRunnerConfirmation(repoRoot string, confirmed func() (RunnerRecord, bool), exited <-chan error, sleep func(time.Duration)) (RunnerRecord, error) {
+// AwaitRunnerStart completes when the runner publishes its live process
+// announcement. The child's exit or its announcement bounds the wait;
+// elapsed time alone does not. The watcher owns tick freshness.
+func AwaitRunnerStart(repoRoot string, confirmed func() (RunnerRecord, bool), exited <-chan error, sleep func(time.Duration)) (RunnerRecord, error) {
 	for {
 		if rec, alive := confirmed(); alive {
 			return rec, nil

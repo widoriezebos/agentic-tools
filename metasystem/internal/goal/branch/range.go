@@ -285,7 +285,11 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 		}
 		id := fields[0]
 		if len(fields) != 2 {
-			return nil, rangeRefusal(goalID, id, fmt.Sprintf("it has %d parents, and a goal branch commit has one", len(fields)-1))
+			refusal := rangeRefusal(goalID, id, fmt.Sprintf("it has %d parents, and a goal branch commit has one", len(fields)-1)).(*RangeError)
+			if len(fields) > 2 && goalID != "" {
+				refusal.Remedy = "run: metasystem work rebase " + goalID
+			}
+			return nil, refusal
 		}
 		kind, err := kindOfWithGit(repo, id, goalID, gitRead)
 		if err != nil {

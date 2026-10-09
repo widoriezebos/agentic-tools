@@ -44,7 +44,21 @@ func TestC(t *testing.T) { t.Parallel() }
 	ctx := context.WithValue(t.Context(), goShardLifecycleHooksKey{}, goShardLifecycleHooks{wrapOutput: func(index int, w io.Writer) io.Writer {
 		return &inventoryOverlapWriter{Writer: w, started: started[index], other: started[1-index]}
 	}})
-	result, err := RunNativeInventory(ctx, NativeInventoryRequest{Root: root, LogRoot: filepath.Join(t.TempDir(), "logs"), Environment: environment, Workers: 2, Packages: []string{"cmd/metasystem"}})
+	planned := 0
+	completed := []PackageExecution{}
+	result, err := RunNativeInventory(ctx, NativeInventoryRequest{Root: root, LogRoot: filepath.Join(t.TempDir(), "logs"), Environment: environment, Workers: 2, Packages: []string{"cmd/metasystem"}, Progress: func(total int, executions []PackageExecution) {
+		if executions == nil {
+			planned = total
+		} else {
+			if planned != 2 {
+				t.Errorf("completion before its plan: %d", planned)
+			}
+			completed = append(completed, executions...)
+		}
+	}})
+	if planned != 2 || len(completed) != 2 {
+		t.Fatalf("live package progress planned=%d completed=%+v", planned, completed)
+	}
 	if err != nil || !result.Failed || len(result.Execution) != 2 {
 		t.Fatalf("result=%+v error=%v", result, err)
 	}

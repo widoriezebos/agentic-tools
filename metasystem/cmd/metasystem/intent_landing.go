@@ -325,19 +325,23 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	view = data.View
 	view.Batch = data.Batch
 	waiting := slices.ContainsFunc(data.Queue, func(entry plain.Entry) bool { return entry.State == plain.StateWaiting })
-	if view.Root != nil && view.Owner.State == lane.OwnerIdle {
+	if view.Root != nil && view.Owner.State == lane.OwnerIdle && data.ProofHeadline == "" {
 		view.Summary = view.SummaryWithWaiting(waiting)
 		data.View = view
 	}
 	summary := view.Summary
+	if data.ProofHeadline != "" {
+		summary = data.ProofHeadline
+	}
 	if view.Root != nil {
 		summary += "; " + landingQueueWords(data.Queue)
 		if data.Admission != "" {
 			summary += "; " + data.Admission
 		}
 	}
+	pageView := inv.landingStatusView(view, unreadable != nil, data.RunningProof, waiting, data.ProofHeadline)
 	result := intentResult{Outcome: intentConfirmed, Summary: summary, Data: data,
-		view: withPlainLane(withRunningProof(inv.landingStatusView(view, unreadable != nil, data.RunningProof, waiting), data.RunningProof), data, record.Install)}
+		view: withPlainLane(withRunningProof(pageView, data.RunningProof), data, record.Install)}
 	if view.Root != nil {
 		result.Targets = laneTargets(*view.Root)
 	}
@@ -496,7 +500,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 // headline says whether the lane runs, and what it proves while its agent
 // is idle. --verbose adds the lane's checkout, who registered it and its
 // landing agent.
-func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, running *plain.RunningProof, waiting bool) func(*textui.Page) {
+func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, running *plain.RunningProof, waiting bool, headline ...string) func(*textui.Page) {
 	return func(page *textui.Page) {
 		env := page.Env()
 		if view.Root == nil {
@@ -511,6 +515,9 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, 
 		}
 		owner := view.Owner
 		switch {
+		case len(headline) > 0 && headline[0] != "":
+			page.Headline(headline[0])
+			page.Section("", "").Text("Lane: " + view.AgentSummary(waiting))
 		case owner.State == lane.OwnerRunning:
 			page.Headline("The landing lane's agent is at work")
 		case owner.State == lane.OwnerStopped:

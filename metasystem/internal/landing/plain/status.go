@@ -3,8 +3,10 @@ package plain
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,8 +39,11 @@ type Status struct {
 	RunningProof        *RunningProof        `json:"running_proof"`
 	RunningRegeneration *RunningRegeneration `json:"running_regeneration,omitempty"`
 	// LastProof is the newest line of results.jsonl.
-	LastProof *Result `json:"last_proof"`
-	LastGate  *Result `json:"last_gate,omitempty"`
+	LastProof      *Result  `json:"last_proof"`
+	TrunkProof     *Result  `json:"trunk_proof,omitempty"`
+	TrunkIncidents []string `json:"trunk_incidents,omitempty"`
+	ProofHeadline  string   `json:"proof_headline,omitempty"`
+	LastGate       *Result  `json:"last_gate,omitempty"`
 	// LastPush is the newest push landing push made.
 	LastPush *Pushed `json:"last_push"`
 	Stop     *Stop   `json:"stop,omitempty"`
@@ -70,7 +75,10 @@ type RunningProof struct {
 	// Goals are the waiting hand-ins the proof's commit holds, oldest
 	// first, by the containment that derives landed; none for a proof that
 	// died or whose commit is not recorded.
-	Goals []string `json:"goals,omitempty"`
+	Goals      []string `json:"goals,omitempty"`
+	UnitsDone  int      `json:"units_done"`
+	UnitsTotal *int     `json:"units_total,omitempty"`
+	Minutes    *float64 `json:"minutes,omitempty"`
 }
 
 // landedWindow is how far back a landing is timed. The page lists what
@@ -292,6 +300,12 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	damaged("the proof results have", skipped, resultsPath(install))
 	if err == nil && len(results) > 0 {
 		status.LastProof = &results[len(results)-1]
+		for i := len(results) - 1; i >= 0; i-- {
+			if results[i].Trunk {
+				status.TrunkProof = &results[i]
+				break
+			}
+		}
 	}
 	gates, skipped, err := countedLines[Result](gatesPath(install))
 	unread("the gate results", err)
@@ -307,6 +321,66 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		status.LastPush = &last
 		status.Queue, err = LandingTimes(status.Queue, pushes, seams.now().Add(-landedWindow), git.brought)
 		unread("when the queued work landed", err)
+	}
+	if running != nil && running.State == "running" {
+		running.Minutes = elapsedMinutes(running.Since, seams.now().UTC().Format(time.RFC3339))
+		var data []byte
+		if running.Log != "" {
+			var readErr error
+			data, readErr = os.ReadFile(running.Log)
+			unread("the running proof log", readErr)
+		}
+		seen := map[string]bool{}
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines[:len(lines)-1] {
+			fields := strings.Fields(line)
+			if len(fields) == 3 && fields[0] == "landing" && fields[1] == "planned" {
+				if total, err := strconv.Atoi(fields[2]); err == nil && total >= 0 {
+					if running.UnitsTotal != nil {
+						total += *running.UnitsTotal
+					}
+					running.UnitsTotal = &total
+					seen = map[string]bool{}
+				}
+			}
+			if len(fields) == 6 && fields[0] == "landing" && fields[1] == "package" && !seen[fields[2]+"/"+fields[3]] {
+				seen[fields[2]+"/"+fields[3]] = true
+				running.UnitsDone++
+			}
+		}
+		total := "unknown"
+		if running.UnitsTotal != nil {
+			total = strconv.Itoa(*running.UnitsTotal)
+		}
+		status.ProofHeadline = fmt.Sprintf("Proving %s; %d/%s units done; %s min elapsed", Short(running.Commit), running.UnitsDone, total, clockMinutes(running.Minutes))
+	} else if proof := status.TrunkProof; proof != nil && proof.Result == Red {
+		main, readErr := git.main()
+		unread("main for the trunk proof", readErr)
+		if readErr == nil && main == proof.Commit {
+			incidents, readErr := seams.incidents(install, string(layout.Checkout), main)
+			unread("main's incidents", readErr)
+			for _, incident := range incidents {
+				if incident.Closed == nil {
+					status.TrunkIncidents = append(status.TrunkIncidents, incident.ID)
+				}
+			}
+			failed := make([]string, 0, len(proof.Failed))
+			for _, unit := range proof.Failed {
+				failed = append(failed, unit.Unit)
+			}
+			reason := strings.Join(failed, ", ")
+			if reason == "" {
+				reason = proof.Reason
+			}
+			status.ProofHeadline = "main " + Short(main) + " proven red: " + reason
+			if len(status.TrunkIncidents) > 0 {
+				status.ProofHeadline += "; incident " + strings.Join(status.TrunkIncidents, ", ")
+			}
+			status.ProofHeadline += "; hot-fix, then metasystem landing prove --trunk"
+		}
+	}
+	if status.ProofHeadline != "" {
+		status.Summary = status.ProofHeadline
 	}
 	return status
 }

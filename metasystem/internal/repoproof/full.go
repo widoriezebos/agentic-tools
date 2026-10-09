@@ -178,7 +178,24 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	}
 	defer release()
 	native := func(packages, tests, tags []string) error {
-		result, err := hooks.Native(proofrun.NativeInventoryRequest{Root: root, LogRoot: logRoot, Environment: environment, Packages: packages, Tests: tests, BuildTags: tags})
+		type packageShard struct {
+			unit  string
+			shard int
+		}
+		reported := map[packageShard]string{}
+		result, err := hooks.Native(proofrun.NativeInventoryRequest{Root: root, LogRoot: logRoot, Environment: environment, Packages: packages, Tests: tests, BuildTags: tags, Progress: func(planned int, completed []proofrun.PackageExecution) {
+			if completed == nil {
+				fmt.Fprintf(stdout, "landing planned %d\n", planned)
+			}
+			for _, execution := range completed {
+				reported[packageShard{packageUnit(execution.Package), execution.Shard}] = execution.Status
+				ms := int64(0)
+				if execution.ElapsedMS != nil {
+					ms = *execution.ElapsedMS
+				}
+				fmt.Fprintf(stdout, "landing package %s %d %s %d\n", packageUnit(execution.Package), execution.Shard, execution.Status, ms)
+			}
+		}})
 		if err != nil {
 			return err
 		}
@@ -192,7 +209,9 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 			if execution.ElapsedMS != nil {
 				ms = *execution.ElapsedMS
 			}
-			fmt.Fprintf(stdout, "landing package %s %d %s %d\n", unit, execution.Shard, execution.Status, ms)
+			if status, ok := reported[packageShard{unit, execution.Shard}]; !ok || status != execution.Status {
+				fmt.Fprintf(stdout, "landing package %s %d %s %d\n", unit, execution.Shard, execution.Status, ms)
+			}
 			if slices.Contains(tags, "batchtest") {
 				unit = "go-batchtest"
 			}

@@ -169,6 +169,18 @@ func rebaseWith(req RebaseRequest, d rebaseDependencies) (RebaseResult, error) {
 			return result, err
 		}
 	}
+	if onMain {
+		// Landing requires a linear branch even when main is already an ancestor.
+		count, err := d.git(req.Repo, "rev-list", "--merges", "--count", req.EndpointTip+".."+local)
+		if err != nil {
+			return result, err
+		}
+		merges, err := strconv.Atoi(strings.TrimSpace(string(count)))
+		if err != nil {
+			return result, err
+		}
+		onMain = merges == 0
+	}
 	if !onMain {
 		next, regenerated, err := replayRebase(req, local, d)
 		if err != nil {
