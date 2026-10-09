@@ -31,7 +31,14 @@ func main() {
 	exitCode := flag.Int("exit-code", 0, "the status to exit with")
 	exitNow := flag.Bool("exit-now", false, "exit before anything is ready")
 	live := flag.String("live-file", "", "touch this file while alive and remove it on exit")
+	listenFD := flag.Int("listen-fd", -1, "inherited listener instead of binding an address")
+	addressFD := flag.Int("address-fd", -1, "report the bound address on this descriptor")
 	flag.Parse()
+	var addressReport *os.File
+	if *addressFD >= 0 {
+		addressReport = os.NewFile(uintptr(*addressFD), "bound address")
+		defer addressReport.Close()
+	}
 	// A test bed's process table lists the application by this line.
 	fmt.Println("fixtureapp: pid", os.Getpid())
 
@@ -72,7 +79,15 @@ func main() {
 	started := time.Now()
 	if !*noListen && address != "" {
 		time.Sleep(*listenAfter)
-		listener, err := net.Listen("tcp", address)
+		var listener net.Listener
+		var err error
+		if *listenFD >= 0 {
+			file := os.NewFile(uintptr(*listenFD), "application listener")
+			listener, err = net.FileListener(file)
+			_ = file.Close()
+		} else {
+			listener, err = net.Listen("tcp", address)
+		}
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "fixtureapp: cannot listen:", err)
 			os.Exit(1)
@@ -100,6 +115,14 @@ func main() {
 		server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
 		go func() { _ = server.Serve(listener) }()
 		fmt.Println("fixtureapp: listening on", listener.Addr().String())
+		if addressReport != nil {
+			if _, err := fmt.Fprintln(addressReport, listener.Addr().String()); err != nil {
+				panic(err)
+			}
+		}
+	}
+	if addressReport != nil {
+		_ = addressReport.Close()
 	}
 	if *readyLine != "" {
 		time.Sleep(*readyAfter)

@@ -114,12 +114,16 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		if err != nil {
 			return notRun(err)
 		}
+		reporter := getenv("METASYSTEM_FULL_REPORTER")
+		if reporter == "" {
+			reporter = "proof/.full-reporter"
+		}
 		for _, group := range contract.Groups {
 			if group.Adapter != "section" {
 				continue
 			}
 			var report bytes.Buffer
-			err := command([]string{"proof/.full-reporter", "--section", group.ID}, io.MultiWriter(stdout, &report), stderr)
+			err := command([]string{reporter, "--section", group.ID}, io.MultiWriter(stdout, &report), stderr)
 			var result struct {
 				Data struct {
 					Groups []struct {

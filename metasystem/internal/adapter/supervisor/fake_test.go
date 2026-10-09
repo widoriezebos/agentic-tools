@@ -581,6 +581,18 @@ func TestFakeReturnValidation(t *testing.T) {
 func TestFakeNoSessionSignal(t *testing.T) {
 	t.Parallel()
 	f := newFakeInstall(t, installOptions{prompt: "FAKE:no-session-signal\n"})
+	handshake := make(chan struct{}, 1)
+	f.dispatcher.OnRun = func(args []string) {
+		if args[0] != "__handshake" {
+			return
+		}
+		for pid := range f.holds() {
+			if !exists(filepath.Join(f.holdDir, ".exited."+strconv.Itoa(pid))) {
+				t.Errorf("a handshake ran before hold %d reported its exit", pid)
+			}
+		}
+		handshake <- struct{}{}
+	}
 	done := make(chan int, 1)
 	go func() { done <- f.run() }()
 	var pid int
@@ -597,7 +609,7 @@ func TestFakeNoSessionSignal(t *testing.T) {
 	select {
 	case code := <-done:
 		t.Fatalf("supervisor exited %d while its hold lived", code)
-	case <-time.After(50 * time.Millisecond):
+	default:
 	}
 	if !strings.Contains(f.logText(), "ordinary output without a session-established event\n") {
 		t.Fatalf("log = %q", f.logText())
@@ -605,9 +617,16 @@ func TestFakeNoSessionSignal(t *testing.T) {
 	if len(f.dispatcher.calls(t)) != 0 {
 		t.Fatal("a handshake ran before the hold ended")
 	}
-	syscall.Kill(pid, syscall.SIGTERM)
+	if err := syscall.Kill(pid, syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
 	if code := <-done; code != 0 {
 		t.Fatalf("exit %d, stderr %s", code, f.stderr.String())
+	}
+	select {
+	case <-handshake:
+	default:
+		t.Fatal("no handshake followed the hold's exit")
 	}
 }
 

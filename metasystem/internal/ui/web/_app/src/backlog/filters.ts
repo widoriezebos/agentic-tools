@@ -130,7 +130,7 @@ export function arcsOn(rows: readonly Row[]): string[] {
 }
 
 function distinct(values: readonly string[]): string[] {
-  return [...new Set(values.filter((value) => value !== ""))].sort((left, right) => left.localeCompare(right));
+  return [...new Set(values.filter((value) => value !== ""))].sort((left, right) => left.localeCompare(right, "en"));
 }
 
 /* --------------------------------------------------- the Done lane's reach -- */

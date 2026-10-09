@@ -1,9 +1,13 @@
 #!/bin/sh
-# Builds the reporter to one fixed, ignored path and overwrites it each run;
-# nothing is removed (no rm on a variable path).
+# Each invocation keeps its reporter in a directory of its own.
 cd "$(dirname "$0")/.." || { printf 'LANDING-NOT-RUN\tenvironment\n'; exit 1; }
-if ! go build -o proof/.full-reporter ./proof; then
+reporter_dir=$(mktemp -d "${TMPDIR:-/tmp}/metasystem-full-reporter.XXXXXX") || { printf 'LANDING-NOT-RUN\tenvironment\n'; exit 1; }
+trap 'exit 1' HUP INT TERM
+if ! go build -o "$reporter_dir/reporter" ./proof; then
     printf 'LANDING-NOT-RUN\tenvironment\n'
     exit 1
 fi
-exec proof/.full-reporter "$@"
+METASYSTEM_FULL_REPORTER="$reporter_dir/reporter"
+export METASYSTEM_FULL_REPORTER
+"$reporter_dir/reporter" "$@"
+exit $?

@@ -193,7 +193,7 @@ func TestFullRunsBatchStaticAndSectionsBeforeReporting(t *testing.T) {
 			fmt.Fprint(stdout, `{"data":{"settings":[{"Key":"host.proof-vm","Value":""}]}}`)
 		case argv[1] == "test":
 			fmt.Fprintln(stdout, `{"Action":"pass","Package":"fixture/package"}`)
-		case argv[0] == "proof/.full-reporter":
+		case argv[0] == "/fixture/run/reporter":
 			id := argv[2]
 			status, exit := "passed", 0
 			if id == "section/gate-fail-open-tripwire" {
@@ -206,7 +206,12 @@ func TestFullRunsBatchStaticAndSectionsBeforeReporting(t *testing.T) {
 		}
 		return nil
 	}
-	exit := run(&out, &stderr, func(string) string { return "" }, command, "../../testing.json")
+	exit := run(&out, &stderr, func(key string) string {
+		if key == "METASYSTEM_FULL_REPORTER" {
+			return "/fixture/run/reporter"
+		}
+		return ""
+	}, command, "../../testing.json")
 	if exit != 1 || !strings.HasSuffix(out.String(), "LANDING-FAILED\tsection/gate-fail-open-tripwire\t\nLANDING-CHECKED\t1\n") {
 		t.Fatalf("exit=%d output=%s stderr=%s calls=%v", exit, &out, &stderr, calls)
 	}
@@ -220,7 +225,7 @@ func TestFullRunsBatchStaticAndSectionsBeforeReporting(t *testing.T) {
 		}
 		count := 0
 		for _, call := range calls {
-			if reflect.DeepEqual(call, []string{"proof/.full-reporter", "--section", group.ID}) {
+			if reflect.DeepEqual(call, []string{"/fixture/run/reporter", "--section", group.ID}) {
 				count++
 			}
 		}
@@ -387,3 +392,102 @@ func TestFullLegFailuresKeepTheirGroupAndEnvironmentVerdicts(t *testing.T) {
 }
 
 func init() { runtime.LockOSThread() }
+
+// The shell entrypoint must give concurrent invocations distinct build outputs.
+func TestFullScriptBuildsPrivateReporters(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "proof"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	script, err := os.ReadFile("../../proof/full.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	entry := filepath.Join(root, "proof", "full.sh")
+	if err := testexec.WriteFile(entry, script, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	tools := t.TempDir()
+	// The compiled stand-in reports both its own path and the path its sections inherit.
+	goStub := `#!/bin/sh
+[ "$1" = build ] && [ "$2" = -o ] && [ "$4" = ./proof ] || exit 64
+cat >"$3" <<'REPORTER'
+#!/bin/sh
+printf '%s\n%s\n' "$0" "$METASYSTEM_FULL_REPORTER"
+printf 'ready\n' >"$REPORTER_STARTED"
+read -r release <&3
+exit "${REPORTER_EXIT:-0}"
+REPORTER
+chmod +x "$3"
+`
+	if err := testexec.WriteFile(filepath.Join(tools, "go"), []byte(goStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	type result struct {
+		output []byte
+		err    error
+	}
+	results := make(chan result, 2)
+	var releases []*os.File
+	var startedPaths []string
+	for run := range 2 {
+		releaseRead, releaseWrite, err := os.Pipe()
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() {
+			_ = releaseWrite.Close()
+			_ = releaseRead.Close()
+		})
+		releases = append(releases, releaseWrite)
+		started := filepath.Join(root, fmt.Sprintf("reporter-started-%d", run))
+		startedPaths = append(startedPaths, started)
+		go func() {
+			cmd := exec.Command("/bin/sh", entry)
+			cmd.Env = append(os.Environ(), "PATH="+tools+":/usr/bin:/bin", "TMPDIR="+root, "REPORTER_EXIT=7", "REPORTER_STARTED="+started)
+			cmd.ExtraFiles = []*os.File{releaseRead}
+			output, err := cmd.CombinedOutput()
+			results <- result{output, err}
+		}()
+	}
+	// Both reporters must be running before either can exit.
+	testenv.Await(t, "both concurrent reporters to start", func() bool {
+		select {
+		case got := <-results:
+			t.Fatalf("reporter exited before release: %v\n%s", got.err, got.output)
+		default:
+		}
+		for _, path := range startedPaths {
+			if _, err := os.Stat(path); err != nil {
+				return false
+			}
+		}
+		return true
+	})
+	for _, release := range releases {
+		if _, err := release.WriteString("release\n"); err != nil {
+			t.Fatal(err)
+		}
+		_ = release.Close()
+	}
+	paths := map[string]bool{}
+	for range 2 {
+		got := <-results
+		var exit *exec.ExitError
+		if !errors.As(got.err, &exit) || exit.ExitCode() != 7 {
+			t.Fatalf("reporter exit was lost: %v\n%s", got.err, got.output)
+		}
+		lines := strings.Split(strings.TrimSpace(string(got.output)), "\n")
+		if len(lines) != 2 || lines[0] != lines[1] || !strings.HasPrefix(lines[0], root+string(os.PathSeparator)) {
+			t.Fatalf("the reporter and its sections do not share a private path: %q", got.output)
+		}
+		if paths[lines[0]] {
+			t.Fatalf("concurrent runs built to the same path: %s", lines[0])
+		}
+		paths[lines[0]] = true
+		if info, err := os.Stat(lines[0]); err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
+			t.Fatalf("private reporter must remain executable after exit: %v", err)
+		}
+	}
+}

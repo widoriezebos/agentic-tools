@@ -629,7 +629,14 @@ func createProcessNamespace(mkdirTemp func(string, string) (string, error), root
 			return fail(err)
 		}
 	}
-	values := make(map[string]string, len(directories)+len(shared))
+	gitConfig := filepath.Join(root, "gitconfig")
+	if err := os.WriteFile(gitConfig, nil, 0o600); err != nil {
+		return fail(fmt.Errorf("isolate git configuration: %w", err))
+	}
+	values := map[string]string{
+		"GIT_CONFIG_NOSYSTEM": "1",
+		"GIT_CONFIG_GLOBAL":   gitConfig,
+	}
 	for name, value := range directories {
 		values[name] = value
 	}

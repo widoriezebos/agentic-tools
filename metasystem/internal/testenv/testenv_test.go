@@ -721,3 +721,32 @@ func withoutRegistryOwnership(environment []string) []string {
 	}
 	return clean
 }
+
+// Main isolates both system and global Git configuration in every test process.
+func TestMainIsolatesMachineGitConfiguration(t *testing.T) {
+	t.Parallel()
+	const helper = "TESTENV_GIT_CONFIG_HELPER"
+	if os.Getenv(helper) != "1" {
+		hostile := filepath.Join(t.TempDir(), "hostile-gitconfig")
+		if err := os.WriteFile(hostile, []byte("[commit]\n gpgsign = true\n[core]\n hooksPath = /host/hooks\n fsmonitor = /host/monitor\n[init]\n defaultBranch = host-default\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command(os.Args[0], "-test.run=^TestMainIsolatesMachineGitConfiguration$", "-test.timeout=30m")
+		cmd.Env = append(os.Environ(), helper+"=1", "GIT_CONFIG_GLOBAL="+hostile, "GIT_CONFIG_NOSYSTEM=0")
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("isolated test process: %v\n%s", err, output)
+		}
+		return
+	}
+	if got := os.Getenv("GIT_CONFIG_NOSYSTEM"); got != "1" {
+		t.Errorf("system Git config remains enabled: %q", got)
+	}
+	global := os.Getenv("GIT_CONFIG_GLOBAL")
+	if !filepath.IsAbs(global) || filepath.Dir(global) != filepath.Dir(os.Getenv("HOME")) {
+		t.Fatalf("global Git config is outside this test process's namespace: %q", global)
+	}
+	data, err := os.ReadFile(global)
+	if err != nil || len(data) != 0 {
+		t.Fatalf("global Git config is not an empty readable file: %q %v", data, err)
+	}
+}
