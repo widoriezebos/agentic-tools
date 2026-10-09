@@ -11,6 +11,48 @@ func unitStopAskFixture(root, finding string) AskRequest {
 	return AskRequest{RepoRoot: root, Goal: "g", Kind: "stop", Machine: "m", Facts: []string{"unresolved finding " + finding}, Now: time.Unix(10, 0), UnitStop: &UnitStopQuestion{Loop: "unit-round", Subject: "g/u/run", Attempt: 2, Finding: finding, Review: "read", Needs: "metasystem work revise g --work u --reason 'correct the finding' --by Wido", AcceptableActs: []string{"work-revise", "goal-accept-risk", "goal-done"}}}
 }
 
+func TestUnitStopActKeepsGoalFreeDesignAndBoundDrop(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"goal-free design", "goal-free unit", "drop without attempt", "drop without findings", "bound drop"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			request := unitStopAskFixture(root, "read:1")
+			request.UnitStop.AcceptableActs = []string{"design-accept", "work-drop"}
+			if scenario == "goal-free design" {
+				request.Goal, request.About, request.Kind, request.UnitStop.Loop = "", "machine", "other", "design-round"
+			}
+			q, err := Ask(request)
+			if err != nil {
+				t.Fatal(err)
+			}
+			act := UnitStopAct{ID: "act", Goal: request.Goal, Loop: request.UnitStop.Loop, Subject: request.UnitStop.Subject, Attempt: 2, Findings: []string{"read:1"}, Kind: "work-drop", At: time.Unix(11, 0), UnitClosed: true}
+			valid := scenario == "goal-free design" || scenario == "bound drop"
+			switch scenario {
+			case "goal-free design":
+				act.Kind, act.Attempt, act.Findings = "design-accept", 0, nil
+			case "goal-free unit":
+				act.Goal = ""
+			case "drop without attempt":
+				act.Attempt = 0
+			case "drop without findings":
+				act.Findings = nil
+			}
+			if err := RecordUnitStopAct(root, act); (err == nil) != valid {
+				t.Fatalf("act validation: valid=%t err=%v act=%+v", valid, err, act)
+			}
+			stored, err := ReadQuestion(root, q.ID)
+			want := "open"
+			if valid {
+				want = "closed"
+			}
+			if err != nil || stored.State != want {
+				t.Fatalf("question state=%s want=%s err=%v", stored.State, want, err)
+			}
+		})
+	}
+}
+
 func TestUnitStopActClosesOnlyItsFindingAndSubject(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()

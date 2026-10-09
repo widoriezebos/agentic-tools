@@ -30,7 +30,7 @@ func (inv *intentInvocation) designRoundLimit(root string) int64 {
 			return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), root, limit)
 		}
 	}
-	return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), root, reviewRoundCeiling(inv.stateRoot))
+	return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), root, reviewRoundCeiling(inv.layout.InstallationRoot.Path()))
 }
 
 // reviewRoundCeiling is metasystem.budget.review-round-max in the

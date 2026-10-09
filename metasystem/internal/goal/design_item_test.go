@@ -2,7 +2,6 @@ package goal
 
 import (
 	"encoding/json"
-	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -123,5 +122,5 @@ func TestDesignExitReloadAndUnopenedDestinationBlockDone(t *testing.T) {
 	if err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, f.DesignExits[0].OpenCommand) {
 		t.Fatalf("unopened source completed: %+v %v", result, err)
 	}
-	t.Log(fmt.Sprintf("done: %s; %s", result.Outcome, result.Detail))
+	t.Logf("done: %s; %s", result.Outcome, result.Detail)
 }

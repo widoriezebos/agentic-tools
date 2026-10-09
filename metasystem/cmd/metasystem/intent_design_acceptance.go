@@ -408,7 +408,7 @@ func (inv *intentInvocation) finishDesignSplit(plan designReviewPlan, exit goal.
 		return fmt.Errorf("destination opening remains pending (%s): %s %v; recovery: %s", opened.Outcome, opened.Detail, err, exit.OpenCommand)
 	}
 	text := fmt.Sprintf("Goal %s was split from %s because the design is too large.\nApprove: metasystem goal approve %s", exit.Destination, plan.goalID, exit.Destination)
-	if err := phase.NotifyLanded(context.Background(), inv.stateRoot, text, "design-split:"+exit.Destination, req.Now); err != nil {
+	if err := phase.NotifyLanded(context.Background(), inv.layout.InstallationRoot.Path(), text, "design-split:"+exit.Destination, req.Now); err != nil {
 		fmt.Fprintln(inv.stderr, "follow-up is open; its approval message is retained for one retry: "+err.Error())
 	}
 	return nil

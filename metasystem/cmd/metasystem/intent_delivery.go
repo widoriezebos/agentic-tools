@@ -859,7 +859,7 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 			next:    append(inv.typedArgvLess("tool-calls"), "--tool-calls", "30"), nextReason: "30 is an example budget"}
 	}
 	if goalID == "" && len(targets) == 1 && targets[0].Kind == "design" {
-		return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), "", reviewRoundCeiling(inv.stateRoot)), calls, nil
+		return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), "", reviewRoundCeiling(inv.layout.InstallationRoot.Path())), calls, nil
 	}
 	projection, _, failed := inv.projection()
 	if failed != nil {
