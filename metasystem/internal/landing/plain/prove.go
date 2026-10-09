@@ -157,6 +157,8 @@ type ProveSeams struct {
 	FetchCommand func(*exec.Cmd)
 	// FetchTimeout overrides the fetch deadline for isolated tests.
 	FetchTimeout time.Duration
+	// FetchDeadline supplies the fetch expiry; nil uses the configured timeout.
+	FetchDeadline func(time.Duration) <-chan time.Time
 	// Trunk selects origin/main for a fresh full check.
 	Trunk bool
 	// Gate selects the cheap merge check and its separate result register.
@@ -945,7 +947,7 @@ func Short(id string) string {
 // Git runs git in dir and returns its trimmed output.
 func Git(dir string, args ...string) (string, error) {
 	if len(args) > 0 && args[0] == "fetch" {
-		return boundedFetch(dir, 60*time.Second, nil, args...)
+		return boundedFetch(dir, 60*time.Second, nil, nil, args...)
 	}
 	command := exec.Command("git", append([]string{"-C", dir}, args...)...)
 	command.Env = gittree.ScrubbedEnviron()
@@ -961,7 +963,7 @@ func Git(dir string, args ...string) (string, error) {
 }
 
 // boundedFetch keeps a stalled remote or credential prompt inside one keeper tick.
-func boundedFetch(dir string, timeout time.Duration, prepare func(*exec.Cmd), args ...string) (string, error) {
+func boundedFetch(dir string, timeout time.Duration, prepare func(*exec.Cmd), deadline func(time.Duration) <-chan time.Time, args ...string) (string, error) {
 	if timeout <= 0 {
 		timeout = 60 * time.Second
 	}
@@ -973,7 +975,10 @@ func boundedFetch(dir string, timeout time.Duration, prepare func(*exec.Cmd), ar
 	if prepare != nil {
 		prepare(command)
 	}
-	err := boundedexec.Run(command, boundedexec.FixedBound(timeout, ""), "the landing fetch")
+	if deadline == nil {
+		deadline = time.After
+	}
+	err := boundedexec.RunWithDeadline(command, boundedexec.FixedBound(timeout, ""), "the landing fetch", deadline)
 	if err != nil {
 		return "", fmt.Errorf("git fetch: %w: %s", err, strings.TrimSpace(stderr.String()))
 	}

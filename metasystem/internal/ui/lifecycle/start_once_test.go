@@ -118,6 +118,29 @@ func TestExecSpawnReadsTheReadyLineTheChildWrites(t *testing.T) {
 	testutil.Require(t, "release", child.Release(), nil)
 }
 
+func TestExecSpawnExtraFilesFollowTheReadinessDescriptor(t *testing.T) {
+	t.Parallel()
+
+	home := t.TempDir()
+	payload := filepath.Join(home, "address")
+	testutil.Require(t, "write address", os.WriteFile(payload, []byte("127.0.0.1:49997\n"), 0o600), nil)
+	file, err := os.Open(payload)
+	testutil.Require(t, "open address", err, nil)
+	defer file.Close()
+	script := filepath.Join(home, "server")
+	testutil.Require(t, "write server", testexec.WriteFile(script, []byte("#!/bin/sh\nIFS= read -r address <&4 || exit 1\nprintf 'ready %s\\n' \"$address\" >&3\n"), 0o755), nil)
+	child, err := ExecSpawn(LaunchSpec{
+		Executable: script, Dir: home, LogPath: filepath.Join(home, "server.log"), ExtraFiles: []*os.File{file},
+	})
+	testutil.Require(t, "spawn", err, nil)
+	defer child.Kill()
+	line, err := child.ReadyLine(WaitForReport)
+	testutil.Require(t, "read ready line", err, nil)
+	testutil.Expect(t, "ready line from extra descriptor", line, "ready 127.0.0.1:49997")
+	_, err = child.(*execChild).process.Wait()
+	testutil.Require(t, "wait for server exit", err, nil)
+}
+
 // A child that exits without a ready line ends the read rather than waiting
 // out the whole wait, and Kill of it reports the process as already done.
 func TestExecSpawnChildThatClosesWithoutReadyLine(t *testing.T) {

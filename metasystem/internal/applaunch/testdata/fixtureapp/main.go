@@ -18,6 +18,7 @@ import (
 )
 
 func main() {
+	readyFIFO := flag.String("ready-fifo", "", "acknowledge readiness to the owning fixture")
 	listen := flag.String("listen", "", "address to listen on (default: METASYSTEM_APP_ADDRESS)")
 	readyAfter := flag.Duration("ready-after", 0, "answer 200 only after this long")
 	darkFile := flag.String("dark-file", "", "stop answering 200 while this file exists, while staying alive")
@@ -27,6 +28,7 @@ func main() {
 	ignoreTerm := flag.Bool("ignore-term", false, "ignore SIGTERM")
 	noListen := flag.Bool("no-listen", false, "listen on nothing at all")
 	spawnDescendant := flag.Bool("spawn-descendant", false, "spawn a descendant that ignores TERM and wait in the foreground")
+	exitFIFO := flag.String("exit-fifo", "", "exit after the owning fixture releases this pipe")
 	exitAfter := flag.Duration("exit-after", 0, "exit by itself after this long")
 	exitCode := flag.Int("exit-code", 0, "the status to exit with")
 	exitNow := flag.Bool("exit-now", false, "exit before anything is ready")
@@ -46,8 +48,11 @@ func main() {
 		fmt.Println("fixtureapp: exiting before readiness")
 		os.Exit(*exitCode)
 	}
+	quit := make(chan os.Signal, 1)
 	if *ignoreTerm {
 		signal.Notify(make(chan os.Signal, 1), syscall.SIGTERM)
+	} else {
+		signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	}
 	if *live != "" {
 		_ = os.WriteFile(*live, []byte(strconv.Itoa(os.Getpid())), 0o644)
@@ -128,8 +133,40 @@ func main() {
 		time.Sleep(*readyAfter)
 		fmt.Println(*readyLine)
 	}
-	if *exitAfter > 0 {
-		time.Sleep(*exitAfter)
+	if *readyFIFO != "" {
+		gate, err := os.OpenFile(*readyFIFO, os.O_WRONLY, 0)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		fmt.Fprintln(gate, "ready")
+		gate.Close()
+	}
+	if *exitFIFO != "" || *exitAfter > 0 {
+		if *exitFIFO != "" {
+			exit := make(chan error, 1)
+			go func() {
+				gate, err := os.Open(*exitFIFO)
+				if err == nil {
+					var event [1]byte
+					_, err = gate.Read(event[:])
+					gate.Close()
+				}
+				exit <- err
+			}()
+			select {
+			case err := <-exit:
+				if err != nil {
+					fmt.Fprintln(os.Stderr, err)
+					os.Exit(1)
+				}
+			case <-quit:
+				fmt.Println("fixtureapp: stopping")
+				return
+			}
+		} else {
+			time.Sleep(*exitAfter)
+		}
 		fmt.Println("fixtureapp: exiting by itself")
 		if *live != "" {
 			_ = os.Remove(*live)
@@ -139,8 +176,6 @@ func main() {
 	if *ignoreTerm {
 		select {}
 	}
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGTERM, syscall.SIGINT)
 	<-quit
 	fmt.Println("fixtureapp: stopping")
 }

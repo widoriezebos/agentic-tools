@@ -16,12 +16,18 @@ import (
 // ProbeOnce asks the contract's readiness probe once. The two probed forms
 // answer here; the two observed forms have nothing to ask and say so.
 func ProbeOnce(contract Contract, address string) error {
+	return ProbeWithTimeout(contract, address, 3*time.Second)
+}
+
+// ProbeWithTimeout uses the caller's deadline backstop for network probes.
+// Zero waits for the network answer; the caller owns cancellation.
+func ProbeWithTimeout(contract Contract, address string, timeout time.Duration) error {
 	facts := FactsFor(address)
 	switch contract.ReadyKind() {
 	case ReadyHTTP:
-		return probeHTTP(facts.Substitute(contract.Ready.URL))
+		return probeHTTP(facts.Substitute(contract.Ready.URL), timeout)
 	case ReadyTCP:
-		return probeTCP(facts.Substitute(contract.Ready.Address))
+		return probeTCP(facts.Substitute(contract.Ready.Address), timeout)
 	}
 	return errNotProbed
 }
@@ -36,12 +42,23 @@ var probeClient = &http.Client{Timeout: 3 * time.Second,
 	// somewhere else, so it is not followed and not counted as ready.
 	CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
 
-func probeHTTP(url string) error {
+func probeHTTP(url string, timeout time.Duration) error {
 	request, err := http.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
-	response, err := probeClient.Do(request)
+	client := probeClient
+	if timeout != probeClient.Timeout {
+		copyClient := *probeClient
+		copyClient.Timeout = timeout
+		transport := http.DefaultTransport.(*http.Transport).Clone()
+		transport.DialContext = (&net.Dialer{Timeout: timeout}).DialContext
+		transport.TLSHandshakeTimeout = timeout
+		defer transport.CloseIdleConnections()
+		copyClient.Transport = transport
+		client = &copyClient
+	}
+	response, err := client.Do(request)
 	if err != nil {
 		return err
 	}
@@ -55,8 +72,8 @@ func probeHTTP(url string) error {
 	return nil
 }
 
-func probeTCP(address string) error {
-	connection, err := net.DialTimeout("tcp", address, 3*time.Second)
+func probeTCP(address string, timeout time.Duration) error {
+	connection, err := net.DialTimeout("tcp", address, timeout)
 	if err != nil {
 		return err
 	}

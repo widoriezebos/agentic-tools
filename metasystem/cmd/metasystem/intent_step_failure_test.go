@@ -210,6 +210,9 @@ func TestIntentUnattributedRedHoldsForProvenPerson(t *testing.T) {
 func TestIntentSupervisorReadyTimeoutRetriesOnce(t *testing.T) {
 	t.Parallel()
 	b, p := failedCommandBed(t, 0)
+	clock := time.Unix(123, 0)
+	b.manager.Now = func() time.Time { return clock }
+	b.manager.Sleep = func(d time.Duration) { clock = clock.Add(d) }
 	b.manager.StartCap = time.Second
 	b.manager.Supervisor = failureSupervisor{bed: b, unready: true}
 	code, result := failedCommandBuild(t, b)

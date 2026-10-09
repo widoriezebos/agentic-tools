@@ -1,6 +1,7 @@
 package applaunch
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -18,6 +19,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/lifecycle"
 	"golang.org/x/sys/unix"
@@ -78,6 +80,91 @@ func listenerAddress(t *testing.T, file *os.File) string {
 	}
 	defer listener.Close()
 	return listener.Addr().String()
+}
+
+// An inherited listener can report its address and acknowledge readiness
+// before the owner releases the application's exit gate.
+func TestFixtureInheritedListenerReportsAddressAndReadinessBeforeExit(t *testing.T) {
+	t.Parallel()
+	listener := reserveListener(t)
+	address := listenerAddress(t, listener)
+	root := t.TempDir()
+	readyPath, exitPath := filepath.Join(root, "ready"), filepath.Join(root, "exit")
+	for _, path := range []string{readyPath, exitPath} {
+		if err := unix.Mkfifo(path, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ready, err := os.OpenFile(readyPath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ready.Close()
+	exit, err := os.OpenFile(exitPath, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer exit.Close()
+	reportRead, reportWrite, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer reportRead.Close()
+	defer reportWrite.Close()
+	logPath := filepath.Join(root, "application.log")
+	log, err := os.Create(logPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer log.Close()
+	child, err := ExecChild(ChildSpec{
+		Argv: []string{mustApp(t), "--listen", "127.0.0.1:0", "--listen-fd", "3", "--address-fd", "4",
+			"--ready-fifo", readyPath, "--ready-line", "application ready", "--exit-fifo", exitPath, "--exit-code", "7"},
+		Dir: root, Environment: os.Environ(), Log: log, ExtraFiles: []*os.File{listener, reportWrite},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	listener.Close()
+	reportWrite.Close()
+	type result struct {
+		status string
+		err    error
+	}
+	var ended result
+	done := make(chan struct{})
+	go func() {
+		status, err := child.Wait()
+		ended = result{status, err}
+		close(done)
+	}()
+	defer func() {
+		_ = child.(*execChild).command.Process.Kill()
+		<-done
+	}()
+	reported, err := bufio.NewReader(reportRead).ReadString('\n')
+	if err != nil || reported != address+"\n" {
+		t.Fatalf("inherited listener address = %q, err=%v; want %q", reported, err, address)
+	}
+	var acknowledgment [6]byte
+	if _, err := io.ReadFull(ready, acknowledgment[:]); err != nil || string(acknowledgment[:]) != "ready\n" {
+		t.Fatalf("readiness acknowledgment = %q, err=%v", acknowledgment, err)
+	}
+	contract := Contract{Ready: &Ready{Kind: ReadyHTTP, URL: "http://${address}/-/health"}}
+	if err := ProbeOnce(contract, address); err != nil {
+		t.Fatalf("the acknowledged application must answer on the inherited listener: %v", err)
+	}
+	if _, err := exit.Write([]byte("exit\n")); err != nil {
+		t.Fatal(err)
+	}
+	<-done
+	if ended.err != nil || ended.status != "exit 7" {
+		t.Fatalf("released application = %q, err=%v; want exit 7", ended.status, ended.err)
+	}
+	output, err := os.ReadFile(logPath)
+	if err != nil || !strings.Contains(string(output), "application ready\n") || !strings.Contains(string(output), "fixtureapp: exiting by itself\n") {
+		t.Fatalf("readiness and exit log = %q, err=%v", output, err)
+	}
 }
 
 // bed is one seat: a state root, a project root and a written contract.
@@ -161,7 +248,7 @@ func (b *bed) startWith(key string, args []string) (string, int, error) {
 		time.Duration(b.contract.StopWaitMS())*time.Millisecond+5*time.Second)
 	reapPID := pid
 	if reapPID == 0 {
-		if record, err := ReadRecord(b.stateRoot, key); err == nil {
+		if record, err := ReadRecord(stateroottest.Installation(b.t, b.stateRoot).Path(), key); err == nil {
 			if ref, err := record.SupervisorRef(); err == nil {
 				reapPID = int(ref.Pid)
 			}
@@ -400,7 +487,7 @@ func TestSupervisorInterruptedBetweenSpawnAndChildWrite(t *testing.T) {
 	// The separate pipe can be read without waiting once the owner is reaped.
 	args = append(args, "--ready-fd", "5", "--listen-fd", "4")
 	spec := LaunchSpec{Executable: b.super, Args: args, Dir: b.root,
-		LogPath:    filepath.Join(Dir(b.stateRoot), StandingKey+".launch.log"),
+		LogPath:    filepath.Join(Dir(stateroottest.Installation(t, b.stateRoot).Path()), StandingKey+".launch.log"),
 		ExtraFiles: []*os.File{listener, readyWrite}}
 	t.Cleanup(func() { b.cleanup(StandingKey) })
 	_, _, err = LaunchSupervisor(spec, func(spec LaunchSpec) (lifecycle.Child, error) {

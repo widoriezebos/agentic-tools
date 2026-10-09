@@ -596,6 +596,8 @@ type intentOwners struct {
 	// nil is this executable. It is an owner of the invocation, never a
 	// process-wide variable, so parallel invocations cannot swap it.
 	appEngine func() (string, error)
+	// appConfigure supplies per-invocation listener and process dependencies.
+	appConfigure func(*appRun)
 	// landing are the landing verbs' seams; the zero value is production.
 	landing laneVerbOwners
 	// deploy are the deploy verbs' seams; the zero value is production.

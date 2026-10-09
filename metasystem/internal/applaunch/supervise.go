@@ -22,7 +22,8 @@ type ChildSpec struct {
 	Dir         string
 	Environment []string
 	Log         *os.File
-	ExtraFiles  []*os.File
+	// ExtraFiles carry listeners already owned by the launcher.
+	ExtraFiles []*os.File
 }
 
 // Child is the application the supervisor owns for the run's life.

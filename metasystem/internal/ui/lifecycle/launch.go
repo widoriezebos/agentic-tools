@@ -37,6 +37,7 @@ type LaunchSpec struct {
 	Args       []string
 	Dir        string
 	LogPath    string
+	// ExtraFiles follow the readiness descriptor in the detached child.
 	ExtraFiles []*os.File
 }
 

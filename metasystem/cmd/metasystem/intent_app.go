@@ -164,6 +164,9 @@ func (inv *intentInvocation) appVerb(verb string) int {
 	run.lookupEnv = inv.owners.lookupEnv
 	run.supervisorWait = inv.owners.appSupervisorWait
 	run.engine = inv.owners.appEngine
+	if inv.owners.appConfigure != nil {
+		inv.owners.appConfigure(&run)
+	}
 	targets = []intentTarget{{Kind: "app", ID: run.key}}
 	switch verb {
 	case "status":
@@ -556,8 +559,11 @@ func (inv *intentInvocation) appStop(run appRun, targets []intentTarget, wait ti
 		return intentResult{Outcome: intentConfirmed, Targets: targets, Data: appData(run, before),
 			Summary: "no application run is recorded for " + run.key, view: appActView("no application run is recorded for "+run.key, nil, nil)}
 	}
+	if wait == 0 {
+		wait = run.stopWait
+	}
 	result, err := applaunch.Stop(run.roots.Installation.Path(), run.key, run.contract, applaunch.StopOptions{
-		Probe: applaunch.ProbeOnce, Wait: wait, ProjectRoot: run.tree, Environment: run.environment()})
+		Probe: run.readOptions().Probe, Wait: wait, ProjectRoot: run.tree, Environment: run.environment()})
 	if err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the application could not be stopped: " + err.Error(), retry: "try again"}
 	}

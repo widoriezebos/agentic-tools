@@ -186,7 +186,7 @@ func (s ProveSeams) fetchMain(checkout string) error {
 	args := []string{"fetch", "--quiet", "origin", "+refs/heads/main:refs/remotes/origin/main"}
 	var err error
 	if s.FetchCommand != nil || s.Git == nil {
-		_, err = boundedFetch(checkout, s.FetchTimeout, s.FetchCommand, args...)
+		_, err = boundedFetch(checkout, s.FetchTimeout, s.FetchCommand, s.FetchDeadline, args...)
 	} else {
 		_, err = s.git(checkout, args...)
 	}
