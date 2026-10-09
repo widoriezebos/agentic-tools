@@ -64,85 +64,102 @@ func initRearmRepo(t *testing.T) string {
 }
 
 func TestGitProjectionAdapterPreservesArchivedKindsModesAndSymlinks(t *testing.T) {
-	outer := canonicalPath(t.TempDir())
-	rearmGit(t, outer, "init", "-q", "-b", "trunk")
-	rearmGit(t, outer, "config", "user.name", "test")
-	rearmGit(t, outer, "config", "user.email", "test@example.invalid")
-	installation := filepath.Join(outer, "metasystem")
-	writeRearmFile(t, filepath.Join(installation, "go.mod"), "module fixture.invalid/nested\n")
-	writeRearmFile(t, filepath.Join(installation, "cmd", "surface.txt"), "source")
-	writeRearmFile(t, filepath.Join(installation, "cmd", "kind"), "target")
-	if err := os.Symlink("one", filepath.Join(installation, "cmd", "link")); err != nil {
-		t.Fatal(err)
-	}
-	rearmGit(t, outer, "add", ".")
-	rearmGit(t, outer, "commit", "-qm", "source")
-	source := rearmGit(t, outer, "rev-parse", "HEAD")
-	policy, err := behaviorsurface.Load()
-	if err != nil {
-		t.Fatal(err)
-	}
-	deps := defaultRearmResolverDeps()
-	originalDiff, originalArchive := deps.projectionDiff, deps.archivedEngineDigest
-	diffCalls, archiveCalls := 0, 0
-	deps.projectionDiff = func(ctx context.Context, root, from, to string, progress func()) ([]byte, error) {
-		diffCalls++
-		return originalDiff(ctx, root, from, to, progress)
-	}
-	deps.archivedEngineDigest = func(ctx context.Context, root, commit string, loaded behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
-		archiveCalls++
-		return originalArchive(ctx, root, commit, loaded, clock, seconds)
-	}
+	t.Parallel()
 	cases := []struct {
 		name             string
-		change           func()
+		change           func(t *testing.T, outer, installation, source string)
 		equal, indexOnly bool
 		changedPath      string
 	}{
-		{"ledger-only move", func() { writeRearmFile(t, filepath.Join(installation, "memory", "receipts.log"), "ledger\n") }, true, false, ""},
-		{"engine content", func() { writeRearmFile(t, filepath.Join(installation, "cmd", "surface.txt"), "changed") }, false, false, "cmd/surface.txt"},
-		{"executable mode", func() { _ = os.Chmod(filepath.Join(installation, "cmd", "surface.txt"), 0o755) }, true, false, ""},
-		{"symlink target", func() {
+		{"ledger-only move", func(t *testing.T, outer, installation, source string) {
+			writeRearmFile(t, filepath.Join(installation, "memory", "receipts.log"), "ledger\n")
+		}, true, false, ""},
+		{"engine content", func(t *testing.T, outer, installation, source string) {
+			writeRearmFile(t, filepath.Join(installation, "cmd", "surface.txt"), "changed")
+		}, false, false, "cmd/surface.txt"},
+		{"executable mode", func(t *testing.T, outer, installation, source string) {
+			_ = os.Chmod(filepath.Join(installation, "cmd", "surface.txt"), 0o755)
+		}, true, false, ""},
+		{"symlink target", func(t *testing.T, outer, installation, source string) {
 			_ = os.Remove(filepath.Join(installation, "cmd", "link"))
 			_ = os.Symlink("two", filepath.Join(installation, "cmd", "link"))
 		}, false, false, "cmd/link"},
-		{"file to symlink", func() {
+		{"file to symlink", func(t *testing.T, outer, installation, source string) {
 			_ = os.Remove(filepath.Join(installation, "cmd", "kind"))
 			_ = os.Symlink("target", filepath.Join(installation, "cmd", "kind"))
 		}, false, false, "cmd/kind"},
-		{"added engine file", func() { writeRearmFile(t, filepath.Join(installation, "cmd", "added"), "added") }, false, false, "cmd/added"},
-		{"outside installation", func() { writeRearmFile(t, filepath.Join(outer, "cmd", "outside"), "outside") }, true, false, ""},
-		{"gitlink fallback", func() {
+		{"added engine file", func(t *testing.T, outer, installation, source string) {
+			writeRearmFile(t, filepath.Join(installation, "cmd", "added"), "added")
+		}, false, false, "cmd/added"},
+		{"outside installation", func(t *testing.T, outer, installation, source string) {
+			writeRearmFile(t, filepath.Join(outer, "cmd", "outside"), "outside")
+		}, true, false, ""},
+		{"gitlink fallback", func(t *testing.T, outer, installation, source string) {
 			rearmGit(t, outer, "update-index", "--add", "--cacheinfo", "160000,"+source+",metasystem/cmd/submodule")
 		}, true, true, ""},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			rearmGit(t, outer, "checkout", "-q", "--detach", source)
-			tc.change()
+			t.Parallel()
+			outer := canonicalPath(t.TempDir())
+			rearmGit(t, outer, "init", "-q", "-b", "trunk")
+			rearmGit(t, outer, "config", "user.name", "test")
+			rearmGit(t, outer, "config", "user.email", "test@example.invalid")
+			installation := filepath.Join(outer, "metasystem")
+			writeRearmFile(t, filepath.Join(installation, "go.mod"), "module fixture.invalid/nested\n")
+			writeRearmFile(t, filepath.Join(installation, "cmd", "surface.txt"), "source")
+			writeRearmFile(t, filepath.Join(installation, "cmd", "kind"), "target")
+			if err := os.Symlink("one", filepath.Join(installation, "cmd", "link")); err != nil {
+				t.Fatal(err)
+			}
+			rearmGit(t, outer, "add", ".")
+			rearmGit(t, outer, "commit", "-qm", "source")
+			source := rearmGit(t, outer, "rev-parse", "HEAD")
+			policy, err := behaviorsurface.Load()
+			if err != nil {
+				t.Fatal(err)
+			}
+			deps := defaultRearmResolverDeps()
+			originalDiff, originalArchive := deps.projectionDiff, deps.archivedEngineDigest
+			diffCalls, archiveCalls := 0, 0
+			deps.projectionDiff = func(ctx context.Context, root, from, to string, progress func()) ([]byte, error) {
+				diffCalls++
+				return originalDiff(ctx, root, from, to, progress)
+			}
+			deps.archivedEngineDigest = func(ctx context.Context, root, commit string, loaded behaviorsurface.Policy, clock RearmClock, seconds int) (string, error) {
+				archiveCalls++
+				return originalArchive(ctx, root, commit, loaded, clock, seconds)
+			}
+			tc.change(t, outer, installation, source)
 			if !tc.indexOnly {
 				rearmGit(t, outer, "add", "-A")
 			}
 			rearmGit(t, outer, "commit", "-qm", tc.name)
 			destination := rearmGit(t, outer, "rev-parse", "HEAD")
-			tempRoot := t.TempDir()
-			t.Setenv("TMPDIR", tempRoot)
 			sourceDigest, sourceErr := archivedEngineDigestAtCommit(context.Background(), installation, source, policy)
 			destinationDigest, destinationErr := archivedEngineDigestAtCommit(context.Background(), installation, destination, policy)
 			if sourceErr != nil || destinationErr != nil || (sourceDigest == destinationDigest) != tc.equal {
 				t.Fatalf("archived digest agreement setup: source=%v destination=%v equal=%t want=%t", sourceErr, destinationErr, sourceDigest == destinationDigest, tc.equal)
 			}
-			before, _ := os.ReadDir(tempRoot)
+			before, err := os.ReadDir(installation)
+			if err != nil {
+				t.Fatal(err)
+			}
 			diffCalls, archiveCalls = 0, 0
-			err := compareEngineProjectionWithDeps(deps, context.Background(), installation, source, destination, policy, SystemRearmClock(), RearmResolveSeconds(installation))
+			err = compareEngineProjectionWithDeps(deps, context.Background(), installation, source, destination, policy, SystemRearmClock(), RearmResolveSeconds(installation))
 			if (err == nil) != tc.equal || diffCalls != 1 || archiveCalls != map[bool]int{true: 2}[tc.indexOnly] {
 				t.Fatalf("comparison: err=%v diffs=%d archives=%d equal=%t", err, diffCalls, archiveCalls, tc.equal)
 			}
 			if tc.changedPath != "" && (!strings.Contains(err.Error(), tc.changedPath) || !errors.Is(err, ErrProjectionDiffers) || !errors.Is(err, ErrNotOwned) || errors.Is(err, ErrJudgmentStalled)) {
 				t.Fatalf("changed path or error class missing: %v", err)
 			}
-			if after, readErr := os.ReadDir(tempRoot); readErr != nil || !reflect.DeepEqual(before, after) {
-				t.Fatalf("comparison changed the temporary directory: before=%v after=%v err=%v", before, after, readErr)
+			if after, readErr := os.ReadDir(installation); readErr != nil || !reflect.DeepEqual(before, after) {
+				t.Fatalf("comparison changed the installation directory: before=%v after=%v err=%v", before, after, readErr)
+			}
+			// The witness archive lives in the process scratch and is removed with it; a
+			// regression to os.MkdirTemp("") would leave residue directly under TMPDIR.
+			if residue, globErr := filepath.Glob(filepath.Join(os.TempDir(), "metasystem-rearm-witness-*")); globErr != nil || len(residue) != 0 {
+				t.Fatalf("comparison left witness scratch outside the process scratch: %v err=%v", residue, globErr)
 			}
 		})
 	}

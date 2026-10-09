@@ -68,6 +68,7 @@ var inheritedControlNames = []string{
 }
 
 var inheritedControlPrefixes = []string{
+	"LANDING_",
 	"METASYSTEM_CHECKOUT_EXECUTION_GUARD_",
 	identity.FixtureCustodianEnv,
 	"METASYSTEM_GATE_WITNESS",
@@ -1310,7 +1311,7 @@ func lockWouldBlock(err error) bool {
 	return errors.Is(err, unix.EWOULDBLOCK) || errors.Is(err, unix.EAGAIN)
 }
 
-// WithoutInheritedControls removes engine and installation selectors from a
+// WithoutInheritedControls removes engine, installation and landing proof selectors from a
 // child environment while preserving unrelated values and their order.
 func WithoutInheritedControls(environment []string) []string {
 	clean := make([]string, 0, len(environment))
