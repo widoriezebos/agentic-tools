@@ -41,6 +41,9 @@ type Output struct {
 	Bytes int64  `json:"bytes"`
 }
 type Measurement struct {
+	observedAt          time.Time
+	window              *Measurement
+	missingTimestamps   int
 	Calls               int    `json:"calls"`
 	ToolCalls           int    `json:"toolCalls"`
 	InputTokens         int64  `json:"inputTokens"`

@@ -15,6 +15,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -354,6 +355,7 @@ func (inv *intentInvocation) readHostMachines(fleet map[string]bool) hostReading
 	reading := inv.discoverHostMachines(fleet)
 	home, homeErr := inv.landing().home()
 	sources := inv.machineSeams().capacitySources
+	sources.RegistryPath = reading.Registry
 	if homeErr != nil {
 		sources.Registration = func(string) (lane.Record, bool, error) { return lane.Record{}, false, homeErr }
 	}
@@ -361,6 +363,7 @@ func (inv *intentInvocation) readHostMachines(fleet map[string]bool) hostReading
 	if inv.owners.processes.launches != nil {
 		manager = inv.owners.processes.launches()
 	}
+	sources.Usage = manager.CapacityUsage
 	reading.Capacity = hostcapacity.Read(home, manager, inv.landing().now(), sources)
 	notOurs := map[int64]bool{}
 	for _, machine := range reading.Machines {
@@ -601,7 +604,7 @@ func machineListSummary(reading hostReading, others int) string {
 // machineListDetail is --verbose: each machine of this computer, the
 // machines on other computers, and what is not ours.
 func machineListDetail(reading hostReading, others []otherComputerMachine, env textui.Env) []string {
-	lines := append([]string{"host capacity:"}, hostCapacityLines(reading.Capacity, env)...)
+	lines := append([]string{"host capacity:"}, hostCapacityLines(reading.Capacity, env, true)...)
 	lines = append(lines, "on this computer:")
 	for _, machine := range reading.Machines {
 		header := fmt.Sprintf("%s  %s  %s", machine.Name, machine.State, machine.Checkout)
@@ -749,7 +752,7 @@ func (inv *intentInvocation) machineListView(report seat.Report, reading hostRea
 		page.Headline(textui.Count(count, "machine on this computer", "machines on this computer"), states,
 			textui.Count(jobs, "job running", "jobs running"), elsewhere)
 		capacity := page.Section("Host capacity", "")
-		for _, line := range hostCapacityLines(reading.Capacity, env) {
+		for _, line := range hostCapacityLines(reading.Capacity, env, inv.input.switched("verbose")) {
 			capacity.Text(line)
 		}
 
@@ -1243,7 +1246,7 @@ func (inv *intentInvocation) machineStopTargetArgs() []string {
 }
 
 // hostCapacityLines renders the observation with local times and readable paths.
-func hostCapacityLines(s hostcapacity.Snapshot, env textui.Env) []string {
+func hostCapacityLines(s hostcapacity.Snapshot, env textui.Env, verbose bool) []string {
 	at, _ := time.Parse(time.RFC3339Nano, s.At)
 	lines := []string{"observed " + env.Time(at)}
 	if s.Load.Available {
@@ -1268,5 +1271,41 @@ func hostCapacityLines(s hostcapacity.Snapshot, env textui.Env) []string {
 	for _, mark := range s.Providers.Marks {
 		lines = append(lines, fmt.Sprintf("provider %s: %s; runtime %s; model %s; reset %s", mark.Provider, mark.LastClass, mark.Runtime, mark.Model, lane.LocalText(mark.ResetAt)))
 	}
+	for _, recovery := range s.Providers.Recovery {
+		due := recovery.Due
+		if _, err := time.Parse(time.RFC3339Nano, due); err == nil {
+			due = lane.LocalText(due)
+		}
+		lines = append(lines, fmt.Sprintf("provider %s recovery: interval %s; due %s; episode %s", recovery.Provider, recovery.Interval, due, lane.LocalText(recovery.Episode)))
+	}
+	lines = append(lines, "usage: session totals; trailing hour ["+lane.LocalText(s.Usage.From)+", "+lane.LocalText(s.Usage.Until)+"); account window, limit and percentage unknown")
+	groups := map[string][2]int{}
+	for _, session := range s.Usage.Sessions {
+		key := env.Path(session.WorkingDirectory) + " / " + session.Provider
+		n := groups[key]
+		n[0]++
+		if len(session.Problems) > 0 {
+			n[1]++
+		}
+		groups[key] = n
+	}
+	for _, key := range slices.Sorted(maps.Keys(groups)) {
+		lines = append(lines, fmt.Sprintf("%s: %d sessions; session totals and trailing hour; %d with incomplete coverage", key, groups[key][0], groups[key][1]))
+	}
+	if verbose {
+		for _, session := range s.Usage.Sessions {
+			lines = append(lines, fmt.Sprintf("%s session %s; checkout %s; provisional %t", session.Provider, session.Session, env.Path(session.WorkingDirectory), session.Provisional))
+			lines = append(lines, fmt.Sprintf("session totals: %s; trailing hour: %s", hostUsageTokens(session.Totals), hostUsageTokens(session.TrailingHour)))
+			lines = append(lines, session.Problems...)
+		}
+	}
+	lines = append(lines, s.Usage.Problems...)
 	return append(lines, s.Errors...)
+}
+
+func hostUsageTokens(v *hostcapacity.Tokens) string {
+	if v == nil {
+		return "unknown"
+	}
+	return fmt.Sprintf("%d calls; input %d; cache read %d; cache creation %d; output %d; peak context %d", v.Calls, v.Input, v.CacheRead, v.CacheCreation, v.Output, v.PeakContext)
 }

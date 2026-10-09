@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostcapacity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -36,10 +37,11 @@ const boardPath = "/api/board"
 // nicknames; an error is an unreadable registry, never an empty board), the
 // prober that decides whether an owner lives, and the stall bound.
 type BoardSource struct {
-	Home   string
-	Seats  func() ([]board.Seat, error)
-	Prober identity.Prober
-	Stall  time.Duration
+	Capacity func(time.Time) hostcapacity.Snapshot
+	Home     string
+	Seats    func() ([]board.Seat, error)
+	Prober   identity.Prober
+	Stall    time.Duration
 	// Stuck reads the host's unit runs with the serving seat's bounds.
 	Stuck func(now time.Time) ([]launch.UnitStanding, error)
 	// Dial connects to the bridge; nil dials its socket under Home. Retry is
@@ -63,6 +65,7 @@ type BoardSource struct {
 // boardPayload is the classified board, and each seat's line as a person
 // reads it, rendered once here so the page and the terminal say the same.
 type boardPayload struct {
+	Capacity *hostcapacity.Snapshot `json:"capacity"`
 	board.View
 	Lines []boardLine `json:"lines"`
 	// Lane is the host's landing lane, landing status --json's data: the
@@ -147,6 +150,10 @@ func (h *handler) boardView(source *BoardSource) boardPayload {
 	}
 	observed, observable := h.boardObservation()
 	payload := boardPayload{Lines: []boardLine{}, Lane: laneView, Unreadable: []string{}}
+	if source.Capacity != nil {
+		capacity := source.Capacity(now)
+		payload.Capacity = &capacity
+	}
 	if !observable {
 		payload.Unreadable = append(payload.Unreadable, "the goal ledger can't be read: "+ledgerProblem(h.info.Observe != nil, observed))
 	}

@@ -110,7 +110,17 @@ exit 0
           "available": false,
           "detail": "shared provider coverage is unavailable"
         },
-        "errors": []
+        "errors": [],
+        "usage": {
+          "sessions": [],
+          "trailingHourFrom": "2026-09-30T09:00:00Z",
+          "trailingHourUntil": "2026-09-30T10:00:00Z",
+          "accountWindow": null,
+          "accountLimit": null,
+          "accountNumerator": null,
+          "accountPercent": null,
+          "problems": []
+        }
       },
       "machines": [
         {

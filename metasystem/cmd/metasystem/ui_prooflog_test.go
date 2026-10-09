@@ -59,8 +59,8 @@ func TestUIProofLogsReadThisComputersLane(t *testing.T) {
 	if withProofLogs(nil) != nil {
 		t.Fatal("a build with no board reader gained one")
 	}
-	if source := withProofLogs(&httpd.BoardSource{}); source.ProofLog == nil {
-		t.Fatal("the board serves no proof logs")
+	if source := withProofLogs(&httpd.BoardSource{}); source.ProofLog == nil || source.Capacity == nil {
+		t.Fatal("the board serves no proof logs or host capacity")
 	}
 }
 

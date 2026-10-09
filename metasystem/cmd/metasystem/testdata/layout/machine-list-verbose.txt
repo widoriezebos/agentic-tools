@@ -8,6 +8,8 @@ Host capacity
   1 active build across 1 goal
   build l-1: running; goal g-1; checkout work
   providers: shared provider coverage is unavailable
+  usage: session totals; trailing hour [2026-09-30 11:00 CEST, 2026-09-30 12:00 CEST); account
+    window, limit and percentage unknown
 
 Fleet
   MACHINE   DOING     SEEN     ENGINE           FREE
