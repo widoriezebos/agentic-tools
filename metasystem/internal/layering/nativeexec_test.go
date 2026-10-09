@@ -31,10 +31,11 @@ var lawfulExecPrograms = map[string]execAllowance{
 	"git": {reason: "the repository is git's: no in-module Go library reads or writes it, so git is the version-control adapter every owner drives"},
 	"go": {
 		files: []string{"cmd/devgate/main.go", "cmd/metasystem/proof_run.go", "cmd/metasystem/intent_adopt.go", "cmd/metasystem/landing_path.go",
-			"internal/testenv/toolchain.go", "internal/rootaudit/load.go"},
+			"internal/testenv/toolchain.go", "internal/rootaudit/load.go", "internal/landing/batch/goadapter/impact.go"},
 		reason: "the Go toolchain builds and runs the engine and the development gate: a supervised launch of the language adapter; " +
 			"internal/testenv/toolchain.go: test support, the one place tests start the toolchain, under a per-binary slot; " +
-			"internal/rootaudit/load.go: the development gate's run-state audit asks go list for the package graph and the export data it type-checks against, which no standard-library package provides",
+			"internal/rootaudit/load.go: the development gate's run-state audit asks go list for the package graph and the export data it type-checks against, which no standard-library package provides; " +
+			"internal/landing/batch/goadapter/impact.go: the Go language adapter asks go list for the package import graph to select a change's reverse dependents (the language-specific half of test impact)",
 	},
 	"bash": {
 		files:  []string{"internal/landing/receipt.go", "internal/contract/measure.go", "internal/testutil/"},
