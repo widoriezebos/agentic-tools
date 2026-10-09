@@ -30,16 +30,27 @@ func readProcessReport(root, installation, goal, unit string, runner *launch.Uni
 		unknown = append(unknown, "process history unavailable: "+err.Error())
 	}
 	all := processmeasure.Input{Now: now, Unknown: append(unknown, state.Unknown...)}
+	var carryUnits []string
+	if unit != "" {
+		carryUnits = append(carryUnits, unit)
+	}
 	for _, run := range runs {
 		if unit != "" && run.Unit != unit {
 			continue
+		}
+		if unit != "" && run.Record != nil {
+			for _, subject := range run.Record.Subjects {
+				if subject.Commit != "" {
+					carryUnits = append(carryUnits, subject.Commit)
+				}
+			}
 		}
 		input := unitMeasureInput(run, runner, installation)
 		all.Runs = append(all.Runs, input)
 		all.Steps = append(all.Steps, input.Steps...)
 	}
 	var acts []processmeasure.Act
-	checks, missing := carryMeasures(installation, goal)
+	checks, missing := carryMeasures(installation, goal, carryUnits...)
 	all.Unknown = append(all.Unknown, missing...)
 	all.Steps = append(all.Steps, checks...)
 	for _, act := range state.Acts {

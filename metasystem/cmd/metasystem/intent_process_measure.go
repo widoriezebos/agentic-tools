@@ -20,11 +20,11 @@ func (inv *intentInvocation) unitMeasureInput(work launch.NamedWork) processmeas
 	return unitMeasureInput(work, inv.unitRunner(), inv.layout.InstallationRoot.Path())
 }
 
-func carryMeasures(root, goalID string) ([]processmeasure.Step, []string) {
+func carryMeasures(root, goalID string, units ...string) ([]processmeasure.Step, []string) {
 	checks, unknown := launch.ReadCheckExecutions(filepath.Join(root, "artifacts", "unit-checks", "carry"))
 	var steps []processmeasure.Step
 	for _, check := range checks {
-		if goalID == "" || check.Goal == goalID {
+		if (goalID == "" || check.Goal == goalID) && (len(units) == 0 || slices.Contains(units, check.Run)) {
 			steps = append(steps, check.Steps...)
 		}
 	}
