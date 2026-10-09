@@ -32,9 +32,14 @@ type fleetBoundaryBed struct {
 	session string
 }
 
-func newFleetBoundaryBed(t *testing.T, driver string) *fleetBoundaryBed {
+func newFleetBoundaryBed(t *testing.T, driver string, supplied ...*workBed) *fleetBoundaryBed {
 	t.Helper()
-	bed := newWorkBed(t)
+	var bed *workBed
+	if len(supplied) > 0 {
+		bed = supplied[0]
+	} else {
+		bed = newWorkBed(t)
+	}
 	testprovider.Register(t, bed.root())
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
 	if err != nil || state != identity.Alive {

@@ -261,9 +261,12 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 		return inv.driveUnitReviews()
 	}
 	config.AdvanceBoundary = func(root string) error {
-		inv := &intentInvocation{cwd: root, owners: owners}
+		automatic := owners
+		automatic.prove = nil
+		inv := &intentInvocation{cwd: root, owners: automatic}
 		return inv.advanceBoundary()
 	}
+	config.ResetBoundary = func(root string) error { return steward.RetainBoundary(root, "", nil) }
 	config.Units = func(root, id string) ([]steward.UnitStage, error) {
 		inv := &intentInvocation{cwd: root, owners: owners}
 		if problem := inv.selectRoot(); problem != nil {

@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // TestWorkStopGoalCompletesItsRecordedStop: a breach-stopped goal's fence
@@ -182,6 +183,10 @@ func TestWorkStopGoalStopsEveryRunningJobOfTheGoal(t *testing.T) {
 		}
 	}
 	owners := b.owners()
+	unitRoot := t.TempDir()
+	owners.work.units = func(stateroot.Layout) *launch.UnitRunner {
+		return &launch.UnitRunner{Root: unitRoot}
+	}
 	var cancelled []string
 	owners.processes.cancelDispatch = func(_, job string) (map[string]any, int, error) {
 		cancelled = append(cancelled, job)

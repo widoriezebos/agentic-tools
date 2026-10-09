@@ -88,6 +88,7 @@ type TickConfig struct {
 	DriveWork func(root string) error
 	// AdvanceBoundary consumes only this pass's successful engine observation.
 	AdvanceBoundary func(string) error
+	ResetBoundary   func(string) error
 	// ProbeProvider answers one provider call without a limit; nil probes nothing.
 	ProbeProvider func(top string) (bool, error)
 	// ProbeRuntime runs the admission owner's capability probe without a job.

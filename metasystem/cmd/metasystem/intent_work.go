@@ -720,6 +720,16 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	if eligible := goal.ClaimApprovalEligibility(projection.Tree, file, now); !personInvocation && !eligible.Ready {
 		return fmt.Errorf("goal %s cannot execute: %s", record.Goal, eligible.Wait)
 	}
+	if spec.Kind == "build" && spec.Round == 1 && !personInvocation {
+		brief := ""
+		if record.Operation != nil {
+			brief, _, _ = takeIntentFlag(record.Operation.Argv, "brief", true)
+			brief = (&intentInvocation{cwd: record.Operation.CallerDirectory}).inputPath(brief)
+		}
+		if err := inv.boundaryBuildAdmission(record.Goal, record.Unit, record.Base, brief); err != nil {
+			return err
+		}
+	}
 	if spec.AdapterData != nil {
 		spec.AdapterData["unitAuthorityRoot"], _ = json.Marshal(inv.layout.InstallationRoot.Path())
 		spec.AdapterData["unitPersonInvocation"], _ = json.Marshal(personInvocation)
@@ -1169,6 +1179,9 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 			return "", fmt.Errorf("cannot read the goal branch's commit: %w", err)
 		}
 		base := strings.TrimSpace(string(head))
+		if err := inv.boundaryBuildAdmission(id, unit, base, briefPath); err != nil {
+			return "", err
+		}
 		buildBrief, readBrief := filepath.Join(directory, "build-brief.md"), filepath.Join(directory, "read-brief.md")
 		// The reader writes its findings where its sandbox allows writes and
 		// outside the product diff: a private temporary directory, created

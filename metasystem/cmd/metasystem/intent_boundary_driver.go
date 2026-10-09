@@ -11,7 +11,9 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
 
 func (inv *intentInvocation) advanceBoundary() error {
@@ -23,7 +25,35 @@ func (inv *intentInvocation) advanceBoundary() error {
 	if err != nil || code != 0 || (policy != "auto" && policy != "person") {
 		return fmt.Errorf("the seat driver policy is unavailable (seat.driver=%q, exit %d): %v", policy, code, err)
 	}
-	return steward.AdvanceBoundary(inv.stateRoot, policy == "person", identity.KernelProber{}, inv.prepareBoundary)
+	if err := steward.RetainBoundary(inv.stateRoot, supervise.BuildStamp, nil); err != nil {
+		return err
+	}
+	err = steward.AdvanceBoundary(inv.stateRoot, policy == "person", identity.KernelProber{}, inv.prepareBoundary)
+	events, readErr := steward.ReadUnitBoundaries(inv.stateRoot)
+	if readErr != nil {
+		return errors.Join(err, readErr)
+	}
+	seen := map[string]bool{}
+	for i := len(events) - 1; i >= 0; i-- {
+		event := events[i]
+		if event.Seat != inv.stateRoot || seen[event.Goal] {
+			continue
+		}
+		seen[event.Goal] = true
+		act := event.Next
+		if act == nil {
+			continue
+		}
+		if act.Unit == "" && len(act.Command) > 2 && act.Command[2] == "land" {
+			err = errors.Join(err, inv.boundaryHandIn(&event))
+		} else if policy == "auto" && act.Effect != "" {
+			_, nextErr := inv.unitRunner().Continue(launch.UnitRequest{Resume: act.Effect, NonBlocking: true})
+			if !errors.Is(nextErr, launch.ErrUnitObserving) {
+				err = errors.Join(err, nextErr)
+			}
+		}
+	}
+	return err
 }
 
 func (inv *intentInvocation) prepareBoundary(event steward.UnitBoundary) (steward.BoundaryAct, error) {
@@ -33,7 +63,7 @@ func (inv *intentInvocation) prepareBoundary(event steward.UnitBoundary) (stewar
 	}
 	file, where := goalRecord(projection, event.Goal)
 	if file == nil || where != "live" {
-		return steward.BoundaryAct{}, errors.New("the boundary's goal is no longer open; no next work was prepared")
+		return steward.BoundaryAct{}, steward.ErrBoundaryClosed
 	}
 	state, err := inv.delivery().branchState(inv.layout.InstallationRoot.Path(), event.Goal)
 	if err != nil {
@@ -74,7 +104,7 @@ func (inv *intentInvocation) prepareBoundary(event steward.UnitBoundary) (stewar
 		files = append(files, file)
 	}
 	claim := sha256.Sum256(goal.RenderFile(file))
-	directory, err := inv.unitRunner().NamedInputDirectory(inv.stateRoot, event.Goal, fmt.Sprintf("%s/%s/%v/%x", progress.Unit, act.Tip, files, claim))
+	directory, err := inv.unitRunner().NamedInputDirectory(inv.stateRoot, event.Goal, fmt.Sprintf("%s/%s/%v/%x/%s/%s/%s", progress.Unit, act.Tip, files, claim, event.Session, event.Unit, event.Outcome))
 	if err != nil {
 		return act, err
 	}
@@ -104,12 +134,68 @@ func (inv *intentInvocation) prepareBoundary(event steward.UnitBoundary) (stewar
 	}
 	for _, one := range work {
 		if one.Unit == progress.Unit && one.Record != nil {
-			if one.Record.State == "cancelled" {
-				act.Command, act.Summary = nil, "the required unit was cancelled; a person must choose its next work"
+			submitted := ""
+			if operation := one.Record.Operation; operation != nil {
+				submitted, _, _ = takeIntentFlag(operation.Argv, "brief", true)
+				submitted = (&intentInvocation{cwd: operation.CallerDirectory}).inputPath(submitted)
+			}
+			if one.Record.State == "cancelled" || one.Record.Base != act.Tip || submitted != brief {
+				act.Command, act.Summary = nil, "the required unit was cancelled or its preparation changed; a person must choose its next work"
 				return act, nil
 			}
-			act.Effect, act.Command, act.Summary = one.Run, nil, "the worker's submitted build is retained; continue that run"
+			act.Effect, act.Summary = one.Run, "the worker's submitted build is retained; continue that run"
 		}
 	}
 	return act, nil
+}
+
+func (inv *intentInvocation) boundaryBuildAdmission(id, unit, base, brief string) error {
+	if inv.checkDirectPersonProof("work build", false) == nil {
+		return nil
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return errors.New(problem.Summary)
+	}
+	policy, _, code, err := inv.work().config("seat.driver", intentConfPath(inv.layout))
+	if err != nil || code != 0 || (policy != "auto" && policy != "person") {
+		return fmt.Errorf("the seat driver policy is unavailable (seat.driver=%q, exit %d): %v", policy, code, err)
+	}
+	event, err := steward.BoundaryAdmission(inv.stateRoot, id, supervise.BuildStamp, policy == "person", identity.KernelProber{})
+	if err != nil || event.Goal == "" {
+		return err
+	}
+	if policy == "auto" {
+		if err := inv.automaticReviewAdmission(); err != nil {
+			return err
+		}
+	}
+	act, err := inv.prepareBoundary(event)
+	if err != nil {
+		return err
+	}
+	if act.Unit != unit || act.Tip != base || actorValue(act.Command, "--brief") != brief {
+		return fmt.Errorf("boundary preparation changed: %s; inspect metasystem work status %s", act.Summary, id)
+	}
+	return nil
+}
+
+// boundaryHandIn observes the prepared public command's effect on the lane.
+func (inv *intentInvocation) boundaryHandIn(event *steward.UnitBoundary) error {
+	root, configured, problem := inv.laneCheck(inv.targets(event.Goal))
+	if problem != nil {
+		return errors.New(problem.Summary)
+	}
+	if !configured {
+		return nil
+	}
+	install, err := inv.laneInstallOf(root)
+	if err != nil {
+		return err
+	}
+	entry, found, err := inv.latestLaneGoalEntry(install, event.Goal, "")
+	if err != nil || !found || entry.SHA != event.Next.Tip {
+		return err
+	}
+	event.Next.Effect, event.Next.Summary = entry.SHA, "the whole goal is handed to the landing lane; the goal remains open"
+	return steward.RetainBoundary(inv.stateRoot, "", event)
 }

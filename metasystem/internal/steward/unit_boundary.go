@@ -25,6 +25,7 @@ type UnitBoundary struct {
 	Handoff   string       `json:"handoff,omitempty"`
 	Signalled bool         `json:"signalled,omitempty"`
 	Lineage   string       `json:"lineage,omitempty"`
+	Engine    string       `json:"engine,omitempty"`
 	Next      *BoundaryAct `json:"next,omitempty"`
 }
 

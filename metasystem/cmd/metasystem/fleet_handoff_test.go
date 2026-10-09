@@ -44,10 +44,10 @@ func TestFleetBoundaryPublicHandoff(t *testing.T) {
 			select {
 			case <-terms:
 				events, err := steward.ReadUnitBoundaries(root)
-				if err != nil || len(events) != 1 || events[0].Handoff == "" {
+				if err != nil || len(events) == 0 || events[len(events)-1].Handoff == "" {
 					t.Fatalf("signal preceded durable binding: %+v %v", events, err)
 				}
-				if err := json.NewEncoder(observed).Encode(events[0]); err != nil {
+				if err := json.NewEncoder(observed).Encode(events[len(events)-1]); err != nil {
 					t.Fatal(err)
 				}
 			case <-released:

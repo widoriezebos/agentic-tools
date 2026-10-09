@@ -17,8 +17,9 @@ import (
 
 func TestTheSeatPromptIsWrittenFromTheGoalsRecord(t *testing.T) {
 	t.Parallel()
-	for _, scenario := range []string{"facts", "returned", "reader failures"} {
+	for _, scenario := range []string{"facts", "returned", "reader failures", "boundary", "review boundary"} {
 		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
 			bed := newSeatBed(t, seatReadyGoal("alpha", "Continue the saved next step."))
 			bed.goals["alpha"].NextStep += strings.Repeat("wide界", 1000)
 			bed.tips["alpha"] = "goal-tip"
@@ -67,6 +68,16 @@ func TestTheSeatPromptIsWrittenFromTheGoalsRecord(t *testing.T) {
 			case "reader failures":
 				d.Units = func(string, string) ([]UnitStage, error) { return nil, errors.New("units failed") }
 			}
+			if scenario == "boundary" || scenario == "review boundary" {
+				events := []UnitBoundary{{Seat: bed.root, Session: "old", Goal: "alpha", Unit: "finished/1", Outcome: "green", Next: &BoundaryAct{Unit: "next", Tip: "goal-tip", Summary: "Fill the accepted Decision.", Command: []string{"metasystem", "work", "build", "alpha", "--work", "next", "--brief", "/prepared/brief.md"}}}}
+				if scenario == "review boundary" {
+					events[0].Next.Command = []string{"metasystem", "work", "review", "alpha", "--work", "next"}
+				}
+				if err := writeUnitBoundaries(bed.root, events); err != nil {
+					t.Fatal(err)
+				}
+			}
+
 			record, err := startSeatWithDependencies(bed.root, SeatSelection{Goal: "alpha"}, d)
 			if err != nil || record.LaunchID == "" || len(bed.launcher.starts) != 1 {
 				t.Fatalf("seat did not start: %+v %v", record, err)
@@ -84,6 +95,14 @@ func TestTheSeatPromptIsWrittenFromTheGoalsRecord(t *testing.T) {
 				if !strings.Contains(prompt, text) {
 					t.Fatalf("missing %q in %s", text, prompt)
 				}
+			}
+			if scenario == "boundary" {
+				require("Required preparation: fill only unit next's brief")
+				require("Fill the accepted Decision.")
+				require("\"--brief\" \"/prepared/brief.md\"")
+			}
+			if scenario == "review boundary" && strings.Contains(prompt, "Required preparation:") {
+				t.Fatal("a required read was presented as a build brief task")
 			}
 			require(seatBrief(SeatSelection{Goal: "alpha"}, true))
 			for _, instruction := range []string{"stop advancing at that boundary", "--note <that note> --no-delegates", "repeat the same handoff command to confirm durable binding", "End your turn once the binding is durable", "remain alive, report the exact error"} {

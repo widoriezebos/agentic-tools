@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 	"slices"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -810,6 +811,21 @@ func seatFacts(root string, selection SeatSelection, machine string, tips map[st
 	var facts strings.Builder
 	unavailable := func(name, command string) { facts.WriteString(name + " unavailable; " + command + "\n") }
 	facts.WriteString("\nGoal record:\n")
+	if events, err := ReadUnitBoundaries(root); err == nil {
+		for i := len(events) - 1; i >= 0; i-- {
+			if events[i].Goal != id {
+				continue
+			}
+			if act := events[i].Next; act != nil && act.Unit != "" && act.Effect == "" && len(act.Command) > 2 && act.Command[2] == "build" {
+				facts.WriteString(fmt.Sprintf("Required preparation: fill only unit %s's brief from the accepted Decision at goal tip %s. %s\nSubmit:", act.Unit, act.Tip, act.Summary))
+				for _, arg := range act.Command {
+					facts.WriteString(" " + strconv.Quote(arg))
+				}
+				facts.WriteString("\n")
+			}
+			break
+		}
+	}
 	projection, err := d.Project(root, d.Now())
 	if err != nil || projection.Tree == nil || projection.Tree.Live[id] == nil {
 		unavailable("Next step", show)

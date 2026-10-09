@@ -397,6 +397,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				rearmed = true
 			}
 		}
+		if !rearmed && cfg.ResetBoundary != nil {
+			if err := cfg.ResetBoundary(top); err != nil {
+				return err
+			}
+		}
 		if rearmed && cfg.AdvanceBoundary != nil {
 			if advanceErr := cfg.AdvanceBoundary(top); advanceErr != nil {
 				fmt.Fprintf(os.Stderr, "boundary preparation: %v\n", advanceErr)

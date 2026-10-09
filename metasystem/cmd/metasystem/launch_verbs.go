@@ -266,5 +266,5 @@ func checkUnitChildAuthority(manager *launch.Manager, execution launch.Record, o
 	if len(settings.Values) == 0 {
 		settings = launch.DefaultSettings()
 	}
-	return inv.unitLaunchAuthority(unit, launch.StartSpec{Model: model, ID: execution.ID, Kind: execution.Kind, AdapterData: execution.AdapterData}, settings, personInvocation)
+	return inv.unitLaunchAuthority(unit, launch.StartSpec{Model: model, ID: execution.ID, Kind: execution.Kind, Round: execution.Round, AdapterData: execution.AdapterData}, settings, personInvocation)
 }
