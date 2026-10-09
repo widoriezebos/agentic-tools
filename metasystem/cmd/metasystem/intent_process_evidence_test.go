@@ -38,6 +38,16 @@ func processCommittedPage(t *testing.T, bed *workBed, path string, data []byte) 
 	bed.workOwnersHook = func(owners *intentWorkOwners) {
 		git := owners.git
 		owners.git = func(root string, args ...string) ([]byte, error) {
+			// This accepted page predates the committed size declaration.
+			if slices.Equal(args, []string{"log", "--first-parent", "--reverse", "--format=%H", "--diff-merges=first-parent", "-G", "^design[.](unit-lines-max|goal-units-max)=", "origin/main", "--", "metasystem.conf"}) {
+				return nil, nil
+			}
+			if slices.Equal(args, []string{"log", "--first-parent", "--format=%H", "--diff-merges=first-parent", "origin/main", "--", filepath.ToSlash(relative)}) {
+				return []byte("accepted-page\n"), nil
+			}
+			if slices.Equal(args, []string{"show", "accepted-page:" + filepath.ToSlash(relative)}) {
+				return append([]byte(nil), data...), nil
+			}
 			if slices.Equal(args, []string{"show", "origin/main:" + filepath.ToSlash(relative)}) {
 				if root != bed.root() {
 					t.Fatalf("accepted page read from %s, want %s", root, bed.root())

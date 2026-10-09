@@ -125,6 +125,17 @@ func init() {
 	read("decision show", "shows one record")
 	read("grant list", "lists the powers of attorney")
 
+	stateful("goal scope", "a unit whose excluded scope is already restored succeeds without another record",
+		goalRepeatWitness(func(f *goal.GoalFile) {
+			at := syncRequestTestNow.Format(time.RFC3339Nano)
+			drop := goal.UnitDrop{Unit: "evidence", Operation: "drop-evidence", Loop: "unit-read", Subject: "built-evidence", Attempt: 1, Revision: f.Revision,
+				Covered: []string{strings.Repeat("a", 40)}, Findings: []string{"read:1"}, Commit: strings.Repeat("b", 40), Tree: strings.Repeat("c", 40),
+				Proof: "drop-check", Decisions: strings.Repeat("d", 64), Requirements: strings.Repeat("e", 64), Actor: "Wido", Reason: "Remove required work", Impact: "Dependent work waits", At: at}
+			f.UnitDrops = []goal.UnitDrop{drop}
+			f.ScopeExclusions = []goal.ScopeExclusion{{Unit: drop.Unit, Operation: drop.Operation, Requirements: drop.Requirements, Result: drop.Commit, Proof: drop.Proof,
+				Actor: drop.Actor, Authority: "enrolled", Reason: drop.Reason, Impact: drop.Impact, At: at, Designs: []string{"design-evidence"}}}
+		}, nil, "already restored scope for unit evidence",
+			"goal", "scope", "restore", bedGoal, "evidence", "--by", "Wido"))
 	stateful("goal approve", "the same approval that stands is success with no record",
 		goalRepeatWitness(makeQueued, nil, "already has the same proven approval",
 			"goal", "approve", bedGoal, "--fixture-human-authority", "--lineage", "m1"))

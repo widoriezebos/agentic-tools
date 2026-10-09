@@ -206,6 +206,21 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		TaggedScan: func(string) census.TaggedProcessCensus { return census.TaggedProcessCensus{} },
 	}
 	root, worktree := c.root(), c.worktree
+	// The linked worktree shares the primary's accepted ledger and clock.
+	// Read commands may select either installation while their records stay local.
+	endpoint, commandNow := owners.dependencies.endpoint, owners.commandNow
+	owners.dependencies.endpoint = func(installation string) (goal.Endpoint, error) {
+		if sameCanonicalPath(installation, worktree) {
+			return endpoint(root)
+		}
+		return endpoint(installation)
+	}
+	owners.commandNow = func(stateRoot string) (time.Time, error) {
+		if sameCanonicalPath(stateRoot, worktree) {
+			return commandNow(root)
+		}
+		return commandNow(stateRoot)
+	}
 	owners.resolver = stateroot.NewResolver(func(path string) (string, error) {
 		if withinPath(path, worktree) {
 			return worktree, nil
@@ -918,7 +933,7 @@ func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	inv := &intentInvocation{owners: owners, layout: layout, cwd: w.root(), input: intentInput{values: map[string][]string{}},
+	inv := &intentInvocation{owners: owners, layout: layout, cwd: w.root(), stateRoot: w.root(), input: intentInput{values: map[string][]string{}},
 		reviewWork: &reviewWorkContext{goal: w.id, work: "cap", attempt: 1}}
 	runner := inv.unitRunner()
 	if runner.ExaminationRoot == b.install {

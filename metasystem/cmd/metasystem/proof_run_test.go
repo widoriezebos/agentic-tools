@@ -2745,7 +2745,7 @@ func TestProofRunLegacyPublicLauncherLossHoldsSlotUntilCustodianDrainsChild(t *t
 	result := filepath.Join(t.TempDir(), "result.json")
 	command := (proofBinaryFixture{t: t}).command(environment, engine, "proof-run", "launch", "--suite", "launcher-loss",
 		"--root", root, "--conf", conf, "--progress", result+".progress", "--log", result+".log", "--banner", "launcher-loss",
-		"--result", result, "--", "bash", "-c", `printf '%d\n' "$$" > "$1"; while :; do sleep .05; done`, "fixture", childPIDPath)
+		"--result", result, "--", "bash", "-c", `printf '%d\n' "$$" > "$1.tmp"; mv "$1.tmp" "$1"; while :; do sleep .05; done`, "fixture", childPIDPath)
 	var output bytes.Buffer
 	command.Stdout, command.Stderr = &output, &output
 	if err := command.Start(); err != nil {

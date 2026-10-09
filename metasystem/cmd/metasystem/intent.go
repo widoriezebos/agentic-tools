@@ -273,7 +273,7 @@ func goalIntentCommands() []intentCommand {
 			examples: []string{"metasystem goal done verbs-match-intent --reason 'all four slices landed'"},
 			run:      runIntentDone,
 		},
-		{object: "goal", action: "scope", audience: "human", summary: "restore a person's excluded required scope", usage: []string{"metasystem goal scope restore G UNIT --by NAME"}, flags: []intentFlag{intentByFlag}, maxArgs: 3, run: runIntentScopeRestore},
+		{object: "goal", action: "scope", audience: "human", summary: "restore a person's excluded required scope", usage: []string{"metasystem goal scope restore G UNIT --by NAME"}, flags: []intentFlag{intentByFlag}, maxArgs: 3, examples: []string{"metasystem goal scope restore example evidence --by Wido"}, run: runIntentScopeRestore},
 	}
 }
 

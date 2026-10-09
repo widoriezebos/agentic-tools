@@ -208,7 +208,7 @@ func TestIntentBuildNamesTheUnitsTableCause(t *testing.T) {
 	bed := newWorkBed(t)
 	brief := bed.brief("brief.md", "Build the unit.\n\n| Unit | Lines |\n| --- | --- |\n| u1 | many |\n")
 	_, result, _ := bed.work(append([]string{"work", "build", bed.id, "u1", "--brief", brief}, workCheck...)...)
-	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "unit u1 has no number in its size column") || !strings.Contains(result.Summary, "nothing was built") {
+	if result.Outcome != intentRefused || !strings.Contains(result.Summary, "unit u1 has no number in its total size column") || !strings.Contains(result.Summary, "nothing was built") {
 		t.Fatalf("the table's fault must be line 1: %+v", result)
 	}
 }

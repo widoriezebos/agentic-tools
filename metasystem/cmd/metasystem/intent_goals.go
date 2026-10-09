@@ -47,7 +47,7 @@ func (inv *intentInvocation) projectionWithFetch(fetchFirst bool) (goal.Projecti
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "the goal list can't be found here: " + err.Error(), code: 1,
 			next: inv.publicArgv("system", "status"), nextReason: "shows how this checkout is set up"}
 	}
-	now, err := inv.owners.commandNow(inv.layout.InstallationRoot.Path())
+	now, err := inv.owners.commandNow(inv.stateRoot)
 	if err != nil {
 		return goal.Projection{}, time.Time{}, &intentResult{Outcome: intentFailed, Summary: "the clock can't be read: " + err.Error(), code: 1,
 			next: inv.typedArgv(), nextReason: "try again"}

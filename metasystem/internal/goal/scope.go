@@ -44,6 +44,9 @@ func RestoreScope(r VerbRequest, id, unit string) (PublishResult, error) {
 			if f == nil || !slices.ContainsFunc(f.ScopeExclusions, func(e ScopeExclusion) bool { return e.Unit == unit }) {
 				return nil, fmt.Errorf("goal %s has no scope exclusion for unit %s", id, unit)
 			}
+			if !slices.ContainsFunc(f.ScopeExclusions, func(e ScopeExclusion) bool { return e.Unit == unit && e.RestoredAt == "" }) {
+				return nil, AlreadyHolds{Reason: "goal " + id + " already restored scope for unit " + unit}
+			}
 			for i := range f.ScopeExclusions {
 				e := &f.ScopeExclusions[i]
 				if e.Unit == unit && e.RestoredAt == "" {
