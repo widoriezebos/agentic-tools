@@ -93,8 +93,9 @@ type SurveyResult struct {
 
 // Marker is one live gate run, exported for the scanner.
 type Marker struct {
-	Pid  int64
-	Gate string
+	Pid          int64
+	PidStartedAt int64
+	Gate         string
 }
 
 // Survey classifies every marker in the checkout.
@@ -134,7 +135,7 @@ func Survey(root string) SurveyResult {
 		}
 		switch livenessOf(*marker.Pid, *marker.PidStartedAt) {
 		case identity.Alive:
-			result.Live = append(result.Live, Marker{Pid: *marker.Pid, Gate: marker.Gate})
+			result.Live = append(result.Live, Marker{Pid: *marker.Pid, PidStartedAt: *marker.PidStartedAt, Gate: marker.Gate})
 		case identity.Dead:
 			_ = os.Remove(path)
 		default:

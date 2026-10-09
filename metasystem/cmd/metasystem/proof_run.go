@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
@@ -543,8 +544,23 @@ func legacyProofLaunchAllowed(root string) bool {
 	if fixtureauth.FixtureModeRoot(root) || !goal.NewWorld(root) {
 		return true
 	}
+	if authenticatedProofReporter(root, int64(os.Getppid())) {
+		return true
+	}
 	classification, err := personVerbCaller(root, int64(os.Getppid()))
 	return err == nil && classification.Class == lease.ClassHuman
+}
+
+// A registered repository proof can run without a goal. Its gate launch
+// must descend from the marker's live process in the same installation.
+func authenticatedProofReporter(root string, caller int64) bool {
+	for _, marker := range gaterun.Survey(root).Live {
+		if marker.Gate == "repository proof" &&
+			proofrun.AuthenticateAncestor(caller, proofrun.ProcessIdentity{Pid: marker.Pid, PidStartedAt: marker.PidStartedAt}) == nil {
+			return true
+		}
+	}
+	return false
 }
 
 type proofLaunchAdmission struct {
