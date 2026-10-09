@@ -39,6 +39,9 @@ func (l *stubLease) Authorize(_ Invocation, mode AuthorityMode, job string) erro
 
 type stubHost struct{ wait WaitOutcome }
 
+func (stubHost) UnitLaunchStatus(string) (string, error) { return "", os.ErrNotExist }
+func (stubHost) CancelUnitLaunch(string) error           { return os.ErrNotExist }
+
 func (h stubHost) WaitJob(context.Context, string, string, int64) WaitOutcome { return h.wait }
 func (stubHost) WatchJob(context.Context, string, string, int64, string) int  { return 0 }
 func (stubHost) BreachStopOrderingHuman(context.Context, string, int64, time.Time) (string, error) {

@@ -104,23 +104,24 @@ func censusAdmissionRequest(t *testing.T, readers loadReaders, max int, exact id
 }
 
 func TestAdmissionCapResolvesFromConfigurationAndCores(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name, value, source string
 		cores, want         int
 		wantErr             bool
 	}{
-		{"absent-18", "", "cores", 18, 3, false},
-		{"absent-8", "", "cores", 8, 1, false},
-		{"absent-3", "", "cores", 3, 1, false},
-		{"absent-negative", "", "cores", -1, 1, false},
-		{"absent-key-in-a-populated-conf", "unrelated.value=1", "cores", 18, 3, false},
+		{"absent-18", "", "default", 18, 1, false},
+		{"absent-8", "", "default", 8, 1, false},
+		{"absent-3", "", "default", 3, 1, false},
+		{"absent-negative", "", "default", -1, 1, false},
+		{"absent-key-in-a-populated-conf", "unrelated.value=1", "default", 18, 1, false},
 		{"configured", "5", "configured", 18, 5, false},
 		{"disabled", "0", "configured", 18, 0, false},
 		{"not-an-integer", "x", "", 18, 0, true},
 		{"negative", "-1", "", 18, 0, true},
 		{"too-large", "65", "", 18, 0, true},
 		{"duplicate-key", AdmissionCapKey + "=1\n" + AdmissionCapKey + "=2", "", 18, 0, true},
-		{"empty-path", "derived", "cores", 0, 1, false},
+		{"empty-path", "derived", "default", 18, 1, false},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -170,7 +171,9 @@ func admissionRequest(t *testing.T, admissionMax, overlaps int, known, nested bo
 		loadOptions: []loadSampleOption{withLoadReaders(readers)}})
 }
 func TestAdmissionCapExemptsNestedReceipts(t *testing.T) {
+	t.Parallel()
 	request := admissionRequest(t, 1, 3, true, true)
+	request.ConfPath = ""
 	attempt, decision, err := reserveLocked(candidateAdmission(request))
 	if err != nil || decision.Disposition != DispositionExecuted || attempt.AttemptID == "" {
 		t.Fatalf("nested reserve = %+v, %+v, %v", attempt, decision, err)
@@ -222,16 +225,19 @@ func TestAdmissionCapAdmitsBesideIdleBatchOwner(t *testing.T) {
 }
 
 func TestAdmissionSlotLifecycleAndRefusalLeavesNoState(t *testing.T) {
+	t.Parallel()
 	for _, ending := range []string{"normal-exit", "crash", "kill"} {
 		t.Run(ending, func(t *testing.T) {
+			t.Parallel()
 			now := time.Date(2026, 9, 17, 10, 0, 0, 0, time.UTC)
 			first := admissionProcess(110, 1, now.Add(-2*time.Minute), "metasystem", "test", "run")
 			second := admissionProcess(210, 1, now.Add(-time.Minute), "metasystem", "proof-run", "launch")
 			census := &admissionCensus{}
 			census.replace(first)
-			readers := censusLoadReaders(census, 8)
+			readers := censusLoadReaders(census, 18)
 
 			firstRequest := censusAdmissionRequest(t, readers, 1, first.exact, "slot-holder-"+ending, now)
+			firstRequest.ConfPath = ""
 			firstRequest.AttemptID = "proof-slot-holder-" + ending
 			firstAttempt, firstDecision, err := reserveLocked(firstRequest)
 			if err != nil || firstDecision.Disposition != DispositionExecuted || firstAttempt.AttemptID == "" {
@@ -240,6 +246,7 @@ func TestAdmissionSlotLifecycleAndRefusalLeavesNoState(t *testing.T) {
 
 			census.replace(first, second)
 			secondRequest := censusAdmissionRequest(t, readers, 1, second.exact, "refused-"+ending, now.Add(time.Second))
+			writeTestFile(t, secondRequest.ConfPath, []byte("# no proof cap key\n"), 0o600)
 			secondRequest.AttemptID = "proof-refused-" + ending
 			secondRequest.ReservationOwner = &ReservationOwner{ControlRoot: secondRequest.ControlRoot, RunID: "run-" + ending,
 				RunGeneration: 1, LaunchNonce: "launch-" + ending, GoalRevision: secondRequest.GoalRevision,
@@ -278,13 +285,24 @@ func TestAdmissionSlotLifecycleAndRefusalLeavesNoState(t *testing.T) {
 	}
 }
 func TestAdmissionRefusalNamesItsExpiryAndRuling(t *testing.T) {
-	reason := (AdmissionCap{Max: 2, Key: AdmissionCapKey, Source: "configured"}).RefusalReason(LoadSample{OverlappingHost: 3, OverlapKnown: true}, true)
-	for _, part := range []string{AdmissionCapKey, "admitted=2", "observed=3", "ruling=R-111-m1e", "tests-never-wait-on-wall-time:1e,2,3b", "engine-policy-binding-survives-drift-and-load:U4a,U4b"} {
-		if !strings.Contains(reason, part) {
-			t.Fatalf("reason %q does not contain %q", reason, part)
+	t.Parallel()
+	for _, sample := range []LoadSample{{OverlappingHost: 3, OverlapKnown: true}, {OverlapKnown: false}} {
+		for _, nestedKnown := range []bool{true, false} {
+			reason := (AdmissionCap{Max: 2, Key: AdmissionCapKey, Source: "configured"}).RefusalReason(sample, nestedKnown)
+			for _, part := range []string{AdmissionCapKey, "admitted=2", "retry="} {
+				if !strings.Contains(reason, part) {
+					t.Fatalf("reason %q does not contain %q", reason, part)
+				}
+			}
+			for _, retired := range []string{"temporary=", "ruling=", "expires-when=", "R-111-m1e"} {
+				if strings.Contains(reason, retired) {
+					t.Fatalf("reason %q contains retired metadata %q", reason, retired)
+				}
+			}
 		}
 	}
 }
+
 func TestAdmissionCapAdmitsWhenOverlapIsUnknown(t *testing.T) {
 	request := admissionRequest(t, 1, 99, false, false)
 	attempt, decision, err := reserveLocked(candidateAdmission(request))

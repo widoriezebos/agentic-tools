@@ -245,6 +245,10 @@ func runIntentDesign(inv *intentInvocation) int {
 	case where != "live":
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: fmt.Sprintf("goal %s is %s; nothing was done", id, where),
 			Decision: "nothing to do; only an open goal gets a design"})
+	case file.State == goal.StateSplit:
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
+			Summary: fmt.Sprintf("goal %s is split into its children; nothing was done", id),
+			next:    inv.publicArgv("goal", "split", id, "--reverse", "--reason", "TEXT"), nextReason: "restores the parent before child work starts"})
 	case file.State == goal.StateQueued || file.State == goal.StateParked || file.Budget == nil || file.Budget.ReviewRoundLimit <= 0:
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary: fmt.Sprintf("goal %s is not approved with review rounds in its budget; nothing was done", id),

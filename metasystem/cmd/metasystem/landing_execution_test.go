@@ -39,8 +39,12 @@ func TestLandingExecutionAdapterRetriesSelectedBatchUnderHelmAndPause(t *testing
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return b.now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return b.home, nil })}
 	dead := true
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, now: func() time.Time { return b.now }, nonce: func() (string, error) { return "scoped", nil },
-		machine: func(string) (string, error) { return "fixture", nil }, settings: func(string) (launch.Settings, error) {
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.manager = func() *launch.Manager { return manager }
+		agent.now = func() time.Time { return b.now }
+		agent.nonce = func() (string, error) { return "scoped", nil }
+		agent.machine = func(string) (string, error) { return "fixture", nil }
+		agent.settings = func(string) (launch.Settings, error) {
 			if dead {
 				return launch.Settings{}, errors.New("provider launcher unavailable")
 			}
@@ -48,7 +52,8 @@ func TestLandingExecutionAdapterRetriesSelectedBatchUnderHelmAndPause(t *testing
 			settings.LandingRuntime = "claude"
 			settings.LandingModel = "fixture-model"
 			return settings, nil
-		}}
+		}
+	})
 	keeper := newLandingAgentKeeper(b.checkout, b.home, agent)
 	b.owners.landing.keeper = func(string, string) lane.AgentKeeper { return keeper }
 	b.owners.landing.machine = func(string) (string, error) { return "fixture", nil }
@@ -81,18 +86,18 @@ func TestLandingExecutionAdapterRetriesSelectedBatchUnderHelmAndPause(t *testing
 	third := b.seat(t, "c")
 	b.git(t, b.checkout, "fetch", "--quiet", "origin")
 	dead = false
-	b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-		t.Fatal("retry re-proved the person")
-		return humanauthority.Proof{}, nil
+	b.owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Prove(root, 30, person(), at)
 	}
 	// A standing provider outage still holds the recorded selection.
-	_, err = outage.Record(b.installation, outage.ProviderLimit, "fixture", launch.LandingOwnerLineage, b.now)
+	_, err = outage.Observe(b.home, "claude", "landing-model", outage.ProviderLimit, "fixture", launch.LandingOwnerLineage, b.now)
 	helmMust(t, err)
 	b.success(t, "landing", "run")
 	if len(landingLaunches(t, store)) != 0 {
 		t.Fatal("Explicit bypassed the provider hold")
 	}
-	helmMust(t, outage.Clear(b.installation))
+	_, err = outage.Observe(b.home, "claude", "landing-model", "", "", "fixture-success", b.now.Add(time.Nanosecond))
+	helmMust(t, err)
 	b.success(t, "landing", "run")
 	launches := landingLaunches(t, store)
 	if len(launches) != 1 {
@@ -489,11 +494,37 @@ func TestLandingExecutionReadinessKeepsSelectionAndRealRemedy(t *testing.T) {
 	}
 	selected := b.batch(t)
 	b.owners.landing.ready = func(string) error { return nil }
+	startProofs := 0
 	b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
-		t.Fatal("readiness recovery re-proved selection")
-		return humanauthority.Proof{}, nil
+		startProofs++
+		return humanauthority.Proof{}, errors.New("the retry is an agent act")
 	}
-	if code, text := b.run(t, b.lane, "landing", "run"); code != 0 || b.starts != 1 || b.batch(t).ID != selected.ID {
-		t.Fatalf("readiness retry: %d %s starts=%d", code, text, b.starts)
+	if code, text := b.run(t, b.lane, "landing", "run"); code != 0 || b.starts != 1 || b.batch(t).ID != selected.ID || startProofs != 1 {
+		t.Fatalf("readiness retry: %d %s starts=%d startProofs=%d", code, text, b.starts, startProofs)
+	}
+}
+
+func TestLandingExecutionPersonProofBelongsToOneInvocation(t *testing.T) {
+	t.Parallel()
+	b := newSelectionBed(t)
+	prove := enrolledPersonProver(t, b.lane, b.now)
+	proofs, holds := 0, 0
+	b.owners.prove = func(root string, pid int64, reader humanauthority.Reader, runtime, sessions string, at time.Time) (humanauthority.Proof, error) {
+		proofs++
+		if proofs > 1 {
+			return humanauthority.Proof{}, errors.New("the later invocation is an agent act")
+		}
+		return prove(root, pid, reader, runtime, sessions, at)
+	}
+	b.keeper.ProviderHold = func(string) (string, error) {
+		holds++
+		return "the model provider is limited", nil
+	}
+	if code, text := b.run(t, b.lane, "landing", "run", "--goals", "a"); code != 0 || b.starts != 1 || proofs != 1 || holds != 0 {
+		t.Fatalf("person selection and start: %d %s starts=%d proofs=%d holds=%d", code, text, b.starts, proofs, holds)
+	}
+	selected := b.batch(t)
+	if code, text := b.run(t, b.lane, "landing", "run", "--batch", selected.ID, "--json"); code != 0 || !strings.Contains(text, "selection recorded, execution not started") || !strings.Contains(text, "provider is limited") || b.starts != 1 || proofs != 2 || holds != 1 || b.batch(t).ID != selected.ID {
+		t.Fatalf("agent continuation inherited person authority: %d %s starts=%d proofs=%d holds=%d", code, text, b.starts, proofs, holds)
 	}
 }

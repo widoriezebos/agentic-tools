@@ -150,6 +150,8 @@ func TestIntentPlanningClaimAndRelease(t *testing.T) {
 		t.Fatalf("claim without a goal while one is held = %d %+v", code, result)
 	}
 
+	held.Arc = "held-group"
+	bed.addGoal(held)
 	other := *held
 	other.Id = "second-held"
 	bed.addGoal(&other)

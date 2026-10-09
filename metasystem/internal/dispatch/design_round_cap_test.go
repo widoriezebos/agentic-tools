@@ -58,6 +58,8 @@ func setGoalReviewRounds(t *testing.T, bed *goalAdmissionBed, member int64, ceil
 		t.Fatalf("parse goal fixture: %v", problems)
 	}
 	file.Budget.ReviewRoundLimit = member
+	file.NormApproval.ReviewRounds = member
+	file.Approved.Digest = legacyBudgetApprovalDigest(file.Intent, *file.Budget)
 	if err := os.WriteFile(path, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +67,7 @@ func setGoalReviewRounds(t *testing.T, bed *goalAdmissionBed, member int64, ceil
 }
 
 func TestDesignCriticLimitIsGoalMemberUnderCeiling(t *testing.T) {
+	t.Parallel()
 	for _, c := range []struct{ member, want int64 }{{12, 12}, {30, 20}} {
 		bed := newGoalAdmissionBed(t, 2)
 		setGoalReviewRounds(t, bed, c.member, 20)

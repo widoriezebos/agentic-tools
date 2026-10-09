@@ -94,7 +94,8 @@ var immutableFields = map[string]bool{
 	"configurationObligations": true, "launchCapability": true,
 	"fenceGeneration":    true,
 	"reviewChainCounted": true,
-	"aliasedFrom":        true, "rosterAliasedFrom": true,
+	"unitRun":            true, "unitRound": true,
+	"aliasedFrom": true, "rosterAliasedFrom": true,
 	"declaredOutputs": true, "declaredOutputsDigest": true, "declaredOutputsSource": true,
 	"design":      true,
 	"rebasedFrom": true, "rebasedTo": true, "conflictedPaths": true,
@@ -105,6 +106,9 @@ var immutableFields = map[string]bool{
 // protects invariants that a status-only compare cannot express. Generic
 // record patches must not bypass that owner.
 var dedicatedMetadataFields = map[string]bool{
+	"unitUnaccounted":           true,
+	"unitEnvironment":           true,
+	"unitExecuted":              true,
 	"findingRegister":           true,
 	"findingRegisterRound":      true,
 	"reviewRoundLimit":          true,

@@ -278,6 +278,14 @@ func processIntentCommands() []intentCommand {
 			run:      runIntentMachineList,
 		},
 		{
+			object: "machine", action: "clear-provider", audience: "human", summary: "clear one provider's advisory outage hold",
+			usage:    []string{"metasystem machine clear-provider PROVIDER"},
+			details:  []string{"A person's act at their enrolled terminal. This closes only that provider's wait; it does not claim the provider answered. An absent mark is success."},
+			maxArgs:  1,
+			examples: []string{"metasystem machine clear-provider anthropic"},
+			run:      runIntentMachineClearProvider,
+		},
+		{
 			object: "machine", action: "stop", audience: "human", summary: "stop MetaSystem on one machine of this computer, or on every one",
 			usage: []string{"metasystem machine stop NAME", "metasystem machine stop --all"},
 			details: []string{
@@ -322,10 +330,10 @@ func processIntentCommands() []intentCommand {
 		{
 			object: "work", action: "stop", audience: "both", summary: "stop one running job or diagnostic read, or every running job of a goal",
 			usage: []string{"metasystem work stop REF", "metasystem work stop G"},
-			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read): exactly that one stops.",
+			details: []string{"REF is j1:ID (a launch), j2:ID (a dispatch job) or read:REF (a diagnostic read): exactly that one stops. A person can use run:ID to cancel a unit run and release its worktree after its children stop.",
 				"G is a goal: every running job of that goal stops, and no other goal's. A goal its budget stopped completes its recorded stop by itself once none of its jobs runs."},
 			maxArgs:  1,
-			accepts:  []string{refGoal, refJ1, refJ2, refRead},
+			accepts:  []string{refGoal, refJ1, refJ2, refRun, refRead},
 			examples: []string{"metasystem work stop j2:design-r2-4f1c", "metasystem work stop verbs-match-intent"},
 			run:      runIntentWorkStop,
 		},
@@ -474,8 +482,14 @@ func defaultProcessIntentOwners() processIntentOwners {
 // cancelDispatchJob cancels one dispatch job through its delegate owner and
 // returns that owner's typed JSON outcome.
 func cancelDispatchJob(checkout, job string) (map[string]any, int, error) {
+	return cancelDispatchJobWith(func(request delegateRequest, stdout, stderr io.Writer) int {
+		return runDelegateIn(request.args, checkout, stdout, stderr)
+	}, checkout, job)
+}
+
+func cancelDispatchJobWith(delegate delegateCaller, installation, job string) (map[string]any, int, error) {
 	var stdout, stderr bytes.Buffer
-	code := runDelegateIn([]string{"--cancel", job}, checkout, &stdout, &stderr)
+	code := delegate(delegateRequest{rootOverride: installation, args: []string{"--cancel", job}}, &stdout, &stderr)
 	var outcome map[string]any
 	if err := json.Unmarshal(bytes.TrimSpace(stdout.Bytes()), &outcome); err != nil {
 		return nil, code, fmt.Errorf("the delegate owner returned no typed outcome: %v; %s", err, strings.TrimSpace(stderr.String()))
@@ -1262,7 +1276,20 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: fmt.Sprintf("unit run %s could not be read", ref.qualified()),
 				retry: "try again", Details: []string{"unit run: " + err.Error()}})
 		}
-		lines := []string{}
+		_ = inv.selectRoot()
+		var now time.Time
+		if runner.Manager.Now != nil {
+			now = runner.Manager.Now()
+		} else {
+			now, err = inv.owners.commandNow(inv.layout.InstallationRoot.Path())
+			if err != nil {
+				return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the status clock could not be read",
+					next: inv.publicArgv("work", "status", ref.qualified()), nextReason: "reads the run again", Details: []string{err.Error()}})
+			}
+			runner.Manager = &launch.Manager{Store: runner.Manager.Store, Now: func() time.Time { return now }}
+		}
+		report := readProcessReport(inv.stateRoot, inv.layout.InstallationRoot.Path(), record.Goal, record.Unit, runner, now, nil)
+		lines := report.Lines
 		for _, round := range record.Rounds {
 			line := fmt.Sprintf("round %d: %s", round.Number, round.Outcome)
 			if round.Cause != "" {
@@ -1271,7 +1298,7 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 			lines = append(lines, line)
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, text: lines,
-			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record}})
+			Summary: fmt.Sprintf("unit run %s (%s, goal %s): %s", unitRunPrefix+record.ID, record.Unit, record.Goal, record.State), Data: map[string]any{"record": record, "processReport": report}})
 	}
 	job := ref.job
 	targets := []intentTarget{{Kind: "job", ID: jobReference(job)}}
@@ -1302,6 +1329,9 @@ func runIntentWorkStop(inv *intentInvocation) int {
 	ref, problem := inv.resolveWorkRef(inv.input.args[0], inv.command.accepts)
 	if problem != nil {
 		return inv.render(*problem)
+	}
+	if ref.kind == refRun {
+		return inv.stopUnitRun(ref.id)
 	}
 	if ref.kind == refRead {
 		return runIntentReviewRef(inv, "stop", ref.id)
@@ -1354,7 +1384,11 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 	if file.StopFence != nil {
 		// The recorded stop's bookkeeping, as the steward's pass does it.
 		stopID := file.StopFence.StopID
-		if batch, err := dispatchcore.ReconcileStopBatch(inv.stateRoot, stopID, now); err == nil {
+		host := engineHost{}
+		if inv.owners.processes.launches != nil {
+			host.launches = inv.owners.processes.launches()
+		}
+		if batch, err := dispatchcore.ReconcileStopBatchWithLaunchStatus(inv.layout.InstallationRoot.Path(), stopID, now, host.UnitLaunchStatus); err == nil {
 			data["stop"], data["stopState"] = stopID, string(batch.State)
 			if batch.State == goal.StopBatchComplete {
 				stopLine = "its budget stop " + stopID + " is complete; metasystem goal resume " + id + " lifts it"
@@ -1559,7 +1593,7 @@ func runIntentAsk(inv *intentInvocation) int {
 			Summary: "a carry question needs --wants in its exact shape, so nothing was asked",
 			next:    inv.retryWith([]string{"wants"}, "--wants", "carry workspace=SHA goal="+id+" past=NAME"), nextReason: "the workspace's 40-character commit, and who it carries past"})
 	}
-	q, warnings, code, err := inv.owners.processes.ask(inv.stateRoot, in)
+	q, warnings, code, err := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), in)
 	if err != nil && q.ID == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: max(code, 1), Targets: askTargets, Summary: err.Error() + "; nothing was asked", text: warnings,
 			retry: "once the cause above is fixed"})

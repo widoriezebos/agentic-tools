@@ -262,6 +262,9 @@ func approvalRequired(f *GoalFile, verb string) error {
 	if f == nil {
 		return coded("APPROVAL_REQUIRED", fmt.Errorf("that goal isn't open, so the %s was refused\nrun: metasystem goal list", verb))
 	}
+	if f.State == StateSplit {
+		return splitRestoreRequired(f)
+	}
 	return coded("APPROVAL_REQUIRED", fmt.Errorf("goal %s isn't approved yet (it is %s), so the %s was refused\nrun: metasystem goal approve %s", f.Id, f.State, verb, f.Id))
 }
 
@@ -370,6 +373,9 @@ func requireApprovedForClaimWithContext(context *claimAdmissionContext, t *TreeG
 }
 
 func requireApprovalRecord(f *GoalFile, verb string) error {
+	if f != nil && f.State == StateSplit {
+		return refuseGoalAdmission(splitRestoreRequired(f))
+	}
 	if f == nil || f.Approved == nil || f.Budget == nil {
 		return refuseGoalAdmission(approvalRequired(f, verb))
 	}
@@ -591,6 +597,9 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				}
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
+				}
+				if f.State == StateSplit {
+					return nil, splitRestoreRequired(f)
 				}
 				if f.State != StateQueued && f.State != StateApproved && f.State != StateClaimed && f.State != StateParked {
 					return nil, fmt.Errorf("goal %s is %s; approve admits queued, parked, or already-approved work and may re-ratify a claim", id, f.State)
@@ -915,4 +924,8 @@ func RecordFleetEnrollment(r VerbRequest, generation uint64) (PublishResult, err
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	})
+}
+
+func splitRestoreRequired(f *GoalFile) error {
+	return fmt.Errorf("goal %s is split; a person restores its work with metasystem goal split %s --reverse --reason TEXT", f.Id, f.Id)
 }

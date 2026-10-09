@@ -2,6 +2,8 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +13,10 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -31,6 +36,67 @@ import (
 func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	targets := []intentTarget{{Kind: "unit", ID: run}}
 	runner := inv.unitRunner()
+	if current, err := runner.Status(run); err == nil && len(current.Rounds) > 0 {
+		round := current.Rounds[len(current.Rounds)-1]
+		retryRequested := round.Stop != nil && round.Stop.Loop == "unit-build" && (round.Cause == "environment" || round.Cause == "deadline")
+		for _, step := range round.Steps {
+			if step.RetryReason != "" && step.RetryReason == inv.input.text("reason") {
+				retryRequested = true
+			}
+		}
+		if retryRequested && strings.TrimSpace(inv.input.text("reason")) != "" {
+			actor, _, problem := inv.actingAs("work review retry", current.Goal, actorHuman)
+			if problem != nil {
+				return *problem
+			}
+			person, reason := unitStopActor(actor), inv.input.text("reason")
+			impact := "Impact: rerun the retained failed step with the same inputs and fresh output, without another build.\nThe environment may still fail; automatic correction limits remain unchanged.\nStop this run to end the continuation; retained evidence remains."
+			resumed, err := runner.RetryFailedStep(run, person, reason, func() error {
+				return inv.recordUnitStopOverride(current.Goal, "work-review-retry", reason, impact, person)
+			})
+			if err == nil {
+				resumed, err = runner.Continue(launch.UnitRequest{Resume: run})
+			}
+			return inv.unitOutcome(runner, resumed, err, targets, inv.workArgv(current, "wait"))
+		}
+		if round.Stop != nil && round.Stop.Loop == "unit-build" && round.Outcome != "build-size" || round.Outcome == "build-gap" || round.Outcome == "build-size" && strings.TrimSpace(inv.input.text("reason")) == "" {
+			return inv.unitOutcome(runner, launch.UnitResult{Record: current}, nil, targets, inv.workArgv(current, "wait"))
+		}
+		if round.Outcome == "build-size" {
+			actor, _, problem := inv.actingAs("work review size", current.Goal, actorHuman)
+			if problem != nil {
+				return *problem
+			}
+			impact := fmt.Sprintf("Impact: accept %d changed lines against %d declared and resume the pending checks.\nThe larger change still needs checks and review; later automatic limits remain.\nStop this run to undo the continuation; its retained change remains.", round.BuildLines, round.DeclaredLines)
+			person := unitStopActor(actor)
+			var impactErr error
+			resumed, err := runner.AcceptBuildSize(run, person, func() error {
+				impactErr = inv.recordUnitStopOverride(current.Goal, "work-review-size", inv.input.text("reason"), impact, person)
+				return impactErr
+			})
+			if impactErr != nil {
+				return intentResult{Outcome: intentFailed, code: 1, Summary: "the size decision impact could not be recorded", Details: []string{impactErr.Error()}, next: inv.sameCommand()}
+			}
+			if err != nil {
+				return inv.unitOutcome(runner, resumed, err, targets, inv.workArgv(current, "wait"))
+			}
+			resumed, err = runner.Continue(launch.UnitRequest{Resume: run})
+			return inv.unitOutcome(runner, resumed, err, targets, inv.workArgv(current, "wait"))
+		}
+		if round.Stop != nil && strings.HasPrefix(round.Stop.Handoff, "stopped ") && round.Stop.Handoff != "stopped unreadable-policy" && len(current.Subjects) == 0 && round.ReadModel != "" {
+			if round.UnknownRetries == 0 {
+				fresh, err := runner.RetryUnknownRead(run)
+				if err != nil || fresh.Capped {
+					return inv.unitOutcome(runner, fresh, err, targets, inv.workArgv(current, "wait"))
+				}
+				current = fresh.Record
+				round = current.Rounds[len(current.Rounds)-1]
+			}
+			if round.Stop != nil && strings.HasPrefix(round.Stop.Handoff, "stopped ") {
+				return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: unitData(current, runner.Manager), Summary: "the fresh examination still has unknown inputs; " + round.Stop.Handoff + " holds this unit", next: inv.workArgv(current, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
+			}
+		}
+	}
 	var result intentResult
 	err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 		result = inv.reviewUnitRound(runner, targets, review, retain)
@@ -145,8 +211,11 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	endpointTip := ""
 	tip := func() (string, error) {
 		if endpointTip == "" {
-			var tipErr error
-			endpointTip, tipErr = conn.endpointTip(original.Path(), endpoint)
+			tipErr := review.Wait(func() error {
+				var err error
+				endpointTip, err = conn.endpointTip(original.Path(), endpoint)
+				return err
+			})
 			if tipErr != nil {
 				return "", tipErr
 			}
@@ -163,7 +232,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		if err != nil {
 			return refuse(retry, "try again; --verbose shows the cause", "the goal worktree can't be read, so nothing was committed", "cannot read goal worktree %s: %v", worktree, err)
 		}
-		if subject != nil && subject.StagedTree != "" && head != review.Head {
+		if subject != nil && subject.StagedTree != "" && head != review.Head && head != subject.ExpectedParent {
 			// A commit may have been made without being recorded; only
 			// the exact bound result is adopted.
 			commit, conflict := resolveUnitCommit(git, install, base, goalID, unit, *subject, head)
@@ -174,11 +243,23 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			}
 			subject.Commit, subject.Tip = commit, head
 		} else {
+			var frozenPatch []byte
+			if review.Round.Result != nil {
+				frozenPatch, err = os.ReadFile(filepath.Join(review.Round.Directory, "result.patch"))
+				if err != nil || launch.UnitResultDigest(string(frozenPatch)) != review.Round.Result.PatchDigest {
+					return refuse(retry, "recovers the retained patch", "the retained result patch cannot be verified", "%v", err)
+				}
+			}
 			diff, err := runner.WorktreeDiff(worktree, review.Base)
 			if err != nil {
 				return refuse(retry, "try again; --verbose shows the cause", "the goal worktree can't be read, so nothing was committed", "cannot read goal worktree %s: %v", worktree, err)
 			}
-			if head != review.Head || !bytes.Equal(diff, review.Diff) || (!review.Legacy && current != review.Result) {
+			movedEquivalent := false
+			if head != review.Head && frozenPatch != nil {
+				patch, patchErr := runner.WorktreeDiff(worktree, head)
+				movedEquivalent = patchErr == nil && bytes.Equal(patch, frozenPatch) && current == review.Result
+			}
+			if !movedEquivalent && (head != review.Head || !bytes.Equal(diff, review.Diff) || (!review.Legacy && current != review.Result)) {
 				return refuse(revise, "builds the result again; or put the worktree back as the build left it and repeat",
 					fmt.Sprintf("the goal worktree changed after build round %d, so nothing was staged", review.Round.Number),
 					"UNIT_RESULT_CHANGED: goal worktree %s no longer holds round %d's result (HEAD %.12s, expected %.12s)", worktree, review.Round.Number, head, review.Head)
@@ -207,7 +288,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				subject = &launch.UnitSubject{Round: review.Round.Number, Operation: operation}
 			}
 			subject.ExpectedParent, subject.ResultDigest, subject.DiffDigest, subject.Paths =
-				review.Head, launch.UnitResultDigest(current), review.DiffDigest, paths
+				head, launch.UnitResultDigest(current), review.DiffDigest, paths
 			if review.Prior != nil {
 				parent, err := git(worktree, "rev-parse", review.Prior.Commit+"^")
 				if err != nil {
@@ -233,13 +314,74 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				return refuse(retry, "try again; --verbose shows the cause", "the commit can't be recorded before it is made, so nothing was committed", "cannot retain the unit subject before committing: %v", err)
 			}
 			var installed string
+			var gateErr error
 			commitErr := conn.commitToken(install, func() error {
 				var err error
 				installed, err = conn.commit(branch.CommitRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
 					GoalID: goalID, Units: []string{unit}, OpID: subject.Operation + "-unit", Kind: branch.Unit,
-					Amend: subject.Amends != "", Whole: review.Whole, CheckClaim: check, Transport: conn.transport})
+					Amend: subject.Amends != "", Whole: review.Whole, CheckClaim: check, Transport: conn.transport,
+					FrozenPatch: frozenPatch, ResumeWorktree: subject.GateWorktree,
+					KeepWorktree: func() bool {
+						for _, id := range subject.GateLaunches {
+							current, err := runner.Manager.Status(id)
+							if err != nil && !os.IsNotExist(err) || err == nil && !current.State.Terminal() {
+								return true
+							}
+						}
+						return false
+					},
+					BeforeCommit: func(dir, parent, tree string) error {
+						if parent != review.Head || subject.Amends != "" || subject.GateSnapshot != nil {
+							if subject.Amends != "" {
+								if _, err := conn.rebaseGate(dir); err != nil {
+									gateErr = err
+									return err
+								}
+							}
+							gate, err := runner.ProveRoundResult(review, dir, subject, retain)
+							if err != nil {
+								gateErr = err
+								return err
+							}
+							subject.GateRunID = gate
+						}
+						if subject.Amends == "" {
+							subject.ExpectedParent, subject.StagedTree = parent, tree
+						}
+						subject.Conflict = ""
+						return retain(*subject)
+					}})
 				return err
 			})
+
+			var pending *launch.PublicationPending
+			if errors.As(gateErr, &pending) {
+				if !pending.Running {
+					subject.GateWorktree = ""
+					subject.GateSnapshot, subject.GateLaunches = nil, nil
+					_ = retain(*subject)
+				}
+				return intentResult{Targets: targets, Outcome: intentInProgress, code: 3, Data: data, Summary: pending.Error(), next: retry, nextReason: "resumes the recorded publication check"}
+			}
+			if _, err := os.Stat(subject.GateWorktree); subject.GateWorktree == "" || os.IsNotExist(err) {
+				subject.GateWorktree = ""
+			}
+			if commitErr != nil && subject.GateWorktree == "" {
+				subject.GateSnapshot = nil
+				subject.GateLaunches = nil
+			}
+			if err := retain(*subject); err != nil {
+				return refuse(retry, "reconciles the retained subject", "the publication outcome could not be recorded", "%v", err)
+			}
+			var replayConflict *branch.OpError
+			if errors.As(commitErr, &replayConflict) && replayConflict.Code == branch.ReplayConflictCode {
+				subject.Conflict = commitErr.Error()
+				if err := retain(*subject); err != nil {
+					return refuse(retry, "retains the same conflict", "the publication conflict could not be recorded", "%v", err)
+				}
+				correction := append(slices.Clone(revise), "--reason", "resolve the retained publication conflict", "--by", "NAME")
+				return refuse(correction, "a person admits a correction of this retained round with its original plan", "the retained change conflicts with the current branch; nothing was committed", "%s", subject.Conflict)
+			}
 			if commitErr != nil {
 				after, _ := git(worktree, "rev-parse", "HEAD")
 				installed = strings.TrimSpace(string(after))
@@ -247,12 +389,24 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			commit, conflict := resolveUnitCommit(git, install, base, goalID, unit, *subject, installed)
 			if conflict != nil {
 				data["subject"] = subject
+				if launch.IsCode(gateErr, "PUBLICATION_CHECK_RED") {
+					correction := append(slices.Clone(revise), "--reason", "correct the retained publication check failure", "--by", "NAME")
+					return refuse(correction, "a person admits a correction of this retained round", "the publication checks failed; nothing was committed", "%v", gateErr)
+				}
+				if gateErr != nil {
+					next, reason := retry, "repeats the same publication after the cause is fixed"
+					if launch.IsCode(gateErr, "BUDGET_REFUSED") || launch.IsCode(gateErr, "BUDGET_UNKNOWN") {
+						next, reason = inv.publicArgv("goal", "budget", goalID, "BOX"), "a person sets the budget; then repeat this command"
+					}
+					return refuse(next, reason, gateErr.Error(), "%v", gateErr)
+				}
 				summary := fmt.Sprintf("the branch commit owner's result for unit %s does not bind round %d: %v", unit, review.Round.Number, conflict)
 				if commitErr != nil {
 					summary = fmt.Sprintf("the branch commit owner did not commit unit %s: %v", unit, commitErr)
 				}
 				return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: summary,
-					next: inv.sameCommand(), nextReason: "the bound subject is kept; the same command reconciles or commits it once"}
+					Details: launchDetails(commitErr),
+					next:    inv.sameCommand(), nextReason: "the bound subject is kept; the same command reconciles or commits it once"}
 			}
 			subject.Commit, subject.Tip = commit, installed
 		}
@@ -264,6 +418,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		}
 	}
 	data["commit"], data["tip"], data["operation"] = subject.Commit, subject.Tip, subject.Operation
+	data["expectedParent"] = subject.ExpectedParent
 	if subject.Amends != "" {
 		data["amends"] = subject.Amends
 	}
@@ -275,20 +430,29 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			err = conn.commitToken(install, func() error {
 				var carryErr error
 				carried, carryErr = conn.carry(branch.CarryRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
-					GoalID: goalID, CheckClaim: check, Gate: conn.rebaseGate, Transport: conn.transport})
+					GoalID: goalID, CheckClaim: check, Gate: conn.rebaseGate, SubjectCheck: conn.subjectCheck, Transport: conn.transport})
 				return carryErr
 			})
 			data["carried"] = carried.Carried
+			data["needsReview"], data["unknown"] = carried.NeedsReview, carried.Unknown
+			for _, name := range carried.NeedsReview {
+				carriedLines = append(carriedLines, "review needed: "+name+"; run: metasystem work review "+goalID+" --work "+name)
+			}
 			for _, name := range carried.Carried {
 				carriedLines = append(carriedLines, "review carried: "+name)
 			}
 		}
 		if err == nil {
 			var pushed branch.PushResult
-			pushed, err = conn.push(branch.PushRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
-				GoalID: goalID, OpID: subject.Operation + "-push", CheckClaim: check, Transport: conn.transport})
+			err = review.Wait(func() error {
+				var pushErr error
+				pushed, pushErr = conn.push(branch.PushRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base,
+					GoalID: goalID, OpID: subject.Operation + "-push", CheckClaim: check, Transport: conn.transport})
+				return pushErr
+			})
 			if err == nil {
-				subject.Published = pushed.Tip
+				// Carried review commits are part of the published branch tip.
+				subject.Published, subject.Tip = pushed.Tip, pushed.Tip
 				err = retain(*subject)
 			}
 		}
@@ -306,8 +470,13 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	if install != original.Path() {
 		args = append(args, "--selected-installation", original.Path())
 	}
+	if inv.reviewWork == nil {
+		retry, _ := strconv.ParseInt(inv.input.text("retry"), 10, 64)
+		inv.reviewWork = &reviewWorkContext{goal: goalID, work: unit, run: record.ID, retry: retry}
+	}
 	if inv.reviewWork != nil {
 		inv.reviewWork.attempt, inv.reviewWork.retain, inv.reviewWork.subject = review.Round.Number, retain, subject
+		inv.reviewWork.run = record.ID
 	}
 	if inv.reviewWork != nil && inv.reviewWork.retry > 0 {
 		args = append(args, "--retry", strconv.FormatInt(inv.reviewWork.retry, 10))
@@ -373,7 +542,31 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		args = criticArgs
 		data["readNotPromoted"] = reason
 	}
-	result := inv.commitReview(targets, install, goalID, subject.Commit, args, criticArgs)
+	result := inv.commitReviewChecked(targets, install, goalID, subject.Commit, args, func(read branch.BranchReadResult) error {
+		head, current, err := runner.WorktreeResult(worktree)
+		if err != nil {
+			return err
+		}
+		if current == "" && head != subject.Tip && read.AttestationCommit == "" && read.RootJob != "" {
+			// A collected attestation can outlive a failed read-record save.
+			// Only the same build, reviewer and check may cross this boundary.
+			kind, kindErr := branch.KindOf(worktree, head, goalID)
+			if kindErr == nil && kind.Kind == branch.Read && kind.CommitID == subject.Commit {
+				base, baseErr := tip()
+				if baseErr != nil {
+					return baseErr
+				}
+				att, attErr := branch.ValidateAttestationAt(worktree, head, base, goalID, unit, subject.Commit)
+				if attErr == nil && att.Source.Kind == "critic-root" && att.Source.RootJob == read.RootJob && att.Gate.RunID == read.GateRunID {
+					return nil
+				}
+			}
+		}
+		if current != "" || head != subject.Tip && head != read.AttestationCommit {
+			return fmt.Errorf("the worktree changed after the read; restore its result or revise before publishing")
+		}
+		return nil
+	}, review.Wait, criticArgs)
 	result.text = append(result.text, carriedLines...)
 	if merged, ok := result.Data.(map[string]any); ok && merged["readNotPromoted"] != nil {
 		bundle = nil
@@ -393,10 +586,15 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		result.Data = data
 	}
 	if result.Outcome == intentConfirmed || result.Outcome == intentUnchanged {
+		if err := inv.retainPublication(subject, result, retain); err != nil {
+			return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data, Summary: "the read is published, but its publication time could not be retained: " + err.Error(), next: retry, nextReason: "rechecks the published read; a missing publication time stays unavailable"}
+		}
 		if bundle != nil {
 			result.Summary = fmt.Sprintf("the build's clean read %s by %s is the unit's read and is published", bundle.ReadLaunch, bundle.ReadModel)
 		}
-		result.next, result.nextReason = inv.goalNextStep(goalID)
+		if len(subject.TransferredTo) == 0 {
+			result.next, result.nextReason = inv.goalNextStep(goalID)
+		}
 	}
 	if bundle != nil && inv.input.has("model") {
 		result.Summary += "; --model was not used because no critic started"
@@ -420,6 +618,9 @@ func unitReadPromotion(review launch.UnitReview, subject launch.UnitSubject, rev
 	if revision == 0 || len(report) == 0 || len(readJSON) == 0 || read.State != launch.Completed || read.Kind != "read" || !read.VerdictIsCounting() {
 		return nil, "the read's report, completed launch or goal revision is unavailable"
 	}
+	if read.Read != nil && read.Read.Material != 0 || read.Read == nil && len(read.AdapterData["unitStopInputs"]) > 0 {
+		return nil, "the structured read is unavailable or has material findings"
+	}
 	if step.State != launch.StepPassed || !branch.UnitReadVerdictIsLand(step.Verdict, string(report)) {
 		return nil, "the read did not pass with VERDICT: land"
 	}
@@ -440,13 +641,27 @@ func unitReadPromotion(review launch.UnitReview, subject launch.UnitSubject, rev
 		return nil, "the run's base is not the commit's parent"
 	}
 	runtime := strings.TrimSuffix(strings.TrimSuffix(read.Adapter, "-exec"), "-headless")
-	return &branch.UnitReadBundle{SchemaVersion: 1, Goal: review.Record.Goal, Commit: subject.Commit, UnitRun: review.Record.ID,
+	var canonical []byte
+	var digest string
+	if read.Read != nil {
+		canonical, digest = read.Read.Canonical()
+	}
+	return &branch.UnitReadBundle{CanonicalRead: canonical, ReadDigest: digest, SchemaVersion: 1, Goal: review.Record.Goal, Commit: subject.Commit, UnitRun: review.Record.ID,
 		Round: review.Round.Number, ReadLaunch: step.LaunchID, ReadRuntime: runtime, ReadModel: readModel, BuildModel: buildModel,
 		ExaminedBase: review.Base, ExaminedTree: subject.StagedTree, GoalRevision: revision,
 		VerdictLine: "VERDICT: land", Report: string(report), LaunchRecord: string(readJSON)}, ""
 }
 
 func readPromotion(runner *launch.UnitRunner, review launch.UnitReview, subject launch.UnitSubject, revision uint64, resolve func(runtime, model string) (string, error)) (*branch.UnitReadBundle, string) {
+	if runner.InheritedFindings != nil {
+		rows, err := runner.InheritedFindings(review.Record.Goal, review.Record.Unit)
+		if err != nil {
+			return nil, "the destination's inherited evidence cannot be read"
+		}
+		if len(rows) > 0 {
+			return nil, "the destination needs a committed read of its complete inherited change"
+		}
+	}
 	var build, read launch.Record
 	var report, readJSON []byte
 	if runner.Manager != nil {
@@ -455,8 +670,11 @@ func readPromotion(runner *launch.UnitRunner, review launch.UnitReview, subject 
 				build, _ = runner.Manager.Store.Read(step.LaunchID)
 			} else if strings.HasPrefix(step.Name, "read") {
 				read, _ = runner.Manager.Store.Read(step.LaunchID)
-				if len(read.Outputs) == 1 {
-					report, _ = os.ReadFile(read.Outputs[0].Path)
+				for _, output := range read.Outputs {
+					if strings.HasSuffix(output.Path, ".md") {
+						report, _ = os.ReadFile(output.Path)
+						break
+					}
 				}
 				if dir, err := runner.Manager.Store.StateDir(step.LaunchID); err == nil {
 					readJSON, _ = os.ReadFile(filepath.Join(dir, "record.json"))
@@ -634,8 +852,237 @@ func (inv *intentInvocation) closerAt(targets []intentTarget, root string) (*int
 // commit and review run share it. A refused unit read uses the supplied
 // critic arguments; if that start also fails, the same review continues it.
 func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, unit string, args []string, fallback ...[]string) (out intentResult) {
+	if full, err := inv.work().git(root, "rev-parse", "--verify", unit+"^{commit}"); err == nil {
+		unit = strings.TrimSpace(string(full))
+	}
+	if work := inv.workOfCommit(goalID, unit); work != nil {
+		runner := inv.unitRunner()
+		err := runner.ReviewSubject(work.Run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+			caller := *inv
+			caller.reviewWork = &reviewWorkContext{goal: goalID, work: work.Unit, run: work.Run, attempt: review.Round.Number, subject: review.Subject, retain: retain}
+			out = caller.commitReviewChecked(targets, root, goalID, unit, args, func(read branch.BranchReadResult) error {
+				head, dirty, err := runner.WorktreeResult(root)
+				if err != nil {
+					return err
+				}
+				if dirty != "" || head != review.Subject.Tip && head != read.AttestationCommit {
+					return fmt.Errorf("the read's worktree changed; restore its result or revise this work before publishing")
+				}
+				return nil
+			}, review.Wait, fallback...)
+			return nil
+		})
+		if err != nil {
+			return inv.treeFailure(err)
+		}
+		return out
+	}
+	return inv.commitReviewChecked(targets, root, goalID, unit, args, nil, nil, fallback...)
+}
+
+func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, goalID, unit string, args []string, check func(branch.BranchReadResult) error, wait func(func() error) error, fallback ...[]string) (out intentResult) {
 	owners := inv.delivery()
-	result, code, err := owners.branchRead(args)
+	var branchRead func([]string) (branch.BranchReadResult, int, error)
+	installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
+	alreadyPublished := inspectErr == nil && installed.Published
+	changed, discardRecord := false, false
+	newVersion := "SHA"
+	changedResult := func() intentResult {
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: map[string]any{"cause": "environment"},
+			Summary: "the worktree changed after the read; review a new version of this work before publishing",
+			next:    inv.publicArgv("work", "review", "--commit", newVersion, "--goal", goalID), nextReason: "starts a new read of the changed version; commit any uncommitted changes first and use their new commit"}
+	}
+	if alreadyPublished {
+		check, wait = nil, nil
+		branchRead = func([]string) (branch.BranchReadResult, int, error) {
+			installed.State = "already-collected"
+			return installed, 0, nil
+		}
+	} else if check == nil {
+		runner := inv.unitRunner()
+		release, err := runner.ReserveMutation(root, goalID, "read-publication")
+		if err != nil {
+			return inv.treeFailure(err)
+		}
+		defer release()
+		identity := sha256.Sum256([]byte(goalID + "\x00" + unit))
+		path := filepath.Join(root, "artifacts", "agents", "read-publication", fmt.Sprintf("%x", identity))
+		// Publication always compares against the reviewed commit. This record
+		// keeps retirement across invocations without changing the critic's evidence.
+		var record struct {
+			ReviewedCommit string `json:"reviewedCommit"`
+			Retired        bool   `json:"retired,omitempty"`
+			ChangedTip     string `json:"changedTip,omitempty"`
+			RootJob        string `json:"rootJob,omitempty"`
+		}
+		err = runner.MutationSection(root, func(_ *launch.UnitRunner) error {
+			retained, err := os.ReadFile(path)
+			if err == nil {
+				// A plain saved tip is an active record from an older engine;
+				// it never replaces the reviewed commit as the baseline.
+				if len(retained) == 40 {
+					if _, err := hex.DecodeString(string(retained)); err != nil {
+						return err
+					}
+					record.ReviewedCommit = unit
+					return nil
+				}
+				if err := json.Unmarshal(retained, &record); err != nil {
+					return err
+				}
+				if record.ReviewedCommit != unit {
+					return fmt.Errorf("the publication record does not match the reviewed commit")
+				}
+				return nil
+			}
+			if !os.IsNotExist(err) {
+				return err
+			}
+			record.ReviewedCommit = unit
+			data, err := json.Marshal(record)
+			if err != nil {
+				return err
+			}
+			durable, err := atomicfile.WriteText(path, string(data), root)
+			if err == nil && !durable {
+				err = fmt.Errorf("the publication record's durability is unknown")
+			}
+			return err
+		})
+		if err != nil {
+			return inv.treeFailure(err)
+		}
+		defer func() {
+			if !changed && !discardRecord {
+				return
+			}
+			if err := runner.MutationSection(root, func(_ *launch.UnitRunner) error {
+				if changed {
+					data, err := json.Marshal(record)
+					if err != nil {
+						return err
+					}
+					durable, err := atomicfile.WriteText(path, string(data), root)
+					if err == nil && !durable {
+						err = fmt.Errorf("the retired read's durability is unknown")
+					}
+					return err
+				}
+				err := os.Remove(path)
+				if os.IsNotExist(err) {
+					return nil
+				}
+				return err
+			}); err != nil {
+				out = inv.treeFailure(err)
+			}
+		}()
+		check = func(read branch.BranchReadResult) error {
+			current, dirty, err := runner.WorktreeResult(root)
+			if err != nil {
+				return err
+			}
+			paths, err := launch.UnitResultPaths(dirty)
+			if err != nil {
+				return err
+			}
+			if !slices.ContainsFunc(paths, func(path string) bool { return branch.PathClass(path) != branch.ClassExcluded }) {
+				dirty = ""
+			}
+			// Uncommitted changes hold publication without retiring the read:
+			// once they are committed or removed, the same read is judged again.
+			if dirty != "" && !record.Retired {
+				return fmt.Errorf("the worktree has uncommitted changes; commit or remove them, then repeat this command")
+			}
+			refuse := record.Retired
+			if dirty == "" && current != unit {
+				git := inv.work().git
+				base, err := git(root, "merge-base", unit, current)
+				if err != nil {
+					return err
+				}
+				if strings.TrimSpace(string(base)) != unit {
+					refuse = true
+				} else {
+					paths, err := git(root, "diff-tree", "-r", "-z", "--no-commit-id", "--no-renames", "--name-only", unit+"^", unit)
+					if err != nil {
+						return err
+					}
+					reviewedPaths := splitNUL(paths)
+					if !refuse {
+						differs, err := git(root, "diff-tree", "-r", "-z", "--no-commit-id", "--no-renames", "--name-only", unit, current)
+						if err != nil {
+							return err
+						}
+						for _, path := range splitNUL(differs) {
+							if slices.Contains(reviewedPaths, path) {
+								refuse = true
+								break
+							}
+						}
+					}
+					if refuse {
+						// A later read record or unrelated unit is not the new
+						// version of the files whose read was retired.
+						args := append([]string{"log", "-1", "--format=%H", unit + ".." + current, "--"}, reviewedPaths...)
+						latest, err := git(root, args...)
+						if err != nil {
+							return err
+						}
+						if commit := strings.TrimSpace(string(latest)); commit != "" {
+							newVersion = commit
+						}
+					}
+				}
+			}
+			if refuse {
+				changed = true
+				if !record.Retired {
+					record.Retired, record.ChangedTip, record.RootJob = true, current, read.RootJob
+				}
+				return fmt.Errorf("the worktree changed after the read; review a new version of this work before publishing")
+			}
+			return nil
+		}
+		branchRead = func(args []string) (result branch.BranchReadResult, code int, err error) {
+			err = runner.MutationSection(root, func(_ *launch.UnitRunner) error {
+				installed, _ := inv.work().inspectRead(root, goalID, unit)
+				if err := check(installed); err != nil {
+					return err
+				}
+				var readErr error
+				result, code, readErr = owners.branchRead(args)
+				return readErr
+			})
+			return
+		}
+		wait = func(publish func() error) error {
+			return runner.MutationSection(root, func(bound *launch.UnitRunner) error {
+				// Collection installed this invocation's attestation; the reviewed
+				// paths must still match before the push releases the lock.
+				read, err := inv.work().inspectRead(root, goalID, unit)
+				if err != nil {
+					return err
+				}
+				if err := check(read); err != nil {
+					return err
+				}
+				return bound.CommandWait(publish)
+			})
+		}
+	} else {
+		branchRead = func(args []string) (branch.BranchReadResult, int, error) {
+			installed, _ := inv.work().inspectRead(root, goalID, unit)
+			if err := check(installed); err != nil {
+				return branch.BranchReadResult{}, 1, err
+			}
+			return owners.branchRead(args)
+		}
+	}
+	result, code, err := branchRead(args)
+	if changed {
+		return changedResult()
+	}
 	if err != nil && slices.Contains(args, "--unit-read") && len(fallback) > 0 {
 		reason := strings.SplitN(err.Error(), "\nrun:", 2)[0]
 		installed, inspectErr := inv.work().inspectRead(root, goalID, unit)
@@ -644,7 +1091,7 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 			result.State = "already-collected"
 		} else {
 			args = fallback[0]
-			result, code, err = owners.branchRead(args)
+			result, code, err = branchRead(args)
 		}
 		defer func() {
 			data, _ := out.Data.(map[string]any)
@@ -654,6 +1101,16 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 			}
 			data["readNotPromoted"] = reason
 		}()
+	}
+	if err == nil && result.RootJob != "" && inv.reviewWork != nil && slices.Contains([]string{"closed", "collected", "already-collected"}, result.State) {
+		store := branch.CriticStore(root, result.RootJob)
+		newest, readErr := inv.newestRoundAt(store, result.RootJob)
+		if readErr == nil {
+			readErr = retainWorkExamination(inv.reviewWork, result.RootJob, newest, inv.returnPathAt(store, result.RootJob, recordRound(newest)))
+		}
+		if readErr != nil {
+			return intentResult{Outcome: intentFailed, code: 1, Summary: "the review decision could not be retained", Details: []string{readErr.Error()}, next: inv.sameCommand()}
+		}
 	}
 	if err == nil && result.State == "closed" {
 		// The critic's records are where it was dispatched: this
@@ -732,9 +1189,12 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 		if refuted := inv.refutedClose(targets, store, goalID, result.RootJob); refuted != nil {
 			return *refuted
 		}
-		result, code, err = owners.branchRead(append(args, "--collect"))
+		result, code, err = branchRead(append(args, "--collect"))
 	}
 	if err != nil {
+		if changed {
+			return changedResult()
+		}
 		var refusal *branch.OpError
 		var neverLaunched *branch.ReadNeverLaunchedError
 		switch {
@@ -764,12 +1224,49 @@ func (inv *intentInvocation) commitReview(targets []intentTarget, root, goalID, 
 			Summary: "the review of this work is in progress",
 			next:    inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "continues this review and publishes its result when ready"}
 	}
-	published, err := owners.publishRead(root, goalID, unit)
+	if check != nil {
+		if err := check(result); err != nil {
+			if changed {
+				return changedResult()
+			}
+			data["cause"] = "environment"
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
+				Summary: err.Error(), next: inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "publishes once the committed result is restored or corrected"}
+		}
+	}
+	var published branch.PublishReadResult
+	publish := func() error {
+		if alreadyPublished {
+			published = branch.PublishReadResult{Attestation: result.AttestationCommit, OpID: branch.PublishOperationID(result.GateRunID), State: "current"}
+			return nil
+		}
+		var err error
+		published, err = owners.publishRead(root, goalID, unit)
+		return err
+	}
+	if wait != nil {
+		err = wait(publish)
+	} else {
+		err = publish()
+	}
 	data["publication"] = published
 	if err != nil {
+		if changed {
+			return changedResult()
+		}
 		return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Data: data,
 			Summary: fmt.Sprintf("the review is complete, but its result has not yet been published: %v", err),
 			next:    inv.canonicalReviewArgv(targets, goalID, unit), nextReason: "publishes the same attestation under the same push operation; no critic or commit is repeated"}
+	}
+	discardRecord = true
+	if result.TransferCoverage != nil {
+		coverage := *result.TransferCoverage
+		completed := inv.goalAct(goalID, "complete transferred findings", inv.syncOwner("complete-transfers", []string{"--root", inv.stateRoot, "--id", goalID}, nil, false, func(req goal.VerbRequest, _ *syncFlags) (goal.PublishResult, error) {
+			return goal.CompleteTransfers(req, goalID, coverage.TargetUnit, coverage)
+		}, "id"))
+		if completed.Outcome != intentConfirmed && completed.Outcome != intentUnchanged {
+			return completed
+		}
 	}
 	outcome := intentConfirmed
 	if result.State == "already-collected" && published.State == "current" {
@@ -872,4 +1369,15 @@ func (inv *intentInvocation) cleanExaminationJoin(root, goalID, unit, rootJob st
 		return "", false
 	}
 	return join, true
+}
+
+// retainPublication timestamps only a push made by this review call.
+func (inv *intentInvocation) retainPublication(subject *launch.UnitSubject, result intentResult, retain func(launch.UnitSubject) error) error {
+	data, _ := result.Data.(map[string]any)
+	published, ok := data["publication"].(branch.PublishReadResult)
+	if subject == nil || subject.PublishedAt != "" || !ok || published.State != "pushed" {
+		return nil
+	}
+	subject.PublishedAt = inv.unitRunner().Manager.Now().UTC().Format(time.RFC3339Nano)
+	return retain(*subject)
 }

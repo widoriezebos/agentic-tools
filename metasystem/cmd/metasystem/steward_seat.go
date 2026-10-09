@@ -19,8 +19,11 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -162,7 +165,7 @@ func (l stewardSeatLauncher) SeatLaunch(id string) (steward.SeatLaunchState, err
 		return steward.SeatLaunchState{}, err
 	}
 	return steward.SeatLaunchState{Found: true, Terminal: record.State.Terminal(), State: string(record.State),
-		ResultPath: filepath.Join(dir, "result.json"), FinishedAt: record.FinishedAt}, nil
+		ResultPath: filepath.Join(dir, "result.json"), FinishedAt: record.FinishedAt, Runtime: record.Adapter, Model: launchModel(record)}, nil
 }
 
 // wireStewardSeat arms the runner's tick with the seat launcher: the
@@ -183,6 +186,54 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 			return nil, errors.New(problem.Summary)
 		}
 		return units, nil
+	}
+	config.CompletedBoundary = func(root string, now time.Time) error {
+		holder, err := lease.CurrentHolder(root)
+		if errors.Is(err, lease.ErrLeaseAbsent) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if holder.MainId == "" {
+			return nil
+		}
+		var started time.Time
+		for _, announcement := range lease.AnnouncementsFor(root, holder.Pid) {
+			if announcement.MainId == holder.MainId {
+				started = time.Unix(announcement.PidStartedAt, 0)
+			}
+		}
+		if holder.SessionId == "" || started.IsZero() {
+			return nil
+		}
+		inv := &intentInvocation{cwd: root, owners: owners}
+		if problem := inv.selectRoot(); problem != nil {
+			return errors.New(problem.Summary)
+		}
+		projection, _, problem := inv.projection()
+		if problem != nil {
+			return errors.New(problem.Summary)
+		}
+		machine, err := owners.dependencies.machine(inv.stateRoot)
+		if err != nil {
+			return err
+		}
+		work, err := goal.ClaimableWorkFromProjection(projection, machine, identity.KernelProber{})
+		if err != nil {
+			return err
+		}
+		home := config.WorkStateRoot
+		if home == "" {
+			home, err = steward.HomeStateRoot()
+		}
+		if err != nil {
+			return err
+		}
+		if err := steward.ObserveUnitBoundary(root, home, holder.SessionId, started, work, config.Units, now); err != nil {
+			return err
+		}
+		return steward.FinishUnitHandoff(root, holder.SessionId)
 	}
 }
 

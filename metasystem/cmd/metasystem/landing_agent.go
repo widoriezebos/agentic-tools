@@ -11,6 +11,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -62,6 +63,7 @@ func landingLaneCheckout(home func() (string, error)) func() (launch.LaneCheckou
 type landingAgent struct {
 	// proofEffects are the lane Git and process boundaries; zero uses the host.
 	proofEffects plain.ProveSeams
+	home         string
 	manager      func() *launch.Manager
 	// settings are the launch settings of the installation at a state root.
 	settings func(stateRoot string) (launch.Settings, error)
@@ -177,11 +179,18 @@ func (a landingAgent) reapOutage(id string) error {
 	if !ok {
 		class, evidence, ok = outage.ClassifyLogs(filepath.Join(dir, "stderr.log"), filepath.Join(dir, "exec.log"))
 	}
-	if !ok {
+	if !ok && record.State != launch.Completed && (record.ExitCode == nil || *record.ExitCode != 0) {
 		return nil
 	}
-	_, err = outage.Record(batch.ModuleRoot(record.WorkingDirectory), class, evidence, launch.LandingOwnerLineage, a.now())
-	return err
+	seen, err := time.Parse(time.RFC3339Nano, record.FinishedAt)
+	if err != nil {
+		return err
+	}
+	_, err = outage.Observe(a.home, record.Adapter, launchModel(record), class, evidence, record.ID, seen)
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "provider evidence was not recorded:", err)
+	}
+	return nil
 }
 
 // questionHold holds the start while a question about the lane asked on
@@ -230,6 +239,7 @@ func (a landingAgent) questionHold(module string) (string, error) {
 // outage at the lane installation and an open question the landing agent
 // asked about the lane, and each ended launch is reaped for its outage.
 func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeeper {
+	agent.home = home
 	machine := agent.machine
 	if machine == nil {
 		machine = goal.ResolveMachine
@@ -288,6 +298,21 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			_, err := plain.RecordedPersonBatch(record.Install, record, "")
 			return err == nil
 		},
+		ProviderHold: func(root string) (string, error) {
+			settings, err := agent.settings(batch.ModuleRoot(root))
+			if err != nil {
+				return "", err
+			}
+			providers, err := outage.ReadProviders(home)
+			mark, standing := providers.Standing(settings.LandingRuntime, agent.now())
+			if err != nil {
+				return "", err
+			}
+			if standing {
+				return fmt.Sprintf("the model provider is limited or overloaded (%s since %s); it starts when the provider recovers", mark.LastClass, lane.LocalText(mark.Since)), nil
+			}
+			return "", nil
+		},
 		Holds: []func(string) (string, error){
 			func(string) (string, error) {
 				record, _, err := lane.Read(home)
@@ -303,12 +328,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				}
 				return plain.KeeperDrainHold(record.Install)
 			},
-			func(root string) (string, error) {
-				if mark, standing := outage.StandingAt(batch.ModuleRoot(root), agent.now()); standing {
-					return fmt.Sprintf("the model provider is limited or overloaded (%s since %s); it starts when the provider recovers", mark.LastClass, lane.LocalText(mark.Since)), nil
-				}
-				return "", nil
-			},
+
 			func(string) (string, error) {
 				record, _, err := lane.Read(home)
 				if err != nil {
@@ -359,4 +379,10 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 		return nil
 	}
 	return newLandingAgentKeeper(repo, home, newLandingAgent()).Run
+}
+
+func launchModel(record launch.Record) string {
+	var model string
+	_ = json.Unmarshal(record.AdapterData["model"], &model)
+	return model
 }

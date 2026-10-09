@@ -63,6 +63,9 @@ func diskCompiledSettings() []Setting {
 }
 
 var coreSettings = []Setting{
+	{Key: "host.builds", Default: "auto", Meaning: "build admission: auto, a positive distinct-goal cap, or person"},
+	{Key: "host.load-max", Default: "8", Meaning: "automatic builds require current one-minute host load below this positive declaration"},
+	{Key: "process.change", Default: "person", Meaning: "whether an agent may apply a cited process setting or needs a person to execute the exact proposal"},
 	{Key: "landing.batch", Default: "auto", Meaning: "batch selection cap, distinct from landing.batch-root; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.proof", Default: "auto", Meaning: "full-proof decisions; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.on-red", Default: "auto", Meaning: "red decisions; consumption deferred to lane-reads-its-policies"},
@@ -80,6 +83,8 @@ var coreSettings = []Setting{
 		Meaning: "the repository's full proof command, declared in metasystem.conf"},
 	{Key: "proof.cheap", CommittedOnly: true, ProofInput: true,
 		Meaning: "the repository's merge gate command, declared in metasystem.conf"},
+	{Key: "proof.audits", CommittedOnly: true, ProofInput: true, Meaning: "the unit audit command; true explicitly declares no audits"},
+	{Key: "proof.deadline", CommittedOnly: true, ProofInput: true, Meaning: "positive minutes allowed for each declared unit check command"},
 	// Installation shape.
 	{Key: "metasystem.engine-delivery", Default: "source", ProofInput: true,
 		Meaning: "how the engine ships (D17/D33): source, rebuilt by the target and by CI; declared, never inferred"},
@@ -95,8 +100,8 @@ var coreSettings = []Setting{
 		Meaning: "true only in the template repository's committed metasystem.conf (read there alone); adoption never ships it"},
 	{Key: EvidenceRootKey, Computed: "config.ResolveEvidenceRoot", ProofInput: false,
 		Meaning: "where durable evidence is mirrored; defaults to ~/metasystem-evidence/<checkout name>, outside the repository"},
-	{Key: "proof.admission.top-level-max", Computed: "proofrun.ResolveAdmissionCap", ProofInput: false,
-		Meaning: "host-wide cap on concurrent top-level proof attempts (ruling R-111-m1e); unset is max(1, cores/6), 0 disables it"},
+	{Key: "proof.admission.top-level-max", Default: "1", ProofInput: false,
+		Meaning: "host-wide cap on concurrent top-level proof attempts; unset is one, 0 disables it"},
 
 	// The interface (ui.go). None is a proof input: the interface never
 	// changes what a proof proves, and ui.listen is a machine's own port.

@@ -27,6 +27,7 @@ const (
 )
 
 var auditModes = map[string]auditMode{
+	"cmd/metasystem/intent_process_report.go#runIntentChannelStatus": {group: "G4", layout: auditReport},
 	// Step 0's reference conversions: status and grant list.
 	"cmd/metasystem/intent_table.go#runIntentTopStatus":        {layout: auditEnforce},
 	"cmd/metasystem/intent_process.go#runIntentCheckoutStatus": {layout: auditEnforce},
@@ -92,9 +93,13 @@ var auditModes = map[string]auditMode{
 	"cmd/metasystem/intent_evidence.go#runIntentEvidenceShow":    {layout: auditEnforce},
 	"cmd/metasystem/intent_evidence.go#runIntentEvidenceExport":  {layout: auditEnforce},
 	"cmd/metasystem/intent_evidence.go#runIntentEvidenceDispose": {layout: auditEnforce},
+
 	// G4 delivery.
+	"cmd/metasystem/intent_process_setting.go": {group: "G4"},
+
 	"cmd/metasystem/intent_work.go":           {group: "G4"},
 	"cmd/metasystem/intent_delivery.go":       {group: "G4"},
+	"cmd/metasystem/intent_work_commit.go":    {group: "G4"},
 	"cmd/metasystem/intent_work_rebase.go":    {group: "G4", layout: auditEnforce, messages: auditEnforce},
 	"cmd/metasystem/intent_work_workspace.go": {group: "G4"},
 	"cmd/metasystem/intent_design.go":         {group: "G4"},

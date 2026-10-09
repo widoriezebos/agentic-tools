@@ -48,7 +48,7 @@ func (runner *UnitRunner) countedCap(record UnitRunRecord) error {
 	}
 	var newest UnitRound
 	for _, round := range record.Rounds {
-		if round.Cause == "" {
+		if round.Cause == "own" {
 			newest = round
 		}
 	}
@@ -78,19 +78,7 @@ func (runner *UnitRunner) countedCap(record UnitRunRecord) error {
 func (runner *UnitRunner) roundDivergent(record UnitRunRecord) error {
 	var reads []UnitRound
 	for _, round := range record.Rounds {
-		read := false
-		for _, step := range round.Steps {
-			if strings.HasPrefix(step.Name, "read") && unitStepVerdictCounts(step) {
-				count := measuredMaterialCount(Record{Kind: "read", Measurement: Measurement{Verdict: "VERDICT: " + strings.TrimPrefix(step.Verdict, "VERDICT: ")}})
-				read = read || count != nil
-			}
-		}
-		for _, subject := range record.Subjects {
-			if subject.Round == round.Number && subject.Examination != "" {
-				read = subject.ExaminationReturnPath != ""
-			}
-		}
-		if read {
+		if len(round.Reads) > 0 {
 			reads = append(reads, round)
 		}
 	}

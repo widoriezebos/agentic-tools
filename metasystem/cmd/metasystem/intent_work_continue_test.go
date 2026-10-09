@@ -10,10 +10,12 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 // releaseHeldBuild completes the one build launch a held starter left
@@ -27,6 +29,9 @@ func (b *workBed) releaseHeldBuild(result intentResult) {
 	if _, err := b.manager.Store.Update(launchID, func(record *launch.Record) error {
 		exit := 0
 		record.State, record.ExitCode = launch.Completed, &exit
+		record.FinishedAt = b.manager.Now().UTC().Format(time.RFC3339Nano)
+		dead := workProcessRef(99)
+		record.Supervisor, record.Child, record.ProcessGroup = &dead, &dead, &dead
 		return nil
 	}); err != nil {
 		b.t.Fatal(err)
@@ -57,6 +62,8 @@ func tamper(t *testing.T, path string) func() {
 func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
+	// Automatic continuation joins a typed material finding; prose alone is unknown.
+	bed.manager.Supervisor = &stopReadStarter{bed: bed, reads: [][]readsubject.Finding{{stopFinding("regression", "guarded.go")}, {stopFinding("scope", "other.go")}}}
 	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n")
 	bed.starter.hold = "build"
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "guarded", "--brief", brief, "--lines", "5"}, workCheck...)...)
@@ -103,7 +110,12 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 		t.Fatalf("fold after a retained input changed: code=%d %+v", code, refused)
 	}
 	restore()
-	bed.brief("follow-up.md", "Fix it, differently.\n")
+	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	finding := record.Rounds[0].Reads[0].Findings[0].ID
+	bed.brief("follow-up.md", "Fix it, differently.\n\n## Decisions on round 1\n\n| "+finding+" | fixed | guarded.go:12 |\n")
 	// The run keeps its own plan, proof and round limit: a goal's attempt,
 	// work item or decisions file is refused before the runner is asked.
 	for _, conflict := range [][]string{{"--after", "1"}, {"--work", "guarded"}, {"--dispositions", followUp}} {
@@ -115,7 +127,8 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	if code != 0 || resultData(t, result)["round"].(float64) != 2 || resultData(t, result)["maxRounds"].(float64) != 2 {
 		t.Fatalf("fold with its own brief: code=%d %+v", code, result)
 	}
-	if code, refused, _ := bed.work("work", "revise", "run:"+run, "--brief", followUp); code != 1 || !strings.Contains(resultWords(refused), "UNIT_ROUND_LIMIT") {
+	// The allowance is consumed by read collection, before another correction request.
+	if code, refused, _ := bed.work("work", "revise", "run:"+run, "--brief", followUp); code != 1 || !strings.Contains(resultWords(refused), "UNIT_STOPPED") {
 		t.Fatalf("round past the limit: code=%d %+v", code, refused)
 	}
 
@@ -125,6 +138,9 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	legacyPlan := filepath.Join(bed.root(), "legacy-plan.json")
 	os.WriteFile(legacyPlan, []byte(strings.Replace(string(data), `"unit": "guarded"`, `"unit": "legacy"`, 1)), 0o600)
 	runner := &launch.UnitRunner{Manager: bed.manager, Git: workGit{bed}, Root: bed.unitRoot}
+	if _, err := runner.CancelRun(run); err != nil {
+		t.Fatal(err)
+	}
 	legacy, err := runner.Advance(launch.UnitRequest{Plan: legacyPlan})
 	if err != nil || plan.Unit != "guarded" {
 		t.Fatalf("legacy plan: %v", err)
@@ -150,13 +166,15 @@ func (a codexVerdictAdapter) Measure(record launch.Record, state string) (launch
 func (a codexVerdictAdapter) Strays() ([]string, error) { return nil, nil }
 
 var writeFindingsTo = regexp.MustCompile(`(?m)^Write findings to: (.+)$`)
+var writeStructuredFindingsTo = regexp.MustCompile(`(?m)^Also write structured findings to (.+)\. The JSON object requires`)
 
 // sandboxReader stands in for the Codex child: it writes the findings file
 // the brief it is handed names, and records the command it was started with.
 type sandboxReader struct {
-	mu       *sync.Mutex
-	commands *[]launch.Command
-	findings *string
+	mu         *sync.Mutex
+	commands   *[]launch.Command
+	findings   *string
+	structured *string
 }
 
 func (r sandboxReader) SelfRef() (identity.Ref, error) { return workProcessRef(10), nil }
@@ -166,6 +184,11 @@ func (r sandboxReader) StartChild(command launch.Command) (launch.Child, identit
 	r.mu.Unlock()
 	if match := writeFindingsTo.FindStringSubmatch(command.Stdin); match != nil {
 		if err := os.WriteFile(match[1], []byte(*r.findings), 0o600); err != nil {
+			return nil, identity.Ref{}, err
+		}
+	}
+	if match := writeStructuredFindingsTo.FindStringSubmatch(command.Stdin); match != nil && r.structured != nil {
+		if err := os.WriteFile(match[1], []byte(*r.structured), 0600); err != nil {
 			return nil, identity.Ref{}, err
 		}
 	}
@@ -183,18 +206,19 @@ func TestIntentReadFindingsInSandboxTemp(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBed(t)
 	findings := "No material findings.\nVERDICT: land\n"
+	structured := `{"findings":[],"verdictMaterialCount":0}`
 	var mu sync.Mutex
 	var commands []launch.Command
 	adapter := codexVerdictAdapter{CodexExec: launch.CodexExec{Binary: "codex", Model: "gpt-6-sol", Effort: "high"}, verdictAdapter: verdictAdapter{findings: new(string)}}
 	for _, name := range []string{"codex-exec", "claude-headless"} {
 		bed.manager.Adapters[name] = adapter
 	}
-	bed.manager.Processes = sandboxReader{mu: &mu, commands: &commands, findings: &findings}
+	bed.manager.Processes = sandboxReader{mu: &mu, commands: &commands, findings: &findings, structured: &structured}
 	bed.manager.Supervisor = superviseReads{bed.starter}
 	brief := bed.brief("brief.md", "Read each round: yes\nBuild the unit.\n")
 	code, result, _ := bed.work(append([]string{"work", "build", bed.id, "sandboxed", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	data := resultData(t, result)
-	if code != 0 || data["outcome"] != "green" || data["readClean"] != true {
+	if code != 0 || data["outcome"] != "green" || data["readClean"] != true || data["stop"].(map[string]any)["decision"] != "close" {
 		t.Fatalf("sandboxed read: code=%d %+v", code, result)
 	}
 	plan, _ := launch.ReadUnitPlan(data["plan"].(string))
@@ -209,8 +233,16 @@ func TestIntentReadFindingsInSandboxTemp(t *testing.T) {
 		t.Fatalf("codex command=%+v", commands)
 	}
 	copies := data["readFindings"].([]any)
-	if retained, _ := os.ReadFile(copies[0].(string)); len(copies) != 1 || string(retained) != findings {
+	// Reads retain both the prose report and the structured stop evidence.
+	if retained, _ := os.ReadFile(copies[0].(string)); len(copies) != 2 || string(retained) != findings {
 		t.Fatalf("retained copies=%v", copies)
+	}
+	if retained, err := os.ReadFile(copies[1].(string)); err != nil || string(retained) != structured {
+		t.Fatalf("retained structured evidence=%s err=%v", retained, err)
+	}
+	collected := data["reads"].([]any)[0].(map[string]any)
+	if collected["output"] != copies[1] {
+		t.Fatalf("the read names mutable evidence instead of its retained copy: %+v", collected)
 	}
 	// The findings directory is a registered store of the unit (Part B R1):
 	// the next round's read runs in the same directory, emptied in place
@@ -219,7 +251,8 @@ func TestIntentReadFindingsInSandboxTemp(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	code, result, _ = bed.work("work", "revise", "run:"+data["run"].(string), "--brief", bed.brief("follow-up.md", "Again.\n"))
+	// A clean read admits no automatic correction; a person requests this rerun.
+	code, result, _ = bed.work("work", "revise", "run:"+data["run"].(string), "--brief", bed.brief("follow-up.md", "Again.\n"), "--reason", "Exercise another read of the clean unit", "--by", "Wido")
 	info, err := os.Lstat(filepath.Dir(output))
 	if code != 0 || resultData(t, result)["readClean"] != true || err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 || !os.SameFile(before, info) {
 		t.Fatalf("the next round's read: code=%d %+v info=%v err=%v", code, result, info, err)

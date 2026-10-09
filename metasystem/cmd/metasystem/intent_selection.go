@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -65,7 +66,14 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 	}
 	outcome := ""
 	if rounds := work.Record.Rounds; len(rounds) > 0 {
-		outcome = rounds[len(rounds)-1].Outcome
+		round := rounds[len(rounds)-1]
+		if round.Transferred {
+			return "transferred; its destinations remain required"
+		}
+		if round.Stop != nil && round.Stop.Decision == "stop" {
+			return "stopped: " + round.Stop.Class + "; " + round.Stop.Handoff
+		}
+		outcome = round.Outcome
 	}
 	if launch.UnitReviewReadyOutcomes[outcome] {
 		if subject := currentSubject(work); subject != nil && subject.Commit != "" {
@@ -142,7 +150,11 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 		stage := workStage(one, inv.work().inspectRead)
 		view := map[string]any{"work": one.Unit, "stage": stage, "attempt": workAttempt(one)}
 		if one.Record != nil {
-			view["state"] = one.Record.State
+			view["state"], view["run"] = one.Record.State, one.Run
+			if len(one.Record.Rounds) > 0 {
+				r := one.Record.Rounds[len(one.Record.Rounds)-1]
+				view["stop"], view["reads"] = r.Stop, r.Reads
+			}
 		}
 		views = append(views, view)
 		next, _ := inv.workContinuation(id, one, true)
@@ -157,7 +169,11 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 				}
 			}
 		}
-		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at})
+		run := ""
+		if one.Record != nil {
+			run = one.Record.ID
+		}
+		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at, Run: run})
 	}
 	for _, item := range manual {
 		stage := item.stage(inv.work().inspectRead)
@@ -205,6 +221,16 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Targets: inv.targets(id), text: lines, Data: map[string]any{"goal": id, "work": views, "designs": designs}}
+	if inv.input.has("work") && len(work) == 1 {
+		m := inv.unitMeasures(work[0])
+		views[0]["measures"] = m
+		result.text = append(result.text, "  "+measureLine(m))
+	}
+	if !inv.input.has("work") {
+		if err := inv.goalCosts(id, work, &result); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "goal cost unavailable: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnoses the saved work"})
+		}
+	}
 	// The goal's own card line (D14-r2, R23).
 	if line, ok := inv.hostBoardView(inv.boardNow()).GoalLine(id, inv.boardNow(), time.Local); ok {
 		result.text = append(result.text, "  "+line)
@@ -228,11 +254,19 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 
 // renderGoalUnitStatus keeps the shared unit lines whole in the status page.
 func (inv *intentInvocation) renderGoalUnitStatus(result intentResult, unitCount int) int {
-	if unitCount == 0 {
-		return inv.render(result)
+	id := result.Data.(map[string]any)["goal"].(string)
+	if projection, now, problem := inv.projection(); problem == nil {
+		if file, _ := goalRecord(projection, id); file != nil && file.Budget != nil {
+			view := inv.budgetView(file, now)
+			result.Data.(map[string]any)["budget"] = view
+			result.text = append(result.text, view.lines()...)
+		}
 	}
+	report := readProcessReport(inv.stateRoot, inv.layout.InstallationRoot.Path(), id, inv.input.text("work"), inv.unitRunner(), inv.unitRunner().Manager.Now(), nil)
+	result.Data.(map[string]any)["processReport"] = report
 	result.view = func(page *textui.Page) {
 		page.Headline(result.Summary)
+		page.Legacy(report.Lines...)
 		section := page.Section("", "")
 		for _, line := range result.text[:unitCount] {
 			section.Fixed(strings.TrimSpace(line))
@@ -345,11 +379,26 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 		suffix = []string{"--work", work.Unit}
 	}
 	read := branch.BranchReadResult{}
+	gapPerson := work.Record != nil && work.Record.MaxRounds > 0 && workAttempt(work) >= work.Record.MaxRounds
+	if lastOutcome(work) == "build-gap" {
+		policy, err := inv.unitRunner().ReviewPolicy()
+		gapPerson = gapPerson || err != nil || policy == "person"
+	}
 	if subject := currentSubject(work); builtWork(work) && subject != nil && subject.Commit != "" {
 		read, _ = inv.work().inspectRead(work.Record.Worktree, work.Record.Goal, subject.Commit)
 	}
 
 	switch {
+	case work.Record != nil && len(work.Record.Rounds) > 0 && work.Record.Rounds[len(work.Record.Rounds)-1].Stop != nil && work.Record.Rounds[len(work.Record.Rounds)-1].Stop.Loop == "unit-build" && lastOutcome(work) != "build-size" && lastOutcome(work) != "build-gap":
+		round := work.Record.Rounds[len(work.Record.Rounds)-1]
+		if round.Cause == "environment" || round.Cause == "deadline" {
+			return inv.workArgv(*work.Record, "review", "--reason", "TEXT", "--by", "NAME"), "a person reruns the retained failed step after repairing its environment"
+		}
+		return inv.workArgv(*work.Record, "revise", "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), "a person decides how to continue the failed step"
+	case lastOutcome(work) == "build-gap" && gapPerson:
+		return inv.workArgv(*work.Record, "revise", "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), "a person decides whether to admit another gap correction"
+	case lastOutcome(work) == "build-size":
+		return inv.workArgv(*work.Record, "review", "--reason", "TEXT", "--by", "NAME"), "a person decides whether to accept the retained change size"
 	case work.Running():
 		return inv.publicArgv(append([]string{"work", "wait", id}, suffix...)...), "the work is running; this waits for it"
 	case read.State == "collected" && !read.Published:
@@ -495,6 +544,9 @@ func currentSubject(work launch.NamedWork) *launch.UnitSubject {
 // unreviewedWork is built work whose newest result has no collected read:
 // the work review G examines when no name is given.
 func unreviewedWork(work launch.NamedWork) bool {
+	if lastOutcome(work) == "build-size" {
+		return true
+	}
 	if !builtWork(work) {
 		return false
 	}
@@ -534,6 +586,12 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		return runIntentReviewDischarge(inv, id)
 	}
 	for _, only := range []string{"test", "review", "implementation-chain", "artifact", "result", "critic", "by", "lineage", "fixture-human-authority"} {
+		if inv.input.has("reason") && (only == "by" || only == "fixture-human-authority") {
+			continue
+		}
+		if inv.input.has("dispositions") && (only == "by" || only == "fixture-human-authority") {
+			continue
+		}
 		if inv.input.has(only) {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
 				Summary: fmt.Sprintf("--%s only goes with --finding, which resolves a review finding; nothing was done", only),
@@ -643,7 +701,8 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 			Summary: fmt.Sprintf("work %s of goal %s is still running; it is reviewed once built", selected.Unit, id),
 			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to finish"})
 	}
-	if !builtWork(*selected) {
+	heldBuild := selected.Record != nil && len(selected.Record.Rounds) > 0 && selected.Record.Rounds[len(selected.Record.Rounds)-1].Stop != nil && selected.Record.Rounds[len(selected.Record.Rounds)-1].Stop.Loop == "unit-build"
+	if !builtWork(*selected) && lastOutcome(*selected) != "build-size" && lastOutcome(*selected) != "build-gap" && !heldBuild {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: workTargets(id, *selected),
 			Summary: fmt.Sprintf("work %s of goal %s did not pass its checks (%s), so there is nothing to review; nothing was started", selected.Unit, id, lastOutcome(*selected)),
 			next:    inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(workAttempt(*selected)), "--brief", "FILE"), nextReason: "a correction brief starts one new attempt"})
@@ -778,8 +837,28 @@ func runIntentRevise(inv *intentInvocation) int {
 			Summary: fmt.Sprintf("work %s of goal %s is still being reserved by its build; nothing was done", selected.Unit, id),
 			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to record its run"})
 	}
+	person, reason, impact := "", inv.input.text("reason"), ""
+	if strings.TrimSpace(reason) != "" || inv.input.has("by") {
+		actor, proof, problem := inv.actingAs("revise", id, actorHuman)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		_ = proof
+		for index, value := range actor {
+			if value == "--by" && index+1 < len(actor) {
+				person = actor[index+1]
+			}
+		}
+		if person == "" || strings.TrimSpace(reason) == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a reasoned revision needs the person's name and reason", next: inv.typedArgvWith("--reason", "TEXT"), nextReason: "give the reason for this revision"})
+		}
+		impact = "Impact: this admits one correction despite the recorded read.\nIts findings and automatic allowance remain. The result needs another read.\nCancel the admitted run to undo the request."
+		if err := inv.recordUnitStopOverride(id, "work-revise", reason, impact, person); err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision impact could not be recorded", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "records the impact before starting"})
+		}
+	}
 	var decisions []byte
-	if inv.input.has("dispositions") {
+	if person == "" && inv.input.has("dispositions") {
 		decisions, problem = inv.reviseDecisions(id, *selected, after)
 		if problem != nil {
 			return inv.render(*problem)
@@ -789,7 +868,19 @@ func runIntentRevise(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	runner := inv.unitRunner()
-	revised, err := runner.Revise(launch.UnitRevisionRequest{Run: selected.Run, After: after, Brief: brief, Decisions: decisions})
+	revised, err := runner.Revise(launch.UnitRevisionRequest{Run: selected.Run, After: after, Brief: brief, Decisions: decisions, Person: person, Reason: reason, Impact: impact})
+	if person != "" && revised.Revision.Attempt > 0 {
+		findings := revised.Revision.Findings
+		if len(findings) > 0 {
+			subject := selected.Record.Rounds[len(selected.Record.Rounds)-1].Stop
+			if subject != nil {
+				actErr := channel.RecordUnitStopAct(inv.layout.InstallationRoot.Path(), channel.UnitStopAct{ID: revised.Record.ID + ":" + fmt.Sprint(revised.Revision.Attempt), Goal: id, Loop: subject.Loop, Subject: subject.Subject, Attempt: subject.Attempt, Findings: findings, Kind: "work-revise", Reason: reason, At: inv.unitStopNow()})
+				if actErr != nil {
+					return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision was admitted, but its questions need reconciliation", Details: []string{actErr.Error()}, next: inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--brief", inv.callerPath(inv.input.text("brief")), "--reason", reason, "--by", person), nextReason: "reconciles the same admission"})
+				}
+			}
+		}
+	}
 	again := inv.publicArgv("work", "revise", id, "--work", selected.Unit, "--after", fmt.Sprint(max(after, revised.Revision.After)), "--brief", inv.callerPath(inv.input.text("brief")))
 	if inv.input.has("dispositions") {
 		again = append(again, "--dispositions", inv.flagPath("dispositions"))

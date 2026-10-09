@@ -14,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
@@ -33,12 +34,26 @@ func newDesignGateBed(t *testing.T, tier uint8) *workBed {
 func designGatePage(t *testing.T, bed *workBed, critique string) (string, []byte) {
 	t.Helper()
 	path := filepath.Join(bed.stateRoot(), "plans", "designs", "gate.md")
-	data := []byte("# Gate design\n\n- Kind: design\n- Id: gate-design\n- Status: accepted\n- Goals: " + bed.id + "\n" + critique + "\nBuild the gate.\n")
+	data := []byte("# Gate design\n\n- Kind: design\n- Id: gate-design\n- Status: accepted\n- Goals: " + bed.id + "\n" + strings.TrimRight(critique, "\n") + "\n\nBuild the gate.\n")
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(path, data, 0o600); err != nil {
 		t.Fatal(err)
+	}
+	// The accepted page is committed on main, with no estimate rows.
+	hook := bed.workOwnersHook
+	bed.workOwnersHook = func(owners *intentWorkOwners) {
+		if hook != nil {
+			hook(owners)
+		}
+		git := owners.git
+		owners.git = func(root string, args ...string) ([]byte, error) {
+			if slices.Equal(args, []string{"show", "origin/main:plans/designs/gate.md"}) {
+				return append([]byte(nil), data...), nil
+			}
+			return git(root, args...)
+		}
 	}
 	return path, data
 }
@@ -156,7 +171,7 @@ func TestDesignGateWarnsAndStillBuilds(t *testing.T) {
 	t.Parallel()
 	bed := newDesignGateBed(t, 2)
 	result, output := designGateBuild(t, bed, "u")
-	want := "warning: goal " + bed.id + " has no accepted design; this build runs on its brief alone\nmetasystem design write " + bed.id + " --brief FILE\n"
+	want := "warning: goal " + bed.id + " has no accepted design; this build runs on its brief alone\nmetasystem design write " + bed.id + " --brief FILE\nwarning: estimate unavailable; the build goes on\n"
 	if output != want {
 		t.Fatalf("warning pair: got %q want %q", output, want)
 	}
@@ -239,7 +254,7 @@ func TestDesignGateStandingEvidence(t *testing.T) {
 			if tier == 1 {
 				want = "not-design-bearing"
 			}
-			if output != "" || record.Verdict != want || record.WouldRefuse {
+			if output != "warning: estimate unavailable; the build goes on\n" || record.Verdict != want || record.WouldRefuse {
 				t.Fatalf("standing evidence: record=%+v output=%q", record, output)
 			}
 			if tier > 1 {
@@ -311,7 +326,12 @@ func TestDesignGateMalformedJobStillBuilds(t *testing.T) {
 	bed := newDesignGateBed(t, 2)
 	bed.designGate.chains = nil
 	designGatePage(t, bed, "- Critique: closed at round 2 on 0 material findings (WHO)\n")
-	path := filepath.Join(bed.stateRoot(), "artifacts", "agents", "jobs", "design-critic-broken.json")
+	chainRoot := t.TempDir()
+	path := filepath.Join(chainRoot, "artifacts", "agents", "jobs", "design-critic-broken.json")
+	bed.designGate.chains = func(_, id, page string) ([]designgate.Chain, error) {
+		_, err := dispatchcore.ReadDesignCritiqueChains(chainRoot, id, page)
+		return nil, err
+	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		t.Fatal(err)
 	}
@@ -320,8 +340,12 @@ func TestDesignGateMalformedJobStillBuilds(t *testing.T) {
 	}
 	result, output := designGateBuild(t, bed, "u")
 	lines := strings.Split(strings.TrimSuffix(output, "\n"), "\n")
-	if len(lines) != 2 || !strings.HasPrefix(lines[0], "warning: the design check could not run (") || !strings.Contains(lines[0], path) || !strings.HasSuffix(lines[0], "); this build was not checked") || lines[1] != "metasystem design list --goal "+bed.id {
+	if len(lines) != 3 || !strings.HasPrefix(lines[0], "warning: the design check could not run (") || !strings.Contains(lines[0], path) || !strings.HasSuffix(lines[0], "); this build was not checked") || lines[1] != "metasystem design list --goal "+bed.id {
 		t.Fatalf("broken job warning pair: %q", output)
+	}
+	problem := strings.TrimSuffix(strings.TrimPrefix(lines[0], "warning: the design check could not run ("), "); this build was not checked")
+	if lines[2] != "warning: estimate unavailable ("+problem+"); the build goes on at your word" {
+		t.Fatalf("broken job estimate warning: %q", lines[2])
 	}
 	identity, _ := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
 	_, record := designGateRead(t, bed, identity, "u")
@@ -411,7 +435,7 @@ func TestDesignGateRecordWorkNameCannotEscape(t *testing.T) {
 				return nil
 			}
 			_, output := designGateBuild(t, bed, "../other-goal/main")
-			want := "warning: the design check's record could not be written (the work name is not one plain path segment); the build goes on\nnothing to do: the landing check runs without it\n"
+			want := "warning: the design check's record could not be written (the work name is not one plain path segment); the build goes on\nnothing to do: the landing check runs without it\nwarning: estimate unavailable; the build goes on\n"
 			if output != want || lowlight != strings.Split(want, "\n")[0] || writes != 0 {
 				t.Fatalf("unsafe work name: writes=%d output=%q lowlight=%q", writes, output, lowlight)
 			}

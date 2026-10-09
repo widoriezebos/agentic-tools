@@ -239,8 +239,10 @@ type VerbRequest struct {
 	// Authority is the fresh in-process human proof carried by --by. A human
 	// name without this proof never authorizes a human-reserved transition.
 	Authority *humanauthority.Proof
-	Ulid      string // caller-minted; the opid derives from it
-	Now       time.Time
+	// SplitCheck reads current work evidence under the caller's revision lock.
+	SplitCheck func(*GoalFile) error
+	Ulid       string // caller-minted; the opid derives from it
+	Now        time.Time
 	// ReconcileScope, when not empty, is the exact set of goals a reconcile
 	// session may publish: the session refuses, before it records any
 	// pending publication, when the edits it captured touch another goal.
@@ -470,6 +472,9 @@ func bindClaim(f *GoalFile, machine, lineage, at string, revision uint64, claimE
 		return errors.New("only the session that holds this checkout can claim; start one with metasystem session start")
 	}
 	f.Claimed = newClaimRecord(machine, lineage, at, revision)
+	if f.FirstClaimAt == "" {
+		f.FirstClaimAt = at
+	}
 	f.Claimed.EpisodeAt = at
 	f.Claimed.EpisodeRevision = revision
 	f.StopCapability = &StopCapability{
@@ -2462,18 +2467,32 @@ func DeferFindings(r VerbRequest, id string, obligations []ReviewObligation) (Pu
 			if f.State != StateClaimed || !ownPair(f.Claimed, r.Actor) {
 				return nil, fmt.Errorf("goal %s defer-findings requires its owning pair", id)
 			}
+			changed := false
 			for _, incoming := range obligations {
+				if err := validateTransfer(incoming); err != nil {
+					return nil, err
+				}
+				if err := validateTransferGraph(f.ReviewObligations, obligations); err != nil {
+					return nil, err
+				}
 				found := false
 				for _, existing := range f.ReviewObligations {
 					if existing.Finding == incoming.Finding && existing.Chain == incoming.Chain {
+						if incoming.TargetUnit != "" && (existing.TargetUnit != incoming.TargetUnit || existing.SourceUnit != incoming.SourceUnit || existing.StopReference != incoming.StopReference) {
+							return nil, fmt.Errorf("finding %s has already been transferred; a second stop requires a person's act", incoming.Finding)
+						}
 						found = true
 						break
 					}
 				}
 				if !found {
+					changed = true
 					incoming.State = "open"
 					f.ReviewObligations = append(f.ReviewObligations, incoming)
 				}
+			}
+			if !changed {
+				return nil, AlreadyHolds{Reason: "these review obligations are already published"}
 			}
 			touch(f, r, "defer-findings", []string{id})
 			return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
@@ -2482,6 +2501,7 @@ func DeferFindings(r VerbRequest, id string, obligations []ReviewObligation) (Pu
 
 type DischargeEvidence struct {
 	Root, ImplementationChain, Artifact, ResultRunID, CriticRoot string
+	Transfer                                                     *TransferCoverage
 }
 
 func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation string, supplied ...DischargeEvidence) (PublishResult, error) {
@@ -2515,7 +2535,18 @@ func DischargeReviewObligation(r VerbRequest, id, finding, chain, by, citation s
 				return nil, matchErr
 			}
 			obligation := f.ReviewObligations[match]
-			if obligation.Fixture != "" {
+			if obligation.TargetUnit != "" {
+				var evidence DischargeEvidence
+				if len(supplied) == 1 {
+					evidence = supplied[0]
+				}
+				if err := proveTransferCoverage(obligation, evidence.Transfer); err != nil {
+					return nil, err
+				}
+				f.ReviewObligations[match].CoverageRead = evidence.Transfer.ReadID
+				f.ReviewObligations[match].CoverageCommit = evidence.Transfer.Commit
+				citation = "covered: " + evidence.Transfer.ReadID + " commit=" + evidence.Transfer.Commit
+			} else if obligation.Fixture != "" {
 				var evidence DischargeEvidence
 				if len(supplied) == 1 {
 					evidence = supplied[0]
@@ -2807,9 +2838,9 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 					return nil, err
 				}
 			}
-			if f.State == StateParked {
-				missing := fmt.Sprintf("goal %s is parked; concluding it is a human act", id)
-				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of a parked goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+			if f.State == StateParked || f.State == StateSplit {
+				missing := fmt.Sprintf("goal %s is %s; concluding it is a human act", id, f.State)
+				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of a paused or split goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
 					return nil, err
 				}
 			}
@@ -3143,6 +3174,9 @@ func unparkRequest(r VerbRequest, id, verified string) PublishRequest {
 			if opidLanded(f, r) {
 				return nil, AlreadyApplied{}
 			}
+			if f.State == StateSplit {
+				return nil, splitRestoreRequired(f)
+			}
 			if f.State != StateParked {
 				// An unpark's effect is that the goal is not parked, and it is
 				// not: from a browser session, resuming a running goal is the
@@ -3472,6 +3506,9 @@ func reopenAbandonedRequest(r VerbRequest, id string) PublishRequest {
 				return nil, err
 			}
 			if f, live := t.Live[id]; live {
+				if f.State == StateSplit {
+					return nil, splitRestoreRequired(f)
+				}
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
 				}
@@ -3616,6 +3653,9 @@ func reopenRequest(r VerbRequest, id string) PublishRequest {
 				return nil, err
 			}
 			if f, live := t.Live[id]; live {
+				if f.State == StateSplit {
+					return nil, splitRestoreRequired(f)
+				}
 				if opidLanded(f, r) {
 					return nil, AlreadyApplied{}
 				}

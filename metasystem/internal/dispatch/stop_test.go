@@ -62,11 +62,11 @@ func TestElapsedBudgetThreeBandsAndBreachStopFixedPoint(t *testing.T) {
 	}
 
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "local-live.json"), map[string]any{
-		"jobId": "local-live", "operationId": "local-live", "goalId": "bounded", "goalRevision": 2,
+		"runtime": "local", "jobId": "local-live", "operationId": "local-live", "goalId": "bounded", "goalRevision": 2,
 		"machineId": "bed-m1", "claimEpoch": 7, "capMin": 10, "status": "running",
 	})
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "foreign-live.json"), map[string]any{
-		"jobId": "foreign-live", "operationId": "foreign-live", "goalId": "bounded", "goalRevision": 2,
+		"runtime": "local", "jobId": "foreign-live", "operationId": "foreign-live", "goalId": "bounded", "goalRevision": 2,
 		"machineId": "other", "claimEpoch": 7, "capMin": 10, "status": "running",
 	})
 	batch, err := bed.stop("bounded", 2, pastGraceBoundary)
@@ -103,7 +103,7 @@ func TestElapsedBudgetThreeBandsAndBreachStopFixedPoint(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "local-live.json"), map[string]any{
-		"jobId": "local-live", "operationId": "local-live", "goalId": "bounded", "goalRevision": 2,
+		"runtime": "local", "jobId": "local-live", "operationId": "local-live", "goalId": "bounded", "goalRevision": 2,
 		"machineId": "bed-m1", "claimEpoch": 7, "capMin": 10, "status": "cancelled",
 	})
 	batch, err = ReconcileStopBatch(root, batch.StopID, pastGraceBoundary.Add(time.Second))
@@ -124,7 +124,7 @@ func TestIndeterminateCustodyIsTerminalForMachineryAndRoutesToEscalation(t *test
 	bed := newGoalMutationBed(t)
 	root := bed.root
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "unknown.json"), map[string]any{
-		"jobId": "unknown", "operationId": "unknown", "goalId": "bounded", "goalRevision": 2,
+		"runtime": "local", "jobId": "unknown", "operationId": "unknown", "goalId": "bounded", "goalRevision": 2,
 		"machineId": "bed-m1", "capMin": 10, "status": "running",
 	})
 	now := time.Date(2026, 8, 28, 21, 0, 0, 0, time.UTC)
@@ -137,7 +137,7 @@ func TestIndeterminateCustodyIsTerminalForMachineryAndRoutesToEscalation(t *test
 		t.Fatalf("unknown custody did not become indeterminate: %+v %v", batch, err)
 	}
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "unknown.json"), map[string]any{
-		"jobId": "unknown", "operationId": "unknown", "goalId": "bounded", "goalRevision": 2,
+		"runtime": "local", "jobId": "unknown", "operationId": "unknown", "goalId": "bounded", "goalRevision": 2,
 		"machineId": "bed-m1", "claimEpoch": 7, "capMin": 10, "status": "cancelled",
 	})
 	retry, err := ReconcileStopBatch(root, batch.StopID, now.Add(time.Second))

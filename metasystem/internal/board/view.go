@@ -104,17 +104,18 @@ type SeatView struct {
 // GoalView is one goal on a seat: its card's identifiers, numbers and times,
 // or the reason it is Unknown.
 type GoalView struct {
-	Reserved       bool       `json:"reserved,omitempty"`
-	Stuck          *StuckUnit `json:"stuck,omitempty"`
-	Goal           string     `json:"goal"`
-	Stage          Stage      `json:"stage,omitempty"`
-	Round          *Round     `json:"round,omitempty"`
-	Proof          *Proof     `json:"proof,omitempty"`
-	Batch          string     `json:"batch,omitempty"`
-	Landed         int        `json:"landed,omitempty"`
-	Since          time.Time  `json:"since,omitzero"`
-	LastProgressAt time.Time  `json:"lastProgressAt,omitzero"`
-	Unknown        string     `json:"unknown,omitempty"`
+	Reserved       bool        `json:"reserved,omitempty"`
+	Stop           *ReviewStop `json:"stop,omitempty"`
+	Stuck          *StuckUnit  `json:"stuck,omitempty"`
+	Goal           string      `json:"goal"`
+	Stage          Stage       `json:"stage,omitempty"`
+	Round          *Round      `json:"round,omitempty"`
+	Proof          *Proof      `json:"proof,omitempty"`
+	Batch          string      `json:"batch,omitempty"`
+	Landed         int         `json:"landed,omitempty"`
+	Since          time.Time   `json:"since,omitzero"`
+	LastProgressAt time.Time   `json:"lastProgressAt,omitzero"`
+	Unknown        string      `json:"unknown,omitempty"`
 }
 
 // StuckUnit is the reader's stuck launch or round bound on a goal's card.
@@ -167,7 +168,7 @@ func NewView(seats []Seat, picture Picture) View {
 }
 
 func goalView(card Card, unknown string) GoalView {
-	return GoalView{Goal: card.Goal, Stage: card.Stage, Round: card.Round, Proof: card.Proof, Batch: card.Batch, Landed: card.Landed,
+	return GoalView{Stop: card.Stop, Goal: card.Goal, Stage: card.Stage, Round: card.Round, Proof: card.Proof, Batch: card.Batch, Landed: card.Landed,
 		Since: card.Since, LastProgressAt: card.LastProgressAt, Unknown: unknown}
 }
 
@@ -276,6 +277,9 @@ func goalText(entry GoalView, now time.Time, location *time.Location) string {
 		return text
 	}
 	text := entry.Goal + ", " + StageText(entry.Stage, entry.Round, entry.Proof, entry.Landed)
+	if entry.Stop != nil {
+		text += fmt.Sprintf("; review %s at attempt %d of %d: %s; %s", entry.Stop.Decision, entry.Stop.Attempt, entry.Stop.Budget, entry.Stop.Class, entry.Stop.Handoff)
+	}
 	if entry.Stage == StageJoined && entry.Batch != "" {
 		text += " batch " + entry.Batch
 	}

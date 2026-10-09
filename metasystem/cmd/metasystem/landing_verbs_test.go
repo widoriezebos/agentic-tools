@@ -593,6 +593,7 @@ func runRecertifiedLandingFixture(t *testing.T, prefix string, moveOrigin, omitT
 		writeReceiptFixture(t, root, relative, string(append(data, '\n')))
 	}
 	writeFixtureJSON("artifacts/agents/jobs/park-chain.json", map[string]any{
+		"runtime": "local", "startedAt": now.Add(-time.Minute).Format(time.RFC3339), "endedAt": now.Format(time.RFC3339),
 		"jobId": "park-chain", "role": "implementer", "round": 1, "parentJob": nil,
 		"workspaceRoot": chainRoot, "baseSha": baseCommit, "status": "completed",
 		"goalId": "landing-goal", "goalRevision": 2, "operationId": "park-chain-reservation", "capMin": 1,

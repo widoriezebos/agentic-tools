@@ -23,7 +23,9 @@ func init() {
 	for _, name := range []string{"work status", "work wait", "design show", "design list", "test wait", "test plan", "test list", "test status"} {
 		registerIdempotency(name, idemRead, "reads or waits on recorded state and changes nothing", nil)
 	}
+	registerIdempotency("channel status", idemCreation, "a read changes nothing; a delivery retries its pending text and records a successful boundary only after sending", nil)
 	registerIdempotency("test groups", idemRead, "writes no record; a second call runs the same groups again", nil)
+	registerIdempotency("work commit", idemCreation, "each staged change creates a new named unit commit; --amend corrects that unit, while an empty index has nothing to commit", nil)
 	registerIdempotency("work review", idemCreation,
 		"each examination is a new review round of its subject; the same request rejoins the round it started (a repeat reads its progress and findings), and a closed chain's repeated close is unchanged", nil)
 	registerIdempotency("work revise", idemCreation,
@@ -102,17 +104,20 @@ func witnessWorkBriefRepeat(t *testing.T) {
 func witnessWorkBuildRepeat(t *testing.T) {
 	bed := newWorkBed(t)
 	brief := bed.brief("a.md", "Build part a.\n\nMaximum reader tool calls: 5\n")
-	args := append([]string{"work", "build", bed.id, "--work", "a", "--brief", brief, "--lines", "5", "--check"}, workArgv...)
+	args := []string{"work", "build", bed.id, "--work", "a", "--brief", brief, "--lines", "5"}
 	code, first, _ := bed.work(args...)
 	if code != 0 || first.Outcome != intentConfirmed {
 		t.Fatalf("first build: code=%d %+v", code, first)
 	}
 	launches, runs, publications := len(bed.starter.launched()), bed.runDirectories(), bed.publications()
+	files, unitFiles := workIdemSnapshot(t, bed.root()), workIdemSnapshot(t, bed.unitRoot)
 	code, again, _ := bed.work(args...)
 	if code != 0 || resultData(t, again)["run"] != resultData(t, first)["run"] || len(bed.starter.launched()) != launches ||
 		!slices.Equal(bed.runDirectories(), runs) || bed.publications() != publications {
 		t.Fatalf("repeated build: code=%d %+v launches=%d->%d", code, again, launches, len(bed.starter.launched()))
 	}
+	workIdemSameFiles(t, "work build checkout", files, workIdemSnapshot(t, bed.root()))
+	workIdemSameFiles(t, "work build unit records", unitFiles, workIdemSnapshot(t, bed.unitRoot))
 }
 
 func witnessWorkStopRepeat(t *testing.T) {

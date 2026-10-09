@@ -150,6 +150,35 @@ func (inv *intentInvocation) policyParams(key string) (config.GetParams, error) 
 	return config.GetParams{Key: key, ConfPath: conf, LookupEnv: inv.owners.lookupEnv, Policy: &config.PolicyContext{Checkout: checkout, CallingCheckout: calling, Readers: readers}}, nil
 }
 
+// reviewPolicyRepair names the layer that must change before a review can proceed.
+func (inv *intentInvocation) reviewPolicyRepair(err error) ([]string, string) {
+	next := inv.publicArgv("settings", "set", "review.stop", "auto")
+	reason := "a person at an enrolled terminal repairs the review policy"
+	var problem *config.PolicyReadError
+	if errors.As(err, &problem) {
+		switch problem.Source {
+		case "env":
+			return []string{"unset", config.EnvName("review.stop")}, "remove the invalid environment override, then repeat the review"
+		case "conf":
+			if conf, pathErr := inv.policyReaders().ConfPath(problem.Checkout); pathErr == nil {
+				return []string{"edit", conf}, "set review.stop to auto in the committed configuration, then repeat the review"
+			}
+		case "coordinator":
+			return []string{"metasystem", "settings", "coordinator", "--withdraw", "--by", inv.knownPerson(), "--repo", problem.Checkout}, "a person withdraws the unreadable coordinator declaration"
+		case "lane":
+			return []string{"metasystem", "landing", "set", "PATH"}, "a person registers the landing checkout again"
+		case "helm":
+			next := []string{"metasystem", "helm", "return", "--repo", problem.Checkout}
+			return next, humanauthority.PersonActRemedy(shellCommand(next))
+		}
+		if problem.Checkout != "" {
+			// The owner checkout replaces the caller's --repo, which may name a subdirectory or another seat.
+			next = []string{"metasystem", "settings", "set", "review.stop", "auto", "--repo", problem.Checkout}
+		}
+	}
+	return next, reason
+}
+
 func (inv *intentInvocation) runPolicyShow(key string) int {
 	params, err := inv.policyParams(key)
 	var resolved config.PolicyResolution
@@ -213,7 +242,7 @@ func (inv *intentInvocation) runPolicyShow(key string) int {
 
 // settingsPerson tries the calling worktree, its primary checkout, then the
 // destination. Roster writes retain their separate, destination-only gate.
-func (inv *intentInvocation) settingsPerson(destination stateroot.Layout, act string) (string, time.Time, *intentResult) {
+func (inv *intentInvocation) settingsPerson(destination stateroot.Layout, act string, observed ...*humanauthority.Proof) (string, time.Time, *intentResult) {
 	layouts := []stateroot.Layout{}
 	if calling, err := inv.owners.resolver.ResolveLayout(inv.cwd); err == nil {
 		layouts = append(layouts, calling)
@@ -243,6 +272,9 @@ func (inv *intentInvocation) settingsPerson(destination stateroot.Layout, act st
 		proof, err := inv.owners.prove(rootPath, int64(os.Getppid()), nil, "", "", now)
 		if err != nil {
 			continue
+		}
+		if len(observed) > 0 {
+			*observed[0] = proof
 		}
 		if proof.Helm != nil || !proof.EnrolledTerminalFor(rootPath) {
 			_ = humanauthority.RecordAttorneyRefusal(rootPath, proof, act, "set only by the person's own proof", now)

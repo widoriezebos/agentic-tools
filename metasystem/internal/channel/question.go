@@ -50,24 +50,27 @@ type Question struct {
 	Machine string `json:"machine"`
 	// Lineage is the asking session's owner lineage; with Machine it names
 	// the session whose turn may end while the question is open.
-	Lineage        string       `json:"lineage,omitempty"`
-	OpenedAt       time.Time    `json:"openedAt"`
-	Facts          []string     `json:"facts"`
-	Options        []Option     `json:"options"`
-	Recommendation string       `json:"recommendation"`
-	Wants          string       `json:"wants"`
-	Budget         *goal.Budget `json:"budget,omitempty"`
-	Thread         *MessageRef  `json:"thread"`
-	State          string       `json:"state"`
-	ClosedBecause  string       `json:"closedBecause,omitempty"`
-	Undelivered    int          `json:"undelivered"`
-	Answer         *Answer      `json:"answer"`
-	Rejected       []Rejection  `json:"rejected"`
-	FactsDigest    string       `json:"factsDigest"`
-	LedgerCursor   string       `json:"ledgerCursor,omitempty"`
+	Lineage        string            `json:"lineage,omitempty"`
+	OpenedAt       time.Time         `json:"openedAt"`
+	Facts          []string          `json:"facts"`
+	Options        []Option          `json:"options"`
+	Recommendation string            `json:"recommendation"`
+	Wants          string            `json:"wants"`
+	Budget         *goal.Budget      `json:"budget,omitempty"`
+	Thread         *MessageRef       `json:"thread"`
+	State          string            `json:"state"`
+	ClosedBecause  string            `json:"closedBecause,omitempty"`
+	Undelivered    int               `json:"undelivered"`
+	Answer         *Answer           `json:"answer"`
+	Rejected       []Rejection       `json:"rejected"`
+	FactsDigest    string            `json:"factsDigest"`
+	LedgerCursor   string            `json:"ledgerCursor,omitempty"`
+	UnitStop       *UnitStopQuestion `json:"unitStop,omitempty"`
+	ProcessAct     string            `json:"processAct,omitempty"`
 }
 
 type AskRequest struct {
+	ProcessAct                                    string
 	Context                                       context.Context
 	RepoRoot, Goal, About, Kind, Machine, Lineage string
 	Facts                                         []string
@@ -78,6 +81,7 @@ type AskRequest struct {
 	Destination                                   DestinationConfig
 	Now                                           time.Time
 	LedgerCursor                                  string
+	UnitStop                                      *UnitStopQuestion
 }
 
 const (
@@ -241,6 +245,13 @@ func Ask(r AskRequest) (Question, error) {
 // is written, posted or published again. The same facts with any other
 // parameter is a different question and is asked.
 func AskOrFind(r AskRequest) (Question, bool, error) {
+	if r.UnitStop != nil {
+		return askUnitStop(r)
+	}
+	return askOrFind(r)
+}
+
+func askOrFind(r AskRequest) (Question, bool, error) {
 	if r.Now.IsZero() {
 		r.Now = time.Now().UTC()
 	}
@@ -274,7 +285,10 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 		return Question{}, false, err
 	}
 	for _, q := range existing {
-		if q.State == "open" && q.Goal == r.Goal && q.About == r.About && q.Kind == r.Kind && q.FactsDigest == digest && sameAsk(q, r) {
+		if r.UnitStop != nil && q.UnitStop != nil && q.Goal == r.Goal && q.UnitStop.sameKey(*r.UnitStop) {
+			return q, true, nil
+		}
+		if r.UnitStop == nil && q.UnitStop == nil && q.State == "open" && q.Goal == r.Goal && q.About == r.About && q.Kind == r.Kind && q.FactsDigest == digest && sameAsk(q, r) {
 			return q, true, nil
 		}
 	}
@@ -282,7 +296,7 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor}
+	q := Question{ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}
@@ -305,7 +319,7 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 		}
 	}
 	// A question without a goal has no goal file to mark.
-	if r.Lineage != "" && r.Goal != "" {
+	if r.Lineage != "" && r.Goal != "" && r.ProcessAct == "" {
 		ep, e := goal.ResolveEndpoint(r.RepoRoot)
 		if e != nil {
 			return q, false, e
@@ -328,7 +342,7 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 // sameAsk says whether an open question carries exactly the options,
 // recommendation, wanted token and proposed budget a new request asks with.
 func sameAsk(q Question, r AskRequest) bool {
-	if q.Recommendation != r.Recommendation || q.Wants != r.Wants || !reflect.DeepEqual(q.Budget, r.Budget) {
+	if q.ProcessAct != r.ProcessAct || q.Recommendation != r.Recommendation || q.Wants != r.Wants || !reflect.DeepEqual(q.Budget, r.Budget) {
 		return false
 	}
 	if len(q.Options) != len(r.Options) {
@@ -389,6 +403,12 @@ func ReplyInstructionsAt(root string, q Question) string {
 }
 
 func replyInstructions(q Question, codeOff bool) string {
+	if q.ProcessAct != "" {
+		return "Run " + q.Wants + "; applying this exact process act closes the question."
+	}
+	if q.UnitStop != nil {
+		return "Run " + q.UnitStop.Needs + "; a successful matching act or unit closure closes this question. A text answer leaves it open."
+	}
 	if command := LaneStopCommand(q); command != "" {
 		return "Run " + command + "; a later lane record closes this question."
 	}
@@ -469,7 +489,7 @@ func renderQuestionParts(q Question, facts, consequences []string, recommendatio
 }
 
 func questionHead(q Question) string {
-	if command := LaneStopCommand(q); command != "" {
+	if command := ActCommand(q); command != "" {
 		return command + "\n"
 	}
 	return fmt.Sprintf("%s — %s\n", QuestionSubject(q), q.Kind)

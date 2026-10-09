@@ -23,7 +23,11 @@ import (
 
 // LandedNotice is one landing's line.
 type LandedNotice struct {
-	SHA string `json:"sha"`
+	// SplitParent and SplitChildren identify an approval request sharing the
+	// channel's delivery state. Empty fields identify a landing message.
+	SplitParent   string   `json:"splitParent,omitempty"`
+	SplitChildren []string `json:"splitChildren,omitempty"`
+	SHA           string   `json:"sha"`
 	// Text is the message: the plain sentences of what landed.
 	Text string    `json:"text"`
 	At   time.Time `json:"at"`
@@ -61,7 +65,7 @@ func PostLanded(ctx context.Context, repo string, p Provider, d DestinationConfi
 		return RetryLanded(ctx, repo, p, d)
 	}
 	return withLandedState(repo, func(s *LandedState) error {
-		retryErr := retryPending(ctx, s, p, d)
+		retryErr := retryPending(ctx, s, p, d, nil)
 		if s.known(sha) {
 			return retryErr
 		}
@@ -81,13 +85,32 @@ func RetryLanded(ctx context.Context, repo string, p Provider, d DestinationConf
 	if len(LoadLandedState(repo).Pending) == 0 {
 		return nil
 	}
-	return withLandedState(repo, func(s *LandedState) error { return retryPending(ctx, s, p, d) })
+	return withLandedState(repo, func(s *LandedState) error { return retryPending(ctx, s, p, d, nil) })
 }
 
 // retryPending posts each pending line once more: posted, or given up.
-func retryPending(ctx context.Context, s *LandedState, p Provider, d DestinationConfig) error {
+func retryPending(ctx context.Context, s *LandedState, p Provider, d DestinationConfig, refresh func(LandedNotice) (string, error)) error {
 	var problems []error
+	var pending []LandedNotice
 	for _, notice := range s.Pending {
+		if notice.SplitParent != "" {
+			if refresh == nil {
+				pending = append(pending, notice)
+				continue
+			}
+			text, err := refresh(notice)
+			if err != nil {
+				notice.Error = err.Error()
+				s.Failed = append(s.Failed, notice)
+				problems = append(problems, err)
+				continue
+			}
+			notice.Text = text
+			if text == "" {
+				s.Posted = append(s.Posted, notice.SHA)
+				continue
+			}
+		}
 		if _, err := p.Post(ctx, d, notice.Text, nil); err != nil {
 			notice.Error = err.Error()
 			s.Failed = append(s.Failed, notice)
@@ -96,7 +119,7 @@ func retryPending(ctx context.Context, s *LandedState, p Provider, d Destination
 		}
 		s.Posted = append(s.Posted, notice.SHA)
 	}
-	s.Pending = nil
+	s.Pending = pending
 	return errors.Join(problems...)
 }
 

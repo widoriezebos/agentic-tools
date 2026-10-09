@@ -45,6 +45,9 @@ func (f PublicationCaptureFailure) Unwrap() error { return f.Cause }
 
 // Endpoint is the resolved synchronization endpoint.
 type Endpoint struct {
+	// SplitConfirmed requests child approval after a committed split; delivery
+	// failures belong to the channel owner and never undo goal publication.
+	SplitConfirmed         func(Endpoint, string, string, time.Time)
 	ClaimHolder            func(string) (ClaimHolderFacts, error)
 	Root                   string     // repository worktree root
 	Remote                 string     // goal.sync-remote; "local" is single-machine mode

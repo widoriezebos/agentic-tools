@@ -1253,8 +1253,54 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 		if err := stop(); err != nil {
 			t.Errorf("stop installed supervision: %v", err)
 		}
+		// Wait commands and the steward can start Git readers after a hook's
+		// custody snapshot. Retain their descendants after both producers
+		// stop, including when supervision was disarmed earlier in the test.
+		if err := fixture.HoldOwnedChildren(); err != nil {
+			t.Errorf("retain shutdown descendants: %v", err)
+		}
 	})
 	return stop
+}
+
+func TestInstalledWaitCleanupRetainsChildrenAfterEarlyShutdown(t *testing.T) {
+	t.Parallel()
+	var child *exec.Cmd
+	var input io.WriteCloser
+	// Observe after the fixture cleanup, keeping the child blocked until
+	// that cleanup ends its exact process identity.
+	t.Cleanup(func() {
+		if child == nil || child.Process == nil {
+			return
+		}
+		err := child.Wait()
+		if err == nil || !child.ProcessState.Sys().(syscall.WaitStatus).Signaled() ||
+			child.ProcessState.Sys().(syscall.WaitStatus).Signal() != syscall.SIGKILL {
+			t.Errorf("late child was not ended by fixture cleanup: state=%v err=%v", child.ProcessState, err)
+		}
+		_ = input.Close()
+	})
+	fixture := newInstalledWaitFixture(t, "late-shutdown-child")
+	root := t.TempDir()
+	canonical := filepath.Join(root, "metasystem")
+	if err := testexec.WriteFile(canonical, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stop := installPendingWaitSupervisionCleanup(t, fixture, canonical, root)
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	// This reader starts after the explicit shutdown's custody snapshot.
+	// Its ready signal makes the cleanup race deterministic without a sleep.
+	child = fixture.Shell(testexec.ReadyPrologue + "read -r _")
+	var err error
+	input, err = child.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.StartReady(child); err != nil {
+		t.Fatal(err)
+	}
 }
 
 // retireUnpublishedPendingWaitOwner settles the one owner state up --shutdown

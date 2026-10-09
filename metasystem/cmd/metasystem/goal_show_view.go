@@ -89,6 +89,26 @@ func (shown goalShown) view(page *textui.Page) {
 	}
 	page.Section("Intent", "").Text(prose(file.Intent))
 	page.Section("Next step", "").Text(prose(file.NextStep))
+	if file.Split != nil {
+		text := strings.Join(file.Split.Children, ", ")
+		for i := len(file.History) - 1; i >= 0; i-- {
+			entry := file.History[i]
+			if entry.Verb == "split" {
+				break
+			}
+			if entry.Verb == "split-reverse" {
+				at, err := time.Parse(time.RFC3339, entry.At)
+				if err == nil {
+					text += " (reversed " + env.Time(at) + " by " + strings.TrimPrefix(entry.Actor, "human:") + ")"
+				}
+				break
+			}
+		}
+		page.Section("Split into goals", "").Text(text)
+	}
+	if file.SplitFrom != "" {
+		page.Section("Split from", "").Text(file.SplitFrom)
+	}
 	if file.Parked != nil && file.Parked.Because != "" {
 		page.Section("Waits", "").Text(prose(file.Parked.Because))
 	}

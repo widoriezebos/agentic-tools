@@ -161,10 +161,12 @@ type Row struct {
 	Verdict   *Verdict           `json:"verdict,omitempty"`
 	// Gate is the landing gate's reading of a goal in the Review lane
 	// (g1-s70), filled by JoinGates where the settings are known.
-	Gate       *Gate  `json:"gate,omitempty"`
-	Sliced     bool   `json:"sliced"`
-	Decomposed bool   `json:"decomposed"`
-	OpenedAt   string `json:"openedAt"`
+	Gate       *Gate             `json:"gate,omitempty"`
+	Split      *goal.SplitRecord `json:"split,omitempty"`
+	SplitFrom  string            `json:"splitFrom,omitempty"`
+	Sliced     bool              `json:"sliced"`
+	Decomposed bool              `json:"decomposed"`
+	OpenedAt   string            `json:"openedAt"`
 	// DoneAt is when this goal's own conclusion was written, from its
 	// History, and the empty string where nothing recorded one. A reader
 	// showing the work of the last few days needs the date the conclusion
@@ -268,6 +270,8 @@ func LaneOf(f *goal.GoalFile, tree *goal.TreeGoals, horizon goal.ApprovalHorizon
 		default:
 			return LaneInProgress, PhaseNotRecorded, []string{"phase not recorded"}
 		}
+	case goal.StateSplit:
+		return LaneWaiting, "split", nil
 	case goal.StateParked:
 		return LaneWaiting, PhaseNotRecorded, nil
 	case goal.StateApproved:
@@ -306,6 +310,8 @@ func rowOf(f *goal.GoalFile, where string, tree *goal.TreeGoals, horizon goal.Ap
 		Lane:         lane,
 		Phase:        phase,
 		State:        f.State,
+		Split:        f.Split,
+		SplitFrom:    f.SplitFrom,
 		Intent:       f.Intent,
 		NextStep:     f.NextStep,
 		Concluded:    f.Conclude,

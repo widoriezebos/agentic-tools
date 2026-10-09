@@ -10,6 +10,7 @@ import (
 type ConfSetting struct {
 	Key   string
 	Value string
+	Unset bool
 }
 
 // SetConfKeys rewrites a metasystem.conf-format file so each setting's
@@ -25,12 +26,14 @@ func SetConfKeys(confPath string, settings []ConfSetting) error {
 	}
 
 	pending := map[string]string{}
+	removed := map[string]bool{}
 	order := []string{}
 	for _, setting := range settings {
 		if _, known := pending[setting.Key]; !known {
 			order = append(order, setting.Key)
 		}
 		pending[setting.Key] = setting.Value
+		removed[setting.Key] = setting.Unset
 	}
 
 	var out []string
@@ -47,13 +50,16 @@ func SetConfKeys(confPath string, settings []ConfSetting) error {
 			out = append(out, raw)
 			continue
 		}
+		if removed[key] {
+			continue
+		}
 		if !written[key] {
 			written[key] = true
 			out = append(out, key+"="+value)
 		}
 	}
 	for _, key := range order {
-		if !written[key] {
+		if !written[key] && !removed[key] {
 			out = append(out, key+"="+pending[key])
 		}
 	}

@@ -1,0 +1,11 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "machine clear-provider",
+  "targets": [],
+  "outcome": "confirmed",
+  "summary": "provider anthropic: the advisory hold is clear; this does not claim provider success"
+}
+
+--

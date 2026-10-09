@@ -119,6 +119,12 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 	targets := []intentTarget{{Kind: "question", ID: q.publicName()}}
 	if q.kind == "channel" {
 		c := q.channel
+		if c.ProcessAct != "" {
+			return intentResult{Outcome: intentConfirmed, Summary: c.State + ": " + c.Wants, Data: c, view: func(page *textui.Page) {
+				page.Headline(c.State + " process setting")
+				page.Section("", "").Fixed(c.Wants)
+			}}
+		}
 		data := map[string]any{"kind": "channel", "question": c, "replyInstructions": channel.ReplyInstructionsAt(inv.stateRoot, c)}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data}
 		var headline, fact string
@@ -141,11 +147,11 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			result.text = []string{channel.ReplyInstructionsAt(inv.stateRoot, c)}
 			headline = "Channel question " + c.ID + " waits for the person's reply in its channel thread"
 		}
-		if command := channel.LaneStopCommand(c); command != "" && c.State != "closed" {
+		if command := channel.ActCommand(c); command != "" && c.State != "closed" {
 			result.Summary, result.next, result.nextReason, result.text = command, nil, "", nil
 		}
 		result.view = func(page *textui.Page) {
-			if command := channel.LaneStopCommand(c); command != "" && c.State != "closed" {
+			if command := channel.ActCommand(c); command != "" && c.State != "closed" {
 				page.Headline(command, "")
 				page.Section("", "").Text(strings.Join(c.Facts[1:], "\n"))
 				return

@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+func TestFleetAndProcessDefaultsCoexist(t *testing.T) {
+	t.Parallel()
+	for key, want := range map[string]string{"host.builds": "auto", "host.load-max": "8", "process.change": "person"} {
+		if got, ok := CompiledDefault(key); !ok || got != want {
+			t.Fatalf("CompiledDefault(%s) = %q, %t; want %q", key, got, ok, want)
+		}
+		if ProofInput(key) {
+			t.Fatalf("%s changed proof identity", key)
+		}
+	}
+}
+
 func TestRosterRuntimeNames(t *testing.T) {
 	t.Parallel()
 	for value, want := range map[string][]string{
@@ -118,13 +130,13 @@ func TestValidateAcceptsAnOverridesOnlyConfiguration(t *testing.T) {
 	t.Parallel()
 	repo := t.TempDir()
 	conf := filepath.Join(repo, "metasystem.conf")
-	putFile(t, conf, "# overrides only\nproof.full=true\nproof.cheap=true\n")
+	putFile(t, conf, "# overrides only\nproof.full=true\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\n")
 	contract, err := os.ReadFile(filepath.Join("..", "..", "testing.json"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	putFile(t, filepath.Join(repo, "testing.json"), string(contract))
-	for _, dir := range []string{".claude/agents", ".claude/skills", ".codex", ".agents/skills", ".devin"} {
+	for _, dir := range []string{".claude/agents", ".claude/skills", ".codex", ".agents/skills", ".devin/agents"} {
 		if err := os.MkdirAll(filepath.Join(repo, filepath.FromSlash(dir)), 0o755); err != nil {
 			t.Fatal(err)
 		}

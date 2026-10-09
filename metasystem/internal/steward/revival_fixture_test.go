@@ -10,9 +10,11 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 type revivalFixture struct {
+	t            *testing.T
 	root         string
 	dependencies openWorkDependencies
 	worldReads   atomic.Int32
@@ -21,7 +23,11 @@ type revivalFixture struct {
 
 func newRevivalFixture(t *testing.T, wantWorld, wantWork int32) *revivalFixture {
 	t.Helper()
-	f := &revivalFixture{root: t.TempDir()}
+	f := &revivalFixture{t: t, root: t.TempDir()}
+	testprovider.Register(t, f.root)
+	if err := os.WriteFile(filepath.Join(f.root, "metasystem.conf"), []byte("launch.seat.runtime=claude\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	writeLedger(t, f.root, "# Goals\n\n## Current goal: fix-it — Repair the thing\n- Origin: main\n- Next step: Repair it.\n")
 	f.dependencies = openWorkDependencies{
 		NewWorld: func(root string) bool {
@@ -51,10 +57,12 @@ func newRevivalFixture(t *testing.T, wantWorld, wantWork int32) *revivalFixture 
 }
 
 func (f *revivalFixture) complete(cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, claims ...SeatIdleClaimSeam) (ReviveOutcome, error) {
+	cfg.ProviderHome = testprovider.Register(f.t, f.root)
 	return completeRevivalWithDependencies(f.root, cfg, census, nonce, launch, nil, f.dependencies, claims...)
 }
 
 func (f *revivalFixture) decide(cfg TickConfig, census WorkerCensus, ev Evidence, intent Intent) (Decision, string, error) {
+	cfg.ProviderHome = testprovider.Register(f.t, f.root)
 	return decideForRevivalWithDependencies(f.root, cfg, census, ev, intent, f.dependencies)
 }
 

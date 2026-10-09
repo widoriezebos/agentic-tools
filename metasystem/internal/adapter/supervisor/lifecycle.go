@@ -57,6 +57,7 @@ type Supervision struct {
 	round, rootJob                                 string
 	requestedModel, requestedSession               string
 
+	observedAt     time.Time
 	handshakeDone  bool
 	sessionID      string
 	effectiveModel string
@@ -636,6 +637,7 @@ func (s *Supervision) waitForCLI(cli *child) (int, error) {
 		}
 		s.d.Clock.Sleep(interval)
 	}
+	s.observedAt = s.d.Clock.Now()
 	return cli.wait(), nil
 }
 
@@ -644,6 +646,11 @@ func (s *Supervision) waitForCLI(cli *child) (int, error) {
 // error code and phase name, and decides whether the one bounded repair turn
 // runs.
 func (s *Supervision) adjudicate(p adapter.AdjudicateParams) string {
+	p.Runtime, p.Model = s.runtime, s.effectiveModel
+	if p.Model == "" {
+		p.Model = s.requestedModel
+	}
+	p.ObservedAt = s.observedAt
 	p.Root = s.d.Root
 	p.Job = s.job
 	p.RecordPath = s.record

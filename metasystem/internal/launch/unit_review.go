@@ -16,10 +16,15 @@ import (
 // creating a second subject. A prior round's subject stays for diagnosis
 // after a later round amends it.
 type UnitSubject struct {
-	Round     int    `json:"round"`
-	Operation string `json:"operation"`
-	// ExpectedParent is the HEAD the completed round observed after its
-	// proof: the tip the unit commit is made on (or amended from).
+	GateWorktree string              `json:"gateWorktree,omitempty"`
+	GateSnapshot *repositorySnapshot `json:"gateSnapshot,omitempty"`
+	GateLaunches []string            `json:"gateLaunches,omitempty"`
+	GateRunID    string              `json:"gateRunId,omitempty"`
+	Conflict     string              `json:"conflict,omitempty"`
+	Round        int                 `json:"round"`
+	Operation    string              `json:"operation"`
+	// ExpectedParent is the publication parent after replay, or the branch
+	// tip an amendment replaces. The round retains its original parent.
 	ExpectedParent string `json:"expectedParent"`
 	// ResultDigest is the SHA-256 of the round's retained result: the raw
 	// diff of its proof-after snapshot. It is not a Git tree identifier.
@@ -40,17 +45,23 @@ type UnitSubject struct {
 	// Examination is the critic chain whose completed return examined this
 	// subject; ExaminationRound is that return's round. A failed critic
 	// round with no return never sets them.
-	Examination      string `json:"examination,omitempty"`
-	ExaminationRound int64  `json:"examinationRound,omitempty"`
+	UnknownRetries   int      `json:"unknownRetries,omitempty"`
+	ExaminationJob   string   `json:"examinationJob,omitempty"`
+	TransferredTo    []string `json:"transferredTo,omitempty"`
+	Examination      string   `json:"examination,omitempty"`
+	ExaminationRound int64    `json:"examinationRound,omitempty"`
 	// ExaminationReturnPath is the return in the store the review resolved.
 	ExaminationReturnPath string `json:"examinationReturnPath,omitempty"`
+	PublishedAt           string `json:"publishedAt,omitempty"`
 }
 
 // UnitReview is a completed round as a committed review consumes it.
 type UnitReview struct {
-	Whole  bool
-	Record UnitRunRecord
-	Round  UnitRound
+	AdmitChild func(string) error
+	Wait       func(func() error) error
+	Whole      bool
+	Record     UnitRunRecord
+	Round      UnitRound
 	// Head is the completed round's observed HEAD; Result is its retained
 	// raw diff (proof-after snapshot Tree), compared byte for byte. Base and
 	// Diff are the plan's cumulative diff base and the round's retained
@@ -94,8 +105,31 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 	if runner.Manager == nil && runner.Root == "" {
 		return fmt.Errorf("unit run store is unavailable")
 	}
-	if _, err := runner.read(id); err != nil {
+	current, err := runner.read(id)
+	if err != nil {
 		return coded("UNIT_RUN_UNKNOWN", "run="+id, fmt.Errorf("there is no work run %s: %v", id, err))
+	}
+	if runner.Manager != nil && runner.tree == nil {
+		_, err := treeCall(runner, current.Worktree, func(bound *UnitRunner) (struct{}, error) {
+			return struct{}{}, bound.ReviewSubject(id, bind)
+		})
+		return err
+	}
+	if runner.Manager != nil {
+		if err := runner.GateTree(current.Worktree, id, nil); err != nil {
+			return err
+		}
+	}
+	if runner.Manager != nil {
+		_, key, err := namedUnitIdentity(UnitPlan{Worktree: current.Worktree, Goal: current.Goal, Unit: current.Unit})
+		if err != nil {
+			return err
+		}
+		held, err := runner.namedLock(key, UnitPlan{Goal: current.Goal, Unit: current.Unit})
+		if err != nil {
+			return err
+		}
+		defer releaseUnitLock(held)
 	}
 	lock, err := runner.lock(id)
 	if err != nil {
@@ -126,8 +160,15 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 	if err != nil {
 		return coded("UNIT_REVIEW_NOT_READY", fmt.Sprintf("run=%s round=%d", id, round.Number), fmt.Errorf("the changes of attempt %d were not kept, so they cannot be reviewed: %v", round.Number, err))
 	}
-	review := UnitReview{Record: record, Round: round, Head: strings.TrimSpace(after.Head), Result: after.Tree,
+	review := UnitReview{Wait: runner.CommandWait, Record: record, Round: round, Head: strings.TrimSpace(after.Head), Result: after.Tree,
 		Diff: diff, DiffDigest: digestHex(diff), Legacy: after.Tree != "" && !strings.Contains(after.Tree, "\x00")}
+	review.AdmitChild = func(id string) error {
+		if runner.tree == nil {
+			return fmt.Errorf("the publication check has no worktree owner")
+		}
+		runner.tree.owner.Children = append(runner.tree.owner.Children, id)
+		return writeUnitJSON(runner.tree.path, *runner.tree.owner, runner.root())
+	}
 	plan, err := readUnitPlan(record.Plan, record.PlanDirectory)
 	if err != nil {
 		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the plan of run %s cannot be read: %v", id, err))
@@ -139,6 +180,13 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		// A corrected attempt was built from its correction brief alone, so
 		// it is reviewed against that brief.
 		review.BuildBrief = round.FollowUp
+	}
+	if frozen, frozenErr := readUnitPlan(filepath.Join(round.Directory, "plan.json"), record.PlanDirectory); frozenErr == nil && frozen.Check != nil {
+		// The declared-check instructions are part of the brief the builder
+		// received; review uses the same complete brief and its digest.
+		review.BuildBrief = frozen.Build.Brief
+	} else if frozenErr != nil && !errors.Is(frozenErr, os.ErrNotExist) {
+		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the frozen plan of attempt %d cannot be read: %v", round.Number, frozenErr))
 	}
 	for index := range record.Subjects {
 		subject := record.Subjects[index]
@@ -156,16 +204,38 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 			return fmt.Errorf("a subject binds only the latest completed round %d", round.Number)
 		}
 		replaced := false
+		sameExamination := false
 		for index := range record.Subjects {
 			if record.Subjects[index].Round == subject.Round {
+				previous := record.Subjects[index]
+				sameExamination = previous.Examination == subject.Examination && previous.ExaminationRound == subject.ExaminationRound &&
+					previous.ExaminationReturnPath == subject.ExaminationReturnPath && previous.ExaminationJob == subject.ExaminationJob
 				record.Subjects[index], replaced = subject, true
 			}
 		}
 		if !replaced {
 			record.Subjects = append(record.Subjects, subject)
 		}
-		if subject.Examination != "" && record.CountedCap > 0 {
-			material, err := runner.roundMaterial(record, round)
+		if subject.UnknownRetries > record.Rounds[len(record.Rounds)-1].UnknownRetries {
+			record.Rounds[len(record.Rounds)-1].UnknownRetries = subject.UnknownRetries
+		}
+		if len(subject.TransferredTo) > 0 {
+			record.Rounds[len(record.Rounds)-1].Transferred = true
+		}
+		if subject.Examination != "" {
+			latest := &record.Rounds[len(record.Rounds)-1]
+			var err error
+			if sameExamination && len(latest.Reads) > 0 && latest.Stop != nil &&
+				(latest.Stop.Handoff == "stopped unreadable-policy" || latest.Stop.Handoff == "stopped unreadable-inherited-findings") {
+				// The examination is retained; only its decision inputs need another read.
+				err = runner.decideRound(&record, latest, "")
+			} else {
+				err = runner.CollectExamination(&record, latest, subject)
+			}
+			if err != nil {
+				return err
+			}
+			material, err := runner.roundMaterial(record, record.Rounds[len(record.Rounds)-1])
 			if err != nil {
 				record.Notes = append(record.Notes, fmt.Sprintf("attempt %d: material count is unknown: %v", round.Number, err))
 			}

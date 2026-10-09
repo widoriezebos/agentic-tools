@@ -95,6 +95,9 @@ func newRebaseFixture(t *testing.T) *rebaseFixture {
 					if tip == policyFirst {
 						return f.old, nil
 					}
+					if f.empty {
+						return nil, rangeRefusal("goal-a", policySecond, "the build changes no file and has no retained read proving its change landed")
+					}
 					return f.units, nil
 				},
 				Index:   func(string) (string, error) { return policyFirst, nil },
@@ -115,6 +118,9 @@ func newRebaseFixture(t *testing.T) *rebaseFixture {
 			},
 		},
 		git: func(_ string, args ...string) ([]byte, error) {
+			if len(args) == 3 && args[0] == "rev-list" && args[1] == "--count" {
+				return []byte("0\n"), nil
+			}
 			switch strings.Join(args, " ") {
 			case "merge-base " + pushPolicyBase + " " + f.tip:
 				return []byte(policyMoved + "\n"), nil
@@ -365,7 +371,7 @@ func TestRebasePolicy(t *testing.T) {
 		f.reviewedUnit()
 		f.empty = true
 		_, err := rebaseWith(f.req, f.d)
-		if err == nil || !strings.Contains(err.Error(), "already on main") || len(f.events) != 0 || f.tip != policyFirst || f.closed != 1 {
+		if err == nil || !strings.Contains(err.Error(), "no retained read") || len(f.events) != 0 || f.tip != policyFirst || f.closed != 1 {
 			t.Fatalf("empty %v %+v", err, f)
 		}
 	})

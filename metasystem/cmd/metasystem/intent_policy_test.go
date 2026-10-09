@@ -382,7 +382,7 @@ func TestPolicySettingsCheckWithoutSessionOrLane(t *testing.T) {
 	t.Parallel()
 	b := newPolicyBed(t)
 	b.registry = config.PolicyRegistry{}
-	body := "metasystem.runtimes=claude\nmetasystem.template=true\nproof.full=true\nproof.cheap=true\nreview.stop=0\nlanding.batch=2\nsettings.apply=boundary\n"
+	body := "metasystem.runtimes=claude\nmetasystem.template=true\nproof.full=true\nproof.cheap=true\nproof.audits=true\nproof.deadline=15\nreview.stop=0\nlanding.batch=2\nsettings.apply=boundary\n"
 	if err := os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte(body), 0600); err != nil {
 		t.Fatal(err)
 	}

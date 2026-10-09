@@ -5,7 +5,7 @@ exit 2
   "verb": "work build",
   "targets": [],
   "outcome": "refused",
-  "summary": "work build needs one goal, a brief and the checks to run; nothing was done",
+  "summary": "work build needs one goal and a brief; nothing was done",
   "next": {
     "argv": [
       "metasystem",
@@ -14,11 +14,9 @@ exit 2
       "standing-validation",
       "--json",
       "--brief",
-      "FILE",
-      "--check",
-      "COMMAND"
+      "FILE"
     ],
-    "reason": "FILE is the brief; COMMAND is the check that must pass (metasystem work build --help)"
+    "reason": "FILE is the brief; committed settings select the checks"
   }
 }
 

@@ -99,7 +99,12 @@ func (s *session) requireGoalAdmission() error {
 		s.recordOutcome("BUDGET_UNKNOWN", "refused", err.Error(), s.outcomeJob())
 		return s.die(1, "dispatch refused because the governing goal admission could not be evaluated")
 	}
-	verdict, err := dispatch.EvaluateGoalAdmission(s.root, s.env.OwnerLineage, now)
+	var verdict dispatch.GoalAdmissionVerdict
+	if s.unknownExaminationRetrySource != "" {
+		verdict, err = dispatch.EvaluateGoalAdmissionForUnknownExaminationRetry(s.root, s.env.OwnerLineage, s.unknownExaminationRetrySource, now)
+	} else {
+		verdict, err = dispatch.EvaluateGoalAdmission(s.root, s.env.OwnerLineage, now)
+	}
 	if err != nil {
 		s.eprintln(err.Error())
 		s.recordOutcome("BUDGET_UNKNOWN", "refused", err.Error(), s.outcomeJob())
@@ -215,6 +220,10 @@ func (s *session) requireGoalRevisionAdmission(subj *subject, proposed int64, di
 		now, err := s.goalNow()
 		if err != nil {
 			return dispatch.GoalRevisionAdmission{}, err
+		}
+		if s.unknownExaminationRetrySource != "" {
+			return dispatch.EvaluateUnknownExaminationRetryAdmission(s.root, s.unknownExaminationRetrySource, subj.goal, subj.goalRevision,
+				uint64(proposed), now, dispatch.ConcreteProofAdmissionReads(), dispatch.HazardClass(subj.destructiveReach))
 		}
 		return dispatch.EvaluateGoalRevisionAdmissionForDispatchWithReads(s.root, subj.goal, subj.goalRevision, uint64(proposed), now,
 			subj.role, dispatchMode, dispatch.ConcreteProofAdmissionReads(), dispatch.HazardClass(subj.destructiveReach))

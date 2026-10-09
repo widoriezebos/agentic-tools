@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -61,6 +62,7 @@ type BudgetBreach struct {
 // latest exact consumed discharge proof. While the goal is marked as waiting
 // to land, Wait is its open wait, already taken off Elapsed.
 type BudgetProjection struct {
+	unitAttempts            map[string]bool
 	Status                  BudgetProjectionStatus
 	GoalID                  string
 	GoalRevision            uint64
@@ -268,23 +270,28 @@ func jobRecordPath(name string) string {
 // ProjectBudget scans the reservation records once and derives the sole
 // spending view for the claim revision. It has no side effects; health and
 // pre-publication admission consume the same complete projection.
-func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time) BudgetProjection {
-	return ProjectBudgetWithoutRun(repoRoot, file, now, "")
+func ProjectBudget(repoRoot string, file *goal.GoalFile, now time.Time, homes ...string) BudgetProjection {
+	return projectBudgetWithoutRun(repoRoot, file, now, "", true, false, homes...)
 }
 
 // ProjectConsumption reconstructs attempts and minutes for a budgeted goal's
 // human-approved episode, whether or not the goal currently has a claim.
-func ProjectConsumption(repoRoot string, file *goal.GoalFile, now time.Time) ConsumptionProjection {
-	return ConsumptionProjection(projectBudgetWithoutRun(repoRoot, file, now, "", false))
+func ProjectConsumption(repoRoot string, file *goal.GoalFile, now time.Time, homes ...string) ConsumptionProjection {
+	return ConsumptionProjection(projectBudgetWithoutRun(repoRoot, file, now, "", false, false, homes...))
 }
 
 // ProjectBudgetWithoutRun reconstructs spend while omitting one concluding
 // run from its live record and durable terminal charge state.
 func ProjectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time, excludeRunID string) BudgetProjection {
-	return projectBudgetWithoutRun(repoRoot, file, now, excludeRunID, true)
+	return projectBudgetWithoutRun(repoRoot, file, now, excludeRunID, true, false)
 }
 
-func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time, excludeRunID string, authorityLens bool) BudgetProjection {
+// ProjectSplitWork reads spending and unfinished reservations without requiring a build claim.
+func ProjectSplitWork(repoRoot string, file *goal.GoalFile, now time.Time) BudgetProjection {
+	return projectBudgetWithoutRun(repoRoot, file, now, "", false, true)
+}
+
+func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time, excludeRunID string, authorityLens bool, working bool, homes ...string) BudgetProjection {
 	if file == nil {
 		return unknownBudget("", 0, "plans/goals", "the goal record is missing")
 	}
@@ -385,7 +392,10 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		}
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
+	var dependencies []clockDependency
 	operations := make(map[string]string)
+	unitAttempts := make(map[string]bool)
+	projection.unitAttempts = unitAttempts
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -413,6 +423,28 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if recordGoal != file.Id {
 			continue
 		}
+		// A unit reservation charges its physical launch; that launch record
+		// owns the runtime and provider dependency, not this accounting row.
+		if asString(record["unitRun"]) == "" {
+			dependencyAt := asString(record["startedAt"])
+			if dependencyAt == "" {
+				dependencyAt = asString(record["createdAt"])
+			}
+			if at, err := time.Parse(time.RFC3339Nano, dependencyAt); err == nil {
+				until, _ := time.Parse(time.RFC3339Nano, asString(record["endedAt"]))
+				if !TerminalStatus(asString(record["status"])) {
+					until = now
+				}
+				dependencies = append(dependencies, clockDependency{at: at, runtime: asString(record["runtime"]), until: until,
+					providerFailed: jobProviderFailure(repoRoot, strings.TrimSuffix(entry.Name(), ".json"), record)})
+			} else if asString(record["runtime"]) == "local" || asString(record["runtime"]) == "plain-exec" {
+				// Local accounting does not need a provider clock. An unknown
+				// start must still prevent subtracting another job's outage.
+				dependencies = append(dependencies, clockDependency{runtime: asString(record["runtime"])})
+			} else {
+				return unknownBudget(file.Id, revision, logicalPath, "job dependency time is unreadable")
+			}
+		}
 		lens := JobRecordOf(record)
 		jobID := lens.JobID()
 		wantJobID := strings.TrimSuffix(entry.Name(), ".json")
@@ -427,6 +459,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("operationId %q duplicates %s", operationID, first))
 		}
 		operations[operationID] = logicalPath
+		if record["unitUnaccounted"] == true && asString(record["unitRun"]) != "" && operationID == "unit-launch:"+jobID && TerminalStatus(lens.Status()) {
+			continue
+		}
 		recordRevision, ok := lens.GoalRevision()
 		if !ok || recordRevision == 0 {
 			return unknownBudget(file.Id, revision, logicalPath, "the authoritative reservation is revisionless")
@@ -461,7 +496,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			wait.observe(startedAt, asString(record["endedAt"]), status == "running")
 		}
 		consumes := consumptionMember(recordGoal, recordRevision, file.Id, consumptionKey)
-		authorizes := authorityLens && recordRevision >= accountingRevision
+		authorizes := (authorityLens || working) && (working || recordRevision >= accountingRevision)
 		if !consumes && !authorizes {
 			continue
 		}
@@ -478,10 +513,44 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				consumes = false
 			}
 		}
+		unknownRetry := false
+		if prior := asString(record["examinationRetryOf"]); prior != "" {
+			state := loadCritiqueState(repoRoot)
+			owner := state.records[state.chainRoot(prior)]
+			if asString(record["role"]) != "code-critic" || asString(record["parentJob"]) != prior || asString(owner["unknownExaminationRetryFrom"]) != prior {
+				return unknownBudget(file.Id, revision, logicalPath, "the fresh examination does not match its recorded retry")
+			}
+			consumes = false
+			unknownRetry = true
+		}
 		if !goalbudget.ReservationConsumesBudget(TerminalStatus(status), lens.Phase(), lens.RefusalClass()) {
 			continue
 		}
-		if consumes {
+		unitAttempt := ""
+		if run, present := record["unitRun"]; present {
+			runID, typed := run.(string)
+			round, roundOK := numInt(record["unitRound"])
+			if !typed || runID == "" || !roundOK || round < 1 || operationID != "unit-launch:"+jobID {
+				return unknownBudget(file.Id, revision, logicalPath, "the unit reservation has an unreadable execution identity")
+			}
+			if TerminalStatus(status) {
+				if _, typed := record["unitExecuted"].(bool); !typed {
+					return unknownBudget(file.Id, revision, logicalPath, "the terminal unit reservation has unreadable execution evidence")
+				}
+				if record["unitExecuted"] == false {
+					continue
+				}
+			}
+			if excluded, present := record["unitEnvironment"]; present {
+				if excluded != true || !TerminalStatus(status) {
+					return unknownBudget(file.Id, revision, logicalPath, "the unit environment exclusion has no terminal execution")
+				}
+				continue
+			}
+			unitAttempt = fmt.Sprintf("%s/%d", runID, round)
+		}
+		if consumes && (unitAttempt == "" || !unitAttempts[unitAttempt]) {
+			unitAttempts[unitAttempt] = true
 			switch countedCriticRole {
 			case "design-critic":
 				if projection.DesignCritiques == math.MaxUint64 {
@@ -500,9 +569,12 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			projection.Attempts++
 		}
 		charge := capMinutes
+		if unknownRetry {
+			charge = 0
+		}
 		terminal := TerminalStatus(status)
 		if terminal && consumes {
-			if !recordHasProcessIdentity(record) {
+			if !recordHasProcessIdentity(record) && !(unitAttempt != "" && record["unitExecuted"] == true) {
 				charge = 0
 			} else {
 				var start time.Time
@@ -576,9 +648,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		// Only a proof that launched ends the wait, from its launch; one only
 		// reserved has not. When a launch that could end the wait cannot be
 		// dated, neither can the wait, and the budget is unknown.
-		if wait != nil && (attempt.GoalID == file.Id || attempt.AccountedGoal() == file.Id) {
+		if attempt.GoalID == file.Id || attempt.AccountedGoal() == file.Id {
 			launchedAt, record, launchErr := proofrun.LaunchedAt(repoRoot, attempt)
-			if launchErr != nil && wait.bears(attempt.StartedAt, attempt.EndedAt, attempt.Terminal == nil) {
+			if launchErr != nil && (wait == nil || wait.bears(attempt.StartedAt, attempt.EndedAt, attempt.Terminal == nil)) {
 				named := logicalPath
 				if record != "" {
 					named = filepath.ToSlash(strings.TrimPrefix(record, repoRoot+string(filepath.Separator)))
@@ -587,10 +659,15 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			}
 			if record != "" && launchErr == nil {
 				wait.observe(launchedAt.Format(time.RFC3339), attempt.EndedAt, attempt.Terminal == nil)
+				until, _ := time.Parse(time.RFC3339Nano, attempt.EndedAt)
+				if attempt.Terminal == nil {
+					until = now
+				}
+				dependencies = append(dependencies, clockDependency{at: launchedAt, runtime: "local", until: until})
 			}
 		}
 		consumes := consumptionMember(attempt.AccountedGoal(), attempt.AccountedRevision(), file.Id, consumptionKey)
-		authorizes := authorityLens && attempt.GoalID == file.Id && attempt.AccountingRevision >= accountingRevision
+		authorizes := attempt.GoalID == file.Id && (working || authorityLens && attempt.AccountingRevision >= accountingRevision)
 		if !consumes && !authorizes {
 			continue
 		}
@@ -687,6 +764,10 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		}
 		for _, attempt := range state.Attempts {
 			wait.observe(attempt.StartedAt, attempt.EndedAt, false)
+			if at, err := time.Parse(time.RFC3339Nano, attempt.StartedAt); err == nil {
+				until, _ := time.Parse(time.RFC3339Nano, attempt.EndedAt)
+				dependencies = append(dependencies, clockDependency{at: at, runtime: "local", until: until})
+			}
 		}
 		if !consumptionMember(file.Id, state.GoalRevision, file.Id, consumptionKey) {
 			continue
@@ -719,7 +800,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("goalRevision %d is later than accepted goal revision %d", governed.GoalRevision, revision))
 		}
 		consumes := consumptionMember(record.GoalId, governed.GoalRevision, file.Id, consumptionKey)
-		authorizes := authorityLens && governed.GoalRevision >= accountingRevision
+		authorizes := (authorityLens || working) && (working || governed.GoalRevision >= accountingRevision)
 		if !consumes && !authorizes {
 			continue
 		}
@@ -799,8 +880,38 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		projection.ReservedJobMinutes += attempt.ObservedCostMinutes
 		projection.ObservedJobMinutes += attempt.ObservedCostMinutes
 	}
-	if wait != nil {
-		projection.Wait = wait.span(budgetStartedAt, now)
+	// Splitting needs work reservations, not provider pauses in the elapsed budget clock.
+	if !working && !budgetStartedAt.IsZero() {
+		home := ""
+		if len(homes) > 0 {
+			home = homes[0]
+		}
+		providerStart := budgetStartedAt
+		if claimed {
+			claimedAt, parseErr := time.Parse(time.RFC3339, file.Claimed.At)
+			if parseErr != nil {
+				return unknownBudget(file.Id, revision, recordPath, "the claim timestamp is malformed")
+			}
+			// Past idle gaps precede this claim; provider waits cannot overlap them.
+			if claimedAt.After(providerStart) {
+				providerStart = claimedAt
+			}
+		}
+		spans, err := providerWaits(home, file.Id, providerStart, now, dependencies)
+		if err != nil {
+			return unknownBudget(file.Id, revision, "provider/launch history", err.Error())
+		}
+		if wait != nil {
+			duration := wait.span(budgetStartedAt, now)
+			if duration > 0 {
+				from := wait.mark
+				if from.Before(budgetStartedAt) {
+					from = budgetStartedAt
+				}
+				spans = append(spans, outage.Span{Start: from, End: from.Add(duration)})
+			}
+		}
+		projection.Wait = outage.Paused(spans)
 		projection.Elapsed = max(projection.Elapsed-projection.Wait, 0)
 	}
 	if authorityLens {
@@ -864,8 +975,8 @@ func (w *waitClock) span(budgetStart, now time.Time) time.Duration {
 // from its mark until its own next job or proof started, or until now while
 // none has. The wait does not count against the goal's elapsed limit. It is
 // zero for an unmarked goal and for one whose budget cannot be projected.
-func WaitSpan(repoRoot string, file *goal.GoalFile, now time.Time) time.Duration {
-	return ProjectBudget(repoRoot, file, now).Wait
+func WaitSpan(repoRoot string, file *goal.GoalFile, now time.Time, homes ...string) time.Duration {
+	return ProjectBudget(repoRoot, file, now, homes...).Wait
 }
 
 // LandingOverdue hands the landing lines the budget projection's answer to

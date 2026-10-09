@@ -51,7 +51,7 @@ func (runner *UnitRunner) AdvanceNamed(planPath string) (UnitResult, error) {
 	if runner.Manager == nil {
 		return UnitResult{}, errors.New("unit launch manager is unavailable")
 	}
-	named, err := ReadUnitPlan(planPath)
+	named, err := ReadUnitPlanInput(planPath)
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -59,12 +59,22 @@ func (runner *UnitRunner) AdvanceNamed(planPath string) (UnitResult, error) {
 	if err != nil {
 		return UnitResult{}, err
 	}
+	if runner.tree == nil {
+		return treeCall(runner, worktree, func(r *UnitRunner) (UnitResult, error) { return r.AdvanceNamed(planPath) })
+	}
+	entry, _, err := runner.readNamed(key)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if err := runner.GateTree(worktree, entry.Run, nil); err != nil {
+		return UnitResult{}, err
+	}
 	lock, err := runner.namedLock(key, named)
 	if err != nil {
 		return UnitResult{}, err
 	}
 	defer releaseUnitLock(lock)
-	return runner.advanceNamedLocked(named, worktree, key)
+	return runner.advanceNamedLocked(named, worktree, key, false)
 }
 
 // Continue advances a recorded run by its id, with an optional follow-up
@@ -95,6 +105,9 @@ func (runner *UnitRunner) Continue(request UnitRequest) (UnitResult, error) {
 			return UnitResult{Record: record, Round: len(record.Rounds)}, nil
 		}
 		return UnitResult{}, err
+	}
+	if runner.tree == nil {
+		return treeCall(runner, worktree, func(r *UnitRunner) (UnitResult, error) { return r.Continue(request) })
 	}
 	entry, found, err := runner.readNamed(key)
 	if err != nil {
@@ -144,6 +157,18 @@ func (runner *UnitRunner) AdvancePrepared(worktree, goal, unit string, request [
 	if err != nil {
 		return UnitResult{}, err
 	}
+	if runner.tree == nil {
+		return treeCall(runner, real, func(r *UnitRunner) (UnitResult, error) {
+			return r.AdvancePrepared(worktree, goal, unit, request, options, prepare)
+		})
+	}
+	entry, _, err := runner.readNamed(key)
+	if err != nil {
+		return UnitResult{}, err
+	}
+	if err := runner.GateTree(real, entry.Run, nil); err != nil {
+		return UnitResult{}, err
+	}
 	lock, err := runner.namedLock(key, UnitPlan{Unit: unit, Goal: goal})
 	if err != nil {
 		return UnitResult{}, err
@@ -181,12 +206,12 @@ func (runner *UnitRunner) AdvancePrepared(worktree, goal, unit string, request [
 	}
 	bound := *runner
 	bound.options = options
-	return bound.advanceNamedLocked(named, real, key)
+	return bound.advanceNamedLocked(named, real, key, true)
 }
 
 // advanceNamedLocked reserves or continues the named run; the caller holds
 // the unit's named lock.
-func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key string) (UnitResult, error) {
+func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key string, retained bool) (UnitResult, error) {
 	data, err := os.ReadFile(named.Path)
 	if err != nil {
 		return UnitResult{}, planInvalid("plan", err)
@@ -196,7 +221,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 		return UnitResult{}, err
 	}
 	planDirectory := filepath.Dir(named.Path)
-	plan, err := readUnitPlan(staged, planDirectory)
+	plan, err := readUnitPlanInput(staged, planDirectory, retained)
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -232,6 +257,18 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 		}
 		if err := runner.admitRound(plan, plan.Build.Brief, nil); err != nil {
 			return UnitResult{}, err
+		}
+		if runner.AdmitEstimate != nil {
+			if err := runner.AdmitEstimate(&plan); err != nil {
+				return UnitResult{}, err
+			}
+			data, err := json.MarshalIndent(plan, "", "  ")
+			if err != nil {
+				return UnitResult{}, err
+			}
+			if _, err := atomicfile.WriteText(staged, string(data)+"\n", runner.root()); err != nil {
+				return UnitResult{}, err
+			}
 		}
 		id, err := newID(runner.Manager.Now())
 		if err != nil {
@@ -434,6 +471,9 @@ func (runner *UnitRunner) namedLock(key string, plan UnitPlan) (*os.File, error)
 		}
 		return nil, coded("UNIT_RUN_BUSY", unitFacts(plan.Unit, plan.Goal, "run="+run), fmt.Errorf("another command is advancing unit %s; run the same command again to follow it", plan.Unit))
 	}
+	if runner.tree != nil {
+		runner.tree.files = append(runner.tree.files, held.File())
+	}
 	return held.File(), nil
 }
 
@@ -554,4 +594,27 @@ func (runner *UnitRunner) RetainedRequest(worktree, goal, unit string) ([]byte, 
 		return nil, false, nil
 	}
 	return data, err == nil, err
+}
+
+// GoalRuns reads retained runs across worktrees and names unreadable records.
+func (runner *UnitRunner) GoalRuns(goal string) (work []NamedWork, unknown []string, err error) {
+	entries, err := os.ReadDir(runner.root())
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, nil, err
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || !idPattern.MatchString(entry.Name()) {
+			continue
+		}
+		record, err := runner.read(entry.Name())
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil || record.ID != entry.Name() {
+			unknown = append(unknown, "run "+entry.Name()+" unavailable")
+		} else if goal == "" || record.Goal == goal {
+			work = append(work, NamedWork{Unit: record.Unit, Run: record.ID, Record: &record})
+		}
+	}
+	return work, unknown, nil
 }

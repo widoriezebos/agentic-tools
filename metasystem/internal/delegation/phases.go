@@ -3,6 +3,7 @@ package delegation
 import (
 	"errors"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -260,7 +261,7 @@ func (s *session) breachStopRun(stopID string) error {
 		if err != nil {
 			return s.die(1, fmt.Sprintf("breach-stop %s is indeterminate: %s", stopID, err.Error()))
 		}
-		batch, err := dispatch.ReconcileStopBatch(s.root, stopID, now)
+		batch, err := dispatch.ReconcileStopBatchWithLaunchStatus(s.root, stopID, now, s.l.ports.Host.UnitLaunchStatus)
 		if err == nil && batch.State == "INDETERMINATE" {
 			return s.die(1, fmt.Sprintf("breach-stop %s is indeterminate: %s", stopID, encodeJSON(batch)))
 		}
@@ -286,6 +287,13 @@ func (s *session) breachStopRun(stopID string) error {
 			if err := dispatch.AuthorizeStopCancellation(s.root, stopID, job); err != nil {
 				_ = s.verbFailure(err)
 				return s.die(1, fmt.Sprintf("breach-stop %s lost cancellation authority for %s", stopID, job))
+			}
+			record := s.recordPath(job)
+			if fieldOr(record, "unitRun") != "" && fieldOr(record, "operationId") == "unit-launch:"+job {
+				// An absent execution leaves only its reservation to cancel.
+				if err := s.l.ports.Host.CancelUnitLaunch(job); err != nil && !errors.Is(err, fs.ErrNotExist) {
+					return s.die(1, fmt.Sprintf("breach-stop %s could not cancel unit launch %s: %v", stopID, job, err))
+				}
 			}
 			s.stopCancelAuthorized = stopID
 			cancelErr := s.internalCancel(job)

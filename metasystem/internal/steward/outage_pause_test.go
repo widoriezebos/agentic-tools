@@ -12,12 +12,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func markOutage(t *testing.T, root string, now time.Time) {
 	t.Helper()
-	if _, err := outage.Record(root, "overloaded", "API Error: 529", "test", now); err != nil {
+	if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test", now); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -54,12 +56,17 @@ func TestProviderOutagePausesTheAging(t *testing.T) {
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	now := time.Date(2026, 9, 21, 10, 0, 0, 0, time.UTC)
 	cfg := TickConfig{StaleTicks: 2, Now: now}
-	r := outageTickN(bed, cfg, census, 2)
+	outageTickN(bed, cfg, census, 1)
+	cfg.Now = cfg.Now.Add(10 * time.Minute)
+	r := outageTickN(bed, cfg, census, 1)
 	if r.Evidence.TicksSinceAdvance != 1 {
 		t.Fatalf("the second quiet tick ages to 1: %+v", r.Evidence)
 	}
-	markOutage(t, root, now)
-	r = outageTickN(bed, cfg, census, 3)
+	markOutage(t, root, cfg.Now)
+	for range 3 {
+		cfg.Now = cfg.Now.Add(10 * time.Minute)
+		r = outageTickN(bed, cfg, census, 1)
+	}
 	if r.Evidence.TicksSinceAdvance != 1 {
 		t.Fatalf("the clock must pause during a standing outage: %+v", r.Evidence)
 	}
@@ -71,9 +78,10 @@ func TestProviderOutagePausesTheAging(t *testing.T) {
 		"the model provider is overloaded; local work continues; the clocks are paused") {
 		t.Fatalf("the narration must say the clocks are paused: %v\n%s", err, narration)
 	}
-	if err := outage.Clear(root); err != nil {
+	if _, err := outage.Observe(testprovider.Home(root), "claude", "fixture-model", "", "", "fixture-success", cfg.Now); err != nil {
 		t.Fatal(err)
 	}
+	cfg.Now = cfg.Now.Add(10 * time.Minute)
 	r = outageTickN(bed, cfg, census, 1)
 	if r.Evidence.TicksSinceAdvance != 2 || r.ProviderOutage {
 		t.Fatalf("a cleared outage resumes the aging where it stopped: %+v", r)
@@ -105,19 +113,27 @@ func TestProgressStillResetsDuringOutage(t *testing.T) {
 // a continuation spawned into the outage would burn a launch on a
 // certain failure — and its dry-revival count with it.
 func TestOutageHoldsRevival(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	now := time.Date(2026, 10, 1, 10, 0, 0, 0, time.UTC)
+	markOutage(t, root, now)
+	_, standing := testprovider.StandingAt(root, now)
 	dead := Snapshot{
 		Work:           WorkOwned,
 		Workers:        Workers{CensusComplete: true},
 		StaleTicks:     5,
 		MaxRevivals:    3,
-		ProviderOutage: true,
+		ProviderOutage: standing,
 	}
 	d := Decide(dead)
 	if d.Verdict != VerdictStalledDead || d.Action != ActNotify ||
 		!strings.Contains(d.Reason, "holding revival until the provider recovers") {
 		t.Fatalf("an outage holds revival with the reason on record: %+v", d)
 	}
-	dead.ProviderOutage = false
+	if err := testprovider.Clear(root); err != nil {
+		t.Fatal(err)
+	}
+	_, dead.ProviderOutage = testprovider.StandingAt(root, now)
 	if d := Decide(dead); d.Action != ActRevive {
 		t.Fatalf("without the outage the same snapshot revives: %+v", d)
 	}
@@ -150,12 +166,33 @@ func TestTickHoldsRevivalDuringOutage(t *testing.T) {
 	} else {
 		t.Fatalf("the tick must not revive during a standing outage: %+v", r.Decision)
 	}
-	if err := outage.Clear(root); err != nil {
+	if err := testprovider.Clear(root); err != nil {
 		t.Fatal(err)
 	}
 	r = outageTickN(bed, cfg, census, 1)
 	if r.Decision.Action != ActRevive {
 		t.Fatalf("clearing the mark releases the revival: %+v", r.Decision)
+	}
+}
+
+func TestTickUnknownProviderPreservesOperatorReason(t *testing.T) {
+	t.Parallel()
+	bed := newDecisionTickRepository(t)
+	if err := os.Remove(lane.RecordPath(testprovider.Home(bed.root))); err != nil {
+		t.Fatal(err)
+	}
+	if err := SaveEvidence(bed.root, EvidencePath(bed.root), Evidence{Marks: bed.currentMarks(), DryRevivals: 3}); err != nil {
+		t.Fatal(err)
+	}
+	result := bed.tickN(TickConfig{Now: time.Date(2026, 10, 8, 10, 0, 0, 0, time.UTC)}, deadCensus(), 1)
+	if result.Decision.Action != ActNotify || !strings.Contains(result.Decision.Reason, "operator needed") ||
+		!strings.Contains(result.Decision.Reason, "metasystem landing set PATH") {
+		t.Fatalf("the operator reason and provider repair must both remain visible: %+v", result.Decision)
+	}
+	pending, err := PendingNotifications(bed.root)
+	if err != nil || len(pending) != 1 || !strings.Contains(pending[0].Message, "operator needed") ||
+		!strings.Contains(pending[0].Message, "metasystem landing set PATH") {
+		t.Fatalf("the notification must retain both reasons: %+v %v", pending, err)
 	}
 }
 
@@ -202,7 +239,7 @@ func TestTickCarriesTheLongOutageNoticing(t *testing.T) {
 	root := bed.root
 	census := fakeCensus{workers: Workers{Live: 1, CensusComplete: true}}
 	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
-	if _, err := outage.Record(root, "overloaded", "API Error: 529", "test",
+	if _, err := testprovider.Record(root, "overloaded", "API Error: 529", "test",
 		now.Add(-15*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -210,5 +247,30 @@ func TestTickCarriesTheLongOutageNoticing(t *testing.T) {
 	narration, err := os.ReadFile(NarrationPath(root))
 	if err != nil || !strings.Contains(string(narration), "provider has been overloaded for") {
 		t.Fatalf("the narration must carry the long-outage noticing: %v\n%s", err, narration)
+	}
+}
+
+func TestProviderUnknownNamesTheRepair(t *testing.T) {
+	t.Parallel()
+	bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
+	home := testprovider.Home(bed.root)
+	if err := os.Remove(lane.RecordPath(home)); err != nil {
+		t.Fatal(err)
+	}
+	result := bed.tick(deadWorkers)
+	if result.Decision.Action != ActNotify || !strings.Contains(result.Decision.Reason, "metasystem landing set PATH") || strings.Contains(result.Decision.Reason, "overloaded") {
+		t.Fatalf("registration repair: %+v", result.Decision)
+	}
+	testprovider.Register(t, bed.root)
+	if _, err := testprovider.Record(bed.root, "overloaded", "HTTP 529", "fixture", bed.now); err != nil {
+		t.Fatal(err)
+	}
+	path := testprovider.Path(bed.root)
+	if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result = bed.tick(deadWorkers)
+	if result.Decision.Action != ActNotify || !strings.Contains(result.Decision.Reason, path) || strings.Contains(result.Decision.Reason, "overloaded") {
+		t.Fatalf("state repair: %+v", result.Decision)
 	}
 }

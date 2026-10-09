@@ -926,6 +926,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	}
 	var selected *plain.Batch
 	var selectionErr error
+	personAct := false
 	if inv.input.has("goals") || inv.input.has("by") {
 		person, problem := inv.lanePerson("select the landing batch", root)
 		if problem != nil {
@@ -934,6 +935,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		if !inv.input.has("goals") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "--by requires an explicit --goals selection; nothing was recorded", next: inv.publicArgv("landing", "run", "--goals", "GOALS")})
 		}
+		personAct = true
 		goals := strings.Split(inv.input.text("goals"), ",")
 		for i := range goals {
 			goals[i] = strings.TrimSpace(goals[i])
@@ -1016,6 +1018,11 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	keeper.Helmed = func(root string) bool { return owners.helm(root).Active }
 	keeper.Continuation = func(current lane.Record) string { return plain.PersonBatchContinuation(current.Install, current, home) }
 	keeper.Explicit = true
+	if !personAct {
+		_, personProblem := inv.lanePerson("start the landing agent", root)
+		personAct = personProblem == nil
+	}
+	keeper.PersonAct = personAct
 	run := keeper.Run()
 	data := landingRunData{Outcome: run.Outcome, Launch: run.Launch, Root: root, Reasons: run.Reasons, Problems: run.Problems}
 	details := []string{run.Line}
