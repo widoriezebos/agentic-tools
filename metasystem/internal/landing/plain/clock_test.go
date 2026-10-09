@@ -3,6 +3,7 @@ package plain
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -148,5 +149,30 @@ func TestLandingClockTimesARegisteredFlakeRepeat(t *testing.T) {
 	r := b.run(t)
 	if r.Minutes == nil || *r.Minutes != 8 || len(r.FlakeRepeats) != 1 || r.FlakeRepeats[0].Since != bedNow.Add(5*time.Minute).Format(time.RFC3339) || r.FlakeRepeats[0].Minutes == nil || *r.FlakeRepeats[0].Minutes != 3 {
 		t.Fatalf("repeat's own timing: %+v, repeats %+v", r, r.FlakeRepeats)
+	}
+}
+
+func TestProveShellLeadsItsPathWithTheServingEngine(t *testing.T) {
+	t.Parallel()
+	b := newBed(t)
+	var path string
+	result, err := Run(b.install, b.checkout, "fixture", "", io.Discard, ProveSeams{Now: func() time.Time { return bedNow }, Command: func(cmd *exec.Cmd) error {
+		for _, entry := range cmd.Env {
+			if strings.HasPrefix(entry, "PATH=") {
+				path = strings.TrimPrefix(entry, "PATH=")
+			}
+		}
+		_, err := cmd.Stdout.Write([]byte("landing environment fixture\nlanding package fixture/unit 1 ok 1\nLANDING-CHECKED\t0\n"))
+		return err
+	}})
+	if err != nil || result.Result != Green {
+		t.Fatalf("prove: %+v %v", result, err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first, _, _ := strings.Cut(path, string(os.PathListSeparator)); first != filepath.Dir(executable) {
+		t.Fatalf("the proof shell's PATH must lead with the engine running the lane: %q", path)
 	}
 }

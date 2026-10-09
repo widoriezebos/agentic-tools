@@ -1023,7 +1023,14 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 	}
 	shell := exec.Command("/bin/sh", "-c", command)
 	shell.Dir = dir
-	shell.Env = append(os.Environ(), "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit, "LANDING_ONLY="+only,
+	// The proof's reporter asks the serving engine (`metasystem landing status`,
+	// `settings show`): the engine running this lane leads the proof's PATH, so the
+	// proof never depends on the environment the lane's agent happened to inherit.
+	enginePath := os.Getenv("PATH")
+	if executable, err := os.Executable(); err == nil {
+		enginePath = filepath.Dir(executable) + string(os.PathListSeparator) + enginePath
+	}
+	shell.Env = append(os.Environ(), "PATH="+enginePath, "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit, "LANDING_ONLY="+only,
 		"LANDING_PROOF_SCOPE="+decision.Scope, "LANDING_PROOF_BASE="+base, "LANDING_PROOF_GROUPS="+strings.Join(decision.groupIDs(), " "))
 	shell.Stdout, shell.Stderr = log, log
 	run := seams.Command
