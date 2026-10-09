@@ -96,107 +96,41 @@ func TestLandingResolveBatchConflictWaitsThenReturnsAgainstMain(t *testing.T) {
 	}
 }
 
-func TestLandingResolveRegenerationHoldsByCauseAndShowsStatus(t *testing.T) {
+func TestLandingResolveGeneratedReturnShowsPathsInStatus(t *testing.T) {
 	t.Parallel()
-	for _, failure := range []string{"lost process", "non-zero baseline", "missing log", "take main"} {
-		t.Run(failure, func(t *testing.T) {
-			t.Parallel()
-			b := newResolveVerbFixture(t)
-			b.owners.landing.view = func(string) lane.View {
-				return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}, Summary: "the landing lane is idle"}
-			}
-			if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
-				t.Fatal(err)
-			}
-			aborts, runs := 0, 0
-			git := func(_ string, args ...string) (string, error) {
-				switch strings.Join(args, " ") {
-				case "ls-tree --name-only main-sha -- metasystem/plans/goals/trunk-red.json":
-					return "", nil
-				case "show HEAD:metasystem/testing.json":
-					return b.contract, nil
-				case "diff --name-only --diff-filter=U -z", "ls-files -z", "ls-tree -r --name-only -z HEAD -- metasystem/out/result":
-					return "metasystem/out/result\x00", nil
-				case "rev-parse --verify HEAD^{commit}", "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
-					return "main-sha", nil
-				case "rev-parse --verify MERGE_HEAD^{commit}":
-					return "goal-sha", nil
-				case "diff --name-only -z AUTO_MERGE --", "ls-files --others --exclude-standard -z", "restore --source=AUTO_MERGE --worktree -- metasystem/out/result":
-					return "", nil
-				case "restore --source=HEAD --staged --worktree -- metasystem/out/result":
-					if failure == "take main" {
-						return "", errors.New("cannot take main")
-					}
-					return "", nil
-				case "merge --abort":
-					aborts++
-					return "", nil
-				}
-				if args[0] == "cat-file" {
-					return "", nil
-				}
-				if args[0] == "merge-base" {
-					return "", exec.Command("/usr/bin/false").Run()
-				}
-				t.Fatalf("unexpected Git: %v", args)
-				return "", nil
-			}
-			b.owners.landing.plainResolve.Git = git
-			b.owners.landing.plainProve.Git = git
-			b.owners.landing.plainResolve.Run = func(_ []string, _ string, log *os.File, _ func(int64) error) error {
-				runs++
-				if _, err := log.WriteString("fixture failed\n"); err != nil {
-					t.Fatal(err)
-				}
-				if failure == "non-zero baseline" {
-					if runs == 2 && aborts != 1 {
-						t.Fatal("replay precedes abort")
-					}
-					return exec.Command("/usr/bin/false").Run()
-				}
-				return errors.New("command cannot start")
-			}
-			if failure == "missing log" {
-				if err := os.WriteFile(filepath.Join(plain.Dir(b.install), "regenerations"), []byte("blocked"), 0o600); err != nil {
-					t.Fatal(err)
-				}
-			}
-			for attempt := 1; attempt <= 2; attempt++ {
-				code, output := b.run(t, b.root, "resolve", "--json")
-				var result struct{ Data plain.ResolveOutcome }
-				if code != 1 || json.Unmarshal([]byte(output), &result) != nil || result.Data.Entry == nil || result.Data.Entry.State != plain.StateWaiting {
-					t.Fatalf("failure returned: exit=%d %s", code, output)
-				}
-				wantCause, wantHeld := "environment", attempt == 2
-				if failure == "non-zero baseline" {
-					wantCause, wantHeld = "unclassified", true
-				}
-				if result.Data.Outcome != "held" || result.Data.Cause.Kind != wantCause || result.Data.Held != wantHeld {
-					t.Fatalf("classification: %+v", result.Data)
-				}
-				statusCode, statusOutput := b.run(t, b.root, "status")
-				if statusCode != 0 || !strings.Contains(oneSpaced(statusOutput), "cause: "+wantCause) || wantHeld && !strings.Contains(statusOutput, "hold and ask") {
-					t.Fatalf("status: exit=%d %s", statusCode, statusOutput)
-				}
-				if wantHeld {
-					// A held regeneration exposes its stop and remedy through status.
-					code, output := b.run(t, b.root, "status", "--json")
-					var status struct{ Data plain.Status }
-					command := "metasystem landing run"
-					if wantCause == "unclassified" {
-						command = "metasystem landing return goal --cause unclassified --reason TEXT"
-					}
-					if code != 0 || json.Unmarshal([]byte(output), &status) != nil || status.Data.Stop == nil || status.Data.Stop.Attempt != 0 || status.Data.Stop.Cause.Kind != wantCause || status.Data.Stop.Command() != command || status.Data.Stop.Evidence == "" {
-						t.Fatalf("held regeneration has no uncounted stop and command: %d %s", code, output)
-					}
-					break
-				}
-			}
-			before := runs
-			if code, output := b.run(t, b.root, "resolve"); code != 0 || !strings.Contains(output, "stays waiting") || runs != before {
-				t.Fatalf("held regeneration retried: exit=%d runs=%d %s", code, runs, output)
-			}
-		})
+	b := newResolveVerbFixture(t)
+	b.owners.landing.view = func(string) lane.View {
+		return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}, Summary: "the landing lane is idle"}
+	}
+	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+		t.Fatal(err)
+	}
+	b.sourceConflictGit(t, func() {})
+	git := b.owners.landing.plainResolve.Git
+	b.owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
+		if strings.Join(args, " ") == "diff --name-only --diff-filter=U -z" {
+			return "metasystem/out/result\x00", nil
+		}
+		return git(dir, args...)
+	}
+	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		if args[0] == "rev-parse" {
+			return "main-sha", nil
+		}
+		if args[0] == "merge-base" {
+			return "", exec.Command("/usr/bin/false").Run()
+		}
+		if args[0] == "ls-tree" || args[0] == "cat-file" {
+			return "", nil
+		}
+		t.Fatalf("unexpected status Git: %v", args)
+		return "", nil
+	}
+	if code, text := b.run(t, b.root, "resolve"); code != 0 {
+		t.Fatalf("return=%d %s", code, text)
+	}
+	if code, text := b.run(t, b.root, "status"); code != 0 || !strings.Contains(oneSpaced(text), "metasystem/out/result (generated)") || !strings.Contains(oneSpaced(text), "work rebase goal") || !strings.Contains(text, "returned") {
+		t.Fatalf("status=%d %s", code, text)
 	}
 }
 

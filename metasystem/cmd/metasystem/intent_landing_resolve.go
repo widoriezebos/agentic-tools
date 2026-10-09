@@ -12,9 +12,9 @@ import (
 
 func landingResolveCommand() intentCommand {
 	return laneCommand(intentCommand{
-		object: "landing", action: "resolve", audience: "both", summary: "regenerate declared outputs in a conflicted merge, or return its source conflicts",
+		object: "landing", action: "resolve", audience: "both", summary: "return every merge conflict with its paths",
 		usage:    []string{"metasystem landing resolve"},
-		details:  []string{"Runs only in the registered landing checkout, before anyone edits the conflict. Main's generated files are rebuilt using the testing contract's argv, without a shell, and staged for the merge commit.", "A source conflict with main returns the goal for work rebase; a conflict with a batch member holds it until that member lands. A failed regeneration aborts and is classified: a lost process retries once, and a command that also fails before the merge holds for a question. Regeneration records never count as proof; commit the merge and run landing prove.", "An already resolved tree changes nothing. landing status shows the running command and its log size; landing stop ends it."},
+		details:  []string{"Runs only in the registered landing checkout, before anyone edits the conflict. Every conflict, including generated files, aborts the merge and returns the goal with its paths by class.", "Run metasystem work rebase G on the goal branch, which regenerates what the testing contract declares, then hand in again. A conflict with a batch member holds the goal until that member lands.", "An already resolved tree changes nothing. Obsolete resolve-begun.json records are ignored and landing status names them as stale."},
 		maxArgs:  0,
 		examples: []string{"metasystem landing resolve"},
 	}, runIntentLandingResolve)

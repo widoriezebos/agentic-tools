@@ -69,9 +69,8 @@ func resolveBegunPath(install string) string {
 	return filepath.Join(Dir(install), "resolve-begun.json")
 }
 
-// Resolve starts on an untouched conflicted merge or resumes its own generated
-// changes. AUTO_MERGE is Git's original snapshot, including conflict markers;
-// changes outside the resumed output sets must never be discarded.
+// Resolve returns an untouched conflicted merge with its paths. AUTO_MERGE
+// is Git's original snapshot; checkout edits must never be discarded.
 func Resolve(home, install, checkout string, contract testpolicy.Contract, seams ResolveSeams) (out ResolveOutcome, err error) {
 	err = withLock(install, func() (runErr error) {
 		git := func(args ...string) (string, error) { return seams.git(checkout, args...) }
@@ -80,19 +79,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			return err
 		}
 		paths := nulPaths(listed)
-		var begun *begunResolve
-		data, err := os.ReadFile(resolveBegunPath(install))
-		if err == nil {
-			if err := json.Unmarshal(data, &begun); err != nil {
-				return err
-			}
-			if begun == nil || begun.SHA == "" || len(begun.Paths) == 0 {
-				return errors.New("the begun resolve record has no merge or paths; nothing was changed")
-			}
-		} else if !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		if len(paths) == 0 && begun == nil {
+		if len(paths) == 0 {
 			out.Held = true
 			return nil
 		}
@@ -107,18 +94,6 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 				return nil
 			}
 			return fmt.Errorf("there is no conflicted lane merge: %w", err)
-		}
-		resuming := begun != nil && begun.SHA == sha
-		if len(paths) == 0 && !resuming {
-			out.Held = true
-			return nil
-		}
-		if resuming {
-			for _, name := range begun.Paths {
-				if !slices.Contains(paths, name) {
-					paths = append(paths, name)
-				}
-			}
 		}
 		entries, err := Entries(install)
 		if err != nil {
@@ -139,32 +114,10 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			out.Cause, out.Reason, out.Outcome, out.Held, out.Entry = entry.Cause, entry.Reason, "held", true, &entry
 			return nil
 		}
-		ownsBegun := resuming
-		defer func() {
-			recordErr := appendLine(regeneratePath(install), out.Regeneration)
-			if recordErr == nil && out.Held && out.Cause != nil {
-				cause := *out.Cause
-				if cause.Evidence == "" {
-					cause.Evidence = regeneratePath(install)
-				}
-				recordErr = recordProofStop(install, Result{Result: Red, Scope: "regeneration", Goals: []GoalSHA{{Goal: out.Goal, SHA: out.SHA}}, Cause: &cause, Log: out.Log, Reason: out.Reason, At: out.At})
-			}
-			if recordErr == nil && ownsBegun && (out.Outcome == "resolved" || out.Outcome == "returned" || out.Outcome == "held") {
-				recordErr = os.Remove(resolveBegunPath(install))
-			}
-			runErr = errors.Join(runErr, recordErr)
-		}()
 		prefix, err := installationPrefix(install, checkout)
 		if err != nil {
 			return err
 		}
-		var sets []testpolicy.Generated
-		for _, set := range contract.Generated {
-			if slices.ContainsFunc(paths, func(name string) bool { return conflict.GeneratedBy([]testpolicy.Generated{set}, prefix, name) }) {
-				sets = append(sets, set)
-			}
-		}
-		outputs := func(name string) bool { return conflict.GeneratedBy(sets, prefix, name) }
 		dirty, err := git("diff", "--name-only", "-z", "AUTO_MERGE", "--")
 		if err != nil {
 			return fmt.Errorf("the merge's original tree can't be read to exclude checkout edits; nothing was changed: %w", err)
@@ -173,8 +126,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 		if err != nil {
 			return err
 		}
-		foreign := func(name string) bool { return !resuming || !outputs(name) }
-		if slices.ContainsFunc(nulPaths(dirty), foreign) || slices.ContainsFunc(nulPaths(untracked), foreign) {
+		if len(nulPaths(dirty)) > 0 || len(nulPaths(untracked)) > 0 {
 			out.Outcome = "refused"
 			return errors.New("the lane checkout has changes outside the recorded merge; nothing was changed")
 		}
@@ -184,10 +136,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			return err
 		}
 		detail := &conflict.Return{Main: main, Paths: classified}
-		for _, item := range classified {
-			if item.Class == conflict.Generated {
-				continue
-			}
+		for range classified {
 			trunk, err := git("rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
 			if err != nil {
 				return err
@@ -223,7 +172,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			}
 			out.Conflict = detail
 			if _, err := git("merge", "--abort"); err != nil {
-				return fmt.Errorf("abort the source conflict: %w", err)
+				return fmt.Errorf("abort the merge conflict: %w", err)
 			}
 			out.Exit = 0
 			if len(after) > 0 {
@@ -236,7 +185,11 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 				return resolveWaitingLocked(install, entry, after, false, &out)
 			}
 			out.Cause = &Cause{Kind: "own", Goal: entry.Goal, SHA: entry.SHA}
-			out.Reason = "source conflicts need resolution on the goal branch; run metasystem work rebase " + entry.Goal
+			names := make([]string, 0, len(classified))
+			for _, path := range classified {
+				names = append(names, path.Path+" ("+path.Class+")")
+			}
+			out.Reason = "the merge conflicts with main in " + strings.Join(names, ", ") + "; run metasystem work rebase " + entry.Goal + ", which regenerates what the contract declares, then hand in again"
 			returned, _, err := returnLocked(install, entry.Goal, out.Reason, out.Cause, detail, seams.now(), seams.Proof)
 			out.Entry, out.Outcome = &returned, "returned"
 			if returned.State == StateWaiting {
@@ -245,6 +198,56 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			}
 			return err
 		}
+		var begun *begunResolve
+		data, err := os.ReadFile(resolveBegunPath(install))
+		if err == nil {
+			if err := json.Unmarshal(data, &begun); err != nil {
+				return err
+			}
+			if begun == nil || begun.SHA == "" || len(begun.Paths) == 0 {
+				return errors.New("the begun resolve record has no merge or paths; nothing was changed")
+			}
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		if len(paths) == 0 && begun == nil {
+			out.Held = true
+			return nil
+		}
+		resuming := begun != nil && begun.SHA == sha
+		if len(paths) == 0 && !resuming {
+			out.Held = true
+			return nil
+		}
+		if resuming {
+			for _, name := range begun.Paths {
+				if !slices.Contains(paths, name) {
+					paths = append(paths, name)
+				}
+			}
+		}
+		ownsBegun := resuming
+		defer func() {
+			recordErr := appendLine(regeneratePath(install), out.Regeneration)
+			if recordErr == nil && out.Held && out.Cause != nil {
+				cause := *out.Cause
+				if cause.Evidence == "" {
+					cause.Evidence = regeneratePath(install)
+				}
+				recordErr = recordProofStop(install, Result{Result: Red, Scope: "regeneration", Goals: []GoalSHA{{Goal: out.Goal, SHA: out.SHA}}, Cause: &cause, Log: out.Log, Reason: out.Reason, At: out.At})
+			}
+			if recordErr == nil && ownsBegun && (out.Outcome == "resolved" || out.Outcome == "returned" || out.Outcome == "held") {
+				recordErr = os.Remove(resolveBegunPath(install))
+			}
+			runErr = errors.Join(runErr, recordErr)
+		}()
+		var sets []testpolicy.Generated
+		for _, set := range contract.Generated {
+			if slices.ContainsFunc(paths, func(name string) bool { return conflict.GeneratedBy([]testpolicy.Generated{set}, prefix, name) }) {
+				sets = append(sets, set)
+			}
+		}
+		outputs := func(name string) bool { return conflict.GeneratedBy(sets, prefix, name) }
 		// A failed regeneration restores the merge snapshot before aborting, and
 		// removes only new outputs in the sets this run actually regenerated.
 		abort := func(cause error) error {

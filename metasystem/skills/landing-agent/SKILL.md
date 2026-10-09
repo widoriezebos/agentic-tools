@@ -19,7 +19,7 @@ You are this computer's landing agent, in the lane checkout. You merge the recor
   in one message, the plain sentences the seats handed in (`--delivered`) for what it landed.
 - `metasystem landing return GOAL --cause own [--reason TEXT]`: returns a demonstrated own defect; without a reason, the proof supplies its failed tests and evidence.
 
-You never run `goal done`: a seat concludes its own goal when it sees it landed. Never push main
+You never run `goal done`: a seat concludes its own goal when it sees it landed. Never commit in the lane, push main
 with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 
 The lane and the hand gate run the same full proof: `sh proof/full.sh` from
@@ -27,6 +27,9 @@ The lane and the hand gate run the same full proof: `sh proof/full.sh` from
 only `ok` package lines pass, and missing test reports are red.
 
 ## The loop
+
+This repository sets `landing.batch=1` in its committed `metasystem.conf`, so
+each recorded batch has one member. The built-in default policy is `auto`.
 
 When a full check needs a person, stop on its recorded request. The person uses
 `metasystem landing prove` (or `--trunk` for main); `landing run` grants no
@@ -52,40 +55,46 @@ human return restores no automatic allowance.
    members wait without a selection, ask with `--about lane` and end your turn.
 2. If `last_proof` is for HEAD's tree: green → `landing push`; red → case 3. A green proof is
    never left unpushed: when the push refuses because main moved, do case 5 before anything else.
-3. Otherwise: `git fetch origin`, `git checkout --detach origin/main`, then merge only the
-   recorded `batch.members`, in order, whose exact goal and sha are still waiting and not held.
+3. Otherwise: `git fetch origin`, `git checkout --detach origin/main`, then merge the one
+   recorded `batch.members` pair whose exact goal and sha are still waiting and not held.
    Skip members already on fetched main, returned, superseded or held by their batch-conflict `after` record;
    never substitute another waiting line or a newer tip. Use `git merge --no-ff SHA`. After every merge run
    `metasystem landing prove --gate --wait` and read its result (`last_gate` in status).
-   Green: continue with the next merge. Red with `repeat: allowed`: run
+   Green: run `landing prove` and end your turn. Red with `repeat: allowed`: run
    `metasystem landing prove --gate --wait` once more.
    An `own` cause: check out the merge's first parent, then run
-   `metasystem landing return GOAL --cause own` for the goal the cause names and continue.
-   Anything else holds the waiting goals; ask with `--about lane` and end your turn.
+   `metasystem landing return GOAL --cause own` once for the goal the cause names; its supplied reason lists every failed unit and test. The seat fixes on its branch and hands in again.
+   A `main` cause follows case 3: hold for main's hot-fix and trunk proof. Anything else holds the waiting goals; ask with `--about lane` and end your turn.
    After all checks are green, run `landing prove` and end your turn.
    Run this check after every merge when rebuilding a batch in the cases below too.
 
 ## Cases
 
-1. **One waiting, green:** merge it, prove, push.
-2. **Several selected:** merge only those selected pairs, prove once, push once.
-3. **Red:** read `last_proof.cause`. For `own`, run `metasystem landing return GOAL --cause own`
-   for the goal it names, merge the remaining selected pairs on latest main, and prove. For `main`,
-   the batch holds: name main's failed units and the incident record. A person hot-fixes main,
-   then `metasystem landing prove --trunk` (case 8) clears the incident when green; continue with case 5.
-   When `last_proof.repeat` is
-   `allowed`, run `metasystem landing prove` once more and end your turn. For any other cause,
-   end your turn; the waiting goals hold. A red without the repeat allowance gets
-   no other check of that tree.
-4. **Conflict:** never edit a conflicted file. Run `metasystem landing resolve` and read its
-   outcome and reason. `resolved`: commit the staged merge, then prove it. `returned`: land
-   the rest. `held`: read its reason. When it says to retry, end your turn and retry that
-   hand-in once at the next turn. When it says to ask, ask with `--about lane`; a second lost
-   process holds and asks. Otherwise skip that line. A batch conflict waits until its `after` hand-ins have landed or returned;
-   merge it again in the next batch. `landing status` shows the running command and log size;
-   `landing stop` ends it. Regeneration is never proof.
+1. **One waiting, green:** merge the recorded member on fetched main, run `landing prove --gate --wait`, then `landing prove` and end your turn. Push when the full proof is green.
+2. **Several waiting:** the recorded batch holds one goal. Merge only that pair, run `landing prove --gate --wait`, then `landing prove` and end your turn; push its green before selecting the next goal.
+3. **Red:** read `last_proof.cause` (or `last_gate.cause` for a cheap-gate red).
+   For `own`, check out the merge's first parent, then run
+   `metasystem landing return GOAL --cause own` once for the goal it names.
+   The proof supplies the complete red list: every failed unit and test, with `<unit> (package)`
+   for a package failure. The seat sees that reason in `work land GOAL`, fixes on its branch
+   under its own budget, and hands in again.
+   For `main`, hold the batch and end your turn naming main's units (`cause.name`), the
+   incident record and the way forward. Main's red is fixed first, through the enrolled
+   person's hot-fix. The hot-fix alone releases nothing: after it reaches main, run
+   `metasystem landing prove --trunk` when woken with `full-due` or asked by the person;
+   its green clears the incident, then continue with case 5 on the new main.
+   When `last_proof.repeat` is `allowed`, run `metasystem landing prove` once more and
+   end your turn. For any other cause, the waiting goals hold. A budget hold needs the enrolled person's own
+   `metasystem landing prove`; follow the recorded command. `landing run` grants no proof
+   permission. A red without the repeat allowance gets no other check of that tree.
+4. **Conflict:** never edit a conflicted file. Run `metasystem landing resolve`, which
+   aborts and returns the hand-in with every conflicting path by class, including generated
+   files, and `metasystem work rebase GOAL` as the remedy. The seat regenerates what its
+   contract declares and hands in again. A conflict with a batch member holds behind its
+   `after` hand-ins until they land or return. Read the outcome and reason, then continue
+   with the remaining waiting work. The lane never regenerates, stages or commits a conflict.
 5. **Main moved during the proof** (push refuses: HEAD does not contain origin's main): fetch,
-   check out the new main, merge the same recorded batch members, in the same order, and
+   check out the new main, merge the same one recorded batch member, and
    `landing prove`. When only goal ledger files moved, it reports the green at once and you push in
    the same turn. A recorded flake moves main by its record; merging the new main inherits the
    green and its reason, naming the flaky unit and its fix goal. When other files moved and
@@ -96,7 +105,8 @@ human return restores no automatic allowance.
    they are the next batch.
    **Design refusal** (push returns a goal whose design no longer stands, or refuses because HEAD
    still contains a returned goal): rebuild the batch. Run `git checkout --detach origin/main`,
-   `git merge --no-ff SHA` for the remaining recorded selected pairs that still wait and are not held, then `metasystem landing prove`.
+   `git merge --no-ff SHA` for the recorded member if it still waits and is not held,
+   run `metasystem landing prove --gate --wait`, then `metasystem landing prove`.
    End your turn; push when the proof is green.
 6. **Lane paused** (`paused`, or a verb says the lane is stopped): read status again. Continue only your matching `admitted-batch`; a later pause removes that admission, so stop. Never clear the pause or select other work.
 7. **The check stopped or ran no test** (`running_proof.state` is `died`, or `last_proof` is

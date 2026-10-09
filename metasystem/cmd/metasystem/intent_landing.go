@@ -337,7 +337,7 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: summary, Data: data,
-		view: withPlainLane(withRunningProof(inv.landingStatusView(view, unreadable != nil, data.RunningProof, waiting), data.RunningProof), data)}
+		view: withPlainLane(withRunningProof(inv.landingStatusView(view, unreadable != nil, data.RunningProof, waiting), data.RunningProof), data, record.Install)}
 	if view.Root != nil {
 		result.Targets = laneTargets(*view.Root)
 	}
@@ -376,7 +376,7 @@ func landingQueueWords(queue []plain.Entry) string {
 // withPlainLane adds the plain lane's queue, last proof and last push to
 // landing status's page: the lines that wait or were returned, and with
 // --verbose the landed ones too.
-func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui.Page) {
+func withPlainLane(view func(*textui.Page), data landingStatusData, install string) func(*textui.Page) {
 	return func(page *textui.Page) {
 		view(page)
 		if data.Root == nil {
@@ -415,6 +415,9 @@ func withPlainLane(view func(*textui.Page), data landingStatusData) func(*textui
 		}
 		if run := data.RunningRegeneration; run != nil {
 			page.Section("Regenerating", "").Text(fmt.Sprintf("%s: %s (%s); log %s, %d bytes", run.Goal, strings.Join(run.Command, " "), run.State, run.Log, run.LogBytes))
+		}
+		if _, err := os.Lstat(filepath.Join(plain.Dir(install), "resolve-begun.json")); err == nil {
+			page.Section("", "").Text("Stale resolve-begun.json: ignored; every merge conflict returns to its seat.")
 		}
 		rows := [][2]string{}
 		for _, entry := range data.Queue {

@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -209,60 +208,36 @@ func TestLandingResolveVerbFailsWhenReturnCannotBeAppended(t *testing.T) {
 	}
 }
 
-// A changed regeneration rule requires a green run before the merge for an own return.
-func TestLandingResolveVerbReturnsFailedRegenerationOnlyAfterBaselinePasses(t *testing.T) {
+func TestLandingResolveVerbReturnsGeneratedPathsWithoutRunningCommands(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
 	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	aborted := false
-	runs := 0
-	b.owners.landing.plainResolve = plain.ResolveSeams{
-		Git: func(_ string, args ...string) (string, error) {
-			switch strings.Join(args, " ") {
-			case "show HEAD:metasystem/testing.json":
-				return b.contract, nil
-			case "diff --name-only --diff-filter=U -z", "ls-files -z", "ls-tree -r --name-only -z HEAD -- metasystem/out/result":
-				return "metasystem/out/result\x00", nil
-			case "rev-parse --verify HEAD^{commit}":
-				return "main-sha", nil
-			case "rev-parse --verify MERGE_HEAD^{commit}":
-				return "goal-sha", nil
-			case "diff --name-only -z AUTO_MERGE --", "ls-files --others --exclude-standard -z",
-				"restore --source=HEAD --staged --worktree -- metasystem/out/result",
-				"restore --source=AUTO_MERGE --worktree -- metasystem/out/result":
-				return "", nil
-			case "merge --abort":
-				aborted = true
-				return "", nil
-			default:
-				t.Fatalf("unexpected Git call %v", args)
-				return "", nil
-			}
-		},
-		Run: func(_ []string, _ string, log *os.File, _ func(int64) error) error {
-			runs++
-			if runs > 1 {
-				if !aborted {
-					t.Fatal("baseline regeneration ran before abort")
-				}
-				return nil
-			}
-			if _, err := log.WriteString("fixture regeneration failed\n"); err != nil {
-				t.Fatal(err)
-			}
-			return exec.Command("/usr/bin/false").Run()
-		},
+	b.sourceConflictGit(t, func() { aborted = true })
+	git := b.owners.landing.plainResolve.Git
+	b.owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
+		if strings.Join(args, " ") == "diff --name-only --diff-filter=U -z" {
+			return "metasystem/out/result\x00", nil
+		}
+		return git(dir, args...)
+	}
+	b.owners.landing.plainResolve.Run = func([]string, string, *os.File, func(int64) error) error {
+		t.Fatal("generator ran in the lane")
+		return nil
+	}
+	begun := filepath.Join(plain.Dir(b.install), "resolve-begun.json")
+	if err := os.WriteFile(begun, []byte("obsolete"), 0600); err != nil {
+		t.Fatal(err)
 	}
 	code, text := b.run(t, b.root, "resolve")
 	entry, ok, err := plain.Latest(b.install, "goal")
-	if err != nil || !ok || entry.State != plain.StateReturned || !aborted || runs != 2 || entry.Cause.Kind != "own" || entry.Cause.Evidence == "" || entry.Conflict == nil {
-		t.Fatalf("queue=%+v ok=%v err=%v aborted=%v runs=%d", entry, ok, err, aborted, runs)
+	if code != 0 || err != nil || !ok || entry.State != plain.StateReturned || !aborted || entry.Cause.Kind != "own" || entry.Conflict == nil || !strings.Contains(oneSpaced(text), "metasystem/out/result (generated)") || !strings.Contains(oneSpaced(text), "work rebase goal") {
+		t.Fatalf("return=%d %s queue=%+v err=%v", code, text, entry, err)
 	}
-	if code != 1 || !strings.Contains(oneSpaced(text), "returned goal: regeneration exited 1; log:") ||
-		!strings.Contains(oneSpaced(text), oneSpaced(entry.Reason)) || strings.Contains(text, "tries again") || strings.Contains(text, "could not be resolved") {
-		t.Fatalf("failed regeneration answer=%d %s", code, text)
+	if _, err := os.Stat(filepath.Join(plain.Dir(b.install), "regenerate.jsonl")); !os.IsNotExist(err) {
+		t.Fatalf("return wrote regeneration: %v", err)
 	}
 }
 

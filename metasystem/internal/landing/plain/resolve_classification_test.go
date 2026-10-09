@@ -9,7 +9,7 @@ import (
 	"testing"
 )
 
-func TestResolveRegenerationReturnLimitHoldsWaitingEntry(t *testing.T) {
+func TestResolveConflictReturnLimitHoldsWaitingEntry(t *testing.T) {
 	t.Parallel()
 	b := newResolveFixture(t)
 	if err := os.Remove(queuePath(b.install)); err != nil {
@@ -62,94 +62,31 @@ func TestResolveRegenerationReturnLimitHoldsWaitingEntry(t *testing.T) {
 	if !errors.As(err, &refusal) || refusal.Code != "LANE_RETURN_PERSON" || !strings.Contains(refusal.Reason, "two automatic returns") {
 		t.Fatalf("return limit was not enforced: out=%+v err=%v", out, err)
 	}
-	if out.Outcome != "held" || !out.Held || out.Exit != 1 || out.Entry == nil || out.Entry.State != StateWaiting || !out.Entry.Held || out.Cause == nil || out.Cause.Kind != "own" || runs != 3 {
-		t.Errorf("refused regeneration return=%+v runs=%d", out, runs)
+	if out.Outcome != "held" || !out.Held || out.Exit != 0 || out.Entry == nil || out.Entry.State != StateWaiting || !out.Entry.Held || out.Cause == nil || out.Cause.Kind != "own" || runs != 0 {
+		t.Errorf("refused conflict return=%+v runs=%d", out, runs)
 	}
 	entry, ok, err := Latest(b.install, "goal")
 	if err != nil || !ok || entry.SHA != "goal-sha" || entry.State != StateWaiting || !entry.Held {
 		t.Errorf("queue did not retain the hold: entry=%+v found=%v err=%v", entry, ok, err)
 	}
 	second, err := b.resolve()
-	if err != nil || second.Outcome != "held" || !second.Held || runs != 3 {
-		t.Fatalf("held regeneration ran again: out=%+v runs=%d err=%v", second, runs, err)
+	if err != nil || second.Outcome != "held" || !second.Held || runs != 0 {
+		t.Fatalf("held conflict ran again: out=%+v runs=%d err=%v", second, runs, err)
 	}
 }
 
-func TestResolveKilledRegenerationRetriesOnceAndNeverReplaysOrReturns(t *testing.T) {
-	t.Parallel()
-	b := newResolveFixture(t)
-	runs := 0
-	b.seams.Run = func([]string, string, *os.File, func(int64) error) error {
-		runs++
-		command := exec.Command("/bin/sleep", "60")
-		if err := command.Start(); err != nil {
-			t.Fatal(err)
-		}
-		if err := command.Process.Kill(); err != nil {
-			t.Fatal(err)
-		}
-		return command.Wait()
-	}
-	for attempt := 1; attempt <= 2; attempt++ {
-		out, err := b.resolve()
-		if err == nil || out.Exit < 128 || out.Cause.Kind != "environment" || out.Cause.Name != "lost-process" || out.Held != (attempt == 2) || out.Entry.State != StateWaiting || runs != attempt {
-			t.Fatalf("attempt %d: %+v runs=%d err=%v", attempt, out, runs, err)
-		}
-		if _, err := os.Stat(resolveBegunPath(b.install)); !errors.Is(err, os.ErrNotExist) {
-			t.Fatalf("aborted run left a begun merge: %v", err)
-		}
-	}
-	rows, err := readLines[Regeneration](regeneratePath(b.install))
-	if err != nil || len(rows) != 2 {
-		t.Fatalf("resolution records=%v err=%v", rows, err)
-	}
-	out, err := b.resolve()
-	if err != nil || !out.Held || runs != 2 {
-		t.Fatalf("third run: %+v runs=%d err=%v", out, runs, err)
-	}
-}
-
-func TestResolveBaselineCleansOnlySetsItRan(t *testing.T) {
+func TestResolveReturnsAllGeneratedSetsWithoutReplayOrCleanup(t *testing.T) {
 	t.Parallel()
 	b := newResolveFixture(t)
 	b.paths += "metasystem/unused/conflict\x00"
-	b.tracked += "metasystem/unused/conflict\x00"
-	runs, aborted := 0, false
-	originalGit := b.seams.Git
-	b.seams.Git = func(dir string, args ...string) (string, error) {
-		if strings.Join(args, " ") == "merge --abort" {
-			aborted = true
-		}
-		return originalGit(dir, args...)
-	}
-	b.seams.Run = func([]string, string, *os.File, func(int64) error) error {
-		runs++
-		if runs == 2 && !aborted {
-			t.Fatal("baseline ran before abort")
-		}
-		if aborted {
-			b.untracked = "metasystem/out/new\x00metasystem/unused/preexisting\x00metasystem/unrelated\x00"
-		}
-		return exec.Command("/usr/bin/false").Run()
-	}
 	out, err := b.resolve()
-	if err == nil || !out.Held || out.Cause.Kind != "unclassified" || runs != 2 || out.Entry.State != StateWaiting {
-		t.Fatalf("baseline failure=%+v runs=%d err=%v", out, runs, err)
+	if err != nil || out.Held || out.Outcome != "returned" || out.Entry == nil || out.Entry.State != StateReturned || len(out.Command) != 0 || len(out.Conflict.Paths) != 2 || !strings.Contains(out.Reason, "metasystem/out/conflict") || !strings.Contains(out.Reason, "metasystem/unused/conflict") {
+		t.Fatalf("return=%+v err=%v", out, err)
 	}
-	var replayWrites [][]string
-	for at, write := range b.writes {
-		if reflect.DeepEqual(write, []string{"merge", "--abort"}) {
-			replayWrites = b.writes[at+1:]
-			break
-		}
+	if !reflect.DeepEqual(b.writes, [][]string{{"merge", "--abort"}}) {
+		t.Fatalf("return changed outputs: %v", b.writes)
 	}
-	want := [][]string{
-		{"clean", "-f", "--", "metasystem/out/new"},
-		{"restore", "--source=HEAD", "--staged", "--worktree", "--", "metasystem/out/conflict", "metasystem/out/other", "metasystem/out/new"},
-	}
-	if !reflect.DeepEqual(replayWrites, want) {
-		t.Fatalf("replay touched an unrun set or unrelated file: %v", replayWrites)
-	}
+	b.record(out)
 }
 
 func TestConflictDependencyHoldTracksExactHandInAndPendingSkipsHeld(t *testing.T) {

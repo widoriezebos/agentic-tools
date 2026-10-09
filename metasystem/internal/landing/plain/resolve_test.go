@@ -1,7 +1,6 @@
 package plain
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -92,76 +91,30 @@ func (b *resolveFixture) resolve() (ResolveOutcome, error) {
 
 func (b *resolveFixture) record(out ResolveOutcome) {
 	b.t.Helper()
-	rows, err := readLines[Regeneration](regeneratePath(b.install))
-	expected := 1
-	if out.Exit > 0 && out.Cause != nil && out.Cause.Kind != "environment" {
-		expected = 2
-	}
-	if err != nil || len(rows) != expected || !reflect.DeepEqual(rows[len(rows)-1], out.Regeneration) || expected == 2 && rows[0].Cause.Kind != "unclassified" {
-		b.t.Fatalf("regeneration rows=%+v err=%v; want one outcome %+v", rows, err, out.Regeneration)
-	}
-	if _, err := os.Stat(resultsPath(b.install)); !errors.Is(err, os.ErrNotExist) {
-		b.t.Fatalf("regeneration wrote a proof result: %v", err)
-	}
-	last, err := LastRegeneration(b.install)
-	if err != nil || last == nil || !reflect.DeepEqual(*last, out.Regeneration) {
-		b.t.Fatalf("last regeneration=%+v err=%v", last, err)
-	}
-	if _, err := os.Stat(regenerationRunningPath(b.install)); !errors.Is(err, os.ErrNotExist) {
-		b.t.Fatalf("completed command remains running: %v", err)
+	for _, path := range []string{regeneratePath(b.install), resultsPath(b.install), regenerationRunningPath(b.install)} {
+		if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+			b.t.Fatalf("conflict return wrote %s: %v", path, err)
+		}
 	}
 }
 
-func TestResolveGeneratedRunsOrderedArgvAndStagesDeclaredOutputs(t *testing.T) {
+func TestResolveGeneratedAbortsAndReturnsWithoutRegeneration(t *testing.T) {
 	t.Parallel()
 	b := newResolveFixture(t)
-	var commands [][]string
-	b.seams.Run = func(argv []string, dir string, log *os.File, started func(int64) error) error {
-		commands = append(commands, append([]string(nil), argv...))
-		if dir != filepath.Join(b.install, "src") {
-			t.Fatalf("cwd=%s", dir)
-		}
-		if err := started(0); err != nil {
-			t.Fatal(err)
-		}
-		if _, err := log.WriteString("rebuilt\n"); err != nil {
-			t.Fatal(err)
-		}
-		b.untracked = "metasystem/out/new\x00"
-		return nil
-	}
 	out, err := b.resolve()
-	wantCommands := [][]string{b.contract.Generated[0].Command, b.contract.Generated[0].Then}
-	if err != nil || out.Outcome != "resolved" || out.Exit != 0 || out.Entry != nil || out.Held || !reflect.DeepEqual(commands, wantCommands) || !reflect.DeepEqual(out.Command, wantCommands) {
-		t.Fatalf("out=%+v commands=%v err=%v", out, commands, err)
+	if err != nil || out.Outcome != "returned" || out.Exit != 0 || out.Entry == nil || out.Entry.State != StateReturned || out.Held || len(out.Command) != 0 || out.Conflict.Paths[0].Class != conflict.Generated || !strings.Contains(out.Reason, "metasystem/out/conflict (generated)") || !strings.Contains(out.Reason, "work rebase goal") {
+		t.Fatalf("out=%+v err=%v", out, err)
 	}
-	wantWrites := [][]string{
-		{"restore", "--source=HEAD", "--staged", "--worktree", "--", "metasystem/out/conflict"},
-		{"add", "-A", "--", "metasystem/out/conflict", "metasystem/out/other", "metasystem/out/new"},
-	}
-	if !reflect.DeepEqual(b.writes, wantWrites) {
-		t.Fatalf("Git writes=%v; want %v", b.writes, wantWrites)
+	if !reflect.DeepEqual(b.writes, [][]string{{"merge", "--abort"}}) {
+		t.Fatalf("Git writes=%v", b.writes)
 	}
 	b.record(out)
-	entry, _, err := Latest(b.install, "goal")
-	if err != nil || entry.State != StateWaiting {
-		t.Fatalf("queue=%+v err=%v", entry, err)
-	}
-	data, err := os.ReadFile(out.Log)
-	if err != nil || string(data) != "rebuilt\nrebuilt\n" {
-		t.Fatalf("log=%q err=%v", data, err)
-	}
-	// The second invocation observes the staged tree and must append nothing.
-	before, err := os.ReadFile(regeneratePath(b.install))
-	if err != nil {
-		t.Fatal(err)
-	}
 	b.paths = ""
 	second, err := b.resolve()
-	after, readErr := os.ReadFile(regeneratePath(b.install))
-	if err != nil || readErr != nil || !second.Held || !reflect.DeepEqual(before, after) || !reflect.DeepEqual(b.writes, wantWrites) {
-		t.Fatalf("repeat=%+v err=%v read=%v writes=%v", second, err, readErr, b.writes)
+	if err != nil || !second.Held || len(b.writes) != 1 {
+		t.Fatalf("repeat=%+v err=%v writes=%v", second, err, b.writes)
 	}
+	b.record(second)
 }
 
 func TestResolveSourceAbortsAndReturnsStructuredConflictWithoutEditing(t *testing.T) {
@@ -186,45 +139,23 @@ func TestResolveSourceAbortsAndReturnsStructuredConflictWithoutEditing(t *testin
 	b.record(out)
 }
 
-// A non-zero regeneration returns only when its commands pass before the merge.
-func TestResolveFailedCommandRestoresAbortsAndReturnsOwnWithBaselineAndLog(t *testing.T) {
+func TestResolveIgnoresObsoleteBegunRecordBeforeReturning(t *testing.T) {
 	t.Parallel()
 	b := newResolveFixture(t)
-	runs := 0
-	b.seams.Run = func(_ []string, _ string, log *os.File, started func(int64) error) error {
-		runs++
-		if runs > 1 {
-			return nil
-		}
-		if err := started(0); err != nil {
-			return err
-		}
-		if _, err := log.WriteString("compile failed\n"); err != nil {
-			return err
-		}
-		b.untracked = "metasystem/out/new\x00metasystem/unrelated\x00"
-		return exec.Command("/usr/bin/false").Run()
+	begun := resolveBegunPath(b.install)
+	data := []byte("obsolete, undecodable record")
+	if err := os.WriteFile(begun, data, 0600); err != nil {
+		t.Fatal(err)
 	}
 	out, err := b.resolve()
-	if err == nil || out.Outcome != "returned" || out.Exit != 1 || out.Entry == nil || out.Entry.State != StateReturned || !strings.Contains(out.Entry.Reason, "exited 1; log: "+out.Log) || len(out.Command) != 1 || runs != 3 || out.Entry.Cause.Kind != "own" {
-		t.Fatalf("out=%+v err=%v", out, err)
+	if err != nil || out.Entry == nil || out.Entry.State != StateReturned {
+		t.Fatalf("return=%+v err=%v", out, err)
 	}
-	want := [][]string{
-		{"restore", "--source=HEAD", "--staged", "--worktree", "--", "metasystem/out/conflict"},
-		{"clean", "-f", "--", "metasystem/out/new"},
-		{"restore", "--source=AUTO_MERGE", "--worktree", "--", "metasystem/out/conflict", "metasystem/out/other", "metasystem/out/new"},
-		{"merge", "--abort"},
-		{"clean", "-f", "--", "metasystem/out/new"},
-		{"restore", "--source=HEAD", "--staged", "--worktree", "--", "metasystem/out/conflict", "metasystem/out/other", "metasystem/out/new"},
-	}
-	if !reflect.DeepEqual(b.writes, want) {
-		t.Fatalf("failure cleanup=%v; want %v", b.writes, want)
+	kept, err := os.ReadFile(begun)
+	if err != nil || !reflect.DeepEqual(kept, data) {
+		t.Fatalf("begun record changed: %q %v", kept, err)
 	}
 	b.record(out)
-	data, readErr := os.ReadFile(out.Log)
-	if readErr != nil || string(data) != "compile failed\n\nRegeneration on the tree before the merge:\n" {
-		t.Fatalf("failure log=%q err=%v", data, readErr)
-	}
 }
 
 func TestResolveRefusesCheckoutEditsWithoutChangingTheMerge(t *testing.T) {
@@ -315,144 +246,97 @@ func TestRegenerationStatusShowsCommandLogGrowthAndDiedState(t *testing.T) {
 	b.record(out)
 }
 
-// A stopped generator leaves the hand-in waiting with an environment cause.
-func TestRegenerationRefusesPausedLaneBeforeStartingCommand(t *testing.T) {
+// Conflict returns never start a generator, including when generators are paused.
+func TestResolveReturnsConflictWithoutStartingPausedGenerator(t *testing.T) {
 	t.Parallel()
 	b := newResolveFixture(t)
 	if _, err := lane.SetPause(b.home, "Wido", bedNow); err != nil {
 		t.Fatal(err)
 	}
 	out, err := b.resolve()
-	if err == nil || !strings.Contains(err.Error(), "landing lane is stopped") || out.Entry == nil || out.Entry.State != StateWaiting || out.Outcome != "held" || out.Cause.Kind != "environment" {
+	if err != nil || out.Outcome != "returned" || out.Entry == nil || out.Entry.State != StateReturned || len(out.Command) != 0 {
 		t.Fatalf("out=%+v err=%v", out, err)
 	}
 	b.record(out)
 }
 
-// Git's delete/change index and its open merge after restore determine whether
-// resolution can continue; a stub that accepts restore cannot prove either.
-func TestGitAdapterResolveRemovesGeneratedPathDeletedOnMain(t *testing.T) {
+// Real Git proves that returning a generated conflict clears its merge and index.
+func TestGitAdapterResolveReturnsGeneratedConflictDeletedOnMain(t *testing.T) {
 	t.Parallel()
 	b := newResolveGitAdapterFixture(t, true)
 	out, err := b.resolve()
-	if err != nil || out.Held || out.Outcome != "resolved" || out.Exit != 0 || b.runs != 1 || !reflect.DeepEqual(out.Command, [][]string{b.contract.Generated[0].Command}) {
+	if err != nil || out.Held || out.Outcome != "returned" || out.Exit != 0 || b.runs != 0 || len(out.Command) != 0 {
 		t.Fatalf("resolve=%+v runs=%d err=%v", out, b.runs, err)
 	}
 	if _, err := os.Stat(filepath.Join(b.checkout, "metasystem/out/conflict")); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("main's deleted output remains: %v", err)
 	}
-	if got := b.mustGit("show", ":metasystem/out/rebuilt"); got != "regenerated" {
-		t.Fatalf("staged output=%q", got)
+	if _, err := os.Stat(filepath.Join(b.checkout, ".git/MERGE_HEAD")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("merge remains: %v", err)
 	}
-	if got := b.mustGit("ls-files", "--unmerged"); got != "" {
-		t.Fatalf("unmerged paths=%q", got)
+	if got := b.mustGit("status", "--porcelain"); got != "" {
+		t.Fatalf("checkout dirty: %s", got)
 	}
 	b.record(out)
 }
 
-// A real restore clears every unmerged index stage while keeping MERGE_HEAD;
-// a stub cannot prove that a restart regenerates this apparently resolved tree.
-func TestGitAdapterResolveResumesAfterTakingMainBeforeStaging(t *testing.T) {
+// A staged merge has no conflict to return, even if an obsolete record remains.
+func TestGitAdapterResolveIgnoresBegunRecordOnStagedMerge(t *testing.T) {
 	t.Parallel()
 	b := newResolveGitAdapterFixture(t, false)
-	sha := b.mustGit("rev-parse", "--verify", "MERGE_HEAD^{commit}")
-	data, err := json.Marshal(struct {
-		SHA   string   `json:"sha"`
-		Paths []string `json:"paths"`
-	}{sha, []string{"metasystem/out/conflict"}})
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Recreate a resolver that wrote its begun record, took main, then died.
-	if err := os.WriteFile(filepath.Join(Dir(b.install), "resolve-begun.json"), data, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	b.mustGit("restore", "--source=HEAD", "--staged", "--worktree", "--", "metasystem/out/conflict")
-	if got := b.mustGit("ls-files", "--unmerged"); got != "" {
-		t.Fatalf("restore left unmerged paths=%q", got)
-	}
-	out, err := b.resolve()
-	if err != nil || out.Held || out.Outcome != "resolved" || b.runs != 1 {
-		t.Fatalf("restart=%+v runs=%d err=%v", out, b.runs, err)
-	}
-	if got := b.mustGit("show", ":metasystem/out/conflict"); got != "regenerated" {
-		t.Fatalf("staged output=%q; want regenerated", got)
-	}
-	b.record(out)
-	if _, err := os.Stat(filepath.Join(Dir(b.install), "resolve-begun.json")); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("completed resolve keeps its begun record: %v", err)
-	}
-	before, err := os.ReadFile(regeneratePath(b.install))
-	if err != nil {
-		t.Fatal(err)
-	}
-	index := b.mustGit("write-tree")
-	repeat, err := b.resolve()
-	after, readErr := os.ReadFile(regeneratePath(b.install))
-	if err != nil || readErr != nil || !repeat.Held || b.runs != 1 || !reflect.DeepEqual(before, after) || b.mustGit("write-tree") != index {
-		t.Fatalf("repeat=%+v runs=%d err=%v read=%v", repeat, b.runs, err, readErr)
-	}
-}
-
-// Git's restore clears the unmerged stages while leaving an open merge; a stub
-// cannot prove that a refused resume still needs regeneration on its next run.
-func TestGitAdapterResolveRetainsBegunRecordAfterRefusedResume(t *testing.T) {
-	t.Parallel()
-	b := newResolveGitAdapterFixture(t, false)
-	data, err := json.Marshal(begunResolve{
-		SHA: b.mustGit("rev-parse", "--verify", "MERGE_HEAD^{commit}"), Paths: []string{"metasystem/out/conflict"},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
 	begun := resolveBegunPath(b.install)
-	if err := os.WriteFile(begun, data, 0o600); err != nil {
+	data := []byte("obsolete record")
+	if err := os.WriteFile(begun, data, 0600); err != nil {
 		t.Fatal(err)
 	}
 	b.mustGit("restore", "--source=HEAD", "--staged", "--worktree", "--", "metasystem/out/conflict")
-	if got := b.mustGit("ls-files", "--unmerged"); got != "" {
-		t.Fatalf("restore left unmerged paths=%q", got)
+	index := b.mustGit("write-tree")
+	for range 2 {
+		out, err := b.resolve()
+		if err != nil || !out.Held || b.runs != 0 || b.mustGit("write-tree") != index {
+			t.Fatalf("resolve=%+v runs=%d err=%v", out, b.runs, err)
+		}
+		b.record(out)
 	}
-	stray := filepath.Join(b.checkout, "scratch")
-	if err := os.WriteFile(stray, []byte("unrelated\n"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	refused, err := b.resolve()
-	if err == nil || !strings.Contains(err.Error(), "changes outside the recorded merge") || refused.Outcome != "refused" || refused.Held || b.runs != 0 {
-		t.Fatalf("refusal=%+v runs=%d err=%v", refused, b.runs, err)
-	}
-	b.record(refused)
 	kept, err := os.ReadFile(begun)
 	if err != nil || !reflect.DeepEqual(kept, data) {
-		t.Fatalf("refused resume lost or changed its begun record: %v", err)
+		t.Fatalf("begun record changed: %q %v", kept, err)
 	}
+}
+
+// Refusing checkout edits preserves the merge and the obsolete record for inspection.
+func TestGitAdapterResolveKeepsCheckoutEditsAndBegunRecord(t *testing.T) {
+	t.Parallel()
+	b := newResolveGitAdapterFixture(t, false)
+	begun := resolveBegunPath(b.install)
+	data := []byte("obsolete record")
+	if err := os.WriteFile(begun, data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	stray := filepath.Join(b.checkout, "scratch")
+	if err := os.WriteFile(stray, []byte("unrelated\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	out, err := b.resolve()
+	if err == nil || out.Outcome != "refused" || b.runs != 0 {
+		t.Fatalf("refusal=%+v runs=%d err=%v", out, b.runs, err)
+	}
+	if _, err := os.Stat(filepath.Join(b.checkout, ".git/MERGE_HEAD")); err != nil {
+		t.Fatalf("refusal aborted merge: %v", err)
+	}
+	kept, err := os.ReadFile(begun)
+	if err != nil || !reflect.DeepEqual(kept, data) {
+		t.Fatalf("begun record changed: %q %v", kept, err)
+	}
+	b.record(out)
 	if err := os.Remove(stray); err != nil {
 		t.Fatal(err)
 	}
-	out, err := b.resolve()
-	if err != nil || out.Held || out.Outcome != "resolved" || b.runs != 1 {
-		t.Fatalf("restart=%+v runs=%d err=%v", out, b.runs, err)
+	out, err = b.resolve()
+	if err != nil || out.Outcome != "returned" || b.runs != 0 {
+		t.Fatalf("return=%+v runs=%d err=%v", out, b.runs, err)
 	}
-	if got := b.mustGit("show", ":metasystem/out/conflict"); got != "regenerated" {
-		t.Fatalf("staged output=%q; want regenerated", got)
-	}
-	if _, err := os.Stat(begun); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("completed resolve keeps its begun record: %v", err)
-	}
-	rows, err := readLines[Regeneration](regeneratePath(b.install))
-	if err != nil || len(rows) != 2 || !reflect.DeepEqual(rows[1], out.Regeneration) {
-		t.Fatalf("regeneration rows=%+v err=%v", rows, err)
-	}
-	before, err := os.ReadFile(regeneratePath(b.install))
-	if err != nil {
-		t.Fatal(err)
-	}
-	index := b.mustGit("write-tree")
-	repeat, err := b.resolve()
-	after, readErr := os.ReadFile(regeneratePath(b.install))
-	if err != nil || readErr != nil || !repeat.Held || b.runs != 1 || !reflect.DeepEqual(before, after) || b.mustGit("write-tree") != index {
-		t.Fatalf("repeat=%+v runs=%d err=%v read=%v", repeat, b.runs, err, readErr)
-	}
+	b.record(out)
 }
 
 type resolveGitAdapterFixture struct {
@@ -496,6 +380,7 @@ func newResolveGitAdapterFixture(t *testing.T, deleted bool) *resolveGitAdapterF
 		write("main")
 	}
 	b.mustGit("commit", "--quiet", "-am", "main")
+	b.mustGit("update-ref", "refs/remotes/origin/main", "HEAD")
 	if output, err := b.seams.Git(b.checkout, "merge", "--no-commit", "goal"); err == nil {
 		t.Fatalf("expected a conflicted merge: %s", output)
 	}

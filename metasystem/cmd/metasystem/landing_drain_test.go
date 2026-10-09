@@ -726,50 +726,27 @@ func TestLandingDrainExplicitPersonProof(t *testing.T) {
 	}
 }
 
-func TestLandingDrainRegenerationAndKeeperComplete(t *testing.T) {
+func TestLandingDrainConflictReturnAndKeeperComplete(t *testing.T) {
 	t.Parallel()
 	b := newDrainVerbBed(t)
 	seedDrainLine(t, b.install, "goal", "goal-sha")
+	seedDrainLine(t, b.install, "waiting", "waiting-sha")
 	code, result := b.verb(t, "drain")
 	expectOutcome(t, "drain", code, result, intentConfirmed)
 	entered, release := make(chan struct{}), make(chan struct{})
 	var once sync.Once
-	b.owners.landing.plainResolve = plain.ResolveSeams{Now: func() time.Time { return laneTestNow }, Run: func(_ []string, _ string, _ *os.File, started func(int64) error) error {
-		if err := started(0); err != nil {
-			return err
+	b.sourceConflictGit(t, func() { once.Do(func() { close(entered); <-release }) })
+	originalGit := b.owners.landing.plainResolve.Git
+	b.owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
+		if strings.Join(args, " ") == "diff --name-only --diff-filter=U -z" {
+			return "metasystem/out/conflict\x00", nil
 		}
-		once.Do(func() { close(entered); <-release })
+		return originalGit(dir, args...)
+	}
+	b.owners.landing.plainResolve.Run = func([]string, string, *os.File, func(int64) error) error {
+		t.Fatal("draining lane ran a generator")
 		return nil
-	}, Git: func(_ string, args ...string) (string, error) {
-		switch strings.Join(args, " ") {
-		case "show HEAD:metasystem/testing.json":
-			return b.contract, nil
-		case "diff --name-only --diff-filter=U -z":
-			return "metasystem/out/conflict\x00", nil
-		case "rev-parse --verify HEAD^{commit}":
-			return "main-sha", nil
-		case "rev-parse --verify MERGE_HEAD^{commit}":
-			return "goal-sha", nil
-		case "diff --name-only -z AUTO_MERGE --", "ls-files --others --exclude-standard -z":
-			return "", nil
-		case "ls-files -z":
-			return "metasystem/out/conflict\x00", nil
-		}
-		if args[0] == "ls-tree" {
-			return "metasystem/out/conflict\x00", nil
-		}
-		if args[0] == "ls-files" {
-			return "100644 base 1\tmetasystem/out/conflict\x00100644 main 2\tmetasystem/out/conflict\x00100644 goal 3\tmetasystem/out/conflict\x00", nil
-		}
-		if args[0] == "diff" {
-			return "@@ -2,0 +3 @@\n+insert\n", nil
-		}
-		if args[0] == "restore" || args[0] == "add" {
-			return "", nil
-		}
-		t.Fatalf("unexpected regeneration Git %v", args)
-		return "", nil
-	}}
+	}
 	resolveDone := make(chan int, 1)
 	go func() { code, _ := b.verb(t, "resolve"); resolveDone <- code }()
 	<-entered
@@ -780,7 +757,7 @@ func TestLandingDrainRegenerationAndKeeperComplete(t *testing.T) {
 	b.keeper.Observe = func(record lane.Record) error {
 		home, err := lock.File(lane.LockPath(b.home), 0600, lock.TryExclusive)
 		if err != nil {
-			t.Error("keeper retained the home lock before waiting for regeneration")
+			t.Error("keeper retained the home lock before waiting for a conflict return")
 			observed.Do(func() { close(observing) })
 			return err
 		}
@@ -791,7 +768,7 @@ func TestLandingDrainRegenerationAndKeeperComplete(t *testing.T) {
 	keeperDone := make(chan lane.AgentRun, 1)
 	go func() { keeperDone <- b.keeper.Run() }()
 	<-observing
-	// A second explicit drain also waits for regeneration's queue lock, without retaining the home lock.
+	// A second explicit drain also waits for the conflict return's queue lock, without retaining the home lock.
 	draining := make(chan struct{})
 	drainDone := make(chan int, 1)
 	go func() { close(draining); code, _ := b.verb(t, "drain"); drainDone <- code }()
@@ -803,7 +780,7 @@ func TestLandingDrainRegenerationAndKeeperComplete(t *testing.T) {
 	_ = home.Release()
 	close(release)
 	if code := <-resolveDone; code != 0 {
-		t.Fatal("regeneration did not finish", code)
+		t.Fatal("conflict return did not finish", code)
 	}
 	if code := <-drainDone; code != 0 {
 		t.Fatal("waiting drain did not finish", code)
@@ -819,9 +796,13 @@ func TestLandingDrainRegenerationAndKeeperComplete(t *testing.T) {
 		t.Fatalf("unreadable policy admitted a batch: %+v %v", batch, err)
 	}
 	drain, err := plain.ReadDrain(b.install)
-	entry, found, entryErr := plain.Latest(b.install, "goal")
-	if err != nil || drain == nil || drain.State != plain.DrainDraining || entryErr != nil || !found || entry.State != plain.StateWaiting || entry.SHA != "goal-sha" {
-		t.Fatalf("regeneration hid waiting membership: drain=%+v err=%v entry=%+v found=%v err=%v", drain, err, entry, found, entryErr)
+	entry, found, entryErr := plain.Latest(b.install, "waiting")
+	if err != nil || drain == nil || drain.State != plain.DrainDraining || entryErr != nil || !found || entry.State != plain.StateWaiting || entry.SHA != "waiting-sha" {
+		t.Fatalf("conflict return hid waiting membership: drain=%+v err=%v entry=%+v found=%v err=%v", drain, err, entry, found, entryErr)
+	}
+	returned, ok, returnErr := plain.Latest(b.install, "goal")
+	if returnErr != nil || !ok || returned.State != plain.StateReturned || !strings.Contains(returned.Reason, "metasystem/out/conflict (generated)") {
+		t.Fatalf("conflict was not returned: %+v %v", returned, returnErr)
 	}
 	// A readable automatic policy permits the real selection owner to resume the admitted work.
 	effects := b.owners.landing.plainProve
@@ -837,10 +818,10 @@ func TestLandingDrainRegenerationAndKeeperComplete(t *testing.T) {
 		t.Fatalf("keeper did not resume admitted work after policy recovery: %+v launches=%d", run, b.launches)
 	}
 	batch, err = plain.ReadBatch(b.install)
-	if err != nil || batch == nil || len(batch.Members) != 1 || batch.Members[0] != (plain.GoalSHA{Goal: "goal", SHA: "goal-sha"}) {
+	if err != nil || batch == nil || len(batch.Members) != 1 || batch.Members[0] != (plain.GoalSHA{Goal: "waiting", SHA: "waiting-sha"}) {
 		t.Fatalf("recovery did not select the admitted commit: %+v %v", batch, err)
 	}
-	b.landed["goal-sha"] = true
+	b.landed["waiting-sha"] = true
 	run = b.keeper.Run()
 	drain, err = plain.ReadDrain(b.install)
 	batch, batchErr := plain.ReadBatch(b.install)

@@ -233,7 +233,7 @@ func TestLandingRedPermissionAuthorityMatrix(t *testing.T) {
 // a human return, a new batch identity, and a return to the same commit.
 func TestLandingReturnHistoryAcrossRoutes(t *testing.T) {
 	t.Parallel()
-	for _, route := range []string{"public", "source", "regeneration", "design"} {
+	for _, route := range []string{"public", "source", "generated", "design"} {
 		t.Run(route, func(t *testing.T) {
 			t.Parallel()
 			b := newResolveVerbFixture(t)
@@ -259,33 +259,21 @@ func TestLandingReturnHistoryAcrossRoutes(t *testing.T) {
 					}
 					return b.run(t, b.root, "resolve", "--json")
 				}
-				if route == "regeneration" {
-					runs := 0
-					b.owners.landing.plainResolve = plain.ResolveSeams{
-						Git: func(_ string, args ...string) (string, error) {
-							switch strings.Join(args, " ") {
-							case "show HEAD:metasystem/testing.json":
-								return b.contract, nil
-							case "diff --name-only --diff-filter=U -z", "ls-files -z", "ls-tree -r --name-only -z HEAD -- metasystem/out/result":
-								return "metasystem/out/result\x00", nil
-							case "rev-parse --verify HEAD^{commit}":
-								return "main-sha", nil
-							case "rev-parse --verify MERGE_HEAD^{commit}":
-								return sha, nil
-							case "diff --name-only -z AUTO_MERGE --", "ls-files --others --exclude-standard -z", "restore --source=HEAD --staged --worktree -- metasystem/out/result", "restore --source=AUTO_MERGE --worktree -- metasystem/out/result", "merge --abort":
-								return "", nil
-							default:
-								t.Fatalf("unexpected regeneration Git %v", args)
-								return "", nil
-							}
-						},
-						Run: func(_ []string, _ string, log *os.File, _ func(int64) error) error {
-							runs++
-							if runs > 1 {
-								return nil
-							}
-							return exec.Command("/usr/bin/false").Run()
-						},
+				if route == "generated" {
+					b.sourceConflictGit(t, func() {})
+					original := b.owners.landing.plainResolve.Git
+					b.owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
+						switch strings.Join(args, " ") {
+						case "diff --name-only --diff-filter=U -z":
+							return "metasystem/out/result\x00", nil
+						case "rev-parse --verify MERGE_HEAD^{commit}":
+							return sha, nil
+						}
+						return original(dir, args...)
+					}
+					b.owners.landing.plainResolve.Run = func([]string, string, *os.File, func(int64) error) error {
+						t.Fatal("generated conflict ran a generator")
+						return nil
 					}
 					return b.run(t, b.root, "resolve", "--json")
 				}
@@ -663,7 +651,7 @@ func TestLandingSourceConflictPersonHoldsWaitingEntry(t *testing.T) {
 	}
 }
 
-func TestLandingRegenerationPersonStopsBeforeReplay(t *testing.T) {
+func TestLandingGeneratedConflictPersonStopsBeforeReturn(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
 	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\ntesting.contract=testing.json\nlanding.on-red=person\n"), 0600))
@@ -671,47 +659,37 @@ func TestLandingRegenerationPersonStopsBeforeReplay(t *testing.T) {
 	_, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"})
 	helmMust(t, err)
 	runs := 0
-	b.owners.landing.plainResolve = plain.ResolveSeams{
-		Git: func(_ string, args ...string) (string, error) {
-			switch strings.Join(args, " ") {
-			case "show HEAD:metasystem/testing.json":
-				return b.contract, nil
-			case "diff --name-only --diff-filter=U -z", "ls-files -z", "ls-tree -r --name-only -z HEAD -- metasystem/out/result":
-				return "metasystem/out/result\x00", nil
-			case "rev-parse --verify HEAD^{commit}":
-				return "main-sha", nil
-			case "rev-parse --verify MERGE_HEAD^{commit}":
-				return "goal-sha", nil
-			case "diff --name-only -z AUTO_MERGE --", "ls-files --others --exclude-standard -z", "restore --source=HEAD --staged --worktree -- metasystem/out/result", "restore --source=AUTO_MERGE --worktree -- metasystem/out/result", "merge --abort":
-				return "", nil
-			default:
-				t.Fatalf("red person started regeneration replay: %v", args)
-				return "", nil
-			}
-		},
-		Run: func(_ []string, _ string, _ *os.File, _ func(int64) error) error {
-			runs++
-			return exec.Command("/usr/bin/false").Run()
-		},
+	b.sourceConflictGit(t, func() {})
+	original := b.owners.landing.plainResolve.Git
+	b.owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
+		if strings.Join(args, " ") == "diff --name-only --diff-filter=U -z" {
+			return "metasystem/out/result\x00", nil
+		}
+		return original(dir, args...)
+	}
+	b.owners.landing.plainResolve.Run = func([]string, string, *os.File, func(int64) error) error {
+		runs++
+		t.Fatal("generated conflict ran a generator")
+		return nil
 	}
 	code, text := b.run(t, b.root, "resolve", "--json")
 	entry, _, err := plain.Latest(b.install, "goal")
-	if code == 0 || err != nil || entry.State != plain.StateWaiting || !entry.Held || entry.Cause == nil || entry.Cause.Kind != "unclassified" || runs != 1 || !strings.Contains(text, "LANE_RETURN_PERSON") {
-		t.Fatalf("red regeneration continued: %d %s %+v %v runs=%d", code, text, entry, err, runs)
+	if code == 0 || err != nil || entry.State != plain.StateWaiting || !entry.Held || entry.Cause == nil || entry.Cause.Kind != "own" || runs != 0 || !strings.Contains(text, "LANE_RETURN_PERSON") {
+		t.Fatalf("generated conflict returned without a person: %d %s %+v %v runs=%d", code, text, entry, err, runs)
 	}
 	stops, err := plain.OpenStops(b.install)
 	helmMust(t, err)
 	found := false
 	for _, stop := range stops {
-		if stop.Command() == "metasystem landing return goal --cause unclassified --reason TEXT" {
+		if stop.Command() == "metasystem landing return goal --cause own --reason TEXT" {
 			found = true
 		}
 	}
 	if !found {
-		t.Fatalf("unclassified regeneration lacks actual return remedy: %+v", stops)
+		t.Fatalf("generated conflict lacks actual return remedy: %+v", stops)
 	}
-	if code, text := b.run(t, b.root, "resolve", "--json"); code != 0 || runs != 1 {
-		t.Fatalf("held regeneration ran again: %d %s runs=%d", code, text, runs)
+	if code, text := b.run(t, b.root, "resolve", "--json"); code != 0 || runs != 0 {
+		t.Fatalf("held generated conflict ran again: %d %s runs=%d", code, text, runs)
 	}
 }
 
