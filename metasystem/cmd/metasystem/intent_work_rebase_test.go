@@ -379,3 +379,56 @@ func TestWorkRebaseLinearizesMergedMainGitAdapter(t *testing.T) {
 		t.Fatalf("replayed unit or publication changed: commits=%+v err=%v", commits, err)
 	}
 }
+
+// The Git adapter must replace a pushed merge with the replayed unit history.
+func TestWorkRebaseLinearizesAPushedMergeGitAdapter(t *testing.T) {
+	t.Parallel()
+	b, owners, _ := rebaseIntentBed(t)
+	repo := b.worktree
+	git := func(args ...string) string { t.Helper(); return connectionGit(t, repo, args...) }
+	git("init", "-q", "-b", "main")
+	git("config", "user.name", "fixture")
+	git("config", "user.email", "fixture@example.invalid")
+	git("commit", "-qm", "base", "--allow-empty")
+	remote := filepath.Join(t.TempDir(), "origin.git")
+	connectionGit(t, filepath.Dir(remote), "init", "-q", "--bare", remote)
+	git("remote", "add", "origin", remote)
+	git("checkout", "-qb", "goal/"+b.id)
+	writeUnitCarryFile(t, filepath.Join(repo, "u1.go"), "work\n")
+	git("add", "u1.go")
+	message := "keep the unit message\n\nGoal-Unit: " + b.id + "/u1"
+	git("commit", "-qm", message)
+	git("push", "-q", "origin", "goal/"+b.id)
+	git("checkout", "-q", "main")
+	writeUnitCarryFile(t, filepath.Join(repo, "main.txt"), "main moved\n")
+	git("add", "main.txt")
+	git("commit", "-qm", "advance main")
+	main := git("rev-parse", "HEAD")
+	git("push", "-q", "origin", "main")
+	git("checkout", "-q", "goal/"+b.id)
+	git("merge", "--no-ff", "-qm", "merge main by hand", "main")
+	git("push", "-q", "origin", "goal/"+b.id)
+	git("fetch", "-q", "origin")
+	old := git("rev-parse", "origin/goal/"+b.id)
+	if merges := git("rev-list", "--merges", "--count", "main..origin/goal/"+b.id); merges != "1" {
+		t.Fatalf("fixture must have one pushed merge above main, got %s", merges)
+	}
+	if _, err := branch.InspectStatus(repo, main, old, b.id); err == nil || !strings.Contains(err.Error(), "2 parents") || !strings.Contains(err.Error(), "work rebase "+b.id) {
+		t.Fatalf("work land's refusal shape: %v", err)
+	}
+	owners.connection.endpointTip = branch.EndpointTip
+	owners.connection.rebase = branch.Rebase
+	code, result := b.runJSON(owners, "work", "rebase", b.id)
+	if code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("rebase: exit %d %+v", code, result)
+	}
+	git("fetch", "-q", "origin")
+	tip := git("rev-parse", "origin/goal/"+b.id)
+	if merges := git("rev-list", "--merges", "--count", "main..origin/goal/"+b.id); merges != "0" {
+		t.Fatalf("rebase left %s merges on origin above main", merges)
+	}
+	status, err := branch.InspectStatus(repo, main, tip, b.id)
+	if err != nil || len(status.Commits) != 1 || status.Commits[0].Unit != "u1" || git("show", "-s", "--format=%B", tip) != message || git("show", tip+":u1.go") != "work" || git("rev-parse", "HEAD") != tip {
+		t.Fatalf("replayed unit, publication, or work land inspection changed: status=%+v err=%v", status, err)
+	}
+}

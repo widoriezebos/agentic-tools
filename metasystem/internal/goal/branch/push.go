@@ -412,14 +412,23 @@ func pushWithRepository(req PushRequest, repository pushRepository) (PushResult,
 		return PushResult{}, err
 	}
 	if remotePresent {
-		if err := fetchAndValidateFromRepository(req, remoteTip, repository); err != nil {
-			return PushResult{}, err
+		// Replacing the recorded lease base requires only the validated local range.
+		if !(originPresent && remoteTip == originTip) {
+			if err := fetchAndValidateFromRepository(req, remoteTip, repository); err != nil {
+				return PushResult{}, err
+			}
 		}
 		remoteBuiltOnLocal, err := repository.Ancestor(req.Repo, localTip, remoteTip)
 		if err != nil {
 			return PushResult{}, err
 		}
 		if remoteBuiltOnLocal {
+			// A remote descendant is adopted, so its range must still be validated.
+			if originPresent && remoteTip == originTip {
+				if err := fetchAndValidateFromRepository(req, remoteTip, repository); err != nil {
+					return PushResult{}, err
+				}
+			}
 			if err := adoptRemoteTipWithRepository(req.Repo, req.GoalID, localTip, remoteTip, req.Hooks.BeforeAdoptionRefMove, req.Hooks.AfterAdoptionRefMove, repository); err != nil {
 				return PushResult{}, err
 			}
