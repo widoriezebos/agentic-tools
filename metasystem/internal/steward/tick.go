@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -33,6 +34,8 @@ type WorkerCensus interface {
 
 // TickConfig carries the thresholds; zero values take the defaults.
 type TickConfig struct {
+	// ProviderHome selects the host registration; empty uses the registry home.
+	ProviderHome string
 	// WorkStateRoot selects the host unit and launch stores; empty uses the
 	// registry's production default.
 	WorkStateRoot string
@@ -75,6 +78,8 @@ type TickConfig struct {
 	// RearmAtBoundary catches up an idle seat and starts the rebuilt engine.
 	// A true result ends this runner so its replacement can take the lock.
 	RearmAtBoundary func() (bool, error)
+	// CompletedBoundary retains completed work before later boundary consumers.
+	CompletedBoundary func(string, time.Time) error
 	// ProbeProvider answers one provider call without a limit; nil probes nothing.
 	ProbeProvider func(top string) (bool, error)
 	// ProbeRuntime runs the admission owner's capability probe without a job.
@@ -110,6 +115,22 @@ func (c TickConfig) withDefaults() TickConfig {
 		c.MaxRevivals = 3
 	}
 	return c
+}
+
+// The sampled elapsed age excludes partial provider waits. Evidence without
+// a time sample uses its retained tick count.
+func (c TickConfig) progressTicks(repoRoot string, ev Evidence) int {
+	if ev.SampledAt == "" {
+		return ev.TicksSinceAdvance
+	}
+	seconds := 0
+	if c.Runner != nil {
+		seconds = c.Runner.TickSeconds
+	}
+	if seconds <= 0 {
+		seconds = TickSeconds(repoRoot)
+	}
+	return int(ev.Age / (time.Duration(seconds) * time.Second))
 }
 
 func (c TickConfig) now() time.Time {
@@ -245,6 +266,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if state := helm.Active(repoRoot); state.Active {
 		return helmTick(repoRoot, cfg, generation, selfExact.Ref(), tickAttempt.AttemptSeq, state)
 	}
+
 	tickCompleted := false
 	defer func() {
 		reportErr := runTickReports(repoRoot, cfg, func() error {
@@ -268,6 +290,15 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 			returnErr = fmt.Errorf("record failed tick completion: %w", completeErr)
 		}
 	}()
+
+	if err := outage.ExpireAndNotify(cfg.ProviderHome, repoRoot, cfg.now(), func(provider string, interval outage.Interval) error {
+		return deliverNoticeWith(repoRoot, Notice{Source: NoticeAlert, Ref: "provider-stale-" + provider + "-" + interval.Since,
+			Message: fmt.Sprintf("provider %s: the stale outage mark expired without a provider answer", provider)}, deliver)
+	}); err != nil {
+		if logErr := logOrphanSeatRun(repoRoot, "provider expiry or stale alert failed: "+strings.ReplaceAll(err.Error(), "\n", "; "), cfg.now()); logErr != nil {
+			fmt.Fprintf(os.Stderr, "provider expiry or stale alert failed: %v; recording the failure: %v\n", err, logErr)
+		}
+	}
 
 	// Budget healing runs before health and notification. A successful stop is
 	// machinery history only; a failure remains visible to the ordinary health
@@ -512,13 +543,7 @@ const degradedNoticeTicks = 2
 
 func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, prev Evidence, marks Marks, dependencies openWorkDependencies) (TickResult, error) {
 	ev := Observe(prev, marks)
-	// A standing provider outage pauses the aging, never the reset:
-	// progress during an outage still counts, but the absence of
-	// progress stops accusing local machinery while the provider is
-	// the one down. The mark lapses on its own horizon, so a paused
-	// clock can never outlive the outage's evidence. ONE sample
-	// governs the whole tick — aging, decision, and narration must
-	// tell the same story even when the mark moves mid-tick.
+	// Age and decisions share one provider observation; progress still resets age.
 	// The seat launches are reaped before the outage is sampled: a seat the
 	// provider stopped feeds the mark this same tick holds by.
 	var seat *seatTickState
@@ -530,14 +555,51 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 	if dependencies.Seat != nil {
 		log = dependencies.Seat.Log
 	}
-	outageMark, providerOutage := standingProviderOutage(repoRoot, cfg.now(), log)
-	if providerOutage && marks == prev.Marks {
-		ev = prev
+	providers, providerErr := outage.ReadProviders(cfg.ProviderHome)
+	var outageMark outage.Mark
+	var providerOutage bool
+	// The selected launch runtime governs the hold and its patience clock.
+	providerCheck := func(runtime string, err error) (outage.Mark, bool) {
+		if err == nil {
+			err = providerErr
+		}
+		outageMark, providerOutage = providerOutageFrom(providers, err, runtime, cfg.now(), log)
+		ev = Observe(prev, marks)
+		if marks == prev.Marks {
+			sampled, sampleErr := time.Parse(time.RFC3339Nano, prev.SampledAt)
+			if prev.SampledAt != "" && sampleErr == nil && !cfg.now().Before(sampled) {
+				spans, waitErr := providers.Waiting(runtime, sampled, cfg.now())
+				if err == nil && waitErr != nil {
+					outageMark, providerOutage = providerOutageFrom(providers, waitErr, runtime, cfg.now(), log)
+				}
+				if err == nil && waitErr == nil {
+					elapsed, paused := cfg.now().Sub(sampled), outage.Paused(spans)
+					ev.Age = prev.Age + elapsed - paused
+					if paused > 0 && paused == elapsed || providerOutage && elapsed == 0 {
+						ev.TicksSinceAdvance = prev.TicksSinceAdvance
+					}
+				}
+			} else if prev.SampledAt == "" && err == nil && providerOutage {
+				ev = prev
+			}
+		}
+		ev.SampledAt = cfg.now().Format(time.RFC3339Nano)
+		return outageMark, providerOutage
 	}
 
-	d, selection, workReason, err := decideNowWithSeat(repoRoot, cfg, census, ev, providerOutage, dependencies, seat)
+	d, selection, workReason, err := decideNowWithSeat(repoRoot, cfg, census, &ev, providerCheck, dependencies, seat)
 	if err != nil {
 		return TickResult{}, err
+	}
+	if outageMark.LastClass == "unknown" && (d.Action == ActNotify || d.Action == ActHold) {
+		d.Reason += "\n" + outageMark.LastDetail
+	}
+	if d.Action == ActRevive && selection == nil {
+		if _, reason, readErr := abnormalRestartState(repoRoot, ev, cfg.now()); readErr != nil {
+			d = Decision{VerdictDegraded, ActNotify, readErr.Error()}
+		} else if reason != "" {
+			d.Action, d.Reason = ActNotify, reason
+		}
 	}
 	// One degraded read, such as a ledger read inside a burst of ledger
 	// commits, reads fine at the next tick: the verdict is reported every
@@ -731,7 +793,7 @@ func degradedTick(repoRoot, reason string) (TickResult, error) {
 // census is read for claimable work as for owned work, and with the seat
 // wiring present claimable work, and owned work under the seat lineage, are
 // the seat ladder's to decide.
-func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, providerOutage bool, dependencies openWorkDependencies, seat *seatTickState) (Decision, *SeatSelection, string, error) {
+func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev *Evidence, providerCheck func(string, error) (outage.Mark, bool), dependencies openWorkDependencies, seat *seatTickState) (Decision, *SeatSelection, string, error) {
 	cfg = cfg.withDefaults()
 	dependencies.Now = cfg.now
 	if cfg.WorkStateRoot != "" {
@@ -753,7 +815,7 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	}
 
 	if dependencies.Seat != nil && seat != nil && shared != nil {
-		if d, selection, ok := decideSeat(repoRoot, cfg, work, *shared, workers, providerOutage, *dependencies.Seat, *seat); ok {
+		if d, selection, ok := decideSeat(repoRoot, cfg, work, *shared, workers, providerCheck, *dependencies.Seat, *seat); ok {
 			return d, selection, workReason, nil
 		}
 	}
@@ -771,14 +833,32 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, workReason, nil
 	}
 
-	return Decide(Snapshot{
+	runtime := ""
+	var runtimeErr error
+	if len(live) > 0 {
+		runtime = revivalRuntime(live[0])
+	} else {
+		roster, err := dispatch.ResolveRoster(dispatch.RosterParams{
+			ConfPath: filepath.Join(repoRoot, "metasystem.conf"), Role: "steward-continuation", Mode: "build",
+		})
+		runtime, runtimeErr = roster.Runtime, err
+	}
+	_, providerOutage := providerCheck(runtime, nil)
+
+	d := Decide(Snapshot{
 		Work:               work,
 		Workers:            workers,
-		TicksSinceProgress: ev.TicksSinceAdvance,
+		TicksSinceProgress: cfg.progressTicks(repoRoot, *ev),
 		StaleTicks:         cfg.StaleTicks,
 		DryRevivals:        ev.DryRevivals,
 		MaxRevivals:        cfg.MaxRevivals,
 		ActiveContinuation: len(live) > 0 || len(activeConsumed) > 0,
 		ProviderOutage:     providerOutage,
-	}), nil, workReason, nil
+	})
+	if runtimeErr != nil && d.Action == ActRevive {
+		// A broken roster is a configuration error, not an outage: waiting cannot clear it,
+		// and only the revival that needs the roster is affected.
+		d = Decision{VerdictDegraded, ActNotify, "revival cannot choose its provider: " + runtimeErr.Error() + "; repair role.steward-continuation in metasystem.conf"}
+	}
+	return d, nil, workReason, nil
 }

@@ -36,6 +36,7 @@ func TestSTR3Gap03OutputsGrammar(t *testing.T) {
 }
 
 func TestGoalReviewRoundLimitUsesTupleAndGoalFreeCeiling(t *testing.T) {
+	t.Parallel()
 	bed := newGoalAdmissionBed(t, 2)
 	repo := bed.root
 	if err := os.WriteFile(filepath.Join(repo, "metasystem.conf"), []byte("metasystem.budget.review-round-max=9\n"), 0o644); err != nil {
@@ -51,6 +52,8 @@ func TestGoalReviewRoundLimitUsesTupleAndGoalFreeCeiling(t *testing.T) {
 		t.Fatalf("parse bounded goal: %v", problems)
 	}
 	file.Budget.ReviewRoundLimit = 9
+	file.NormApproval.ReviewRounds = 9
+	file.Approved.Digest = legacyBudgetApprovalDigest(file.Intent, *file.Budget)
 	if err := os.WriteFile(goalPath, goal.RenderFile(file), 0o644); err != nil {
 		t.Fatal(err)
 	}

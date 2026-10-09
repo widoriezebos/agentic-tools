@@ -43,7 +43,7 @@ func TestBudgetProjectionStartsAtConsumedDurableProofEpoch(t *testing.T) {
 		{id: "after-proof", started: "2026-08-28T09:45:00Z", status: "running", cap: 20},
 	} {
 		writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", job.id+".json"), map[string]any{
-			"jobId": job.id, "operationId": job.id, "role": "code-critic", "parentJob": nil,
+			"runtime": "local", "jobId": job.id, "operationId": job.id, "role": "code-critic", "parentJob": nil,
 			"goalId": "bounded", "goalRevision": 3, "capMin": job.cap, "status": job.status, "startedAt": job.started,
 			reviewChainCountedField: true,
 		})

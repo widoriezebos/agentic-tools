@@ -16,9 +16,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/retrodebt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 type healthProbe map[int64]struct {
@@ -117,7 +117,7 @@ func TestSessionMainReadsAliveWhenNoStepIsDue(t *testing.T) {
 			case "fenced":
 				bed.fence = "process creation is fenced"
 			case "provider outage":
-				if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "fixture", bed.now); err != nil {
+				if _, err := testprovider.Record(bed.root, "overloaded", "API Error: 529", "fixture", bed.now); err != nil {
 					t.Fatal(err)
 				}
 			case "revivals capped":
@@ -514,12 +514,14 @@ func writeHealthJob(t *testing.T, root, name, body string) {
 }
 
 func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)
 
 	t.Run("within budget", func(t *testing.T) {
+		t.Parallel()
 		root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
-		writeHealthJob(t, root, "design-one", `{"jobId":"design-one","operationId":"design-one","role":"design-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
-		writeHealthJob(t, root, "code-one", `{"jobId":"code-one","operationId":"code-one","role":"code-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
+		writeHealthJob(t, root, "design-one", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","endedAt":"2026-08-28T08:30:00Z","jobId":"design-one","operationId":"design-one","role":"design-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
+		writeHealthJob(t, root, "code-one", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","endedAt":"2026-08-28T08:30:00Z","jobId":"code-one","operationId":"code-one","role":"code-critic","parentJob":null,"reviewChainCounted":true,"goalId":"bounded-goal","goalRevision":2,"capMin":1,"status":"completed"}`)
 		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		if role.Status != HealthAlive || !strings.Contains(role.Reason, "designCritiques=1/2 codeCritiques=1/2") {
 			t.Fatalf("known structured budget was not judged: %+v", role)
@@ -527,6 +529,7 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("elapsed admission closed", func(t *testing.T) {
+		t.Parallel()
 		caseNow := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 		root, projection, projectionErr := budgetHealthProjectionBed(t, caseNow, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		role := checkClaimedGoalBudgetsFromProjection(root, caseNow, projection, true, projectionErr, nil)
@@ -537,6 +540,7 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("elapsed breach", func(t *testing.T) {
+		t.Parallel()
 		caseNow := time.Date(2026, 8, 28, 14, 0, 0, 0, time.UTC)
 		root, projection, projectionErr := budgetHealthProjectionBed(t, caseNow, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
 		role := checkClaimedGoalBudgetsFromProjection(root, caseNow, projection, true, projectionErr, nil)
@@ -547,9 +551,10 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("breach", func(t *testing.T) {
+		t.Parallel()
 		root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
-		writeHealthJob(t, root, "one", `{"jobId":"one","operationId":"reserve-one","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"running"}`)
-		writeHealthJob(t, root, "two", `{"jobId":"two","operationId":"reserve-two","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"pending"}`)
+		writeHealthJob(t, root, "one", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","jobId":"one","operationId":"reserve-one","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"running"}`)
+		writeHealthJob(t, root, "two", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","jobId":"two","operationId":"reserve-two","goalId":"bounded-goal","goalRevision":2,"capMin":40,"status":"pending"}`)
 		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		if role.Status != HealthDead || !strings.Contains(role.Reason, "reservedJobMinutesLimit") ||
 			!strings.Contains(role.Reason, "activeJobLimit") || !strings.Contains(role.Remedy, "the armed steward stops this revision on its next tick") || !strings.Contains(role.Remedy, "metasystem goal pause bounded-goal") {
@@ -561,8 +566,9 @@ func TestClaimedGoalStructuredBudgetHealthEvidence(t *testing.T) {
 	})
 
 	t.Run("budget unknown", func(t *testing.T) {
+		t.Parallel()
 		root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{"bounded-goal": structuredHealthGoal()})
-		writeHealthJob(t, root, "revisionless", `{"jobId":"revisionless","operationId":"reserve-one","goalId":"bounded-goal","capMin":20,"status":"running"}`)
+		writeHealthJob(t, root, "revisionless", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","jobId":"revisionless","operationId":"reserve-one","goalId":"bounded-goal","capMin":20,"status":"running"}`)
 		role := checkClaimedGoalBudgetsFromProjection(root, now, projection, true, projectionErr, nil)
 		verdict := applyHealthObservation(root, HealthObservationState{}, []RoleVerdict{role}, now)
 		if role.Status != HealthDead || !role.NoAutomaticRemedy ||
@@ -724,6 +730,7 @@ func TestHealthThresholdConfigurationUsesDefaultsAndRejectsInvalidBounds(t *test
 }
 
 func TestClaimedGoalRemedyIsJudgedPerGoal(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 8, 28, 12, 0, 0, 0, time.UTC)
 	breach := structuredHealthGoal()
 	breach.Id = "a-breach"
@@ -745,7 +752,7 @@ func TestClaimedGoalRemedyIsJudgedPerGoal(t *testing.T) {
 	root, projection, projectionErr := budgetHealthProjectionBed(t, now, map[string]*goal.GoalFile{
 		breach.Id: breach, indeterminate.Id: indeterminate,
 	})
-	writeHealthJob(t, root, "over-limit", `{"jobId":"over-limit","operationId":"reserve-over-limit","goalId":"a-breach","goalRevision":2,"capMin":80,"status":"running"}`)
+	writeHealthJob(t, root, "over-limit", `{"runtime":"plain-exec","createdAt":"2026-08-28T08:00:00Z","jobId":"over-limit","operationId":"reserve-over-limit","goalId":"a-breach","goalRevision":2,"capMin":80,"status":"running"}`)
 	stamp := now.Format(time.RFC3339)
 	batch := goal.StopBatch{
 		StopID: indeterminate.StopFence.StopID, GoalID: indeterminate.Id, GoalRevision: 2,

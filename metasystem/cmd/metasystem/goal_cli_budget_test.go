@@ -220,7 +220,7 @@ func TestGoalCLIBudgetEarnedExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeJob := func(id, started, ended string) {
-		record := `{"jobId":"` + id + `","operationId":"` + id + `","goalId":"earned-extension","goalRevision":` + match[1] +
+		record := `{"jobId":"` + id + `","operationId":"` + id + `","runtime":"local","goalId":"earned-extension","goalRevision":` + match[1] +
 			`,"capMin":1,"status":"completed","startedAt":"` + started + `","endedAt":"` + ended + `"}` + "\n"
 		if err := os.WriteFile(filepath.Join(jobs, id+".json"), []byte(record), 0o644); err != nil {
 			t.Fatal(err)
@@ -236,9 +236,12 @@ func TestGoalCLIBudgetEarnedExtension(t *testing.T) {
 	args := []string{"--root", bed.root, "--id", "earned-extension", "--revision", match[1], "--proposed-cap", "1",
 		"--role", "implementer", "--dispatch-mode", "fresh", "--destructive-reach", "DESIGN-BEARING", "--lineage", bed.lineage}
 	extend := func() int {
-		code, _, _ := bed.owner(func(dependencies syncRequestDependencies) int {
+		code, out, errOut := bed.owner(func(dependencies syncRequestDependencies) int {
 			return goalExtendBudgetTo(args, bed.commandNow, dependencies, reads, dependencies.outStream(), dependencies.errStream())
 		})
+		if code != 0 {
+			t.Logf("extend-budget: code=%d out=%q err=%q", code, out, errOut)
+		}
 		return code
 	}
 	if code := extend(); code != 0 {
@@ -330,11 +333,7 @@ func TestGoalCLIBudgetStructuredBudget(t *testing.T) {
 	}
 }
 
-// scope-bounds: an over-norm set-budget refuses with the typed norm refusal
-// and the split remedy; open --claim is retired; the split publishes both
-// members, the parent's conclusion and the root's registry atomically and
-// moves the blocked goal's edge to the members; a decomposed parent never
-// reopens and its id survives prune as retired.
+// Scope bounds retain the split source and its dependents' existing hold.
 func TestGoalCLIBudgetScopeBounds(t *testing.T) {
 	t.Parallel()
 	bed := newGoalCLIBed(t, goalCLISeed{})
@@ -371,31 +370,29 @@ func TestGoalCLIBudgetScopeBounds(t *testing.T) {
 		t.Fatal(err)
 	}
 	tip := bed.tip()
-	gcliBudgetMust(t, bed, "goal", "split", "split-parent", "--plan", draft)
+	gcliBudgetMust(t, bed, "goal", "split", "split-parent", "--plan", draft, "--by", "Wido")
 	if bed.tip() == tip {
 		t.Fatal("goal split did not publish")
 	}
 	one := bed.accepted("plans/goals/split-parent-one.md")
-	parent := bed.accepted("records/goals/split-parent.md")
+	parent := bed.accepted("plans/goals/split-parent.md")
 	backlog := bed.accepted("plans/goals/backlog.md")
-	if goalCLILine(one, "- Arc: ") != "- Arc: split-parent" || !strings.HasPrefix(goalCLILine(parent, "- Ratified: "), "- Ratified: tier=main ") ||
-		!strings.Contains(parent, "goal:split-parent-one") || goalCLILine(backlog, "- split-parent opid=") == "" ||
-		bed.accepted("plans/goals/split-parent-two.md") == "" {
+	if goalCLILine(one, "- Arc: ") != "" || goalCLILine(one, "- SplitFrom: ") != "- SplitFrom: split-parent" ||
+		!strings.HasPrefix(goalCLILine(parent, "- Ratified: "), "- Ratified: tier=human ") || goalCLILine(parent, "- State: ") != "- State: split" ||
+		goalCLILine(backlog, "- split-parent opid=") != "" || bed.accepted("plans/goals/split-parent-two.md") == "" {
 		t.Fatalf("the atomic split records are incomplete:\n%s\n%s\n%s", one, parent, backlog)
 	}
 	blocked := bed.goalRecord("norm-parent")
-	if goalCLILine(blocked, "- BlockedBy: ") != "- BlockedBy: split-parent-one, split-parent-two" || !strings.Contains(blocked, " blocker=split-parent-one because=") {
-		t.Fatalf("the split did not move the blocked goal's edge and park to the members:\n%s", blocked)
+	if goalCLILine(blocked, "- BlockedBy: ") != "- BlockedBy: split-parent" || !strings.Contains(blocked, " blocker=split-parent because=") {
+		t.Fatalf("the split rewrote the blocked goal's edge or park:\n%s", blocked)
 	}
-	gcliBudgetRefused(t, bed, "was split into member goals and never comes back", "goal", "reopen", "split-parent", "--next", "Bring it back.")
+	gcliBudgetRefused(t, bed, "reverse", "goal", "reopen", "split-parent", "--next", "Bring it back.")
 	if code, out, errOut := gcliBudgetFamily(t, bed, "prune", "--keep", "0"); code != 0 {
 		t.Fatalf("goal prune: code=%d out=%q err=%q", code, out, errOut)
 	}
-	if bed.accepted("records/goals/split-parent.md") != "" {
-		t.Fatal("prune kept the decomposed parent's record")
+	if bed.accepted("plans/goals/split-parent.md") == "" {
+		t.Fatal("prune removed the live split source")
 	}
-	gcliBudgetRefused(t, bed, "goal id split-parent was used by a goal that was split", append([]string{"goal", "open", "split-parent", "--origin", "human",
-		"--intent", "Illicit resurrection.", "--next", "Stop.", "--tier", "3", "--risk", gcliBudgetTierThree, "--basis", "fixture risk"}, gcliBudgetHuman...)...)
 }
 
 // gcliBudgetSweep runs the classify-sweep owner with the bed's dependencies.

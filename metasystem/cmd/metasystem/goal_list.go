@@ -24,7 +24,7 @@ func goalDisplayRecord(file *goal.GoalFile, history bool) *goal.GoalFile {
 // syncedListStates are the buckets a synced ledger has, in the order the
 // summary lists them; the legacy ledger has its current goal instead of
 // claimed and approved. "open" is not a state of either.
-var syncedListStates = []string{goal.StateClaimed, goal.StateApproved, goal.StateQueued, goal.StateParked}
+var syncedListStates = []string{goal.StateClaimed, goal.StateApproved, goal.StateQueued, goal.StateParked, goal.StateSplit}
 
 func goalListSummary(grouped map[string][]*goal.GoalFile, states []string, tip string, notices []string, includeDone bool, horizon goal.ApprovalHorizon, trunkRed ...goal.TrunkRedEntry) string {
 	if includeDone {

@@ -56,6 +56,8 @@ func exitFor(err error) int {
 // Engine drives one mission's runner lifecycle on its two roots. Its
 // event stream is the flight-recorder witness: emitting never fails a caller.
 type Engine struct {
+	// ProviderHome selects the host registration; empty uses the registry home.
+	ProviderHome string
 	// Root is the state root: the mission's contract and every project-state
 	// read, and the checkout the wall inspects.
 	Root string

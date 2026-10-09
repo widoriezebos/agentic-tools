@@ -457,7 +457,20 @@ func (inv *intentInvocation) resolveLayout() *intentResult {
 // launch manager's own settings.
 func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	_ = inv.resolveLayout()
-	runner := inv.work().units(inv.layout)
+	source := inv.work().units(inv.layout)
+	runner := new(launch.UnitRunner)
+	*runner = *source
+	runner.Actor = ""
+	manager := *runner.Manager
+	params, err := inv.policyParams("host.builds")
+	if err != nil {
+		params = config.GetParams{Key: "host.builds", ConfPath: intentConfPath(inv.layout), LookupEnv: inv.owners.lookupEnv}
+	}
+	manager.BuildPolicy, manager.BuildPolicyError = params, nil
+	runner.Manager = &manager
+	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && inv.checkDirectPersonProof("work "+inv.command.action, false) == nil {
+		runner.Actor = "person"
+	}
 	runner.FreezeCheck = inv.resolveUnitCheck
 	if inv.input.has("check") {
 		runner.ReviewPolicy = func() (string, error) { return "person", nil }
@@ -1463,6 +1476,23 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		}
 		plain, details := launchAccount(err)
 		switch {
+		case launch.IsCode(err, "LAUNCH_BUILD_CAPACITY"), launch.IsCode(err, "LAUNCH_BUILD_PERSON"):
+			held := intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + "; no build was launched", Details: details,
+				next: again, nextReason: humanauthority.PersonActRemedy(shellCommand(again)) + "; settings stay in force"}
+			if launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
+				q, warnings, code, askErr := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), channelAskInput{Goal: targetID(targets, "goal", record.Goal), Kind: "other",
+					Facts: []string{"Start this build at your enrolled terminal?", plain, shellCommand(again)}, Options: []string{"start: run the exact build command at your enrolled terminal", "wait: leave this build waiting"}})
+				held.text, held.code = warnings, max(code, 1)
+				if askErr != nil {
+					held.Details = append(held.Details, askErr.Error())
+				}
+				if q.ID != "" {
+					held.Targets = append(held.Targets, intentTarget{Kind: "question", ID: q.ID})
+					held.next = inv.publicArgv("question", "wait", "channel:"+q.ID)
+					held.nextReason = "wait for the person's answer; only their direct build command bypasses admission"
+				}
+			}
+			return held
 		case errors.Is(err, errProofDeclaration):
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Data: unitData(record, runner.Manager),
 				next: inv.publicArgv("work", "build", record.Goal, "--work", "declaration-repair", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME", "--check", "COMMAND"), nextReason: "a person supplies the repair's exact check without reading the broken declaration"}
@@ -1713,7 +1743,11 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 		return inv.render(inv.unitOutcome(runner, result.UnitResult, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
 	}
 	result, err := runner.Continue(launch.UnitRequest{Resume: run, FollowUp: brief})
-	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, inv.publicArgv("work", "wait", unitRunPrefix+run)))
+	again := inv.publicArgv("work", "wait", unitRunPrefix+run)
+	if launch.IsCode(err, "LAUNCH_BUILD_CAPACITY") || launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
+		again = inv.publicArgv("work", "build", unitRunPrefix+run)
+	}
+	return inv.render(inv.unitOutcome(runner, result, err, []intentTarget{{Kind: "run", ID: unitRunPrefix + run}}, again))
 }
 
 // wait
@@ -2793,13 +2827,24 @@ func (inv *intentInvocation) resumeChannelWait(id string, row metarun.Waiter, ti
 // and an environment-supplied clock. Only
 // the person's own proof at the enrolled terminal sets them, never the helm
 // and never a power of attorney.
-var authoritySettings = map[string]bool{"metasystem.runtimes": true, "landing.batch": true, "landing.proof": true, "landing.on-red": true, "landing.trunk-red": true, "seat.driver": true, "review.stop": true, "goal.raise": true, "question.route": true, "process.change": true}
+var authoritySettings = map[string]bool{"host.builds": true, "host.load-max": true, "metasystem.runtimes": true, "landing.batch": true, "landing.proof": true, "landing.on-red": true, "landing.trunk-red": true, "seat.driver": true, "review.stop": true, "goal.raise": true, "question.route": true, "process.change": true}
 
 // directPersonProof refuses unless this shell is the person at the enrolled
 // terminal, proven by the walk itself.
 func (inv *intentInvocation) directPersonProof(act string) *intentResult {
+	return inv.checkDirectPersonProof(act, true)
+}
+
+// checkDirectPersonProof can observe the actor without recording a refusal
+// when an agent is allowed to perform the act under its ordinary authority.
+func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bool) *intentResult {
 	if problem := inv.resolveLayout(); problem != nil {
 		return problem
+	}
+	if inv.stateRoot == "" {
+		if problem := inv.selectLayoutRoot(); problem != nil {
+			return problem
+		}
 	}
 	authorityRoot := checkoutAuthorityRoot(inv.layout)
 	// refused says, in plain words, that only the person at the enrolled
@@ -2822,13 +2867,6 @@ func (inv *intentInvocation) directPersonProof(act string) *intentResult {
 		}
 		return result
 	}
-	if inv.stateRoot == "" {
-		root, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
-		if err != nil {
-			return refused("this installation's state can't be found", err)
-		}
-		inv.stateRoot = root.Path()
-	}
 	if inv.owners.prove == nil || inv.owners.commandNow == nil {
 		return refused("who is at this terminal can't be checked here", nil)
 	}
@@ -2841,7 +2879,9 @@ func (inv *intentInvocation) directPersonProof(act string) *intentResult {
 		return refused(humanauthority.PlainReason(err), err)
 	}
 	if proof.Helm != nil || !proof.EnrolledTerminalFor(authorityRoot) {
-		_ = humanauthority.RecordAttorneyRefusal(inv.layout.InstallationRoot.Path(), proof, act, "set only by the person's own proof", now)
+		if recordRefusal {
+			_ = humanauthority.RecordAttorneyRefusal(inv.layout.InstallationRoot.Path(), proof, act, "set only by the person's own proof", now)
+		}
 		return refused("this shell acts under the helm or a grant", nil)
 	}
 	return nil

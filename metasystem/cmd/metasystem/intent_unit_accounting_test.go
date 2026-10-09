@@ -89,7 +89,7 @@ func TestIntentUnitLaunchAccountingBudgetAdmission(t *testing.T) {
 				if status == "unreadable" {
 					status = "completed"
 				}
-				prior, _ = json.Marshal(map[string]any{"jobId": "prior", "operationId": "prior", "goalId": bed.id, "goalRevision": file.Claimed.Revision,
+				prior, _ = json.Marshal(map[string]any{"runtime": "local", "jobId": "prior", "operationId": "prior", "goalId": bed.id, "goalRevision": file.Claimed.Revision,
 					"status": status, "capMin": 2, "pid": 20, "startedAt": bed.manager.Now().Add(-2 * time.Minute).UTC().Format(time.RFC3339Nano), "endedAt": bed.manager.Now().UTC().Format(time.RFC3339Nano)})
 				data := prior
 				if row.prior == "unreadable" {

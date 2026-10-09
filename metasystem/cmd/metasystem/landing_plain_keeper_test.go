@@ -40,8 +40,11 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return bed.home, nil })}
 	nonces := 0
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, settings: installationSettings, now: func() time.Time { return now },
-		nonce: func() (string, error) { nonces++; return strings.Repeat(string(rune('0'+nonces)), 16), nil }}
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.manager = func() *launch.Manager { return manager }
+		agent.now = func() time.Time { return now }
+		agent.nonce = func() (string, error) { nonces++; return strings.Repeat(string(rune('0'+nonces)), 16), nil }
+	})
 	keeper := newLandingAgentKeeper(module, bed.home, agent)
 	wake := func(home string) lane.WakeSources {
 		return lane.WakeSources{Reasons: func(string) ([]string, error) {
@@ -67,7 +70,10 @@ func TestKeeperWakesOnQueuedAndProofFinishedAndHoldsWhileProving(t *testing.T) {
 		t.Helper()
 		records, _ := store.List()
 		for _, record := range records {
-			if _, err := store.Update(record.ID, func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
+			if _, err := store.Update(record.ID, func(r *launch.Record) error {
+				r.State, r.FinishedAt = launch.Completed, now.Format(time.RFC3339Nano)
+				return nil
+			}); err != nil {
 				t.Fatal(err)
 			}
 		}

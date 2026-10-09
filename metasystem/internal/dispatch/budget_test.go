@@ -258,7 +258,7 @@ type budgetJobLife struct {
 func writeBudgetJob(t *testing.T, root, name, operation string, revision, cap uint64, status string, life budgetJobLife) {
 	t.Helper()
 	record := map[string]any{
-		"jobId": name, "operationId": operation, "goalId": "bounded",
+		"runtime": "local", "jobId": name, "operationId": operation, "goalId": "bounded",
 		"goalRevision": revision, "capMin": cap, "status": status,
 	}
 	if life.startedAt != "" {
@@ -446,7 +446,7 @@ func TestBudgetProjectionUsesJobRecordsForTheBoundRevision(t *testing.T) {
 	writeBudgetJob(t, root, "live", "reserve-b", 3, 45, "running", budgetJobLife{})
 	writeBudgetJob(t, root, "old-revision", "reserve-old", 2, 60, "completed", budgetJobLife{})
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "unrelated.json"), map[string]any{
-		"jobId": "unrelated", "goalId": nil, "status": "completed",
+		"runtime": "local", "jobId": "unrelated", "goalId": nil, "status": "completed",
 	})
 
 	projection := ProjectBudget(root, budgetGoal(), time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
@@ -962,7 +962,7 @@ func TestUnconsumedDischargeJSONCannotResetTheBudgetProjection(t *testing.T) {
 		{id: "after", operation: "after", started: "2026-08-28T09:45:00Z", status: "running", cap: 20},
 	} {
 		writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", job.id+".json"), map[string]any{
-			"jobId": job.id, "operationId": job.operation, "goalId": "bounded", "goalRevision": 3,
+			"runtime": "local", "jobId": job.id, "operationId": job.operation, "goalId": "bounded", "goalRevision": 3,
 			"capMin": job.cap, "status": job.status, "startedAt": job.started,
 		})
 	}
@@ -985,6 +985,11 @@ func TestPublishedSetupRetainsAttemptAndReservedMinutes(t *testing.T) {
 	if err := buildSetupWithGoalReads(root, setup, "reserved", "implementer", "", "main-1", "5", "bounded", 3, 3, capFile, "", "", reads); err != nil {
 		t.Fatal(err)
 	}
+	record := readJSONFile(t, setup)
+	record["runtime"] = "local"
+	if err := writeRecord(setup, record); err != nil {
+		t.Fatal(err)
+	}
 	if err := RecordCreate(root, "reserved", setup); err != nil {
 		t.Fatal(err)
 	}
@@ -1002,7 +1007,7 @@ func TestSetupRefusalsReleaseAttemptAndMinuteReservations(t *testing.T) {
 	file.Budget.ReservedJobMinutesLimit = 120
 	for _, name := range []string{"setup-refused-one", "setup-refused-two"} {
 		writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", name+".json"), map[string]any{
-			"jobId": name, "operationId": name, "goalId": "bounded", "goalRevision": 3,
+			"runtime": "local", "jobId": name, "operationId": name, "goalId": "bounded", "goalRevision": 3,
 			"capMin": 30, "status": "failed", "phase": "setup", "refusalClass": "setup",
 		})
 	}
@@ -1016,7 +1021,7 @@ func TestSetupRefusalsReleaseAttemptAndMinuteReservations(t *testing.T) {
 	}
 
 	writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "protocol-error.json"), map[string]any{
-		"jobId": "protocol-error", "operationId": "protocol-error", "goalId": "bounded", "goalRevision": 3,
+		"runtime": "local", "jobId": "protocol-error", "operationId": "protocol-error", "goalId": "bounded", "goalRevision": 3,
 		"capMin": 30, "status": "failed", "phase": "validation",
 		"pid": 4242, "startedAt": "2026-08-28T08:30:00Z", "endedAt": "2026-08-28T09:00:00Z",
 		"protocolError": map[string]any{"key": "invalid-return", "violation": "malformed implementer return"},
@@ -1037,7 +1042,7 @@ func TestBudgetProjectionReportsExactUnknownRecord(t *testing.T) {
 			name: "revisionless",
 			mutate: func(root string) {
 				writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "lost.json"), map[string]any{
-					"jobId": "lost", "operationId": "reserve-lost", "goalId": "bounded", "capMin": 10, "status": "running",
+					"runtime": "local", "jobId": "lost", "operationId": "reserve-lost", "goalId": "bounded", "capMin": 10, "status": "running",
 				})
 			},
 			want: "artifacts/agents/jobs/lost.json",
@@ -1054,7 +1059,7 @@ func TestBudgetProjectionReportsExactUnknownRecord(t *testing.T) {
 			name: "contradictory unbound revision",
 			mutate: func(root string) {
 				writeJSON(t, filepath.Join(root, "artifacts", "agents", "jobs", "contradictory.json"), map[string]any{
-					"jobId": "contradictory", "operationId": "reserve-contradictory", "goalId": nil,
+					"runtime": "local", "jobId": "contradictory", "operationId": "reserve-contradictory", "goalId": nil,
 					"goalRevision": 3, "capMin": 10, "status": "running",
 				})
 			},

@@ -141,6 +141,7 @@ func TestGoalRevisionAdmissionCommandRefusesExhaustedCodeCriticClass(t *testing.
 			"jobId": job, "operationId": job, "role": "code-critic", "parentJob": nil,
 			"goalId": "standing-validation", "goalRevision": 2, "capMin": 1, "status": "completed",
 			"reviewChainCounted": true,
+			"runtime":            "local", "createdAt": "2026-08-30T08:20:00Z",
 		})
 	}
 	verdict, err := goalRevisionAdmissionVerdict(root, 1, "code-critic", reads, commandNow)
@@ -176,7 +177,8 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 	writeTemp(t, jobs, "spent.json", map[string]any{
 		"jobId": "spent", "operationId": "spent", "goalId": "standing-validation", "goalRevision": 2,
 		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:20:00Z", "endedAt": "2026-08-30T08:21:00Z",
-		"pid": 4242,
+		"runtime": "local",
+		"pid":     4242,
 	})
 	verdict, err := goalRevisionAdmissionVerdict(root, 1, "implementer", reads, repository.commandNow(now))
 	if err != nil || !verdict.Refused() {
@@ -224,6 +226,7 @@ func TestGoalRevisionAdmissionCommandJSONCarriesBudgetExtensionOffer(t *testing.
 	writeTemp(t, jobs, "spent-again.json", map[string]any{
 		"jobId": "spent-again", "operationId": "spent-again", "goalId": "standing-validation", "goalRevision": 2,
 		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:30:00Z", "endedAt": "2026-08-30T08:31:00Z",
+		"runtime": "local",
 	})
 	second, secondCode := captureStderr(t, func(stdout, stderr io.Writer) int {
 		return goalExtendBudgetTo(extendArgs, repository.commandNow(now), withStreams(inputs, stdout, stderr), reads, stdout, stderr)
@@ -294,6 +297,7 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 		writeTemp(t, jobs, "active.json", map[string]any{
 			"jobId": "active", "operationId": "active", "goalId": "standing-validation", "goalRevision": 2,
 			"capMin": 1, "status": "running",
+			"runtime": "local", "createdAt": "2026-08-30T08:20:00Z",
 		})
 		inputs := repository.extendBudgetInputs(t)
 		output, code := captureStderr(t, func(stdout, stderr io.Writer) int {

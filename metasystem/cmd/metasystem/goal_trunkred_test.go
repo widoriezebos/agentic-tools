@@ -251,10 +251,11 @@ func TestTrunkRedNextLinesAndPlacement(t *testing.T) {
 	}
 }
 func TestTrunkRedListCountsOpenEntriesOnly(t *testing.T) {
+	t.Parallel()
 	grouped := map[string][]*goal.GoalFile{goal.StateQueued: {{Id: "goal", State: goal.StateQueued}}}
 	plain := goalListSummary(grouped, syncedListStates, "tip", []string{"notice"}, false, goal.ApprovalHorizon{})
 	empty := goalListSummary(grouped, syncedListStates, "tip", []string{"notice"}, false, goal.ApprovalHorizon{}, []goal.TrunkRedEntry{}...)
-	wantEmpty := "claimed=0 approved=0 queued=1 parked=0 done=0 tip=tip\n" +
+	wantEmpty := "claimed=0 approved=0 queued=1 parked=0 split=0 done=0 tip=tip\n" +
 		"! notice\n" +
 		"0:0 queued tier 0 goal pin=- claim=- :: \n"
 	entries := []goal.TrunkRedEntry{{ID: "c", Group: "g3", Opened: "2", Owner: goal.TrunkRedOwner{Machine: "m3", Since: "three"}}, {ID: "closed", Closed: &goal.TrunkRedClosure{At: "closed"}}, {ID: "b", Group: "g2", Opened: "2", Owner: goal.TrunkRedOwner{Machine: "m2", Since: "two"}}, {ID: "z", Group: "g1", Opened: "1", Owner: goal.TrunkRedOwner{Since: "one"}, Holds: []string{"one"}}}
@@ -275,7 +276,7 @@ func TestTrunkRedListCountsOpenEntriesOnly(t *testing.T) {
 	notice := strings.Repeat("x", goalListSummaryMaxBytes-headerEnd-len(row)-3)
 	capped := goalListSummary(grouped, syncedListStates, "tip", []string{notice}, false, goal.ApprovalHorizon{}, entries[3])
 	emptyGrouped := map[string][]*goal.GoalFile{}
-	emptyHeader := "claimed=0 approved=0 queued=0 parked=0 done=0 trunk-red=1 tip=tip\n"
+	emptyHeader := "claimed=0 approved=0 queued=0 parked=0 split=0 done=0 trunk-red=1 tip=tip\n"
 	noticeOnly := strings.Repeat("x", goalListSummaryMaxBytes-len(emptyHeader)-3)
 	noticeCapped := goalListSummary(emptyGrouped, syncedListStates, "tip", []string{noticeOnly}, false, goal.ApprovalHorizon{}, entries[3])
 	noticeFooter := "... 0 more; run with --json > file for the records\n"

@@ -75,6 +75,43 @@ exit 0
     ],
     "this": "m1e",
     "thisComputer": {
+      "capacity": {
+        "at": "2026-09-30T10:00:00Z",
+        "owner": {
+          "root": "/Users/wido/GitHub/agentic-tools-landing",
+          "install": "/Users/wido/GitHub/agentic-tools-landing",
+          "custodyEpoch": 1,
+          "registeredBy": "Wido",
+          "at": "2026-09-29T10:00:00Z"
+        },
+        "ownerKnown": true,
+        "load": {
+          "at": "2026-09-30T10:00:00Z",
+          "load1m": 2,
+          "load5m": 3,
+          "load15m": 4,
+          "cores": 18,
+          "available": true
+        },
+        "builds": [
+          {
+            "id": "l-1",
+            "goal": "g-1",
+            "runtime": "",
+            "state": "running",
+            "workingDirectory": "/Users/wido/GitHub/agentic-tools-m1e/work"
+          }
+        ],
+        "buildsKnown": true,
+        "goals": [
+          "g-1"
+        ],
+        "providers": {
+          "available": false,
+          "detail": "shared provider coverage is unavailable"
+        },
+        "errors": []
+      },
       "machines": [
         {
           "name": "m1e",

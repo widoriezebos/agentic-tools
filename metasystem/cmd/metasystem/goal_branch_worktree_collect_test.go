@@ -185,7 +185,7 @@ func TestReviewCommitFromThePrimaryCollectsInTheGoalWorktree(t *testing.T) {
 	inv := &intentInvocation{
 		layout: stateroot.Layout{GitRoot: f.primary, RepositoryRoot: f.primary, InstallationRoot: stateroottest.Installation(t, f.primary)},
 		input:  intentInput{values: map[string][]string{"goal": {"standing-validation"}}},
-		owners: intentOwners{delivery: &intentDeliveryOwners{
+		owners: intentOwners{resolver: stateroot.NewResolver(fakeTop(f.primary), noExecutable), delivery: &intentDeliveryOwners{
 			branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 				reads = append(reads, args)
 				return goalBranchReadRun(args, deps)

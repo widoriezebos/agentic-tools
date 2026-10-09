@@ -96,6 +96,12 @@ func SeatBusyAt(root, units string, work goal.ClaimableBudgetedWork, options Sea
 		if step == nil {
 			continue
 		}
+		if step.State == launch.StepStarting {
+			if options.AtBoundary {
+				busy, reason = true, fmt.Sprintf("unit %s step %s for goal %s is starting", run.ID, step.Name, run.Goal)
+			}
+			continue
+		}
 		file, ok := work.OwnedClaim(run.Goal)
 		var limit time.Duration
 		if ok && file.Budget != nil {
@@ -145,7 +151,7 @@ func currentSeatRunStep(run launch.UnitRunRecord) (*launch.UnitStep, time.Time) 
 			if !at.IsZero() && (first.IsZero() || at.Before(first)) {
 				first = at
 			}
-			if step.State == launch.StepRunning {
+			if step.State == launch.StepRunning || step.State == launch.StepStarting {
 				copy := step
 				current = &copy
 			}

@@ -67,7 +67,13 @@ func newDrainVerbBed(t *testing.T) *drainVerbBed {
 	}}
 	b.owners.landing.plainProve = effects
 	manager := &launch.Manager{Store: launch.Store{Root: t.TempDir()}}
-	agent := landingAgent{manager: func() *launch.Manager { return manager }, now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "lane-machine", nil }, proofEffects: effects}
+	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.settings = func(string) (launch.Settings, error) { return launch.DefaultSettings(), nil }
+		agent.manager = func() *launch.Manager { return manager }
+		agent.now = func() time.Time { return laneTestNow }
+		agent.machine = func(string) (string, error) { return "lane-machine", nil }
+		agent.proofEffects = effects
+	})
 	b.keeper = newLandingAgentKeeper(b.root, b.home, agent)
 	b.keeper.Running = func() (string, bool, error) { return "", false, nil }
 	b.keeper.Start = func(string, lane.Wake) (string, error) {

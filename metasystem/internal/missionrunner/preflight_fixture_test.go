@@ -5,6 +5,8 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 	"maps"
 	"os"
 	"os/exec"
@@ -24,7 +26,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/mission"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -1549,7 +1550,8 @@ func TestInternalRunFullCycle(t *testing.T) {
 	// A standing outage mark rides into the happy path: any provider
 	// success must clear it (provider-outage-posture), witnessed here
 	// rather than in a second full mission run.
-	if _, err := outage.Record(engine.installation(), "overloaded", "API Error: 529", "mission-runner", time.Now()); err != nil {
+	engine.ProviderHome = testprovider.Register(t, engine.installation())
+	if _, err := outage.Observe(engine.ProviderHome, "fake", "fake-model", "overloaded", "API Error: 529", "mission-runner", engine.now().Add(-time.Second)); err != nil {
 		t.Fatal(err)
 	}
 
@@ -1621,7 +1623,7 @@ func TestInternalRunFullCycle(t *testing.T) {
 	if err != nil || !strings.Contains(string(ledgerBytes), "- Classification: unresolved;") {
 		t.Fatalf("turn one did not classify the real baseline measurement: %v %s", err, ledgerBytes)
 	}
-	if _, ok := outage.Read(engine.installation()); ok {
+	if _, ok := testprovider.Read(engine.installation(), "fake"); ok {
 		t.Fatal("a completed host turn must clear the seeded outage mark")
 	}
 }

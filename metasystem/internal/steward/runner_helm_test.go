@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func TestRunnerRefreshOutcomePreservesPass(t *testing.T) {
@@ -68,7 +69,8 @@ type helmLoop struct {
 func newHelmLoop(t *testing.T) *helmLoop {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+	testprovider.Register(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.runtime=claude\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.MkdirAll(filepath.Join(root, ".git"), 0o755); err != nil {

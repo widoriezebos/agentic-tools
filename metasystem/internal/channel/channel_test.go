@@ -286,13 +286,20 @@ func TestStatusDigestIgnoresHeaderTime(t *testing.T) {
 }
 
 func TestReportShowsOneQuestionTwoLandingsAndOnlyTwoNextItems(t *testing.T) {
+	t.Parallel()
 	now := time.Date(2026, 9, 4, 12, 0, 0, 0, time.UTC)
-	fixture := newReportFixture(t, now,
-		reportGoal("delivery-one", "Deliver one.", goal.StateApproved, "other-machine", now),
-		reportGoal("delivery-two", "Deliver two.", goal.StateApproved, "other-machine", now),
+	next := []*goal.GoalFile{
 		reportClaimedGoal("alpha-next", "Do alpha.", "fleet-one", now),
 		reportClaimedGoal("beta-next", "Do beta.", "fleet-one", now),
 		reportClaimedGoal("gamma-next", "Do gamma.", "fleet-one", now),
+	}
+	for _, file := range next {
+		file.Arc = "report-work"
+	}
+	fixture := newReportFixture(t, now,
+		reportGoal("delivery-one", "Deliver one.", goal.StateApproved, "other-machine", now),
+		reportGoal("delivery-two", "Deliver two.", goal.StateApproved, "other-machine", now),
+		next[0], next[1], next[2],
 	)
 	root := fixture.root
 	if err := writeJSON(questionPath(root, "question"), Question{ID: "question", Goal: "launch-choice", State: "open", Facts: []string{"Choose the launch colour"}}); err != nil {

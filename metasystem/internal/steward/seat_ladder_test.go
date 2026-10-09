@@ -7,6 +7,7 @@ package steward
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 const seatBedMachine = "bed-m1"
@@ -79,7 +81,8 @@ type seatBed struct {
 func newSeatBed(t *testing.T, goals ...*goal.GoalFile) *seatBed {
 	t.Helper()
 	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+	testprovider.Register(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.runtime=claude\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	writeStewardRecord(t, ledgerAttentionStatePath(root), map[string]any{
@@ -119,16 +122,17 @@ func (b *seatBed) projection(now time.Time) goal.Projection {
 
 func (b *seatBed) seatDependencies() *seatDependencies {
 	return &seatDependencies{
-		Launcher: b.launcher,
-		Units:    func(string, string) ([]UnitStage, error) { return nil, nil },
-		Lane:     func(string, string) (plain.Entry, bool, error) { return plain.Entry{}, false, nil },
-		Main:     func(string) (string, error) { return "main", nil },
-		Contains: func(string, string, string) (bool, error) { return false, nil },
-		Jobs:     func(string) ([]map[string]any, error) { return nil, nil },
-		Refusals: func() ([]launch.Refusal, error) { return nil, nil },
-		Launches: func() ([]launch.Record, error) { return nil, nil },
-		Threads:  func() ([]board.Thread, error) { return nil, nil },
-		Project:  func(string, time.Time) (goal.Projection, error) { return b.projection(b.now), nil },
+		ProviderHome: testprovider.Home(b.root),
+		Launcher:     b.launcher,
+		Units:        func(string, string) ([]UnitStage, error) { return nil, nil },
+		Lane:         func(string, string) (plain.Entry, bool, error) { return plain.Entry{}, false, nil },
+		Main:         func(string) (string, error) { return "main", nil },
+		Contains:     func(string, string, string) (bool, error) { return false, nil },
+		Jobs:         func(string) ([]map[string]any, error) { return nil, nil },
+		Refusals:     func() ([]launch.Refusal, error) { return nil, nil },
+		Launches:     func() ([]launch.Record, error) { return nil, nil },
+		Threads:      func() ([]board.Thread, error) { return nil, nil },
+		Project:      func(string, time.Time) (goal.Projection, error) { return b.projection(b.now), nil },
 		Tips: func(_ string, goals []string) (map[string]string, error) {
 			tips := map[string]string{}
 			for _, id := range goals {
@@ -166,7 +170,7 @@ func (b *seatBed) tickWith(census WorkerCensus) TickResult {
 	if err != nil {
 		b.t.Fatal(err)
 	}
-	result, err := decideTickWithDependencies(b.root, TickConfig{Now: b.now}, census, prev, Marks{HeadOid: "h", OpidDigest: "d"}, b.dependencies())
+	result, err := decideTickWithDependencies(b.root, TickConfig{Now: b.now, ProviderHome: testprovider.Home(b.root)}, census, prev, Marks{HeadOid: "h", OpidDigest: "d"}, b.dependencies())
 	if err != nil {
 		b.t.Fatal(err)
 	}
@@ -199,7 +203,7 @@ func (b *seatBed) startUnder(selection SeatSelection, census WorkerCensus) (Seat
 	b.t.Helper()
 	dependencies := *b.seatDependencies()
 	dependencies.Recheck = func(records []SeatRecord) (Decision, *SeatSelection, error) {
-		return seatRecheck(b.root, TickConfig{Now: b.now}, census, b.dependencies(), records)
+		return seatRecheck(b.root, TickConfig{Now: b.now, ProviderHome: testprovider.Home(b.root)}, census, b.dependencies(), records)
 	}
 	return startSeatWithDependencies(b.root, selection, dependencies)
 }
@@ -215,7 +219,7 @@ func (b *seatBed) end(id, state, result string) {
 	if err := os.WriteFile(path, []byte(result), 0o644); err != nil {
 		b.t.Fatal(err)
 	}
-	b.launcher.states[id] = SeatLaunchState{Found: true, Terminal: true, State: state, ResultPath: path, FinishedAt: b.now.Format(time.RFC3339Nano)}
+	b.launcher.states[id] = SeatLaunchState{Home: testprovider.Home(b.root), Runtime: "claude", Model: "fixture-model", Found: true, Terminal: true, State: state, ResultPath: path, FinishedAt: b.now.Format(time.RFC3339Nano)}
 }
 
 func (b *seatBed) records() []SeatRecord {
@@ -344,7 +348,7 @@ func TestReadyWorkHonoursTheGuardsInOrder(t *testing.T) {
 	t.Run("an unreaped seat launch holds before everything", func(t *testing.T) {
 		bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 		bed.start(&SeatSelection{Goal: "alpha", Ready: []string{"alpha"}})
-		if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
+		if _, err := testprovider.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
 			t.Fatal(err)
 		}
 		result := bed.tick(Workers{Live: 1, LiveSeatMains: 1, CensusComplete: true})
@@ -355,7 +359,7 @@ func TestReadyWorkHonoursTheGuardsInOrder(t *testing.T) {
 	t.Run("an outage notifies before the cap", func(t *testing.T) {
 		bed := newSeatBed(t, seatReadyGoal("alpha", "Build it."))
 		capSeats(t, bed, "alpha", 3)
-		if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
+		if _, err := testprovider.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
 			t.Fatal(err)
 		}
 		result := bed.tick(deadWorkers)
@@ -528,8 +532,8 @@ func TestProviderLimitAfterClaimRecoversWithoutAPerson(t *testing.T) {
 			bed.put(seatClaimedGoal("held", SeatLineage))
 			bed.end(record.LaunchID, "failed", weather.result)
 			result = bed.tick(deadWorkers)
-			mark, standing := outage.StandingAt(bed.root, bed.now)
-			if !standing || mark.Source != SeatLineage || mark.LastClass != weather.class {
+			mark, standing := testprovider.StandingAt(bed.root, bed.now)
+			if !standing || mark.Source != record.LaunchID || mark.LastClass != weather.class {
 				t.Fatalf("a provider-limit ending feeds the outage mark with class %s: %+v %v", weather.class, mark, standing)
 			}
 			if result.Decision.Action != ActNotify || result.Seat != nil {
@@ -570,15 +574,41 @@ func TestProviderLimitAfterClaimRecoversWithoutAPerson(t *testing.T) {
 	})
 }
 
+// seatLadderTick judges recorded seats at the per-goal retry boundary.
+// Automatic process restarts have a separate seat-wide allowance.
+func seatLadderTick(t *testing.T, bed *seatBed) TickResult {
+	t.Helper()
+	state := reapSeatLaunches(bed.root, *bed.seatDependencies(), bed.now)
+	if state.Err != nil || state.Unreaped != "" {
+		t.Fatalf("seat records are not settled: %+v", state)
+	}
+	projection := bed.projection(bed.now)
+	work, err := goal.ClaimableWorkFromProjection(projection, seatBedMachine, identity.KernelProber{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	world := SeatWorldFrom(work, projection.Tree.Live, bed.settings, bed.tips, bed.now)
+	decision, selection := PlanSeat(world, state.Records, 3, false)
+	return TickResult{Decision: decision, Seat: selection}
+}
+
 // seatCycle runs one seat that claims the goal, writes a blocker and releases
 // it: the ledger moves, the branch does not.
 func seatCycle(t *testing.T, bed *seatBed, want string, blocker string) SeatRecord {
 	t.Helper()
-	result := bed.tick(deadWorkers)
+	result := seatLadderTick(t, bed)
 	if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != want {
 		t.Fatalf("seat for %s: %+v %+v", want, result.Decision, result.Seat)
 	}
-	record := bed.start(result.Seat)
+	record := SeatRecord{Schema: 1, LaunchID: fmt.Sprintf("fixture-seat-%d", len(bed.launcher.starts)+1),
+		Goal: want, ApprovalOpid: bed.goals[want].Approved.Opid, Machine: seatBedMachine,
+		Tips: map[string]string{want: bed.tips[want]}, StartedAt: bed.now.Format(seatStartedAtLayout)}
+	if err := writeSeatRecord(bed.root, record); err != nil {
+		t.Fatal(err)
+	}
+	if err := bed.launcher.StartSeat(SeatLaunchSpec{ID: record.LaunchID}); err != nil {
+		t.Fatal(err)
+	}
 	file := bed.goals[want]
 	file.NextStep = blocker
 	file.Revision++
@@ -600,7 +630,7 @@ func TestClaimBlockerReleaseCyclesStopAtTheCap(t *testing.T) {
 	for i := 0; i < 3; i++ {
 		seatCycle(t, bed, "a-stuck", "Blocked: the fixture is missing.")
 	}
-	result := bed.tick(deadWorkers)
+	result := seatLadderTick(t, bed)
 	if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "b-next" {
 		t.Fatalf("the fourth tick names another free goal: %+v %+v", result.Decision, result.Seat)
 	}
@@ -608,13 +638,14 @@ func TestClaimBlockerReleaseCyclesStopAtTheCap(t *testing.T) {
 		t.Fatalf("three no-progress seats count three: %d", count)
 	}
 	bed.drop("b-next")
-	result = bed.tick(deadWorkers)
+	result = seatLadderTick(t, bed)
 	if result.Decision.Action != ActNotify || result.Seat != nil ||
 		!strings.Contains(result.Decision.Reason, "3 seats ended without progress on a-stuck") {
 		t.Fatalf("with no other goal the cap starts none and notifies: %+v", result.Decision)
 	}
 
 	t.Run("a seat whose goal branch gained a commit resets the count", func(t *testing.T) {
+		t.Parallel()
 		bed := newSeatBed(t, seatReadyGoal("a-stuck", "Build it."))
 		seatCycle(t, bed, "a-stuck", "Blocked.")
 		seatCycle(t, bed, "a-stuck", "Blocked.")
@@ -623,7 +654,7 @@ func TestClaimBlockerReleaseCyclesStopAtTheCap(t *testing.T) {
 		// The third seat's record is reaped at the next tick; before that,
 		// its branch gains a commit.
 		bed.tips["a-stuck"] = "1111111111111111111111111111111111111111"
-		result := bed.tick(deadWorkers)
+		result := seatLadderTick(t, bed)
 		if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "a-stuck" {
 			t.Fatalf("progress resets the count: %+v %+v", result.Decision, result.Seat)
 		}
@@ -631,6 +662,37 @@ func TestClaimBlockerReleaseCyclesStopAtTheCap(t *testing.T) {
 			t.Fatalf("the newest seat made progress: %d", count)
 		}
 	})
+}
+
+func TestAutomaticRevivalStopsAfterClaimReleaseWithoutWorkProgress(t *testing.T) {
+	t.Parallel()
+	bed := newSeatBed(t, seatReadyGoal("a-stuck", "Build it."))
+	for range 2 {
+		result := bed.tick(deadWorkers)
+		if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "a-stuck" {
+			t.Fatalf("seat was not admitted: %+v", result)
+		}
+		record := bed.start(result.Seat)
+		file := bed.goals["a-stuck"]
+		file.NextStep = "Blocked: the fixture is missing."
+		file.Revision++
+		for _, verb := range []string{"claim", "release"} {
+			file.History = append(file.History, goal.HistoryLine{At: bed.now.Format(time.RFC3339),
+				Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC4", seatBedMachine, SeatLineage), Verb: verb,
+				Actor: seatBedMachine + "+" + SeatLineage, Targets: []string{file.Id}, Keep: -1})
+		}
+		bed.end(record.LaunchID, "completed", `{"type":"result","is_error":false,"result":"released"}`)
+		bed.now = bed.now.Add(time.Minute)
+	}
+	result := bed.tick(deadWorkers)
+	if result.Decision.Action != ActNotify || result.Seat != nil ||
+		!strings.Contains(result.Decision.Reason, "the automatic revival produced no retained work progress") || len(bed.launcher.starts) != 2 {
+		t.Fatalf("claim and release must not authorize another automatic revival: %+v starts=%d", result, len(bed.launcher.starts))
+	}
+	evidence, err := LoadEvidence(EvidencePath(bed.root))
+	if err != nil || evidence.AbnormalCount != 1 || evidence.Abnormal[0].Pending {
+		t.Fatalf("the stopped tick changed the retained restart allowance: %+v %v", evidence, err)
+	}
 }
 
 // Test 19.
@@ -847,7 +909,7 @@ func TestASeatStartRereadsItsGroundsUnderTheLock(t *testing.T) {
 	t.Run("an outage began", func(t *testing.T) {
 		t.Parallel()
 		bed, selection := selected(t)
-		if _, err := outage.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
+		if _, err := testprovider.Record(bed.root, "overloaded", "API Error: 529", "test", bed.now); err != nil {
 			t.Fatal(err)
 		}
 		refused(t, bed, selection, fakeCensus{workers: deadWorkers})

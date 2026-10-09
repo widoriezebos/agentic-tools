@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func handoffLegacyDependencies(prober identity.Prober) openWorkDependencies {
@@ -34,6 +35,7 @@ func completeHandoffRevival(root string, prober identity.Prober, cfg TickConfig,
 func TestARefusedContinuationBriefHoldsTheHandoff(t *testing.T) {
 	t.Parallel()
 	root, intent := prepareRevivalHandoff(t, "500000000000000d")
+	home := testprovider.Register(t, root)
 	prober := handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 	path := "artifacts/agents/handoff/state.json"
 	refusal := &dispatch.BriefAuthorityRefusal{MissingPaths: []string{path}, Details: map[string]string{path: "runtime path; looked in work trees dispatch and primary"}}
@@ -47,7 +49,7 @@ func TestARefusedContinuationBriefHoldsTheHandoff(t *testing.T) {
 		return refusal
 	}
 	for tick := 0; tick < 2; tick++ {
-		held, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, launch, admit)
+		held, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: home}, deadCensus(), intent.Nonce, launch, admit)
 		if err != nil || !held.Held || held.Launched || held.Escalate || launches != 0 {
 			t.Fatalf("refused admission did not hold: %+v %v launches=%d", held, err, launches)
 		}
@@ -61,15 +63,15 @@ func TestARefusedContinuationBriefHoldsTheHandoff(t *testing.T) {
 	if pending, err := PendingNotifications(root); err != nil || len(pending) != 1 || !strings.Contains(pending[0].Message, refusal.Error()) {
 		t.Fatalf("hold notice lost the path or its class: %+v %v", pending, err)
 	}
-	passed, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, launch, func(it Intent) error { admissions++; return nil })
+	passed, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: home}, deadCensus(), intent.Nonce, launch, func(it Intent) error { admissions++; return nil })
 	if err != nil || !passed.Launched || launches != 1 || admissions != 3 {
 		t.Fatalf("a later admitted tick did not launch: %+v %v launches=%d admissions=%d", passed, err, launches, admissions)
 	}
 	if live, err := LiveIntents(root); err != nil || len(live) != 0 {
 		t.Fatalf("admitted launch left a live intent: %+v %v", live, err)
 	}
-	if ev, err := LoadEvidence(EvidencePath(root)); err != nil || ev.DryRevivals != 1 {
-		t.Fatalf("admitted launch must count once: %+v %v", ev, err)
+	if ev, err := LoadEvidence(EvidencePath(root)); err != nil || ev.DryRevivals != 0 || ev.AbnormalCount != 0 {
+		t.Fatalf("a planned handoff must spend no revival allowance: %+v %v", ev, err)
 	}
 	if pending, err := PendingNotifications(root); err != nil || len(pending) != 0 {
 		t.Fatalf("admitted launch left a hold notice: %+v %v", pending, err)
@@ -216,7 +218,9 @@ func TestHandoffAdmissionKeepsALandingGoal(t *testing.T) {
 }
 
 func TestHandoffLaunchRefusesWhenItsNoticeCannotBeCleared(t *testing.T) {
+	t.Parallel()
 	root, intent := prepareRevivalHandoff(t, "5000000000000004")
+	home := testprovider.Register(t, root)
 	prober := handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 	path := filepath.Join(pendingDir(root), handoffNoticeNonce(intent.Nonce)+".json")
 	if err := QueueNotification(root, PendingNotification{Nonce: handoffNoticeNonce(intent.Nonce), Message: "steward: held"}); err != nil {
@@ -232,7 +236,7 @@ func TestHandoffLaunchRefusesWhenItsNoticeCannotBeCleared(t *testing.T) {
 		t.Fatal(err)
 	}
 	launches := 0
-	outcome, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	outcome, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: home}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})
@@ -248,9 +252,11 @@ func TestHandoffLaunchRefusesWhenItsNoticeCannotBeCleared(t *testing.T) {
 }
 
 func TestHandoffNoticeAuthorizationIsRecheckedBeforeDelivery(t *testing.T) {
+	t.Parallel()
 	root, intent := prepareRevivalHandoff(t, "5000000000000007")
+	home := testprovider.Register(t, root)
 	prober := handoffProbe(*intent.Handoff, identity.Alive, true, nil)
-	held, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	held, err := completeHandoffRevival(root, prober, TickConfig{ProviderHome: home}, deadCensus(), intent.Nonce, func(Intent) error {
 		t.Fatal("a live predecessor launched its successor")
 		return nil
 	})
@@ -285,7 +291,7 @@ func TestHandoffNoticeAuthorizationIsRecheckedBeforeDelivery(t *testing.T) {
 
 	prober = handoffProbe(*intent.Handoff, identity.Dead, false, nil)
 	launches := 0
-	launched, launchErr := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error {
+	launched, launchErr := completeHandoffRevival(root, prober, TickConfig{ProviderHome: home}, deadCensus(), intent.Nonce, func(Intent) error {
 		launches++
 		return nil
 	})

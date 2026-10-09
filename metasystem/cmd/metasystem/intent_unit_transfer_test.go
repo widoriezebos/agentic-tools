@@ -125,8 +125,9 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	if !required {
 		declared = "required-other"
 	}
-	page, _ := designGatePage(t, b, "- Critique: closed at round 1 on 0 material findings (reader)",
+	page, data := designGatePage(t, b, "- Critique: closed at round 1 on 0 material findings (reader)",
 		"\n| Unit | Purpose | Estimated changed lines |\n| --- | --- | --- |\n| "+declared+" | Complete the required behavior | 5 |\n")
+	processCommittedPage(t, b, page, data)
 	run, before, _ := stopBuild(t, b, "auto")
 	if before.Rounds[0].Stop == nil || before.Rounds[0].Stop.Decision != "continue" {
 		t.Fatalf("source did not admit its first correction: %+v", before)
@@ -172,7 +173,7 @@ func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFix
 	if err := os.WriteFile(filepath.Join(roundDir, "return.md"), []byte("VERDICT: REVISE material=2\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	readerRecord := map[string]any{"jobId": critic, "role": "code-critic", "status": "completed", "round": 1, "goalId": b.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-read-model", "findingRegister": []any{}, "reviews": "commit:" + commit, "findingRegisterRound": 0, "reviewRoundLimit": 6, "criticRoundsConsumed": 0,
+	readerRecord := map[string]any{"runtime": "local", "jobId": critic, "role": "code-critic", "status": "completed", "round": 1, "goalId": b.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-read-model", "findingRegister": []any{}, "reviews": "commit:" + commit, "findingRegisterRound": 0, "reviewRoundLimit": 6, "criticRoundsConsumed": 0,
 		"operationId": "fixture-critic:" + critic, "goalRevision": b.goalFile(b.id).Claimed.Revision, "capMin": 1,
 		"startedAt": b.manager.Now().UTC().Format(time.RFC3339Nano), "endedAt": b.manager.Now().UTC().Format(time.RFC3339Nano),
 		"instanceTag": "fixture-critic-" + critic, "pid": int64(20), "pgid": int64(20), "pidStartedAt": int64(400)}

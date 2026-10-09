@@ -40,6 +40,9 @@ type AdjudicateParams struct {
 	RepairCandidate  string
 	SettleAvailable  bool
 	SettleOK         bool
+
+	Runtime, Model, Home string
+	ObservedAt           time.Time
 }
 
 // adjudicateValidate runs the same two-step validation the shell composed:
@@ -124,7 +127,7 @@ func AdjudicateTurn(p AdjudicateParams) (string, error) {
 	}
 	switch {
 	case p.Stage == "initial" && p.CLIStatus != 0:
-		recordIfOverloaded(p.Root, p.LogPath, p.CandidatePath)
+		p.recordIfOverloaded(p.CandidatePath)
 	case p.Stage == "initial":
 		// A zero-status CLI can still be carrying the provider's own
 		// error document: that records, never clears. Otherwise the
@@ -132,22 +135,22 @@ func AdjudicateTurn(p AdjudicateParams) (string, error) {
 		// correlated handshake — because exit 0 alone does not prove
 		// the provider answered.
 		if class, evidence, hit := outage.ClassifyProviderResult(p.CandidatePath); hit {
-			_, _ = outage.Record(p.Root, class, evidence, "delegate-adapter", time.Now())
+			p.observeProvider(class, evidence)
 		} else if p.HandshakeDone {
-			_ = outage.Clear(p.Root)
+			p.observeProvider("", "")
 		}
 	case p.Stage == "after-repair" && p.RepairRC != 0:
-		recordIfOverloaded(p.Root, p.LogPath, p.RepairCandidate)
+		p.recordIfOverloaded(p.RepairCandidate)
 	case p.Stage == "after-repair":
 		if class, evidence, hit := outage.ClassifyProviderResult(p.RepairCandidate); hit {
-			_, _ = outage.Record(p.Root, class, evidence, "delegate-adapter", time.Now())
+			p.observeProvider(class, evidence)
 		} else {
 			// The repair only runs inside an established session; its
 			// zero exit is a provider conversation.
-			_ = outage.Clear(p.Root)
+			p.observeProvider("", "")
 		}
 	case verdict == "finish completed null completed":
-		_ = outage.Clear(p.Root)
+		p.observeProvider("", "")
 	}
 	return verdict, nil
 }
@@ -182,13 +185,13 @@ func criticFailureFold(recordPath, verdict string) string {
 // recordIfOverloaded feeds the outage mark when the failed call's
 // evidence is overload-shaped: the CLI stderr log, then the structured
 // provider result behind its is_error gate.
-func recordIfOverloaded(root, logPath, resultPath string) {
-	class, evidence, hit := outage.ClassifyLogs(logPath)
+func (p AdjudicateParams) recordIfOverloaded(resultPath string) {
+	class, evidence, hit := outage.ClassifyLogs(p.LogPath)
 	if !hit {
 		class, evidence, hit = outage.ClassifyProviderResult(resultPath)
 	}
 	if hit {
-		_, _ = outage.Record(root, class, evidence, "delegate-adapter", time.Now())
+		p.observeProvider(class, evidence)
 	}
 }
 
@@ -279,4 +282,10 @@ func adjudicateTurnStage(p AdjudicateParams) (string, error) {
 		return "fail-pending empty_reply delivery", nil
 	}
 	return "", fmt.Errorf("adjudicate-turn: unknown stage %q", p.Stage)
+}
+
+func (p AdjudicateParams) observeProvider(class, evidence string) {
+	if _, err := outage.Observe(p.Home, p.Runtime, p.Model, class, evidence, p.Job, p.ObservedAt); err != nil {
+		fmt.Fprintln(os.Stderr, "provider evidence was not recorded:", err)
+	}
 }

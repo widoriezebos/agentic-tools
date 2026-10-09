@@ -183,7 +183,7 @@ func init() {
 	stateful("goal unapprove", "a goal with no approval is already unapproved",
 		goalRepeatWitness(nil, nil, "is already not approved",
 			"goal", "unapprove", bedGoal, "--reason", "the design changes first"))
-	stateful("goal split", "a parent already split into exactly these members is success with no record (witnessed at the owner: the router's split needs the MAIN checkout-lease holder)",
+	stateful("goal split", "an authenticated person repeating the same split reports the held effect without another record",
 		witnessSplitAtOwner)
 	stateful("goal group", "a goal already in that group is success with no record",
 		goalRepeatWitness(makeQueued, addOtherGoal, "is already in group other-goal",
@@ -215,8 +215,8 @@ func init() {
 		})
 }
 
-// witnessSplitAtOwner splits the bed goal twice through the split owner, as
-// the lease holder's router call does, and requires the second split to be an
+// witnessSplitAtOwner splits the bed goal twice through the person-authorized
+// split owner, and requires the second split to be an
 // unchanged success that published and journaled nothing.
 func witnessSplitAtOwner(t *testing.T) {
 	bed := newIntentBed(t, false, makeQueued)
@@ -228,18 +228,22 @@ func witnessSplitAtOwner(t *testing.T) {
 		{ID: bedGoal + "-one", Intent: "Deliver the first part.", NextStep: "Build part one."},
 		{ID: bedGoal + "-two", Intent: "Deliver the second part.", NextStep: "Build part two."},
 	}
-	ratification := goal.SplitRatification{Tier: goal.RatifierMain, MainID: "main-1", ClaimEpoch: 1, DraftSHA256: goal.SplitDraftSHA256(bedGoal, members)}
+	ratification := goal.SplitRatification{Tier: goal.RatifierHuman, By: "Wido", DraftSHA256: goal.SplitDraftSHA256(bedGoal, members)}
 	request := func(ulid string) goal.VerbRequest {
-		return goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: "mac-cli", Lineage: "m1"}, Ulid: ulid,
+		return goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: "mac-cli", Lineage: "m1", Human: "Wido"}, Ulid: ulid,
 			Now: time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC), ClaimEpoch: 1,
 			ParkBranchCheck: func(string, string) (string, error) { return "", nil }}
 	}
-	first, err := goal.Split(request("01J5X0000000000000000QDS01"), bedGoal, members, ratification, nil)
+	proof, err := fixedFixtureGoalAuthority(bed.root(), 0, nil, "", "", request("unused").Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := goal.Split(request("01J5X0000000000000000QDS01"), bedGoal, members, ratification, &proof)
 	if err != nil || first.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("the first split = %+v %v", first, err)
 	}
 	publications, journal, files := bed.publications(), goalJournalNames(t, bed.root()), goalLedgerBytes(bed)
-	second, err := goal.Split(request("01J5X0000000000000000QDS02"), bedGoal, members, ratification, nil)
+	second, err := goal.Split(request("01J5X0000000000000000QDS02"), bedGoal, members, ratification, &proof)
 	if err != nil || second.Outcome != goal.OutcomeAbandoned || !second.Unchanged || !strings.Contains(second.Detail, "is already split into") {
 		t.Fatalf("the repeated split = %+v %v; want an unchanged success", second, err)
 	}
@@ -290,4 +294,9 @@ func TestIntentReleaseAtAnUnenrolledTerminal(t *testing.T) {
 	if code != 0 || result.Outcome != intentConfirmed || bed.goalFile(bedGoal).State == goal.StateClaimed {
 		t.Fatalf("a named release at an unenrolled terminal = %d %+v", code, result)
 	}
+}
+
+func TestGoalSplitRepeatHolds(t *testing.T) {
+	t.Parallel()
+	witnessSplitAtOwner(t)
 }

@@ -194,7 +194,11 @@ func (inv *intentInvocation) goalUnitStages(id string) (work []launch.NamedWork,
 				}
 			}
 		}
-		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at})
+		run := ""
+		if one.Record != nil {
+			run = one.Record.ID
+		}
+		units = append(units, steward.UnitStage{Unit: one.Unit, Stage: stage, Line: lines[len(lines)-1], At: at, Run: run})
 	}
 	for _, item := range manual {
 		stage := item.stage(inv.work().inspectRead)
@@ -275,7 +279,15 @@ func runIntentStatusGoal(inv *intentInvocation, id string) int {
 
 // renderGoalUnitStatus keeps the shared unit lines whole in the status page.
 func (inv *intentInvocation) renderGoalUnitStatus(result intentResult, unitCount int) int {
-	report := readProcessReport(inv.stateRoot, inv.layout.InstallationRoot.Path(), result.Data.(map[string]any)["goal"].(string), inv.input.text("work"), inv.unitRunner(), inv.unitRunner().Manager.Now(), nil)
+	id := result.Data.(map[string]any)["goal"].(string)
+	if projection, now, problem := inv.projection(); problem == nil {
+		if file, _ := goalRecord(projection, id); file != nil && file.Budget != nil {
+			view := inv.budgetView(file, now)
+			result.Data.(map[string]any)["budget"] = view
+			result.text = append(result.text, view.lines()...)
+		}
+	}
+	report := readProcessReport(inv.stateRoot, inv.layout.InstallationRoot.Path(), id, inv.input.text("work"), inv.unitRunner(), inv.unitRunner().Manager.Now(), nil)
 	result.Data.(map[string]any)["processReport"] = report
 	result.view = func(page *textui.Page) {
 		page.Headline(result.Summary)

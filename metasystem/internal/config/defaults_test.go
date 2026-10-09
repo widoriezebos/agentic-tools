@@ -9,6 +9,18 @@ import (
 	"time"
 )
 
+func TestFleetAndProcessDefaultsCoexist(t *testing.T) {
+	t.Parallel()
+	for key, want := range map[string]string{"host.builds": "auto", "host.load-max": "8", "process.change": "person"} {
+		if got, ok := CompiledDefault(key); !ok || got != want {
+			t.Fatalf("CompiledDefault(%s) = %q, %t; want %q", key, got, ok, want)
+		}
+		if ProofInput(key) {
+			t.Fatalf("%s changed proof identity", key)
+		}
+	}
+}
+
 func TestRosterRuntimeNames(t *testing.T) {
 	t.Parallel()
 	for value, want := range map[string][]string{

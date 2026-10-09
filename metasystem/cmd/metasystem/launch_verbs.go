@@ -52,6 +52,7 @@ func newLaunchManagerFrom(executable string, executableErr error, serving func(s
 	if executableErr != nil {
 		settingsErr = executableErr
 	}
+	capacityHome, _ := batchowner.LandingLaneHome()
 	scanner := launch.KernelProcessScanner{Prober: prober}
 	codex := launch.CodexExec{Binary: "codex", SessionsRoot: filepath.Join(home, ".codex", "sessions"), Now: time.Now, Scanner: scanner}
 	// Claude Code keeps its session transcripts under CLAUDE_CONFIG_DIR when
@@ -63,7 +64,7 @@ func newLaunchManagerFrom(executable string, executableErr error, serving func(s
 	claude := launch.ClaudeHeadless{Binary: "claude", ProjectsRoot: filepath.Join(claudeConfig, "projects"), Scanner: scanner}
 	stateRoot, _ := launch.DefaultRoot()
 	devin := launch.DevinPrint{Binary: "devin", StateRoot: stateRoot, Scanner: scanner}
-	return &launch.Manager{Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude, "devin-print": devin, "plain-exec": launch.PlainExec{}},
+	return &launch.Manager{BuildPolicy: config.GetParams{ConfPath: confPath, LookupEnv: lookupEnv}, CapacityHome: capacityHome, Store: launch.Store{}, Adapters: map[string]launch.Adapter{"codex-exec": codex, "claude-headless": claude, "devin-print": devin, "plain-exec": launch.PlainExec{}},
 		Processes: processes, Signaler: processes, Prober: prober, Supervisor: launch.OSSupervisorStarter{Executable: engine, Prober: prober}, Now: time.Now,
 		Sleep: time.Sleep, Grace: 2 * time.Second, Poll: 50 * time.Millisecond, StartCap: launch.DefaultWaitTimeout,
 		Settings: settings, SettingsError: settingsErr, CompressAbove: disk.Bytes(config.DiskCompressAboveKey), Seat: launchSeat(executable, executableErr, launchMachine),

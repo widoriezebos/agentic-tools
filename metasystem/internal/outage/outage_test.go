@@ -1,6 +1,8 @@
 package outage
 
 import (
+	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -15,33 +17,33 @@ var t0 = time.Date(2026, 8, 24, 8, 0, 0, 0, time.UTC)
 // count growing only while the outage keeps being fed.
 func TestMarkLifecycle(t *testing.T) {
 	root := t.TempDir()
-	if _, ok := Read(root); ok {
+	if _, ok := fixtureRead(root); ok {
 		t.Fatal("an absent mark must read as no outage")
 	}
-	m, err := Record(root, "overloaded", "API Error: 529", "mission-runner", t0)
+	m, err := fixtureObserve(root, "overloaded", "API Error: 529", "mission-runner", t0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m.ConsecutiveFailures != 1 || m.LastClass != "overloaded" || m.Since != m.LastAt {
 		t.Fatalf("first failure starts the outage: %+v", m)
 	}
-	m, err = Record(root, "http-529", "still down", "delegate-adapter", t0.Add(2*time.Minute))
+	m, err = fixtureObserve(root, "http-529", "still down", "delegate-adapter", t0.Add(2*time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if m.ConsecutiveFailures != 2 || m.Since == m.LastAt || m.Source != "delegate-adapter" {
 		t.Fatalf("a fed outage keeps its start and grows its count: %+v", m)
 	}
-	if _, ok := StandingAt(root, t0.Add(3*time.Minute)); !ok {
+	if _, ok := fixtureStanding(root, t0.Add(3*time.Minute)); !ok {
 		t.Fatal("a fed mark stands")
 	}
-	if err := Clear(root); err != nil {
+	if err := fixtureClear(root); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := Read(root); ok {
+	if _, ok := fixtureRead(root); ok {
 		t.Fatal("a cleared mark is gone")
 	}
-	if err := Clear(root); err != nil {
+	if err := fixtureClear(root); err != nil {
 		t.Fatal("clearing an absent mark is success")
 	}
 }
@@ -50,45 +52,59 @@ func TestMarkLifecycle(t *testing.T) {
 // never permanently pause the steward's clocks; and a NEW failure
 // after the lapse starts a fresh outage rather than resuming the old.
 func TestHorizonLapse(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	if _, err := Record(root, "overloaded", "529", "mission-runner", t0); err != nil {
+	if _, err := fixtureObserve(root, "overloaded", "529", "mission-runner", t0); err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := StandingAt(root, t0.Add(Horizon)); !ok {
+	if _, ok := fixtureStanding(root, t0.Add(Horizon)); !ok {
 		t.Fatal("a mark inside the horizon stands")
 	}
-	if _, ok := StandingAt(root, t0.Add(Horizon+time.Second)); ok {
+	if _, ok := fixtureStanding(root, t0.Add(Horizon+time.Second)); ok {
 		t.Fatal("a mark past the horizon has lapsed")
 	}
-	if _, ok := StandingAt(root, t0.Add(-Horizon-time.Second)); ok {
+	if _, ok := fixtureStanding(root, t0.Add(-Horizon-time.Second)); ok {
 		t.Fatal("a future-dated mark lapses on the same bound; a clock correction must not pause the clocks indefinitely")
 	}
-	m, err := Record(root, "overloaded", "529 again", "mission-runner", t0.Add(2*Horizon))
+	m, err := fixtureObserve(root, "overloaded", "529 again", "mission-runner", t0.Add(2*Horizon))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if m.ConsecutiveFailures != 1 || m.Since != t0.Add(2*Horizon).UTC().Format(time.RFC3339) {
-		t.Fatalf("a failure after the lapse starts a new outage: %+v", m)
+	if m.ConsecutiveFailures != 1 || m.Since != t0.Add(2*Horizon).UTC().Format(time.RFC3339) || m.LastAt != m.Since {
+		t.Fatalf("a failure after expiry starts a fresh outage: %+v", m)
+	}
+	state, err := ReadProviders(filepath.Join(root, ".metasystem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	intervals := state.Current["anthropic"].Intervals
+	if len(intervals) != 1 || intervals[0].Since != t0.Format(time.RFC3339) ||
+		intervals[0].Until != t0.Add(Horizon).Format(time.RFC3339) || !intervals[0].Stale || intervals[0].FirstSuccessAt != "" {
+		t.Fatalf("expiry must retain the bounded wait without claiming provider success: %+v", intervals)
 	}
 }
 
-// A torn mark fails toward normal operation: no outage, and the next
-// Record starts clean.
-func TestTornMarkReadsAsNoOutage(t *testing.T) {
+// Unreadable current evidence stays unknown and cannot be overwritten by an observation.
+func TestUnreadableProviderStateRefusesObservation(t *testing.T) {
+	t.Parallel()
 	root := t.TempDir()
-	path := Path(root)
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if _, err := fixtureObserve(root, "overloaded", "529", "fixture", t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("{torn"), 0o644); err != nil {
+	home := filepath.Join(root, ".metasystem")
+	state, err := ReadProviders(home)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if _, ok := Read(root); ok {
-		t.Fatal("a torn mark must not stand")
+	path := filepath.Join(root, "artifacts", "agents", fmt.Sprintf("providers-%d.json", state.Owner.CustodyEpoch))
+	if err := os.WriteFile(path, []byte("{torn"), 0o600); err != nil {
+		t.Fatal(err)
 	}
-	m, err := Record(root, "overloaded", "529", "mission-runner", t0)
-	if err != nil || m.ConsecutiveFailures != 1 {
-		t.Fatalf("recording over a torn mark starts clean: %+v %v", m, err)
+	if _, err := ReadProviders(home); err == nil || !strings.Contains(err.Error(), path) {
+		t.Fatalf("unreadable state was healthy or its file was hidden: %v", err)
+	}
+	if _, err := Observe(home, "claude", "fixture-model", "overloaded", "529", "fixture", t0.Add(time.Second)); err == nil {
+		t.Fatal("observation overwrote unreadable state")
 	}
 }
 
@@ -170,7 +186,7 @@ func TestClassifyProviderResultGate(t *testing.T) {
 // Long evidence is clipped; a long log is tail-read without error.
 func TestEvidenceClipAndTail(t *testing.T) {
 	root := t.TempDir()
-	m, err := Record(root, "overloaded", strings.Repeat("x", 1000), "mission-runner", t0)
+	m, err := fixtureObserve(root, "overloaded", strings.Repeat("x", 1000), "mission-runner", t0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,10 +270,10 @@ func TestUsageLimitFeedsTheOutageMark(t *testing.T) {
 	}
 	// The class feeds the mark like any other provider failure.
 	root := t.TempDir()
-	if _, err := Record(root, ProviderLimit, "Claude AI usage limit reached", "steward", t0); err != nil {
+	if _, err := fixtureObserve(root, ProviderLimit, "Claude AI usage limit reached", "steward", t0); err != nil {
 		t.Fatal(err)
 	}
-	if mark, ok := StandingAt(root, t0.Add(time.Minute)); !ok || mark.LastClass != ProviderLimit {
+	if mark, ok := fixtureStanding(root, t0.Add(time.Minute)); !ok || mark.LastClass != ProviderLimit {
 		t.Fatalf("the usage limit did not stand as an outage: %+v %v", mark, ok)
 	}
 }
@@ -272,11 +288,11 @@ func TestLimitMarkLapsesAtItsNamedReset(t *testing.T) {
 	seen := time.Date(2026, 10, 3, 1, 17, 52, 0, time.UTC)
 	stands := func(t *testing.T, root string, at time.Time) bool {
 		t.Helper()
-		_, ok := StandingAt(root, at)
+		_, ok := fixtureStanding(root, at)
 		return ok
 	}
 	root := t.TempDir()
-	m, err := Record(root, ProviderLimit, "You've hit your session limit · resets 3:30am (Europe/Amsterdam)", "steward-seat", seen)
+	m, err := fixtureObserve(root, ProviderLimit, "You've hit your session limit · resets 3:30am (Europe/Amsterdam)", "steward-seat", seen)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -288,23 +304,21 @@ func TestLimitMarkLapsesAtItsNamedReset(t *testing.T) {
 	}
 
 	epoch := t.TempDir()
-	if m, err := Record(epoch, ProviderLimit, "Claude AI usage limit reached|"+strconv.FormatInt(seen.Add(5*time.Minute).Unix(), 10), "mission-runner", seen); err != nil || m.ResetAt != "2026-10-03T01:22:52Z" {
+	if m, err := fixtureObserve(epoch, ProviderLimit, "Claude AI usage limit reached|"+strconv.FormatInt(seen.Add(5*time.Minute).Unix(), 10), "mission-runner", seen); err != nil || m.ResetAt != "2026-10-03T01:22:52Z" {
 		t.Fatalf("epoch reset = %+v, %v", m, err)
 	}
 
 	local := t.TempDir()
-	m, err = Record(local, ProviderLimit, "5-hour limit reached ∙ resets 3pm", "mission-runner", seen)
+	m, err = fixtureObserve(local, ProviderLimit, "5-hour limit reached ∙ resets 3pm", "mission-runner", seen)
 	reset, parseErr := time.Parse(time.RFC3339, m.ResetAt)
 	localSeen := seen.In(time.Local)
 	want := time.Date(localSeen.Year(), localSeen.Month(), localSeen.Day(), 15, 0, 0, 0, time.Local)
 	if !want.After(seen) {
 		want = want.AddDate(0, 0, 1)
 	}
-	if want.Sub(seen) > MaxLimitHold {
-		want = seen.Add(MaxLimitHold)
-	}
+
 	if err != nil || parseErr != nil || !reset.Equal(want) {
-		t.Fatalf("a zoneless reset is the next local 3pm capped at five hours: %+v, %v, want %s", m, err, want)
+		t.Fatalf("a zoneless reset is the next local 3pm with the observed reset retained: %+v, %v, want %s", m, err, want)
 	}
 
 	for _, line := range []string{
@@ -312,7 +326,7 @@ func TestLimitMarkLapsesAtItsNamedReset(t *testing.T) {
 		"Claude AI usage limit reached|" + strconv.FormatInt(seen.Add(-time.Hour).Unix(), 10),
 	} {
 		later := t.TempDir()
-		if _, err := Record(later, ProviderLimit, line, "steward-seat", seen); err != nil {
+		if _, err := fixtureObserve(later, ProviderLimit, line, "steward-seat", seen); err != nil {
 			t.Fatal(err)
 		}
 		if !stands(t, later, seen.Add(Horizon)) || stands(t, later, seen.Add(Horizon+time.Second)) {
@@ -320,19 +334,19 @@ func TestLimitMarkLapsesAtItsNamedReset(t *testing.T) {
 		}
 	}
 	distant := t.TempDir()
-	m, err = Record(distant, ProviderLimit, "You've hit your usage limit · resets 11pm (Europe/Amsterdam)", "steward-seat", seen)
-	if err != nil || m.ResetAt != seen.Add(MaxLimitHold).UTC().Format(time.RFC3339) {
-		t.Fatalf("a distant reset must cap at five hours: %+v, %v", m, err)
+	m, err = fixtureObserve(distant, ProviderLimit, "You've hit your usage limit · resets 11pm (Europe/Amsterdam)", "steward-seat", seen)
+	if err != nil || m.ResetAt != "2026-10-03T21:00:00Z" {
+		t.Fatalf("a distant reset must retain the provider observation: %+v, %v", m, err)
 	}
 	if !stands(t, distant, seen) || !stands(t, distant, seen.Add(MaxLimitHold-time.Second)) || stands(t, distant, seen.Add(MaxLimitHold)) {
 		t.Fatal("a distant reset must hold for five hours and lapse at the cap")
 	}
 	overload := t.TempDir()
-	if m, err := Record(overload, "overloaded", "API Error: 529 Overloaded · resets 1am", "mission-runner", seen); err != nil || m.ResetAt != "" {
+	if m, err := fixtureObserve(overload, "overloaded", "API Error: 529 Overloaded · resets 1am", "mission-runner", seen); err != nil || m.ResetAt != "" {
 		t.Fatalf("an overload names no reset: %+v, %v", m, err)
 	}
 
-	if m, err := Record(root, "overloaded", "API Error: 529", "mission-runner", seen.Add(time.Minute)); err != nil || m.ResetAt != "" {
+	if m, err := fixtureObserve(root, "overloaded", "API Error: 529", "mission-runner", seen.Add(time.Minute)); err != nil || m.ResetAt != "" {
 		t.Fatalf("a later failure's line replaces the reset: %+v, %v", m, err)
 	}
 	if !stands(t, root, time.Date(2026, 10, 3, 1, 31, 0, 0, time.UTC)) {
@@ -357,10 +371,8 @@ func TestSessionResetWindow(t *testing.T) {
 		if !ok || !reset.Equal(want) {
 			t.Fatalf("message at %s: reset=%s, want %s", seen, reset, want)
 		}
-		mark, err := Record(t.TempDir(), ProviderLimit, line, "fixture", seen)
-		if minute >= 50 {
-			want = seen.Add(5 * time.Hour)
-		}
+		mark, err := fixtureObserve(t.TempDir(), ProviderLimit, line, "fixture", seen)
+
 		if err != nil || mark.ResetAt != want.UTC().Format(time.RFC3339) {
 			t.Fatalf("message at %s: mark=%+v, error=%v, want %s", seen, mark, err, want)
 		}
@@ -369,4 +381,33 @@ func TestSessionResetWindow(t *testing.T) {
 			t.Fatalf("message at %s: retry=%v at %s", seen, retry, retryAt)
 		}
 	}
+}
+
+func fixtureObserve(root, class, detail, source string, at time.Time) (Mark, error) {
+	home := filepath.Join(root, ".metasystem")
+	if _, _, err := lane.Register(home, lane.Layout{Checkout: lane.CheckoutRoot(root), Install: lane.InstallRoot(root)}, "fixture", at); err != nil {
+		return Mark{}, err
+	}
+	return Observe(home, "claude", "fixture-model", class, detail, source, at)
+}
+func fixtureRead(root string) (Mark, bool) {
+	s, err := ReadProviders(filepath.Join(root, ".metasystem"))
+	if err != nil {
+		return Mark{}, false
+	}
+	m := s.Current["anthropic"].Mark
+	return m, m.ConsecutiveFailures > 0
+}
+func fixtureStanding(root string, at time.Time) (Mark, bool) {
+	s, err := ReadProviders(filepath.Join(root, ".metasystem"))
+	if err != nil {
+		return Mark{}, false
+	}
+	return s.Standing("claude", at)
+}
+func fixtureClear(root string) error {
+	m, _ := fixtureRead(root)
+	at, _ := time.Parse(time.RFC3339Nano, m.LastAt)
+	_, err := Observe(filepath.Join(root, ".metasystem"), "claude", "fixture-model", "", "", "fixture-success", at.Add(time.Nanosecond))
+	return err
 }

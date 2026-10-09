@@ -56,8 +56,14 @@ func ClearDeferredRearm(root string) error {
 }
 
 // SeatAtUnitBoundary excludes running steps, critics and unreadable work.
-func SeatAtUnitBoundary(root, home string, now time.Time) (bool, error) {
-	work, err := goal.ReadClaimableBudgetedWork(root, now)
+func SeatAtUnitBoundary(root, home string, now time.Time, observed ...goal.ClaimableBudgetedWork) (bool, error) {
+	var work goal.ClaimableBudgetedWork
+	var err error
+	if len(observed) > 0 {
+		work = observed[0]
+	} else {
+		work, err = goal.ReadClaimableBudgetedWork(root, now)
+	}
 	if err != nil {
 		return false, err
 	}

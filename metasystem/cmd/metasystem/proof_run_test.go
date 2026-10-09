@@ -528,7 +528,7 @@ func TestCandidateCannotUseAuthorityEarnedExtension(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTemp(t, jobs, "authority-spent.json", map[string]any{
-		"jobId": "authority-spent", "operationId": "authority-spent", "goalId": "standing-validation", "goalRevision": 2,
+		"runtime": "local", "jobId": "authority-spent", "operationId": "authority-spent", "goalId": "standing-validation", "goalRevision": 2,
 		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:20:00Z", "endedAt": "2026-08-30T08:21:00Z",
 	})
 	announceProofFixtureHolder(t, root)
@@ -1955,7 +1955,7 @@ func TestProofAdmissionExtendsRejudgesAndReserves(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTemp(t, jobs, "proof-spent.json", map[string]any{
-		"jobId": "proof-spent", "operationId": "proof-spent", "goalId": "standing-validation", "goalRevision": 2,
+		"runtime": "local", "jobId": "proof-spent", "operationId": "proof-spent", "goalId": "standing-validation", "goalRevision": 2,
 		"capMin": 1, "status": "completed", "startedAt": "2026-08-30T08:20:00Z", "endedAt": "2026-08-30T08:21:00Z",
 	})
 
@@ -1994,9 +1994,10 @@ func TestNativeDelegateProofAdmissionExtendsItsClaimPairBudget(t *testing.T) {
 	}
 	ref := parent.Ref()
 	record := map[string]any{
-		"jobId": "native-proof", "operationId": "native-proof", "goalId": "standing-validation", "goalRevision": 2,
+		"runtime": "local", "jobId": "native-proof", "operationId": "native-proof", "goalId": "standing-validation", "goalRevision": 2,
 		"machineId": "mac-cli", "claimEpoch": 1, "capMin": 1, "status": "running",
 		"pid": parent.Pid, "pidStartedAt": ref.StartedAtSec,
+		"startedAt": now.Add(-time.Minute).Format(time.RFC3339),
 	}
 	if ref.StartedAtUnixMicro > 0 {
 		record["pidStartedAtExactMicro"] = ref.StartedAtUnixMicro
@@ -2077,9 +2078,10 @@ func TestSupervisorTakeoverRefusesStaleEpochProof(t *testing.T) {
 	}
 	ref := parent.Ref()
 	record := map[string]any{
-		"jobId": "stale-proof", "operationId": "stale-proof", "goalId": "standing-validation", "goalRevision": 2,
+		"runtime": "local", "jobId": "stale-proof", "operationId": "stale-proof", "goalId": "standing-validation", "goalRevision": 2,
 		"machineId": "mac-cli", "claimEpoch": 1, "capMin": 1, "status": "running",
 		"pid": parent.Pid, "pidStartedAt": ref.StartedAtSec,
+		"startedAt": now.Add(-time.Minute).Format(time.RFC3339),
 	}
 	if ref.StartedAtUnixMicro > 0 {
 		record["pidStartedAtExactMicro"] = ref.StartedAtUnixMicro

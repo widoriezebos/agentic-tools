@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
@@ -30,6 +31,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter/fakeadapter"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
@@ -391,6 +393,10 @@ func newWorkBedWith(t *testing.T, amend func(*goal.GoalFile)) *workBed {
 		Adapters:  map[string]launch.Adapter{"codex-exec": workAdapter{}, "claude-headless": workAdapter{}, "plain-exec": workAdapter{}},
 		Processes: workProcesses{}, Prober: workProber{}, Now: clock.Now, Sleep: clock.Sleep, Grace: time.Second, Poll: time.Second}
 	bed.manager.Settings = launch.DefaultSettings()
+	bed.manager.CapacityHome = testprovider.Register(t, t.TempDir())
+	bed.manager.CapacitySources.Load = func(at time.Time) hostload.Sample {
+		return hostload.Sample{At: at.Format(time.RFC3339Nano), Available: true, Load1m: 0}
+	}
 	bed.manager.Settings.WaitCapSeconds = 2
 	for index, value := range bed.manager.Settings.Values {
 		if value.Key == launch.ReadModelKey {

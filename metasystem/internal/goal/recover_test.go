@@ -1015,7 +1015,7 @@ func TestRecoveryRefusesJournaledHumanDone(t *testing.T) {
 
 func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T) {
 	t.Parallel()
-	t.Run("created main split completes", func(t *testing.T) {
+	t.Run("published human split completes", func(t *testing.T) {
 		t.Parallel()
 		endpoint, _ := fakeGoalEndpoint(t)
 		root := endpoint.Root
@@ -1024,20 +1024,59 @@ func TestRecoveryCompletesMainSplitAndRejectsHumanOrDoctoredDrafts(t *testing.T)
 		}
 		members := testMembers("recover-main-split")
 		request := verbReqFor(endpoint, "01J5X00000000000000000RM10", "mac-a")
-		rebuilt, err := splitRequest(request, "recover-main-split", members, mainRatification("recover-main-split", members), nil)
+		if result, err := splitAsPerson(t, request, "recover-main-split", members); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("publish split: %+v %v", result, err)
+		}
+		published, err := ReadEntry(root, request.opid())
 		if err != nil {
 			t.Fatal(err)
 		}
-		strandEntry(t, root, rebuilt.Opid, PhaseCreated, rebuilt.Intent)
+		published.Phase, published.Outcome, published.Evidence, published.TerminalAt = PhasePushed, "", "", ""
+		published.Owner = OwnerIdentity{Pid: 99999999, PidStartedAt: 1}
+		if err := writeEntry(root, published); err != nil {
+			t.Fatal(err)
+		}
 		reports, err := Recover(endpoint)
 		if err != nil {
 			t.Fatal(err)
 		}
-		entry, readErr := ReadEntry(root, rebuilt.Opid)
+		entry, readErr := ReadEntry(root, request.opid())
 		projection, projectErr := Project(endpoint, false, time.Now())
 		if readErr != nil || projectErr != nil || entry.Outcome != OutcomeConfirmed ||
-			projection.Tree.Done["recover-main-split"] == nil || projection.Tree.Live["recover-main-split-one"] == nil {
+			projection.Tree.Live["recover-main-split"] == nil || projection.Tree.Live["recover-main-split"].State != StateSplit ||
+			projection.Tree.Done["recover-main-split"] != nil || projection.Tree.Live["recover-main-split-one"] == nil || projection.Tree.Live["recover-main-split-two"] == nil {
 			t.Fatalf("main split did not recover atomically: entry=%+v reports=%+v read=%v project=%v", entry, reports, readErr, projectErr)
+		}
+	})
+
+	t.Run("created main split requires a person's ratification", func(t *testing.T) {
+		t.Parallel()
+		endpoint, _ := fakeGoalEndpoint(t)
+		request := verbReqFor(endpoint, "01J5X00000000000000000RM20", "mac-a")
+		if result, err := Open(request, "recover-agent-split", "Keep unpublished work intact.", OriginMain, "Ask the person."); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("open: %+v %v", result, err)
+		}
+		request.Ulid = "01J5X00000000000000000RM21"
+		members := testMembers("recover-agent-split")
+		rebuilt, err := splitRequest(request, "recover-agent-split", members, mainRatification("recover-agent-split", members), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		strandEntry(t, endpoint.Root, rebuilt.Opid, PhaseCreated, rebuilt.Intent)
+		if _, err := Recover(endpoint); err != nil {
+			t.Fatal(err)
+		}
+		entry, err := ReadEntry(endpoint.Root, rebuilt.Opid)
+		if err != nil || entry.Outcome != OutcomeRejected || !strings.Contains(entry.Evidence, "a person approves the split") {
+			t.Fatalf("unpublished agent split did not require a person: %+v %v", entry, err)
+		}
+		projection, err := Project(endpoint, false, request.Now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		parent := projection.Tree.Live["recover-agent-split"]
+		if parent == nil || parent.State != StateQueued || parent.Revision != 1 || projection.Tree.Done[parent.Id] != nil || projection.Tree.Live["recover-agent-split-one"] != nil || projection.Tree.Live["recover-agent-split-two"] != nil {
+			t.Fatalf("unpublished agent split changed the ledger: %+v", projection.Tree)
 		}
 	})
 
@@ -1110,7 +1149,27 @@ func TestRecoveryClassifiesOldArcDebtAfterDecomposedParentWasPruned(t *testing.T
 	}
 	members := testMembers("pruned-split")
 	request := verbReqFor(endpoint, "01J5X00000000000000000RP20", "mac-a")
-	if res, err := Split(request, "pruned-split", members, mainRatification("pruned-split", members), nil); err != nil || res.Outcome != OutcomeConfirmed {
+	legacy := PublishRequest{
+		Opid: request.opid(), Machine: request.Actor.Machine, Lineage: request.Actor.Lineage,
+		Intent: Intent{Verb: "split", Targets: []string{"pruned-split"}}, Message: "fixture legacy decomposition",
+		Mutate: func(tip string) ([]Change, error) {
+			tree, err := loadTreeFor(endpoint, tip)
+			if err != nil {
+				return nil, err
+			}
+			parent := tree.Live["pruned-split"]
+			parent.State, parent.Conclude = StateDone, "Legacy decomposition."
+			ratification := mainRatification(parent.Id, members)
+			parent.Ratified = &ratification
+			touch(parent, request, "split", []string{parent.Id})
+			tree.Root.Decomposed = append(tree.Root.Decomposed, DecomposedEntry{Id: parent.Id, Opid: request.opid(), At: request.stamp(), OldArc: parent.Arc})
+			return []Change{{Path: livePath(parent.Id), Delete: true}, {Path: donePath(parent.Id), Content: RenderFile(parent)}, {Path: goalsPrefix + "backlog.md", Content: RenderRoot(tree.Root)}}, nil
+		},
+		AfterConfirmed: func(tip string) error {
+			return raiseSplitOldArcDebt(endpoint, tip, "pruned-split", request.opid(), request.Now)
+		},
+	}
+	if res, err := Publish(endpoint, legacy); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("split: %+v %v", res, err)
 	}
 	if res, err := Prune(verbReqFor(endpoint, "01J5X00000000000000000RP30", "mac-a"), 0); err != nil || res.Outcome != OutcomeConfirmed {
