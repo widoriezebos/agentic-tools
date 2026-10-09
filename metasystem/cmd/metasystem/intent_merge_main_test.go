@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -29,6 +30,15 @@ func TestGoalProjectionFreshFetchUsesInstallationEndpoint(t *testing.T) {
 		return endpoint(root)
 	}
 	stateRoot := filepath.Join(bed.root(), "application")
+	// The command clock reads the run's state root, as on main; the bed's
+	// clock is keyed to the checkout, so check the root and delegate.
+	clock := owners.commandNow
+	owners.commandNow = func(root string) (time.Time, error) {
+		if root != stateRoot {
+			t.Fatalf("command clock read from %q, want state root %q", root, stateRoot)
+		}
+		return clock(bed.root())
+	}
 	inv := &intentInvocation{owners: owners, stateRoot: stateRoot,
 		layout: stateroot.Layout{InstallationRoot: installation}}
 	before := bed.repo.captures
