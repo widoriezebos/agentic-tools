@@ -47,7 +47,7 @@ func readOpenWorkShared(repoRoot string, dependencies openWorkDependencies) (Ope
 	if dependencies.NewWorld(repoRoot) {
 		return convertedOpenWorkWithDependencies(repoRoot, dependencies)
 	}
-	work, reason, err := legacyOpenWorkWithReader(repoRoot, dependencies.ReadClaimableBudgetedWork)
+	work, reason, err := legacyOpenWorkWithReader(repoRoot, dependencies.ReadClaimableBudgetedWork, dependencies)
 	return work, reason, nil, err
 }
 
@@ -87,7 +87,7 @@ func seatBusyReader(home string) func(string, goal.ClaimableBudgetedWork, time.T
 			var err error
 			selected, err = HomeStateRoot()
 			if err != nil {
-				return false, "unreadable records: 1", 1
+				return len(work.Claimed)+len(work.Landing) > 0, "dependent work custody is unknown; unreadable records: 1", 1
 			}
 		}
 		return SeatBusyAt(root, filepath.Join(selected, "unit"), work, SeatBusyOptions{Now: now})
@@ -146,7 +146,7 @@ func LegacyOpenWork(repoRoot string) (OpenWork, string, error) {
 	return legacyOpenWorkWithReader(repoRoot, goal.ReadClaimableBudgetedWork)
 }
 
-func legacyOpenWorkWithReader(repoRoot string, reader func(string, time.Time) (goal.ClaimableBudgetedWork, error)) (OpenWork, string, error) {
+func legacyOpenWorkWithReader(repoRoot string, reader func(string, time.Time) (goal.ClaimableBudgetedWork, error), dependencies ...openWorkDependencies) (OpenWork, string, error) {
 	path := goal.LedgerPath(repoRoot)
 	data, err := os.ReadFile(path)
 	if os.IsNotExist(err) {
@@ -167,6 +167,15 @@ func legacyOpenWorkWithReader(repoRoot string, reader func(string, time.Time) (g
 	work, err := reader(repoRoot, time.Now())
 	if err != nil {
 		return WorkDegraded, fmt.Sprintf("legacy backlog judgment failed: %v", err), nil
+	}
+	if len(dependencies) > 0 && dependencies[0].Busy != nil {
+		now := time.Now()
+		if dependencies[0].Now != nil {
+			now = dependencies[0].Now()
+		}
+		if busy, reason, _ := dependencies[0].Busy(repoRoot, work, now); busy {
+			return WorkInFlight, reason, nil
+		}
 	}
 	return classifySharedBacklog(work)
 }
