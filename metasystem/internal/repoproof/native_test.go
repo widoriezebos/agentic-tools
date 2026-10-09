@@ -93,7 +93,7 @@ func TestBatchPassRunsOnlyTaggedTestsAndReportsEmptyPass(t *testing.T) {
 					t.Fatal(out.String())
 				}
 			}
-			if code != wantExit || calls != 2 || !strings.Contains(out.String(), "landing group go-batchtest "+status+" ") {
+			if code != wantExit || calls != 2 || strings.Contains(out.String(), "landing group go-batchtest") || (status == "red") != strings.Contains(out.String(), "LANDING-FAILED\tgo-batchtest") {
 				t.Fatalf("exit=%d calls=%d output=%s error=%s", code, calls, &out, &problem)
 			}
 		})
