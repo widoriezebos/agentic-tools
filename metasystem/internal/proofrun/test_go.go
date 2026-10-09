@@ -100,20 +100,20 @@ func RunGoGateTests(ctx context.Context, request GoGateTestRequest) (GoGateTestR
 		return GoGateTestResult{}, 2, fmt.Errorf("go gate test workers must be positive")
 	}
 	request.Packages, request.Race, request.Coverage = []string{"internal/...", "cmd/..."}, true, true
-	return runNativeInventory(ctx, request)
+	return runNativeInventory(ctx, request, false)
 }
 
 // RunNativeInventory discovers and proves this tree's selected packages and tests.
 // Code failures are returned in the result; discovery and launch errors are errors.
 func RunNativeInventory(ctx context.Context, request NativeInventoryRequest) (NativeInventoryResult, error) {
-	result, _, err := runNativeInventory(ctx, request)
+	result, _, err := runNativeInventory(ctx, request, true)
 	if result.Failed {
 		return result, nil
 	}
 	return result, err
 }
 
-func runNativeInventory(ctx context.Context, request NativeInventoryRequest) (NativeInventoryResult, int, error) {
+func runNativeInventory(ctx context.Context, request NativeInventoryRequest, byPackage bool) (NativeInventoryResult, int, error) {
 	result := GoGateTestResult{}
 	if request.Root == "" || request.LogRoot == "" {
 		return result, 2, fmt.Errorf("go gate test root and log root are required")
@@ -155,8 +155,12 @@ func runNativeInventory(ctx context.Context, request NativeInventoryRequest) (Na
 	ctx = withTestWorkerPool(ctx, request.Workers)
 	limits, sampleInterval := groupSupervisorSettings(nil)
 	var output synchronizedBuffer
-	outcome, closeErr, coverageMerge, executions, launchErr := runShardedGoGroup(ctx, nativeRequest, group, request.Root, environment, expected,
-		discovery.Inventory, discovery.ModulePrefix, limits, sampleInterval, result.LogPath, &output, goCacheFacts{})
+	partitions := partitionGoTests(expected, discovery.Inventory, discovery.ModulePrefix, request.Workers)
+	if byPackage {
+		partitions = partitionNativePackages(expected, discovery.Inventory, discovery.ModulePrefix, request.Workers)
+	}
+	outcome, closeErr, coverageMerge, executions, launchErr := runGoPartitions(ctx, nativeRequest, group, request.Root, environment, expected,
+		partitions, limits, sampleInterval, result.LogPath, &output, goCacheFacts{})
 	result.Execution = executions
 	result.Output = output.Bytes()
 	if launchErr != nil {
@@ -861,6 +865,25 @@ func partitionGoTests(expected []NativeTestIdentity, inventory []string, moduleP
 	for index := range partitions {
 		sort.Strings(partitions[index].Names)
 		partitions[index].Packages = sortedStringSet(packageSets[index])
+	}
+	return partitions
+}
+
+// partitionNativePackages gives each package one launch. The command package
+// has enough tests to keep all workers busy, so its sorted names are dealt
+// round robin into isolated launches using the existing test partitioner.
+func partitionNativePackages(expected []NativeTestIdentity, inventory []string, modulePrefix string, workers int) []goTestPartition {
+	byPackage := map[string][]NativeTestIdentity{}
+	for _, identity := range expected {
+		byPackage[identity.Classname] = append(byPackage[identity.Classname], identity)
+	}
+	var partitions []goTestPartition
+	for _, pkg := range goInventoryPackages(inventory, modulePrefix) {
+		ceiling := 1
+		if pkg == modulePrefix+"cmd/metasystem" {
+			ceiling = workers
+		}
+		partitions = append(partitions, partitionGoTests(byPackage[pkg], []string{pkg}, "", ceiling)...)
 	}
 	return partitions
 }
