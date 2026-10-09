@@ -11,11 +11,13 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func TestUnknownExaminationFollowUpAdmitsFullGoalAllowanceOnce(t *testing.T) {
 	t.Parallel()
 	b := newDispatchBed(t)
+	home := testprovider.Register(t, b.root)
 	b.useRealGoalOwner()
 	b.completeOnWait()
 	now := b.alignClock()
@@ -46,7 +48,7 @@ func TestUnknownExaminationFollowUpAdmitsFullGoalAllowanceOnce(t *testing.T) {
 	if _, err := dispatch.CollectExamination(b.root, "unknown-source"); err == nil {
 		t.Fatal("disagreeing structured and prose verdicts became readable")
 	}
-	before := dispatch.ProjectBudget(b.root, file, now)
+	before := dispatch.ProjectBudget(b.root, file, now, home)
 	if before.Attempts != 1 {
 		t.Fatalf("fixture did not reach the goal attempt allowance: %+v", before)
 	}
@@ -60,7 +62,7 @@ func TestUnknownExaminationFollowUpAdmitsFullGoalAllowanceOnce(t *testing.T) {
 	if fresh["examinationRetryOf"] != "unknown-source" || fresh["parentJob"] != "unknown-source" || fresh["reviews"] != "commit:"+commit {
 		t.Fatalf("fresh read lost its reserved original subject: %v", fresh)
 	}
-	after := dispatch.ProjectBudget(b.root, file, now)
+	after := dispatch.ProjectBudget(b.root, file, now, home)
 	if after.Status != dispatch.BudgetKnown || after.Attempts != before.Attempts || after.ReservedJobMinutes != before.ReservedJobMinutes || after.ActiveJobs != 1 {
 		t.Fatalf("fresh read spent goal allowance or lost its active slot: before=%+v after=%+v", before, after)
 	}

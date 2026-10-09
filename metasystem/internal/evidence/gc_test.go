@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 // The pass runs against a frozen clock so grace windows and archive ages are
@@ -404,6 +405,7 @@ func TestGCKeepsCurrentGoalRevisionSpendingAndProjection(t *testing.T) {
 func TestCleanupKeepsTheRecordThatEndedAStandingWait(t *testing.T) {
 	t.Parallel()
 	root, evidenceRoot, _, jobs := checkout(t)
+	home := testprovider.Register(t, root)
 	renderedRoot := goal.RenderRoot(&goal.RootRecord{
 		Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1,
 	})
@@ -446,7 +448,7 @@ func TestCleanupKeepsTheRecordThatEndedAStandingWait(t *testing.T) {
 	// Three hours since the episode began, less the half hour from the mark
 	// to the job: past the two-hour box. Without the job the whole two hours
 	// since the mark would come off, and the goal would read as inside it.
-	before := dispatch.ProjectBudget(root, marked, testNow)
+	before := dispatch.ProjectBudget(root, marked, testNow, home)
 	if before.Status != dispatch.BudgetKnown || before.Wait != 30*time.Minute || before.Elapsed != 150*time.Minute {
 		t.Fatalf("the projection before cleanup is not the fixture's: %+v", before)
 	}
@@ -457,7 +459,7 @@ func TestCleanupKeepsTheRecordThatEndedAStandingWait(t *testing.T) {
 	if _, err := os.Stat(recordPath); err != nil {
 		t.Fatalf("cleanup removed the job that ended the standing wait: %v", err)
 	}
-	after := dispatch.ProjectBudget(root, marked, testNow)
+	after := dispatch.ProjectBudget(root, marked, testNow, home)
 	if after.Elapsed != before.Elapsed || after.Wait != before.Wait || !reflect.DeepEqual(before, after) {
 		t.Fatalf("budget projection changed across cleanup: before=%+v after=%+v", before, after)
 	}
