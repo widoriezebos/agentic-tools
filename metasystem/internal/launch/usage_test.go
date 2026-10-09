@@ -40,7 +40,7 @@ func TestCancelledLaunchIsMeasured(t *testing.T) {
 		t.Fatal(err)
 	}
 	writeTranscript(t, projects, "0f0e0d0c-0b0a-4908-8706-050403020100")
-	processes.onStart = func(Command) {
+	processes.childWait = func() {
 		// A cancellation arrives while the session runs; it leaves no
 		// result behind.
 		_, _ = m.Store.Update("landing-cancelled", func(record *Record) error { record.Reason = "cancel-requested"; return nil })

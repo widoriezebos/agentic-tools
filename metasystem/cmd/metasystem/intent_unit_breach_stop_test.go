@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -135,10 +138,17 @@ func TestIntentUnitLaunchStopCancelsNeverStartedReservation(t *testing.T) {
 		t.Run(stop, func(t *testing.T) {
 			t.Parallel()
 			bed := newWorkBed(t)
-			bed.starter.hold = "build"
+			personProof := bed.personProof
+			bed.personProof = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+				return humanauthority.Proof{}, errors.New("agent invocation")
+			}
+			bed.manager.CapacitySources.Load = func(at time.Time) hostload.Sample {
+				return hostload.Sample{At: at.Format(time.RFC3339Nano), Available: true, Load1m: 100}
+			}
 			brief := bed.brief("stop.md", "Build the unit.\n")
 			code, result, _ := bed.work(append([]string{"work", "build", bed.id, "stop", "--brief", brief, "--lines", "5"}, workCheck...)...)
-			if code != 3 {
+			bed.personProof = personProof
+			if code != 1 || len(bed.starter.launched()) != 0 {
 				t.Fatalf("held build: %d %+v", code, result)
 			}
 			run := resultData(t, result)["run"].(string)
@@ -152,14 +162,7 @@ func TestIntentUnitLaunchStopCancelsNeverStartedReservation(t *testing.T) {
 			if err != nil || reservation["status"] != "pending" {
 				t.Fatalf("build has no pending reservation: %+v %v", reservation, err)
 			}
-			stateDir, err := bed.manager.Store.StateDir(id)
-			if err != nil {
-				t.Fatal(err)
-			}
-			// A reservation survives even when no execution was started.
-			if err := os.RemoveAll(stateDir); err != nil {
-				t.Fatal(err)
-			}
+			// Admission retained spending, but created no execution record.
 			if _, err := bed.manager.Store.Read(id); !os.IsNotExist(err) {
 				t.Fatalf("launch record still exists: %v", err)
 			}

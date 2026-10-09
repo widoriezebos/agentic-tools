@@ -155,7 +155,11 @@ func TestIntentTreeReservationWaitsAcrossCommandsAndExactCancellation(t *testing
 
 			// A terminal record cannot release custody while its exact child is live.
 			if terminalRecord {
-				b.manager.Store.Update(child, func(r *launch.Record) error { r.State = launch.Cancelled; return nil })
+				b.manager.Store.Update(child, func(r *launch.Record) error {
+					r.State = launch.Cancelled
+					r.FinishedAt = b.manager.Now().UTC().Format(time.RFC3339Nano)
+					return nil
+				})
 			}
 			assertWait := func(result intentResult, code int) {
 				t.Helper()

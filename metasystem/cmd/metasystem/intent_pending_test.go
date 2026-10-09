@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -13,9 +14,13 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
@@ -251,6 +256,26 @@ func TestDriverPendingRunBuildRemedy(t *testing.T) {
 func pendingWork(t *testing.T, bed *workBed, argv ...string) (int, intentResult, string) {
 	t.Helper()
 	owners := bed.workOwners()
+	owners.processes = defaultProcessIntentOwners()
+	owners.processes.launches = func() *launch.Manager { return bed.manager }
+	owners.processes.cancelDispatch = func(_, job string) (map[string]any, int, error) {
+		ports := fake.NewSet()
+		ports.Clock.Current = bed.manager.Now()
+		ports.Lease.ClassifyFunc = func(delegation.Invocation) (lease.ClassifyResult, error) {
+			return lease.ClassifyResult{Class: lease.ClassSteward}, nil
+		}
+		ports.Records.CASFunc = func(job, expect, target, patch string) (string, error) {
+			return dispatchcore.RecordCAS(bed.root(), job, expect, target, patch)
+		}
+		set := ports.Ports()
+		set.Host = engineHost{launches: bed.manager}
+		life, err := delegation.New(delegation.Config{Root: bed.root(), RepoScope: bed.root()}, set)
+		if err != nil {
+			return nil, 1, err
+		}
+		result := life.Run(context.Background(), delegation.Request{Env: delegation.Env{DelegateInternal: true}}, []string{"__cancel-owned", "--job", job})
+		return map[string]any{"outcome": "CANCELLED", "jobId": job}, result.ExitCode, nil
+	}
 	owners.processes.ask = func(root string, in channelAskInput) (channel.Question, []string, int, error) {
 		return askChannelQuestionVia(root, in, channelAskSurface{
 			identity: func(string) (string, string, error) { return "fixture-machine", "fixture-lineage", nil },

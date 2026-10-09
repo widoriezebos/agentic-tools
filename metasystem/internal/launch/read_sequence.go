@@ -17,12 +17,15 @@ import (
 // it starts, started and saved; the step states and their recording are the
 // same for both.
 type stepDriver struct {
-	mayStart func(int) error
-	wait     func(string, time.Duration) (Record, bool, error)
-	manager  *Manager
-	record   *UnitRunRecord
-	round    *UnitRound
-	launchID func(index int) string
+	recoveryReady func() error
+	actor         string
+	commandWait   func(func() error) error
+	mayStart      func(int) error
+	wait          func(string, time.Duration) (Record, bool, error)
+	manager       *Manager
+	record        *UnitRunRecord
+	round         *UnitRound
+	launchID      func(index int) string
 	// before is asked before a step's launch is created; its refusal
 	// starts nothing.
 	before   func(StartSpec) error
@@ -79,6 +82,9 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 			return Record{}, err
 		}
 	}
+	if err := driver.pendingCancellation(&spec); err != nil {
+		return Record{}, err
+	}
 	launchRecord, err := driver.manager.Store.Read(step.LaunchID)
 	if errors.Is(err, fs.ErrNotExist) {
 		if driver.mayStart != nil {
@@ -123,6 +129,21 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 			}
 		}
 		launchRecord, err = driver.start(spec)
+	}
+	if driver.unit && err == nil && launchRecord.State == Starting && launchRecord.Supervisor == nil && launchRecord.Child == nil && launchRecord.ProcessGroup == nil {
+		spec.ID = step.LaunchID
+		if driver.recoveryReady != nil {
+			if err := driver.recoveryReady(); err != nil {
+				return launchRecord, err
+			}
+		}
+		if driver.before != nil {
+			if err := driver.before(spec); err != nil {
+				return launchRecord, err
+			}
+		}
+		spec.Actor, spec.wait = driver.actor, driver.commandWait
+		launchRecord, err = driver.manager.ResumePending(spec)
 	}
 	if driver.unit && capacityWaiting(err) {
 		if saveErr := driver.retainCapacityWait(index, err); saveErr != nil {

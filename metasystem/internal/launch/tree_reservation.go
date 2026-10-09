@@ -254,6 +254,9 @@ func (runner *UnitRunner) finishedMutationEnded(record UnitRunRecord, children [
 // CancelRun records the person's stop before signalling, so no new step can
 // start. Ownership remains until every retained child's exact custody ends.
 func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
+	if err := runner.RequestCancel(id); err != nil {
+		return UnitRunRecord{}, err
+	}
 	bound := *runner
 	bound.recoverRun = id
 	runner = &bound
@@ -283,6 +286,11 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		}
 		children = unitChildren(record, children)
 		record.State = "cancelled"
+		for i := range record.Rounds {
+			for j := range record.Rounds[i].Steps {
+				runner.driver(&record, &record.Rounds[i]).closeCapacityWait(j, "cancelled", runner.Manager.Now().UTC().Format(time.RFC3339Nano))
+			}
+		}
 		if err := writeUnitJSON(filepath.Join(runner.runDir(id), "run.json"), record, runner.root()); err != nil {
 			return err
 		}
@@ -309,6 +317,11 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 	}
 	if !runner.treeChildrenEnded(children) {
 		return record, runner.childCustodyError(children, errors.New("the run's children are not proven dead; its worktree remains reserved"))
+	}
+	for _, round := range record.Rounds {
+		if err := runner.collectLaunches(record, round); err != nil {
+			return record, err
+		}
 	}
 	if runner.CriticCustody != nil && !runner.finishedMutationEnded(record, children) {
 		dead, err := runner.CriticCustody(record, true)

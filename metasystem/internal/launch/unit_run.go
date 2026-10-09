@@ -765,11 +765,11 @@ func (runner *UnitRunner) readSequence(record *UnitRunRecord, round *UnitRound, 
 // driver starts a unit round's launches under the run's own launch ids,
 // its launch gate and its named reservation.
 func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDriver {
-	return stepDriver{mayStart: func(index int) error {
+	return stepDriver{recoveryReady: runner.continuationAllowed, actor: runner.Actor, commandWait: runner.CommandWait, mayStart: func(index int) error {
 		step := round.Steps[index]
 		// The first build is admitted by the command that creates the run.
 		// Every later start, including a retry, reads continuation authority.
-		if round.Number == 1 && index == 0 && (len(step.LaunchIDs) == 0 || len(step.LaunchIDs) == 1 && step.State == StepStarting) {
+		if round.Number == 1 && index == 0 && (len(step.LaunchIDs) == 0 || len(step.LaunchIDs) == 1 && step.State == StepStarting && step.PendingAct == nil) {
 			return nil
 		}
 		return runner.continuationAllowed()

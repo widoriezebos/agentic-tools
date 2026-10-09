@@ -35,9 +35,17 @@ func (p *fakeProber) Probe(pid int64) (identity.Exact, identity.Liveness, error)
 	return identity.Exact{Pid: pid, StartedAt: time.Unix(pid, 0)}, state, nil
 }
 
-type fakeChild struct{ exit int }
+type fakeChild struct {
+	exit int
+	wait func()
+}
 
-func (child fakeChild) Wait() (int, error) { return child.exit, nil }
+func (child fakeChild) Wait() (int, error) {
+	if child.wait != nil {
+		child.wait()
+	}
+	return child.exit, nil
+}
 
 type fakeProcesses struct {
 	probe       *fakeProber
@@ -51,6 +59,7 @@ type fakeProcesses struct {
 	groupChecks int
 	command     Command
 	onStart     func(Command)
+	childWait   func()
 }
 
 func (p *fakeProcesses) SelfRef() (identity.Ref, error) { return p.self, nil }
@@ -62,7 +71,7 @@ func (p *fakeProcesses) StartChild(command Command) (Child, identity.Ref, error)
 	if p.startErr != nil {
 		return nil, p.child, p.startErr
 	}
-	return fakeChild{p.exit}, p.child, nil
+	return fakeChild{exit: p.exit, wait: p.childWait}, p.child, nil
 }
 func (p *fakeProcesses) SignalGroup(_ int64, signal syscall.Signal) error {
 	p.signals = append(p.signals, signal)
@@ -815,9 +824,19 @@ func TestCancelDuringChildHandoffReachesRecordedGroup(t *testing.T) {
 	if _, err := m.Store.Update(record.ID, func(r *Record) error { r.AdapterData = record.AdapterData; return nil }); err != nil {
 		t.Fatal(err)
 	}
+	cancelled := make(chan error, 1)
 	processes.onStart = func(Command) {
-		if _, err := m.Cancel(record.ID); err == nil {
-			t.Error("cancellation claimed death before the child was recorded")
+		go func() { _, err := m.Cancel(record.ID); cancelled <- err }()
+	}
+	processes.childWait = func() {
+		if err := <-cancelled; err != nil {
+			t.Errorf("concurrent cancellation: %v", err)
+		}
+	}
+	m.Sleep = func(time.Duration) {
+		current, err := m.Store.Read(record.ID)
+		if err != nil || current.Child == nil {
+			t.Errorf("signal preceded child recording: %+v %v", current, err)
 		}
 	}
 	got, err := m.Supervise(record.ID)

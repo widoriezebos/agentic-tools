@@ -1376,7 +1376,41 @@ func runIntentWorkStopGoal(inv *intentInvocation, id string) int {
 	}
 	var stopped, failed []string
 	var lines []string
+	runner := inv.work().units(inv.layout)
+	runs, unknown, readErr := runner.GoalRuns(id)
+	if readErr != nil {
+		unknown = append(unknown, readErr.Error())
+	}
+	failed = append(failed, unknown...)
+	if len(runs) > 0 {
+		runner = inv.unitRunner()
+	}
+	for _, run := range runs {
+		if run.Record.State == "awaiting-judgement" || run.Record.State == "completed" {
+			continue
+		}
+		if err := runner.RequestCancel(run.Run); err != nil {
+			failed = append(failed, "run:"+run.Run)
+			lines = append(lines, err.Error())
+		}
+	}
+	for _, run := range runs {
+		if run.Record.State == "awaiting-judgement" || run.Record.State == "completed" {
+			continue
+		}
+		if _, err := runner.CancelRun(run.Run); err != nil {
+			failed = append(failed, "run:"+run.Run)
+			lines = append(lines, err.Error())
+		} else {
+			stopped = append(stopped, "run:"+run.Run)
+		}
+	}
 	for _, job := range jobs {
+		if run, _ := job.dispatch["unitRun"].(string); run != "" && slices.ContainsFunc(runs, func(work launch.NamedWork) bool { return work.Run == run }) {
+			if _, err := runner.Manager.Store.Read(job.id); !os.IsNotExist(err) {
+				continue
+			}
+		}
 		if jobGoal(job) != id || jobEnded(job) {
 			continue
 		}

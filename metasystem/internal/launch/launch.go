@@ -51,6 +51,7 @@ type SupervisorStarter interface {
 	StartSupervisor(id, stateDir string) (identity.Ref, error)
 }
 type StartSpec struct {
+	resume bool
 	// Actor is proven for this invocation and is never retained in a launch.
 	Actor                                              string
 	ID, Kind, Goal, Tag, WorkingDirectory, Brief, Page string
@@ -326,6 +327,9 @@ func (m *Manager) startSupervisor(id, stateDir string) (Record, error) {
 			return failed, errors.New(failed.Reason)
 		}
 		if !m.Now().Before(deadline) {
+			if !refAlive(m.Prober, &supervisor) {
+				return current, errors.New("supervisor identity is unknown; reservation retained")
+			}
 			_ = m.endGroup(supervisor.Pid)
 			failed, writeErr := m.fail(id, "supervisor-ready-timeout", nil)
 			if writeErr != nil {
@@ -420,6 +424,22 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		return m.failCause(id, "declared-outputs: "+err.Error(), nil)
 	}
+	releaseCancel, err := cancelGate(readString(record.AdapterData, "unitCancellation"))
+	if err != nil {
+		return Record{}, err
+	}
+	defer func() { releaseCancel() }()
+	if err := cancellationRequested(readString(record.AdapterData, "unitCancellation")); err != nil {
+		if errors.Is(err, errLaunchCancelledBeforeChild) {
+			return m.finishCancelledBeforeChild(id, err)
+		}
+		return Record{}, err
+	}
+	releaseCreation, err := cancelGate(filepath.Join(stateDir, "creation"))
+	if err != nil {
+		return Record{}, err
+	}
+	defer func() { releaseCreation() }()
 	record, err = m.update(id, func(current *Record) error {
 		if current.Reason == "cancel-requested" || current.State.Terminal() {
 			return errLaunchCancelledBeforeChild
@@ -484,6 +504,10 @@ func (m *Manager) Supervise(id string) (Record, error) {
 		})
 		return Record{}, errors.Join(err, cleanupErr)
 	}
+	releaseCreation()
+	releaseCreation = func() {}
+	releaseCancel()
+	releaseCancel = func() {}
 	if fenceClaim != nil {
 		if reason := seatFenceMoved(fenceRoot, fenceGeneration); reason != "" {
 			return m.endFencedSeat(id, reason, child, childRef)
@@ -715,17 +739,28 @@ func (m *Manager) Cancel(id string) (Record, error) {
 	if current, err := m.Store.Read(id); err == nil && current.State.Terminal() {
 		return current, nil
 	}
+	state, err := m.Store.StateDir(id)
+	if err != nil {
+		return Record{}, err
+	}
+	release, err := cancelGate(filepath.Join(state, "creation"))
+	if err != nil {
+		return Record{}, err
+	}
 	record, err := m.update(id, func(record *Record) error {
 		if !record.State.Terminal() {
 			record.Reason = "cancel-requested"
 		}
 		return nil
 	})
+	release()
 	if err != nil || record.State.Terminal() {
 		return record, err
 	}
 	if record.ProcessGroup != nil {
-		_ = m.Processes.SignalGroup(record.ProcessGroup.Pid, syscall.SIGTERM)
+		if err := m.signalRecordedGroup(record, syscall.SIGTERM); err != nil {
+			return record, err
+		}
 	}
 	m.Sleep(m.Grace)
 	current, err := m.Store.Read(id)
@@ -733,7 +768,9 @@ func (m *Manager) Cancel(id string) (Record, error) {
 		return Record{}, err
 	}
 	if !m.provenDead(current) && current.ProcessGroup != nil {
-		_ = m.Processes.SignalGroup(current.ProcessGroup.Pid, syscall.SIGKILL)
+		if err := m.signalRecordedGroup(current, syscall.SIGKILL); err != nil {
+			return current, err
+		}
 		m.Sleep(m.Grace)
 	}
 	current, err = m.Store.Read(id)

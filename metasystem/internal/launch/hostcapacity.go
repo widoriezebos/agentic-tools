@@ -33,6 +33,9 @@ func (m *Manager) CapacityBuilds() ([]hostcapacity.Build, error) {
 // one host-wide lock. The lock is released before a supervisor can start.
 func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
 	if spec.Kind != "build" {
+		if spec.resume {
+			return nil
+		}
 		return m.Store.Create(record)
 	}
 	root, err := m.Store.root()
@@ -53,6 +56,9 @@ func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
 	}
 	defer held.Release()
 	if spec.Actor == "person" {
+		if spec.resume {
+			return nil
+		}
 		return m.Store.Create(record)
 	}
 	if m.BuildPolicyError != nil {
@@ -107,6 +113,9 @@ func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
 		if cap.Cmp(big.NewInt(int64(len(goals)))) < 0 {
 			return refuse("LAUNCH_BUILD_CAPACITY", "distinct active build goals reach the host.builds cap")
 		}
+	}
+	if spec.resume {
+		return nil
 	}
 	return m.Store.Create(record)
 }
