@@ -87,10 +87,6 @@ func TestDeadlineRemainingPreservesExpiredDeadline(t *testing.T) {
 	if !bounded || remaining >= 0 {
 		t.Fatalf("expired deadline remaining=%s bounded=%t, want a negative duration and a bound", remaining, bounded)
 	}
-	remaining, bounded = DeadlineRemaining(t)
-	if !bounded || remaining <= 0 {
-		t.Fatalf("test deadline remaining=%s bounded=%t, want a positive duration and a bound", remaining, bounded)
-	}
 }
 
 func TestDeadlineRemainingWithoutDeadlineIsUnbounded(t *testing.T) {

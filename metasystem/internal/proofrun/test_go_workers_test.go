@@ -1193,8 +1193,10 @@ func TestGoWorkerOwnedProcessInheritsTestDeadline(t *testing.T) {
 	if runGoWorkerTestInOwnedProcess(t) {
 		return
 	}
-	if _, bounded := t.Deadline(); !bounded {
-		t.Fatal("owned Go-worker process has no test deadline to bound diagnostic waits")
+	// The child is bounded exactly when its parent was: the proof runner runs
+	// with -timeout 0, and an unbounded parent must leave the child unbounded.
+	if _, bounded := t.Deadline(); strconv.FormatBool(bounded) != os.Getenv("GO_WORKER_PARENT_BOUNDED") {
+		t.Fatalf("owned Go-worker deadline bounded=%t, want the parent's %q", bounded, os.Getenv("GO_WORKER_PARENT_BOUNDED"))
 	}
 }
 
@@ -1204,11 +1206,12 @@ func runGoWorkerTestInOwnedProcess(t *testing.T, childArguments ...string) bool 
 		return false
 	}
 	arguments := append([]string{"-test.run=^" + regexp.QuoteMeta(t.Name()) + "$", "-test.v"}, childArguments...)
-	if remaining, bounded := testenv.DeadlineRemaining(t); bounded {
+	remaining, bounded := testenv.DeadlineRemaining(t)
+	if bounded {
 		arguments = append(arguments, "-test.timeout="+remaining.String())
 	}
 	command := exec.CommandContext(t.Context(), os.Args[0], arguments...)
-	command.Env = append(os.Environ(), "GO_WANT_GO_WORKER_OWNED_TEST=1")
+	command.Env = append(os.Environ(), "GO_WANT_GO_WORKER_OWNED_TEST=1", "GO_WORKER_PARENT_BOUNDED="+strconv.FormatBool(bounded))
 	if output, err := command.CombinedOutput(); err != nil {
 		t.Fatalf("owned Go-worker test failed: %v\n%s", err, output)
 	}
