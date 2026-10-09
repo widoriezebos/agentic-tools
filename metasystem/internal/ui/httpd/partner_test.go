@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/partner/fakeacp"
@@ -195,7 +196,23 @@ func TestPartnerEventsRideTheOneStreamWithNoIdOfTheirOwn(t *testing.T) {
 		Authority: proven(), Partner: service, PartnerConfigured: true,
 		NotificationJournal: journalWith(t),
 	}
-	stream := streamedFrom(t, info, "")
+	h := newHandler(info, loopback(), testBundle(), randomNonce)
+	subscribed := make(chan struct{})
+	subscribe := h.subscribePartner
+	h.subscribePartner = func() (<-chan partner.Event, func()) {
+		events, stop := subscribe()
+		close(subscribed)
+		return events, stop
+	}
+	stream := streamedOver(t, h, "")
+	testenv.Await(t, "the stream’s Partner subscription", func() bool {
+		select {
+		case <-subscribed:
+			return true
+		default:
+			return false
+		}
+	})
 	// The send goes to a second handler over the same service, which is what a
 	// browser does: the stream is one request and the send is another.
 	served := New(info, loopback(), testBundle())

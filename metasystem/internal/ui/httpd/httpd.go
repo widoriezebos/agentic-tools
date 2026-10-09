@@ -377,6 +377,8 @@ type handler struct {
 	// per handler so that a test's faster clock is its own server's alone.
 	streamTick      time.Duration
 	streamHeartbeat time.Duration
+	// subscribePartner registers the service’s watcher for this stream.
+	subscribePartner func() (<-chan partner.Event, func())
 	// bridge is the one subscription to the host board's bridge, alive
 	// while a notification stream is open; nil without a board reader or a
 	// fleet watch to announce on.
@@ -414,6 +416,7 @@ func newHandler(info Info, bound net.Addr, bundle fs.FS, nonce func() string) *h
 	// composition of it, which needs the journal and the seat's standing as
 	// well as the two readers the Partner was built with.
 	if info.Partner != nil {
+		handler.subscribePartner = info.Partner.Subscribe
 		info.Partner.SeesOverview(handler.partnerOverview)
 	}
 	return handler

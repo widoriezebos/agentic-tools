@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/decisions"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/notifications"
@@ -177,6 +179,7 @@ func TestNotificationRoutesTakeTheSamePolicyAsEveryOtherRead(t *testing.T) {
 // started for the second event would find the first had already taken it off
 // the connection and buffered it where nobody looks.
 type opened struct {
+	seen     []string
 	lines    chan string
 	problems chan error
 	stop     func()
@@ -258,18 +261,23 @@ func streamedOver(t *testing.T, h *handler, lastEventID string) *opened {
 	return stream
 }
 
-// line is the next line the stream sent. A stream that says nothing hangs
-// here until the test binary's own deadline: no timer of this test's own
-// decides that verdict.
-func (o *opened) line(t *testing.T) string {
+// line waits for the next line within the test binary’s deadline and names
+// the lines already received if the stream stops making progress.
+func (o *opened) line(t testenv.AwaitTB) string {
 	t.Helper()
-	select {
-	case line := <-o.lines:
-		return line
-	case err := <-o.problems:
-		t.Fatalf("the stream ended: %v", err)
-	}
-	return ""
+	var next string
+	testenv.AwaitOr(t, "the next stream line", func() bool {
+		select {
+		case next = <-o.lines:
+			o.seen = append(o.seen, next)
+			return true
+		case err := <-o.problems:
+			t.Fatalf("the stream ended: %v; lines seen: %q", err, o.seen)
+		default:
+		}
+		return false
+	}, func() string { return fmt.Sprintf("lines seen: %q", o.seen) })
+	return next
 }
 
 // event is the next complete event, with the comments between them skipped.
@@ -419,4 +427,35 @@ func TestARawHealthVerdictIsNoPersonsNotification(t *testing.T) {
 	without.NotificationJournal = journalWith(t, journalAt(t, "D2", "alert", actionable, at))
 	baseline := decisionsPage(t, New(without, loopback(), testBundle()), "the read without the verdict")
 	testutil.Expect(t, "and what it counts", page.Counts.NeedsYou, baseline.Counts.NeedsYou)
+}
+
+// The deadline belongs to the test binary; an expired fixture deadline
+// proves the read’s failure path without waiting for elapsed time.
+type expiredStreamDeadline struct{ failure string }
+
+func (*expiredStreamDeadline) Helper()                     {}
+func (*expiredStreamDeadline) Deadline() (time.Time, bool) { return time.Unix(1, 0), true }
+func (d *expiredStreamDeadline) Fatalf(format string, args ...any) {
+	d.failure = fmt.Sprintf(format, args...)
+	panic(d)
+}
+
+func TestStreamLineDeadlineReportsTheLinesAlreadySeen(t *testing.T) {
+	t.Parallel()
+	stream := &opened{lines: make(chan string, 1), problems: make(chan error, 1)}
+	stream.lines <- "event: partner"
+	testutil.Expect(t, "the available line is read", stream.line(t), "event: partner")
+	deadline := &expiredStreamDeadline{}
+	func() {
+		defer func() {
+			if got := recover(); got != deadline {
+				t.Fatalf("deadline failure = %v, want the fixture failure", got)
+			}
+		}()
+		stream.line(deadline)
+	}()
+	if !strings.Contains(deadline.failure, "still awaiting the next stream line") ||
+		!strings.Contains(deadline.failure, `lines seen: ["event: partner"]`) {
+		t.Fatalf("stream deadline lost its awaited event or received lines: %s", deadline.failure)
+	}
 }

@@ -748,6 +748,7 @@ func TestGoPlanCountsStartedShardWhenLaterCoverageSetupFails(t *testing.T) {
 		sources[pkg+"/"+pkg+"_test.go"] = testSnapshotFile(`package `+pkg+`
 import ("fmt"; "os"; "testing")
 func TestDiagnostic`+strings.ToUpper(pkg)+`(t *testing.T) {
+ t.Parallel()
  fmt.Fprintln(os.Stderr, "`+diagnostic+`")
  select {}
 }
@@ -759,7 +760,14 @@ func TestDiagnostic`+strings.ToUpper(pkg)+`(t *testing.T) {
 	hooks := goShardLifecycleHooks{
 		prepareCoverage: func(index int, directory, groupID string) error {
 			if index == 1 {
-				<-collected
+				testenv.AwaitOr(t, "the first shard’s collected diagnostic", func() bool {
+					select {
+					case <-collected:
+						return true
+					default:
+						return false
+					}
+				}, func() string { return "diagnostic not collected: " + diagnostic })
 				return errors.New("injected plan coverage setup failure")
 			}
 			if err := os.MkdirAll(directory, 0o700); err != nil {

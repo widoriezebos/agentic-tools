@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -112,6 +113,39 @@ func (c *testCreationClaim) isClosed() bool {
 }
 
 func TestLaunchSuiteWritesBannerProgressAndReapsWatchdog(t *testing.T) {
+	t.Parallel()
+	if done := os.Getenv("PROOFRUN_BANNER_WATCHDOG_DONE"); done != "" {
+		root := os.Getenv("PROOFRUN_BANNER_WATCHDOG_ROOT")
+		ticks := make(chan time.Time)
+		finished := make(chan error, 1)
+		go func() {
+			finished <- RunWatchdog(WatchdogOptions{
+				Suite: "fixture", Root: root, ProgressPath: filepath.Join(root, "progress.jsonl"), DonePath: done,
+				LogPaths: []string{strings.TrimSuffix(done, ".done")}, SuiteIdentity: identity.Ref{Pid: 7, StartedAtSec: 8},
+				Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+				Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+				Prober: pidProbe{started: 8}, Now: func() time.Time { return watchdogFixtureNow },
+				NewTicker: func(time.Duration) (<-chan time.Time, func()) { return ticks, func() {} },
+				Signal:    func(int, syscall.Signal) error { t.Error("the progressing suite was signalled"); return nil },
+				Shutdown:  func() error { t.Error("supervision was shut down"); return nil },
+			})
+		}()
+		testenv.Await(t, "the launcher’s watchdog done file", func() bool { return suiteDone(done) })
+		var result error
+		testenv.Await(t, "the watchdog to observe completion", func() bool {
+			select {
+			case result = <-finished:
+				return true
+			case ticks <- watchdogFixtureNow:
+			default:
+			}
+			return false
+		})
+		if result != nil {
+			t.Fatal(result)
+		}
+		return
+	}
 	root := t.TempDir()
 	watchdog := filepath.Join(root, "watchdog.sh")
 	writeExecutable(t, watchdog, `#!/usr/bin/env bash
@@ -119,16 +153,17 @@ done_path=
 while (($#)); do
   if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
 done
-while [[ ! -e "$done_path" ]]; do sleep 0.01; done
+export PROOFRUN_BANNER_WATCHDOG_DONE="$done_path"
+exec "$PROOFRUN_BANNER_TEST_BINARY" -test.run='^TestLaunchSuiteWritesBannerProgressAndReapsWatchdog$' -test.timeout=30m
 `)
 	progress := filepath.Join(root, "progress.jsonl")
 	ownerPath := filepath.Join(root, "run-owner")
 	logPath := filepath.Join(root, "logs", "suite.log")
 	banner := "suite-cost suite=fixture witness=armed duration=minutes heartbeat=progress.jsonl logs=logs/suite.log"
-	sectionCommand := `printf '{"suite":"fixture","section":"only","event":"start","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"
+	sectionCommand := `printf '{"suite":"fixture","section":"only","event":"start","at":"%s","depth":0}\n' "$PROOFRUN_BANNER_AT" >>"$1"
 printf '%s' "$METASYSTEM_RUN_OWNER" >"$2"
 echo suite-output
-printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$1"`
+printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n' "$PROOFRUN_BANNER_AT" >>"$1"`
 	var output bytes.Buffer
 	var errors bytes.Buffer
 	result := LaunchSuite(LaunchOptions{
@@ -138,8 +173,10 @@ printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n
 		Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
 		Poll: 10 * time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
 		WatchdogExecutable: watchdog, Command: []string{"bash", "-c", sectionCommand, "fixture", progress, ownerPath},
-		Environment: []string{"PATH=" + os.Getenv("PATH")},
-		Output:      &output, ErrorOutput: &errors,
+		Environment: append(os.Environ(), "PROOFRUN_BANNER_TEST_BINARY="+os.Args[0],
+			"PROOFRUN_BANNER_WATCHDOG_ROOT="+root, "PROOFRUN_BANNER_AT="+watchdogFixtureNow.Format(time.RFC3339)),
+		Prober: pidProbe{started: watchdogFixtureNow.Unix()}, Now: func() time.Time { return watchdogFixtureNow },
+		Output: &output, ErrorOutput: &errors,
 	})
 	if result != 0 {
 		t.Fatalf("result = %d, output = %q, errors = %q", result, output.String(), errors.String())
