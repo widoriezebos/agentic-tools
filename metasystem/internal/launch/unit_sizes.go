@@ -11,14 +11,22 @@ var combinedCell = regexp.MustCompile(`^\s*([0-9]+)\s*\(\s*([0-9]+)\s*\)\s*$`)
 // ParseUnitSizes retains sized unit rows, including conflicts, across tables.
 // A production estimate is unknown unless the cell states one unambiguously.
 func ParseUnitSizes(page string) []UnitSize {
+	return parseUnitSizes(page, false)
+}
+
+// Build sizing uses the first sized table; design admission counts every table.
+func parseUnitSizes(page string, firstTableOnly bool) []UnitSize {
 	var rows []UnitSize
 	unit, total, production := -1, -1, -1
 	for _, line := range strings.Split(page, "\n") {
-		cells := tableCells(line)
-		if len(cells) == 0 {
+		if !strings.HasPrefix(strings.TrimSpace(line), "|") {
+			if firstTableOnly && unit >= 0 && (total >= 0 || production >= 0) {
+				break
+			}
 			unit, total, production = -1, -1, -1
 			continue
 		}
+		cells := tableCells(line)
 		u, n, p := -1, -1, -1
 		for i, cell := range cells {
 			header := strings.ToLower(strings.Join(strings.Fields(cell), " "))

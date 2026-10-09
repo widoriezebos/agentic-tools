@@ -205,7 +205,7 @@ func UnsizedMissing(err error) string {
 }
 
 func sizesFromTable(page string, wanted []string) ([]UnitSize, int64, error) {
-	rows := ParseUnitSizes(page)
+	rows := parseUnitSizes(page, true)
 	if len(rows) == 0 {
 		return nil, 0, coded("LAUNCH_BUILD_UNSIZED", "missing=units-table", &UnsizedError{Missing: "units-table", Err: errors.New("the page has no sized units table")})
 	}

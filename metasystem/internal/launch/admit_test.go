@@ -224,6 +224,30 @@ func TestSizesFromTableStopsAtTheFirstNonTableLine(t *testing.T) {
 	}
 }
 
+func TestBuildAdmissionUsesFirstSizeTableAndDesignParsingKeepsAll(t *testing.T) {
+	t.Parallel()
+	page := "| Unit | Checks |\n| --- | --- |\n| reader | check |\n\n" +
+		"| Lines | Unit |\n| --- | --- |\n| 40 | first |\n" +
+		"Count the output with command | wc -l.\n\n" +
+		"| Unit | Lines | Production lines |\n| --- | --- | --- |\n| later | 900 | 200 |\n"
+	m, _, _, _ := manager(t)
+	m.Settings = DefaultSettings()
+	m.Settings.BuildLinesCap = 40
+	err := m.Admit(StartSpec{Kind: "build", Brief: writeLaunchFile(t, "brief", "build first\n"), UnitsPage: writeLaunchFile(t, "units", page)})
+	if err != nil {
+		t.Fatalf("first-table build admission: %v", err)
+	}
+	rows := ParseUnitSizes(page)
+	if len(rows) != 2 || rows[0].Name != "first" || rows[0].Lines != 40 || rows[1].Name != "later" || rows[1].Lines != 900 || rows[1].Production == nil || *rows[1].Production != 200 {
+		t.Fatalf("goal-wide design rows = %+v; want first=40 and later=900 (200 production)", rows)
+	}
+	m.Settings.BuildLinesCap = 39
+	err = m.Admit(StartSpec{Kind: "build", Brief: writeLaunchFile(t, "small-brief", "build first\n"), UnitsPage: writeLaunchFile(t, "small-units", page)})
+	if err == nil || !strings.Contains(ErrorDetail(err), "LAUNCH_BUILD_OVERSIZE size=40 cap=39") {
+		t.Fatalf("first-table build cap: %v", err)
+	}
+}
+
 func TestUnsizedBuildRefuses(t *testing.T) {
 	_, _, err := buildSize(StartSpec{Brief: writeLaunchFile(t, "brief", "none\n")})
 	if err == nil || !strings.Contains(ErrorDetail(err), "LAUNCH_BUILD_UNSIZED missing=declared-size") {
