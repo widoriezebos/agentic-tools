@@ -69,6 +69,9 @@ type LaunchOptions struct {
 	HintTerminal      func(root, attemptID, publicationID, bootID string, bootNanos int64)
 	BeforeProcessDone func(CompletionContext) error
 	Now               func() time.Time
+	// StopNow measures cleanup grace independently of receipt timestamps.
+	// A nil clock uses physical time.
+	StopNow func() time.Time
 }
 
 var proofPublicationBootClock = identity.BootClock
@@ -560,7 +563,7 @@ func LaunchSuite(options LaunchOptions) int {
 		}
 		outcome := stopSuite(record.SuiteProcess, StopOptions{
 			TermGrace: options.TermGrace, KillGrace: options.KillGrace, Poll: options.Poll,
-			Prober: prober, Signal: options.Signal, Sleep: waitForSuite,
+			Prober: prober, Signal: options.Signal, Now: options.StopNow, Sleep: waitForSuite,
 		})
 		if secondFenceErr != nil {
 			fmt.Fprintln(combinedErr, "suite launcher: second stop-fence read:", secondFenceErr)

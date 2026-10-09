@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
@@ -513,6 +514,7 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 	var signals []syscall.Signal
 	var problems bytes.Buffer
 	fixed := time.Date(2026, 9, 21, 9, 0, 0, 0, time.UTC)
+	stopClock := fixed
 	result := LaunchSuite(LaunchOptions{
 		Suite: "second-fence-error", Root: root, ConfPath: filepath.Join(root, "metasystem.conf"),
 		ProgressPath: filepath.Join(root, "progress.jsonl"), LogPath: filepath.Join(root, "suite.log"),
@@ -521,6 +523,10 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 		TermGrace: 5 * time.Millisecond, KillGrace: time.Second, WatchdogExecutable: watchdog,
 		Command:     []string{"bash", "-c", `trap '' TERM; printf 'ready\n' >"$1"; exec tail -f /dev/null`, "fixture", ready},
 		ErrorOutput: &problems, Now: func() time.Time { return fixed },
+		StopNow: func() time.Time {
+			stopClock = stopClock.Add(5 * time.Millisecond)
+			return stopClock
+		},
 		FenceReader: func(string) (stopfence.Record, error) {
 			reads++
 			if reads == 1 {
@@ -542,11 +548,33 @@ while [[ ! -e "$done_path" ]]; do sleep 0.01; done
 		},
 		Signal: func(target int, signal syscall.Signal) error {
 			signals = append(signals, signal)
-			return syscall.Kill(target, signal)
+			var killedRef identity.Ref
+			if signal == syscall.SIGKILL && target < 0 {
+				exact, state, err := (identity.KernelProber{}).Probe(int64(-target))
+				if err != nil {
+					return err
+				}
+				if state == identity.Alive {
+					killedRef = exact.Ref()
+				}
+			}
+			if err := syscall.Kill(target, signal); err != nil {
+				return err
+			}
+			if killedRef.Pid > 0 {
+				// Signal delivery and reaping finish on kernel evidence, not a grace deadline.
+				testenv.Await(t, "the killed suite to be dead", func() bool {
+					return identity.AliveRef(identity.KernelProber{}, killedRef) == identity.Dead
+				})
+			}
+			return nil
 		},
 	})
 	if result != 1 || reads != 2 || !claim.isClosed() || !strings.Contains(problems.String(), "controlled second fence read failure") {
 		t.Fatalf("result=%d reads=%d claimClosed=%t signals=%v errors=%q", result, reads, claim.isClosed(), signals, problems.String())
+	}
+	if !stopClock.After(fixed) {
+		t.Fatal("cleanup did not use its independent grace clock")
 	}
 	termAt, killAt := -1, -1
 	for index, signal := range signals {
