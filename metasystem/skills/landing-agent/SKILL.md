@@ -97,7 +97,10 @@ human return restores no automatic allowance.
    required decision. Check out the merge's first parent before rebuilding the
    batch after a return. When the engine refuses the fix build, return as before with the refusal as evidence; other engine refusals hold the batch and go to case 9.
    For `main`, hold the batch and end your turn naming main's units (`cause.name`), the
-   incident record and the way forward. Main's red is fixed first, through the enrolled
+   incident record and the way forward. When `running_proof.trunk` is set and `running_proof.state` is `running`, end your turn without asking;
+   the keeper wakes the landing agent when the trunk proof ends.
+   Ask a person about main's red only when no trunk proof is running and no hot-fix is in flight.
+   Main's red is fixed first, through the enrolled
    person's hot-fix. The hot-fix alone releases nothing: after it reaches main, run
    `metasystem landing prove --trunk` when woken with `full-due` or asked by the person;
    its green clears the incident, then continue with case 5 on the new main.

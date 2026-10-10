@@ -178,6 +178,9 @@ func ProofHold(install string, seams ProveSeams) (string, error) {
 	if err != nil || !recorded || !alive {
 		return "", err
 	}
+	if running.Trunk {
+		return "held: trunk proof " + running.Attempt + " running", nil
+	}
 	return fmt.Sprintf("tree %s is being proven (attempt %s, since %s); the agent is woken when it ends", Short(running.Tree), running.Attempt, running.Since), nil
 }
 

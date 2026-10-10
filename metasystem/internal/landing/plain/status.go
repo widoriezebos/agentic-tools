@@ -324,6 +324,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		status.Queue, err = LandingTimes(status.Queue, pushes, seams.now().Add(-landedWindow), git.brought)
 		unread("when the queued work landed", err)
 	}
+	waitingForTrunk := false
 	if running != nil && running.State == "running" {
 		running.Minutes = elapsedMinutes(running.Since, seams.now().UTC().Format(time.RFC3339))
 		var data []byte
@@ -355,6 +356,22 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			total = strconv.Itoa(*running.UnitsTotal)
 		}
 		status.ProofHeadline = fmt.Sprintf("Proving %s; %d/%s units done; %s min elapsed", Short(running.Commit), running.UnitsDone, total, clockMinutes(running.Minutes))
+		if running.Trunk {
+			main, readErr := git.main()
+			unread("main for the trunk proof", readErr)
+			if readErr == nil {
+				incidents, readErr := seams.incidents(install, string(layout.Checkout), main)
+				unread("main's incidents", readErr)
+				if readErr == nil && len(openIncidents(incidents)) > 0 {
+					waitingForTrunk = true
+					since := "an unrecorded time"
+					if at, err := time.Parse(time.RFC3339, running.Since); err == nil {
+						since = at.Local().Format("15:04")
+					}
+					status.ProofHeadline = fmt.Sprintf("main %s red; its trunk proof runs since %s (attempt %s); wait", Short(main), since, running.Attempt)
+				}
+			}
+		}
 	} else if proof := status.TrunkProof; proof != nil && proof.Result == Red {
 		main, readErr := git.main()
 		unread("main for the trunk proof", readErr)
@@ -405,6 +422,9 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	questions, _ := channel.WalkQuestions(install)
 	for _, q := range questions {
 		if q.Goal != "" || q.About != "lane" || q.State != "open" {
+			continue
+		}
+		if waitingForTrunk && strings.Contains(channel.LaneStopCommand(q), "--exception "+goal.LandTrunkRedCode) {
 			continue
 		}
 		machineName := seams.Machine

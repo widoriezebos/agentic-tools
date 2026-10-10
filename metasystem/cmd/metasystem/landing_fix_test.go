@@ -113,6 +113,11 @@ func TestSkillLandingAgentOneFixRound(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
+	for _, words := range []string{"When `running_proof.trunk` is set and `running_proof.state` is `running`, end your turn without asking", "the keeper wakes the landing agent when the trunk proof ends", "Ask a person about main's red only when no trunk proof is running and no hot-fix is in flight"} {
+		if !strings.Contains(text, words) {
+			t.Errorf("skill omits trunk-proof waiting rule %q", words)
+		}
+	}
 	for _, words := range []string{"ONE fix round", "every red of the batch proof's gate", "fix the goal's code or", "never loosen or delete a test", "--work lane-fix-1", "metasystem work review GOAL", "Goal-Unit: GOAL/lane-fix-1", "material read finding", "the fix job id and read id", "For `main`, hold the batch", "--check 'metasystem test impact'", "followed by `metasystem landing prove`", "`running_fix`", "When the engine refuses the fix build, return as before"} {
 		if !strings.Contains(text, words) {
 			t.Errorf("skill omits %q", words)
