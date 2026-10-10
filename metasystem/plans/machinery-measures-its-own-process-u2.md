@@ -1,0 +1,20 @@
+# Brief: machinery-measures-its-own-process, unit U2 (settings and the full-suite check are recorded process acts)
+
+Working Mode: Implement
+U1a, U1b and U1b-fixes are committed on this branch. Spec: /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/machinery-measures-its-own-process.md, Decision 2 "Settings and unit checks are recorded process acts (U2)", its U2 rows, the five-questions rows, round-1 changes 1, 2, 6, and round-2 acceptance item R2-M1, which OVERRIDES Decision 2's check text: every unit's check argv is only an observation (U1a records it); the ONLY check that is a gated process act is one whose argv equals the committed proof.full (split on whitespace): "full at combine", the full suite belongs to landing. Per-unit check differences never hold a build and never count as interventions. Also: a helm or attorney grant act counts as the agent's (records Proof.Helm and the grant identity); under process.change=person an agent's change is a proposal with one question whose needs is the exact `metasystem settings set KEY VALUE --repo CHECKOUT --act ID` command, and a person's direct act takes effect (never refused for anything but damage). Undo and `settings unset` belong to U3, not here.
+
+Build: `process.change=auto|person` (default person; person-only to change), the ProcessAct record under the target state root (process/acts/<id>.json) with actor lineage, proven authority including Proof.Helm, target, before/after, cited rule or design stage with its digest, expected measure; `processchange.ApplySetting` on the routed settings write for the keys Decision 2 names (not committed-only proof.* keys, not the direct-person-only landing.*/review.stop keys beyond reusing their validation); `processchange.AdmitCheck` at work build admission only for a check equal to proof.full; the subject-bound question adapter and act closure; replay reconciles by target bytes (no repeated write).
+Size: at most 250 production lines. If it will not fit, build the largest usable first part (the act record, the settings path and its question) within 250 and report the rest; do not stop empty.
+Public-verb test: the design's TestProcessSettingActPublicRemedy (agent `settings set` under default person leaves bytes unchanged and creates one ask; `question show` prints the exact command; executing it as a person applies the act once; a repeat writes nothing), plus: an agent's work build with an ordinary per-unit check is never held; one with a check equal to proof.full under person is held with the act. Mutations: apply an agent's change under person; hold an ordinary check.
+
+
+The five questions are answered in Decision 1's table; implement those answers, and say in the return where each lives in code.
+
+# Defect classes the reads keep finding (avoid each; the read checks them)
+1. A refusal remedy that cannot succeed when followed, or that undoes the gate.
+2. An agent given a person's power, or a person treated as an agent. A person's act is never refused except to prevent damage.
+3. An older or records entry hiding current state.
+4. A test seam hiding production behavior: every new function has a production caller and a test through the public verb; no stub returns an error shape production does not.
+
+# Check (Wido 10-07: "be Scrooge where it comes to testing. ONLY WHEN ABSOLUTELY NEEDED")
+`go build ./...` and `go vet` on the packages you changed; then ONLY the tests you added or changed, by name (`-run '^(TestA|TestB)$'`), and each one's mutation (break the code, see it red, restore). No package-wide runs, no broad selections, no whole suite: the full suite runs once, when the goal lands. If you change a message or skill text, also run `-run 'TestAudit|TestInstruction'` once. Every new test calls t.Parallel(); no wall-clock waits (inject clocks); test executables via testexec. Never open any metasystem.conf.local (synthetic settings only). Do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat, and each test with the mutation that turns it red.

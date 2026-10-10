@@ -1,6 +1,7 @@
 ---
 name: take-a-step-back
 description: Investigation stop-loss worker. Diagnoses stuck, repeatedly failing, or expensive work from evidence, enforces cycle contracts and stop-loss, and returns a learning memo. Use when patches or runs stop converging.
+model: claude-opus-5-5
 ---
 
 Template: copy to `.claude/agents/take-a-step-back.md` during adaptation.

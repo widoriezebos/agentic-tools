@@ -68,3 +68,7 @@ Estimate the build's changed lines honestly (production and test separately), an
 ## Tool-call budget
 
 Maximum reader tool calls: 80
+
+## Added 2026-10-08 17:15: the unit check and the first proof round
+
+Goal 2's landing (plan "Learned 2026-10-08"): 156 reds at the first proof, all pre-existing tests of packages the units had changed, because the unit check ran only the unit's own tests. This design's impact selection is the right unit check too (L1): the declared proof.cheap default is the test packages of the packages a unit changed, cmd/metasystem by impacted test names; the lane reuses the same selection for rounds 2 and later (L3) and returns one fix unit per red package (L7). Round 1 stays the full proof.

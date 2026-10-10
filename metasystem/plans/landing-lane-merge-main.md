@@ -1,0 +1,5 @@
+# Brief: resolve the lane branch's merge of main (prep for the hand landing of goals 8 and 8b)
+
+Working Mode: Implement
+In this worktree (branch goal/landing-takes-an-hour-pipeline, which contains goal 8 landing-takes-an-hour and 8b P3) `git merge --no-ff origin/main` (436e8ec86) is in progress with two conflicts: cmd/metasystem/intent_idempotency_work_test.go and cmd/metasystem/intent_unit_check_test.go. Resolve keeping both sides whole (main's behaviour; this branch's additions on top), `git add`, `git -c core.hooksPath=/dev/null commit --no-edit`, `go run ./cmd/devgate build`.
+Then the cheap tier, fixing reds forward in this job (never loosen an assertion; production where wrong, fixtures where a design changed behaviour): `go vet ./...`; `go run ./cmd/devgate static`; the whole test packages of every internal package this branch changed versus origin/main AND their internal reverse dependents (`go list` Deps/TestImports/XTestImports); the tests of the conflicted files by name. Never the whole cmd package. Report each red with cause and fix, and every exit. Never open metasystem.conf.local; do not touch memory/, records/, plans/.

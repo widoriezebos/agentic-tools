@@ -88,3 +88,7 @@ Each unit checks only its new and changed tests and their mutations. The full su
 ## Added 2026-10-08 15:20: a first-cut repeat detector exists as a patch
 
 agentic-tools-evidence/mmp-u4-out-of-scope-20261008/ holds a 164-line build of RepeatedClass at ApplySetting (no AdmitCheck route). Its read (2026-10-08) found: the window keyed by lineage against R2-M4 (key by checkout plus the goal episode from the claim, lineage an attribute); an agent can reset its window by replaying an applied act (count every act with AppliedAt, refuse an agent's --act replay of an applied act); the progress measure is hard-coded unknown (read U1's measure since the preceding applied act, record the direction). Reuse it only with those three changes.
+
+## Added 2026-10-08 20:50: U5 of process-changes-cover moved here
+
+The person estimate correction (process-changes-cover design U5: `work estimate` by a proved person, original estimate and correction reference kept, readers consistent; its test TestEstimateCorrectionPublicWork) moved here so process-changes-cover could take the unowned check-act contract as U0.

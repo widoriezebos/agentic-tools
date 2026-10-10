@@ -1,0 +1,4 @@
+# Brief: no flaky tests: races, fix forward (hook wait off the test goroutine)
+
+Working Mode: Implement
+Branch fix/flakes-race-20261009 (race redesigns committed). internal/proofrun/test_go_workers_test.go:763 calls testenv.AwaitOr(t, ...) inside the prepareCoverage hook, which runs on a group goroutine (test_build.go:941 -> :1432), not the test goroutine: on timeout t.Fatalf exits only that goroutine, group completion is never delivered and RunTestPlan blocks until the binary's timeout panic (message lost). In the hook, wait on `collected` with a select bounded by t.Deadline() and return an error naming the missing diagnostic; never call t.Fatalf/FailNow off the test goroutine. Grep the other test hooks/callbacks in internal/proofrun for the same pattern and fix them the same way. Run the changed tests by name with -count=10. Do not commit. Never open metasystem.conf.local.

@@ -67,3 +67,9 @@ Public acceptance must drive the real proof/resolver producers through their pub
 ## Added 2026-10-08 09:35: moved from review-chain-stops-and-records declared-check
 
 (1) The declared cheap check stays cheap: before the check is frozen `test plan` shows its selection for the unit; the measured minutes per unit are recorded with the step times (machinery-measures-its-own-process U1a/U1b evidence); when the selection resolves to deep, or its measured time exceeds a third of the last full proof's, the unit's status says so with the setting that chose it, and a person decides. (2) proof.audits flags changed assertions in pre-existing tests; an agent's change without a cited design line holds for a person; a person's change never holds. (3) Candidate edits to the declarations take effect only in the next round. Goal 2's resolveUnitCheck and UnitCheck.Run (cmd/metasystem/intent_unit_check.go, internal/launch/unit_check.go) are the owners to extend; see plans/handoff-review-chain-stops-and-records-declared-check-2.md.
+
+## Added 2026-10-08 17:15: proof.cheap's declared default (L1)
+
+U2a (cheap stays cheap) declares the default cheap check as: the unit's own new and changed tests, plus the test package of every package whose production code the unit changed (whole for internal/*), plus cmd/metasystem tests selected by the changed symbols, verbs and fixtures (lane-reproves' impact selection), never the whole cmd package. Measured basis: goal 2's 156 integration reds were all in changed packages' existing tests (plan "Learned 2026-10-08").
+
+Note 17:30: L1's shipped default (proof.cheap = own tests + changed packages + impacted cmd) is built by goal landing-takes-an-hour U4; U2a keeps the preview and the deep hold.

@@ -1,0 +1,10 @@
+# Brief: goal 2 integration fix-forward 4 (gate #2 reds in cmd and static)
+
+Working Mode: Implement
+This worktree is goal 2 (review-chain-stops-and-records) with main merged and fix-forwards 1-3 committed (tip b4f8447de). Gate #2 ran on ff2b0d730 under heavy host load (load 15-30): internal is fixed since (b4f8447de); cmd/metasystem had 34 failing tests (list: /Users/wido/LocalStorage/GitHub/agentic-tools-evidence/gate-rcs2-20261008/failed-cmd.txt; log cmd.log there), and devgate static refused: staticcheck (cmd/metasystem/intent_unit_review.go:213 S1021, :882 SA4006 branchRead never used, intent_unit_review_test.go:693 SA4006) and the run-state audit (new crossings of intentInvocation.state/stateRoot in intent_goals.go projection and runIntentDone, intent_process.go runIntentWorkStopGoal, intent_work.go unitLaunchAuthority and two func literals; see static.log).
+
+1. Rerun the 34 failed cmd tests by name (-count=1 -timeout 30m). Any that pass now were load: list them, and run each once more to confirm.
+2. For every real red: fix forward on this branch, fixing production where production is wrong and the fixture where a pre-existing test pins older behavior the design changed (cite plans/designs/review-chain-stops-and-records.md); never delete a test or loosen an assertion.
+3. Fix the three staticcheck findings (SA4006 :882 may hide a real defect: check what branchRead was meant to feed). For the run-state audit, route each new crossing through the sanctioned run-state owner the audit names, or, if the crossing is the design's intended state read, register it the way the audit's own instructions say (read the audit's code and its allowlist rules; never weaken the audit itself).
+4. Then run `go vet ./cmd/metasystem/`, `go run ./cmd/devgate static`, and the WHOLE cmd/metasystem package once with -count=1 -timeout 90m, and report every package line.
+Never open any metasystem.conf.local; do not touch memory/, records/ or plans/. Leave changes uncommitted. Return: per red, load or real, cause, fixed where (production/fixture), and the final exits.

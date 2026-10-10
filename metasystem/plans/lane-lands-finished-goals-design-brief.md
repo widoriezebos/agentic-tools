@@ -61,3 +61,7 @@ The lane's policies and the helm (`settings` keys `landing.batch`, `landing.on-r
 ## Questions the design may put to Wido
 
 Only ones whose answer changes what is built. Name the mechanism and the two options.
+
+## Added 2026-10-08 17:15: red classification returns fixes per package, and the proof runs quiet
+
+From goal 2's landing (plan "Learned 2026-10-08", L6 and L7): the lane's proof holds host.builds=0 for its duration (fleet-survives-its-providers P5b is the lever) so seats' builders do not run under it; red classification groups reds by package and cause and returns one fix unit per package to the seat, buildable in parallel, instead of one fix for the whole batch.

@@ -1,0 +1,10 @@
+# Task: write the design for runs-advance-on-their-own
+
+Working Mode: Design
+Write plans/designs/runs-advance-on-their-own.md from the brief plans/runs-advance-on-their-own-design-brief.md (read it in full, including every dated addition). Read plans/machinery-open-findings-plan-2026-10-06.md (the goal's findings, the stop table, "Learned 2026-10-07"), plans/designs/machinery-mechanisms.md, and every accepted design the brief names as a dependency (plans/designs/*.md; goal 2's design review-chain-stops-and-records.md and goal 3's fleet-survives-its-providers.md are accepted; goal 2's code is on goal/review-chain-stops-and-records at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e-review-chain-stops-and-records/metasystem and goal 3's on goal/fleet-survives-its-providers at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e-fleet-survives-its-providers/metasystem: cite code there where you build on it). Rulings in memory/rulings.md bind, including R-148-m1e (split follow-up goals may be opened by an agent, unapproved, with an immediate channel approval request).
+
+SIZE (Wido 2026-10-07): each unit at most 250 production lines, at most 5 units; split into a follow-up brief BEFORE the units table if needed, and name what moved. One paragraph per unit Decision with the exact behaviour and sites, so a builder cannot read more scope in. Production callers only. Each unit's check is its new and changed tests and their mutations; the full suite runs once when the goal lands.
+
+Shape as the accepted designs: header (Kind: design, Id: a new ULID, Status: draft, Goals: runs-advance-on-their-own), Wido's binding words, what it delivers, Decisions with code sites read on the current tree (cite file:line), Units table (unit, intent, production lines, areas), Estimates, one public-verb test per unit failing under its mutation, readers; the five questions for every new function, record and act; the four defect classes.
+
+Do not touch code, memory/, records/ or the ledger. Never open any metasystem.conf.local. Return: page path, units with production-line estimates, anything split off.

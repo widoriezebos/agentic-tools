@@ -1,6 +1,7 @@
 ---
 name: inception
 description: The guided birth of an app under the metasystem. Runs the inception interview on the coordinator seat — vision, criteria, the minimal net, covenant v1, doctrine v1, and the steel-thread backlog — for a fresh repository or as a retrofit harvest into a mature one. Use outside every mission, with the human present.
+model: claude-opus-5-5
 ---
 
 Template: copy to `.claude/agents/inception.md` during adaptation.

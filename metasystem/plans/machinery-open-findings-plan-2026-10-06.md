@@ -421,6 +421,28 @@ Evidence of the day: 5 units committed 10:00 to 22:00 at 4 to 7 hours each; 0 of
 
 Expected effect, to be measured: a unit from about 4 to 7 hours to about 2 (build 25 min on the cheap check, read 15 min overlapping the attest, one correction 40 min, read 15 min), and fewer fix units. Not a lever: any additional check, read or round.
 
+## Learned 2026-10-08: goal 2's landing took 6h44m (Wido 17:05: "seven hours is ridiculous")
+
+Where it went (09:38 to 16:22): merge main 10m (4 conflicts); gate 1, full, internal then cmd serially, 40m: 156 reds in 8 packages, a cmd panic, static red; fix-forward 1 as one Codex job over 36 files, 2h05; gate 2, full, under load 15-30 from ten builders, 54m: 2 internal and 34 cmd reds the panic had hidden, static red; fix-forwards 2-4, 1h50; gate 3, cmd and static, 45m: one load flake (passed 4 of 4 alone); final merge and push 10m. Gates 2h20, fix jobs 3h55, the rest 30m.
+
+Where the reds came from (all real, none load): config validation made proof.audits and proof.deadline mandatory, so 12 config tests and every fixture went red; the tree reservation added git calls the launch fakes did not expect, 76 launch reds; 61 cmd reds of the same two causes plus the stop record; one panic in a cmd test hid 34 more until gate 2. Not one was a unit's own test. All were pre-existing tests of packages the units had changed, accumulated silently over about 25 unit commits because each unit ran only its own new tests (the 10-07 Scrooge rule as applied). The cost was deferred, not removed, and deferring it put 25 units' breakage into one serial fix loop where every round needs a 45-minute gate and the builder no longer knows the cause.
+
+Is this what the lane would do? Yes. lane-lands-finished-goals merges main, proves once, classifies the red and returns a fix; the loop is the same, automated and serialized per batch, so the lane would have taken as long. lane-reproves-only-what-a-change-can-affect (accepted) reduces rounds 2 and later to the impacted packages; nothing in the machinery changes round 1.
+
+| Lesson | Practice now | Machinery owner |
+| --- | --- | --- |
+| L1 the unit check is the unit's own tests PLUS the test package of every package it changed (cmd/metasystem by impacted test names, never whole); a red there is fixed in the unit, where the cause is known, in parallel across builders | COMMON block amended 10-08 | the declared check: proof.cheap's declared default (process-changes-cover U2a, cheap stays cheap); lane-reproves' impact selection reused at the unit |
+| L2 a goal is at most 5 units (10-07); goal 2 was 15 units plus 10 fix units, pre-cap | in force | design-size-admission (review-drops) refuses more |
+| L3 a fix round reproves only the failed packages plus the importers of the fix; the full proof runs once more only at the end | hand gates from mmp on | lane-reproves (rounds 2+) |
+| L4 a panic in one test hides the package: shard cmd/metasystem in the gate so a panic loses one shard, never the package | devgate gate | machinery-housekeeping-follow-up (added 10-08) |
+| L5 the gate runs internal and cmd in parallel (independent packages, 18 cores): about 40m to 25m | devgate gate | machinery-housekeeping-follow-up |
+| L6 a proof needs a quiet host: no builder starts while a gate runs; the lane's proof holds host.builds for its duration | start-queue pauses during gates | fleet-survives-its-providers P5b (host.builds) consumed by the lane; lane-lands follow-up |
+| L7 fix-forward by package and cause in parallel builders, not one 2-hour job | from mmp on | red classification (1a) returns one fix unit per package |
+
+Owner since 17:30: goal landing-takes-an-hour (plan row 8) takes L1 and L3-L7 as its units U1-U5; process-changes-cover U2a keeps the preview and the deep hold; the housekeeping follow-up keeps the load-fragile test.
+
+Target: a landing is merge, one gate (about 25 minutes sharded and parallel), at most one targeted fix round: about one hour. Measure on machinery-measures, goal 3 and goals-are-shaped-small tonight and record the three times here.
+
 ## Practices tried by hand, promoted to machinery when proven
 
 Wido (2026-10-06 22:45 CEST): "what you apply here should be the best solution. And if that proves to be true; that should be promoted to machinery." Each practice below is applied by hand from goal 1b on, measured per goal against 1a's baseline, and becomes a unit of the named goal only when its measure holds on at least two goals; a practice whose measure does not hold is dropped and the drop recorded here.
@@ -450,8 +472,55 @@ Wido (2026-10-06 22:45 CEST): "what you apply here should be the best solution. 
 | 5 | remedies-prove-they-clear | 9, 11 | ask routing, the refusal kind of the register | The health phase and the refusals hold the stop |
 | 6 | briefs-carry-their-rules (opened 10-07; brief plans/briefs-carry-their-rules-design-brief.md) | 15, 20 | the scaffold | Cuts rounds and reads |
 | 7 | machinery-housekeeping (opened 10-07; brief plans/machinery-housekeeping-design-brief.md, with plans/engine-inputs-design-brief.md, dropped from lane-drain-and-fresh-claims 10-07) | 14, 17, 18, 19, 21 | the flake kind of the register, the engine stamp | Small units, bundled |
+| 8 | landing-takes-an-hour (opened 10-08 17:30; brief plans/landing-takes-an-hour-design-brief.md) | the seven-hour landing: L1, L3-L7 of "Learned 2026-10-08" | the gate shards and runs in parallel, a proof holds the host, reds return per package, the unit check includes what the unit changed, the landing clock | Before switch-on (Wido 10-08 17:25) |
+| 8b | landing-takes-an-hour-pipeline (follow-up of 8, opened 10-08 19:50; brief plans/landing-takes-an-hour-pipeline-design-brief.md) | the next landing is prepared during the current proof | prepared merge and cheap tier against the expected main | Before switch-on |
 | 2c (proposed 10-07 22:50, brief plans/machinery-measures-its-own-process-design-brief.md, not yet opened) | machinery-measures-its-own-process: cost per step against the estimate, a process change is a recorded act with a cited rule (person-gated by default), drift names its cause with the machinery's own process changes as a cause class and revert as the first remedy, the steward's own class-repeat stop, own cost reported apart | the practices table's measures (hand-measured today); 10, 9 | self-measurement, process-change acts, the `process` stop loop | Wido 10-07: the steward must detect and act on the drift m1e could not |
 | 2b | split from goal 2 and its follow-ups (10-07): lane-drain-and-fresh-claims (done), lane-reads-its-policies, ledger-reads-are-fresh (done), person-claims, review-drops-and-design-convergence (design accepted 10-07, 4 units), design-round-convergence-and-exits (opened 10-07, split from review-drops under the size cap), goals-are-shaped-small-with-a-person (Wido 10-07) | 6, 20 | the stop's drop effect, design-round exits, size admission, the person's split; goals-are-shaped-small-with-a-person step 1 is acceptance and lineage through the existing plan file (m1e for Wido, 2026-10-08, reversible); proposal versioning/history/replay and browser shaping follow in plans/people-shape-goal-splits-in-the-app-design-brief.md | Every split goal lands before switch-on, in this order after goal 2 |
 
 
 The landing redesign is split in two designs, 1a (the lane's charter: whole-goal admission, merge instead of rebase, red classification, trunk timer and register) and 1b (the policies and the helm, drain, areas on the claim over the claim-and-queue view), each with a consumer from its first unit; the minimal stop and ask records are 1a's because its on-red hold needs them. The machinery stays off until every goal of this plan (0 to 7) is on main; then one small real goal goes from claim to `goal done` with no hand step while a person holds nothing, and only then is it switched on (Wido, 2026-10-06 22:15 CEST: "no machinery does not switch on until all is landed. I want a reliable machine before we switch it on"). Until then every goal is delivered by hand with delegates. Finding 7 needs Wido's word first, because it amends his rule of 09-20 for headless sessions.
+
+## Measured 2026-10-08 20:11: the first sharded gate
+
+machinery-measures cmd/metasystem, 1,817 tests: whole-package runs took 52 and 45 minutes (one hid reds behind a panic); six parallel name shards of one compiled binary took 35 minutes under load 11 and reported all 14 reds in one run. Every red goes into one fix round; the landing reruns only those 14 plus touched files, no second full gate.
+
+| machinery-measures-its-own-process | 16:30 | 20:35 | 4h05 | gate 1 52m with a panic; fix 1h; audit fix; whole run stopped; shard gate 35m with 14 reds; one fix round 25m; narrow read 1m |
+
+## Landing measure from 2026-10-08 21:10: push-to-next-proof
+
+Minutes from a push to main until the next goal's full proof starts, with all in-progress branches kept current (landing-takes-an-hour-pipeline P0). Before (machinery-measures after goal 2): 16:22 push, its full gate started 16:45 after a 15-minute conflict job, then 4h to land. Record the next three.
+
+## Decided 2026-10-08 21:35 (Fable for Wido, reversible): the lane stays, as a merge queue
+
+See plans/landing-takes-an-hour-pipeline-design-brief.md "the lane as a merge queue". The 10-05 rule "one goal in the lane at a time" is a hand rule from the broken-lane days; in the machinery landing.batch=auto lands every waiting goal that is current and cheap-green in one proof. Lifting it by hand tonight is Wido's call.
+
+Clock note (added at 21:46 by `date`): the labels 21:20, 21:35, 21:55, 22:05 and 22:10 in this file came from m1e's own estimate, about 40 minutes ahead of the host clock; their order is right, the minutes are not.
+
+## Measured 2026-10-08 21:58: the second sharded gate
+
+goal 3 cmd/metasystem, six shards of one binary, static in parallel: 12 minutes at load about 5 (the first shard gate took 35 minutes at load 11; whole-package runs 45-52). One nil-pointer panic killed five of six shards, so the hand runner must list the tests a dead shard never ran (goal 8 U1 does); 17 reds were visible, one fix round for all.
+
+## Measured 2026-10-09 02:52: goals-are-shaped-small landing (third hand landing tonight)
+
+| goal | start | push | total | steps |
+|---|---|---|---|---|
+| goals-are-shaped-small-with-a-person | 23:20 (merge main, goal 3) | 02:52 | 3h32 | merge 1 conflict by hand; cheap tier found a red on main (internal/processchange without the shared TestMain, from machinery-measures; carried by this landing); shard gate 1 44m at six builders with 15 reds in three classes; one fix round (Codex 9m); about 2h idle because m1e's waiter never fired (zsh does not split an unquoted list); shard gate 2 21m on a quiet host, green; narrow read 2m |
+
+Without the idle waiter the landing took about 1h30. Shard gate minutes by load: 12 at load 5, 17, 20, 21 quiet; 35 at load 11; 44 under six builders. The L6 rule (no builder under a gate) is worth about 20 minutes per gate.
+
+## Learned 2026-10-09 03:30: a landing left main red in packages it did not change
+
+A whole `go test ./internal/...` on main 3cd45f791 found reds the landing gates never ran: four fixtures in internal/delegation and internal/evidence fail with "provider ownership unknown" (goal 3 made budget projection need provider ownership) and the UI bundle is stale. Goal 3's and gss's gates ran the cmd package in shards plus only the internal packages each goal changed; the packages that import a changed package (reverse dependents) were never run. The landing gate is: cheap tier = changed packages AND their reverse dependents; full gate = every package, cmd sharded. Owner: goal 8 U4 selection (impact through the adapter must include reverse dependents) and the hand practice from now on (precheck.sh runs reverse dependents). Fix on main: branch fix/main-red-20261009, pushed before the next goal.
+
+## For Wido 2026-10-09 03:45: the UI bundle on main is stale and its rebuild needs your dependency decision
+
+goals-are-shaped-small S1 changed internal/ui/web/_app/src/backlog/api.ts and src/project/api.ts without regenerating the bundle (the hand cheap tier selected Go packages only; fixed: precheck now runs internal/ui/web when _app changes), so internal/ui/web TestBundleIsCurrent is red on main. `npm run bundle` refuses because its npm audit now reports advisories in KaTeX and source-map-js; dependency approval is yours (docs/project-rules.md), so m1e did not bypass the audit. Options: (a) approve upgrading the two packages to advisory-free versions, then rebuild the bundle (m1e can do both once you say so); (b) accept the advisories for now with a recorded exception. Until then TestBundleIsCurrent stays red on main and every landing gate will show it (known, not the landing's fault).
+
+| remedies-prove-they-clear | 02:53 (merge main) | 04:08 | 1h15 | clean merge; cheap tier red: static (gofmt, one state-root crossing listed under store-roots) and a whole internal sweep found main red (provider fixtures, pushed 70627454a first); wall-clock waits in two new tests (Codex 9m); cheap tier with reverse dependents 7m found one hooks red (hand fix); shard gate 17m, one red (hand fix); narrow read 1m |
+| review-drops-and-design-convergence | 04:08 (cheap tier on merged main) | 06:01 | 1h53 | cheap tier with reverse dependents 16m, two reds (Codex 10m); shard gate 1 26m, 25 reds in five classes (Codex fix round 30m); shard gate 2 25m, one red (hand fix, test-only); narrow reads 3m and 21m |
+
+Measured 2026-10-09 06:20: design-round-cutover was estimated at 225 production lines and needs five builds of about 160-250 lines each (parts 1-4 committed, part 5 building). The estimate covered the new paths but not the legacy cutover, the close routes and the guidance; the design-size gate should count every route and owner a unit must change, not only its new code (owner: goals-are-shaped-small / design-size admission, as a measured case).
+
+## Measured 2026-10-09 17:58: the lane's first trunk proof after deploy
+
+Main 03762942b, lane engine install 28: 61 minutes (16:57-17:58), red. The reporter sharded by test name across all packages: 18 shards x ~107 packages = 1,962 package runs for ~174 packages (internal packages run ~11 times), per-shard sums 30-45 min. The hand gate on the same tree shape: 17 min (cmd/metasystem in 6 shards, every other package once). The red had four causes: one real red on main (steward archive test, state-dependent), one lane-induced (LANDING_* exported into the proof reach the tests' nested lane fixtures), and the two shell sections that no hand gate ever ran (adoption-fixtures: unrecognized spawned engine; go-engine-gate: a trunk proof has no goal). `landing status` showed "idle" and no red afterwards. Full list: agentic-tools-evidence/lane-test-20261009/findings.md.

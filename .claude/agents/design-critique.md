@@ -1,6 +1,7 @@
 ---
 name: design-critique
 description: Adversarial design critic. Attacks a written design before implementation and reports findings sorted by materiality. Use when a design document is ready for critique; the critic must not be the design's author.
+model: claude-opus-5-5
 ---
 
 Template: copy to `.claude/agents/design-critique.md` during adaptation.

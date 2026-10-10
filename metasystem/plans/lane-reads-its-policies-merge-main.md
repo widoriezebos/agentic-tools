@@ -1,0 +1,7 @@
+# Brief: resolve the merge of main into goal/lane-reads-its-policies
+
+Working Mode: Implement
+In this worktree `git merge --no-ff origin/main` is in progress with conflicts in cmd/metasystem/intent_landing.go, landing_agent.go, landing_plain.go, internal/landing/lane/agent.go, internal/landing/plain/{prove,push,queue,status,wake}.go. HEAD holds goal lane-reads-its-policies complete (U1..U5-fixes; plans/designs/lane-reads-its-policies.md: the lane reads landing.batch/on-red/trunk-red/proof, person holds and stops with one act each, the proof admission and detached child, red classification and returns, trunk permission and the person's exception). origin/main brings goals ledger-reads-are-fresh and person-claims (plans/designs/ledger-reads-are-fresh.md, plans/designs/person-claims.md: fresh reads on explicit paths, the claim classifies its caller, person reservations, the tier norm where main checks it).
+
+Resolve every conflict keeping BOTH sides whole; where both changed the same function, keep main's reads and person rules and lane-reads' policy behaviour. Then `git add` and `git -c core.hooksPath=/dev/null commit --no-edit`, then `go run ./cmd/devgate build`.
+Check (Scrooge: the full suite runs once afterwards on this tree, not here): go build ./... && go vet ./internal/landing/... ./cmd/metasystem/ && go test -count=1 -timeout 30m ./internal/landing/... ; no cmd package run. Never open any metasystem.conf.local; do not touch memory/, records/ or plans/. Return the exits and per conflicted file what was kept.

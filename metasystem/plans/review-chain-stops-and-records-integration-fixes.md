@@ -1,0 +1,13 @@
+# Brief: goal 2 integration fix-forward (review-chain-stops-and-records)
+
+Working Mode: Implement
+This worktree holds goal 2 complete with origin/main merged in (d5c0b5bc0). Its one full gate went red: 156 failing tests in 8 packages plus a panic in cmd/metasystem (intent_step_failure_test.go:219, index out of range [1] with length 1) that hid the rest of that package. Evidence: /Users/wido/LocalStorage/GitHub/agentic-tools-evidence/gate-rcs-20261008/ (internal.log, cmd.log, failed-tests.txt, failed-packages.txt). The units were built with only their own new tests run (by rule), so pre-existing tests that pin older behavior or older fixtures broke here. Fix forward on this branch, never weakening what a test protects.
+
+Known root causes from the logs (confirm each, find the rest):
+- internal/config (12) and others: "proof.audits is required in metasystem.conf / proof.deadline is required" — declared-check made both required. Decide per plans/designs/review-chain-stops-and-records.md Decision 6: if the design requires them only where a unit check runs, make validation require them only there (or default them as the design says) rather than in every config; otherwise add them to the fixtures and to the shipped metasystem.conf. State which and cite the design line.
+- internal/launch (76): review_start_matrix_test.go:174 `work build` code=1 (30), unit_named_test.go "unexpected Git call" (fakes missing the new git calls of the tree reservation / declared check), unit_revise_test.go:328, unit_attribution_test.go:232, unit_test.go:589 — likely fixtures missing the declared check or the new reservation; add the declarations and expected calls to the fixtures where production is right.
+- cmd/metasystem: the panic first (intent_step_failure_test.go:219 indexes a result that now has one element), then every other red in cmd.log.
+- goal/branch, layering, proofrun, refusal, testenv: one to three each; read each.
+Where a test's expectation is wrong because the design changed the behavior, change the expectation and cite the design line in the commit message's body you return; where production is wrong, fix production. Never delete a test or loosen an assertion to get green.
+
+Check: go build ./... && go vet ./... ; rerun ONLY the failed tests by name per package (-run with the names from failed-tests.txt, -count=1 -timeout 30m); then rerun the WHOLE cmd/metasystem package once (-count=1 -timeout 90m), because the panic hid part of it, and report every package line (ok or FAIL). Every test you add calls t.Parallel(). Never open any metasystem.conf.local; do not touch memory/ or records/. Leave changes uncommitted. Return: root causes found, per cause the files changed and whether production or fixture, and the final exits.

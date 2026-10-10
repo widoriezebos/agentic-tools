@@ -1,0 +1,6 @@
+# Brief: resolve review-drops-and-design-convergence's merge of main (keep the branch current)
+
+Working Mode: Implement
+In this worktree `git merge --no-ff origin/main` is in progress with conflicts (`git diff --name-only --diff-filter=U`). HEAD is goal review-drops-and-design-convergence's branch (plans/designs/review-drops-and-design-convergence.md; its committed units). origin/main now holds goal 2 (review-chain-stops-and-records) with its integration fix-forwards and machinery-measures-its-own-process (process acts, drift stops, cost report, process.change policy).
+Resolve keeping both sides whole; where main changed a path this branch also touched, keep main's behaviour and re-apply this branch's additions on top. Then `git add`, `git -c core.hooksPath=/dev/null commit --no-edit`, `go run ./cmd/devgate build`.
+Cheap tier, in order, fixing each red forward in this job: `go vet ./...`; `go run ./cmd/devgate static`; the whole test package of every internal package with a conflicted file; the tests of the conflicted cmd files by name. Never the whole cmd package. Production where wrong, fixtures where a design changed behaviour, never loosen an assertion. Never open any metasystem.conf.local; do not touch memory/, records/ or plans/. Return per conflicted file what was kept and every exit.

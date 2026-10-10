@@ -1,0 +1,11 @@
+# Task: revise the design fleet-provider-and-session-recovery after critique round 1
+
+Working Mode: Design
+Revise plans/designs/fleet-provider-and-session-recovery.md in place (keep Status: draft). Round 1 (Opus) found 4 material findings, each with a concrete change; apply them and add a "Round 1 findings and changes" table. Cap: unit <=250 production lines, <=5 units; cite code on origin/main 91f42e0aa (fix runner.go:491, which is runnerWait, not the steward's pass).
+
+1. R3 due time: the ask fires at evidenced reset plus the interval even when probes after the reset fail (source P2: a failed reset probe leaves the mark for P3's stale expiry), so it asks the person to revive into a still-limited provider. Start the due clock only at the first genuine provider success (probe or launch) after the reset; while the mark stands P3's stale-mark alert covers it. Add "provider still limited after reset: no ask" to the R3 test.
+2. R2/R3 closure: automatic StartSeat writes no RecoveryOf (internal/steward/seat_start.go:79-94 SeatRecord has none), so an open ask stays open after automatic recovery. R2 states that automatic StartSeat writes RecoveryOf for a seat whose last launch ended in the episode, lines counted.
+3. R2 owns the person seat-start that the source's P5 prints (no such verb exists: machine start clones, cmd/metasystem/intent_process.go:294; session start is the agent's). Delete the conditional "if P5 lands an equivalent person remedy first". In plans/designs/fleet-survives-its-providers.md add under its decisions (dated 2026-10-08, by m1e for Wido) the acceptance item: P5's printed remedy is `machine revive SEAT`, shown as unavailable until fleet-provider-and-session-recovery R2 lands.
+4. R4 window: whole-session containment leaves the trailing hour empty for 10-24 hour sessions. Sum usage per call by its transcript timestamp inside the window with the existing TranscriptUsage reader (internal/launch/claude.go:120), on active and ended sessions; add an active long-session subcase to TestFleetUsagePublicViews.
+Decided by m1e for Wido (record, 2026-10-08, reversible): R5 (engine and trunk facts on the fleet view) is cut as more than the smallest thing that works; write it into the plan's deferred list.
+Return: the material count you believe remains and the unit table with lines.

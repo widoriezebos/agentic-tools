@@ -1,0 +1,6 @@
+# Brief: resolve briefs-carry-their-rules's merge of main (keep the branch current, goal 3 landed)
+
+Working Mode: Implement
+In this worktree `git merge --no-ff origin/main` is in progress with conflicts (`git diff --name-only --diff-filter=U`). HEAD is goal briefs-carry-their-rules's branch (plans/designs/briefs-carry-their-rules.md; its committed units). origin/main (899274ebe) now adds goal 3 fleet-survives-its-providers: the host view, provider marks, dependent clocks pausing in an outage, the unit boundary event and headless handoff, restart limits, host.builds/host.load-max build admission.
+Resolve keeping both sides whole; where main changed a path this branch also touched, keep main's behaviour and re-apply this branch's additions on top. Then `git add`, `git -c core.hooksPath=/dev/null commit --no-edit`, `go run ./cmd/devgate build`.
+Cheap tier, in order, fixing each red forward in this job: `go vet ./...`; `go run ./cmd/devgate static`; the whole test package of every internal package with a conflicted file; the tests of the conflicted cmd files by name. Never the whole cmd package. Production where wrong, fixtures where a design changed behaviour, never loosen an assertion. Never open any metasystem.conf.local; do not touch memory/, records/ or plans/. Return per conflicted file what was kept and every exit.

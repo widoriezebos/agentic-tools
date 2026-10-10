@@ -1,0 +1,11 @@
+# Task: revise the design goals-are-shaped-small-with-a-person after critique round 1
+
+Working Mode: Design
+Revise plans/designs/goals-are-shaped-small-with-a-person.md in place (keep Status: draft). Round 1 (Opus) found 2 material findings; add a "Round 1 findings and changes" table. Cap: unit <=250 production lines, <=5 units; one paragraph per unit Decision; cite code on origin/main.
+
+F1 (S3, remedy that cannot succeed): S3 replaces the size refusal's working remedy (the person's `goal open NEW-GOAL ...`, accepted review-drops design lines 104 and 117) with `goal split propose`, which cannot end in a goal allowed to build until the effects follow-up lands; S3's own test asserts the dead end. Change: keep `goal open` as the remedy for the goal-count case; `propose` only as optional shaping in the details.
+F2 (premise, smallest thing that works): about 680 lines build a parallel versioned proposal store, and after it lands no split outcome differs from today; `goal split --plan FILE` already reads a person's plan (internal/goal/split.go:63); the harm is only the effect: the parent becomes StateDone (split.go:315) and its id is retired (root.go:348).
+
+Decided by m1e for Wido (record under "Decided by m1e for Wido", 2026-10-08, reversible): step 1 is the EFFECT on the existing plan-file grammar: `goal split G --plan FILE` puts the parent in a `split` state (not done, id not retired), records lineage both ways, and opens the children unapproved and blocked by the source (R-148-m1e: an agent may open a follow-up goal that is part of a person's goal, with an immediate channel message asking the person to approve it); a person can reverse a split whose children have not started. Show and edit stay the plain file. The versioned store, revision history, operation-id replay and the browser move to the app follow-up brief (write the destination into that brief). Record on the plan's goal row that acceptance and lineage are this goal's step 1.
+Non-material, fold if cheap: `--plan` means JSON on propose but markdown on split (drop propose or align); S3 waits for review-drops (CheckDesignSize) and says so.
+Return: the material count you believe remains and the unit table with lines.

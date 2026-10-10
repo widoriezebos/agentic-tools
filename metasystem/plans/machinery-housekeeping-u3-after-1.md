@@ -1,0 +1,8 @@
+# Brief: machinery-housekeeping U3, correction 1 (tests for a fix already made)
+
+Working Mode: Implement
+U3 is uncommitted in this worktree. Its read found: continueRed (internal/landing/plain/replay.go) treated every Repeat=="started" result as a flake repeat in progress, but proveInWorktree (prove.go:1119-1121) also sets "started" on whole-check, environment and person re-proofs, so a red re-proof skipped the lane's replay attribution and stayed unclassified (recordProofStop could blame a single goal for a main red). m1e made the fix (uncommitted): the flake branch is gated on len(result.FlakeRepeats) > 0, and when the tree's one repeat is spent (NoRepeat from the history scan) the red keeps its ordinary cause and goes to replay. Do not change production code unless a test shows the fix is wrong.
+
+Write tests only, in internal/landing/plain next to TestLandingProveKeepsTheFlakeRepeatSpent: (a) the critic's probe: a known, unaffected red gets its whole-check repeat ("allowed") and the repeat also fails: cause main with name red:u/a:TestA after the repeat and its replay on main (mutation: gate on Repeat only, red); (b) the history scan's refusal (a prior started repeat on the same tree) leaves the red with its ordinary cause, not "flake" (mutation: keep the flake cause on refusal, red).
+
+Check: go build ./... && go vet ./internal/landing/plain/ && go test -count=1 -timeout 15m -run 'Repeat|Flake' ./internal/landing/plain/. Every new test calls t.Parallel(). Never open any metasystem.conf.local; do not touch memory/, records/ or plans/. Leave uncommitted. Return the exits and each mutation result.

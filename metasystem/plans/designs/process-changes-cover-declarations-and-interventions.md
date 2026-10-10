@@ -54,6 +54,8 @@ The 22:55 estimate-correction addition stays in U5. The 01:25 full-suite additio
 
 ## Decided by m1e for Wido
 
+- 2026-10-08 20:50 CEST, at U2a's prerequisite stop (the builder returned the mismatch this page asks for at line 36): machinery-measures-its-own-process landed without the source check-act contract (its U2 handoff: "Check acts, consumed-act links, predecessor/history reading ... NOT implemented"), so no goal owns it. This goal takes it as unit U0, built first, from machinery-measures-its-own-process.md Decision 2's check part: `work build --check` admission records a check act with the retained before/after argv and consumed-act links, compares with the previous admitted selection and its rung, asks a person under process.change=person through the existing exact-act question, and a person's execution of the pending act consumes it; U2a and U2b then build on it. To keep five units, U5 (person estimate correction) moves to plans/process-interventions-and-missing-measures-design-brief.md. Reversible by Wido.
+
 2026-10-08, **reversible**, as directed by the round-1 revision task: move former U1 (retained repository-byte citation resolution) and the `auto` citation-admission branch to [follow-up section F](../process-interventions-and-missing-measures-design-brief.md#f-repository-byte-citations-and-auto-admission). Under `process.change=person`, every agent proposal already asks a person, so former U1 changes no admission outcome now. Split former U2 into U2a (snapshot, pending act, build/revise remedy) and U2b (carry and full-suite exception), retaining five units of at most 250 production lines. This records the supplied decision; it does not change policy or accept the draft.
 
 - 2026-10-08 12:25 CEST, at the design stop (round 2: material 2 to 2, F1 repeats round 1's class 3 in U2a): the design is accepted and both round-2 findings are folded as acceptance items, each checked by its unit's code read. Reversible by Wido.
@@ -97,16 +99,17 @@ Production counts include public grammar/help, adapters, record changes, errors,
 
 | Unit | Intent | Production lines | Areas |
 | --- | --- | ---: | --- |
-| U2a | Goal-keyed snapshot, pending declaration act, build/revise remedy and next-round freeze | 245 (snapshot/seed/reference 70, act/admission/replay 85, build/revise grammar/help/remedy/status 90) | `internal/processchange`, `internal/launch`, unit/build/revise commands |
-| U2b | Carry admission and exact full-suite exception | 200 (carry/subject/reconciliation 65, equality/exception act 65, command/remedy/help/status 70) | same process admission owner, unit/carry/build/revise commands |
-| U3 | Declaration delta inverse through branch publication | 245 (delta 65, branch-owned patch entry 60, command/act/replay/remedy 120) | `internal/processchange`, `internal/goal/branch`, work command |
-| U4 | Nested execution evidence and exclusive cost/report | 240 (executor records/callers 95, composition 45, arithmetic/projection 100) | `internal/launch`, unit/carry commands, `internal/processmeasure`, existing report |
-| U5 | Person estimate correction and consistent readers | 210 (act/authority/grammar 80, estimate reference/recovery 70, readers/provenance 60) | unit estimate/work commands, `internal/launch`, `internal/processchange`, `internal/processmeasure` |
+| U2a | Goal-keyed snapshot, pending declaration act, build/revise remedy and next-round freeze (snapshot/seed/reference 70, act/admission/replay 85, build/revise grammar/help/remedy/status 90) | 245 | `internal/processchange`, `internal/launch`, unit/build/revise commands |
+| U2b | Carry admission and exact full-suite exception (carry/subject/reconciliation 65, equality/exception act 65, command/remedy/help/status 70) | 200 | same process admission owner, unit/carry/build/revise commands |
+| U3 | Declaration delta inverse through branch publication (delta 65, branch-owned patch entry 60, command/act/replay/remedy 120) | 245 | `internal/processchange`, `internal/goal/branch`, work command |
+| U4 | Nested execution evidence and exclusive cost/report (executor records/callers 95, composition 45, arithmetic/projection 100) | 240 | `internal/launch`, unit/carry commands, `internal/processmeasure`, existing report |
 | **Total** | **Five units, each at most 250** | **1,140** | |
 
 ## Estimates
 
 Planning estimates only; they are not spend authorization or timeout defaults. Each check is only the unit's new and changed tests and the mutations below. The full suite runs once when the complete goal lands on the integration tree; collect its reds into one fix pass, without another branch-only suite.
+
+U5 (person estimate correction and consistent readers) moved to the follow-up brief process-interventions-and-missing-measures on 2026-10-08 20:48 CEST, when U2a's prerequisite stop made this goal take the check-act contract as U0 instead; this goal declares U0, U2a, U2b, U3 and U4.
 
 | Unit | Elapsed minutes, build/read | Expected check minutes | Production lines | Test-line allowance | Changed-line allocation |
 | --- | ---: | ---: | ---: | ---: | ---: |
@@ -114,7 +117,6 @@ Planning estimates only; they are not spend authorization or timeout defaults. E
 | U2b | 75 | 8 | 200 | 280 | 480 |
 | U3 | 100 | 10 | 245 | 340 | 585 |
 | U4 | 85 | 8 | 240 | 300 | 540 |
-| U5 | 70 | 6 | 210 | 240 | 450 |
 
 ## One public-verb test per unit and its mutations
 
@@ -155,7 +157,6 @@ The private execution plan already retains its environment; new public records c
 | U2b | Printed carry check/read and full-suite exception work under hold | Citation or another unit's exception is not approval | Exact carry subject and admission-bound exception | Real carry and underlying build/revise/full argv selection, no wrapper-name inference |
 | U3 | Inverse admitted under its own stop; explicit repair when evidence missing | Explicit patch does not establish person identity | Bind act to its own goal/branch and recheck current changed keys | Branch-owned patch validation/publication stays real; only Git I/O faked |
 | U4 | Missing evidence creates no forced rerun | Cost evidence grants no power; grants retain attribution | New incomplete execution cannot borrow old completion | Actual executor writes records consumed by actual report |
-| U5 | Complete explicit values repair advisory damage | Only direct person changes denominator | Original estimate and correction reference survive readmission | Public command, real estimate lock and every report reader |
 
 ## Design obligations and delivery state
 

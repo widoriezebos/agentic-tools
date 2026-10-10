@@ -1,0 +1,7 @@
+# Brief: resolve the merge of main into goal/review-chain-stops-and-records
+
+Working Mode: Implement
+In this worktree `git merge --no-ff origin/main` is in progress with conflicts in cmd/metasystem/intent_work_test.go, internal/board/view.go, internal/channel/question.go, internal/landing/plain/stop.go. HEAD holds goal 2 complete (plans/designs/review-chain-stops-and-records.md: the unit stop record and asks, build outcomes and failed steps, the tree reservation, the round result, read publication, the declared check). origin/main brings person-claims, lane-reads-its-policies (the lane's policy reads, holds, stops and proof admission; internal/landing/plain/stop.go and policy_question.go changed there), machinery-housekeeping (flake facts) and the red-on-main fix.
+
+Resolve keeping BOTH sides whole: lane-reads' stop keys, legacy close matching, open-stop reads and policy questions with goal 2's per-subject closing and stop records; both sides' question kinds; both sides' board view fields. Then `git add` and `git -c core.hooksPath=/dev/null commit --no-edit`, then `go run ./cmd/devgate build`.
+Check (Scrooge; the full gate runs next on this tree): go build ./... && go vet ./internal/landing/... ./internal/board/ ./internal/channel/ ./cmd/metasystem/ && go test -count=1 -timeout 30m ./internal/landing/plain/ ./internal/board/ ./internal/channel/. Never open any metasystem.conf.local; do not touch memory/, records/ or plans/. Return the exits and per conflicted file what was kept.

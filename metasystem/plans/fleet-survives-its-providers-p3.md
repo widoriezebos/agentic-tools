@@ -1,0 +1,18 @@
+# Brief: fleet-survives-its-providers, unit P3 (dependent clocks pause and stale marks clear visibly)
+
+Working Mode: Implement
+P1, P2 and its fixes are committed on this branch (provider marks per provider, each caller checking its launch's runtime). Build "P3 — Dependent clocks pause and stale marks clear visibly" of plans/designs/fleet-survives-its-providers.md and ONLY that (read the section in full and the round-3 folds naming P3): use P2's provider intervals in the budget projection (internal/dispatch/budget.go:271, its consumption entry :277, wait projection :867) and the steward's age/decision sample (internal/steward/tick.go:515), subtracting only the union of evidenced waiting intervals intersecting that clock's lifetime and provider dependency, unioned with existing excluded waits (never twice); unrelated work, another provider's execution and billable job minutes stay charged; a missing dependency is unknown, never a guessed pause; progress still resets the steward's age. Expiry in the same outage owner: at reset plus one probe interval (two minutes, runner.go:454), or outage.Horizon (30 minutes) from the last genuine observation when no reset exists; expiry closes the interval at that bound, clears the mark and retains a once-per-mark stale alert delivered by the registered steward's existing notification owner; a late tick never charges or pauses past the bound; a replay does not duplicate the alert; stale expiry is not provider success (fleet-provider-and-session-recovery R3 reads firstSuccessAt; do not fake it). A person's clear closes only the chosen interval at the clear's time.
+Size: at most 250 production lines. If it will not fit, build the pause first and report the rest.
+Public-verb test (TestFleetProviderPausePublicStatus, the design's): through the steward tick and goal/work status: outage, reset, overlap with a landing wait and recovery; dependent elapsed and age pause once; unrelated work and job minutes advance; a reset-plus-grace stale mark clears with one alert, also after a late tick or restart; a person's clear ends only its interval. Mutations: subtract the outage from all work; subtract overlapping waits twice; keep a stale mark silently.
+
+
+The five questions are answered in Decision 1's table; implement those answers, and say in the return where each lives in code.
+
+# Defect classes the reads keep finding (avoid each; the read checks them)
+1. A refusal remedy that cannot succeed when followed, or that undoes the gate.
+2. An agent given a person's power, or a person treated as an agent. A person's act is never refused except to prevent damage.
+3. An older or records entry hiding current state.
+4. A test seam hiding production behavior: every new function has a production caller and a test through the public verb; no stub returns an error shape production does not.
+
+# Check (Wido 10-07: "be Scrooge where it comes to testing. ONLY WHEN ABSOLUTELY NEEDED")
+`go build ./...` and `go vet` on the packages you changed; then ONLY the tests you added or changed, by name (`-run '^(TestA|TestB)$'`), and each one's mutation (break the code, see it red, restore). No package-wide runs, no broad selections, no whole suite: the full suite runs once, when the goal lands. If you change a message or skill text, also run `-run 'TestAudit|TestInstruction'` once. Every new test calls t.Parallel(); no wall-clock waits (inject clocks); test executables via testexec. Never open any metasystem.conf.local (synthetic settings only). Do not touch memory/ or records/. Leave uncommitted. Return the exits, git diff --stat, and each test with the mutation that turns it red.

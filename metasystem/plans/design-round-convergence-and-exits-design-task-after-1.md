@@ -1,0 +1,12 @@
+# Task: revise the design design-round-convergence-and-exits after critique round 1
+
+Working Mode: Design
+Revise plans/designs/design-round-convergence-and-exits.md in place (keep Status: draft). Round 1 (Opus) found 5 material findings; fold each with a concrete change and add a "Round 1 findings and changes" table. Size cap binds (unit <=250 production lines, <=5 units).
+
+1. Decided by m1e for Wido (record under "Decided by m1e for Wido", 2026-10-08, reversible): no dependency on goals-are-shaped-small-with-a-person, which removes the ordering cycle (plan :454; that brief :14, :20, :35). design-fold-and-split delivers fold-and-accept plus a partial split that publishes source acceptance, the destination draft or brief, and its transfer on the DesignExit, without the split owner; the destination opens through the existing `goal open` (queued for a person's approval, never approved by the machine), as the hand practice did tonight. Move the split-owner integration (~70 lines) to goals-are-shaped-small-with-a-person as its own production caller, and say so in the page so that goal's brief can be updated. Remove the prerequisite; design-round-cutover no longer waits on another goal.
+2. Decision 2: a goal-free review with a configured review-round-max=0 means "no ceiling" (internal/config/defaults.go:155), so its cap is 4; explicit zero means "no examination" only for a goal's approved budget. Add the subcase to the cutover test.
+3. Decision 2: "fixed" is derived mechanically, never from an author mark: a class counts as fixed in a section when a material finding of that class there was accepted in the prior round and that section changed in the bound revision. Add the mutation "fixed taken from an optional author mark".
+4. Decision 3 and the retry row: when the one retry is exhausted, the stopped record and its display print the executable person acts (`design review FILE --ruling ... --reason ... --by ...` or `--scope`); the cutover test follows the printed command to a ruled outcome.
+5. Decision 5: commit the goal's DesignExit first and write the page head (Status: accepted, closed head) afterwards as a projection of it, so no reader (internal/designgate/gate.go:62 first) sees accepted without a committed exit; adjust the publication test's fault-injection steps.
+
+Do not touch code, memory/, records/ or the ledger. Never open any metasystem.conf.local. Return: units with estimates and what changed per finding.

@@ -1,0 +1,8 @@
+# Task: revise the design process-changes-cover-declarations-and-interventions after critique round 1
+
+Working Mode: Design
+Revise plans/designs/process-changes-cover-declarations-and-interventions.md in place (keep Status: draft). Round 1 (Opus) found 2 material findings; apply the changes and add a "Round 1 findings and changes" table. Cap: unit <=250 production lines, <=5 units.
+
+M1 (U2 baseline): the "declaration changed" baseline is shared across all goals of the checkout, but each goal reads declarations from its own worktree HEAD (goal/review-chain-stops-and-records cmd/metasystem/intent_unit_check.go:36-46); alternating goals raise false acts, and U3's inverse would write one branch's declarations into another. Key the baseline by goal, seeded at the goal's first admission from the committed origin/main commit (machinery-measures-its-own-process.md:124: the goal's previous admitted unit check); use the target-checkout window only to detect repeated interventions. Add the alternation case to the U2 test and the mutation "baseline keyed by checkout".
+M2 (U2 over size): split U2 into U2a (snapshot, pending act, the build/revise --act remedy) and U2b (carry and the full-suite exception). Decided by m1e for Wido (record under "Decided by m1e for Wido", 2026-10-08, reversible): to stay within five units, U1 and the `auto` citation-admission branch move to the follow-up brief (under process.change=person every agent proposal already asks a person, so U1 changes no outcome now); write the destination into that brief.
+Return: the material count you believe remains and the unit table with lines.

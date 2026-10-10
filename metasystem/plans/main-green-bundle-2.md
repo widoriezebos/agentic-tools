@@ -1,0 +1,4 @@
+# Brief: main green: rebuild the UI bundle after the flake fixes
+
+Working Mode: Implement
+Branch fix/main-green-20261009 (HEAD a56fb855a). internal/ui/web TestBundleIsCurrent is red: the flake fixes changed src/backlog/filters.ts, filters.test.ts, reorder.ts, reorder.test.ts, src/decisions/decisions.ts, queue.test.ts (explicit-locale sorting) without rebuilding the bundle. In internal/ui/web/_app, with the project's required Node version (as in the earlier bundle fix on this branch, commit e3c666592): `npm ci --ignore-scripts`, `npm run bundle` (its audit must pass; never bypass), `npm run typecheck`, `npm test`; then `go test ./internal/ui/web` and `go run ./cmd/devgate static`. Change nothing else. Do not commit; do not touch memory/, records/, plans/. Never open metasystem.conf.local. Report every exit and the changed files.

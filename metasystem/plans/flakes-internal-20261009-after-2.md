@@ -1,0 +1,5 @@
+# Brief: no flaky tests: internal, correction 2 (the last)
+
+Working Mode: Implement
+The uncommitted redesigns plus correction 1 are in this worktree; keep them (F-2 tcp readiness and F-3 proof/full.sh hold). One BREAKING finding: TestFakeHostHold ignore-term=true fails on unmodified code ("inherited SIGTERM ignored = false, want true", fake_test.go:450): on Go 1.27 the runtime installs its own SIGTERM handler before main, so signal.Ignored(syscall.SIGTERM) in internal/missionrunner/hostturn/testdata/hold/main.go never sees the ignore inherited from internal/adapter/supervisor/fake_host.go:129.
+Fix: observe the inherited ignore by behaviour: in ignore mode the fixture does NOT register SIGTERM (so delivery follows the inherited disposition) and registers SIGUSR1, acknowledging each SIGUSR1 on a file/pipe; the test sends SIGTERM, then SIGUSR1, waits for the acknowledgement (observed event, test deadline) and asserts the process is alive. Mutation: remove fake_host.go:129 (overlay) -> SIGTERM kills the hold -> red. Run TestFakeHostHold -count=20 and the other changed tests -count=10. Do not commit. Never open metasystem.conf.local.
