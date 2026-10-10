@@ -646,6 +646,21 @@ func pathDeclarationsOverlap(left, right string) bool {
 	return errA == nil && errB == nil && a.Overlaps(b)
 }
 
+// GoTestName recognizes test entrypoints, excluding the package's TestMain hook.
+func GoTestName(name string) bool {
+	suffix, ok := strings.CutPrefix(name, "Test")
+	if !ok || name == "TestMain" {
+		return false
+	}
+	if suffix == "" {
+		return true
+	}
+	for _, character := range suffix {
+		return !unicode.IsLower(character)
+	}
+	return false
+}
+
 func GoTests(group Group) (all bool, names []string, err error) {
 	var keyword string
 	if json.Unmarshal(group.Tests, &keyword) == nil {

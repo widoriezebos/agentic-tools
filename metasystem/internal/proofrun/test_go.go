@@ -21,6 +21,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/audit"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -278,6 +280,7 @@ func goArgumentsCachedForSchema(ctx context.Context, group testpolicy.Group, cwd
 	if err != nil {
 		return nil, nil, goDiscovery{}, false, err
 	}
+	names = slices.DeleteFunc(names, func(name string) bool { return !goTestName(name) })
 	discovery, started, err := discoverGoTestsCached(ctx, cwd, environment, group.Packages, group.BuildTags, group.Race, cache)
 	if err != nil {
 		return nil, nil, discovery, started, err
@@ -786,15 +789,14 @@ func nearestGoModule(directory string) (string, string, error) {
 }
 
 func goTestName(name string) bool {
-	if strings.HasPrefix(name, "Fuzz") && len(name) > len("Fuzz") {
-		next := name[len("Fuzz")]
-		return next < 'a' || next > 'z'
+	if suffix, ok := strings.CutPrefix(name, "Fuzz"); ok {
+		if suffix == "" {
+			return true
+		}
+		character, _ := utf8.DecodeRuneInString(suffix)
+		return !unicode.IsLower(character)
 	}
-	if name == "TestMain" || !strings.HasPrefix(name, "Test") || len(name) == len("Test") {
-		return false
-	}
-	next := name[len("Test")]
-	return next < 'a' || next > 'z'
+	return testpolicy.GoTestName(name)
 }
 
 type goTestPartition struct {

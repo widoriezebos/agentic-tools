@@ -247,6 +247,120 @@ func TestTestImpactChangedTestHunksGitAdapter(t *testing.T) {
 	}
 }
 
+func TestTestImpactChangedTestMainSelectsNoTestNameGitAdapter(t *testing.T) {
+	t.Parallel()
+	root, _ := impactGitAdapterBed(t)
+	before := "package main\nimport (\"os\"; \"testing\")\nfunc TestMain(m *testing.M) { _ = 1; os.Exit(m.Run()) }\nfunc TestUntouched(t *testing.T) { t.Parallel() }\n"
+	impactWrite(t, root, "cmd/metasystem/main_test.go", before)
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "test entrypoint fixture")
+	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	impactWrite(t, root, "cmd/metasystem/main_test.go", strings.Replace(before, "_ = 1", "_ = 2", 1))
+	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
+	if code != 0 || !strings.Contains(out, "selection: cmd/metasystem\n") || strings.Contains(out, "cmd/metasystem=") {
+		t.Fatalf("TestMain change must select the package without test names: exit=%d out=%s problem=%s", code, out, problem)
+	}
+}
+
+func TestTestImpactSelectsOnlyGoTestNamesGitAdapter(t *testing.T) {
+	t.Parallel()
+	root, base := impactGitAdapterBed(t)
+	source := `package main
+import ("os"; "testing")
+func Test(t *testing.T) { t.Parallel(); if err := os.WriteFile("bare-test-ran", []byte("ran"), 0600); err != nil { t.Fatal(err) } }
+func Testhelper(t *testing.T) { t.Parallel() }
+func TestéHelper(t *testing.T) { t.Parallel() }
+type helper struct{}
+func (helper) TestMethod(t *testing.T) { t.Parallel() }
+func TestPresent(t *testing.T) { t.Parallel() }
+func TestÉPresent(t *testing.T) { t.Parallel() }
+`
+	impactWrite(t, root, "cmd/metasystem/helpers_test.go", source)
+	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
+	if code != 0 || !strings.Contains(out, "selection: cmd/metasystem=Test,TestPresent,TestÉPresent\n") {
+		t.Fatalf("Go test names only: exit=%d out=%s problem=%s", code, out, problem)
+	}
+	// Go's vet rejects lowercase pseudo-test declarations in runnable fixtures.
+	impactWrite(t, root, "cmd/metasystem/helpers_test.go", strings.NewReplacer("Testhelper", "helperLower", "TestéHelper", "helperUnicodeLower").Replace(source))
+	code, out, problem = impactPublic(t, root, "--base", base)
+	if code != 0 || !strings.Contains(out, "landing group unit/cmd/metasystem green") {
+		t.Fatalf("Go test execution: exit=%d out=%s problem=%s", code, out, problem)
+	}
+	if _, err := os.Stat(filepath.Join(root, "cmd/metasystem/bare-test-ran")); err != nil {
+		t.Fatalf("bare Test did not execute: %v", err)
+	}
+}
+
+func TestTestImpactTestMainReferencesSelectDependentGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, separate := range []bool{false, true} {
+		t.Run(fmt.Sprintf("separate-test-file=%t", separate), func(t *testing.T) {
+			t.Parallel()
+			root, _ := impactGitAdapterBed(t)
+			impactWrite(t, root, "internal/launch/setup.go", "package launch\nfunc Setup() bool { return false }\n")
+			mainSource := `package tool
+import ("os"; "testing"; "example.invalid/impact/internal/launch")
+func TestMain(m *testing.M) { code := m.Run(); if launch.Setup() { os.Exit(7) }; os.Exit(code) }
+`
+			testSource := "func TestA(t *testing.T) { t.Parallel() }\n"
+			if separate {
+				impactWrite(t, root, "cmd/tool/tool_test.go", "package tool\nimport \"testing\"\n"+testSource)
+			} else {
+				mainSource += testSource
+			}
+			impactWrite(t, root, "cmd/tool/main_test.go", mainSource)
+			testingFixtureGit(t, root, "add", ".")
+			testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "setup fixture")
+			base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+			impactWrite(t, root, "internal/launch/setup.go", "package launch\nfunc Setup() bool { return true }\n")
+			selection := "selection: cmd/tool=TestA\n"
+			if separate {
+				selection = "selection: cmd/tool\n"
+			}
+			code, out, problem := impactPublic(t, root, "--base", base, "--plan")
+			if code != 0 || !strings.Contains(out, selection) || strings.Contains(out, "TestMain") {
+				t.Fatalf("TestMain dependency selection: exit=%d out=%s problem=%s", code, out, problem)
+			}
+			code, out, problem = impactPublic(t, root, "--base", base)
+			if code != 1 || !strings.Contains(out, "landing group unit/cmd/tool red") || !strings.Contains(out, "LANDING-FAILED\tcmd/tool\t") {
+				t.Fatalf("TestMain failure must be red: exit=%d out=%s problem=%s", code, out, problem)
+			}
+		})
+	}
+}
+
+func TestTestImpactReplayIgnoresTestMain(t *testing.T) {
+	t.Parallel()
+	for _, selection := range []string{"TestMain", "TestMain,TestPresent"} {
+		t.Run(selection, func(t *testing.T) {
+			t.Parallel()
+			root := impactAdapterBed(t)
+			impactWrite(t, root, "cmd/metasystem/main_test.go", `package main
+import ("os"; "testing")
+func TestMain(m *testing.M) { os.WriteFile("main-ran", []byte("ran"), 0600); os.Exit(m.Run()) }
+func TestPresent(t *testing.T) { t.Parallel(); os.WriteFile("test-ran", []byte("ran"), 0600) }
+func TestNoise(t *testing.T) { t.Parallel(); t.Fatal("unselected test ran") }
+`)
+			command := exec.Command(commandTestExecutable(t), "test", "impact", "--root", root)
+			command.Dir = root
+			command.Env = append(slices.DeleteFunc(fixtureCommandEnvironment(t), func(e string) bool {
+				return strings.HasPrefix(e, "LANDING_ONLY=") || strings.HasPrefix(e, "LANDING_PROOF_BASE=")
+			}), "LANDING_ONLY=cmd/metasystem="+selection)
+			data, err := command.CombinedOutput()
+			if err != nil || !strings.Contains(string(data), "landing group unit/cmd/metasystem green") || !strings.HasSuffix(string(data), "LANDING-CHECKED\t0\n") {
+				t.Fatalf("TestMain replay: error=%v output=%s", err, data)
+			}
+			if _, err := os.Stat(filepath.Join(root, "cmd/metasystem/main-ran")); err != nil {
+				t.Fatalf("TestMain did not execute: %v", err)
+			}
+			_, err = os.Stat(filepath.Join(root, "cmd/metasystem/test-ran"))
+			if selection == "TestMain" && !os.IsNotExist(err) || selection != "TestMain" && err != nil {
+				t.Fatalf("selected test execution: selection=%s error=%v", selection, err)
+			}
+		})
+	}
+}
+
 func TestTestImpactShippedCheapDeclarationGitAdapter(t *testing.T) {
 	t.Parallel()
 	data, err := os.ReadFile(filepath.Join("..", "..", "metasystem.conf"))
@@ -471,7 +585,7 @@ func TestTestImpactLandingOnlyAndReports(t *testing.T) {
 			if strings.HasPrefix(mode, "replay") {
 				impactWrite(t, root, "cmd/tool/other_test.go", "package tool\nimport \"testing\"\nfunc TestOther(t *testing.T) { t.Parallel(); t.Fatal(\"must not run\") }\n")
 				impactWrite(t, root, "internal/unselected/noise_test.go", "package unselected\nimport \"testing\"\nfunc TestNoise(t *testing.T) { t.Parallel(); t.Fatal(\"must not select\") }\n")
-				impactWrite(t, root, "cmd/metasystem/tag_test.go", "//go:build batchtest\n\npackage main\nimport \"testing\"\nfunc TestTagged(t *testing.T) { t.Parallel(); t.Fatal(\"tag selected\") }\n")
+				impactWrite(t, root, "cmd/metasystem/selected_test.go", "package main\nimport \"testing\"\nfunc TestSelected(t *testing.T) { t.Parallel(); t.Fatal(\"test selected\") }\n")
 			}
 			if mode == "build" {
 				impactWrite(t, root, "cmd/tool/broken.go", "package tool\nvar _ = missing\n")
@@ -493,7 +607,7 @@ func TestTestImpactLandingOnlyAndReports(t *testing.T) {
 			}
 			if strings.HasPrefix(mode, "replay") {
 				command.Args = append(command.Args, "--base", "missing", "--plan")
-				command.Env = append(command.Env, "LANDING_ONLY=metasystem/internal/a metasystem/cmd/tool=TestOne metasystem/cmd/metasystem=TestTagged", "LANDING_PROOF_BASE=missing")
+				command.Env = append(command.Env, "LANDING_ONLY=metasystem/internal/a metasystem/cmd/tool=TestOne metasystem/cmd/metasystem=TestSelected", "LANDING_PROOF_BASE=missing")
 				if mode == "replay-no-base" {
 					command.Args = command.Args[:5]
 					command.Env = slices.DeleteFunc(command.Env, func(e string) bool { return strings.HasPrefix(e, "LANDING_PROOF_BASE=") })
@@ -518,7 +632,7 @@ func TestTestImpactLandingOnlyAndReports(t *testing.T) {
 				return
 			}
 			if strings.HasPrefix(mode, "replay") {
-				if code != 1 || strings.Contains(text, "plan:") || strings.Contains(text, "selection:") || strings.Contains(problem.String(), "TestOther") || strings.Contains(problem.String(), "TestNoise") || !strings.Contains(problem.String(), "TestTagged") || !strings.Contains(text, "replay selections ignore the comparison base from flags and environment") || !strings.Contains(text, "landing group unit/internal/a green") || !strings.Contains(text, "landing group unit/cmd/tool green") {
+				if code != 1 || strings.Contains(text, "plan:") || strings.Contains(text, "selection:") || strings.Contains(problem.String(), "TestOther") || strings.Contains(problem.String(), "TestNoise") || !strings.Contains(problem.String(), "TestSelected") || !strings.Contains(text, "replay selections ignore the comparison base from flags and environment") || !strings.Contains(text, "landing group unit/internal/a green") || !strings.Contains(text, "landing group unit/cmd/tool green") {
 					t.Fatalf("replay exit=%d out=%s problem=%s", code, text, problem.String())
 				}
 				return
@@ -612,7 +726,7 @@ func TestA(t *testing.T) { t.Parallel(); cwd, err := os.Getwd(); if err != nil {
 	}
 }
 
-func TestTestImpactUsesInstallationPrefixAndTagsOnlyReplayGitAdapter(t *testing.T) {
+func TestTestImpactUsesInstallationPrefixWithoutBatchTagGitAdapter(t *testing.T) {
 	t.Parallel()
 	root, _ := impactGitAdapterBed(t)
 	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() {}\nvar replayTagged bool\nfunc value() bool { return true }\n")
@@ -632,14 +746,14 @@ func TestTestImpactUsesInstallationPrefixAndTagsOnlyReplayGitAdapter(t *testing.
 	if code != 1 || !reflect.DeepEqual(plain.FailedChecks([]byte(out)), []plain.FailedUnit{{Unit: "cmd/metasystem", Tests: []string{"TestValue"}}}) {
 		t.Fatalf("ordinary red report: code=%d out=%s problem=%s", code, out, problem)
 	}
+	impactWrite(t, root, "cmd/metasystem/main.go", "package main\nfunc main() {}\nvar replayTagged bool\nfunc value() bool { return true }\n")
 	command := exec.Command(commandTestExecutable(t), "test", "impact", "--root", root)
 	command.Dir = root
 	command.Env = append(slices.DeleteFunc(fixtureCommandEnvironment(t), func(e string) bool {
 		return strings.HasPrefix(e, "LANDING_ONLY=") || strings.HasPrefix(e, "LANDING_PROOF_BASE=")
-	}), "LANDING_ONLY=cmd/metasystem=TestTagged")
+	}), "LANDING_ONLY=cmd/metasystem=TestValue")
 	data, err := command.CombinedOutput()
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(data), "LANDING-FAILED\tcmd/metasystem\tTestTagged\n") {
-		t.Fatalf("replay must include tagged test: error=%v output=%s", err, data)
+	if err != nil || !strings.Contains(string(data), "landing group unit/cmd/metasystem green") || !strings.HasSuffix(string(data), "LANDING-CHECKED\t0\n") {
+		t.Fatalf("replay must run without the batch tag: error=%v output=%s", err, data)
 	}
 }
