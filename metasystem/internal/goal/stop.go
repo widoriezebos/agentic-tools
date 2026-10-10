@@ -484,11 +484,16 @@ func resumeRequest(r ResumeRequest) PublishRequest {
 				}
 			}
 			machine, lineage, claimEpoch := f.Claimed.Machine, f.Claimed.Lineage, f.StopCapability.ClaimEpoch
-			if _, err := checkFenceLiftForRebudget(r.Endpoint.Root, t, f, "resume"); err != nil {
-				return nil, err
+			fence := *f.StopFence
+			// A person may resume a stopped claim to conclude or hand in its work
+			// while the machine holds another working claim.
+			if err := VerifyStopBatchComplete(r.Endpoint.Root, f.Id, *f.StopCapability, fence); err != nil {
+				return nil, fmt.Errorf("goal resume %s cannot lift fence %s: %v; finish stop %s with metasystem work stop %s",
+					f.Id, fence.StopID, err, fence.StopID, f.Id)
 			}
 			touch(f, r.VerbRequest, "resume", []string{r.GoalID})
 			f.History[len(f.History)-1].ApprovedRef = r.ApprovedRef
+			f.History[len(f.History)-1].Reason = fmt.Sprintf("cleared stop fence %s: %s", fence.StopID, fence.Reason)
 			if temporaryAuthority {
 				f.History[len(f.History)-1].recordTemporaryRelay(r.Authority.ReviewBy, r.Authority.Departure, r.Authority.TemporaryHumanWord)
 			}

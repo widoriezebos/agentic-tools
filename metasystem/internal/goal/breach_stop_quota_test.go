@@ -98,7 +98,7 @@ func TestBreachStoppedClaimLeavesMachineQuotaOpenButKeepsResumeFence(t *testing.
 	}
 }
 
-func TestResumeWaitsUntilMachinesOtherLiveClaimIsReleased(t *testing.T) {
+func TestResumeKeepsAgentClaimTreeQuota(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)
 	budget := Budget{ElapsedLimit: "1m", AttemptLimit: 2, ReservedJobMinutesLimit: 20, ActiveJobLimit: 1}
@@ -160,8 +160,7 @@ func TestResumeWaitsUntilMachinesOtherLiveClaimIsReleased(t *testing.T) {
 		GoalID: "fenced-a", Budget: budget,
 	}
 	resume.Authority = testHumanAuthority(t, endpoint.Root, resume.Now)
-	wantRefusal := "goal resume fenced-a refused: machine mac-a already holds live claim working-b; conclude, park or release working-b first, then resume fenced-a"
-	if result, err := Resume(resume); err != nil || result.Outcome != OutcomeRejected || result.Detail != wantRefusal {
+	if result, err := Resume(resume); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "the quota is one claim per machine") {
 		t.Fatalf("resume with another live claim mismatch: %+v %v", result, err)
 	}
 	projection, err = projectFetched(endpoint, resume.Now)

@@ -847,7 +847,9 @@ func runIntentResume(inv *intentInvocation) int {
 			return file.State == goal.StateParked || file.IsFencedClaim()
 		})
 	}
-	projection, _, problem := inv.projection()
+	// Resume chooses a transition from the published ledger: the accepted
+	// snapshot may predate a stop fence written by the custodian.
+	projection, _, problem := inv.projectionWithFetch(true)
 	if problem != nil {
 		return inv.render(*problem)
 	}
