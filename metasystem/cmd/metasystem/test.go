@@ -121,7 +121,26 @@ func runTestGroupsWithEnvironment(args, environment []string, stdout, stderr io.
 }
 
 func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, environment []string, units map[string]string, stdout, stderr io.Writer) int {
-	results, runErr := proofrun.RunNamedGroups(context.Background(), installation, contract, ids, environment)
+	var progress func(string, int, []proofrun.PackageExecution)
+	if units != nil {
+		progress = func(id string, planned int, completed []proofrun.PackageExecution) {
+			if planned > 0 {
+				fmt.Fprintf(stdout, "landing planned %d\n", planned)
+			}
+			for _, execution := range completed {
+				unit := execution.Package
+				if units[id] != "" {
+					unit = units[id]
+				}
+				ms := int64(0)
+				if execution.ElapsedMS != nil {
+					ms = *execution.ElapsedMS
+				}
+				fmt.Fprintf(stdout, "landing package %s %d %s %d\n", unit, execution.Shard, execution.Status, ms)
+			}
+		}
+	}
+	results, runErr := proofrun.RunNamedGroups(context.Background(), installation, contract, ids, environment, progress)
 	exit := 0
 	for _, result := range results {
 		fmt.Fprintf(stdout, "landing group %s %s %d\n", result.ID, result.Status, result.DurationMS)

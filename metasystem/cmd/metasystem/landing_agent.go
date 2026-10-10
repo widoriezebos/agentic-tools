@@ -112,6 +112,7 @@ You are this computer's landing agent, in the landing lane %s. Follow the landin
 The keeper woke you for: %s.
 metasystem landing status --json shows the lane's state and its wake reasons; stop when none is left.
 Your recorded batch identity is %s. Read status before each step; continue through a pause only when status admits this batch.
+For a question about the checkout being off main, include "The checkout is not on main." in its facts. For a question about main's commit, include "Main is at commit <full SHA>." in its facts, replacing <full SHA> with the commit. The keeper withdraws your question when that premise is gone.
 Read its recorded batch and merge only those goal/commit pairs, in their recorded order. New waiting lines belong to the next selection. A prepared batch with a person selector needs its recorded person selection before it is admitted.
 `, root, strings.Join(wake.Reasons, ", "), wake.BatchID)
 }
@@ -223,10 +224,15 @@ func (a landingAgent) questionHold(module string) (string, error) {
 	}
 	for _, q := range lane {
 		if q.Machine == machine {
+			if withdrawn, err := plain.WithdrawStaleLaneQuestion(module, q, a.proofEffects); err != nil {
+				return "", err
+			} else if withdrawn {
+				continue
+			}
 			if command := channel.LaneStopCommand(q); command != "" {
 				return "the lane waits for a person's act\nrun: " + command, nil
 			}
-			return fmt.Sprintf("the landing agent asked a person about the lane (question %s) and waits for the answer; it starts again once the question is answered or withdrawn\nrun: metasystem question show channel:%s", q.ID, q.ID), nil
+			return plain.LaneQuestionHeadline(q), nil
 		}
 	}
 	return "", nil

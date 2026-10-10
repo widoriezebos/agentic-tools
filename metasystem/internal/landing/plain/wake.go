@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,8 @@ import (
 const (
 	// WakeQueued: a hand-in is neither returned nor contained in main.
 	WakeQueued = "queued"
+	// WakeMissingHandIn names a hand-in the selection could not obtain.
+	WakeMissingHandIn = "missing-hand-in"
 	// WakeProofFinished: a proof ended after the agent's last launch and
 	// queued work remains.
 	WakeProofFinished = "proof-finished"
@@ -42,10 +45,13 @@ func WakeReasons(install, checkout string, lastLaunch, now time.Time, effects ..
 		seams = effects[0]
 	}
 	pending, err := pendingQueue(install, checkout, seams, true)
-	if err != nil {
-		return nil, err
+	waiting, waitingErr := Waiting(install)
+	missing := handInCommits(install, checkout, waiting, seams, false)
+	reasons, reasonErr := wakeReasons(install, len(pending) > 0, lastLaunch, now, seams.TimerHeld != nil && seams.TimerHeld())
+	if missing != nil {
+		reasons = append(reasons, WakeMissingHandIn)
 	}
-	return wakeReasons(install, len(pending) > 0, lastLaunch, now, seams.TimerHeld != nil && seams.TimerHeld())
+	return reasons, errors.Join(err, waitingErr, missing, reasonErr)
 }
 
 func wakeReasons(install string, queued bool, lastLaunch, now time.Time, timerHeld ...bool) ([]string, error) {

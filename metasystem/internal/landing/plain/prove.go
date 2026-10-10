@@ -142,6 +142,8 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// Machine reads the lane computer's existing nickname.
+	Machine          func(string) (string, error)
 	ClassificationOf string
 	// Person admits one direct proof; Start binds its provenance to the attempt.
 	Person *ActProvenance
@@ -409,7 +411,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			return err
 		}
 		if recorded && alive {
-			if running.Tree == tree && running.Gate == seams.Gate && running.Trunk == seams.Trunk {
+			if running.Gate == seams.Gate && running.Trunk == seams.Trunk && (running.Tree == tree || !seams.Gate && !seams.Trunk && ledgerOnlyBetween(seams.git, checkout, running.Tree, tree)) {
 				started, already = running, true
 				return nil
 			}
@@ -839,6 +841,18 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		if err := appendLine(seams.resultsPath(install), result); err != nil {
 			return err
 		}
+		if !seams.Gate && !running.Trunk && result.Result == Green {
+			commit, tree, err := head(seams.git, checkout)
+			if err == nil && tree != result.Tree && ledgerOnlyBetween(seams.git, checkout, result.Tree, tree) {
+				carried := result
+				carried.CountedFull = false
+				carried.Commit, carried.Tree, carried.Reason = commit, tree, inheritedReason(result)
+				carried.Base, carried.Scope, carried.ScopeReason = result.Tree, "scoped", carried.Reason
+				if err := appendLine(seams.resultsPath(install), carried); err != nil {
+					return err
+				}
+			}
+		}
 		if current, recorded, _, _ := ReadRunning(install, seams); recorded && current.Attempt == running.Attempt {
 			return os.Remove(runningPath(install))
 		}
@@ -865,6 +879,20 @@ func ledgerPath(path string) bool {
 		}
 	}
 	return false
+}
+
+// ledgerOnlyBetween compares the proof's tree with a candidate tree.
+func ledgerOnlyBetween(git func(string, ...string) (string, error), checkout, from, to string) bool {
+	changed, err := git(checkout, "diff", "--name-only", "--no-renames", from, to)
+	if err != nil {
+		return false
+	}
+	for _, path := range strings.Split(strings.TrimSpace(changed), "\n") {
+		if path != "" && !ledgerPath(path) {
+			return false
+		}
+	}
+	return true
 }
 
 // ledgerOnlySinceGreen names a recent green tree from which tree differs

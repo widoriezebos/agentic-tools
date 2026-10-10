@@ -322,16 +322,20 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	record, _, unreadable := lane.Read(home)
 	owners.plainProve = inv.laneBatchSeams(home, record, owners.plainProve)
 	data := landingStatus(owners, home, record, view)
+	headline := data.ProofHeadline
+	if data.Summary != "" && data.Summary != view.Summary {
+		headline = data.Summary
+	}
 	view = data.View
 	view.Batch = data.Batch
 	waiting := slices.ContainsFunc(data.Queue, func(entry plain.Entry) bool { return entry.State == plain.StateWaiting })
-	if view.Root != nil && view.Owner.State == lane.OwnerIdle && data.ProofHeadline == "" {
+	if view.Root != nil && view.Owner.State == lane.OwnerIdle && headline == "" {
 		view.Summary = view.SummaryWithWaiting(waiting)
 		data.View = view
 	}
 	summary := view.Summary
-	if data.ProofHeadline != "" {
-		summary = data.ProofHeadline
+	if headline != "" {
+		summary = headline
 	}
 	if view.Root != nil {
 		summary += "; " + landingQueueWords(data.Queue)
@@ -339,7 +343,7 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 			summary += "; " + data.Admission
 		}
 	}
-	pageView := inv.landingStatusView(view, unreadable != nil, data.RunningProof, waiting, data.ProofHeadline)
+	pageView := inv.landingStatusView(view, unreadable != nil, data.RunningProof, waiting, headline)
 	result := intentResult{Outcome: intentConfirmed, Summary: summary, Data: data,
 		view: withPlainLane(withRunningProof(pageView, data.RunningProof), data, record.Install)}
 	if view.Root != nil {
@@ -359,7 +363,9 @@ func landingStatus(owners laneVerbOwners, home string, record lane.Record, view 
 	if owners.status != nil {
 		return owners.status(home, record, view)
 	}
-	return plain.ReadStatus(home, record, view, owners.plainProve)
+	seams := owners.plainProve
+	seams.Machine = owners.machine
+	return plain.ReadStatus(home, record, view, seams)
 }
 
 // landingQueueWords counts the queue's lines that need the lane, for the

@@ -78,8 +78,15 @@ func TestWorkLandIncidentFixWakesWithoutPush(t *testing.T) {
 	l, _ := holdLaneFixture(t, register)
 	git := l.owners.landing.plainProve.Git
 	l.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
-		if args[0] == "fetch" && strings.Join(args, " ") != "fetch --quiet origin +refs/heads/main:refs/remotes/origin/main" {
-			t.Fatal("selection may fetch main, but must not fetch the fix claim")
+		if args[0] == "fetch" {
+			for _, arg := range args[1:] {
+				if arg == "refs/heads/goal/"+bedGoal {
+					t.Fatal("selection must not fetch the incident fix claim's branch")
+				}
+			}
+			if strings.Join(args, " ") != "fetch --quiet origin +refs/heads/main:refs/remotes/origin/main" {
+				t.Fatalf("unexpected branch fetch: %v", args)
+			}
 		}
 		return git(dir, args...)
 	}
