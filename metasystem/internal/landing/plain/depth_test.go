@@ -158,6 +158,9 @@ func TestFullDueBatchDepthAndClock(t *testing.T) {
 				return b.git.commit + " main sha", nil
 			}
 		case "rev-parse":
+			if slices.Contains(args, "main^{tree}") {
+				return "main-tree", nil
+			}
 			if slices.Contains(args, "refs/remotes/origin/main^{commit}") {
 				return "main", nil
 			}

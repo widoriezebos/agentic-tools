@@ -117,7 +117,9 @@ func TestLandingFullDueLedgerRefreshAdapterInheritsAndPaysClock(t *testing.T) {
 			b.owners.landing.now = func() time.Time { return b.now }
 			sha := b.seat(t, "low")
 			b.owners.landing.plainProve.GoalTier = func(string, string) (uint8, error) { return 1, nil }
-			b.owners.landing.plainProve.BatchDepth = func(string, string, plain.Running) (string, string) { return "impact", "low tier" }
+			if b.owners.landing.proveSeams(b.installation).BatchDepth == nil {
+				t.Fatal("production proof has no batch depth policy")
+			}
 			b.success(t, "landing", "run")
 			b.assemble(t, sha)
 			b.success(t, "landing", "prove", "--wait")

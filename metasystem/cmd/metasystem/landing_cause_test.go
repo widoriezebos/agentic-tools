@@ -195,7 +195,7 @@ func TestLandingProveRecordsCauseAndGoalCommits(t *testing.T) {
 		switch strings.Join(args, " ") {
 		case "rev-parse --verify HEAD^{commit}":
 			return "head", nil
-		case "rev-parse --verify HEAD^{tree}":
+		case "rev-parse --verify HEAD^{tree}", "rev-parse --verify head^{tree}":
 			return "tree", nil
 		case "show head:metasystem/metasystem.conf":
 			return "proof.full=printf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n", nil

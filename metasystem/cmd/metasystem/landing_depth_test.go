@@ -80,6 +80,7 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 			t.Parallel()
 			b := newMergeGateBed(t)
 			b.prepareBatch(t)
+			seedCurrentTrunkClock(t, b.install, laneTestNow)
 			depthGoals(t, b, row.tiers...)
 			if row.name == "above tier" {
 				impactWrite(t, b.install, "metasystem.conf", "landing.full-from-tier=2\n")
@@ -208,6 +209,7 @@ func TestLandingStatusBatchDepthInFlight(t *testing.T) {
 	t.Parallel()
 	b := newMergeGateBed(t)
 	b.prepareBatch(t)
+	seedCurrentTrunkClock(t, b.install, laneTestNow)
 	depthGoals(t, b, 3, 3)
 	b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
 	b.owners.landing.plainProve.Alive = func(plain.Running) bool { return true }

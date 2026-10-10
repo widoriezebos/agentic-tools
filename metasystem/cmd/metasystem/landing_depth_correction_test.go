@@ -132,7 +132,7 @@ func TestLandingProveBackgroundHonoursScopedAdmissionWithoutDepthDecision(t *tes
 	}
 	impactWrite(t, b.install, "metasystem.conf", "testing.contract=testing.json\n")
 	at := laneTestNow.Add(-10 * time.Minute).Format(time.RFC3339)
-	writeCauseProof(t, b.install, "results.jsonl", plain.Result{Commit: "merge-b", Tree: "merge-b-tree", Result: plain.Green, Scope: "full", Attempt: "base", At: at, FullAt: at, FullTree: "merge-b-tree", Environment: "fixture"})
+	writeCauseProof(t, b.install, "results.jsonl", plain.Result{Trunk: true, Scope: "full", Result: plain.Green, At: at}, plain.Result{Commit: "merge-b", Tree: "merge-b-tree", Result: plain.Green, Scope: "full", Attempt: "base", At: at, FullAt: at, FullTree: "merge-b-tree", Environment: "fixture"})
 	b.head = "merge-b-moved"
 	git := b.owners.landing.plainProve.Git
 	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {

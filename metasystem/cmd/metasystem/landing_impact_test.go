@@ -18,6 +18,7 @@ func TestLandingProveImpactOwnProvenanceAndPush(t *testing.T) {
 	t.Parallel()
 	b := newMergeGateBed(t)
 	b.prepareBatch(t)
+	seedCurrentTrunkClock(t, b.install, laneTestNow)
 	const plan = "plan: base main (base)\nselection: internal/a\n"
 	plans, proofs := 0, 0
 	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
@@ -43,7 +44,7 @@ func TestLandingProveImpactOwnProvenanceAndPush(t *testing.T) {
 		t.Fatalf("impact provenance: %+v; plans=%d proofs=%d", r, plans, proofs)
 	}
 	history, err := plain.Results(b.install)
-	if err != nil || len(history) != 1 {
+	if err != nil || len(history) != 2 || !history[0].Trunk || history[1].Attempt != r.Attempt {
 		t.Fatalf("first proof inherited history: %+v %v", history, err)
 	}
 	code, status := b.run(t, b.root, "status")
