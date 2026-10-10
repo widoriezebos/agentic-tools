@@ -133,8 +133,7 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 		t.Fatalf("collected=%+v %v", fix, err)
 	}
 	resolutionPatch := filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".patch")
-	resolution, err := os.ReadFile(resolutionPatch)
-	if err != nil {
+	if _, err := os.ReadFile(resolutionPatch); err != nil {
 		t.Fatal(err)
 	}
 	brief = fix.Brief
@@ -147,7 +146,7 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 	if err := os.WriteFile(resolutionPatch, handResolution, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	resolution = handResolution
+	resolution := handResolution
 	normalGit := owners.work.git
 	owners.work.git = func(dir string, args ...string) ([]byte, error) { return (launch.OSGitRunner{}).Run(dir, nil, args...) }
 	units := owners.work.units
