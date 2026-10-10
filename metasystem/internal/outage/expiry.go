@@ -26,7 +26,7 @@ func (m Mark) waitBound() (time.Time, error) {
 
 func (c *Condition) close(at time.Time, stale bool) {
 	stamp := at.UTC().Format(time.RFC3339Nano)
-	c.Intervals = append(c.Intervals, Interval{Since: c.Mark.Since, Until: stamp, Stale: stale})
+	c.Intervals = append(c.Intervals, Interval{Since: c.Mark.Since, Until: stamp, Stale: stale, RecoveryAfter: c.Mark.RecoveryAfter, ResetAt: c.Mark.ResetAt})
 	c.Mark, c.ClearedAt = Mark{}, stamp
 }
 

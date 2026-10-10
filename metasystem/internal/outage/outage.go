@@ -34,6 +34,7 @@ const evidenceClip = 200
 // Mark is the outage record: how many provider failures in a row, what
 // the last one looked like, who saw it, and when the outage began.
 type Mark struct {
+	RecoveryAfter       string `json:"recoveryAfter,omitempty"`
 	ConsecutiveFailures int    `json:"consecutiveFailures"`
 	LastClass           string `json:"lastClass"`
 	LastDetail          string `json:"lastDetail"`

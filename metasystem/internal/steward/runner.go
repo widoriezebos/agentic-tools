@@ -429,6 +429,9 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				}
 			}
 		}
+		if recoveryErr := ReconcileRecoveryRequests(top, cfg, timed); recoveryErr != nil {
+			fmt.Fprintf(os.Stderr, "seat recovery requests: %v\n", recoveryErr)
+		}
 		// Recovery runs before delivery. A failed recovery queues its incident
 		// above and can reach the operator in this same pass; a successful one
 		// leaves only silent history.
@@ -1034,6 +1037,13 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	if _, err := readOpenFence(top, "the steward runner"); err != nil {
 		return outcome, err
 	}
+	// Enrollment publication and continuation launch share arbitration.
+	// Arm always takes its own lock first.
+	arbitration, err := AcquireArbitration(top)
+	if err != nil {
+		return outcome, err
+	}
+	defer arbitration.Release()
 	identityPath := RepoIdentityPath(top)
 	prior, priorErr := VerifyIdentity(identityPath, top)
 	if errors.Is(priorErr, os.ErrNotExist) {

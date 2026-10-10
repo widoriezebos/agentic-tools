@@ -1,0 +1,27 @@
+{
+  "schemaVersion": 1,
+  "goal": "fleet-provider-and-session-recovery",
+  "unit": "integration-fixes-3",
+  "subject": {
+    "commit": "7a883f2450f1a24bf477fb1278b811b1441391a0",
+    "parent": "5dac4392e524d148e040b2321fbf3207583b9fb6",
+    "tree": "497dbd56c13389623afc495278f8823c4d74ff4a",
+    "patchDigest": "d3bdd4886706562a18e49b69c366b25fa7812a900d1107c712b09245920fdadb",
+    "unitDigest": "e105fda55c709e29bd34b82be5cf397d487406eef6b452a0ee36335e9c38966b"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-6f3ead9f9d5e4f089e150b6e",
+    "round": 1,
+    "closureSha256": "83a46428d141426b8c33b46edce517b8ebfbdb6e85e7cf6576d267b375f5130e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "497dbd56c13389623afc495278f8823c4d74ff4a",
+    "runId": "goal-read-gate-20261010t030631z-253f7759b68f025f"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "47527711cdfff21b768e278b82aae88d03346c154e400b38c3a277abbe80ea95"
+}

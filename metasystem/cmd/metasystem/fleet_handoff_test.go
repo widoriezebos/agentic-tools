@@ -17,7 +17,9 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -621,7 +623,7 @@ func testFleetAbnormalSeatRestarts(t *testing.T) {
 				launcher.state.State = "failed"
 				tick = observe(strings.Repeat("d", 40))
 			}
-			if tick.Seat != nil || tick.Decision.Action != steward.ActNotify || !strings.Contains(tick.Decision.Reason, "machine revive "+root+" (unavailable until fleet-provider-and-session-recovery R2 lands)") {
+			if tick.Seat != nil || tick.Decision.Action != steward.ActNotify || !strings.Contains(tick.Decision.Reason, "metasystem machine revive "+root) {
 				t.Fatalf("public seat tick did not stop: %+v", tick)
 			}
 			if restarts > 2 {
@@ -678,7 +680,10 @@ func testFleetCompletedSeatProgress(t *testing.T) {
 func testFleetUnreservedStartFailure(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 10, 8, 8, 0, 0, 0, time.UTC)
-	root := fleetSeatFixture(t, "auto", now)
+	root, err := filepath.EvalSymlinks(fleetSeatFixture(t, "auto", now))
+	if err != nil {
+		t.Fatal(err)
+	}
 	launched := 0
 	launcher := &fleetRestartLauncher{}
 	launcher.started = func(steward.SeatLaunchSpec) error {
@@ -724,7 +729,71 @@ func testFleetUnreservedStartFailure(t *testing.T) {
 		t.Fatalf("unknown start launched %d automatic restarts; expected none", launched-1)
 	}
 	var output, problem bytes.Buffer
-	if code := runStewardStatus([]string{"--repo", root}, &output, &problem); code != 0 || !strings.Contains(output.String(), "unknown launch outcome") || !strings.Contains(output.String(), "machine revive "+root+" (unavailable until fleet-provider-and-session-recovery R2 lands)") {
+	if code := runStewardStatus([]string{"--repo", root}, &output, &problem); code != 0 || !strings.Contains(output.String(), "unknown launch outcome") || !strings.Contains(output.String(), "metasystem machine revive "+root) {
 		t.Fatalf("unknown outcome hold missing from public status: %d %s %s", code, &output, &problem)
+	}
+	// The person's remedy uses the real launch owner with no launch record
+	// retained by the failed supervisor, and continues the same held goal.
+	bed := newWorkBedWith(t, func(f *goal.GoalFile) { workApprovedBox(f); f.Claimed.Lineage = steward.SeatLineage })
+	file := bed.goalFile(bed.id)
+	file.Id, file.Claimed.Machine = "brief-goal", "m1"
+	file.StopCapability.Machine = "m1"
+	for i := range file.History {
+		file.History[i].Targets = []string{file.Id}
+	}
+	if err := os.WriteFile(filepath.Join(root, "plans", "goals", "brief-goal.md"), goal.RenderFile(file), 0600); err != nil {
+		t.Fatal(err)
+	}
+	record.Held, record.ApprovalOpid = true, file.Approved.Opid
+	data, _ := json.Marshal(record)
+	if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "steward", "seats", record.LaunchID+".json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude,codex\nlaunch.seat.runtime=claude\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	enrollReviveRunner(t, root, now)
+	owners := bed.owners()
+	owners.resolver = stateroot.NewResolver(fakeTop(root), noExecutable)
+	owners.commandNow = func(string) (time.Time, error) { return now, nil }
+	if err := os.MkdirAll(filepath.Join(root, ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	owners.prove = enrolledPersonProver(t, root, now)
+	owners.dependencies.machine = func(string) (string, error) { return "m1", nil }
+	owners.processes.launches = func() *launch.Manager { return bed.manager }
+	owners.processes.process.repositoryTop = fakeTop(root)
+	home, registryPath := bed.manager.CapacityHome, filepath.Join(root, "host-registry")
+	owners.landing.home = func() (string, error) { return home, nil }
+	owners.machines.registryPath = func() (string, error) { return registryPath, nil }
+	owners.machines.nickname = func(path string) (string, bool) { return "m1", path == root }
+	owners.machines.seatCensus = fleetHandoffCensus{}
+	payload, _ := json.Marshal(map[string]any{"schemaVersion": 1, "event": registry.EventRelaunched, "checkoutPath": root, "ownerTag": "revive", "at": now.Format(time.RFC3339), "generation": 1, "watcherTag": "w", "reaperTag": "r", "retiredThrough": 0})
+	if err := registry.AppendFrame(registryPath, payload); err != nil {
+		t.Fatal(err)
+	}
+	bed.manager.Adapters["claude-headless"] = launch.ClaudeHeadless{Binary: "claude"}
+	bed.starter.hold = "seat"
+	productionLauncher := newStewardSeatLauncher()
+	productionLauncher.manager, productionLauncher.repositoryTop, productionLauncher.laneRoot = owners.processes.launches, fakeTop(root), laneRootAt(home)
+	owners.machines.seatLauncher = &productionLauncher
+	command, rest, ok := resolveIntentArgv(strings.Fields("machine revive " + root))
+	if !ok {
+		t.Fatal("printed remedy did not resolve")
+	}
+	output.Reset()
+	problem.Reset()
+	if code := runIntentIn(command, append(rest, "--json"), &output, &problem, root, owners); code != 0 {
+		t.Fatalf("printed person remedy failed: %d %s %s", code, &output, &problem)
+	}
+	var result struct {
+		Data steward.SeatRecord `json:"data"`
+	}
+	if err := json.Unmarshal(output.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := bed.manager.Status(result.Data.LaunchID)
+	if err != nil || actual.State != launch.Running || result.Data.RecoveryOf == nil || result.Data.RecoveryOf.LaunchID != record.LaunchID || len(bed.starter.launched()) != 1 {
+		t.Fatalf("printed remedy did not start exactly one replacement: %+v %+v %v", result.Data, actual, err)
 	}
 }

@@ -213,7 +213,7 @@ esac
 				second = third
 			}
 			expected := map[string]string{"hour-cap": "two automatic abnormal restarts", "repeated-class": "same death class", "no-progress": "no retained work progress", "unknown-dispatch": "unknown launch outcome"}[scenario]
-			if second.Launched || !second.Held || !second.Escalate || !strings.Contains(second.Reason, expected) || !strings.Contains(second.Reason, "machine revive "+root+" (unavailable until fleet-provider-and-session-recovery R2 lands)") {
+			if second.Launched || !second.Held || !second.Escalate || !strings.Contains(second.Reason, expected) || !strings.Contains(second.Reason, "metasystem machine revive "+root) {
 				t.Fatalf("automatic restart did not stop with its remedy: %+v", second)
 			}
 			var output, problem bytes.Buffer

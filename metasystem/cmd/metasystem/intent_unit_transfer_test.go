@@ -116,9 +116,23 @@ type transferScenarioFixture struct {
 	observer                          *transferPublicationObserver
 }
 
-func newTransferScenarioFixture(t *testing.T, required bool) transferScenarioFixture {
+func newTransferScenarioFixture(t *testing.T, required bool, goalID ...string) transferScenarioFixture {
 	t.Helper()
 	b := newStopWorkBed(t)
+	if len(goalID) > 0 {
+		file := b.goalFile(b.id)
+		oldPath := "plans/goals/" + b.id + ".md"
+		delete(b.repo.commit(b.repo.accepted).files, oldPath)
+		if err := os.Remove(filepath.Join(b.root(), filepath.FromSlash(oldPath))); err != nil {
+			t.Fatal(err)
+		}
+		file.Id, b.id = goalID[0], goalID[0]
+		for i := range file.History {
+			file.History[i].Targets = []string{b.id}
+		}
+		b.addGoal(file)
+		b.initialBinding.GoalID, b.initialBinding.File = b.id, file
+	}
 	b.lineage = b.goalFile(b.id).Claimed.Lineage
 	b.manager.Supervisor = &stopReadStarter{bed: b, reads: [][]readsubject.Finding{{stopFinding("regression", "source.go"), stopFinding("weakened-test", "source_test.go"), stopFinding("incomplete-item", "requirement.go")}, {stopFinding("regression", "newfile.go"), stopFinding("missing-reader", "reader.go")}}}
 	declared := "stopped"

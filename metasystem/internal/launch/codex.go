@@ -253,8 +253,9 @@ func measureRollout(path string, measurement *Measurement) error {
 	scanner.Buffer(make([]byte, 64*1024), 128*1024*1024)
 	for scanner.Scan() {
 		var event struct {
-			Type    string `json:"type"`
-			Payload struct {
+			Type      string `json:"type"`
+			Timestamp string `json:"timestamp"`
+			Payload   struct {
 				Type string `json:"type"`
 				Info struct {
 					Last struct {
@@ -279,6 +280,19 @@ func measureRollout(path string, measurement *Measurement) error {
 			measurement.ToolCalls++
 		}
 		if event.Type == "event_msg" && event.Payload.Type == "token_count" {
+			if !measurement.observedAt.IsZero() {
+				total := event.Payload.Info.Total
+				call := Measurement{Calls: 1, InputTokens: total.InputTokens - measurement.InputTokens, CacheReadTokens: total.CachedInputTokens - measurement.CacheReadTokens, CacheCreationTokens: total.CacheWriteInputTokens - measurement.CacheCreationTokens, OutputTokens: total.OutputTokens - measurement.OutputTokens, PeakContext: event.Payload.Info.Last.InputTokens}
+				if call.InputTokens < 0 || call.CacheReadTokens < 0 || call.CacheCreationTokens < 0 || call.OutputTokens < 0 {
+					return fmt.Errorf("session cumulative token categories decreased")
+				}
+				if call.TotalTokens() == 0 {
+					continue
+				}
+				if !measurement.observeCall(call, event.Timestamp) {
+					continue
+				}
+			}
 			measurement.Calls++
 			measurement.InputTokens = event.Payload.Info.Total.InputTokens
 			measurement.CacheReadTokens = event.Payload.Info.Total.CachedInputTokens
@@ -294,6 +308,23 @@ func measureRollout(path string, measurement *Measurement) error {
 		}
 	}
 	return scanner.Err()
+}
+
+func (adapter CodexExec) measureTranscript(session string, measurement *Measurement, files func(string) ([]string, error)) error {
+	all, err := files(adapter.SessionsRoot)
+	var paths []string
+	for _, path := range all {
+		if strings.HasPrefix(filepath.Base(path), "rollout-") && strings.HasSuffix(path, "-"+session+".jsonl") {
+			paths = append(paths, path)
+		}
+	}
+	if err != nil {
+		return err
+	}
+	if len(paths) != 1 {
+		return fmt.Errorf("rollout for session %s: found %d", session, len(paths))
+	}
+	return measureRollout(paths[0], measurement)
 }
 func copyCritique(record Record, stateDir string, measurement *Measurement) (Output, error) {
 	source := filepath.Join(record.WorkingDirectory, "metasystem", "artifacts", "reports", record.Tag+"-critique-r1.md")

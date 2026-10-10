@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostcapacity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/knownissues"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
@@ -1386,6 +1387,10 @@ func uiAsks(roots lifecycle.Roots) func() ([]channel.Question, error) {
 // (fleet-panel-ux step 2, 2a.3); a build with no board reader stays one.
 func withProofLogs(source *httpd.BoardSource) *httpd.BoardSource {
 	if source != nil {
+		source.Capacity = func(now time.Time) hostcapacity.Snapshot {
+			manager := newLaunchManager()
+			return hostcapacity.Read(source.Home, manager, now, hostcapacity.Sources{Usage: manager.CapacityUsage})
+		}
 		source.ProofLog = uiProofLogs(batchowner.LandingLaneHome)
 	}
 	return source

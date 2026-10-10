@@ -66,6 +66,19 @@ func TestWorkDropStatusContinuesPendingPublication(t *testing.T) {
 	if code != 0 || !strings.Contains(status.Summary, "dropped") {
 		t.Fatalf("older build bookkeeping hid the published drop: %d %+v", code, status)
 	}
+	// A different fixture can finish a goal on the shared board with a later clock.
+	// Its release must not replace this drop's card.
+	other := newStopWorkBed(t)
+	endpoint, err := other.dependencies().endpoint(other.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	claim := other.goalFile(other.id).Claimed
+	if result, err := goal.Release(goal.VerbRequest{Endpoint: endpoint,
+		Actor: goal.Actor{Machine: claim.Machine, Lineage: claim.Lineage},
+		Now:   f.bed.manager.Now().Add(24 * time.Hour), Ulid: "01J5X00000000000000000TT03"}, other.id); err != nil || result.Outcome != goal.OutcomeConfirmed {
+		t.Fatalf("independent goal release: %+v %v", result, err)
+	}
 	home, err := board.Home()
 	if err != nil {
 		t.Fatal(err)

@@ -42,8 +42,9 @@ type Answer struct {
 	Phase        string     `json:"phase"`
 }
 type Question struct {
-	ID   string `json:"id"`
-	Goal string `json:"goal"`
+	Recovery *RecoverySubject `json:"recovery,omitempty"`
+	ID       string           `json:"id"`
+	Goal     string           `json:"goal"`
 	// About names what a question without a goal is about: lane or machine.
 	About   string `json:"about,omitempty"`
 	Kind    string `json:"kind"`
@@ -70,6 +71,7 @@ type Question struct {
 }
 
 type AskRequest struct {
+	Recovery                                      *RecoverySubject
 	ProcessAct                                    string
 	Context                                       context.Context
 	RepoRoot, Goal, About, Kind, Machine, Lineage string
@@ -89,6 +91,11 @@ const (
 	questionMessageRuneLimit = 1600
 	questionFactLimit        = 4
 )
+
+// RecoverySubject binds a request to the host registration and the exact failed seat launch.
+type RecoverySubject struct {
+	Host, Seat, Launch, Provider, Episode, Due string
+}
 
 func channelRoot(repo string) string { return filepath.Join(repo, "artifacts", "agents", "channel") }
 func questionPath(repo, id string) string {
@@ -285,6 +292,9 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 		return Question{}, false, err
 	}
 	for _, q := range existing {
+		if r.Recovery != nil && q.Recovery != nil && *r.Recovery == *q.Recovery {
+			return q, true, nil
+		}
 		if r.UnitStop != nil && q.UnitStop != nil && q.Goal == r.Goal && q.UnitStop.sameKey(*r.UnitStop) {
 			return q, true, nil
 		}
@@ -296,7 +306,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
+	q := Question{Recovery: r.Recovery, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}
@@ -403,6 +413,9 @@ func ReplyInstructionsAt(root string, q Question) string {
 }
 
 func replyInstructions(q Question, codeOff bool) string {
+	if q.Recovery != nil {
+		return "Run " + q.Wants + "; only a matching successful seat recovery closes this question. A text answer leaves it open."
+	}
 	if q.ProcessAct != "" {
 		return "Run " + q.Wants + "; applying this exact process act closes the question."
 	}
@@ -613,8 +626,11 @@ func Close(repo, id, because string, p Provider, d DestinationConfig, successful
 	if q.UnitStop != nil && len(successfulAct) > 0 {
 		q.UnitStop.ClosedBy = successfulAct[0]
 	}
-	if LaneStopCommand(q) != "" {
+	if LaneStopCommand(q) != "" || q.Recovery != nil {
 		q.ClosedBecause = because
+		if q.Recovery != nil {
+			q.Facts = append(q.Facts, because)
+		}
 	}
 	if q.Answer != nil {
 		q.Answer.Phase = "closed"

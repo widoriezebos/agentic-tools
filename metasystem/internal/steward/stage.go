@@ -127,6 +127,7 @@ anything; yield if a live worker shows fresh progress.
 	return Intent{
 		Nonce: nonce, Goal: goal, JobId: jobId, Reason: reason,
 		RepoIdentity: id.RepoIdentity, InstallGen: id.Generation,
+		HumanWitnessedGeneration: id.HumanWitnessedGeneration, HumanWitnessedAt: id.HumanWitnessedAt,
 		Role: continuationRole, Permissions: continuationPermissions,
 		Runtime: runtime, Model: model,
 		RoleDigest: roleDigest, BriefDigest: briefDigest, PermsDigest: permsDigest,
@@ -182,6 +183,7 @@ the authority wherever the state snapshot disagrees.
 	return Intent{
 		Nonce: nonce, Goal: goalID, JobId: jobId, Reason: seatHandoffReason,
 		RepoIdentity: id.RepoIdentity, InstallGen: id.Generation,
+		HumanWitnessedGeneration: id.HumanWitnessedGeneration, HumanWitnessedAt: id.HumanWitnessedAt,
 		Role: continuationRole, Permissions: continuationPermissions,
 		Runtime: runtime, Model: model,
 		RoleDigest: roleDigest, BriefDigest: briefDigest, PermsDigest: permsDigest,

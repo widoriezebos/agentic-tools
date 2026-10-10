@@ -279,6 +279,15 @@ func TestDiskDefaultsAreInTheOneCompiledTable(t *testing.T) {
 // before the defaults were compiled in, when Keys listed nothing for it.
 func TestNoConfigurationFileResolvesTheCompiledDefaults(t *testing.T) {
 	t.Parallel()
+	if value, _, err := Get(GetParams{Key: "provider.recovery-alert-after", LookupEnv: noEnv}); err != nil || value != "6m" {
+		t.Fatalf("provider recovery default = %q, %v", value, err)
+	}
+	for _, value := range []string{"0m", "-1m", "soon"} {
+		problems := validateRepo(t, validConf+"provider.recovery-alert-after="+value+"\n")
+		if !hasProblem(problems, "provider.recovery-alert-after must be a positive duration") {
+			t.Fatalf("invalid recovery interval %q accepted: %v", value, problems)
+		}
+	}
 	env := mapEnv(map[string]string{EnvName("watch.stale-min"): "7"})
 	for _, key := range Keys("", "", nil) {
 		if key == EvidenceRootKey {

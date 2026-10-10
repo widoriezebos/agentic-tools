@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -98,7 +97,7 @@ func (adapter ClaudeHeadless) Measure(record Record, stateDir string) (Measureme
 	// session is measured (K10).
 	usageErr := fmt.Errorf("claude session of launch %s is not known, so its transcript can't be read", record.ID)
 	if sessionID != "" {
-		usageErr = adapter.measureTranscript(sessionID, &measurement)
+		usageErr = adapter.measureTranscript(sessionID, &measurement, transcriptFiles)
 		measurement.UsageRead = usageErr == nil
 	}
 	switch {
@@ -123,7 +122,7 @@ func (adapter ClaudeHeadless) TranscriptUsage(record Record) (Measurement, error
 		return Measurement{}, fmt.Errorf("launch %s recorded no claude session, so its transcript can't be found", record.ID)
 	}
 	var measurement Measurement
-	if err := adapter.measureTranscript(sessionID, &measurement); err != nil {
+	if err := adapter.measureTranscript(sessionID, &measurement, transcriptFiles); err != nil {
 		return Measurement{}, err
 	}
 	measurement.UsageRead = true
@@ -198,17 +197,14 @@ func textMeasure(text string) (int, int, string) {
 	return lines, len(strings.Fields(text)), strings.Join(parts, " | ")
 }
 
-func (adapter ClaudeHeadless) measureTranscript(sessionID string, measurement *Measurement) error {
+func (adapter ClaudeHeadless) measureTranscript(sessionID string, measurement *Measurement, files func(string) ([]string, error)) error {
+	all, err := files(adapter.ProjectsRoot)
 	var paths []string
-	err := filepath.WalkDir(adapter.ProjectsRoot, func(path string, entry fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		if !entry.IsDir() && entry.Name() == sessionID+".jsonl" {
+	for _, path := range all {
+		if filepath.Base(path) == sessionID+".jsonl" {
 			paths = append(paths, path)
 		}
-		return nil
-	})
+	}
 	if err != nil {
 		return err
 	}
@@ -235,6 +231,7 @@ func measureClaudeTranscript(path string, measurement *Measurement, seen map[str
 	for scanner.Scan() {
 		var row struct {
 			Type, Subtype string
+			Timestamp     string          `json:"timestamp"`
 			Message       json.RawMessage `json:"message"`
 		}
 		if err := json.Unmarshal(scanner.Bytes(), &row); err != nil {
@@ -274,15 +271,12 @@ func measureClaudeTranscript(path string, measurement *Measurement, seen map[str
 			return err
 		}
 		seen[message.ID] = true
-		measurement.Calls++
-		measurement.InputTokens += usage.Input
-		measurement.CacheReadTokens += usage.CacheRead
-		measurement.CacheCreationTokens += usage.CacheCreation
-		measurement.OutputTokens += usage.Output
-		context := usage.Input + usage.CacheRead + usage.CacheCreation
-		if context > measurement.PeakContext {
-			measurement.PeakContext = context
+		call := Measurement{Calls: 1, InputTokens: usage.Input, CacheReadTokens: usage.CacheRead, CacheCreationTokens: usage.CacheCreation, OutputTokens: usage.Output, PeakContext: usage.Input + usage.CacheRead + usage.CacheCreation}
+		if !measurement.observeCall(call, row.Timestamp) {
+			continue
 		}
+		addCall(measurement, call)
+		context := usage.Input + usage.CacheRead + usage.CacheCreation
 		if context > 200000 {
 			measurement.CallsAbove200++
 		}

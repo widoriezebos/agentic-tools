@@ -15,6 +15,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -22,12 +23,14 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostcapacity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -59,8 +62,76 @@ func runIntentMachineClearProvider(inv *intentInvocation) int {
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "provider " + outage.Provider(inv.input.args[0]) + ": the advisory hold is clear; this does not claim provider success"})
 }
 
+func runIntentMachineRevive(inv *intentInvocation) int {
+	if len(inv.input.args) != 1 {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "name the existing seat to revive", next: inv.publicArgv("machine", "revive", "SEAT")})
+	}
+	if problem := inv.selectLayoutRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	reading := inv.discoverHostMachines(map[string]bool{inv.input.args[0]: true})
+	var target *hostMachine
+	for _, machine := range reading.Machines {
+		if machine.Name == inv.input.args[0] || machine.Checkout == inv.input.args[0] {
+			target = machine
+		}
+	}
+	if target == nil || reading.RegistryProblem != "" {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the registered seat cannot be resolved: " + inv.input.args[0], Details: []string{reading.RegistryProblem}, next: inv.publicArgv("machine", "list")})
+	}
+	child := inv.checkoutInvocation(target.Checkout)
+	if problem := child.selectLayoutRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	var person humanauthority.Proof
+	if problem := child.directPersonProof("machine revive", &person); problem != nil {
+		return inv.render(*problem)
+	}
+	root, now := child.layout.InstallationRoot.Path(), person.CheckedAt
+	closed, _, err := stopfence.Closed(root)
+	if closed {
+		return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this seat was intentionally stopped; start MetaSystem before reviving it", next: inv.publicArgv("system", "start", "--repo", target.Checkout)})
+	}
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the process-creation fence cannot be read: " + err.Error(), next: inv.publicArgv("system", "status", "--repo", target.Checkout)})
+	}
+	launcher := newStewardSeatLauncher()
+	if inv.owners.processes.launches != nil {
+		launcher.manager = inv.owners.processes.launches
+	}
+	if inv.owners.processes.process.repositoryTop != nil {
+		launcher.repositoryTop = inv.owners.processes.process.repositoryTop
+	}
+	launcher.laneRoot = laneRootAt(reading.laneHome)
+	home, err := inv.landing().home()
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), next: inv.publicArgv("landing", "status")})
+	}
+	census := inv.machineSeams().seatCensus
+	if census == nil {
+		census = steward.RuntimeWorkerCensus{MetasystemRoot: child.layout.InstallationRoot.Path()}
+	}
+	if supplied := inv.machineSeams().seatLauncher; supplied != nil {
+		launcher = *supplied
+	}
+	if _, err := steward.RepairEnrolledRunner(root); err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the enrolled runner could not be repaired: " + err.Error(), next: inv.publicArgv("system", "start", "--repo", target.Checkout)})
+	}
+	record, err := steward.ReviveSeat(root, steward.TickConfig{Now: now, Seat: launcher, ProviderHome: home}, census, inv.input.text("after"), person, reading.Registry)
+	if err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), Data: record, next: inv.publicArgv("system", "status", "--repo", target.Checkout)})
+	}
+	owner, _, _ := lane.Read(home)
+	if err := steward.ReconcileRecoveryRequests(owner.Install, steward.TickConfig{Now: now, Seat: launcher, ProviderHome: home, RecoveryRegistry: reading.Registry}, census); err != nil {
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: "seat " + target.Name + ": session " + record.LaunchID + " started once despite holds; automatic policy and restart history stay unchanged", Details: []string{"Recovery questions remain pending: " + err.Error()}, Data: record, next: inv.typedArgv(), nextReason: "retry reconciliation of this same recovery"})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "seat " + target.Name + ": session " + record.LaunchID + " started once despite holds; automatic policy and restart history stay unchanged", Details: []string{"This one act bypasses advisory holds."}, Data: record})
+}
+
 // machineOwners are the machine verbs' seams; the zero value is production.
 type machineOwners struct {
+	seatCensus      steward.WorkerCensus
+	seatLauncher    *stewardSeatLauncher
 	capacitySources hostcapacity.Sources
 	// registryPath is the host registry of armed checkouts.
 	registryPath func() (string, error)
@@ -258,7 +329,7 @@ func (inv *intentInvocation) discoverHostMachines(fleet map[string]bool) hostRea
 			machine.Name = filepath.Base(machine.Checkout)
 		}
 		armed := slices.Contains(machine.Sources, "registry: armed")
-		if machine.Lane || (machine.Nickname && (armed || fleet[machine.Name])) {
+		if machine.Lane || (machine.Nickname && (armed || fleet[machine.Name] || fleet[machine.Checkout])) {
 			machines = append(machines, machine)
 			continue
 		}
@@ -284,6 +355,7 @@ func (inv *intentInvocation) readHostMachines(fleet map[string]bool) hostReading
 	reading := inv.discoverHostMachines(fleet)
 	home, homeErr := inv.landing().home()
 	sources := inv.machineSeams().capacitySources
+	sources.RegistryPath = reading.Registry
 	if homeErr != nil {
 		sources.Registration = func(string) (lane.Record, bool, error) { return lane.Record{}, false, homeErr }
 	}
@@ -291,6 +363,7 @@ func (inv *intentInvocation) readHostMachines(fleet map[string]bool) hostReading
 	if inv.owners.processes.launches != nil {
 		manager = inv.owners.processes.launches()
 	}
+	sources.Usage = manager.CapacityUsage
 	reading.Capacity = hostcapacity.Read(home, manager, inv.landing().now(), sources)
 	notOurs := map[int64]bool{}
 	for _, machine := range reading.Machines {
@@ -531,7 +604,7 @@ func machineListSummary(reading hostReading, others int) string {
 // machineListDetail is --verbose: each machine of this computer, the
 // machines on other computers, and what is not ours.
 func machineListDetail(reading hostReading, others []otherComputerMachine, env textui.Env) []string {
-	lines := append([]string{"host capacity:"}, hostCapacityLines(reading.Capacity, env)...)
+	lines := append([]string{"host capacity:"}, hostCapacityLines(reading.Capacity, env, true)...)
 	lines = append(lines, "on this computer:")
 	for _, machine := range reading.Machines {
 		header := fmt.Sprintf("%s  %s  %s", machine.Name, machine.State, machine.Checkout)
@@ -679,7 +752,7 @@ func (inv *intentInvocation) machineListView(report seat.Report, reading hostRea
 		page.Headline(textui.Count(count, "machine on this computer", "machines on this computer"), states,
 			textui.Count(jobs, "job running", "jobs running"), elsewhere)
 		capacity := page.Section("Host capacity", "")
-		for _, line := range hostCapacityLines(reading.Capacity, env) {
+		for _, line := range hostCapacityLines(reading.Capacity, env, inv.input.switched("verbose")) {
 			capacity.Text(line)
 		}
 
@@ -1173,7 +1246,7 @@ func (inv *intentInvocation) machineStopTargetArgs() []string {
 }
 
 // hostCapacityLines renders the observation with local times and readable paths.
-func hostCapacityLines(s hostcapacity.Snapshot, env textui.Env) []string {
+func hostCapacityLines(s hostcapacity.Snapshot, env textui.Env, verbose bool) []string {
 	at, _ := time.Parse(time.RFC3339Nano, s.At)
 	lines := []string{"observed " + env.Time(at)}
 	if s.Load.Available {
@@ -1198,5 +1271,41 @@ func hostCapacityLines(s hostcapacity.Snapshot, env textui.Env) []string {
 	for _, mark := range s.Providers.Marks {
 		lines = append(lines, fmt.Sprintf("provider %s: %s; runtime %s; model %s; reset %s", mark.Provider, mark.LastClass, mark.Runtime, mark.Model, lane.LocalText(mark.ResetAt)))
 	}
+	for _, recovery := range s.Providers.Recovery {
+		due := recovery.Due
+		if _, err := time.Parse(time.RFC3339Nano, due); err == nil {
+			due = lane.LocalText(due)
+		}
+		lines = append(lines, fmt.Sprintf("provider %s recovery: interval %s; due %s; episode %s", recovery.Provider, recovery.Interval, due, lane.LocalText(recovery.Episode)))
+	}
+	lines = append(lines, "usage: session totals; trailing hour ["+lane.LocalText(s.Usage.From)+", "+lane.LocalText(s.Usage.Until)+"); account window, limit and percentage unknown")
+	groups := map[string][2]int{}
+	for _, session := range s.Usage.Sessions {
+		key := env.Path(session.WorkingDirectory) + " / " + session.Provider
+		n := groups[key]
+		n[0]++
+		if len(session.Problems) > 0 {
+			n[1]++
+		}
+		groups[key] = n
+	}
+	for _, key := range slices.Sorted(maps.Keys(groups)) {
+		lines = append(lines, fmt.Sprintf("%s: %d sessions; session totals and trailing hour; %d with incomplete coverage", key, groups[key][0], groups[key][1]))
+	}
+	if verbose {
+		for _, session := range s.Usage.Sessions {
+			lines = append(lines, fmt.Sprintf("%s session %s; checkout %s; provisional %t", session.Provider, session.Session, env.Path(session.WorkingDirectory), session.Provisional))
+			lines = append(lines, fmt.Sprintf("session totals: %s; trailing hour: %s", hostUsageTokens(session.Totals), hostUsageTokens(session.TrailingHour)))
+			lines = append(lines, session.Problems...)
+		}
+	}
+	lines = append(lines, s.Usage.Problems...)
 	return append(lines, s.Errors...)
+}
+
+func hostUsageTokens(v *hostcapacity.Tokens) string {
+	if v == nil {
+		return "unknown"
+	}
+	return fmt.Sprintf("%d calls; input %d; cache read %d; cache creation %d; output %d; peak context %d", v.Calls, v.Input, v.CacheRead, v.CacheCreation, v.Output, v.PeakContext)
 }

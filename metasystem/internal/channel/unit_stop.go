@@ -31,6 +31,9 @@ func (q UnitStopQuestion) sameKey(other UnitStopQuestion) bool {
 
 // ActCommand returns the executable act a stop asks for.
 func ActCommand(q Question) string {
+	if q.Recovery != nil {
+		return q.Wants
+	}
 	if q.UnitStop != nil {
 		return q.UnitStop.Needs
 	}

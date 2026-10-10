@@ -177,7 +177,7 @@ func disposeStatusReplyWithEndpoint(ctx context.Context, c PollConfig, status St
 }
 
 func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, resolveEndpoint pollEndpointResolver) error {
-	if q.ProcessAct != "" {
+	if q.ProcessAct != "" || q.Recovery != nil {
 		return nil
 	}
 	a := q.Answer

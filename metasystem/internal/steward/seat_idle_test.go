@@ -121,12 +121,12 @@ func TestSeatBusyUnreadableRecordIsCounted(t *testing.T) {
 		t.Fatal(err)
 	}
 	busy, reason, skipped := SeatBusyAt(bed.root, units, work, options)
-	if busy || skipped != 1 || reason != "unreadable records: 1" {
+	if !busy || skipped != 1 || !strings.Contains(reason, "custody is unknown") {
 		t.Fatalf("bad record was not skipped: %v %q %d", busy, reason, skipped)
 	}
 	deps := seatBusyDependencies(bed, units, work, options)
 	answer, reason, _, err := convertedOpenWorkWithDependencies(bed.root, deps)
-	if err != nil || answer != WorkClaimable || !strings.Contains(reason, "unreadable records: 1") {
+	if err != nil || answer != WorkInFlight || !strings.Contains(reason, "custody is unknown") {
 		t.Fatalf("bad record degraded the tick: %s %q %v", answer, reason, err)
 	}
 }
@@ -146,7 +146,7 @@ func TestSeatBusyCriticRequiresLiveProcess(t *testing.T) {
 	}
 }
 
-func TestSeatBusyRunExpiresAtGoalBudget(t *testing.T) {
+func TestSeatBusyRunRemainsBusyPastGoalBudget(t *testing.T) {
 	t.Parallel()
 	bed, units, work, options := seatBusyFixture(t)
 	file, ok := work.OwnedClaim("held")
@@ -156,8 +156,8 @@ func TestSeatBusyRunExpiresAtGoalBudget(t *testing.T) {
 	limit, _ := goal.ParseWorkingDuration(file.Budget.ElapsedLimit)
 	seatBusyRun(t, units, bed.now.Add(-limit+time.Minute), 41)
 	busy, reason, skipped := SeatBusyAt(bed.root, units, work, options)
-	if busy || skipped != 0 {
-		t.Fatalf("expired run is busy: %v %q %d", busy, reason, skipped)
+	if !busy || skipped != 0 {
+		t.Fatalf("live run past its budget is idle: %v %q %d", busy, reason, skipped)
 	}
 }
 

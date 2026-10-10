@@ -56,6 +56,7 @@ func init() {
 	registerIdempotency("system setup", idemStateful, "the checkout's hooks and commit fence already run the engine: success, no settings or hook written", witnessSystemSetupRepeat)
 	registerIdempotency("system enroll", idemStateful, "the same person at the same terminal is already enrolled: success, no enrollment generation, no fleet publication", witnessSystemEnrollRepeat)
 	registerIdempotency("machine stop", idemStateful, "every machine already stopped with nothing of MetaSystem's running: success, no fence generation, no launch touched", witnessMachineStopRepeat)
+	registerIdempotency("machine revive", idemStateful, "one failed launch binds one recorded successor; a repeat reconciles its actual outcome without another launch", func(t *testing.T) { t.Run("public act", TestMachineRevivePublicAct) })
 	registerIdempotency("machine start", idemStateful, "a machine already launched and supervised from here: success, no launch record", witnessMachineStartRepeat)
 	registerIdempotency("ui start", idemStateful, "the interface already runs at the address asked for: success, nothing launched", witnessUIStartRepeat)
 	registerIdempotency("ui stop", idemStateful, "no interface runs on this seat, nor alone on another machine of this computer: success, nothing signalled", witnessUIStopRepeat)

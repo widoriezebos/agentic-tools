@@ -39,6 +39,10 @@ type Intent struct {
 	Model        string `json:"model"`
 	JobId        string `json:"jobId"`
 	Reason       string `json:"reason,omitempty"`
+
+	// The human witness scopes continuation authority across verified engine rebuilds.
+	HumanWitnessedGeneration int    `json:"humanWitnessedGeneration,omitempty"`
+	HumanWitnessedAt         string `json:"humanWitnessedAt,omitempty"`
 	// Handoff binds a seat handoff to its immutable state and predecessor.
 	Handoff *HandoffBinding `json:"handoff,omitempty"`
 	// ClaimNeeded distinguishes an unclaimed target from the seat's existing

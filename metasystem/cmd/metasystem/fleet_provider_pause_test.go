@@ -337,6 +337,9 @@ func TestFleetProviderPausePublicStatus(t *testing.T) {
 				if len(c.Intervals) != 1 || c.Intervals[0].FirstSuccessAt != successAt.Format(time.RFC3339Nano) || c.Intervals[0].Stale != test.lateRecovery {
 					t.Fatalf("genuine recovery did not retain the first answer and closing cause: %+v", c)
 				}
+				if c.Intervals[0].RecoveryAfter != "6m" || c.Intervals[0].ResetAt != start.Add(8*time.Minute).Format(time.RFC3339Nano) {
+					t.Fatalf("recovery lost the episode's bound interval or reported reset: %+v", c)
+				}
 			}
 			if test.concurrentProvider {
 				concurrent := record

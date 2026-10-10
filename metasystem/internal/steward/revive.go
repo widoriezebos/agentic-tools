@@ -98,7 +98,7 @@ func prepareIntentUnderLock(repoRoot, receiptFile string, it Intent) error {
 // merely to announce work that the machinery can do itself.
 func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, admit AdmitSeam, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
 	return completeRevivalWithDependencies(repoRoot, cfg, census, nonce, launch, admit, openWorkDependencies{
-		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork, HandoffProber: identity.KernelProber{},
+		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork, HandoffProber: identity.KernelProber{}, Busy: seatBusyReader(cfg.WorkStateRoot),
 	}, claimOption...)
 }
 
@@ -309,6 +309,18 @@ func claimSeatIdleGoal(repoRoot string, intent Intent) error {
 
 func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, ev Evidence, intent Intent, dependencies openWorkDependencies) (Decision, string, error) {
 	cfg = cfg.withDefaults()
+	dependencies.Now = cfg.now
+	if cfg.WorkStateRoot != "" {
+		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot)
+	}
+	dependentBusy := false
+	if observe := dependencies.Busy; observe != nil {
+		dependencies.Busy = func(root string, work goal.ClaimableBudgetedWork, now time.Time) (bool, string, int) {
+			busy, reason, skipped := observe(root, work, now)
+			dependentBusy = busy
+			return busy, reason, skipped
+		}
+	}
 	work, workReason, err := readOpenWorkWithDependencies(repoRoot, dependencies)
 	if err != nil {
 		return Decision{}, "", err
@@ -358,6 +370,9 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 		ActiveContinuation: others > 0,
 		ProviderOutage:     providerOutage,
 	})
+	if dependentBusy {
+		return Decision{VerdictHealthy, ActNone, workReason}, workReason, nil
+	}
 	if intent.Reason == seatHandoffReason {
 		return decideForHandoffWithReader(repoRoot, cfg, workers, ev, intent, others, providerOutage, workReason, now, dependencies.ReadClaimableBudgetedWork, dependencies.HandoffProber)
 	}
@@ -432,7 +447,7 @@ type AbnormalRestart struct {
 }
 
 func abnormalRemedy(root, reason string) string {
-	return reason + fmt.Sprintf("; person's remedy: machine revive %s (unavailable until fleet-provider-and-session-recovery R2 lands)", root)
+	return reason + fmt.Sprintf("; person's remedy: metasystem machine revive %s", root)
 }
 
 // abnormalRestartState reads the latest death and retained progress, never
