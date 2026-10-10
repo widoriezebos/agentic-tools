@@ -448,6 +448,14 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			}
 		}
 	}
+	if selected != nil && selected.State != BatchClosed && selected.DepthClass != "" {
+		status.Summary += fmt.Sprintf("; batch of %d, depth class %s", len(selected.Members), selected.DepthClass)
+		if reason, _ := overdueBatch(install, selected.ID, seams); reason != "" {
+			status.Summary += "; " + reason
+		} else if status.LastProof != nil && status.LastProof.BatchID == selected.ID && status.LastProof.ScopeReason != "" {
+			status.Summary += "; " + status.LastProof.ScopeReason
+		}
+	}
 	return status
 }
 

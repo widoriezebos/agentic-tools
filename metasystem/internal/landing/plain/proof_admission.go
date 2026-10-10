@@ -67,15 +67,29 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 	if running.Trunk {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check of main"}}
 	}
+	depth, reason := BatchProofDepth(install, checkout, running, seams)
+	if depth == "inherited" {
+		return scopeDecision{scopeRecord: scopeRecord{Scope: depth}}
+	}
+	if depth == "full" && seams.DepthScope == "" && !seams.Impact {
+		return scopeDecision{scopeRecord: scopeRecord{Scope: depth, ScopeReason: reason}}
+	}
+	if depth == "impact" && seams.DepthScope == "" && !seams.Impact {
+		d := impactScope(install, checkout, seams)
+		if !strings.HasPrefix(d.ScopeReason, "impact proof error:") {
+			d.ScopeReason = reason
+		}
+		return d
+	}
 	if seams.DepthScope != "" {
-		d := scopeDecision{scopeRecord: scopeRecord{Scope: seams.DepthScope, ScopeReason: seams.DepthReason}}
+		d := scopeDecision{scopeRecord: scopeRecord{Scope: depth, ScopeReason: reason}}
 		if seams.Impact {
 			d = impactScope(install, checkout, seams)
 			if strings.HasPrefix(d.ScopeReason, "impact check error:") {
-				d.ScopeReason += "; " + seams.DepthReason
+				d.ScopeReason += "; " + reason
 			} else {
-				d.ScopeReason = seams.DepthReason
-				if seams.DepthScope == "full" {
+				d.ScopeReason = reason
+				if depth == "full" {
 					d.ScopeReason += "; explicit impact check does not satisfy the push at decided full depth"
 				}
 			}
@@ -85,16 +99,35 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 	if seams.Impact {
 		return impactScope(install, checkout, seams)
 	}
-	previous, found, _ := resultFor(seams.resultsPath(install), running.Tree)
-	if found && strings.HasPrefix(previous.ScopeReason, "full check pending:") {
-		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: previous.ScopeReason}}
-	}
-	if !found || previous.Result == Green {
-		if from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree); ok && from.fullCurrent(seams.now()) {
-			return scopeDecision{scopeRecord: scopeRecord{Scope: "inherited"}}
-		}
-	}
+
 	return decideScope(install, checkout, running, seams)
+}
+
+// BatchProofDepth chooses inheritance and cadence before the ordinary batch policy.
+// An empty scope leaves the existing scoped-proof selector in charge.
+func BatchProofDepth(install, checkout string, running Running, seams ProveSeams) (string, string) {
+	previous, found, _ := resultFor(seams.resultsPath(install), running.Tree)
+	from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree)
+	canInherit := (!found || previous.Result == Green) && !strings.HasPrefix(previous.ScopeReason, "full check pending:") && ok && from.fullCurrent(seams.now())
+	if !seams.Impact && canInherit && from.Scope == "full" && batchGreenReusable(install, running.BatchID, from, seams) {
+		return "inherited", ""
+	}
+	if reason, _ := overdueBatch(install, running.BatchID, seams); reason != "" {
+		return "full", reason
+	}
+	if found && strings.HasPrefix(previous.ScopeReason, "full check pending:") {
+		return "full", previous.ScopeReason
+	}
+	if !seams.Impact && canInherit {
+		return "inherited", ""
+	}
+	if seams.DepthScope != "" {
+		return seams.DepthScope, seams.DepthReason
+	}
+	if running.BatchID != "" && seams.BatchDepth != nil {
+		return seams.BatchDepth(install, checkout, running)
+	}
+	return "", ""
 }
 
 // admitExecutionLocked reads policy for each whole execution, with the

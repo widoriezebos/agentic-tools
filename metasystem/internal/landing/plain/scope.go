@@ -423,7 +423,7 @@ func inheritScope(install string, result, from Result) (Result, error) {
 	result.Scope, result.ScopeReason = from.Scope, result.Reason
 	result.Base, result.FullTree, result.FullAt = from.Tree, from.FullTree, from.FullAt
 	result.Environment = from.Environment
-	if from.Scope != "" {
+	if from.Scope != "" && from.Scope != "full" {
 		result.Scope = "scoped"
 	}
 	decision := scopeDecision{scopeRecord: scopeRecord{Scope: result.Scope, ScopeReason: result.ScopeReason, Base: result.Base}}

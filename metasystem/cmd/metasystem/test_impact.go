@@ -277,6 +277,22 @@ func impactCost(install, module, plan string, contract testpolicy.Contract) (int
 	return share, cheap, err
 }
 
+func batchDepthSeams(seams plain.ProveSeams) plain.ProveSeams {
+	if seams.BatchDepth == nil {
+		seams.BatchDepth = func(install, checkout string, running plain.Running) (string, string) {
+			impact, reason := batchDepth(install, checkout, running.Commit, seams)
+			if reason == "" {
+				return "", ""
+			}
+			if impact {
+				return "impact", reason
+			}
+			return "full", reason
+		}
+	}
+	return seams
+}
+
 func batchDepth(install, checkout, commit string, seams plain.ProveSeams) (bool, string) {
 	batch, err := plain.ReadBatch(install)
 	if err != nil || batch == nil || batch.State == plain.BatchClosed {

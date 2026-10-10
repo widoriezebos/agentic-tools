@@ -151,6 +151,10 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// GoalTier reads a waiting member's tier; nil reads its goal file.
+	GoalTier func(install, goal string) (uint8, error)
+	// BatchDepth chooses the ordinary batch scope and reason before cadence applies.
+	BatchDepth func(install, checkout string, running Running) (scope, reason string)
 	// Machine reads the lane computer's existing nickname.
 	Machine          func(string) (string, error)
 	ClassificationOf string
@@ -454,7 +458,11 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			if err != nil {
 				return err
 			}
-			if found && seams.acceptsGreen(install, checkout, result) {
+			batchID := ""
+			if batch != nil {
+				batchID = batch.ID
+			}
+			if found && seams.acceptsGreen(install, checkout, result) && batchGreenReusable(install, batchID, result, seams) {
 				started, already = Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At}, true
 				return nil
 			}
@@ -583,7 +591,15 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 			return err
 		}
 		if result, ok, err := seams.checkBound(install, tree); err != nil || ok {
-			settled, found = result, ok && seams.acceptsGreen(install, checkout, result)
+			batch, readErr := ReadBatch(install)
+			if readErr != nil {
+				return readErr
+			}
+			batchID := ""
+			if batch != nil && batch.State != BatchClosed {
+				batchID = batch.ID
+			}
+			settled, found = result, ok && seams.acceptsGreen(install, checkout, result) && batchGreenReusable(install, batchID, result, seams)
 			if found {
 				_, err = checkBatchLocked(install, checkout, commit, "", seams.Gate, true, seams)
 			}
@@ -604,6 +620,9 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		}
 		if batch != nil {
 			settled.BatchID, settled.BatchMembers = batch.ID, batch.Members
+			if !batchGreenReusable(install, batch.ID, from, seams) {
+				return nil
+			}
 		}
 		settled, err = inheritScope(install, settled, from)
 		if err != nil {
@@ -732,7 +751,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		if err != nil {
 			return err
 		}
-		if !running.Trunk && found && seams.acceptsGreen(install, checkout, previous) {
+		if !running.Trunk && found && seams.acceptsGreen(install, checkout, previous) && batchGreenReusable(install, running.BatchID, previous, seams) {
 			result, already = previous, true
 			return nil
 		}
@@ -821,14 +840,14 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if err != nil {
 		return result, err
 	}
-	var decision scopeDecision
+	decision := proofScope(install, checkout, running, seams)
 	observed := &proofOutput{output: io.Discard}
 	inherited := false
 	from, ok := Result{}, false
 	if !seams.Gate && !running.Trunk && !seams.Impact {
 		from, ok = ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree)
 	}
-	if !seams.Gate && !running.Trunk && !seams.Impact && previous.Result == "" && ok && from.fullCurrent(seams.now()) && (running.Admission == nil || running.Admission.Scope == "inherited") {
+	if !seams.Gate && !running.Trunk && !seams.Impact && previous.Result == "" && ok && from.fullCurrent(seams.now()) && decision.Scope == "inherited" {
 		result.Reason = inheritedReason(from)
 		result, err = inheritScope(install, result, from)
 		if err != nil {

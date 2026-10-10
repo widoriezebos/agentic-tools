@@ -95,21 +95,26 @@ func fullProofDue(install string, now time.Time) (bool, error) {
 	if err != nil || due {
 		return due, err
 	}
+	last, every, err := fullProofClock(install)
+	return last.IsZero() || now.Sub(last) >= every, err
+}
+
+func fullProofClock(install string) (time.Time, time.Duration, error) {
 	raw, _, err := config.Get(config.GetParams{Key: "proof.trunk-every", ConfPath: filepath.Join(install, "metasystem.conf")})
 	if err != nil {
-		return false, err
+		return time.Time{}, 0, err
 	}
 	every, err := time.ParseDuration(raw)
 	if err != nil || every <= 0 {
-		return false, fmt.Errorf("main's full check interval must be a positive duration; %s is %q", "proof.trunk-every", raw)
+		return time.Time{}, 0, fmt.Errorf("main's full check interval must be a positive duration; %s is %q", "proof.trunk-every", raw)
 	}
 	results, err := Results(install)
 	if err != nil {
-		return false, err
+		return time.Time{}, 0, err
 	}
 	pushes, err := readLines[Pushed](pushesPath(install))
 	if err != nil {
-		return false, err
+		return time.Time{}, 0, err
 	}
 	last := time.Time{}
 	for _, proof := range results {
@@ -131,11 +136,13 @@ func fullProofDue(install string, now time.Time) (bool, error) {
 				proof = r
 			}
 		}
-		if proof.Result == Green && proof.Scope == "full" && proof.FullTree == proof.Tree && proof.FullAt == proof.At && !strings.HasPrefix(proof.Reason, "inherits green from tree ") && pushedAt.After(last) {
+		full := proof.FullTree == proof.Tree && proof.FullAt == proof.At
+		inheritedFull := strings.HasPrefix(proof.Reason, "inherits green from tree ") && proof.FullTree != "" && proof.fullCurrent(pushedAt)
+		if proof.Result == Green && proof.Scope == "full" && (full || inheritedFull) && pushedAt.After(last) {
 			last = pushedAt
 		}
 	}
-	return last.IsZero() || now.Sub(last) >= every, nil
+	return last, every, nil
 }
 
 // scopedProofDue reads only the newest push. Any later full green pays its

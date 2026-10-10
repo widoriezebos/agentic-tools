@@ -44,6 +44,10 @@ func newFixTopologyGitBed(t *testing.T) (*bed, ProveSeams, string) {
 		fmt.Fprint(cmd.Stdout, "LANDING-CHECKED\t0\n")
 		return nil
 	}}
+	// Main's current clock lets ledger refreshes exercise proof inheritance.
+	if err := appendLine(resultsPath(b.install), Result{Trunk: true, Result: Green, Scope: "full", At: bedNow.Add(-time.Minute).Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
 	result, err := Run(b.install, b.checkout, "fixture", "", io.Discard, seams)
 	if err != nil || result.Result != Red || result.Cause == nil || result.Cause.Kind != "own" || result.Cause.Goal != "goal-a" {
 		t.Fatalf("initial red %+v: %v", result, err)

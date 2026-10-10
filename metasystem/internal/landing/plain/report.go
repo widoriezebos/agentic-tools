@@ -143,6 +143,9 @@ func recordFlakes(seams ProveSeams, red, green Result, kind string, repeats []Ru
 	if green.Result == Green {
 		green.FlakePublished = true
 		green.Reason = strings.Join(reasons, "; ")
+		if green.Scope == "full" {
+			green.FullTree, green.FullAt = green.Tree, green.At
+		}
 	}
 	return green
 }

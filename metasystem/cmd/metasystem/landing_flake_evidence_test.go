@@ -197,6 +197,9 @@ func TestLandingProveKeepsTheFlakeRepeatSpent(t *testing.T) {
 					if err != nil || latest.Result != plain.Green || !latest.FlakePublished || publications != 2 {
 						t.Fatalf("publication did not recover: %+v %v output=%s", latest, err, text)
 					}
+					if latest.FullTree != latest.Tree || latest.FullAt != latest.At {
+						t.Fatalf("recovered full proof lost its clock: %+v", latest)
+					}
 				} else if code, text := b.run(t, b.root, "prove", "--wait", "--json"); code == 0 || len(b.runs) != 2 {
 					t.Fatalf("spent tree ran again: exit=%d %s runs=%v", code, text, b.runs)
 				}
@@ -210,6 +213,9 @@ func TestLandingProveKeepsTheFlakeRepeatSpent(t *testing.T) {
 				latest, _, err := plain.LastResult(b.install)
 				if code != 0 || err != nil || latest.Result != plain.Green || !latest.FlakePublished || publications != 1 || len(b.runs) != 2 {
 					t.Fatalf("evidence repair reran or stayed red: exit=%d %s %+v %v runs=%v", code, text, latest, err, b.runs)
+				}
+				if latest.FullTree != latest.Tree || latest.FullAt != latest.At {
+					t.Fatalf("recovered full proof lost its clock: %+v", latest)
 				}
 			}
 			if name == "red again" {

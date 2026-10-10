@@ -115,7 +115,7 @@ func (inv *intentInvocation) lanePaused(admitted laneAdmitted, what string) *int
 // proveSeams are landing prove's effects: the test's, else this engine
 // started detached.
 func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
-	seams := owners.plainProve
+	seams := batchDepthSeams(owners.plainProve)
 	if seams.Executable == nil {
 		seams.Executable = os.Executable
 	}
@@ -273,14 +273,20 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		seams.DepthReason = running.Admission.Reason
 	}
 	if attempt == "" && !seams.Gate && !seams.Trunk {
-		impact, reason := batchDepth(admitted.installation, checkout, commit, seams)
-		if reason != "" {
-			seams.DepthScope = "full"
-			if impact {
-				seams.DepthScope = "impact"
+		batch, err := plain.ReadBatch(admitted.installation)
+		if err != nil {
+			return inv.render(landingProveRefusal(inv, targets, err))
+		}
+		if batch != nil && batch.State != plain.BatchClosed {
+			tree, err := git(checkout, "rev-parse", "--verify", commit+"^{tree}")
+			if err != nil {
+				return inv.render(landingProveRefusal(inv, targets, err))
 			}
-			seams.DepthReason = reason
-			seams.Impact = seams.Impact || impact
+			scope, reason := plain.BatchProofDepth(admitted.installation, checkout, plain.Running{Commit: commit, Tree: tree, BatchID: batch.ID}, seams)
+			if scope == "full" || scope == "impact" {
+				seams.DepthScope, seams.DepthReason = scope, reason
+				seams.Impact = seams.Impact || scope == "impact"
+			}
 		}
 	}
 	if seams.Impact {

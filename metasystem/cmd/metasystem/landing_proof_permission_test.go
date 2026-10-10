@@ -427,6 +427,7 @@ func TestLandingProofPermissionScopedEscalationNeedsFreshAct(t *testing.T) {
 		t.Run(fmt.Sprintf("directScoped=%v", directScoped), func(t *testing.T) {
 			t.Parallel()
 			b := newBatchVerbBed(t, "auto")
+			seedCurrentTrunkClock(t, b.installation, b.now)
 			b.configuration += "testing.contract=testing.json\nlanding.proof=person\n"
 			b.policy(t, "auto")
 			contract := testpolicy.Contract{SchemaVersion: testpolicy.ExecutionContractSchemaVersion,

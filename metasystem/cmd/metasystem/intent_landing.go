@@ -1146,6 +1146,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 // laneBatchSeams supplies the registered owner and the original caller to
 // policy resolution. Selection never borrows a seat's configuration.
 func (inv *intentInvocation) laneBatchSeams(home string, record lane.Record, seams plain.ProveSeams) plain.ProveSeams {
+	seams = batchDepthSeams(seams)
 	seams.Pause = func() (lane.Pause, bool) { return lane.ReadPause(home) }
 	seams.FenceCheck = func() error {
 		if _, paused := lane.ReadPause(home); !paused {

@@ -167,6 +167,7 @@ func TestLandingMovedScriptIsFullAndMovedRecordIsScoped(t *testing.T) {
 		t.Run(fmt.Sprintf("script=%v", script), func(t *testing.T) {
 			t.Parallel()
 			b := newReplayVerbBed(t)
+			seedCurrentTrunkClock(t, b.install, laneTestNow)
 			path := "metasystem/plans/page.md"
 			if script {
 				path = "scripts/check.sh"

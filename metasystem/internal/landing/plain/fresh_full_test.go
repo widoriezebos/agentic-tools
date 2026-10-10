@@ -13,7 +13,7 @@ import (
 
 func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"never", "green trunk", "red trunk", "expired trunk", "full push", "expired full push", "unpublished full", "scoped push", "inherited push", "legacy push", "newer red at push", "old push newer full", "custom interval", "invalid interval", "zero interval"} {
+	for _, name := range []string{"never", "green trunk", "red trunk", "expired trunk", "full push", "expired full push", "unpublished full", "scoped push", "inherited push", "inherited full push", "expired inherited full push", "legacy push", "newer red at push", "old push newer full", "custom interval", "invalid interval", "zero interval"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
@@ -44,7 +44,7 @@ func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T
 					proof.At = bedNow.Add(-4 * time.Hour).Format(time.RFC3339)
 				}
 				due = name == "expired trunk" || name == "custom interval"
-			case "full push", "expired full push", "scoped push", "inherited push", "legacy push", "newer red at push", "old push newer full":
+			case "full push", "expired full push", "scoped push", "inherited push", "inherited full push", "expired inherited full push", "legacy push", "newer red at push", "old push newer full":
 				pushed = true
 				if name == "expired full push" {
 					proof.At = bedNow.Add(-4 * time.Hour).Format(time.RFC3339)
@@ -55,11 +55,21 @@ func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T
 				}
 				if name == "inherited push" {
 					proof.Reason = "inherits green from tree older"
+					proof.Scope = "scoped"
+				}
+				if name == "inherited full push" || name == "expired inherited full push" {
+					proof.Reason = "inherits green from tree older"
+					proof.FullTree = "older-tree"
+					age := time.Minute
+					if name == "expired inherited full push" {
+						age = 61 * time.Minute
+					}
+					proof.FullAt = at.Add(-age).Format(time.RFC3339)
 				}
 				if name == "legacy push" {
 					proof.Scope = ""
 				}
-				due = name != "full push"
+				due = name != "full push" && name != "inherited full push"
 			}
 			var records []string
 			if name != "never" {

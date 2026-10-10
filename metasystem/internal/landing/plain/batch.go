@@ -55,6 +55,7 @@ type Batch struct {
 	CreatedAt     string         `json:"created-at"`
 	State         string         `json:"state"`
 	ClosureReason string         `json:"closure-reason,omitempty"`
+	DepthClass    string         `json:"depth-class,omitempty"`
 	Person        *ActProvenance `json:"person,omitempty"`
 }
 
@@ -452,7 +453,16 @@ func selectBatchLocked(install, checkout, main string, registered lane.Record, p
 	if n == 0 {
 		return nil, nil
 	}
+	class := ""
+	if policy.Value == "auto" {
+		entries, class, err = selectDepthClass(install, checkout, entries, s)
+		if err != nil {
+			return nil, err
+		}
+		n = len(entries)
+	}
 	batch := &Batch{ID: s.newID(), Lane: registered, Base: main, Selector: policy, CreatedAt: s.now().Format(time.RFC3339Nano), State: BatchPrepared, Members: []GoalSHA{}}
+	batch.DepthClass = class
 	for _, entry := range entries[:n] {
 		batch.Members = append(batch.Members, GoalSHA{Goal: entry.Goal, SHA: entry.SHA})
 	}
