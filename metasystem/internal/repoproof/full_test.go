@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 
@@ -197,21 +198,33 @@ func TestFullRunsBatchStaticAndSectionsBeforeReporting(t *testing.T) {
 		}
 		return nil
 	}
+	// Every section of the real contract is a cadence group; this contract
+	// takes one of them out of the cadence so a landing proves it.
+	contractPath := landingContractWithoutCadence(t, "section/gate-fail-open-tripwire")
 	exit := runHost(&out, &stderr, func(key string) string {
 		if key == "METASYSTEM_FULL_REPORTER" {
 			return "/fixture/run/reporter"
 		}
 		return ""
-	}, command, "../../testing.json", hooks)
+	}, command, contractPath, hooks)
 	if exit != 1 || batches != 1 || !strings.HasSuffix(out.String(), "LANDING-FAILED\tsection/gate-fail-open-tripwire\t\nLANDING-CHECKED\t1\n") {
 		t.Fatalf("exit=%d batch=%d out=%s err=%s", exit, batches, &out, &stderr)
 	}
-	contract, err := testpolicy.Load("../../testing.json")
+	contract, err := testpolicy.Load(contractPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, group := range contract.Groups {
-		if group.Adapter == "section" && sections[group.ID] != 1 {
+		if group.Adapter != "section" {
+			continue
+		}
+		if slices.Contains(contract.Cadence, group.ID) {
+			if sections[group.ID] != 0 || !strings.Contains(out.String(), "landing cadence "+group.ID+" deferred\n") {
+				t.Fatalf("cadence section %s ran %d times or was not deferred: %s", group.ID, sections[group.ID], &out)
+			}
+			continue
+		}
+		if sections[group.ID] != 1 {
 			t.Fatalf("section %s runs %d", group.ID, sections[group.ID])
 		}
 	}
@@ -359,7 +372,8 @@ func TestFullLegFailuresKeepTheirGroupAndEnvironmentVerdicts(t *testing.T) {
 			if fault == "static-red" {
 				suffix = "LANDING-FAILED\tfast-static-build\t\nLANDING-CHECKED\t1\n"
 			}
-			exit := runHost(&out, &stderr, func(string) string { return "" }, command, "../../testing.json", hooks)
+			// The section faults need a section a landing runs: one taken out of the cadence.
+			exit := runHost(&out, &stderr, func(string) string { return "" }, command, landingContractWithoutCadence(t, "section/go-engine-gate"), hooks)
 			if exit != 1 || !strings.HasSuffix(out.String(), suffix) {
 				t.Fatalf("exit=%d out=%s err=%s", exit, &out, &stderr)
 			}
@@ -518,4 +532,34 @@ chmod +x "$3"
 			t.Fatalf("private reporter must remain executable after exit: %v", err)
 		}
 	}
+}
+
+// landingContractWithoutCadence copies the repository contract with one group
+// taken out of its cadence list, so a landing proves that section.
+func landingContractWithoutCadence(t *testing.T, id string) string {
+	t.Helper()
+	data, err := os.ReadFile("../../testing.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var contract map[string]any
+	if err := json.Unmarshal(data, &contract); err != nil {
+		t.Fatal(err)
+	}
+	var cadence []any
+	for _, entry := range contract["cadence"].([]any) {
+		if entry != id {
+			cadence = append(cadence, entry)
+		}
+	}
+	contract["cadence"] = cadence
+	edited, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "testing.json")
+	if err := os.WriteFile(path, edited, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return path
 }

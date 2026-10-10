@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -234,6 +235,10 @@ func TestB(t *testing.T) { t.Parallel() }
 			}
 			var out, problem bytes.Buffer
 			code := runHost(&out, &problem, func(string) string { return "" }, command, "../../testing.json", hooks)
+			contract, err := testpolicy.Load("../../testing.json")
+			if err != nil {
+				t.Fatal(err)
+			}
 			wantExit := 0
 			if panicTest {
 				wantExit = 1
@@ -241,13 +246,13 @@ func TestB(t *testing.T) { t.Parallel() }
 			if code != wantExit || natives != 2 || !strings.Contains(out.String(), "landing package example.com/proof/internal/launch ") {
 				t.Fatalf("exit=%d native=%d output=%s error=%s", code, natives, &out, &problem)
 			}
-			contract, err := testpolicy.Load("../../testing.json")
-			if err != nil {
-				t.Fatal(err)
-			}
 			for _, group := range contract.Groups {
-				if group.Adapter == "section" && sections[group.ID] != 1 {
-					t.Fatalf("section %s runs %d", group.ID, sections[group.ID])
+				want := 1
+				if slices.Contains(contract.Cadence, group.ID) {
+					want = 0 // a cadence section is the cadence trigger's, not a landing's
+				}
+				if group.Adapter == "section" && sections[group.ID] != want {
+					t.Fatalf("section %s runs %d, want %d", group.ID, sections[group.ID], want)
 				}
 			}
 			if panicTest {

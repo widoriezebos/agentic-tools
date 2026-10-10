@@ -268,6 +268,13 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 			if group.Adapter != "section" {
 				continue
 			}
+			if slices.Contains(contract.Cadence, group.ID) {
+				// A cadence section is the contract's scheduled deep run (the
+				// engine gate at -race over every package takes hours); the
+				// cadence trigger proves it, not every landing.
+				fmt.Fprintf(stdout, "landing cadence %s deferred\n", group.ID)
+				continue
+			}
 			var report bytes.Buffer
 			err := command([]string{reporter, "--section", group.ID}, io.MultiWriter(stdout, &report), stderr)
 			var result struct {
