@@ -306,6 +306,96 @@
         "by": "wido",
         "why": "Not a red: status unavailable, the lane's scheduled check never ran (standing cadence authority unavailable after engine drift). Recorded by the lane's trunk-red loop 2026-09-30 16:14-16:25Z; lane paused; fix under goal landing-lane-runtime-redesign (step-back memo evidence/lane-stepback-20260930/memo.md)"
       }
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestBlockedAgentAsksAndTheStopLetsItWait",
+      "identity": "red:metasystem/cmd/metasystem:TestBlockedAgentAsksAndTheStopLetsItWait",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261010T051731.570819000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestBlockedAgentAsksAndTheStopLetsItWait",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261010T051731.570819000Z-replay-1",
+          "batch": "20261010T051731.570819000Z-replay-1",
+          "baseCommit": "3bf1cc27ea20cb4dd00255e7e102ad8417766036",
+          "baseTree": "f9402e75dfce182984134549c54c4f6ee1db61ff",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261010T051731.570819000Z-replay-1.log",
+          "logDigest": "6c5efaba773f0cf9354846b6b703702428e6c868ce7fcc454a8a3013d0ec2e6b",
+          "seenAt": "2026-10-10T06:24:16Z",
+          "opid": "H6H1NT2JGDQ1R5XGP3M3B48RSS-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261010T051731.570819000Z-replay-1"
+      ],
+      "opened": "2026-10-10T06:24:16Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestPendingWaitInstalledVerdicts",
+      "identity": "red:metasystem/cmd/metasystem:TestPendingWaitInstalledVerdicts",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261010T051731.570819000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestPendingWaitInstalledVerdicts",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261010T051731.570819000Z-replay-1",
+          "batch": "20261010T051731.570819000Z-replay-1",
+          "baseCommit": "3bf1cc27ea20cb4dd00255e7e102ad8417766036",
+          "baseTree": "f9402e75dfce182984134549c54c4f6ee1db61ff",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261010T051731.570819000Z-replay-1.log",
+          "logDigest": "6c5efaba773f0cf9354846b6b703702428e6c868ce7fcc454a8a3013d0ec2e6b",
+          "seenAt": "2026-10-10T06:24:16Z",
+          "opid": "H6H1NT2JGDQ1R5XGP3M3B48RSS-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261010T051731.570819000Z-replay-1"
+      ],
+      "opened": "2026-10-10T06:24:16Z",
+      "closed": null
     }
   ],
   "cadence": {
