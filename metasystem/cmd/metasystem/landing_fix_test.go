@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -30,6 +31,7 @@ func TestLaneFixCheckpointMatchesRegisteredBatch(t *testing.T) {
 		{"other members", func(_ *lane.Record, _ *plain.Batch, r *plain.Running) {
 			r.BatchMembers = []plain.GoalSHA{{Goal: "other", SHA: "sha"}}
 		}, false},
+		{"prepared batch", func(_ *lane.Record, b *plain.Batch, _ *plain.Running) { b.State = plain.BatchPrepared }, false},
 		{"no batch commit", func(_ *lane.Record, _ *plain.Batch, r *plain.Running) { r.Commit = "" }, false},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -38,7 +40,8 @@ func TestLaneFixCheckpointMatchesRegisteredBatch(t *testing.T) {
 			registered := lane.Record{Root: root, Install: root, CustodyEpoch: 1}
 			members := []plain.GoalSHA{{Goal: "goal-a", SHA: "member"}}
 			batch := plain.Batch{ID: "batch-1", Lane: registered, Base: "main", State: plain.BatchRunning, Members: members}
-			running := plain.Running{Commit: "batch-commit", BatchID: batch.ID, BatchMembers: members}
+			running := plain.Running{Commit: "batch-commit", Tree: "batch-tree", Attempt: "proof", BatchID: batch.ID, BatchMembers: members}
+			red := plain.Result{Commit: running.Commit, Tree: running.Tree, Attempt: running.Attempt, BatchID: running.BatchID, BatchMembers: running.BatchMembers, Result: plain.Red}
 			test.change(&registered, &batch, &running)
 			dir := plain.Dir(root)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -52,6 +55,10 @@ func TestLaneFixCheckpointMatchesRegisteredBatch(t *testing.T) {
 				if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
 					t.Fatal(err)
 				}
+			}
+			data, _ := json.Marshal(red)
+			if err := os.WriteFile(filepath.Join(dir, "results.jsonl"), append(data, '\n'), 0o600); err != nil {
+				t.Fatal(err)
 			}
 			fix := landingFixCheckpoint(root, root, registered)
 			if (fix != nil) != test.want {
@@ -139,7 +146,7 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 	records := map[string]any{
 		lane.RecordPath(filepath.Join(registry, ".metasystem")): registered,
 		filepath.Join(plain.Dir(root), "batch.json"):            plain.Batch{ID: "batch-1", Lane: registered, Base: head, State: plain.BatchRunning, Members: members},
-		filepath.Join(plain.Dir(root), "running.json"):          plain.Running{Commit: head, BatchID: "batch-1", BatchMembers: members},
+		filepath.Join(plain.Dir(root), "running.json"):          plain.Running{Commit: head, Tree: "batch-tree", Attempt: "red-proof", BatchID: "batch-1", BatchMembers: members},
 	}
 	for path, value := range records {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -152,6 +159,10 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 		if err := os.WriteFile(path, data, 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	red, _ := json.Marshal(plain.Result{Commit: head, Tree: "batch-tree", Attempt: "red-proof", BatchID: "batch-1", BatchMembers: members, Result: plain.Red})
+	if err := os.WriteFile(filepath.Join(plain.Dir(root), "results.jsonl"), append(red, '\n'), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	executable, err := os.Executable()
 	if err != nil {
@@ -189,5 +200,131 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 	}
 	if got := goalSyncMutationGit(t, root, "show", "-s", "--format=%B", "HEAD"); !strings.Contains(got, "Goal-Unit: standing-validation/lane-fix-1") {
 		t.Fatalf("commit omitted trailer: %q", got)
+	}
+}
+
+func TestLaneMergeGuardRealGitCommit(t *testing.T) {
+	t.Parallel()
+	root := syncedClaimedGoalFixture(t)
+	head := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
+	goalSyncMutationGit(t, root, "checkout", "--detach", head)
+	goalSyncMutationGit(t, root, "checkout", "-b", "merge-member")
+	if err := os.WriteFile(filepath.Join(root, "member.go"), []byte("package fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "member.go")
+	goalSyncMutationGit(t, root, "commit", "-m", "member")
+	tip := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
+	goalSyncMutationGit(t, root, "checkout", "--detach", head)
+	goalSyncMutationGit(t, root, "merge", "--no-commit", "--no-ff", tip)
+	pid := int64(os.Getpid())
+	exact, state, err := (identity.KernelProber{}).Probe(pid)
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe %s: %v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(root, "lane-fix-session", pid, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-fix-session", "metasystem", lane.AgentLineage); err != nil {
+		t.Fatal(err)
+	}
+	if holder, err := lease.RequireHolder(root, pid, nil); err != nil || !holder.Holder {
+		t.Fatalf("holder %+v: %v", holder, err)
+	}
+	if !landingFixActor(root, pid) || landingFixActor(root, int64(os.Getppid())) {
+		t.Fatal("landing identity did not distinguish its session from another process")
+	}
+	registry := t.TempDir()
+	registered := lane.Record{Root: root, Install: root, CustodyEpoch: 1}
+	members := []plain.GoalSHA{{Goal: "standing-validation", SHA: tip}}
+	records := map[string]any{
+		lane.RecordPath(filepath.Join(registry, ".metasystem")): registered,
+		filepath.Join(plain.Dir(root), "batch.json"):            plain.Batch{ID: "batch-1", Lane: registered, Base: head, State: plain.BatchRunning, Members: members},
+	}
+	for path, value := range records {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := plain.WriteFix(root, &plain.Fix{Goal: "standing-validation", Units: []string{"lane-merge-1"}, Commit: head, Tip: tip, State: "resolving", Attempt: "merge-attempt", Paths: []conflict.Path{{Path: "code.go", Class: conflict.Builder}}}); err != nil {
+		t.Fatal(err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := "#!/bin/sh\nexec " + shellquote.Token(executable) + " internal pre-commit --root " + shellquote.Token(root) + "\n"
+	if err := os.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "code.go"), []byte("package fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "code.go")
+	messagePath := filepath.Join(t.TempDir(), "message")
+	commit := func(message string) error {
+		t.Helper()
+		if err := os.WriteFile(messagePath, []byte(message), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command("git", "-C", root, "commit", "-F", messagePath)
+		command.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+registry)
+		output, err := command.CombinedOutput()
+		t.Logf("git commit: %v\n%s", err, output)
+		return err
+	}
+	if err := commit("repair without a trailer\n"); err == nil {
+		t.Fatal("commit without trailer passed")
+	}
+	if got := goalSyncMutationGit(t, root, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("refused commit moved HEAD: %s", got)
+	}
+	message := "goal standing-validation: merge resolution of fixture\n\nGoal-Unit: standing-validation/lane-merge-1\n"
+	if err := commit(message); err != nil {
+		t.Fatal("valid lane merge refused", err)
+	}
+	if parents := goalSyncMutationGit(t, root, "show", "-s", "--format=%P", "HEAD"); parents != head+" "+tip {
+		t.Fatalf("merge parents=%q", parents)
+	}
+	if got := goalSyncMutationGit(t, root, "show", "-s", "--format=%B", "HEAD"); !strings.Contains(got, "Goal-Unit: standing-validation/lane-merge-1") {
+		t.Fatalf("commit omitted trailer: %q", got)
+	}
+}
+
+func TestLaneFixCheckpointRequiresRecordedRed(t *testing.T) {
+	t.Parallel()
+	for _, verdict := range []string{"missing", "green", "red"} {
+		t.Run(verdict, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			registered := lane.Record{Root: root, Install: root, CustodyEpoch: 1}
+			members := []plain.GoalSHA{{Goal: "goal", SHA: "member"}}
+			running := plain.Running{Commit: "batch", Tree: "tree", Attempt: "proof", BatchID: "batch", BatchMembers: members}
+			if err := os.MkdirAll(plain.Dir(root), 0755); err != nil {
+				t.Fatal(err)
+			}
+			for name, value := range map[string]any{"batch.json": plain.Batch{ID: "batch", Lane: registered, Base: "main", State: plain.BatchRunning, Members: members}, "running.json": running} {
+				data, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(plain.Dir(root), name), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if verdict != "missing" {
+				data, _ := json.Marshal(plain.Result{Commit: running.Commit, Tree: running.Tree, Attempt: running.Attempt, BatchID: running.BatchID, BatchMembers: members, Result: verdict})
+				if err := os.WriteFile(filepath.Join(plain.Dir(root), "results.jsonl"), append(data, '\n'), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if fix := landingFixCheckpoint(root, root, registered); (fix != nil) != (verdict == "red") {
+				t.Fatalf("%s proof checkpoint=%+v", verdict, fix)
+			}
+		})
 	}
 }

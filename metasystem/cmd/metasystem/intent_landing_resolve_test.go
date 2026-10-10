@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -146,6 +147,53 @@ func TestLandingResolveVerbUsesMainsContractAndReturnsSourceDetails(t *testing.T
 	if result.Data.Conflict == nil || result.Data.Conflict.Main != "main-sha" || len(result.Data.Conflict.Paths) != 1 || result.Data.Conflict.Paths[0].Resolution != "keep both, main's lines then the goal's" || result.Data.Entry == nil || result.Data.Entry.State != plain.StateReturned || result.Data.Entry.Cause == nil || result.Data.Entry.Cause.Kind != "own" || result.Data.Entry.Cause.Goal != "goal" || result.Data.Entry.Cause.SHA != "goal-sha" || !reflect.DeepEqual(writes, [][]string{{"merge", "--abort"}}) {
 		t.Fatalf("returned conflict=%+v writes=%v", result.Data, writes)
 	}
+}
+
+func TestLandingResolveAsSeatRecordsConflictWithoutAborting(t *testing.T) {
+	t.Parallel()
+	b := newResolveVerbFixture(t)
+	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+		t.Fatal(err)
+	}
+	b.sourceConflictGit(t, func() { t.Fatal("taking the conflict aborted before trying") })
+	for range 2 {
+		code, output := b.run(t, b.root, "resolve", "--as-seat", "--json")
+		var result struct {
+			Outcome string
+			Data    plain.ResolveOutcome
+		}
+		if code != 0 || json.Unmarshal([]byte(output), &result) != nil || result.Data.Outcome != "resolving" || result.Data.Entry != nil {
+			t.Fatalf("exit=%d output=%s", code, output)
+		}
+	}
+	fix, err := plain.ReadFix(b.install)
+	if err != nil || fix == nil || fix.State != "resolving" || len(fix.Paths) != 1 || fix.Paths[0].Path != "metasystem/src/list.go" {
+		t.Fatalf("fix=%+v err=%v", fix, err)
+	}
+	entry, _, err := plain.Latest(b.install, "goal")
+	if err != nil || entry.State != plain.StateWaiting {
+		t.Fatalf("queue=%+v %v", entry, err)
+	}
+	git := b.owners.landing.plainResolve.Git
+	missing := exec.Command("/bin/sh", "-c", "exit 128").Run()
+	b.owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
+		if strings.Join(args, " ") == "rev-parse --verify MERGE_HEAD^{commit}" {
+			return "", missing
+		}
+		return git(dir, args...)
+	}
+	code, output := b.run(t, b.root, "resolve", "--as-seat", "--json")
+	var abandoned struct {
+		Outcome, Summary string
+		Data             plain.ResolveOutcome
+	}
+	if code != 0 || json.Unmarshal([]byte(output), &abandoned) != nil || abandoned.Outcome != intentUnchanged || abandoned.Data.Outcome != "abandoned" || !strings.Contains(abandoned.Summary, "resolution was abandoned") {
+		t.Fatalf("missing merge exit=%d output=%s", code, output)
+	}
+	if active, err := plain.ReadFix(b.install); err != nil || active != nil {
+		t.Fatalf("closed resolution remains active: %+v %v", active, err)
+	}
+
 }
 
 func (b *resolveVerbFixture) sourceConflictGit(t *testing.T, abort func()) {

@@ -709,6 +709,9 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 // build
 
 func runIntentBuild(inv *intentInvocation) int {
+	if code, handled := laneMergeWork(inv); handled {
+		return code
+	}
 	if problem := inv.buildEngineAdmission(); problem != nil {
 		return inv.render(*problem)
 	}

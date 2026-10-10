@@ -380,8 +380,21 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			status.ProofHeadline += "; hot-fix, then metasystem landing prove --trunk"
 		}
 	}
-	status.RunningFix, err = readFix(install)
+	status.RunningFix, err = readFix(install, true)
 	unread("the lane fix", err)
+	if err == nil && status.RunningFix != nil {
+		err = RefreshMerge(install, string(layout.Checkout), status.RunningFix, seams)
+		unread("the pending merge", err)
+		if status.RunningFix.State == "abandoned" {
+			// An abandoned resolution describes only the checkpoint it belonged to.
+			tip, readErr := seams.git(string(layout.Checkout), "rev-parse", "--verify", "HEAD^{commit}")
+			unread("the abandoned resolution's checkpoint", readErr)
+			if readErr == nil && tip == status.RunningFix.Commit && (running == nil || running.State != "running") {
+				status.ProofHeadline = status.RunningFix.Reason
+			}
+			status.RunningFix = nil
+		}
+	}
 	if status.RunningFix != nil {
 		status.ProofHeadline = fixHeadline(status.RunningFix)
 	}

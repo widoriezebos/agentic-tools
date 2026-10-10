@@ -444,6 +444,7 @@ func wrapperFenced(git func(args ...string) GitResult, root string) string {
 type LaneFixCommit struct {
 	Commit, Message string
 	Members         []string
+	MergeTip        string
 }
 
 func laneFixAdmits(owners GuardOwners, root, workTree string, git func(...string) GitResult) bool {
@@ -466,11 +467,20 @@ func laneFixAdmits(owners GuardOwners, root, workTree string, git func(...string
 			if member != "" {
 				return false
 			}
-			match := regexp.MustCompile(`^Goal-Unit: ([^ /]+)/(lane-fix-[1-9][0-9]*)$`).FindStringSubmatch(line)
+			match := regexp.MustCompile(`^Goal-Unit: ([^ /]+)/(lane-(?:fix|merge)-[1-9][0-9]*)$`).FindStringSubmatch(line)
 			if match == nil {
 				return false
 			}
 			member = match[1]
+			if fix.MergeTip != "" && !strings.HasPrefix(match[2], "lane-merge-") {
+				return false
+			}
+			if strings.HasPrefix(match[2], "lane-merge-") {
+				merge := git("rev-parse", "--verify", "MERGE_HEAD")
+				if fix.MergeTip == "" || merge.Code != 0 || strings.TrimSpace(string(merge.Stdout)) != fix.MergeTip {
+					return false
+				}
+			}
 		}
 	}
 	for _, goal := range fix.Members {

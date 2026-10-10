@@ -74,11 +74,23 @@ func landingFixCheckpoint(root, checkout string, registered lane.Record) *landpa
 		return nil
 	}
 	batch, err := plain.ReadBatch(root)
-	if err != nil || batch == nil || batch.State != plain.BatchRunning || batch.Lane != registered {
+	if err != nil || batch == nil || (batch.State != plain.BatchRunning && batch.State != plain.BatchPrepared) || batch.Lane != registered {
+		return nil
+	}
+	if merge, err := plain.ReadFix(root); err == nil && merge != nil && merge.State == "resolving" {
+		fix := &landpath.LaneFixCommit{Commit: merge.Commit, MergeTip: merge.Tip}
+		for _, member := range batch.Members {
+			if member.Goal == merge.Goal && member.SHA == merge.Tip {
+				fix.Members = append(fix.Members, member.Goal)
+			}
+		}
+		return fix
+	}
+	if batch.State != plain.BatchRunning {
 		return nil
 	}
 	running, recorded, _, err := plain.ReadRunning(root, plain.ProveSeams{})
-	if err != nil || !recorded || running.Commit == "" || running.BatchID != batch.ID || !slices.Equal(running.BatchMembers, batch.Members) {
+	if err != nil || !recorded || running.Commit == "" || running.BatchID != batch.ID || !slices.Equal(running.BatchMembers, batch.Members) || !plain.RecordedFixRed(root, running) {
 		return nil
 	}
 	fix := &landpath.LaneFixCommit{Commit: running.Commit}

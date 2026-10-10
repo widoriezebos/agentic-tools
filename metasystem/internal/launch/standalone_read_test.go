@@ -549,6 +549,37 @@ func TestStandaloneReadCheckoutGitAdapter(t *testing.T) {
 	}
 }
 
+// A committed merge is read by applying its diff to its first parent, not to itself.
+func TestStandaloneReadCommittedPatchBaseGitAdapter(t *testing.T) {
+	t.Parallel()
+	repo := t.TempDir()
+	runGit(t, repo, "init")
+	runGit(t, repo, "config", "user.email", "test@example.invalid")
+	runGit(t, repo, "config", "user.name", "Test")
+	writeFile(t, filepath.Join(repo, "file.go"), "main\n")
+	runGit(t, repo, "add", ".")
+	runGit(t, repo, "commit", "-m", "base")
+	base := strings.TrimSpace(runGit(t, repo, "rev-parse", "HEAD"))
+	writeFile(t, filepath.Join(repo, "file.go"), "main\ngoal\n")
+	runGit(t, repo, "commit", "-am", "candidate")
+	patch, brief := filepath.Join(t.TempDir(), "candidate.patch"), filepath.Join(t.TempDir(), "brief.md")
+	writeFile(t, patch, runGit(t, repo, "diff", "--binary", "HEAD^", "HEAD"))
+	writeFile(t, brief, "Read the committed merge.\n")
+	fixture := baseUnitFixture(t)
+	fixture.runner.Git = OSGitRunner{}
+	fixture.starter.onStart = func(record Record) error {
+		data, err := os.ReadFile(filepath.Join(record.WorkingDirectory, "file.go"))
+		if err != nil || string(data) != "main\ngoal\n" {
+			t.Fatalf("reader's candidate=%q err=%v", data, err)
+		}
+		return nil
+	}
+	result, err := fixture.runner.StartRead(ReadRequest{Directory: repo, Brief: brief, Patch: patch, Base: "HEAD^"})
+	if err != nil || !result.Complete || result.Attempt.Limitation != "" || result.Request.Base != base {
+		t.Fatalf("read=%+v err=%v", result, err)
+	}
+}
+
 func directoryDigest(t *testing.T, root string) string {
 	t.Helper()
 	var lines []string
