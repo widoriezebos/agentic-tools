@@ -53,14 +53,14 @@ func UnitImpact(moduleRoot, base string) (impact Impact, err error) {
 	full := slices.Contains(impact.Paths, "go.mod") || slices.Contains(impact.Paths, "go.sum")
 	for _, path := range impact.Paths {
 		if strings.HasSuffix(path, "_test.go") && !strings.Contains("/"+path, "/testdata/") {
-			if _, err := impactFile(workspace, base, path, true, symbols); err != nil {
+			if _, _, err := impactFile(workspace, base, path, true, symbols); err != nil {
 				return impact, err
 			}
 		}
 		if strings.HasSuffix(path, ".go") && !strings.HasSuffix(path, "_test.go") && !strings.Contains("/"+path, "/testdata/") {
 			changed[relativePackage(module, pathpkg.Join(module, filepath.ToSlash(filepath.Dir(path))))] = true
 			symbols["own/"+strings.TrimSuffix(path, ".go")+"_test.go"] = true
-			if _, err := impactFile(workspace, base, path, true, symbols); err != nil {
+			if _, _, err := impactFile(workspace, base, path, true, symbols); err != nil {
 				return impact, err
 			}
 		}
@@ -88,18 +88,20 @@ func UnitImpact(moduleRoot, base string) (impact Impact, err error) {
 			continue
 		}
 		names := map[string]bool{}
+		wholeFile := false
 		for path := range files {
 			if strings.TrimPrefix(pkg, "./") != filepath.ToSlash(filepath.Dir(path)) || !strings.HasSuffix(path, "_test.go") {
 				continue
 			}
-			selected, err := impactFile(workspace, base, path, slices.Contains(impact.Paths, path), symbols)
+			selected, whole, err := impactFile(workspace, base, path, slices.Contains(impact.Paths, path), symbols)
 			if err != nil {
 				return impact, err
 			}
 			maps.Copy(names, selected)
+			wholeFile = wholeFile || whole
 		}
 		tests := slices.Sorted(maps.Keys(names))
-		whole := full || strings.HasPrefix(pkg, "./internal/") && slices.Contains(dependents, pkg) || changed[pkg] && (strings.HasPrefix(pkg, "./internal/") || len(tests) == 0)
+		whole := full || wholeFile || strings.HasPrefix(pkg, "./internal/") && slices.Contains(dependents, pkg) || changed[pkg] && (strings.HasPrefix(pkg, "./internal/") || len(tests) == 0)
 		if !whole && len(tests) == 0 {
 			continue
 		}
@@ -113,10 +115,10 @@ func UnitImpact(moduleRoot, base string) (impact Impact, err error) {
 }
 
 // impactFile reads both sides so removed declarations and messages select their readers.
-func impactFile(workspace gittree.Workspace, base, path string, changed bool, symbols map[string]bool) (map[string]bool, error) {
+func impactFile(workspace gittree.Workspace, base, path string, changed bool, symbols map[string]bool) (map[string]bool, bool, error) {
 	after, err := os.ReadFile(filepath.Join(workspace.Dir, path))
 	if err != nil && !os.IsNotExist(err) {
-		return nil, err
+		return nil, false, err
 	}
 	var before, diff []byte
 	if changed {
@@ -125,12 +127,13 @@ func impactFile(workspace gittree.Workspace, base, path string, changed bool, sy
 			diff, err = workspace.DiffBlobs(before, after)
 		}
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 	}
 	hunks := regexp.MustCompile(`(?m)^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@`).FindAllStringSubmatch(string(diff), -1)
 	tests, all := map[string]bool{}, map[string]bool{}
 	isTest, referenced := strings.HasSuffix(path, "_test.go"), symbols["own/"+path]
+	hasTestMain := false
 	for side, data := range [][]byte{before, after} {
 		if len(data) == 0 {
 			continue
@@ -138,7 +141,7 @@ func impactFile(workspace gittree.Workspace, base, path string, changed bool, sy
 		positions := token.NewFileSet()
 		file, err := parser.ParseFile(positions, path, data, 0)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		overlaps := func(node ast.Node) bool {
 			first, last := positions.Position(node.Pos()).Line, positions.Position(node.End()).Line
@@ -162,9 +165,14 @@ func impactFile(workspace gittree.Workspace, base, path string, changed bool, sy
 		ast.Inspect(file, func(node ast.Node) bool {
 			switch node := node.(type) {
 			case *ast.FuncDecl:
-				if overlaps(node) && (!isTest || node.Recv != nil || !strings.HasPrefix(node.Name.Name, "Test")) {
+				if isTest && node.Recv == nil && node.Name.Name == "TestMain" {
+					hasTestMain = hasTestMain || side == 1
+					return true
+				}
+				entrypoint := isTest && node.Recv == nil && testpolicy.GoTestName(node.Name.Name)
+				if overlaps(node) && !entrypoint {
 					symbols[node.Name.Name] = true
-				} else if isTest && side == 1 && node.Recv == nil && strings.HasPrefix(node.Name.Name, "Test") {
+				} else if side == 1 && entrypoint {
 					all[node.Name.Name] = true
 					if overlaps(node) {
 						tests[node.Name.Name] = true
@@ -187,7 +195,7 @@ func impactFile(workspace gittree.Workspace, base, path string, changed bool, sy
 	if referenced {
 		tests = all
 	}
-	return tests, nil
+	return tests, referenced && hasTestMain && len(all) == 0, nil
 }
 
 // impactPackageImports adds the Go tool's build and test dependencies to the module graph.

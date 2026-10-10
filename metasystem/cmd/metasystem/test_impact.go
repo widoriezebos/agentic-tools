@@ -131,9 +131,6 @@ func runTestImpact(args []string, stdout, stderr io.Writer) int {
 			id := "unit/" + pkg
 			units[id] = unit
 			group := testpolicy.Group{ID: id, Adapter: "go", CWD: filepath.Clean(prefix), Packages: []string{"./" + pkg}, Tests: tests}
-			if pkg == "cmd/metasystem" {
-				group.BuildTags = []string{"batchtest"}
-			}
 			contract.Groups = append(contract.Groups, group)
 			ids = append(ids, id)
 		}

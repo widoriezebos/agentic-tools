@@ -2,13 +2,17 @@ package proofrun
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 func TestNativeCommandPartitionsUseThreeShardsPerWorker(t *testing.T) {
@@ -157,5 +161,61 @@ func TestMain(m *testing.M) { m.Run(); os.Exit(3) }
 	}
 	if !good || !bad || !nativeIdentityStatus(result.Observed, "TestA", "passed") || !nativeIdentityStatus(result.Observed, "TestB", "passed") {
 		t.Fatalf("TestMain hid package failure: %+v", result)
+	}
+}
+
+func TestNativeInventoryIgnoresNonTestSelections(t *testing.T) {
+	t.Parallel()
+	for _, names := range [][]string{
+		{"TestMain"},
+		{"Test"},
+		{"TestMain", "Test", "Testhelper", "TestéHelper", "TestPresent"},
+		{"TestMain", "TestPresent", "TestAbsent"},
+	} {
+		t.Run(strings.Join(names, ","), func(t *testing.T) {
+			t.Parallel()
+			root, environment := namedGroupModule(t, `package named
+import ("os"; "testing")
+func TestMain(m *testing.M) { os.WriteFile("main-ran", []byte("ran"), 0600); os.Exit(m.Run()) }
+func Test(t *testing.T) { t.Parallel(); t.Log("bare Test ran") }
+func TestPresent(t *testing.T) { t.Parallel(); t.Log("selected test ran") }
+func TestNoise(t *testing.T) { t.Parallel(); t.Fatal("unselected test ran") }
+`)
+			result, err := RunNativeInventory(t.Context(), NativeInventoryRequest{Root: root, LogRoot: t.TempDir(), Environment: environment, Workers: 2, Packages: []string{"."}, Tests: names})
+			wantMissing := slices.Contains(names, "TestAbsent")
+			missingCount := 0
+			if wantMissing {
+				missingCount = 1
+			}
+			if err != nil || result.Failed != wantMissing || len(result.Missing) != missingCount {
+				t.Fatalf("selection=%v failed=%t missing=%+v observed=%+v err=%v", names, result.Failed, result.Missing, result.Observed, err)
+			}
+			if wantMissing && result.Missing[0].Name != "TestAbsent" {
+				t.Fatalf("only a real missing test may be red: %+v", result.Missing)
+			}
+			if slices.Contains(names, "TestPresent") && !nativeIdentityStatus(result.Observed, "TestPresent", "passed") {
+				t.Fatalf("selected test did not run: observed=%+v", result.Observed)
+			}
+			if slices.Contains(names, "Test") && !nativeIdentityStatus(result.Observed, "Test", "passed") {
+				t.Fatalf("bare Test did not run: observed=%+v", result.Observed)
+			}
+			if _, err := os.Stat(filepath.Join(root, "main-ran")); err != nil {
+				t.Fatalf("TestMain must still execute: %v", err)
+			}
+			// Replay groups use the same discovery boundary as native inventory.
+			encoded, err := json.Marshal(names)
+			if err != nil {
+				t.Fatal(err)
+			}
+			group := testpolicy.Group{ID: "selected", Adapter: "go", CWD: ".", Packages: []string{"."}, Tests: encoded}
+			results, err := RunNamedGroups(t.Context(), root, testpolicy.Contract{SchemaVersion: 2, Groups: []testpolicy.Group{group}}, []string{group.ID}, environment)
+			wantStatus := "green"
+			if wantMissing {
+				wantStatus = "red"
+			}
+			if err != nil || len(results) != 1 || results[0].Status != wantStatus || slices.Contains(results[0].Reasons, "missing test TestMain") {
+				t.Fatalf("named selection=%v results=%+v err=%v", names, results, err)
+			}
+		})
 	}
 }
