@@ -1,0 +1,193 @@
+package main
+
+import (
+	"encoding/json"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
+)
+
+func TestLaneFixCheckpointMatchesRegisteredBatch(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		change func(*lane.Record, *plain.Batch, *plain.Running)
+		want   bool
+	}{
+		{"member batch", func(*lane.Record, *plain.Batch, *plain.Running) {}, true},
+		{"other checkout", func(r *lane.Record, _ *plain.Batch, _ *plain.Running) { r.Root += "-other" }, false},
+		{"new registration", func(r *lane.Record, _ *plain.Batch, _ *plain.Running) { r.CustodyEpoch++ }, false},
+		{"closed batch", func(_ *lane.Record, b *plain.Batch, _ *plain.Running) { b.State = plain.BatchClosed }, false},
+		{"other proof", func(_ *lane.Record, _ *plain.Batch, r *plain.Running) { r.BatchID = "another" }, false},
+		{"other members", func(_ *lane.Record, _ *plain.Batch, r *plain.Running) {
+			r.BatchMembers = []plain.GoalSHA{{Goal: "other", SHA: "sha"}}
+		}, false},
+		{"no batch commit", func(_ *lane.Record, _ *plain.Batch, r *plain.Running) { r.Commit = "" }, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			registered := lane.Record{Root: root, Install: root, CustodyEpoch: 1}
+			members := []plain.GoalSHA{{Goal: "goal-a", SHA: "member"}}
+			batch := plain.Batch{ID: "batch-1", Lane: registered, Base: "main", State: plain.BatchRunning, Members: members}
+			running := plain.Running{Commit: "batch-commit", BatchID: batch.ID, BatchMembers: members}
+			test.change(&registered, &batch, &running)
+			dir := plain.Dir(root)
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			for name, value := range map[string]any{"batch.json": batch, "running.json": running} {
+				data, err := json.Marshal(value)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, name), data, 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			fix := landingFixCheckpoint(root, root, registered)
+			if (fix != nil) != test.want {
+				t.Fatalf("checkpoint %+v, want admitted=%v", fix, test.want)
+			}
+			if fix != nil && (fix.Commit != "batch-commit" || len(fix.Members) != 1 || fix.Members[0] != "goal-a") {
+				t.Fatalf("wrong checkpoint: %+v", fix)
+			}
+		})
+	}
+}
+
+func TestLaneFixMessageReadsGitFileAndRefusesEdits(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	message := "goal goal-a: lane fix of package-a (fix round 1)\n\nGoal-Unit: goal-a/lane-fix-1\n"
+	if err := os.WriteFile(filepath.Join(root, "message"), []byte(message), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		args []string
+		want string
+	}{
+		{"file", []string{"-F", "message"}, message},
+		{"literal", []string{"-m", message}, message},
+		{"long literal", []string{"--message=" + message}, message},
+		{"long file", []string{"--file=message", "--quiet"}, message},
+		{"no message", nil, ""},
+		{"unreadable", []string{"-F", "missing"}, ""},
+		{"stdin", []string{"-F", "-"}, ""},
+		{"edited", []string{"-F", "message", "--edit"}, ""},
+		{"amended", []string{"-F", "message", "--amend"}, ""},
+		{"different message", []string{"-F", "message", "-m", "no trailer"}, ""},
+		{"extra trailer", []string{"-F", "message", "--trailer", "Goal-Unit: other/lane-fix-1"}, ""},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := landingFixMessage(root, test.args); got != test.want {
+				t.Fatalf("message %q, want %q", got, test.want)
+			}
+		})
+	}
+}
+
+func TestSkillLandingAgentOneFixRound(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(filepath.Join("..", "..", "skills", "landing-agent", "SKILL.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, words := range []string{"ONE fix round", "every red of this gate", "fix the goal's code or", "never loosen or delete a test", "--work lane-fix-1", "metasystem work review GOAL", "Goal-Unit: GOAL/lane-fix-1", "material read finding", "job id and read id", "For `main`, hold the batch"} {
+		if !strings.Contains(text, words) {
+			t.Errorf("skill omits %q", words)
+		}
+	}
+	if strings.Contains(text, "Never commit in the lane") {
+		t.Fatal("skill still forbids its engine fix commit")
+	}
+}
+
+func TestLaneFixGuardRealGitCommit(t *testing.T) {
+	t.Parallel()
+	root := syncedClaimedGoalFixture(t)
+	head := goalSyncMutationGit(t, root, "rev-parse", "HEAD")
+	goalSyncMutationGit(t, root, "checkout", "--detach", head)
+	pid := int64(os.Getpid())
+	exact, state, err := (identity.KernelProber{}).Probe(pid)
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe %s: %v", state, err)
+	}
+	if _, err := lease.AnnounceWithPair(root, "lane-fix-session", pid, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "lane-fix-session", "metasystem", lane.AgentLineage); err != nil {
+		t.Fatal(err)
+	}
+	if holder, err := lease.RequireHolder(root, pid, nil); err != nil || !holder.Holder {
+		t.Fatalf("holder %+v: %v", holder, err)
+	}
+	if !landingFixActor(root, pid) || landingFixActor(root, int64(os.Getppid())) {
+		t.Fatal("landing identity did not distinguish its session from another process")
+	}
+	registry := t.TempDir()
+	registered := lane.Record{Root: root, Install: root, CustodyEpoch: 1}
+	members := []plain.GoalSHA{{Goal: "standing-validation", SHA: head}}
+	records := map[string]any{
+		lane.RecordPath(filepath.Join(registry, ".metasystem")): registered,
+		filepath.Join(plain.Dir(root), "batch.json"):            plain.Batch{ID: "batch-1", Lane: registered, Base: head, State: plain.BatchRunning, Members: members},
+		filepath.Join(plain.Dir(root), "running.json"):          plain.Running{Commit: head, BatchID: "batch-1", BatchMembers: members},
+	}
+	for path, value := range records {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(value)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hook := "#!/bin/sh\nexec " + shellquote.Token(executable) + " internal pre-commit --root " + shellquote.Token(root) + "\n"
+	if err := os.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte(hook), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "code.go"), []byte("package fixture\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "code.go")
+	messagePath := filepath.Join(t.TempDir(), "message")
+	commit := func(message string) error {
+		t.Helper()
+		if err := os.WriteFile(messagePath, []byte(message), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.Command("git", "-C", root, "commit", "-F", messagePath)
+		command.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+registry)
+		output, err := command.CombinedOutput()
+		t.Logf("git commit: %v\n%s", err, output)
+		return err
+	}
+	if err := commit("repair without a trailer\n"); err == nil {
+		t.Fatal("commit without trailer passed")
+	}
+	if got := goalSyncMutationGit(t, root, "rev-parse", "HEAD"); got != head {
+		t.Fatalf("refused commit moved HEAD: %s", got)
+	}
+	message := "goal standing-validation: lane fix of fixture (fix round 1)\n\nGoal-Unit: standing-validation/lane-fix-1\n"
+	if err := commit(message); err != nil {
+		t.Fatal("valid lane fix refused", err)
+	}
+	if got := goalSyncMutationGit(t, root, "show", "-s", "--format=%B", "HEAD"); !strings.Contains(got, "Goal-Unit: standing-validation/lane-fix-1") {
+		t.Fatalf("commit omitted trailer: %q", got)
+	}
+}

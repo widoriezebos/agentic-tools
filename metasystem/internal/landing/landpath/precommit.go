@@ -29,6 +29,9 @@ type GuardOwners struct {
 	// Classify returns the caller's lease class; an error or an empty class
 	// is an unavailable identity decision.
 	Classify func(root string, caller int64) (string, error)
+	// LaneFix reads an authenticated landing agent's batch and proposed message.
+	// Nil or an unreadable record admits no lane commit.
+	LaneFix func(root, workTree string, caller int64) *LaneFixCommit
 	// WrapperToken reports whether caller runs under the live wrapper the
 	// token names.
 	WrapperToken func(token string, caller int64) bool
@@ -127,7 +130,7 @@ func guard(owners GuardOwners, root, workTree string, stderr io.Writer, notices 
 		// Human commits are sovereign; an agent commit that could damage
 		// what the wrapper protects must run under the live landing path
 		// that minted the wrapper token.
-		if reason := wrapperFenced(git, root); reason != "" && !owners.WrapperToken(TokenPath(root), owners.CallerPID) && !yield("wrapper-fence") {
+		if reason := wrapperFenced(git, root); reason != "" && !laneFixAdmits(owners, root, workTree, git) && !owners.WrapperToken(TokenPath(root), owners.CallerPID) && !yield("wrapper-fence") {
 			fmt.Fprintf(stderr, "an agent commits here only through metasystem work land (%s), so the commit was refused\n", reason)
 			fmt.Fprintln(stderr, "run: metasystem work land --message FILE --staged  (--local commits without pushing)")
 			fmt.Fprintln(stderr, "a goal's work: metasystem work review with the goal and --changes; other work, as a patch file")
@@ -435,4 +438,45 @@ func wrapperFenced(git func(args ...string) GitResult, root string) string {
 		}
 	}
 	return ""
+}
+
+// LaneFixCommit is the batch checkpoint and the actual git commit message.
+type LaneFixCommit struct {
+	Commit, Message string
+	Members         []string
+}
+
+func laneFixAdmits(owners GuardOwners, root, workTree string, git func(...string) GitResult) bool {
+	if owners.LaneFix == nil {
+		return false
+	}
+	fix := owners.LaneFix(root, workTree, owners.CallerPID)
+	if fix == nil || fix.Commit == "" {
+		return false
+	}
+	head := git("rev-parse", "--verify", "HEAD")
+	if head.Code != 0 || strings.TrimSpace(string(head.Stdout)) != fix.Commit {
+		return false
+	}
+	paragraphs := strings.Split(strings.TrimSpace(fix.Message), "\n\n")
+	trailers := strings.Split(paragraphs[len(paragraphs)-1], "\n")
+	var member string
+	for _, line := range trailers {
+		if strings.HasPrefix(line, "Goal-Unit:") {
+			if member != "" {
+				return false
+			}
+			match := regexp.MustCompile(`^Goal-Unit: ([^ /]+)/(lane-fix-[1-9][0-9]*)$`).FindStringSubmatch(line)
+			if match == nil {
+				return false
+			}
+			member = match[1]
+		}
+	}
+	for _, goal := range fix.Members {
+		if member != "" && goal == member {
+			return true
+		}
+	}
+	return false
 }

@@ -619,6 +619,7 @@ func landingPathOwners() landpath.Owners {
 func landingGuardOwners() landpath.GuardOwners {
 	return landpath.GuardOwners{
 		Git:          landingPathGit,
+		LaneFix:      landingFixCommit,
 		Probe:        os.Getenv("METASYSTEM_GUARD_PROBE"),
 		AllowNewPlan: os.Getenv("METASYSTEM_ALLOW_NEW_PLAN") == "1",
 		CallerPID:    int64(os.Getpid()),

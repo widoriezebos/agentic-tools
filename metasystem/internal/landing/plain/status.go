@@ -36,6 +36,7 @@ type Status struct {
 	// contains its sha. A landed hand-in a push of the last day brought
 	// carries that push's time.
 	Queue               []Entry              `json:"queue"`
+	RunningFix          *Fix                 `json:"running_fix,omitempty"`
 	RunningProof        *RunningProof        `json:"running_proof"`
 	RunningRegeneration *RunningRegeneration `json:"running_regeneration,omitempty"`
 	// LastProof is the newest line of results.jsonl.
@@ -378,6 +379,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			}
 			status.ProofHeadline += "; hot-fix, then metasystem landing prove --trunk"
 		}
+	}
+	status.RunningFix, err = readFix(install)
+	unread("the lane fix", err)
+	if status.RunningFix != nil {
+		status.ProofHeadline = fixHeadline(status.RunningFix)
 	}
 	if status.ProofHeadline != "" {
 		status.Summary = status.ProofHeadline
