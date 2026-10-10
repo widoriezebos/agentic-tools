@@ -312,8 +312,19 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	gates, skipped, err := countedLines[Result](gatesPath(install))
 	unread("the gate results", err)
 	damaged("the gate results have", skipped, gatesPath(install))
-	if err == nil && len(gates) > 0 {
-		status.LastGate = &gates[len(gates)-1]
+	if err == nil {
+		status.LastGate = &Result{Result: "none"}
+		head, headErr := seams.git(string(layout.Checkout), "rev-parse", "--verify", "HEAD^{commit}")
+		unread("the gate's requested HEAD", headErr)
+		if headErr == nil {
+			status.LastGate.Requested = head
+			for i := len(gates) - 1; i >= 0; i-- {
+				if gates[i].Requested == head {
+					status.LastGate = &gates[i]
+					break
+				}
+			}
+		}
 	}
 	pushes, skipped, err := countedLines[Pushed](pushesPath(install))
 	unread("the push record", err)

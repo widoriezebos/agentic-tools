@@ -39,7 +39,7 @@ func LastGate(install string) (Result, bool, error) {
 // Its result and repeat belong to that parent's tree, independently of HEAD.
 func gateBaseline(seams ProveSeams, install, checkout, command string, running Running, output io.Writer) (Result, bool, scopeDecision) {
 	decision := scopeDecision{scopeRecord: scopeRecord{Scope: "gate"}}
-	baseline := Result{Result: Red, Commit: running.Commit, Tree: running.Tree, Attempt: running.Attempt, Log: running.Log,
+	baseline := Result{Requested: running.Commit, Attributed: running.Commit, Result: Red, Commit: running.Commit, Tree: running.Tree, Attempt: running.Attempt, Log: running.Log,
 		At: seams.now().Format(time.RFC3339Nano), Scope: "gate", Cause: &Cause{Kind: "unclassified", Evidence: running.Log}}
 	parents, err := seams.git(checkout, "show", "-s", "--format=%P", running.Commit)
 	if err == nil && len(strings.Fields(parents)) == 1 {
@@ -82,6 +82,7 @@ func gateBaseline(seams ProveSeams, install, checkout, command string, running R
 	baseRun.BatchID, baseRun.BatchMembers = running.BatchID, running.BatchMembers
 	baseline.Person = running.Person
 	baseline.Commit, baseline.Tree, baseline.Attempt, baseline.Log = parent, tree, baseRun.Attempt, baseRun.Log
+	baseline.Requested, baseline.Attributed = parent, parent
 	baseline.Cause.Evidence = baseRun.Log
 	baseline.Goals, err = goalsInCommit(install, checkout, parent, seams.git)
 	if err != nil {

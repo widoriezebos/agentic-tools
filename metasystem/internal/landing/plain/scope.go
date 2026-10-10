@@ -288,6 +288,7 @@ type proofOutput struct {
 	output      io.Writer
 	pending     string
 	environment string
+	static      string
 	envSeen     bool
 	ran         []string
 	durations   map[string]int64
@@ -376,6 +377,9 @@ func (p *proofOutput) line(line string) {
 	}
 	if p.durations == nil {
 		p.durations = map[string]int64{}
+	}
+	if fields[2] == "fast-static-build" {
+		p.static = fields[3]
 	}
 	p.ran = append(p.ran, fields[2])
 	p.durations[fields[2]] = duration

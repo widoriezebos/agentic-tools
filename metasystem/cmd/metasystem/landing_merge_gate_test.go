@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,9 @@ func newMergeGateBed(t *testing.T) *replayVerbBed {
 	b.owners.landing.person = func(string) (string, error) { return "", errors.New("no enrolled person") }
 	git := b.owners.landing.plainProve.Git
 	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+		if strings.Join(args, " ") == "rev-parse --verify refs/remotes/origin/main^{commit}" {
+			return "main", nil
+		}
 		if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/metasystem.conf") {
 			return "proof.full=full-fixture\nproof.cheap=cheap-fixture\n", nil
 		}
@@ -34,6 +38,22 @@ func newMergeGateBed(t *testing.T) *replayVerbBed {
 			return "main sha-a", nil
 		}
 		return git(dir, args...)
+	}
+	b.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, error) { return 10, true, nil }
+	command := b.owners.landing.plainProve.Command
+	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+		if len(cmd.Args) > 1 && cmd.Args[1] == "test" {
+			fmt.Fprint(cmd.Stdout, "plan: base fixture\nselection: internal/a\n")
+			return nil
+		}
+		if strings.Contains(cmd.Args[len(cmd.Args)-1], " test groups ") {
+			fmt.Fprint(cmd.Stdout, "landing environment fixture toolchain\n")
+			if strings.HasSuffix(cmd.Args[len(cmd.Args)-1], "fast-static-build") {
+				fmt.Fprint(cmd.Stdout, "landing group fast-static-build green 1\nLANDING-CHECKED\t0\n")
+			}
+			return nil
+		}
+		return command(cmd)
 	}
 	b.owners.landing.plainProve.RecordMain = func([]plain.Result) error { return nil }
 	return b
@@ -60,6 +80,33 @@ func commandEnv(cmd *exec.Cmd, key string) string {
 		}
 	}
 	return ""
+}
+
+func TestLandingGateStaticParentReplayUsesProofCommandSeam(t *testing.T) {
+	t.Parallel()
+	b := newMergeGateBed(t)
+	b.head = "merge-a"
+	b.fail = func(*exec.Cmd, string) (string, error) {
+		t.Fatal("a static red ran the cheap proof")
+		return "", nil
+	}
+	command := b.owners.landing.plainProve.Command
+	var checked []string
+	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+		if commandEnv(cmd, "LANDING_ONLY") == "fast-static-build" {
+			commit := commandEnv(cmd, "LANDING_COMMIT")
+			checked = append(checked, commit)
+			if commit == "merge-a" {
+				fmt.Fprint(cmd.Stdout, "landing group fast-static-build red 1\n")
+				return exec.Command("/usr/bin/false").Run()
+			}
+		}
+		return command(cmd)
+	}
+	red := gateResult(t, b, 1)
+	if !reflect.DeepEqual(checked, []string{"merge-a", "main"}) || red.Cause == nil || red.Cause.Kind != "own" || red.Static != plain.Red {
+		t.Fatalf("static replay bypassed the proof seam or lost attribution: static=%v result=%+v", checked, red)
+	}
 }
 
 func TestLandingPausedPersonProofUnreadableLaunchRetainsFailedAdmission(t *testing.T) {
@@ -271,7 +318,7 @@ func TestLandingMergeGateOwnReturnAndBaselineFailure(t *testing.T) {
 					t.Fatalf("gate replay: %+v runs=%v", red, b.runs)
 				}
 				data, err := os.ReadFile(red.Cause.Evidence)
-				if err != nil || string(data) != replayFailure+"\nlanding prove: the proving command exited 1\n" || red.Cause.Evidence != red.Log {
+				if err != nil || string(data) != "landing environment fixture toolchain\nlanding group fast-static-build green 1\nLANDING-CHECKED\t0\n"+replayFailure+"\nlanding prove: the proving command exited 1\n" || red.Cause.Evidence != red.Log {
 					t.Fatalf("own evidence: %s %v", data, err)
 				}
 				b.head = "merge-a"
@@ -367,6 +414,18 @@ func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	}
 	if _, err := plain.SelectBatch(bed.installation, bed.checkout, record, plain.ProveSeams{}); err != nil {
 		t.Fatalf("prepare fixture selection: %v", err)
+	}
+	bed.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, error) { return 10, true, nil }
+	bed.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+		if len(cmd.Args) > 1 && cmd.Args[1] == "test" {
+			fmt.Fprint(cmd.Stdout, "selection: internal/a\n")
+			return nil
+		}
+		if strings.Contains(cmd.Args[len(cmd.Args)-1], " test groups ") {
+			fmt.Fprint(cmd.Stdout, "landing environment fixture toolchain\nlanding group fast-static-build green 1\nLANDING-CHECKED\t0\n")
+			return nil
+		}
+		return cmd.Run()
 	}
 	var stdout, stderr strings.Builder
 	code := runIntentIn(mustIntentCommand(t, "landing prove"), []string{"--gate", "--wait", "--json"}, &stdout, &stderr, bed.checkout, bed.owners)

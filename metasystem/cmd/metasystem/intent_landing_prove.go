@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -189,6 +190,15 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		seams.Person = person
 		seams.FenceCheck = nil
 	}
+	if seams.ImpactCost == nil {
+		seams.ImpactCost = func(dir, plan string) (int, bool, error) {
+			_, contract, _, err := testrun.LoadContract(dir)
+			if err != nil {
+				return 0, false, err
+			}
+			return impactCost(admitted.installation, dir, plan, contract)
+		}
+	}
 	seams.Trunk = inv.input.switched("trunk")
 	checkout := string(admitted.layout.Checkout)
 	seams.Gate = inv.input.switched("gate")
@@ -332,6 +342,9 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(landingProveRefusal(inv, targets, err))
 	}
 	words := provedWords(result.Commit, result.Tree)
+	if result.Result == plain.Skipped {
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: words + ": " + result.Reason})
+	}
 	if result.Result == plain.Green {
 		if result.Trunk {
 			if err := admitted.owners.clearLandingIncidents(admitted.installation, result); err != nil {

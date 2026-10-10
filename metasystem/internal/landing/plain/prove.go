@@ -34,9 +34,10 @@ import (
 
 // The results a proof ends with.
 const (
-	Green = "green"
-	Red   = "red"
-	Held  = "held"
+	Green   = "green"
+	Red     = "red"
+	Held    = "held"
+	Skipped = "skipped"
 )
 
 // Running is the proof that runs, as running.json keeps it.
@@ -66,6 +67,10 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
+	Requested             string               `json:"requested,omitempty"`
+	Attributed            string               `json:"attributed,omitempty"`
+	Depth                 string               `json:"depth,omitempty"`
+	Static                string               `json:"fast-static-build,omitempty"`
 	FlakeRepeats          []Running            `json:"flake-repeats,omitempty"`
 	RepeatComplete        bool                 `json:"repeat-complete,omitempty"`
 	FlakePublished        bool                 `json:"flake-published,omitempty"`
@@ -170,6 +175,8 @@ type ProveSeams struct {
 	FetchDeadline func(time.Duration) <-chan time.Time
 	// Trunk selects origin/main for a fresh full check.
 	Trunk bool
+	// ImpactCost applies the configured cheapness rule to a pinned selection.
+	ImpactCost func(dir, plan string) (share int, cheap bool, err error)
 	// Gate selects the cheap merge check and its separate result register.
 	Gate        bool
 	DepthReason string
@@ -321,6 +328,7 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	red.Person, red.Executions, red.ClassificationOf = running.Person, running.Executions, running.ClassificationOf
 	if running.Gate {
 		red.Scope = "gate"
+		red.Requested, red.Attributed = running.Commit, running.Commit
 	}
 	red.Goals, err = goalsInCommit(install, checkout, running.Commit, seams.git)
 	if err != nil {
@@ -350,7 +358,7 @@ func (s ProveSeams) checkBound(install, tree string) (Result, bool, error) {
 	if err == nil && found && result.Result == Red && s.Person == nil && (result.ClassificationPending || result.ClassificationPerson == nil && result.ClassificationOf == "") {
 		err = redContinuationLocked(install, result, s)
 	}
-	if err == nil && found && result.Result != Green && result.Result != Held && result.Repeat != "allowed" && s.Person == nil {
+	if err == nil && found && result.Result != Green && result.Result != Held && result.Result != Skipped && result.Repeat != "allowed" && s.Person == nil {
 		err = &NoRepeat{}
 	}
 	if err != nil && s.Person != nil {
@@ -842,6 +850,9 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		result = timedResult(result, running.Since, seams.now())
 		result = decision.describe(result, observed)
 	}
+	if seams.Gate {
+		result.Requested, result.Attributed = running.Commit, result.Commit
+	}
 	if result.Reason != "" {
 		fmt.Fprintf(output, "\nlanding prove: %s\n", result.Reason)
 	}
@@ -1108,17 +1119,28 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 	observed.readLog(log, offset)
 	observed.finish()
 	report := observed.report
+	// A named static group reports its completed verdict with a group line;
+	// it does not emit the test command's LANDING-CHECKED report.
+	if report.kind == "" && only == "fast-static-build" && (observed.static == Green || observed.static == Red) {
+		report.kind = "complete"
+		if observed.static == Red {
+			report.failed = []FailedUnit{{Unit: "fast-static-build"}}
+		}
+	}
 	if temporary {
 		if info, statErr := log.Stat(); statErr == nil {
 			_, copyErr := io.Copy(output, io.NewSectionReader(log, offset, info.Size()-offset))
 			err = errors.Join(err, copyErr)
 		}
 		// Without the caller's seekable log the scope environment stays unknown.
-		*observed = proofOutput{output: io.Discard}
+		*observed = proofOutput{output: io.Discard, static: observed.static}
 	}
 	if err != nil {
 		var exit *exec.ExitError
 		if errors.As(err, &exit) && exit.Exited() {
+			if exit.ExitCode() == 127 {
+				report.kind = "not-run"
+			}
 			return report, fmt.Errorf("the proving command exited %d", exit.ExitCode())
 		}
 		return report, fmt.Errorf("the proving command ended: %w", err)
@@ -1133,17 +1155,11 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 // this process proves (it holds running.json), so every worktree under
 // proofTrees is a leftover.
 func proveInWorktree(seams ProveSeams, install, checkout, command string, running Running, decision *scopeDecision, output io.Writer, observed *proofOutput, result, previous Result) Result {
-	if seams.Gate && !seams.gateBaseline {
-		var baseline Result
-		var ok bool
-		baseline, ok, *decision = gateBaseline(seams, install, checkout, command, running, output)
-		if !ok {
-			return baseline
-		}
-	}
 	git := seams.git
 	trees := proofTrees(install)
-	removeProofTrees(git, checkout, trees, output)
+	if !seams.gateBaseline {
+		removeProofTrees(git, checkout, trees, output)
+	}
 	if err := os.MkdirAll(trees, 0o755); err != nil {
 		result.Result, result.Reason, result.Cause = Red, err.Error(), &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}
 		if previous.Result == "" {
@@ -1169,6 +1185,13 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 	if rel, err := filepath.Rel(checkout, install); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
 		dir = filepath.Join(tree, rel)
 	}
+	if seams.Gate {
+		var done bool
+		result, done = prepareGate(seams, install, checkout, dir, command, running, decision, output, observed, result, previous)
+		if done {
+			return result
+		}
+	}
 	if decision.Scope == "impact" {
 		if err := decision.impactPlan(seams, dir); err != nil {
 			decision.ScopeReason = "impact proof error: " + err.Error()
@@ -1177,6 +1200,12 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 			result.allowEnvironmentRepeat(previous)
 			return result
 		}
+	}
+	if decision.Scope == "impact" && reuseGate(seams, install, dir, running, *decision, output, observed) {
+		gate, _, _ := LastGate(install)
+		result.Reason = "proven by attempt " + gate.Attempt
+		result.Static, result.Depth = gate.Static, "impact"
+		return result
 	}
 	report, runErr := runCheck(seams, dir, command, running, "", *decision, output, observed)
 	if decision.Scope == "impact" && strings.TrimSpace(observed.environment) == "" {

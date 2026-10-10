@@ -242,6 +242,11 @@ func TestLaneFixTopologyRealGitRedReplayAndReturn(t *testing.T) {
 			fix := recordTopologyFix(t, b, parent, "Goal-Unit: goal-a/lane-fix-1")
 			seams.Gate = gate
 			seams.Command = func(cmd *exec.Cmd) error {
+				if strings.Contains(cmd.Args[len(cmd.Args)-1], " test groups fast-static-build") {
+					fmt.Fprint(cmd.Stdout, "landing group fast-static-build green 1\nLANDING-CHECKED\t0\n")
+					return nil
+				}
+
 				for _, env := range cmd.Env {
 					if env == "LANDING_COMMIT="+fix.Commit {
 						fmt.Fprint(cmd.Stdout, "LANDING-FAILED\tpackage-a\tTestBroken\nLANDING-CHECKED\t1\n")

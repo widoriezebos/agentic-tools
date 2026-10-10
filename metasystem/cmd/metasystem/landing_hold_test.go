@@ -104,6 +104,8 @@ func holdLaneFixture(t *testing.T, entries []goal.TrunkRedEntry) (*resolveVerbFi
 	falseState := replayFalseState(t)
 	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
+		case "rev-parse --verify HEAD^{commit}":
+			return "head", nil
 		case "fetch --quiet origin +refs/heads/main:refs/remotes/origin/main":
 			return "", nil
 		case "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":

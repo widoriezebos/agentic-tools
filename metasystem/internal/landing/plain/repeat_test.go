@@ -114,6 +114,20 @@ func (b *repeatBed) refused() {
 	}
 }
 
+func TestRepeatMissingEngineIsEnvironment(t *testing.T) {
+	t.Parallel()
+	b := newRepeatBed(t)
+	for i := range 2 {
+		red := b.run(filepath.Join(b.checkout, "missing-engine"))
+		if red.Result != Red || red.Cause == nil || red.Cause.Kind != "environment" || red.CountedFull || red.Reason != "the proving command exited 127" {
+			t.Fatalf("missing engine consumed a full check or lost its environment cause: %+v", red)
+		}
+		if (red.Repeat == "allowed") != (i == 0) {
+			t.Fatalf("missing engine has the wrong repeat allowance on attempt %d: %+v", i+1, red)
+		}
+	}
+}
+
 func TestRepeatNoTestsRan(t *testing.T) {
 	t.Parallel()
 	b := newRepeatBed(t)

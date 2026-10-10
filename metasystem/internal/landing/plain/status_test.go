@@ -604,6 +604,15 @@ func TestLandingTimesNameADamagedPushWithNothingToTime(t *testing.T) {
 // Record damage, proof ownership and landing times keep their own assertions.
 func (b *statusBed) read(seams ProveSeams, git laneGit) Status {
 	b.t.Helper()
+	if seams.Git == nil {
+		seams.Git = func(_ string, args ...string) (string, error) {
+			if strings.Join(args, " ") == "rev-parse --verify HEAD^{commit}" {
+				return "head", nil
+			}
+			b.t.Fatalf("unstubbed status Git: %v", args)
+			return "", nil
+		}
+	}
 	seams.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }
 	return readStatus(b.home, b.record, b.view, seams, git)
 }

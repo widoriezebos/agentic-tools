@@ -69,6 +69,10 @@ func (s ProveSeams) acceptsGreen(install, checkout string, result Result) bool {
 	if !result.reusableGreen(s.now()) {
 		return false
 	}
+	if s.Gate {
+		commit, _, err := s.subject(checkout)
+		return err == nil && result.Requested == commit && result.Static == Green
+	}
 	if s.Impact {
 		d := impactScope(install, checkout, s)
 		return result.Scope == "impact" && d.Base != "" && result.Base == d.Base && result.BaseCommit == d.BaseCommit

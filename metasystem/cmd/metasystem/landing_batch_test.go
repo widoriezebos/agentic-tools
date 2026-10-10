@@ -61,6 +61,18 @@ func newBatchVerbBed(t *testing.T, policy string) *batchVerbBed {
 		Executable: func() (string, error) { return "/fixture/engine", nil },
 		Launch:     func([]string, string, string) (int64, error) { b.launches++; return int64(os.Getppid()), nil },
 		Alive:      func(running plain.Running) bool { return running.Pid == int64(os.Getpid()) },
+		ImpactCost: func(string, string) (int, bool, error) { return 10, true, nil },
+		Command: func(cmd *exec.Cmd) error {
+			if len(cmd.Args) > 2 && cmd.Args[1] == "test" && cmd.Args[2] == "impact" {
+				fmt.Fprint(cmd.Stdout, "plan: base fixture\nselection: fixture\n")
+				return nil
+			}
+			if strings.HasSuffix(cmd.Args[len(cmd.Args)-1], " test groups fast-static-build") {
+				fmt.Fprint(cmd.Stdout, "landing group fast-static-build green 1\n")
+				return nil
+			}
+			return cmd.Run()
+		},
 	}
 	b.owners.landing.keeper = func(home, root string) lane.AgentKeeper {
 		return lane.AgentKeeper{Home: home, Self: root, Now: func() time.Time { return b.now },
@@ -72,6 +84,31 @@ func newBatchVerbBed(t *testing.T, policy string) *batchVerbBed {
 		}
 	}
 	return b
+}
+
+func TestLandingGateStaticUsesProofCommandSeam(t *testing.T) {
+	t.Parallel()
+	b := newBatchVerbBed(t, "1")
+	a := b.seat(t, "a")
+	b.success(t, "landing", "run")
+	b.assemble(t, a)
+	command := b.owners.landing.plainProve.Command
+	var checked []string
+	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+		if commandEnv(cmd, "LANDING_ONLY") == "fast-static-build" {
+			checked = append(checked, commandEnv(cmd, "LANDING_COMMIT"))
+		}
+		return command(cmd)
+	}
+	b.success(t, "landing", "prove", "--gate", "--wait")
+	head := b.git(t, b.checkout, "rev-parse", "HEAD")
+	if !reflect.DeepEqual(checked, []string{head, b.main}) || b.executions(t) != 2 {
+		t.Fatalf("gate and parent static checks bypassed the proof seam: static=%v cheap=%d", checked, b.executions(t))
+	}
+	gate, found, err := plain.LastGate(b.installation)
+	if err != nil || !found || gate.Result != plain.Green || gate.Static != plain.Green {
+		t.Fatalf("static fixture lost its gate evidence: %+v found=%v err=%v", gate, found, err)
+	}
 }
 
 func (b *batchVerbBed) policy(t *testing.T, value string) {
@@ -170,6 +207,7 @@ func TestLandingBatchAdapterCapsGateProofPushAndRetry(t *testing.T) {
 		t.Fatalf("gate green authorized push: %d %s", code, text)
 	}
 	arrived := false
+	runCommand := b.owners.landing.plainProve.Command
 	b.owners.landing.plainProve.Command = func(command *exec.Cmd) error {
 		if !arrived && strings.Contains(strings.Join(command.Env, "\n"), "LANDING_PROOF_SCOPE=full") {
 			arrived = true
@@ -178,7 +216,7 @@ func TestLandingBatchAdapterCapsGateProofPushAndRetry(t *testing.T) {
 			}
 			b.seat(t, "d")
 		}
-		return command.Run()
+		return runCommand(command)
 	}
 	b.success(t, "landing", "prove", "--wait")
 	proof, ok, err := plain.LastResult(b.installation)
