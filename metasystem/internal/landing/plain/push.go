@@ -97,7 +97,7 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 					return err
 				}
 				if batch.ClosureReason == "confirmed push accounts for the selected members" {
-					return nil
+					return closeFix(install, "")
 				}
 				for _, member := range batch.Members {
 					onMain, err := batchContains(checkout, old, member.SHA, seams)
@@ -207,6 +207,9 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 		if err := writeBatch(install, batch); err != nil {
 			return err
 		}
+	}
+	if err := closeFix(install, ""); err != nil {
+		return err
 	}
 	if err := closeProofLoop(install); err != nil {
 		return err

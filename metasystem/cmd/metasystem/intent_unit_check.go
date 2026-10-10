@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -18,7 +19,10 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		return strings.TrimSpace(string(data)), err
 	}
 	check := &launch.UnitCheck{Base: plan.Base, Directory: plan.Proof[0].Dir, Environment: os.Environ()}
-	if inv.input.has("check") {
+	laneCheck := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal) != nil && slices.Equal(inv.input.values["check"], []string{"metasystem test impact"})
+	if laneCheck {
+		check.Cheap, check.Audits, check.Minutes = "metasystem test impact", "true", 15
+	} else if inv.input.has("check") {
 		actor, _, problem := inv.actingAs("work build manual check", plan.Goal, actorHuman)
 		if problem != nil {
 			return plan, fmt.Errorf("%s", problem.Summary)

@@ -365,6 +365,9 @@ func (inv *intentInvocation) manualContinuation(id string, item manualWorkItem) 
 // recorded subject is that very commit; otherwise the committed version is
 // shown from the range, so stale build bookkeeping never overshadows it.
 func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]launch.NamedWork, []manualWorkItem) {
+	if inv.connection().laneFix(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, id) != nil {
+		return work, nil
+	}
 	worktree, problem := inv.goalWorktree(id)
 	if problem != nil {
 		return work, nil

@@ -427,7 +427,7 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 	case !ok:
 		return Entry{}, false, fmt.Errorf("%w: %s was never handed in", ErrNotWaiting, goal)
 	case latest.State == StateReturned:
-		return latest, false, nil
+		return latest, false, closeFix(install, goal)
 	case latest.State != StateWaiting:
 		return latest, false, fmt.Errorf("%w: %s already %s", ErrNotWaiting, goal, latest.State)
 	}
@@ -442,6 +442,9 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 	at := now.UTC().Format(time.RFC3339)
 	if err := appendLine(queuePath(install), Line{ReturnOrigin: &origin, Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Cause: cause, Conflict: detail}); err != nil {
 		return latest, false, err
+	}
+	if err := closeFix(install, goal); err != nil {
+		return latest, true, err
 	}
 	latest.ReturnOrigin = &origin
 	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict, latest.Cause = StateReturned, reason, at, detail, cause

@@ -57,6 +57,7 @@ func firstLine(err error) string {
 var pushProtocolAvailable bool
 
 type CommitRequest struct {
+	LaneFixUnits                                  []string
 	BeforeCommit                                  func(dir, parent, tree string) error
 	BeforeInstall                                 func() (func() error, error)
 	PrepareOnly                                   bool
@@ -329,6 +330,30 @@ func commitStaged(req CommitRequest, r commitRepository) (string, error) {
 func commitStagedSubject(req CommitRequest, subjectCommit string, r commitRepository) (string, error) {
 	if err := CheckCommitAccess(req.GoalID, req.CheckClaim); err != nil {
 		return "", err
+	}
+	if req.LaneFixUnits != nil {
+		units, err := requestUnits(req)
+		if err != nil || req.Kind != Unit || req.Amend || req.Whole || len(units) != 1 || !strings.HasPrefix(units[0], "lane-fix-") || r.facts.HeadRef(req.Repo) != "" {
+			return "", fmt.Errorf("a lane fix needs one plain unit on detached HEAD")
+		}
+		head, err := r.facts.Head(req.Repo)
+		if err != nil || head != req.EndpointTip {
+			return "", fmt.Errorf("the batch commit changed before the fix commit")
+		}
+		paths, err := r.facts.Staged(req.Repo)
+		if err != nil {
+			return "", err
+		}
+		if len(paths) == 0 {
+			return "", fmt.Errorf("the fix has no staged changes")
+		}
+		if err := validateCommitPaths(Unit, paths, req.GoalID); err != nil {
+			return "", err
+		}
+		if err := r.effects.Commit(req.Repo, fmt.Sprintf("goal %s: lane fix of %s (fix round %s)", req.GoalID, strings.Join(req.LaneFixUnits, ", "), strings.TrimPrefix(units[0], "lane-fix-")), "Goal-Unit: "+req.GoalID+"/"+units[0], false); err != nil {
+			return "", err
+		}
+		return r.facts.Head(req.Repo)
 	}
 	state, err := r.inspectCommitBranch(req)
 	if err != nil {

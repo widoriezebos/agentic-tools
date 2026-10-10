@@ -471,6 +471,10 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && inv.checkDirectPersonProof("work "+inv.command.action, false) == nil {
 		runner.Actor = "person"
 	}
+	runner.AdmitDetached = func(plan launch.UnitPlan) bool {
+		fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal)
+		return fix != nil && plan.Base == fix.Parent && plan.Unit == fmt.Sprintf("lane-fix-%d", fix.Round) && fix.Commit == ""
+	}
 	runner.FreezeCheck = inv.resolveUnitCheck
 	if inv.input.has("check") {
 		runner.ReviewPolicy = func() (string, error) { return "person", nil }
@@ -508,7 +512,19 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if len(settings.Values) == 0 {
 			settings = launch.DefaultSettings()
 		}
-		return inv.unitLaunchAuthority(record, spec, settings)
+		if err := inv.unitLaunchAuthority(record, spec, settings); err != nil {
+			return err
+		}
+		if spec.Kind == "build" {
+			if fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), record.Worktree, record.Goal); fix != nil {
+				if record.Unit != fmt.Sprintf("lane-fix-%d", fix.Round) || len(record.Rounds) != 1 {
+					return fmt.Errorf("the lane admits only its recorded fix round")
+				}
+				fix.Job, fix.State = record.ID, "building"
+				return plain.WriteFix(inv.layout.InstallationRoot.Path(), *fix)
+			}
+		}
+		return nil
 	}
 	runner.Manager.SandboxAct = inv.consumedSandboxAct
 	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
@@ -1243,6 +1259,9 @@ func (inv *intentInvocation) callerPath(path string) string {
 // it prints the Git command that prepares it; the current checkout and its
 // uncommitted files are left where they are.
 func (inv *intentInvocation) goalWorktree(id string) (string, *intentResult) {
+	if inv.connection().laneFix(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, id) != nil {
+		return inv.layout.GitRoot, nil
+	}
 	git := inv.work().git
 	output, err := git(inv.layout.GitRoot, "worktree", "list", "--porcelain")
 	if err != nil {

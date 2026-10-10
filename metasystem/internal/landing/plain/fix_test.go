@@ -42,3 +42,67 @@ func TestReadStatusLaneFixUnreadable(t *testing.T) {
 		t.Fatalf("damaged repair disappeared: %+v", status)
 	}
 }
+
+func TestFixRecordClosesOnReturnAndPush(t *testing.T) {
+	t.Parallel()
+	for _, outcome := range []string{"return", "push"} {
+		t.Run(outcome, func(t *testing.T) {
+			t.Parallel()
+			b := newBed(t)
+			sha := b.seat("seat-a", "goal-a")
+			b.handIn("seat-a", "goal-a", sha)
+			head := b.merge("goal-a")
+			fix := Fix{Attempt: "attempt", Round: 1, Goal: "goal-a", Units: []string{"unit-a"}, Job: "build", Commit: head, State: "reviewing"}
+			if err := WriteFix(b.install, fix); err != nil {
+				t.Fatal(err)
+			}
+			if outcome == "return" {
+				_, changed, err := ReturnDesignRefused(b.install, DesignCheck{Goal: "goal-a", Commit: sha, Reason: "accepted design changed"}, bedNow)
+				if err != nil || !changed {
+					t.Fatalf("return changed=%v: %v", changed, err)
+				}
+			} else {
+				if result := b.prove(b.greenScript); result.Result != Green {
+					t.Fatalf("proof %+v", result)
+				}
+				if _, err := b.push(); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// A repeated outcome finishes a fix record whose earlier close failed.
+			if err := WriteFix(b.install, fix); err != nil {
+				t.Fatal(err)
+			}
+			if outcome == "return" {
+				if _, changed, err := ReturnDesignRefused(b.install, DesignCheck{Goal: "goal-a", Commit: sha, Reason: "accepted design changed"}, bedNow); err != nil || changed {
+					t.Fatalf("repeated return changed=%v: %v", changed, err)
+				}
+			} else if _, err := b.push(); err != nil {
+				t.Fatal(err)
+			}
+			if active, err := ActiveFix(b.install); err != nil || active != nil {
+				t.Fatalf("fix still active %+v: %v", active, err)
+			}
+			data, err := os.ReadFile(filepath.Join(Dir(b.install), "fixes", "attempt.json"))
+			if err != nil || !strings.Contains(string(data), `"state":"closed"`) {
+				t.Fatalf("closure %s: %v", data, err)
+			}
+		})
+	}
+}
+
+func TestFixBuildingHeadlineUsesBatchParent(t *testing.T) {
+	t.Parallel()
+	install := t.TempDir()
+	fix := Fix{Attempt: "attempt", Round: 1, Goal: "goal-a", Units: []string{"unit-a"}, Job: "build", Parent: "0123456789abcdef", State: "building"}
+	if err := WriteFix(install, fix); err != nil {
+		t.Fatal(err)
+	}
+	active, err := ActiveFix(install)
+	if err != nil || active == nil {
+		t.Fatalf("building fix %+v: %v", active, err)
+	}
+	if headline := fixHeadline(active); headline != "Fixing unit-a of goal-a on 0123456789ab (fix round 1)" {
+		t.Fatalf("building headline %q", headline)
+	}
+}

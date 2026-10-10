@@ -443,6 +443,7 @@ func wrapperFenced(git func(args ...string) GitResult, root string) string {
 // LaneFixCommit is the batch checkpoint and the actual git commit message.
 type LaneFixCommit struct {
 	Commit, Message string
+	Unit            string
 	Members         []string
 }
 
@@ -467,7 +468,7 @@ func laneFixAdmits(owners GuardOwners, root, workTree string, git func(...string
 				return false
 			}
 			match := regexp.MustCompile(`^Goal-Unit: ([^ /]+)/(lane-fix-[1-9][0-9]*)$`).FindStringSubmatch(line)
-			if match == nil {
+			if match == nil || fix.Unit != "" && match[2] != fix.Unit {
 				return false
 			}
 			member = match[1]

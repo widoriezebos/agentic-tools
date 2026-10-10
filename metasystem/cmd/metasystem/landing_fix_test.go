@@ -78,6 +78,7 @@ func TestLaneFixMessageReadsGitFileAndRefusesEdits(t *testing.T) {
 	}{
 		{"file", []string{"-F", "message"}, message},
 		{"literal", []string{"-m", message}, message},
+		{"paragraphs", []string{"-m", "subject", "-m", "Goal-Unit: goal-a/lane-fix-1"}, "subject\n\nGoal-Unit: goal-a/lane-fix-1"},
 		{"long literal", []string{"--message=" + message}, message},
 		{"long file", []string{"--file=message", "--quiet"}, message},
 		{"no message", nil, ""},
@@ -104,7 +105,7 @@ func TestSkillLandingAgentOneFixRound(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, words := range []string{"ONE fix round", "every red of this gate", "fix the goal's code or", "never loosen or delete a test", "--work lane-fix-1", "metasystem work review GOAL", "Goal-Unit: GOAL/lane-fix-1", "material read finding", "job id and read id", "For `main`, hold the batch"} {
+	for _, words := range []string{"ONE fix round", "every red of this gate", "fix the goal's code or", "never loosen or delete a test", "--work lane-fix-1", "metasystem work review GOAL", "Goal-Unit: GOAL/lane-fix-1", "material read finding", "job id and read id", "For `main`, hold the batch", "--check 'metasystem test impact'", "followed by `metasystem landing prove`", "`running_fix`", "When the engine refuses the fix build, return as before"} {
 		if !strings.Contains(text, words) {
 			t.Errorf("skill omits %q", words)
 		}
@@ -139,8 +140,10 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 	records := map[string]any{
 		lane.RecordPath(filepath.Join(registry, ".metasystem")): registered,
 		filepath.Join(plain.Dir(root), "batch.json"):            plain.Batch{ID: "batch-1", Lane: registered, Base: head, State: plain.BatchRunning, Members: members},
-		filepath.Join(plain.Dir(root), "running.json"):          plain.Running{Commit: head, BatchID: "batch-1", BatchMembers: members},
+		filepath.Join(plain.Dir(root), "running.json"):          plain.Running{Commit: head, Attempt: "attempt-1", BatchID: "batch-1", BatchMembers: members},
 	}
+	records[filepath.Join(plain.Dir(root), "fixes", "attempt-1.json")] = plain.Fix{Goal: "standing-validation", Units: []string{"fixture"}, Job: "build", State: "building", Round: 1, Attempt: "attempt-1", Parent: head}
+	records[filepath.Join(plain.Dir(root), "results.jsonl")] = plain.Result{Attempt: "attempt-1", Commit: head, Result: plain.Red, Cause: &plain.Cause{Kind: "own", Goal: "standing-validation"}, Failed: []plain.FailedUnit{{Unit: "fixture"}}}
 	for path, value := range records {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -171,7 +174,11 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 		if err := os.WriteFile(messagePath, []byte(message), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		command := exec.Command("git", "-C", root, "commit", "-F", messagePath)
+		args := []string{"-C", root, "commit"}
+		for _, paragraph := range strings.Split(strings.TrimSpace(message), "\n\n") {
+			args = append(args, "-m", paragraph)
+		}
+		command := exec.Command("git", args...)
 		command.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+registry)
 		output, err := command.CombinedOutput()
 		t.Logf("git commit: %v\n%s", err, output)
@@ -182,6 +189,9 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 	}
 	if got := goalSyncMutationGit(t, root, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("refused commit moved HEAD: %s", got)
+	}
+	if err := commit("repair\n\nGoal-Unit: standing-validation/lane-fix-2\n"); err == nil {
+		t.Fatal("unrecorded fix round passed")
 	}
 	message := "goal standing-validation: lane fix of fixture (fix round 1)\n\nGoal-Unit: standing-validation/lane-fix-1\n"
 	if err := commit(message); err != nil {

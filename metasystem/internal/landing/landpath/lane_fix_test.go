@@ -58,3 +58,24 @@ func TestGuardLaneFixStillFencesLedgerAndBackups(t *testing.T) {
 		})
 	}
 }
+
+func TestGuardLaneFixMatchesRecordedRound(t *testing.T) {
+	t.Parallel()
+	for _, unit := range []string{"lane-fix-1", "lane-fix-2"} {
+		t.Run(unit, func(t *testing.T) {
+			t.Parallel()
+			b := newGuardBed(t)
+			b.git.branch, b.git.head = "", "batch"
+			b.stage("M", "code.go")
+			b.owners.Classify = func(string, int64) (string, error) { return "MAIN", nil }
+			b.owners.LaneFix = func(string, string, int64) *LaneFixCommit {
+				return &LaneFixCommit{Commit: "batch", Members: []string{"goal-a"}, Unit: "lane-fix-1", Message: "repair\n\nGoal-Unit: goal-a/" + unit}
+			}
+			want := 1
+			if unit == "lane-fix-1" {
+				want = 0
+			}
+			b.expect(b.run(), want)
+		})
+	}
+}

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -47,9 +48,11 @@ func landingFixCommit(root, checkout string, caller int64) *landpath.LaneFixComm
 		return nil
 	}
 	fix := landingFixCheckpoint(root, checkout, registered)
-	if fix == nil {
+	active, readErr := plain.ActiveFix(root)
+	if fix == nil || readErr != nil || active == nil || landingFixForRegistered(root, checkout, active.Goal, caller, registered) == nil {
 		return nil
 	}
+	fix.Members, fix.Unit = []string{active.Goal}, fmt.Sprintf("lane-fix-%d", active.Round)
 	seen := map[int64]bool{}
 	for caller > 0 && !seen[caller] {
 		seen[caller] = true
@@ -98,7 +101,7 @@ func landingFixMessage(checkout string, args []string) string {
 		key, value, inline := strings.Cut(args[i], "=")
 		switch key {
 		case "-F", "--file", "-m", "--message":
-			if file != "" {
+			if file != "" && (!literal || key != "-m" && key != "--message") {
 				return ""
 			}
 			if !inline {
@@ -108,7 +111,11 @@ func landingFixMessage(checkout string, args []string) string {
 				}
 				value = args[i]
 			}
-			file = value
+			if file != "" {
+				file += "\n\n" + value
+			} else {
+				file = value
+			}
 			literal = key == "-m" || key == "--message"
 		case "--allow-empty", "--no-edit", "--quiet", "-q":
 		default:

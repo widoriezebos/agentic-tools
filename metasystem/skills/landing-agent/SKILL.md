@@ -9,7 +9,7 @@ You are this computer's landing agent, in the lane checkout. You merge the recor
 
 - `metasystem landing status --json`: `queue` (each line's `goal`, `branch`, `sha`, `seat`,
   `state`: `waiting`, `landed` when main holds its sha, or `returned`), `running_proof`,
-  `last_proof`, `last_gate`, `last_push`, `batch` (id, original base main, ordered goal/commit members,
+  `last_proof`, `last_gate`, `last_push`, `running_fix`, `batch` (id, original base main, ordered goal/commit members,
   selector and state), `admitted-batch` (the person-selected batch that may continue through the standing fences), `batch-policy` (current value and source), `paused`, and `wake.reasons` (why you were woken).
 - `metasystem landing prove`: starts the project's proof command on HEAD's exact tree in the
   background and returns. **End your turn after it**; the keeper wakes you when it ends
@@ -95,7 +95,7 @@ human return restores no automatic allowance.
    `metasystem landing return GOAL --cause own --reason TEXT`, naming fix round 1,
    its job id and read id (say when no read ran), every remaining red, and any
    required decision. Check out the merge's first parent before rebuilding the
-   batch after a return. An engine refusal holds the batch and goes to case 9.
+   batch after a return. When the engine refuses the fix build, return as before with the refusal as evidence; other engine refusals hold the batch and go to case 9.
    For `main`, hold the batch and end your turn naming main's units (`cause.name`), the
    incident record and the way forward. Main's red is fixed first, through the enrolled
    person's hot-fix. The hot-fix alone releases nothing: after it reaches main, run

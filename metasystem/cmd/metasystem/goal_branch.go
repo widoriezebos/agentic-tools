@@ -263,7 +263,13 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	if err != nil {
 		return branch.BranchReadResult{}, 1, err
 	}
-	branchTip, present, err := originTipReader(*root, endpoint, *goalID)
+	var branchTip string
+	var present bool
+	if fix := landingFixFor(*root, "", *goalID, int64(os.Getpid())); fix != nil && fix.Commit == *unit {
+		endpointTip, branchTip, present = fix.Parent, fix.Commit, true
+	} else {
+		branchTip, present, err = originTipReader(*root, endpoint, *goalID)
+	}
 	if err != nil || !present {
 		if err == nil {
 			err = fmt.Errorf("origin has no goal/%s", *goalID)
@@ -492,6 +498,9 @@ func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, confi
 
 func goalBranchClaimCheckWithDeadline(root, goalID string, endpoint goal.Endpoint, config func(string, string) (string, error), holderRoot func(string) string, deadline func(time.Duration) <-chan time.Time) func() error {
 	return func() error {
+		if landingFixFor(root, "", goalID, int64(os.Getpid())) != nil {
+			return nil
+		}
 		machine, err := goal.ResolveMachineWithConfig(root, config)
 		if err != nil {
 			return err
