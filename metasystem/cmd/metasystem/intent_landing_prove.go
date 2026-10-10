@@ -147,7 +147,7 @@ func landingProveCommand() intentCommand {
 			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full proof no more than an hour old. After record or ledger changes under a proven batch, the proof runs only the groups whose declared inputs cover what main gained, while that batch's full proof is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
 			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. A recorded selection may continue through its standing pause; a direct person may request one proof while it stays stopped.",
-			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full proof.",
+			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full proof. When the batch decided full depth, an explicit impact green does not satisfy landing push.",
 			"--trunk fetches origin/main and runs a fresh full check there, even after a green or red; the lane checkout stays where it is. --gate and --trunk cannot be used together."},
 		flags: []intentFlag{{name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "prove here and wait for the result"},
 			{name: "classify", value: "ATTEMPT", usage: "classify one saved red; a person supplies this act"},
@@ -252,10 +252,29 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		if err != nil {
 			return inv.render(landingProveRefusal(inv, targets, err))
 		}
+		if recorded && running.Admission != nil && !seams.Gate && !seams.Trunk && !inv.input.switched("impact") {
+			seams.Impact = running.Impact
+		}
 		if !recorded || running.Attempt != attempt || running.Admission == nil || (running.Admission.State != "launched" && running.Admission.State != "pending") || running.Gate != seams.Gate || running.Trunk != seams.Trunk || running.Impact != seams.Impact {
 			return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "this background check has no matching unclaimed admission", Next: "metasystem landing prove"}))
 		}
 		commit = running.Commit
+		seams.DepthScope = running.Admission.DepthScope
+		seams.DepthReason = running.Admission.Reason
+	}
+	if attempt == "" && !seams.Gate && !seams.Trunk {
+		impact, reason := batchDepth(admitted.installation, checkout, commit, seams)
+		if reason != "" {
+			seams.DepthScope = "full"
+			if impact {
+				seams.DepthScope = "impact"
+			}
+			seams.DepthReason = reason
+			seams.Impact = seams.Impact || impact
+		}
+	}
+	if seams.Impact {
+		key = "proof.cheap"
 	}
 	command, err := seams.CommandForCommit(commit)
 	if err != nil {

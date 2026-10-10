@@ -88,7 +88,7 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 			t.Fatalf("unexpected merge call: %v", args)
 			return "", nil
 		}, Run: func(argv []string, dir string, log *os.File, started func(int64) error) error {
-			if strings.Join(argv, " ") != "env LANDING_PROOF_BASE=batch /bin/sh -c metasystem test impact" || dir != root {
+			if strings.Join(argv, " ") != "env LANDING_PROOF_BASE=batch /bin/sh -c metasystem test impact --check" || dir != root {
 				t.Fatalf("check=%v cwd=%s", argv, dir)
 			}
 			return started(0)

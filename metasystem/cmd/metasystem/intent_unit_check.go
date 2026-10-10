@@ -21,7 +21,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 	check := &launch.UnitCheck{Base: plan.Base, Directory: plan.Proof[0].Dir, Environment: os.Environ()}
 	laneCheck := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal) != nil && slices.Equal(inv.input.values["check"], []string{"metasystem test impact"})
 	if laneCheck {
-		check.Cheap, check.Audits, check.Minutes = "metasystem test impact", "true", 15
+		check.Cheap, check.Audits, check.Minutes = "metasystem test impact --check", "true", 15
 	} else if inv.input.has("check") {
 		actor, _, problem := inv.actingAs("work build manual check", plan.Goal, actorHuman)
 		if problem != nil {
@@ -63,6 +63,9 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 	brief, err := os.ReadFile(plan.Build.Brief)
 	if err != nil {
 		return plan, err
+	}
+	if laneCheck {
+		brief = append([]byte("Stage the repair before running its check.\n"), brief...)
 	}
 	plan.Build.Brief = filepath.Join(directory, "checked-build.md")
 	_, err = atomicfile.WriteText(plan.Build.Brief, fmt.Sprintf("Before returning, run: metasystem test run --unit-run %s\n\n%s", run, brief), directory)

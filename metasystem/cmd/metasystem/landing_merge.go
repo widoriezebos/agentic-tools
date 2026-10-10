@@ -51,7 +51,16 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 		var job launch.Record
 		if fix.Job == "" {
 			fix.Job, fix.Brief = fmt.Sprintf("lane-merge-%x", sha256.Sum256([]byte(fix.Attempt)))[:63], inv.callerPath(inv.input.text("brief"))
-			if err = plain.WriteFix(root, fix); err == nil {
+			brief, readErr := os.ReadFile(fix.Brief)
+			if readErr != nil {
+				return inv.render(landingLaneFailure(nil, readErr.Error(), nil)), true
+			}
+			fix.Brief = filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".build.md")
+			brief = append(brief, []byte("\nBefore returning, stage the resolution and run: "+shellCommand([]string{"env", "LANDING_PROOF_BASE=" + fix.Commit, "metasystem", "test", "impact", "--check"})+"\n")...)
+			if err = os.WriteFile(fix.Brief, brief, 0600); err == nil {
+				err = plain.WriteFix(root, fix)
+			}
+			if err == nil {
 				job, err = runner.Manager.Start(launch.StartSpec{ID: fix.Job, Kind: "build", Goal: fix.Goal, Tag: fix.Units[0], WorkingDirectory: checkout, Brief: fix.Brief, UnitsPage: fix.Brief, Units: fix.Units})
 			}
 		} else {
@@ -61,7 +70,7 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 			if job.State != launch.Completed {
 				err = errors.New("resolution job " + fix.Job + " cannot resolve: " + job.Reason)
 			} else {
-				err = plain.CompleteMerge(home, root, checkout, fix, "metasystem test impact", inv.landing().plainResolve)
+				err = plain.CompleteMerge(home, root, checkout, fix, "metasystem test impact --check", inv.landing().plainResolve)
 			}
 		}
 		if fix.State == "reviewing" || fix.State == "resolved" {

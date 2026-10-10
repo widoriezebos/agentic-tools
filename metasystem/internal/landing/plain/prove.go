@@ -171,7 +171,10 @@ type ProveSeams struct {
 	// Trunk selects origin/main for a fresh full check.
 	Trunk bool
 	// Gate selects the cheap merge check and its separate result register.
-	Gate         bool
+	Gate        bool
+	DepthReason string
+	// DepthScope is non-empty only when the batch depth policy made a decision.
+	DepthScope   string
 	Impact       bool
 	gateBaseline bool
 	// Incidents reads main's register for queue holds; nil uses Git.
@@ -817,7 +820,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if !seams.Gate && !running.Trunk && !seams.Impact {
 		from, ok = ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree)
 	}
-	if !seams.Gate && !running.Trunk && !seams.Impact && previous.Result == "" && ok && from.fullCurrent(seams.now()) {
+	if !seams.Gate && !running.Trunk && !seams.Impact && previous.Result == "" && ok && from.fullCurrent(seams.now()) && (running.Admission == nil || running.Admission.Scope == "inherited") {
 		result.Reason = inheritedReason(from)
 		result, err = inheritScope(install, result, from)
 		if err != nil {

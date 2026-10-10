@@ -7,28 +7,43 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // ExecutionAdmission belongs to one attempt's pinned tree and declaration.
 // State changes under the queue lock: pending, launched, claimed, or failed.
 type ExecutionAdmission struct {
-	Groups   []string     `json:"groups,omitempty"`
-	Lane     *lane.Record `json:"lane,omitempty"`
-	Attempt  string       `json:"attempt"`
-	Commit   string       `json:"commit"`
-	Tree     string       `json:"tree"`
-	BatchID  string       `json:"batch-id,omitempty"`
-	Gate     bool         `json:"gate,omitempty"`
-	Trunk    bool         `json:"trunk,omitempty"`
-	Scope    string       `json:"scope"`
-	Base     string       `json:"base,omitempty"`
-	BaseSHA  string       `json:"baseCommit,omitempty"`
-	Command  string       `json:"command"`
-	Policy   PolicyValue  `json:"policy"`
-	At       string       `json:"at"`
-	State    string       `json:"state"`
-	Warning  string       `json:"warning,omitempty"`
-	Override bool         `json:"override,omitempty"`
+	// Decision pins the complete scope across the detached process boundary.
+	Decision *admittedScope `json:"decision,omitempty"`
+	// DepthScope marks a batch depth decision, independently of the executed scope.
+	DepthScope string       `json:"depthScope,omitempty"`
+	DepthBase  string       `json:"depthBase,omitempty"`
+	Groups     []string     `json:"groups,omitempty"`
+	Lane       *lane.Record `json:"lane,omitempty"`
+	Attempt    string       `json:"attempt"`
+	Commit     string       `json:"commit"`
+	Tree       string       `json:"tree"`
+	BatchID    string       `json:"batch-id,omitempty"`
+	Gate       bool         `json:"gate,omitempty"`
+	Trunk      bool         `json:"trunk,omitempty"`
+	Reason     string       `json:"reason,omitempty"`
+	Scope      string       `json:"scope"`
+	Base       string       `json:"base,omitempty"`
+	BaseSHA    string       `json:"baseCommit,omitempty"`
+	Command    string       `json:"command"`
+	Policy     PolicyValue  `json:"policy"`
+	At         string       `json:"at"`
+	State      string       `json:"state"`
+	Warning    string       `json:"warning,omitempty"`
+	Override   bool         `json:"override,omitempty"`
+}
+
+// admittedScope keeps the selection and its source facts for the admitted execution.
+type admittedScope struct {
+	scopeRecord
+	Source   Result                    `json:"source,omitempty"`
+	Contract testpolicy.Contract       `json:"contract,omitempty"`
+	Affected testpolicy.AffectedResult `json:"affected,omitempty"`
 }
 
 func proofCommand(gate, trunk bool) string {
@@ -42,11 +57,30 @@ func proofCommand(gate, trunk bool) string {
 }
 
 func proofScope(install, checkout string, running Running, seams ProveSeams) scopeDecision {
+	if running.Admission != nil && running.Admission.Decision != nil {
+		pinned := running.Admission.Decision
+		return scopeDecision{scopeRecord: pinned.scopeRecord, base: pinned.Source, contract: pinned.Contract, affected: pinned.Affected}
+	}
 	if running.Gate {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "gate"}}
 	}
 	if running.Trunk {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check of main"}}
+	}
+	if seams.DepthScope != "" {
+		d := scopeDecision{scopeRecord: scopeRecord{Scope: seams.DepthScope, ScopeReason: seams.DepthReason}}
+		if seams.Impact {
+			d = impactScope(install, checkout, seams)
+			if strings.HasPrefix(d.ScopeReason, "impact proof error:") {
+				d.ScopeReason += "; " + seams.DepthReason
+			} else {
+				d.ScopeReason = seams.DepthReason
+				if seams.DepthScope == "full" {
+					d.ScopeReason += "; explicit impact check does not satisfy the push at decided full depth"
+				}
+			}
+		}
+		return d
 	}
 	if seams.Impact {
 		return impactScope(install, checkout, seams)
@@ -69,7 +103,20 @@ func admitExecutionLocked(install, checkout, command string, running *Running, d
 	if decision.Scope == "impact" && decision.Base == "" {
 		return fmt.Errorf("%s", decision.ScopeReason)
 	}
-	admission := ExecutionAdmission{Attempt: running.Attempt, Commit: running.Commit, Tree: running.Tree, BatchID: running.BatchID, Gate: running.Gate, Trunk: running.Trunk, Groups: decision.groupIDs(), Scope: decision.Scope, Base: decision.Base, BaseSHA: decision.BaseCommit, Command: command, At: seams.now().Format(time.RFC3339Nano), State: "pending"}
+	admission := ExecutionAdmission{Attempt: running.Attempt, Commit: running.Commit, Tree: running.Tree, BatchID: running.BatchID, Gate: running.Gate, Trunk: running.Trunk, Groups: decision.groupIDs(), Scope: decision.Scope, Reason: decision.ScopeReason, Base: decision.Base, BaseSHA: decision.BaseCommit, Command: command, At: seams.now().Format(time.RFC3339Nano), State: "pending"}
+	// Keep only the source facts needed by a scoped proof, without its execution history.
+	pinned := admittedScope{scopeRecord: decision.scopeRecord, Contract: decision.contract, Affected: decision.affected, Source: Result{Tree: decision.base.Tree, Attempt: decision.base.Attempt, FullTree: decision.base.FullTree, FullAt: decision.base.FullAt, Environment: decision.base.Environment}}
+	admission.Decision = &pinned
+	admission.DepthScope = seams.DepthScope
+	if seams.DepthScope != "" {
+		batch, err := ReadBatch(install)
+		if err != nil {
+			return err
+		}
+		if batch != nil {
+			admission.DepthBase = batch.Base
+		}
+	}
 	if seams.Lane != nil {
 		registered, err := seams.Lane()
 		if err != nil {

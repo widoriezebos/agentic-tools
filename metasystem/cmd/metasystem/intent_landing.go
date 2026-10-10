@@ -475,6 +475,9 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 				table.Row(textui.Plain(row[0]), textui.Plain(row[1]))
 			}
 		}
+		if run := data.RunningProof; run != nil && run.Admission != nil && run.Admission.Reason != "" {
+			page.Section("Proof", "").Text("proving at " + run.Admission.Scope + " depth: " + run.Admission.Reason)
+		}
 		if data.LastProof == nil && data.LastGate == nil && data.LastPush == nil {
 			return
 		}
@@ -482,6 +485,9 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 		if proof := data.LastProof; proof != nil {
 			if proof.Scope != "" {
 				section.KV("scope", textui.Plain(proof.Scope))
+				if proof.ScopeReason != "" {
+					section.Text("proving at " + proof.Scope + " depth: " + proof.ScopeReason)
+				}
 			}
 			if proof.Scope == "impact" {
 				section.KV("base", textui.Plain(shortLandingID(proof.BaseCommit)+" (tree "+shortLandingID(proof.Base)+")"))

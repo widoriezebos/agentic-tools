@@ -179,3 +179,15 @@ func TestBatchAdmissionClosesMatchingBatchAcrossScopes(t *testing.T) {
 		})
 	}
 }
+
+func TestDepthDecisionPreservesImpactScopeError(t *testing.T) {
+	t.Parallel()
+	b := newScopeBed(t)
+	b.seams.DepthScope = "full"
+	b.seams.DepthReason = "tier 3: full"
+	b.seams.Impact = true
+	decision := proofScope(b.install, b.checkout, Running{}, b.seams)
+	if decision.Base != "" || !strings.Contains(decision.ScopeReason, "impact proof error: no batch base is recorded") || !strings.Contains(decision.ScopeReason, "tier 3: full") {
+		t.Fatalf("impact error was replaced by depth reason: %+v", decision)
+	}
+}

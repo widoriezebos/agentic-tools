@@ -4,10 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -19,9 +23,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
-func runTestImpact(args []string, stdout, stderr io.Writer) int {
+func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 	flags := newFlagSet("test impact", stdout, stderr)
 	base := flags.String("base", os.Getenv("LANDING_PROOF_BASE"), "the unit's comparison base")
+	check := flags.Bool("check", false, "check a repair at impact depth only when cheap; reuse its unchanged staged tree")
 	plan := flags.Bool("plan", false, "print the selection without running it")
 	root := pathFlag(flags, "root", ".", "the Go module installation")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
@@ -38,10 +43,28 @@ func runTestImpact(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stdout, "LANDING-NOT-RUN\tenvironment")
 		return 1
 	}
+	var identity repairCheck
+	if *check && !*plan && !replay {
+		identity, _ = repairCheckIdentity(installation, *base)
+		if reused, _ := repairCheckCache(installation, identity, false); reused {
+			fmt.Fprintln(stdout, "check reused from the job")
+			return 0
+		}
+		defer func() {
+			after, _ := repairCheckIdentity(installation, *base)
+			if code == 0 && after.Tree == identity.Tree {
+				if _, err := repairCheckCache(installation, identity, true); err != nil {
+					fmt.Fprintln(stderr, err)
+					code = 1
+				}
+			}
+		}()
+	}
 	prefix := ""
 	if config.TemplateMode(installation) {
 		prefix = "metasystem/"
 	}
+	fullContract := contract
 	ids := []string{}
 	units := map[string]string{}
 	selections := strings.Fields(only)
@@ -137,6 +160,24 @@ func runTestImpact(args []string, stdout, stderr io.Writer) int {
 			ids = append(ids, id)
 		}
 	}
+	if *check && !replay {
+		var selection strings.Builder
+		for _, item := range selections {
+			fmt.Fprintln(&selection, "selection: "+item)
+		}
+		share, cheap, err := impactCost(installation, installation, selection.String(), fullContract)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		if !cheap {
+			ids = []string{"fast-static-build"}
+			identity.Reason = fmt.Sprintf("check: fast-static-build only; impact would cover %d%%", share)
+		} else {
+			identity.Reason = "check: impact"
+		}
+		fmt.Fprintln(stdout, identity.Reason)
+	}
 	if !replay && *plan {
 		return 0
 	}
@@ -164,4 +205,172 @@ func runTestImpact(args []string, stdout, stderr io.Writer) int {
 func landingOnly() (string, bool) {
 	only := os.Getenv("LANDING_ONLY")
 	return only, strings.TrimSpace(only) != ""
+}
+
+func impactDepth(plan string, contract testpolicy.Contract, full, limit int) (int, bool) {
+	whole := map[string]bool{}
+	for _, line := range strings.Split(plan, "\n") {
+		selection, ok := strings.CutPrefix(line, "selection: ")
+		if !ok || strings.Contains(selection, "=") {
+			continue
+		}
+		for _, group := range contract.Groups {
+			if selection == group.ID && (group.Adapter != "go" || string(group.Tests) != `"all"`) {
+				selection = ""
+			}
+		}
+		if selection != "" {
+			whole[strings.TrimPrefix(strings.TrimPrefix(selection, "metasystem/"), "unit/")] = true
+		}
+	}
+	if full == 0 {
+		return 100, false
+	}
+	share := len(whole) * 100 / full
+	return share, !whole["cmd/metasystem"] && len(whole)*100 < limit*full
+}
+
+func depthSetting(install, key string) (int, error) {
+	value, _, err := config.Get(config.GetParams{ConfPath: filepath.Join(install, "metasystem.conf"), Key: key})
+	if n, numberErr := strconv.Atoi(value); err == nil && numberErr == nil && n >= 1 {
+		return n, nil
+	}
+	return 0, fmt.Errorf("%s must be a positive integer", key)
+}
+
+func fullGroupCount(install string, contract testpolicy.Contract) (int, error) {
+	count := len(contract.Groups)
+	for _, group := range contract.Groups {
+		if group.PackageSelection == "" {
+			continue
+		}
+		command := exec.Command("go", "list", "-tags", strings.Join(group.BuildTags, ","), "-f", "{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}", "./...")
+		command.Dir = install
+		packages, err := command.Output()
+		if err != nil {
+			return 0, err
+		}
+		count += len(strings.Fields(string(packages))) - 1
+	}
+	return count, nil
+}
+
+func impactCost(install, module, plan string, contract testpolicy.Contract) (int, bool, error) {
+	full, err := fullGroupCount(module, contract)
+	if err != nil {
+		return 0, false, err
+	}
+	limit, err := depthSetting(install, "landing.impact-max-share")
+	share, cheap := impactDepth(plan, contract, full, limit)
+	return share, cheap, err
+}
+
+func batchDepth(install, checkout, commit string, seams plain.ProveSeams) (bool, string) {
+	batch, err := plain.ReadBatch(install)
+	if err != nil || batch == nil || batch.State == plain.BatchClosed {
+		return false, ""
+	}
+	fallback := func(err error) (bool, string) {
+		if os.IsNotExist(err) {
+			return false, ""
+		}
+		return false, "depth cannot be selected: " + err.Error() + "; full"
+	}
+	threshold, err := depthSetting(install, "landing.full-from-tier")
+	if err != nil {
+		return fallback(err)
+	}
+	tiers := []string{}
+	highest := 0
+	unset := false
+	for _, member := range batch.Members {
+		data, err := os.ReadFile(filepath.Join(install, "plans", "goals", member.Goal+".md"))
+		if err != nil {
+			return fallback(err)
+		}
+		file, problems := goal.ParseFile(data)
+		if len(problems) > 0 {
+			return fallback(fmt.Errorf("goal %s is invalid: %v", member.Goal, problems))
+		}
+		tier := int(goal.GateTier(file))
+		tiers = append(tiers, strconv.Itoa(tier))
+		highest = max(highest, tier)
+		unset = unset || file.Tier == 0
+	}
+	if highest >= threshold {
+		if unset && highest == 3 {
+			return false, "tier 3 (unset): full"
+		}
+		return false, fmt.Sprintf("tier %d: full", highest)
+	}
+	git := seams.Git
+	if git == nil {
+		git = plain.Git
+	}
+	tree, err := os.MkdirTemp("", "metasystem-depth-")
+	if err != nil {
+		return fallback(err)
+	}
+	defer os.RemoveAll(tree)
+	if _, err = git(checkout, "worktree", "add", "--detach", tree, commit); err != nil {
+		return fallback(err)
+	}
+	defer git(checkout, "worktree", "remove", "--force", tree)
+	relative, err := filepath.Rel(checkout, install)
+	if err != nil {
+		return fallback(err)
+	}
+	dir := filepath.Join(tree, relative)
+	_, contract, _, err := testrun.LoadContract(dir)
+	if err != nil {
+		return fallback(err)
+	}
+	plan, err := plain.ReadImpactPlan(seams, dir, batch.Base)
+	if err != nil {
+		return fallback(err)
+	}
+	share, cheap, err := impactCost(install, dir, plan, contract)
+	if err != nil {
+		return fallback(err)
+	}
+	if !cheap {
+		return false, fmt.Sprintf("impact would cover %d%%: full", share)
+	}
+	return true, fmt.Sprintf("tiers %s; %d%% of the tree", strings.Join(tiers, ","), share)
+}
+
+type repairCheck struct{ Tree, Base, Reason string }
+
+func repairCheckIdentity(install, base string) (repairCheck, error) {
+	base, err := plain.Git(install, "rev-parse", "--verify", base+"^{commit}")
+	if err != nil {
+		return repairCheck{}, err
+	}
+	tree, err := plain.Git(install, "write-tree")
+	if err != nil {
+		return repairCheck{}, err
+	}
+	untracked, err := plain.Git(install, "ls-files", "--modified", "--others", "--exclude-standard")
+	if err != nil || untracked != "" {
+		return repairCheck{}, fmt.Errorf("the repair has unstaged files or cannot be read")
+	}
+	return repairCheck{Tree: tree, Base: base}, nil
+}
+
+func repairCheckCache(install string, check repairCheck, save bool) (bool, error) {
+	if check.Tree == "" {
+		return false, nil
+	}
+	path := filepath.Join(plain.Dir(install), "repair-check.json")
+	if save {
+		data, _ := json.Marshal(check)
+		err := os.MkdirAll(filepath.Dir(path), 0700)
+		if err == nil {
+			_, err = atomicfile.WriteFile(path, data, 0600, plain.Dir(install))
+		}
+		return false, err
+	}
+	data, err := os.ReadFile(path)
+	var previous repairCheck
+	return err == nil && json.Unmarshal(data, &previous) == nil && previous.Tree == check.Tree && previous.Base == check.Base, nil
 }

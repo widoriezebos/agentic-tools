@@ -141,7 +141,7 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 	if batch, err := CheckBatch(install, checkout, head, old, false, seams); err != nil {
 		return outcome, err
 	} else if result, ok, _ := ResultFor(install, tree); ok && result.Scope == "impact" && (batch == nil || result.BaseCommit != batch.Base) {
-		return outcome, &Refusal{Code: CodeUnproven, Reason: "the impact proof belongs to another batch base", Next: "metasystem landing prove --impact"}
+		return outcome, &Refusal{Code: CodeUnproven, Reason: "the impact proof belongs to another batch base", Next: "metasystem landing prove"}
 	} else if batch != nil && batch.State != BatchRunning {
 		return outcome, batchRefusal("the recorded selection has not been admitted for execution")
 	}
@@ -274,6 +274,29 @@ func provenGreen(install, tree string) *Refusal {
 		return &Refusal{Code: CodeUnproven, Reason: "HEAD's tree " + Short(tree) + " was never proven, so nothing was pushed", Next: "landing prove"}
 	case result.Result != Green:
 		return &Refusal{Code: CodeRed, Reason: "HEAD's tree " + Short(tree) + " was proven " + result.Result + ", not green, so nothing was pushed", Next: "landing status"}
+	}
+	if result.Scope == "impact" {
+		batch, err := ReadBatch(install)
+		if err != nil {
+			return &Refusal{Code: CodeUnproven, Reason: "the batch depth decision cannot be read: " + err.Error(), Next: "metasystem landing prove"}
+		}
+		if batch != nil && result.BatchID == batch.ID && result.BaseCommit == batch.Base {
+			for i := len(result.Executions) - 1; i >= 0; i-- {
+				admission := result.Executions[i]
+				scope, base := admission.DepthScope, admission.DepthBase
+				if scope == "" {
+					scope, base = admission.Scope, admission.BaseSHA
+				}
+				if admission.BatchID != batch.ID || admission.Tree != tree || base != batch.Base {
+					continue
+				}
+				if scope == "impact" {
+					return nil
+				}
+				return &Refusal{Code: CodeUnproven, Reason: "the batch decided " + scope + " depth; the impact green does not satisfy the push", Next: "metasystem landing prove"}
+			}
+		}
+		return &Refusal{Code: CodeUnproven, Reason: "the impact green has no recorded impact depth decision for this batch base", Next: "metasystem landing prove"}
 	}
 	return nil
 }

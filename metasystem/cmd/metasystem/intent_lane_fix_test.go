@@ -251,7 +251,7 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 		t.Fatalf("work %+v: %v", work, err)
 	}
 	plan, err := launch.ReadUnitPlan(filepath.Join(work[0].Record.Rounds[0].Directory, "plan.json"))
-	if err != nil || plan.Check == nil || plan.Check.Cheap != "metasystem test impact" || plan.Check.SelectedBy != "" {
+	if err != nil || plan.Check == nil || plan.Check.Cheap != "metasystem test impact --check" || plan.Check.SelectedBy != "" {
 		t.Fatalf("lane check %+v: %v", plan.Check, err)
 	}
 	if connectionGit(t, b.root(), "rev-parse", "HEAD") != head {
