@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -332,4 +333,17 @@ func LandingEnvironment(ctx context.Context, root string, environment []string) 
 		parts = append(parts, strings.Join(strings.Fields(string(kernel)), " "))
 	}
 	return strings.Join(parts, "; "), nil
+}
+
+// WriteLandingEnvironment emits the shared proof environment protocol line.
+func WriteLandingEnvironment(output io.Writer, read func() (string, error)) error {
+	fingerprint, err := read()
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(fingerprint) == "" {
+		return fmt.Errorf("the proof environment fingerprint is empty")
+	}
+	_, err = fmt.Fprintln(output, "landing environment "+fingerprint)
+	return err
 }

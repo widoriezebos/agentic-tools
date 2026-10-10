@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -71,14 +70,18 @@ func TestFullReporterMeasuresItsTotalBeforeTheReport(t *testing.T) {
 				now = now.Add(2 * time.Minute)
 				return proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "fixture/unit", Shard: 1, Status: "ok"}}}, nil
 			}}
-			command := func(argv []string, stdout, stderr io.Writer) error {
-				if argv[0] == "go" {
-					now = now.Add(time.Minute)
-					if red {
-						return exec.Command("/usr/bin/false").Run()
-					}
-					return nil
+			hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
+				if len(ids) != 1 || ids[0] != "fast-static-build" {
+					t.Fatalf("static selection: %v", ids)
 				}
+				now = now.Add(time.Minute)
+				status := "green"
+				if red {
+					status = "red"
+				}
+				return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: status, DurationMS: 60000}}, nil
+			}
+			command := func(argv []string, stdout, stderr io.Writer) error {
 				fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":"passed","nativeLaunched":true,"nativeExitStatus":0}]}}`, argv[2])
 				return nil
 			}

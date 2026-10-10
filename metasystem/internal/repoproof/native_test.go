@@ -221,11 +221,14 @@ func TestB(t *testing.T) { t.Parallel() }
 				}
 				return result, nil
 			}}
-			command := func(argv []string, stdout, _ io.Writer) error {
-				if reflect.DeepEqual(argv, []string{"go", "run", "./cmd/devgate", "static"}) {
-					static = true
-					return nil
+			hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
+				if !reflect.DeepEqual(ids, []string{"fast-static-build"}) {
+					t.Fatalf("static selection: %v", ids)
 				}
+				static = true
+				return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: "green"}}, nil
+			}
+			command := func(argv []string, stdout, _ io.Writer) error {
 				if natives != 2 || len(argv) != 3 || argv[1] != "--section" {
 					t.Fatalf("section ran before native passes: %v", argv)
 				}
@@ -388,6 +391,10 @@ func TestFullShardsRunEveryPackageAndAPanicLosesOneShard(t *testing.T) {
 				}
 				return result, nil
 			}, Groups: func(ids []string) ([]proofrun.NamedGroupResult, error) {
+				if reflect.DeepEqual(ids, []string{"fast-static-build"}) {
+					static = true
+					return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: "green"}}, nil
+				}
 				groups++
 				if mode == "unknown group" {
 					return nil, errors.New("unknown group")
@@ -402,10 +409,6 @@ func TestFullShardsRunEveryPackageAndAPanicLosesOneShard(t *testing.T) {
 				return []proofrun.NamedGroupResult{{ID: "verb-ratchet", Status: status, DurationMS: 7}}, nil
 			}}
 			command := func(argv []string, stdout, _ io.Writer) error {
-				if reflect.DeepEqual(argv, []string{"go", "run", "./cmd/devgate", "static"}) {
-					static = true
-					return nil
-				}
 				if argv[0] != env["METASYSTEM_FULL_REPORTER"] {
 					t.Fatalf("unexpected command %v", argv)
 				}

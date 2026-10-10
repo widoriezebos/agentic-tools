@@ -141,14 +141,15 @@ func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
 func landingProveCommand() intentCommand {
 	return laneCommand(intentCommand{
 		object: "landing", action: "prove", audience: "both", summary: "prove the landing checkout's HEAD with the project's own command",
-		usage: []string{"metasystem landing prove [--gate|--trunk] [--wait]"},
-		details: []string{"Runs the shell command set as proof.full in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full or scoped, LANDING_PROOF_BASE naming the base tree (empty for full), LANDING_PROOF_GROUPS naming space-separated declared group ids, and LANDING_PROOF_PACKAGES naming space-separated packages or package=TestA,TestB selections (both empty for full), and LANDING_ONLY naming a failed unit when it is checked again alone; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
+		usage: []string{"metasystem landing prove [--impact|--gate|--trunk] [--wait]"},
+		details: []string{"Runs the shell command set as proof.full in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full, scoped or impact, LANDING_PROOF_BASE naming the base tree (empty for full), LANDING_PROOF_GROUPS naming space-separated declared group ids, and LANDING_PROOF_PACKAGES naming space-separated packages or package=TestA,TestB selections (both empty for full), and LANDING_ONLY naming a failed unit when it is checked again alone; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
 			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full proof no more than an hour old. After record or ledger changes under a proven batch, the proof runs only the groups whose declared inputs cover what main gained, while that batch's full proof is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
 			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. A recorded selection may continue through its standing pause; a direct person may request one proof while it stays stopped.",
+			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full proof.",
 			"--trunk fetches origin/main and runs a fresh full check there, even after a green or red; the lane checkout stays where it is. --gate and --trunk cannot be used together."},
-		flags: []intentFlag{{name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "prove here and wait for the result"},
+		flags: []intentFlag{{name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "prove here and wait for the result"},
 			{name: "classify", value: "ATTEMPT", usage: "classify one saved red; a person supplies this act"},
 			{name: "attempt", value: "ID", hidden: true, usage: "the attempt id a background start chose"}},
 		maxArgs:  0,
@@ -158,9 +159,9 @@ func landingProveCommand() intentCommand {
 
 func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	targets := laneTargets(admitted.record.Root)
-	if inv.input.switched("gate") && inv.input.switched("trunk") {
+	if inv.input.switched("gate") && inv.input.switched("trunk") || inv.input.switched("impact") && (inv.input.switched("gate") || inv.input.switched("trunk")) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: "--gate and --trunk cannot be used together, so nothing was proven"})
+			Summary: "--impact, --gate and --trunk cannot be used together, so nothing was proven"})
 	}
 	var person *plain.ActProvenance
 	// The detached child claims the recorded admission; only a fresh public
@@ -175,7 +176,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "a background attempt must claim its admission with --wait", Next: "metasystem landing prove"}))
 	}
 
-	if inv.input.text("classify") != "" && (inv.input.switched("gate") || inv.input.switched("trunk") || inv.input.text("attempt") != "") {
+	if inv.input.text("classify") != "" && (inv.input.switched("impact") || inv.input.switched("gate") || inv.input.switched("trunk") || inv.input.text("attempt") != "") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--classify names a saved red and cannot be combined with another proof subject"})
 	}
 	if inv.input.text("classify") != "" && person == nil {
@@ -191,7 +192,11 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	seams.Trunk = inv.input.switched("trunk")
 	checkout := string(admitted.layout.Checkout)
 	seams.Gate = inv.input.switched("gate")
+	seams.Impact = inv.input.switched("impact")
 	key := proveCommandKey
+	if seams.Impact {
+		key = "proof.cheap"
+	}
 	if seams.Gate {
 		key = "proof.cheap"
 		if admitted.owners.plainProve.Judge == nil {
@@ -247,7 +252,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		if err != nil {
 			return inv.render(landingProveRefusal(inv, targets, err))
 		}
-		if !recorded || running.Attempt != attempt || running.Admission == nil || (running.Admission.State != "launched" && running.Admission.State != "pending") || running.Gate != seams.Gate || running.Trunk != seams.Trunk {
+		if !recorded || running.Attempt != attempt || running.Admission == nil || (running.Admission.State != "launched" && running.Admission.State != "pending") || running.Gate != seams.Gate || running.Trunk != seams.Trunk || running.Impact != seams.Impact {
 			return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "this background check has no matching unclaimed admission", Next: "metasystem landing prove"}))
 		}
 		commit = running.Commit

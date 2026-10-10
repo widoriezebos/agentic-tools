@@ -335,6 +335,9 @@ func repositoryProofRunners() repoproof.HostRunners {
 		}
 		return result, nil
 	}, Groups: func(ids []string) ([]proofrun.NamedGroupResult, error) {
+		if reflect.DeepEqual(ids, []string{"fast-static-build"}) {
+			return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: "green"}}, nil
+		}
 		if os.Getenv("REPOSITORY_PROOF_BATCH_FAILURE") == "" || !reflect.DeepEqual(ids, []string{"go-batchtest"}) {
 			return nil, fmt.Errorf("unexpected replay groups: %v", ids)
 		}

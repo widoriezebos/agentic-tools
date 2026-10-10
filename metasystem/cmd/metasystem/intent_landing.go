@@ -480,6 +480,18 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 		}
 		section := page.Section("Last", "")
 		if proof := data.LastProof; proof != nil {
+			if proof.Scope != "" {
+				section.KV("scope", textui.Plain(proof.Scope))
+			}
+			if proof.Scope == "impact" {
+				section.KV("base", textui.Plain(shortLandingID(proof.BaseCommit)+" (tree "+shortLandingID(proof.Base)+")"))
+				section.KV("plan hash", textui.Plain(shortLandingID(proof.PlanHash)))
+				presence := "missing"
+				if proof.Environment != "" {
+					presence = "present"
+				}
+				section.KV("environment fingerprint", textui.Plain(presence))
+			}
 			section.KV("proven", textui.Plain(proof.Result+landingRedReason(proof.Reason)+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
 			if len(proof.FlakeRepeats) > 0 {
 				section.KV("original", textui.Plain(proof.Attempt+"; evidence: "+proof.Log))

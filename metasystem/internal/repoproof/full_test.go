@@ -177,12 +177,15 @@ func TestFullRunsBatchStaticAndSectionsBeforeReporting(t *testing.T) {
 		}
 		return proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "fixture/package", Shard: 1, Status: "ok"}}}, nil
 	}}
+	hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
+		if !reflect.DeepEqual(ids, []string{"fast-static-build"}) {
+			t.Fatalf("static selection: %v", ids)
+		}
+		static = true
+		return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: "green"}}, nil
+	}
 	sections := map[string]int{}
 	command := func(argv []string, stdout, _ io.Writer) error {
-		if reflect.DeepEqual(argv, []string{"go", "run", "./cmd/devgate", "static"}) {
-			static = true
-			return nil
-		}
 		if argv[0] != "/fixture/run/reporter" {
 			t.Fatalf("unexpected %v", argv)
 		}
@@ -348,16 +351,20 @@ func TestFullLegFailuresKeepTheirGroupAndEnvironmentVerdicts(t *testing.T) {
 				}
 				return result, nil
 			}}
-			command := func(argv []string, stdout, _ io.Writer) error {
-				if argv[0] == "go" {
-					if fault == "static-environment" {
-						return errors.New("not started")
-					}
-					if fault == "static-red" {
-						return exec.Command("/bin/sh", "-c", "exit 1").Run()
-					}
-					return nil
+			hooks.Groups = func(ids []string) ([]proofrun.NamedGroupResult, error) {
+				if !reflect.DeepEqual(ids, []string{"fast-static-build"}) {
+					t.Fatalf("static selection: %v", ids)
 				}
+				if fault == "static-environment" {
+					return nil, errors.New("not started")
+				}
+				status := "green"
+				if fault == "static-red" {
+					status = "red"
+				}
+				return []proofrun.NamedGroupResult{{ID: "fast-static-build", Status: status}}, nil
+			}
+			command := func(argv []string, stdout, _ io.Writer) error {
 				if fault == "section-environment" {
 					fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":"unavailable","nativeLaunched":false}]}}`, argv[2])
 					return errors.New("not started")

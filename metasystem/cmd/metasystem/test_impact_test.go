@@ -757,3 +757,62 @@ func TestTestImpactUsesInstallationPrefixWithoutBatchTagGitAdapter(t *testing.T)
 		t.Fatalf("replay must run without the batch tag: error=%v output=%s", err, data)
 	}
 }
+
+// Git supplies the comparison base for the real impact command and adapter.
+func TestTestImpactStaticFirstAndEnvironmentGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, red := range []bool{false, true} {
+		t.Run(fmt.Sprintf("static-red-%v", red), func(t *testing.T) {
+			t.Parallel()
+			root, base := impactGitAdapterBed(t)
+			data, err := os.ReadFile(filepath.Join(root, "testing.json"))
+			helmMust(t, err)
+			var contract testpolicy.Contract
+			helmMust(t, json.Unmarshal(data, &contract))
+			static := contract.Groups[0]
+			static.ID, static.Phase, static.Kind = "fast-static-build", "admission", "static"
+			static.Inputs = []string{"cmd/**"}
+			static.Argv = []string{"/bin/sh", "-c", "exit 0"}
+			if red {
+				static.Argv[2] = "exit 1"
+			}
+			contract.Groups = append(contract.Groups, static)
+			data, err = json.Marshal(contract)
+			helmMust(t, err)
+			impactWrite(t, root, "testing.json", string(data))
+			impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = true // changed\n")
+			cmd := exec.Command(commandTestExecutable(t), "test", "impact", "--root", root, "--base", base)
+			cmd.Dir = root
+			cmd.Env = append(slices.DeleteFunc(fixtureCommandEnvironment(t), func(e string) bool {
+				return strings.HasPrefix(e, "LANDING_ONLY=") || strings.HasPrefix(e, "LANDING_PROOF_SCOPE=")
+			}), "LANDING_PROOF_SCOPE=impact")
+			out, err := cmd.CombinedOutput()
+			code := 0
+			if err != nil {
+				var exit *exec.ExitError
+				if !errors.As(err, &exit) {
+					t.Fatal(err)
+				}
+				code = exit.ExitCode()
+			}
+			text := string(out)
+			wantCode, color := 0, "green"
+			if red {
+				wantCode, color = 1, "red"
+			}
+			staticLine := "landing group fast-static-build " + color
+			if code != wantCode || !strings.Contains(text, "landing environment go version ") || !strings.Contains(text, "landing group unit/internal/launch green") || !strings.Contains(text, staticLine) || strings.Index(text, staticLine) > strings.Index(text, "landing group unit/internal/launch") {
+				t.Fatalf("static-first exit=%d: %s", code, text)
+			}
+			if red && !strings.Contains(text, "LANDING-FAILED\tfast-static-build\t") {
+				t.Fatalf("static red unnamed: %s", text)
+			}
+			planned := exec.Command(cmd.Args[0], append(cmd.Args[1:], "--plan")...)
+			planned.Dir, planned.Env = cmd.Dir, cmd.Env
+			out, err = planned.CombinedOutput()
+			if err != nil || strings.Contains(string(out), "landing environment ") || strings.Contains(string(out), "landing group ") {
+				t.Fatalf("plan executed proof: %s %v", out, err)
+			}
+		})
+	}
+}

@@ -116,11 +116,10 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	if hooks.Environment == nil {
 		hooks.Environment = func() (string, error) { return proofrun.LandingEnvironment(ctx, root, environment) }
 	}
-	text, err := hooks.Environment()
+	err = proofrun.WriteLandingEnvironment(stdout, hooks.Environment)
 	if err != nil {
 		return notRun(err)
 	}
-	fmt.Fprintln(stdout, "landing environment "+text)
 	contract, err := testpolicy.Load(contractPath)
 	if err != nil {
 		return notRun(err)
@@ -148,17 +147,9 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	}
 	full := !scoped && only == ""
 	if full {
-		staticStart, status := hooks.Now(), "green"
-		if err := command([]string{"go", "run", "./cmd/devgate", "static"}, stdout, stderr); err != nil {
-			var exit *exec.ExitError
-			if !errors.As(err, &exit) || exit.ExitCode() == 126 || exit.ExitCode() == 127 {
-				return notRun(err)
-			}
-			failed["fast-static-build"] = nil
-			status = "red"
-		}
-		fmt.Fprintf(stdout, "landing group fast-static-build %s %d\n", status, hooks.Now().Sub(staticStart).Milliseconds())
+		groups = append([]string{"fast-static-build"}, groups...)
 	}
+
 	if len(groups) > 0 {
 		results, err := hooks.Groups(groups)
 		if err != nil {

@@ -23,6 +23,8 @@ type scopeRecord struct {
 	Scope        string           `json:"scope"`
 	ScopeReason  string           `json:"scopeReason"`
 	Base         string           `json:"base,omitempty"`
+	BaseCommit   string           `json:"baseCommit,omitempty"`
+	PlanHash     string           `json:"planHash,omitempty"`
 	ChangedPaths []string         `json:"changedPaths"`
 	Durations    map[string]int64 `json:"durations"`
 	Packages     []PackageTiming  `json:"packages"`
@@ -39,10 +41,9 @@ type scopeGroup struct {
 
 type scopeDecision struct {
 	scopeRecord
-	BaseCommit string
-	base       Result
-	contract   testpolicy.Contract
-	affected   testpolicy.AffectedResult
+	base     Result
+	contract testpolicy.Contract
+	affected testpolicy.AffectedResult
 }
 
 // decideScope keeps a batch's full green for at most an hour. Any unreadable
@@ -402,10 +403,11 @@ func (r Result) reusableGreen(now time.Time) bool {
 
 func (d scopeDecision) describe(result Result, observed *proofOutput) Result {
 	result.Scope, result.ScopeReason, result.Base = d.Scope, d.ScopeReason, d.Base
+	result.BaseCommit, result.PlanHash = d.BaseCommit, d.PlanHash
 	result.Ran, result.Environment = observed.ran, observed.environment
 	if d.Scope == "scoped" {
 		result.FullTree, result.FullAt = d.base.FullTree, d.base.FullAt
-	} else if result.Result == Green && d.Scope != "gate" {
+	} else if result.Result == Green && d.Scope != "gate" && d.Scope != "impact" {
 		result.FullTree, result.FullAt = result.Tree, result.At
 	} else {
 		result.FullTree, result.FullAt = "", ""

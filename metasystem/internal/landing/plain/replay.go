@@ -23,6 +23,14 @@ func classifyRed(seams ProveSeams, install, checkout, command, dir string, runni
 	return continueRed(seams, install, checkout, command, dir, running, decision, output, result, previous, replay)
 }
 
+// allowEnvironmentRepeat grants one retry when a tree's first check could not
+// be proved because of its environment. A later failure spends that allowance.
+func (r *Result) allowEnvironmentRepeat(previous Result) {
+	if r.Cause != nil && r.Cause.Kind == "environment" && previous.Result == "" {
+		r.Repeat = "allowed"
+	}
+}
+
 func observeRed(seams ProveSeams, install string, running Running, decision scopeDecision, observed *proofOutput, result, previous Result, report checkReport, runErr error) Result {
 	result = timedResult(result, running.Since, seams.now())
 	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
@@ -35,10 +43,11 @@ func observeRed(seams ProveSeams, install string, running Running, decision scop
 		result.CountedFull = false
 	}
 	result = decision.describe(result, observed)
-	if result.Cause.Kind == "environment" && previous.Result == "" {
-		result.Repeat = "allowed"
-	}
+	result.allowEnvironmentRepeat(previous)
 	result.Failed = report.failed
+	if slices.ContainsFunc(result.Failed, func(unit FailedUnit) bool { return unit.Unit == "fast-static-build" }) {
+		result.Reason = "fast-static-build: " + result.Reason
+	}
 	result.Cause.Tests = failingTests(result.Failed)
 	result.Person, result.Executions = running.Person, running.Executions
 	result.ClassificationOf = running.ClassificationOf

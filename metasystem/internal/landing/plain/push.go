@@ -140,6 +140,8 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 	}
 	if batch, err := CheckBatch(install, checkout, head, old, false, seams); err != nil {
 		return outcome, err
+	} else if result, ok, _ := ResultFor(install, tree); ok && result.Scope == "impact" && (batch == nil || result.BaseCommit != batch.Base) {
+		return outcome, &Refusal{Code: CodeUnproven, Reason: "the impact proof belongs to another batch base", Next: "metasystem landing prove --impact"}
 	} else if batch != nil && batch.State != BatchRunning {
 		return outcome, batchRefusal("the recorded selection has not been admitted for execution")
 	}

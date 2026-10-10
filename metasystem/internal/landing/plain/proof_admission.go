@@ -22,6 +22,7 @@ type ExecutionAdmission struct {
 	Trunk    bool         `json:"trunk,omitempty"`
 	Scope    string       `json:"scope"`
 	Base     string       `json:"base,omitempty"`
+	BaseSHA  string       `json:"baseCommit,omitempty"`
 	Command  string       `json:"command"`
 	Policy   PolicyValue  `json:"policy"`
 	At       string       `json:"at"`
@@ -47,6 +48,9 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 	if running.Trunk {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check of main"}}
 	}
+	if seams.Impact {
+		return impactScope(install, checkout, seams)
+	}
 	previous, found, _ := resultFor(seams.resultsPath(install), running.Tree)
 	if found && strings.HasPrefix(previous.ScopeReason, "full check pending:") {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: previous.ScopeReason}}
@@ -62,7 +66,10 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 // admitExecutionLocked reads policy for each whole execution, with the
 // computed scope known. A prior person's admission grants no later execution.
 func admitExecutionLocked(install, checkout, command string, running *Running, decision scopeDecision, seams ProveSeams) error {
-	admission := ExecutionAdmission{Attempt: running.Attempt, Commit: running.Commit, Tree: running.Tree, BatchID: running.BatchID, Gate: running.Gate, Trunk: running.Trunk, Groups: decision.groupIDs(), Scope: decision.Scope, Base: decision.Base, Command: command, At: seams.now().Format(time.RFC3339Nano), State: "pending"}
+	if decision.Scope == "impact" && decision.Base == "" {
+		return fmt.Errorf("%s", decision.ScopeReason)
+	}
+	admission := ExecutionAdmission{Attempt: running.Attempt, Commit: running.Commit, Tree: running.Tree, BatchID: running.BatchID, Gate: running.Gate, Trunk: running.Trunk, Groups: decision.groupIDs(), Scope: decision.Scope, Base: decision.Base, BaseSHA: decision.BaseCommit, Command: command, At: seams.now().Format(time.RFC3339Nano), State: "pending"}
 	if seams.Lane != nil {
 		registered, err := seams.Lane()
 		if err != nil {

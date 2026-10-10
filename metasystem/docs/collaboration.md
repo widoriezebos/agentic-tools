@@ -36,7 +36,7 @@ Keep reviews small and cheap:
 
 Ordinary landings consume the risk-selected shared testing result through
 `test status`; they add no governance command or approval form. Per-landing
-depth is decided by the change, never by the goal's risk answers: a protected
+depth is decided by the change, with the batch's riskiest member's tier as the floor (R-149-m1e: at or above landing.full-from-tier the full suite runs whatever the change): a protected
 policy change, an unowned path, a surface whose declared raise or critical
 obligations demand it, or an explicit `--mode deep` runs deep; every other
 landing runs canary plus standard and finishes in about a minute. The two

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -13,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
@@ -138,11 +140,22 @@ func runTestImpact(args []string, stdout, stderr io.Writer) int {
 	if !replay && *plan {
 		return 0
 	}
+	environment := os.Environ()
+	if err := proofrun.WriteLandingEnvironment(stdout, func() (string, error) {
+		return proofrun.LandingEnvironment(context.Background(), installation, environment)
+	}); err != nil {
+		fmt.Fprintln(stderr, err)
+		fmt.Fprintln(stdout, "LANDING-NOT-RUN\tenvironment")
+		return 1
+	}
+	if !replay && os.Getenv("LANDING_PROOF_SCOPE") == "impact" {
+		ids = append([]string{"fast-static-build"}, slices.DeleteFunc(ids, func(id string) bool { return id == "fast-static-build" })...)
+	}
 	if len(ids) == 0 {
 		fmt.Fprintln(stdout, "LANDING-CHECKED\t0")
 		return 0
 	}
-	return runNamedTestGroups(installation, contract, ids, os.Environ(), units, stdout, stderr)
+	return runNamedTestGroups(installation, contract, ids, environment, units, stdout, stderr)
 }
 
 // landingOnly reads the replay selection: the lane's gate always sets
