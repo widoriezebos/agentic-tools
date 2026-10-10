@@ -444,7 +444,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	}
 	if fix != nil {
 		fix.Commit, fix.State = subject.Commit, "reviewing"
-		if err := plain.WriteFix(original.Path(), *fix); err != nil {
+		if err := plain.WriteFix(original.Path(), fix); err != nil {
 			return refuse(retry, "retains the fix commit", "the fix commit could not be recorded", "%v", err)
 		}
 		return inv.reviewLaneFix(targets, original.Path(), *fix, "--brief", inv.callerPath(chooseUnitValue(inv.input.text("brief"), review.BuildBrief)), "--build-brief-sha256", review.BuildBriefSHA256, "--join="+strconv.FormatBool(!inv.input.has("brief")))

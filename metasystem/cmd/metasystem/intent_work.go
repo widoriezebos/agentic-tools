@@ -521,7 +521,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 					return fmt.Errorf("the lane admits only its recorded fix round")
 				}
 				fix.Job, fix.State = record.ID, "building"
-				return plain.WriteFix(inv.layout.InstallationRoot.Path(), *fix)
+				return plain.WriteFix(inv.layout.InstallationRoot.Path(), fix)
 			}
 		}
 		return nil
@@ -725,6 +725,9 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 // build
 
 func runIntentBuild(inv *intentInvocation) int {
+	if code, handled := laneMergeWork(inv); handled {
+		return code
+	}
 	if problem := inv.buildEngineAdmission(); problem != nil {
 		return inv.render(*problem)
 	}

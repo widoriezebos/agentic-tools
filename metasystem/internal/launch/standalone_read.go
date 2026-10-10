@@ -35,8 +35,12 @@ type ReadRequest struct {
 	// Directory is where the caller stands inside a Git checkout; the
 	// checkout's top level is resolved from it.
 	Directory string
-	// Patch is a supplied patch file; empty captures the checkout's current
-	// tracked and untracked, unignored changes against its HEAD.
+	// Base selects the commit a supplied patch applies to; empty uses HEAD.
+	// With no Patch, an explicit Base reads that committed tree and uses its
+	// first-parent diff only to select and partition the read's files.
+	Base string
+	// Patch is a supplied patch file; with neither Patch nor Base, the read
+	// captures tracked and untracked, unignored changes against HEAD.
 	Patch string
 	Brief string
 	// Goal only associates the read with a goal for admission and records.
@@ -56,8 +60,8 @@ type ReadRequestRecord struct {
 	Ref      string `json:"ref"`
 	Kind     string `json:"kind"`
 	TopLevel string `json:"topLevel"`
-	// Base is the context commit: the checkout's HEAD when the request was
-	// made. A supplied patch is not claimed to match it.
+	// Base is the resolved context commit. A supplied patch is not claimed
+	// to match it; a commit read materializes this tree without applying a diff.
 	Base        string      `json:"base"`
 	Goal        string      `json:"goal,omitempty"`
 	Diff        string      `json:"diff"`
@@ -144,7 +148,11 @@ func (runner *UnitRunner) StartRead(request ReadRequest) (ReadResult, error) {
 		return ReadResult{}, coded("READ_CHECKOUT_UNAVAILABLE", "directory="+request.Directory, fmt.Errorf("%s is not a readable Git checkout: %w", request.Directory, err))
 	}
 	top := strings.TrimSpace(string(topOutput))
-	headOutput, err := git.Run(top, nil, "rev-parse", "--verify", "HEAD^{commit}")
+	base := request.Base
+	if base == "" {
+		base = "HEAD"
+	}
+	headOutput, err := git.Run(top, nil, "rev-parse", "--verify", base+"^{commit}")
 	if err != nil {
 		return ReadResult{}, coded("READ_CHECKOUT_UNAVAILABLE", "directory="+top, fmt.Errorf("%s is not a readable Git checkout: %w", top, err))
 	}
@@ -155,6 +163,11 @@ func (runner *UnitRunner) StartRead(request ReadRequest) (ReadResult, error) {
 		kind = "patch"
 		if diff, err = os.ReadFile(request.Patch); err != nil {
 			return ReadResult{}, coded("READ_PATCH_UNREADABLE", "patch="+request.Patch, fmt.Errorf("the patch %s cannot be read: %w", request.Patch, err))
+		}
+	} else if request.Base != "" {
+		kind = "commit"
+		if diff, err = git.Run(top, nil, "show", "--format=", "--first-parent", "--binary", head); err != nil {
+			return ReadResult{}, err
 		}
 	} else {
 		// The caller's own brief inside the checkout is the read's brief,
@@ -623,7 +636,8 @@ func (runner *UnitRunner) readResult(record ReadRequestRecord, attempt ReadAttem
 // disposable directory outside the checkout: the base commit's tracked
 // files through a private index, then the candidate applied as plain files.
 // Ignored source files and local configuration are never part of it, and it
-// has no Git directory of its own; it is not a sandbox. A supplied patch
+// has no Git directory of its own; it is not a sandbox. Commit reads keep
+// the committed tree intact. A supplied patch
 // that does not apply leaves the base and records that limitation.
 func (runner *UnitRunner) prepareReadContext(record ReadRequestRecord, attempt *ReadAttempt) error {
 	// The context outlives this process, so it is a registered store the
@@ -654,11 +668,13 @@ func (runner *UnitRunner) prepareReadContext(record ReadRequestRecord, attempt *
 	if err := os.Remove(filepath.Join(context, "index")); err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return fail(err)
 	}
-	if _, err := git.Run(checkout, []string{"GIT_CEILING_DIRECTORIES=" + context}, "apply", "--binary", record.Diff); err != nil {
-		if record.Kind != "patch" {
-			return fail(coded("READ_CONTEXT_UNAVAILABLE", "ref="+record.Ref, fmt.Errorf("the changes to read no longer apply to the commit they were taken from: %w", err)))
+	if record.Kind != "commit" {
+		if _, err := git.Run(checkout, []string{"GIT_CEILING_DIRECTORIES=" + context}, "apply", "--binary", record.Diff); err != nil {
+			if record.Kind != "patch" {
+				return fail(coded("READ_CONTEXT_UNAVAILABLE", "ref="+record.Ref, fmt.Errorf("the changes to read no longer apply to the commit they were taken from: %w", err)))
+			}
+			attempt.Limitation = fmt.Sprintf("the supplied patch does not apply to base %s, so the reader's checkout holds the base only: %v", record.Base, err)
 		}
-		attempt.Limitation = fmt.Sprintf("the supplied patch does not apply to base %s, so the reader's checkout holds the base only: %v", record.Base, err)
 	}
 	attempt.Context, attempt.Checkout = context, checkout
 	return nil

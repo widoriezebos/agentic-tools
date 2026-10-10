@@ -3,10 +3,13 @@ package plain
 import (
 	"bytes"
 	"errors"
+
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 )
 
 func TestFixRecordAdvanceRequiresFirstParentAndSameBatch(t *testing.T) {
@@ -17,7 +20,7 @@ func TestFixRecordAdvanceRequiresFirstParentAndSameBatch(t *testing.T) {
 			install := t.TempDir()
 			fix := Fix{Attempt: "red", Round: 1, Parent: "batch-commit", Goal: "goal-a", Units: []string{"unit-a"}, Job: "build", Commit: "repair", State: "reviewing"}
 			previous := Running{Attempt: fix.Attempt, Commit: fix.Parent, Checkpoint: true, BatchID: "batch", BatchMembers: []GoalSHA{{Goal: fix.Goal, SHA: "unit"}}}
-			if err := WriteFix(install, fix); err != nil {
+			if err := WriteFix(install, &fix); err != nil {
 				t.Fatal(err)
 			}
 			if err := withLock(install, func() error { return writeRunning(install, previous) }); err != nil {
@@ -77,7 +80,7 @@ func TestFixRecordStaleReadersDoNotWrite(t *testing.T) {
 	t.Parallel()
 	b := newStatusBed(t)
 	fix := Fix{Attempt: "older", Goal: "goal-a", Units: []string{"unit-a"}, Job: "build", Commit: "repair", State: "reviewing"}
-	if err := WriteFix(b.install, fix); err != nil {
+	if err := WriteFix(b.install, &fix); err != nil {
 		t.Fatal(err)
 	}
 	b.lines("running.json", Running{Attempt: "current", Checkpoint: true, BatchMembers: []GoalSHA{{Goal: fix.Goal, SHA: "unit"}}})
@@ -129,6 +132,19 @@ func TestReadStatusLaneFixHeadline(t *testing.T) {
 	}
 }
 
+func TestReadStatusResolvingMergeNamesPaths(t *testing.T) {
+	t.Parallel()
+	b := newStatusBed(t)
+	fix := &Fix{Goal: "goal-a", Units: []string{"lane-merge-1"}, Commit: "batch", Tip: "tip", State: "resolving", Attempt: "merge-attempt", Paths: []conflict.Path{{Path: "code.go", Class: conflict.Builder}, {Path: "bundle.js", Class: conflict.Generated}}}
+	if err := WriteFix(b.install, fix); err != nil {
+		t.Fatal(err)
+	}
+	status := b.read(ProveSeams{Git: func(string, ...string) (string, error) { return "tip", nil }}, laneGit{main: func() (string, error) { return "main", nil }, contains: func(string, string) (bool, error) { return false, nil }})
+	if status.Summary != "Resolving 2 conflicts of goal-a (code.go, bundle.js)" || status.RunningFix == nil {
+		t.Fatalf("status=%+v", status)
+	}
+}
+
 func TestReadStatusLaneFixUnreadable(t *testing.T) {
 	t.Parallel()
 	b := newStatusBed(t)
@@ -152,7 +168,7 @@ func TestFixRecordClosesOnReturnAndPush(t *testing.T) {
 			b.handIn("seat-a", "goal-a", sha)
 			head := b.merge("goal-a")
 			fix := Fix{Attempt: "attempt", Round: 1, Goal: "goal-a", Units: []string{"unit-a"}, Job: "build", Commit: head, State: "reviewing"}
-			if err := WriteFix(b.install, fix); err != nil {
+			if err := WriteFix(b.install, &fix); err != nil {
 				t.Fatal(err)
 			}
 			if outcome == "return" {
@@ -169,7 +185,7 @@ func TestFixRecordClosesOnReturnAndPush(t *testing.T) {
 				}
 			}
 			// A repeated outcome finishes a fix record whose earlier close failed.
-			if err := WriteFix(b.install, fix); err != nil {
+			if err := WriteFix(b.install, &fix); err != nil {
 				t.Fatal(err)
 			}
 			if outcome == "return" {
@@ -194,7 +210,7 @@ func TestFixBuildingHeadlineUsesBatchParent(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
 	fix := Fix{Attempt: "attempt", Round: 1, Goal: "goal-a", Units: []string{"unit-a"}, Job: "build", Parent: "0123456789abcdef", State: "building"}
-	if err := WriteFix(install, fix); err != nil {
+	if err := WriteFix(install, &fix); err != nil {
 		t.Fatal(err)
 	}
 	active, err := ActiveFix(install)
@@ -216,7 +232,7 @@ func TestFixRecordDamagedOtherGoalDoesNotBlockReturnOrPush(t *testing.T) {
 			b.handIn("seat-a", "goal-a", sha)
 			head := b.merge("goal-a")
 			fix := Fix{Attempt: "attempt", Round: 1, Goal: "goal-a", Units: []string{"unit-a"}, Job: "build", Commit: head, State: "reviewing"}
-			if err := WriteFix(b.install, fix); err != nil {
+			if err := WriteFix(b.install, &fix); err != nil {
 				t.Fatal(err)
 			}
 			b.write(filepath.Join(Dir(b.install), "fixes", "other.json"), `{"goal":"other","state":"building"}`)

@@ -428,7 +428,7 @@ func TestLaneFixBuildAllowanceCannotRestartOrRebuild(t *testing.T) {
 			}
 			if name == "stale record" {
 				fix.Attempt = "older"
-				if err := plain.WriteFix(b.root(), fix); err != nil {
+				if err := plain.WriteFix(b.root(), &fix); err != nil {
 					t.Fatal(err)
 				}
 				active, err := plain.ActiveFix(b.root())
@@ -438,7 +438,7 @@ func TestLaneFixBuildAllowanceCannotRestartOrRebuild(t *testing.T) {
 				}
 				return
 			}
-			if err := plain.WriteFix(b.root(), fix); err != nil {
+			if err := plain.WriteFix(b.root(), &fix); err != nil {
 				t.Fatal(err)
 			}
 			code, result := b.run("work", "build", b.id, "--work", "lane-fix-1", "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact")

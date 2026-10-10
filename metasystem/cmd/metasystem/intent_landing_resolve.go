@@ -12,9 +12,10 @@ import (
 
 func landingResolveCommand() intentCommand {
 	return laneCommand(intentCommand{
-		object: "landing", action: "resolve", audience: "both", summary: "return every merge conflict with its paths",
-		usage:    []string{"metasystem landing resolve"},
-		details:  []string{"Runs only in the registered landing checkout, before anyone edits the conflict. Every conflict, including generated files, aborts the merge and returns the goal with its paths by class.", "Run metasystem work rebase G on the goal branch, which regenerates what the testing contract declares, then hand in again. A conflict with a batch member holds the goal until that member lands.", "An already resolved tree changes nothing. Obsolete resolve-begun.json records are ignored and landing status names them as stale."},
+		object: "landing", action: "resolve", audience: "both", summary: "take a merge conflict as the seat, or return it with its paths",
+		usage:    []string{"metasystem landing resolve [--as-seat]"},
+		flags:    []intentFlag{{name: "as-seat", usage: "take the conflict on the batch tree without aborting"}},
+		details:  []string{"Runs only in the registered landing checkout, before anyone edits the conflict. With --as-seat, records resolving and its paths without aborting. Without it, aborts and returns the goal with its paths by class, including the stopped resolution job id.", "Run metasystem work rebase G on the goal branch, which regenerates what the testing contract declares, then hand in again. A conflict with a batch member holds the goal until that member lands.", "An already resolved tree changes nothing. Obsolete resolve-begun.json records are ignored and landing status names them as stale."},
 		maxArgs:  0,
 		examples: []string{"metasystem landing resolve"},
 	}, runIntentLandingResolve)
@@ -28,8 +29,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 	if refused := inv.lanePaused(admitted, "resolved"); refused != nil {
 		return inv.render(*refused)
 	}
-	// Main's declaration remains readable even when the testing contract is
-	// itself a source conflict. Such a conflict must be returned, not edited.
+	// HEAD's declaration remains readable when the contract itself conflicts.
 	relative, _, err := config.CommittedLookup(filepath.Join(admitted.installation, "metasystem.conf"), "testing.contract")
 	if err != nil {
 		return inv.render(landingLaneFailure(targets, "the testing contract declaration cannot be read", err))
@@ -39,6 +39,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(landingLaneFailure(targets, "the lane installation cannot be placed", err))
 	}
 	seams := admitted.owners.plainResolve
+	seams.AsSeat = inv.input.switched("as-seat")
 	seams.Proof = inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))
 	git := seams.Git
 	if git == nil {
@@ -54,6 +55,12 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	defer plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 	out, err := plain.Resolve(admitted.home, admitted.installation, string(admitted.layout.Checkout), contract, seams)
+	if err == nil && out.Outcome == "resolving" {
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: out, Summary: fmt.Sprintf("Resolving %d conflicts of %s", len(out.Conflict.Paths), out.Goal), next: inv.publicArgv("landing", "status")})
+	}
+	if err == nil && out.Outcome == "abandoned" {
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: out, Summary: out.Reason, next: inv.publicArgv("landing", "status")})
+	}
 	if out.Held && out.Goal == "" {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: out, Summary: "the lane tree has no unresolved paths; nothing was changed"})
 	}

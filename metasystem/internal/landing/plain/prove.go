@@ -398,6 +398,9 @@ func (s ProveSeams) subject(checkout string) (string, string, error) {
 // command and records the result. A repeat while the same tree's proof runs
 // starts nothing (already true); another tree's running proof is *Busy.
 func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
+	if err := proofFixReady(install, seams); err != nil {
+		return Running{}, false, err
+	}
 	commit, tree, err := seams.subject(checkout)
 	if err != nil {
 		return Running{}, false, err
@@ -544,6 +547,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 // starts the proof. Inherited and scoped greens require a full proof no
 // more than an hour old.
 func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
+	if err := proofFixReady(install, seams); err != nil {
+		return Result{}, false, err
+	}
 	if seams.Trunk {
 		return Result{}, false, nil
 	}
@@ -616,6 +622,9 @@ func writeRunning(install string, running Running) error {
 // it); empty records this process as the running proof first, refusing
 // while another tree's proof runs. The command's output goes to output.
 func Run(install, checkout, command, attempt string, output io.Writer, seams ProveSeams) (Result, error) {
+	if err := proofFixReady(install, seams); err != nil {
+		return Result{}, err
+	}
 	var commit, tree string
 	var err error
 	if attempt == "" {

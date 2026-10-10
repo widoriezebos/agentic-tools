@@ -617,6 +617,9 @@ func (inv *intentInvocation) sameCommand() []string {
 // submission, or a finding's discharge), a dispatch job, a unit run, one
 // commit with --commit, or with no target feedback on changes.
 func runIntentReview(inv *intentInvocation) int {
+	if code, handled := laneMergeWork(inv); handled {
+		return code
+	}
 	if inv.input.switched("check-only") {
 		return runIntentReviewCheckOnly(inv)
 	}

@@ -67,7 +67,7 @@ func recordTopologyFix(t *testing.T, b *bed, parent, message string) Fix {
 	b.git(b.checkout, "add", "goal-a.txt")
 	b.git(b.checkout, "commit", "--quiet", "-m", "repair", "-m", message)
 	fix := Fix{Attempt: running.Attempt, Round: 1, Parent: parent, Goal: "goal-a", Units: []string{"package-a"}, Job: "build", Read: "read", Commit: b.git(b.checkout, "rev-parse", "HEAD"), State: "reviewing"}
-	if err := WriteFix(b.install, fix); err != nil {
+	if err := WriteFix(b.install, &fix); err != nil {
 		t.Fatal(err)
 	}
 	return fix
@@ -222,7 +222,7 @@ func TestLaneFixTopologyRealGitRefusals(t *testing.T) {
 				}
 			}
 			if name != "no record" {
-				if err := WriteFix(b.install, fix); err != nil {
+				if err := WriteFix(b.install, &fix); err != nil {
 					t.Fatal(err)
 				}
 			}

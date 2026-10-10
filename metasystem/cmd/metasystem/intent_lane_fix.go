@@ -77,7 +77,7 @@ func (inv *intentInvocation) reviewLaneFix(targets []intentTarget, root string, 
 			fix.Verdict, _ = data["verdict"].(string)
 		}
 	}
-	if err := plain.WriteFix(root, fix); err != nil {
+	if err := plain.WriteFix(root, &fix); err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: fmt.Sprintf("the lane fix's read could not be retained: %v", err)}
 	}
 	if data, ok := result.Data.(map[string]any); ok {
