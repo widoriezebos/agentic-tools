@@ -71,7 +71,7 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 		d := scopeDecision{scopeRecord: scopeRecord{Scope: seams.DepthScope, ScopeReason: seams.DepthReason}}
 		if seams.Impact {
 			d = impactScope(install, checkout, seams)
-			if strings.HasPrefix(d.ScopeReason, "impact proof error:") {
+			if strings.HasPrefix(d.ScopeReason, "impact check error:") {
 				d.ScopeReason += "; " + seams.DepthReason
 			} else {
 				d.ScopeReason = seams.DepthReason

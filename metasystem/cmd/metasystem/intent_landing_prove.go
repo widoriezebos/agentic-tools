@@ -24,7 +24,7 @@ import (
 // lane checkout at the proven commit with LANDING_TREE and LANDING_COMMIT set; exit 0 is green.
 const proveCommandKey = "proof.full"
 
-var errProofDeclaration = errors.New("proof declaration is missing or invalid in the proven commit's metasystem.conf")
+var errProofDeclaration = errors.New("check declaration is missing or invalid in the proven commit's metasystem.conf")
 
 type proofDeclarationError struct {
 	key string
@@ -145,10 +145,10 @@ func landingProveCommand() intentCommand {
 		usage: []string{"metasystem landing prove [--impact|--gate|--trunk] [--wait]"},
 		details: []string{"Runs the shell command set as proof.full in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full, scoped or impact, LANDING_PROOF_BASE naming the base tree (empty for full), LANDING_PROOF_GROUPS naming space-separated declared group ids, and LANDING_PROOF_PACKAGES naming space-separated packages or package=TestA,TestB selections (both empty for full), and LANDING_ONLY naming a failed unit when it is checked again alone; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
-			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full proof no more than an hour old. After record or ledger changes under a proven batch, the proof runs only the groups whose declared inputs cover what main gained, while that batch's full proof is under an hour old.",
+			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full check no more than an hour old. After record or ledger changes under a proven batch, the check runs only the groups whose declared inputs cover what main gained, while that batch's full check is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
-			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. A recorded selection may continue through its standing pause; a direct person may request one proof while it stays stopped.",
-			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full proof. When the batch decided full depth, an explicit impact green does not satisfy landing push.",
+			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. A recorded selection may continue through its standing pause; a direct person may request one check while it stays stopped.",
+			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full check. When the batch decided full depth, an explicit impact green does not satisfy landing push.",
 			"--trunk fetches origin/main and runs a fresh full check there, even after a green or red; the lane checkout stays where it is. --gate and --trunk cannot be used together."},
 		flags: []intentFlag{{name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "prove here and wait for the result"},
 			{name: "classify", value: "ATTEMPT", usage: "classify one saved red; a person supplies this act"},
@@ -178,7 +178,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 
 	if inv.input.text("classify") != "" && (inv.input.switched("impact") || inv.input.switched("gate") || inv.input.switched("trunk") || inv.input.text("attempt") != "") {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--classify names a saved red and cannot be combined with another proof subject"})
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--classify names a saved red and cannot be combined with another check subject"})
 	}
 	if inv.input.text("classify") != "" && person == nil {
 		_, problem := inv.lanePerson("classify this saved red", admitted.record.Root)
@@ -241,7 +241,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 				}
 			}
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, next: inv.publicArgv("landing", "status"), nextReason: "shows the separate return or proof act"})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, next: inv.publicArgv("landing", "status"), nextReason: "shows the separate return or check act"})
 	}
 	ref := "HEAD"
 	if seams.Trunk {

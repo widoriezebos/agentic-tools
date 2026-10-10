@@ -208,7 +208,7 @@ func TestLandingGateNotCheapStillRunsStatic(t *testing.T) {
 			if statics != wantStatics || len(b.runs) != 0 || result.Result != wantState || result.Static != static || result.Requested != b.head || result.Attributed != b.head || status.Result != wantState || status.Requested != b.head {
 				t.Fatalf("result=%+v status=%+v static runs=%d test runs=%v", result, status, statics, b.runs)
 			}
-			if static == plain.Green && result.Reason != "impact covers 97%; the batch proof follows" {
+			if static == plain.Green && result.Reason != "impact covers 97%; the batch check follows" {
 				t.Fatalf("skip reason: %+v", result)
 			}
 		})

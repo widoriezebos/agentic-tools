@@ -342,7 +342,7 @@ func WriteLandingEnvironment(output io.Writer, read func() (string, error)) erro
 		return err
 	}
 	if strings.TrimSpace(fingerprint) == "" {
-		return fmt.Errorf("the proof environment fingerprint is empty")
+		return fmt.Errorf("the check environment fingerprint is empty")
 	}
 	_, err = fmt.Fprintln(output, "landing environment "+fingerprint)
 	return err

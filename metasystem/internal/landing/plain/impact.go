@@ -1,17 +1,35 @@
 package plain
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"fmt"
 	"os"
 	"os/exec"
 	"strings"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
+
+// ImpactPlan is the selection returned by test impact --plan --json.
+type ImpactPlan struct {
+	Base       string   `json:"base"`
+	Subject    string   `json:"subject"`
+	Selections []string `json:"selections"`
+}
+
+// Text renders the plan content independently of its envelope's formatting.
+func (p ImpactPlan) Text() string {
+	var text strings.Builder
+	fmt.Fprintf(&text, "plan: base %s (%s)\n", p.Base, p.Subject)
+	for _, selection := range p.Selections {
+		fmt.Fprintln(&text, "selection: "+selection)
+	}
+	return text.String()
+}
 
 // impactScope binds selection to the main commit from which the batch began.
 func impactScope(install, checkout string, seams ProveSeams) scopeDecision {
-	d := scopeDecision{scopeRecord: scopeRecord{Scope: "impact", ScopeReason: "impact proof against the batch base; static checks first"}}
+	d := scopeDecision{scopeRecord: scopeRecord{Scope: "impact", ScopeReason: "impact check against the batch base; static checks first"}}
 	batch, err := ReadBatch(install)
 	if err == nil && batch == nil {
 		err = fmt.Errorf("no batch base is recorded")
@@ -24,7 +42,7 @@ func impactScope(install, checkout string, seams ProveSeams) scopeDecision {
 		}
 	}
 	if err != nil {
-		d.ScopeReason = "impact proof error: " + err.Error()
+		d.ScopeReason = "impact check error: " + err.Error()
 	}
 	return d
 }
@@ -47,22 +65,29 @@ func ReadImpactPlan(seams ProveSeams, dir, base string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	command := exec.Command(engine, "test", "impact", "--plan", "--base", base)
+	command := exec.Command(engine, "test", "impact", "--plan", "--json", "--base", base)
 	command.Dir = dir
 	command.Env = append(os.Environ(), "LANDING_ONLY=", "LANDING_PROOF_BASE="+base)
-	var plan, problem bytes.Buffer
-	command.Stdout, command.Stderr = &plan, &problem
+	read := verbresult.Capture(command, "test impact")
 	run := seams.Command
 	if run == nil {
 		run = (*exec.Cmd).Run
 	}
-	if err := run(command); err != nil {
-		return "", fmt.Errorf("the impact plan could not be read: %w; %s", err, strings.TrimSpace(problem.String()))
+	result, err := read(run(command))
+	if err != nil {
+		return "", fmt.Errorf("the impact plan could not be read: %w", err)
 	}
-	if plan.Len() == 0 {
-		return "", fmt.Errorf("the impact plan is empty")
+	if result.Outcome != verbresult.Confirmed {
+		return "", result.Err()
 	}
-	return plan.String(), nil
+	var plan ImpactPlan
+	if err := result.DecodeData(&plan); err != nil {
+		return "", fmt.Errorf("the impact plan could not be read: %w", err)
+	}
+	if plan.Base == "" {
+		return "", fmt.Errorf("the impact plan's base is empty")
+	}
+	return plan.Text(), nil
 }
 
 func (s ProveSeams) acceptsGreen(install, checkout string, result Result) bool {

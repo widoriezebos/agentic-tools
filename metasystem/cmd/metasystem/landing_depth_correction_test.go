@@ -23,7 +23,7 @@ func TestLandingPushRejectsImpactWhenBatchDecidedFull(t *testing.T) {
 	depthGoals(t, b, 3, 3)
 	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
 		if len(cmd.Args) > 1 && cmd.Args[1] == "test" {
-			fmt.Fprint(cmd.Stdout, "selection: internal/a\n")
+			writeImpactPlanResult(t, cmd, "plan: base main\nselection: internal/a\n")
 			return nil
 		}
 		fmt.Fprint(cmd.Stdout, "landing environment fixture\nLANDING-CHECKED\t0\n")
@@ -99,7 +99,7 @@ func TestLandingDepthTierlessGoalRequiresFull(t *testing.T) {
 		return value, err
 	}
 	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
-		fmt.Fprint(cmd.Stdout, "selection: internal/a=TestA\n")
+		writeImpactPlanResult(t, cmd, "plan: base main\nselection: internal/a=TestA\n")
 		return nil
 	}
 	impact, reason := batchDepth(b.install, b.root, b.head, b.owners.landing.plainProve)

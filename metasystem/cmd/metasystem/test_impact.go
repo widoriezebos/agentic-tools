@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
@@ -24,7 +25,13 @@ import (
 )
 
 func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
+	invocation := testRunInvocation{stdout: stdout, stderr: stderr, name: "test impact"}
+	finish := invocation.envelope(invocation.name, args)
+	defer func() { finish(code) }()
+	stdout = invocation.stdout
 	flags := newFlagSet("test impact", stdout, stderr)
+	flags.Bool("json", false, "print the plan as a JSON result")
+	output := plain.ImpactPlan{Selections: []string{}}
 	base := flags.String("base", os.Getenv("LANDING_PROOF_BASE"), "the unit's comparison base")
 	check := flags.Bool("check", false, "check a repair at impact depth only when cheap; reuse its unchanged staged tree")
 	plan := flags.Bool("plan", false, "print the selection without running it")
@@ -85,6 +92,7 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+		output.Base, output.Subject = sha, subject
 		fmt.Fprintf(stdout, "plan: base %s (%s)\n", sha, subject)
 		impact, err := goadapter.UnitImpact(installation, sha)
 		if err != nil {
@@ -178,7 +186,11 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 		}
 		fmt.Fprintln(stdout, identity.Reason)
 	}
-	if !replay && *plan {
+	if *plan && (!replay || invocation.outcome != nil) {
+		if invocation.outcome != nil {
+			output.Selections = selections
+			invocation.outcome.data = output
+		}
 		return 0
 	}
 	environment := os.Environ()
@@ -307,7 +319,11 @@ func batchDepth(install, checkout, commit string, seams plain.ProveSeams) (bool,
 	if git == nil {
 		git = plain.Git
 	}
-	tree, err := os.MkdirTemp("", "metasystem-depth-")
+	scratch, err := diskstore.ProcessScratch()
+	if err != nil {
+		return fallback(err)
+	}
+	tree, err := os.MkdirTemp(scratch, "metasystem-depth-")
 	if err != nil {
 		return fallback(err)
 	}

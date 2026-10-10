@@ -1194,7 +1194,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 	}
 	if decision.Scope == "impact" {
 		if err := decision.impactPlan(seams, dir); err != nil {
-			decision.ScopeReason = "impact proof error: " + err.Error()
+			decision.ScopeReason = "impact check error: " + err.Error()
 			result.Result, result.Reason = Red, decision.ScopeReason
 			result.Cause = &Cause{Kind: "environment", Evidence: running.Log}
 			result.allowEnvironmentRepeat(previous)
@@ -1209,7 +1209,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 	}
 	report, runErr := runCheck(seams, dir, command, running, "", *decision, output, observed)
 	if decision.Scope == "impact" && strings.TrimSpace(observed.environment) == "" {
-		decision.ScopeReason = "impact proof error: the environment fingerprint is empty"
+		decision.ScopeReason = "impact check error: the environment fingerprint is empty"
 		result.Result, result.Reason = Red, decision.ScopeReason
 		result.Cause = &Cause{Kind: "environment", Evidence: running.Log}
 		result.allowEnvironmentRepeat(previous)

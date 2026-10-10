@@ -80,7 +80,7 @@ func prepareGate(seams ProveSeams, install, checkout, dir, command string, runni
 		result.Depth = "impact"
 		if !cheap {
 			result.Result = Skipped
-			result.Reason = fmt.Sprintf("impact covers %d%%; the batch proof follows", share)
+			result.Reason = fmt.Sprintf("impact covers %d%%; the batch check follows", share)
 			return result, true
 		}
 	}

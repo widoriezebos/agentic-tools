@@ -64,7 +64,7 @@ func newBatchVerbBed(t *testing.T, policy string) *batchVerbBed {
 		ImpactCost: func(string, string) (int, bool, error) { return 10, true, nil },
 		Command: func(cmd *exec.Cmd) error {
 			if len(cmd.Args) > 2 && cmd.Args[1] == "test" && cmd.Args[2] == "impact" {
-				fmt.Fprint(cmd.Stdout, "plan: base fixture\nselection: fixture\n")
+				writeImpactPlanResult(t, cmd, "plan: base fixture\nselection: fixture\n")
 				return nil
 			}
 			if strings.HasSuffix(cmd.Args[len(cmd.Args)-1], " test groups fast-static-build") {

@@ -220,7 +220,7 @@ func landingIntentCommands() []intentCommand {
 			usage: []string{"metasystem landing run [--goals G1,G2] [--by NAME] [--json]"},
 			details: []string{"Takes the same decision the lane checkout's steward takes each tick, under the lane's lock: it starts the landing agent when work is queued, the lane is not stopped and no landing agent runs.",
 				"A landing agent already running, or a lane with nothing queued, changes nothing. A stopped lane, a lane checkout at the helm, or a lane that can't run is refused with the one command that resumes it.",
-				"--goals records an enrolled person's ordered selection at the registered lane before execution is requested; generic run retries that record without reopening proof allowance.",
+				"--goals records an enrolled person's ordered selection at the registered lane before execution is requested; generic run retries that record without reopening check allowance.",
 				"--json prints the outcome (started, running, idle, paused, held, failed) and the landing agent's session."},
 			flags:    []intentFlag{{name: "goals", value: "G1,G2", usage: "the waiting goals the enrolled person selects, in order"}, byFlag, {name: "batch", value: "ID", hidden: true, usage: "continue the matching recorded person selection"}},
 			maxArgs:  0,
@@ -466,7 +466,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 				if len(machinery) > 0 {
 					words += "; machinery rounds " + strings.Join(machinery, ", ")
 				}
-				rows = append(rows, [2]string{unit.Unit, words + "; proof " + strings.Join(unit.Proof, ", ") + "; read " + unit.Read})
+				rows = append(rows, [2]string{unit.Unit, words + "; checks " + strings.Join(unit.Proof, ", ") + "; read " + unit.Read})
 			}
 		}
 		if len(rows) > 0 {

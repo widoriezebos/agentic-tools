@@ -21,9 +21,9 @@ func TestLandingProveImpactOwnProvenanceAndPush(t *testing.T) {
 	const plan = "plan: base main (base)\nselection: internal/a\n"
 	plans, proofs := 0, 0
 	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
-		if len(cmd.Args) == 6 && reflect.DeepEqual(cmd.Args[1:], []string{"test", "impact", "--plan", "--base", "main"}) {
+		if len(cmd.Args) == 7 && reflect.DeepEqual(cmd.Args[1:], []string{"test", "impact", "--plan", "--json", "--base", "main"}) {
 			plans++
-			fmt.Fprint(cmd.Stdout, plan)
+			writeImpactPlanResult(t, cmd, plan)
 			return nil
 		}
 		proofs++
@@ -78,7 +78,7 @@ func TestLandingProveImpactMissingFingerprintIsErrorWithoutFull(t *testing.T) {
 	proofs := 0
 	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
 		if len(cmd.Args) > 1 && cmd.Args[1] == "test" {
-			fmt.Fprint(cmd.Stdout, "plan: base main\n")
+			writeImpactPlanResult(t, cmd, "plan: base main\n")
 			return nil
 		}
 		proofs++
@@ -101,7 +101,7 @@ func TestLandingProveImpactStaticRedNamesGroup(t *testing.T) {
 	b.prepareBatch(t)
 	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
 		if len(cmd.Args) > 1 && cmd.Args[1] == "test" {
-			fmt.Fprint(cmd.Stdout, "plan: base main\n")
+			writeImpactPlanResult(t, cmd, "plan: base main\n")
 			return nil
 		}
 		fmt.Fprint(cmd.Stdout, "landing environment fixture toolchain\nlanding group fast-static-build red 1\nlanding group unit/internal/a green 2\nLANDING-FAILED\tfast-static-build\t\nLANDING-CHECKED\t1\n")
@@ -130,7 +130,7 @@ func TestLandingProveImpactEnvironmentErrorAllowsOneRetry(t *testing.T) {
 						if failing && failure == "plan" {
 							return errors.New("impact plan temporarily unavailable")
 						}
-						fmt.Fprint(cmd.Stdout, "plan: base main\n")
+						writeImpactPlanResult(t, cmd, "plan: base main\n")
 						return nil
 					}
 					proofs++

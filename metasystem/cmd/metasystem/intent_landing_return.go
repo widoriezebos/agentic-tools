@@ -16,7 +16,7 @@ func landingReturnCommand() intentCommand {
 	return laneCommand(intentCommand{
 		object: "landing", action: "return", audience: "both", summary: "give one goal in the landing lane back to its seat, with the reason",
 		usage: []string{"metasystem landing return GOAL --cause CAUSE [--reason TEXT] [--by NAME]"},
-		details: []string{"The landing agent returns only a goal whose newest proof demonstrates its own defect at the waiting commit. A proven person may return any cause. Without --reason, the failed tests and evidence supply the reason.",
+		details: []string{"The landing agent returns only a goal whose newest check demonstrates its own defect at the waiting commit. A proven person may return any cause. Without --reason, the failed tests and evidence supply the reason.",
 			"The seat's work land GOAL then shows it was returned and why; a new commit on its branch is handed in again with work land GOAL.",
 			"A goal already returned is left as it is."},
 		flags:    []intentFlag{{name: "cause", value: "CAUSE", usage: "own, main, other, flake, environment, or unclassified"}, reasonFlag("because", "why, kept with the return"), {name: "by", value: "NAME", usage: "a proven person returns any cause"}},

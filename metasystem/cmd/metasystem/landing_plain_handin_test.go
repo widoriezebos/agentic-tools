@@ -142,7 +142,7 @@ func testHandInUnitRounds(t *testing.T, state intentBranchState, reads [2]string
 	}
 	code, out, stderr := w.run(statusOwners, "landing", "status")
 	words := oneSpaced(out)
-	for _, part := range []string{"u1 2 counted rounds; machinery rounds provider-limit=2, sandbox-denied=1; proof static, unit, check; read " + reads[0], "u2 1 counted rounds; proof check; read " + reads[1]} {
+	for _, part := range []string{"u1 2 counted rounds; machinery rounds provider-limit=2, sandbox-denied=1; checks static, unit, check; read " + reads[0], "u2 1 counted rounds; checks check; read " + reads[1]} {
 		if code != 0 || !strings.Contains(words, part) {
 			t.Fatalf("landing status lacks %q: code=%d %s %s", part, code, out, stderr)
 		}

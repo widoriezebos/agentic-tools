@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -102,10 +103,18 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			var depthTrees []string
 			git := b.owners.landing.plainProve.Git
 			b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
 				result, err := git(dir, args...)
 				if len(args) > 1 && args[0] == "worktree" && args[1] == "add" {
+					if strings.HasPrefix(filepath.Base(args[3]), "metasystem-depth-") {
+						scratch, err := diskstore.ProcessScratch()
+						if err != nil || filepath.Dir(args[3]) != scratch {
+							t.Fatalf("depth checkout outside process scratch: path=%s scratch=%s error=%v", args[3], scratch, err)
+						}
+						depthTrees = append(depthTrees, args[3])
+					}
 					install := filepath.Join(args[3], "metasystem")
 					if err := os.MkdirAll(install, 0700); err != nil {
 						t.Fatal(err)
@@ -121,7 +130,7 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 			}
 			b.owners.landing.plainProve.Command = func(command *exec.Cmd) error {
 				if len(command.Args) > 1 && command.Args[1] == "test" {
-					fmt.Fprint(command.Stdout, row.plan)
+					writeImpactPlanResult(t, command, "plan: base main\n"+row.plan)
 					return nil
 				}
 				if got := commandEnv(command, "LANDING_PROOF_SCOPE"); got != row.scope {
@@ -141,6 +150,14 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 			var report struct{ Data plain.Result }
 			if err := json.Unmarshal([]byte(out), &report); err != nil || code != 0 || report.Data.Scope != row.scope || report.Data.ScopeReason != row.reason {
 				t.Fatalf("code=%d report=%s err=%v", code, out, err)
+			}
+			if row.tiers[0] == 2 && row.tiers[1] == 2 && len(depthTrees) == 0 {
+				t.Fatal("the batch depth selection did not create its checkout")
+			}
+			for _, tree := range depthTrees {
+				if _, err := os.Stat(tree); !os.IsNotExist(err) {
+					t.Fatalf("depth checkout was not removed: path=%s error=%v", tree, err)
+				}
 			}
 			if len(report.Data.Executions) != 1 || report.Data.Executions[0].DepthScope != row.scope || report.Data.Executions[0].DepthBase != "main" {
 				t.Fatalf("batch depth decision was not retained: %+v", report.Data.Executions)

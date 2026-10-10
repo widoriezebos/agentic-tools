@@ -3,7 +3,6 @@ package proofrun
 import (
 	"bytes"
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -27,7 +26,7 @@ func TestWriteLandingEnvironmentSharedHeaderAndErrors(t *testing.T) {
 				if err == nil || out.Len() != 0 {
 					t.Fatalf("invalid environment emitted: %q, %v", &out, err)
 				}
-				if tc.err == nil && !strings.Contains(err.Error(), "fingerprint is empty") {
+				if tc.err == nil && err.Error() != "the check environment fingerprint is empty" {
 					t.Fatal(err)
 				}
 			} else if err != nil || out.String() != "landing environment fixture toolchain\n" {

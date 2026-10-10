@@ -187,7 +187,7 @@ func TestDepthDecisionPreservesImpactScopeError(t *testing.T) {
 	b.seams.DepthReason = "tier 3: full"
 	b.seams.Impact = true
 	decision := proofScope(b.install, b.checkout, Running{}, b.seams)
-	if decision.Base != "" || !strings.Contains(decision.ScopeReason, "impact proof error: no batch base is recorded") || !strings.Contains(decision.ScopeReason, "tier 3: full") {
+	if decision.Base != "" || !strings.Contains(decision.ScopeReason, "impact check error: no batch base is recorded") || !strings.Contains(decision.ScopeReason, "tier 3: full") {
 		t.Fatalf("impact error was replaced by depth reason: %+v", decision)
 	}
 }
