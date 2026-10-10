@@ -2,13 +2,18 @@ package goal
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 func TestMain(m *testing.M) {
+	humanauthority.EnrollmentLocation = func(root string) (string, string, error) {
+		return filepath.Join(root, "artifacts", "agents", "authority", "human-terminal.json"), root, nil
+	}
 	os.Exit(testenv.Main(m))
 }
 

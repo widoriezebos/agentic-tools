@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/spend"
@@ -18,6 +19,9 @@ import (
 var spendFenceNow = time.Date(2026, 9, 2, 20, 0, 0, 0, time.UTC)
 
 func TestMain(m *testing.M) {
+	humanauthority.EnrollmentLocation = func(root string) (string, string, error) {
+		return filepath.Join(root, "artifacts", "agents", "authority", "human-terminal.json"), root, nil
+	}
 	if len(os.Args) > 1 && os.Args[1] == processGitHelperArg {
 		os.Exit(runProcessGitHelper(os.Args[2:]))
 	}

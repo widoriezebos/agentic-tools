@@ -17,7 +17,7 @@ type lanePersonObservation struct {
 }
 
 // lanePerson observes the original calling checkout, independently of --repo.
-// A linked checkout keeps its own enrollment rather than borrowing its primary's.
+// The machine names the person; the calling checkout keeps custody of the act.
 func (inv *intentInvocation) lanePerson(act, target string) (lanePersonObservation, *intentResult) {
 	var observed lanePersonObservation
 	path := inv.cwd

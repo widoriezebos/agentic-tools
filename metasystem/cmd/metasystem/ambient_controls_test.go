@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -23,6 +24,11 @@ var declaredContextCostCandidateEngine string
 // whose candidate is a package-level input; its proof flag declares that
 // input before the ambient selector is removed.
 func TestMain(m *testing.M) {
+	if os.Getenv("METASYSTEM_TEST_MACHINE") == "" {
+		humanauthority.EnrollmentLocation = func(root string) (string, string, error) {
+			return filepath.Join(root, "artifacts", "agents", "authority", "human-terminal.json"), root, nil
+		}
+	}
 	executable, err := os.Executable()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "locate command test executable:", err)
