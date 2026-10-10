@@ -113,6 +113,10 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 				return readErr
 			}
 			if ok && current.Attempt == running.Attempt {
+				if result.Result == Red {
+					current.Attempt, current.Commit, current.Tree, current.Gate, current.Trunk, current.Checkpoint = result.Attempt, result.Commit, result.Tree, seams.Gate, result.Trunk, true
+					return writeRunning(install, current)
+				}
 				return os.Remove(runningPath(install))
 			}
 			return nil

@@ -42,6 +42,11 @@ func gateBaseline(seams ProveSeams, install, checkout, command string, running R
 	baseline := Result{Result: Red, Commit: running.Commit, Tree: running.Tree, Attempt: running.Attempt, Log: running.Log,
 		At: seams.now().Format(time.RFC3339Nano), Scope: "gate", Cause: &Cause{Kind: "unclassified", Evidence: running.Log}}
 	parents, err := seams.git(checkout, "show", "-s", "--format=%P", running.Commit)
+	if err == nil && len(strings.Fields(parents)) == 1 {
+		if fix, fixErr := currentFix(install, seams); fixErr == nil && fix != nil && fix.Commit == running.Commit {
+			return baseline, true, decision
+		}
+	}
 	if err != nil || len(strings.Fields(parents)) != 2 {
 		baseline.Reason = "the cheap check needs HEAD to be a merge with two parents"
 		return baseline, false, decision
@@ -143,6 +148,9 @@ func replayGate(seams ProveSeams, install, checkout, command string, running Run
 		return result
 	}
 	trees := []replayTree{{Running: Running{Commit: running.Commit}, Main: running.Commit == main}}
+	if fix, err := currentFix(install, seams); err == nil && fix != nil && fix.Commit == running.Commit {
+		return replayBatch(seams, install, checkout, command, running, result, previous)
+	}
 	if !seams.gateBaseline {
 		parents, err := seams.git(checkout, "show", "-s", "--format=%P", running.Commit)
 		fields := strings.Fields(parents)

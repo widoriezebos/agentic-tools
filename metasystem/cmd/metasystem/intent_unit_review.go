@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
@@ -190,6 +191,11 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 			next: next, nextReason: then, Details: []string{detail}}.withCause(argError(args))
 	}
 	conn, git := inv.connection(), inv.work().git
+	fix := conn.laneFix(original.Path(), worktree, goalID)
+	if fix != nil {
+		commit := conn.commit
+		conn.commit = func(req branch.CommitRequest) (string, error) { req.LaneFixUnits = fix.Units; return commit(req) }
+	}
 	// The selected installation's endpoint and claim authorize every
 	// effect; the goal worktree's own resolution must agree, because the
 	// read and publication owners resolve there.
@@ -201,7 +207,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		return refuse(inv.publicArgv("system", "check"), "shows both configurations", "the goal worktree points at another goal branch than this checkout, so nothing was committed",
 			"goal worktree %s resolves goal branch endpoint %s %s (%v), not the selected installation's %s %s", install, local.Remote, local.Branch, err, endpoint.Remote, endpoint.Branch)
 	}
-	check := conn.claimCheck(original.Path(), goalID, endpoint)
+	check := inv.laneClaimCheck(conn, original.Path(), goalID, endpoint)
 	if err := branch.CheckCommitAccess(goalID, check); err != nil {
 		if holder, next, reason, held := inv.heldElsewhere(goalID, err); held {
 			return refuse(next, reason, fmt.Sprintf("seat %s holds goal %s and writes its branch, so nothing was committed", holder, goalID), "%v", err)
@@ -209,6 +215,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		return refuse(inv.publicArgv("goal", "show", goalID), "shows who holds the goal", fmt.Sprintf("this session can't commit to goal %s's branch, so nothing was committed", goalID), "%v", err)
 	}
 	endpointTip := ""
+	if fix != nil {
+		endpointTip = fix.Parent
+	}
 	tip := func() (string, error) {
 		if endpointTip == "" {
 			tipErr := review.Wait(func() error {
@@ -432,6 +441,13 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 				Summary: fmt.Sprintf("unit commit %s exists but could not be recorded with run %s: %v", subject.Commit, record.ID, err),
 				next:    inv.sameCommand(), nextReason: "the same command reconciles the exact commit"}
 		}
+	}
+	if fix != nil {
+		fix.Commit, fix.State = subject.Commit, "reviewing"
+		if err := plain.WriteFix(original.Path(), *fix); err != nil {
+			return refuse(retry, "retains the fix commit", "the fix commit could not be recorded", "%v", err)
+		}
+		return inv.reviewLaneFix(targets, original.Path(), *fix, "--brief", inv.callerPath(chooseUnitValue(inv.input.text("brief"), review.BuildBrief)), "--build-brief-sha256", review.BuildBriefSHA256, "--join="+strconv.FormatBool(!inv.input.has("brief")))
 	}
 	data["commit"], data["tip"], data["operation"] = subject.Commit, subject.Tip, subject.Operation
 	data["expectedParent"] = subject.ExpectedParent

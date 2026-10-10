@@ -155,8 +155,9 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
-	Actor       string
-	FreezeCheck func(UnitPlan, string) (UnitPlan, error)
+	AdmitDetached func(UnitPlan) bool
+	Actor         string
+	FreezeCheck   func(UnitPlan, string) (UnitPlan, error)
 	// CriticCustody observes or cancels every committed examination of this run.
 	CriticCustody func(UnitRunRecord, bool) (bool, error)
 	recoverRun    string
@@ -351,6 +352,9 @@ func (runner *UnitRunner) admitRound(plan UnitPlan, buildBrief string, previous 
 }
 
 func (runner *UnitRunner) requireGoalBranch(plan UnitPlan) error {
+	if runner.AdmitDetached != nil && runner.AdmitDetached(plan) {
+		return nil
+	}
 	git := runner.Git
 	if git == nil {
 		git = OSGitRunner{}

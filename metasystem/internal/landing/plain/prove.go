@@ -41,6 +41,7 @@ const (
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
+	Checkpoint        bool                 `json:"checkpoint,omitempty"`
 	ClassificationOf  string               `json:"classification-of,omitempty"`
 	ObservedIncidents []goal.TrunkRedEntry `json:"observed-incidents,omitempty"`
 	Admission         *ExecutionAdmission  `json:"admission,omitempty"`
@@ -214,6 +215,9 @@ func (s ProveSeams) now() time.Time {
 }
 
 func (s ProveSeams) alive(running Running) bool {
+	if running.Checkpoint {
+		return false
+	}
 	if s.Alive != nil {
 		return s.Alive(running)
 	}
@@ -272,6 +276,9 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	running, recorded, alive, err := ReadRunning(install, seams)
 	if err != nil || !recorded || alive {
 		return running, recorded, alive, err
+	}
+	if running.Checkpoint {
+		return running, true, false, nil
 	}
 	if running.Admission != nil {
 		if running.Admission.State == "pending" {
@@ -483,6 +490,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			return err
 		}
 		started.setAdmissionState("pending")
+		if err := advanceFix(install, checkout, started, seams); err != nil {
+			return err
+		}
 		if err := writeRunning(install, started); err != nil {
 			return err
 		}
@@ -577,6 +587,9 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		}
 		settled.Goals, err = goalsInCommit(install, checkout, commit, seams.git)
 		if err != nil {
+			return err
+		}
+		if err := advanceFix(install, checkout, Running{Attempt: settled.Attempt, Commit: settled.Commit, BatchID: settled.BatchID, BatchMembers: settled.BatchMembers}, seams); err != nil {
 			return err
 		}
 		found = true
@@ -749,6 +762,9 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			return err
 		}
 		running.setAdmissionState("claimed")
+		if err := advanceFix(install, checkout, running, seams); err != nil {
+			return err
+		}
 		if err := writeRunning(install, running); err != nil {
 			return err
 		}
@@ -854,6 +870,10 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			}
 		}
 		if current, recorded, _, _ := ReadRunning(install, seams); recorded && current.Attempt == running.Attempt {
+			if result.Result == Red {
+				current.Checkpoint = true
+				return writeRunning(install, current)
+			}
 			return os.Remove(runningPath(install))
 		}
 		return nil

@@ -1247,6 +1247,11 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	goalID := inv.input.text("goal")
 	targets := []intentTarget{{Kind: "commit", ID: unit}}
+	if fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, goalID); fix != nil {
+		if commit, err := goalBranchGit(inv.layout.GitRoot, "rev-parse", "--verify", unit+"^{commit}"); err == nil && commit == fix.Commit {
+			return inv.reviewLaneFix(targets, inv.layout.InstallationRoot.Path(), *fix)
+		}
+	}
 	if goalID == "" {
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 2,
 			Summary: "a commit review needs the goal whose branch holds the commit; nothing was reviewed",

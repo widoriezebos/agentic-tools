@@ -624,6 +624,24 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 			continue
 		}
 		if len(fields) == 2 {
+			fix, err := currentFix(install, s)
+			if err != nil {
+				return batch, err
+			}
+			if fix != nil && fix.Commit == fields[0] && fix.Parent == fields[1] && slices.ContainsFunc(batch.Members, func(m GoalSHA) bool { return m.Goal == fix.Goal }) {
+				running, recorded, _, err := ReadRunning(install, s)
+				if err != nil {
+					return batch, err
+				}
+				message, err := s.git(checkout, "show", "-s", "--format=%B", fields[0])
+				if err != nil {
+					return batch, err
+				}
+				paragraphs := strings.Split(strings.TrimSpace(message), "\n\n")
+				if (!recorded || running.BatchID == batch.ID && slices.Equal(running.BatchMembers, batch.Members)) && paragraphs[len(paragraphs)-1] == fmt.Sprintf("Goal-Unit: %s/lane-fix-%d", fix.Goal, fix.Round) {
+					continue
+				}
+			}
 			reason := "commit " + Short(fields[0]) + " is outside fetched main and does not merge a selected member or main"
 			var outside []string
 			for _, entry := range entries {

@@ -427,7 +427,7 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 	case !ok:
 		return Entry{}, false, fmt.Errorf("%w: %s was never handed in", ErrNotWaiting, goal)
 	case latest.State == StateReturned:
-		return latest, false, nil
+		return latest, false, closeFix(install, goal)
 	case latest.State != StateWaiting:
 		return latest, false, fmt.Errorf("%w: %s already %s", ErrNotWaiting, goal, latest.State)
 	}
@@ -439,13 +439,19 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 	if err != nil {
 		return latest, false, err
 	}
+	if fix, err := currentFix(install, seams); err == nil && fix != nil && fix.Goal == goal {
+		reason += fmt.Sprintf("; fix round %d, job %s, read %s", fix.Round, fix.Job, fix.Read)
+	}
 	at := now.UTC().Format(time.RFC3339)
 	if err := appendLine(queuePath(install), Line{ReturnOrigin: &origin, Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Cause: cause, Conflict: detail}); err != nil {
 		return latest, false, err
 	}
 	latest.ReturnOrigin = &origin
 	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict, latest.Cause = StateReturned, reason, at, detail, cause
-	return latest, true, closeGoalStopsLocked(install, goal, "return "+goal, now, latest.SHA)
+	if err := closeGoalStopsLocked(install, goal, "return "+goal, now, latest.SHA); err != nil {
+		return latest, true, err
+	}
+	return latest, true, closeFix(install, goal)
 }
 
 // Landed derives each waiting entry's landing: one whose sha main

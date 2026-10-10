@@ -37,6 +37,7 @@ type Status struct {
 	// contains its sha. A landed hand-in a push of the last day brought
 	// carries that push's time.
 	Queue               []Entry              `json:"queue"`
+	RunningFix          *Fix                 `json:"running_fix,omitempty"`
 	RunningProof        *RunningProof        `json:"running_proof"`
 	RunningRegeneration *RunningRegeneration `json:"running_regeneration,omitempty"`
 	// LastProof is the newest line of results.jsonl.
@@ -380,6 +381,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			status.ProofHeadline += "; hot-fix, then metasystem landing prove --trunk"
 		}
 	}
+	status.RunningFix, err = readFix(install)
+	unread("the lane fix", err)
+	if status.RunningFix != nil {
+		status.ProofHeadline = fixHeadline(status.RunningFix)
+	}
 	if status.ProofHeadline != "" {
 		status.Summary = status.ProofHeadline
 	}
@@ -492,6 +498,11 @@ func LandingTimes(entries []Entry, pushes []Pushed, since time.Time, brought fun
 		for _, commit := range commits {
 			for _, index := range waiting[commit] {
 				out[index].LandedAt, out[index].Landing = push.At, push.Clock
+				for _, fix := range push.Fixes {
+					if fix.Goal == out[index].Goal {
+						out[index].Fix, out[index].Reason = fix.Commit, fmt.Sprintf("landed with lane fix %d", fix.Round)
+					}
+				}
 			}
 			delete(waiting, commit)
 		}
@@ -543,7 +554,7 @@ func ReadRunningProof(install string, seams ProveSeams) *RunningProof {
 // and why it can't be read.
 func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 	running, recorded, alive, err := ReadRunning(install, seams)
-	if err != nil || !recorded {
+	if err != nil || !recorded || running.Checkpoint {
 		return nil, err
 	}
 	state := "running"

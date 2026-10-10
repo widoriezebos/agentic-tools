@@ -471,6 +471,10 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && inv.checkDirectPersonProof("work "+inv.command.action, false) == nil {
 		runner.Actor = "person"
 	}
+	runner.AdmitDetached = func(plan launch.UnitPlan) bool {
+		fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal)
+		return fix != nil && plan.Base == fix.Parent && plan.Unit == fmt.Sprintf("lane-fix-%d", fix.Round) && fix.Commit == "" && fix.Job == ""
+	}
 	runner.FreezeCheck = inv.resolveUnitCheck
 	if inv.input.has("check") {
 		runner.ReviewPolicy = func() (string, error) { return "person", nil }
@@ -508,7 +512,19 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if len(settings.Values) == 0 {
 			settings = launch.DefaultSettings()
 		}
-		return inv.unitLaunchAuthority(record, spec, settings)
+		if err := inv.unitLaunchAuthority(record, spec, settings); err != nil {
+			return err
+		}
+		if spec.Kind == "build" {
+			if fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), record.Worktree, record.Goal); fix != nil {
+				if record.Unit != fmt.Sprintf("lane-fix-%d", fix.Round) || len(record.Rounds) != 1 || fix.Job != "" {
+					return fmt.Errorf("the lane admits only its recorded fix round")
+				}
+				fix.Job, fix.State = record.ID, "building"
+				return plain.WriteFix(inv.layout.InstallationRoot.Path(), *fix)
+			}
+		}
+		return nil
 	}
 	runner.Manager.SandboxAct = inv.consumedSandboxAct
 	runner.CollectLaunch = func(unit launch.UnitRunRecord, execution launch.Record, cause string) error {
@@ -678,7 +694,7 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	if err != nil {
 		return err
 	}
-	if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), record.Goal, endpoint)); err != nil {
+	if err := branch.CheckHolder(inv.laneClaimCheck(conn, inv.layout.InstallationRoot.Path(), record.Goal, endpoint)); err != nil {
 		return err
 	}
 	projection, now, problem := inv.projection()
@@ -919,7 +935,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	if endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path()); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the goal branch can't be reached, so nothing was built",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err))
-	} else if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), id, endpoint)); err != nil {
+	} else if err := branch.CheckHolder(inv.laneClaimCheck(conn, inv.layout.InstallationRoot.Path(), id, endpoint)); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was built",
 			next: inv.claimRemedy(id, err), nextReason: claimRemedyReason(err, "a person takes the goal over; or the session holding it builds"),
 			Details: refusalCodeDetails(goal.RefusalCode(err))})
@@ -1243,6 +1259,9 @@ func (inv *intentInvocation) callerPath(path string) string {
 // it prints the Git command that prepares it; the current checkout and its
 // uncommitted files are left where they are.
 func (inv *intentInvocation) goalWorktree(id string) (string, *intentResult) {
+	if inv.connection().laneFix(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, id) != nil {
+		return inv.layout.GitRoot, nil
+	}
 	git := inv.work().git
 	output, err := git(inv.layout.GitRoot, "worktree", "list", "--porcelain")
 	if err != nil {

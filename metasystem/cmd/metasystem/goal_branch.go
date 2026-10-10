@@ -263,7 +263,14 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	if err != nil {
 		return branch.BranchReadResult{}, 1, err
 	}
-	branchTip, present, err := originTipReader(*root, endpoint, *goalID)
+	var branchTip string
+	var present bool
+	checkout, _ := os.Getwd()
+	if fix := landingFixFor(*root, checkout, *goalID, int64(os.Getpid())); fix != nil && fix.Commit == *unit {
+		endpointTip, branchTip, present = fix.Parent, fix.Commit, true
+	} else {
+		branchTip, present, err = originTipReader(*root, endpoint, *goalID)
+	}
 	if err != nil || !present {
 		if err == nil {
 			err = fmt.Errorf("origin has no goal/%s", *goalID)
@@ -308,7 +315,12 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Scope: projection.Tree.Live[*goalID], Repo: *root, Remote: endpoint.Remote,
 		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect, Join: *join,
 		BriefPath: brief.value, BuildBriefSHA256: *buildDigest, Runtime: runtime.value, Model: model.value, Selected: *selected, UnitRead: bundle,
-		CheckClaim: goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot), Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,
+		CheckClaim: func() error {
+			if fix := landingFixFor(*root, checkout, *goalID, int64(os.Getpid())); fix != nil && fix.Commit == *unit {
+				return nil
+			}
+			return goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot)()
+		}, Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,
 		Retry: *retry, FollowUp: func(rootJob, brief string) (string, error) {
 			return readFollowUp(dependencies.Delegator, *root, rootJob, brief, *selected)
 		}})

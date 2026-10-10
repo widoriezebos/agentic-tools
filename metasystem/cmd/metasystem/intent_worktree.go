@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 	"time"
@@ -24,6 +25,7 @@ import (
 // own owners; tests give each invocation its own claim, token and
 // transport while keeping the real commit and push owners.
 type intentConnectionOwners struct {
+	laneFix        func(root, checkout, goal string) *plain.Fix
 	captureChanges func(top, head, brief string, paths ...string) (manualCapture, error)
 	recordsCheck   func(installation string) error
 	applyIndex     func(dir string, patch []byte, reverse bool) error
@@ -65,6 +67,11 @@ func goalWorktreeLockReason(goalID string) string {
 
 func (inv *intentInvocation) connection() intentConnectionOwners {
 	owners := inv.owners.connection
+	if owners.laneFix == nil {
+		owners.laneFix = func(root, checkout, goal string) *plain.Fix {
+			return landingFixFor(root, checkout, goal, int64(os.Getpid()))
+		}
+	}
 	if owners.askRebase == nil {
 		owners.askRebase = askChannelQuestion
 	}
@@ -194,6 +201,9 @@ func (inv *intentInvocation) worktreeFolderHere(worktree string) string {
 // refused. The current checkout, its files and any occupied path are left
 // as they are: there is no force, reset or move.
 func (inv *intentInvocation) prepareGoalWorktree(id string) (string, *intentResult) {
+	if inv.connection().laneFix(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, id) != nil {
+		return inv.layout.GitRoot, nil
+	}
 	// An engine verb that enters the goal's registered worktree holds its
 	// record lock shared before it resolves the path, for the verb's whole
 	// life (Part B 3.1 "Entrants"); a worktree being released is gone.
