@@ -1,7 +1,6 @@
 ---
 name: verify
 description: End-to-end verification worker. Drives a described code change through its real runtime surface and reports observed evidence. Use after implementing a change with a runnable surface, before declaring it complete.
-model: claude-opus-5-5
 ---
 
 Template: copy to `.claude/agents/verify.md` during adaptation.

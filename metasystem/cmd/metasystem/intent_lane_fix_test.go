@@ -20,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 type laneFixBed struct {
@@ -128,7 +129,7 @@ func newLaneFixBed(t *testing.T) *laneFixBed {
 	}
 	hookDir := filepath.Join(root, ".git", "hooks")
 	hook := "#!/bin/sh\necho hook >> " + shellQuote(b.hookTrace) + "\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexport METASYSTEM_SUPERVISION_REGISTRY_HOME=" + shellQuote(registry) + "\nexec " + shellQuote(executable) + " internal pre-commit --root " + shellQuote(root) + "\n"
-	if err := os.WriteFile(filepath.Join(hookDir, "pre-commit"), []byte(hook), 0755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(hookDir, "pre-commit"), []byte(hook), 0755); err != nil {
 		t.Fatal(err)
 	}
 	connectionGit(t, root, "config", "core.hooksPath", hookDir)
@@ -499,9 +500,9 @@ func TestLaneFixCommittedReadOwnerRealProcess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(executable, "fixture-lane-read-owner", b.root(), b.id, connectionGit(t, b.root(), "rev-parse", "HEAD"))
+	fixture := pinProofBinaryFixture(t, b.root())
+	cmd := fixture.command(append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.registry), executable, "fixture-lane-read-owner", b.root(), b.id, connectionGit(t, b.root(), "rev-parse", "HEAD"))
 	cmd.Dir = b.root()
-	cmd.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.registry)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("committed read owner: %v %s", err, output)
@@ -515,8 +516,8 @@ func TestLaneFixGenericClaimOwnerRealProcessRefusesCustody(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command(executable, "fixture-lane-claim-owner", b.root(), b.id)
-	cmd.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.registry)
+	fixture := pinProofBinaryFixture(t, b.root())
+	cmd := fixture.command(append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.registry), executable, "fixture-lane-claim-owner", b.root(), b.id)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("generic claim owner: %v %s", err, output)

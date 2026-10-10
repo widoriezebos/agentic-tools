@@ -1,7 +1,6 @@
 ---
 name: refactor
 description: Behavior-preserving refactor worker. Restructures code under trusted-baseline, batching, and validation-ladder discipline. Use for readability, extraction, or cleanup work that must not change behavior.
-model: claude-opus-5-5
 ---
 
 Template: copy to `.claude/agents/refactor.md` during adaptation.

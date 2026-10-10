@@ -73,7 +73,7 @@ human return restores no automatic allowance.
 2. **Several waiting:** the recorded batch holds one goal. Merge only that pair, run `landing prove --gate --wait`, then `landing prove` and end your turn; push its green before selecting the next goal.
 3. **Red:** read `last_proof.cause` (or `last_gate.cause` for a cheap-gate red).
    For `own`, run ONE fix round as the goal's seat in the lane checkout, whose detached
-   HEAD is the batch commit. Keep every red of this gate in that one fix job; never
+   HEAD is the batch commit. Keep every red of the batch proof's gate in that one fix job; never
    start a second fix round for the same gate.
    Write `artifacts/agents/landing/fixes/<attempt>/brief.md`, naming the goal, every
    failed unit and test from the proof (including `<unit> (package)` for a package
@@ -93,7 +93,7 @@ human return restores no automatic allowance.
    proof runs; green goes to `landing push` as usual.
    Red again, a material read finding, or a builder stopped for a decision: run
    `metasystem landing return GOAL --cause own --reason TEXT`, naming fix round 1,
-   its job id and read id (say when no read ran), every remaining red, and any
+   the fix job id and read id (say when no read ran), every remaining red, and any
    required decision. Check out the merge's first parent before rebuilding the
    batch after a return. When the engine refuses the fix build, return as before with the refusal as evidence; other engine refusals hold the batch and go to case 9.
    For `main`, hold the batch and end your turn naming main's units (`cause.name`), the
@@ -124,8 +124,8 @@ human return restores no automatic allowance.
    The builder resolves and stages the source conflicts in this checkout, leaving
    generated conflicts for the engine's declared regeneration commands. It leaves
    the pending merge uncommitted. While running, status begins
-   `Resolving <n> conflicts of GOAL (<paths>)`.
-   Wait for the job through `metasystem work wait j2:JOB`, then repeat the same build
+   `Resolving COUNT conflicts of GOAL (PATHS)`.
+   Wait for the resolution job through `metasystem work wait j2:JOB`, then repeat the same build
    command to collect it. The engine reuses the regeneration path's commands, stages
    their outputs, runs the check and completes this merge using the lane's merge
    message plus `Goal-Unit: GOAL/lane-merge-1`. Never substitute a git commit or
@@ -136,12 +136,12 @@ human return restores no automatic allowance.
    `fixes/<attempt>.context.patch`, the complete first-parent diff. Neither is
    applied to the checkout. If the read errors, status says the merge is resolved
    with its read pending and names the error; repeat the same review command.
-   A job that stops because it cannot resolve, incompatible intents, a required
+   A resolution job that stops because it cannot resolve, incompatible intents, a required
    decision of the goal's person goes back through
-   `metasystem landing resolve`. Its return names every path and the job id in its
+   `metasystem landing resolve`. Its return names every path and the resolution job id in its
    reason; a conflict with another batch member retains today's `after` hold.
    A material read finding after the merge commit returns the goal through
-   `metasystem landing return GOAL --cause own --reason TEXT`, naming the job,
+   `metasystem landing return GOAL --cause own --reason TEXT`, naming the resolution job,
    read and findings; rebuild from the merge's first parent, as in case 3.
    Read the outcome and reason, then continue with the remaining waiting work.
 5. **Main moved during the proof** (push refuses: HEAD does not contain origin's main): fetch,

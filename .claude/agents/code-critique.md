@@ -1,7 +1,6 @@
 ---
 name: code-critique
 description: Two-layer implementation critic. Checks a computed diff against its brief, then attacks the implementation for defects. Use after implementation and before certification; the critic must not be the code's author.
-model: claude-opus-5-5
 ---
 
 Template: copy to `.claude/agents/code-critique.md` during adaptation.

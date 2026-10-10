@@ -66,13 +66,13 @@ func postedQuestion(t *testing.T, root, id string, done <-chan struct{}) channel
 }
 
 // replyInThread scripts the person's coded reply in the question's thread.
-func replyInThread(t *testing.T, providerDir string, q channel.Question, text string) {
+func replyInThread(t *testing.T, providerDir string, q channel.Question, text string, now time.Time) {
 	t.Helper()
 	thread := q.Thread.ThreadID
 	if thread == "" {
 		thread = q.Thread.ID
 	}
-	code, err := channel.TOTPCode(blockedQuestionSecret, blockedQuestionNow())
+	code, err := channel.TOTPCode(blockedQuestionSecret, now)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,7 +91,7 @@ func TestBlockedQuestionReplyAndProviderShareFixtureClock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	replyInThread(t, providerDir, channel.Question{Thread: &thread}, "lift")
+	replyInThread(t, providerDir, channel.Question{Thread: &thread}, "lift", blockedQuestionNow())
 	replies, _, err := provider.Receive(t.Context(), destination, []channel.MessageRef{thread}, "")
 	if err != nil || len(replies) != 1 {
 		t.Fatalf("receive scripted reply: replies=%+v err=%v", replies, err)
@@ -103,6 +103,33 @@ func TestBlockedQuestionReplyAndProviderShareFixtureClock(t *testing.T) {
 	}
 	if _, valid := channel.VerifyTOTP(blockedQuestionSecret, code, reply.SentAt); !valid {
 		t.Fatal("scripted reply's code does not authenticate at its provider timestamp")
+	}
+}
+
+func TestQuestionReplyUsesCallerClock(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
+	providerDir, _ := commandFakeBedWithClock(t, func() time.Time { return now })
+	provider, destination, err := channelFake.Provider(providerDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thread, err := provider.Post(t.Context(), destination, "Return the branch?", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replyInThread(t, providerDir, channel.Question{Thread: &thread}, "return it", now)
+	replies, _, err := provider.Receive(t.Context(), destination, []channel.MessageRef{thread}, "")
+	if err != nil || len(replies) != 1 {
+		t.Fatalf("receive scripted reply: replies=%+v err=%v", replies, err)
+	}
+	reply := replies[0]
+	answer, code, ok := channel.SplitTOTP(reply.Text)
+	if !ok || answer != "return it" || !reply.SentAt.Truncate(time.Second).Equal(now) {
+		t.Fatalf("scripted reply uses the caller's instant: %+v", reply)
+	}
+	if _, valid := channel.VerifyTOTP(blockedQuestionSecret, code, reply.SentAt); !valid {
+		t.Fatal("scripted reply's code does not authenticate at the caller's provider timestamp")
 	}
 }
 
@@ -178,7 +205,7 @@ func TestBlockedAgentAsksAndTheStopLetsItWait(t *testing.T) {
 		t.Fatalf("with the question open the Stop lets the turn end: %+v", verdict)
 	}
 
-	replyInThread(t, providerDir, posted, "lift")
+	replyInThread(t, providerDir, posted, "lift", blockedQuestionNow())
 	var answered waited
 	testenv.Await(t, "the background wait to return the answer", func() bool {
 		select {
@@ -263,7 +290,7 @@ func TestGoallessQuestionWaitReturnsTheRecordedAnswer(t *testing.T) {
 		}
 		return false
 	})
-	replyInThread(t, providerDir, posted, "return it")
+	replyInThread(t, providerDir, posted, "return it", blockedQuestionNow())
 	var code int
 	testenv.Await(t, "the goal-less wait to return", func() bool {
 		select {

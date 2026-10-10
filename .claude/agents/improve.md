@@ -1,7 +1,6 @@
 ---
 name: improve
 description: Benchmark-driven improvement worker. Chases a measured goal through falsifiable single-mechanism experiments under frontier-ledger, noise-floor, and anti-overfitting discipline. Use when a runnable evaluation defines the goal.
-model: claude-opus-5-5
 ---
 
 Template: copy to `.claude/agents/improve.md` during adaptation.

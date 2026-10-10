@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestLaneFixCheckpointMatchesRegisteredBatch(t *testing.T) {
@@ -112,7 +113,7 @@ func TestSkillLandingAgentOneFixRound(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, words := range []string{"ONE fix round", "every red of this gate", "fix the goal's code or", "never loosen or delete a test", "--work lane-fix-1", "metasystem work review GOAL", "Goal-Unit: GOAL/lane-fix-1", "material read finding", "job id and read id", "For `main`, hold the batch", "--check 'metasystem test impact'", "followed by `metasystem landing prove`", "`running_fix`", "When the engine refuses the fix build, return as before"} {
+	for _, words := range []string{"ONE fix round", "every red of the batch proof's gate", "fix the goal's code or", "never loosen or delete a test", "--work lane-fix-1", "metasystem work review GOAL", "Goal-Unit: GOAL/lane-fix-1", "material read finding", "the fix job id and read id", "For `main`, hold the batch", "--check 'metasystem test impact'", "followed by `metasystem landing prove`", "`running_fix`", "When the engine refuses the fix build, return as before"} {
 		if !strings.Contains(text, words) {
 			t.Errorf("skill omits %q", words)
 		}
@@ -182,7 +183,7 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	hook := "#!/bin/sh\nexec " + shellquote.Token(executable) + " internal pre-commit --root " + shellquote.Token(root) + "\n"
-	if err := os.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte(hook), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte(hook), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "code.go"), []byte("package fixture\n"), 0o600); err != nil {
@@ -302,7 +303,7 @@ func TestLaneMergeGuardRealGitCommit(t *testing.T) {
 		t.Fatal(err)
 	}
 	hook := "#!/bin/sh\nexec " + shellquote.Token(executable) + " internal pre-commit --root " + shellquote.Token(root) + "\n"
-	if err := os.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte(hook), 0o755); err != nil {
+	if err := testexec.WriteFile(filepath.Join(root, ".git", "hooks", "pre-commit"), []byte(hook), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(root, "code.go"), []byte("package fixture\n"), 0o600); err != nil {

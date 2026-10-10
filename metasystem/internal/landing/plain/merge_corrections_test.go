@@ -3,15 +3,14 @@ package plain
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 func TestSeatMergeProofRequiresResolutionAndRead(t *testing.T) {
@@ -227,13 +226,19 @@ func TestGitAdapterSeatMergeCommandsAllowHandIn(t *testing.T) {
 				if (command == "check") == isCheck {
 					attempted = true
 					go func() { _, _, err := HandIn(b.install, Line{Goal: "another", SHA: "another-tip"}); handInDone <- err }()
-					select {
-					case err := <-handInDone:
-						if err != nil {
-							return err
+					var handInErr error
+					if err := testenv.AwaitError(t, "the command to allow a concurrent queue hand-in", func() bool {
+						select {
+						case handInErr = <-handInDone:
+							return true
+						default:
+							return false
 						}
-					case <-time.After(5 * time.Second):
-						return errors.New("the command held the queue lock; a hand-in could not finish")
+					}); err != nil {
+						return err
+					}
+					if handInErr != nil {
+						return handInErr
 					}
 				}
 				if isCheck {

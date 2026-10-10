@@ -108,7 +108,8 @@ func TestLaneQuestionAnswerIsPolledByTheLanesSteward(t *testing.T) {
 			t.Fatalf("git %v: %v %s", args, err, out)
 		}
 	}
-	providerDir, _ := commandFakeBed(t)
+	now := time.Now().UTC()
+	providerDir, _ := commandFakeBedWithClock(t, func() time.Time { return now })
 	files := map[string]string{
 		filepath.Join(module, "go.mod"):                "module fixture\n",
 		filepath.Join(module, "metasystem.conf"):       "channel.destination.fleet.adapter=fake\nchannel.destination.fleet.fake.dir=" + providerDir + "\nchannel.human.slack.user-id=human-a\n",
@@ -132,7 +133,6 @@ func TestLaneQuestionAnswerIsPolledByTheLanesSteward(t *testing.T) {
 	goalSyncMutationGit(t, module, "push", "-q", "origin", "HEAD:main")
 	registerLane(t, home, checkout, "a-person", time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
 	module = resolvedPath(module)
-	now := time.Now().UTC()
 	store := launch.Store{Root: filepath.Join(base, "launches")}
 	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude", ProjectsRoot: filepath.Join(base, "projects")}},
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
@@ -173,7 +173,7 @@ func TestLaneQuestionAnswerIsPolledByTheLanesSteward(t *testing.T) {
 	if err != nil || posted.Thread == nil {
 		t.Fatalf("the lane's steward delivered the lane question: %+v %v", posted, err)
 	}
-	replyInThread(t, providerDir, posted, "return it")
+	replyInThread(t, providerDir, posted, "return it", now)
 	tick()
 	if answered, err := channel.ReadQuestion(module, q.ID); err != nil || answered.Answer == nil || answered.Answer.Text != "return it" {
 		t.Fatalf("the answer is recorded in the lane's question store: %+v %v", answered, err)

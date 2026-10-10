@@ -1,7 +1,6 @@
 ---
 name: retro
 description: Metasystem retro worker. Reviews the previous retro's instruction changes against evidence, mines receipts for patterns, and proposes gated instruction changes with falsifiable expected effects for human veto. Use when the receipt cadence reports a retro due.
-model: claude-opus-5-5
 ---
 
 Template: copy to `.claude/agents/retro.md` during adaptation.
