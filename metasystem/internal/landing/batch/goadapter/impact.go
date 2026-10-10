@@ -28,15 +28,26 @@ type Impact struct {
 	Packages []testpolicy.Group
 }
 
-// TestPackageCount counts packages with internal or external tests under the group's build tags.
-func TestPackageCount(moduleRoot string, buildTags []string) (int, error) {
-	command := exec.Command("go", "list", "-tags", strings.Join(buildTags, ","), "-f", "{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}", "./...")
+// TestPackagePaths names each test-bearing package relative to its module.
+func TestPackagePaths(moduleRoot string, buildTags []string) ([]string, error) {
+	command := exec.Command("go", "list", "-tags", strings.Join(buildTags, ","), "-f", "{{if or .TestGoFiles .XTestGoFiles}}{{.Dir}}{{end}}", "./...")
 	command.Dir = moduleRoot
-	packages, err := command.Output()
+	output, err := command.Output()
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return len(strings.Fields(string(packages))), nil
+	var packages []string
+	for _, dir := range strings.Split(strings.TrimSpace(string(output)), "\n") {
+		if dir == "" {
+			continue
+		}
+		pkg, err := filepath.Rel(moduleRoot, dir)
+		if err != nil {
+			return nil, err
+		}
+		packages = append(packages, filepath.ToSlash(pkg))
+	}
+	return packages, nil
 }
 
 // UnitImpact selects tests from the current working snapshot against the unit's base.

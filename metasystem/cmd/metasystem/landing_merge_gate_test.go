@@ -39,7 +39,7 @@ func newMergeGateBed(t *testing.T) *replayVerbBed {
 		}
 		return git(dir, args...)
 	}
-	b.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, error) { return 10, true, nil }
+	b.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, int, string, error) { return 10, true, 110, "", nil }
 	command := b.owners.landing.plainProve.Command
 	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
 		if len(cmd.Args) > 1 && cmd.Args[1] == "test" {
@@ -415,7 +415,7 @@ func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	if _, err := plain.SelectBatch(bed.installation, bed.checkout, record, plain.ProveSeams{}); err != nil {
 		t.Fatalf("prepare fixture selection: %v", err)
 	}
-	bed.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, error) { return 10, true, nil }
+	bed.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, int, string, error) { return 10, true, 110, "", nil }
 	bed.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
 		if len(cmd.Args) > 1 && cmd.Args[1] == "test" {
 			writeImpactPlanResult(t, cmd, "plan: base main\nselection: internal/a\n")

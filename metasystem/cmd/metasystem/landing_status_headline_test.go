@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
@@ -63,6 +64,33 @@ func TestLandingStatusKeepsQuestionAndMissingHandInHeadlines(t *testing.T) {
 			if code != 0 || !strings.Contains(first, want) {
 				t.Fatalf("headline overwritten: exit=%d first=%q out=%s err=%s", code, first, &out, &problem)
 			}
+		})
+	}
+}
+
+func TestLandingStatusShowsLastFixCheck(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"resolving", "reviewing"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			bed, _, _, _, _ := landingRestartBed(t)
+			git := bed.plainProve.Git
+			bed.plainProve.Git = func(dir string, args ...string) (string, error) {
+				if len(args) > 2 && args[0] == "rev-parse" && args[2] == "MERGE_HEAD^{commit}" {
+					return "tip", nil
+				}
+				return git(dir, args...)
+			}
+			fix := &plain.Fix{Goal: "goal", Units: []string{"lane-merge-1"}, Job: "build", Commit: "main", Tip: "tip", State: state, Attempt: "attempt", Paths: []conflict.Path{{Path: "code.go", Class: conflict.Builder}}, CheckMinutes: 48.25, CheckResult: plain.Red}
+			if err := plain.WriteFix(bed.landingA, fix); err != nil {
+				t.Fatal(err)
+			}
+			code, out, problem := bed.run(t, "landing", "status")
+			first := strings.Split(strings.TrimSpace(out), "\n")[0]
+			if code != 0 || !strings.Contains(first, "last check red in 48.25 minutes") {
+				t.Fatalf("exit=%d first=%q out=%s problem=%s", code, first, out, problem)
+			}
+			t.Log(first)
 		})
 	}
 }

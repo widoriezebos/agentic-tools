@@ -58,7 +58,8 @@ func prepareGate(seams ProveSeams, install, checkout, dir, command string, runni
 		decision.BaseCommit = strings.Fields(parents)[0]
 		decision.Base, err = seams.git(checkout, "rev-parse", "--verify", decision.BaseCommit+"^{tree}")
 
-		share, cheap := 0, false
+		share, cheap, full := 0, false, 0
+		reason := ""
 		if err == nil {
 			if seams.ImpactCost == nil {
 				err = fmt.Errorf("the impact cost reader is unavailable")
@@ -67,7 +68,7 @@ func prepareGate(seams ProveSeams, install, checkout, dir, command string, runni
 				err = planErr
 				if err == nil {
 					decision.PlanHash = fmt.Sprintf("%x", sha256.Sum256([]byte(plan)))
-					share, cheap, err = seams.ImpactCost(dir, plan)
+					share, cheap, full, reason, err = seams.ImpactCost(dir, plan)
 				}
 			}
 		}
@@ -80,7 +81,10 @@ func prepareGate(seams ProveSeams, install, checkout, dir, command string, runni
 		result.Depth = "impact"
 		if !cheap {
 			result.Result = Skipped
-			result.Reason = fmt.Sprintf("impact covers %d%%; the batch check follows", share)
+			result.Reason = reason
+			if result.Reason == "" {
+				result.Reason = fmt.Sprintf("impact covers %d%% of %d packages; the batch check follows", share, full)
+			}
 			return result, true
 		}
 	}

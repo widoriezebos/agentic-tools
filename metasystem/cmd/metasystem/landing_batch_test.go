@@ -61,7 +61,7 @@ func newBatchVerbBed(t *testing.T, policy string) *batchVerbBed {
 		Executable: func() (string, error) { return "/fixture/engine", nil },
 		Launch:     func([]string, string, string) (int64, error) { b.launches++; return int64(os.Getppid()), nil },
 		Alive:      func(running plain.Running) bool { return running.Pid == int64(os.Getpid()) },
-		ImpactCost: func(string, string) (int, bool, error) { return 10, true, nil },
+		ImpactCost: func(string, string) (int, bool, int, string, error) { return 10, true, 110, "", nil },
 		Command: func(cmd *exec.Cmd) error {
 			if len(cmd.Args) > 2 && cmd.Args[1] == "test" && cmd.Args[2] == "impact" {
 				writeImpactPlanResult(t, cmd, "plan: base fixture\nselection: fixture\n")

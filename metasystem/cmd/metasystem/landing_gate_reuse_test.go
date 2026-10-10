@@ -178,7 +178,7 @@ func TestLandingGateNotCheapStillRunsStatic(t *testing.T) {
 		t.Run(static, func(t *testing.T) {
 			t.Parallel()
 			b := newMergeGateBed(t)
-			b.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, error) { return 97, false, nil }
+			b.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, int, string, error) { return 97, false, 110, "", nil }
 			command := b.owners.landing.plainProve.Command
 			statics := 0
 			b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
@@ -208,7 +208,10 @@ func TestLandingGateNotCheapStillRunsStatic(t *testing.T) {
 			if statics != wantStatics || len(b.runs) != 0 || result.Result != wantState || result.Static != static || result.Requested != b.head || result.Attributed != b.head || status.Result != wantState || status.Requested != b.head {
 				t.Fatalf("result=%+v status=%+v static runs=%d test runs=%v", result, status, statics, b.runs)
 			}
-			if static == plain.Green && result.Reason != "impact covers 97%; the batch check follows" {
+			if result.Minutes == nil || status.Minutes == nil {
+				t.Fatalf("gate wall time missing: result=%+v status=%+v", result, status)
+			}
+			if static == plain.Green && result.Reason != "impact covers 97% of 110 packages; the batch check follows" {
 				t.Fatalf("skip reason: %+v", result)
 			}
 		})
@@ -259,8 +262,10 @@ func TestLandingStatusGateLastSection(t *testing.T) {
 			case "none":
 				writeCauseProof(t, b.install, "gates.jsonl", plain.Result{Requested: "old-head", Commit: "old-head", Tree: "old-tree", Result: plain.Green})
 			case plain.Skipped:
-				gate.Reason = "impact covers 97%; the batch check follows"
-				want = "skipped for 222222222222 (tree 333333333333) (" + gate.Reason + ")"
+				minutes := 2.5
+				gate.Minutes = &minutes
+				gate.Reason = "impact covers 97% of 110 packages; the batch check follows"
+				want = "skipped for 222222222222 (tree 333333333333) (" + gate.Reason + "); wall time 2.50 min"
 				writeCauseProof(t, b.install, "gates.jsonl", gate)
 			case plain.Red:
 				gate.Reason = "static check failed"
@@ -270,7 +275,7 @@ func TestLandingStatusGateLastSection(t *testing.T) {
 			}
 			code, out := b.run(t, b.root, "status")
 			_, last, found := strings.Cut(out, "\nLast\n")
-			if code != 0 || !found || strings.TrimSpace(last) != "gate   "+want {
+			if code != 0 || !found || strings.Join(strings.Fields(last), " ") != "gate "+want {
 				t.Fatalf("gate last section: exit=%d\n%s\nwant: %s", code, out, want)
 			}
 			t.Logf("rendered Last section:\nLast\n%s", last)
@@ -397,5 +402,23 @@ func TestSkillLandingAgentGateStatesAndBatchDepth(t *testing.T) {
 				t.Errorf("%s omits %q", marker, state)
 			}
 		}
+	}
+}
+
+func TestLandingGateNamedCommandFullReason(t *testing.T) {
+	t.Parallel()
+	b := newMergeGateBed(t)
+	b.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, int, string, error) {
+		return 0, false, 169, "change selects cmd/metasystem: full", nil
+	}
+	result := gateResult(t, b, 0)
+	status := gateStatus(t, b)
+	for _, got := range []plain.Result{result, status} {
+		if got.Result != plain.Skipped || got.Static != plain.Green || got.Reason != "change selects cmd/metasystem: full" {
+			t.Fatalf("command selection reason missing: %+v", got)
+		}
+	}
+	if len(b.runs) != 0 {
+		t.Fatalf("not-cheap gate ran tests: %v", b.runs)
 	}
 }

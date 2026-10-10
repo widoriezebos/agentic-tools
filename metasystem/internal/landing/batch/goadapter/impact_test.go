@@ -3,10 +3,11 @@ package goadapter
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
-func TestTestPackageCountHonorsBuildTagsAndTestFiles(t *testing.T) {
+func TestTestPackagePathsHonorsBuildTagsAndTestFiles(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	for path, source := range map[string]string{
@@ -38,21 +39,30 @@ func TestTestPackageCountHonorsBuildTagsAndTestFiles(t *testing.T) {
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
-			count, err := TestPackageCount(root, row.tags)
+			packages, err := TestPackagePaths(root, row.tags)
+			count := len(packages)
 			if err != nil || count != row.want {
 				t.Fatalf("test packages=%d error=%v; want %d", count, err, row.want)
+			}
+			want := []string{"externaltest", "internaltest"}
+			if row.want == 3 {
+				want = append(want, "tagged")
+			}
+			slices.Sort(packages)
+			if !slices.Equal(packages, want) {
+				t.Fatalf("paths=%v; want %v", packages, want)
 			}
 		})
 	}
 }
 
-func TestTestPackageCountReturnsDiscoveryFailure(t *testing.T) {
+func TestTestPackagePathsReturnsDiscoveryFailure(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("invalid module declaration\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if count, err := TestPackageCount(root, nil); err == nil || count != 0 {
-		t.Fatalf("invalid module: count=%d error=%v; want no count and a discovery error", count, err)
+	if packages, err := TestPackagePaths(root, nil); err == nil || len(packages) != 0 {
+		t.Fatalf("invalid module: packages=%v error=%v; want no packages and a discovery error", packages, err)
 	}
 }

@@ -29,6 +29,9 @@ type Fix struct {
 	Commit  string   `json:"commit"`
 	State   string   `json:"state"`
 
+	CheckMinutes float64 `json:"check_minutes,omitempty"`
+	CheckResult  string  `json:"check_result,omitempty"`
+
 	Paths     []conflict.Path        `json:"paths,omitempty"`
 	Tip       string                 `json:"tip,omitempty"`
 	Reason    string                 `json:"reason,omitempty"`
@@ -109,6 +112,14 @@ func readFixRecords(install string, closeStale, includeClosed, mergeOnly bool, g
 }
 
 func fixHeadline(fix *Fix) string {
+	headline := fixStateHeadline(fix)
+	if fix.CheckResult != "" {
+		headline += fmt.Sprintf("; last check %s in %.2f minutes", fix.CheckResult, fix.CheckMinutes)
+	}
+	return headline
+}
+
+func fixStateHeadline(fix *Fix) string {
 	if fix.State == "resolved" {
 		return fmt.Sprintf("Resolved merge of %s, read pending: %s", fix.Goal, fix.Reason)
 	}

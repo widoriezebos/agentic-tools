@@ -71,6 +71,14 @@ func TestLaneMergeRealImpactCheckGitAdapter(t *testing.T) {
 				t.Fatal(readErr)
 			}
 			t.Logf("check log:\n%s", data)
+			recorded, recordErr := plain.FixForAttempt(root, fix.Attempt)
+			wantResult := plain.Red
+			if green {
+				wantResult = plain.Green
+			}
+			if recordErr != nil || recorded == nil || recorded.CheckMinutes <= 0 || recorded.CheckResult != wantResult {
+				t.Fatalf("merge check not retained: %+v err=%v", recorded, recordErr)
+			}
 			if !strings.Contains(string(data), "plan: base "+base) {
 				t.Fatalf("first parent did not reach the real check: %v\n%s", err, data)
 			}

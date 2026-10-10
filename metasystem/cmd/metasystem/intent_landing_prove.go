@@ -191,10 +191,10 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		seams.FenceCheck = nil
 	}
 	if seams.ImpactCost == nil {
-		seams.ImpactCost = func(dir, plan string) (int, bool, error) {
+		seams.ImpactCost = func(dir, plan string) (int, bool, int, string, error) {
 			_, contract, _, err := testrun.LoadContract(dir)
 			if err != nil {
-				return 0, false, err
+				return 0, false, 0, "", err
 			}
 			return impactCost(admitted.installation, dir, plan, contract)
 		}

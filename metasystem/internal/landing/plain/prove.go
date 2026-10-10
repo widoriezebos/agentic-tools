@@ -179,8 +179,8 @@ type ProveSeams struct {
 	FetchDeadline func(time.Duration) <-chan time.Time
 	// Trunk selects origin/main for a fresh full check.
 	Trunk bool
-	// ImpactCost applies the configured cheapness rule to a pinned selection.
-	ImpactCost func(dir, plan string) (share int, cheap bool, err error)
+	// ImpactCost applies the configured cheapness rule and names a command-selection full check.
+	ImpactCost func(dir, plan string) (share int, cheap bool, full int, reason string, err error)
 	// Gate selects the cheap merge check and its separate result register.
 	Gate        bool
 	DepthReason string

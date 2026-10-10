@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
@@ -49,20 +50,68 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 		fmt.Fprintln(stdout, "LANDING-NOT-RUN\tenvironment")
 		return 1
 	}
-	var identity repairCheck
+	started := time.Now()
+	identity := repairCheck{Reason: "impact"}
+	timed := false
+	reusedCheck := false
+	finishTiming := func() {
+		if !*plan && !timed {
+			fmt.Fprintf(stdout, "impact check: %s; wall time %s\n", identity.Reason, time.Since(started).Round(time.Millisecond))
+			timed = true
+		}
+	}
+	defer finishTiming()
+	if !*plan {
+		defer func() {
+			if reusedCheck {
+				return
+			}
+			fix, err := plain.ReadFix(installation)
+			if err == nil && fix != nil {
+				fix.CheckMinutes = time.Since(started).Minutes()
+				fix.CheckResult = plain.Green
+				if code != 0 {
+					fix.CheckResult = plain.Red
+				}
+				err = plain.WriteFix(installation, fix)
+			}
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				code = 1
+			}
+		}()
+	}
+
 	if *check && !*plan && !replay {
-		identity, _ = repairCheckIdentity(installation, *base)
+		identity, err = repairCheckIdentity(installation, *base)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
 		if reused, _ := repairCheckCache(installation, identity, false); reused {
-			fmt.Fprintln(stdout, "check reused from the job")
+			reusedCheck = true
+			identity.Reason = "check reused from the job"
+			fmt.Fprintln(stdout, identity.Reason)
 			return 0
 		}
 		defer func() {
-			after, _ := repairCheckIdentity(installation, *base)
-			if code == 0 && after.Tree == identity.Tree {
-				if _, err := repairCheckCache(installation, identity, true); err != nil {
-					fmt.Fprintln(stderr, err)
-					code = 1
-				}
+			if code != 0 {
+				return
+			}
+			after, err := repairCheckIdentity(installation, *base)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				code = 1
+				return
+			}
+			if after.Tree != identity.Tree {
+				fmt.Fprintln(stdout, "check not saved: the staged tree changed during the check")
+				return
+			}
+			identity.DurationMS = time.Since(started).Milliseconds()
+			if _, err := repairCheckCache(installation, identity, true); err != nil {
+				fmt.Fprintln(stderr, err)
+				code = 1
 			}
 		}()
 	}
@@ -172,16 +221,16 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 		for _, item := range selections {
 			fmt.Fprintln(&selection, "selection: "+item)
 		}
-		share, cheap, err := impactCost(installation, installation, selection.String(), fullContract)
+		share, cheap, full, _, err := impactCost(installation, installation, selection.String(), fullContract)
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
 		if !cheap {
 			ids = []string{"fast-static-build"}
-			identity.Reason = fmt.Sprintf("check: fast-static-build only; impact would cover %d%%", share)
+			identity.Reason = fmt.Sprintf("check: fast-static-build only; impact would cover %d%% of %d packages", share, full)
 		} else {
-			identity.Reason = "check: impact"
+			identity.Reason = fmt.Sprintf("check: impact; covers %d%% of %d packages", share, full)
 		}
 		fmt.Fprintln(stdout, identity.Reason)
 	}
@@ -197,6 +246,7 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 		return proofrun.LandingEnvironment(context.Background(), installation, environment)
 	}); err != nil {
 		fmt.Fprintln(stderr, err)
+		finishTiming()
 		fmt.Fprintln(stdout, "LANDING-NOT-RUN\tenvironment")
 		return 1
 	}
@@ -204,10 +254,11 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 		ids = append([]string{"fast-static-build"}, slices.DeleteFunc(ids, func(id string) bool { return id == "fast-static-build" })...)
 	}
 	if len(ids) == 0 {
+		finishTiming()
 		fmt.Fprintln(stdout, "LANDING-CHECKED\t0")
 		return 0
 	}
-	return runNamedTestGroups(installation, contract, ids, environment, units, stdout, stderr)
+	return runNamedTestGroups(installation, contract, ids, environment, units, stdout, stderr, finishTiming)
 }
 
 // landingOnly reads the replay selection: the lane's gate always sets
@@ -218,27 +269,48 @@ func landingOnly() (string, bool) {
 	return only, strings.TrimSpace(only) != ""
 }
 
-func impactDepth(plan string, contract testpolicy.Contract, full, limit int) (int, bool) {
-	whole := map[string]bool{}
-	for _, line := range strings.Split(plan, "\n") {
-		selection, ok := strings.CutPrefix(line, "selection: ")
-		if !ok || strings.Contains(selection, "=") {
-			continue
-		}
-		for _, group := range contract.Groups {
-			if selection == group.ID && (group.Adapter != "go" || string(group.Tests) != `"all"`) {
-				selection = ""
+func impactDepth(plan string, contract testpolicy.Contract, full map[string]bool, limit int) (int, bool) {
+	selected := map[string]bool{}
+	addPackage := func(pkg string) {
+		pkg = strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(pkg, "metasystem/"), "unit/"), "./")
+		prefix, recursive := strings.CutSuffix(pkg, "/...")
+		for key := range full {
+			if !strings.HasPrefix(key, "group/") && (key == pkg || pkg == "..." || recursive && (key == prefix || strings.HasPrefix(key, prefix+"/"))) {
+				selected[key] = true
 			}
 		}
-		if selection != "" {
-			whole[strings.TrimPrefix(strings.TrimPrefix(selection, "metasystem/"), "unit/")] = true
+	}
+	for _, line := range strings.Split(plan, "\n") {
+		selection, ok := strings.CutPrefix(line, "selection: ")
+		if !ok || slices.Contains(contract.Always.Canary, selection) {
+			continue
+		}
+		unit, names, named := strings.Cut(selection, "=")
+		if named && names == "" {
+			continue
+		}
+		index := slices.IndexFunc(contract.Groups, func(group testpolicy.Group) bool { return selection == group.ID })
+		if index < 0 {
+			addPackage(unit)
+			continue
+		}
+		group := contract.Groups[index]
+		if group.Adapter != "go" {
+			selected["group/"+group.ID] = true
+			continue
+		}
+		if group.PackageSelection != "" {
+			addPackage("...")
+		}
+		for _, pkg := range group.Packages {
+			addPackage(pkg)
 		}
 	}
-	if full == 0 {
+	if len(full) == 0 {
 		return 100, false
 	}
-	share := len(whole) * 100 / full
-	return share, !whole["cmd/metasystem"] && len(whole)*100 < limit*full
+	share := len(selected) * 100 / len(full)
+	return share, !selected["cmd/metasystem"] && len(selected)*100 < limit*len(full)
 }
 
 func depthSetting(install, key string) (int, error) {
@@ -249,29 +321,43 @@ func depthSetting(install, key string) (int, error) {
 	return 0, fmt.Errorf("%s must be a positive integer", key)
 }
 
-func fullGroupCount(install string, contract testpolicy.Contract) (int, error) {
-	count := len(contract.Groups)
+func fullPackageMeasure(install string, contract testpolicy.Contract) (map[string]bool, error) {
+	packages := map[string]bool{}
+	tags := map[string][]string{"": nil}
 	for _, group := range contract.Groups {
-		if group.PackageSelection == "" {
-			continue
+		if group.Adapter != "go" {
+			if !slices.Contains(contract.Always.Canary, group.ID) {
+				packages["group/"+group.ID] = true
+			}
+		} else {
+			tags[strings.Join(group.BuildTags, ",")] = group.BuildTags
 		}
-		packages, err := goadapter.TestPackageCount(install, group.BuildTags)
-		if err != nil {
-			return 0, err
-		}
-		count += packages - 1
 	}
-	return count, nil
+	for _, buildTags := range tags {
+		paths, err := goadapter.TestPackagePaths(install, buildTags)
+		if err != nil {
+			return nil, err
+		}
+		for _, pkg := range paths {
+			packages[pkg] = true
+		}
+	}
+	return packages, nil
 }
 
-func impactCost(install, module, plan string, contract testpolicy.Contract) (int, bool, error) {
-	full, err := fullGroupCount(module, contract)
+func impactCost(install, module, plan string, contract testpolicy.Contract) (int, bool, int, string, error) {
+	packages, err := fullPackageMeasure(module, contract)
+	full := len(packages)
 	if err != nil {
-		return 0, false, err
+		return 0, false, 0, "", err
 	}
 	limit, err := depthSetting(install, "landing.impact-max-share")
-	share, cheap := impactDepth(plan, contract, full, limit)
-	return share, cheap, err
+	share, cheap := impactDepth(plan, contract, packages, limit)
+	reason := ""
+	if err == nil && full > 0 && !cheap && share < limit {
+		reason = "change selects cmd/metasystem: full"
+	}
+	return share, cheap, full, reason, err
 }
 
 func batchDepthSeams(seams plain.ProveSeams) plain.ProveSeams {
@@ -358,17 +444,23 @@ func batchDepth(install, checkout, commit string, seams plain.ProveSeams) (bool,
 	if err != nil {
 		return fallback(err)
 	}
-	share, cheap, err := impactCost(install, dir, plan, contract)
+	share, cheap, full, reason, err := impactCost(install, dir, plan, contract)
 	if err != nil {
 		return fallback(err)
 	}
 	if !cheap {
-		return false, fmt.Sprintf("impact would cover %d%%: full", share)
+		if reason != "" {
+			return false, reason
+		}
+		return false, fmt.Sprintf("impact would cover %d%% of %d packages: full", share, full)
 	}
-	return true, fmt.Sprintf("tiers %s; %d%% of the tree", strings.Join(tiers, ","), share)
+	return true, fmt.Sprintf("tiers %s; %d%% of %d packages", strings.Join(tiers, ","), share, full)
 }
 
-type repairCheck struct{ Tree, Base, Reason string }
+type repairCheck struct {
+	Tree, Base, Reason string
+	DurationMS         int64
+}
 
 func repairCheckIdentity(install, base string) (repairCheck, error) {
 	base, err := plain.Git(install, "rev-parse", "--verify", base+"^{commit}")
@@ -378,10 +470,6 @@ func repairCheckIdentity(install, base string) (repairCheck, error) {
 	tree, err := plain.Git(install, "write-tree")
 	if err != nil {
 		return repairCheck{}, err
-	}
-	untracked, err := plain.Git(install, "ls-files", "--modified", "--others", "--exclude-standard")
-	if err != nil || untracked != "" {
-		return repairCheck{}, fmt.Errorf("the repair has unstaged files or cannot be read")
 	}
 	return repairCheck{Tree: tree, Base: base}, nil
 }

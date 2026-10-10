@@ -120,7 +120,7 @@ func runTestGroupsWithEnvironment(args, environment []string, stdout, stderr io.
 	return runNamedTestGroups(installation, contract, ids, environment, nil, stdout, stderr)
 }
 
-func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, environment []string, units map[string]string, stdout, stderr io.Writer) int {
+func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, environment []string, units map[string]string, stdout, stderr io.Writer, completed ...func()) int {
 	var progress func(string, int, []proofrun.PackageExecution)
 	if units != nil {
 		progress = func(id string, planned int, completed []proofrun.PackageExecution) {
@@ -141,6 +141,9 @@ func runNamedTestGroups(installation string, contract testpolicy.Contract, ids, 
 		}
 	}
 	results, runErr := proofrun.RunNamedGroups(context.Background(), installation, contract, ids, environment, progress)
+	for _, finish := range completed {
+		finish()
+	}
 	exit := 0
 	for _, result := range results {
 		fmt.Fprintf(stdout, "landing group %s %s %d\n", result.ID, result.Status, result.DurationMS)

@@ -486,7 +486,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			if proof.Scope != "" {
 				section.KV("scope", textui.Plain(proof.Scope))
 				if proof.ScopeReason != "" {
-					section.Text("proving at " + proof.Scope + " depth: " + proof.ScopeReason)
+					section.Text("proving at " + proof.Scope + " depth: " + proof.ScopeReason + landingWallTime(proof))
 				}
 			}
 			if proof.Scope == "impact" {
@@ -517,7 +517,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			if gate.Cause != nil {
 				words += "; cause: " + gate.Cause.Kind
 			}
-			section.KV("gate", textui.Plain(words))
+			section.KV("gate", textui.Plain(words+landingWallTime(gate)))
 		}
 		if push := data.LastPush; push != nil {
 			section.KV("push", textui.Plain(shortLandingID(push.Commit)+" (from "+shortLandingID(push.Old)+"), "+lane.LocalText(push.At)))
@@ -1492,4 +1492,11 @@ func stopLaneRegeneration(owners laneVerbOwners, record lane.Record) error {
 		return err
 	}
 	return owners.stopRegeneration(string(layout.Install))
+}
+
+func landingWallTime(result *plain.Result) string {
+	if result.Minutes == nil {
+		return ""
+	}
+	return fmt.Sprintf("; wall time %.2f min", *result.Minutes)
 }

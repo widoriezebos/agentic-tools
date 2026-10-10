@@ -254,11 +254,11 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 				}
 				return git(dir, args...)
 			}
-			b.owners.landing.plainProve.ImpactCost = func(_ string, plan string) (int, bool, error) {
+			b.owners.landing.plainProve.ImpactCost = func(_ string, plan string) (int, bool, int, string, error) {
 				if !strings.Contains(plan, "selection: internal/p\n") {
 					t.Fatalf("gate cost read the wrong plan: %s", plan)
 				}
-				return 10, true, nil
+				return 10, true, 110, "", nil
 			}
 			var statics []string
 			var incidents []plain.Result
