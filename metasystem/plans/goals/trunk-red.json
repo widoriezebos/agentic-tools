@@ -397,11 +397,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261010T051731.570819000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-10T06:24:16Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-10T11:51:02Z",
+        "attempt": "20261010T105655.669980000Z",
+        "baseCommit": "f60331ae77b645553c545b0c58e2a021efe2128f",
+        "how": "green",
+        "opid": "X3CV5ZSZVQAJ65HSR5NDC3CPCB-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
