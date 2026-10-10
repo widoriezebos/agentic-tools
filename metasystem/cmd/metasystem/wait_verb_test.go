@@ -1422,8 +1422,9 @@ func (o *pendingWaitHookOwners) HealthPreview(string, roots.Installation) (strin
 
 // pendingWaitHookEnvironment is the environment the hook runs with: this
 // test process is the fake agent that owns the session.
-func pendingWaitHookEnvironment(now string) map[string]string {
+func pendingWaitHookEnvironment(now, ownerLineage string) map[string]string {
 	environment := map[string]string{
+		"METASYSTEM_OWNER_LINEAGE":            ownerLineage,
 		"METASYSTEM_HOOK_DELEGATE_STATE_ROOT": "", "METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT": "", "METASYSTEM_HOOK_DELEGATE_JOB": "",
 		"METASYSTEM_BIN": "", "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE": "", "METASYSTEM_CENSUS_PROCESS_FILE": "",
 		"METASYSTEM_FAKE_AGENT_ANCESTOR_PID": fmt.Sprint(os.Getpid()),
@@ -1438,7 +1439,11 @@ func pendingWaitHookEnvironment(now string) map[string]string {
 // a Stop runs its worker path directly.
 func runPendingWaitHook(t *testing.T, fixture *installedWaitFixture, hook string, owners *pendingWaitHookOwners, event, payload, label, now string) installedHookResult {
 	t.Helper()
-	environment := pendingWaitHookEnvironment(now)
+	holder, err := lease.CurrentHolder(hook)
+	if err != nil {
+		t.Fatal(err)
+	}
+	environment := pendingWaitHookEnvironment(now, holder.OwnerLineage)
 	if fixture != nil {
 		for _, entry := range fixture.Env(nil) {
 			name, value, _ := strings.Cut(entry, "=")
@@ -1700,6 +1705,19 @@ func TestPendingWaitInstalledVerdicts(t *testing.T) {
 	artifactData, err := os.ReadFile(artifact)
 	if err != nil || !strings.Contains(string(artifactData), "WAITING: registered wait") {
 		t.Fatalf("fake Stop hook omitted its registered-wait evidence: %v %s", err, artifactData)
+	}
+}
+
+func TestPendingWaitInstalledVerdictsWithLandingCaller(t *testing.T) {
+	t.Parallel()
+	fixture := testutil.Fixture(t)
+	command := exec.CommandContext(t.Context(), commandTestExecutable(t),
+		"-test.run=^TestPendingWaitInstalledVerdicts$", "-test.timeout=30m", "-test.count=1")
+	// The child declares its controls, or testenv.Main scrubs the lineage it is given.
+	command.Env = fixture.Env(fixtureCommandEnvironment(t, "METASYSTEM_OWNER_LINEAGE=landing-agent", "GO_WANT_FIXTURE_LANDING_ENVIRONMENT_CHILD=1"))
+	output, err := runRecordedInstalledWaitCommand(&installedWaitFixture{ProcessFixture: fixture}, command)
+	if err != nil {
+		t.Fatalf("registered wait under a landing caller: %v\n%s", err, output)
 	}
 }
 

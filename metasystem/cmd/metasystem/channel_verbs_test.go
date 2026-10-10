@@ -223,11 +223,16 @@ func TestWaitChannelAnswer(t *testing.T) {
 
 func commandFakeBed(t *testing.T) (string, string) {
 	t.Helper()
+	return commandFakeBedWithClock(t, nil)
+}
+
+func commandFakeBedWithClock(t *testing.T, now func() time.Time) (string, string) {
+	t.Helper()
 	dir := t.TempDir()
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	ready := make(chan string, 1)
-	go func() { done <- channelFake.ServeReady(ctx, dir, ready) }()
+	go func() { done <- channelFake.ServeWithHooks(ctx, dir, channelFake.ServeHooks{Ready: ready, Now: now}) }()
 	select {
 	case base := <-ready:
 		t.Cleanup(func() {
