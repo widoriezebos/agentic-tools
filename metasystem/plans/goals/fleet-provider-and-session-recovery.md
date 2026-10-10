@@ -8,14 +8,13 @@
 - Next step: Design from plans/fleet-provider-and-session-recovery-design-brief.md (units at most 250 production lines, at most 5) after fleet-survives-its-providers lands its provider mark and boundary event
 - OpenedAt: 2026-10-08T05:16:38Z
 - FirstClaimAt: 2026-10-10T02:53:08Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-10T04:51:57Z revision=5 opid=QR403A15XQH7QCGY5HERD9DNAR-m1e-718ba0eb authority=proven digest=ee711d99c51b2a0dd3fb32ee4cadec0e0a0669c963e9e5a71529c9690b37765f episode=5
 - Sliced: machine=m1e lineage=main-1790454088-93948-21671b revision=3 at=2026-10-10T03:06:34Z
-- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-10T04:51:57Z by=human:Wido areas="null" areas-source="01M4D2EVAP4F4TMEAEF6ZR3BYJ@ecb27f30530559c95c9226294a8ce40dbe0b443f925adff154653d111367a699" areas-known=false areas-warnings="[\"areas unknown for goal fleet-provider-and-session-recovery in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/fleet-provider-and-session-recovery.md\"]" revision=5 accountingRevision=5 episodeAt=2026-10-10T02:53:08Z episodeRevision=3
-- StopCapability: generation=5 revision=5 machine=m1e claimEpoch=9 fenceEpoch=1
-- StopFence: stopId=stop-fleet-provider-and-session-recovery-r5-f1 revision=5 epoch=1 capabilityGeneration=5 closedAt=2026-10-10T14:57:34Z reason=ELAPSED_LIMIT
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-10T19:24:28Z by=human:Wido revision=7 accountingRevision=7 episodeAt=2026-10-10T19:24:28Z episodeRevision=7
+- StopCapability: generation=7 revision=7 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-08T05:16:38Z PXQCDM36RZ1TXZYJJ7CBMYANN5-m1e-718ba0eb open actor=human:Wido targets=fleet-provider-and-session-recovery
@@ -24,4 +23,5 @@ History:
 - 2026-10-10T03:06:34Z Y0YF4JC4ZJWQMFVDM4NQ0Q0XH4-m1e-f456f182 slice-start actor=m1e+main-1790454088-93948-21671b targets=fleet-provider-and-session-recovery
 - 2026-10-10T04:51:57Z QR403A15XQH7QCGY5HERD9DNAR-m1e-718ba0eb set-budget actor=human:Wido targets=fleet-provider-and-session-recovery displaced=m1e+main-1790454088-93948-21671b@2026-10-10T02:53:08Z
 - 2026-10-10T14:57:34Z R8E3J9S18ZMQN6GNXVMTSFCQRA-m1e-43182c96 breach-stop actor=m1e+goal-stop-custodian targets=fleet-provider-and-session-recovery
-Integrity: sha256=0156f8bf5bf03729798993057ecf60eccafcd5ad55ce0c52a9379f9dc181b4b3
+- 2026-10-10T19:24:28Z RN2054SFYV2SBAEYVQ0D7XEDCF-landing-c6925449 resume actor=human:Wido targets=fleet-provider-and-session-recovery reason=cleared stop fence stop-fleet-provider-and-session-recovery-r5-f1: ELAPSED_LIMIT
+Integrity: sha256=2dac2824615f8cacf74919aca67df7d2ea107be9e53127759c83636153ba0dfd
