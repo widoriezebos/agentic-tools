@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	channelFake "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -21,13 +22,18 @@ import (
 
 const blockedQuestionSecret = "JBSWY3DPEHPK3PXP"
 
+func blockedQuestionNow() time.Time {
+	return time.Date(2026, 8, 30, 9, 0, 0, 0, time.UTC)
+}
+
 // blockedQuestionRoot is the remote-ledger seat fixture with the
 // repository's fake channel provider configured and a synthetic TOTP
 // secret; it returns the root and the provider's directory.
 func blockedQuestionRoot(t *testing.T) (string, string) {
 	t.Helper()
 	root, _ := eventWaitRoot(t)
-	providerDir, _ := commandFakeBed(t)
+	t.Setenv("METASYSTEM_GOAL_NOW", blockedQuestionNow().Format(time.RFC3339))
+	providerDir, _ := commandFakeBedWithClock(t, blockedQuestionNow)
 	conf := filepath.Join(root, "metasystem.conf")
 	confBytes, err := os.ReadFile(conf)
 	if err != nil {
@@ -66,12 +72,38 @@ func replyInThread(t *testing.T, providerDir string, q channel.Question, text st
 	if thread == "" {
 		thread = q.Thread.ID
 	}
-	code, err := channel.TOTPCode(blockedQuestionSecret, time.Now())
+	code, err := channel.TOTPCode(blockedQuestionSecret, blockedQuestionNow())
 	if err != nil {
 		t.Fatal(err)
 	}
 	reply, _ := json.Marshal(map[string]any{"thread_ts": thread, "user": "human-a", "text": text + " " + code})
 	writeTestingFixtureFile(t, filepath.Join(providerDir, "replies.jsonl"), append(reply, '\n'), 0o644)
+}
+
+func TestBlockedQuestionReplyAndProviderShareFixtureClock(t *testing.T) {
+	t.Parallel()
+	providerDir, _ := commandFakeBedWithClock(t, blockedQuestionNow)
+	provider, destination, err := channelFake.Provider(providerDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	thread, err := provider.Post(t.Context(), destination, "Lift the review hold?", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replyInThread(t, providerDir, channel.Question{Thread: &thread}, "lift")
+	replies, _, err := provider.Receive(t.Context(), destination, []channel.MessageRef{thread}, "")
+	if err != nil || len(replies) != 1 {
+		t.Fatalf("receive scripted reply: replies=%+v err=%v", replies, err)
+	}
+	reply := replies[0]
+	answer, code, ok := channel.SplitTOTP(reply.Text)
+	if !ok || answer != "lift" || !reply.SentAt.Truncate(time.Second).Equal(blockedQuestionNow()) {
+		t.Fatalf("scripted reply uses the fixture instant: %+v", reply)
+	}
+	if _, valid := channel.VerifyTOTP(blockedQuestionSecret, code, reply.SentAt); !valid {
+		t.Fatal("scripted reply's code does not authenticate at its provider timestamp")
+	}
 }
 
 // stopVerdict runs the Stop judgment the seat's hook runs, for one session
