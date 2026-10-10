@@ -50,8 +50,8 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 				next:    next, nextReason: reason, Details: []string{err.Error()}})
 		}
 		return inv.render(intentResult{Targets: inv.targets(id), Outcome: intentRefused, code: 1,
-			Summary: fmt.Sprintf("this session's hold on goal %s can't be confirmed, so this work wasn't committed", id),
-			next:    inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes it over; or commit from the session that holds it",
+			Summary: claimRefusalSummary(err, fmt.Sprintf("this session's hold on goal %s can't be confirmed, so this work wasn't committed", id)),
+			next:    inv.claimRemedy(id, err), nextReason: claimRemedyReason(err, "a person takes it over; or commit from the session that holds it"),
 			Details: []string{err.Error()}})
 	}
 	release, err := runner.ReserveMutation(worktree, id, "commit")

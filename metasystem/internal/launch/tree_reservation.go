@@ -22,10 +22,14 @@ import (
 type TreeWaitingError struct {
 	Run       string
 	CanCancel bool
+	Mutation  *identity.Ref
 }
 
 func (e *TreeWaitingError) Error() string {
 	message := "the worktree belongs to run " + e.Run + "; wait with metasystem work wait run:" + e.Run
+	if e.Mutation != nil {
+		message += fmt.Sprintf("; mutation process pid %d, start %d holds it", e.Mutation.Pid, e.Mutation.StartedAtSec)
+	}
 	if e.CanCancel {
 		message += "; no child is live: a person can release it with metasystem work stop run:" + e.Run
 	}
@@ -212,13 +216,16 @@ func (runner *UnitRunner) treeQuiescent(owner treeReservation) (released, ended 
 	if err != nil {
 		return false, false
 	}
+	owner.Children = unitChildren(record, owner.Children)
+	if runner.finishedMutationEnded(record, owner.Children) {
+		return true, true
+	}
 	if runner.CriticCustody != nil {
 		dead, err := runner.CriticCustody(record, false)
 		if err != nil || !dead {
 			return false, false
 		}
 	}
-	owner.Children = unitChildren(record, owner.Children)
 	if record.Mutation != nil {
 		ended = identity.LiveRef(runner.Manager.Prober, *record.Mutation) == identity.Dead
 		childrenEnded := runner.treeChildrenEnded(owner.Children)
@@ -237,6 +244,13 @@ func (runner *UnitRunner) treeQuiescent(owner treeReservation) (released, ended 
 	return closed && ended, ended
 }
 
+// A finished mutation with no surviving children no longer owns the tree.
+// Critic records cannot extend the custody of a command that has ended.
+func (runner *UnitRunner) finishedMutationEnded(record UnitRunRecord, children []string) bool {
+	return (record.State == "cancelled" || record.State == "completed") && record.Mutation != nil &&
+		identity.LiveRef(runner.Manager.Prober, *record.Mutation) == identity.Dead && runner.treeChildrenEnded(children)
+}
+
 // CancelRun records the person's stop before signalling, so no new step can
 // start. Ownership remains until every retained child's exact custody ends.
 func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
@@ -248,7 +262,7 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		return record, err
 	}
 	if record.Mutation != nil && record.State == "running" && identity.LiveRef(runner.Manager.Prober, *record.Mutation) != identity.Dead {
-		return record, &TreeWaitingError{Run: id}
+		return record, &TreeWaitingError{Run: id, Mutation: record.Mutation}
 	}
 	var children []string
 	err = runner.treeLocked(record.Worktree, func(_ string, owner *treeReservation) error {
@@ -290,10 +304,13 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 			return record, errors.New("unit launch manager is unavailable")
 		}
 		if _, err := runner.Manager.Cancel(child); err != nil {
-			return record, err
+			return record, runner.childCustodyError(children, err)
 		}
 	}
-	if runner.CriticCustody != nil {
+	if !runner.treeChildrenEnded(children) {
+		return record, runner.childCustodyError(children, errors.New("the run's children are not proven dead; its worktree remains reserved"))
+	}
+	if runner.CriticCustody != nil && !runner.finishedMutationEnded(record, children) {
 		dead, err := runner.CriticCustody(record, true)
 		if err != nil {
 			return record, err
@@ -301,9 +318,6 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		if !dead {
 			return record, errors.New("the run's critics are not proven dead; its worktree remains reserved")
 		}
-	}
-	if !runner.treeChildrenEnded(children) {
-		return record, errors.New("the run's children are not proven dead; its worktree remains reserved")
 	}
 	err = runner.treeLocked(record.Worktree, func(path string, owner *treeReservation) error {
 		if owner.Run != id {
@@ -318,6 +332,21 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		return nil
 	})
 	return record, err
+}
+
+func (runner *UnitRunner) childCustodyError(children []string, cause error) error {
+	for _, id := range children {
+		child, err := runner.Manager.Store.Read(id)
+		if err != nil {
+			continue
+		}
+		for _, ref := range []*identity.Ref{child.Supervisor, child.Child, child.ProcessGroup} {
+			if ref != nil && identity.LiveRef(runner.Manager.Prober, *ref) != identity.Dead {
+				return fmt.Errorf("%w; child %s process pid %d, start %d still holds the worktree", cause, id, ref.Pid, ref.StartedAtSec)
+			}
+		}
+	}
+	return cause
 }
 
 // treeRuns reads only runs whose current canonical worktree names this tree.

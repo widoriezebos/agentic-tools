@@ -81,7 +81,11 @@ func (inv *intentInvocation) criticCustody(run launch.UnitRunRecord, cancel bool
 		if dependencies.MatchesTag == nil {
 			dependencies.MatchesTag = dispatchproc.PositionedJobTagAt(store)
 		}
-		if dispatchcore.ProveCustodyDeath(store, record, dependencies).Outcome != dispatchcore.CustodyDeathProven {
+		death := dispatchcore.ProveCustodyDeath(store, record, dependencies)
+		if death.Process != nil {
+			return false, fmt.Errorf("critic %s process pid %d, start %d still holds the worktree", job, death.Process.Pid, death.Process.StartedAtSec)
+		}
+		if death.Outcome != dispatchcore.CustodyDeathProven {
 			ended = false
 		}
 	}
@@ -123,7 +127,7 @@ func (inv *intentInvocation) stopUnitRun(id string) int {
 	record, err := inv.unitRunner().CancelRun(id)
 	targets := []intentTarget{{Kind: "unit", ID: id}}
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the run could not be fully stopped; its worktree remains reserved", Details: []string{err.Error()}, next: inv.sameCommand(), Data: record})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the run could not be fully stopped; its worktree remains reserved: " + err.Error(), Details: []string{err.Error()}, next: inv.sameCommand(), Data: record})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "run " + id + " cancelled; its children ended and its worktree is released", Data: record})
 }

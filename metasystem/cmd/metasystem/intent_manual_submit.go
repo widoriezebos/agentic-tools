@@ -159,8 +159,8 @@ func (inv *intentInvocation) submitManualWork(id string) intentResult {
 				next:    next, nextReason: reason, Details: []string{err.Error()}}
 		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1,
-			Summary: fmt.Sprintf("this session's hold on goal %s can't be confirmed, so this work wasn't submitted", id),
-			next:    inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes it over; or submit from the session that holds it",
+			Summary: claimRefusalSummary(err, fmt.Sprintf("this session's hold on goal %s can't be confirmed, so this work wasn't submitted", id)),
+			next:    inv.claimRemedy(id, err), nextReason: claimRemedyReason(err, "a person takes it over; or submit from the session that holds it"),
 			Details: []string{err.Error()}}
 	}
 	worktree, problem := inv.prepareGoalWorktree(id)
