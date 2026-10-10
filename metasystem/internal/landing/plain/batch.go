@@ -316,6 +316,9 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 			return nil, nil
 		}
 	}
+	if err := handInCommits(install, checkout, entries, s, true); err != nil {
+		return nil, err
+	}
 	if err := s.fetchMain(checkout); err != nil {
 		return nil, err
 	}

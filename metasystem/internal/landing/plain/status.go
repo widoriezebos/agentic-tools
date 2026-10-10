@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
@@ -381,6 +382,41 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	}
 	if status.ProofHeadline != "" {
 		status.Summary = status.ProofHeadline
+	}
+	questions, _ := channel.WalkQuestions(install)
+	for _, q := range questions {
+		if q.Goal != "" || q.About != "lane" || q.State != "open" {
+			continue
+		}
+		machineName := seams.Machine
+		if machineName == nil {
+			machineName = goal.ResolveMachine
+		}
+		machine, err := machineName(install)
+		if err != nil {
+			unread("this computer's name for the lane question", err)
+			break
+		}
+		if q.Machine == machine {
+			if satisfied, err := PolicyQuestionSatisfied(install, q); err != nil {
+				unread("the lane question's premise", err)
+			} else if !satisfied {
+				status.Summary = LaneQuestionHeadline(q)
+				if strings.Contains(status.ProofHeadline, " proven red:") {
+					status.Summary = status.ProofHeadline + ". " + status.Summary
+				}
+				break
+			}
+		}
+	}
+	if view.Wake != nil {
+		for _, problem := range view.Wake.Unread {
+			problem = strings.SplitN(problem, "\n", 2)[0]
+			if strings.HasPrefix(problem, "hand-in ") {
+				status.Summary = problem
+				break
+			}
+		}
 	}
 	return status
 }

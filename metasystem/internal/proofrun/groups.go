@@ -30,7 +30,7 @@ type NamedGroupResult struct {
 // RunNamedGroups runs concrete groups and their prerequisites in a plain
 // installation. Logs are temporary diagnostics, never retained proof records.
 // Selection is validated in full before discovery or any native command runs.
-func RunNamedGroups(ctx context.Context, installation string, contract testpolicy.Contract, ids, environment []string) ([]NamedGroupResult, error) {
+func RunNamedGroups(ctx context.Context, installation string, contract testpolicy.Contract, ids, environment []string, progress ...func(string, int, []PackageExecution)) ([]NamedGroupResult, error) {
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("no testing group ids supplied")
 	}
@@ -93,6 +93,14 @@ func RunNamedGroups(ctx context.Context, installation string, contract testpolic
 			return nil
 		}
 		group := groups[id]
+		groupRequest := request
+		groupRequest.nativeProgress = nil
+		if len(progress) > 0 && progress[0] != nil {
+			groupRequest.nativeProgress = func(planned int, completed []PackageExecution) { progress[0](id, planned, completed) }
+			if group.Adapter != "go" {
+				groupRequest.nativeProgress(1, nil)
+			}
+		}
 		result := NamedGroupResult{ID: id, Status: "red"}
 		for _, dependency := range group.Requires {
 			if err := run(dependency); err != nil {
@@ -104,10 +112,20 @@ func RunNamedGroups(ctx context.Context, installation string, contract testpolic
 		}
 		if len(result.Reasons) == 0 {
 			var err error
-			result, err = runNamedGroup(ctx, request, root, group, contract.SchemaVersion, cache)
+			result, err = runNamedGroup(ctx, groupRequest, root, group, contract.SchemaVersion, cache)
 			if err != nil {
 				return fmt.Errorf("testing group %s: %w", id, err)
 			}
+		}
+		if groupRequest.nativeProgress != nil && (group.Adapter != "go" || len(result.Reasons) > 0 && strings.Contains(result.Reasons[0], "not run")) {
+			ms, status := result.DurationMS, "ok"
+			if result.Status != "green" {
+				status = "failed"
+			}
+			if group.Adapter == "go" {
+				groupRequest.nativeProgress(1, nil)
+			}
+			groupRequest.nativeProgress(0, []PackageExecution{{Package: id, Shard: 0, Status: status, ElapsedMS: &ms}})
 		}
 		known[id] = result.Status
 		results = append(results, result)

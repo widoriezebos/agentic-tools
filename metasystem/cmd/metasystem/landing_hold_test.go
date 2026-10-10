@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -100,6 +101,7 @@ func holdLaneFixture(t *testing.T, entries []goal.TrunkRedEntry) (*resolveVerbFi
 	b.owners.landing.contained = func(_ string, main string) func(string) (bool, error) {
 		return func(sha string) (bool, error) { return main == "head" && sha == "sha-goal", nil }
 	}
+	falseState := replayFalseState(t)
 	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
 		case "fetch --quiet origin +refs/heads/main:refs/remotes/origin/main":
@@ -112,8 +114,15 @@ func holdLaneFixture(t *testing.T, entries []goal.TrunkRedEntry) (*resolveVerbFi
 			return string(goal.RenderTrunkRed(entries)), nil
 		}
 		if args[0] == "cat-file" {
+			if args[2] == "main^{commit}" || args[2] == "sha-goal^{commit}" || args[2] == "sha-before^{commit}" || args[2] == strings.Repeat("2", 40)+"^{commit}" {
+				return "", nil
+			}
 			return "", os.ErrNotExist
 		}
+		if args[0] == "merge-base" {
+			return "", &exec.ExitError{ProcessState: falseState}
+		}
+
 		t.Fatalf("unstubbed Git: %v", args)
 		return "", nil
 	}

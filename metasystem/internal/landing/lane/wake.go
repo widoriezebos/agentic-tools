@@ -27,10 +27,10 @@ func ReadWake(record Record, sources WakeSources) Wake {
 		return wake
 	}
 	reasons, err := sources.Reasons(record.Root)
+	wake.Reasons = append(wake.Reasons, reasons...)
 	if err != nil {
 		wake.Unread = append(wake.Unread, err.Error())
 		return wake
 	}
-	wake.Reasons = append(wake.Reasons, reasons...)
 	return wake
 }
