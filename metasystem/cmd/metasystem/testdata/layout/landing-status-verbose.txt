@@ -6,3 +6,6 @@ Lane  ~/GitHub/agentic-tools-landing
 
 Admission
   admission open
+
+Last
+  gate   none for head

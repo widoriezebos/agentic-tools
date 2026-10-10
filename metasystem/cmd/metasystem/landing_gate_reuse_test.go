@@ -243,6 +243,56 @@ func TestLandingStatusGateAbsentStaleAndBaselineRed(t *testing.T) {
 	}
 }
 
+func TestLandingStatusGateLastSection(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"none", plain.Skipped, plain.Red} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			b := newMergeGateBed(t)
+			b.head = strings.Repeat("1", 40)
+			b.owners.landing.view = func(string) lane.View {
+				return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}}
+			}
+			gate := plain.Result{Requested: b.head, Commit: strings.Repeat("2", 40), Tree: strings.Repeat("3", 40), Result: state}
+			want := "none for 111111111111"
+			switch state {
+			case "none":
+				writeCauseProof(t, b.install, "gates.jsonl", plain.Result{Requested: "old-head", Commit: "old-head", Tree: "old-tree", Result: plain.Green})
+			case plain.Skipped:
+				gate.Reason = "impact covers 97%; the batch check follows"
+				want = "skipped for 222222222222 (tree 333333333333) (" + gate.Reason + ")"
+				writeCauseProof(t, b.install, "gates.jsonl", gate)
+			case plain.Red:
+				gate.Reason = "static check failed"
+				gate.Cause = &plain.Cause{Kind: "main"}
+				want = "red (static check failed) for 222222222222 (tree 333333333333); cause: main"
+				writeCauseProof(t, b.install, "gates.jsonl", gate)
+			}
+			code, out := b.run(t, b.root, "status")
+			_, last, found := strings.Cut(out, "\nLast\n")
+			if code != 0 || !found || strings.TrimSpace(last) != "gate   "+want {
+				t.Fatalf("gate last section: exit=%d\n%s\nwant: %s", code, out, want)
+			}
+			t.Logf("rendered Last section:\nLast\n%s", last)
+			code, out = b.run(t, b.root, "status", "--json")
+			var result struct {
+				Data struct {
+					LastGate map[string]json.RawMessage `json:"last_gate"`
+				}
+			}
+			if err := json.Unmarshal([]byte(out), &result); err != nil || code != 0 {
+				t.Fatalf("gate JSON: exit=%d %s (%v)", code, out, err)
+			}
+			if string(result.Data.LastGate["requested"]) != `"`+b.head+`"` || string(result.Data.LastGate["result"]) != `"`+state+`"` {
+				t.Fatalf("gate lost requested HEAD or result: %s", out)
+			}
+			if _, present := result.Data.LastGate["classification-policy"]; present {
+				t.Fatalf("zero classification policy emitted: %s", out)
+			}
+		})
+	}
+}
+
 func TestLandingProveReusesGateOnlyAtBatchBaseWithStaticAndEnvironment(t *testing.T) {
 	t.Parallel()
 	for _, mutation := range []string{"one member", "two members", "static red", "static absent", "environment", "depth", "tree", "gate red"} {

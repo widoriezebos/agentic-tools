@@ -77,7 +77,7 @@ type Result struct {
 	Flakes                []FlakeRecord        `json:"flakes,omitempty"`
 	ClassificationOf      string               `json:"classification-of,omitempty"`
 	NextFull              *Result              `json:"next-full,omitempty"`
-	ClassificationPolicy  PolicyValue          `json:"classification-policy,omitempty"`
+	ClassificationPolicy  PolicyValue          `json:"classification-policy,omitempty,omitzero"`
 	ClassificationWarning string               `json:"classification-warning,omitempty"`
 	ClassificationPending bool                 `json:"classification-pending,omitempty"`
 	ClassificationPerson  *ActProvenance       `json:"classification-person,omitempty"`

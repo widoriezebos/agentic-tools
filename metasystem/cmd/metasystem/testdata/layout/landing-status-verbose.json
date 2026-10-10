@@ -32,12 +32,22 @@ exit 0
       "unread": []
     },
     "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: landing agent running (pid 38928)",
-    "admission": "admission open",
     "paused": false,
     "agent_alive": true,
+    "admission": "admission open",
     "queue": [],
     "running_proof": null,
     "last_proof": null,
+    "last_gate": {
+      "requested": "head",
+      "goals": null,
+      "tree": "",
+      "commit": "",
+      "result": "none",
+      "log": "",
+      "at": "",
+      "minutes": null
+    },
     "last_push": null,
     "problems": []
   }

@@ -26,18 +26,26 @@ exit 0
     "batch": null,
     "next": null,
     "wake": {
-      "reasons": [
-        "full-due"
-      ],
+      "reasons": [],
       "unread": []
     },
     "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it",
-    "admission": "admission open",
     "paused": true,
     "agent_alive": false,
+    "admission": "admission open",
     "queue": [],
     "running_proof": null,
     "last_proof": null,
+    "last_gate": {
+      "requested": "head",
+      "goals": null,
+      "tree": "",
+      "commit": "",
+      "result": "none",
+      "log": "",
+      "at": "",
+      "minutes": null
+    },
     "last_push": null,
     "problems": []
   }

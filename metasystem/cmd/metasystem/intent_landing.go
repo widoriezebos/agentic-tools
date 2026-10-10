@@ -508,6 +508,12 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 		}
 		if gate := data.LastGate; gate != nil {
 			words := gate.Result + landingRedReason(gate.Reason) + " for " + provedWords(gate.Commit, gate.Tree)
+			switch gate.Result {
+			case "none":
+				words = "none for " + shortLandingID(gate.Requested)
+			case plain.Skipped:
+				words = gate.Result + " for " + provedWords(gate.Commit, gate.Tree) + landingRedReason(gate.Reason)
+			}
 			if gate.Cause != nil {
 				words += "; cause: " + gate.Cause.Kind
 			}
