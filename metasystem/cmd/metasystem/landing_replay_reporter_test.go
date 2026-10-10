@@ -254,8 +254,29 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 				}
 				return git(dir, args...)
 			}
+			b.owners.landing.plainProve.ImpactCost = func(_ string, plan string) (int, bool, error) {
+				if !strings.Contains(plan, "selection: internal/p\n") {
+					t.Fatalf("gate cost read the wrong plan: %s", plan)
+				}
+				return 10, true, nil
+			}
+			var statics []string
+			var incidents []plain.Result
+			b.owners.landing.plainProve.RecordMain = func(results []plain.Result) error {
+				incidents = append(incidents, results...)
+				return nil
+			}
 			b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+				if len(cmd.Args) > 1 && cmd.Args[1] == "test" {
+					writeImpactPlanResult(t, cmd, "plan: base main\nselection: internal/p\n")
+					return nil
+				}
 				commit, only := commandEnv(cmd, "LANDING_COMMIT"), commandEnv(cmd, "LANDING_ONLY")
+				if strings.HasSuffix(cmd.Args[len(cmd.Args)-1], " test groups fast-static-build") {
+					statics = append(statics, commit)
+					fmt.Fprint(cmd.Stdout, "landing environment fixture toolchain\nlanding group fast-static-build green 1\n")
+					return nil
+				}
 				if commandEnv(cmd, "LANDING_PROOF_BASE") != "main" && only == "" {
 					t.Fatalf("gate base=%q, want parent's commit", commandEnv(cmd, "LANDING_PROOF_BASE"))
 				}
@@ -273,6 +294,16 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 			result := gateResult(t, b.replayVerbBed, 1)
 			if result.Cause.Kind != "main" || !reflect.DeepEqual(b.runs, []string{"main:", "merge-g:", "main:metasystem/internal/p"}) {
 				t.Fatalf("gate attribution: %+v runs=%v", result, b.runs)
+			}
+			if len(incidents) != 1 || incidents[0].Commit != "main" || len(incidents[0].Failed) != 1 || incidents[0].Failed[0].Unit != "metasystem/internal/p" {
+				t.Fatalf("gate main incident=%+v", incidents)
+			}
+			if !reflect.DeepEqual(statics, []string{"merge-g", "main"}) || result.Static != plain.Green || result.Requested != "merge-g" || result.Attributed != "merge-g" {
+				t.Fatalf("gate static checks and request: %+v statics=%v", result, statics)
+			}
+			status := gateStatus(t, b.replayVerbBed)
+			if status.Result != plain.Red || status.Requested != "merge-g" || status.Attributed != "merge-g" || status.Cause == nil || status.Cause.Kind != "main" {
+				t.Fatalf("gate status lost the merge's main failure: %+v", status)
 			}
 		})
 	}

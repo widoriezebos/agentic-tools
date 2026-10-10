@@ -8,7 +8,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -256,13 +255,11 @@ func fullGroupCount(install string, contract testpolicy.Contract) (int, error) {
 		if group.PackageSelection == "" {
 			continue
 		}
-		command := exec.Command("go", "list", "-tags", strings.Join(group.BuildTags, ","), "-f", "{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}", "./...")
-		command.Dir = install
-		packages, err := command.Output()
+		packages, err := goadapter.TestPackageCount(install, group.BuildTags)
 		if err != nil {
 			return 0, err
 		}
-		count += len(strings.Fields(string(packages))) - 1
+		count += packages - 1
 	}
 	return count, nil
 }

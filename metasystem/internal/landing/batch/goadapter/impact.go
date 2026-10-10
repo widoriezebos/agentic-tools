@@ -28,6 +28,17 @@ type Impact struct {
 	Packages []testpolicy.Group
 }
 
+// TestPackageCount counts packages with internal or external tests under the group's build tags.
+func TestPackageCount(moduleRoot string, buildTags []string) (int, error) {
+	command := exec.Command("go", "list", "-tags", strings.Join(buildTags, ","), "-f", "{{if or .TestGoFiles .XTestGoFiles}}{{.ImportPath}}{{end}}", "./...")
+	command.Dir = moduleRoot
+	packages, err := command.Output()
+	if err != nil {
+		return 0, err
+	}
+	return len(strings.Fields(string(packages))), nil
+}
+
 // UnitImpact selects tests from the current working snapshot against the unit's base.
 func UnitImpact(moduleRoot, base string) (impact Impact, err error) {
 	workspace := gittree.Workspace{Dir: moduleRoot}
