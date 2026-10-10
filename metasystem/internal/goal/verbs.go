@@ -234,6 +234,7 @@ func (a Actor) historyActor() string {
 
 // VerbRequest carries what every verb needs.
 type VerbRequest struct {
+	claimHolderProber identity.Prober
 	// HandoverNow and HandoverSleep supply the claim-lock clock; nil uses wall time.
 	HandoverNow   func() time.Time
 	HandoverSleep func(time.Duration)
@@ -4205,6 +4206,10 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 			if ownPair(f.Claimed, r.Actor) {
 				return nil, AlreadyHolds{Reason: "goal " + id + " is already claimed by this session (" + f.Claimed.Machine + "+" + f.Claimed.Lineage + ", since " + f.Claimed.At + ")"}
 			}
+			holderWarning, err := localHolderWarning(r, f.Claimed)
+			if err != nil {
+				return nil, err
+			}
 			// Steal follows the selected old pair across the arc. Other
 			// independently claimed, parked, or queued members neither move
 			// nor lend their fence, pin, or budget to this preflight.
@@ -4235,6 +4240,9 @@ func stealRequestWithReason(r VerbRequest, id, reason string) PublishRequest {
 					return nil, err
 				}
 				snapshot.Warnings = append(snapshot.Warnings, reservationWarnings(t, r, m, tip)...)
+				if holderWarning != "" {
+					snapshot.Warnings = append(snapshot.Warnings, holderWarning)
+				}
 				displaced := pairMarker(m.Claimed)
 				touchDisplaced(m, r, "steal", targets, displaced)
 				recordHistoryReason(m, reason)

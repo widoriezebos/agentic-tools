@@ -22,6 +22,11 @@ const (
 type CustodyDeathResult struct {
 	Outcome CustodyDeathOutcome
 	Reason  string
+	Process *identity.Ref
+}
+
+func custodyAlive(reason string, ref identity.Ref) CustodyDeathResult {
+	return CustodyDeathResult{Outcome: CustodyDeathAlive, Reason: reason, Process: &ref}
 }
 
 // CustodyDeathDependencies are the kernel observations behind one death
@@ -111,7 +116,7 @@ func ProveCustodyDeath(root string, record map[string]any, dependencies CustodyD
 			if index > 0 {
 				reason = "custody-process-alive"
 			}
-			return CustodyDeathResult{Outcome: CustodyDeathAlive, Reason: reason}
+			return custodyAlive(reason, ref)
 		case identity.Unknown:
 			return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: "recorded-identity-unreadable"}
 		}
@@ -131,13 +136,13 @@ func ProveCustodyDeath(root string, record map[string]any, dependencies CustodyD
 		}
 		switch recordedRefLiveness(dependencies.Reader, marker.supervisor) {
 		case identity.Alive:
-			return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: "prefork-supervisor-alive"}
+			return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: "prefork-supervisor-alive", Process: &marker.supervisor}
 		case identity.Unknown:
 			return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: "prefork-supervisor-unreadable"}
 		case identity.Dead:
 			tagged := dependencies.TaggedScan(tag)
 			if len(tagged.Tagged) > 0 {
-				return CustodyDeathResult{Outcome: CustodyDeathAlive, Reason: "prefork-tagged-survivor"}
+				return custodyAlive("prefork-tagged-survivor", tagged.Tagged[0].Identity.Ref())
 			}
 			if !tagged.Complete() {
 				return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: "prefork-tag-absence-unprovable"}
@@ -183,7 +188,7 @@ func ProveCustodyDeath(root string, record map[string]any, dependencies CustodyD
 		})
 		switch verification.Outcome {
 		case identity.VerificationVerified:
-			return CustodyDeathResult{Outcome: CustodyDeathAlive, Reason: "tagged-group-member-alive"}
+			return custodyAlive("tagged-group-member-alive", verification.Identity.Ref())
 		case identity.VerificationIndeterminate:
 			return CustodyDeathResult{Outcome: CustodyDeathDeferred, Reason: "in-group-member-unproven"}
 		case identity.VerificationNotOurs:
@@ -198,7 +203,7 @@ func ProveCustodyDeath(root string, record map[string]any, dependencies CustodyD
 	// defeat death. A positive nonce-tagged survivor anywhere still does:
 	// nonce uniqueness makes it ours and the next reconciliation can add it.
 	if tagged := dependencies.TaggedScan(tag); len(tagged.Tagged) > 0 {
-		return CustodyDeathResult{Outcome: CustodyDeathAlive, Reason: "nonce-tagged-survivor"}
+		return custodyAlive("nonce-tagged-survivor", tagged.Tagged[0].Identity.Ref())
 	}
 	return CustodyDeathResult{Outcome: CustodyDeathProven, Reason: "custody-closed"}
 }

@@ -513,6 +513,7 @@ func goalBranchClaimCheckWithDeadline(root, goalID string, endpoint goal.Endpoin
 			held := goalHeldElsewhere{goal: goalID, machine: machine, lineage: current.OwnerLineage}
 			if file != nil && file.Claimed != nil {
 				held.holder = file.Claimed.Machine
+				held.holderLineage = file.Claimed.Lineage
 			}
 			return held
 		}
@@ -523,10 +524,29 @@ func goalBranchClaimCheckWithDeadline(root, goalID string, endpoint goal.Endpoin
 // goalHeldElsewhere is the claim check's refusal when this session does not
 // hold the goal; holder is the seat whose claim it is, empty when nobody
 // claims it.
-type goalHeldElsewhere struct{ goal, holder, machine, lineage string }
+type goalHeldElsewhere struct{ goal, holder, holderLineage, machine, lineage string }
 
 func (e goalHeldElsewhere) Error() string {
-	return fmt.Sprintf("goal %s is held by another session, not %s (%s); only that session writes its branch\nrun: metasystem goal claim %s --take-over --reason TEXT  (as a person)", e.goal, e.machine, e.lineage, e.goal)
+	if e.holder == "" {
+		return fmt.Sprintf("this session does not hold goal %s; nobody does\nrun: metasystem goal claim %s", e.goal, e.goal)
+	}
+	return fmt.Sprintf("goal %s is held by another session, %s (%s), not %s (%s); only that session writes its branch\nrun: metasystem goal claim %s --take-over --reason TEXT  (as a person, after the holding session ends)", e.goal, e.holder, e.holderLineage, e.machine, e.lineage, e.goal)
+}
+
+func (inv *intentInvocation) claimRemedy(goalID string, err error) []string {
+	var held goalHeldElsewhere
+	if errors.As(err, &held) && held.holder == "" {
+		return inv.publicArgv("goal", "claim", goalID)
+	}
+	return inv.publicArgv("goal", "claim", goalID, "--take-over", "--reason", "TEXT")
+}
+
+func claimRefusalSummary(err error, fallback string) string {
+	var held goalHeldElsewhere
+	if errors.As(err, &held) && held.holder == "" {
+		return fmt.Sprintf("this session does not hold goal %s; nobody does", held.goal)
+	}
+	return fallback
 }
 
 // heldElsewhere is the guidance when another seat's claim refused a write to
@@ -695,4 +715,12 @@ func goalBranchPublishRead(root, goalID, unit string) (branch.PublishReadResult,
 // goalBranchStaticArgv runs the worktree's own static gate, trimmed.
 func goalBranchStaticArgv(proofPath string) []string {
 	return []string{"go", "run", "-trimpath", "./cmd/devgate", "static", "--proof-out", proofPath}
+}
+
+func claimRemedyReason(err error, fallback string) string {
+	var held goalHeldElsewhere
+	if errors.As(err, &held) && held.holder == "" {
+		return "claims the unheld goal; then repeat this command"
+	}
+	return fallback
 }
