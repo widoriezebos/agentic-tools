@@ -279,6 +279,31 @@ func TestLandingKeeperPublicRunHoldsLiveAttemptAndAgent(t *testing.T) {
 	}
 }
 
+func TestLandingKeeperTrunkRedWaitsUntilTrunkProofEnds(t *testing.T) {
+	t.Parallel()
+	bed, keeper, _, starts, proofAlive := landingRestartBed(t)
+	queueRestartWork(t, bed)
+	bed.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
+		return []goal.TrunkRedEntry{{ID: "red-1", Identity: "red-1"}}, nil
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(bed.landingA), "running.json"), []byte(`{"attempt":"trunk-1","trunk":true,"pid":42,"commit":"main","tree":"trunk-tree"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	*proofAlive = true
+	if line := keeper.Step(); *starts != 0 || !strings.Contains(line, "held: trunk proof trunk-1 running") {
+		t.Fatalf("running trunk proof: %q, starts=%d", line, *starts)
+	} else {
+		t.Logf("keeper step: %s", line)
+	}
+	if err := os.Remove(filepath.Join(plain.Dir(bed.landingA), "running.json")); err != nil {
+		t.Fatal(err)
+	}
+	*proofAlive = false
+	if run := keeper.Run(); run.Outcome != lane.AgentStarted || *starts != 1 {
+		t.Fatalf("ended trunk proof: %+v, starts=%d; want one start", run, *starts)
+	}
+}
+
 func TestLandingKeeperStartsWhenProviderHoldExpires(t *testing.T) {
 	t.Parallel()
 	bed, keeper, now, starts, _ := landingRestartBed(t)

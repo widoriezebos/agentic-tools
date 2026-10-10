@@ -127,6 +127,38 @@ func (f *trunkPermissionFixture) question(t *testing.T) channel.Question {
 	return q
 }
 
+func TestLandingTrunkProofDefersExceptionQuestionAndStatusAct(t *testing.T) {
+	t.Parallel()
+	f := newTrunkPermissionFixture(t)
+	_, _, err := plain.HandIn(f.l.install, plain.Line{Goal: bedGoal, SHA: f.tip.status.BranchTip, Seat: f.b.root()})
+	helmMust(t, err)
+	f.question(t)
+	f.owners.landing.plainProve.Alive = func(plain.Running) bool { return true }
+	writeCauseProof(t, f.l.install, "results.jsonl", plain.Result{Trunk: true, Commit: "main", Result: plain.Red, Failed: []plain.FailedUnit{{Unit: "fixture"}}})
+	running := filepath.Join(plain.Dir(f.l.install), "running.json")
+	data, err := json.Marshal(plain.Running{Trunk: true, Attempt: "trunk-1", Commit: "main", Tree: "main-tree", Since: laneTestNow.Format(time.RFC3339)})
+	helmMust(t, err)
+	helmMust(t, os.WriteFile(running, data, 0o600))
+	f.l.owners.landing, f.l.owners.policies = f.owners.landing, f.owners.policies
+	code, text := f.l.run(t, f.l.root, "status", "--json")
+	want := "main main red; its trunk proof runs since " + laneTestNow.Local().Format("15:04") + " (attempt trunk-1); wait"
+	if code != 0 || !strings.Contains(text, want) || strings.Contains(text, "--exception") || strings.Contains(text, "pending-actions") {
+		t.Fatalf("landing status --json during trunk proof: exit=%d %s; want %q with no person act", code, text, want)
+	}
+	t.Logf("landing status --json: exit=%d, headline=%q", code, want)
+	f.sync(t)
+	questions, unread := channel.WalkOpenQuestions(f.l.install)
+	if len(questions) != 0 || len(unread) != 0 {
+		t.Fatalf("running trunk proof asks for an exception: %+v %v", questions, unread)
+	}
+	helmMust(t, os.Remove(running))
+	f.sync(t)
+	questions, unread = channel.WalkOpenQuestions(f.l.install)
+	if len(questions) != 1 || len(unread) != 0 || !strings.Contains(channel.LaneStopCommand(questions[0]), "--exception") {
+		t.Fatalf("ended trunk proof does not restore the exception question: %+v %v", questions, unread)
+	}
+}
+
 func TestLandingTrunkExceptionAuthorityMatrix(t *testing.T) {
 	t.Parallel()
 	f := newTrunkPermissionFixture(t)

@@ -87,6 +87,14 @@ func PolicyRequests(install string, effects ...ProveSeams) ([]PolicyRequest, err
 		if err != nil || len(waiting) == 0 {
 			return requests, err
 		}
+		// A trunk proof can clear main's incident without a person's exception.
+		running, recorded, alive, err := ReadRunning(install, seams)
+		if err != nil {
+			return requests, err
+		}
+		if recorded && alive && running.Trunk && !running.Checkpoint {
+			return requests, nil
+		}
 		main, err := checkoutGit(record.Root, seams).main()
 		if err != nil {
 			return requests, err
