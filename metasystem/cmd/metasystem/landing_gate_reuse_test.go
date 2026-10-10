@@ -303,6 +303,7 @@ func TestLandingProveReusesGateOnlyAtBatchBaseWithStaticAndEnvironment(t *testin
 				b.head = "merge-a"
 			}
 			b.prepareBatch(t)
+			seedCurrentTrunkClock(t, b.install, laneTestNow)
 			if mutation != "two members" {
 				batch, err := plain.ReadBatch(b.install)
 				if err != nil {
