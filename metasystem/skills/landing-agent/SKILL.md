@@ -82,7 +82,7 @@ human return restores no automatic allowance.
    its tests; never loosen or delete a test; if the fix needs a decision of the
    goal's person, stop and say so".
    Run `metasystem work build GOAL --work lane-fix-1 --brief FILE --check 'metasystem test impact'`.
-   The build commits ONE plain commit on the batch tree through the engine's build
+   The review commits ONE plain commit on the batch tree through the engine's
    commit path, with message `goal GOAL: lane fix of <units> (fix round 1)` and final
    paragraph `Goal-Unit: GOAL/lane-fix-1`. Never substitute a git commit or bypass a
    guard when the engine refuses. The build/review path records

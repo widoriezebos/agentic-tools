@@ -110,6 +110,9 @@ func TestSkillLandingAgentOneFixRound(t *testing.T) {
 			t.Errorf("skill omits %q", words)
 		}
 	}
+	if strings.Contains(text, "The build commits ONE") || !strings.Contains(text, "The review commits ONE") {
+		t.Fatal("skill assigns the repair commit to the build")
+	}
 	if strings.Contains(text, "Never commit in the lane") {
 		t.Fatal("skill still forbids its engine fix commit")
 	}
@@ -131,7 +134,14 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 	if holder, err := lease.RequireHolder(root, pid, nil); err != nil || !holder.Holder {
 		t.Fatalf("holder %+v: %v", holder, err)
 	}
-	if !landingFixActor(root, pid) || landingFixActor(root, int64(os.Getppid())) {
+	seat := t.TempDir()
+	if _, err := lease.AnnounceWithPair(seat, "ordinary", pid, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "ordinary", "metasystem", "ordinary-seat"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := lease.RequireHolder(seat, pid, nil); err != nil {
+		t.Fatal(err)
+	}
+	if !landingFixActor(root, pid) || landingFixActor(seat, pid) {
 		t.Fatal("landing identity did not distinguish its session from another process")
 	}
 	registry := t.TempDir()
@@ -194,8 +204,32 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 		t.Fatal("unrecorded fix round passed")
 	}
 	message := "goal standing-validation: lane fix of fixture (fix round 1)\n\nGoal-Unit: standing-validation/lane-fix-1\n"
+	fix, err := plain.FixForAttempt(root, "attempt-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	stale := *fix
+	stale.Attempt = "older"
+	writeLaneFixJSON(t, filepath.Join(plain.Dir(root), "fixes", "attempt-1.json"), stale)
+	if err := commit(message); err == nil {
+		t.Fatal("stale attempt authorized the real hook")
+	}
+	if err := plain.WriteFix(root, *fix); err != nil {
+		t.Fatal(err)
+	}
 	if err := commit(message); err != nil {
 		t.Fatal("valid lane fix refused", err)
+	}
+	fix.Commit = goalSyncMutationGit(t, root, "rev-parse", "HEAD")
+	if err := plain.WriteFix(root, *fix); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "code.go"), []byte("package fixture\n// second repair\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	goalSyncMutationGit(t, root, "add", "code.go")
+	if err := commit(message); err == nil {
+		t.Fatal("real hook admitted a second repair commit")
 	}
 	if got := goalSyncMutationGit(t, root, "show", "-s", "--format=%B", "HEAD"); !strings.Contains(got, "Goal-Unit: standing-validation/lane-fix-1") {
 		t.Fatalf("commit omitted trailer: %q", got)

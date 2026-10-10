@@ -207,7 +207,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		return refuse(inv.publicArgv("system", "check"), "shows both configurations", "the goal worktree points at another goal branch than this checkout, so nothing was committed",
 			"goal worktree %s resolves goal branch endpoint %s %s (%v), not the selected installation's %s %s", install, local.Remote, local.Branch, err, endpoint.Remote, endpoint.Branch)
 	}
-	check := conn.claimCheck(original.Path(), goalID, endpoint)
+	check := inv.laneClaimCheck(conn, original.Path(), goalID, endpoint)
 	if err := branch.CheckCommitAccess(goalID, check); err != nil {
 		if holder, next, reason, held := inv.heldElsewhere(goalID, err); held {
 			return refuse(next, reason, fmt.Sprintf("seat %s holds goal %s and writes its branch, so nothing was committed", holder, goalID), "%v", err)

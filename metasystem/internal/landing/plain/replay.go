@@ -194,6 +194,13 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 				return result
 			}
 			main = fields[0]
+			if fix, fixErr := currentFix(install, seams); fixErr == nil && fix != nil && fix.Commit == running.Commit {
+				batch, batchErr := ReadBatch(install)
+				if batchErr != nil || batch == nil {
+					return result
+				}
+				main = batch.Base
+			}
 			merges, err = seams.git(checkout, "log", "--first-parent", "--merges", "--reverse", "--format=%H %P", main+".."+running.Commit)
 		}
 	}
@@ -214,6 +221,15 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 			return result
 		}
 		trees = append(trees, replayTree{Running: Running{Commit: fields[0]}, Goal: result.Goals[index]})
+	}
+	if fix, err := currentFix(install, seams); err == nil && fix != nil && fix.Commit == running.Commit {
+		for i := range trees {
+			if trees[i].Goal.Goal == fix.Goal {
+				trees[i].Commit = fix.Commit
+				trees = trees[:i+1]
+				break
+			}
+		}
 	}
 	return classifyReplay(seams, install, checkout, command, running, result, previous, trees)
 }

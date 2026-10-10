@@ -49,7 +49,7 @@ func landingFixCommit(root, checkout string, caller int64) *landpath.LaneFixComm
 	}
 	fix := landingFixCheckpoint(root, checkout, registered)
 	active, readErr := plain.ActiveFix(root)
-	if fix == nil || readErr != nil || active == nil || landingFixForRegistered(root, checkout, active.Goal, caller, registered) == nil {
+	if fix == nil || readErr != nil || active == nil || active.Commit != "" || active.Parent != fix.Commit || landingFixForRegistered(root, checkout, active.Goal, caller, registered) == nil {
 		return nil
 	}
 	fix.Members, fix.Unit = []string{active.Goal}, fmt.Sprintf("lane-fix-%d", active.Round)

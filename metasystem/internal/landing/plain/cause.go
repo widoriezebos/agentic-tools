@@ -77,7 +77,7 @@ func ReturnProven(install, goal, kind, reason string, person bool, by string, no
 		}
 		if latest.State == StateReturned {
 			entry = latest
-			return nil
+			return closeFix(install, goal)
 		}
 		proof, readErr := lastGoalProof(install, goal)
 		if readErr != nil && !person {

@@ -32,6 +32,7 @@ func (r *Refusal) Error() string { return r.Code + ": " + r.Reason }
 
 // Pushed is one line of pushes.jsonl.
 type Pushed struct {
+	Fixes        []Fix     `json:"fixes,omitempty"`
 	Clock        *Clock    `json:"clock,omitempty"`
 	BatchID      string    `json:"batch-id,omitempty"`
 	BatchMembers []GoalSHA `json:"batch-members,omitempty"`
@@ -97,7 +98,12 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 					return err
 				}
 				if batch.ClosureReason == "confirmed push accounts for the selected members" {
-					return closeFix(install, "")
+					for _, member := range batch.Members {
+						if err := closeFix(install, member.Goal); err != nil {
+							return err
+						}
+					}
+					return nil
 				}
 				for _, member := range batch.Members {
 					onMain, err := batchContains(checkout, old, member.SHA, seams)
@@ -180,6 +186,17 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 		return err
 	}
 	pushed := Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)}
+	if fix, err := currentFix(install, seams); err != nil {
+		return err
+	} else if fix != nil {
+		contained, err := fixInFirstParent(checkout, head, fix.Commit, seams)
+		if err != nil {
+			return err
+		}
+		if contained {
+			pushed.Fixes = []Fix{*fix}
+		}
+	}
 	clockBatch := batch
 	if batch != nil {
 		pushed.BatchID = batch.ID
@@ -208,14 +225,23 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 			return err
 		}
 	}
-	if err := closeFix(install, ""); err != nil {
-		return err
-	}
 	if err := closeProofLoop(install); err != nil {
 		return err
 	}
 	for _, member := range pushed.BatchMembers {
 		if err := closeGoalStopsLocked(install, member.Goal, "push", now, member.SHA); err != nil {
+			return err
+		}
+	}
+	if batch == nil {
+		proof, _, err := ResultFor(install, tree)
+		if err != nil {
+			return err
+		}
+		pushed.BatchMembers = proof.Goals
+	}
+	for _, member := range pushed.BatchMembers {
+		if err := closeFix(install, member.Goal); err != nil {
 			return err
 		}
 	}

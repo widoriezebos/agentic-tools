@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -22,6 +25,8 @@ import (
 type laneFixBed struct {
 	*connectionBed
 	registered lane.Record
+	registry   string
+	hookTrace  string
 	owners     intentOwners
 }
 
@@ -50,10 +55,38 @@ func newLaneFixBed(t *testing.T) *laneFixBed {
 	if err := os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/\n.claude/settings.local.json\nmetasystem.conf.local\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	rootPath := filepath.Join(root, "plans", "goals", "backlog.md")
+	raw, err := os.ReadFile(rootPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootRecord, problems := goal.ParseRoot(raw)
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	rootRecord.SyncMode = goal.SyncRemote
+	if err := os.WriteFile(rootPath, goal.RenderRoot(rootRecord), 0600); err != nil {
+		t.Fatal(err)
+	}
 	connectionGit(t, root, "add", "-A")
 	connectionGit(t, root, "commit", "-qm", "fixture batch")
+	base := connectionGit(t, root, "rev-parse", "HEAD")
+	connectionGit(t, root, "update-ref", goal.AcceptedRef, base)
+	connectionGit(t, root, "checkout", "-b", "goal/"+c.id)
+	if err := os.WriteFile(filepath.Join(root, "broken.txt"), []byte("broken\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	connectionGit(t, root, "add", "broken.txt")
+	connectionGit(t, root, "commit", "-qm", "member")
+	member := connectionGit(t, root, "rev-parse", "HEAD")
+	connectionGit(t, root, "checkout", "--detach", base)
+	connectionGit(t, root, "merge", "--no-ff", "-m", "batch", "goal/"+c.id)
+	connectionGit(t, root, "branch", "-d", "goal/"+c.id)
 	head := connectionGit(t, root, "rev-parse", "HEAD")
-	connectionGit(t, root, "checkout", "--detach", head)
+	origin := filepath.Join(t.TempDir(), "origin.git")
+	connectionGit(t, root, "init", "--bare", origin)
+	connectionGit(t, root, "remote", "add", "origin", origin)
+	connectionGit(t, root, "push", "origin", base+":refs/heads/main")
 	c.worktree, c.manager.Supervisor = root, c
 	pid := int64(os.Getpid())
 	exact, state, err := (identity.KernelProber{}).Probe(pid)
@@ -67,12 +100,38 @@ func newLaneFixBed(t *testing.T) *laneFixBed {
 		t.Fatal(err)
 	}
 	b := &laneFixBed{connectionBed: c, registered: lane.Record{Root: root, Install: root, CustodyEpoch: 1}}
-	members := []plain.GoalSHA{{Goal: c.id, SHA: head}}
+	members := []plain.GoalSHA{{Goal: c.id, SHA: member}}
+	if _, _, err := plain.HandIn(root, plain.Line{Goal: c.id, Branch: "goal/" + c.id, SHA: member, Seat: "seat"}); err != nil {
+		t.Fatal(err)
+	}
 	dir := plain.Dir(root)
-	writeLaneFixJSON(t, filepath.Join(dir, "batch.json"), plain.Batch{ID: "batch", Base: head, Lane: b.registered, State: plain.BatchRunning, Members: members})
-	writeLaneFixJSON(t, filepath.Join(dir, "running.json"), plain.Running{Attempt: "attempt", Commit: head, Tree: connectionGit(t, root, "rev-parse", "HEAD^{tree}"), BatchID: "batch", BatchMembers: members})
-	result := plain.Result{Attempt: "attempt", Commit: head, Result: plain.Red, Cause: &plain.Cause{Kind: "own", Goal: c.id}, Failed: []plain.FailedUnit{{Unit: "package-a", Tests: []string{"TestBroken"}}, {Unit: "package-b"}}}
-	writeLaneFixJSON(t, filepath.Join(dir, "results.jsonl"), result)
+	writeLaneFixJSON(t, filepath.Join(dir, "batch.json"), plain.Batch{ID: "batch", Base: base, Lane: b.registered, State: plain.BatchRunning, Members: members})
+	result, err := plain.Run(root, root, "fixture", "", io.Discard, plain.ProveSeams{Now: func() time.Time { return time.Now() }, Command: func(cmd *exec.Cmd) error {
+		for _, env := range cmd.Env {
+			if env == "LANDING_COMMIT="+head {
+				fmt.Fprint(cmd.Stdout, "LANDING-FAILED\tpackage-a\tTestBroken\nLANDING-FAILED\tpackage-b\tTestBrokenB\nLANDING-CHECKED\t2\n")
+				return fmt.Errorf("red")
+			}
+		}
+		fmt.Fprint(cmd.Stdout, "LANDING-CHECKED\t0\n")
+		return nil
+	}})
+	if err != nil || result.Result != plain.Red || result.Cause == nil || result.Cause.Kind != "own" {
+		t.Fatalf("real red %+v: %v", result, err)
+	}
+	registry := t.TempDir()
+	b.registry, b.hookTrace = registry, filepath.Join(t.TempDir(), "hook-trace")
+	writeLaneFixJSON(t, lane.RecordPath(filepath.Join(registry, ".metasystem")), b.registered)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	hookDir := filepath.Join(root, ".git", "hooks")
+	hook := "#!/bin/sh\necho hook >> " + shellQuote(b.hookTrace) + "\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexport METASYSTEM_SUPERVISION_REGISTRY_HOME=" + shellQuote(registry) + "\nexec " + shellQuote(executable) + " internal pre-commit --root " + shellQuote(root) + "\n"
+	if err := os.WriteFile(filepath.Join(hookDir, "pre-commit"), []byte(hook), 0755); err != nil {
+		t.Fatal(err)
+	}
+	connectionGit(t, root, "config", "core.hooksPath", hookDir)
 	b.owners = c.workOwners()
 	b.owners.work.git = nil
 	b.owners.work.units = func(stateroot.Layout) *launch.UnitRunner {
@@ -171,7 +230,7 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 	t.Parallel()
 	b := newLaneFixBed(t)
 	head := connectionGit(t, b.root(), "rev-parse", "HEAD")
-	brief := filepath.Join(plain.Dir(b.root()), "fixes", "attempt", "brief.md")
+	brief := filepath.Join(plain.Dir(b.root()), "fixes", "brief.md")
 	if err := os.MkdirAll(filepath.Dir(brief), 0700); err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +242,7 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 		t.Fatalf("build: %d %s", code, built.Summary)
 	}
 	fix, err := plain.ActiveFix(b.root())
-	if err != nil || fix == nil || fix.State != "building" || fix.Commit != "" || fix.Job == "" || fix.Attempt != "attempt" || strings.Join(fix.Units, ",") != "package-a,package-b" {
+	if err != nil || fix == nil || fix.State != "building" || fix.Commit != "" || fix.Job == "" || fix.Attempt == "" || strings.Join(fix.Units, ",") != "package-a,package-b" {
 		t.Fatalf("build record %+v: %v", fix, err)
 	}
 	work, err := b.owners.work.units(stateroot.Layout{}).NamedWork(b.root(), b.id)
@@ -201,6 +260,9 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 		t.Fatalf("prepared goal worktree: %s", worktrees)
 	}
 	code, reviewed := b.run("work", "review", b.id, "--work", "lane-fix-1")
+	if trace, err := os.ReadFile(b.hookTrace); err != nil || !strings.Contains(string(trace), "hook") {
+		t.Fatalf("engine commit skipped real hook: %s %v", trace, err)
+	}
 	if code != 0 || reviewed.Outcome != intentConfirmed {
 		t.Fatalf("review: %d %s", code, reviewed.Summary)
 	}
@@ -273,16 +335,23 @@ func TestLaneFixCustodyRejectsOutsidersAndStaleAttempts(t *testing.T) {
 				running.BatchMembers = batch.Members
 				writeLaneFixJSON(t, filepath.Join(plain.Dir(b.root()), "running.json"), running)
 			case "seat":
-				b.owners.connection.laneFix = func(root, checkout, id string) *plain.Fix {
-					return landingFixForRegistered(root, checkout, id, int64(os.Getppid()), b.registered)
+				seat := t.TempDir()
+				pid := int64(os.Getpid())
+				exact, _, err := (identity.KernelProber{}).Probe(pid)
+				if err != nil {
+					t.Fatal(err)
 				}
-				b.owners.connection.claimCheck = func(root, id string, _ goal.Endpoint) func() error {
-					return func() error {
-						if b.owners.connection.laneFix(root, root, id) == nil {
-							return fmt.Errorf("seat has no batch custody")
-						}
-						return nil
-					}
+				if _, err := lease.AnnounceWithPair(seat, "seat", pid, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "seat", "metasystem", "ordinary-seat"); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := lease.RequireHolder(seat, pid, nil); err != nil {
+					t.Fatal(err)
+				}
+				b.owners.connection.laneFix = func(_, checkout, id string) *plain.Fix {
+					return landingFixForRegistered(seat, checkout, id, pid, b.registered)
+				}
+				b.owners.connection.claimCheck = func(string, string, goal.Endpoint) func() error {
+					return func() error { return fmt.Errorf("seat has no batch custody") }
 				}
 			case "stale attempt":
 				running, _, _, _ := plain.ReadRunning(b.root(), plain.ProveSeams{})
@@ -311,5 +380,145 @@ func TestLaneFixCheckDoesNotGrantManualOverride(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(b.root(), "code.go")); !os.IsNotExist(err) {
 		t.Fatalf("builder ran: %v", err)
+	}
+}
+
+func TestLaneFixBuildRefusesPrimaryCheckoutWithSelectedLane(t *testing.T) {
+	t.Parallel()
+	b := newLaneFixBed(t)
+	primary := filepath.Join(t.TempDir(), "primary")
+	connectionGit(t, b.root(), "worktree", "add", primary, "main")
+	original := b.owners.resolver
+	b.owners.resolver = stateroot.NewResolver(func(path string) (string, error) {
+		if withinPath(path, primary) {
+			return primary, nil
+		}
+		return b.root(), nil
+	}, noExecutable)
+	// Selecting the lane installation must not turn the caller's primary checkout into the lane.
+	command, rest, _ := resolveIntentArgv([]string{"work", "build", b.id, "--repo", b.root(), "--work", "lane-fix-1", "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact"})
+	b.owners.connection.claimCheck = func(string, string, goal.Endpoint) func() error {
+		return func() error { return fmt.Errorf("the live seat holds the goal") }
+	}
+	var stdout, stderr bytes.Buffer
+	code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, primary, b.owners)
+	var result intentResult
+	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+		t.Fatal(err)
+	}
+	if code == 0 || !strings.Contains(result.Summary, "live seat holds") {
+		t.Fatalf("primary build: exit %d %s; %s", code, &stdout, &stderr)
+	}
+	if _, err := os.Stat(filepath.Join(b.root(), "code.go")); !os.IsNotExist(err) {
+		t.Fatalf("builder ran: %v", err)
+	}
+	b.owners.resolver = original
+}
+
+func TestLaneFixBuildAllowanceCannotRestartOrRebuild(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"building", "closed", "stale record"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newLaneFixBed(t)
+			running, _, _, _ := plain.ReadRunning(b.root(), plain.ProveSeams{})
+			fix := plain.Fix{Attempt: running.Attempt, Parent: running.Commit, Goal: b.id, Round: 1, Units: []string{"package-a"}, Job: "first-build", State: "building"}
+			if name == "closed" {
+				fix.State = "closed"
+			}
+			if name == "stale record" {
+				fix.Attempt = "older"
+				if err := plain.WriteFix(b.root(), fix); err != nil {
+					t.Fatal(err)
+				}
+				active, err := plain.ActiveFix(b.root())
+				retained, readErr := plain.FixForAttempt(b.root(), "older")
+				if err != nil || readErr != nil || active != nil || retained == nil || retained.State != "building" {
+					t.Fatalf("stale fix %+v retained %+v: %v %v", active, retained, err, readErr)
+				}
+				return
+			}
+			if err := plain.WriteFix(b.root(), fix); err != nil {
+				t.Fatal(err)
+			}
+			code, result := b.run("work", "build", b.id, "--work", "lane-fix-1", "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact")
+			if code == 0 {
+				t.Fatalf("second builder ran: %s", result.Summary)
+			}
+			if _, err := os.Stat(filepath.Join(b.root(), "code.go")); !os.IsNotExist(err) {
+				t.Fatalf("builder ran: %v", err)
+			}
+		})
+	}
+}
+
+func init() {
+	testHelperCommands["fixture-lane-claim-owner"] = func(args []string) int {
+		root, id := args[0], args[1]
+		if landingFixFor(root, root, id, int64(os.Getpid())) == nil {
+			fmt.Fprintln(os.Stderr, "fixture lacks authenticated lane custody")
+			return 2
+		}
+		called := false
+		err := goalBranchClaimCheckWith(root, id, goal.Endpoint{}, func(string, string) (string, error) { called = true; return "", nil }, func(string) string { return root })()
+		if !called || err == nil || !strings.Contains(err.Error(), "this machine has no name") {
+			fmt.Fprintf(os.Stderr, "generic claim borrowed custody: %v\n", err)
+			return 1
+		}
+		return 0
+	}
+}
+
+func init() {
+	testHelperCommands["fixture-lane-read-owner"] = func(args []string) int {
+		root, id, commit := args[0], args[1], args[2]
+		result, _, err := goalBranchReadRun([]string{"--root", root, "--goal", id, "--unit", commit}, goalBranchReadDependencies{
+			Gate: func(string) (string, error) { return "green", nil },
+			Delegate: func(string, string, string, string, string) (string, error) {
+				return "", fmt.Errorf("lane committed read reached delegate")
+			},
+		})
+		if err != nil || result.RootJob != "lane-read" {
+			fmt.Fprintf(os.Stderr, "lane read: %+v %v\n", result, err)
+			return 1
+		}
+		return 0
+	}
+}
+
+func TestLaneFixCommittedReadOwnerRealProcess(t *testing.T) {
+	t.Parallel()
+	b := newLaneFixBed(t)
+	if code, result := b.run("work", "build", b.id, "--work", "lane-fix-1", "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact"); code != 0 {
+		t.Fatalf("build %d %s", code, result.Summary)
+	}
+	if code, result := b.run("work", "review", b.id, "--work", "lane-fix-1"); code != 0 {
+		t.Fatalf("review %d %s", code, result.Summary)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(executable, "fixture-lane-read-owner", b.root(), b.id, connectionGit(t, b.root(), "rev-parse", "HEAD"))
+	cmd.Dir = b.root()
+	cmd.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.registry)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("committed read owner: %v %s", err, output)
+	}
+}
+
+func TestLaneFixGenericClaimOwnerRealProcessRefusesCustody(t *testing.T) {
+	t.Parallel()
+	b := newLaneFixBed(t)
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command(executable, "fixture-lane-claim-owner", b.root(), b.id)
+	cmd.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.registry)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("generic claim owner: %v %s", err, output)
 	}
 }

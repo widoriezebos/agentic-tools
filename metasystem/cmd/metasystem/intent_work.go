@@ -473,7 +473,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	}
 	runner.AdmitDetached = func(plan launch.UnitPlan) bool {
 		fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal)
-		return fix != nil && plan.Base == fix.Parent && plan.Unit == fmt.Sprintf("lane-fix-%d", fix.Round) && fix.Commit == ""
+		return fix != nil && plan.Base == fix.Parent && plan.Unit == fmt.Sprintf("lane-fix-%d", fix.Round) && fix.Commit == "" && fix.Job == ""
 	}
 	runner.FreezeCheck = inv.resolveUnitCheck
 	if inv.input.has("check") {
@@ -517,7 +517,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		}
 		if spec.Kind == "build" {
 			if fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), record.Worktree, record.Goal); fix != nil {
-				if record.Unit != fmt.Sprintf("lane-fix-%d", fix.Round) || len(record.Rounds) != 1 {
+				if record.Unit != fmt.Sprintf("lane-fix-%d", fix.Round) || len(record.Rounds) != 1 || fix.Job != "" {
 					return fmt.Errorf("the lane admits only its recorded fix round")
 				}
 				fix.Job, fix.State = record.ID, "building"
@@ -694,7 +694,7 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	if err != nil {
 		return err
 	}
-	if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), record.Goal, endpoint)); err != nil {
+	if err := branch.CheckHolder(inv.laneClaimCheck(conn, inv.layout.InstallationRoot.Path(), record.Goal, endpoint)); err != nil {
 		return err
 	}
 	projection, now, problem := inv.projection()
@@ -935,7 +935,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	if endpoint, err := conn.endpoint(inv.layout.InstallationRoot.Path()); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: "the goal branch can't be reached, so nothing was built",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}.withCause(err))
-	} else if err := branch.CheckHolder(conn.claimCheck(inv.layout.InstallationRoot.Path(), id, endpoint)); err != nil {
+	} else if err := branch.CheckHolder(inv.laneClaimCheck(conn, inv.layout.InstallationRoot.Path(), id, endpoint)); err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: err.Error() + "; nothing was built",
 			next: inv.publicArgv("goal", "claim", id, "--take-over", "--reason", "TEXT"), nextReason: "a person takes the goal over; or the session holding it builds",
 			Details: refusalCodeDetails(goal.RefusalCode(err))})

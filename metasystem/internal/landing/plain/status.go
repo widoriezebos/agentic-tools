@@ -462,6 +462,11 @@ func LandingTimes(entries []Entry, pushes []Pushed, since time.Time, brought fun
 		for _, commit := range commits {
 			for _, index := range waiting[commit] {
 				out[index].LandedAt, out[index].Landing = push.At, push.Clock
+				for _, fix := range push.Fixes {
+					if fix.Goal == out[index].Goal {
+						out[index].Fix, out[index].Reason = fix.Commit, fmt.Sprintf("landed with lane fix %d", fix.Round)
+					}
+				}
 			}
 			delete(waiting, commit)
 		}
@@ -513,7 +518,7 @@ func ReadRunningProof(install string, seams ProveSeams) *RunningProof {
 // and why it can't be read.
 func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 	running, recorded, alive, err := ReadRunning(install, seams)
-	if err != nil || !recorded {
+	if err != nil || !recorded || running.Checkpoint {
 		return nil, err
 	}
 	state := "running"
