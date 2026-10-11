@@ -96,7 +96,8 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 					return ""
 				}
 				if only := env("LANDING_ONLY"); only != "" {
-					if got := strings.Fields(only); !reflect.DeepEqual(got, []string{"u/first=TestFirst", "u/second=TestSecond"}) {
+					// The replay names the failed tests per unit; a named replay that is green on main re-runs the whole units once before attributing (lane-speed U2, LS-03).
+					if got := strings.Fields(only); !reflect.DeepEqual(got, []string{"u/first=TestFirst", "u/second=TestSecond"}) && !reflect.DeepEqual(got, []string{"u/first", "u/second"}) {
 						t.Fatalf("replay units=%v; want both failed units", got)
 					}
 					replays = append(replays, env("LANDING_COMMIT"))
@@ -193,8 +194,13 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 			idemSameTree(t, "clean resolve repeat", before, idemTreeDigest(t, plain.Dir(b.installation)))
 			t.Run("parentReplay", func(t *testing.T) {
 				t.Parallel()
-				if !reflect.DeepEqual(replays, []string{parent}) {
-					t.Fatalf("replay runs=%v; want once on parent %s", replays, parent)
+				// A main-side red attributes after one named run; a goal-side red confirms the main prefix green with a whole-unit run after the named one (LS-03): two runs, both on the parent.
+				want := []string{parent}
+				if cause == "own" {
+					want = []string{parent, parent}
+				}
+				if !reflect.DeepEqual(replays, want) {
+					t.Fatalf("replay runs=%v; want %v", replays, want)
 				}
 			})
 		})

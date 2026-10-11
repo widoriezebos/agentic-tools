@@ -7,6 +7,7 @@ package plain
 import (
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"slices"
 	"time"
@@ -277,8 +278,8 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 			return err
 		}
 	}
-	// Bookkeeping of the members' paused clocks never undoes a push that main already holds:
-	// every effect below still happens and the bookkeeping error is reported at the end.
+	// Bookkeeping of the members' paused clocks never undoes or fails a push that main already holds:
+	// every effect below still happens and a bookkeeping error is only noted.
 	var bookkeeping error
 	for _, member := range pushed.BatchMembers {
 		if err := saveClosedBudget(install, member.Goal, now, seams); err != nil {
@@ -304,7 +305,10 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 			return err
 		}
 	}
-	return bookkeeping
+	if bookkeeping != nil {
+		fmt.Fprintf(os.Stderr, "note: the push is on main; its clock bookkeeping was not saved: %v\n", bookkeeping)
+	}
+	return nil
 }
 
 func (s ProveSeams) fetchMain(checkout string) error {

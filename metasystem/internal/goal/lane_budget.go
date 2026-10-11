@@ -98,6 +98,10 @@ func ReadLaneBudget(install, id string, start, now time.Time, repositories ...Re
 		if row.Outcome == "pushed" && sha == "" {
 			continue
 		}
+		if row.At == "" {
+			// A line written before the lane stamped its entries (the shape before 2026-10-11) bounds no stay.
+			continue
+		}
 		at, err := time.Parse(time.RFC3339Nano, row.At)
 		if err != nil {
 			return LaneBudgetRecord{}, fmt.Errorf("goal %s has an unreadable lane timestamp: %w", id, err)
