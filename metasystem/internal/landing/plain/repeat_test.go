@@ -327,7 +327,7 @@ func TestRepeatCompletedDeadCheckKeepsGreen(t *testing.T) {
 
 func TestRepeatIncompleteReportRefusesEveryEntry(t *testing.T) {
 	t.Parallel()
-	for name, report := range map[string]string{"absent": "exit 1", "count": "printf 'LANDING-FAILED\tu/a\tTestA\nLANDING-CHECKED\t2\n'; exit 1", "not last": "printf 'LANDING-CHECKED\t0\nmore output\n'; exit 1"} {
+	for name, report := range map[string]string{"absent": "exit 1", "count": "printf 'LANDING-FAILED\tu/a\tTestA\nLANDING-CHECKED\t2\n'; exit 1", "protocol after checked": "printf 'LANDING-CHECKED\t0\nLANDING-UNKNOWN\n'; exit 1"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newRepeatBed(t)

@@ -1095,12 +1095,14 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 	}
 
 	log, ok := output.(*os.File)
+	logPath := running.Log
+	if logPath == "" && ok {
+		logPath = log.Name()
+	}
 	offset := int64(-1)
 	if ok {
-		if info, err := log.Stat(); err == nil && info.Mode().IsRegular() {
-			if position, err := log.Seek(0, io.SeekCurrent); err == nil {
-				offset = position
-			}
+		if info, err := os.Stat(logPath); err == nil && info.Mode().IsRegular() {
+			offset = info.Size()
 		}
 	}
 	temporary := offset < 0
@@ -1112,6 +1114,7 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 		}
 		defer os.Remove(log.Name())
 		defer log.Close()
+		logPath = log.Name()
 		offset = 0
 	}
 	base := decision.BaseCommit
@@ -1135,7 +1138,7 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 		run = (*exec.Cmd).Run
 	}
 	err := run(shell)
-	observed.readLog(log, offset)
+	observed.readLog(logPath, offset)
 	observed.finish()
 	report := observed.report
 	// A named static group reports its completed verdict with a group line;

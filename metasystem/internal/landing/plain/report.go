@@ -47,6 +47,16 @@ func readReport(tail []byte) checkReport {
 	if len(last) == 2 && last[0] == "LANDING-NOT-RUN" {
 		return checkReport{kind: "not-run"}
 	}
+	checked := len(lines) - 1
+	// The engine can render its result after the command's final report.
+	// Any later protocol line leaves that report incomplete.
+	for checked >= 0 && !strings.HasPrefix(lines[checked], "LANDING-") {
+		checked--
+	}
+	if checked < 0 {
+		return checkReport{}
+	}
+	last = strings.Split(strings.TrimSuffix(lines[checked], "\r"), "\t")
 	if len(last) != 2 || last[0] != "LANDING-CHECKED" {
 		return checkReport{}
 	}
@@ -55,7 +65,7 @@ func readReport(tail []byte) checkReport {
 		return checkReport{}
 	}
 	report := checkReport{kind: "complete"}
-	for i := len(lines) - 2; i >= 0; i-- {
+	for i := checked - 1; i >= 0; i-- {
 		fields := strings.Split(strings.TrimSuffix(lines[i], "\r"), "\t")
 		switch fields[0] {
 		case "LANDING-FAILED":

@@ -107,6 +107,34 @@ func TestLandingClassifiedRedAgentProveDoesNotReopenRequest(t *testing.T) {
 	}
 }
 
+func TestLandingClassifySavedLogWithRenderLines(t *testing.T) {
+	t.Parallel()
+	b, red := redPermissionBed(t)
+	log, err := os.OpenFile(red.Log, os.O_WRONLY|os.O_APPEND, 0)
+	helmMust(t, err)
+	_, err = log.WriteString("landing prove: failed\n✗ commit is proven red\n→ metasystem landing status\n")
+	helmMust(t, err, log.Close())
+	data, err := os.ReadFile(red.Log)
+	helmMust(t, err)
+	failed := plain.FailedChecks(data)
+	if len(failed) != 1 || failed[0].Unit != "u/a" || strings.Join(failed[0].Tests, " ") != "TestA" {
+		t.Fatalf("saved log lost the incident's test identities: %+v", failed)
+	}
+	judged := false
+	b.owners.landing.plainProve.Judge = func(_ string, commit string, units []plain.FailedUnit) (map[string]plain.UnitJudgement, error) {
+		judged = true
+		if commit != red.Commit || len(units) != 1 || units[0].Unit != "u/a" || strings.Join(units[0].Tests, " ") != "TestA" {
+			t.Fatalf("classification lost the recorded report: %s %+v", commit, units)
+		}
+		return nil, nil
+	}
+	b.success(t, "landing", "prove", "--classify", red.Attempt)
+	classified, found, err := plain.LastResult(b.installation)
+	if err != nil || !found || !judged || classified.ClassificationPending || classified.ClassificationPerson == nil {
+		t.Fatalf("saved red did not classify: %+v judged=%t err=%v", classified, judged, err)
+	}
+}
+
 func TestLandingRedPermissionAuthorityMatrix(t *testing.T) {
 	t.Parallel()
 	for _, act := range []string{"classification", "return"} {

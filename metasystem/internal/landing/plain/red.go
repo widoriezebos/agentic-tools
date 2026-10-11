@@ -76,6 +76,17 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 		if !found {
 			return fmt.Errorf("no recorded red exists for attempt %s", attempt)
 		}
+		if len(result.Failed) == 0 && result.Log != "" {
+			if data, readErr := os.ReadFile(result.Log); readErr == nil {
+				if failed := FailedChecks(data); len(failed) > 0 {
+					result.Failed = failed
+					if result.Cause == nil {
+						result.Cause = &Cause{Kind: "unclassified", Evidence: result.Log}
+					}
+					result.Cause.Tests = failingTests(result.Failed)
+				}
+			}
+		}
 		if seams.Person == nil {
 			if err := redContinuationLocked(install, result, seams); err != nil {
 				return err

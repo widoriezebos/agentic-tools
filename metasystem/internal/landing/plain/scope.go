@@ -298,13 +298,12 @@ type proofOutput struct {
 
 // readLog observes only this command's bytes after the shell exits. The size
 // bounds the read even when a background descendant keeps writing to the log.
-// A nonseekable or unreadable log leaves the environment unknown.
-func (p *proofOutput) readLog(output io.Writer, offset int64) {
-	file, ok := output.(*os.File)
-	if !ok || offset < 0 {
+// A nonregular or unreadable log leaves the environment unknown.
+func (p *proofOutput) readLog(path string, offset int64) {
+	if offset < 0 {
 		return
 	}
-	log, err := os.Open(file.Name())
+	log, err := os.Open(path)
 	if err != nil {
 		return
 	}
