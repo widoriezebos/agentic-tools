@@ -96,7 +96,7 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 					return ""
 				}
 				if only := env("LANDING_ONLY"); only != "" {
-					if got := strings.Fields(only); !reflect.DeepEqual(got, []string{"u/first", "u/second"}) {
+					if got := strings.Fields(only); !reflect.DeepEqual(got, []string{"u/first=TestFirst", "u/second=TestSecond"}) {
 						t.Fatalf("replay units=%v; want both failed units", got)
 					}
 					replays = append(replays, env("LANDING_COMMIT"))
@@ -105,7 +105,7 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 					fmt.Fprint(cmd.Stdout, "LANDING-FAILED\tu/first\tTestFirst\nLANDING-FAILED\tu/second\tTestSecond\nLANDING-CHECKED\t2\n")
 					return exec.Command("/usr/bin/false").Run()
 				}
-				if cause == "main" && (env("LANDING_ONLY") == "" || slices.Contains(strings.Fields(env("LANDING_ONLY")), "u/first")) {
+				if cause == "main" && (env("LANDING_ONLY") == "" || slices.Contains(strings.Fields(env("LANDING_ONLY")), "u/first=TestFirst")) {
 					fmt.Fprint(cmd.Stdout, "LANDING-FAILED\tu/first\tTestFirst\nLANDING-CHECKED\t1\n")
 					return exec.Command("/usr/bin/false").Run()
 				}

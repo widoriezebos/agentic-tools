@@ -138,8 +138,17 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 	if only != "" {
 		groups, selections = nil, nil
 		for _, selection := range strings.Fields(only) {
-			if slices.ContainsFunc(contract.Groups, func(group testpolicy.Group) bool { return group.ID == selection }) {
-				groups = append(groups, selection)
+			id, names, _ := strings.Cut(selection, "=")
+			if index := slices.IndexFunc(contract.Groups, func(group testpolicy.Group) bool { return group.ID == id }); index >= 0 {
+				group := &contract.Groups[index]
+				if names == "" && len(strings.Fields(only)) == 1 {
+					names = strings.Join(strings.Fields(getenv("LANDING_ONLY_TESTS")), ",")
+				}
+				if names != "" && group.Adapter == "go" {
+					group.Tests, _ = json.Marshal(strings.Split(names, ","))
+					group.Shards = 1
+				}
+				groups = append(groups, id)
 			} else {
 				selections = append(selections, selection)
 			}
@@ -175,7 +184,7 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		}
 		reported := map[packageShard]string{}
 		batch := slices.Contains(tags, "batchtest")
-		result, err := hooks.Native(proofrun.NativeInventoryRequest{Root: root, LogRoot: logRoot, Environment: environment, Packages: packages, Tests: tests, BuildTags: tags, OnlyTaggedTests: batch, Progress: func(planned int, completed []proofrun.PackageExecution) {
+		result, err := hooks.Native(proofrun.NativeInventoryRequest{Root: root, LogRoot: logRoot, Environment: environment, Packages: packages, Tests: tests, BuildTags: tags, OnlyTaggedTests: batch, Unsharded: only != "" && len(tests) > 0, Progress: func(planned int, completed []proofrun.PackageExecution) {
 			if completed == nil {
 				fmt.Fprintf(stdout, "landing planned %d\n", planned)
 			}
@@ -215,6 +224,12 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		}
 		for index, identities := range [][]proofrun.NativeTestIdentity{result.Observed, result.Missing, result.Unexpected} {
 			for _, identity := range identities {
+				// A replay can name a test introduced after this prefix. Discovery
+				// leaves its package empty; the package's compile still completes.
+				if only != "" && len(tests) > 0 && index == 1 && identity.Classname == "" && identity.Status == "missing" && slices.Contains(tests, identity.Name) {
+					fmt.Fprintf(stdout, "landing dropped %s: absent on replay tree\n", identity.Name)
+					continue
+				}
 				if index != 2 && (identity.Status == "passed" || identity.Status == "skipped") {
 					continue
 				}
@@ -237,6 +252,8 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 		var tests []string
 		if names != "" {
 			tests = strings.Split(names, ",")
+		} else if len(strings.Fields(only)) == 1 {
+			tests = strings.Fields(getenv("LANDING_ONLY_TESTS"))
 		}
 		if err := native([]string{pkg}, tests, nil); err != nil {
 			return notRun(err)
@@ -361,7 +378,7 @@ func runVM(stdout, stderr io.Writer, getenv func(string) string, command Command
 		" && git -C " + shellQuote(dir) + " checkout --force --detach " + shellQuote(commit) +
 		" && test -f " + shellQuote(dir+"/metasystem/proof/full.sh") +
 		"); then printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; fi; cd " + shellQuote(dir+"/metasystem") +
-		" || { printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; }; LANDING_COMMIT=" + shellQuote(commit) + " LANDING_ONLY=" + shellQuote(getenv("LANDING_ONLY")) + " sh proof/full.sh --host"
+		" || { printf 'LANDING-NOT-RUN\\tenvironment\\n'; exit 1; }; LANDING_COMMIT=" + shellQuote(commit) + " LANDING_ONLY=" + shellQuote(getenv("LANDING_ONLY")) + " LANDING_ONLY_TESTS=" + shellQuote(getenv("LANDING_ONLY_TESTS")) + " sh proof/full.sh --host"
 	pipeline := "cat " + shellQuote(bundle) + " | limactl shell " + shellQuote(vm) + " -- bash -c " + shellQuote(remote) + `; statuses=("${PIPESTATUS[@]}"); if [ "${statuses[0]}" -ne 0 ]; then exit 2; fi; exit "${statuses[1]}"`
 	var report bytes.Buffer
 	err = command([]string{"bash", "-c", pipeline}, io.MultiWriter(stdout, &report), stderr)

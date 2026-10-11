@@ -37,7 +37,7 @@ func TestFullReporterCorrectsLivePackageVerdicts(t *testing.T) {
 					return "fixture/unit"
 				}
 				return ""
-			}, nil, "../../testing.json", hooks)
+			}, nil, "testdata/testing.json", hooks)
 			text := out.String()
 			first := "landing package fixture/unit 1 ok 0\n"
 			last := "landing package fixture/unit 1 " + final + " 0\n"
@@ -85,7 +85,7 @@ func TestFullReporterMeasuresItsTotalBeforeTheReport(t *testing.T) {
 				fmt.Fprintf(stdout, `{"data":{"groups":[{"id":%q,"status":"passed","nativeLaunched":true,"nativeExitStatus":0}]}}`, argv[2])
 				return nil
 			}
-			code := runHost(&out, &stderr, func(string) string { return "" }, command, "../../testing.json", hooks)
+			code := runHost(&out, &stderr, func(string) string { return "" }, command, "testdata/testing.json", hooks)
 			want := 0
 			status := "green"
 			if red {
@@ -106,7 +106,7 @@ func TestFullReporterMeasuresItsTotalBeforeTheReport(t *testing.T) {
 			now = now.Add(time.Minute)
 			return "", &os.PathError{Op: "read", Path: "fixture", Err: os.ErrNotExist}
 		}}
-		code := runHost(&out, &stderr, func(string) string { return "" }, nil, "../../testing.json", hooks)
+		code := runHost(&out, &stderr, func(string) string { return "" }, nil, "testdata/testing.json", hooks)
 		text := out.String()
 		if code != 1 || strings.Count(text, "landing clock total 60000\n") != 1 || !strings.HasPrefix(text, "landing clock total 60000\nLANDING-NOT-RUN\t") {
 			t.Fatalf("not-run exit=%d out=%s stderr=%s", code, text, &stderr)

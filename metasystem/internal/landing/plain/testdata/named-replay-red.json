@@ -1,0 +1,205 @@
+{
+  "classification-pending": true,
+  "executions": [
+    {
+      "decision": {
+        "scope": "full",
+        "scopeReason": "full proof overdue since 13:04",
+        "changedPaths": null,
+        "durations": null,
+        "packages": null,
+        "source": {
+          "goals": null,
+          "tree": "",
+          "commit": "",
+          "result": "",
+          "log": "",
+          "at": "",
+          "minutes": null
+        },
+        "contract": {
+          "schemaVersion": 0,
+          "projectRisk": {
+            "severity": 0,
+            "exposure": 0,
+            "reversibility": "",
+            "detection": "",
+            "recovery": ""
+          },
+          "surfaces": null,
+          "groups": null,
+          "always": {
+            "canary": null,
+            "standard": null
+          },
+          "unknown": null,
+          "cadence": null
+        },
+        "affected": {
+          "Groups": null,
+          "Uncovered": null,
+          "TemplateCovered": null
+        }
+      },
+      "depthScope": "full",
+      "depthBase": "823722cc1f27f323a8065dac0fa17094c5bcfd48",
+      "lane": {
+        "root": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing",
+        "install": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem",
+        "custodyEpoch": 2,
+        "registeredBy": "Wido",
+        "at": "2026-10-02T00:07:44Z"
+      },
+      "attempt": "20261011T111952.309251000Z",
+      "commit": "14d0764486d31f1a7e8017c54e10a25000bda524",
+      "tree": "a4251dc84cb5417b880dc2f61f228f6c9662979d",
+      "batch-id": "20261011T102928.606590000Z",
+      "reason": "full proof overdue since 13:04",
+      "scope": "full",
+      "command": "sh proof/full.sh",
+      "policy": {
+        "value": "auto",
+        "source": "built-in",
+        "checkout": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing",
+        "set-by": "built-in",
+        "at": "0001-01-01T00:00:00Z"
+      },
+      "at": "2026-10-11T11:19:52.443408Z",
+      "state": "claimed"
+    }
+  ],
+  "batch-id": "20261011T102928.606590000Z",
+  "batch-members": [
+    {
+      "goal": "lane-first-run-fixes",
+      "sha": "a4004d908e8a4022c8eb53671b4d57df6bddf2b3"
+    }
+  ],
+  "countedFull": true,
+  "cause": {
+    "kind": "unclassified",
+    "tests": [
+      "metasystem/internal/landing/plain TestReadStatusTrunkRedWaitsForRunningTrunkProof"
+    ],
+    "evidence": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261011T111952.309251000Z.log"
+  },
+  "goals": [
+    {
+      "goal": "review-briefs-name-a-threat-model",
+      "sha": "c8f6e887ac612815d347bcc11d57350b4e107729"
+    },
+    {
+      "goal": "lane-check-green",
+      "sha": "4bb2582a2f8f4b4eba1afb78dbe98a61d245cb3f"
+    },
+    {
+      "goal": "lane-check-conflict-a",
+      "sha": "98386d24dde861691c4fe2edaa968d25b9f23f8a"
+    },
+    {
+      "goal": "lane-check-pause",
+      "sha": "f56d17b7dd49075104c9e06f85e532c866409a1a"
+    },
+    {
+      "goal": "fleet-card-can-land-now",
+      "sha": "d09e85a29f8be94fd4403a55dff22d9aa1512cc5"
+    },
+    {
+      "goal": "ui-reads-well-on-a-phone-in-plain-words",
+      "sha": "5eee70e0833e90c92557d33c275da58372c27646"
+    },
+    {
+      "goal": "fleet-panel-ux",
+      "sha": "f5e27311fb872b6c29317b8d87a5622271efa5b7"
+    },
+    {
+      "goal": "fleet-page-redesign",
+      "sha": "bce5c8c196abd4fd881cd86f567d5b9e8e566610"
+    },
+    {
+      "goal": "rosters-are-configuration-items",
+      "sha": "1be71f3b50418ab225595459d75d68e33e7f8368"
+    },
+    {
+      "goal": "review-findings-read-as-decisions",
+      "sha": "87d84be4f0451ec67ddbf2a37b19ea96b2c91de5"
+    },
+    {
+      "goal": "one-folder-deployed-and-evolved",
+      "sha": "d09578485253fd9c504eee6ff05714bba2c89065"
+    },
+    {
+      "goal": "landing-deploys-the-engine",
+      "sha": "e3a3147ed4ea44bce2b9a8c079ee40a24ecec889"
+    },
+    {
+      "goal": "design-gate-at-dispatch",
+      "sha": "95dafe3f9b476ffb0a8f4127d5c268dbf8c551b7"
+    },
+    {
+      "goal": "lane-records-flakes-and-routes-their-fix",
+      "sha": "6cf423b41ea1be857a003c4dcdb30cf46ef600bc"
+    },
+    {
+      "goal": "machinery-blocks-of-2026-10-02",
+      "sha": "eb9f9e8e1b7bd60ca4a642387ff16286b9da2906"
+    },
+    {
+      "goal": "records-land-through-the-lane",
+      "sha": "15262deb26e5654be55707f2a000ff88cbc29547"
+    },
+    {
+      "goal": "goal-worktree-dispatch-uses-the-primary",
+      "sha": "b398b2a4498c3b33f71b5dded9caadb6ec67e6ae"
+    },
+    {
+      "goal": "unit-rounds-converge-or-stop",
+      "sha": "b4ed5e5c1a686bb0825bae380a5a9e952a3b4d05"
+    },
+    {
+      "goal": "machinery-blocks-of-2026-10-04",
+      "sha": "74ef67d5320d283efecc41e573e3c6c2718c5ee7"
+    },
+    {
+      "goal": "lane-reproves-only-what-a-change-can-affect",
+      "sha": "7b731cda335f34e6b076b5ae51656f3832eb7ef2"
+    },
+    {
+      "goal": "health-is-green-when-the-seat-is-healthy",
+      "sha": "61ece944988dcec7d284f0080b0469d62a28cb54"
+    },
+    {
+      "goal": "fleet-provider-and-session-recovery",
+      "sha": "c7b8bf25cd192386b8f0413baf6adf21afcb37ae"
+    },
+    {
+      "goal": "lane-first-run-fixes",
+      "sha": "a4004d908e8a4022c8eb53671b4d57df6bddf2b3"
+    }
+  ],
+  "tree": "a4251dc84cb5417b880dc2f61f228f6c9662979d",
+  "commit": "14d0764486d31f1a7e8017c54e10a25000bda524",
+  "result": "red",
+  "log": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261011T111952.309251000Z.log",
+  "at": "2026-10-11T11:58:42Z",
+  "started_at": "2026-10-11T11:19:52Z",
+  "minutes": 38.833333333333336,
+  "attempt": "20261011T111952.309251000Z",
+  "reason": "the proving command exited 1",
+  "failed": [
+    {
+      "unit": "metasystem/internal/landing/plain",
+      "tests": [
+        "TestReadStatusTrunkRedWaitsForRunningTrunkProof"
+      ],
+      "surfaces": null
+    }
+  ],
+  "scope": "full",
+  "scopeReason": "full proof overdue since 13:04",
+  "ran": [
+    "refusal-register-standard",
+    "fast-static-build"
+  ],
+  "environment": "go version go1.27.2 darwin/arm64; GOOS=\"darwin\"; GOARCH=\"arm64\"; CGO_ENABLED=\"1\"; GOFLAGS=\"\"; GOEXPERIMENT=\"\"; GOTOOLCHAIN=\"auto\"; Darwin 25.6.0"
+}

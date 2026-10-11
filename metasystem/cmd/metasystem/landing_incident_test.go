@@ -169,7 +169,8 @@ func TestIncidentLandingProveListsEachMainFailureAndKeepsMainUnchangedOnRepeat(t
 			lane, b, move := incidentProveFixture(t, unchanged)
 			before := b.repo.canonical
 			check := lane.prove(t)
-			wantRuns := "merge-b:,main:u/a u/green u/b"
+			// The replay names the failed tests per unit (lane-speed U2); the main evidence is still one reporter run.
+			wantRuns := "merge-b:,main:u/a=TestOne,TestTwo u/green=TestBatchOnly u/b=TestThree"
 			if unchanged {
 				wantRuns = "main:"
 			}
@@ -266,7 +267,8 @@ func TestIncidentLandingProveDoesNotRecordIncompleteMainReplay(t *testing.T) {
 	}
 	check := lane.prove(t)
 	if check.Cause == nil || check.Cause.Kind != "unclassified" || !strings.Contains(check.Reason, "u/a u/b") || check.Repeat != "" ||
-		strings.Join(lane.runs, ",") != "merge-b:,main:u/a u/b" {
+		// An incomplete named replay falls back to the whole unit once (lane-speed U2); both incomplete, nothing is attributed.
+		strings.Join(lane.runs, ",") != "merge-b:,main:u/a=TestOne u/b=TestThree,main:u/a u/b" {
 		t.Fatalf("incomplete replay was attributed: %+v runs=%v", check, lane.runs)
 	}
 	stored, ok, err := plain.LastResult(lane.install)

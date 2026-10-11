@@ -55,6 +55,11 @@ func TestLandingReplayReporterProcess(t *testing.T) {
 		},
 		Native: func(r proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
 			fmt.Fprintln(os.Stdout, "fixture native "+strings.Join(r.Packages, " ")+" tests="+strings.Join(r.Tests, ","))
+			planned := 54
+			if len(r.Tests) > 0 && r.Unsharded {
+				planned = 1
+			}
+			r.Progress(planned, nil)
 			packages := r.Packages
 			if len(r.BuildTags) > 0 {
 				return proofrun.NativeInventoryResult{Execution: []proofrun.PackageExecution{{Package: "fixture/tagged", Status: "ok", Shard: 1}}}, nil
@@ -70,6 +75,9 @@ func TestLandingReplayReporterProcess(t *testing.T) {
 				unit := "metasystem/" + pkg
 				execution := proofrun.PackageExecution{Package: "github.com/widoriezebos/agentic-tools/metasystem/" + pkg, Status: "ok", Shard: 1}
 				names := map[string][]string{"internal/p": {"TestP"}, "cmd/metasystem": {"TestGoal"}}[pkg]
+				if len(r.Tests) > 0 {
+					names = r.Tests
+				}
 				status, action := "passed", "pass"
 				if f := failure(unit); f != nil {
 					execution.Status, result.Failed = "fail", true
@@ -202,7 +210,7 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 			var incidents []plain.Result
 			b.owners.landing.plainProve.RecordMain = func(results []plain.Result) error { incidents = append(incidents, results...); return nil }
 			result := b.prove(t)
-			selections := "fast-static-build metasystem/cmd/metasystem metasystem/internal/lease metasystem/internal/p"
+			selections := "fast-static-build metasystem/cmd/metasystem=TestGoal metasystem/internal/lease metasystem/internal/p=TestP"
 			if result.Cause.Kind != "main" || !strings.Contains(result.Cause.Name, "internal/p") || len(result.Cause.Tests) != 4 || !slices.Contains(result.Cause.Tests, "metasystem/internal/lease (package)") || !reflect.DeepEqual(b.runs, []string{"merge-g:", "main:" + selections}) {
 				t.Fatalf("main attribution: cause=%+v runs=%v", result.Cause, b.runs)
 			}
@@ -226,7 +234,7 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 			b.mainFailures, b.failures = nil, b.failures[1:]
 			b.runs = nil
 			fixed := b.prove(t)
-			if fixed.Cause.Kind != "own" || fixed.Cause.Goal != "g" || len(fixed.Cause.Tests) != 3 || len(b.runs) != 2 || !strings.HasPrefix(b.runs[1], "main-fixed:") {
+			if fixed.Cause.Kind != "own" || fixed.Cause.Goal != "g" || len(fixed.Cause.Tests) != 3 || len(b.runs) != 3 || !strings.HasPrefix(b.runs[1], "main-fixed:") {
 				t.Fatalf("fixed main attribution: %+v runs=%v", fixed, b.runs)
 			}
 			if code, out := b.run(t, b.root, "return", "g", "--cause", "own"); code != 0 {
@@ -381,4 +389,53 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 		})
 	}
 
+}
+
+func TestLandingReplayNamesFiveTestsAndRecordsTheForm(t *testing.T) {
+	t.Parallel()
+	for _, named := range []bool{true, false} {
+		t.Run(fmt.Sprintf("named=%t", named), func(t *testing.T) {
+			t.Parallel()
+			b := newOneGoalReplayBed(t)
+			names := []string{"TestA", "TestB", "TestC", "TestD", "TestE"}
+			if !named {
+				names = nil
+			}
+			b.failures = []plain.FailedUnit{{Unit: "metasystem/cmd/metasystem", Tests: names}}
+			command := b.owners.landing.plainProve.Command
+			b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+				want := ""
+				if commandEnv(cmd, "LANDING_ONLY") != "" && len(b.runs) == 1 {
+					want = strings.Join(names, " ")
+				}
+				if got := commandEnv(cmd, "LANDING_ONLY_TESTS"); got != want {
+					t.Fatalf("replay names=%q want=%q", got, want)
+				}
+				return command(cmd)
+			}
+			result := b.prove(t)
+			wantForm, wantPlan := "replay: whole unit metasystem/cmd/metasystem", "landing planned 54\n"
+			if named {
+				wantForm, wantPlan = "named replay green on main: whole-unit replay ran; replay: whole unit metasystem/cmd/metasystem", "landing planned 1\n"
+			}
+			if result.Replay != wantForm || result.Cause.Kind != "own" {
+				t.Fatalf("classification=%+v", result)
+			}
+			results, err := plain.Results(b.install)
+			helmMust(t, err)
+			if results[len(results)-1].Replay != wantForm {
+				t.Fatalf("appended result lost replay form: %+v", results)
+			}
+			stops, err := plain.OpenStops(b.install)
+			helmMust(t, err)
+			if len(stops) == 0 || stops[len(stops)-1].Replay != wantForm || !strings.Contains(stops[len(stops)-1].Words(), wantForm) {
+				t.Fatalf("stop lost replay form: %+v", stops)
+			}
+			log, err := os.ReadFile(filepath.Join(plain.Dir(b.install), "proofs", result.Attempt+"-replay-1.log"))
+			helmMust(t, err)
+			if !strings.Contains(string(log), wantPlan) || !strings.Contains(string(log), "tests="+strings.Join(names, ",")+"\n") {
+				t.Fatalf("replay plan: %s", log)
+			}
+		})
+	}
 }

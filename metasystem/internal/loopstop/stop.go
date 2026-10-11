@@ -23,6 +23,7 @@ func (c Cause) Valid() bool {
 }
 
 type Stop struct {
+	Replay       string   `json:"replay,omitempty"`
 	ProofAttempt string   `json:"proof-attempt,omitempty"`
 	Tree         string   `json:"tree,omitempty"`
 	BatchID      string   `json:"batch-id,omitempty"`
@@ -193,6 +194,9 @@ func (s Stop) Words() string {
 		if s.Cause.Kind == "main" && s.Cause.Name != "" {
 			why += "; incident: " + s.Cause.Name
 		}
+	}
+	if s.Replay != "" {
+		why += "; " + s.Replay
 	}
 	return "the lane stopped: " + why + ". Subject: " + s.Subject
 }

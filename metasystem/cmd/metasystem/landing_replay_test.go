@@ -215,7 +215,7 @@ func TestLandingReplayFindsOwnOrMainThroughProve(t *testing.T) {
 			if result.Cause == nil || result.Cause.Kind != kind || result.Repeat != "" || !result.CountedFull {
 				t.Fatalf("classification: %+v", result)
 			}
-			if kind == "own" && (result.Cause.Goal != "b" || result.Cause.SHA != "sha-b" || strings.Join(b.runs, ",") != "merge-b:,merge-a:u/a") {
+			if kind == "own" && (result.Cause.Goal != "b" || result.Cause.SHA != "sha-b" || strings.Join(b.runs, ",") != "merge-b:,merge-a:u/a,merge-a:u/a") {
 				t.Fatalf("merge attribution: %+v runs=%v", result.Cause, b.runs)
 			}
 			wantEvidence := replayFailure
@@ -270,7 +270,7 @@ func TestLandingReplayIncompleteIsolationHolds(t *testing.T) {
 				}
 			}
 			result := b.prove(t)
-			if result.Cause.Kind != "unclassified" || result.Repeat != "" || len(b.runs) != 2 {
+			if result.Cause.Kind != "unclassified" || result.Repeat != "" || len(b.runs) != 3 {
 				t.Fatalf("incomplete replay: %+v runs=%v", result, b.runs)
 			}
 			if code, _ := b.run(t, b.root, "prove", "--wait"); code != 1 || b.full != 1 {

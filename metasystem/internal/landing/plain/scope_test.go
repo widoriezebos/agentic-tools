@@ -657,6 +657,9 @@ func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 	if red.Result != Red || red.Scope != "scoped" || red.Base != b.base.Tree || red.FullAt != b.base.FullAt || !reflect.DeepEqual(red.Ran, []string{"unrelated"}) || len(red.Failed) != 1 || red.Failed[0].Unit != "u/a" || red.Load != 2.75 || red.Repeat != "allowed" || commandEnv(b.calls[0], "LANDING_PROOF_GROUPS") != "unrelated" {
 		t.Fatalf("scoped failure: %+v", red)
 	}
+	if len(b.calls) != 3 || commandEnv(b.calls[1], "LANDING_ONLY_TESTS") != "TestA" || commandEnv(b.calls[2], "LANDING_ONLY_TESTS") != "" || commandEnv(b.calls[2], "LANDING_ONLY") != "u/a" {
+		t.Fatalf("scoped replay must check the whole unit after named green: %d calls", len(b.calls))
+	}
 	if record := b.record(t); record.Groups[1].State != "ran" || !reflect.DeepEqual(record.Groups[1].Why, []string{"metasystem/records/test-image.json"}) {
 		t.Fatalf("failed group's scope record: %+v", record)
 	}
@@ -682,7 +685,7 @@ func TestARedScopedProofNamesItsGroupsAndAllowsOneWholeRepeat(t *testing.T) {
 	b.output = repeatLog
 	t.Cleanup(func() { repeatLog.Close() })
 	green := b.run(t)
-	if green.Result != Green || green.Scope != "scoped" || green.FullAt != b.base.FullAt || len(records) != 1 || len(records[0].Outputs) != 1 || len(records[0].RepeatOutputs) != 1 || records[0].Repeat != "whole" || records[0].RepeatAttempt != green.Attempt || !strings.Contains(green.Reason, "goal fix-flaky-a") || len(b.calls) != 3 {
+	if green.Result != Green || green.Scope != "scoped" || green.FullAt != b.base.FullAt || len(records) != 1 || len(records[0].Outputs) != 1 || len(records[0].RepeatOutputs) != 1 || records[0].Repeat != "whole" || records[0].RepeatAttempt != green.Attempt || !strings.Contains(green.Reason, "goal fix-flaky-a") || len(b.calls) != 4 {
 		t.Fatalf("scoped whole repeat: %+v, records %+v", green, records)
 	}
 }

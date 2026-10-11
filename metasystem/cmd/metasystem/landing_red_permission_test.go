@@ -223,7 +223,7 @@ func TestLandingRedPermissionAuthorityMatrix(t *testing.T) {
 			}
 			if act == "classification" {
 				result, _, err := plain.LastResult(b.installation)
-				if err != nil || result.ClassificationPending || result.ClassificationPerson == nil || result.ClassificationPerson.Root != root || result.Cause.Kind != "own" || result.Cause.Goal != "a" || b.executions(t) != before+1 {
+				if err != nil || result.ClassificationPending || result.ClassificationPerson == nil || result.ClassificationPerson.Root != root || result.Cause.Kind != "own" || result.Cause.Goal != "a" || b.executions(t) != before+2 {
 					t.Fatalf("classified subject: %+v %v count=%d", result, err, b.executions(t))
 				}
 				entry, _, _ := plain.Latest(b.installation, "a")
@@ -232,13 +232,13 @@ func TestLandingRedPermissionAuthorityMatrix(t *testing.T) {
 				}
 				// A restart can repeat attribution, but cannot use the full admission.
 				b.success(t, words...)
-				if b.executions(t) != before+2 {
+				if b.executions(t) != before+4 {
 					t.Fatal("classification replay did not remain isolated")
 				}
 				b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
 					return humanauthority.Proof{}, errors.New("agent")
 				}
-				if code, text := b.run(t, "landing", "prove", "--wait"); code == 0 || !strings.Contains(text, "gets no other") || b.executions(t) != before+2 {
+				if code, text := b.run(t, "landing", "prove", "--wait"); code == 0 || !strings.Contains(text, "gets no other") || b.executions(t) != before+4 {
 					t.Fatalf("classification lent full permission: %d %s", code, text)
 				}
 			} else {
@@ -471,7 +471,7 @@ func TestLandingClassifyRetainsFullBudget(t *testing.T) {
 	helmMust(t, testexec.WriteFile(script, []byte(body), 0755))
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
 	classified, _, err := plain.LastResult(b.installation)
-	if err != nil || !classified.ClassificationPending || b.executions(t) != 3 || len(classified.Executions) != 1 || classified.Person == nil {
+	if err != nil || !classified.ClassificationPending || b.executions(t) != 4 || len(classified.Executions) != 1 || classified.Person == nil {
 		t.Fatalf("classification did not admit exactly its next full: %+v %v count=%d", classified, err, b.executions(t))
 	}
 	before := b.executions(t)
@@ -744,7 +744,7 @@ func TestLandingRedSavedBeforeAutomaticReplay(t *testing.T) {
 	if code, text := b.run(t, "landing", "prove", "--wait"); code == 0 {
 		t.Fatalf("own red unexpectedly passed: %s", text)
 	}
-	if observed != 1 || b.executions(t) != 2 {
+	if observed != 2 || b.executions(t) != 3 {
 		t.Fatalf("automatic attribution execution count=%d observations=%d", b.executions(t), observed)
 	}
 	result, _, err := plain.LastResult(b.installation)
@@ -761,11 +761,11 @@ func TestLandingClassifyCannotRepeatIncompleteFull(t *testing.T) {
 	helmMust(t, testexec.WriteFile(script, []byte(body), 0755))
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
 	next, _, err := plain.LastResult(b.installation)
-	if err != nil || next.ClassificationOf != red.Attempt || next.CountedFull || b.executions(t) != 3 {
+	if err != nil || next.ClassificationOf != red.Attempt || next.CountedFull || b.executions(t) != 4 {
 		t.Fatalf("incomplete full admission: %+v %v count=%d", next, err, b.executions(t))
 	}
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
-	if b.executions(t) != 4 {
+	if b.executions(t) != 6 {
 		t.Fatalf("restart repeated the spent full admission: count=%d", b.executions(t))
 	}
 }
@@ -800,7 +800,7 @@ func TestLandingClassifyCannotRepeatLostFull(t *testing.T) {
 	helmMust(t, err, os.WriteFile(filepath.Join(plain.Dir(b.installation), "running.json"), raw, 0600))
 	b.owners.landing.plainProve.Alive = func(plain.Running) bool { return false }
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
-	if b.executions(t) != 4 {
+	if b.executions(t) != 6 {
 		t.Fatalf("restart repeated a lost full execution: count=%d", b.executions(t))
 	}
 	observations, err := plain.Results(b.installation)
@@ -833,7 +833,7 @@ func TestLandingClassifyHistoricalRedCannotAdmitReplacement(t *testing.T) {
 			}
 			b.success(t, "landing", "prove", "--classify", red.Attempt)
 			result, _, err := plain.LastResult(b.installation)
-			if err != nil || result.Attempt != red.Attempt || result.Commit != red.Commit || result.Tree != red.Tree || result.ClassificationPerson == nil || b.executions(t) != 2 {
+			if err != nil || result.Attempt != red.Attempt || result.Commit != red.Commit || result.Tree != red.Tree || result.ClassificationPerson == nil || b.executions(t) != 3 {
 				t.Fatalf("historical red changed its subject or executed replacement: %+v %v count=%d", result, err, b.executions(t))
 			}
 			if mode == "own" && (result.Cause.Kind != "own" || result.Cause.SHA != red.Goals[0].SHA) {
@@ -849,7 +849,7 @@ func TestLandingClassifyHistoricalRedCannotAdmitReplacement(t *testing.T) {
 				t.Fatalf("old attribution returned replacement: %s", text)
 			}
 			entry, _, err := plain.Latest(b.installation, "a")
-			if err != nil || entry.State != plain.StateWaiting || entry.SHA != replacement || b.executions(t) != 2 {
+			if err != nil || entry.State != plain.StateWaiting || entry.SHA != replacement || b.executions(t) != 3 {
 				t.Fatalf("replacement changed: %+v %v", entry, err)
 			}
 		})
@@ -936,7 +936,7 @@ func TestLandingClassifyRechecksBudgetAtFullAdmission(t *testing.T) {
 	helmMust(t, testexec.WriteFile(script, []byte(body), 0755))
 	intervened := false
 	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
-		if !intervened && strings.Join(args, " ") == "rev-parse --verify HEAD^{commit}" && b.executions(t) == 2 {
+		if !intervened && strings.Join(args, " ") == "rev-parse --verify HEAD^{commit}" && b.executions(t) == 3 {
 			_, recorded, _, err := plain.ReadRunning(b.installation, b.owners.landing.plainProve)
 			helmMust(t, err)
 			if !recorded {
@@ -957,7 +957,7 @@ func TestLandingClassifyRechecksBudgetAtFullAdmission(t *testing.T) {
 		return plain.Git(dir, args...)
 	}
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
-	if !intervened || b.executions(t) != 2 {
+	if !intervened || b.executions(t) != 3 {
 		t.Fatalf("classification bypassed budget at fresh admission: intervened=%v count=%d", intervened, b.executions(t))
 	}
 	stops, err := plain.OpenStops(b.installation)

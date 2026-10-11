@@ -74,10 +74,12 @@ type NativeInventoryRequest struct {
 	Packages, BuildTags, Tests []string
 	Race, Coverage             bool
 	OnlyTaggedTests            bool
-	Root                       string
-	LogRoot                    string
-	Environment                []string
-	Workers                    int
+	// Unsharded keeps an isolated replay in one package execution.
+	Unsharded   bool
+	Root        string
+	LogRoot     string
+	Environment []string
+	Workers     int
 	// Progress reports the selected package executions before and during the run.
 	Progress func(planned int, completed []PackageExecution)
 }
@@ -187,6 +189,9 @@ func runNativeInventory(ctx context.Context, request NativeInventoryRequest, byP
 	partitions := partitionGoTests(expected, discovery.Inventory, discovery.ModulePrefix, request.Workers)
 	if byPackage {
 		partitions = partitionNativePackages(expected, discovery.Inventory, discovery.ModulePrefix, request.Workers)
+	}
+	if request.Unsharded {
+		partitions = partitionGoTests(expected, discovery.Inventory, discovery.ModulePrefix, 1)
 	}
 	outcome, closeErr, coverageMerge, executions, launchErr := runGoPartitions(ctx, nativeRequest, group, request.Root, environment, expected,
 		partitions, limits, sampleInterval, result.LogPath, &output, goCacheFacts{})

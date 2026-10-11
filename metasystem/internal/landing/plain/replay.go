@@ -3,6 +3,7 @@ package plain
 import (
 	"errors"
 	"fmt"
+	"go/token"
 	"io"
 	"os"
 	"os/exec"
@@ -10,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // classifyRed applies the first-match cause table. The caller supplies the
@@ -246,6 +249,7 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 // classifyReplay attributes only a complete isolated failure after a complete
 // isolated green. It neither turns the full red green nor spends a repeat.
 func classifyReplay(seams ProveSeams, install, checkout, command string, running Running, result, previous Result, trees []replayTree) Result {
+	result.Replay = ""
 	for i, prefix := range trees {
 		if !running.Trunk && result.ClassificationPerson == nil {
 			if _, err := CheckBatch(install, checkout, prefix.Commit, "", true, seams); err != nil {
@@ -281,21 +285,76 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 		var mainChecks []Result
 		recordingMain := i == 0 && prefix.Main && prefix.Tree != running.Tree && seams.RecordMain != nil
 		units := make([]string, len(result.Failed))
+		var tests, forms, wholeForms []string
+		named := false
+		contract, _ := testpolicy.Load(filepath.Join(dir, "testing.json"))
 		for j, unit := range result.Failed {
 			units[j] = unit.Unit
+			wholeForm := "replay: whole unit " + unit.Unit
+			wholeForms = append(wholeForms, wholeForm)
+			// Only a package unit replays by name. A contract group (go-batchtest, a command group, a section) keeps the whole-unit replay:
+			// its reporter runs the group as one command and cannot drop a name that is absent on the replayed tree, so a named red there would be blamed on main.
+			goUnit := strings.Contains(unit.Unit, "/") && !strings.HasPrefix(unit.Unit, "section/")
+			for _, group := range contract.Groups {
+				if group.ID == unit.Unit {
+					goUnit = false
+					break
+				}
+			}
+			if len(unit.Tests) == 0 || !goUnit {
+				forms = append(forms, wholeForm)
+				continue
+			}
+			if slices.ContainsFunc(unit.Tests, func(name string) bool {
+				return !token.IsIdentifier(name) || !strings.HasPrefix(name, "Test") || name == "TestMain"
+			}) {
+				forms = append(forms, "named replay invalid test identity: whole unit; "+wholeForm)
+				continue
+			}
+			named = true
+			tests = append(tests, unit.Tests...)
+			forms = append(forms, fmt.Sprintf("replay: %d named tests of %s", len(unit.Tests), unit.Unit))
+			// Multiple units keep each package's names in its own selector.
+			if len(result.Failed) > 1 {
+				units[j] += "=" + strings.Join(unit.Tests, ",")
+			}
 		}
 		prefix.Log = filepath.Join(Dir(install), "proofs", prefix.Attempt+".log")
 		file, err := os.Create(prefix.Log)
 		if err != nil {
 			complete = false
 		} else {
+			form := strings.Join(forms, "; ")
 			result.Cause.Evidence = prefix.Log
 			prefix.Since = seams.now().UTC().Format(time.RFC3339)
-			report, runErr := runCheck(seams, dir, command, prefix.Running, strings.Join(units, " "), scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, file, &proofOutput{output: io.Discard})
+			run := func(selectors, names []string) (checkReport, bool) {
+				report, runErr := runCheck(seams, dir, command, prefix.Running, strings.Join(selectors, " "), scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, file, &proofOutput{output: io.Discard}, names...)
+				var exit *exec.ExitError
+				return report, report.kind == "complete" && (runErr == nil || len(report.failed) > 0 && (!errors.As(runErr, &exit) || exit.Exited()))
+			}
+			report, done := run(units, tests)
+			if named && (!done || len(report.failed) == 0) {
+				reason := "named replay incomplete: whole unit"
+				if done {
+					reason = "named replay green on prefix: whole-unit replay ran"
+					if prefix.Main {
+						reason = "named replay green on main: whole-unit replay ran"
+					}
+				}
+				form = reason + "; " + strings.Join(wholeForms, "; ")
+				fmt.Fprintln(file, form)
+				for j, unit := range result.Failed {
+					units[j] = unit.Unit
+				}
+				report, done = run(units, nil)
+			}
 			closeErr := file.Close()
-			var exit *exec.ExitError
-			complete = report.kind == "complete" && closeErr == nil && (runErr == nil || len(report.failed) > 0 && (!errors.As(runErr, &exit) || exit.Exited()))
+			complete = done && closeErr == nil
 			failed = complete && len(report.failed) > 0
+			if result.Replay != "" {
+				result.Replay += "; "
+			}
+			result.Replay += form
 			if complete && failed && recordingMain {
 				mainChecks = append(mainChecks, timedResult(Result{Result: Red, Commit: prefix.Commit, Tree: prefix.Tree,
 					Attempt: prefix.Attempt, Log: prefix.Log, Failed: report.failed}, prefix.Since, seams.now()))

@@ -86,7 +86,7 @@ func TestBatchPassRunsOnlyTaggedTestsAndReportsEmptyPass(t *testing.T) {
 				}
 				return ""
 			}
-			code := runHost(&out, &problem, getenv, func(argv []string, _, _ io.Writer) error { t.Fatalf("unexpected command %v", argv); return nil }, "../../testing.json", hooks)
+			code := runHost(&out, &problem, getenv, func(argv []string, _, _ io.Writer) error { t.Fatalf("unexpected command %v", argv); return nil }, "testdata/testing.json", hooks)
 			wantExit, status := 0, "green"
 			if mode == "failure" {
 				wantExit, status = 1, "red"
@@ -237,8 +237,8 @@ func TestB(t *testing.T) { t.Parallel() }
 				return nil
 			}
 			var out, problem bytes.Buffer
-			code := runHost(&out, &problem, func(string) string { return "" }, command, "../../testing.json", hooks)
-			contract, err := testpolicy.Load("../../testing.json")
+			code := runHost(&out, &problem, func(string) string { return "" }, command, "testdata/testing.json", hooks)
+			contract, err := testpolicy.Load("testdata/testing.json")
 			if err != nil {
 				t.Fatal(err)
 			}

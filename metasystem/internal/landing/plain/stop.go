@@ -171,6 +171,7 @@ func recordProofStop(install string, result Result) error {
 		return nil
 	}
 	s := Stop{ProofAttempt: result.Attempt, Loop: "lane-proof", Tree: result.Tree, BatchID: result.BatchID, Scope: result.Scope, Trunk: result.Trunk, Budget: 2, Cause: result.Cause, Class: strings.Join(result.Cause.Tests, ", "), Evidence: result.Cause.Evidence, At: result.At}
+	s.Replay = result.Replay
 	if len(result.Goals) == 1 && result.Cause.Kind == "unclassified" {
 		cause := *result.Cause
 		cause.Goal = result.Goals[0].Goal

@@ -314,7 +314,7 @@ func TestLandingMergeGateOwnReturnAndBaselineFailure(t *testing.T) {
 				t.Fatalf("classification: %+v runs=%v", red, b.runs)
 			}
 			if cause == "own" {
-				if red.Cause.Goal != "b" || red.Cause.SHA != "sha-b" || !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-a:u/a"}) {
+				if red.Cause.Goal != "b" || red.Cause.SHA != "sha-b" || !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-a:u/a", "merge-a:u/a"}) {
 					t.Fatalf("gate replay: %+v runs=%v", red, b.runs)
 				}
 				data, err := os.ReadFile(red.Cause.Evidence)
@@ -494,7 +494,7 @@ func TestLandingMergeGateUsesRecordedRedAndKeepsFullAllowance(t *testing.T) {
 		return "LANDING-CHECKED\t0\n", nil
 	}
 	first := gateResult(t, b, 1)
-	if first.Repeat != "" || first.Cause.Kind != "own" || first.Cause.Goal != "b" || !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-a:u/a"}) {
+	if first.Repeat != "" || first.Cause.Kind != "own" || first.Cause.Goal != "b" || !reflect.DeepEqual(b.runs, []string{"merge-a:", "merge-b:", "merge-a:u/a", "merge-a:u/a"}) {
 		t.Fatalf("full proof supplied gate baseline or spent its repeat: %+v runs=%v", first, b.runs)
 	}
 	before := len(b.runs)

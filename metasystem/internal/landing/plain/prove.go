@@ -81,6 +81,7 @@ type Result struct {
 	ClassificationPolicy  PolicyValue          `json:"classification-policy,omitempty,omitzero"`
 	ClassificationWarning string               `json:"classification-warning,omitempty"`
 	ClassificationPending bool                 `json:"classification-pending,omitempty"`
+	Replay                string               `json:"replay,omitempty"`
 	ClassificationPerson  *ActProvenance       `json:"classification-person,omitempty"`
 	ObservedIncidents     []goal.TrunkRedEntry `json:"observed-incidents,omitempty"`
 	Person                *ActProvenance       `json:"person,omitempty"`
@@ -1070,7 +1071,7 @@ func boundedFetch(dir string, timeout time.Duration, prepare func(*exec.Cmd), de
 
 // runCheck gives the shell files, so a descendant holding its output open
 // cannot delay its exit. Both protocols are read from this run's log bytes.
-func runCheck(seams ProveSeams, dir, command string, running Running, only string, decision scopeDecision, output io.Writer, observed *proofOutput) (checkReport, error) {
+func runCheck(seams ProveSeams, dir, command string, running Running, only string, decision scopeDecision, output io.Writer, observed *proofOutput, tests ...string) (checkReport, error) {
 	if only == "" && (decision.Scope == "full" || decision.Scope == "scoped" || decision.Scope == "impact") {
 		if running.Admission == nil || running.Admission.State != "claimed" || !running.Admission.matches(running) || running.Admission.Scope != decision.Scope || (running.Admission.Command != "" && running.Admission.Command != command) {
 			return checkReport{}, fmt.Errorf("this execution has no matching claimed check admission")
@@ -1114,6 +1115,7 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 		enginePath = filepath.Dir(executable) + string(os.PathListSeparator) + enginePath
 	}
 	shell.Env = append(os.Environ(), "PATH="+enginePath, "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit, "LANDING_ONLY="+only,
+		"LANDING_ONLY_TESTS="+strings.Join(tests, " "),
 		"LANDING_PROOF_SCOPE="+decision.Scope, "LANDING_PROOF_BASE="+base, "LANDING_PROOF_GROUPS="+strings.Join(decision.groupIDs(), " "))
 	shell.Stdout, shell.Stderr = log, log
 	run := seams.Command

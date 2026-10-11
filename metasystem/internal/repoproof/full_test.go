@@ -69,7 +69,7 @@ func TestFullReportsPackageFailuresAndRunsOnlyRequestedPackage(t *testing.T) {
 					return "metasystem/internal/config"
 				}
 				return ""
-			}, command, "../../testing.json", hooks)
+			}, command, "testdata/testing.json", hooks)
 			want := 1
 			if tc.status == "ok" {
 				want = 0
@@ -139,12 +139,18 @@ func TestFullVMTransfersCommitAndKeepsReportLast(t *testing.T) {
 				return c.Run()
 			}
 			exit := run(&out, &stderr, func(key string) string {
+				if key == "LANDING_ONLY_TESTS" {
+					return "TestA TestB"
+				}
 				if key == "LANDING_COMMIT" {
 					return commit
 				}
 				return ""
-			}, command, "../../testing.json")
+			}, command, "testdata/testing.json")
 			data, err := os.ReadFile(log)
+			if !strings.Contains(string(data), "LANDING_ONLY_TESTS="+shellQuote("TestA TestB")) {
+				t.Fatalf("VM dropped named replay: %s", data)
+			}
 			if exit != 1 || err != nil || out.String() != "VM native output\nLANDING-FAILED\tfixture/vm\tTestVM\nLANDING-CHECKED\t1\n" {
 				t.Fatalf("exit=%d output=%s stderr=%s args=%s err=%v", exit, &out, &stderr, data, err)
 			}
@@ -285,7 +291,7 @@ func TestRepositorySectionRunnerExecutesArchiveWithoutGit(t *testing.T) {
 	if err := os.MkdirAll(module, 0755); err != nil {
 		t.Fatal(err)
 	}
-	contract, err := testpolicy.Load("../../testing.json")
+	contract, err := testpolicy.Load("testdata/testing.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -409,6 +415,9 @@ func TestFullReplaySelectionsKeepGroupsAndPackagesSeparate(t *testing.T) {
 				}
 				return results, nil
 			}, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+				if request.Unsharded != (len(request.Tests) > 0) {
+					t.Fatalf("replay partition=%+v", request)
+				}
 				if len(request.Packages) != 1 {
 					t.Fatalf("packages=%v", request.Packages)
 				}
@@ -424,11 +433,14 @@ func TestFullReplaySelectionsKeepGroupsAndPackagesSeparate(t *testing.T) {
 				hooks.Native = nil
 			}
 			code := runHost(&out, &problem, func(key string) string {
+				if key == "LANDING_ONLY_TESTS" {
+					return "TestA TestB"
+				}
 				if key == "LANDING_ONLY" {
 					return selections
 				}
 				return ""
-			}, nil, "../../testing.json", hooks)
+			}, nil, "testdata/testing.json", hooks)
 			if unknown {
 				if code != 1 || !strings.HasSuffix(out.String(), "LANDING-NOT-RUN\tenvironment\n") {
 					t.Fatalf("unknown selection exit=%d out=%s error=%s", code, &out, &problem)
@@ -545,7 +557,7 @@ chmod +x "$3"
 // taken out of its cadence list, so a landing proves that section.
 func landingContractWithoutCadence(t *testing.T, id string) string {
 	t.Helper()
-	data, err := os.ReadFile("../../testing.json")
+	data, err := os.ReadFile("testdata/testing.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -569,4 +581,47 @@ func landingContractWithoutCadence(t *testing.T, id string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func TestFullReplayDropsAbsentNamesButKeepsMissingTerminals(t *testing.T) {
+	t.Parallel()
+	for _, terminal := range []bool{false, true} {
+		t.Run(fmt.Sprintf("terminal=%t", terminal), func(t *testing.T) {
+			t.Parallel()
+			var out, stderr bytes.Buffer
+			const pkg = "example.com/replay/internal/p"
+			hooks := HostRunners{Environment: func() (string, error) { return "fixture", nil }, Native: func(request proofrun.NativeInventoryRequest) (proofrun.NativeInventoryResult, error) {
+				if !reflect.DeepEqual(request.Tests, []string{"TestAbsent", "TestPresent"}) || !request.Unsharded {
+					t.Fatalf("request=%+v", request)
+				}
+				result := proofrun.NativeInventoryResult{
+					Execution: []proofrun.PackageExecution{{Package: pkg, Shard: 1, Status: "ok"}},
+					Missing:   []proofrun.NativeTestIdentity{{Name: "TestAbsent", Status: "missing"}},
+				}
+				if terminal {
+					result.Execution[0].Status = "missing"
+					result.Missing = append(result.Missing, proofrun.NativeTestIdentity{Classname: pkg, Name: "TestPresent", Status: "missing-terminal"})
+				} else {
+					result.Observed = []proofrun.NativeTestIdentity{{Classname: pkg, Name: "TestPresent", Status: "passed"}}
+				}
+				return result, nil
+			}}
+			code := runHost(&out, &stderr, func(key string) string {
+				if key == "LANDING_ONLY" {
+					return "metasystem/internal/p"
+				}
+				if key == "LANDING_ONLY_TESTS" {
+					return "TestAbsent TestPresent"
+				}
+				return ""
+			}, nil, "testdata/testing.json", hooks)
+			wantCode, suffix := 0, "LANDING-CHECKED\t0\n"
+			if terminal {
+				wantCode, suffix = 1, "LANDING-FAILED\texample.com/replay/internal/p\tTestPresent(did not report)\nLANDING-CHECKED\t1\n"
+			}
+			if code != wantCode || !strings.HasSuffix(out.String(), suffix) || strings.Contains(out.String(), "TestAbsent(did not report)") {
+				t.Fatalf("exit=%d out=%s stderr=%s", code, &out, &stderr)
+			}
+		})
+	}
 }
