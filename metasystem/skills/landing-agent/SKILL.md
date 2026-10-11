@@ -93,20 +93,25 @@ human return restores no automatic allowance.
    For `own`, run ONE fix round as the goal's seat in the lane checkout, whose detached
    HEAD is the batch commit. Keep every red of the batch proof's gate in that one fix job; never
    start a second fix round for the same batch proof gate.
-   Write `artifacts/agents/landing/fixes/<attempt>/brief.md`, naming the goal, every
+   The lane owns this allowance (`landing.fix-rounds`, default 1 per batch proof;
+   `landing.fix-minutes`, default 120 minutes per job); the goal's budget is untouched.
+   `<stamp>` is the red proof attempt's timestamp through seconds, for example
+   `20261011T040737` from `20261011T040737.033326000Z`. Keep that stamp through
+   the repair's follow-up proofs; a changed hand-in's new proof gets its own stamp.
+   Write `artifacts/agents/landing/fixes/<attempt>/brief.md` (FILE below), naming the goal, every
    failed unit and test from the proof (including `<unit> (package)` for a package
    failure), the proof log path, and `git diff <batch base main>..HEAD -- metasystem`
    as the change under test. Include this rule verbatim: "fix the goal's code or
    its tests; never loosen or delete a test; if the fix needs a decision of the
    goal's person, stop and say so".
-   Run `metasystem work build GOAL --work lane-fix-1 --brief FILE --check 'metasystem test impact'`.
+   Run `metasystem work build GOAL --work lane-fix-<stamp>-1 --brief FILE --check 'metasystem test impact'`.
    The review commits ONE plain commit on the batch tree through the engine's
    commit path, with message `goal GOAL: lane fix of <units> (fix round 1)` and final
-   paragraph `Goal-Unit: GOAL/lane-fix-1`. Never substitute a git commit or bypass a
+   paragraph `Goal-Unit: GOAL/lane-fix-<stamp>-1`. Never substitute a git commit or bypass a
    guard when the engine refuses. The build/review path records
    `artifacts/agents/landing/fixes/<attempt>.json` with `{goal, units, job, read, commit, state}`;
    while running, status begins `Fixing <units> of GOAL on <sha> (fix round 1)`.
-   Then run `metasystem work review GOAL --work lane-fix-1` for the roster's read,
+   Then run `metasystem work review GOAL --work lane-fix-<stamp>-1` for the roster's read,
    followed by `metasystem landing prove` of the new HEAD. End your turn while the
    proof runs; green goes to `landing push` as usual.
    Red again, a material read finding, or a builder stopped for a decision: run

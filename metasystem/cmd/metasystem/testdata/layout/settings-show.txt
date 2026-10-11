@@ -1,5 +1,7 @@
-28 settings of m1e · 4 configured · 24 defaults
+30 settings of m1e · 4 configured · 26 defaults
 
+landing.fix-minutes                  120               default
+landing.fix-rounds                   1                 default
 launch.brief.admitted.tokens         120000            default
 launch.build.effort                  xhigh             default
 launch.build.max.changed.lines       1500              default
@@ -28,3 +30,8 @@ launch.seat.runtime                  off               default
 launch.seat.window.tokens            0                 default
 launch.unit.counted.rounds           6                 default
 launch.wait.cap.seconds              240               default
+
+landing.fix-minutes: minutes allowed for each lane fix job, independent of the goal budget
+
+landing.fix-rounds: fix rounds the lane allows per red batch proof attempt, independent of the goal
+  budget

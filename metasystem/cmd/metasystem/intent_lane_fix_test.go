@@ -2,12 +2,17 @@ package main
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +25,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -47,7 +54,12 @@ func writeLaneFixJSON(t *testing.T, path string, value any) {
 
 func newLaneFixBed(t *testing.T) *laneFixBed {
 	t.Helper()
-	c := &connectionBed{workBed: newWorkBed(t), t: t, edits: map[string]string{"code.go": "package fixture\n"}}
+	return newLaneFixBedWith(t, workApprovedBox)
+}
+
+func newLaneFixBedWith(t *testing.T, amend func(*goal.GoalFile)) *laneFixBed {
+	t.Helper()
+	c := &connectionBed{workBed: newWorkBedWith(t, amend), t: t, edits: map[string]string{"code.go": "package fixture\n"}}
 	root := c.root()
 	connectionGit(t, root, "init", "-q", "-b", "main")
 	connectionGit(t, root, "config", "user.name", "Fixture")
@@ -211,6 +223,18 @@ func newLaneFixBed(t *testing.T) *laneFixBed {
 	return b
 }
 
+func (b *laneFixBed) fixUnit() string {
+	b.t.Helper()
+	running, _, _, err := plain.ReadRunning(b.root(), plain.ProveSeams{})
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	if fix, err := plain.FixForAttempt(b.root(), running.Attempt); err == nil && fix != nil {
+		return fix.Unit()
+	}
+	return (plain.Fix{Attempt: running.Attempt, Round: 1}).Unit()
+}
+
 func (b *laneFixBed) run(args ...string) (int, intentResult) {
 	b.t.Helper()
 	command, rest, ok := resolveIntentArgv(args)
@@ -238,7 +262,7 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 	if err := os.WriteFile(brief, []byte("Repair the fixture.\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
-	code, built := b.run("work", "build", b.id, "--work", "lane-fix-1", "--brief", brief, "--lines", "2", "--check", "metasystem test impact")
+	code, built := b.run("work", "build", b.id, "--work", b.fixUnit(), "--brief", brief, "--lines", "2", "--check", "metasystem test impact")
 	if code != 0 || resultData(t, built)["state"] != "awaiting-judgement" {
 		t.Fatalf("build: %d %s", code, built.Summary)
 	}
@@ -260,7 +284,7 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 	if worktrees := connectionGit(t, b.root(), "worktree", "list", "--porcelain"); strings.Count(worktrees, "worktree ") != 1 {
 		t.Fatalf("prepared goal worktree: %s", worktrees)
 	}
-	code, reviewed := b.run("work", "review", b.id, "--work", "lane-fix-1")
+	code, reviewed := b.run("work", "review", b.id, "--work", b.fixUnit())
 	if trace, err := os.ReadFile(b.hookTrace); err != nil || !strings.Contains(string(trace), "hook") {
 		t.Fatalf("engine commit skipped real hook: %s %v", trace, err)
 	}
@@ -277,7 +301,7 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 	if count := connectionGit(t, b.root(), "rev-list", "--count", head+"..HEAD"); count != "1" {
 		t.Fatalf("fix commits: %s", count)
 	}
-	want := "goal " + b.id + ": lane fix of package-a, package-b (fix round 1)\n\nGoal-Unit: " + b.id + "/lane-fix-1"
+	want := "goal " + b.id + ": lane fix of package-a, package-b (fix round 1)\n\nGoal-Unit: " + b.id + "/" + b.fixUnit()
 	if message := connectionGit(t, b.root(), "show", "-s", "--format=%B", "HEAD"); message != want {
 		t.Fatalf("message %q, want %q", message, want)
 	}
@@ -288,7 +312,7 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 	if err != nil || fix == nil || fix.Commit != commit || fix.Read != "lane-read" || fix.Verdict == "" || fix.State != "reviewing" {
 		t.Fatalf("review record %+v: %v", fix, err)
 	}
-	code, _ = b.run("work", "review", b.id, "--work", "lane-fix-1")
+	code, _ = b.run("work", "review", b.id, "--work", b.fixUnit())
 	if code != 0 || connectionGit(t, b.root(), "rev-parse", "HEAD") != commit {
 		t.Fatal("repeated review made another commit")
 	}
@@ -305,7 +329,7 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 		return branch.BranchReadResult{}, 1, fmt.Errorf("fixture retry reached the committed-read owner")
 	}
 	for _, args := range [][]string{
-		{"work", "review", b.id, "--work", "lane-fix-1", "--retry", "1"},
+		{"work", "review", b.id, "--work", b.fixUnit(), "--retry", "1"},
 		{"work", "review", "--commit", commit[:12], "--goal", b.id, "--retry", "1"},
 	} {
 		code, result := b.run(args...)
@@ -361,7 +385,7 @@ func TestLaneFixCustodyRejectsOutsidersAndStaleAttempts(t *testing.T) {
 			case "attached branch":
 				connectionGit(t, b.root(), "checkout", "-b", "other")
 			}
-			code, result := b.run("work", "build", b.id, "--work", "lane-fix-1", "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact")
+			code, result := b.run("work", "build", b.id, "--work", b.fixUnit(), "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact")
 			if code == 0 || result.Outcome != intentRefused {
 				t.Fatalf("unauthorized build: %d %s", code, result.Summary)
 			}
@@ -375,7 +399,7 @@ func TestLaneFixCustodyRejectsOutsidersAndStaleAttempts(t *testing.T) {
 func TestLaneFixCheckDoesNotGrantManualOverride(t *testing.T) {
 	t.Parallel()
 	b := newLaneFixBed(t)
-	code, result := b.run("work", "build", b.id, "--work", "lane-fix-1", "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "/usr/bin/true")
+	code, result := b.run("work", "build", b.id, "--work", b.fixUnit(), "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "/usr/bin/true")
 	if code == 0 || !strings.Contains(result.Summary, "manual check needs") {
 		t.Fatalf("manual override: exit %d, %s", code, result.Summary)
 	}
@@ -397,7 +421,7 @@ func TestLaneFixBuildRefusesPrimaryCheckoutWithSelectedLane(t *testing.T) {
 		return b.root(), nil
 	}, noExecutable)
 	// Selecting the lane installation must not turn the caller's primary checkout into the lane.
-	command, rest, _ := resolveIntentArgv([]string{"work", "build", b.id, "--repo", b.root(), "--work", "lane-fix-1", "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact"})
+	command, rest, _ := resolveIntentArgv([]string{"work", "build", b.id, "--repo", b.root(), "--work", b.fixUnit(), "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact"})
 	b.owners.connection.claimCheck = func(string, string, goal.Endpoint) func() error {
 		return func() error { return fmt.Errorf("the live seat holds the goal") }
 	}
@@ -442,7 +466,7 @@ func TestLaneFixBuildAllowanceCannotRestartOrRebuild(t *testing.T) {
 			if err := plain.WriteFix(b.root(), &fix); err != nil {
 				t.Fatal(err)
 			}
-			code, result := b.run("work", "build", b.id, "--work", "lane-fix-1", "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact")
+			code, result := b.run("work", "build", b.id, "--work", b.fixUnit(), "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact")
 			if code == 0 {
 				t.Fatalf("second builder ran: %s", result.Summary)
 			}
@@ -490,10 +514,10 @@ func init() {
 func TestLaneFixCommittedReadOwnerRealProcess(t *testing.T) {
 	t.Parallel()
 	b := newLaneFixBed(t)
-	if code, result := b.run("work", "build", b.id, "--work", "lane-fix-1", "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact"); code != 0 {
+	if code, result := b.run("work", "build", b.id, "--work", b.fixUnit(), "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact"); code != 0 {
 		t.Fatalf("build %d %s", code, result.Summary)
 	}
-	if code, result := b.run("work", "review", b.id, "--work", "lane-fix-1"); code != 0 {
+	if code, result := b.run("work", "review", b.id, "--work", b.fixUnit()); code != 0 {
 		t.Fatalf("review %d %s", code, result.Summary)
 	}
 	executable, err := os.Executable()
@@ -521,5 +545,389 @@ func TestLaneFixGenericClaimOwnerRealProcessRefusesCustody(t *testing.T) {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		t.Fatalf("generic claim owner: %v %s", err, output)
+	}
+}
+
+func readLaneFixGoalFixture(t *testing.T) *goal.GoalFile {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join("testdata", "lane_fix_goal.md"))
+	if err != nil {
+		t.Fatalf("lane fix goal fixture can't be read: %v", err)
+	}
+	file, problems := goal.ParseFile(raw)
+	if len(problems) > 0 || file.Budget == nil {
+		t.Fatalf("lane fix goal fixture has no valid budget: %v", problems)
+	}
+	return file
+}
+
+func TestLaneFixLapsedGoalBoxAdmitsBuild(t *testing.T) {
+	t.Parallel()
+	realGoal := readLaneFixGoalFixture(t)
+	b := newLaneFixBedWith(t, func(file *goal.GoalFile) {
+		box := *realGoal.Budget
+		file.Budget = &box
+		file.Budget.ElapsedLimit = "1m"
+		file.Budget.ReviewRoundLimit = 0
+		file.Budget.AttemptLimit = 1
+		file.Budget.ReservedJobMinutesLimit = 1
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	contract, err := os.ReadFile(filepath.Join("..", "..", "testing.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	realContract, err := testpolicy.Decode(contract)
+	if err != nil {
+		t.Fatal(err)
+	}
+	selected, err := testpolicy.Select(realContract, testpolicy.SelectionRequest{
+		ChangedPaths:  []string{"metasystem/cmd/metasystem/intent_lane_fix.go", "metasystem/internal/config/defaults.go", "metasystem/skills/landing-agent/SKILL.md"},
+		GoalRisk:      testpolicy.GoalRisk{Severity: int(realGoal.Risk.Severity), Novelty: int(realGoal.Risk.Novelty), Exposure: int(realGoal.Risk.Exposure), Accumulation: int(realGoal.Risk.Accumulation)},
+		RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDiagnostic,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := testrun.PlanOutputOf(testrun.Preparation{EffectiveContract: realContract, Plan: selected})
+	if len(output.Groups) == 0 || len(output.Plan.RequiredGroups) == 0 {
+		t.Fatalf("real testing plan is empty: %+v", output.Plan)
+	}
+	t.Logf("real testing plan mode=%s required=%v", output.Plan.ExecutedMode, output.Plan.RequiredGroups)
+	if err := os.WriteFile(filepath.Join(b.root(), "testing.json"), contract, 0600); err != nil {
+		t.Fatal(err)
+	}
+	before := b.goalFile(b.id)
+	spending := dispatchcore.ProjectBudget(b.root(), before, b.manager.Now())
+	if code, ordinary := b.run("work", "build", b.id, "--work", "ordinary", "--brief", b.brief("ordinary.md", "Build ordinary work.\n"), "--lines", "2"); code == 0 || !strings.Contains(ordinary.Summary, "not approved with a budget yet") {
+		t.Fatalf("ordinary work escaped goal admission: %s", ordinary.Summary)
+	}
+	args := []string{"work", "build", b.id, "--work", b.fixUnit(), "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact"}
+	code, result := b.run(args...)
+	if code != 0 || strings.Contains(result.Summary, "not approved with a budget yet") {
+		t.Fatalf("lane allowance refused: exit %d %s", code, result.Summary)
+	}
+	after := b.goalFile(b.id)
+	charged := dispatchcore.ProjectBudget(b.root(), after, b.manager.Now())
+	if !reflect.DeepEqual(before, after) || charged.Attempts != spending.Attempts || charged.ReservedJobMinutes != spending.ReservedJobMinutes || charged.ActiveJobs != spending.ActiveJobs {
+		t.Fatalf("lane repair spent goal budget: before=%+v after=%+v", spending, charged)
+	}
+	runs, err := b.owners.work.units(stateroot.Layout{}).NamedWork(b.root(), b.id)
+	if err != nil || len(runs) != 1 {
+		t.Fatalf("plan runs %+v: %v", runs, err)
+	}
+	plan, err := launch.ReadUnitPlan(filepath.Join(runs[0].Record.Rounds[0].Directory, "plan.json"))
+	if err != nil || plan.Check == nil || plan.Check.Cheap != "metasystem test impact --check" || runs[0].Record.MaxRounds != 1 {
+		t.Fatalf("real build plan %+v: %v", plan, err)
+	}
+	t.Logf("real contract schema, captured ledger budget and emitted plan: unit=%s check=%s", plan.Unit, plan.Check.Cheap)
+	records, err := b.manager.Store.List()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, record := range records {
+		var text string
+		if err := json.Unmarshal(record.AdapterData["deadline"], &text); err != nil {
+			t.Fatal(err)
+		}
+		deadline, err := time.Parse(time.RFC3339Nano, text)
+		started, _ := time.Parse(time.RFC3339Nano, record.StartedAt)
+		if err != nil || deadline.Sub(started) != 120*time.Minute {
+			t.Fatalf("lane job's box: %s %s %v", record.ID, text, err)
+		}
+	}
+	if code, result := b.run(args...); code != 0 {
+		t.Fatalf("idempotent repeat: %s", result.Summary)
+	}
+	repeated, _ := b.manager.Store.List()
+	if len(repeated) != len(records) {
+		t.Fatal("repeat launched a second repair")
+	}
+}
+
+func init() {
+	testHelperCommands["fixture-lane-real-read-dispatch"] = func(args []string) int {
+		root, id, commit, brief := args[0], args[1], args[2], args[3]
+		read, code, err := goalBranchReadRun([]string{"--root", root, "--goal", id, "--unit", commit, "--brief", brief}, goalBranchReadDependencies{
+			Gate: func(string) (string, error) { return "fixture-green", nil },
+			Delegator: func(request delegateRequest, stdout, stderr io.Writer) int {
+				return runDelegateWith(request, stdout, io.MultiWriter(stderr, os.Stderr))
+			},
+		})
+		if err != nil || code != 0 || read.RootJob == "" {
+			fmt.Fprintf(os.Stderr, "real lane read dispatch: %+v code=%d err=%v\n", read, code, err)
+			return 1
+		}
+		fmt.Fprintln(os.Stdout, read.RootJob)
+		return 0
+	}
+}
+
+// Real Git, custody, the committed-read owner, dispatch admission and the fake
+// runtime adapter prove a lapsed goal cannot deny or pay for the lane's read.
+func TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch(t *testing.T) {
+	t.Parallel()
+	realGoal := readLaneFixGoalFixture(t)
+	b := newLaneFixBedWith(t, func(file *goal.GoalFile) {
+		box := *realGoal.Budget
+		box.ElapsedLimit, box.ReviewRoundLimit = "1m", 0
+		file.Budget = &box
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, box, file.Risk)
+	})
+	brief := b.brief("fix.md", "Repair the fixture.\n")
+	if code, result := b.run("work", "build", b.id, "--work", b.fixUnit(), "--brief", brief, "--lines", "2", "--check", "metasystem test impact"); code != 0 {
+		t.Fatalf("build: %d %s", code, result.Summary)
+	}
+	// Commit through the repair owner, leaving its read for the real dispatch.
+	b.owners.delivery.branchRead = func([]string) (branch.BranchReadResult, int, error) { return branch.BranchReadResult{}, 0, nil }
+	if _, result := b.run("work", "review", b.id, "--work", b.fixUnit()); result.Outcome != intentInProgress {
+		t.Fatalf("commit: %s", result.Summary)
+	}
+	commit := connectionGit(t, b.root(), "rev-parse", "HEAD")
+	before := dispatchcore.ProjectBudget(b.root(), b.goalFile(b.id), time.Now())
+	if before.Elapsed < time.Minute {
+		t.Fatalf("fixture has no elapsed breach: %+v", before)
+	}
+	module, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, asset := range []string{"docs", "skills"} {
+		if output, err := exec.Command("cp", "-R", filepath.Join(module, asset), b.root()).CombinedOutput(); err != nil {
+			t.Fatalf("install %s: %v %s", asset, err, output)
+		}
+	}
+	enginePath := filepath.Join(b.root(), "bin", "metasystem")
+	if err := os.Remove(enginePath); err != nil {
+		t.Fatal(err)
+	}
+	engine := testenv.Link(t, testenv.Engine(t), enginePath)
+	engineBytes, err := os.ReadFile(engine)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeLaneFixJSON(t, filepath.Join(b.root(), "artifacts", "agents", "steward", "identity.json"), map[string]any{
+		"repoIdentity": b.root(), "generation": 1, "installPath": engine,
+		"installDigest": fmt.Sprintf("sha256:%x", sha256.Sum256(engineBytes)), "mintedAt": "1970-01-01T00:00:00Z", "enrollment": "fixture",
+	})
+	conf := filepath.Join(b.root(), "metasystem.conf")
+	configBytes, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	configBytes = append(configBytes, []byte("\nrole.code-critic.runtime=fake\nrole.code-critic.model.fake=fake-model\nlanding.fix-minutes=7\nmetasystem.budget.review-round-max=6\nevidence.root="+t.TempDir()+"\n")...)
+	if err := os.WriteFile(conf, configBytes, 0600); err != nil {
+		t.Fatal(err)
+	}
+	fixture := pinProofBinaryFixture(t, b.root())
+	env := append(os.Environ(), "HOME="+b.registry, "METASYSTEM_BIN="+engine, "METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.registry, "METASYSTEM_AGENT_RUNTIME=fake")
+	arm := []string{"up", "--metasystem-root", b.root(), "--repo", b.root()}
+	t.Cleanup(func() {
+		cmd := fixture.command(env, engine, append(arm, "--shutdown")...)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Errorf("shutdown: %v %s", err, output)
+		}
+		if _, err := steward.Disarm(b.root()); err != nil {
+			t.Errorf("disarm fixture steward: %v", err)
+		}
+	})
+	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("probe fixture holder: %s %v", state, err)
+	}
+	start := append(append([]string{}, arm...), "--session", "landing", "--pid", fmt.Sprint(exact.Pid), "--start-time", fmt.Sprint(exact.StartedAt.Unix()), "--tag", "landing", "--owner-lineage", lane.AgentLineage)
+	if output, err := fixture.command(env, engine, start...).CombinedOutput(); err != nil {
+		t.Fatalf("arm real dispatcher: %v %s", err, output)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := fixture.command(append(env, "GO_WANT_BATCH_E2E_COMMAND=1"), executable, "fixture-lane-real-read-dispatch", b.root(), b.id, commit, brief)
+	cmd.Dir = b.root()
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("real dispatch: %v %s", err, output)
+	}
+	job := lastOutputLine(output)
+	var record map[string]any
+	data, err := os.ReadFile(filepath.Join(b.root(), "artifacts", "agents", "jobs", job+".json"))
+	if err != nil || json.Unmarshal(data, &record) != nil {
+		t.Fatalf("dispatched job %q: %v", job, err)
+	}
+	if record["goalId"] != nil || record["reviewRoundLimit"] != float64(6) || record["capMin"] != float64(7) || record["reviews"] != "commit:"+commit || record["runtime"] != "fake" || record["requestedModel"] != "fake-model" {
+		t.Fatalf("lane read allowance/roster: %+v", record)
+	}
+	data, err = os.ReadFile(filepath.Join(b.root(), ".git", "metasystem", "goal-reads", b.id, commit+".json"))
+	if err != nil || json.Unmarshal(data, &record) != nil || record["goal"] != b.id || record["unitCommit"] != commit || record["rootJob"] != job {
+		t.Fatalf("read lost goal/unit identity: %s %v", data, err)
+	}
+	after := dispatchcore.ProjectBudget(b.root(), b.goalFile(b.id), time.Now())
+	if after.CodeCritiques != before.CodeCritiques || after.Attempts != before.Attempts || after.ReservedJobMinutes != before.ReservedJobMinutes {
+		t.Fatalf("read charged the goal: before=%+v after=%+v", before, after)
+	}
+	t.Logf("real committed read admitted: goal=%s commit=%s job=%s, cap=7m rounds=6", b.id, commit, job)
+}
+
+func TestLaneFixGreenAndDisabledAllowanceAdmitNoBuild(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"green", "disabled", "wrong unit"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newLaneFixBed(t)
+			unit := b.fixUnit()
+			switch name {
+			case "green":
+				result, _, err := plain.LastResult(b.root())
+				if err != nil {
+					t.Fatal(err)
+				}
+				result.Result = plain.Green
+				data, _ := json.Marshal(result)
+				if err := os.WriteFile(filepath.Join(plain.Dir(b.root()), "results.jsonl"), append(data, '\n'), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "disabled":
+				file, err := os.OpenFile(filepath.Join(b.root(), "metasystem.conf"), os.O_APPEND|os.O_WRONLY, 0600)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = file.WriteString("\nlanding.fix-rounds=0\n")
+				if closeErr := file.Close(); err != nil || closeErr != nil {
+					t.Fatalf("setting: %v %v", err, closeErr)
+				}
+			case "wrong unit":
+				unit = "lane-fix-20261011T000000-1"
+			}
+			code, result := b.run("work", "build", b.id, "--work", unit, "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact")
+			if code == 0 {
+				t.Fatalf("unauthorized build: %s", result.Summary)
+			}
+			if _, err := os.Stat(filepath.Join(b.root(), "code.go")); !os.IsNotExist(err) {
+				t.Fatal("builder ran without an own red allowance")
+			}
+		})
+	}
+}
+
+func TestLaneFixSpentReturnAndChangedHandInFreshIdentity(t *testing.T) {
+	t.Parallel()
+	b := newLaneFixBed(t)
+	firstUnit := b.fixUnit()
+	if code, result := b.run("work", "build", b.id, "--work", firstUnit, "--brief", b.brief("first.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact"); code != 0 {
+		t.Fatalf("first build: %s", result.Summary)
+	}
+	fix, err := plain.ActiveFix(b.root())
+	if err != nil || fix == nil {
+		t.Fatalf("fix %+v: %v", fix, err)
+	}
+	entry, changed, err := plain.ReturnProven(b.root(), b.id, "own", "still red", false, "", time.Now())
+	want := "the lane's 1 fix round for proof " + fix.RepairProof() + " is spent"
+	if err != nil || !changed || !strings.Contains(entry.Reason, want) || !strings.Contains(entry.Reason, fix.Job) {
+		t.Fatalf("spent return %+v: %v", entry, err)
+	}
+	// The stopped repair's existing owner releases the checkout before the next hand-in.
+	runner := b.owners.work.units(stateroot.Layout{})
+	if _, err := runner.CancelRun(fix.Job); err != nil {
+		t.Fatal(err)
+	}
+	// The changed hand-in belongs to a fresh batch and proof on the same checkout.
+	head := connectionGit(t, b.root(), "rev-parse", "HEAD")
+	if head == entry.SHA {
+		t.Fatal("fixture hand-in did not change")
+	}
+	if _, changed, err := plain.HandIn(b.root(), plain.Line{Goal: b.id, Branch: "goal/" + b.id, SHA: head, Seat: "seat"}); err != nil || !changed {
+		t.Fatalf("changed hand-in: %v", err)
+	}
+	batch, err := plain.ReadBatch(b.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	batch.ID, batch.State, batch.Members = "batch-again", plain.BatchRunning, []plain.GoalSHA{{Goal: b.id, SHA: head}}
+	running := plain.Running{Attempt: "20261012T040737.033326000Z", Commit: head, Tree: "new-batch-tree", BatchID: batch.ID, BatchMembers: batch.Members, Checkpoint: true}
+	red := plain.Result{Attempt: running.Attempt, Commit: head, Tree: running.Tree, BatchID: batch.ID, BatchMembers: batch.Members, Result: plain.Red, Cause: &plain.Cause{Kind: "own", Goal: b.id, SHA: head}, Failed: []plain.FailedUnit{{Unit: "package-a"}}}
+	writeLaneFixJSON(t, filepath.Join(plain.Dir(b.root()), "batch.json"), batch)
+	writeLaneFixJSON(t, filepath.Join(plain.Dir(b.root()), "running.json"), running)
+	data, _ := json.Marshal(red)
+	if err := os.WriteFile(filepath.Join(plain.Dir(b.root()), "results.jsonl"), append(data, '\n'), 0600); err != nil {
+		t.Fatal(err)
+	}
+	unit := b.fixUnit()
+	if unit == firstUnit || unit != "lane-fix-20261012T040737-1" {
+		t.Fatalf("episode identity %q equals %q", unit, firstUnit)
+	}
+	// Make the next repair's own change distinct, as a changed hand-in's brief is.
+	b.edits["code.go"] = "package fixture\n// next episode\n"
+	if code, result := b.run("work", "build", b.id, "--work", unit, "--brief", b.brief("second.md", "Repair the next episode.\n"), "--lines", "3", "--check", "metasystem test impact"); code != 0 || strings.Contains(resultWords(result), "UNIT_NAMED_INPUT_CHANGED") {
+		t.Fatalf("fresh allowance: %s", resultWords(result))
+	}
+	works, err := b.owners.work.units(stateroot.Layout{}).NamedWork(b.root(), b.id)
+	if err != nil || len(works) != 2 {
+		t.Fatalf("episode jobs %+v: %v", works, err)
+	}
+}
+
+func TestSettingsLaneFixKeysAndMeaning(t *testing.T) {
+	t.Parallel()
+	b := newWorkBed(t)
+	owners := b.workOwners()
+	owners.work.config = configSettingWithDefault
+	owners.work.settings = func(string) (launch.Settings, error) { return launch.DefaultSettings(), nil }
+	code, keys, stderr := b.intentBed.run(owners, "settings", "keys")
+	if code != 0 || !strings.Contains(keys, "landing.fix-rounds") || !strings.Contains(keys, "landing.fix-minutes") {
+		t.Fatalf("keys exit %d: %s %s", code, keys, stderr)
+	}
+	if code, text, stderr := b.intentBed.run(owners, "settings", "show"); code != 0 || !strings.Contains(text, "landing.fix-rounds") || !strings.Contains(text, "landing.fix-minutes") || !strings.Contains(text, "independent of the goal budget") {
+		t.Fatalf("show exit %d: %s %s", code, text, stderr)
+	}
+	for key, want := range map[string]string{"landing.fix-rounds": "1", "landing.fix-minutes": "120"} {
+		code, text, stderr := b.intentBed.run(owners, "settings", "show", key)
+		if code != 0 || !strings.Contains(text, key+" is "+want) || !strings.Contains(strings.Join(strings.Fields(text), " "), "independent of the goal budget") {
+			t.Fatalf("%s exit %d: %s %s", key, code, text, stderr)
+		}
+		code, text, stderr = b.intentBed.run(owners, "settings", "show", key, "--json")
+		var result struct {
+			Data struct {
+				Settings []launch.Setting `json:"settings"`
+			} `json:"data"`
+		}
+		if err := json.Unmarshal([]byte(text), &result); err != nil {
+			t.Fatalf("%s JSON: %v: %s", key, err, text)
+		}
+		values := result.Data.Settings
+		if code != 0 || len(values) != 1 || values[0].Key != key || values[0].Value != want || values[0].Source != "default" {
+			t.Fatalf("%s JSON exit %d: %s %s", key, code, text, stderr)
+		}
+	}
+}
+
+func TestLaneFixJobUsesConfiguredMinutes(t *testing.T) {
+	t.Parallel()
+	b := newLaneFixBed(t)
+	conf := filepath.Join(b.root(), "metasystem.conf")
+	raw, err := os.ReadFile(conf)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(conf, append(raw, []byte("\nlanding.fix-minutes=7\n")...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if code, result := b.run("work", "build", b.id, "--work", b.fixUnit(), "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact"); code != 0 {
+		t.Fatalf("build: %s", result.Summary)
+	}
+	records, err := b.manager.Store.List()
+	if err != nil || len(records) == 0 {
+		t.Fatalf("jobs: %v", err)
+	}
+	for _, record := range records {
+		var text string
+		if err := json.Unmarshal(record.AdapterData["deadline"], &text); err != nil {
+			t.Fatal(err)
+		}
+		deadline, err := time.Parse(time.RFC3339Nano, text)
+		started, _ := time.Parse(time.RFC3339Nano, record.StartedAt)
+		if err != nil || deadline.Sub(started) != 7*time.Minute {
+			t.Fatalf("configured job box=%s: %v", text, err)
+		}
 	}
 }

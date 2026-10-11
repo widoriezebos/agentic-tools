@@ -468,13 +468,24 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		params = config.GetParams{Key: "host.builds", ConfPath: intentConfPath(inv.layout), LookupEnv: inv.owners.lookupEnv}
 	}
 	manager.BuildPolicy, manager.BuildPolicyError = params, nil
+	manager.LaunchCap = func(spec launch.StartSpec) (time.Duration, error) {
+		fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), spec.WorkingDirectory, spec.Goal)
+		if fix == nil || spec.Tag != fix.Unit() {
+			return 0, nil
+		}
+		minutes := config.LandingFixLimit(intentConfPath(inv.layout), "landing.fix-minutes")
+		if minutes < 1 {
+			return 0, fmt.Errorf("the lane's landing.fix-minutes must be a positive integer")
+		}
+		return time.Duration(minutes) * time.Minute, nil
+	}
 	runner.Manager = &manager
 	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && inv.checkDirectPersonProof("work "+inv.command.action, false) == nil {
 		runner.Actor = "person"
 	}
 	runner.AdmitDetached = func(plan launch.UnitPlan) bool {
 		fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal)
-		return fix != nil && plan.Base == fix.Parent && plan.Unit == fmt.Sprintf("lane-fix-%d", fix.Round) && fix.Commit == "" && fix.Job == ""
+		return fix != nil && plan.Base == fix.Parent && plan.Unit == fix.Unit() && fix.Commit == "" && fix.Job == ""
 	}
 	runner.FreezeCheck = inv.resolveUnitCheck
 	if inv.input.has("check") {
@@ -518,7 +529,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		}
 		if spec.Kind == "build" {
 			if fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), record.Worktree, record.Goal); fix != nil {
-				if record.Unit != fmt.Sprintf("lane-fix-%d", fix.Round) || len(record.Rounds) != 1 || fix.Job != "" {
+				if record.Unit != fix.Unit() || len(record.Rounds) != 1 || fix.Job != "" {
 					return fmt.Errorf("the lane admits only its recorded fix round")
 				}
 				fix.Job, fix.State = record.ID, "building"
@@ -551,6 +562,9 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 			if problem := inv.selectRoot(); problem != nil {
 				return fmt.Errorf("the execution installation cannot be read: %s", problem.Summary)
 			}
+		}
+		if fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), unit.Worktree, unit.Goal); fix != nil && unit.Unit == fix.Unit() {
+			return nil
 		}
 		projection, _, problem := inv.projection()
 		if problem != nil {
@@ -697,6 +711,9 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	}
 	if err := branch.CheckHolder(inv.laneClaimCheck(conn, inv.layout.InstallationRoot.Path(), record.Goal, endpoint)); err != nil {
 		return err
+	}
+	if fix := conn.laneFix(inv.layout.InstallationRoot.Path(), record.Worktree, record.Goal); fix != nil && record.Unit == fix.Unit() {
+		return nil
 	}
 	projection, now, problem := inv.projection()
 	if problem != nil {
@@ -912,7 +929,8 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 	if file.StopCapability != nil && file.StopCapability.ClaimEpoch == 0 {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: "goal " + id + " is reserved, awaiting session start; nothing was built", next: inv.publicArgv("session", "start"), nextReason: "the owning session adopts the reservation; then repeat this command"})
 	}
-	if file.Budget == nil || file.Budget.ReviewRoundLimit <= 0 {
+	laneFix := inv.laneBuildFix(id, unit)
+	if laneFix == nil && (file.Budget == nil || file.Budget.ReviewRoundLimit <= 0) {
 		return inv.render(intentResult{Outcome: intentRefused, Targets: targets, code: 1,
 			Summary: fmt.Sprintf("goal %s is not approved with a budget yet; nothing was built", id),
 			next:    inv.publicArgv("goal", "approve", id), nextReason: "a person approves it; then repeat this command"})
@@ -977,7 +995,11 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		fmt.Fprintln(inv.stderr, gateResult.Warning[0]+"\n"+gateResult.Warning[1])
 	}
 	runner := inv.unitRunner()
-	request, problem := inv.unitRequest(runner, id, unit, designs, int(file.Budget.ReviewRoundLimit))
+	rounds := 1
+	if laneFix == nil {
+		rounds = int(file.Budget.ReviewRoundLimit)
+	}
+	request, problem := inv.unitRequest(runner, id, unit, designs, rounds)
 	if problem != nil {
 		problem.Targets = targets
 		return inv.render(*problem)
@@ -996,7 +1018,7 @@ func runIntentBuildUnit(inv *intentInvocation) int {
 		}
 		if unit = matched[0]; unit != ambiguous[0] {
 			targets = []intentTarget{{Kind: "goal", ID: id}, {Kind: "work", ID: unit}}
-			if request, problem = inv.unitRequest(runner, id, unit, designs, int(file.Budget.ReviewRoundLimit)); problem != nil {
+			if request, problem = inv.unitRequest(runner, id, unit, designs, rounds); problem != nil {
 				problem.Targets = targets
 				return inv.render(*problem)
 			}
@@ -2283,7 +2305,16 @@ func runIntentSettings(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the launch settings in " + confPath + " can't be read",
 			next: inv.publicArgv("settings", "check"), nextReason: "names what is wrong", Details: []string{err.Error()}})
 	}
-	values := settings.Values
+	values := slices.Clone(settings.Values)
+	for _, key := range []string{"landing.fix-rounds", "landing.fix-minutes"} {
+		if len(inv.input.args) == 0 || inv.input.args[0] == key {
+			value, source, code, err := inv.work().config(key, confPath)
+			if err != nil || code != 0 {
+				return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the lane's fix allowance can't be read", Details: []string{fmt.Sprint(err)}, next: inv.publicArgv("settings", "check")})
+			}
+			values = append(values, launch.Setting{Key: key, Value: value, Source: source})
+		}
+	}
 	if len(inv.input.args) == 1 {
 		key := inv.input.args[0]
 		index := slices.IndexFunc(values, func(value launch.Setting) bool { return value.Key == key })
@@ -2320,6 +2351,19 @@ func runIntentSettings(inv *intentInvocation) int {
 		view:    settingsView(inv.statusSeatName(inv.layout.GitRoot), len(inv.input.args) == 1, values, data["adapters"])})
 }
 
+func showLandingFixMeaning(page *textui.Page, values []launch.Setting) {
+	for _, value := range values {
+		if value.Key != "landing.fix-rounds" && value.Key != "landing.fix-minutes" {
+			continue
+		}
+		for _, definition := range config.CompiledSettings() {
+			if definition.Key == value.Key {
+				page.Section("", "").Text(value.Key + ": " + definition.Meaning)
+			}
+		}
+	}
+}
+
 // settingsView is settings show's page (output-style §6.14): a table of
 // key, value and where the value comes from, sorted by key; a value is
 // shown as stored, since it is pasted back into settings set. One named
@@ -2348,6 +2392,7 @@ func settingsView(seat string, one bool, values []launch.Setting, adapters any) 
 				source = sorted[0].Source
 			}
 			page.Headline(sorted[0].Key+" is "+sorted[0].Value, source)
+			showLandingFixMeaning(page, sorted)
 			return
 		}
 		page.Headline(textui.Count(len(sorted), "setting", "settings")+" of "+seat, facts...)
@@ -2359,6 +2404,7 @@ func settingsView(seat string, one bool, values []launch.Setting, adapters any) 
 			}
 			table.Row(textui.Plain(value.Key), textui.Plain(value.Value), source)
 		}
+		showLandingFixMeaning(page, sorted)
 		if lines, ok := adapters.([]string); ok && len(lines) > 0 {
 			section := page.Section("Adapters", "")
 			for _, line := range lines {

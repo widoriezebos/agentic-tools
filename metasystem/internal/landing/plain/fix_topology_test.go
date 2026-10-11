@@ -29,7 +29,7 @@ func newFixTopologyGitBed(t *testing.T) (*bed, ProveSeams, string) {
 	attempt := 0
 	seams := ProveSeams{Now: func() time.Time { return bedNow }, NewID: func() string {
 		attempt++
-		return fmt.Sprintf("proof-%d", attempt)
+		return fmt.Sprintf("20261011T%06d.033326000Z", 40737+attempt-1)
 	}, Command: func(cmd *exec.Cmd) error {
 		var commit string
 		for _, env := range cmd.Env {
@@ -80,7 +80,7 @@ func recordTopologyFix(t *testing.T, b *bed, parent, message string) Fix {
 func TestLaneFixTopologyRealGitProofAndPush(t *testing.T) {
 	t.Parallel()
 	b, seams, parent := newFixTopologyGitBed(t)
-	fix := recordTopologyFix(t, b, parent, "Goal-Unit: goal-a/lane-fix-1")
+	fix := recordTopologyFix(t, b, parent, "Goal-Unit: goal-a/lane-fix-20261011T040737-1")
 	batch, err := CheckBatch(b.install, b.checkout, fix.Commit, "", false, seams)
 	if err != nil || batch == nil || !slices.Equal(batch.Members, []GoalSHA{{Goal: "goal-a", SHA: b.git(b.checkout, "rev-parse", "origin/goal/goal-a")}}) {
 		t.Fatalf("repair admission %+v: %v", batch, err)
@@ -130,7 +130,7 @@ func TestLaneFixTopologyRealGitMainRefreshProofAndPush(t *testing.T) {
 		t.Run(stage, func(t *testing.T) {
 			t.Parallel()
 			b, seams, parent := newFixTopologyGitBed(t)
-			fix := recordTopologyFix(t, b, parent, "Goal-Unit: goal-a/lane-fix-1")
+			fix := recordTopologyFix(t, b, parent, "Goal-Unit: goal-a/lane-fix-20261011T040737-1")
 			if stage != "red checkpoint" {
 				result, err := Run(b.install, b.checkout, "fixture", "", io.Discard, seams)
 				if err != nil || result.Result != Green {
@@ -182,16 +182,19 @@ func TestLaneFixTopologyRealGitMainRefreshProofAndPush(t *testing.T) {
 
 func TestLaneFixTopologyRealGitRefusals(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"no record", "wrong round", "non-member", "off batch", "stale attempt", "extra paragraph", "closed record", "older checkpoint", "returned member"} {
+	for _, name := range []string{"no record", "malformed stamp", "wrong round", "non-member", "off batch", "stale attempt", "extra paragraph", "closed record", "older checkpoint", "returned member"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b, seams, parent := newFixTopologyGitBed(t)
-			message := "Goal-Unit: goal-a/lane-fix-1"
+			message := "Goal-Unit: goal-a/lane-fix-20261011T040737-1"
+			if name == "malformed stamp" {
+				message = "Goal-Unit: goal-a/lane-fix-20261011T04073-1"
+			}
 			if name == "wrong round" {
-				message = "Goal-Unit: goal-a/lane-fix-2"
+				message = "Goal-Unit: goal-a/lane-fix-20261011T040737-2"
 			}
 			if name == "non-member" {
-				message = "Goal-Unit: other/lane-fix-1"
+				message = "Goal-Unit: other/lane-fix-20261011T040737-1"
 			}
 			if name == "extra paragraph" {
 				message += "\nextra"
@@ -243,7 +246,7 @@ func TestLaneFixTopologyRealGitRedReplayAndReturn(t *testing.T) {
 		t.Run(fmt.Sprint(gate), func(t *testing.T) {
 			t.Parallel()
 			b, seams, parent := newFixTopologyGitBed(t)
-			fix := recordTopologyFix(t, b, parent, "Goal-Unit: goal-a/lane-fix-1")
+			fix := recordTopologyFix(t, b, parent, "Goal-Unit: goal-a/lane-fix-20261011T040737-1")
 			seams.Gate = gate
 			seams.Command = func(cmd *exec.Cmd) error {
 				if strings.Contains(cmd.Args[len(cmd.Args)-1], " test groups fast-static-build") {

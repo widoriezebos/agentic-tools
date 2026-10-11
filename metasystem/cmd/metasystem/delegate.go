@@ -84,6 +84,8 @@ type delegateRequest struct {
 	// derived from; empty is this process's own.
 	engine string
 	args   []string
+	// capMinutes is the authenticated lane repair's per-job allowance.
+	capMinutes int
 	// dir is the working directory relative file arguments resolve against.
 	dir string
 	// environment is configuration the request carries beside this
@@ -130,6 +132,9 @@ func runDelegateWith(request delegateRequest, stdout, stderr io.Writer) int {
 	}
 	if dir != "" {
 		internalArgs = absoluteDelegatePaths(internalArgs, dir)
+	}
+	if request.capMinutes > 0 && mode == "dispatch" {
+		internalArgs = append(internalArgs, "--cap-min", strconv.Itoa(request.capMinutes))
 	}
 	if detail := brain.Fence(root, mode, goal.ExistingLedgerIdentity(root)); detail != "" {
 		writeJSONLine(stdout, stderr, delegateOutcome{Outcome: "BRAIN_REFUSED", Headline: "refused", Detail: detail})

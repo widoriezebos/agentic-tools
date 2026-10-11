@@ -18,16 +18,17 @@ import (
 
 // Fix is one bounded repair of a batch, retained beside its brief.
 type Fix struct {
-	Attempt string   `json:"attempt"`
-	Round   int      `json:"round"`
-	Parent  string   `json:"parent"`
-	Verdict string   `json:"verdict,omitempty"`
-	Goal    string   `json:"goal"`
-	Units   []string `json:"units"`
-	Job     string   `json:"job"`
-	Read    string   `json:"read"`
-	Commit  string   `json:"commit"`
-	State   string   `json:"state"`
+	Attempt      string   `json:"attempt"`
+	ProofAttempt string   `json:"proof_attempt,omitempty"`
+	Round        int      `json:"round"`
+	Parent       string   `json:"parent"`
+	Verdict      string   `json:"verdict,omitempty"`
+	Goal         string   `json:"goal"`
+	Units        []string `json:"units"`
+	Job          string   `json:"job"`
+	Read         string   `json:"read"`
+	Commit       string   `json:"commit"`
+	State        string   `json:"state"`
 
 	CheckMinutes  float64 `json:"check_minutes,omitempty"`
 	CheckResult   string  `json:"check_result,omitempty"`
@@ -39,6 +40,22 @@ type Fix struct {
 	Reason    string                 `json:"reason,omitempty"`
 	Brief     string                 `json:"brief,omitempty"`
 	Generated []testpolicy.Generated `json:"generated,omitempty"`
+}
+
+// Unit keeps the repair's identity when its follow-up proof gets a new attempt.
+func (fix Fix) Unit() string {
+	stamp := strings.SplitN(fix.RepairProof(), ".", 2)[0]
+	if _, err := time.Parse("20060102T150405", stamp); err != nil || fix.Round < 1 {
+		return ""
+	}
+	return fmt.Sprintf("lane-fix-%s-%d", stamp, fix.Round)
+}
+
+func (fix Fix) RepairProof() string {
+	if fix.ProofAttempt != "" {
+		return fix.ProofAttempt
+	}
+	return fix.Attempt
 }
 
 func ReadFix(install string) (*Fix, error) { return readFix(install, false) }
@@ -237,6 +254,7 @@ func advanceFix(install, checkout string, running Running, seams ProveSeams) err
 	fix.State = "closed"
 	err = WriteFix(install, fix)
 	if err == nil && follows {
+		fix.ProofAttempt = fix.RepairProof()
 		fix.Attempt, fix.State = running.Attempt, "reviewing"
 		err = WriteFix(install, fix)
 	}

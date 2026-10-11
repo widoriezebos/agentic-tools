@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
@@ -79,6 +80,57 @@ func TestDetachedProofReadsItsOwnReport(t *testing.T) {
 	}
 	if got.Environment != "current" || !reflect.DeepEqual(got.Durations, map[string]int64{"checks": 12}) || !reflect.DeepEqual(got.Packages, []PackageTiming{{Unit: "p/q", Shard: 0, Status: "fail", MS: 12}}) {
 		t.Fatalf("detached proof observations: %+v", got)
+	}
+}
+
+// Signals may interrupt the wait, but cannot extend the publication deadline.
+func pollDetachedReport(events []unix.PollFd, timeout time.Duration, now func() time.Time, poll func([]unix.PollFd, int) (int, error)) (int, error) {
+	deadline := now().Add(timeout)
+	for {
+		remaining := deadline.Sub(now())
+		if remaining <= 0 {
+			return 0, nil
+		}
+		n, err := poll(events, int((remaining+time.Millisecond-1)/time.Millisecond))
+		if err != unix.EINTR {
+			return n, err
+		}
+	}
+}
+
+func TestDetachedProofReportPollRetriesInterruptedWait(t *testing.T) {
+	t.Parallel()
+	calls := 0
+	current := time.Unix(0, 0)
+	now := func() time.Time { return current }
+	n, err := pollDetachedReport(nil, time.Second, now, func(_ []unix.PollFd, milliseconds int) (int, error) {
+		calls++
+		if want := 1000 - (calls-1)*400; milliseconds != want {
+			t.Fatalf("poll timeout %d, want remaining %d milliseconds", milliseconds, want)
+		}
+		if calls == 1 {
+			current = current.Add(400 * time.Millisecond)
+			return -1, unix.EINTR
+		}
+		return 1, nil
+	})
+	if err != nil || n != 1 || calls != 2 {
+		t.Fatalf("interrupted wait: n=%d calls=%d err=%v", n, calls, err)
+	}
+	if n, err := pollDetachedReport(nil, 0, now, func([]unix.PollFd, int) (int, error) {
+		t.Fatal("expired deadline polled again")
+		return 1, nil
+	}); n != 0 || err != nil {
+		t.Fatalf("expired wait: n=%d err=%v", n, err)
+	}
+	calls = 0
+	n, err = pollDetachedReport(nil, time.Second, now, func([]unix.PollFd, int) (int, error) {
+		calls++
+		current = current.Add(time.Second)
+		return -1, unix.EINTR
+	})
+	if n != 0 || err != nil || calls != 1 {
+		t.Fatalf("interrupt extended deadline: n=%d calls=%d err=%v", n, calls, err)
 	}
 }
 

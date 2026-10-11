@@ -2,13 +2,34 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"slices"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
+
+// Batch custody replaces the goal's budget, but its claim and current approval
+// still authorize a repair. Read the accepted ledger at each admission.
+func laneFixApproval(root, id string) error {
+	endpoint, err := branch.MainEndpoint(root)
+	if err != nil {
+		return err
+	}
+	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	if err != nil {
+		return err
+	}
+	if eligible := goal.ClaimApprovalEligibility(projection.Tree, projection.Tree.Live[id], projection.Horizon.Now); !eligible.Ready {
+		return fmt.Errorf("goal %s cannot execute: %s", id, eligible.Wait)
+	}
+	return nil
+}
 
 func landingFixFor(root, checkout, goal string, caller int64) *plain.Fix {
 	home, err := batchowner.LandingLaneHome()
@@ -43,7 +64,7 @@ func landingFixForRegistered(root, checkout, goal string, caller int64, register
 			fix.Units = append(fix.Units, unit.Unit)
 		}
 	}
-	if err != nil || fix == nil || fix.Attempt != running.Attempt || fix.Goal != goal || fix.Round != 1 || fix.State == "closed" || fix.Parent != running.Commit && fix.Commit != running.Commit {
+	if err != nil || fix == nil || fix.Attempt != running.Attempt || fix.Goal != goal || fix.Round < 1 || fix.Round > config.LandingFixLimit(filepath.Join(root, "metasystem.conf"), "landing.fix-rounds") || fix.Unit() == "" || fix.State == "closed" || fix.Parent != running.Commit && fix.Commit != running.Commit {
 		return nil
 	}
 	head, err := goalBranchGit(checkout, "rev-parse", "HEAD")
@@ -95,4 +116,17 @@ func (inv *intentInvocation) laneClaimCheck(conn intentConnectionOwners, root, g
 		}
 		return conn.claimCheck(root, goalID, endpoint)()
 	}
+}
+
+// laneBuildFix binds the allowance to both the authenticated caller and its unit.
+func (inv *intentInvocation) laneBuildFix(id, unit string) *plain.Fix {
+	caller, err := inv.owners.resolver.ResolveLayout(inv.cwd)
+	if err != nil {
+		return nil
+	}
+	fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), caller.GitRoot, id)
+	if fix == nil || fix.Unit() != unit {
+		return nil
+	}
+	return fix
 }

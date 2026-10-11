@@ -89,6 +89,8 @@ type Manager struct {
 	Settings      Settings
 	SettingsError error
 	SandboxAct    func(Record, Settings) string
+	// LaunchCap bounds a job independently of the caller's wait timeout.
+	LaunchCap func(StartSpec) (time.Duration, error)
 	// CompressAbove is disk.compress-above-mib in bytes: a launch's log
 	// that large is gzipped when the launch ends; 0 compresses nothing.
 	CompressAbove int64
@@ -201,6 +203,15 @@ func (m *Manager) Start(spec StartSpec) (Record, error) {
 		data[key] = value
 	}
 	record.AdapterData = data
+	if m.LaunchCap != nil {
+		cap, err := m.LaunchCap(spec)
+		if err != nil {
+			return Record{}, err
+		}
+		if cap > 0 {
+			setString(record.AdapterData, "deadline", m.Now().Add(cap).UTC().Format(time.RFC3339Nano))
+		}
+	}
 	setString(record.AdapterData, "brief", inputs[0].Path)
 	if spec.Kind == "read" && spec.StopInputs {
 		setString(record.AdapterData, "unitStopInputs", "true")
@@ -495,7 +506,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if record.Reason == "cancel-requested" {
 		_ = m.Processes.SignalGroup(childRef.Pid, syscall.SIGTERM)
 	}
-	exitCode, waitErr := child.Wait()
+	exitCode, waitErr, expired := m.waitChild(record, child, childRef.Pid)
 	if cleanupErr := m.endGroup(childRef.Pid); cleanupErr != nil {
 		failed, failErr := m.fail(id, "process-group-unproven: "+cleanupErr.Error(), &exitCode)
 		if failErr != nil {
@@ -549,6 +560,9 @@ func (m *Manager) Supervise(id string) (Record, error) {
 			record.AdapterData[key] = value
 		}
 		record.State, record.Reason = adapterOutcome(adapter, exitCode, measureErr)
+		if expired {
+			record.State, record.Reason = Failed, "launch-deadline"
+		}
 		if copyErr != nil {
 			record.State, record.Reason = Failed, "declared-output: "+copyErr.Error()
 		} else if record.Kind == "read" && measureErr != nil && record.State == Completed {
@@ -588,6 +602,34 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	compressFinishedLog(record, command.LogPath, m.CompressAbove)
 	return record, nil
 }
+
+// waitChild enforces the retained deadline even when the initiating command ended.
+func (m *Manager) waitChild(record Record, child Child, pgid int64) (int, error, bool) {
+	deadline, err := time.Parse(time.RFC3339Nano, readString(record.AdapterData, "deadline"))
+	if err != nil {
+		code, err := child.Wait()
+		return code, err, false
+	}
+	type outcome struct {
+		code int
+		err  error
+	}
+	ended := make(chan outcome, 1)
+	go func() { code, err := child.Wait(); ended <- outcome{code, err} }()
+	timer := time.NewTimer(max(0, deadline.Sub(m.Now())))
+	defer timer.Stop()
+	select {
+	case result := <-ended:
+		return result.code, result.err, false
+	case <-timer.C:
+		if err := m.endGroup(pgid); err != nil {
+			return -1, err, true
+		}
+		result := <-ended
+		return result.code, result.err, true
+	}
+}
+
 func (m *Manager) finishCancelledBeforeChild(id string, cause error) (Record, error) {
 	record, err := m.update(id, func(current *Record) error {
 		if current.State.Terminal() {
@@ -852,6 +894,8 @@ func (m *Manager) stopCause(record Record) string {
 		return ""
 	}
 	switch {
+	case record.Reason == "launch-deadline":
+		return "deadline"
 	case record.Reason == "supervisor-lost", record.Reason == "supervisor-lost-before-child":
 		return "process-lost"
 	case strings.HasPrefix(record.Reason, "declared-outputs: declared-output-busy:"), strings.HasPrefix(record.Reason, "declared-output: declared-output-busy:"):

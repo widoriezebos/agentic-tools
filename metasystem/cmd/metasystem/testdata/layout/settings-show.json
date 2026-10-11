@@ -5,7 +5,7 @@ exit 0
   "verb": "settings show",
   "targets": [],
   "outcome": "confirmed",
-  "summary": "28 setting(s) of /Users/wido/GitHub/agentic-tools-m1e",
+  "summary": "30 setting(s) of /Users/wido/GitHub/agentic-tools-m1e",
   "data": {
     "adapters": null,
     "conf": "/Users/wido/GitHub/agentic-tools-m1e/metasystem.conf",
@@ -148,6 +148,16 @@ exit 0
       {
         "Key": "launch.unit.counted.rounds",
         "Value": "6",
+        "Source": "default"
+      },
+      {
+        "Key": "landing.fix-rounds",
+        "Value": "1",
+        "Source": "default"
+      },
+      {
+        "Key": "landing.fix-minutes",
+        "Value": "120",
         "Source": "default"
       }
     ]

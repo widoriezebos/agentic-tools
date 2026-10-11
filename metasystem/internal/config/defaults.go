@@ -69,6 +69,8 @@ var coreSettings = []Setting{
 	{Key: "process.change", Default: "person", Meaning: "whether an agent may apply a cited process setting or needs a person to execute the exact proposal"},
 	{Key: "landing.agent-idle-minutes", Default: "10", Meaning: "minutes without a step after an empty batch before reporting an idle agent"},
 	{Key: "landing.batch", Default: "auto", Meaning: "batch selection cap, distinct from landing.batch-root; consumption deferred to lane-reads-its-policies"},
+	{Key: "landing.fix-rounds", Default: "1", Meaning: "fix rounds the lane allows per red batch proof attempt, independent of the goal budget"},
+	{Key: "landing.fix-minutes", Default: "120", Meaning: "minutes allowed for each lane fix job, independent of the goal budget"},
 	{Key: "landing.full-from-tier", Default: "3", Meaning: "the lowest batch member tier that requires a full proof"},
 	{Key: "landing.wait-hours", Default: "12", Meaning: "hours waiting in the lane before status reports a finding; never stops a goal"},
 	{Key: "landing.impact-max-share", Default: "50", Meaning: "percent of full proof groups at which impact is replaced by full"},

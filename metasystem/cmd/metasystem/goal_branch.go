@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"context"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -177,6 +178,25 @@ func callDelegate(delegate delegateCaller, root string, args []string, selected 
 }
 
 func readDelegate(delegate delegateCaller, root, brief, goalID, commit, runtime, model string, selected ...string) (string, error) {
+	checkout, _ := os.Getwd()
+	if fix := landingFixFor(root, checkout, goalID, int64(os.Getpid())); fix != nil && fix.Commit == commit {
+		if err := laneFixApproval(root, goalID); err != nil {
+			return "", &branch.ReadNeverLaunchedError{Err: err}
+		}
+		minutes := config.LandingFixLimit(filepath.Join(root, "metasystem.conf"), "landing.fix-minutes")
+		if minutes < 1 {
+			return "", fmt.Errorf("the lane's landing.fix-minutes must be a positive integer")
+		}
+		caller := delegate
+		if caller == nil {
+			caller = runDelegateWith
+		}
+		delegate = func(request delegateRequest, stdout, stderr io.Writer) int {
+			request.capMinutes = minutes
+			return caller(request, stdout, stderr)
+		}
+		goalID = "none-explicit"
+	}
 	args := []string{"--role", "code-critic", "--reviews", "commit:" + commit,
 		"--goal", goalID, "--brief", brief, "--destructive-reach", "DESIGN-BEARING"}
 	if runtime != "" {
@@ -319,7 +339,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 		Units: coveredUnitNames(*units),
 		CheckClaim: func() error {
 			if fix := landingFixFor(*root, checkout, *goalID, int64(os.Getpid())); fix != nil && fix.Commit == *unit {
-				return nil
+				return laneFixApproval(*root, *goalID)
 			}
 			return goalBranchClaimCheckWith(*root, *goalID, endpoint, config, holderRoot)()
 		}, Gate: gate, Delegate: delegate, Commit: commitRead, Repository: readRepository,

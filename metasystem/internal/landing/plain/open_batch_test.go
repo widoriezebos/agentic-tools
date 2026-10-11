@@ -46,7 +46,7 @@ func openBatchSelectionSeams(t *testing.T) ProveSeams {
 				}
 				return "fixed\nmerged\nmain", nil
 			case "show":
-				return "repair\n\nGoal-Unit: goal/lane-fix-1", nil
+				return "repair\n\nGoal-Unit: goal/lane-fix-20261011T040737-1", nil
 			default:
 				return "", fmt.Errorf("unexpected Git: %v", args)
 			}
@@ -97,7 +97,7 @@ func TestOpenBatchNewcomerWaitsUntilFixRoundEnds(t *testing.T) {
 	if err := writeBatch(install, batch); err != nil {
 		t.Fatal(err)
 	}
-	running := Running{Attempt: "red-gate", Commit: "merged", Tree: "red-tree", Gate: true, Checkpoint: true, BatchID: batch.ID, BatchMembers: batch.Members}
+	running := Running{Attempt: "20261011T040737.033326000Z", Commit: "merged", Tree: "red-tree", Gate: true, Checkpoint: true, BatchID: batch.ID, BatchMembers: batch.Members}
 	if err := writeRunning(install, running); err != nil {
 		t.Fatal(err)
 	}
@@ -131,12 +131,19 @@ func TestOpenBatchNewcomerWaitsUntilFixRoundEnds(t *testing.T) {
 	if !waiting.Open || !slices.Equal(waiting.Members, batch.Members) {
 		t.Fatalf("fix round admitted newcomer: %+v", waiting)
 	}
-	if err := advanceFix(install, install, Running{Attempt: "next", Commit: fix.Commit, BatchID: batch.ID, BatchMembers: waiting.Members}, seams); err != nil {
+	next := Running{Attempt: "20261011T050737.033326000Z", Commit: fix.Commit, BatchID: batch.ID, BatchMembers: waiting.Members}
+	if err := advanceFix(install, install, next, seams); err != nil {
 		t.Fatal(err)
 	}
-	continued, err := FixForAttempt(install, "next")
-	if err != nil || continued == nil || continued.State != "reviewing" {
+	continued, err := FixForAttempt(install, next.Attempt)
+	if err != nil || continued == nil || continued.State != "reviewing" || continued.ProofAttempt != running.Attempt || continued.Unit() != fix.Unit() {
 		t.Fatalf("lost fix continuation: %+v %v", continued, err)
+	}
+	if err := writeRunning(install, next); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := CheckBatch(install, install, fix.Commit, "main", true, seams); err != nil {
+		t.Fatalf("follow-up proof lost repair admission: %v", err)
 	}
 	if err := closeFix(install, "goal"); err != nil {
 		t.Fatal(err)
