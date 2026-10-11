@@ -21,6 +21,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -366,7 +367,7 @@ func createTestReceiptWithInputs(root, tree, command string, stdout, stderr io.W
 
 	cmd := exec.Command("bash", "-c", command)
 	cmd.Dir = candidateWorkspace.Dir
-	cmd.Env = gittree.ScrubbedEnviron()
+	cmd.Env = commandenv.EngineEnvironment(gittree.ScrubbedEnviron())
 	cmd.Stdout = stdout
 	cmd.Stderr = stderr
 	runErr := runReceiptCommand(cmd, receiptCommandBound(filepath.Join(root, "metasystem.conf")), interrupts)

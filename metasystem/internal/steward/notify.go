@@ -23,6 +23,8 @@ import (
 	"time"
 
 	"errors"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 )
 
 // notifyTimeout bounds one delivery attempt; a hung notifier is a
@@ -163,7 +165,7 @@ func deliverWithDependencies(repoRoot, message string, deps notificationDependen
 		cmd = deps.commandContext(ctx, "osascript", "-e", script)
 	} else {
 		cmd = deps.commandContext(ctx, "/bin/sh", "-c", command)
-		cmd.Env = append(cmd.Environ(), "STEWARD_MESSAGE="+message)
+		cmd.Env = append(commandenv.EngineEnvironment(cmd.Environ()), "STEWARD_MESSAGE="+message)
 	}
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("notification not delivered: %v (%s)", err, strings.TrimSpace(string(out)))

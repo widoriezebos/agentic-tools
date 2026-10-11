@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/applaunch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
@@ -321,7 +322,7 @@ func (r appRun) runContractCommand(what string, command *applaunch.Command, time
 	argv := facts.Argv(command)
 	process := exec.Command(argv[0], argv[1:]...)
 	process.Dir = filepath.Join(r.tree, filepath.FromSlash(command.CWD))
-	process.Env = facts.Environment(r.environment(), r.dataRoot, r.logPath)
+	process.Env = commandenv.EngineEnvironment(facts.Environment(r.environment(), r.dataRoot, r.logPath))
 	if err := os.MkdirAll(filepath.Dir(r.logPath), 0o755); err != nil {
 		return err
 	}

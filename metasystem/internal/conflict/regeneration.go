@@ -8,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"syscall"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 )
 
 // Restore cannot remove an unmerged path missing from HEAD. Remove those
@@ -70,6 +72,7 @@ func StageGenerated(git Git, generated func(string) bool) error {
 func RunRegenerationArgv(argv []string, dir string, log *os.File, started func(int64) error) error {
 	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir, command.Stdout, command.Stderr = dir, log, log
+	command.Env = commandenv.EngineEnvironment(command.Environ())
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		return err

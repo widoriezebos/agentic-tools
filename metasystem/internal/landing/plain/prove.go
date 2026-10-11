@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -1110,23 +1111,16 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 	}
 	shell := exec.Command("/bin/sh", "-c", command)
 	shell.Dir = dir
-	// The proof's reporter asks the serving engine (`metasystem landing status`,
-	// `settings show`): the engine running this lane leads the proof's PATH, so the
-	// proof never depends on the environment the lane's agent happened to inherit.
-	enginePath := os.Getenv("PATH")
-	if executable, err := os.Executable(); err == nil {
-		enginePath = filepath.Dir(executable) + string(os.PathListSeparator) + enginePath
-	}
-	env := []string{"PATH=" + enginePath, "LANDING_TREE=" + running.Tree, "LANDING_COMMIT=" + running.Commit, "LANDING_ONLY=" + only,
+	env := []string{"LANDING_TREE=" + running.Tree, "LANDING_COMMIT=" + running.Commit, "LANDING_ONLY=" + only,
 		"LANDING_ONLY_TESTS=" + strings.Join(tests, " "),
 		"LANDING_PROOF_SCOPE=" + decision.Scope, "LANDING_PROOF_BASE=" + base, "LANDING_PROOF_GROUPS=" + strings.Join(decision.groupIDs(), " ")}
-	shell.Env = append(os.Environ(), env...)
+	shell.Env = commandenv.EngineEnvironment(append(os.Environ(), env...))
 	shell.Stdout, shell.Stderr = log, log
 	run := seams.Command
 	if run == nil {
 		run = func(command *exec.Cmd) error {
 			done := make(chan error, 1)
-			_, err := gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: command.Args, Dir: command.Dir, Env: env, Log: logPath, Completed: done})
+			_, err := gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: command.Args, Dir: command.Dir, Env: command.Env, Log: logPath, Completed: done})
 			if err != nil {
 				return err
 			}

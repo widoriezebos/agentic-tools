@@ -166,7 +166,10 @@ func TestWorkRebaseDeclaredCheckSubjectAndFailures(t *testing.T) {
 			if err != nil || json.Unmarshal(evidence, &execution) != nil || len(execution.Exits) != 2 {
 				t.Fatalf("evidence=%s err=%v", evidence, err)
 			}
-			if execution.Exits[0].Exit != cheap || execution.Exits[1].Exit != audit || !strings.Contains(execution.Exits[0].Output, execution.Check.Directory) || !slices.Equal(execution.Check.Environment, os.Environ()) {
+			// The carried check is frozen with the installed engine first on PATH (unit 3), the rest of the environment unchanged.
+			wantEnvironment := slices.DeleteFunc(slices.Clone(os.Environ()), func(entry string) bool { return strings.HasPrefix(entry, "PATH=") })
+			wantEnvironment = append(wantEnvironment, "PATH="+filepath.Join(b.root(), "bin")+string(os.PathListSeparator)+os.Getenv("PATH"))
+			if execution.Exits[0].Exit != cheap || execution.Exits[1].Exit != audit || !strings.Contains(execution.Exits[0].Output, execution.Check.Directory) || !slices.Equal(execution.Check.Environment, wantEnvironment) {
 				t.Fatalf("execution=%+v", execution)
 			}
 			if code != 0 {

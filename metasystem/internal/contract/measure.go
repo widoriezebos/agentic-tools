@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -367,6 +368,7 @@ func measureCommand(commandRoot, command string, capMinutes int) (map[string]str
 		"GIT_CONFIG_KEY_0=core.useReplaceRefs", "GIT_CONFIG_VALUE_0=false",
 		"GIT_CONFIG_KEY_1=gc.auto", "GIT_CONFIG_VALUE_1=0",
 		"GIT_CONFIG_KEY_2=maintenance.auto", "GIT_CONFIG_VALUE_2=false")
+	cmd.Env = commandenv.EngineEnvironment(cmd.Env)
 	var output strings.Builder
 	cmd.Stdout = &output
 	cmd.Stderr = &output

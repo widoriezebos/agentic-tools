@@ -153,7 +153,10 @@ func TestIntentDeclaredCheckFrozenAcrossBuilderAndProof(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if plan.Check.Base != plan.Base || plan.Check.SourceTree != "declaration-tree" || plan.Check.Minutes != 15 || !slices.Equal(plan.Check.Environment, os.Environ()) || len(plan.Proof) != 1 {
+			wantPath := filepath.Join(b.root(), "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
+			wantEnvironment := slices.DeleteFunc(slices.Clone(os.Environ()), func(entry string) bool { return strings.HasPrefix(entry, "PATH=") })
+			wantEnvironment = append(wantEnvironment, "PATH="+wantPath)
+			if len(plan.Proof) != 1 || plan.Check.Base != plan.Base || plan.Check.SourceTree != "declaration-tree" || plan.Check.Minutes != 15 || !slices.Equal(plan.Check.Environment, wantEnvironment) || !slices.Equal(plan.Proof[0].Env, wantEnvironment) {
 				t.Fatal("declaration tree, minutes, environment or commands were not frozen")
 			}
 			canonicalDirectory, err := filepath.EvalSymlinks(b.worktree)
@@ -180,7 +183,7 @@ func TestIntentDeclaredCheckFrozenAcrossBuilderAndProof(t *testing.T) {
 					t.Fatalf("exits lost: %+v", retained.Exits)
 				}
 				for _, exit := range retained.Exits {
-					if exit.Minutes < 0 || exit.Output != exit.Name+"|"+canonicalDirectory+"|"+os.Getenv("PATH")+"\n" {
+					if exit.Minutes < 0 || exit.Output != exit.Name+"|"+canonicalDirectory+"|"+wantPath+"\n" {
 						t.Fatalf("different environment/directory/output: %+v", exit)
 					}
 				}
@@ -431,8 +434,11 @@ func TestIntentDeclaredCheckPublicationRunsInCommitWorktree(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &retained) != nil {
 		t.Fatalf("gate record: %s %v", raw, err)
 	}
-	if retained.Directory != gate || retained.Check.Directory != b.worktree || retained.Check.SourceTree != "declaration-tree" || retained.Check.Minutes != 15 || !slices.Equal(retained.Check.Environment, os.Environ()) || len(retained.Exits) != 2 || retained.Exits[0].Output != "commit tree\n" || retained.Exits[1].Output != os.Getenv("PATH") {
-		t.Fatalf("gate did not record the new tree under frozen declarations: %+v", retained)
+	wantPath := filepath.Join(b.root(), "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
+	wantEnvironment := slices.DeleteFunc(slices.Clone(os.Environ()), func(entry string) bool { return strings.HasPrefix(entry, "PATH=") })
+	wantEnvironment = append(wantEnvironment, "PATH="+wantPath)
+	if retained.Directory != gate || retained.Check.Directory != b.worktree || retained.Check.SourceTree != "declaration-tree" || retained.Check.Minutes != 15 || !slices.Equal(retained.Check.Environment, wantEnvironment) || len(retained.Exits) != 2 || retained.Exits[0].Output != "commit tree\n" || retained.Exits[1].Output != wantPath {
+		t.Fatalf("gate did not record the new tree under frozen declarations: run directory=%q declared directory=%q source tree=%q minutes=%d exits=%+v", retained.Directory, retained.Check.Directory, retained.Check.SourceTree, retained.Check.Minutes, retained.Exits)
 	}
 }
 

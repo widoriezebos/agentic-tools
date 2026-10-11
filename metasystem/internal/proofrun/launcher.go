@@ -17,6 +17,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -264,6 +265,7 @@ func LaunchSuite(options LaunchOptions) int {
 		"METASYSTEM_PROOF_RECORD_KEY="+options.Suite,
 		"METASYSTEM_PROOF_CREATION_CLAIM="+claim.Path(),
 	)
+	suite.Env = commandenv.EngineEnvironment(suite.Env)
 	if executable, executableErr := os.Executable(); executableErr == nil {
 		suite.Env = append(suite.Env, "METASYSTEM_PROOF_AUTH_BIN="+executable)
 	}

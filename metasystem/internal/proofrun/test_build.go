@@ -26,6 +26,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
@@ -3126,6 +3127,7 @@ func explicitEnvironmentCommand(ctx context.Context, cwd string, environment, ar
 	if len(argv) == 0 || argv[0] == "" {
 		return nil, fmt.Errorf("empty command")
 	}
+	environment = commandenv.EngineEnvironment(environment)
 	executable := argv[0]
 	if !filepath.IsAbs(executable) && strings.ContainsRune(executable, filepath.Separator) {
 		executable = filepath.Join(cwd, executable)

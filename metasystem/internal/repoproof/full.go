@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -33,7 +34,18 @@ type HostRunners struct {
 type Command func([]string, io.Writer, io.Writer) error
 
 func Execute(argv []string, stdout, stderr io.Writer) error {
-	command := exec.Command(argv[0], argv[1:]...)
+	cwd, err := os.Getwd()
+	if err != nil {
+		return err
+	}
+	environment := commandenv.EngineEnvironment(os.Environ())
+	executable, err := proofrun.ResolveTestingExecutable(context.Background(), cwd, environment, argv)
+	if err != nil {
+		return err
+	}
+	command := exec.Command(executable, argv[1:]...)
+	command.Args[0] = argv[0]
+	command.Env = environment
 	command.Stdout, command.Stderr = stdout, stderr
 	return command.Run()
 }

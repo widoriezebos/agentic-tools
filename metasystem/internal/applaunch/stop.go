@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -362,7 +363,7 @@ func (o StopOptions) execStop(command Command, facts Facts, record Record) error
 	}
 	process := exec.Command(argv[0], argv[1:]...)
 	process.Dir = filepath.Join(o.ProjectRoot, filepath.FromSlash(command.CWD))
-	process.Env = facts.Environment(o.Environment, record.StateRoot, record.Log)
+	process.Env = commandenv.EngineEnvironment(facts.Environment(o.Environment, record.StateRoot, record.Log))
 	if log, err := os.OpenFile(record.Log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644); err == nil {
 		defer log.Close()
 		process.Stdout, process.Stderr = log, log

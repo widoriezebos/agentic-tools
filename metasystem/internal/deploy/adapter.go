@@ -10,6 +10,7 @@ import (
 	"strings"
 	"syscall"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -109,6 +110,7 @@ func (r *Runner) call(operation, commit, artifact string, previous *Line, log st
 	fmt.Fprintf(logFile, "== %s %s\n", operation, commit)
 	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir = filepath.Join(tree.source, filepath.FromSlash(tree.contract.Adapter.CWD))
+	command.Env = commandenv.EngineEnvironment(command.Environ())
 	command.Stdin = bytes.NewReader(body)
 	var stdout bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, logFile

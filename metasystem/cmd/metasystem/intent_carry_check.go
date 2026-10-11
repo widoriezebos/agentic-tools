@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -23,7 +24,8 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 	if err != nil {
 		return branch.GateObservation{}, err
 	}
-	check := launch.UnitCheck{Base: subject.Parent, SourceTree: subject.Tree, Directory: directory, Environment: os.Environ()}
+	// The carried check is frozen with the installed engine first on PATH, as the resolved unit check is (unit 3).
+	check := launch.UnitCheck{Base: subject.Parent, SourceTree: subject.Tree, Directory: directory, Environment: commandenv.EngineEnvironmentInDirectory(os.Environ(), filepath.Join(inv.layout.InstallationRoot.Path(), "bin"))}
 	var values [3]string
 	for i, key := range []string{"proof.cheap", "proof.audits", "proof.deadline"} {
 		values[i], err = landingProofCommand(directory, top, subject.Commit, key, goalBranchGit)

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
@@ -18,7 +19,8 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		data, err := inv.work().git(root, args...)
 		return strings.TrimSpace(string(data)), err
 	}
-	check := &launch.UnitCheck{Base: plan.Base, Directory: plan.Proof[0].Dir, Environment: os.Environ()}
+	check := &launch.UnitCheck{Base: plan.Base, Directory: plan.Proof[0].Dir,
+		Environment: commandenv.EngineEnvironmentInDirectory(os.Environ(), filepath.Join(inv.layout.InstallationRoot.Path(), "bin"))}
 	laneCheck := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal) != nil && slices.Equal(inv.input.values["check"], []string{"metasystem test impact"})
 	if laneCheck {
 		check.Cheap, check.Audits, check.Minutes = "metasystem test impact --check", "true", 15

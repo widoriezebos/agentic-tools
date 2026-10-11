@@ -46,9 +46,9 @@ func (check UnitCheck) Run(directory, records string) (string, []CheckExit, erro
 	var failures []error
 	for _, command := range []struct{ name, text string }{{"cheap", check.Cheap}, {"audits", check.Audits}} {
 		process := exec.Command("/bin/sh", "-c", command.text)
-		process.Dir, process.Env = directory, check.Environment
+		process.Dir, process.Env = directory, slices.Clone(check.Environment)
 		if command.name == "cheap" && check.Base != "" {
-			process.Env = append(slices.Clone(check.Environment), "LANDING_PROOF_BASE="+check.Base)
+			process.Env = append(slices.Clone(process.Env), "LANDING_PROOF_BASE="+check.Base)
 		}
 		var output bytes.Buffer
 		process.Stdout, process.Stderr = &output, &output

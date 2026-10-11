@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -49,7 +50,7 @@ func ExecChild(spec ChildSpec) (Child, error) {
 	}
 	command := exec.Command(spec.Argv[0], spec.Argv[1:]...)
 	command.Dir = spec.Dir
-	command.Env = spec.Environment
+	command.Env = commandenv.EngineEnvironment(spec.Environment)
 	command.ExtraFiles = spec.ExtraFiles
 	command.Stdin = nullInput
 	command.Stdout = spec.Log

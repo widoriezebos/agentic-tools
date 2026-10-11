@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -107,7 +108,7 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 							command = shellCommand([]string{engine, "test", "impact", "--check"})
 						}
 						proof := exec.Command("/bin/sh", "-c", command)
-						proof.Env = append(proof.Environ(), "LANDING_PROOF_BASE="+parent)
+						proof.Env = append(commandenv.EngineEnvironment(proof.Environ()), "LANDING_PROOF_BASE="+parent)
 						proof.Dir, proof.Stdout, proof.Stderr = installation, inv.stderr, inv.stderr
 						if err := proof.Run(); err != nil {
 							return fmt.Errorf("the cheap check failed; nothing was committed: %w", err)
