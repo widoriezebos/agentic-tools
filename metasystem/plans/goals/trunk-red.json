@@ -805,11 +805,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261011T005918.026682000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-11T01:37:17Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-11T02:23:09Z",
+        "attempt": "20261011T014956.528332000Z",
+        "baseCommit": "3c01896343bbbc97ebfaff89a77d5ca8231495c9",
+        "how": "green",
+        "opid": "4AMYY25CDG7QWBCY1R1Y92H7H7-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
