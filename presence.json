@@ -1,0 +1,13 @@
+{
+  "presenceSchema": 1,
+  "machine": "ui",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem",
+  "generation": 39,
+  "engine": "c517f978b8c0435767d7db87e42f29b41defd9b2",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": null,
+  "working": null,
+  "tickAt": "2026-10-11T01:09:04Z",
+  "diskFreeBytes": 227359526912
+}
