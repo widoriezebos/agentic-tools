@@ -10,6 +10,7 @@ import (
 )
 
 func init() {
+	registerIdempotency("landing rehearse", idemCreation, "each call creates a fresh scratch lane and fixture goal for a new rehearsal attempt; a second call is a new attempt", nil)
 	registerIdempotency("landing status", idemRead, "reads the host's lane record and its keeper; changes nothing", nil)
 	registerIdempotency("landing set", idemStateful, "the lane is already that checkout: success, the record untouched", witnessLandingSetRepeat)
 	registerIdempotency("landing start", idemStateful, "the lane already runs, unpaused: success, nothing written", witnessLandingStartRepeat)

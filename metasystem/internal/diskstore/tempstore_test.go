@@ -23,7 +23,7 @@ func (b scratchBed) createTemp(t *testing.T, owner Owner) (string, error) {
 }
 
 func (b scratchBed) releaseTemp(path string, owner Owner) error {
-	return releaseTempStore(context.Background(), b.registry, path, "read-context", owner)
+	return ReleaseTempStoreAt(context.Background(), b.registry, path, "read-context", owner)
 }
 
 // An owner-released temporary store is registered before it holds a byte,

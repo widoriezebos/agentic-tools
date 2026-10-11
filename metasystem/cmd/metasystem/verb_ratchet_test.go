@@ -94,7 +94,10 @@ const (
 	// landing prove (internal/landing/kernel/prove.go, design r10 K6) is
 	// the lane's one way to run a batch's tests: it launches the lane-charged
 	// test run child; the owner's launches go when unit D deletes the owner.
-	verbRatchetSelfSubprocessCeiling = 102
+	// The isolated landing rehearsal has one candidate-engine launcher and
+	// one scenario-loop call to it. Both sites are needed to exercise the
+	// candidate CLI rather than the calling engine against the scratch lane.
+	verbRatchetSelfSubprocessCeiling = 104
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
 	// homes, c3's plan deletions, distill's record removal): measured 12.

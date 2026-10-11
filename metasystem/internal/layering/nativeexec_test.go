@@ -86,7 +86,7 @@ func judgeNativeExec(relative string, source []byte) ([]string, error) {
 		}
 		importNames[name] = path
 	}
-	if len(importNames) == 0 {
+	if len(importNames) == 0 && !strings.HasPrefix(relative, "internal/landing/rehearsal/") {
 		return nil, nil
 	}
 	constants := fileStringConstants(file)
@@ -105,10 +105,12 @@ func judgeNativeExec(relative string, source []byte) ([]string, error) {
 			return true
 		}
 		path, imported := importNames[qualifier.Name]
-		if !imported {
-			return true
-		}
 		index, entry := execCallPrograms[path][selector.Sel.Name]
+		// Scratch.Run is the rehearsal's bounded process launcher; its
+		// literal program has the same obligations as exec.Command's.
+		if !imported && strings.HasPrefix(relative, "internal/landing/rehearsal/") && selector.Sel.Name == "Run" {
+			index, entry = 1, true
+		}
 		if !entry || index >= len(call.Args) {
 			return true
 		}
@@ -285,5 +287,20 @@ func f(ctx context.Context, engine string) {
 		if strings.Contains(violation, `"bash"`) {
 			t.Fatalf("bash is lawful in the landing receipt's declared-command runner: %q", violation)
 		}
+	}
+}
+
+func TestGoDecidesNativelyJudgesRehearsalLauncher(t *testing.T) {
+	t.Parallel()
+	source := []byte(`package rehearsal
+ func f(s *Scratch, archive, snapshot string) {
+ s.Run(snapshot, "tar", "-xf", archive)
+ s.Run(snapshot, "go", "run", "./cmd/devgate", "build")
+ s.Run(snapshot, "git", "archive", "HEAD")
+ }
+ `)
+	violations, err := judgeNativeExec("internal/landing/rehearsal/scratch.go", source)
+	if err != nil || len(violations) != 2 || !strings.Contains(violations[0], `execs "tar"`) || !strings.Contains(violations[1], `execs "go"`) {
+		t.Fatalf("rehearsal shell-out mutations: %v: %v", violations, err)
 	}
 }

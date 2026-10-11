@@ -81,6 +81,7 @@ type laneVerbOwners struct {
 
 func (inv *intentInvocation) landing() laneVerbOwners {
 	owners := inv.owners.landing
+	inv.rehearsalLaneEffects(&owners)
 	if owners.home == nil {
 		owners.home = batchowner.LandingLaneHome
 	}
@@ -261,6 +262,7 @@ func landingIntentCommands() []intentCommand {
 		landingPushCommand(),
 		landingReturnCommand(),
 		landingResolveCommand(),
+		landingRehearseCommand(),
 	}
 }
 

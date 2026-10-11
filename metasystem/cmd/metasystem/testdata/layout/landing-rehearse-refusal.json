@@ -1,0 +1,15 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing rehearse",
+  "targets": [],
+  "outcome": "refused",
+  "summary": "does not take --engine; it takes --keep, --repo, --json. Nothing was done",
+  "next": {
+    "argv": [],
+    "reason": "see metasystem help landing rehearse"
+  }
+}
+
+--

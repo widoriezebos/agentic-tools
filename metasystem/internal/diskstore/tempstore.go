@@ -33,6 +33,11 @@ func CreateTempStore(name, class string, owner Owner) (string, error) {
 	return createTempStore(scratchTempRoot(), registry, name, class, owner, rand.Reader)
 }
 
+// CreateTempStoreAt creates an owner-held store in an explicitly isolated registry.
+func CreateTempStoreAt(tempRoot string, registry Registry, name, class string, owner Owner) (string, error) {
+	return createTempStore(tempRoot, registry, name, class, owner, rand.Reader)
+}
+
 // ReleaseTempStore is the owner's release of its temporary store at path,
 // once the owner has proved nothing uses it.
 func ReleaseTempStore(ctx context.Context, path, class string, owner Owner) error {
@@ -40,6 +45,11 @@ func ReleaseTempStore(ctx context.Context, path, class string, owner Owner) erro
 	if err != nil {
 		return err
 	}
+	return releaseTempStore(ctx, registry, path, class, owner)
+}
+
+// ReleaseTempStoreAt releases an owner-held store in its explicitly isolated registry.
+func ReleaseTempStoreAt(ctx context.Context, registry Registry, path, class string, owner Owner) error {
 	return releaseTempStore(ctx, registry, path, class, owner)
 }
 

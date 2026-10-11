@@ -1,0 +1,17 @@
+# rehearsal-green
+
+- State: claimed
+- Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="One isolated fixture value with a direct test."
+- Tier: 1
+- Intent: Change the green fixture value from one to two and land it through the scratch lane.
+- Origin: human
+- OpenedAt: @TIME@
+- Revision: 3
+- Budget: elapsedLimit=1h attemptLimit=2 reservedJobMinutesLimit=10 activeJobLimit=1 reviewRoundLimit=0
+- Approved: by=human:rehearsal at=@TIME@ revision=2 opid=01J5X0000000000000000000B1-rehearsal-2bcd3e14 authority=proven digest=cde0c85b67570f364fed34c0def5f4effd5d1b7f228d4d8dbd6541e3792d608a
+- Claimed: machine=rehearsal lineage=rehearsal at=@TIME@ revision=3 accountingRevision=3
+
+History:
+- @TIME@ 01J5X0000000000000000000B0-rehearsal-2bcd3e14 open actor=human:rehearsal targets=rehearsal-green
+- @TIME@ 01J5X0000000000000000000B1-rehearsal-2bcd3e14 approve actor=human:rehearsal targets=rehearsal-green
+- @TIME@ 01J5X0000000000000000000B2-rehearsal-2bcd3e14 claim actor=rehearsal+rehearsal targets=rehearsal-green

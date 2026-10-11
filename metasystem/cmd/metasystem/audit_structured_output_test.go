@@ -41,6 +41,7 @@ var structuredOutputExceptions = map[string]string{
 	"internal/deploy/adapter.go:Runner.call":                     "a project's deploy adapter JSON protocol",
 	"internal/goal/attention.go:captureLocalTipBounded":          "git rev-parse --verify",
 	"internal/hostload/memory.go:AvailableMemory":                "vm_stat and getconf",
+	"internal/landing/rehearsal/scratch.go:Scratch.Run":          "git, go and tar setup tools; engine verbs use Scratch.Verb's structured envelope",
 	"internal/ledgerfence/fence.go:Ensure":                       "the git hook chain (adopter-extensible scripts) answering the guard's nonce ack with exit 42",
 	"internal/proofrun/resource_custody.go:startResourceCustody": "our custodian: the --ready-fd protocol is the answer; its stderr is quoted only in a failure",
 	"internal/runtimes/external/external.go:Adapter.Call":        "an adopter's external adapter JSON protocol",
