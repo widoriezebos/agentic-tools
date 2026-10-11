@@ -30,6 +30,10 @@ exit 0
       "unread": []
     },
     "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it",
+    "main_move": {
+      "kind": "none",
+      "count": 0
+    },
     "paused": true,
     "agent_alive": false,
     "admission": "admission open",

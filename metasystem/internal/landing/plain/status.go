@@ -22,6 +22,7 @@ import (
 // proof, the last proof and the last push. An absent value is null.
 type Status struct {
 	lane.View
+	MainMove       MainMove        `json:"main_move"`
 	PendingActions []PolicyRequest `json:"pending-actions,omitempty"`
 	BatchPolicy    *PolicyValue    `json:"batch-policy,omitempty"`
 	AdmittedBatch  string          `json:"admitted-batch,omitempty"`
@@ -143,7 +144,7 @@ func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 
 func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit) (status Status) {
 	pause, paused := lane.ReadPause(home)
-	status = Status{AdmittedBatch: PersonBatchContinuation(record.Install, record, home), View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
+	status = Status{MainMove: MainMove{Kind: "none"}, AdmittedBatch: PersonBatchContinuation(record.Install, record, home), View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
 	if view.Root == nil {
 		// A registration that can't be read is a lane this read could not
 		// read, not a lane that is not there.
@@ -196,6 +197,26 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		status.Batch = selected
 	}
 	unread("the batch selection", err)
+	if selected != nil && selected.State != BatchClosed {
+		commit, readErr := seams.git(string(layout.Checkout), "rev-parse", "--verify", "HEAD^{commit}")
+		if readErr == nil {
+			var main string
+			main, readErr = git.main()
+			if readErr == nil {
+				status.MainMove, readErr = mainMove(string(layout.Checkout), commit, main, seams, selected.Members...)
+			}
+		}
+		unread("main's movement", readErr)
+		defer func() {
+			switch status.MainMove.Kind {
+			case "records-only":
+				status.Summary += fmt.Sprintf("; main gained %d record commits since the batch base; the batch stands", status.MainMove.Count)
+			case "code":
+				status.Summary += "; main moved: code change; rebuild"
+			}
+		}()
+	}
+
 	status.PendingActions, err = PolicyRequests(install, seams)
 	unread("pending policy actions", err)
 	if seams.Policy != nil {

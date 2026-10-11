@@ -67,6 +67,7 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
+	FoldedCommits         []string             `json:"folded_commits,omitempty"`
 	Requested             string               `json:"requested,omitempty"`
 	Attributed            string               `json:"attributed,omitempty"`
 	Depth                 string               `json:"depth,omitempty"`
@@ -928,26 +929,6 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return nil
 	})
 	return result, errors.Join(err, result.executionErr)
-}
-
-// ledgerPaths are the goal ledger paths goal verbs rewrite, which
-// docs/project-rules.md excludes from delivery content: a tree that
-// differs from a green tree only in them needs no new proof. With seats
-// publishing goal acts every few minutes, re-proving each such tree means
-// a proof never finishes before main moves again, and nothing lands.
-var ledgerPaths = []string{
-	"metasystem/plans/goals/", "metasystem/plans/goals.md", "metasystem/plans/goals-accepted.json",
-	"metasystem/records/goals/", "metasystem/records/counselor/",
-	"metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log",
-}
-
-func ledgerPath(path string) bool {
-	for _, ledger := range ledgerPaths {
-		if path == ledger || strings.HasSuffix(ledger, "/") && strings.HasPrefix(path, ledger) {
-			return true
-		}
-	}
-	return false
 }
 
 // ledgerOnlyBetween compares the proof's tree with a candidate tree.

@@ -114,6 +114,9 @@ func holdLaneFixture(t *testing.T, entries []goal.TrunkRedEntry) (*resolveVerbFi
 			return "metasystem/plans/goals/trunk-red.json", nil
 		case "show main:metasystem/plans/goals/trunk-red.json":
 			return string(goal.RenderTrunkRed(entries)), nil
+		case "rev-list --first-parent --parents main..head", "rev-list --reverse head..main":
+			// HEAD is main here: no main move to classify.
+			return "", nil
 		}
 		if args[0] == "cat-file" {
 			if args[2] == "main^{commit}" || args[2] == "sha-goal^{commit}" || args[2] == "sha-before^{commit}" || args[2] == strings.Repeat("2", 40)+"^{commit}" {

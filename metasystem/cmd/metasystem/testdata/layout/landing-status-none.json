@@ -22,6 +22,10 @@ exit 0
     "next": null,
     "wake": null,
     "summary": "no landing lane is registered on this computer; metasystem landing set registers one",
+    "main_move": {
+      "kind": "none",
+      "count": 0
+    },
     "paused": false,
     "agent_alive": false,
     "queue": [],

@@ -1,0 +1,249 @@
+# Backlog
+
+- Identity: P700PZP7S9CSCKSR9J0WSVZ263
+- FormatVersion: 1
+- SyncMode: remote
+- MigrationEpoch: 2026-08-20T00:00:00Z
+- ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
+- MigrationMode: manifest
+- Revision: 184
+- ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
+- FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
+
+PowerOfAttorney:
+- W20E4BC5BSZHCWG3DF5SNGM812-m1e-c6925449 by=human:Wido tiers=1 verbs=approve,set-budget,unpark since=2026-09-13T06:38:47Z expires=2026-09-19
+- HN63XDTBD11WDD5B24PCPK89Z6-m1e-c6925449 by=human:Wido tiers=1,2 verbs=approve,set-budget,unpark since=2026-09-13T20:46:45Z expires=2026-09-19
+- STGRH0WVA5WDWK60TM0CBD2P4S-m1c-c6925449 by=human:Wido tiers=1 verbs=approve,set-budget,unpark since=2026-09-16T00:06:45Z expires=2026-09-22
+- FS0EXK42TCS94KQRW8APTQ66EK-m1e-c6925449 by=human:Wido tiers=1,2 verbs=approve,set-budget,unpark since=2026-09-16T07:34:02Z expires=2026-09-20
+- YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a by=human:wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-09-30T08:56:58Z until=2026-10-01T08:56:00Z revoked=2026-10-01T07:08:06Z revokedBy=human:Wido
+- C7QKWNXVF5C7Z60W7H5CE8W16F-m1e-10c6b8fe by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-01T07:08:06Z until=2026-10-01T18:00:00Z revoked=2026-10-01T15:31:39Z revokedBy=human:Wido
+- VDRWT66V2QX0M9XGP6XCB3NXCW-m1e-c6925449 by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-01T15:31:39Z until=2026-10-03T15:31:00Z
+- EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-03T15:39:48Z until=2026-10-05T22:00:00Z revoked=2026-10-05T18:28:46Z revokedBy=human:Wido
+- 9F5DQFDHQK4TRSTF6P8T2B2HEV-m1e-718ba0eb by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-05T18:28:46Z until=2026-10-08T22:00:00Z revoked=2026-10-07T09:07:05Z revokedBy=human:Wido
+- XJTXDYWWB9GC4D66RNK7C7CD64-m1e-718ba0eb by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-07T09:07:05Z until=2026-10-14T09:07:00Z
+
+History:
+- 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido
+- 2026-09-06T06:37:21Z CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f enroll-terminal actor=human:terminal
+- 2026-09-06T06:53:37Z A35EHY2TGAWCCFA1Q1J0WZGS35-m1-a4f8999f approve actor=human:Wido reason=sweep listing=a61df1ea107aefb6437c355c9d05f7a9e4e868d77363dbb0d6293f3e7b94c28e approved=100 ratified=11 skipped=adoption-inventory-from-install-set,answer-archive,conformance-runtime-state-litter,disk-hygiene,dispatch-fixture-refused-by-goal-norm,fleet-pull,host-implementer-wall,idle-every-runtime-enforcement,ledger-authentication,merge-stage-critic-close,mission-completion-protocol,one-approval-gate,open-work-scanner-blindspots,steward-catchup-livelock
+- 2026-09-06T14:30:14Z AE3TVHYT4WVWE623BDZZK3XWBK-m1-a4f8999f ack actor=m1+main-1788594343-3833-fb64b9 targets=hook-root-resolver-design displaced=m1+main-1788594343-3833-fb64b9@2026-09-06T11:21:23Z ack
+- 2026-09-06T21:08:58Z VGPR7YCXCGD6J8TVPK8A51CA29-m1-a4f8999f ack actor=m1+main-1788594343-3833-fb64b9 targets=fleet-coordinator-brain displaced=m1+main-1788594343-3833-fb64b9@2026-09-06T21:04:27Z ack
+- 2026-09-07T07:30:28Z 9S47R8KRJBAWTSFQ1TJQDEMD2S-m1b-c6925449 ack actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb displaced=m1b+main-1788680071-18713-e76d5d@2026-09-07T00:54:32Z ack
+- 2026-09-07T17:23:32Z ME8EJKSF7R2FJEWYZ13W5JVC9C-m1b-c6925449 ack actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb displaced=m1b+main-1788680071-18713-e76d5d@2026-09-07T07:29:27Z ack
+- 2026-09-08T05:24:18Z CCPXF4Z60MFM3TR8HMWPSM2K8S-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=host-runtime-setup displaced=m1c+main-1788759014-39092-24fa5c@2026-09-07T05:46:29Z ack
+- 2026-09-08T05:24:18Z CCPXF4Z60MFM3TR8HMWPSM2K8S-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=host-runtime-setup displaced=m1c+main-1788759014-39092-24fa5c@2026-09-07T10:34:41Z ack
+- 2026-09-08T06:03:40Z BTQK44TAHQG04MNHEX3QW4SJ6W-m1b-c6925449 ack actor=m1b+main-1788680071-18713-e76d5d targets=metasystem-stop-verb displaced=m1b+main-1788680071-18713-e76d5d@2026-09-07T17:22:36Z ack
+- 2026-09-08T16:13:31Z MVQB2N9NB40E5JN0G531CG0793-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-08T05:30:36Z ack
+- 2026-09-09T07:02:39Z HM0265CA42BEV4C7KJK8MRDJ7J-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-08T15:17:31Z ack
+- 2026-09-09T07:53:19Z BSM7M0966AW6PP27KX7KNFB6HA-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T06:15:30Z ack
+- 2026-09-09T10:07:26Z 7FWJB1WRYQWTXYBHTE20KAWFDC-m1d-a38bcdde ack actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat displaced=m1d+main-1788941004-20871-6e7a43@2026-09-09T09:08:59Z ack
+- 2026-09-09T13:09:24Z J886PPPDT9VWDHJR9TGXVWR9PQ-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T07:45:39Z ack
+- 2026-09-09T13:09:24Z J886PPPDT9VWDHJR9TGXVWR9PQ-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T09:14:14Z ack
+- 2026-09-09T13:09:24Z J886PPPDT9VWDHJR9TGXVWR9PQ-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T10:32:42Z ack
+- 2026-09-10T06:03:24Z GFGTDQ5RH0TX7NY6KH8K03NBR9-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T12:29:23Z ack
+- 2026-09-10T06:03:24Z GFGTDQ5RH0TX7NY6KH8K03NBR9-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T16:28:40Z ack
+- 2026-09-10T06:03:24Z GFGTDQ5RH0TX7NY6KH8K03NBR9-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T18:15:06Z ack
+- 2026-09-10T06:03:24Z GFGTDQ5RH0TX7NY6KH8K03NBR9-m1c-1274caf4 ack actor=m1c+main-1788759014-39092-24fa5c targets=coordinator-loop-prevention displaced=m1c+main-1788759014-39092-24fa5c@2026-09-09T20:30:14Z ack
+- 2026-09-10T06:18:28Z 83XV5YWBR1PN5MV65PNHJS6ZY8-m1d-a38bcdde ack actor=m1d+main-1788941004-20871-6e7a43 targets=breach-stop-wedges-seat displaced=m1d+main-1788941004-20871-6e7a43@2026-09-10T06:18:03Z ack
+- 2026-09-10T09:21:37Z 2C24XF9AWAKWKYAJ8ZF7A1TKW2-m1c-66a02980 ack actor=m1c+main-1789023008-75159-b69143 targets=gate-fence-returns-to-per-landing-proof displaced=m1c+main-1789023008-75159-b69143@2026-09-10T06:53:58Z ack
+- 2026-09-11T10:04:01Z XY00804EZFSMJF2462WQFKRTH3-m1d-a38bcdde ack actor=human:Wido targets=human-carried-landing-carry displaced=m1d+main-1788941004-20871-6e7a43@2026-09-11T02:09:09Z ack
+- 2026-09-11T11:05:29Z P40SW96EDNR7JMQ0G6JZMPSRTV-m1c-66a02980 ack actor=m1c+main-1789023008-75159-b69143 targets=budget-raises-preserve-elapsed-origin displaced=m1c+main-1789023008-75159-b69143@2026-09-11T05:48:36Z ack
+- 2026-09-11T13:12:46Z EP76YEAF9FNDJ474Q4MKSYR87A-m1-1701c13c ack actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock displaced=m1+main-1788940932-18533-7fa6c2@2026-09-10T22:37:29Z ack
+- 2026-09-11T13:12:46Z EP76YEAF9FNDJ474Q4MKSYR87A-m1-1701c13c ack actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock displaced=m1+main-1788940932-18533-7fa6c2@2026-09-11T00:34:18Z ack
+- 2026-09-11T13:12:46Z EP76YEAF9FNDJ474Q4MKSYR87A-m1-1701c13c ack actor=m1+main-1788940932-18533-7fa6c2 targets=proof-groups-detect-hangs-by-progress-not-the-clock displaced=m1+main-1788940932-18533-7fa6c2@2026-09-11T01:15:34Z ack
+- 2026-09-11T13:52:22Z S2R40KWSVJ8NQA8KJR2ER8E8QN-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=landing-runs-standard-deep-runs-at-cadence displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T13:25:46Z ack
+- 2026-09-11T14:53:37Z D582VB519KB1J9V7Q7BGYW7ZQN-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=adoption-comparison-runs-once displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T14:41:37Z ack
+- 2026-09-11T14:53:50Z 166K1EH4DGXAQTZN22W8W57RKS-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=narration-cap-test-writes-its-history-once displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T14:53:37Z ack
+- 2026-09-11T14:54:06Z 2PB2JN1G2SH0F8TV68R94WVAE0-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=missionrunner-cycle-tests-lower-the-reap-interval displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T14:53:50Z ack
+- 2026-09-11T15:01:47Z 58EHC1WQTMB2B28F7A6XGGG1KY-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=commit-does-not-repeat-the-fast-gate displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T14:54:06Z ack
+- 2026-09-11T15:02:30Z 2VMTGJ8N67T3CC3A6ZYKPPBCYT-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=brain-boot-sleep-fixture-matches-its-deadline displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T15:01:47Z ack
+- 2026-09-11T15:15:53Z VDTHR8CEY32MD4FPYXZ91NKFDG-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=witness-fallback-only-on-environmental-refusal displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T15:02:30Z ack
+- 2026-09-11T16:37:45Z KC7BM4TWZYTWMDWRXXX9S9V766-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=dispatcher-fixture-long-waits-bounded displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T16:22:22Z ack
+- 2026-09-11T19:57:46Z RK9AQ3TT6EG56TEMHAWN2M0AV6-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T16:37:45Z ack
+- 2026-09-11T22:09:34Z FR4FWH1KFPD58D0J91CJJMQB4M-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes displaced=m1e+main-1789030447-51011-5722fc@2026-09-11T19:57:52Z ack
+- 2026-09-12T07:18:57Z HSYCR4FGWYB94K6XTT9MD9YVMH-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=seat-opened-goals-name-their-blocker displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T06:04:09Z ack
+- 2026-09-12T07:29:40Z YCT88RS6800D5203WBRYDJY72Z-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=landing-refuses-without-its-receipt-line displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T06:07:26Z ack
+- 2026-09-12T08:05:37Z 1Q9KA44DBTZW7AV0505SD24JN0-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=delivery-receipt-stops-at-first-failure displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T07:29:40Z ack
+- 2026-09-12T09:33:54Z XM1RW2NX75WRKF6GGXJRPP22V4-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=budget-extends-by-consumption-and-breach-parks displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T07:18:57Z ack
+- 2026-09-12T09:52:29Z TB9PAF22EN5N6FH79ABVBRVF3J-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=retained-proof-reuse-crosses-claims-and-attempts displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T08:05:37Z ack
+- 2026-09-12T11:18:02Z HPF24PEEADES1RYW50C9NXRFZB-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=tier-from-severity-and-novelty displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T09:33:54Z ack
+- 2026-09-12T11:24:23Z 1488BWB7Q9GB3M70XT0QK7AT2V-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=deep-battery-under-ten-minutes displaced=m1e+main-1789030447-51011-5722fc@2026-09-12T08:19:30Z ack
+- 2026-09-12T11:24:37Z DHDRSCC796KT7ZT4NQHBF5PETZ-m1b-c6925449 ack actor=human:Wido targets=defect-analysis-gate displaced=m1b+main-1788680071-18713-e76d5d@2026-09-12T05:46:33Z ack
+- 2026-09-12T12:24:00Z E2H64P1E38N6Y36P3YMNK4AGDH-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=hung-proof-attempts-end-at-their-deadline displaced=m1e+main-1789030447-51011-5722fc@2026-09-12T11:48:35Z ack
+- 2026-09-12T12:40:44Z JCVKBXXEV2V9VDHACGNXQF64WK-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=delegate-proof-runs-inside-the-sandbox displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T11:24:41Z ack
+- 2026-09-12T15:09:31Z 4685C09HB51JJ643WR0X37G5XK-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=land-ready-work-lands-without-a-claim-slot displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T11:18:02Z ack
+- 2026-09-12T15:19:34Z 0338M903FQ19JSZAP4ETNRAA42-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=time-bound-tests-run-on-artificial-clocks displaced=m1e+main-1789030447-51011-5722fc@2026-09-12T12:24:00Z ack
+- 2026-09-12T15:48:46Z Y53S7944GVPSNJQ4H661SSNCHV-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=delegate-rounds-reuse-a-warm-gate displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T12:40:44Z ack
+- 2026-09-12T17:15:40Z Z3B6P74Y7T7J632YQB12RN10EW-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=capped-round-continues-instead-of-restarting displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T15:09:31Z ack
+- 2026-09-12T22:48:37Z JC8W18D9FYMHQBMPYA25415TD9-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-infrastructure-allows-the-seat-to-stop displaced=m1b+main-1789191336-90295-e4b24b@2026-09-12T19:41:20Z ack
+- 2026-09-12T22:51:49Z FTAD9PC8KSDC6PF0WFKRQPYB9F-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=critique-always displaced=m1e+main-1789030447-51011-5722fc@2026-09-12T21:50:58Z ack
+- 2026-09-13T06:38:47Z W20E4BC5BSZHCWG3DF5SNGM812-m1e-c6925449 grant actor=human:Wido reason=tiers=1 verbs=approve,set-budget,unpark expires=2026-09-19
+- 2026-09-13T06:46:50Z 85WNMEGZTZW1G2BRM9070THZMP-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=budget-extends-by-consumption-and-breach-parks displaced=m1c+main-1789191340-90689-8975a9@2026-09-12T17:19:41Z ack
+- 2026-09-13T08:43:33Z M15R4Y7X35N20R2FN4A23QSWJJ-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=wait-verb-returns-on-recorded-events displaced=m1b+main-1789191336-90295-e4b24b@2026-09-13T08:29:53Z ack
+- 2026-09-13T08:54:07Z SK4M8NE8FGF30BY1GYEG3X72YN-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=landing-receipt-survives-records-drift displaced=m1e+main-1789030447-51011-5722fc@2026-09-13T06:47:36Z ack
+- 2026-09-13T18:23:23Z B62DMVD4JTW7AV40KDEETAV8T3-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=stop-refusal-fits-on-one-screen displaced=m1c+main-1789191340-90689-8975a9@2026-09-13T15:38:47Z ack
+- 2026-09-13T20:46:45Z HN63XDTBD11WDD5B24PCPK89Z6-m1e-c6925449 grant actor=human:Wido reason=tiers=1,2 verbs=approve,set-budget,unpark expires=2026-09-19
+- 2026-09-14T02:14:03Z MNBZ2D4GPE3BVNXB8BVYJE9AAK-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=receipt-admission-caps-concurrent-batteries displaced=m1e+main-1789030447-51011-5722fc@2026-09-14T01:22:19Z ack
+- 2026-09-14T03:22:01Z FSV7Y77NMFWJN3XB3AJZ07Z6SY-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget displaced=m1e+main-1789030447-51011-5722fc@2026-09-14T03:21:33Z ack
+- 2026-09-14T06:09:25Z NTSAP4M2ES3MYB38KSYHMN1MET-m1b-c6925449 engine-floor actor=human:Wido reason=e35aef8ad7599bea7b0fc3d0d53652fb0b533d77 every enrolled seat runs this engine or newer
+- 2026-09-14T16:18:00Z DSCY6YR357JHJXBFN1GE6BJ4BW-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=stop-gate-honours-a-registered-wait displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T14:11:03Z ack
+- 2026-09-14T17:04:20Z JN9BSG8SSNCZT03FEBHAQZQQF1-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T06:48:31Z ack
+- 2026-09-14T17:04:20Z JN9BSG8SSNCZT03FEBHAQZQQF1-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T16:45:56Z ack
+- 2026-09-14T19:01:21Z V14JQ0XATFB25HZXXYCFQJEVE1-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=stop-decisions-record-deadline-evidence displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T16:47:25Z ack
+- 2026-09-14T20:40:12Z ESAW8Z92TP4653ZQNG8S2C9GZM-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=beds-report-every-failure displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T20:26:40Z ack
+- 2026-09-14T21:28:54Z MGDJ8D64C2HFM8D319GS2YNYGQ-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=witness-bed-fakes-the-proof-engine-build displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T21:11:33Z ack
+- 2026-09-14T21:31:26Z B58FC7PFZK47RCQSBJMT1ZHJQ1-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=hook-root-resolver-design displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T21:31:08Z ack
+- 2026-09-14T22:34:25Z H6GZTQRDWAVT3FQ4CDHFKZSHMY-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=brain-actor-seam-lists-the-wait-caller displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T22:33:20Z ack
+- 2026-09-14T23:04:32Z 7H9K8PNMY01FPGN6QRZPSMZ270-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=session-start-relays-the-durable-wait-line displaced=m1c+main-1789191340-90689-8975a9@2026-09-14T23:03:51Z ack
+- 2026-09-14T23:46:53Z PNCBBMPB4H34MVRQR9YWEVJJD5-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget displaced=m1e+main-1789030447-51011-5722fc@2026-09-14T03:21:41Z ack
+- 2026-09-15T00:10:53Z 2Y78Z4MRM6W2046FF2DHS6CV9Q-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=failures-show-observed-against-expected displaced=m1b+main-1789191336-90295-e4b24b@2026-09-14T22:39:33Z ack
+- 2026-09-15T00:35:35Z J65DZJR6EP4XN3JG6G4X4KAZQB-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=forged-delegate-hint-refuses-session-start displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T00:05:25Z ack
+- 2026-09-15T05:41:18Z CQ5ANK3RJ8QHJT0HTKJ5S5JFWB-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=failures-show-observed-against-expected displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T00:10:17Z ack
+- 2026-09-15T05:48:39Z F7DVK9M8CSHD0K2FNK7S9VMWT3-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T05:46:42Z ack
+- 2026-09-15T06:17:43Z A0PCR3BD19AEHS3113XVH7AN63-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=brain-boot-failure-keeps-the-wait-line displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T06:07:18Z ack
+- 2026-09-15T06:44:35Z HZ88VXMW9CCWC9ES2PQGP99PR9-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=failures-show-observed-against-expected displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T05:40:44Z ack
+- 2026-09-15T07:46:57Z GD1V9HCT798Y38XSJV9V0JGM32-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=go-tests-never-inherit-a-candidate-engine displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T06:17:43Z ack
+- 2026-09-15T08:37:32Z Z64HJ4MYHMSWENEGAKHC2M4DSM-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=land-bed-reads-build-stamps-without-a-broken-pipe displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T07:46:57Z ack
+- 2026-09-15T08:43:26Z A1K4HM0D59HEXM01PTFK900NP5-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=brief-declares-the-round-boundary displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T07:12:44Z ack
+- 2026-09-15T09:07:04Z 840ZVTPYSKSEDG3THN5S5E61E4-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=dispatch-bed-preamble-check-survives-a-large-prompt displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T08:17:04Z ack
+- 2026-09-15T09:22:07Z QTNKJ52FEGJR6KH1B81WQZ9B3X-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=coordinator-context-stays-under-budget displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T08:43:30Z ack
+- 2026-09-15T09:23:53Z S4A6VNHF2W9YKGAZAGFBXMW36P-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=delegates-never-write-the-receipts-log displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T08:37:32Z ack
+- 2026-09-15T09:50:24Z 7DWWGDZB5V4PH5VM5TF29P0SNP-m1c-69c9e454 ack actor=m1c+main-1789191340-90689-8975a9 targets=design-allocations-leave-ceiling-margin displaced=m1c+main-1789191340-90689-8975a9@2026-09-15T09:23:53Z ack
+- 2026-09-15T09:57:33Z 8SZWYATG3551EVT3G23ZSGQD2V-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=goal-cli-power-of-attorney-check-reads-the-backlog-from-a-file displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T09:07:18Z ack
+- 2026-09-15T10:40:04Z KSPZF9860HA7SVJFD30RS4XPD8-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=brief-declares-the-round-boundary displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T09:22:11Z ack
+- 2026-09-15T12:16:07Z 9JZY876BJBSP1CSY3T5DV1EJSG-m1c-29fb3255 ack actor=m1c+main-1789191340-90689-792d8f targets=design-delegates-run-fresh-and-bounded displaced=m1c+main-1789191340-90689-792d8f@2026-09-15T11:38:06Z ack
+- 2026-09-15T13:03:00Z C83JXN6KX6ASQBP9WKC52AH96B-m1c-29fb3255 ack actor=m1c+main-1789191340-90689-792d8f targets=suite-progress-bed-runs-on-trunk displaced=m1c+main-1789191340-90689-792d8f@2026-09-15T12:18:09Z ack
+- 2026-09-15T14:01:39Z W89Q0CM58SA5XQPQN6DPWS1D1Z-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=every-verb-resolves-repo-to-an-absolute-root displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T12:38:32Z ack
+- 2026-09-15T14:19:47Z T7XVX4PHEDP4HCQKGT9E6ARKN8-m1c-a6ea8b3e ack actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause displaced=m1c+main-1789191340-90689-2eda89@2026-09-15T13:57:56Z ack
+- 2026-09-15T15:58:41Z Q3QHW72TYK67S1ARK71CN07AMT-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T14:21:33Z ack
+- 2026-09-15T19:27:57Z 97CTDTWA254ANM27G8EAM3V5WJ-m1c-a6ea8b3e ack actor=m1c+main-1789191340-90689-2eda89 targets=spend-fence-reports-tokens-per-model-and-cause displaced=m1c+main-1789191340-90689-2eda89@2026-09-15T19:11:11Z ack
+- 2026-09-15T19:39:31Z J6X2RVRCNHK0YN02W54TDH9X8J-m1e-892cdaec ack actor=m1e+main-1789030447-51011-5722fc targets=seats-spend-tokens-in-bounded-sessions displaced=m1e+main-1789030447-51011-5722fc@2026-09-15T10:40:08Z ack
+- 2026-09-15T19:48:16Z GXG1QX184WKBT3C9A6Y7WY33BA-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T15:58:45Z ack
+- 2026-09-15T19:48:16Z GXG1QX184WKBT3C9A6Y7WY33BA-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-15T19:28:26Z ack
+- 2026-09-16T00:03:56Z MSHR36GJYHFACY535HPTK69SYM-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=registered-wait-matches-the-runtime-session displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T00:03:19Z ack
+- 2026-09-16T00:06:45Z STGRH0WVA5WDWK60TM0CBD2P4S-m1c-c6925449 grant actor=human:Wido reason=tiers=1 verbs=approve,set-budget,unpark expires=2026-09-22
+- 2026-09-16T02:16:08Z GCD6ZFXF2FFBBKRHMCZ56GH6DF-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T02:15:06Z ack
+- 2026-09-16T07:34:02Z FS0EXK42TCS94KQRW8APTQ66EK-m1e-c6925449 grant actor=human:Wido reason=tiers=1,2 verbs=approve,set-budget,unpark expires=2026-09-20
+- 2026-09-16T08:32:37Z 06TVM7E1K85PYBAZ9REMEA7HC2-m1b-30a7e141 ack actor=m1b+main-1789191336-90295-e4b24b targets=coordinator-wakes-on-events-not-polls displaced=m1b+main-1789191336-90295-e4b24b@2026-09-16T07:58:28Z ack
+- 2026-09-16T19:58:50Z 9MZ8XE84X51QJ6C4VP01KHYYE7-m1c-fde8080b ack actor=m1c+main-1789560465-86072-c7b126 targets=fixture-children-cannot-outlive-their-test displaced=m1c+main-1789560465-86072-c7b126@2026-09-16T18:42:59Z ack
+- 2026-09-16T23:51:51Z S0H1K0NY95NNDQZY8FPDRA15C6-m1e-a3d4c1e1 ack actor=m1e+main-1789030447-51011-2956ea targets=trunk-reds-proof-grades-and-alert-episode displaced=m1e+main-1789030447-51011-2956ea@2026-09-16T23:48:08Z ack
+- 2026-09-17T06:28:14Z QX48D1FMFQXF5HDM5R1FE34YC9-m1c-fde8080b ack actor=m1c+main-1789560465-86072-c7b126 targets=fixture-children-cannot-outlive-their-test displaced=m1c+main-1789560465-86072-c7b126@2026-09-16T19:59:00Z ack
+- 2026-09-17T11:00:18Z SFAAG6XTSTBKHWN3GQ3TAS7Q2F-m1c-fde8080b ack actor=m1c+main-1789560465-86072-c7b126 targets=fixture-children-cannot-outlive-their-test displaced=m1c+main-1789560465-86072-c7b126@2026-09-17T06:04:58Z ack
+- 2026-09-17T15:25:47Z ZW8J6Q8PKV38PNCED2ACG1C665-m1c-fde8080b ack actor=m1c+main-1789560465-86072-c7b126 targets=goals-live-on-branches displaced=m1c+main-1789560465-86072-c7b126@2026-09-17T11:00:18Z ack
+- 2026-09-17T15:37:34Z 9C051BTV9GHW41WCH66QXW1AAY-m1b-d0e95724 ack actor=m1b+main-1789560571-22295-8d907a targets=red-on-main-gets-an-owner-on-the-ledger displaced=m1b+main-1789560571-22295-8d907a@2026-09-17T02:17:31Z ack
+- 2026-09-17T15:37:34Z 9C051BTV9GHW41WCH66QXW1AAY-m1b-d0e95724 ack actor=m1b+main-1789560571-22295-8d907a targets=red-on-main-gets-an-owner-on-the-ledger displaced=m1b+main-1789560571-22295-8d907a@2026-09-17T06:05:36Z ack
+- 2026-09-19T14:53:12Z TJQ1Y0QHSG6JGD10S9J3THCQ11-m1b-d0e95724 ack actor=m1b+main-1789560571-22295-8d907a targets=batch-landing-known-issues-are-fixed displaced=m1b+main-1789560571-22295-8d907a@2026-09-18T14:09:05Z ack
+- 2026-09-19T15:51:18Z SBW1ZKJ7EZ94F2YH97VKC8VC3Z-m1e-c19f13ae ack actor=m1e+main-1789561396-11601-6f713b targets=seat-successor-continues-a-handoff-without-a-human displaced=m1e+main-1789561396-11601-6f713b@2026-09-19T07:41:10Z ack
+- 2026-09-19T20:56:07Z 7D3J897XRPZZ0JHWA60Q8BNWEC-m1e-c19f13ae ack actor=m1e+main-1789561396-11601-6f713b targets=machinery-runs-unattended-on-codex displaced=m1e+main-1789561396-11601-6f713b@2026-09-19T15:51:18Z ack
+- 2026-09-21T03:33:11Z ZE2EPBZC81XWKVMHJZPRRPN9CP-m1e-226b0953 ack actor=human:Wido targets=goal-landing-efficiency displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-20T10:46:49Z ack
+- 2026-09-21T03:33:11Z ZE2EPBZC81XWKVMHJZPRRPN9CP-m1e-226b0953 ack actor=human:Wido targets=goal-landing-efficiency displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-20T16:31:05Z ack
+- 2026-09-21T03:33:11Z ZE2EPBZC81XWKVMHJZPRRPN9CP-m1e-226b0953 ack actor=human:Wido targets=goal-landing-efficiency displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-20T18:49:23Z ack
+- 2026-09-21T03:33:11Z ZE2EPBZC81XWKVMHJZPRRPN9CP-m1e-226b0953 ack actor=human:Wido targets=goal-landing-efficiency displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-20T21:54:19Z ack
+- 2026-09-22T11:27:26Z ETHNG0PHR6PFBGHHAQ7TXFW3NJ-m1e-226b0953 ack actor=m1e+main-1789893000-16595-1a7a6a targets=tests-parallel-and-deterministic displaced=m1e+main-1789893000-16595-1a7a6a@2026-09-22T01:18:20Z ack
+- 2026-09-30T08:56:58Z YY6RQ7765HX224V3NT4TN67JFR-m1e-b6a4eb0a grant actor=human:wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-01T08:56:00Z
+- 2026-09-30T08:58:05Z EEDJWQCK3SC1YPZ56F1EY4GKV9-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=verbs-match-intent displaced=m1e+main-1790454088-93948-21671b@2026-09-27T19:58:20Z ack
+- 2026-09-30T08:58:05Z EEDJWQCK3SC1YPZ56F1EY4GKV9-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=verbs-match-intent displaced=m1e+main-1790454088-93948-21671b@2026-09-27T19:58:48Z ack
+- 2026-10-01T03:32:31Z Z12HCBR7GFBKK5MK9SSY936S7N-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=test-environment-edges-are-closed displaced=m1e+main-1790454088-93948-21671b@2026-09-30T13:25:28Z ack
+- 2026-10-01T03:32:31Z Z12HCBR7GFBKK5MK9SSY936S7N-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=switch-on-trial displaced=m1e+main-1790454088-93948-21671b@2026-09-30T08:58:05Z ack
+- 2026-10-01T06:56:04Z P72GVYNRQCHJ3FKHMQ3M1DTRVV-ui-d4023bb7 ack actor=ui+main-1790664507-87928-61899b targets=ask-what-happened-follow-ups displaced=ui+main-1790664507-87928-61899b@2026-09-30T14:56:00Z ack
+- 2026-10-01T07:08:06Z C7QKWNXVF5C7Z60W7H5CE8W16F-m1e-10c6b8fe grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-01T18:00:00Z
+- 2026-10-01T07:54:10Z GS4MJ74SR7M92ZNCWCH0TXEBK8-ui-d4023bb7 ack actor=ui+main-1790664507-87928-61899b targets=ask-what-happened-follow-ups displaced=ui+main-1790664507-87928-61899b@2026-10-01T06:56:04Z ack
+- 2026-10-01T07:54:10Z GS4MJ74SR7M92ZNCWCH0TXEBK8-ui-d4023bb7 ack actor=ui+main-1790664507-87928-61899b targets=ask-what-happened-follow-ups displaced=ui+main-1790664507-87928-61899b@2026-10-01T06:58:00Z ack
+- 2026-10-01T15:31:39Z VDRWT66V2QX0M9XGP6XCB3NXCW-m1e-c6925449 grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-03T15:31:00Z
+- 2026-10-02T02:11:01Z GWMFCQNTB3NRHRG4WFTWJVMWVB-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=review-briefs-name-a-threat-model displaced=m1e+main-1790454088-93948-21671b@2026-10-02T02:08:51Z ack
+- 2026-10-02T02:50:24Z 2X46PWT82ZT6XZFVJP35B3F8B0-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=lane-check-red displaced=m1e+main-1790454088-93948-21671b@2026-10-02T02:11:20Z ack
+- 2026-10-02T03:11:13Z WN89TPJVYJZECWK5B4C441EG6X-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=lane-check-conflict-b displaced=m1e+main-1790454088-93948-21671b@2026-10-02T02:50:38Z ack
+- 2026-10-02T10:16:27Z D2VVM51K6YGVSFX2CXP5K6KMG6-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=lane-check-pause displaced=m1e+main-1790454088-93948-21671b@2026-10-02T03:11:13Z ack
+- 2026-10-02T22:28:16Z 35F1SFBERVEFTZJ3TYJCYF8472-m1h-71c5cb39 ack actor=m1h+steward-seat targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-02T21:05:00Z ack
+- 2026-10-02T22:29:18Z P1RYV5X29AE0XXNMPAR32AB841-m1i-71c5cb39 ack actor=m1i+steward-seat targets=steward-acts-on-behaviour-patterns displaced=m1i+steward-seat@2026-10-02T21:04:56Z ack
+- 2026-10-02T22:31:05Z 64M7RPYBY4AWX6YPFCE27XHVS3-m1g-71c5cb39 ack actor=m1g+steward-seat targets=seat-path-lands-without-help displaced=m1g+steward-seat@2026-10-02T20:47:59Z ack
+- 2026-10-02T22:59:40Z ZYVWY8ZE320CWWJD8QTFAXSSV0-ui-71c5cb39 ack actor=ui+steward-seat targets=work-review-starts-its-critic displaced=ui+steward-seat@2026-10-02T21:05:35Z ack
+- 2026-10-03T02:48:01Z NCKBTQVZ3P6QY3NQ4KHZ7Y00GF-m1g-71c5cb39 ack actor=m1g+steward-seat targets=seat-path-lands-without-help displaced=m1g+steward-seat@2026-10-02T22:38:46Z ack
+- 2026-10-03T03:30:40Z 6VXGFMDNPESRGPYNDRKBFMHGDA-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-02T22:59:40Z ack
+- 2026-10-03T04:14:53Z K432J4ASKK6NNK23GE7YBDE0KF-m1i-71c5cb39 ack actor=m1i+steward-seat targets=ui-reads-well-on-a-phone-in-plain-words displaced=m1i+steward-seat@2026-10-02T22:29:18Z ack
+- 2026-10-03T04:14:53Z K432J4ASKK6NNK23GE7YBDE0KF-m1i-71c5cb39 ack actor=m1i+steward-seat targets=ui-reads-well-on-a-phone-in-plain-words displaced=m1i+steward-seat@2026-10-02T23:37:36Z ack
+- 2026-10-03T04:30:13Z NJ0PCKW93JRDY9F3B2AWDKF323-m1h-71c5cb39 ack actor=m1h+steward-seat targets=ui-shows-true-facts displaced=m1h+steward-seat@2026-10-02T22:28:16Z ack
+- 2026-10-03T04:31:54Z YM5ZEZFBBG48YHE1424W0RGRH2-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T03:30:45Z ack
+- 2026-10-03T04:34:49Z VFV6Y8SQPGHMHV5JH1CCK2A5V4-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T04:31:59Z ack
+- 2026-10-03T04:59:05Z TWT3002RGN00M3RQM776GQ76DA-m1f-71c5cb39 ack actor=m1f+steward-seat targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-02T20:46:14Z ack
+- 2026-10-03T06:22:44Z 8P3NNSA5H4V8YJJN5TFKVP9RGA-m1h-71c5cb39 ack actor=m1h+steward-seat targets=ui-shows-true-facts displaced=m1h+steward-seat@2026-10-03T04:30:18Z ack
+- 2026-10-03T07:51:12Z 4GYAQTS292434CMP21X2WRK6Y7-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T04:14:53Z ack
+- 2026-10-03T09:56:18Z WBRNW9RTCN4QZMW81A9R7PPRFN-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T07:51:18Z ack
+- 2026-10-03T10:41:26Z 8CA1K7YJM66QMHYERSRHKTSZ7M-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T07:22:05Z ack
+- 2026-10-03T10:50:25Z 087EY8M5V15AXAG0JB4GB6PD80-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-02T21:56:55Z ack
+- 2026-10-03T10:50:25Z 087EY8M5V15AXAG0JB4GB6PD80-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-02T23:31:20Z ack
+- 2026-10-03T10:50:25Z 087EY8M5V15AXAG0JB4GB6PD80-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T02:37:34Z ack
+- 2026-10-03T10:50:25Z 087EY8M5V15AXAG0JB4GB6PD80-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T09:22:32Z ack
+- 2026-10-03T12:03:28Z KR1SD72S6PHG56R7CQQZG40RPD-m1h-71c5cb39 ack actor=m1h+steward-seat targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T06:22:44Z ack
+- 2026-10-03T12:19:54Z EGWE71E3X1BEP1N1HMSNSX5TRG-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T10:41:32Z ack
+- 2026-10-03T12:19:54Z EGWE71E3X1BEP1N1HMSNSX5TRG-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-panel-ux displaced=ui+steward-seat@2026-10-03T04:34:54Z ack
+- 2026-10-03T13:25:02Z KVQQEFT02BGPTG44NY8806WBW0-m1g-71c5cb39 ack actor=m1g+steward-seat targets=seat-path-lands-without-help displaced=m1g+steward-seat@2026-10-03T02:48:05Z ack
+- 2026-10-03T14:02:29Z VS553HRBE2RFQZ7YRZCXZZ9DQH-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T10:50:29Z ack
+- 2026-10-03T14:02:29Z VS553HRBE2RFQZ7YRZCXZZ9DQH-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T13:59:35Z ack
+- 2026-10-03T15:39:48Z EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-05T22:00:00Z
+- 2026-10-03T15:55:50Z 6FWMCWAS5BRSZANWD0SH5T1CGS-m1f-71c5cb39 ack actor=m1f+steward-seat targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-03T09:21:35Z ack
+- 2026-10-03T16:36:41Z VTADZVAQD0PH7ZDN51AFNVYYDH-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T09:56:26Z ack
+- 2026-10-03T18:01:52Z AW504GE0NGC15GPJ5BPVMJS4A8-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T14:50:04Z ack
+- 2026-10-03T18:52:24Z 5EN42JD81N73ABCA993E24Y4QR-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T16:36:47Z ack
+- 2026-10-03T18:56:52Z 1E094QCHY4Q8MM0G67ZN1WZWBH-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T14:02:37Z ack
+- 2026-10-03T19:09:39Z TDBQDC7CDDFB14913P8D19D9XQ-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T18:56:56Z ack
+- 2026-10-03T19:21:01Z SKH11229TWKJX5JK7SGM0QS893-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T19:09:49Z ack
+- 2026-10-03T20:14:52Z KS5Q3QVNEQVWT60S1HEEV1BHSZ-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T16:01:55Z ack
+- 2026-10-03T20:19:32Z AFJWSW44RFS05E0GGE16QHT49B-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T18:01:59Z ack
+- 2026-10-03T21:05:53Z D5D545VENZTY9J55W53M5873H3-m1h-71c5cb39 ack actor=m1h+steward-seat targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T12:03:33Z ack
+- 2026-10-03T21:05:53Z D5D545VENZTY9J55W53M5873H3-m1h-71c5cb39 ack actor=m1h+steward-seat targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T13:49:21Z ack
+- 2026-10-03T21:05:53Z D5D545VENZTY9J55W53M5873H3-m1h-71c5cb39 ack actor=m1h+steward-seat targets=landing-deploys-the-engine displaced=m1h+steward-seat@2026-10-03T17:13:40Z ack
+- 2026-10-03T21:28:06Z PRDRPE12W326X62FNV8WDHESP8-m1i-71c5cb39 ack actor=m1i+steward-seat targets=rosters-are-configuration-items displaced=m1i+steward-seat@2026-10-03T20:56:41Z ack
+- 2026-10-03T22:11:47Z 24DN2V7F98QZEV8X45VA2DDZYQ-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T19:50:34Z ack
+- 2026-10-03T22:11:47Z 24DN2V7F98QZEV8X45VA2DDZYQ-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-03T20:27:31Z ack
+- 2026-10-03T23:30:28Z 8AM99PCVHP7RC48D0222N9F18D-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T14:31:48Z ack
+- 2026-10-04T03:41:58Z G1HQWRKP4T1X0K2RQRK9FJ2RCT-ui-71c5cb39 ack actor=ui+steward-seat targets=fleet-page-redesign displaced=ui+steward-seat@2026-10-03T23:31:14Z ack
+- 2026-10-04T04:23:11Z RZ8YG3ED1SZD68Y8KWHQBY0E49-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-03T15:51:37Z ack
+- 2026-10-04T04:23:11Z RZ8YG3ED1SZD68Y8KWHQBY0E49-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-03T22:08:14Z ack
+- 2026-10-04T04:23:11Z RZ8YG3ED1SZD68Y8KWHQBY0E49-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T00:53:35Z ack
+- 2026-10-04T06:26:47Z VBMX26ZAVTE3EMB9QK62FSY2SJ-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-03T21:05:59Z ack
+- 2026-10-04T06:26:47Z VBMX26ZAVTE3EMB9QK62FSY2SJ-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T03:13:07Z ack
+- 2026-10-04T07:00:26Z QYDXBT9X032SXXJ4RHJWSPF0YA-m1g-71c5cb39 ack actor=m1g+steward-seat targets=seat-path-lands-without-help displaced=m1g+steward-seat@2026-10-03T13:25:07Z ack
+- 2026-10-04T07:13:36Z 2HZEYVH3JJ1PDSP0SZF9KCMWK4-ui-71c5cb39 ack actor=ui+steward-seat targets=review-findings-read-as-decisions displaced=ui+steward-seat@2026-10-04T03:43:20Z ack
+- 2026-10-04T07:16:25Z TH01RG2VK2RY9N57M7P3N0DW2B-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T17:56:51Z ack
+- 2026-10-04T07:16:25Z TH01RG2VK2RY9N57M7P3N0DW2B-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-03T22:10:47Z ack
+- 2026-10-04T07:16:25Z TH01RG2VK2RY9N57M7P3N0DW2B-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T01:03:24Z ack
+- 2026-10-04T07:16:25Z TH01RG2VK2RY9N57M7P3N0DW2B-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T03:12:59Z ack
+- 2026-10-04T07:54:49Z YHAS5G3ER5ZYA8PRVP863RHX8X-m1k-71c5cb39 ack actor=m1k+steward-seat targets=unit-rounds-converge-or-stop displaced=m1k+steward-seat@2026-10-04T07:31:39Z ack
+- 2026-10-04T08:20:16Z 7V3K7XGF27ZS3FNRRMX0WDXKN4-m1f-71c5cb39 ack actor=m1f+steward-seat targets=one-folder-deployed-and-evolved displaced=m1f+steward-seat@2026-10-03T15:55:56Z ack
+- 2026-10-04T12:06:11Z 0P5FP3348WTN4R25KDWMJ3PC78-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T03:12:51Z ack
+- 2026-10-04T12:06:11Z 0P5FP3348WTN4R25KDWMJ3PC78-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T05:41:54Z ack
+- 2026-10-04T12:43:16Z J4T4PAZM1Q7PYJBY3V3XQ7AR3R-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T07:59:10Z ack
+- 2026-10-04T12:43:16Z J4T4PAZM1Q7PYJBY3V3XQ7AR3R-m1k-71c5cb39 ack actor=m1k+steward-seat targets=design-gate-at-dispatch displaced=m1k+steward-seat@2026-10-04T11:38:01Z ack
+- 2026-10-04T13:02:08Z 39425ZKJYYF0NSFP83SXSMJ5E2-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T07:57:20Z ack
+- 2026-10-04T14:29:56Z MEK687RRMVD23RQWV51372ABD6-m1l-71c5cb39 ack actor=m1l+steward-seat targets=agent-works-as-project-partner displaced=m1l+steward-seat@2026-10-04T11:37:52Z ack
+- 2026-10-04T14:34:41Z FS34KKJ8DP27GS06H252GE0GAV-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T07:01:26Z ack
+- 2026-10-04T14:34:41Z FS34KKJ8DP27GS06H252GE0GAV-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T07:23:38Z ack
+- 2026-10-04T14:35:15Z 4HX85XR2SHM71K72AHWGTGCVEB-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=codex-jobs-run-unsandboxed-on-a-trusted-host displaced=m1e+main-1790454088-93948-21671b@2026-10-04T07:32:41Z ack
+- 2026-10-04T14:38:45Z Q99Q3B96S4GGC03Z7QE7BRYCW7-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T19:21:01Z ack
+- 2026-10-04T14:38:45Z Q99Q3B96S4GGC03Z7QE7BRYCW7-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-03T23:11:23Z ack
+- 2026-10-04T14:38:45Z Q99Q3B96S4GGC03Z7QE7BRYCW7-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-04T03:25:15Z ack
+- 2026-10-04T15:44:46Z ZK5ZSWGRNV22QMETM11CC1G39Z-ui-71c5cb39 ack actor=ui+steward-seat targets=lane-records-flakes-and-routes-their-fix displaced=ui+steward-seat@2026-10-04T07:24:09Z ack
+- 2026-10-04T16:43:29Z 0MF6KB6V2T9CP3TEPN2FQ132R8-m1l-71c5cb39 ack actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy displaced=m1l+steward-seat@2026-10-04T14:33:15Z ack
+- 2026-10-04T17:00:10Z 7ZJKMPXMCMJJZ729STYCEBCRH5-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-04 displaced=m1j+steward-seat@2026-10-04T14:38:51Z ack
+- 2026-10-04T18:16:29Z FFYBZBPSN5S5A07TQN8SB0149G-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-04 displaced=m1j+steward-seat@2026-10-04T17:34:58Z ack
+- 2026-10-04T19:00:41Z KVBM907F0994CBZG8MV7F0CN1K-m1f-71c5cb39 ack actor=m1f+steward-seat targets=lane-reproves-only-what-a-change-can-affect displaced=m1f+steward-seat@2026-10-04T08:22:27Z ack
+- 2026-10-04T19:21:34Z CMJKRPJQYVGH09QC4NBSPQMW57-ui-71c5cb39 ack actor=ui+steward-seat targets=lane-records-flakes-and-routes-their-fix displaced=ui+steward-seat@2026-10-04T14:40:45Z ack
+- 2026-10-04T19:37:27Z PAV4JZB4EBEWJRCH3A9YJM6T95-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T14:28:12Z ack
+- 2026-10-04T21:10:52Z A8J9T0DYJ0T6B5CBH02RXQWHYW-m1f-71c5cb39 ack actor=m1f+steward-seat targets=lane-reproves-only-what-a-change-can-affect displaced=m1f+steward-seat@2026-10-04T15:37:28Z ack
+- 2026-10-04T21:11:52Z BFW272P4H50MTYFKGSWTW9RB3W-m1g-71c5cb39 ack actor=m1g+steward-seat targets=goal-worktree-dispatch-uses-the-primary displaced=m1g+steward-seat@2026-10-04T18:02:19Z ack
+- 2026-10-04T21:12:08Z RWS9NVG0Y9MTE00G5FSXDHSK9X-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T13:00:29Z ack
+- 2026-10-04T21:12:08Z RWS9NVG0Y9MTE00G5FSXDHSK9X-m1h-71c5cb39 ack actor=m1h+steward-seat targets=conflicts-resolve-unattended displaced=m1h+steward-seat@2026-10-04T20:12:57Z ack
+- 2026-10-04T21:12:24Z 7QVW2QBQ79PYQ86NYP7ERY43CJ-m1k-71c5cb39 ack actor=m1k+steward-seat targets=unit-rounds-converge-or-stop displaced=m1k+steward-seat@2026-10-04T13:04:45Z ack
+- 2026-10-04T21:12:24Z 7QVW2QBQ79PYQ86NYP7ERY43CJ-m1k-71c5cb39 ack actor=m1k+steward-seat targets=unit-rounds-converge-or-stop displaced=m1k+steward-seat@2026-10-04T18:39:55Z ack
+- 2026-10-04T21:12:40Z 908Q5E3FCRE22MM2XZERZ7QR1Z-m1l-71c5cb39 ack actor=m1l+steward-seat targets=health-is-green-when-the-seat-is-healthy displaced=m1l+steward-seat@2026-10-04T15:00:09Z ack
+- 2026-10-04T21:12:56Z 1CCP3RYQA3YH887S9DMM5R6SQ4-m1j-71c5cb39 ack actor=m1j+steward-seat targets=machinery-blocks-of-2026-10-02 displaced=m1j+steward-seat@2026-10-04T20:23:53Z ack
+- 2026-10-04T21:13:12Z 19SCN56KZ6VW0QM0G6X9G40802-ui-71c5cb39 ack actor=ui+steward-seat targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-04T19:21:34Z ack
+- 2026-10-05T18:28:46Z 9F5DQFDHQK4TRSTF6P8T2B2HEV-m1e-718ba0eb grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-08T22:00:00Z
+- 2026-10-06T09:43:12Z 1R22TKM0DZ85BJE23Y7WV40KVM-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=design-gate-at-dispatch displaced=m1e+main-1790454088-93948-21671b@2026-10-04T14:35:15Z ack
+- 2026-10-07T09:07:05Z XJTXDYWWB9GC4D66RNK7C7CD64-m1e-718ba0eb grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-14T09:07:00Z
+- 2026-10-10T02:53:08Z 24JCRJKX6BZ7Y4JE09F4B5Q5MD-m1e-f456f182 ack actor=human:Wido targets=lane-lands-finished-goals displaced=m1e+main-1790454088-93948-21671b@2026-10-06T09:43:12Z ack
+- 2026-10-10T14:42:17Z T38S2VCT4ZPCGH5YGV51B5W6TZ-m1e-f456f182 ack actor=human:Wido targets=fleet-provider-and-session-recovery displaced=m1e+main-1790454088-93948-21671b@2026-10-10T02:53:08Z ack
+- 2026-10-10T14:42:17Z T38S2VCT4ZPCGH5YGV51B5W6TZ-m1e-f456f182 ack actor=human:Wido targets=process-changes-cover-declarations-and-interventions displaced=m1e+main-1790454088-93948-21671b@2026-10-10T03:07:30Z ack
+- 2026-10-11T06:06:18Z JBWYK11THE7QD92K84V19KFPH1-m1e-f456f182 ack actor=human:Wido targets=process-changes-cover-declarations-and-interventions displaced=m1e+main-1790454088-93948-21671b@2026-10-10T19:24:35Z ack
+Integrity: sha256=7a271caf0c8ffda8b60017bcebc5fb345bd4c2c554c922ad1cebcfc2932f88dd

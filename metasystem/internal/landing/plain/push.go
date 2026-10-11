@@ -32,14 +32,15 @@ func (r *Refusal) Error() string { return r.Code + ": " + r.Reason }
 
 // Pushed is one line of pushes.jsonl.
 type Pushed struct {
-	Fixes        []Fix     `json:"fixes,omitempty"`
-	Clock        *Clock    `json:"clock,omitempty"`
-	BatchID      string    `json:"batch-id,omitempty"`
-	BatchMembers []GoalSHA `json:"batch-members,omitempty"`
-	Old          string    `json:"old"`
-	Commit       string    `json:"commit"`
-	Tree         string    `json:"tree"`
-	At           string    `json:"at"`
+	FoldedCommits []string  `json:"folded_commits,omitempty"`
+	Fixes         []Fix     `json:"fixes,omitempty"`
+	Clock         *Clock    `json:"clock,omitempty"`
+	BatchID       string    `json:"batch-id,omitempty"`
+	BatchMembers  []GoalSHA `json:"batch-members,omitempty"`
+	Old           string    `json:"old"`
+	Commit        string    `json:"commit"`
+	Tree          string    `json:"tree"`
+	At            string    `json:"at"`
 }
 
 // PushOutcome is what a push did: main moved from Old to Commit
@@ -133,7 +134,22 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 	if err != nil {
 		return outcome, err
 	}
+	move := MainMove{Kind: "none"}
 	if !forward {
+		selected, readErr := ReadBatch(install)
+		if readErr != nil {
+			return outcome, readErr
+		}
+		var members []GoalSHA
+		if selected != nil {
+			members = selected.Members
+		}
+		move, err = mainMove(checkout, head, old, seams, members...)
+		if err != nil {
+			return outcome, err
+		}
+	}
+	if !forward && move.Kind != "records-only" {
 		return outcome, &Refusal{Code: CodeNotFastForward,
 			Reason: "HEAD does not contain origin's main " + Short(old) + ", so pushing it would rewrite main; nothing was pushed",
 			Next:   "merge origin/main into the lane checkout, prove it and push again"}
@@ -145,11 +161,38 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 	} else if batch != nil && batch.State != BatchRunning {
 		return outcome, batchRefusal("the recorded selection has not been admitted for execution")
 	}
+
+	if move.Kind == "records-only" {
+		err = withLock(install, func() error {
+			if _, err := checkBatchLocked(install, checkout, head, old, false, false, seams); err != nil {
+				return err
+			}
+			operation := seams
+			operation.AgentRunning = nil
+			idle, err := batchIdle(install, operation)
+			if err != nil {
+				return err
+			}
+			if !idle {
+				return batchRefusal("a test run or conflict regeneration still owns the batch")
+			}
+			if refusal := provenGreen(install, tree); refusal != nil {
+				return refusal
+			}
+			head, tree, err = foldRecords(install, checkout, old, tree, move, seams)
+			return err
+		})
+		if err != nil {
+			return outcome, err
+		}
+		outcome.Commit, outcome.Tree = head, tree
+	}
 	if before != nil {
 		if err := before(old, head); err != nil {
 			return outcome, err
 		}
 	}
+
 	err = withLock(install, func() error {
 		batch, err := checkBatchLocked(install, checkout, head, old, false, false, seams)
 		if err != nil {
@@ -188,6 +231,12 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 		return err
 	}
 	pushed := Pushed{Old: old, Commit: head, Tree: tree, At: now.UTC().Format(time.RFC3339)}
+	if proof, ok, err := ResultFor(install, tree); err != nil {
+		return err
+	} else if ok {
+		pushed.FoldedCommits = proof.FoldedCommits
+	}
+
 	if fix, err := currentFix(install, seams); err != nil {
 		return err
 	} else if fix != nil {
