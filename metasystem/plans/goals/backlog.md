@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 183
+- Revision: 184
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -245,4 +245,5 @@ History:
 - 2026-10-10T02:53:08Z 24JCRJKX6BZ7Y4JE09F4B5Q5MD-m1e-f456f182 ack actor=human:Wido targets=lane-lands-finished-goals displaced=m1e+main-1790454088-93948-21671b@2026-10-06T09:43:12Z ack
 - 2026-10-10T14:42:17Z T38S2VCT4ZPCGH5YGV51B5W6TZ-m1e-f456f182 ack actor=human:Wido targets=fleet-provider-and-session-recovery displaced=m1e+main-1790454088-93948-21671b@2026-10-10T02:53:08Z ack
 - 2026-10-10T14:42:17Z T38S2VCT4ZPCGH5YGV51B5W6TZ-m1e-f456f182 ack actor=human:Wido targets=process-changes-cover-declarations-and-interventions displaced=m1e+main-1790454088-93948-21671b@2026-10-10T03:07:30Z ack
-Integrity: sha256=7df6f909be8db0f9b2618981a0e34875468892eda4700041ef30b4f076530cf1
+- 2026-10-11T06:06:18Z JBWYK11THE7QD92K84V19KFPH1-m1e-f456f182 ack actor=human:Wido targets=process-changes-cover-declarations-and-interventions displaced=m1e+main-1790454088-93948-21671b@2026-10-10T19:24:35Z ack
+Integrity: sha256=7a271caf0c8ffda8b60017bcebc5fb345bd4c2c554c922ad1cebcfc2932f88dd
