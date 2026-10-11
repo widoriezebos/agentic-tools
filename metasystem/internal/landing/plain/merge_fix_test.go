@@ -73,6 +73,11 @@ func TestGitAdapterSeatMergeCompletesAndProves(t *testing.T) {
 			b.seams.Run = func(argv []string, dir string, log *os.File, started func(int64) error) error {
 				if reflect.DeepEqual(argv, []string{"env", "LANDING_PROOF_BASE=" + main, "/bin/sh", "-c", "metasystem test impact"}) {
 					checks++
+					checked := *fix
+					checked.CheckMinutes, checked.CheckResult = 2.28, "static-only"
+					if err := WriteFix(b.install, &checked); err != nil {
+						return err
+					}
 					return started(0)
 				}
 				return generator(argv, dir, log, started)
@@ -83,6 +88,10 @@ func TestGitAdapterSeatMergeCompletesAndProves(t *testing.T) {
 			}
 			if checks != 1 || (generated && b.runs != 1) {
 				t.Fatalf("checks=%d generators=%d", checks, b.runs)
+			}
+			checked, err := FixForAttempt(b.install, fix.Attempt)
+			if err != nil || checked.CheckResult != "static-only" || checked.CheckMinutes != 2.28 {
+				t.Fatalf("merge completion lost the check: %+v error=%v", checked, err)
 			}
 			if got := b.mustGit("show", "-s", "--format=%P", "HEAD"); got != main+" "+tip {
 				t.Fatalf("parents=%s", got)

@@ -99,6 +99,13 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 						if err != nil {
 							return err
 						}
+						if fix := conn.laneFix(inv.layout.InstallationRoot.Path(), worktree, id); fix != nil && inv.input.text("work") == fmt.Sprintf("lane-fix-%d", fix.Round) {
+							engine, err := inv.landing().proveSeams(root).Executable()
+							if err != nil {
+								return err
+							}
+							command = shellCommand([]string{engine, "test", "impact", "--check"})
+						}
 						proof := exec.Command("/bin/sh", "-c", command)
 						proof.Env = append(proof.Environ(), "LANDING_PROOF_BASE="+parent)
 						proof.Dir, proof.Stdout, proof.Stderr = installation, inv.stderr, inv.stderr

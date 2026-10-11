@@ -70,6 +70,9 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 			if err == nil && fix != nil {
 				fix.CheckMinutes = time.Since(started).Minutes()
 				fix.CheckResult = plain.Green
+				if output.Check == "static-only" {
+					fix.CheckResult = "static-only"
+				}
 				if code != 0 {
 					fix.CheckResult = plain.Red
 				}
@@ -216,7 +219,7 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 			ids = append(ids, id)
 		}
 	}
-	if *check && !replay {
+	if (*check || *plan) && !replay {
 		var selection strings.Builder
 		for _, item := range selections {
 			fmt.Fprintln(&selection, "selection: "+item)
@@ -228,11 +231,16 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 		}
 		if !cheap {
 			ids = []string{"fast-static-build"}
-			identity.Reason = fmt.Sprintf("check: fast-static-build only; impact would cover %d%% of %d packages", share, full)
+			output.Check = "static-only"
+			identity.Reason = fmt.Sprintf("check: fast-static-build only; impact would cover %d%% of %d packages; not cheap: static gate only; the batch proof covers the tree", share, full)
 		} else {
+			output.Check = "impact"
 			identity.Reason = fmt.Sprintf("check: impact; covers %d%% of %d packages", share, full)
 		}
-		fmt.Fprintln(stdout, identity.Reason)
+		if *check {
+			output.CheckReason = identity.Reason
+			fmt.Fprintln(stdout, identity.Reason)
+		}
 	}
 	if *plan && (!replay || invocation.outcome != nil) {
 		if invocation.outcome != nil {

@@ -182,7 +182,7 @@ func TestLandingCheckFixRecordsEveryOutcomeGitAdapter(t *testing.T) {
 				t.Fatal(err)
 			}
 			code, out, problem := impactPublic(t, root, "--base", base, "--check")
-			wantCode, wantResult := 0, "green"
+			wantCode, wantResult := 0, "static-only"
 			if outcome == "red" {
 				wantCode, wantResult = 1, "red"
 			}

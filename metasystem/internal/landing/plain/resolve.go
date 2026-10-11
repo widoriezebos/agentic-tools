@@ -582,6 +582,13 @@ func commitResolvedMerge(home, install, checkout string, fix *Fix, check string,
 		return err
 	}
 	return withLock(install, func() error {
+		checked, err := FixForAttempt(install, fix.Attempt)
+		if err != nil {
+			return err
+		}
+		if checked != nil {
+			fix.CheckMinutes, fix.CheckResult = checked.CheckMinutes, checked.CheckResult
+		}
 		if err := refreshMergeLocked(install, checkout, fix, ProveSeams{Git: seams.Git}); err != nil {
 			return err
 		}

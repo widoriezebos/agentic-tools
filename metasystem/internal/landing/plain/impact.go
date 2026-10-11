@@ -12,9 +12,11 @@ import (
 
 // ImpactPlan is the selection returned by test impact --plan --json.
 type ImpactPlan struct {
-	Base       string   `json:"base"`
-	Subject    string   `json:"subject"`
-	Selections []string `json:"selections"`
+	Base        string   `json:"base"`
+	Subject     string   `json:"subject"`
+	Selections  []string `json:"selections"`
+	Check       string   `json:"check,omitempty"`
+	CheckReason string   `json:"check_reason,omitempty"`
 }
 
 // Text renders the plan content independently of its envelope's formatting.
@@ -23,6 +25,9 @@ func (p ImpactPlan) Text() string {
 	fmt.Fprintf(&text, "plan: base %s (%s)\n", p.Base, p.Subject)
 	for _, selection := range p.Selections {
 		fmt.Fprintln(&text, "selection: "+selection)
+	}
+	if p.CheckReason != "" {
+		fmt.Fprintln(&text, p.CheckReason)
 	}
 	return text.String()
 }
