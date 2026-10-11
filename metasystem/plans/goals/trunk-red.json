@@ -856,11 +856,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261011T201636.380268000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-11T21:28:48Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-11T23:47:58Z",
+        "attempt": "20261011T224558.913483000Z",
+        "baseCommit": "2c4b38d776c7ea0db2bec3c44c56a4a73a39862c",
+        "how": "green",
+        "opid": "FDNCZANZ0R8A9592P43TRNVK8S-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestAPushRecordedOnceAfterALostResponse/keeper/after-line",
