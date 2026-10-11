@@ -403,6 +403,29 @@ func TestIncidentRecorderRecordsBuildFailureAndEveryUnitLog(t *testing.T) {
 	}
 }
 
+func TestIncidentRedTrunkResultRegistersThreeFailuresInOneCommit(t *testing.T) {
+	t.Parallel()
+	lane, register, _ := incidentProveFixture(t, false)
+	before := register.repo.canonical
+	publications := register.repo.publications
+	proof := lane.prove(t)
+	if proof.Cause == nil || proof.Cause.Kind != "main" {
+		t.Fatalf("main's red proof: %+v", proof)
+	}
+	if got := register.repo.publications - publications; got != 1 || register.repo.commit(register.repo.canonical).parent != before {
+		t.Fatalf("one red trunk result published %d ledger commits; want 1", got)
+	}
+	code, result := register.runJSON(register.owners(), "incident", "list")
+	data, err := json.Marshal(result.Data)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var listed struct{ Incidents []goal.TrunkRedEntry }
+	if err := json.Unmarshal(data, &listed); err != nil || code != 0 || len(listed.Incidents) != 3 {
+		t.Fatalf("three main failures lost: %d %s %v", code, data, err)
+	}
+}
+
 func TestIncidentLandingPushClearsOnlyNewestFreshFullGreen(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"fresh full", "scoped", "inherited", "without scope", "other full tree", "old full time", "unrelated tree", "not pushed", "clear failure", "changed entry", "old accepted", "without register", "bad register"} {
@@ -411,9 +434,10 @@ func TestIncidentLandingPushClearsOnlyNewestFreshFullGreen(t *testing.T) {
 			b := newIntentBed(t, false, nil)
 			oldAccepted := b.repo.accepted
 			owners := incidentRecorderFixture(t, b, "finder")
-			if err := owners.proveSeams(b.root()).RecordMain([]plain.Result{incidentCheckFixture(t, "TestOne", "TestTwo")}); err != nil {
+			if err := owners.proveSeams(b.root()).RecordMain([]plain.Result{incidentCheckFixture(t, "TestOne", "TestTwo", "TestThree", "TestFour", "TestFive", "TestSix", "TestSeven", "TestEight")}); err != nil {
 				t.Fatal(err)
 			}
+			publications := b.repo.publications
 			pushed := b.repo.commit(b.repo.canonical)
 			pushed.files = obligationFilesCopy(pushed.files)
 			if name == "without register" {
@@ -460,17 +484,22 @@ func TestIncidentLandingPushClearsOnlyNewestFreshFullGreen(t *testing.T) {
 			} else {
 				writeCauseProof(t, lane.install, "results.jsonl", proof, newest)
 			}
-			lane.owners.landing.clearMain = func(r goal.VerbRequest, args goal.TrunkRedClearArgs) (goal.PublishResult, error) {
-				if args.ExpectedEntry.ID != args.Entry || args.Attempt != proof.Attempt || args.BaseTree != proof.Tree || args.BaseCommit != proof.Commit || !args.Executed {
-					t.Fatalf("clear is not bound to the observed entry and proof: %+v", args)
+			lane.owners.landing.clearMain = func(r goal.VerbRequest, args []goal.TrunkRedClearArgs) (goal.PublishResult, error) {
+				if len(args) != 8 {
+					t.Fatalf("green proof must carry all eight incidents: %+v", args)
+				}
+				for _, entry := range args {
+					if entry.ExpectedEntry.ID != entry.Entry || entry.Attempt != proof.Attempt || entry.BaseTree != proof.Tree || entry.BaseCommit != proof.Commit || !entry.Executed {
+						t.Fatalf("clear is not bound to the observed entry and proof: %+v", entry)
+					}
 				}
 				if name == "clear failure" {
 					return goal.PublishResult{Outcome: goal.OutcomeRejected, Detail: "not cleared"}, nil
 				}
 				if name == "changed entry" {
-					args.ExpectedEntry.Status = "not-run"
+					args[len(args)-1].ExpectedEntry.Status = "not-run"
 				}
-				return goal.ClearTrunkRed(r, args)
+				return goal.ClearTrunkReds(r, args)
 			}
 			lane.owners.landing.push = func(_, _ string, _ time.Time, before func(string, string) error) (plain.PushOutcome, error) {
 				out := plain.PushOutcome{Old: "old", Commit: "head", Tree: "pushed-tree", Changed: name != "not pushed"}
@@ -499,9 +528,12 @@ func TestIncidentLandingPushClearsOnlyNewestFreshFullGreen(t *testing.T) {
 			if err := json.Unmarshal(data, &listed); err != nil {
 				t.Fatal(err)
 			}
-			want := 2
+			want := 8
 			if name == "fresh full" || name == "old accepted" {
 				want = 0
+				if got := b.repo.publications - publications; got != 1 {
+					t.Fatalf("one green trunk result published %d ledger commits; want 1", got)
+				}
 			}
 			if len(listed.Incidents) != want {
 				t.Fatalf("%s cleared wrong entries: %s", name, data)

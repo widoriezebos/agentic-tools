@@ -106,21 +106,24 @@ func (owners laneVerbOwners) clearLandingIncidents(installation string, proof pl
 	}
 	clear := owners.clearMain
 	if clear == nil {
-		clear = goal.ClearTrunkRed
+		clear = goal.ClearTrunkReds
 	}
+	var clears []goal.TrunkRedClearArgs
 	for _, entry := range entries {
 		if entry.Closed != nil || !strings.HasPrefix(entry.Identity, "red:") || entry.EntryClass() != goal.TrunkRedClassTrunkRed {
 			continue
 		}
-		r.Ulid, err = goalUlid()
-		if err != nil {
-			return err
-		}
-		result, err := clear(r, goal.TrunkRedClearArgs{Entry: entry.ID, Attempt: proof.Attempt, BaseCommit: proof.Commit, BaseTree: proof.Tree, Group: entry.Group, ExpectedEntry: entry, Executed: true})
-		if err := confirmedIncidentWrite(result, err); err != nil {
-			return err
-		}
-		if err := plain.CloseIncidentStop(installation, entry.Identity, owners.now()); err != nil {
+		clears = append(clears, goal.TrunkRedClearArgs{Entry: entry.ID, Attempt: proof.Attempt, BaseCommit: proof.Commit, BaseTree: proof.Tree, Group: entry.Group, ExpectedEntry: entry, Executed: true})
+	}
+	if len(clears) == 0 {
+		return nil
+	}
+	result, err := clear(r, clears)
+	if err := confirmedIncidentWrite(result, err); err != nil {
+		return err
+	}
+	for _, entry := range clears {
+		if err := plain.CloseIncidentStop(installation, entry.ExpectedEntry.Identity, owners.now()); err != nil {
 			return err
 		}
 	}

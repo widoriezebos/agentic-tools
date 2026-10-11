@@ -620,14 +620,18 @@ func trunkRedBatchObservation(args TrunkRedRecordArgs) bool {
 
 func trunkRedRecordRequest(r VerbRequest, args TrunkRedRecordArgs) PublishRequest {
 	encoded, _ := json.Marshal(args)
-	groupNames := make([]string, len(args.Groups))
-	for index, group := range args.Groups {
-		groupNames[index] = group.Group
+	incidents := "incidents"
+	if len(args.Groups) == 1 {
+		incidents = "incident"
+	}
+	message := fmt.Sprintf("trunk-red record %s: %d %s", args.Attempt, len(args.Groups), incidents)
+	if args.CadenceClaim != nil {
+		message = fmt.Sprintf("trunk-red cadence claim %s", args.CadenceClaim.Key.TrunkTree)
 	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "trunk-red-record", Args: map[string]string{"red": string(encoded)}},
-		Message: "trunk-red record " + args.Batch + " " + strings.Join(groupNames, ","),
+		Message: message,
 		Mutate: func(tip string) ([]Change, error) {
 			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
@@ -788,46 +792,117 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 		expectedEntry, _ = json.Marshal(args.ExpectedEntry)
 		intentArgs["expectedEntry"] = string(expectedEntry)
 	}
+	message := fmt.Sprintf("trunk-red clear %s", args.Entry)
+	if args.Attempt != "" {
+		message += fmt.Sprintf(" (%s)", args.Attempt)
+	}
+	message += ": 1 incident"
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
 		Intent:  Intent{Verb: "trunk-red-clear", Targets: []string{args.Entry}, Args: intentArgs},
-		Message: "trunk-red clear " + args.Entry,
+		Message: message,
 		Mutate: func(tip string) ([]Change, error) {
 			tree, err := loadTreeFor(r.Endpoint, tip)
 			if err != nil {
 				return nil, err
 			}
-			entry := trunkRedByID(tree.TrunkRed, args.Entry)
-			if entry == nil {
-				return nil, coded("TRUNK_RED_UNKNOWN", fmt.Errorf("incident %s doesn't exist; metasystem incident list shows them", args.Entry))
-			}
-			if entry.FixProof != nil && slices.ContainsFunc(entry.FixProof.Passes, func(pass TrunkRedPass) bool { return pass.Opid == r.opid() }) {
-				return nil, AlreadyApplied{}
-			}
-			if entry.Closed != nil {
-				if entry.Closed.Opid == r.opid() {
-					return nil, AlreadyApplied{}
-				}
-				return nil, coded("TRUNK_RED_CLOSED", fmt.Errorf("incident %s is already closed; nothing to do", args.Entry))
-			}
-			if !args.legacyUnbound {
-				currentEntry, _ := json.Marshal(entry)
-				if !bytes.Equal(currentEntry, expectedEntry) {
-					return nil, coded("TRUNK_RED_CHANGED", fmt.Errorf("incident %s changed while it was being cleared; try again", args.Entry))
-				}
-			}
-			if entry.EntryClass() != TrunkRedClassTrunkRed {
-				return trunkRedChanges(tree, countFlakePass(entry, args, r))
-			}
-			entry.Closed = &TrunkRedClosure{At: r.stamp(), Attempt: args.Attempt, BaseCommit: args.BaseCommit, How: "green", Opid: r.opid()}
-			entry.Holds = []string{}
-			if args.BranchMerged && entry.FixBranch.Name != "" {
-				entry.FixBranch.State = TrunkRedBranchMerged
-			}
-			return []Change{{Path: trunkRedPath, Content: renderTrunkRedState(tree.TrunkRed, tree.Cadence, tree.CadenceClaim)}}, nil
+			return trunkRedChanges(tree, applyTrunkRedClear(tree, r, args))
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
+}
+
+// ClearTrunkReds closes the incidents covered by one green proof in one ledger transaction.
+func ClearTrunkReds(r VerbRequest, args []TrunkRedClearArgs) (PublishResult, error) {
+	if len(args) == 0 {
+		return PublishResult{Outcome: OutcomeConfirmed}, nil
+	}
+	for _, entry := range args {
+		if entry.Attempt != args[0].Attempt || entry.BaseCommit != args[0].BaseCommit || entry.BaseTree != args[0].BaseTree {
+			return PublishResult{}, fmt.Errorf("incident clears must name the same attempt, commit and tree")
+		}
+	}
+	return Publish(r.Endpoint, trunkRedClearBatchRequest(r, args))
+}
+
+func trunkRedClearBatchRequest(r VerbRequest, args []TrunkRedClearArgs) PublishRequest {
+	encoded, _ := json.Marshal(args)
+	incidents := "incidents"
+	if len(args) == 1 {
+		incidents = "incident"
+	}
+	targets := make([]string, len(args))
+	for i, entry := range args {
+		targets[i] = entry.Entry
+	}
+	return PublishRequest{
+		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
+		Intent:  Intent{Verb: "trunk-red-clear", Targets: targets, Args: map[string]string{"clears": string(encoded)}},
+		Message: fmt.Sprintf("trunk-red clear %s: %d %s", args[0].Attempt, len(args), incidents),
+		Mutate: func(tip string) ([]Change, error) {
+			tree, err := loadTreeFor(r.Endpoint, tip)
+			if err != nil {
+				return nil, err
+			}
+			changed := false
+			for _, entry := range args {
+				current := trunkRedByID(tree.TrunkRed, entry.Entry)
+				// An entry that is already closed, under whichever attempt, is the effect this clear asks for (R-129-ui): it is satisfied, never rewritten, never a refusal.
+				if current != nil && current.Closed != nil {
+					continue
+				}
+				err := applyTrunkRedClear(tree, r, entry)
+				var already AlreadyApplied
+				if errors.As(err, &already) {
+					continue
+				}
+				if err != nil {
+					return nil, err
+				}
+				changed = true
+			}
+			if !changed {
+				return nil, AlreadyApplied{}
+			}
+			return trunkRedChanges(tree, nil)
+		},
+		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
+	}
+}
+
+func applyTrunkRedClear(tree *TreeGoals, r VerbRequest, args TrunkRedClearArgs) error {
+	var expectedEntry []byte
+	if !args.legacyUnbound {
+		expectedEntry, _ = json.Marshal(args.ExpectedEntry)
+	}
+	entry := trunkRedByID(tree.TrunkRed, args.Entry)
+	if entry == nil {
+		return coded("TRUNK_RED_UNKNOWN", fmt.Errorf("incident %s doesn't exist; metasystem incident list shows them", args.Entry))
+	}
+	if entry.FixProof != nil && slices.ContainsFunc(entry.FixProof.Passes, func(pass TrunkRedPass) bool { return pass.Opid == r.opid() }) {
+		return AlreadyApplied{}
+	}
+	if entry.Closed != nil {
+		if entry.Closed.Opid == r.opid() {
+			return AlreadyApplied{}
+		}
+		return coded("TRUNK_RED_CLOSED", fmt.Errorf("incident %s is already closed; nothing to do", args.Entry))
+	}
+	if !args.legacyUnbound {
+		currentEntry, _ := json.Marshal(entry)
+		if !bytes.Equal(currentEntry, expectedEntry) {
+			return coded("TRUNK_RED_CHANGED", fmt.Errorf("incident %s changed while it was being cleared; try again", args.Entry))
+		}
+	}
+	if entry.EntryClass() != TrunkRedClassTrunkRed {
+		return countFlakePass(entry, args, r)
+	}
+	entry.Closed = &TrunkRedClosure{At: r.stamp(), Attempt: args.Attempt, BaseCommit: args.BaseCommit, How: "green", Opid: r.opid()}
+	entry.Holds = []string{}
+	if args.BranchMerged && entry.FixBranch.Name != "" {
+		entry.FixBranch.State = TrunkRedBranchMerged
+	}
+	return nil
 }
 
 // countFlakePass counts an executed pass after a main commit that changed the

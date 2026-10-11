@@ -389,6 +389,13 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return trunkRedOwnRequest(r, TrunkRedOwnArgs{Entry: target, Goal: in.Args["goal"], Branch: in.Args["branch"],
 			BranchCommit: in.Args["branchCommit"], To: in.Args["to"], By: in.Args["by"]}), nil
 	case "trunk-red-clear":
+		if encoded, batch := in.Args["clears"]; batch {
+			var args []TrunkRedClearArgs
+			if err := json.Unmarshal([]byte(encoded), &args); err != nil || len(args) == 0 {
+				return PublishRequest{}, fmt.Errorf("the stored trunk-red clear has no readable entries; close it by hand")
+			}
+			return trunkRedClearBatchRequest(r, args), nil
+		}
 		branchMerged, err := strconv.ParseBool(in.Args["branchMerged"])
 		if err != nil {
 			return PublishRequest{}, fmt.Errorf("the stored trunk-red clear has an invalid branchMerged value; close it by hand")
