@@ -703,11 +703,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261010T223414.252735000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-11T00:48:05Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-11T02:23:09Z",
+        "attempt": "20261011T014956.528332000Z",
+        "baseCommit": "3c01896343bbbc97ebfaff89a77d5ca8231495c9",
+        "how": "green",
+        "opid": "BZMTADMZCTNREB9MEWW5FVQ1PY-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestPolicySettingsExecutableReadAndRefusal",
