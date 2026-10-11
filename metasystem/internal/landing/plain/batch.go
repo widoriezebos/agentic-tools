@@ -648,7 +648,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 					return batch, err
 				}
 				paragraphs := strings.Split(strings.TrimSpace(message), "\n\n")
-				if (!recorded || running.BatchID == batch.ID && slices.Equal(running.BatchMembers, batch.Members)) && paragraphs[len(paragraphs)-1] == fmt.Sprintf("Goal-Unit: %s/lane-fix-%d", fix.Goal, fix.Round) {
+				if (!recorded || running.BatchID == batch.ID && slices.Equal(running.BatchMembers, batch.Members)) && fix.Unit() != "" && paragraphs[len(paragraphs)-1] == fmt.Sprintf("Goal-Unit: %s/%s", fix.Goal, fix.Unit()) {
 					continue
 				}
 			}

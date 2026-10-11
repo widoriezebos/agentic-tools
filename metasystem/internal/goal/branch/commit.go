@@ -350,7 +350,7 @@ func commitStagedSubject(req CommitRequest, subjectCommit string, r commitReposi
 		if err := validateCommitPaths(Unit, paths, req.GoalID); err != nil {
 			return "", err
 		}
-		if err := r.effects.Commit(req.Repo, fmt.Sprintf("goal %s: lane fix of %s (fix round %s)", req.GoalID, strings.Join(req.LaneFixUnits, ", "), strings.TrimPrefix(units[0], "lane-fix-")), "Goal-Unit: "+req.GoalID+"/"+units[0], false); err != nil {
+		if err := r.effects.Commit(req.Repo, fmt.Sprintf("goal %s: lane fix of %s (fix round %s)", req.GoalID, strings.Join(req.LaneFixUnits, ", "), units[0][strings.LastIndexByte(units[0], '-')+1:]), "Goal-Unit: "+req.GoalID+"/"+units[0], false); err != nil {
 			return "", err
 		}
 		return r.facts.Head(req.Repo)

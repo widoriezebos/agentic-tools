@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -56,7 +55,7 @@ func landingFixCommit(root, checkout string, caller int64) *landpath.LaneFixComm
 		if readErr != nil || active == nil || active.Commit != "" || active.Parent != fix.Commit || landingFixForRegistered(root, checkout, active.Goal, caller, registered) == nil {
 			return nil
 		}
-		fix.Members, fix.Unit = []string{active.Goal}, fmt.Sprintf("lane-fix-%d", active.Round)
+		fix.Members, fix.Unit = []string{active.Goal}, active.Unit()
 	}
 	seen := map[int64]bool{}
 	for caller > 0 && !seen[caller] {

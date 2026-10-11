@@ -633,7 +633,7 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	// who fat-fingers exec.local-timeout-sec=300s silently runs on defaults
 	// and discovers it from the exact hang class the bound exists to prevent.
 	for _, knob := range []string{
-		"design.unit-lines-max", "design.goal-units-max",
+		"design.unit-lines-max", "design.goal-units-max", "landing.fix-minutes",
 		ContextCeilingTokensKey, ContextHandoffMarginTokensKey,
 		"channel.http-timeout-sec", "channel.long-poll-sec", "channel.poll-timeout-sec", "exec.local-timeout-sec", "exec.network-timeout-sec", "landing.receipt-bound-min",
 		"watch.interval-sec", "watch.stale-min", "watch.cap-min",
@@ -646,6 +646,11 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 			if parsed, parseErr := strconv.Atoi(raw); parseErr != nil || parsed < 1 {
 				add("%s must be a positive integer, got %s", knob, pyRepr(raw))
 			}
+		}
+	}
+	if raw, present := values["landing.fix-rounds"]; present {
+		if parsed, err := strconv.Atoi(raw); err != nil || parsed < 0 {
+			add("landing.fix-rounds must be a non-negative integer, got %s", pyRepr(raw))
 		}
 	}
 	// The behaviour patterns' switches and thresholds (v1 reports only).

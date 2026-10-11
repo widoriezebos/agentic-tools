@@ -75,7 +75,7 @@ func TestLaneFixCheckpointMatchesRegisteredBatch(t *testing.T) {
 func TestLaneFixMessageReadsGitFileAndRefusesEdits(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
-	message := "goal goal-a: lane fix of package-a (fix round 1)\n\nGoal-Unit: goal-a/lane-fix-1\n"
+	message := "goal goal-a: lane fix of package-a (fix round 1)\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-1\n"
 	if err := os.WriteFile(filepath.Join(root, "message"), []byte(message), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestLaneFixMessageReadsGitFileAndRefusesEdits(t *testing.T) {
 	}{
 		{"file", []string{"-F", "message"}, message},
 		{"literal", []string{"-m", message}, message},
-		{"paragraphs", []string{"-m", "subject", "-m", "Goal-Unit: goal-a/lane-fix-1"}, "subject\n\nGoal-Unit: goal-a/lane-fix-1"},
+		{"paragraphs", []string{"-m", "subject", "-m", "Goal-Unit: goal-a/lane-fix-20261011T040737-1"}, "subject\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-1"},
 		{"long literal", []string{"--message=" + message}, message},
 		{"long file", []string{"--file=message", "--quiet"}, message},
 		{"no message", nil, ""},
@@ -95,7 +95,7 @@ func TestLaneFixMessageReadsGitFileAndRefusesEdits(t *testing.T) {
 		{"edited", []string{"-F", "message", "--edit"}, ""},
 		{"amended", []string{"-F", "message", "--amend"}, ""},
 		{"different message", []string{"-F", "message", "-m", "no trailer"}, ""},
-		{"extra trailer", []string{"-F", "message", "--trailer", "Goal-Unit: other/lane-fix-1"}, ""},
+		{"extra trailer", []string{"-F", "message", "--trailer", "Goal-Unit: other/lane-fix-20261011T040737-1"}, ""},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -113,7 +113,10 @@ func TestSkillLandingAgentOneFixRound(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
-	for _, words := range []string{"ONE fix round", "every red of the batch proof's gate", "the same batch proof gate", "fix the goal's code or", "never loosen or delete a test", "--work lane-fix-1", "metasystem work review GOAL", "Goal-Unit: GOAL/lane-fix-1", "material read finding", "the fix job id and read id", "For `main`, hold the batch", "--check 'metasystem test impact'", "followed by `metasystem landing prove`", "`running_fix`", "When the engine refuses the fix build, return as before"} {
+	if strings.Contains(text, "the lane's 1 fix round for proof <attempt> is spent") {
+		t.Fatal("skill duplicates the spent allowance sentence appended by the return owner")
+	}
+	for _, words := range []string{"ONE fix round", "landing.fix-rounds", "landing.fix-minutes", "20261011T040737", "the goal's budget is untouched", "every red of the batch proof's gate", "the same batch proof gate", "fix the goal's code or", "never loosen or delete a test", "--work lane-fix-<stamp>-1", "metasystem work review GOAL", "Goal-Unit: GOAL/lane-fix-<stamp>-1", "material read finding", "the fix job id and read id", "For `main`, hold the batch", "--check 'metasystem test impact'", "followed by `metasystem landing prove`", "`running_fix`", "When the engine refuses the fix build, return as before"} {
 		if !strings.Contains(text, words) {
 			t.Errorf("skill omits %q", words)
 		}
@@ -158,10 +161,10 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 	records := map[string]any{
 		lane.RecordPath(filepath.Join(registry, ".metasystem")): registered,
 		filepath.Join(plain.Dir(root), "batch.json"):            plain.Batch{ID: "batch-1", Lane: registered, Base: head, State: plain.BatchRunning, Members: members},
-		filepath.Join(plain.Dir(root), "running.json"):          plain.Running{Commit: head, Tree: "batch-tree", Attempt: "attempt-1", BatchID: "batch-1", BatchMembers: members},
+		filepath.Join(plain.Dir(root), "running.json"):          plain.Running{Commit: head, Tree: "batch-tree", Attempt: "20261011T040737.033326000Z", BatchID: "batch-1", BatchMembers: members},
 	}
-	records[filepath.Join(plain.Dir(root), "fixes", "attempt-1.json")] = plain.Fix{Goal: "standing-validation", Units: []string{"fixture"}, Job: "build", State: "building", Round: 1, Attempt: "attempt-1", Parent: head}
-	records[filepath.Join(plain.Dir(root), "results.jsonl")] = plain.Result{Attempt: "attempt-1", Commit: head, Tree: "batch-tree", BatchID: "batch-1", BatchMembers: members, Result: plain.Red, Cause: &plain.Cause{Kind: "own", Goal: "standing-validation"}, Failed: []plain.FailedUnit{{Unit: "fixture"}}}
+	records[filepath.Join(plain.Dir(root), "fixes", "20261011T040737.033326000Z.json")] = plain.Fix{Goal: "standing-validation", Units: []string{"fixture"}, Job: "build", State: "building", Round: 1, Attempt: "20261011T040737.033326000Z", Parent: head}
+	records[filepath.Join(plain.Dir(root), "results.jsonl")] = plain.Result{Attempt: "20261011T040737.033326000Z", Commit: head, Tree: "batch-tree", BatchID: "batch-1", BatchMembers: members, Result: plain.Red, Cause: &plain.Cause{Kind: "own", Goal: "standing-validation"}, Failed: []plain.FailedUnit{{Unit: "fixture"}}}
 	for path, value := range records {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
@@ -212,17 +215,17 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 	if got := goalSyncMutationGit(t, root, "rev-parse", "HEAD"); got != head {
 		t.Fatalf("refused commit moved HEAD: %s", got)
 	}
-	if err := commit("repair\n\nGoal-Unit: standing-validation/lane-fix-2\n"); err == nil {
+	if err := commit("repair\n\nGoal-Unit: standing-validation/lane-fix-20261011T040737-2\n"); err == nil {
 		t.Fatal("unrecorded fix round passed")
 	}
-	message := "goal standing-validation: lane fix of fixture (fix round 1)\n\nGoal-Unit: standing-validation/lane-fix-1\n"
-	fix, err := plain.FixForAttempt(root, "attempt-1")
+	message := "goal standing-validation: lane fix of fixture (fix round 1)\n\nGoal-Unit: standing-validation/lane-fix-20261011T040737-1\n"
+	fix, err := plain.FixForAttempt(root, "20261011T040737.033326000Z")
 	if err != nil {
 		t.Fatal(err)
 	}
 	stale := *fix
 	stale.Attempt = "older"
-	writeLaneFixJSON(t, filepath.Join(plain.Dir(root), "fixes", "attempt-1.json"), stale)
+	writeLaneFixJSON(t, filepath.Join(plain.Dir(root), "fixes", "20261011T040737.033326000Z.json"), stale)
 	if err := commit(message); err == nil {
 		t.Fatal("stale attempt authorized the real hook")
 	}
@@ -243,7 +246,7 @@ func TestLaneFixGuardRealGitCommit(t *testing.T) {
 	if err := commit(message); err == nil {
 		t.Fatal("real hook admitted a second repair commit")
 	}
-	if got := goalSyncMutationGit(t, root, "show", "-s", "--format=%B", "HEAD"); !strings.Contains(got, "Goal-Unit: standing-validation/lane-fix-1") {
+	if got := goalSyncMutationGit(t, root, "show", "-s", "--format=%B", "HEAD"); !strings.Contains(got, "Goal-Unit: standing-validation/lane-fix-20261011T040737-1") {
 		t.Fatalf("commit omitted trailer: %q", got)
 	}
 }

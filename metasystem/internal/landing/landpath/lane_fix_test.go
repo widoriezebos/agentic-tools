@@ -12,15 +12,16 @@ func TestGuardLaneFixCommitRule(t *testing.T) {
 		actor                 bool
 		want                  int
 	}{
-		{"landing agent", "batch", "repair\n\nGoal-Unit: goal-a/lane-fix-1", []string{"goal-a"}, true, 0},
-		{"launched build", "batch", "repair\n\nGoal-Unit: goal-a/lane-fix-2", []string{"goal-a"}, true, 0},
-		{"another agent", "batch", "repair\n\nGoal-Unit: goal-a/lane-fix-1", []string{"goal-a"}, false, 1},
-		{"non-batch HEAD", "other", "repair\n\nGoal-Unit: goal-a/lane-fix-1", []string{"goal-a"}, true, 1},
+		{"landing agent", "batch", "repair\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-1", []string{"goal-a"}, true, 0},
+		{"launched build", "batch", "repair\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-2", []string{"goal-a"}, true, 0},
+		{"another agent", "batch", "repair\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-1", []string{"goal-a"}, false, 1},
+		{"non-batch HEAD", "other", "repair\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-1", []string{"goal-a"}, true, 1},
+		{"malformed stamp", "batch", "repair\n\nGoal-Unit: goal-a/lane-fix-20261011T04073-1", []string{"goal-a"}, true, 1},
 		{"no trailer", "batch", "repair", []string{"goal-a"}, true, 1},
-		{"non-member", "batch", "repair\n\nGoal-Unit: outsider/lane-fix-1", []string{"goal-a"}, true, 1},
+		{"non-member", "batch", "repair\n\nGoal-Unit: outsider/lane-fix-20261011T040737-1", []string{"goal-a"}, true, 1},
 		{"ordinary unit", "batch", "repair\n\nGoal-Unit: goal-a/unit", []string{"goal-a"}, true, 1},
-		{"body only", "batch", "Goal-Unit: goal-a/lane-fix-1\n\nrepair", []string{"goal-a"}, true, 1},
-		{"duplicate trailer", "batch", "repair\n\nGoal-Unit: goal-a/lane-fix-1\nGoal-Unit: goal-a/lane-fix-2", []string{"goal-a"}, true, 1},
+		{"body only", "batch", "Goal-Unit: goal-a/lane-fix-20261011T040737-1\n\nrepair", []string{"goal-a"}, true, 1},
+		{"duplicate trailer", "batch", "repair\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-1\nGoal-Unit: goal-a/lane-fix-20261011T040737-2", []string{"goal-a"}, true, 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
@@ -52,7 +53,7 @@ func TestGuardLaneFixStillFencesLedgerAndBackups(t *testing.T) {
 			b.stage("M", path)
 			b.owners.Classify = func(string, int64) (string, error) { return "MAIN", nil }
 			b.owners.LaneFix = func(string, string, int64) *LaneFixCommit {
-				return &LaneFixCommit{Commit: "batch", Message: "fix\n\nGoal-Unit: goal-a/lane-fix-1", Members: []string{"goal-a"}}
+				return &LaneFixCommit{Commit: "batch", Message: "fix\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-1", Members: []string{"goal-a"}}
 			}
 			b.expect(b.run(), 1)
 		})
@@ -61,7 +62,7 @@ func TestGuardLaneFixStillFencesLedgerAndBackups(t *testing.T) {
 
 func TestGuardLaneFixMatchesRecordedRound(t *testing.T) {
 	t.Parallel()
-	for _, unit := range []string{"lane-fix-1", "lane-fix-2"} {
+	for _, unit := range []string{"lane-fix-20261011T040737-1", "lane-fix-20261011T040737-2"} {
 		t.Run(unit, func(t *testing.T) {
 			t.Parallel()
 			b := newGuardBed(t)
@@ -69,10 +70,10 @@ func TestGuardLaneFixMatchesRecordedRound(t *testing.T) {
 			b.stage("M", "code.go")
 			b.owners.Classify = func(string, int64) (string, error) { return "MAIN", nil }
 			b.owners.LaneFix = func(string, string, int64) *LaneFixCommit {
-				return &LaneFixCommit{Commit: "batch", Members: []string{"goal-a"}, Unit: "lane-fix-1", Message: "repair\n\nGoal-Unit: goal-a/" + unit}
+				return &LaneFixCommit{Commit: "batch", Members: []string{"goal-a"}, Unit: "lane-fix-20261011T040737-1", Message: "repair\n\nGoal-Unit: goal-a/" + unit}
 			}
 			want := 1
-			if unit == "lane-fix-1" {
+			if unit == "lane-fix-20261011T040737-1" {
 				want = 0
 			}
 			b.expect(b.run(), want)
@@ -87,8 +88,8 @@ func TestGuardLaneMergeRequiresTrailerAndSelectedMergeTip(t *testing.T) {
 		want                                 int
 	}{
 		{"merge", "merge\n\nGoal-Unit: goal-a/lane-merge-1", "batch", "tip", "tip", 0},
-		{"fix during merge", "repair\n\nGoal-Unit: goal-a/lane-fix-1", "batch", "tip", "tip", 1},
-		{"fix after abort", "repair\n\nGoal-Unit: goal-a/lane-fix-1", "batch", "", "tip", 1},
+		{"fix during merge", "repair\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-1", "batch", "tip", "tip", 1},
+		{"fix after abort", "repair\n\nGoal-Unit: goal-a/lane-fix-20261011T040737-1", "batch", "", "tip", 1},
 		{"no trailer", "merge", "batch", "tip", "tip", 1},
 		{"missing merge", "merge\n\nGoal-Unit: goal-a/lane-merge-1", "batch", "", "tip", 1},
 		{"other tip", "merge\n\nGoal-Unit: goal-a/lane-merge-1", "batch", "other", "tip", 1},

@@ -468,7 +468,7 @@ func laneFixAdmits(owners GuardOwners, root, workTree string, git func(...string
 			if member != "" {
 				return false
 			}
-			match := regexp.MustCompile(`^Goal-Unit: ([^ /]+)/(lane-(?:fix|merge)-[1-9][0-9]*)$`).FindStringSubmatch(line)
+			match := regexp.MustCompile(`^Goal-Unit: ([^ /]+)/(lane-(?:fix-[0-9]{8}T[0-9]{6}-[1-9][0-9]*|merge-[1-9][0-9]*))$`).FindStringSubmatch(line)
 			if match == nil || strings.HasPrefix(match[2], "lane-fix-") && fix.Unit != "" && match[2] != fix.Unit {
 				return false
 			}

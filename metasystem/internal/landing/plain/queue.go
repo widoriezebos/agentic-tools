@@ -21,6 +21,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -439,7 +440,14 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 	if err != nil {
 		return latest, false, err
 	}
-	if fix, err := currentFix(install, seams); err == nil && fix != nil && fix.Goal == goal {
+	fix, fixErr := currentFix(install, seams)
+	if fix == nil && fixErr == nil {
+		fix, fixErr = readFix(install, false, goal)
+	}
+	if fixErr == nil && fix != nil && fix.Goal == goal && fix.Tip == "" && fix.Round > 0 {
+		if cause != nil && cause.Kind == "own" && fix.Round >= config.LandingFixLimit(filepath.Join(install, "metasystem.conf"), "landing.fix-rounds") {
+			reason += fmt.Sprintf("; the lane's %d fix round for proof %s is spent", fix.Round, fix.RepairProof())
+		}
 		reason += fmt.Sprintf("; fix round %d, job %s, read %s", fix.Round, fix.Job, fix.Read)
 	}
 	at := now.UTC().Format(time.RFC3339)
