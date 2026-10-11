@@ -1,0 +1,35 @@
+# The lane spends its minutes on what a change can affect: resolution-only reads, named replays, cheap-or-skip checks
+
+- Kind: design
+- Id: 01M4NQ7BZXBXCV0WNT53SSXKNW
+- Status: draft
+- Critique: Astra round 1 (16:58) 2 material on S1 — LS-01 merge-tree exits 1 on the very conflicts S1 targets (use the tree it still writes, with markers, or restrict the diff to the conflicted paths), LS-02 the merge read runs through laneMergeWork (cmd/metasystem/intent_delivery.go ~620 and landing_merge.go), not intent_lane_fix.go — both folded; LS-03 (order-dependent failures in a named replay) deferred to S2 as an inconclusive-outcome rule; Opus read of U1 (18:40) 3 material — the path restriction hid resolution edits outside the conflicted paths, an empty diff counted as reviewed, the merge brief was dropped — all folded into S1
+- Goals: lane-speed
+- Requested: by Wido on 2026-10-11 16:50 ("you mentioned a few things that would radically reduce the time in the lane, what happened with these" — "WHY?!?"), after a day in which no speed item was built while the lane's cycle stayed at two hours
+
+## Problem, measured on 2026-10-11
+
+A landing through the lane costs about two hours: the Opus read of a lane merge took 53 and 71 minutes for three resolved files (findings 98, 109); classifying a red by replaying the failed unit took 35 minutes for cmd/metasystem (54 groups) and 19 minutes for pcc's second red, while the five failing tests run in under three minutes by name (finding 103); the resolution job's `--check 'metasystem test impact'` ran 65+ minutes for a goal touching cmd/metasystem, and the engine's commit-time check 56 minutes for an eight-file fix (findings 118, 133). The full proof (40 min) is the floor; the three items above are avoidable.
+
+## Step 1: the smallest thing that works first (R-121-m0)
+
+Step 1 is S1 alone (the resolution-only read): it removes the largest single cost (an hour per merge with a conflict) and changes only the brief the lane writes for the merge read and the bound it records; S2 and S3 follow as independent units once S1 lands. Deferred: nothing else of this design.
+
+## Decisions
+
+- S1 The merge read covers the resolution. The merge read of `lane-merge-N` is dispatched by `laneMergeWork` (cmd/metasystem/intent_delivery.go ~620) through landing_merge.go, which today builds the complete first-parent context patch and its own instructions and passes both to the critic; that is where the scope narrows. The subject becomes the resolution: `git merge-tree --write-tree <parent1> <parent2>` writes a tree even when it exits 1 with conflicts (conflict markers in the conflicted files); the diff from that tree to the merge commit's tree is the resolution — exactly what the resolution job changed, including a third file it edited to make the merge compile, with regenerated bundles (the record's generated paths) excluded; it is NOT restricted to the conflicted paths (the merge-tree tree already holds both sides' clean merges, so nothing of the goal's own change leaks in; a path restriction only hides resolution edits — Opus read of U1, 2026-10-11 18:40); when that diff is empty (the resolution kept the side merge-tree wrote, e.g. a modify/delete conflict), the read covers the first-parent diff of the conflicted paths instead and never counts as reviewed without a critic; the lane's merge brief (per-path intents and the keep-both-sides rule) stays prepended to the critic's instructions; the brief states that the goal's units were read on their branch and the rest is out of scope; the conflict record (paths, classes) and the check result are the context. The read's wall time is recorded on the lane-merge fix record (`read_minutes`) over that review's lifecycle; `landing.read-minutes` (compiled default 20) bounds it: over the bound, status prints a finding line, never a stop. Test the actual `lane-merge-1` dispatch and the critic's frozen inputs.
+- S2 The replay runs the failed tests by name. (LS-03, deferred into S2's unit: a named replay that passes on main while the full run failed is INCONCLUSIVE for order-dependent failures; the classification then falls back to the whole-unit replay rather than attributing to the goal.) The classification replay (internal/landing/plain/replay.go, the isolated check of a failed unit on the main prefix and on the merge) passes the failed tests' names with the unit: `LANDING_ONLY=<unit>` plus `LANDING_ONLY_TESTS=<space-separated names>` (the reporter in proof/ runs only those tests in that unit, plus the compile); a unit whose failures carry no test names keeps today's whole-unit replay. The classification record names which form ran.
+- S3 Resolution and fix checks are cheap or skipped. A resolution or fix job's check (`--check 'metasystem test impact'`) applies the batch rule that already decides the proof's depth (D2 of lane-proves-at-the-batch-risk: `landing.impact-max-share`, cmd/metasystem named is never cheap): when the selection is not cheap, the job's check is the static gate only and the fix record says "check: static only; the batch proof covers the tree"; when cheap, as today. The same rule applies to `work commit`'s committed cheap check for a lane fix.
+
+## Threat model
+
+(1) A resolution-only read misses a semantic conflict elsewhere: the batch proof covers behaviour; the read covers the resolution's intent (the design of lane-recovers-and-pauses, D3, says the same). (2) A named replay misses a failure that only appears with the package's other tests: the full proof already ran the whole package and recorded exactly these failures; the replay's question is attribution (main or own), not discovery. (3) Skipping a non-cheap check lets a red resolution reach the proof: the proof is the gate before any push; the cost is one more full proof in the rare case, versus 65 minutes on every cmd-touching resolution today.
+
+## Units (each at most 250 production lines, independent files, built in parallel, each with a real-shape test from today's records)
+
+- S1 → unit U1: the merge-read brief and bound (cmd/metasystem/intent_lane_fix.go, the landing-agent skill's read step, fix record field). Tests: a brief built from a real merge commit with three resolved files names only their hunks; the recorded wall time; the bound as a finding line (injected clock).
+- S2 → unit U2: named replay (internal/landing/plain/replay.go, proof/ reporter's LANDING_ONLY_TESTS). Tests: the replay of today's red (cmd/metasystem, 5 tests) runs 5 tests, not 54 groups (fixture reporter); a unit without names keeps the whole-unit replay; the classification record names the form.
+- S3 → unit U3: cheap-or-skip for resolution/fix checks (internal/landing/plain/resolve.go / fix.go, the --check path in cmd/metasystem/intent_lane_fix.go, work commit's lane-fix check). Tests: a selection over the share → static only, record says so; a cheap selection → runs; the real shape of today's repair-check.json and fix records.
+
+## Estimates
+U1 2 h, U2 2 h, U3 2 h build+read, in parallel; one lane run for the goal (its own test).

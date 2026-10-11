@@ -25,3 +25,11 @@ Clearing eight incidents moved main eight times; a trunk result writes one recor
 ## Unit 6 (from findings 120-122): the hand-in accepts a tip read that names the units it covered
 
 A hand-built goal cannot get per-unit machinery reads (`--commit` and `--work` refuse once a later read exists; the oldest tree fails today's static gate); the whole-goal check accepts a read of the branch tip whose record names every unit it covered, and the person's exception computes its candidate from the branch.
+
+## Unit 7 (from finding 133): the resolution's and fix round's check honour the cheapness rule
+
+A resolution or fix job's `--check 'metasystem test impact'` runs whatever the impact plan selects; for a goal touching cmd/metasystem that is a near-full run (65+ min on 2026-10-11). The job's check applies the batch rule: when the selection is not cheap (landing.impact-max-share, cmd named never cheap), the check is the static gate only and the batch proof covers the tree; the fix record says which.
+
+## Unit 8 (from finding 134): the agent's turn ends when its batch empties or a step completes
+
+A person's return of the batch's last member, or the end of a step the agent waited on, ends the agent's turn (the keeper wakes it again when there is work); status names the step in progress and its start time, so a silent 40-minute session is visible as what it is.

@@ -1,0 +1,13 @@
+# lane-housekeeping-2 unit 1: every check runs detached from any terminal
+
+Working Mode: Implement. Worktree = this checkout, off origin/main. At most 250 production lines. Leave everything uncommitted; never commit, rebase or push; never touch memory/receipts.log, plans/ or testing.json by hand. Real shapes (read-only, never edit): the landing install /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/ (results.jsonl, stops.jsonl, queue.jsonl, fixes/, proofs/*.log), origin/main's recent "trunk-red clear" and "goal slice-start" commits. Run every test family that drives the changed verb, the changed internal packages whole, `go run ./cmd/devgate static`, `./internal/layering`, `./cmd/metasystem -run TestAudit`. Report: diff --stat, production line count, every exit, each mutation. Read memory/rulings.md first (R-104 injected clocks, R-138 no shell-outs, R-142 no HAL9000).
+Design: plans/lane-housekeeping-2-design-brief.md unit 1 (from finding 104) and plans/lane-first-run-fixes-design-brief.md (unit 9 text).
+
+## Measured defect
+A person's `landing prove --wait` and `landing prove --classify ATTEMPT` ran their checks inside the person's process lineage (the enrolled pane); tests that assert "no terminal fact" (cmd/metasystem/intent_authority_positive_test.go ~179 and siblings) saw the enrolled terminal and flipped, main was recorded red seven times over and a trunk-red exception was offered for a green main (finding 104, 2026-10-11 02:48).
+
+## Build
+No engine path runs a proof command in the caller's terminal: `landing prove --wait` and `--classify` start the same detached run the keeper would start (gaterun.LaunchDetached, as `landing prove` without --wait already does: internal/landing/plain/prove.go Start ~497-528) and then WAIT on its result (poll the running record/results until the attempt ends, bounded by the proof's own deadline); the output the person sees is the result, not the proof's stream. The classify path (ClassifyAttempt in internal/landing/plain/red.go) runs its replays the same way: detached child, waited on. The person's act record (ClassificationPerson, Person on the Running) is kept exactly as today.
+
+## Tests
+Real shape: a classify started from a FAKE enrolled-terminal lineage (the process identity table METASYSTEM_FAKE_PROCESS_IDENTITY_FILE as the authority tests use it) runs its replay in a child that does not carry the terminal fact (assert through the proof command's environment/identity seen by the fixture reporter); `--wait` returns the detached run's recorded result; a killed detached run makes --wait return its red, never hang (bounded). Mutation: run the check inline → the child carries the terminal fact → test fails.
