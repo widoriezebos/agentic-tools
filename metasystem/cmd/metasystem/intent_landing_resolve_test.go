@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -75,7 +76,11 @@ func (b *resolveVerbFixture) run(t *testing.T, cwd string, words ...string) (int
 		t.Fatalf("landing %s is not discoverable", words[0])
 	}
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, words[1:], &stdout, &stderr, cwd, b.owners)
+	owners := b.owners
+	if words[0] == "prove" && slices.Contains(words, "--wait") && !slices.Contains(words, "--attempt") {
+		owners = proofWaitFixtureOwners(t, owners, b.install, cwd)
+	}
+	code := runIntentIn(command, words[1:], &stdout, &stderr, cwd, owners)
 	return code, stdout.String() + stderr.String()
 }
 

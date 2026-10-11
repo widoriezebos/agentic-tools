@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/boundedexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -193,8 +194,10 @@ type ProveSeams struct {
 	Impact       bool
 	gateBaseline bool
 	// Incidents reads main's register for queue holds; nil uses Git.
-	Incidents  func(install, checkout, main string) ([]goal.TrunkRedEntry, error)
-	Now        func() time.Time
+	Incidents func(install, checkout, main string) ([]goal.TrunkRedEntry, error)
+	Now       func() time.Time
+	// WaitPoll waits for the next observation of a detached proof.
+	WaitPoll   func()
 	Executable func() (string, error)
 	// Launch starts argv detached in dir, its output appended to log, and
 	// returns its pid (the kernel's detached start).
@@ -1114,15 +1117,26 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 	if executable, err := os.Executable(); err == nil {
 		enginePath = filepath.Dir(executable) + string(os.PathListSeparator) + enginePath
 	}
-	shell.Env = append(os.Environ(), "PATH="+enginePath, "LANDING_TREE="+running.Tree, "LANDING_COMMIT="+running.Commit, "LANDING_ONLY="+only,
-		"LANDING_ONLY_TESTS="+strings.Join(tests, " "),
-		"LANDING_PROOF_SCOPE="+decision.Scope, "LANDING_PROOF_BASE="+base, "LANDING_PROOF_GROUPS="+strings.Join(decision.groupIDs(), " "))
+	env := []string{"PATH=" + enginePath, "LANDING_TREE=" + running.Tree, "LANDING_COMMIT=" + running.Commit, "LANDING_ONLY=" + only,
+		"LANDING_ONLY_TESTS=" + strings.Join(tests, " "),
+		"LANDING_PROOF_SCOPE=" + decision.Scope, "LANDING_PROOF_BASE=" + base, "LANDING_PROOF_GROUPS=" + strings.Join(decision.groupIDs(), " ")}
+	shell.Env = append(os.Environ(), env...)
 	shell.Stdout, shell.Stderr = log, log
 	run := seams.Command
 	if run == nil {
-		run = (*exec.Cmd).Run
+		run = func(command *exec.Cmd) error {
+			done := make(chan error, 1)
+			_, err := gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: command.Args, Dir: command.Dir, Env: env, Log: logPath, Completed: done})
+			if err != nil {
+				return err
+			}
+			return <-done
+		}
 	}
 	err := run(shell)
+	if _, seekErr := log.Seek(0, io.SeekEnd); seekErr != nil {
+		err = errors.Join(err, seekErr)
+	}
 	observed.readLog(logPath, offset)
 	observed.finish()
 	report := observed.report

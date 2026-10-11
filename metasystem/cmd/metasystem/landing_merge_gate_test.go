@@ -428,7 +428,10 @@ func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 		return cmd.Run()
 	}
 	var stdout, stderr strings.Builder
-	code := runIntentIn(mustIntentCommand(t, "landing prove"), []string{"--gate", "--wait", "--json"}, &stdout, &stderr, bed.checkout, bed.owners)
+	owners := bed.owners
+	owners.landing.plainProve.Launch = nil
+	owners = proofWaitFixtureOwners(t, owners, bed.installation, bed.checkout)
+	code := runIntentIn(mustIntentCommand(t, "landing prove"), []string{"--gate", "--wait", "--json"}, &stdout, &stderr, bed.checkout, owners)
 	if code != 0 {
 		t.Fatalf("real gate: %d %s%s", code, &stdout, &stderr)
 	}

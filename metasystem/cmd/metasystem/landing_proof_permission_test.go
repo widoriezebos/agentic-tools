@@ -138,6 +138,7 @@ func TestLandingProofPermissionAuthorityMatrix(t *testing.T) {
 			_, err = lane.SetPause(b.home, "Wido", b.now)
 			helmMust(t, err)
 			b.owners.prove = enrolledPersonProver(t, root, b.now)
+			launches := b.launches
 			b.success(t, words...)
 			result, found, err := plain.LastResult(b.installation)
 			if err != nil || !found || result.Person == nil || result.Person.Root != root || result.Person.Person != "Wido" || result.Trunk != trunk || len(result.Executions) != 1 || result.Executions[0].Scope != "full" || result.Executions[0].Tree != result.Tree || result.Executions[0].State != "claimed" || b.executions(t) != before+1 {
@@ -155,7 +156,7 @@ func TestLandingProofPermissionAuthorityMatrix(t *testing.T) {
 			}
 			if !trunk {
 				b.success(t, "landing", "prove")
-				if b.executions(t) != before+1 || b.launches != 0 {
+				if b.executions(t) != before+1 || b.launches != launches+1 {
 					t.Fatal("reused green executed or launched")
 				}
 			}
@@ -265,6 +266,7 @@ func TestLandingProofPermissionRejectsMismatchedAdmissionAndFailedLaunch(t *test
 	if code, text := b.run(t, "landing", "prove", "--wait", "--attempt", failed.Attempt); code == 0 {
 		t.Fatalf("failed admission claimed: %s", text)
 	}
+	b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
 	b.success(t, "landing", "prove", "--wait")
 	if b.executions(t) != 1 {
 		t.Fatal("failed launch prevented fresh exact act")

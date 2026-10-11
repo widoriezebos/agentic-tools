@@ -16,6 +16,8 @@ type DetachedLaunch struct {
 	Log  string
 	// Env adds KEY=VALUE entries to the inherited environment.
 	Env []string
+	// Completed receives the reaped exit when a caller waits for this launch.
+	Completed chan<- error
 	// GuardRoot and GuardOwner register the started process as a member of
 	// the checkout's execution guard while the launcher is still in its
 	// native ancestry; both or neither.
@@ -69,6 +71,11 @@ func LaunchDetached(launch DetachedLaunch) (int64, error) {
 			return 0, err
 		}
 	}
-	go func() { _ = command.Wait() }()
+	go func() {
+		err := command.Wait()
+		if launch.Completed != nil {
+			launch.Completed <- err
+		}
+	}()
 	return pid, nil
 }

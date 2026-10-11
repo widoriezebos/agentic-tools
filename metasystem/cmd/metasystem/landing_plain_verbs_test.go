@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"syscall"
@@ -28,8 +29,9 @@ type plainVerbBed struct {
 	*laneVerbBed
 	registry, checkout, installation, origin, main string
 	// exited is the FIFO a detached engine child holds until it exits.
-	exited string
-	owners intentOwners
+	exited     string
+	owners     intentOwners
+	realLaunch func([]string, string, string) (int64, error)
 }
 
 func newPlainVerbBed(t *testing.T) *plainVerbBed {
@@ -67,6 +69,12 @@ func newPlainVerbBed(t *testing.T) *plainVerbBed {
 	registerLane(t, bed.home, bed.checkout, "Wido", laneTestNow)
 	bed.owners = bed.laneVerbBed.owners()
 	bed.owners.resolver = stateroot.NewResolver(stateroot.RepositoryTop, os.Executable)
+	bed.owners.landing.plainProve.Executable = os.Executable
+	bed.owners.landing.plainProve.Launch = func(argv []string, dir, log string) (int64, error) {
+		return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: argv, Dir: dir, Log: log,
+			Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry}})
+	}
+	bed.realLaunch = bed.owners.landing.plainProve.Launch
 	return bed
 }
 
@@ -155,7 +163,16 @@ func (bed *plainVerbBed) run(t *testing.T, words ...string) (int, string) {
 		t.Fatalf("no public command %s %s", words[0], words[1])
 	}
 	var stdout, stderr bytes.Buffer
-	code := runIntentIn(command, words[2:], &stdout, &stderr, bed.cwd, bed.owners)
+	owners := bed.owners
+	if words[1] == "prove" && slices.Contains(words, "--wait") && !slices.Contains(words, "--attempt") {
+		if owners.landing.plainProve.Command != nil || owners.landing.plainProve.Launch != nil && reflect.ValueOf(owners.landing.plainProve.Launch).Pointer() != reflect.ValueOf(bed.realLaunch).Pointer() {
+			if owners.landing.plainProve.Launch != nil && reflect.ValueOf(owners.landing.plainProve.Launch).Pointer() == reflect.ValueOf(bed.realLaunch).Pointer() {
+				owners.landing.plainProve.Launch = nil
+			}
+			owners = proofWaitFixtureOwners(t, owners, bed.installation, bed.cwd)
+		}
+	}
+	code := runIntentIn(command, words[2:], &stdout, &stderr, bed.cwd, owners)
 	return code, stdout.String() + stderr.String()
 }
 
@@ -195,11 +212,13 @@ func (bed *plainVerbBed) detachedEngine(t *testing.T) plain.ProveSeams {
 	if err := syscall.Mkfifo(bed.exited, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	return plain.ProveSeams{Executable: func() (string, error) { return executable, nil },
+	seams := plain.ProveSeams{Executable: func() (string, error) { return executable, nil },
 		Launch: func(argv []string, dir, log string) (int64, error) {
 			return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: argv, Dir: dir, Log: log,
 				Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry, engineChildExited + "=" + bed.exited}})
 		}}
+	bed.realLaunch = seams.Launch
+	return seams
 }
 
 // Plain lane steps 2 to 5 end to end over real git: two seats hand in, the

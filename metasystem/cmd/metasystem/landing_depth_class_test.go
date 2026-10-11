@@ -148,7 +148,7 @@ func TestLandingFullDueLedgerRefreshAdapterInheritsAndPaysClock(t *testing.T) {
 			}
 			b.success(t, words...)
 			inherited, ok, err := plain.LastResult(b.installation)
-			if err != nil || !ok || inherited.Result != plain.Green || inherited.Scope != "full" || inherited.FullTree != full.FullTree || inherited.FullAt != full.FullAt || inherited.Tree == full.Tree || !strings.HasPrefix(inherited.Reason, "inherits green from tree ") || b.executions(t) != 1 || b.launches != 0 {
+			if err != nil || !ok || inherited.Result != plain.Green || inherited.Scope != "full" || inherited.FullTree != full.FullTree || inherited.FullAt != full.FullAt || inherited.Tree == full.Tree || !strings.HasPrefix(inherited.Reason, "inherits green from tree ") || b.executions(t) != 1 || b.launches != 1 {
 				t.Fatalf("refresh did not inherit full green without a runner: %+v %v; executions=%d launches=%d", inherited, err, b.executions(t), b.launches)
 			}
 			reasons, err := plain.WakeReasons(b.installation, b.checkout, time.Time{}, b.now, b.owners.landing.plainProve)

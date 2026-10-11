@@ -24,6 +24,9 @@ func TestMain(m *testing.M) {
 	if install := os.Getenv(proveChildEnv); install != "" {
 		os.Exit(runProveChild(install, os.Getenv(proveChildCommand), os.Args[1:]))
 	}
+	if os.Getenv(detachedIdentityReport) != "" {
+		os.Exit(testenv.Main(m, testenv.DeclareInheritedControls()...))
+	}
 	os.Exit(testenv.Main(m))
 }
 

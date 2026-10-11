@@ -147,10 +147,10 @@ func landingProveCommand() intentCommand {
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
 			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full check no more than an hour old. After record or ledger changes under a proven batch, the check runs only the groups whose declared inputs cover what main gained, while that batch's full check is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
-			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait proves in this command and says the result. A recorded selection may continue through its standing pause; a direct person may request one check while it stays stopped.",
+			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait starts the same background check and waits for its saved result. A recorded selection may continue through its standing pause; a direct person may request one check while it stays stopped.",
 			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full check. When the batch decided full depth, an explicit impact green does not satisfy landing push.",
 			"--trunk fetches origin/main and runs a fresh full check there, even after a green or red; the lane checkout stays where it is. --gate and --trunk cannot be used together."},
-		flags: []intentFlag{{name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "prove here and wait for the result"},
+		flags: []intentFlag{{name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "wait for the detached check's result"},
 			{name: "classify", value: "ATTEMPT", usage: "classify one saved red; a person supplies this act"},
 			{name: "attempt", value: "ID", hidden: true, usage: "the attempt id a background start chose"}},
 		maxArgs:  0,
@@ -327,22 +327,33 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		}
 		return inv.render(result)
 	}
-	output := os.Stdout
+	var result plain.Result
 	if attempt == "" {
-		// A person's --wait keeps the command's output in the lane's log,
-		// as a detached proof does; this command's own output is its result.
-		logs := filepath.Join(plain.Dir(admitted.installation), "proofs")
-		if err := os.MkdirAll(logs, 0o755); err != nil {
-			return inv.render(landingLaneFailure(targets, "the log of landing prove can't be created, so nothing was proven", err))
-		}
-		file, err := os.Create(filepath.Join(logs, time.Now().UTC().Format("20060102T150405.000000000Z")+".log"))
+		var settled bool
+		result, settled, err = plain.Settled(admitted.installation, checkout, seams)
 		if err != nil {
-			return inv.render(landingLaneFailure(targets, "the log of landing prove can't be created, so nothing was proven", err))
+			return inv.render(landingProveRefusal(inv, targets, err))
 		}
-		defer file.Close()
-		output = file
+		if !settled {
+			running, _, startErr := plain.Start(admitted.installation, checkout, seams)
+			_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
+			if startErr != nil {
+				return inv.render(landingProveRefusal(inv, targets, startErr))
+			}
+			result, err = plain.Wait(admitted.installation, checkout, running, seams)
+		}
+	} else {
+		log, logErr := plain.ProofLog(admitted.installation, attempt)
+		if logErr != nil {
+			return inv.render(landingProveRefusal(inv, targets, logErr))
+		}
+		output, logErr := os.OpenFile(log, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
+		if logErr != nil {
+			return inv.render(landingProveRefusal(inv, targets, logErr))
+		}
+		defer output.Close()
+		result, err = plain.Run(admitted.installation, checkout, command, attempt, output, seams)
 	}
-	result, err := plain.Run(admitted.installation, checkout, command, attempt, output, seams)
 	_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 	if err != nil {
 		return inv.render(landingProveRefusal(inv, targets, err))
@@ -353,8 +364,10 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	if result.Result == plain.Green {
 		if result.Trunk {
-			if err := admitted.owners.clearLandingIncidents(admitted.installation, result); err != nil {
-				return inv.render(landingLaneFailure(targets, "main passed its full check, but its incidents could not be cleared", err))
+			if attempt != "" {
+				if err := admitted.owners.clearLandingIncidents(admitted.installation, result); err != nil {
+					return inv.render(landingLaneFailure(targets, "main passed its full check, but its incidents could not be cleared", err))
+				}
 			}
 			summary := "main passed its full check; no push is needed"
 			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, view: landingDone(summary, result.Log)})
