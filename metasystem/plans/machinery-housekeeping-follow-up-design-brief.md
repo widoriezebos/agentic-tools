@@ -78,3 +78,13 @@ Note 17:30: L4, L5 and L6 are built by goal landing-takes-an-hour (U1, U2); this
 - 2026-10-10 04:12 (m1e): the four `section/*` groups are cadence groups; the landing proof now defers them (hot-fix). Check whether the cadence trigger (deep-sections design) runs on this host; if nothing runs them, schedule it or demote go-engine-gate to a fixture-sized proof of the gate mechanism.
 
 - 2026-10-10 08:57 (m1e): the impact selector follows one step from a changed symbol to a test; a test file whose only link is a helper in another _test.go is not selected (Opus read of u1c, N-1; same at base). Later, when it hurts: follow helper references within the package's test files.
+
+- 2026-10-10 11:12 (m1e): switch-on check: no hand scripts in use (finding 46 inventory); schedule records-land-through-the-lane right after the lane rounds; verify the steward redeploys the landing checkout after a lane push (landing-deploys-the-engine) covers the lane itself.
+
+- 2026-10-10 12:06 (m1e): fix forward: the lane question test's 150-second wall-clock window (finding 50); channelphase.Run takes its clock from the caller so tests pin it; SKILL.md placeholder style uniform.
+
+- 2026-10-10 18:11 (m1e): breach-stop fence vs resume (finding 72): a StopFence written on a claimed goal (State=claimed) cannot be cleared by `goal resume` ("nothing to resume") and blocks `goal done` even with --force: resume must clear a set StopFence whatever the state; a lane landing concludes the goal or pauses its elapsed clock while queued/held in the lane.
+
+- 2026-10-10 18:52 (m1e): test hygiene: ten landing beds (landing_batch_test.go:61 and kin) set /fixture/engine as the engine without faking the static command seam; a proof step that really runs the engine exits 127 in them. One shared bed fake for every runner seam.
+
+- 2026-10-11 00:52 (m1e): the lane's merge read ran 53 minutes (whole-package tests in the reader's own scripts); the read brief for lane-merge/lane-fix reads must forbid whole-package runs (the batch proof proves); bound the read to the diff and named tests.

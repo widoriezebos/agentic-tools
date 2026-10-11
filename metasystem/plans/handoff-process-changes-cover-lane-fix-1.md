@@ -1,0 +1,14 @@
+# Process declaration and intervention lane repairs
+
+- Owner: Codex unit builder, goal/process-changes-cover-declarations-and-interventions.
+- Goal and current status: lane-fix-1 implemented; merge and fixes remain uncommitted. The lane still owns independent review, full proof and landing.
+- In flight: none in this unit. All requested test commands and the final whole-module static check passed.
+- Decisions: follow the person's four decisions in process-changes-cover-declarations-and-interventions-lane-fix-1.md. Revert repeats return unchanged without publication or new records. Named runs preserve their admitted plan while checking changed input. Committed declaration approval accepts enrolled person proof or enrolled power-of-attorney proof. Carried reads require cheap checks, audits and deadline; an absent full command does not invalidate that read. Malformed declarations still refuse.
+- Merge: MERGE_HEAD is 565fe781d78a0539171c6014ba190cec04e98ff5. The three conflicts are resolved and staged with the reference resolution. The lane refusal assertion uses the reference's expected wording. testing.json was neither conflicted nor edited.
+- Proof: the four acceptance tests passed twice on final code; all named-unit tests passed; whole processchange, processmeasure, launch and goal/branch packages passed (processmeasure has no test files). The requested process/work families, layering audit, command audits, host audits, build and vet passed. Both whole-module static runs passed, including the rerun after the final corrections.
+- Verification caught: declaration approval must reject fixture-only proof even though ordinary goal acts accept it. The existing declaration admission test caught this; it passes after requiring enrolled proof. The new real-contract test replaces proof.cheap rather than appending a duplicate key.
+- Plan limitation: test impact --base origin/main --plan refuses because the merge is intentionally uncommitted and origin/main is not an ancestor of HEAD. The real plan against merge-base 2f4fa5e3b265e3fa346020f72e94a9db999dddd4 succeeded and includes the new grant test. This does not replace the lane's plan against merged main.
+- Waiting on the human: none for these repairs; independent critique and landing remain with the lane. No commit, push, rebase, stash or reset was performed in this checkout.
+- Next step: the lane reviews the uncommitted fixes, finishes its merge under its existing authority, then runs its plan and full proof. Keep the goal ledger and the person's brief intact.
+
+- Evidence: /Users/wido/metasystem-evidence/agentic-tools-m1e-process-changes-cover/lane-fix-1-20261011-081020/report.md lists every command exit, test mutation and diff statistic. Raw logs and the real plan output are beside it, copied with matching SHA-256 hashes.

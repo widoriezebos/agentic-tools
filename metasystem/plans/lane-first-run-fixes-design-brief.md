@@ -18,3 +18,11 @@ Out of scope (own goal): the seat-side recovery verbs (findings 6-10). Acceptanc
 ## Unit 8 (added 2026-10-11, hot-fix class): a detached proof reads its own report
 
 The detached prover re-opened its log by `/dev/stdout`, a write-only descriptor, so no real proof ever parsed its `LANDING-FAILED`/`LANDING-CHECKED` report: reds stayed unclassified (no fix round), full greens never counted (every batch "overdue"), the environment fingerprint stayed empty (impact scope impossible). Read the log by its known path, offset by size, tolerate the engine's own trailing render lines, and prove it with a test that launches a child the way the lane does. Brief: `plans/lane-first-run-fixes-u8-detached-proof-reads-its-report.md`.
+
+## Unit 9 (added 2026-10-11 02:55, from finding 104): every check runs detached from any terminal
+
+A person's `landing prove --wait` and `--classify` ran their checks inside the person's process lineage; tests that assert "no terminal fact" flipped, main was recorded red seven times over, and a trunk-red exception was offered for a green main. The person's verb starts the same detached run the keeper would start and waits on its result; no engine path runs a proof command in the caller's terminal. Real-shape test: a classify started from a fake enrolled terminal lineage runs its replay in a child that does not carry the terminal fact.
+
+## Unit 10 (added 2026-10-11 02:55, from finding 103): the replay runs the failed tests by name
+
+Attributing a red replayed every group of the failed unit's package (54 units, ~35 min for five tests that take under 3 min). The replay passes the failed tests' names with the unit (LANDING_ONLY plus the tests) and the reporter runs only those plus the package's compile; a unit without test names keeps today's whole-unit replay.
