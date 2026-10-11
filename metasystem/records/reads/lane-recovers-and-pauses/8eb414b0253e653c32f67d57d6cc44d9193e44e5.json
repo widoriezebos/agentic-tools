@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-recovers-and-pauses",
+  "unit": "U2",
+  "subject": {
+    "commit": "8eb414b0253e653c32f67d57d6cc44d9193e44e5",
+    "parent": "b77f24056eb32f6af4d19893ef28ac0d90eedde2",
+    "tree": "a66f7c84874bccafdda9766da1afe6bf434bf501",
+    "patchDigest": "90cef57ceca959eb5692578e7223b6204cd8cffe4cfbc2a93114b895d43a9c01",
+    "unitDigest": "7ef9c1feb76711ffea5460154653cddd8214de3351d40865065d6bd46ac73033"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-49321087c8c09c1c0180ec02",
+    "round": 1,
+    "closureSha256": "95effd3356558f1bcf392ca7d66b6bec79448b2a1a66a171719d53ef2b953f91"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a66f7c84874bccafdda9766da1afe6bf434bf501",
+    "runId": "goal-read-gate-20261011t130602z-50870637a64a0bb0"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_lane_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-49321087c8c09c1c0180ec02"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-49321087c8c09c1c0180ec02"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/settings-show.json",
+      "readerWord": "reviewed by critic root code-critic-49321087c8c09c1c0180ec02"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/settings-show.txt",
+      "readerWord": "reviewed by critic root code-critic-49321087c8c09c1c0180ec02"
+    },
+    {
+      "path": "metasystem/internal/landing/landpath/lane_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-49321087c8c09c1c0180ec02"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/detached_report_test.go",
+      "readerWord": "reviewed by critic root code-critic-49321087c8c09c1c0180ec02"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/fix_topology_test.go",
+      "readerWord": "reviewed by critic root code-critic-49321087c8c09c1c0180ec02"
+    }
+  ],
+  "sha256": "ddc3fd08b295df0b26cdc4aa8f3309e562979a855a04f0e519da5197581655f4"
+}
