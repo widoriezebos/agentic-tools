@@ -723,6 +723,51 @@
       ],
       "opened": "2026-10-11T00:48:05Z",
       "closed": null
+    },
+    {
+      "id": "red:metasystem/internal/config:TestShippedConfigurationHoldsNoCompiledDefault",
+      "identity": "red:metasystem/internal/config:TestShippedConfigurationHoldsNoCompiledDefault",
+      "group": "metasystem/internal/config",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261011T005918.026682000Z.log",
+          "classname": "metasystem/internal/config",
+          "name": "TestShippedConfigurationHoldsNoCompiledDefault",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261011T005918.026682000Z",
+          "batch": "20261011T005918.026682000Z",
+          "baseCommit": "d66c5df353c43d65a2d9b30dff1a2ea98ed3a3bd",
+          "baseTree": "bf590b2732fc97f57b6fdfac4e1127c573ef5d6e",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261011T005918.026682000Z.log",
+          "logDigest": "c2c5ab9f34be37eb992c8373c7f95d7a1c99e0321bb9a396dd6d18538835f6d2",
+          "seenAt": "2026-10-11T01:37:17Z",
+          "opid": "68HKZSSVE0KAKHGZYD8RR61S63-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261011T005918.026682000Z"
+      ],
+      "opened": "2026-10-11T01:37:17Z",
+      "closed": null
     }
   ],
   "cadence": {
