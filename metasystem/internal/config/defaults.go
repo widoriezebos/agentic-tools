@@ -72,6 +72,7 @@ var coreSettings = []Setting{
 	{Key: "landing.full-from-tier", Default: "3", Meaning: "the lowest batch member tier that requires a full proof"},
 	{Key: "landing.wait-hours", Default: "12", Meaning: "hours waiting in the lane before status reports a finding; never stops a goal"},
 	{Key: "landing.impact-max-share", Default: "50", Meaning: "percent of full proof groups at which impact is replaced by full"},
+	{Key: "landing.read-minutes", Default: "20", Meaning: "merge read minutes above which status reports a finding without stopping"},
 	{Key: "landing.proof", Default: "auto", Meaning: "full-proof decisions; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.on-red", Default: "auto", Meaning: "red decisions; consumption deferred to lane-reads-its-policies"},
 	{Key: "landing.trunk-red", Default: "auto", Meaning: "red main decisions; consumption deferred to lane-reads-its-policies"},

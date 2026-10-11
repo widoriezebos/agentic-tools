@@ -143,7 +143,7 @@ func (inv *intentInvocation) work() intentWorkOwners {
 			command.Stderr = &stderr
 			output, err := command.Output()
 			if err != nil {
-				return output, fmt.Errorf("git %s: %v: %s", args[0], err, strings.TrimSpace(stderr.String()))
+				return output, fmt.Errorf("git %s: %w: %s", args[0], err, strings.TrimSpace(stderr.String()))
 			}
 			return output, nil
 		}

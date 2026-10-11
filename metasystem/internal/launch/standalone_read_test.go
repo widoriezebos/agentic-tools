@@ -775,3 +775,16 @@ func TestWorktreeDiffRacyCleanIndexGitAdapter(t *testing.T) {
 		t.Fatal("source HEAD, index or file changed")
 	}
 }
+
+func TestStandaloneReadCommitDiffRequiresCommittedTree(t *testing.T) {
+	t.Parallel()
+	for _, request := range []ReadRequest{
+		{Directory: "checkout", Brief: "brief", CommitDiff: "resolution"},
+		{Directory: "checkout", Brief: "brief", CommitDiff: "resolution", Base: "merge", Patch: "applied"},
+	} {
+		runner := UnitRunner{Manager: &Manager{}}
+		if _, err := runner.StartRead(request); err == nil || !strings.Contains(err.Error(), "committed-tree diff") {
+			t.Fatalf("invalid read accepted: %+v %v", request, err)
+		}
+	}
+}

@@ -39,6 +39,9 @@ type ReadRequest struct {
 	// With no Patch, an explicit Base reads that committed tree and uses its
 	// first-parent diff only to select and partition the read's files.
 	Base string
+	// CommitDiff selects the files and hunks of a committed-tree read from a
+	// supplied diff, without applying it to that tree. Base must name the commit.
+	CommitDiff string
 	// Patch is a supplied patch file; with neither Patch nor Base, the read
 	// captures tracked and untracked, unignored changes against HEAD.
 	Patch string
@@ -142,6 +145,9 @@ func (runner *UnitRunner) StartRead(request ReadRequest) (ReadResult, error) {
 	if request.Retry < 0 {
 		return ReadResult{}, coded("READ_REQUEST_INVALID", "", errors.New("--retry takes the number of an attempt the read shows"))
 	}
+	if request.CommitDiff != "" && (request.Base == "" || request.Patch != "") {
+		return ReadResult{}, coded("READ_REQUEST_INVALID", "", errors.New("a committed-tree diff needs a base commit and cannot also apply a patch"))
+	}
 	git := runner.git()
 	topOutput, err := git.Run(request.Directory, nil, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -166,7 +172,12 @@ func (runner *UnitRunner) StartRead(request ReadRequest) (ReadResult, error) {
 		}
 	} else if request.Base != "" {
 		kind = "commit"
-		if diff, err = git.Run(top, nil, "show", "--format=", "--first-parent", "--binary", head); err != nil {
+		if request.CommitDiff != "" {
+			diff, err = os.ReadFile(request.CommitDiff)
+		} else {
+			diff, err = git.Run(top, nil, "show", "--format=", "--first-parent", "--binary", head)
+		}
+		if err != nil {
 			return ReadResult{}, err
 		}
 	} else {

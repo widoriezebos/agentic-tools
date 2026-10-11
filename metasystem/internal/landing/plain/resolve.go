@@ -641,6 +641,7 @@ func commitResolvedMerge(home, install, checkout string, fix *Fix, check string,
 			return err
 		}
 		fix.State = "reviewing"
+		// The check result stays what the check process recorded (green, or static-only when the selection was not cheap).
 		return WriteFix(install, fix)
 	})
 }

@@ -1,12 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -81,12 +85,24 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 		if fix.State != "reviewing" && fix.State != "resolved" {
 			err = errors.New("the merge build has not completed")
 		} else {
-			patch := filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".patch")
-			context := filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".context.patch")
+			patch := filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".resolution.patch")
+			context := filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".context.json")
 			var diff []byte
-			diff, err = inv.work().git(checkout, "diff", "--binary", fix.Commit+"^", fix.Commit)
+			var fallbackParent int
+			diff, fallbackParent, err = inv.mergeResolutionDiff(checkout, fix)
 			if err == nil {
-				err = os.WriteFile(context, diff, 0o600)
+				err = os.WriteFile(patch, diff, 0o600)
+			}
+			if err == nil {
+				var detail []byte
+				detail, err = json.Marshal(struct {
+					Paths        any     `json:"paths"`
+					CheckResult  string  `json:"check_result"`
+					CheckMinutes float64 `json:"check_minutes"`
+				}{fix.Paths, fix.CheckResult, fix.CheckMinutes})
+				if err == nil {
+					err = os.WriteFile(context, detail, 0o600)
+				}
 			}
 			if err == nil {
 				var read launch.ReadResult
@@ -97,11 +113,17 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 					err = fmt.Errorf("read the merge brief: %w", err)
 				}
 				if err == nil {
-					brief = append(brief, []byte(fmt.Sprintf("\nRead the resolved merge %s in the checkout. INPUT %s is the hand resolution against AUTO_MERGE; INPUT %s is the complete first-parent diff. Both are reference files; neither is applied to the checkout.\n", fix.Commit, filepath.Base(patch), filepath.Base(context)))...)
+					scope := fmt.Sprintf("\nRead only the conflict resolution of merge %s. The goal's units were read on their branch; the rest of the goal is out of scope. CommitDiff contains the resolution diff from the automatic merge tree, excluding the record's generated paths. INPUT %s records the conflicted paths, their classes and the check result. It is a reference file, never applied to the checkout.\n", fix.Commit, filepath.Base(context))
+					if fallbackParent == 1 {
+						scope += "The resolution kept merge-tree's side; read the conflicted paths' first-parent diff.\n"
+					} else if fallbackParent == 2 {
+						scope += "The resolution kept main's side; this diff shows what the goal's side lost.\n"
+					}
+					brief = append(brief, []byte(scope)...)
 					err = os.WriteFile(readBrief, brief, 0o600)
 				}
 				if err == nil {
-					request := launch.ReadRequest{Directory: checkout, Base: fix.Commit, Brief: readBrief, Goal: fix.Goal, Inputs: []string{patch, context}}
+					request := launch.ReadRequest{Directory: checkout, Base: fix.Commit, CommitDiff: patch, Brief: readBrief, Goal: fix.Goal, Inputs: []string{context}}
 					if fix.State == "resolved" && fix.Read != "" {
 						previous, readErr := runner.InspectRead(fix.Read)
 						if readErr != nil {
@@ -111,7 +133,14 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 						}
 					}
 					if err == nil {
-						read, err = runner.StartRead(request)
+						if fix.ReadStartedAt == "" {
+							fix.ReadStartedAt = inv.landing().now().UTC().Format(time.RFC3339Nano)
+							err = plain.WriteFix(root, fix)
+						}
+						if err == nil {
+							read, err = runner.StartRead(request)
+						}
+						fix.UpdateReadMinutes(inv.landing().now())
 					}
 				}
 				if read.Ref != "" {
@@ -128,7 +157,10 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 					err = fmt.Errorf("merge read %s failed: %s", read.Ref, reason)
 				}
 				result = inv.diagnosticReadResult(read, err, patch)
-				if read.Complete {
+				if err == nil && read.Empty {
+					err = errors.New("the merge read has no reviewable diff")
+				}
+				if err == nil && read.Complete {
 					fix.State = "done"
 					result.Summary = "Reviewed the resolved merge of " + fix.Goal
 					result.next = inv.publicArgv("landing", "prove")
@@ -155,4 +187,54 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 		}
 	}
 	return inv.render(result), true
+}
+
+// mergeResolutionDiff compares the automatic merge with the committed resolution,
+// excluding generated paths. A resolution that kept the automatic tree's side
+// is judged on its recorded conflicted paths against the parent whose side
+// was not kept. The returned parent number identifies that fallback.
+func (inv *intentInvocation) mergeResolutionDiff(checkout string, fix *plain.Fix) ([]byte, int, error) {
+	parents, err := inv.work().git(checkout, "rev-list", "--parents", "-n", "1", fix.Commit)
+	if err != nil {
+		return nil, 0, err
+	}
+	commits := strings.Fields(string(parents))
+	if len(commits) != 3 {
+		return nil, 0, errors.New("the resolution must be a two-parent merge commit")
+	}
+	tree, err := inv.work().git(checkout, "merge-tree", "--write-tree", commits[1], commits[2])
+	if err != nil {
+		var exit *exec.ExitError
+		if !errors.As(err, &exit) || exit.ExitCode() != 1 {
+			return nil, 0, err
+		}
+	}
+	automatic, _, _ := strings.Cut(string(tree), "\n")
+	if strings.TrimSpace(automatic) == "" || len(fix.Paths) == 0 {
+		return nil, 0, errors.New("the automatic merge tree and recorded conflict paths are required")
+	}
+	prefix := inv.layout.InstallationRel
+	var exclusions []string
+	for _, set := range fix.Generated {
+		for _, path := range set.Paths {
+			exclusions = append(exclusions, ":(exclude)"+filepath.ToSlash(filepath.Join(prefix, path)))
+		}
+	}
+	args := append([]string{"diff", "--binary", strings.TrimSpace(automatic), fix.Commit + "^{tree}", "--"}, exclusions...)
+	diff, err := inv.work().git(checkout, args...)
+	if err != nil || len(bytes.TrimSpace(diff)) > 0 {
+		return diff, 0, err
+	}
+	for parent := 1; parent <= 2; parent++ {
+		args = []string{"diff", "--binary", commits[parent], fix.Commit + "^{tree}", "--"}
+		for _, path := range fix.Paths {
+			args = append(args, ":(literal)"+path.Path)
+		}
+		args = append(args, exclusions...)
+		diff, err = inv.work().git(checkout, args...)
+		if err != nil || len(bytes.TrimSpace(diff)) > 0 {
+			return diff, parent, err
+		}
+	}
+	return nil, 2, errors.New("the resolved merge has no reviewable diff on its recorded conflict paths")
 }

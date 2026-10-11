@@ -42,7 +42,7 @@ func TestCompiledDefaultsAnswerEveryReader(t *testing.T) {
 	putFile(t, conf, "# overrides only\n")
 	for key, want := range map[string]string{
 		"watch.stale-min": "20", "suite.section-cap-min": "45", "metasystem.runtimes": "claude,codex,devin",
-		"design.unit-lines-max": "250", "design.goal-units-max": "5",
+		"design.unit-lines-max": "250", "design.goal-units-max": "5", "landing.read-minutes": "20",
 		"testing.contract": "testing.json", "dispatch.max-inline-input-kb": "80", "dispatch.transport.devin": "acp",
 		"launch.build.model.claude": "claude-opus-5-5", "role.default.model.claude": "claude-opus-5-5",
 	} {

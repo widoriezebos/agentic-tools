@@ -150,11 +150,14 @@ human return restores no automatic allowance.
    message plus `Goal-Unit: GOAL/lane-merge-1`. Never substitute a git commit or
    bypass a guard. Run `metasystem work review GOAL --work lane-merge-1`, wait for
    its read and repeat that command to collect it, then `metasystem landing prove`.
-   The read checks out the merge commit itself. Its brief names two INPUT files:
-   `fixes/<attempt>.patch`, the hand resolution against AUTO_MERGE, and
-   `fixes/<attempt>.context.patch`, the complete first-parent diff. Neither is
-   applied to the checkout. If the read errors, status says the merge is resolved
-   with its read pending and names the error; repeat the same review command.
+   The read covers the resolution diff from the automatic merge tree — every file
+   the resolution changed, generated paths excluded; when that diff is empty, the
+   conflicted paths' diff against the parent whose side was not kept. The context
+   records their classes and the check result; the goal's
+   units were read on their branch and the rest of the goal is out of scope.
+   The read checks out the merge commit itself and applies neither input to it.
+   If the read errors, status says the merge is resolved with its read pending and
+   names the error; repeat the same review command.
    A resolution job that stops because it cannot resolve, incompatible intents, a required
    decision of the goal's person goes back through
    `metasystem landing resolve`. Its return names every path and the resolution job id in its

@@ -46,11 +46,12 @@ type Status struct {
 	RunningProof        *RunningProof        `json:"running_proof"`
 	RunningRegeneration *RunningRegeneration `json:"running_regeneration,omitempty"`
 	// LastProof is the newest line of results.jsonl.
-	LastProof      *Result  `json:"last_proof"`
-	TrunkProof     *Result  `json:"trunk_proof,omitempty"`
-	TrunkIncidents []string `json:"trunk_incidents,omitempty"`
-	ProofHeadline  string   `json:"proof_headline,omitempty"`
-	LastGate       *Result  `json:"last_gate,omitempty"`
+	LastProof        *Result  `json:"last_proof"`
+	TrunkProof       *Result  `json:"trunk_proof,omitempty"`
+	TrunkIncidents   []string `json:"trunk_incidents,omitempty"`
+	ProofHeadline    string   `json:"proof_headline,omitempty"`
+	MergeReadFinding string   `json:"merge_read_finding,omitempty"`
+	LastGate         *Result  `json:"last_gate,omitempty"`
 	// LastPush is the newest push landing push made.
 	LastPush *Pushed `json:"last_push"`
 	Stop     *Stop   `json:"stop,omitempty"`
@@ -464,6 +465,24 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	}
 	if status.RunningFix != nil {
 		status.ProofHeadline = fixHeadline(status.RunningFix)
+	}
+	merge := status.RunningFix
+	if merge != nil && merge.Tip != "" && (merge.ReadStartedAt != "" || merge.ReadMinutes > 0) {
+		if merge.State == "reviewing" {
+			merge.UpdateReadMinutes(seams.now())
+		}
+		raw, _, boundErr := config.Get(config.GetParams{Key: "landing.read-minutes", ConfPath: filepath.Join(install, "metasystem.conf")})
+		if errors.Is(boundErr, os.ErrNotExist) {
+			raw, boundErr = config.MustDefault("landing.read-minutes"), nil
+		}
+		bound, parseErr := strconv.ParseFloat(raw, 64)
+		if boundErr == nil && (parseErr != nil || bound <= 0) {
+			boundErr = fmt.Errorf("landing.read-minutes must be positive, got %q", raw)
+		}
+		unread("the merge read bound", boundErr)
+		if boundErr == nil && merge.ReadMinutes > bound {
+			status.MergeReadFinding = fmt.Sprintf("merge read ran %g min, bound %g", merge.ReadMinutes, bound)
+		}
 	}
 	if status.ProofHeadline != "" {
 		status.Summary = status.ProofHeadline

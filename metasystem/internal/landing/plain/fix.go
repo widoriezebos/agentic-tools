@@ -29,8 +29,10 @@ type Fix struct {
 	Commit  string   `json:"commit"`
 	State   string   `json:"state"`
 
-	CheckMinutes float64 `json:"check_minutes,omitempty"`
-	CheckResult  string  `json:"check_result,omitempty"`
+	CheckMinutes  float64 `json:"check_minutes,omitempty"`
+	CheckResult   string  `json:"check_result,omitempty"`
+	ReadMinutes   float64 `json:"read_minutes,omitempty"`
+	ReadStartedAt string  `json:"read_started_at,omitempty"`
 
 	Paths     []conflict.Path        `json:"paths,omitempty"`
 	Tip       string                 `json:"tip,omitempty"`
@@ -331,4 +333,11 @@ func proofFixReady(install string, seams ProveSeams) error {
 		return errors.New(message)
 	}
 	return nil
+}
+
+// UpdateReadMinutes measures the wall time of a merge read across collections.
+func (fix *Fix) UpdateReadMinutes(now time.Time) {
+	if started, err := time.Parse(time.RFC3339Nano, fix.ReadStartedAt); err == nil {
+		fix.ReadMinutes = max(fix.ReadMinutes, now.Sub(started).Minutes())
+	}
 }

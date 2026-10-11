@@ -399,6 +399,9 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 				page.Section("", "").Text(data.AgentProgress.Finding)
 			}
 		}
+		if data.MergeReadFinding != "" {
+			page.Section("Finding", "").Text(data.MergeReadFinding)
+		}
 		if policy := data.BatchPolicy; policy != nil {
 			page.Section("Batch policy", "").Text(policy.Value + " from " + policy.Source)
 		}
