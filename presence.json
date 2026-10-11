@@ -1,0 +1,13 @@
+{
+  "presenceSchema": 1,
+  "machine": "m1f",
+  "repoIdentity": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1f/metasystem",
+  "generation": 20,
+  "engine": "cb49645fe0464819e4b843e514951e17c5a222fa",
+  "armedLineage": "no-lease",
+  "tickSeconds": 600,
+  "chain": null,
+  "working": null,
+  "tickAt": "2026-10-11T01:02:09Z",
+  "diskFreeBytes": 237417934848
+}
