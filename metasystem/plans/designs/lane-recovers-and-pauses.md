@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M4MSA883YK2CM2W2BXXFCT5H
-- Status: draft
+- Status: accepted
 - Critique: Astra round 1 (2026-10-11 08:08) 1 material: first slice undefined (R-121-m0), Step 1 added; round 2 (08:14) 2 material on the extra fix round (LRP-01 no recovery state after the automatic return, LRP-02 a second repair commit fails the batch-history check): the extra round leaves Step 1 and becomes Step 3 with both findings as its obligations; round 3 (08:27) 1 material (LRP-03 a re-hand-in's fresh round collides with the first round's build identity) folded into Step 1, LRP-04 (`--cause other` is not a cause) corrected
 - Goals: lane-recovers-and-pauses
 - Requested: by Wido on 2026-10-11 08:00 ("I follow your recommendation … there should always be a verb that the human can use to recover … Every scenario we should support with a verb … Now make it flawless"), after the overnight lane run (lane test findings 98-113)
@@ -25,7 +25,7 @@ Deferred, in order: Step 2 = D1 (clock pause); Step 3 = the extra round `landing
 A goal's elapsed budget does not run while the goal is in the lane: from the hand-in's acceptance (`work land`) to its push or return, the budget record carries the pause (`lane_paused_at`, accumulated `lane_paused_minutes`), the breach-stop custodian excludes paused time, `goal show`/`goal budget` print "in the lane since HH:MM, clock paused (Nh so far)". A goal returned by the lane resumes its clock at the return. The lane's own waiting time is bounded separately: `landing.wait-hours` (default 12) over which status prints a finding line ("waiting 13 h in the lane") — never a stop.
 
 ### D2 The lane owns its fix rounds
-A red batch proof attributed to a goal (`own`) admits a lane fix round under the lane's allowance: `landing.fix-rounds` (default 1 per batch proof) and `landing.fix-minutes` (default 120 per round), checked by the lane's admission, not the goal's review rounds or attempts; the fix job's provenance and commit (`Goal-Unit: G/lane-fix-N`) land on the batch tree as today; the goal's box is untouched by the round. When the allowance is spent and the proof is still red, the lane returns the goal with the brief and the rounds' evidence (as today's return). A person may grant one more round (D4).
+A red batch proof attributed to a goal (`own`) admits a lane fix round under the lane's allowance: `landing.fix-rounds` (default 1 per batch proof) and `landing.fix-minutes` (default 120 per round), checked by the lane's admission, not the goal's review rounds or attempts; the fix job's provenance and commit (`Goal-Unit: G/lane-fix-<batch proof attempt>-1`, the identity Step 1 defines) land on the batch tree as today; the goal's box is untouched by the round. When the allowance is spent and the proof is still red, the lane returns the goal with the brief and the rounds' evidence (as today's return). A person may grant one more round (D4).
 
 ### D3 The merge read covers the resolution
 The read of a lane merge (`lane-merge-N`) judges the diff between the merge commit and git's automatic merge of the same parents (the hunks the resolution wrote), with the conflict record, the paths' classes and the check result as context, and nothing else of the goal (the goal's units were read on their branch). The brief states the scope and the bound `landing.read-minutes` (default 20); the read's wall time is recorded next to the fix record; an overrun is recorded as a finding line in status, not a stop.

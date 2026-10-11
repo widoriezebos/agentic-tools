@@ -1,0 +1,22 @@
+# Unit U2 (Step 1): the lane owns its fix rounds
+
+Working Mode: Implement. Goal lane-recovers-and-pauses, design `plans/designs/lane-recovers-and-pauses.md` (accepted; D2 and Step 1 only — D1, D3, D4's new verbs and the extra round are later steps). Worktree = this checkout, branch goal/lane-recovers-and-pauses off origin/main. At most 250 production lines. Leave everything uncommitted; never commit, rebase or push.
+
+## Measured problem (lane test finding 109, 2026-10-11)
+The landing agent's fix round `metasystem work build GOAL --work lane-fix-1 --brief FILE --check 'metasystem test impact'` was refused: "goal … is not approved with a budget yet; nothing was built" — the goal's elapsed box had lapsed while it waited in the lane and its box had zero review rounds. The red proof was `20261011T040737.033326000Z`; its fix brief is `artifacts/agents/landing/fixes/20261011T040737.033326000Z/brief.md` in the landing install; the fix record shape is `artifacts/agents/landing/fixes/20261011T022722.620392000Z.json` there (read both for real shapes; never edit the landing install).
+
+## Decisions to build
+- D2a Allowance: compiled settings `landing.fix-rounds` (default 1, per batch proof attempt) and `landing.fix-minutes` (default 120, the job's box per round) in internal/config defaults (never in metasystem.conf: a shipped line equal to the compiled default is a red). `settings show` lists them with their meaning.
+- D2b Admission: a lane fix build (the landing agent in the registered lane checkout, unit named as D2c) is admitted by the LANE's allowance, not the goal's box: rounds already recorded for this proof attempt < landing.fix-rounds, and the job runs under landing.fix-minutes; the goal's elapsed, attempts and review rounds are neither consulted nor consumed, and the fix round never changes the goal's budget record. Find today's gate in cmd/metasystem/intent_lane_fix.go (the `Round != 1` check) and the goal-admission path the refusal text came from; the lane allowance replaces that path for lane fixes only. Any other build keeps today's admission.
+- D2c Identity: the fix unit is `lane-fix-<stamp>-1` where <stamp> is the red proof attempt's timestamp prefix up to the seconds (`20261011T040737`), so a returned goal handed in again gets a distinct fix job for its new red proof while a repeat within one episode stays idempotent; the commit trailer is `Goal-Unit: GOAL/lane-fix-<stamp>-1`; the batch-history check (internal/landing/plain/batch.go, the trailer format test), `currentFix`/fix records (fix.go) and the skill text (skills/landing-agent/SKILL.md: the brief path, the unit name, the trailer, "ONE fix round") follow; the skill test (cmd/metasystem/landing_fix_test.go TestSkillLandingAgentOneFixRound) asserts the new words.
+- D2d Return: when the allowance is spent and the proof is still red, the lane returns the goal as today; the reason names the lane's allowance ("the lane's 1 fix round for proof <attempt> is spent") instead of a budget refusal.
+
+## Tests (new or changed; each with a mutation named in the report)
+1. Fixture seams: an own red whose goal box is lapsed (elapsed exhausted, review rounds 0) admits the lane fix build; the refusal text "not approved with a budget yet" never appears. Mutation: consult the goal box → test fails.
+2. A green batch proof admits no fix round (the allowance is only for an own red).
+3. A second own red for the same attempt with rounds spent → return with the D2d reason; a NEW proof attempt (after a changed hand-in) gets a fresh allowance and a distinct unit name (named-unit identity never reports UNIT_NAMED_INPUT_CHANGED across episodes).
+4. Real shapes: the fix record JSON of 2026-10-11 and the fix brief are fixtures (copy their shape, not the landing install paths); the batch-history trailer check accepts `lane-fix-20261011T040737-1` and rejects a malformed stamp.
+5. Config: `TestShippedConfigurationHoldsNoCompiledDefault` stays green; the two settings appear in `settings keys`.
+
+## Checks
+`go vet ./...`; `go test -count=1 -timeout 30m ./internal/landing/plain ./internal/config ./internal/launch ./internal/layering ./internal/audit`; `go test -count=1 -timeout 30m ./cmd/metasystem -run 'TestLaneFix|TestLanding|TestSkill|TestAudit|TestWorkBuild|TestSettings'`; `go run ./cmd/devgate static`. Never edit testing.json; never open metasystem.conf.local. Report: diff --stat, production line count, every exit, each mutation.
