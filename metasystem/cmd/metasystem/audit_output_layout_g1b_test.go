@@ -140,7 +140,7 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		const pid = 38928
 		notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
 		owners := intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
-			plainProve: plain.ProveSeams{Git: func(_ string, args ...string) (string, error) {
+			plainProve: plain.ProveSeams{Now: func() time.Time { return now }, Git: func(_ string, args ...string) (string, error) {
 				switch strings.Join(args, " ") {
 				case "rev-parse --verify HEAD^{commit}":
 					return "head", nil

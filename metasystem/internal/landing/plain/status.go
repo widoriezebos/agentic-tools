@@ -24,6 +24,7 @@ import (
 // whether the lane is paused and its agent alive, the queue, the running
 // proof, the last proof and the last push. An absent value is null.
 type Status struct {
+	AgentProgress *AgentProgress `json:"agent_progress,omitempty"`
 	lane.View
 	MainMove       MainMove        `json:"main_move"`
 	PendingActions []PolicyRequest `json:"pending-actions,omitempty"`
@@ -185,6 +186,14 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	}
 	install := string(layout.Install)
 	defer func() {
+		var err error
+		status.AgentProgress, err = agentProgress(install, view.Owner, seams, status.Queue...)
+		if err != nil {
+			said("the agent step cannot be read: " + err.Error())
+		}
+		if err := status.agentIdleFinding(install, seams); err != nil {
+			said("the agent idle policy cannot be read: " + err.Error())
+		}
 		confPath := filepath.Join(install, "metasystem.conf")
 		if _, err := os.Stat(confPath); errors.Is(err, os.ErrNotExist) {
 			confPath = ""

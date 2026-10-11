@@ -697,7 +697,7 @@ func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, 
 	if problem := inv.checkOwnEngine(); problem != nil {
 		return inv.render(*problem)
 	}
-	return command.run(inv)
+	return inv.runWithLandingStep()
 }
 
 // leaveStores drops every shared hold the verb took on a store it entered.

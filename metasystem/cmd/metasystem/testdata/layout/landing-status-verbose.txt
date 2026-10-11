@@ -4,6 +4,9 @@ Lane  ~/GitHub/agentic-tools-landing
   registered   by Wido, 08:58
   agent        running since 10:53 · pid 38928
 
+Agent
+  agent: running, no step for 5 min
+
 Admission
   admission open
 

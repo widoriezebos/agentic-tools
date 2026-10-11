@@ -1,5 +1,8 @@
 ○ The landing lane is stopped by Wido; it lands nothing
 
+Agent
+  agent: idle since 10:28
+
 Admission
   admission open
 

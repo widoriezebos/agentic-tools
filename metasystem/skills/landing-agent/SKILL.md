@@ -28,7 +28,13 @@ The lane and the hand gate run the same full proof: `sh proof/full.sh` from
 `metasystem/` in the tree being proved. It prints every package and shard;
 only `ok` package lines pass, and missing test reports are red.
 
+## The batch
+
+When `landing status --json` shows no batch member left waiting or running (every member landed, returned or superseded), end your turn at once — unless you were woken with `full-due` (case 8) or main owes a proof with no active batch (step 1): run that proof first. The keeper wakes the agent when there is work; a person's return of the last member ends your turn.
+
 ## The loop
+
+Read `metasystem landing status --json` before each step. When `landing status --json` shows no batch member left waiting or running (every member landed, returned or superseded), end your turn at once — unless you were woken with `full-due` (case 8) or main owes a proof with no active batch (step 1): run that proof first. The keeper wakes the agent when there is work; a person's return of the last member ends your turn.
 
 This repository sets `landing.batch=1` in its committed `metasystem.conf`, so
 each recorded batch has one member. The built-in default policy is `auto`.
@@ -189,5 +195,5 @@ human return restores no automatic allowance.
 9. **Blocked outside cases 1-8:** ask with `--about lane`, then end your turn; the keeper holds you
    until it is answered.
 
-Never end your session with a `waiting` line you could act on: push it, return it, or have a
+Never end your turn with a `waiting` member of your recorded batch you could act on: push it, return it, or have a
 proof running, or hold on the cause the proof records.

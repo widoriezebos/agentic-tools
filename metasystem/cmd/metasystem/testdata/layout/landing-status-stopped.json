@@ -12,6 +12,11 @@ exit 0
   "outcome": "confirmed",
   "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it; 0 waiting, 0 returned in the queue; admission open",
   "data": {
+    "agent_progress": {
+      "since": "2026-09-30T08:28:00Z",
+      "minutes": 30,
+      "line": "agent: idle since 10:28"
+    },
     "root": "/Users/wido/GitHub/agentic-tools-landing",
     "registered_by": "Wido",
     "registered_at": "2026-09-30T06:58:00Z",

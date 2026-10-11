@@ -33,8 +33,9 @@ import (
 
 // laneVerbOwners are the landing verbs' seams; the zero value is production.
 type laneVerbOwners struct {
-	view func(string) lane.View
-	home func() (string, error)
+	stepActor func(string, int64) bool
+	view      func(string) lane.View
+	home      func() (string, error)
 	// probe reads whether the lane's landing agent runs.
 	probe    func(root string) (lane.OwnerProbe, error)
 	validate func(root, seatRoot string, now time.Time) (string, error)
@@ -391,6 +392,12 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 		view(page)
 		if data.Root == nil {
 			return
+		}
+		if data.AgentProgress != nil {
+			page.Section("Agent", "").Text(data.AgentProgress.Line)
+			if data.AgentProgress.Finding != "" {
+				page.Section("", "").Text(data.AgentProgress.Finding)
+			}
 		}
 		if policy := data.BatchPolicy; policy != nil {
 			page.Section("Batch policy", "").Text(policy.Value + " from " + policy.Source)

@@ -1,0 +1,2 @@
+{"goal":"lane-recovers-and-pauses","branch":"goal/lane-recovers-and-pauses","sha":"9f13400000000000000000000000000000000001","seat":"m1e","at":"2026-10-11T14:30:00Z"}
+{"goal":"lane-recovers-and-pauses","sha":"9f13400000000000000000000000000000000001","outcome":"returned","reason":"person returned the last member","cause":{"kind":"other"},"at":"2026-10-11T14:59:49Z"}
