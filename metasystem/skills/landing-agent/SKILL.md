@@ -107,11 +107,13 @@ human return restores no automatic allowance.
    the fix job id and read id (say when no read ran), every remaining red, and any
    required decision. Check out the merge's first parent before rebuilding the
    batch after a return. When the engine refuses the fix build, return as before with the refusal as evidence; other engine refusals hold the batch and go to case 9.
-   For `main`, hold the batch and end your turn naming main's units (`cause.name`), the
-   incident record and the way forward. Main's red is fixed first, through the enrolled
-   person's hot-fix. The hot-fix alone releases nothing: after it reaches main, run
-   `metasystem landing prove --trunk` when woken with `full-due` or asked by the person;
-   its green clears the incident, then continue with case 5 on the new main.
+   For `main`, hold the batch; fetch main and compare it with the main commit recorded when the incident
+   was registered. When fetched main moved since the incident was registered, run
+   `metasystem landing prove --trunk` yourself (detached) before any question and end
+   your turn while it runs. Ask only if that proof is red. Its green clears the incident,
+   then continue with case 5 on the new main. When main has not moved, hold the batch
+   naming main's units (`cause.name`), the incident record and the way forward through
+   the enrolled person's hot-fix. The hot-fix alone releases nothing: it needs the trunk proof.
    When `last_proof.repeat` is `allowed`, run `metasystem landing prove` once more and
    end your turn. For any other cause, the waiting goals hold. A budget hold needs the enrolled person's own
    `metasystem landing prove`; follow the recorded command. `landing run` grants no proof

@@ -32,7 +32,7 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 	}
 	// Queue history differs from the assembly's merge order.
 	for _, g := range []string{"c", "b", "a"} {
-		if _, _, err := plain.HandIn(b.install, plain.Line{Goal: g, SHA: "sha-" + g}); err != nil {
+		if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: g, SHA: "sha-" + g}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -343,7 +343,7 @@ func TestLandingReplayBudgetHoldsShrinkingBatchAndGenericRunCannotReopen(t *test
 		if result := b.prove(t); result.Cause.Kind != "own" || result.Cause.Goal != g {
 			t.Fatalf("culprit %s: %+v", g, result)
 		}
-		if _, _, err := plain.ReturnProven(b.install, g, "own", "", false, "", laneTestNow); err != nil {
+		if _, _, err := plain.ReturnProven(b.install, g, "own", "", false, "", laneTestNow, plain.ProveSeams{BudgetHome: t.TempDir()}); err != nil {
 			t.Fatal(err)
 		}
 		b.head = "merge-b"

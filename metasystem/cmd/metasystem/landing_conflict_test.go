@@ -21,7 +21,7 @@ func TestLandingResolveBatchConflictWaitsThenReturnsAgainstMain(t *testing.T) {
 		return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}, Summary: "the landing lane is idle"}
 	}
 	for _, goal := range []string{"A", "B"} {
-		if _, _, err := plain.HandIn(b.install, plain.Line{Goal: goal, SHA: goal + "-sha"}); err != nil {
+		if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: goal, SHA: goal + "-sha"}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -102,7 +102,7 @@ func TestLandingResolveGeneratedReturnShowsPathsInStatus(t *testing.T) {
 	b.owners.landing.view = func(string) lane.View {
 		return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}, Summary: "the landing lane is idle"}
 	}
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	b.sourceConflictGit(t, func() {})
@@ -140,7 +140,7 @@ func TestLandingResolveProbesMainBeforeReturningSourceConflict(t *testing.T) {
 		t.Run(probe, func(t *testing.T) {
 			t.Parallel()
 			b := newResolveVerbFixture(t)
-			if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+			if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"}); err != nil {
 				t.Fatal(err)
 			}
 			aborts := 0
@@ -184,7 +184,7 @@ func TestWorkLandBatchConflictNamesDependencyAndLeavesQueueAlone(t *testing.T) {
 	t.Parallel()
 	b := newLandRebaseBed(t)
 	tip := b.landing.status.BranchTip
-	line := plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: tip, Delivered: "Makes landing reliable"}
+	line := plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "standing-validation", Branch: "goal/standing-validation", SHA: tip, Delivered: "Makes landing reliable"}
 	if _, _, err := plain.HandIn(b.lane, line); err != nil {
 		t.Fatal(err)
 	}

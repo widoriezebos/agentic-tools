@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 // Git's pending merge, parent topology and hook admission cannot be proved by a Git stub.
@@ -23,7 +24,7 @@ func TestGitAdapterSeatMergeCompletesAndProves(t *testing.T) {
 			if err := os.Remove(queuePath(b.install)); err != nil {
 				t.Fatal(err)
 			}
-			if _, _, err := HandIn(b.install, Line{Goal: "goal", SHA: tip}); err != nil {
+			if _, _, err := HandIn(b.install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: tip}); err != nil {
 				t.Fatal(err)
 			}
 			if !generated {
@@ -152,7 +153,7 @@ func TestSeatMergeCannotResolveReturnsPathsAndJob(t *testing.T) {
 	if fix, err := ReadFix(b.install); err != nil || fix != nil {
 		t.Fatalf("returned job still resolving: %+v %v", fix, err)
 	}
-	if _, _, err := HandIn(b.install, Line{Goal: "goal", SHA: "goal-sha", Again: true}); err != nil {
+	if _, _, err := HandIn(b.install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: "goal-sha", Again: true}); err != nil {
 		t.Fatal(err)
 	}
 	b.seams.AsSeat = true
@@ -206,7 +207,7 @@ func TestGitAdapterSeatMergeWithBatchMember(t *testing.T) {
 			if err := os.Remove(queuePath(b.install)); err != nil {
 				t.Fatal(err)
 			}
-			for _, line := range []Line{{Goal: "earlier", SHA: member}, {Goal: "goal", SHA: tip}} {
+			for _, line := range []Line{{At: bedNow.Format(time.RFC3339), Goal: "earlier", SHA: member}, {At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: tip}} {
 				if _, _, err := HandIn(b.install, line); err != nil {
 					t.Fatal(err)
 				}

@@ -89,11 +89,11 @@ func TestDesignRefusalReturnsOnlyCheckedHandIn(t *testing.T) {
 		t.Run(map[bool]string{false: "checked", true: "newer"}[newer], func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
-			if _, _, err := HandIn(install, Line{Goal: "goal", SHA: "checked"}); err != nil {
+			if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: "checked"}); err != nil {
 				t.Fatal(err)
 			}
 			if newer {
-				if _, _, err := HandIn(install, Line{Goal: "goal", SHA: "newer"}); err != nil {
+				if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: "newer"}); err != nil {
 					t.Fatal(err)
 				}
 			}

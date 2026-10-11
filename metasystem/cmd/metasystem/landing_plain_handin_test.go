@@ -153,7 +153,7 @@ func TestLandingStatusSaysRecords(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
 	var line plain.Line
-	if err := json.Unmarshal([]byte(`{"goal":"design","branch":"goal/design","sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","seat":"ui","records":true}`), &line); err != nil {
+	if err := json.Unmarshal([]byte(`{"goal":"design","branch":"goal/design","sha":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","seat":"ui","records":true,"at":"2026-09-29T18:00:00Z"}`), &line); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := plain.HandIn(install, line); err != nil {
@@ -161,7 +161,7 @@ func TestLandingStatusSaysRecords(t *testing.T) {
 	}
 	for _, state := range []string{plain.StateWaiting, plain.StateLanded, plain.StateReturned} {
 		if state == plain.StateReturned {
-			if _, _, err := plain.ReturnProven(install, "design", "unclassified", "records check failed", true, "fixture", time.Time{}, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+			if _, _, err := plain.ReturnProven(install, "design", "unclassified", "records check failed", true, "fixture", laneTestNow, plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 				t.Fatal(err)
 			}
 		}
@@ -292,7 +292,7 @@ func TestWorkLandAgainAfterReturn(t *testing.T) {
 			b := newLandRebaseBed(t)
 			b.rebase.State, b.rebase.NewTip = "held", b.rebase.OldTip
 			b.rebase.Regenerated = []string{"gen/out"}
-			line := plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: b.rebase.OldTip, Delivered: "Makes landing reliable"}
+			line := plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "standing-validation", Branch: "goal/standing-validation", SHA: b.rebase.OldTip, Delivered: "Makes landing reliable"}
 			if _, _, err := plain.HandIn(b.lane, line); err != nil {
 				t.Fatal(err)
 			}
@@ -404,7 +404,7 @@ func TestWorkLandHandsInToThePlainLane(t *testing.T) {
 		t.Fatalf("a repeat appends nothing: %q", data)
 	}
 
-	if _, _, err := plain.ReturnProven(install, "standing-validation", "unclassified", "app-standard fails since it joined", true, "fixture", time.Now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+	if _, _, err := plain.ReturnProven(install, "standing-validation", "unclassified", "app-standard fails since it joined", true, "fixture", time.Now(), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result = b.do("work", "land", "standing-validation")

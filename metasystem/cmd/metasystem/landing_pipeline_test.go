@@ -157,7 +157,7 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 			b.git(t, writer, "commit", "--quiet", "-am", "change generated bundle")
 			b.git(t, writer, "push", "--quiet", "origin", "goal/c")
 			third := b.git(t, writer, "rev-parse", "HEAD")
-			_, _, err = plain.HandIn(b.installation, plain.Line{Goal: "c", SHA: third, Branch: "goal/c"})
+			_, _, err = plain.HandIn(b.installation, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "c", SHA: third, Branch: "goal/c"})
 			helmMust(t, err)
 			b.advanceMain(t, "metasystem/out/bundle", "main\n")
 			b.git(t, b.checkout, "checkout", "--quiet", "--detach", "origin/main")

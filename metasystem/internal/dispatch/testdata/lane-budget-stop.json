@@ -1,0 +1,28 @@
+{
+  "stopId": "stop-lane-proves-at-the-batch-risk-r3-f1",
+  "goalId": "lane-proves-at-the-batch-risk",
+  "goalRevision": 3,
+  "fenceEpoch": 1,
+  "capabilityGeneration": 3,
+  "machineId": "m1e",
+  "claimEpoch": 9,
+  "reason": "ELAPSED_LIMIT",
+  "state": "COMPLETE",
+  "openedAt": "2026-10-11T02:47:39Z",
+  "updatedAt": "2026-10-11T02:47:43Z",
+  "completedAt": "2026-10-11T02:47:43Z",
+  "pass": 1,
+  "pendingJobs": [],
+  "terminalJobs": [],
+  "pendingProofAttempts": [],
+  "terminalProofAttempts": [],
+  "observedProofAttempts": [],
+  "observedJobs": [],
+  "cancelOutcomes": [],
+  "firingEvidence": {
+    "elapsedUsed": "12h5m22.19788s",
+    "admissionLimit": "1d",
+    "breachBoundary": "12h0m0s",
+    "gracePercent": 50
+  }
+}

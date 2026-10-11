@@ -293,7 +293,13 @@ func (view intentBudgetView) lines() []string {
 		}
 		return append(lines, "spent: unknown: "+reason)
 	}
+	for _, problem := range projection.Problems {
+		lines = append(lines, "problem: "+problem)
+	}
 	limits := projection.Limits
+	if words := projection.LaneBudgetRecord.Words(); words != "" {
+		lines = append(lines, words)
+	}
 	lines = append(lines, fmt.Sprintf("spent: elapsed %s of %s, attempts %d of %d, job minutes %d of %d reserved, active jobs %d of %d",
 		projection.Elapsed.Round(time.Minute), limits.ElapsedLimit, projection.Attempts, limits.AttemptLimit,
 		projection.ReservedJobMinutes, limits.ReservedJobMinutesLimit, projection.ActiveJobs, limits.ActiveJobLimit))

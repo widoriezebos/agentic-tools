@@ -181,6 +181,9 @@ func (shown goalShown) budgetSection(page *textui.Page) {
 		return
 	}
 	limits := projection.Limits
+	if words := projection.LaneBudgetRecord.Words(); words != "" {
+		section.Text(words)
+	}
 	elapsed := []textui.Span{textui.Plain(textui.Duration(projection.Elapsed.Round(time.Minute)) + " of " + limits.ElapsedLimit)}
 	switch projection.ElapsedState {
 	case dispatchcore.ElapsedBreach:

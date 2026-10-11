@@ -127,7 +127,7 @@ func (b *drainVerbBed) readStatus(t *testing.T) plain.Status {
 }
 func seedDrainLine(t *testing.T, install, g, sha string) {
 	t.Helper()
-	if _, _, err := plain.HandIn(install, plain.Line{Goal: g, SHA: sha}); err != nil {
+	if _, _, err := plain.HandIn(install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: g, SHA: sha}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -216,7 +216,7 @@ func TestLandingDrainWorkLandRemedyAndPersonProvenance(t *testing.T) {
 			}
 			if kind == "again" {
 				seedDrainLine(t, install, "standing-validation", owners.status.BranchTip)
-				if _, _, err := plain.ReturnProven(install, "standing-validation", "unclassified", "own", true, "fixture", laneTestNow, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+				if _, _, err := plain.ReturnProven(install, "standing-validation", "unclassified", "own", true, "fixture", laneTestNow, plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 					t.Fatal(err)
 				}
 				args = append(args, "--again")
@@ -673,7 +673,7 @@ func TestLandingDrainExplicitPersonProof(t *testing.T) {
 	b.owners.commandNow = func(string) (time.Time, error) { return laneTestNow, nil }
 	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0600))
 	for _, g := range []string{"a", "b", "c"} {
-		if _, _, err := plain.ReturnProven(b.install, g, "unclassified", "done", true, "fixture", laneTestNow, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+		if _, _, err := plain.ReturnProven(b.install, g, "unclassified", "done", true, "fixture", laneTestNow, plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -711,7 +711,7 @@ func TestLandingDrainExplicitPersonProof(t *testing.T) {
 	if code != 0 {
 		t.Fatalf("person proof refused under drain: %s", text)
 	}
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "a", SHA: "sha-a", Again: true}, "Wido"); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "a", SHA: "sha-a", Again: true}, "Wido"); err != nil {
 		t.Fatal(err)
 	}
 	b.owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {

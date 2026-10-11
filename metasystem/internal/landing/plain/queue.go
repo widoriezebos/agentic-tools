@@ -21,6 +21,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -427,7 +428,7 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 	case !ok:
 		return Entry{}, false, fmt.Errorf("%w: %s was never handed in", ErrNotWaiting, goal)
 	case latest.State == StateReturned:
-		return latest, false, closeFix(install, goal)
+		return latest, false, errors.Join(saveClosedBudget(install, goal, now, effects...), closeGoalStopsLocked(install, goal, "return "+goal, now, latest.SHA), closeFix(install, goal))
 	case latest.State != StateWaiting:
 		return latest, false, fmt.Errorf("%w: %s already %s", ErrNotWaiting, goal, latest.State)
 	}
@@ -448,10 +449,8 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 	}
 	latest.ReturnOrigin = &origin
 	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict, latest.Cause = StateReturned, reason, at, detail, cause
-	if err := closeGoalStopsLocked(install, goal, "return "+goal, now, latest.SHA); err != nil {
-		return latest, true, err
-	}
-	return latest, true, closeFix(install, goal)
+	// The returned line is written: the bookkeeping below all runs, and its errors are reported together (a failed clock save never leaves the goal's stops or fix open).
+	return latest, true, errors.Join(saveClosedBudget(install, goal, now, seams), closeGoalStopsLocked(install, goal, "return "+goal, now, latest.SHA), closeFix(install, goal))
 }
 
 // Landed derives each waiting entry's landing: one whose sha main
@@ -555,4 +554,19 @@ func AreaEntries(install string) ([]Entry, error) {
 		return nil, fmt.Errorf("%s has %d unreadable queue lines", queuePath(install), skipped)
 	}
 	return entriesOf(lines), nil
+}
+
+func saveClosedBudget(install, id string, now time.Time, effects ...ProveSeams) error {
+	home := ""
+	if len(effects) > 0 {
+		home = effects[0].BudgetHome
+	}
+	if home == "" {
+		var err error
+		home, err = board.Home()
+		if err != nil {
+			return err
+		}
+	}
+	return goal.SaveClosedLaneBudget(home, install, id, now)
 }

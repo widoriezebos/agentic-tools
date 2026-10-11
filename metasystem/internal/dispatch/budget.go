@@ -11,9 +11,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/obligationstate"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -62,6 +64,7 @@ type BudgetBreach struct {
 // latest exact consumed discharge proof. While the goal is marked as waiting
 // to land, Wait is its open wait, already taken off Elapsed.
 type BudgetProjection struct {
+	goal.LaneBudgetRecord
 	unitAttempts            map[string]bool
 	Status                  BudgetProjectionStatus
 	GoalID                  string
@@ -886,6 +889,41 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if len(homes) > 0 {
 			home = homes[0]
 		}
+		laneHome := home
+		if laneHome == "" {
+			var err error
+			laneHome, err = board.Home()
+			if err != nil {
+				return unknownBudget(file.Id, revision, "lane home", err.Error())
+			}
+		}
+		closed, laneErr := goal.ReadClosedLaneBudget(laneHome, file.Id, budgetStartedAt, now)
+		if laneErr != nil {
+			return unknownBudget(file.Id, revision, "closed landing lane stays", laneErr.Error())
+		}
+		projection.LaneBudgetRecord = closed
+		projection.ClosedSpans = nil
+		registered, present, laneErr := lane.Read(laneHome)
+		if laneErr != nil {
+			projection.Problems = append(projection.Problems, "landing lane pause unavailable: "+laneErr.Error())
+		} else if present {
+			current, err := goal.ReadLaneBudget(registered.Install, file.Id, budgetStartedAt, now)
+			if err != nil {
+				return unknownBudget(file.Id, revision, "landing lane clock", err.Error())
+			}
+			projection.PausedAt = current.PausedAt
+			projection.Problems = append(projection.Problems, current.Problems...)
+			if !current.PausedAt.IsZero() {
+				from := current.PausedAt
+				if from.Before(budgetStartedAt) {
+					from = budgetStartedAt
+				}
+				if now.After(from) {
+					projection.Spans = append(projection.Spans, outage.Span{Start: from, End: now})
+				}
+			}
+			projection.PausedMinutes = outage.Paused(projection.Spans).Minutes()
+		}
 		providerStart := budgetStartedAt
 		if claimed {
 			claimedAt, parseErr := time.Parse(time.RFC3339, file.Claimed.At)
@@ -900,6 +938,10 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		spans, err := providerWaits(home, file.Id, providerStart, now, dependencies)
 		if err != nil {
 			return unknownBudget(file.Id, revision, "provider/launch history", err.Error())
+		}
+		spans = append(spans, projection.Spans...)
+		if wait != nil && len(projection.Spans) > 0 {
+			wait.observe(projection.Spans[0].Start.Format(time.RFC3339), "", true)
 		}
 		if wait != nil {
 			duration := wait.span(budgetStartedAt, now)

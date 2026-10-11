@@ -7,6 +7,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestResolveConflictReturnLimitHoldsWaitingEntry(t *testing.T) {
@@ -22,7 +23,7 @@ func TestResolveConflictReturnLimitHoldsWaitingEntry(t *testing.T) {
 		return PolicyValue{Value: "auto"}, nil
 	}
 	for index, sha := range []string{"first-sha", "second-sha"} {
-		if _, _, err := HandIn(b.install, Line{Goal: "goal", SHA: sha}); err != nil {
+		if _, _, err := HandIn(b.install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: sha}); err != nil {
 			t.Fatal(err)
 		}
 		failures := []string{"first-test", "second-test"}
@@ -39,7 +40,7 @@ func TestResolveConflictReturnLimitHoldsWaitingEntry(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := HandIn(b.install, Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+	if _, _, err := HandIn(b.install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: "goal-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	runs, aborted := 0, false
@@ -96,7 +97,7 @@ func TestConflictDependencyHoldTracksExactHandInAndPendingSkipsHeld(t *testing.T
 			t.Parallel()
 			install := t.TempDir()
 			for _, goal := range []string{"A", "B", "environment"} {
-				if _, _, err := HandIn(install, Line{Goal: goal, SHA: goal}); err != nil {
+				if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: goal, SHA: goal}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -118,7 +119,7 @@ func TestConflictDependencyHoldTracksExactHandInAndPendingSkipsHeld(t *testing.T
 				}
 			}
 			if outcome == "superseded" {
-				if _, _, err := HandIn(install, Line{Goal: "A", SHA: "new-A"}); err != nil {
+				if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "A", SHA: "new-A"}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -150,7 +151,7 @@ func TestResolveBatchDependencyRecordsMergedSupersededCommit(t *testing.T) {
 	b := newResolveFixture(t)
 	b.paths = "metasystem/src/list.go\x00"
 	for _, sha := range []string{"merged-A", "new-A"} {
-		if _, _, err := HandIn(b.install, Line{Goal: "A", SHA: sha}); err != nil {
+		if _, _, err := HandIn(b.install, Line{At: bedNow.Format(time.RFC3339), Goal: "A", SHA: sha}); err != nil {
 			t.Fatal(err)
 		}
 	}

@@ -325,14 +325,17 @@ func TestLandingReturnHistoryAcrossRoutes(t *testing.T) {
 				}
 				return b.run(t, b.root, "return", "goal", "--cause", "own", "--json")
 			}
-			helmMust(t, func() error { _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: sha}); return err }())
+			helmMust(t, func() error {
+				_, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: sha})
+				return err
+			}())
 			code, text := invoke([]string{"u/a TestA", "u/a TestB"})
 			entry, _, err := plain.Latest(b.install, "goal")
 			if err != nil || entry.State != plain.StateReturned {
 				t.Fatalf("first %s return: %d %s %+v %v", route, code, text, entry, err)
 			}
 			sha = "next-sha"
-			_, _, err = plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: sha})
+			_, _, err = plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: sha})
 			helmMust(t, err)
 			code, text = invoke([]string{"u/a TestA"})
 			entry, _, err = plain.Latest(b.install, "goal")
@@ -353,7 +356,7 @@ func TestLandingReturnHistoryAcrossRoutes(t *testing.T) {
 				return humanauthority.Proof{}, errors.New("agent")
 			}
 			sha = "third-sha"
-			_, _, err = plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: sha})
+			_, _, err = plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: sha})
 			helmMust(t, err)
 			if route != "public" {
 				code, text = invoke(nil)
@@ -369,7 +372,7 @@ func TestLandingReturnHistoryAcrossRoutes(t *testing.T) {
 				t.Fatalf("shrinking different failures refused: %d %s", code, text)
 			}
 			sha = "fourth-sha"
-			_, _, err = plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: sha})
+			_, _, err = plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: sha})
 			helmMust(t, err)
 			code, text = invoke([]string{"u/c TestNewer"})
 			entry, _, _ = plain.Latest(b.install, "goal")
@@ -423,7 +426,7 @@ func TestLandingReturnNewFailureClassAndNonShrinkingSet(t *testing.T) {
 				return humanauthority.Proof{}, errors.New("agent")
 			}
 			b.owners.landing.machine = func(string) (string, error) { return "fixture", nil }
-			_, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"})
+			_, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"})
 			helmMust(t, err)
 			if first == "conflict" {
 				b.sourceConflictGit(t, func() {})
@@ -436,7 +439,7 @@ func TestLandingReturnNewFailureClassAndNonShrinkingSet(t *testing.T) {
 					t.Fatalf("first test return: %d %s", code, text)
 				}
 			}
-			_, _, err = plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "fixed"})
+			_, _, err = plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "fixed"})
 			helmMust(t, err)
 			writeCauseProof(t, b.install, "results.jsonl", plain.Result{Result: plain.Red, BatchID: "renamed", Attempt: "new-proof", Cause: &plain.Cause{Kind: "own", Goal: "goal", SHA: "fixed", Tests: []string{"u/b TestNew"}, Evidence: "new.log"}})
 			code, text := b.run(t, b.root, "return", "goal", "--cause", "own")
@@ -445,7 +448,7 @@ func TestLandingReturnNewFailureClassAndNonShrinkingSet(t *testing.T) {
 				if code != 0 || err != nil || entry.State != plain.StateReturned {
 					t.Fatalf("new failure class held: %d %s %+v %v", code, text, entry, err)
 				}
-				_, _, err = plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "another"})
+				_, _, err = plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "another"})
 				helmMust(t, err)
 				writeCauseProof(t, b.install, "results.jsonl", plain.Result{Result: plain.Red, Cause: &plain.Cause{Kind: "own", Goal: "goal", SHA: "another", Tests: []string{"u/c TestOther"}, Evidence: "third.log"}})
 				code, text = b.run(t, b.root, "return", "goal", "--cause", "own")
@@ -496,7 +499,7 @@ func TestLandingClassifyRetainsFullBudget(t *testing.T) {
 	b.git(t, seat, "push", "--quiet", "origin", "goal/a")
 	b.git(t, b.checkout, "fetch", "--quiet", "origin")
 	sha := b.git(t, seat, "rev-parse", "HEAD")
-	_, _, err = plain.HandIn(b.installation, plain.Line{Goal: "a", SHA: sha})
+	_, _, err = plain.HandIn(b.installation, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "a", SHA: sha})
 	helmMust(t, err)
 	b.success(t, "landing", "run")
 	b.assemble(t, sha)
@@ -530,13 +533,13 @@ func TestLandingReturnSameTipKeepsCurrentRequest(t *testing.T) {
 	}
 	machine := func(string) (string, error) { return "fixture", nil }
 	b.owners.landing.machine = machine
-	_, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "same-sha"})
+	_, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "same-sha"})
 	helmMust(t, err)
 	writeCauseProof(t, b.install, "results.jsonl", plain.Result{Result: plain.Red, Cause: &plain.Cause{Kind: "own", Goal: "goal", SHA: "same-sha", Tests: []string{"u/a TestA"}, Evidence: "own.log"}})
 	if code, text := b.run(t, b.root, "return", "goal", "--cause", "own"); code != 0 {
 		t.Fatalf("first return: %d %s", code, text)
 	}
-	_, _, err = plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "same-sha", Again: true})
+	_, _, err = plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "same-sha", Again: true})
 	helmMust(t, err)
 	if code, text := b.run(t, b.root, "return", "goal", "--cause", "own"); code == 0 || !strings.Contains(text, "known failures") {
 		t.Fatalf("same tip reset history: %d %s", code, text)
@@ -586,7 +589,7 @@ func TestLandingReturnClosesMatchingProofOrGateStop(t *testing.T) {
 				b.owners.resolver = stateroot.NewResolver(func(string) (string, error) { return b.root, nil }, os.Executable)
 				b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)
 				b.owners.landing.machine = func(string) (string, error) { return "fixture", nil }
-				_, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "current-sha"})
+				_, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "current-sha"})
 				helmMust(t, err)
 				result := plain.Result{Result: plain.Red, Attempt: "current", Tree: "current-tree", Goals: []plain.GoalSHA{{Goal: "goal", SHA: "current-sha"}}}
 				register := "results.jsonl"
@@ -663,7 +666,7 @@ func TestLandingSourceConflictPersonHoldsWaitingEntry(t *testing.T) {
 	b := newResolveVerbFixture(t)
 	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\ntesting.contract=testing.json\nlanding.on-red=person\n"), 0600))
 	b.owners.landing.machine = func(string) (string, error) { return "fixture", nil }
-	_, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"})
+	_, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"})
 	helmMust(t, err)
 	aborts := 0
 	b.sourceConflictGit(t, func() { aborts++ })
@@ -684,7 +687,7 @@ func TestLandingGeneratedConflictPersonStopsBeforeReturn(t *testing.T) {
 	b := newResolveVerbFixture(t)
 	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\ntesting.contract=testing.json\nlanding.on-red=person\n"), 0600))
 	b.owners.landing.machine = func(string) (string, error) { return "fixture", nil }
-	_, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"})
+	_, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"})
 	helmMust(t, err)
 	runs := 0
 	b.sourceConflictGit(t, func() {})
@@ -819,7 +822,7 @@ func TestLandingClassifyHistoricalRedCannotAdmitReplacement(t *testing.T) {
 			b, red := redPermissionBed(t, mode == "all-green")
 			replacement := b.seat(t, "replacement")
 			b.git(t, b.checkout, "fetch", "--quiet", "origin", "goal/replacement")
-			_, _, err := plain.HandIn(b.installation, plain.Line{Goal: "a", SHA: replacement})
+			_, _, err := plain.HandIn(b.installation, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "a", SHA: replacement})
 			helmMust(t, err)
 			b.git(t, b.checkout, "checkout", "--quiet", "--detach", replacement)
 			b.policy(t, "auto")

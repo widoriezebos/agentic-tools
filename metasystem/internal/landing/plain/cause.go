@@ -76,8 +76,8 @@ func ReturnProven(install, goal, kind, reason string, person bool, by string, no
 			return fmt.Errorf("%w: %s was never handed in", ErrNotWaiting, goal)
 		}
 		if latest.State == StateReturned {
-			entry = latest
-			return closeFix(install, goal)
+			entry, changed, readErr = returnLocked(install, goal, reason, nil, nil, now, effects...)
+			return readErr
 		}
 		proof, readErr := lastGoalProof(install, goal)
 		if readErr != nil && !person {

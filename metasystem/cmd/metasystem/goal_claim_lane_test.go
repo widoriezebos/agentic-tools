@@ -51,7 +51,7 @@ func claimLaneBed(t *testing.T) (*intentBed, intentOwners, *resolveVerbFixture) 
 
 func queueClaimGoal(t *testing.T, install, id string) {
 	t.Helper()
-	if _, _, err := plain.HandIn(install, plain.Line{Goal: id, Branch: "goal/" + id, SHA: id + "-sha"}); err != nil {
+	if _, _, err := plain.HandIn(install, plain.Line{At: "2026-10-06T09:00:00Z", Goal: id, Branch: "goal/" + id, SHA: id + "-sha"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -143,19 +143,19 @@ func TestGoalClaimLaneQuotaBoundAndStates(t *testing.T) {
 				wantRemedy = []string{"metasystem", "goal", "done", bedGoal, "--reason", "TEXT"}
 			case "returned then records":
 				queueClaimGoal(t, lane.install, bedGoal)
-				if _, changed, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "the widget check failed", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed {
+				if _, changed, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "the widget check failed", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed {
 					t.Fatalf("return: changed=%v err=%v", changed, err)
 				}
-				if _, added, err := plain.HandIn(lane.install, plain.Line{Goal: bedGoal, Branch: "records/" + bedGoal, SHA: "records-sha", Records: true}); err != nil || !added {
+				if _, added, err := plain.HandIn(lane.install, plain.Line{At: "2026-10-06T09:00:00Z", Goal: bedGoal, Branch: "records/" + bedGoal, SHA: "records-sha", Records: true}); err != nil || !added {
 					t.Fatalf("records hand-in: added=%v err=%v", added, err)
 				}
 				wantRemedy = []string{"metasystem", "work", "land", bedGoal}
 			case "records then returned":
 				queueClaimGoal(t, lane.install, bedGoal)
-				if _, added, err := plain.HandIn(lane.install, plain.Line{Goal: bedGoal, Branch: "records/" + bedGoal, SHA: "records-sha", Records: true}); err != nil || !added {
+				if _, added, err := plain.HandIn(lane.install, plain.Line{At: "2026-10-06T09:00:00Z", Goal: bedGoal, Branch: "records/" + bedGoal, SHA: "records-sha", Records: true}); err != nil || !added {
 					t.Fatalf("records hand-in: added=%v err=%v", added, err)
 				}
-				if entry, changed, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "the records check failed", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed || !entry.Records {
+				if entry, changed, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "the records check failed", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed || !entry.Records {
 					t.Fatalf("records return: entry=%+v changed=%v err=%v", entry, changed, err)
 				}
 				wantRemedy = []string{"metasystem", "work", "land", bedGoal}

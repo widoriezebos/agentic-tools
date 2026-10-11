@@ -430,6 +430,9 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			page.Section("", "").Text("Stale resolve-begun.json: ignored; every merge conflict returns to its seat.")
 		}
 		rows := [][2]string{}
+		for _, finding := range data.Findings {
+			page.Section("", "").Text(finding)
+		}
 		for _, entry := range data.Queue {
 			if (entry.State == plain.StateLanded || entry.State == plain.StateSuperseded) && !page.Verbose() {
 				continue
@@ -1147,6 +1150,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 // policy resolution. Selection never borrows a seat's configuration.
 func (inv *intentInvocation) laneBatchSeams(home string, record lane.Record, seams plain.ProveSeams) plain.ProveSeams {
 	seams = batchDepthSeams(seams)
+	seams.BudgetHome = home
 	seams.Pause = func() (lane.Pause, bool) { return lane.ReadPause(home) }
 	seams.FenceCheck = func() error {
 		if _, paused := lane.ReadPause(home); !paused {

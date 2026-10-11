@@ -43,7 +43,7 @@ func newResolveFixture(t *testing.T) *resolveFixture {
 			t.Fatal("unexpected regeneration command")
 			return nil
 		}}
-	if _, _, err := HandIn(b.install, Line{Goal: "goal", SHA: "goal-sha", Branch: "goal/goal"}); err != nil {
+	if _, _, err := HandIn(b.install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: "goal-sha", Branch: "goal/goal"}); err != nil {
 		t.Fatal(err)
 	}
 	return b
@@ -384,7 +384,7 @@ func newResolveGitAdapterFixture(t *testing.T, deleted bool) *resolveGitAdapterF
 	if output, err := b.seams.Git(b.checkout, "merge", "--no-commit", "goal"); err == nil {
 		t.Fatalf("expected a conflicted merge: %s", output)
 	}
-	if _, _, err := HandIn(b.install, Line{Goal: "goal", SHA: sha, Branch: "goal/goal"}); err != nil {
+	if _, _, err := HandIn(b.install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: sha, Branch: "goal/goal"}); err != nil {
 		t.Fatal(err)
 	}
 	b.contract.Generated = []testpolicy.Generated{{Paths: []string{"out/**"}, Command: []string{"compile"}}}

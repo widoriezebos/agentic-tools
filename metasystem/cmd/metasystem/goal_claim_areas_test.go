@@ -164,16 +164,16 @@ func TestGoalClaimAreasQueueLifecycle(t *testing.T) {
 			claimAreaDesign(t, bed, bedGoal, "metasystem/a/**")
 			claimAreaDesign(t, bed, "second-goal", "metasystem/a/new.go")
 			snapshot := ownersSnapshot(t, bed, bedGoal)
-			if _, _, err := plain.HandIn(lane.install, plain.Line{Goal: bedGoal, SHA: "code-sha", Records: scenario == "records only contained", AreaSnapshot: snapshot}); err != nil {
+			if _, _, err := plain.HandIn(lane.install, plain.Line{At: "2026-10-06T09:00:00Z", Goal: bedGoal, SHA: "code-sha", Records: scenario == "records only contained", AreaSnapshot: snapshot}); err != nil {
 				t.Fatal(err)
 			}
 			switch scenario {
 			case "returned":
-				if _, _, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "needs correction", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+				if _, _, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "needs correction", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 					t.Fatal(err)
 				}
 			case "records":
-				if _, _, err := plain.HandIn(lane.install, plain.Line{Goal: bedGoal, SHA: "record-sha", Records: true, AreaSnapshot: snapshot}); err != nil {
+				if _, _, err := plain.HandIn(lane.install, plain.Line{At: "2026-10-06T09:00:00Z", Goal: bedGoal, SHA: "record-sha", Records: true, AreaSnapshot: snapshot}); err != nil {
 					t.Fatal(err)
 				}
 			case "released waiting":
@@ -200,7 +200,7 @@ func TestGoalClaimAreasQueueLifecycle(t *testing.T) {
 				first := bed.goalFile(bedGoal)
 				first.State, first.Claimed = goal.StateApproved, nil
 				bed.addGoal(first)
-				if _, _, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "dropped", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+				if _, _, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "dropped", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -366,10 +366,10 @@ func releasedAreasHandInBed(t *testing.T, overlap bool) (*deliveryBed, string, s
 	if err := os.WriteFile(existingDesign, append(data, []byte("\nAreas: []\n")...), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: strings.Repeat("2", 40)}); err != nil {
+	if _, _, err := plain.HandIn(install, plain.Line{At: bed.owners.now().UTC().Format(time.RFC3339), Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: strings.Repeat("2", 40)}); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := plain.ReturnProven(install, bedGoal, "unclassified", "needs another hand-in", true, "fixture", bed.owners.now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+	if _, _, err := plain.ReturnProven(install, bedGoal, "unclassified", "needs another hand-in", true, "fixture", bed.owners.now(), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	first := bed.goalFile(bedGoal)
@@ -466,7 +466,7 @@ func TestWorkLandReleasedAreasAgentRetry(t *testing.T) {
 		t.Fatalf("printed refusal does not retry the hand-in: exit=%d stdout=%q stderr=%q", code, stdout, stderr)
 	}
 	blockerSHA := strings.Repeat("3", 40)
-	if _, _, err := plain.HandIn(install, plain.Line{Goal: blocker, SHA: blockerSHA, AreaSnapshot: bed.goalFile(blocker).Claimed.AreaSnapshot}); err != nil {
+	if _, _, err := plain.HandIn(install, plain.Line{At: "2026-10-06T09:00:00Z", Goal: blocker, SHA: blockerSHA, AreaSnapshot: bed.goalFile(blocker).Claimed.AreaSnapshot}); err != nil {
 		t.Fatal(err)
 	}
 	bed.owners.laneContains = func(sha, main string) (bool, error) { return sha == blockerSHA && main == "local-main", nil }

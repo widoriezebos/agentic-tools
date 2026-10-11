@@ -330,7 +330,7 @@ func TestHandInRepeatIsOneLineAndReturnShowsAtTheSeat(t *testing.T) {
 func TestHandInAgainRequeuesReturnedTipAndKeepsWaitingMetadata(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
-	line := Line{Goal: "goal-a", Branch: "goal/goal-a", SHA: "same-tip", Delivered: "Makes landing reliable"}
+	line := Line{At: bedNow.Format(time.RFC3339), Goal: "goal-a", Branch: "goal/goal-a", SHA: "same-tip", Delivered: "Makes landing reliable"}
 	delivered := line.Delivered
 	if _, _, err := HandIn(install, line); err != nil {
 		t.Fatal(err)

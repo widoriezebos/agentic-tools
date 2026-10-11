@@ -31,7 +31,7 @@ func TestClosedBatchNeverBlocksTheNextSelection(t *testing.T) {
 						helmMust(t, os.Remove(filepath.Join(plain.Dir(b.install), "queue.jsonl")))
 					} else {
 						for _, member := range batch.Members {
-							_, _, err := plain.ReturnProven(b.install, member.Goal, "own", "fixture returned", true, "fixture", laneTestNow)
+							_, _, err := plain.ReturnProven(b.install, member.Goal, "own", "fixture returned", true, "fixture", laneTestNow, plain.ProveSeams{BudgetHome: t.TempDir()})
 							helmMust(t, err)
 						}
 					}

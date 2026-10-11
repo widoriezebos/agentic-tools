@@ -65,6 +65,7 @@ func concreteReceiptAdmissionReads() receiptAdmissionReads {
 // goalAdmissionReads supplies the three repository facts used before policy reads.
 // Each call carries its own value so concurrent admissions cannot share a fixture.
 type goalAdmissionReads struct {
+	BudgetHome      string // explicit host home; empty uses this computer's registration
 	NewWorld        func(string) bool
 	ResolveEndpoint func(string) (goal.Endpoint, error)
 	ResolveMachine  func(string) (string, error)

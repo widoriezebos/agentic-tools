@@ -81,7 +81,7 @@ func (b *resolveVerbFixture) run(t *testing.T, cwd string, words ...string) (int
 
 func witnessLandingResolveRepeat(t *testing.T) {
 	b := newResolveVerbFixture(t)
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	b.owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
@@ -123,7 +123,7 @@ func witnessLandingResolveRepeat(t *testing.T) {
 func TestLandingResolveVerbUsesMainsContractAndReturnsSourceDetails(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	// The checkout's conflicted contract cannot be decoded; main's blob can.
@@ -152,7 +152,7 @@ func TestLandingResolveVerbUsesMainsContractAndReturnsSourceDetails(t *testing.T
 func TestLandingResolveAsSeatRecordsConflictWithoutAborting(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	b.sourceConflictGit(t, func() { t.Fatal("taking the conflict aborted before trying") })
@@ -230,7 +230,7 @@ func (b *resolveVerbFixture) sourceConflictGit(t *testing.T, abort func()) {
 func TestLandingResolveVerbFailsWhenReturnCannotBeAppended(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	aborted := false
@@ -259,7 +259,7 @@ func TestLandingResolveVerbFailsWhenReturnCannotBeAppended(t *testing.T) {
 func TestLandingResolveVerbReturnsGeneratedPathsWithoutRunningCommands(t *testing.T) {
 	t.Parallel()
 	b := newResolveVerbFixture(t)
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "goal-sha"}); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "goal-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	aborted := false

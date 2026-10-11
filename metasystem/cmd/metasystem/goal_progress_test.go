@@ -187,7 +187,7 @@ func TestWorkLandRecordsDoNotHideTheGoalsLanding(t *testing.T) {
 	records := strings.Repeat("4", 40)
 	owners.status.BranchTip = records
 	owners.status.Status.Commits = append(owners.status.Status.Commits, branch.Commit{ID: records, Kind: branch.Plan})
-	if _, added, err := plain.HandIn(install, plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: records, Records: true}); err != nil || !added {
+	if _, added, err := plain.HandIn(install, plain.Line{At: b.owners.now().UTC().Format(time.RFC3339), Goal: "standing-validation", Branch: "goal/standing-validation", SHA: records, Records: true}); err != nil || !added {
 		t.Fatalf("records hand-in: added=%v err=%v", added, err)
 	}
 	owners.status.EndpointTip = records
@@ -233,10 +233,10 @@ func TestWorkLandReturnedRecordsDoNotHideTheGoalsLanding(t *testing.T) {
 	records := strings.Repeat("4", 40)
 	owners.status.BranchTip = records
 	owners.status.Status.Commits = append(owners.status.Status.Commits, branch.Commit{ID: records, Kind: branch.Plan})
-	if _, added, err := plain.HandIn(install, plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: records, Records: true}); err != nil || !added {
+	if _, added, err := plain.HandIn(install, plain.Line{At: b.owners.now().UTC().Format(time.RFC3339), Goal: "standing-validation", Branch: "goal/standing-validation", SHA: records, Records: true}); err != nil || !added {
 		t.Fatalf("records hand-in: added=%v err=%v", added, err)
 	}
-	if entry, changed, err := plain.ReturnProven(install, "standing-validation", "unclassified", "the records check failed", true, "fixture", b.owners.now(), plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed || !entry.Records || entry.SHA != records {
+	if entry, changed, err := plain.ReturnProven(install, "standing-validation", "unclassified", "the records check failed", true, "fixture", b.owners.now(), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed || !entry.Records || entry.SHA != records {
 		t.Fatalf("records return: entry=%+v changed=%v err=%v", entry, changed, err)
 	}
 

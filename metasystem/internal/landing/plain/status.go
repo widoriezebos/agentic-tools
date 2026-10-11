@@ -3,14 +3,17 @@ package plain
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
@@ -56,6 +59,7 @@ type Status struct {
 	// none, and so is what the view could not read (its pause, its agent,
 	// its wake). Empty when everything was read.
 	Problems []string `json:"problems"`
+	Findings []string `json:"findings,omitempty"`
 }
 
 // RunningProof is the lane's proof recorded running.
@@ -180,6 +184,27 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		return status
 	}
 	install := string(layout.Install)
+	defer func() {
+		confPath := filepath.Join(install, "metasystem.conf")
+		if _, err := os.Stat(confPath); errors.Is(err, os.ErrNotExist) {
+			confPath = ""
+		}
+		value, _, err := config.Get(config.GetParams{Key: "landing.wait-hours", ConfPath: confPath})
+		if err == nil {
+			err = config.SettingValueProblem("landing.wait-hours", value)
+		}
+		if err != nil {
+			said("the lane waiting bound can't be read: " + err.Error())
+			return
+		}
+		hours, _ := strconv.ParseUint(value, 10, 64)
+		for _, entry := range status.Queue {
+			at, err := time.Parse(time.RFC3339Nano, entry.At)
+			if entry.State == StateWaiting && err == nil && seams.now().Sub(at) > time.Duration(hours)*time.Hour {
+				status.Findings = append(status.Findings, fmt.Sprintf("%s: waiting %g h in the lane", entry.Goal, math.Round(seams.now().Sub(at).Hours()*10)/10))
+			}
+		}
+	}()
 	progress := DrainProgress{}
 	progress.Drain, err = ReadDrain(install)
 	status.Drain = progress.Drain

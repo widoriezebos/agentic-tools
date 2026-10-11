@@ -47,7 +47,7 @@ func TestPlainLanePushWritesLandedCards(t *testing.T) {
 	for _, goal := range []string{"ready", "building", "newer", "superseded", "missing", "unreadable", "released", "returned"} {
 		sha := goal + "-sha"
 		inside[sha] = true
-		if _, _, err := plain.HandIn(b.root, plain.Line{Goal: goal, SHA: sha}); err != nil {
+		if _, _, err := plain.HandIn(b.root, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: goal, SHA: sha}); err != nil {
 			t.Fatal(err)
 		}
 		if goal == "missing" {
@@ -64,11 +64,11 @@ func TestPlainLanePushWritesLandedCards(t *testing.T) {
 	for _, goal := range []string{"newer", "superseded"} {
 		sha := goal + "-new"
 		inside[sha] = goal == "superseded"
-		if _, _, err := plain.HandIn(b.root, plain.Line{Goal: goal, SHA: sha}); err != nil {
+		if _, _, err := plain.HandIn(b.root, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: goal, SHA: sha}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, _, err := plain.ReturnProven(b.root, "returned", "unclassified", "fix needed", true, "fixture", b.clock, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+	if _, _, err := plain.ReturnProven(b.root, "returned", "unclassified", "fix needed", true, "fixture", b.clock, plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result := b.push(owners)
@@ -231,10 +231,10 @@ func TestWorkLandRepeatPreservesCard(t *testing.T) {
 			t.Parallel()
 			b, tip, install := plainLaneBedWith(t, true, "critic-root", "critic-root")
 			addQueue := func() {
-				_, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: tip.status.BranchTip})
+				_, _, err := plain.HandIn(install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: tip.status.BranchTip})
 				helmMust(t, err)
 				if test.stage == board.StageReturned {
-					_, _, err = plain.ReturnProven(install, bedGoal, "unclassified", "fix needed", true, "fixture", laneTestNow, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}})
+					_, _, err = plain.ReturnProven(install, bedGoal, "unclassified", "fix needed", true, "fixture", laneTestNow, plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}})
 					helmMust(t, err)
 				}
 			}

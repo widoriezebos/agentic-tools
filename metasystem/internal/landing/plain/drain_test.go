@@ -25,11 +25,11 @@ func drainFixture(t *testing.T, install string) Drain {
 func TestDrainHandInAdmission(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
-	line := Line{Goal: "a", SHA: "a1", Delivered: "first"}
+	line := Line{At: bedNow.Format(time.RFC3339), Goal: "a", SHA: "a1", Delivered: "first"}
 	if _, _, err := HandIn(install, line); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := HandIn(install, Line{Goal: "returned", SHA: "r1"}); err != nil {
+	if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "returned", SHA: "r1"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, _, err := ReturnProven(install, "returned", "unclassified", "own", true, "fixture", bedNow, ProveSeams{Person: &ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
@@ -43,10 +43,10 @@ func TestDrainHandInAdmission(t *testing.T) {
 	if e, added, err := HandIn(install, line); err != nil || added || e.Delivered != "metadata" {
 		t.Fatalf("repeat: %+v %v %v", e, added, err)
 	}
-	if e, added, err := HandIn(install, Line{Goal: "returned", SHA: "r1"}); err != nil || added || e.State != StateReturned {
+	if e, added, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "returned", SHA: "r1"}); err != nil || added || e.State != StateReturned {
 		t.Fatalf("returned repeat: %+v %v", e, err)
 	}
-	for _, proposed := range []Line{{Goal: "b", SHA: "b1"}, {Goal: "a", SHA: "a2"}, {Goal: "returned", SHA: "r1", Again: true}, {Goal: "records", SHA: "rec", Records: true, DrainBy: "forged", WholeBy: "Wido", Exception: &Exception{By: "Wido"}}} {
+	for _, proposed := range []Line{{At: bedNow.Format(time.RFC3339), Goal: "b", SHA: "b1"}, {At: bedNow.Format(time.RFC3339), Goal: "a", SHA: "a2"}, {At: bedNow.Format(time.RFC3339), Goal: "returned", SHA: "r1", Again: true}, {At: bedNow.Format(time.RFC3339), Goal: "records", SHA: "rec", Records: true, DrainBy: "forged", WholeBy: "Wido", Exception: &Exception{By: "Wido"}}} {
 		_, _, err := HandIn(install, proposed)
 		var closed *AdmissionClosed
 		if !errors.As(err, &closed) || closed.Drain.By != "Wido" {
@@ -61,7 +61,7 @@ func TestDrainHandInAdmission(t *testing.T) {
 	if err != nil || progress.Drain.State != DrainHeld {
 		t.Fatalf("empty drain: %+v %v", progress, err)
 	}
-	proposed := Line{Goal: "person", SHA: "p1", DrainBy: "forged"}
+	proposed := Line{At: bedNow.Format(time.RFC3339), Goal: "person", SHA: "p1", DrainBy: "forged"}
 	e, added, err := HandIn(install, proposed, "Wido")
 	drain, _ := ReadDrain(install)
 	if err != nil || !added || e.DrainBy != "Wido" || drain.State != DrainDraining {
@@ -70,7 +70,7 @@ func TestDrainHandInAdmission(t *testing.T) {
 	if changed, err := ClearDrain(install); err != nil || !changed {
 		t.Fatal(changed, err)
 	}
-	if _, added, err := HandIn(install, Line{Goal: "b", SHA: "b1"}); err != nil || !added {
+	if _, added, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "b", SHA: "b1"}); err != nil || !added {
 		t.Fatal(added, err)
 	}
 }
@@ -78,7 +78,7 @@ func TestDrainHandInAdmission(t *testing.T) {
 func TestHandInSkipsDamagedQueueWithoutDrain(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
-	if _, _, err := HandIn(install, Line{Goal: "known", SHA: "known-sha"}); err != nil {
+	if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "known", SHA: "known-sha"}); err != nil {
 		t.Fatal(err)
 	}
 	file, err := os.OpenFile(queuePath(install), os.O_WRONLY|os.O_APPEND, 0)
@@ -89,7 +89,7 @@ func TestHandInSkipsDamagedQueueWithoutDrain(t *testing.T) {
 	if err := errors.Join(writeErr, file.Close()); err != nil {
 		t.Fatal(err)
 	}
-	line := Line{Goal: "new", SHA: "new-sha"}
+	line := Line{At: bedNow.Format(time.RFC3339), Goal: "new", SHA: "new-sha"}
 	if entry, added, err := HandIn(install, line); err != nil || !added || entry.State != StateWaiting {
 		t.Fatalf("damaged queue refused a hand-in with admission open: %+v added=%v err=%v", entry, added, err)
 	}
@@ -105,7 +105,7 @@ func TestHandInSkipsDamagedQueueWithoutDrain(t *testing.T) {
 func TestRecordsHandInSupersedesOlderWaitingLine(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
-	for _, line := range []Line{{Goal: "goal", SHA: "code"}, {Goal: "goal", SHA: "records", Records: true}} {
+	for _, line := range []Line{{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: "code"}, {At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: "records", Records: true}} {
 		if _, _, err := HandIn(install, line); err != nil {
 			t.Fatal(err)
 		}
@@ -123,10 +123,10 @@ func TestRecordsHandInSupersedesOlderWaitingLine(t *testing.T) {
 func TestDrainMembershipIncludesHeldAndDamage(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
-	if _, _, err := HandIn(install, Line{Goal: "held", SHA: "h"}); err != nil {
+	if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "held", SHA: "h"}); err != nil {
 		t.Fatal(err)
 	}
-	if err := appendLine(queuePath(install), Line{Goal: "held", SHA: "h", Outcome: StateWaiting, Held: true}); err != nil {
+	if err := appendLine(queuePath(install), Line{At: bedNow.Format(time.RFC3339), Goal: "held", SHA: "h", Outcome: StateWaiting, Held: true}); err != nil {
 		t.Fatal(err)
 	}
 	drainFixture(t, install)
@@ -150,13 +150,13 @@ func TestDrainMembershipIncludesHeldAndDamage(t *testing.T) {
 	if err != nil || p.Unknown == "" || p.Drain.State != DrainDraining {
 		t.Fatalf("unknown membership held or returned error: %+v %v", p, err)
 	}
-	if _, _, err := HandIn(install, Line{Goal: "agent", SHA: "a"}); err == nil {
+	if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "agent", SHA: "a"}); err == nil {
 		t.Fatal("agent crossed the standing drain with unknown membership")
 	}
-	if entry, added, err := HandIn(install, Line{Goal: "person", SHA: "p"}, "Wido"); err != nil || !added || entry.DrainBy != "Wido" {
+	if entry, added, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "person", SHA: "p"}, "Wido"); err != nil || !added || entry.DrainBy != "Wido" {
 		t.Fatalf("damaged membership blocked a person's hand-in: %+v added=%v err=%v", entry, added, err)
 	}
-	if _, added, err := HandIn(install, Line{Goal: "person", SHA: "p"}); err != nil || added {
+	if _, added, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "person", SHA: "p"}); err != nil || added {
 		t.Fatalf("known repeat was blocked by damaged membership: added=%v err=%v", added, err)
 	}
 	p, err = AdvanceDrain(install, "checkout", seams)
@@ -223,7 +223,7 @@ func TestDrainAndHandInSerialize(t *testing.T) {
 	go func() {
 		defer wg.Done()
 		started <- struct{}{}
-		_, _, handErr = HandIn(install, Line{Goal: "g", SHA: "s"})
+		_, _, handErr = HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "g", SHA: "s"})
 	}()
 	go func() {
 		defer wg.Done()
@@ -241,7 +241,7 @@ func TestDrainAndHandInSerialize(t *testing.T) {
 	if err != nil || drainErr != nil || handErr != nil && !errors.As(handErr, &closed) || (handErr == nil) != (len(entries) == 1) {
 		t.Fatalf("partial admission: %+v hand=%v drain=%v read=%v", entries, handErr, drainErr, err)
 	}
-	if _, _, err := HandIn(install, Line{Goal: "later", SHA: "s2"}); err == nil {
+	if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "later", SHA: "s2"}); err == nil {
 		t.Fatal("locked drain check was bypassed")
 	}
 }
@@ -265,7 +265,7 @@ func TestDrainProofAdmissionAndTimer(t *testing.T) {
 	if _, _, err := Start(install, "checkout", seams); err == nil || launches != 0 {
 		t.Fatal("idle proof was admitted", err, launches)
 	}
-	if _, _, err := HandIn(install, Line{Goal: "g", SHA: "s"}, "Wido"); err != nil {
+	if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "g", SHA: "s"}, "Wido"); err != nil {
 		t.Fatal(err)
 	}
 	seams.Git = func(_ string, args ...string) (string, error) {
@@ -291,7 +291,7 @@ func TestDrainProofAdmissionAndTimer(t *testing.T) {
 	if _, _, err := Start(install, "checkout", seams); err == nil {
 		t.Fatal("agent admitted trunk timer proof")
 	}
-	if _, _, err := HandIn(install, Line{Goal: "g", SHA: "s", Again: true}, "Wido"); err != nil {
+	if _, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "g", SHA: "s", Again: true}, "Wido"); err != nil {
 		t.Fatal(err)
 	}
 	seams.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
@@ -318,7 +318,7 @@ func TestHandInUnderDrainWithDamagedQueueRefusesAsClosed(t *testing.T) {
 	if _, _, err := SetDrain(install, Drain{By: "Wido", At: bedNow.UTC().Format(time.RFC3339), Source: DrainSource{Kind: "person"}, Reason: "maintenance"}); err != nil {
 		t.Fatal(err)
 	}
-	_, _, err := HandIn(install, Line{Goal: "g", SHA: "s"})
+	_, _, err := HandIn(install, Line{At: bedNow.Format(time.RFC3339), Goal: "g", SHA: "s"})
 	var closed *AdmissionClosed
 	if !errors.As(err, &closed) {
 		t.Fatalf("an agent's hand-in under a drain with a damaged queue line: %v", err)

@@ -45,7 +45,7 @@ func TestLandingReturnRequiresDemonstratedOwnCause(t *testing.T) {
 			t.Parallel()
 			b := newResolveVerbFixture(t)
 			b.owners.landing.person = func(string) (string, error) { return "", errors.New("no enrolled person") }
-			if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "waiting"}); err != nil {
+			if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "waiting"}); err != nil {
 				t.Fatal(err)
 			}
 			cause := &plain.Cause{Kind: "own", Goal: "goal", SHA: "waiting", Tests: []string{"internal/steward TestTick"}, Evidence: "own.log"}
@@ -168,7 +168,7 @@ func TestLandingReturnWritesReturnedCard(t *testing.T) {
 	if err := board.WriteAt(home, card); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "waiting"}); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "waiting"}); err != nil {
 		t.Fatal(err)
 	}
 	writeCauseProof(t, b.install, "results.jsonl", plain.Result{Result: plain.Red, Cause: &plain.Cause{Kind: "own", Goal: "goal", SHA: "waiting"}})
@@ -187,7 +187,7 @@ func TestLandingProveRecordsCauseAndGoalCommits(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.full=printf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "waiting"}); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "waiting"}); err != nil {
 		t.Fatal(err)
 	}
 	falseState := replayFalseState(t)
@@ -245,7 +245,7 @@ func TestLandingStatusReadsCauseAndNamesOtherGoal(t *testing.T) {
 	b := newResolveVerbFixture(t)
 	goals := []plain.GoalSHA{{Goal: "culprit", SHA: "culprit-sha"}, {Goal: "mate", SHA: "mate-sha"}}
 	for _, goal := range goals {
-		if _, _, err := plain.HandIn(b.install, plain.Line{Goal: goal.Goal, SHA: goal.SHA}); err != nil {
+		if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: goal.Goal, SHA: goal.SHA}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -278,7 +278,7 @@ func TestLandingReturnPersonWithoutBy(t *testing.T) {
 	b.owners.resolver = stateroot.NewResolver(func(string) (string, error) { return b.root, nil }, os.Executable)
 	b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)
 	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\ntesting.contract=testing.json\n"), 0600))
-	if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "waiting"}); err != nil {
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "waiting"}); err != nil {
 		t.Fatal(err)
 	}
 	code, output := b.run(t, b.root, "return", "goal", "--cause", "main", "--reason", "main needs repair")
@@ -316,10 +316,10 @@ func TestLandingPushReturnedCommitBoundaries(t *testing.T) {
 				t.Fatalf("unexpected Git: %v", args)
 				return "", nil
 			}
-			if _, _, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: "returned-sha"}); err != nil {
+			if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: "returned-sha"}); err != nil {
 				t.Fatal(err)
 			}
-			if _, _, err := plain.ReturnDesignRefused(b.install, plain.DesignCheck{Goal: "goal", Commit: "returned-sha", Reason: "the design changed"}, laneTestNow); err != nil {
+			if _, _, err := plain.ReturnDesignRefused(b.install, plain.DesignCheck{Goal: "goal", Commit: "returned-sha", Reason: "the design changed"}, laneTestNow, plain.ProveSeams{BudgetHome: t.TempDir()}); err != nil {
 				t.Fatal(err)
 			}
 			retrySHA := ""
@@ -330,7 +330,7 @@ func TestLandingPushReturnedCommitBoundaries(t *testing.T) {
 				retrySHA = "returned-sha"
 			}
 			if retrySHA != "" {
-				entry, added, err := plain.HandIn(b.install, plain.Line{Goal: "goal", SHA: retrySHA, Again: retrySHA == "returned-sha"})
+				entry, added, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "goal", SHA: retrySHA, Again: retrySHA == "returned-sha"})
 				if err != nil || !added || entry.State != plain.StateWaiting {
 					t.Fatalf("retry not queued: entry=%+v added=%v err=%v", entry, added, err)
 				}

@@ -716,7 +716,7 @@ func TestLandingBatchAdapterSameSHARehandIn(t *testing.T) {
 			t.Parallel()
 			b := newBatchVerbBed(t, "auto")
 			sha := b.seat(t, "a")
-			if _, changed, err := plain.ReturnProven(b.installation, "a", "unclassified", "rebuild requested", true, "fixture", b.now, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed {
+			if _, changed, err := plain.ReturnProven(b.installation, "a", "unclassified", "rebuild requested", true, "fixture", b.now, plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil || !changed {
 				t.Fatalf("return: %v %v", changed, err)
 			}
 			var prefix string

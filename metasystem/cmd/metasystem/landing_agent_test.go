@@ -173,6 +173,11 @@ func TestLandingAgentSkillUsesTheVerbsAsDeclared(t *testing.T) {
 	if strings.Contains(string(data), "`metasystem landing run`") || !strings.Contains(string(data), "The keeper prepares the batch before launching you") {
 		t.Fatal("the skill must use the keeper's prepared selection, without sending a running agent to landing run")
 	}
+	for _, words := range []string{"When fetched main moved since the incident was registered, run", "`metasystem landing prove --trunk` yourself (detached) before any question", "Ask only if that proof is red"} {
+		if !strings.Contains(string(data), words) {
+			t.Errorf("the skill is missing the moved-main recovery rule: %s", words)
+		}
+	}
 	spans := strings.Split(string(data), "`")
 	for index := 1; index < len(spans); index += 2 {
 		words := strings.Fields(spans[index])

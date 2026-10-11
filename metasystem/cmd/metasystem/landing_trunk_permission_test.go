@@ -131,7 +131,7 @@ func TestLandingTrunkExceptionAuthorityMatrix(t *testing.T) {
 	t.Parallel()
 	f := newTrunkPermissionFixture(t)
 	// A pre-existing hand-in must remain visible even when permission holds it.
-	_, _, err := plain.HandIn(f.l.install, plain.Line{Goal: bedGoal, SHA: f.tip.status.BranchTip, Seat: f.b.root()})
+	_, _, err := plain.HandIn(f.l.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: bedGoal, SHA: f.tip.status.BranchTip, Seat: f.b.root()})
 	helmMust(t, err)
 	q := f.question(t)
 	invoke := func(name string) (int, intentResult) {
@@ -414,7 +414,7 @@ func TestLandingTrunkExceptionProvenBatchPush(t *testing.T) {
 		t.Helper()
 		exception, err := plain.BindException(plain.GoalSHA{Goal: "a", SHA: sha}, record, proof, proofRoot, "Wido", "Ship this work", b.now, incidents, nil)
 		helmMust(t, err)
-		_, _, err = plain.HandIn(b.installation, plain.Line{Goal: "a", SHA: sha, Exception: exception})
+		_, _, err = plain.HandIn(b.installation, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "a", SHA: sha, Exception: exception})
 		helmMust(t, err)
 	}
 	bind()

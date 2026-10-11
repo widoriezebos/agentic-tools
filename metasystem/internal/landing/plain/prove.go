@@ -152,6 +152,8 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// BudgetHome names the host budget records; empty uses the board home.
+	BudgetHome string
 	// GoalTier reads a waiting member's tier; nil reads its goal file.
 	GoalTier func(install, goal string) (uint8, error)
 	// BatchDepth chooses the ordinary batch scope and reason before cadence applies.

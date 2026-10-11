@@ -264,10 +264,25 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 		copy.Members = pushed.BatchMembers
 		clockBatch = &copy
 	}
+	if batch == nil {
+		proof, _, err := ResultFor(install, tree)
+		if err != nil {
+			return err
+		}
+		pushed.BatchMembers = proof.Goals
+	}
 	pushed.Clock = landingClock(install, checkout, clockBatch, now, seams)
 	if !slices.ContainsFunc(pushes, func(p Pushed) bool { return p.Commit == head }) {
 		if err := appendLine(pushesPath(install), pushed); err != nil {
 			return err
+		}
+	}
+	// Bookkeeping of the members' paused clocks never undoes a push that main already holds:
+	// every effect below still happens and the bookkeeping error is reported at the end.
+	var bookkeeping error
+	for _, member := range pushed.BatchMembers {
+		if err := saveClosedBudget(install, member.Goal, now, seams); err != nil {
+			bookkeeping = errors.Join(bookkeeping, fmt.Errorf("closed lane budget of %s: %w", member.Goal, err))
 		}
 	}
 	if batch != nil && batch.ClosureReason != "confirmed push accounts for the selected members" {
@@ -284,19 +299,12 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 			return err
 		}
 	}
-	if batch == nil {
-		proof, _, err := ResultFor(install, tree)
-		if err != nil {
-			return err
-		}
-		pushed.BatchMembers = proof.Goals
-	}
 	for _, member := range pushed.BatchMembers {
 		if err := closeFix(install, member.Goal); err != nil {
 			return err
 		}
 	}
-	return nil
+	return bookkeeping
 }
 
 func (s ProveSeams) fetchMain(checkout string) error {

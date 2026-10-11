@@ -405,7 +405,7 @@ func TestLandingMergeGateGreenCannotAuthorizePush(t *testing.T) {
 	sha := bed.git(t, bed.checkout, "rev-parse", "HEAD")
 	bed.git(t, bed.checkout, "checkout", "--quiet", "main")
 	bed.git(t, bed.checkout, "merge", "--quiet", "--no-ff", "-m", "merge goal", sha)
-	if _, _, err := plain.HandIn(bed.installation, plain.Line{Goal: "g", SHA: sha}); err != nil {
+	if _, _, err := plain.HandIn(bed.installation, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "g", SHA: sha}); err != nil {
 		t.Fatal(err)
 	}
 	record, present, err := lane.Read(bed.home)

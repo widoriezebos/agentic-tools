@@ -222,7 +222,7 @@ func ensureBreachStopWithReads(root, id string, revision uint64, now time.Time, 
 	}
 	var firingEvidence *goal.StopFiringEvidence
 	if binding.Fence == nil {
-		budget := ProjectBudget(root, binding.File, now)
+		budget := ProjectBudget(root, binding.File, now, reads.BudgetHome)
 		if budget.Status != BudgetKnown {
 			return goal.StopBatch{}, fmt.Errorf("cannot prove a live-stop boundary: %s", budget.Unknown.Reason)
 		}
@@ -341,7 +341,7 @@ func (policy GoalRecoveryPolicy) breachStopWithReads(endpoint goal.Endpoint, ent
 		release()
 		return goal.PublishRequest{}, nil, fmt.Errorf("goal %s revision %d already has a fence; recovery will not replace it", id, binding.Revision)
 	}
-	projection := ProjectBudget(endpoint.Root, binding.File, now)
+	projection := ProjectBudget(endpoint.Root, binding.File, now, reads.BudgetHome)
 	if projection.Status != BudgetKnown {
 		release()
 		return goal.PublishRequest{}, nil, fmt.Errorf("cannot re-establish breach-stop authority: %s", projection.Unknown.Reason)
@@ -441,7 +441,7 @@ func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionRea
 			routes = append(routes, route)
 			continue
 		}
-		budget := ProjectBudget(root, file, now)
+		budget := ProjectBudget(root, file, now, reads.BudgetHome)
 		if budget.Status != BudgetKnown {
 			routes = append(routes, StopRoute{
 				GoalID: id, Revision: file.Claimed.Revision, Condition: StopRouteIndeterminate,

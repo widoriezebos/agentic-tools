@@ -110,7 +110,7 @@ func newOneGoalReplayBed(t *testing.T) *oneGoalReplayBed {
 	t.Helper()
 	b := &oneGoalReplayBed{replayVerbBed: newReplayVerbBed(t), parent: "main", main: "main", sha: "sha-g"}
 	helmMust(t, os.Remove(filepath.Join(plain.Dir(b.install), "queue.jsonl")))
-	_, _, err := plain.HandIn(b.install, plain.Line{Goal: "g", SHA: "sha-g"})
+	_, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "g", SHA: "sha-g"})
 	helmMust(t, err)
 	b.head = "merge-g"
 	helmMust(t, os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=fixture\n"), 0600))
@@ -320,7 +320,7 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 				t.Fatalf("first return: %d %s", code, out)
 			}
 			b.sha = "sha-g-fixed"
-			_, _, err := plain.HandIn(b.install, plain.Line{Goal: "g", SHA: b.sha})
+			_, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "g", SHA: b.sha})
 			helmMust(t, err)
 			b.head = "merge-second"
 			registered, _, err := lane.Read(b.home)

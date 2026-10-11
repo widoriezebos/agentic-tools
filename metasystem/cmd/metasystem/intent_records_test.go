@@ -323,7 +323,7 @@ func TestRecordsQueueKeepsTheThroughSelection(t *testing.T) {
 	t.Parallel()
 	b := newLandRebaseBed(t)
 	b.landing.status.BranchTip = strings.Repeat("3", 40)
-	if _, _, err := plain.HandIn(b.lane, plain.Line{Goal: "standing-validation", Branch: "goal/standing-validation", SHA: b.landing.status.BranchTip, Records: true}); err != nil {
+	if _, _, err := plain.HandIn(b.lane, plain.Line{At: b.owners.delivery.now().UTC().Format(time.RFC3339), Goal: "standing-validation", Branch: "goal/standing-validation", SHA: b.landing.status.BranchTip, Records: true}); err != nil {
 		t.Fatal(err)
 	}
 	through := b.landing.status.Status.Units[1].Commit
@@ -342,7 +342,7 @@ func TestRecordsHandInSummaryKeepsItsSubject(t *testing.T) {
 	if code != 0 || !strings.HasPrefix(result.Summary, want+" handed to the lane;") {
 		t.Fatalf("records hand-in summary: %d %+v", code, result)
 	}
-	if _, _, err := plain.ReturnProven(b.lane, "standing-validation", "unclassified", "records check failed", true, "fixture", time.Time{}, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+	if _, _, err := plain.ReturnProven(b.lane, "standing-validation", "unclassified", "records check failed", true, "fixture", b.owners.delivery.now(), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result = b.runJSON(b.owners, "work", "land", "standing-validation", "--records", recordsPath, "--again", "--delivered", "The design is accepted")
@@ -423,7 +423,7 @@ func TestRecordsAlreadyOnTheBranchMakeNoSecondCommit(t *testing.T) {
 	if code != 0 || result.Outcome != intentUnchanged || !strings.Contains(result.Summary, "goal standing-validation's records at bbbbbbbbbbbb is waiting") || len(b.requests) != 0 || err != nil || len(entries) != 1 {
 		t.Fatalf("queued repeat stays one hand-in: %d %+v entries=%v %v", code, result, entries, err)
 	}
-	if _, _, err := plain.ReturnProven(b.lane, "standing-validation", "unclassified", "records check failed", true, "fixture", time.Time{}, plain.ProveSeams{Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+	if _, _, err := plain.ReturnProven(b.lane, "standing-validation", "unclassified", "records check failed", true, "fixture", b.owners.delivery.now(), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
 		t.Fatal(err)
 	}
 	code, result = b.runJSON(b.owners, "work", "land", "standing-validation")
