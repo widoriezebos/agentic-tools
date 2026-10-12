@@ -354,6 +354,9 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 			}
 			summary += " for incidents " + strings.Join(identities, ", ")
 		}
+		if line.Exception.Impact != "" {
+			summary += "; " + line.Exception.Impact
+		}
 	}
 	if entry.DrainBy != "" {
 		summary += "; " + entry.DrainBy + " extended the drain with this hand-in"
@@ -366,6 +369,9 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	}
 	outcome := intentConfirmed
 	if !added {
+		if line.Exception != nil {
+			summary = "already admitted; " + summary
+		}
 		outcome = intentUnchanged
 	}
 	return intentResult{Targets: targets, Outcome: outcome, Data: map[string]any{"route": "lane", "queue": entry},

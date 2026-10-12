@@ -17,6 +17,7 @@ import (
 type Exception struct {
 	Code           string            `json:"code"`
 	Reason         string            `json:"reason"`
+	Impact         string            `json:"impact,omitempty"`
 	By             string            `json:"by"`
 	Goal           string            `json:"goal,omitempty"`
 	SHA            string            `json:"sha,omitempty"`
@@ -102,6 +103,11 @@ func BindException(subject GoalSHA, destination lane.Record, proof humanauthorit
 		Person: &ActProvenance{Kind: "trunk-exception", Person: name, Root: root, CheckedAt: at.UTC(), TerminalGeneration: proof.TerminalGeneration, TerminalRef: proof.TerminalRef, Destination: destination, Subject: []GoalSHA{subject}}, BindingUnknown: readErr != nil}
 	if readErr == nil {
 		exception.Incidents = &IncidentCoverage{Open: openIncidents(incidents)}
+		identities := make([]string, 0, len(exception.Incidents.Open))
+		for _, incident := range exception.Incidents.Open {
+			identities = append(identities, incident.Identity)
+		}
+		exception.Impact = "This lands " + subject.Goal + " while main fails " + strings.Join(identities, ", ") + "; those failures stay open and later goals are still held by them; undo with `landing give-back " + subject.Goal + "` before the push, or a revert after."
 	}
 	return exception, nil
 }
@@ -170,7 +176,7 @@ func ExceptionCommand(goalID, target, name string) []string {
 	if name == "" {
 		name = "NAME"
 	}
-	command := []string{"metasystem", "work", "land", goalID, "--exception", goal.LandTrunkRedCode, "--reason", "TEXT", "--by", name}
+	command := []string{"metasystem", "landing", "land-anyway", goalID, "--reason", "TEXT", "--by", name}
 	if target != "" {
 		command = append(command, "--repo", target)
 	}

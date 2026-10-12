@@ -113,6 +113,9 @@ func TestSkillLandingAgentOneFixRound(t *testing.T) {
 		t.Fatal(err)
 	}
 	text := string(data)
+	if !strings.Contains(text, "When `landing push` says \"not admitted for execution\" after `landing give-back` of a merged member, rebuild on the current selection as after a code move of main (case 5).") {
+		t.Fatal("skill omits rebuilding the selection after a merged member's give-back")
+	}
 	if strings.Contains(text, "the lane's 1 fix round for proof <attempt> is spent") {
 		t.Fatal("skill duplicates the spent allowance sentence appended by the return owner")
 	}

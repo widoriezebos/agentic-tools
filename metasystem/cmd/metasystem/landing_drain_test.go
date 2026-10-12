@@ -321,7 +321,7 @@ func TestLandingDrainKeeperUnknownMembershipAndCompletion(t *testing.T) {
 	heldRun := b.keeper.Run()
 	drain, _ = plain.ReadDrain(b.install)
 	// Held entries require a person's exact exception act (lane-reads-its-policies.md:145).
-	if heldRun.Outcome != lane.AgentHeld || !strings.Contains(heldRun.Line, "--exception GOAL_LAND_TRUNK_RED") || drain.State != plain.DrainDraining || b.launches != 1 {
+	if heldRun.Outcome != lane.AgentHeld || !strings.Contains(heldRun.Line, "landing land-anyway known") || drain.State != plain.DrainDraining || b.launches != 1 {
 		t.Fatalf("incident-held work disappeared or woke an agent: %+v %+v", heldRun, drain)
 	}
 	if status := b.readStatus(t); status.DrainWaiting != 1 || len(status.Queue) != 1 || !status.Queue[0].Held || status.Admission != "draining, 1 waiting" {

@@ -1,0 +1,11 @@
+# lane-recovery-along-intent U2 correction 1 (Opus read of commit 0bc6fc4c9): two material findings, two small ones
+
+Working Mode: Implement. Correction to the top commit of this branch (build/lri2, "goal lane-recovery-along-intent units U2"); re-read plans/lane-recovery-u2-give-back-and-land-anyway.md and the design's D2/D3. Leave the changes uncommitted; change only what this brief names; never commit, rebase or push; never touch memory/receipts.log, plans/, testing.json, go.mod or any metasystem.conf*.
+
+1. (F-1) A pending give-back (recorded while a person's proof runs) is bound to the goal name only, so after a seat re-hands G at a new SHA the completion returns the NEW hand-in in the person's name and keeps doing so on every keeper pass (`finishGiveBacksLocked` passes member.Goal; `giveBackLocked` reads Latest(G)). Bind the pending action to its GoalSHA: when Latest(G).SHA differs from the action's SHA, or the member is no longer in the batch, clear the action (Pending=false, impact "superseded by a newer hand-in; nothing returned") and return nothing. Fixture: a person's proof pending, G re-handed at sha2, the proof completes → G@sha2 still waiting, the action cleared, no return record.
+2. (F-2, R-143) `landing land-anyway` states its impact in plain words in its result and records it beside the exception: "This lands G while main fails <incident ids>; those failures stay open and later goals are still held by them; undo with `landing give-back G` before the push, or a revert after." Fixture: the result and the record carry the line with the real incident ids.
+3. (N-1) The landing agent's skill gets one rule: when `landing push` answers "not admitted for execution" after a give-back of a merged member, the agent rebuilds the batch's merge on the current selection (the same step as after a code move of main) instead of waiting. Keep the skill audit's budget.
+4. (N-4) land-anyway trims the reason before the empty check, as give-back does.
+
+## Checks
+as the unit's brief, plus `-run 'TestSkill'` in the command families. Report the four changes, their fixtures, the mutations (keep the name-only binding → fixture 1 red; drop the impact line → fixture 2 red) and every check's exit.

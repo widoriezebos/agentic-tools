@@ -320,6 +320,9 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	if err != nil || !recorded || alive {
 		return running, recorded, alive, err
 	}
+	if err := finishGiveBacksLocked(install, seams); err != nil {
+		return running, recorded, alive, err
+	}
 	if running.Checkpoint {
 		return running, true, false, nil
 	}
@@ -1013,9 +1016,15 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		if current, recorded, _, _ := ReadRunning(install, seams); recorded && current.Attempt == running.Attempt {
 			if result.Result == Red {
 				current.Checkpoint = true
-				return writeRunning(install, current)
+				if err := writeRunning(install, current); err != nil {
+					return err
+				}
+			} else if err := os.Remove(runningPath(install)); err != nil {
+				return err
 			}
-			return os.Remove(runningPath(install))
+			completed := seams
+			completed.Alive = func(Running) bool { return false }
+			return finishGiveBacksLocked(install, completed)
 		}
 		return nil
 	})

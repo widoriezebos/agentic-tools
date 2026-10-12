@@ -1,0 +1,11 @@
+exit 2
+--
+{
+  "schemaVersion": 1,
+  "verb": "landing land-anyway",
+  "targets": [],
+  "outcome": "failed",
+  "summary": "landing land-anyway needs one goal and --reason TEXT"
+}
+
+--

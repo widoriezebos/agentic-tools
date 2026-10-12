@@ -42,6 +42,8 @@ type Pushed struct {
 	Commit        string    `json:"commit"`
 	Tree          string    `json:"tree"`
 	At            string    `json:"at"`
+
+	Exceptions []*Exception `json:"exceptions,omitempty"`
 }
 
 // PushOutcome is what a push did: main moved from Old to Commit
@@ -271,6 +273,15 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 			return err
 		}
 		pushed.BatchMembers = proof.Goals
+	}
+	entries, err := Entries(install)
+	if err != nil {
+		return err
+	}
+	for _, entry := range entries {
+		if entry.State == StateWaiting && entry.Exception != nil && slices.Contains(pushed.BatchMembers, GoalSHA{Goal: entry.Goal, SHA: entry.SHA}) {
+			pushed.Exceptions = append(pushed.Exceptions, entry.Exception)
+		}
 	}
 	pushed.Clock = landingClock(install, checkout, clockBatch, now, seams)
 	if !slices.ContainsFunc(pushes, func(p Pushed) bool { return p.Commit == head }) {

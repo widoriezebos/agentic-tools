@@ -137,7 +137,7 @@ func PolicyRequests(install string, effects ...ProveSeams) ([]PolicyRequest, err
 			if err == nil {
 				continue
 			}
-			requests = append(requests, PolicyRequest{Subject: PolicySubject{Lane: record, Policy: "landing.trunk-red", Act: "trunk-exception", Members: []GoalSHA{{Goal: entry.Goal, SHA: entry.SHA}}, Incidents: openIncidents(incidents)}, Required: ExceptionCommand(entry.Goal, target, personName), Evidence: err.Error()})
+			requests = append(requests, PolicyRequest{Subject: PolicySubject{Lane: record, Policy: "landing.trunk-red", Act: "trunk-exception", Members: []GoalSHA{{Goal: entry.Goal, SHA: entry.SHA}}, Incidents: openIncidents(incidents)}, Required: ExceptionCommand(entry.Goal, target, personName), Evidence: err.Error() + "; alias: metasystem work land " + entry.Goal + " --exception " + goal.LandTrunkRedCode + " --reason TEXT --by " + personName})
 		}
 	}
 	return requests, nil

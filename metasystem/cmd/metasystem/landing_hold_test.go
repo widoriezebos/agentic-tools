@@ -36,7 +36,7 @@ func TestWorkLandTrunkRedRefusesUntilIncidentClaim(t *testing.T) {
 	holdIncidentFixture(t, b.intentBed)
 	code, result := b.do("work", "land", bedGoal)
 	expectOutcome(t, "main red", code, result, intentRefused)
-	if !strings.Contains(result.Summary, holdIncidentID) || !strings.Contains(result.Summary, "Nothing was handed in") || resultData(t, result)["code"] != goal.LandTrunkRedCode || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "work land "+bedGoal+" --exception "+goal.LandTrunkRedCode) {
+	if !strings.Contains(result.Summary, holdIncidentID) || !strings.Contains(result.Summary, "Nothing was handed in") || resultData(t, result)["code"] != goal.LandTrunkRedCode || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "landing land-anyway "+bedGoal+" --reason TEXT") {
 		t.Fatalf("incident refusal: %+v", result)
 	}
 	if entries, err := plain.Entries(install); err != nil || len(entries) != 0 {
@@ -257,7 +257,7 @@ func TestLandingPushRefusesHeldGoal(t *testing.T) {
 			}
 			if name == "red" || name == "conflict" {
 				var result intentResult
-				remedy := "work land goal --exception " + goal.LandTrunkRedCode
+				remedy := "landing land-anyway goal --reason TEXT"
 				if name == "conflict" {
 					remedy = "checkout --detach origin/main"
 				}

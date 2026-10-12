@@ -271,21 +271,8 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 			return writeBatch(install, batch)
 		}
 	}
-	if cancel == nil {
-		r := timedResult(Result{Result: "cancelled", Reason: "cancelled: restart for " + newcomer, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Log: running.Log, BatchID: running.BatchID, BatchMembers: running.BatchMembers, Goals: running.BatchMembers}, running.Since, s.now())
-		data, err := json.Marshal(r)
-		if err != nil {
-			return err
-		}
-		if _, err := atomicfile.WriteFile(cancelPath(install, running.Attempt), append(data, '\n'), 0600, install); err != nil {
-			return err
-		}
-		cancel = &r
-	}
-	if !atomicfile.Confirm(cancelPath(install, running.Attempt), install) {
-		return errors.New("the cancellation could not be made durable; the batch stays sealed")
-	}
-	if err := s.endProof(running); err != nil {
+	cancel, err = cancelProofLocked(install, running, "cancelled: restart for "+newcomer, s)
+	if err != nil {
 		return err
 	}
 	batch.Restarts = append(batch.Restarts, Restart{Goal: newcomer, Elapsed: *elapsed, Expected: expected, At: s.now().Format(time.RFC3339), Reason: reason})
@@ -318,4 +305,30 @@ func comparableProofs(results []Result, scope string) []Result {
 		}
 	}
 	return proofs
+}
+
+// cancelProofLocked makes cancellation durable before stopping either process.
+func cancelProofLocked(install string, running Running, reason string, s ProveSeams) (*Result, error) {
+	cancel, err := readCancel(install, running)
+	if err != nil {
+		return nil, err
+	}
+	if cancel == nil {
+		r := timedResult(Result{Result: "cancelled", Reason: reason, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Log: running.Log, BatchID: running.BatchID, BatchMembers: running.BatchMembers, Goals: running.BatchMembers}, running.Since, s.now())
+		data, err := json.Marshal(r)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := atomicfile.WriteFile(cancelPath(install, running.Attempt), append(data, '\n'), 0600, install); err != nil {
+			return nil, err
+		}
+		cancel = &r
+	}
+	if !atomicfile.Confirm(cancelPath(install, running.Attempt), install) {
+		return nil, errors.New("the cancellation could not be made durable; the batch stays sealed")
+	}
+	if err := s.endProof(running); err != nil {
+		return nil, err
+	}
+	return cancel, nil
 }

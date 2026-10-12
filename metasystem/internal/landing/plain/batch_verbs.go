@@ -17,6 +17,9 @@ type BatchAction struct {
 	Impact  string    `json:"impact"`
 	Pending bool      `json:"pending,omitempty"`
 	Attempt string    `json:"attempt,omitempty"`
+
+	Reason string         `json:"reason,omitempty"`
+	Person *ActProvenance `json:"person,omitempty"`
 }
 
 // ActOnBatch records decisions under the queue lock. A live proof keeps its

@@ -278,7 +278,7 @@ func unconfirmedLane(result intentResult, err error) intentResult {
 func landingIntentCommands() []intentCommand {
 	byFlag := intentFlag{name: "by", value: "NAME", usage: "who acts (default: this seat's nickname)"}
 	return []intentCommand{
-		landingBatchCommand(), landingRestartCommand(), landingResumeCommand(), landingHealthCommand(),
+		landingBatchCommand(), landingRestartCommand(), landingResumeCommand(), landingGiveBackCommand(), landingLandAnywayCommand(), landingHealthCommand(),
 		{
 			object: "landing", action: "status", audience: "both", summary: "the landing lane on this computer: its checkout and its landing agent",
 			usage: []string{"metasystem landing status [--verbose]"},

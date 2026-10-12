@@ -79,6 +79,7 @@ human return restores no automatic allowance.
    members wait without a selection, ask with `--about lane` and end your turn.
 2. If `last_proof` is for HEAD's tree: green → `landing push`; red → case 3. A green proof is
    never left unpushed: when the push refuses because main moved, do case 5 before anything else.
+   When `landing push` says "not admitted for execution" after `landing give-back` of a merged member, rebuild on the current selection as after a code move of main (case 5).
 3. Otherwise: `git fetch origin`, then read `landing status --json` again.
    A freshly prepared batch with nothing merged yet merges its recorded members (cases 1 and 2),
    whatever `main_move` says: a freshly prepared batch with nothing merged yet always starts with

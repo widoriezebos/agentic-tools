@@ -315,6 +315,9 @@ func batchIdle(install string, s ProveSeams) (bool, error) {
 // SelectBatch fetches before taking the queue lock. A running selection is
 // reconciled against main and queue outcomes; open automatic batches admit arrivals.
 func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams) (selected *Batch, err error) {
+	if err := withLock(install, func() error { return finishGiveBacksLocked(install, s) }); err != nil {
+		return nil, err
+	}
 	entries, err := batchEntries(install)
 	if err != nil {
 		return nil, err
@@ -622,6 +625,9 @@ func CheckBatch(install, checkout, commit, main string, prefix bool, s ProveSeam
 }
 
 func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool, s ProveSeams) (*Batch, error) {
+	if err := finishGiveBacksLocked(install, s); err != nil {
+		return nil, err
+	}
 	if s.FenceCheck != nil {
 		if err := s.FenceCheck(); err != nil {
 			return nil, err

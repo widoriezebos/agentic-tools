@@ -107,7 +107,7 @@ func (f *trunkPermissionFixture) question(t *testing.T) channel.Question {
 	}
 	q := questions[0]
 	command := channel.LaneStopCommand(q)
-	if !strings.Contains(command, "work land "+bedGoal+" --exception "+goal.LandTrunkRedCode) {
+	if !strings.Contains(command, "landing land-anyway "+bedGoal+" --reason TEXT") || !strings.Contains(strings.Join(q.Facts, " "), "alias: metasystem work land "+bedGoal+" --exception "+goal.LandTrunkRedCode) {
 		t.Fatalf("exception remedy: %s", command)
 	}
 	code, result := f.b.runJSON(f.owners, "question", "show", "channel:"+q.ID, "--repo", f.l.install)
@@ -282,7 +282,7 @@ func TestLandingTrunkExceptionFreshCoverageAndReplacement(t *testing.T) {
 		return func(sha string) (bool, error) { return ref == "head" && sha == original.SHA, nil }
 	}
 	code, text := f.l.run(t, f.l.root, "push", "--json")
-	if code == 0 || *f.pushes != 0 || !strings.Contains(text, "--exception") {
+	if code == 0 || *f.pushes != 0 || !strings.Contains(text, "land-anyway") {
 		t.Fatalf("reopened incident crossed push: %d pushes=%d %s", code, *f.pushes, text)
 	}
 	f.incidents[0].Sightings[0].Opid = "01J5X0000000000000000000X2-mac-cli-aaaaaaaa"
@@ -431,7 +431,7 @@ func TestLandingTrunkExceptionProvenBatchPush(t *testing.T) {
 	later.Opened = b.now.Add(time.Hour).Format(time.RFC3339)
 	incidents = append(incidents, later)
 	code, text = b.run(t, "landing", "push")
-	if code == 0 || !strings.Contains(text, "--exception") {
+	if code == 0 || !strings.Contains(text, "landing") || !strings.Contains(text, "land-anyway") {
 		t.Fatalf("new incident escaped fresh push guard: %d %s", code, text)
 	}
 	if _, found, err := plain.LastPush(b.installation); err != nil || found {
