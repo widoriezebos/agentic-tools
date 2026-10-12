@@ -1417,11 +1417,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/gate/main-moved=false",
@@ -1462,11 +1468,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/gate/main-moved=true",
@@ -1507,11 +1519,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/main-moved=false",
@@ -1552,11 +1570,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/main-moved=true",
@@ -1597,11 +1621,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestEveryPublicActionHasAnIdempotencyRow",
@@ -1642,11 +1672,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict-2",
@@ -1687,11 +1723,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict/main",
@@ -1732,11 +1774,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProofAttemptBinaryLaunchesUseSharedIsolation",
@@ -1777,11 +1825,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestVerbRatchetEngineSelfSubprocess",
@@ -1822,11 +1876,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/goal:TestAuditFreshProjectionsUseInjectedDeadline",
@@ -1867,11 +1927,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T120522.326048000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T13:41:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T18:01:52Z",
+        "attempt": "20261012T170916.351797000Z",
+        "baseCommit": "bd5c725d394e3ab9e0b8f5ca6aee524935e72451",
+        "how": "green",
+        "opid": "4KHPZZSM09AE7ZDWCFFYFV4A4G-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
