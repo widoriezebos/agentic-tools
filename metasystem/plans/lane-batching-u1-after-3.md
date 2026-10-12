@@ -1,0 +1,16 @@
+# lane-batching U1 correction 3: selection happens where the lane acts, and the window pauses whenever a newcomer could wedge the batch
+
+Working Mode: Implement. Third correction (a deliberate deviation from the two-corrections rule: the unit is the batching core and the two remaining defects are small guards the critic located exactly). Worktree uncommitted; change only what this brief names; never commit, rebase or push; never touch memory/receipts.log, plans/ or testing.json. Checks sequential with -p 4 (or -p 2 under load).
+
+## F-1 (high): the wedge is still reachable through the status-side selection
+A newcomer joining between a red gate and the moment the fix record is written gets the fix commit refused (LANE_BATCH_MEMBERSHIP): the gate's running record keeps members [g1] as a checkpoint (prove.go ~961); `landing status` (intent_landing.go ~325-327) runs SelectBatch → extendBatchLocked (batch.go ~491), whose only guard is ReadFix — and no fix file exists until the fix build launches (intent_work.go ~520-525). Fix (both): (1) REMOVE the selection from `landing status` (those ~7 lines): status is a read; admission already happens at gate and full-proof admission (batch.go ~657) and in the keeper's Prepare (landing_agent.go ~287); (2) in extendBatchLocked, also pause while a red checkpoint for this batch is recorded (ReadRunning: Checkpoint && BatchID == batch.ID) — the window pauses from the red gate until the fix round closes. Regression test: the critic's probe (a newcomer between the red gate and the fix record → the fix commit is accepted, the newcomer waits with a reason); mutation: drop the checkpoint pause → refused → test fails.
+
+## F-2 (high, R-142): a person's held proof can be refused because the machine added a member
+When the full proof's admission is held for a person (budget or landing.proof=person; proof_admission.go ~175-190; holdProofLocked returns before recordBatchProofAttemptLocked, prove.go ~529-532) the batch stays open; newcomers join via the keeper's Prepare; when the person runs the given `landing prove`, checkBatchLocked(admit=true) extends the batch and refuses the candidate for lacking the newcomer — agent work the person cannot do. Fix: seal the batch when a full proof's admission is held for a person (in holdProofLocked for full scope with a BatchID); the person's command then proves the candidate as built. Test: held proof, newcomer arrives, person runs the command → accepted; the newcomer waits for the next batch (mutation: no seal → refused → test fails).
+
+## Folds (non-material)
+- N-1: after a lane fix round the window should reopen when the fix closes (advanceFix/closeFix), not only by hand in a test — if the full proof's Start seals before the window can reopen, say so plainly in the report (the newcomer waits for the next batch, as before U1).
+- N-5: a goal handing in again at a new SHA while its old SHA is a member: print a status line saying it waits for the next batch.
+
+## Checks
+`go vet ./internal/landing/plain ./cmd/metasystem`; `go test -p 4 -count=1 -timeout 30m ./internal/landing/plain ./internal/layering`; `go test -p 4 -count=1 -timeout 30m ./cmd/metasystem -run 'TestLanding|TestSkill|TestAudit|TestBatch'`; `go run ./cmd/devgate static`. Report: diff --stat, production line count (≤250 incl. the skill), every exit, each mutation.

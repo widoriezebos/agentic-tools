@@ -1,0 +1,9 @@
+# lane-housekeeping-2 unit 4 correction 2: the in-process check still records the new tree under the frozen declarations
+
+Working Mode: Implement. Correction after the FULL cmd/metasystem gate of the combined hot-fix (2026-10-12 05:25) failed one audit on this unit. Worktree uncommitted on top of the unit's commit f4b0bf5cd (branch build/lh2f); leave fixes uncommitted; never commit, rebase or push; never touch memory/receipts.log, plans/ or testing.json. Checks sequential with -p 4 (or -p 2 under load).
+
+## TestIntentDeclaredCheckPublicationRunsInCommitWorktree (cmd/metasystem/intent_unit_check_test.go:435)
+"gate did not record the new tree under frozen declarations: {Directory:… Check:{SelectedBy: Reason: Base:base-commit …}}" — `work commit`'s check now runs the unit's impact in-process and no longer records the committed tree under the frozen declarations (the record the declared-check publication relies on). Read the test and the frozen-declarations recording path the old shell-out path used; the in-process check must leave the same record (SelectedBy, Reason, Base, the tree) for the committed tree. Mutation: drop the record → the test fails.
+
+## Checks
+Repository audits that every unit MUST run by name before reporting (they are what the full package catches): `go test -p 4 -count=1 -timeout 30m ./cmd/metasystem -run 'TestEveryPublicActionHasAnIdempotencyRow|TestIntentPublicCoverage|TestIntentDeclaredCheck|TestVerbRatchet|TestProofAttemptBinaryLaunchesUseSharedIsolation|TestAudit'`. Then `go test -p 4 -count=1 -timeout 30m ./internal/landing/plain ./internal/landing/batch/... ./internal/layering` and `./cmd/metasystem -run 'TestWorkCommit|TestTestImpact|TestLandingCheck'`; `go run ./cmd/devgate static`. Report: diff --stat, production line count (≤250 total), every exit, the mutation.

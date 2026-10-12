@@ -1,0 +1,12 @@
+# lane-housekeeping-2 unit 6: the hand-in accepts a tip read that names the units it covered
+
+Working Mode: Implement. Goal lane-housekeeping-2, design brief `plans/lane-housekeeping-2-design-brief.md` (read it first). Worktree = this checkout, off origin/main. At most 250 production lines. Leave everything uncommitted; never commit, rebase or push; never touch memory/receipts.log, plans/ or testing.json by hand. Tests never READ live state that is not about the real contract, and never copy testing.json, go.mod, metasystem.conf or ledger pages into testdata (a test that certifies the real contract reads the LIVE files; fixtures hold small synthetic shapes or one saved record). Run checks sequentially with -p 4. Report: diff --stat, production line count, every exit, each mutation.
+
+## Problem (findings 120-122, 2026-10-11)
+A hand-built goal cannot get per-unit machinery reads: `work review --commit` and `--work` refuse once a later read exists, and the oldest tree fails today's static gate. The whole-goal check of `work land G --whole` demanded a clean read per unit, so hand-built goals (lane-speed, lane-housekeeping-2 today) could only land as hot-fixes.
+
+## Build
+The whole-goal check accepts ONE machinery-recorded clean read of the goal branch's tip whose record names every unit it covered (the read request carries `--units U1,U2,…` or the dispositions name them; the record stores the list); every unit of the goal's design must be named by some clean read at a commit that is an ancestor of the tip (a per-unit read or the tip read); a unit not covered is refused with the units missing and the verb that covers them. The person's `--exception` computes its candidate from the branch (tip, units named in the design) instead of requiring a machinery build. `work review --commit TIP --goal G --units …` records the names. Real shape: today's lane-speed goal (units U1-U3 on branch tips lane-speed/s1..s3, landed by hot-fix) and lane-housekeeping-2 (U1, U5, U8): a fixture copy of their records shows the check passing with a tip read naming the units and refusing when one is missing (mutation: drop the unit list check → the refusal test fails).
+
+## Checks
+`go vet ./cmd/metasystem ./internal/goal/... ./internal/launch`; `go test -p 4 -count=1 -timeout 30m ./internal/goal/... ./internal/launch ./internal/layering`; `go test -p 4 -count=1 -timeout 30m ./cmd/metasystem -run 'TestWorkLand|TestWorkReview|TestUnitReview|TestAudit'`; `go run ./cmd/devgate static`.
