@@ -62,5 +62,11 @@ Step 1 is U1 alone. After it the lane steward exists as a reader: `landing healt
 - U4 A confirmed flake the register names twice opens its fix goal (tier 3, top priority, the sightings as basis) through the goal verbs; the register records the goal; the seats build it as any goal and the lane lands it. The fix is machinery; no new job runner.
 - U5 Person-refusal defects: every refusal of a person's verb is an intervention record and a row; the steward reports the count until it is zero.
 
+## Deferred from U1
+The fleet line (D7): the fleet reads git-published seat records that carry no lane identity, so `Health.Line()` is not wired into `metasystem fleet` by U1; U3 wires it where the lane's install is known (the landing install's own record). Until then `landing health` is the one place to look.
+
+## Size exception, U1
+U1 built at 703 production lines against the 250-line unit cap (health.go 502: eleven fact groups each saying measured or unmeasured, eleven rows, the read-only observation path; the verb 22; status, step record and status fixtures the rest). The reader is one piece by design (D2: one source); splitting the facts from the rows would have been two commits of one build. Recorded as a missed cap with its reason (Wido 2026-10-07: unit ≤ 250 lines); U2-U5 are sized to the cap.
+
 ## Estimates
 U1 2 h, U2 3 h, U3 1 h, U4 2 h, U5 1 h build+read; hand-landed today under the broken-machine rule.
