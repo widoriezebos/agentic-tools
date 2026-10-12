@@ -1,0 +1,6 @@
+{
+  "base": "625ec7bc7953f00a221f8965fccb67dcc702438b",
+  "commit": "07d49bbce56fd90c0af78c8a03a7a88608b02769",
+  "package": "metasystem/cmd/metasystem",
+  "tests": 1411
+}

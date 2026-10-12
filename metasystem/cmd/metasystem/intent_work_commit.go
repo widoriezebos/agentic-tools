@@ -1,10 +1,15 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -69,6 +74,7 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 		return refused(err)
 	}
 	var commit string
+	var checked repairCheck
 	err = runner.MutationSection(worktree, func(bound *launch.UnitRunner) error {
 		return conn.section(root, func(token func(func() error) error) error {
 			return token(func() error {
@@ -92,25 +98,8 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 						if _, err := conn.rebaseGate(installation); err != nil {
 							return err
 						}
-						top, err := goalBranchGit(candidate, "rev-parse", "--show-toplevel")
+						checked, err = conn.commitCheck(installation, parent)
 						if err != nil {
-							return err
-						}
-						command, err := landingProofCommand(installation, top, parent, "proof.cheap", goalBranchGit)
-						if err != nil {
-							return err
-						}
-						if fix := conn.laneFix(inv.layout.InstallationRoot.Path(), worktree, id); fix != nil && inv.input.text("work") == fmt.Sprintf("lane-fix-%d", fix.Round) {
-							engine, err := inv.landing().proveSeams(root).Executable()
-							if err != nil {
-								return err
-							}
-							command = shellCommand([]string{engine, "test", "impact", "--check"})
-						}
-						proof := exec.Command("/bin/sh", "-c", command)
-						proof.Env = append(commandenv.EngineEnvironment(proof.Environ()), "LANDING_PROOF_BASE="+parent)
-						proof.Dir, proof.Stdout, proof.Stderr = installation, inv.stderr, inv.stderr
-						if err := proof.Run(); err != nil {
 							return fmt.Errorf("the cheap check failed; nothing was committed: %w", err)
 						}
 						afterHead, after, err := bound.WorktreeResult(candidate)
@@ -120,6 +109,20 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 						afterIndex, indexErr := goalBranchGit(candidate, "write-tree")
 						if beforeHead != afterHead || before != after || beforeIndex != afterIndex || indexErr != nil {
 							return fmt.Errorf("the checks changed the commit candidate; nothing was committed")
+						}
+						record := inv.layout.InstallationRoot.Path("artifacts", "unit-checks", "commits", operation+".json")
+						data, err := json.Marshal(struct {
+							Goal, Work string
+							repairCheck
+						}{id, inv.input.text("work"), checked})
+						if err == nil {
+							err = os.MkdirAll(filepath.Dir(record), 0700)
+						}
+						if err == nil {
+							_, err = atomicfile.WriteFile(record, data, 0600, filepath.Dir(record))
+						}
+						if err != nil {
+							return err
 						}
 						return nil
 					}})
@@ -140,6 +143,36 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 	if err != nil {
 		return inv.render(intentResult{Targets: inv.targets(id), Outcome: intentPartial, code: 1, Summary: "the work is committed but publication is pending: " + err.Error(), next: inv.publicArgv("work", "review", id, "--changes", "--work", inv.input.text("work"), "--brief", "FILE"), nextReason: "continues the committed work"})
 	}
-	return inv.render(intentResult{Targets: inv.targets(id), Outcome: intentConfirmed, Summary: "committed the staged work as " + shortSHA(commit),
+	return inv.render(intentResult{Targets: inv.targets(id), Outcome: intentConfirmed, Summary: fmt.Sprintf("committed the staged work as %s; %s (%.2f minutes)", shortSHA(commit), checked.Form, checked.Minutes),
 		Data: map[string]any{"commit": commit, "work": inv.input.text("work")}, next: inv.publicArgv("work", "review", "--commit", commit, "--goal", id), nextReason: "publishes its independent read"})
+}
+
+// committedWorkCheck preserves the project's cheap-check declaration for the unit's parent.
+func committedWorkCheck(directory, base string, stdout, stderr io.Writer) (repairCheck, error) {
+	top, err := goalBranchGit(directory, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return repairCheck{}, err
+	}
+	command, err := landingProofCommand(directory, top, base, "proof.cheap", goalBranchGit)
+	if err != nil {
+		return repairCheck{}, err
+	}
+	words := shellWords(command)
+	if len(words) >= 3 && words[0] == "metasystem" && words[1] == "test" && words[2] == "impact" {
+		return committedImpactCheck(directory, base, stdout, stderr, words[3:]...)
+	}
+	checked, err := repairCheckIdentity(directory, base)
+	if err != nil {
+		return repairCheck{}, err
+	}
+	proof := exec.Command("/bin/sh", "-c", command)
+	proof.Env = append(commandenv.EngineEnvironment(proof.Environ()), "LANDING_PROOF_BASE="+base)
+	proof.Dir, proof.Stdout, proof.Stderr = directory, stdout, stderr
+	started := time.Now()
+	if err := proof.Run(); err != nil {
+		return repairCheck{}, err
+	}
+	checked.Form, checked.Reason = "declared: "+command, "declared cheap check"
+	checked.DurationMS, checked.Minutes = time.Since(started).Milliseconds(), time.Since(started).Minutes()
+	return checked, nil
 }

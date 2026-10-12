@@ -14,7 +14,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // These adapter scenarios require Git's actual index, scratch commit and
@@ -75,6 +74,9 @@ func readPublicationAdapterBed(t *testing.T, subdirectory ...string) (*connectio
 	owners.connection.section = func(_ string, act func(func(func() error) error) error) error {
 		return act(func(act func() error) error { return act() })
 	}
+	owners.connection.commitCheck = func(directory, base string) (repairCheck, error) {
+		return repairCheck{Base: base, Form: "impact: 0 tests of 0 packages", DurationMS: 1}, nil
+	}
 	return c, owners
 }
 
@@ -87,6 +89,17 @@ func TestWorkCommitSubdirectoryGitAdapter(t *testing.T) {
 	connectionGit(t, install, "commit", "-qm", "goal "+c.id+" units settings\n\nGoal-Unit: "+c.id+"/settings")
 	writeUnitCarryFile(t, filepath.Join(c.worktree, "hand.txt"), "hand change\n")
 	connectionGit(t, c.worktree, "add", "hand.txt")
+	owners.connection.commitCheck = func(candidate, base string) (repairCheck, error) {
+		if filepath.Base(candidate) != "metasystem" {
+			t.Fatalf("impact check outside the installation: %s", candidate)
+		}
+		for _, path := range []string{filepath.Join(candidate, "metasystem.conf"), filepath.Join(candidate, "..", "hand.txt")} {
+			if _, err := os.Stat(path); err != nil {
+				t.Fatalf("impact candidate missing %s: %v", path, err)
+			}
+		}
+		return repairCheck{Base: base, Form: "impact: 0 tests of 0 packages", Minutes: 0.1}, nil
+	}
 	static := 0
 	owners.connection.rebaseGate = func(candidate string) (string, error) {
 		static++
@@ -386,21 +399,21 @@ func TestCommitReadPublicationDirtyTreeRecoveryGitAdapter(t *testing.T) {
 
 func TestWorkCommitGatesGitAdapter(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"green", "static-red", "cheap-red", "checks-write", "checks-stage"} {
+	for _, mode := range []string{"green", "static-red", "impact-red", "checks-write", "checks-stage"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			c, owners := readPublicationAdapterBed(t)
-			if mode == "cheap-red" || mode == "checks-write" || mode == "checks-stage" {
-				command := "false"
+			owners.connection.commitCheck = func(directory, base string) (repairCheck, error) {
+				if mode == "impact-red" {
+					return repairCheck{}, errors.New("impact red")
+				}
 				if mode == "checks-write" {
-					command = "printf changed > hand.txt"
+					writeUnitCarryFile(t, filepath.Join(directory, "hand.txt"), "changed")
 				}
 				if mode == "checks-stage" {
-					command = "git update-index --cacheinfo 100644,$(printf wrong | git hash-object -w --stdin),hand.txt"
+					connectionGit(t, directory, "update-index", "--force-remove", "hand.txt")
 				}
-				writeUnitCarryFile(t, filepath.Join(c.worktree, "metasystem.conf"), "proof.cheap="+command+"\n")
-				connectionGit(t, c.worktree, "add", "metasystem.conf")
-				connectionGit(t, c.worktree, "commit", "-qm", "goal "+c.id+" units settings\n\nGoal-Unit: "+c.id+"/settings")
+				return repairCheck{Base: base, Form: "impact: 1 tests of 1 packages", DurationMS: 1}, nil
 			}
 			before := connectionGit(t, c.worktree, "rev-parse", "HEAD")
 			writeUnitCarryFile(t, filepath.Join(c.worktree, "hand.txt"), "hand change\n")
@@ -464,20 +477,12 @@ func TestWorkCommitShippedImpactDeclarationGitAdapter(t *testing.T) {
 	if declaration != "metasystem test impact" {
 		t.Fatalf("shipped cheap proof = %q", declaration)
 	}
-	bin := t.TempDir()
-	engine := os.Getenv("METASYSTEM_WAIT_BINARY")
-	if engine == "" {
-		t.Fatal("TestMain supplied no source-built executable")
-	}
-	if err := testexec.WriteFile(filepath.Join(bin, "metasystem"), []byte("#!/bin/sh\nexec "+shellCommand([]string{engine})+" \"$@\"\n"), 0700); err != nil {
-		t.Fatal(err)
-	}
-	// Only command discovery is fixture-specific; the shipped proof has no base argument.
-	impactWrite(t, c.worktree, "metasystem.conf", "testing.contract=testing.json\nproof.cheap=PATH="+shellCommand([]string{bin})+":$PATH "+declaration+"\n")
+	impactWrite(t, c.worktree, "metasystem.conf", "testing.contract=testing.json\nlanding.impact-max-share=100\nproof.cheap="+declaration+"\n")
 	connectionGit(t, c.worktree, "add", ".")
 	connectionGit(t, c.worktree, "commit", "-qm", "goal "+c.id+" units settings\n\nGoal-Unit: "+c.id+"/settings")
 	parent := connectionGit(t, c.worktree, "rev-parse", "HEAD")
 	owners.connection.rebaseGate = func(string) (string, error) { return "static-green", nil }
+	owners.connection.commitCheck = nil
 	impactWrite(t, c.worktree, "internal/launch/value.go", "package launch\nconst Value = false\n")
 	connectionGit(t, c.worktree, "add", "internal/launch/value.go")
 	code, result := c.runJSON(owners, "work", "commit", c.id, "--work", "value")

@@ -1,0 +1,510 @@
+diff --git a/metasystem/cmd/metasystem/intent_declaration_test.go b/metasystem/cmd/metasystem/intent_declaration_test.go
+index 5a927de52..c913cef62 100644
+--- a/metasystem/cmd/metasystem/intent_declaration_test.go
++++ b/metasystem/cmd/metasystem/intent_declaration_test.go
+@@ -7,6 +7,7 @@ import (
+ 	"fmt"
+ 	"os"
+ 	"path/filepath"
++	"regexp"
+ 	"slices"
+ 	"strings"
+ 	"testing"
+@@ -15,9 +16,12 @@ import (
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+ 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+ )
+ 
+ func TestDeclaredChangePublicAdmission(t *testing.T) {
+@@ -372,3 +376,103 @@ func TestDeclaredChangePrivateEnvironment(t *testing.T) {
+ 		t.Fatalf("private environment was not frozen: %v", err)
+ 	}
+ }
++
++func TestDeclarationGrantAdmissionWithRepositoryContract(t *testing.T) {
++	t.Parallel()
++	module := filepath.Join("..", "..")
++	contract, err := testpolicy.Load(filepath.Join(module, "testing.json"))
++	if err != nil || len(contract.Groups) == 0 {
++		t.Fatalf("repository testing contract: %v", err)
++	}
++	pages, err := filepath.Glob(filepath.Join(module, "plans", "goals", "*.md"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	var ledger *goal.GoalFile
++	for _, path := range pages {
++		if filepath.Base(path) == "backlog.md" {
++			continue
++		}
++		data, err := os.ReadFile(path)
++		if err != nil {
++			t.Fatal(err)
++		}
++		file, problems := goal.ParseFile(data)
++		if len(problems) != 0 {
++			t.Fatalf("repository goal %s: %v", path, problems)
++		}
++		ledger = file
++		break
++	}
++	if ledger == nil {
++		t.Fatal("the repository has no goal ledger page")
++	}
++	var risk testpolicy.GoalRisk
++	if ledger.Risk != nil {
++		risk = testpolicy.GoalRisk{Severity: int(ledger.Risk.Severity), Novelty: int(ledger.Risk.Novelty), Exposure: int(ledger.Risk.Exposure), Accumulation: int(ledger.Risk.Accumulation)}
++	}
++	selection, err := testpolicy.Select(contract, testpolicy.SelectionRequest{ChangedPaths: []string{"metasystem/cmd/metasystem/intent_unit_check.go", "metasystem/internal/processchange/check.go"}, GoalRisk: risk, RequestedMode: testpolicy.ModeAuto, Purpose: testpolicy.PurposeDelivery})
++	if err != nil || len(selection.SelectedGroups) == 0 || len(selection.Stages) == 0 {
++		t.Fatalf("repository test plan: %+v %v", selection, err)
++	}
++	t.Logf("repository test plan for ledger goal %s: %+v", ledger.Id, selection)
++	committed, err := os.ReadFile(filepath.Join(module, "metasystem.conf"))
++	if err != nil {
++		t.Fatal(err)
++	}
++	b := newWorkBed(t)
++	candidate := regexp.MustCompile(`(?m)^proof\.cheap=.*$`).ReplaceAllString(string(committed), "proof.cheap=printf grant-selected")
++	b.workOwnersHook = func(work *intentWorkOwners) {
++		git := work.git
++		work.git = func(root string, args ...string) ([]byte, error) {
++			switch {
++			case slices.Equal(args, []string{"rev-parse", "origin/main"}), len(args) == 3 && args[0] == "merge-base":
++				return []byte("repository-baseline"), nil
++			case len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem.conf"):
++				if args[1] == b.head+":metasystem.conf" {
++					return []byte(candidate), nil
++				}
++				return committed, nil
++			}
++			return git(root, args...)
++		}
++	}
++	owners := b.workOwners()
++	owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, now time.Time) (humanauthority.Proof, error) {
++		return humanauthority.HelmProof(root, humanauthority.HelmGrant{By: "Wido", Grant: "declaration-grant"}, now)
++	}
++	brief := b.brief("repository-declarations.md", ledger.Intent+"\n")
++	code, result := checkActBuild(t, b, owners, "work", "build", b.id, "--work", "granted-check", "--brief", brief, "--lines", "5")
++	if code != 1 || len(b.starter.launched()) != 0 {
++		t.Fatalf("grant must propose the changed declaration before launching: %d %+v", code, result)
++	}
++	acts, unknown, err := processchange.ReadActs(b.root(), b.id)
++	if err != nil || len(unknown) != 0 || len(acts) != 1 {
++		t.Fatalf("declaration proposal: %+v %v %v", acts, unknown, err)
++	}
++	act := acts[0]
++	if act.Class != "declaration" || act.Status != "proposed" || act.AfterDeclaration.Values[0] != "printf grant-selected" || act.Proof.Helm == nil || act.Proof.Helm.Grant != "declaration-grant" || act.AppliedProof.Schema != 0 || act.AppliedProof.Helm != nil || !act.AppliedAt.IsZero() {
++		t.Fatalf("grant was applied as a person or lost proposal provenance: %+v", act)
++	}
++	question, err := channel.ReadQuestion(b.root(), act.Question)
++	if err != nil || question.State != "open" || question.ProcessAct != act.ID {
++		t.Fatalf("grant proposal did not ask a person: %+v %v", question, err)
++	}
++	log, err := os.ReadFile(humanauthority.AttorneyLogPath(b.root()))
++	if err != nil && !os.IsNotExist(err) || strings.Contains(string(log), "refused") {
++		t.Fatalf("admitted declaration logged a refusal: %s %v", log, err)
++	}
++	owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
++	code, applied := checkActBuild(t, b, owners, result.Next.Argv[1:]...)
++	if code != 0 || len(b.starter.launched()) == 0 {
++		t.Fatalf("person could not approve the grant's proposal: %d %+v", code, applied)
++	}
++	plan, err := launch.ReadUnitPlan(resultData(t, applied)["plan"].(string))
++	if err != nil || plan.Check == nil || plan.Check.Declaration == nil || plan.Check.ProcessAct != act.ID || plan.Check.Declaration.Values != act.AfterDeclaration.Values || plan.Check.Cheap != "printf grant-selected" || !slices.Equal(plan.FullArgv, act.AfterDeclaration.FullArgv) {
++		t.Fatalf("published plan did not freeze the approved repository declaration: %+v %v", plan.Check, err)
++	}
++	acts, unknown, err = processchange.ReadActs(b.root(), b.id)
++	if err != nil || len(unknown) != 0 || len(acts) != 1 || acts[0].Status != "applied" || acts[0].AppliedProof.Helm != nil || acts[0].AppliedProof.Grade != humanauthority.GradeEnrolled || acts[0].AppliedProof.Outcome != humanauthority.OutcomeProven || acts[0].AppliedProof.TerminalGeneration == 0 {
++		t.Fatalf("declaration was not applied with the person's own proof: %+v %v %v", acts, unknown, err)
++	}
++}
+diff --git a/metasystem/cmd/metasystem/intent_idempotency_work_test.go b/metasystem/cmd/metasystem/intent_idempotency_work_test.go
+index 8e9c20094..20e3bde01 100644
+--- a/metasystem/cmd/metasystem/intent_idempotency_work_test.go
++++ b/metasystem/cmd/metasystem/intent_idempotency_work_test.go
+@@ -38,6 +38,7 @@ func init() {
+ 	registerIdempotency("test run", idemCreation,
+ 		"each call runs the risk-selected tests as a new proof attempt of the checkout as it is now; test status answers whether retained proof already covers a tree without running anything", nil)
+ 
++	registerIdempotency("work revert", idemStateful, "an applied inverse resolves its original intervention and repeats without a commit or record", witnessWorkRevertRepeat)
+ 	registerIdempotency("work brief", idemStateful, "the same scaffold already at --out is unchanged; different content there is refused and kept", witnessWorkBriefRepeat)
+ 	registerIdempotency("work build", idemStateful, "the same goal, work and request reach the same attempt again and launch nothing", witnessWorkBuildRepeat)
+ 	registerIdempotency("work stop", idemStateful, "a job that already ended is already stopped; a goal's stop that already completed is left as it is (TestWorkStopGoalCompletesItsRecordedStop)", witnessWorkStopRepeat)
+@@ -245,3 +246,7 @@ func witnessDesignStopRepeat(t *testing.T) {
+ 		workIdemSameFiles(t, "design stop", files, workIdemSnapshot(t, launchRoot))
+ 	}
+ }
++
++func witnessWorkRevertRepeat(t *testing.T) {
++	exerciseDeclarationInversePublicRevert(t, []string{"delta-replay"})
++}
+diff --git a/metasystem/cmd/metasystem/intent_inverse_test.go b/metasystem/cmd/metasystem/intent_inverse_test.go
+index fff26c9e1..bb82ba825 100644
+--- a/metasystem/cmd/metasystem/intent_inverse_test.go
++++ b/metasystem/cmd/metasystem/intent_inverse_test.go
+@@ -138,7 +138,12 @@ func (f *inverseGit) inputs() (branch.CommitFacts, branch.CommitEffects) {
+ }
+ func TestDeclarationInversePublicRevert(t *testing.T) {
+ 	t.Parallel()
+-	for _, scenario := range []string{"delta-replay", "conflict", "missing", "wrong-target", "wrong-act-branch", "wrong-checkout", "wrong-current-branch", "explicit-conflict", "corrupt-baseline", "empty-restored", "no-final-newline", "inherited", "staged-overlap", "invalid-path", "write-failure", "push-failure", "inherited-mixed", "code-patch", "gate-failure", "cheap-failure"} {
++	exerciseDeclarationInversePublicRevert(t, []string{"delta-replay", "conflict", "missing", "wrong-target", "wrong-act-branch", "wrong-checkout", "wrong-current-branch", "explicit-conflict", "corrupt-baseline", "empty-restored", "no-final-newline", "inherited", "staged-overlap", "invalid-path", "write-failure", "push-failure", "inherited-mixed", "code-patch", "gate-failure", "cheap-failure"})
++}
++
++func exerciseDeclarationInversePublicRevert(t *testing.T, scenarios []string) {
++	t.Helper()
++	for _, scenario := range scenarios {
+ 		t.Run(scenario, func(t *testing.T) {
+ 			t.Parallel()
+ 			b, owners, _ := rebaseIntentBed(t)
+@@ -418,9 +423,11 @@ func TestDeclarationInversePublicRevert(t *testing.T) {
+ 						t.Fatalf("next admission kept the reversed declaration: %s (%v)", data, err)
+ 					}
+ 				}
+-				if code, result = b.runJSON(owners, args...); code != 0 || f.publications != 1 {
++				files := workIdemSnapshot(t, b.root())
++				if code, result = b.runJSON(owners, args...); code != 0 || result.Outcome != intentUnchanged || f.publications != 1 {
+ 					t.Fatalf("replay: %d %+v", code, result)
+ 				}
++				workIdemSameFiles(t, "work revert", files, workIdemSnapshot(t, b.root()))
+ 				state, _ := processchange.ReadState(b.root(), b.id)
+ 				if len(state.Stops) != 1 || state.Stops[0].ID != "other" {
+ 					t.Fatalf("other stop cleared: %+v", state)
+diff --git a/metasystem/cmd/metasystem/intent_unit_check.go b/metasystem/cmd/metasystem/intent_unit_check.go
+index 9208bcbea..a39cdfc39 100644
+--- a/metasystem/cmd/metasystem/intent_unit_check.go
++++ b/metasystem/cmd/metasystem/intent_unit_check.go
+@@ -119,7 +119,16 @@ func runIntentUnitCheck(inv *intentInvocation) int {
+ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directory string, publish func() error, subject ...branch.AttestationSubject) error {
+ 	check := plan.Check
+ 	act := processchange.ProcessAct{Goal: plan.Goal, Unit: plan.Unit, Operation: directory, Checkout: checkoutAuthorityRoot(inv.layout), Key: "declarations", Layer: "committed", After: check.Cheap, AfterDeclaration: check.Declaration, Lineage: inv.claimLineage(), Reason: "Approve the committed unit checks"}
+-	by, _, refusal := inv.settingsPerson(inv.layout, "committed unit checks", &act.Proof)
++	actor, proof, refusal := inv.actingAs("committed unit checks", plan.Goal, actorHuman)
++	by := unitStopActor(actor)
++	if proof != nil {
++		act.Proof = *proof
++	}
++	person := refusal == nil && act.Proof.EnrolledTerminalFor(act.Checkout) && act.Proof.Helm == nil
++	var carrySubject string
++	if len(subject) != 0 {
++		carrySubject = subject[0].Commit
++	}
+ 	remedy := inv.typedArgvLess("act", "json", "verbose", "repo")
+ 	remedy = append(remedy, "--repo", inv.layout.InstallationRoot.Path())
+ 	if len(subject) != 0 {
+@@ -153,7 +162,15 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
+ 		if err == nil && branch != "goal/"+plan.Goal {
+ 			err = fmt.Errorf("the worktree is not this goal's branch: %s", branch)
+ 		}
+-		mainCommit := readGit("rev-parse", "origin/main")
++		endpoint, problem := inv.connection().endpoint(plan.Worktree)
++		if problem != nil {
++			return candidate, main, inherited, problem
++		}
++		mainRef := endpoint.Remote + "/" + strings.TrimPrefix(endpoint.Branch, "refs/heads/")
++		if endpoint.Remote == "local" {
++			mainRef = endpoint.Branch
++		}
++		mainCommit := readGit("rev-parse", mainRef)
+ 		base := readGit("merge-base", candidateCommit, mainCommit)
+ 		read := func(commit string) (snapshot processchange.Declaration) {
+ 			snapshot.Commit, snapshot.Branch = commit, branch
+@@ -166,12 +183,20 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
+ 				if err != nil {
+ 					break
+ 				}
+-				snapshot.Values[i], _, err = config.CommittedContentLookup(snapshot.Content, key)
++				var present bool
++				snapshot.Values[i], present, err = config.CommittedContentLookup(snapshot.Content, key)
++				// Carrying a read requires the subject's cheap checks; a full
++				// command is compared only when the repository declares one.
++				if len(subject) != 0 && key == "proof.full" && err == nil && !present {
++					continue
++				}
+ 				if err == nil {
+ 					err = config.SettingValueProblem(key, snapshot.Values[i])
+ 				}
+ 			}
+-			snapshot.FullArgv = []string{"/bin/sh", "-c", snapshot.Values[3]}
++			if snapshot.Values[3] != "" {
++				snapshot.FullArgv = []string{"/bin/sh", "-c", snapshot.Values[3]}
++			}
+ 			return
+ 		}
+ 		candidate, main, inherited = read(candidateCommit), read(mainCommit), read(base)
+@@ -188,7 +213,7 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
+ 	if publish == nil {
+ 		selectedAct = check.ProcessAct
+ 	}
+-	admitted, err := processchange.AdmitDeclaration(processchange.DeclarationAdmission{Check: processchange.Check{Root: inv.stateRoot, Installation: inv.layout.InstallationRoot, Act: selectedAct, ProcessAct: act, Person: refusal == nil, Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }}, Resume: publish == nil, Source: source,
++	admitted, err := processchange.AdmitDeclaration(processchange.DeclarationAdmission{Check: processchange.Check{Root: inv.stateRoot, Installation: inv.layout.InstallationRoot, Act: selectedAct, ProcessAct: act, Person: person, Now: inv.unitRunner().Manager.Now(), Remedy: func(id string) string { return shellCommand(withAct(id)) }}, Resume: publish == nil, Source: source,
+ 		Recheck: func() error {
+ 			tip, err := git("rev-parse", "HEAD")
+ 			currentBranch, branchErr := branch, error(nil)
+@@ -204,6 +229,7 @@ func (inv *intentInvocation) admitUnitDeclaration(plan *launch.UnitPlan, directo
+ 			return inv.recordUnitStopOverride(plan.Goal, "work-declarations", act.Reason, "Impact: this admission uses these committed checks, audits and deadline.\nExact full-suite selections run the full suite for this subject. Earlier rounds keep their frozen checks.", by)
+ 		},
+ 		Publish: func(admitted processchange.ProcessAct) error { check.ProcessAct = admitted.ID; return publish() },
++		Subject: carrySubject,
+ 	})
+ 	if err != nil {
+ 		if len(subject) != 0 {
+diff --git a/metasystem/cmd/metasystem/intent_work_commit.go b/metasystem/cmd/metasystem/intent_work_commit.go
+index 8a404ae30..ab73f85ce 100644
+--- a/metasystem/cmd/metasystem/intent_work_commit.go
++++ b/metasystem/cmd/metasystem/intent_work_commit.go
+@@ -44,6 +44,13 @@ func runIntentWorkCommit(inv *intentInvocation) int {
+ 		if code != 0 {
+ 			return code
+ 		}
++		if prepared.Status == "applied" {
++			act, err := processchange.CompleteInverse(inv.stateRoot, inv.layout.InstallationRoot, prepared, prepared.PublishedCommit, inv.unitRunner().Manager.Now())
++			if err != nil {
++				return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the declaration inverse remains pending: " + err.Error(), Data: prepared})
++			}
++			return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the declaration delta is already reverted; nothing was published", Data: act})
++		}
+ 		inverse = &prepared
+ 	}
+ 	root, conn, runner := inv.goalWorktreeInstallation(worktree), inv.connection(), inv.unitRunner()
+@@ -197,6 +204,9 @@ func (inv *intentInvocation) prepareDeclarationInverse(id, worktree string) (act
+ 	if err != nil {
+ 		return refused(err)
+ 	}
++	if act.Status == "applied" {
++		return act, 0
++	}
+ 	if err := inv.recordUnitStopOverride(id, "work-revert", act.Reason, "Impact: restore only these declarations. Earlier rounds and unrelated holds stay as they are.", by); err != nil {
+ 		return refused(err)
+ 	}
+diff --git a/metasystem/internal/launch/unit_named.go b/metasystem/internal/launch/unit_named.go
+index 483e33384..7e105d328 100644
+--- a/metasystem/internal/launch/unit_named.go
++++ b/metasystem/internal/launch/unit_named.go
+@@ -1,6 +1,7 @@
+ package launch
+ 
+ import (
++	"bytes"
+ 	"crypto/sha256"
+ 	"encoding/json"
+ 	"errors"
+@@ -216,12 +217,26 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
+ 	if err != nil {
+ 		return UnitResult{}, planInvalid("plan", err)
+ 	}
+-	staged := runner.namedPath(key, ".plan")
+-	if _, err := atomicfile.WriteText(staged, string(data), runner.root()); err != nil {
++	entry, found, err := runner.readNamed(key)
++	if err != nil {
+ 		return UnitResult{}, err
+ 	}
++	staged := runner.namedPath(key, ".plan")
++	input := named.Path
++	if !found {
++		input = staged
++		previous, err := os.ReadFile(staged)
++		if err != nil && !errors.Is(err, fs.ErrNotExist) {
++			return UnitResult{}, err
++		}
++		if !bytes.Equal(previous, data) {
++			if _, err := atomicfile.WriteText(staged, string(data), runner.root()); err != nil {
++				return UnitResult{}, err
++			}
++		}
++	}
+ 	planDirectory := filepath.Dir(named.Path)
+-	plan, err := readUnitPlanInput(staged, planDirectory, retained)
++	plan, err := readUnitPlanInput(input, planDirectory, retained)
+ 	if err != nil {
+ 		return UnitResult{}, err
+ 	}
+@@ -236,10 +251,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
+ 	if err != nil {
+ 		return UnitResult{}, err
+ 	}
+-	entry, found, err := runner.readNamed(key)
+-	if err != nil {
+-		return UnitResult{}, err
+-	}
++	plan.Path = staged
+ 	if found {
+ 		if entry.Worktree != worktree || entry.Goal != plan.Goal || entry.Unit != plan.Unit || !idPattern.MatchString(entry.Run) ||
+ 			entry.State != namedReserved && entry.State != namedRecorded {
+diff --git a/metasystem/internal/launch/unit_named_test.go b/metasystem/internal/launch/unit_named_test.go
+index 7965144ff..bb1d81cf6 100644
+--- a/metasystem/internal/launch/unit_named_test.go
++++ b/metasystem/internal/launch/unit_named_test.go
+@@ -1,6 +1,7 @@
+ package launch
+ 
+ import (
++	"bytes"
+ 	"encoding/json"
+ 	"errors"
+ 	"os"
+@@ -9,6 +10,7 @@ import (
+ 	"strings"
+ 	"sync"
+ 	"testing"
++	"time"
+ )
+ 
+ func rewriteUnitPlan(t *testing.T, path string, change func(*UnitPlan)) {
+@@ -619,3 +621,54 @@ func TestNamedUnitChangeBeforeAPendingLaunchLaunchesNothingUntilRestored(t *test
+ 		})
+ 	}
+ }
++
++func TestNamedUnitRepeatPreservesAdmittedPlan(t *testing.T) {
++	t.Parallel()
++	fixture := newUnitFixture(t, "", "branch", "branch", "round")
++	admissions := 0
++	fixture.runner.AdmitEstimate = func(plan *UnitPlan) error {
++		admissions++
++		plan.Estimate = &UnitEstimate{DesignID: "design", Unit: plan.Unit, SourceSHA256: strings.Repeat("a", 64), BodySHA256: strings.Repeat("b", 64), ElapsedMinutes: 5}
++		return nil
++	}
++	first, err := fixture.runner.AdvanceNamed(fixture.plan)
++	if err != nil {
++		t.Fatal(err)
++	}
++	plan, err := ReadUnitPlan(fixture.plan)
++	if err != nil {
++		t.Fatal(err)
++	}
++	_, key, err := namedUnitIdentity(plan)
++	if err != nil {
++		t.Fatal(err)
++	}
++	staged := fixture.runner.namedPath(key, ".plan")
++	before, err := os.ReadFile(staged)
++	if err != nil {
++		t.Fatal(err)
++	}
++	retained, err := ReadUnitPlan(staged)
++	if err != nil || retained.Estimate == nil {
++		t.Fatalf("admitted estimate: %+v %v", retained.Estimate, err)
++	}
++	stamp := time.Unix(100, 0)
++	if err := os.Chtimes(staged, stamp, stamp); err != nil {
++		t.Fatal(err)
++	}
++	for range 2 {
++		again, err := fixture.runner.AdvanceNamed(fixture.plan)
++		if err != nil || again.Record.ID != first.Record.ID || admissions != 1 {
++			t.Fatalf("repeat: %+v %v admissions=%d", again, err, admissions)
++		}
++		after, err := os.ReadFile(staged)
++		if err != nil {
++			t.Fatal(err)
++		}
++		info, err := os.Stat(staged)
++		if err != nil || !bytes.Equal(before, after) || !info.ModTime().Equal(stamp) {
++			t.Fatalf("repeat rewrote the admitted plan: %v", err)
++		}
++	}
++	requireLaunchedOnce(t, fixture, 3)
++}
+diff --git a/metasystem/internal/processchange/check.go b/metasystem/internal/processchange/check.go
+index d088240ae..b29dbbb6d 100644
+--- a/metasystem/internal/processchange/check.go
++++ b/metasystem/internal/processchange/check.go
+@@ -174,6 +174,7 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
+ type Declaration = launch.UnitDeclaration
+ type DeclarationAdmission struct {
+ 	Check
++	Subject string
+ 	Resume  bool
+ 	Source  func() (candidate, main, inherited Declaration, err error)
+ 	Recheck func() error
+@@ -213,7 +214,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
+ 	}
+ 	body, readErr := os.ReadFile(path)
+ 	var previous declarationReference
+-	if readErr != nil && !os.IsNotExist(readErr) || readErr == nil && (json.Unmarshal(body, &previous) != nil || previous.Goal != c.Goal || previous.Seed == "" || previous.Snapshot.Commit == "" || slices.Contains(previous.Snapshot.Values[:], "")) {
++	if readErr != nil && !os.IsNotExist(readErr) || readErr == nil && (json.Unmarshal(body, &previous) != nil || previous.Goal != c.Goal || previous.Seed == "" || previous.Snapshot.Commit == "" || slices.Contains(previous.Snapshot.Values[:3], "") || c.Subject == "" && previous.Snapshot.Values[3] == "") {
+ 		return act, fmt.Errorf("the goal's declaration baseline is unavailable; a person can supply --reason TEXT --by NAME --check COMMAND")
+ 	}
+ 	candidate, main, inherited, problem := c.Source()
+diff --git a/metasystem/internal/processchange/check_test.go b/metasystem/internal/processchange/check_test.go
+index f20f4b3b0..0a25c7848 100644
+--- a/metasystem/internal/processchange/check_test.go
++++ b/metasystem/internal/processchange/check_test.go
+@@ -1,9 +1,13 @@
+ package processchange
+ 
+ import (
++	"crypto/sha256"
++	"encoding/json"
++	"fmt"
+ 	"os"
+ 	"path/filepath"
+ 	"slices"
++	"strings"
+ 	"testing"
+ 	"time"
+ 
+@@ -11,6 +15,54 @@ import (
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
+ )
+ 
++func TestAdmitDeclarationBaselineRequiresFullExceptCarry(t *testing.T) {
++	t.Parallel()
++	for _, state := range []string{"ordinary missing full", "carry missing full", "ordinary complete", "carry missing cheap"} {
++		t.Run(state, func(t *testing.T) {
++			t.Parallel()
++			root := t.TempDir()
++			snapshot := Declaration{Commit: "subject", Values: [4]string{"printf cheap", "true", "15", ""}}
++			if state == "ordinary complete" {
++				snapshot.Values[3] = "printf full"
++			}
++			if state == "carry missing cheap" {
++				snapshot.Values[0] = ""
++			}
++			baseline := declarationReference{Goal: "goal", Seed: "main", Snapshot: snapshot}
++			body, err := json.Marshal(baseline)
++			if err != nil {
++				t.Fatal(err)
++			}
++			path := filepath.Join(root, "process", fmt.Sprintf("declaration-%x.json", sha256.Sum256([]byte(baseline.Goal))))
++			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
++				t.Fatal(err)
++			}
++			if err := os.WriteFile(path, body, 0600); err != nil {
++				t.Fatal(err)
++			}
++			published := false
++			c := DeclarationAdmission{Check: Check{Root: root, ProcessAct: ProcessAct{Goal: baseline.Goal}},
++				Source:  func() (Declaration, Declaration, Declaration, error) { return snapshot, snapshot, snapshot, nil },
++				Recheck: func() error { return nil }, Publish: func(ProcessAct) error { published = true; return nil }}
++			if strings.HasPrefix(state, "carry") {
++				c.Subject = snapshot.Commit
++			}
++			act, err := AdmitDeclaration(c)
++			if state == "ordinary missing full" || state == "carry missing cheap" {
++				if err == nil || !strings.Contains(err.Error(), "baseline is unavailable") || published {
++					t.Fatalf("damaged baseline was admitted: %+v %v published=%v", act, err, published)
++				}
++				after, err := os.ReadFile(path)
++				if err != nil || string(after) != string(body) {
++					t.Fatalf("damaged baseline was changed: %s %v", after, err)
++				}
++			} else if err != nil || act.Status != "unchanged" || !published {
++				t.Fatalf("lawful baseline was held: %+v %v published=%v", act, err, published)
++			}
++		})
++	}
++}
++
+ func TestAdmitCheckChangedAgentKeepsCallerArgv(t *testing.T) {
+ 	t.Parallel()
+ 	c := Check{Root: t.TempDir(), Installation: roots.Installation(t.TempDir()), ProcessAct: ProcessAct{Goal: "goal", Unit: "unit", Operation: ".inputs/unit", Checkout: "checkout", AfterArgv: []string{"make", "d"}}, Observation: true, Now: time.Unix(1, 0), Remedy: func(string) string { return "person check" }}

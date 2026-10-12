@@ -154,27 +154,9 @@ func TestLandingCheckRealRecordShapes(t *testing.T) {
 // The real impact verb reads this repository's complete package graph and prints its plan.
 func TestLandingCheckRealContractLedgerAndPlanGitAdapter(t *testing.T) {
 	t.Parallel()
-	root := t.TempDir()
-	archive := filepath.Join(t.TempDir(), "module.zip")
-	testingFixtureGit(t, "../../..", "clone", "--quiet", "--shared", "--no-checkout", ".", root)
-	testingFixtureGit(t, "../../..", "archive", "--format=zip", "--output="+archive, "HEAD", "metasystem")
-	reader, err := zip.OpenReader(archive)
-	helmMust(t, err)
-	defer reader.Close()
-	for _, file := range reader.File {
-		if file.FileInfo().IsDir() {
-			continue
-		}
-		input, err := file.Open()
-		helmMust(t, err)
-		data, err := io.ReadAll(input)
-		helmMust(t, err)
-		helmMust(t, input.Close())
-		impactWrite(t, root, file.Name, string(data))
-		helmMust(t, os.Chmod(filepath.Join(root, file.Name), file.Mode().Perm()))
-	}
-	module := filepath.Join(root, "metasystem")
-	data, err := os.ReadFile(filepath.Join(module, "testing.json"))
+	module := realImpactArchive(t, "HEAD")
+	root := filepath.Dir(module)
+	data, err := os.ReadFile("../../testing.json")
 	helmMust(t, err)
 	contract, err := testpolicy.Decode(data)
 	helmMust(t, err)
@@ -215,6 +197,13 @@ func TestLandingCheckRealContractLedgerAndPlanGitAdapter(t *testing.T) {
 	if plan.Check != "static-only" || !probe {
 		t.Fatalf("real plan: check=%q selections=%v", plan.Check, plan.Selections)
 	}
+	form, err := impactSelectionForm(module, contract, plan.Selections, nil)
+	helmMust(t, err)
+	for _, id := range []string{"policy-canary", "adapter-canary", "command-interface-smoke"} {
+		if !slices.Contains(plan.Selections, id) || !strings.Contains(form, id) {
+			t.Fatalf("real contract group %s missing from plan or check record: %v; %s", id, plan.Selections, form)
+		}
+	}
 	t.Logf("real contract: %d groups, %d ledger goals; plan:\n%s", len(contract.Groups), len(goals), plan.Text())
 }
 
@@ -244,7 +233,7 @@ func TestWorkCommitLaneFixCheckGitAdapter(t *testing.T) {
 			data, err = json.Marshal(contract)
 			helmMust(t, err)
 			impactWrite(t, c.worktree, "testing.json", string(data))
-			impactWrite(t, c.worktree, "metasystem.conf", "testing.contract=testing.json\nproof.cheap=false\nlanding.impact-max-share=1\n")
+			impactWrite(t, c.worktree, "metasystem.conf", "testing.contract=testing.json\nproof.cheap=metasystem test impact\nlanding.impact-max-share=1\n")
 			connectionGit(t, c.worktree, "add", ".")
 			connectionGit(t, c.worktree, "commit", "-qm", "goal "+c.id+" units settings\n\nGoal-Unit: "+c.id+"/settings")
 			parent := connectionGit(t, c.worktree, "rev-parse", "HEAD")
@@ -254,11 +243,7 @@ func TestWorkCommitLaneFixCheckGitAdapter(t *testing.T) {
 				}
 				return &plain.Fix{Goal: id, Parent: parent, Round: 1}
 			}
-			engine := os.Getenv("METASYSTEM_WAIT_BINARY")
-			if engine == "" {
-				t.Fatal("TestMain supplied no source-built executable")
-			}
-			owners.landing.plainProve.Executable = func() (string, error) { return engine, nil }
+			owners.connection.commitCheck = nil
 			owners.connection.rebaseGate = func(string) (string, error) { return "static-green", nil }
 			impactWrite(t, c.worktree, "internal/launch/value.go", "package launch\nconst Value = false\n")
 			connectionGit(t, c.worktree, "add", "internal/launch/value.go")
@@ -275,4 +260,29 @@ func TestWorkCommitLaneFixCheckGitAdapter(t *testing.T) {
 			}
 		})
 	}
+}
+
+func realImpactArchive(t *testing.T, ref string) string {
+	t.Helper()
+	root := t.TempDir()
+	archive := filepath.Join(t.TempDir(), "module.zip")
+	testingFixtureGit(t, "../../..", "clone", "--quiet", "--shared", "--no-checkout", ".", root)
+	testingFixtureGit(t, root, "update-ref", "HEAD", ref)
+	testingFixtureGit(t, "../../..", "archive", "--format=zip", "--output="+archive, ref, "metasystem")
+	reader, err := zip.OpenReader(archive)
+	helmMust(t, err)
+	defer reader.Close()
+	for _, file := range reader.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+		input, err := file.Open()
+		helmMust(t, err)
+		data, err := io.ReadAll(input)
+		helmMust(t, err)
+		helmMust(t, input.Close())
+		impactWrite(t, root, file.Name, string(data))
+		helmMust(t, os.Chmod(filepath.Join(root, file.Name), file.Mode().Perm()))
+	}
+	return filepath.Join(root, "metasystem")
 }

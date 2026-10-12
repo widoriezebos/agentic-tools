@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"go/ast"
+	"go/build"
+	"go/parser"
+	"go/token"
 	"io"
 	"os"
 	"path/filepath"
@@ -25,6 +29,11 @@ import (
 )
 
 func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
+	only, _ := landingOnly()
+	return runTestImpactSelection(args, stdout, stderr, only)
+}
+
+func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string) (code int) {
 	invocation := testRunInvocation{stdout: stdout, stderr: stderr, name: "test impact"}
 	finish := invocation.envelope(invocation.name, args)
 	defer func() { finish(code) }()
@@ -33,13 +42,13 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 	flags.Bool("json", false, "print the plan as a JSON result")
 	output := plain.ImpactPlan{Selections: []string{}}
 	base := flags.String("base", os.Getenv("LANDING_PROOF_BASE"), "the unit's comparison base")
-	check := flags.Bool("check", false, "check a repair at impact depth only when cheap; reuse its unchanged staged tree")
+	check := flags.Bool("check", false, "check a unit at impact depth only when cheap; reuse its unchanged staged tree")
 	plan := flags.Bool("plan", false, "print the selection without running it")
 	root := pathFlag(flags, "root", ".", "the Go module installation")
 	if flags.Parse(args) != nil || flags.NArg() != 0 {
 		return 2
 	}
-	only, replay := landingOnly()
+	replay := strings.TrimSpace(only) != ""
 	if !replay && *base == "" {
 		fmt.Fprintln(stderr, "the unit check needs its comparison base\nrun: metasystem test impact --base COMMIT # or set LANDING_PROOF_BASE")
 		return 2
@@ -112,6 +121,7 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 				return
 			}
 			identity.DurationMS = time.Since(started).Milliseconds()
+			identity.Minutes = time.Since(started).Minutes()
 			if _, err := repairCheckCache(installation, identity, true); err != nil {
 				fmt.Fprintln(stderr, err)
 				code = 1
@@ -232,9 +242,15 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 		if !cheap {
 			ids = []string{"fast-static-build"}
 			output.Check = "static-only"
+			identity.Form = "static-only: selection not cheap"
 			identity.Reason = fmt.Sprintf("check: fast-static-build only; impact would cover %d%% of %d packages; not cheap: static gate only; the batch proof covers the tree", share, full)
 		} else {
 			output.Check = "impact"
+			identity.Form, err = impactSelectionForm(installation, contract, ids, units)
+			if err != nil {
+				fmt.Fprintln(stderr, err)
+				return 1
+			}
 			identity.Reason = fmt.Sprintf("check: impact; covers %d%% of %d packages", share, full)
 		}
 		if *check {
@@ -249,7 +265,13 @@ func runTestImpact(args []string, stdout, stderr io.Writer) (code int) {
 		}
 		return 0
 	}
-	environment := os.Environ()
+	environment := slices.DeleteFunc(os.Environ(), func(entry string) bool {
+		return strings.HasPrefix(entry, "LANDING_ONLY=") || !replay && strings.HasPrefix(entry, "LANDING_PROOF_BASE=")
+	})
+	environment = append(environment, "LANDING_ONLY="+only)
+	if !replay {
+		environment = append(environment, "LANDING_PROOF_BASE="+output.Base)
+	}
 	if err := proofrun.WriteLandingEnvironment(stdout, func() (string, error) {
 		return proofrun.LandingEnvironment(context.Background(), installation, environment)
 	}); err != nil {
@@ -467,7 +489,9 @@ func batchDepth(install, checkout, commit string, seams plain.ProveSeams) (bool,
 
 type repairCheck struct {
 	Tree, Base, Reason string
+	Form               string
 	DurationMS         int64
+	Minutes            float64
 }
 
 func repairCheckIdentity(install, base string) (repairCheck, error) {
@@ -498,4 +522,60 @@ func repairCheckCache(install string, check repairCheck, save bool) (bool, error
 	data, err := os.ReadFile(path)
 	var previous repairCheck
 	return err == nil && json.Unmarshal(data, &previous) == nil && previous.Tree == check.Tree && previous.Base == check.Base, nil
+}
+
+// committedImpactCheck retains the impact decision made for this unit's candidate.
+func committedImpactCheck(directory, base string, stdout, stderr io.Writer, flags ...string) (repairCheck, error) {
+	if code := runTestImpactSelection(append(flags, "--root", directory, "--base", base, "--check"), stdout, stderr, ""); code != 0 {
+		return repairCheck{}, fmt.Errorf("the unit impact check exited %d", code)
+	}
+	data, err := os.ReadFile(filepath.Join(plain.Dir(directory), "repair-check.json"))
+	var checked repairCheck
+	if err == nil {
+		err = json.Unmarshal(data, &checked)
+	}
+	return checked, err
+}
+
+func impactSelectionForm(directory string, contract testpolicy.Contract, ids []string, units map[string]string) (string, error) {
+	tests, packages := 0, 0
+	var groups []string
+	for _, group := range contract.Groups {
+		if !slices.Contains(ids, group.ID) {
+			continue
+		}
+		if units[group.ID] == "" {
+			groups = append(groups, group.ID)
+			continue
+		}
+		packages += len(group.Packages)
+		var names []string
+		if json.Unmarshal(group.Tests, &names) == nil {
+			tests += len(names)
+		} else {
+			for _, path := range group.Packages {
+				dir := filepath.Join(directory, path)
+				pkg, err := build.Default.ImportDir(dir, 0)
+				if err != nil {
+					return "", err
+				}
+				for _, file := range append(pkg.TestGoFiles, pkg.XTestGoFiles...) {
+					parsed, err := parser.ParseFile(token.NewFileSet(), filepath.Join(dir, file), nil, 0)
+					if err != nil {
+						return "", err
+					}
+					for _, decl := range parsed.Decls {
+						if fn, ok := decl.(*ast.FuncDecl); ok && fn.Recv == nil && testpolicy.GoTestName(fn.Name.Name) {
+							tests++
+						}
+					}
+				}
+			}
+		}
+	}
+	form := fmt.Sprintf("impact: %d tests of %d packages", tests, packages)
+	if len(groups) > 0 {
+		form += " + groups " + strings.Join(groups, ", ")
+	}
+	return form, nil
 }
