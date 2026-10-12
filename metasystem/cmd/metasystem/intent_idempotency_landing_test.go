@@ -14,6 +14,7 @@ import (
 )
 
 func init() {
+	registerIdempotency("landing deploy", idemStateful, "the installed engine already carries origin main's stamp: nothing to deploy, no build or record", landingDeployRepeat)
 	registerIdempotency("landing health", idemRead, "reads health facts without changing lane records", nil)
 	registerIdempotency("landing batch", idemRead, "viewing the batch changes nothing; seal and reopen are stateful forms with their own repeat witnesses", nil)
 	registerIdempotency("landing restart", idemStateful, "the same restart is already applied or pending for this proof: success, nothing written", witnessLandingRestartRepeat)

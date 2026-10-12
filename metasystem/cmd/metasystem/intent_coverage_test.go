@@ -32,7 +32,7 @@ var publicPairs = []string{
 	"session start", "session stop", "session status", "session handoff", "session isolate", "session wait",
 	"mission start", "mission status", "mission resume", "mission seal", "mission repair",
 	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system setup", "system adopt", "system completion",
-	"landing health", "landing status", "landing set", "landing start", "landing drain", "landing stop", "landing unset", "landing run", "landing resolve", "landing prove", "landing push", "landing return", "landing batch", "landing restart", "landing give-back", "landing land-anyway", "landing resume",
+	"landing health", "landing status", "landing set", "landing start", "landing drain", "landing stop", "landing unset", "landing run", "landing resolve", "landing prove", "landing push", "landing return", "landing batch", "landing restart", "landing deploy", "landing give-back", "landing land-anyway", "landing resume",
 	"deploy status", "deploy now", "deploy rollback", "deploy pause", "deploy resume",
 	"alert list", "alert ack", "alert clear",
 	"machine list", "machine start", "machine stop", "machine clear-provider", "machine revive",
@@ -66,6 +66,7 @@ func TestHelpLandingBatchExamplesCoverStatefulForms(t *testing.T) {
 		{"landing resume", []string{"metasystem landing resume"}},
 		{"landing give-back", []string{"metasystem landing give-back my-goal --reason 'Continue at the seat'"}},
 		{"landing land-anyway", []string{"metasystem landing land-anyway my-goal --reason 'Ship the independent fix'"}},
+		{"landing deploy", []string{"metasystem landing deploy", "metasystem landing deploy --now --by Wido --json"}},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()

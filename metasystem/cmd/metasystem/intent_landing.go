@@ -65,14 +65,15 @@ type laneVerbOwners struct {
 	pause func(home, by, reason string, now time.Time) (bool, error)
 	// plainProve are landing prove's effects; the zero value starts the
 	// engine detached through gaterun.LaunchDetached.
-	plainProve       plain.ProveSeams
-	settle           func(lane.Layout) (lane.Settlement, error)
-	mainEndpoint     func(string) (goal.Endpoint, error)
-	recordFlake      func(goal.VerbRequest, goal.FlakeRecordArgs) (goal.FlakeRecordResult, error)
-	recordMain       func(goal.VerbRequest, goal.TrunkRedRecordArgs) (goal.PublishResult, error)
-	clearMain        func(goal.VerbRequest, []goal.TrunkRedClearArgs) (goal.PublishResult, error)
-	plainResolve     plain.ResolveSeams
-	stopRegeneration func(string) error
+	plainProve        plain.ProveSeams
+	settle            func(lane.Layout) (lane.Settlement, error)
+	restartSupervisor func(string) error
+	mainEndpoint      func(string) (goal.Endpoint, error)
+	recordFlake       func(goal.VerbRequest, goal.FlakeRecordArgs) (goal.FlakeRecordResult, error)
+	recordMain        func(goal.VerbRequest, goal.TrunkRedRecordArgs) (goal.PublishResult, error)
+	clearMain         func(goal.VerbRequest, []goal.TrunkRedClearArgs) (goal.PublishResult, error)
+	plainResolve      plain.ResolveSeams
+	stopRegeneration  func(string) error
 	// push is landing push's push of the lane checkout's HEAD to main;
 	// before runs once the push's own checks pass, and its error stops the
 	// publication.
@@ -278,7 +279,7 @@ func unconfirmedLane(result intentResult, err error) intentResult {
 func landingIntentCommands() []intentCommand {
 	byFlag := intentFlag{name: "by", value: "NAME", usage: "who acts (default: this seat's nickname)"}
 	return []intentCommand{
-		landingBatchCommand(), landingRestartCommand(), landingResumeCommand(), landingGiveBackCommand(), landingLandAnywayCommand(), landingHealthCommand(),
+		landingBatchCommand(), landingRestartCommand(), landingResumeCommand(), landingGiveBackCommand(), landingLandAnywayCommand(), landingHealthCommand(), landingDeployCommand(),
 		{
 			object: "landing", action: "status", audience: "both", summary: "the landing lane on this computer: its checkout and its landing agent",
 			usage: []string{"metasystem landing status [--verbose]"},

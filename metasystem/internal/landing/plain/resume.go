@@ -75,13 +75,11 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 		if fix == nil || fix.Tip != tip || fix.Commit != head {
 			return nil
 		}
-		settled, minutes, jobErr := resolutionSettled(*fix, s)
-		_, live, agentErr := keeper.Running()
-		regen, regenErr := ReadRunningRegeneration(record.Install, s)
-		if err := errors.Join(jobErr, agentErr, regenErr); err != nil {
+		settled, minutes, err := ResolutionWritersSettled(record.Install, *fix, s)
+		if err != nil {
 			return err
 		}
-		if !settled || live || regen != nil && regen.State == "running" {
+		if !settled {
 			run.Lines[0] = "the resolution job of " + fix.Goal + fmt.Sprintf(" still runs (%.1f min); give it back or wait", minutes)
 			if fix.State == "resolving" && fix.Job == "" {
 				run.Lines[0] = "the resolution of " + fix.Goal + " has no job; the agent continues it"
@@ -264,4 +262,16 @@ func resolutionSettled(fix Fix, s ProveSeams) (bool, float64, error) {
 		minutes = *elapsed
 	}
 	return record.State.Terminal() && !record.OutputOwnerUnproven, minutes, nil
+}
+
+// ResolutionWritersSettled permits discarding a merge only after its recorded
+// job, landing agent and regeneration have relinquished the checkout.
+func ResolutionWritersSettled(install string, fix Fix, s ProveSeams) (bool, float64, error) {
+	settled, minutes, jobErr := resolutionSettled(fix, s)
+	if s.ResumeKeeper == nil || s.ResumeKeeper.Running == nil {
+		return false, minutes, errors.Join(jobErr, errors.New("the landing agent's keeper is unavailable"))
+	}
+	_, live, agentErr := s.ResumeKeeper.Running()
+	regen, regenErr := ReadRunningRegeneration(install, s)
+	return settled && !live && (regen == nil || regen.State != "running"), minutes, errors.Join(jobErr, agentErr, regenErr)
 }

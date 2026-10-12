@@ -294,7 +294,7 @@ func TestLandingStewardStaleEngineReportsWithoutActing(t *testing.T) {
 	}
 	status := ReadStatus(b.home, b.record, b.view, b.seams)
 	row := healthRow(status.Health, "stale-engine")
-	if row == nil || row.Act != "redeploy the engine from main (deploy now); the steward acts on it once landing-deploys-the-engine rebuilds the install's engine" {
+	if row == nil || row.Act != "metasystem landing deploy" {
 		t.Fatalf("stale engine prescription: %+v", row)
 	}
 }

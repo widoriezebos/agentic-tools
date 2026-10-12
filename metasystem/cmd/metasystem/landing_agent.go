@@ -297,6 +297,9 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			proof.CommandForCommit = func(commit string) (string, error) {
 				return landingProofCommand(record.Install, record.Root, commit, proveCommandKey, proof.Git)
 			}
+			if err := plain.RestartDeployedProof(record.Install, record.Root, proof); err != nil {
+				return err
+			}
 			recoveryErr := plain.RecoverMovedMain(record.Install, record.Root, proof)
 			drainErr = errors.Join(drainErr, recoveryErr, readErr)
 			questionErr := plain.SyncPolicyQuestion(record.Install, machine, agent.now(), seams)

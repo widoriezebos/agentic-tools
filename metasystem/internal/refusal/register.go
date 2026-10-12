@@ -119,6 +119,7 @@ var Rows = []Row{
 	{Code: "LANE_PUSH_NOT_FAST_FORWARD", Owner: "internal/landing/plain", Site: "push.go#PushChecked", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_RESOLVE_EDITS", Owner: "cmd/metasystem", Site: "intent_landing_resolve.go#runIntentLandingResolve", Shape: Question, H1: StandingGuide, Forward: "landing resolve"},
 	{Code: "LANE_BATCH_MEMBERSHIP", Owner: "internal/landing/plain", Site: "batch.go#batchRefusal", Shape: Question, H1: StandingAgent},
+	{Code: "LANE_DEPLOY_MERGE", Owner: "internal/landing/plain", Site: "deploy.go#deployMerge", Shape: Question, H1: StandingGuide, Forward: "landing give-back"},
 	{Code: "LANE_BATCH_PERSON", Owner: "internal/landing/plain", Site: "batch.go#PolicyDecision", Shape: Question, H1: StandingInput},
 	{Code: "LANE_PROOF_PERSON", Owner: "internal/landing/plain", Site: "proof_admission.go#admitExecutionLocked", Shape: Agent, Override: "landing prove", Commands: 1},
 	{Code: "LANE_PROOF_BUDGET", Owner: "internal/landing/plain", Site: "proof_admission.go#admitExecutionLocked", Shape: Agent, Override: "landing prove", Commands: 1},

@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -396,11 +395,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		h.Proofs.Median = &median
 		h.Proofs.Drift = h.Proofs.Running != nil && *h.Proofs.Running > 1.5*median
 	}
-	file, err := os.Open(filepath.Join(install, "bin", "metasystem"))
-	if err == nil {
-		h.Engine.Revision, err = enginebuild.ReadStamp(file)
-		err = errors.Join(err, file.Close())
-	}
+	h.Engine.Revision, err = installedEngineStamp(install)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
@@ -518,7 +513,7 @@ func (h Health) Rows() []Fired {
 		fire("silent-agent", subject, h.Agent.Minutes, "end the silent landing agent session and wake the keeper")
 	}
 	if h.Engine.Stale {
-		fire("stale-engine", h.Engine.Revision, nil, "redeploy the engine from main (deploy now); the steward acts on it once landing-deploys-the-engine rebuilds the install's engine")
+		fire("stale-engine", h.Engine.Revision, nil, "metasystem landing deploy")
 	}
 	if b := h.Batch; b != nil && b.State != BatchClosed && !b.Open && len(b.Members) == 1 {
 		for _, a := range b.Waiting {
