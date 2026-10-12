@@ -112,6 +112,7 @@ cmd/metasystem/goalsync_mutations.go:		req.Actor.Human = f.by
 cmd/metasystem/goalsync_verbs.go:		return goal.Actor{}, err
 cmd/metasystem/goalsync_verbs.go:	return goal.Actor{Machine: machine, Lineage: lineage, Human: human}, nil
 cmd/metasystem/intent_delivery.go:	caller, err := classifyVerbCaller(root, int64(os.Getpid()))
+cmd/metasystem/intent_landing_flake.go:		result, err := goal.RecordFlake(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: now}, goal.FlakeRecordArgs{Unit: f.TestUnit, Fix: &fix})
 cmd/metasystem/intent_landing_flake.go:		result, err := record(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()},
 cmd/metasystem/intent_landing_incident.go:	return goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()}, err
 cmd/metasystem/intent_planning.go:			_, refusal := goal.ClaimAreas(projection.Tree, endpoint, projection.Tip, candidate, snapshot, readers, goal.Actor{Machine: machine, Lineage: inv.claimLineage()})
