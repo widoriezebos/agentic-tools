@@ -21,7 +21,7 @@ func laneFixApproval(root, id string) error {
 	if err != nil {
 		return err
 	}
-	projection, err := goal.Project(endpoint, true, time.Now().UTC())
+	projection, err := goal.ProjectWithDeadline(endpoint, true, time.Now().UTC(), time.After)
 	if err != nil {
 		return err
 	}
