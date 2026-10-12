@@ -69,7 +69,7 @@ func TestLandingKeeperEmptyBatchIdleBoundary(t *testing.T) {
 			t.Parallel()
 			b := newStatusBed(t)
 			at, _ := time.Parse(time.RFC3339, "2026-10-11T14:59:49Z")
-			b.lines("agent-idle.json", agentIdle{at.Format(time.RFC3339)})
+			b.lines("agent-idle.json", agentIdle{EndedAt: at.Format(time.RFC3339)})
 			p, err := agentProgress(b.install, lane.OwnerView{State: lane.OwnerRunning}, ProveSeams{Now: func() time.Time { return at.Add(time.Duration(minutes) * time.Minute) }})
 			if err != nil {
 				t.Fatal(err)
@@ -121,6 +121,9 @@ func TestLandingAgentStepLifecycleAndSanitisation(t *testing.T) {
 	p, err = agentProgress(install, lane.OwnerView{}, ProveSeams{Now: func() time.Time { return at.Add(2 * time.Minute) }})
 	if err != nil || p.Line != "agent: idle since "+at.Add(time.Minute).In(time.Local).Format("15:04") || p.Since != at.Add(time.Minute).Format(time.RFC3339) {
 		t.Fatalf("idle: %+v %v", p, err)
+	}
+	if p.LastStep == nil || p.LastStep.Verb != "prove" || p.LastStep.StartedAt != at.Format(time.RFC3339) {
+		t.Fatalf("the completed step was lost: %+v", p)
 	}
 }
 

@@ -1534,7 +1534,7 @@ var intentActionIntents = map[string][]struct {
 		{"Shape", []string{"add", "remove"}},
 	},
 	"landing": {
-		{"Read", []string{"status", "batch"}},
+		{"Read", []string{"status", "batch", "health"}},
 		{"Work", []string{"batch seal", "batch reopen", "run", "start", "drain", "stop", "restart", "prove", "push", "return", "resolve"}},
 		{"Shape", []string{"set", "unset"}},
 	},

@@ -27,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
@@ -71,6 +72,8 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
+	LoadStart             *hostload.Sample     `json:"load_start,omitempty"`
+	LoadEnd               *hostload.Sample     `json:"load_end,omitempty"`
 	Fresh                 bool                 `json:"fresh,omitempty"`
 	FoldedCommits         []string             `json:"folded_commits,omitempty"`
 	Requested             string               `json:"requested,omitempty"`
@@ -158,6 +161,8 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	Load     func(time.Time) hostload.Sample
+	ReadOnly bool
 	// Fresh bypasses saved green proofs and executes the requested check.
 	Fresh bool
 	// BudgetHome names the host budget records; empty uses the board home.
@@ -901,6 +906,12 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	}
 	result = Result{Fresh: running.Fresh, Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
 	result.BatchID, result.BatchMembers = running.BatchID, running.BatchMembers
+	load := seams.Load
+	if load == nil {
+		load = hostload.Read
+	}
+	start := load(seams.now())
+	result.LoadStart = &start
 	result.Goals, err = goalsInCommit(install, checkout, running.Commit, seams.git)
 	if err != nil {
 		return result, err
@@ -938,6 +949,8 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if seams.Gate {
 		result.Requested, result.Attributed = running.Commit, result.Commit
 	}
+	end := load(seams.now())
+	result.LoadEnd = &end
 	if result.Reason != "" {
 		fmt.Fprintf(output, "\nlanding prove: %s\n", result.Reason)
 	}
@@ -1194,13 +1207,20 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 			return <-done
 		}
 	}
+	load := seams.Load
+	if load == nil {
+		load = hostload.Read
+	}
+	start := load(seams.now())
 	err := run(shell)
+	end := load(seams.now())
 	if _, seekErr := log.Seek(0, io.SeekEnd); seekErr != nil {
 		err = errors.Join(err, seekErr)
 	}
 	observed.readLog(logPath, offset)
 	observed.finish()
 	report := observed.report
+	report.loadStart, report.loadEnd = &start, &end
 	// A named static group reports its completed verdict with a group line;
 	// it does not emit the test command's LANDING-CHECKED report.
 	if report.kind == "" && only == "fast-static-build" && (observed.static == Green || observed.static == Red) {
@@ -1337,6 +1357,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		report, runErr = runCheck(seams, dir, command, running, "", *decision, output, observed)
 	}
 	result.CountedFull = report.kind == "complete" && decision.Scope == "full"
+	result.LoadStart, result.LoadEnd = report.loadStart, report.loadEnd
 	if previous.Result != "" {
 		result.Repeat = "started"
 	}

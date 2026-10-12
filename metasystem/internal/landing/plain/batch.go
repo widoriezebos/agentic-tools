@@ -499,7 +499,7 @@ func selectBatchLocked(install, checkout, main string, registered lane.Record, p
 // extendBatchLocked retains the selection identity and merge order while its
 // automatic admission window is open. Person selections never expand.
 func extendBatchLocked(install, checkout string, batch *Batch, s ProveSeams) error {
-	if !batch.Open || batch.State == BatchClosed || batch.Selector.Value != "auto" || batch.Person != nil {
+	if !batch.Open || batch.State == BatchClosed || !automaticBatch(*batch) {
 		return nil
 	}
 	// A repair's checkpoint retains the exact selected members through its read.
@@ -517,7 +517,8 @@ func extendBatchLocked(install, checkout string, batch *Batch, s ProveSeams) err
 	}
 	var arrivals []Entry
 	for _, entry := range entries {
-		if !slices.ContainsFunc(batch.Members, func(m GoalSHA) bool { return m.Goal == entry.Goal }) {
+		admission, _ := batchAdmission(*batch, entry)
+		if admission == "admissible" && !slices.ContainsFunc(batch.Members, func(m GoalSHA) bool { return m.Goal == entry.Goal }) {
 			arrivals = append(arrivals, entry)
 		}
 	}
@@ -843,4 +844,29 @@ func memberAccounted(entries []Entry, member GoalSHA, checkout, main string, s P
 	}
 	entry := entries[index]
 	return entry.State == StateReturned || entry.State == StateSuperseded || entry.Held && len(entry.After) > 0, nil
+}
+
+func automaticBatch(batch Batch) bool { return batch.Selector.Value == "auto" && batch.Person == nil }
+
+func batchAdmission(batch Batch, entry Entry) (string, string) {
+	switch {
+	case batch.Person != nil || slices.ContainsFunc(batch.Actions, func(a BatchAction) bool { return a.Kind == "seal" && a.By != "" && a.At == batch.SealedAt }):
+		return "not admissible", "sealed by a person"
+	case strings.TrimLeft(batch.Selector.Value, "0") == "1":
+		return "not admissible", "batch cap is one"
+	case batch.Selector.Value == "":
+		return "unknown", "the admission policy is unrecorded"
+	case !automaticBatch(batch):
+		return "not admissible", "the batch does not use automatic policy"
+	case slices.ContainsFunc(batch.Members, func(m GoalSHA) bool { return m.Goal == entry.Goal }):
+		return "not admissible", "the goal is already selected in this batch"
+	case entry.SHA == "":
+		return "unknown", "the hand-in does not establish eligibility"
+	case entry.State != StateWaiting:
+		return "not admissible", "the goal is " + entry.State
+	case entry.Held:
+		return "not admissible", "the goal is held: " + entry.Reason
+	default:
+		return "admissible", "eligible under automatic admission"
+	}
 }

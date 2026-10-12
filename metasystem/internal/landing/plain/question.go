@@ -30,22 +30,55 @@ func WithdrawStaleLaneQuestion(install string, q channel.Question, seams ProveSe
 	if q.Lineage != lane.AgentLineage || channel.LaneStopCommand(q) != "" {
 		return false, nil
 	}
+	premise, err := LaneQuestionPremise(install, q, seams)
+	if err != nil || premise != "gone" {
+		return false, nil
+	}
+	_, err = channel.Withdraw(install, q.ID, "the checkout or main commit premise is no longer current", nil, channel.DestinationConfig{})
+	return err == nil, err
+}
+
+// LaneQuestionPremise judges only the explicit evidence carried by the question.
+func LaneQuestionPremise(install string, q channel.Question, seams ProveSeams) (string, error) {
+	if channel.LaneStopCommand(q) != "" {
+		satisfied, err := PolicyQuestionSatisfied(install, q)
+		if satisfied {
+			return "gone", err
+		}
+		return "current", err
+	}
+	if q.Lineage != lane.AgentLineage || channel.LaneStopCommand(q) != "" {
+		return "unknown", nil
+	}
 	facts := strings.Join(q.Facts, "\n")
-	stale := false
+	premise := "unknown"
 	if strings.Contains(strings.ToLower(facts), "checkout is not on main") {
 		branch, err := seams.git(install, "symbolic-ref", "--quiet", "--short", "HEAD")
-		stale = err == nil && branch == "main"
+		if err != nil {
+			return "unknown", err
+		}
+		if branch == "main" {
+			return "gone", nil
+		}
+		premise = "current"
 	}
 	if match := mainQuestionCommit.FindStringSubmatch(facts); len(match) > 0 {
 		main, err := checkoutGit(install, seams).main()
-		if err == nil && main != match[1] {
+		if err != nil {
+			return "unknown", err
+		}
+		if main == match[1] {
+			return "current", nil
+		}
+		if main != match[1] {
 			contained, err := checkoutGit(install, seams).contains(main, match[1])
-			stale = stale || err == nil && contained
+			if err != nil {
+				return "unknown", err
+			}
+			if contained {
+				return "gone", nil
+			}
 		}
 	}
-	if !stale {
-		return false, nil
-	}
-	_, err := channel.Withdraw(install, q.ID, "the checkout or main commit premise is no longer current", nil, channel.DestinationConfig{})
-	return err == nil, err
+	return premise, nil
 }

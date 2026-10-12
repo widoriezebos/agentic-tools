@@ -12,6 +12,47 @@ exit 0
   "outcome": "confirmed",
   "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it; 0 waiting, 0 returned in the queue; admission open",
   "data": {
+    "health": {
+      "state": "paused",
+      "goals": [],
+      "agent": {
+        "alive": false,
+        "minutes": 30,
+        "silent": false
+      },
+      "paused": {
+        "since": "2026-09-30T08:28:00Z",
+        "reason": "",
+        "minutes": 30
+      },
+      "questions": [],
+      "incidents": [],
+      "load": {
+        "now": {
+          "at": "2026-09-30T08:58:00Z",
+          "load1m": 2,
+          "load5m": 0,
+          "load15m": 0,
+          "cores": 8,
+          "available": true
+        },
+        "saturated": false,
+        "at_start": null,
+        "at_end": null
+      },
+      "engine": {
+        "revision": "",
+        "stale": false,
+        "known": false
+      },
+      "proofs": {
+        "durations": null,
+        "median": null,
+        "running": null,
+        "drift": false,
+        "samples": null
+      }
+    },
     "agent_progress": {
       "since": "2026-09-30T08:28:00Z",
       "minutes": 30,

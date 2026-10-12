@@ -45,6 +45,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-drain", args: []string{"landing", "drain"}, bed: landingDrainLayoutBed},
 		{name: "landing-start", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
+		{name: "landing-health-none", args: []string{"landing", "health"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-batch-none", args: []string{"landing", "batch"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-restart-none", args: []string{"landing", "restart"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-run", args: []string{"landing", "run"}, bed: inTheLaneCheckout(landingLayoutBed(landingLayoutRunning))},
@@ -142,8 +143,14 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		const pid = 38928
 		notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
 		owners := intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
-			plainProve: plain.ProveSeams{Now: func() time.Time { return now }, Git: func(_ string, args ...string) (string, error) {
+			plainProve: plain.ProveSeams{Load: func(time.Time) hostload.Sample {
+				return hostload.Sample{At: now.Format(time.RFC3339), Load1m: 2, Cores: 8, Available: true}
+			}, Now: func() time.Time { return now }, Git: func(_ string, args ...string) (string, error) {
 				switch strings.Join(args, " ") {
+				case "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
+					return "main", nil
+				case "ls-tree --name-only main -- plans/goals/trunk-red.json", "ls-tree --name-only main -- metasystem/plans/goals/trunk-red.json":
+					return "", nil
 				case "rev-parse --verify HEAD^{commit}":
 					return "head", nil
 				case "show head:metasystem/metasystem.conf":

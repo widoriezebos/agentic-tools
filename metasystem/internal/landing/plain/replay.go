@@ -36,6 +36,7 @@ func (r *Result) allowEnvironmentRepeat(previous Result) {
 }
 
 func observeRed(seams ProveSeams, install string, running Running, decision scopeDecision, observed *proofOutput, result, previous Result, report checkReport, runErr error) Result {
+	result.LoadStart, result.LoadEnd = report.loadStart, report.loadEnd
 	result = timedResult(result, running.Since, seams.now())
 	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
 	if result.Load == 0 {
@@ -432,7 +433,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 				// Isolated checks retain their batch context but cannot authorize a full green.
 				check := timedResult(Result{Result: Red, Commit: prefix.Commit, Tree: prefix.Tree, Scope: "scoped",
 					Goals: result.Goals, BatchID: running.BatchID, BatchMembers: running.BatchMembers,
-					Attempt: prefix.Attempt, Log: prefix.Log, Failed: report.failed, Load: report.load,
+					Attempt: prefix.Attempt, Log: prefix.Log, Failed: report.failed, Load: report.load, LoadStart: report.loadStart, LoadEnd: report.loadEnd,
 					Cause: &Cause{Kind: "unclassified", Tests: failingTests(report.failed), Evidence: prefix.Log}}, prefix.Since, seams.now())
 				if check.Load == 0 {
 					if sample := hostload.Read(seams.now()); sample.Available {

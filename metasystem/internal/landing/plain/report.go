@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 )
 
@@ -33,9 +34,10 @@ func (w *commandTail) Write(p []byte) (int, error) {
 }
 
 type checkReport struct {
-	kind   string
-	failed []FailedUnit
-	load   float64
+	loadStart, loadEnd *hostload.Sample
+	kind               string
+	failed             []FailedUnit
+	load               float64
 }
 
 // FailedChecks reads test identities only from a complete command report.

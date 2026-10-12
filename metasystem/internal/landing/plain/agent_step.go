@@ -26,6 +26,7 @@ type AgentStep struct {
 }
 
 type AgentProgress struct {
+	LastStep    *AgentStep `json:"last_step,omitempty"`
 	Step        *AgentStep `json:"step,omitempty"`
 	Since       string     `json:"since,omitempty"`
 	Minutes     int        `json:"minutes"`
@@ -35,7 +36,8 @@ type AgentProgress struct {
 }
 
 type agentIdle struct {
-	EndedAt string `json:"ended_at"`
+	EndedAt string     `json:"ended_at"`
+	Step    *AgentStep `json:"step,omitempty"`
 }
 
 // BeginAgentStep retains switches only: free text, paths and option values never enter status.
@@ -68,7 +70,7 @@ func BeginAgentStep(install, verb string, args []string, now time.Time) (func(ti
 			if current.PID != step.PID || current.StartedAt != step.StartedAt {
 				return nil
 			}
-			if err := writeAgentRecord(install, "agent-idle.json", agentIdle{ended.UTC().Format(time.RFC3339)}); err != nil {
+			if err := writeAgentRecord(install, "agent-idle.json", agentIdle{EndedAt: ended.UTC().Format(time.RFC3339), Step: &step}); err != nil {
 				return err
 			}
 			return os.Remove(filepath.Join(Dir(install), "agent-step.json"))
@@ -109,6 +111,7 @@ func agentProgress(install string, owner lane.OwnerView, seams ProveSeams, queue
 			return nil, errors.New("the agent step has no valid verb, start time or process")
 		}
 		progress.Step, progress.Since = &step, step.StartedAt
+		progress.LastStep = &step
 		progress.Minutes = int(seams.now().Sub(at) / time.Minute)
 		running := Running{Pid: step.PID, Process: step.Process}
 		live := seams.alive(running)
@@ -133,6 +136,7 @@ func agentProgress(install string, owner lane.OwnerView, seams ProveSeams, queue
 	if err == nil && idle.EndedAt > progress.Since {
 		progress.Since = idle.EndedAt
 	}
+	progress.LastStep = idle.Step
 	// A person's return is recorded activity even though it runs outside the agent session.
 	for _, entry := range queue {
 		if entry.ReturnedAt > progress.Since {

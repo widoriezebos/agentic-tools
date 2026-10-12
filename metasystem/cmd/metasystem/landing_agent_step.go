@@ -8,11 +8,11 @@ import (
 )
 
 func (inv *intentInvocation) runWithLandingStep() int {
-	if inv.command.object != "landing" {
+	if inv.command.object != "landing" && inv.command.object != "work" {
 		return inv.command.run(inv)
 	}
-	switch inv.command.action {
-	case "prove", "push", "resolve", "return", "run":
+	switch inv.command.object + " " + inv.command.action {
+	case "landing prove", "landing push", "landing resolve", "landing return", "landing run", "work build", "work review", "work wait", "work land":
 	default:
 		return inv.command.run(inv)
 	}
@@ -27,7 +27,11 @@ func (inv *intentInvocation) runWithLandingStep() int {
 	if !actor(record.Install, int64(os.Getpid())) {
 		return inv.command.run(inv)
 	}
-	finish, err := plain.BeginAgentStep(record.Install, inv.command.action, inv.raw, owners.now())
+	verb := inv.command.action
+	if inv.command.object == "work" {
+		verb = "work " + verb
+	}
+	finish, err := plain.BeginAgentStep(record.Install, verb, inv.raw, owners.now())
 	if err != nil {
 		fmt.Fprintln(inv.stderr, "the landing agent step could not be recorded:", err)
 	} else {

@@ -33,18 +33,8 @@ func expectedFullMinutes(install string) (float64, error) {
 		return 0, err
 	}
 	var minutes []float64
-	seen := map[string]bool{}
-	for _, r := range slices.Backward(results) {
-		if seen[r.Attempt] {
-			continue
-		}
-		seen[r.Attempt] = true
-		if r.Result == Green && r.Scope == "full" && r.Minutes != nil && *r.Minutes >= 0 && r.ClassificationOf == "" && !strings.HasPrefix(r.Reason, "inherits green") {
-			minutes = append(minutes, *r.Minutes)
-			if len(minutes) == 5 {
-				break
-			}
-		}
+	for _, r := range comparableProofs(results, "full") {
+		minutes = append(minutes, *r.Minutes)
 	}
 	if len(minutes) == 0 {
 		return 45, nil
@@ -310,4 +300,22 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 
 func proofMinutes(elapsed, expected float64) string {
 	return fmt.Sprintf("%.1f of %.1f min", elapsed, expected)
+}
+
+func comparableProofs(results []Result, scope string) []Result {
+	var proofs []Result
+	seen := map[string]bool{}
+	for _, r := range slices.Backward(results) {
+		if seen[r.Attempt] {
+			continue
+		}
+		seen[r.Attempt] = true
+		if r.Result == Green && r.Scope == scope && r.Minutes != nil && *r.Minutes >= 0 && r.ClassificationOf == "" && !strings.HasPrefix(r.Reason, "inherits green") {
+			proofs = append(proofs, r)
+			if len(proofs) == 5 {
+				break
+			}
+		}
+	}
+	return proofs
 }

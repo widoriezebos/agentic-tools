@@ -24,6 +24,7 @@ import (
 // whether the lane is paused and its agent alive, the queue, the running
 // proof, the last proof and the last push. An absent value is null.
 type Status struct {
+	Health        *Health        `json:"health,omitempty"`
 	AgentProgress *AgentProgress `json:"agent_progress,omitempty"`
 	lane.View
 	MainMove       MainMove        `json:"main_move"`
@@ -186,6 +187,19 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		return status
 	}
 	install := string(layout.Install)
+	var abandoned string
+	var healthResults []Result
+	var healthQueue []Line
+	defer func() {
+		if len(status.Problems) > 0 {
+			return
+		}
+		batch, _ := status.Batch.(*Batch)
+		status.Health, err = buildHealth(status, batch, pause, abandoned, healthResults, healthQueue, install, string(layout.Checkout), seams, git)
+		if err != nil {
+			said("the lane health cannot be read: " + err.Error())
+		}
+	}()
 	defer func() {
 		var err error
 		status.AgentProgress, err = agentProgress(install, view.Owner, seams, status.Queue...)
@@ -316,6 +330,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		said(progress.Unknown)
 	}
 	if err == nil {
+		healthQueue = lines
 		status.Queue = entriesOf(lines)
 	}
 	if len(status.Queue) > 0 {
@@ -357,6 +372,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	unread("the proof results", err)
 	damaged("the proof results have", skipped, resultsPath(install))
 	if err == nil && len(results) > 0 {
+		healthResults = results
 		status.LastProof = &results[len(results)-1]
 		for i := len(results) - 1; i >= 0; i-- {
 			if results[i].Trunk {
@@ -455,9 +471,14 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	status.RunningFix, err = readFix(install, true)
 	unread("the lane fix", err)
 	if err == nil && status.RunningFix != nil {
-		err = RefreshMerge(install, string(layout.Checkout), status.RunningFix, seams)
+		if seams.ReadOnly {
+			err = observeMerge(install, string(layout.Checkout), status.RunningFix, seams)
+		} else {
+			err = RefreshMerge(install, string(layout.Checkout), status.RunningFix, seams)
+		}
 		unread("the pending merge", err)
 		if status.RunningFix.State == "abandoned" {
+			abandoned = status.RunningFix.Attempt
 			// An abandoned resolution describes only the checkpoint it belonged to.
 			tip, readErr := seams.git(string(layout.Checkout), "rev-parse", "--verify", "HEAD^{commit}")
 			unread("the abandoned resolution's checkpoint", readErr)

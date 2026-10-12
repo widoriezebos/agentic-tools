@@ -12,6 +12,42 @@ exit 0
   "outcome": "confirmed",
   "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: landing agent running (pid 38928); 0 waiting, 0 returned in the queue; admission open",
   "data": {
+    "health": {
+      "state": "idle",
+      "goals": [],
+      "agent": {
+        "alive": true,
+        "minutes": 5,
+        "silent": false
+      },
+      "questions": [],
+      "incidents": [],
+      "load": {
+        "now": {
+          "at": "2026-09-30T08:58:00Z",
+          "load1m": 2,
+          "load5m": 0,
+          "load15m": 0,
+          "cores": 8,
+          "available": true
+        },
+        "saturated": false,
+        "at_start": null,
+        "at_end": null
+      },
+      "engine": {
+        "revision": "",
+        "stale": false,
+        "known": false
+      },
+      "proofs": {
+        "durations": null,
+        "median": null,
+        "running": null,
+        "drift": false,
+        "samples": null
+      }
+    },
     "agent_progress": {
       "since": "2026-09-30T08:53:00Z",
       "minutes": 5,

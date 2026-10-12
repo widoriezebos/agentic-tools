@@ -288,6 +288,17 @@ func RefreshMerge(install, checkout string, fix *Fix, seams ProveSeams) error {
 }
 
 func refreshMergeLocked(install, checkout string, fix *Fix, seams ProveSeams) error {
+	resolving := fix != nil && fix.State == "resolving"
+	if err := observeMerge(install, checkout, fix, seams); err != nil {
+		return err
+	}
+	if resolving && fix.State == "abandoned" {
+		return WriteFix(install, fix)
+	}
+	return nil
+}
+
+func observeMerge(install, checkout string, fix *Fix, seams ProveSeams) error {
 	if fix == nil || fix.State != "resolving" {
 		return nil
 	}
@@ -317,7 +328,7 @@ func refreshMergeLocked(install, checkout string, fix *Fix, seams ProveSeams) er
 		return nil
 	}
 	fix.State = "abandoned"
-	return WriteFix(install, fix)
+	return nil
 }
 
 // RecordedFixRed binds an ordinary repair to the failed proof's checkpoint.
