@@ -496,17 +496,16 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		if merge.State == "reviewing" {
 			merge.UpdateReadMinutes(seams.now())
 		}
-		raw, _, boundErr := config.Get(config.GetParams{Key: "landing.read-minutes", ConfPath: filepath.Join(install, "metasystem.conf")})
-		if errors.Is(boundErr, os.ErrNotExist) {
-			raw, boundErr = config.MustDefault("landing.read-minutes"), nil
-		}
-		bound, parseErr := strconv.ParseFloat(raw, 64)
-		if boundErr == nil && (parseErr != nil || bound <= 0) {
-			boundErr = fmt.Errorf("landing.read-minutes must be positive, got %q", raw)
-		}
+		bound, boundErr := resolutionReadBound(install)
 		unread("the merge read bound", boundErr)
-		if boundErr == nil && merge.ReadMinutes > bound {
-			status.MergeReadFinding = fmt.Sprintf("merge read ran %g min, bound %g", merge.ReadMinutes, bound)
+		if boundErr == nil && merge.State == "reviewing" {
+			status.ProofHeadline = fmt.Sprintf("reading the resolution of %s: %g of %g min", merge.Goal, merge.ReadMinutes, bound)
+			if merge.ReadMinutes > bound {
+				status.MergeReadFinding = fmt.Sprintf("merge read ran %g min, bound %g", merge.ReadMinutes, bound)
+				if merge.ReadLaneOwned && merge.Reason != "" {
+					status.MergeReadFinding += "; " + merge.Reason
+				}
+			}
 		}
 	}
 	if status.ProofHeadline != "" {

@@ -85,11 +85,42 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 		if fix.State != "reviewing" && fix.State != "resolved" {
 			err = errors.New("the merge build has not completed")
 		} else {
+			readEffects := inv.laneBatchSeams(home, registered, inv.landing().plainProve)
+			readEffects.Now = inv.landing().now
+			returned, expireErr := plain.ExpireResolutionRead(root, func(ref string) (bool, error) {
+				read, err := runner.StopRead(ref)
+				if err == nil && len(read.Uncertain) > 0 {
+					err = fmt.Errorf("resolution read jobs could not be proved stopped: %s", strings.Join(read.Uncertain, ", "))
+				}
+				return !read.Complete && len(read.Uncertain) == 0, err
+			}, readEffects)
+			if expireErr != nil {
+				return inv.render(landingLaneFailure(nil, "the resolution read could not be returned", expireErr)), true
+			}
+			if returned != nil {
+				return inv.render(intentResult{Outcome: intentConfirmed, Data: returned, Summary: returned.Reason, Details: inv.writeReturnedCard(fix.Goal), next: inv.publicArgv("landing", "status")}), true
+			}
+			current, readErr := plain.FixForAttempt(root, fix.Attempt)
+			if readErr != nil {
+				return inv.render(landingLaneFailure(nil, "the resolution read could not be read", readErr)), true
+			}
+			if current != nil {
+				fix = current
+			}
 			patch := filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".resolution.patch")
 			context := filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".context.json")
 			var diff []byte
 			var fallbackParent int
-			diff, fallbackParent, err = inv.mergeResolutionDiff(checkout, fix)
+			var paths []string
+			diff, fallbackParent, err = inv.mergeResolutionDiff(checkout, fix, &paths)
+			if err == nil && fallbackParent == 0 && !resolutionNeedsRead(paths) {
+				fix.State = "done"
+				fix.Reason = fmt.Sprintf("resolution of %s reviewed by its check only: %d test/records files, no production code", fix.Goal, len(paths))
+				if err = plain.WriteFix(root, fix); err != nil {
+					return inv.render(landingLaneFailure(nil, "the resolution check could not be recorded", err)), true
+				}
+				return inv.render(intentResult{Outcome: intentConfirmed, Data: fix, Summary: fix.Reason, next: inv.publicArgv("landing", "prove")}), true
+			}
 			if err == nil {
 				err = os.WriteFile(patch, diff, 0o600)
 			}
@@ -135,6 +166,7 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 					if err == nil {
 						if fix.ReadStartedAt == "" {
 							fix.ReadStartedAt = inv.landing().now().UTC().Format(time.RFC3339Nano)
+							fix.ReadLaneOwned = true
 							err = plain.WriteFix(root, fix)
 						}
 						if err == nil {
@@ -166,9 +198,14 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 					result.next = inv.publicArgv("landing", "prove")
 				}
 				if err == nil {
-					fix.Reason = ""
+					if read.Complete || fix.State != "reviewing" {
+						fix.Reason = ""
+					}
 					if !read.Complete {
 						fix.State = "reviewing"
+						if fix.Reason != "" {
+							result.Details = append(result.Details, fix.Reason)
+						}
 					}
 					err = plain.WriteFix(root, fix)
 				}
@@ -193,7 +230,7 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 // excluding generated paths. A resolution that kept the automatic tree's side
 // is judged on its recorded conflicted paths against the parent whose side
 // was not kept. The returned parent number identifies that fallback.
-func (inv *intentInvocation) mergeResolutionDiff(checkout string, fix *plain.Fix) ([]byte, int, error) {
+func (inv *intentInvocation) mergeResolutionDiff(checkout string, fix *plain.Fix, paths ...*[]string) ([]byte, int, error) {
 	parents, err := inv.work().git(checkout, "rev-list", "--parents", "-n", "1", fix.Commit)
 	if err != nil {
 		return nil, 0, err
@@ -223,7 +260,7 @@ func (inv *intentInvocation) mergeResolutionDiff(checkout string, fix *plain.Fix
 	args := append([]string{"diff", "--binary", strings.TrimSpace(automatic), fix.Commit + "^{tree}", "--"}, exclusions...)
 	diff, err := inv.work().git(checkout, args...)
 	if err != nil || len(bytes.TrimSpace(diff)) > 0 {
-		return diff, 0, err
+		return diff, 0, errors.Join(err, inv.resolutionPaths(checkout, args, paths))
 	}
 	for parent := 1; parent <= 2; parent++ {
 		args = []string{"diff", "--binary", commits[parent], fix.Commit + "^{tree}", "--"}
@@ -233,8 +270,49 @@ func (inv *intentInvocation) mergeResolutionDiff(checkout string, fix *plain.Fix
 		args = append(args, exclusions...)
 		diff, err = inv.work().git(checkout, args...)
 		if err != nil || len(bytes.TrimSpace(diff)) > 0 {
-			return diff, parent, err
+			return diff, parent, errors.Join(err, inv.resolutionPaths(checkout, args, paths))
 		}
 	}
 	return nil, 2, errors.New("the resolved merge has no reviewable diff on its recorded conflict paths")
+}
+
+func (inv *intentInvocation) resolutionPaths(checkout string, args []string, paths []*[]string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	args = append([]string{"diff", "--name-only", "-z", "--no-renames"}, args[2:]...)
+	raw, err := inv.work().git(checkout, args...)
+	if err != nil {
+		return err
+	}
+	for _, path := range strings.Split(strings.TrimSuffix(string(raw), "\x00"), "\x00") {
+		if path != "" {
+			path = strings.TrimPrefix(path, strings.TrimSuffix(inv.layout.InstallationRel, "/")+"/")
+			*paths[0] = append(*paths[0], path)
+		}
+	}
+	return nil
+}
+
+// resolutionNeedsRead excludes tests and records; production Go files always need a read.
+func resolutionNeedsRead(paths []string) bool {
+	for _, path := range paths {
+		if strings.HasSuffix(path, "_test.go") {
+			continue
+		}
+		if strings.HasSuffix(path, ".go") {
+			return true
+		}
+		record := false
+		for _, part := range strings.Split(filepath.ToSlash(path), "/") {
+			if part == "testdata" || part == "plans" || part == "memory" || part == "records" || part == "skills" {
+				record = true
+				break
+			}
+		}
+		if !record {
+			return true
+		}
+	}
+	return false
 }

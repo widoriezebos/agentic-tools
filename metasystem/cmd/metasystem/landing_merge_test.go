@@ -209,6 +209,17 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 				}
 			}
 			now := time.Date(2026, 10, 11, 12, 0, 0, 0, time.UTC)
+			conf := filepath.Join(root, "metasystem.conf")
+			config, err := os.OpenFile(conf, os.O_APPEND|os.O_WRONLY|os.O_CREATE, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := config.WriteString("\nlanding.read-minutes=25\n"); err != nil {
+				t.Fatal(err)
+			}
+			if err := config.Close(); err != nil {
+				t.Fatal(err)
+			}
 			owners.landing.now = func() time.Time { return now }
 			b.starter.hold = "read"
 			if code, output := reviewMerge(); code != 124 {

@@ -24,6 +24,7 @@ func TestLandingStatusMergeReadBoundIsOnlyAFinding(t *testing.T) {
 		{"under", "reviewing", "", 19, false},
 		{"at bound", "reviewing", "", 20, false},
 		{"over", "reviewing", "", 21, true},
+		{"refused lane return", "reviewing", "", 21, true},
 		{"completed", "done", "", 21, false},
 		{"minutes only", "reviewing", "", 21, true},
 		{"override", "reviewing", "landing.read-minutes=25\n", 21, false},
@@ -39,6 +40,10 @@ func TestLandingStatusMergeReadBoundIsOnlyAFinding(t *testing.T) {
 			fix.State = tc.state
 			fix.ReadStartedAt = laneTestNow.UTC().Format(time.RFC3339Nano)
 			fix.ReadMinutes = tc.minutes
+			if tc.name == "refused lane return" {
+				fix.ReadLaneOwned = true
+				fix.Reason = "merge read ran 21 min, bound 20; the return needs a person; landing give-back " + fix.Goal
+			}
 			if tc.name == "minutes only" {
 				fix.ReadStartedAt = ""
 			}
@@ -58,6 +63,19 @@ func TestLandingStatusMergeReadBoundIsOnlyAFinding(t *testing.T) {
 			code, output := b.run(t, b.root, "status")
 			if code != 0 || strings.Contains(oneSpaced(output), "merge read ran 21 min, bound 20") != tc.finding {
 				t.Fatalf("status exit=%d %s", code, output)
+			}
+			if tc.name == "refused lane return" && !strings.Contains(oneSpaced(output), "landing give-back "+fix.Goal) {
+				t.Fatalf("person command missing from finding: %s", output)
+			}
+			if tc.state == "reviewing" {
+				bound := 20
+				if tc.name == "override" {
+					bound = 25
+				}
+				want := fmt.Sprintf("reading the resolution of %s: %g of %d min", fix.Goal, tc.minutes, bound)
+				if !strings.Contains(oneSpaced(output), want) {
+					t.Fatalf("running read clock missing %q: %s", want, output)
+				}
 			}
 			code, output = b.run(t, b.root, "status", "--json")
 			var result struct{ Data plain.Status }

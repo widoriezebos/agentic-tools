@@ -50,7 +50,7 @@ When `landing status --json` shows no batch member left waiting or running (ever
 
 ## The loop
 
-Read `metasystem landing status --json` before each step. When `landing status --json` shows no batch member left waiting or running (every member landed, returned or superseded), end your turn at once — unless you were woken with `full-due` (case 8) or main owes a proof with no active batch (step 1): run that proof first. The keeper wakes the agent when there is work; a person's return of the last member ends your turn.
+When `landing status --json` shows no batch member left waiting or running (every member landed, returned or superseded), end your turn at once — unless you were woken with `full-due` (case 8) or main owes a proof with no active batch (step 1): run that proof first. The keeper wakes the agent when there is work; a person's return of the last member ends your turn.
 
 The built-in `auto` policy admits every eligible waiting goal until the full proof starts.
 Numeric caps and person selections keep their recorded membership.
@@ -81,6 +81,7 @@ human return restores no automatic allowance.
    never left unpushed: when the push refuses because main moved, do case 5 before anything else.
    When `landing push` says "not admitted for execution" after `landing give-back` of a merged member, rebuild on the current selection as after a code move of main (case 5).
 3. Otherwise: `git fetch origin`, then read `landing status --json` again.
+   When this step has a member to merge or a conflict to resolve, launch that job (the resolution job first) before any other reading; the engine records the step at launch.
    A freshly prepared batch with nothing merged yet merges its recorded members (cases 1 and 2),
    whatever `main_move` says: a freshly prepared batch with nothing merged yet always starts with
    `git fetch origin` and `git checkout --detach origin/main`, then merges its recorded members

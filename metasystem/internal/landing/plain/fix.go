@@ -34,6 +34,7 @@ type Fix struct {
 	CheckResult   string  `json:"check_result,omitempty"`
 	ReadMinutes   float64 `json:"read_minutes,omitempty"`
 	ReadStartedAt string  `json:"read_started_at,omitempty"`
+	ReadLaneOwned bool    `json:"read_lane_owned,omitempty"`
 
 	Paths     []conflict.Path        `json:"paths,omitempty"`
 	Tip       string                 `json:"tip,omitempty"`
