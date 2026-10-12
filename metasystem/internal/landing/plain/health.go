@@ -31,6 +31,7 @@ type Health struct {
 	StalePendingMerge   string           `json:"stale_pending_merge,omitempty"`
 	SealedBehindMain    bool             `json:"sealed_behind_main,omitempty"`
 	State               string           `json:"state"`
+	Stops               []Stop           `json:"stops,omitempty"`
 	Goals               []GoalHealth     `json:"goals"`
 	Batch               *BatchHealth     `json:"batch,omitempty"`
 	Agent               AgentHealth      `json:"agent"`
@@ -147,6 +148,15 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		return nil, err
 	}
 	h.Report = report.Summary
+	stops, err := OpenStops(install)
+	if err != nil {
+		return nil, err
+	}
+	for _, stop := range stops {
+		if laneLoopStop(stop) {
+			h.Stops = append(h.Stops, stop)
+		}
+	}
 	interventions, err := readLines[Intervention](interventionsPath(install))
 	if err != nil {
 		return nil, err
@@ -174,7 +184,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	if status.RunningFix != nil && status.RunningFix.State == "resolving" {
 		h.State = "resolving"
 	}
-	if (status.Paused || status.Stop != nil) && h.State != "stopped" && h.State != "held" {
+	if status.Paused && h.State != "stopped" && h.State != "held" {
 		h.State = "paused"
 	}
 	if status.RunningProof != nil && status.RunningProof.State == "running" {
@@ -191,7 +201,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			end = e.ReturnedAt
 		}
 		minutes := elapsedMinutes(e.At, end)
-		if e.State == StateLanded {
+		if e.State == StateLanded || e.State == StateReturned {
 			landed, err := time.Parse(time.RFC3339Nano, end)
 			if minutes == nil || err != nil || landed.Before(now.Add(-landedWindow)) || landed.After(now) {
 				continue
@@ -245,8 +255,6 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	h.SealedBehindMain = batch != nil && batch.State != BatchClosed && !batch.Open && batch.SealedAt != "" && status.MainMove.Kind == "code"
 	if status.Paused {
 		h.Paused = &PauseHealth{Since: pause.At, Reason: pause.Reason, Minutes: elapsedMinutes(pause.At, stamp)}
-	} else if status.Stop != nil {
-		h.Paused = &PauseHealth{Since: status.Stop.At, Reason: status.Stop.Evidence, Minutes: elapsedMinutes(status.Stop.At, stamp)}
 	}
 	h.Agent.Alive = status.AgentAlive
 	if p := status.AgentProgress; p != nil {
@@ -597,6 +605,9 @@ func (h Health) Text() string {
 	fmt.Fprintf(&out, "agent: alive %t; last step %s, %s min; waiting on %s\n", h.Agent.Alive, h.Agent.Verb, measured(h.Agent.Minutes), h.Agent.WaitingOn)
 	if p := h.Paused; p != nil {
 		fmt.Fprintf(&out, "paused: since %s, %s min; %s\n", lane.LocalText(p.Since), measured(p.Minutes), p.Reason)
+	}
+	for _, stop := range h.Stops {
+		fmt.Fprintf(&out, "open loop stop: %s; %s; %s\n", stop.Loop, stop.Words(), stop.Command())
 	}
 	fmt.Fprintln(&out, "questions:")
 	for _, q := range h.Questions {

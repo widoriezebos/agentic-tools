@@ -49,6 +49,91 @@ func OpenStops(install string) ([]Stop, error) {
 	return open, err
 }
 
+func laneLoopStop(s Stop) bool {
+	return s.Loop == "lane-proof" || s.Loop == "lane-gate" || s.Loop == "lane-return"
+}
+
+// closeGoneLoopStops retains unknown subjects and closes only obsolete lane loops.
+func closeGoneLoopStops(install string, status Status, now time.Time) error {
+	return withLock(install, func() error {
+		proofs, err := readLines[Result](resultsPath(install))
+		if err != nil {
+			return err
+		}
+		gates, err := readLines[Result](gatesPath(install))
+		if err != nil {
+			return err
+		}
+		running, recorded, _, err := ReadRunning(install, ProveSeams{Alive: func(Running) bool { return false }})
+		if err != nil {
+			return err
+		}
+		if r := running; recorded && !r.Checkpoint {
+			result := Result{Attempt: r.Attempt, Trunk: r.Trunk, BatchID: r.BatchID, Goals: r.BatchMembers}
+			if len(result.Goals) == 0 && status.RunningProof != nil && status.RunningProof.Attempt == r.Attempt {
+				for _, name := range status.RunningProof.Goals {
+					result.Goals = append(result.Goals, GoalSHA{Goal: name})
+				}
+			}
+			if r.Gate {
+				gates = append(gates, result)
+			} else {
+				proofs = append(proofs, result)
+			}
+		}
+		return closeMatchingStopsLocked(install, "subject gone", now, func(s Stop) bool {
+			if !laneLoopStop(s) {
+				return false
+			}
+			if s.Loop == "lane-return" && s.Subject == "lane" {
+				return s.Attempt != status.Owner.Barren
+			}
+			results := proofs
+			if s.Loop == "lane-gate" {
+				results = gates
+			}
+			subjects := strings.Split(s.Subject, ", ")
+			targets, current := map[string]string{}, ""
+			for _, r := range results {
+				if r.Trunk != s.Trunk || !s.Trunk && !slices.ContainsFunc(r.Goals, func(g GoalSHA) bool { return slices.Contains(subjects, g.Goal) }) {
+					continue
+				}
+				if s.ProofAttempt != "" && r.Attempt == s.ProofAttempt {
+					for _, g := range r.Goals {
+						targets[g.Goal] = g.SHA
+					}
+				}
+				if s.Trunk || s.BatchID != "" && r.BatchID == s.BatchID || !slices.ContainsFunc(subjects, func(name string) bool {
+					return !slices.ContainsFunc(r.Goals, func(g GoalSHA) bool { return g.Goal == name })
+				}) {
+					current = r.Attempt
+				}
+			}
+			if s.Loop != "lane-return" && s.ProofAttempt != "" && current != "" && current != s.ProofAttempt {
+				return true
+			}
+			for _, name := range subjects {
+				sha := targets[name]
+				if s.Loop == "lane-return" {
+					sha = s.Tree
+				}
+				found := false
+				for i := len(status.Queue) - 1; i >= 0; i-- {
+					e := status.Queue[i]
+					if e.Goal == name && (sha == "" || e.SHA == sha) {
+						found = e.State == StateLanded || e.State == StateReturned || e.State == StateSuperseded
+						break
+					}
+				}
+				if !found {
+					return false
+				}
+			}
+			return len(subjects) > 0
+		})
+	})
+}
+
 func stopKey(s Stop) string {
 	if s.Decision == "close" && s.StoppedAt != nil {
 		s.At = *s.StoppedAt

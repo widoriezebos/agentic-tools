@@ -354,14 +354,14 @@ func TestLandingStewardOpenLoopStopBoundsActs(t *testing.T) {
 	stop := Stop{Loop: "lane-proof", Subject: "main", Decision: "stop", Evidence: "a person must decide", At: bedNow.Add(-time.Minute).Format(time.RFC3339)}
 	b.lines("stops.jsonl", stop)
 	run := b.step(bedNow)
-	if len(b.calls) != 0 || len(run.Interventions) != 0 || strings.Count(run.Line, "bounded: a person's stop is open") != 3 {
-		t.Fatalf("acted during open stop: %+v calls=%v", run, b.calls)
+	if len(b.calls) == 0 || len(run.Interventions) == 0 || strings.Contains(run.Line, "a person's stop is open") {
+		t.Fatalf("loop stop bounded the steward: %+v calls=%v", run, b.calls)
 	}
 	stop.Decision = "close"
 	b.lines("stops.jsonl", stop)
 	closed := b.step(bedNow.Add(time.Minute))
-	if len(b.calls) == 0 || len(closed.Interventions) == 0 {
-		t.Fatalf("closed stop still bounded: %+v calls=%v", closed, b.calls)
+	if len(closed.Interventions) != 1 || closed.Interventions[0].Row != "unproven-incidents" || !strings.Contains(closed.Line, "already acted within 60 minutes") {
+		t.Fatalf("closing a loop stop lost the intervention bound: %+v calls=%v", closed, b.calls)
 	}
 }
 

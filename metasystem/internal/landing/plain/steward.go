@@ -66,8 +66,15 @@ func StewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 			return lane.OwnerProbe{}, errors.New("the landing agent's process cannot be observed")
 		}
 	}
-	view := lane.BuildView(lane.ViewSources{Home: home, Now: now, Owner: effects.Owner})
+	view := lane.BuildView(lane.ViewSources{Home: home, Now: now, Owner: effects.Owner, Fingerprint: KeeperFingerprint})
 	status := ReadStatus(home, record, view, seams)
+	if len(status.Problems) > 0 || status.Health == nil {
+		return run, fmt.Errorf("the lane steward cannot read status: %s", strings.Join(status.Problems, "; "))
+	}
+	if err = closeGoneLoopStops(record.Install, status, now); err != nil {
+		return run, err
+	}
+	status = ReadStatus(home, record, view, seams)
 	if len(status.Problems) > 0 || status.Health == nil {
 		return run, fmt.Errorf("the lane steward cannot read status: %s", strings.Join(status.Problems, "; "))
 	}
@@ -100,9 +107,6 @@ func StewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 			if act && previous.Row == row.Row && previous.Subject == row.Subject && (parseErr != nil || now.Sub(at) < time.Hour) {
 				reason = "bounded: already acted within 60 minutes"
 			}
-		}
-		if act && status.Stop != nil {
-			reason = "bounded: a person's stop is open"
 		}
 		if reason != "" {
 			lines = append(lines, row.Row+": "+row.Subject+"; "+reason)

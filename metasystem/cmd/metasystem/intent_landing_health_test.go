@@ -88,6 +88,9 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 	if engine == "" {
 		t.Fatal("the package did not build the CLI")
 	}
+	stop, err := json.Marshal(plain.Stop{Loop: "lane-proof", Subject: "waiting", Decision: "stop", At: laneTestNow.UTC().Format(time.RFC3339Nano), Class: "waiting goal needs proof"})
+	helmMust(t, err)
+	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.installation), "stops.jsonl"), append(stop, '\n'), 0600))
 	for _, args := range [][]string{{"landing", "health"}, {"landing", "health", "--json"}, {"landing", "health", "unexpected"}} {
 		cmd := exec.CommandContext(t.Context(), engine, args...)
 		cmd.Dir = b.checkout
@@ -101,6 +104,15 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 		}
 		if err != nil || !strings.Contains(string(out), "nothing fires") {
 			t.Fatalf("%v: %v %s", args, err, out)
+		}
+		if args[len(args)-1] == "--json" {
+			var result struct{ Data plain.Health }
+			helmMust(t, json.Unmarshal(out, &result))
+			if result.Data.State != "idle" || result.Data.Paused != nil || len(result.Data.Stops) != 1 {
+				t.Fatalf("loop stop paused the CLI or disappeared: %s", out)
+			}
+		} else if !strings.Contains(string(out), "waiting goal needs proof") {
+			t.Fatalf("CLI omitted the retained loop stop's reason: %s", out)
 		}
 		if !strings.Contains(string(out), "redeploy the engine from main") || !strings.Contains(string(out), "deployed") {
 			t.Fatalf("CLI omitted the intervention: %s", out)
