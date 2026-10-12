@@ -141,7 +141,7 @@ func TestLandingProveRecordsEachFlakeOnce(t *testing.T) {
 					t.Fatalf("missing exact test identity %s", name)
 				}
 				entry := entries[index]
-				if entry.TestUnit != "u/a" || entry.TestName != name || entry.Class != goal.TrunkRedClassFlake || entry.FixGoal != "fix-flaky-u-a" || entry.Closed != nil || entry.AllowanceUntil != "" || entry.Owner != (goal.TrunkRedOwner{}) || len(entry.Sightings) != 1 {
+				if entry.TestUnit != "u/a" || entry.TestName != name || entry.Class != goal.TrunkRedClassFlake || entry.FixGoal != "" || entry.Closed != nil || entry.AllowanceUntil != "" || entry.Owner != (goal.TrunkRedOwner{}) || len(entry.Sightings) != 1 {
 					t.Fatalf("test entry: %+v", entry)
 				}
 				s := entry.Sightings[0]
@@ -157,9 +157,12 @@ func TestLandingProveRecordsEachFlakeOnce(t *testing.T) {
 					}
 				}
 			}
-			fix, problems := goal.ParseFile([]byte(ledger.goalRecord("fix-flaky-u-a")))
-			if len(problems) != 0 || fix.Approved != nil || fix.Claimed != nil || fix.State != goal.StateQueued || strings.Count(fix.NextStep, "Flaky:") != 1 {
-				t.Fatalf("one unapproved fix: %+v %v", fix, problems)
+			files, err := ledger.repo.Files(ledger.tip(), "plans/goals/")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, exists := files["plans/goals/fix-flaky-u-a.md"]; exists {
+				t.Fatal("the recorder opened a package fix before the steward")
 			}
 			before := ledger.tip()
 			replay, err := goal.RecordFlake(request, observation)
@@ -181,7 +184,7 @@ func TestLandingProveRecordsEachFlakeOnce(t *testing.T) {
 				t.Fatalf("legacy and per-test facts did not join: %+v", facts)
 			}
 			for _, fact := range facts {
-				if fact.TestUnit == "u/a" && (len(fact.Sightings) != 2 || fact.Sightings[0].LogPath != "legacy.log" || fact.FixGoal != "fix-flaky-u-a") {
+				if fact.TestUnit == "u/a" && (len(fact.Sightings) != 2 || fact.Sightings[0].LogPath != "legacy.log" || fact.FixGoal != "") {
 					t.Fatalf("legacy history or newer fix lost: %+v", fact)
 				}
 			}

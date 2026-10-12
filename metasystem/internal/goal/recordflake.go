@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,6 +13,8 @@ import (
 
 // FlakeRecordArgs describes a failed check followed by a passing repeat on one tree.
 type FlakeRecordArgs struct {
+	ObserveOnly                                            bool
+	Fix                                                    *FlakeFix
 	Unit, Batch, Commit, Tree, Attempt, LogPath, LogDigest string
 	Tests, Surfaces                                        []string
 	Load                                                   float64
@@ -22,10 +25,11 @@ type FlakeRecordArgs struct {
 
 // FlakeRecordResult names the fix and the number of sightings in the register.
 type FlakeRecordResult struct {
-	FixGoal   string
-	Action    string // opened | reopened | extended
-	Sightings int
-	Publish   PublishResult
+	FixOpenedAt string
+	FixGoal     string
+	Action      string // opened | reopened | extended
+	Sightings   int
+	Publish     PublishResult
 }
 
 // RecordFlake records the failed check and routes its fix in one publication.
@@ -52,10 +56,14 @@ func recordFlake(r VerbRequest, args FlakeRecordArgs, publish func(Endpoint, Pub
 		return result, err
 	}
 	for _, entry := range FlakeFacts(tree.TrunkRed) {
-		if entry.TestUnit != args.Unit || len(entry.Sightings) < result.Sightings || !trunkRedSightingExists(entry.Sources, entry.Identity, r.opid()) {
+		if entry.TestUnit != args.Unit || len(entry.Sightings) < result.Sightings || args.Fix == nil && !trunkRedSightingExists(entry.Sources, entry.Identity, r.opid()) || args.Fix != nil && entry.Identity != args.Fix.Identity {
 			continue
 		}
 		result.FixGoal, result.Sightings, result.Action = entry.FixGoal, len(entry.Sightings), "extended"
+		result.FixOpenedAt = entry.FixOpenedAt
+		if entry.FixGoal == "" {
+			continue
+		}
 		f := tree.Live[entry.FixGoal]
 		if f == nil {
 			f, _ = tree.Archived(entry.FixGoal)
@@ -79,6 +87,9 @@ func recordFlake(r VerbRequest, args FlakeRecordArgs, publish func(Endpoint, Pub
 }
 
 func flakeRecordRequest(r VerbRequest, args FlakeRecordArgs) (PublishRequest, error) {
+	if args.Fix != nil {
+		return flakeFixRequest(r, args)
+	}
 	if strings.TrimSpace(args.Unit) == "" || len(args.Tests) == 0 || r.Now.IsZero() {
 		return PublishRequest{}, fmt.Errorf("recording a flaky test needs its unit, failed tests, and the time it was seen")
 	}
@@ -133,6 +144,14 @@ func flakeRecordRequest(r VerbRequest, args FlakeRecordArgs) (PublishRequest, er
 		entry := openTrunkRedByIdentity(entries, red.Groups[0].Identity)
 		for _, group := range groups {
 			current := openTrunkRedByIdentity(entries, group.Identity)
+			if args.ObserveOnly {
+				current.FixGoal, current.FixOpenedAt = "", ""
+			}
+			for _, prior := range FlakeFacts(tree.TrunkRed) {
+				if args.ObserveOnly && prior.Identity == current.Identity && tree.Live[prior.FixGoal] != nil {
+					current.FixGoal, current.FixOpenedAt = prior.FixGoal, prior.FixOpenedAt
+				}
+			}
 			sighting := &current.Sightings[len(current.Sightings)-1]
 			sighting.Load, sighting.Surfaces, sighting.Repeat = args.Load, args.Surfaces, args.Repeat
 			if output, ok := args.Outputs[current.TestName]; ok {
@@ -143,6 +162,27 @@ func flakeRecordRequest(r VerbRequest, args FlakeRecordArgs) (PublishRequest, er
 				rerun.Output = &output
 				sighting.Rerun = &rerun
 			}
+		}
+		if args.ObserveOnly {
+			for _, fact := range FlakeFacts(entries) {
+				if fact.TestUnit != args.Unit || !slices.Contains(args.Tests, fact.TestName) || tree.Live[fact.FixGoal] == nil {
+					continue
+				}
+				for _, group := range groups {
+					current := openTrunkRedByIdentity(entries, group.Identity)
+					if current.TestName == fact.TestName {
+						current.FixGoal, current.FixOpenedAt = fact.FixGoal, fact.FixOpenedAt
+					}
+				}
+				if file := tree.Live[fact.FixGoal]; file != nil {
+					line := fmt.Sprintf("Flaky: %s %s; attempt %s; log %s; load %g; seen %d times.", args.Unit, fact.TestName, args.Attempt, args.LogPath, args.Load, len(fact.Sightings))
+					file.NextStep = appendNextStep(file.NextStep, line)
+					touch(file, r, "record-flake", []string{file.Id})
+					changes = append(changes, Change{Path: livePath(file.Id), Content: RenderFile(file)})
+				}
+			}
+			changes[0].Content = renderTrunkRedState(entries, tree.Cadence, tree.CadenceClaim)
+			return changes, nil
 		}
 		count := len(entry.Sightings)
 		for _, prior := range tree.TrunkRed {

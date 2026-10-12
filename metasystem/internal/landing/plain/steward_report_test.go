@@ -2,6 +2,8 @@ package plain
 
 import (
 	"encoding/json"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -12,6 +14,33 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
+
+func TestLandingStewardReportUnreadableFlakeGoalKeepsHour(t *testing.T) {
+	t.Parallel()
+	for _, malformed := range []bool{false, true} {
+		t.Run(fmt.Sprint(malformed), func(t *testing.T) {
+			t.Parallel()
+			b := newReportBed(t)
+			b.status.Health = &Health{Flakes: []goal.FlakeFact{{TrunkRedEntry: goal.TrunkRedEntry{FixGoal: "missing-fix"}}}}
+			git := b.seams.Git
+			b.seams.Git = func(dir string, args ...string) (string, error) {
+				if args[0] == "show" && strings.Contains(args[1], "missing-fix.md") {
+					if malformed {
+						return "invalid goal", nil
+					}
+					return "", errors.New("goal file missing at accepted ref")
+				}
+				return git(dir, args...)
+			}
+			b.report(b.now)
+			for _, want := range []string{"missing-fix cannot be read", "### Quality", "### Speed", "### Tokens"} {
+				if !strings.Contains(b.text(), want) {
+					t.Fatalf("report missing %q: %s", want, b.text())
+				}
+			}
+		})
+	}
+}
 
 type reportBed struct {
 	*statusBed

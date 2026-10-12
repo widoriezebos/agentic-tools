@@ -182,7 +182,7 @@ func TestLandingFlakeRecordFieldsAndPublication(t *testing.T) {
 				},
 				recordFlake: func(r goal.VerbRequest, args goal.FlakeRecordArgs) (goal.FlakeRecordResult, error) {
 					called = true
-					want := goal.FlakeRecordArgs{Unit: record.Unit, Tests: record.Tests, Surfaces: record.Surfaces, Commit: record.Commit, Tree: record.Tree, Attempt: record.Attempt, LogPath: record.Log, Load: record.Load, Repeat: record.Repeat, Rerun: goal.TrunkRedRerun{Attempt: record.RepeatAttempt, LogPath: record.RepeatLog}}
+					want := goal.FlakeRecordArgs{ObserveOnly: true, Unit: record.Unit, Tests: record.Tests, Surfaces: record.Surfaces, Commit: record.Commit, Tree: record.Tree, Attempt: record.Attempt, LogPath: record.Log, Load: record.Load, Repeat: record.Repeat, Rerun: goal.TrunkRedRerun{Attempt: record.RepeatAttempt, LogPath: record.RepeatLog}}
 					if !reflect.DeepEqual(args, want) || !reflect.DeepEqual(r.Endpoint, endpoint) || r.Actor != (goal.Actor{Machine: "lane", Lineage: lane.AgentLineage}) || r.Now != laneTestNow || r.Ulid == "" {
 						t.Fatalf("record request = %+v %+v", r, args)
 					}

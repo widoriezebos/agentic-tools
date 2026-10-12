@@ -142,6 +142,7 @@ type TrunkRedClosure struct {
 }
 
 type TrunkRedEntry struct {
+	FixOpenedAt  string             `json:"fixOpenedAt,omitempty"`
 	TestUnit     string             `json:"testUnit,omitempty"`
 	TestName     string             `json:"testName,omitempty"`
 	ID           string             `json:"id"`

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -102,6 +103,26 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 			}
 			if i.Closed != nil && inHour(i.Closed.At) {
 				fmt.Fprintf(&out, "- Incident %s closed: %s\n", i.ID, i.Closed.Why)
+			}
+		}
+		for _, act := range acts {
+			if act.Row == "confirmed-flake" && inHour(act.At) && strings.HasPrefix(act.What, "opened ") && !strings.HasPrefix(act.Outcome, "failed:") {
+				fmt.Fprintf(&out, "- Flake goal %s; sightings %s\n", act.What, act.Why)
+			}
+		}
+		if status.Health != nil {
+			for _, f := range status.Health.Flakes {
+				if f.FixGoal == "" {
+					continue
+				}
+				file, err := readFlakeFixGoal(install, checkout, f.FixGoal, seams)
+				if err != nil {
+					fmt.Fprintf(&out, "- Flake fix goal %s cannot be read: %v\n", f.FixGoal, err)
+					continue
+				}
+				if file.State != goal.StateDone && file.State != goal.StateAbandoned {
+					fmt.Fprintf(&out, "- Flake fix goal %s still open: %s\n", f.FixGoal, file.State)
+				}
 			}
 		}
 		fmt.Fprintln(&out, "\n### Speed")

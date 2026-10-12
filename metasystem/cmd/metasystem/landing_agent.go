@@ -390,6 +390,7 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 	seams := (laneVerbOwners{plainProve: agent.proofEffects}).proveSeams(repo)
 	seams.Machine = agent.machine
 	seams.Steward = &plain.StewardEffects{Owner: agent.probe,
+		FlakeFix: (laneVerbOwners{}).landingFlakeFixer(repo),
 		Settle: func(record lane.Record) (string, error) {
 			layout, err := record.Layout()
 			if err != nil {

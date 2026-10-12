@@ -19,9 +19,11 @@ import (
 
 // Health is the lane's recorded evidence and measured ages; reading it acts on nothing.
 type Health struct {
-	Report              string         `json:"report,omitempty"`
-	ReportPath          string         `json:"-"`
-	Interventions       []Intervention `json:"interventions,omitempty"`
+	Flakes              []goal.FlakeFact  `json:"flakes,omitempty"`
+	FlakeGoalStates     map[string]string `json:"flake_goal_states,omitempty"`
+	Report              string            `json:"report,omitempty"`
+	ReportPath          string            `json:"-"`
+	Interventions       []Intervention    `json:"interventions,omitempty"`
 	observedAt          time.Time
 	StateReason         string           `json:"state_reason,omitempty"`
 	AdmissibleWaiting   []string         `json:"admissible_waiting,omitempty"`
@@ -290,9 +292,18 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	if err != nil {
 		return nil, err
 	}
+	h.Flakes = goal.FlakeFacts(incidents)
+	h.FlakeGoalStates = map[string]string{}
+	for _, f := range h.Flakes {
+		if f.FixGoal != "" {
+			if file, err := readFlakeFixGoal(install, checkout, f.FixGoal, seams); err == nil {
+				h.FlakeGoalStates[f.FixGoal] = file.State
+			}
+		}
+	}
 	proven := slices.ContainsFunc(results, func(r Result) bool { return r.Trunk && r.Commit == main && (r.Result == Green || r.Result == Red) })
 	for _, incident := range incidents {
-		if incident.Closed != nil {
+		if incident.Closed != nil || incident.EntryClass() == goal.TrunkRedClassFlake {
 			continue
 		}
 		fact := IncidentHealth{ID: incident.ID, Test: strings.TrimSpace(incident.TestUnit + " " + incident.TestName), Class: incident.EntryClass(), Repeat: "none"}
@@ -451,8 +462,13 @@ func (h Health) Rows() []Fired {
 		if r.Result == Red && saturated && len(r.FlakeRepeats) == 0 && len(r.Flakes) == 0 && !r.RepeatComplete {
 			fire("suspected-contention", r.Commit, r.Minutes, "repeat by name before classifying; the recorded attribution stands")
 		}
-		if healthRepeat(*r) == Green {
-			fire("confirmed-flake", r.Attempt, r.Minutes, "a flake: register it, no incident")
+		if healthRepeat(*r) == Green && len(h.Flakes) == 0 {
+			fire("confirmed-flake", r.Attempt, r.Minutes, "one more sighting opens its fix goal")
+		}
+	}
+	for _, f := range h.Flakes {
+		if f.Closed == nil && f.EntryClass() == goal.TrunkRedClassFlake {
+			fire("confirmed-flake", f.Identity, nil, flakePrescription(f, h.FlakeGoalStates[f.FixGoal]))
 		}
 	}
 	if h.Agent.Silent {

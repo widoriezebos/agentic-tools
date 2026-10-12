@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -18,6 +19,7 @@ type Intervention struct {
 }
 
 type StewardEffects struct {
+	FlakeFix     func(goal.FlakeFact, goal.FlakeFix, time.Time) (goal.FlakeFact, error)
 	UsageStore   *launch.Store
 	Owner        func(string) (lane.OwnerProbe, error)
 	Withdraw     func(string, channel.Question, ProveSeams) (bool, error)
@@ -77,7 +79,7 @@ func StewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		return run, err
 	}
 	for _, row := range status.Health.Rows() {
-		act := row.Row == "stale-question" || row.Row == "unproven-incidents" || row.Row == "silent-agent" || row.Row == "suspected-contention"
+		act := row.Row == "stale-question" || row.Row == "unproven-incidents" || row.Row == "silent-agent" || row.Row == "suspected-contention" || stewardFlakeReady(status.Health, row)
 		reason := "report only"
 		if act {
 			reason = ""
@@ -105,6 +107,8 @@ func StewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		seams.ReadOnly, seams.Person = false, nil
 		var actErr error
 		switch row.Row {
+		case "confirmed-flake":
+			entry, actErr = stewardFlake(status.Health, row, now, effects)
 		case "silent-agent":
 			entry.How = "settle the landing agent; keeper wake"
 			entry.Outcome, actErr = stewardEffect(effects.Settle, record)

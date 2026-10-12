@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -128,7 +129,7 @@ func (owners laneVerbOwners) landingFlakeRecorder(installation string) func(plai
 		}
 		ulid := strings.ToUpper(fmt.Sprintf("%x", sha256.Sum256([]byte(f.Tree+"\x00"+f.Attempt+"\x00"+f.Unit)))[:26])
 		result, err := record(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: owners.now()},
-			goal.FlakeRecordArgs{Unit: f.Unit, Tests: f.Tests, Surfaces: f.Surfaces, Commit: f.Commit, Tree: f.Tree, Attempt: f.Attempt, LogPath: f.Log, Load: f.Load, Repeat: f.Repeat, Where: f.Where, Outputs: f.Outputs, RepeatOutputs: f.RepeatOutputs,
+			goal.FlakeRecordArgs{ObserveOnly: true, Unit: f.Unit, Tests: f.Tests, Surfaces: f.Surfaces, Commit: f.Commit, Tree: f.Tree, Attempt: f.Attempt, LogPath: f.Log, Load: f.Load, Repeat: f.Repeat, Where: f.Where, Outputs: f.Outputs, RepeatOutputs: f.RepeatOutputs,
 				Rerun: goal.TrunkRedRerun{Attempt: f.RepeatAttempt, LogPath: f.RepeatLog}})
 		if err != nil {
 			return plain.FlakeRecorded{}, err
@@ -137,5 +138,32 @@ func (owners laneVerbOwners) landingFlakeRecorder(installation string) func(plai
 			return plain.FlakeRecorded{}, fmt.Errorf("the flaky test was not recorded in the shared goal list (%s): %s", result.Publish.Outcome, result.Publish.Detail)
 		}
 		return plain.FlakeRecorded{Goal: result.FixGoal, Seen: result.Sightings}, nil
+	}
+}
+
+func (owners laneVerbOwners) landingFlakeFixer(installation string) func(goal.FlakeFact, goal.FlakeFix, time.Time) (goal.FlakeFact, error) {
+	return func(f goal.FlakeFact, fix goal.FlakeFix, now time.Time) (goal.FlakeFact, error) {
+		endpoint := owners.mainEndpoint
+		if endpoint == nil {
+			endpoint = branch.MainEndpoint
+		}
+		e, err := endpoint(installation)
+		if err != nil {
+			return f, err
+		}
+		machine, err := owners.machine(installation)
+		if err != nil {
+			return f, err
+		}
+		var sighting string
+		if len(f.Sightings) > 0 {
+			sighting = f.Sightings[len(f.Sightings)-1].Opid
+		}
+		ulid := strings.ToUpper(fmt.Sprintf("%x", sha256.Sum256([]byte(f.Identity+"\x00fix\x00"+sighting)))[:26])
+		result, err := goal.RecordFlake(goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: machine, Lineage: lane.AgentLineage}, Ulid: ulid, Now: now}, goal.FlakeRecordArgs{Unit: f.TestUnit, Fix: &fix})
+		if err == nil {
+			f.FixGoal, f.FixOpenedAt = result.FixGoal, result.FixOpenedAt
+		}
+		return f, err
 	}
 }
