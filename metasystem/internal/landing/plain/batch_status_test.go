@@ -39,9 +39,9 @@ func TestLandingBatchStatusProvingNeverIdle(t *testing.T) {
 				t.Fatal(err)
 			}
 			status := b.read(ProveSeams{Now: func() time.Time { return bedNow.Add(7 * time.Minute) }, Alive: func(Running) bool { return true }, Machine: func(string) (string, error) { return "fixture", nil }}, b.git(nil, nil))
-			want := "the lane proves main (7.0 min); nothing to do"
+			want := "proving (0 of counting units, 7.0 min); the lane proves main; the agent waits for the keeper; nothing to do"
 			if known {
-				want = "the lane proves main (7.0 min); nothing to do"
+				want = "proving (4 of 233 units, 7.0 min); the lane proves main; the agent waits for the keeper; nothing to do"
 			}
 			if status.Summary != LaneQuestionHeadline(question) || status.ProofHeadline != want || strings.Contains(status.Summary, "idle") {
 				t.Fatalf("summary %q proof %q; want %q", status.Summary, status.ProofHeadline, want)

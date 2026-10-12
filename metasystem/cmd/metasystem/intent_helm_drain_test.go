@@ -50,7 +50,15 @@ func TestHelmDrainDirectLifecycle(t *testing.T) {
 	}
 	// Person start reopens admission even when the keeper cannot run.
 	b.owners.landing.person = func(string) (string, error) { return "Wido", nil }
-	b.owners.landing.ready = func(string) error { return fmt.Errorf("keeper unavailable") }
+	b.owners.landing.ready = func(string) error {
+		if drain, err := plain.ReadDrain(install); err != nil || drain != nil {
+			t.Fatalf("keeper checked before admission reopened: %+v %v", drain, err)
+		}
+		if !helm.Active(b.lane).Active {
+			t.Fatal("start returned the helm before checking the keeper")
+		}
+		return fmt.Errorf("keeper unavailable")
+	}
 	var out bytes.Buffer
 	code := runIntentIn(mustIntentCommand(t, "landing start"), []string{"--json"}, &out, &out, b.seat, b.owners)
 	if code == 0 || !strings.Contains(out.String(), "admission open") || !helm.Active(b.lane).Active {

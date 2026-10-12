@@ -69,7 +69,7 @@ func TestLandingStatusReportsLiveProofProgress(t *testing.T) {
 	writeQuestionFixture(t, filepath.Join(plain.Dir(b.install), "running.json"), plain.Running{Commit: "main", Tree: "tree", Trunk: true, Since: laneTestNow.Format(time.RFC3339), Log: log, Attempt: "proof", Pid: 4242})
 	code, words := b.run(t, b.root, "status")
 	first := strings.Join(strings.Fields(strings.Split(strings.TrimSpace(words), "\n\n")[0]), " ")
-	if code != 0 || !strings.Contains(first, "the lane proves main (7.0 min); nothing to do") || strings.Contains(first, "idle") {
+	if code != 0 || first != "proving (2 of 3 units, 7.0 min); the lane proves main; the agent waits for the keeper; nothing to do" || strings.Contains(first, "idle") {
 		t.Fatalf("live progress missing: %d %s", code, words)
 	}
 	code, words = b.run(t, b.root, "status", "--json")

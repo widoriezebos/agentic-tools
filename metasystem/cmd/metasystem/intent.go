@@ -1553,7 +1553,7 @@ var intentActionIntents = map[string][]struct {
 	},
 	"landing": {
 		{"Read", []string{"status", "batch", "health"}},
-		{"Work", []string{"batch seal", "batch reopen", "run", "start", "drain", "stop", "restart", "deploy", "prove", "push", "return", "resolve"}},
+		{"Work", []string{"batch seal", "batch reopen", "run", "land-anyway", "start", "drain", "stop", "restart", "resume", "deploy", "prove", "push", "return", "give-back", "resolve"}},
 		{"Shape", []string{"set", "unset"}},
 	},
 	"system": {

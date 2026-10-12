@@ -73,7 +73,7 @@ func TestReadStatusAbandonedMergeYieldsToNewProof(t *testing.T) {
 	for _, tip := range []string{fix.Commit, "new-batch"} {
 		b.lines("running.json", Running{Commit: tip, Tree: "proof-tree", Attempt: "new-proof", Pid: 42, Since: bedNow.Format(time.RFC3339)})
 		status := read(tip)
-		if !strings.HasPrefix(status.ProofHeadline, "the lane proves main (") || status.Summary != status.ProofHeadline || status.RunningFix != nil {
+		if !strings.HasPrefix(status.ProofHeadline, "proving (0 of counting units, ") || !strings.Contains(status.ProofHeadline, "the lane proves main") || status.Summary != status.ProofHeadline || status.RunningFix != nil {
 			t.Fatalf("abandonment replaced new proof: %+v", status)
 		}
 	}

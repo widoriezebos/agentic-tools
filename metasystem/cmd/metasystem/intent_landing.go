@@ -968,7 +968,7 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 			resumed = false
 		}
 		if reopened {
-			details = append(details, "removed the drain; accepting new work")
+			details = append(details, "removed the drain; admission open: accepting new work")
 		}
 		if resumed {
 			details = append(details, "removed the pause")
@@ -1008,7 +1008,7 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 		outcome = intentConfirmed
 	}
 	if reopened {
-		summary += "; accepting new work"
+		summary += "; admission open: accepting new work"
 	}
 	return intentResult{Outcome: outcome, Targets: targets, Data: view, Summary: summary, Details: append(details, "its landing agent starts when there is work"), view: landingDone(summary, record.Root)}
 }

@@ -435,7 +435,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 				running.UnitsDone++
 			}
 		}
-		status.ProofHeadline = fmt.Sprintf("the lane proves main (%s min); nothing to do", clockMinutes(running.Minutes))
+		total := "counting"
+		if running.UnitsTotal != nil {
+			total = strconv.Itoa(*running.UnitsTotal)
+		}
+		status.ProofHeadline = fmt.Sprintf("proving (%d of %s units, %s min); the lane proves main; the agent waits for the keeper; nothing to do", running.UnitsDone, total, clockMinutes(running.Minutes))
 	} else if proof := status.TrunkProof; proof != nil && proof.Result == Green && proof.FlakePublished {
 		status.ProofHeadline = "main is proven with unstable checks: " + flakeNames(proof.Flakes) + "; run: metasystem landing resume"
 	} else if proof := status.LastProof; proof != nil && len(proof.Flakes) > 0 && strings.Contains(proof.Reason, "flake on main:") {
