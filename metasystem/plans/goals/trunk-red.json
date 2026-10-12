@@ -1377,6 +1377,501 @@
         "by": "",
         "why": ""
       }
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun",
+      "identity": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestARedProofIsToldFromMainsWithOneReplayRun",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/gate/main-moved=false",
+      "identity": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/gate/main-moved=false",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestARedProofIsToldFromMainsWithOneReplayRun/gate/main-moved=false",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/gate/main-moved=true",
+      "identity": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/gate/main-moved=true",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestARedProofIsToldFromMainsWithOneReplayRun/gate/main-moved=true",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/main-moved=false",
+      "identity": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/main-moved=false",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestARedProofIsToldFromMainsWithOneReplayRun/main-moved=false",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/main-moved=true",
+      "identity": "red:metasystem/cmd/metasystem:TestARedProofIsToldFromMainsWithOneReplayRun/main-moved=true",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestARedProofIsToldFromMainsWithOneReplayRun/main-moved=true",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestEveryPublicActionHasAnIdempotencyRow",
+      "identity": "red:metasystem/cmd/metasystem:TestEveryPublicActionHasAnIdempotencyRow",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestEveryPublicActionHasAnIdempotencyRow",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict-2",
+      "identity": "red:metasystem/cmd/metasystem:TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict/main",
+      "identity": "red:metasystem/cmd/metasystem:TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict/main",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict/main",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestProofAttemptBinaryLaunchesUseSharedIsolation",
+      "identity": "red:metasystem/cmd/metasystem:TestProofAttemptBinaryLaunchesUseSharedIsolation",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestProofAttemptBinaryLaunchesUseSharedIsolation",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestVerbRatchetEngineSelfSubprocess",
+      "identity": "red:metasystem/cmd/metasystem:TestVerbRatchetEngineSelfSubprocess",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestVerbRatchetEngineSelfSubprocess",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/internal/goal:TestAuditFreshProjectionsUseInjectedDeadline",
+      "identity": "red:metasystem/internal/goal:TestAuditFreshProjectionsUseInjectedDeadline",
+      "group": "metasystem/internal/goal",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "classname": "metasystem/internal/goal",
+          "name": "TestAuditFreshProjectionsUseInjectedDeadline",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261012T120522.326048000Z-replay-1",
+          "batch": "20261012T120522.326048000Z-replay-1",
+          "baseCommit": "3ce48ae1f2e4d388c9b870b519891eb2fa3938c1",
+          "baseTree": "76818060cb50e8827558ea112395f61afae051f8",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261012T120522.326048000Z-replay-1.log",
+          "logDigest": "a3d61d5cb3baf6c7aa42cd0cc6bd073aee13d877003bad763a4a8a4a7e1c5d18",
+          "seenAt": "2026-10-12T13:41:38Z",
+          "opid": "5Y4F3C4FYC7DGTYC1E4WWAF4QK-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261012T120522.326048000Z-replay-1"
+      ],
+      "opened": "2026-10-12T13:41:38Z",
+      "closed": null
     }
   ],
   "cadence": {
