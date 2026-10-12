@@ -56,11 +56,21 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 			record := filepath.Join(t.TempDir(), "claude-record")
 			fakeBin := t.TempDir()
 			fake := filepath.Join(fakeBin, "claude")
+			exitGate, releaseFake := appExitGate(t)
+			fakeReleased := false
+			release := func() {
+				if !fakeReleased {
+					releaseFake()
+					fakeReleased = true
+				}
+			}
+			t.Cleanup(release)
 			script := "#!/usr/bin/env bash\ncase \"${1:-}\" in --version) echo '2.1.0 (Claude Code)'; exit 0 ;; auth) exit 0 ;; esac\n" +
 				"pwd -P >'" + record + ".cwd'\nprintf '%s\\n' \"$@\" >'" + record + ".argv'\ncat >'" + record + ".stdin' || true\n" +
 				"model=; prev=; for a in \"$@\"; do [[ \"$prev\" == --model ]] && model=$a; prev=$a; done\n" +
 				// Announce the session the way the Claude hook does, then end the turn.
-				"printf '{\"session_id\":\"fake-session\",\"model\":\"%s\"}\\n' \"$model\" >\"$METASYSTEM_CLAUDE_SESSION_SIGNAL\"\nsleep 1\n" +
+				"printf '{\"session_id\":\"fake-session\",\"model\":\"%s\"}\\n' \"$model\" >\"$METASYSTEM_CLAUDE_SESSION_SIGNAL\"\n" +
+				"IFS= read -r _ <" + shellQuote(exitGate) + "\n" +
 				// Its result reports the model it ran as Claude does, in modelUsage;
 				// the critic payload itself stays deliberately incomplete.
 				"printf '{\"type\":\"result\",\"subtype\":\"success\",\"session_id\":\"fake-session\",\"model\":\"%s\",\"modelUsage\":{\"%s\":{}},\"result\":\"fixture\"}\\n' \"$model\" \"$model\"\n" +
@@ -104,12 +114,19 @@ func TestGoalBranchReadRealDelegateReachesSelectedClaude(t *testing.T) {
 				t.Fatalf("branch read: code=%d stdout=%q stderr=%q; fake claude argv=%.200q", code, stdout, stderr, argv)
 			}
 			job := strings.Fields(strings.SplitN(stdout, "root-job=", 2)[1])[0]
+			// Successful dispatch has recorded the session. The fake can exit
+			// after that acknowledgement, regardless of scheduling latency.
+			release()
 			// The engine's own job waiter returns once the job records a
 			// terminal status, so the fake's files and the terminal record are
 			// complete before they are read and before the worktree is removed.
 			// The fake's result is not a critic verdict, so any terminal outcome
 			// is accepted; timeout, interruption or a missing record is not.
-			wait := exec.CommandContext(t.Context(), commandTestExecutable(t), waitHelperCommand, "--root", worktree, "--job", job, "--timeout", "90s", "--json")
+			waitArgs := []string{waitHelperCommand, "--root", worktree, "--job", job, "--json"}
+			if remaining := fixtureDeadlineRemaining(t); remaining > 0 {
+				waitArgs = append(waitArgs, "--timeout", min(remaining, 24*time.Hour).String())
+			}
+			wait := exec.CommandContext(t.Context(), commandTestExecutable(t), waitArgs...)
 			wait.Env = append(os.Environ(), "GO_WANT_BATCH_E2E_COMMAND=1")
 			var waitStderr strings.Builder
 			wait.Stderr = &waitStderr

@@ -179,6 +179,8 @@ type appRun struct {
 	spawn      applaunch.Spawn
 	extraFiles []*os.File
 	probe      func(applaunch.Contract, string) error
+	// addressAvailable checks a candidate port; nil probes a TCP listener.
+	addressAvailable func(string) bool
 	// engine names the engine that supervises this run; nil is this
 	// executable, as `ui start` launches this executable.
 	engine func() (string, error)
@@ -383,6 +385,10 @@ func (r *appRun) allocateAddress() error {
 	if r.allocate != nil {
 		return r.allocate(r)
 	}
+	addressAvailable := r.addressAvailable
+	if addressAvailable == nil {
+		addressAvailable = available
+	}
 	if r.contract.Address == "" {
 		r.address = ""
 		return nil
@@ -391,14 +397,14 @@ func (r *appRun) allocateAddress() error {
 		// The standing address is the contract's own and is not chosen, so it
 		// is checked: another service answering there would be taken for
 		// this application.
-		if !available(r.contract.Address) {
+		if !addressAvailable(r.contract.Address) {
 			return fmt.Errorf("the standing address %s is taken by another process; free it or change address in the launch contract", r.contract.Address)
 		}
 		r.address = r.contract.Address
 		return nil
 	}
 	if record, err := applaunch.ReadRecord(r.roots.Installation.Path(), r.key); err == nil && record.Address != "" {
-		if available(record.Address) {
+		if addressAvailable(record.Address) {
 			r.address = record.Address
 			return nil
 		}
@@ -414,7 +420,7 @@ func (r *appRun) allocateAddress() error {
 	taken := r.takenAddresses()
 	for port := low; port <= high; port++ {
 		candidate := net.JoinHostPort(host, strconv.Itoa(port))
-		if taken[candidate] || !available(candidate) {
+		if taken[candidate] || !addressAvailable(candidate) {
 			continue
 		}
 		r.address = candidate

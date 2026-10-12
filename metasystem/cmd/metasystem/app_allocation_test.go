@@ -58,7 +58,11 @@ func TestAppAllocationReusesRecordedAddressBeforeWalkingRange(t *testing.T) {
 	if err := applaunch.WriteRecord(root, applaunch.Record{Key: run.key, Address: recorded.address, Supervisor: appAllocationSupervisor(t)}); err != nil {
 		t.Fatal(err)
 	}
-	recorded.listener.Close()
+	// Keep the port reserved while the allocator sees it as available to
+	// this run. Another process cannot take it between release and probing.
+	run.addressAvailable = func(address string) bool {
+		return address == recorded.address || available(address)
+	}
 	if err := run.allocateAddress(); err != nil || run.address != recorded.address {
 		t.Fatalf("the free recorded address must be reused even with the whole range occupied: address=%s err=%v", run.address, err)
 	}
@@ -82,8 +86,14 @@ func TestAppAllocationWalkSkipsTakenRecordsAndOccupiedPorts(t *testing.T) {
 	if err := applaunch.WriteRecord(root, applaunch.Record{Key: applaunch.KeyFor("goal/g1"), Address: ports[2].address, Supervisor: supervisor}); err != nil {
 		t.Fatal(err)
 	}
-	ports[2].listener.Close()
-	ports[3].listener.Close()
+	// The two available candidates stay reserved by this test. The other
+	// run's record must exclude its candidate before the availability probe.
+	run.addressAvailable = func(address string) bool {
+		if address == ports[2].address {
+			t.Fatal("the allocator probed a port reserved by another run's record")
+		}
+		return address == ports[3].address || available(address)
+	}
 	if err := run.allocateAddress(); err != nil || run.address != ports[3].address {
 		t.Fatalf("the range walk must skip the occupied port and the other run's record: address=%s err=%v", run.address, err)
 	}
@@ -100,6 +110,38 @@ func appAllocationSupervisor(t *testing.T) string {
 		t.Fatal(err)
 	}
 	return encoded
+}
+
+func TestAppAllocationDefaultsToTCPProbe(t *testing.T) {
+	t.Parallel()
+	for _, ref := range []string{"", "main"} {
+		name := "standing"
+		if ref != "" {
+			name = "recorded"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			ports := appAllocationPorts(t)
+			root := t.TempDir()
+			run := appRun{
+				roots:    lifecycle.Roots{Installation: stateroottest.Installation(t, root)},
+				contract: applaunch.Contract{Address: ports[0].address, PortRange: appAllocationRange(ports)},
+				ref:      ref, key: applaunch.KeyFor(ref),
+			}
+			if ref != "" {
+				if err := applaunch.WriteRecord(root, applaunch.Record{Key: run.key, Address: ports[0].address, Supervisor: appAllocationSupervisor(t)}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			want := "taken by another process"
+			if ref != "" {
+				want = "every port from"
+			}
+			if err := run.allocateAddress(); err == nil || !strings.Contains(err.Error(), want) || run.address != "" {
+				t.Fatalf("the default probe must refuse occupied ports: address=%q err=%v", run.address, err)
+			}
+		})
+	}
 }
 
 func TestAppBedPreservesContractStopWait(t *testing.T) {
