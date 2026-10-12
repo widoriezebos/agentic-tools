@@ -97,8 +97,9 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 				}
 				if only := env("LANDING_ONLY"); only != "" {
 					// The replay names the failed tests per unit; a named replay that is green on main re-runs the whole units once before attributing (lane-speed U2, LS-03).
-					if got := strings.Fields(only); !reflect.DeepEqual(got, []string{"u/first=TestFirst", "u/second=TestSecond"}) && !reflect.DeepEqual(got, []string{"u/first", "u/second"}) {
-						t.Fatalf("replay units=%v; want both failed units", got)
+					// A red found on main is repeated per failed unit before it becomes an incident (lane-batching D8), so a run naming one failed unit is also allowed.
+					if got := strings.Fields(only); !reflect.DeepEqual(got, []string{"u/first=TestFirst", "u/second=TestSecond"}) && !reflect.DeepEqual(got, []string{"u/first", "u/second"}) && !reflect.DeepEqual(got, []string{"u/first=TestFirst"}) && !reflect.DeepEqual(got, []string{"u/first"}) {
+						t.Fatalf("replay units=%v; want the failed units or one of them", got)
 					}
 					replays = append(replays, env("LANDING_COMMIT"))
 				}
@@ -106,7 +107,7 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 					fmt.Fprint(cmd.Stdout, "LANDING-FAILED\tu/first\tTestFirst\nLANDING-FAILED\tu/second\tTestSecond\nLANDING-CHECKED\t2\n")
 					return exec.Command("/usr/bin/false").Run()
 				}
-				if cause == "main" && (env("LANDING_ONLY") == "" || slices.Contains(strings.Fields(env("LANDING_ONLY")), "u/first=TestFirst")) {
+				if cause == "main" && (env("LANDING_ONLY") == "" || slices.Contains(strings.Fields(env("LANDING_ONLY")), "u/first=TestFirst") || slices.Contains(strings.Fields(env("LANDING_ONLY")), "u/first")) {
 					fmt.Fprint(cmd.Stdout, "LANDING-FAILED\tu/first\tTestFirst\nLANDING-CHECKED\t1\n")
 					return exec.Command("/usr/bin/false").Run()
 				}
@@ -137,8 +138,9 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 				}
 				t.Run("parentReplay", func(t *testing.T) {
 					t.Parallel()
-					if !reflect.DeepEqual(replays, []string{parent}) {
-						t.Fatalf("replay runs=%v; want once on parent %s", replays, parent)
+					// The named replay and the D8 repeat of main's red unit: two runs, both on the parent.
+					if !reflect.DeepEqual(replays, []string{parent, parent}) {
+						t.Fatalf("replay runs=%v; want twice on parent %s", replays, parent)
 					}
 				})
 				return
@@ -195,10 +197,8 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 			t.Run("parentReplay", func(t *testing.T) {
 				t.Parallel()
 				// A main-side red attributes after one named run; a goal-side red confirms the main prefix green with a whole-unit run after the named one (LS-03): two runs, both on the parent.
-				want := []string{parent}
-				if cause == "own" {
-					want = []string{parent, parent}
-				}
+				// main: the named replay and the D8 repeat of the red unit; own: the named replay and the LS-03 whole-unit confirmation. Two runs on the parent either way.
+				want := []string{parent, parent}
 				if !reflect.DeepEqual(replays, want) {
 					t.Fatalf("replay runs=%v; want %v", replays, want)
 				}
