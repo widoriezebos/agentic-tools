@@ -415,7 +415,12 @@ func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err erro
 }
 
 func landingLaneFailure(targets []intentTarget, summary string, err error) intentResult {
-	return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: summary, retry: "tries again", Details: []string{err.Error()}}
+	result := intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: summary, retry: "tries again"}
+	// A refusal without an underlying error carries its summary only (callers pass nil).
+	if err != nil {
+		result.Details = []string{err.Error()}
+	}
+	return result
 }
 
 // provedWords names a proof's subject: its commit and tree.
