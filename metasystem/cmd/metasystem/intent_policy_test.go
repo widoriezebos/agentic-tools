@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -493,6 +494,10 @@ func TestPolicySettingsExecutableReadAndRefusal(t *testing.T) {
 	run := func(args ...string) ([]byte, error) {
 		command := exec.Command(binary, args...)
 		command.Dir = b.lane
+		// The child starts its own session with no controlling terminal: the refusal
+		// below is the non-terminal act's, wherever the test itself runs (an enrolled
+		// pane would otherwise lend it the person's terminal).
+		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 		command.Env = append(os.Environ(), "PATH="+tools, "METASYSTEM_SUPERVISION_REGISTRY_HOME="+t.TempDir())
 		command.Env = append(command.Env, extraEnv...)
 		return command.CombinedOutput()
