@@ -162,6 +162,17 @@ func BatchLines(batch *Batch, entries []Entry, checkout string, s ProveSeams) ([
 	if err != nil {
 		return nil, err
 	}
+	if len(entries) > 0 {
+		git := checkoutGit(checkout, s)
+		main, err := git.main()
+		if err != nil {
+			return nil, err
+		}
+		entries, err = Landed(entries, func(sha string) (bool, error) { return git.contains(main, sha) })
+		if err != nil {
+			return nil, err
+		}
+	}
 	for _, m := range batch.Members {
 		merged, err := batchContains(checkout, head, m.SHA, s)
 		if err != nil {

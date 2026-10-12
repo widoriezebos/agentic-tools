@@ -81,6 +81,9 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 	helmMust(t, err)
 	helmMust(t, os.MkdirAll(plain.Dir(b.installation), 0755))
 	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.installation), "interventions.jsonl"), interventions, 0600))
+	report, err := os.ReadFile("testdata/landing-steward-report.json")
+	helmMust(t, err)
+	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.installation), "steward-report.json"), report, 0600))
 	engine := os.Getenv("METASYSTEM_WAIT_BINARY")
 	if engine == "" {
 		t.Fatal("the package did not build the CLI")
@@ -101,6 +104,9 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 		}
 		if !strings.Contains(string(out), "redeploy the engine from main") || !strings.Contains(string(out), "deployed") {
 			t.Fatalf("CLI omitted the intervention: %s", out)
+		}
+		if !strings.Contains(string(out), "hour to 11:30: 2 landed, 1 returned") || args[len(args)-1] != "--json" && !strings.Contains(string(out), "steward-report.md") {
+			t.Fatalf("CLI omitted the saved report: %s", out)
 		}
 	}
 	now := time.Now()

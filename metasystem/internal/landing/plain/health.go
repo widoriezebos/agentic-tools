@@ -19,8 +19,14 @@ import (
 
 // Health is the lane's recorded evidence and measured ages; reading it acts on nothing.
 type Health struct {
+	Report              string         `json:"report,omitempty"`
+	ReportPath          string         `json:"-"`
 	Interventions       []Intervention `json:"interventions,omitempty"`
 	observedAt          time.Time
+	StateReason         string           `json:"state_reason,omitempty"`
+	AdmissibleWaiting   []string         `json:"admissible_waiting,omitempty"`
+	StalePendingMerge   string           `json:"stale_pending_merge,omitempty"`
+	SealedBehindMain    bool             `json:"sealed_behind_main,omitempty"`
 	State               string           `json:"state"`
 	Goals               []GoalHealth     `json:"goals"`
 	Batch               *BatchHealth     `json:"batch,omitempty"`
@@ -132,37 +138,99 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	h := &Health{State: "idle", Goals: []GoalHealth{}, Questions: []QuestionHealth{}, Incidents: []IncidentHealth{}, AbandonedResolution: abandoned, LastProof: status.LastProof}
 	now := seams.now()
 	h.observedAt = now
+	h.ReportPath = filepath.Join(Dir(install), "steward-report.md")
+	report, err := readStewardReport(install)
+	if err != nil {
+		return nil, err
+	}
+	h.Report = report.Summary
 	interventions, err := readLines[Intervention](interventionsPath(install))
 	if err != nil {
 		return nil, err
 	}
 	h.Interventions = interventions[max(0, len(interventions)-5):]
 	stamp := now.Format(time.RFC3339Nano)
-	if status.Paused || status.Stop != nil {
+	switch status.Owner.State {
+	case lane.OwnerStopped:
+		h.State = "stopped"
+	case lane.OwnerHeld:
+		h.State = "held"
+		h.StateReason = strings.TrimPrefix(status.View.AgentSummary(false), "held ")
+	case lane.OwnerRunning:
+		h.State = "agent running"
+	}
+	if status.RunningFix != nil && status.RunningFix.State == "resolving" {
+		h.State = "resolving"
+	}
+	if (status.Paused || status.Stop != nil) && h.State != "stopped" && h.State != "held" {
 		h.State = "paused"
 	}
 	if status.RunningProof != nil && status.RunningProof.State == "running" {
 		h.State = "proving"
 	}
 	for _, e := range status.Queue {
-		if e.State != StateWaiting && e.State != StateLanded {
+		if e.State != StateWaiting && e.State != StateReturned && e.State != StateLanded {
 			continue
 		}
 		end := stamp
 		if e.State == StateLanded {
 			end = e.LandedAt
+		} else if e.State == StateReturned {
+			end = e.ReturnedAt
 		}
 		minutes := elapsedMinutes(e.At, end)
+		if e.State == StateLanded {
+			landed, err := time.Parse(time.RFC3339Nano, end)
+			if minutes == nil || err != nil || landed.Before(now.Add(-landedWindow)) || landed.After(now) {
+				continue
+			}
+		}
 		reason := e.Reason
-		if reason == "" {
-			reason = status.Summary
+		if reason == "" && e.State == StateWaiting {
+			reason = "waiting for admission to the batch"
+			if batch != nil && batch.State != BatchClosed {
+				if slices.Contains(batch.Members, GoalSHA{Goal: e.Goal, SHA: e.SHA}) {
+					reason = "selected in this batch"
+				} else if !batch.Open {
+					reason = "waiting for the next batch"
+				} else if status.RunningFix != nil {
+					reason = "a fix round is open"
+				}
+			}
 		}
 		state := e.State
 		if status.RunningProof != nil && status.RunningProof.State == "running" && slices.Contains(status.RunningProof.Goals, e.Goal) {
 			state = "proving"
 		}
-		h.Goals = append(h.Goals, GoalHealth{Goal: e.Goal, State: state, Minutes: minutes, Overdue: minutes != nil && *minutes > 60, Reason: reason})
+		h.Goals = append(h.Goals, GoalHealth{Goal: e.Goal, State: state, Minutes: minutes, Overdue: e.State != StateLanded && minutes != nil && *minutes > 60, Reason: reason})
 	}
+	if h.State == "held" && status.Owner.Barren > 0 {
+		entries := slices.Clone(status.Queue)
+		slices.SortStableFunc(entries, func(a, b Entry) int {
+			aTime, aErr := time.Parse(time.RFC3339Nano, a.At)
+			bTime, bErr := time.Parse(time.RFC3339Nano, b.At)
+			if aErr != nil || bErr != nil {
+				return 0
+			}
+			return aTime.Compare(bTime)
+		})
+		for _, e := range entries {
+			if e.State == StateWaiting && !e.Held && e.SHA != "" {
+				h.AdmissibleWaiting = append(h.AdmissibleWaiting, e.Goal)
+			}
+		}
+	}
+	if h.State == "stopped" && strings.Contains(status.Summary, "rebuild") {
+		merge, err := seams.git(checkout, "rev-parse", "--verify", "--quiet", "MERGE_HEAD^{commit}")
+		var exit *exec.ExitError
+		if err != nil && (!errors.As(err, &exit) || exit.ExitCode() != 1) {
+			return nil, err
+		}
+		if err == nil {
+			h.StalePendingMerge = merge
+		}
+	}
+	h.SealedBehindMain = batch != nil && batch.State != BatchClosed && !batch.Open && batch.SealedAt != "" && status.MainMove.Kind == "code"
 	if status.Paused {
 		h.Paused = &PauseHealth{Since: pause.At, Reason: pause.Reason, Minutes: elapsedMinutes(pause.At, stamp)}
 	} else if status.Stop != nil {
@@ -359,6 +427,15 @@ func (h Health) Rows() []Fired {
 	fire := func(row, subject string, minutes *float64, act string) {
 		rows = append(rows, Fired{Row: row, Subject: subject, Minutes: measured(minutes), Act: act})
 	}
+	if len(h.AdmissibleWaiting) > 0 {
+		fire("barren-hold", strings.Join(h.AdmissibleWaiting, ","), nil, "metasystem landing run --goals "+strings.Join(h.AdmissibleWaiting, ","))
+	}
+	if h.StalePendingMerge != "" {
+		fire("stale-pending-merge", h.StalePendingMerge, nil, "abort it (the lane rebuilds on the current main)")
+	}
+	if h.SealedBehindMain {
+		fire("sealed-batch-behind-main", h.Batch.ID, h.Batch.Minutes, "landing restart")
+	}
 	for _, q := range h.Questions {
 		if q.Premise == "gone" {
 			fire("stale-question", q.ID, &q.Minutes, "withdraw it, prove main, re-ask only if red")
@@ -411,7 +488,7 @@ func (h Health) Rows() []Fired {
 		fire("abandoned-resolution", h.AbandonedResolution, nil, "rebuild the merge on the current main")
 	}
 	for _, g := range h.Goals {
-		if g.Overdue {
+		if g.State != StateLanded && g.Overdue {
 			fire("overdue-goal", g.Goal, g.Minutes, fmt.Sprintf("%s: %s min; %s", g.Goal, measured(g.Minutes), g.Reason))
 		}
 	}
@@ -427,14 +504,21 @@ func (h Health) Rows() []Fired {
 }
 func (h Health) Line() (line string) {
 	defer func() {
+		if h.Report != "" {
+			line += "; " + h.Report
+		}
 		if len(h.Interventions) > 0 {
 			last := h.Interventions[len(h.Interventions)-1]
 			line += fmt.Sprintf("; steward: %s %s min ago", last.What, measured(elapsedMinutes(last.At, h.observedAt.Format(time.RFC3339Nano))))
 		}
 	}()
+	state := h.State
+	if h.State == "held" && h.StateReason != "" {
+		state += " " + h.StateReason
+	}
 	rows := h.Rows()
 	if len(rows) == 0 {
-		return "lane " + h.State + "; nothing fires"
+		return "lane " + state + "; nothing fires"
 	}
 	names := []string{}
 	for _, r := range rows {
@@ -450,11 +534,12 @@ func (h Health) Line() (line string) {
 	if h.Load.Now.Available {
 		load = fmt.Sprintf("%g", h.Load.Now.Load1m)
 	}
-	return fmt.Sprintf("lane %s; %d rows fire: %s; %d goals, oldest %g min; load %s", h.State, len(rows), strings.Join(names, ", "), len(h.Goals), oldest, load)
+	return fmt.Sprintf("lane %s; %d rows fire: %s; %d goals, oldest %g min; load %s", state, len(rows), strings.Join(names, ", "), len(h.Goals), oldest, load)
 }
 func (h Health) Text() string {
 	var out strings.Builder
 	fmt.Fprintln(&out, h.Line())
+	fmt.Fprintln(&out, "report: "+h.ReportPath)
 	fmt.Fprintf(&out, "goals: %d\n", len(h.Goals))
 	for _, g := range h.Goals {
 		fmt.Fprintf(&out, "  %s: %s, %s min; %s\n", g.Goal, g.State, measured(g.Minutes), g.Reason)

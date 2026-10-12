@@ -472,3 +472,19 @@ func TestLandingBatchCLIReadGitAdapter(t *testing.T) {
 		t.Logf("production CLI %v: %v\n%s", args, err, out)
 	}
 }
+
+func TestLandingBatchShowsOnlyWaitingQueueEntries(t *testing.T) {
+	t.Parallel()
+	b, batch := batchVerbFixture(t, "sealed")
+	base := b.owners.landing.plainProve.Git
+	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+		if len(args) > 2 && args[0] == "merge-base" && args[1] == "--is-ancestor" && args[2] == "5b72cf4a72634b7865f4045606852c0ae391bfd1" {
+			return "", nil
+		}
+		return base(dir, args...)
+	}
+	code, out := b.run(t, b.seat, "landing", "batch")
+	if code != 0 || !strings.Contains(out, batch.ID) || strings.Contains(out, "shared-state-in-the-ledger waits:") {
+		t.Fatalf("exit %d: %s", code, out)
+	}
+}

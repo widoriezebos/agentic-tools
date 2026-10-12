@@ -1,0 +1,94 @@
+[
+  {
+    "name": "barren work",
+    "owner": "held",
+    "barren": 2,
+    "state": "held",
+    "row": "barren-hold",
+    "act": "metasystem landing run --goals older,newer"
+  },
+  {
+    "name": "stopped pending merge",
+    "owner": "stopped",
+    "state": "stopped",
+    "summary": "main moved: code change; rebuild",
+    "merge": true,
+    "row": "stale-pending-merge",
+    "act": "abort it (the lane rebuilds on the current main)"
+  },
+  {
+    "name": "stopped without pending merge",
+    "owner": "stopped",
+    "state": "stopped",
+    "summary": "main moved: code change; rebuild"
+  },
+  {
+    "name": "pending merge without rebuild",
+    "owner": "stopped",
+    "state": "stopped",
+    "merge": true
+  },
+  {
+    "name": "sealed behind code",
+    "owner": "idle",
+    "state": "idle",
+    "move": "code",
+    "row": "sealed-batch-behind-main",
+    "act": "landing restart"
+  },
+  {
+    "name": "sealed behind records",
+    "owner": "idle",
+    "state": "idle",
+    "move": "records-only"
+  },
+  {
+    "name": "open behind code",
+    "owner": "idle",
+    "state": "idle",
+    "move": "code",
+    "open": true
+  },
+  {
+    "name": "proving",
+    "owner": "running",
+    "state": "proving",
+    "proof": true
+  },
+  {
+    "name": "resolving",
+    "owner": "running",
+    "state": "resolving",
+    "fix": true
+  },
+  {
+    "name": "agent",
+    "owner": "running",
+    "state": "agent running"
+  },
+  {
+    "name": "paused",
+    "owner": "idle",
+    "state": "paused",
+    "paused": true
+  },
+  {
+    "name": "barren with stop record",
+    "owner": "held",
+    "barren": 2,
+    "state": "held",
+    "row": "barren-hold",
+    "act": "metasystem landing run --goals older,newer",
+    "stop": true
+  },
+  {
+    "name": "stopped with stop record",
+    "owner": "stopped",
+    "state": "stopped",
+    "summary": "main moved: code change; rebuild",
+    "merge": true,
+    "row": "stale-pending-merge",
+    "act": "abort it (the lane rebuilds on the current main)",
+    "stop": true
+  }
+]

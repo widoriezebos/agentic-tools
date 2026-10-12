@@ -28,6 +28,22 @@ The lane and the hand gate run the same full proof: `sh proof/full.sh` from
 `metasystem/` in the tree being proved. It prints every package and shard;
 only `ok` package lines pass, and missing test reports are red.
 
+## The lane steward
+
+Read `metasystem landing health` before asking a person anything: it is the
+one place for lane facts, fired rows, interventions and the hourly report.
+At the start of each host turn read `artifacts/agents/landing/interventions.jsonl`.
+Do not re-ask a question the steward withdrew until a fresh proof of main exists.
+
+The steward watches stale questions, moved main with unproven incidents,
+reds under load and confirmed flakes, silent agents, stale engines, missed
+batching, proof drift, abandoned resolutions, overdue goals, pauses and old questions.
+It may withdraw a stale question and prove main, prove main before a question
+or to repeat a red under load, redeploy the engine, and settle a silent landing
+agent session and wake the keeper. Other rows are reported for attention.
+Each act is recorded and bounded to once per situation per hour. It never
+ends a person's process, refuses a person's verb, or pushes code.
+
 ## The batch
 
 When `landing status --json` shows no batch member left waiting or running (every member landed, returned or superseded), end your turn at once — unless you were woken with `full-due` (case 8) or main owes a proof with no active batch (step 1): run that proof first. The keeper wakes the agent when there is work; a person's return of the last member ends your turn.

@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -17,6 +18,7 @@ type Intervention struct {
 }
 
 type StewardEffects struct {
+	UsageStore   *launch.Store
 	Owner        func(string) (lane.OwnerProbe, error)
 	Withdraw     func(string, channel.Question, ProveSeams) (bool, error)
 	Trunk        func(string, string, ProveSeams) (string, error)
@@ -146,6 +148,15 @@ func StewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		if appendErr != nil {
 			break
 		}
+	}
+	store := launch.Store{}
+	if effects.UsageStore != nil {
+		store = *effects.UsageStore
+	}
+	summary, reportErr := StewardReport(record.Install, record.Root, status, history, now, seams, store)
+	err = errors.Join(err, reportErr)
+	if summary != "" {
+		lines = append(lines, summary)
 	}
 	run.Line = strings.Join(lines, "; ")
 	return run, err

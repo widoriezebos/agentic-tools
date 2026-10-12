@@ -1,0 +1,275 @@
+{
+  "queue": [
+    {
+      "goal": "quick",
+      "sha": "quick-sha",
+      "at": "2026-10-12T08:30:00Z",
+      "state": "landed",
+      "landed_at": "2026-10-12T09:15:00Z"
+    },
+    {
+      "goal": "slow",
+      "sha": "slow-sha",
+      "at": "2026-10-12T07:50:00Z",
+      "state": "landed",
+      "landed_at": "2026-10-12T09:25:00Z"
+    },
+    {
+      "goal": "returned",
+      "sha": "returned-sha",
+      "at": "2026-10-12T08:10:00Z",
+      "state": "returned",
+      "returned_at": "2026-10-12T09:20:00Z",
+      "reason": "its own test failed"
+    },
+    {
+      "goal": "waiting",
+      "sha": "waiting-sha",
+      "at": "2026-10-12T08:15:00Z",
+      "state": "waiting",
+      "reason": "main needs proof"
+    },
+    {
+      "goal": "old",
+      "sha": "old-sha",
+      "at": "2026-10-12T06:00:00Z",
+      "state": "landed",
+      "landed_at": "2026-10-12T08:30:00Z"
+    }
+  ],
+  "results": [
+    {
+      "attempt": "main-red",
+      "at": "2026-10-12T09:10:00Z",
+      "result": "red",
+      "cause": {
+        "kind": "main"
+      },
+      "failed": [
+        {
+          "unit": "unit",
+          "tests": [
+            "TestMainFailure"
+          ]
+        }
+      ],
+      "log": "main-red.log"
+    },
+    {
+      "attempt": "main-red",
+      "at": "2026-10-12T09:10:00Z",
+      "result": "red",
+      "cause": {
+        "kind": "main"
+      },
+      "failed": [
+        {
+          "unit": "unit",
+          "tests": [
+            "TestMainFailure"
+          ]
+        }
+      ],
+      "log": "main-red.log"
+    },
+    {
+      "attempt": "goal-red",
+      "at": "2026-10-12T09:11:00Z",
+      "result": "red",
+      "cause": {
+        "kind": "own",
+        "goal": "returned"
+      }
+    },
+    {
+      "attempt": "flake-red",
+      "at": "2026-10-12T09:12:00Z",
+      "result": "red",
+      "cause": {
+        "kind": "flake"
+      }
+    },
+    {
+      "attempt": "unknown-red",
+      "at": "2026-10-12T09:13:00Z",
+      "result": "red"
+    },
+    {
+      "attempt": "before-hour",
+      "at": "2026-10-12T08:30:00Z",
+      "result": "red"
+    },
+    {
+      "attempt": "future",
+      "at": "2026-10-12T09:31:00Z",
+      "result": "red"
+    }
+  ],
+  "pushes": [
+    {
+      "old": "base",
+      "commit": "push-quick",
+      "at": "2026-10-12T09:15:00Z"
+    },
+    {
+      "old": "push-quick",
+      "commit": "push-slow",
+      "at": "2026-10-12T09:25:00Z"
+    }
+  ],
+  "incidents": [
+    {
+      "id": "main-incident",
+      "opened": "2026-10-12T09:10:00Z",
+      "testUnit": "unit",
+      "testName": "TestMainFailure"
+    },
+    {
+      "id": "closed-incident",
+      "opened": "2026-10-12T07:10:00Z",
+      "closed": {
+        "at": "2026-10-12T09:22:00Z",
+        "why": "main passed"
+      }
+    }
+  ],
+  "acts": [
+    {
+      "At": "2026-10-12T09:14:00Z",
+      "Row": "unproven-incidents",
+      "Subject": "main-incident",
+      "What": "prove main",
+      "Why": "main moved",
+      "How": "metasystem landing prove --trunk",
+      "Outcome": "proving main"
+    }
+  ],
+  "launches": [
+    {
+      "id": "landing-session",
+      "kind": "landing",
+      "workingDirectory": "lane",
+      "state": "completed",
+      "startedAt": "2026-10-12T09:00:00Z",
+      "finishedAt": "2026-10-12T09:26:00Z",
+      "measurement": {
+        "usageRead": true,
+        "inputTokens": 11,
+        "cacheReadTokens": 13,
+        "cacheCreationTokens": 17,
+        "outputTokens": 19
+      }
+    },
+    {
+      "id": "critic-session",
+      "kind": "read",
+      "goal": "slow",
+      "workingDirectory": "/tmp/read-context/slow",
+      "state": "completed",
+      "startedAt": "2026-10-12T08:40:00Z",
+      "finishedAt": "2026-10-12T08:45:00Z",
+      "measurement": {
+        "usageRead": true,
+        "inputTokens": 7,
+        "outputTokens": 5
+      },
+      "read": null,
+      "adapterData": {
+        "fenceRoot": "lane-install"
+      }
+    },
+    {
+      "id": "foreign-session",
+      "kind": "landing",
+      "workingDirectory": "other-lane",
+      "state": "completed",
+      "startedAt": "2026-10-12T09:00:00Z",
+      "finishedAt": "2026-10-12T09:26:00Z",
+      "measurement": {
+        "usageRead": true,
+        "inputTokens": 999
+      }
+    },
+    {
+      "id": "foreign-critic",
+      "kind": "read",
+      "goal": "other-goal",
+      "workingDirectory": "other-repository",
+      "state": "completed",
+      "startedAt": "2026-10-12T08:40:00Z",
+      "finishedAt": "2026-10-12T08:45:00Z",
+      "measurement": {
+        "usageRead": true,
+        "inputTokens": 999
+      }
+    },
+    {
+      "id": "critic-second",
+      "kind": "read",
+      "goal": "slow",
+      "workingDirectory": "/tmp/read-context/slow",
+      "state": "completed",
+      "startedAt": "2026-10-12T09:10:00Z",
+      "finishedAt": "2026-10-12T08:45:00Z",
+      "measurement": {
+        "usageRead": true,
+        "inputTokens": 8
+      },
+      "read": null,
+      "adapterData": {
+        "fenceRoot": "lane-install"
+      }
+    },
+    {
+      "id": "critic-before-handin",
+      "kind": "read",
+      "goal": "slow",
+      "workingDirectory": "/tmp/read-context/slow",
+      "state": "completed",
+      "startedAt": "2026-10-12T07:40:00Z",
+      "finishedAt": "2026-10-12T08:45:00Z",
+      "measurement": {
+        "usageRead": true,
+        "inputTokens": 999
+      },
+      "read": null,
+      "adapterData": {
+        "fenceRoot": "lane-install"
+      }
+    },
+    {
+      "id": "critic-after-push",
+      "kind": "read",
+      "goal": "slow",
+      "workingDirectory": "/tmp/read-context/slow",
+      "state": "completed",
+      "startedAt": "2026-10-12T09:26:00Z",
+      "finishedAt": "2026-10-12T08:45:00Z",
+      "measurement": {
+        "usageRead": true,
+        "inputTokens": 999
+      },
+      "read": null,
+      "adapterData": {
+        "fenceRoot": "lane-install"
+      }
+    },
+    {
+      "id": "critic-foreign-install",
+      "kind": "read",
+      "goal": "slow",
+      "workingDirectory": "/tmp/read-context/slow",
+      "state": "completed",
+      "startedAt": "2026-10-12T09:10:00Z",
+      "finishedAt": "2026-10-12T08:45:00Z",
+      "measurement": {
+        "usageRead": true,
+        "inputTokens": 999
+      },
+      "read": null,
+      "adapterData": {
+        "fenceRoot": "other-install"
+      }
+    }
+  ]
+}

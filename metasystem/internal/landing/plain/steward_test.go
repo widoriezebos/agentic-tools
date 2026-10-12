@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"golang.org/x/sys/unix"
@@ -50,7 +52,8 @@ func newStewardBed(t *testing.T) *stewardBed {
 		t.Fatal(err)
 	}
 	b.seams.Steward = &StewardEffects{
-		Owner: func(string) (lane.OwnerProbe, error) { return lane.OwnerProbe{}, nil },
+		UsageStore: &launch.Store{Root: t.TempDir()},
+		Owner:      func(string) (lane.OwnerProbe, error) { return lane.OwnerProbe{}, nil },
 		Withdraw: func(install string, q channel.Question, seams ProveSeams) (bool, error) {
 			b.calls = append(b.calls, "withdraw")
 			return WithdrawStaleLaneQuestion(install, q, seams)
@@ -448,19 +451,19 @@ func TestLandingStewardAppendHoldsInstallLock(t *testing.T) {
 	b.seams.Steward.Trunk = func(string, string, ProveSeams) (string, error) {
 		err := unix.Mkfifo(interventionsPath(b.install), 0600)
 		ready <- err
-		return "proving main", err
+		return "proving main " + strings.Repeat("x", 1024*1024), err
 	}
 	done := make(chan error, 1)
 	go func() { _, err := StewardStep(b.home, bedNow, b.seams); done <- err }()
 	if err := <-ready; err != nil {
 		t.Fatal(err)
 	}
-	// Opening the pipe for reading lets the pending append finish on every exit.
+	// A record larger than the pipe buffer keeps its append blocked until read.
 	var pipe *os.File
 	finished := false
 	t.Cleanup(func() {
 		if pipe == nil {
-			pipe, _ = os.OpenFile(interventionsPath(b.install), os.O_RDWR, 0600)
+			pipe, _ = os.OpenFile(interventionsPath(b.install), os.O_RDONLY, 0600)
 		}
 		if pipe != nil {
 			if !finished {
@@ -491,19 +494,30 @@ func TestLandingStewardAppendHoldsInstallLock(t *testing.T) {
 		t.Fatal("the intervention append did not hold the installation lock")
 	}
 	var err error
-	pipe, err = os.OpenFile(interventionsPath(b.install), os.O_RDWR, 0600)
+	pipe, err = os.OpenFile(interventionsPath(b.install), os.O_RDONLY, 0600)
 	if err != nil {
 		t.Fatal(err)
+	}
+	first := make([]byte, 1)
+	if _, err := io.ReadFull(pipe, first); err != nil {
+		t.Fatal(err)
+	}
+	held, err := lock.File(lockPath(b.install), 0600, lock.TryExclusive)
+	if !lock.Busy(err) {
+		if held != nil {
+			_ = held.Release()
+		}
+		t.Fatalf("the pending intervention append did not hold the installation lock: %v", err)
 	}
 	line, err := bufio.NewReader(pipe).ReadBytes('\n')
 	if err != nil {
 		t.Fatal(err)
 	}
 	var intervention Intervention
-	if err = json.Unmarshal(line, &intervention); err != nil {
+	if err = json.Unmarshal(append(first, line...), &intervention); err != nil {
 		t.Fatal(err)
 	}
-	if intervention.Row != "unproven-incidents" || intervention.Outcome != "proving main" {
+	if intervention.Row != "unproven-incidents" || !strings.HasPrefix(intervention.Outcome, "proving main ") {
 		t.Fatal(intervention)
 	}
 	if err = <-done; err != nil {
