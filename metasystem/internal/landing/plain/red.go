@@ -181,6 +181,9 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 		}
 		return replayBatch(seams, install, checkout, command, original, red, prior)
 	})
+	if result.Trunk && result.Result == Red && result.Cause != nil && result.Cause.Kind == "main" {
+		result = recordMainFailures(seams, result, []Result{result})
+	}
 	err = withLock(install, func() error {
 		if err := appendLine(seams.resultsPath(install), result); err != nil {
 			return err

@@ -126,7 +126,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 		red = true
 		code, out := b.run(t, b.root, "prove", "--trunk", "--wait", "--json")
 		var data struct{ Data plain.Result }
-		if err := json.Unmarshal([]byte(out), &data); err != nil || code != 1 || !data.Data.Trunk || data.Data.Scope != "full" || data.Data.Cause == nil || data.Data.Cause.Kind != "main" || calls != before+1 {
+		if err := json.Unmarshal([]byte(out), &data); err != nil || code != 1 || !data.Data.Trunk || data.Data.Scope != "full" || data.Data.Cause == nil || data.Data.Cause.Kind != "main" || calls != before+2 {
 			t.Fatalf("fresh red: %d %s calls=%d %v", code, out, calls, err)
 		}
 		register.repo.commits["main"] = register.repo.commit(register.repo.canonical)

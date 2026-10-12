@@ -83,6 +83,11 @@ func PolicyRequests(install string, effects ...ProveSeams) ([]PolicyRequest, err
 		if err != nil {
 			return requests, err
 		}
+		if running, recorded, alive, err := ReadRunning(install, seams); err != nil {
+			return requests, err
+		} else if recorded && alive && running.Trunk {
+			return requests, nil
+		}
 		waiting, err := Waiting(install)
 		if err != nil || len(waiting) == 0 {
 			return requests, err

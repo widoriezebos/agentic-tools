@@ -422,6 +422,10 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			total = strconv.Itoa(*running.UnitsTotal)
 		}
 		status.ProofHeadline = fmt.Sprintf("proving (%d of %s units, %s min); the agent waits for the keeper", running.UnitsDone, total, clockMinutes(running.Minutes))
+	} else if proof := status.TrunkProof; proof != nil && proof.Result == Green && proof.FlakePublished {
+		status.ProofHeadline = proof.Reason
+	} else if proof := status.LastProof; proof != nil && len(proof.Flakes) > 0 && strings.Contains(proof.Reason, "flake on main:") {
+		status.ProofHeadline = proof.Reason
 	} else if proof := status.TrunkProof; proof != nil && proof.Result == Red {
 		main, readErr := git.main()
 		unread("main for the trunk proof", readErr)

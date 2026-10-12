@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/designgate"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
@@ -904,7 +905,7 @@ func TestLandingClassifyTrunkRefreshCannotAdmitReplacement(t *testing.T) {
 	incident := incidentRecorderFixture(t, register, "finder-one")
 	b.owners.landing.mainEndpoint, b.owners.landing.machine = incident.mainEndpoint, incident.machine
 	script := filepath.Join(filepath.Dir(b.checkout), "check")
-	body := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$LANDING_COMMIT\" \"$LANDING_TREE\" \"$LANDING_PROOF_SCOPE\" >> " + shellCommand([]string{b.trace}) + "\nif [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\nprintf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n"
+	body := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$LANDING_COMMIT\" \"$LANDING_TREE\" \"$LANDING_PROOF_SCOPE\" >> " + shellCommand([]string{b.trace}) + "\nprintf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n"
 	helmMust(t, testexec.WriteFile(script, []byte(body), 0755))
 	if code, text := b.run(t, "landing", "prove", "--trunk", "--wait"); code == 0 || !strings.Contains(text, "LANE_RED_PERSON") {
 		t.Fatalf("trunk red: %d %s", code, text)
@@ -920,11 +921,16 @@ func TestLandingClassifyTrunkRefreshCannotAdmitReplacement(t *testing.T) {
 	}
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
 	result, _, err := plain.LastResult(b.installation)
-	if err != nil || result.Attempt != red.Attempt || result.Commit != red.Commit || !result.Trunk || result.ClassificationPerson == nil || result.Cause == nil || result.Cause.Kind != "main" || b.executions(t) != 2 {
+	if err != nil || result.Attempt != red.Attempt || result.Commit != red.Commit || !result.Trunk || result.ClassificationPerson == nil || result.Cause == nil || result.Cause.Kind != "main" || b.executions(t) != 3 {
 		t.Fatalf("classification reused a stale main reference or admitted its replacement: %+v %v count=%d", result, err, b.executions(t))
 	}
 	if ref := b.git(t, b.checkout, "rev-parse", "origin/main"); ref != red.Commit {
 		t.Fatalf("classification fetched a replacement without a next-full admission: %s", ref)
+	}
+	data := register.repo.commit(register.repo.canonical).files["plans/goals/trunk-red.json"]
+	entries, problems := goal.ParseTrunkRed(data)
+	if len(problems) != 0 || len(entries) != 1 || entries[0].Sightings[0].BaseCommit != red.Commit {
+		t.Fatalf("classified trunk red was not registered against its saved main: %+v %v", entries, problems)
 	}
 }
 

@@ -60,7 +60,7 @@ func TestReplayAndFlakeRepeatWaitForLongCheck(t *testing.T) {
 				if got.Result != Green || replays != 2 || len(b.records) != 2 {
 					t.Fatalf("long flake repeats lost their completed result: %+v cause=%+v replays=%d records=%d", got, got.Cause, replays, len(b.records))
 				}
-			} else if got.Result != Red || got.Cause == nil || got.Cause.Kind != "main" || replays != 1 || strings.Contains(got.Reason, "did not complete") {
+			} else if got.Result != Red || got.Cause == nil || got.Cause.Kind != "main" || replays != 3 || strings.Contains(got.Reason, "did not complete") {
 				t.Fatalf("long classification replay lost its attribution: %+v cause=%+v replays=%d", got, got.Cause, replays)
 			}
 		})

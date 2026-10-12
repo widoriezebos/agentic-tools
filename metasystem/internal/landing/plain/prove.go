@@ -956,7 +956,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			// The canceller retains the identities until both process groups are gone.
 			return nil
 		}
-		if result.Trunk && result.Result == Red && len(result.Failed) > 0 && (result.Cause == nil || result.Cause.Kind != "environment") {
+		if result.Trunk && result.Result == Red && len(result.Failed) > 0 && (result.Cause != nil && result.Cause.Kind == "main") {
 			result = recordMainFailures(seams, result, []Result{result})
 		}
 		if !result.Trunk && result.Result == Red && len(result.Failed) > 0 && (result.Cause == nil || result.Cause.Kind != "environment") && seams.RecordMain != nil {

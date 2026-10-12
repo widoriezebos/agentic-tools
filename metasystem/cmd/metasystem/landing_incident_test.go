@@ -170,7 +170,7 @@ func TestIncidentLandingProveListsEachMainFailureAndKeepsMainUnchangedOnRepeat(t
 			before := b.repo.canonical
 			check := lane.prove(t)
 			// The replay names the failed tests per unit (lane-speed U2); the main evidence is still one reporter run.
-			wantRuns := "merge-b:,main:u/a=TestOne,TestTwo u/green=TestBatchOnly u/b=TestThree"
+			wantRuns := "merge-b:,main:u/a=TestOne,TestTwo u/green=TestBatchOnly u/b=TestThree,main:u/a,main:u/b"
 			if unchanged {
 				wantRuns = "main:"
 			}

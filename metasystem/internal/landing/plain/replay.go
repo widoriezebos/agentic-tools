@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -37,6 +38,11 @@ func (r *Result) allowEnvironmentRepeat(previous Result) {
 func observeRed(seams ProveSeams, install string, running Running, decision scopeDecision, observed *proofOutput, result, previous Result, report checkReport, runErr error) Result {
 	result = timedResult(result, running.Since, seams.now())
 	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
+	if result.Load == 0 {
+		if sample := hostload.Read(seams.now()); sample.Available {
+			result.Load = sample.Load1m
+		}
+	}
 	result.Cause = &Cause{Kind: "unclassified", Evidence: running.Log}
 	var exit *exec.ExitError
 	var launch *exec.Error
@@ -92,6 +98,16 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 	if result.Cause.Kind == "environment" || len(result.Failed) == 0 {
 		return result
 	}
+	if running.Trunk {
+		if !slices.ContainsFunc(result.Failed, func(unit FailedUnit) bool { return len(unit.Tests) > 0 }) {
+			return replay(result, previous)
+		}
+		repeated := repeatRed(seams, install, command, dir, running, decision, result, true)
+		if repeated.Result == Red && repeated.Cause.Kind == "unclassified" {
+			return replay(repeated, previous)
+		}
+		return repeated
+	}
 	known := len(result.Failed) > 0
 	if seams.Judge != nil {
 		judged, err := seams.Judge(checkout, running.Commit, result.Failed)
@@ -108,7 +124,18 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 	if !known || previous.Result != "" {
 		return replay(result, previous)
 	}
+	repeated := repeatRed(seams, install, command, dir, running, decision, result, false)
+	if len(repeated.FlakeRepeats) == 0 {
+		return replay(repeated, previous)
+	}
+	return repeated
+}
+
+// repeatRed spends one repeat in the same worktree before a red is attributed.
+// Main checks bind the allowance to the attempt; batch checks bind it to the tree.
+func repeatRed(seams ProveSeams, install, command, dir string, running Running, decision scopeDecision, result Result, main bool) Result {
 	ordinary, ordinaryRepeat := *result.Cause, result.Repeat
+	var retained *Result
 	result.FlakeRepeats = make([]Running, len(result.Failed))
 	for i := range result.Failed {
 		repeat := running
@@ -124,8 +151,13 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 		if err != nil {
 			return err
 		}
-		for _, prior := range history {
-			if prior.Tree == result.Tree && prior.Repeat == "started" {
+		for i := len(history) - 1; i >= 0; i-- {
+			prior := history[i]
+			if main && prior.Attempt == result.Attempt && (prior.Repeat == "started" || prior.FlakePublished) {
+				retained = &prior
+				return &NoRepeat{}
+			}
+			if !main && prior.Repeat == "started" && prior.Tree == result.Tree {
 				return &NoRepeat{}
 			}
 		}
@@ -136,10 +168,18 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 	}); err != nil {
 		var refused *NoRepeat
 		if errors.As(err, &refused) {
+			if retained != nil {
+				if retained.RepeatComplete && !retained.FlakePublished {
+					green := *retained
+					green.Result, green.Cause, green.Failed = Green, nil, nil
+					return recordFlakes(seams, *retained, green, "alone", retained.FlakeRepeats)
+				}
+				return *retained
+			}
 			// The tree's one repeat is spent: the red keeps its ordinary cause.
 			result.FlakeRepeats, result.Repeat = nil, ordinaryRepeat
 			*result.Cause = ordinary
-			return replay(result, previous)
+			return result
 		}
 		result.Reason = "the repeat could not be recorded: " + err.Error()
 		return result
@@ -149,14 +189,17 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 		return result
 	}
 	repeats := result.FlakeRepeats
+	contract, _ := testpolicy.Load(filepath.Join(dir, "testing.json"))
 	var failures []string
+	uncertain := false
 	for i, unit := range result.Failed {
 		repeat := repeats[i]
 		repeat.Since = seams.now().UTC().Format(time.RFC3339)
 		var report checkReport
 		file, err := os.OpenFile(repeat.Log, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 		if err == nil {
-			report, err = runCheck(seams, dir, command, repeat, unit.Unit, decision, file, &proofOutput{output: io.Discard})
+			tests, _ := namedUnitTests(unit, contract)
+			report, err = runCheck(seams, dir, command, repeat, unit.Unit, decision, file, &proofOutput{output: io.Discard}, tests...)
 			if err == nil && (report.kind != "complete" || len(report.failed) != 0) {
 				err = fmt.Errorf("the repeat has no complete passing report")
 			}
@@ -167,15 +210,27 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 		repeats[i] = repeat
 		if err != nil {
 			result.Cause.Kind = "unclassified"
-			if report.kind != "complete" {
+			var exit *exec.ExitError
+			if report.kind != "complete" || main && (len(report.failed) == 0 || errors.As(err, &exit) && !exit.Exited()) {
+				uncertain = true
 				result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
 			}
 			failures = append(failures, unit.Unit+": "+err.Error())
 		}
 	}
 	if len(failures) > 0 {
+		if uncertain {
+			result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
+		}
 		result.Reason = strings.Join(failures, "; ")
-		return recordFlakes(seams, result, result, "alone", repeats)
+		result = recordFlakes(seams, result, result, "alone", repeats)
+		if main {
+			if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result) }); err != nil {
+				result.Cause.Kind = "flake"
+				result.Reason += "; " + err.Error()
+			}
+		}
+		return result
 	}
 	result.RepeatComplete = true
 	if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result) }); err != nil {
@@ -184,7 +239,28 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 	}
 	green := result
 	green.Result, green.Repeat, green.Failed, green.Load, green.Reason, green.Cause = Green, "", nil, 0, "", nil
-	return recordFlakes(seams, result, green, "alone", repeats)
+	green = recordFlakes(seams, result, green, "alone", repeats)
+	if main {
+		if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), green) }); err != nil {
+			result.Reason = "the repeat publication could not be recorded: " + err.Error()
+			return result
+		}
+	}
+	return green
+}
+
+// namedUnitTests selects only top-level Go tests in package units. Groups keep
+// their whole command, and an invalid identity keeps every test in its unit.
+func namedUnitTests(unit FailedUnit, contract testpolicy.Contract) ([]string, bool) {
+	if len(unit.Tests) == 0 || !strings.Contains(unit.Unit, "/") || strings.HasPrefix(unit.Unit, "section/") || slices.ContainsFunc(contract.Groups, func(group testpolicy.Group) bool { return group.ID == unit.Unit }) {
+		return nil, false
+	}
+	if slices.ContainsFunc(unit.Tests, func(name string) bool {
+		return !token.IsIdentifier(name) || !strings.HasPrefix(name, "Test") || name == "TestMain"
+	}) {
+		return nil, true
+	}
+	return unit.Tests, false
 }
 
 // replayTree is a prefix of the check's subject, oldest first. Main is true
@@ -300,31 +376,20 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			units[j] = unit.Unit
 			wholeForm := "replay: whole unit " + unit.Unit
 			wholeForms = append(wholeForms, wholeForm)
-			// Only a package unit replays by name. A contract group (go-batchtest, a command group, a section) keeps the whole-unit replay:
-			// its reporter runs the group as one command and cannot drop a name that is absent on the replayed tree, so a named red there would be blamed on main.
-			goUnit := strings.Contains(unit.Unit, "/") && !strings.HasPrefix(unit.Unit, "section/")
-			for _, group := range contract.Groups {
-				if group.ID == unit.Unit {
-					goUnit = false
-					break
+			names, invalid := namedUnitTests(unit, contract)
+			if len(names) == 0 {
+				if invalid {
+					wholeForm = "named replay invalid test identity: whole unit; " + wholeForm
 				}
-			}
-			if len(unit.Tests) == 0 || !goUnit {
 				forms = append(forms, wholeForm)
 				continue
 			}
-			if slices.ContainsFunc(unit.Tests, func(name string) bool {
-				return !token.IsIdentifier(name) || !strings.HasPrefix(name, "Test") || name == "TestMain"
-			}) {
-				forms = append(forms, "named replay invalid test identity: whole unit; "+wholeForm)
-				continue
-			}
 			named = true
-			tests = append(tests, unit.Tests...)
-			forms = append(forms, fmt.Sprintf("replay: %d named tests of %s", len(unit.Tests), unit.Unit))
+			tests = append(tests, names...)
+			forms = append(forms, fmt.Sprintf("replay: %d named tests of %s", len(names), unit.Unit))
 			// Multiple units keep each package's names in its own selector.
 			if len(result.Failed) > 1 {
-				units[j] += "=" + strings.Join(unit.Tests, ",")
+				units[j] += "=" + strings.Join(names, ",")
 			}
 		}
 		prefix.Log = filepath.Join(Dir(install), "proofs", prefix.Attempt+".log")
@@ -363,9 +428,29 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 				result.Replay += "; "
 			}
 			result.Replay += form
-			if complete && failed && recordingMain {
-				mainChecks = append(mainChecks, timedResult(Result{Result: Red, Commit: prefix.Commit, Tree: prefix.Tree,
-					Attempt: prefix.Attempt, Log: prefix.Log, Failed: report.failed}, prefix.Since, seams.now()))
+			if complete && failed && prefix.Main {
+				// Isolated checks retain their batch context but cannot authorize a full green.
+				check := timedResult(Result{Result: Red, Commit: prefix.Commit, Tree: prefix.Tree, Scope: "scoped",
+					Goals: result.Goals, BatchID: running.BatchID, BatchMembers: running.BatchMembers,
+					Attempt: prefix.Attempt, Log: prefix.Log, Failed: report.failed, Load: report.load,
+					Cause: &Cause{Kind: "unclassified", Tests: failingTests(report.failed), Evidence: prefix.Log}}, prefix.Since, seams.now())
+				if check.Load == 0 {
+					if sample := hostload.Read(seams.now()); sample.Available {
+						check.Load = sample.Load1m
+					}
+				}
+				if slices.ContainsFunc(report.failed, func(unit FailedUnit) bool { return len(unit.Tests) > 0 }) {
+					prefix.Trunk = true
+					check = repeatRed(seams, install, command, dir, prefix.Running, scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, check, true)
+					failed = check.Result == Red
+					complete = !failed || check.Cause.Kind == "unclassified"
+				}
+				if !failed {
+					result.Flakes = append(result.Flakes, check.Flakes...)
+					result.Reason += "; " + check.Reason
+				} else if complete && recordingMain {
+					mainChecks = append(mainChecks, check)
+				}
 			}
 			if prefix.Main && failed {
 				result.Cause.Name = mainFailureIdentity(report.failed)
@@ -376,7 +461,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 		}
 
 		_, removeErr := seams.git(checkout, "worktree", "remove", "--force", tree)
-		if i == 0 && prefix.Main && failed {
+		if i == 0 && prefix.Main && failed && complete {
 			result.Cause.Kind = "main"
 			if len(mainChecks) > 0 {
 				result.Cause.Evidence = mainChecks[0].Log

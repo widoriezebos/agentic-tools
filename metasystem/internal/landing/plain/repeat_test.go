@@ -472,16 +472,16 @@ func TestRepeatKnownRedWholeCheckFailureReplaysOnMain(t *testing.T) {
 	if red.Result != Red || red.Cause == nil || red.Cause.Kind != "main" || red.Cause.Name != "red:u/a:TestA" || red.Repeat != "started" || len(red.FlakeRepeats) != 0 || len(b.records) != 0 {
 		t.Fatalf("whole repeat lost main attribution: %+v cause=%+v records=%+v", red, red.Cause, b.records)
 	}
-	if judgements != 1 || len(calls) != 2 {
-		t.Fatalf("want one judgement, one whole repeat and one main replay: judgements=%d calls=%d", judgements, len(calls))
+	if judgements != 1 || len(calls) != 3 {
+		t.Fatalf("want one judgement, one whole repeat, one main replay and its named repeat: judgements=%d calls=%d", judgements, len(calls))
 	}
-	for i, only := range []string{"", "u/a"} {
+	for i, only := range []string{"", "u/a", "u/a"} {
 		commit := "commit"
-		if i == 1 {
+		if i > 0 {
 			commit = "parent"
 		}
 		attempt := "a1"
-		if i == 1 {
+		if i > 0 {
 			attempt += "-replay-1"
 		}
 		wantDir := filepath.Join(proofTrees(b.install), attempt, "metasystem")
@@ -490,7 +490,7 @@ func TestRepeatKnownRedWholeCheckFailureReplaysOnMain(t *testing.T) {
 		}
 	}
 	lines := b.lines()
-	if len(lines) != 4 || lines[1].Repeat != "started" || !reflect.DeepEqual(lines[len(lines)-1], red) {
+	if len(lines) != 6 || lines[1].Repeat != "started" || !reflect.DeepEqual(lines[len(lines)-1], red) {
 		t.Fatalf("whole repeat and its attributed result were not recorded: %+v", lines)
 	}
 	b.refused()

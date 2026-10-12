@@ -148,6 +148,10 @@ func recordFlakes(seams ProveSeams, red, green Result, kind string, repeats []Ru
 		if recorded.Seen != 1 {
 			seen = fmt.Sprintf("%d times", recorded.Seen)
 		}
+		if where == "main" {
+			reasons = append(reasons, "flake on main: "+strings.Join(unit.Tests, ", ")+", green on repeat; registered")
+			continue
+		}
 		reasons = append(reasons, fmt.Sprintf("%s failed once and passed when run again %s; seen %s; goal %s fixes it", unit.Unit, how, seen, recorded.Goal))
 	}
 	if green.Result == Green {

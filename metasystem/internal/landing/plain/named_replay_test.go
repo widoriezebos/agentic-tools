@@ -134,6 +134,17 @@ func TestReplayFallsBackBeforeAttributingNamedResults(t *testing.T) {
 			}
 			b.seams.Command = func(cmd *exec.Cmd) error {
 				calls++
+				if calls > tc.calls {
+					want := "TestOrder"
+					if tc.name == "command group" || tc.name == "go group" || tc.name == "section group" {
+						want = ""
+					}
+					if calls != tc.calls+1 || commandEnv(cmd, "LANDING_ONLY_TESTS") != want {
+						t.Fatalf("main repeat selector: got %q, want %q", commandEnv(cmd, "LANDING_ONLY_TESTS"), want)
+					}
+					fmt.Fprintf(cmd.Stdout, "LANDING-FAILED\t%s\tTestOrder\nLANDING-CHECKED\t1\n", tc.unit)
+					return fmt.Errorf("persistent red")
+				}
 				if commandEnv(cmd, "LANDING_ONLY") != tc.unit {
 					t.Fatalf("unit=%q", commandEnv(cmd, "LANDING_ONLY"))
 				}
@@ -176,7 +187,11 @@ func TestReplayFallsBackBeforeAttributingNamedResults(t *testing.T) {
 			if tc.whole == "incomplete" || tc.whole == "green" {
 				want = "unclassified"
 			}
-			if calls != tc.calls || removals != 1 || !strings.Contains(result.Replay, tc.form) || result.Cause.Kind != want {
+			wantCalls := tc.calls
+			if want == "main" {
+				wantCalls++
+			}
+			if calls != wantCalls || removals != 1 || !strings.Contains(result.Replay, tc.form) || result.Cause.Kind != want {
 				t.Fatalf("result=%+v cause=%+v calls=%d removals=%d", result, result.Cause, calls, removals)
 			}
 			if want == "main" && (len(incidents) != 1 || incidents[0].Failed[0].Tests[0] != "TestOrder") {
