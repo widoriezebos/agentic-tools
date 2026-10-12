@@ -1,7 +1,9 @@
 package branch
 
 import (
+	"encoding/json"
 	"fmt"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -360,6 +362,15 @@ func validateRangeWithGit(repo, endpointTip, tip, goalID string, gitRead func(st
 				if landed {
 					delete(emptyUnits, kind.Unit)
 					continue
+				}
+			}
+			if !earlier && unitLists[kind.Unit] && slices.ContainsFunc(commits, func(c Commit) bool { return c.ID == kind.CommitID && c.Kind != Unit }) {
+				// A recorded tip examination can include a plan or read after
+				// the last build. Its attestation is validated by the read owner.
+				data, readErr := gitRead(repo, "show", id+":"+attestationPath(goalID, kind.CommitID))
+				var att Attestation
+				if readErr == nil && json.Unmarshal(data, &att) == nil && len(att.CoveredUnits) > 0 && att.Subject.Commit == kind.CommitID {
+					earlier = true
 				}
 			}
 			if !earlier {

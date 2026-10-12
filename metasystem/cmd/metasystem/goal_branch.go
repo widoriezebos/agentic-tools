@@ -227,6 +227,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	root := pathFlag(flags, "root", ".", "checkout root")
 	goalID := flags.String("goal", "", "goal id")
 	unit := flags.String("unit", "", "Goal-Unit commit")
+	units := flags.String("units", "", "comma-separated units covered by this read")
 	unitRead := flags.String("unit-read", "", "bundle of the build's clean read to record as the unit's read")
 	brief, runtime, model := &goalBranchReadOption{name: "brief"}, &goalBranchReadOption{name: "runtime"}, &goalBranchReadOption{name: "model"}
 	flags.Var(brief, "brief", "accepted implementation brief to freeze into the critic dispatch")
@@ -315,6 +316,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Scope: projection.Tree.Live[*goalID], Repo: *root, Remote: endpoint.Remote,
 		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect, Join: *join,
 		BriefPath: brief.value, BuildBriefSHA256: *buildDigest, Runtime: runtime.value, Model: model.value, Selected: *selected, UnitRead: bundle,
+		Units: coveredUnitNames(*units),
 		CheckClaim: func() error {
 			if fix := landingFixFor(*root, checkout, *goalID, int64(os.Getpid())); fix != nil && fix.Commit == *unit {
 				return nil
@@ -399,6 +401,7 @@ func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDepende
 	out := flags.String("out", "", "new artifact directory")
 	receipt := flags.String("test-receipt", "", "schema-3 landing test receipt")
 	last := flags.Bool("last", false, "the holder's word that this is the goal's complete unit set")
+	exceptionCandidate := flags.Bool("exception-candidate", false, "compose all branch work for a person's exception")
 	through := flags.String("through", "", "last unit commit of a human-approved partial prefix")
 	parseErr := flags.Parse(args)
 	if parseErr != nil && parseProblem.Len() > 0 {
@@ -446,7 +449,8 @@ func goalBranchLandPrepRun(args []string, dependencies goalBranchLandPrepDepende
 		Repo: *root, Remote: endpoint.Remote, EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID,
 		Out: *out, TestReceipt: *receipt, Last: *last, Through: *through, LandingReady: file.Landing != nil,
 		GoalPage: string(goal.RenderFile(file)), ApprovedBy: file.Approved.By, Seat: seat, CheckClaim: check, ReadsWaived: goal.ReadsWaived(file),
-		CandidateOnly: dependencies.CandidateOnly,
+		CandidateOnly:      dependencies.CandidateOnly,
+		ExceptionCandidate: *exceptionCandidate,
 	})
 	if err != nil {
 		return goalBranchLandPrepOutcome{}, 1, err

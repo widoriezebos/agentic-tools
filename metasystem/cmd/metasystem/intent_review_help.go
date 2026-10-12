@@ -8,7 +8,7 @@ const (
 	reviewFindingUsage = "metasystem work review G --finding F --test NAME"
 	reviewDesignUsage  = "metasystem design review FILE [--goal G] [--dispositions FILE [--after N]] [--retry N]"
 	reviewJobUsage     = "metasystem work review j2:J [--dispositions FILE]"
-	reviewCommitUsage  = "metasystem work review --commit SHA --goal G"
+	reviewCommitUsage  = "metasystem work review --commit SHA --goal G [--units U1,U2,…]"
 	reviewRunUsage     = "metasystem work review run:RUN [--model MODEL]"
 	reviewChangesUsage = "metasystem work review --changes --brief FILE [--goal G] [--retry N]"
 	reviewDiffUsage    = "metasystem work review --patch PATCH --brief FILE [--goal G] [--retry N]"
@@ -61,7 +61,7 @@ func reviewHelpForms() []intentHelpForm {
 			effects:     "Requests the committed version's independent review, then completes and publishes the review once its findings and checks are resolved. It does not land or conclude the goal.",
 			authority:   "The commit must belong to the goal's work. Decisions are the author's; severe or unproven risk still needs the applicable human act.",
 			repetition:  "Repeat to observe or collect that review. --dispositions FILE decides its findings. --retry N explicitly retries a stopped examination that failed without findings; preserve the exact commit and goal.",
-			flags:       []string{"commit", "goal", "brief", "dispositions", "retry", "model"},
+			flags:       []string{"commit", "goal", "units", "brief", "dispositions", "retry", "model"},
 			optionNotes: map[string]intentHelpOptionNote{"dispositions": {description: "the author's decisions on this commit's examination"}, "retry": {description: "one more examination after failed round N is stopped"}, "model": {description: "the critic model, subject to roster authorization"}},
 			example:     []string{"metasystem", "work", "review", "--commit", "SHA", "--goal", "G", "--json"},
 		},

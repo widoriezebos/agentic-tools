@@ -32,6 +32,7 @@ const ReadDispatchPendingCode = "GOAL_READ_DISPATCH_PENDING"
 const ReadDispatchFailed = "goal branch read could not dispatch its critic"
 
 type BranchReadRequest struct {
+	Units                                                    []string
 	Scope                                                    *goal.GoalFile
 	Repo, Remote, EndpointTip, BranchTip, GoalID, UnitCommit string
 	BriefPath, Runtime, Model                                string
@@ -92,7 +93,8 @@ type ReadGateRequest struct {
 }
 
 type branchReadRecord struct {
-	GateFailure string `json:"gateFailure,omitempty"`
+	CoveredUnits []string `json:"coveredUnits,omitempty"`
+	GateFailure  string   `json:"gateFailure,omitempty"`
 
 	TransferCoverage  *goal.TransferCoverage `json:"transferCoverage,omitempty"`
 	SchemaVersion     int                    `json:"schemaVersion"`
@@ -318,19 +320,6 @@ func branchReadID(prefix string) (string, error) {
 		return "", err
 	}
 	return prefix + "-" + time.Now().UTC().Format("20060102t150405z") + "-" + hex.EncodeToString(raw), nil
-}
-
-func branchUnitWithRepository(repository BranchReadRepository, repo, endpoint, tip, goal, commit string) (KindInfo, error) {
-	commits, err := repository.Range(repo, endpoint, tip, goal)
-	if err != nil {
-		return KindInfo{}, err
-	}
-	for _, candidate := range commits {
-		if candidate.ID == commit && candidate.Kind == Unit {
-			return KindInfo{Kind: Unit, Units: candidate.Units, Unit: candidate.Unit, CommitID: candidate.ID}, nil
-		}
-	}
-	return KindInfo{}, operationRefusal(ReadInvalidCode, "commit %s is not a build on goal %s's branch\nrun: metasystem work status %s", commit, goal, goal)
 }
 
 // branchReadDefaultMode is the Working Mode header of a critic brief whose
@@ -621,7 +610,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if dropped, done, err := droppedRead(repository, request); done || err != nil {
 		return dropped, err
 	}
-	info, err := branchUnitWithRepository(repository, request.Repo, request.EndpointTip, request.BranchTip, request.GoalID, request.UnitCommit)
+	info, err := branchReadSubject(repository, request)
 	if err != nil {
 		return result, err
 	}
@@ -657,6 +646,19 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	if record.Goal != "" && (record.Goal != request.GoalID || record.UnitCommit != request.UnitCommit || record.Tree != subject.Tree) {
 		return result, fmt.Errorf("goal branch read record does not match the requested unit")
 	}
+	coverageChanged := false
+	if len(request.Units) > 0 {
+		units, namesErr := requestUnits(CommitRequest{Units: request.Units})
+		if namesErr != nil {
+			return result, namesErr
+		}
+		slices.Sort(units)
+		coverageChanged = !slices.Equal(units, record.CoveredUnits)
+		if (record.RootJob != "" || record.AttestationCommit != "" || record.DispatchPending || record.FrozenBriefSHA256 != "" && !record.DispatchRetryable) && coverageChanged {
+			return result, operationRefusal(ReadBriefChangedCode, "this review already started with other units\nrun: metasystem work status %s", request.GoalID)
+		}
+		record.CoveredUnits = units
+	}
 	supplied, inputSHA256, err := branchReadInput(request.BriefPath)
 	if err != nil {
 		return result, err
@@ -677,7 +679,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	// dispatch refused (retryable, no root) started nothing, so a request
 	// naming a brief, runtime or model starts over with them; a request
 	// naming none repeats the saved start.
-	restart := record.RootJob == "" && record.DispatchRetryable && (inputSHA256 != "" || request.Runtime != "" || request.Model != "")
+	restart := record.RootJob == "" && record.DispatchRetryable && (inputSHA256 != "" || request.Runtime != "" || request.Model != "" || coverageChanged)
 	if !restart && record.RootJob != "" && (inputSHA256 != "" && inputSHA256 != record.BriefInputSHA256 ||
 		request.Runtime != "" && request.Runtime != record.Runtime || request.Model != "" && request.Model != record.Model) {
 		return result, operationRefusal(ReadBriefChangedCode, "this build's review already started with another brief, runtime or model in critic job %s\nrun: metasystem work review %s", record.RootJob, request.GoalID)
@@ -711,6 +713,9 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		return result, nil
 	}
 	if request.UnitRead != nil {
+		if len(record.CoveredUnits) > 0 {
+			return result, fmt.Errorf("a read naming covered units needs an independent branch critic")
+		}
 		bundle, err := validateUnitReadBundle(request.UnitRead, request.GoalID, subject)
 		if err != nil {
 			return result, err
@@ -793,8 +798,12 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 			commit = CommitRead
 		}
 		collect := CommitReadRequest{Repo: request.Repo, Remote: request.Remote,
-			EndpointTip: request.EndpointTip, GoalID: request.GoalID, Units: info.Units, OpID: record.GateRunID + "-collect",
+			CoveredUnits: record.CoveredUnits,
+			EndpointTip:  request.EndpointTip, GoalID: request.GoalID, Units: info.Units, OpID: record.GateRunID + "-collect",
 			CheckClaim: request.CheckClaim, RootJob: record.RootJob, GateRunID: record.GateRunID, GateTree: record.Tree, TestsChanged: tests}
+		if len(record.CoveredUnits) > 0 {
+			collect.SubjectCommit = request.UnitCommit
+		}
 		if len(inherited) > 0 {
 			frozen, readErr := os.ReadFile(record.Brief)
 			if readErr != nil {
@@ -866,6 +875,10 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		brief, err = branchReadBriefWithRepository(repository, request.Repo, request.EndpointTip, request.GoalID, request.UnitCommit, supplied, packet, request.BuildBriefSHA256)
 		if err != nil {
 			return result, err
+		}
+		if len(record.CoveredUnits) > 0 {
+			brief += "\n# Covered units\n\nThis read covers " + strings.Join(record.CoveredUnits, ", ") +
+				". Examine all their changes on this branch, including earlier commits:\n\n```sh\ngit diff " + request.EndpointTip + "..." + request.UnitCommit + " --\n```\n"
 		}
 		for _, obligation := range inherited {
 			if !hex40(obligation.SourceCommit) {
@@ -963,7 +976,7 @@ func installedBranchRead(reads attestationReads, request BranchReadRequest, info
 		if att.Source.Kind == "reader-record" || att.Source.Kind == "unit-read" {
 			return "", false, nil
 		}
-		if att.Source.RootJob != record.RootJob || att.Gate.RunID != record.GateRunID || att.Subject.Tree != record.Tree {
+		if att.Source.RootJob != record.RootJob || att.Gate.RunID != record.GateRunID || att.Subject.Tree != record.Tree || !slices.Equal(att.CoveredUnits, record.CoveredUnits) {
 			return "", false, operationRefusal(ReadInvalidCode, "the recorded review %s of build %s came from reviewer %s and check %s, not %s and %s\nrun: metasystem work status %s",
 				commit.ID, request.UnitCommit, att.Source.RootJob, att.Gate.RunID, record.RootJob, record.GateRunID, request.GoalID)
 		}

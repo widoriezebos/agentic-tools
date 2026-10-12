@@ -2001,6 +2001,24 @@ func TestGoalLandingRetryIdentitySurvivesASecondClone(t *testing.T) {
 	fresh.assertLanding(result, fixedOut, 2)
 }
 
+func TestGoalLandingExceptionCandidateNamesUnreadBuilds(t *testing.T) {
+	t.Parallel()
+	f, _, _ := newCompositionFacts(t)
+	// The last build keeps its patch, but has no clean read on this branch.
+	tip := f.units[2]
+	f.folds[2] = f.folds[2][:1]
+	f.writeFiles(f.repo, f.nodes[tip].files)
+	request := f.request(f.base, tip, "", "")
+	request.CandidateOnly, request.ExceptionCandidate, request.LandingReady = true, true, false
+	f.expectPending(tip, 3)
+	f.expect("close")
+	result, err := prepareLanding(request, f.repository())
+	if err != nil || result.Candidate == "" || strings.Join(result.UnreadUnits, ",") != "u3" {
+		t.Fatalf("the exception candidate lost its unread build: %+v %v", result, err)
+	}
+	f.consumed()
+}
+
 func TestGoalLandingCandidateOnlyMatchesPreparationWithoutEffects(t *testing.T) {
 	t.Parallel()
 	f, tip, projected := newCompositionFacts(t)

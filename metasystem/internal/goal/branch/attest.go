@@ -74,6 +74,7 @@ type TestChange struct {
 }
 
 type Attestation struct {
+	CoveredUnits   []string           `json:"coveredUnits,omitempty"`
 	CanonicalRead  json.RawMessage    `json:"canonicalRead,omitempty"`
 	ReadDigest     string             `json:"readDigest,omitempty"`
 	SchemaVersion  int                `json:"schemaVersion"`
@@ -120,6 +121,8 @@ type UnitReadBundle struct {
 }
 
 type CommitReadRequest struct {
+	SubjectCommit                                 string
+	CoveredUnits                                  []string
 	GateObservation                               *GateObservation
 	CanonicalRead                                 json.RawMessage
 	ReadDigest                                    string
@@ -550,6 +553,9 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 	if att.SchemaVersion != 1 || att.Goal != goalID || att.Unit != unit || att.Verdict != "LAND" || att.Subject.Commit != commit {
 		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record at %s is not a landing verdict for %s/%s\nrun: metasystem work review %s", commit, goalID, unit, goalID)
 	}
+	if _, err := requestUnits(CommitRequest{Units: att.CoveredUnits}); err != nil {
+		return Attestation{}, err
+	}
 	digest, err := digestAttestation(att)
 	if err != nil || digest != att.SHA256 {
 		return Attestation{}, operationRefusal(ReadInvalidCode, "the review record of %s changed after it was written\nrun: metasystem work review %s", commit, goalID)
@@ -593,7 +599,7 @@ func validateAttestation(r attestationReads, repo, snapshot, endpointTip, goalID
 			return Attestation{}, err
 		}
 		if att.Carry.FromTree != prior.Subject.Tree || att.Carry.ToCommit != commit || att.Carry.ToTree != subject.Tree ||
-			priorChange != change || !sameFoldDigests(withoutReadFolds(prior.Folds), withoutReadFolds(folds)) || prior.Source != att.Source || !slices.Equal(prior.CoversFindings, att.CoversFindings) || !slices.Equal(prior.CoversCommits, att.CoversCommits) {
+			priorChange != change || !sameFoldDigests(withoutReadFolds(prior.Folds), withoutReadFolds(folds)) || prior.Source != att.Source || !slices.Equal(prior.CoversFindings, att.CoversFindings) || !slices.Equal(prior.CoversCommits, att.CoversCommits) || !slices.Equal(prior.CoveredUnits, att.CoveredUnits) {
 			return Attestation{}, operationRefusal(ReadStaleCode, "the review carried over from %s no longer fits: the changes moved since\nrun: metasystem work review %s", att.Carry.FromCommit, goalID)
 		}
 		return att, nil
@@ -912,6 +918,14 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		return "", Attestation{}, operationRefusal(ReadUngatedCode, "the review can't be recorded without its passing quick check\nrun: metasystem work review %s", req.GoalID)
 	}
 	unitCommit, err := unitCommitInRangeWithReads(r, req.Repo, req.EndpointTip, state.baseTip, req.GoalID, units)
+	if req.SubjectCommit != "" && len(req.CoveredUnits) > 0 {
+		unitCommit = req.SubjectCommit
+		ancestor, ancestorErr := r.IsAncestor(req.Repo, unitCommit, state.baseTip)
+		if ancestorErr != nil || !ancestor {
+			return "", Attestation{}, operationRefusal(ReadInvalidCode, "the reviewed tip is no longer on goal %s's branch\nrun: metasystem work status %s", req.GoalID, req.GoalID)
+		}
+		err = nil
+	}
 	if err != nil {
 		return "", Attestation{}, err
 	}
@@ -930,11 +944,15 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		return "", Attestation{}, err
 	}
 	att := Attestation{
+		CoveredUnits:  append([]string(nil), req.CoveredUnits...),
 		CanonicalRead: append(json.RawMessage(nil), req.CanonicalRead...), ReadDigest: req.ReadDigest,
 		SchemaVersion: 1, Goal: req.GoalID, Unit: list, Subject: subject,
 		Verdict: "LAND", Gate: GateObservation{Kind: "go-gate-fast", Tree: req.GateTree, RunID: req.GateRunID},
 		Folds: folds, TestsChanged: append([]TestChange(nil), req.TestsChanged...),
 		CoversFindings: append([]string(nil), req.CoversFindings...), CoversCommits: append([]string(nil), req.CoversCommits...),
+	}
+	if _, err := requestUnits(CommitRequest{Units: att.CoveredUnits}); err != nil {
+		return "", Attestation{}, err
 	}
 	if req.GateObservation != nil && req.GateObservation.Kind == "unit-check" {
 		if req.GateObservation.RunID != req.GateRunID || !validGateObservation(*req.GateObservation, subject.Tree) {
@@ -948,6 +966,9 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		prior, err := validateAttestation(r, req.Repo, "", req.EndpointTip, req.GoalID, list, req.Carry, map[string]bool{})
 		if err != nil {
 			return "", Attestation{}, err
+		}
+		if len(prior.CoveredUnits) > 0 {
+			return "", Attestation{}, operationRefusal(ReadStaleCode, "a read covering several units needs a new examination after rebase\nrun: metasystem work review --commit %s --goal %s --units %s", unitCommit, req.GoalID, strings.Join(prior.CoveredUnits, ","))
 		}
 		priorChange, err := changeDigestWithReads(r, req.Repo, req.Carry)
 		if err != nil {

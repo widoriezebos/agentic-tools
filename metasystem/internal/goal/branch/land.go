@@ -49,7 +49,8 @@ type LandRequest struct {
 	// CandidateOnly composes the pending landing and returns its projected
 	// candidate workspace tree, the tree a landing receipt must prove,
 	// without reading a receipt or writing artifacts.
-	CandidateOnly bool
+	CandidateOnly      bool
+	ExceptionCandidate bool
 }
 
 type LandResult struct {
@@ -57,6 +58,7 @@ type LandResult struct {
 	RetryIdentity                                           string
 	ProofNumber                                             int
 	FailingGroups                                           []string
+	UnreadUnits                                             []string
 }
 
 type LandingProof struct {
@@ -584,6 +586,9 @@ func PrepareLanding(req LandRequest) (LandResult, error) {
 }
 
 func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
+	if req.ExceptionCandidate && !req.CandidateOnly {
+		return LandResult{}, fmt.Errorf("an exception candidate cannot prepare a landing")
+	}
 	if _, err := branchMergeDriverArgs(); err != nil {
 		return LandResult{}, err
 	}
@@ -622,14 +627,20 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 		}
 	}
 	landable := status.Prefix
-	if req.ReadsWaived {
+	var unreadUnits []string
+	if req.ExceptionCandidate {
+		for _, unit := range status.Units[status.Prefix:] {
+			unreadUnits = append(unreadUnits, unit.Unit)
+		}
+	}
+	if req.ReadsWaived || req.ExceptionCandidate {
 		landable = len(status.Units)
 	}
 	count := landable
 	if count == 0 {
 		return LandResult{}, operationRefusal(LandUnprovenCode, "goal %s has no reviewed build ready to land\nrun: metasystem work review %s", req.GoalID, req.GoalID)
 	}
-	if req.Last && !req.LandingReady {
+	if req.Last && !req.LandingReady && !req.ExceptionCandidate {
 		return LandResult{}, operationRefusal(LandPartialCode, "--last requires the goal queued to land (metasystem work land %s --queue-only)", req.GoalID)
 	}
 	if req.Last && landable != len(status.Units) {
@@ -763,7 +774,7 @@ func prepareLanding(req LandRequest, r landingRepository) (LandResult, error) {
 		return LandResult{}, err
 	}
 	if req.CandidateOnly {
-		return LandResult{Endpoint: req.EndpointTip, Candidate: projected, LastUnit: lastUnit}, nil
+		return LandResult{Endpoint: req.EndpointTip, Candidate: projected, LastUnit: lastUnit, UnreadUnits: unreadUnits}, nil
 	}
 	evidence, err := readLandingReceiptWith(r, req.Repo, req.GoalID, req.TestReceipt, projected)
 	if err != nil {

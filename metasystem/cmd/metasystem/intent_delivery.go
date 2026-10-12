@@ -95,6 +95,7 @@ func intentDeliveryCommands() []intentCommand {
 				{name: "changes", usage: "with G: submit this checkout's current changes as the goal's work; without G: feedback on them"},
 				{name: "patch", value: "PATCH", usage: "with G: submit this patch file as the goal's work; without G: feedback on it"},
 				{name: "commit", value: "SHA", usage: "review one committed version of a goal's work, with --goal"},
+				{name: "units", value: "U1,U2,…", usage: "with --commit: units covered by this branch examination, stored with its read"},
 				{name: "dispositions", value: "FILE", usage: "the author's decisions, in the bound file the review wrote"},
 				{name: "retry", value: "N", usage: "examine the subject once more after examination N failed without findings"},
 				reasonFlag("because", "the reason a person accepts the builder's measured size"),
@@ -450,6 +451,14 @@ func intentBranchStateWithDeadline(root, goalID string, deadline func(time.Durat
 		}
 		attestation, err := branch.ValidateAttestationAt(root, branchTip, endpointTip, goalID, unit.Unit, unit.Commit)
 		if err != nil {
+			for _, read := range status.CleanReads {
+				if read.CoversUnit(unit) {
+					attestation, err = read, nil
+					break
+				}
+			}
+		}
+		if err != nil {
 			return intentBranchState{}, fmt.Errorf("unit %s has no valid attestation: %w", unit.Unit, err)
 		}
 		state.Sources = append(state.Sources, attestation.Source.Kind)
@@ -630,6 +639,9 @@ func runIntentReview(inv *intentInvocation) int {
 		}
 	}
 	manual := inv.input.has("changes") || inv.input.has("patch")
+	if inv.input.has("units") && !inv.input.has("commit") {
+		return inv.refuse("", "covered units need a commit review; nothing was done", "metasystem work review --commit SHA --goal GOAL --units U1,U2")
+	}
 	if inv.input.has("commit") {
 		if len(inv.input.args) > 0 || manual {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--commit names the subject itself, so it takes no other subject; nothing was done",
@@ -1248,6 +1260,9 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 }
 
 func (inv *intentInvocation) reviewCommit(unit string) intentResult {
+	if inv.input.has("units") && strings.TrimSpace(inv.input.text("units")) == "" {
+		return intentResult{Outcome: intentRefused, code: 2, Summary: "the covered unit list is empty; nothing was reviewed", next: inv.typedArgvWith("--units", "U1,U2")}
+	}
 	goalID := inv.input.text("goal")
 	targets := []intentTarget{{Kind: "commit", ID: unit}}
 	if fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), inv.layout.GitRoot, goalID); fix != nil {
@@ -1265,6 +1280,9 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	// --changes do: a goal worktree's installation, with this one selected.
 	root := inv.goalBranchInstallation(goalID)
 	args := []string{"--root", root, "--goal", goalID, "--unit", unit}
+	if inv.input.has("units") {
+		args = append(args, "--units", inv.input.text("units"))
+	}
 	if root != inv.layout.InstallationRoot.Path() {
 		args = append(args, "--selected-installation", inv.layout.InstallationRoot.Path())
 	}
@@ -2340,6 +2358,7 @@ func goalProgress(designs []string, state intentBranchState) (goalProgressState,
 		}
 	}
 	clean := func(index int) bool {
+		// A covering read marks a build clean only through status (the build at or before the read's subject); a later rebuild stays unread.
 		return state.ReadsWaived || index < state.Status.Prefix || state.Status.Units[index].Resolved()
 	}
 	covered := make([]bool, len(state.Status.Units))
@@ -2459,8 +2478,15 @@ func handLandingSubject(targets []intentTarget, goalID, through string, state in
 			missing = append(missing, strings.Join(progress.Unread, ", ")+verb)
 		}
 		next := []string{"metasystem", "work", "review", goalID, "--work", progress.Unit}
-		if progress.NeedsBuild {
-			next = []string{"metasystem", "work", "build", goalID, "--work", progress.Unit, "--brief", "FILE", "--check", "COMMAND"}
+		if len(progress.Unbuilt) > 0 {
+			next = []string{"metasystem", "work", "build", goalID, "--work", progress.Unbuilt[0], "--brief", "FILE", "--check", "COMMAND"}
+		}
+		if len(progress.Unbuilt) == 0 && (whole && !records || len(state.Status.CleanReads) > 0) {
+			var missingUnits []string
+			for _, unit := range progress.Unread {
+				missingUnits = append(missingUnits, strings.Split(unit, "+")...)
+			}
+			next = []string{"metasystem", "work", "review", "--commit", state.BranchTip, "--goal", goalID, "--units", strings.Join(missingUnits, ",")}
 		}
 		declaration := fmt.Sprintf("its design declares %d units", progress.Declared)
 		if progress.Declared == 0 {

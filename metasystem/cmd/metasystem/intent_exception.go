@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -117,8 +118,12 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 		tree := composed.Workspace
 		data["candidate"], data["tree"], data["endpoint"] = tree, tree, composed.Endpoint
 		if opid = inv.recordedException(goalID, tree); opid == "" {
+			reason := inv.input.text("reason")
+			if notice, _ := data["unreadBuilds"].(string); notice != "" {
+				reason += "; " + notice
+			}
 			args := []string{"--root", inv.stateRoot, "--id", goalID, "--by", inv.input.text("by"), "--tree", tree,
-				"--past", inv.input.text("exception"), "--why", inv.input.text("reason"), "--expires", expires.String()}
+				"--past", inv.input.text("exception"), "--why", reason, "--expires", expires.String()}
 			if inv.input.has("replace-exception") {
 				args = append(args, "--supersede", inv.input.text("replace-exception"))
 			}
@@ -172,6 +177,8 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 		return inv.carriedStopped(goalID, opid, targets, data, "its state can't be read from the goal records", "its carry status cannot be read: "+err.Error())
 	}
 	data["word"], data["consumption"] = status.Word, status.Consumption
+	// The recorded exception keeps its notice when the branch gains more work.
+	notice := inv.exceptionUnreadBuilds(goalID, opid)
 	acknowledgePlans := false
 	if status.Word == "ok" && status.Consumption == "none" {
 		if subject.Workspace == "" {
@@ -302,7 +309,13 @@ func (inv *intentInvocation) landException(goalID string, validateOnly ...bool) 
 			stopped.Decision = ""
 			stopped.Data.(map[string]any)["afterProof"] = continuation
 		}
+		if notice != "" {
+			stopped.Details = append(stopped.Details, notice)
+		}
 		return stopped
+	}
+	if notice != "" {
+		result.Summary += "; " + notice
 	}
 	result.Details = append(result.Details, log...)
 	return result
@@ -403,7 +416,7 @@ func (inv *intentInvocation) carriedRefresh(primary string, targets []intentTarg
 // read, is empty.
 func (inv *intentInvocation) composeCarriedSubject(root, primary, goalID string, targets []intentTarget, data map[string]any) (landing.CarriedSubject, string, *intentResult) {
 	before := inv.intentBranchTip(goalID)
-	candidate, code, err := inv.delivery().landCandidate([]string{"--root", root, "--goal", goalID, "--last"})
+	candidate, code, err := inv.delivery().landCandidate([]string{"--root", root, "--goal", goalID, "--last", "--exception-candidate"})
 	if err != nil {
 		return landing.CarriedSubject{}, "", withCauseRef(err, intentResult{Outcome: intentRefused, code: max(code, 1), Targets: targets, Data: data,
 			Summary: "the goal's work can't be put together on top of main, so nothing was recorded",
@@ -427,7 +440,32 @@ func (inv *intentInvocation) composeCarriedSubject(root, primary, goalID string,
 	if after := inv.intentBranchTip(goalID); before != "" && after == before {
 		tip = before
 	}
+	data["branchTip"] = tip
+	if len(candidate.Result.UnreadUnits) > 0 {
+		data["unreadBuilds"] = strings.Join(candidate.Result.UnreadUnits, ", ") + " land without a clean read"
+	}
 	return landing.CarriedSubject{Goal: goalID, Endpoint: candidate.Result.Endpoint, EndpointWorkspace: endpointWorkspace, Workspace: workspace}, tip, nil
+}
+
+func (inv *intentInvocation) exceptionUnreadBuilds(goalID, opid string) string {
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return ""
+	}
+	word, err := goal.CarryWordAt(projection.Tree, goalID, opid)
+	if err != nil {
+		return ""
+	}
+	_, quoted, _ := strings.Cut(word.History.Reason, " why=")
+	prefix, err := strconv.QuotedPrefix(quoted)
+	if err != nil {
+		return ""
+	}
+	reason, _ := strconv.Unquote(prefix)
+	if index := strings.LastIndex(reason, "; "); index >= 0 && strings.HasSuffix(reason, " land without a clean read") {
+		return reason[index+2:]
+	}
+	return ""
 }
 
 // noteExceptionRelease records the exception's release set at its

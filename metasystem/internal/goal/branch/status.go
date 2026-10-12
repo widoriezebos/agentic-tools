@@ -18,6 +18,7 @@ type UnitStatus struct {
 }
 
 type Status struct {
+	CleanReads        []Attestation
 	Tip               string
 	Commits           []Commit
 	Units             []UnitStatus
@@ -106,7 +107,9 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 	}
 	result := Status{Tip: tip, Commits: commits}
 	unitIndex := map[string]int{}
+	commitIndex := map[string]int{}
 	for _, commit := range commits {
+		commitIndex[commit.ID] = len(commitIndex)
 		switch commit.Kind {
 		case Unit:
 			if _, exists := unitIndex[commit.ID]; exists {
@@ -122,11 +125,26 @@ func inspectStatus(repo, endpointTip, tip, goalID string, deps statusDependencie
 				return Status{}, err
 			}
 			index, exists := unitIndex[info.CommitID]
+			if exists && result.Units[index].Unit != commit.Unit || !exists && !slices.ContainsFunc(commits, func(c Commit) bool { return c.ID == info.CommitID && c.Kind != Unit }) {
+				continue
+			}
+			att, readErr := deps.attestation(repo, tip, endpointTip, goalID, commit.Unit, info.CommitID)
+			if subjectIndex, present := commitIndex[info.CommitID]; present && info.CommitID != commit.ID {
+				if readErr == nil && len(att.CoveredUnits) > 0 && att.Source.Kind == "critic-root" {
+					result.CleanReads = append(result.CleanReads, att)
+					for i := range result.Units {
+						unit := &result.Units[i]
+						if commitIndex[unit.Commit] <= subjectIndex && att.CoversUnit(*unit) {
+							unit.ReadState = "read clean"
+						}
+					}
+				}
+			}
 			if !exists || result.Units[index].Unit != commit.Unit {
 				continue
 			}
 			result.Units[index].ReadState = "needs read"
-			if _, err := deps.attestation(repo, tip, endpointTip, goalID, commit.Unit, info.CommitID); err == nil {
+			if readErr == nil {
 				result.Units[index].ReadState = "read clean"
 			}
 		}

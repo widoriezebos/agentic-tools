@@ -1,0 +1,20 @@
+[
+  {
+    "goal": "lane-speed",
+    "branches": ["lane-speed/s1", "lane-speed/s2", "lane-speed/s3"],
+    "units": [
+      {"Unit": "U1", "Commit": "5cdc0283af10ddf9b8da34f474c5ed15138198d5"},
+      {"Unit": "U2", "Commit": "04eae6a2dc334898732ad92d68f93fea1463a610"},
+      {"Unit": "U3", "Commit": "04f9fe8776015ac89fbd7eed7289dad5c5f77f2b"}
+    ]
+  },
+  {
+    "goal": "lane-housekeeping-2",
+    "branches": [],
+    "units": [
+      {"Unit": "U1", "Commit": "1111111111111111111111111111111111111111"},
+      {"Unit": "U5", "Commit": "5555555555555555555555555555555555555555"},
+      {"Unit": "U8", "Commit": "8888888888888888888888888888888888888888"}
+    ]
+  }
+]

@@ -176,39 +176,6 @@ func (b *carriedDeliveryBed) addGoalFold(path, content, op string) {
 	}
 }
 
-// addGoalUnit pushes one more reviewed unit onto the goal's branch through
-// the branch owners; path is repository-relative, so it may lie outside
-// the installation.
-func (b *carriedDeliveryBed) addGoalUnit(path, content, unit string) {
-	b.t.Helper()
-	root := b.f.goalRoot
-	top := filepath.Dir(root)
-	writeTestingFixtureFile(b.t, filepath.Join(top, filepath.FromSlash(path)), []byte(content), 0o755)
-	goalSyncMutationGit(b.t, top, "add", path)
-	claim := func() error { return nil }
-	commit, err := branch.CommitStaged(branch.CommitRequest{Repo: root, Remote: "upstream", EndpointTip: b.f.base,
-		GoalID: "standing-validation", Unit: unit, OpID: unit + "-unit", Kind: branch.Unit, CheckClaim: claim})
-	if err != nil {
-		b.t.Fatal(err)
-	}
-	digest, err := branch.UnitDigest(root, commit)
-	if err != nil {
-		b.t.Fatal(err)
-	}
-	record := "metasystem/records/misc/" + unit + "-read.md"
-	writeTestingFixtureFile(b.t, filepath.Join(top, filepath.FromSlash(record)), []byte(commit+" "+digest+"\n"), 0o644)
-	unitTree := goalSyncMutationGit(b.t, root, "rev-parse", commit+"^{tree}")
-	if _, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: root, Remote: "upstream", EndpointTip: b.f.base,
-		GoalID: "standing-validation", Unit: unit, OpID: unit + "-read", ReaderRecord: record,
-		GateRunID: "fast-clean", GateTree: unitTree, CheckClaim: claim}); err != nil {
-		b.t.Fatal(err)
-	}
-	if _, err := branch.Push(branch.PushRequest{Repo: root, Remote: "upstream", EndpointTip: b.f.base,
-		GoalID: "standing-validation", OpID: unit + "-push", CheckClaim: claim}); err != nil {
-		b.t.Fatal(err)
-	}
-}
-
 // carried is the one commit on origin main carrying the word.
 func (b *carriedDeliveryBed) carried(opid string) string {
 	b.t.Helper()
@@ -570,7 +537,20 @@ func TestIntentCarriedReplacement(t *testing.T) {
 func TestIntentCarriedFromTheLinkedGoalCheckout(t *testing.T) {
 	b := newCarriedDeliveryBed(t)
 	f := b.f
-	b.addGoalUnit("benchmark/carried.sh", "#!/usr/bin/env bash\nexit 0\n", "u2")
+	// The unit has no read; only the person's recorded exception admits it.
+	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(f.goalRoot), "benchmark", "carried.sh"), []byte("#!/usr/bin/env bash\nexit 0\n"), 0o755)
+	goalSyncMutationGit(t, f.goalRoot, "add", "../benchmark/carried.sh")
+	claim := func() error { return nil }
+	if _, err := branch.CommitStaged(branch.CommitRequest{Repo: f.goalRoot, Remote: "upstream", EndpointTip: f.base,
+		GoalID: "standing-validation", Unit: "u2", OpID: "u2-unit", Kind: branch.Unit, CheckClaim: claim}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := branch.Push(branch.PushRequest{Repo: f.goalRoot, Remote: "upstream", EndpointTip: f.base,
+		GoalID: "standing-validation", OpID: "u2-push", CheckClaim: claim}); err != nil {
+		t.Fatal(err)
+	}
+	// A malformed size table adds no safety to the person's exception.
+	b.addGoalFold("plans/designs/accepted.md", "# Accepted\n\n- Kind: design\n- Id: accepted\n- Status: accepted\n- Goals: standing-validation\n\n| Unit | Lines |\n| --- | --- |\n| u2 | invalid |\n", "accepted")
 	// The goal worktree tracks the design page a template checkout has; its
 	// branch predates the bed's tracking commit.
 	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(f.goalRoot), "development", "metasystem-design.md"), []byte("# fixture\n"), 0o644)
@@ -590,6 +570,21 @@ func TestIntentCarriedFromTheLinkedGoalCheckout(t *testing.T) {
 	code, landed := b.shown(b.provePublicly(result))
 	if code != 0 || landed.Outcome != intentConfirmed {
 		t.Fatalf("the linked delivery did not land: %d %+v", code, landed)
+	}
+	if !strings.Contains(landed.Summary, "u2 land without a clean read") {
+		t.Fatalf("the result hides the unread build: %+v", landed)
+	}
+	endpoint, err := goal.ResolveEndpoint(f.mainRoot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	projection, err := goal.Project(endpoint, false, time.Now().UTC())
+	if err != nil {
+		t.Fatal(err)
+	}
+	word, err := goal.CarryWordAt(projection.Tree, "standing-validation", opid)
+	if err != nil || !strings.Contains(word.History.Reason, "flaky host; u2 land without a clean read") {
+		t.Fatalf("the exception's reason hides the unread build: %+v %v", word, err)
 	}
 	carried := b.carried(opid)
 	if got := goalSyncMutationGit(t, f.mainRoot, "show", carried+":benchmark/carried.sh"); !strings.Contains(got, "exit 0") {
