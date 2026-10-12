@@ -5,13 +5,17 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"maps"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
@@ -163,11 +167,12 @@ func TestLandingCheckRealContractLedgerAndPlanGitAdapter(t *testing.T) {
 	if len(contract.Groups) < 20 {
 		t.Fatalf("real contract was not loaded: %d groups", len(contract.Groups))
 	}
-	goals, err := filepath.Glob(filepath.Join(module, "plans/goals/*.md"))
+	goals, err := filepath.Glob(filepath.Join("..", "..", "plans", "goals", "*.md"))
 	helmMust(t, err)
 	if len(goals) == 0 {
 		t.Fatal("real goal ledger missing")
 	}
+	tiers := map[string]uint8{}
 	for _, path := range goals {
 		if filepath.Base(path) == "backlog.md" {
 			continue
@@ -178,6 +183,8 @@ func TestLandingCheckRealContractLedgerAndPlanGitAdapter(t *testing.T) {
 		if len(problems) != 0 || goal.GateTier(file) == 0 {
 			t.Fatalf("real goal %s: %v", path, problems)
 		}
+		tiers[file.Id] = file.Tier
+		impactWrite(t, module, "plans/goals/"+filepath.Base(path), string(data))
 	}
 	testingFixtureGit(t, root, "read-tree", "HEAD")
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
@@ -204,6 +211,36 @@ func TestLandingCheckRealContractLedgerAndPlanGitAdapter(t *testing.T) {
 			t.Fatalf("real contract group %s missing from plan or check record: %v; %s", id, plan.Selections, form)
 		}
 	}
+	// The selector consumes real ledger tiers while the queue and clock remain isolated.
+	queueInstall := t.TempDir()
+	members := []plain.GoalSHA{}
+	for _, id := range slices.Sorted(maps.Keys(tiers)) {
+		members = append(members, plain.GoalSHA{Goal: id, SHA: id + "-tip"})
+		_, _, err := plain.HandIn(queueInstall, plain.Line{Goal: id, SHA: id + "-tip", At: laneTestNow.Format(time.RFC3339Nano)})
+		helmMust(t, err)
+	}
+	notAncestor := exec.Command("/usr/bin/false").Run()
+	selected, err := plain.SelectBatch(queueInstall, queueInstall, lane.Record{Root: queueInstall, Install: queueInstall, CustodyEpoch: 1}, plain.ProveSeams{
+		Now:       func() time.Time { return laneTestNow },
+		GoalTier:  func(_, id string) (uint8, error) { return tiers[id], nil },
+		Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil },
+		Git: func(_ string, args ...string) (string, error) {
+			switch args[0] {
+			case "fetch", "cat-file":
+				return "", nil
+			case "rev-parse":
+				return "main", nil
+			case "merge-base":
+				return "", notAncestor
+			default:
+				return "", fmt.Errorf("unexpected selector Git: %v", args)
+			}
+		},
+	})
+	if err != nil || selected == nil || !selected.Open || selected.DepthClass != "full" || !slices.Equal(selected.Members, members) {
+		t.Fatalf("real ledger selection: %+v error=%v", selected, err)
+	}
+
 	t.Logf("real contract: %d groups, %d ledger goals; plan:\n%s", len(contract.Groups), len(goals), plan.Text())
 }
 

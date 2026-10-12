@@ -23,15 +23,15 @@ func TestSelectBatchDepthClasses(t *testing.T) {
 		links                          map[string]bool
 		want                           []string
 	}{
-		{name: "mixed cheap first", tiers: []uint8{3, 1, 2, 3}, want: []string{"g1", "g2"}, class: "cheap"},
+		{name: "mixed all admitted", tiers: []uint8{3, 1, 2, 3}, want: []string{"g0", "g1", "g2", "g3"}, class: "full"},
 		{name: "all cheap", tiers: []uint8{1, 2}, want: []string{"g0", "g1"}, class: "cheap"},
 		{name: "all full", tiers: []uint8{3, 3}, want: []string{"g0", "g1"}, class: "full"},
 		{name: "empty"},
 		{name: "cheap descendant of full", tiers: []uint8{3, 1}, links: map[string]bool{"g0 g1": true}, want: []string{"g0", "g1"}, class: "full"},
 		{name: "full descendant of cheap", tiers: []uint8{1, 3}, links: map[string]bool{"g0 g1": true}, want: []string{"g0", "g1"}, class: "full"},
-		{name: "transitive ancestry", tiers: []uint8{1, 3, 1, 2}, links: map[string]bool{"g0 g2": true, "g1 g2": true}, want: []string{"g3"}, class: "cheap"},
-		{name: "configured threshold", threshold: "2", tiers: []uint8{2, 1}, want: []string{"g1"}, class: "cheap"},
-		{name: "unknown tier is full", tiers: []uint8{0, 1}, want: []string{"g1"}, class: "cheap"},
+		{name: "transitive ancestry", tiers: []uint8{1, 3, 1, 2}, links: map[string]bool{"g0 g2": true, "g1 g2": true}, want: []string{"g0", "g1", "g2", "g3"}, class: "full"},
+		{name: "configured threshold", threshold: "2", tiers: []uint8{2, 1}, want: []string{"g0", "g1"}, class: "full"},
+		{name: "unknown tier is full", tiers: []uint8{0, 1}, want: []string{"g0", "g1"}, class: "full"},
 		{name: "numeric policy unchanged", policy: "2", tiers: []uint8{3, 1, 2}, want: []string{"g0", "g1"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -97,20 +97,7 @@ func TestSelectBatchDepthClasses(t *testing.T) {
 			if !reflect.DeepEqual(got, tc.want) || batch.DepthClass != tc.class {
 				t.Fatalf("batch %+v, want %v at %s", batch, tc.want, tc.class)
 			}
-			if tc.name == "mixed cheap first" {
-				// A confirmed landing closes the cheap selection before selecting the remaining full lines.
-				for _, member := range batch.Members {
-					landed[member.SHA] = true
-				}
-				batch.State, batch.ClosureReason = BatchClosed, "confirmed push accounts for the selected members"
-				if err := writeBatch(install, batch); err != nil {
-					t.Fatal(err)
-				}
-				next, err := SelectBatch(install, install, batch.Lane, seams)
-				if err != nil || next == nil || next.DepthClass != "full" || !slices.Equal(next.Members, []GoalSHA{{Goal: "g0", SHA: "g0"}, {Goal: "g3", SHA: "g3"}}) {
-					t.Fatalf("full batch after cheap: %+v %v", next, err)
-				}
-			}
+
 		})
 	}
 }
@@ -245,7 +232,7 @@ func TestSelectBatchReadsGoalFileTier(t *testing.T) {
 	}
 }
 
-func TestSelectBatchDepthAncestryFailure(t *testing.T) {
+func TestSelectBatchDepthNeedsNoAncestrySplit(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
 	entries := []Entry{{Goal: "cheap", SHA: "cheap-tip"}, {Goal: "full", SHA: "full-tip"}}
@@ -261,8 +248,8 @@ func TestSelectBatchDepthAncestryFailure(t *testing.T) {
 			}
 			return "", errors.New("ancestry unavailable")
 		}}
-	if selected, _, err := selectDepthClass(install, install, entries, seams); err == nil || selected != nil {
-		t.Fatalf("unknown ancestry admitted split: %v %v", selected, err)
+	if selected, class, err := selectDepthClass(install, install, entries, seams); err != nil || !reflect.DeepEqual(selected, entries) || class != "full" {
+		t.Fatalf("mixed batch must stay together without ancestry scans: %v %s %v", selected, class, err)
 	}
 	if batch, err := ReadBatch(install); err != nil || batch != nil {
 		t.Fatalf("failed selection wrote batch: %+v %v", batch, err)

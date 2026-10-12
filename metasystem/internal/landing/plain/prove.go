@@ -472,7 +472,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			}
 			if found && seams.acceptsGreen(install, checkout, result) && batchGreenReusable(install, batchID, result, seams) {
 				started, already = Running{Gate: seams.Gate, Trunk: seams.Trunk, Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At}, true
-				return nil
+				return sealBatchLocked(install, batchID, seams)
 			}
 		}
 		if seams.FenceCheck != nil {
@@ -530,7 +530,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if err := advanceFix(install, checkout, started, seams); err != nil {
 			return err
 		}
-		if err := writeRunning(install, started); err != nil {
+		if err := recordBatchProofAttemptLocked(install, started, seams); err != nil {
 			return err
 		}
 		pid, err := seams.Launch(argv, checkout, log)
@@ -610,6 +610,9 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 			settled, found = result, ok && seams.acceptsGreen(install, checkout, result) && batchGreenReusable(install, batchID, result, seams)
 			if found {
 				_, err = checkBatchLocked(install, checkout, commit, "", seams.Gate, true, seams)
+				if err == nil {
+					err = sealBatchLocked(install, batchID, seams)
+				}
 			}
 			return err
 		}
@@ -644,9 +647,39 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 			return err
 		}
 		found = true
-		return appendLine(resultsPath(install), settled)
+		if err := appendLine(resultsPath(install), settled); err != nil {
+			return err
+		}
+		return sealBatchLocked(install, settled.BatchID, seams)
 	})
 	return settled, found, err
+}
+
+// recordBatchProofAttemptLocked seals admission when a full batch proof's
+// admitted attempt is recorded. Gate attempts keep the window open.
+func recordBatchProofAttemptLocked(install string, running Running, s ProveSeams) error {
+	if err := writeRunning(install, running); err != nil {
+		return err
+	}
+	return sealBatchLocked(install, running.BatchID, s)
+}
+
+// sealBatchLocked ends admission when a batch's full proof starts, is reused,
+// or holds its candidate for a person.
+func sealBatchLocked(install, batchID string, s ProveSeams) error {
+	if s.Gate || s.Trunk || batchID == "" {
+		return nil
+	}
+	batch, err := ReadBatch(install)
+	if err != nil {
+		return err
+	}
+	if batch == nil || batch.ID != batchID || !batch.Open {
+		return nil
+	}
+	batch.Open = false
+	batch.SealedAt = s.now().Format(time.RFC3339Nano)
+	return writeBatch(install, batch)
 }
 
 func writeRunning(install string, running Running) error {
@@ -761,7 +794,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		}
 		if !running.Trunk && found && seams.acceptsGreen(install, checkout, previous) && batchGreenReusable(install, running.BatchID, previous, seams) {
 			result, already = previous, true
-			return nil
+			return sealBatchLocked(install, running.BatchID, seams)
 		}
 		if seams.FenceCheck != nil {
 			if err := seams.FenceCheck(); err != nil {
@@ -819,7 +852,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		if err := advanceFix(install, checkout, running, seams); err != nil {
 			return err
 		}
-		if err := writeRunning(install, running); err != nil {
+		if err := recordBatchProofAttemptLocked(install, running, seams); err != nil {
 			return err
 		}
 		if found && previous.Result != Green {

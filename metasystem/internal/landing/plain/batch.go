@@ -45,9 +45,8 @@ func PolicyDecision(value PolicyValue, readErr error) error {
 }
 
 // Batch pins a selection, independently of the queue's authoritative outcomes.
-// Its original base and members survive a rebuild on newer main.
+// Its original base and admitted members survive a rebuild on newer main.
 type Batch struct {
-	SealedAt      string         `json:"sealed-at,omitempty"`
 	Actions       []BatchAction  `json:"actions,omitempty"`
 	ID            string         `json:"id"`
 	Lane          lane.Record    `json:"lane"`
@@ -56,6 +55,8 @@ type Batch struct {
 	Selector      PolicyValue    `json:"selector"`
 	CreatedAt     string         `json:"created-at"`
 	State         string         `json:"state"`
+	Open          bool           `json:"open"`
+	SealedAt      string         `json:"sealed_at,omitempty"`
 	ClosureReason string         `json:"closure-reason,omitempty"`
 	DepthClass    string         `json:"depth-class,omitempty"`
 	Person        *ActProvenance `json:"person,omitempty"`
@@ -259,7 +260,7 @@ func (s ProveSeams) batchPolicy() (PolicyValue, error) {
 }
 
 func batchRefusal(reason string) error {
-	return &Refusal{Code: CodeBatch, Reason: reason + "; no batch check or push was admitted", Next: "reassemble only the recorded selected commits on fetched main once its live operations have ended, then metasystem landing prove"}
+	return &Refusal{Code: CodeBatch, Reason: reason + "; no batch check or push was admitted", Next: "reassemble only the recorded selected commits on fetched main once its live operations have ended, then metasystem landing prove --gate --wait, then metasystem landing prove --wait"}
 }
 
 func (s ProveSeams) batchLane(batch *Batch) error {
@@ -295,7 +296,7 @@ func batchIdle(install string, s ProveSeams) (bool, error) {
 }
 
 // SelectBatch fetches before taking the queue lock. A running selection is
-// reconciled against main and queue outcomes, never replaced with new arrivals.
+// reconciled against main and queue outcomes; open automatic batches admit arrivals.
 func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams) (selected *Batch, err error) {
 	entries, err := batchEntries(install)
 	if err != nil {
@@ -395,6 +396,17 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 						}
 					}
 				} else if batch.State != BatchClosed && (batch.State == BatchRunning || !idle) {
+					if batch.Open {
+						policy, err := s.batchPolicy()
+						if err != nil {
+							return PolicyDecision(policy, err)
+						}
+						if policy.Value == "auto" {
+							if err := extendBatchLocked(install, checkout, batch, s); err != nil {
+								return err
+							}
+						}
+					}
 					selected = batch
 					return nil
 				}
@@ -409,6 +421,9 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 			return PolicyDecision(policy, err)
 		}
 		if batch != nil && batch.State == BatchPrepared && batch.Selector.Value == policy.Value {
+			if err := extendBatchLocked(install, checkout, batch, s); err != nil {
+				return err
+			}
 			selected = batch
 		} else {
 			selected, err = selectBatchLocked(install, checkout, main, registered, policy, s)
@@ -463,7 +478,7 @@ func selectBatchLocked(install, checkout, main string, registered lane.Record, p
 		}
 		n = len(entries)
 	}
-	batch := &Batch{ID: s.newID(), Lane: registered, Base: main, Selector: policy, CreatedAt: s.now().Format(time.RFC3339Nano), State: BatchPrepared, Members: []GoalSHA{}}
+	batch := &Batch{ID: s.newID(), Lane: registered, Base: main, Selector: policy, CreatedAt: s.now().Format(time.RFC3339Nano), State: BatchPrepared, Open: policy.Value == "auto", Members: []GoalSHA{}}
 	batch.DepthClass = class
 	for _, entry := range entries[:n] {
 		batch.Members = append(batch.Members, GoalSHA{Goal: entry.Goal, SHA: entry.SHA})
@@ -472,6 +487,47 @@ func selectBatchLocked(install, checkout, main string, registered lane.Record, p
 		return nil, err
 	}
 	return batch, writeBatch(install, batch)
+}
+
+// extendBatchLocked retains the selection identity and merge order while its
+// automatic admission window is open. Person selections never expand.
+func extendBatchLocked(install, checkout string, batch *Batch, s ProveSeams) error {
+	if !batch.Open || batch.State == BatchClosed || batch.Selector.Value != "auto" || batch.Person != nil {
+		return nil
+	}
+	// A repair's checkpoint retains the exact selected members through its read.
+	fix, err := ReadFix(install)
+	if err != nil || fix != nil {
+		return err
+	}
+	running, recorded, _, err := ReadRunning(install, s)
+	if err != nil || recorded && running.Checkpoint && running.BatchID == batch.ID {
+		return err
+	}
+	entries, err := pending(install, checkout, s)
+	if err != nil {
+		return err
+	}
+	var arrivals []Entry
+	for _, entry := range entries {
+		if !slices.ContainsFunc(batch.Members, func(m GoalSHA) bool { return m.Goal == entry.Goal }) {
+			arrivals = append(arrivals, entry)
+		}
+	}
+	if len(arrivals) == 0 {
+		return nil
+	}
+	_, class, err := selectDepthClass(install, checkout, arrivals, s)
+	if err != nil {
+		return err
+	}
+	if class == "full" {
+		batch.DepthClass = class
+	}
+	for _, entry := range arrivals {
+		batch.Members = append(batch.Members, GoalSHA{Goal: entry.Goal, SHA: entry.SHA})
+	}
+	return writeBatch(install, batch)
 }
 
 // batchEntries keeps the current outcome of each goal and commit pair.
@@ -603,6 +659,12 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 			}
 		}
 	}
+	if admit {
+		if err := extendBatchLocked(install, checkout, batch, s); err != nil {
+			return batch, err
+		}
+	}
+
 	entries, err := batchEntries(install)
 	if err != nil {
 		return batch, err

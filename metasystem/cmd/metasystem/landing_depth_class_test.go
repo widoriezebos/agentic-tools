@@ -47,7 +47,7 @@ func TestLandingSelectDepthClassStatus(t *testing.T) {
 		t.Fatalf("landing run: exit %d, %s", code, output)
 	}
 	batch := b.batch(t)
-	if batch.DepthClass != "cheap" || len(batch.Members) != 1 || batch.Members[0].Goal != "b" {
+	if batch.DepthClass != "full" || !slices.Equal(batch.Members, []plain.GoalSHA{{Goal: "a", SHA: "sha-a"}, {Goal: "b", SHA: "sha-b"}}) {
 		t.Fatalf("mixed selection: %+v", batch)
 	}
 	code, output = b.run(t, b.lane, "landing", "status", "--json")
@@ -61,7 +61,7 @@ func TestLandingSelectDepthClassStatus(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantReason := "full proof overdue since " + b.now.Local().Format("15:04")
-	if !strings.Contains(status.Data.Summary, "batch of 1, depth class cheap") || !strings.Contains(status.Data.Summary, wantReason) {
+	if !strings.Contains(status.Data.Summary, "batch of 2, depth class full") || !strings.Contains(status.Data.Summary, wantReason) {
 		t.Fatalf("status lost depth or reason: %s", output)
 	}
 	t.Logf("observed status: %s", status.Data.Summary)
@@ -222,8 +222,8 @@ func TestLandingSelectAdapterSupersededAncestryKeepsFullBatch(t *testing.T) {
 	t.Log("selected both waiting goals at full depth; candidate containing superseded a passed admission")
 }
 
-// Real Git distinguishes shared landed history from an unlanded dependency.
-func TestLandingSelectAdapterLandedAncestryKeepsCheapBatch(t *testing.T) {
+// Real Git proves both waiting tips can share already-landed history.
+func TestLandingSelectAdapterLandedAncestryAdmitsBothWaitingGoals(t *testing.T) {
 	t.Parallel()
 	b := newBatchVerbBed(t, "auto")
 	b.owners.landing.plainProve.GoalTier = func(_, id string) (uint8, error) {
@@ -248,7 +248,7 @@ func TestLandingSelectAdapterLandedAncestryKeepsCheapBatch(t *testing.T) {
 	b.git(t, seatA, "commit", "--quiet", "-m", "a follow-up on main")
 	newA := b.git(t, seatA, "rev-parse", "HEAD")
 	b.git(t, seatA, "push", "--quiet", "origin", "goal/a")
-	if _, _, err := plain.HandIn(b.installation, plain.Line{Goal: "a", SHA: newA}); err != nil {
+	if _, _, err := plain.HandIn(b.installation, plain.Line{Goal: "a", SHA: newA, At: b.now.Format(time.RFC3339Nano)}); err != nil {
 		t.Fatal(err)
 	}
 	shaB := b.seat(t, "b")
@@ -261,17 +261,21 @@ func TestLandingSelectAdapterLandedAncestryKeepsCheapBatch(t *testing.T) {
 	}
 
 	b.success(t, "landing", "run")
-	cheap := b.batch(t)
-	if cheap.DepthClass != "cheap" || !slices.Equal(cheap.Members, []plain.GoalSHA{{Goal: "b", SHA: shaB}}) {
-		t.Fatalf("landed ancestry joined unrelated work: %+v", cheap)
+	batch := b.batch(t)
+	if batch.DepthClass != "full" || !slices.Equal(batch.Members, []plain.GoalSHA{{Goal: "a", SHA: newA}, {Goal: "b", SHA: shaB}}) {
+		t.Fatalf("mixed waiting goals were split despite shared landed history: %+v", batch)
 	}
-	b.assemble(t, shaB)
+	b.assemble(t, newA, shaB)
 	b.success(t, "landing", "prove", "--wait")
 	b.success(t, "landing", "push")
-	b.success(t, "landing", "run")
-	full := b.batch(t)
-	if full.DepthClass != "full" || !slices.Equal(full.Members, []plain.GoalSHA{{Goal: "a", SHA: newA}}) {
-		t.Fatalf("remaining a follow-up: %+v", full)
+	for _, sha := range []string{newA, shaB} {
+		if inside, err := plain.IsAncestor(b.checkout, sha, "origin/main"); err != nil || !inside {
+			t.Fatalf("selected member was not published: %s %v %v", sha, inside, err)
+		}
 	}
-	t.Log("landed a1; selected and pushed b alone at cheap depth; selected waiting a2 alone at full depth")
+	b.success(t, "landing", "run")
+	if closed := b.batch(t); closed.State != plain.BatchClosed || closed.ID != batch.ID {
+		t.Fatalf("landed members started another batch: %+v", closed)
+	}
+	t.Log("landed a1; selected and pushed a2 and b together at full depth")
 }

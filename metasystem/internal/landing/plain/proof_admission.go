@@ -211,6 +211,11 @@ func admitExecutionLocked(install, checkout, command string, running *Running, d
 }
 
 func holdProofLocked(install string, running Running, seams ProveSeams, code, reason string) error {
+	if !running.Gate && !running.Trunk && running.BatchID != "" {
+		if err := sealBatchLocked(install, running.BatchID, seams); err != nil {
+			return err
+		}
+	}
 	subject := running.Tree
 	if running.Trunk {
 		subject = "main"

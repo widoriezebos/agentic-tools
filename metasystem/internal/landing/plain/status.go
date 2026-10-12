@@ -522,6 +522,27 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			}
 		}
 	}
+	if selected != nil && selected.State != BatchClosed {
+		if selected.Open {
+			status.Summary += fmt.Sprintf("; batch open: %d members, seals when the full proof starts", len(selected.Members))
+		} else if at, err := time.Parse(time.RFC3339Nano, selected.SealedAt); err == nil {
+			status.Summary += fmt.Sprintf("; batch sealed %s: %d members", at.Local().Format("15:04"), len(selected.Members))
+		}
+		checkpoint, recorded, _, readErr := ReadRunning(install, seams)
+		unread("the batch checkpoint", readErr)
+		fixOpen := status.RunningFix != nil && status.RunningFix.State != "abandoned" || recorded && checkpoint.Checkpoint && checkpoint.BatchID == selected.ID
+		for _, entry := range status.Queue {
+			if entry.State != StateWaiting || entry.Held || slices.Contains(selected.Members, GoalSHA{Goal: entry.Goal, SHA: entry.SHA}) {
+				continue
+			}
+			sameGoal := slices.ContainsFunc(selected.Members, func(member GoalSHA) bool { return member.Goal == entry.Goal })
+			if !selected.Open || sameGoal {
+				status.Summary += "; " + entry.Goal + " waits for the next batch"
+			} else if fixOpen {
+				status.Summary += "; " + entry.Goal + " waits: a fix round is open"
+			}
+		}
+	}
 	if selected != nil && selected.State != BatchClosed && selected.DepthClass != "" {
 		status.Summary += fmt.Sprintf("; batch of %d, depth class %s", len(selected.Members), selected.DepthClass)
 		if reason, _ := overdueBatch(install, selected.ID, seams); reason != "" {
