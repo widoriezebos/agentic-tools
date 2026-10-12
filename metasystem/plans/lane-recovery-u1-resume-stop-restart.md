@@ -13,3 +13,6 @@ Working Mode: Implement. Goal lane-recovery-along-intent, design `plans/designs/
 
 ## Checks
 `go vet ./cmd/metasystem ./internal/landing/plain ./internal/landing/lane`; `go test -p 4 -count=1 -timeout 30m ./internal/landing/plain ./internal/landing/lane ./internal/layering ./internal/testenv`; `go test -p 4 -count=1 -timeout 40m ./cmd/metasystem -run 'TestLanding|TestAudit|TestHelp|TestEveryPublicActionHasAnIdempotencyRow|TestIntentPublicCoverage|TestIntentDeclaredCheck|TestVerbRatchet|TestProofAttemptBinaryLaunchesUseSharedIsolation'`; `go run ./cmd/devgate static`; `gofmt -l` empty. Report: files, production line count, every check's exit, the mutations, anything left out and why.
+
+## Also in this build (the design's critique rounds 1-6, folded)
+Implement every item of `plans/lane-recovery-u1-after-1.md` (eight items: abort only an abandoned and unowned merge bound by checkpoint and tip; the stale-merge transition when the job ended and main moved by code; restart performs the explicit continuation; the trunk proof for a hold without selectable goals; the person-policy selection hold; stop revokes a standing continuation) as part of this unit, with their fixtures.

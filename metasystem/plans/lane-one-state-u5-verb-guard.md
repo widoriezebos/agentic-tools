@@ -1,0 +1,18 @@
+# lane-one-state U5 (D4): verbs fail visibly — one guard, launch before record, every wait names its start
+
+Working Mode: Implement. Goal lane-one-state, design `plans/designs/lane-one-state.md` (read it whole). Builds on U1-U4 (branch build/los1). One commit; never push. Production code ≤ 250 lines. No test may read ../../testing.json or plans/goals; no "witness" or "certification" tests.
+
+## Build
+1. One guard for every landing verb (cmd/metasystem, the `landing …` intents and the keeper/agent entry in landing_agent.go): a deferred recover that turns a panic into a refusal (exit 2, one line "landing <verb> failed inside the engine: <panic value>; incident <id> records the stack") and writes an incident record `artifacts/agents/landing/incidents/<time>-<verb>.json` {verb, args, at, panic, stack, engine stamp} BEFORE exiting; health lists open incident records as rows ("an engine incident at 20:03 in landing merge: nil error in landingLaneFailure") until a person clears them with `landing incident clear ID` (a person's act). The guard is installed in ONE place (the shared dispatch the landing intents go through; find it, do not copy it per verb) and the audit test `TestEveryLandingVerbIsGuarded` walks the landing intents and fails on one outside the guard.
+2. Launch before record: every place that stores a job id in a lane record (the resolution launch in resolve.go, the proof launch in prove.go, the regeneration launch) does it in this order under the lock: write the launch record (what, when, by) → launch → store the job id with the launch time; a launch that fails leaves the launch record with its error and no job id, and `landing status` says "launch of the resolution failed at 20:03: <error>" instead of waiting on a job that never came (finding 233).
+3. Every wait names its start: the status/health phrases "waiting since an unrecorded time", "sealed an unrecorded time", "the seal or hand-in time is unrecorded" (grep them) are replaced by the record's own time from U1's state record (transition time or `seen since … (observed)`), and the three remaining writers without a time (if any are left after U2) are instrumented here. After this unit the phrase "unrecorded" no longer appears in internal/landing/plain (a test greps the package's non-test sources).
+4. Every verb that changes a record emits its transition (`state.Transition`, U1) — the writers in batch.go, queue.go, prove.go, fix.go, resolve.go, pause.go, stops: each raw write is followed by the matching transition under the same lock, so events.jsonl is the lane's complete history and the shadow's rebuild diff (U1) shrinks to zero on a healthy lane (the drift rows prove it).
+
+## Tests
+A verb whose fake seam panics → exit 2, one refusal line, one incident file with the stack, health lists it, `incident clear` removes it (person) and an agent's clear is refused; a resolution launch whose seam fails → launch record with the error, no job id, status names the failure and its time; the "unrecorded" grep test; a drive-through (pause → resume → hand-in → batch → proof → push) on the status bed leaves zero drift events and zero rebuild diffs after each step.
+
+## Checks
+`go vet ./internal/landing/state ./internal/landing/plain ./internal/landing/lane ./cmd/metasystem`; `go test -p 4 -count=1 -timeout 30m ./internal/landing/state ./internal/landing/plain ./internal/landing/lane ./internal/layering ./internal/testenv`; `go test -count=1 -run 'TestAudit|TestLanding|TestIntentPublicCoverage|TestEveryPublicActionHasAnIdempotencyRow' ./cmd/metasystem`.
+
+## Do not
+No wording table (U6). A person is never refused a verb by the guard (R-129/NO HAL: the guard refuses only the crashed act, never the person).
