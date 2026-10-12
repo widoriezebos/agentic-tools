@@ -110,6 +110,27 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 		}
 	}
 	now := time.Now()
+	for _, row := range []string{"person-refused", "person-protected"} {
+		helmMust(t, plain.RecordIntervention(b.installation, plain.Intervention{At: now.Add(-time.Minute).UTC().Format(time.RFC3339Nano), Row: row, Subject: "landing return missing", What: "person's act was refused"}))
+	}
+	for _, args := range [][]string{{"landing", "health"}, {"landing", "health", "--json"}} {
+		before := idemTreeDigest(t, b.installation)
+		cmd := exec.CommandContext(t.Context(), engine, args...)
+		cmd.Dir = b.checkout
+		cmd.Env = fixtureCommandEnvironment(t, "METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.registry)
+		out, err := cmd.CombinedOutput()
+		if err != nil || !strings.Contains(string(out), "; 1 refusals") || !strings.Contains(string(out), "; steward: redeploy the engine from main") || strings.Contains(string(out), "steward: person's act was refused") {
+			t.Fatalf("CLI refusal health: %v %s", err, out)
+		}
+		if args[len(args)-1] == "--json" {
+			var result struct{ Data plain.Health }
+			helmMust(t, json.Unmarshal(out, &result))
+			if len(result.Data.Interventions) != 1 || result.Data.Interventions[0].Row != "stale-engine" || len(result.Data.Refusals) != 1 || result.Data.Refusals[0].Row != "person-refused" {
+				t.Fatalf("CLI mixed person records with steward acts: %s", out)
+			}
+		}
+		idemSameTree(t, "CLI refusal health read", before, idemTreeDigest(t, b.installation))
+	}
 	idle := struct {
 		EndedAt string           `json:"ended_at"`
 		Step    *plain.AgentStep `json:"step"`

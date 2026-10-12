@@ -19,6 +19,7 @@ type lanePersonObservation struct {
 // lanePerson observes the original calling checkout, independently of --repo.
 // A linked checkout keeps its own enrollment rather than borrowing its primary's.
 func (inv *intentInvocation) lanePerson(act, target string) (lanePersonObservation, *intentResult) {
+	inv.laneCallerObserved, inv.laneCallerPerson = true, false
 	var observed lanePersonObservation
 	path := inv.cwd
 	if _, err := helm.Locate(path); err != nil {
@@ -67,6 +68,7 @@ func (inv *intentInvocation) lanePerson(act, target string) (lanePersonObservati
 	if observed.Proof.Helm != nil || !observed.Proof.EnrolledTerminalFor(observed.Root) {
 		return refused("this shell has no direct enrolled-terminal proof", nil)
 	}
+	inv.laneCallerPerson = true
 	observed.Name = "author unknown"
 	enrollment, err := humanauthority.ReadEnrollment(observed.Root)
 	if err == nil && enrollment.Generation == observed.Proof.TerminalGeneration && enrollment.TerminalRef == observed.Proof.TerminalRef && strings.TrimSpace(enrollment.Human) != "" {

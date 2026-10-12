@@ -107,6 +107,12 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	if owners.person == nil {
 		owners.person = provenPerson(humanauthority.KernelReader{}, func() int64 { return int64(os.Getppid()) }, goalCommandNow)
 	}
+	person := owners.person
+	owners.person = func(root string) (string, error) {
+		name, err := person(root)
+		inv.laneCallerObserved, inv.laneCallerPerson = true, err == nil
+		return name, err
+	}
 	if owners.ready == nil {
 		owners.ready = batchowner.LandingLaneReady
 	}
@@ -158,6 +164,90 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.unitsOnMain = plain.UnitsOnMain
 	}
 	return owners
+}
+
+// observeLandingRefusal observes the rendered result once, including refusals
+// before lane admission. Agent refusals are not a person's intervention.
+func (inv *intentInvocation) observeLandingRefusal(result intentResult) intentResult {
+	if inv.command.object != "landing" || result.code == 2 || result.Outcome != intentRefused && result.refusalCode == "" {
+		return result
+	}
+	if inv.command.action == "prove" && inv.input.text("attempt") != "" {
+		return result
+	}
+	owners := inv.landing()
+	record := lane.Record{}
+	if inv.laneRecord != nil {
+		record = *inv.laneRecord
+	} else {
+		home, _ := owners.home()
+		record, _, _ = lane.Read(home)
+	}
+	install := record.Install
+	if install == "" && inv.resolveLayout() == nil {
+		install = inv.layout.InstallationRoot.Path()
+	}
+	if inv.laneCallerObserved && !inv.laneCallerPerson {
+		return result
+	}
+	if !inv.laneCallerObserved {
+		switch inv.command.action {
+		case "set", "start", "drain", "unset", "stop":
+			proveAt := inv.cwd
+			if inv.resolveLayout() == nil {
+				proveAt = inv.layout.InstallationRoot.Path()
+			}
+			if inv.command.action == "set" && inv.input.text("seat") != "" {
+				proveAt = inv.callerPath(inv.input.text("seat"))
+			}
+			if _, err := owners.person(proveAt); err != nil {
+				return result
+			}
+		default:
+			if _, refused := inv.lanePerson("perform this lane act", record.Root); refused != nil {
+				return result
+			}
+		}
+	}
+	result.problems = append(result.problems, inv.recordPersonRefusal(install, inv.command.name, inv.raw, result)...)
+	return result
+}
+
+// recordPersonRefusal reports a recording failure without changing the act.
+func (inv *intentInvocation) recordPersonRefusal(install, verb string, args []string, refusal intentResult) []string {
+	why := refusal.refusalCode
+	for _, detail := range refusal.Details {
+		code := strings.TrimPrefix(detail, "refused because: ")
+		if why == "" && (code != detail || strings.HasPrefix(code, "LANE_") || strings.HasPrefix(code, "LANDING_")) {
+			code, _, _ = strings.Cut(code, ":")
+			if !strings.ContainsAny(code, " \t\n") {
+				why = code
+			}
+		}
+	}
+	if why == "" {
+		why = "LANE_" + strings.ToUpper(inv.command.action) + "_REFUSED"
+	}
+	entry := plain.Intervention{At: inv.landing().now().UTC().Format(time.RFC3339Nano), Row: "person-refused",
+		Subject: strings.TrimSpace(verb + " " + shellCommand(args)), What: refusal.Summary, Why: why,
+		How: "the person's verb was refused; R-142/143: a person is never denied a verb, so this is a defect"}
+	if why == plain.CodeResolveEdits || why == plain.CodeNotFastForward {
+		entry.Row = "person-protected"
+	}
+	var err error
+	if install == "" {
+		err = errors.New("the lane installation could not be located")
+	} else if info, statErr := os.Stat(install); statErr != nil {
+		err = statErr
+	} else if !info.IsDir() {
+		err = errors.New("the lane installation is not a directory")
+	} else {
+		err = plain.RecordIntervention(install, entry)
+	}
+	if err != nil {
+		return []string{"could not record the person's refusal: " + oneLine(err.Error())}
+	}
+	return nil
 }
 
 // laneUnconfirmed is what a person reads after a lane write this computer
@@ -289,10 +379,12 @@ func (inv *intentInvocation) laneContext(needLane bool) (owners laneVerbOwners, 
 			Details: []string{err.Error()}}
 	}
 	if needLane && !ok {
+		inv.laneRecord = &record
 		return owners, home, record, &intentResult{Outcome: intentRefused, code: 1,
 			Summary: "no landing lane is registered on this computer; nothing was done",
 			next:    inv.publicArgv("landing", "set", "PATH"), nextReason: "register the landing checkout every seat lands through"}
 	}
+	inv.laneRecord = &record
 	return owners, home, record, nil
 }
 

@@ -24,6 +24,7 @@ type Health struct {
 	Report              string            `json:"report,omitempty"`
 	ReportPath          string            `json:"-"`
 	Interventions       []Intervention    `json:"interventions,omitempty"`
+	Refusals            []Intervention    `json:"refusals,omitempty"`
 	observedAt          time.Time
 	StateReason         string           `json:"state_reason,omitempty"`
 	AdmissibleWaiting   []string         `json:"admissible_waiting,omitempty"`
@@ -150,7 +151,16 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	if err != nil {
 		return nil, err
 	}
-	h.Interventions = interventions[max(0, len(interventions)-5):]
+	for _, entry := range interventions {
+		if entry.Row != "person-refused" && entry.Row != "person-protected" {
+			h.Interventions = append(h.Interventions, entry)
+		}
+		at, err := time.Parse(time.RFC3339Nano, entry.At)
+		if entry.Row == "person-refused" && err == nil && !at.After(now) && now.Sub(at) < 24*time.Hour {
+			h.Refusals = append(h.Refusals, entry)
+		}
+	}
+	h.Interventions = h.Interventions[max(0, len(h.Interventions)-5):]
 	stamp := now.Format(time.RFC3339Nano)
 	switch status.Owner.State {
 	case lane.OwnerStopped:
@@ -447,6 +457,18 @@ func (h Health) Rows() []Fired {
 	if h.SealedBehindMain {
 		fire("sealed-batch-behind-main", h.Batch.ID, h.Batch.Minutes, "landing restart")
 	}
+	if len(h.Refusals) > 0 {
+		verbs := []string{}
+		for _, entry := range h.Refusals {
+			words := strings.Fields(entry.Subject)
+			verb := strings.Join(words[:min(2, len(words))], " ")
+			if !slices.Contains(verbs, verb) {
+				verbs = append(verbs, verb)
+			}
+		}
+		subject := fmt.Sprintf("%d: %s", len(h.Refusals), strings.Join(verbs, ", "))
+		fire("person-refused", subject, nil, fmt.Sprintf("a person was refused %d times in 24 h: %s; each is a defect to fix upstream, not a rule to add", len(h.Refusals), strings.Join(verbs, ", ")))
+	}
 	for _, q := range h.Questions {
 		if q.Premise == "gone" {
 			fire("stale-question", q.ID, &q.Minutes, "withdraw it, prove main, re-ask only if red")
@@ -522,6 +544,9 @@ func (h Health) Line() (line string) {
 	defer func() {
 		if h.Report != "" {
 			line += "; " + h.Report
+		}
+		if len(h.Refusals) > 0 {
+			line += fmt.Sprintf("; %d refusals", len(h.Refusals))
 		}
 		if len(h.Interventions) > 0 {
 			last := h.Interventions[len(h.Interventions)-1]

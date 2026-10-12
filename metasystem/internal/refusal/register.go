@@ -117,6 +117,7 @@ var Rows = []Row{
 	{Code: "LANE_PUSH_UNPROVEN", Owner: "internal/landing/plain", Site: "push.go#provenGreen", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_PUSH_RED", Owner: "internal/landing/plain", Site: "push.go#provenGreen", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_PUSH_NOT_FAST_FORWARD", Owner: "internal/landing/plain", Site: "push.go#PushChecked", Shape: Question, H1: StandingAgent},
+	{Code: "LANE_RESOLVE_EDITS", Owner: "cmd/metasystem", Site: "intent_landing_resolve.go#runIntentLandingResolve", Shape: Question, H1: StandingGuide, Forward: "landing resolve"},
 	{Code: "LANE_BATCH_MEMBERSHIP", Owner: "internal/landing/plain", Site: "batch.go#batchRefusal", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_BATCH_PERSON", Owner: "internal/landing/plain", Site: "batch.go#PolicyDecision", Shape: Question, H1: StandingInput},
 	{Code: "LANE_PROOF_PERSON", Owner: "internal/landing/plain", Site: "proof_admission.go#admitExecutionLocked", Shape: Agent, Override: "landing prove", Commands: 1},
@@ -387,6 +388,7 @@ var Rows = []Row{
 }
 
 var Exclusions = []Exclusion{
+	{Pattern: "person-refused", Reason: "an intervention row and health observation; the refusal's code is stored separately in Why"},
 	{Pattern: "job-refused", Reason: "a delegation event name in events.jsonl; its summary carries the refusal message"},
 	{Pattern: "dispatch-refused", Reason: "a failed job record's error value identifying dispatch setup failure; its refusal message is stored separately"},
 	{Pattern: "AUTO_MERGE", Reason: "a git state file name, not a refusal"},

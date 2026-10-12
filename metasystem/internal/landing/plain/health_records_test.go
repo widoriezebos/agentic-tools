@@ -12,6 +12,42 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
 
+func TestLandingHealthRefusalsKeepStewardActsSeparate(t *testing.T) {
+	t.Parallel()
+	for _, acts := range []bool{false, true} {
+		t.Run(map[bool]string{false: "only refusals", true: "five steward acts"}[acts], func(t *testing.T) {
+			t.Parallel()
+			b := newStatusBed(t)
+			var entries []any
+			if acts {
+				for i := 0; i < 6; i++ {
+					entries = append(entries, Intervention{At: bedNow.Add(-time.Duration(10-i) * time.Minute).Format(time.RFC3339Nano), Row: "stale-engine", What: "deployed the lane engine"})
+				}
+			}
+			for i := 0; i < 6; i++ {
+				entries = append(entries, Intervention{At: bedNow.Add(-time.Minute).Format(time.RFC3339Nano), Row: "person-refused", Subject: "landing return missing", What: "nothing of goal missing waits"},
+					Intervention{At: bedNow.Format(time.RFC3339Nano), Row: "person-protected", Subject: "landing push", What: "pushing would rewrite main"})
+			}
+			b.lines("interventions.jsonl", entries...)
+			h := readHealthBed(t, b, healthSeams(bedNow)).Health
+			wantActs := 0
+			if acts {
+				wantActs = 5
+			}
+			if len(h.Interventions) != wantActs || len(h.Refusals) != 6 || healthRow(h, "person-refused") == nil {
+				t.Fatalf("health=%+v", h)
+			}
+			line := h.Line()
+			if !strings.Contains(line, "; 6 refusals") || strings.Contains(line, "steward: nothing") || strings.Contains(line, "steward: pushing") || strings.Contains(line, "; steward:") != acts {
+				t.Fatal(line)
+			}
+			if acts && !strings.Contains(line, "; steward: deployed the lane engine 5 min ago") {
+				t.Fatal(line)
+			}
+		})
+	}
+}
+
 func TestLandingHealthQuestionPremise(t *testing.T) {
 	t.Parallel()
 	old, next := strings.Repeat("a", 40), strings.Repeat("b", 40)

@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -650,9 +651,11 @@ type intentInvocation struct {
 	entrants []*diskstore.Entrant
 	// notices holds the helm and grant admission notices until the result
 	// says whether the act proceeded; nil prints them at once.
-	notices       *admissionNotices
-	laneException *lanePersonObservation
-	landingWords  string
+	notices                              *admissionNotices
+	laneException                        *lanePersonObservation
+	landingWords                         string
+	laneCallerObserved, laneCallerPerson bool
+	laneRecord                           *lane.Record
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -829,7 +832,9 @@ type intentResult struct {
 	Decision      string         `json:"decision,omitempty"`
 	// Details are what only --verbose prints: refusal codes, paths the fix
 	// does not need, background ("Messages a Person Reads").
-	Details []string `json:"details,omitempty"`
+	Details     []string `json:"details,omitempty"`
+	problems    []string
+	refusalCode string
 
 	text       []string
 	next       []string
@@ -854,6 +859,7 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
+	result = inv.observeLandingRefusal(result)
 	result = result.withClaimPreparation(inv.claimPreparation)
 	result.SchemaVersion = 1
 	result.Verb = inv.command.name
@@ -876,6 +882,9 @@ func (inv *intentInvocation) render(result intentResult) int {
 		result.Details = append(result.Details, inv.notices.settle(!proceeded, verbose && !inv.input.switched("json"))...)
 	}
 	if inv.input.switched("json") {
+		for _, problem := range result.problems {
+			result.Details = append(result.Details, "Problems: "+problem)
+		}
 		// Line 2 that is a reason without a command ("nothing to do; why")
 		// is next with an empty argv, so a reader shows both lines too.
 		if result.Next == nil && result.nextReason != "" {
@@ -917,6 +926,9 @@ func (inv *intentInvocation) render(result intentResult) int {
 	}
 	if verbose {
 		page.Legacy(detailLines(result.Details)...)
+	}
+	if len(result.problems) > 0 {
+		page.Section("Problems", "").Text(strings.Join(result.problems, "\n"))
 	}
 	_, _ = io.WriteString(stream, page.String())
 	return code

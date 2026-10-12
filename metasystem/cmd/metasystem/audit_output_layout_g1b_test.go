@@ -130,6 +130,10 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 			}
 		}
 		cwd, home, landing = realpath.Resolve(cwd), realpath.Resolve(home), realpath.Resolve(landing)
+		// A refusal without a registered lane records at the calling install.
+		if err := os.WriteFile(filepath.Join(cwd, "metasystem.conf"), nil, 0600); err != nil {
+			t.Fatal(err)
+		}
 		now := layoutNow
 		alive := kind != landingLayoutNone
 		if kind != landingLayoutNone {

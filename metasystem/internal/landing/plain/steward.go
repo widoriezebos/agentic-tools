@@ -36,6 +36,11 @@ func interventionsPath(install string) string {
 	return filepath.Join(Dir(install), "interventions.jsonl")
 }
 
+// RecordIntervention appends under the same installation lock as lane acts.
+func RecordIntervention(install string, entry Intervention) error {
+	return withLock(install, func() error { return appendLine(interventionsPath(install), entry) })
+}
+
 // StewardStep serializes stewards; verbs and appends acquire the install lock separately.
 func StewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, err error) {
 	record, present, err := lane.Read(home)
@@ -144,7 +149,7 @@ func StewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		if actErr != nil {
 			entry.Outcome = "failed: " + actErr.Error()
 		}
-		appendErr := withLock(record.Install, func() error { return appendLine(interventionsPath(record.Install), entry) })
+		appendErr := RecordIntervention(record.Install, entry)
 		err = errors.Join(err, actErr, appendErr)
 		run.Interventions = append(run.Interventions, entry)
 		history = append(history, entry)

@@ -16,6 +16,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
+// ErrResolveEdits protects checkout edits from a merge abort.
+var ErrResolveEdits = errors.New("the lane checkout has changes outside the recorded merge; nothing was changed")
+
+const CodeResolveEdits = "LANE_RESOLVE_EDITS"
+
 // ResolveSeams keeps Git and command execution local to a resolution.
 type ResolveSeams struct {
 	Proof ProveSeams
@@ -177,7 +182,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 		}
 		if (fix == nil || fix.State != "resolving" || fix.Tip != sha || fix.Commit != main) && (len(nulPaths(dirty)) > 0 || len(nulPaths(untracked)) > 0) {
 			out.Outcome = "refused"
-			return errors.New("the lane checkout has changes outside the recorded merge; nothing was changed")
+			return ErrResolveEdits
 		}
 		generated := func(name string) bool { return conflict.GeneratedBy(contract.Generated, prefix, name) }
 		classified, err := conflict.Classify(git, paths, generated)

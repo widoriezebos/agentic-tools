@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"path/filepath"
 	"strings"
@@ -79,6 +80,9 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 				next: inv.publicArgv("landing", "status"), nextReason: "shows the remaining hand-ins"})
 		}
 		result := landingLaneFailure(targets, "the lane merge could not be resolved: "+oneLine(err.Error()), err)
+		if errors.Is(err, plain.ErrResolveEdits) {
+			result.refusalCode = plain.CodeResolveEdits
+		}
 		result.Data = out
 		return inv.render(result)
 	}
