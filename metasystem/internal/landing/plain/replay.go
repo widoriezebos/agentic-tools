@@ -20,7 +20,7 @@ import (
 // allowance, including a registered flake's repeat in the current worktree.
 func classifyRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, output io.Writer, observed *proofOutput, result, previous Result, report checkReport, runErr error, replay func(Result, Result) Result) Result {
 	result = observeRed(seams, install, running, decision, observed, result, previous, report, runErr)
-	if result.executionErr != nil {
+	if result.executionErr != nil || result.Result == "cancelled" {
 		return result
 	}
 	return continueRed(seams, install, checkout, command, dir, running, decision, output, result, previous, replay)
@@ -56,6 +56,14 @@ func observeRed(seams ProveSeams, install string, running Running, decision scop
 	result.ClassificationOf = running.ClassificationOf
 	result.ClassificationPending = true
 	if err := withLock(install, func() error {
+		cancel, err := readCancel(install, running)
+		if err != nil {
+			return err
+		}
+		if cancel != nil {
+			result = *cancel
+			return nil
+		}
 		if err := appendLine(seams.resultsPath(install), result); err != nil {
 			return err
 		}

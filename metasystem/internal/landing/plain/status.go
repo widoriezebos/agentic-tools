@@ -551,6 +551,14 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			status.Summary += "; " + status.LastProof.ScopeReason
 		}
 	}
+	if selected != nil {
+		for _, restart := range selected.Restarts {
+			status.Summary += fmt.Sprintf("; %s at %s", restart.Reason, proofMinutes(restart.Elapsed, restart.Expected))
+		}
+		for _, reason := range selected.Waiting {
+			status.Summary += "; " + reason
+		}
+	}
 	return status
 }
 

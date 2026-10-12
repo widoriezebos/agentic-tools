@@ -18,6 +18,8 @@ type DetachedLaunch struct {
 	Env []string
 	// Completed receives the reaped exit when a caller waits for this launch.
 	Completed chan<- error
+	// Started records the identity before the child can be reaped.
+	Started func(pid int64) error
 	// GuardRoot and GuardOwner register the started process as a member of
 	// the checkout's execution guard while the launcher is still in its
 	// native ancestry; both or neither.
@@ -64,6 +66,13 @@ func LaunchDetached(launch DetachedLaunch) (int64, error) {
 		return 0, err
 	}
 	pid := int64(command.Process.Pid)
+	if launch.Started != nil {
+		if err := launch.Started(pid); err != nil {
+			_ = syscall.Kill(-int(pid), syscall.SIGKILL)
+			_ = command.Wait()
+			return 0, err
+		}
+	}
 	if launch.GuardRoot != "" {
 		if err := RegisterSpawnedExecutionGuardMember(launch.GuardRoot, pid, launch.GuardOwner); err != nil {
 			_ = command.Process.Kill()

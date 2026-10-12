@@ -47,7 +47,10 @@ func WakeReasons(install, checkout string, lastLaunch, now time.Time, effects ..
 	pending, err := pendingQueue(install, checkout, seams, true)
 	waiting, waitingErr := Waiting(install)
 	missing := handInCommits(install, checkout, waiting, seams, false)
-	reasons, reasonErr := wakeReasons(install, len(pending) > 0, lastLaunch, now, seams.TimerHeld != nil && seams.TimerHeld())
+	// Selection owns unreadable batches; the wake only adds a reopened batch.
+	batch, _ := ReadBatch(install)
+	restarted := batch != nil && batch.Open && len(batch.Restarts) > 0
+	reasons, reasonErr := wakeReasons(install, len(pending) > 0 || restarted, lastLaunch, now, seams.TimerHeld != nil && seams.TimerHeld())
 	if missing != nil {
 		reasons = append(reasons, WakeMissingHandIn)
 	}

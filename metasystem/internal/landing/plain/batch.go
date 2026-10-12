@@ -47,7 +47,11 @@ func PolicyDecision(value PolicyValue, readErr error) error {
 // Batch pins a selection, independently of the queue's authoritative outcomes.
 // Its original base and admitted members survive a rebuild on newer main.
 type Batch struct {
+	Open          bool           `json:"open"`
+	SealedAt      string         `json:"sealed_at,omitempty"`
 	Actions       []BatchAction  `json:"actions,omitempty"`
+	Restarts      []Restart      `json:"restarts,omitempty"`
+	Waiting       []string       `json:"waiting,omitempty"`
 	ID            string         `json:"id"`
 	Lane          lane.Record    `json:"lane"`
 	Base          string         `json:"base"`
@@ -55,8 +59,6 @@ type Batch struct {
 	Selector      PolicyValue    `json:"selector"`
 	CreatedAt     string         `json:"created-at"`
 	State         string         `json:"state"`
-	Open          bool           `json:"open"`
-	SealedAt      string         `json:"sealed_at,omitempty"`
 	ClosureReason string         `json:"closure-reason,omitempty"`
 	DepthClass    string         `json:"depth-class,omitempty"`
 	Person        *ActProvenance `json:"person,omitempty"`
@@ -341,6 +343,11 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 			}
 			if err := s.batchLane(batch); err != nil {
 				return err
+			}
+			if batch.State == BatchRunning {
+				if err := restartBatchLocked(install, checkout, main, batch, s); err != nil {
+					return err
+				}
 			}
 			idle, err := batchIdle(install, s)
 			if err != nil {
@@ -819,7 +826,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 		}
 	}
 	if admit && batch.State == BatchPrepared {
-		batch.State = BatchRunning
+		batch.State, batch.Open = BatchRunning, false
 		err = writeBatch(install, batch)
 	}
 	return batch, err
