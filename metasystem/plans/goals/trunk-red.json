@@ -1275,6 +1275,51 @@
         "by": "",
         "why": ""
       }
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestPendingWaitFromChildShell",
+      "identity": "red:metasystem/cmd/metasystem:TestPendingWaitFromChildShell",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261011T235626.846906000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestPendingWaitFromChildShell",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261011T235626.846906000Z-replay-1",
+          "batch": "20261011T235626.846906000Z-replay-1",
+          "baseCommit": "e749ff3fd6bf1500510c28b828764c8d1f266ec0",
+          "baseTree": "539aed17568baa2e9fb644655fc30d4a9f520280",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261011T235626.846906000Z-replay-1.log",
+          "logDigest": "fb98bfe2fdb4ecdd767437a9d9d48776279a1e9cd092fc8f661deafd9e123132",
+          "seenAt": "2026-10-12T01:13:36Z",
+          "opid": "VMMB3NRMGRF8TPMQGCH4VJXPYN-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261011T235626.846906000Z-replay-1"
+      ],
+      "opened": "2026-10-12T01:13:36Z",
+      "closed": null
     }
   ],
   "cadence": {
