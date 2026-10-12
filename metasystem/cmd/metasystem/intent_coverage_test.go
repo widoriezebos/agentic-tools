@@ -32,7 +32,7 @@ var publicPairs = []string{
 	"session start", "session stop", "session status", "session handoff", "session isolate", "session wait",
 	"mission start", "mission status", "mission resume", "mission seal", "mission repair",
 	"system start", "system stop", "system restart", "system status", "system check", "system enroll", "system setup", "system adopt", "system completion",
-	"landing status", "landing set", "landing start", "landing drain", "landing stop", "landing unset", "landing run", "landing resolve", "landing prove", "landing push", "landing return",
+	"landing status", "landing set", "landing start", "landing drain", "landing stop", "landing unset", "landing run", "landing resolve", "landing prove", "landing push", "landing return", "landing batch", "landing restart",
 	"deploy status", "deploy now", "deploy rollback", "deploy pause", "deploy resume",
 	"alert list", "alert ack", "alert clear",
 	"machine list", "machine start", "machine stop", "machine clear-provider", "machine revive",
@@ -54,6 +54,32 @@ var revisionSevenObjects = []string{"goal", "design", "decision", "grant", "work
 
 // hiddenPairs are the process entrypoints whose first word is an object.
 var hiddenPairs = []string{"goal fetch", "goal next", "test worker", "test worker-capabilities", "mission run-loop", "app serve", "ui serve", "ui tools", "landing observe", "landing workspace"}
+
+func TestHelpLandingBatchExamplesCoverStatefulForms(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name     string
+		examples []string
+	}{
+		{"landing batch", []string{"metasystem landing batch", "metasystem landing batch seal", "metasystem landing batch reopen --with my-goal"}},
+		{"landing restart", []string{"metasystem landing restart"}},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			command, ok := findIntentCommand(row.name)
+			if !ok {
+				t.Fatalf("missing public command %s", row.name)
+			}
+			var help bytes.Buffer
+			writeIntentHelp(&help, command)
+			for _, example := range row.examples {
+				if !slices.Contains(command.examples, example) || !strings.Contains(help.String(), example) {
+					t.Errorf("%s lacks the example %q in its table or help", row.name, example)
+				}
+			}
+		})
+	}
+}
 
 // TestIntentPublicCoverage is structural: it checks the object-action table,
 // its grammar, its help and its catalogue against the engine families, and

@@ -62,6 +62,7 @@ var auditModes = map[string]auditMode{
 	// G1b machine and landing.
 	"cmd/metasystem/intent_machine.go":        {group: "G1b", layout: auditEnforce},
 	"cmd/metasystem/intent_landing.go":        {group: "G1b", layout: auditEnforce},
+	"cmd/metasystem/intent_landing_batch.go":  {group: "G1b", layout: auditEnforce},
 	"cmd/metasystem/intent_landing_prove.go":  {group: "G1b", layout: auditEnforce},
 	"cmd/metasystem/intent_landing_push.go":   {group: "G1b", layout: auditEnforce},
 	"cmd/metasystem/intent_landing_return.go": {group: "G1b", layout: auditEnforce},

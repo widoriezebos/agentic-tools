@@ -62,7 +62,7 @@ func TestReadStatusAbandonedMergeYieldsToNewProof(t *testing.T) {
 		t.Fatal(err)
 	}
 	read := func(tip string) Status {
-		return b.read(ProveSeams{Git: func(string, ...string) (string, error) { return tip, nil }, Alive: func(Running) bool { return true }}, b.git(nil, nil))
+		return b.read(ProveSeams{Now: func() time.Time { return bedNow }, Git: func(string, ...string) (string, error) { return tip, nil }, Alive: func(Running) bool { return true }}, b.git(nil, nil))
 	}
 	if status := read(fix.Commit); status.Summary != fix.Reason {
 		t.Fatalf("current abandonment lost its reason: %+v", status)
@@ -71,9 +71,9 @@ func TestReadStatusAbandonedMergeYieldsToNewProof(t *testing.T) {
 		t.Fatalf("stale abandonment replaced status: %+v", status)
 	}
 	for _, tip := range []string{fix.Commit, "new-batch"} {
-		b.lines("running.json", Running{Commit: tip, Tree: "proof-tree", Attempt: "new-proof", Pid: 42, Since: time.Now().UTC().Format(time.RFC3339)})
+		b.lines("running.json", Running{Commit: tip, Tree: "proof-tree", Attempt: "new-proof", Pid: 42, Since: bedNow.Format(time.RFC3339)})
 		status := read(tip)
-		if !strings.HasPrefix(status.ProofHeadline, "Proving "+tip+";") || status.Summary != status.ProofHeadline || status.RunningFix != nil {
+		if !strings.HasPrefix(status.ProofHeadline, "proving (0 of counting units,") || status.Summary != status.ProofHeadline || status.RunningFix != nil {
 			t.Fatalf("abandonment replaced new proof: %+v", status)
 		}
 	}

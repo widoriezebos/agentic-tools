@@ -166,8 +166,8 @@ func TestLandingVerbsSetStartStop(t *testing.T) {
 		!strings.Contains(stdout, "agent is at work") {
 		t.Fatalf("status --verbose = %d %q", code, stdout)
 	}
-	if _, ok := findIntentAction("landing", "restart"); ok {
-		t.Fatal("landing restart still restarts a batch owner that no longer exists")
+	if command, ok := findIntentAction("landing", "restart"); !ok || !strings.Contains(command.summary, "proof") {
+		t.Fatal("landing restart must name the batch proof it restarts")
 	}
 }
 

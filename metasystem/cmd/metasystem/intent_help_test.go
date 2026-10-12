@@ -428,8 +428,8 @@ func TestIntentAgentResultProtocol(t *testing.T) {
 
 // Object help groups by intent (output-style D4): an object with more than
 // intentHelpGroupAbove actions names each of them in exactly one intent,
-// and every named action is one of the object's; a smaller object is one
-// list.
+// and every named action or subform is declared by the object; a smaller
+// object is one list.
 func TestIntentObjectHelpGroupsEveryActionOnce(t *testing.T) {
 	t.Parallel()
 	for _, object := range intentObjects() {
@@ -447,7 +447,14 @@ func TestIntentObjectHelpGroupsEveryActionOnce(t *testing.T) {
 		for _, group := range groups {
 			for _, action := range group.actions {
 				if _, ok := actions[action]; !ok {
-					t.Errorf("%s groups %s under %s, which is not one of its actions", object, action, group.heading)
+					parent, _, subform := strings.Cut(action, " ")
+					command, known := findIntentAction(object, parent)
+					declared := subform && known && slices.ContainsFunc(command.usage, func(usage string) bool {
+						return strings.HasPrefix(usage, "metasystem "+object+" "+action+" ") || usage == "metasystem "+object+" "+action
+					})
+					if !declared {
+						t.Errorf("%s groups %s under %s, which is not a declared action or subform", object, action, group.heading)
+					}
 				}
 				actions[action]++
 			}

@@ -47,6 +47,8 @@ func PolicyDecision(value PolicyValue, readErr error) error {
 // Batch pins a selection, independently of the queue's authoritative outcomes.
 // Its original base and members survive a rebuild on newer main.
 type Batch struct {
+	SealedAt      string         `json:"sealed-at,omitempty"`
+	Actions       []BatchAction  `json:"actions,omitempty"`
 	ID            string         `json:"id"`
 	Lane          lane.Record    `json:"lane"`
 	Base          string         `json:"base"`
@@ -398,7 +400,7 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 				}
 			}
 		}
-		if batch != nil && batch.State != BatchClosed && batch.Person != nil {
+		if batch != nil && batch.State != BatchClosed && (batch.Person != nil || batch.SealedAt != "") {
 			selected = batch
 			return nil
 		}
@@ -586,7 +588,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 			return batch, err
 		}
 	}
-	if batch.State == BatchPrepared && admit && batch.Person == nil {
+	if batch.State == BatchPrepared && admit && batch.Person == nil && batch.SealedAt == "" {
 		policy, err := s.batchPolicy()
 		if err := PolicyDecision(policy, err); err != nil {
 			return batch, err

@@ -417,11 +417,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 				running.UnitsDone++
 			}
 		}
-		total := "unknown"
+		total := "counting"
 		if running.UnitsTotal != nil {
 			total = strconv.Itoa(*running.UnitsTotal)
 		}
-		status.ProofHeadline = fmt.Sprintf("Proving %s; %d/%s units done; %s min elapsed", Short(running.Commit), running.UnitsDone, total, clockMinutes(running.Minutes))
+		status.ProofHeadline = fmt.Sprintf("proving (%d of %s units, %s min); the agent waits for the keeper", running.UnitsDone, total, clockMinutes(running.Minutes))
 	} else if proof := status.TrunkProof; proof != nil && proof.Result == Red {
 		main, readErr := git.main()
 		unread("main for the trunk proof", readErr)
@@ -463,7 +463,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			status.RunningFix = nil
 		}
 	}
-	if status.RunningFix != nil {
+	if status.RunningFix != nil && (running == nil || running.State != "running") {
 		status.ProofHeadline = fixHeadline(status.RunningFix)
 	}
 	merge := status.RunningFix

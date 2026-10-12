@@ -1,0 +1,5 @@
+landing planned 233
+landing package metasystem/cmd/devgate 1 ok 10196
+landing package metasystem/cmd/metasystem 10 ok 105636
+landing package metasystem/cmd/metasystem 14 ok 144755
+landing package metasystem/internal/landing/lane 130 ok 45607

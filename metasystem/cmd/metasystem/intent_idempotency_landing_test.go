@@ -3,6 +3,10 @@ package main
 // Idempotency rows of the landing object (R-129-ui; U12).
 
 import (
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +14,8 @@ import (
 )
 
 func init() {
+	registerIdempotency("landing batch", idemRead, "viewing the batch changes nothing; seal and reopen are stateful forms with their own repeat witnesses", nil)
+	registerIdempotency("landing restart", idemStateful, "the same restart is already applied or pending for this proof: success, nothing written", witnessLandingRestartRepeat)
 	registerIdempotency("landing status", idemRead, "reads the host's lane record and its keeper; changes nothing", nil)
 	registerIdempotency("landing set", idemStateful, "the lane is already that checkout: success, the record untouched", witnessLandingSetRepeat)
 	registerIdempotency("landing start", idemStateful, "the lane already runs, unpaused: success, nothing written", witnessLandingStartRepeat)
@@ -17,6 +23,84 @@ func init() {
 	registerIdempotency("landing stop", idemStateful, "the lane is already stopped: success, the pause untouched", witnessLandingStopRepeat)
 	registerIdempotency("landing run", idemStateful, "a landing agent already runs: success, no second launch and nothing written", witnessLandingRunRepeat)
 	registerIdempotency("landing unset", idemStateful, "no lane is registered any more: success, nothing written", witnessLandingUnsetRepeat)
+}
+
+func TestLandingBatchSealRepeatAsSuccess(t *testing.T) {
+	t.Parallel()
+	witnessLandingBatchRepeat(t, "seal", "open")
+}
+
+func TestLandingBatchReopenRepeatAsSuccess(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"sealed", "running"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			witnessLandingBatchRepeat(t, "reopen", state)
+		})
+	}
+}
+
+func TestLandingRestartRepeatAsSuccess(t *testing.T) {
+	t.Parallel()
+	witnessLandingRestartRepeat(t)
+}
+
+func witnessLandingRestartRepeat(t *testing.T) {
+	t.Helper()
+	for _, state := range []string{"sealed", "running"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			witnessLandingBatchRepeat(t, "restart", state)
+		})
+	}
+}
+
+// The stateful batch forms repeat through the public router. Both applied
+// decisions and requests pending on a live proof must leave records untouched.
+func witnessLandingBatchRepeat(t *testing.T, kind, state string) {
+	t.Helper()
+	bed, _ := batchVerbFixture(t, state)
+	words := []string{"landing", "batch", kind}
+	want := "already sealed"
+	if kind == "reopen" {
+		words = append(words, "--with", "shared-state-in-the-ledger")
+		want = "already a member"
+	} else if kind == "restart" {
+		words = []string{"landing", "restart"}
+		want = "already a member"
+	}
+	if state == "running" {
+		want = "request already pending"
+	}
+	words = append(words, "--by", "Wido", "--json")
+	code, out := bed.run(t, bed.seat, words...)
+	var first intentResult
+	helmMust(t, json.Unmarshal([]byte(out), &first))
+	expectOutcome(t, "first batch "+kind, code, first, intentConfirmed)
+	batch := bed.batch(t)
+	if len(batch.Actions) != 1 || batch.Actions[0].Kind != kind || batch.Actions[0].Pending != (state == "running") {
+		t.Fatalf("first %s did not record its decision: %+v", kind, batch)
+	}
+	beforeLane, beforeHome, beforeSeat := idemTreeDigest(t, bed.lane), idemTreeDigest(t, bed.home), idemTreeDigest(t, bed.seat)
+	path := filepath.Join(plain.Dir(bed.lane), "batch.json")
+	before, err := os.Stat(path)
+	helmMust(t, err)
+	bed.now = bed.now.Add(time.Minute)
+	code, out = bed.run(t, bed.seat, words...)
+	var second intentResult
+	helmMust(t, json.Unmarshal([]byte(out), &second))
+	expectOutcome(t, "repeated batch "+kind, code, second, intentConfirmed)
+	if !strings.Contains(second.Summary, want) {
+		t.Fatalf("repeat did not answer as applied: %+v; want %q", second, want)
+	}
+	idemSameTree(t, "a repeated batch "+kind, beforeLane, idemTreeDigest(t, bed.lane))
+	idemSameTree(t, "a repeated batch "+kind, beforeHome, idemTreeDigest(t, bed.home))
+	idemSameTree(t, "a repeated batch "+kind, beforeSeat, idemTreeDigest(t, bed.seat))
+	after, err := os.Stat(path)
+	helmMust(t, err)
+	if !os.SameFile(before, after) || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("repeat rewrote the batch even though its contents are unchanged")
+	}
 }
 
 // witnessLandingRepeat runs one landing verb twice on a registered lane and asserts

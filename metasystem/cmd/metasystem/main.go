@@ -519,7 +519,6 @@ func writeUnknownIntentCommand(w io.Writer, name string, rest []string) {
 type retiredIntentAction struct{ why, next string }
 
 var retiredIntentActions = map[string]retiredIntentAction{
-	"landing restart": {why: "the lane has no owner to restart now", next: "metasystem landing start"},
 	"landing publish": {why: "landing push puts a proven HEAD on main", next: "metasystem landing push"},
 }
 

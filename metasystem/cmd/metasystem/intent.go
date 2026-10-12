@@ -1534,8 +1534,8 @@ var intentActionIntents = map[string][]struct {
 		{"Shape", []string{"add", "remove"}},
 	},
 	"landing": {
-		{"Read", []string{"status"}},
-		{"Work", []string{"run", "start", "drain", "stop", "prove", "push", "return", "resolve"}},
+		{"Read", []string{"status", "batch"}},
+		{"Work", []string{"batch seal", "batch reopen", "run", "start", "drain", "stop", "restart", "prove", "push", "return", "resolve"}},
 		{"Shape", []string{"set", "unset"}},
 	},
 	"system": {
@@ -1562,6 +1562,10 @@ func intentObjectHelpPage(env textui.Env, object string) *textui.Page {
 	for _, command := range actions {
 		all = append(all, helpRow{command.action, command.summary})
 		summaries[command.action] = command.summary
+	}
+	if object == "landing" {
+		summaries["batch seal"], summaries["batch reopen"] = "close the batch's admission window", "admit a waiting goal with --with G"
+		all = append(all, helpRow{"batch seal", summaries["batch seal"]}, helpRow{"batch reopen", summaries["batch reopen"]})
 	}
 	column := helpColumn(all)
 	if len(actions) <= intentHelpGroupAbove || intentActionIntents[object] == nil {

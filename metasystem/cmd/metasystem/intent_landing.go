@@ -183,6 +183,7 @@ func unconfirmedLane(result intentResult, err error) intentResult {
 func landingIntentCommands() []intentCommand {
 	byFlag := intentFlag{name: "by", value: "NAME", usage: "who acts (default: this seat's nickname)"}
 	return []intentCommand{
+		landingBatchCommand(), landingRestartCommand(),
 		{
 			object: "landing", action: "status", audience: "both", summary: "the landing lane on this computer: its checkout and its landing agent",
 			usage: []string{"metasystem landing status [--verbose]"},
@@ -414,6 +415,11 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			for _, member := range batch.Members {
 				section.Text(member.Goal + " at " + shortLandingID(member.SHA))
 			}
+			for _, act := range batch.Actions {
+				if act.Pending {
+					section.Text(act.PendingLine())
+				}
+			}
 			if batch.ClosureReason != "" {
 				section.Text(batch.ClosureReason)
 			}
@@ -560,7 +566,11 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, 
 		switch {
 		case len(headline) > 0 && headline[0] != "":
 			page.Headline(headline[0])
-			page.Section("", "").Text("Lane: " + view.AgentSummary(waiting))
+			words := view.AgentSummary(waiting)
+			if running != nil && running.State == "running" {
+				words = "proving; the agent waits for the keeper"
+			}
+			page.Section("", "").Text("Lane: " + words)
 		case owner.State == lane.OwnerRunning:
 			page.Headline("The landing lane's agent is at work")
 		case owner.State == lane.OwnerStopped:

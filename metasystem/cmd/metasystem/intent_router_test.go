@@ -219,9 +219,12 @@ func TestIntentRouterSuggestsTheCurrentCommand(t *testing.T) {
 	}
 	// A retired action says it was removed and why, and names the one
 	// command that does the work now, instead of a guess by spelling.
-	if code, stdout, stderr := routeWith(registered, "landing", "restart"); code != 2 || stdout != "" ||
-		stderr != "metasystem landing restart was removed; the lane has no owner to restart now; nothing was done\nrun: metasystem landing start\n" {
-		t.Errorf("landing restart = %d %q %q", code, stdout, stderr)
+	if code, stdout, stderr := routeWith(registered, "landing", "publish"); code != 2 || stdout != "" ||
+		stderr != "metasystem landing publish was removed; landing push puts a proven HEAD on main; nothing was done\nrun: metasystem landing push\n" {
+		t.Errorf("landing publish = %d %q %q", code, stdout, stderr)
+	}
+	if code, stdout, stderr := routeWith(registered, "landing", "restart", "--help"); code != 0 || stderr != "" || !strings.Contains(stdout, "restart the proof") {
+		t.Errorf("landing restart help = %d %q %q", code, stdout, stderr)
 	}
 	// Every suggestion is a current public command: it routes to its own
 	// descriptor.
