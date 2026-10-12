@@ -64,6 +64,7 @@ func (bed *laneVerbBed) owners() intentOwners {
 	notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
 	return intentOwners{prove: bed.prove, commandNow: func(string) (time.Time, error) { return laneTestNow, nil }, policies: bed.policies, resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
 		plainProve: bed.plainProve,
+		settle:     settleLandingAgent(func() (string, bool, error) { return "fixture-agent", bed.alive, nil }, func(string) error { bed.alive = false; return nil }),
 		home:       func() (string, error) { return bed.home, nil },
 		probe: func(string) (lane.OwnerProbe, error) {
 			if !bed.alive {

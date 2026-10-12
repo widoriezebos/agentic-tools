@@ -31,10 +31,6 @@ func ActOnBatch(install, kind, goal string, person ActProvenance, s ProveSeams) 
 		if batch == nil {
 			return errors.New("there is no current batch")
 		}
-		entries, err := Entries(install)
-		if err != nil {
-			return err
-		}
 		act := BatchAction{Kind: kind, By: person.Person, At: person.CheckedAt.UTC().Format(time.RFC3339Nano)}
 		switch kind {
 		case "seal":
@@ -50,7 +46,15 @@ func ActOnBatch(install, kind, goal string, person ActProvenance, s ProveSeams) 
 			if err != nil {
 				return err
 			}
-			entries, err = Landed(entries, func(sha string) (bool, error) { return git.contains(main, sha) })
+			entries, err := Entries(install)
+			if err == nil {
+				entries, err = Landed(entries, func(sha string) (bool, error) { return git.contains(main, sha) })
+			}
+			if err != nil {
+				return err
+			}
+			incidents, err := s.incidents(install, batch.Lane.Root, main)
+			entries = HoldEntries(entries, incidents, s)
 			if err != nil {
 				return err
 			}
@@ -59,7 +63,7 @@ func ActOnBatch(install, kind, goal string, person ActProvenance, s ProveSeams) 
 				if e.Goal == goal {
 					state = e.State
 				}
-				if e.State == StateWaiting && (kind == "restart" || e.Goal == goal) && !slices.Contains(batch.Members, GoalSHA{Goal: e.Goal, SHA: e.SHA}) {
+				if e.State == StateWaiting && !e.Held && (kind == "restart" || e.Goal == goal) && !slices.Contains(batch.Members, GoalSHA{Goal: e.Goal, SHA: e.SHA}) {
 					act.With = append(act.With, GoalSHA{Goal: e.Goal, SHA: e.SHA})
 				}
 			}
@@ -99,6 +103,9 @@ func ActOnBatch(install, kind, goal string, person ActProvenance, s ProveSeams) 
 					}
 				}
 				batch.State, batch.SealedAt, batch.ClosureReason = BatchPrepared, "", ""
+				if kind == "restart" {
+					batch.Base = main
+				}
 				person.Kind, person.Subject = "selection", slices.Clone(batch.Members)
 				if s.Pause != nil {
 					if pause, paused := s.Pause(); paused && !pause.Unreadable() {
@@ -106,12 +113,25 @@ func ActOnBatch(install, kind, goal string, person ActProvenance, s ProveSeams) 
 					}
 				}
 				batch.Person = &person
+				if kind == "restart" {
+					if err := bindBarrenStopLocked(install, batch.Person); err != nil {
+						return err
+					}
+				}
 			}
 		default:
 			return errors.New("unknown batch action")
 		}
 		batch.Actions = append(batch.Actions, act)
-		return writeBatch(install, batch)
+		if err := writeBatch(install, batch); err != nil {
+			return err
+		}
+		if kind == "restart" && !act.Pending && batch.Person != nil {
+			return closeMatchingStopsLocked(install, "person selected batch "+batch.ID, person.CheckedAt, func(stop Stop) bool {
+				return stop.Loop == "lane-return" && stop.Subject == "lane" && stop.At == batch.Person.BarrenStopAt
+			})
+		}
+		return nil
 	})
 	return batch, message, err
 }
@@ -205,4 +225,16 @@ func BatchLines(batch *Batch, entries []Entry, checkout string, s ProveSeams) ([
 		lines = append(lines, e.Goal+" waits: "+reason)
 	}
 	return lines, nil
+}
+
+// RevokeStandingContinuation makes a subsequent stop fence every selection.
+func RevokeStandingContinuation(install string) error {
+	return withLock(install, func() error {
+		batch, err := ReadBatch(install)
+		if err != nil || batch == nil || batch.Person == nil || batch.Person.StandingPause == nil {
+			return err
+		}
+		batch.Person.StandingPause = nil
+		return writeBatch(install, batch)
+	})
 }

@@ -60,6 +60,10 @@ func runIntentLandingBatch(inv *intentInvocation, admitted laneAdmitted) int {
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the batch's merge state could not be read: " + oneLine(err.Error()), Data: batch})
 	}
+	if kind == "restart" && message == "" && batch != nil && batch.Person != nil && len(batch.Actions) > 0 && !batch.Actions[len(batch.Actions)-1].Pending {
+		run := plain.ContinueSelection(admitted.installation, admitted.record, inv.resumeKeeper(admitted))
+		lines = append(lines, run.Line)
+	}
 	if message != "" {
 		lines = append([]string{message}, lines...)
 	}

@@ -47,6 +47,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-health-none", args: []string{"landing", "health"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-batch-none", args: []string{"landing", "batch"}, bed: landingLayoutBed(landingLayoutNone)},
+		{name: "landing-resume-none", args: []string{"landing", "resume"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-restart-none", args: []string{"landing", "restart"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-run", args: []string{"landing", "run"}, bed: inTheLaneCheckout(landingLayoutBed(landingLayoutRunning))},
 		{name: "landing-run-refusal", args: []string{"landing", "run"}, bed: inTheLaneCheckout(landingLayoutBed(landingLayoutPaused))},
@@ -163,7 +164,8 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 				t.Fatalf("layout queried Git %v", args)
 				return "", nil
 			}},
-			home: func() (string, error) { return home, nil },
+			home:   func() (string, error) { return home, nil },
+			settle: settleLandingAgent(func() (string, bool, error) { return "layout-agent", alive, nil }, func(string) error { alive = false; return nil }),
 			probe: func(string) (lane.OwnerProbe, error) {
 				if !alive {
 					return lane.OwnerProbe{}, nil

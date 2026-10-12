@@ -472,7 +472,7 @@ func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 			return "", true, err
 		}
 	}
-	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs (%s) ended with the lane unchanged; a person must select waiting goals with metasystem landing run --goals GOALS, or prove main with metasystem landing prove --trunk when none is eligible",
+	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs (%s) ended with the lane unchanged; a person runs metasystem landing resume",
 		root, state.Barren, strings.Join(state.BarrenLaunches, ", ")), true, nil
 }
 

@@ -1,0 +1,2 @@
+✗ no landing lane is registered on this computer; nothing was done
+  → metasystem landing set PATH  register the landing checkout every seat lands through

@@ -66,6 +66,7 @@ type laneVerbOwners struct {
 	// plainProve are landing prove's effects; the zero value starts the
 	// engine detached through gaterun.LaunchDetached.
 	plainProve       plain.ProveSeams
+	settle           func(lane.Layout) (lane.Settlement, error)
 	mainEndpoint     func(string) (goal.Endpoint, error)
 	recordFlake      func(goal.VerbRequest, goal.FlakeRecordArgs) (goal.FlakeRecordResult, error)
 	recordMain       func(goal.VerbRequest, goal.TrunkRedRecordArgs) (goal.PublishResult, error)
@@ -137,6 +138,10 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 	}
 	if owners.keeper == nil {
 		owners.keeper = func(home, root string) lane.AgentKeeper { return newLandingAgentKeeper(root, home, newLandingAgent()) }
+	}
+	if owners.settle == nil {
+		agent := newLandingAgent()
+		owners.settle = settleLandingAgent(agent.running, agent.cancel)
 	}
 	if owners.stopRegeneration == nil {
 		owners.stopRegeneration = plain.StopRegeneration
@@ -273,7 +278,7 @@ func unconfirmedLane(result intentResult, err error) intentResult {
 func landingIntentCommands() []intentCommand {
 	byFlag := intentFlag{name: "by", value: "NAME", usage: "who acts (default: this seat's nickname)"}
 	return []intentCommand{
-		landingBatchCommand(), landingRestartCommand(), landingHealthCommand(),
+		landingBatchCommand(), landingRestartCommand(), landingResumeCommand(), landingHealthCommand(),
 		{
 			object: "landing", action: "status", audience: "both", summary: "the landing lane on this computer: its checkout and its landing agent",
 			usage: []string{"metasystem landing status [--verbose]"},
@@ -895,6 +900,7 @@ func runIntentLandingStart(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	if refused := inv.laneResumable(owners, home, record); refused != nil {
+		refused.Summary += "; a person runs metasystem landing resume to recover it"
 		return inv.render(*refused)
 	}
 	return inv.render(inv.startLane(owners, home, record))
@@ -1437,21 +1443,8 @@ func runIntentLandingStop(inv *intentInvocation) int {
 // stopLane pauses the lane at a person's word.
 func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record lane.Record, reason string) (intentResult, bool) {
 	targets := laneTargets(record.Root)
-	if pause, paused := lane.ReadPause(home); paused {
-		if err := stopLaneRegeneration(owners, record); err != nil {
-			return landingLaneFailure(targets, "the running regeneration could not be stopped", err), false
-		}
-		result := intentResult{Outcome: intentUnchanged, Targets: targets, Summary: "the landing lane is already stopped by " + pause.Who() + " at " + lane.LocalText(pause.At) + "; metasystem landing start resumes it"}
-		result.view = func(page *textui.Page) {
-			done := "the landing lane is already stopped by " + pause.Who()
-			if at, err := time.Parse(time.RFC3339, pause.At); err == nil {
-				done += " " + page.Env().Since(at)
-			}
-			page.Done(done)
-			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "start"), Reason: "resumes it"})
-		}
-		return result, true
-	}
+	prior, alreadyStopped := lane.ReadPause(home)
+	probe, _ := owners.probe(record.Root)
 	by := inv.landingActor(owners)
 	inv.sayWhenTheLaneLockIsHeld(home)
 	_, err := owners.pause(home, by, reason, owners.now())
@@ -1460,16 +1453,40 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be stopped: " + err.Error()}}, false
 	}
 	if err := stopLaneRegeneration(owners, record); err != nil {
-		return landingLaneFailure(targets, "the lane is paused, but its regeneration could not be stopped", err), false
+		return landingLaneFailure(targets, "the running regeneration could not be stopped", err), false
+	}
+	if err := plain.RevokeStandingContinuation(record.Install); err != nil {
+		return landingLaneFailure(targets, "the lane is paused, but its continuation could not be revoked", err), false
+	}
+	layout, layoutErr := record.Layout()
+	if layoutErr != nil {
+		return landingLaneFailure(targets, "the lane is paused, but its agent could not be reached", layoutErr), false
+	}
+	settlement, settleErr := owners.settle(layout)
+	if settleErr != nil || len(settlement.Live)+len(settlement.Unknown) > 0 {
+		return landingLaneFailure(targets, "the lane is paused, but its agent has not ended", errors.Join(settleErr, errors.New(strings.Join(append(settlement.Live, settlement.Unknown...), "; ")))), false
 	}
 	// The way to seats landing their own work is unset, which line 2 names.
 	who := lane.Pause{By: by, Reason: reason}.Who()
-	return unconfirmedLane(intentResult{Outcome: intentConfirmed, Targets: targets, Data: inv.laneView(owners, home),
-		Summary: "stopped the landing lane for " + who + "; no landing agent starts until metasystem landing start",
+	line := "stopped the landing lane for " + who
+	if alreadyStopped {
+		line = "the landing lane is already stopped by " + prior.Who()
+	}
+	ended := "no landing agent was running"
+	if probe.Alive {
+		ended = "the landing agent's session ended"
+	}
+	line += "; " + ended
+	outcome := intentConfirmed
+	if alreadyStopped && !probe.Alive {
+		outcome = intentUnchanged
+	}
+	return unconfirmedLane(intentResult{Outcome: outcome, Targets: targets, Data: inv.laneView(owners, home),
+		Summary: line,
 		Details: []string{"the lane at " + record.Root + " starts no landing agent until metasystem landing start"},
 		next:    inv.publicArgv("landing", "unset"), nextReason: "lets each seat land its own work instead",
 		view: func(page *textui.Page) {
-			page.Done("stopped the landing lane for " + who + "; no landing agent starts until it starts again")
+			page.Done(line)
 		}}, err), true
 }
 

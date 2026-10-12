@@ -75,7 +75,7 @@ func TestLandingKeeperStatusShowsBarrenHold(t *testing.T) {
 		return landingStatusData{View: view, Queue: waiting}
 	}
 	command, _ := findIntentAction("landing", "status")
-	const want = "held after 2 runs that left the lane unchanged; a person's recorded selection or a fresh proof of main is needed"
+	const want = "held after 2 runs that left the lane unchanged; a person runs metasystem landing resume"
 	for _, args := range [][]string{{"--json"}, {}} {
 		var stdout, stderr bytes.Buffer
 		code := runIntentIn(command, args, &stdout, &stderr, bed.cwd, owners)

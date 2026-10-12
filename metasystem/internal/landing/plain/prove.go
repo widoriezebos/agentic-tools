@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
@@ -161,9 +162,11 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
-	Steward  *StewardEffects
-	Load     func(time.Time) hostload.Sample
-	ReadOnly bool
+	ResumeKeeper    *lane.AgentKeeper
+	ResolutionStore *launch.Store
+	Steward         *StewardEffects
+	Load            func(time.Time) hostload.Sample
+	ReadOnly        bool
 	// Fresh bypasses saved green proofs and executes the requested check.
 	Fresh bool
 	// BudgetHome names the host budget records; empty uses the board home.

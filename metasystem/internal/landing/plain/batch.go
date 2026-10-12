@@ -85,6 +85,13 @@ func SelectPersonBatch(install, checkout string, registered lane.Record, goals [
 	if proof.Helm != nil || !proof.EnrolledTerminalFor(root) {
 		return nil, errors.New("the person's terminal did not authorize this selection")
 	}
+	person := ActProvenance{Kind: "selection", Person: name, Root: root, CheckedAt: at.UTC(), TerminalGeneration: proof.TerminalGeneration, TerminalRef: proof.TerminalRef, Destination: registered}
+	return PersonSelection(install, checkout, registered, goals, person, s)
+}
+
+// PersonSelection records a selection after the caller proves the person's terminal.
+func PersonSelection(install, checkout string, registered lane.Record, goals []string, person ActProvenance, s ProveSeams) (selected *Batch, err error) {
+	at := person.CheckedAt
 	if len(goals) == 0 {
 		return nil, errors.New("name at least one waiting goal with --goals")
 	}
@@ -141,27 +148,15 @@ func SelectPersonBatch(install, checkout string, registered lane.Record, goals [
 			policy = PolicyValue{Value: "unknown", Source: policyErr.Error()}
 		}
 		batch.Selector = policy
-		batch.Person = &ActProvenance{Kind: "selection", Person: name, Root: root, CheckedAt: at.UTC(), TerminalGeneration: proof.TerminalGeneration, TerminalRef: proof.TerminalRef, Destination: registered, Subject: members}
+		person.Kind, person.Destination, person.Subject = "selection", registered, members
+		batch.Person = &person
 		if s.Pause != nil {
 			if pause, paused := s.Pause(); paused && !pause.Unreadable() {
 				batch.Person.StandingPause = &pause
 			}
 		}
-		stops, err := readLines[Stop](stopsPath(install))
-		if err != nil {
+		if err := bindBarrenStopLocked(install, batch.Person); err != nil {
 			return err
-		}
-		seenStops := stopSet{}
-		for i := len(stops) - 1; i >= 0; i-- {
-			stop := stops[i]
-			if seenStops.contains(stop) {
-				continue
-			}
-			seenStops.add(stop)
-			if stop.Decision == "stop" && stop.Loop == "lane-return" && stop.Subject == "lane" {
-				batch.Person.BarrenStopAt = stop.At
-				break
-			}
 		}
 		if err := s.batchLane(batch); err != nil {
 			return err
@@ -175,6 +170,26 @@ func SelectPersonBatch(install, checkout string, registered lane.Record, goals [
 		})
 	})
 	return selected, err
+}
+
+func bindBarrenStopLocked(install string, person *ActProvenance) error {
+	stops, err := readLines[Stop](stopsPath(install))
+	if err != nil {
+		return err
+	}
+	seenStops := stopSet{}
+	for i := len(stops) - 1; i >= 0; i-- {
+		stop := stops[i]
+		if seenStops.contains(stop) {
+			continue
+		}
+		seenStops.add(stop)
+		if stop.Decision == "stop" && stop.Loop == "lane-return" && stop.Subject == "lane" {
+			person.BarrenStopAt = stop.At
+			break
+		}
+	}
+	return nil
 }
 
 // RecordedPersonBatch checks an internal continuation against its durable effect.
