@@ -55,7 +55,13 @@ func TestDetachedProofReadsItsOwnReport(t *testing.T) {
 	testenv.ReapFixtureProcessGroups(t, []testenv.FixtureProcessGroup{{Verb: "detached proof report", Resolve: func() (int, bool, error) { return int(pid), true, nil }}})
 	// The detached proof must publish its diagnostics within the launch bound.
 	events := []unix.PollFd{{Fd: int32(notification.Fd()), Events: unix.POLLIN}}
-	if n, err := unix.Poll(events, 20_000); err != nil || n != 1 || events[0].Revents&unix.POLLIN == 0 {
+	// A signal (a reaped child under load) interrupts the poll; it is simply issued again with its full bound
+	// (no wall clock in a test, R-104; a handful of interruptions can only lengthen the wait, never shorten it).
+	n, err := unix.Poll(events, 20_000)
+	for err == unix.EINTR {
+		n, err = unix.Poll(events, 20_000)
+	}
+	if err != nil || n != 1 || events[0].Revents&unix.POLLIN == 0 {
 		data, _ := os.ReadFile(log)
 		t.Fatalf("detached proof did not publish diagnostics within 20 seconds: %d %v\n%s", n, err, data)
 	}
