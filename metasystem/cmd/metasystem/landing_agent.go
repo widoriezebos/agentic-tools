@@ -224,11 +224,6 @@ func (a landingAgent) questionHold(module string) (string, error) {
 	}
 	for _, q := range lane {
 		if q.Machine == machine {
-			if withdrawn, err := plain.WithdrawStaleLaneQuestion(module, q, a.proofEffects); err != nil {
-				return "", err
-			} else if withdrawn {
-				continue
-			}
 			if command := channel.LaneStopCommand(q); command != "" {
 				return "the lane waits for a person's act\nrun: " + command, nil
 			}
@@ -390,7 +385,60 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 	if err != nil {
 		return nil
 	}
-	return newLandingAgentKeeper(repo, home, newLandingAgent()).Run
+	agent := newLandingAgent()
+	keeper := newLandingAgentKeeper(repo, home, agent)
+	seams := (laneVerbOwners{plainProve: agent.proofEffects}).proveSeams(repo)
+	seams.Machine = agent.machine
+	seams.Steward = &plain.StewardEffects{Owner: agent.probe,
+		Settle: func(record lane.Record) (string, error) {
+			layout, err := record.Layout()
+			if err != nil {
+				return "", err
+			}
+			settled, err := settleLandingAgent(agent.running, agent.cancel)(layout)
+			if len(settled.Unknown)+len(settled.Live) > 0 {
+				err = errors.Join(err, errors.New(strings.Join(append(settled.Unknown, settled.Live...), "; ")))
+			}
+			return "landing agent ended", err
+		},
+		Wake: func(lane.Record) (string, error) { run := keeper.Run(); return run.Line, nil },
+	}
+	return landingStewardTick(keeper.Run, func() (plain.StewardRun, error) {
+		record, _, err := lane.Read(home)
+		if err != nil {
+			return plain.StewardRun{}, err
+		}
+		proof := seams
+		proof.Pause = func() (lane.Pause, bool) { return lane.ReadPause(home) }
+		proof.FenceCheck = func() error {
+			if _, paused := lane.ReadPause(home); paused {
+				return errors.New("a person stopped the lane")
+			}
+			return nil
+		}
+		proof.CommandForCommit = func(commit string) (string, error) {
+			return landingProofCommand(record.Install, record.Root, commit, proveCommandKey, proof.Git)
+		}
+		return plain.StewardStep(home, agent.now(), proof)
+	})
+}
+
+func landingStewardTick(keeper func() lane.AgentRun, step func() (plain.StewardRun, error)) func() lane.AgentRun {
+	return func() lane.AgentRun {
+		run := keeper()
+		if run.Outcome == lane.AgentNotKept || run.Outcome == lane.AgentFailed || run.Outcome == lane.AgentStarted || run.Launch != "" && run.Outcome != lane.AgentRunning {
+			return run
+		}
+		steward, err := step()
+		if steward.Line != "" {
+			run.Line += "; steward: " + steward.Line
+		}
+		if err != nil {
+			run.Problems = append(run.Problems, err.Error())
+			run.Line += "; steward failed: " + err.Error()
+		}
+		return run
+	}
 }
 
 func launchModel(record launch.Record) string {

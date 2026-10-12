@@ -161,6 +161,7 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	Steward  *StewardEffects
 	Load     func(time.Time) hostload.Sample
 	ReadOnly bool
 	// Fresh bypasses saved green proofs and executes the requested check.

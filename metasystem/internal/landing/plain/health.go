@@ -19,6 +19,8 @@ import (
 
 // Health is the lane's recorded evidence and measured ages; reading it acts on nothing.
 type Health struct {
+	Interventions       []Intervention `json:"interventions,omitempty"`
+	observedAt          time.Time
 	State               string           `json:"state"`
 	Goals               []GoalHealth     `json:"goals"`
 	Batch               *BatchHealth     `json:"batch,omitempty"`
@@ -129,6 +131,12 @@ func measured(value *float64) string {
 func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string, results []Result, queue []Line, install, checkout string, seams ProveSeams, git laneGit) (*Health, error) {
 	h := &Health{State: "idle", Goals: []GoalHealth{}, Questions: []QuestionHealth{}, Incidents: []IncidentHealth{}, AbandonedResolution: abandoned, LastProof: status.LastProof}
 	now := seams.now()
+	h.observedAt = now
+	interventions, err := readLines[Intervention](interventionsPath(install))
+	if err != nil {
+		return nil, err
+	}
+	h.Interventions = interventions[max(0, len(interventions)-5):]
 	stamp := now.Format(time.RFC3339Nano)
 	if status.Paused || status.Stop != nil {
 		h.State = "paused"
@@ -364,7 +372,7 @@ func (h Health) Rows() []Fired {
 	if r := h.LastProof; r != nil {
 		saturated := r.LoadStart != nil && r.LoadStart.Saturated() || r.LoadEnd != nil && r.LoadEnd.Saturated()
 		if r.Result == Red && saturated && len(r.FlakeRepeats) == 0 && len(r.Flakes) == 0 && !r.RepeatComplete {
-			fire("suspected-contention", r.Attempt, r.Minutes, "repeat by name before classifying; the recorded attribution stands")
+			fire("suspected-contention", r.Commit, r.Minutes, "repeat by name before classifying; the recorded attribution stands")
 		}
 		if healthRepeat(*r) == Green {
 			fire("confirmed-flake", r.Attempt, r.Minutes, "a flake: register it, no incident")
@@ -384,10 +392,10 @@ func (h Health) Rows() []Fired {
 				subject = "with 1 goal waiting"
 			}
 		}
-		fire("silent-agent", subject, h.Agent.Minutes, "metasystem landing unset ends the agent session and removes the lane; the steward's loop (U2) ends it through the settle path while keeping the lane")
+		fire("silent-agent", subject, h.Agent.Minutes, "end the silent landing agent session and wake the keeper")
 	}
 	if h.Engine.Stale {
-		fire("stale-engine", h.Engine.Revision, nil, "redeploy the engine from main")
+		fire("stale-engine", h.Engine.Revision, nil, "redeploy the engine from main (deploy now); the steward acts on it once landing-deploys-the-engine rebuilds the install's engine")
 	}
 	if b := h.Batch; b != nil && b.State != BatchClosed && !b.Open && len(b.Members) == 1 {
 		for _, a := range b.Waiting {
@@ -417,7 +425,13 @@ func (h Health) Rows() []Fired {
 	}
 	return rows
 }
-func (h Health) Line() string {
+func (h Health) Line() (line string) {
+	defer func() {
+		if len(h.Interventions) > 0 {
+			last := h.Interventions[len(h.Interventions)-1]
+			line += fmt.Sprintf("; steward: %s %s min ago", last.What, measured(elapsedMinutes(last.At, h.observedAt.Format(time.RFC3339Nano))))
+		}
+	}()
 	rows := h.Rows()
 	if len(rows) == 0 {
 		return "lane " + h.State + "; nothing fires"
@@ -481,6 +495,10 @@ func (h Health) Text() string {
 	fmt.Fprintf(&out, "load: %s; saturated %t; at start %s/end %s\nlast push: %s\n", current, h.Load.Saturated, measured(h.Load.AtStart), measured(h.Load.AtEnd), lane.LocalText(h.LastPush))
 	for _, r := range h.Rows() {
 		fmt.Fprintf(&out, "%s: %s (%s min): %s\n", r.Row, r.Subject, r.Minutes, r.Act)
+	}
+	fmt.Fprintln(&out, "interventions:")
+	for _, act := range h.Interventions {
+		fmt.Fprintf(&out, "  %s: %s; %s; %s; %s\n", lane.LocalText(act.At), act.What, act.Why, act.How, act.Outcome)
 	}
 	return strings.TrimSpace(out.String())
 }

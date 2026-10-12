@@ -77,6 +77,10 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 	t.Parallel()
 	b := newPlainVerbBed(t)
 	b.cwd = b.checkout
+	interventions, err := os.ReadFile("testdata/landing-steward-interventions.jsonl")
+	helmMust(t, err)
+	helmMust(t, os.MkdirAll(plain.Dir(b.installation), 0755))
+	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.installation), "interventions.jsonl"), interventions, 0600))
 	engine := os.Getenv("METASYSTEM_WAIT_BINARY")
 	if engine == "" {
 		t.Fatal("the package did not build the CLI")
@@ -94,6 +98,9 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 		}
 		if err != nil || !strings.Contains(string(out), "nothing fires") {
 			t.Fatalf("%v: %v %s", args, err, out)
+		}
+		if !strings.Contains(string(out), "redeploy the engine from main") || !strings.Contains(string(out), "deployed") {
+			t.Fatalf("CLI omitted the intervention: %s", out)
 		}
 	}
 	now := time.Now()

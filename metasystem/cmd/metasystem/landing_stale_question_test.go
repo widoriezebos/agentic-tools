@@ -62,9 +62,20 @@ func TestLandingAgentWithdrawsOnlyItsStaleLaneQuestion(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+			if hold == "" || got.State != "open" {
+				t.Fatalf("keeper withdrew a question before the steward could prove and record: %q %+v", hold, got)
+			}
+			_, err = plain.WithdrawStaleLaneQuestion(install, q, a.proofEffects)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err = channel.ReadQuestion(install, q.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
 			stale := scenario == "back on main" || scenario == "main advanced"
 			if stale {
-				if hold != "" || got.State != "closed" {
+				if got.State != "closed" {
 					t.Fatalf("stale premise still holds: %q %+v", hold, got)
 				}
 			} else if hold == "" || got.State != "open" {

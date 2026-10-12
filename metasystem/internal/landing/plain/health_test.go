@@ -209,7 +209,7 @@ func TestLandingHealthProofRowsAndOldSamples(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			b := newStatusBed(t)
-			r := Result{Result: Red, Load: 9, Failed: []FailedUnit{{Unit: "unit", Tests: []string{"TestRed"}}}}
+			r := Result{Attempt: "red-attempt", Commit: "proven-commit", Result: Red, Load: 9, Failed: []FailedUnit{{Unit: "unit", Tests: []string{"TestRed"}}}}
 			if tc.load {
 				r.LoadStart = &hostload.Sample{Available: true, Cores: 8, Load1m: 9}
 			}
@@ -222,6 +222,9 @@ func TestLandingHealthProofRowsAndOldSamples(t *testing.T) {
 			h := readHealthBed(t, b, healthSeams(bedNow)).Health
 			if tc.row != "" && healthRow(h, tc.row) == nil {
 				t.Fatal(h.Rows())
+			}
+			if tc.row == "suspected-contention" && healthRow(h, tc.row).Subject != r.Commit {
+				t.Fatalf("contention subject is not the proven commit: %+v", h.Rows())
 			}
 			if tc.repeat && healthRow(h, "suspected-contention") != nil {
 				t.Fatal(h.Rows())
