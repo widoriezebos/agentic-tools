@@ -101,6 +101,12 @@ func PolicyRequests(install string, effects ...ProveSeams) ([]PolicyRequest, err
 			return requests, err
 		}
 		incidents, incidentErr := seams.incidents(install, record.Root, main)
+		if incidentErr == nil {
+			needed, err := movedIncidentMain(install, record.Root, main, incidents, seams)
+			if err != nil || needed {
+				return requests, err
+			}
+		}
 		value, policyErr := PolicyValue{Value: "auto"}, error(nil)
 		if seams.Policy != nil {
 			value, policyErr = seams.Policy("landing.trunk-red")
@@ -258,6 +264,24 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 					answered, err := PolicyQuestionSatisfied(install, q)
 					if err != nil {
 						return err
+					}
+					if !answered && len(effects) > 0 {
+						var subject PolicySubject
+						if json.Unmarshal([]byte(strings.TrimPrefix(q.Facts[1], "lane policy: ")), &subject) == nil && subject.Policy == "landing.trunk-red" {
+							main, err := checkoutGit(subject.Lane.Root, effects[0]).main()
+							if err != nil {
+								return err
+							}
+							incidents, err := effects[0].incidents(install, subject.Lane.Root, main)
+							if err != nil {
+								return err
+							}
+							if needed, err := movedIncidentMain(install, subject.Lane.Root, main, incidents, effects[0]); err != nil {
+								return err
+							} else if needed {
+								because = "main moved to " + main + "; proving it again"
+							}
+						}
 					}
 					if answered {
 						because = "answered by the recorded person act"

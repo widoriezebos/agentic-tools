@@ -291,6 +291,12 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			effects := agent.proofEffects
 			effects.Now = agent.now
 			_, drainErr := plain.AdvanceDrain(record.Install, record.Root, effects)
+			proof := (laneVerbOwners{plainProve: seams}).proveSeams(record.Install)
+			proof.CommandForCommit = func(commit string) (string, error) {
+				return landingProofCommand(record.Install, record.Root, commit, proveCommandKey, proof.Git)
+			}
+			recoveryErr := plain.RecoverMovedMain(record.Install, record.Root, proof)
+			drainErr = errors.Join(drainErr, recoveryErr)
 			questionErr := plain.SyncPolicyQuestion(record.Install, machine, agent.now(), seams)
 			if questionErr != nil {
 				questionErr = fmt.Errorf("synchronize the lane's stop question in %s: %w; repair that question source and observe the lane again", plain.Dir(record.Install), questionErr)
