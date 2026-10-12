@@ -211,7 +211,8 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 			b.owners.landing.plainProve.RecordMain = func(results []plain.Result) error { incidents = append(incidents, results...); return nil }
 			result := b.prove(t)
 			selections := "fast-static-build metasystem/cmd/metasystem=TestGoal metasystem/internal/lease metasystem/internal/p=TestP"
-			if result.Cause.Kind != "main" || !strings.Contains(result.Cause.Name, "internal/p") || len(result.Cause.Tests) != 4 || !slices.Contains(result.Cause.Tests, "metasystem/internal/lease (package)") || !reflect.DeepEqual(b.runs, []string{"merge-g:", "main:" + selections}) {
+			if result.Cause.Kind != "main" || !strings.Contains(result.Cause.Name, "internal/p") || len(result.Cause.Tests) != 4 || !slices.Contains(result.Cause.Tests, "metasystem/internal/lease (package)") || !reflect.DeepEqual(b.runs, []string{"merge-g:", "main:" + selections, "main:metasystem/internal/p"}) {
+				// The third run is the flake repeat of main's red unit before it becomes an incident (lane-batching D8).
 				t.Fatalf("main attribution: cause=%+v runs=%v", result.Cause, b.runs)
 			}
 			if len(incidents) != 1 || incidents[0].Commit != "main" || len(incidents[0].Failed) != 1 || incidents[0].Failed[0].Unit != "metasystem/internal/p" {
@@ -300,7 +301,8 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 				return err
 			}
 			result := gateResult(t, b.replayVerbBed, 1)
-			if result.Cause.Kind != "main" || !reflect.DeepEqual(b.runs, []string{"main:", "merge-g:", "main:metasystem/internal/p"}) {
+			if result.Cause.Kind != "main" || !reflect.DeepEqual(b.runs, []string{"main:", "merge-g:", "main:metasystem/internal/p", "main:metasystem/internal/p"}) {
+				// The fourth run is the flake repeat of main's red unit before it becomes an incident (lane-batching D8).
 				t.Fatalf("gate attribution: %+v runs=%v", result, b.runs)
 			}
 			if len(incidents) != 1 || incidents[0].Commit != "main" || len(incidents[0].Failed) != 1 || incidents[0].Failed[0].Unit != "metasystem/internal/p" {
