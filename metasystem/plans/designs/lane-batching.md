@@ -2,7 +2,7 @@
 
 - Id: 01M4PJJEJBYA525BT5AGD0616A
 - Kind: design
-- Status: draft
+- Status: done
 - Goals: lane-batching
 - Requested: by Wido on 2026-10-11 22:30 ("think about how to create batches … it might even be worth it to cancel an existing lane that has just started if another goal comes in … design for all of this and get it implemented")
 - Critique: Opus read of U1 (02:20) 3 material — records-only hand-ins were filtered out of batches (D1 wording error, fixed here), a newcomer during an open fix round wedged the batch (no newcomer joins while a fix round is open), a test pinned two live goal pages; Astra round 1 (23:40) 4 material — LB-01 Go's test cache does not track a child process's inputs: D5 must use the existing reuse policy (internal/proofrun/reuse_policy.go) and feed it the input facts, never blanket-remove -count=1; LB-02 the detached wrapper launches the proof command in its own session and drops its pid, so a cancel must own and stop the whole proof process tree and confirm termination; LB-03 `--fresh` must bypass the saved/inherited proof reuse (prove.go ~472, ~761), not only Go's cache; LB-04 under a red main only an incident's FIX (hold.go ~161 names it) overrides the restart threshold, an unrelated newcomer never interrupts the fix's proof. Not material: BatchRunning is set during gate admission, so the seal is its own stamp when the FULL proof starts; status already shows proof progress. All folded below.

@@ -1,0 +1,14 @@
+# Hot-fix: the tests that went red only under host load become load-independent (R-104)
+
+Working Mode: Implement. Hot-fix by hand on branch hotfix/load-fragile-tests-20261012 (this checkout, off origin/main). Leave changes uncommitted; never commit, rebase or push; never touch memory/receipts.log, plans/ or testing.json. Checks sequential with -p 4 (or -p 2 under load). The rule: a test never waits on wall time, never depends on a fixed port or on how busy the host is; waits are event-driven or use injected clocks; port ranges come from a free block the test reserves.
+
+## The tests (each failed in a landing-lane proof on 2026-10-11/12 while the host carried Codex builds, and passed alone every time)
+1. TestPendingWaitFromChildShell (cmd/metasystem) — red in the whole-unit replay of 03:13 under load 40-70.
+2. TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase (cmd/metasystem) — red in the trunk proof of 04:35 under load 20-35.
+3. TestAppAllocationReusesRecordedAddressBeforeWalkingRange (cmd/metasystem/app_allocation_test.go:63) — "every port from 51563 to 51565 is taken; free one or widen portRange": a fixed port range collides with other test processes.
+4. TestGoalBranchReadRealDelegateReachesSelectedClaude (+ /headerless) and TestEveryPublicActionHasAnIdempotencyRow — red in the full proof of 23:28 under load 70, green alone twice.
+
+For each: read the test and the code it drives; find the load-sensitive element (a fixed timeout, a sleep, a wall-clock deadline, a fixed port, a race between child-process start and the assertion, a dependence on scheduling order) and remove it: event waits (channels, polling on a recorded fact with the existing testenv.Await or equivalent, no wall clock), injected clocks, a port chosen from a free range reserved by the test, serialising with the resource's owner where the fixture is shared. Production code changes only when the test cannot be made sound otherwise, and then the smallest one. For the fourth group, if you find no load-sensitive element after reading, say so with the evidence (what the failure output in /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261011T201636.380268000Z.log shows for them — read-only) rather than inventing a change.
+
+## Checks
+Each fixed test 20× under artificial load: `go test -p 4 -count=20 -run '<name>$' ./cmd/metasystem` while `yes > /dev/null &` ×8 runs (kill them after); the repository audits by name: `go test -p 4 -count=1 -timeout 30m ./cmd/metasystem -run 'TestEveryPublicActionHasAnIdempotencyRow|TestIntentPublicCoverage|TestIntentDeclaredCheck|TestVerbRatchet|TestProofAttemptBinaryLaunchesUseSharedIsolation|TestAudit'`; `go test -p 4 -count=1 ./internal/testenv -run TestNoTestWaitsOnWallTime`; `go run ./cmd/devgate static`. Report: per test, the load-sensitive element found and the change; the 20× result under load; diff --stat; every exit.

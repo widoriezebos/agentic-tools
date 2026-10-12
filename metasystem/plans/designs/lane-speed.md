@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M4NQ7BZXBXCV0WNT53SSXKNW
-- Status: draft
+- Status: done
 - Critique: Astra round 1 (16:58) 2 material on S1 — LS-01 merge-tree exits 1 on the very conflicts S1 targets (use the tree it still writes, with markers, or restrict the diff to the conflicted paths), LS-02 the merge read runs through laneMergeWork (cmd/metasystem/intent_delivery.go ~620 and landing_merge.go), not intent_lane_fix.go — both folded; LS-03 (order-dependent failures in a named replay) deferred to S2 as an inconclusive-outcome rule; Opus read of U1 (18:40) 3 material — the path restriction hid resolution edits outside the conflicted paths, an empty diff counted as reviewed, the merge brief was dropped — all folded into S1
 - Goals: lane-speed
 - Requested: by Wido on 2026-10-11 16:50 ("you mentioned a few things that would radically reduce the time in the lane, what happened with these" — "WHY?!?"), after a day in which no speed item was built while the lane's cycle stayed at two hours

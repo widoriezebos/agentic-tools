@@ -1,0 +1,14 @@
+# lane-steward U5: every refusal of a person's lane verb is an intervention record and a row, so the class is counted until it is zero
+
+Working Mode: Implement. Goal lane-steward, design `plans/designs/lane-steward.md` (read it whole; U1-U4 landed). Worktree = this checkout. At most 250 production lines. Never commit, rebase or push; never touch memory/receipts.log, plans/, testing.json, go.mod or any metasystem.conf*. Tests never read a live ledger or install.
+
+## Build
+1. In `cmd/metasystem/intent_landing.go` every path that renders a refusal of a person's act (`personRefusal`, the "refused because:" results, `laneResumable`, the return and resolve refusals — list them all in the report) also appends one intervention record (U2's `Intervention`: Row `person-refused`, Subject the verb and its argument, What the refusal text, Why the code, How "the person's verb was refused; R-142/143: a person is never denied a verb, so this is a defect") through one helper `recordPersonRefusal(install, verb, args, refusal)`; the helper never changes the verb's outcome or exit code and never fails the verb (a write error is one line in Problems).
+2. `Health` gains `Refusals []Intervention` (the last 24 h) and `Rows()` gains `person-refused` (one row naming the count and the verbs; prescription "a person was refused <n> times in 24 h: <verbs>; each is a defect to fix upstream, not a rule to add"). `Line()` appends `; <n> refusals` when n > 0. The hourly report's Quality section lists them.
+3. Exclusion (R-142/143 damage protection): a refusal that the rulings register allows because the act would destroy data (the verb's own damage-protection code) is recorded with Row `person-protected` and does not count.
+
+## Tests
+Through the command's test harness with a fixture install and an enrolled-person fake: (a) a refused `landing return` writes one person-refused record, the verb's exit code is unchanged; (b) a refused `landing resolve` the same; (c) a damage-protection refusal writes person-protected and the row does not count it; (d) `landing health` shows the row and the count; after 24 h in the fixture clock, the count drops; (e) a write failure of the interventions file leaves the verb's result intact and adds a Problems line. Mutation: swallow the refusal, or count protected ones → a test fails.
+
+## Checks
+`go vet ./cmd/metasystem ./internal/landing/plain`; `go test -p 4 -count=1 -timeout 30m ./internal/landing/plain ./internal/layering`; `go test -p 4 -count=1 -timeout 40m ./cmd/metasystem -run 'TestLanding|TestAudit|TestEveryPublicActionHasAnIdempotencyRow|TestIntentPublicCoverage|TestIntentDeclaredCheck|TestVerbRatchet|TestProofAttemptBinaryLaunchesUseSharedIsolation'`; `go run ./cmd/devgate static`; `gofmt -l` empty. Report: files, production line count, every check's exit, the mutations, anything left out and why.
