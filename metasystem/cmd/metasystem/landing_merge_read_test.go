@@ -68,11 +68,7 @@ func TestLandingStatusMergeReadBoundIsOnlyAFinding(t *testing.T) {
 				t.Fatalf("person command missing from finding: %s", output)
 			}
 			if tc.state == "reviewing" {
-				bound := 20
-				if tc.name == "override" {
-					bound = 25
-				}
-				want := fmt.Sprintf("reading the resolution of %s: %g of %d min", fix.Goal, tc.minutes, bound)
+				want := fmt.Sprintf("reading the resolution of %s (%g min); nothing to do", fix.Goal, tc.minutes)
 				if !strings.Contains(oneSpaced(output), want) {
 					t.Fatalf("running read clock missing %q: %s", want, output)
 				}

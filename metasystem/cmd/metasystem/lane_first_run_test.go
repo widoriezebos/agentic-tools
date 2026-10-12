@@ -25,7 +25,7 @@ func TestLandingStatusLeadsWithCurrentTrunkRed(t *testing.T) {
 	writeQuestionFixture(t, filepath.Join(plain.Dir(b.install), "results.jsonl"), proof)
 	code, words := b.run(t, b.root, "status")
 	first := strings.Join(strings.Fields(strings.Split(strings.TrimSpace(words), "\n\n")[0]), " ")
-	for _, want := range []string{"main main proven red", "metasystem/internal/broken", incidents[0].ID, "hot-fix", "metasystem landing prove --trunk"} {
+	for _, want := range []string{"main is red", "metasystem/internal/broken", "TestBroken", incidents[0].ID, "metasystem landing prove --trunk"} {
 		if code != 0 || !strings.Contains(first, want) {
 			t.Fatalf("headline lacks %q: exit %d %s", want, code, words)
 		}
@@ -44,7 +44,7 @@ func TestLandingStatusLeadsWithCurrentTrunkRed(t *testing.T) {
 		Data    plain.Status
 	}
 	helmMust(t, json.Unmarshal([]byte(words), &result))
-	if code != 0 || !strings.Contains(result.Summary, "main main proven red") || !strings.Contains(result.Data.Summary, "main main proven red") {
+	if code != 0 || !strings.Contains(result.Summary, "main is red") || !strings.Contains(result.Data.Summary, "main is red") {
 		t.Fatalf("batch hid main: %d %s", code, words)
 	}
 	// A closed current incident and a newer green trunk proof clear the red.
@@ -69,7 +69,7 @@ func TestLandingStatusReportsLiveProofProgress(t *testing.T) {
 	writeQuestionFixture(t, filepath.Join(plain.Dir(b.install), "running.json"), plain.Running{Commit: "main", Tree: "tree", Trunk: true, Since: laneTestNow.Format(time.RFC3339), Log: log, Attempt: "proof", Pid: 4242})
 	code, words := b.run(t, b.root, "status")
 	first := strings.Join(strings.Fields(strings.Split(strings.TrimSpace(words), "\n\n")[0]), " ")
-	if code != 0 || !strings.Contains(first, "proving (2 of 3 units, 7.0 min); the agent waits for the keeper") || strings.Contains(first, "idle") {
+	if code != 0 || !strings.Contains(first, "the lane proves main (7.0 min); nothing to do") || strings.Contains(first, "idle") {
 		t.Fatalf("live progress missing: %d %s", code, words)
 	}
 	code, words = b.run(t, b.root, "status", "--json")

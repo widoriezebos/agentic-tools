@@ -120,7 +120,7 @@ func TestReadStatusLaneFixHeadline(t *testing.T) {
 			}
 			b.lines("fixes/attempt.json", Fix{Goal: "goal-a", Units: []string{"unit-a", "unit-b"}, Job: "build-1", Read: "read-1", Commit: "0123456789abcdef", State: state})
 			status := b.read(ProveSeams{}, laneGit{main: func() (string, error) { return "main", nil }, contains: func(string, string) (bool, error) { return false, nil }})
-			want := "Fixing unit-a, unit-b of goal-a on 0123456789ab (fix round 1)"
+			want := "Fixing unit-a, unit-b of goal-a on 0123456789ab (fix round 1); nothing to do"
 			if state == "done" {
 				if status.RunningFix != nil || strings.HasPrefix(status.ProofHeadline, "Fixing") {
 					t.Fatalf("completed repair still runs: %+v", status)
@@ -140,7 +140,7 @@ func TestReadStatusResolvingMergeNamesPaths(t *testing.T) {
 		t.Fatal(err)
 	}
 	status := b.read(ProveSeams{Git: func(string, ...string) (string, error) { return "tip", nil }}, laneGit{main: func() (string, error) { return "main", nil }, contains: func(string, string) (bool, error) { return false, nil }})
-	if status.Summary != "Resolving 2 conflicts of goal-a (code.go, bundle.js)" || status.RunningFix == nil {
+	if status.Summary != "Resolving 2 conflicts of goal-a (code.go, bundle.js); nothing to do" || status.RunningFix == nil {
 		t.Fatalf("status=%+v", status)
 	}
 }
@@ -217,7 +217,7 @@ func TestFixBuildingHeadlineUsesBatchParent(t *testing.T) {
 	if err != nil || active == nil {
 		t.Fatalf("building fix %+v: %v", active, err)
 	}
-	if headline := fixHeadline(active); headline != "Fixing unit-a of goal-a on 0123456789ab (fix round 1)" {
+	if headline := fixHeadline(active); headline != "Fixing unit-a of goal-a on 0123456789ab (fix round 1); nothing to do" {
 		t.Fatalf("building headline %q", headline)
 	}
 }

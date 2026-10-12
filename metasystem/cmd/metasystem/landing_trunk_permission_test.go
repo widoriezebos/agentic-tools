@@ -110,19 +110,36 @@ func (f *trunkPermissionFixture) question(t *testing.T) channel.Question {
 	if !strings.Contains(command, "landing land-anyway "+bedGoal+" --reason TEXT") || !strings.Contains(strings.Join(q.Facts, " "), "alias: metasystem work land "+bedGoal+" --exception "+goal.LandTrunkRedCode) {
 		t.Fatalf("exception remedy: %s", command)
 	}
-	code, result := f.b.runJSON(f.owners, "question", "show", "channel:"+q.ID, "--repo", f.l.install)
-	if code != 0 || !strings.Contains(result.Summary+strings.Join(result.Details, " ")+result.Decision, command) && (result.Next == nil || strings.Join(result.Next.Argv, " ") != command) {
-		// The public prose projection carries the facts; the JSON data owns them.
-		raw, _ := json.Marshal(result)
-		if code != 0 || !bytes.Contains(raw, []byte(command)) {
-			t.Fatalf("question show: %d %s", code, raw)
+	for _, text := range []string{q.Facts[0], channel.ReplyInstructions(q)} {
+		for _, want := range []string{"lets " + bedGoal + " land while main's incident ", "undo: metasystem landing give-back " + bedGoal + " --reason TEXT"} {
+			if !strings.Contains(text, want) {
+				t.Fatalf("lost impact or undo %q: %s", want, text)
+			}
 		}
+	}
+	code, result := f.b.runJSON(f.owners, "question", "show", "channel:"+q.ID, "--repo", f.l.install)
+	if code != 0 || result.Summary != q.Facts[0] {
+		t.Fatalf("question show lost its intent: %d %+v", code, result)
+	}
+	raw, err := json.Marshal(result)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var saved struct {
+		Data struct{ Question channel.Question }
+	}
+	if err := json.Unmarshal(raw, &saved); err != nil || channel.LaneStopCommand(saved.Data.Question) != command {
+		t.Fatalf("question show lost its saved executable command: %s %v", raw, err)
 	}
 	f.l.owners.policies = f.owners.policies
 	f.l.owners.landing = f.owners.landing
 	code, text := f.l.run(t, f.l.root, "status", "--json")
 	if code != 0 || !strings.Contains(text, "landing.trunk-red") || !strings.Contains(text, "--exception") {
 		t.Fatalf("status lost held-entry act: %d %s", code, text)
+	}
+	code, text = f.l.run(t, f.l.root, "status")
+	if code != 0 || !strings.Contains(oneSpaced(text), "lets "+bedGoal+" land while main's incident ") || !strings.Contains(oneSpaced(text), "undo: metasystem landing give-back "+bedGoal+" --reason TEXT") {
+		t.Fatalf("status lost impact and undo: %d %s", code, text)
 	}
 	return q
 }

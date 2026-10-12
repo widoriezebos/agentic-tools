@@ -18,6 +18,7 @@ import (
 
 // PolicySubject identifies an act request independently of its notification.
 type PolicySubject struct {
+	Required     []string           `json:"required,omitempty"`
 	Incidents    []IncidentIdentity `json:"incidents,omitempty"`
 	ProofAttempt string             `json:"proof-attempt,omitempty"`
 	Tree         string             `json:"tree,omitempty"`
@@ -32,6 +33,19 @@ type PolicyRequest struct {
 	Subject  PolicySubject `json:"subject"`
 	Required []string      `json:"required"`
 	Evidence string        `json:"evidence"`
+}
+
+func (request PolicyRequest) Remedy() string {
+	command := lane.Remedy(strings.Join(request.Required, " "))
+	words := strings.Fields(command)
+	if len(words) > 3 && words[1] == "landing" && words[2] == "land-anyway" {
+		incidents := []string{}
+		for _, incident := range request.Subject.Incidents {
+			incidents = append(incidents, incident.Identity)
+		}
+		command += " (" + lane.LandAnywayImpact(words[3], strings.Join(incidents, ", ")) + ")"
+	}
+	return command
 }
 
 // PolicyQuestionSatisfied recognizes only the effect recorded for this subject.
@@ -193,11 +207,12 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 		}
 		pending := [][]string{}
 		for _, request := range requests {
+			request.Subject.Required = request.Required
 			data, err := json.Marshal(request.Subject)
 			if err != nil {
 				return err
 			}
-			pending = append(pending, []string{strings.Join(request.Required, " "), "lane policy: " + string(data), "evidence: " + request.Evidence})
+			pending = append(pending, []string{request.Remedy(), "lane policy: " + string(data), "evidence: " + request.Evidence})
 		}
 		stops, err := readLines[Stop](stopsPath(install))
 		if err != nil {
@@ -211,11 +226,12 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 			}
 			seen.add(stop)
 			if stop.Decision == "stop" && strings.HasPrefix(stop.Handoff, "ask ") {
+				stop.Required = strings.Fields(stop.Command())
 				data, err := json.Marshal(stop)
 				if err != nil {
 					return err
 				}
-				pending = append(pending, []string{stop.Command(), "lane stop: " + string(data), "evidence: " + stop.Evidence})
+				pending = append(pending, []string{StopHeadline(stop), "lane stop: " + string(data), "evidence: " + stop.Evidence})
 			}
 		}
 		questions, _ := channel.WalkQuestions(install)

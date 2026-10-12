@@ -273,13 +273,13 @@ func (k AgentKeeper) Run() (out AgentRun) {
 			return nil
 		}
 		if k.scope(record) != scope {
-			result = agentRun(AgentHeld, root, "the recorded selection changed before launch")
+			result = agentRun(AgentHeld, root, "the chosen goals changed before the agent started")
 			return nil
 		}
 		if k.AdmitWake != nil {
 			checked, err := k.AdmitWake(root, wake)
 			if err != nil {
-				result = agentRun(AgentHeld, root, "the landing start admission cannot be read: "+err.Error())
+				result = agentRun(AgentHeld, root, "whether the landing agent may start cannot be read: "+err.Error())
 				return nil
 			}
 			wake = checked
@@ -472,8 +472,8 @@ func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 			return "", true, err
 		}
 	}
-	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs (%s) ended with the lane unchanged; a person runs metasystem landing resume",
-		root, state.Barren, strings.Join(state.BarrenLaunches, ", ")), true, nil
+	return fmt.Sprintf("the landing agent at %s is not started: its last %d runs ended with the lane unchanged; a person runs metasystem landing resume",
+		root, state.Barren), true, nil
 }
 
 // held reads the holds: the first that holds, or cannot be read, stops the

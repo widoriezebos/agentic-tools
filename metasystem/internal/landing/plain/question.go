@@ -12,14 +12,19 @@ import (
 
 // LaneQuestionHeadline names the waiting answer and the person's remedies.
 func LaneQuestionHeadline(q channel.Question) string {
-	sentence := ""
-	if len(q.Facts) > 0 {
-		sentence = strings.Join(strings.Fields(q.Facts[0]), " ")
-		if i := strings.IndexAny(sentence, ".?!"); i >= 0 {
-			sentence = sentence[:i+1]
-		}
+	waiting := fmt.Sprintf("Waiting for a person's answer to question %s since %s", q.ID, q.OpenedAt.In(time.Local).Format("2006-01-02 15:04 MST"))
+	if channel.LaneStopCommand(q) != "" {
+		return waiting + "; " + q.Facts[0]
 	}
-	return fmt.Sprintf("Waiting for a person's answer to question %s since %s: %s; run: metasystem question show channel:%s; when stale: metasystem question withdraw channel:%s --reason TEXT", q.ID, q.OpenedAt.In(time.Local).Format("2006-01-02 15:04 MST"), sentence, q.ID, q.ID)
+	fact := ""
+	if len(q.Facts) > 0 {
+		fact = q.Facts[0]
+		if at := strings.IndexAny(fact, ".?!"); at >= 0 {
+			fact = fact[:at+1]
+		}
+		fact += "; "
+	}
+	return waiting + "; " + fact + "metasystem question show channel:" + q.ID + "; withdraw: metasystem question withdraw channel:" + q.ID + " --reason TEXT"
 }
 
 var mainQuestionCommit = regexp.MustCompile(`(?i)main is at commit ([0-9a-f]{40})(?:[^0-9a-f]|$)`)

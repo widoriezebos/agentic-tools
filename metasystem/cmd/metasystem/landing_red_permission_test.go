@@ -557,7 +557,7 @@ func TestLandingReturnSameTipKeepsCurrentRequest(t *testing.T) {
 	helmMust(t, err)
 	_, err = file.Write(append(raw, '\n'))
 	helmMust(t, err, file.Close())
-	if code, text := b.run(t, b.root, "status", "--verbose"); code != 0 || !strings.Contains(text, "metasystem landing return goal --cause own --reason TEXT") {
+	if code, text := b.run(t, b.root, "status", "--verbose"); code != 0 || !strings.Contains(oneSpaced(text), "metasystem landing give-back goal --reason TEXT") {
 		t.Fatalf("newer unrelated stop hid the current return: %d %s", code, text)
 	}
 	b.owners.prove = enrolledPersonProver(t, b.install, laneTestNow)

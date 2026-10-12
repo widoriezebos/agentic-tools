@@ -10,14 +10,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // proveCommandKey is the project's proof command, run in a worktree of the
@@ -426,37 +424,6 @@ func landingLaneFailure(targets []intentTarget, summary string, err error) inten
 // provedWords names a proof's subject: its commit and tree.
 func provedWords(commit, tree string) string {
 	return shortLandingID(commit) + " (tree " + shortLandingID(tree) + ")"
-}
-
-// withRunningProof adds the lane's running proof to landing status's page.
-func withRunningProof(view func(*textui.Page), running *plain.RunningProof) func(*textui.Page) {
-	if running == nil {
-		return view
-	}
-	return func(page *textui.Page) {
-		view(page)
-		since := lane.LocalText(running.Since)
-		if at, err := time.Parse(time.RFC3339, running.Since); err == nil {
-			since = page.Env().Since(at)
-		}
-		words := "proving tree " + shortLandingID(running.Tree) + " as attempt " + running.Attempt + ", " + since
-		command := "metasystem landing prove"
-		if running.Gate {
-			command += " --gate"
-		} else if running.Trunk {
-			command += " --trunk"
-		}
-		switch running.State {
-		case "died":
-			words = "check of tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + ") died without a result; retry: " + command
-		case "pending":
-			words = "check admission pending for tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + "); retry: " + command + " after admission ends"
-		case "failed":
-			words = "check admission failed for tree " + shortLandingID(running.Tree) + " (attempt " + running.Attempt + "); retry: " + command
-		}
-
-		page.Section("Proving", "").Text(words)
-	}
 }
 
 // landingRedReason is a red result's recorded reason, in brackets: how the

@@ -898,6 +898,12 @@ func (inv *intentInvocation) render(result intentResult) int {
 		fmt.Fprintln(inv.stdout, string(encoded))
 		return code
 	}
+	if inv.command.object == "landing" && result.Next != nil && inv.command.audience != "agent" && inv.command.action != "prove" && inv.command.action != "push" && inv.command.action != "resolve" && inv.command.action != "return" && (!inv.laneCallerObserved || inv.laneCallerPerson) {
+		command := strings.Join(result.Next.Argv, " ")
+		if remedy := lane.Remedy(command); remedy != command {
+			result.Next = &intentNext{Argv: strings.Fields(remedy), Reason: result.Next.Reason}
+		}
+	}
 	succeeded := result.Outcome == intentConfirmed || result.Outcome == intentUnchanged
 	stream := inv.stdout
 	if !succeeded {

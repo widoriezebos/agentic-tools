@@ -18,12 +18,12 @@ func TestStatusHeadlineNamesOpenLaneQuestion(t *testing.T) {
 	seams := ProveSeams{Machine: func(string) (string, error) { return "this-machine", nil }, Git: func(string, ...string) (string, error) { return "this-machine", nil }}
 	root := install
 	status := ReadStatus(t.TempDir(), lane.Record{Root: install, Install: install}, lane.View{Root: &root, Summary: "idle; its agent starts within one tick"}, seams)
-	for _, want := range []string{"Waiting for a person's answer to question " + q.ID, " since ", "May I restore the checkout?", "metasystem question show channel:" + q.ID, "metasystem question withdraw channel:" + q.ID + " --reason TEXT"} {
+	for _, want := range []string{"Waiting for a person's answer to question " + q.ID, " since ", "May I restore the checkout?", "metasystem question show channel:" + q.ID, "metasystem question withdraw channel:" + q.ID} {
 		if !strings.Contains(status.Summary, want) {
 			t.Fatalf("missing %q: %s", want, status.Summary)
 		}
 	}
-	if strings.Contains(status.Summary, "More details") {
+	if strings.Contains(status.Summary, "metasystem landing resume") || strings.Contains(status.Summary, "More details") {
 		t.Fatalf("headline includes more than first sentence: %s", status.Summary)
 	}
 	if _, err := channel.Withdraw(install, q.ID, "restored", nil, channel.DestinationConfig{}); err != nil {

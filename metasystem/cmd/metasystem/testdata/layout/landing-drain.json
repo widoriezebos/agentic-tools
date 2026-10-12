@@ -10,7 +10,7 @@ exit 0
     }
   ],
   "outcome": "unchanged",
-  "summary": "admission closed by Wido; queued work finishes before the lane holds",
+  "summary": "the lane is draining by request of Wido; queued work finishes before the lane holds",
   "data": {
     "by": "Wido",
     "at": "2026-09-29T18:00:00Z",
@@ -19,14 +19,6 @@ exit 0
       "kind": "person"
     },
     "state": "draining"
-  },
-  "next": {
-    "argv": [
-      "metasystem",
-      "landing",
-      "status"
-    ],
-    "reason": "shows drain progress"
   }
 }
 

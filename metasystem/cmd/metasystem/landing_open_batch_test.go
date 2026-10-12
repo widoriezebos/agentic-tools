@@ -40,7 +40,7 @@ func TestLandingOpenBatchGateNewcomerAndSealGitAdapter(t *testing.T) {
 			if observed.ID != first.ID || !observed.Open || !reflect.DeepEqual(observed.Members, first.Members) {
 				t.Fatalf("status changed membership: %+v", observed)
 			}
-			if code, text := b.run(t, "landing", "status"); code != 0 || !strings.Contains(text, "batch open: 1 members, seals when the full proof starts") {
+			if code, text := b.run(t, "landing", "status"); code != 0 || b.batch(t).Open != true || strings.Contains(text, "sealed window") {
 				t.Fatalf("open status: exit=%d %s", code, text)
 			}
 			b.git(t, b.checkout, "fetch", "--quiet", "origin")
@@ -74,7 +74,7 @@ func TestLandingOpenBatchGateNewcomerAndSealGitAdapter(t *testing.T) {
 			if late := b.batch(t); late.Open || !reflect.DeepEqual(late.Members, want) || late.SealedAt != sealed.SealedAt {
 				t.Fatalf("sealed batch changed for a late arrival: %+v", late)
 			}
-			if code, text := b.run(t, "landing", "status"); code != 0 || !strings.Contains(text, "batch sealed "+b.now.Local().Format("15:04")+": 2 members") || !strings.Contains(text, "c waits for the next batch") {
+			if code, text := b.run(t, "landing", "status"); code != 0 || b.batch(t).Open || b.batch(t).SealedAt != sealed.SealedAt || !strings.Contains(text, "c waits for the next batch") {
 				t.Fatalf("sealed status: exit=%d %s", code, text)
 			}
 		})

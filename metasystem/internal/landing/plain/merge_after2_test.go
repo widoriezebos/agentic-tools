@@ -64,7 +64,7 @@ func TestReadStatusAbandonedMergeYieldsToNewProof(t *testing.T) {
 	read := func(tip string) Status {
 		return b.read(ProveSeams{Now: func() time.Time { return bedNow }, Git: func(string, ...string) (string, error) { return tip, nil }, Alive: func(Running) bool { return true }}, b.git(nil, nil))
 	}
-	if status := read(fix.Commit); status.Summary != fix.Reason {
+	if status := read(fix.Commit); !strings.Contains(status.Summary, "resolution was abandoned") || !strings.Contains(status.Summary, "metasystem landing resume") {
 		t.Fatalf("current abandonment lost its reason: %+v", status)
 	}
 	if status := read("new-batch"); status.Summary == fix.Reason || status.ProofHeadline == fix.Reason || status.RunningFix != nil {
@@ -73,7 +73,7 @@ func TestReadStatusAbandonedMergeYieldsToNewProof(t *testing.T) {
 	for _, tip := range []string{fix.Commit, "new-batch"} {
 		b.lines("running.json", Running{Commit: tip, Tree: "proof-tree", Attempt: "new-proof", Pid: 42, Since: bedNow.Format(time.RFC3339)})
 		status := read(tip)
-		if !strings.HasPrefix(status.ProofHeadline, "proving (0 of counting units,") || status.Summary != status.ProofHeadline || status.RunningFix != nil {
+		if !strings.HasPrefix(status.ProofHeadline, "the lane proves main (") || status.Summary != status.ProofHeadline || status.RunningFix != nil {
 			t.Fatalf("abandonment replaced new proof: %+v", status)
 		}
 	}
@@ -125,7 +125,7 @@ func TestReadStatusResolvedMergeNamesReadError(t *testing.T) {
 		t.Fatal(err)
 	}
 	status := b.read(ProveSeams{}, b.git(nil, nil))
-	if status.RunningFix == nil || status.RunningFix.State != "resolved" || !strings.Contains(status.ProofHeadline, "read pending") || !strings.Contains(status.Summary, fix.Reason) {
+	if status.RunningFix == nil || status.RunningFix.State != "resolved" || !strings.Contains(status.ProofHeadline, "read pending") || status.RunningFix.Reason != fix.Reason || !strings.Contains(status.Summary, "; nothing to do") {
 		t.Fatalf("pending read or its error disappeared: %+v", status)
 	}
 	if err := proofFixReady(b.install, ProveSeams{}); err == nil || !strings.Contains(err.Error(), fix.Reason) {

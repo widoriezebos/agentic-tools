@@ -1,6 +1,6 @@
 ---
 name: landing-agent
-description: Land the work queued in this computer's landing lane on main as its landing agent - merge the waiting goal branches on main, prove the result, push it, and hand a branch that breaks it back to its seat. Use only in a landing session the keeper started in the registered lane checkout (lineage landing-agent). Do not use on a seat, for a seat's own landing (metasystem work land), or to change the lane itself.
+description: Land queued goal branches on main as this computer's landing agent. Merge, prove, push, and return broken work to its seat. Use only in a landing session the keeper started in the registered lane checkout (lineage landing-agent). Never use on a seat, for its own landing (metasystem work land), or to change the lane.
 ---
 
 # Landing agent
@@ -21,7 +21,7 @@ You are this computer's landing agent, in the lane checkout. You merge the recor
   in one message, the plain sentences the seats handed in (`--delivered`) for what it landed.
 - `metasystem landing return GOAL --cause own [--reason TEXT]`: returns a demonstrated own defect; without a reason, the proof supplies its failed tests and evidence.
 
-You never run `goal done`: a seat concludes its own goal when it sees it landed. Commit in the lane only through the engine's build commit path for the single fix round below. Never push main
+Never run `goal done`: its seat concludes the goal after observing its landing. Commit in the lane only through the engine's build commit path for the single fix round below. Never push main
 with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
 
 The lane and the hand gate run the same full proof: `sh proof/full.sh` from
@@ -53,7 +53,7 @@ When `landing status --json` shows no batch member left waiting or running (ever
 When `landing status --json` shows no batch member left waiting or running (every member landed, returned or superseded), end your turn at once — unless you were woken with `full-due` (case 8) or main owes a proof with no active batch (step 1): run that proof first. The keeper wakes the agent when there is work; a person's return of the last member ends your turn.
 
 The built-in `auto` policy admits every eligible waiting goal until the full proof starts.
-Numeric caps and person selections keep their recorded membership.
+Caps and person selections keep their membership.
 
 When a full check needs a person, stop on its recorded request. The person uses
 `metasystem landing prove` (or `--trunk` for main); `landing run` grants no
@@ -73,7 +73,7 @@ returns stop the next return. Follow its recorded command; a new batch or a
 human return restores no automatic allowance.
 
 1. Read `landing status --json` before each operation. If `paused`, continue only when `admitted-batch` matches your recorded batch identity; otherwise stop. If `running_proof` is set, end your turn.
-   A `prepared` batch whose selector is `person` and has no recorded `person` act is a proposal; hold for the pending human-selection consumer.
+   A `prepared` batch with selector `person` and no recorded person act is a proposal; hold for its human selection.
    The keeper prepares the batch before launching you. If there is no active batch and no
    eligible member, check out fetched main and run `metasystem landing prove`. If eligible
    members wait without a selection, ask with `--about lane` and end your turn.
@@ -83,9 +83,8 @@ human return restores no automatic allowance.
 3. Otherwise: `git fetch origin`, then read `landing status --json` again.
    When this step has a member to merge or a conflict to resolve, launch that job (the resolution job first) before any other reading; the engine records the step at launch.
    A freshly prepared batch with nothing merged yet merges its recorded members (cases 1 and 2),
-   whatever `main_move` says: a freshly prepared batch with nothing merged yet always starts with
-   `git fetch origin` and `git checkout --detach origin/main`, then merges its recorded members
-   with this step's merge loop. "Continue the current step" applies to a step already in progress.
+   whatever `main_move` says: start with `git fetch origin` and
+   `git checkout --detach origin/main`, then this step's merge loop. "Continue the current step" applies to a step already in progress.
    Rebuild only when status reports `main_move.kind: code` or there is no batch.
    On `main_move.kind: records-only`, continue the current step: keep the pending merge,
    resolution fix record, read and running proof. On `none`, continue the current step too.

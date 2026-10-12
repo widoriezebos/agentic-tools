@@ -261,7 +261,10 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			case "records-only":
 				status.Summary += fmt.Sprintf("; main gained %d record commits since the batch base; the batch stands", status.MainMove.Count)
 			case "code":
-				status.Summary += "; main moved: code change; rebuild"
+				status.Summary += "; main moved: code change"
+				if !strings.Contains(status.Summary, "metasystem landing ") && status.RunningProof == nil {
+					status.Summary += "; run: metasystem landing resume"
+				}
 			}
 		}()
 	}
@@ -297,9 +300,8 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		status.PendingActions = append(status.PendingActions, PolicyRequest{Required: stop.Required, Evidence: stop.Evidence, Subject: PolicySubject{Lane: record, Policy: "landing.on-red", Act: stop.Loop, BatchID: stop.BatchID, ProofAttempt: stop.ProofAttempt, Tree: stop.Tree, Members: []GoalSHA{{Goal: stop.Subject, SHA: stop.Tree}}}})
 	}
 	if status.Stop != nil && status.Stop.Loop == "lane-return" && status.Stop.Subject == "lane" && status.Owner.State == lane.OwnerHeld {
-		command := status.Stop.Command()
+		command := lane.Remedy(status.Stop.Command())
 		status.Owner.RetryHint = &command
-		status.Summary += "; run: " + command
 	}
 	if status.Stop != nil && strings.HasPrefix(status.Stop.Handoff, "hold ") {
 		main, readErr := git.main()
@@ -433,15 +435,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 				running.UnitsDone++
 			}
 		}
-		total := "counting"
-		if running.UnitsTotal != nil {
-			total = strconv.Itoa(*running.UnitsTotal)
-		}
-		status.ProofHeadline = fmt.Sprintf("proving (%d of %s units, %s min); the agent waits for the keeper", running.UnitsDone, total, clockMinutes(running.Minutes))
+		status.ProofHeadline = fmt.Sprintf("the lane proves main (%s min); nothing to do", clockMinutes(running.Minutes))
 	} else if proof := status.TrunkProof; proof != nil && proof.Result == Green && proof.FlakePublished {
-		status.ProofHeadline = proof.Reason
+		status.ProofHeadline = "main is proven with unstable checks: " + flakeNames(proof.Flakes) + "; run: metasystem landing resume"
 	} else if proof := status.LastProof; proof != nil && len(proof.Flakes) > 0 && strings.Contains(proof.Reason, "flake on main:") {
-		status.ProofHeadline = proof.Reason
+		status.ProofHeadline = "main has unstable checks: " + flakeNames(proof.Flakes) + "; run: metasystem landing resume"
 	} else if proof := status.TrunkProof; proof != nil && proof.Result == Red {
 		main, readErr := git.main()
 		unread("main for the trunk proof", readErr)
@@ -453,20 +451,27 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 					status.TrunkIncidents = append(status.TrunkIncidents, incident.ID)
 				}
 			}
-			failed := make([]string, 0, len(proof.Failed))
-			for _, unit := range proof.Failed {
-				failed = append(failed, unit.Unit)
-			}
+			failed := failingTests(proof.Failed)
 			reason := strings.Join(failed, ", ")
 			if reason == "" {
 				reason = proof.Reason
 			}
-			status.ProofHeadline = "main " + Short(main) + " proven red: " + reason
+			status.ProofHeadline = "main is red"
 			if len(status.TrunkIncidents) > 0 {
-				status.ProofHeadline += "; incident " + strings.Join(status.TrunkIncidents, ", ")
+				status.ProofHeadline += " (incident " + strings.Join(status.TrunkIncidents, ", ") + ")"
 			}
-			status.ProofHeadline += "; hot-fix, then metasystem landing prove --trunk"
+			status.ProofHeadline += ": " + reason + "; land a fix on main, then metasystem landing prove --trunk"
+			if len(status.TrunkIncidents) > 0 {
+				for _, entry := range status.Queue {
+					if entry.State == StateWaiting {
+						status.ProofHeadline += "; or metasystem landing land-anyway " + entry.Goal + " --reason TEXT (" + lane.LandAnywayImpact(entry.Goal, strings.Join(status.TrunkIncidents, ", ")) + ")"
+					}
+				}
+			}
 		}
+	}
+	if running != nil && running.State != "running" && status.ProofHeadline == "" {
+		status.ProofHeadline = "the lane's check " + running.State + "; run: metasystem landing resume"
 	}
 	status.RunningFix, err = readFix(install, true)
 	unread("the lane fix", err)
@@ -483,7 +488,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			tip, readErr := seams.git(string(layout.Checkout), "rev-parse", "--verify", "HEAD^{commit}")
 			unread("the abandoned resolution's checkpoint", readErr)
 			if readErr == nil && tip == status.RunningFix.Commit && (running == nil || running.State != "running") {
-				status.ProofHeadline = status.RunningFix.Reason
+				status.ProofHeadline = "the resolution was abandoned: " + status.RunningFix.Reason + "; run: metasystem landing resume"
 			}
 			status.RunningFix = nil
 		}
@@ -499,7 +504,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		bound, boundErr := resolutionReadBound(install)
 		unread("the merge read bound", boundErr)
 		if boundErr == nil && merge.State == "reviewing" {
-			status.ProofHeadline = fmt.Sprintf("reading the resolution of %s: %g of %g min", merge.Goal, merge.ReadMinutes, bound)
+			status.ProofHeadline = fmt.Sprintf("reading the resolution of %s (%g min); nothing to do", merge.Goal, merge.ReadMinutes)
 			if merge.ReadMinutes > bound {
 				status.MergeReadFinding = fmt.Sprintf("merge read ran %g min, bound %g", merge.ReadMinutes, bound)
 				if merge.ReadLaneOwned && merge.Reason != "" {
@@ -530,7 +535,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 				unread("the lane question's premise", err)
 			} else if !satisfied {
 				status.Summary = LaneQuestionHeadline(q)
-				if strings.Contains(status.ProofHeadline, " proven red:") {
+				if strings.HasPrefix(status.ProofHeadline, "main is red") {
 					status.Summary = status.ProofHeadline + ". " + status.Summary
 				}
 				break
@@ -541,16 +546,22 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		for _, problem := range view.Wake.Unread {
 			problem = strings.SplitN(problem, "\n", 2)[0]
 			if strings.HasPrefix(problem, "hand-in ") {
-				status.Summary = problem
+				status.Summary = problem + "; run: metasystem landing resume"
 				break
 			}
 		}
 	}
 	if selected != nil && selected.State != BatchClosed {
-		if selected.Open {
-			status.Summary += fmt.Sprintf("; batch open: %d members, seals when the full proof starts", len(selected.Members))
-		} else if at, err := time.Parse(time.RFC3339Nano, selected.SealedAt); err == nil {
-			status.Summary += fmt.Sprintf("; batch sealed %s: %d members", at.Local().Format("15:04"), len(selected.Members))
+		if selected.SealedAt != "" {
+			if sealed, err := time.Parse(time.RFC3339Nano, selected.SealedAt); err == nil {
+				status.Summary += fmt.Sprintf("; batch sealed %s: %d members", sealed.Local().Format("15:04"), len(selected.Members))
+			}
+		}
+		if len(selected.Restarts) > 0 {
+			status.Summary += "; " + selected.Restarts[len(selected.Restarts)-1].Reason
+		}
+		for _, waiting := range selected.Waiting {
+			status.Summary += "; " + waiting
 		}
 		checkpoint, recorded, _, readErr := ReadRunning(install, seams)
 		unread("the batch checkpoint", readErr)
@@ -567,21 +578,8 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			}
 		}
 	}
-	if selected != nil && selected.State != BatchClosed && selected.DepthClass != "" {
-		status.Summary += fmt.Sprintf("; batch of %d, depth class %s", len(selected.Members), selected.DepthClass)
-		if reason, _ := overdueBatch(install, selected.ID, seams); reason != "" {
-			status.Summary += "; " + reason
-		} else if status.LastProof != nil && status.LastProof.BatchID == selected.ID && status.LastProof.ScopeReason != "" {
-			status.Summary += "; " + status.LastProof.ScopeReason
-		}
-	}
-	if selected != nil {
-		for _, restart := range selected.Restarts {
-			status.Summary += fmt.Sprintf("; %s at %s", restart.Reason, proofMinutes(restart.Elapsed, restart.Expected))
-		}
-		for _, reason := range selected.Waiting {
-			status.Summary += "; " + reason
-		}
+	if strings.Contains(status.Summary, "; nothing to do") {
+		status.Summary = strings.ReplaceAll(status.Summary, "; nothing to do", "") + "; nothing to do"
 	}
 	return status
 }
@@ -727,4 +725,12 @@ func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 		}
 	}
 	return &RunningProof{Admission: running.Admission, Person: running.Person, Trunk: running.Trunk, BatchID: running.BatchID, BatchMembers: running.BatchMembers, Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
+}
+
+func flakeNames(flakes []FlakeRecord) string {
+	names := []string{}
+	for _, flake := range flakes {
+		names = append(names, flake.Tests...)
+	}
+	return strings.Join(names, ", ")
 }

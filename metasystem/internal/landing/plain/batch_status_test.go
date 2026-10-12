@@ -39,9 +39,9 @@ func TestLandingBatchStatusProvingNeverIdle(t *testing.T) {
 				t.Fatal(err)
 			}
 			status := b.read(ProveSeams{Now: func() time.Time { return bedNow.Add(7 * time.Minute) }, Alive: func(Running) bool { return true }, Machine: func(string) (string, error) { return "fixture", nil }}, b.git(nil, nil))
-			want := "proving (0 of counting units, 7.0 min); the agent waits for the keeper"
+			want := "the lane proves main (7.0 min); nothing to do"
 			if known {
-				want = "proving (4 of 233 units, 7.0 min); the agent waits for the keeper"
+				want = "the lane proves main (7.0 min); nothing to do"
 			}
 			if status.Summary != LaneQuestionHeadline(question) || status.ProofHeadline != want || strings.Contains(status.Summary, "idle") {
 				t.Fatalf("summary %q proof %q; want %q", status.Summary, status.ProofHeadline, want)
@@ -80,9 +80,9 @@ func TestLandingBatchProvingPreservesSummaryPriorityAndDepth(t *testing.T) {
 			}}, b.git(nil, nil))
 			want := status.ProofHeadline
 			if problem {
-				want = "hand-in a cannot be read"
+				want = "hand-in a cannot be read; run: metasystem landing resume"
 			}
-			want += "; batch of 1, depth class full; full proof overdue since " + bedNow.Local().Format("15:04")
+
 			if status.Summary != want {
 				t.Fatalf("summary %q; want %q", status.Summary, want)
 			}

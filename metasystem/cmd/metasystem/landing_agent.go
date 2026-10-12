@@ -113,6 +113,7 @@ The keeper woke you for: %s.
 metasystem landing status --json shows the lane's state and its wake reasons; stop when none is left.
 Your recorded batch identity is %s. Read status before each step; continue through a pause only when status admits this batch.
 For a question about the checkout being off main, include "The checkout is not on main." in its facts. For a question about main's commit, include "Main is at commit <full SHA>." in its facts, replacing <full SHA> with the commit. The keeper withdraws your question when that premise is gone.
+A recorded lane stop names the person's command. Other questions start with the fact needing a decision; show and withdraw them with metasystem question show channel:ID and metasystem question withdraw channel:ID --reason TEXT. An open question holds resume. Leave mechanism details in landing health and status --json.
 Read its recorded batch and merge only those goal/commit pairs, in their recorded order. New waiting lines belong to the next selection. A prepared batch with a person selector needs its recorded person selection before it is admitted.
 `, root, strings.Join(wake.Reasons, ", "), wake.BatchID)
 }
@@ -224,9 +225,6 @@ func (a landingAgent) questionHold(module string) (string, error) {
 	}
 	for _, q := range lane {
 		if q.Machine == machine {
-			if command := channel.LaneStopCommand(q); command != "" {
-				return "the lane waits for a person's act\nrun: " + command, nil
-			}
 			return plain.LaneQuestionHeadline(q), nil
 		}
 	}

@@ -86,7 +86,7 @@ func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *
 		t.Fatalf("stop lost its decision or evidence: %+v", stop)
 	}
 	code, text = b.run(t, b.root, "status")
-	if code != 0 || !strings.Contains(oneSpaced(text), "the lane stopped:") || !strings.Contains(oneSpaced(text), command) || !strings.Contains(oneSpaced(text), "TestBroken") {
+	if code != 0 || !strings.Contains(oneSpaced(text), "the lane stopped:") || !strings.Contains(oneSpaced(text), lane.Remedy(command)) || !strings.Contains(oneSpaced(text), "cause: unclassified") || !strings.Contains(oneSpaced(text), stop.Subject) || !strings.Contains(oneSpaced(text), "TestBroken") {
 		t.Fatalf("stop is not visible: %d %s", code, text)
 	}
 	// The keeper recovers the request already reconciled by check admission.
@@ -94,21 +94,21 @@ func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *
 		agent.now = func() time.Time { return laneTestNow }
 		agent.machine = func(string) (string, error) { return "lane-machine", nil }
 	})
-	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, command) {
+	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, lane.Remedy(command)) {
 		t.Fatalf("keeper did not ask and hold: %q %v", hold, err)
 	}
 	questions, _ := channel.WalkOpenQuestions(b.install)
-	if len(questions) != 1 || questions[0].Facts[0] != command {
+	if len(questions) != 1 || !strings.Contains(questions[0].Facts[0], lane.Remedy(command)) {
 		t.Fatalf("the stop needs one command question: %+v", questions)
 	}
-	if instructions := channel.ReplyInstructions(questions[0]); !strings.HasPrefix(instructions, "Run "+command) || strings.Contains(instructions, "Reply") {
+	if instructions := channel.ReplyInstructions(questions[0]); !strings.Contains(instructions, lane.Remedy(command)) || strings.Contains(instructions, "Reply") {
 		t.Fatalf("the stop asks for an answer instead of an act: %q", instructions)
 	}
 	b.owners.processes.question = channel.ReadQuestion
 	action, _ := findIntentAction("question", "show")
 	var stdout, stderr bytes.Buffer
 	code = runIntentIn(action, []string{"channel:" + questions[0].ID}, &stdout, &stderr, b.install, b.owners)
-	if code != 0 || strings.SplitN(strings.TrimSpace(stdout.String()), "\n", 2)[0] != command || strings.Contains(stdout.String(), "question retry") {
+	if code != 0 || !strings.Contains(oneSpaced(stdout.String()), lane.Remedy(command)) || !strings.Contains(stdout.String(), questions[0].ID) || !strings.Contains(stdout.String(), "cause: unclassified") || !strings.Contains(stdout.String(), "TestBroken") || strings.Contains(stdout.String(), "question retry") {
 		t.Fatalf("question show lost the stop command: %d %s %s", code, &stdout, &stderr)
 	}
 	if _, err := syncStopQuestionHold(agent, b.install); err != nil {
@@ -123,7 +123,7 @@ func TestLandingStopAfterSecondRedShowsCommandAndGenericRunPreservesQuestion(t *
 	if code, text := b.run(t, b.root, "run"); code != 0 {
 		t.Fatalf("landing run: %d %s", code, text)
 	}
-	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, command) {
+	if hold, err := syncStopQuestionHold(agent, b.install); err != nil || !strings.Contains(hold, lane.Remedy(command)) {
 		t.Fatalf("generic run changed the stopped subject: %q %v", hold, err)
 	}
 	if q, err := channel.ReadQuestion(b.install, questions[0].ID); err != nil || q.State == "closed" {
@@ -177,7 +177,7 @@ func TestLandingStopCauseChoosesTheHandoff(t *testing.T) {
 				}
 			case "environment":
 				// Decision 4 requires the check act; generic run grants no repeat authority.
-				if stop.Attempt != 0 || stop.Command() != "metasystem landing prove" || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
+				if stop.Attempt != 0 || stop.Command() != "metasystem landing prove" || len(questions) != 1 || !strings.Contains(questions[0].Facts[0], lane.Remedy(stop.Command())) {
 					t.Fatalf("environment spent a full attempt or chose a return: %+v questions=%+v", stop, questions)
 				}
 			}
@@ -239,7 +239,7 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 			keeper.Holds[0] = func(string) (string, error) { return "", nil }
 			keeper.Waiting = nil
 			keeper.Start = func(string, lane.Wake) (string, error) { t.Fatal("an answer lifted the stop"); return "", nil }
-			if run := keeper.Run(); run.Outcome != lane.AgentHeld || !strings.Contains(run.Line, "landing return") {
+			if run := keeper.Run(); run.Outcome != lane.AgentHeld || !strings.Contains(run.Line, "landing give-back") {
 				t.Fatalf("an answer lifted the stop: %+v", run)
 			}
 			if act == "return" {
@@ -285,7 +285,7 @@ func TestLandingStopBarrenHoldRecordsOneQuestionAndSelectionClearsIt(t *testing.
 	}
 	stop, err := plain.NewestStop(install)
 	questions, _ := channel.WalkOpenQuestions(install)
-	if err != nil || stop == nil || stop.Loop != "lane-return" || stop.Attempt != 2 || stop.Measure.Name != "lane fingerprint" || stop.Command() != "metasystem landing run --goals a" || stop.Evidence != lane.AgentStatePath(b.home) || len(questions) != 1 || questions[0].Facts[0] != stop.Command() {
+	if err != nil || stop == nil || stop.Loop != "lane-return" || stop.Attempt != 2 || stop.Measure.Name != "lane fingerprint" || stop.Command() != "metasystem landing run --goals a" || stop.Evidence != lane.AgentStatePath(b.home) || len(questions) != 1 || !strings.Contains(questions[0].Facts[0], lane.Remedy(stop.Command())) {
 		t.Fatalf("barren stop: %+v %v questions=%+v", stop, err, questions)
 	}
 	b.prove = enrolledPersonProver(t, b.landingA, *now)

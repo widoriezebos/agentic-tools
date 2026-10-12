@@ -147,13 +147,23 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			result.text = []string{channel.ReplyInstructionsAt(inv.stateRoot, c)}
 			headline = "Channel question " + c.ID + " waits for the person's reply in its channel thread"
 		}
-		if command := channel.ActCommand(c); command != "" && c.State != "closed" {
+		act := channel.ActCommand(c)
+		if channel.LaneStopCommand(c) != "" {
+			act = c.Facts[0]
+		}
+		if command := act; command != "" && c.State != "closed" {
 			result.Summary, result.next, result.nextReason, result.text = command, nil, "", nil
 		}
 		result.view = func(page *textui.Page) {
-			if command := channel.ActCommand(c); command != "" && c.State != "closed" {
+			instructions := channel.ReplyInstructionsAt(inv.stateRoot, c)
+			if command := act; command != "" && c.State != "closed" {
 				page.Headline(command, "")
-				page.Section("", "").Text(strings.Join(c.Facts[1:], "\n"))
+				if channel.LaneStopCommand(c) == "" {
+					page.Section("", "").Text(strings.Join(c.Facts[1:], "\n"))
+				} else {
+					page.Section("", "").Text("question " + c.ID)
+					page.Section("", "").Text(instructions)
+				}
 				return
 			}
 			page.Headline(headline, fact)
@@ -166,7 +176,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			}
 			page.Facts(rows...)
 			if c.Thread != nil && c.Answer == nil && c.State != "closed" {
-				page.Section("", "").Text(channel.ReplyInstructionsAt(inv.stateRoot, c))
+				page.Section("", "").Text(instructions)
 			}
 		}
 		return result

@@ -218,14 +218,9 @@ func (view View) AgentSummary(waiting bool) string {
 	case OwnerHeld:
 		agent = fmt.Sprintf("held after %d runs that left the lane unchanged; a person runs metasystem landing resume", view.Owner.Barren)
 	default:
-		// Why the lane cannot run and the one fix, in the one line (summary
-		// by default).
-		agent = "the landing agent can't run"
-		if view.Owner.LastExit != nil {
-			agent = *view.Owner.LastExit
-		}
-		if view.Owner.RetryHint != nil {
-			agent += "; to fix: " + *view.Owner.RetryHint
+		agent = "the landing agent's state is unknown; run: metasystem landing resume"
+		if view.Owner.LastExit != nil && view.Owner.Unread == "" {
+			agent = "the landing lane can't run; run: metasystem landing resume"
 		}
 	}
 	return agent

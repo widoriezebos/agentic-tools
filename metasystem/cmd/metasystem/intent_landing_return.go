@@ -60,7 +60,7 @@ func runIntentLandingReturn(inv *intentInvocation, admitted laneAdmitted) int {
 	case errors.Is(err, plain.ErrNotWaiting):
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
 			Summary: "nothing of goal " + goalID + " waits in the landing lane, so nothing was returned",
-			next:    inv.publicArgv("landing", "status"), nextReason: "shows the queue", Details: []string{err.Error()}})
+			Details: []string{err.Error()}})
 	case err != nil:
 		return inv.render(landingLaneFailure(targets, "the return of "+goalID+" could not be recorded: "+oneLine(err.Error()), err))
 	}

@@ -15,14 +15,6 @@ exit 1
   ],
   "outcome": "refused",
   "summary": "nothing of goal goal-z waits in the landing lane, so nothing was returned",
-  "next": {
-    "argv": [
-      "metasystem",
-      "landing",
-      "status"
-    ],
-    "reason": "shows the queue"
-  },
   "details": [
     "no hand-in of this goal waits in the lane: goal-z was never handed in"
   ]

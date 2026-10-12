@@ -7,8 +7,5 @@ Lane  ~/GitHub/agentic-tools-landing
 Agent
   agent: running, no step for 5 min
 
-Admission
-  admission open
-
 Last
   gate   none for head

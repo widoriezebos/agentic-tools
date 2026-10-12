@@ -26,20 +26,10 @@ exit 0
     "batch": null,
     "next": null,
     "wake": {
-      "reasons": [
-        "full-due"
-      ],
+      "reasons": [],
       "unread": []
     },
     "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it"
-  },
-  "next": {
-    "argv": [
-      "metasystem",
-      "landing",
-      "unset"
-    ],
-    "reason": "lets each seat land its own work instead"
   },
   "details": [
     "the lane at /Users/wido/GitHub/agentic-tools-landing starts no landing agent until metasystem landing start"

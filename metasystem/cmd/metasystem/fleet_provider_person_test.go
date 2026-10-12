@@ -62,7 +62,7 @@ func TestFleetProviderMarkPublicPersonStart(t *testing.T) {
 	if err != nil || selected == nil {
 		t.Fatalf("recorded person selection: %v", err)
 	}
-	if code, text := b.run(t, "landing", "run", "--batch", selected.ID, "--json"); code != 0 || !strings.Contains(text, "selection recorded, execution not started") || !strings.Contains(text, "provider") || len(landingLaunches(t, store)) != 1 {
+	if code, text := b.run(t, "landing", "run", "--batch", selected.ID, "--json"); code != 0 || !strings.Contains(text, "the chosen goals are saved; the agent has not started") || !strings.Contains(text, "provider") || len(landingLaunches(t, store)) != 1 {
 		t.Fatalf("a later agent inherited the person's provider bypass: exit %d %s", code, text)
 	}
 	// A second exact person act starts and ends another launch before the hint breaks.

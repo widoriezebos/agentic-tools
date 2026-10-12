@@ -50,11 +50,11 @@ func proofQuestion(t *testing.T, b *batchVerbBed, command string) channel.Questi
 	for _, q := range questions {
 		if channel.LaneStopCommand(q) == command {
 			code, text := b.run(t, "question", "show", "channel:"+q.ID)
-			if code != 0 || !strings.Contains(text, command) {
+			if code != 0 || !strings.Contains(oneSpaced(text), lane.Remedy(command)) {
 				t.Fatalf("question show: %d %s", code, text)
 			}
 			code, text = b.plainVerbBed.run(t, "landing", "status", "--verbose")
-			if code != 0 || !strings.Contains(text, command) {
+			if code != 0 || !strings.Contains(oneSpaced(text), lane.Remedy(command)) {
 				t.Fatalf("status: %d %s", code, text)
 			}
 			return q

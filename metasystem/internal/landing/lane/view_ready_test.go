@@ -22,7 +22,7 @@ func TestViewOfALaneThatCannotStartNamesTheFix(t *testing.T) {
 	if strings.Join(view.Owner.Fix, " ") != fix {
 		t.Fatalf("fix argv = %q, want %q", view.Owner.Fix, fix)
 	}
-	for _, want := range []string{"the landing lane can't run", "supervision is not armed", fix} {
+	for _, want := range []string{"the landing lane can't run", "metasystem landing resume"} {
 		if !strings.Contains(view.Summary, want) {
 			t.Errorf("summary %q lacks %q", view.Summary, want)
 		}

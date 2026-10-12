@@ -55,13 +55,15 @@ func TestLandingSelectDepthClassStatus(t *testing.T) {
 		t.Fatalf("landing status: exit %d, %s", code, output)
 	}
 	var status struct {
-		Data plain.Status `json:"data"`
+		Data struct {
+			plain.Status
+			Batch *plain.Batch `json:"batch"`
+		} `json:"data"`
 	}
 	if err := json.Unmarshal([]byte(output), &status); err != nil {
 		t.Fatal(err)
 	}
-	wantReason := "full proof overdue since " + b.now.Local().Format("15:04")
-	if !strings.Contains(status.Data.Summary, "batch of 2, depth class full") || !strings.Contains(status.Data.Summary, wantReason) {
+	if status.Data.Batch == nil || status.Data.Batch.DepthClass != "full" || !slices.Equal(status.Data.Batch.Members, batch.Members) {
 		t.Fatalf("status lost depth or reason: %s", output)
 	}
 	t.Logf("observed status: %s", status.Data.Summary)

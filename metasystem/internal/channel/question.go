@@ -423,7 +423,7 @@ func replyInstructions(q Question, codeOff bool) string {
 		return "Run " + q.UnitStop.Needs + "; a successful matching act or unit closure closes this question. A text answer leaves it open."
 	}
 	if command := LaneStopCommand(q); command != "" {
-		return "Run " + command + "; a later lane record closes this question."
+		return q.Facts[0] + "; a later lane record closes this question."
 	}
 	if codeOff {
 		if q.Wants != "" {
@@ -484,6 +484,9 @@ func renderQuestion(q Question, codeOff bool) string {
 }
 
 func renderQuestionParts(q Question, facts, consequences []string, recommendation, notice, tail string) string {
+	if command := LaneStopCommand(q); command != "" {
+		facts = []string{q.Facts[0], "question " + q.ID}
+	}
 	var b strings.Builder
 	b.WriteString(questionHead(q))
 	for _, f := range facts {
@@ -502,6 +505,9 @@ func renderQuestionParts(q Question, facts, consequences []string, recommendatio
 }
 
 func questionHead(q Question) string {
+	if command := LaneStopCommand(q); command != "" {
+		return q.Facts[0] + "\n"
+	}
 	if command := ActCommand(q); command != "" {
 		return command + "\n"
 	}
@@ -511,6 +517,12 @@ func questionHead(q Question) string {
 // LaneStopCommand recognizes the lane's own stop question in its existing facts.
 func LaneStopCommand(q Question) string {
 	if q.About == "lane" && q.Goal == "" && q.Lineage == "landing-agent" && len(q.Facts) == 3 && (strings.HasPrefix(q.Facts[1], "lane stop: ") || strings.HasPrefix(q.Facts[1], "lane policy: ")) {
+		var record struct {
+			Required []string `json:"required"`
+		}
+		if _, data, ok := strings.Cut(q.Facts[1], ": "); ok && json.Unmarshal([]byte(data), &record) == nil && len(record.Required) > 0 {
+			return strings.Join(record.Required, " ")
+		}
 		return q.Facts[0]
 	}
 	return ""

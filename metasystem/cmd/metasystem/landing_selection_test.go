@@ -135,7 +135,7 @@ func (b *selectionBed) proposal(t *testing.T) []string {
 	q := b.question(t)
 	code, text := b.run(t, b.lane, "question", "show", "channel:"+q.ID)
 	command := strings.Fields(channel.LaneStopCommand(q))
-	if code != 0 || len(command) == 0 || !strings.Contains(text, channel.LaneStopCommand(q)) {
+	if code != 0 || len(command) == 0 || !strings.Contains(oneSpaced(text), lane.Remedy(channel.LaneStopCommand(q))) {
 		t.Fatalf("show: %d %s; preparation: %s", code, text, out)
 	}
 	_, text = b.run(t, b.lane, "landing", "status", "--json")
@@ -369,7 +369,7 @@ func TestLandingSelectionEffectFailureAndQuestionRecovery(t *testing.T) {
 			if err != nil || current.State != "closed" {
 				t.Fatalf("recorded effect request not closed: %+v %v", current, err)
 			}
-			if failure == "launcher" && !strings.Contains(out, "selection recorded, execution not started") {
+			if failure == "launcher" && !strings.Contains(out, "the chosen goals are saved; the agent has not started") {
 				t.Fatalf("launcher lost the pending effect: %s", out)
 			}
 		})
@@ -492,11 +492,11 @@ func TestLandingSelectionBarrenTickRefreshesStaleCommand(t *testing.T) {
 				t.Fatalf("stale notification remained open: %+v %v", ended, err)
 			}
 			for _, words := range [][]string{{"landing", "status"}, {"question", "show", "channel:" + q.ID}} {
-				if code, out := b.run(t, b.lane, words...); code != 0 || !strings.Contains(out, want) {
+				if code, out := b.run(t, b.lane, words...); code != 0 || !strings.Contains(oneSpaced(out), lane.Remedy(want)) {
 					t.Fatalf("%v did not print refreshed command: %d %s", words, code, out)
 				}
 			}
-			if code, out := b.run(t, b.lane, "landing", "run"); code == 0 || !strings.Contains(oneSpaced(out), want) {
+			if code, out := b.run(t, b.lane, "landing", "run"); code == 0 || !strings.Contains(oneSpaced(out), lane.Remedy(want)) {
 				t.Fatalf("generic refusal lost refreshed remedy: %d %s", code, out)
 			}
 			b.owners.prove = enrolledPersonProver(t, b.lane, b.now)
@@ -553,7 +553,7 @@ func TestLandingSelectionBarrenRemedyIsolatesStopsAndProofBudget(t *testing.T) {
 		t.Fatalf("barren command: %+v", barren)
 	}
 	code, out := b.run(t, b.lane, "question", "show", "channel:"+barren.ID)
-	if code != 0 || !strings.Contains(out, channel.LaneStopCommand(barren)) {
+	if code != 0 || !strings.Contains(oneSpaced(out), lane.Remedy(channel.LaneStopCommand(barren))) || !strings.Contains(out, barren.ID) {
 		t.Fatalf("question command: %d %s", code, out)
 	}
 	// Text answers and withdrawing the notification leave its owning stop intact.
@@ -640,7 +640,7 @@ func TestLandingSelectionBarrenWithoutEligibleGoalsOffersTrunkProof(t *testing.T
 				t.Fatalf("no-eligible-goal remedy: %q", channel.LaneStopCommand(q))
 			}
 			for _, words := range [][]string{{"landing", "status"}, {"question", "show", "channel:" + q.ID}} {
-				if code, out := b.run(t, b.lane, words...); code != 0 || !strings.Contains(out, want) || strings.Contains(out, "run --goals") {
+				if code, out := b.run(t, b.lane, words...); code != 0 || !strings.Contains(oneSpaced(out), lane.Remedy(want)) || strings.Contains(out, "run --goals") {
 					t.Fatalf("%v did not expose executable trunk remedy: %d %s", words, code, out)
 				}
 			}
@@ -654,7 +654,7 @@ func TestLandingSelectionCrossCheckoutMissingEngineRetainsChoice(t *testing.T) {
 	command := b.proposal(t)
 	q := b.question(t)
 	b.owners.prove = enrolledPersonProver(t, b.seat, b.now)
-	if code, out := b.run(t, b.seat, command...); code != 0 || !strings.Contains(out, "selection recorded, execution not started") || !strings.Contains(out, "devgate build") {
+	if code, out := b.run(t, b.seat, command...); code != 0 || !strings.Contains(out, "the chosen goals are saved; the agent has not started") || !strings.Contains(oneSpaced(out), "go run ./cmd/devgate build") {
 		t.Fatalf("missing engine revoked recorded choice: %d %s", code, out)
 	}
 	selected := b.batch(t)

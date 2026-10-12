@@ -1,2 +1,1 @@
-✓ admission closed by Wido; queued work finishes before the lane holds
-→ metasystem landing status  shows drain progress
+✓ the lane is draining by request of Wido; queued work finishes before the lane holds

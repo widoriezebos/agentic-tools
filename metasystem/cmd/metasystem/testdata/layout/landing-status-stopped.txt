@@ -1,12 +1,9 @@
 ○ The landing lane is stopped by Wido; it lands nothing
 
+to do: metasystem landing start
+
 Agent
   agent: idle since 10:28
 
-Admission
-  admission open
-
 Last
   gate   none for head
-
-→ metasystem landing start  resumes it

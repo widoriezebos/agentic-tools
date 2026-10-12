@@ -578,7 +578,7 @@ func TestLandingMainStopNamesIncidentInStatusAndQuestion(t *testing.T) {
 		t.Fatalf("main stop has no incident handoff: %+v %v", stop, err)
 	}
 	code, text := b.run(t, b.root, "status")
-	if code != 0 || !strings.Contains(oneSpaced(text), stop.Command()) || !strings.Contains(oneSpaced(text), identity) {
+	if code != 0 || !strings.Contains(oneSpaced(text), "land a fix on main, then metasystem landing prove --trunk") || !strings.Contains(oneSpaced(text), identity) {
 		t.Fatalf("status: %d %s", code, text)
 	}
 	data, err := json.Marshal(stop)
@@ -586,7 +586,7 @@ func TestLandingMainStopNamesIncidentInStatusAndQuestion(t *testing.T) {
 		t.Fatal(err)
 	}
 	q, err := channel.Ask(channel.AskRequest{RepoRoot: b.install, About: "lane", Kind: "other", Machine: "finder-one", Lineage: lane.AgentLineage,
-		Facts: []string{stop.Command(), "lane stop: " + string(data), "evidence: " + stop.Evidence}, Now: syncRequestTestNow})
+		Facts: []string{plain.StopHeadline(*stop), "lane stop: " + string(data), "evidence: " + stop.Evidence}, Now: syncRequestTestNow})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -594,7 +594,7 @@ func TestLandingMainStopNamesIncidentInStatusAndQuestion(t *testing.T) {
 	action, _ := findIntentAction("question", "show")
 	var stdout, stderr bytes.Buffer
 	code = runIntentIn(action, []string{"channel:" + q.ID}, &stdout, &stderr, b.install, b.owners)
-	if code != 0 || !strings.HasPrefix(stdout.String(), stop.Command()+"\n") || !strings.Contains(stdout.String(), identity) {
+	if code != 0 || !strings.Contains(oneSpaced(stdout.String()), "land a fix on main, then metasystem landing prove --trunk") || !strings.Contains(stdout.String(), identity) || !strings.Contains(stdout.String(), "TestOne") || !strings.Contains(stdout.String(), q.ID) {
 		t.Fatalf("question: %d %s %s", code, &stdout, &stderr)
 	}
 	proof := plain.Result{Result: plain.Green, Commit: register.repo.canonical, Tree: "green-tree", Scope: "full", At: syncRequestTestNow.Format(time.RFC3339), FullAt: syncRequestTestNow.Format(time.RFC3339), FullTree: "green-tree", Attempt: "clearing-green"}

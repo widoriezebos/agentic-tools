@@ -286,7 +286,7 @@ func TestLandingMainMoveGitAdapterClassification(t *testing.T) {
 				t.Fatalf("classification: %+v %v want %s/%d", move, err, want, count)
 			}
 			status := ReadStatus(t.TempDir(), batch.Lane, lane.View{Root: &b.checkout}, ProveSeams{})
-			if status.MainMove.Kind != want || (want == "code" && !strings.Contains(status.Summary, "main moved: code change; rebuild")) {
+			if status.MainMove.Kind != want || (want == "code" && !strings.Contains(status.Summary, "main moved: code change; run: metasystem landing resume")) {
 				t.Fatalf("status=%+v", status)
 			}
 			if want == "code" {

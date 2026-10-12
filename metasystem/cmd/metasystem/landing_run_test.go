@@ -137,11 +137,13 @@ func TestLandingRunAtTheHelmIsRefused(t *testing.T) {
 	bed.wake = []string{"queued"}
 	bed.helmed = true
 	code, stdout, stderr := bed.run(t, "landing", "run")
-	if code == 0 || !strings.Contains(stderr, "at the helm") || !strings.Contains(oneSpaced(stderr), "metasystem helm return --repo "+bed.landingA) {
+	if code == 0 || !strings.Contains(stderr, "at the helm") || !strings.Contains(oneSpaced(stderr), "metasystem helm return") {
 		t.Fatalf("landing run at the helm = %d %q %q; want refused with helm return", code, stdout, stderr)
 	}
-	if !strings.Contains(oneSpaced(stderr), humanauthority.PersonActRemedy(shellCommand([]string{"metasystem", "helm", "return", "--repo", bed.landingA}))) {
-		t.Fatalf("the return must be the person's act at their enrolled terminal:\n%s", stderr)
+	_, stdout, stderr = bed.run(t, "landing", "run", "--json")
+	var recorded struct{ Next *intentNext }
+	if err := json.Unmarshal([]byte(stdout+stderr), &recorded); err != nil || recorded.Next == nil || !strings.Contains(recorded.Next.Reason, humanauthority.PersonActRemedy(shellCommand([]string{"metasystem", "helm", "return", "--repo", bed.landingA}))) {
+		t.Fatalf("the record lost the enrolled terminal requirement: %s %s", stdout, stderr)
 	}
 	if launches := landingLaunches(t, store); len(launches) != 0 {
 		t.Fatalf("a helmed lane started a landing agent: %+v", launches)

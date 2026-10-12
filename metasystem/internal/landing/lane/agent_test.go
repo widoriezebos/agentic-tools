@@ -313,7 +313,7 @@ func TestKeeperLaunchesOnlyForAQueueNotPausedNoneAlive(t *testing.T) {
 
 // TestKeeperHoldsAfterBarrenRuns: an agent that exits at once with work
 // still pending and the lane unchanged is started at most twice; the keeper
-// then holds, naming both launches and the ways on, until the lane changes
+// then holds, naming the intent command, until the lane changes
 // (a new hand-in) or a start is asked for by name.
 func TestKeeperHoldsAfterBarrenRuns(t *testing.T) {
 	t.Parallel()
@@ -334,8 +334,8 @@ func TestKeeperHoldsAfterBarrenRuns(t *testing.T) {
 	for range 6 {
 		line = step(keeper)
 	}
-	if len(agent.starts) != 2 || !strings.Contains(line, "ended with the lane unchanged") || !strings.Contains(line, "landing-1, landing-2") {
-		t.Fatalf("barren runs: %d starts, last line %q; want two starts, then a hold naming both", len(agent.starts), line)
+	if len(agent.starts) != 2 || !strings.Contains(line, "ended with the lane unchanged") || !strings.Contains(line, "metasystem landing resume") || strings.Contains(line, "landing-1") || strings.Contains(line, "landing-2") {
+		t.Fatalf("barren runs: %d starts, last line %q; want two starts, then a hold naming resume without launch ids", len(agent.starts), line)
 	}
 	lane = "a new hand-in"
 	step(keeper)

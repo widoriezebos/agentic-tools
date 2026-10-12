@@ -271,7 +271,7 @@ func TestLandingSetIsAPersonsAct(t *testing.T) {
 	bed := newLaneVerbBed(t)
 	bed.person = humanauthority.Refusedf(humanauthority.OutcomeNotEnrolled, "human authority has no readable terminal enrollment")
 	code, _, stderr := bed.run(t, "landing", "set", bed.landingA)
-	if code == 0 || !strings.Contains(stderr, "only a person may register the landing lane") || !strings.Contains(stderr, "metasystem system enroll") {
+	if code == 0 || !strings.Contains(stderr, "only a person may register the landing lane") || !strings.Contains(stderr, "metasystem system enroll --name NAME") {
 		t.Fatalf("first registration by no person = %d %q", code, stderr)
 	}
 	if _, ok, _ := lane.Read(bed.home); ok {
@@ -333,7 +333,7 @@ func TestLandingStartRefusesALaneWhoseSupervisionIsNotArmed(t *testing.T) {
 	}
 	bed.ready = lane.UnarmedRefusal(bed.landingA)
 	code, stdout, stderr := bed.run(t, "landing", "start", "--verbose")
-	for _, want := range []string{lane.CodeUnarmed, "supervision is not armed", "  → metasystem system start --repo " + bed.landingA, "nothing was started"} {
+	for _, want := range []string{lane.CodeUnarmed, "supervision is not armed", "  → metasystem system start --repo", "nothing was started"} {
 		if !strings.Contains(stderr, want) {
 			t.Errorf("start = %d %q; lacks %q", code, stderr, want)
 		}
@@ -380,11 +380,11 @@ func TestLandingStatusSaysWhyTheLaneCannotRun(t *testing.T) {
 	bed := newLaneVerbBed(t)
 	bed.ready = lane.UnarmedRefusal(bed.landingA)
 	code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA)
-	if code != 0 || !strings.Contains(stdout, "→ metasystem system start --repo "+bed.landingA) {
+	if code != 0 || !strings.Contains(stdout, "→ metasystem system start --repo") {
 		t.Fatalf("set on an unarmed checkout = %d %q %q; want the arming named next", code, stdout, stderr)
 	}
 	code, stdout, _ = bed.run(t, "landing", "status")
-	for _, want := range []string{"! The landing lane can't run its agent", "supervision is not armed", "→ metasystem system start --repo " + bed.landingA} {
+	for _, want := range []string{"! The landing lane can't run its agent", "supervision is not armed", "to do: metasystem system start --repo"} {
 		if code != 0 || !strings.Contains(oneSpaced(stdout), want) {
 			t.Errorf("status = %d %q; lacks %q", code, stdout, want)
 		}
@@ -459,7 +459,7 @@ func TestLandingUnsetListsWhatIsLeftAndContinues(t *testing.T) {
 	}
 	report = lane.UnsetReport{Record: lane.Record{Root: bed.landingA}, Stopped: lane.StepSettled, Settlement: lane.Settlement{Unknown: []string{"whether the lane's owner runs is unknown"}}}
 	code, _, stderr := bed.run(t, "landing", "unset")
-	if code == 0 || !strings.Contains(stderr, "whether the lane's owner runs is unknown") || !strings.Contains(stderr, "metasystem landing unset --force") {
+	if code == 0 || !strings.Contains(stderr, "whether the lane's owner runs is unknown") || !strings.Contains(stderr, "metasystem landing unset") {
 		t.Fatalf("unset waiting on unknown state = %d %q", code, stderr)
 	}
 	if code, _, _ := bed.run(t, "landing", "unset", "--force"); code == 0 || !forced {
@@ -491,8 +491,8 @@ func TestLandingStartOfAStoppedLaneIsAPersonsAct(t *testing.T) {
 	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
 		t.Fatalf("set = %d %q", code, stderr)
 	}
-	if code, stdout, stderr := bed.run(t, "landing", "stop"); code != 0 || !strings.Contains(stdout, "metasystem landing unset") {
-		t.Fatalf("stop = %d %q %q; want line 2 to name landing unset", code, stdout, stderr)
+	if code, stdout, stderr := bed.run(t, "landing", "stop"); code != 0 || !strings.Contains(oneSpaced(stdout), "no landing agent was running") || strings.Contains(stdout, "→") {
+		t.Fatalf("stop = %d %q %q; want an ended session with no follow-up act", code, stdout, stderr)
 	}
 	bed.person = humanauthority.Refusedf(humanauthority.OutcomeNotEnrolled, "human authority has no readable terminal enrollment")
 	code, _, stderr := bed.run(t, "landing", "start")

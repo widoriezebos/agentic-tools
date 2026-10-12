@@ -440,12 +440,16 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	if view.Root != nil {
 		summary += "; " + landingQueueWords(data.Queue)
 		if data.Admission != "" {
-			summary += "; " + data.Admission
+			if !inv.input.switched("json") {
+				summary += "; " + strings.ReplaceAll(strings.ReplaceAll(data.Admission, "admission open", "accepting new work"), "admission unknown", "whether new work can join is unknown")
+			} else {
+				summary += "; " + data.Admission
+			}
 		}
 	}
 	pageView := inv.landingStatusView(view, unreadable != nil, data.RunningProof, waiting, headline)
 	result := intentResult{Outcome: intentConfirmed, Summary: summary, Data: data,
-		view: withPlainLane(withRunningProof(pageView, data.RunningProof), data, record.Install)}
+		view: withPlainLane(pageView, data, record.Install)}
 	if view.Root != nil {
 		result.Targets = laneTargets(*view.Root)
 	}
@@ -505,7 +509,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			page.Section("Batch policy", "").Text(policy.Value + " from " + policy.Source)
 		}
 		for _, request := range data.PendingActions {
-			page.Section("Person act", "").Text("run: " + shellCommand(request.Required))
+			page.Section("Person act", "").Text("run: " + request.Remedy())
 		}
 		if batch, ok := data.Batch.(*plain.Batch); ok && batch != nil {
 			section := page.Section("Selected batch", "")
@@ -522,20 +526,9 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 				section.Text(batch.ClosureReason)
 			}
 		}
-		if data.Admission != "" {
-			section := page.Section("Admission", "")
-			section.Text(data.Admission)
-			if data.Drain != nil {
-				section.Text("closed by " + data.Drain.By + " at " + lane.LocalText(data.Drain.At))
-				if data.Drain.Reason != "" {
-					section.Text(data.Drain.Reason)
-				}
-			}
-		}
 		if stop := data.Stop; stop != nil {
 			section := page.Section("", "")
-			section.Text(stop.Words())
-			section.Text("run: " + stop.Command())
+			section.Text(plain.StopHeadline(*stop))
 		}
 		if run := data.RunningRegeneration; run != nil {
 			page.Section("Regenerating", "").Text(fmt.Sprintf("%s: %s (%s); log %s, %d bytes", run.Goal, strings.Join(run.Command, " "), run.State, run.Log, run.LogBytes))
@@ -664,6 +657,9 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, 
 		switch {
 		case len(headline) > 0 && headline[0] != "":
 			page.Headline(headline[0])
+			if remedy := plain.LaneStatusRemedy(view, running != nil && running.State == "running", headline[0]); remedy != "" {
+				page.Section("", "").Text("to do: " + remedy)
+			}
 			words := view.AgentSummary(waiting)
 			if running != nil && running.State == "running" {
 				words = "proving; the agent waits for the keeper"
@@ -680,15 +676,24 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, 
 				by += " (" + *owner.StoppedBecause + ")"
 			}
 			page.Mark(textui.Stopped, "The landing lane is stopped by "+by+"; it lands nothing")
-			page.Hint(textui.Hint{Argv: inv.publicArgv("landing", "start"), Reason: "resumes it"})
+			page.Section("", "").Text("to do: metasystem landing start")
 		case owner.State == lane.OwnerIdle && running != nil && running.State == "running":
 			// The proof the agent started runs on after the agent's turn.
 			page.Headline("The landing lane is proving tree " + shortLandingID(running.Tree) + "; its agent is not running")
 		case owner.State == lane.OwnerIdle || owner.State == lane.OwnerHeld:
 			page.Headline("The landing lane is " + view.AgentSummary(waiting))
+			if remedy := plain.LaneStatusRemedy(view, false, ""); remedy != "" {
+				page.Section("", "").Text("to do: " + remedy)
+			}
 		default:
 			page.Mark(textui.Alert, "The landing lane can't run its agent")
 			section := page.Section("", "")
+			if remedy := plain.LaneStatusRemedy(view, false, ""); remedy != "" {
+				if len(owner.Fix) > 0 {
+					remedy = lane.Remedy(textui.Command(owner.Fix))
+				}
+				section.Text("to do: " + remedy)
+			}
 			if owner.LastExit != nil {
 				section.Text("why: " + *owner.LastExit)
 			}
@@ -937,7 +942,7 @@ func (inv *intentInvocation) laneResumable(owners laneVerbOwners, home string, r
 		if paused {
 			refused.Summary = "only a person may resume the landing lane " + pause.By + " stopped, and " + strings.TrimSuffix(refused.Summary, ", so nothing was done") + "; it stays stopped"
 		} else {
-			refused.Summary = "only a person may reopen admission; the drain stays standing"
+			refused.Summary = "only a person may accept new work again; the drain stays standing"
 		}
 		return refused
 	}
@@ -963,7 +968,7 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 			resumed = false
 		}
 		if reopened {
-			details = append(details, "removed the drain; admission open")
+			details = append(details, "removed the drain; accepting new work")
 		}
 		if resumed {
 			details = append(details, "removed the pause")
@@ -1003,7 +1008,7 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 		outcome = intentConfirmed
 	}
 	if reopened {
-		summary += "; admission open"
+		summary += "; accepting new work"
 	}
 	return intentResult{Outcome: outcome, Targets: targets, Data: view, Summary: summary, Details: append(details, "its landing agent starts when there is work"), view: landingDone(summary, record.Root)}
 }
@@ -1023,14 +1028,14 @@ func runIntentLandingDrain(inv *intentInvocation) int {
 	}
 	drain, changed, err := plain.SetDrain(record.Install, plain.Drain{By: by, At: owners.now().UTC().Format(time.RFC3339), Reason: inv.input.text("reason"), Source: plain.DrainSource{Kind: "person"}})
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "admission could not be closed", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries the drain write"})
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the lane could not be drained", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries the drain write"})
 	}
 	outcome := intentConfirmed
 	if !changed {
 		outcome = intentUnchanged
 	}
-	summary := "admission closed by " + drain.By + "; queued work finishes before the lane holds"
-	return inv.render(intentResult{Outcome: outcome, Targets: laneTargets(record.Root), Data: drain, Summary: summary, next: inv.publicArgv("landing", "status"), nextReason: "shows drain progress", view: landingDone(summary)})
+	summary := "the lane is draining by request of " + drain.By + "; queued work finishes before the lane holds"
+	return inv.render(intentResult{Outcome: outcome, Targets: laneTargets(record.Root), Data: drain, Summary: summary, view: landingDone(summary)})
 }
 
 // landing run starts the landing agent now instead of at the lane
@@ -1112,7 +1117,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 	syncErr := plain.SyncPolicyQuestion(record.Install, owners.machine, owners.now())
 	if selectionErr != nil {
 		if selected != nil && selected.Person != nil {
-			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "selection recorded, execution not started", Data: selected, Details: []string{selectionErr.Error()}, next: inv.publicArgv("landing", "run"), nextReason: "retries only the recorded selection"})
+			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the chosen goals are saved; the agent has not started", Data: selected, Details: []string{selectionErr.Error()}, next: inv.publicArgv("landing", "run"), nextReason: "retries the chosen goals"})
 		}
 		result := landingLaneFailure(targets, "no landing selection was admitted", selectionErr)
 		requests, _ := plain.PolicyRequests(record.Install)
@@ -1136,12 +1141,12 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		if syncErr != nil {
 			details = append(details, "question sync pending: "+syncErr.Error())
 		}
-		next, why := inv.publicArgv("landing", "run"), "retries only the recorded selection"
+		next, why := inv.publicArgv("landing", "run"), "retries the chosen goals"
 		if len(remedy) > 0 && len(remedy[0].next) > 0 {
-			next, why = remedy[0].next, remedy[0].nextReason+"; then landing run retries only the recorded selection"
+			next, why = remedy[0].next, remedy[0].nextReason+"; then landing run retries the chosen goals"
 			details = append(details, remedy[0].Details...)
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "selection recorded, execution not started", Data: selected, Details: details, next: next, nextReason: why})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the chosen goals are saved; the agent has not started", Data: selected, Details: details, next: next, nextReason: why})
 	}
 	if owners.helm(root).Active && !recorded {
 		result := intentResult{Outcome: intentRefused, code: 1, Targets: targets,
@@ -1255,7 +1260,7 @@ func runIntentLandingRun(inv *intentInvocation) int {
 		}
 		summary := run.Line
 		if stop, err := plain.NewestStop(record.Install); err == nil && stop != nil && stop.Loop == "lane-return" && stop.Subject == "lane" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: stop.Words(), next: stop.Required, nextReason: "performs the person act for this stopped subject"})
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Data: data, Summary: plain.StopHeadline(*stop), next: stop.Required, nextReason: "performs the person act for this stopped subject"})
 		}
 		if summary == "" {
 			summary = "the landing agent at " + root + " was not started"
@@ -1379,8 +1384,8 @@ func (inv *intentInvocation) handOffLandingRun(record lane.Record) int {
 		if inv.input.has("batch") {
 			selected, err := plain.RecordedPersonBatch(install, record, inv.input.text("batch"))
 			if err == nil {
-				return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "selection recorded, execution not started; " + summary, Data: selected,
-					next: []string{"sh", "-c", build(install)}, nextReason: "builds the lane's engine; then landing run retries the recorded selection"})
+				return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "the chosen goals are saved; the agent has not started; " + summary, Data: selected,
+					next: []string{"sh", "-c", build(install)}, nextReason: "builds the lane's engine; then landing run retries the chosen goals"})
 			}
 		}
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: summary,
@@ -1467,7 +1472,6 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 	if settleErr != nil || len(settlement.Live)+len(settlement.Unknown) > 0 {
 		return landingLaneFailure(targets, "the lane is paused, but its agent has not ended", errors.Join(settleErr, errors.New(strings.Join(append(settlement.Live, settlement.Unknown...), "; ")))), false
 	}
-	// The way to seats landing their own work is unset, which line 2 names.
 	who := lane.Pause{By: by, Reason: reason}.Who()
 	line := "stopped the landing lane for " + who
 	if alreadyStopped {
@@ -1485,7 +1489,6 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 	return unconfirmedLane(intentResult{Outcome: outcome, Targets: targets, Data: inv.laneView(owners, home),
 		Summary: line,
 		Details: []string{"the lane at " + record.Root + " starts no landing agent until metasystem landing start"},
-		next:    inv.publicArgv("landing", "unset"), nextReason: "lets each seat land its own work instead",
 		view: func(page *textui.Page) {
 			page.Done(line)
 		}}, err), true

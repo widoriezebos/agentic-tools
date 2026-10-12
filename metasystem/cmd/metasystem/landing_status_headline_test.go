@@ -47,7 +47,7 @@ func TestLandingStatusKeepsQuestionAndMissingHandInHeadlines(t *testing.T) {
 			code := runIntentIn(command, nil, &out, &problem, bed.cwd, owners)
 			first := strings.Split(strings.TrimSpace(out.String()), "\n")[0]
 			if mode == "red and question" {
-				if !strings.HasPrefix(first, "main main proven red: check failed") {
+				if !strings.HasPrefix(first, "main is red: check failed") {
 					t.Fatalf("red headline hidden: %q", first)
 				}
 				out.Reset()
@@ -58,7 +58,7 @@ func TestLandingStatusKeepsQuestionAndMissingHandInHeadlines(t *testing.T) {
 				}
 				first = result.Summary
 			}
-			if mode == "red and question" && (!strings.HasPrefix(first, "main main proven red: check failed") || strings.Index(first, "proven red") > strings.Index(first, want)) {
+			if mode == "red and question" && (!strings.HasPrefix(first, "main is red: check failed") || strings.Index(first, "main is red") > strings.Index(first, want)) {
 				t.Fatalf("red headline hidden by question: %q", first)
 			}
 			if code != 0 || !strings.Contains(first, want) {
@@ -86,7 +86,7 @@ func TestLandingStatusShowsLastFixCheck(t *testing.T) {
 				t.Fatal(err)
 			}
 			code, out, problem := bed.run(t, "landing", "status")
-			first := strings.Split(strings.TrimSpace(out), "\n")[0]
+			first := oneSpaced(strings.Split(strings.TrimSpace(out), "\n\n")[0])
 			if code != 0 || !strings.Contains(first, "last check red in 48.25 minutes") {
 				t.Fatalf("exit=%d first=%q out=%s problem=%s", code, first, out, problem)
 			}

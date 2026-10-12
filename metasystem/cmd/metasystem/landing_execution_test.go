@@ -69,7 +69,7 @@ func TestLandingExecutionAdapterRetriesSelectedBatchUnderHelmAndPause(t *testing
 		t.Fatal("selection remedy missing")
 	}
 	code, text := b.run(t, command[1:]...)
-	if code != 0 || !strings.Contains(text, "selection recorded, execution not started") || !strings.Contains(text, "landing run") {
+	if code != 0 || !strings.Contains(text, "the chosen goals are saved; the agent has not started") || !strings.Contains(text, "landing run") {
 		t.Fatalf("dead launcher: %d %s", code, text)
 	}
 	selected := b.batch(t)
@@ -153,7 +153,7 @@ func TestLandingExecutionLaterPauseStopsKeeperAndVerbs(t *testing.T) {
 	helmMust(t, err)
 	before := b.starts
 	code, text := b.run(t, "landing", "run")
-	if code != 0 || b.starts != before || !strings.Contains(text, "execution not started") || !strings.Contains(text, "metasystem landing start") {
+	if code != 0 || b.starts != before || !strings.Contains(text, "the agent has not started") || !strings.Contains(text, "metasystem landing start") {
 		t.Fatalf("later pause run: %d %s starts=%d", code, text, b.starts)
 	}
 	var pending intentResult
@@ -489,7 +489,7 @@ func TestLandingExecutionReadinessKeepsSelectionAndRealRemedy(t *testing.T) {
 	b.owners.prove = enrolledPersonProver(t, b.lane, b.now)
 	b.owners.landing.ready = func(string) error { return lane.UnarmedRefusal(b.lane) }
 	code, text := b.run(t, b.lane, "landing", "run", "--goals", "a")
-	if code != 0 || !strings.Contains(text, "selection recorded, execution not started") || !strings.Contains(text, "system start --repo "+b.lane) || b.starts != 0 {
+	if code != 0 || !strings.Contains(text, "the chosen goals are saved; the agent has not started") || !strings.Contains(oneSpaced(text), "metasystem system start --repo "+b.lane) || !strings.Contains(oneSpaced(text), "terminal no agent started") || b.starts != 0 {
 		t.Fatalf("readiness: %d %s starts=%d", code, text, b.starts)
 	}
 	selected := b.batch(t)
@@ -524,7 +524,7 @@ func TestLandingExecutionPersonProofBelongsToOneInvocation(t *testing.T) {
 		t.Fatalf("person selection and start: %d %s starts=%d proofs=%d holds=%d", code, text, b.starts, proofs, holds)
 	}
 	selected := b.batch(t)
-	if code, text := b.run(t, b.lane, "landing", "run", "--batch", selected.ID, "--json"); code != 0 || !strings.Contains(text, "selection recorded, execution not started") || !strings.Contains(text, "provider is limited") || b.starts != 1 || proofs != 2 || holds != 1 || b.batch(t).ID != selected.ID {
+	if code, text := b.run(t, b.lane, "landing", "run", "--batch", selected.ID, "--json"); code != 0 || !strings.Contains(text, "the chosen goals are saved; the agent has not started") || !strings.Contains(text, "provider is limited") || b.starts != 1 || proofs != 2 || holds != 1 || b.batch(t).ID != selected.ID {
 		t.Fatalf("agent continuation inherited person authority: %d %s starts=%d proofs=%d holds=%d", code, text, b.starts, proofs, holds)
 	}
 }

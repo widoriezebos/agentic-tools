@@ -136,12 +136,12 @@ func fixHeadline(fix *Fix) string {
 	if fix.CheckResult != "" {
 		headline += fmt.Sprintf("; last check %s in %.2f minutes", fix.CheckResult, fix.CheckMinutes)
 	}
-	return headline
+	return headline + "; nothing to do"
 }
 
 func fixStateHeadline(fix *Fix) string {
 	if fix.State == "resolved" {
-		return fmt.Sprintf("Resolved merge of %s, read pending: %s", fix.Goal, fix.Reason)
+		return fmt.Sprintf("Resolved merge of %s, read pending", fix.Goal)
 	}
 	if fix.State == "resolving" {
 		var paths []string
