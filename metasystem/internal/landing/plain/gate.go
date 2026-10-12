@@ -39,7 +39,7 @@ func LastGate(install string) (Result, bool, error) {
 // Its result and repeat belong to that parent's tree, independently of HEAD.
 func gateBaseline(seams ProveSeams, install, checkout, command string, running Running, output io.Writer) (Result, bool, scopeDecision) {
 	decision := scopeDecision{scopeRecord: scopeRecord{Scope: "gate"}}
-	baseline := Result{Requested: running.Commit, Attributed: running.Commit, Result: Red, Commit: running.Commit, Tree: running.Tree, Attempt: running.Attempt, Log: running.Log,
+	baseline := Result{Fresh: running.Fresh, Requested: running.Commit, Attributed: running.Commit, Result: Red, Commit: running.Commit, Tree: running.Tree, Attempt: running.Attempt, Log: running.Log,
 		At: seams.now().Format(time.RFC3339Nano), Scope: "gate", Cause: &Cause{Kind: "unclassified", Evidence: running.Log}}
 	parents, err := seams.git(checkout, "show", "-s", "--format=%P", running.Commit)
 	if err == nil && len(strings.Fields(parents)) == 1 {
@@ -74,10 +74,13 @@ func gateBaseline(seams ProveSeams, install, checkout, command string, running R
 		baseline.Reason = err.Error()
 		return baseline, false, decision
 	}
-	if found && previous.Result == Green {
+	if found && previous.Result == Green && !running.Fresh {
 		return previous, true, decision
 	}
-	baseRun := Running{Person: running.Person, Gate: true, Commit: parent, Tree: tree, Attempt: running.Attempt + "-baseline",
+	if previous.Result == Green {
+		previous, found = Result{}, false
+	}
+	baseRun := Running{Fresh: running.Fresh, Person: running.Person, Gate: true, Commit: parent, Tree: tree, Attempt: running.Attempt + "-baseline",
 		Log: filepath.Join(Dir(install), "proofs", running.Attempt+"-baseline.log")}
 	baseRun.BatchID, baseRun.BatchMembers = running.BatchID, running.BatchMembers
 	baseline.Person = running.Person

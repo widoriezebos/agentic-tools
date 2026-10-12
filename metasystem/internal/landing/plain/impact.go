@@ -96,7 +96,7 @@ func ReadImpactPlan(seams ProveSeams, dir, base string) (string, error) {
 }
 
 func (s ProveSeams) acceptsGreen(install, checkout string, result Result) bool {
-	if !result.reusableGreen(s.now()) {
+	if s.Fresh || !result.reusableGreen(s.now()) {
 		return false
 	}
 	if s.Gate {

@@ -142,15 +142,16 @@ func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
 func landingProveCommand() intentCommand {
 	return laneCommand(intentCommand{
 		object: "landing", action: "prove", audience: "both", summary: "prove the landing checkout's HEAD with the project's own command",
-		usage: []string{"metasystem landing prove [--impact|--gate|--trunk] [--wait]"},
+		usage: []string{"metasystem landing prove [--impact|--gate|--trunk] [--wait] [--fresh]"},
 		details: []string{"Runs the shell command set as proof.full in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full, scoped or impact, LANDING_PROOF_BASE naming the base tree (empty for full), LANDING_PROOF_GROUPS naming space-separated declared group ids, and LANDING_PROOF_PACKAGES naming space-separated packages or package=TestA,TestB selections (both empty for full), LANDING_ONLY naming failed units when they are checked again alone, and LANDING_ONLY_TESTS naming space-separated tests for a single Go unit replay; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
 			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full check no more than an hour old. After record or ledger changes under a proven batch, the check runs only the groups whose declared inputs cover what main gained, while that batch's full check is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
 			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait starts the same background check and waits for its saved result. A recorded selection may continue through its standing pause; a direct person may request one check while it stays stopped.",
 			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full check. When the batch decided full depth, an explicit impact green does not satisfy landing push.",
+			"--fresh bypasses saved and inherited green proofs and runs the requested check again, including the baseline for --gate. A full proof runs in full, and the result records fresh.",
 			"--trunk fetches origin/main and runs a fresh full check there, even after a green or red; the lane checkout stays where it is. --gate and --trunk cannot be used together."},
-		flags: []intentFlag{{name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "wait for the detached check's result"},
+		flags: []intentFlag{{name: "fresh", usage: "run the requested check again without reusing a saved proof"}, {name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "wait for the detached check's result"},
 			{name: "classify", value: "ATTEMPT", usage: "classify one saved red; a person supplies this act"},
 			{name: "attempt", value: "ID", hidden: true, usage: "the attempt id a background start chose"}},
 		maxArgs:  0,
@@ -177,7 +178,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "a background attempt must claim its admission with --wait", Next: "metasystem landing prove"}))
 	}
 
-	if inv.input.text("classify") != "" && (inv.input.switched("impact") || inv.input.switched("gate") || inv.input.switched("trunk") || inv.input.text("attempt") != "") {
+	if inv.input.text("classify") != "" && (inv.input.switched("impact") || inv.input.switched("gate") || inv.input.switched("trunk") || inv.input.switched("fresh") || inv.input.text("attempt") != "") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--classify names a saved red and cannot be combined with another check subject"})
 	}
 	if inv.input.text("classify") != "" && person == nil {
@@ -199,6 +200,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 			return impactCost(admitted.installation, dir, plan, contract)
 		}
 	}
+	seams.Fresh = inv.input.switched("fresh")
 	seams.Trunk = inv.input.switched("trunk")
 	checkout := string(admitted.layout.Checkout)
 	seams.Gate = inv.input.switched("gate")
@@ -269,10 +271,11 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 			return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "this background check has no matching unclaimed admission", Next: "metasystem landing prove"}))
 		}
 		commit = running.Commit
+		seams.Fresh = running.Fresh
 		seams.DepthScope = running.Admission.DepthScope
 		seams.DepthReason = running.Admission.Reason
 	}
-	if attempt == "" && !seams.Gate && !seams.Trunk {
+	if attempt == "" && !seams.Gate && !seams.Trunk && !seams.Fresh {
 		batch, err := plain.ReadBatch(admitted.installation)
 		if err != nil {
 			return inv.render(landingProveRefusal(inv, targets, err))
@@ -462,6 +465,9 @@ func landingRedReason(reason string) string {
 
 func proofRetryArgv(inv *intentInvocation) []string {
 	argv := inv.publicArgv("landing", "prove")
+	if inv.input.switched("fresh") {
+		argv = append(argv, "--fresh")
+	}
 	if inv.input.switched("gate") {
 		argv = append(argv, "--gate")
 	}

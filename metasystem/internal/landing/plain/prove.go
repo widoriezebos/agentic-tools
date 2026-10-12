@@ -43,6 +43,7 @@ const (
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
+	Fresh             bool                 `json:"fresh,omitempty"`
 	Checkpoint        bool                 `json:"checkpoint,omitempty"`
 	ClassificationOf  string               `json:"classification-of,omitempty"`
 	ObservedIncidents []goal.TrunkRedEntry `json:"observed-incidents,omitempty"`
@@ -70,6 +71,7 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
+	Fresh                 bool                 `json:"fresh,omitempty"`
 	FoldedCommits         []string             `json:"folded_commits,omitempty"`
 	Requested             string               `json:"requested,omitempty"`
 	Attributed            string               `json:"attributed,omitempty"`
@@ -156,6 +158,8 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// Fresh bypasses saved green proofs and executes the requested check.
+	Fresh bool
 	// BudgetHome names the host budget records; empty uses the board home.
 	BudgetHome string
 	// GoalTier reads a waiting member's tier; nil reads its goal file.
@@ -348,7 +352,7 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	if attempt != "" && running.Attempt == attempt && running.OwnProcess() {
 		return running, recorded, alive, nil
 	}
-	red := Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
+	red := Result{Fresh: running.Fresh, Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
 		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended", Cause: &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}}
 	red.BatchID, red.BatchMembers = running.BatchID, running.BatchMembers
 	red.Person, red.Executions, red.ClassificationOf = running.Person, running.Executions, running.ClassificationOf
@@ -462,7 +466,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			return err
 		}
 		if recorded && alive {
-			if running.Gate == seams.Gate && running.Trunk == seams.Trunk && running.Impact == seams.Impact && (running.Tree == tree || !seams.Gate && !seams.Trunk && ledgerOnlyBetween(seams.git, checkout, running.Tree, tree)) {
+			if running.Gate == seams.Gate && running.Trunk == seams.Trunk && running.Impact == seams.Impact && (!seams.Fresh || running.Fresh) && (running.Tree == tree || !seams.Gate && !seams.Trunk && ledgerOnlyBetween(seams.git, checkout, running.Tree, tree)) {
 				started, already = running, true
 				return nil
 			}
@@ -523,10 +527,13 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if seams.Impact {
 			argv = append(argv, "--impact")
 		}
+		if seams.Fresh {
+			argv = append(argv, "--fresh")
+		}
 		if seams.Trunk {
 			argv = append(argv, "--trunk")
 		}
-		started = Running{Person: seams.Person, Impact: seams.Impact, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: int64(os.Getpid()), Process: processRef(int64(os.Getpid()))}
+		started = Running{Fresh: seams.Fresh, Person: seams.Person, Impact: seams.Impact, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: int64(os.Getpid()), Process: processRef(int64(os.Getpid()))}
 		if batch != nil {
 			started.BatchID, started.BatchMembers = batch.ID, batch.Members
 		}
@@ -598,7 +605,7 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 	if err := proofFixReady(install, seams); err != nil {
 		return Result{}, false, err
 	}
-	if seams.Trunk {
+	if seams.Trunk || seams.Fresh {
 		return Result{}, false, nil
 	}
 	commit, tree, err := seams.subject(checkout)
@@ -725,7 +732,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			return Result{}, err
 		}
 	}
-	running := Running{Person: seams.Person, Impact: seams.Impact, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: attempt, Tree: tree, Commit: commit}
+	running := Running{Fresh: seams.Fresh, Person: seams.Person, Impact: seams.Impact, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: attempt, Tree: tree, Commit: commit}
 	var previous, result Result
 	already := false
 	err = withLock(install, func() error {
@@ -769,6 +776,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 				}
 			}
 			running = current
+			seams.Fresh = running.Fresh
 		}
 		if recorded && alive && (current.Attempt != attempt || current.Gate != seams.Gate || current.Trunk != seams.Trunk || current.Impact != seams.Impact) {
 			return &Busy{Running: current}
@@ -823,7 +831,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		if previous.Result == Held {
 			previous, found = Result{}, false
 		} else if previous.Result == Green {
-			previous = Result{}
+			previous, found = Result{}, false
 		}
 		if attempt != "" {
 			if running.Admission.Command != "" && running.Admission.Command != command {
@@ -891,7 +899,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if err != nil || already {
 		return result, err
 	}
-	result = Result{Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
+	result = Result{Fresh: running.Fresh, Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
 	result.BatchID, result.BatchMembers = running.BatchID, running.BatchMembers
 	result.Goals, err = goalsInCommit(install, checkout, running.Commit, seams.git)
 	if err != nil {
@@ -904,7 +912,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	if !seams.Gate && !running.Trunk && !seams.Impact {
 		from, ok = ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree)
 	}
-	if !seams.Gate && !running.Trunk && !seams.Impact && previous.Result == "" && ok && from.fullCurrent(seams.now()) && decision.Scope == "inherited" {
+	if !running.Fresh && !seams.Gate && !running.Trunk && !seams.Impact && previous.Result == "" && ok && from.fullCurrent(seams.now()) && decision.Scope == "inherited" {
 		result.Reason = inheritedReason(from)
 		result, err = inheritScope(install, result, from)
 		if err != nil {
@@ -1283,7 +1291,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 			return result
 		}
 	}
-	if decision.Scope == "impact" && reuseGate(seams, install, dir, running, *decision, output, observed) {
+	if !running.Fresh && decision.Scope == "impact" && reuseGate(seams, install, dir, running, *decision, output, observed) {
 		gate, _, _ := LastGate(install)
 		result.Reason = "proven by attempt " + gate.Attempt
 		result.Static, result.Depth = gate.Static, "impact"

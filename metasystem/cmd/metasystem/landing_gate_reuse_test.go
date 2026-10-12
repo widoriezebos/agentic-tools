@@ -300,7 +300,7 @@ func TestLandingStatusGateLastSection(t *testing.T) {
 
 func TestLandingProveReusesGateOnlyAtBatchBaseWithStaticAndEnvironment(t *testing.T) {
 	t.Parallel()
-	for _, mutation := range []string{"one member", "two members", "static red", "static absent", "environment", "depth", "tree", "gate red"} {
+	for _, mutation := range []string{"one member", "two members", "static red", "static absent", "environment", "depth", "tree", "gate red", "fresh"} {
 		t.Run(mutation, func(t *testing.T) {
 			t.Parallel()
 			b := newMergeGateBed(t)
@@ -346,10 +346,17 @@ func TestLandingProveReusesGateOnlyAtBatchBaseWithStaticAndEnvironment(t *testin
 			b.fail = func(*exec.Cmd, string) (string, error) {
 				return "LANDING-FAILED\tfast-static-build\t\nLANDING-CHECKED\t1\nlanding environment fixture toolchain\n", exec.Command("/usr/bin/false").Run()
 			}
-			code, out := b.run(t, b.root, "prove", "--impact", "--wait", "--json")
+			argv := []string{"prove", "--impact", "--wait", "--json"}
+			if mutation == "fresh" {
+				argv = append(argv, "--fresh")
+			}
+			code, out := b.run(t, b.root, argv...)
 			var proof struct{ Data plain.Result }
 			if err := json.Unmarshal([]byte(out), &proof); err != nil {
 				t.Fatalf("proof: %s %v", out, err)
+			}
+			if mutation == "fresh" && (!proof.Data.Fresh || proof.Data.Scope != "impact") {
+				t.Fatalf("fresh lost its explicit impact request: %+v", proof.Data)
 			}
 			if mutation == "one member" {
 				if code != 0 || proof.Data.Result != plain.Green || proof.Data.Scope != "impact" || proof.Data.BaseCommit != "main" || proof.Data.Environment != gate.Environment || proof.Data.Reason != "proven by attempt "+gate.Attempt || len(b.runs) != runsBefore {

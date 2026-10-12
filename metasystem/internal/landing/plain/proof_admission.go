@@ -64,6 +64,9 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 	if running.Gate {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "gate"}}
 	}
+	if running.Fresh && !running.Impact {
+		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check requested"}}
+	}
 	if running.Trunk {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check of main"}}
 	}
