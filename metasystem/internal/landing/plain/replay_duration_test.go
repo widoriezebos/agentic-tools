@@ -144,9 +144,9 @@ var config = struct {
 }{func(string, string) (string, bool, error) { return "1", true, nil }, func(string, string) error { return nil }}
 var syscall = struct { Kill func(int, int) error; SIGKILL int }{func(int, int) error { return nil }, 9}
 // The launcher seam replaces the detached process effect; the runner still owns its wait.
-var seams = struct { launchCheck func(*exec.Cmd, []string, string, chan<- error) error }{
-    func(command *exec.Cmd, env []string, log string, done chan<- error) error {
-        _, err := stub.LaunchDetached(stub.DetachedLaunch{Argv: command.Args, Dir: command.Dir, Env: env, Log: log, Completed: done})
+var seams = struct { launchCheck func(*exec.Cmd, string, chan<- error) error }{
+    func(command *exec.Cmd, log string, done chan<- error) error {
+        _, err := stub.LaunchDetached(stub.DetachedLaunch{Argv: command.Args, Dir: command.Dir, Env: command.Env, Log: log, Completed: done})
         return err
     },
 }

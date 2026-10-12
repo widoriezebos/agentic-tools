@@ -596,7 +596,7 @@ func TestRestartStopsTheWholeDetachedCheckBeforeReopening(t *testing.T) {
 	proofDone := make(chan error, 1)
 	command := exec.Command(os.Args[0], "-test.run=^TestRestartProofWorker$", "-test.timeout=30m")
 	command.Env = append(os.Environ(), "PLAIN_RESTART_WORKER_PID="+childPath)
-	if err := seams.launchCheck(command, []string{"PLAIN_RESTART_WORKER_PID=" + childPath}, os.DevNull, proofDone); err != nil {
+	if err := seams.launchCheck(command, os.DevNull, proofDone); err != nil {
 		t.Fatal(err)
 	}
 	running, _, _, err = ReadRunning(install, seams)
@@ -742,7 +742,7 @@ func TestRestartCannotLaunchAfterCancellationOrLossOfOwnership(t *testing.T) {
 			}
 			marker := filepath.Join(install, "started")
 			done := make(chan error, 1)
-			err := seams.launchCheck(exec.Command("/bin/sh", "-c", `echo started > "$1"; sleep 600`, "check", marker), nil, os.DevNull, done)
+			err := seams.launchCheck(exec.Command("/bin/sh", "-c", `echo started > "$1"; sleep 600`, "check", marker), os.DevNull, done)
 			if err == nil {
 				t.Fatal("an unowned command launched")
 			}
@@ -1011,8 +1011,17 @@ func TestRestartBatchWireFields(t *testing.T) {
 	if err := json.Unmarshal(data, &record); err != nil {
 		t.Fatal(err)
 	}
-	if value, exists := record["sealed_at"]; !exists || value != "" {
-		t.Fatalf("empty seal stamp omitted: %s", data)
+	if _, exists := record["sealed_at"]; exists {
+		t.Fatalf("unsealed batch carries a seal stamp: %s", data)
+	}
+	install := t.TempDir()
+	batch := &Batch{ID: "batch", Base: "main", Open: true, State: BatchRunning, Lane: lane.Record{Root: install, Install: install, CustodyEpoch: 1}}
+	if err := writeBatch(install, batch); err != nil {
+		t.Fatal(err)
+	}
+	read, err := ReadBatch(install)
+	if err != nil || read == nil || !read.Open || read.SealedAt != "" {
+		t.Fatalf("batch reader rejected an absent seal stamp: %+v %v", read, err)
 	}
 }
 

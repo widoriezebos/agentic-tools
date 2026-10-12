@@ -219,6 +219,16 @@ func TestOpenBatchReusedGreenSealsWithoutNewAttempt(t *testing.T) {
 			if _, err := os.Stat(runningPath(install)); !os.IsNotExist(err) {
 				t.Fatalf("reuse created a running attempt: %v", err)
 			}
+			if _, already, err := Start(install, install, seams); err != nil || !already {
+				t.Fatalf("repeated reuse start: %v %v", already, err)
+			}
+			again, err := ReadBatch(install)
+			if err != nil || again.SealedAt != sealed.SealedAt || len(again.Restarts) != 0 {
+				t.Fatalf("repeated reuse changed the seal or restarted: %+v %v", again, err)
+			}
+			if _, err := os.Stat(runningPath(install)); !os.IsNotExist(err) {
+				t.Fatalf("repeated reuse created a running attempt: %v", err)
+			}
 		})
 	}
 }
@@ -388,6 +398,10 @@ func TestOpenBatchGateAdmissionLeavesWindowUntilFullProof(t *testing.T) {
 	gate, err := ReadBatch(install)
 	if err != nil || !gate.Open || gate.State != BatchRunning || gate.SealedAt != "" {
 		t.Fatalf("gate closed admission: %+v %v", gate, err)
+	}
+	lines, err := BatchLines(gate, nil, install, seams)
+	if err != nil || lines[0] != "batch batch: open" {
+		t.Fatalf("gate described as sealed: %v %v", lines, err)
 	}
 	// The isolated gate has finished before the full proof is admitted.
 	if err := os.Remove(runningPath(install)); err != nil {

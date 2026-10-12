@@ -9,6 +9,7 @@ import (
 )
 
 func TestRestartCancelledTreeMayBeProvenAgain(t *testing.T) {
+	t.Parallel()
 	install, batch, running, seams, ended := restartBed(t, 12, false)
 	if _, err := SelectBatch(install, install, batch.Lane, seams); err != nil || *ended != 1 {
 		t.Fatalf("restart did not happen: %v %d", err, *ended)
@@ -39,6 +40,7 @@ func liveRef(t *testing.T, args ...string) (*exec.Cmd, string) {
 }
 
 func TestRestartFinishedCommandNeverWedgesTheLane(t *testing.T) {
+	t.Parallel()
 	install, batch, running, seams, ended := restartBed(t, 12, false)
 	wrapper, wref := liveRef(t, "/bin/sleep", "600")
 	t.Cleanup(func() { _ = wrapper.Process.Kill(); _, _ = wrapper.Process.Wait() })
@@ -61,6 +63,7 @@ func TestRestartFinishedCommandNeverWedgesTheLane(t *testing.T) {
 
 // A person's --classify act holds a running record of its own; a newcomer must not cancel it.
 func TestRestartNeverEndsAPersonsClassification(t *testing.T) {
+	t.Parallel()
 	install, batch, running, seams, ended := restartBed(t, 12, false)
 	if err := appendLine(resultsPath(install), Result{Attempt: running.Attempt, Tree: running.Tree, Result: Red, BatchID: batch.ID}); err != nil {
 		t.Fatal(err)

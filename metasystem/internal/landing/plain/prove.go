@@ -1187,7 +1187,7 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 	if run == nil {
 		run = func(command *exec.Cmd) error {
 			done := make(chan error, 1)
-			err := seams.launchCheck(command, env, logPath, done)
+			err := seams.launchCheck(command, logPath, done)
 			if err != nil {
 				return err
 			}

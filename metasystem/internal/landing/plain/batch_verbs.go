@@ -130,7 +130,7 @@ func BatchLines(batch *Batch, entries []Entry, checkout string, s ProveSeams) ([
 	state := "open"
 	if batch.State == BatchClosed {
 		state = "closed"
-	} else if batch.SealedAt != "" || batch.State == BatchRunning {
+	} else if batch.SealedAt != "" || !batch.Open && batch.State == BatchRunning {
 		at := batch.SealedAt
 		if at == "" {
 			if running, recorded, _, err := ReadRunning(batch.Lane.Install, s); err != nil {

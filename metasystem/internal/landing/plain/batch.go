@@ -826,7 +826,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 		}
 	}
 	if admit && batch.State == BatchPrepared {
-		batch.State, batch.Open = BatchRunning, false
+		batch.State = BatchRunning
 		err = writeBatch(install, batch)
 	}
 	return batch, err
