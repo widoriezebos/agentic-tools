@@ -160,27 +160,36 @@ func readLines[T any](path string) ([]T, error) {
 // they do not decode, for the lane's status to say (fix round 4); a blank
 // line holds no record and is not counted.
 func countedLines[T any](path string) ([]T, int, error) {
+	out, _, skipped, err := countedLineOrdinals[T](path)
+	return out, skipped, err
+}
+
+func countedLineOrdinals[T any](path string) ([]T, []int, int, error) {
+	var ordinals []int
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, 0, nil
+		return nil, nil, 0, nil
 	}
 	if err != nil {
-		return nil, 0, err
+		return nil, nil, 0, err
 	}
 	var out []T
 	skipped := 0
 	scanner := bufio.NewScanner(bytes.NewReader(data))
 	scanner.Buffer(make([]byte, 0, 64*1024), 4*1024*1024)
+	ordinal := 0
 	for scanner.Scan() {
+		ordinal++
 		var value T
 		switch {
 		case json.Unmarshal(scanner.Bytes(), &value) == nil:
 			out = append(out, value)
+			ordinals = append(ordinals, ordinal)
 		case len(bytes.TrimSpace(scanner.Bytes())) > 0:
 			skipped++
 		}
 	}
-	return out, skipped, scanner.Err()
+	return out, ordinals, skipped, scanner.Err()
 }
 
 // Entries are the queue's hand-ins, oldest first, each with its recorded
@@ -196,9 +205,15 @@ func Entries(install string) ([]Entry, error) {
 
 // entriesOf are the hand-ins the queue's lines record, as Entries says.
 func entriesOf(lines []Line) []Entry {
+	entries, _ := entriesAndOrdinals(lines)
+	return entries
+}
+
+func entriesAndOrdinals(lines []Line) ([]Entry, []int) {
+	var ordinals []int
 	entries := []Entry{}
 	index := map[string]int{}
-	for _, line := range lines {
+	for ordinal, line := range lines {
 		key := line.Goal + "@" + line.SHA
 		if line.Outcome == "" {
 			if at, seen := index[key]; seen && entries[at].State != StateReturned {
@@ -223,6 +238,7 @@ func entriesOf(lines []Line) []Entry {
 					}
 				}
 				index[key] = len(entries)
+				ordinals = append(ordinals, ordinal+1)
 				entries = append(entries, Entry{AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
 			}
 			continue
@@ -239,7 +255,7 @@ func entriesOf(lines []Line) []Entry {
 		entries[at].After, entries[at].Held = line.After, line.Held
 		entries[at].Conflict, entries[at].Cause = line.Conflict, line.Cause
 	}
-	return entries
+	return entries, ordinals
 }
 
 // Waiting are the hand-ins not returned, landed or not.

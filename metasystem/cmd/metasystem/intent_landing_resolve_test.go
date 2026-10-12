@@ -17,7 +17,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 type resolveVerbFixture struct {
@@ -38,16 +37,7 @@ func newResolveVerbFixture(t *testing.T) *resolveVerbFixture {
 	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	data, err := os.ReadFile("../../testing.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	contract, err := testpolicy.Decode(data)
-	if err != nil {
-		t.Fatal(err)
-	}
-	contract.Generated = []testpolicy.Generated{{Paths: []string{"out/**"}, Command: []string{"fixture-build"}}}
-	data, err = json.Marshal(contract)
+	data, err := os.ReadFile("testdata/landing-observation-contract.json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,6 +50,25 @@ func newResolveVerbFixture(t *testing.T) *resolveVerbFixture {
 		t.Fatal(err)
 	}
 	b.owners = (&laneVerbBed{home: b.home}).owners()
+	notAncestor := replayFalseState(t)
+	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		switch args[0] {
+		case "symbolic-ref":
+			return "main", nil
+		case "rev-parse":
+			if slices.Contains(args, "MERGE_HEAD^{commit}") {
+				return "", nil
+			}
+			return "head", nil
+		case "cat-file", "ls-tree", "rev-list":
+			return "", nil
+		case "merge-base":
+			return "", &exec.ExitError{ProcessState: notAncestor}
+		}
+		t.Fatalf("unstubbed resolve fixture Git: %v", args)
+		return "", nil
+	}
+
 	// The fixture declares its lane policy without consulting host registrations.
 	b.owners.policies = config.PolicyReaders{
 		Registry: func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{Lane: b.root}, nil },

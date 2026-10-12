@@ -26,6 +26,7 @@ type AgentStep struct {
 }
 
 type AgentProgress struct {
+	Source      string     `json:"-"`
 	LastStep    *AgentStep `json:"last_step,omitempty"`
 	Step        *AgentStep `json:"step,omitempty"`
 	Since       string     `json:"since,omitempty"`
@@ -99,6 +100,7 @@ func agentProgress(install string, owner lane.OwnerView, seams ProveSeams, queue
 	progress := &AgentProgress{}
 	if owner.Since != nil {
 		progress.Since = *owner.Since
+		progress.Source = "landing-agent-keeper.json"
 	}
 	var step AgentStep
 	err := readAgentRecord(install, "agent-step.json", &step)
@@ -111,6 +113,7 @@ func agentProgress(install string, owner lane.OwnerView, seams ProveSeams, queue
 			return nil, errors.New("the agent step has no valid verb, start time or process")
 		}
 		progress.Step, progress.Since = &step, step.StartedAt
+		progress.Source = "agent-step.json"
 		progress.LastStep = &step
 		progress.Minutes = int(seams.now().Sub(at) / time.Minute)
 		running := Running{Pid: step.PID, Process: step.Process}
@@ -135,12 +138,14 @@ func agentProgress(install string, owner lane.OwnerView, seams ProveSeams, queue
 	}
 	if err == nil && idle.EndedAt > progress.Since {
 		progress.Since = idle.EndedAt
+		progress.Source = "agent-idle.json"
 	}
 	progress.LastStep = idle.Step
 	// A person's return is recorded activity even though it runs outside the agent session.
 	for _, entry := range queue {
 		if entry.ReturnedAt > progress.Since {
 			progress.Since = entry.ReturnedAt
+			progress.Source = "queue.jsonl"
 		}
 	}
 	if progress.Since == "" {

@@ -265,6 +265,11 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		return inv.laneBatchSeams(home, record, seams).Policy(key)
 	}
 	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, seams),
+		Refresh: func(now time.Time) {
+			readonly := seams
+			readonly.AgentProbe = agent.probe
+			_, _ = plain.RefreshShadow(home, now, "keeper", readonly)
+		},
 		AdmitWake: func(root string, wake lane.Wake) (lane.Wake, error) {
 			record, err := seams.Lane()
 			if err != nil {
@@ -366,7 +371,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 // probe reads whether a landing agent runs on this computer, its process
 // and since when: what the lane's view shows as the lane's runner.
 func (a landingAgent) probe(string) (lane.OwnerProbe, error) {
-	records, err := a.manager().List()
+	records, err := a.manager().EffectiveList()
 	if err != nil {
 		return lane.OwnerProbe{}, err
 	}

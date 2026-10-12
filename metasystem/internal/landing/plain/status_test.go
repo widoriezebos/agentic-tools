@@ -99,10 +99,19 @@ func newStatusBed(t *testing.T) *statusBed {
 	t.Helper()
 	checkout := t.TempDir()
 	install := filepath.Join(checkout, "metasystem")
+	if err := os.MkdirAll(install, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("metasystem.template=true\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	root := checkout
-	return &statusBed{t: t, home: t.TempDir(), checkout: checkout, install: install,
-		record: lane.Record{Root: checkout, Install: install},
+	b := &statusBed{t: t, home: t.TempDir(), checkout: checkout, install: install,
+		record: lane.Record{Root: checkout, Install: install, CustodyEpoch: 1},
 		view:   lane.View{Root: &root, Owner: lane.OwnerView{State: lane.OwnerIdle}}}
+	shadowRegister(t, b.home, b.record)
+	t.Cleanup(func() { assertShadowAgrees(t, b.home, shadowSeams()) })
+	return b
 }
 
 // lines writes one record file of the lane, a JSON line per value.

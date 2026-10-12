@@ -52,6 +52,8 @@ func newFixTopologyGitBed(t *testing.T) (*bed, ProveSeams, string) {
 	if err != nil || result.Result != Red || result.Cause == nil || result.Cause.Kind != "own" || result.Cause.Goal != "goal-a" {
 		t.Fatalf("initial red %+v: %v", result, err)
 	}
+	home := shadowHome(t, b.checkout, b.install)
+	t.Cleanup(func() { assertShadowAgrees(t, home, seams) })
 	return b, seams, parent
 }
 

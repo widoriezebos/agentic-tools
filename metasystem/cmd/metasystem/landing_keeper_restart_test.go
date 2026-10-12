@@ -137,6 +137,8 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 	falseState := replayFalseState(t)
 	bed.plainProve = plain.ProveSeams{Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }, Now: func() time.Time { return laneTestNow }, Git: func(_ string, args ...string) (string, error) {
 		switch args[0] {
+		case "symbolic-ref":
+			return "main", nil
 		case "fetch":
 			return "", nil
 		case "rev-parse":

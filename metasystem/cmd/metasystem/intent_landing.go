@@ -37,12 +37,13 @@ type laneVerbOwners struct {
 	view      func(string) lane.View
 	home      func() (string, error)
 	// probe reads whether the lane's landing agent runs.
-	probe    func(root string) (lane.OwnerProbe, error)
-	validate func(root, seatRoot string, now time.Time) (string, error)
-	by       func(installation string) string
-	now      func() time.Time
-	wake     func(home string) lane.WakeSources
-	status   func(home string, record lane.Record, view lane.View) landingStatusData
+	probe           func(root string) (lane.OwnerProbe, error)
+	validate        func(root, seatRoot string, now time.Time) (string, error)
+	by              func(installation string) string
+	now             func() time.Time
+	wake            func(home string) lane.WakeSources
+	observationWake func(string, plain.ProveSeams) lane.WakeSources
+	status          func(home string, record lane.Record, view lane.View) landingStatusData
 	// person proves the person at the enrolled terminal of an installation
 	// and names them.
 	person func(root string) (string, error)
@@ -100,9 +101,11 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.now = func() time.Time { return time.Now().UTC() }
 	}
 	if owners.wake == nil {
+		owners.observationWake = func(home string, seams plain.ProveSeams) lane.WakeSources { return plain.KeeperWake(home, seams) }
 		owners.wake = func(home string) lane.WakeSources {
 			record, _, _ := lane.Read(home)
 			seams := inv.laneBatchSeams(home, record, owners.plainProve)
+			seams.ReadOnly = true
 			return plain.KeeperWake(home, seams)
 		}
 	}
@@ -418,10 +421,27 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	view := inv.laneView(owners, home)
-	record, _, unreadable := lane.Read(home)
-	owners.plainProve = inv.laneBatchSeams(home, record, owners.plainProve)
-	data := landingStatus(owners, home, record, view)
+	var record lane.Record
+	var unreadable error
+	var data plain.Status
+	var view lane.View
+	for try := 0; try < 3; try++ {
+		record, _, unreadable = lane.Read(home)
+		seams := inv.laneBatchSeams(home, record, owners.plainProve)
+		seams.Machine = owners.machine
+		seams.AgentProbe = owners.probe
+		data = plain.ObserveStatus(home, record, seams, func(readonly plain.ProveSeams) lane.View {
+			view = inv.laneObservationView(owners, home, readonly)
+			return view
+		})
+		var changed *plain.Reregistered
+		if !errors.As(data.ObservationError, &changed) {
+			break
+		}
+	}
+	if owners.status != nil {
+		data = owners.status(home, record, view)
+	}
 	headline := data.ProofHeadline
 	if data.Summary != "" && data.Summary != view.Summary {
 		headline = data.Summary
@@ -462,15 +482,6 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 // landingStatusData is landing status --json: the plain lane's status,
 // the one reader /api/board's lane reads too (plain.ReadStatus).
 type landingStatusData = plain.Status
-
-func landingStatus(owners laneVerbOwners, home string, record lane.Record, view lane.View) landingStatusData {
-	if owners.status != nil {
-		return owners.status(home, record, view)
-	}
-	seams := owners.plainProve
-	seams.Machine = owners.machine
-	return plain.ReadStatus(home, record, view, seams)
-}
 
 // landingQueueWords counts the queue's lines that need the lane, for the
 // one line.
@@ -1636,4 +1647,14 @@ func landingWallTime(result *plain.Result) string {
 		return ""
 	}
 	return fmt.Sprintf("; wall time %.2f min", *result.Minutes)
+}
+
+func (inv *intentInvocation) laneObservationView(owners laneVerbOwners, home string, readonly plain.ProveSeams) lane.View {
+	owners.plainProve = readonly
+	owners.probe = readonly.AgentProbe
+	if owners.observationWake != nil {
+		owners.wake = func(home string) lane.WakeSources { return owners.observationWake(home, readonly) }
+	}
+
+	return inv.laneView(owners, home)
 }

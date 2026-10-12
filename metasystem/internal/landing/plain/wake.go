@@ -44,7 +44,7 @@ func WakeReasons(install, checkout string, lastLaunch, now time.Time, effects ..
 	if len(effects) > 0 {
 		seams = effects[0]
 	}
-	pending, err := pendingQueue(install, checkout, seams, true)
+	pending, err := pendingQueue(install, checkout, seams, !seams.ReadOnly)
 	waiting, waitingErr := Waiting(install)
 	missing := handInCommits(install, checkout, waiting, seams, false)
 	// Selection owns unreadable batches; the wake only adds a reopened batch.
@@ -196,7 +196,21 @@ func ProofHold(install string, seams ProveSeams) (string, error) {
 // launch of the landing agent. landing status reads the same.
 func KeeperWake(home string, effects ...ProveSeams) lane.WakeSources {
 	return lane.WakeSources{Reasons: func(root string) ([]string, error) {
-		layout, err := lane.NewLayout(root)
+		seams := ProveSeams{}
+		if len(effects) > 0 {
+			seams = effects[0]
+		}
+		var record lane.Record
+		var err error
+		if seams.Lane != nil {
+			record, err = seams.Lane()
+		} else {
+			record, _, err = lane.Read(home)
+		}
+		if err != nil {
+			return nil, err
+		}
+		layout, err := record.Layout()
 		if err != nil {
 			return nil, err
 		}
@@ -205,10 +219,6 @@ func KeeperWake(home string, effects ...ProveSeams) lane.WakeSources {
 			return nil, err
 		}
 		launched, _ := time.Parse(time.RFC3339, state.StartedAt)
-		seams := ProveSeams{}
-		if len(effects) > 0 {
-			seams = effects[0]
-		}
 		return WakeReasons(string(layout.Install), string(layout.Checkout), launched, seams.now(), seams)
 	}}
 }

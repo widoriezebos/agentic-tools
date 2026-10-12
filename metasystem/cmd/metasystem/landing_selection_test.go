@@ -60,6 +60,8 @@ func newSelectionBed(t *testing.T) *selectionBed {
 		Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil },
 		Git: func(_ string, args ...string) (string, error) {
 			switch args[0] {
+			case "symbolic-ref":
+				return "main", nil
 			case "fetch", "cat-file":
 				return "", nil
 			case "rev-parse":

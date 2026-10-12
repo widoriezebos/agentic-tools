@@ -65,6 +65,12 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 				return "main sha-a", nil
 			case joined == "show -s --format=%cI HEAD":
 				return laneTestNow.UTC().Format(time.RFC3339), nil
+			case joined == "symbolic-ref --quiet --short HEAD":
+				return "main", nil
+			case joined == "rev-parse --verify --quiet refs/heads/main^{commit}":
+				return "main", nil
+			case joined == "rev-parse --verify MERGE_HEAD^{commit}":
+				return "", &exec.ExitError{ProcessState: falseState}
 			case joined == "rev-parse --verify HEAD^{commit}":
 				return b.head, nil
 			case joined == "rev-parse --verify HEAD^{tree}":

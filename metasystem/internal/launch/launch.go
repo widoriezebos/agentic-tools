@@ -738,6 +738,22 @@ func (m *Manager) Status(id string) (Record, error) {
 	}
 	return record, nil
 }
+
+// EffectiveList checks process death without reconciling launch records on disk.
+func (m *Manager) EffectiveList() ([]Record, error) {
+	records, err := m.Store.List()
+	if err != nil {
+		return nil, err
+	}
+	for i := range records {
+		r := &records[i]
+		if (r.State == Running || r.State == Starting && r.Supervisor != nil) && m.Prober != nil && refDead(m.Prober, r.Supervisor) && refDead(m.Prober, r.Child) {
+			r.State, r.Reason = Failed, "supervisor-lost"
+		}
+	}
+	return records, nil
+}
+
 func (m *Manager) List() ([]Record, error) {
 	records, err := m.Store.List()
 	if err != nil {

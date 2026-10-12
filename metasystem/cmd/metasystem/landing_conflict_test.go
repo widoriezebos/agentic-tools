@@ -29,6 +29,10 @@ func TestLandingResolveBatchConflictWaitsThenReturnsAgainstMain(t *testing.T) {
 	trunk, head, aborts, probes := "main-sha", "batch-sha", 0, 0
 	git := func(_ string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
+		case "symbolic-ref --quiet --short HEAD":
+			return "main", nil
+		case "rev-parse --verify --quiet refs/heads/main^{commit}":
+			return trunk, nil
 		case "ls-tree --name-only main-sha -- metasystem/plans/goals/trunk-red.json", "ls-tree --name-only A-sha -- metasystem/plans/goals/trunk-red.json":
 			return "", nil
 		case "show HEAD:metasystem/testing.json":
@@ -114,6 +118,9 @@ func TestLandingResolveGeneratedReturnShowsPathsInStatus(t *testing.T) {
 		return git(dir, args...)
 	}
 	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		if args[0] == "symbolic-ref" {
+			return "main", nil
+		}
 		if args[0] == "rev-parse" {
 			return "main-sha", nil
 		}

@@ -46,6 +46,9 @@ func newResolveFixture(t *testing.T) *resolveFixture {
 	if _, _, err := HandIn(b.install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: "goal-sha", Branch: "goal/goal"}); err != nil {
 		t.Fatal(err)
 	}
+	ensureShadowConfig(t, b.install)
+	shadowRegister(t, b.home, lane.Record{Root: b.checkout, Install: b.install, CustodyEpoch: 1})
+	t.Cleanup(func() { seams := shadowSeams(); assertShadowAgrees(t, b.home, seams) })
 	return b
 }
 

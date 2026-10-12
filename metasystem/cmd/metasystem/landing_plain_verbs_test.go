@@ -561,15 +561,16 @@ func TestPlainLaneProveRefusesAnUncommittedFullDeclaration(t *testing.T) {
 		Executable: func() (string, error) { t.Fatal("an undeclared command reached the launcher"); return "", nil },
 		Command:    func(*exec.Cmd) error { t.Fatal("an undeclared command ran"); return nil },
 	}
+	_, err := plain.RefreshShadow(bed.home, laneTestNow, "fixture", bed.owners.landing.plainProve)
+	helmMust(t, err)
+	before := idemTreeDigest(t, plain.Dir(bed.installation))
 	for _, args := range [][]string{{"landing", "prove"}, {"landing", "prove", "--wait"}} {
 		code, output := bed.run(t, args...)
 		if code != 1 || !strings.Contains(output, "proof.full") || !strings.Contains(output, "declare proof.full in metasystem.conf through a goal and land it on main") || strings.Contains(output, "settings set") {
 			t.Fatalf("uncommitted declaration = %d\n%s", code, output)
 		}
 	}
-	if _, err := os.Stat(plain.Dir(bed.installation)); !os.IsNotExist(err) {
-		t.Fatalf("a refused proof wrote records: %v", err)
-	}
+	idemSameTree(t, "refused proof", before, idemTreeDigest(t, plain.Dir(bed.installation)))
 }
 
 // A detached proof must keep both its tree and its command when HEAD moves.

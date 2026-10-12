@@ -338,19 +338,24 @@ func TestAPushRecordedOnceAfterALostResponse(t *testing.T) {
 				write("results.jsonl", green, true)
 				write("stops.jsonl", stop, true)
 				if death != "old-closure" {
-					write("pushes.jsonl", plain.Pushed{Commit: green.Commit, Tree: green.Tree, Old: batch.Base, BatchID: batch.ID, BatchMembers: batch.Members}, true)
+					write("pushes.jsonl", plain.Pushed{Commit: green.Commit, Tree: green.Tree, Old: batch.Base, BatchID: batch.ID, BatchMembers: batch.Members, At: laneTestNow.Format(time.RFC3339Nano)}, true)
 				}
 				projections := 0
+				readingShadow := false
 				seams := plain.ProveSeams{Now: func() time.Time { return laneTestNow }, Policy: func(string) (plain.PolicyValue, error) { return plain.PolicyValue{Value: "auto"}, nil }, Git: func(_ string, args ...string) (string, error) {
 					switch {
+					case args[0] == "symbolic-ref":
+						return "main", nil
 					case args[0] == "fetch" || args[0] == "cat-file" || args[0] == "ls-tree":
 						return "", nil
 					case args[0] == "rev-parse" && strings.HasSuffix(args[len(args)-1], "^{tree}"):
 						return green.Tree, nil
 					case args[0] == "rev-parse":
 						return green.Commit, nil
+					case args[0] == "rev-list":
+						return member.SHA + "\n" + green.Commit, nil
 					case args[0] == "merge-base":
-						if args[2] == member.SHA && args[3] == green.Commit {
+						if !readingShadow && args[2] == member.SHA && args[3] == green.Commit {
 							projections++
 						}
 						return "", nil
@@ -361,9 +366,11 @@ func TestAPushRecordedOnceAfterALostResponse(t *testing.T) {
 						return "", nil
 					}
 				}}
+				seams.Observed = func() { readingShadow = true }
 				b.owners.landing.plainProve = seams
 				invoke := func() {
 					t.Helper()
+					readingShadow = false
 					if caller == "keeper" {
 						_, err := plain.SelectBatch(b.install, b.root, registered, seams)
 						helmMust(t, err)
@@ -371,11 +378,19 @@ func TestAPushRecordedOnceAfterALostResponse(t *testing.T) {
 						t.Fatalf("push exit=%d: %s", code, text)
 					}
 				}
+				if caller == "push" {
+					command, ok := findIntentAction("landing", "push")
+					if !ok {
+						t.Fatal("landing push is missing")
+					}
+					inv := intentInvocation{command: command, cwd: b.root, owners: b.owners}
+					inv.refreshLaneShadow()
+				}
 				before := idemTreeDigest(t, plain.Dir(b.install))
 				invoke()
 				if death == "completed" {
 					idemSameTree(t, "completed publication", before, idemTreeDigest(t, plain.Dir(b.install)))
-					// A completed push needs no second projection of its published members.
+					// Publication does not reconcile its members again; the shadow reads them independently.
 					want := 0
 					if caller == "keeper" {
 						want = 1

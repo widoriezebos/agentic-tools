@@ -18,6 +18,8 @@ func TestLandingHealthTextJSONAndReadOnly(t *testing.T) {
 	t.Parallel()
 	b := newPlainVerbBed(t)
 	b.cwd = b.checkout
+	_, err := plain.RefreshShadow(b.home, laneTestNow, "fixture", b.owners.landing.plainProve)
+	helmMust(t, err)
 	for _, args := range [][]string{{"landing", "health"}, {"landing", "health", "--json"}, {"landing", "status", "--json"}} {
 		before := idemTreeDigest(t, b.installation)
 		code, text := b.run(t, args...)
@@ -58,6 +60,8 @@ func TestLandingHealthTextJSONAndReadOnly(t *testing.T) {
 	data, err := json.Marshal(plain.Line{Goal: "g", SHA: strings.Repeat("a", 40), At: laneTestNow.Add(-95 * time.Minute).Format(time.RFC3339)})
 	helmMust(t, err)
 	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.installation), "queue.jsonl"), append(data, '\n'), 0600))
+	_, err = plain.RefreshShadow(b.home, laneTestNow, "fixture", b.owners.landing.plainProve)
+	helmMust(t, err)
 	for _, args := range [][]string{{"landing", "health"}, {"landing", "health", "--json"}} {
 		before, home := idemTreeDigest(t, b.checkout), idemTreeDigest(t, b.home)
 		code, out := b.run(t, args...)
@@ -166,6 +170,8 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 		t.Fatalf("CLI used the finished step's start for inactivity: %s", out)
 	}
 	helmMust(t, plain.WriteFix(b.installation, &plain.Fix{Attempt: "resolution", Goal: "g", Commit: b.main, Tip: "missing", State: "resolving", Units: []string{"unit"}, Paths: []conflict.Path{{Path: "x"}}}))
+	_, err = plain.RefreshShadow(b.home, time.Now().UTC(), "fixture", plain.ProveSeams{})
+	helmMust(t, err)
 	for _, args := range [][]string{{"landing", "health"}, {"landing", "health", "--json"}} {
 		before, home := idemTreeDigest(t, b.checkout), idemTreeDigest(t, b.home)
 		cmd := exec.CommandContext(t.Context(), engine, args...)

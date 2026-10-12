@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -57,6 +58,11 @@ func newBed(t *testing.T) *bed {
 	if err := testexec.WriteFile(b.redScript, []byte("#!/bin/sh\necho app-standard failed\nexit 1\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	home := shadowHome(t, b.checkout, b.install)
+	t.Cleanup(func() {
+		seams := ProveSeams{Now: func() time.Time { return bedNow }}
+		assertShadowAgrees(t, home, seams)
+	})
 	return b
 }
 
@@ -363,6 +369,16 @@ func TestHandInAgainRequeuesReturnedTipAndKeepsWaitingMetadata(t *testing.T) {
 		}
 		delivered = line.Delivered
 		line.Again, line.Delivered = false, ""
+	}
+	assertShadowAgrees(t, shadowHome(t, install, install), shadowSeams())
+	shadow, _, err := state.Read(Dir(install))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, ordinal := range []int{1, 3, 6} {
+		if shadow.HandIns[i].Ordinal != ordinal {
+			t.Fatalf("submission %d ordinal=%d; want queue line %d", i, shadow.HandIns[i].Ordinal, ordinal)
+		}
 	}
 }
 

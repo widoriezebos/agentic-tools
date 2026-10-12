@@ -4,10 +4,14 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
 func (inv *intentInvocation) runWithLandingStep() int {
+	if inv.command.object == "landing" {
+		defer inv.refreshLaneShadow()
+	}
 	if inv.command.object != "landing" && inv.command.object != "work" {
 		return inv.command.run(inv)
 	}
@@ -42,4 +46,23 @@ func (inv *intentInvocation) runWithLandingStep() int {
 		}()
 	}
 	return inv.command.run(inv)
+}
+
+func (inv *intentInvocation) refreshLaneShadow() {
+	if inv.laneSkipShadow {
+		return
+	}
+	owners := inv.landing()
+	home, err := owners.home()
+	if err != nil {
+		return
+	}
+	record, exists, err := lane.Read(home)
+	if err != nil || !exists {
+		return
+	}
+	seams := inv.laneBatchSeams(home, record, owners.plainProve)
+	seams.Machine = owners.machine
+	seams.AgentProbe = owners.probe
+	_, _ = plain.RefreshShadow(home, owners.now(), "landing "+inv.command.action, seams)
 }

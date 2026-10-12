@@ -63,8 +63,10 @@ func ReadAgentState(home string) (AgentState, error) {
 
 // AgentKeeper wakes the host lane's landing agent.
 type AgentKeeper struct {
-	Home string
-	Now  func() time.Time
+	// Refresh observes the shadow before any host lock or early return.
+	Refresh func(time.Time)
+	Home    string
+	Now     func() time.Time
 	// Self is the checkout this steward keeps; only the lane checkout's own
 	// steward (its top or its module root) starts the agent.
 	Self string
@@ -169,6 +171,9 @@ func (e *ObservationError) Unwrap() []error { return []error{e.Progress, e.StopQ
 // never waits for them, and the start is re-checked under the flock before
 // and after.
 func (k AgentKeeper) Run() (out AgentRun) {
+	if k.Refresh != nil {
+		k.Refresh(k.Now())
+	}
 	var observations []string
 	defer func() {
 		out.Problems = append(out.Problems, observations...)

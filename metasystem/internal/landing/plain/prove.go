@@ -164,9 +164,14 @@ type FlakeRecorded struct {
 type ProveSeams struct {
 	ResumeKeeper    *lane.AgentKeeper
 	ResolutionStore *launch.Store
-	Steward         *StewardEffects
-	Load            func(time.Time) hostload.Sample
-	ReadOnly        bool
+	// Observed reports the start of a raw status observation.
+	Observed            func()
+	BeforeShadowPublish func()
+	// RefreshMerge replaces the merge writer; read-only observations bypass it.
+	RefreshMerge func(string, string, *Fix, ProveSeams) error
+	Steward      *StewardEffects
+	Load         func(time.Time) hostload.Sample
+	ReadOnly     bool
 	// Fresh bypasses saved green proofs and executes the requested check.
 	Fresh bool
 	// BudgetHome names the host budget records; empty uses the board home.
@@ -191,6 +196,7 @@ type ProveSeams struct {
 	// Lane reads the host registration again before a selection or admission.
 	Lane         func() (lane.Record, error)
 	AgentRunning func() (bool, error)
+	AgentProbe   func(string) (lane.OwnerProbe, error)
 	// FetchCommand prepares the bounded fetch process; nil runs Git unchanged.
 	FetchCommand func(*exec.Cmd)
 	// FetchTimeout overrides the fetch deadline for isolated tests.

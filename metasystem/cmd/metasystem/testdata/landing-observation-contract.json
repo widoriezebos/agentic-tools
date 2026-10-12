@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 2,
+  "projectRisk": {"severity": 1, "exposure": 1, "reversibility": "revert", "detection": "immediate", "recovery": "bounded"},
+  "surfaces": [{"id": "app", "paths": ["metasystem/**"], "standard": ["check"]}],
+  "groups": [{"id": "check", "kind": "unit", "adapter": "command", "cwd": ".", "phase": "acceptance", "environmentMode": "inherit", "inputs": ["metasystem/**"], "platforms": ["any"], "targetMs": 1, "argv": ["fixture-check"], "format": "exit-status"}],
+  "unknown": ["check"],
+  "generated": [{"paths": ["out/**"], "command": ["fixture-build"]}]
+}

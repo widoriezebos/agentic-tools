@@ -3,21 +3,22 @@ package plain
 import (
 	"errors"
 	"fmt"
-	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 // Health is the lane's recorded evidence and measured ages; reading it acts on nothing.
 type Health struct {
+	ObservationProblem  string            `json:"observation_problem,omitempty"`
+	Shadow              *state.Record     `json:"shadow,omitempty"`
 	Flakes              []goal.FlakeFact  `json:"flakes,omitempty"`
 	FlakeGoalStates     map[string]string `json:"flake_goal_states,omitempty"`
 	Report              string            `json:"report,omitempty"`
@@ -244,7 +245,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	if h.State == "stopped" && strings.Contains(status.Summary, "rebuild") {
 		merge, err := seams.git(checkout, "rev-parse", "--verify", "--quiet", "MERGE_HEAD^{commit}")
 		var exit *exec.ExitError
-		if err != nil && (!errors.As(err, &exit) || exit.ExitCode() != 1) {
+		if err != nil && !errors.Is(err, errNoMerge) && (!errors.As(err, &exit) || exit.ExitCode() != 1) {
 			return nil, err
 		}
 		if err == nil {
@@ -276,39 +277,9 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		h.Agent.WaitingOn = "regeneration " + r.Goal + " since " + lane.LocalText(r.Since)
 	}
 	h.Agent.Silent = h.Agent.Alive && h.Agent.Minutes != nil && *h.Agent.Minutes > 20 && h.Agent.WaitingOn == ""
-	main, err := git.main()
-	if err != nil {
-		return nil, err
-	}
-	questions, problems := channel.WalkQuestions(install)
-	if len(problems) > 0 {
-		return nil, fmt.Errorf("lane questions: %v", problems)
-	}
-	for _, q := range questions {
-		if q.Goal != "" || q.About != "lane" || q.State != "open" {
-			continue
-		}
-		machine := seams.Machine
-		if machine == nil {
-			machine = goal.ResolveMachine
-		}
-		name, err := machine(install)
-		if err != nil {
-			return nil, err
-		}
-		if q.Machine != name {
-			continue
-		}
-		premise, err := LaneQuestionPremise(install, q, seams)
-		if err != nil {
-			return nil, err
-		}
-		h.Questions = append(h.Questions, QuestionHealth{ID: q.ID, Kind: q.Kind, Minutes: now.Sub(q.OpenedAt).Minutes(), Premise: premise, WaitsFor: LaneQuestionHeadline(q)})
-	}
-	incidents, err := seams.incidents(install, checkout, main)
-	if err != nil {
-		return nil, err
-	}
+	main := status.Raw.Main
+	h.Questions = append([]QuestionHealth{}, status.Raw.QuestionHealth...)
+	incidents := status.Raw.Incidents
 	h.Flakes = goal.FlakeFacts(incidents)
 	h.FlakeGoalStates = map[string]string{}
 	for _, f := range h.Flakes {
@@ -395,10 +366,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		h.Proofs.Median = &median
 		h.Proofs.Drift = h.Proofs.Running != nil && *h.Proofs.Running > 1.5*median
 	}
-	h.Engine.Revision, err = installedEngineStamp(install)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
-	}
+	h.Engine.Revision = status.Raw.Engine
 	if revision := strings.TrimSuffix(strings.TrimPrefix(h.Engine.Revision, "dev-"), "-dirty"); revision != "" && revision != "unknown" && revision != "dev" {
 		if _, err := seams.git(checkout, "cat-file", "-e", revision+"^{commit}"); err == nil {
 			h.Engine.Known = true
@@ -447,6 +415,9 @@ func healthRepeat(r Result) string {
 }
 
 func (h Health) Rows() []Fired {
+	if h.ObservationProblem != "" {
+		return []Fired{{Row: "observation-unstable", Subject: h.ObservationProblem}}
+	}
 	rows := []Fired{}
 	fire := func(row, subject string, minutes *float64, act string) {
 		rows = append(rows, Fired{Row: row, Subject: subject, Minutes: measured(minutes), Act: act})
@@ -544,6 +515,9 @@ func (h Health) Rows() []Fired {
 	return rows
 }
 func (h Health) Line() (line string) {
+	if h.ObservationProblem != "" {
+		return h.ObservationProblem
+	}
 	defer func() {
 		if h.Report != "" {
 			line += "; " + h.Report
@@ -581,6 +555,9 @@ func (h Health) Line() (line string) {
 	return fmt.Sprintf("lane %s; %d rows fire: %s; %d goals, oldest %g min; load %s", state, len(rows), strings.Join(names, ", "), len(h.Goals), oldest, load)
 }
 func (h Health) Text() string {
+	if h.ObservationProblem != "" {
+		return h.ObservationProblem
+	}
 	var out strings.Builder
 	fmt.Fprintln(&out, h.Line())
 	fmt.Fprintln(&out, "report: "+h.ReportPath)

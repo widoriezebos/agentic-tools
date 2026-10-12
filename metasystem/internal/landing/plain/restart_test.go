@@ -87,6 +87,14 @@ func restartBed(t *testing.T, minutes int, red bool) (string, *Batch, Running, P
 			return nil
 		},
 	}
+	home := shadowHome(t, install, install)
+	t.Cleanup(func() {
+		effects := shadowSeams()
+		effects.Now = seams.Now
+		effects.Alive = seams.Alive
+		effects.Incidents = seams.Incidents
+		assertShadowAgrees(t, home, effects)
+	})
 	return install, batch, running, seams, ended
 }
 

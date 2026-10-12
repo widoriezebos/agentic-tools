@@ -74,6 +74,8 @@ func newScopeBed(t *testing.T) *scopeBed {
 		fmt.Fprint(command.Stdout, "ment image toolchain\nlanding environment ignored\nlanding group plans passed 12\nlanding group shared passed 34")
 		return nil
 	}
+	home := shadowHome(t, b.checkout, b.install)
+	t.Cleanup(func() { seams := shadowSeams(); assertShadowAgrees(t, home, seams) })
 	return b
 }
 

@@ -48,6 +48,8 @@ func newDrainVerbBed(t *testing.T) *drainVerbBed {
 	falseState := replayFalseState(t)
 	effects := plain.ProveSeams{Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return b.incidents, nil }, Now: func() time.Time { return laneTestNow }, Alive: func(r plain.Running) bool { return r.Pid == 42 }, Git: func(_ string, args ...string) (string, error) {
 		switch args[0] {
+		case "symbolic-ref":
+			return "main", nil
 		case "rev-parse":
 			return "main", nil
 		case "cat-file":

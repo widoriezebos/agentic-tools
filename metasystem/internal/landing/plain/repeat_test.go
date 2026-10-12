@@ -33,6 +33,9 @@ func newRepeatBed(t *testing.T) *repeatBed {
 		t.Fatal(err)
 	}
 	b.install, b.trace = filepath.Join(b.checkout, "metasystem"), filepath.Join(b.checkout, "checks")
+	if err := os.MkdirAll(b.install, 0755); err != nil {
+		t.Fatal(err)
+	}
 	g := stubGit{commit: "commit", tree: "tree"}
 	id := 0
 	b.seams = ProveSeams{Now: func() time.Time { return bedNow }, NewID: func() string { id++; return fmt.Sprintf("a%d", id) },
@@ -67,6 +70,8 @@ func newRepeatBed(t *testing.T) *repeatBed {
 			return FlakeRecorded{Goal: "fix-flaky-" + strings.ReplaceAll(r.Unit, "/", "-"), Seen: 3}, nil
 		},
 	}
+	home := shadowHome(t, b.checkout, b.install)
+	t.Cleanup(func() { seams := shadowSeams(); assertShadowAgrees(t, home, seams) })
 	return b
 }
 

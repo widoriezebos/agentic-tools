@@ -195,10 +195,18 @@ func TestLandingDeployPreservesLiveJoblessResolutionAfterMainMoves(t *testing.T)
 		switch call {
 		case "fetch origin main", "status --porcelain=v1 -z --no-renames --untracked-files=all":
 			return "", nil
+		case "ls-tree --name-only main -- metasystem/plans/goals/trunk-red.json":
+			return "", nil
 		case "rev-parse --show-prefix":
 			return "metasystem/", nil
 		case "rev-parse --verify origin/main^{commit}":
 			return "main", nil
+		case "rev-parse --verify --quiet refs/heads/main^{commit}", "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
+			return "main", nil
+		case "symbolic-ref --quiet --short HEAD":
+			return "main", nil
+		case "rev-parse --verify MERGE_HEAD^{commit}":
+			return "goal-tip", nil
 		case "rev-parse --verify --quiet MERGE_HEAD^{commit}":
 			return "goal-tip", nil
 		case "rev-parse --verify HEAD^{commit}":

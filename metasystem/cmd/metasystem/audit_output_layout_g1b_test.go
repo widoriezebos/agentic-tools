@@ -155,6 +155,12 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 				return hostload.Sample{At: now.Format(time.RFC3339), Load1m: 2, Cores: 8, Available: true}
 			}, Now: func() time.Time { return now }, Git: func(_ string, args ...string) (string, error) {
 				switch strings.Join(args, " ") {
+				case "symbolic-ref --quiet --short HEAD":
+					return "main", nil
+				case "rev-parse --verify MERGE_HEAD^{commit}":
+					return "", nil
+				case "rev-parse --verify --quiet refs/heads/main^{commit}":
+					return "main", nil
 				case "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
 					return "main", nil
 				case "ls-tree --name-only main -- plans/goals/trunk-red.json", "ls-tree --name-only main -- metasystem/plans/goals/trunk-red.json":

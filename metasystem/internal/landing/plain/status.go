@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 // Status is the plain lane as landing status --json carries it and as
@@ -24,8 +25,11 @@ import (
 // whether the lane is paused and its agent alive, the queue, the running
 // proof, the last proof and the last push. An absent value is null.
 type Status struct {
-	Health        *Health        `json:"health,omitempty"`
-	AgentProgress *AgentProgress `json:"agent_progress,omitempty"`
+	ObservationError error          `json:"-"`
+	Shadow           *state.Record  `json:"shadow,omitempty"`
+	Raw              RawFacts       `json:"-"`
+	Health           *Health        `json:"health,omitempty"`
+	AgentProgress    *AgentProgress `json:"agent_progress,omitempty"`
 	lane.View
 	MainMove       MainMove        `json:"main_move"`
 	PendingActions []PolicyRequest `json:"pending-actions,omitempty"`
@@ -67,6 +71,7 @@ type Status struct {
 
 // RunningProof is the lane's proof recorded running.
 type RunningProof struct {
+	raw          Running
 	Admission    *ExecutionAdmission `json:"admission,omitempty"`
 	Person       *ActProvenance      `json:"person,omitempty"`
 	Trunk        bool                `json:"trunk,omitempty"`
@@ -141,15 +146,61 @@ func checkoutGit(dir string, seams ProveSeams) laneGit {
 // ReadStatus reads the plain lane around its view: home is the lane's home
 // (its pause), record the registered lane, seams the proof's (its process
 // check and its clock).
-func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeams) Status {
+func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeams, captured ...*state.Record) Status {
 	layout, _ := record.Layout()
 	if seams.Lane == nil {
 		seams.Lane = func() (lane.Record, error) { return record, nil }
 	}
-	return readStatus(home, record, view, seams, checkoutGit(string(layout.Checkout), seams))
+	return readStatus(home, record, view, seams, checkoutGit(string(layout.Checkout), seams), captured...)
 }
 
-func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit) (status Status) {
+func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit, captured ...*state.Record) Status {
+	var shadow state.Record
+	var exists bool
+	var shadowErr error
+	if len(captured) > 0 && captured[0] != nil {
+		shadow, exists = *captured[0], true
+	} else if record.Install != "" {
+		shadow, exists, shadowErr = state.Read(Dir(record.Install))
+	}
+	status, raw := observe(home, record, view, seams, git)
+	if exists {
+		status.Shadow = &shadow
+	}
+	raw.Previous = status.Shadow
+	status.Raw = raw
+	var refreshFinding string
+	if record.Install != "" && readAgentRecord(record.Install, "shadow-refresh.json", &refreshFinding) == nil && refreshFinding != "" {
+		status.Findings = append(status.Findings, "the lane shadow refresh failed: "+refreshFinding)
+	}
+	if shadowErr != nil {
+		status.Findings = append(status.Findings, "the lane shadow cannot be read: "+shadowErr.Error())
+	}
+	if raw.Err != nil {
+		status.Problems = append(status.Problems, raw.Err.Error())
+	}
+	return assembleHealth(status, record, seams, git)
+}
+func assembleHealth(status Status, record lane.Record, seams ProveSeams, git laneGit) Status {
+	if len(status.Problems) == 0 && status.Root != nil {
+		layout, err := record.Layout()
+		if err == nil {
+			status.Health, err = buildHealth(status, status.Raw.Batch, status.Raw.Pause, status.Raw.Abandoned, status.Raw.Results, status.Raw.Queue, string(layout.Install), string(layout.Checkout), seams, git)
+		}
+		if err != nil {
+			status.Problems = append(status.Problems, "the lane health cannot be read: "+err.Error())
+		}
+		if status.Health != nil {
+			status.Health.Shadow = status.Shadow
+		}
+	}
+	return status
+}
+
+func observe(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit) (status Status, raw RawFacts) {
+	if seams.Observed != nil {
+		seams.Observed()
+	}
 	pause, paused := lane.ReadPause(home)
 	status = Status{MainMove: MainMove{Kind: "none"}, AdmittedBatch: PersonBatchContinuation(record.Install, record, home), View: view, Paused: paused, AgentAlive: view.Owner.State == lane.OwnerRunning, Queue: []Entry{}, Problems: []string{}}
 	if view.Root == nil {
@@ -158,7 +209,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		if view.Unreadable != "" {
 			status.Problems = append(status.Problems, "the lane's registration can't be read: "+view.Unreadable)
 		}
-		return status
+		return status, raw
 	}
 	// Every read failure this status could know of is a problem, one plain
 	// line each (fix round 4). First what the lane's own records and the
@@ -184,20 +235,55 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	layout, err := record.Layout()
 	if err != nil {
 		status.Problems = append(status.Problems, "the lane's record can't be placed: "+err.Error())
-		return status
+		return status, raw
 	}
 	install := string(layout.Install)
-	var abandoned string
-	var healthResults []Result
-	var healthQueue []Line
-	defer func() {
-		if len(status.Problems) > 0 {
-			return
+	raw.Now = seams.now()
+	raw.Pause = pause
+	originalMain := git.main
+	mainRead := false
+	var main string
+	var mainErr error
+	git.main = func() (string, error) {
+		if !mainRead {
+			main, mainErr = originalMain()
+			mainRead = true
 		}
-		batch, _ := status.Batch.(*Batch)
-		status.Health, err = buildHealth(status, batch, pause, abandoned, healthResults, healthQueue, install, string(layout.Checkout), seams, git)
+		return main, mainErr
+	}
+	originalSeams := seams
+	incidentsRead := false
+	var incidents []goal.TrunkRedEntry
+	var incidentsErr error
+	seams.Incidents = func(install, checkout, main string) ([]goal.TrunkRedEntry, error) {
+		if !incidentsRead {
+			incidents, incidentsErr = originalSeams.incidents(install, checkout, main)
+			incidentsRead = true
+		}
+		return incidents, incidentsErr
+	}
+	var abandoned string
+	defer func() {
+		raw.Abandoned = abandoned
+		raw.Agent, err = lane.ReadAgentState(home)
+		if err != nil && !slices.Contains(status.Problems, lane.UnreadableAgentRecord(home)) {
+			raw.Err = errors.Join(raw.Err, err)
+		}
+		mainReported := mainRead
+		raw.Main, err = git.main()
+		if err != nil && !mainReported {
+			raw.Err = errors.Join(raw.Err, err)
+		}
+		if err == nil {
+			incidentsReported := incidentsRead
+			raw.Incidents, err = seams.incidents(install, string(layout.Checkout), raw.Main)
+			if err != nil && !incidentsReported {
+				raw.Err = errors.Join(raw.Err, err)
+			}
+		}
+		raw.Engine, err = shadowEngine(install)
 		if err != nil {
-			said("the lane health cannot be read: " + err.Error())
+			raw.Err = errors.Join(raw.Err, err)
 		}
 	}()
 	defer func() {
@@ -242,6 +328,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		}
 	}
 	selected, err := ReadBatch(install)
+	raw.Batch = selected
 	if selected != nil {
 		status.Batch = selected
 	}
@@ -292,6 +379,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	status.Stop, err = NewestStop(install)
 	unread("the stop record", err)
 	openStops, readErr := OpenStops(install)
+	raw.Stops = openStops
 	unread("the pending red actions", readErr)
 	for _, stop := range openStops {
 		if (stop.Loop != "lane-classify" && !(stop.Loop == "lane-return" && stop.Subject != "lane")) || status.Stop != nil && stopKey(stop) == stopKey(*status.Stop) {
@@ -324,7 +412,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		}
 		status.Admission, status.DrainWaiting, status.DrainUnknown = progress.Words(), progress.Waiting, progress.Unknown
 	}()
-	lines, skipped, err := countedLines[Line](queuePath(install))
+	lines, lineOrdinals, skipped, err := countedLineOrdinals[Line](queuePath(install))
 	unread("the queue", err)
 	damaged("the queue has", skipped, queuePath(install))
 	if _, membershipErr := queueMembership(install); membershipErr != nil && (progress.Drain != nil || progress.Unknown != "") {
@@ -332,8 +420,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 		said(progress.Unknown)
 	}
 	if err == nil {
-		healthQueue = lines
-		status.Queue = entriesOf(lines)
+		raw.Queue = lines
+		status.Queue, raw.Ordinals = entriesAndOrdinals(lines)
+		for i, ordinal := range raw.Ordinals {
+			raw.Ordinals[i] = lineOrdinals[ordinal-1]
+		}
 	}
 	if len(status.Queue) > 0 {
 		main, err := git.main()
@@ -360,6 +451,9 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	running, err := readRunningProof(install, seams)
 	unread("the running proof", err)
 	status.RunningProof = running
+	if running != nil {
+		raw.Running = running.raw
+	}
 	if progress.Drain != nil {
 		if _, executionErr := drainExecution(install, seams); executionErr != nil {
 			progress.Unknown += " drain progress cannot be read: " + executionErr.Error()
@@ -374,7 +468,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	unread("the proof results", err)
 	damaged("the proof results have", skipped, resultsPath(install))
 	if err == nil && len(results) > 0 {
-		healthResults = results
+		raw.Results = results
 		status.LastProof = &results[len(results)-1]
 		for i := len(results) - 1; i >= 0; i-- {
 			if results[i].Trunk {
@@ -482,10 +576,13 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	if err == nil && status.RunningFix != nil {
 		if seams.ReadOnly {
 			err = observeMerge(install, string(layout.Checkout), status.RunningFix, seams)
+		} else if seams.RefreshMerge != nil {
+			err = seams.RefreshMerge(install, string(layout.Checkout), status.RunningFix, seams)
 		} else {
 			err = RefreshMerge(install, string(layout.Checkout), status.RunningFix, seams)
 		}
 		unread("the pending merge", err)
+		raw.Fix = *status.RunningFix
 		if status.RunningFix.State == "abandoned" {
 			abandoned = status.RunningFix.Attempt
 			// An abandoned resolution describes only the checkpoint it belonged to.
@@ -520,7 +617,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	if status.ProofHeadline != "" {
 		status.Summary = status.ProofHeadline
 	}
-	questions, _ := channel.WalkQuestions(install)
+	questions, questionProblems := channel.WalkQuestions(install)
+	if len(questionProblems) > 0 {
+		said(fmt.Sprintf("lane questions: %v", questionProblems))
+	}
+	questionHeadline := false
 	for _, q := range questions {
 		if q.Goal != "" || q.About != "lane" || q.State != "open" {
 			continue
@@ -535,6 +636,13 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 			break
 		}
 		if q.Machine == machine {
+			premise, premiseErr := LaneQuestionPremise(install, q, seams)
+			unread("the lane question's premise", premiseErr)
+			raw.Questions = append(raw.Questions, state.Question{ID: q.ID, Premise: premise, Since: state.Since{At: q.OpenedAt}})
+			raw.QuestionHealth = append(raw.QuestionHealth, QuestionHealth{ID: q.ID, Kind: q.Kind, Minutes: seams.now().Sub(q.OpenedAt).Minutes(), Premise: premise, WaitsFor: LaneQuestionHeadline(q)})
+			if questionHeadline {
+				continue
+			}
 			if satisfied, err := PolicyQuestionSatisfied(install, q); err != nil {
 				unread("the lane question's premise", err)
 			} else if !satisfied {
@@ -542,7 +650,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 				if strings.HasPrefix(status.ProofHeadline, "main is red") {
 					status.Summary = status.ProofHeadline + ". " + status.Summary
 				}
-				break
+				questionHeadline = true
 			}
 		}
 	}
@@ -585,7 +693,7 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	if strings.Contains(status.Summary, "; nothing to do") {
 		status.Summary = strings.ReplaceAll(status.Summary, "; nothing to do", "") + "; nothing to do"
 	}
-	return status
+	return status, raw
 }
 
 // proving are the goals of the waiting entries the proof's commit contains,
@@ -728,7 +836,7 @@ func readRunningProof(install string, seams ProveSeams) (*RunningProof, error) {
 			state = "failed"
 		}
 	}
-	return &RunningProof{Admission: running.Admission, Person: running.Person, Trunk: running.Trunk, BatchID: running.BatchID, BatchMembers: running.BatchMembers, Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
+	return &RunningProof{raw: running, Admission: running.Admission, Person: running.Person, Trunk: running.Trunk, BatchID: running.BatchID, BatchMembers: running.BatchMembers, Gate: running.Gate, Attempt: running.Attempt, Tree: running.Tree, Commit: running.Commit, Since: running.Since, Log: running.Log, State: state}, nil
 }
 
 func flakeNames(flakes []FlakeRecord) string {

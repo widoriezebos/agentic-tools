@@ -301,6 +301,9 @@ func TestLandingPushReturnedCommitBoundaries(t *testing.T) {
 			// Push reads fresh main and incident inputs before checking returns (lane-reads-its-policies.md:145).
 			notAncestor := replayFalseState(t)
 			b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+				if args[0] == "symbolic-ref" {
+					return "main", nil
+				}
 				if args[0] == "rev-parse" {
 					return "old", nil
 				}

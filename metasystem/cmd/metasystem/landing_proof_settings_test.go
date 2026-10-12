@@ -119,6 +119,14 @@ func TestLandingProveRequiresAValidFullDeclaration(t *testing.T) {
 			}
 			b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
 				switch strings.Join(args, " ") {
+				case "symbolic-ref --quiet --short HEAD":
+					return "main", nil
+				case "rev-parse --verify MERGE_HEAD^{commit}":
+					return "", nil
+				case "rev-parse --verify --quiet refs/heads/main^{commit}", "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
+					return "head", nil
+				case "ls-tree --name-only head -- metasystem/plans/goals/trunk-red.json":
+					return "", nil
 				case "rev-parse --verify HEAD^{commit}":
 					return "head", nil
 				case "show head:metasystem/metasystem.conf":

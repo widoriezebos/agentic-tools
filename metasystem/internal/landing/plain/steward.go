@@ -42,7 +42,17 @@ func RecordIntervention(install string, entry Intervention) error {
 }
 
 // StewardStep serializes stewards; verbs and appends acquire the install lock separately.
-func StewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, err error) {
+func StewardStep(home string, now time.Time, seams ProveSeams) (StewardRun, error) {
+	for try := 0; try < 3; try++ {
+		run, err := stewardStep(home, now, seams)
+		var changed *Reregistered
+		if !errors.As(err, &changed) {
+			return run, err
+		}
+	}
+	return StewardRun{}, errors.New("the landing lane registration kept changing during the steward read")
+}
+func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, err error) {
 	record, present, err := lane.Read(home)
 	if err != nil || !present {
 		return run, err
@@ -66,15 +76,25 @@ func StewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 			return lane.OwnerProbe{}, errors.New("the landing agent's process cannot be observed")
 		}
 	}
-	view := lane.BuildView(lane.ViewSources{Home: home, Now: now, Owner: effects.Owner, Fingerprint: KeeperFingerprint})
-	status := ReadStatus(home, record, view, seams)
+	seams.AgentProbe = effects.Owner
+	build := func(readonly ProveSeams) lane.View {
+		return lane.BuildView(lane.ViewSources{Home: home, Now: now, Owner: readonly.AgentProbe, Fingerprint: KeeperFingerprint, Wake: KeeperWake(home, readonly)})
+	}
+	status := ObserveStatus(home, record, seams, build)
+	view := status.View
+	if status.ObservationError != nil {
+		return run, status.ObservationError
+	}
 	if len(status.Problems) > 0 || status.Health == nil {
 		return run, fmt.Errorf("the lane steward cannot read status: %s", strings.Join(status.Problems, "; "))
 	}
 	if err = closeGoneLoopStops(record.Install, status, now); err != nil {
 		return run, err
 	}
-	status = ReadStatus(home, record, view, seams)
+	status = ObserveStatus(home, record, seams, build)
+	if status.ObservationError != nil {
+		return run, status.ObservationError
+	}
 	if len(status.Problems) > 0 || status.Health == nil {
 		return run, fmt.Errorf("the lane steward cannot read status: %s", strings.Join(status.Problems, "; "))
 	}

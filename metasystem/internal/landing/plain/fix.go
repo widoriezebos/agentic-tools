@@ -319,7 +319,7 @@ func observeMerge(install, checkout string, fix *Fix, seams ProveSeams) error {
 	tip, err := seams.git(checkout, "rev-parse", "--verify", "MERGE_HEAD^{commit}")
 	if err != nil {
 		var exit *exec.ExitError
-		if !errors.As(err, &exit) || exit.ExitCode() != 128 {
+		if !errors.Is(err, errNoMerge) && (!errors.As(err, &exit) || exit.ExitCode() != 128) {
 			return err
 		}
 		fix.Reason = "the pending merge is gone; its resolution was abandoned"

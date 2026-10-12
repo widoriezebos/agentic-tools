@@ -59,6 +59,12 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 		Judge: func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) { return nil, nil },
 		Git: func(_ string, args ...string) (string, error) {
 			switch strings.Join(args, " ") {
+			case "symbolic-ref --quiet --short HEAD":
+				return "main", nil
+			case "rev-parse --verify MERGE_HEAD^{commit}":
+				return "", nil
+			case "rev-parse --verify --quiet refs/heads/main^{commit}":
+				return "main", nil
 			case "fetch origin main":
 				fetches++
 				return "", nil
@@ -240,9 +246,17 @@ func TestLandingMovedScriptIsFullAndMovedRecordIsScoped(t *testing.T) {
 func TestLandingGateAndTrunkTogetherAreRefusedBeforeEffects(t *testing.T) {
 	t.Parallel()
 	b := newMergeGateBed(t)
-	b.owners.landing.plainProve.Git = func(string, ...string) (string, error) {
-		t.Fatal("conflicting proof modes reached Git")
-		return "", errors.New("unexpected Git")
+	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		switch args[0] {
+		case "rev-parse":
+			return "head", nil
+		case "symbolic-ref":
+			return "main", nil
+		case "ls-tree", "cat-file", "merge-base", "rev-list":
+			return "", nil
+		}
+		t.Fatalf("conflicting proof modes reached a Git effect: %v", args)
+		return "", errors.New("unexpected Git effect")
 	}
 	code, out := b.run(t, b.root, "prove", "--gate", "--trunk", "--wait", "--json")
 	if code != 1 || !strings.Contains(out, "--gate and --trunk cannot be used together") || len(b.runs) != 0 {

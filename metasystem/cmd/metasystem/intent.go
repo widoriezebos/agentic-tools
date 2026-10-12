@@ -656,6 +656,7 @@ type intentInvocation struct {
 	landingWords                         string
 	laneCallerObserved, laneCallerPerson bool
 	laneRecord                           *lane.Record
+	laneSkipShadow                       bool
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -861,6 +862,7 @@ type intentResult struct {
 func (inv *intentInvocation) render(result intentResult) int {
 	result = inv.observeLandingRefusal(result)
 	result = result.withClaimPreparation(inv.claimPreparation)
+	inv.laneSkipShadow = result.Outcome == intentUnchanged || result.code == 2 || result.Outcome == intentRefused && !inv.laneCallerPerson
 	result.SchemaVersion = 1
 	result.Verb = inv.command.name
 	if result.Targets == nil {

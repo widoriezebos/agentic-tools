@@ -274,6 +274,21 @@ func TestLandingHealthDurationThresholdsAndLine(t *testing.T) {
 		t.Fatal(h.Line())
 	}
 }
+func TestLandingHealthUsesCapturedEngineStamp(t *testing.T) {
+	t.Parallel()
+	b := newStatusBed(t)
+	s := healthSeams(bedNow)
+	status := readHealthBed(t, b, s)
+	status.Raw.Engine = "captured-engine"
+	status = assembleHealth(status, b.record, s, b.git(nil, nil))
+	if status.Health == nil || status.Health.Engine.Revision != status.Raw.Engine || !status.Health.Engine.Known {
+		t.Fatalf("health must use the captured engine stamp: health=%+v problems=%v", status.Health, status.Problems)
+	}
+	if projected := ShadowOf(status, status.Raw); projected.Engine.Stamp != status.Health.Engine.Revision {
+		t.Fatalf("health engine %q disagrees with shadow engine %q", status.Health.Engine.Revision, projected.Engine.Stamp)
+	}
+}
+
 func TestLandingHealthEngineStampAndLaneDiff(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
