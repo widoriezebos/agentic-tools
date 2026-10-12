@@ -58,6 +58,8 @@ type Batch struct {
 	Members       []GoalSHA      `json:"members"`
 	Selector      PolicyValue    `json:"selector"`
 	CreatedAt     string         `json:"created-at"`
+	RunningAt     string         `json:"running-at,omitempty"`
+	ClosedAt      string         `json:"closed-at,omitempty"`
 	State         string         `json:"state"`
 	ClosureReason string         `json:"closure-reason,omitempty"`
 	DepthClass    string         `json:"depth-class,omitempty"`
@@ -416,6 +418,7 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 					}
 					if batch.State != BatchClosed {
 						batch.State, batch.ClosureReason = BatchClosed, "all selected members are accounted for on main or by queue outcomes"
+						batch.ClosedAt = s.now().UTC().Format(time.RFC3339Nano)
 						if err := writeBatch(install, batch); err != nil {
 							return err
 						}
@@ -849,6 +852,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 	}
 	if admit && batch.State == BatchPrepared {
 		batch.State = BatchRunning
+		batch.RunningAt = s.now().UTC().Format(time.RFC3339Nano)
 		err = writeBatch(install, batch)
 	}
 	return batch, err

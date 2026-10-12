@@ -16,6 +16,7 @@ import (
 
 type Intervention struct {
 	At, Row, Subject, What, Why, How, Outcome string
+	Shadow                                    string
 }
 
 type StewardEffects struct {
@@ -172,6 +173,9 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		}
 		if actErr != nil {
 			entry.Outcome = "failed: " + actErr.Error()
+		}
+		if shadow := status.Shadow; shadow != nil {
+			entry.Shadow = fmt.Sprintf("lane %s, agent %s since %s", shadow.Lane.Word, shadow.Agent.Word, shadow.Agent.Since.At.Local().Format("15:04"))
 		}
 		appendErr := RecordIntervention(record.Install, entry)
 		err = errors.Join(err, actErr, appendErr)

@@ -266,11 +266,11 @@ func TestLandingHealthDurationThresholdsAndLine(t *testing.T) {
 	}
 	h := readHealthBed(t, b, healthSeams(bedNow)).Health
 	r := healthRow(h, "overdue-goal")
-	if r == nil || r.Minutes != "95" || !strings.Contains(h.Line(), "2 rows fire: overdue-goal, paused") {
+	if r == nil || r.Minutes != "95" || !strings.Contains(h.Line(), "3 rows fire: drift: no state record yet, overdue-goal, paused") {
 		t.Fatalf("line=%s rows=%+v", h.Line(), h.Rows())
 	}
 	h = readHealthBed(t, newStatusBed(t), healthSeams(bedNow)).Health
-	if h.Line() != "lane idle; nothing fires" {
+	if !strings.HasPrefix(h.Line(), "lane idle; 1 rows fire: drift: no state record yet;") {
 		t.Fatal(h.Line())
 	}
 }

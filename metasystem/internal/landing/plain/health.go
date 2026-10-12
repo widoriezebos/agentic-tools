@@ -17,6 +17,7 @@ import (
 
 // Health is the lane's recorded evidence and measured ages; reading it acts on nothing.
 type Health struct {
+	Drift               []Fired           `json:"drift,omitempty"`
 	ObservationProblem  string            `json:"observation_problem,omitempty"`
 	Shadow              *state.Record     `json:"shadow,omitempty"`
 	Flakes              []goal.FlakeFact  `json:"flakes,omitempty"`
@@ -139,7 +140,7 @@ func measured(value *float64) string {
 }
 
 func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string, results []Result, queue []Line, install, checkout string, seams ProveSeams, git laneGit) (*Health, error) {
-	h := &Health{State: "idle", Goals: []GoalHealth{}, Questions: []QuestionHealth{}, Incidents: []IncidentHealth{}, AbandonedResolution: abandoned, LastProof: status.LastProof}
+	h := &Health{State: "idle", Shadow: status.Shadow, Drift: shadowRows(status), Goals: []GoalHealth{}, Questions: []QuestionHealth{}, Incidents: []IncidentHealth{}, AbandonedResolution: abandoned, LastProof: status.LastProof}
 	now := seams.now()
 	h.observedAt = now
 	h.ReportPath = filepath.Join(Dir(install), "steward-report.md")
@@ -416,9 +417,12 @@ func healthRepeat(r Result) string {
 
 func (h Health) Rows() []Fired {
 	if h.ObservationProblem != "" {
+		if len(h.Drift) > 0 {
+			return append([]Fired(nil), h.Drift...)
+		}
 		return []Fired{{Row: "observation-unstable", Subject: h.ObservationProblem}}
 	}
-	rows := []Fired{}
+	rows := append([]Fired{}, h.Drift...)
 	fire := func(row, subject string, minutes *float64, act string) {
 		rows = append(rows, Fired{Row: row, Subject: subject, Minutes: measured(minutes), Act: act})
 	}
@@ -540,7 +544,11 @@ func (h Health) Line() (line string) {
 	}
 	names := []string{}
 	for _, r := range rows {
-		names = append(names, r.Row)
+		name := r.Row
+		if r.Row == "drift" {
+			name += ": " + r.Subject
+		}
+		names = append(names, name)
 	}
 	oldest := 0.
 	for _, g := range h.Goals {

@@ -104,12 +104,37 @@ func (pause Pause) Who() string {
 // ClearPause ends a pause, a readable one or not; a lane not paused is
 // unchanged.
 func ClearPause(home string) (changed bool, err error) {
+	return ClearPauseAt(home, "a person", time.Now())
+}
+
+func ReadResume(home string) (resume Pause, present bool, err error) {
+	present, err = readJSON(filepath.Join(HostDir(home), "landing-lane-resumed.json"), &resume)
+	return
+}
+
+// ResumeRecordError is an advisory failure after the pause was cleared.
+type ResumeRecordError struct{ Err error }
+
+func (e *ResumeRecordError) Error() string {
+	return "the resume time could not be recorded: " + e.Err.Error()
+}
+func (e *ResumeRecordError) Unwrap() error { return e.Err }
+
+// ClearPauseAt clears the pause before recording the shadow's resume time.
+// A ResumeRecordError never means the lane is still paused.
+func ClearPauseAt(home, by string, now time.Time) (changed bool, err error) {
 	err = withLock(home, func() error {
 		if _, paused := ReadPause(home); !paused {
 			return nil
 		}
+		if err := removeIfPresent(pausePath(home)); err != nil {
+			return err
+		}
 		changed = true
-		return removeIfPresent(pausePath(home))
+		if err := writeJSON(home, filepath.Join(HostDir(home), "landing-lane-resumed.json"), Pause{At: now.UTC().Format(time.RFC3339Nano), By: by}); err != nil {
+			return &ResumeRecordError{Err: err}
+		}
+		return nil
 	})
 	return changed, err
 }

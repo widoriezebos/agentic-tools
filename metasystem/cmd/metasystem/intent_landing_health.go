@@ -39,5 +39,12 @@ func runIntentLandingHealth(inv *intentInvocation, admitted laneAdmitted) int {
 	if status.Health == nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the lane health cannot be read: " + strings.Join(status.Problems, "; ")})
 	}
+	if len(status.Problems) > 0 || status.Health.ObservationProblem != "" {
+		rows := []string{"the lane health cannot be read"}
+		for _, row := range status.Health.Rows() {
+			rows = append(rows, row.Row+": "+row.Subject)
+		}
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: strings.Join(rows, "\n"), Data: status.Health})
+	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Summary: strings.Join(append([]string{status.Health.Text()}, status.Findings...), "\n"), Data: status.Health})
 }

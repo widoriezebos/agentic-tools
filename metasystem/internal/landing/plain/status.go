@@ -182,6 +182,11 @@ func readStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	return assembleHealth(status, record, seams, git)
 }
 func assembleHealth(status Status, record lane.Record, seams ProveSeams, git laneGit) Status {
+	if len(status.Problems) > 0 && status.Root != nil {
+		rows := shadowRows(status)
+		status.Health = &Health{State: "unknown", Shadow: status.Shadow, Drift: rows, ObservationProblem: rows[0].Subject}
+		return status
+	}
 	if len(status.Problems) == 0 && status.Root != nil {
 		layout, err := record.Layout()
 		if err == nil {
@@ -210,6 +215,25 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			status.Problems = append(status.Problems, "the lane's registration can't be read: "+view.Unreadable)
 		}
 		return status, raw
+	}
+	resume, _, resumeErr := lane.ReadResume(home)
+	raw.Resume = resume
+	if resumeErr != nil {
+		raw.Resume = lane.Pause{}
+		status.Findings = append(status.Findings, "the lane resume record cannot be read: "+resumeErr.Error())
+	}
+	var resumeFinding string
+	if err := readAgentRecord(record.Install, "resume-record-finding.json", &resumeFinding); err == nil && resumeFinding != "" {
+		raw.Resume = lane.Pause{}
+		status.Findings = append(status.Findings, resumeFinding)
+	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
+		status.Findings = append(status.Findings, "the resume finding cannot be read: "+err.Error())
+	}
+	_, skipped, eventsErr := state.ReadEvents(Dir(record.Install))
+	if eventsErr != nil {
+		status.Findings = append(status.Findings, "the lane shadow events cannot be read: "+eventsErr.Error())
+	} else if skipped > 0 {
+		status.Findings = append(status.Findings, state.SkippedEvidence(skipped))
 	}
 	// Every read failure this status could know of is a problem, one plain
 	// line each (fix round 4). First what the lane's own records and the

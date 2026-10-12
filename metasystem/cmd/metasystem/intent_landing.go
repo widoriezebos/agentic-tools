@@ -967,14 +967,28 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	if inv.resolveLayout() == nil {
 		proveAt = inv.layout.InstallationRoot.Path()
 	}
-	_, personErr := owners.person(proveAt)
+	person, personErr := owners.person(proveAt)
 	resumed, reopened := false, false
+	resumeWarning := ""
 	details := []string{}
 	var removalErr error
 	if personErr == nil {
 		var drainErr, pauseErr error
 		reopened, drainErr = plain.ClearDrain(record.Install)
-		resumed, pauseErr = lane.ClearPause(home)
+		resumed, pauseErr = lane.ClearPauseAt(home, person, owners.now())
+		var resumeFinding *lane.ResumeRecordError
+		if errors.As(pauseErr, &resumeFinding) {
+			resumeWarning = resumeFinding.Error()
+			details = append(details, resumeFinding.Error())
+			if err := plain.RecordResumeFinding(record.Install, resumeFinding.Error()); err != nil {
+				details = append(details, "the resume finding could not be saved: "+err.Error())
+			}
+			pauseErr = nil
+		} else if resumed && pauseErr == nil {
+			if err := plain.RecordResumeFinding(record.Install, ""); err != nil {
+				details = append(details, "the resume finding could not be cleared: "+err.Error())
+			}
+		}
 		if pauseErr != nil {
 			resumed = false
 		}
@@ -1020,6 +1034,9 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 	}
 	if reopened {
 		summary += "; admission open: accepting new work"
+	}
+	if resumeWarning != "" {
+		summary += "; " + resumeWarning
 	}
 	return intentResult{Outcome: outcome, Targets: targets, Data: view, Summary: summary, Details: append(details, "its landing agent starts when there is work"), view: landingDone(summary, record.Root)}
 }

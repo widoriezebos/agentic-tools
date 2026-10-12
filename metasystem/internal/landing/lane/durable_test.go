@@ -17,14 +17,20 @@ import (
 var doubted sync.Map
 
 type doubt struct {
-	mu      sync.Mutex
-	anchors []string
+	mu          sync.Mutex
+	anchors     []string
+	beforeWrite func(string)
 }
 
 // writeFile is installed once, before any test runs, so parallel tests
 // doubt only their own home's writes.
 func init() {
 	writeFile = func(path string, data []byte, mode os.FileMode, anchor string) (bool, error) {
+		if value, ok := doubted.Load(filepath.Dir(filepath.Dir(path))); ok {
+			if before := value.(*doubt).beforeWrite; before != nil {
+				before(path)
+			}
+		}
 		durable, err := atomicfile.WriteFile(path, data, mode, anchor)
 		if value, ok := doubted.Load(filepath.Dir(filepath.Dir(path))); ok {
 			d := value.(*doubt)

@@ -2,9 +2,11 @@
 package state
 
 import (
+	"bufio"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -134,6 +136,43 @@ func Read(dir string) (Record, bool, error) {
 	return record, err == nil, err
 }
 
+// ReadEvents keeps complete lines after a torn append; blank lines carry no event.
+func ReadEvents(dir string) (events []Event, skipped int, err error) {
+	file, err := os.Open(filepath.Join(dir, "events.jsonl"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, 0, nil
+	}
+	if err != nil {
+		return nil, 0, err
+	}
+	defer func() { err = errors.Join(err, file.Close()) }()
+	reader := bufio.NewReader(file)
+	for {
+		line, readErr := reader.ReadBytes('\n')
+		if len(strings.TrimSpace(string(line))) > 0 {
+			var event Event
+			if json.Unmarshal(line, &event) != nil {
+				skipped++
+			} else {
+				events = append(events, event)
+			}
+		}
+		if errors.Is(readErr, io.EOF) {
+			return events, skipped, nil
+		}
+		if readErr != nil {
+			return events, skipped, readErr
+		}
+	}
+}
+
+func SkippedEvidence(count int) string {
+	if count == 1 {
+		return "events.jsonl: 1 undecodable line skipped"
+	}
+	return fmt.Sprintf("events.jsonl: %d undecodable lines skipped", count)
+}
+
 // Diff includes payloads and clocks, even when the state words agree.
 func Diff(a, b Record) (changed []string) {
 	var walk func(string, reflect.Value, reflect.Value)
@@ -183,9 +222,21 @@ func locked(dir string, change func() error) error {
 	return change()
 }
 func appendEvent(dir string, event Event) error {
-	file, err := os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0600)
+	file, err := os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_CREATE|os.O_APPEND|os.O_RDWR, 0600)
 	if err != nil {
 		return err
+	}
+	// Separate a torn final line from the complete event about to be appended.
+	info, statErr := file.Stat()
+	if statErr == nil && info.Size() > 0 {
+		var last [1]byte
+		_, statErr = file.ReadAt(last[:], info.Size()-1)
+		if statErr == nil && last[0] != '\n' {
+			_, statErr = file.WriteString("\n")
+		}
+	}
+	if statErr != nil {
+		return errors.Join(statErr, file.Close())
 	}
 	return errors.Join(json.NewEncoder(file).Encode(event), file.Close())
 }
@@ -237,7 +288,7 @@ func Transition(dir string, now time.Time, kind, from, to, by, evidence string, 
 }
 func Replace(dir string, now time.Time, next Record, by string, expectVersion int, expectFingerprint Fingerprint) (changed []string, err error) {
 	err = locked(dir, func() error {
-		previous, _, readErr := Read(dir)
+		previous, present, readErr := Read(dir)
 		if readErr != nil {
 			previous = Record{}
 		}
@@ -245,15 +296,35 @@ func Replace(dir string, now time.Time, next Record, by string, expectVersion in
 			return &Stale{}
 		}
 		changed = Diff(previous, next)
+		events, skipped, eventsErr := ReadEvents(dir)
+		if eventsErr != nil {
+			return eventsErr
+		}
 		recovered := previous.LastObservation != nil && next.LastObservation == nil
-		if len(changed) == 0 && readErr == nil && !recovered {
+		damageRecorded := skipped == 0
+		for i := len(events) - 1; i >= 0 && !damageRecorded; i-- {
+			if events[i].Rebuild {
+				damageRecorded = strings.Contains(events[i].Evidence, SkippedEvidence(skipped))
+				break
+			}
+		}
+		if len(changed) == 0 && readErr == nil && !recovered && damageRecorded {
 			return nil
 		}
 		if readErr != nil {
 			changed = append([]string{"previous record unreadable: " + readErr.Error()}, changed...)
 		}
-		if len(changed) > 0 {
-			if err := appendEvent(dir, Event{At: now.UTC(), Kind: "rebuild", By: by, Evidence: strings.Join(changed, "\n"), Rebuild: true}); err != nil {
+		if len(changed) > 0 || !damageRecorded {
+			if present {
+				if err := appendDrift(dir, now, changed, by, events); err != nil {
+					return err
+				}
+			}
+			evidence := append([]string(nil), changed...)
+			if skipped > 0 {
+				evidence = append(evidence, SkippedEvidence(skipped))
+			}
+			if err := appendEvent(dir, Event{At: now.UTC(), Kind: "rebuild", By: by, Evidence: strings.Join(evidence, "\n"), Rebuild: true}); err != nil {
 				return err
 			}
 		}
@@ -266,6 +337,36 @@ func Replace(dir string, now time.Time, next Record, by string, expectVersion in
 		return write(dir, next)
 	})
 	return changed, err
+}
+
+// appendDrift accounts for transitions since the preceding rebuild under state.lock.
+func appendDrift(dir string, now time.Time, changed []string, by string, events []Event) error {
+	var transitions []string
+	for _, event := range events {
+		if event.Rebuild {
+			transitions = nil
+		} else if event.Kind != "defect" && event.Kind != "drift" && !strings.HasPrefix(event.Kind, "observation-") {
+			transitions = append(transitions, event.Kind)
+		}
+	}
+	var drift []string
+	for _, difference := range changed {
+		field, _, _ := strings.Cut(difference, ": ")
+		explained := false
+		for _, kind := range transitions {
+			if field == kind || strings.HasPrefix(field, kind+".") {
+				explained = true
+				break
+			}
+		}
+		if !explained {
+			drift = append(drift, difference)
+		}
+	}
+	if len(drift) == 0 {
+		return nil
+	}
+	return appendEvent(dir, Event{At: now.UTC(), Kind: "drift", By: by, Evidence: strings.Join(drift, "\n")})
 }
 
 // Fingerprint validates publication while the state lock is held. The reader

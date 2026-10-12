@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
@@ -172,6 +173,25 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 			if inHour(a.At) {
 				count++
 				fmt.Fprintf(&out, "- Row %s: %s; act %s; why %s; how %s; outcome %s\n", a.Row, a.Subject, a.What, a.Why, a.How, a.Outcome)
+			}
+		}
+		fmt.Fprintln(&out, "\n### drift")
+		events, skipped, err := state.ReadEvents(Dir(install))
+		if err != nil {
+			fmt.Fprintf(&out, "- The lane shadow events cannot be read: %s\n", err)
+		} else if skipped > 0 {
+			fmt.Fprintf(&out, "- %s\n", state.SkippedEvidence(skipped))
+		}
+		day := now.Local().Format("2006-01-02")
+		for _, event := range events {
+			if event.Kind == "drift" && event.By == "keeper" && !event.At.After(now) && event.At.Local().Format("2006-01-02") == day {
+				differences := strings.Split(event.Evidence, "\n")
+				for i, difference := range differences {
+					field, values, _ := strings.Cut(difference, ": ")
+					before, after, _ := strings.Cut(values, " → ")
+					differences[i] = field + ": " + localShadowValue(before) + " → " + localShadowValue(after)
+				}
+				fmt.Fprintf(&out, "- %s: %s\n", event.At.Local().Format("15:04"), strings.Join(differences, "; "))
 			}
 		}
 		fmt.Fprintln(&out, "\n### Tokens\n\nSession totals; a landing session may be shared across goals.")

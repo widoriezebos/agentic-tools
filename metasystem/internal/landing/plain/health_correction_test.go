@@ -102,6 +102,9 @@ func TestLandingHealthStateAndRecoveryRows(t *testing.T) {
 				return "main", nil
 			}
 			before := filepath.Join(Dir(b.install), "fixes")
+			status.Raw = RawFacts{Now: bedNow, Batch: batch, Ordinals: []int{1, 2, 3, 4}}
+			shadow := ShadowOf(status, status.Raw)
+			status.Shadow = &shadow
 			h, err := buildHealth(status, batch, lane.Pause{}, "", nil, nil, b.install, b.checkout, s, b.git(nil, nil))
 			if err != nil {
 				t.Fatal(err)

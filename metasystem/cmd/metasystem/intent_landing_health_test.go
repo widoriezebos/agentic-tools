@@ -95,6 +95,8 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 	stop, err := json.Marshal(plain.Stop{Loop: "lane-proof", Subject: "waiting", Decision: "stop", At: laneTestNow.UTC().Format(time.RFC3339Nano), Class: "waiting goal needs proof"})
 	helmMust(t, err)
 	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.installation), "stops.jsonl"), append(stop, '\n'), 0600))
+	_, err = plain.RefreshShadow(b.home, time.Now().UTC(), "fixture", plain.ProveSeams{})
+	helmMust(t, err)
 	for _, args := range [][]string{{"landing", "health"}, {"landing", "health", "--json"}, {"landing", "health", "unexpected"}} {
 		cmd := exec.CommandContext(t.Context(), engine, args...)
 		cmd.Dir = b.checkout

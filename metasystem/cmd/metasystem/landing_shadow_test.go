@@ -62,16 +62,17 @@ func TestLandingShadowCLIRefreshAndJSON(t *testing.T) {
 	if !status.Paused || status.Shadow == nil || status.Shadow.Lane.Word != "paused" || status.Health == nil || status.Health.Shadow == nil {
 		t.Fatalf("status shadow: %+v", status)
 	}
-	if _, err := lane.ClearPause(b.home); err != nil {
+	resumedAt := laneTestNow.Add(time.Minute)
+	if _, err := lane.ClearPauseAt(b.home, "fixture", resumedAt); err != nil {
 		t.Fatal(err)
 	}
 	call("health")
 	record, _, err = state.Read(plain.Dir(b.installation))
-	if err != nil || record.Lane.Word != "running" || !record.Lane.Since.Observed {
+	if err != nil || record.Lane.Word != "running" || record.Lane.Since.Observed || !record.Lane.Since.At.Equal(resumedAt) {
 		t.Fatalf("health exit did not refresh resume: %+v %v", record.Lane, err)
 	}
 	data, err := os.ReadFile(filepath.Join(plain.Dir(b.installation), "events.jsonl"))
-	if err != nil || strings.Count(string(data), "\n") != 2 {
+	if err != nil || strings.Count(string(data), "\n") != 3 {
 		t.Fatalf("unchanged verbs appended rebuilds: %s %v", data, err)
 	}
 	if err := os.WriteFile(filepath.Join(plain.Dir(b.installation), "state.json"), []byte(`{not json`), 0600); err != nil {

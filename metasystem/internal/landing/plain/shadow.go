@@ -20,6 +20,7 @@ type RawFacts struct {
 	Previous                *state.Record
 	Stops                   []Stop
 	Pause                   lane.Pause
+	Resume                  lane.Pause
 	Agent                   lane.AgentState
 	AgentLive               *bool
 	Batch                   *Batch
@@ -53,6 +54,13 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	}
 	next.Lane.By, next.Lane.Reason = raw.Pause.By, raw.Pause.Reason
 	next.Lane.Since = since(raw.Pause.At, "landing-lane.json")
+	if next.Lane.Word == "running" {
+		next.Lane.By, next.Lane.Reason = raw.Resume.By, ""
+		next.Lane.Since = since(raw.Resume.At, "landing-lane-resumed.json")
+		if raw.Resume.At == "" {
+			next.Lane.Since = since("", "landing-lane.json")
+		}
+	}
 	agentAlive := observation.AgentAlive
 	if raw.AgentLive != nil {
 		agentAlive = *raw.AgentLive
@@ -111,6 +119,12 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 		stamp := ""
 		if batch.State == BatchPrepared {
 			stamp = preparedAt
+		}
+		if batch.State == BatchRunning {
+			stamp = batch.RunningAt
+		}
+		if batch.State == BatchClosed {
+			stamp = batch.ClosedAt
 		}
 		next.Batch.Execution.Since = since(stamp, "batch.json")
 		next.Batch.Admission.Word = "sealed"
@@ -214,6 +228,13 @@ func shadowEngine(install string) (string, error) {
 	}
 	stamp, err := enginebuild.ReadStamp(file)
 	return stamp, errors.Join(err, file.Close())
+}
+
+// RecordResumeFinding retains advisory failure separately from operational records.
+func RecordResumeFinding(install string, finding string) error {
+	return withLock(install, func() error {
+		return writeAgentRecord(install, "resume-record-finding.json", finding)
+	})
 }
 
 // RefreshShadow publishes only complete, coherent observations.

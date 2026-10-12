@@ -83,15 +83,45 @@ func TestReplaceNamesPayloadAndSinceDifferences(t *testing.T) {
 		t.Fatalf("changed: %q; want %q (%v)", changed, want, err)
 	}
 	list := events(t, dir)
-	if len(list) != 2 || !list[1].Rebuild || list[1].Evidence != strings.Join(changed, "\n") {
+	if len(list) != 3 || list[1].Kind != "drift" || list[1].Evidence != strings.Join(changed, "\n") || !list[2].Rebuild || list[2].Evidence != strings.Join(changed, "\n") {
 		t.Fatalf("events: %+v", list)
 	}
-	if changed, err = replaceFixture(dir, now.Add(time.Minute), after, "keeper"); err != nil || len(changed) != 0 || len(events(t, dir)) != 2 {
+	if changed, err = replaceFixture(dir, now.Add(time.Minute), after, "keeper"); err != nil || len(changed) != 0 || len(events(t, dir)) != 3 {
 		t.Fatalf("unchanged replace: %q %v", changed, err)
 	}
 }
 
 func fmtTime(at time.Time) string { return at.String() }
+
+func TestRebuildDriftExplainsOnlyTransitionFieldsSinceLastRebuild(t *testing.T) {
+	t.Parallel()
+	dir, now := t.TempDir(), time.Date(2026, 10, 12, 20, 0, 0, 0, time.UTC)
+	initial := Record{Lane: Lane{Fact: Fact{Word: "running"}}, Batch: Batch{Members: []Member{{Goal: "A", SHA: "a"}}}}
+	if _, err := replaceFixture(dir, now, initial, "fixture"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Transition(dir, now, "lane", "running", "paused", "person", "maintenance", func(r *Record) { r.Lane.Word = "paused" }); err != nil {
+		t.Fatal(err)
+	}
+	next, _, _ := Read(dir)
+	next.Lane.Since, next.Lane.By = Since{At: now}, "person"
+	next.Batch.Members = append(next.Batch.Members, Member{Goal: "B", SHA: "b"})
+	if _, err := replaceFixture(dir, now, next, "keeper"); err != nil {
+		t.Fatal(err)
+	}
+	list := events(t, dir)
+	if len(list) != 4 || list[2].Kind != "drift" || list[2].Evidence != "batch.members: [{A a}] → [{A a} {B b}]" || !list[3].Rebuild {
+		t.Fatalf("transition masked unrelated drift: %+v", list)
+	}
+	next.Lane.Reason = "handwritten"
+	if _, err := replaceFixture(dir, now.Add(time.Minute), next, "keeper"); err != nil {
+		t.Fatal(err)
+	}
+	list = events(t, dir)
+	if len(list) != 6 || list[4].Kind != "drift" || list[4].Evidence != "lane.reason:  → handwritten" {
+		t.Fatalf("an old transition hid new drift: %+v", list)
+	}
+}
 
 func TestUnpublishedTemporaryLeavesOldRecordReadable(t *testing.T) {
 	t.Parallel()
@@ -288,7 +318,10 @@ func TestReplaceObservationRecoveryWithAndWithoutFactChanges(t *testing.T) {
 			list := events(t, dir)
 			wantEvents := 3
 			if changedFact {
-				wantEvents++
+				wantEvents += 2
+				if list[2].Kind != "drift" || list[2].Evidence != "lane.word: running → paused" {
+					t.Fatalf("recovery lost drift: %+v", list)
+				}
 			}
 			if err != nil || got.LastObservation != nil || got.Version != before.Version+1 || len(list) != wantEvents || list[len(list)-1].Kind != "observation-recovered" || list[len(list)-1].Rebuild {
 				t.Fatalf("recovery: record=%+v error=%v events=%+v", got, err, list)
@@ -306,4 +339,58 @@ func replaceFixture(dir string, now time.Time, next Record, by string) ([]string
 		return nil, err
 	}
 	return Replace(dir, now, next, by, previous.Version, Fingerprint{Current: func() string { return "" }})
+}
+
+func TestReplaceSkipsTornEventAndRecordsEvidence(t *testing.T) {
+	t.Parallel()
+	for _, tail := range []string{"\n", ""} {
+		t.Run(map[string]string{"\n": "line", "": "tail"}[tail], func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			now := time.Date(2026, 10, 12, 20, 0, 0, 0, time.UTC)
+			r := Record{Lane: Lane{Fact: Fact{Word: "running"}}}
+			if _, err := replaceFixture(dir, now, r, "fixture"); err != nil {
+				t.Fatal(err)
+			}
+			file, err := os.OpenFile(filepath.Join(dir, "events.jsonl"), os.O_APPEND|os.O_WRONLY, 0600)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, writeErr := file.WriteString(`{"kind":` + tail)
+			if err := errors.Join(writeErr, file.Close()); err != nil {
+				t.Fatal(err)
+			}
+			// Even unchanged facts must acknowledge the damaged history on the next rebuild.
+			if _, err := replaceFixture(dir, now, r, "keeper"); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(filepath.Join(dir, "events.jsonl"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+			var last Event
+			if err := json.Unmarshal([]byte(lines[len(lines)-1]), &last); err != nil {
+				t.Fatal(err)
+			}
+			if !last.Rebuild || last.By != "keeper" || !strings.Contains(last.Evidence, "events.jsonl: 1 undecodable line skipped") {
+				t.Fatalf("rebuild lost damage evidence: %+v", last)
+			}
+			if _, err := replaceFixture(dir, now, r, "keeper"); err != nil {
+				t.Fatal(err)
+			}
+			list, skipped, err := ReadEvents(dir)
+			if err != nil || skipped != 1 || len(list) != 2 {
+				t.Fatalf("unchanged refresh repeated rebuild: %+v %d %v", list, skipped, err)
+			}
+			r.Lane.Word = "paused"
+			if _, err := replaceFixture(dir, now.Add(time.Minute), r, "keeper"); err != nil {
+				t.Fatal(err)
+			}
+			list, skipped, err = ReadEvents(dir)
+			if err != nil || skipped != 1 || len(list) != 4 || list[2].Kind != "drift" || list[3].Kind != "rebuild" {
+				t.Fatalf("later events disappeared past torn line: %+v %d %v", list, skipped, err)
+			}
+		})
+	}
 }

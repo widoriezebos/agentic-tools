@@ -209,7 +209,7 @@ func TestObservationFailedQueueAndQuestionKeepCompleteShadow(t *testing.T) {
 				t.Fatal(events)
 			}
 			status := ObserveStatus(b.home, b.record, seams, nil)
-			if status.Health != nil || !strings.Contains(strings.Join(status.Problems, ";"), path) {
+			if status.Health == nil || healthRow(status.Health, "observation-failed") == nil || healthRow(status.Health, "drift") != nil || !strings.Contains(status.Health.Text(), path) || !strings.Contains(strings.Join(status.Problems, ";"), path) {
 				t.Fatalf("health hid error: %+v", status)
 			}
 			if err := os.Remove(path); err != nil {

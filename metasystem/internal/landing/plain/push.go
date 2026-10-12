@@ -298,6 +298,9 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 		}
 	}
 	if batch != nil && batch.ClosureReason != "confirmed push accounts for the selected members" {
+		if batch.State != BatchClosed {
+			batch.ClosedAt = now.UTC().Format(time.RFC3339Nano)
+		}
 		batch.State, batch.ClosureReason = BatchClosed, "confirmed push accounts for the selected members"
 		if err := writeBatch(install, batch); err != nil {
 			return err

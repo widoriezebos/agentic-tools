@@ -259,11 +259,11 @@ func TestShadowAgreementLifecycleAndEverySince(t *testing.T) {
 	}
 	r := read()
 	transition("lane", r.Lane.Since, bedNow.Format(time.RFC3339))
-	if _, err := lane.ClearPause(b.home); err != nil {
+	if _, err := lane.ClearPauseAt(b.home, "person", bedNow); err != nil {
 		t.Fatal(err)
 	}
 	r = read()
-	observation("lane", r.Lane.Since, "landing-lane.json")
+	transition("lane", r.Lane.Since, bedNow.Format(time.RFC3339Nano))
 	at := bedNow.Add(-time.Minute).Format(time.RFC3339)
 	b.lines("queue.jsonl", Line{Goal: "A", SHA: "a", At: at})
 	r = read()
@@ -283,11 +283,12 @@ func TestShadowAgreementLifecycleAndEverySince(t *testing.T) {
 	transition("batch.execution", r.Batch.Execution.Since, at)
 	transition("batch.admission", r.Batch.Admission.Since, at)
 	batch.State = BatchRunning
+	batch.RunningAt = bedNow.Format(time.RFC3339Nano)
 	if err := writeBatch(b.install, batch); err != nil {
 		t.Fatal(err)
 	}
 	r = read()
-	observation("batch.execution", r.Batch.Execution.Since, "batch.json")
+	transition("batch.execution", r.Batch.Execution.Since, batch.RunningAt)
 	if r.Batch.Admission.Word != "open" {
 		t.Fatal(r.Batch)
 	}
@@ -325,6 +326,12 @@ func TestShadowAgreementLifecycleAndEverySince(t *testing.T) {
 	r = read()
 	transition("main", r.Main.Since, bedNow.Format(time.RFC3339))
 	transition("landed hand-in", r.HandIns[0].Since, bedNow.Format(time.RFC3339))
+	batch.State, batch.ClosedAt = BatchClosed, bedNow.Format(time.RFC3339Nano)
+	if err := writeBatch(b.install, batch); err != nil {
+		t.Fatal(err)
+	}
+	r = read()
+	transition("batch.execution", r.Batch.Execution.Since, batch.ClosedAt)
 	observation("holds", r.Holds.Since, "landing-agent-keeper.json")
 }
 
@@ -502,8 +509,12 @@ func TestShadowKeeperEveryOutcomeAndHandWrittenPause(t *testing.T) {
 				t.Fatal(r.Lane)
 			}
 			data, err = os.ReadFile(filepath.Join(Dir(b.install), "events.jsonl"))
-			if err != nil || strings.Count(string(data), "\n") != 2 {
+			if err != nil || strings.Count(string(data), "\n") != 3 {
 				t.Fatalf("second tick events: %s %v", data, err)
+			}
+			events := shadowEvents(t, b.install)
+			if events[1].Kind != "drift" || !strings.Contains(events[1].Evidence, "lane.") || !events[2].Rebuild {
+				t.Fatalf("handwritten pause lost drift: %+v", events)
 			}
 		})
 	}
