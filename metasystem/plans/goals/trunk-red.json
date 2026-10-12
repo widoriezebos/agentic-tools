@@ -1315,11 +1315,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261011T235626.846906000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-12T01:13:36Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T04:50:19Z",
+        "attempt": "20261012T040437.772766000Z",
+        "baseCommit": "b536d0b0e399784be0656f3353734f771652cb7a",
+        "how": "green",
+        "opid": "QWKWKJ91ZP0HW9SFG060QK6R6S-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase",
@@ -1360,11 +1366,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261012T014045.916632000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-12T02:35:37Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-12T04:50:19Z",
+        "attempt": "20261012T040437.772766000Z",
+        "baseCommit": "b536d0b0e399784be0656f3353734f771652cb7a",
+        "how": "green",
+        "opid": "QWKWKJ91ZP0HW9SFG060QK6R6S-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
