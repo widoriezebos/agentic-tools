@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-rehearsal-before-landing",
+  "unit": "U1",
+  "subject": {
+    "commit": "3c92b778768748c732d81f3084e075c48d0a9f11",
+    "parent": "5dfaf4fdc6ce695c3f3b9ceeb7778783cfa0e04b",
+    "tree": "5afdb025bc065f0d93932e2787c6720ab723faa0",
+    "patchDigest": "c1b7d6662ba3aa4dae7e99a7cfded4781cd96c964d033116c29ec69ae20e0084",
+    "unitDigest": "cdc21898e8510f2f736d1c29c58f595f461a53281b97de47ed789d183d99b2a4"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-db0632c76447e41b36d3ccd7",
+    "round": 1,
+    "closureSha256": "b53e8d9db0f208649e776416606980a43cee06acfdf1590c724058a8462df3e7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "5afdb025bc065f0d93932e2787c6720ab723faa0",
+    "runId": "goal-read-gate-20261012t024843z-f69b390e972bd241"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/audit_modes_test.go",
+      "readerWord": "reviewed by critic root code-critic-db0632c76447e41b36d3ccd7"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/audit_output_layout_g1b_test.go",
+      "readerWord": "reviewed by critic root code-critic-db0632c76447e41b36d3ccd7"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/audit_structured_output_test.go",
+      "readerWord": "reviewed by critic root code-critic-db0632c76447e41b36d3ccd7"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_coverage_test.go",
+      "readerWord": "reviewed by critic root code-critic-db0632c76447e41b36d3ccd7"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_landing_test.go",
+      "readerWord": "reviewed by critic root code-critic-db0632c76447e41b36d3ccd7"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/verb_ratchet_test.go",
+      "readerWord": "reviewed by critic root code-critic-db0632c76447e41b36d3ccd7"
+    },
+    {
+      "path": "metasystem/internal/diskstore/tempstore_test.go",
+      "readerWord": "reviewed by critic root code-critic-db0632c76447e41b36d3ccd7"
+    },
+    {
+      "path": "metasystem/internal/layering/nativeexec_test.go",
+      "readerWord": "reviewed by critic root code-critic-db0632c76447e41b36d3ccd7"
+    }
+  ],
+  "sha256": "3a943944a00ad357fdad4346873ab5dd9c608eeedcc16eb285e99a9404a22f57"
+}
