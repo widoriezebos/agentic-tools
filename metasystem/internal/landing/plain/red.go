@@ -109,7 +109,7 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 			result.ClassificationPerson = &act
 			running.Person = &act
 		}
-		if err := writeRunning(install, running); err != nil {
+		if err := writeRunning(install, running, seams); err != nil {
 			return err
 		}
 		return nil
@@ -126,9 +126,9 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 			if ok && current.Attempt == running.Attempt {
 				if result.Result == Red {
 					current.Attempt, current.Commit, current.Tree, current.Gate, current.Trunk, current.Checkpoint = result.Attempt, result.Commit, result.Tree, seams.Gate, result.Trunk, true
-					return writeRunning(install, current)
+					return writeRunning(install, current, seams)
 				}
-				return os.Remove(runningPath(install))
+				return removeRunning(install, seams)
 			}
 			return nil
 		}))
@@ -185,14 +185,14 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 		result = recordMainFailures(seams, result, []Result{result})
 	}
 	err = withLock(install, func() error {
-		if err := appendLine(seams.resultsPath(install), result); err != nil {
+		if err := appendLine(seams.resultsPath(install), result, seams); err != nil {
 			return err
 		}
-		if err := recordProofStop(install, result); err != nil {
+		if err := recordProofStop(install, result, seams); err != nil {
 			return err
 		}
 		if result.ClassificationPerson != nil {
-			return closeSubjectStopsLocked(install, "lane-classify", attempt, "person classified recorded red", seams.now())
+			return closeSubjectStopsLocked(install, "lane-classify", attempt, "person classified recorded red", seams.now(), seams)
 		}
 		return nil
 	})
@@ -238,7 +238,7 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 			if !recorded || current.Attempt != running.Attempt {
 				return fmt.Errorf("the classification no longer owns its execution slot")
 			}
-			return os.Remove(runningPath(install))
+			return removeRunning(install, seams)
 		})
 		if boundErr != nil {
 			result.ClassificationWarning += "; " + boundErr.Error()

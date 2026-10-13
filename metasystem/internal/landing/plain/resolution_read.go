@@ -55,7 +55,7 @@ func ExpireResolutionRead(install string, stop func(string) (bool, error), seams
 			}
 			current.ReadMinutes = fix.ReadMinutes
 			current.Reason = fmt.Sprintf("merge read ran %g min, bound %g; %s; a person can use landing give-back %s", fix.ReadMinutes, bound, refused.Reason, fix.Goal)
-			return WriteFix(install, current)
+			return WriteFix(install, current, seams)
 		}
 		checkout := install
 		if seams.Lane != nil {
@@ -76,7 +76,7 @@ func ExpireResolutionRead(install string, stop func(string) (bool, error), seams
 		}
 		reason := fmt.Sprintf("the resolution read of %s ran %g min past the bound of %g min; %s; review and hand in again", fix.Goal, fix.ReadMinutes-bound, bound, location)
 		current.ReadMinutes, current.Reason = fix.ReadMinutes, reason
-		if err := WriteFix(install, current); err != nil {
+		if err := WriteFix(install, current, seams); err != nil {
 			return err
 		}
 		entry, _, err := returnLocked(install, fix.Goal, reason, cause, nil, seams.now(), seams)

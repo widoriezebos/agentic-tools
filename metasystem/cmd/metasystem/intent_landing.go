@@ -1034,7 +1034,7 @@ func (inv *intentInvocation) startLane(owners laneVerbOwners, home string, recor
 		}
 		return *refused
 	}
-	if err := lane.RepairAgentRecord(home); err != nil {
+	if err := lane.RepairAgentRecord(home, owners.now()); err != nil {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: strings.Join(details, "; ") + "; the keeper record could not be repaired", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "tries the repair again"}
 	}
 	view := inv.laneView(owners, home)
@@ -1316,6 +1316,7 @@ func (inv *intentInvocation) laneBatchSeams(home string, record lane.Record, sea
 	seams = batchDepthSeams(seams)
 	seams.AgentReady = inv.landing().ready
 	seams.BudgetHome = home
+	seams.TransitionBy = inv.command.action
 	seams.Pause = func() (lane.Pause, bool) { return lane.ReadPause(home) }
 	seams.FenceCheck = func() error {
 		if _, paused := lane.ReadPause(home); !paused {

@@ -72,7 +72,7 @@ func observeRed(seams ProveSeams, install string, running Running, decision scop
 			result = *cancel
 			return nil
 		}
-		if err := appendLine(seams.resultsPath(install), result); err != nil {
+		if err := appendLine(seams.resultsPath(install), result, seams); err != nil {
 			return err
 		}
 		return redContinuationLocked(install, result, seams)
@@ -163,10 +163,10 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 				return &NoRepeat{}
 			}
 		}
-		if err := recordProofStop(install, result); err != nil {
+		if err := recordProofStop(install, result, seams); err != nil {
 			return err
 		}
-		return appendLine(seams.resultsPath(install), result)
+		return appendLine(seams.resultsPath(install), result, seams)
 	}); err != nil {
 		var refused *NoRepeat
 		if errors.As(err, &refused) {
@@ -227,7 +227,7 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 		result.Reason = strings.Join(failures, "; ")
 		result = recordFlakes(seams, result, result, "alone", repeats)
 		if main {
-			if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result) }); err != nil {
+			if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result, seams) }); err != nil {
 				result.Cause.Kind = "flake"
 				result.Reason += "; " + err.Error()
 			}
@@ -235,7 +235,7 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 		return result
 	}
 	result.RepeatComplete = true
-	if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result) }); err != nil {
+	if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result, seams) }); err != nil {
 		result.Reason = "the repeat's outcome could not be recorded: " + err.Error()
 		return result
 	}

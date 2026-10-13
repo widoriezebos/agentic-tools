@@ -187,7 +187,7 @@ func AdvanceDrain(install, checkout string, seams ProveSeams) (progress DrainPro
 			if batchErr == nil && terminal && idle && !unfinished {
 				batch.State, batch.ClosureReason = BatchClosed, "drain accounts for all selected members and their operations have ended"
 				batch.ClosedAt = seams.now().UTC().Format(time.RFC3339Nano)
-				batchErr = writeBatch(install, batch)
+				batchErr = writeBatch(install, batch, seams)
 			} else {
 				unfinished = true
 			}

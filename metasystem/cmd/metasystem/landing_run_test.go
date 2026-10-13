@@ -8,8 +8,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -20,11 +22,12 @@ import (
 func landingRunBed(t *testing.T) (*laneVerbBed, launch.Store) {
 	t.Helper()
 	bed := newLaneVerbBed(t)
+	bed.repoTop = func(string) (string, error) { return bed.landingA, nil }
 	if code, stdout, stderr := bed.run(t, "landing", "set", bed.landingA, "--by", "Wido"); code != 0 {
 		t.Fatalf("set = %d %q %q", code, stdout, stderr)
 	}
 	module := filepath.Join(bed.landingA, "metasystem")
-	for name, content := range map[string]string{"go.mod": "module fixture\n", "metasystem.conf.local": "launch.landing.runtime=claude\nlaunch.landing.model=claude-roster-model\n"} {
+	for name, content := range map[string]string{"go.mod": "module fixture\n", "metasystem.conf": "metasystem.template=true\n", "metasystem.conf.local": "launch.landing.runtime=claude\nlaunch.landing.model=claude-roster-model\n"} {
 		if err := os.WriteFile(filepath.Join(module, name), []byte(content), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -33,11 +36,23 @@ func landingRunBed(t *testing.T) (*laneVerbBed, launch.Store) {
 	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude", ProjectsRoot: filepath.Join(t.TempDir(), "projects")}},
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return laneTestNow }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,
 		Lane: landingLaneCheckout(func() (string, error) { return bed.home, nil })}
+	bed.plainProve = plain.ProveSeams{Now: func() time.Time { return laneTestNow },
+		Git: func(_ string, args ...string) (string, error) {
+			if args[0] == "rev-parse" && !strings.Contains(args[len(args)-1], "MERGE_HEAD") {
+				return "main", nil
+			}
+			return "", nil
+		},
+		Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil },
+	}
 	agent := newTestLandingAgent(func(agent *landingAgent) {
+		agent.proofEffects = bed.plainProve
+		agent.machine = func(string) (string, error) { return "landing", nil }
 		agent.manager = func() *launch.Manager { return manager }
 		agent.now = func() time.Time { return laneTestNow }
 		agent.nonce = func() (string, error) { return "0011223344556677", nil }
 	})
+	bed.ownerProbe = agent.probe
 	bed.keeper = func(home, root string) lane.AgentKeeper {
 		keeper := newLandingAgentKeeper(root, home, agent)
 		keeper.Sources.Reasons = func(string) ([]string, error) { return bed.wake, nil }

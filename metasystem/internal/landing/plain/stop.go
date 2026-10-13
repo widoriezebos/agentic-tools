@@ -136,7 +136,11 @@ func (seen stopSet) add(s Stop) {
 	}
 }
 
-func closeMatchingStopsLocked(install, act string, now time.Time, matches func(Stop) bool) error {
+func closeMatchingStopsLocked(install, act string, now time.Time, matches func(Stop) bool, effects ...ProveSeams) error {
+	return closeStopsLocked(install, act, now, matches, func(path string, s Stop) error { return appendLine(path, s, effects...) })
+}
+
+func closeStopsLocked(install, act string, now time.Time, matches func(Stop) bool, appendStop func(string, Stop) error) error {
 	lines, err := readLines[Stop](stopsPath(install))
 	if err != nil {
 		return err
@@ -154,18 +158,18 @@ func closeMatchingStopsLocked(install, act string, now time.Time, matches func(S
 		openedAt := s.At
 		s.StoppedAt = &openedAt
 		s.Decision, s.Handoff, s.At = "close", act, now.UTC().Format(time.RFC3339Nano)
-		if err := appendLine(stopsPath(install), s); err != nil {
+		if err := appendStop(stopsPath(install), s); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func closeSubjectStopsLocked(install, loop, subject, act string, now time.Time) error {
-	return closeMatchingStopsLocked(install, act, now, func(s Stop) bool { return s.Loop == loop && s.Subject == subject })
+func closeSubjectStopsLocked(install, loop, subject, act string, now time.Time, effects ...ProveSeams) error {
+	return closeMatchingStopsLocked(install, act, now, func(s Stop) bool { return s.Loop == loop && s.Subject == subject }, effects...)
 }
 
-func closeGoalStopsLocked(install, goal, act string, now time.Time, sha ...string) error {
+func closeGoalStopsWithSeamsLocked(install, goal, act string, now time.Time, effects ProveSeams, sha ...string) error {
 	var proofs []Result
 	if len(sha) > 0 {
 		for _, path := range []string{resultsPath(install), gatesPath(install)} {
@@ -199,7 +203,7 @@ func closeGoalStopsLocked(install, goal, act string, now time.Time, sha ...strin
 		}
 		// Regeneration and legacy stops may carry only the goal's commit.
 		return s.Tree == "" && (s.Cause == nil || s.Cause.SHA == "" || s.Cause.SHA == sha[0])
-	})
+	}, effects)
 }
 
 // CloseIncidentStop ends only the proof stop whose main incident cleared.
@@ -226,7 +230,7 @@ func CloseIncidentStop(install, incident string, now time.Time) error {
 }
 
 // recordProofStop runs under the lane lock after attribution and before a repeat.
-func recordProofStop(install string, result Result) error {
+func recordProofStop(install string, result Result, effects ...ProveSeams) error {
 	if result.ClassificationPending || result.Result != Red || result.Cause == nil || result.Trunk && result.Cause.Kind != "environment" {
 		return nil
 	}
@@ -304,21 +308,19 @@ func recordProofStop(install string, result Result) error {
 	if s.Decision == "continue" {
 		s.Decision = "repeat"
 	}
-	return appendLine(stopsPath(install), s)
+	return appendLine(stopsPath(install), s, effects...)
 }
 
 // RecordBarrenStop mirrors the keeper's existing hold without changing its count.
 func RecordBarrenStop(install string, state lane.AgentState, evidence string, now time.Time, effects ...ProveSeams) error {
+	effects = []ProveSeams{firstEffects(effects).transitionAs("keeper")}
 	return withLock(install, func() error {
 		if state.Barren == 0 {
-			return closeSubjectStopsLocked(install, "lane-return", "lane", "superseded by lane progress", now)
+			return closeSubjectStopsLocked(install, "lane-return", "lane", "superseded by lane progress", now, effects...)
 		}
 		s := Stop{Loop: "lane-return", Subject: "lane", Attempt: state.Barren, Budget: 2, Class: "lane unchanged", Decision: "stop", Handoff: "ask lane",
 			Cause: &Cause{Kind: "unclassified"}, Evidence: evidence, At: now.UTC().Format(time.RFC3339Nano)}
-		seams := ProveSeams{}
-		if len(effects) > 0 {
-			seams = effects[0]
-		}
+		seams := firstEffects(effects)
 		checkout := install
 		if seams.Lane != nil {
 			record, err := seams.Lane()
@@ -346,9 +348,9 @@ func RecordBarrenStop(install string, state lane.AgentState, evidence string, no
 		if err != nil || last != nil && last.Loop == s.Loop && last.Evidence == s.Evidence && slices.Equal(last.Required, s.Required) {
 			return err
 		}
-		if err := closeSubjectStopsLocked(install, s.Loop, s.Subject, "superseded by current lane remedy", now); err != nil {
+		if err := closeSubjectStopsLocked(install, s.Loop, s.Subject, "superseded by current lane remedy", now, effects...); err != nil {
 			return err
 		}
-		return appendLine(stopsPath(install), s)
+		return appendLine(stopsPath(install), s, effects...)
 	})
 }

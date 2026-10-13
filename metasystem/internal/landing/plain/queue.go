@@ -135,7 +135,11 @@ func withLock(install string, fn func() error) error {
 }
 
 // appendLine appends one JSON line in a single write.
-func appendLine(path string, value any) error {
+func appendLine(path string, value any, effects ...ProveSeams) error {
+	return transitionLine(path, value, func() error { return appendRawLine(path, value) }, effects...)
+}
+
+func appendRawLine(path string, value any) error {
 	data, err := json.Marshal(value)
 	if err != nil {
 		return err
@@ -361,7 +365,7 @@ func handIn(install string, line Line, person []string, effects ...ProveSeams) (
 				}
 				// Delivery information belongs to the waiting line; it
 				// does not create another hand-in.
-				if err := appendLine(queuePath(install), line); err != nil {
+				if err := appendLine(queuePath(install), line, effects...); err != nil {
 					return err
 				}
 				if line.Delivered != "" {
@@ -405,10 +409,10 @@ func handIn(install string, line Line, person []string, effects ...ProveSeams) (
 				}
 			}
 		}
-		if err := appendLine(queuePath(install), line); err != nil {
+		if err := appendLine(queuePath(install), line, effects...); err != nil {
 			return err
 		}
-		if err := closeGoalStopsLocked(install, line.Goal, "superseded by hand-in "+line.Goal, time.Now()); err != nil {
+		if err := closeGoalStopsWithSeamsLocked(install, line.Goal, "hand-in "+line.Goal, firstEffects(effects).now(), firstEffects(effects)); err != nil {
 			return err
 		}
 		entry, added = Entry{AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
@@ -438,6 +442,7 @@ func Say(install, goal, sha, delivered string) error {
 var ErrNotWaiting = errors.New("no hand-in of this goal waits in the lane")
 
 func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.Return, now time.Time, effects ...ProveSeams) (Entry, bool, error) {
+	effects = []ProveSeams{firstEffects(effects).transitionAs("return")}
 	latest, ok, err := Latest(install, goal)
 	switch {
 	case err != nil:
@@ -445,14 +450,11 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 	case !ok:
 		return Entry{}, false, fmt.Errorf("%w: %s was never handed in", ErrNotWaiting, goal)
 	case latest.State == StateReturned:
-		return latest, false, errors.Join(saveClosedBudget(install, goal, now, effects...), closeGoalStopsLocked(install, goal, "return "+goal, now, latest.SHA), closeFix(install, goal))
+		return latest, false, errors.Join(saveClosedBudget(install, goal, now, effects...), closeGoalStopsWithSeamsLocked(install, goal, "return "+goal, now, firstEffects(effects), latest.SHA), closeFix(install, goal, effects...))
 	case latest.State != StateWaiting:
 		return latest, false, fmt.Errorf("%w: %s already %s", ErrNotWaiting, goal, latest.State)
 	}
-	seams := ProveSeams{}
-	if len(effects) > 0 {
-		seams = effects[0]
-	}
+	seams := firstEffects(effects)
 	origin, err := checkReturnLocked(install, latest, cause, detail, now, seams)
 	if err != nil {
 		return latest, false, err
@@ -468,13 +470,13 @@ func returnLocked(install, goal, reason string, cause *Cause, detail *conflict.R
 		reason += fmt.Sprintf("; fix round %d, job %s, read %s", fix.Round, fix.Job, fix.Read)
 	}
 	at := now.UTC().Format(time.RFC3339)
-	if err := appendLine(queuePath(install), Line{ReturnOrigin: &origin, Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Cause: cause, Conflict: detail}); err != nil {
+	if err := appendLine(queuePath(install), Line{ReturnOrigin: &origin, Goal: goal, SHA: latest.SHA, At: at, Outcome: StateReturned, Reason: reason, Cause: cause, Conflict: detail}, effects...); err != nil {
 		return latest, false, err
 	}
 	latest.ReturnOrigin = &origin
 	latest.State, latest.Reason, latest.ReturnedAt, latest.Conflict, latest.Cause = StateReturned, reason, at, detail, cause
 	// The returned line is written: the bookkeeping below all runs, and its errors are reported together (a failed clock save never leaves the goal's stops or fix open).
-	return latest, true, errors.Join(saveClosedBudget(install, goal, now, seams), closeGoalStopsLocked(install, goal, "return "+goal, now, latest.SHA), closeFix(install, goal))
+	return latest, true, errors.Join(saveClosedBudget(install, goal, now, seams), closeGoalStopsWithSeamsLocked(install, goal, "return "+goal, now, firstEffects(effects), latest.SHA), closeFix(install, goal, effects...))
 }
 
 // Landed derives each waiting entry's landing: one whose sha main
@@ -514,10 +516,7 @@ func Landed(entries []Entry, contains func(sha string) (bool, error)) ([]Entry, 
 // nor contained in origin's main as the lane checkout last fetched it. It
 // is the signal a keeper wakes the landing agent on.
 func Pending(install, checkout string, effects ...ProveSeams) ([]Entry, error) {
-	seams := ProveSeams{}
-	if len(effects) > 0 {
-		seams = effects[0]
-	}
+	seams := firstEffects(effects)
 	return pending(install, checkout, seams)
 }
 

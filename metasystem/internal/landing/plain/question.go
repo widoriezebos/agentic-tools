@@ -28,7 +28,12 @@ func WithdrawStaleLaneQuestion(install string, q channel.Question, seams ProveSe
 	if due, _ := state.LifecycleDue("question", state.LifecycleFacts{Premise: state.QuestionPremise(facts).Word}, seams.now()); err != nil || !due {
 		return false, nil
 	}
-	_, err = channel.Withdraw(install, q.ID, "the checkout or main commit premise is no longer current", nil, channel.DestinationConfig{})
+	err = withLock(install, func() error {
+		return transitionWrite(install, "questions", "withdraw", seams.now(), "", func() error {
+			_, err := channel.Withdraw(install, q.ID, "the checkout or main commit premise is no longer current", nil, channel.DestinationConfig{})
+			return err
+		}, seams)
+	})
 	return err == nil, err
 }
 

@@ -483,7 +483,9 @@ func TestShadowKeeperEveryOutcomeAndHandWrittenPause(t *testing.T) {
 			b := newStatusBed(t)
 			shadowRegister(t, b.home, b.record)
 			seams := shadowSeams()
-			keeper := lane.AgentKeeper{Home: b.home, Self: b.checkout, Now: seams.Now, Running: func() (string, bool, error) { return "", false, nil }, Start: func(string, lane.Wake) (string, error) { return "session", nil },
+			live := false
+			seams.AgentRunning = func() (bool, error) { return live, nil }
+			keeper := lane.AgentKeeper{Home: b.home, Self: b.checkout, Now: seams.Now, Running: func() (string, bool, error) { return "session", live, nil }, Start: func(string, lane.Wake) (string, error) { live = true; return "session", nil },
 				Refresh: func(now time.Time) {
 					if _, err := RefreshShadow(b.home, now, "keeper", seams); err != nil {
 						t.Fatal(err)
@@ -496,7 +498,8 @@ func TestShadowKeeperEveryOutcomeAndHandWrittenPause(t *testing.T) {
 				keeper.Sources.Reasons = func(string) ([]string, error) { return []string{"A waits"}, nil }
 			}
 			if outcome == lane.AgentPaused {
-				if _, err := lane.SetPause(b.home, "person", bedNow); err != nil {
+				data, _ := json.Marshal(lane.Pause{By: "person", At: bedNow.Format(time.RFC3339Nano)})
+				if err := os.WriteFile(filepath.Join(lane.HostDir(b.home), "landing-lane-paused.json"), data, 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -507,7 +510,11 @@ func TestShadowKeeperEveryOutcomeAndHandWrittenPause(t *testing.T) {
 				t.Fatalf("tick failed to write shadow: %v %v", exists, err)
 			}
 			data, err := os.ReadFile(filepath.Join(Dir(b.install), "events.jsonl"))
-			if err != nil || strings.Count(string(data), "\n") != 1 {
+			firstEvents := 1
+			if outcome == lane.AgentStarted {
+				firstEvents++
+			}
+			if err != nil || strings.Count(string(data), "\n") != firstEvents {
 				t.Fatalf("first tick events: %s %v", data, err)
 			}
 			pause := lane.Pause{By: "handwritten", At: bedNow.Add(time.Minute).Format(time.RFC3339)}
@@ -521,11 +528,11 @@ func TestShadowKeeperEveryOutcomeAndHandWrittenPause(t *testing.T) {
 				t.Fatal(r.Lane)
 			}
 			data, err = os.ReadFile(filepath.Join(Dir(b.install), "events.jsonl"))
-			if err != nil || strings.Count(string(data), "\n") != 3 {
+			if err != nil || strings.Count(string(data), "\n") != firstEvents+2 {
 				t.Fatalf("second tick events: %s %v", data, err)
 			}
 			events := shadowEvents(t, b.install)
-			if events[1].Kind != "drift" || !strings.Contains(events[1].Evidence, "lane.") || !events[2].Rebuild {
+			if events[firstEvents].Kind != "drift" || !strings.Contains(events[firstEvents].Evidence, "lane.") || !events[firstEvents+1].Rebuild {
 				t.Fatalf("handwritten pause lost drift: %+v", events)
 			}
 		})

@@ -109,9 +109,11 @@ type Holds struct {
 	Since            Since `json:"since"`
 }
 type EngineIncident struct {
-	At    time.Time `json:"at"`
-	Verb  string    `json:"verb"`
-	Panic string    `json:"panic"`
+	Count  int       `json:"count"`
+	LastAt time.Time `json:"last_at"`
+	At     time.Time `json:"at"`
+	Verb   string    `json:"verb"`
+	Panic  string    `json:"panic"`
 }
 type Engine struct {
 	Incidents []EngineIncident `json:"incidents"`
@@ -292,7 +294,26 @@ func write(dir string, record Record) error {
 }
 func Transition(dir string, now time.Time, kind, from, to, by, evidence string, apply func(*Record), raw ...func() error) (event Event, err error) {
 	event = Event{At: now.UTC(), Kind: kind, From: from, To: to, By: by, Evidence: evidence}
-	err = locked(dir, func() error {
+	err = WithWriter(dir, func(w *Writer) error {
+		event, err = w.Transition(now, kind, from, to, by, evidence, apply, raw...)
+		return err
+	})
+	return event, err
+}
+
+// Writer owns state.lock for a raw write and its shadow transition.
+type Writer struct{ dir string }
+
+// WithWriter keeps refresh publication outside the complete write observation.
+func WithWriter(dir string, change func(*Writer) error) error {
+	return locked(dir, func() error { return change(&Writer{dir: dir}) })
+}
+
+// Transition applies a transition while the writer holds state.lock.
+func (w *Writer) Transition(now time.Time, kind, from, to, by, evidence string, apply func(*Record), raw ...func() error) (event Event, err error) {
+	dir := w.dir
+	event = Event{At: now.UTC(), Kind: kind, From: from, To: to, By: by, Evidence: evidence}
+	err = func() error {
 		record, _, err := Read(dir)
 		if err != nil {
 			return err
@@ -314,24 +335,28 @@ func Transition(dir string, now time.Time, kind, from, to, by, evidence string, 
 				}
 			}
 		} else {
-			field := reflect.ValueOf(record)
-			for _, part := range strings.Split(kind, ".") {
+			if kind == "hand_ins" || kind == "questions" || kind == "stop" || kind == "holds" || kind == "engine" {
+				actual = Word(record, kind)
+			} else {
+				field := reflect.ValueOf(record)
+				for _, part := range strings.Split(kind, ".") {
+					if field.Kind() != reflect.Struct {
+						return fmt.Errorf("unknown state field %q", kind)
+					}
+					field = field.FieldByNameFunc(func(name string) bool { return strings.EqualFold(name, part) })
+					if !field.IsValid() {
+						return fmt.Errorf("unknown state field %q", kind)
+					}
+				}
 				if field.Kind() != reflect.Struct {
-					return fmt.Errorf("unknown state field %q", kind)
+					return fmt.Errorf("state field %q has no word", kind)
 				}
-				field = field.FieldByNameFunc(func(name string) bool { return strings.EqualFold(name, part) })
-				if !field.IsValid() {
-					return fmt.Errorf("unknown state field %q", kind)
+				word := field.FieldByName("Word")
+				if !word.IsValid() {
+					return fmt.Errorf("state field %q has no word", kind)
 				}
+				actual = word.String()
 			}
-			if field.Kind() != reflect.Struct {
-				return fmt.Errorf("state field %q has no word", kind)
-			}
-			word := field.FieldByName("Word")
-			if !word.IsValid() {
-				return fmt.Errorf("state field %q has no word", kind)
-			}
-			actual = word.String()
 		}
 		if actual != from {
 			event.Kind, event.From = "defect", actual
@@ -351,8 +376,41 @@ func Transition(dir string, now time.Time, kind, from, to, by, evidence string, 
 			return err
 		}
 		return write(dir, record)
-	})
+	}()
 	return event, err
+}
+
+// Word names the state of a collection or the lane's current stop.
+func Word(record Record, kind string) string {
+	switch kind {
+	case "holds":
+		return fmt.Sprintf("barren=%d, selection_pending=%t", record.Holds.Barren, record.Holds.SelectionPending)
+	case "engine":
+		data, _ := json.Marshal(record.Engine)
+		return string(data)
+	case "hand_ins":
+		var words []string
+		for _, entry := range record.HandIns {
+			words = append(words, fmt.Sprintf("%s/%s/%d=%s", entry.Goal, entry.SHA, entry.Ordinal, entry.Word))
+		}
+		return strings.Join(words, ", ")
+	case "questions":
+		var words []string
+		for _, question := range record.Questions {
+			words = append(words, question.ID+"="+question.Premise)
+		}
+		return strings.Join(words, ", ")
+	case "stop":
+		if record.Stop != nil {
+			return record.Stop.Subject + "=" + record.Stop.Kind
+		}
+		return ""
+	}
+	field := reflect.ValueOf(record)
+	for _, part := range strings.Split(kind, ".") {
+		field = field.FieldByNameFunc(func(name string) bool { return strings.EqualFold(name, part) })
+	}
+	return field.FieldByName("Word").String()
 }
 func Replace(dir string, now time.Time, next Record, by string, expectVersion int, expectFingerprint Fingerprint) (changed []string, err error) {
 	err = locked(dir, func() error {
@@ -383,8 +441,9 @@ func Replace(dir string, now time.Time, next Record, by string, expectVersion in
 			changed = append([]string{"previous record unreadable: " + readErr.Error()}, changed...)
 		}
 		if len(changed) > 0 || !damageRecorded {
-			if present {
-				if err := appendDrift(dir, now, changed, by, events); err != nil {
+			if present && len(changed) > 0 {
+				// Transitions already update the shadow; remaining differences are drift.
+				if err := appendEvent(dir, Event{At: now.UTC(), Kind: "drift", By: by, Evidence: strings.Join(changed, "\n")}); err != nil {
 					return err
 				}
 			}
@@ -407,36 +466,6 @@ func Replace(dir string, now time.Time, next Record, by string, expectVersion in
 	return changed, err
 }
 
-// appendDrift accounts for transitions since the preceding rebuild under state.lock.
-func appendDrift(dir string, now time.Time, changed []string, by string, events []Event) error {
-	var transitions []string
-	for _, event := range events {
-		if event.Rebuild {
-			transitions = nil
-		} else if event.Kind != "defect" && event.Kind != "drift" && !strings.HasPrefix(event.Kind, "observation-") {
-			transitions = append(transitions, event.Kind)
-		}
-	}
-	var drift []string
-	for _, difference := range changed {
-		field, _, _ := strings.Cut(difference, ": ")
-		explained := false
-		for _, kind := range transitions {
-			if field == kind || strings.HasPrefix(field, kind+".") {
-				explained = true
-				break
-			}
-		}
-		if !explained {
-			drift = append(drift, difference)
-		}
-	}
-	if len(drift) == 0 {
-		return nil
-	}
-	return appendEvent(dir, Event{At: now.UTC(), Kind: "drift", By: by, Evidence: strings.Join(drift, "\n")})
-}
-
 // Fingerprint validates publication while the state lock is held. The reader
 // supplies the fingerprint so storage never depends on the lane's readers.
 type Fingerprint struct {
@@ -448,21 +477,10 @@ type Stale struct{}
 func (*Stale) Error() string { return "the lane changed before the shadow could be published" }
 
 func NoteObservation(dir string, now time.Time, problems []string) error {
-	return locked(dir, func() error {
-		record, _, err := Read(dir)
-		if err != nil {
-			return err
-		}
-		record.LastObservation = &Observation{At: now.UTC(), Problems: append([]string(nil), problems...)}
-		record.Version++
-		if err := appendEvent(dir, Event{At: now.UTC(), Kind: "observation-failed", Evidence: strings.Join(problems, "; ")}); err != nil {
-			return err
-		}
-		return write(dir, record)
-	})
+	return WithWriter(dir, func(w *Writer) error { return w.NoteObservation(now, problems) })
 }
 func NoteUnstable(dir string, now time.Time) error {
-	return locked(dir, func() error { return appendEvent(dir, Event{At: now.UTC(), Kind: "observation-unstable"}) })
+	return WithWriter(dir, func(w *Writer) error { return w.NoteUnstable(now) })
 }
 
 // Carry retains the first observation of an unchanged identity and word.
@@ -499,4 +517,35 @@ func Carry(previous *Record, next Record) Record {
 	}
 	keep(p.Holds.Since, &next.Holds.Since, p.Holds.Barren == next.Holds.Barren && p.Holds.SelectionPending == next.Holds.SelectionPending)
 	return next
+}
+
+// ReportFailure retains advisory state errors after an operational write succeeded.
+// A refused transition already carries its defect event.
+func ReportFailure(dir string, now time.Time, by string, failure error) {
+	var refused *Refused
+	if errors.As(failure, &refused) {
+		if joined, ok := failure.(interface{ Unwrap() []error }); !ok || len(joined.Unwrap()) == 1 {
+			return
+		}
+	}
+	if err := appendEvent(dir, Event{At: now.UTC(), Kind: "observation-failed", By: by, Evidence: failure.Error()}); err != nil {
+		data, _ := json.Marshal("the lane transition could not be recorded: " + errors.Join(failure, err).Error())
+		_, _ = atomicfile.WriteFile(filepath.Join(dir, "transition-finding.json"), append(data, '\n'), 0600, "")
+	}
+}
+
+func (w *Writer) NoteUnstable(now time.Time) error {
+	return appendEvent(w.dir, Event{At: now.UTC(), Kind: "observation-unstable"})
+}
+func (w *Writer) NoteObservation(now time.Time, problems []string) error {
+	record, _, err := Read(w.dir)
+	if err != nil {
+		return err
+	}
+	record.LastObservation = &Observation{At: now.UTC(), Problems: append([]string(nil), problems...)}
+	record.Version++
+	if err := appendEvent(w.dir, Event{At: now.UTC(), Kind: "observation-failed", Evidence: strings.Join(problems, "; ")}); err != nil {
+		return err
+	}
+	return write(w.dir, record)
 }

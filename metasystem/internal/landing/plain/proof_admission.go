@@ -249,7 +249,7 @@ func holdProofLocked(install string, running Running, seams ProveSeams, code, re
 	if !slices.ContainsFunc(open, func(o Stop) bool {
 		return o.Loop == stop.Loop && o.Subject == stop.Subject && o.Tree == stop.Tree && o.Class == stop.Class && o.Trunk == stop.Trunk
 	}) {
-		if err := appendLine(stopsPath(install), stop); err != nil {
+		if err := appendLine(stopsPath(install), stop, seams); err != nil {
 			return err
 		}
 	}
@@ -258,7 +258,7 @@ func holdProofLocked(install string, running Running, seams ProveSeams, code, re
 
 // Only the matching proof admission closes its request. Spent result history
 // remains intact, including after an explicit budget exception.
-func closeProofAdmissionStopsLocked(install string, running Running, now time.Time) error {
+func closeProofAdmissionStopsLocked(install string, running Running, now time.Time, effects ...ProveSeams) error {
 	if running.Person == nil {
 		return nil
 	}
@@ -274,11 +274,11 @@ func closeProofAdmissionStopsLocked(install string, running Running, now time.Ti
 			return (stop.Scope == "" || stop.Scope == "full") && stop.Subject == "main"
 		}
 		return running.BatchID != "" && stop.BatchID == running.BatchID || stop.Subject == proofStopSubject(running.BatchMembers, running.Trunk) || stop.Subject == running.Tree
-	})
+	}, effects...)
 	if err != nil && running.Admission != nil {
 		running.Admission.Warning += "; check request closure pending: " + err.Error()
 		running.Executions[len(running.Executions)-1].Warning = running.Admission.Warning
-		return writeRunning(install, running)
+		return writeRunning(install, running, effects...)
 	}
 	return nil
 }

@@ -145,6 +145,9 @@ func TestKeeperLifecycleRecords(t *testing.T) {
 				for _, event := range events {
 					if event.Kind == kind {
 						count++
+						if kind == "question" && event.To != "withdrawn" {
+							t.Fatalf("question retirement lost its destination: %+v", event)
+						}
 						if event.By != "keeper" || event.From != "present" || event.Evidence == "" || event.RecordID == "" {
 							t.Fatalf("event: %+v", event)
 						}

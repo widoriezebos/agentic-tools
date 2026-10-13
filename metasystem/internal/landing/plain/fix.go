@@ -116,7 +116,7 @@ func readFixRecords(install string, closeStale, includeClosed, mergeOnly bool, g
 		}
 		if due, reason := landingstate.LifecycleDue("fix", landingstate.LifecycleFacts{Attempt: fix.Attempt, CurrentAttempt: running.Attempt}, time.Now()); recorded && fix.Tip == "" && due {
 			if closeStale {
-				if _, err := landingstate.Transition(Dir(install), time.Now(), "fix:"+filepath.Base(path), "present", "closed", "keeper", reason, nil, func() error { fix.State = "closed"; return WriteFix(install, &fix) }); err != nil {
+				if _, err := landingstate.Transition(Dir(install), time.Now(), "fix:"+filepath.Base(path), "present", "closed", "keeper", reason, nil, func() error { fix.State = "closed"; return writeRawFix(install, &fix) }); err != nil {
 					return nil, err
 				}
 			}
@@ -151,13 +151,22 @@ func resolutionDescription(f *Fix) landingstate.Resolution {
 }
 
 // WriteFix retains a fix's lifecycle beside its attempt's brief.
-func WriteFix(install string, fix *Fix) error {
+func WriteFix(install string, fix *Fix, effects ...ProveSeams) error {
+	s := firstEffects(effects)
+	return transitionWrite(install, "resolution", "resolve", s.now(), "", func() error { return writeRawFix(install, fix, s.now()) }, effects...)
+}
+
+func writeRawFix(install string, fix *Fix, clock ...time.Time) error {
 	previous, err := FixForAttempt(install, fix.Attempt)
 	if err != nil {
 		return err
 	}
 	if fix.At == "" || previous != nil && previous.State != fix.State {
-		fix.At = time.Now().UTC().Format(time.RFC3339Nano)
+		if len(clock) > 0 {
+			fix.At = clock[0].UTC().Format(time.RFC3339Nano)
+		} else {
+			fix.At = time.Now().UTC().Format(time.RFC3339Nano)
+		}
 	}
 	data, err := json.Marshal(fix)
 	if err != nil {
@@ -252,23 +261,23 @@ func advanceFix(install, checkout string, running Running, seams ProveSeams) err
 		}
 	}
 	fix.State = "closed"
-	err = WriteFix(install, fix)
+	err = WriteFix(install, fix, seams)
 	if err == nil && follows {
 		fix.ProofAttempt = fix.RepairProof()
 		fix.Attempt, fix.State = running.Attempt, "reviewing"
-		err = WriteFix(install, fix)
+		err = WriteFix(install, fix, seams)
 	}
 	return err
 }
 
-func closeFix(install, goal string) error {
+func closeFix(install, goal string, effects ...ProveSeams) error {
 	fix, err := readFixRecords(install, true, false, false, goal)
 	if err != nil {
 		return err
 	}
 	if fix != nil {
 		fix.State = "closed"
-		if err := WriteFix(install, fix); err != nil {
+		if err := WriteFix(install, fix, effects...); err != nil {
 			return err
 		}
 	}
@@ -276,7 +285,7 @@ func closeFix(install, goal string) error {
 	if err != nil || !recorded || !running.Checkpoint || goal != "" && !slices.ContainsFunc(running.BatchMembers, func(m GoalSHA) bool { return m.Goal == goal }) {
 		return err
 	}
-	return os.Remove(runningPath(install))
+	return removeRunning(install, effects...)
 }
 
 // RefreshMerge closes a resolution whose pending merge no longer exists.
@@ -293,7 +302,7 @@ func refreshMergeLocked(install, checkout string, fix *Fix, seams ProveSeams) er
 		return err
 	}
 	if resolving && fix.State == "abandoned" {
-		return WriteFix(install, fix)
+		return WriteFix(install, fix, seams)
 	}
 	return nil
 }

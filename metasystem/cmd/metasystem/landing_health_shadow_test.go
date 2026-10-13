@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,10 +19,12 @@ func TestLandingHealthShadowDriftCLI(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			t.Parallel()
 			b := newPlainVerbBed(t)
+			b.owners.landing.plainProve.AgentReady = func(root string) error { return lane.UnarmedRefusal(root) }
 			if _, err := plain.RefreshShadow(b.home, laneTestNow, "fixture", b.owners.landing.plainProve); err != nil {
 				t.Fatal(err)
 			}
-			if _, err := lane.SetPause(b.home, "the person", laneTestNow.Add(time.Minute)); err != nil {
+			data, _ := json.Marshal(lane.Pause{By: "the person", At: laneTestNow.Add(time.Minute).Format(time.RFC3339Nano)})
+			if err := os.WriteFile(filepath.Join(lane.HostDir(b.home), "landing-lane-paused.json"), data, 0600); err != nil {
 				t.Fatal(err)
 			}
 			words := "lane running, agent idle since 20:33"

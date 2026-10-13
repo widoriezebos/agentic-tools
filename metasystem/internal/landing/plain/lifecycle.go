@@ -55,7 +55,7 @@ func lifecycleRecords(install string, status Status, now time.Time, seams ProveS
 	}
 	for _, stop := range stops {
 		add("loop-stop", stopKey(stop), stopLifecycleFacts(stop, status, proofs, gates), func() error {
-			return closeMatchingStopsLocked(install, "subject gone", now, func(s Stop) bool { return stopKey(s) == stopKey(stop) })
+			return closeStopsLocked(install, "subject gone", now, func(s Stop) bool { return stopKey(s) == stopKey(stop) }, func(path string, s Stop) error { return appendRawLine(path, s) })
 		})
 	}
 	for _, q := range status.Raw.AllQuestions {
@@ -95,7 +95,7 @@ func lifecycleRecords(install string, status Status, now time.Time, seams ProveS
 		if recorded && fix.Tip == "" {
 			f.Attempt, f.CurrentAttempt = fix.Attempt, running.Attempt
 		}
-		add("fix", filepath.Base(path), f, func() error { fix.State = "closed"; return WriteFix(install, &fix) })
+		add("fix", filepath.Base(path), f, func() error { fix.State = "closed"; return writeRawFix(install, &fix, now) })
 	}
 	for i, e := range status.Queue {
 		stamp := e.LandedAt
@@ -144,9 +144,13 @@ func retireLifecycle(install string, status Status, now time.Time, seams ProveSe
 			if only != "" && record.kind != only {
 				continue
 			}
-			var changes []func() error
 			if record.retire != nil {
-				changes = append(changes, record.retire)
+				s := seams
+				s.TransitionBy, s.TransitionEvidence = "keeper", record.reason
+				if err := transitionWrite(install, record.id, "keeper", now, record.to, record.retire, s); err != nil {
+					return err
+				}
+				continue
 			}
 			mark := func(shadow *state.Record) {
 				switch record.kind {
@@ -162,7 +166,7 @@ func retireLifecycle(install string, status Status, now time.Time, seams ProveSe
 					}
 				}
 			}
-			if _, err := state.Transition(Dir(install), now, record.id, "present", record.to, "keeper", record.reason, mark, changes...); err != nil {
+			if _, err := state.Transition(Dir(install), now, record.id, "present", record.to, "keeper", record.reason, mark); err != nil {
 				return err
 			}
 		}
@@ -176,7 +180,7 @@ func RefreshLifecycle(home string, now time.Time, seams ProveSeams) error {
 	if err != nil || !present {
 		return err
 	}
-	seams.Now, seams.ReadOnly = func() time.Time { return now }, true
+	seams.Now, seams.ReadOnly, seams.BudgetHome = func() time.Time { return now }, true, home
 	status := ObserveStatus(home, r, seams, nil)
 	if len(status.Problems) > 0 {
 		return errors.New(strings.Join(status.Problems, "; "))

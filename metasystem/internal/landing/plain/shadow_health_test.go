@@ -37,7 +37,8 @@ func TestLandingHealthShadowDrift(t *testing.T) {
 			s.Now = func() time.Time { return bedNow.Add(30 * time.Minute) }
 			switch scenario {
 			case "pause":
-				if _, err := lane.SetPause(b.home, "the person", pauseAt); err != nil {
+				data, _ := json.Marshal(lane.Pause{By: "the person", At: pauseAt.Format(time.RFC3339Nano)})
+				if err := os.WriteFile(filepath.Join(lane.HostDir(b.home), "landing-lane-paused.json"), data, 0600); err != nil {
 					t.Fatal(err)
 				}
 			case "members":

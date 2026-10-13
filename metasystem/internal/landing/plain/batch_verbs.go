@@ -126,13 +126,13 @@ func ActOnBatch(install, kind, goal string, person ActProvenance, s ProveSeams) 
 			return errors.New("unknown batch action")
 		}
 		batch.Actions = append(batch.Actions, act)
-		if err := writeBatch(install, batch); err != nil {
+		if err := writeBatch(install, batch, s); err != nil {
 			return err
 		}
 		if kind == "restart" && !act.Pending && batch.Person != nil {
 			return closeMatchingStopsLocked(install, "person selected batch "+batch.ID, person.CheckedAt, func(stop Stop) bool {
 				return stop.Loop == "lane-return" && stop.Subject == "lane" && stop.At == batch.Person.BarrenStopAt
-			})
+			}, s)
 		}
 		return nil
 	})

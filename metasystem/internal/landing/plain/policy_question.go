@@ -169,7 +169,7 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 		if batch != nil && batch.Person != nil && batch.Person.BarrenStopAt != "" {
 			if err := closeMatchingStopsLocked(install, "person selected batch "+batch.ID, batch.Person.CheckedAt, func(stop Stop) bool {
 				return stop.Loop == "lane-return" && stop.Subject == "lane" && stop.At == batch.Person.BarrenStopAt
-			}); err != nil {
+			}, effects...); err != nil {
 				return err
 			}
 		}
@@ -184,7 +184,7 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 				return readErr
 			}
 			if known && latest.State == StateReturned && latest.SHA == returned.SHA && latest.ReturnedAt == returned.At && returned.Outcome == StateReturned && returned.ReturnOrigin != nil {
-				if err := closeGoalStopsLocked(install, returned.Goal, "recorded return "+returned.Goal, now, returned.SHA); err != nil {
+				if err := closeGoalStopsWithSeamsLocked(install, returned.Goal, "recorded return "+returned.Goal, now, firstEffects(effects), returned.SHA); err != nil {
 					return err
 				}
 			}
@@ -196,7 +196,7 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 			}
 			for _, result := range results {
 				if result.ClassificationPerson != nil && !result.ClassificationPending {
-					if err := closeSubjectStopsLocked(install, "lane-classify", result.Attempt, "recorded person classification", now); err != nil {
+					if err := closeSubjectStopsLocked(install, "lane-classify", result.Attempt, "recorded person classification", now, effects...); err != nil {
 						return err
 					}
 				}
@@ -314,7 +314,10 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 						because = "answered by the recorded person act"
 					}
 				}
-				if _, err := channel.Withdraw(install, q.ID, because, nil, channel.DestinationConfig{}); err != nil {
+				if err := transitionWrite(install, "questions", "withdraw", now, "", func() error {
+					_, err := channel.Withdraw(install, q.ID, because, nil, channel.DestinationConfig{})
+					return err
+				}, effects...); err != nil {
 					return err
 				}
 			}
@@ -338,7 +341,12 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 			if index[facts[1]] != "" {
 				continue
 			}
-			q, err := channel.Ask(channel.AskRequest{RepoRoot: install, About: "lane", Kind: "other", Machine: name, Lineage: lane.AgentLineage, Facts: facts, Recommendation: "Run the command above; its recorded effect closes this request.", Now: now})
+			var q channel.Question
+			err := transitionWrite(install, "questions", "ask", now, "", func() error {
+				var err error
+				q, err = channel.Ask(channel.AskRequest{RepoRoot: install, About: "lane", Kind: "other", Machine: name, Lineage: lane.AgentLineage, Facts: facts, Recommendation: "Run the command above; its recorded effect closes this request.", Now: now})
+				return err
+			}, effects...)
 			if err != nil {
 				return err
 			}

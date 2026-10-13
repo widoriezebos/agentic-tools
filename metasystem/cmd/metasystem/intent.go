@@ -674,7 +674,7 @@ func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, 
 	if command.object == "landing" {
 		return guardLanding(cwd, command.action, raw, stdout, stderr, func(out, err io.Writer) int {
 			return runIntentCore(command, raw, out, err, cwd, owners)
-		}, owners.landing.home)
+		}, owners.landing.home, owners.landing.plainProve)
 	}
 	return runIntentCore(command, raw, stdout, stderr, cwd, owners)
 }

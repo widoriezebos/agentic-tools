@@ -129,8 +129,8 @@ func TestLandingShadowVerbAndKeeperDriftReport(t *testing.T) {
 			actors = append(actors, event.By)
 		}
 	}
-	if skipped != 0 || strings.Join(actors, ",") != "landing stop,landing start" {
-		t.Fatalf("verb drift provenance: %v", actors)
+	if skipped != 0 || len(actors) != 0 {
+		t.Fatalf("healthy verbs emitted drift: %v", actors)
 	}
 	report := func(now time.Time) string {
 		t.Helper()

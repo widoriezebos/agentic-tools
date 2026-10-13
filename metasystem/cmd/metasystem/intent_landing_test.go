@@ -39,6 +39,8 @@ type laneVerbBed struct {
 	// lane checkout at the helm.
 	keeper     func(home, root string) lane.AgentKeeper
 	helmed     bool
+	repoTop    func(string) (string, error)
+	ownerProbe func(string) (lane.OwnerProbe, error)
 	plainProve plain.ProveSeams
 	policies   config.PolicyReaders
 	// pause replaces the write of a person's stop; nil writes it.
@@ -62,11 +64,17 @@ func newLaneVerbBed(t *testing.T) *laneVerbBed {
 
 func (bed *laneVerbBed) owners() intentOwners {
 	notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
+	if bed.repoTop != nil {
+		notARepository = bed.repoTop
+	}
 	return intentOwners{prove: bed.prove, commandNow: func(string) (time.Time, error) { return laneTestNow, nil }, policies: bed.policies, resolver: stateroot.NewResolver(notARepository, os.Executable), landing: laneVerbOwners{
 		plainProve: bed.plainProve,
 		settle:     settleLandingAgent(func() (string, bool, error) { return "fixture-agent", bed.alive, nil }, func(string) error { bed.alive = false; return nil }),
 		home:       func() (string, error) { return bed.home, nil },
-		probe: func(string) (lane.OwnerProbe, error) {
+		probe: func(root string) (lane.OwnerProbe, error) {
+			if bed.ownerProbe != nil {
+				return bed.ownerProbe(root)
+			}
 			if !bed.alive {
 				return lane.OwnerProbe{}, nil
 			}

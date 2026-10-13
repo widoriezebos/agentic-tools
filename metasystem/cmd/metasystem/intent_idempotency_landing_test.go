@@ -10,7 +10,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 func init() {
@@ -83,6 +86,8 @@ func witnessLandingBatchRepeat(t *testing.T, kind, state string) {
 	if len(batch.Actions) != 1 || batch.Actions[0].Kind != kind || batch.Actions[0].Pending != (state == "running") {
 		t.Fatalf("first %s did not record its decision: %+v", kind, batch)
 	}
+	beforeEvents, _, eventErr := landingstate.ReadEvents(plain.Dir(bed.lane))
+	helmMust(t, eventErr)
 	beforeLane, beforeHome, beforeSeat := idemTreeDigest(t, bed.lane), idemTreeDigest(t, bed.home), idemTreeDigest(t, bed.seat)
 	path := filepath.Join(plain.Dir(bed.lane), "batch.json")
 	before, err := os.Stat(path)
@@ -94,6 +99,11 @@ func witnessLandingBatchRepeat(t *testing.T, kind, state string) {
 	expectOutcome(t, "repeated batch "+kind, code, second, intentConfirmed)
 	if !strings.Contains(second.Summary, want) {
 		t.Fatalf("repeat did not answer as applied: %+v; want %q", second, want)
+	}
+	afterEvents, _, eventErr := landingstate.ReadEvents(plain.Dir(bed.lane))
+	helmMust(t, eventErr)
+	if len(afterEvents) != len(beforeEvents) {
+		t.Fatalf("repeated batch %s appended events: %d -> %d", kind, len(beforeEvents), len(afterEvents))
 	}
 	idemSameTree(t, "a repeated batch "+kind, beforeLane, idemTreeDigest(t, bed.lane))
 	idemSameTree(t, "a repeated batch "+kind, beforeHome, idemTreeDigest(t, bed.home))
@@ -110,19 +120,35 @@ func witnessLandingBatchRepeat(t *testing.T, kind, state string) {
 func witnessLandingRepeat(t *testing.T, act func(*laneVerbBed) []string) {
 	t.Helper()
 	bed := newLaneVerbBed(t)
+	bed.plainProve.Git = func(_ string, args ...string) (string, error) {
+		if args[0] == "rev-parse" && !strings.Contains(args[len(args)-1], "MERGE_HEAD") {
+			return "main", nil
+		}
+		return "", nil
+	}
+	bed.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }
 	bed.alive = true
 	if code, _, stderr := bed.run(t, "landing", "set", bed.landingA); code != 0 {
 		t.Fatalf("set = %d %q", code, stderr)
 	}
+	registration, _, err := lane.Read(bed.home)
+	helmMust(t, err)
 	words := act(bed)
 	if code, _, stderr := bed.run(t, words...); code != 0 {
 		t.Fatalf("first %v = %d %q", words, code, stderr)
 	}
 	before := idemTreeDigest(t, bed.home)
+	beforeEvents, _, err := landingstate.ReadEvents(plain.Dir(registration.Install))
+	helmMust(t, err)
 	if code, stdout, stderr := bed.run(t, words...); code != 0 {
 		t.Fatalf("repeated %v = %d %q %q", words, code, stdout, stderr)
 	}
 	idemSameTree(t, "a repeated landing "+words[1], before, idemTreeDigest(t, bed.home))
+	afterEvents, _, err := landingstate.ReadEvents(plain.Dir(registration.Install))
+	helmMust(t, err)
+	if len(afterEvents) != len(beforeEvents) {
+		t.Fatalf("repeated landing %s appended events: %d -> %d", words[1], len(beforeEvents), len(afterEvents))
+	}
 }
 
 func witnessLandingSetRepeat(t *testing.T) {
@@ -172,10 +198,19 @@ func witnessLandingRunRepeat(t *testing.T) {
 		t.Fatalf("first landing run = %d %q", code, stderr)
 	}
 	before := idemTreeDigest(t, bed.home)
+	registration, _, err := lane.Read(bed.home)
+	helmMust(t, err)
+	beforeEvents, _, err := landingstate.ReadEvents(plain.Dir(registration.Install))
+	helmMust(t, err)
 	if code, stdout, stderr := bed.run(t, "landing", "run"); code != 0 {
 		t.Fatalf("repeated landing run = %d %q %q", code, stdout, stderr)
 	}
 	idemSameTree(t, "a repeated landing run", before, idemTreeDigest(t, bed.home))
+	afterEvents, _, err := landingstate.ReadEvents(plain.Dir(registration.Install))
+	helmMust(t, err)
+	if len(afterEvents) != len(beforeEvents) {
+		t.Fatalf("repeated run appended events: %d -> %d: %+v", len(beforeEvents), len(afterEvents), afterEvents)
+	}
 	if launches := landingLaunches(t, store); len(launches) != 1 {
 		t.Fatalf("a repeated landing run launched again: %d launches", len(launches))
 	}

@@ -43,7 +43,7 @@ type agentIdle struct {
 }
 
 // BeginAgentStep retains switches only: free text, paths and option values never enter status.
-func BeginAgentStep(install, verb string, args []string, now time.Time) (func(time.Time) error, error) {
+func BeginAgentStep(install, verb string, args []string, now time.Time, effects ...ProveSeams) (func(time.Time) error, error) {
 	step := AgentStep{Verb: verb, Args: []string{}, StartedAt: now.UTC().Format(time.RFC3339), PID: int64(os.Getpid())}
 	for _, arg := range args {
 		switch arg {
@@ -53,16 +53,13 @@ func BeginAgentStep(install, verb string, args []string, now time.Time) (func(ti
 	}
 	exact, live, err := identity.KernelProber{}.Probe(step.PID)
 	if err != nil || live != identity.Alive {
-		return nil, fmt.Errorf("identify landing step process: %v", err)
+		return func(time.Time) error { return nil }, fmt.Errorf("identify landing step process: %v", err)
 	}
 	step.Process, err = identity.EncodeRef(exact.Ref())
 	if err != nil {
-		return nil, err
+		return func(time.Time) error { return nil }, err
 	}
-	if err := withLock(install, func() error { return writeAgentRecord(install, "agent-step.json", step) }); err != nil {
-		return nil, err
-	}
-	return func(ended time.Time) error {
+	finish := func(ended time.Time) error {
 		return withLock(install, func() error {
 			var current AgentStep
 			if err := readAgentRecord(install, "agent-step.json", &current); err != nil {
@@ -72,12 +69,20 @@ func BeginAgentStep(install, verb string, args []string, now time.Time) (func(ti
 			if current.PID != step.PID || current.StartedAt != step.StartedAt {
 				return nil
 			}
-			if err := writeAgentRecord(install, "agent-idle.json", agentIdle{EndedAt: ended.UTC().Format(time.RFC3339), Step: &step}); err != nil {
-				return err
-			}
-			return os.Remove(filepath.Join(Dir(install), "agent-step.json"))
+			return transitionWrite(install, "agent", verb, ended, "", func() error {
+				if err := writeAgentRecord(install, "agent-idle.json", agentIdle{EndedAt: ended.UTC().Format(time.RFC3339), Step: &step}); err != nil {
+					return err
+				}
+				return os.Remove(filepath.Join(Dir(install), "agent-step.json"))
+			}, effects...)
 		})
-	}, nil
+	}
+	if err := withLock(install, func() error {
+		return transitionWrite(install, "agent", verb, now, "", func() error { return writeAgentRecord(install, "agent-step.json", step) }, effects...)
+	}); err != nil {
+		return finish, err
+	}
+	return finish, nil
 }
 
 func writeAgentRecord(install, name string, record any) error {

@@ -73,7 +73,7 @@ func shadowInputs(home string) []string {
 	if !exists {
 		return paths
 	}
-	for _, name := range []string{"state.json", "resume-record-finding.json", "queue.jsonl", "batch.json", "running.json", "results.jsonl", "gates.jsonl", "pushes.jsonl", "stops.jsonl", "agent-step.json", "agent-idle.json", "drain.json", "regenerating.json", "stop-question", "hand-in-fetches.jsonl"} {
+	for _, name := range []string{"state.json", "transition-finding.json", "resume-record-finding.json", "queue.jsonl", "batch.json", "running.json", "results.jsonl", "gates.jsonl", "pushes.jsonl", "stops.jsonl", "agent-step.json", "agent-idle.json", "drain.json", "regenerating.json", "stop-question", "hand-in-fetches.jsonl"} {
 		paths = append(paths, filepath.Join(Dir(record.Install), name))
 	}
 	for _, pattern := range []string{filepath.Join(Dir(record.Install), "fixes", "*.json"), filepath.Join(Dir(record.Install), "incidents", "*.json")} {
@@ -215,6 +215,13 @@ func captureObservation(home string, expected *lane.Record, seams ProveSeams, bu
 	}
 	probe, probeErr := owner(a.Lane.Root)
 	readonly.AgentProbe = func(string) (lane.OwnerProbe, error) { return probe, probeErr }
+	var unready *bool
+	if readonly.AgentReady != nil && !probe.Alive {
+		readyErr := readonly.AgentReady(a.Lane.Root)
+		readonly.AgentReady = func(string) error { return readyErr }
+		value := readyErr != nil
+		unready = &value
+	}
 	var view lane.View
 	if build != nil {
 		view = build(readonly)
@@ -223,7 +230,7 @@ func captureObservation(home string, expected *lane.Record, seams ProveSeams, bu
 	}
 	status, raw := observe(home, a.Lane, view, readonly, checkoutGit(a.Lane.Root, readonly))
 	raw.Anchors, raw.Previous = a, shadow
-	raw.AgentLive = &probe.Alive
+	raw.AgentLive, raw.AgentUnready = &probe.Alive, unready
 	if probeErr != nil {
 		status.Problems = append(status.Problems, "the landing agent cannot be observed: "+probeErr.Error())
 	}

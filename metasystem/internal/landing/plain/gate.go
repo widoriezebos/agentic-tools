@@ -94,7 +94,7 @@ func gateBaseline(seams ProveSeams, install, checkout, command string, running R
 	}
 	if found {
 		previous.Repeat = "started"
-		err = withLock(install, func() error { return appendLine(gatesPath(install), previous) })
+		err = withLock(install, func() error { return appendLine(gatesPath(install), previous, seams) })
 	}
 	if err == nil {
 		err = os.MkdirAll(filepath.Dir(baseRun.Log), 0o755)
@@ -134,7 +134,7 @@ func gateBaseline(seams ProveSeams, install, checkout, command string, running R
 		return baseline, false, decision
 	}
 	if err := withLock(install, func() error {
-		if err := appendLine(gatesPath(install), baseline); err != nil {
+		if err := appendLine(gatesPath(install), baseline, seams); err != nil {
 			return err
 		}
 		return closeProofAdmissionStopsLocked(install, baseRun, seams.now())

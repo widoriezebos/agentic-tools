@@ -164,13 +164,13 @@ func PersonSelection(install, checkout string, registered lane.Record, goals []s
 		if err := s.batchLane(batch); err != nil {
 			return err
 		}
-		if err := writeBatch(install, batch); err != nil {
+		if err := writeBatch(install, batch, s); err != nil {
 			return err
 		}
 		selected = batch
 		return closeMatchingStopsLocked(install, "person selected batch "+batch.ID, at, func(stop Stop) bool {
 			return stop.Loop == "lane-return" && stop.Subject == "lane" && stop.At == batch.Person.BarrenStopAt
-		})
+		}, s)
 	})
 	return selected, err
 }
@@ -263,7 +263,12 @@ func ReadBatch(install string) (*Batch, error) {
 	return &batch, nil
 }
 
-func writeBatch(install string, batch *Batch) error {
+func writeBatch(install string, batch *Batch, effects ...ProveSeams) error {
+	s := firstEffects(effects)
+	return transitionWrite(install, "batch.execution", "batch", s.now(), "", func() error { return writeRawBatch(install, batch) }, effects...)
+}
+
+func writeRawBatch(install string, batch *Batch) error {
 	data, err := json.Marshal(batch)
 	if err != nil {
 		return err
@@ -420,7 +425,7 @@ func SelectBatch(install, checkout string, registered lane.Record, s ProveSeams)
 					if batch.State != BatchClosed {
 						batch.State, batch.ClosureReason = BatchClosed, "all selected members are accounted for on main or by queue outcomes"
 						batch.ClosedAt = s.now().UTC().Format(time.RFC3339Nano)
-						if err := writeBatch(install, batch); err != nil {
+						if err := writeBatch(install, batch, s); err != nil {
 							return err
 						}
 					}
@@ -515,7 +520,7 @@ func selectBatchLocked(install, checkout, main string, registered lane.Record, p
 	if err := s.batchLane(batch); err != nil {
 		return nil, err
 	}
-	return batch, writeBatch(install, batch)
+	return batch, writeBatch(install, batch, s)
 }
 
 // extendBatchLocked retains the selection identity and merge order while its
@@ -557,7 +562,7 @@ func extendBatchLocked(install, checkout string, batch *Batch, s ProveSeams) err
 	for _, entry := range arrivals {
 		batch.Members = append(batch.Members, GoalSHA{Goal: entry.Goal, SHA: entry.SHA})
 	}
-	return writeBatch(install, batch)
+	return writeBatch(install, batch, s)
 }
 
 // batchEntries keeps the current outcome of each goal and commit pair.
@@ -854,7 +859,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 	if admit && batch.State == BatchPrepared {
 		batch.State = BatchRunning
 		batch.RunningAt = s.now().UTC().Format(time.RFC3339Nano)
-		err = writeBatch(install, batch)
+		err = writeBatch(install, batch, s)
 	}
 	return batch, err
 }

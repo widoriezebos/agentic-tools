@@ -349,9 +349,14 @@ func TestObservationUnstablePublishesNothing(t *testing.T) {
 	seam.Observed = func() {
 		calls++
 		if calls%2 == 1 {
-			_, _ = lane.SetPause(b.home, "fixture", bedNow)
+			data, _ := json.Marshal(lane.Pause{By: "fixture", At: bedNow.Format(time.RFC3339Nano)})
+			if err := os.WriteFile(filepath.Join(lane.HostDir(b.home), "landing-lane-paused.json"), data, 0600); err != nil {
+				t.Fatal(err)
+			}
 		} else {
-			_, _ = lane.ClearPause(b.home)
+			if err := os.Remove(filepath.Join(lane.HostDir(b.home), "landing-lane-paused.json")); err != nil {
+				t.Fatal(err)
+			}
 		}
 	}
 	if _, err := RefreshShadow(b.home, bedNow, "keeper", seam); err != nil {
@@ -367,7 +372,7 @@ func TestObservationUnstablePublishesNothing(t *testing.T) {
 		t.Fatal(events)
 	}
 	calls = 0
-	if _, err := lane.ClearPause(b.home); err != nil {
+	if err := os.Remove(filepath.Join(lane.HostDir(b.home), "landing-lane-paused.json")); err != nil {
 		t.Fatal(err)
 	}
 	status := ObserveStatus(b.home, b.record, seam, nil)

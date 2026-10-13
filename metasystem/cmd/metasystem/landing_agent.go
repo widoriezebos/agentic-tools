@@ -444,7 +444,7 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 	})
 	return func() (run lane.AgentRun) {
 		var failure bytes.Buffer
-		code := guardLanding(repo, "run", nil, io.Discard, &failure, func(io.Writer, io.Writer) int { run = tick(); return 0 }, func() (string, error) { return home, nil })
+		code := guardLanding(repo, "run", nil, io.Discard, &failure, func(io.Writer, io.Writer) int { run = tick(); return 0 }, func() (string, error) { return home, nil }, seams)
 		if code == 2 {
 			run.Outcome, run.Line = lane.AgentFailed, strings.TrimSpace(failure.String())
 			run.Problems = []string{run.Line}

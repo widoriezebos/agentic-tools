@@ -126,10 +126,6 @@ func TestShadowKeeperTransitionDoesNotDrift(t *testing.T) {
 	if _, err := lane.SetPause(b.home, "person", pauseAt); err != nil {
 		t.Fatal(err)
 	}
-	// A transition names the lane change, while the raw writer supplies its clock and actor.
-	if _, err := state.Transition(Dir(b.install), pauseAt, "lane", "running", "paused", "person", "maintenance", func(r *state.Record) { r.Lane.Word = "paused" }); err != nil {
-		t.Fatal(err)
-	}
 	if _, err := RefreshShadow(b.home, pauseAt, "keeper", s); err != nil {
 		t.Fatal(err)
 	}
@@ -138,8 +134,9 @@ func TestShadowKeeperTransitionDoesNotDrift(t *testing.T) {
 			t.Fatalf("transition became drift: %+v", event)
 		}
 	}
-	// The following rebuild has ended that transition's explanation window.
-	if _, err := lane.ClearPauseAt(b.home, "person", pauseAt.Add(time.Minute)); err != nil {
+	// A hand edit still leaves one unexplained change for the keeper.
+	data := []byte(`{"by":"person","at":"2026-10-01T12:00:00Z","reason":"hand edit"}`)
+	if err := os.WriteFile(filepath.Join(lane.HostDir(b.home), "landing-lane-paused.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := RefreshShadow(b.home, pauseAt.Add(time.Minute), "keeper", s); err != nil {

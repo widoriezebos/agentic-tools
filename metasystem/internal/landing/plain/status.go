@@ -219,6 +219,10 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		raw.Resume = lane.Pause{}
 		status.Findings = append(status.Findings, "the lane resume record cannot be read: "+resumeErr.Error())
 	}
+	var transitionFinding string
+	if readAgentRecord(record.Install, "transition-finding.json", &transitionFinding) == nil && transitionFinding != "" {
+		status.Findings = append(status.Findings, transitionFinding)
+	}
 	var resumeFinding string
 	if err := readAgentRecord(record.Install, "resume-record-finding.json", &resumeFinding); err == nil && resumeFinding != "" {
 		raw.Resume = lane.Pause{}
@@ -311,7 +315,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		incidents, incidentErr := EngineIncidents(install)
 		raw.Err = errors.Join(raw.Err, incidentErr)
 		for _, i := range incidents {
-			raw.EngineIncidents = append(raw.EngineIncidents, landingstate.EngineIncident{At: i.At, Verb: i.Verb, Panic: i.Panic})
+			raw.EngineIncidents = append(raw.EngineIncidents, landingstate.EngineIncident{Count: i.Count, LastAt: i.LastAt, At: i.At, Verb: i.Verb, Panic: i.Panic})
 		}
 		raw.Engine, err = shadowEngine(install)
 		if err != nil {

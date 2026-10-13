@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -80,8 +82,24 @@ func TestLandingResolutionReadProductionGate(t *testing.T) {
 			now := laneTestNow
 			owners.landing.now = func() time.Time { return now }
 			owners.landing.plainProve.BudgetHome = t.TempDir()
+			owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }
 			pushes := 0
 			owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+				if args[0] == "cat-file" {
+					return "", nil
+				}
+				if args[0] == "symbolic-ref" {
+					return "main", nil
+				}
+				if args[0] == "rev-parse" {
+					if strings.Contains(args[len(args)-1], "MERGE_HEAD") {
+						return "", nil
+					}
+					return "merge", nil
+				}
+				if args[0] == "merge-base" {
+					return "", &exec.ExitError{ProcessState: replayFalseState(t)}
+				}
 				pushes++
 				if dir != checkout || strings.Join(args, " ") != "push origin merge:refs/heads/lane-merges/"+b.id {
 					t.Fatalf("unexpected publication: %s %v", dir, args)

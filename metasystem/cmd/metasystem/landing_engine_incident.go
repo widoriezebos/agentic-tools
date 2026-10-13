@@ -9,7 +9,7 @@ func landingIncidentCommand() intentCommand {
 		usage: []string{"metasystem landing incident clear ID", "metasystem landing incident clear --all"}, maxArgs: 2,
 		flags:    []intentFlag{{name: "all", usage: "clear all open engine incidents"}},
 		examples: []string{"metasystem landing incident clear 20261013T180300.000000000-merge", "metasystem landing incident clear --all"}, run: func(inv *intentInvocation) int {
-			owners, _, record, problem := inv.laneContext(true)
+			owners, home, record, problem := inv.laneContext(true)
 			if problem != nil {
 				return inv.render(*problem)
 			}
@@ -24,7 +24,10 @@ func landingIncidentCommand() intentCommand {
 			if !all {
 				id = inv.input.args[1]
 			}
-			if err := plain.ClearEngineIncidents(record.Install, id, all); err != nil {
+			seams := inv.laneBatchSeams(home, record, owners.plainProve)
+			seams.Now = owners.now
+			seams.TransitionBy = "incident"
+			if err := plain.ClearEngineIncidents(record.Install, id, all, seams); err != nil {
 				return inv.render(landingLaneFailure(nil, "the incident could not be cleared", err))
 			}
 			return inv.render(intentResult{Outcome: intentConfirmed, Summary: "Engine incident cleared: " + id})

@@ -8,6 +8,7 @@ import (
 
 // GiveBack records a person's return, preserving a person's running proof.
 func GiveBack(install, goal, reason string, person ActProvenance, s ProveSeams) (entry Entry, message string, err error) {
+	s = s.transitionAs("give-back")
 	err = withLock(install, func() error {
 		entry, message, err = giveBackLocked(install, goal, reason, person, s)
 		return err
@@ -52,7 +53,7 @@ func giveBackLocked(install, goal, reason string, person ActProvenance, s ProveS
 		} else {
 			batch.Actions = append(batch.Actions, BatchAction{Kind: "give-back", By: person.Person, At: person.CheckedAt.UTC().Format(time.RFC3339Nano), With: []GoalSHA{member}, Reason: reason, Person: &person, Pending: true, Attempt: running.Attempt, Impact: "return to the seat after the proof ends"})
 			index = len(batch.Actions) - 1
-			if err := writeBatch(install, batch); err != nil {
+			if err := writeBatch(install, batch, s); err != nil {
 				return entry, "", err
 			}
 		}
@@ -66,7 +67,7 @@ func giveBackLocked(install, goal, reason string, person ActProvenance, s ProveS
 			}
 			if cancel, err := cancelProofLocked(install, running, "cancelled: give-back "+goal, s); err != nil {
 				return entry, "", err
-			} else if err := finishCancel(install, running, *cancel); err != nil {
+			} else if err := finishCancel(install, running, *cancel, s); err != nil {
 				return entry, "", err
 			}
 		}
@@ -82,7 +83,7 @@ func giveBackLocked(install, goal, reason string, person ActProvenance, s ProveS
 		}
 		batch.Actions[index].Pending = false
 		batch.Actions[index].Impact = landingstate.Phrase("returned-to-the-seat-rebuild-the-merge-without-this")
-		if err := writeBatch(install, batch); err != nil {
+		if err := writeBatch(install, batch, s); err != nil {
 			return entry, "", err
 		}
 	}
@@ -111,7 +112,7 @@ func finishGiveBacksLocked(install string, s ProveSeams) error {
 				if !known || entry.SHA != member.SHA || !slices.Contains(batch.Members, member) {
 					batch.Actions[index].Pending = false
 					batch.Actions[index].Impact = landingstate.Phrase("superseded-by-a-newer-hand-in-nothing-returned")
-					if err := writeBatch(install, batch); err != nil {
+					if err := writeBatch(install, batch, s); err != nil {
 						return err
 					}
 					break

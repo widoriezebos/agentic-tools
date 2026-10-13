@@ -67,6 +67,8 @@ func newResumeBed(t *testing.T) *resumeBed {
 		Git: func(_ string, args ...string) (string, error) {
 			b.calls = append(b.calls, strings.Join(args, " "))
 			switch args[0] {
+			case "symbolic-ref":
+				return "main", nil
 			case "fetch", "cat-file":
 				return "", nil
 			case "rev-parse":

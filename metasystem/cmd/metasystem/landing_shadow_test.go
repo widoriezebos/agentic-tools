@@ -22,9 +22,11 @@ func TestLandingShadowCLIRefreshAndJSON(t *testing.T) {
 	if engine == "" {
 		t.Fatal("the package did not build the CLI")
 	}
-	if _, err := lane.SetPauseBecause(b.home, "fixture", "maintenance", laneTestNow); err != nil {
+	data, _ := json.Marshal(lane.Pause{By: "fixture", Reason: "maintenance", At: laneTestNow.Format(time.RFC3339Nano)})
+	if err := os.WriteFile(filepath.Join(lane.HostDir(b.home), "landing-lane-paused.json"), data, 0600); err != nil {
 		t.Fatal(err)
 	}
+
 	call := func(action string) json.RawMessage {
 		t.Helper()
 		cmd := exec.CommandContext(t.Context(), engine, "landing", action, "--json")
@@ -71,8 +73,8 @@ func TestLandingShadowCLIRefreshAndJSON(t *testing.T) {
 	if err != nil || record.Lane.Word != "running" || record.Lane.Since.Observed || !record.Lane.Since.At.Equal(resumedAt) {
 		t.Fatalf("health exit did not refresh resume: %+v %v", record.Lane, err)
 	}
-	data, err := os.ReadFile(filepath.Join(plain.Dir(b.installation), "events.jsonl"))
-	if err != nil || strings.Count(string(data), "\n") != 3 {
+	data, err = os.ReadFile(filepath.Join(plain.Dir(b.installation), "events.jsonl"))
+	if err != nil || strings.Count(string(data), "\n") != 2 {
 		t.Fatalf("unchanged verbs appended rebuilds: %s %v", data, err)
 	}
 	if err := os.WriteFile(filepath.Join(plain.Dir(b.installation), "state.json"), []byte(`{not json`), 0600); err != nil {

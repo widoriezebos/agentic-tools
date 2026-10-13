@@ -200,7 +200,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			}
 			if fix == nil {
 				fix = &Fix{Goal: entry.Goal, Units: []string{"lane-merge-1"}, Commit: main, Tip: sha, State: "resolving", Attempt: seams.Proof.newID(), Paths: classified, Generated: contract.Generated}
-				if err := WriteFix(install, fix); err != nil {
+				if err := WriteFix(install, fix, seams.Proof); err != nil {
 					return err
 				}
 			}
@@ -247,7 +247,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 			}
 			if fix != nil && fix.State == "resolving" && fix.Tip == sha {
 				fix.State = "returned"
-				if err := WriteFix(install, fix); err != nil {
+				if err := WriteFix(install, fix, seams.Proof); err != nil {
 					return err
 				}
 			}
@@ -648,7 +648,7 @@ func commitResolvedMerge(home, install, checkout string, fix *Fix, check string,
 		}
 		fix.State = "reviewing"
 		// The check result stays what the check process recorded (green, or static-only when the selection was not cheap).
-		return WriteFix(install, fix)
+		return WriteFix(install, fix, seams.Proof)
 	})
 }
 

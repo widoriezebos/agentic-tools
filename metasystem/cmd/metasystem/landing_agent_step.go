@@ -35,10 +35,12 @@ func (inv *intentInvocation) runWithLandingStep() int {
 	if inv.command.object == "work" {
 		verb = "work " + verb
 	}
-	finish, err := plain.BeginAgentStep(record.Install, verb, inv.raw, owners.now())
+	home, _ := owners.home()
+	finish, err := plain.BeginAgentStep(record.Install, verb, inv.raw, owners.now(), inv.laneBatchSeams(home, record, owners.plainProve))
 	if err != nil {
 		fmt.Fprintln(inv.stderr, "the landing agent step could not be recorded:", err)
-	} else {
+	}
+	if finish != nil {
 		defer func() {
 			if err := finish(owners.now()); err != nil {
 				fmt.Fprintln(inv.stderr, "the landing agent step exit could not be recorded:", err)

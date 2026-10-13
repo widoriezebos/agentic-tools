@@ -63,10 +63,8 @@ func Push(install, checkout string, now time.Time) (PushOutcome, error) {
 // PushChecked runs before with fetched main and HEAD after the push's own
 // checks pass. An error from before prevents publication and its push record.
 func PushChecked(install, checkout string, now time.Time, before func(old, head string) error, effects ...ProveSeams) (PushOutcome, error) {
-	seams := ProveSeams{}
-	if len(effects) > 0 {
-		seams = effects[0]
-	}
+	seams := firstEffects(effects)
+	seams = seams.transitionAs("push")
 	head, tree, err := head(seams.git, checkout)
 	if err != nil {
 		return PushOutcome{}, err
@@ -103,7 +101,7 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 				}
 				if batch.ClosureReason == "confirmed push accounts for the selected members" {
 					for _, member := range batch.Members {
-						if err := closeFix(install, member.Goal); err != nil {
+						if err := closeFix(install, member.Goal, seams); err != nil {
 							return err
 						}
 					}
@@ -285,7 +283,7 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 	}
 	pushed.Clock = landingClock(install, checkout, clockBatch, now, seams)
 	if !slices.ContainsFunc(pushes, func(p Pushed) bool { return p.Commit == head }) {
-		if err := appendLine(pushesPath(install), pushed); err != nil {
+		if err := appendLine(pushesPath(install), pushed, seams); err != nil {
 			return err
 		}
 	}
@@ -302,7 +300,7 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 			batch.ClosedAt = now.UTC().Format(time.RFC3339Nano)
 		}
 		batch.State, batch.ClosureReason = BatchClosed, "confirmed push accounts for the selected members"
-		if err := writeBatch(install, batch); err != nil {
+		if err := writeBatch(install, batch, seams); err != nil {
 			return err
 		}
 	}
@@ -310,12 +308,12 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 		return err
 	}
 	for _, member := range pushed.BatchMembers {
-		if err := closeGoalStopsLocked(install, member.Goal, "push", now, member.SHA); err != nil {
+		if err := closeGoalStopsWithSeamsLocked(install, member.Goal, "push", now, seams, member.SHA); err != nil {
 			return err
 		}
 	}
 	for _, member := range pushed.BatchMembers {
-		if err := closeFix(install, member.Goal); err != nil {
+		if err := closeFix(install, member.Goal, seams); err != nil {
 			return err
 		}
 	}

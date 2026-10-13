@@ -13,10 +13,18 @@ import (
 )
 
 // guardLanding publishes an engine failure before returning the crashed act's refusal.
-func guardLanding(install, verb string, args []string, stdout, stderr io.Writer, run func(io.Writer, io.Writer) int, home func() (string, error)) (code int) {
+func guardLanding(install, verb string, args []string, stdout, stderr io.Writer, run func(io.Writer, io.Writer) int, home func() (string, error), effects ...plain.ProveSeams) (code int) {
+	seams := plain.ProveSeams{}
+	if len(effects) > 0 {
+		seams = effects[0]
+	}
+	now := time.Now
+	if seams.Now != nil {
+		now = seams.Now
+	}
 	defer func() {
 		if value := recover(); value != nil {
-			incident, err := plain.RecordEngineIncident(install, verb, args, time.Now(), fmt.Sprint(value), string(debug.Stack()))
+			incident, err := plain.RecordEngineIncident(install, verb, args, now(), fmt.Sprint(value), string(debug.Stack()), seams)
 			code = 2
 			line := fmt.Sprintf("landing %s failed inside the engine: %s; incident %s records the stack", verb, oneLineLanding(fmt.Sprint(value)), incident.ID)
 			if err != nil {
@@ -30,6 +38,7 @@ func guardLanding(install, verb string, args []string, stdout, stderr io.Writer,
 		home = batchowner.LandingLaneHome
 	}
 	if path, err := home(); err == nil {
+		seams.BudgetHome = path
 		if record, present, err := lane.Read(path); err == nil && present {
 			install = record.Install
 		}

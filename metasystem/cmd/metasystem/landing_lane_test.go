@@ -104,6 +104,9 @@ func TestLandingPushChecksDesign(t *testing.T) {
 					if args[0] == "rev-parse" {
 						return "main", nil
 					}
+					if args[0] == "symbolic-ref" {
+						return "main", nil
+					}
 					if args[0] == "cat-file" {
 						return "", nil
 					}

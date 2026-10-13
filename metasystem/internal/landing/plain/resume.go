@@ -31,6 +31,7 @@ func ContinueSelection(install string, record lane.Record, keeper lane.AgentKeep
 
 // Resume recovers only work whose recorded owners permit the next transition.
 func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run ResumeRun, err error) {
+	s = s.transitionAs("resume")
 	record, present, err := lane.Read(home)
 	if err != nil || !present {
 		return run, errors.Join(err, errors.New("no landing lane is registered"))
@@ -105,7 +106,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 		}
 		if fix.State != "abandoned" {
 			fix.State, fix.Reason = "abandoned", "superseded by main's code move; rebuild"
-			if err := WriteFix(record.Install, fix); err != nil {
+			if err := WriteFix(record.Install, fix, s); err != nil {
 				return err
 			}
 		}
@@ -113,7 +114,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 			return err
 		}
 		// Abandoned resolutions retain their reason; ordinary readers exclude them.
-		if err := WriteFix(record.Install, fix); err != nil {
+		if err := WriteFix(record.Install, fix, s); err != nil {
 			return err
 		}
 		blocked = false

@@ -100,7 +100,7 @@ func TestRebuildDriftExplainsOnlyTransitionFieldsSinceLastRebuild(t *testing.T) 
 	if _, err := replaceFixture(dir, now, initial, "fixture"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := Transition(dir, now, "lane", "running", "paused", "person", "maintenance", func(r *Record) { r.Lane.Word = "paused" }); err != nil {
+	if _, err := Transition(dir, now, "lane", "running", "paused", "person", "maintenance", func(r *Record) { r.Lane.Word = "paused"; r.Lane.Since = Since{At: now}; r.Lane.By = "person" }); err != nil {
 		t.Fatal(err)
 	}
 	next, _, _ := Read(dir)

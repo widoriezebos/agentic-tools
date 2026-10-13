@@ -6,6 +6,8 @@ import (
 	"strings"
 	"time"
 	"unicode"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 // Pause is a person's deliberate stop of the lane for maintenance.
@@ -43,15 +45,19 @@ func ReadPause(home string) (Pause, bool) {
 
 // SetPause records a person's pause; a lane already paused is unchanged.
 func SetPause(home, by string, now time.Time) (changed bool, err error) {
-	return SetPauseBecause(home, by, "", now)
+	return setPauseBecause(home, by, "", now, "pause")
 }
 
 // SetPauseBecause records a person's pause with why it was made; a lane
 // already paused is unchanged, its first reason kept. A pause written but not
 // confirmed on disk returns changed and ErrNotDurable.
 func SetPauseBecause(home, by, reason string, now time.Time) (changed bool, err error) {
+	return setPauseBecause(home, by, reason, now, "stop")
+}
+
+func setPauseBecause(home, by, reason string, now time.Time, verb string) (changed bool, err error) {
 	err = withLock(home, func() error {
-		changed, err = setPauseLockedBecause(home, by, reason, now)
+		changed, err = setPauseLockedBecause(home, by, reason, now, verb)
 		return err
 	})
 	return changed, err
@@ -62,11 +68,47 @@ func setPauseLocked(home, by string, now time.Time) (bool, error) {
 	return setPauseLockedBecause(home, by, "", now)
 }
 
-func setPauseLockedBecause(home, by, reason string, now time.Time) (bool, error) {
+func setPauseLockedBecause(home, by, reason string, now time.Time, verbs ...string) (bool, error) {
 	if _, paused := ReadPause(home); paused {
 		return false, nil
 	}
-	return true, writeJSON(home, pausePath(home), Pause{By: by, At: now.UTC().Format(time.RFC3339), Reason: PauseReason(reason)})
+	pause := Pause{By: by, At: now.UTC().Format(time.RFC3339), Reason: PauseReason(reason)}
+	if err := writeJSON(home, pausePath(home), pause); err != nil {
+		return true, err
+	}
+	verb := "pause"
+	if len(verbs) > 0 {
+		verb = verbs[0]
+	}
+	return true, pauseTransition(home, "running", "paused", verb, pause)
+}
+
+func pauseTransition(home, from, to, verb string, pause Pause) error {
+	registration, present, err := Read(home)
+	if err != nil || !present {
+		return nil
+	}
+	dir := filepath.Join(registration.Install, "artifacts", "agents", "landing")
+	shadow, _, err := state.Read(dir)
+	if err != nil {
+		at, _ := time.Parse(time.RFC3339Nano, pause.At)
+		state.ReportFailure(dir, at, verb, err)
+		return nil
+	}
+	if shadow.Stop != nil {
+		from, to = "stopped", "stopped"
+	}
+	at, _ := time.Parse(time.RFC3339Nano, pause.At)
+	_, err = state.Transition(dir, at, "lane", from, to, verb, pause.Who(), func(r *state.Record) {
+		r.Lane = state.Lane{Fact: state.Fact{Word: to, Since: state.Since{At: at}}, By: pause.By, Reason: pause.Reason}
+		if shadow.Stop != nil && verb == "resume" {
+			r.Lane = state.Lane{Fact: state.Fact{Word: to, Since: shadow.Lane.Since}}
+		}
+	})
+	if err != nil {
+		state.ReportFailure(dir, at, verb, err)
+	}
+	return nil
 }
 
 // pauseReasonLimit caps a pause's reason, which line 1 of messages shows.
@@ -124,17 +166,23 @@ func (e *ResumeRecordError) Unwrap() error { return e.Err }
 // A ResumeRecordError never means the lane is still paused.
 func ClearPauseAt(home, by string, now time.Time) (changed bool, err error) {
 	err = withLock(home, func() error {
-		if _, paused := ReadPause(home); !paused {
+		pause, paused := ReadPause(home)
+		if !paused {
 			return nil
 		}
 		if err := removeIfPresent(pausePath(home)); err != nil {
 			return err
 		}
 		changed = true
-		if err := writeJSON(home, filepath.Join(HostDir(home), "landing-lane-resumed.json"), Pause{At: now.UTC().Format(time.RFC3339Nano), By: by}); err != nil {
+		resume := Pause{At: now.UTC().Format(time.RFC3339Nano), By: by}
+		if err := writeJSON(home, filepath.Join(HostDir(home), "landing-lane-resumed.json"), resume); err != nil {
 			return &ResumeRecordError{Err: err}
 		}
-		return nil
+		from := "paused"
+		if pause.Unreadable() {
+			from = "stopped"
+		}
+		return pauseTransition(home, from, "running", "resume", resume)
 	})
 	return changed, err
 }

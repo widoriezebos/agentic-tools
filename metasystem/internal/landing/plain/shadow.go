@@ -24,7 +24,7 @@ type RawFacts struct {
 	Pause                   lane.Pause
 	Resume                  lane.Pause
 	Agent                   lane.AgentState
-	AgentLive               *bool
+	AgentLive, AgentUnready *bool
 	Batch                   *Batch
 	Queue                   []Line
 	Ordinals                []int
@@ -243,7 +243,7 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	}
 	next.Questions = append([]state.Question(nil), raw.Questions...)
 	next.Holds.Barren, next.Holds.SelectionPending = raw.Agent.Barren, observation.BatchPolicy != nil && observation.BatchPolicy.Value == "person" && raw.Batch == nil
-	holdAt := ""
+	holdAt := raw.Agent.BarrenAt
 	for _, stop := range raw.Stops {
 		if stop.Loop == "lane-return" && stop.Subject == "lane" && stop.Attempt == raw.Agent.Barren {
 			holdAt = stop.At
@@ -263,6 +263,9 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 // RenderInputsOf projects transient values without publishing them.
 func RenderInputsOf(observation Status, raw RawFacts) state.RenderInputs {
 	inputs := state.RenderInputs{Now: raw.Now, Unready: observation.Owner.State == lane.OwnerUnready, Unread: observation.Owner.Unread != "", PID: observation.Owner.PID, HandIns: map[int]state.HandInInput{}, Questions: raw.QuestionInputs}
+	if raw.AgentUnready != nil {
+		inputs.Unready = *raw.AgentUnready
+	}
 	if wake := observation.View.Wake; wake != nil {
 		for _, problem := range wake.Unread {
 			if strings.HasPrefix(problem, "hand-in ") {
@@ -337,6 +340,7 @@ func RefreshShadow(home string, now time.Time, by string, seams ProveSeams) (cha
 			_ = writeAgentRecord(record.Install, "shadow-refresh.json", refreshErr.Error())
 		} else {
 			_ = os.Remove(filepath.Join(Dir(record.Install), "shadow-refresh.json"))
+			_ = os.Remove(filepath.Join(Dir(record.Install), "transition-finding.json"))
 		}
 	}()
 	seams.Now = func() time.Time { return now }

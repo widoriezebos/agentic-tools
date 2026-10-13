@@ -66,14 +66,14 @@ func readCancel(install string, running Running) (*Result, error) {
 	return &result, nil
 }
 
-func finishCancel(install string, running Running, result Result) error {
+func finishCancel(install string, running Running, result Result, effects ...ProveSeams) error {
 	mode := ProveSeams{Gate: running.Gate}
 	results, err := readLines[Result](mode.resultsPath(install))
 	if err != nil {
 		return err
 	}
 	if !slices.ContainsFunc(results, func(r Result) bool { return r.Attempt == running.Attempt }) {
-		if err := appendLine(mode.resultsPath(install), result); err != nil {
+		if err := appendLine(mode.resultsPath(install), result, effects...); err != nil {
 			return err
 		}
 	}
@@ -82,7 +82,7 @@ func finishCancel(install string, running Running, result Result) error {
 		return err
 	}
 	if recorded && current.Attempt == running.Attempt {
-		return os.Remove(runningPath(install))
+		return removeRunning(install, effects...)
 	}
 	return nil
 }
@@ -178,7 +178,7 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 		return err
 	}
 	if !recorded || running.Gate || running.Impact || running.Trunk || running.BatchID != batch.ID || running.Admission != nil && running.Admission.Scope != "full" || running.Person != nil || running.ClassificationOf != "" {
-		return writeBatch(install, batch)
+		return writeBatch(install, batch, s)
 	}
 	last, found, err := ResultFor(install, running.Tree)
 	if err != nil {
@@ -186,14 +186,14 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 	}
 	classifying := running.ClassificationOf != "" || found && last.Attempt == running.Attempt && last.ClassificationPending
 	if found && last.Attempt == running.Attempt && !classifying {
-		return writeBatch(install, batch)
+		return writeBatch(install, batch, s)
 	}
 	cancel, err := readCancel(install, running)
 	if err != nil {
 		return err
 	}
 	if !alive && cancel == nil {
-		return writeBatch(install, batch)
+		return writeBatch(install, batch, s)
 	}
 	expected, err := expectedFullMinutes(install)
 	if err != nil {
@@ -256,7 +256,7 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 		}
 	}
 	if len(newcomers) == 0 {
-		return writeBatch(install, batch)
+		return writeBatch(install, batch, s)
 	}
 	reason := "restart for " + newcomer
 	if preempted {
@@ -269,7 +269,7 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 		}
 		// Let the wrapper publish an exited command's result before making a decision.
 		if identity.LiveRef(identity.KernelProber{}, ref) != identity.Alive {
-			return writeBatch(install, batch)
+			return writeBatch(install, batch, s)
 		}
 	}
 	cancel, err = cancelProofLocked(install, running, "cancelled: restart for "+newcomer, s)
@@ -280,10 +280,10 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 	batch.Members = append(batch.Members, newcomers...)
 	batch.Waiting = nil
 	batch.State, batch.Open, batch.SealedAt = BatchPrepared, true, ""
-	if err := writeBatch(install, batch); err != nil {
+	if err := writeBatch(install, batch, s); err != nil {
 		return err
 	}
-	return finishCancel(install, running, *cancel)
+	return finishCancel(install, running, *cancel, s)
 }
 
 func proofMinutes(elapsed, expected float64) string {

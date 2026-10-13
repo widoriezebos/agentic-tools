@@ -13,6 +13,7 @@ import (
 	"fmt"
 	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -34,6 +35,7 @@ type AgentState struct {
 	// lane at the last such end.
 	Fingerprint       string   `json:"fingerprint,omitempty"`
 	Barren            int      `json:"barren,omitempty"`
+	BarrenAt          string   `json:"barrenAt,omitempty"`
 	BarrenLaunches    []string `json:"barrenLaunches,omitempty"`
 	BarrenFingerprint string   `json:"barrenFingerprint,omitempty"`
 }
@@ -300,7 +302,7 @@ func (k AgentKeeper) Run() (out AgentRun) {
 		}
 		current.StartingAt = k.Now().UTC().Format(time.RFC3339)
 		claimed = true
-		return written(writeJSON(k.Home, agentStatePath(k.Home), current))
+		return k.writeState(current)
 	}); err != nil {
 		return agentRun(AgentFailed, root, "the landing agent's keeper can't claim the start: "+err.Error())
 	}
@@ -320,10 +322,10 @@ func (k AgentKeeper) Run() (out AgentRun) {
 		current.StartingAt = ""
 		if startErr != nil {
 			result = agentRun(AgentFailed, root, fmt.Sprintf("the landing agent at %s could not start for %s: %v", root, strings.Join(wake.Reasons, ", "), startErr))
-			return written(writeJSON(k.Home, agentStatePath(k.Home), current))
+			return k.writeState(current)
 		}
 		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339), Fingerprint: fingerprint,
-			Barren: current.Barren, BarrenLaunches: current.BarrenLaunches, BarrenFingerprint: current.BarrenFingerprint}
+			Barren: current.Barren, BarrenAt: current.BarrenAt, BarrenLaunches: current.BarrenLaunches, BarrenFingerprint: current.BarrenFingerprint}
 		result = AgentRun{Outcome: AgentStarted, Launch: id, Root: root, Reasons: wake.Reasons,
 			Line: fmt.Sprintf("lane agent started by the keeper: %d waiting line(s); %s at %s: %s", waiting, id, root, strings.Join(wake.Reasons, ", "))}
 		// A changed fence, registration or selection stops the new launch.
@@ -346,7 +348,7 @@ func (k AgentKeeper) Run() (out AgentRun) {
 				}
 			}
 		}
-		return written(writeJSON(k.Home, agentStatePath(k.Home), current))
+		return k.writeState(current)
 	}); err != nil {
 		return AgentRun{Outcome: AgentFailed, Launch: id, Root: root, Line: fmt.Sprintf("the landing agent at %s: its keeper record could not be written: %v", root, err)}
 	}
@@ -414,7 +416,7 @@ func (k AgentKeeper) decide(record Record) (AgentRun, bool) {
 		}
 		state.ReapedAt = k.Now().UTC().Format(time.RFC3339)
 		k.countBarren(&state, root)
-		if err := written(writeJSON(k.Home, agentStatePath(k.Home), state)); err != nil {
+		if err := k.writeState(state); err != nil {
 			return agentRun(AgentFailed, root, "the landing agent's keeper can't write its record: "+err.Error()), false
 		}
 	}
@@ -468,7 +470,7 @@ func (k AgentKeeper) barrenHold(record Record) (string, bool, error) {
 				return "", false, err
 			}
 		}
-		return "", false, written(writeJSON(k.Home, agentStatePath(k.Home), state))
+		return "", false, k.writeState(state)
 	}
 	if state.Barren < barrenLimit {
 		return "", false, nil
@@ -525,10 +527,14 @@ func UnreadableAgentRecord(home string) string {
 // RepairAgentRecord replaces a keeper record that cannot be read, at a
 // landing start, keeping nothing (its launch, if any, is left to
 // the launch store); a readable record is left as it is.
-func RepairAgentRecord(home string) error {
+func RepairAgentRecord(home string, clock ...time.Time) error {
+	now := time.Now()
+	if len(clock) > 0 {
+		now = clock[0]
+	}
 	return withLock(home, func() error {
 		if _, err := ReadAgentState(home); err != nil {
-			return written(writeJSON(home, agentStatePath(home), AgentState{}))
+			return (AgentKeeper{Home: home, Now: func() time.Time { return now }}).writeState(AgentState{})
 		}
 		return nil
 	})
@@ -569,4 +575,78 @@ func pausedClosed(home string) (string, bool) {
 		return "an unnamed person", true
 	}
 	return pause.By, true
+}
+
+// writeState runs under the host lane lock. The keeper owns launch and reap
+// facts; agent command steps remain owned by the command process.
+func (k AgentKeeper) writeState(next AgentState) error {
+	previous, previousErr := ReadAgentState(k.Home)
+	now := k.Now()
+	if previousErr != nil || previous.Barren != next.Barren {
+		next.BarrenAt = now.UTC().Format(time.RFC3339Nano)
+	}
+	raw := func() error { return written(writeJSON(k.Home, agentStatePath(k.Home), next)) }
+	registration, present, err := Read(k.Home)
+	if err != nil || !present {
+		return raw()
+	}
+	dir := filepath.Join(registration.Install, "artifacts", "agents", "landing")
+	called := false
+	err = landingstate.WithWriter(dir, func(w *landingstate.Writer) error {
+		old, _, readErr := landingstate.Read(dir)
+		called = true
+		if err := raw(); err != nil {
+			return err
+		}
+		if readErr != nil {
+			landingstate.ReportFailure(dir, now, "keeper", readErr)
+			return nil
+		}
+		agent := old.Agent
+		if previousErr != nil || previous.Launch != next.Launch || previous.StartedAt != next.StartedAt || previous.ReapedAt != next.ReapedAt {
+			agent.Session = next.Launch
+			stamp := next.StartedAt
+			agent.Word = "idle"
+			if next.ReapedAt != "" || next.Launch == "" {
+				agent.Word, stamp = "ended", next.ReapedAt
+			}
+			at, _ := time.Parse(time.RFC3339Nano, stamp)
+			agent.Since = landingstate.Since{At: at}
+			if stamp == "" {
+				agent.Since = landingstate.Since{At: now, Observed: true, Source: "landing-agent-keeper.json"}
+			}
+			if previousErr != nil || previous.Launch != next.Launch {
+				agent.Step = landingstate.Step{}
+			}
+		}
+		if !reflect.DeepEqual(old.Agent, agent) {
+			updated := old
+			updated.Agent = agent
+			_, err := w.Transition(now, "agent", old.Agent.Word, agent.Word, "keeper", strings.Join(landingstate.Diff(old, updated), "\n"), func(r *landingstate.Record) { r.Agent = agent })
+			if err != nil {
+				landingstate.ReportFailure(dir, now, "keeper", err)
+			}
+		}
+		if previous.Barren != next.Barren || previousErr != nil && old.Holds.Barren != next.Barren {
+			holds := old.Holds
+			holds.Barren = next.Barren
+			at, _ := time.Parse(time.RFC3339Nano, next.BarrenAt)
+			holds.Since = landingstate.Since{At: at}
+			updated := old
+			updated.Holds = holds
+			_, err := w.Transition(now, "holds", landingstate.Word(old, "holds"), landingstate.Word(updated, "holds"), "keeper", strings.Join(landingstate.Diff(old, updated), "\n"), func(r *landingstate.Record) { r.Holds = holds })
+			if err != nil {
+				landingstate.ReportFailure(dir, now, "keeper", err)
+			}
+		}
+		return nil
+	})
+	if !called {
+		if rawErr := raw(); rawErr != nil {
+			return rawErr
+		}
+		landingstate.ReportFailure(dir, now, "keeper", err)
+		return nil
+	}
+	return err
 }

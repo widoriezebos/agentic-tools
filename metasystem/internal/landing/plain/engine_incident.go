@@ -21,7 +21,7 @@ type EngineIncident struct {
 	Engine string    `json:"engine_stamp"`
 }
 
-func RecordEngineIncident(install, verb string, args []string, at time.Time, panicText, stack string) (EngineIncident, error) {
+func RecordEngineIncident(install, verb string, args []string, at time.Time, panicText, stack string, effects ...ProveSeams) (EngineIncident, error) {
 	var incident EngineIncident
 	err := withLock(install, func() error {
 		incidents, err := EngineIncidents(install)
@@ -36,7 +36,9 @@ func RecordEngineIncident(install, verb string, args []string, at time.Time, pan
 				}
 				incident.Count++
 				incident.LastAt = at.UTC()
-				return writeAgentRecord(install, filepath.Join("incidents", incident.ID+".json"), incident)
+				return transitionWrite(install, "engine", verb, at, "", func() error {
+					return writeAgentRecord(install, filepath.Join("incidents", incident.ID+".json"), incident)
+				}, effects...)
 			}
 		}
 		stamp, _ := shadowEngine(install)
@@ -53,7 +55,9 @@ func RecordEngineIncident(install, verb string, args []string, at time.Time, pan
 			}
 			incident.ID = fmt.Sprintf("%s-%d", base, suffix)
 		}
-		return writeAgentRecord(install, filepath.Join("incidents", incident.ID+".json"), incident)
+		return transitionWrite(install, "engine", verb, at, "", func() error {
+			return writeAgentRecord(install, filepath.Join("incidents", incident.ID+".json"), incident)
+		}, effects...)
 	})
 	return incident, err
 }
@@ -74,7 +78,7 @@ func EngineIncidents(install string) (incidents []EngineIncident, err error) {
 }
 
 // ClearEngineIncidents serializes clearing with recurrence recording.
-func ClearEngineIncidents(install, id string, all bool) error {
+func ClearEngineIncidents(install, id string, all bool, effects ...ProveSeams) error {
 	return withLock(install, func() error {
 		ids := []string{id}
 		if all {
@@ -87,15 +91,18 @@ func ClearEngineIncidents(install, id string, all bool) error {
 				ids = append(ids, incident.ID)
 			}
 		}
-		for _, id := range ids {
-			if filepath.Base(id) != id || id == "." || id == ".." || id == "" {
-				return errors.New("invalid engine incident id")
+		s := firstEffects(effects)
+		return transitionWrite(install, "engine", "resume", s.now(), "", func() error {
+			for _, id := range ids {
+				if filepath.Base(id) != id || id == "." || id == ".." || id == "" {
+					return errors.New("invalid engine incident id")
+				}
+				err := os.Remove(filepath.Join(Dir(install), "incidents", id+".json"))
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
+					return err
+				}
 			}
-			err := os.Remove(filepath.Join(Dir(install), "incidents", id+".json"))
-			if err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-		}
-		return nil
+			return nil
+		}, effects...)
 	})
 }
