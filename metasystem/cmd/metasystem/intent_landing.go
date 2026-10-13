@@ -1480,11 +1480,21 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 	prior, alreadyStopped := lane.ReadPause(home)
 	probe, _ := owners.probe(record.Root)
 	by := inv.landingActor(owners)
+	var provenance *plain.ActProvenance
+	if person, problem := inv.lanePerson("stop the landing lane", record.Root); problem == nil {
+		by = person.Name
+		provenance = &plain.ActProvenance{Kind: "stop", Person: person.Name, Root: person.Root, CheckedAt: person.At, TerminalGeneration: person.Proof.TerminalGeneration, TerminalRef: person.Proof.TerminalRef, Destination: record}
+	}
 	inv.sayWhenTheLaneLockIsHeld(home)
 	_, err := owners.pause(home, by, reason, owners.now())
 	if err != nil && !errors.Is(err, lane.ErrNotDurable) {
 		return intentResult{Outcome: intentFailed, code: 1, Targets: targets, Summary: "the landing lane couldn't be stopped",
 			next: inv.sameCommand(), nextReason: "tries again", Details: []string{"the landing lane could not be stopped: " + err.Error()}}, false
+	}
+	if provenance != nil && !alreadyStopped {
+		if err := plain.RecordStopPerson(record.Install, provenance); err != nil {
+			return landingLaneFailure(targets, "the lane is paused, but its person's act could not be recorded", err), false
+		}
 	}
 	if err := stopLaneRegeneration(owners, record); err != nil {
 		return landingLaneFailure(targets, "the running regeneration could not be stopped", err), false

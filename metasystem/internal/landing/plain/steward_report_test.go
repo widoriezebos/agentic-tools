@@ -144,7 +144,7 @@ func TestLandingStewardReportQualitySpeedAndSummary(t *testing.T) {
 	if strings.Contains(b.text(), "before-hour") || strings.Contains(b.text(), "future") || strings.Count(b.text(), "Red main-red:") != 1 {
 		t.Fatal(b.text())
 	}
-	want := "hour to " + b.now.Local().Format("15:04") + ": 2 landed, 1 returned, 4 red (goal 1, main 1, flake 1, unknown 1), oldest goal 75 min, 1 acts"
+	want := "hour to " + b.now.Local().Format("15:04") + ": 2 landed, 1 returned, 4 red (goal 1, main 1, flake 1, unknown 1), oldest goal 75 min, 1 acts, 0 overdue records"
 	if summary != want {
 		t.Fatalf("got %s; want %s", summary, want)
 	}

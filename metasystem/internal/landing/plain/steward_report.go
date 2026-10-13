@@ -265,7 +265,15 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 				}
 			}
 		}
-		summary = fmt.Sprintf("hour to %s: %d landed, %d returned, %d red (goal %d, main %d, flake %d, unknown %d), oldest goal %g min, %d acts", now.Local().Format("15:04"), landed, returned, reds, causes["goal"], causes["main"], causes["flake"], causes["unknown"], oldest, count)
+		overdue := 0
+		if status.Health != nil {
+			for _, row := range status.Health.Rows() {
+				if row.Row == "overdue-record" {
+					overdue++
+				}
+			}
+		}
+		summary = fmt.Sprintf("hour to %s: %d landed, %d returned, %d red (goal %d, main %d, flake %d, unknown %d), oldest goal %g min, %d acts, %d overdue records", now.Local().Format("15:04"), landed, returned, reds, causes["goal"], causes["main"], causes["flake"], causes["unknown"], oldest, count, overdue)
 		fmt.Fprintf(&out, "\n%s\n\n", summary)
 		path := filepath.Join(Dir(install), "steward-report.md")
 		old, err := os.ReadFile(path)

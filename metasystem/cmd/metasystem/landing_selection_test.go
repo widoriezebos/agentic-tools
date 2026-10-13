@@ -574,12 +574,16 @@ func TestLandingSelectionBarrenRemedyIsolatesStopsAndProofBudget(t *testing.T) {
 	}
 	_, _, err = plain.HandIn(b.lane, plain.Line{Goal: "unrelated", SHA: "sha-unrelated"})
 	helmMust(t, err)
-	// An unrelated hand-in must not close any request, even if the keeper's
-	// fingerprint subsequently allows a new automatic observation.
+	// An unrelated hand-in preserves the person's withdrawal and the other
+	// subjects' open requests, even when the keeper observes new work.
 	helmMust(t, plain.SyncPolicyQuestion(b.lane, b.owners.landing.machine, b.now))
 	open, _ := channel.WalkOpenQuestions(b.lane)
-	if len(open) != 3 {
-		t.Fatalf("unrelated hand-in closed a request: %+v", open)
+	if len(open) != 2 || !slices.ContainsFunc(open, func(q channel.Question) bool { return strings.Contains(q.Facts[1], `"subject":"a"`) }) || !slices.ContainsFunc(open, func(q channel.Question) bool { return strings.Contains(q.Facts[1], `"subject":"a, b"`) }) {
+		t.Fatalf("unrelated hand-in changed an independent request: %+v", open)
+	}
+	withdrawn, err := channel.ReadQuestion(b.lane, barren.ID)
+	if err != nil || withdrawn.State != "closed" || withdrawn.ClosedBecause != "not now" {
+		t.Fatalf("person's withdrawal lost: %+v %v", withdrawn, err)
 	}
 	b.owners.prove = enrolledPersonProver(t, b.lane, b.now)
 	command := strings.Fields(channel.LaneStopCommand(barren))[1:]

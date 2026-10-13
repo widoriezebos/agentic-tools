@@ -1,8 +1,10 @@
 package plain
 
 import (
+	"encoding/json"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -37,7 +39,7 @@ func WithdrawStaleLaneQuestion(install string, q channel.Question, seams ProveSe
 		return false, nil
 	}
 	facts, err := laneQuestionFacts(install, q, seams)
-	if err != nil || state.QuestionPremise(facts).Word != state.Gone {
+	if due, _ := state.LifecycleDue("question", state.LifecycleFacts{Premise: state.QuestionPremise(facts).Word}, seams.now()); err != nil || !due {
 		return false, nil
 	}
 	_, err = channel.Withdraw(install, q.ID, "the checkout or main commit premise is no longer current", nil, channel.DestinationConfig{})
@@ -53,6 +55,15 @@ func LaneQuestionPremise(install string, q channel.Question, seams ProveSeams) (
 }
 
 func laneQuestionFacts(install string, q channel.Question, seams ProveSeams) (f state.PremiseFacts, err error) {
+	if len(q.Facts) > 1 && strings.HasPrefix(q.Facts[1], "lane stop: ") {
+		var stop Stop
+		if err := json.Unmarshal([]byte(strings.TrimPrefix(q.Facts[1], "lane stop: ")), &stop); err != nil {
+			return f, err
+		}
+		stops, err := OpenStops(install)
+		f.Policy, f.Satisfied = true, !slices.ContainsFunc(stops, func(s Stop) bool { return stopKey(s) == stopKey(stop) })
+		return f, err
+	}
 	f.Policy, f.LaneAgent = channel.LaneStopCommand(q) != "", q.Lineage == lane.AgentLineage
 	if f.Policy {
 		f.Satisfied, err = PolicyQuestionSatisfied(install, q)

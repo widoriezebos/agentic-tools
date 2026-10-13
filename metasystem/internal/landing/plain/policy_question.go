@@ -271,10 +271,20 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 			if channel.LaneStopCommand(q) == "" || q.Machine != name {
 				continue
 			}
-			matching := slices.ContainsFunc(pending, func(facts []string) bool { return slices.Equal(q.Facts, facts) })
-			if matching && q.State != "closed" {
-				index[q.Facts[1]] = q.ID
-			} else if !matching && q.State != "closed" {
+			matching := false
+			for _, facts := range pending {
+				same := slices.Equal(q.Facts, facts)
+				if strings.HasPrefix(facts[1], "lane stop: ") && strings.HasPrefix(q.Facts[1], "lane stop: ") {
+					var old, current Stop
+					if json.Unmarshal([]byte(strings.TrimPrefix(q.Facts[1], "lane stop: ")), &old) == nil && json.Unmarshal([]byte(strings.TrimPrefix(facts[1], "lane stop: ")), &current) == nil {
+						same = stopKey(old) == stopKey(current)
+					}
+				}
+				if same && (q.State != "closed" || strings.HasPrefix(facts[1], "lane stop: ")) {
+					index[facts[1]], matching = q.ID, true
+				}
+			}
+			if !matching && q.State != "closed" {
 				because := "superseded by current lane state"
 				if strings.HasPrefix(q.Facts[1], "lane policy: ") {
 					answered, err := PolicyQuestionSatisfied(install, q)

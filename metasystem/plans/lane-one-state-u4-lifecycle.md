@@ -14,5 +14,12 @@ Per row: a fixture record that is due → the keeper's tick retires it with one 
 ## Checks
 `go vet ./internal/landing/state ./internal/landing/plain ./cmd/metasystem`; `go test -p 4 -count=1 -timeout 30m ./internal/landing/state ./internal/landing/plain ./internal/landing/lane ./internal/layering ./internal/testenv`; `go test -count=1 -run 'TestAudit|TestLandingHealth|TestLandingSteward' ./cmd/metasystem`.
 
+Always also: `go test -count=1 -run 'TestEveryStatefulActionRepeatsAsSuccess|TestEveryPublicActionHasAnIdempotencyRow|TestIntentObjectHelpGroupsEveryActionOnce|TestIntentPublicCoverage|TestHelmDrain|TestPlainLaneProve' ./cmd/metasystem` (the audits the full gate caught in 244 and 251).
+
 ## Do not
 No verb guard (U5), no wording changes beyond the two rows (U6). The keeper acts on the TABLE's facts read from the raw records, never on the shadow alone.
+
+## Added from the live record (2026-10-13 03:45, finding 255)
+- The red-proof question has been asked five times for one loop stop (every engine restart and every tick that finds none open re-asks it): the lifecycle row for a question binds it to the loop stop's identity (attempt + subject), so a withdrawn question is not re-asked while its stop stands and the person's withdrawal is itself a decision the keeper records; a restart re-asks nothing.
+- state.json carries 109 hand-ins (the whole queue history): the retention row for submissions keeps the live ones and the returned ones inside the day window; older ones leave the record (they stay in queue.jsonl).
+- `landing stop` records By = "landing" (the install), not the person: the stop/pause record carries the person's name when the act was a person's (ActProvenance), so the describer can say "stopped by Wido since 21:52".

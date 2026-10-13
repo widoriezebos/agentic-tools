@@ -253,22 +253,27 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		}
 		return record, err
 	}
-	seams.Policy = func(key string) (plain.PolicyValue, error) {
-		record, err := seams.Lane()
-		if err != nil {
-			return plain.PolicyValue{}, err
+	if seams.Policy == nil {
+		seams.Policy = func(key string) (plain.PolicyValue, error) {
+			record, err := seams.Lane()
+			if err != nil {
+				return plain.PolicyValue{}, err
+			}
+			inv, err := landingDesignInvocation(record.Install, io.Discard)
+			if err != nil {
+				return plain.PolicyValue{}, err
+			}
+			return inv.laneBatchSeams(home, record, seams).Policy(key)
 		}
-		inv, err := landingDesignInvocation(record.Install, io.Discard)
-		if err != nil {
-			return plain.PolicyValue{}, err
-		}
-		return inv.laneBatchSeams(home, record, seams).Policy(key)
 	}
+
 	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, seams),
 		Refresh: func(now time.Time) {
 			readonly := seams
 			readonly.AgentProbe = agent.probe
-			_, _ = plain.RefreshShadow(home, now, "keeper", readonly)
+			if _, err := plain.RefreshShadow(home, now, "keeper", readonly); err == nil {
+				_ = plain.RefreshLifecycle(home, now, readonly)
+			}
 		},
 		AdmitWake: func(root string, wake lane.Wake) (lane.Wake, error) {
 			record, err := seams.Lane()

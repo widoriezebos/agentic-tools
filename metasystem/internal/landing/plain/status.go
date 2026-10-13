@@ -96,11 +96,8 @@ type RunningProof struct {
 	Minutes    *float64 `json:"minutes,omitempty"`
 }
 
-// landedWindow is how far back a landing is timed. The page lists what
-// landed today, and pushes.jsonl grows by a line with every landing, so a
-// read asks only the pushes of the last day what they brought; an older
-// landing carries no time.
-const landedWindow = 24 * time.Hour
+// landedWindow is the lifecycle table's completed submission window.
+const landedWindow = state.SubmissionWindow
 
 // laneGit is what a status read asks the lane checkout's Git: origin's main
 // as the checkout last fetched it, whether that main contains a commit, and
@@ -493,6 +490,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 	damaged("the proof results have", skipped, resultsPath(install))
 	if err == nil && len(results) > 0 {
 		raw.Results = results
+		results = retainedResults(results, seams.now())
 		status.LastProof = &results[len(results)-1]
 		for i := len(results) - 1; i >= 0; i-- {
 			if results[i].Trunk {
@@ -505,6 +503,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 	unread("the gate results", err)
 	damaged("the gate results have", skipped, gatesPath(install))
 	if err == nil {
+		gates = retainedResults(gates, seams.now())
 		status.LastGate = &Result{Result: "none"}
 		head, headErr := seams.git(string(layout.Checkout), "rev-parse", "--verify", "HEAD^{commit}")
 		unread("the gate's requested HEAD", headErr)
@@ -642,6 +641,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		status.Summary = status.ProofHeadline
 	}
 	questions, questionProblems := channel.WalkQuestions(install)
+	raw.AllQuestions = questions
 	if len(questionProblems) > 0 {
 		said(fmt.Sprintf("lane questions: %v", questionProblems))
 	}

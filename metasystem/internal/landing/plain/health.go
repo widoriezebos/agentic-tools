@@ -142,6 +142,7 @@ func measured(value *float64) string {
 func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string, results []Result, queue []Line, install, checkout string, seams ProveSeams, git laneGit) (*Health, error) {
 	h := &Health{State: "idle", Shadow: status.Shadow, Drift: shadowRows(status), Goals: []GoalHealth{}, Questions: []QuestionHealth{}, Incidents: []IncidentHealth{}, AbandonedResolution: abandoned, LastProof: status.LastProof}
 	now := seams.now()
+	results = retainedResults(results, now)
 	h.observedAt = now
 	h.ReportPath = filepath.Join(Dir(install), "steward-report.md")
 	report, err := readStewardReport(install)
@@ -172,6 +173,13 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		}
 	}
 	h.Interventions = h.Interventions[max(0, len(h.Interventions)-5):]
+	overdue, err := lifecycleRecords(install, status, now, seams)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range overdue {
+		h.Drift = append(h.Drift, Fired{Row: "overdue-record", Subject: record.reason})
+	}
 	stamp := now.Format(time.RFC3339Nano)
 	switch status.Owner.State {
 	case lane.OwnerStopped:
@@ -204,7 +212,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		minutes := elapsedMinutes(e.At, end)
 		if e.State == StateLanded || e.State == StateReturned {
 			landed, err := time.Parse(time.RFC3339Nano, end)
-			if minutes == nil || err != nil || landed.Before(now.Add(-landedWindow)) || landed.After(now) {
+			if minutes == nil || err != nil || lifecycleExpired("submission", e.State, landed, now) || landed.After(now) {
 				continue
 			}
 		}

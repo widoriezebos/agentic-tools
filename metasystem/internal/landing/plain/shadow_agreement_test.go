@@ -129,7 +129,7 @@ func assertShadowAgrees(t *testing.T, home string, seams ProveSeams) {
 	equal("agent.word", shadow.Agent.Word, agentWord)
 	step := state.Step{}
 	if p := observation.AgentProgress; p != nil {
-		if p.Step != nil {
+		if p.Step != nil && !p.ProcessGone {
 			step = state.Step{Verb: p.Step.Verb, Args: append([]string(nil), p.Step.Args...), StartedAt: p.Step.StartedAt}
 		}
 	}
@@ -138,7 +138,7 @@ func assertShadowAgrees(t *testing.T, home string, seams ProveSeams) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if batch != nil {
+	if batch != nil && !(batch.State == BatchClosed && len(batch.Members) == 0) {
 		equal("batch.id", shadow.Batch.ID, batch.ID)
 		equal("batch.execution.word", shadow.Batch.Execution.Word, batch.State)
 		admission := "sealed"
@@ -158,18 +158,30 @@ func assertShadowAgrees(t *testing.T, home string, seams ProveSeams) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(shadow.HandIns) != len(entries) {
-		t.Fatalf("hand_ins count: got %d; queue has %d", len(shadow.HandIns), len(entries))
-	}
-	equal("hand_ins observation count", len(shadow.HandIns), len(observation.Queue))
+	j := 0
 	for i, e := range observation.Queue {
-		prefix := fmt.Sprintf("hand_ins[%d]", i)
-		equal(prefix+".goal", shadow.HandIns[i].Goal, entries[i].Goal)
-		equal(prefix+".sha", shadow.HandIns[i].SHA, entries[i].SHA)
-		equal(prefix+".word", shadow.HandIns[i].Word, e.State)
-		equal(prefix+".ordinal", shadow.HandIns[i].Ordinal, raw.Ordinals[i])
-		equal(prefix+".reason", shadow.HandIns[i].Reason, e.Reason)
+		stamp := e.LandedAt
+		if e.State == StateReturned {
+			stamp = e.ReturnedAt
+		}
+		at, _ := time.Parse(time.RFC3339Nano, stamp)
+		// Queue history remains, while completed hand-ins leave the shadow.
+		if e.State == StateSuperseded || (e.State == StateReturned || e.State == StateLanded) && !at.IsZero() && seams.now().Sub(at) > 24*time.Hour {
+			continue
+		}
+		if j >= len(shadow.HandIns) {
+			t.Fatalf("missing live hand-in: %+v", e)
+		}
+		prefix := fmt.Sprintf("hand_ins[%d]", j)
+		equal(prefix+".goal", shadow.HandIns[j].Goal, entries[i].Goal)
+		equal(prefix+".sha", shadow.HandIns[j].SHA, entries[i].SHA)
+		equal(prefix+".word", shadow.HandIns[j].Word, e.State)
+		equal(prefix+".ordinal", shadow.HandIns[j].Ordinal, raw.Ordinals[i])
+		equal(prefix+".reason", shadow.HandIns[j].Reason, e.Reason)
+		j++
 	}
+	equal("live hand_ins count", len(shadow.HandIns), j)
+
 	if running := ReadRunningProof(record.Install, seams); running != nil {
 		equal("proof.attempt", shadow.Proof.Attempt, running.Attempt)
 		equal("proof.word", shadow.Proof.Word, running.State)

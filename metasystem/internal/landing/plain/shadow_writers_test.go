@@ -215,12 +215,12 @@ func TestShadowBatchCloseTimes(t *testing.T) {
 				t.Fatal(err)
 			}
 			r, _, err := state.Read(Dir(b.install))
-			if err != nil || r.Batch.Execution.Word != BatchClosed || r.Batch.Execution.Since.Observed || !r.Batch.Execution.Since.At.Equal(now) {
-				t.Fatalf("%s close clock: %+v %v", path, r.Batch, err)
+			if err != nil || r.Batch.ID != "" {
+				t.Fatalf("%s empty closed batch remained: %+v %v", path, r.Batch, err)
 			}
 			closed, err := ReadBatch(b.install)
-			if err != nil {
-				t.Fatal(err)
+			if err != nil || closed == nil || closed.State != BatchClosed || closed.ClosedAt != now.Format(time.RFC3339Nano) {
+				t.Fatalf("%s raw close clock: %+v %v", path, closed, err)
 			}
 			closedAt := closed.ClosedAt
 			if err := completePush(b.install, b.checkout, closed, "before", "main", "tree", now.Add(time.Minute), s); err != nil {

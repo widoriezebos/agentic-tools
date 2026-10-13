@@ -156,7 +156,7 @@ func TestAuditLanePredicates(t *testing.T) {
 		"Resume": "MergeOwnership", "deployMerge": "MergeOwnership", "stewardStep": "StopOwner",
 		"batchAdmission": "Admissibility", "checkBatchLocked": "Admissibility", "admissionAtSeal": "Admissibility",
 		"LaneQuestionPremise": "QuestionPremise", "WithdrawStaleLaneQuestion": "QuestionPremise",
-		"returnOrigin": "Actor", "PersonSelection": "Actor", "closeGoneLoopStops": "StopOwner",
+		"returnOrigin": "Actor", "PersonSelection": "Actor", "stopLifecycleFacts": "StopOwner",
 	})
 	if err != nil {
 		t.Fatal(err)

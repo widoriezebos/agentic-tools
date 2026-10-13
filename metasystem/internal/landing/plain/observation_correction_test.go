@@ -405,6 +405,10 @@ func TestObservationAgentWordAndIdleClock(t *testing.T) {
 	if !slices.ContainsFunc(state.Diff(live, gone), func(s string) bool { return strings.HasPrefix(s, "agent.word:") }) {
 		t.Fatal("agent death missing from diff")
 	}
+	var retained AgentStep
+	if err := readAgentRecord(b.install, "agent-step.json", &retained); err != nil || !reflect.DeepEqual(retained, step) {
+		t.Fatalf("raw step changed: %+v %v", retained, err)
+	}
 	if err := os.Remove(filepath.Join(Dir(b.install), "agent-step.json")); err != nil {
 		t.Fatal(err)
 	}
@@ -415,8 +419,8 @@ func TestObservationAgentWordAndIdleClock(t *testing.T) {
 	if idle.Agent.Word != "idle" || !idle.Agent.Since.At.Equal(bedNow) {
 		t.Fatal(idle.Agent)
 	}
-	if !reflect.DeepEqual(gone.Agent.Step, live.Agent.Step) {
-		t.Fatal("lost step after process died")
+	if !reflect.DeepEqual(gone.Agent.Step, state.Step{}) {
+		t.Fatal("retired step remained in the shadow")
 	}
 }
 

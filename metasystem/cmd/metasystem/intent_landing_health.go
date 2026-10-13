@@ -2,20 +2,30 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 func landingHealthCommand() intentCommand {
 	return laneCommand(intentCommand{object: "landing", action: "health", audience: "both", maxArgs: 0,
 		summary:  "show the lane's health facts and the observations that need attention",
-		usage:    []string{"metasystem landing health [--json]"},
-		examples: []string{"metasystem landing health", "metasystem landing health --json"},
+		usage:    []string{"metasystem landing health [--rules] [--json]"},
+		flags:    []intentFlag{{name: "rules", usage: "print each record retirement rule"}},
+		examples: []string{"metasystem landing health", "metasystem landing health --json", "metasystem landing health --rules"},
 	}, runIntentLandingHealth)
 }
 func runIntentLandingHealth(inv *intentInvocation, admitted laneAdmitted) int {
+	if inv.input.has("rules") {
+		var lines []string
+		for _, row := range state.Lifecycle {
+			lines = append(lines, fmt.Sprintf("%s: %s", row.Kind, row.Retires))
+		}
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: strings.Join(lines, "\n")})
+	}
 	var status plain.Status
 	for try := 0; try < 3; try++ {
 		seams := inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.plainProve)

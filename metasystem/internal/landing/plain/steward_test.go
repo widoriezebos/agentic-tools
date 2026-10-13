@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -21,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
@@ -32,6 +34,58 @@ type stewardBed struct {
 	seams    ProveSeams
 	calls    []string
 	question channel.Question
+}
+
+func TestLandingStewardSeventeenRetiredLoopStopsDoNotBound(t *testing.T) {
+	t.Parallel()
+	b := newStewardBed(t)
+	b.incidents()
+	at := bedNow.Add(-time.Hour).Format(time.RFC3339Nano)
+	var stops, queue []any
+	for i := range 17 {
+		name := fmt.Sprintf("landed-%d", i)
+		stops = append(stops, Stop{Loop: "lane-proof", Subject: name, Decision: "stop", At: at})
+		queue = append(queue, Line{Goal: name, SHA: name, At: at})
+	}
+	b.lines("stops.jsonl", stops...)
+	b.lines("queue.jsonl", queue...)
+	if _, err := RefreshShadow(b.home, bedNow, "fixture", b.seams); err != nil {
+		t.Fatal(err)
+	}
+	before := ObserveStatus(b.home, b.record, b.seams, nil)
+	count := 0
+	for _, row := range before.Health.Rows() {
+		if row.Row == "overdue-record" {
+			count++
+		}
+	}
+	if count != 17 {
+		t.Fatalf("overdue stops=%d", count)
+	}
+	if err := RefreshLifecycle(b.home, bedNow, b.seams); err != nil {
+		t.Fatal(err)
+	}
+	open, err := OpenStops(b.install)
+	if err != nil || len(open) != 0 {
+		t.Fatalf("stops=%v err=%v", open, err)
+	}
+	events, _, err := state.ReadEvents(Dir(b.install))
+	if err != nil {
+		t.Fatal(err)
+	}
+	count = 0
+	for _, event := range events {
+		if event.Kind == "loop-stop" {
+			count++
+		}
+	}
+	if count != 17 {
+		t.Fatalf("retirement events=%d", count)
+	}
+	run := b.step(bedNow)
+	if strings.Contains(run.Line, "bounded:") || strings.Contains(run.Line, "overdue-record") || len(b.calls) != 1 || b.calls[0] != "trunk" {
+		t.Fatalf("retired stops still bound: %+v calls=%v", run, b.calls)
+	}
 }
 
 func newStewardBed(t *testing.T) *stewardBed {

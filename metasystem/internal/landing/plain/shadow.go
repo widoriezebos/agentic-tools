@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -33,6 +34,7 @@ type RawFacts struct {
 	Incidents               []goal.TrunkRedEntry
 	QuestionHealth          []QuestionHealth
 	Anchors                 Anchors
+	AllQuestions            []channel.Question
 	Questions               []state.Question
 }
 
@@ -76,16 +78,16 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 			source = "landing-agent-keeper.json"
 		}
 		next.Agent.Since = since(progress.Since, source)
-		if step := progress.Step; step != nil {
+		if step := progress.Step; step != nil && !progress.ProcessGone {
 			next.Agent.Step = state.Step{Verb: step.Verb, Args: append([]string(nil), step.Args...), StartedAt: step.StartedAt}
 			if agentAlive {
 				next.Agent.Word = "stepping"
 			}
 			next.Agent.Since = since(step.StartedAt, "agent-step.json")
-			if progress.ProcessGone && agentAlive {
-				next.Agent.Word = "step-process-gone"
-				next.Agent.Since = since("", "agent-step.json")
-			}
+		}
+		if progress.Step != nil && progress.ProcessGone && agentAlive {
+			next.Agent.Word = "step-process-gone"
+			next.Agent.Since = since("", "agent-step.json")
 		}
 	} else {
 		stamp := raw.Agent.StartedAt
@@ -97,7 +99,7 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	if !agentAlive {
 		next.Agent.Since = since(raw.Agent.ReapedAt, "landing-agent-keeper.json")
 	}
-	if batch := raw.Batch; batch != nil {
+	if batch := raw.Batch; batch != nil && !(batch.State == BatchClosed && len(batch.Members) == 0) {
 		next.Batch.ID, next.Batch.Base = batch.ID, batch.Base
 		next.Batch.Execution.Word = batch.State
 		preparedAt := batch.CreatedAt
@@ -138,6 +140,14 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 		}
 	}
 	for i, entry := range observation.Queue {
+		stamp := entry.LandedAt
+		if entry.State == StateReturned {
+			stamp = entry.ReturnedAt
+		}
+		at, _ := time.Parse(time.RFC3339Nano, stamp)
+		if lifecycleExpired("submission", entry.State, at, raw.Now) {
+			continue
+		}
 		one := state.HandIn{Goal: entry.Goal, SHA: entry.SHA, Ordinal: raw.Ordinals[i], Reason: entry.Reason}
 		one.Word = entry.State
 		one.At, _ = time.Parse(time.RFC3339Nano, entry.At)

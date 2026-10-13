@@ -110,6 +110,7 @@ type Record struct {
 	LastObservation *Observation `json:"last_observation,omitempty"`
 }
 type Event struct {
+	RecordID string    `json:"record_id,omitempty"`
 	At       time.Time `json:"at"`
 	Kind     string    `json:"kind"`
 	From     string    `json:"from"`
@@ -248,36 +249,62 @@ func write(dir string, record Record) error {
 	_, err = atomicfile.WriteFile(filepath.Join(dir, "state.json"), append(data, '\n'), 0600, "")
 	return err
 }
-func Transition(dir string, now time.Time, kind, from, to, by, evidence string, apply func(*Record)) (event Event, err error) {
+func Transition(dir string, now time.Time, kind, from, to, by, evidence string, apply func(*Record), raw ...func() error) (event Event, err error) {
 	event = Event{At: now.UTC(), Kind: kind, From: from, To: to, By: by, Evidence: evidence}
 	err = locked(dir, func() error {
 		record, _, err := Read(dir)
 		if err != nil {
 			return err
 		}
-		field := reflect.ValueOf(record)
-		for _, part := range strings.Split(kind, ".") {
+		actual := "present"
+		recordKind, _, retirement := strings.Cut(kind, ":")
+		if retirement {
+			event.Kind = recordKind
+			event.RecordID = kind
+		}
+		if retirement {
+			events, _, readErr := ReadEvents(dir)
+			if readErr != nil {
+				return readErr
+			}
+			for _, previous := range events {
+				if previous.RecordID == kind && previous.Kind == recordKind {
+					actual = previous.To
+				}
+			}
+		} else {
+			field := reflect.ValueOf(record)
+			for _, part := range strings.Split(kind, ".") {
+				if field.Kind() != reflect.Struct {
+					return fmt.Errorf("unknown state field %q", kind)
+				}
+				field = field.FieldByNameFunc(func(name string) bool { return strings.EqualFold(name, part) })
+				if !field.IsValid() {
+					return fmt.Errorf("unknown state field %q", kind)
+				}
+			}
 			if field.Kind() != reflect.Struct {
-				return fmt.Errorf("unknown state field %q", kind)
+				return fmt.Errorf("state field %q has no word", kind)
 			}
-			field = field.FieldByNameFunc(func(name string) bool { return strings.EqualFold(name, part) })
-			if !field.IsValid() {
-				return fmt.Errorf("unknown state field %q", kind)
+			word := field.FieldByName("Word")
+			if !word.IsValid() {
+				return fmt.Errorf("state field %q has no word", kind)
 			}
+			actual = word.String()
 		}
-		if field.Kind() != reflect.Struct {
-			return fmt.Errorf("state field %q has no word", kind)
-		}
-		word := field.FieldByName("Word")
-		if !word.IsValid() {
-			return fmt.Errorf("state field %q has no word", kind)
-		}
-		if actual := word.String(); actual != from {
+		if actual != from {
 			event.Kind, event.From = "defect", actual
 			return errors.Join(&Refused{Kind: kind, Actual: actual, Expected: from}, appendEvent(dir, event))
 		}
 		version := record.Version
-		apply(&record)
+		for _, change := range raw {
+			if err := change(); err != nil {
+				return err
+			}
+		}
+		if apply != nil {
+			apply(&record)
+		}
 		record.Version = version + 1
 		if err := appendEvent(dir, event); err != nil {
 			return err

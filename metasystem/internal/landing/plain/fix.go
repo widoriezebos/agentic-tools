@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -111,10 +112,9 @@ func readFixRecords(install string, closeStale, includeClosed, mergeOnly bool, g
 		if fix.Attempt == "" {
 			fix.Attempt = strings.TrimSuffix(filepath.Base(path), ".json")
 		}
-		if recorded && fix.Tip == "" && running.Attempt != fix.Attempt {
+		if due, reason := state.LifecycleDue("fix", state.LifecycleFacts{Attempt: fix.Attempt, CurrentAttempt: running.Attempt}, time.Now()); recorded && fix.Tip == "" && due {
 			if closeStale {
-				fix.State = "closed"
-				if err := WriteFix(install, &fix); err != nil {
+				if _, err := state.Transition(Dir(install), time.Now(), "fix:"+filepath.Base(path), "present", "closed", "keeper", reason, nil, func() error { fix.State = "closed"; return WriteFix(install, &fix) }); err != nil {
 					return nil, err
 				}
 			}
