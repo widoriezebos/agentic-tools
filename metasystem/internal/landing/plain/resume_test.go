@@ -552,3 +552,16 @@ func TestRestartBindsAndClosesOnlyCurrentBarrenStop(t *testing.T) {
 		t.Fatalf("restart lost durable selection: %+v err=%v", stored, err)
 	}
 }
+
+func TestResumeRebuildPreservesUnownedMerge(t *testing.T) {
+	t.Parallel()
+	b := newResumeBed(t)
+	b.merge = "tip"
+	if err := WriteFix(b.install, &Fix{Attempt: "fix", Goal: "older", Job: "job", Units: []string{"merge"}, State: "rebuild", Commit: b.head, Tip: b.merge}); err != nil {
+		t.Fatal(err)
+	}
+	run := b.resume(t)
+	if b.aborts != 0 || b.merge != "tip" || b.starts != 1 || !strings.Contains(strings.Join(run.Lines, "\n"), "the current merge is preserved") {
+		t.Fatalf("aborts=%d merge=%q starts=%d run=%+v", b.aborts, b.merge, b.starts, run)
+	}
+}

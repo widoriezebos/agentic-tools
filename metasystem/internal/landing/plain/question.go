@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 // LaneQuestionHeadline names the waiting answer and the person's remedies.
@@ -35,55 +36,48 @@ func WithdrawStaleLaneQuestion(install string, q channel.Question, seams ProveSe
 	if q.Lineage != lane.AgentLineage || channel.LaneStopCommand(q) != "" {
 		return false, nil
 	}
-	premise, err := LaneQuestionPremise(install, q, seams)
-	if err != nil || premise != "gone" {
+	facts, err := laneQuestionFacts(install, q, seams)
+	if err != nil || state.QuestionPremise(facts).Word != state.Gone {
 		return false, nil
 	}
 	_, err = channel.Withdraw(install, q.ID, "the checkout or main commit premise is no longer current", nil, channel.DestinationConfig{})
 	return err == nil, err
 }
 
-// LaneQuestionPremise judges only the explicit evidence carried by the question.
 func LaneQuestionPremise(install string, q channel.Question, seams ProveSeams) (string, error) {
-	if channel.LaneStopCommand(q) != "" {
-		satisfied, err := PolicyQuestionSatisfied(install, q)
-		if satisfied {
-			return "gone", err
-		}
-		return "current", err
+	facts, err := laneQuestionFacts(install, q, seams)
+	if err != nil {
+		facts.Unreadable = err.Error()
 	}
-	if q.Lineage != lane.AgentLineage || channel.LaneStopCommand(q) != "" {
-		return "unknown", nil
+	return state.QuestionPremise(facts).Word, err
+}
+
+func laneQuestionFacts(install string, q channel.Question, seams ProveSeams) (f state.PremiseFacts, err error) {
+	f.Policy, f.LaneAgent = channel.LaneStopCommand(q) != "", q.Lineage == lane.AgentLineage
+	if f.Policy {
+		f.Satisfied, err = PolicyQuestionSatisfied(install, q)
+		return f, err
+	}
+	if !f.LaneAgent {
+		return f, nil
 	}
 	facts := strings.Join(q.Facts, "\n")
-	premise := "unknown"
-	if strings.Contains(strings.ToLower(facts), "checkout is not on main") {
-		branch, err := seams.git(install, "symbolic-ref", "--quiet", "--short", "HEAD")
-		if err != nil {
-			return "unknown", err
+	f.CheckoutOffMain = strings.Contains(strings.ToLower(facts), "checkout is not on main")
+	if f.CheckoutOffMain {
+		f.Branch, err = seams.git(install, "symbolic-ref", "--quiet", "--short", "HEAD")
+		if err != nil || f.Branch == "main" {
+			return f, err
 		}
-		if branch == "main" {
-			return "gone", nil
-		}
-		premise = "current"
 	}
 	if match := mainQuestionCommit.FindStringSubmatch(facts); len(match) > 0 {
-		main, err := checkoutGit(install, seams).main()
+		f.ExpectedMain = match[1]
+		f.Main, err = checkoutGit(install, seams).main()
 		if err != nil {
-			return "unknown", err
+			return f, err
 		}
-		if main == match[1] {
-			return "current", nil
-		}
-		if main != match[1] {
-			contained, err := checkoutGit(install, seams).contains(main, match[1])
-			if err != nil {
-				return "unknown", err
-			}
-			if contained {
-				return "gone", nil
-			}
+		if f.Main != f.ExpectedMain {
+			f.Contains, err = checkoutGit(install, seams).contains(f.Main, f.ExpectedMain)
 		}
 	}
-	return premise, nil
+	return f, err
 }

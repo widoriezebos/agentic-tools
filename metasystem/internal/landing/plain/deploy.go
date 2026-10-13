@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 type DeployOptions struct {
@@ -151,7 +152,7 @@ func deployMerge(install, checkout, main string, opts DeployOptions, seams Prove
 	if err != nil {
 		return err
 	}
-	fix, err := readFix(install, true)
+	fix, err := readFixRecords(install, false, true, true)
 	if err != nil {
 		return err
 	}
@@ -159,14 +160,15 @@ func deployMerge(install, checkout, main string, opts DeployOptions, seams Prove
 	if err != nil {
 		return err
 	}
-	stale := fix != nil && fix.Commit == head && fix.Tip == tip && (fix.State == "abandoned" || fix.State == "rebuild")
-	if fix != nil && fix.Commit == head && fix.Tip == tip && fix.State == "resolving" {
-		stale, err = codeMoved(install, checkout, head, main, seams)
+	facts := mergeFacts(fix, head, tip)
+	if state.MergeOwnership(facts).Word != state.Unknown && fix.State == "resolving" {
+		facts.MainMoved, err = codeMoved(install, checkout, head, main, seams)
 		if err != nil {
 			return err
 		}
 	}
-	if !stale {
+	facts.WritersSettled = true
+	if state.MergeOwnership(facts).Word != state.Abandoned {
 		goal := "the pending merge"
 		if fix != nil {
 			goal = fix.Goal
@@ -180,7 +182,8 @@ func deployMerge(install, checkout, main string, opts DeployOptions, seams Prove
 	if err != nil {
 		return err
 	}
-	if !settled {
+	facts.WritersSettled = settled
+	if state.MergeOwnership(facts).Word != state.Abandoned {
 		return &Refusal{Code: "LANE_DEPLOY_MERGE", Reason: "the lane is resolving " + fix.Goal + "; give it back or wait", Next: "metasystem landing give-back " + fix.Goal + " --reason TEXT"}
 	}
 	if fix.State != "abandoned" {

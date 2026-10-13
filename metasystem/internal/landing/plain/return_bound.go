@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 // ReturnOrigin preserves the act and the comparable failure across hand-ins.
@@ -22,6 +23,9 @@ type ReturnOrigin struct {
 
 func returnOrigin(cause *Cause, detail *conflict.Return, person *ActProvenance) ReturnOrigin {
 	origin := ReturnOrigin{Person: person, Class: "tests"}
+	if state.Actor(state.ActorFacts{Provenance: person != nil}).Word != state.Person {
+		origin.Person = nil
+	}
 	if cause != nil {
 		origin.Failures = slices.Clone(cause.Tests)
 		origin.Attempt = cause.Evidence

@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 const (
@@ -38,7 +39,7 @@ func PolicyDecision(value PolicyValue, readErr error) error {
 	if readErr != nil {
 		return fmt.Errorf("the batch policy cannot be read; no selection was admitted: %w", readErr)
 	}
-	if value.Value == "person" {
+	if state.Admissibility(state.AdmissionFacts{Selecting: true, Policy: value.Value}).Word != "admissible" {
 		return &Refusal{Code: "LANE_BATCH_PERSON", Reason: "the batch policy requires a person's selection", Next: "metasystem landing run --goals GOALS"}
 	}
 	return nil
@@ -152,7 +153,7 @@ func PersonSelection(install, checkout string, registered lane.Record, goals []s
 		batch.Selector = policy
 		person.Kind, person.Destination, person.Subject = "selection", registered, members
 		batch.Person = &person
-		if s.Pause != nil {
+		if s.Pause != nil && state.Actor(state.ActorFacts{Provenance: batch.Person != nil}).Word == state.Person {
 			if pause, paused := s.Pause(); paused && !pause.Unreadable() {
 				batch.Person.StandingPause = &pause
 			}
@@ -676,7 +677,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 			return batch, err
 		}
 	}
-	if batch.State == BatchPrepared && admit && batch.Person == nil && batch.SealedAt == "" {
+	if batch.State == BatchPrepared && admit && state.Admissibility(state.AdmissionFacts{Selecting: true, PersonSeal: batch.Person != nil || batch.SealedAt != ""}).Word == "admissible" {
 		policy, err := s.batchPolicy()
 		if err := PolicyDecision(policy, err); err != nil {
 			return batch, err
@@ -874,24 +875,15 @@ func memberAccounted(entries []Entry, member GoalSHA, checkout, main string, s P
 func automaticBatch(batch Batch) bool { return batch.Selector.Value == "auto" && batch.Person == nil }
 
 func batchAdmission(batch Batch, entry Entry) (string, string) {
-	switch {
-	case batch.Person != nil || slices.ContainsFunc(batch.Actions, func(a BatchAction) bool { return a.Kind == "seal" && a.By != "" && a.At == batch.SealedAt }):
-		return "not admissible", "sealed by a person"
-	case strings.TrimLeft(batch.Selector.Value, "0") == "1":
-		return "not admissible", "batch cap is one"
-	case batch.Selector.Value == "":
-		return "unknown", "the admission policy is unrecorded"
-	case !automaticBatch(batch):
-		return "not admissible", "the batch does not use automatic policy"
-	case slices.ContainsFunc(batch.Members, func(m GoalSHA) bool { return m.Goal == entry.Goal }):
-		return "not admissible", "the goal is already selected in this batch"
-	case entry.SHA == "":
-		return "unknown", "the hand-in does not establish eligibility"
-	case entry.State != StateWaiting:
-		return "not admissible", "the goal is " + entry.State
-	case entry.Held:
-		return "not admissible", "the goal is held: " + entry.Reason
-	default:
-		return "admissible", "eligible under automatic admission"
+	decision := state.Admissibility(admissionFacts(batch, entry))
+	return decision.Word, decision.Fact
+}
+
+func admissionFacts(batch Batch, entry Entry) state.AdmissionFacts {
+	return state.AdmissionFacts{
+		PersonSeal: batch.Person != nil || slices.ContainsFunc(batch.Actions, func(a BatchAction) bool { return a.Kind == "seal" && a.By != "" && a.At == batch.SealedAt }),
+		CapReached: strings.TrimLeft(batch.Selector.Value, "0") == "1", Policy: batch.Selector.Value,
+		Selected: slices.ContainsFunc(batch.Members, func(m GoalSHA) bool { return m.Goal == entry.Goal }),
+		Eligible: entry.SHA != "", EntryState: entry.State, Held: entry.Held, HoldReason: entry.Reason,
 	}
 }

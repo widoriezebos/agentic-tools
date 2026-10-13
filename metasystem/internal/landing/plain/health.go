@@ -154,7 +154,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		return nil, err
 	}
 	for _, stop := range stops {
-		if laneLoopStop(stop) {
+		if state.StopOwner(state.StopFacts{Recorded: true, Loop: stop.Loop}).Word == state.Loop {
 			h.Stops = append(h.Stops, stop)
 		}
 	}
@@ -656,7 +656,8 @@ func admissionAtSeal(batch Batch, entry Entry, lines []Line, incidents []goal.Tr
 	}
 	for _, recorded := range slices.Backward(HoldEntries(entriesOf(snapshot), open)) {
 		if recorded.Goal == entry.Goal && recorded.SHA == entry.SHA {
-			return batchAdmission(batch, recorded)
+			decision := state.Admissibility(admissionFacts(batch, recorded))
+			return decision.Word, decision.Fact
 		}
 	}
 	return "unknown", "eligibility at the seal is unrecorded"

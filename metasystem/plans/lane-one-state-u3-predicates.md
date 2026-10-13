@@ -18,5 +18,7 @@ Table tests per predicate, one case per decision-table row, plus the disagreemen
 ## Checks
 `go vet ./internal/landing/state ./internal/landing/plain ./cmd/metasystem`; `go test -p 4 -count=1 -timeout 30m ./internal/landing/state ./internal/landing/plain ./internal/landing/lane ./internal/layering ./internal/testenv`; `go test -count=1 -run 'TestAudit|TestLandingResume|TestLandingDeploy|TestLandingSteward' ./cmd/metasystem`.
 
+Always also: `go test -count=1 -run 'TestEveryStatefulActionRepeatsAsSuccess|TestEveryPublicActionHasAnIdempotencyRow|TestIntentObjectHelpGroupsEveryActionOnce|TestIntentPublicCoverage|TestHelmDrain|TestPlainLaneProve' ./cmd/metasystem` (the audits the full gate caught in 244 and 251).
+
 ## Do not
 No lifecycle rules (U4), no verb guard (U5), no wording changes (U6). Nothing acts on the shadow.

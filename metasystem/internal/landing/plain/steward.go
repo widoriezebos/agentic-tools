@@ -10,6 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
@@ -105,7 +106,7 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 	}
 	lines := []string{}
 	proofRunning := status.RunningProof != nil && status.RunningProof.State == "running"
-	person := status.Paused || view.Owner.StoppedBy != nil || proofRunning && status.RunningProof.Person != nil
+	person := state.StopOwner(state.StopFacts{Paused: status.Paused, StoppedBy: view.Owner.StoppedBy != nil, PersonProof: proofRunning && status.RunningProof.Person != nil}).Word == state.Person
 	young := status.AgentProgress != nil && status.AgentProgress.Step != nil && status.AgentProgress.Minutes < 2
 	main, err := checkoutGit(record.Root, seams).main()
 	if err != nil {

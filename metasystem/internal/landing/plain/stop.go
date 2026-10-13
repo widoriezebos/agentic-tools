@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 )
 
@@ -49,10 +50,6 @@ func OpenStops(install string) ([]Stop, error) {
 	return open, err
 }
 
-func laneLoopStop(s Stop) bool {
-	return s.Loop == "lane-proof" || s.Loop == "lane-gate" || s.Loop == "lane-return"
-}
-
 // closeGoneLoopStops retains unknown subjects and closes only obsolete lane loops.
 func closeGoneLoopStops(install string, status Status, now time.Time) error {
 	return withLock(install, func() error {
@@ -82,7 +79,7 @@ func closeGoneLoopStops(install string, status Status, now time.Time) error {
 			}
 		}
 		return closeMatchingStopsLocked(install, "subject gone", now, func(s Stop) bool {
-			if !laneLoopStop(s) {
+			if state.StopOwner(state.StopFacts{Recorded: true, Loop: s.Loop}).Word != state.Loop {
 				return false
 			}
 			if s.Loop == "lane-return" && s.Subject == "lane" {

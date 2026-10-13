@@ -586,3 +586,27 @@ func TestDeployStatusPreservesPorcelainColumnsAndPaths(t *testing.T) {
 		t.Fatalf("status bytes changed: %q %v", status, err)
 	}
 }
+
+func TestDeployMergeUsesResumeRecordScope(t *testing.T) {
+	t.Parallel()
+	b := newDeployBed(t)
+	b.merge = "goal-tip"
+	fix := &Fix{Attempt: "merge", Goal: "G", Commit: b.head, Tip: b.merge, State: "abandoned", Units: []string{"merge"}, Paths: []conflict.Path{{Path: "file.go"}}}
+	if err := WriteFix(b.install, fix); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFix(b.install, &Fix{Attempt: "proof", Goal: "other", Commit: b.head, State: "abandoned"}); err != nil {
+		t.Fatal(err)
+	}
+	// The proof record is newer, but it does not describe the pending merge.
+	for i, attempt := range []string{"merge", "proof"} {
+		at := bedNow.Add(time.Duration(i) * time.Minute)
+		if err := os.Chtimes(filepath.Join(Dir(b.install), "fixes", attempt+".json"), at, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	run, err := b.deploy()
+	if err != nil || b.merge != "" || b.builds != 1 || b.restarts != 1 || !slices.Contains(run.Steps, "aborted the abandoned merge of G") {
+		t.Fatalf("merge=%q builds=%d restarts=%d run=%+v err=%v", b.merge, b.builds, b.restarts, run, err)
+	}
+}

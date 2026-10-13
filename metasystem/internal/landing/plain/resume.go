@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
@@ -72,14 +73,16 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 		}
 		blocked = true
 		run.Lines = append(run.Lines, "the current merge is preserved; the agent continues it")
-		if fix == nil || fix.Tip != tip || fix.Commit != head {
+		facts := mergeFacts(fix, head, tip)
+		if state.MergeOwnership(facts).Word == state.Unknown {
 			return nil
 		}
 		settled, minutes, err := ResolutionWritersSettled(record.Install, *fix, s)
 		if err != nil {
 			return err
 		}
-		if !settled {
+		facts.WritersSettled = settled
+		if state.MergeOwnership(facts).Word == state.Owned && !settled {
 			run.Lines[0] = "the resolution job of " + fix.Goal + fmt.Sprintf(" still runs (%.1f min); give it back or wait", minutes)
 			if fix.State == "resolving" && fix.Job == "" {
 				run.Lines[0] = "the resolution of " + fix.Goal + " has no job; the agent continues it"
@@ -95,15 +98,16 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 			if err != nil {
 				return err
 			}
-			if move.Kind == "code" {
-				fix.State, fix.Reason = "abandoned", "superseded by main's code move; rebuild"
-				if err := WriteFix(record.Install, fix); err != nil {
-					return err
-				}
-			}
+			facts.MainMoved = move.Kind == "code"
+		}
+		if state.MergeOwnership(facts).Word != state.Abandoned {
+			return nil
 		}
 		if fix.State != "abandoned" {
-			return nil
+			fix.State, fix.Reason = "abandoned", "superseded by main's code move; rebuild"
+			if err := WriteFix(record.Install, fix); err != nil {
+				return err
+			}
 		}
 		if _, err := s.git(record.Root, "merge", "--abort"); err != nil {
 			return err
@@ -274,4 +278,11 @@ func ResolutionWritersSettled(install string, fix Fix, s ProveSeams) (bool, floa
 	_, live, agentErr := s.ResumeKeeper.Running()
 	regen, regenErr := ReadRunningRegeneration(install, s)
 	return settled && !live && (regen == nil || regen.State != "running"), minutes, errors.Join(jobErr, agentErr, regenErr)
+}
+
+func mergeFacts(fix *Fix, head, tip string) state.MergeFacts {
+	if fix == nil {
+		return state.MergeFacts{Head: head, MergeTip: tip}
+	}
+	return state.MergeFacts{Present: true, Job: fix.Job, State: fix.State, Checkpoint: fix.Commit, Tip: fix.Tip, Head: head, MergeTip: tip, Closed: fix.State == "closed"}
 }
