@@ -1474,16 +1474,23 @@ func runIntentLandingStop(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	result, _ := inv.stopLane(owners, home, record, lane.PauseReason(inv.input.text("reason")))
+	proveAt := inv.cwd
+	if inv.resolveLayout() == nil {
+		proveAt = inv.layout.InstallationRoot.Path()
+	}
+	by, err := owners.person(proveAt)
+	if err != nil {
+		by = inv.landingActor(owners)
+	}
+	result, _ := inv.stopLane(owners, home, record, by, lane.PauseReason(inv.input.text("reason")))
 	return inv.render(result)
 }
 
-// stopLane pauses the lane at a person's word.
-func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record lane.Record, reason string) (intentResult, bool) {
+// stopLane pauses the lane until a person resumes it.
+func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record lane.Record, by, reason string) (intentResult, bool) {
 	targets := laneTargets(record.Root)
 	prior, alreadyStopped := lane.ReadPause(home)
 	probe, _ := owners.probe(record.Root)
-	by := inv.landingActor(owners)
 	var provenance *plain.ActProvenance
 	if person, problem := inv.lanePerson("stop the landing lane", record.Root); problem == nil {
 		by = person.Name

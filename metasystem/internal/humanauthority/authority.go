@@ -23,6 +23,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 const (
@@ -56,7 +58,7 @@ type ProcessRef struct {
 	BootID       string `json:"bootId,omitempty"`
 }
 
-// Enrollment is the local terminal root every later proof must reach.
+// Enrollment is the machine's terminal root every later proof must reach.
 type Enrollment struct {
 	Schema        int        `json:"schema"`
 	EnrolledAt    time.Time  `json:"enrolledAt"`
@@ -660,13 +662,72 @@ func enrollmentPath(root string) string {
 	return filepath.Join(root, "artifacts", "agents", "authority", "human-terminal.json")
 }
 
-// ReadEnrollment reads the exact enrolled terminal record without accepting
-// unknown fields or trailing JSON.
+func machineEnrollmentPath() (string, error) {
+	path, err := registry.DefaultPath()
+	if err != nil {
+		return "", err
+	}
+	if !filepath.IsAbs(path) {
+		return "", fmt.Errorf("human terminal enrollment needs the machine's absolute state directory")
+	}
+	return filepath.Join(filepath.Dir(path), "host", "human-terminal.json"), nil
+}
+
+// EnrollmentLocation binds the authority store once at process setup. It
+// returns the proof's path and a pre-existing directory for durable writes.
+// The default store belongs to the machine; custody still belongs to root.
+var EnrollmentLocation = func(string) (string, string, error) {
+	path, err := machineEnrollmentPath()
+	return path, filepath.Dir(filepath.Dir(filepath.Dir(path))), err
+}
+
+// ReadEnrollment reads the machine's proof and refreshes a resolved install's cache.
+// A valid legacy install proof is promoted when the machine has none. A
+// broken machine proof refuses authority rather than using a stale cache.
+// Without an install layout, the machine proof is only read.
 func ReadEnrollment(root string) (Enrollment, error) {
-	data, err := os.ReadFile(enrollmentPath(root))
+	path, anchor, err := EnrollmentLocation(root)
 	if err != nil {
 		return Enrollment{}, err
 	}
+	install := false
+	if filepath.IsAbs(root) {
+		_, layoutErr := stateroot.ParseInstallation(root)
+		install = layoutErr == nil
+	}
+	data, err := os.ReadFile(path)
+	if os.IsNotExist(err) && install {
+		if legacy, cacheErr := os.ReadFile(enrollmentPath(root)); cacheErr == nil {
+			data = legacy
+			if _, err := decodeEnrollment(data); err != nil {
+				return Enrollment{}, err
+			}
+			if err := writeEnrollment(path, data, anchor); err != nil {
+				return Enrollment{}, fmt.Errorf("legacy terminal enrollment could not be promoted to the machine: %w", err)
+			}
+			err = nil
+		}
+	}
+	if err != nil {
+		return Enrollment{}, err
+	}
+	enrollment, err := decodeEnrollment(data)
+	if err != nil {
+		return Enrollment{}, err
+	}
+	if !install {
+		return enrollment, nil
+	}
+	cached, readErr := os.ReadFile(enrollmentPath(root))
+	if readErr != nil || !bytes.Equal(cached, data) {
+		if err := writeEnrollment(enrollmentPath(root), data, root); err != nil {
+			return Enrollment{}, fmt.Errorf("machine enrollment stands, but the install's cache could not be refreshed: %w", err)
+		}
+	}
+	return enrollment, nil
+}
+
+func decodeEnrollment(data []byte) (Enrollment, error) {
 	var enrollment Enrollment
 	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
@@ -681,6 +742,17 @@ func ReadEnrollment(root string) (Enrollment, error) {
 		return Enrollment{}, fmt.Errorf("human terminal enrollment is incomplete")
 	}
 	return enrollment, nil
+}
+
+func writeEnrollment(path string, data []byte, anchor string) error {
+	durable, err := atomicfile.WriteText(path, string(data), anchor)
+	if err != nil {
+		return err
+	}
+	if !durable {
+		return fmt.Errorf("human terminal enrollment was written but its durability is unknown")
+	}
+	return nil
 }
 
 // ProveTerminal performs the enrollment walk without reading or writing an
@@ -837,16 +909,28 @@ func Enroll(root string, invokerPID int64, reader Reader, human string, now time
 	if err != nil {
 		return Enrollment{}, fmt.Errorf("terminal enrollment refused: %w", err)
 	}
+	path, anchor, err := EnrollmentLocation(root)
+	if err != nil {
+		return Enrollment{}, err
+	}
+	_, pathErr := os.Stat(path)
 	generation := uint64(1)
-	if prior, readErr := ReadEnrollment(root); readErr == nil {
+	prior, readErr := ReadEnrollment(root)
+	if readErr == nil {
 		// The same person enrolled at this very terminal and session is a
 		// repeat whose effect holds: no second enrollment generation.
 		if prior.Human == human && prior.TerminalID == proof.observedTerminalID &&
 			sameRef(prior.TerminalRef, proof.InvokerRef) && sameRef(prior.SessionLeader, proof.TerminalRef) {
-			prior.Repeat = true
-			return prior, nil
+			if pathErr == nil {
+				prior.Repeat = true
+				return prior, nil
+			} else if !os.IsNotExist(pathErr) {
+				return Enrollment{}, pathErr
+			}
+			generation = prior.Generation
+		} else {
+			generation = prior.Generation + 1
 		}
-		generation = prior.Generation + 1
 	} else if !os.IsNotExist(readErr) {
 		return Enrollment{}, readErr
 	}
@@ -856,12 +940,12 @@ func Enroll(root string, invokerPID int64, reader Reader, human string, now time
 	if err != nil {
 		return Enrollment{}, err
 	}
-	durable, err := atomicfile.WriteText(enrollmentPath(root), string(encoded)+"\n", root)
-	if err != nil {
+	encoded = append(encoded, '\n')
+	if err := writeEnrollment(path, encoded, anchor); err != nil {
 		return Enrollment{}, err
 	}
-	if !durable {
-		return Enrollment{}, fmt.Errorf("human terminal enrollment was written but its durability is unknown")
+	if err := writeEnrollment(enrollmentPath(root), encoded, root); err != nil {
+		return enrollment, fmt.Errorf("machine enrollment stands, but the install's cache could not be refreshed: %w", err)
 	}
 	return enrollment, nil
 }

@@ -2837,7 +2837,7 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 			// These conclusions are a person's act: a typed --by is only a
 			// name, so each needs a terminal-grade proof for this checkout.
 			if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) {
-				missing := fmt.Sprintf("goal %s is claimed by %s+%s; concluding another's work is a human act", id, f.Claimed.Machine, f.Claimed.Lineage)
+				missing := fmt.Sprintf("goal %s is claimed by %s+%s; concluding another's work is a human act; caller resolved to agent %s+%s because no person's authority was proven", id, f.Claimed.Machine, f.Claimed.Lineage, r.Actor.Machine, r.Actor.Lineage)
 				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of another pair's claim", Missing: missing}, humanauthority.GradeTerminal); err != nil {
 					return nil, err
 				}
