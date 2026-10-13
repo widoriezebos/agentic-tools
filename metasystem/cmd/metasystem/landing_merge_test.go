@@ -24,10 +24,10 @@ import (
 
 func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 	t.Parallel()
-	for _, resolution := range []string{"resolution", "kept goal", "kept main"} {
+	for _, resolution := range []string{"resolution", "kept goal", "kept main", "lost job id", "missing launch", "lost failed job"} {
 		t.Run(resolution, func(t *testing.T) {
 			t.Parallel()
-			keptSide := resolution != "resolution"
+			keptSide := resolution == "kept goal" || resolution == "kept main"
 			b := newWorkBed(t)
 			layout, err := b.owners().resolver.ResolveLayout(b.root())
 			if err != nil {
@@ -119,7 +119,49 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 				t.Logf("exit=%d %s", code, lastOutput)
 				return code
 			}
-			for range 2 {
+			if resolution == "lost failed job" {
+				if code := invoke(); code != 0 {
+					t.Fatalf("initial build exit=%d", code)
+				}
+				saved, err := plain.ReadFix(root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err := b.manager.Store.Update(saved.Job, func(job *launch.Record) error {
+					job.State, job.Reason = launch.Failed, "fixture supervisor could not start"
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				saved.Job = ""
+				if err := plain.WriteFix(root, saved); err != nil {
+					t.Fatal(err)
+				}
+				if code := invoke(); code == 0 || !strings.Contains(lastOutput, "fixture supervisor could not start") || strings.Contains(lastOutput, "already exists") {
+					t.Fatalf("failed launch collection: %d %s", code, lastOutput)
+				}
+				if len(b.starter.launched()) != 1 {
+					t.Fatal("started a second job")
+				}
+				return
+			}
+			for call := range 2 {
+				if call == 1 && resolution == "lost job id" {
+					saved, err := plain.ReadFix(root)
+					if err != nil {
+						t.Fatal(err)
+					}
+					saved.Job = ""
+					if err := plain.WriteFix(root, saved); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if call == 0 && resolution == "missing launch" {
+					fix.Launch = &plain.LaunchRecord{What: "resolution", Error: "launch did not complete"}
+					if err := plain.WriteFix(root, fix); err != nil {
+						t.Fatal(err)
+					}
+				}
 				if code := invoke(); code != 0 {
 					t.Fatalf("build exit=%d", code)
 				}
@@ -146,6 +188,12 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 			fix, err = plain.ReadFix(root)
 			if err != nil || fix == nil || fix.State != "reviewing" || fix.Commit != "merge-commit" || fix.CheckResult != "green" {
 				t.Fatalf("collected=%+v %v", fix, err)
+			}
+			if resolution == "lost job id" || resolution == "missing launch" {
+				if fix.Launch == nil || fix.Launch.Attempt != fix.Attempt || fix.Launch.Job != fix.Job {
+					t.Fatalf("launch identity missing: %+v", fix)
+				}
+				return
 			}
 			resolutionPatch := filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".patch")
 			if _, err := os.ReadFile(resolutionPatch); err != nil {

@@ -60,6 +60,7 @@ var auditModes = map[string]auditMode{
 	"internal/stoptransition/transition.go":                  {group: "G1a"},
 	"internal/stoptransition/families.go":                    {group: "G1a"},
 	// G1b machine and landing.
+	"cmd/metasystem/landing_engine_incident.go":   {group: "G1b", layout: auditEnforce},
 	"cmd/metasystem/intent_landing_giveback.go":   {group: "G1b", layout: auditEnforce},
 	"cmd/metasystem/intent_landing_landanyway.go": {group: "G1b", layout: auditEnforce},
 	"cmd/metasystem/intent_machine.go":            {group: "G1b", layout: auditEnforce},

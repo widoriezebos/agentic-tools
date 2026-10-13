@@ -42,6 +42,9 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 	seams := admitted.owners.plainResolve
 	seams.AsSeat = inv.input.switched("as-seat")
 	seams.Proof = inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))
+	if observed, problem := inv.lanePerson("request this regeneration", admitted.record.Root); problem == nil {
+		seams.Proof.Person = &plain.ActProvenance{Kind: "regeneration", Person: observed.Name, Root: observed.Root, CheckedAt: observed.At.UTC(), TerminalGeneration: observed.Proof.TerminalGeneration, TerminalRef: observed.Proof.TerminalRef, Destination: admitted.record}
+	}
 	git := seams.Git
 	if git == nil {
 		git = plain.Git

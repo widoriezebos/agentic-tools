@@ -141,7 +141,19 @@ func measured(value *float64) string {
 
 func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string, results []Result, queue []Line, install, checkout string, seams ProveSeams, git laneGit) (*Health, error) {
 	h := &Health{State: "idle", Shadow: status.Shadow, Drift: shadowRows(status), Goals: []GoalHealth{}, Questions: []QuestionHealth{}, Incidents: []IncidentHealth{}, AbandonedResolution: abandoned, LastProof: status.LastProof}
+	engineIncidents, incidentErr := EngineIncidents(install)
+	if incidentErr != nil {
+		return nil, incidentErr
+	}
+	for _, incident := range engineIncidents {
+		h.Drift = append(h.Drift, Fired{Row: "engine-incident", Subject: fmt.Sprintf("an engine incident at %s in landing %s: %s", incident.At.Local().Format("15:04"), incident.Verb, incident.Panic)})
+	}
+
 	now := seams.now()
+	shadow := state.Record{}
+	if status.Shadow != nil {
+		shadow = *status.Shadow
+	}
 	results = retainedResults(results, now)
 	h.observedAt = now
 	h.ReportPath = filepath.Join(Dir(install), "steward-report.md")
@@ -272,18 +284,22 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			h.Agent.Verb = p.LastStep.Verb
 		}
 		if p.Step != nil && !p.ProcessGone {
-			h.Agent.WaitingOn = p.Step.Verb + " since " + lane.LocalText(p.Step.StartedAt)
+			h.Agent.WaitingOn = p.Step.Verb + " since " + waitSince(p.Step.StartedAt, shadow.Agent.Since, now)
 		}
 	}
 	if r := status.RunningProof; r != nil && r.State == "running" {
-		h.Agent.WaitingOn = "proof " + r.Attempt + " since " + lane.LocalText(r.Since)
+		h.Agent.WaitingOn = "proof " + r.Attempt + " since " + waitSince(r.Since, shadow.Proof.Since, now)
 		h.Proofs.Running = elapsedMinutes(r.Since, stamp)
 	}
 	if f := status.RunningFix; f != nil {
-		h.Agent.WaitingOn = "fix/resolution " + f.Attempt + " (" + f.State + ") since " + lane.LocalText(f.ReadStartedAt)
+		since := f.At
+		if f.State == "reviewing" {
+			since = f.ReadStartedAt
+		}
+		h.Agent.WaitingOn = "fix/resolution " + f.Attempt + " (" + f.State + ") since " + waitSince(since, shadow.Resolution.Since, now)
 	}
 	if r := status.RunningRegeneration; r != nil && r.State == "running" {
-		h.Agent.WaitingOn = "regeneration " + r.Goal + " since " + lane.LocalText(r.Since)
+		h.Agent.WaitingOn = "regeneration " + r.Goal + " since " + waitSince(r.Since, state.Since{}, now)
 	}
 	h.Agent.Silent = h.Agent.Alive && h.Agent.Minutes != nil && *h.Agent.Minutes > 20 && h.Agent.WaitingOn == ""
 	main := status.Raw.Main
@@ -326,7 +342,13 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			if e.State != StateWaiting {
 				continue
 			}
-			arrival := BatchArrival{Goal: e.Goal, Boundary: "unknown", Admission: "unknown", Reason: "the seal or hand-in time is unrecorded"}
+			handInSince := state.Since{}
+			for _, entry := range shadow.HandIns {
+				if entry.Goal == e.Goal && entry.SHA == e.SHA && entry.Word == e.State {
+					handInSince = entry.Since
+				}
+			}
+			arrival := BatchArrival{Goal: e.Goal, Boundary: "unknown", Admission: "unknown", Reason: "seal time " + waitSince(batch.SealedAt, shadow.Batch.Admission.Since, now) + "; hand-in time " + waitSince(e.At, handInSince, now)}
 			at, atErr := time.Parse(time.RFC3339Nano, e.At)
 			sealed, sealErr := time.Parse(time.RFC3339Nano, batch.SealedAt)
 			if atErr == nil && sealErr == nil {
@@ -583,7 +605,11 @@ func (h Health) Text() string {
 	}
 	fmt.Fprintln(&out, "batch:")
 	if b := h.Batch; b != nil {
-		fmt.Fprintf(&out, "  %s: open %t, sealed %s, %d members, %s min\n", b.ID, b.Open, lane.LocalText(b.SealedAt), len(b.Members), measured(b.Minutes))
+		since := state.Since{}
+		if h.Shadow != nil {
+			since = h.Shadow.Batch.Admission.Since
+		}
+		fmt.Fprintf(&out, "  %s: open %t, sealed %s, %d members, %s min\n", b.ID, b.Open, waitSince(b.SealedAt, since, h.observedAt), len(b.Members), measured(b.Minutes))
 		for _, a := range b.Waiting {
 			fmt.Fprintf(&out, "  %s: %s; %s; %s\n", a.Goal, a.Boundary, a.Admission, a.Reason)
 		}
@@ -668,5 +694,19 @@ func admissionAtSeal(batch Batch, entry Entry, lines []Line, incidents []goal.Tr
 			return decision.Word, decision.Fact
 		}
 	}
-	return "unknown", "eligibility at the seal is unrecorded"
+	return "unknown", "the queue cannot establish eligibility at the seal"
+}
+
+func waitSince(stamp string, since state.Since, _ time.Time) string {
+	if at, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+		return lane.LocalText(at.Format(time.RFC3339Nano))
+	}
+	if since.At.IsZero() {
+		return "an unknown time"
+	}
+	text := since.At.Local().Format("2006-01-02 15:04 MST")
+	if since.Observed {
+		text = "seen since " + text + " (observed)"
+	}
+	return text
 }

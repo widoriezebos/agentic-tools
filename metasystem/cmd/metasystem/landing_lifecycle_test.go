@@ -102,3 +102,28 @@ func TestLandingHealthRulesAreTheLifecycleTable(t *testing.T) {
 		t.Fatalf("rules=%d; table=%d", lines, len(state.Lifecycle))
 	}
 }
+
+func TestLandingStopAfterFailedRegenerationRecordsStopAndShowsFailure(t *testing.T) {
+	t.Parallel()
+	b, _ := batchVerbFixture(t, "sealed")
+	writeQuestionFixture(t, filepath.Join(plain.Dir(b.lane), "regenerating.json"), plain.RunningRegeneration{Goal: "A", Since: laneTestNow.Format(time.RFC3339Nano), Launch: &plain.LaunchRecord{What: "regeneration", By: "Wido", At: laneTestNow.Format(time.RFC3339Nano), Error: "compiler unavailable"}})
+	b.owners.landing.stopRegeneration = plain.StopRegeneration
+	for range 2 {
+		code, out := b.run(t, b.seat, "landing", "stop", "--json")
+		if code != 0 || !strings.Contains(out, "failed regeneration is closed") {
+			t.Fatalf("stop: %d %s", code, out)
+		}
+	}
+	pause, present := lane.ReadPause(b.home)
+	if !present || pause.By != "Wido" {
+		t.Fatalf("stop not recorded: %+v", pause)
+	}
+	saved, err := plain.ReadRunningRegeneration(b.lane, plain.ProveSeams{})
+	if err != nil || saved == nil || saved.State != "launch-failed" || saved.Launch.Error != "compiler unavailable" {
+		t.Fatalf("failure lost: %+v %v", saved, err)
+	}
+	code, out := b.run(t, b.seat, "landing", "status")
+	if code != 0 || !strings.Contains(out, "compiler unavailable") || strings.Contains(out, "regeneration process is undecidable") {
+		t.Fatalf("failure status: %d %s", code, out)
+	}
+}

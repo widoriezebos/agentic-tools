@@ -629,7 +629,7 @@ func TestShadowOfProjectsRecordedPayloadsAndHonestClocks(t *testing.T) {
 	if got.HandIns[0].Reason != "own failure" || got.HandIns[0].Since.Observed || !got.HandIns[0].At.Equal(started) || !got.HandIns[1].Since.Observed || got.HandIns[1].Since.Source != "queue.jsonl" {
 		t.Fatalf("hand-ins: %+v", got.HandIns)
 	}
-	if got.Resolution.Goal != "A" || got.Resolution.Job != "job" || !got.Resolution.Since.Observed || got.Resolution.Since.Source != "fixes/resolution.json" {
+	if got.Resolution.Goal != "A" || got.Resolution.Job != "job" || !got.Resolution.Since.At.IsZero() || got.Resolution.Since.Observed || got.Resolution.Since.Source != "" {
 		t.Fatalf("resolution: %+v", got.Resolution)
 	}
 	if got.Proof.Attempt != "proof" || got.Proof.Scope != "gate" || got.Proof.Since.Observed || !got.Proof.Since.At.Equal(started) || got.Proof.LoadAtStart != nil {
