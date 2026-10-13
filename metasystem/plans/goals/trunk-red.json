@@ -1938,6 +1938,51 @@
         "by": "",
         "why": ""
       }
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestProofAttemptBinaryLaunchesUseSharedIsolation-2",
+      "identity": "red:metasystem/cmd/metasystem:TestProofAttemptBinaryLaunchesUseSharedIsolation",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261013T085836.621290000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestProofAttemptBinaryLaunchesUseSharedIsolation",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261013T085836.621290000Z-replay-1",
+          "batch": "20261013T085836.621290000Z-replay-1",
+          "baseCommit": "ed04f6afc133ceb56bb81102c43ab3f2efa4ef23",
+          "baseTree": "065ab060ddd58475284183b0ea9e0f39e9a4b3e5",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261013T085836.621290000Z-replay-1.log",
+          "logDigest": "b0e8d8827c14d227dced866415d18858b57c12051f4291dc66c18705f7b0af8f",
+          "seenAt": "2026-10-13T09:47:47Z",
+          "opid": "RCE6Z4B0FEVYWRMGHYXZRKW1WH-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261013T085836.621290000Z-replay-1"
+      ],
+      "opened": "2026-10-13T09:47:47Z",
+      "closed": null
     }
   ],
   "cadence": {
