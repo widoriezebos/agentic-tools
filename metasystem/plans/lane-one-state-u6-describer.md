@@ -13,5 +13,7 @@ Table completeness: every (section, word) the state package can hold has a row (
 ## Checks
 `go vet ./internal/landing/state ./internal/landing/plain ./internal/landing/lane ./cmd/metasystem`; `go test -p 4 -count=1 -timeout 30m ./internal/landing/state ./internal/landing/plain ./internal/landing/lane ./internal/layering ./internal/testenv`; `go test -count=1 -run 'TestAudit|TestLanding|TestIntentPublicCoverage' ./cmd/metasystem`.
 
+Always also: `go test -count=1 -run 'TestEveryStatefulActionRepeatsAsSuccess|TestEveryPublicActionHasAnIdempotencyRow|TestIntentObjectHelpGroupsEveryActionOnce|TestIntentPublicCoverage|TestHelmDrain|TestPlainLaneProve' ./cmd/metasystem` (the audits the full gate caught in 244 and 251).
+
 ## Do not
 No new state words. No producer survives outside describe.go for a headline, a question's first line or a remedy. The landing-agent skill is updated only where it quotes a phrase that changed (keep it under 3000 words).

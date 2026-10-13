@@ -14,5 +14,7 @@ A verb whose fake seam panics → exit 2, one refusal line, one incident file wi
 ## Checks
 `go vet ./internal/landing/state ./internal/landing/plain ./internal/landing/lane ./cmd/metasystem`; `go test -p 4 -count=1 -timeout 30m ./internal/landing/state ./internal/landing/plain ./internal/landing/lane ./internal/layering ./internal/testenv`; `go test -count=1 -run 'TestAudit|TestLanding|TestIntentPublicCoverage|TestEveryPublicActionHasAnIdempotencyRow' ./cmd/metasystem`.
 
+Always also: `go test -count=1 -run 'TestEveryStatefulActionRepeatsAsSuccess|TestEveryPublicActionHasAnIdempotencyRow|TestIntentObjectHelpGroupsEveryActionOnce|TestIntentPublicCoverage|TestHelmDrain|TestPlainLaneProve' ./cmd/metasystem` (the audits the full gate caught in 244 and 251).
+
 ## Do not
 No wording table (U6). A person is never refused a verb by the guard (R-129/NO HAL: the guard refuses only the crashed act, never the person).

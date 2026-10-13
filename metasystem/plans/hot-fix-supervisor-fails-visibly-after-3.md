@@ -1,0 +1,8 @@
+# Hot-fix hf11 correction 3 (Astra round 3 on cf3382405, 2026-10-13 02:09) — human disposition under the stop rule (m1e in Wido's name): the one remaining material finding is the hot-fix's whole purpose, so it is fixed
+
+Working Mode: Implement, on branch build/hf11 (worktree /Users/wido/LocalStorage/GitHub/agentic-tools-m1e-hf11), as uncommitted changes on top of cf3382405 (folded into that commit by hand). Never commit, push, rebase or reset.
+
+F1 (material): the supervisor's notes reach the proof log only when supervision returns (`appendNotes(logFile)` after the fact), so while a unit is stuck the operator still sees nothing — the original silence. Fix: the notes sink writes each note line THROUGH to the unit's log file (the prover's log writer: in test_build.go ~1494/1521 the shard's log file; in groups.go and test_rerun.go the group's retained-output file or the prover's stderr when there is no file) at the moment it is recorded, under the same mutex, while staying out of the parser's byte buffer; the retained output at the end no longer appends them again (no duplicates). A note is therefore visible in `artifacts/agents/landing/proofs/<attempt>.log` within one sample interval of being recorded. Test (injected clock, scripted reader): a `Waiting` reading recorded mid-supervision appears in the log file before supervision returns (the test reads the file while the fake wait is still blocked), and exactly once in the final output.
+
+## Checks
+`go vet ./internal/proofrun`; `go test -count=1 -timeout 30m ./internal/proofrun` (one run at a time, load below 20); `go test -count=1 -run 'TestLanding|TestProofAttempt' ./cmd/metasystem`.

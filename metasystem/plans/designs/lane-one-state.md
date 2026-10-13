@@ -26,12 +26,27 @@ Step 1 is U1 and U2: the state record with its transitions and events, the shado
 ## Threat model
 (1) The shadow disagrees with the old readers and is believed: in step 1 nothing acts on the shadow alone (the steward keeps its own view until the agreement test has been green for a night); disagreements are rows, not acts. (2) The events file grows: one file per day, retired by the lifecycle table. (3) Lock contention on every verb: the transition is one small write under the lock the verbs already take. (4) A transition refused because the record lags reality (a crashed verb left the record behind): the refusal is recorded and the shadow builder repairs the record from the raw records on the next tick in step 1; in step 2 the guard of D4 makes that case an incident. (5) The design itself becomes a reader of readers: exactly two places compare (the fixture test and health's live comparison), both report and neither acts; everything else reads the record. (6) A raw record that carries no time: the record says `observed`, never a guessed time; a row for every observed field survives until its writer is instrumented (step 1 does the four named).
 
-## Units (each ≤ 250 production lines; hand-landed under the broken-machine rule, one at a time, FULL gate)
+## Units
+
+| Unit | Intent | Changed lines | Production lines | Areas |
+| --- | --- | ---: | ---: | --- |
+| U1 | D1, D6 step 1a: the state record, its lock, transitions and events; one pure projection of one coherent observation; health and status carry it under shadow (landed ed337d4a5, size exception) | 3000 | 1200 | `internal/landing/state/`, `internal/landing/plain/shadow.go`, `observation.go`, `cmd/metasystem/intent_landing*.go` |
+| U2 | D6 step 1b: health and the steward read the shadow, drift rows and events, the three writers carry their times (landed 335826c98) | 800 | 350 | `internal/landing/plain/health*.go`, `steward*.go`, `batch.go`, `internal/landing/lane/pause.go` |
+| U3 | D2: one predicate library and its no-copy audit (landed 2c2029cba) | 600 | 250 | `internal/landing/state/predicates.go`, `plain/resume.go`, `deploy.go`, `steward.go`, `batch.go`, `question.go`, `return_bound.go` |
+| U4 | D3: one lifecycle table, keeper retirements, overdue rows, question bound to its stop, retention, a stop names the person (landed 22bc86acc, size exception) | 1200 | 460 | `internal/landing/state/lifecycle.go`, `plain/lifecycle.go`, `health.go`, `question.go`, `stop.go` |
+| U5 | D4: the verb guard, incidents, launch-before-record, waits with a start (built 337b8aa31) | 700 | 250 | `cmd/metasystem/landing_guard.go`, `landing_engine_incident.go`, `plain/engine_incident.go`, `resolve.go`, `prove.go`, `regeneration.go` |
+| U5b | D4 item 4: every raw write emits its transition; a healthy lane has zero drift | 500 | 250 | `internal/landing/plain/*.go` writers, `internal/landing/lane/pause.go` |
+| U6 | D5: one describer; the words, the intent verb and what a person may do from one table (building) | 700 | 250 | `internal/landing/state/describe.go`, `words.go`, `plain/status.go`, `health.go`, `lane/remedy.go`, `view.go` |
+
+Each unit stays within 250 production lines unless a size exception is recorded above; built one at a time, read by Opus, landed through the lane (U1-U4 by hand under the broken-machine rule of 2026-10-12).
+
+### The unit briefs
 - U1 (step 1a): `internal/landing/state` (the record, Transition, Replace, events, the state lock), the shadow builder in plain (the one re-derivation, read-only path), the refresh at the keeper tick's entry and after every verb, the agreement test over the lane fixtures. Brief: plans/lane-one-state-u1-state-record.md.
 - U2 (step 1b): health compares live and prints drift rows, the keeper writes drift events, the steward reads the shadow, the three writers get their times. Brief: plans/lane-one-state-u2-health-reads-the-shadow.md.
 - U3 the predicate library and the no-copy audit; resume, deploy, the steward's bounds and the batch's admission call it.
 - U4 the lifecycle table, applied by the keeper as transitions; the defect row.
-- U5 the verb guard (panic → refusal + incident, exit 2), launch-before-record, waits with a start.
+- U5 the verb guard (panic → refusal + incident, exit 2), launch-before-record, waits with a start. Brief: plans/lane-one-state-u5-verb-guard.md.
+- U5b every raw write emits its transition; a healthy lane has zero drift (split from U5 by the builder's own report, 2026-10-13 05:05). Brief: plans/lane-one-state-u5b-verbs-emit-transitions.md.
 - U6 `Describe(state)` for status, health, the steward's rows, the questions and the remedies; lane-recovery U4's audit becomes a walk over the table.
 
 ## Critique record
@@ -48,7 +63,7 @@ Step 1 is U1 and U2: the state record with its transitions and events, the shado
 - Round 1 (Astra gpt-6-astra, 2026-10-12 21:53, on a tree 13 commits behind origin): 3 material — F1 one entry per goal loses a second hand-in (status_test.go:557, health.go:139) → D1 keys entries by goal and SHA; F2 the builder cannot reconstruct every since from today's records (batch.go:829 running without a time; status.go:620 landed without a time) → D1 since is a transition time or a marked observation, step 1 instruments the four writers; F3 no live mechanism produces the promised disagreement rows (pause.go:69 then a crash) → D6 step 1 health compares live and prints drift rows, the keeper writes drift events. Folded.
 
 ## Size exceptions
-- U1: the record schema, its lock and events, the pure projection and the coherence machinery (anchors, fingerprint, stale publication, non-mutating callbacks) are one indivisible slice — committed as 320a5f951 at +1182/-112 production lines (state.go, shadow.go, observation.go and the wiring of health, status, steward, keeper, agent step, queue, prove, fix, wake and the launch probe) and +1806 test lines; recorded here as the exception the 250-line rule requires, read whole by Opus. The next units stay under 250.
+- U1: the record schema, its lock and events, the pure projection and the coherence machinery (anchors, fingerprint, stale publication, non-mutating callbacks) are one indivisible slice — committed as 320a5f951 at +1182/-112 production lines (state.go, shadow.go, observation.go and the wiring of health, status, steward, keeper, agent step, queue, prove, fix, wake and the launch probe) and +1806 test lines; recorded here as the exception the 250-line rule requires, read whole by Opus. U4 (0ead3f037) measured +460/-131: the table, the keeper's retirements, the overdue rows, the question binding, the retention rule and the person's stop are one lifecycle, built after the live record showed all six on the first night; read whole by Opus. U2 (335826c98) +347/-41 with its correction. The next units stay under 250.
 
 ## Estimates
 U1 3 h, U2 2 h, U3 3 h, U4 2 h, U5 2 h, U6 3 h build+read; step 1 tonight, the rest tomorrow after a night of measurement.
