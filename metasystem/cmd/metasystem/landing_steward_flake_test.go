@@ -153,3 +153,41 @@ func TestLandingStewardFlakeFixUsesGoalPublication(t *testing.T) {
 func plainFlakeForSteward(attempt string) plain.FlakeRecord {
 	return plain.FlakeRecord{FailedUnit: plain.FailedUnit{Unit: "u/a", Tests: []string{"TestClock"}}, Attempt: attempt, Commit: "main", Tree: "main-tree", Log: "red.log", Load: 22, Repeat: "alone", RepeatAttempt: "green-" + attempt, RepeatLog: "green.log"}
 }
+
+// TestLandingFlakeFixerFromEmptyOwnersResolvesTheMachine: the landing agent
+// wires the steward's flake fixer from empty owners (landing_agent.go), so the
+// machine seam must default to the checkout's machine instead of dereferencing
+// nil (engine incident 20261013T151839-run on 5793734b8).
+func TestLandingFlakeFixerFromEmptyOwnersResolvesTheMachine(t *testing.T) {
+	t.Parallel()
+	b, ledger := newFlakeEvidenceBed(t, []string{"TestClock"})
+	owner := b.owners.landing
+	record := owner.landingFlakeRecorder(b.install)
+	for _, attempt := range []string{"red-1", "red-2"} {
+		if _, err := record(plainFlakeForSteward(attempt)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	entries, problems := goal.ParseTrunkRed([]byte(ledger.accepted("plans/goals/trunk-red.json")))
+	if len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	fact := goal.FlakeFacts(entries)[0]
+	fix := goal.FlakeFix{Identity: fact.Identity, ID: "flake-fix-u-a-testclock", Tier: 3, Priority: 1, Intent: "Fix TestClock under load with an artificial clock.", Basis: "red-1; red-2", Next: "Fix it."}
+	owner.machine = nil
+	wantMachine, wantErr := goal.ResolveMachine(b.install)
+	updated, err := owner.landingFlakeFixer(b.install)(fact, fix, laneTestNow)
+	if wantErr != nil {
+		if err == nil || err.Error() != wantErr.Error() {
+			t.Fatalf("empty owners: err=%v want %v", err, wantErr)
+		}
+		return
+	}
+	if err != nil || updated.FixGoal != fix.ID || updated.FixOpenedAt == "" {
+		t.Fatalf("empty owners: fix=%+v err=%v", updated, err)
+	}
+	if _, problems := goal.ParseFile([]byte(ledger.goalRecord(fix.ID))); len(problems) != 0 {
+		t.Fatal(problems)
+	}
+	t.Logf("empty owners resolved machine %q from the checkout and opened %s", wantMachine, fix.ID)
+}
