@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 var (
@@ -742,7 +743,83 @@ func proseRowSiteEmits(t *testing.T, root string, row Prose) bool {
 			return true
 		}
 	}
-	return false
+	return landingPhraseSiteEmits(t, data, first, last, opening, landingstate.Phrases)
+}
+
+// landingPhraseSiteEmits follows a message lookup at its registered emitter.
+func landingPhraseSiteEmits(t *testing.T, source []byte, first, last int, opening string, phrases map[string]string) bool {
+	t.Helper()
+	positions := token.NewFileSet()
+	file, err := parser.ParseFile(positions, "owner.go", source, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	aliases := map[string]bool{}
+	for _, imported := range file.Imports {
+		if unquote(t, imported.Path) != "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state" {
+			continue
+		}
+		alias := "state"
+		if imported.Name != nil {
+			alias = imported.Name.Name
+		}
+		aliases[alias] = true
+	}
+	emitted := false
+	ast.Inspect(file, func(node ast.Node) bool {
+		call, ok := node.(*ast.CallExpr)
+		if !ok || len(call.Args) != 1 {
+			return true
+		}
+		selector, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || selector.Sel.Name != "Phrase" {
+			return true
+		}
+		owner, ok := selector.X.(*ast.Ident)
+		if !ok || !aliases[owner.Name] {
+			return true
+		}
+		key, ok := call.Args[0].(*ast.BasicLit)
+		if !ok || key.Kind != token.STRING {
+			return true
+		}
+		line := positions.Position(call.Pos()).Line
+		if line >= first && line <= last && strings.Contains(phrases[unquote(t, key)], opening) {
+			emitted = true
+		}
+		return true
+	})
+	return emitted
+}
+
+func TestLandingPhraseEmissionKeepsItsRegisteredSite(t *testing.T) {
+	t.Parallel()
+	phrases := map[string]string{"pause": "the lane is paused by the person"}
+	for _, tc := range []struct {
+		name, source string
+		first, last  int
+		want         bool
+	}{
+		{"emitter", `package fixture
+import state "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+func act() error { return fmt.Errorf(state.Phrase("pause")) }`, 3, 3, true},
+		{"wrong key", `package fixture
+import state "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+func act() error { return fmt.Errorf(state.Phrase("other")) }`, 3, 3, false},
+		{"outside site", `package fixture
+import state "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+func act() error { return fmt.Errorf(state.Phrase("pause")) }`, 1, 2, false},
+		{"different owner", `package fixture
+import state "example.invalid/other"
+func act() error { return fmt.Errorf(state.Phrase("pause")) }`, 3, 3, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := landingPhraseSiteEmits(t, []byte(tc.source), tc.first, tc.last, "the lane is paused", phrases); got != tc.want {
+				t.Fatalf("emission=%t want %t", got, tc.want)
+			}
+		})
+	}
 }
 
 func TestHCL11EntryPointsPresent(t *testing.T) {

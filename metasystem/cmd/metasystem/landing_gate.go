@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"path/filepath"
 	"strings"
 	"time"
@@ -84,7 +85,7 @@ func (inv *intentInvocation) pushGate() func(root, goalID string) error {
 		}
 		// The landing path tells the person the gate's two lines.
 		result := landingGateRefusal(nil, goalID, err)
-		return &landpath.GateRefusal{Reason: strings.TrimSuffix(result.Summary, ", so nothing was landed"), Run: result.next,
+		return &landpath.GateRefusal{Reason: strings.TrimSuffix(result.Summary, landingstate.Phrase("so-nothing-was-landed")), Run: result.next,
 			Then: result.nextReason, Details: result.Details, Cause: err.Error()}
 	}
 }
@@ -124,7 +125,7 @@ func landingGateRefusal(targets []intentTarget, goalID string, err error) intent
 	var refusal *goal.GateRefusal
 	if !errors.As(err, &refusal) {
 		return intentResult{Targets: targets, Outcome: intentFailed, code: 1,
-			Summary: "whether goal " + goalID + " may land can't be read now, so nothing was landed",
+			Summary: "whether goal " + goalID + landingstate.Phrase("may-land-can-t-be-read-now-so-nothing"),
 			next:    []string{"metasystem", "goal", "sync"}, nextReason: "then repeat this command",
 			Details: []string{"the landing gate could not be read: " + err.Error()}}
 	}
@@ -137,7 +138,7 @@ func landingGateRefusal(targets []intentTarget, goalID string, err error) intent
 	switch refusal.Code {
 	case goal.GateHeldBySitting:
 		held, _, _ := strings.Cut(refusal.Reason, ";")
-		result.Summary = held + ", so nothing was landed"
+		result.Summary = held + landingstate.Phrase("so-nothing-was-landed")
 		result.nextReason = "once the review is over; then repeat this command"
 	case goal.GateWaitsForHuman:
 		why := refusal.Reason
@@ -150,7 +151,7 @@ func landingGateRefusal(targets []intentTarget, goalID string, err error) intent
 			command = "metasystem goal land-without-sitting " + goalID + " --reason TEXT"
 		}
 	default:
-		result.Summary = refusal.Reason + ", so nothing was landed"
+		result.Summary = refusal.Reason + landingstate.Phrase("so-nothing-was-landed")
 	}
 	if command != "" {
 		result.next = shellWords(command)

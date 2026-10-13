@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"path/filepath"
 	"strings"
 
@@ -42,7 +43,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 	seams := admitted.owners.plainResolve
 	seams.AsSeat = inv.input.switched("as-seat")
 	seams.Proof = inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))
-	if observed, problem := inv.lanePerson("request this regeneration", admitted.record.Root); problem == nil {
+	if observed, problem := inv.landingPersonCheck("request this regeneration", admitted.record.Root); problem == nil {
 		seams.Proof.Person = &plain.ActProvenance{Kind: "regeneration", Person: observed.Name, Root: observed.Root, CheckedAt: observed.At.UTC(), TerminalGeneration: observed.Proof.TerminalGeneration, TerminalRef: observed.Proof.TerminalRef, Destination: admitted.record}
 	}
 	git := seams.Git
@@ -60,7 +61,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 	defer plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 	out, err := plain.Resolve(admitted.home, admitted.installation, string(admitted.layout.Checkout), contract, seams)
 	if err == nil && out.Outcome == "resolving" {
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: out, Summary: fmt.Sprintf("Resolving %d conflicts of %s", len(out.Conflict.Paths), out.Goal), next: inv.publicArgv("landing", "status")})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: out, Summary: fmt.Sprintf(landingstate.Phrase("resolving-d-conflicts-of-s"), len(out.Conflict.Paths), out.Goal), next: inv.publicArgv("landing", "status")})
 	}
 	if err == nil && out.Outcome == "abandoned" {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: out, Summary: out.Reason, next: inv.publicArgv("landing", "status")})
@@ -79,7 +80,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 	if err != nil {
 		if out.Entry != nil && out.Entry.State == plain.StateReturned {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: out,
-				Summary: fmt.Sprintf("returned %s: %s", out.Goal, out.Entry.Reason), Details: append(inv.writeReturnedCard(out.Goal), err.Error()),
+				Summary: fmt.Sprintf(landingstate.Phrase("returned-s-s"), out.Goal, out.Entry.Reason), Details: append(inv.writeReturnedCard(out.Goal), err.Error()),
 				next: inv.publicArgv("landing", "status"), nextReason: "shows the remaining hand-ins"})
 		}
 		result := landingLaneFailure(targets, "the lane merge could not be resolved: "+oneLine(err.Error()), err)
@@ -90,7 +91,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(result)
 	}
 	if out.Entry != nil {
-		summary := fmt.Sprintf("returned %s: %s", out.Goal, out.Entry.Reason)
+		summary := fmt.Sprintf(landingstate.Phrase("returned-s-s"), out.Goal, out.Entry.Reason)
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: out, Summary: summary, Details: inv.writeReturnedCard(out.Goal), next: inv.publicArgv("landing", "status"), nextReason: "shows the remaining hand-ins"})
 	}
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: out, Summary: "regenerated and staged the generated conflicts for " + out.Goal + "; commit the merge, then run landing prove", Details: []string{strings.Join([]string{"log", out.Log}, ": ")}})

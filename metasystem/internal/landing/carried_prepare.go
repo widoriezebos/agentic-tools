@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -508,7 +509,7 @@ func carriedReceiptLine(request CarriedStage, workspace gittree.Workspace, top s
 	}
 	options := receipt.Options{Root: request.Root, File: ledger.file, Type: "implement", Outcome: "reworked",
 		Skills: "none", Verify: "skipped", Corrections: "0", StopLoss: "no", Goal: request.Subject.Goal,
-		Note: fmt.Sprintf("prepared for carried delivery under exception %s code %s; not yet landed", request.Opid, request.Exception),
+		Note: fmt.Sprintf(landingstate.Phrase("prepared-for-carried-delivery-under-exception-s-code-s"), request.Opid, request.Exception),
 		Now:  request.Now}
 	if added := receipt.Add(options); added.Code != 0 {
 		return "", "", fmt.Errorf("receipt add refused: %s", strings.Join(append(added.Out, added.Err...), "; "))

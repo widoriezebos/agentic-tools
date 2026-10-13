@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -19,7 +20,7 @@ func landingDeployCommand() intentCommand {
 }
 
 func runIntentLandingDeploy(inv *intentInvocation, admitted laneAdmitted) int {
-	person, problem := inv.lanePerson("deploy the lane's engine", admitted.record.Root)
+	person, problem := inv.landingPersonCheck("deploy the lane's engine", admitted.record.Root)
 	if problem != nil {
 		return inv.render(*problem)
 	}
@@ -48,7 +49,7 @@ func runIntentLandingDeploy(inv *intentInvocation, admitted laneAdmitted) int {
 		result.Outcome, result.Summary = intentUnchanged, "nothing to deploy"
 	}
 	if err != nil {
-		result.Outcome, result.code, result.Summary = intentFailed, 1, "the lane's engine deploy stopped: "+oneLine(err.Error())
+		result.Outcome, result.code, result.Summary = intentFailed, 1, landingstate.Phrase("the-lane-s-engine-deploy-stopped")+oneLine(err.Error())
 		var refusal *plain.Refusal
 		if errors.As(err, &refusal) {
 			result.refusalCode = refusal.Code

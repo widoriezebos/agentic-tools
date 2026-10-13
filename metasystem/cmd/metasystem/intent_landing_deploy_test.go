@@ -104,7 +104,7 @@ func TestLandingDeployRequiresTheEnrolledTerminal(t *testing.T) {
 	b, owners, builds := landingDeployBed(t)
 	owners.prove = nil
 	code, result := runLandingDeploy(t, b, owners, "--now", "--by", "Wido")
-	if code == 0 || result.Outcome != intentRefused || *builds != 0 || !strings.Contains(result.Summary, "enrolled terminal") {
+	if code == 0 || result.Outcome != intentRefused || *builds != 0 || !strings.Contains(result.Summary, "the terminal cannot be checked") {
 		t.Fatalf("unproven deploy: %d %+v builds=%d", code, result, *builds)
 	}
 	b, owners, builds = landingDeployBed(t)

@@ -3,6 +3,7 @@ package landing
 import (
 	"encoding/json"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -140,14 +141,14 @@ commitLoop:
 		if messageErr != nil {
 			verdict.Outcome = "unreadable"
 			verdict.ExitCode = 2
-			verdict.Warnings = append(verdict.Warnings, "held: unreadable: "+entry.commit)
+			verdict.Warnings = append(verdict.Warnings, landingstate.Phrase("held-unreadable-message")+entry.commit)
 			return verdict, nil
 		}
 		_, message, foundMessage := strings.Cut(string(object), "\n\n")
 		if !foundMessage {
 			verdict.Outcome = "unreadable"
 			verdict.ExitCode = 2
-			verdict.Warnings = append(verdict.Warnings, "held: unreadable: "+entry.commit)
+			verdict.Warnings = append(verdict.Warnings, landingstate.Phrase("held-unreadable-message")+entry.commit)
 			return verdict, nil
 		}
 		trailers := parseHeldTrailers(message)
@@ -188,7 +189,7 @@ commitLoop:
 		softened := false
 		refuse := func(code, detail string) bool {
 			if human {
-				verdict.Warnings = append(verdict.Warnings, fmt.Sprintf("held: warning %s: %s: %s", code, entry.commit, detail))
+				verdict.Warnings = append(verdict.Warnings, fmt.Sprintf(landingstate.Phrase("held-warning-s-s-s"), code, entry.commit, detail))
 				softened = true
 				return false
 			}
@@ -244,7 +245,7 @@ commitLoop:
 		if treeErr != nil {
 			verdict.Outcome = "unreadable"
 			verdict.ExitCode = 2
-			verdict.Warnings = append(verdict.Warnings, "held: unreadable: "+entry.commit)
+			verdict.Warnings = append(verdict.Warnings, landingstate.Phrase("held-unreadable-message")+entry.commit)
 			return verdict, nil
 		}
 		if goalID == "" {
@@ -252,7 +253,7 @@ commitLoop:
 				verdict.Outcome = "goal-free"
 				continue commitLoop
 			}
-			if refuse("goal-binding-missing", "agent landings are goal work: name the held goal with --goal, or the ledger must be declared Goal-free") {
+			if refuse("goal-binding-missing", landingstate.Phrase("agent-landings-are-goal-work-name-the-held-goal")) {
 				return verdict, nil
 			}
 			if softened {

@@ -2,6 +2,7 @@ package plain
 
 import (
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -107,7 +108,7 @@ func BindException(subject GoalSHA, destination lane.Record, proof humanauthorit
 		for _, incident := range exception.Incidents.Open {
 			identities = append(identities, incident.Identity)
 		}
-		exception.Impact = "This lands " + subject.Goal + " while main fails " + strings.Join(identities, ", ") + "; those failures stay open and later goals are still held by them; undo with `landing give-back " + subject.Goal + "` before the push, or a revert after."
+		exception.Impact = "This lands " + subject.Goal + " while main fails " + strings.Join(identities, ", ") + landingstate.Phrase("those-failures-stay-open-and-later-goals-are-still") + subject.Goal + "` before the push, or a revert after."
 	}
 	return exception, nil
 }

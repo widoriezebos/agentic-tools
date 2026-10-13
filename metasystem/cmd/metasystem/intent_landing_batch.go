@@ -42,7 +42,7 @@ func runIntentLandingBatch(inv *intentInvocation, admitted laneAdmitted) int {
 	batch, err := plain.ReadBatch(admitted.installation)
 	message := ""
 	if err == nil && kind != "" {
-		person, problem := inv.lanePerson("decide the batch's admission window", admitted.record.Root)
+		person, problem := inv.landingPersonCheck("decide the batch's admission window", admitted.record.Root)
 		if problem != nil {
 			return inv.render(*problem)
 		}

@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"io"
 	"os"
 	"os/exec"
@@ -189,6 +190,8 @@ type ProveSeams struct {
 	ClassificationOf string
 	// Person admits one direct proof; Start binds its provenance to the attempt.
 	Person *ActProvenance
+	// CallerRefusal is the enrollment reason observed by the direct caller.
+	CallerRefusal string
 	// FenceCheck rechecks execution admission under the owning queue lock.
 	FenceCheck func() error
 	// Pause observes the standing maintenance fence at selection.
@@ -201,6 +204,7 @@ type ProveSeams struct {
 	Lane         func() (lane.Record, error)
 	AgentRunning func() (bool, error)
 	AgentProbe   func(string) (lane.OwnerProbe, error)
+	AgentReady   func(string) error
 	// FetchCommand prepares the bounded fetch process; nil runs Git unchanged.
 	FetchCommand func(*exec.Cmd)
 	// FetchTimeout overrides the fetch deadline for isolated tests.
@@ -375,7 +379,7 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 		return running, recorded, alive, nil
 	}
 	red := Result{Fresh: running.Fresh, Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
-		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended", Cause: &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}}
+		At: seams.now().Format(time.RFC3339), Result: Red, Reason: landingstate.Phrase("the-lane-s-check-stopped-before-it-ended"), Cause: &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}}
 	red.BatchID, red.BatchMembers, red.BatchBase = running.BatchID, running.BatchMembers, running.BatchBase
 	red.Person, red.Executions, red.ClassificationOf = running.Person, running.Executions, running.ClassificationOf
 	if running.Gate {
@@ -431,7 +435,7 @@ func ReadRunning(install string, seams ProveSeams) (Running, bool, bool, error) 
 	}
 	var running Running
 	if err := json.Unmarshal(data, &running); err != nil {
-		return Running{}, true, false, fmt.Errorf("the running check cannot be decoded: %w", err)
+		return Running{}, true, false, fmt.Errorf(landingstate.Phrase("the-running-check-cannot-be-decoded-w"), err)
 	}
 	return running, true, (running.Admission == nil || running.Admission.State != "failed") && seams.alive(running), nil
 }
@@ -586,7 +590,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			if writeErr := writeRunning(install, started); writeErr != nil {
 				return errors.Join(err, writeErr)
 			}
-			return fmt.Errorf("start proving tree %s: %w", Short(tree), err)
+			return fmt.Errorf(landingstate.Phrase("start-proving-tree-s-w"), Short(tree), err)
 		}
 		process := processRef(pid)
 		if pid <= 0 || process == "" {
@@ -608,7 +612,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			if seams.Trunk {
 				retry += " --trunk"
 			}
-			return fmt.Errorf("start proving tree %s: %s; retry: %s", Short(tree), reason, retry)
+			return fmt.Errorf(landingstate.Phrase("start-proving-tree-s-s-retry-s"), Short(tree), reason, retry)
 		}
 		started.Pid, started.Process = pid, process
 		started.setAdmissionState("launched")
@@ -1209,7 +1213,7 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 		var err error
 		log, err = os.CreateTemp(dir, "landing-check-*.log")
 		if err != nil {
-			return checkReport{}, fmt.Errorf("the proving command's log could not be made: %w", err)
+			return checkReport{}, fmt.Errorf(landingstate.Phrase("the-proving-command-s-log-could-not-be-made"), err)
 		}
 		defer os.Remove(log.Name())
 		defer log.Close()
@@ -1274,9 +1278,9 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 			if exit.ExitCode() == 127 {
 				report.kind = "not-run"
 			}
-			return report, fmt.Errorf("the proving command exited %d", exit.ExitCode())
+			return report, fmt.Errorf(landingstate.Phrase("the-proving-command-exited-d"), exit.ExitCode())
 		}
-		return report, fmt.Errorf("the proving command ended: %w", err)
+		return report, fmt.Errorf(landingstate.Phrase("the-proving-command-ended-w"), err)
 	}
 	return report, nil
 }
@@ -1484,7 +1488,7 @@ func recordedLog(install, attempt string) (string, error) {
 	}
 	data, err := os.ReadFile(runningPath(install))
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("the running landing check can't be read: %w", err)
+		return "", fmt.Errorf(landingstate.Phrase("the-running-landing-check-can-t-be-read-w"), err)
 	}
 	// A torn running.json is a proof that died mid-start: it names nothing.
 	var running Running

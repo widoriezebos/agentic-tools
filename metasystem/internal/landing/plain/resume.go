@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
@@ -74,7 +74,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 		blocked = true
 		run.Lines = append(run.Lines, "the current merge is preserved; the agent continues it")
 		facts := mergeFacts(fix, head, tip)
-		if state.MergeOwnership(facts).Word == state.Unknown {
+		if landingstate.MergeOwnership(facts).Word == landingstate.Unknown {
 			return nil
 		}
 		settled, minutes, err := ResolutionWritersSettled(record.Install, *fix, s)
@@ -82,7 +82,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 			return err
 		}
 		facts.WritersSettled = settled
-		if state.MergeOwnership(facts).Word == state.Owned && !settled {
+		if landingstate.MergeOwnership(facts).Word == landingstate.Owned && !settled {
 			run.Lines[0] = "the resolution job of " + fix.Goal + fmt.Sprintf(" still runs (%.1f min); give it back or wait", minutes)
 			if fix.State == "resolving" && fix.Job == "" {
 				run.Lines[0] = "the resolution of " + fix.Goal + " has no job; the agent continues it"
@@ -100,7 +100,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 			}
 			facts.MainMoved = move.Kind == "code"
 		}
-		if state.MergeOwnership(facts).Word != state.Abandoned {
+		if landingstate.MergeOwnership(facts).Word != landingstate.Abandoned {
 			return nil
 		}
 		if fix.State != "abandoned" {
@@ -141,14 +141,14 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 		if batch != nil {
 			id = batch.ID
 		}
-		run.Lines = []string{"nothing to resume: the lane is running batch " + id}
+		run.Lines = []string{landingstate.Phrase("nothing-to-resume-the-lane-is-running-batch") + id}
 		return run, nil
 	}
 	if proofLive {
 		drainChanged, drainErr := ClearDrain(record.Install)
 		pauseChanged, pauseErr := lane.ClearPause(home)
 		run.Changed = run.Changed || drainChanged || pauseChanged
-		run.Lines = append(run.Lines, "the running proof continues")
+		run.Lines = append(run.Lines, landingstate.Phrase("the-running-proof-continues"))
 		return run, errors.Join(drainErr, pauseErr)
 	}
 	entries, queueErr := pending(record.Install, record.Root, s)
@@ -209,7 +209,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 		if err != nil {
 			return run, err
 		}
-		line := "proving main"
+		line := landingstate.Phrase("proving-main")
 		if clearHold {
 			line += " to clear the hold"
 		}
@@ -280,9 +280,9 @@ func ResolutionWritersSettled(install string, fix Fix, s ProveSeams) (bool, floa
 	return settled && !live && (regen == nil || regen.State != "running"), minutes, errors.Join(jobErr, agentErr, regenErr)
 }
 
-func mergeFacts(fix *Fix, head, tip string) state.MergeFacts {
+func mergeFacts(fix *Fix, head, tip string) landingstate.MergeFacts {
 	if fix == nil {
-		return state.MergeFacts{Head: head, MergeTip: tip}
+		return landingstate.MergeFacts{Head: head, MergeTip: tip}
 	}
-	return state.MergeFacts{Present: true, Job: fix.Job, State: fix.State, Checkpoint: fix.Commit, Tip: fix.Tip, Head: head, MergeTip: tip, Closed: fix.State == "closed"}
+	return landingstate.MergeFacts{Present: true, Job: fix.Job, State: fix.State, Checkpoint: fix.Commit, Tip: fix.Tip, Head: head, MergeTip: tip, Closed: fix.State == "closed"}
 }

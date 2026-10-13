@@ -24,7 +24,7 @@ exit 1
     "reason": "resumes the lane; then run metasystem landing run again"
   },
   "details": [
-    "the landing agent at /Users/wido/GitHub/agentic-tools-landing is not started: the lane is paused by Wido; metasystem landing start resumes it"
+    "the landing agent at /Users/wido/GitHub/agentic-tools-landing is not started: the lane is paused by Wido; metasystem landing resume resumes it"
   ]
 }
 

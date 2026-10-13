@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"regexp"
 	"strings"
 
@@ -34,7 +35,7 @@ func (b *boundary) refuseAgent(decided decision) int {
 		reason, then = "the change edits goal files, which change only through goal commands, so nothing was committed",
 			"unstage the goal files and make that change through the goal commands (goal edit, say)"
 	case "runtime-path-refused":
-		reason, then = "the change includes files the running system writes, which are never landed", "unstage them, then repeat this command"
+		reason, then = landingstate.Phrase("the-change-includes-files-the-running-system-writes-which"), "unstage them, then repeat this command"
 	case "exact-revert-record-refused":
 		reason, then = "a revert may not delete or shorten records, so nothing was committed", "put the record back and add a new record instead"
 	case "goal-item-not-held":
@@ -116,17 +117,17 @@ func (b *boundary) carriedFacts(decided decision, judge Judge, settledTree strin
 	}
 	if *result.Delivery.Sufficient {
 		if status != 0 {
-			return facts, b.stop(1, unreadable, testRun, repeat, "test verify returned success evidence with a failing process status")
+			return facts, b.stop(1, unreadable, testRun, repeat, landingstate.Phrase("test-verify-returned-success-evidence-with-a-failing-process"))
 		}
 		facts.battery = "green"
 		return facts, 0
 	}
 	facts.battery = "red"
 	if result.Delivery.MissingGroups == nil {
-		return facts, b.stop(1, unreadable, testRun, repeat, "test verify returned an unreadable missing-groups list")
+		return facts, b.stop(1, unreadable, testRun, repeat, landingstate.Phrase("test-verify-returned-an-unreadable-missing-groups-list"))
 	}
 	if result.Delivery.FailingGroups == nil {
-		return facts, b.stop(1, unreadable, testRun, repeat, "test verify returned an unreadable failing-groups list")
+		return facts, b.stop(1, unreadable, testRun, repeat, landingstate.Phrase("test-verify-returned-an-unreadable-failing-groups-list"))
 	}
 	facts.missing, facts.failing = groupList(*result.Delivery.MissingGroups), groupList(*result.Delivery.FailingGroups)
 	return facts, 0
@@ -341,7 +342,7 @@ func (b *boundary) push() int {
 	b.details.Write(pushed.Stdout)
 	if pushed.Code != 0 {
 		return b.stop(1, "committed, but origin refused the push: "+oneLine(string(pushed.Stderr)), []string{"git", "push", "origin", branch},
-			"after resolving it; then push transport too", string(pushed.Stderr))
+			landingstate.Phrase("after-resolving-it-then-push-transport-too"), string(pushed.Stderr))
 	}
 	b.details.Write(pushed.Stderr)
 	remotes := b.git(root, "remote")
@@ -353,7 +354,7 @@ func (b *boundary) push() int {
 		var synced bytes.Buffer
 		if b.owners.SyncTransport(root, branch, &synced, &synced) != 0 {
 			return b.stop(1, "pushed to origin, but the transport copy couldn't be updated",
-				[]string{"git", "push", "transport", "refs/remotes/origin/" + branch + ":refs/heads/" + branch}, "after resolving the transport remote",
+				[]string{"git", "push", "transport", "refs/remotes/origin/" + branch + ":refs/heads/" + branch}, landingstate.Phrase("after-resolving-the-transport-remote"),
 				synced.String())
 		}
 		writeDetails(b.details, synced.String())

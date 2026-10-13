@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"io"
 	"os"
 	"path/filepath"
@@ -136,7 +137,7 @@ func landingHeldTo(stdout, stderr io.Writer, root, base, commit, remote, ref str
 func landingHeldVerdictTo(stdout, stderr io.Writer, root, base, commit, remote, ref string) (landing.HeldVerdict, int) {
 	verdict, err := landing.Held(root, base, commit, remote, ref)
 	if err != nil {
-		fmt.Fprintln(stderr, "held: unreadable:", err)
+		fmt.Fprintln(stderr, landingstate.Phrase("held-unreadable-2"), err)
 		return verdict, 2
 	}
 	for _, warning := range verdict.Warnings {
@@ -144,19 +145,19 @@ func landingHeldVerdictTo(stdout, stderr io.Writer, root, base, commit, remote, 
 	}
 	switch verdict.Outcome {
 	case "nothing-to-push":
-		fmt.Fprintln(stdout, "held: nothing to push")
+		fmt.Fprintln(stdout, landingstate.Phrase("held-nothing-to-push"))
 	case "goal-free":
-		fmt.Fprintln(stdout, "held: goal-free ledger")
+		fmt.Fprintln(stdout, landingstate.Phrase("held-goal-free-ledger"))
 	case "ok":
-		fmt.Fprintf(stdout, "held: ok %d commit(s) above %s\n", verdict.Commits, shortLandingID(verdict.Base))
+		fmt.Fprintf(stdout, landingstate.Phrase("held-ok-d-commit-s-above-s"), verdict.Commits, shortLandingID(verdict.Base))
 	case "refused":
 		if verdict.Refusal != nil {
-			fmt.Fprintf(stderr, "held refused: %s: %s: %s\n", verdict.Refusal.Code, verdict.Refusal.Commit, verdict.Refusal.Detail)
+			fmt.Fprintf(stderr, landingstate.Phrase("held-refused-s-s-s"), verdict.Refusal.Code, verdict.Refusal.Commit, verdict.Refusal.Detail)
 		}
 	case "unreadable":
 		// Held has already supplied the precise unreadable line in Warnings.
 	default:
-		fmt.Fprintln(stderr, "held: unreadable: unknown verdict")
+		fmt.Fprintln(stderr, landingstate.Phrase("held-unreadable-unknown-verdict"))
 		return verdict, 2
 	}
 	return verdict, verdict.ExitCode

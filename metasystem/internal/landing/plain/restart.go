@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -60,7 +61,7 @@ func readCancel(install string, running Running) (*Result, error) {
 		return nil, err
 	}
 	if result.Attempt != running.Attempt || result.Tree != running.Tree || result.Result != "cancelled" {
-		return nil, errors.New("the cancellation does not match the running check")
+		return nil, errors.New(landingstate.Phrase("the-cancellation-does-not-match-the-running-check"))
 	}
 	return &result, nil
 }
@@ -152,7 +153,7 @@ func (s ProveSeams) endProof(r Running) error {
 			return nil
 		}
 		if !s.now().Before(deadline) {
-			return errors.New("the check's processes have not stopped; the batch stays sealed")
+			return errors.New(landingstate.Phrase("the-check-s-processes-have-not-stopped-the-batch"))
 		}
 		if s.WaitPoll != nil {
 			s.WaitPoll()
@@ -200,7 +201,7 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 	}
 	elapsed := elapsedMinutes(running.Since, s.now().Format(time.RFC3339))
 	if elapsed == nil {
-		return errors.New("the running check's elapsed time cannot be read")
+		return errors.New(landingstate.Phrase("the-running-check-s-elapsed-time-cannot-be-read"))
 	}
 	incidents, err := s.incidents(install, checkout, main)
 	if err != nil {
@@ -218,7 +219,7 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 	case batch.Person != nil:
 		commonWhy = "this batch was selected by " + batch.Person.Person
 	case fixProving:
-		commonWhy = "the fix of main is proving"
+		commonWhy = landingstate.Phrase("the-fix-of-main-is-proving")
 	case classifying && cancel == nil:
 		commonWhy = "a red is being classified; the newcomer waits"
 	}

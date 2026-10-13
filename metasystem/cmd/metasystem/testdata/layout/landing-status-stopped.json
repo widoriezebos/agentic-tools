@@ -10,7 +10,7 @@ exit 0
     }
   ],
   "outcome": "confirmed",
-  "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it; 0 waiting, 0 returned in the queue; admission open",
+  "summary": "paused by Wido; 0 waiting, 0 returned in the queue; admission open",
   "data": {
     "health": {
       "drift": [
@@ -83,7 +83,7 @@ exit 0
       "reasons": [],
       "unread": []
     },
-    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it",
+    "summary": "paused by Wido",
     "main_move": {
       "kind": "none",
       "count": 0

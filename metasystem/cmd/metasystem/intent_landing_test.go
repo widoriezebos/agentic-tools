@@ -150,7 +150,7 @@ func TestLandingVerbsSetStartStop(t *testing.T) {
 		t.Fatalf("stop = %d %q", code, stdout)
 	}
 	view := bed.status(t)
-	if view.Owner.State != lane.OwnerStopped || view.Owner.StoppedBy == nil || *view.Owner.StoppedBy != "Wido" || !strings.Contains(view.Summary, "metasystem landing start") {
+	if view.Owner.State != lane.OwnerStopped || view.Owner.StoppedBy == nil || *view.Owner.StoppedBy != "Wido" || !strings.Contains(view.Summary, "paused by Wido") {
 		t.Fatalf("status after stop = %+v %q", view.Owner, view.Summary)
 	}
 	if code, stdout, _ := bed.run(t, "landing", "stop"); code != 0 || !strings.Contains(stdout, "already stopped by Wido") {
@@ -193,7 +193,7 @@ func TestLandingStopRecordsItsReason(t *testing.T) {
 	if view.Owner.StoppedBecause == nil || *view.Owner.StoppedBecause != reason || !strings.Contains(view.Summary, reason) {
 		t.Fatalf("status after stop --reason = %+v %q", view.Owner, view.Summary)
 	}
-	if code, stdout, _ := bed.run(t, "landing", "status"); code != 0 || !strings.Contains(oneSpaced(stdout), "stopped by Wido ("+reason+")") {
+	if code, stdout, _ := bed.run(t, "landing", "status"); code != 0 || !strings.Contains(oneSpaced(stdout), "paused by Wido ("+reason+")") {
 		t.Fatalf("status = %d %q", code, stdout)
 	}
 	if code, stdout, _ := bed.run(t, "landing", "stop", "--reason", "another"); code != 0 || !strings.Contains(oneSpaced(stdout), "already stopped by Wido ("+reason+")") {

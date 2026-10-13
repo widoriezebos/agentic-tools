@@ -107,7 +107,7 @@ func TestKeeperAbandonedFixRemainsVisibleAcrossTenTicks(t *testing.T) {
 	}
 	at := bedNow.Format(time.RFC3339Nano)
 	b.lines("queue.jsonl", Line{Goal: "g", SHA: "sha", At: at})
-	fix := Fix{Attempt: "repair", Goal: "g", Tip: "sha", State: "abandoned", Reason: "its resolution was abandoned"}
+	fix := Fix{Attempt: "repair", Goal: "g", Tip: "sha", Commit: "main", State: "abandoned", Reason: "its resolution was abandoned"}
 	if err := WriteFix(b.install, &fix); err != nil {
 		t.Fatal(err)
 	}

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -103,7 +104,7 @@ func checkoutGone(path string) (bool, error) {
 		if parentErr == nil {
 			parentErr = fmt.Errorf("%s is not a folder", filepath.Dir(path))
 		}
-		return false, fmt.Errorf("the folder that held it can't be reached: %w", parentErr)
+		return false, fmt.Errorf(landingstate.Phrase("the-folder-that-held-it-can-t-be-reached"), parentErr)
 	}
 	return true, nil
 }

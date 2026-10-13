@@ -2,7 +2,7 @@ package lane
 
 import (
 	"errors"
-	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"time"
 )
 
@@ -163,7 +163,7 @@ func ownerView(sources ViewSources, root string) OwnerView {
 		if state.Barren >= barrenLimit && sources.Fingerprint != nil {
 			fingerprint, err := sources.Fingerprint(root)
 			if err != nil {
-				owner.Unread = "whether the lane changed after its held runs is unknown: " + err.Error()
+				owner.Unread = landingstate.Phrase("whether-the-lane-changed-after-its-held-runs-is") + err.Error()
 				owner.LastExit = text(owner.Unread)
 				return owner
 			}
@@ -198,30 +198,29 @@ func (view View) SummaryWithWaiting(waiting bool) string {
 
 // AgentSummary is the agent's state as every lane reader says it.
 func (view View) AgentSummary(waiting bool) string {
-	agent := "landing agent " + view.Owner.State
+	return landingstate.Describe(view.DescriptionRecord(waiting), view.DescriptionInputs(waiting)).Headline
+}
+
+// DescriptionRecord carries the observed owner facts without rendering them.
+func (view View) DescriptionRecord(waiting bool) landingstate.Record {
+	r := landingstate.Record{Agent: landingstate.Agent{Word: "ended"}}
 	switch view.Owner.State {
 	case OwnerRunning:
-		if view.Owner.PID != nil {
-			agent += fmt.Sprintf(" (pid %d)", *view.Owner.PID)
-		}
+		r.Agent.Word = "stepping"
 	case OwnerStopped:
-		agent = "stopped by " + *view.Owner.StoppedBy
-		if view.Owner.StoppedBecause != nil {
-			agent += " (" + *view.Owner.StoppedBecause + ")"
+		r.Lane.Word = "stopped"
+		if view.Owner.StoppedBy != nil {
+			r.Lane.By = *view.Owner.StoppedBy
 		}
-		agent += "; metasystem landing start resumes it"
-	case OwnerIdle:
-		agent = "idle; its landing agent starts when there is work"
-		if waiting {
-			agent = fmt.Sprintf("idle; its agent starts within one tick (%d s)", int(AgentTick/time.Second))
+		if view.Owner.StoppedBecause != nil {
+			r.Lane.Reason = *view.Owner.StoppedBecause
 		}
 	case OwnerHeld:
-		agent = fmt.Sprintf("held after %d runs that left the lane unchanged; a person runs metasystem landing resume", view.Owner.Barren)
-	default:
-		agent = "the landing agent's state is unknown; run: metasystem landing resume"
-		if view.Owner.LastExit != nil && view.Owner.Unread == "" {
-			agent = "the landing lane can't run; run: metasystem landing resume"
-		}
+		r.Holds.Barren = view.Owner.Barren
 	}
-	return agent
+	return r
+}
+
+func (view View) DescriptionInputs(waiting bool) landingstate.RenderInputs {
+	return landingstate.RenderInputs{Waiting: waiting, PID: view.Owner.PID, Unready: view.Owner.State == OwnerUnready, Unread: view.Owner.Unread != ""}
 }

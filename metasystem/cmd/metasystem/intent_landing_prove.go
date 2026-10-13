@@ -8,6 +8,7 @@ package main
 
 import (
 	"errors"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,7 +108,7 @@ func (inv *intentInvocation) lanePaused(admitted laneAdmitted, what string) *int
 		return nil
 	}
 	return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
-		Summary: "the landing lane is stopped by " + pause.Who() + ", so nothing was " + what,
+		Summary: landingstate.Phrase("the-landing-lane-is-stopped-by") + pause.Who() + ", so nothing was " + what,
 		next:    inv.publicArgv("landing", "start"), nextReason: "a person resumes it"}
 }
 
@@ -169,7 +170,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	// The detached child claims the recorded admission; only a fresh public
 	// invocation observes direct authority at the original calling checkout.
 	if inv.input.text("attempt") == "" {
-		observed, problem := inv.lanePerson("request this check", admitted.record.Root)
+		observed, problem := inv.landingPersonCheck("request this check", admitted.record.Root)
 		personProblem = problem
 		if problem == nil {
 			person = &plain.ActProvenance{Kind: "proof", Person: observed.Name, Root: observed.Root, CheckedAt: observed.At.UTC(),
@@ -183,7 +184,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets, Summary: "--classify names a saved red and cannot be combined with another check subject"})
 	}
 	if inv.input.text("classify") != "" && person == nil {
-		_, problem := inv.lanePerson("classify this saved red", admitted.record.Root)
+		_, problem := inv.landingPersonCheck("classify this saved red", admitted.record.Root)
 		return inv.render(*problem)
 	}
 	proofRefusal := func(err error) intentResult {
@@ -199,6 +200,9 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	seams := admitted.owners.proveSeams(admitted.installation)
 	seams = inv.laneBatchSeams(admitted.home, admitted.record, seams)
+	if personProblem != nil && len(personProblem.next) >= 3 && personProblem.next[1] == "system" && personProblem.next[2] == "enroll" {
+		seams.CallerRefusal = personProblem.Summary
+	}
 	if person != nil {
 		seams.Person = person
 		seams.FenceCheck = nil
@@ -335,10 +339,10 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 			return inv.render(proofRefusal(err))
 		}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: running,
-			Summary: "proving " + provedWords(running.Commit, running.Tree) + " in the background; end your turn, the keeper wakes the landing agent when it ends"}
+			Summary: landingstate.Phrase("proving") + provedWords(running.Commit, running.Tree) + " in the background; end your turn, the keeper wakes the landing agent when it ends"}
 		if already {
 			result.Outcome = intentUnchanged
-			result.Summary = "already proving " + provedWords(running.Commit, running.Tree) + " since " + lane.LocalText(running.Since)
+			result.Summary = landingstate.Phrase("already-proving") + provedWords(running.Commit, running.Tree) + " since " + lane.LocalText(running.Since)
 		}
 		return inv.render(result)
 	}

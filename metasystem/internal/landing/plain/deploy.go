@@ -16,7 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 type DeployOptions struct {
@@ -121,7 +121,7 @@ func DeployEngine(home string, person ActProvenance, now time.Time, opts DeployO
 			break
 		}
 		if len(run.Steps) == 0 {
-			run.Steps = append(run.Steps, "waited for the running proof")
+			run.Steps = append(run.Steps, landingstate.Phrase("waited-for-the-running-proof"))
 		}
 		if seams.WaitPoll != nil {
 			seams.WaitPoll()
@@ -161,19 +161,19 @@ func deployMerge(install, checkout, main string, opts DeployOptions, seams Prove
 		return err
 	}
 	facts := mergeFacts(fix, head, tip)
-	if state.MergeOwnership(facts).Word != state.Unknown && fix.State == "resolving" {
+	if landingstate.MergeOwnership(facts).Word != landingstate.Unknown && fix.State == "resolving" {
 		facts.MainMoved, err = codeMoved(install, checkout, head, main, seams)
 		if err != nil {
 			return err
 		}
 	}
 	facts.WritersSettled = true
-	if state.MergeOwnership(facts).Word != state.Abandoned {
+	if landingstate.MergeOwnership(facts).Word != landingstate.Abandoned {
 		goal := "the pending merge"
 		if fix != nil {
 			goal = fix.Goal
 		}
-		return &Refusal{Code: "LANE_DEPLOY_MERGE", Reason: "the lane is resolving " + goal + "; give it back or wait", Next: "metasystem landing give-back " + goal + " --reason TEXT"}
+		return &Refusal{Code: "LANE_DEPLOY_MERGE", Reason: landingstate.Phrase("the-lane-is-resolving") + goal + "; give it back or wait", Next: "metasystem landing give-back " + goal + " --reason TEXT"}
 	}
 	if opts.MergeSettled == nil {
 		return errors.New("the abandoned merge's writers cannot be checked; wait before deploying")
@@ -183,8 +183,8 @@ func deployMerge(install, checkout, main string, opts DeployOptions, seams Prove
 		return err
 	}
 	facts.WritersSettled = settled
-	if state.MergeOwnership(facts).Word != state.Abandoned {
-		return &Refusal{Code: "LANE_DEPLOY_MERGE", Reason: "the lane is resolving " + fix.Goal + "; give it back or wait", Next: "metasystem landing give-back " + fix.Goal + " --reason TEXT"}
+	if landingstate.MergeOwnership(facts).Word != landingstate.Abandoned {
+		return &Refusal{Code: "LANE_DEPLOY_MERGE", Reason: landingstate.Phrase("the-lane-is-resolving") + fix.Goal + "; give it back or wait", Next: "metasystem landing give-back " + fix.Goal + " --reason TEXT"}
 	}
 	if fix.State != "abandoned" {
 		fix.State, fix.Reason = "abandoned", "superseded by main's code move; rebuild"
@@ -225,7 +225,7 @@ func RestartDeployedProof(install, checkout string, seams ProveSeams) error {
 			}
 		}
 		if !atomicfile.Confirm(cancelPath(install, running.Attempt), install) {
-			return errors.New("the restart could not be made durable; the running check continues")
+			return errors.New(landingstate.Phrase("the-restart-could-not-be-made-durable-the-running"))
 		}
 		if err := seams.endProof(running); err != nil {
 			return err

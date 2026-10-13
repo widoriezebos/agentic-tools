@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -47,7 +48,7 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 		return inv.render(intentResult{Outcome: intentUnchanged, Data: fix, Summary: fix.Reason, next: inv.publicArgv("landing", "resolve")}), true
 	}
 	runner := inv.unitRunner()
-	result := intentResult{Outcome: intentConfirmed, Data: fix, Summary: "Resolving conflicts of " + fix.Goal, next: inv.sameCommand(), nextReason: "collects this same job"}
+	result := intentResult{Outcome: intentConfirmed, Data: fix, Summary: landingstate.Phrase("resolving-conflicts-of") + fix.Goal, next: inv.sameCommand(), nextReason: "collects this same job"}
 	if inv.command.action == "build" {
 		if !inv.input.has("brief") || len(inv.input.values["check"]) != 1 || inv.input.text("check") != "metasystem test impact" {
 			return inv.render(landingLaneFailure(nil, "a lane merge requires a brief and --check 'metasystem test impact'", nil)), true
@@ -105,12 +106,12 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 			returned, expireErr := plain.ExpireResolutionRead(root, func(ref string) (bool, error) {
 				read, err := runner.StopRead(ref)
 				if err == nil && len(read.Uncertain) > 0 {
-					err = fmt.Errorf("resolution read jobs could not be proved stopped: %s", strings.Join(read.Uncertain, ", "))
+					err = fmt.Errorf(landingstate.Phrase("resolution-read-jobs-could-not-be-proved-stopped-s"), strings.Join(read.Uncertain, ", "))
 				}
 				return !read.Complete && len(read.Uncertain) == 0, err
 			}, readEffects)
 			if expireErr != nil {
-				return inv.render(landingLaneFailure(nil, "the resolution read could not be returned", expireErr)), true
+				return inv.render(landingLaneFailure(nil, landingstate.Phrase("the-resolution-read-could-not-be-returned"), expireErr)), true
 			}
 			if returned != nil {
 				return inv.render(intentResult{Outcome: intentConfirmed, Data: returned, Summary: returned.Reason, Details: inv.writeReturnedCard(fix.Goal), next: inv.publicArgv("landing", "status")}), true

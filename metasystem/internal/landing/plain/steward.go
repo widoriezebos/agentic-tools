@@ -10,7 +10,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
@@ -106,7 +106,7 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 	}
 	lines := []string{}
 	proofRunning := status.RunningProof != nil && status.RunningProof.State == "running"
-	person := state.StopOwner(state.StopFacts{Paused: status.Paused, StoppedBy: view.Owner.StoppedBy != nil, PersonProof: proofRunning && status.RunningProof.Person != nil}).Word == state.Person
+	person := landingstate.StopOwner(landingstate.StopFacts{Paused: status.Paused, StoppedBy: view.Owner.StoppedBy != nil, PersonProof: proofRunning && status.RunningProof.Person != nil}).Word == landingstate.Person
 	young := status.AgentProgress != nil && status.AgentProgress.Step != nil && status.AgentProgress.Minutes < 2
 	main, err := checkoutGit(record.Root, seams).main()
 	if err != nil {
@@ -176,7 +176,7 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 			entry.Outcome = "failed: " + actErr.Error()
 		}
 		if shadow := status.Shadow; shadow != nil {
-			entry.Shadow = fmt.Sprintf("lane %s, agent %s since %s", shadow.Lane.Word, shadow.Agent.Word, shadow.Agent.Since.At.Local().Format("15:04"))
+			entry.Shadow = strings.Join(landingstate.Describe(*shadow, landingstate.RenderInputs{}).Steward, "; ")
 		}
 		appendErr := RecordIntervention(record.Install, entry)
 		err = errors.Join(err, actErr, appendErr)
@@ -213,5 +213,5 @@ func stewardTrunk(install, checkout string, seams ProveSeams) (string, error) {
 		return "", err
 	}
 	running, _, err := Start(install, checkout, seams)
-	return "proving main: " + running.Attempt, err
+	return landingstate.Phrase("proving-main-2") + running.Attempt, err
 }

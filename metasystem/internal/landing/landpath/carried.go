@@ -2,6 +2,7 @@ package landpath
 
 import (
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"io"
 	"regexp"
 	"strconv"
@@ -28,7 +29,7 @@ func (d *driver) exceptionGone() string {
 func (d *driver) goalFetchForCarry() {
 	output, status := d.owners.GoalFetch(d.request.Root)
 	if status != 0 {
-		d.carryAsk("the goal records couldn't be fetched, so nothing was landed", d.usingException(), "once the goal remote answers", output)
+		d.carryAsk(landingstate.Phrase("the-goal-records-couldn-t-be-fetched-so-nothing"), d.usingException(), "once the goal remote answers", output)
 	}
 	output = strings.TrimRight(output, "\n")
 	tip := output
@@ -37,8 +38,8 @@ func (d *driver) goalFetchForCarry() {
 	}
 	tip, _, _ = strings.Cut(tip, " ")
 	if !fullCommitID.MatchString(tip) {
-		d.carryAsk("the goal records came back incomplete, so nothing was landed", d.usingException(), repeat,
-			"goal fetch returned no accepted ledger tip: "+output)
+		d.carryAsk(landingstate.Phrase("the-goal-records-came-back-incomplete-so-nothing-was"), d.usingException(), repeat,
+			landingstate.Phrase("goal-fetch-returned-no-accepted-ledger-tip")+output)
 	}
 	d.carriedLedgerTip = tip
 }
@@ -46,14 +47,14 @@ func (d *driver) goalFetchForCarry() {
 func (d *driver) readCarryStatus() {
 	status, output, code := d.owners.CarryStatus(d.request.Root, d.request.Carried, d.request.Goal, d.carriedLedgerTip)
 	if code != 0 {
-		d.carryAsk("exception "+d.request.Carried+" can't be read from the goal records, so nothing was landed", nil,
+		d.carryAsk("exception "+d.request.Carried+landingstate.Phrase("can-t-be-read-from-the-goal-records-so"), nil,
 			"check the exception id (metasystem goal show "+d.request.Goal+")", output)
 	}
 	d.carriedWord, d.carriedConsumption, d.carriedReservation = status.Word, status.Consumption, status.Reservation
 	d.carriedIntent, d.carriedCounselor, d.carriedPast = status.Intent, status.Counselor, status.Past
 	d.carriedBy, d.carriedWorkspace, d.carriedSource = status.By, status.Workspace, status.Source
 	if d.carriedWord == "" || d.carriedConsumption == "" || d.carriedReservation == "" {
-		d.carryAsk("exception "+d.request.Carried+" reads incomplete in the goal records, so nothing was landed",
+		d.carryAsk("exception "+d.request.Carried+landingstate.Phrase("reads-incomplete-in-the-goal-records-so-nothing-was"),
 			[]string{"metasystem", "goal", "sync"}, "then repeat this command", "carry status was incomplete")
 	}
 }
@@ -103,12 +104,12 @@ func (d *driver) carryForwardStaged(release string) {
 			d.mustGit("rebase", "--abort")
 			d.mustGit("reset", "--soft", base)
 			if release != "" {
-				d.abandonReservation(release, "carried landing stopped at rebase conflict")
+				d.abandonReservation(release, landingstate.Phrase("carried-landing-stopped-at-rebase-conflict"))
 			}
 			if conflicts == "" {
 				conflicts = "unknown paths"
 			}
-			d.carryAsk("the change conflicts with main in "+conflicts+", so nothing was landed", nil,
+			d.carryAsk("the change conflicts with main in "+conflicts+landingstate.Phrase("so-nothing-was-landed"), nil,
 				"merge origin/main by hand, stage the result, then repeat this command")
 		}
 		d.mustGit("reset", "--soft", "refs/remotes/origin/main")
@@ -136,7 +137,7 @@ func (d *driver) reserveCarry() {
 	output, status := d.owners.GoalCarrying(CarryingRequest{Root: d.request.Root, Goal: d.request.Goal, Ref: d.request.Carried,
 		Tree: tree, By: d.carriedBy, Lineage: d.request.OwnerLineage})
 	if status != 0 {
-		d.carryAsk("the goal couldn't be reserved for this exception landing, so nothing was landed", nil, "fix what the goal records report (--verbose shows it), then repeat this command", output)
+		d.carryAsk(landingstate.Phrase("the-goal-couldn-t-be-reserved-for-this-exception"), nil, "fix what the goal records report (--verbose shows it), then repeat this command", output)
 	}
 	output = strings.TrimRight(output, "\n")
 	row := strings.TrimPrefix(output, "carrying=")
@@ -146,8 +147,8 @@ func (d *driver) reserveCarry() {
 		tip = output[index+len(" ledger="):]
 	}
 	if row == "" || !fullCommitID.MatchString(tip) {
-		d.carryAsk("the goal's reservation for this landing came back incomplete, so nothing was landed", d.usingException(), repeat,
-			"reservation returned an incomplete row: "+output)
+		d.carryAsk(landingstate.Phrase("the-goal-s-reservation-for-this-landing-came-back"), d.usingException(), repeat,
+			landingstate.Phrase("reservation-returned-an-incomplete-row")+output)
 	}
 	d.carriedRow, d.carriedLedgerTip = row, tip
 	d.carryAbandonArmed = true
@@ -186,7 +187,7 @@ func (d *driver) verifyLocalCarriedCommit(commit string) {
 	}
 	workspace, err := d.owners.Live().Workspace(d.request.Root, tree)
 	if err != nil {
-		d.failed(1, "the files of the unfinished exception commit can't be read, so nothing was landed", err)
+		d.failed(1, landingstate.Phrase("the-files-of-the-unfinished-exception-commit-can-t"), err)
 		exitLanding(1)
 	}
 	if workspace != d.carriedWorkspace {
@@ -238,7 +239,7 @@ func (d *driver) rebaseRecovered() {
 	d.stepOutput.Reset()
 	if d.gitTo(&d.stepOutput, "rebase", "refs/remotes/origin/main") != 0 {
 		d.git("rebase", "--abort")
-		d.carryAsk("the unfinished exception commit conflicts with main, so nothing was landed", nil,
+		d.carryAsk(landingstate.Phrase("the-unfinished-exception-commit-conflicts-with-main-so-nothing"), nil,
 			"rebase it onto origin/main by hand, then repeat this command")
 	}
 }
@@ -253,7 +254,7 @@ func (d *driver) ensureRecoveryReservation() {
 		d.reserveCarry()
 		d.stepOutput.Reset()
 		if d.fetchOrigin(&d.stepOutput) != 0 {
-			d.carryAsk("origin couldn't be fetched, so nothing was landed", d.usingException(), "once origin answers",
+			d.carryAsk(landingstate.Phrase("origin-couldn-t-be-fetched-so-nothing-was-landed"), d.usingException(), "once origin answers",
 				d.stepOutput.String())
 		}
 		d.rebaseRecovered()
@@ -313,7 +314,7 @@ func (d *driver) createCarriedIntent(commit string) {
 	entry, _, _ = strings.Cut(entry, " ledger=")
 	if entry == "" {
 		d.stop(1, "the exception landing couldn't be recorded before its push, so nothing was pushed", d.usingException(), repeat,
-			"carried intent returned no entry")
+			landingstate.Phrase("carried-intent-returned-no-entry"))
 		exitLanding(1)
 	}
 	d.carriedEntry = entry
@@ -370,7 +371,7 @@ func (d *driver) carriedStep(name string, request CarriedRequest) {
 }
 
 func (d *driver) finishCarriedPublication(commit string) {
-	d.requiredStep("goal held at the rebased base", d.heldCheck)
+	d.requiredStep(landingstate.Phrase("goal-held-at-the-rebased-base"), d.heldCheck)
 	d.createCarriedIntent(commit)
 	d.printCarriedAdvisory(commit)
 	d.seam("before-push")
@@ -379,7 +380,7 @@ func (d *driver) finishCarriedPublication(commit string) {
 	d.recordCarriedRelease(commit)
 	if status := d.runStep("push carried commit to origin (single attempt)", d.pushOrigin); status != 0 {
 		if d.movingOriginRejection() {
-			d.carryAsk("main moved while this landed, so nothing was pushed", d.usingException(), "lands it on the new main",
+			d.carryAsk(landingstate.Phrase("main-moved-while-this-landed-so-nothing-was-pushed"), d.usingException(), "lands it on the new main",
 				d.stepOutput.String())
 		}
 		d.failStep(status)
@@ -410,7 +411,7 @@ func (d *driver) recordCarriedRelease(commit string) {
 
 func (d *driver) runCarried() {
 	if d.runStep("fetch origin for carried landing", d.fetchOrigin) != 0 {
-		d.carryAsk("origin couldn't be fetched, so nothing was landed", d.usingException(), "once origin answers", d.stepOutput.String())
+		d.carryAsk(landingstate.Phrase("origin-couldn-t-be-fetched-so-nothing-was-landed"), d.usingException(), "once origin answers", d.stepOutput.String())
 	}
 	d.goalFetchForCarry()
 	d.readCarryStatus()
@@ -429,7 +430,7 @@ func (d *driver) runCarried() {
 		return
 	case strings.HasPrefix(d.carriedConsumption, "origin:"):
 		commit := strings.TrimPrefix(d.carriedConsumption, "origin:")
-		writeDetails(d.details, "already landed as "+commit+"; completing the record")
+		writeDetails(d.details, landingstate.Phrase("already-landed-as")+commit+"; completing the record")
 		if entry, found := strings.CutPrefix(d.carriedIntent, "carrying:"); found {
 			d.carriedEntry = entry
 			d.carriedStep("complete carried goal record", CarriedRequest{Entry: entry})
@@ -452,19 +453,19 @@ func (d *driver) runCarried() {
 	switch d.carriedWord {
 	case "ok":
 	case "expired":
-		d.carryAsk("exception "+d.request.Carried+" has expired, so nothing was landed", nil, d.exceptionGone())
+		d.carryAsk("exception "+d.request.Carried+landingstate.Phrase("has-expired-so-nothing-was-landed"), nil, d.exceptionGone())
 	case "missing":
-		d.carryAsk("goal "+d.request.Goal+" has no exception "+d.request.Carried+", so nothing was landed", []string{"metasystem", "goal", "sync"},
+		d.carryAsk("goal "+d.request.Goal+" has no exception "+d.request.Carried+landingstate.Phrase("so-nothing-was-landed"), []string{"metasystem", "goal", "sync"},
 			"then repeat this command if the exception was recorded elsewhere")
 	case "unproven":
-		d.carryAsk("exception "+d.request.Carried+" wasn't recorded by a person at an enrolled terminal, so nothing was landed", nil,
+		d.carryAsk("exception "+d.request.Carried+landingstate.Phrase("wasn-t-recorded-by-a-person-at-an-enrolled"), nil,
 			"record it again from your own terminal: metasystem work land "+d.request.Goal+" --exception CODE --reason R")
 	default:
-		d.carryAsk("exception "+d.request.Carried+" is in a state this landing doesn't know, so nothing was landed", nil,
+		d.carryAsk("exception "+d.request.Carried+landingstate.Phrase("is-in-a-state-this-landing-doesn-t-know"), nil,
 			d.exceptionGone()+" (--verbose shows its state)", "carry word state: "+d.carriedWord)
 	}
 	if d.carriedConsumption != "none" {
-		d.carryAsk("exception "+d.request.Carried+" is in a state this landing doesn't know, so nothing was landed", nil,
+		d.carryAsk("exception "+d.request.Carried+landingstate.Phrase("is-in-a-state-this-landing-doesn-t-know"), nil,
 			d.exceptionGone()+" (--verbose shows its state)", "consumption state: "+d.carriedConsumption)
 	}
 	d.holdIndex()

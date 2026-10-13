@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"slices"
 	"strconv"
 	"strings"
@@ -47,7 +48,7 @@ func (run *landingRun) extraLines() []string {
 func (run *landingRun) stopped(result intentResult, status int, retry []string) intentResult {
 	result.Summary = run.stop.Reason
 	if result.Summary == "" {
-		result.Summary = "the landing stopped (exit " + strconv.Itoa(status) + ") without saying why"
+		result.Summary = landingstate.Phrase("the-landing-stopped-exit") + strconv.Itoa(status) + ") without saying why"
 		result.next, result.nextReason = append(retry, "--verbose"), "shows the landing's log"
 	}
 	switch {

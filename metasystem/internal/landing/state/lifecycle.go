@@ -22,7 +22,7 @@ const ResultRetention = 14 * SubmissionWindow
 
 // Lifecycle owns retirement decisions; readers supply facts from the records.
 var Lifecycle = []LifecycleRow{
-	{"loop-stop", "closes when its subjects landed, returned or were superseded, or its proof attempt is no longer current", "closed", func(f LifecycleFacts, _ time.Time) (bool, string) {
+	{"loop-stop", Phrase("closes-when-its-subjects-landed-returned-or-were-superseded"), "closed", func(f LifecycleFacts, _ time.Time) (bool, string) {
 		if f.Owner != Loop {
 			return false, ""
 		}
@@ -35,14 +35,14 @@ var Lifecycle = []LifecycleRow{
 	{"question", "withdraws when its premise is gone; a person's withdrawal remains a decision for the same stop identity", "withdrawn", func(f LifecycleFacts, _ time.Time) (bool, string) {
 		return f.Premise == Gone, "its premise is gone; " + f.Detail
 	}},
-	{"fix", "closes when done, superseded by another proof, or its merge ownership is settled; an abandoned fix waits until its subject landed, returned or was superseded", "closed", func(f LifecycleFacts, _ time.Time) (bool, string) {
+	{"fix", Phrase("closes-when-done-superseded-by-another-proof-or-its"), "closed", func(f LifecycleFacts, _ time.Time) (bool, string) {
 		if f.Word == Abandoned {
 			return subjectsEnded(f.Subjects), "its subject " + f.Subject + " " + f.Detail
 		}
 		owner := MergeOwnership(f.Merge).Word
 		return f.Word == "done" || f.Attempt != "" && f.CurrentAttempt != "" && f.Attempt != f.CurrentAttempt || owner == Settled, "its repair ended or was superseded"
 	}},
-	{"submission", "leaves the views after the day window when landed or returned; superseded submissions leave immediately; queue history stays", "retired", func(f LifecycleFacts, now time.Time) (bool, string) {
+	{"submission", Phrase("leaves-the-views-after-the-day-window-when-landed"), "retired", func(f LifecycleFacts, now time.Time) (bool, string) {
 		return f.Word == "superseded" || (f.Word == "returned" || f.Word == "landed") && !f.At.IsZero() && now.Sub(f.At) > SubmissionWindow, "its completed submission is outside the day window"
 	}},
 	{"result", "leaves the views after fourteen days unless it is the latest of its kind; results.jsonl retains history", "retired", func(f LifecycleFacts, now time.Time) (bool, string) {

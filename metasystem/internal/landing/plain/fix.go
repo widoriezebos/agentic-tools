@@ -13,7 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -114,16 +114,16 @@ func readFixRecords(install string, closeStale, includeClosed, mergeOnly bool, g
 		if fix.Attempt == "" {
 			fix.Attempt = strings.TrimSuffix(filepath.Base(path), ".json")
 		}
-		if due, reason := state.LifecycleDue("fix", state.LifecycleFacts{Attempt: fix.Attempt, CurrentAttempt: running.Attempt}, time.Now()); recorded && fix.Tip == "" && due {
+		if due, reason := landingstate.LifecycleDue("fix", landingstate.LifecycleFacts{Attempt: fix.Attempt, CurrentAttempt: running.Attempt}, time.Now()); recorded && fix.Tip == "" && due {
 			if closeStale {
-				if _, err := state.Transition(Dir(install), time.Now(), "fix:"+filepath.Base(path), "present", "closed", "keeper", reason, nil, func() error { fix.State = "closed"; return WriteFix(install, &fix) }); err != nil {
+				if _, err := landingstate.Transition(Dir(install), time.Now(), "fix:"+filepath.Base(path), "present", "closed", "keeper", reason, nil, func() error { fix.State = "closed"; return WriteFix(install, &fix) }); err != nil {
 					return nil, err
 				}
 			}
 			continue
 		}
 		if active != nil {
-			return nil, errors.New("more than one lane fix is running")
+			return nil, errors.New(landingstate.Phrase("more-than-one-lane-fix-is-running"))
 		}
 		active = &fix
 	}
@@ -133,31 +133,21 @@ func readFixRecords(install string, closeStale, includeClosed, mergeOnly bool, g
 	return active, nil
 }
 
-func fixHeadline(fix *Fix) string {
-	headline := fixStateHeadline(fix)
-	if fix.CheckResult != "" {
-		headline += fmt.Sprintf("; last check %s in %.2f minutes", fix.CheckResult, fix.CheckMinutes)
-	}
-	return headline + "; nothing to do"
-}
-
-func fixStateHeadline(fix *Fix) string {
-	if fix.State == "resolved" {
-		return fmt.Sprintf("Resolved merge of %s, read pending", fix.Goal)
-	}
-	if fix.State == "resolving" {
-		var paths []string
-		for _, path := range fix.Paths {
-			paths = append(paths, path.Path)
-		}
-		return fmt.Sprintf("Resolving %d conflicts of %s (%s)", len(paths), fix.Goal, strings.Join(paths, ", "))
-	}
-	commit := fix.Commit
+func resolutionDescription(f *Fix) landingstate.Resolution {
+	commit := f.Commit
 	if commit == "" {
-		commit = fix.Parent
+		commit = f.Parent
 	}
-	round := max(1, fix.Round)
-	return fmt.Sprintf("Fixing %s of %s on %s (fix round %d)", strings.Join(fix.Units, ", "), fix.Goal, Short(commit), round)
+	paths := []string{}
+	for _, p := range f.Paths {
+		paths = append(paths, p.Path)
+	}
+	r := landingstate.Resolution{Fact: landingstate.Fact{Word: f.State}, Goal: f.Goal, Job: f.Job, Reason: f.Reason, Commit: commit, Paths: paths, Units: f.Units, Round: f.Round, CheckResult: f.CheckResult, ReadPending: f.State == "reviewing" && f.Tip != "" && (f.ReadStartedAt != "" || f.ReadMinutes > 0)}
+	if f.Launch != nil {
+		r.LaunchError = f.Launch.Error
+		r.LaunchAt, _ = time.Parse(time.RFC3339Nano, f.Launch.At)
+	}
+	return r
 }
 
 // WriteFix retains a fix's lifecycle beside its attempt's brief.

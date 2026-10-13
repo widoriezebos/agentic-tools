@@ -1,6 +1,7 @@
 package plain
 
 import (
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"slices"
 	"time"
 )
@@ -26,7 +27,7 @@ func giveBackLocked(install, goal, reason string, person ActProvenance, s ProveS
 	member := GoalSHA{Goal: goal, SHA: entry.SHA}
 	selected := batch != nil && slices.Contains(batch.Members, member)
 	if !selected && entry.State == StateReturned {
-		return entry, goal + " is already returned: " + entry.Reason, nil
+		return entry, goal + landingstate.Phrase("is-already-returned") + entry.Reason, nil
 	}
 	proof, err := lastGoalProof(install, goal)
 	if err != nil {
@@ -37,7 +38,7 @@ func giveBackLocked(install, goal, reason string, person ActProvenance, s ProveS
 		if attributed != "main" {
 			attributed = "another goal"
 		}
-		reason += "; the lane's last check attributed " + attributed + " at " + resultTime(proof).Local().Format("2006-01-02 15:04 MST") + "; the person returned the goal as unclassified"
+		reason += "; the lane's last check attributed " + attributed + " at " + resultTime(proof).Local().Format("2006-01-02 15:04 MST") + landingstate.Phrase("the-person-returned-the-goal-as-unclassified")
 	}
 	if selected {
 		running, recorded, alive, err := ReadRunning(install, s)
@@ -80,14 +81,14 @@ func giveBackLocked(install, goal, reason string, person ActProvenance, s ProveS
 			batch.Person.Subject = slices.Clone(batch.Members)
 		}
 		batch.Actions[index].Pending = false
-		batch.Actions[index].Impact = "returned to the seat; rebuild the merge without this goal"
+		batch.Actions[index].Impact = landingstate.Phrase("returned-to-the-seat-rebuild-the-merge-without-this")
 		if err := writeBatch(install, batch); err != nil {
 			return entry, "", err
 		}
 	}
 	s.Person = &person
 	entry, _, err = returnLocked(install, goal, reason, &Cause{Kind: "unclassified", Name: person.Person, Goal: goal, SHA: entry.SHA}, nil, s.now(), s)
-	return entry, "returned " + goal + " to its seat: " + entry.Reason, err
+	return entry, landingstate.Phrase("returned") + goal + " to its seat: " + entry.Reason, err
 }
 
 // finishGiveBacksLocked consumes durable requests before selecting or pushing.
@@ -109,7 +110,7 @@ func finishGiveBacksLocked(install string, s ProveSeams) error {
 				}
 				if !known || entry.SHA != member.SHA || !slices.Contains(batch.Members, member) {
 					batch.Actions[index].Pending = false
-					batch.Actions[index].Impact = "superseded by a newer hand-in; nothing returned"
+					batch.Actions[index].Impact = landingstate.Phrase("superseded-by-a-newer-hand-in-nothing-returned")
 					if err := writeBatch(install, batch); err != nil {
 						return err
 					}

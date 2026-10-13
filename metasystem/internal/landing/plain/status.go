@@ -16,7 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 // Status is the plain lane as landing status --json carries it and as
@@ -25,11 +25,11 @@ import (
 // whether the lane is paused and its agent alive, the queue, the running
 // proof, the last proof and the last push. An absent value is null.
 type Status struct {
-	ObservationError error          `json:"-"`
-	Shadow           *state.Record  `json:"shadow,omitempty"`
-	Raw              RawFacts       `json:"-"`
-	Health           *Health        `json:"health,omitempty"`
-	AgentProgress    *AgentProgress `json:"agent_progress,omitempty"`
+	ObservationError error                `json:"-"`
+	Shadow           *landingstate.Record `json:"shadow,omitempty"`
+	Raw              RawFacts             `json:"-"`
+	Health           *Health              `json:"health,omitempty"`
+	AgentProgress    *AgentProgress       `json:"agent_progress,omitempty"`
 	lane.View
 	MainMove       MainMove        `json:"main_move"`
 	PendingActions []PolicyRequest `json:"pending-actions,omitempty"`
@@ -97,7 +97,7 @@ type RunningProof struct {
 }
 
 // landedWindow is the lifecycle table's completed submission window.
-const landedWindow = state.SubmissionWindow
+const landedWindow = landingstate.SubmissionWindow
 
 // laneGit is what a status read asks the lane checkout's Git: origin's main
 // as the checkout last fetched it, whether that main contains a commit, and
@@ -143,7 +143,7 @@ func checkoutGit(dir string, seams ProveSeams) laneGit {
 // ReadStatus reads the plain lane around its view: home is the lane's home
 // (its pause), record the registered lane, seams the proof's (its process
 // check and its clock).
-func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeams, captured ...*state.Record) Status {
+func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeams, captured ...*landingstate.Record) Status {
 	layout, _ := record.Layout()
 	if seams.Lane == nil {
 		seams.Lane = func() (lane.Record, error) { return record, nil }
@@ -151,14 +151,14 @@ func ReadStatus(home string, record lane.Record, view lane.View, seams ProveSeam
 	return readStatus(home, record, view, seams, checkoutGit(string(layout.Checkout), seams), captured...)
 }
 
-func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit, captured ...*state.Record) Status {
-	var shadow state.Record
+func readStatus(home string, record lane.Record, view lane.View, seams ProveSeams, git laneGit, captured ...*landingstate.Record) Status {
+	var shadow landingstate.Record
 	var exists bool
 	var shadowErr error
 	if len(captured) > 0 && captured[0] != nil {
 		shadow, exists = *captured[0], true
 	} else if record.Install != "" {
-		shadow, exists, shadowErr = state.Read(Dir(record.Install))
+		shadow, exists, shadowErr = landingstate.Read(Dir(record.Install))
 	}
 	status, raw := observe(home, record, view, seams, git)
 	if exists {
@@ -226,11 +226,11 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 	} else if err != nil && !errors.Is(err, os.ErrNotExist) {
 		status.Findings = append(status.Findings, "the resume finding cannot be read: "+err.Error())
 	}
-	_, skipped, eventsErr := state.ReadEvents(Dir(record.Install))
+	_, skipped, eventsErr := landingstate.ReadEvents(Dir(record.Install))
 	if eventsErr != nil {
 		status.Findings = append(status.Findings, "the lane shadow events cannot be read: "+eventsErr.Error())
 	} else if skipped > 0 {
-		status.Findings = append(status.Findings, state.SkippedEvidence(skipped))
+		status.Findings = append(status.Findings, landingstate.SkippedEvidence(skipped))
 	}
 	// Every read failure this status could know of is a problem, one plain
 	// line each (fix round 4). First what the lane's own records and the
@@ -245,7 +245,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		status.Problems = append(status.Problems, line)
 	}
 	if pause.Unreadable() {
-		said("the lane's pause record can't be read, so the lane reads as stopped")
+		said(landingstate.Phrase("the-lane-s-pause-record-can-t-be-read"))
 	}
 	said(view.Owner.Unread)
 	if view.Wake != nil {
@@ -283,6 +283,12 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		}
 		return incidents, incidentsErr
 	}
+	defer func() {
+		d := landingstate.Describe(ShadowOf(status, raw), RenderInputsOf(status, raw))
+		status.ProofHeadline = d.ProofHeadline
+		status.Summary = d.Summary
+	}()
+
 	var abandoned string
 	defer func() {
 		raw.Abandoned = abandoned
@@ -301,6 +307,11 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			if err != nil && !incidentsReported {
 				raw.Err = errors.Join(raw.Err, err)
 			}
+		}
+		incidents, incidentErr := EngineIncidents(install)
+		raw.Err = errors.Join(raw.Err, incidentErr)
+		for _, i := range incidents {
+			raw.EngineIncidents = append(raw.EngineIncidents, landingstate.EngineIncident{At: i.At, Verb: i.Verb, Panic: i.Panic})
 		}
 		raw.Engine, err = shadowEngine(install)
 		if err != nil {
@@ -364,17 +375,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			}
 		}
 		unread("main's movement", readErr)
-		defer func() {
-			switch status.MainMove.Kind {
-			case "records-only":
-				status.Summary += fmt.Sprintf("; main gained %d record commits since the batch base; the batch stands", status.MainMove.Count)
-			case "code":
-				status.Summary += "; main moved: code change"
-				if !strings.Contains(status.Summary, "metasystem landing ") && status.RunningProof == nil {
-					status.Summary += "; run: metasystem landing resume"
-				}
-			}
-		}()
+
 	}
 
 	status.PendingActions, err = PolicyRequests(install, seams)
@@ -467,13 +468,16 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		}
 	}
 	regenerating, err := ReadRunningRegeneration(install, seams)
-	unread("the running regeneration", err)
+	unread(landingstate.Phrase("the-running-regeneration"), err)
 	status.RunningRegeneration = regenerating
 	running, err := readRunningProof(install, seams)
-	unread("the running proof", err)
+	unread(landingstate.Phrase("the-running-proof"), err)
 	status.RunningProof = running
 	if running != nil {
 		raw.Running = running.raw
+	} else if selected != nil {
+		raw.Running, _, _, err = ReadRunning(install, seams)
+		unread("the batch checkpoint", err)
 	}
 	if progress.Drain != nil {
 		if _, executionErr := drainExecution(install, seams); executionErr != nil {
@@ -483,7 +487,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 	}
 	if running != nil && running.State == "running" && running.Commit != "" {
 		running.Goals, err = proving(status.Queue, running.Commit, git.contains)
-		unread("what the running proof holds", err)
+		unread(landingstate.Phrase("what-the-running-proof-holds"), err)
 	}
 	results, skipped, err := countedLines[Result](resultsPath(install))
 	unread("the proof results", err)
@@ -524,7 +528,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		last := pushes[len(pushes)-1]
 		status.LastPush = &last
 		status.Queue, err = LandingTimes(status.Queue, pushes, seams.now().Add(-landedWindow), git.brought)
-		unread("when the queued work landed", err)
+		unread(landingstate.Phrase("when-the-queued-work-landed"), err)
 	}
 	if running != nil && running.State == "running" {
 		running.Minutes = elapsedMinutes(running.Since, seams.now().UTC().Format(time.RFC3339))
@@ -532,7 +536,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		if running.Log != "" {
 			var readErr error
 			data, readErr = os.ReadFile(running.Log)
-			unread("the running proof log", readErr)
+			unread(landingstate.Phrase("the-running-proof-log"), readErr)
 		}
 		seen := map[string]bool{}
 		lines := strings.Split(string(data), "\n")
@@ -552,48 +556,22 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 				running.UnitsDone++
 			}
 		}
-		total := "counting"
-		if running.UnitsTotal != nil {
-			total = strconv.Itoa(*running.UnitsTotal)
-		}
-		status.ProofHeadline = fmt.Sprintf("proving (%d of %s units, %s min); the lane proves main; the agent waits for the keeper; nothing to do", running.UnitsDone, total, clockMinutes(running.Minutes))
-	} else if proof := status.TrunkProof; proof != nil && proof.Result == Green && proof.FlakePublished {
-		status.ProofHeadline = "main is proven with unstable checks: " + flakeNames(proof.Flakes) + "; run: metasystem landing resume"
-	} else if proof := status.LastProof; proof != nil && len(proof.Flakes) > 0 && strings.Contains(proof.Reason, "flake on main:") {
-		status.ProofHeadline = "main has unstable checks: " + flakeNames(proof.Flakes) + "; run: metasystem landing resume"
-	} else if proof := status.TrunkProof; proof != nil && proof.Result == Red {
+	}
+	if proof := status.TrunkProof; proof != nil && proof.Result == Red {
 		main, readErr := git.main()
 		unread("main for the trunk proof", readErr)
 		if readErr == nil && main == proof.Commit {
 			incidents, readErr := seams.incidents(install, string(layout.Checkout), main)
 			unread("main's incidents", readErr)
+			raw.Incidents = incidents
 			for _, incident := range incidents {
 				if incident.Closed == nil {
 					status.TrunkIncidents = append(status.TrunkIncidents, incident.ID)
 				}
 			}
-			failed := failingTests(proof.Failed)
-			reason := strings.Join(failed, ", ")
-			if reason == "" {
-				reason = proof.Reason
-			}
-			status.ProofHeadline = "main is red"
-			if len(status.TrunkIncidents) > 0 {
-				status.ProofHeadline += " (incident " + strings.Join(status.TrunkIncidents, ", ") + ")"
-			}
-			status.ProofHeadline += ": " + reason + "; land a fix on main, then metasystem landing prove --trunk"
-			if len(status.TrunkIncidents) > 0 {
-				for _, entry := range status.Queue {
-					if entry.State == StateWaiting {
-						status.ProofHeadline += "; or metasystem landing land-anyway " + entry.Goal + " --reason TEXT (" + lane.LandAnywayImpact(entry.Goal, strings.Join(status.TrunkIncidents, ", ")) + ")"
-					}
-				}
-			}
 		}
 	}
-	if running != nil && running.State != "running" && status.ProofHeadline == "" {
-		status.ProofHeadline = "the lane's check " + running.State + "; run: metasystem landing resume"
-	}
+
 	status.RunningFix, err = readFix(install, true)
 	unread("the lane fix", err)
 	if err == nil && status.RunningFix != nil {
@@ -611,18 +589,14 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			// An abandoned resolution describes only the checkpoint it belonged to.
 			tip, readErr := seams.git(string(layout.Checkout), "rev-parse", "--verify", "HEAD^{commit}")
 			unread("the abandoned resolution's checkpoint", readErr)
-			if readErr == nil && tip == status.RunningFix.Commit && (running == nil || running.State != "running") {
-				status.ProofHeadline = "the resolution was abandoned: " + status.RunningFix.Reason + "; run: metasystem landing resume"
+			if readErr != nil || tip != status.RunningFix.Commit {
+				raw.Fix = Fix{}
 			}
+
 			status.RunningFix = nil
 		}
 	}
-	if status.RunningFix != nil && (running == nil || running.State != "running") {
-		status.ProofHeadline = fixHeadline(status.RunningFix)
-	}
-	if fix := status.RunningFix; fix != nil && fix.Launch != nil && fix.Launch.Error != "" {
-		status.ProofHeadline = "launch of the resolution failed at " + lane.LocalText(fix.Launch.At) + ": " + fix.Launch.Error
-	}
+
 	merge := status.RunningFix
 	if merge != nil && merge.Tip != "" && (merge.ReadStartedAt != "" || merge.ReadMinutes > 0) {
 		if merge.State == "reviewing" {
@@ -631,7 +605,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		bound, boundErr := resolutionReadBound(install)
 		unread("the merge read bound", boundErr)
 		if boundErr == nil && merge.State == "reviewing" {
-			status.ProofHeadline = fmt.Sprintf("reading the resolution of %s (%g min); nothing to do", merge.Goal, merge.ReadMinutes)
+			raw.Fix = *merge
 			if merge.ReadMinutes > bound {
 				status.MergeReadFinding = fmt.Sprintf("merge read ran %g min, bound %g", merge.ReadMinutes, bound)
 				if merge.ReadLaneOwned && merge.Reason != "" {
@@ -640,15 +614,12 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			}
 		}
 	}
-	if status.ProofHeadline != "" {
-		status.Summary = status.ProofHeadline
-	}
+
 	questions, questionProblems := channel.WalkQuestions(install)
 	raw.AllQuestions = questions
 	if len(questionProblems) > 0 {
 		said(fmt.Sprintf("lane questions: %v", questionProblems))
 	}
-	questionHeadline := false
 	for _, q := range questions {
 		if q.Goal != "" || q.About != "lane" || q.State != "open" {
 			continue
@@ -665,61 +636,16 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		if q.Machine == machine {
 			premise, premiseErr := LaneQuestionPremise(install, q, seams)
 			unread("the lane question's premise", premiseErr)
-			raw.Questions = append(raw.Questions, state.Question{ID: q.ID, Premise: premise, Since: state.Since{At: q.OpenedAt}})
+			raw.Questions = append(raw.Questions, landingstate.Question{ID: q.ID, Premise: premise, Since: landingstate.Since{At: q.OpenedAt}})
+			if raw.QuestionInputs == nil {
+				raw.QuestionInputs = map[string]landingstate.QuestionInput{}
+			}
+			raw.QuestionInputs[q.ID] = landingstate.QuestionInput{FirstLine: firstQuestionLine(q), Policy: channel.LaneStopCommand(q) != ""}
 			raw.QuestionHealth = append(raw.QuestionHealth, QuestionHealth{ID: q.ID, Kind: q.Kind, Minutes: seams.now().Sub(q.OpenedAt).Minutes(), Premise: premise, WaitsFor: LaneQuestionHeadline(q)})
-			if questionHeadline {
-				continue
-			}
-			if satisfied, err := PolicyQuestionSatisfied(install, q); err != nil {
-				unread("the lane question's premise", err)
-			} else if !satisfied {
-				status.Summary = LaneQuestionHeadline(q)
-				if strings.HasPrefix(status.ProofHeadline, "main is red") {
-					status.Summary = status.ProofHeadline + ". " + status.Summary
-				}
-				questionHeadline = true
-			}
+
 		}
 	}
-	if view.Wake != nil {
-		for _, problem := range view.Wake.Unread {
-			problem = strings.SplitN(problem, "\n", 2)[0]
-			if strings.HasPrefix(problem, "hand-in ") {
-				status.Summary = problem + "; run: metasystem landing resume"
-				break
-			}
-		}
-	}
-	if selected != nil && selected.State != BatchClosed {
-		if selected.SealedAt != "" {
-			if sealed, err := time.Parse(time.RFC3339Nano, selected.SealedAt); err == nil {
-				status.Summary += fmt.Sprintf("; batch sealed %s: %d members", sealed.Local().Format("15:04"), len(selected.Members))
-			}
-		}
-		if len(selected.Restarts) > 0 {
-			status.Summary += "; " + selected.Restarts[len(selected.Restarts)-1].Reason
-		}
-		for _, waiting := range selected.Waiting {
-			status.Summary += "; " + waiting
-		}
-		checkpoint, recorded, _, readErr := ReadRunning(install, seams)
-		unread("the batch checkpoint", readErr)
-		fixOpen := status.RunningFix != nil && status.RunningFix.State != "abandoned" || recorded && checkpoint.Checkpoint && checkpoint.BatchID == selected.ID
-		for _, entry := range status.Queue {
-			if entry.State != StateWaiting || entry.Held || slices.Contains(selected.Members, GoalSHA{Goal: entry.Goal, SHA: entry.SHA}) {
-				continue
-			}
-			sameGoal := slices.ContainsFunc(selected.Members, func(member GoalSHA) bool { return member.Goal == entry.Goal })
-			if !selected.Open || sameGoal {
-				status.Summary += "; " + entry.Goal + " waits for the next batch"
-			} else if fixOpen {
-				status.Summary += "; " + entry.Goal + " waits: a fix round is open"
-			}
-		}
-	}
-	if strings.Contains(status.Summary, "; nothing to do") {
-		status.Summary = strings.ReplaceAll(status.Summary, "; nothing to do", "") + "; nothing to do"
-	}
+
 	return status, raw
 }
 
@@ -796,7 +722,7 @@ func LandingTimes(entries []Entry, pushes []Pushed, since time.Time, brought fun
 				out[index].LandedAt, out[index].Landing = push.At, push.Clock
 				for _, fix := range push.Fixes {
 					if fix.Goal == out[index].Goal {
-						out[index].Fix, out[index].Reason = fix.Commit, fmt.Sprintf("landed with lane fix %d", fix.Round)
+						out[index].Fix, out[index].Reason = fix.Commit, fmt.Sprintf(landingstate.Phrase("landed-with-lane-fix-d"), fix.Round)
 					}
 				}
 			}

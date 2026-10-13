@@ -178,6 +178,9 @@ func admitExecutionLocked(install, checkout, command string, running *Running, d
 		}
 		if readErr != nil || admission.Policy.Value == "person" {
 			if !person {
+				if seams.CallerRefusal != "" {
+					return &Refusal{Code: "LANE_PROOF_PERSON", Reason: seams.CallerRefusal}
+				}
 				reason := "the full check needs the person at an enrolled terminal"
 				if readErr != nil {
 					reason = "the check policy cannot be read, so this full check needs a person"
@@ -190,6 +193,9 @@ func admitExecutionLocked(install, checkout, command string, running *Running, d
 		}
 		if !running.Trunk {
 			if err := seams.checkBudget(install, checkout, running.Commit); err != nil {
+				if !person && seams.CallerRefusal != "" {
+					return &Refusal{Code: "LANE_PROOF_BUDGET", Reason: seams.CallerRefusal}
+				}
 				if !person || seams.ClassificationOf != "" {
 					return holdProofLocked(install, *running, seams, "LANE_PROOF_BUDGET", (&ProofBudget{}).Error())
 				}

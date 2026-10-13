@@ -53,7 +53,7 @@ func TestLandingStatusToDoImmediatelyFollowsHeadline(t *testing.T) {
 			sections := strings.Split(strings.TrimSpace(out.String()), "\n\n")
 			want := "metasystem landing resume"
 			if state == "stopped" {
-				want = "metasystem landing start"
+				want = "metasystem landing resume"
 			}
 			if state == "unready" {
 				want = "metasystem system start --repo fixture"

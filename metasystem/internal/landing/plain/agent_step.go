@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -158,7 +159,7 @@ func agentProgress(install string, owner lane.OwnerView, seams ProveSeams, queue
 	progress.Minutes = int(seams.now().Sub(at) / time.Minute)
 	progress.Line = "agent: idle since " + at.In(time.Local).Format("15:04")
 	if owner.State == lane.OwnerRunning {
-		progress.Line = fmt.Sprintf("agent: running, no step for %d min", progress.Minutes)
+		progress.Line = fmt.Sprintf(landingstate.Phrase("agent-running-no-step-for-d-min"), progress.Minutes)
 	}
 	return progress, nil
 }

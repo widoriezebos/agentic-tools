@@ -67,7 +67,7 @@ func TestReadStatusAbandonedMergeYieldsToNewProof(t *testing.T) {
 	if status := read(fix.Commit); !strings.Contains(status.Summary, "resolution was abandoned") || !strings.Contains(status.Summary, "metasystem landing resume") {
 		t.Fatalf("current abandonment lost its reason: %+v", status)
 	}
-	if status := read("new-batch"); status.Summary == fix.Reason || status.ProofHeadline == fix.Reason || status.RunningFix != nil {
+	if status := read("new-batch"); strings.Contains(status.Summary, "resolution was abandoned") || status.ProofHeadline == fix.Reason || status.RunningFix != nil {
 		t.Fatalf("stale abandonment replaced status: %+v", status)
 	}
 	for _, tip := range []string{fix.Commit, "new-batch"} {

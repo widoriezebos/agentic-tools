@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"io"
 	"os"
 	"path/filepath"
@@ -295,7 +296,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			_, readErr := plain.ExpireResolutionRead(record.Install, func(ref string) (bool, error) {
 				read, err := (&launch.UnitRunner{Manager: agent.manager()}).StopRead(ref)
 				if err == nil && len(read.Uncertain) > 0 {
-					err = fmt.Errorf("resolution read jobs could not be proved stopped: %s", strings.Join(read.Uncertain, ", "))
+					err = fmt.Errorf(landingstate.Phrase("resolution-read-jobs-could-not-be-proved-stopped-s"), strings.Join(read.Uncertain, ", "))
 				}
 				return !read.Complete && len(read.Uncertain) == 0, err
 			}, seams)
@@ -432,7 +433,7 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 		proof.Pause = func() (lane.Pause, bool) { return lane.ReadPause(home) }
 		proof.FenceCheck = func() error {
 			if _, paused := lane.ReadPause(home); paused {
-				return errors.New("a person stopped the lane")
+				return errors.New(landingstate.Phrase("a-person-stopped-the-lane"))
 			}
 			return nil
 		}

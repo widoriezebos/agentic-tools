@@ -77,7 +77,7 @@ func Admissibility(f AdmissionFacts) Admission {
 	case f.EntryState != "waiting":
 		return Admission{"not admissible", "the goal is " + f.EntryState}
 	case f.Held:
-		return Admission{"not admissible", "the goal is held: " + f.HoldReason}
+		return Admission{"not admissible", Phrase("the-goal-is-held") + f.HoldReason}
 	default:
 		return Admission{"admissible", "eligible under automatic admission"}
 	}

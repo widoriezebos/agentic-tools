@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -169,7 +170,7 @@ func observeCarried(params ObserveParams) Observation {
 	workspace := gittree.Workspace{Dir: params.RepoRoot}
 	baseTree, err := workspace.HeadTree()
 	if err != nil {
-		return carriedRefusal("goal-item-not-held", fmt.Sprintf("goal %s cannot be proven held; repair the base tree, then take it over with metasystem goal claim %s --take-over --reason TEXT", params.Goal, params.Goal), provenance)
+		return carriedRefusal("goal-item-not-held", fmt.Sprintf(landingstate.Phrase("goal-s-cannot-be-proven-held-repair-the-base"), params.Goal, params.Goal), provenance)
 	}
 	if err := heldGoalError(workspace, baseTree, params.Goal, params.Actor, 0); err != nil {
 		return carriedRefusal("goal-item-not-held", fmt.Sprintf("%s; take it over with metasystem goal claim %s --take-over --reason TEXT", err, params.Goal), provenance)
@@ -349,7 +350,7 @@ func carriedDebtText(debt goal.CarryDebt) string {
 		if goalID == "" {
 			goalID = "G"
 		}
-		return fmt.Sprintf("carry debt is unpaid: word %s landed as %s without a carried row; run metasystem work land %s --using-exception %s", debt.ID, debt.Detail, goalID, debt.ID)
+		return fmt.Sprintf(landingstate.Phrase("carry-debt-is-unpaid-word-s-landed-as-s"), debt.ID, debt.Detail, goalID, debt.ID)
 	}
 }
 

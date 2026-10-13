@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 func TestFixRecordAdvanceRequiresFirstParentAndSameBatch(t *testing.T) {
@@ -252,4 +253,8 @@ func TestFixRecordDamagedOtherGoalDoesNotBlockReturnOrPush(t *testing.T) {
 			}
 		})
 	}
+}
+
+func fixHeadline(fix *Fix) string {
+	return state.Describe(state.Record{Resolution: resolutionDescription(fix)}, state.RenderInputs{ReadMinutes: fix.ReadMinutes, CheckMinutes: fix.CheckMinutes}).Headline
 }

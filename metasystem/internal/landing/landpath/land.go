@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"io"
 	"os"
 	"path/filepath"
@@ -261,7 +262,7 @@ func (d *driver) failStep(status int) {
 	if last == "" {
 		last = fmt.Sprintf("it exited %d", status)
 	}
-	d.stopped.said("the landing stopped at "+d.stepName+": "+last, nil, "fix what stopped it (--verbose shows the step's log), then repeat this command")
+	d.stopped.said(landingstate.Phrase("the-landing-stopped-at")+d.stepName+": "+last, nil, landingstate.Phrase("fix-what-stopped-it-verbose-shows-the-step-s"))
 	d.tell()
 	exitLanding(status)
 }
@@ -336,7 +337,7 @@ func (d *driver) held() int {
 	}
 	detail, err := d.owners.BrainFence(request.Root, "land")
 	if err != nil {
-		return d.failed(1, "this checkout's role couldn't be read, so nothing was landed", err)
+		return d.failed(1, landingstate.Phrase("this-checkout-s-role-couldn-t-be-read-so"), err)
 	}
 	if detail != "" {
 		return d.stop(2, brainReason, nil, brainThen, detail)
@@ -348,17 +349,17 @@ func (d *driver) held() int {
 	if request.MessageFile == "-" {
 		file, done, err := diskstore.ScratchFile("metasystem-land-message.")
 		if err != nil {
-			return d.failed(1, "the commit message couldn't be saved for the commit, so nothing was landed", err)
+			return d.failed(1, landingstate.Phrase("the-commit-message-couldn-t-be-saved-for-the"), err)
 		}
 		d.ownedFile, d.ownedDone = file.Name(), done
 		_, writeErr := file.Write(request.Message)
 		closeErr := file.Close()
 		if writeErr != nil || closeErr != nil {
-			return d.stop(1, "the commit message couldn't be saved for the commit, so nothing was landed", nil, "", fmt.Sprint(writeErr, closeErr))
+			return d.stop(1, landingstate.Phrase("the-commit-message-couldn-t-be-saved-for-the"), nil, "", fmt.Sprint(writeErr, closeErr))
 		}
 		d.messageFile = d.ownedFile
 	} else if !d.owners.FileReadable(request.MessageFile) {
-		return d.stop(2, "the commit message file can't be read, so nothing was landed", nil,
+		return d.stop(2, landingstate.Phrase("the-commit-message-file-can-t-be-read-so"), nil,
 			"check the file named by --message, then repeat this command", "message file: "+request.MessageFile)
 	}
 	return d.land()
@@ -369,39 +370,39 @@ var chainIdentifier = regexp.MustCompile(`^[a-z0-9][a-z0-9-]*$`)
 func (d *driver) validate() int {
 	request := d.request
 	if request.MessageFile == "" {
-		return d.optionStop("a landing needs its commit message, so nothing was landed", "name the message file with --message FILE")
+		return d.optionStop(landingstate.Phrase("a-landing-needs-its-commit-message-so-nothing-was"), "name the message file with --message FILE")
 	}
 	if request.StagedOnly && len(request.Pathspecs) > 0 {
-		return d.optionStop("--staged lands what is staged, so it takes no --path, so nothing was landed", "use --staged or --path, not both")
+		return d.optionStop(landingstate.Phrase("staged-lands-what-is-staged-so-it-takes-no"), "use --staged or --path, not both")
 	}
 	if !request.StagedOnly && len(request.Pathspecs) == 0 && request.Carried == "" {
-		return d.optionStop("nothing to land: no --path and no --staged, so nothing was landed", "name the files with --path, or land what is staged with --staged")
+		return d.optionStop(landingstate.Phrase("nothing-to-land-no-path-and-no-staged-so"), "name the files with --path, or land what is staged with --staged")
 	}
 	if request.Tests != "" && request.TestReceipt != "" {
-		return d.optionStop("--tests and --test-receipt don't go together, so nothing was landed", "drop --test-receipt for a tier-1 landing, or --tests for a receipted chain")
+		return d.optionStop(landingstate.Phrase("tests-and-test-receipt-don-t-go-together-so"), "drop --test-receipt for a tier-1 landing, or --tests for a receipted chain")
 	}
 	if request.TestReceipt != "" && request.Chain == "" && request.DirectFix != "tier-1" && request.Carried == "" {
-		return d.optionStop("--test-receipt goes with --chain or --direct-fix tier-1, so nothing was landed", "add --chain J, or drop --test-receipt")
+		return d.optionStop(landingstate.Phrase("test-receipt-goes-with-chain-or-direct-fix-tier"), "add --chain J, or drop --test-receipt")
 	}
 	if request.Carried != "" && (!request.GoalSet || request.Goal == "") {
-		return d.optionStop("an exception landing names its goal, so nothing was landed", "name the goal: metasystem work land G ...")
+		return d.optionStop(landingstate.Phrase("an-exception-landing-names-its-goal-so-nothing-was"), "name the goal: metasystem work land G ...")
 	}
 	if request.Recertification != "" && request.Chain == "" {
-		return d.optionStop("--recertification goes with --chain, so nothing was landed", "add --chain J with the chain's root job")
+		return d.optionStop(landingstate.Phrase("recertification-goes-with-chain-so-nothing-was-landed"), "add --chain J with the chain's root job")
 	}
 	if request.Recertification != "" && request.DirectFix != "" && request.DirectFix != "register-carriage" {
-		return d.optionStop("--recertification combines only with --direct-fix register-carriage, so nothing was landed", "drop --direct-fix, or use register-carriage")
+		return d.optionStop(landingstate.Phrase("recertification-combines-only-with-direct-fix-register-carriage-so"), "drop --direct-fix, or use register-carriage")
 	}
 	if request.Recertification != "" && request.TestReceipt == "" {
-		return d.optionStop("a recertified landing needs a fresh test receipt for this exact change, so nothing was landed", "add --test-receipt PATH")
+		return d.optionStop(landingstate.Phrase("a-recertified-landing-needs-a-fresh-test-receipt-for"), "add --test-receipt PATH")
 	}
 	if request.DirectFix == "tier-1" {
 		if !request.GoalSet || request.Goal == "" || request.RootJob == "" || request.Tests == "" && request.TestReceipt == "" {
-			return d.optionStop("--direct-fix tier-1 needs a goal, --root-job, and --test-receipt or --tests, so nothing was landed",
+			return d.optionStop(landingstate.Phrase("direct-fix-tier-needs-a-goal-root-job-and"),
 				"add the missing one: metasystem work land G --direct-fix tier-1 --root-job J --test-receipt PATH ...")
 		}
 	} else if request.RootJob != "" || request.Tests != "" {
-		return d.optionStop("--root-job and --tests go only with --direct-fix tier-1, so nothing was landed", "drop them, or add --direct-fix tier-1")
+		return d.optionStop(landingstate.Phrase("root-job-and-tests-go-only-with-direct-fix"), "drop them, or add --direct-fix tier-1")
 	}
 	if request.Chain != "" && chainIdentifier.MatchString(request.Chain) {
 		d.gateWidth = d.owners.JobGateWidth(request.Root, request.Chain)
@@ -410,7 +411,7 @@ func (d *driver) validate() int {
 			if request.GoalSet && request.Goal != "" {
 				testRun = append(testRun, "--goal", request.Goal)
 			}
-			return d.stop(2, "chain "+request.Chain+" needs its full test run's receipt, so nothing was landed", testRun,
+			return d.stop(2, "chain "+request.Chain+landingstate.Phrase("needs-its-full-test-run-s-receipt-so-nothing"), testRun,
 				"then pass its receipt with --test-receipt PATH", "the chain's gate width is full: it lands only with sufficient schema-2 testing evidence")
 		}
 	}
@@ -501,7 +502,7 @@ func (d *driver) land() int {
 		}
 		d.requiredStep("fetch origin", d.fetchOrigin)
 		d.requiredStep("rebase onto origin/"+d.branch, d.rebaseOrigin)
-		d.requiredStep("goal held at the rebased base", d.heldCheck)
+		d.requiredStep(landingstate.Phrase("goal-held-at-the-rebased-base"), d.heldCheck)
 		d.details.Write(d.stepOutput.Bytes())
 		d.requiredStep("verify shared testing proof after rebase", d.verifyCurrentTestingProof)
 		const pushLimit = 3
@@ -521,7 +522,7 @@ func (d *driver) land() int {
 			fmt.Fprintf(d.details, "origin moved during push; fetching and rebasing before retry %d of %d\n", attempt+1, pushLimit)
 			d.requiredStep(fmt.Sprintf("fetch origin after push attempt %d", attempt), d.fetchOrigin)
 			d.requiredStep(fmt.Sprintf("rebase onto origin/%s after push attempt %d", d.branch, attempt), d.rebaseOrigin)
-			d.requiredStep("goal held at the rebased base", d.heldCheck)
+			d.requiredStep(landingstate.Phrase("goal-held-at-the-rebased-base"), d.heldCheck)
 			d.details.Write(d.stepOutput.Bytes())
 			d.requiredStep("verify shared testing proof after retry rebase", d.verifyCurrentTestingProof)
 		}
@@ -639,7 +640,7 @@ func (d *driver) checkRulingsIDMints(out io.Writer) int {
 func (d *driver) verifyChecks(out io.Writer) int {
 	branch, status := d.gitOut("symbolic-ref", "--quiet", "--short", "HEAD")
 	if status != 0 {
-		return d.stop(2, "this checkout isn't on a branch, so nothing was landed", []string{"git", "switch", "main"}, repeat)
+		return d.stop(2, landingstate.Phrase("this-checkout-isn-t-on-a-branch-so-nothing"), []string{"git", "switch", "main"}, repeat)
 	}
 	d.branch = branch
 	if d.request.Carried != "" && branch != "main" {
@@ -661,7 +662,7 @@ func (d *driver) verifyChecks(out io.Writer) int {
 func (d *driver) stageChanges(out io.Writer) int {
 	if !d.request.StagedOnly {
 		if len(d.request.Pathspecs) == 0 {
-			return d.optionStop("nothing to land: no --path and no --staged, so nothing was landed", "name the files with --path, or land what is staged with --staged")
+			return d.optionStop(landingstate.Phrase("nothing-to-land-no-path-and-no-staged-so"), "name the files with --path, or land what is staged with --staged")
 		}
 		if status := d.gitTo(out, append([]string{"add", "--"}, d.request.Pathspecs...)...); status != 0 {
 			return status
@@ -724,7 +725,7 @@ func (d *driver) checkReceiptLine(out io.Writer) int {
 	}
 	decision, err := d.owners.ReceiptLine(d.request.Root, tree, goal, d.request.DirectFix)
 	if err != nil {
-		return d.failed(1, "the receipt record couldn't be read, so nothing was landed", err)
+		return d.failed(1, landingstate.Phrase("the-receipt-record-couldn-t-be-read-so-nothing"), err)
 	}
 	if decision.Refused {
 		detail := decision.Detail
@@ -737,14 +738,14 @@ func (d *driver) checkReceiptLine(out io.Writer) int {
 			d.git(append([]string{"reset", "-q", "--"}, d.request.Pathspecs...)...)
 		}
 		if decision.Removed {
-			return d.stop(2, "the change deletes the receipt record, so nothing was landed", nil,
+			return d.stop(2, landingstate.Phrase("the-change-deletes-the-receipt-record-so-nothing-was"), nil,
 				"restore the record and unstage its deletion, then repeat this command", detail)
 		}
 		then := "add the goal's receipt line, stage the record, then repeat this command"
 		if decision.Command != "" {
 			then = "add the line with " + decision.Command + ", stage the record, then repeat this command"
 		}
-		return d.stop(2, "the change touches code but adds no receipt line for it, so nothing was landed", nil, then, detail)
+		return d.stop(2, landingstate.Phrase("the-change-touches-code-but-adds-no-receipt-line"), nil, then, detail)
 	}
 	fmt.Fprintln(out, decision.Encoded)
 	return 0
@@ -786,14 +787,14 @@ func (d *driver) checkSuppliedTestReceipt(out io.Writer) int {
 		testRun = append(testRun, "--goal", d.request.Goal)
 	}
 	if failure != "" {
-		return d.stop(2, "the test receipt can't be read ("+failure+"), so nothing was landed", testRun,
+		return d.stop(2, "the test receipt can't be read ("+failure+landingstate.Phrase("so-nothing-was-landed-2"), testRun,
 			"makes a new one; pass it with --test-receipt, then repeat this command", "receipt: "+path)
 	}
 	if tree == candidate {
 		return 0
 	}
 	mismatch := fmt.Sprintf("the receipt at %s names tree %s but the staged candidate is %s", path, tree, candidate)
-	stale := "the test receipt is for other files than the staged change, so nothing was landed"
+	stale := landingstate.Phrase("the-test-receipt-is-for-other-files-than-the")
 	if !workspacePresent {
 		return d.stop(2, stale, testRun, "makes one for this change; pass it with --test-receipt, then repeat this command", mismatch)
 	}
@@ -985,7 +986,7 @@ func (d *driver) loadRecertificationFacts(out io.Writer) int {
 		return status
 	}
 	if strings.HasPrefix(d.request.Recertification, "/") {
-		return d.optionStop("--recertification takes the record's path inside the repository, not an absolute path, so nothing was landed",
+		return d.optionStop(landingstate.Phrase("recertification-takes-the-record-s-path-inside-the-repository"),
 			"name it relative to the repository root")
 	}
 	var record struct {
@@ -1028,7 +1029,7 @@ func (d *driver) parkRecertified(reason, detail string) {
 	}
 	writeDetails(d.details, "PARK-FAILED cause="+reason, detail, output)
 	d.stopped.Reason = ""
-	d.stop(1, "chain "+d.request.Chain+" stopped ("+recertificationCause(reason)+") and couldn't be set aside either", nil,
+	d.stop(1, "chain "+d.request.Chain+landingstate.Phrase("stopped")+recertificationCause(reason)+") and couldn't be set aside either", nil,
 		"fix the cause (--verbose shows it), then land the chain again")
 	exitLanding(1)
 }
@@ -1038,7 +1039,7 @@ func (d *driver) parkRecertified(reason, detail string) {
 func recertificationCause(reason string) string {
 	switch reason {
 	case "chain-recertification-target-moved":
-		return "main moved while it was being landed"
+		return landingstate.Phrase("main-moved-while-it-was-being-landed")
 	case "chain-recertification-test-command-refused", "chain-full-gate-refused":
 		return "its tests haven't passed for this exact change"
 	case "chain-recertification-source-changed":

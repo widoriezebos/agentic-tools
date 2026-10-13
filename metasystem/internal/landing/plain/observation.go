@@ -76,9 +76,14 @@ func shadowInputs(home string) []string {
 	for _, name := range []string{"state.json", "resume-record-finding.json", "queue.jsonl", "batch.json", "running.json", "results.jsonl", "gates.jsonl", "pushes.jsonl", "stops.jsonl", "agent-step.json", "agent-idle.json", "drain.json", "regenerating.json", "stop-question", "hand-in-fetches.jsonl"} {
 		paths = append(paths, filepath.Join(Dir(record.Install), name))
 	}
-	for _, pattern := range []string{filepath.Join(Dir(record.Install), "fixes", "*.json")} {
+	for _, pattern := range []string{filepath.Join(Dir(record.Install), "fixes", "*.json"), filepath.Join(Dir(record.Install), "incidents", "*.json")} {
 		files, _ := filepath.Glob(pattern)
 		paths = append(paths, files...)
+	}
+	var running Running
+	data, _ := os.ReadFile(runningPath(record.Install))
+	if json.Unmarshal(data, &running) == nil && running.Log != "" {
+		paths = append(paths, running.Log)
 	}
 	files, _ := filepath.Glob(filepath.Join(home, "launch", "*", "record.json"))
 	for _, path := range files {
@@ -214,7 +219,7 @@ func captureObservation(home string, expected *lane.Record, seams ProveSeams, bu
 	if build != nil {
 		view = build(readonly)
 	} else {
-		view = lane.BuildView(lane.ViewSources{Home: home, Now: readonly.now(), Owner: readonly.AgentProbe, Wake: KeeperWake(home, readonly)})
+		view = lane.BuildView(lane.ViewSources{Home: home, Now: readonly.now(), Owner: readonly.AgentProbe, Ready: readonly.AgentReady, Wake: KeeperWake(home, readonly)})
 	}
 	status, raw := observe(home, a.Lane, view, readonly, checkoutGit(a.Lane.Root, readonly))
 	raw.Anchors, raw.Previous = a, shadow

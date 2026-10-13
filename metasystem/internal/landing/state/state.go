@@ -28,7 +28,7 @@ type Fact struct {
 	Since Since  `json:"since"`
 }
 type Lane struct {
-	Fact
+	Fact   `json:",inline"`
 	By     string `json:"by"`
 	Reason string `json:"reason"`
 }
@@ -52,14 +52,16 @@ type Member struct {
 	SHA  string `json:"sha"`
 }
 type Batch struct {
-	ID        string   `json:"id"`
-	Execution Fact     `json:"execution"`
-	Admission Fact     `json:"admission"`
-	Members   []Member `json:"members"`
-	Base      string   `json:"base"`
+	SealedAt  time.Time `json:"sealed_at"`
+	MainMove  string    `json:"main_move"`
+	ID        string    `json:"id"`
+	Execution Fact      `json:"execution"`
+	Admission Fact      `json:"admission"`
+	Members   []Member  `json:"members"`
+	Base      string    `json:"base"`
 }
 type HandIn struct {
-	Fact
+	Fact    `json:",inline"`
 	Goal    string    `json:"goal"`
 	SHA     string    `json:"sha"`
 	Ordinal int       `json:"ordinal"`
@@ -67,20 +69,34 @@ type HandIn struct {
 	At      time.Time `json:"at"`
 }
 type Resolution struct {
-	Fact
-	Goal string `json:"goal"`
-	Job  string `json:"job"`
+	Reason      string    `json:"reason"`
+	Commit      string    `json:"commit"`
+	CheckResult string    `json:"check_result"`
+	LaunchError string    `json:"launch_error"`
+	Paths       []string  `json:"paths"`
+	Units       []string  `json:"units"`
+	Round       int       `json:"round"`
+	LaunchAt    time.Time `json:"launch_at"`
+	ReadPending bool      `json:"read_pending"`
+	Fact        `json:",inline"`
+	Goal        string `json:"goal"`
+	Job         string `json:"job"`
 }
 type Proof struct {
-	Fact
+	Fact        `json:",inline"`
 	Attempt     string           `json:"attempt"`
 	Scope       string           `json:"scope"`
+	Trunk       bool             `json:"trunk"`
+	Members     []Member         `json:"members"`
 	LoadAtStart *hostload.Sample `json:"load_at_start"`
 }
 type Main struct {
-	Fact
-	Commit        string   `json:"commit"`
-	OpenIncidents []string `json:"open_incidents"`
+	Reason         string `json:"reason"`
+	Flakes         string `json:"flakes"`
+	FlakePublished bool   `json:"flake_published"`
+	Fact           `json:",inline"`
+	Commit         string   `json:"commit"`
+	OpenIncidents  []string `json:"open_incidents"`
 }
 type Question struct {
 	ID      string `json:"id"`
@@ -92,10 +108,18 @@ type Holds struct {
 	SelectionPending bool  `json:"selection_pending"`
 	Since            Since `json:"since"`
 }
+type EngineIncident struct {
+	At    time.Time `json:"at"`
+	Verb  string    `json:"verb"`
+	Panic string    `json:"panic"`
+}
 type Engine struct {
-	Stamp string `json:"stamp"`
+	Incidents []EngineIncident `json:"incidents"`
+	Stamp     string           `json:"stamp"`
 }
 type Record struct {
+	Stop            *Stop        `json:"stop,omitempty"`
+	RemedyCommand   string       `json:"remedy_command,omitempty"`
 	Lane            Lane         `json:"lane"`
 	Agent           Agent        `json:"agent"`
 	Batch           Batch        `json:"batch"`
@@ -108,6 +132,13 @@ type Record struct {
 	Engine          Engine       `json:"engine"`
 	Version         int          `json:"version"`
 	LastObservation *Observation `json:"last_observation,omitempty"`
+}
+type Stop struct {
+	Subject string   `json:"subject"`
+	Kind    string   `json:"kind"`
+	Name    string   `json:"name"`
+	Command string   `json:"command"`
+	Tests   []string `json:"tests"`
 }
 type Event struct {
 	RecordID string    `json:"record_id,omitempty"`
@@ -205,10 +236,20 @@ func Diff(a, b Record) (changed []string) {
 			}
 			return
 		}
-		changed = append(changed, fmt.Sprintf("%s: %v → %v", path, x.Interface(), y.Interface()))
+		changed = append(changed, fmt.Sprintf("%s: %s → %s", path, diffValue(x), diffValue(y)))
 	}
 	walk("", reflect.ValueOf(a), reflect.ValueOf(b))
 	return changed
+}
+
+func diffValue(value reflect.Value) string {
+	if value.Kind() == reflect.Pointer {
+		if value.IsNil() {
+			return "<nil>"
+		}
+		return diffValue(value.Elem())
+	}
+	return fmt.Sprint(value.Interface())
 }
 
 func locked(dir string, change func() error) error {

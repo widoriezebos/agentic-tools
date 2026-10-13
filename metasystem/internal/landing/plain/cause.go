@@ -2,6 +2,7 @@ package plain
 
 import (
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"slices"
 	"strings"
@@ -58,7 +59,7 @@ func (r *ReturnRefused) Error() string {
 			why += " (" + strings.Join(c.Tests, ", ") + ")"
 		}
 	}
-	return "goal " + r.Goal + " was not returned: the lane's last check found " + why + ". Only a goal's own defect sends it back."
+	return "goal " + r.Goal + landingstate.Phrase("was-not-returned-the-lane-s-last-check-found") + why + ". Only a goal's own defect sends it back."
 }
 
 // ReturnProven checks and records a return under the same queue lock. A person's
@@ -117,7 +118,7 @@ func ReturnProven(install, goal, kind, reason string, person bool, by string, no
 		}
 		if person && proof.Cause != nil && proof.Cause.Kind == "main" && kind != "main" {
 			at := resultTime(proof).Local().Format("2006-01-02 15:04 MST")
-			reason += "; the lane's last check attributed main at " + at + "; the person returned the goal as " + kind
+			reason += "; the lane's last check attributed main at " + at + landingstate.Phrase("the-person-returned-the-goal-as") + kind
 		}
 		entry, changed, readErr = returnLocked(install, goal, reason, cause, nil, now, effects...)
 		return readErr

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -74,7 +75,7 @@ func runRegeneration(home, install string, running RunningRegeneration, argv []s
 		}
 	}()
 	if _, paused := lane.ReadPause(home); paused {
-		return errors.New("the landing lane is stopped")
+		return errors.New(landingstate.Phrase("the-landing-lane-is-stopped"))
 	}
 	drain, drainErr := ReadDrain(install)
 	if drainErr != nil {

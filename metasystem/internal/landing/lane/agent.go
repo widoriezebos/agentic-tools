@@ -11,6 +11,7 @@ package lane
 import (
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"path/filepath"
 	"strings"
 	"time"
@@ -333,15 +334,15 @@ func (k AgentKeeper) Run() (out AgentRun) {
 			result.Outcome = AgentPaused
 			if err := k.Cancel(id); err != nil {
 				result.Outcome = AgentFailed
-				result.Line = fmt.Sprintf("the landing agent %s started at %s as the lane was paused by %s, and could not be stopped: %v; run: metasystem work stop %s", id, root, by, err, id)
+				result.Line = fmt.Sprintf(landingstate.Phrase("the-landing-agent-s-started-at-s-as-the"), id, root, by, err, id)
 				if changedLane || !paused {
-					result.Line = fmt.Sprintf("the landing agent %s changed its registered lane or selected work while starting and could not be stopped: %v; run: metasystem work stop %s", id, err, id)
+					result.Line = fmt.Sprintf(landingstate.Phrase("the-landing-agent-s-changed-its-registered-lane-or"), id, err, id)
 				}
 			} else {
-				result.Line = fmt.Sprintf("the landing agent %s started at %s as the lane was paused by %s, and was stopped again", id, root, by)
+				result.Line = fmt.Sprintf(landingstate.Phrase("the-landing-agent-s-started-at-s-as-the-2"), id, root, by)
 				if changedLane || !paused {
 					result.Outcome = AgentHeld
-					result.Line = "the landing agent " + id + " was stopped because its registered lane or selected work changed while it started"
+					result.Line = "the landing agent " + id + landingstate.Phrase("was-stopped-because-its-registered-lane-or-selected-work")
 				}
 			}
 		}
@@ -360,7 +361,7 @@ func (k AgentKeeper) scope(record Record) string {
 }
 
 func pausedLine(root, by string) string {
-	return fmt.Sprintf("the landing agent at %s is not started: the lane is paused by %s; metasystem landing start resumes it", root, by)
+	return fmt.Sprintf(landingstate.Phrase("the-landing-agent-at-s-is-not-started-the"), root, by)
 }
 
 // recheck is what may stop a start between the decision and the launch: the
@@ -378,7 +379,7 @@ func (k AgentKeeper) recheck(record Record) (AgentRun, bool) {
 		return agentRun(AgentHeld, root, fmt.Sprintf("the landing agent at %s is not started: whether one runs can't be read (%v)", root, err)), true
 	}
 	if running {
-		return AgentRun{Outcome: AgentRunning, Launch: id, Root: root, Line: fmt.Sprintf("the landing agent %s is running at %s", id, root)}, true
+		return AgentRun{Outcome: AgentRunning, Launch: id, Root: root, Line: fmt.Sprintf(landingstate.Phrase("the-landing-agent-s-is-running-at-s"), id, root)}, true
 	}
 	at, starting, err := AgentStarting(k.Home, k.Now())
 	if err != nil {

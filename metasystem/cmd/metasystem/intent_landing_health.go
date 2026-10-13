@@ -13,12 +13,15 @@ import (
 func landingHealthCommand() intentCommand {
 	return laneCommand(intentCommand{object: "landing", action: "health", audience: "both", maxArgs: 0,
 		summary:  "show the lane's health facts and the observations that need attention",
-		usage:    []string{"metasystem landing health [--rules] [--json]"},
-		flags:    []intentFlag{{name: "rules", usage: "print each record retirement rule"}},
-		examples: []string{"metasystem landing health", "metasystem landing health --json", "metasystem landing health --rules"},
+		usage:    []string{"metasystem landing health [--rules] [--words] [--json]"},
+		flags:    []intentFlag{{name: "rules", usage: "print each record retirement rule"}, {name: "words", usage: "print each lane state phrase and its intent verb"}},
+		examples: []string{"metasystem landing health", "metasystem landing health --json", "metasystem landing health --rules", "metasystem landing health --words"},
 	}, runIntentLandingHealth)
 }
 func runIntentLandingHealth(inv *intentInvocation, admitted laneAdmitted) int {
+	if inv.input.has("words") {
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: state.WordsText(), Data: state.WordsText()})
+	}
 	if inv.input.has("rules") {
 		var lines []string
 		for _, row := range state.Lifecycle {

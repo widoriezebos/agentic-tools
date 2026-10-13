@@ -3,6 +3,7 @@ package landpath
 import (
 	"bytes"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"io"
 	"regexp"
 	"strconv"
@@ -186,7 +187,7 @@ func (b *boundary) held(epoch string) int {
 	if b.agent && request.OwnerLineage == "" {
 		return b.stop(2, "this agent shell doesn't say which session it is, so nothing was committed", nil,
 			"export METASYSTEM_OWNER_LINEAGE in the session's shell, then repeat this command",
-			"the checkout is held under a claim, and an agent commit names its owner lineage")
+			landingstate.Phrase("the-checkout-is-held-under-a-claim-and-an"))
 	}
 	if request.Carried != "" && (!request.GoalSet || request.LedgerTip == "" || request.CarriedBy == "" || request.CarriedPast == "") {
 		return b.stop(2, "a carried commit needs its goal, ledger tip, person and past refusal; one is missing", nil, "",
@@ -367,7 +368,7 @@ func (b *boundary) proveAndCommit() int {
 	// starts neither tests nor builds. A carried landing defers that
 	// judgment into its observer so a readable red battery can be carried.
 	if b.owners.ConfValue(request.Root, "testing.contract") == "" {
-		return b.stop(1, "metasystem.conf names no test contract (testing.contract), so nothing can be landed", nil,
+		return b.stop(1, landingstate.Phrase("metasystem-conf-names-no-test-contract-testing-contract-so"), nil,
 			"add testing.contract to the committed metasystem.conf", "there is no landing without a testing contract")
 	}
 	if request.Carried == "" {
@@ -555,11 +556,11 @@ func (b *boundary) decideAndCommit(settledTree string) int {
 			decided = read
 			executable, err := b.owners.LiveEngine()
 			if err != nil {
-				return b.failed(1, "the running metasystem program can't be read, so nothing was committed", err)
+				return b.failed(1, landingstate.Phrase("the-running-metasystem-program-can-t-be-read-so"), err)
 			}
 			digest, err := fileDigest(b.owners, executable)
 			if err != nil {
-				return b.failed(1, "the running metasystem program can't be read, so nothing was committed", err)
+				return b.failed(1, landingstate.Phrase("the-running-metasystem-program-can-t-be-read-so"), err)
 			}
 			judgeTrailer = "live sha256=" + digest
 		} else {

@@ -12,7 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
@@ -176,11 +176,11 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 			}
 		}
 		fmt.Fprintln(&out, "\n### drift")
-		events, skipped, err := state.ReadEvents(Dir(install))
+		events, skipped, err := landingstate.ReadEvents(Dir(install))
 		if err != nil {
 			fmt.Fprintf(&out, "- The lane shadow events cannot be read: %s\n", err)
 		} else if skipped > 0 {
-			fmt.Fprintf(&out, "- %s\n", state.SkippedEvidence(skipped))
+			fmt.Fprintf(&out, "- %s\n", landingstate.SkippedEvidence(skipped))
 		}
 		day := now.Local().Format("2006-01-02")
 		for _, event := range events {
@@ -273,7 +273,7 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 				}
 			}
 		}
-		summary = fmt.Sprintf("hour to %s: %d landed, %d returned, %d red (goal %d, main %d, flake %d, unknown %d), oldest goal %g min, %d acts, %d overdue records", now.Local().Format("15:04"), landed, returned, reds, causes["goal"], causes["main"], causes["flake"], causes["unknown"], oldest, count, overdue)
+		summary = fmt.Sprintf(landingstate.Phrase("hour-to-s-d-landed-d-returned-d-red"), now.Local().Format("15:04"), landed, returned, reds, causes["goal"], causes["main"], causes["flake"], causes["unknown"], oldest, count, overdue)
 		fmt.Fprintf(&out, "\n%s\n\n", summary)
 		path := filepath.Join(Dir(install), "steward-report.md")
 		old, err := os.ReadFile(path)

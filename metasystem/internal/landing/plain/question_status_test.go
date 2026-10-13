@@ -29,7 +29,7 @@ func TestStatusHeadlineNamesOpenLaneQuestion(t *testing.T) {
 	if _, err := channel.Withdraw(install, q.ID, "restored", nil, channel.DestinationConfig{}); err != nil {
 		t.Fatal(err)
 	}
-	if status = ReadStatus(t.TempDir(), lane.Record{Root: install, Install: install}, lane.View{Root: &root, Summary: "idle"}, seams); status.Summary != "idle" {
+	if status = ReadStatus(t.TempDir(), lane.Record{Root: install, Install: install}, lane.View{Root: &root, Summary: "idle"}, seams); status.Summary != "idle; its landing agent starts when there is work" {
 		t.Fatalf("closed question holds status: %s", status.Summary)
 	}
 }

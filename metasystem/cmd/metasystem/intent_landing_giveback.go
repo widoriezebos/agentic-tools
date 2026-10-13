@@ -1,6 +1,7 @@
 package main
 
 import (
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -24,7 +25,7 @@ func landingGiveBackCommand() intentCommand {
 				}
 				return inv.render(*problem)
 			}
-			person, problem := inv.lanePerson("give this goal back", admitted.record.Root)
+			person, problem := inv.landingPersonCheck("give this goal back", admitted.record.Root)
 			if problem != nil {
 				return inv.render(*problem)
 			}
@@ -36,7 +37,7 @@ func landingGiveBackCommand() intentCommand {
 				return inv.render(landingLaneFailure(laneTargets(admitted.record.Root), "the give-back could not finish: "+oneLine(err.Error()), err))
 			}
 			outcome := intentConfirmed
-			if strings.HasPrefix(message, entry.Goal+" is already returned:") || strings.HasPrefix(message, "give-back already pending") || strings.HasPrefix(message, "nothing to give back") {
+			if strings.HasPrefix(message, entry.Goal+landingstate.Phrase("is-already-returned-2")) || strings.HasPrefix(message, "give-back already pending") || strings.HasPrefix(message, "nothing to give back") {
 				outcome = intentUnchanged
 			}
 			details := []string{}

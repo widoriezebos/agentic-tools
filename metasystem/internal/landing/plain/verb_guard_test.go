@@ -149,7 +149,7 @@ func TestLegacySealWaitUsesItsSavedObservation(t *testing.T) {
 	shadow := state.Record{Batch: state.Batch{Admission: state.Fact{Since: state.Since{At: bedNow, Observed: true}}}}
 	health := Health{Shadow: &shadow, Batch: &BatchHealth{ID: "legacy"}, observedAt: bedNow.Add(time.Hour)}
 	text := health.Text()
-	if !strings.Contains(text, "seen since "+bedNow.Local().Format("2006-01-02 15:04 MST")+" (observed)") {
+	if !strings.Contains(text, "seen since "+bedNow.Local().Format("15:04")+" (the record carries no transition time)") {
 		t.Fatal(text)
 	}
 }

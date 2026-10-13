@@ -14,7 +14,7 @@ func landingResumeCommand() intentCommand {
 		flags:    []intentFlag{{name: "by", value: "NAME", usage: "the enrolled person's name"}},
 		examples: []string{"metasystem landing resume", "metasystem landing resume --by Wido"},
 	}, func(inv *intentInvocation, admitted laneAdmitted) int {
-		person, problem := inv.lanePerson("resume the landing lane", admitted.record.Root)
+		person, problem := inv.landingPersonCheck("resume the landing lane", admitted.record.Root)
 		if problem != nil {
 			return inv.render(*problem)
 		}

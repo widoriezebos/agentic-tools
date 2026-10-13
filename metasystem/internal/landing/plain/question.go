@@ -2,11 +2,9 @@ package plain
 
 import (
 	"encoding/json"
-	"fmt"
 	"regexp"
 	"slices"
 	"strings"
-	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
@@ -15,19 +13,7 @@ import (
 
 // LaneQuestionHeadline names the waiting answer and the person's remedies.
 func LaneQuestionHeadline(q channel.Question) string {
-	waiting := fmt.Sprintf("Waiting for a person's answer to question %s since %s", q.ID, q.OpenedAt.In(time.Local).Format("2006-01-02 15:04 MST"))
-	if channel.LaneStopCommand(q) != "" {
-		return waiting + "; " + q.Facts[0]
-	}
-	fact := ""
-	if len(q.Facts) > 0 {
-		fact = q.Facts[0]
-		if at := strings.IndexAny(fact, ".?!"); at >= 0 {
-			fact = fact[:at+1]
-		}
-		fact += "; "
-	}
-	return waiting + "; " + fact + "metasystem question show channel:" + q.ID + "; withdraw: metasystem question withdraw channel:" + q.ID + " --reason TEXT"
+	return state.Describe(state.Record{Questions: []state.Question{{ID: q.ID, Since: state.Since{At: q.OpenedAt}}}}, state.RenderInputs{Questions: map[string]state.QuestionInput{q.ID: {FirstLine: firstQuestionLine(q), Policy: channel.LaneStopCommand(q) != ""}}}).Questions[0]
 }
 
 var mainQuestionCommit = regexp.MustCompile(`(?i)main is at commit ([0-9a-f]{40})(?:[^0-9a-f]|$)`)
@@ -91,4 +77,11 @@ func laneQuestionFacts(install string, q channel.Question, seams ProveSeams) (f 
 		}
 	}
 	return f, err
+}
+
+func firstQuestionLine(q channel.Question) string {
+	if len(q.Facts) > 0 {
+		return q.Facts[0]
+	}
+	return ""
 }

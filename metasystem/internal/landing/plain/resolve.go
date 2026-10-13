@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -256,7 +257,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 				for _, before := range after {
 					names = append(names, before.Goal)
 				}
-				out.Reason = "conflicts with goal " + strings.Join(names, ", ") + ", which is in the same batch; it is merged again when " + strings.Join(names, ", ") + " has landed"
+				out.Reason = "conflicts with goal " + strings.Join(names, ", ") + ", which is in the same batch; it is merged again when " + strings.Join(names, ", ") + landingstate.Phrase("has-landed")
 				if fix != nil && fix.Tip == sha {
 					out.Reason += "; resolution job " + fix.Job + " cannot resolve"
 				}

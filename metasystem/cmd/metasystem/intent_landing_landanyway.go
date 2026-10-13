@@ -22,7 +22,7 @@ func landingLandAnywayCommand() intentCommand {
 			if problem := inv.selectRoot(); problem != nil {
 				return inv.render(*problem)
 			}
-			person, problem := inv.lanePerson("land this goal anyway", inv.layout.InstallationRoot.Path())
+			person, problem := inv.landingPersonCheck("land this goal anyway", inv.layout.InstallationRoot.Path())
 			if problem != nil {
 				return inv.render(*problem)
 			}

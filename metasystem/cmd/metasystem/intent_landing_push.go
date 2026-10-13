@@ -9,6 +9,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"io"
 	"os"
 	"path/filepath"
@@ -91,12 +92,12 @@ func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners land
 		now, headErr := inHead(entry.SHA)
 		before, oldErr := inOld(entry.SHA)
 		if err := errors.Join(headErr, oldErr); err != nil {
-			failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: whether HEAD contains returned goal "+entry.Goal+" could not be read: "+oneLine(err.Error()), err)
+			failed := landingLaneFailure(laneTargets(admitted.record.Root), landingstate.Phrase("nothing-was-pushed-whether-head-contains-returned-goal")+entry.Goal+" could not be read: "+oneLine(err.Error()), err)
 			return &failed
 		}
 		if now && !before {
 			return &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
-				Summary: "HEAD still contains returned goal " + entry.Goal + "; nothing was pushed",
+				Summary: landingstate.Phrase("head-still-contains-returned-goal") + entry.Goal + "; nothing was pushed",
 				next:    rebuild, nextReason: rebuildReason}
 		}
 	}
@@ -117,10 +118,10 @@ func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners land
 		}
 		design := landing.ObserveDesign(facts, false)
 		if design.RefusesAgent {
-			design.Pair[0] = strings.TrimSuffix(design.Pair[0], "; nothing was landed") + "; nothing was pushed"
+			design.Pair[0] = strings.TrimSuffix(design.Pair[0], landingstate.Phrase("nothing-was-landed")) + "; nothing was pushed"
 			check := plain.DesignCheck{Goal: entry.Goal, Commit: entry.SHA, Verdict: design.Verdict, Reason: design.Pair[0]}
 			if _, _, err := plain.ReturnDesignRefused(admitted.installation, check, admitted.owners.now(), inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))); err != nil {
-				failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: the design refusal of "+entry.Goal+" could not be returned: "+oneLine(err.Error()), err)
+				failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: the design refusal of "+entry.Goal+landingstate.Phrase("could-not-be-returned")+oneLine(err.Error()), err)
 				return &failed
 			}
 			design.Pair[1] = textui.Command(rebuild) + " (" + rebuildReason + ")"
@@ -130,7 +131,7 @@ func (inv *intentInvocation) checkLaneDesigns(admitted laneAdmitted, owners land
 					detail += " governed-by=" + ruling
 				}
 				refused = &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root), Data: design,
-					Summary: strings.TrimSuffix(design.Pair[0], "; nothing was pushed") + "; goal " + entry.Goal + " was returned to its seat; nothing was pushed", next: rebuild,
+					Summary: strings.TrimSuffix(design.Pair[0], "; nothing was pushed") + "; goal " + entry.Goal + landingstate.Phrase("was-returned-to-its-seat-nothing-was-pushed"), next: rebuild,
 					nextReason: rebuildReason,
 					Details:    []string{detail}}
 			} else {
@@ -280,7 +281,7 @@ func (inv *intentInvocation) boardHome() (string, error) {
 func (inv *intentInvocation) writeLandedCards(admitted laneAdmitted, contains func(string, string) func(string) (bool, error), outcome plain.PushOutcome) []string {
 	entries, err := plain.Entries(admitted.installation)
 	if err != nil {
-		return []string{"the landed cards could not be read from the queue: " + err.Error()}
+		return []string{landingstate.Phrase("the-landed-cards-could-not-be-read-from-the") + err.Error()}
 	}
 	checkout := string(admitted.layout.Checkout)
 	inHead := contains(checkout, outcome.Commit)
@@ -316,14 +317,14 @@ func (inv *intentInvocation) writeLandedCards(admitted laneAdmitted, contains fu
 	}
 	var told []string
 	for goal, problem := range problems {
-		told = append(told, fmt.Sprintf("the landed card for %s was not written: %s", goal, problem))
+		told = append(told, fmt.Sprintf(landingstate.Phrase("the-landed-card-for-s-was-not-written-s"), goal, problem))
 	}
 	if len(goals) == 0 {
 		return told
 	}
 	home, err := inv.boardHome()
 	if err != nil {
-		return append(told, "the landed cards were not written: "+err.Error())
+		return append(told, landingstate.Phrase("the-landed-cards-were-not-written")+err.Error())
 	}
 	for _, goal := range goals {
 		if problems[goal] != "" {
@@ -360,7 +361,7 @@ func (inv *intentInvocation) writeLandedCards(admitted laneAdmitted, contains fu
 			}
 		}
 		if problem != "" {
-			told = append(told, fmt.Sprintf("the landed card for %s was not written: %s", goal, problem))
+			told = append(told, fmt.Sprintf(landingstate.Phrase("the-landed-card-for-s-was-not-written-s"), goal, problem))
 		}
 	}
 	return told
@@ -423,13 +424,13 @@ func (inv *intentInvocation) checkLaneHolds(admitted laneAdmitted, owners landin
 		}
 		inside, err := owners.contains(checkout, head)(entry.SHA)
 		if err != nil {
-			failed := landingLaneFailure(laneTargets(admitted.record.Root), "nothing was pushed: whether HEAD contains held goal "+entry.Goal+" could not be read", err)
+			failed := landingLaneFailure(laneTargets(admitted.record.Root), landingstate.Phrase("nothing-was-pushed-whether-head-contains-held-goal")+entry.Goal+" could not be read", err)
 			return &failed
 		}
 		if inside {
 			result := &intentResult{Outcome: intentRefused, code: 1, Targets: laneTargets(admitted.record.Root),
-				Summary: "HEAD contains held goal " + entry.Goal + ": " + entry.Reason + "; nothing was pushed",
-				next:    []string{"git", "-C", checkout, "checkout", "--detach", "origin/main"}, nextReason: "rebuild the batch by merging only waiting goals that are not held, then metasystem landing prove"}
+				Summary: landingstate.Phrase("head-contains-held-goal") + entry.Goal + ": " + entry.Reason + "; nothing was pushed",
+				next:    []string{"git", "-C", checkout, "checkout", "--detach", "origin/main"}, nextReason: landingstate.Phrase("rebuild-the-batch-by-merging-only-waiting-goals-that")}
 			if !sourceHeld[plain.GoalSHA{Goal: entry.Goal, SHA: entry.SHA}] {
 				target := checkout
 				if filepath.IsAbs(entry.Seat) {

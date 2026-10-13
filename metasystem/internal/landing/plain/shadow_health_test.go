@@ -129,7 +129,7 @@ func TestLandingStewardShadowIsEvidenceOnly(t *testing.T) {
 			baseline = append([]string(nil), b.calls...)
 			continue
 		}
-		want := "lane paused, agent idle since " + bedNow.Add(-time.Minute).Local().Format("15:04")
+		want := "paused by the person; lane paused since " + bedNow.Local().Format("15:04") + "; agent idle since " + bedNow.Add(-time.Minute).Local().Format("15:04")
 		if run.Interventions[0].Shadow != want || !reflect.DeepEqual(b.calls, baseline) {
 			t.Fatalf("shadow changed acts or lost evidence: %+v calls=%v baseline=%v", run, b.calls, baseline)
 		}
@@ -137,5 +137,42 @@ func TestLandingStewardShadowIsEvidenceOnly(t *testing.T) {
 		if len(status.Health.Interventions) != 1 || status.Health.Interventions[0].Shadow != want {
 			t.Fatalf("health lost shadow words: %+v", status.Health.Interventions)
 		}
+	}
+}
+
+func TestObservationRetakesEngineIncidentChange(t *testing.T) {
+	t.Parallel()
+	b := newStatusBed(t)
+	seams := shadowSeams()
+	calls := 0
+	seams.Observed = func() {
+		calls++
+		if calls == 1 {
+			if _, err := RecordEngineIncident(b.install, "prove", nil, bedNow, "engine failure", "stack"); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	status := ObserveStatus(b.home, b.record, seams, nil)
+	record := ShadowOf(status, status.Raw)
+	if calls != 2 || len(status.Problems) > 0 || len(record.Engine.Incidents) != 1 {
+		t.Fatalf("incoherent engine observation: reads=%d record=%+v problems=%v", calls, record.Engine, status.Problems)
+	}
+}
+
+func TestObservationFingerprintIncludesProofProgressLog(t *testing.T) {
+	t.Parallel()
+	b := newStatusBed(t)
+	log := filepath.Join(t.TempDir(), "proof.log")
+	if err := os.WriteFile(log, []byte("landing planned 234\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	b.lines("running.json", Running{Log: log})
+	before := recordsFingerprint(b.home)
+	if err := os.WriteFile(log, []byte("landing planned 234\nlanding package unit 1 ok 2\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if recordsFingerprint(b.home) == before {
+		t.Fatal("proof progress changed without invalidating the observation")
 	}
 }

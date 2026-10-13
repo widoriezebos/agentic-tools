@@ -7,6 +7,7 @@ package main
 
 import (
 	"errors"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -31,14 +32,14 @@ func runIntentLandingReturn(inv *intentInvocation, admitted laneAdmitted) int {
 	kind := strings.TrimSpace(inv.input.text("cause"))
 	if len(inv.input.args) != 1 || !(plain.Cause{Kind: kind}).Valid() {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: targets,
-			Summary: "landing return requires one goal and --cause own, main, other, flake, environment, or unclassified; nothing was returned",
+			Summary: landingstate.Phrase("landing-return-requires-one-goal-and-cause-own-main"),
 			next:    inv.publicArgv("landing", "return", "GOAL", "--cause", "CAUSE"), nextReason: "returns GOAL"})
 	}
 	goalID := inv.input.args[0]
 	targets = append(targets, intentTarget{Kind: "goal", ID: goalID})
-	observed, problem := inv.lanePerson("return this goal", admitted.record.Root)
+	observed, problem := inv.landingPersonCheck("return this goal", admitted.record.Root)
 	person := problem == nil
-	if !person && inv.input.has("by") {
+	if !person && (inv.input.has("by") || len(problem.next) >= 3 && problem.next[1] == "system" && problem.next[2] == "enroll") {
 		return inv.render(*problem)
 	}
 	seams := inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))
@@ -59,15 +60,15 @@ func runIntentLandingReturn(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: refused.Error(), next: inv.publicArgv("landing", "status"), nextReason: "shows the cause"})
 	case errors.Is(err, plain.ErrNotWaiting):
 		return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: targets,
-			Summary: "nothing of goal " + goalID + " waits in the landing lane, so nothing was returned",
+			Summary: "nothing of goal " + goalID + landingstate.Phrase("waits-in-the-landing-lane-so-nothing-was-returned"),
 			Details: []string{err.Error()}})
 	case err != nil:
 		return inv.render(landingLaneFailure(targets, "the return of "+goalID+" could not be recorded: "+oneLine(err.Error()), err))
 	}
 	if !changed {
-		summary := goalID + " is already returned: " + entry.Reason
+		summary := goalID + landingstate.Phrase("is-already-returned") + entry.Reason
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: entry, Summary: summary, view: landingDone(summary)})
 	}
-	summary := "returned " + goalID + " at " + shortLandingID(entry.SHA) + " to its seat: " + entry.Reason
+	summary := landingstate.Phrase("returned") + goalID + " at " + shortLandingID(entry.SHA) + " to its seat: " + entry.Reason
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: entry, Summary: summary, Details: inv.writeReturnedCard(goalID), view: landingDone(summary)})
 }

@@ -2,6 +2,7 @@ package lane
 
 import (
 	"errors"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"path/filepath"
 	"time"
 )
@@ -170,7 +171,7 @@ func fence(home, by string, now time.Time) (journal *UnsetJournal, fresh bool, g
 		switch {
 		case err != nil && !(errors.As(err, &refusal) && refusal.Code == CodeRecordIncomplete):
 			return &Refusal{Code: CodeRecordIncomplete,
-				Message: "this computer's landing lane record cannot be read (" + err.Error() + "), so the lane's members are not known and nothing was returned",
+				Message: "this computer's landing lane record cannot be read (" + err.Error() + landingstate.Phrase("so-the-lane-s-members-are-not-known-and"),
 				Fix:     "a person registers the landing checkout again, which replaces the record, then unsets it: metasystem landing set PATH",
 				Argv:    []string{"metasystem", "landing", "set", "PATH"}}
 		case !ok && fenced:

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"path"
 	"path/filepath"
@@ -154,7 +155,7 @@ func ObserveDesign(f DesignFacts, person bool) DesignObservation {
 			r.Pair[0] = line + "; it goes on at your word"
 		} else if r.Mode == "refuse" && r.WouldRefuse {
 			r.RefusesAgent = true
-			r.Pair = [2]string{strings.TrimPrefix(line, "warning: ") + "; nothing was landed", "metasystem goal allow " + f.Goal + " build-without-design --reason TEXT"}
+			r.Pair = [2]string{strings.TrimPrefix(line, "warning: ") + landingstate.Phrase("nothing-was-landed"), "metasystem goal allow " + f.Goal + " build-without-design --reason TEXT"}
 		}
 	}
 	return r
@@ -658,7 +659,7 @@ func observeChainWithFacts(params ObserveParams, change string, facts observatio
 	if params.Goal == "" && params.Actor != "" {
 		if !goalFreeAt(workspace, baseTree) {
 			result := wouldRefuse("goal-binding-missing", provenance)
-			result.Detail = "agent landings are goal work: name the held goal with --goal, or the ledger must be declared Goal-free"
+			result.Detail = landingstate.Phrase("agent-landings-are-goal-work-name-the-held-goal")
 			return result
 		}
 		goalFree = true
@@ -1244,7 +1245,7 @@ func nonBehaviorClassError(resolved map[string]pathclass.Class, changedPaths []s
 	}
 	for _, changedPath := range changedPaths {
 		if resolved[changedPath] == pathclass.Runtime {
-			return &carriageError{code: "runtime-path-refused", err: fmt.Errorf("runtime path %s cannot be landed", changedPath)}
+			return &carriageError{code: "runtime-path-refused", err: fmt.Errorf(landingstate.Phrase("runtime-path-s-cannot-be-landed"), changedPath)}
 		}
 	}
 	var unclassified []string
@@ -1270,12 +1271,12 @@ func nonBehaviorClassError(resolved map[string]pathclass.Class, changedPaths []s
 func heldGoal(workspace observationReader, baseTree, goalID, actor string, want uint64) (*goal.GoalFile, error) {
 	data, present, err := workspace.FileAt(baseTree, "plans/goals/"+goalID+".md")
 	if err != nil || !present {
-		return nil, &carriageError{code: "goal-item-not-held", err: fmt.Errorf("goal item %s is not held by %s", goalID, actor)}
+		return nil, &carriageError{code: "goal-item-not-held", err: fmt.Errorf(landingstate.Phrase("goal-item-s-is-not-held-by-s"), goalID, actor)}
 	}
 	file, problems := goal.ParseFile(data)
 	if len(problems) != 0 || file.Id != goalID || file.State != goal.StateClaimed || file.Claimed == nil ||
 		actor != file.Claimed.Machine+"+"+file.Claimed.Lineage {
-		return nil, &carriageError{code: "goal-item-not-held", err: fmt.Errorf("goal item %s is not held by %s", goalID, actor)}
+		return nil, &carriageError{code: "goal-item-not-held", err: fmt.Errorf(landingstate.Phrase("goal-item-s-is-not-held-by-s"), goalID, actor)}
 	}
 	if want != 0 && file.Claimed.Revision != want {
 		return nil, &carriageError{code: "goal-revision-moved", err: fmt.Errorf("goal item %s is claimed at revision %d; this landing was dispatched under revision %d", goalID, file.Claimed.Revision, want)}
@@ -1354,7 +1355,7 @@ func recordCarriageError(workspace observationReader, baseTree, candidateTree st
 
 	if strings.HasPrefix(changedPath, "memory/") || strings.HasPrefix(changedPath, "development/") {
 		if !present || (existed && !held) {
-			return &carriageError{code: "record-not-owned", err: fmt.Errorf("record %s requires a held goal", changedPath)}
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf(landingstate.Phrase("record-s-requires-a-held-goal"), changedPath)}
 		}
 		return nil
 	}
@@ -1367,7 +1368,7 @@ func recordCarriageError(workspace observationReader, baseTree, candidateTree st
 			return nil
 		}
 		if !held {
-			return &carriageError{code: "record-not-owned", err: fmt.Errorf("existing record %s requires a held goal", changedPath)}
+			return &carriageError{code: "record-not-owned", err: fmt.Errorf(landingstate.Phrase("existing-record-s-requires-a-held-goal"), changedPath)}
 		}
 		if err := appendOnly(workspace, baseTree, candidateTree, changedPath); err != nil {
 			return &carriageError{code: "register-carriage-not-append-only", err: err}
@@ -1589,7 +1590,7 @@ func observeDirectFixWithFacts(params ObserveParams, change string, facts observ
 		if params.Goal == "" && params.Actor != "" {
 			if !goalFreeAt(workspace, baseTree) {
 				result := wouldRefuse("goal-binding-missing", provenance)
-				result.Detail = "agent landings are goal work: name the held goal with --goal, or the ledger must be declared Goal-free"
+				result.Detail = landingstate.Phrase("agent-landings-are-goal-work-name-the-held-goal")
 				return result
 			}
 			provenance += " goal-free"
@@ -1619,7 +1620,7 @@ func observeDirectFixWithFacts(params ObserveParams, change string, facts observ
 		if params.Goal == "" && params.Actor != "" {
 			if !goalFreeAt(workspace, baseTree) {
 				result := wouldRefuse("goal-binding-missing", provenance)
-				result.Detail = "agent landings are goal work: name the held goal with --goal, or the ledger must be declared Goal-free"
+				result.Detail = landingstate.Phrase("agent-landings-are-goal-work-name-the-held-goal")
 				return result
 			}
 			goalFree = true
@@ -1796,7 +1797,7 @@ func exactRevertClassError(resolved map[string]pathclass.Class, paths []string, 
 	}
 	for _, changedPath := range paths {
 		if resolved[changedPath] == pathclass.Runtime {
-			return &exactRevertError{code: "runtime-path-refused", err: fmt.Errorf("runtime path %s cannot be landed", changedPath)}
+			return &exactRevertError{code: "runtime-path-refused", err: fmt.Errorf(landingstate.Phrase("runtime-path-s-cannot-be-landed"), changedPath)}
 		}
 	}
 	var unclassified []string

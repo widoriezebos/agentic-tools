@@ -29,7 +29,7 @@ exit 0
       "reasons": [],
       "unread": []
     },
-    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; metasystem landing start resumes it"
+    "summary": "landing lane /Users/wido/GitHub/agentic-tools-landing: stopped by Wido; run: metasystem landing resume"
   },
   "details": [
     "the lane at /Users/wido/GitHub/agentic-tools-landing starts no landing agent until metasystem landing start"

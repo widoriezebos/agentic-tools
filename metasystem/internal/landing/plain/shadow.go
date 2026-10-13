@@ -16,6 +16,7 @@ import (
 
 // RawFacts retains the records belonging to one status observation.
 type RawFacts struct {
+	EngineIncidents         []state.EngineIncident
 	Err                     error
 	Now                     time.Time
 	Previous                *state.Record
@@ -36,6 +37,7 @@ type RawFacts struct {
 	Anchors                 Anchors
 	AllQuestions            []channel.Question
 	Questions               []state.Question
+	QuestionInputs          map[string]state.QuestionInput
 }
 
 // ShadowOf projects only the supplied observation; it never reads or acts.
@@ -47,6 +49,9 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 		return state.Since{At: raw.Now.UTC(), Observed: true, Source: source}
 	}
 	next := state.Record{}
+	if stop := observation.Stop; stop != nil {
+		next.Stop = stopDescription(*stop)
+	}
 	next.Lane.Word = "running"
 	if observation.Paused {
 		next.Lane.Word = "paused"
@@ -101,6 +106,8 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	}
 	if batch := raw.Batch; batch != nil && !(batch.State == BatchClosed && len(batch.Members) == 0) {
 		next.Batch.ID, next.Batch.Base = batch.ID, batch.Base
+		next.Batch.SealedAt, _ = time.Parse(time.RFC3339Nano, batch.SealedAt)
+		next.Batch.MainMove = observation.MainMove.Kind
 		next.Batch.Execution.Word = batch.State
 		preparedAt := batch.CreatedAt
 		latest := func(stamp string) {
@@ -167,7 +174,7 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 		next.HandIns = append(next.HandIns, one)
 	}
 	if fix := raw.Fix; fix.State != "" {
-		next.Resolution.Goal, next.Resolution.Word, next.Resolution.Job = fix.Goal, fix.State, fix.Job
+		next.Resolution = resolutionDescription(&fix)
 		stamp := fix.At
 		if fix.State == "reviewing" {
 			stamp = fix.ReadStartedAt
@@ -178,6 +185,13 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	}
 	if proof := observation.RunningProof; proof != nil {
 		next.Proof.Attempt, next.Proof.Word = proof.Attempt, proof.State
+		next.Proof.Trunk = raw.Running.Trunk
+		for _, member := range raw.Running.BatchMembers {
+			next.Proof.Members = append(next.Proof.Members, state.Member{Goal: member.Goal, SHA: member.SHA})
+		}
+		if len(next.Proof.Members) == 0 && raw.Batch != nil && raw.Running.BatchID == raw.Batch.ID {
+			next.Proof.Members = append([]state.Member(nil), next.Batch.Members...)
+		}
 		next.Proof.Scope = "full"
 		if raw.Running.Gate {
 			next.Proof.Scope = "gate"
@@ -205,6 +219,14 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	for _, proof := range raw.Results {
 		if proof.Trunk && proof.Commit == raw.Main && (proof.Result == Green || proof.Result == Red) {
 			next.Main.Word, stamp, source = proof.Result, proof.At, "results.jsonl"
+			next.Main.Reason = strings.Join(failingTests(proof.Failed), ", ")
+			if next.Main.Reason == "" {
+				next.Main.Reason = proof.Reason
+			}
+			next.Main.Flakes, next.Main.FlakePublished = "", false
+			if proof.Result == Green {
+				next.Main.Flakes, next.Main.FlakePublished = flakeNames(proof.Flakes), proof.FlakePublished
+			}
 		}
 	}
 	for _, incident := range raw.Incidents {
@@ -216,6 +238,9 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 		stamp, source = push.At, "pushes.jsonl"
 	}
 	next.Main.Since = since(stamp, source)
+	if p := observation.LastProof; next.Main.Word != Red && p != nil && p.Result == Green && len(p.Flakes) > 0 && strings.Contains(p.Reason, "flake on main:") {
+		next.Main.Flakes = flakeNames(p.Flakes)
+	}
 	next.Questions = append([]state.Question(nil), raw.Questions...)
 	next.Holds.Barren, next.Holds.SelectionPending = raw.Agent.Barren, observation.BatchPolicy != nil && observation.BatchPolicy.Value == "person" && raw.Batch == nil
 	holdAt := ""
@@ -231,7 +256,48 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	}
 	next.Holds.Since = since(holdAt, holdSource)
 	next.Engine.Stamp = raw.Engine
+	next.Engine.Incidents = raw.EngineIncidents
 	return state.Carry(raw.Previous, next)
+}
+
+// RenderInputsOf projects transient values without publishing them.
+func RenderInputsOf(observation Status, raw RawFacts) state.RenderInputs {
+	inputs := state.RenderInputs{Now: raw.Now, Unready: observation.Owner.State == lane.OwnerUnready, Unread: observation.Owner.Unread != "", PID: observation.Owner.PID, HandIns: map[int]state.HandInInput{}, Questions: raw.QuestionInputs}
+	if wake := observation.View.Wake; wake != nil {
+		for _, problem := range wake.Unread {
+			if strings.HasPrefix(problem, "hand-in ") {
+				inputs.UnreadHandIn = strings.SplitN(problem, "\n", 2)[0]
+				break
+			}
+		}
+	}
+	if proof := observation.RunningProof; proof != nil {
+		inputs.UnitsDone, inputs.UnitsTotal, inputs.Minutes = proof.UnitsDone, proof.UnitsTotal, proof.Minutes
+	}
+	inputs.ReadMinutes, inputs.CheckMinutes = raw.Fix.ReadMinutes, raw.Fix.CheckMinutes
+	if batch := raw.Batch; batch != nil {
+		inputs.MainCommits = observation.MainMove.Count
+		inputs.WaitingReasons = append([]string(nil), batch.Waiting...)
+		if len(batch.Restarts) > 0 {
+			inputs.RestartReasons = []string{batch.Restarts[len(batch.Restarts)-1].Reason}
+		}
+	}
+	for i, entry := range observation.Queue {
+		one := state.HandInInput{}
+		if b := raw.Batch; b != nil && b.State != BatchClosed && entry.State == StateWaiting {
+			selected, sameGoal := false, false
+			for _, m := range b.Members {
+				selected = selected || m.Goal == entry.Goal && m.SHA == entry.SHA
+				sameGoal = sameGoal || m.Goal == entry.Goal
+			}
+			if !entry.Held && !selected {
+				one.WaitNext = !b.Open || sameGoal
+				one.WaitFix = !one.WaitNext && (observation.RunningFix != nil || raw.Running.Checkpoint && raw.Running.BatchID == b.ID)
+			}
+		}
+		inputs.HandIns[raw.Ordinals[i]] = one
+	}
+	return inputs
 }
 
 func shadowEngine(install string) (string, error) {

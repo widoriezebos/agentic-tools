@@ -9,6 +9,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"strings"
 	"time"
 
@@ -106,7 +107,7 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 	switch entry.State {
 	case plain.StateLanded:
 		return &intentResult{Targets: targets, Outcome: intentUnchanged, Data: data,
-			Summary: fmt.Sprintf("%s at %s landed on main through the landing lane; the goal stays open until done", subject, plain.Short(entry.SHA)),
+			Summary: fmt.Sprintf(landingstate.Phrase("s-at-s-landed-on-main-through-the-landing"), subject, plain.Short(entry.SHA)),
 			next:    inv.publicArgv("goal", "done", goalID, "--reason", "TEXT"), nextReason: "concludes it"}
 	case plain.StateReturned:
 		if sha != "" && inv.input.has("again") {
@@ -114,11 +115,11 @@ func (inv *intentInvocation) laneQueueState(targets []intentTarget, install, goa
 		}
 		if entry.Conflict != nil {
 			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-				Summary: fmt.Sprintf("%s at %s was returned: %s", subject, plain.Short(entry.SHA), entry.Reason),
+				Summary: fmt.Sprintf(landingstate.Phrase("s-at-s-was-returned-s"), subject, plain.Short(entry.SHA), entry.Reason),
 				next:    inv.publicArgv("work", "rebase", goalID)}
 		}
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data,
-			Summary: fmt.Sprintf("%s at %s was returned: %s", subject, plain.Short(entry.SHA), entry.Reason),
+			Summary: fmt.Sprintf(landingstate.Phrase("s-at-s-was-returned-s"), subject, plain.Short(entry.SHA), entry.Reason),
 			next:    inv.sameCommand(), nextReason: "after the fix is pushed to " + entry.Branch + ", hands it in again; or metasystem work land " + goalID + " --again when the return no longer applies"}
 	}
 	if len(entry.After) > 0 {
@@ -377,7 +378,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	return intentResult{Targets: targets, Outcome: outcome, Data: map[string]any{"route": "lane", "queue": entry},
 		Details: details,
 		Summary: summary,
-		next:    inv.sameCommand(), nextReason: "shows whether it waits, landed or was returned"}
+		next:    inv.sameCommand(), nextReason: landingstate.Phrase("shows-whether-it-waits-landed-or-was-returned")}
 }
 
 func (inv *intentInvocation) writeJoinedCard(goal string) []string {
@@ -500,7 +501,7 @@ func (inv *intentInvocation) writeReturnedCard(goal string) []string {
 		})
 	}
 	if err != nil {
-		return []string{"the returned card for " + goal + " was not written: " + err.Error()}
+		return []string{landingstate.Phrase("the-returned-card-for") + goal + " was not written: " + err.Error()}
 	}
 	return nil
 }

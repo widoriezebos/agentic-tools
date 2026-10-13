@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
@@ -27,9 +28,14 @@ func TestLandingHealthTextJSONAndReadOnly(t *testing.T) {
 			t.Fatalf("%v: exit %d: %s", args, code, text)
 		}
 		if args[len(args)-1] != "--json" {
-			for _, group := range []string{"lane idle; nothing fires", "goals:", "batch:", "agent:", "questions:", "incidents:", "engine:", "proofs:", "load:"} {
+			for _, group := range []string{"lane idle; nothing fires", "agent:\n  alive false:  (unmeasured min); last step: ; waiting-on:", "engine: unknown; stale false", "proofs: [] min; median unmeasured; running unmeasured min", "load:"} {
 				if !strings.Contains(text, group) {
 					t.Fatalf("missing %s: %s", group, text)
+				}
+			}
+			for _, header := range []string{"goals:", "batch:", "questions:", "incidents:"} {
+				if strings.Contains(text, header) {
+					t.Fatalf("empty header %s: %s", header, text)
 				}
 			}
 		} else {
@@ -68,6 +74,9 @@ func TestLandingHealthTextJSONAndReadOnly(t *testing.T) {
 		if code != 0 || !strings.Contains(out, "abandoned-resolution") || !strings.Contains(out, "overdue-goal") {
 			t.Fatalf("abandoned health: %d %s", code, out)
 		}
+		if args[len(args)-1] != "--json" && !strings.Contains(out, "g: waiting (95 min); waiting for admission to the batch") {
+			t.Fatalf("goal's measured facts missing: %s", out)
+		}
 		idemSameTree(t, "abandoned resolution health", before, idemTreeDigest(t, b.checkout))
 		idemSameTree(t, "abandoned resolution health home", home, idemTreeDigest(t, b.home))
 	}
@@ -95,7 +104,7 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 	stop, err := json.Marshal(plain.Stop{Loop: "lane-proof", Subject: "waiting", Decision: "stop", At: laneTestNow.UTC().Format(time.RFC3339Nano), Class: "waiting goal needs proof"})
 	helmMust(t, err)
 	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.installation), "stops.jsonl"), append(stop, '\n'), 0600))
-	_, err = plain.RefreshShadow(b.home, time.Now().UTC(), "fixture", plain.ProveSeams{})
+	_, err = plain.RefreshShadow(b.home, time.Now().UTC(), "fixture", plain.ProveSeams{AgentReady: func(root string) error { return lane.UnarmedRefusal(root) }})
 	helmMust(t, err)
 	for _, args := range [][]string{{"landing", "health"}, {"landing", "health", "--json"}, {"landing", "health", "unexpected"}} {
 		cmd := exec.CommandContext(t.Context(), engine, args...)
@@ -172,7 +181,7 @@ func TestLandingHealthCLIRealEntrypoint(t *testing.T) {
 		t.Fatalf("CLI used the finished step's start for inactivity: %s", out)
 	}
 	helmMust(t, plain.WriteFix(b.installation, &plain.Fix{Attempt: "resolution", Goal: "g", Commit: b.main, Tip: "missing", State: "resolving", Units: []string{"unit"}, Paths: []conflict.Path{{Path: "x"}}}))
-	_, err = plain.RefreshShadow(b.home, time.Now().UTC(), "fixture", plain.ProveSeams{})
+	_, err = plain.RefreshShadow(b.home, time.Now().UTC(), "fixture", plain.ProveSeams{AgentReady: func(root string) error { return lane.UnarmedRefusal(root) }})
 	helmMust(t, err)
 	for _, args := range [][]string{{"landing", "health"}, {"landing", "health", "--json"}} {
 		before, home := idemTreeDigest(t, b.checkout), idemTreeDigest(t, b.home)

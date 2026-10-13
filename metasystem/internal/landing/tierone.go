@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,7 +70,7 @@ func observeTierOne(params ObserveParams, change string, facts observationFacts)
 	if params.Goal == "" && params.Actor != "" {
 		if !goalFreeAt(workspace, baseTree) {
 			result := refuse("goal-binding-missing", provenance)
-			result.Detail = "agent landings are goal work: name the held goal with --goal, or the ledger must be declared Goal-free"
+			result.Detail = landingstate.Phrase("agent-landings-are-goal-work-name-the-held-goal")
 			return result
 		}
 		provenance += " goal-free"

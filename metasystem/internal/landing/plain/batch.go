@@ -14,7 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 const (
@@ -39,7 +39,7 @@ func PolicyDecision(value PolicyValue, readErr error) error {
 	if readErr != nil {
 		return fmt.Errorf("the batch policy cannot be read; no selection was admitted: %w", readErr)
 	}
-	if state.Admissibility(state.AdmissionFacts{Selecting: true, Policy: value.Value}).Word != "admissible" {
+	if landingstate.Admissibility(landingstate.AdmissionFacts{Selecting: true, Policy: value.Value}).Word != "admissible" {
 		return &Refusal{Code: "LANE_BATCH_PERSON", Reason: "the batch policy requires a person's selection", Next: "metasystem landing run --goals GOALS"}
 	}
 	return nil
@@ -153,7 +153,7 @@ func PersonSelection(install, checkout string, registered lane.Record, goals []s
 		batch.Selector = policy
 		person.Kind, person.Destination, person.Subject = "selection", registered, members
 		batch.Person = &person
-		if s.Pause != nil && state.Actor(state.ActorFacts{Provenance: batch.Person != nil}).Word == state.Person {
+		if s.Pause != nil && landingstate.Actor(landingstate.ActorFacts{Provenance: batch.Person != nil}).Word == landingstate.Person {
 			if pause, paused := s.Pause(); paused && !pause.Unreadable() {
 				batch.Person.StandingPause = &pause
 			}
@@ -677,7 +677,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 			return batch, err
 		}
 	}
-	if batch.State == BatchPrepared && admit && state.Admissibility(state.AdmissionFacts{Selecting: true, PersonSeal: batch.Person != nil || batch.SealedAt != ""}).Word == "admissible" {
+	if batch.State == BatchPrepared && admit && landingstate.Admissibility(landingstate.AdmissionFacts{Selecting: true, PersonSeal: batch.Person != nil || batch.SealedAt != ""}).Word == "admissible" {
 		policy, err := s.batchPolicy()
 		if err := PolicyDecision(policy, err); err != nil {
 			return batch, err
@@ -816,7 +816,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 		}
 		selected := slices.Contains(batch.Members, GoalSHA{Goal: entry.Goal, SHA: entry.SHA})
 		if !selected || entry.State != StateWaiting || entry.Held {
-			return batch, batchRefusal("the candidate contains an unselected, superseded, returned or held hand-in: " + entry.Goal)
+			return batch, batchRefusal(landingstate.Phrase("the-candidate-contains-an-unselected-superseded-returned-or-held") + entry.Goal)
 		}
 	}
 	for _, member := range batch.Members {
@@ -834,7 +834,7 @@ func checkBatchLocked(install, checkout, commit, main string, prefix, admit bool
 				return batch, err
 			}
 			if inside && !onMain {
-				return batch, batchRefusal("the candidate contains a superseded, returned or held selected hand-in: " + member.Goal)
+				return batch, batchRefusal(landingstate.Phrase("the-candidate-contains-a-superseded-returned-or-held-selected") + member.Goal)
 			}
 			continue
 		}
@@ -875,12 +875,12 @@ func memberAccounted(entries []Entry, member GoalSHA, checkout, main string, s P
 func automaticBatch(batch Batch) bool { return batch.Selector.Value == "auto" && batch.Person == nil }
 
 func batchAdmission(batch Batch, entry Entry) (string, string) {
-	decision := state.Admissibility(admissionFacts(batch, entry))
+	decision := landingstate.Admissibility(admissionFacts(batch, entry))
 	return decision.Word, decision.Fact
 }
 
-func admissionFacts(batch Batch, entry Entry) state.AdmissionFacts {
-	return state.AdmissionFacts{
+func admissionFacts(batch Batch, entry Entry) landingstate.AdmissionFacts {
+	return landingstate.AdmissionFacts{
 		PersonSeal: batch.Person != nil || slices.ContainsFunc(batch.Actions, func(a BatchAction) bool { return a.Kind == "seal" && a.By != "" && a.At == batch.SealedAt }),
 		CapReached: strings.TrimLeft(batch.Selector.Value, "0") == "1", Policy: batch.Selector.Value,
 		Selected: slices.ContainsFunc(batch.Members, func(m GoalSHA) bool { return m.Goal == entry.Goal }),

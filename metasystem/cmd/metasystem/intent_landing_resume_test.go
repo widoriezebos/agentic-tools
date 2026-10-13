@@ -102,7 +102,7 @@ func TestLandingResumeRequiresPerson(t *testing.T) {
 	b := newSelectionBed(t)
 	before := idemTreeDigest(t, b.home)
 	code, out := b.run(t, b.seat, "landing", "resume", "--json")
-	if code == 0 || !strings.Contains(out, "only the person") {
+	if code == 0 || !strings.Contains(out, "this terminal is not enrolled for the landing install; type: metasystem system enroll --name NAME") {
 		t.Fatalf("exit=%d: %s", code, out)
 	}
 	idemSameTree(t, "unproved resume", before, idemTreeDigest(t, b.home))

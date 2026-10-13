@@ -3,6 +3,7 @@ package plain
 import (
 	"encoding/json"
 	"fmt"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"path/filepath"
 	"slices"
@@ -305,7 +306,7 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 							if needed, err := movedIncidentMain(install, subject.Lane.Root, main, incidents, effects[0]); err != nil {
 								return err
 							} else if needed {
-								because = "main moved to " + main + "; proving it again"
+								because = "main moved to " + main + landingstate.Phrase("proving-it-again")
 							}
 						}
 					}

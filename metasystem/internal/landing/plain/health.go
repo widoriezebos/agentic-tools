@@ -12,20 +12,21 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
 
 // Health is the lane's recorded evidence and measured ages; reading it acts on nothing.
 type Health struct {
-	Drift               []Fired           `json:"drift,omitempty"`
-	ObservationProblem  string            `json:"observation_problem,omitempty"`
-	Shadow              *state.Record     `json:"shadow,omitempty"`
-	Flakes              []goal.FlakeFact  `json:"flakes,omitempty"`
-	FlakeGoalStates     map[string]string `json:"flake_goal_states,omitempty"`
-	Report              string            `json:"report,omitempty"`
-	ReportPath          string            `json:"-"`
-	Interventions       []Intervention    `json:"interventions,omitempty"`
-	Refusals            []Intervention    `json:"refusals,omitempty"`
+	description         landingstate.Description
+	Drift               []Fired              `json:"drift,omitempty"`
+	ObservationProblem  string               `json:"observation_problem,omitempty"`
+	Shadow              *landingstate.Record `json:"shadow,omitempty"`
+	Flakes              []goal.FlakeFact     `json:"flakes,omitempty"`
+	FlakeGoalStates     map[string]string    `json:"flake_goal_states,omitempty"`
+	Report              string               `json:"report,omitempty"`
+	ReportPath          string               `json:"-"`
+	Interventions       []Intervention       `json:"interventions,omitempty"`
+	Refusals            []Intervention       `json:"refusals,omitempty"`
 	observedAt          time.Time
 	StateReason         string           `json:"state_reason,omitempty"`
 	AdmissibleWaiting   []string         `json:"admissible_waiting,omitempty"`
@@ -141,16 +142,16 @@ func measured(value *float64) string {
 
 func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string, results []Result, queue []Line, install, checkout string, seams ProveSeams, git laneGit) (*Health, error) {
 	h := &Health{State: "idle", Shadow: status.Shadow, Drift: shadowRows(status), Goals: []GoalHealth{}, Questions: []QuestionHealth{}, Incidents: []IncidentHealth{}, AbandonedResolution: abandoned, LastProof: status.LastProof}
-	engineIncidents, incidentErr := EngineIncidents(install)
-	if incidentErr != nil {
-		return nil, incidentErr
+	if !status.Raw.Now.IsZero() {
+		h.description = landingstate.Describe(ShadowOf(status, status.Raw), RenderInputsOf(status, status.Raw))
 	}
-	for _, incident := range engineIncidents {
-		h.Drift = append(h.Drift, Fired{Row: "engine-incident", Subject: fmt.Sprintf("an engine incident at %s in landing %s: %s", incident.At.Local().Format("15:04"), incident.Verb, incident.Panic)})
+	for _, incident := range status.Raw.EngineIncidents {
+		d := landingstate.Describe(landingstate.Record{Engine: landingstate.Engine{Incidents: []landingstate.EngineIncident{incident}}}, landingstate.RenderInputs{})
+		h.Drift = append(h.Drift, Fired{Row: "engine-incident", Subject: d.Headline})
 	}
 
 	now := seams.now()
-	shadow := state.Record{}
+	shadow := landingstate.Record{}
 	if status.Shadow != nil {
 		shadow = *status.Shadow
 	}
@@ -167,7 +168,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		return nil, err
 	}
 	for _, stop := range stops {
-		if state.StopOwner(state.StopFacts{Recorded: true, Loop: stop.Loop}).Word == state.Loop {
+		if landingstate.StopOwner(landingstate.StopFacts{Recorded: true, Loop: stop.Loop}).Word == landingstate.Loop {
 			h.Stops = append(h.Stops, stop)
 		}
 	}
@@ -198,9 +199,9 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		h.State = "stopped"
 	case lane.OwnerHeld:
 		h.State = "held"
-		h.StateReason = strings.TrimPrefix(status.View.AgentSummary(false), "held ")
+		h.StateReason = strings.TrimPrefix(status.View.AgentSummary(false), landingstate.Phrase("held"))
 	case lane.OwnerRunning:
-		h.State = "agent running"
+		h.State = landingstate.Phrase("agent-running")
 	}
 	if status.RunningFix != nil && status.RunningFix.State == "resolving" {
 		h.State = "resolving"
@@ -299,7 +300,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		h.Agent.WaitingOn = "fix/resolution " + f.Attempt + " (" + f.State + ") since " + waitSince(since, shadow.Resolution.Since, now)
 	}
 	if r := status.RunningRegeneration; r != nil && r.State == "running" {
-		h.Agent.WaitingOn = "regeneration " + r.Goal + " since " + waitSince(r.Since, state.Since{}, now)
+		h.Agent.WaitingOn = "regeneration " + r.Goal + " since " + waitSince(r.Since, landingstate.Since{}, now)
 	}
 	h.Agent.Silent = h.Agent.Alive && h.Agent.Minutes != nil && *h.Agent.Minutes > 20 && h.Agent.WaitingOn == ""
 	main := status.Raw.Main
@@ -342,7 +343,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			if e.State != StateWaiting {
 				continue
 			}
-			handInSince := state.Since{}
+			handInSince := landingstate.Since{}
 			for _, entry := range shadow.HandIns {
 				if entry.Goal == e.Goal && entry.SHA == e.SHA && entry.Word == e.State {
 					handInSince = entry.Since
@@ -528,7 +529,7 @@ func (h Health) Rows() []Fired {
 		}
 	}
 	if h.Proofs.Drift {
-		fire("proof-drift", "running proof", h.Proofs.Running, fmt.Sprintf("%s min against a median of %s; load at start %s/end %s", measured(h.Proofs.Running), measured(h.Proofs.Median), measured(h.Load.AtStart), measured(h.Load.AtEnd)))
+		fire("proof-drift", landingstate.Phrase("running-proof"), h.Proofs.Running, fmt.Sprintf("%s min against a median of %s; load at start %s/end %s", measured(h.Proofs.Running), measured(h.Proofs.Median), measured(h.Load.AtStart), measured(h.Load.AtEnd)))
 	}
 	if h.AbandonedResolution != "" {
 		fire("abandoned-resolution", h.AbandonedResolution, nil, "rebuild the merge on the current main")
@@ -598,36 +599,57 @@ func (h Health) Text() string {
 	}
 	var out strings.Builder
 	fmt.Fprintln(&out, h.Line())
+	d := h.description
+	if d.Headline == "" && h.Shadow != nil {
+		d = landingstate.Describe(*h.Shadow, landingstate.RenderInputs{})
+	}
+	fmt.Fprintln(&out, d.Headline)
+	fmt.Fprintln(&out, strings.Join(d.Facts, "\n"))
+	inputs := landingstate.RenderInputs{Health: map[string][]landingstate.MeasuredFact{}}
+	for _, goal := range h.Goals {
+		inputs.Health["goals"] = append(inputs.Health["goals"], landingstate.MeasuredFact{Subject: goal.Goal, Word: goal.State, Minutes: goal.Minutes, Reason: goal.Reason})
+	}
+	if batch := h.Batch; batch != nil {
+		names := []string{}
+		for _, member := range batch.Members {
+			names = append(names, member.Goal)
+		}
+		admission := "sealed"
+		if batch.Open {
+			admission = "open"
+		}
+		inputs.Health["batch"] = append(inputs.Health["batch"], landingstate.MeasuredFact{Subject: batch.ID, Word: batch.State, Minutes: batch.Minutes, Reason: "members: " + strings.Join(names, ", ") + "; admission: " + admission})
+		for _, arrival := range batch.Waiting {
+			inputs.Health["batch"] = append(inputs.Health["batch"], landingstate.MeasuredFact{Subject: arrival.Goal, Word: arrival.Admission, Reason: "boundary: " + arrival.Boundary + "; " + arrival.Reason})
+		}
+	}
+	inputs.Health["agent"] = []landingstate.MeasuredFact{{Subject: fmt.Sprintf("alive %t", h.Agent.Alive), Word: h.Agent.Verb, Minutes: h.Agent.Minutes, Reason: "last step: " + h.Agent.Verb + "; waiting-on: " + h.Agent.WaitingOn}}
+	if pause := h.Paused; pause != nil {
+		inputs.Health["paused"] = []landingstate.MeasuredFact{{Subject: "lane", Word: landingstate.Paused, Minutes: pause.Minutes, Reason: pause.Reason}}
+	}
+	for _, question := range h.Questions {
+		minutes := question.Minutes
+		inputs.Health["questions"] = append(inputs.Health["questions"], landingstate.MeasuredFact{Subject: question.ID, Word: question.Premise, Minutes: &minutes, Reason: question.WaitsFor})
+	}
+	facts := landingstate.Describe(landingstate.Record{}, inputs).HealthFacts
+	for _, section := range []string{"goals", "batch", "agent", "paused", "questions"} {
+		if len(facts[section]) > 0 {
+			fmt.Fprintln(&out, section+":")
+			for _, fact := range facts[section] {
+				fmt.Fprintln(&out, "  "+fact)
+			}
+		}
+	}
 	fmt.Fprintln(&out, "report: "+h.ReportPath)
-	fmt.Fprintf(&out, "goals: %d\n", len(h.Goals))
-	for _, g := range h.Goals {
-		fmt.Fprintf(&out, "  %s: %s, %s min; %s\n", g.Goal, g.State, measured(g.Minutes), g.Reason)
-	}
-	fmt.Fprintln(&out, "batch:")
-	if b := h.Batch; b != nil {
-		since := state.Since{}
-		if h.Shadow != nil {
-			since = h.Shadow.Batch.Admission.Since
-		}
-		fmt.Fprintf(&out, "  %s: open %t, sealed %s, %d members, %s min\n", b.ID, b.Open, waitSince(b.SealedAt, since, h.observedAt), len(b.Members), measured(b.Minutes))
-		for _, a := range b.Waiting {
-			fmt.Fprintf(&out, "  %s: %s; %s; %s\n", a.Goal, a.Boundary, a.Admission, a.Reason)
-		}
-	} else {
-		fmt.Fprintln(&out, "  none")
-	}
-	fmt.Fprintf(&out, "agent: alive %t; last step %s, %s min; waiting on %s\n", h.Agent.Alive, h.Agent.Verb, measured(h.Agent.Minutes), h.Agent.WaitingOn)
-	if p := h.Paused; p != nil {
-		fmt.Fprintf(&out, "paused: since %s, %s min; %s\n", lane.LocalText(p.Since), measured(p.Minutes), p.Reason)
-	}
 	for _, stop := range h.Stops {
 		fmt.Fprintf(&out, "open loop stop: %s; %s; %s\n", stop.Loop, stop.Words(), stop.Command())
 	}
-	fmt.Fprintln(&out, "questions:")
-	for _, q := range h.Questions {
-		fmt.Fprintf(&out, "  %s: %s, %g min, premise %s; %s\n", q.ID, q.Kind, q.Minutes, q.Premise, q.WaitsFor)
+	for _, q := range d.Questions {
+		fmt.Fprintln(&out, q)
 	}
-	fmt.Fprintln(&out, "incidents:")
+	if len(h.Incidents) > 0 {
+		fmt.Fprintln(&out, "incidents:")
+	}
 	for _, i := range h.Incidents {
 		fmt.Fprintf(&out, "  %s: commit %s, %s, class %s, attribution %v, repeat %s, main moved %t, unproven %t\n", i.ID, i.Commit, i.Test, i.Class, i.Attribution, i.Repeat, i.MainMoved, i.Unproven)
 	}
@@ -635,7 +657,7 @@ func (h Health) Text() string {
 	if h.Engine.Known {
 		known = h.Engine.Revision
 	}
-	fmt.Fprintf(&out, "engine: %s; stale %t\nproofs: %v min; median %s; running %s min\n", known, h.Engine.Stale, h.Proofs.Durations, measured(h.Proofs.Median), measured(h.Proofs.Running))
+	fmt.Fprintf(&out, landingstate.Phrase("engine-s-stale-t-proofs-v-min-median-s"), known, h.Engine.Stale, h.Proofs.Durations, measured(h.Proofs.Median), measured(h.Proofs.Running))
 	for index, sample := range h.Proofs.Samples {
 		fmt.Fprintf(&out, "  proof %d: load at start %s/end %s\n", index+1, measured(sample.AtStart), measured(sample.AtEnd))
 	}
@@ -647,7 +669,9 @@ func (h Health) Text() string {
 	for _, r := range h.Rows() {
 		fmt.Fprintf(&out, "%s: %s (%s min): %s\n", r.Row, r.Subject, r.Minutes, r.Act)
 	}
-	fmt.Fprintln(&out, "interventions:")
+	if len(h.Interventions) > 0 {
+		fmt.Fprintln(&out, "interventions:")
+	}
 	for _, act := range h.Interventions {
 		fmt.Fprintf(&out, "  %s: %s; %s; %s; %s\n", lane.LocalText(act.At), act.What, act.Why, act.How, act.Outcome)
 	}
@@ -690,14 +714,14 @@ func admissionAtSeal(batch Batch, entry Entry, lines []Line, incidents []goal.Tr
 	}
 	for _, recorded := range slices.Backward(HoldEntries(entriesOf(snapshot), open)) {
 		if recorded.Goal == entry.Goal && recorded.SHA == entry.SHA {
-			decision := state.Admissibility(admissionFacts(batch, recorded))
+			decision := landingstate.Admissibility(admissionFacts(batch, recorded))
 			return decision.Word, decision.Fact
 		}
 	}
 	return "unknown", "the queue cannot establish eligibility at the seal"
 }
 
-func waitSince(stamp string, since state.Since, _ time.Time) string {
+func waitSince(stamp string, since landingstate.Since, _ time.Time) string {
 	if at, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
 		return lane.LocalText(at.Format(time.RFC3339Nano))
 	}

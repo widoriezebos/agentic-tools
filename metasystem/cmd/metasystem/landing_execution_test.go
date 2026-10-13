@@ -153,7 +153,7 @@ func TestLandingExecutionLaterPauseStopsKeeperAndVerbs(t *testing.T) {
 	helmMust(t, err)
 	before := b.starts
 	code, text := b.run(t, "landing", "run")
-	if code != 0 || b.starts != before || !strings.Contains(text, "the agent has not started") || !strings.Contains(text, "metasystem landing start") {
+	if code != 0 || b.starts != before || !strings.Contains(text, "the agent has not started") || !strings.Contains(text, "metasystem landing resume") {
 		t.Fatalf("later pause run: %d %s starts=%d", code, text, b.starts)
 	}
 	var pending intentResult
