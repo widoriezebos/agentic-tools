@@ -682,6 +682,11 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	return runner.finish(record, round, outcome)
 }
 
+// PrepareBuildPlan freezes composition for a build whose proof already has an owner.
+func (runner *UnitRunner) PrepareBuildPlan(plan UnitPlan, directory string) (UnitPlan, error) {
+	return runner.roundProofPlan(plan, directory, true)
+}
+
 func (runner *UnitRunner) roundProofPlan(plan UnitPlan, directory string, proofPlanned bool, revision ...*UnitRevisionRequest) (UnitPlan, error) {
 	path := filepath.Join(directory, "plan.json")
 	if _, err := os.Stat(path); err == nil {

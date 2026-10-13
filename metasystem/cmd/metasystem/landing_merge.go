@@ -50,9 +50,26 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 		}
 		var job launch.Record
 		if fix.Job == "" {
-			fix.Job, fix.Brief = fmt.Sprintf("lane-merge-%x", sha256.Sum256([]byte(fix.Attempt)))[:63], inv.callerPath(inv.input.text("brief"))
-			if err = plain.WriteFix(root, fix); err == nil {
-				job, err = runner.Manager.Start(launch.StartSpec{ID: fix.Job, Kind: "build", Goal: fix.Goal, Tag: fix.Units[0], WorkingDirectory: checkout, Brief: fix.Brief, UnitsPage: fix.Brief, Units: fix.Units})
+			id := fmt.Sprintf("lane-merge-%x", sha256.Sum256([]byte(fix.Attempt)))[:63]
+			directory := filepath.Join(plain.Dir(root), "fixes", id)
+			brief := inv.callerPath(inv.input.text("brief"))
+			plan := launch.UnitPlan{Unit: fix.Units[0], Goal: fix.Goal, Worktree: checkout, Base: fix.Commit,
+				Build: launch.UnitBuildPlan{Brief: brief, UnitsPage: brief, Units: fix.Units, Inputs: []string{}, Outputs: []string{}},
+				Proof: []launch.ProofCommand{{Name: "lane-impact", Dir: root, Argv: []string{"metasystem", "test", "impact"}, Env: []string{}}}}
+			// Merge completion owns the check; only brief preparation belongs to the unit runner.
+			runner.FreezeCheck = nil
+			runner.ComposeUnitBrief = func(plan launch.UnitPlan, directory string, revision *launch.UnitRevisionRequest) (launch.UnitPlan, error) {
+				return inv.composeBuildBrief(plan, directory, revision, "metasystem test impact")
+			}
+			if err = os.MkdirAll(directory, 0o700); err == nil {
+				plan, err = runner.PrepareBuildPlan(plan, directory)
+			}
+			if err == nil {
+				fix.Job, fix.Brief = id, plan.Build.Brief
+				err = plain.WriteFix(root, fix)
+			}
+			if err == nil {
+				job, err = runner.Manager.Start(launch.StartSpec{ID: fix.Job, Kind: "build", Goal: fix.Goal, Tag: fix.Units[0], WorkingDirectory: checkout, Brief: fix.Brief, UnitsPage: fix.Brief, Units: fix.Units, Actor: runner.Actor})
 			}
 		} else {
 			job, err = runner.Manager.Status(fix.Job)

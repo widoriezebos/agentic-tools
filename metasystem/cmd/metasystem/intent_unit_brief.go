@@ -12,14 +12,17 @@ import (
 )
 
 func (inv *intentInvocation) composeUnitBrief(plan launch.UnitPlan, directory string, revision *launch.UnitRevisionRequest) (launch.UnitPlan, error) {
+	return inv.composeBuildBrief(plan, directory, revision, "metasystem test run --unit-run "+filepath.Base(filepath.Dir(directory)))
+}
+
+func (inv *intentInvocation) composeBuildBrief(plan launch.UnitPlan, directory string, revision *launch.UnitRevisionRequest, command string) (launch.UnitPlan, error) {
 	data, err := os.ReadFile(plan.Build.Brief)
 	if err != nil {
 		return plan, err
 	}
-	command := "metasystem test run --unit-run " + filepath.Base(filepath.Dir(directory))
 	prefix := "Before returning, run: " + command + "\n\n"
 	supplied := strings.TrimPrefix(string(data), prefix)
-	person := inv.checkDirectPersonProof("retain supplementary brief text", false) == nil || plan.Check.SelectedBy != "" || revision != nil && revision.Person != ""
+	person := inv.checkDirectPersonProof("retain supplementary brief text", false) == nil || plan.Check != nil && plan.Check.SelectedBy != "" || revision != nil && revision.Person != ""
 	originalPersonBrief := revision != nil && revision.Rebase != nil && plan.BriefSuppliedByPerson
 	if revision == nil || revision.Rebase == nil {
 		plan.BriefSuppliedByPerson = person
@@ -142,7 +145,11 @@ func (inv *intentInvocation) composeUnitBrief(plan launch.UnitPlan, directory st
 	}
 	var out strings.Builder
 	out.WriteString(prefix)
-	fmt.Fprintf(&out, "# Goal\n\nUnit %s of goal %s.\n\n%s\n# Workspace\n\nBranch goal/%s, worktree %s; base %s. Leave changes uncommitted.\n\n# Units\n\n", plan.Unit, plan.Goal, decisions, plan.Goal, plan.Worktree, referenceBase)
+	workspace := "Branch goal/" + plan.Goal
+	if command == "metasystem test impact" {
+		workspace = "Landing lane merge"
+	}
+	fmt.Fprintf(&out, "# Goal\n\nUnit %s of goal %s.\n\n%s\n# Workspace\n\n%s, worktree %s; base %s. Leave changes uncommitted.\n\n# Units\n\n", plan.Unit, plan.Goal, decisions, workspace, plan.Worktree, referenceBase)
 	if lines, err := launch.DeclaredUnitLines(plan.Build.UnitsPage, plan.Unit); err == nil {
 		fmt.Fprintf(&out, "| Unit | Changed lines |\n| --- | ---: |\n| %s | %d |\n", plan.Unit, lines)
 	}
@@ -150,7 +157,7 @@ func (inv *intentInvocation) composeUnitBrief(plan launch.UnitPlan, directory st
 	readerSections := strings.SplitN(inv.briefReaderSections(decision, readers, limits, referenceBase), "# Deletion rules", 2)
 	out.WriteString(readerSections[0])
 	fmt.Fprintf(&out, "\n# A test through the public verb\n\n%s\n# Check\n\n%s\n", acceptance, command)
-	if plan.Check.SelectedBy != "" {
+	if plan.Check != nil && plan.Check.SelectedBy != "" {
 		fmt.Fprintf(&out, "Manual check selected by %s: %s.\n", plan.Check.SelectedBy, plan.Check.Reason)
 	}
 	out.WriteString("\n# Deletion rules" + readerSections[1])

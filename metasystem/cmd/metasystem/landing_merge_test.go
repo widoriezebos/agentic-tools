@@ -22,6 +22,21 @@ import (
 
 func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 	t.Parallel()
+	testLaneMergeBuild(t, "composed")
+}
+
+func TestLaneMergeBuildRefusesConflictingSupplementaryCheck(t *testing.T) {
+	t.Parallel()
+	testLaneMergeBuild(t, "conflicting check")
+}
+
+func TestLaneMergeBuildRefusesUnreadableSupplementaryBrief(t *testing.T) {
+	t.Parallel()
+	testLaneMergeBuild(t, "unreadable brief")
+}
+
+func testLaneMergeBuild(t *testing.T, scenario string) {
+	t.Helper()
 	b := newWorkBed(t)
 	layout, err := b.owners().resolver.ResolveLayout(b.root())
 	if err != nil {
@@ -55,7 +70,23 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 	if _, _, err := plain.HandIn(root, plain.Line{Goal: b.id, SHA: "member"}); err != nil {
 		t.Fatal(err)
 	}
-	brief := b.brief("merge.md", "| Unit | Lines |\n| --- | ---: |\n| lane-merge-1 | 5 |\nResolve both sides.\n")
+	supplied := "| Unit | Lines |\n| --- | ---: |\n| lane-merge-1 | 5 |\nResolve both sides.\n# Check\nmetasystem test impact\n"
+	if scenario == "conflicting check" {
+		supplied = strings.Replace(supplied, "metasystem test impact", "run an unrelated check", 1)
+	}
+	brief := b.brief("merge.md", supplied)
+	if scenario == "unreadable brief" {
+		if err := os.Remove(filepath.Join(checkout, brief)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	design := filepath.Join(b.stateRoot(), "plans/designs/merge.md")
+	if err := os.MkdirAll(filepath.Dir(design), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(design, []byte("# Merge specification\n\n- Kind: design\n- Id: merge-design\n- Status: accepted\n- Goals: "+b.id+"\n\n## Units\n\n| Unit | Lines |\n| --- | ---: |\n| lane-merge-1 | 5 |\n\n## lane-merge-1 — Merge\n\nRetain the accepted merge behavior.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	message := filepath.Join(t.TempDir(), "MERGE_MSG")
 	if err := os.WriteFile(message, []byte("Merge member into batch\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -63,6 +94,13 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 	owners := b.workOwners()
 	owners.landing.home = func() (string, error) { return home, nil }
 	head, commits := "batch", 0
+	git := owners.work.git
+	owners.work.git = func(dir string, args ...string) ([]byte, error) {
+		if dir == checkout && strings.Join(args, " ") == "rev-parse HEAD" {
+			return []byte(head), nil
+		}
+		return git(dir, args...)
+	}
 	owners.landing.plainResolve = plain.ResolveSeams{
 		Git: func(dir string, args ...string) (string, error) {
 			if dir != checkout {
@@ -104,6 +142,16 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 		t.Logf("exit=%d %s", code, lastOutput)
 		return code
 	}
+	if scenario != "composed" {
+		if code := invoke(); code == 0 || len(b.starter.launched()) != 0 {
+			t.Fatalf("invalid composition launched: exit=%d jobs=%v", code, b.starter.launched())
+		}
+		fix, err := plain.ReadFix(root)
+		if err != nil || fix.Job != "" || fix.State != "resolving" {
+			t.Fatalf("invalid composition changed merge custody: %+v %v", fix, err)
+		}
+		return
+	}
 	for range 2 {
 		if code := invoke(); code != 0 {
 			t.Fatalf("build exit=%d", code)
@@ -115,6 +163,46 @@ func TestLaneMergeBuildCollectsOneJobOnBatchTree(t *testing.T) {
 	fix, err = plain.ReadFix(root)
 	if err != nil || fix == nil {
 		t.Fatalf("fix=%+v %v", fix, err)
+	}
+	composed, err := os.ReadFile(fix.Brief)
+	if err != nil {
+		t.Fatal(err)
+	}
+	quoted := "> " + strings.ReplaceAll(supplied, "\n", "\n> ")
+	if !strings.Contains(string(composed), quoted) || strings.Count(string(composed), "\n# Check\n") != 1 || !strings.Contains(string(composed), "# Check\n\nmetasystem test impact\n") || strings.Contains(string(composed), "test run --unit-run") {
+		t.Fatalf("merge build bypassed composition or changed its owned check: %s", composed)
+	}
+	if !strings.Contains(string(composed), "Retain the accepted merge behavior.") || !strings.Contains(string(composed), "Landing lane merge, worktree "+checkout) {
+		t.Fatalf("merge lost its accepted Decision or workspace: %s", composed)
+	}
+	plan, err := launch.ReadUnitPlan(filepath.Join(plain.Dir(root), "fixes", fix.Job, "plan.json"))
+	if err != nil || plan.Base != "batch" || len(plan.Proof) != 1 || strings.Join(plan.Proof[0].Argv, " ") != "metasystem test impact" || plan.Build.Brief != fix.Brief {
+		t.Fatalf("merge did not retain its owned check and brief: %+v %v", plan, err)
+	}
+	if err := os.WriteFile(design, []byte("unreadable design on replay"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(checkout, brief), []byte("changed supplementary text on replay"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code := invoke(); code != 0 {
+		t.Fatalf("frozen replay exit=%d", code)
+	}
+	frozen, err := os.ReadFile(fix.Brief)
+	if err != nil || string(frozen) != string(composed) || len(b.starter.launched()) != 1 {
+		t.Fatalf("replay refreshed composition: %s %v", frozen, err)
+	}
+	build, err := b.manager.Store.Read(fix.Job)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dispatched string
+	if err := json.Unmarshal(build.AdapterData["brief"], &dispatched); err != nil {
+		t.Fatal(err)
+	}
+	actual, err := os.ReadFile(dispatched)
+	if err != nil || string(actual) != string(composed) {
+		t.Fatalf("merge dispatch lost composed bytes: %s %v", actual, err)
 	}
 	if _, err := b.manager.Store.Update(fix.Job, func(record *launch.Record) error { record.State = launch.Completed; return nil }); err != nil {
 		t.Fatal(err)
