@@ -1991,6 +1991,7 @@
       }
     },
     {
+      "fixOpenedAt": "2026-10-13T19:06:39Z",
       "testUnit": "metasystem/internal/adopt",
       "testName": "TestAdoptGitIntegrationVendoredWritersUseApplicationState",
       "id": "flake:9a9ba92fed47aa48be1dc8ac0e83215c363e24e455dede63ebaa57557089cffb",
@@ -2106,7 +2107,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-internal-adopt-testadoptgitintegrationvendoredwritersuseapplicationstate",
       "fixBranch": {
         "name": "",
         "commit": "",
