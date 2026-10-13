@@ -151,7 +151,13 @@ func (owners laneVerbOwners) landingFlakeFixer(installation string) func(goal.Fl
 		if err != nil {
 			return f, err
 		}
-		machine, err := owners.machine(installation)
+		// The agent wires this fixer from empty owners (landing_agent.go); the
+		// machine seam then defaults like the endpoint seam above.
+		resolveMachine := owners.machine
+		if resolveMachine == nil {
+			resolveMachine = goal.ResolveMachine
+		}
+		machine, err := resolveMachine(installation)
 		if err != nil {
 			return f, err
 		}
