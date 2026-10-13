@@ -1978,11 +1978,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261013T085836.621290000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-10-13T09:47:47Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-13T10:33:32Z",
+        "attempt": "20261013T094836.984885000Z",
+        "baseCommit": "15bed69832c422b2b7161fd4ddef7b0f0aa7e476",
+        "how": "green",
+        "opid": "66K3V0XRH86XW55W7E4WSGGF7Q-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "testUnit": "metasystem/internal/adopt",
