@@ -17,8 +17,8 @@ func TestProofBudgetCountsOnlyCompletedFullAttempts(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
 			goals := []GoalSHA{{Goal: "a", SHA: "sha-a"}, {Goal: "b", SHA: "sha-b"}, {Goal: "c", SHA: "sha-c"}}
-			first := Result{Tree: "first", Commit: "first", Result: Red, Attempt: "first", Goals: goals, CountedFull: true}
-			second := Result{Tree: "second", Commit: "second", Result: Green, Attempt: "second", Goals: goals[:2], CountedFull: true}
+			first := Result{Tree: "first", Commit: "first", Result: Red, Attempt: "first", Goals: goals, CountedFull: true, BatchBase: "base"}
+			second := Result{Tree: "second", Commit: "second", Result: Green, Attempt: "second", Goals: goals[:2], CountedFull: true, BatchBase: "base"}
 			refused := false
 			switch name {
 			case "two reds":
@@ -61,7 +61,7 @@ func TestProofBudgetCountsOnlyCompletedFullAttempts(t *testing.T) {
 			seams := ProveSeams{Git: func(string, ...string) (string, error) { return "", nil }}
 			err := withLock(install, func() error { return checkProofBudget(install, "checkout", "third", seams) })
 			var budget *ProofBudget
-			if errors.As(err, &budget) && err.Error() != "this batch used two full checks; goals hold; ask a person to run: metasystem landing prove" {
+			if errors.As(err, &budget) && err.Error() != (&ProofBudget{}).Error() {
 				t.Fatalf("budget remedy: %v", err)
 			}
 			if errors.As(err, &budget) != refused || err != nil && !errors.As(err, &budget) {

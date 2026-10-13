@@ -1,0 +1,11 @@
+# lane-one-state U7 correction 1 (Opus read of 2ca78ad04, 2026-10-13 13:51; one material, three cheap folds)
+
+Working Mode: Implement, on branch build/los7 (worktree /Users/wido/LocalStorage/GitHub/agentic-tools-m1e-los7), as uncommitted changes on top of 2ca78ad04 (folded into that commit by hand). Never commit, push, rebase or reset. No wall clocks, no live-install reads; no files under metasystem/artifacts.
+
+1. F-1 (material): the loop stop's attempt counter (`recordProofStop`, stop.go:259-271) still counts red attempts across bases — it resets only on a loop-close marker or a changed goal set — so after a resume onto a new main the person is asked after ONE red (attempt 3 of 2). Apply the same per-base rule `checkProofBudget` now uses: in the stop.go:261 loop skip results whose base differs from the current result's base when that base is set. Test: two reds on base A, then one red on base B → "repeat"; a second red on B → "stop".
+2. F-2: the terminal line and the enrol hint appear only for a HUMAN at a tty without a helm: an agent in a pty gets no terminal line; a person at a helm whose terminal is enrolled is told "terminal: enrolled for Wido (helm active)", never the enrol hint (intent_landing.go:479-487; use the proof's Helm and EnrolledTerminalFor facts, not any `problem`).
+3. F-3: running the person check for the status line must not change the remedy rewrite (intent.go:912 skips the `lane.Remedy` translation when `laneCallerObserved && !laneCallerPerson`): observe the terminal for the status line without setting the caller flags that other paths read.
+4. F-5: `ProofBudget.Error()` (replay.go:538) no longer says "ask a person to run: metasystem landing prove"; it says "this batch used two full checks on this base; goals hold until a person decides: metasystem landing prove (at the enrolled terminal) or metasystem landing give-back GOAL --reason TEXT", and the enrolled person's override warning does not quote it.
+
+## Checks
+`go vet ./internal/landing/plain ./internal/landing/lane ./cmd/metasystem`; `go test -p 4 -count=1 -timeout 30m ./internal/landing/plain ./internal/landing/lane`; `go test -count=1 -run 'TestLandingProve|TestLandingStatus|TestLandingReplay|TestLandingStop|TestPlainLaneProve|TestHelmDrain|TestEveryStatefulActionRepeatsAsSuccess|TestAudit' ./cmd/metasystem`. One `go test -p 4` at a time, load below 20.

@@ -3,6 +3,7 @@ package plain
 import (
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"go/token"
 	"io"
 	"os"
@@ -265,7 +266,7 @@ func namedUnitTests(unit FailedUnit, contract testpolicy.Contract) ([]string, bo
 }
 
 // replayTree is a prefix of the check's subject, oldest first. Main is true
-// for the proved merge's main parent; Goal identifies the merge ending a later prefix.
+// for the batch's main base; Goal identifies the merge ending a later prefix.
 type replayTree struct {
 	Running
 	Main bool
@@ -285,12 +286,10 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 			return result
 		}
 		if running.Commit != fetchedMain {
-			parents, readErr := seams.git(checkout, "show", "-s", "--format=%P", running.Commit)
-			fields := strings.Fields(parents)
-			if readErr != nil || len(fields) == 0 {
+			main, err = replayBase(checkout, running.Commit, fetchedMain, seams)
+			if err != nil {
 				return result
 			}
-			main = fields[0]
 			if fix, fixErr := currentFix(install, seams); fixErr == nil && fix != nil && fix.Commit == running.Commit {
 				batch, batchErr := ReadBatch(install)
 				if batchErr != nil || batch == nil {
@@ -329,6 +328,31 @@ func replayBatch(seams ProveSeams, install, checkout, command string, running Ru
 		}
 	}
 	return classifyReplay(seams, install, checkout, command, running, result, previous, trees)
+}
+
+// replayBase finds the first main commit on the batch's first-parent chain.
+func replayBase(checkout, tip, main string, seams ProveSeams) (string, error) {
+	seen := map[string]bool{}
+	for commit := tip; commit != "" && !seen[commit]; {
+		seen[commit] = true
+		if commit == main {
+			return commit, nil
+		}
+		inside, err := checkoutGit(checkout, seams).contains(main, commit)
+		if err != nil {
+			return "", err
+		}
+		if inside {
+			return commit, nil
+		}
+		parents, err := seams.git(checkout, "show", "-s", "--format=%P", commit)
+		fields := strings.Fields(parents)
+		if err != nil || len(fields) == 0 {
+			return "", fmt.Errorf("cannot read the batch's main base at %s: %v", commit, err)
+		}
+		commit = fields[0]
+	}
+	return "", fmt.Errorf("the batch's first-parent chain does not reach main")
 }
 
 // classifyReplay attributes only a complete isolated failure after a complete
@@ -513,7 +537,7 @@ func mainFailureIdentity(failed []FailedUnit) string {
 type ProofBudget struct{}
 
 func (*ProofBudget) Error() string {
-	return "this batch used two full checks; goals hold; ask a person to run: metasystem landing prove"
+	return "two full checks went red on this base; a person decides\nmetasystem landing prove, or metasystem landing give-back GOAL --reason TEXT; " + humanauthority.PersonActRemedy("metasystem landing prove")
 }
 
 func subsetGoals(goals, first []GoalSHA) bool {
@@ -531,23 +555,32 @@ func checkProofBudget(install, checkout, commit string, seams ProveSeams) error 
 	if skipped != 0 {
 		return fmt.Errorf("the full-check history contains unreadable lines; a person may request one fresh check")
 	}
+	batch, err := ReadBatch(install)
+	if err != nil {
+		return err
+	}
 	var first []GoalSHA
+	base := ""
 	firstRed := false
 	attempts := map[string]bool{}
 	for _, r := range results {
+		if batch != nil && r.BatchBase != batch.Base {
+			continue
+		}
 		if r.LoopClosed {
 			first, firstRed, attempts = nil, false, map[string]bool{}
 			continue
 		}
-		if r.Trunk || !r.CountedFull || len(r.Goals) == 0 {
+		if r.Trunk || !r.CountedFull || len(r.Goals) == 0 || r.BatchBase == "" {
 			continue
 		}
-		if !subsetGoals(r.Goals, first) {
+		if !subsetGoals(r.Goals, first) || r.BatchBase != base {
 			first, firstRed, attempts = nil, false, map[string]bool{}
 		}
 		if first == nil || !firstRed && r.Result == Red {
 			first = r.Goals
 		}
+		base = r.BatchBase
 		firstRed = firstRed || r.Result == Red
 		if first != nil {
 			attempts[r.Attempt] = r.Result == Red

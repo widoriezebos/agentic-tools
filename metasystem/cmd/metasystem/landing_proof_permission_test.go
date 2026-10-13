@@ -317,7 +317,7 @@ func TestLandingProofPermissionFollowScopeStopCommands(t *testing.T) {
 				selected := b.batch(t)
 				var proofs []plain.Result
 				for _, id := range []string{"first", "second"} {
-					proofs = append(proofs, plain.Result{Commit: head, Tree: tree, Result: plain.Red, Attempt: id, CountedFull: true, Scope: "full", Repeat: "allowed", Goals: selected.Members, BatchID: selected.ID, BatchMembers: selected.Members})
+					proofs = append(proofs, plain.Result{Commit: head, Tree: tree, Result: plain.Red, Attempt: id, CountedFull: true, Scope: "full", Repeat: "allowed", Goals: selected.Members, BatchID: selected.ID, BatchBase: selected.Base, BatchMembers: selected.Members})
 				}
 				writeCauseProof(t, b.installation, file, proofs...)
 				b.configuration = strings.ReplaceAll(b.configuration, "landing.proof=person", "landing.proof=auto")

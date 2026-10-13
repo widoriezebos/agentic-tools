@@ -8,6 +8,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 type lanePersonObservation struct {
@@ -63,7 +64,13 @@ func (inv *intentInvocation) lanePerson(act, target string) (lanePersonObservati
 	}
 	observed.Proof, err = inv.owners.prove(observed.Root, int64(os.Getppid()), nil, "", "", observed.At)
 	if err != nil {
-		return refused(humanauthority.PlainReason(err), err)
+		// The terminal's own refusal names this terminal and the enroll command; a
+		// later, more specific reason (an unnamed enrollment, a --by mismatch) stays.
+		reason := humanauthority.PlainReason(err)
+		if remedy := humanauthority.RemedyFor(observed.Root, err, inv.personName(""), inv.typedArgv()); remedy.Kind == humanauthority.RemedyNotEnrolled || remedy.Kind == humanauthority.RemedyOtherTerminal {
+			reason = "this terminal is not enrolled for the landing install; type: " + strings.Join(remedy.Argv, " ")
+		}
+		return refused(reason, err)
 	}
 	if observed.Proof.Helm != nil || !observed.Proof.EnrolledTerminalFor(observed.Root) {
 		return refused("this shell has no direct enrolled-terminal proof", nil)
@@ -84,4 +91,16 @@ func (inv *intentInvocation) lanePerson(act, target string) (lanePersonObservati
 		}
 	}
 	return observed, nil
+}
+
+func (inv *intentInvocation) laneTerminal() bool {
+	if check := inv.owners.helm.stdinTerminal; check != nil {
+		return check()
+	}
+	stdin := inv.owners.helm.stdin
+	if stdin == nil {
+		stdin = os.Stdin
+	}
+	file, ok := stdin.(*os.File)
+	return ok && textui.IsTerminal(file.Fd())
 }

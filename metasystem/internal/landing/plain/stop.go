@@ -259,6 +259,9 @@ func recordProofStop(install string, result Result) error {
 	}
 	attempts := map[string]bool{}
 	for _, r := range results {
+		if result.BatchBase != "" && r.BatchBase != result.BatchBase {
+			continue
+		}
 		if mode.Gate && r.Tree != result.Tree || r.Trunk && !r.LoopClosed {
 			continue
 		}

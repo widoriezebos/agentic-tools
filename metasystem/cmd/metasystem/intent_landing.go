@@ -476,6 +476,31 @@ func runIntentLandingStatus(inv *intentInvocation) int {
 	if len(view.Owner.Fix) > 0 {
 		result.next, result.nextReason = view.Owner.Fix, laneFixReason(view.Owner.Fix)
 	}
+	if !inv.input.switched("json") && inv.laneTerminal() {
+		// Status observes the terminal without classifying the caller for action remedies.
+		observer := *inv
+		observed, _ := observer.lanePerson("request a lane act", record.Root)
+		if observed.Proof.Outcome != humanauthority.OutcomeAgent {
+			terminal := ""
+			if observed.Proof.EnrolledTerminalFor(observed.Root) {
+				name := observed.Name
+				if observed.Proof.Helm != nil {
+					name = observed.Proof.Helm.By + " (helm active)"
+				}
+				terminal = "terminal: enrolled for " + name
+			} else if observed.Proof.Helm == nil {
+				remedy := humanauthority.RemedyFor(observed.Root, humanauthority.Refused(humanauthority.OutcomeNotEnrolled, nil), inv.personName(""), nil)
+				terminal = "terminal: not enrolled; type: " + strings.Join(remedy.Argv, " ")
+			}
+			if terminal != "" {
+				view := result.view
+				result.view = func(page *textui.Page) {
+					view(page)
+					page.Section("", "").Text(terminal)
+				}
+			}
+		}
+	}
 	return inv.render(result)
 }
 

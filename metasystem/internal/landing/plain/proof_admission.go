@@ -1,6 +1,7 @@
 package plain
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -190,10 +191,14 @@ func admitExecutionLocked(install, checkout, command string, running *Running, d
 		if !running.Trunk {
 			if err := seams.checkBudget(install, checkout, running.Commit); err != nil {
 				if !person || seams.ClassificationOf != "" {
-					return holdProofLocked(install, *running, seams, "LANE_PROOF_BUDGET", "this batch used two full checks; goals hold; ask a person to run: metasystem landing prove")
+					return holdProofLocked(install, *running, seams, "LANE_PROOF_BUDGET", (&ProofBudget{}).Error())
 				}
 				admission.Override = true
-				admission.Warning += "; this one execution exceeds the automatic full-check allowance: " + err.Error()
+				admission.Warning += "; this one execution exceeds the automatic full-check allowance"
+				var budget *ProofBudget
+				if !errors.As(err, &budget) {
+					admission.Warning += ": " + err.Error()
+				}
 			}
 		}
 	}

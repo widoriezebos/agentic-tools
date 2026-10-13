@@ -45,6 +45,7 @@ const (
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
+	BatchBase         string               `json:"batch-base,omitempty"`
 	Launch            *LaunchRecord        `json:"launch,omitempty"`
 	Fresh             bool                 `json:"fresh,omitempty"`
 	Checkpoint        bool                 `json:"checkpoint,omitempty"`
@@ -74,6 +75,8 @@ type Running struct {
 
 // Result is one line of results.jsonl.
 type Result struct {
+	// BatchBase is the main commit on which this attempt's batch was built.
+	BatchBase             string               `json:"batch-base,omitempty"`
 	LoadStart             *hostload.Sample     `json:"load_start,omitempty"`
 	LoadEnd               *hostload.Sample     `json:"load_end,omitempty"`
 	Fresh                 bool                 `json:"fresh,omitempty"`
@@ -373,7 +376,7 @@ func checkState(install, checkout, attempt string, seams ProveSeams) (Running, b
 	}
 	red := Result{Fresh: running.Fresh, Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Attempt: running.Attempt, Log: running.Log,
 		At: seams.now().Format(time.RFC3339), Result: Red, Reason: "the lane's check stopped before it ended", Cause: &Cause{Kind: "environment", Name: "lost-process", Evidence: running.Log}}
-	red.BatchID, red.BatchMembers = running.BatchID, running.BatchMembers
+	red.BatchID, red.BatchMembers, red.BatchBase = running.BatchID, running.BatchMembers, running.BatchBase
 	red.Person, red.Executions, red.ClassificationOf = running.Person, running.Executions, running.ClassificationOf
 	if running.Gate {
 		red.Scope = "gate"
@@ -554,7 +557,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		}
 		started = Running{Fresh: seams.Fresh, Person: seams.Person, Impact: seams.Impact, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Launch: &LaunchRecord{What: "proof", At: seams.now().UTC().Format(time.RFC3339Nano), By: launchBy(seams.Person)}}
 		if batch != nil {
-			started.BatchID, started.BatchMembers = batch.ID, batch.Members
+			started.BatchID, started.BatchMembers, started.BatchBase = batch.ID, batch.Members, batch.Base
 		}
 		command := ""
 		if seams.CommandForCommit != nil {
@@ -675,7 +678,7 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 			return err
 		}
 		if batch != nil {
-			settled.BatchID, settled.BatchMembers = batch.ID, batch.Members
+			settled.BatchID, settled.BatchMembers, settled.BatchBase = batch.ID, batch.Members, batch.Base
 			if !batchGreenReusable(install, batch.ID, from, seams) {
 				return nil
 			}
@@ -812,6 +815,9 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 			}
 			if batch != nil {
 				running.BatchID, running.BatchMembers = batch.ID, batch.Members
+				if attempt == "" {
+					running.BatchBase = batch.Base
+				}
 			}
 		}
 		if seams.CommandForCommit != nil {
@@ -924,7 +930,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		return result, err
 	}
 	result = Result{Fresh: running.Fresh, Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
-	result.BatchID, result.BatchMembers = running.BatchID, running.BatchMembers
+	result.BatchID, result.BatchMembers, result.BatchBase = running.BatchID, running.BatchMembers, running.BatchBase
 	load := seams.Load
 	if load == nil {
 		load = hostload.Read

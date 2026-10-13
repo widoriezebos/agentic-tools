@@ -8,6 +8,39 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 )
 
+func TestProofStopCountsAttemptsOnCurrentBase(t *testing.T) {
+	t.Parallel()
+	install := t.TempDir()
+	for _, attempt := range []struct {
+		base, id, decision string
+		count              int
+	}{{"A", "a1", "repeat", 1}, {"A", "a2", "stop", 2}, {"B", "b1", "repeat", 1}, {"B", "b2", "stop", 2}} {
+		result := Result{BatchBase: attempt.base, Attempt: attempt.id, Result: Red, CountedFull: true,
+			Goals: []GoalSHA{{Goal: "g", SHA: "sha"}}, Repeat: "allowed", Scope: "full",
+			Cause:  &Cause{Kind: "environment", Tests: []string{attempt.id}},
+			Failed: []FailedUnit{{Unit: "check", Tests: []string{attempt.id}}}}
+		if err := withLock(install, func() error {
+			if err := appendLine(resultsPath(install), result); err != nil {
+				return err
+			}
+			return recordProofStop(install, result)
+		}); err != nil {
+			t.Fatal(err)
+		}
+		stops, err := readLines[Stop](stopsPath(install))
+		if err != nil || len(stops) == 0 {
+			t.Fatalf("stop history: %+v %v", stops, err)
+		}
+		got := stops[len(stops)-1]
+		if got.Attempt != attempt.count || got.Decision != attempt.decision {
+			t.Fatalf("%s on base %s: %+v; want attempt %d, %s", attempt.id, attempt.base, got, attempt.count, attempt.decision)
+		}
+		if attempt.id == "b1" && got.Measure.Previous != nil {
+			t.Fatalf("old base supplied the previous red set: %+v", got.Measure)
+		}
+	}
+}
+
 func TestStopClosurePreservesOriginalIdentity(t *testing.T) {
 	t.Parallel()
 	for _, at := range []string{"", "2026-10-06T10:00:00Z"} {

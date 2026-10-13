@@ -107,7 +107,7 @@ func TestLandingHeldFullProofKeepsCandidateMembershipGitAdapter(t *testing.T) {
 				tree := b.git(t, b.checkout, "rev-parse", "HEAD^{tree}")
 				var spent []plain.Result
 				for _, id := range []string{"first", "second"} {
-					spent = append(spent, plain.Result{Attempt: id, Commit: head, Tree: tree, Result: plain.Red, Repeat: "allowed", Scope: "full", CountedFull: true, Goals: selected.Members, BatchID: selected.ID, BatchMembers: selected.Members})
+					spent = append(spent, plain.Result{Attempt: id, Commit: head, Tree: tree, Result: plain.Red, Repeat: "allowed", Scope: "full", CountedFull: true, Goals: selected.Members, BatchID: selected.ID, BatchBase: selected.Base, BatchMembers: selected.Members})
 				}
 				writeCauseProof(t, b.installation, "results.jsonl", spent...)
 				b.configuration = strings.ReplaceAll(b.configuration, "landing.proof=person", "landing.proof=auto")

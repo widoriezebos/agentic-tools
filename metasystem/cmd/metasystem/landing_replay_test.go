@@ -221,7 +221,7 @@ func TestLandingReplayFindsOwnOrMainThroughProve(t *testing.T) {
 			if result.Cause == nil || result.Cause.Kind != kind || result.Repeat != "" || !result.CountedFull {
 				t.Fatalf("classification: %+v", result)
 			}
-			if kind == "own" && (result.Cause.Goal != "b" || result.Cause.SHA != "sha-b" || strings.Join(b.runs, ",") != "merge-b:,merge-a:u/a,merge-a:u/a") {
+			if kind == "own" && (result.Cause.Goal != "b" || result.Cause.SHA != "sha-b" || strings.Join(b.runs, ",") != "merge-b:,main:u/a,main:u/a,merge-a:u/a,merge-a:u/a") {
 				t.Fatalf("merge attribution: %+v runs=%v", result.Cause, b.runs)
 			}
 			wantEvidence := replayFailure

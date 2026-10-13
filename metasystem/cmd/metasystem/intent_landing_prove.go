@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
@@ -164,10 +165,12 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 			Summary: "--impact, --gate and --trunk cannot be used together, so nothing was proven"})
 	}
 	var person *plain.ActProvenance
+	var personProblem *intentResult
 	// The detached child claims the recorded admission; only a fresh public
 	// invocation observes direct authority at the original calling checkout.
 	if inv.input.text("attempt") == "" {
 		observed, problem := inv.lanePerson("request this check", admitted.record.Root)
+		personProblem = problem
 		if problem == nil {
 			person = &plain.ActProvenance{Kind: "proof", Person: observed.Name, Root: observed.Root, CheckedAt: observed.At.UTC(),
 				TerminalGeneration: observed.Proof.TerminalGeneration, TerminalRef: observed.Proof.TerminalRef, Destination: admitted.record}
@@ -182,6 +185,17 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	if inv.input.text("classify") != "" && person == nil {
 		_, problem := inv.lanePerson("classify this saved red", admitted.record.Root)
 		return inv.render(*problem)
+	}
+	proofRefusal := func(err error) intentResult {
+		var held *plain.Refusal
+		var repeat *plain.NoRepeat
+		needsPerson := errors.As(err, &held) && (held.Code == "LANE_PROOF_BUDGET" || held.Code == "LANE_PROOF_PERSON") || errors.As(err, &repeat)
+		if needsPerson && personProblem != nil && inv.laneTerminal() && len(personProblem.next) >= 3 && personProblem.next[1] == "system" && personProblem.next[2] == "enroll" {
+			result := *personProblem
+			result.Summary = strings.TrimSuffix(result.Summary, "; nothing was recorded") + "; nothing was proven"
+			return result
+		}
+		return landingProveRefusal(inv, targets, err)
 	}
 	seams := admitted.owners.proveSeams(admitted.installation)
 	seams = inv.laneBatchSeams(admitted.home, admitted.record, seams)
@@ -227,7 +241,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		result, err := plain.ClassifyAttempt(admitted.installation, checkout, classify, seams)
 		_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 		if err != nil {
-			return inv.render(landingProveRefusal(inv, targets, err))
+			return inv.render(proofRefusal(err))
 		}
 		summary := "classified saved red " + classify + " at " + shortLandingID(result.Commit)
 		if result.Cause != nil {
@@ -248,25 +262,25 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		ref = "origin/main"
 		if inv.input.text("attempt") == "" {
 			if _, err := git(checkout, "fetch", "origin", "main"); err != nil {
-				return inv.render(landingProveRefusal(inv, targets, err))
+				return inv.render(proofRefusal(err))
 			}
 		}
 	}
 	commit, err := git(checkout, "rev-parse", "--verify", ref+"^{commit}")
 	if err != nil {
-		return inv.render(landingProveRefusal(inv, targets, err))
+		return inv.render(proofRefusal(err))
 	}
 	attempt := inv.input.text("attempt")
 	if attempt != "" {
 		running, recorded, _, err := plain.ReadRunning(admitted.installation, seams)
 		if err != nil {
-			return inv.render(landingProveRefusal(inv, targets, err))
+			return inv.render(proofRefusal(err))
 		}
 		if recorded && running.Admission != nil && !seams.Gate && !seams.Trunk && !inv.input.switched("impact") {
 			seams.Impact = running.Impact
 		}
 		if !recorded || running.Attempt != attempt || running.Admission == nil || (running.Admission.State != "launched" && running.Admission.State != "pending") || running.Gate != seams.Gate || running.Trunk != seams.Trunk || running.Impact != seams.Impact {
-			return inv.render(landingProveRefusal(inv, targets, &plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "this background check has no matching unclaimed admission", Next: "metasystem landing prove"}))
+			return inv.render(proofRefusal(&plain.Refusal{Code: "LANE_PROOF_ADMISSION", Reason: "this background check has no matching unclaimed admission", Next: "metasystem landing prove"}))
 		}
 		commit = running.Commit
 		seams.Fresh = running.Fresh
@@ -276,12 +290,12 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	if attempt == "" && !seams.Gate && !seams.Trunk && !seams.Fresh {
 		batch, err := plain.ReadBatch(admitted.installation)
 		if err != nil {
-			return inv.render(landingProveRefusal(inv, targets, err))
+			return inv.render(proofRefusal(err))
 		}
 		if batch != nil && batch.State != plain.BatchClosed {
 			tree, err := git(checkout, "rev-parse", "--verify", commit+"^{tree}")
 			if err != nil {
-				return inv.render(landingProveRefusal(inv, targets, err))
+				return inv.render(proofRefusal(err))
 			}
 			scope, reason := plain.BatchProofDepth(admitted.installation, checkout, plain.Running{Commit: commit, Tree: tree, BatchID: batch.ID}, seams)
 			if scope == "full" || scope == "impact" {
@@ -295,12 +309,12 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	command, err := seams.CommandForCommit(commit)
 	if err != nil {
-		return inv.render(landingProveRefusal(inv, targets, err))
+		return inv.render(proofRefusal(err))
 	}
 	if !inv.input.switched("wait") {
 		settled, ok, err := plain.Settled(admitted.installation, checkout, seams)
 		if err != nil {
-			return inv.render(landingProveRefusal(inv, targets, err))
+			return inv.render(proofRefusal(err))
 		}
 		if ok {
 			summary := provedWords(settled.Commit, settled.Tree) + " is already proven green"
@@ -318,7 +332,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		running, already, err := plain.Start(admitted.installation, checkout, seams)
 		_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 		if err != nil {
-			return inv.render(landingProveRefusal(inv, targets, err))
+			return inv.render(proofRefusal(err))
 		}
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: running,
 			Summary: "proving " + provedWords(running.Commit, running.Tree) + " in the background; end your turn, the keeper wakes the landing agent when it ends"}
@@ -333,31 +347,31 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		var settled bool
 		result, settled, err = plain.Settled(admitted.installation, checkout, seams)
 		if err != nil {
-			return inv.render(landingProveRefusal(inv, targets, err))
+			return inv.render(proofRefusal(err))
 		}
 		if !settled {
 			running, _, startErr := plain.Start(admitted.installation, checkout, seams)
 			_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 			if startErr != nil {
-				return inv.render(landingProveRefusal(inv, targets, startErr))
+				return inv.render(proofRefusal(startErr))
 			}
 			result, err = plain.Wait(admitted.installation, checkout, running, seams)
 		}
 	} else {
 		log, logErr := plain.ProofLog(admitted.installation, attempt)
 		if logErr != nil {
-			return inv.render(landingProveRefusal(inv, targets, logErr))
+			return inv.render(proofRefusal(logErr))
 		}
 		output, logErr := os.OpenFile(log, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0600)
 		if logErr != nil {
-			return inv.render(landingProveRefusal(inv, targets, logErr))
+			return inv.render(proofRefusal(logErr))
 		}
 		defer output.Close()
 		result, err = plain.Run(admitted.installation, checkout, command, attempt, output, seams)
 	}
 	_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 	if err != nil {
-		return inv.render(landingProveRefusal(inv, targets, err))
+		return inv.render(proofRefusal(err))
 	}
 	words := provedWords(result.Commit, result.Tree)
 	if result.Result == plain.Skipped {

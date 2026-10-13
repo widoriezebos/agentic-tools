@@ -100,7 +100,7 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 				result.ClassificationWarning = "the red policy cannot be read: " + readErr.Error()
 			}
 		}
-		running = Running{Attempt: attempt + "-classify-" + seams.newID(), Commit: result.Commit, Tree: result.Tree, BatchID: result.BatchID, BatchMembers: result.BatchMembers, Gate: seams.Gate, Trunk: result.Trunk, Since: seams.now().Format(time.RFC3339Nano), Pid: int64(os.Getpid()), Process: processRef(int64(os.Getpid()))}
+		running = Running{Attempt: attempt + "-classify-" + seams.newID(), Commit: result.Commit, Tree: result.Tree, BatchID: result.BatchID, BatchBase: result.BatchBase, BatchMembers: result.BatchMembers, Gate: seams.Gate, Trunk: result.Trunk, Since: seams.now().Format(time.RFC3339Nano), Pid: int64(os.Getpid()), Process: processRef(int64(os.Getpid()))}
 		// Store the act before any attribution command; the raw result stays intact.
 		if seams.Person != nil {
 			act := *seams.Person

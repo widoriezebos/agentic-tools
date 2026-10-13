@@ -53,7 +53,7 @@ func seedAllowedWholeProof(t *testing.T, b *replayVerbBed) {
 	if err := os.WriteFile(log, []byte(replayFailure), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	writeCauseProof(t, b.install, "results.jsonl", plain.Result{Result: plain.Red, Commit: b.head, Tree: b.head + "-tree", Attempt: "previous-whole", BatchID: batch.ID,
+	writeCauseProof(t, b.install, "results.jsonl", plain.Result{Result: plain.Red, Commit: b.head, Tree: b.head + "-tree", Attempt: "previous-whole", BatchID: batch.ID, BatchBase: batch.Base,
 		Goals: batch.Members, Scope: "full", CountedFull: true, Repeat: "allowed", Log: log, At: laneTestNow.Format(time.RFC3339),
 		Failed: []plain.FailedUnit{{Unit: "u/a", Tests: []string{"TestBroken"}}}, Cause: &plain.Cause{Kind: "unclassified", Evidence: log}})
 }
