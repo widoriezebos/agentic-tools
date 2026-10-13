@@ -620,6 +620,9 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 	if status.RunningFix != nil && (running == nil || running.State != "running") {
 		status.ProofHeadline = fixHeadline(status.RunningFix)
 	}
+	if fix := status.RunningFix; fix != nil && fix.Launch != nil && fix.Launch.Error != "" {
+		status.ProofHeadline = "launch of the resolution failed at " + lane.LocalText(fix.Launch.At) + ": " + fix.Launch.Error
+	}
 	merge := status.RunningFix
 	if merge != nil && merge.Tip != "" && (merge.ReadStartedAt != "" || merge.ReadMinutes > 0) {
 		if merge.State == "reviewing" {

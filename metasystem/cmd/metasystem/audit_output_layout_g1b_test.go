@@ -45,6 +45,7 @@ func g1bLayoutCases() []layoutCase {
 		{name: "landing-drain", args: []string{"landing", "drain"}, bed: landingDrainLayoutBed},
 		{name: "landing-start", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutRunning)},
 		{name: "landing-start-refusal", args: []string{"landing", "start"}, bed: landingLayoutBed(landingLayoutNone)},
+		{name: "landing-incident-none", args: []string{"landing", "incident", "clear", "fixture-incident"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-health-none", args: []string{"landing", "health"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-batch-none", args: []string{"landing", "batch"}, bed: landingLayoutBed(landingLayoutNone)},
 		{name: "landing-resume-none", args: []string{"landing", "resume"}, bed: landingLayoutBed(landingLayoutNone)},

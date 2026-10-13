@@ -45,6 +45,7 @@ const (
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
+	Launch            *LaunchRecord        `json:"launch,omitempty"`
 	Fresh             bool                 `json:"fresh,omitempty"`
 	Checkpoint        bool                 `json:"checkpoint,omitempty"`
 	ClassificationOf  string               `json:"classification-of,omitempty"`
@@ -551,7 +552,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if seams.Trunk {
 			argv = append(argv, "--trunk")
 		}
-		started = Running{Fresh: seams.Fresh, Person: seams.Person, Impact: seams.Impact, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Pid: int64(os.Getpid()), Process: processRef(int64(os.Getpid()))}
+		started = Running{Fresh: seams.Fresh, Person: seams.Person, Impact: seams.Impact, Gate: seams.Gate, Trunk: seams.Trunk, Attempt: id, Tree: tree, Commit: commit, Log: log, Since: seams.now().Format(time.RFC3339), Launch: &LaunchRecord{What: "proof", At: seams.now().UTC().Format(time.RFC3339Nano), By: launchBy(seams.Person)}}
 		if batch != nil {
 			started.BatchID, started.BatchMembers = batch.ID, batch.Members
 		}
@@ -572,8 +573,12 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if err := recordBatchProofAttemptLocked(install, started, seams); err != nil {
 			return err
 		}
+		if err := writeRunning(install, started); err != nil {
+			return err
+		}
 		pid, err := seams.Launch(argv, checkout, log)
 		if err != nil {
+			started.Launch.Error = err.Error()
 			started.setAdmissionState("failed")
 			if writeErr := writeRunning(install, started); writeErr != nil {
 				return errors.Join(err, writeErr)
@@ -582,6 +587,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		}
 		process := processRef(pid)
 		if pid <= 0 || process == "" {
+			started.Launch.Error = "the check process has no readable identity"
 			started.setAdmissionState("failed")
 			if err := writeRunning(install, started); err != nil {
 				return err

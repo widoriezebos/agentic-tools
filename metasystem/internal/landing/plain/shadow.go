@@ -168,11 +168,13 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	}
 	if fix := raw.Fix; fix.State != "" {
 		next.Resolution.Goal, next.Resolution.Word, next.Resolution.Job = fix.Goal, fix.State, fix.Job
-		stamp := ""
+		stamp := fix.At
 		if fix.State == "reviewing" {
 			stamp = fix.ReadStartedAt
 		}
-		next.Resolution.Since = since(stamp, "fixes/"+fix.Attempt+".json")
+		if at, err := time.Parse(time.RFC3339Nano, stamp); err == nil {
+			next.Resolution.Since = state.Since{At: at.UTC()}
+		}
 	}
 	if proof := observation.RunningProof; proof != nil {
 		next.Proof.Attempt, next.Proof.Word = proof.Attempt, proof.State
@@ -189,7 +191,11 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 		if proof.State == "running" {
 			startedAt = proof.Since
 		}
-		next.Proof.Since = since(startedAt, "running.json")
+		if proof.State != "running" {
+			next.Proof.Since = since("", "running.json")
+		} else if at, err := time.Parse(time.RFC3339Nano, startedAt); err == nil {
+			next.Proof.Since = state.Since{At: at.UTC()}
+		}
 	} else if proof := observation.LastProof; proof != nil {
 		next.Proof.Attempt, next.Proof.Word, next.Proof.Scope, next.Proof.LoadAtStart = proof.Attempt, proof.Result, proof.Scope, proof.LoadStart
 		next.Proof.Since = since(proof.At, "results.jsonl")

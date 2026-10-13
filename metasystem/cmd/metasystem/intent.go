@@ -671,6 +671,15 @@ func runIntent(command intentCommand, raw []string, stdout, stderr io.Writer, ow
 }
 
 func runIntentIn(command intentCommand, raw []string, stdout, stderr io.Writer, cwd string, owners intentOwners) int {
+	if command.object == "landing" {
+		return guardLanding(cwd, command.action, raw, stdout, stderr, func(out, err io.Writer) int {
+			return runIntentCore(command, raw, out, err, cwd, owners)
+		}, owners.landing.home)
+	}
+	return runIntentCore(command, raw, stdout, stderr, cwd, owners)
+}
+
+func runIntentCore(command intentCommand, raw []string, stdout, stderr io.Writer, cwd string, owners intentOwners) int {
 	// An owner that prints does so on this invocation's streams, unless the
 	// caller gave the owners streams of their own.
 	if owners.dependencies.stdout == nil {
@@ -1555,7 +1564,7 @@ var intentActionIntents = map[string][]struct {
 	},
 	"landing": {
 		{"Read", []string{"status", "batch", "health"}},
-		{"Work", []string{"batch seal", "batch reopen", "run", "land-anyway", "start", "drain", "stop", "restart", "resume", "deploy", "prove", "push", "return", "give-back", "resolve"}},
+		{"Work", []string{"batch seal", "batch reopen", "run", "land-anyway", "start", "drain", "stop", "restart", "resume", "deploy", "prove", "push", "return", "give-back", "resolve", "incident"}},
 		{"Shape", []string{"set", "unset"}},
 	},
 	"system": {

@@ -225,7 +225,7 @@ func drainExecution(install string, seams ProveSeams) (bool, error) {
 		proofErr = errors.Join(proofErr, fmt.Errorf("%s: test run process is undecidable", runningPath(install)))
 	}
 	regeneration, regenErr := ReadRunningRegeneration(install, seams)
-	if regeneration != nil && seams.Alive == nil && !knownDrainProcess(Running{Pid: regeneration.Pid, Process: regeneration.Process}) {
+	if regeneration != nil && regeneration.State != "launch-failed" && seams.Alive == nil && !knownDrainProcess(Running{Pid: regeneration.Pid, Process: regeneration.Process}) {
 		regenErr = errors.Join(regenErr, fmt.Errorf("%s: regeneration process is undecidable", regenerationRunningPath(install)))
 	}
 	if proofErr != nil {

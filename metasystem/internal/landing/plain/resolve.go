@@ -454,7 +454,7 @@ func Resolve(home, install, checkout string, contract testpolicy.Contract, seams
 						continue
 					}
 					out.Command = append(out.Command, argv)
-					running := RunningRegeneration{Goal: entry.Goal, SHA: sha, Command: argv, Log: out.Log, Since: seams.now().Format(time.RFC3339)}
+					running := RunningRegeneration{Launch: &LaunchRecord{By: launchBy(seams.Proof.Person)}, Goal: entry.Goal, SHA: sha, Command: argv, Log: out.Log, Since: seams.now().Format(time.RFC3339)}
 					err := runRegeneration(home, install, running, argv, dir, log, seams.Run)
 					if err != nil {
 						out.Exit = commandExit(err)
@@ -552,7 +552,7 @@ func replayRegeneration(home, install string, git conflict.Git, sets []testpolic
 			if len(argv) == 0 {
 				continue
 			}
-			running := RunningRegeneration{Goal: goal, SHA: sha, Command: argv, Log: evidence, Since: seams.now().Format(time.RFC3339)}
+			running := RunningRegeneration{Launch: &LaunchRecord{By: launchBy(seams.Proof.Person)}, Goal: goal, SHA: sha, Command: argv, Log: evidence, Since: seams.now().Format(time.RFC3339)}
 			if err := runRegeneration(home, install, running, argv, filepath.Join(install, set.Cwd), log, seams.Run); err != nil {
 				return err
 			}
@@ -583,7 +583,7 @@ func commitResolvedMerge(home, install, checkout string, fix *Fix, check string,
 		return err
 	}
 	defer log.Close()
-	if err := runRegeneration(home, install, RunningRegeneration{Goal: fix.Goal, SHA: fix.Tip, Log: log.Name()}, []string{"env", "LANDING_PROOF_BASE=" + fix.Commit, "/bin/sh", "-c", check}, install, log, seams.Run); err != nil {
+	if err := runRegeneration(home, install, RunningRegeneration{Launch: &LaunchRecord{By: launchBy(seams.Proof.Person)}, Goal: fix.Goal, SHA: fix.Tip, Since: seams.now().Format(time.RFC3339Nano), Log: log.Name()}, []string{"env", "LANDING_PROOF_BASE=" + fix.Commit, "/bin/sh", "-c", check}, install, log, seams.Run); err != nil {
 		return err
 	}
 	return withLock(install, func() error {

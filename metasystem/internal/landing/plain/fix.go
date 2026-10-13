@@ -19,17 +19,19 @@ import (
 
 // Fix is one bounded repair of a batch, retained beside its brief.
 type Fix struct {
-	Attempt      string   `json:"attempt"`
-	ProofAttempt string   `json:"proof_attempt,omitempty"`
-	Round        int      `json:"round"`
-	Parent       string   `json:"parent"`
-	Verdict      string   `json:"verdict,omitempty"`
-	Goal         string   `json:"goal"`
-	Units        []string `json:"units"`
-	Job          string   `json:"job"`
-	Read         string   `json:"read"`
-	Commit       string   `json:"commit"`
-	State        string   `json:"state"`
+	Launch       *LaunchRecord `json:"launch,omitempty"`
+	At           string        `json:"at,omitempty"`
+	Attempt      string        `json:"attempt"`
+	ProofAttempt string        `json:"proof_attempt,omitempty"`
+	Round        int           `json:"round"`
+	Parent       string        `json:"parent"`
+	Verdict      string        `json:"verdict,omitempty"`
+	Goal         string        `json:"goal"`
+	Units        []string      `json:"units"`
+	Job          string        `json:"job"`
+	Read         string        `json:"read"`
+	Commit       string        `json:"commit"`
+	State        string        `json:"state"`
 
 	CheckMinutes  float64 `json:"check_minutes,omitempty"`
 	CheckResult   string  `json:"check_result,omitempty"`
@@ -160,6 +162,13 @@ func fixStateHeadline(fix *Fix) string {
 
 // WriteFix retains a fix's lifecycle beside its attempt's brief.
 func WriteFix(install string, fix *Fix) error {
+	previous, err := FixForAttempt(install, fix.Attempt)
+	if err != nil {
+		return err
+	}
+	if fix.At == "" || previous != nil && previous.State != fix.State {
+		fix.At = time.Now().UTC().Format(time.RFC3339Nano)
+	}
 	data, err := json.Marshal(fix)
 	if err != nil {
 		return err

@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -16,15 +17,16 @@ import (
 )
 
 type RunningRegeneration struct {
-	Goal     string   `json:"goal"`
-	SHA      string   `json:"sha"`
-	Command  []string `json:"command"`
-	Log      string   `json:"log"`
-	Since    string   `json:"since"`
-	Pid      int64    `json:"pid"`
-	Process  string   `json:"process"`
-	State    string   `json:"state"`
-	LogBytes int64    `json:"log_bytes"`
+	Launch   *LaunchRecord `json:"launch,omitempty"`
+	Goal     string        `json:"goal"`
+	SHA      string        `json:"sha"`
+	Command  []string      `json:"command"`
+	Log      string        `json:"log"`
+	Since    string        `json:"since"`
+	Pid      int64         `json:"pid"`
+	Process  string        `json:"process"`
+	State    string        `json:"state"`
+	LogBytes int64         `json:"log_bytes"`
 }
 
 func regenerationRunningPath(install string) string {
@@ -42,6 +44,10 @@ func ReadRunningRegeneration(install string, seams ProveSeams) (*RunningRegenera
 	var running RunningRegeneration
 	if err := json.Unmarshal(data, &running); err != nil {
 		return nil, err
+	}
+	if running.Launch != nil && running.Launch.Error != "" {
+		running.State = "launch-failed"
+		return &running, nil
 	}
 	running.State = "running"
 	if !seams.alive(Running{Pid: running.Pid, Process: running.Process}) {
@@ -83,6 +89,17 @@ func runRegeneration(home, install string, running RunningRegeneration, argv []s
 			return &AdmissionClosed{Drain: drain}
 		}
 	}
+	if running.Since == "" {
+		running.Since = time.Now().UTC().Format(time.RFC3339Nano)
+	}
+	by := "landing"
+	if running.Launch != nil {
+		by = running.Launch.By
+	}
+	running.Launch = &LaunchRecord{What: "regeneration", At: running.Since, By: by}
+	if err := writeRegeneration(install, running); err != nil {
+		return err
+	}
 	started := func(pid int64) error {
 		running.Pid, running.Process = pid, processRef(pid)
 		err := writeRegeneration(install, running)
@@ -94,6 +111,11 @@ func runRegeneration(home, install string, running RunningRegeneration, argv []s
 		run = conflict.RunRegenerationArgv
 	}
 	err = run(argv, dir, log, started)
+	if err != nil && running.Pid == 0 {
+		running.State = "launch-failed"
+		running.Launch.Error = err.Error()
+		return errors.Join(err, writeRegeneration(install, running))
+	}
 	removeErr := os.Remove(regenerationRunningPath(install))
 	if errors.Is(removeErr, os.ErrNotExist) {
 		removeErr = nil
@@ -116,7 +138,7 @@ func commandExit(err error) int {
 // The resolver restores the merge and records an environment cause.
 func StopRegeneration(install string) error {
 	running, err := ReadRunningRegeneration(install, ProveSeams{})
-	if err != nil || running == nil || running.State == "died" {
+	if err != nil || running == nil || running.State == "died" || running.State == "launch-failed" {
 		return err
 	}
 	ref, err := identity.ParseRef(running.Process)

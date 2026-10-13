@@ -9,6 +9,7 @@ package main
 // The agent's procedure is the landing-agent skill.
 
 import (
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -422,7 +423,7 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 		},
 		Wake: func(lane.Record) (string, error) { run := keeper.Run(); return run.Line, nil },
 	}
-	return landingStewardTick(keeper.Run, func() (plain.StewardRun, error) {
+	tick := landingStewardTick(keeper.Run, func() (plain.StewardRun, error) {
 		record, _, err := lane.Read(home)
 		if err != nil {
 			return plain.StewardRun{}, err
@@ -440,6 +441,15 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 		}
 		return plain.StewardStep(home, agent.now(), proof)
 	})
+	return func() (run lane.AgentRun) {
+		var failure bytes.Buffer
+		code := guardLanding(repo, "run", nil, io.Discard, &failure, func(io.Writer, io.Writer) int { run = tick(); return 0 }, func() (string, error) { return home, nil })
+		if code == 2 {
+			run.Outcome, run.Line = lane.AgentFailed, strings.TrimSpace(failure.String())
+			run.Problems = []string{run.Line}
+		}
+		return run
+	}
 }
 
 func landingStewardTick(keeper func() lane.AgentRun, step func() (plain.StewardRun, error)) func() lane.AgentRun {

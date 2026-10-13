@@ -282,7 +282,7 @@ func unconfirmedLane(result intentResult, err error) intentResult {
 func landingIntentCommands() []intentCommand {
 	byFlag := intentFlag{name: "by", value: "NAME", usage: "who acts (default: this seat's nickname)"}
 	return []intentCommand{
-		landingBatchCommand(), landingRestartCommand(), landingResumeCommand(), landingGiveBackCommand(), landingLandAnywayCommand(), landingHealthCommand(), landingDeployCommand(),
+		landingIncidentCommand(), landingBatchCommand(), landingRestartCommand(), landingResumeCommand(), landingGiveBackCommand(), landingLandAnywayCommand(), landingHealthCommand(), landingDeployCommand(),
 		{
 			object: "landing", action: "status", audience: "both", summary: "the landing lane on this computer: its checkout and its landing agent",
 			usage: []string{"metasystem landing status [--verbose]"},
@@ -542,7 +542,11 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			section.Text(plain.StopHeadline(*stop))
 		}
 		if run := data.RunningRegeneration; run != nil {
-			page.Section("Regenerating", "").Text(fmt.Sprintf("%s: %s (%s); log %s, %d bytes", run.Goal, strings.Join(run.Command, " "), run.State, run.Log, run.LogBytes))
+			regeneration := fmt.Sprintf("%s: %s (%s); log %s, %d bytes", run.Goal, strings.Join(run.Command, " "), run.State, run.Log, run.LogBytes)
+			if run.Launch != nil && run.Launch.Error != "" {
+				regeneration += "; launch failed: " + oneLineLanding(run.Launch.Error)
+			}
+			page.Section("Regenerating", "").Text(regeneration)
 		}
 		if _, err := os.Lstat(filepath.Join(plain.Dir(install), "resolve-begun.json")); err == nil {
 			page.Section("", "").Text("Stale resolve-begun.json: ignored; every merge conflict returns to its seat.")
@@ -1520,6 +1524,9 @@ func (inv *intentInvocation) stopLane(owners laneVerbOwners, home string, record
 		ended = "the landing agent's session ended"
 	}
 	line += "; " + ended
+	if failed, err := plain.ReadRunningRegeneration(record.Install, owners.plainProve); err == nil && failed != nil && failed.State == "launch-failed" {
+		line += "; failed regeneration is closed: " + oneLineLanding(failed.Launch.Error)
+	}
 	outcome := intentConfirmed
 	if alreadyStopped && !probe.Alive {
 		outcome = intentUnchanged
