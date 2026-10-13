@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 185
+- Revision: 186
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -20,7 +20,8 @@ PowerOfAttorney:
 - VDRWT66V2QX0M9XGP6XCB3NXCW-m1e-c6925449 by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-01T15:31:39Z until=2026-10-03T15:31:00Z
 - EJSNF4E0Q4GRGW0R3YHWM7RX5X-m1e-718ba0eb by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-03T15:39:48Z until=2026-10-05T22:00:00Z revoked=2026-10-05T18:28:46Z revokedBy=human:Wido
 - 9F5DQFDHQK4TRSTF6P8T2B2HEV-m1e-718ba0eb by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-05T18:28:46Z until=2026-10-08T22:00:00Z revoked=2026-10-07T09:07:05Z revokedBy=human:Wido
-- XJTXDYWWB9GC4D66RNK7C7CD64-m1e-718ba0eb by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-07T09:07:05Z until=2026-10-14T09:07:00Z
+- XJTXDYWWB9GC4D66RNK7C7CD64-m1e-718ba0eb by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-07T09:07:05Z until=2026-10-14T09:07:00Z revoked=2026-10-13T23:38:46Z revokedBy=human:Wido
+- 3PEAE3MC5TSET75R26RRRXCPWH-m1e-c6925449 by=human:Wido verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem lineage=main-1790454088-93948-21671b since=2026-10-13T23:38:46Z until=2026-10-17T22:00:00Z
 
 History:
 - 2026-08-22T06:30:55Z BXWE9NXAWCGCTR3MFCE8GDC4P5-widos-m5-pro-bf243850 migrate actor=human:wido
@@ -248,4 +249,5 @@ History:
 - 2026-10-11T06:06:18Z JBWYK11THE7QD92K84V19KFPH1-m1e-f456f182 ack actor=human:Wido targets=process-changes-cover-declarations-and-interventions displaced=m1e+main-1790454088-93948-21671b@2026-10-10T19:24:35Z ack
 - 2026-10-11T14:54:10Z YTBBES0SYX3BSXEQA1VW8K2FX9-m1e-f456f182 ack actor=human:Wido targets=lane-recovers-and-pauses displaced=m1e+main-1790454088-93948-21671b@2026-10-11T09:06:38Z ack
 - 2026-10-11T14:54:10Z YTBBES0SYX3BSXEQA1VW8K2FX9-m1e-f456f182 ack actor=human:Wido targets=lane-rehearsal-before-landing displaced=m1e+main-1790454088-93948-21671b@2026-10-11T09:06:29Z ack
-Integrity: sha256=404bf6ef7438d2176458c26d7babfc42b9d1a562ff9f15b61307939fd60924ab
+- 2026-10-13T23:38:46Z 3PEAE3MC5TSET75R26RRRXCPWH-m1e-c6925449 grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-17T22:00:00Z
+Integrity: sha256=09ab3b06f0237e95c8338813d2b7706cd89b209ac9b583a0952289a52d604534
