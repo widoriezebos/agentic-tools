@@ -9,13 +9,14 @@
 - Origin: human
 - Next step: U1 is built on goal/steward-flake-fixer-resolves-its-machine (7e7e04e23): the machine seam defaults like the endpoint seam, with a mutation-checked test; hand it to the landing lane.
 - OpenedAt: 2026-10-13T16:18:04Z
-- Revision: 3
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- Revision: 4
+- Budget: elapsedLimit=4h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-13T16:18:19Z revision=2 opid=8FYK6YQBYA4K3FB7EHFYWRHBBH-m1e-c6925449 authority=proven digest=8745fcbc59bd94d727348212bb0a2889266ba8cedc4cfbfd80fc19b53140ce65 episode=2
+- Approved: by=human:Wido at=2026-10-13T16:19:37Z revision=4 opid=9PM56VFKR3D8QEK914YYSAHJPM-m1e-c6925449 authority=proven digest=f6fd0962382baa7d973f6949a839d5faf10f443edd37c785ff653d98ed2852cf episode=4
 
 History:
 - 2026-10-13T16:18:04Z EYYWXQ00APWR97KAPHZQQ0FVFJ-m1e-c6925449 open actor=human:Wido targets=steward-flake-fixer-resolves-its-machine
 - 2026-10-13T16:18:19Z 8FYK6YQBYA4K3FB7EHFYWRHBBH-m1e-c6925449 approve actor=human:Wido targets=steward-flake-fixer-resolves-its-machine
 - 2026-10-13T16:18:40Z Z1Y92JHNZJ0J5HH7KB0BHGF9CZ-m1e-c6925449 set-priority actor=human:Wido targets=steward-flake-fixer-resolves-its-machine reason=priority-order subject=steward-flake-fixer-resolves-its-machine from=unranked to=1:49 requested-sequence=append
-Integrity: sha256=5073d2c5b1790b5c3a8374ba53c30ded727aac4239732097e7bbd0cda3a18f1d
+- 2026-10-13T16:19:37Z 9PM56VFKR3D8QEK914YYSAHJPM-m1e-c6925449 approve actor=human:Wido targets=steward-flake-fixer-resolves-its-machine
+Integrity: sha256=1b48f7ecc9f07b8c1cad30e58ace5dbb756ef678870b87737c189f7c089eab64
