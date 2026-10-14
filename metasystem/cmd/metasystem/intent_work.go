@@ -1599,8 +1599,12 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 	targets = append(targets, intentTarget{Kind: "unit", ID: record.ID})
 	data := unitData(record, runner.Manager)
 	if result.Capped {
+		summary := result.AttributionSummary(runner.Manager.Now())
+		if summary == "" {
+			summary = record.Unit + ": the work is still running"
+		}
 		return intentResult{Outcome: intentInProgress, Targets: targets, code: 3, Data: data,
-			Summary: fmt.Sprintf("run %s round %d is still running step %s (launch %s)", record.ID, result.Round, result.Step, result.Launch),
+			Summary: summary,
 			next:    inv.workArgv(record, "wait"), nextReason: "continue waiting for this work"}
 	}
 	round := record.Rounds[len(record.Rounds)-1]
@@ -1610,7 +1614,11 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		if round.Outcome != "build-size" {
 			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
 		}
-		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Data: data, Summary: round.Stop.Handoff + ": " + round.Stop.Class, next: next}
+		summary := round.Stop.Handoff + ": " + round.Stop.Class
+		if reported := result.BuildResultSummary(); reported != "" {
+			summary = reported
+		}
+		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Data: data, Summary: summary, next: next}
 	}
 	if round.Outcome == "read-compacted" {
 		return intentResult{Outcome: intentFailed, Targets: targets, code: unitExitReadCompacted, Data: data, text: []string{line},

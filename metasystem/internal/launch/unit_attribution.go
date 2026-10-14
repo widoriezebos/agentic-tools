@@ -98,6 +98,12 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 		}
 	}
 	comparison := step.Comparison
+	if comparison.StartedAt == "" {
+		comparison.StartedAt = runner.Manager.Now().UTC().Format(time.RFC3339Nano)
+		if err := runner.save(*record); err != nil {
+			return false, err
+		}
+	}
 	if comparison.Base != base || comparison.Tree != strings.TrimSpace(string(tree)) || !reflect.DeepEqual(comparison.Command, command) || comparison.Directory != filepath.Join(directory, relative) {
 		return false, fmt.Errorf("the retained comparison names a different base tree or command; request a reasoned revision")
 	}
@@ -235,4 +241,21 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 	}
 	step.Cause = cause
 	return false, runner.save(*record)
+}
+
+func (result UnitResult) AttributionSummary(now time.Time) string {
+	if !result.Capped || len(result.Record.Rounds) == 0 {
+		return ""
+	}
+	for _, step := range result.Record.Rounds[len(result.Record.Rounds)-1].Steps {
+		if step.State == StepFailed && step.Cause == "unclassified" && step.Comparison != nil {
+			started, _ := time.Parse(time.RFC3339Nano, step.Comparison.StartedAt)
+			minutes := 0
+			if !started.IsZero() {
+				minutes = max(0, int(now.Sub(started).Minutes()))
+			}
+			return fmt.Sprintf("%s: comparing the red with the base (%d min)", result.Record.Unit, minutes)
+		}
+	}
+	return ""
 }

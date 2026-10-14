@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strconv"
@@ -318,6 +319,32 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 		return UnitResult{}, err
 	}
 	deadline := runner.Manager.Now().Add(time.Duration(settings.WaitCapSeconds) * time.Second)
+	if request.Resume != "" {
+		round := &record.Rounds[len(record.Rounds)-1]
+		for index := range round.Steps {
+			step := &round.Steps[index]
+			if round.Outcome != "" || step.State != StepFailed || !strings.HasPrefix(step.Name, "proof:") {
+				continue
+			}
+			if step.Retained != nil {
+				if capped, err := runner.advanceStep(&record, round, index, *step.Retained, deadline); err != nil || capped {
+					return runner.result(record, round, step, capped), err
+				}
+			}
+			if capped, err := runner.attributeProof(&record, round, index, plan.Base, deadline); err != nil || capped {
+				return runner.result(record, round, step, capped), err
+			}
+			if step.State == StepFailed {
+				if plan.HasRead() && !slices.ContainsFunc(round.Steps, func(s UnitStep) bool { return strings.HasPrefix(s.Name, "read") }) {
+					round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepPending, Model: round.ReadModel})
+				}
+				if err := runner.skipAfter(&record, round, index+1, "proof-red"); err != nil {
+					return UnitResult{Record: record}, err
+				}
+				return runner.finish(&record, round, "proof-red")
+			}
+		}
+	}
 	return runner.advanceRunning(&record, plan, deadline)
 }
 
@@ -523,7 +550,11 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			if plan.HasRead() {
 				round.Steps = append(round.Steps, UnitStep{Name: "read", State: StepSkipped, Reason: "build-failed", Model: round.ReadModel})
 			}
-			return runner.finish(record, round, "build-failed")
+			outcome := "build-failed"
+			if step.Reason == "build-partial" {
+				outcome = step.Reason
+			}
+			return runner.finish(record, round, outcome)
 		}
 	}
 	if held, err := runner.freezeBuildOutcome(record, round, plan, buildCount); err != nil || held {
@@ -871,7 +902,91 @@ func (runner *UnitRunner) advanceStep(record *UnitRunRecord, round *UnitRound, i
 			}
 		}
 	}
-	return runner.driver(record, round).advanceStep(index, spec, deadline)
+	passed := round.Steps[index].State == StepPassed
+	capped, err := runner.driver(record, round).advanceStep(index, spec, deadline)
+	if err != nil || capped || spec.Kind != "build" || passed {
+		return capped, err
+	}
+	return false, runner.judgeBuildResult(record, round, index)
+}
+
+var buildResultLine = regexp.MustCompile(`^RESULT:\s*((?i:DONE|PARTIAL|FAILED))\b`)
+
+func (runner *UnitRunner) judgeBuildResult(record *UnitRunRecord, round *UnitRound, index int) error {
+	step := &round.Steps[index]
+	if step.State != StepPassed {
+		return nil
+	}
+	launch, err := runner.Manager.Store.Read(step.LaunchID)
+	if err != nil {
+		return err
+	}
+	// A completed process cannot override a failed output collection or cancellation.
+	if launch.State != Completed {
+		return nil
+	}
+	directory, err := runner.Manager.Store.StateDir(launch.ID)
+	if err != nil {
+		return err
+	}
+	data, err := os.ReadFile(filepath.Join(directory, "last-message.txt"))
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if os.IsNotExist(err) {
+		data = []byte(strings.ReplaceAll(launch.Measurement.ResultTail, " | ", "\n"))
+	}
+	word, open := parseBuildResult(string(data))
+	if word == "PARTIAL" || word == "FAILED" {
+		if open != "" {
+			if _, err := atomicfile.WriteText(filepath.Join(round.Directory, "open.md"), open, runner.root()); err != nil {
+				return err
+			}
+		}
+	}
+	if _, err := runner.Manager.Store.Update(launch.ID, func(r *Record) error { r.Measurement.Verdict = word; return nil }); err != nil {
+		return err
+	}
+	switch word {
+	case "PARTIAL", "FAILED":
+		step.State, step.Cause, step.Reason = StepFailed, "unclassified", "build-"+strings.ToLower(word)
+	case "":
+		step.Reason = "no-result-block"
+	}
+	return runner.save(*record)
+}
+
+func parseBuildResult(message string) (word, open string) {
+	lines := strings.Split(message, "\n")
+	for index, line := range lines {
+		match := buildResultLine.FindStringSubmatch(strings.Trim(strings.TrimSpace(line), "`"))
+		if len(match) == 0 {
+			continue
+		}
+		word = strings.ToUpper(match[1])
+		for end := index + 1; end < len(lines); end++ {
+			line := strings.TrimSpace(lines[end])
+			if strings.HasPrefix(line, "```") || buildResultLine.MatchString(strings.Trim(line, "`")) {
+				break
+			}
+			if strings.HasPrefix(strings.Trim(line, "`"), "OPEN:") {
+				block := []string{strings.Trim(line, "`")}
+				for next := end + 1; next < len(lines); next++ {
+					if strings.HasPrefix(strings.TrimSpace(lines[next]), "```") || buildResultLine.MatchString(strings.Trim(strings.TrimSpace(lines[next]), "`")) {
+						break
+					}
+					block = append(block, lines[next])
+				}
+				text := strings.TrimSpace(strings.Join(block, "\n"))
+				if strings.TrimSpace(strings.TrimPrefix(text, "OPEN:")) != "" {
+					open = text + "\n"
+				}
+				break
+			}
+		}
+		return word, open
+	}
+	return "", ""
 }
 
 func (runner *UnitRunner) skipAfter(record *UnitRunRecord, round *UnitRound, from int, reason string) error {
@@ -1236,6 +1351,11 @@ func admitFollowUp(run UnitRunRecord, path string) error {
 
 func readOutputs(manager *Manager, round UnitRound) []string {
 	var paths []string
+	if path := filepath.Join(round.Directory, "open.md"); round.Directory != "" {
+		if _, err := os.Stat(path); err == nil {
+			paths = append(paths, path)
+		}
+	}
 	for _, step := range round.Steps {
 		if strings.HasPrefix(step.Name, "read") && step.LaunchID != "" {
 			if record, err := manager.Store.Read(step.LaunchID); err == nil {

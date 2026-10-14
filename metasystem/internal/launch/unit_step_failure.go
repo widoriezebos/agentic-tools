@@ -11,6 +11,22 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 )
 
+func (result UnitResult) BuildResultSummary() string {
+	if len(result.Record.Rounds) == 0 {
+		return ""
+	}
+	for _, step := range result.Record.Rounds[len(result.Record.Rounds)-1].Steps {
+		if step.State == StepFailed && (step.Reason == "build-partial" || step.Reason == "build-failed") {
+			reported := "a partial result"
+			if step.Reason == "build-failed" {
+				reported = "a failed result"
+			}
+			return result.Record.Unit + ": the builder reported " + reported
+		}
+	}
+	return ""
+}
+
 // Baseline comparison and flake attribution can replace unclassified only
 // with demonstrated evidence. A command exit by itself proves no own defect.
 func failedStepCause(record Record) string {
