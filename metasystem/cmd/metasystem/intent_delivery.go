@@ -55,6 +55,7 @@ func intentDeliveryCommands() []intentCommand {
 	return []intentCommand{
 		intentWorkRebaseCommand(),
 		intentWorkCommitCommand(),
+		intentWorkRevertCommand(),
 		{
 			object: "work", action: "review", laidOut: true, primary: true, audience: "both", summary: "independently review a goal's built work, a job, a run or a commit",
 			usage: []string{reviewGoalUsage, reviewSubmitUsage, reviewFindingUsage,
@@ -85,15 +86,18 @@ func intentDeliveryCommands() []intentCommand {
 				"and --retry N asks for one new attempt after attempt N failed or was stopped.",
 				"run:RUN commits the newest round on its goal branch, replacing an earlier round commit, and requests independent review; --model names its critic.",
 				"A design is reviewed with design review FILE.",
+				"--commit SHA --goal G --check-only admits and checks that exact carry subject; --act ID names its retained proposal.",
 				"--check-only asks no critic: j2:J --stage review|recertify|merge checks the job's review boundary, and --findings RETURN",
 				"--dispositions FILE checks that every finding of a round is decided (against the chain's register when j2:ROOT names it).",
 			},
-			flags: []intentFlag{
+			flags: []intentFlag{{name: "rerun", usage: "rerun the retained subject check under its admitted act"},
 				goalFlag,
 				{name: "work", value: "NAME", usage: "with G: the goal's named work to review"},
 				{name: "last", usage: "with --changes or --patch: marks this unit as the goal's last; for a goal whose design has no Units table"},
 				{name: "changes", usage: "with G: submit this checkout's current changes as the goal's work; without G: feedback on them"},
 				{name: "patch", value: "PATCH", usage: "with G: submit this patch file as the goal's work; without G: feedback on it"},
+				{name: "act", value: "ID", usage: "with --commit --check-only: admit this subject's retained check or full-suite exception"},
+				{name: "check", value: "COMMAND...", rest: true, usage: "with --commit --check-only: explicit person repair; ends the options"},
 				{name: "commit", value: "SHA", usage: "review one committed version of a goal's work, with --goal"},
 				{name: "units", value: "U1,U2,…", usage: "with --commit: units covered by this branch examination, stored with its read"},
 				{name: "dispositions", value: "FILE", usage: "the author's decisions, in the bound file the review wrote"},
@@ -143,6 +147,8 @@ func intentDeliveryCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "work", value: "NAME", usage: "the goal's named work to correct"},
+				{name: "act", value: "ID", usage: "approve this round's retained declaration proposal at your enrolled terminal"},
+				{name: "check", value: "COMMAND...", rest: true, usage: "explicit person repair check; ends the options"},
 				{name: "after", value: "N", usage: "the attempt being corrected (default: rejoin the same request, else the newest attempt)"},
 				intentBriefFlag,
 				reasonFlag("because", "the reason a person requests a correction despite the recorded review"),
@@ -629,6 +635,9 @@ func runIntentReview(inv *intentInvocation) int {
 	if code, handled := laneMergeWork(inv); handled {
 		return code
 	}
+	if (inv.input.has("act") || inv.input.has("check")) && !(inv.input.has("commit") && inv.input.has("goal") && inv.input.switched("check-only")) {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a retained subject check needs its exact commit, goal and --check-only", next: inv.publicArgv("work", "review", "--commit", "SHA", "--goal", "G", "--check-only"), nextReason: "checks the named subject before its read"})
+	}
 	if inv.input.switched("check-only") {
 		return runIntentReviewCheckOnly(inv)
 	}
@@ -736,6 +745,17 @@ func (inv *intentInvocation) reviewCommonChecks(kind string) *intentResult {
 // against the chain's register when j2:ROOT names it). Its output and exit
 // code are the checks' own: 0 passes, 1 fails, 2 is a usage mistake.
 func runIntentReviewCheckOnly(inv *intentInvocation) int {
+	if inv.input.has("commit") && inv.input.has("goal") {
+		if problem := inv.selectLayoutRoot(); problem != nil {
+			return inv.render(*problem)
+		}
+		gate, err := branch.ResolveReadGate(branch.ReadGateRequest{Repo: inv.goalBranchInstallation(inv.input.text("goal")), GoalID: inv.input.text("goal"), UnitCommit: inv.input.text("commit"), SubjectCheck: inv.carrySubjectCheck, Repository: inv.owners.connection.readRepository})
+		result := intentResult{Outcome: intentConfirmed, Summary: "the exact subject's admitted checks passed", Data: gate}
+		if err != nil {
+			result.Outcome, result.code, result.Summary = intentRefused, 1, err.Error()
+		}
+		return inv.render(result)
+	}
 	allowed := []string{"check-only", "stage", "test-command", "recertification", "findings", "dispositions", "repo", "json"}
 	for name := range inv.input.values {
 		if !slices.Contains(allowed, name) {

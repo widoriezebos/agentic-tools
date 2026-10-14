@@ -25,7 +25,7 @@ func TestUnitCheckFindsRunningEngineWithoutCallerPath(t *testing.T) {
 			t.Fatalf("frozen check record: %s, %v", data, err)
 		}
 		environment := slices.Clone(check.Environment)
-		_, exits, err := check.Run(check.Directory, t.TempDir())
+		_, exits, err := check.Run(check.Directory, t.TempDir(), CheckContext{})
 		if err != nil || len(exits) != 2 {
 			t.Fatalf("declared engine checks: %+v, %v", exits, err)
 		}

@@ -136,7 +136,15 @@ func TestIntentNamedContinuationKeepsTheReservation(t *testing.T) {
 	plan, _ := launch.ReadUnitPlan(resultData(t, result)["plan"].(string))
 	data, _ := os.ReadFile(resultData(t, result)["plan"].(string))
 	legacyPlan := filepath.Join(bed.root(), "legacy-plan.json")
-	os.WriteFile(legacyPlan, []byte(strings.Replace(string(data), `"unit": "guarded"`, `"unit": "legacy"`, 1)), 0o600)
+	var input map[string]any
+	if err := json.Unmarshal(data, &input); err != nil {
+		t.Fatal(err)
+	}
+	input["unit"] = "legacy"
+	delete(input, "fullArgv")
+	delete(input, "estimate")
+	data, _ = json.Marshal(input)
+	os.WriteFile(legacyPlan, data, 0o600)
 	runner := &launch.UnitRunner{Manager: bed.manager, Git: workGit{bed}, Root: bed.unitRoot}
 	if _, err := runner.CancelRun(run); err != nil {
 		t.Fatal(err)

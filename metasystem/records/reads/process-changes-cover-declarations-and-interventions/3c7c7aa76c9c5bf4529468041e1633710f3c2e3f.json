@@ -1,0 +1,91 @@
+{
+  "coveredUnits": [
+    "F-1-fix",
+    "U0",
+    "U2a",
+    "U2b",
+    "U3",
+    "U4",
+    "U4-carry-filter",
+    "integration-fixes-fixround",
+    "lane-fix-1"
+  ],
+  "schemaVersion": 1,
+  "goal": "process-changes-cover-declarations-and-interventions",
+  "unit": "U0+U2a+U2b+U3+U4+U4-carry-filter+integration-fixes-fixround+lane-fix-1+F-1-fix",
+  "subject": {
+    "commit": "3c7c7aa76c9c5bf4529468041e1633710f3c2e3f",
+    "parent": "f97d4d064d05fa076cb4e6c6b5076bacf5124751",
+    "tree": "b74908537011df469d0cf355685d0ae0e0deff19",
+    "patchDigest": "97981704fa241ef4cd6eceb2d5b281d9946c4f603979cd6e2ae106e6392dcc92",
+    "unitDigest": "1e8680bb8f490b89c72071bad36550c7b98c2277cef243f273554c81042994b8"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-cd6f6d64dafd043a26c5c580",
+    "round": 1,
+    "closureSha256": "510ba64473ed0a5d0501073d129b5b3dfdba9eb2ee6d1f0e2ad8a87bfb179a6d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "b74908537011df469d0cf355685d0ae0e0deff19",
+    "runId": "goal-read-gate-20261014t144532z-492bcd2970ec77b3"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_carry_check_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_coverage_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_process_report_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_round_result_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_check_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_carry_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_continue_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_check_base_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_check_path_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_named_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd6f6d64dafd043a26c5c580"
+    }
+  ],
+  "sha256": "c817a49543edd81b8761db54f51370918392c5a53a5cc57c3bc17692eb8e9dff"
+}

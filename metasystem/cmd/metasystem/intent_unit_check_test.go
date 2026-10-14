@@ -104,9 +104,9 @@ func declaredCheckBed(t *testing.T, body string) *workBed {
 			case slices.Equal(args, []string{"rev-parse", "candidate-commit^{tree}"}):
 				return []byte("candidate-tree"), nil
 			case len(args) == 2 && args[0] == "show" && strings.HasPrefix(args[1], "base-commit:"):
-				return []byte(body), nil
+				return []byte(body + "proof.full=true # full\n"), nil
 			case len(args) == 2 && args[0] == "show" && strings.HasPrefix(args[1], "candidate-commit:"):
-				return []byte("proof.cheap=true\nproof.audits=true\nproof.deadline=1\n"), nil
+				return []byte("proof.cheap=true\nproof.audits=true\nproof.deadline=1\nproof.full=true # full\n"), nil
 			}
 			return git(root, args...)
 		}
@@ -252,7 +252,7 @@ func TestIntentDeclaredCheckManualRepairRequiresPerson(t *testing.T) {
 			git := owners.work.git
 			owners.work.git = func(root string, args ...string) ([]byte, error) {
 				if len(args) > 0 && args[0] == "show" {
-					t.Fatal("manual repair read broken declarations")
+					return nil, errors.New("committed full-suite classification unavailable")
 				}
 				return git(root, args...)
 			}
@@ -260,6 +260,10 @@ func TestIntentDeclaredCheckManualRepairRequiresPerson(t *testing.T) {
 				owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
 					return humanauthority.Proof{}, humanauthority.AgentRefused("codex")
 				}
+			} else {
+				// Check admission requires the person's enrolled terminal,
+				// independently of the name supplied with --by.
+				owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
 			}
 			var stdout, stderr bytes.Buffer
 			starter := &declaredCheckStarter{bed: b, t: t, beforeBuild: func() {
@@ -330,6 +334,12 @@ func TestIntentDeclaredCheckNextRoundUsesNewDeclarations(t *testing.T) {
 	}
 	followUp := b.brief("follow.md", "Use the next round's repaired declarations.\n")
 	code, result, _ = stopPublic(t, b, "broken-policy", "work", "revise", "run:"+run, "--brief", followUp, "--reason", "Repair the failed check", "--by", "Wido")
+	if code != 1 || processAct(t, result).Status != "proposed" {
+		t.Fatalf("changed declaration was not held: %d %+v", code, result)
+	}
+	owners := b.workOwners()
+	owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+	code, result = checkActBuild(t, b, owners, result.Next.Argv[1:]...)
 	if code != 0 || resultData(t, result)["outcome"] != "green" {
 		t.Fatalf("next round: %d %+v", code, result)
 	}
@@ -604,6 +614,12 @@ func TestIntentDeclaredCheckLaterBuilderCannotReplaceRetainedEvidence(t *testing
 		}
 	}
 	code, revised, _ := stopPublic(t, b, "broken-policy", "work", "revise", "run:"+run, "--brief", b.brief("custody-next.md", "Repair.\n"), "--reason", "Repair the failed check", "--by", "Wido")
+	if code != 1 || processAct(t, revised).Status != "proposed" {
+		t.Fatalf("changed declaration was not held: %d %+v", code, revised)
+	}
+	owners := b.workOwners()
+	owners.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+	code, revised = checkActBuild(t, b, owners, revised.Next.Argv[1:]...)
 	if code != 0 || resultData(t, revised)["outcome"] != "green" {
 		t.Fatalf("second round: %d %+v", code, revised)
 	}

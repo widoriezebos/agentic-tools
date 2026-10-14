@@ -7,12 +7,14 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 )
 
 func intentWorkCommitCommand() intentCommand {
@@ -26,11 +28,12 @@ func intentWorkCommitCommand() intentCommand {
 }
 
 func runIntentWorkCommit(inv *intentInvocation) int {
+	reverting := inv.command.action == "revert"
 	id, problem := inv.singleTarget()
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	if id == "" || !validManualWorkName(inv.input.text("work")) {
+	if id == "" || !reverting && !validManualWorkName(inv.input.text("work")) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "commit needs a goal and a work name; nothing was committed", next: inv.publicArgv("work", "commit", "G", "--work", "U")})
 	}
 	if problem := inv.selectRoot(); problem != nil {
@@ -39,6 +42,21 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 	worktree, problem := inv.goalWorktree(id)
 	if problem != nil {
 		return inv.render(*problem)
+	}
+	var inverse *processchange.ProcessAct
+	if reverting {
+		prepared, code := inv.prepareDeclarationInverse(id, worktree)
+		if code != 0 {
+			return code
+		}
+		if prepared.Status == "applied" {
+			act, err := processchange.CompleteInverse(inv.stateRoot, inv.layout.InstallationRoot, prepared, prepared.PublishedCommit, inv.unitRunner().Manager.Now())
+			if err != nil {
+				return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the declaration inverse remains pending: " + err.Error(), Data: prepared})
+			}
+			return inv.render(intentResult{Outcome: intentUnchanged, Summary: "the declaration delta is already reverted; nothing was published", Data: act})
+		}
+		inverse = &prepared
 	}
 	root, conn, runner := inv.goalWorktreeInstallation(worktree), inv.connection(), inv.unitRunner()
 	refused := func(err error) int {
@@ -69,7 +87,12 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 	if err != nil {
 		return refused(err)
 	}
-	operation, err := conn.operationID()
+	operation, unit, publish, patch := "", inv.input.text("work"), conn.commit, []byte(nil)
+	if inverse == nil {
+		operation, err = conn.operationID()
+	} else {
+		operation, unit, publish, patch = inverse.Operation, "inverse-"+inverse.ID, conn.commitPatch, inverse.Patch
+	}
 	if err != nil {
 		return refused(err)
 	}
@@ -79,8 +102,8 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 		return conn.section(root, func(token func(func() error) error) error {
 			return token(func() error {
 				var err error
-				commit, err = conn.commit(branch.CommitRequest{Repo: root, Remote: endpoint.Remote, EndpointTip: base, GoalID: id,
-					Unit: inv.input.text("work"), OpID: operation, Kind: branch.Unit, Amend: inv.input.switched("amend"), CheckClaim: check, Transport: conn.transport,
+				commit, err = publish(branch.CommitRequest{Repo: root, Remote: endpoint.Remote, EndpointTip: base, GoalID: id,
+					Unit: unit, FrozenPatch: patch, OpID: operation, Kind: branch.Unit, Amend: inv.input.switched("amend"), CheckClaim: check, Transport: conn.transport,
 					BeforeCommit: func(candidate, parent, tree string) error {
 						prefix, err := goalBranchGit(root, "rev-parse", "--show-prefix")
 						if err != nil {
@@ -141,7 +164,17 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 		})
 	})
 	if err != nil {
+		if inverse != nil {
+			return refused(err)
+		}
 		return inv.render(intentResult{Targets: inv.targets(id), Outcome: intentPartial, code: 1, Summary: "the work is committed but publication is pending: " + err.Error(), next: inv.publicArgv("work", "review", id, "--changes", "--work", inv.input.text("work"), "--brief", "FILE"), nextReason: "continues the committed work"})
+	}
+	if inverse != nil {
+		act, err := processchange.CompleteInverse(inv.stateRoot, inv.layout.InstallationRoot, *inverse, commit, runner.Manager.Now())
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), Data: *inverse, next: append(inv.typedArgvLess("patch", "json"), "--patch", "FILE"), nextReason: "repeat with the retained inverse patch at your enrolled terminal"})
+		}
+		return inv.render(intentResult{Outcome: intentConfirmed, Summary: "the declaration delta was published; its intervention hold is resolved", Data: act})
 	}
 	return inv.render(intentResult{Targets: inv.targets(id), Outcome: intentConfirmed, Summary: fmt.Sprintf("committed the staged work as %s; %s (%.2f minutes)", shortSHA(commit), checked.Form, checked.Minutes),
 		Data: map[string]any{"commit": commit, "work": inv.input.text("work")}, next: inv.publicArgv("work", "review", "--commit", commit, "--goal", id), nextReason: "publishes its independent read"})
@@ -175,4 +208,47 @@ func committedWorkCheck(directory, base string, stdout, stderr io.Writer) (repai
 	checked.Form, checked.Reason = "declared: "+command, "declared cheap check"
 	checked.DurationMS, checked.Minutes = time.Since(started).Milliseconds(), time.Since(started).Minutes()
 	return checked, nil
+}
+
+func intentWorkRevertCommand() intentCommand {
+	return intentCommand{object: "work", action: "revert", laidOut: true, audience: "person", summary: "restore a process act's declaration delta as a new branch commit", usage: []string{"metasystem work revert G --act ID --reason TEXT [--patch FILE]"}, examples: []string{"metasystem work revert improve-checks --act ID --reason \"Remove excess checks\""}, maxArgs: 1, accepts: []string{refGoal}, flags: []intentFlag{{name: "act", value: "ID", usage: "the original declaration act"}, {name: "reason", value: "TEXT", usage: "why to remove this intervention"}, {name: "patch", value: "FILE", usage: "explicit person repair when inverse evidence is unavailable"}}, run: runIntentWorkCommit}
+}
+func (inv *intentInvocation) prepareDeclarationInverse(id, worktree string) (act processchange.ProcessAct, code int) {
+	if inv.input.text("act") == "" || inv.input.text("reason") == "" {
+		return act, inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "revert needs an original act and a reason"})
+	}
+	act = processchange.ProcessAct{Goal: id, Checkout: checkoutAuthorityRoot(inv.layout), Reason: inv.input.text("reason")}
+	by, _, refusal := inv.settingsPerson(inv.layout, "reverse committed declarations", &act.Proof)
+	if refusal != nil {
+		return act, inv.render(*refusal)
+	}
+	refused := func(err error) (processchange.ProcessAct, int) {
+		return act, inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the declaration inverse remains pending: " + err.Error(), Data: act, next: append(inv.typedArgvLess("patch", "json"), "--patch", "FILE"), nextReason: "review an explicit delta at your enrolled terminal"})
+	}
+	currentBranch, err := inv.work().git(worktree, "symbolic-ref", "--short", "HEAD")
+	if err != nil || strings.TrimSpace(string(currentBranch)) != "goal/"+id {
+		return refused(fmt.Errorf("the worktree is not this goal's branch"))
+	}
+	path, patch := filepath.ToSlash(filepath.Join(inv.layout.InstallationRel, "metasystem.conf")), []byte(nil)
+	if inv.input.has("patch") {
+		patch, err = os.ReadFile(inv.inputPath(inv.input.text("patch")))
+		if err != nil {
+			return refused(err)
+		}
+	}
+	content, err := inv.work().git(worktree, "show", "HEAD:"+path)
+	if err != nil && patch == nil {
+		return refused(err)
+	}
+	act, err = processchange.PrepareInverse(inv.stateRoot, inv.layout.InstallationRoot, inv.input.text("act"), strings.TrimSpace(string(currentBranch)), path, string(content), patch, act, inv.unitRunner().Manager.Now())
+	if err != nil {
+		return refused(err)
+	}
+	if act.Status == "applied" {
+		return act, 0
+	}
+	if err := inv.recordUnitStopOverride(id, "work-revert", act.Reason, "Impact: restore only these declarations. Earlier rounds and unrelated holds stay as they are.", by); err != nil {
+		return refused(err)
+	}
+	return act, 0
 }
