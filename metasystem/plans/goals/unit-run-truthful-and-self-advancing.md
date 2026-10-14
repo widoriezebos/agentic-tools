@@ -9,13 +9,15 @@
 - Origin: human
 - Next step: U1: result-block judgement on a completed launch and Continue finishing a recorded failure after its attribution (brief agentic-tools-evidence/lane-test-20261009/briefs/unit-run-truthful-U1.md; built by Codex in worktree agentic-tools-m1e-unitrun on 364e776f4, read by Opus 5.5, handed in by Wido)
 - OpenedAt: 2026-10-14T11:50:12Z
-- Revision: 3
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Revision: 4
+- Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=4
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-14T11:50:20Z revision=2 opid=HJC0FT5YWKHCY51W8XB4SN6H1C-m1e-c6925449 authority=proven digest=9311826f43c0427dc066568d67584326b243d1d7cf32984819e4abf578eb4921 episode=2
+- NormApproval: approvedRef=D1EGCA48KFMMBNHPBBKPHXAZ3K-m1e-c6925449 minutes=1200 reviewRounds=4 goalRevision=3
+- Approved: by=human:Wido at=2026-10-14T11:50:45Z revision=4 opid=D1EGCA48KFMMBNHPBBKPHXAZ3K-m1e-c6925449 authority=proven digest=12fcdd6c0a1bfc51ba01cceee59c8d00b6fd512f26b7e41965b4551ef603926d episode=4
 
 History:
 - 2026-10-14T11:50:12Z FB8G2D31X6F6JRRXMG709WRY84-m1e-c6925449 open actor=human:Wido targets=unit-run-truthful-and-self-advancing
 - 2026-10-14T11:50:20Z HJC0FT5YWKHCY51W8XB4SN6H1C-m1e-c6925449 approve actor=human:Wido targets=unit-run-truthful-and-self-advancing
 - 2026-10-14T11:50:37Z 0BDP1Y5G5R7T5PNQMVD2R11KPD-m1e-c6925449 set-priority actor=human:Wido targets=unit-run-truthful-and-self-advancing reason=priority-order subject=unit-run-truthful-and-self-advancing from=unranked to=1:52 requested-sequence=append
-Integrity: sha256=40eb44e529ee3c0701b32bde5ed70544e1275489236378e0e958878f8ff5889d
+- 2026-10-14T11:50:45Z D1EGCA48KFMMBNHPBBKPHXAZ3K-m1e-c6925449 approve actor=human:Wido targets=unit-run-truthful-and-self-advancing
+Integrity: sha256=d2455522ed3aac15498965adf788bac8bbd99e2238862262a02512e56e4eaba6
