@@ -289,3 +289,5 @@ Default completion check for the **design document**: the observable deliverable
 The design resolver and ready-goal commands are not run against this checkout: their ordinary configuration resolution can open the explicitly forbidden local override, and no end-to-end safe invocation was established. This limitation grants no fresh critique budget and makes no claim that no ready work remains. No goal is claimed or ledger changed under this task's narrower write scope.
 
 Proposed receipt, **unwritten**: `type=design goal=design-round-convergence-and-exits result=draft; five findings folded; five units estimated 235/240/245/170/225 production lines; 70-line split-owner integration moved to existing small-goal goal; targeted code read; document checks run; runtime and fresh independent critique not run; no small-goal prerequisite`.
+
+- 2026-10-13 21:25 CEST, Wido via m1e: size exception for unit convergence-recovery (522 production lines in one unit; two correction rounds could not cut it into independently buildable units).
