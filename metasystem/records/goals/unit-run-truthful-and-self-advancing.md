@@ -1,6 +1,6 @@
 # unit-run-truthful-and-self-advancing
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 51
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="Lane-test findings 306, 307, 308 (2026-10-14): a work build run of goal process-changes-cover stalled 25 min after its launch ended, judged a RESULT: PARTIAL build as passed, spent a 15-minute proof the builder had reported unreachable, and its cancel left a base-comparison job pending; interventions S119, S120."
@@ -8,16 +8,15 @@
 - Intent: A unit run judges its build from the builder's result block on a completed launch, finishes a recorded failure after its attribution, advances on its own launch events under the helm, checks a declared deadline before spending it, and speaks to the person in intent (no run ids, steps or record states). Design metasystem/plans/designs/unit-run-truthful-and-self-advancing.md (Id 01M4WVQA75GZ7MB3SRKZMV4NDD, accepted, Astra critique closed at round 3 on 0 material).
 - Origin: human
 - Next step: U1: result-block judgement on a completed launch and Continue finishing a recorded failure after its attribution (brief agentic-tools-evidence/lane-test-20261009/briefs/unit-run-truthful-U1.md; built by Codex in worktree agentic-tools-m1e-unitrun on 364e776f4, read by Opus 5.5, handed in by Wido)
+- Concluded: U1 landed on main by hand (broken machine rule) after three Opus 5.5 reads, two corrections and a clean final read by the opus-critic agent (0 material; notes N-1 judging-window crash, N-2 build-partial wording, N-3 resume tree checks, N-4 first RESULT line, carried to goal unit-run-truthful-and-self-advancing-2 with U2-U4).
 - OpenedAt: 2026-10-14T11:50:12Z
 - FirstClaimAt: 2026-10-14T19:01:16Z
-- Revision: 7
+- Revision: 8
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=4
 - BudgetExceptions: 0
 - NormApproval: approvedRef=D1EGCA48KFMMBNHPBBKPHXAZ3K-m1e-c6925449 minutes=1200 reviewRounds=4 goalRevision=3
 - Approved: by=human:Wido at=2026-10-14T11:50:45Z revision=4 opid=D1EGCA48KFMMBNHPBBKPHXAZ3K-m1e-c6925449 authority=proven digest=12fcdd6c0a1bfc51ba01cceee59c8d00b6fd512f26b7e41965b4551ef603926d episode=4
 - Sliced: machine=m1e lineage=main-1790454088-93948-21671b revision=6 at=2026-10-14T19:08:04Z
-- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-14T19:01:16Z areas="null" areas-source="01M4WVQA75GZ7MB3SRKZMV4NDD@4aac4847648d1b508573c8af6a1d5d16b17ae82f945a11a33d24ff3100e69f53" areas-known=false areas-warnings="[\"areas unknown for goal unit-run-truthful-and-self-advancing in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/unit-run-truthful-and-self-advancing.md\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=6 accountingRevision=6 episodeAt=2026-10-14T19:01:16Z episodeRevision=6
-- StopCapability: generation=6 revision=6 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-14T11:50:12Z FB8G2D31X6F6JRRXMG709WRY84-m1e-c6925449 open actor=human:Wido targets=unit-run-truthful-and-self-advancing
@@ -27,4 +26,5 @@ History:
 - 2026-10-14T12:41:39Z BSNXB97A8ZMAX19BF421YHA53H-m1e-c6925449 done actor=m1e+main-1788680071-18713-e76d5d targets=flake-fix-metasystem-internal-adopt-testadoptgitintegrationvendoredwritersuseapplicationstate,one-person-one-truth,unit-run-truthful-and-self-advancing reason=priority-order from=1:52 to=1:51
 - 2026-10-14T19:01:16Z MDX0ATWE4K2TKCPG8F346FVWK2-m1e-f456f182 claim actor=m1e+main-1790454088-93948-21671b targets=unit-run-truthful-and-self-advancing reason=areas unknown for goal unit-run-truthful-and-self-advancing in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/unit-run-truthful-and-self-advancing.md; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses
 - 2026-10-14T19:08:04Z 6THQ8AG0T4167X6XYEQVHS6PME-m1e-f456f182 slice-start actor=m1e+main-1790454088-93948-21671b targets=unit-run-truthful-and-self-advancing
-Integrity: sha256=a1b51afd7ede97740cd377a74c25484012075e5e5596a0c4510a2b1fcae67093
+- 2026-10-14T22:20:51Z MGY724W2XACDM2Y7BST7RA2CHR-m1e-670f65d0 done actor=human:Wido targets=unit-run-truthful-and-self-advancing displaced=m1e+main-1790454088-93948-21671b@2026-10-14T19:01:16Z
+Integrity: sha256=ffd2e02efa9ca121f863d973f98de7ec663006fc3eca0517e344eac7f4e78f85
