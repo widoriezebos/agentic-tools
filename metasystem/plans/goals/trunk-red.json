@@ -2175,6 +2175,51 @@
       "opened": "2026-10-13T10:33:27Z",
       "closed": null,
       "class": "flake"
+    },
+    {
+      "id": "red:metasystem/internal/adopt:TestAdoptGitIntegrationVendoredWritersUseApplicationState",
+      "identity": "red:metasystem/internal/adopt:TestAdoptGitIntegrationVendoredWritersUseApplicationState",
+      "group": "metasystem/internal/adopt",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261014T091500.848497000Z.log",
+          "classname": "metasystem/internal/adopt",
+          "name": "TestAdoptGitIntegrationVendoredWritersUseApplicationState",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261014T091500.848497000Z",
+          "batch": "20261014T091500.848497000Z",
+          "baseCommit": "c701317a9382a7442c15d879e50f59731e1d5b6b",
+          "baseTree": "37567736b5b19982b6763245480df62e6bd5e440",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261014T091500.848497000Z.log",
+          "logDigest": "2f5803a3c8906c0c097224f7af1817eb67bb7e41ab84b16b9f1ce797076ef850",
+          "seenAt": "2026-10-14T09:59:51Z",
+          "opid": "392X7KEJN14CZDTR9F6MEDRDSH-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261014T091500.848497000Z"
+      ],
+      "opened": "2026-10-14T09:59:51Z",
+      "closed": null
     }
   ],
   "cadence": {
