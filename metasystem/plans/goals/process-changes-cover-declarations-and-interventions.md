@@ -8,13 +8,13 @@
 - Next step: Design from plans/process-changes-cover-declarations-and-interventions-design-brief.md (units at most 250 production lines, at most 5) after machinery-measures-its-own-process lands its acts and measures; ASKED ST3A0X3NRH82TY3499EPS8TXA6 (other): Start this build at your enrolled terminal?
 - OpenedAt: 2026-10-07T21:09:42Z
 - FirstClaimAt: 2026-10-10T03:07:30Z
-- Revision: 12
-- Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=4
-- BudgetExceptions: 2
-- Approved: by=human:Wido at=2026-10-14T06:47:24Z revision=11 opid=DCJCTJ2JCH3XS2KK26WQBDM8HN-m1e-c6925449 authority=proven digest=862e002673b53fe81a771a33811a6d104bafd6120df501944391038162e70800 episode=11
+- Revision: 13
+- Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=8
+- BudgetExceptions: 3
+- Approved: by=human:Wido at=2026-10-14T12:51:48Z revision=13 opid=38B1TMKZ6GN4NNVP906RZHM2RX-m1e-c6925449 authority=proven digest=3a11f779577fdf62ffb43e11d978d6e59c505c20fbe410af7b38f25c521033b6 episode=13
 - Sliced: machine=m1e lineage=main-1790454088-93948-21671b revision=3 at=2026-10-10T03:26:54Z
-- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-14T06:47:24Z by=human:Wido revision=11 accountingRevision=11 episodeAt=2026-10-13T19:21:57Z episodeRevision=10
-- StopCapability: generation=11 revision=11 machine=m1e claimEpoch=9 fenceEpoch=0
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-14T12:51:48Z by=human:Wido revision=13 accountingRevision=13 episodeAt=2026-10-13T19:21:57Z episodeRevision=10
+- StopCapability: generation=13 revision=13 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-07T21:09:42Z ZJ83EDDQSF8KE5SND4THYQHA75-m1e-718ba0eb open actor=human:Wido targets=process-changes-cover-declarations-and-interventions
@@ -29,4 +29,5 @@ History:
 - 2026-10-13T19:21:57Z VKTQ4JNNW4HRCJRXTHBV9AACC8-m1e-c6925449 resume actor=human:Wido targets=process-changes-cover-declarations-and-interventions reason=cleared stop fence stop-process-changes-cover-declarations-and-interventions-r8-f1: ELAPSED_LIMIT
 - 2026-10-14T06:47:24Z DCJCTJ2JCH3XS2KK26WQBDM8HN-m1e-c6925449 set-budget actor=human:Wido targets=process-changes-cover-declarations-and-interventions displaced=m1e+main-1790454088-93948-21671b@2026-10-13T19:21:57Z
 - 2026-10-14T06:59:15Z V6HRJKEXFDMK6H2GJNTKBDGRMQ-m1e-cd3db6d0 ask actor=m1e+f77e7ebb-e1ab-4137-9935-206f37035290 targets=process-changes-cover-declarations-and-interventions
-Integrity: sha256=afdc68a197c6fafdb977ce8e1fd5390495c7c53541476a26bc37a8a79137de38
+- 2026-10-14T12:51:48Z 38B1TMKZ6GN4NNVP906RZHM2RX-m1e-c6925449 set-budget actor=human:Wido targets=process-changes-cover-declarations-and-interventions displaced=m1e+main-1790454088-93948-21671b@2026-10-14T06:47:24Z
+Integrity: sha256=4d1193f1bd44899ca5162039992693dbb80989a4011abe0537cf6cba13b6f4a5
