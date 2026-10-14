@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 186
+- Revision: 187
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -250,4 +250,8 @@ History:
 - 2026-10-11T14:54:10Z YTBBES0SYX3BSXEQA1VW8K2FX9-m1e-f456f182 ack actor=human:Wido targets=lane-recovers-and-pauses displaced=m1e+main-1790454088-93948-21671b@2026-10-11T09:06:38Z ack
 - 2026-10-11T14:54:10Z YTBBES0SYX3BSXEQA1VW8K2FX9-m1e-f456f182 ack actor=human:Wido targets=lane-rehearsal-before-landing displaced=m1e+main-1790454088-93948-21671b@2026-10-11T09:06:29Z ack
 - 2026-10-13T23:38:46Z 3PEAE3MC5TSET75R26RRRXCPWH-m1e-c6925449 grant actor=human:Wido reason=verbs=everything for=m1e checkout=/Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem until=2026-10-17T22:00:00Z
-Integrity: sha256=09ab3b06f0237e95c8338813d2b7706cd89b209ac9b583a0952289a52d604534
+- 2026-10-14T15:05:06Z PZ5706WTYQBX5A3EACMKWEN73V-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=lane-rehearsal-before-landing displaced=m1e+main-1790454088-93948-21671b@2026-10-11T13:07:05Z ack
+- 2026-10-14T15:05:06Z PZ5706WTYQBX5A3EACMKWEN73V-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=process-changes-cover-declarations-and-interventions displaced=m1e+main-1790454088-93948-21671b@2026-10-13T19:21:57Z ack
+- 2026-10-14T15:05:06Z PZ5706WTYQBX5A3EACMKWEN73V-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=process-changes-cover-declarations-and-interventions displaced=m1e+main-1790454088-93948-21671b@2026-10-14T06:47:24Z ack
+- 2026-10-14T15:05:06Z PZ5706WTYQBX5A3EACMKWEN73V-m1e-f456f182 ack actor=m1e+main-1790454088-93948-21671b targets=shared-state-in-the-ledger displaced=m1e+main-1790454088-93948-21671b@2026-10-11T09:06:20Z ack
+Integrity: sha256=a0fc2cc4ce91f8e73586cd7c14a1ed79959709700940dabb60b52207b3f46f56
