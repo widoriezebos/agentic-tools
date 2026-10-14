@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func rewriteUnitPlan(t *testing.T, path string, change func(*UnitPlan)) {
@@ -618,4 +620,55 @@ func TestNamedUnitChangeBeforeAPendingLaunchLaunchesNothingUntilRestored(t *test
 			requireLaunchedOnce(t, fixture, 3)
 		})
 	}
+}
+
+func TestNamedUnitRepeatPreservesAdmittedPlan(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, "", "branch", "branch", "round")
+	admissions := 0
+	fixture.runner.AdmitEstimate = func(plan *UnitPlan) error {
+		admissions++
+		plan.Estimate = &UnitEstimate{DesignID: "design", Unit: plan.Unit, SourceSHA256: strings.Repeat("a", 64), BodySHA256: strings.Repeat("b", 64), ElapsedMinutes: 5}
+		return nil
+	}
+	first, err := fixture.runner.AdvanceNamed(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := ReadUnitPlan(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, key, err := namedUnitIdentity(plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	staged := fixture.runner.namedPath(key, ".plan")
+	before, err := os.ReadFile(staged)
+	if err != nil {
+		t.Fatal(err)
+	}
+	retained, err := ReadUnitPlan(staged)
+	if err != nil || retained.Estimate == nil {
+		t.Fatalf("admitted estimate: %+v %v", retained.Estimate, err)
+	}
+	stamp := time.Unix(100, 0)
+	if err := os.Chtimes(staged, stamp, stamp); err != nil {
+		t.Fatal(err)
+	}
+	for range 2 {
+		again, err := fixture.runner.AdvanceNamed(fixture.plan)
+		if err != nil || again.Record.ID != first.Record.ID || admissions != 1 {
+			t.Fatalf("repeat: %+v %v admissions=%d", again, err, admissions)
+		}
+		after, err := os.ReadFile(staged)
+		if err != nil {
+			t.Fatal(err)
+		}
+		info, err := os.Stat(staged)
+		if err != nil || !bytes.Equal(before, after) || !info.ModTime().Equal(stamp) {
+			t.Fatalf("repeat rewrote the admitted plan: %v", err)
+		}
+	}
+	requireLaunchedOnce(t, fixture, 3)
 }

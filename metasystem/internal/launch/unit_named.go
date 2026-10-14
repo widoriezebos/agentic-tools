@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
@@ -216,12 +217,26 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 	if err != nil {
 		return UnitResult{}, planInvalid("plan", err)
 	}
-	staged := runner.namedPath(key, ".plan")
-	if _, err := atomicfile.WriteText(staged, string(data), runner.root()); err != nil {
+	entry, found, err := runner.readNamed(key)
+	if err != nil {
 		return UnitResult{}, err
 	}
+	staged := runner.namedPath(key, ".plan")
+	input := named.Path
+	if !found {
+		input = staged
+		previous, err := os.ReadFile(staged)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return UnitResult{}, err
+		}
+		if !bytes.Equal(previous, data) {
+			if _, err := atomicfile.WriteText(staged, string(data), runner.root()); err != nil {
+				return UnitResult{}, err
+			}
+		}
+	}
 	planDirectory := filepath.Dir(named.Path)
-	plan, err := readUnitPlanInput(staged, planDirectory, retained)
+	plan, err := readUnitPlanInput(input, planDirectory, retained)
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -236,10 +251,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 	if err != nil {
 		return UnitResult{}, err
 	}
-	entry, found, err := runner.readNamed(key)
-	if err != nil {
-		return UnitResult{}, err
-	}
+	plan.Path = staged
 	if found {
 		if entry.Worktree != worktree || entry.Goal != plan.Goal || entry.Unit != plan.Unit || !idPattern.MatchString(entry.Run) ||
 			entry.State != namedReserved && entry.State != namedRecorded {

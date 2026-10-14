@@ -30,24 +30,42 @@ func readProcessReport(root, installation, goal, unit string, runner *launch.Uni
 		unknown = append(unknown, "process history unavailable: "+err.Error())
 	}
 	all := processmeasure.Input{Now: now, Unknown: append(unknown, state.Unknown...)}
+	var carryUnits []string
+	if unit != "" {
+		carryUnits = append(carryUnits, unit)
+	}
 	for _, run := range runs {
 		if unit != "" && run.Unit != unit {
 			continue
+		}
+		if unit != "" && run.Record != nil {
+			for _, subject := range run.Record.Subjects {
+				if subject.Commit != "" {
+					carryUnits = append(carryUnits, subject.Commit)
+				}
+			}
 		}
 		input := unitMeasureInput(run, runner, installation)
 		all.Runs = append(all.Runs, input)
 		all.Steps = append(all.Steps, input.Steps...)
 	}
 	var acts []processmeasure.Act
+	checks, missing := carryMeasures(installation, goal, carryUnits...)
+	all.Unknown = append(all.Unknown, missing...)
+	all.Steps = append(all.Steps, checks...)
 	for _, act := range state.Acts {
 		if act.AppliedAt.IsZero() {
 			continue
 		}
 		grant := ""
-		if act.Proof.Helm != nil {
-			grant = fmt.Sprintf("by %s; grant %s", act.Proof.Helm.By, act.Proof.Helm.Grant)
+		proof := act.Proof
+		if proof.Helm == nil {
+			proof = act.AppliedProof
 		}
-		acts = append(acts, processmeasure.Act{ID: act.ID, Actor: act.Actor, Lineage: act.Lineage, Grant: grant, Change: act.Key + " = " + act.After})
+		if proof.Helm != nil {
+			grant = fmt.Sprintf("by %s; grant %s", proof.Helm.By, proof.Helm.Grant)
+		}
+		acts = append(acts, processmeasure.Act{ID: act.ID, Actor: act.Actor, Lineage: act.Lineage, Grant: grant, Requester: act.Proof, Applier: act.AppliedProof, Change: act.Key + " = " + act.After})
 	}
 	var stops []string
 	for _, stop := range state.Stops {

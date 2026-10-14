@@ -38,6 +38,7 @@ func init() {
 	registerIdempotency("test run", idemCreation,
 		"each call runs the risk-selected tests as a new proof attempt of the checkout as it is now; test status answers whether retained proof already covers a tree without running anything", nil)
 
+	registerIdempotency("work revert", idemStateful, "an applied inverse resolves its original intervention and repeats without a commit or record", witnessWorkRevertRepeat)
 	registerIdempotency("work brief", idemStateful, "the same scaffold already at --out is unchanged; different content there is refused and kept", witnessWorkBriefRepeat)
 	registerIdempotency("work build", idemStateful, "the same goal, work and request reach the same attempt again and launch nothing", witnessWorkBuildRepeat)
 	registerIdempotency("work stop", idemStateful, "a job that already ended is already stopped; a goal's stop that already completed is left as it is (TestWorkStopGoalCompletesItsRecordedStop)", witnessWorkStopRepeat)
@@ -244,4 +245,8 @@ func witnessDesignStopRepeat(t *testing.T) {
 		}
 		workIdemSameFiles(t, "design stop", files, workIdemSnapshot(t, launchRoot))
 	}
+}
+
+func witnessWorkRevertRepeat(t *testing.T) {
+	exerciseDeclarationInversePublicRevert(t, []string{"delta-replay"})
 }

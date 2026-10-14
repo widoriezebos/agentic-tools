@@ -43,12 +43,15 @@ type workBed struct {
 	*intentBed
 	id, worktree  string
 	declaredCheap string
-	manager       *launch.Manager
-	starter       *workStarter
-	unitRoot      string
-	branchListed  bool
-	head          string
-	ledger        sync.Mutex
+	// declaredAudits and declaredDeadline replace the default proof.audits=true
+	// and proof.deadline=15 when set.
+	declaredAudits, declaredDeadline string
+	manager                          *launch.Manager
+	starter                          *workStarter
+	unitRoot                         string
+	branchListed                     bool
+	head                             string
+	ledger                           sync.Mutex
 	// readDirs are the read-findings directories this bed's builds created
 	// under the temporary root, found through each result's plan.
 	readDirsMu     sync.Mutex
@@ -259,7 +262,7 @@ func TestBuildRefusesAStaleEngine(t *testing.T) {
 							if !slices.Equal(argv, []string{"log", "--format=", "--name-only", row.stamp + "..origin/main", "--", "internal", "cmd"}) {
 								t.Fatalf("git log arguments: %q", argv)
 							}
-						case slices.Equal(argv, []string{"rev-parse", "origin/main"}):
+						case dir == root && slices.Equal(argv, []string{"rev-parse", "origin/main"}):
 							tipCalls++
 							stage, output = "tip", "main-tip\n"
 						default:
@@ -449,6 +452,12 @@ func (b *workBed) workOwners() intentOwners {
 		git: func(dir string, args ...string) ([]byte, error) {
 			joined := strings.Join(args, " ")
 			switch {
+			case joined == "rev-parse origin/main" || joined == "rev-parse refs/heads/main":
+				return []byte("base-commit"), nil
+			case joined == "symbolic-ref --short HEAD":
+				return []byte("goal/" + b.id), nil
+			case len(args) == 3 && args[0] == "merge-base":
+				return []byte("base-commit"), nil
 			case joined == "worktree list --porcelain":
 				primary := b.root()
 				if b.primary != "" {
@@ -466,7 +475,11 @@ func (b *workBed) workOwners() intentOwners {
 				if cheap == "" {
 					cheap = shellCommand(workArgv)
 				}
-				return []byte("proof.cheap=" + cheap + "\nproof.audits=true\nproof.deadline=15\n"), nil
+				audits, deadline := b.declaredAudits, b.declaredDeadline
+				if audits == "" {
+					audits, deadline = "true", "15"
+				}
+				return []byte("proof.cheap=" + cheap + "\nproof.audits=" + audits + "\nproof.deadline=" + deadline + "\nproof.full=true # full\n"), nil
 			case joined == "rev-parse HEAD" && dir == b.worktree:
 				return []byte(b.head + "\n"), nil
 			case strings.HasPrefix(joined, "rev-parse --verify -q refs/heads/goal/"):

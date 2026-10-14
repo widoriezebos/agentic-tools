@@ -352,8 +352,13 @@ func reconcilePushTransactionsWithRepository(req PushRequest, repository pushRep
 	return nil, nil
 }
 
-func Push(req PushRequest) (PushResult, error) {
-	return pushWithRepository(req, gitPushRepository())
+func Push(req PushRequest) (PushResult, error) { return PushWithInputs(req, gitPushRepository()) }
+
+type PushInputs = pushRepository
+type PushTransaction = pushTxn
+
+func PushWithInputs(r PushRequest, in PushInputs) (PushResult, error) {
+	return pushWithRepository(r, in)
 }
 
 func fetchAndValidateFromRepository(req PushRequest, tip string, repository pushRepository) error {

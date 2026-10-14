@@ -35,6 +35,7 @@ type intentConnectionOwners struct {
 	carry          func(branch.CarryRequest) (branch.CarryResult, error)
 	commitCheck    func(directory, base string) (repairCheck, error)
 	rebaseGate     func(string) (string, error)
+	readRepository branch.BranchReadRepository
 	subjectCheck   func(string, branch.AttestationSubject) (branch.GateObservation, error)
 	endpoint       func(root string) (goal.Endpoint, error)
 	endpointTip    func(root string, endpoint goal.Endpoint) (string, error)
@@ -45,6 +46,7 @@ type intentConnectionOwners struct {
 	// lock.
 	section     func(root string, body func(withToken func(func() error) error) error) error
 	transport   branch.PushTransport
+	commitPatch func(branch.CommitRequest) (string, error)
 	commit      func(branch.CommitRequest) (string, error)
 	push        func(branch.PushRequest) (branch.PushResult, error)
 	operationID func() (string, error)
@@ -117,6 +119,9 @@ func (inv *intentInvocation) connection() intentConnectionOwners {
 	}
 	if owners.transport == nil {
 		owners.transport = branch.GitPushTransport{}
+	}
+	if owners.commitPatch == nil {
+		owners.commitPatch = branch.CommitFrozenPatch
 	}
 	if owners.commit == nil {
 		owners.commit = branch.CommitStaged

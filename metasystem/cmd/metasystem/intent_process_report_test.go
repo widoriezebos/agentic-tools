@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -20,6 +21,68 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 )
+
+func TestUnitCarryPublicCostReport(t *testing.T) {
+	t.Parallel()
+	for _, key := range []string{"commit", "unit"} {
+		t.Run(key, func(t *testing.T) {
+			t.Parallel()
+			bed := newWorkBed(t)
+			start := time.Date(2026, 10, 9, 10, 0, 0, 0, time.UTC)
+			bed.manager.Now = func() time.Time { return start.Add(10 * time.Minute) }
+			act := processchange.ProcessAct{ID: "carry-act", Goal: bed.id, Actor: "agent", AppliedAt: start}
+			writeProcessRootJSON(t, filepath.Join(bed.root(), "process", "acts", act.ID+".json"), act)
+			for index, unit := range []string{"first", "second"} {
+				run, commit := "carry-"+unit, unit+"-commit"
+				plan := filepath.Join(bed.unitRoot, run, "plan.json")
+				writeProcessRootJSON(t, plan, launch.UnitPlan{FullArgv: []string{"/bin/sh", "-c", "full"}})
+				record := launch.UnitRunRecord{ID: run, Goal: bed.id, Unit: unit, Worktree: bed.worktree, Plan: plan, State: "awaiting-judgement",
+					Rounds: []launch.UnitRound{{Number: 1}}, Subjects: []launch.UnitSubject{{Round: 1, Commit: commit}}}
+				writeProcessRootJSON(t, filepath.Join(bed.unitRoot, run, "run.json"), record)
+				subject := commit
+				if key == "unit" {
+					subject = unit
+				}
+				observation := launch.CheckExecution{ExecutionID: "check-" + unit, Goal: bed.id, Run: subject, Role: "carry"}
+				for command, name := range []string{"cheap", "audits"} {
+					from := start.Add(time.Duration(command) * time.Minute)
+					to := from.Add(time.Duration(1+index*command) * time.Minute)
+					observation.Steps = append(observation.Steps, processmeasure.Step{
+						ID: subject + "/" + observation.ExecutionID + ":" + name, Kind: "attest", Act: act.ID,
+						Start: from.Format(time.RFC3339Nano), End: to.Format(time.RFC3339Nano), Terminal: true, Outcome: "passed", Coverage: "unknown",
+						Argv: []string{"/bin/sh", "-c", name}, FullArgv: []string{"/bin/sh", "-c", "full"}})
+				}
+				writeProcessRootJSON(t, filepath.Join(bed.root(), "artifacts", "unit-checks", "carry", subject, observation.ExecutionID, "observation.json"), observation)
+			}
+			owners := bed.workOwners()
+			owners.processes.launches = func() *launch.Manager { return bed.manager }
+			for _, want := range []struct {
+				target   string
+				minutes  float64
+				children int
+			}{{"run:carry-first", 2, 2}, {"run:carry-second", 3, 2}, {bed.id, 5, 4}} {
+				code, result := bed.runJSON(owners, "work", "status", want.target)
+				if code != 0 {
+					t.Fatalf("status %s: %d %+v", want.target, code, result)
+				}
+				body, err := json.Marshal(resultData(t, result)["processReport"])
+				if err != nil {
+					t.Fatal(err)
+				}
+				var report processmeasure.Projection
+				if err := json.Unmarshal(body, &report); err != nil {
+					t.Fatal(err)
+				}
+				if report.Measures == nil || report.Measures.Hours["attest"] == nil || math.Abs(*report.Measures.Hours["attest"]*60-want.minutes) > 1e-8 || len(report.Measures.Children) != want.children {
+					t.Fatalf("%s carry cost: %+v; want %g minutes and %d children", want.target, report.Measures, want.minutes, want.children)
+				}
+				if !strings.Contains(strings.Join(report.Lines, "\n"), fmt.Sprintf("Process act %s: own process cost; actor agent;", act.ID)) || !strings.Contains(strings.Join(report.Lines, "\n"), fmt.Sprintf("observed %g minutes;", want.minutes)) {
+					t.Fatalf("%s consumed act cost: %v", want.target, report.Lines)
+				}
+			}
+		})
+	}
+}
 
 func TestProcessCostStatusAndChannelPublicReport(t *testing.T) {
 	t.Parallel()

@@ -11,6 +11,7 @@ type Interval struct{ Start, End time.Time }
 type Step struct {
 	ID, Kind, Pending, Start, End, Collected string
 	Act                                      string
+	Parent, Coverage, Outcome                string
 	Argv                                     []string
 	FullArgv                                 []string
 	Terminal                                 bool
@@ -50,10 +51,11 @@ type Measures struct {
 
 	ElapsedHours      *float64
 	ElapsedLowerBound bool
+	Children          []Step
 }
 
 func Read(in Input) Measures {
-	suiteUnknown := len(in.FullArgv) == 0
+	suiteUnknown := len(in.FullArgv) == 0 && !slices.ContainsFunc(in.Steps, func(step Step) bool { return len(step.FullArgv) > 0 })
 	if len(in.Runs) > 0 {
 		suiteUnknown = false
 		latest := map[string]Input{}
@@ -62,7 +64,9 @@ func Read(in Input) Measures {
 		for _, run := range in.Runs {
 			var start time.Time
 			for _, step := range run.Steps {
-				step.FullArgv = run.FullArgv
+				if step.Coverage == "" {
+					step.FullArgv = run.FullArgv
+				}
 				in.Steps = append(in.Steps, step)
 				at, _ := time.Parse(time.RFC3339Nano, step.Start)
 				if !at.IsZero() && (start.IsZero() || at.Before(start)) {
@@ -109,6 +113,7 @@ func Read(in Input) Measures {
 	seen := map[string]bool{}
 	bad := map[string]bool{"person": len(in.Unknown) > 0}
 	values := map[string]float64{"build": 0, "attest": 0, "read": 0, "correction": 0, "pending": 0, "collection": 0, "person": 0, "suite": 0}
+	unknownInclusion := false
 	bad["suite"] = suiteUnknown
 	var firstBuild time.Time
 	revisions := slices.Clone(in.Revisions)
@@ -129,11 +134,35 @@ func Read(in Input) Measures {
 			firstBuild = start
 		}
 		hours, valid := duration(Interval{start, end}, in.Now)
+		if (step.Kind == "build" || step.Kind == "correction") && !slices.ContainsFunc(in.Steps, func(child Step) bool { return child.Parent == step.ID }) {
+			m.Unknown = append(m.Unknown, "nested checks unavailable: "+step.ID)
+		}
+		if step.Kind == "build" || step.Kind == "correction" || (step.Kind == "attest" && step.Coverage == "") {
+			hours -= nestedHours(step.ID, Interval{start, end}, in.Steps, in.Now)
+		}
 		values[step.Kind] += hours
 		bad[step.Kind] = bad[step.Kind] || !valid
 		if len(step.FullArgv) > 0 && slices.Equal(step.Argv, step.FullArgv) {
 			values["suite"] += hours * 60
 			bad["suite"] = bad["suite"] || !valid
+		}
+		if step.Coverage != "" {
+			bad["suite"] = bad["suite"] || len(step.FullArgv) == 0
+			m.Children = append(m.Children, step)
+			if step.Parent == "" {
+				m.Unknown = append(m.Unknown, "check parent unavailable: "+step.ID)
+			}
+			if step.Usage == nil {
+				m.Unknown = append(m.Unknown, "check usage unavailable: "+step.ID)
+			}
+			if step.Usage != nil && step.Coverage == "unknown" {
+				unknownInclusion = true
+				m.Unknown = append(m.Unknown, "check token inclusion unavailable: "+step.ID)
+			}
+			if step.Coverage != "separate" {
+				continue
+			}
+			step.Pending, step.Collected = step.Start, step.End
 		}
 		pending, _ := time.Parse(time.RFC3339Nano, step.Pending)
 		collected, _ := time.Parse(time.RFC3339Nano, step.Collected)
@@ -151,7 +180,7 @@ func Read(in Input) Measures {
 			values[kind] += hours
 			bad[kind] = bad[kind] || !valid
 		}
-		if step.Kind == "attest" {
+		if step.Kind == "attest" && step.Coverage == "" {
 			continue
 		}
 		m.UsageExpected++
@@ -194,7 +223,7 @@ func Read(in Input) Measures {
 	}
 	m.SuiteMinutes = m.Hours["suite"]
 	delete(m.Hours, "suite")
-	if m.UsageExpected > 0 && m.UsageKnown == m.UsageExpected {
+	if !unknownInclusion && m.UsageExpected > 0 && m.UsageKnown == m.UsageExpected {
 		m.Tokens = &m.ReportedTokens
 	}
 	finish, err := time.Parse(time.RFC3339Nano, in.PublishedAt)
@@ -211,9 +240,52 @@ func Read(in Input) Measures {
 	if hours, valid := duration(Interval{firstBuild, end}, in.Now); valid {
 		m.ElapsedHours = &hours
 	}
-	m.Unknown = append(m.Unknown, "nested checks unavailable", "fix units unavailable", "load waits unavailable")
+	m.Unknown = append(m.Unknown, "fix units unavailable", "load waits unavailable")
 	slices.Sort(m.Unknown)
 	return m
+}
+
+// Nested worker intervals overlap; only their union belongs outside parent work.
+func nestedHours(parent string, window Interval, steps []Step, now time.Time) float64 {
+	var intervals []Interval
+	seen := map[string]bool{}
+	for _, step := range steps {
+		if step.Parent != parent || seen[step.ID] {
+			continue
+		}
+		seen[step.ID] = true
+		start, _ := time.Parse(time.RFC3339Nano, step.Start)
+		end, _ := time.Parse(time.RFC3339Nano, step.End)
+		if step.End == "" && !step.Terminal {
+			end = now
+		}
+		if _, valid := duration(Interval{start, end}, now); !valid {
+			continue
+		}
+		if start.Before(window.Start) {
+			start = window.Start
+		}
+		if end.After(window.End) {
+			end = window.End
+		}
+		if end.After(start) {
+			intervals = append(intervals, Interval{start, end})
+		}
+	}
+	slices.SortFunc(intervals, func(a, b Interval) int { return a.Start.Compare(b.Start) })
+	var merged Interval
+	hours := 0.0
+	for _, interval := range intervals {
+		if merged.End.Before(interval.Start) {
+			value, _ := duration(merged, now)
+			hours += value
+			merged = interval
+		} else if interval.End.After(merged.End) {
+			merged.End = interval.End
+		}
+	}
+	value, _ := duration(merged, now)
+	return hours + value
 }
 
 func duration(interval Interval, now time.Time) (float64, bool) {
