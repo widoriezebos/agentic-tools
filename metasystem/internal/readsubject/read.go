@@ -13,6 +13,7 @@ import (
 
 // Read is one immutable examination, independent of its transport or runner.
 type Read struct {
+	Design      *DesignRead `json:"design,omitempty"`
 	ID          string      `json:"id"`
 	Subject     ReadSubject `json:"subject"`
 	Engine      string      `json:"engine"`
@@ -34,6 +35,7 @@ type Finding struct {
 	Change   string `json:"change"`
 	Resolves string `json:"resolves,omitempty"`
 	Relation string `json:"relation,omitempty"`
+	Coverage string `json:"coverage,omitempty"`
 }
 
 var FindingClasses = []string{"regression", "weakened-test", "incomplete-item", "false-premise", "faked-seam", "missing-reader", "scope", "other"}
@@ -61,17 +63,21 @@ func Collect(id string, subject ReadSubject, engine, model, output string, data 
 	}
 	for i := range r.Findings {
 		f := &r.Findings[i]
-		if (string(fields[i]["material"]) != "true" && string(fields[i]["material"]) != "false") || !slices.Contains(FindingClasses, f.Class) || !slices.Contains([]string{"critical", "high", "medium", "low"}, f.Severity) || strings.TrimSpace(f.Claim) == "" || strings.TrimSpace(f.Evidence) == "" || strings.TrimSpace(f.Change) == "" {
+		if (string(fields[i]["material"]) != "true" && string(fields[i]["material"]) != "false") || !slices.Contains(FindingClasses, f.Class) || !slices.Contains([]string{"critical", "high", "medium", "low"}, f.Severity) || strings.TrimSpace(f.Claim) == "" || strings.TrimSpace(f.Evidence) == "" || ((f.Material || subject.Kind != SubjectDesign) && strings.TrimSpace(f.Change) == "") {
 			return r, fmt.Errorf("finding %d has incomplete stop evidence", i+1)
 		}
-		f.Where = path.Clean(f.Where)
-		if f.Where == "" || path.IsAbs(f.Where) || strings.Contains(f.Where, "\\") || slices.Contains(strings.Split(f.Where, "/"), "..") || f.Where == "." || regexp.MustCompile(`(^[A-Za-z]:|:[0-9]+(?:-[0-9]+)?$)`).MatchString(f.Where) {
-			return r, fmt.Errorf("finding %d needs a repository-relative path", i+1)
+		if subject.Kind != SubjectDesign {
+			f.Where = path.Clean(f.Where)
+			if f.Where == "" || path.IsAbs(f.Where) || strings.Contains(f.Where, "\\") || slices.Contains(strings.Split(f.Where, "/"), "..") || f.Where == "." || regexp.MustCompile(`(^[A-Za-z]:|:[0-9]+(?:-[0-9]+)?$)`).MatchString(f.Where) {
+				return r, fmt.Errorf("finding %d needs a repository-relative path", i+1)
+			}
 		}
 		if f.Class == "other" && strings.TrimSpace(f.Relation) == "" {
 			return r, fmt.Errorf("finding %d of class other must name its rule", i+1)
 		}
-		f.ID = id + ":" + strconv.Itoa(i+1)
+		if subject.Kind != SubjectDesign {
+			f.ID = id + ":" + strconv.Itoa(i+1)
+		}
 		if f.Material {
 			r.Material++
 		}

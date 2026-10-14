@@ -18,9 +18,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/narratordigest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 )
+
+// Gate tests use the configured proof contract; a manual check is a separate person act.
+var designGateCheck = []string{"--read-tool-calls", "12"}
 
 func newDesignGateBed(t *testing.T, tier uint8) *workBed {
 	t.Helper()
@@ -33,6 +37,12 @@ func newDesignGateBed(t *testing.T, tier uint8) *workBed {
 	bed.workOwnersHook = func(o *intentWorkOwners) {
 		fallback := o.git
 		o.git = func(root string, args ...string) ([]byte, error) {
+			if strings.Join(args, " ") == "rev-parse base-commit^{tree}" {
+				return []byte(strings.Repeat("b", 40)), nil
+			}
+			if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem.conf") {
+				return []byte("proof.cheap=true\nproof.audits=true\nproof.deadline=15\n"), nil
+			}
 			if args[0] == "log" {
 				return []byte("historical-declaration\n"), nil
 			}
@@ -46,7 +56,65 @@ func newDesignGateBed(t *testing.T, tier uint8) *workBed {
 		}
 	}
 	return bed
+}
 
+func TestDesignGateConvergenceRetainsSizeAdmission(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"accepted", "oversized", "pending", "body changed"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			bed := sizeBed(t)
+			production := "200"
+			if scenario == "oversized" {
+				production = "300"
+			}
+			path, data := designGatePage(t, bed, "- Critique: closed at round 2 on 1 material finding folded as 1 unit acceptance item (convergence exit-one)", sizeTable("u", 1, "900", production))
+			body, err := project.DesignBodyDigest(path, data)
+			if err != nil {
+				t.Fatal(err)
+			}
+			file := bed.goalFile(bed.id)
+			file.DesignExits = []goal.DesignExit{{Operation: "exit-one", DesignID: "gate-design", BodySHA256: body, Units: []string{"u0"}, Items: []string{"design-read:M1"}}}
+			file.ReviewObligations = []goal.ReviewObligation{{Finding: "design-read:M1", Chain: "design-read", Artifact: "gate.go", Test: "TestPublicGate", Fixture: "group:gate", State: "open", DesignItem: &goal.DesignItem{Exit: "exit-one", DesignID: "gate-design", BodySHA256: body, Unit: "u0", Decision: "6", Tests: []string{"gate/TestPublicGate"}}}}
+			if scenario == "pending" {
+				file.DesignExits = nil
+			}
+			bed.addGoal(file)
+			if scenario == "body changed" {
+				if err := os.WriteFile(path, append(data, []byte("Changed requirement.\n")...), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			code, result, output := sizeBuild(t, bed, "u0")
+			verdict := resultData(t, result)["designGate"].(map[string]any)["verdict"]
+			want := "ok"
+			if scenario == "oversized" {
+				want = "design-size-invalid"
+			} else if scenario != "accepted" {
+				want = "acceptance-pending"
+			}
+			if verdict != want {
+				t.Fatalf("gate=%v want=%s code=%d result=%+v output=%s", verdict, want, code, result, output)
+			}
+			if scenario != "accepted" {
+				if code != 1 || len(bed.starter.launched()) != 0 {
+					t.Fatalf("invalid design launched: code=%d launches=%v result=%+v", code, bed.starter.launched(), result)
+				}
+				return
+			}
+			if code != 0 || !slices.Contains(bed.starter.launched(), "build") {
+				t.Fatalf("accepted design did not build: %d %+v %s", code, result, output)
+			}
+			identity, err := bed.designGate.identity(stateroottest.Installation(t, bed.stateRoot()))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, recorded := designGateRead(t, bed, identity, "u0")
+			if len(recorded.Designs) != 1 || recorded.Designs[0].Size == nil || recorded.Designs[0].Size.Count != 1 || recorded.Designs[0].BodySHA256 != body || !strings.Contains(recorded.Designs[0].Acceptance, "gate/TestPublicGate") {
+				t.Fatalf("build lost size or acceptance evidence: %+v", recorded)
+			}
+		})
+	}
 }
 
 func designGatePage(t *testing.T, bed *workBed, critique string, sections ...string) (string, []byte) {
@@ -80,7 +148,7 @@ func designGatePage(t *testing.T, bed *workBed, critique string, sections ...str
 func designGateBuild(t *testing.T, bed *workBed, unit string) (intentResult, string) {
 	t.Helper()
 	brief := bed.brief("gate-brief.md", "Build the gate.\n")
-	code, result, output := bed.work(append([]string{"work", "build", bed.id, unit, "--brief", brief, "--lines", "40"}, workCheck...)...)
+	code, result, output := bed.work(append([]string{"work", "build", bed.id, unit, "--brief", brief, "--lines", "40"}, designGateCheck...)...)
 	if code != 0 || !slices.Contains(bed.starter.launched(), "build") {
 		t.Fatalf("the build did not start: code=%d result=%+v output=%s", code, result, output)
 	}

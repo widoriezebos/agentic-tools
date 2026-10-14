@@ -241,7 +241,8 @@ const p4DeliveredReturn = `{
   "sessionId":"fake-session","model":{"requested":"fake-model","effective":"fake-model"},
   "claimed":{"model":null,"sessionId":null},"mode":"design","reviewedCommit":"abc1234",
   "evidence":[{"command":"fixture delivery","observed":"canonical return recorded","level":"ran"}],
-  "gaps":[],"findings":[],"rigor":[],"verdictMaterialCount":0
+  "gaps":[],"findings":[],"rigor":[],"verdictMaterialCount":0,
+  "wholePageDigest":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","coverage":[]
 }`
 
 // L2602-2621: a critic whose supervisor died after its valid return landed

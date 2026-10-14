@@ -17,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	critiqueModel "github.com/widoriezebos/agentic-tools/metasystem/internal/critique"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"golang.org/x/sys/unix"
 )
@@ -40,6 +41,12 @@ func init() {
 	dedicatedMetadataFields["read"] = true
 	dedicatedMetadataFields["readDigest"] = true
 	dedicatedMetadataFields["unknownExaminationRetryFrom"] = true
+	dedicatedMetadataFields["designExaminations"] = true
+	dedicatedMetadataFields["designFixedSections"] = true
+	dedicatedMetadataFields["designDecision"] = true
+	dedicatedMetadataFields["designExaminationLimit"] = true
+	dedicatedMetadataFields["designStop"] = true
+	dedicatedMetadataFields["findingRegisterStop"] = true
 	dedicatedMetadataFields["inheritedFindings"] = true
 	dedicatedMetadataFields["examinationRetryOf"] = true
 	dedicatedMetadataFields[findingRegisterSubjectDigestField] = true
@@ -211,9 +218,44 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 			if roundErr != nil {
 				return fmt.Errorf("critique root record %s has malformed register round state: %v", rootJob, roundErr)
 			}
+			if role == "design-critic" && asString(root["unknownExaminationRetryFrom"]) == roundJob && root["designStop"] != nil && status == "completed" && foldedRound == round {
+				if _, err := CollectExamination(repoRoot, roundJob); err != nil {
+					outcome = "unchanged"
+					return nil
+				}
+				retained, _ := root["read"].(map[string]any)
+				if asString(retained["id"]) != roundJob {
+					foldedRound = round - 1
+					root[findingRegisterRoundField] = foldedRound
+				}
+			}
 			if round <= foldedRound {
 				outcome = "unchanged"
+				if stop, _ := root["designStop"].(map[string]any); role == "design-critic" && asString(stop["class"]) == "unknown design evidence" && status == "completed" {
+					if _, err := CollectExamination(repoRoot, roundJob); err != nil {
+						return err
+					}
+					delete(root, "designStop")
+					delete(root, "findingRegisterStop")
+					if decision, _ := root["designDecision"].(map[string]any); asString(decision["decision"]) == "stop" {
+						root["designStop"], root["findingRegisterStop"] = decision, decision
+					}
+					return writeRecord(recordPath, root)
+				}
 				return nil
+			}
+			if retained, _ := root["read"].(map[string]any); asString(roundRecord["examinationRetryOf"]) != "" && asString(retained["id"]) == asString(roundRecord["examinationRetryOf"]) {
+				read, err := CollectExamination(repoRoot, roundJob)
+				if err != nil {
+					return err
+				}
+				data, _ := read.Canonical()
+				if _, err := atomicWriteText(filepath.Join(state.agents, rootJob, "rounds", fmt.Sprint(round), "read.json"), data); err != nil {
+					return err
+				}
+				root[findingRegisterRoundField] = round
+				outcome = "unchanged"
+				return writeRecord(recordPath, root)
 			}
 			if round != foldedRound+1 {
 				return refuse(3, "critique register round %d cannot advance before round %d has been folded", round, foldedRound+1).withRun(jobStatusRun(rootJob))
@@ -236,6 +278,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 
 			advanced := register
 			var roundMaterial int64
+			var completedRead readsubject.Read
 			var completedSubject ReadSubject
 			completedSubjectPresent := false
 			completedSubjectBound := false
@@ -278,6 +321,11 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 					}
 					root[findingRegisterSubjectDigestField] = persisted.Digest()
 				}
+				if role == "design-critic" && persisted.DesignPage != "" {
+					if _, err := CollectExamination(repoRoot, roundJob); err != nil {
+						return err
+					}
+				}
 				completedSubject = persisted
 				completedSubjectPresent = subjectPresent
 				completedSubjectBound = subjectPresent && readsubject.ReturnBindsSubject(persisted, result)
@@ -287,7 +335,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 				} else {
 					var demotions []any
 					version, _ := numInt(result["schemaVersion"])
-					if role == "code-critic" && version == 6 {
+					if role == "code-critic" && version == 6 || role == "design-critic" && persisted.DesignPage != "" {
 						read, err := CollectExamination(repoRoot, roundJob)
 						if err != nil {
 							return err
@@ -297,6 +345,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 						if err := json.Unmarshal(data, &value); err != nil {
 							return err
 						}
+						completedRead = read
 						root["read"], root["readDigest"] = value, digest
 						readPath := filepath.Join(filepath.Dir(resultPath), "read.json")
 						if prior, err := os.ReadFile(readPath); err == nil {
@@ -307,6 +356,18 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 							return err
 						} else if _, err := atomicWriteText(readPath, data); err != nil {
 							return err
+						}
+						if role == "design-critic" {
+							encoded, _ := json.Marshal(read.Findings)
+							json.Unmarshal(encoded, &findings)
+							rows := rigorRowsByID(result["rigor"])
+							rigor := []any{}
+							for _, finding := range read.Findings {
+								row := takeRigorRow(rows, finding.ID)
+								row["findingId"], row["artifact"] = finding.ID, persisted.DesignPath
+								rigor = append(rigor, row)
+							}
+							result["rigor"] = rigor
 						}
 						for i, raw := range findings {
 							f := raw.(map[string]any)
@@ -357,7 +418,7 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 			if accountingErr != nil {
 				return malformedRoundAccounting(rootJob, accountingErr)
 			}
-			if !cancelledRound && !accounting.consumedMissing && asString(roundRecord["examinationRetryOf"]) == "" {
+			if !cancelledRound && !accounting.consumedMissing && asString(roundRecord["examinationRetryOf"]) == "" && (role != "design-critic" || status == "completed") {
 				accounting.consumed++
 			}
 			root[reviewRoundLimitField] = accounting.limit
@@ -376,6 +437,10 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 				}
 			}
 			root[findingRegisterField] = after
+			if role == "design-critic" && completedSubjectBound {
+				delete(root, "designStop")
+				delete(root, "findingRegisterStop")
+			}
 			root[findingRegisterRoundField] = round
 			materialHistory, historyErr := appendMaterialRound(materialHistoryValue, round, roundMaterial, cancelledRound)
 			if historyErr != nil {
@@ -386,6 +451,11 @@ func critiqueRegisterAdvance(repoRoot, rootJob, roundJob string, facts critiqueS
 			}
 			if historyPresent || len(cleanReads) > 0 {
 				root[cleanReadRoundsField] = encodeCleanReadRounds(cleanReads)
+			}
+			if completedRead.Design != nil {
+				if err := recordDesignDecision(state, rootJob, root, roundRecord, completedRead); err != nil {
+					return err
+				}
 			}
 			if writeErr := writeRecord(recordPath, root); writeErr != nil {
 				return writeErr
@@ -419,6 +489,9 @@ func critiqueRoundAccountingWithReads(repoRoot string, state critiqueState, root
 		revision, _ := numInt(root["goalRevision"])
 		resolution, err := goalReviewRoundLimitWithReads(repoRoot, asString(root["goalId"]), uint64(max(revision, 0)), asString(root["role"]), reads)
 		if err != nil || resolution.roleLimit == 0 {
+			if err == nil {
+				err = fmt.Errorf("goal budget is zero; build without critique or ask a person to revise and approve it")
+			}
 			return account, fmt.Errorf("cannot resolve a positive goal review-round limit: %v", err)
 		}
 		account.limit = int64(resolution.roleLimit)
@@ -439,7 +512,7 @@ func critiqueRoundAccountingWithReads(repoRoot string, state critiqueState, root
 			continue
 		}
 		status := asString(record["status"])
-		if (status == "completed" || status == "failed") && jobID != asString(root["unknownExaminationRetryFrom"]) && asString(record["examinationRetryOf"]) == "" {
+		if (status == "completed" || status == "failed" && asString(root["role"]) != "design-critic") && jobID != asString(root["unknownExaminationRetryFrom"]) && asString(record["examinationRetryOf"]) == "" {
 			account.consumed++
 		}
 	}
@@ -850,11 +923,10 @@ func CritiqueRegisterResolveOutOfScope(repoRoot, rootJob string, findingIDs []st
 // open or disputed findings are decided here: one the critic withdrew or the
 // close deferred keeps its resolution, and an id the register does not carry
 // (a finding that was never material) has nothing to decide. The final round's
-// own accepted findings stay open for classification, except non-severe
-// acceptances folded at a one-examination design close.
+// own accepted findings stay open for the final Decision revision and publication.
 func CritiqueRegisterApplyDecisions(repoRoot, rootJob string, decisions map[string]string) error {
 	for id, resolution := range decisions {
-		if resolution != "refuted" && resolution != "accepted" && resolution != "out-of-scope" && resolution != "folded" {
+		if resolution != "refuted" && resolution != "accepted" && resolution != "out-of-scope" {
 			return fmt.Errorf("finding %s: %q is not a decision the register records; it records refuted, accepted and out-of-scope", id, resolution)
 		}
 	}
@@ -873,17 +945,6 @@ func CritiqueRegisterApplyDecisions(repoRoot, rootJob string, decisions map[stri
 				resolution, decided := decisions[register[i].FindingID]
 				if !decided || (register[i].Status != "open" && register[i].Status != "disputed") {
 					continue
-				}
-				if resolution == "folded" {
-					round, _ := numInt(root[findingRegisterRoundField])
-					limit, _ := numInt(root[reviewRoundLimitField])
-					first, _ := firstDesignReturn(repoRoot, rootJob, max(limit, round))
-					if asString(root["role"]) != "design-critic" || round != first || DesignRoundLimit(repoRoot, rootJob, limit) != round {
-						return fmt.Errorf("finding %s can only be folded at a one-examination design close", register[i].FindingID)
-					}
-					if register[i].RigorClass == critiqueModel.Severe {
-						continue
-					}
 				}
 				if resolution == "out-of-scope" && (register[i].RigorClass == critiqueModel.Severe || register[i].RigorClass == critiqueModel.Unproven) {
 					return fmt.Errorf("finding %s is %s and cannot be resolved out-of-scope", register[i].FindingID, register[i].RigorClass)
@@ -922,6 +983,17 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 			if err != nil {
 				return err
 			}
+			if asString(root["role"]) == "design-critic" && root["findingRegisterStop"] != nil {
+				data, _ := json.Marshal(root["findingRegisterStop"])
+				var stop loopstop.Stop
+				if err := json.Unmarshal(data, &stop); err != nil || len(stop.Required) == 0 {
+					return fmt.Errorf("the design stop has no readable remedy")
+				}
+				register, _, err := critiqueFindingRegister(root)
+				if stop.Class == "unknown design evidence" || err != nil || len(openRegisterFindingIDs(register)) != 0 {
+					return fmt.Errorf("the design remains stopped\nrun: %s", stop.Required[0])
+				}
+			}
 			register, present, err := critiqueFindingRegister(root)
 			if err != nil {
 				return err
@@ -947,8 +1019,8 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 			}
 			if len(blockers) > 0 {
 				foldedRound, roundOK := numInt(root[findingRegisterRoundField])
-				if roundOK && designFinalRound(repoRoot, state, rootJob, root, foldedRound) {
-					return designCapHumanRaise(asString(root["goalId"]), foldedRound, designCapHumanFindingIDs(root, register, unresolved, blockerIDs))
+				if roundOK && asString(root["role"]) == "design-critic" {
+					return fmt.Errorf("%s\n%w", strings.Join(blockers, "\n"), designCapHumanRaise(asString(root["design"]), foldedRound, designCapHumanFindingIDs(root, register, unresolved, blockerIDs)))
 				}
 				return fmt.Errorf("%s\na person accepts each risk with metasystem goal accept-risk, or raises the goal's budget with metasystem goal budget", strings.Join(blockers, "\n"))
 			}
@@ -967,7 +1039,7 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 				// bullet 5 sends every other non-clean row to the human without another automatic round.
 				humanIDs := designCapHumanFindingIDs(root, register, unresolved, nil)
 				if len(humanIDs) > 0 {
-					return designCapHumanRaise(asString(root["goalId"]), foldedRound, humanIDs)
+					return designCapHumanRaise(asString(root["design"]), foldedRound, humanIDs)
 				}
 				useFixture = true
 			}
@@ -1015,6 +1087,25 @@ func critiqueRegisterClose(repoRoot, rootJob string, deferFindings deferReviewOb
 	})
 }
 
+// RecordDesignEvidenceStop retains the same unknown outcome on the design
+// round and its register without charging an examination or resolving findings.
+func RecordDesignEvidenceStop(repoRoot, rootJob string, stop loopstop.Stop) error {
+	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
+		return "stopped", withRecordLock(repoRoot, rootJob, func(path string) error {
+			root, err := readObject(path)
+			if err != nil {
+				return err
+			}
+			if asString(root["role"]) != "design-critic" || stop.Loop != "design-round" || stop.Subject != rootJob || stop.Decision != "stop" || !strings.HasPrefix(stop.Handoff, "stopped ") {
+				return fmt.Errorf("unknown design stop must name its design critique root")
+			}
+			root["designStop"], root["findingRegisterStop"] = stop, stop
+			return writeRecord(path, root)
+		})
+	})
+	return err
+}
+
 func deferReviewObligations(repoRoot, rootJob, goalID, machine, lineage string, epoch int64, obligations []goal.ReviewObligation) (string, error) {
 	return deferReviewObligationsWithReads(repoRoot, rootJob, goalID, machine, lineage, epoch, obligations, concreteGoalAdmissionReads())
 }
@@ -1058,23 +1149,22 @@ func reviewRoundCeiling(repoRoot string) int64 {
 	return int64(maximum)
 }
 
-func designCapHumanRaise(goalID string, round int64, findingIDs []string) error {
+func designCapHumanRaise(design string, round int64, findingIDs []string) error {
+	if design == "" {
+		return fmt.Errorf("the design's canonical page is missing; restore the design path on its retained root before closing")
+	}
 	unique := map[string]bool{}
 	for _, id := range findingIDs {
 		unique[id] = true
 	}
-	ids := make([]string, 0, len(unique))
+	findingIDs = nil
 	for id := range unique {
-		ids = append(ids, id)
+		findingIDs = append(findingIDs, id)
 	}
-	sort.Strings(ids)
-	first := "F"
-	if len(ids) > 0 {
-		first = ids[0]
-	}
+	sort.Strings(findingIDs)
 	return &OpError{Code: CritiqueCapExhaustedExitCode, Reason: CritiqueCapExhaustedReason,
-		Message: fmt.Sprintf("design round %d left findings %s for a person to decide\nrun: metasystem goal accept-risk %s --finding %s --reason TEXT, or re-scope it with metasystem goal edit %s",
-			round, strings.Join(ids, ", "), goalID, first, goalID)}
+		Message: fmt.Sprintf("design round %d left findings %s; complete their bound continuation or design exit\nrun: metasystem design review '%s' --dispositions FILE\nA person may record a ruling: metasystem design review '%s' --ruling TEXT --reason TEXT --by NAME",
+			round, strings.Join(findingIDs, ", "), strings.ReplaceAll(design, "'", "'\\''"), strings.ReplaceAll(design, "'", "'\\''"))}
 }
 
 func designCapHumanFindingIDs(root map[string]any, register []registerFinding, unresolved []int, ids []string) []string {
@@ -1127,6 +1217,12 @@ func cleanClosure(state critiqueState, rootJob string, root map[string]any, regi
 	landable, risks, err := readsubject.LandableRegister(encodeFindingRegister(register))
 	if err != nil {
 		return Closure{}, false, err
+	}
+	if !landable && asString(root["role"]) == "design-critic" {
+		landable, err = readsubject.CleanDesignRegister(root)
+		if err != nil {
+			return Closure{}, false, err
+		}
 	}
 	if !landable {
 		return Closure{}, false, nil

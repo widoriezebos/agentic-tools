@@ -4,7 +4,7 @@
   "title": "Design critic return",
   "type": "object",
   "additionalProperties": false,
-  "required": ["jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode", "reviewedCommit", "findings", "verdictMaterialCount"],
+  "required": ["jobId", "round", "runtime", "sessionId", "model", "evidence", "gaps", "mode", "reviewedCommit", "findings", "verdictMaterialCount", "wholePageDigest", "coverage"],
   "properties": {
     "jobId": {"type": "string"},
     "round": {"type": "integer"},
@@ -35,13 +35,22 @@
     "gaps": {"type": "array", "items": {"type": "string"}},
     "mode": {"type": "string"},
     "reviewedCommit": {"type": "string"},
+    "wholePageDigest": {"type": "string"},
+    "coverage": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["row", "where", "answers"], "properties": {
+      "row": {"type": "string"}, "where": {"type": "string"},
+      "answers": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["question", "answer", "evidence", "unanswered"], "properties": {
+        "question": {"enum": [1, 2, 3, 4, 5]}, "answer": {"type": "string"}, "evidence": {"type": "string"}, "unanswered": {"type": "boolean"}
+      }}}
+    }}},
     "findings": {
       "type": "array",
       "items": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["id", "severity", "material", "claim", "evidence"],
+        "required": ["id", "severity", "material", "claim", "evidence", "class", "where", "change", "coverage", "relation"],
         "properties": {
+          "class": {"enum": ["regression", "weakened-test", "incomplete-item", "false-premise", "faked-seam", "missing-reader", "scope", "other"]},
+          "where": {"type": "string"}, "change": {"type": "string"}, "coverage": {"type": "string"}, "relation": {"type": "string"},
           "id": {"type": "string"},
           "severity": {"enum": ["critical", "high", "medium", "low"]},
           "material": {"type": "boolean"},

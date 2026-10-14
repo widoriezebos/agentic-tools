@@ -52,7 +52,7 @@ type reviewBinding struct {
 	Return      string
 }
 
-var reviewBindingLine = regexp.MustCompile(`(?m)^Review binding: goal=(\S+) work=(\S+) attempt=(\d+) subject=([0-9a-f]+) examination=(\S+) round=(\d+) return=([0-9a-f]{64})\s*$`)
+var reviewBindingLine = regexp.MustCompile(`(?m)^Review binding: goal=(\S*) work=(\S+) attempt=(\d+) subject=([0-9a-f]+) examination=(\S+) round=(\d+) return=([0-9a-f]{64})\s*$`)
 
 // line is the binding as the decisions file carries it: a machine line
 // reviewBindingLine parses back, one key=value field per bound fact.
@@ -89,6 +89,11 @@ func decisionsDocument(binding reviewBinding, findings []intentFinding) string {
 	text.WriteString("|" + strings.Repeat(" --- |", len(header)) + "\n")
 	for _, finding := range findings {
 		text.WriteString(fmt.Sprintf("| %s | DECIDE | | |\n", finding.ID))
+	}
+	if strings.HasPrefix(binding.Work, "design:") {
+		text.WriteString("\nFor a moved or renamed heading, append one Section mapping: JSON line.\n")
+		text.WriteString("Its from and to bind the old and new full-page SHA-256; headings lists exact From/To anchors.\n")
+		text.WriteString(fmt.Sprintf("Section mapping example (replace the new page checksum and headings):\n`Section mapping: {\"from\":\"%s\",\"to\":\"new-page-checksum\",\"headings\":[{\"from\":\"## Old heading\",\"to\":\"## New heading\"}]}`\n", binding.Subject))
 	}
 	return text.String()
 }

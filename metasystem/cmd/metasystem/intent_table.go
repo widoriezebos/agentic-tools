@@ -187,6 +187,10 @@ func designIntentCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "goal", value: "G", usage: "the goal the design serves (default: the one the document names)"},
+				{name: "scope", value: "FILE", usage: "a person's specified replacement design, preserving its id and goal"},
+				{name: "ruling", value: "TEXT", usage: "a person's ruling on this design despite advisory findings"},
+				{name: "reason", value: "TEXT", usage: "why the person authorizes this scope or ruling"},
+				{name: "by", value: "NAME", usage: "the person making the act; a name alone grants no authority"},
 				{name: "dispositions", value: "FILE", usage: "the author's decisions on the examined design"},
 				{name: "after", value: "N", usage: "the examination the decisions answer"},
 				{name: "retry", value: "N", usage: "examine the design once more after examination N failed without findings"},
@@ -235,6 +239,12 @@ func runIntentDesignReview(inv *intentInvocation) int {
 	if len(inv.input.args) != 1 {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "design review needs the one design file to review; nothing was done",
 			next: inv.typedArgvFor("FILE"), nextReason: "FILE is the design page", Details: []string{"usage: " + reviewDesignUsage}})
+	}
+	if inv.input.has("scope") || inv.input.has("ruling") {
+		if problem := inv.resolveLayout(); problem != nil {
+			return inv.render(*problem)
+		}
+		return inv.render(inv.ruleDesign())
 	}
 	for _, number := range []string{"retry", "after"} {
 		if value, err := strconv.Atoi(inv.input.text(number)); inv.input.has(number) && (err != nil || value < 1) {

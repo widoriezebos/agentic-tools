@@ -10,7 +10,7 @@ import (
 )
 
 // ExaminationRetryAdmissible admits an environment failure without a return,
-// or one fresh code examination when a completed return has unavailable stop
+// or one fresh critic examination when a completed return has unavailable stop
 // inputs. Readable completed findings are decided instead of retried. Live
 // processes, cancellation and an already reserved unknown-input retry hold.
 func ExaminationRetryAdmissible(repoRoot string, latest map[string]any) error {
@@ -39,9 +39,6 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 	case !TerminalStatus(status):
 		return fmt.Errorf("examination round %d is still %s; a live examination is never retried", round, status)
 	case status == "completed":
-		if role != "code-critic" {
-			return fmt.Errorf("examination round %d completed; its findings are decided, not retried", round)
-		}
 		state := loadCritiqueState(repoRoot)
 		persisted, present := state.records[asString(latest["jobId"])]
 		if !present || asString(persisted["status"]) != "completed" {
@@ -52,7 +49,7 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 		}
 		root := state.records[state.chainRoot(asString(latest["jobId"]))]
 		if asString(root["unknownExaminationRetryFrom"]) != "" {
-			return fmt.Errorf("the fresh examination has already been reserved; unavailable stop inputs hold the unit")
+			return fmt.Errorf("the fresh examination has already been reserved; unavailable stop inputs hold the critique")
 		}
 		if latest["pid"] != nil && asString(latest["groupDeathProvenAt"]) == "" {
 			if death := ProveCustodyDeath(repoRoot, latest, custody); death.Outcome != CustodyDeathProven {
@@ -62,6 +59,8 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 		return nil
 	case status == "cancelled":
 		return fmt.Errorf("examination round %d was cancelled; a cancellation is not retried", round)
+	case role == "design-critic" && status == "timeout":
+		return fmt.Errorf("design examination round %d reached its deadline; a deadline is not retried", round)
 	}
 	if latest["pid"] != nil && asString(latest["groupDeathProvenAt"]) == "" {
 		// Without the reaper's recorded group-death proof, the custody owner
@@ -76,6 +75,9 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 		if chainRoot, err := ChainRootOf(repoRoot, parent); err == nil {
 			root = chainRoot
 		}
+	}
+	if role == "design-critic" && asString(loadCritiqueState(repoRoot).records[root]["unknownExaminationRetryFrom"]) != "" {
+		return fmt.Errorf("the one fresh design examination is already reserved")
 	}
 	returnPath := filepath.Join(repoRoot, "artifacts", "agents", root, "rounds", strconv.FormatInt(round, 10), "return.json")
 	if _, err := os.Stat(returnPath); err == nil {
@@ -93,8 +95,8 @@ func ReserveUnknownExaminationRetry(repoRoot, jobID string) error {
 	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
 		state := loadCritiqueState(repoRoot)
 		latest, present := state.records[jobID]
-		if !present || asString(latest["status"]) != "completed" {
-			return "", fmt.Errorf("unknown-input retry needs its completed examination")
+		if !present || asString(latest["status"]) != "completed" && !(asString(latest["role"]) == "design-critic" && asString(latest["status"]) == "failed") {
+			return "", fmt.Errorf("unknown-input retry needs a terminal critic examination")
 		}
 		if err := ExaminationRetryAdmissible(repoRoot, latest); err != nil {
 			return "", err

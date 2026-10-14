@@ -58,6 +58,13 @@ func TestReadDesignCritiqueChains(t *testing.T) {
 			t.Parallel()
 			repo := t.TempDir()
 			design := filepath.Join(repo, "page.md")
+			// Decision 2 requires a retained identity or a readable legacy
+			// page before absence can authorize another chain.
+			for _, path := range []string{design, filepath.Join(repo, "other.md")} {
+				if err := os.WriteFile(path, []byte("# Legacy design\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
 			jobs := filepath.Join(repo, "artifacts", "agents", "jobs")
 			if chains, err := ReadDesignCritiqueChains(repo, "g", design); err != nil || len(chains) != 0 {
 				t.Fatalf("no local jobs: chains=%+v err=%v", chains, err)

@@ -94,6 +94,7 @@ func (git *recordingOSGit) Run(directory string, environment []string, args ...s
 type completingStarter struct {
 	m                  *Manager
 	failKind, holdKind string
+	proofCause         string
 	order, ids         []string
 	readOutput         string
 	readVerdict        string
@@ -129,6 +130,9 @@ func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, e
 		code := 0
 		if record.Kind == starter.failKind {
 			current.State, current.Reason, code = Failed, "fixture-red", 1
+			if record.Kind == "proof" {
+				current.Cause = starter.proofCause
+			}
 		}
 		current.ExitCode = &code
 		if record.Kind == "read" {
@@ -214,6 +218,10 @@ type unitFixture struct {
 func baseUnitFixture(t *testing.T) unitFixture {
 	t.Helper()
 	root := t.TempDir()
+	root, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
 	worktree := filepath.Join(root, "work")
 	os.MkdirAll(worktree, 0o700)
 	brief := filepath.Join(root, "build.md")
@@ -243,6 +251,8 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 		diff = "diff --git a/unit.go b/unit.go\n--- a/unit.go\n+++ b/unit.go\n+implemented\n"
 	}
 	fixture := baseUnitFixture(t)
+	// Outcome fixtures represent a demonstrated own red; attribution fixtures supply raw exits.
+	fixture.starter.proofCause = "own"
 	var total int64
 	for _, block := range parseDiff([]byte(diff)) {
 		total += block.lines
@@ -773,6 +783,7 @@ func TestRefusedBuildLeavesNoRunRecord(t *testing.T) {
 }
 
 func TestResumeAfterAKillStartsNoSecondLaunch(t *testing.T) {
+	t.Parallel()
 	fixture := newUnitFixture(t, "", "branch", "before", "branch", "round")
 	fixture.runner.AfterWrite = func(record UnitRunRecord) error {
 		for _, step := range record.Rounds[0].Steps {

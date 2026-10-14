@@ -170,7 +170,7 @@ func runReviewStartRow(t *testing.T, row reviewStartRow, via string) {
 	for path, content := range row.edits {
 		c.edits[path] = content
 	}
-	if code, result := c.do(append([]string{"work", "build", c.id, "connect", "--brief", brief, "--lines", "10"}, workCheck...)...); code != 0 || result.Outcome != intentConfirmed {
+	if code, result := c.do(append([]string{"work", "build", c.id, "connect", "--brief", brief, "--lines", "10"}, designGateCheck...)...); code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("build: code=%d %+v", code, result)
 	}
 	work := []string{"work", "review", c.id, "--work", "connect"}

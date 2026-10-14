@@ -25,6 +25,7 @@ type ReadSubject struct {
 	ReviewedMember        string          `json:"reviewedMember,omitempty"`
 	ReviewedProjectTree   string          `json:"reviewedProjectTree,omitempty"`
 	DiffDigest            string          `json:"diffDigest,omitempty"`
+	DesignPage            string          `json:"designPage,omitempty"`
 	DesignPath            string          `json:"designPath,omitempty"`
 	ContentDigest         string          `json:"contentDigest,omitempty"`
 	DeclaredOutputsDigest string          `json:"declaredOutputsDigest,omitempty"`

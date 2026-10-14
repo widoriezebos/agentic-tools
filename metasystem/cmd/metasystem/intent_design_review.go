@@ -15,6 +15,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
@@ -39,25 +41,30 @@ type designReviewRequest struct {
 }
 
 type designReviewEntry struct {
+	Fold     *goal.DesignExit      `json:"fold,omitempty"`
 	Goal     string                `json:"goal"`
 	Design   string                `json:"design"`
 	Subjects map[string]string     `json:"subjects"` // examined round -> subject digest
 	Requests []designReviewRequest `json:"requests"`
+	Exit     *goal.DesignExit      `json:"exit,omitempty"`
 }
 
 func (inv *intentInvocation) designReviewEntryPath(recordID string) string {
 	return inv.layout.InstallationRoot.Path("artifacts", "agents", "intent-review", "design-"+strings.ToLower(recordID), "chain.json")
 }
 
-func (inv *intentInvocation) readDesignReviewEntry(recordID string) designReviewEntry {
+func (inv *intentInvocation) readDesignReviewEntry(recordID string) (designReviewEntry, error) {
 	var entry designReviewEntry
-	if data, err := os.ReadFile(inv.designReviewEntryPath(recordID)); err == nil {
-		json.Unmarshal(data, &entry)
+	data, err := os.ReadFile(inv.designReviewEntryPath(recordID))
+	if err == nil {
+		err = json.Unmarshal(data, &entry)
+	} else if os.IsNotExist(err) {
+		err = nil
 	}
 	if entry.Subjects == nil {
 		entry.Subjects = map[string]string{}
 	}
-	return entry
+	return entry, err
 }
 
 func (inv *intentInvocation) writeDesignReviewEntry(recordID string, entry designReviewEntry) error {
@@ -75,6 +82,7 @@ func (inv *intentInvocation) writeDesignReviewEntry(recordID string, entry desig
 
 // designReviewPlan is what reviewDesign resolved before any dispatch.
 type designReviewPlan struct {
+	root             string // an explicitly selected canonical job alias
 	targets          []intentTarget
 	goalID, recordID string
 	design           string // canonical absolute path
@@ -103,7 +111,29 @@ func (plan designReviewPlan) writeMissingInputs() error {
 // existing critique chain; nil means no chain exists and the first review
 // is dispatched as before.
 func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentResult {
-	chains := dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), plan.goalID, plan.design)
+	entry, err := inv.readDesignReviewEntry(plan.recordID)
+	chains, chainErr := dispatchcore.ReadDesignCritiqueChains(inv.layout.InstallationRoot.Path(), plan.goalID, plan.design)
+	if plan.root != "" {
+		selected := chains[:0]
+		for _, chain := range chains {
+			if chain.Root == plan.root {
+				selected = append(selected, chain)
+			}
+		}
+		chains = selected
+	}
+	if err != nil || chainErr != nil || len(chains) == 0 && len(entry.Subjects) != 0 {
+		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the design history is unknown; no new critique was requested", Details: []string{fmt.Sprint(err, chainErr)}, next: inv.sameCommand(), nextReason: "restore the retained chain entry, job index and frozen subject for this design"}
+	}
+	var open []dispatchcore.DesignCritiqueChain
+	for _, chain := range chains {
+		if !chain.Closed {
+			open = append(open, chain)
+		}
+	}
+	if len(open) > 0 {
+		chains = open
+	}
 	switch {
 	case len(chains) == 0:
 		if inv.input.has("dispositions") || inv.input.has("retry") || inv.input.has("after") {
@@ -123,7 +153,41 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 			nextReason: "decides and closes a critique that no longer applies; the others are listed above"}
 	}
 	chain := chains[0]
-	entry := inv.readDesignReviewEntry(plan.recordID)
+	if entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)] == "" {
+		if subject, present, err := readsubject.ReadRoundSubject(inv.layout.InstallationRoot.Path("artifacts", "agents"), chain.Root, chain.NewestRound); err == nil && present {
+			entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)] = subject.ContentDigest
+			entry.Goal, entry.Design = plan.goalID, plan.design
+			if err := inv.writeDesignReviewEntry(plan.recordID, entry); err != nil {
+				return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the recovered design history could not be retained", Details: []string{err.Error()}, next: inv.sameCommand()}
+			}
+		}
+	}
+	if resumed := inv.finishDesignAcceptance(plan, chain, false); resumed != nil {
+		return resumed
+	}
+	if recordText(chain.Newest, "status") == "completed" && !chain.Closed {
+		required, err := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
+		if err == nil && required {
+			_, err = inv.delivery().examinationRead(inv.layout.InstallationRoot.Path(), chain.NewestJob)
+			if err == nil {
+				_, err = dispatchcore.CritiqueRegisterAdvance(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestJob)
+			}
+		}
+		if err != nil {
+			if inv.input.has("retry") {
+				return inv.retryDesignExamination(plan, chain, entry)
+			}
+			return inv.unknownDesignExamination(plan, chain, err)
+		}
+		if required {
+			if held := inv.designEffectPolicy(plan, chain, ""); held != nil {
+				return held
+			}
+		}
+		if required && inv.input.has("retry") {
+			return inv.collectDesignExamination(plan, chain, entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)])
+		}
+	}
 	entry.Goal, entry.Design = plan.goalID, plan.design
 	status := recordText(chain.Newest, "status")
 	switch {
@@ -132,8 +196,6 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 		// Dispositions section, if the first close could not write it, is
 		// written now.
 		return inv.designCritiqueClosed(plan, chain, intentResult{Targets: append(plan.targets, jobTarget(chain.Root)), Outcome: intentUnchanged})
-	case chain.Closed && chain.NewestRound == 1 && dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), chain.Root, 2) == 1:
-		return designRoundOneRefused(plan)
 	case chain.Closed && (inv.input.has("dispositions") || inv.input.has("retry")):
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary:  fmt.Sprintf("design %s's critique is closed and is never continued; nothing was requested", plan.recordID),
@@ -146,12 +208,14 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 		if entry.Subjects[strconv.FormatInt(chain.NewestRound, 10)] != plan.subject {
 			return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 				Summary: fmt.Sprintf("design %s changed after its critique closed, and a change starts no new critique; nothing was done", plan.recordID),
-				next:    inv.publicArgv("goal", "budget", plan.goalID), nextReason: "a person decides whether it needs another critique and gives the goal a budget for it"}
+				next:    inv.publicArgv("design", "review", relativeOrSame(inv.layout.GitRoot, plan.design), "--scope", "FILE", "--reason", "TEXT", "--by", "NAME"), nextReason: "a person records an explicit scope change; the closed critique keeps its consumed allowance"}
 		}
-		return nil
+		return &intentResult{Targets: append(plan.targets, jobTarget(chain.Root)), Outcome: intentUnchanged, Summary: "the design's retained critique is closed; no new examination was requested"}
 	case !dispatchcore.TerminalStatus(status):
 		return &intentResult{Targets: append(plan.targets, jobTarget(chain.NewestJob)), Outcome: intentInProgress,
 			Summary: fmt.Sprintf("examination %d of design %s is %s", chain.NewestRound, plan.recordID, status), next: inv.sameCommand(), nextReason: "the same review shows its result"}
+	case status == "timeout":
+		return inv.unknownDesignExamination(plan, chain, fmt.Errorf("the design examination reached its deadline; no automatic retry is admitted"))
 	case status != "completed":
 		return &intentResult{Targets: append(plan.targets, jobTarget(chain.NewestJob)), Outcome: intentFailed, code: 1,
 			Summary:    fmt.Sprintf("examination %d of design %s ended %s without findings to decide", chain.NewestRound, plan.recordID, status),
@@ -184,12 +248,6 @@ func (inv *intentInvocation) reviewDesignChain(plan designReviewPlan) *intentRes
 		next:    append(inv.sameCommand(), "--dispositions", template), nextReason: "after deciding every finding in " + template}
 }
 
-func designRoundOneRefused(plan designReviewPlan) *intentResult {
-	reason := fmt.Sprintf("round 1 of %s found no critical finding; its findings are folded and recorded; no second round was started", plan.recordID)
-	return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Data: map[string]any{"code": "DESIGN_ROUND_ONE", "reason": reason}, text: []string{reason},
-		Summary: "no second design examination was started", Decision: "nothing to do; the critique is complete"}
-}
-
 // continueDesignChain requests, or rejoins, the one follow-up examination of
 // the changed design the bound decisions ask for.
 func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain dispatchcore.DesignCritiqueChain, entry designReviewEntry) *intentResult {
@@ -210,6 +268,16 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Summary: err.Error() + "; nothing was requested",
 			next: inv.typedArgvLess("dispositions", "after"), nextReason: "shows the current findings and writes their decisions file"}
 	}
+	if bound.Round < chain.NewestRound {
+		for _, request := range entry.Requests {
+			if request.Kind == "continue" && request.AfterRound == bound.Round && request.DecisionsSHA256 == digestText(content) && request.SubjectSHA256 == plan.subject {
+				return inv.designFollowUp(plan, chain, entry, request)
+			}
+		}
+		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
+			Summary: fmt.Sprintf("review %d already has examination %d; its decisions are frozen; nothing was changed", bound.Round, chain.NewestRound),
+			next:    inv.typedArgvLess("dispositions", "after"), nextReason: "shows the newest examination and its own decisions file"}
+	}
 	returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), chain.Root, bound.Round)
 	if digest, _, readErr := reviewReturnDigest(returnPath); readErr != nil || digest != bound.Return || entry.Subjects[strconv.FormatInt(bound.Round, 10)] != bound.Subject {
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
@@ -221,6 +289,15 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 			Summary: "the decisions file leaves findings undecided (listed above); nothing was requested",
 			next:    inv.sameCommand(), nextReason: "once every finding has a decision"}
 	}
+	if required, err := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), chain.Root, bound.Round); err == nil && required {
+		page, problem := os.ReadFile(plan.design)
+		if problem == nil {
+			_, problem = dispatchcore.DesignRevisionSections(inv.layout.InstallationRoot.Path(), chain.Root, bound.Round, string(page), content)
+		}
+		if problem != nil {
+			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the section evidence is unknown; nothing was closed or requested", Details: []string{problem.Error()}, next: inv.sameCommand(), nextReason: "once the mapping names unique headings in both page versions"}
+		}
+	}
 	// The decisions are the round's own from here on: the close composes the
 	// design's Dispositions section from every answered round's file.
 	if err := retainRoundDecisions(returnPath, path, content); err != nil {
@@ -231,8 +308,30 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 	// is no further round to examine the change, and the engine's own
 	// classification of what is left is the exit (g1-s66 D4).
 	final := bound.Round >= inv.designRoundLimit(chain.Root)
-	if bound.Subject == plan.subject || final {
+	modern := false
+	if root, err := inv.jobRecord(chain.Root); err == nil {
+		if decision, ok := root["designDecision"].(map[string]any); ok {
+			final = recordText(decision, "decision") != "continue"
+			modern = true
+		}
+	}
+	unchanged := bound.Subject == plan.subject
+	if modern && unchanged && !final {
+		decisions, _ := validate.Dispositions(path)
+		unchanged = false
+		for _, decision := range decisions {
+			if decision == "accepted" {
+				unchanged = true
+			}
+		}
+	}
+	if unchanged || final {
 		return inv.closeDesignCritique(plan, chain, returnPath, path, bound.Round, final)
+	}
+	if modern {
+		if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, inv.registerDecisions(chain.Root, bound.Round+1)); err != nil {
+			return inv.unknownDesignExamination(plan, chain, err)
+		}
 	}
 	decisions := digestText(content)
 	operation := fmt.Sprintf("design-%s-after-%d-%s", strings.ToLower(plan.recordID), bound.Round, decisions[:12])
@@ -251,7 +350,7 @@ func (inv *intentInvocation) continueDesignChain(plan designReviewPlan, chain di
 	if _, statErr := os.Stat(followUp); statErr != nil {
 		// Drafts the decisions cite are frozen as the page's were.
 		drafts := inv.freezeDesignDrafts(inv.layout.GitRoot, filepath.Dir(plan.brief), "", nil, content)
-		text := string(brief) + fmt.Sprintf("\n## The author's decisions on examination %d\n\nThe design changed since examination %d. Judge whether each accepted finding is addressed in the new version.\n\n", bound.Round, bound.Round) + string(content) + drafts.section()
+		text := string(brief) + fmt.Sprintf("\n## The author's decisions on examination %d\n\nJudge the whole submitted page, including whether each accepted finding is addressed and each refutation is supported.\n\n", bound.Round) + string(content) + drafts.section()
 		if err := writeIntentInputs(filepath.Dir(plan.brief), drafts.files); err != nil {
 			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the review's inputs can't be written, so nothing was requested",
 				next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
@@ -288,6 +387,19 @@ func (inv *intentInvocation) retryDesignExamination(plan designReviewPlan, chain
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
 			Summary: fmt.Sprintf("review %d is not design %s's newest review (%d); nothing was requested", round, plan.recordID, chain.NewestRound),
 			next:    append(inv.typedArgvLess("retry"), "--retry", strconv.FormatInt(chain.NewestRound, 10)), nextReason: "retries the newest review"}
+	}
+	if status := recordText(chain.Newest, "status"); status == "completed" || status == "failed" {
+		if entry.Subjects[strconv.FormatInt(round, 10)] != plan.subject {
+			return inv.unknownDesignExamination(plan, chain, fmt.Errorf("restore the frozen candidate before retrying its examination"))
+		}
+		if err := dispatchcore.ReserveUnknownExaminationRetry(inv.layout.InstallationRoot.Path(), chain.NewestJob); err != nil {
+			root, _ := inv.jobRecord(chain.Root)
+			if recordText(root, "unknownExaminationRetryFrom") != chain.NewestJob {
+				return inv.unknownDesignExamination(plan, chain, err)
+			}
+		}
+	} else if err := dispatchcore.ExaminationRetryAdmissible(inv.layout.InstallationRoot.Path(), chain.Newest); err != nil {
+		return inv.unknownDesignExamination(plan, chain, err)
 	}
 	if err := plan.writeMissingInputs(); err != nil {
 		return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the review's inputs can't be written, so nothing was requested",
@@ -327,6 +439,11 @@ func (inv *intentInvocation) designFollowUp(plan designReviewPlan, chain dispatc
 		}
 	}
 	if request.Child == "" {
+		if request.Kind == "continue" {
+			if held := inv.designEffectPolicy(plan, chain, "continuation"); held != nil {
+				return held
+			}
+		}
 		outcome, problem := inv.delegate(plan.targets, []string{"--follow-up", request.Root, "--brief", request.Brief, "--op", request.OperationID})
 		if problem != nil {
 			return problem
@@ -350,6 +467,9 @@ func (inv *intentInvocation) designFollowUp(plan designReviewPlan, chain dispatc
 	// A continuation says which round it asked for, and when that round is
 	// the chain's last: its answer is the close.
 	if record, err := inv.jobRecord(request.Child); err == nil && request.Kind == "continue" {
+		if err := inv.recordDesignEffect(plan, dispatchcore.DesignCritiqueChain{Root: request.Root, NewestRound: request.AfterRound}, "continuation", request.OperationID); err != nil {
+			result.Details = append(result.Details, "the examination was requested; its held ask needs repair: "+err.Error())
+		}
 		round := recordRound(record)
 		said := fmt.Sprintf("round %d of critique %s requested", round, request.Root)
 		if round >= inv.designRoundLimit(request.Root) {
@@ -396,7 +516,10 @@ func (inv *intentInvocation) recordFirstDesignExamination(plan designReviewPlan)
 	if len(chains) != 1 {
 		return
 	}
-	entry := inv.readDesignReviewEntry(plan.recordID)
+	entry, err := inv.readDesignReviewEntry(plan.recordID)
+	if err != nil {
+		return
+	}
 	if _, known := entry.Subjects["1"]; known {
 		return
 	}
@@ -434,6 +557,17 @@ func (inv *intentInvocation) closeDesignCritique(plan designReviewPlan, chain di
 		return &intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1, Data: map[string]any{"accepted": accepted},
 			Summary: fmt.Sprintf("design %s is unchanged, but you accepted finding(s) %s; nothing was closed", plan.recordID, strings.Join(accepted, ", ")),
 			next:    inv.sameCommand(), nextReason: "after changing the design to address them; the critique then reviews the new version"}
+	}
+	if required, err := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), chain.Root, round); final && err == nil && required {
+		if err := inv.prepareDesignFold(plan, chain, decisions); err != nil {
+			if errors.Is(err, errDesignRevisionPending) {
+				return &intentResult{Targets: plan.targets, Outcome: intentInProgress, Summary: err.Error(), next: inv.sameCommand(), nextReason: "collect the same prepared revision; no new author attempt is started"}
+			}
+			return &intentResult{Targets: plan.targets, Outcome: intentFailed, code: 1, Summary: "the final design revision is incomplete: " + err.Error(), next: inv.sameCommand(), nextReason: "correct the retained proposal, then collect the same revision"}
+		}
+	}
+	if published := inv.finishDesignAcceptance(plan, chain, true); published != nil {
+		return published
 	}
 	if err := dispatchcore.CritiqueRegisterApplyDecisions(inv.layout.InstallationRoot.Path(), chain.Root, inv.registerDecisions(chain.Root, round)); err != nil {
 		return withCauseRef(err, intentResult{Targets: plan.targets, Outcome: intentRefused, code: 1,
@@ -486,7 +620,9 @@ func (inv *intentInvocation) designCritiqueClosed(plan designReviewPlan, chain d
 // design complete the critique through review design FILE --dispositions.
 func (inv *intentInvocation) collectDesignExamination(plan designReviewPlan, chain dispatchcore.DesignCritiqueChain, examined string) *intentResult {
 	result := inv.collectReview(plan.targets, delegateOutcome{Outcome: "REJOINED", JobID: chain.NewestJob})
-	if recordText(chain.Newest, "status") != "completed" {
+	data, _ := result.Data.(map[string]any)
+	findings, present := data["findings"].([]intentFinding)
+	if recordText(chain.Newest, "status") != "completed" || result.Outcome == intentFailed || !present {
 		return &result
 	}
 	returnPath := inv.returnPathAt(inv.layout.InstallationRoot.Path(), chain.Root, chain.NewestRound)
@@ -494,20 +630,28 @@ func (inv *intentInvocation) collectDesignExamination(plan designReviewPlan, cha
 	if err != nil {
 		return &result
 	}
-	findings, _, _ := readIntentFindings(returnPath)
 	binding := reviewBinding{Goal: plan.goalID, Work: "design:" + plan.recordID, Attempt: int(chain.NewestRound), Subject: examined,
 		Examination: chain.Root, Round: chain.NewestRound, Return: digest}
 	template := filepath.Join(filepath.Dir(returnPath), "decisions.md")
 	if _, statErr := os.Stat(template); statErr != nil {
 		os.WriteFile(template, []byte(decisionsDocument(binding, findings)), 0o600)
 	}
-	data, _ := result.Data.(map[string]any)
-	if data == nil {
-		data = map[string]any{}
-	}
 	data["template"], data["examination"] = template, chain.NewestRound
 	result.Data = data
-	result.next, result.nextReason = append(inv.sameCommand(), "--dispositions", template), "after deciding every finding in "+template
+	result.next, result.nextReason = append(inv.typedArgvLess("retry", "after", "dispositions"), "--dispositions", template), "after deciding every finding in "+template
+	if root, err := inv.jobRecord(chain.Root); err == nil {
+		if decision, ok := root["designDecision"].(map[string]any); ok && recordText(decision, "decision") == "close" && !inv.input.has("dispositions") {
+			if published := inv.finishDesignAcceptance(plan, chain, true); published != nil {
+				if projection, ok := published.Data.(map[string]any); ok {
+					for key, value := range projection {
+						data[key] = value
+					}
+				}
+				published.Data = data
+				return published
+			}
+		}
+	}
 	return &result
 }
 
@@ -575,4 +719,53 @@ func (drafts designDrafts) section() string {
 	}
 	return "\n## Frozen drafts\n\nThese files are frozen as the seat's checkout held them when the review was asked. Read each from its copy,\nnever from the checkout, which may have moved since:\n\n" +
 		strings.Join(drafts.lines, "\n") + "\n"
+}
+
+// closeDesignJob resolves a public job alias to its current design page,
+// retaining the canonical root and using the design publication owner.
+func (inv *intentInvocation) closeDesignJob(job, goalID string) intentResult {
+	fail := func(err error) intentResult {
+		return intentResult{Targets: []intentTarget{jobTarget(job)}, Outcome: intentFailed, code: 1, Summary: "the design history is unknown; nothing was closed", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "restore this design's retained identity, page and frozen subjects"}
+	}
+	state, err := inv.owners.resolver.RootForInstallation(inv.layout.InstallationRoot)
+	if err != nil {
+		return fail(err)
+	}
+	pages, err := project.Read(project.Roots{Checkout: inv.layout.GitRoot, Installation: inv.layout.InstallationRoot, StateRoot: state})
+	if err != nil {
+		return fail(err)
+	}
+	for _, page := range pages.List(project.KindDesign, project.ListOptions{Goal: goalID}) {
+		path := filepath.Join(inv.layout.GitRoot, filepath.FromSlash(page.Path))
+		chains, err := dispatchcore.ReadDesignCritiqueChains(inv.layout.InstallationRoot.Path(), goalID, path)
+		for _, chain := range chains {
+			if chain.Root == job {
+				if err != nil {
+					return fail(err)
+				}
+				root, _ := inv.jobRecord(job)
+				decision, _ := root["designDecision"].(map[string]any)
+				if chain.Closed || !inv.input.has("dispositions") || recordText(decision, "decision") == "close" || recordText(decision, "decision") == "stop" {
+					data, err := os.ReadFile(path)
+					if err != nil {
+						return fail(err)
+					}
+					plan := designReviewPlan{root: job, targets: []intentTarget{{Kind: "design", ID: path}}, goalID: goalID, recordID: page.ID, design: path, subject: digestText(data)}
+					if result := inv.reviewDesignChain(plan); result != nil {
+						return *result
+					}
+					return fail(fmt.Errorf("critique %s lost its canonical root", job))
+				}
+				closer := *inv
+				args := []string{"design", "review", path, "--dispositions", inv.flagPath("dispositions")}
+				if calls := inv.input.text("tool-calls"); calls != "" {
+					args = append(args, "--tool-calls", calls)
+				}
+				closer.command, _ = findIntentAction("design", "review")
+				closer.raw = args[2:]
+				return closer.reviewDesign(path, job)
+			}
+		}
+	}
+	return fail(fmt.Errorf("critique %s has no current design with its retained identity", job))
 }

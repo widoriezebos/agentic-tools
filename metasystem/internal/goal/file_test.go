@@ -31,6 +31,37 @@ func claimedGolden() *GoalFile {
 	}
 }
 
+func TestGoalFileRoundTripsDesignExitsDropsAndScopeTogether(t *testing.T) {
+	t.Parallel()
+	file := claimedGolden()
+	for i := range 2 {
+		unit := fmt.Sprintf("unit-%d", i)
+		drop := UnitDrop{Unit: unit, Operation: "drop-" + unit, Loop: "unit-round", Subject: "read-" + unit, Attempt: 1, Revision: file.Revision,
+			Covered: []string{strings.Repeat("a", 40)}, Findings: []string{"read:1"}, Commit: strings.Repeat("b", 40), Tree: strings.Repeat("c", 40), Proof: "passed-proof",
+			Decisions: strings.Repeat("d", 64), Requirements: strings.Repeat("e", 64), Actor: "Wido", Reason: "Exclude required scope", Impact: "The required unit is omitted", At: file.Claimed.At}
+		file.UnitDrops = append(file.UnitDrops, drop)
+		file.ScopeExclusions = append(file.ScopeExclusions, ScopeExclusion{Unit: unit, Operation: drop.Operation, Requirements: drop.Requirements, Result: drop.Commit, Proof: drop.Proof,
+			Actor: drop.Actor, Authority: "SIGNED_IN_SESSION", Reason: drop.Reason, Impact: drop.Impact, At: drop.At, Designs: []string{"design-" + unit}})
+		file.DesignExits = append(file.DesignExits, DesignExit{Operation: "exit-" + unit, DesignID: "design-" + unit, BodySHA256: strings.Repeat("f", 64), Units: []string{unit}, Items: []string{"design-read:1"}})
+	}
+	rendered := RenderFile(file)
+	parsed, problems := ParseFile(rendered)
+	if len(problems) != 0 {
+		t.Fatalf("combined records did not parse: %v", problems)
+	}
+	if !reflect.DeepEqual(parsed.DesignExits, file.DesignExits) || !reflect.DeepEqual(parsed.UnitDrops, file.UnitDrops) || !reflect.DeepEqual(parsed.ScopeExclusions, file.ScopeExclusions) {
+		t.Fatalf("combined records lost data: exits=%+v drops=%+v scope=%+v", parsed.DesignExits, parsed.UnitDrops, parsed.ScopeExclusions)
+	}
+	if string(RenderFile(parsed)) != string(rendered) {
+		t.Fatal("combined records changed bytes on reload")
+	}
+	for _, exclusion := range parsed.ScopeExclusions {
+		if !parsed.ExcludesScope(exclusion.Unit, exclusion.Designs[0]) {
+			t.Fatalf("reload lost scope exclusion: %+v", exclusion)
+		}
+	}
+}
+
 func TestGoldenClaimedFileRoundTrips(t *testing.T) {
 	t.Parallel()
 	golden := claimedGolden()

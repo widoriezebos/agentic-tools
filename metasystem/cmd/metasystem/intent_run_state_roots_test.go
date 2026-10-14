@@ -29,6 +29,22 @@ func writeRunRootJSON(t *testing.T, path string, value any) {
 	writeTestingFixtureFile(t, path, body, 0600)
 }
 
+func TestDesignReviewCeilingReadsInstallation(t *testing.T) {
+	t.Parallel()
+	checkout, installation := separatedContextRoots(t)
+	writeTestingFixtureFile(t, filepath.Join(checkout, "metasystem.conf"), []byte("metasystem.budget.review-round-max=4\n"), 0o600)
+	writeTestingFixtureFile(t, filepath.Join(installation, "metasystem.conf"), []byte("metasystem.budget.review-round-max=1\n"), 0o600)
+	inv := &intentInvocation{stateRoot: checkout, layout: stateroot.Layout{GitRoot: checkout, InstallationRoot: stateroot.Installation(installation)},
+		input: intentInput{values: map[string][]string{"tool-calls": {"30"}}}}
+	limit, calls, failed := inv.reviewBriefFacts([]intentTarget{{Kind: "design", ID: "design.md"}}, "")
+	if failed != nil || limit != 1 || calls != 30 {
+		t.Fatalf("goal-free review used project settings: limit=%d calls=%d failure=%+v", limit, calls, failed)
+	}
+	if limit := inv.designRoundLimit("missing-review"); limit != 1 {
+		t.Fatalf("review fallback used project settings: limit=%d", limit)
+	}
+}
+
 func TestContextBoundaryStatusReadsInstallation(t *testing.T) {
 	t.Parallel()
 	checkout, installation := separatedContextRoots(t)

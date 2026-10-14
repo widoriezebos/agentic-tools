@@ -203,6 +203,9 @@ func TestManualSubmissionReplayAndAmend(t *testing.T) {
 	}
 	connectionGit(t, worktree, "rm", "-q", "-f", "--cached", "partial.txt")
 	os.Remove(filepath.Join(worktree, "partial.txt"))
+	if err := os.WriteFile(filepath.Join(root, ".git", "info", "exclude"), []byte("metasystem/records/narrator-digest.log\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	os.MkdirAll(filepath.Join(worktree, "metasystem", "records"), 0o700)
 	os.WriteFile(filepath.Join(worktree, "metasystem", "records", "narrator-digest.log"), []byte("a coordination append\n"), 0o644)
 	code, result = manualDo(t, j, worktree, amend...)
@@ -218,7 +221,7 @@ func TestManualSubmissionReplayAndAmend(t *testing.T) {
 		t.Fatalf("the other work must survive the correction: %q", got)
 	}
 	if record, err := os.ReadFile(filepath.Join(worktree, "metasystem", "records", "narrator-digest.log")); err != nil || string(record) != "a coordination append\n" ||
-		!strings.Contains(connectionGit(t, worktree, "status", "--porcelain"), "metasystem/") {
+		!strings.Contains(connectionGit(t, worktree, "status", "--porcelain", "--ignored"), "metasystem/") || strings.Contains(connectionGit(t, worktree, "diff", "--cached", "--name-only"), "narrator-digest.log") {
 		t.Fatalf("the coordination append must stay unstaged in the goal worktree: %q %v", record, err)
 	}
 	code, result = manualDo(t, j, worktree, amend...)
@@ -921,7 +924,7 @@ func TestIntentReviewSelectionMixedProducers(t *testing.T) {
 	// While the build's result is uncommitted, the goal worktree receives no
 	// other hand-written work.
 	os.WriteFile(filepath.Join(root, "late.txt"), []byte("late\n"), 0o644)
-	if _, late := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "late"); late.Outcome != intentInProgress || !strings.Contains(late.Summary, "the worktree belongs to run") {
+	if _, late := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "late"); late.Outcome != intentInProgress || !strings.Contains(late.Summary, "the worktree belongs to run") || late.Next == nil || !slices.Contains(late.Next.Argv, "wait") || connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" || string(mustRead(t, filepath.Join(root, "late.txt"))) != "late\n" {
 		t.Fatalf("a submission onto an uncommitted build result: %+v", late)
 	}
 	os.Remove(filepath.Join(root, "late.txt"))

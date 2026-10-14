@@ -255,7 +255,7 @@ func TestRecurrenceClassesUnproven(t *testing.T) {
 func TestCritiqueClosePrintsEveryBlockingFinding(t *testing.T) {
 	repo := t.TempDir()
 	root := map[string]any{
-		"jobId": "critic", "role": "design-critic", "round": 1, "parentJob": nil, "status": "completed",
+		"jobId": "critic", "role": "design-critic", "design": "plans/designs/reader.md", "round": 1, "parentJob": nil, "status": "completed",
 		findingRegisterRoundField: 1, reviewRoundLimitField: 3, criticRoundsConsumedField: 3, "demotions": []any{},
 	}
 	makeFinding := func(id, artifact string, class critiqueModel.RigorClass) registerFinding {
@@ -279,7 +279,8 @@ func TestCritiqueClosePrintsEveryBlockingFinding(t *testing.T) {
 				t.Fatalf("%s did not print %q: %v", name, want, err)
 			}
 		}
-		wantNext := "a person accepts each risk with metasystem goal accept-risk, or raises the goal's budget with metasystem goal budget"
+		// Decisions 2-3 keep every blocker visible and retain an executable design exit.
+		wantNext := "A person may record a ruling: metasystem design review 'plans/designs/reader.md' --ruling TEXT --reason TEXT --by NAME"
 		if !strings.HasSuffix(err.Error(), wantNext) {
 			t.Fatalf("%s next step = %v", name, err)
 		}

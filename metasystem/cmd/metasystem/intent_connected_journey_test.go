@@ -198,6 +198,9 @@ func newJourneyBedWith(t *testing.T, amend func(*goal.GoalFile)) *journeyBed {
 			record[key] = value
 		}
 		c.writeJSON(filepath.Join(agents, "jobs", id+".json"), record)
+		if _, err := dispatchcore.CollectExamination(install, id); err != nil {
+			t.Fatalf("completed critic evidence: %v", err)
+		}
 		if outcome, err := dispatchcore.CritiqueRegisterAdvance(install, root, id); err != nil || outcome != "advanced" {
 			t.Fatalf("register advance of %s = %q, %v", id, outcome, err)
 		}
@@ -269,7 +272,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	build := func(unit string, edits map[string]string) string {
 		t.Helper()
 		c.edits = edits
-		code, result := do(append([]string{"work", "build", c.id, unit, "--brief", brief, "--lines", "5"}, workCheck...)...)
+		code, result := do(append([]string{"work", "build", c.id, unit, "--brief", brief, "--lines", "5"}, designGateCheck...)...)
 		if code != 0 || result.Outcome != intentConfirmed {
 			t.Fatalf("build %s: code=%d %+v", unit, code, result)
 		}
@@ -405,6 +408,12 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	// One public review with the author's decisions: the real whole close
 	// owner closes and mirrors the chain, then the read is collected and
 	// published.
+	_, ready := do(review...)
+	template, _ := resultData(t, ready)["template"].(string)
+	if template == "" {
+		t.Fatalf("current C decisions template: %+v", ready)
+	}
+	writeUnitCarryFile(t, dispositions, strings.Replace(string(mustRead(t, template)), "| F1 | DECIDE | | |", "| F1 | noted | fixture non-material observation | none |", 1))
 	if code, result := do(append(review, "--dispositions", dispositions)...); code != 0 || result.Outcome != intentConfirmed || job(c.worktree, criticC2)["chainClosed"] != true {
 		t.Fatalf("decide, close and collect the current C read: code=%d %+v", code, result)
 	}

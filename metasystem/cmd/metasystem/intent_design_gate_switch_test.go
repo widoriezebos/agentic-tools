@@ -65,7 +65,7 @@ func TestDesignGateRefusesOnlyWhenSwitchedOn(t *testing.T) {
 			if scenario == "explicit lineage" {
 				args = append(args, "--lineage", "builder")
 			}
-			args = append(args, workCheck...)
+			args = append(args, designGateCheck...)
 			code, result, output := bed.work(args...)
 			refused := scenario == "refuse" || scenario == "explicit lineage" || scenario == "missing critique" || scenario == "open critique"
 			if refused {
@@ -76,8 +76,8 @@ func TestDesignGateRefusesOnlyWhenSwitchedOn(t *testing.T) {
 				if _, err := os.Stat(bed.unitRoot); !os.IsNotExist(err) {
 					t.Fatalf("refused build created a unit store: %v", err)
 				}
-				verboseArgs := append(append([]string(nil), args[:len(args)-len(workCheck)]...), "--verbose")
-				code, _, text := bed.run(bed.workOwners(), append(verboseArgs, workCheck...)...)
+				verboseArgs := append(append([]string(nil), args[:len(args)-len(designGateCheck)]...), "--verbose")
+				code, _, text := bed.run(bed.workOwners(), append(verboseArgs, designGateCheck...)...)
 				if code != 1 || !strings.Contains(text, want) || !strings.Contains(text, "BUILD_DESIGN_NOT_ACCEPTED goal="+bed.id+" verdict=") || !strings.Contains(text, "governed-by=R-146-m1k") {
 					t.Fatalf("verbose refusal: code=%d text=%q", code, text)
 				}

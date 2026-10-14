@@ -19,6 +19,7 @@ func TestLandingDesignCheck(t *testing.T) {
 		{"no critique", "critique-not-recorded", false, true},
 		{"open chain", "critique-open", false, true},
 		{"changed body", "design-changed", true, true},
+		{"changed acceptance", "design-changed", true, true},
 		{"superseded", "design-missing", true, true},
 		{"absent record", "ok", false, false},
 		{"facts fail", "unchecked", false, false},
@@ -43,6 +44,8 @@ func TestLandingDesignCheck(t *testing.T) {
 					case "open chain":
 						f.Designs[0].Chains = []designgate.Chain{{Round: 3}}
 						f.Digests["d"] = "changed too"
+					case "changed acceptance":
+						f.Designs[0].Acceptance = "another exit or item set"
 					case "changed body":
 						f.Digests["d"] = "changed"
 					case "superseded":

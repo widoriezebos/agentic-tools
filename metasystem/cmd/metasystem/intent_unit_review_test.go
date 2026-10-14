@@ -514,7 +514,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	brief := c.brief("brief.md", "Build the connection.\n")
 	c.edits = map[string]string{"connect.txt": "the built result\n", "café.txt": "accented\n", "tab\tname.txt": "tab\n",
 		"quote\"d name.txt": "quoted\n", "dir with space/space name.txt": "spaced\n"}
-	code, result := c.do(append([]string{"work", "build", c.id, "connect", "--last", "--brief", brief, "--lines", "10"}, workCheck...)...)
+	code, result := c.do(append([]string{"work", "build", c.id, "connect", "--last", "--brief", brief, "--lines", "10"}, designGateCheck...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("build: code=%d %+v", code, result)
 	}
@@ -596,7 +596,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	_, result = c.do("work", "review", "run:"+run)
 	if result.Outcome != intentInProgress || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "work review run:"+run+" --dispositions "+resultData(t, result)["template"].(string)) ||
 		len(c.unitCommits("goal/"+c.id)) != 1 || c.commitReads != 0 {
-		t.Fatalf("unclosed critic: %+v", result)
+		t.Fatalf("unclosed critic: %+v next=%+v", result, result.Next)
 	}
 	code, result = c.do("work", "finish", "j2:crit1", "--dispositions", c.dispositions(), "--repo", install)
 	if code != 0 || result.Outcome != intentConfirmed || len(c.closes) != 1 {
@@ -629,16 +629,23 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	if status.Prefix != 1 || len(status.Units) != 1 || status.Units[0].Commit != first {
 		t.Fatalf("landing admission must see the one read unit: %+v", status)
 	}
+	if stop := c.runRecord(run).Rounds[0].Stop; stop == nil || stop.Decision != "close" {
+		t.Fatalf("the published clean read must close its unit: %+v", stop)
+	}
 
 	if finished := c.runRecord(run); finished.Rounds[0].Stop == nil || finished.Rounds[0].Stop.Decision != "close" {
 		t.Fatalf("published round must release its tree: round=%+v subjects=%+v", finished.Rounds[0], finished.Subjects)
 	}
 	// A later unit survives on the branch after the first unit's read.
 	c.edits = map[string]string{"later.txt": "a later unit\n"}
-	_, result = c.do(append([]string{"work", "build", c.id, "later", "--brief", c.brief("later.md", "A later unit.\n"), "--lines", "5"}, workCheck...)...)
+	_, result = c.do(append([]string{"work", "build", c.id, "later", "--brief", c.brief("later.md", "A later unit.\n"), "--lines", "5"}, designGateCheck...)...)
 	later := resultData(t, result)["run"].(string)
 	if code, result = c.do("work", "review", "run:"+later); result.Outcome != intentInProgress || len(c.delegates) != 2 {
 		t.Fatalf("later unit: code=%d %+v", code, result)
+	}
+	c.writeCritic(install, "crit2", c.runRecord(later).Subjects[0].Commit, "cancelled", false)
+	if _, err := c.connectionOwners().work.units(stateroot.Layout{}).CancelRun(later); err != nil {
+		t.Fatal(err)
 	}
 
 	c.writeCritic(install, "crit2", c.delegates[1], "cancelled", false)
@@ -671,6 +678,9 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("the amended branch is the replacement then the replayed later unit, without the dropped read: %v", commits)
 	}
 	c.writeCritic(install, "crit3", second, "completed", false)
+	if _, pending := c.do("work", "review", "run:"+run); pending.Outcome != intentInProgress {
+		t.Fatalf("the work must retain its examination before closure: %+v", pending)
+	}
 	if code, result = c.do("work", "finish", "j2:crit3", "--dispositions", c.dispositions(), "--repo", install); code != 0 {
 		t.Fatalf("close crit3: %+v", result)
 	}
@@ -689,7 +699,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// A failed preliminary read with a passed proof may still request the
 	// committed review.
 	c.edits, c.readFails = map[string]string{"readfail.txt": "read failed, proof passed\n"}, true
-	_, result = c.do(append([]string{"work", "build", c.id, "readfail", "--brief", c.brief("readfail.md", "Read each round: yes\nRead-failed unit.\n"), "--lines", "5"}, workCheck...)...)
+	_, result = c.do(append([]string{"work", "build", c.id, "readfail", "--brief", c.brief("readfail.md", "Read each round: yes\nRead-failed unit.\n"), "--lines", "5"}, designGateCheck...)...)
 	readFailed := resultData(t, result)["run"].(string)
 	if round := c.runRecord(readFailed).Rounds[0]; round.Outcome != "read-failed" || result.Next == nil || result.Next.Argv[2] != "review" {
 		t.Fatalf("read-failed build: %s %+v", round.Outcome, result)
@@ -697,6 +707,10 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	c.readFails = false
 	if code, result = c.do("work", "review", "run:"+readFailed); result.Outcome != intentInProgress || len(c.delegates) != 4 {
 		t.Fatalf("read-failed round requests committed review: code=%d %+v", code, result)
+	}
+	c.writeCritic(install, "crit4", c.runRecord(readFailed).Subjects[0].Commit, "cancelled", false)
+	if _, err := c.connectionOwners().work.units(stateroot.Layout{}).CancelRun(readFailed); err != nil {
+		t.Fatal(err)
 	}
 
 	c.writeCritic(install, "crit4", c.delegates[3], "cancelled", false)
@@ -711,6 +725,9 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("proof-writing build did not hold its result: code=%d %+v", code, result)
 	}
 	wrote := resultData(t, result)["run"].(string)
+	if c.runRecord(wrote).State == "running" {
+		t.Fatalf("proof-writing build: %+v run=%+v", result, c.runRecord(wrote))
+	}
 	code, result = c.do("work", "review", "run:"+wrote)
 	wroteRound := c.runRecord(wrote).Rounds[0]
 	if code != 1 || result.Outcome != intentRefused || wroteRound.Cause != "environment" || wroteRound.Outcome != "proof-wrote" || wroteRound.Stop == nil || wroteRound.Stop.Decision != "stop" || len(wroteRound.Steps) != 2 || len(wroteRound.Steps[1].LaunchIDs) != 2 || len(wroteRound.Reads) != 0 || connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" {
@@ -722,7 +739,7 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	// run in the existing worktree, not a follow-up.
 	c.claimLost = true
 	launches := len(c.starts())
-	code, result = c.do(append([]string{"work", "build", c.id, "unclaimed", "--brief", c.brief("unclaimed.md", "No claim.\n"), "--lines", "5"}, workCheck...)...)
+	code, result = c.do(append([]string{"work", "build", c.id, "unclaimed", "--brief", c.brief("unclaimed.md", "No claim.\n"), "--lines", "5"}, designGateCheck...)...)
 	// The claim is checked before any run is reserved.
 	if result.Outcome == intentConfirmed || !strings.Contains(result.Summary, "is not claimed by this session") || len(c.starts()) != launches {
 		t.Fatalf("unclaimed build: code=%d %+v", code, result)
@@ -907,8 +924,8 @@ func TestReviewCloseAdmitsItsCheckoutThroughParseInstallation(t *testing.T) {
 
 func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
 	t.Parallel()
-	w := newWorkBed(t)
-	code, built, _ := w.work(append([]string{"work", "build", w.id, "--work", "cap", "--brief", w.brief("brief.md", "Build it.\n"), "--lines", "5"}, workCheck...)...)
+	w := newDesignGateBed(t, 3)
+	code, built, _ := w.work(append([]string{"work", "build", w.id, "--work", "cap", "--brief", w.brief("brief.md", "Build it.\n"), "--lines", "5"}, designGateCheck...)...)
 	if code != 0 || built.Outcome != intentConfirmed {
 		t.Fatalf("build: code=%d %+v", code, built)
 	}

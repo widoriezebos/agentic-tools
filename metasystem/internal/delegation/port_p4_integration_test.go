@@ -462,7 +462,7 @@ func (b *bed) dispatchCritic(job string) {
 	b.t.Helper()
 	outputs := b.writeFile("declared-outputs.txt", "plans/designs/p4-design.md\n")
 	if !b.exists("plans/designs/p4-design.md") {
-		b.writeFile("plans/designs/p4-design.md", "# A design under review\n\nThe first revision.\n")
+		b.writeFile("plans/designs/p4-design.md", designFixturePage("# A design under review\n\nThe first revision.\n"))
 		b.git("add", "plans/designs/p4-design.md")
 		b.git("commit", "-qm", "a design under review")
 	}
@@ -480,8 +480,8 @@ func (b *bed) dispatchCritic(job string) {
 // preset's network denial. A follow-up after the design page changed
 // publishes the changed subject as round 2 of the same chain, resuming the
 // parent's session. A round that ended in a protocol error is followed up
-// with its synthetic finding carried; capped and lost critic rounds whose
-// group death is proven are examined once more in the same chain.
+// with its synthetic finding carried; a deadline stops the chain, and a lost
+// critic round whose group death is proven is examined once more.
 func TestFollowUpIntegrationCriticChains(t *testing.T) {
 	t.Parallel()
 	b := newDispatchBed(t)
@@ -496,7 +496,7 @@ func TestFollowUpIntegrationCriticChains(t *testing.T) {
 	b.p5WriteJSON("artifacts/agents/happy/rounds/1/return.json", b.criticalDesignReturn("happy"))
 	b.conclude("happy", "running", "completed", `{"phase":"validation","error":null}`)
 	before := b.p4ReadJSON("artifacts/agents/happy/rounds/1/subject.json")["contentDigest"]
-	revised := b.writeFile("plans/designs/p4-design.md", "# A design under review\n\nThe second revision.\n")
+	revised := b.writeFile("plans/designs/p4-design.md", designFixturePage("# A design under review\n\nThe second revision.\n"))
 	b.git("commit", "-qam", "revise the design")
 	requireExit(t, b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", "happy", "--message", message), 0, b.stderr.String())
 	if after := b.p4ReadJSON("artifacts/agents/happy/rounds/2/subject.json")["contentDigest"]; after != sha256Of(t, revised) || after == before {
@@ -526,7 +526,15 @@ func TestFollowUpIntegrationCriticChains(t *testing.T) {
 	for job, verdict := range map[string][2]string{"timed": {"timeout", "budget-cap"}, "process-loss": {"failed", "process-lost"}} {
 		b.dispatchCritic(job)
 		b.conclude(job, "running", verdict[0], `{"error":"`+verdict[1]+`","phase":"supervision","groupDeathProvenAt":"2026-09-27T12:00:00Z"}`)
-		requireExit(t, b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", job, "--message", message), 0, b.stderr.String())
+		result := b.runEnv(b.dispatchEnv("follow-up"), "follow-up", "--job", job, "--message", message)
+		if verdict[0] == "timeout" {
+			requireExit(t, result, 1, b.stderr.String())
+			if !strings.Contains(b.stderr.String(), "a deadline is not retried") || exists(b.recordPath(job+"-r2")) {
+				t.Fatalf("the deadline granted a fresh design examination: %q", b.stderr.String())
+			}
+			continue
+		}
+		requireExit(t, result, 0, b.stderr.String())
 		if retry := b.record(job + "-r2"); stringOf(retry["round"]) != "2" || retry["parentJob"] != job {
 			t.Fatalf("the examination retry of %s did not create round 2 of the same chain: %v", job, retry)
 		}

@@ -8,6 +8,25 @@ import (
 	"strings"
 )
 
+// CloseRuledDesign reconciles only the design root named by a committed ruling.
+// The original findings and examination counters remain intact.
+func CloseRuledDesign(repoRoot, root, operation string) error {
+	return withRecordSessionLock(repoRoot, root, func(path string, transaction *SessionIndexTransaction) error {
+		record, err := readObject(path)
+		if err != nil {
+			return err
+		}
+		if asString(record["role"]) != "design-critic" {
+			return fmt.Errorf("%s is not a design critique", root)
+		}
+		record["chainClosed"], record["chainCloseReason"] = true, "ruled "+operation
+		if err := writeRecord(path, record); err != nil {
+			return err
+		}
+		return transaction.syncRecord(root, record)
+	})
+}
+
 // CloseGoalReviewChains records a confirmed person's conclusion on each
 // still-open critic root. Findings and reads retain their original evidence.
 func CloseGoalReviewChains(repoRoot, goalID, reason string) error {

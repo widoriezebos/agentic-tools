@@ -19,8 +19,8 @@ import (
 
 func TestRefusedCloseFoldsItsRound(t *testing.T) {
 	t.Parallel()
-	w := newWorkBed(t)
-	code, built, _ := w.work(append([]string{"work", "build", w.id, "records", "--brief", w.brief("records.md", "Build it.\n"), "--lines", "5"}, workCheck...)...)
+	w := newDesignGateBed(t, 3)
+	code, built, _ := w.work(append([]string{"work", "build", w.id, "records", "--brief", w.brief("records.md", "Build it.\n"), "--lines", "5"}, designGateCheck...)...)
 	expectOutcome(t, "build", code, built, intentConfirmed)
 	run := resultData(t, built)["run"].(string)
 	commit := strings.Repeat("d", 40)
@@ -112,7 +112,7 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	c := newConnectionBed(t)
 	c.adapterFixture()
 	c.edits = map[string]string{"connect.txt": "the built result\n"}
-	code, result := c.do(append([]string{"work", "build", c.id, "--work", "connect", "--brief", c.brief("brief.md", "Build it.\n"), "--lines", "5"}, workCheck...)...)
+	code, result := c.do(append([]string{"work", "build", c.id, "--work", "connect", "--brief", c.brief("brief.md", "Build it.\n"), "--lines", "5"}, designGateCheck...)...)
 	if code != 0 || result.Outcome != intentConfirmed {
 		t.Fatalf("build: code=%d %+v", code, result)
 	}
@@ -225,8 +225,13 @@ func TestIntentGoalReviewCompletion(t *testing.T) {
 	if _, result = c.do("status", c.id); !strings.Contains(result.Summary, "its read is collected and published (attestation ") || result.Next == nil || result.Next.Argv[2] != "build" {
 		t.Fatalf("status after collection: %+v", result)
 	}
+	// Repeating the completed review changes nothing.
+	if code, result = c.do("work", "review", c.id, "--work", "connect"); code != 0 || len(c.closes) != 2 || c.commitReads != 1 {
+		t.Fatalf("repeat: code=%d %+v", code, result)
+	}
+	// The next unit owns the worktree until its review completes.
 	c.edits = map[string]string{"later.txt": "a later unit\n"}
-	if _, result = c.do(append([]string{"work", "build", c.id, "--work", "later", "--brief", c.brief("later.md", "Later.\n"), "--lines", "5"}, workCheck...)...); result.Outcome != intentConfirmed {
+	if _, result = c.do(append([]string{"work", "build", c.id, "--work", "later", "--brief", c.brief("later.md", "Later.\n"), "--lines", "5"}, designGateCheck...)...); result.Outcome != intentConfirmed {
 		t.Fatalf("later build: %+v", result)
 	}
 	laterRun := resultData(t, result)["run"].(string)

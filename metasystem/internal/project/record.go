@@ -1,6 +1,8 @@
 package project
 
 import (
+	"crypto/sha256"
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -227,3 +229,17 @@ func splitLines(text string) []string {
 // normalizeSpace collapses a title's inner whitespace, so one record is one
 // line in every listing whatever its file contains.
 func normalizeSpace(value string) string { return strings.Join(strings.Fields(value), " ") }
+
+// DesignBodyDigest excludes only the record head, retaining the entire specification.
+func DesignBodyDigest(path string, data []byte) (string, error) {
+	record, problems, declared := ParseRecord(path, string(data))
+	if !declared || len(problems) != 0 || len(record.Head) == 0 {
+		return "", fmt.Errorf("the design %s cannot be read", path)
+	}
+	lines := strings.SplitAfter(string(data), "\n")
+	body := lines[record.Head[len(record.Head)-1].Line:]
+	if len(body) > 0 && strings.TrimSpace(body[0]) == "" {
+		body = body[1:]
+	}
+	return fmt.Sprintf("%x", sha256.Sum256([]byte(strings.Join(lines[:record.HeadLine-1], "")+strings.Join(body, "")))), nil
+}

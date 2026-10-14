@@ -304,7 +304,8 @@ func TestIntentReviewHelpForms(t *testing.T) {
 			"job": {reviewJobUsage}, "commit": {reviewCommitUsage}, "run": {reviewRunUsage}, "changes": {reviewChangesUsage}, "diff": {reviewDiffUsage},
 			"check": {reviewCheckUsage},
 		},
-		"design review": {"design": {reviewDesignUsage}, "check": {reviewDesignCheck}},
+		// Decision 6 exposes the person's scope and ruling acts alongside review.
+		"design review": {"person": {reviewDesignPerson}, "design": {reviewDesignUsage}, "check": {reviewDesignCheck}},
 	}
 	for name, forms := range expected {
 		_, review := readHelpJSON(t, append(strings.Fields(name), "--json")...)

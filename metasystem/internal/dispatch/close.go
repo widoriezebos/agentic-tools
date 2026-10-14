@@ -71,6 +71,9 @@ func CloseCheck(repoRoot, root string) error {
 			}
 		}
 		if len(blockers) > 0 {
+			if asString(rootRecord["role"]) == "design-critic" {
+				return fmt.Errorf("%s\n%w", strings.Join(blockers, "\n"), designCapHumanRaise(asString(rootRecord["design"]), foldedRound, openRegisterFindingIDs(register)))
+			}
 			next := ""
 			if severeBlocker {
 				next = "\na person accepts each risk with metasystem goal accept-risk, or raises the goal's budget with metasystem goal budget"

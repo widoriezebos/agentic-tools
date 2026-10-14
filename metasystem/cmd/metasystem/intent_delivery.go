@@ -241,8 +241,11 @@ type intentProcessResult struct {
 // intentDeliveryOwners are the owners the delivery commands call. Production
 // uses defaultIntentDeliveryOwners; tests give each invocation its own.
 type intentDeliveryOwners struct {
-	rebindBudget   func(string, string) *intentResult
-	laneRegistrant func(string) string
+	designRecord    func(string) (intentDesignRecord, []byte, error)
+	designChains    func(string, string, string) []dispatchcore.DesignCritiqueChain
+	examinationRead func(string, string) (readsubject.Read, error)
+	rebindBudget    func(string, string) *intentResult
+	laneRegistrant  func(string) string
 	// draftPaths finds cited files missing from the design's source tree;
 	// nil reads Git through the dispatch owner.
 	draftPaths func([]byte, string) ([]string, error)
@@ -395,6 +398,15 @@ func defaultIntentDeliveryOwners(options ...goalBranchSweepOptions) *intentDeliv
 func (inv *intentInvocation) delivery() *intentDeliveryOwners {
 	if inv.owners.delivery == nil {
 		inv.owners.delivery = defaultIntentDeliveryOwners()
+	}
+	if inv.owners.delivery.designRecord == nil {
+		inv.owners.delivery.designRecord = readIntentDesignRecord
+	}
+	if inv.owners.delivery.designChains == nil {
+		inv.owners.delivery.designChains = dispatchcore.DesignCritiqueChains
+	}
+	if inv.owners.delivery.examinationRead == nil {
+		inv.owners.delivery.examinationRead = dispatchcore.CollectExamination
 	}
 	return inv.owners.delivery
 }
@@ -588,6 +600,11 @@ func readIntentFindings(path string) ([]intentFinding, string, error) {
 	}
 	if err := json.Unmarshal(data, &result); err != nil {
 		return nil, "", err
+	}
+	var derived readsubject.Read
+	if retained, err := os.ReadFile(filepath.Join(filepath.Dir(path), "read.json")); err == nil && json.Unmarshal(retained, &derived) == nil && derived.Design != nil {
+		encoded, _ := json.Marshal(derived.Findings)
+		json.Unmarshal(encoded, &result.Findings)
 	}
 	if result.SchemaVersion >= 6 {
 		for index := range result.Findings {
@@ -876,6 +893,9 @@ func (inv *intentInvocation) reviewBriefFacts(targets []intentTarget, goalID str
 			Summary: "the review needs the critic's tool-call budget, and none is configured; nothing was done",
 			next:    append(inv.typedArgvLess("tool-calls"), "--tool-calls", "30"), nextReason: "30 is an example budget"}
 	}
+	if goalID == "" && len(targets) == 1 && targets[0].Kind == "design" {
+		return dispatchcore.DesignRoundLimit(inv.layout.InstallationRoot.Path(), "", reviewRoundCeiling(inv.layout.InstallationRoot.Path())), calls, nil
+	}
 	projection, _, failed := inv.projection()
 	if failed != nil {
 		failed.Targets = targets
@@ -946,7 +966,7 @@ func reviewBrief(mode, chain, goalID string, rounds int64, calls int, threat, sc
 	return strings.Join(lines, "\n")
 }
 
-func (inv *intentInvocation) reviewDesign(file string) intentResult {
+func (inv *intentInvocation) reviewDesign(file string, selectedRoot ...string) intentResult {
 	path := file
 	if !filepath.IsAbs(path) {
 		path = filepath.Join(inv.cwd, path)
@@ -993,12 +1013,12 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 	}
 	goalID := inv.input.text("goal")
 	if goalID == "" {
-		if len(record.Goals) != 1 {
+		if len(record.Goals) > 1 {
 			return intentResult{Targets: target, Outcome: intentRefused, code: 2,
 				Summary: fmt.Sprintf("design %s names %d goals, and a review serves one; nothing was reviewed", record.ID, len(record.Goals)),
 				next:    append(inv.typedArgvLess("goal"), "--goal", firstOr(record.Goals, "GOAL")), nextReason: "or another goal the design names"}
 		}
-		goalID = record.Goals[0]
+		goalID = firstOr(record.Goals, "")
 	}
 	rounds, calls, refused := inv.reviewBriefFacts(target, goalID)
 	if refused != nil {
@@ -1024,13 +1044,13 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		fmt.Sprintf("design page %s, SHA-256 %s", gitRel, hex.EncodeToString(digest[:])),
 		filepath.Join(dir, "findings.md"),
 		[]string{fmt.Sprintf("`%s:1-%d` — the whole design under skills/design-critique/SKILL.md: missing work, false premises and first-use failures", gitRel, lineCount)}) +
-		drafts.section()
+		drafts.section() + "\n## Whole-page evidence\n\nReview the entire frozen page, including every section beyond earlier findings. Return wholePageDigest matching its SHA-256. Return coverage for every row beneath `## The five questions, for every new owner and record`, plus omitted functions, records and acts. Each row names its exact declaration in row and owning heading in where, with five answers numbered 1–5: the function that invokes it, freshness, person/agent authority, executable remedy, unreadable input. Every answer carries answer and evidence, or unanswered=true; never silently omit a cell. Findings name class, exact heading in where, implementation/test change, and coverage (row:question for a missing answer, otherwise empty). A missing decision names the decision and affected dependencies in change.\n"
 	designPath := filepath.Join(git, filepath.FromSlash(gitRel))
 	inputs := map[string]string{brief: briefText, outputs: gitRel + "\n"}
 	for path, content := range drafts.files {
 		inputs[path] = content
 	}
-	plan := designReviewPlan{targets: target, goalID: goalID, recordID: record.ID, design: designPath, subject: hex.EncodeToString(digest[:]), brief: brief,
+	plan := designReviewPlan{root: firstOr(selectedRoot, ""), targets: target, goalID: goalID, recordID: record.ID, design: designPath, subject: hex.EncodeToString(digest[:]), brief: brief,
 		inputs: inputs}
 	// An existing chain is decided before anything is written: a Send that
 	// rejoins a running examination writes nothing, so the brief it admitted,
@@ -1042,7 +1062,7 @@ func (inv *intentInvocation) reviewDesign(file string) intentResult {
 		return intentResult{Targets: target, Outcome: intentFailed, Summary: "the review's brief can't be written, so nothing was reviewed",
 			next: inv.sameCommand(), nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
 	}
-	if len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), goalID, designPath)) == 0 {
+	if goalID != "" && len(dispatchcore.DesignCritiqueChains(inv.layout.InstallationRoot.Path(), goalID, designPath)) == 0 {
 		// The first paid critique needs the goal's claim; an approved goal
 		// nobody holds is claimed lawfully, with no build worktree.
 		if refused := inv.acquireDesignCritiqueClaim(goalID); refused != nil {
@@ -1251,6 +1271,23 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 	}
 	path := inv.returnPath(root, recordRound(record))
 	findings, verdict, err := readIntentFindings(path)
+	if recordText(record, "role") == "design-critic" {
+		required, subjectErr := dispatchcore.DesignEvidenceRequired(inv.layout.InstallationRoot.Path(), root, recordRound(record))
+		if subjectErr != nil {
+			err = subjectErr
+		} else if required {
+			var read readsubject.Read
+			read, err = dispatchcore.CollectExamination(inv.layout.InstallationRoot.Path(), job)
+			if err == nil {
+				_, err = dispatchcore.CritiqueRegisterAdvance(inv.layout.InstallationRoot.Path(), root, job)
+			}
+			if err == nil {
+				encoded, _ := json.Marshal(read.Findings)
+				json.Unmarshal(encoded, &findings)
+				data["read"], data["rawMaterial"] = read, read.Design.RawMaterial
+			}
+		}
+	}
 	if err != nil {
 		return intentResult{Targets: targets, Outcome: intentFailed, Summary: fmt.Sprintf("review job %s finished, but its findings can't be read", job), Data: data,
 			next: inv.publicArgv("work", "status", qualifiedJob(job)), nextReason: "shows the job", Details: []string{err.Error()}}
@@ -1585,6 +1622,39 @@ func joinRefusal(targets []intentTarget, review string, violations []string, ret
 // ---- close
 
 func (inv *intentInvocation) closeChain(job string) intentResult {
+	store := branch.CriticStore(inv.layout.InstallationRoot.Path(), job)
+	if store != inv.layout.InstallationRoot.Path() {
+		closer, refused := inv.closerAt([]intentTarget{jobTarget(job)}, store)
+		if refused != nil {
+			return *refused
+		}
+		return closer.closeChain(job)
+	}
+	if root, err := inv.jobRecord(job); err == nil && recordText(root, "role") == "design-critic" {
+		if recordText(root, "parentJob") != "" {
+			return inv.closeChainRecords(job)
+		}
+		newest, err := inv.newestRound(job)
+		if err != nil {
+			return inv.closeDesignJob(job, recordText(root, "goalId"))
+		}
+		if err == nil {
+			required, err := dispatchcore.DesignEvidenceRequired(store, job, recordRound(newest))
+			if err != nil || required {
+				return inv.closeDesignJob(job, recordText(root, "goalId"))
+			}
+		}
+	}
+	closed := inv.closeChainRecords(job)
+	if root, err := inv.jobRecord(job); err == nil && recordText(root, "role") == "design-critic" && (closed.Outcome == intentConfirmed || closed.Outcome == intentUnchanged) {
+		closed.Summary += "; this ends that review only: it accepts no design, collects no goal read and does not permit landing"
+	}
+	return closed
+}
+
+// closeChainRecords retains the whole close checks. A whole-page design
+// reaches it only after its exit is committed and its page is projected.
+func (inv *intentInvocation) closeChainRecords(job string) intentResult {
 	// The chain's records are where its critic was dispatched: a goal
 	// worktree or the primary checkout that serves it (branch.CriticStore).
 	if store := branch.CriticStore(inv.layout.InstallationRoot.Path(), job); store != inv.layout.InstallationRoot.Path() {
@@ -1592,7 +1662,7 @@ func (inv *intentInvocation) closeChain(job string) intentResult {
 		if refused != nil {
 			return *refused
 		}
-		return closer.closeChain(job)
+		return closer.closeChainRecords(job)
 	}
 	targets := []intentTarget{jobTarget(job)}
 	root, err := inv.jobRecord(job)
@@ -2460,6 +2530,12 @@ func (inv *intentInvocation) goalNextStep(goalID string) ([]string, string) {
 // handLandingSubject selects the whole branch once its declared work and
 // reads are finished. A records hand-in keeps the branch's read requirement.
 func handLandingSubject(targets []intentTarget, goalID, through string, state intentBranchState, records, whole bool, designs ...string) (string, int, *intentResult) {
+	if !records {
+		pending := &goal.GoalFile{Id: goalID, ReviewObligations: state.Status.ReviewObligations}
+		if problem, next := pending.DesignCompletionProblem(); problem != "" {
+			return "", 0, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: problem, next: next}
+		}
+	}
 	units := state.Status.Units
 	unread := func(index int) *intentResult {
 		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1,
@@ -2650,13 +2726,13 @@ func recordWriterAdmits(caller lease.ClassifyResult, err error, job string) (str
 	return "", nil
 }
 
-// closeCriticJob completes an existing review chain named by its critic root
-// with the author's decisions, through the same whole close owner that
-// review G and review commit use: the join, record-writer authority, live
-// processes, caps and accepted findings are the owner's checks. A closed
-// chain is not an accepted design, a collected goal read or permission to
-// land; it only ends that review.
+// closeCriticJob completes a review named by its critic root. Whole-page
+// designs use their canonical publication owner; code and warden reviews
+// use the whole close checks and collect no goal read or landing permission.
 func (inv *intentInvocation) closeCriticJob(job string) intentResult {
+	if root, err := inv.jobRecord(job); err == nil && recordText(root, "role") == "design-critic" {
+		return inv.closeChain(job)
+	}
 	if !inv.input.has("dispositions") {
 		return intentResult{Targets: []intentTarget{jobTarget(job)}, Outcome: intentRefused, code: 2,
 			Summary: fmt.Sprintf("job %s is a review; its findings are decided, not reviewed again; nothing was done", job),

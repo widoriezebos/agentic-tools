@@ -14,6 +14,7 @@ const (
 	reviewDiffUsage    = "metasystem work review --patch PATCH --brief FILE [--goal G] [--retry N]"
 	reviewCheckUsage   = "metasystem work review j2:J --check-only --stage review|recertify|merge | [j2:ROOT] --check-only --findings RETURN --dispositions FILE"
 	reviewDesignCheck  = "metasystem design review FILE --check-only"
+	reviewDesignPerson = "metasystem design review FILE --scope FILE|--ruling TEXT --reason TEXT --by NAME"
 )
 
 func reviewHelpForms() []intentHelpForm {
@@ -128,6 +129,12 @@ func reviewHelpForms() []intentHelpForm {
 
 func designReviewHelpForms() []intentHelpForm {
 	return []intentHelpForm{
+		{name: "person", purpose: "authorize replacement scope or rule on the specified design",
+			usage: []string{reviewDesignPerson}, inputs: []string{"The identified design and a reason; replacement scope preserves its id and goal."},
+			effects:    "Retains and prints prior impact, then publishes a ruled design; unknown critic evidence does not prevent the act.",
+			authority:  "Direct proof from the person's enrolled terminal; --by alone, a grant or the helm cannot authorize this act.",
+			repetition: "Repeat to repair the same retained publication; undo with a reasoned scope act using its retained prior page. Spent rounds and implementation obligations remain.",
+			flags:      []string{"scope", "ruling", "reason", "by"}, example: []string{"metasystem", "design", "review", "plans/designs/example.md", "--ruling", "accept", "--reason", "bounded risk", "--by", "Wido"}},
 		{
 			name: "design", purpose: "independently critique an existing project design",
 			usage: []string{reviewDesignUsage},

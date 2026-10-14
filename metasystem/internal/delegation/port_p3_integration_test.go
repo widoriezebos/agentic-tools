@@ -48,7 +48,7 @@ func openServingGoal(t *testing.T, root, id, intent string) {
 func (b *bed) criticSubject(designs ...string) string {
 	b.t.Helper()
 	for _, design := range designs {
-		b.writeFile(filepath.Join("plans", "designs", design), "# "+design+"\n")
+		b.writeFile(filepath.Join("plans", "designs", design), designFixturePage("# "+design+"\n"))
 	}
 	b.git("add", "-A")
 	b.git("commit", "-qm", "critic subjects")
@@ -403,7 +403,7 @@ func (b *bed) followCritic(job, design string) delegation.Result {
 	b.t.Helper()
 	b.complete(job)
 	b.p5WriteJSON("artifacts/agents/"+job+"/rounds/1/return.json", b.criticalDesignReturn(job))
-	b.writeFile("plans/designs/"+design, "# "+design+"\n\nFollow-up revision.\n")
+	b.writeFile("plans/designs/"+design, designFixturePage("# "+design+"\n\nFollow-up revision.\n"))
 	b.git("add", "-A")
 	b.git("commit", "-qm", "revise "+design)
 	template, err := protocol.Template("follow-up.md")

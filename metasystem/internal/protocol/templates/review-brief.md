@@ -56,6 +56,8 @@ Inside that file, number findings from most severe to least severe. Each
 finding names the file, rule, and concrete failure it causes. If there are no
 material findings, record AGREE and any non-gating observations there.
 
+When the bound build brief carries mandatory design items, explicitly check each requirement and return its finding identity in `coversFindings`; a clean verdict alone proves none of them.
+
 A finding that is one instance of a rule names every sibling place; the fix is the rule.
 
 Give each finding its own line: `RELATION: new`, `RELATION: fold-not-holding`,

@@ -143,6 +143,10 @@ func TestARecurringIDIsItsOwnCardInEachRound(t *testing.T) {
 	b := newDesignLoopBed(t)
 	roots, id, owners := b.page()
 	designReviewRunWith(roots, id, httpd.DesignAsked{Goal: bedGoal, ToolCalls: 30}, owners)
+	// Decision 2: this display fixture has a frozen allowance of two.
+	root := b.job("rev1")
+	root["reviewRoundLimit"] = 2
+	b.writeJob(root)
 	critical := finding("F1", true, "first")
 	critical["severity"] = "critical"
 	b.finish("rev1", 1, "completed", critical)

@@ -9,7 +9,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// A wider review budget cannot admit more than two design examinations.
+// Decision 2 limits design examinations to four regardless of severity.
 
 func fiveRoundHistory(materials ...int64) []any {
 	history := make([]any, 0, len(materials))
@@ -26,8 +26,8 @@ func TestDesignCapFiveRoundTwoResidueDefersFixtures(t *testing.T) {
 	writeJSONFile(t, filepath.Join(repo, "artifacts", "agents", root, "rounds", "1"), "return.json", map[string]any{"findings": []any{map[string]any{"severity": "critical"}}})
 	var got []goal.ReviewObligation
 	outcome, err := critiqueRegisterClose(repo, root, captureObligations(&got))
-	check(t, err == nil && outcome == "deferred" && len(got) == 1,
-		"terminal design residue did not defer: obligations=%+v err=%v", got, err)
+	check(t, err != nil && outcome == "closed" && strings.Contains(err.Error(), "dispatch the next round") && len(got) == 0,
+		"ordinary design findings stopped before four examinations: obligations=%+v err=%v", got, err)
 }
 
 func TestDesignCapFiveRoundTwoBlockerRaisesTheHuman(t *testing.T) {

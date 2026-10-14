@@ -81,6 +81,53 @@ func TestDesignRequestReplay(t *testing.T) {
 	}
 }
 
+func TestDesignRequestOperationBindsOneFinalAuthor(t *testing.T) {
+	t.Parallel()
+	m, starter, request := designFixture(t)
+	request.Operation = "exit-one"
+	first, err := m.RequestDesign(request)
+	if err != nil || first.Attempt.Operation != request.Operation {
+		t.Fatalf("operation reservation: %+v %v", first, err)
+	}
+	request.After = 1
+	rejoined, err := m.RequestDesign(request)
+	if err != nil || !rejoined.Rejoined || rejoined.Attempt.LaunchID != first.Attempt.LaunchID || len(starter.ids) != 1 {
+		t.Fatalf("operation replay started another author: %+v %v", rejoined, err)
+	}
+	request.Brief = []byte("A different scope.\n")
+	if _, err := m.RequestDesign(request); err == nil || len(starter.ids) != 1 {
+		t.Fatal("the operation accepted a different frozen request")
+	}
+	request.After, request.Operation = 0, "exit-two"
+	second, err := m.RequestDesign(request)
+	if err != nil || second.Attempt.Attempt != 2 || second.Attempt.Operation != "exit-two" || len(starter.ids) != 2 {
+		t.Fatalf("a distinct operation failed: %+v %v", second, err)
+	}
+	request.Operation, request.Brief = "exit-one", []byte("Design the reader.\n")
+	old, err := m.RequestDesign(request)
+	if err != nil || !old.Rejoined || old.Current != 2 || old.Attempt.Attempt != 1 || len(starter.ids) != 2 {
+		t.Fatalf("old operation repeated: %+v %v", old, err)
+	}
+}
+
+func TestFinalDesignSizeUsesProductionEstimate(t *testing.T) {
+	t.Parallel()
+	page := "## Units\n\n| Unit | Production lines | Total changed lines |\n| --- | --- | --- |\n| reader | 170 | 510 |\n"
+	units, err := CheckDesignSize(page)
+	if err != nil || len(units) != 1 || units[0].Lines != 170 {
+		t.Fatalf("test allowance counted as production: %+v %v", units, err)
+	}
+	if _, err := CheckDesignSize(strings.Replace(page, "170", "300", 1)); err == nil {
+		t.Fatal("300 production lines accepted")
+	}
+	for _, unit := range []string{"a", "b", "c", "d", "e"} {
+		page += "| " + unit + " | 10 | 10 |\n"
+	}
+	if _, err := CheckDesignSize(page); err == nil {
+		t.Fatal("six units accepted")
+	}
+}
+
 // TestDesignRequestCrashBeforeSupervisor: a launch whose supervisor never
 // claimed it is failed only atomically under the record lock; a supervisor
 // that claims first makes recovery refuse, a supervisor that arrives after

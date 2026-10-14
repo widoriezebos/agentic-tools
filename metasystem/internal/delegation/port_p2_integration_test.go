@@ -36,6 +36,21 @@ func (b *bed) completeJob(job string) {
 	if err := adapter.WriteFakeReturn(b.recordPath(job), filepath.Join(roundDir, "prompt.md"), filepath.Join(roundDir, "return.json")); err != nil {
 		b.t.Fatalf("fake return for %s: %v", job, err)
 	}
+	if b.record(job)["role"] == "design-critic" {
+		data, err := os.ReadFile(filepath.Join(roundDir, "return.json"))
+		if err != nil {
+			b.t.Fatal(err)
+		}
+		var returned map[string]any
+		if err := json.Unmarshal(data, &returned); err != nil {
+			b.t.Fatal(err)
+		}
+		relative, err := filepath.Rel(b.root, filepath.Join(roundDir, "return.json"))
+		if err != nil {
+			b.t.Fatal(err)
+		}
+		b.p5WriteJSON(relative, returned)
+	}
 	patch := filepath.Join(b.t.TempDir(), "complete.json")
 	if err := os.WriteFile(patch, []byte(`{"exitCode":0}`), 0o600); err != nil {
 		b.t.Fatal(err)
@@ -51,7 +66,7 @@ const fixtureDesign = "plans/designs/fixture.md"
 // returns its declared-outputs manifest.
 func (b *bed) designPage() string {
 	b.t.Helper()
-	b.writeFile(fixtureDesign, "# Fixture design\n\nA page under review.\n")
+	b.writeFile(fixtureDesign, designFixturePage("# Fixture design\n\nA page under review.\n"))
 	b.git("add", fixtureDesign)
 	b.git("commit", "-qm", "fixture design page")
 	return b.writeFile("declared-outputs.txt", fixtureDesign+"\n")

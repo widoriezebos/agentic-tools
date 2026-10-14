@@ -97,6 +97,7 @@ func attributionFixture(t *testing.T, baseRed bool, script string, resume ...boo
 		events = append(events, "branch")
 	}
 	f := newUnitFixture(t, "", events...)
+	f.starter.proofCause = ""
 	git := &attributionGit{fixture: f, tree: "base-tree", mainTree: "main-tree", baseRed: baseRed}
 	f.runner.Git = git
 	f.manager.Adapters["plain-exec"] = PlainExec{}

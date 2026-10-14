@@ -44,6 +44,9 @@ func newDesignReviewBed(t *testing.T) *designReviewBed {
 // newDesignReviewBedAmended is newDesignReviewBed over an amended goal file.
 func newDesignReviewBedAmended(t *testing.T, amend func(*goal.GoalFile)) *designReviewBed {
 	b := &designReviewBed{deliveryBed: &deliveryBed{intentBed: newIntentBed(t, false, amend)}}
+	if err := os.MkdirAll(filepath.Join(b.root(), ".git"), 0700); err != nil {
+		t.Fatal(err)
+	}
 	layout, err := b.intentBed.owners().resolver.ResolveLayout(b.root())
 	if err != nil {
 		t.Fatal(err)
@@ -103,6 +106,7 @@ func newDesignReviewBedAmended(t *testing.T, amend func(*goal.GoalFile)) *design
 	return b
 }
 
+// Decision 2 admits ordinary and critical findings under the same frozen cap.
 func TestSecondDesignRoundRefusedWithoutCritical(t *testing.T) {
 	t.Parallel()
 	for _, critical := range []bool{false, true} {
@@ -110,81 +114,37 @@ func TestSecondDesignRoundRefusedWithoutCritical(t *testing.T) {
 			t.Parallel()
 			b := newDesignLoopBed(t)
 			b.review()
-			high, medium := finding("F1", true, "a gap"), finding("F2", true, "another gap")
-			medium["severity"] = "medium"
+			f := finding("F1", true, "a gap")
 			if critical {
-				high["severity"] = "critical"
+				f["severity"] = "critical"
 			}
-			b.finish("rev1", 1, "completed", high, medium)
-			b.register(1, 20, []int64{2}, map[string]any{"findingId": "F1"}, map[string]any{"findingId": "F2"})
-			decided := b.decide(b.review(), map[string]string{"F1": "accepted | folded the gap | section 2", "F2": "accepted | folded the gap | section 3"})
+			b.finish("rev1", 1, "completed", f)
+			b.register(1, 20, []int64{1}, map[string]any{"findingId": "F1"})
+			answer := b.decide(b.review(), map[string]string{"F1": "accepted | specified the gap | section 2"})
 			b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Second version.", 1))
-			dispatch := b.handler
-			b.handler = func(p intentProcess) intentProcessResult {
-				if !critical && (len(p.argv) < 2 || p.argv[1] != "close") {
-					t.Fatal("ordinary findings dispatched another examination")
-				}
-				return dispatch(p)
-			}
-			result := b.review("--dispositions", decided, "--after", "1")
-			if critical {
-				if len(b.followUps) != 1 || b.closes != 0 || !strings.Contains(result.Summary, "round 2 of critique rev1 requested, the final round") {
-					t.Fatalf("critical continuation: %+v", result)
-				}
-				return
-			}
-			if result.Outcome != intentConfirmed || b.closes != 1 || len(b.followUps) != 0 {
-				t.Fatalf("ordinary close: %+v", result)
-			}
-			again := b.review()
-			if again.Outcome != intentRefused || again.Data.(map[string]any)["code"] != "DESIGN_ROUND_ONE" || again.Data.(map[string]any)["reason"] != "round 1 of 01DESIGNREADER found no critical finding; its findings are folded and recorded; no second round was started" {
-				t.Fatalf("second examination: %+v", again)
+			result := b.review("--dispositions", answer, "--after", "1")
+			if result.Outcome != intentInProgress || len(b.followUps) != 1 || b.closes != 0 || strings.Contains(result.Summary, "final round") {
+				t.Fatalf("severity changed the four-examination allowance: %+v", result)
 			}
 		})
 	}
 }
 
+// Decision 2 removes the one-examination fold for every severity.
 func TestOneRoundCloseFoldsAccepted(t *testing.T) {
 	t.Parallel()
 	for _, rigor := range []string{"unproven", "severe"} {
 		t.Run(rigor, func(t *testing.T) {
 			t.Parallel()
 			b := newDesignLoopBed(t)
-			b.writeFile(filepath.Join(b.install, "metasystem.conf"), "evidence.root="+t.TempDir()+"\n")
-			realCloseOwner(t, b.deliveryBed, func(ports *delegation.Ports) { ports.Git = designReviewGit{b.root()} })
-			close := b.owners.closeOwner
-			b.owners.closeOwner = func(root string, args []string) intentProcessResult {
-				b.closes++
-				return close(root, args)
-			}
 			b.review()
 			b.finish("rev1", 1, "completed", finding("F1", true, "a material gap"))
 			b.register(1, 20, []int64{1}, map[string]any{"findingId": "F1", "rigorClass": rigor})
-			snapshot := "artifacts/agents/capabilities/close.json"
-			b.writeFile(filepath.Join(b.install, snapshot), `{"ok":true}`)
-			record := b.job("rev1")
-			record["capabilitySnapshot"] = snapshot
-			b.writeJob(record)
-			decided := b.decide(b.review(), map[string]string{"F1": "accepted | folded the gap | section 2"})
-			result := b.review("--dispositions", decided, "--after", "1")
+			answer := b.decide(b.review(), map[string]string{"F1": "accepted | specified the gap | section 2"})
+			result := b.review("--dispositions", answer)
 			entry := b.job("rev1")["findingRegister"].([]any)[0].(map[string]any)
-			if rigor == "severe" {
-				if result.Outcome != intentRefused || entry["status"] != "open" || !strings.Contains(fmt.Sprint(result.Data), "goal accept-risk") {
-					t.Fatalf("severe risk folded: %+v entry=%v", result, entry)
-				}
-				return
-			}
-			if result.Outcome != intentConfirmed || b.closes != 1 || len(b.followUps) != 0 || b.job("rev1")["chainClosed"] != true || entry["status"] != "resolved" || entry["resolution"] != "folded" || b.job("rev1")["findingRegisterRound"] != float64(1) {
-				t.Fatalf("one-round fold: %+v entry=%v", result, entry)
-			}
-			if clean, err := readsubject.CleanRegister(b.job("rev1")["findingRegister"]); err != nil || !clean {
-				t.Fatalf("closed register = clean %v, error %v", clean, err)
-			}
-			if landable, risks, err := readsubject.LandableRegister(b.job("rev1")["findingRegister"]); err != nil || !landable || risks != nil {
-				t.Fatalf("closed register = landable %v, risks %v, error %v", landable, risks, err)
-			}
-			if saved := string(mustRead(t, roundDecisionsPath(filepath.Join(b.install, "artifacts", "agents", "rev1", "rounds", "1", "return.json")))); !strings.Contains(saved, "| F1 | accepted |") || !strings.Contains(string(mustRead(t, b.design)), "| 1 | F1 | a material gap | accepted |") {
-				t.Fatal("the round or page lost its decisions")
+			if result.Outcome != intentRefused || entry["status"] != "open" || b.closes != 0 || len(b.followUps) != 0 || result.Next == nil || !strings.Contains(result.Next.Reason, "after changing the design") {
+				t.Fatalf("unexamined amendment folded: %+v entry=%v", result, entry)
 			}
 		})
 	}
@@ -206,7 +166,8 @@ func TestDesignReviewRetriesFailedFirstExamination(t *testing.T) {
 	dispatch := b.handler
 	b.handler = func(p intentProcess) intentProcessResult {
 		if root := flagValue(p.argv, "--follow-up"); root != "" {
-			if err := dispatchcore.ExaminationRetryAdmissible(b.install, b.job(root)); err != nil {
+			// Decision 3 reserves the retry before dispatch admits that source.
+			if err := dispatchcore.ReservedUnknownExaminationRetry(b.install, root); err != nil {
 				return intentProcessResult{stderr: []byte(err.Error()), code: 1}
 			}
 			if _, err := dispatchcore.CritiqueExhaustionAdvance(b.install, root, "design-critic", flagValue(p.argv, "--brief"), "child"); err != nil {
@@ -220,8 +181,8 @@ func TestDesignReviewRetriesFailedFirstExamination(t *testing.T) {
 	}
 	b.finish("rev1-r2", 2, "completed", finding("F1", true, "a material gap"))
 	b.register(2, 20, []int64{0, 1}, map[string]any{"findingId": "F1", "critic": "rev1-r2", "rigorClass": "unproven"})
-	if limit := dispatchcore.DesignRoundLimit(b.install, "rev1", 20); limit != 2 {
-		t.Fatalf("first returned examination cap = %d, want 2", limit)
+	if limit := dispatchcore.DesignRoundLimit(b.install, "rev1", 20); limit != 4 {
+		t.Fatalf("first returned examination cap = %d, want 4", limit)
 	}
 	snapshot := "artifacts/agents/capabilities/close.json"
 	b.writeFile(filepath.Join(b.install, snapshot), `{"ok":true}`)
@@ -235,16 +196,19 @@ func TestDesignReviewRetriesFailedFirstExamination(t *testing.T) {
 	if err := os.Rename(decided, answer); err != nil {
 		t.Fatal(err)
 	}
+	// Decision 2: the failed execution consumes no completed examination;
+	// its first material return needs a revision, rather than a legacy fold.
+	b.writeFile(b.design, strings.Replace(string(mustRead(t, b.design)), "First version.", "Second version.", 1))
 	result := b.review("--dispositions", answer, "--after", "2")
 	entry := b.job("rev1")["findingRegister"].([]any)[0].(map[string]any)
-	if result.Outcome != intentConfirmed || b.closes != 1 || len(b.followUps) != 1 || b.job("rev1")["chainClosed"] != true || entry["status"] != "resolved" || entry["resolution"] != "folded" {
-		t.Fatalf("retried examination close: %+v entry=%v", result, entry)
+	if result.Outcome != intentInProgress || b.closes != 0 || len(b.followUps) != 2 || b.job("rev1")["chainClosed"] == true || entry["status"] != "open" || strings.Contains(result.Summary, "final round") {
+		t.Fatalf("retry bought a fold or spent the four-examination allowance: %+v entry=%v", result, entry)
 	}
-	if clean, err := readsubject.CleanRegister(b.job("rev1")["findingRegister"]); err != nil || !clean {
-		t.Fatalf("retried examination register = clean %v, error %v", clean, err)
+	if clean, err := readsubject.CleanRegister(b.job("rev1")["findingRegister"]); err != nil || clean {
+		t.Fatalf("unexamined amendment register = clean %v, error %v", clean, err)
 	}
-	if saved := string(mustRead(t, decided)); !strings.Contains(saved, "| F1 | accepted |") || !strings.Contains(string(mustRead(t, b.design)), "## Dispositions (critique rev1)\n") || !strings.Contains(string(mustRead(t, b.design)), "| 2 | F1 | a material gap | accepted | folded the gap | section 2 |") {
-		t.Fatal("the returned round or page lost its decisions")
+	if saved := string(mustRead(t, decided)); !strings.Contains(saved, "| F1 | accepted |") || strings.Contains(string(mustRead(t, b.design)), "## Dispositions (critique rev1)\n") {
+		t.Fatal("the round lost its decisions or the unclosed page claimed a close")
 	}
 }
 
@@ -309,7 +273,11 @@ func TestDesignCritiqueReplayAndCap(t *testing.T) {
 	}
 	// A failed examination: retried once; a lost response is recovered from
 	// the operation's own record; the replay rejoins even after it failed.
-	b.finish("rev1-r2", 2, "timeout")
+	// Decision 3 permits one failed-execution retry; deadlines never retry.
+	b.finish("rev1-r2", 2, "failed")
+	if err := os.Remove(filepath.Join(b.install, "artifacts", "agents", "rev1", "rounds", "2", "return.json")); err != nil {
+		t.Fatal(err)
+	}
 	b.lose = true
 	if result = review("--retry", "2"); len(b.followUps) != 2 {
 		t.Fatalf("retry request: %+v", result)
@@ -329,7 +297,8 @@ func TestDesignCritiqueReplayAndCap(t *testing.T) {
 	// never adopted.
 	b.writeJob(map[string]any{"jobId": "other-r2", "role": "design-critic", "status": "completed", "round": 2, "parentJob": "other", "operationId": "design-01designreader-retry-3"})
 	b.writeJob(map[string]any{"jobId": "other", "role": "code-critic", "status": "completed", "round": 1})
-	if result = review("--retry", "3"); result.Outcome != intentFailed || !strings.Contains(result.Summary, "belongs to another critique") || len(b.followUps) != 2 {
+	// Decision 3 stops before any third-execution operation can be adopted.
+	if result = review("--retry", "3"); result.Outcome != intentFailed || !strings.Contains(result.Summary, "stopped") || len(b.followUps) != 2 || b.job("rev1")["unknownExaminationRetryFrom"] != "rev1-r2" {
 		t.Fatalf("a foreign operation record: %+v", result)
 	}
 }

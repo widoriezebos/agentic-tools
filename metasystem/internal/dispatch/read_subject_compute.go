@@ -262,7 +262,7 @@ func designReadSubject(facts readSubjectFacts, workspace, design, outputsFile, r
 	}
 	digest := sha256.Sum256(content)
 	return ReadSubject{
-		Kind: SubjectDesign, DesignPath: rel,
+		Kind: SubjectDesign, DesignPath: rel, DesignPage: string(content),
 		ContentDigest:         hex.EncodeToString(digest[:]),
 		DeclaredOutputsDigest: outputsDigest,
 		ReviewedCommit:        reviewedCommit,

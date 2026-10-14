@@ -226,6 +226,7 @@ func TestReviewSubjectRefusesARoundThatIsNotReady(t *testing.T) {
 		{name: "plan-missing", want: "cannot be read", events: []string{"branch", "round"},
 			spoil: func(t *testing.T, fixture unitFixture, record UnitRunRecord) func() {
 				os.Remove(record.Plan)
+				os.Remove(filepath.Join(record.Rounds[0].Directory, "plan.json"))
 				return nil
 			}},
 		{name: "busy", want: "UNIT_RUN_BUSY", events: []string{"branch", "round"},
@@ -321,5 +322,78 @@ func TestDeclaredUnitsReadThePagesUnitsTable(t *testing.T) {
 	}
 	if _, err := DeclaredUnitLines(missing, "parser"); !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestReviewSubjectUsesFrozenRoundPlan(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"frozen", "correction", "corrupt", "legacy"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			events := []string{"branch", "round"}
+			if scenario == "correction" {
+				events = append(events, "branch", "round")
+			}
+			fixture := newUnitFixture(t, reviewDiff, events...)
+			if scenario != "legacy" {
+				fixture.runner.FreezeCheck = func(plan UnitPlan, directory string) (UnitPlan, error) {
+					data, err := os.ReadFile(plan.Build.Brief)
+					if err != nil {
+						return plan, err
+					}
+					plan.Build.Brief = filepath.Join(directory, "checked-build.md")
+					if err := os.WriteFile(plan.Build.Brief, append([]byte("Run the frozen check before returning.\n"), data...), 0600); err != nil {
+						return plan, err
+					}
+					plan.Check = &UnitCheck{Cheap: "true", Audits: "true", Minutes: 15, Directory: plan.Worktree, Environment: []string{}}
+					return plan, nil
+				}
+			}
+			built, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil || built.Record.Rounds[0].Outcome != "green" {
+				t.Fatalf("build: %+v err=%v", built, err)
+			}
+			if scenario == "correction" {
+				built, err = fixture.runner.Advance(UnitRequest{Resume: built.Record.ID, FollowUp: writeFollowUp(t)})
+				if err != nil || built.Record.Rounds[1].Outcome != "green" {
+					t.Fatalf("correction: %+v err=%v", built, err)
+				}
+			}
+			round := built.Record.Rounds[len(built.Record.Rounds)-1]
+			path := filepath.Join(round.Directory, "plan.json")
+			plan, err := ReadUnitPlan(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if scenario == "corrupt" {
+				if err := os.WriteFile(path, []byte("{"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			} else if scenario == "legacy" {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			reviewer := &UnitRunner{Root: fixture.runner.Root, Git: fixture.git}
+			called := false
+			err = reviewer.ReviewSubject(built.Record.ID, func(review UnitReview, _ func(UnitSubject) error) error {
+				called = true
+				if scenario == "corrupt" {
+					return nil
+				}
+				brief, err := os.ReadFile(review.BuildBrief)
+				if err != nil || review.BuildBrief != plan.Build.Brief || review.BuildBriefSHA256 != digestHex(brief) {
+					t.Fatalf("review brief %q must name the frozen round bytes %q, digest=%s err=%v", review.BuildBrief, plan.Build.Brief, review.BuildBriefSHA256, err)
+				}
+				return nil
+			})
+			if scenario == "corrupt" {
+				if err == nil || called || !IsCode(err, "UNIT_REVIEW_NOT_READY") {
+					t.Fatalf("an unreadable current plan used an older plan: called=%t err=%v", called, err)
+				}
+			} else if err != nil || !called {
+				t.Fatalf("review: called=%t err=%v", called, err)
+			}
+		})
 	}
 }

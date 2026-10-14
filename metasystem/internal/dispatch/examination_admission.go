@@ -8,7 +8,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
-// ReservedUnknownExaminationRetry checks the exact completed examination
+// ReservedUnknownExaminationRetry checks the exact terminal examination
 // whose owner reserved the chain's single fresh read. The exemption belongs
 // to that examination, never to an arbitrary follow-up in the chain.
 func ReservedUnknownExaminationRetry(repoRoot, jobID string) error {
@@ -20,8 +20,9 @@ func reservedUnknownExaminationRetry(repoRoot, jobID string) (map[string]any, er
 	state := loadCritiqueState(repoRoot)
 	prior := state.records[jobID]
 	root := state.records[state.chainRoot(jobID)]
-	if prior == nil || asString(prior["jobId"]) != jobID || asString(prior["role"]) != "code-critic" ||
-		asString(prior["status"]) != "completed" || asString(root["unknownExaminationRetryFrom"]) != jobID {
+	role := asString(prior["role"])
+	if prior == nil || asString(prior["jobId"]) != jobID || (role != "code-critic" && role != "design-critic") || role != asString(root["role"]) ||
+		(asString(prior["status"]) != "completed" && !(role == "design-critic" && asString(prior["status"]) == "failed")) || asString(root["unknownExaminationRetryFrom"]) != jobID {
 		return nil, fmt.Errorf("the fresh examination has no matching reserved source read")
 	}
 	if asString(prior["goalId"]) != asString(root["goalId"]) || fmt.Sprint(prior["goalRevision"]) != fmt.Sprint(root["goalRevision"]) ||
@@ -55,7 +56,7 @@ func EvaluateUnknownExaminationRetryAdmission(repoRoot, jobID, id string, revisi
 		return GoalRevisionAdmission{}, fmt.Errorf("the fresh examination does not belong to this goal revision")
 	}
 	return evaluateGoalRevisionAdmissionForDispatchWithReads(repoRoot, id, revision, proposedCap, now,
-		"code-critic", "follow-up", authorityBudgetMembers, reads.private(), hazards...)
+		asString(prior["role"]), "follow-up", authorityBudgetMembers, reads.private(), hazards...)
 }
 
 // EvaluateGoalAdmissionForUnknownExaminationRetry preserves every other
