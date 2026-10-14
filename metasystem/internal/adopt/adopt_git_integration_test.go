@@ -11,6 +11,7 @@ package adopt
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -80,10 +81,60 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 }
 
 func gitCommand(dir string, args ...string) (string, error) {
-	command := exec.Command("git", append([]string{"-c", "user.name=adoption fixture", "-c", "user.email=fixture@example.invalid", "-c", "init.defaultBranch=main", "-C", dir}, args...)...)
-	command.Env = ledgerfence.EnvironWithoutGitSteering()
-	out, err := command.CombinedOutput()
+	out, err := fixtureGitCommand(dir, args...).CombinedOutput()
 	return string(out), err
+}
+
+func fixtureGitCommand(dir string, args ...string) *exec.Cmd {
+	// A snapshot must stop changing before another fixture clones it, and
+	// every repository's writers must finish before fixture cleanup.
+	command := exec.Command("git", append([]string{"-c", "user.name=adoption fixture", "-c", "user.email=fixture@example.invalid", "-c", "init.defaultBranch=main", "-c", "maintenance.autoDetach=false", "-c", "gc.autoDetach=false", "-C", dir}, args...)...)
+	command.Env = ledgerfence.EnvironWithoutGitSteering()
+	return command
+}
+
+// The command must keep automatic maintenance inside the command's wait,
+// including commits that build the shared template used by parallel clones.
+func TestAdoptGitIntegrationWaitsForAutomaticMaintenance(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	gitIn(t, root, "init", "-q", "-b", "main")
+	if err := os.WriteFile(filepath.Join(root, "app.txt"), []byte("fixture\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitIn(t, root, "add", "app.txt")
+	trace := filepath.Join(t.TempDir(), "git-events.json")
+	command := fixtureGitCommand(root, "commit", "-qm", "fixture")
+	command.Env = append(command.Env, "GIT_TRACE2_EVENT="+trace)
+	if out, err := command.CombinedOutput(); err != nil {
+		t.Fatalf("fixture commit: %v\n%s", err, out)
+	}
+	data, err := os.ReadFile(trace)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, line := range bytes.Split(data, []byte("\n")) {
+		if len(line) == 0 {
+			continue
+		}
+		var event struct {
+			Event string   `json:"event"`
+			Argv  []string `json:"argv"`
+		}
+		if err := json.Unmarshal(line, &event); err != nil {
+			t.Fatal(err)
+		}
+		if event.Event != "child_start" || !strings.Contains(strings.Join(event.Argv, " "), "maintenance run --auto") {
+			continue
+		}
+		for _, argument := range event.Argv {
+			if argument == "--no-detach" {
+				return
+			}
+		}
+		t.Fatalf("automatic maintenance can outlive the waited fixture command: %v", event.Argv)
+	}
+	t.Fatal("the fixture commit did not launch automatic maintenance")
 }
 
 func moduleRoot(t *testing.T) string {
@@ -1001,13 +1052,40 @@ func TestAdoptGitIntegrationFromAVendoredTemplate(t *testing.T) {
 // the adopted engine binary, whose installation is the vendored prefix.
 func TestAdoptGitIntegrationVendoredWritersUseApplicationState(t *testing.T) {
 	t.Parallel()
+	started := time.Now()
 	_, nested := templates(t)
+	t.Logf("template ready after %s", time.Since(started))
 	engine := realEngine(t)
-	base := t.TempDir()
+	t.Logf("engine ready after %s", time.Since(started))
+	base, err := os.MkdirTemp("", t.Name())
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		if err := os.RemoveAll(base); err != nil {
+			t.Errorf("fixture removal failed: %v", err)
+			_ = filepath.WalkDir(filepath.Join(base, "application", ".git"), func(path string, entry fs.DirEntry, walkErr error) error {
+				t.Logf("git leftover: %s (%v)", path, walkErr)
+				return nil
+			})
+			out, inspectErr := exec.Command("lsof", "+D", base).CombinedOutput()
+			t.Logf("fixture holders: %s (%v)", out, inspectErr)
+			if records, ok := testenv.FixtureCustodianRecords(); ok {
+				data, readErr := os.ReadFile(records)
+				t.Logf("fixture custody: %s (%v)", data, readErr)
+			}
+		}
+	})
 	target := filepath.Join(base, "application")
 	gitIn(t, base, "init", "-q", "-b", "main", target)
+	// Maintenance writes the object store too. Keep it in the foreground so
+	// each waited Git command also waits for its maintenance writers before
+	// the fixture can remove the repository.
+	gitIn(t, target, "config", "maintenance.autoDetach", "false")
+	gitIn(t, target, "config", "gc.autoDetach", "false")
 	gitIn(t, target, "config", "metasystem.goal.machine", "fixture-machine")
 	adoptWith(t, optionsFor(nested, target, io.Discard))
+	t.Logf("adoption returned after %s", time.Since(started))
 	prefix := filepath.Join(target, "metasystem")
 	data, err := os.ReadFile(engine)
 	if err != nil {
@@ -1022,7 +1100,9 @@ func TestAdoptGitIntegrationVendoredWritersUseApplicationState(t *testing.T) {
 	// A commitless repository ticks degraded by design and a degraded tick
 	// never persists; real adopted repositories have commits.
 	gitIn(t, target, "add", "-A")
+	t.Logf("staging returned after %s", time.Since(started))
 	gitIn(t, target, "-c", "core.hooksPath=/dev/null", "commit", "-qm", "adopted base")
+	t.Logf("adopted commit ready after %s", time.Since(started))
 	run := func(args ...string) string {
 		command := exec.Command(filepath.Join(prefix, "bin", "metasystem"), args...)
 		command.Dir = target
@@ -1035,11 +1115,13 @@ func TestAdoptGitIntegrationVendoredWritersUseApplicationState(t *testing.T) {
 	}
 	run("receipt", "add", "--type", "implement", "--outcome", "shipped", "--skills", "none", "--verify", "clean",
 		"--corrections", "0", "--stop-loss", "no", "--note", "adopted state-root fixture", "--root", prefix)
+	t.Logf("receipt returned after %s", time.Since(started))
 	// The steward's tick runs in its runner's process; its owner is called
 	// here for the adopted repository.
 	if tick, err := steward.RunTick(target, steward.TickConfig{}, steward.RuntimeWorkerCensus{MetasystemRoot: target}); err != nil || tick.Decision.Verdict == steward.VerdictDegraded {
 		t.Fatalf("the adopted steward tick degraded: %+v %v", tick, err)
 	}
+	t.Logf("tick returned after %s", time.Since(started))
 	if !exists(filepath.Join(target, "memory", "receipts.log")) || !exists(filepath.Join(target, "artifacts", "agents", "steward", "highwater.json")) {
 		t.Fatal("the vendored writers did not use the application's state trees")
 	}
