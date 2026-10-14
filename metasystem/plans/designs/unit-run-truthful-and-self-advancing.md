@@ -35,6 +35,9 @@ D6. The person meets intent, never the run's structure (Wido, 2026-10-14 11:06: 
 
 ## Units
 
+Delivery decision 21:01 10-14 (m1e for Wido, Astra-critiqued): U1 is delivered alone through the lane as this goal's whole; U2, U3 and U4 move unchanged to the follow-up goal unit-run-truthful-and-self-advancing-2 (R-148), opened the same day, so that the built 174-line fix lands without declaring the other units done.
+
+
 - U1 (D2 + D4): result-block judgement only on a completed launch; a green flake retry keeps continuing normally (Astra round 3); (a failed or cancelled launch is never promoted; tests for exit-zero with failed output collection, with and without `RESULT: DONE`); `Continue` resumes pending attribution before finishing a recorded failure; tests in `internal/launch` for the three verdict words, the missing block, a Continue over a recorded failed proof with an expired comparison wait (attribution completes before judgement), and the plain-words attribution status. ≤180 lines.
 - U2 (D1): the launch supervisor continues its run at launch end; test that a run with an ended build launch has its proof launched without any verb; the helm test keeps "nothing decided" (no new launches of other goals). ≤150 lines.
 - U3 (D3 + D5 + D6 deadline remedy): deadline check before the proof against the last goal-check execution (timeouts as lower bounds, base comparisons excluded), `work check G --work NAME --minutes N` declaring and resuming in one transition with the round's proof snapshots archived (UTR-5); `proof.deadline=30`. ≤200 lines.
