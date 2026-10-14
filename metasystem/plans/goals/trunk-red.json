@@ -2244,11 +2244,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261014T091500.848497000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-14T09:59:51Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-14T10:58:00Z",
+        "attempt": "20261014T100034.096980000Z",
+        "baseCommit": "6e2fd65e42cd47737377467e40f8598c286899cc",
+        "how": "green",
+        "opid": "N7XNZ0ASEFE42AEAP039A21NHZ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
