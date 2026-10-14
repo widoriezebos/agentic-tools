@@ -2255,6 +2255,88 @@
         "by": "",
         "why": ""
       }
+    },
+    {
+      "id": "red:fast-static-build",
+      "identity": "red:fast-static-build",
+      "group": "fast-static-build",
+      "status": "failed",
+      "failures": [],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261014T204618.765619000Z",
+          "batch": "20261014T204618.765619000Z",
+          "baseCommit": "344ce3f2d37b3806a90eab31166f704b093dba3c",
+          "baseTree": "e8204cd53cce275b673a87ce91bd34115129b003",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261014T204618.765619000Z.log",
+          "logDigest": "0da31f2662a55235a27113d5af4286b44f273d8fd9682ffd48f3baa4962bd168",
+          "seenAt": "2026-10-14T21:30:30Z",
+          "opid": "5NQRGRYQX7X5BBPF9SNKDPTNEV-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261014T204618.765619000Z"
+      ],
+      "opened": "2026-10-14T21:30:30Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestPendingWaitFromChildShell-2",
+      "identity": "red:metasystem/cmd/metasystem:TestPendingWaitFromChildShell",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261014T204618.765619000Z.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestPendingWaitFromChildShell",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261014T204618.765619000Z",
+          "batch": "20261014T204618.765619000Z",
+          "baseCommit": "344ce3f2d37b3806a90eab31166f704b093dba3c",
+          "baseTree": "e8204cd53cce275b673a87ce91bd34115129b003",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261014T204618.765619000Z.log",
+          "logDigest": "0da31f2662a55235a27113d5af4286b44f273d8fd9682ffd48f3baa4962bd168",
+          "seenAt": "2026-10-14T21:30:30Z",
+          "opid": "5NQRGRYQX7X5BBPF9SNKDPTNEV-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261014T204618.765619000Z"
+      ],
+      "opened": "2026-10-14T21:30:30Z",
+      "closed": null
     }
   ],
   "cadence": {
