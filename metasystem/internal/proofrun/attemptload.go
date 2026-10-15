@@ -1,6 +1,7 @@
 package proofrun
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -498,17 +499,149 @@ func isProofLauncherArgv(argv []string) bool {
 // whose launcher is alive, other than self. Unreadable records are skipped:
 // one damaged record must not hide the others.
 func liveAttemptsOtherThan(readers loadReaders, root, self string) int {
-	attempts, _ := readAttemptsSkippingUnreadable(root)
+	ids, _ := unsettledAttemptIDs(root)
 	count := 0
-	for _, attempt := range attempts {
-		if attempt.AttemptID == self || attempt.Terminal != nil {
+	for _, id := range ids {
+		if id == self {
 			continue
 		}
-		if identity.AliveRef(readers.prober, attempt.Launcher.Ref()) == identity.Alive {
+		attempt, err := ReadAttemptHead(root, id)
+		if err == nil && attempt.Terminal == nil && identity.AliveRef(readers.prober, attempt.Launcher.Ref()) == identity.Alive {
 			count++
 		}
 	}
 	return count
+}
+
+// AttemptHead contains the accounting and liveness fields before retained payloads.
+type AttemptHead struct {
+	SchemaVersion      int              `json:"schemaVersion"`
+	AttemptID          string           `json:"attemptId"`
+	GoalID             string           `json:"goalId"`
+	StartedAt          string           `json:"startedAt"`
+	EndedAt            string           `json:"endedAt"`
+	ObservedMinutes    uint64           `json:"observedMinutes"`
+	ControlRoot        string           `json:"controlRoot"`
+	Launcher           ProcessIdentity  `json:"launcher"`
+	ProcessKeys        []string         `json:"processKeys"`
+	Terminal           *AttemptTerminal `json:"terminal"`
+	CancellationIntent string           `json:"cancellationIntent"`
+}
+
+func headOf(a Attempt) AttemptHead {
+	return AttemptHead{a.SchemaVersion, a.AttemptID, a.GoalID, a.StartedAt, a.EndedAt, a.ObservedMinutes,
+		a.ControlRoot, a.Launcher, a.ProcessKeys, a.Terminal, a.CancellationIntent}
+}
+
+func validateAttemptSchema(version int) error {
+	if version > IdentityAttemptSchemaVersion {
+		return fmt.Errorf("it was written by a newer engine (record schema %d)", version)
+	}
+	if version != LegacyAttemptSchemaVersion && version != AttemptSchemaVersion && version != CandidateAttemptSchemaVersion && version != IdentityAttemptSchemaVersion {
+		return fmt.Errorf("test run record has unsupported schema %d", version)
+	}
+	return nil
+}
+
+func validateAttemptBinding(root, id string, head AttemptHead) error {
+	if head.AttemptID != id || head.ControlRoot != root {
+		return fmt.Errorf("the record names a different run than its file")
+	}
+	return nil
+}
+
+func validateAttemptHead(attempt AttemptHead) error {
+	if err := validateAttemptSchema(attempt.SchemaVersion); err != nil {
+		return err
+	}
+	if !safeAttemptID(attempt.AttemptID) || attempt.Launcher.Pid < 1 || attempt.Launcher.Ref().Mode() == identity.CompareInvalid {
+		return fmt.Errorf("test run record lacks its identity or launcher")
+	}
+	started, startErr := time.Parse(time.RFC3339Nano, attempt.StartedAt)
+	ended, endedErr := time.Parse(time.RFC3339Nano, attempt.EndedAt)
+	if attempt.Terminal != nil {
+		if attempt.EndedAt == "" || attempt.Terminal.At != attempt.EndedAt {
+			return fmt.Errorf("finished test run has a contradictory end time")
+		}
+		if startErr != nil || endedErr != nil || ended.Before(started) || attempt.ObservedMinutes == 0 {
+			return fmt.Errorf("finished test run has an invalid observed time")
+		}
+		if attempt.Terminal.Result != TerminalSuccess && attempt.Terminal.Result != TerminalFailed &&
+			attempt.Terminal.Result != TerminalCancelled && attempt.Terminal.Result != TerminalUnknown {
+			return fmt.Errorf("test run result %q is invalid", attempt.Terminal.Result)
+		}
+		if attempt.Terminal.Result == TerminalSuccess && attempt.Terminal.ExitStatus != 0 {
+			return fmt.Errorf("passed test run has a nonzero exit status")
+		}
+		if attempt.Terminal.Result == TerminalFailed && attempt.Terminal.ExitStatus == 0 {
+			return fmt.Errorf("failed test run has a zero exit status")
+		}
+		if attempt.Terminal.Result == TerminalSuccess && attempt.CancellationIntent != "" {
+			return fmt.Errorf("passed test run was also asked to cancel")
+		}
+	} else if attempt.EndedAt != "" || attempt.ObservedMinutes != 0 {
+		return fmt.Errorf("unfinished test run carries a result")
+	}
+	return nil
+}
+
+// ReadAttemptHead stops before the first retained payload value. Full readers
+// alone validate payloads, unknown fields and trailing data.
+func ReadAttemptHead(root, id string) (head AttemptHead, err error) {
+	defer func() {
+		if err != nil {
+			err = fmt.Errorf("read test run %s: %w", id, err)
+		}
+	}()
+	path, err := AttemptPath(root, id)
+	if err != nil {
+		return head, err
+	}
+	file, err := openAttemptRecord(path)
+	if err != nil {
+		return head, err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(bufio.NewReader(file))
+	fields := map[string]any{"schemaVersion": &head.SchemaVersion, "attemptId": &head.AttemptID,
+		"goalId": &head.GoalID, "startedAt": &head.StartedAt, "endedAt": &head.EndedAt,
+		"observedMinutes": &head.ObservedMinutes, "controlRoot": &head.ControlRoot,
+		"launcher": &head.Launcher, "processKeys": &head.ProcessKeys, "terminal": &head.Terminal,
+		"cancellationIntent": &head.CancellationIntent}
+	token, err := decoder.Token()
+	if err != nil {
+		return head, err
+	}
+	if token != json.Delim('{') {
+		return head, fmt.Errorf("not a JSON object")
+	}
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return head, err
+		}
+		key, _ := token.(string) // Object keys are strings.
+		switch key {
+		case "deliveryReceipt", "deliveryReceiptBytes", "testResult", "load":
+			goto validate
+		}
+		target := fields[key]
+		if target == nil {
+			var discard json.RawMessage
+			target = &discard
+		}
+		if err := decoder.Decode(target); err != nil {
+			return head, err
+		}
+	}
+	if _, err := decoder.Token(); err != nil {
+		return head, err
+	}
+validate:
+	if err := validateAttemptBinding(root, id, head); err != nil {
+		return head, err
+	}
+	return head, validateAttemptHead(head)
 }
 
 // readAttemptsSkippingUnreadable reads every attempt record it can and

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -73,20 +74,28 @@ func ReconcileAttempts(root string, options ReconcileOptions) ([]ReconcileOutcom
 	if emit == nil {
 		emit = func(string) {}
 	}
-	attempts, unreadable := readAttemptsSkippingUnreadable(root)
-	for _, problem := range unreadable {
-		emit("proof attempt record skipped: " + problem)
+	ids, err := unsettledAttemptIDs(root)
+	if err != nil {
+		emit("proof attempt record skipped: " + err.Error())
 	}
-	sort.Slice(attempts, func(i, j int) bool { return attempts[i].AttemptID < attempts[j].AttemptID })
 	var outcomes []ReconcileOutcome
-	for _, attempt := range attempts {
+	for _, id := range ids {
+		attempt, err := ReadAttempt(root, id)
+		if err != nil {
+			emit("proof attempt record skipped: " + err.Error())
+			continue
+		}
 		if attempt.Terminal != nil {
 			// A launcher that committed its own terminal after an observation
 			// leaves the marker behind; and its process records may still say
 			// running when every process is gone (23 such records in the
 			// audit). Both are tidied here, never signalled.
 			clearObservation(root, attempt.AttemptID)
-			settleTerminalRecords(root, attempt, options.Prober)
+			if settleTerminalRecords(root, attempt, options.Prober) {
+				if _, err := atomicfile.WriteText(settledPath(root, id), "settled\n", root); err != nil {
+					emit("proof attempt settlement marker: " + err.Error())
+				}
+			}
 			continue
 		}
 		outcome := reconcileOne(root, attempt, options)
@@ -234,19 +243,28 @@ func liveGroupMembers(table identity.ProcessTable, pgid int64) ([]int64, error) 
 // settleTerminalRecords marks a terminal attempt's process records done once
 // every process they name is provably dead; a record that still names a live
 // or uninspectable process is left as it is.
-func settleTerminalRecords(root string, attempt Attempt, prober identity.Prober) {
+func settleTerminalRecords(root string, attempt Attempt, prober identity.Prober) bool {
+	settled := true
 	for _, key := range attempt.ProcessKeys {
 		record, err := ReadProcessRecord(root, key)
-		if err != nil || record.Status == StatusDone {
+		if err != nil {
+			settled = false
+			continue
+		}
+		if record.Status == StatusDone {
 			continue
 		}
 		if identity.AliveRef(prober, record.SuiteProcess.Ref()) != identity.Dead ||
 			identity.AliveRef(prober, record.Watchdog.Ref()) != identity.Dead ||
 			identity.AliveRef(prober, record.Launcher.Ref()) != identity.Dead {
+			settled = false
 			continue
 		}
-		_ = markDone(root, record, record.Launcher.Ref())
+		if err := markDone(root, record, record.Launcher.Ref()); err != nil {
+			settled = false
+		}
 	}
+	return settled
 }
 
 func allRecordedEnded(records []Record, prober identity.Prober) bool {
@@ -287,6 +305,42 @@ func finalizeReconciled(root, id string, records []Record, reason string, now ti
 		return ReconcileOutcome{AttemptID: id, Action: ReconcileUnknown, Reason: "terminal commit: " + err.Error()}
 	}
 	return ReconcileOutcome{AttemptID: id, Action: ReconcileReconciled, Reason: reason}
+}
+
+func settledPath(root, id string) string {
+	return filepath.Join(attemptsDir(root), id+".reconcile-settled")
+}
+
+// unsettledAttemptIDs lists once, without opening settled records. Orphaned
+// markers are removed so a missing record leaves no stale settlement behind.
+func unsettledAttemptIDs(root string) ([]string, error) {
+	entries, err := os.ReadDir(attemptsDir(root))
+	if os.IsNotExist(err) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	names := make(map[string]bool, len(entries))
+	for _, entry := range entries {
+		names[entry.Name()] = true
+	}
+	var ids []string
+	for _, entry := range entries {
+		name := entry.Name()
+		if strings.HasSuffix(name, ".json") {
+			id := strings.TrimSuffix(name, ".json")
+			if !names[id+".reconcile-settled"] {
+				ids = append(ids, id)
+			}
+		} else if strings.HasSuffix(name, ".reconcile-settled") {
+			id := strings.TrimSuffix(name, ".reconcile-settled")
+			if !names[id+".json"] {
+				_ = os.Remove(settledPath(root, id))
+			}
+		}
+	}
+	return ids, nil
 }
 
 // The path-2 observation is a small file beside the attempt: the first pass
@@ -334,12 +388,17 @@ func LiveAttempts(root string, prober identity.Prober) ([]LiveAttemptSummary, er
 	if prober == nil {
 		prober = identity.KernelProber{}
 	}
-	attempts, unreadable := readAttemptsSkippingUnreadable(root)
-	var live []LiveAttemptSummary
-	for _, problem := range unreadable {
-		live = append(live, LiveAttemptSummary{Unreadable: problem})
+	ids, err := unsettledAttemptIDs(root)
+	if err != nil {
+		return nil, err
 	}
-	for _, attempt := range attempts {
+	var live []LiveAttemptSummary
+	for _, id := range ids {
+		attempt, err := ReadAttemptHead(root, id)
+		if err != nil {
+			live = append(live, LiveAttemptSummary{Unreadable: err.Error()})
+			continue
+		}
 		if attempt.Terminal != nil {
 			continue
 		}

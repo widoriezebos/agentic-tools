@@ -371,12 +371,16 @@ func (lock *MutationLock) Release() error {
 	return errors.Join(err, closeErr)
 }
 
+// Attempt file readers can be observed without replacing validation.
+var readAttemptRecord = os.ReadFile
+var openAttemptRecord = os.Open
+
 func ReadAttempt(root, id string) (Attempt, error) {
 	path, err := AttemptPath(root, id)
 	if err != nil {
 		return Attempt{}, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := readAttemptRecord(path)
 	if err != nil {
 		return Attempt{}, err
 	}
@@ -389,8 +393,8 @@ func ReadAttempt(root, id string) (Attempt, error) {
 	if err := json.Unmarshal(data, &header); err != nil {
 		return Attempt{}, fmt.Errorf("read test run %s: %w", id, err)
 	}
-	if header.SchemaVersion > IdentityAttemptSchemaVersion {
-		return Attempt{}, fmt.Errorf("read test run %s: it was written by a newer engine (record schema %d)", id, header.SchemaVersion)
+	if err := validateAttemptSchema(header.SchemaVersion); err != nil {
+		return Attempt{}, fmt.Errorf("read test run %s: %w", id, err)
 	}
 	if header.TestResult != nil && header.TestResult.SchemaVersion > TestResultSchemaVersion {
 		return Attempt{}, fmt.Errorf("read test run %s: it was written by a newer engine (result schema %d)", id, header.TestResult.SchemaVersion)
@@ -404,8 +408,8 @@ func ReadAttempt(root, id string) (Attempt, error) {
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		return Attempt{}, fmt.Errorf("read test run %s: extra data after its record", id)
 	}
-	if attempt.AttemptID != id || attempt.ControlRoot != root {
-		return Attempt{}, fmt.Errorf("read test run %s: the record names a different run than its file", id)
+	if err := validateAttemptBinding(root, id, headOf(attempt)); err != nil {
+		return Attempt{}, fmt.Errorf("read test run %s: %w", id, err)
 	}
 	if err := validateAttempt(attempt); err != nil {
 		return Attempt{}, fmt.Errorf("read test run %s: %w", id, err)
@@ -497,12 +501,13 @@ func writeAttempt(attempt Attempt) error {
 }
 
 func validateAttempt(attempt Attempt) error {
-	if (attempt.SchemaVersion != LegacyAttemptSchemaVersion && attempt.SchemaVersion != AttemptSchemaVersion &&
-		attempt.SchemaVersion != CandidateAttemptSchemaVersion && attempt.SchemaVersion != IdentityAttemptSchemaVersion) || !safeAttemptID(attempt.AttemptID) ||
+	if err := validateAttemptHead(headOf(attempt)); err != nil {
+		return err
+	}
+	if !safeAttemptID(attempt.AttemptID) ||
 		attempt.GoalID == "" || attempt.GoalRevision == 0 || attempt.AccountingRevision == 0 ||
 		attempt.AccountingRevision > attempt.GoalRevision || attempt.ReservedMinutes == 0 ||
-		attempt.ControlRoot == "" || attempt.ExecutionRoot == "" || attempt.ProofIdentity.IdentityDigest == "" ||
-		attempt.Launcher.Pid < 1 || attempt.Launcher.Ref().Mode() == identity.CompareInvalid {
+		attempt.ControlRoot == "" || attempt.ExecutionRoot == "" || attempt.ProofIdentity.IdentityDigest == "" {
 		return fmt.Errorf("test run record lacks its accounting, identity or launcher")
 	}
 	if attempt.SchemaVersion >= CandidateAttemptSchemaVersion {
@@ -560,28 +565,7 @@ func validateAttempt(attempt Attempt) error {
 	if startErr != nil || deadlineErr != nil || !deadline.After(started) {
 		return fmt.Errorf("test run record has an invalid time limit")
 	}
-	ended, endedErr := time.Parse(time.RFC3339Nano, attempt.EndedAt)
-	if attempt.Terminal != nil {
-		if attempt.EndedAt == "" || attempt.Terminal.At != attempt.EndedAt {
-			return fmt.Errorf("finished test run has a contradictory end time")
-		}
-		if endedErr != nil || ended.Before(started) || attempt.ObservedMinutes == 0 {
-			return fmt.Errorf("finished test run has an invalid observed time")
-		}
-		if attempt.Terminal.Result != TerminalSuccess && attempt.Terminal.Result != TerminalFailed &&
-			attempt.Terminal.Result != TerminalCancelled && attempt.Terminal.Result != TerminalUnknown {
-			return fmt.Errorf("test run result %q is invalid", attempt.Terminal.Result)
-		}
-		if attempt.Terminal.Result == TerminalSuccess && attempt.Terminal.ExitStatus != 0 {
-			return fmt.Errorf("passed test run has a nonzero exit status")
-		}
-		if attempt.Terminal.Result == TerminalFailed && attempt.Terminal.ExitStatus == 0 {
-			return fmt.Errorf("failed test run has a zero exit status")
-		}
-		if attempt.Terminal.Result == TerminalSuccess && attempt.CancellationIntent != "" {
-			return fmt.Errorf("passed test run was also asked to cancel")
-		}
-	} else if attempt.EndedAt != "" || attempt.ObservedMinutes != 0 || len(CommittedDeliveryReceipt(attempt)) > 0 {
+	if attempt.Terminal == nil && len(CommittedDeliveryReceipt(attempt)) > 0 {
 		return fmt.Errorf("unfinished test run carries a result")
 	}
 	seenProcesses := map[string]bool{}
