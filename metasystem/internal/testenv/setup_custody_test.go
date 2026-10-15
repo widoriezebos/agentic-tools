@@ -12,6 +12,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -104,6 +105,9 @@ func TestSetupChildIsEndedWhenTheBinaryIsKilled(t *testing.T) {
 		t.Fatalf("probe the setup child: %v %v", childState, probeErr)
 	}
 	childRef := childExact.Ref()
+	evidence := setupCustodyEvidence{registry: registry, owner: key.Owner, custodian: custodian, child: childRef, prober: identity.KernelProber{}}
+	remaining := func() (time.Duration, bool) { return DeadlineRemaining(t) }
+	t.Logf("setup fixture registry=%s owner=%+v custodian=%+v child=%+v", registry, key.Owner, custodian, childRef)
 	if survivors, err := identity.FixtureSurvivors(key); err != nil || len(survivors) != 1 {
 		t.Fatalf("the tagged setup child is not visible as the key's fixture before the kill: %v %v", survivors, err)
 	}
@@ -138,10 +142,10 @@ func TestSetupChildIsEndedWhenTheBinaryIsKilled(t *testing.T) {
 
 	// The wait ends when the child has exited: gone, or a zombie its new
 	// parent has not reaped yet. A zombie still answers kill(pid, 0).
-	Await(t, "the custodian to end the setup child", func() bool {
+	evidence.wait(t, "the custodian to end the setup child", func() bool {
 		exact, state, err := identity.KernelProber{}.Probe(childRef.Pid)
 		return fixtureExited(exact, state, err, childRef)
-	})
+	}, awaitPause, remaining, nil, nil)
 	if survivors, err := identity.FixtureSurvivors(key); err != nil || len(survivors) != 0 {
 		t.Fatalf("the custodian did not end the setup child: survivors=%v err=%v", survivors, err)
 	}
@@ -149,10 +153,11 @@ func TestSetupChildIsEndedWhenTheBinaryIsKilled(t *testing.T) {
 	// The custodian settles on its own after the child: it removes its records
 	// and exits, freeing its log's lock. Another binary's start may sweep the
 	// home first, which is the same outcome.
-	Await(t, "the custodian to settle the dead binary's registry home", func() bool {
+	evidence.wait(t, "the custodian to settle the dead binary's registry home", func() bool {
 		_, err := os.Lstat(registry)
 		return os.IsNotExist(err) || HomeSettled(registry)
-	})
+	}, awaitPause, remaining, nil, nil)
+	t.Log(evidence.describe())
 	followingStart()
 	if _, err := os.Stat(registry); !os.IsNotExist(err) {
 		t.Fatalf("a following start kept the dead binary's settled registry home %s: %v", registry, err)

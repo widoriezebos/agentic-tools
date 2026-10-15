@@ -1078,29 +1078,45 @@ func removeStaleRegistryStaging(staging string) error {
 // the locks are probed and released at once. Anything it cannot read is
 // "not settled".
 func HomeSettled(home string) bool {
-	info, err := os.Lstat(home)
-	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !strings.HasPrefix(filepath.Base(home), registryHomePrefix) {
+	return homeSettled(home, io.Discard)
+}
+
+// homeSettled reports the first pending condition while observing the same
+// locks and records as HomeSettled. Reporting never removes a registry file.
+func homeSettled(home string, report io.Writer) bool {
+	pending := func(condition string, err error) bool {
+		if err != nil {
+			condition += ": " + err.Error()
+		}
+		fmt.Fprintln(report, condition)
 		return false
+	}
+	info, err := os.Lstat(home)
+	if err != nil {
+		return pending("inspect registry home "+home, err)
+	}
+	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 || !strings.HasPrefix(filepath.Base(home), registryHomePrefix) {
+		return pending("registry home is not an owned directory "+home, nil)
 	}
 	owner, err := openRegistryOwner(home)
 	if err != nil {
-		return false
+		return pending("open registry owner "+home, err)
 	}
 	defer unlockAndClose(owner)
 	if err := unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		return false
+		return pending("take registry owner lock "+home, err)
 	}
 	registryLockTaken(owner)
 	entries, err := os.ReadDir(filepath.Dir(home))
 	if err != nil {
-		return false
+		return pending("list registry sidecars "+home, err)
 	}
 	for _, entry := range entries {
 		stem, pid, ok := fixtureCustodianSidecar(entry.Name())
 		if !ok || stem != filepath.Base(home) {
 			continue
 		}
-		if !custodianSidecarsSettled(home, pid) {
+		if !custodianSidecarsSettled(home, pid, report) {
 			return false
 		}
 	}
@@ -1108,29 +1124,48 @@ func HomeSettled(home string) bool {
 }
 
 // custodianSidecarsSettled observes one custodian's sidecars without the
-// removal and the report removeFixtureCustodianSidecars adds.
-func custodianSidecarsSettled(home, pid string) bool {
+// removal removeFixtureCustodianSidecars adds, reporting a pending condition.
+func custodianSidecarsSettled(home, pid string, report io.Writer) bool {
 	logPath := home + ".custodian-" + pid + ".log"
 	recordsPath := home + ".fixture-refs-" + pid
+	pending := func(condition string, err error) bool {
+		if err != nil {
+			condition += ": " + err.Error()
+		}
+		fmt.Fprintln(report, condition)
+		return false
+	}
+	recordsAbsent := func() bool {
+		absent, err := fixtureCustodianRecordsAbsent(recordsPath)
+		if err != nil {
+			return pending("inspect custodian records "+recordsPath, err)
+		}
+		if !absent {
+			return pending("custodian records remain "+recordsPath, nil)
+		}
+		return true
+	}
 	fd, err := unix.Open(logPath, unix.O_RDONLY|unix.O_CLOEXEC|unix.O_NOFOLLOW|unix.O_NONBLOCK, 0)
 	if err == unix.ENOENT {
-		absent, err := fixtureCustodianRecordsAbsent(recordsPath)
-		return absent && err == nil
+		return recordsAbsent()
 	}
 	if err != nil {
-		return false
+		return pending("open custodian log "+logPath, err)
 	}
 	log := os.NewFile(uintptr(fd), logPath)
 	defer unlockAndClose(log)
-	if opened, err := log.Stat(); err != nil || !opened.Mode().IsRegular() {
-		return false
+	opened, err := log.Stat()
+	if err != nil {
+		return pending("inspect custodian log "+logPath, err)
+	}
+	if !opened.Mode().IsRegular() {
+		return pending("custodian log is not regular "+logPath, nil)
 	}
 	if err := unix.Flock(int(log.Fd()), unix.LOCK_EX|unix.LOCK_NB); err != nil {
-		return false
+		return pending("take custodian log lock "+logPath, err)
 	}
 	registryLockTaken(log)
-	absent, err := fixtureCustodianRecordsAbsent(recordsPath)
-	return absent && err == nil
+	return recordsAbsent()
 }
 
 // RemoveSettledHome is the apply half: it takes the home's owner lock

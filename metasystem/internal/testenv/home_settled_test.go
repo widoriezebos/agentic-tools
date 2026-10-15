@@ -11,6 +11,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"golang.org/x/sys/unix"
 )
 
 // snapshotRoot is every path, mode and content digest under root.
@@ -100,4 +102,73 @@ func TestHomeSettledObservesAndRemoveSettledHomeApplies(t *testing.T) {
 	}
 	checkTestenv(t, RemoveSettledHome(running.path, &report))
 	requireSidecars(t, false, running.path, runningLog)
+}
+
+func TestHomeSettlementReportsThePendingCondition(t *testing.T) {
+	t.Parallel()
+	for _, test := range []struct {
+		name   string
+		change func(*testing.T, string)
+		want   string
+	}{
+		{name: "settled"},
+		{name: "owner lock", want: "take registry owner lock", change: func(t *testing.T, home string) {
+			owner, err := openRegistryOwner(home)
+			checkTestenv(t, err)
+			checkTestenv(t, unix.Flock(int(owner.Fd()), unix.LOCK_EX|unix.LOCK_NB))
+			t.Cleanup(func() { _ = unlockAndClose(owner) })
+		}},
+		{name: "missing owner", want: "open registry owner", change: func(t *testing.T, home string) {
+			checkTestenv(t, os.Remove(filepath.Join(home, registryOwnerFile)))
+		}},
+		{name: "absent home", want: "inspect registry home", change: func(t *testing.T, home string) {
+			checkTestenv(t, os.RemoveAll(home))
+		}},
+		{name: "unsafe home", want: "registry home is not an owned directory", change: func(t *testing.T, home string) {
+			checkTestenv(t, os.RemoveAll(home))
+			checkTestenv(t, os.Symlink(t.TempDir(), home))
+		}},
+		{name: "log lock", want: "take custodian log lock", change: func(t *testing.T, home string) {
+			log, err := os.OpenFile(home+".custodian-4242.log", os.O_CREATE|os.O_RDWR, 0o600)
+			checkTestenv(t, err)
+			checkTestenv(t, unix.Flock(int(log.Fd()), unix.LOCK_EX|unix.LOCK_NB))
+			t.Cleanup(func() { _ = unlockAndClose(log) })
+		}},
+		{name: "records without log", want: "custodian records remain", change: func(t *testing.T, home string) {
+			checkTestenv(t, os.WriteFile(home+".fixture-refs-4242", []byte("synthetic record"), 0o600))
+		}},
+		{name: "records with unlocked log", want: "custodian records remain", change: func(t *testing.T, home string) {
+			checkTestenv(t, os.WriteFile(home+".fixture-refs-4242", []byte("synthetic record"), 0o600))
+			checkTestenv(t, os.WriteFile(home+".custodian-4242.log", []byte("cleanup failed"), 0o600))
+		}},
+		{name: "unsafe log", want: "open custodian log", change: func(t *testing.T, home string) {
+			checkTestenv(t, os.Symlink(filepath.Join(home, registryOwnerFile), home+".custodian-4242.log"))
+		}},
+		{name: "nonregular log", want: "custodian log is not regular", change: func(t *testing.T, home string) {
+			checkTestenv(t, os.Mkdir(home+".custodian-4242.log", 0o700))
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			home := deadRegistryHomeUnder(t, t.TempDir()).path
+			if test.change != nil {
+				test.change(t, home)
+			}
+			before := snapshotRoot(t, filepath.Dir(home))
+			var report bytes.Buffer
+			settled := homeSettled(home, &report)
+			if settled != (test.want == "") || (test.want == "" && report.Len() != 0) || !strings.Contains(report.String(), test.want) {
+				t.Fatalf("settled=%t condition=%q, want %q", settled, report.String(), test.want)
+			}
+			if test.want != "" && !strings.Contains(report.String(), home) {
+				t.Fatalf("condition omitted its registry: %q", report.String())
+			}
+			if got := HomeSettled(home); got != settled {
+				t.Fatalf("HomeSettled=%t, reporting observation=%t", got, settled)
+			}
+			if after := snapshotRoot(t, filepath.Dir(home)); after != before {
+				t.Fatalf("settlement observation changed the fixture:\nbefore %s\nafter %s", before, after)
+			}
+		})
+	}
 }
