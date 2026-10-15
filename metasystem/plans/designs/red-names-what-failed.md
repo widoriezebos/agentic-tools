@@ -22,7 +22,7 @@ D4. UX: the person reads "flaky test X: fixed by goal G, passed 2 of 3 times sin
 
 ## Units
 
-- U1 (D1–D4): brief to be written; ≤120 production lines. U1 is the goal's whole delivery.
+- U1 (D1–D4): brief `evidence/briefs/red-names-what-failed-U1-brief.md`; ≤160 production lines (amended 2026-10-15 09:30 from 120, after Astra's rounds on the brief inventoried the register-validation, feeder and display work: validation and lookups ≈ 35, feeder with execution and fix-commit resolution ≈ 60, naming ≈ 20, display and health action ≈ 35; tests counted separately). U1 is the goal's whole delivery.
 
 ## Not in scope
 
