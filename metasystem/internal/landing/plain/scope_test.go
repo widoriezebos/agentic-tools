@@ -32,6 +32,7 @@ func newScopeBed(t *testing.T) *scopeBed {
 	t.Helper()
 	b := &scopeBed{checkout: t.TempDir()}
 	b.install = filepath.Join(b.checkout, "metasystem")
+	fixtureEngine(t, b.install)
 	if err := os.MkdirAll(b.install, 0o755); err != nil {
 		t.Fatal(err)
 	}

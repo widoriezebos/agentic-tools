@@ -37,7 +37,7 @@ func newBed(t *testing.T) *bed {
 	b.git(b.root, "init", "--quiet", "--bare", "-b", "main", b.origin)
 	seed := filepath.Join(b.root, "seed")
 	b.git(b.root, "init", "--quiet", "-b", "main", seed)
-	b.write(filepath.Join(seed, ".gitignore"), "metasystem/artifacts/\n")
+	b.write(filepath.Join(seed, ".gitignore"), "metasystem/artifacts/\nmetasystem/bin/\n")
 	b.write(filepath.Join(seed, "metasystem", "metasystem.conf"), "metasystem.template=true\n")
 	b.git(seed, "add", "-A")
 	b.git(seed, "commit", "--quiet", "-m", "main")
@@ -46,6 +46,7 @@ func newBed(t *testing.T) *bed {
 	b.checkout = filepath.Join(b.root, "lane")
 	b.git(b.root, "clone", "--quiet", b.origin, b.checkout)
 	b.install = filepath.Join(b.checkout, "metasystem")
+	fixtureEngine(t, b.install)
 	// The stand-in proof commands: green records the tree and commit it was
 	// given and exits 0; red exits 1.
 	b.stampFile = filepath.Join(b.root, "proved.txt")

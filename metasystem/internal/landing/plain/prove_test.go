@@ -35,7 +35,7 @@ func (g stubGit) run(dir string, args ...string) (string, error) {
 		return "parent-tree", nil
 	case strings.Join(args, " ") == "log --first-parent --merges --reverse --format=%H %P parent.."+g.commit:
 		return "", nil
-	case strings.Join(args, " ") == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
+	case strings.Join(args, " ") == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}", strings.Join(args, " ") == "rev-parse --verify origin/main^{commit}", strings.Join(args, " ") == "rev-parse --verify refs/remotes/origin/main^{commit}":
 		if g.main != "" {
 			return g.main, nil
 		}
@@ -76,6 +76,7 @@ func (g stubGit) run(dir string, args ...string) (string, error) {
 // checkout being its installation, and returns the result recorded.
 func proveStubbed(t *testing.T, install string, git stubGit, command string) Result {
 	t.Helper()
+	fixtureEngine(t, install)
 	var output bytes.Buffer
 	result, err := Run(install, install, command, "", &output, ProveSeams{Now: func() time.Time { return bedNow }, Git: git.run})
 	if err != nil {

@@ -73,7 +73,7 @@ func shadowInputs(home string) []string {
 	if !exists {
 		return paths
 	}
-	for _, name := range []string{"state.json", "transition-finding.json", "resume-record-finding.json", "queue.jsonl", "batch.json", "running.json", "results.jsonl", "gates.jsonl", "pushes.jsonl", "stops.jsonl", "agent-step.json", "agent-idle.json", "drain.json", "regenerating.json", "stop-question", "hand-in-fetches.jsonl"} {
+	for _, name := range []string{"state.json", "clock.json", "transition-finding.json", "resume-record-finding.json", "queue.jsonl", "batch.json", "running.json", "results.jsonl", "gates.jsonl", "pushes.jsonl", "stops.jsonl", "agent-step.json", "agent-idle.json", "drain.json", "regenerating.json", "stop-question", "hand-in-fetches.jsonl"} {
 		paths = append(paths, filepath.Join(Dir(record.Install), name))
 	}
 	for _, pattern := range []string{filepath.Join(Dir(record.Install), "fixes", "*.json"), filepath.Join(Dir(record.Install), "incidents", "*.json")} {

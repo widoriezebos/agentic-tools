@@ -121,7 +121,7 @@ func fullProofClock(install string) (time.Time, time.Duration, error) {
 	}
 	last := time.Time{}
 	for _, proof := range results {
-		if proof.Trunk {
+		if proof.Trunk && (proof.Result == Green && !proof.didNotRun() || proof.CountedFull) {
 			if at, err := time.Parse(time.RFC3339, proof.At); err == nil && at.After(last) {
 				last = at
 			}

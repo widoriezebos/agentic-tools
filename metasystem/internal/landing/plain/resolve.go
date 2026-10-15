@@ -584,7 +584,7 @@ func commitResolvedMerge(home, install, checkout string, fix *Fix, check string,
 		return err
 	}
 	defer log.Close()
-	if err := runRegeneration(home, install, RunningRegeneration{Launch: &LaunchRecord{By: launchBy(seams.Proof.Person)}, Goal: fix.Goal, SHA: fix.Tip, Since: seams.now().Format(time.RFC3339Nano), Log: log.Name()}, []string{"env", "LANDING_PROOF_BASE=" + fix.Commit, "/bin/sh", "-c", check}, install, log, seams.Run); err != nil {
+	if err := runRegeneration(home, install, RunningRegeneration{Launch: &LaunchRecord{By: launchBy(seams.Proof.Person)}, Goal: fix.Goal, SHA: fix.Tip, Since: seams.now().Format(time.RFC3339Nano), Log: log.Name()}, []string{"/usr/bin/env", "LANDING_PROOF_BASE=" + fix.Commit, "/bin/sh", "-c", check}, install, log, seams.Run); err != nil {
 		return err
 	}
 	return withLock(install, func() error {

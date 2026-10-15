@@ -1203,7 +1203,7 @@ func boundedFetch(dir string, timeout time.Duration, prepare func(*exec.Cmd), de
 
 // runCheck gives the shell files, so a descendant holding its output open
 // cannot delay its exit. Both protocols are read from this run's log bytes.
-func runCheck(seams ProveSeams, dir, command string, running Running, only string, decision scopeDecision, output io.Writer, observed *proofOutput, tests ...string) (checkReport, error) {
+func runCheck(seams ProveSeams, install, dir, command string, running Running, only string, decision scopeDecision, output io.Writer, observed *proofOutput, tests ...string) (checkReport, error) {
 	if only == "" && (decision.Scope == "full" || decision.Scope == "scoped" || decision.Scope == "impact") {
 		if running.Admission == nil || running.Admission.State != "claimed" || !running.Admission.matches(running) || running.Admission.Scope != decision.Scope || (running.Admission.Command != "" && running.Admission.Command != command) {
 			return checkReport{}, fmt.Errorf("this execution has no matching claimed check admission")
@@ -1242,7 +1242,11 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 	env := []string{"LANDING_TREE=" + running.Tree, "LANDING_COMMIT=" + running.Commit, "LANDING_ONLY=" + only,
 		"LANDING_ONLY_TESTS=" + strings.Join(tests, " "),
 		"LANDING_PROOF_SCOPE=" + decision.Scope, "LANDING_PROOF_BASE=" + base, "LANDING_PROOF_GROUPS=" + strings.Join(decision.groupIDs(), " ")}
-	shell.Env = commandenv.EngineEnvironment(append(os.Environ(), env...))
+	environment, environmentErr := commandenv.InstallationEnvironment(append(os.Environ(), env...), install)
+	if environmentErr != nil {
+		return checkReport{kind: "not-run"}, environmentErr
+	}
+	shell.Env = environment
 	shell.Stdout, shell.Stderr = log, log
 	run := seams.Command
 	if run == nil {
@@ -1284,6 +1288,9 @@ func runCheck(seams ProveSeams, dir, command string, running Running, only strin
 		}
 		// Without the caller's seekable log the scope environment stays unknown.
 		*observed = proofOutput{output: io.Discard, static: observed.static}
+	}
+	if report.kind == "not-run" {
+		return report, fmt.Errorf("the check could not run: %s", report.reason)
 	}
 	if err != nil {
 		var exit *exec.ExitError
@@ -1365,16 +1372,13 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		result.Static, result.Depth = gate.Static, "impact"
 		return result
 	}
-	report, runErr := runCheck(seams, dir, command, running, "", *decision, output, observed)
-	if decision.Scope == "impact" && strings.TrimSpace(observed.environment) == "" {
+	report, runErr := runCheck(seams, install, dir, command, running, "", *decision, output, observed)
+	if report.kind != "not-run" && decision.Scope == "impact" && strings.TrimSpace(observed.environment) == "" {
 		decision.ScopeReason = "impact check error: the environment fingerprint is empty"
 		result.Result, result.Reason = Red, decision.ScopeReason
 		result.Cause = &Cause{Kind: "environment", Evidence: running.Log}
 		result.allowEnvironmentRepeat(previous)
 		return result
-	}
-	if seams.Gate && report.kind == "not-run" && runErr == nil {
-		runErr = fmt.Errorf("the cheap check reported that it did not run")
 	}
 	if (runErr == nil || report.kind == "complete") && decision.Scope == "scoped" && (observed.environment == "" || decision.base.Environment == "" || observed.environment != decision.base.Environment) {
 		if runErr != nil {
@@ -1402,7 +1406,7 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		decision.Scope, decision.ScopeReason = "full", fmt.Sprintf("the proof environment changed from %q to %q", decision.base.Environment, observed.environment)
 		decision.Base = ""
 		*observed = proofOutput{output: io.Discard}
-		report, runErr = runCheck(seams, dir, command, running, "", *decision, output, observed)
+		report, runErr = runCheck(seams, install, dir, command, running, "", *decision, output, observed)
 	}
 	result.CountedFull = report.kind == "complete" && decision.Scope == "full"
 	result.LoadStart, result.LoadEnd = report.loadStart, report.loadEnd
@@ -1512,4 +1516,27 @@ func recordedLog(install, attempt string) (string, error) {
 		return "", fmt.Errorf("the landing results have %d line(s) that can't be read, so whether one names attempt %s is not known", damaged, attempt)
 	}
 	return "", fmt.Errorf("%w: no lane record names attempt %s", ErrNoProofLog, attempt)
+}
+
+func (r Result) didNotRun() bool {
+	return r.Cause != nil && r.Cause.Kind == "environment" && !r.CountedFull
+}
+
+func (r Result) incidentIDs(incidents []goal.TrunkRedEntry) (ids []string) {
+	if r.Result != Red || r.didNotRun() {
+		return nil
+	}
+	identities := make(map[string]bool)
+	for _, failed := range r.Failed {
+		identities["red:"+failed.Unit] = true
+		for _, test := range failed.Tests {
+			identities["red:"+failed.Unit+":"+test] = true
+		}
+	}
+	for _, incident := range incidents {
+		if incident.Closed == nil && identities[incident.Identity] {
+			ids = append(ids, incident.ID)
+		}
+	}
+	return ids
 }

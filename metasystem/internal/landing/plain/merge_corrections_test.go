@@ -222,7 +222,7 @@ func TestGitAdapterSeatMergeCommandsAllowHandIn(t *testing.T) {
 			handInDone := make(chan error, 1)
 			attempted := false
 			b.seams.Run = func(argv []string, dir string, log *os.File, started func(int64) error) error {
-				isCheck := len(argv) > 0 && argv[0] == "env"
+				isCheck := len(argv) > 0 && argv[0] == "/usr/bin/env"
 				if (command == "check") == isCheck {
 					attempted = true
 					go func() { _, _, err := HandIn(b.install, Line{Goal: "another", SHA: "another-tip"}); handInDone <- err }()

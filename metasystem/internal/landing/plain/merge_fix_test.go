@@ -72,7 +72,7 @@ func TestGitAdapterSeatMergeCompletesAndProves(t *testing.T) {
 			generator := b.seams.Run
 			checks := 0
 			b.seams.Run = func(argv []string, dir string, log *os.File, started func(int64) error) error {
-				if reflect.DeepEqual(argv, []string{"env", "LANDING_PROOF_BASE=" + main, "/bin/sh", "-c", "metasystem test impact"}) {
+				if reflect.DeepEqual(argv, []string{"/usr/bin/env", "LANDING_PROOF_BASE=" + main, "/bin/sh", "-c", "metasystem test impact"}) {
 					checks++
 					checked := *fix
 					checked.CheckMinutes, checked.CheckResult = 2.28, "static-only"

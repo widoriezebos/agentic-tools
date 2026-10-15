@@ -91,9 +91,12 @@ type Proof struct {
 	LoadAtStart *hostload.Sample `json:"load_at_start"`
 }
 type Main struct {
-	Reason         string `json:"reason"`
-	Flakes         string `json:"flakes"`
-	FlakePublished bool   `json:"flake_published"`
+	CheckNotRun    bool      `json:"check_not_run,omitempty"`
+	RetryAllowed   bool      `json:"retry_allowed,omitempty"`
+	RetryAt        time.Time `json:"retry_at,omitempty"`
+	Reason         string    `json:"reason"`
+	Flakes         string    `json:"flakes"`
+	FlakePublished bool      `json:"flake_published"`
 	Fact           `json:",inline"`
 	Commit         string   `json:"commit"`
 	OpenIncidents  []string `json:"open_incidents"`

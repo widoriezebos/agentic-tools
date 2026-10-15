@@ -70,9 +70,33 @@ func StageGenerated(git Git, generated func(string) bool) error {
 
 // RunRegenerationArgv runs literal arguments in a process group and records output.
 func RunRegenerationArgv(argv []string, dir string, log *os.File, started func(int64) error) error {
+	return runRegenerationArgv(argv, dir, log, started, nil)
+}
+
+// RegenerationInInstallation supplies the lane's engine before constructing argv.
+func RegenerationInInstallation(install string) func([]string, string, *os.File, func(int64) error) error {
+	return func(argv []string, dir string, log *os.File, started func(int64) error) error {
+		environment, err := commandenv.InstallationEnvironment(os.Environ(), install)
+		if err != nil {
+			return err
+		}
+		argv = slices.Clone(argv)
+		if argv[0] == "metasystem" {
+			argv[0] = filepath.Join(install, "bin", "metasystem")
+		} else if argv[0] == "env" {
+			argv[0] = "/usr/bin/env"
+		}
+		return runRegenerationArgv(argv, dir, log, started, environment)
+	}
+}
+
+func runRegenerationArgv(argv []string, dir string, log *os.File, started func(int64) error, environment []string) error {
 	command := exec.Command(argv[0], argv[1:]...)
 	command.Dir, command.Stdout, command.Stderr = dir, log, log
-	command.Env = commandenv.EngineEnvironment(command.Environ())
+	if environment == nil {
+		environment = commandenv.EngineEnvironment(command.Environ())
+	}
+	command.Env = environment
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if err := command.Start(); err != nil {
 		return err

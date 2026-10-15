@@ -141,7 +141,7 @@ func TestDetachedProofReportChild(t *testing.T) {
 	}
 	observed := &proofOutput{output: io.Discard}
 	command := "printf 'landing planned 1\nlanding environment current\nlanding group checks failed 12\nlanding package p/q 0 fail 12\nLANDING-FAILED\tp/q\tTestA TestB\nLANDING-CHECKED\t1\n'"
-	report, err := runCheck(ProveSeams{}, ".", command, Running{Log: os.Getenv("PLAIN_TEST_REPORT_LOG")}, "p/q", scopeDecision{}, os.Stdout, observed)
+	report, err := runCheck(ProveSeams{}, fixtureInstallation(t), ".", command, Running{Log: os.Getenv("PLAIN_TEST_REPORT_LOG")}, "p/q", scopeDecision{}, os.Stdout, observed)
 	got := detachedReportDiagnostics{Kind: report.kind, Failed: report.failed, Environment: observed.environment, Durations: observed.durations, Packages: observed.packages}
 	if err != nil {
 		got.RunError = err.Error()

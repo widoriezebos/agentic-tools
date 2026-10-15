@@ -109,7 +109,7 @@ func runRegeneration(home, install string, running RunningRegeneration, argv []s
 		return err
 	}
 	if run == nil {
-		run = conflict.RunRegenerationArgv
+		run = conflict.RegenerationInInstallation(install)
 	}
 	err = run(argv, dir, log, started)
 	if err != nil && running.Pid == 0 {

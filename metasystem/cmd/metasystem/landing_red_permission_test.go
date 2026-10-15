@@ -209,6 +209,7 @@ func TestLandingRedPermissionAuthorityMatrix(t *testing.T) {
 			b.owners.prove = enrolledPersonProver(t, root, b.now)
 			_, err = lane.SetPause(b.home, "Wido", b.now)
 			helmMust(t, err)
+			helmMust(t, testexec.WriteFile(filepath.Join(b.installation, "bin", "metasystem"), []byte("#!/bin/sh\nprintf '%s\\n' '{\"schemaVersion\":1,\"verb\":\"landing run\",\"targets\":[],\"outcome\":\"confirmed\",\"summary\":\"continued\"}'\n"), 0700))
 			b.success(t, "landing", "run", "--goals", "a")
 			b.owners.prove = enrolledPersonProver(t, root, b.now)
 			if act == "return" {

@@ -37,6 +37,7 @@ func newDeployBed(t *testing.T) *deployBed {
 	root := t.TempDir()
 	b := &deployBed{t: t, home: filepath.Join(root, "home"), checkout: filepath.Join(root, "lane"), head: "old"}
 	b.install = filepath.Join(b.checkout, "metasystem")
+	fixtureEngine(t, b.install)
 	b.record = lane.Record{Root: b.checkout, Install: b.install, RegisteredBy: "Wido", CustodyEpoch: 1, At: bedNow.Format(time.RFC3339)}
 	writeDeployJSON(t, filepath.Join(lane.HostDir(b.home), "landing-lane.json"), b.record)
 	b.stamp("old")

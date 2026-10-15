@@ -36,6 +36,7 @@ func (w *commandTail) Write(p []byte) (int, error) {
 type checkReport struct {
 	loadStart, loadEnd *hostload.Sample
 	kind               string
+	reason             string
 	failed             []FailedUnit
 	load               float64
 }
@@ -47,7 +48,7 @@ func readReport(tail []byte) checkReport {
 	lines := strings.Split(strings.TrimSuffix(string(tail), "\n"), "\n")
 	last := strings.Split(strings.TrimSuffix(lines[len(lines)-1], "\r"), "\t")
 	if len(last) == 2 && last[0] == "LANDING-NOT-RUN" {
-		return checkReport{kind: "not-run"}
+		return checkReport{kind: "not-run", reason: last[1]}
 	}
 	checked := len(lines) - 1
 	// The engine can render its result after the command's final report.

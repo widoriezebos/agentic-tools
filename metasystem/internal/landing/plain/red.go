@@ -175,6 +175,7 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 			break
 		}
 	}
+	seams.checkInstall, seams.checkAttempt = install, running.Attempt
 	result = continueRed(seams, install, checkout, command, dir, original, decision, io.Discard, result, Result{}, func(red, prior Result) Result {
 		if seams.Gate {
 			return replayGate(seams, install, checkout, command, original, red, prior)

@@ -297,6 +297,9 @@ func TestLandingHealthEngineStampAndLaneDiff(t *testing.T) {
 		t.Fatal(err)
 	}
 	path := filepath.Join(b.install, "bin", "metasystem")
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
 	build := testenv.Go("build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(old), "-o", path, "../../enginebuild/testdata/stampprobe")
 	if out, err := build.CombinedOutput(); err != nil {
 		t.Fatalf("stamped fixture binary: %v %s", err, out)

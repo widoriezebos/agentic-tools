@@ -83,7 +83,7 @@ func TestLandingHealthFinishedProofRecordsLoadGreenAndRed(t *testing.T) {
 	for _, command := range []string{"exit 0", "exit 3"} {
 		t.Run(command, func(t *testing.T) {
 			t.Parallel()
-			install, now := t.TempDir(), bedNow
+			install, now := fixtureInstallation(t), bedNow
 			git := stubGit{commit: "commit", tree: "tree"}
 			result, err := Run(install, install, command, "", io.Discard, ProveSeams{
 				Now: func() time.Time { return now }, Git: git.run,
@@ -122,7 +122,7 @@ func TestLandingHealthFinishedProofRecordsLoadGreenAndRed(t *testing.T) {
 
 func TestLandingHealthLoadEndIncludesProofCompletion(t *testing.T) {
 	t.Parallel()
-	install, now := t.TempDir(), bedNow
+	install, now := fixtureInstallation(t), bedNow
 	git := stubGit{commit: "commit", tree: "tree"}
 	result, err := Run(install, install, "exit 0", "", io.Discard, ProveSeams{
 		Now: func() time.Time { return now },

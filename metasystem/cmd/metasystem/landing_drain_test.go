@@ -540,6 +540,7 @@ func TestLandingDrainObserverReleasesHomeLock(t *testing.T) {
 func TestLandingDrainFinishesAdmittedProofAndPush(t *testing.T) {
 	t.Parallel()
 	delivery, state, install := plainLaneBedWith(t, true, "critic-root", "critic-root")
+	writeLaneFixtureEngine(t, install)
 	publicOwners := delivery.intentBed.owners()
 	publicOwners.delivery = delivery.owners
 	publicOwners.connection = delivery.connection

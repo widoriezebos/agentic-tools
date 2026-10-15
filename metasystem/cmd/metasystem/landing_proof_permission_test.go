@@ -211,7 +211,11 @@ func TestLandingProofPermissionDetachedAdmissionRace(t *testing.T) {
 		return int64(os.Getpid()), nil
 	}
 	b.success(t, "landing", "prove")
-	<-entered
+	select {
+	case <-entered:
+	case code := <-completed:
+		t.Fatalf("proof child exited %d before entering its admitted command", code)
+	}
 	running, recorded, _, err := plain.ReadRunning(b.installation, b.owners.landing.plainProve)
 	if err != nil || !recorded || running.Admission.State != "claimed" {
 		t.Fatalf("child claim: %+v %v", running, err)

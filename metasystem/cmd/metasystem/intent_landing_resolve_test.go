@@ -29,6 +29,7 @@ func newResolveVerbFixture(t *testing.T) *resolveVerbFixture {
 	t.Helper()
 	b := &resolveVerbFixture{root: realpath.Resolve(t.TempDir()), home: realpath.Resolve(t.TempDir())}
 	b.install = filepath.Join(b.root, "metasystem")
+	writeLaneFixtureEngine(t, b.install)
 	for _, dir := range []string{b.install, filepath.Join(b.root, ".git"), lane.HostDir(b.home)} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			t.Fatal(err)

@@ -201,7 +201,7 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 		file, err := os.OpenFile(repeat.Log, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 		if err == nil {
 			tests, _ := namedUnitTests(unit, contract)
-			report, err = runCheck(seams, dir, command, repeat, unit.Unit, decision, file, &proofOutput{output: io.Discard}, tests...)
+			report, err = runCheck(seams, install, dir, command, repeat, unit.Unit, decision, file, &proofOutput{output: io.Discard}, tests...)
 			if err == nil && (report.kind != "complete" || len(report.failed) != 0) {
 				err = fmt.Errorf("the repeat has no complete passing report")
 			}
@@ -426,7 +426,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			result.Cause.Evidence = prefix.Log
 			prefix.Since = seams.now().UTC().Format(time.RFC3339)
 			run := func(selectors, names []string) (checkReport, bool) {
-				report, runErr := runCheck(seams, dir, command, prefix.Running, strings.Join(selectors, " "), scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, file, &proofOutput{output: io.Discard}, names...)
+				report, runErr := runCheck(seams, install, dir, command, prefix.Running, strings.Join(selectors, " "), scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, file, &proofOutput{output: io.Discard}, names...)
 				var exit *exec.ExitError
 				return report, report.kind == "complete" && (runErr == nil || len(report.failed) > 0 && (!errors.As(runErr, &exit) || exit.Exited()))
 			}

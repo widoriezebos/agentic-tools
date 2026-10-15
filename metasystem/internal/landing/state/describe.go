@@ -132,6 +132,7 @@ func Describe(r Record, inputs RenderInputs) Description {
 		{r.Main.Word == "red", WordKey{"main", "red"}},
 		{r.Resolution.Word != "" && r.Resolution.Word != "done" && r.Resolution.Word != "closed", WordKey{"resolution", r.Resolution.Word}},
 		{r.Proof.Word == "running" || r.Proof.Word == "died" || r.Proof.Word == "pending" || r.Proof.Word == "failed", WordKey{"proof", r.Proof.Word}},
+		{r.Main.CheckNotRun && r.Proof.Word != "running" && (r.Resolution.Word == "" || r.Resolution.Word == "done" || r.Resolution.Word == "closed"), WordKey{"main", "unproven"}},
 		{len(r.Engine.Incidents) > 0, WordKey{"engine", "incident"}},
 	} {
 		if c.match {
@@ -198,7 +199,23 @@ func Describe(r Record, inputs RenderInputs) Description {
 		}
 	}
 	if key.Section == "main" {
-		d.Headline = redMain(r.Main, r.HandIns)
+		if r.Main.CheckNotRun {
+			d.Headline = "main's last check could not run (" + r.Main.Reason + ")"
+			if r.Main.RetryAllowed {
+				next := "at its next wake"
+				if !r.Main.RetryAt.IsZero() {
+					next = "at " + r.Main.RetryAt.Local().Format("2006-01-02 15:04 MST")
+				}
+				d.Headline += "; the lane will check main again " + next
+				d.Verb, d.Person, d.Agent = "none", "nothing to do", "check main again"
+			} else {
+				d.Headline += "; run: metasystem landing prove --trunk"
+				d.Person = "examine why the check could not run, then metasystem landing prove --trunk"
+				d.Agent = "wait for the person's check"
+			}
+		} else {
+			d.Headline = redMain(r.Main, r.HandIns)
+		}
 	}
 	if r.Main.Word != Red && r.Main.Flakes != "" && key.Section != "proof" && key.Section != "resolution" {
 		d.Headline = "main has unstable checks: " + r.Main.Flakes + "; run: metasystem landing resume"
@@ -207,7 +224,7 @@ func Describe(r Record, inputs RenderInputs) Description {
 		}
 		d.Verb, d.Person = "landing resume", "resume after examining the unstable checks"
 	}
-	if r.Stop != nil && key.Section != "proof" && key.Section != "resolution" {
+	if r.Stop != nil && key.Section != "proof" && key.Section != "resolution" && !r.Main.CheckNotRun {
 		d.Headline = stopText(*r.Stop)
 		d.Verb = "landing resume"
 		d.Person = Remedy(r.Stop.Command)

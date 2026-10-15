@@ -21,12 +21,12 @@ func engineCheckCommand(seams ProveSeams, args string) (string, error) {
 }
 
 // engineCheck runs a testing group or reads its environment from the serving engine.
-func engineCheck(seams ProveSeams, dir, args string, running Running, decision scopeDecision, output io.Writer, observed *proofOutput) error {
+func engineCheck(seams ProveSeams, install, dir, args string, running Running, decision scopeDecision, output io.Writer, observed *proofOutput) error {
 	command, err := engineCheckCommand(seams, args)
 	if err != nil {
 		return err
 	}
-	_, err = runCheck(seams, dir, command, running, "fast-static-build", decision, output, observed)
+	_, err = runCheck(seams, install, dir, command, running, "fast-static-build", decision, output, observed)
 	return err
 }
 
@@ -35,7 +35,7 @@ func prepareGate(seams ProveSeams, install, checkout, dir, command string, runni
 	staticCommand, err := engineCheckCommand(seams, "fast-static-build")
 	var report checkReport
 	if err == nil {
-		report, err = runCheck(seams, dir, staticCommand, running, "fast-static-build", *decision, output, observed)
+		report, err = runCheck(seams, install, dir, staticCommand, running, "fast-static-build", *decision, output, observed)
 	}
 	result.Static = observed.static
 	if err != nil || result.Static != Green {
@@ -105,7 +105,7 @@ func reuseGate(seams ProveSeams, install, dir string, running Running, decision 
 		return false
 	}
 	environment := &proofOutput{output: io.Discard}
-	if err := engineCheck(seams, dir, "--environment", running, decision, output, environment); err != nil || environment.environment != gate.Environment {
+	if err := engineCheck(seams, install, dir, "--environment", running, decision, output, environment); err != nil || environment.environment != gate.Environment {
 		return false
 	}
 	observed.environment, observed.envSeen = gate.Environment, true

@@ -322,7 +322,7 @@ func TestKeeperClockRunningTrunkThenHandIn(t *testing.T) {
 	if err := removeRunning(b.install, b.seams); err != nil {
 		t.Fatal(err)
 	}
-	if err := appendLine(resultsPath(b.install), Result{Trunk: true, Result: Red, At: bedNow.Format(time.RFC3339), Tree: "main-tree"}, b.seams); err != nil {
+	if err := appendLine(resultsPath(b.install), Result{Trunk: true, Result: Red, CountedFull: true, Cause: &Cause{Kind: "main"}, At: bedNow.Format(time.RFC3339), Tree: "main-tree"}, b.seams); err != nil {
 		t.Fatal(err)
 	}
 	b.wake(t)

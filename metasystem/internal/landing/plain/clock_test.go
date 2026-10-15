@@ -168,11 +168,7 @@ func TestProveShellLeadsItsPathWithTheServingEngine(t *testing.T) {
 	if err != nil || result.Result != Green {
 		t.Fatalf("prove: %+v %v", result, err)
 	}
-	executable, err := os.Executable()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if first, _, _ := strings.Cut(path, string(os.PathListSeparator)); first != filepath.Dir(executable) {
-		t.Fatalf("the proof shell's PATH must lead with the engine running the lane: %q", path)
+	if first, _, _ := strings.Cut(path, string(os.PathListSeparator)); first != filepath.Join(b.install, "bin") {
+		t.Fatalf("the proof shell's PATH must lead with the registered installation: %q", path)
 	}
 }

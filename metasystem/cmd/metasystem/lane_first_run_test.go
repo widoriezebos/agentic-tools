@@ -20,8 +20,10 @@ import (
 func TestLandingStatusLeadsWithCurrentTrunkRed(t *testing.T) {
 	t.Parallel()
 	incidents := holdIncidentFixture(t, newIntentBed(t, false, nil))
+	incidents[0].Identity = "red:metasystem/internal/broken:TestBroken"
+	incidents[0].ID = incidents[0].Identity
 	b, _ := holdLaneFixture(t, incidents)
-	proof := plain.Result{Trunk: true, Commit: "main", Result: plain.Red, Failed: []plain.FailedUnit{{Unit: "metasystem/internal/broken", Tests: []string{"TestBroken"}}}}
+	proof := plain.Result{Attempt: "main-red", CountedFull: true, Cause: &plain.Cause{Kind: "main", Name: incidents[0].Identity}, Trunk: true, Commit: "main", Result: plain.Red, Failed: []plain.FailedUnit{{Unit: "metasystem/internal/broken", Tests: []string{"TestBroken"}}}}
 	writeQuestionFixture(t, filepath.Join(plain.Dir(b.install), "results.jsonl"), proof)
 	code, words := b.run(t, b.root, "status")
 	first := strings.Join(strings.Fields(strings.Split(strings.TrimSpace(words), "\n\n")[0]), " ")

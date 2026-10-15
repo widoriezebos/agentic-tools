@@ -38,7 +38,7 @@ func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T
 			case "green trunk", "red trunk", "expired trunk", "custom interval":
 				proof.Trunk = true
 				if name == "red trunk" {
-					proof.Result = Red
+					proof.Result, proof.CountedFull, proof.Cause = Red, true, &Cause{Kind: "main"}
 				}
 				if name == "expired trunk" {
 					proof.At = bedNow.Add(-4 * time.Hour).Format(time.RFC3339)

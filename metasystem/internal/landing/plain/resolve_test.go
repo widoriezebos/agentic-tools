@@ -31,6 +31,7 @@ func newResolveFixture(t *testing.T) *resolveFixture {
 	b := &resolveFixture{t: t, home: t.TempDir(), checkout: t.TempDir(),
 		paths: "metasystem/out/conflict\x00", tracked: "metasystem/out/conflict\x00metasystem/out/other\x00metasystem/src/input\x00"}
 	b.install = filepath.Join(b.checkout, "metasystem")
+	fixtureEngine(t, b.install)
 	if err := os.MkdirAll(filepath.Dir(lane.LockPath(b.home)), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -360,7 +361,7 @@ func newResolveGitAdapterFixture(t *testing.T, deleted bool) *resolveGitAdapterF
 	if err := os.MkdirAll(filepath.Dir(output), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(b.checkout, ".gitignore"), []byte("metasystem/artifacts/\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(b.checkout, ".gitignore"), []byte("metasystem/artifacts/\nmetasystem/bin/\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	write := func(data string) {

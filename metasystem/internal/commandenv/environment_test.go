@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 func TestMain(m *testing.M) { os.Exit(testenv.Main(m)) }
@@ -81,6 +82,59 @@ func TestEngineEnvironmentPreservesDeclaredValuesAndLastPath(t *testing.T) {
 			}
 			if !reflect.DeepEqual(got, wantGot) {
 				t.Fatalf("declared values changed: %v, want %v", got, wantGot)
+			}
+		})
+	}
+}
+
+func TestInstallationEnvironmentValidatesItsOwnEngineAndSuppliesMissingPath(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"path", "absent", "missing", "not executable", "directory"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			install := t.TempDir()
+			bin := filepath.Join(install, "bin")
+			if err := os.MkdirAll(bin, 0700); err != nil {
+				t.Fatal(err)
+			}
+			binary := filepath.Join(bin, "metasystem")
+			if mode == "directory" {
+				if err := os.Mkdir(binary, 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if mode != "missing" {
+				perm := os.FileMode(0700)
+				if mode == "not executable" {
+					perm = 0600
+				}
+				if err := testexec.WriteFile(binary, []byte("fixture"), perm); err != nil {
+					t.Fatal(err)
+				}
+			}
+			input := []string{"VALUE=kept", "PATH=/earlier", "PATH=/competitor"}
+			if mode == "absent" {
+				input = []string{"VALUE=kept"}
+			}
+			before := append([]string(nil), input...)
+			got, err := commandenv.InstallationEnvironment(input, install)
+			if mode == "missing" || mode == "not executable" || mode == "directory" {
+				if err == nil || got != nil || !strings.Contains(err.Error(), "no command was started") {
+					t.Fatalf("invalid installation accepted: %v %v", got, err)
+				}
+				return
+			}
+			wantPath := "PATH=" + bin
+			if mode == "path" {
+				wantPath += string(os.PathListSeparator) + "/competitor"
+			} else {
+				wantPath += string(os.PathListSeparator) + "/usr/bin:/bin"
+			}
+			if err != nil || !reflect.DeepEqual(got, []string{"VALUE=kept", wantPath}) || !reflect.DeepEqual(input, before) {
+				t.Fatalf("installation path: %v %v; original %v", got, err, input)
+			}
+			got[0] = "CHANGED=value"
+			if !reflect.DeepEqual(input, before) {
+				t.Fatal("environment aliases its input")
 			}
 		})
 	}

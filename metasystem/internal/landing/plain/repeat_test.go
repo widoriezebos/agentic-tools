@@ -33,6 +33,7 @@ func newRepeatBed(t *testing.T) *repeatBed {
 		t.Fatal(err)
 	}
 	b.install, b.trace = filepath.Join(b.checkout, "metasystem"), filepath.Join(b.checkout, "checks")
+	fixtureEngine(t, b.install)
 	if err := os.MkdirAll(b.install, 0755); err != nil {
 		t.Fatal(err)
 	}
@@ -273,7 +274,7 @@ func TestRepeatDetachedOwnAttemptKeepsAllowance(t *testing.T) {
 	if err != nil || string(trace) != "check\n" {
 		t.Fatalf("detached check did not run once: %q %v", trace, err)
 	}
-	if lines := b.lines(); len(lines) != 2 || !lines[0].ClassificationPending || !reflect.DeepEqual(lines[1], red) || red.Attempt != running.Attempt || red.Result != Red || red.Repeat != "allowed" || red.Reason != "the proving command exited 2" {
+	if lines := b.lines(); len(lines) != 2 || !lines[0].ClassificationPending || !reflect.DeepEqual(lines[1], red) || red.Attempt != running.Attempt || red.Result != Red || red.Repeat != "allowed" || red.Reason != "the check could not run: disk full" {
 		t.Fatalf("own attempt consumed its allowance: %+v", lines)
 	}
 	if green := b.run("exit 0"); green.Result != Green || len(b.records) != 0 {

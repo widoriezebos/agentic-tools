@@ -195,13 +195,30 @@ func assertShadowAgrees(t *testing.T, home string, seams ProveSeams) {
 	for _, r := range raw.Results {
 		if r.Trunk && r.Commit == raw.Main && (r.Result == Green || r.Result == Red) {
 			main = r.Result
+			if r.Cause != nil && r.Cause.Kind == "environment" && !r.CountedFull {
+				main = "unproven"
+			}
 		}
+	}
+	if r := raw.Running; r.Trunk && r.Commit == raw.Main && r.Launch != nil && r.Launch.Error != "" {
+		main = "unproven"
 	}
 	equal("main.word", shadow.Main.Word, main)
 	var incidents []string
+	var latest Result
+	for _, r := range raw.Results {
+		if r.Trunk && r.Commit == raw.Main {
+			latest = r
+		}
+	}
 	for _, incident := range raw.Incidents {
-		if incident.Closed == nil {
-			incidents = append(incidents, incident.ID)
+		if incident.Closed == nil && latest.Result == Red && !latest.didNotRun() {
+			for _, sighting := range incident.Sightings {
+				if sighting.Attempt == latest.Attempt {
+					incidents = append(incidents, incident.ID)
+					break
+				}
+			}
 		}
 	}
 	equal("main.open_incidents", shadow.Main.OpenIncidents, incidents)
@@ -642,7 +659,7 @@ func TestShadowOfProjectsRecordedPayloadsAndHonestClocks(t *testing.T) {
 	if got.Proof.Attempt != "proof" || got.Proof.Scope != "gate" || got.Proof.Since.Observed || !got.Proof.Since.At.Equal(started) || got.Proof.LoadAtStart != nil {
 		t.Fatalf("proof: %+v", got.Proof)
 	}
-	if got.Main.Word != "unproven" || got.Main.Commit != "external" || !got.Main.Since.Observed || got.Main.Since.Source != "refs/remotes/origin/main" || !slices.Equal(got.Main.OpenIncidents, []string{"incident"}) {
+	if got.Main.Word != "unproven" || got.Main.Commit != "external" || !got.Main.Since.Observed || got.Main.Since.Source != "refs/remotes/origin/main" || len(got.Main.OpenIncidents) != 0 {
 		t.Fatalf("main: %+v", got.Main)
 	}
 	if got.Holds.Barren != 2 || got.Holds.Since.Observed || !got.Holds.Since.At.Equal(started) || !reflect.DeepEqual(got.Questions, raw.Questions) || got.Engine.Stamp != raw.Engine {

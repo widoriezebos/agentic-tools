@@ -24,7 +24,7 @@ func TestFreshProofExecutesSavedGreenRecord(t *testing.T) {
 			if err := json.Unmarshal(data, &prior); err != nil {
 				t.Fatal(err)
 			}
-			install := t.TempDir()
+			install := fixtureInstallation(t)
 			if err := os.MkdirAll(Dir(install), 0700); err != nil {
 				t.Fatal(err)
 			}
@@ -71,7 +71,7 @@ func TestFreshProofExecutesSavedGreenRecord(t *testing.T) {
 
 func TestFreshGateBaselineKeepsRequestOnFailure(t *testing.T) {
 	t.Parallel()
-	install := t.TempDir()
+	install := fixtureInstallation(t)
 	running := Running{Fresh: true, Gate: true, Commit: "single-parent", Tree: "tree", Attempt: "fresh-gate"}
 	git := stubGit{commit: running.Commit, tree: running.Tree}
 	baseline, ok, _ := gateBaseline(ProveSeams{Git: git.run}, install, install, "fixture", running, &bytes.Buffer{})

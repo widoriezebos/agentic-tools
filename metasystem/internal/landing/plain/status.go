@@ -263,6 +263,8 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		return status, raw
 	}
 	install := string(layout.Install)
+	clock, clockErr := readClock(install)
+	raw.Clock = clock
 	raw.Now = seams.now()
 	raw.Pause = pause
 	originalMain := git.main
@@ -493,6 +495,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 		running.Goals, err = proving(status.Queue, running.Commit, git.contains)
 		unread(landingstate.Phrase("what-the-running-proof-holds"), err)
 	}
+	unread("the proof clock", clockErr)
 	results, skipped, err := countedLines[Result](resultsPath(install))
 	unread("the proof results", err)
 	damaged("the proof results have", skipped, resultsPath(install))
@@ -568,11 +571,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			incidents, readErr := seams.incidents(install, string(layout.Checkout), main)
 			unread("main's incidents", readErr)
 			raw.Incidents = incidents
-			for _, incident := range incidents {
-				if incident.Closed == nil {
-					status.TrunkIncidents = append(status.TrunkIncidents, incident.ID)
-				}
-			}
+			status.TrunkIncidents = proof.incidentIDs(incidents)
 		}
 	}
 

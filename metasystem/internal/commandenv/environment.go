@@ -1,6 +1,7 @@
 package commandenv
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -45,4 +46,20 @@ func EngineEnvironmentInDirectory(environment []string, directory string) []stri
 		return slices.Clone(environment)
 	}
 	return append(result, "PATH="+directory+string(os.PathListSeparator)+path)
+}
+
+// InstallationEnvironment binds lane children to the registered installation.
+func InstallationEnvironment(environment []string, install string) ([]string, error) {
+	directory := filepath.Join(install, "bin")
+	binary := filepath.Join(directory, "metasystem")
+	info, err := os.Stat(binary)
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o111 == 0 {
+		return nil, fmt.Errorf("the installation's engine %s is missing or is not executable; no command was started", binary)
+	}
+	for _, entry := range environment {
+		if strings.HasPrefix(entry, "PATH=") {
+			return EngineEnvironmentInDirectory(environment, directory), nil
+		}
+	}
+	return append(slices.Clone(environment), "PATH="+directory+string(os.PathListSeparator)+"/usr/bin:/bin"), nil
 }

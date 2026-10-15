@@ -16,6 +16,7 @@ import (
 
 // RawFacts retains the records belonging to one status observation.
 type RawFacts struct {
+	Clock                   clockWake
 	EngineIncidents         []state.EngineIncident
 	Err                     error
 	Now                     time.Time
@@ -219,6 +220,12 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	for _, proof := range raw.Results {
 		if proof.Trunk && proof.Commit == raw.Main && (proof.Result == Green || proof.Result == Red) {
 			next.Main.Word, stamp, source = proof.Result, proof.At, "results.jsonl"
+			next.Main.CheckNotRun, next.Main.RetryAllowed = proof.didNotRun(), proof.Repeat == "allowed"
+			next.Main.RetryAt = raw.Clock.RetryAt
+			next.Main.OpenIncidents = proof.incidentIDs(raw.Incidents)
+			if proof.didNotRun() {
+				next.Main.Word = "unproven"
+			}
 			next.Main.Reason = strings.Join(failingTests(proof.Failed), ", ")
 			if next.Main.Reason == "" {
 				next.Main.Reason = proof.Reason
@@ -229,16 +236,17 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 			}
 		}
 	}
-	for _, incident := range raw.Incidents {
-		if incident.Closed == nil {
-			next.Main.OpenIncidents = append(next.Main.OpenIncidents, incident.ID)
-		}
+	if r := raw.Running; r.Trunk && r.Commit == raw.Main && r.Launch != nil && r.Launch.Error != "" {
+		next.Main.Reason, next.Main.RetryAt, next.Main.RetryAllowed = r.Launch.Error, raw.Clock.RetryAt, !next.Main.CheckNotRun || next.Main.RetryAllowed
+		next.Main.Word, next.Main.CheckNotRun = "unproven", true
+		next.Main.OpenIncidents, next.Main.Flakes, next.Main.FlakePublished = nil, "", false
+		stamp, source = r.Launch.At, "running.json"
 	}
 	if push := observation.LastPush; push != nil && push.Commit == raw.Main {
 		stamp, source = push.At, "pushes.jsonl"
 	}
 	next.Main.Since = since(stamp, source)
-	if p := observation.LastProof; next.Main.Word != Red && p != nil && p.Result == Green && len(p.Flakes) > 0 && strings.Contains(p.Reason, "flake on main:") {
+	if p := observation.LastProof; !next.Main.CheckNotRun && next.Main.Word != Red && p != nil && p.Result == Green && len(p.Flakes) > 0 && strings.Contains(p.Reason, "flake on main:") {
 		next.Main.Flakes = flakeNames(p.Flakes)
 	}
 	next.Questions = append([]state.Question(nil), raw.Questions...)

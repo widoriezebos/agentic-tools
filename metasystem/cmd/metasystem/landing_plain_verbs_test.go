@@ -53,7 +53,7 @@ func newPlainVerbBed(t *testing.T) *plainVerbBed {
 	bed.git(t, base, "init", "--quiet", "-b", "main", bed.checkout)
 	for path, text := range map[string]string{
 		filepath.Join(bed.installation, "metasystem.conf"): "metasystem.template=true\n",
-		filepath.Join(bed.checkout, ".gitignore"):          "metasystem/artifacts/\nmetasystem/metasystem.conf.local\n",
+		filepath.Join(bed.checkout, ".gitignore"):          "metasystem/artifacts/\nmetasystem/bin/\nmetasystem/metasystem.conf.local\n",
 	} {
 		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
 			t.Fatal(err)
@@ -76,6 +76,7 @@ func newPlainVerbBed(t *testing.T) *plainVerbBed {
 			Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry}})
 	}
 	bed.realLaunch = bed.owners.landing.plainProve.Launch
+	writeLaneFixtureEngine(t, bed.installation)
 	return bed
 }
 
@@ -622,5 +623,16 @@ func TestPlainLaneProveReadsCommandForTheCommitSelectedToRun(t *testing.T) {
 	head := bed.git(t, bed.checkout, "rev-parse", "HEAD")
 	if !moved || err != nil || !found || result.Commit != head || result.Commit == old || result.Result != plain.Red || !strings.Contains(result.Reason, "exited 9") {
 		t.Fatalf("moved HEAD result = %+v, %v", result, err)
+	}
+}
+
+func writeLaneFixtureEngine(t *testing.T, install string) {
+	t.Helper()
+	bin := filepath.Join(install, "bin")
+	if err := os.MkdirAll(bin, 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.WriteFile(filepath.Join(bin, "metasystem"), []byte("#!/bin/sh\nexit 93\n"), 0700); err != nil {
+		t.Fatal(err)
 	}
 }
