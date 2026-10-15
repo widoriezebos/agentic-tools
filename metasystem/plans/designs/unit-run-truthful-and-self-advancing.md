@@ -3,7 +3,7 @@
 - Id: 01M4WVQA75GZ7MB3SRKZMV4NDD
 - Kind: design
 - Status: accepted
-- Goals: unit-run-truthful-and-self-advancing, unit-run-truthful-and-self-advancing-2
+- Goals: unit-run-truthful-and-self-advancing unit-run-truthful-and-self-advancing-2
 - Evidence: lane test findings 306 and 307 (2026-10-14), interventions S119 and S120; run 20261014t065911-dcd9dd3672 of goal process-changes-cover-declarations-and-interventions.
 
 ## Problem
