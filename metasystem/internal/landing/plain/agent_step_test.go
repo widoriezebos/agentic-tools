@@ -185,3 +185,24 @@ func TestLandingAgentIdleConfiguredThresholdAndInvalidValue(t *testing.T) {
 		})
 	}
 }
+
+func TestLandingAgentRetainedStepKeepsKeeperAgeAndWait(t *testing.T) {
+	t.Parallel()
+	for _, live := range []bool{false, true} {
+		t.Run(map[bool]string{false: "dead", true: "live"}[live], func(t *testing.T) {
+			t.Parallel()
+			b := newStatusBed(t)
+			started := time.Date(2026, 10, 13, 10, 26, 0, 0, time.UTC)
+			since := started.Format(time.RFC3339)
+			stepAt := started.Add(-time.Hour)
+			b.lines("agent-step.json", AgentStep{Verb: "prove", StartedAt: stepAt.Format(time.RFC3339), PID: 4242})
+			p, err := agentProgress(b.install, lane.OwnerView{State: lane.OwnerRunning, Since: &since}, ProveSeams{
+				Now:   func() time.Time { return started.Add(21 * time.Minute) },
+				Alive: func(Running) bool { return live },
+			})
+			if err != nil || p == nil || p.Since != since || p.Source != "landing-agent-keeper.json" || p.Step == nil || p.LastStep == nil || p.Step.Verb != "prove" || p.ProcessGone == live || p.Minutes != 81 || !strings.Contains(p.Line, "prove since") {
+				t.Fatalf("retained step: %+v err=%v", p, err)
+			}
+		})
+	}
+}

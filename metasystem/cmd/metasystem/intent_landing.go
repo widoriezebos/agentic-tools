@@ -90,7 +90,15 @@ func (inv *intentInvocation) landing() laneVerbOwners {
 		owners.home = batchowner.LandingLaneHome
 	}
 	if owners.probe == nil {
-		owners.probe = newLandingAgent().probe
+		owners.probe = func(root string) (lane.OwnerProbe, error) {
+			agent := newLandingAgent()
+			home, err := owners.home()
+			if err != nil {
+				return lane.OwnerProbe{}, err
+			}
+			agent.home = home
+			return agent.probe(root)
+		}
 	}
 	if owners.validate == nil {
 		owners.validate = batchowner.ValidateLandingCheckout

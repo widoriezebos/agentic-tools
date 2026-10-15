@@ -203,12 +203,46 @@ func TestKeeperStartsOutsideTheLaneLock(t *testing.T) {
 	agent.running = ""
 	reasons = append(reasons, queuedReason)
 	agent.fail = errors.New("the launcher refused")
-	if line := keeper.Step(); len(agent.starts) != 2 || !strings.Contains(line, "the launcher refused") {
-		t.Fatalf("a failed start: %q", line)
+	if run := keeper.Run(); len(agent.starts) != 2 || run.Outcome != AgentFailed || !strings.Contains(run.Line, "the launcher refused") {
+		t.Fatalf("a failed start: %+v", run)
 	}
 	agent.fail = nil
 	if line := keeper.Step(); len(agent.starts) != 3 || !slices.Equal(agent.starts[2].Reasons, []string{"unfinished", queuedReason}) {
 		t.Fatalf("the next step after a failed start: %q, starts %+v; want a start at once", line, agent.starts)
+	}
+}
+
+func TestKeeperStorageFailureAfterStartStaysFailed(t *testing.T) {
+	t.Parallel()
+	home, _, module := nestedLaneDirs(t)
+	clock := laneNow
+	agent := &fakeAgent{}
+	reasons := []string{queuedReason}
+	k := agent.keeper(home, module, &clock, wakeFor(&reasons))
+	start := k.Start
+	k.Start = func(root string, wake Wake) (string, error) {
+		id, err := start(root, wake)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := SetPause(home, "fixture-person", clock); err != nil {
+			t.Fatal(err)
+		}
+		return id, nil
+	}
+	k.Cancel = func(string) error {
+		// Cancellation finishes after the keeper read its record, before its write.
+		if err := os.Remove(agentStatePath(home)); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Mkdir(agentStatePath(home), 0700); err != nil {
+			t.Fatal(err)
+		}
+		return nil
+	}
+	run := k.Run()
+	if run.Outcome != AgentFailed || run.Launch != "landing-1" || !strings.Contains(run.Line, "its keeper record could not be written") {
+		t.Fatalf("storage failure: %+v", run)
 	}
 }
 
@@ -416,5 +450,29 @@ func TestKeeperExplicitStartSurvivesStopQuestionReadError(t *testing.T) {
 	keeper.PersonSelection = func(Record) bool { return true }
 	if run := keeper.Run(); run.Outcome != AgentStarted || len(agent.starts) != 1 {
 		t.Fatalf("the person's start was held by the unreadable stop question: %+v", run)
+	}
+}
+
+func TestKeeperHeldReservationExplainsRetryAndCancellation(t *testing.T) {
+	t.Parallel()
+	for _, permanent := range []bool{false, true} {
+		t.Run(fmt.Sprint(permanent), func(t *testing.T) {
+			t.Parallel()
+			home, _, module := nestedLaneDirs(t)
+			clock := laneNow
+			agent := &fakeAgent{fail: &StartHeld{Reason: "fixture start refused", Reservation: "landing-fixture", Permanent: permanent}}
+			reasons := []string{queuedReason}
+			keeper := agent.keeper(home, module, &clock, wakeFor(&reasons))
+			run := keeper.Run()
+			want := "the landing agent's start is held: fixture start refused (reservation landing-fixture); "
+			if permanent {
+				want += "run metasystem work stop landing-fixture to request cancellation"
+			} else {
+				want += "it is retried at the next wake — or run metasystem work stop landing-fixture"
+			}
+			if run.Outcome != AgentHeld || run.Line != want || len(agent.starts) != 0 {
+				t.Fatalf("held start: %+v starts=%v; want %q", run, agent.starts, want)
+			}
+		})
 	}
 }

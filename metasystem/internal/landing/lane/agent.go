@@ -159,6 +159,14 @@ type AgentRun struct {
 	Problems []string
 }
 
+// StartHeld retains a reservation and the reason its start was refused.
+type StartHeld struct {
+	Reason, Reservation string
+	Permanent           bool
+}
+
+func (e *StartHeld) Error() string { return e.Reason }
+
 func agentRun(outcome AgentOutcome, root, line string) AgentRun {
 	return AgentRun{Outcome: outcome, Root: root, Line: line}
 }
@@ -338,6 +346,14 @@ func (k AgentKeeper) Run() (out AgentRun) {
 		current.StartingAt = ""
 		if startErr != nil {
 			result = agentRun(AgentFailed, root, fmt.Sprintf("the landing agent at %s could not start for %s: %v", root, strings.Join(wake.Reasons, ", "), startErr))
+			var held *StartHeld
+			if errors.As(startErr, &held) {
+				guidance := "it is retried at the next wake — or run metasystem work stop " + held.Reservation
+				if held.Permanent {
+					guidance = "run metasystem work stop " + held.Reservation + " to request cancellation"
+				}
+				result = agentRun(AgentHeld, root, fmt.Sprintf(landingstate.Phrase("landing-reservation-held"), held.Reason, held.Reservation, guidance))
+			}
 			return k.writeState(current)
 		}
 		current = AgentState{Launch: id, StartedAt: k.Now().UTC().Format(time.RFC3339), Fingerprint: fingerprint,

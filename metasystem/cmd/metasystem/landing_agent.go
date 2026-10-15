@@ -424,6 +424,15 @@ func (a landingAgent) probe(string) (lane.OwnerProbe, error) {
 		if at, err := time.Parse(time.RFC3339, record.StartedAt); err == nil {
 			probe.Since = at
 		}
+		keeper, err := lane.ReadAgentState(a.home)
+		if err != nil {
+			return lane.OwnerProbe{}, err
+		}
+		if keeper.Launch == record.ID {
+			if at, err := time.Parse(time.RFC3339, keeper.StartedAt); err == nil && at.After(probe.Since) {
+				probe.Since = at
+			}
+		}
 		return probe, nil
 	}
 	return lane.OwnerProbe{}, nil
@@ -440,21 +449,7 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 	keeper := newLandingAgentKeeper(repo, home, agent)
 	seams := (laneVerbOwners{plainProve: agent.proofEffects}).proveSeams(repo)
 	seams.Machine = agent.machine
-	seams.Steward = &plain.StewardEffects{Owner: agent.probe,
-		FlakeFix: (laneVerbOwners{}).landingFlakeFixer(repo),
-		Settle: func(record lane.Record) (string, error) {
-			layout, err := record.Layout()
-			if err != nil {
-				return "", err
-			}
-			settled, err := settleLandingAgent(agent.running, agent.cancel)(layout)
-			if len(settled.Unknown)+len(settled.Live) > 0 {
-				err = errors.Join(err, errors.New(strings.Join(append(settled.Unknown, settled.Live...), "; ")))
-			}
-			return "landing agent ended", err
-		},
-		Wake: func(lane.Record) (string, error) { run := keeper.Run(); return run.Line, nil },
-	}
+	seams.Steward = landingAgentStewardEffects(home, agent, keeper)
 	tick := landingStewardTick(keeper.Run, func() (plain.StewardRun, error) {
 		record, _, err := lane.Read(home)
 		if err != nil {
@@ -484,10 +479,29 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 	}
 }
 
+func landingAgentStewardEffects(home string, agent landingAgent, keeper lane.AgentKeeper) *plain.StewardEffects {
+	agent.home = home
+	return &plain.StewardEffects{Owner: agent.probe,
+		FlakeFix: (laneVerbOwners{}).landingFlakeFixer(keeper.Self),
+		Settle: func(record lane.Record) (string, error) {
+			layout, err := record.Layout()
+			if err != nil {
+				return "", err
+			}
+			settled, err := settleLandingAgent(agent.running, agent.cancel)(layout)
+			if len(settled.Unknown)+len(settled.Live) > 0 {
+				err = errors.Join(err, errors.New(strings.Join(append(settled.Unknown, settled.Live...), "; ")))
+			}
+			return "landing agent ended", err
+		},
+		Wake: func(lane.Record) (string, error) { run := keeper.Run(); return run.Line, nil },
+	}
+}
+
 func landingStewardTick(keeper func() lane.AgentRun, step func() (plain.StewardRun, error)) func() lane.AgentRun {
 	return func() lane.AgentRun {
 		run := keeper()
-		if run.Outcome == lane.AgentNotKept || run.Outcome == lane.AgentFailed || run.Outcome == lane.AgentStarted || run.Launch != "" && run.Outcome != lane.AgentRunning {
+		if run.Outcome == lane.AgentNotKept {
 			return run
 		}
 		steward, err := step()

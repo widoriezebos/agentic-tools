@@ -118,8 +118,10 @@ func agentProgress(install string, owner lane.OwnerView, seams ProveSeams, queue
 		if parseErr != nil || step.Verb == "" || step.PID <= 0 {
 			return nil, errors.New("the agent step has no valid verb, start time or process")
 		}
-		progress.Step, progress.Since = &step, step.StartedAt
-		progress.Source = "agent-step.json"
+		progress.Step = &step
+		if since, err := time.Parse(time.RFC3339, progress.Since); err != nil || at.After(since) {
+			progress.Since, progress.Source = step.StartedAt, "agent-step.json"
+		}
 		progress.LastStep = &step
 		progress.Minutes = int(seams.now().Sub(at) / time.Minute)
 		running := Running{Pid: step.PID, Process: step.Process}

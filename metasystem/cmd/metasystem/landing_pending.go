@@ -6,7 +6,6 @@ import (
 	"fmt"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
@@ -49,7 +48,7 @@ func (a landingAgent) resumePending(root string, wake lane.Wake) (string, bool, 
 		return "", false, nil
 	}
 	hold := func(reason string) (string, bool, error) {
-		return "", true, fmt.Errorf(landingstate.Phrase("landing-reservation-held"), pending.ID, reason, pending.ID)
+		return "", true, &lane.StartHeld{Reason: reason, Reservation: pending.ID, Permanent: true}
 	}
 	if pending.Reason == "cancel-requested" {
 		return hold("cancellation is requested")

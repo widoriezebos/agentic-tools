@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -107,7 +108,7 @@ func TestLandingKeeperResumesUnclaimedReservation(t *testing.T) {
 
 func TestLandingKeeperHoldsChangedPendingIdentity(t *testing.T) {
 	t.Parallel()
-	for _, change := range []string{"batch", "registration", "cancel", "unknown-process", "missing-binding", "unreadable-brief", "changed-fence", "changed-directory"} {
+	for _, change := range []string{"batch", "registration", "cancel", "unknown-process", "missing-binding", "unreadable-registration", "unreadable-brief", "changed-fence", "changed-directory"} {
 		t.Run(change, func(t *testing.T) {
 			t.Parallel()
 			b := newPendingLandingBed(t)
@@ -122,6 +123,14 @@ func TestLandingKeeperHoldsChangedPendingIdentity(t *testing.T) {
 				}
 				r.CustodyEpoch++
 				writeQuestionFixture(t, lane.RecordPath(b.home), r)
+			case "unreadable-registration":
+				start := b.keeper.Start
+				b.keeper.Start = func(root string, wake lane.Wake) (string, error) {
+					if err := os.WriteFile(lane.RecordPath(b.home), []byte("{torn"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					return start(root, wake)
+				}
 			case "cancel", "unknown-process", "missing-binding", "unreadable-brief", "changed-fence", "changed-directory":
 				_, err := b.manager.Store.Update(firstReservationID, func(r *launch.Record) error {
 					switch change {
@@ -150,10 +159,72 @@ func TestLandingKeeperHoldsChangedPendingIdentity(t *testing.T) {
 			if err != nil || len(records) != 1 || records[0].Child != nil || out.Outcome == lane.AgentStarted {
 				t.Fatalf("changed pending identity was admitted: %+v %+v %v", out, records, err)
 			}
-			if change != "unknown-process" && !strings.Contains(out.Line, "held") {
+			reason := map[string]string{
+				"batch":                   "its lane registration or selected batch changed",
+				"registration":            "its lane registration or selected batch changed",
+				"cancel":                  "cancellation is requested",
+				"missing-binding":         "its retained lane registration cannot be read",
+				"unreadable-registration": "the current lane registration cannot be read",
+				"unreadable-brief":        "its retained brief cannot be read",
+				"changed-fence":           "its retained process fence does not name the registered installation",
+				"changed-directory":       "its lane registration or selected batch changed",
+			}[change]
+			if change != "unknown-process" && !strings.Contains(out.Line, reason) {
+				t.Fatalf("held line lost its reason %q: %+v", reason, out)
+			}
+			if change != "unknown-process" && (out.Outcome != lane.AgentHeld || !strings.HasPrefix(out.Line, "the landing agent's start is held: ") || !strings.Contains(out.Line, "(reservation "+firstReservationID+")") || !strings.HasSuffix(out.Line, "run metasystem work stop "+firstReservationID+" to request cancellation") || strings.Contains(out.Line, "retried") || strings.Contains(out.Line, "20 min") || strings.Contains(out.Line, "AgentHeld") || strings.Contains(out.Line, "AgentFailed")) {
 				t.Fatalf("held reservation is not visible: %+v", out)
 			}
 		})
+	}
+}
+
+func TestLandingKeeperProductionWiringResumesUnclaimedReservation(t *testing.T) {
+	t.Parallel()
+	b := newPendingLandingBed(t)
+	b.interrupt(t)
+	state, err := lane.ReadAgentState(b.home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	claimed, err := time.Parse(time.RFC3339, state.StartingAt)
+	if err != nil || b.clock.Sub(claimed) <= 10*time.Minute {
+		t.Fatalf("claim is not expired: %+v %v", state, err)
+	}
+	b.manager.Supervisor = recordingSupervisor{b.manager.Store}
+	a := newTestLandingAgent(func(a *landingAgent) {
+		a.manager = func() *launch.Manager { return b.manager }
+		a.now = b.manager.Now
+	})
+	k := newLandingAgentKeeper(b.root, b.home, a)
+	// Isolate admission from recovery while retaining all production launch wiring.
+	k.Refresh, k.Observe, k.Prepare, k.Clock = nil, nil, nil, nil
+	k.Holds, k.ProviderHold, k.Helmed, k.AdmitWake = nil, nil, nil, nil
+	k.Fingerprint, k.BarrenStop, k.Waiting = nil, nil, nil
+	k.Continuation = b.keeper.Continuation
+	k.Sources = b.keeper.Sources
+	out := k.Run()
+	records, err := b.manager.Store.List()
+	if err != nil || out.Outcome != lane.AgentStarted || out.Launch != firstReservationID || len(records) != 1 {
+		t.Fatalf("production recovery: %+v records=%+v err=%v", out, records, err)
+	}
+	if records[0].ID != firstReservationID || records[0].Child == nil || *records[0].Child != (identity.Ref{Pid: 20, StartedAtSec: 20}) {
+		t.Fatalf("reservation did not record its child: %+v", records[0])
+	}
+}
+
+func TestLandingKeeperSupervisorLaunchFailureStaysFailed(t *testing.T) {
+	t.Parallel()
+	b := newPendingLandingBed(t)
+	b.interrupt(t)
+	calls := 0
+	b.manager.Supervisor = supervisorStart(func(string, string) (identity.Ref, error) {
+		calls++
+		return identity.Ref{}, errors.New("supervisor could not launch")
+	})
+	out := b.keeper.Run()
+	if calls != 1 || out.Outcome != lane.AgentFailed || !strings.Contains(out.Line, "supervisor could not launch") {
+		t.Fatalf("supervisor failure: calls=%d run=%+v", calls, out)
 	}
 }
 
