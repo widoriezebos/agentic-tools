@@ -116,6 +116,9 @@ func (m *Manager) admitOnLane(spec StartSpec) error {
 		return fmt.Errorf("the launches cannot be read, so no second landing agent can be ruled out: %w", err)
 	}
 	for _, record := range records {
+		if spec.resume && record.ID == spec.ID {
+			continue
+		}
 		if record.Kind != LandingKind || record.State.Terminal() {
 			continue
 		}

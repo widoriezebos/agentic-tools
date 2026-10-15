@@ -60,6 +60,7 @@ type StartSpec struct {
 	Inputs, Outputs, Units                             []string
 	AdapterData                                        map[string]json.RawMessage
 	readMode                                           string
+	resume                                             bool
 	wait                                               func(func() error) error
 	// Round and MaxRounds are the unit round this launch serves and the
 	// run's approved ceiling; the board card carries them (D14, R24).

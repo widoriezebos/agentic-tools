@@ -397,6 +397,7 @@ func stopText(s Stop) string {
 
 // Phrases owns the lane's person-facing state messages outside the recorded word rows.
 var Phrases = map[string]string{
+	"landing-reservation-held":                                           "landing reservation %s is held: %s; run: metasystem work stop %s",
 	"goal-s-cannot-be-proven-held-repair-the-base":                       "goal %s cannot be proven held; repair the base tree, then take it over with metasystem goal claim %s --take-over --reason TEXT",
 	"carry-debt-is-unpaid-word-s-landed-as-s":                            "carry debt is unpaid: word %s landed as %s without a carried row; run metasystem work land %s --using-exception %s",
 	"prepared-for-carried-delivery-under-exception-s-code-s":             "prepared for carried delivery under exception %s code %s; not yet landed",

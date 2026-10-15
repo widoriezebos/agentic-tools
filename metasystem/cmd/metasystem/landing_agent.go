@@ -124,6 +124,9 @@ Read its recorded batch and merge only those goal/commit pairs, in their recorde
 // kind in the lane checkout on that installation's own settings (the
 // roster keys of its metasystem.conf.local), bound to its fence.
 func (a landingAgent) start(root string, wake lane.Wake) (string, error) {
+	if id, found, err := a.resumePending(root, wake); found || err != nil {
+		return id, err
+	}
 	module := batch.ModuleRoot(root)
 	settings, err := a.settings(module)
 	if err != nil {
@@ -150,9 +153,23 @@ func (a landingAgent) start(root string, wake lane.Wake) (string, error) {
 	manager := *a.manager()
 	manager.Settings, manager.SettingsError = settings, nil
 	spec := launch.StartSpec{ID: id, Kind: launch.LandingKind, WorkingDirectory: root, FenceRoot: module, Brief: brief, Tag: nonce}
+	if a.home != "" {
+		registration, present, err := lane.Read(a.home)
+		if err != nil || !present {
+			return "", errors.Join(err, errors.New("the landing lane registration cannot be read"), os.Remove(brief))
+		}
+		binding, err := json.Marshal(landingPendingBinding{Registration: registration, Batch: wake.BatchID})
+		if err != nil {
+			return "", errors.Join(err, os.Remove(brief))
+		}
+		spec.AdapterData = map[string]json.RawMessage{"landingPendingBinding": binding}
+	}
 	record, err := manager.Start(spec)
 	if err != nil {
-		// A start that did not happen leaves no brief behind.
+		// An existing reservation owns its brief, including an interrupted start.
+		if _, readErr := manager.Store.Read(id); !errors.Is(readErr, os.ErrNotExist) {
+			return "", errors.Join(err, readErr)
+		}
 		return "", errors.Join(err, os.Remove(brief))
 	}
 	return record.ID, nil
@@ -364,7 +381,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				return agent.questionHold(record.Install)
 			},
 		},
-		Running: agent.running, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel,
+		Running: agent.running, Unclaimed: agent.unclaimed, Start: agent.start, Reap: []func(string) error{agent.reapOutage}, Cancel: agent.cancel,
 		Fingerprint: plain.KeeperFingerprint,
 		BarrenStop: func(record lane.Record, state lane.AgentState) error {
 			return plain.RecordBarrenStop(record.Install, state, lane.AgentStatePath(home), agent.now(), plain.ProveSeams{Lane: func() (lane.Record, error) { return record, nil }})

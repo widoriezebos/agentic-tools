@@ -83,6 +83,9 @@ type AgentKeeper struct {
 	PersonAct    bool
 	// Running names a landing launch that has not ended on this computer.
 	Running func() (id string, running bool, err error)
+	// Unclaimed permits the start decision to recover a pending reservation.
+	// It does not change whether the launch is running for settlement or reaping.
+	Unclaimed func(id string) bool
 	// Start starts the landing agent in the lane checkout for the wake and
 	// returns its launch id.
 	Start func(root string, wake Wake) (string, error)
@@ -380,7 +383,7 @@ func (k AgentKeeper) recheck(record Record) (AgentRun, bool) {
 	if err != nil {
 		return agentRun(AgentHeld, root, fmt.Sprintf("the landing agent at %s is not started: whether one runs can't be read (%v)", root, err)), true
 	}
-	if running {
+	if running && (k.Unclaimed == nil || !k.Unclaimed(id)) {
 		return AgentRun{Outcome: AgentRunning, Launch: id, Root: root, Line: fmt.Sprintf(landingstate.Phrase("the-landing-agent-s-is-running-at-s"), id, root)}, true
 	}
 	at, starting, err := AgentStarting(k.Home, k.Now())
