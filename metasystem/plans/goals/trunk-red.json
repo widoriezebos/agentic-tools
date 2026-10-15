@@ -2397,11 +2397,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch",
@@ -2442,11 +2448,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeBuildCollectsOneJobOnBatchTree",
@@ -2487,11 +2499,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeBuildCollectsOneJobOnBatchTree/kept_goal",
@@ -2532,11 +2550,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeBuildCollectsOneJobOnBatchTree/kept_main",
@@ -2577,11 +2601,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeBuildCollectsOneJobOnBatchTree/lost_job_id",
@@ -2622,11 +2652,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeBuildCollectsOneJobOnBatchTree/missing_launch",
@@ -2667,11 +2703,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeBuildCollectsOneJobOnBatchTree/resolution",
@@ -2712,11 +2754,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeRealImpactCheckGitAdapter",
@@ -2757,11 +2805,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeRealImpactCheckGitAdapter/green",
@@ -2802,11 +2856,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneMergeRealImpactCheckGitAdapter/red",
@@ -2847,11 +2907,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T094834.537907000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T11:22:22Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/proofrun:TestTestEnvironmentStandardInventoryMatchesObserved",
@@ -2892,11 +2958,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T130431.912370000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T13:48:58Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/testenv:TestTestExecutablesAreWrittenUnderTheForkLock",
@@ -2937,11 +3009,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261015T130431.912370000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-15T13:48:58Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T16:13:27Z",
+        "attempt": "20261015T152850.989047000Z",
+        "baseCommit": "6226d4a32e66c8a43666de2f43a7062ed97578c2",
+        "how": "green",
+        "opid": "R6A01SP8948R0SGWTABKANJAWJ-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
