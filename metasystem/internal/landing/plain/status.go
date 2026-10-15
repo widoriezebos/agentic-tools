@@ -377,7 +377,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			var main string
 			main, readErr = git.main()
 			if readErr == nil {
-				status.MainMove, readErr = mainMove(string(layout.Checkout), commit, main, seams, selected.Members...)
+				status.MainMove, readErr = mainMove(install, string(layout.Checkout), commit, main, seams, selected.Members...)
 			}
 		}
 		unread("main's movement", readErr)

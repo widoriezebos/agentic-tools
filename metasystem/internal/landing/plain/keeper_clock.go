@@ -102,23 +102,11 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 		state.Reason = "clock due; waiting for the current gate or proof to finish"
 		return state.Reason, prepare(record)
 	}
-	fix, err := ReadFix(install)
+	repair, err := candidateRepairPending(install, running, recorded)
 	if err != nil {
 		return "", err
 	}
-	repair := fix != nil
-	if recorded && running.Checkpoint && !running.Trunk {
-		results, err := readLines[Result](ProveSeams{Gate: running.Gate}.resultsPath(install))
-		if err != nil {
-			return "", err
-		}
-		for _, result := range results {
-			if result.Attempt == running.Attempt {
-				repair = fix != nil || result.Result == Red && (result.Cause == nil || result.Cause.Kind != "main" && result.Cause.Kind != "flake" && result.Cause.Kind != "environment")
-			}
-		}
-	}
-	if repair {
+	if repair != nil {
 		state.Attempted, state.Batch = true, running.BatchID
 		state.Reason = "clock due; waiting for the candidate's repair to finish"
 		return "", prepare(record)
@@ -182,7 +170,7 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 		}
 	}
 	seams.Trunk, seams.Gate, seams.Impact = true, false, false
-	seams.Person = nil
+	seams.Person, seams.Fresh = nil, true
 	state.Reason = "clock due; no batch completed within its wake; " + landingstate.Phrase("proving-main")
 	_, _, err = Start(install, checkout, seams)
 	if err != nil {

@@ -130,7 +130,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 		status(true)
 		before := calls
 		red = true
-		code, out := b.run(t, b.root, "prove", "--trunk", "--wait", "--json")
+		code, out := b.run(t, b.root, "prove", "--trunk", "--fresh", "--wait", "--json")
 		var data struct{ Data plain.Result }
 		if err := json.Unmarshal([]byte(out), &data); err != nil || code != 1 || !data.Data.Trunk || data.Data.Scope != "full" || data.Data.Cause == nil || data.Data.Cause.Kind != "main" || calls != before+2 {
 			t.Fatalf("fresh red: %d %s calls=%d %v", code, out, calls, err)
@@ -140,7 +140,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 		status(false)
 		red = false
 		before = calls
-		code, out = b.run(t, b.root, "prove", "--trunk", "--wait", "--json")
+		code, out = b.run(t, b.root, "prove", "--trunk", "--fresh", "--wait", "--json")
 		if err := json.Unmarshal([]byte(out), &data); err != nil || code != 0 || !data.Data.Trunk || data.Data.FullTree != data.Data.Tree || data.Data.FullAt != data.Data.At || data.Data.Scope != "full" || calls != before+1 {
 			t.Fatalf("fresh green: %d %s calls=%d %v", code, out, calls, err)
 		}
@@ -155,7 +155,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 		status(false)
 		// Another check of the green tree must execute again.
 		before = calls
-		code, out = b.run(t, b.root, "prove", "--trunk", "--wait", "--json")
+		code, out = b.run(t, b.root, "prove", "--trunk", "--fresh", "--wait", "--json")
 		if code != 0 || calls != before+1 {
 			t.Fatalf("green reused: %d %s calls=%d", code, out, calls)
 		}

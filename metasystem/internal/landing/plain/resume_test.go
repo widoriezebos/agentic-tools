@@ -567,3 +567,24 @@ func TestResumeRebuildPreservesUnownedMerge(t *testing.T) {
 		t.Fatalf("aborts=%d merge=%q starts=%d run=%+v", b.aborts, b.merge, b.starts, run)
 	}
 }
+
+func TestResumePersonProvesMainDuringCandidateRepair(t *testing.T) {
+	t.Parallel()
+	b := newResumeBed(t)
+	b.incidents = []goal.TrunkRedEntry{{Identity: "red", Opened: bedNow.Format(time.RFC3339)}}
+	checkpoint := Running{Attempt: "candidate", Tree: "candidate-tree", Commit: "candidate", Checkpoint: true}
+	if err := writeRunning(b.install, checkpoint); err != nil {
+		t.Fatal(err)
+	}
+	if err := appendLine(resultsPath(b.install), Result{Attempt: checkpoint.Attempt, Tree: checkpoint.Tree, Commit: checkpoint.Commit, Result: Red}); err != nil {
+		t.Fatal(err)
+	}
+	if err := WriteFix(b.install, &Fix{Attempt: checkpoint.Attempt, Goal: "repair", Units: []string{"unit"}, Job: "job", Commit: "candidate", State: "building"}); err != nil {
+		t.Fatal(err)
+	}
+	run := b.resume(t)
+	running, recorded, _, err := ReadRunning(b.install, b.seams)
+	if err != nil || !recorded || !running.Trunk || running.Person == nil || b.proofs != 1 || !run.Changed {
+		t.Fatalf("resume: %+v running=%+v proofs=%d error=%v", run, running, b.proofs, err)
+	}
+}

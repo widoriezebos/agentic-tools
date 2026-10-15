@@ -69,12 +69,9 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check requested"}}
 	}
 	if running.Trunk {
-		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check of main"}}
+		return decideScope(install, checkout, running, seams)
 	}
 	depth, reason := BatchProofDepth(install, checkout, running, seams)
-	if depth == "inherited" {
-		return scopeDecision{scopeRecord: scopeRecord{Scope: depth}}
-	}
 	if depth == "full" && seams.DepthScope == "" && !seams.Impact {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: depth, ScopeReason: reason}}
 	}
@@ -107,29 +104,24 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 	return decideScope(install, checkout, running, seams)
 }
 
-// BatchProofDepth chooses inheritance and cadence before the ordinary batch policy.
+// BatchProofDepth chooses cadence and affected checks before the batch policy.
 // An empty scope leaves the existing scoped-proof selector in charge.
 func BatchProofDepth(install, checkout string, running Running, seams ProveSeams) (string, string) {
 	if batch, err := ReadBatch(install); err == nil && batch != nil && batch.ID == running.BatchID && batch.ClockFull {
 		return "full", "main's clock is due; this batch needs a full check"
 	}
 	previous, found, _ := resultFor(seams.resultsPath(install), running.Tree)
-	from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree)
-	canInherit := (!found || previous.Result == Green) && !strings.HasPrefix(previous.ScopeReason, "full check pending:") && ok && from.fullCurrent(seams.now())
-	if !seams.Impact && canInherit && from.Scope == "full" && batchGreenReusable(install, running.BatchID, from, seams) {
-		return "inherited", ""
-	}
 	if reason, _ := overdueBatch(install, running.BatchID, seams); reason != "" {
 		return "full", reason
 	}
 	if found && strings.HasPrefix(previous.ScopeReason, "full check pending:") {
 		return "full", previous.ScopeReason
 	}
-	if !seams.Impact && canInherit {
-		return "inherited", ""
-	}
 	if seams.DepthScope != "" {
 		return seams.DepthScope, seams.DepthReason
+	}
+	if !seams.Impact && seams.BatchDepth != nil && decideScope(install, checkout, running, seams).Scope == "scoped" {
+		return "", ""
 	}
 	if running.BatchID != "" && seams.BatchDepth != nil {
 		return seams.BatchDepth(install, checkout, running)

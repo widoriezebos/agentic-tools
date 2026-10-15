@@ -167,10 +167,13 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	contractCache      map[string]string
 	TransitionBy       string
 	TransitionEvidence string
 	ResumeKeeper       *lane.AgentKeeper
 	ResolutionStore    *launch.Store
+	// NotifyRepairOverride explains a recorded person's override before replacing the checkpoint.
+	NotifyRepairOverride func(string) error
 	// Observed reports the start of a raw status observation.
 	Observed            func()
 	BeforeShadowPublish func()
@@ -481,7 +484,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 	}
 	var started Running
 	already := false
-	err = withLock(install, func() error {
+	err = withLock(install, func() (err error) {
 		currentCommit, currentTree, subjectErr := seams.subject(checkout)
 		if subjectErr != nil {
 			return subjectErr
@@ -494,8 +497,18 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if err != nil {
 			return err
 		}
+		var repair *RepairPending
+		if seams.Trunk {
+			repair, err = candidateRepairPending(install, running, recorded)
+			if err != nil {
+				return err
+			}
+			if repair != nil && seams.Person == nil {
+				return repair
+			}
+		}
 		if recorded && alive {
-			if running.Gate == seams.Gate && running.Trunk == seams.Trunk && running.Impact == seams.Impact && (!seams.Fresh || running.Fresh) && (running.Tree == tree || !seams.Gate && !seams.Trunk && ledgerOnlyBetween(seams.git, checkout, running.Tree, tree)) {
+			if running.Gate == seams.Gate && running.Trunk == seams.Trunk && running.Impact == seams.Impact && (!seams.Fresh || running.Fresh) && (running.Tree == tree || !seams.Gate && !seams.Trunk && ledgerOnlyBetween(seams.git, install, checkout, running.Tree, tree)) {
 				started, already = running, true
 				return nil
 			}
@@ -577,17 +590,50 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			return err
 		}
 		started.setAdmissionState("pending")
+		fixEffect, checkpointEffect, launchEffect := "fix not closed", "checkpoint retained", "launch not attempted"
+		if repair != nil {
+			impact := fmt.Sprintf("the candidate's repair checkpoint of tree %s (fix %s) is replaced by this check at %s's request", Short(repair.Tree), repair.Fix, seams.Person.Person)
+			if repair.Tree == "" {
+				impact = fmt.Sprintf("this check runs beside the pending fix of %s; the fix stays open", repair.Fix)
+				if repair.Closes {
+					impact = fmt.Sprintf("the pending fix of %s is closed by this check at %s's request", repair.Fix, seams.Person.Person)
+				} else if !repair.MergeTip {
+					impact = fmt.Sprintf("this check supersedes the pending repair of %s; its record closes at the next lifecycle refresh", repair.Fix)
+				}
+			}
+			entry := Intervention{At: started.Since, Row: "repair-override", Subject: started.Attempt, What: impact, Person: seams.Person, Outcome: "requested; " + strings.Join([]string{fixEffect, checkpointEffect, launchEffect}, ", ")}
+			if err := appendLine(interventionsPath(install), entry, seams); err != nil {
+				return err
+			}
+			defer func() {
+				entry.Outcome = strings.Join([]string{fixEffect, checkpointEffect, launchEffect}, ", ")
+				err = errors.Join(err, appendLine(interventionsPath(install), entry, seams))
+			}()
+			if seams.NotifyRepairOverride != nil {
+				if err := seams.NotifyRepairOverride(impact); err != nil {
+					return err
+				}
+			}
+		}
 		if err := advanceFix(install, checkout, started, seams); err != nil {
 			return err
 		}
+		if repair != nil && repair.Closes {
+			fixEffect = "fix closed"
+		}
 		if err := recordBatchProofAttemptLocked(install, started, seams); err != nil {
 			return err
+		}
+		if repair != nil && repair.Tree != "" {
+			checkpointEffect = "checkpoint replaced"
 		}
 		if err := writeRunning(install, started, seams); err != nil {
 			return err
 		}
 		pid, err := seams.Launch(argv, checkout, log)
+		launchEffect = "launch succeeded"
 		if err != nil {
+			launchEffect = "launch failed: " + err.Error()
 			started.Launch.Error = err.Error()
 			started.setAdmissionState("failed")
 			if writeErr := writeRunning(install, started, seams); writeErr != nil {
@@ -598,6 +644,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		process := processRef(pid)
 		if pid <= 0 || process == "" {
 			started.Launch.Error = "the check process has no readable identity"
+			launchEffect = "launch failed: " + started.Launch.Error
 			started.setAdmissionState("failed")
 			if err := writeRunning(install, started, seams); err != nil {
 				return err
@@ -627,19 +674,13 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 	return started, already, err
 }
 
-// Settled is HEAD's tree already proven green: the green recorded for that
-// exact tree, or the green it inherits from a tree that differs from it only
-// in goal ledger files, recorded here as Run would record it. Neither needs a
-// proof in the background, whose instant result would end inside the
-// caller's own turn and leave nobody to push it. A tree whose own last
-// result is red, or a running proof, settles nothing: Start reports or
-// starts the proof. Inherited and scoped greens require a full proof no
-// more than an hour old.
+// Settled reuses only an accepted result for the exact current tree.
+// Changed records return through admission so their affected checks run.
 func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 	if err := proofFixReady(install, seams); err != nil {
 		return Result{}, false, err
 	}
-	if seams.Trunk || seams.Fresh {
+	if seams.Fresh || seams.Trunk && seams.Person == nil {
 		return Result{}, false, nil
 	}
 	commit, tree, err := seams.subject(checkout)
@@ -652,6 +693,10 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		_, recorded, alive, err := checkState(install, checkout, "", seams)
 		if err != nil {
 			return err
+		}
+		if seams.Trunk {
+			settled, found = applicableMainProof(install, commit, tree, seams, false)
+			return nil
 		}
 		if result, ok, err := seams.checkBound(install, tree); err != nil || ok {
 			batch, readErr := ReadBatch(install)
@@ -674,38 +719,7 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 		if recorded && alive || seams.Gate || seams.Impact {
 			return nil
 		}
-		from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, tree)
-		if !ok || !from.fullCurrent(seams.now()) {
-			return nil
-		}
-		settled = Result{Tree: tree, Commit: commit, Result: Green, At: seams.now().Format(time.RFC3339), Attempt: seams.newID(),
-			Reason: inheritedReason(from)}
-		batch, err := checkBatchLocked(install, checkout, commit, "", false, true, seams)
-		if err != nil {
-			return err
-		}
-		if batch != nil {
-			settled.BatchID, settled.BatchMembers, settled.BatchBase = batch.ID, batch.Members, batch.Base
-			if !batchGreenReusable(install, batch.ID, from, seams) {
-				return nil
-			}
-		}
-		settled, err = inheritScope(install, settled, from)
-		if err != nil {
-			return err
-		}
-		settled.Goals, err = goalsInCommit(install, checkout, commit, seams.git)
-		if err != nil {
-			return err
-		}
-		if err := advanceFix(install, checkout, Running{Attempt: settled.Attempt, Commit: settled.Commit, BatchID: settled.BatchID, BatchMembers: settled.BatchMembers}, seams); err != nil {
-			return err
-		}
-		found = true
-		if err := appendLine(resultsPath(install), settled, seams); err != nil {
-			return err
-		}
-		return sealBatchLocked(install, settled.BatchID, seams)
+		return nil
 	})
 	return settled, found, err
 }
@@ -948,6 +962,9 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	}
 	result = Result{Fresh: running.Fresh, Trunk: running.Trunk, Tree: running.Tree, Commit: running.Commit, Result: Green, Log: running.Log, At: seams.now().Format(time.RFC3339), Attempt: running.Attempt}
 	result.BatchID, result.BatchMembers, result.BatchBase = running.BatchID, running.BatchMembers, running.BatchBase
+	if batch, err := ReadBatch(install); err == nil && batch != nil && batch.ID == running.BatchID {
+		result.FoldedCommits = batch.FoldedCommits
+	}
 	load := seams.Load
 	if load == nil {
 		load = hostload.Read
@@ -960,34 +977,13 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	}
 	decision := proofScope(install, checkout, running, seams)
 	observed := &proofOutput{output: io.Discard}
-	inherited := false
-	from, ok := Result{}, false
-	if !seams.Gate && !running.Trunk && !seams.Impact {
-		from, ok = ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree)
+	if running.Admission != nil && (running.Admission.Scope != decision.Scope || running.Admission.Base != decision.Base || running.Admission.BaseSHA != decision.BaseCommit || !slices.Equal(running.Admission.Groups, decision.groupIDs())) {
+		return result, fmt.Errorf("the admitted check scope changed; request a fresh check")
 	}
-	if !running.Fresh && !seams.Gate && !running.Trunk && !seams.Impact && previous.Result == "" && ok && from.fullCurrent(seams.now()) && decision.Scope == "inherited" {
-		result.Reason = inheritedReason(from)
-		result, err = inheritScope(install, result, from)
-		if err != nil {
-			return result, err
-		}
-		inherited = true
-	} else {
-		if seams.Gate {
-			decision = scopeDecision{scopeRecord: scopeRecord{Scope: "gate"}}
-		} else if running.Trunk {
-			decision = scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check of main"}}
-		} else {
-			decision = proofScope(install, checkout, running, seams)
-		}
-		if running.Admission != nil && (running.Admission.Scope != decision.Scope || running.Admission.Base != decision.Base || running.Admission.BaseSHA != decision.BaseCommit || !slices.Equal(running.Admission.Groups, decision.groupIDs())) {
-			return result, fmt.Errorf("the admitted check scope changed; request a fresh check")
-		}
-		seams.checkInstall, seams.checkAttempt = install, running.Attempt
-		result = proveInWorktree(seams, install, checkout, command, running, &decision, output, observed, result, previous)
-		result = timedResult(result, running.Since, seams.now())
-		result = decision.describe(result, observed)
-	}
+	seams.checkInstall, seams.checkAttempt = install, running.Attempt
+	result = proveInWorktree(seams, install, checkout, command, running, &decision, output, observed, result, previous)
+	result = timedResult(result, running.Since, seams.now())
+	result = decision.describe(result, observed)
 	if seams.Gate {
 		result.Requested, result.Attributed = running.Commit, result.Commit
 	}
@@ -1025,7 +1021,7 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 				}
 			}
 		}
-		if !inherited && !seams.Gate {
+		if !seams.Gate {
 			if err := decision.writeRecord(install, result, observed); err != nil {
 				return err
 			}
@@ -1035,18 +1031,6 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 		}
 		if err := appendLine(seams.resultsPath(install), result, seams); err != nil {
 			return err
-		}
-		if !seams.Gate && !running.Trunk && !seams.Impact && result.Result == Green {
-			commit, tree, err := head(seams.git, checkout)
-			if err == nil && tree != result.Tree && ledgerOnlyBetween(seams.git, checkout, result.Tree, tree) {
-				carried := result
-				carried.CountedFull = false
-				carried.Commit, carried.Tree, carried.Reason = commit, tree, inheritedReason(result)
-				carried.Base, carried.Scope, carried.ScopeReason = result.Tree, "scoped", carried.Reason
-				if err := appendLine(seams.resultsPath(install), carried, seams); err != nil {
-					return err
-				}
-			}
 		}
 		if current, recorded, _, _ := ReadRunning(install, seams); recorded && current.Attempt == running.Attempt {
 			if result.Result == Red {
@@ -1067,57 +1051,12 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 }
 
 // ledgerOnlyBetween compares the proof's tree with a candidate tree.
-func ledgerOnlyBetween(git func(string, ...string) (string, error), checkout, from, to string) bool {
+func ledgerOnlyBetween(git func(string, ...string) (string, error), install, checkout, from, to string) bool {
 	changed, err := git(checkout, "diff", "--name-only", "--no-renames", from, to)
 	if err != nil {
 		return false
 	}
-	for _, path := range strings.Split(strings.TrimSpace(changed), "\n") {
-		if path != "" && !ledgerPath(path) {
-			return false
-		}
-	}
-	return true
-}
-
-// ledgerOnlySinceGreen names a recent green tree from which tree differs
-// only in goal ledger files.
-func ledgerOnlySinceGreen(git func(string, ...string) (string, error), install, checkout, tree string) (Result, bool) {
-	results, err := Results(install)
-	if err != nil {
-		return Result{}, false
-	}
-	checked := 0
-	for index := len(results) - 1; index >= 0 && checked < 10; index-- {
-		green := results[index]
-		if green.Result != Green || green.Tree == tree {
-			continue
-		}
-		checked++
-		changed, err := git(checkout, "diff", "--name-only", "--no-renames", green.Tree, tree)
-		if err != nil || changed == "" {
-			continue
-		}
-		ledgerOnly := true
-		for _, path := range strings.Split(changed, "\n") {
-			if !ledgerPath(path) {
-				ledgerOnly = false
-				break
-			}
-		}
-		if ledgerOnly {
-			return green, true
-		}
-	}
-	return Result{}, false
-}
-
-func inheritedReason(from Result) string {
-	reason := "inherits green from tree " + Short(from.Tree) + ": only goal ledger files changed since"
-	if from.Reason != "" {
-		reason += "; " + from.Reason
-	}
-	return reason
+	return strings.TrimSpace(changed) == "" || recordsOnlyPaths(install, checkout, strings.Split(strings.TrimSpace(changed), "\n"))
 }
 
 // Results are every recorded result, oldest first.

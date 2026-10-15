@@ -205,9 +205,19 @@ func TestLandingStopQuestionClosesOnReturnOrHandInAndNotAnAnswer(t *testing.T) {
 			if code, out := b.run(t, b.root, "return", "b", "--cause", "own"); code != 1 || !strings.Contains(out, "the return needs a person") {
 				t.Fatalf("return request: %d %s", code, out)
 			}
+			// Main already has applicable proof; this observer tests the candidate's stop.
+			seedApplicableMainProof(t, b.install, "main", "main-tree", laneTestNow)
+			trunkLaunches := 0
+			seams := b.owners.landing.plainProve
+			seams.Launch = func([]string, string, string) (int64, error) { trunkLaunches++; return int64(os.Getpid()), nil }
+			t.Cleanup(func() {
+				if trunkLaunches != 0 {
+					t.Errorf("stop observation launched %d trunk checks", trunkLaunches)
+				}
+			})
 			// The observer synchronizes requests from fresh lane inputs (lane-reads-its-policies.md:140).
 			agent := newTestLandingAgent(func(agent *landingAgent) {
-				agent.proofEffects = b.owners.landing.plainProve
+				agent.proofEffects = seams
 				agent.now = func() time.Time { return laneTestNow }
 				agent.machine = func(string) (string, error) { return "lane-machine", nil }
 			})

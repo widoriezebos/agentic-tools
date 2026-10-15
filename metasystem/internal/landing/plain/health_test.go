@@ -469,6 +469,7 @@ func TestLandingHealthProofScopeAndAttemptSelection(t *testing.T) {
 		{"full", "full", false, false},
 		{"impact", "impact", true, false},
 		{"admitted impact", "impact", false, true},
+		{"admitted changed main", "scoped", false, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -492,7 +493,7 @@ func TestLandingHealthProofScopeAndAttemptSelection(t *testing.T) {
 				records = append(records, Result{Attempt: fmt.Sprintf("other-%d", i), Result: Green, Scope: other, Minutes: &short})
 			}
 			b.lines("results.jsonl", records...)
-			running := Running{Attempt: "current", Impact: tc.impact, Since: bedNow.Add(-50 * time.Minute).Format(time.RFC3339), Pid: 42}
+			running := Running{Attempt: "current", Trunk: tc.scope == "scoped", Impact: tc.impact, Since: bedNow.Add(-50 * time.Minute).Format(time.RFC3339), Pid: 42}
 			if tc.admitted {
 				running.Admission = &ExecutionAdmission{Scope: tc.scope}
 			}

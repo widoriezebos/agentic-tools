@@ -48,6 +48,7 @@ func PolicyDecision(value PolicyValue, readErr error) error {
 // Batch pins a selection, independently of the queue's authoritative outcomes.
 // Its original base and admitted members survive a rebuild on newer main.
 type Batch struct {
+	FoldedCommits []string       `json:"folded_commits,omitempty"`
 	Open          bool           `json:"open"`
 	SealedAt      string         `json:"sealed_at,omitempty"`
 	Actions       []BatchAction  `json:"actions,omitempty"`

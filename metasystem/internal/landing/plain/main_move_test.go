@@ -29,6 +29,13 @@ func TestLandingMainMoveClassificationStopsAtCodeAndPreservesErrors(t *testing.T
 	for _, first := range []string{"code", "error", "records"} {
 		t.Run(first, func(t *testing.T) {
 			t.Parallel()
+			checkout := t.TempDir()
+			if err := os.MkdirAll(filepath.Join(checkout, "metasystem"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(checkout, "metasystem/metasystem.conf"), []byte("metasystem.template=true\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
 			scans := 0
 			broken := errors.New("cannot read commit paths")
 			seams := ProveSeams{Git: func(_ string, args ...string) (string, error) {
@@ -54,7 +61,7 @@ func TestLandingMainMoveClassificationStopsAtCodeAndPreservesErrors(t *testing.T
 					return "", nil
 				}
 			}}
-			move, err := mainMove("fixture", "batch", "main", seams)
+			move, err := mainMove(filepath.Join(checkout, "metasystem"), checkout, "batch", "main", seams)
 			if first == "code" {
 				if err != nil || move.Kind != "code" || move.Count != 2 || scans != 1 {
 					t.Fatalf("code classification scanned further: %+v scans=%d error=%v", move, scans, err)
@@ -76,7 +83,7 @@ func TestLandingMainMoveGitAdapterRewrittenMainRefuses(t *testing.T) {
 	batch := b.merge("goal-a")
 	tree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
 	main := b.git(b.checkout, "commit-tree", tree, "-m", "unrelated main history")
-	move, err := mainMove(b.checkout, batch, main, ProveSeams{})
+	move, err := mainMove(b.install, b.checkout, batch, main, ProveSeams{})
 	var refusal *Refusal
 	if !errors.As(err, &refusal) || refusal.Code != CodeNotFastForward || !strings.Contains(refusal.Next, "rebuild") || move.Kind != "none" || b.git(b.checkout, "rev-parse", "HEAD") != batch {
 		t.Fatalf("rewritten main: %+v error=%v", move, err)
@@ -122,7 +129,16 @@ func TestLandingMainMoveGitAdapterFoldPush(t *testing.T) {
 	}
 	b.git(seed, "push", "--quiet", "origin", "main")
 	refused := errors.New("design needs a decision")
-	out, err := PushChecked(b.install, b.checkout, bedNow, func(_, candidate string) error {
+	out, err := PushChecked(b.install, b.checkout, bedNow, nil)
+	var unproven *Refusal
+	if !errors.As(err, &unproven) || unproven.Code != CodeUnproven || out.Changed {
+		t.Fatalf("unchecked fold: %+v %v", out, err)
+	}
+	checked, err := Run(b.install, b.checkout, "fixture-proof", "", io.Discard, ProveSeams{Now: func() time.Time { return bedNow }, Command: func(cmd *exec.Cmd) error { fmt.Fprintln(cmd.Stdout, "LANDING-CHECKED\t0"); return nil }})
+	if err != nil || checked.Result != Green {
+		t.Fatalf("folded checks: %+v %v", checked, err)
+	}
+	out, err = PushChecked(b.install, b.checkout, bedNow, func(_, candidate string) error {
 		if candidate == proven {
 			t.Fatal("publication checked the unfolded candidate")
 		}
@@ -144,14 +160,14 @@ func TestLandingMainMoveGitAdapterFoldPush(t *testing.T) {
 		t.Fatalf("fold parents=%v remote=%s", parents, b.originMain())
 	}
 	inherited, ok, err := ResultFor(b.install, out.Tree)
-	if err != nil || !ok || !strings.Contains(inherited.Reason, result.Reason) || inherited.FullAt != result.FullAt || inherited.CountedFull {
+	if err != nil || !ok || inherited.Attempt != checked.Attempt || inherited.FullAt != checked.FullAt || !inherited.CountedFull {
 		t.Fatalf("lost proof provenance: %+v %v", inherited, err)
 	}
 	push, ok, err := LastPush(b.install)
 	if err != nil || !ok || !reflect.DeepEqual(push.FoldedCommits, folded) {
 		t.Fatalf("folded push record: %+v %v", push, err)
 	}
-	if !ledgerOnlyBetween(Git, b.checkout, result.Tree, out.Tree) {
+	if !ledgerOnlyBetween(Git, b.install, b.checkout, result.Tree, out.Tree) {
 		t.Fatal("fold changed proven code")
 	}
 }
@@ -257,7 +273,7 @@ func TestLandingMainMoveGitAdapterClassification(t *testing.T) {
 			if err := writeBatch(b.install, batch); err != nil {
 				t.Fatal(err)
 			}
-			move, err := mainMove(b.checkout, commit, b.originMain(), ProveSeams{})
+			move, err := mainMove(b.install, b.checkout, commit, b.originMain(), ProveSeams{})
 			if err != nil || move.Kind != "none" || move.Count != 0 {
 				t.Fatalf("unchanged main: %+v %v", move, err)
 			}
@@ -276,12 +292,12 @@ func TestLandingMainMoveGitAdapterClassification(t *testing.T) {
 				b.git(seed, "revert", "--no-edit", "HEAD")
 				count = 2
 			}
-			if path == "rebuilt code" || path == "metasystem/plans/goals/backlog.md" {
+			if path == "rebuilt code" || path == "metasystem/plans/goals/backlog.md" || path == "metasystem/records/reads/read.json" {
 				want = "records-only"
 			}
 			b.git(seed, "push", "--quiet", "origin", "main")
 			b.git(b.checkout, "fetch", "--quiet", "origin")
-			move, err = mainMove(b.checkout, commit, b.originMain(), ProveSeams{})
+			move, err = mainMove(b.install, b.checkout, commit, b.originMain(), ProveSeams{})
 			if err != nil || move.Kind != want || move.Count != count {
 				t.Fatalf("classification: %+v %v want %s/%d", move, err, want, count)
 			}
@@ -399,8 +415,19 @@ func TestLandingMainMoveGitAdapterRunningProof(t *testing.T) {
 		t.Fatalf("proof after main advance: %+v %v", result, err)
 	}
 	out, err := PushChecked(b.install, b.checkout, bedNow, nil)
+	var refusal *Refusal
+	if !errors.As(err, &refusal) || refusal.Code != CodeUnproven || out.Changed {
+		t.Fatalf("unchecked moved inputs: %+v %v", out, err)
+	}
+	seams.Command = func(cmd *exec.Cmd) error { fmt.Fprintln(cmd.Stdout, "LANDING-CHECKED\t0"); return nil }
+	seams.NewID = func() string { return "folded-proof" }
+	checked, err := Run(b.install, b.checkout, "fixture", "", io.Discard, seams)
+	if err != nil || checked.Result != Green {
+		t.Fatalf("folded proof: %+v %v", checked, err)
+	}
+	out, err = PushChecked(b.install, b.checkout, bedNow, nil)
 	if err != nil || !out.Changed {
-		t.Fatalf("push running proof's green: %+v %v", out, err)
+		t.Fatalf("push checked fold: %+v %v", out, err)
 	}
 }
 
@@ -422,7 +449,7 @@ func TestLandingMainMoveGitAdapterSelectedParentsAreNotMainBase(t *testing.T) {
 	b.git(seed, "merge", "--no-ff", "--no-edit", "origin/goal/goal-b")
 	b.git(seed, "push", "--quiet", "origin", "main")
 	b.git(b.checkout, "fetch", "--quiet", "origin")
-	move, err := mainMove(b.checkout, commit, b.originMain(), ProveSeams{}, members...)
+	move, err := mainMove(b.install, b.checkout, commit, b.originMain(), ProveSeams{}, members...)
 	if err != nil || move.Kind != "code" || move.Count != 2 {
 		t.Fatalf("selected goal became main base: base=%s move=%+v %v", base, move, err)
 	}
@@ -460,7 +487,7 @@ func TestLandingMainMoveGitAdapterRecordMergeOnRebuiltMain(t *testing.T) {
 			b.git(seed, "commit", "--no-edit")
 			b.git(seed, "push", "--quiet", "origin", "main")
 			b.git(b.checkout, "fetch", "--quiet", "origin")
-			move, err := mainMove(b.checkout, commit, b.originMain(), ProveSeams{})
+			move, err := mainMove(b.install, b.checkout, commit, b.originMain(), ProveSeams{})
 			if err != nil || move.Kind != want || move.Count != 2 {
 				t.Fatalf("record merge: %+v %v want %s", move, err, want)
 			}

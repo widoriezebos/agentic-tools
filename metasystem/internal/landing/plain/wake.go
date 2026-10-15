@@ -121,7 +121,7 @@ func fullProofClock(install string) (time.Time, time.Duration, error) {
 	}
 	last := time.Time{}
 	for _, proof := range results {
-		if proof.Trunk && (proof.Result == Green && !proof.didNotRun() || proof.CountedFull) {
+		if proof.Trunk && proof.Scope == "full" && !strings.HasPrefix(proof.Reason, "inherits green from tree ") && (proof.Result == Green && !proof.didNotRun() || proof.Result == Red && proof.CountedFull) {
 			if at, err := time.Parse(time.RFC3339, proof.At); err == nil && at.After(last) {
 				last = at
 			}
@@ -140,39 +140,46 @@ func fullProofClock(install string) (time.Time, time.Duration, error) {
 			}
 		}
 		full := proof.FullTree == proof.Tree && proof.FullAt == proof.At
-		inheritedFull := strings.HasPrefix(proof.Reason, "inherits green from tree ") && proof.FullTree != "" && proof.fullCurrent(pushedAt)
-		if proof.Result == Green && proof.Scope == "full" && (full || inheritedFull) && pushedAt.After(last) {
+		if proof.Result == Green && !proof.didNotRun() && proof.Scope == "full" && full && pushedAt.After(last) {
 			last = pushedAt
 		}
 	}
 	return last, every, nil
 }
 
-// scopedProofDue reads only the newest push. Any later full green pays its
-// debt, including a batch proof, because every lane tree contains main.
+// scopedProofDue keeps the original execution deadline for main or the newest push.
+// A later executed full green pays that debt, including a batch proof.
 func scopedProofDue(install string, now time.Time) (bool, error) {
-	push, ok, err := LastPush(install)
-	if err != nil || !ok {
+	results, err := Results(install)
+	if err != nil {
 		return false, err
 	}
-	result, ok, err := ResultFor(install, push.Tree)
-	if err != nil || !ok || result.Result != Green || result.Scope != "scoped" {
+	push, pushed, err := LastPush(install)
+	if err != nil {
 		return false, err
+	}
+	var result Result
+	for _, proof := range results {
+		if !proof.didNotRun() && (proof.Trunk && (proof.Scope == "scoped" || strings.HasPrefix(proof.Reason, "inherits green from tree ")) || pushed && proof.Tree == push.Tree) {
+			result = proof
+		}
+	}
+	if result.Scope != "scoped" && !strings.HasPrefix(result.Reason, "inherits green from tree ") {
+		return false, nil
 	}
 	fullAt, err := time.Parse(time.RFC3339, result.FullAt)
 	if err != nil || now.Sub(fullAt) <= time.Hour {
 		return false, nil
 	}
-	pushedAt, err := time.Parse(time.RFC3339, push.At)
+	pushedAt, err := time.Parse(time.RFC3339, result.At)
 	if err != nil {
 		return false, nil
 	}
-	results, err := Results(install)
-	if err != nil {
-		return false, err
+	if pushed && push.Tree == result.Tree {
+		pushedAt, _ = time.Parse(time.RFC3339, push.At)
 	}
 	for _, proof := range results {
-		if proof.Scope == "full" && proof.Result == Green {
+		if proof.Scope == "full" && proof.Result == Green && !proof.didNotRun() && !strings.HasPrefix(proof.Reason, "inherits green from tree ") {
 			if at, err := time.Parse(time.RFC3339, proof.At); err == nil && at.After(pushedAt) {
 				return false, nil
 			}

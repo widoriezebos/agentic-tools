@@ -1,7 +1,9 @@
 package plain
 
 import (
+	"errors"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
@@ -76,37 +78,69 @@ func codeMoved(install, checkout, from, to string, seams ProveSeams) (bool, erro
 // RecoverMovedMain uses the same detached trunk admission as landing prove.
 // It runs before question synchronization, so a stale exception cannot gate it.
 func RecoverMovedMain(install, checkout string, seams ProveSeams) error {
-	waiting, err := Waiting(install)
-	if err != nil || len(waiting) == 0 {
-		return err
-	}
-	main, err := checkoutGit(checkout, seams).main()
-	if err != nil {
-		return err
-	}
-	incidents, err := seams.incidents(install, checkout, main)
-	if err != nil || len(openIncidents(incidents)) == 0 {
-		return err
-	}
 	if err := seams.fetchMain(checkout); err != nil {
 		return err
 	}
-	main, err = checkoutGit(checkout, seams).main()
+	seams.Trunk, seams.Gate, seams.Impact = true, false, false
+	main, tree, err := seams.subject(checkout)
 	if err != nil {
 		return err
 	}
-	incidents, err = seams.incidents(install, checkout, main)
-	if err != nil {
-		return err
-	}
-	needed, err := movedIncidentMain(install, checkout, main, incidents, seams)
-	if err != nil || !needed {
-		return err
+	if _, ok := applicableMainProof(install, main, tree, seams, true); ok {
+		return nil
 	}
 	if seams.TimerHeld != nil && seams.TimerHeld() {
 		return nil
 	}
-	seams.Trunk, seams.Gate, seams.Impact = true, false, false
 	_, _, err = Start(install, checkout, seams)
+	var busy *Busy
+	var repair *RepairPending
+	if errors.As(err, &busy) || errors.As(err, &repair) {
+		return nil
+	}
 	return err
+}
+
+// applicableMainProof uses only recorded execution facts; cadence detects environment changes.
+func applicableMainProof(install, commit, tree string, seams ProveSeams, red bool) (Result, bool) {
+	results, damaged, err := countedLines[Result](resultsPath(install))
+	if err != nil || damaged != 0 || commit == "" || tree == "" {
+		return Result{}, false
+	}
+	environment := ""
+	for i := len(results) - 1; i >= 0; i-- {
+		r := results[i]
+		if r.didNotRun() || r.Result != Green && r.Result != Red {
+			continue
+		}
+		if environment == "" {
+			environment = r.Environment
+			if environment == "" {
+				break
+			}
+		}
+		if r.Tree != tree {
+			continue
+		}
+		if r.ClassificationPending || r.Environment == "" || r.Environment != environment {
+			break
+		}
+		if r.Result == Red {
+			return r, red && r.Trunk && r.Commit == commit
+		}
+		fullAt, err := time.Parse(time.RFC3339, r.FullAt)
+		currentFull := err == nil && seams.now().Sub(fullAt) >= 0 && seams.now().Sub(fullAt) < time.Hour
+		inherited := r.Scope == "scoped" || r.Scope == "inherited" || strings.HasPrefix(r.Reason, "inherits green from tree ")
+		if inherited && !currentFull {
+			continue
+		}
+		coverage := r.Scope == "full" && r.FullTree == r.Tree || inherited && currentFull
+		if _, err := time.Parse(time.RFC3339, r.At); err != nil {
+			continue
+		}
+		if r.Scope != "impact" && r.reusableGreen(seams.now()) && (r.Trunk && r.Commit == commit || coverage) {
+			return r, true
+		}
+	}
+	return Result{}, false
 }

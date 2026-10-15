@@ -379,3 +379,63 @@ func (fix *Fix) UpdateReadMinutes(now time.Time) {
 		fix.ReadMinutes = max(fix.ReadMinutes, now.Sub(started).Minutes())
 	}
 }
+
+func candidateRepairPending(install string, running Running, recorded bool) (*RepairPending, error) {
+	fix, err := ReadFix(install)
+	if err != nil {
+		return nil, err
+	}
+	repair := fix != nil
+	if recorded && running.Checkpoint && !running.Trunk {
+		results, err := readLines[Result](ProveSeams{Gate: running.Gate}.resultsPath(install))
+		if err != nil {
+			return nil, err
+		}
+		for _, result := range results {
+			if result.Attempt == running.Attempt {
+				repair = fix != nil || result.Result == Red && (result.Cause == nil || result.Cause.Kind != "main" && result.Cause.Kind != "flake" && result.Cause.Kind != "environment")
+			}
+		}
+	}
+	if !repair {
+		return nil, nil
+	}
+	pending := &RepairPending{Tree: running.Tree, Fix: running.Attempt}
+	if fix != nil {
+		pending.Fix = fix.Goal
+	}
+	if !recorded || !running.Checkpoint {
+		pending.Tree = ""
+	}
+	previous, present, _, err := ReadRunning(install, ProveSeams{})
+	if err != nil {
+		return nil, err
+	}
+	if !present {
+		result, _, err := LastResult(install)
+		if err != nil {
+			return nil, err
+		}
+		if result.Result == Green {
+			previous.Attempt = result.Attempt
+		}
+	}
+	pending.Closes = fix != nil && fix.Attempt == previous.Attempt
+	if fix != nil {
+		pending.MergeTip = fix.Tip != ""
+	}
+	return pending, nil
+}
+
+// RepairPending protects a candidate checkpoint from automatic main checks.
+type RepairPending struct {
+	Tree, Fix        string
+	Closes, MergeTip bool
+}
+
+func (r *RepairPending) Error() string {
+	if r.Tree == "" {
+		return "main's check waits for the pending fix of " + r.Fix
+	}
+	return "main's check waits for the candidate's repair of tree " + Short(r.Tree) + " to finish"
+}

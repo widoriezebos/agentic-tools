@@ -29,18 +29,20 @@ import (
 // reads are isolated from Git; the adapter tests own actual merge containment.
 type selectionBed struct {
 	*policyBed
-	home        string
-	record      lane.Record
-	keeper      lane.AgentKeeper
-	starts      int
-	calls       []string
-	pid         int64
-	callingRoot string
-	proof       humanauthority.Proof
-	proofErr    error
-	policyErr   error
-	machineErr  error
-	ids         int
+	home                             string
+	record                           lane.Record
+	keeper                           lane.AgentKeeper
+	starts                           int
+	trunkLaunches, wantTrunkLaunches int
+	proofReads                       int
+	calls                            []string
+	pid                              int64
+	callingRoot                      string
+	proof                            humanauthority.Proof
+	proofErr                         error
+	policyErr                        error
+	machineErr                       error
+	ids                              int
 }
 
 func newSelectionBed(t *testing.T) *selectionBed {
@@ -52,14 +54,27 @@ func newSelectionBed(t *testing.T) *selectionBed {
 	var err error
 	b.record, _, err = lane.Read(b.home)
 	helmMust(t, err)
-	helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("landing.batch=person\nproof.trunk-every=1h\n"), 0600))
-	seedCurrentTrunkClock(t, b.lane, b.now)
+	helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("landing.batch=person\nproof.trunk-every=1h\nproof.full=fixture-proof\n"), 0600))
+	seedApplicableMainProof(t, b.lane, "main", "main", b.now)
+	t.Cleanup(func() {
+		if b.trunkLaunches != b.wantTrunkLaunches || b.proofReads != b.wantTrunkLaunches {
+			t.Errorf("observation trunk launches=%d reads=%d, want %d each", b.trunkLaunches, b.proofReads, b.wantTrunkLaunches)
+		}
+	})
 	b.owners.processes.question = channel.ReadQuestion
 	b.owners.policies.Registry = func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{Lane: b.lane}, b.policyErr }
 	falseState := replayFalseState(t)
 	seams := plain.ProveSeams{Now: func() time.Time { return b.now }, NewID: func() string { b.ids++; return fmt.Sprintf("batch-%d", b.ids) },
-		Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil },
+		Executable: func() (string, error) { return "fixture-engine", nil },
+		Launch:     func([]string, string, string) (int64, error) { b.trunkLaunches++; return int64(os.Getpid()), nil },
+		Alive:      func(r plain.Running) bool { return r.Pid == int64(os.Getpid()) },
+		Incidents:  func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil },
 		Git: func(_ string, args ...string) (string, error) {
+			// landingProofCommand reads the declaration at the observed main commit.
+			if slices.Equal(args, []string{"show", "main:metasystem.conf"}) {
+				b.proofReads++
+				return "proof.full=fixture-proof\n", nil
+			}
 			switch args[0] {
 			case "symbolic-ref":
 				return "main", nil
@@ -534,6 +549,7 @@ func TestLandingSelectionBarrenRemedyIsolatesStopsAndProofBudget(t *testing.T) {
 	proof := plain.Result{Attempt: "spent", Result: plain.Red, CountedFull: true, Goals: []plain.GoalSHA{{Goal: "a", SHA: "sha-a"}, {Goal: "b", SHA: "sha-b"}}, At: b.now.Format(time.RFC3339Nano)}
 	resultsPath := filepath.Join(plain.Dir(b.lane), "results.jsonl")
 	selectionLines(t, resultsPath, proof)
+	seedApplicableMainProof(t, b.lane, "main", "main", b.now)
 	before, _ := os.ReadFile(resultsPath)
 	if code, out := b.run(t, b.lane, "landing", "run"); code == 0 || b.starts != 0 {
 		t.Fatalf("generic machinery run lifted barren hold: %d %s", code, out)

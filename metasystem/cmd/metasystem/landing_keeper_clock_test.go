@@ -106,12 +106,19 @@ func TestLandingKeeperAgentTrunkAdmitsMainRedCheckpoint(t *testing.T) {
 	red, err := json.Marshal(plain.Result{Attempt: checkpoint.Attempt, BatchID: checkpoint.BatchID, Tree: checkpoint.Tree, Result: plain.Red, Cause: &plain.Cause{Kind: "main"}, At: b.now.Format(time.RFC3339)})
 	helmMust(t, err)
 	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.lane), "results.jsonl"), append(red, '\n'), 0600))
+	// Main has its own applicable result; this check exercises the agent's explicit request.
+	current, err := json.Marshal(plain.Result{Trunk: true, Commit: "main", Tree: "main", Scope: "full", Result: plain.Green, At: b.now.Format(time.RFC3339), FullAt: b.now.Format(time.RFC3339), FullTree: "main", Environment: "fixture"})
+	helmMust(t, err)
+	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.lane), "results.jsonl"), append(append(append(red, '\n'), current...), '\n'), 0600))
 	b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
 		return humanauthority.Proof{}, errors.New("agent caller")
 	}
 	seams := b.owners.landing.plainProve
 	git := seams.Git
 	seams.Git = func(dir string, args ...string) (string, error) {
+		if args[0] == "diff" || args[0] == "merge-base" {
+			return "", nil
+		}
 		if strings.Join(args, " ") == "show main:metasystem.conf" {
 			return "proof.full=fixture-proof\n", nil
 		}
@@ -139,7 +146,7 @@ func TestLandingKeeperAgentTrunkAdmitsMainRedCheckpoint(t *testing.T) {
 	}
 	run := b.keeper.Run()
 	running, recorded, _, err := plain.ReadRunning(b.lane, seams)
-	if err != nil || !recorded || !running.Trunk || running.Person != nil || launches != 1 || run.Outcome != lane.AgentStarted {
+	if err != nil || !recorded || !running.Trunk || running.Person != nil || running.Admission == nil || running.Admission.Scope != "full" || running.Admission.Reason != "the tree comparison names no changed paths" || launches != 1 || run.Outcome != lane.AgentStarted {
 		t.Fatalf("agent trunk proof: run=%+v proof=%+v launches=%d err=%v", run, running, launches, err)
 	}
 }

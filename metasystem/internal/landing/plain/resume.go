@@ -95,7 +95,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 			if err != nil {
 				return err
 			}
-			move, err := mainMove(record.Root, fix.Commit, main, s)
+			move, err := mainMove(record.Install, record.Root, fix.Commit, main, s)
 			if err != nil {
 				return err
 			}
@@ -174,7 +174,7 @@ func Resume(home string, person ActProvenance, now time.Time, s ProveSeams) (run
 		run.Changed = true
 	}
 	if batch != nil && batch.State != BatchClosed {
-		move, err := mainMove(record.Root, batch.Base, main, s, batch.Members...)
+		move, err := mainMove(record.Install, record.Root, batch.Base, main, s, batch.Members...)
 		if err != nil {
 			return run, err
 		}

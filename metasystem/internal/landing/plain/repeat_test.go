@@ -624,7 +624,7 @@ func TestRepeatInheritedGreenIncludesFlakeReason(t *testing.T) {
 			if err := withLock(b.install, func() error { return appendLine(resultsPath(b.install), source) }); err != nil {
 				t.Fatal(err)
 			}
-			b.seams.Git = stubGit{commit: "commit", tree: "tree", changed: map[[2]string]string{{"old", "tree"}: "metasystem/plans/goals/fix.md"}}.run
+			b.seams.Git = stubGit{commit: "commit", tree: "tree", installPrefix: "metasystem", changed: map[[2]string]string{{"old", "tree"}: "metasystem/plans/goals/fix.md"}}.run
 			var green Result
 			if entry == "run" {
 				green = b.run("exit 1")
@@ -632,12 +632,17 @@ func TestRepeatInheritedGreenIncludesFlakeReason(t *testing.T) {
 				var ok bool
 				var err error
 				green, ok, err = Settled(b.install, b.checkout, b.seams)
-				if err != nil || !ok {
-					t.Fatalf("settled: %v %v", ok, err)
+				if err != nil || ok {
+					t.Fatalf("changed inputs settled without execution: %v %v", ok, err)
 				}
+				green = b.run("exit 1")
 			}
-			if green.Result != Green || !strings.HasSuffix(green.Reason, "; "+source.Reason) {
-				t.Fatalf("inherited reason: %+v", green)
+			if green.Result != Red || !strings.Contains(green.Reason, "exited 1") {
+				t.Fatalf("changed inputs borrowed flake green: %+v", green)
+			}
+			retained, found, err := ResultFor(b.install, source.Tree)
+			if err != nil || !found || retained.Reason != source.Reason {
+				t.Fatalf("original flake evidence lost: %+v %v", retained, err)
 			}
 		})
 	}

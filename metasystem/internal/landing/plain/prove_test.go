@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -65,7 +66,7 @@ func (g stubGit) run(dir string, args ...string) (string, error) {
 		if g.onMain[args[2]] {
 			return "", nil
 		}
-		return "", errors.New("commit is not on main")
+		return "", exec.Command("/usr/bin/false").Run()
 	case len(args) == 2 && args[0] == "show":
 		return g.shows[args[1]], g.showErr
 	}
@@ -118,10 +119,7 @@ func TestARedProofRecordsWhyItIsRed(t *testing.T) {
 	}
 }
 
-// A tree that differs from a green tree only in goal ledger files inherits
-// that green, and says so (703ecb830): the red reason is set only where the
-// proof command ran and failed, so it never replaces this one, and the
-// command does not run.
+// Changed ledger inputs must pass their checks before they may be green.
 func TestAnInheritedGreenKeepsItsReason(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
@@ -132,7 +130,7 @@ func TestAnInheritedGreenKeepsItsReason(t *testing.T) {
 	ledgerOnly := stubGit{commit: "c2c2c2c2c2c2c2c2", tree: "b2b2b2b2b2b2b2b2b2",
 		changed: map[[2]string]string{{first.tree, "b2b2b2b2b2b2b2b2b2"}: "metasystem/plans/goals/goal-a.md"}}
 	result := proveStubbed(t, install, ledgerOnly, "exit 1")
-	if result.Result != Green || result.Reason != "inherits green from tree a1a1a1a1a1a1: only goal ledger files changed since" {
+	if result.Result != Red || result.Reason != "the proving command exited 1" {
 		t.Fatalf("the ledger-only tree: %+v", result)
 	}
 }

@@ -145,7 +145,7 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 		if selected != nil {
 			members = selected.Members
 		}
-		move, err = mainMove(checkout, head, old, seams, members...)
+		move, err = mainMove(install, checkout, head, old, seams, members...)
 		if err != nil {
 			return outcome, err
 		}
@@ -187,6 +187,9 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 			return outcome, err
 		}
 		outcome.Commit, outcome.Tree = head, tree
+		if refusal := provenGreen(install, tree); refusal != nil {
+			return outcome, refusal
+		}
 	}
 	if before != nil {
 		if err := before(old, head); err != nil {
@@ -251,6 +254,9 @@ func completePush(install, checkout string, batch *Batch, old, head, tree string
 	}
 	clockBatch := batch
 	if batch != nil {
+		if len(batch.FoldedCommits) != 0 {
+			pushed.FoldedCommits = append([]string{}, batch.FoldedCommits...)
+		}
 		pushed.BatchID = batch.ID
 		for _, member := range batch.Members {
 			landed, err := batchContains(checkout, head, member.SHA, seams)

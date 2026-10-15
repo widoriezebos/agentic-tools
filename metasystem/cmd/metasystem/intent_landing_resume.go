@@ -22,6 +22,7 @@ func landingResumeCommand() intentCommand {
 			return inv.render(*problem)
 		}
 		s := inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))
+		inv.notifyRepairOverride(&s)
 		s.CommandForCommit = func(commit string) (string, error) {
 			return landingProofCommand(admitted.installation, admitted.record.Root, commit, proveCommandKey, s.Git)
 		}

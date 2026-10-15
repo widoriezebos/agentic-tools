@@ -650,10 +650,7 @@ func TestANewHandInSupersedesTheOlderWaitingLine(t *testing.T) {
 	}
 }
 
-// Seats publish goal acts on main every few minutes; a lane that re-proved
-// each such tree never finished a proof before main moved again. A tree that
-// differs from a green tree only in goal ledger files inherits that green;
-// any other change runs the command.
+// Changed ledger inputs and code both require their checks before publication.
 func TestALedgerOnlyChangeInheritsGreenAndCodeStillRuns(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
@@ -669,10 +666,10 @@ func TestALedgerOnlyChangeInheritsGreenAndCodeStillRuns(t *testing.T) {
 	b.git(b.checkout, "commit", "--quiet", "-m", "goal edit goal-a")
 	ledgerTree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
 	result := b.prove(script)
-	if result.Result != Green || result.Tree != ledgerTree || !strings.Contains(result.Reason, "only goal ledger files changed") {
+	if result.Result != Green || result.Tree != ledgerTree || result.Reason != "" {
 		t.Fatalf("a ledger-only change did not inherit green: %+v", result)
 	}
-	if data, _ := os.ReadFile(ran); strings.Count(string(data), "ran") != 1 {
+	if data, _ := os.ReadFile(ran); strings.Count(string(data), "ran") != 2 {
 		t.Fatalf("the command ran for a ledger-only change: %q", data)
 	}
 	b.write(filepath.Join(b.checkout, "metasystem", "code.go"), "package code\n")
@@ -681,22 +678,18 @@ func TestALedgerOnlyChangeInheritsGreenAndCodeStillRuns(t *testing.T) {
 	if result := b.prove(script); result.Result != Green || result.Reason != "" {
 		t.Fatalf("a code change: %+v", result)
 	}
-	if data, _ := os.ReadFile(ran); strings.Count(string(data), "ran") != 2 {
+	if data, _ := os.ReadFile(ran); strings.Count(string(data), "ran") != 3 {
 		t.Fatalf("the command did not run for a code change: %q", data)
 	}
 	b.write(filepath.Join(b.checkout, "metasystem", "plans", "goals", "goal-a.md"), "another act\n")
 	b.git(b.checkout, "add", "-A")
 	b.git(b.checkout, "commit", "--quiet", "-m", "goal edit again")
-	if result := b.prove("exit 1\n"); result.Result != Green || result.Reason == "" {
+	if result := b.prove("exit 1\n"); result.Result != Red || result.Reason == "" {
 		t.Fatalf("the ledger-only change after a green code proof: %+v", result)
 	}
 }
 
-// A tree already proven green, or one that differs from a green tree only in
-// goal ledger files, is settled at once, with no proof in the background: a
-// background proof that ends inside the agent's own turn leaves nobody to
-// push. A code change, or a tree whose own last result is red, settles
-// nothing, so its proof runs.
+// An exact green settles immediately; changed inputs and a red tree require admission.
 func TestAKnownGreenSettlesWithoutABackgroundProof(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
@@ -715,11 +708,15 @@ func TestAKnownGreenSettlesWithoutABackgroundProof(t *testing.T) {
 	b.git(b.checkout, "commit", "--quiet", "-m", "goal edit goal-a")
 	ledgerTree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
 	settled, ok, err := Settled(b.install, b.checkout, seams)
-	if err != nil || !ok || settled.Tree != ledgerTree || settled.Result != Green || !strings.Contains(settled.Reason, "only goal ledger files changed") {
-		t.Fatalf("a ledger-only change: %+v %v %v", settled, ok, err)
+	if err != nil || ok {
+		t.Fatalf("changed ledger settled without execution: %+v %v %v", settled, ok, err)
 	}
-	if recorded, found, err := ResultFor(b.install, ledgerTree); err != nil || !found || recorded.Attempt != settled.Attempt {
-		t.Fatalf("the inherited green is recorded for push: %+v %v %v", recorded, found, err)
+	if recorded, found, err := ResultFor(b.install, ledgerTree); err != nil || found {
+		t.Fatalf("unchecked ledger got green: %+v %v %v", recorded, found, err)
+	}
+	checked := b.prove(b.greenScript)
+	if settled, ok, err := Settled(b.install, b.checkout, seams); err != nil || !ok || settled.Attempt != checked.Attempt {
+		t.Fatalf("checked ledger did not settle: %+v %v %v", settled, ok, err)
 	}
 	b.write(filepath.Join(b.checkout, "metasystem", "code.go"), "package code\n")
 	b.git(b.checkout, "add", "-A")

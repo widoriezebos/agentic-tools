@@ -56,7 +56,7 @@ func TestAScopedPushOwesAFullProofWithinTheHour(t *testing.T) {
 			}
 			scoped := Result{Tree: "pushed-tree", Scope: "scoped", Result: Green,
 				At: pushedAt.Add(-time.Second).Format(time.RFC3339), FullAt: bedNow.Add(-each.age).Format(time.RFC3339)}
-			results := []Result{{Trunk: true, Result: Green, At: pushedAt.Format(time.RFC3339)}, scoped}
+			results := []Result{{Trunk: true, Scope: "full", Result: Green, At: pushedAt.Format(time.RFC3339)}, scoped}
 			if each.proof != nil {
 				results = append(results, *each.proof)
 			}

@@ -24,11 +24,13 @@ import (
 
 type drainVerbBed struct {
 	*resolveVerbFixture
-	landed    map[string]bool
-	person    bool
-	launches  int
-	keeper    lane.AgentKeeper
-	incidents []goal.TrunkRedEntry
+	landed                           map[string]bool
+	person                           bool
+	launches                         int
+	trunkLaunches, wantTrunkLaunches int
+	proofReads                       int
+	keeper                           lane.AgentKeeper
+	incidents                        []goal.TrunkRedEntry
 }
 
 func newDrainVerbBed(t *testing.T) *drainVerbBed {
@@ -45,28 +47,42 @@ func newDrainVerbBed(t *testing.T) *drainVerbBed {
 	b.owners.landing.view = func(string) lane.View {
 		return lane.View{Root: &b.root, Owner: lane.OwnerView{State: lane.OwnerIdle}, Summary: "the landing lane is idle"}
 	}
+	seedApplicableMainProof(t, b.install, "main", "main", laneTestNow)
+	t.Cleanup(func() {
+		if b.trunkLaunches != b.wantTrunkLaunches || b.proofReads != b.wantTrunkLaunches {
+			t.Errorf("observation trunk launches=%d reads=%d, want %d each", b.trunkLaunches, b.proofReads, b.wantTrunkLaunches)
+		}
+	})
 	falseState := replayFalseState(t)
-	effects := plain.ProveSeams{Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return b.incidents, nil }, Now: func() time.Time { return laneTestNow }, Alive: func(r plain.Running) bool { return r.Pid == 42 }, Git: func(_ string, args ...string) (string, error) {
-		switch args[0] {
-		case "symbolic-ref":
-			return "main", nil
-		case "rev-parse":
-			return "main", nil
-		case "cat-file":
-			return "", nil
-		case "merge-base":
-			if b.landed[args[2]] {
+	effects := plain.ProveSeams{
+		Executable: func() (string, error) { return "fixture-engine", nil },
+		Launch:     func([]string, string, string) (int64, error) { b.trunkLaunches++; return int64(os.Getpid()), nil },
+		Incidents:  func(string, string, string) ([]goal.TrunkRedEntry, error) { return b.incidents, nil }, Now: func() time.Time { return laneTestNow }, Alive: func(r plain.Running) bool { return r.Pid == 42 || r.Pid == int64(os.Getpid()) }, Git: func(_ string, args ...string) (string, error) {
+			// landingProofCommand reads this bed's nested installation declaration.
+			if len(args) == 2 && args[0] == "show" && args[1] == "main:metasystem/metasystem.conf" {
+				b.proofReads++
+				return "proof.full=fixture-proof\n", nil
+			}
+			switch args[0] {
+			case "symbolic-ref":
+				return "main", nil
+			case "rev-parse":
+				return "main", nil
+			case "cat-file":
+				return "", nil
+			case "merge-base":
+				if b.landed[args[2]] {
+					return "", nil
+				}
+				return "", &exec.ExitError{ProcessState: falseState}
+			case "ls-tree":
+				return "", nil
+			case "rev-list", "fetch":
 				return "", nil
 			}
-			return "", &exec.ExitError{ProcessState: falseState}
-		case "ls-tree":
+			t.Fatalf("unexpected Git boundary %v", args)
 			return "", nil
-		case "rev-list", "fetch":
-			return "", nil
-		}
-		t.Fatalf("unexpected Git boundary %v", args)
-		return "", nil
-	}}
+		}}
 	b.owners.landing.plainProve = effects
 	manager := &launch.Manager{Store: launch.Store{Root: t.TempDir()}}
 	agent := newTestLandingAgent(func(agent *landingAgent) {

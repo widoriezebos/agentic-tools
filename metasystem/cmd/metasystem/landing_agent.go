@@ -455,7 +455,7 @@ func landingAgentStep(repo string) func() lane.AgentRun {
 		if err != nil {
 			return plain.StewardRun{}, err
 		}
-		proof := seams
+		proof := plain.WithContractCache(seams) // one fresh contract cache per tick: a request-scoped reuse, never a steward-lifetime one
 		proof.Pause = func() (lane.Pause, bool) { return lane.ReadPause(home) }
 		proof.FenceCheck = func() error {
 			if _, paused := lane.ReadPause(home); paused {

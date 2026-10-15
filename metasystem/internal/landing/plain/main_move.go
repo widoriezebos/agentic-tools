@@ -6,22 +6,6 @@ import (
 	"strings"
 )
 
-// Coordination paths are shared by proof inheritance and main-move classification.
-var ledgerPaths = []string{
-	"metasystem/plans/goals/", "metasystem/plans/goals.md", "metasystem/plans/goals-accepted.json",
-	"metasystem/records/goals/", "metasystem/records/counselor/",
-	"metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log",
-}
-
-func ledgerPath(path string) bool {
-	for _, ledger := range ledgerPaths {
-		if path == ledger || strings.HasSuffix(ledger, "/") && strings.HasPrefix(path, ledger) {
-			return true
-		}
-	}
-	return false
-}
-
 // MainMove describes fetched main relative to the main parent already in flight.
 type MainMove struct {
 	Kind    string   `json:"kind"`
@@ -29,7 +13,7 @@ type MainMove struct {
 	Commits []string `json:"commits,omitempty"`
 }
 
-func mainMove(checkout, commit, main string, s ProveSeams, members ...GoalSHA) (MainMove, error) {
+func mainMove(install, checkout, commit, main string, s ProveSeams, members ...GoalSHA) (MainMove, error) {
 	move := MainMove{Kind: "none"}
 	if commit == main {
 		return move, nil
@@ -82,7 +66,7 @@ func mainMove(checkout, commit, main string, s ProveSeams, members ...GoalSHA) (
 			return move, err
 		}
 		for _, path := range strings.Split(paths, "\x00") {
-			if path != "" && !ledgerPath(path) {
+			if path != "" && !recordsOnlyPaths(install, checkout, []string{path}) {
 				move.Kind = "code"
 				return move, nil
 			}
@@ -112,7 +96,7 @@ func foldRecords(install, checkout, main, tree string, move MainMove, s ProveSea
 		return refuse("the record merge failed: " + err.Error())
 	}
 	foldedTree := strings.TrimSpace(merged)
-	if !ledgerOnlyBetween(s.git, checkout, tree, foldedTree) {
+	if !ledgerOnlyBetween(s.git, install, checkout, tree, foldedTree) {
 		return refuse("the record merge cannot preserve the proven code tree")
 	}
 	commit, err := s.git(checkout, "commit-tree", foldedTree, "-p", batch, "-p", main, "-m", fmt.Sprintf("Merge coordination updates from main %s into the proven batch", Short(main)))
@@ -126,17 +110,16 @@ func foldRecords(install, checkout, main, tree string, move MainMove, s ProveSea
 	if err != nil {
 		return "", "", err
 	}
-	if !ledgerOnlyBetween(s.git, checkout, tree, foldedTree) {
+	if !ledgerOnlyBetween(s.git, install, checkout, tree, foldedTree) {
 		return refuse("the committed record merge changed the proven code tree")
 	}
-	source, ok, err := ResultFor(install, tree)
-	if err != nil || !ok {
-		return refuse("the proven source tree cannot be read")
+	batchRecord, err := ReadBatch(install)
+	if err != nil {
+		return "", "", err
 	}
-	reason := inheritedReason(source)
-	source.FoldedCommits = append(source.FoldedCommits, move.Commits...)
-	source.Commit, source.Tree, source.CountedFull = commit, foldedTree, false
-	source.Base, source.Scope, source.Reason = tree, "scoped", reason
-	source.ScopeReason = source.Reason
-	return commit, foldedTree, appendLine(resultsPath(install), source)
+	if batchRecord != nil {
+		batchRecord.FoldedCommits = append(batchRecord.FoldedCommits, move.Commits...)
+		err = writeBatch(install, batchRecord, s)
+	}
+	return commit, foldedTree, err
 }

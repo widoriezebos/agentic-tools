@@ -164,7 +164,7 @@ func TestFullClockCreditsOnlyCompletedMainChecks(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=1h\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
-			proof := Result{Attempt: "proof", Trunk: true, Commit: "main", Result: Green, At: bedNow.Format(time.RFC3339)}
+			proof := Result{Attempt: "proof", Trunk: true, Scope: "full", Commit: "main", Result: Green, At: bedNow.Format(time.RFC3339)}
 			if kind == "main red" {
 				proof.Result, proof.CountedFull, proof.Cause = Red, true, &Cause{Kind: "main"}
 			}

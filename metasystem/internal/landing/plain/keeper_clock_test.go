@@ -187,8 +187,8 @@ func TestKeeperClockRedCheckpointPreserved(t *testing.T) {
 				}
 				trunk := b.seams
 				trunk.Trunk = true
-				if _, _, err := Start(b.install, b.checkout, trunk); err != nil {
-					t.Fatalf("agent trunk admission changed: %v", err)
+				if _, _, err := Start(b.install, b.checkout, trunk); err == nil {
+					t.Fatal("agent trunk replaced the candidate repair checkpoint")
 				}
 				b.alive = false
 				if err := writeRunning(b.install, checkpoint, b.seams); err != nil {
@@ -246,7 +246,7 @@ func TestKeeperClockRedCheckpointPreserved(t *testing.T) {
 					t.Fatalf("repair not admitted: %+v %v", admitted, err)
 				}
 				b.wake(t)
-				if b.trunks != 1 {
+				if b.trunks != 0 {
 					t.Fatal("fallback stole repair proof")
 				}
 				b.alive = false
@@ -258,15 +258,12 @@ func TestKeeperClockRedCheckpointPreserved(t *testing.T) {
 					t.Fatal(err)
 				}
 				b.wake(t)
-				if b.trunks != 1 {
+				if b.trunks != 0 {
 					t.Fatal("repair green lost its push opportunity")
 				}
 			}
 			b.wake(t)
 			wantTrunks := 1
-			if repair {
-				wantTrunks++
-			}
 			if b.trunks != wantTrunks {
 				t.Fatalf("settled red did not fall back: %d", b.trunks)
 			}
@@ -322,7 +319,7 @@ func TestKeeperClockRunningTrunkThenHandIn(t *testing.T) {
 	if err := removeRunning(b.install, b.seams); err != nil {
 		t.Fatal(err)
 	}
-	if err := appendLine(resultsPath(b.install), Result{Trunk: true, Result: Red, CountedFull: true, Cause: &Cause{Kind: "main"}, At: bedNow.Format(time.RFC3339), Tree: "main-tree"}, b.seams); err != nil {
+	if err := appendLine(resultsPath(b.install), Result{Trunk: true, Scope: "full", Result: Red, CountedFull: true, Cause: &Cause{Kind: "main"}, At: bedNow.Format(time.RFC3339), Tree: "main-tree"}, b.seams); err != nil {
 		t.Fatal(err)
 	}
 	b.wake(t)

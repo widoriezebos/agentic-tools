@@ -152,9 +152,10 @@ func TestLaneFixTopologyRealGitMainRefreshProofAndPush(t *testing.T) {
 			if stage == "settled green" {
 				var found bool
 				result, found, err = Settled(b.install, b.checkout, seams)
-				if !found {
-					t.Fatalf("refreshed green was not inherited: %+v %v", result, err)
+				if err != nil || found {
+					t.Fatalf("changed repair inputs settled without execution: %+v %v", result, err)
 				}
+				result, err = Run(b.install, b.checkout, "fixture", "", io.Discard, seams)
 			} else {
 				result, err = Run(b.install, b.checkout, "fixture", "", io.Discard, seams)
 			}

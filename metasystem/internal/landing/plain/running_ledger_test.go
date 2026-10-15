@@ -65,12 +65,13 @@ func TestRunningProofSurvivesOnlyLedgerTreeMoves(t *testing.T) {
 				if err != nil || json.Unmarshal(data, &scope) != nil || scope.Scope != "full" {
 					t.Fatalf("carrying green rewrote the original execution scope: %s err=%v", data, err)
 				}
-				if !found || newer.Result != Green || newer.CountedFull || newer.Attempt != result.Attempt || newer.Commit != "new-commit" || newer.FullTree != result.Tree || newer.FullAt != result.At {
-					t.Fatalf("new tree has no carried proof: %+v found=%v original=%+v", newer, found, result)
+				if found {
+					t.Fatalf("changed records got carried green: %+v", newer)
 				}
-				_, already, err := Start(b.install, b.checkout, b.seams)
-				if err != nil || !already {
-					t.Fatalf("finished ledger tree reran: %v %v", already, err)
+				b.seams.Launch = func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil }
+				started, already, err := Start(b.install, b.checkout, b.seams)
+				if err != nil || already || started.Tree != "new-tree" {
+					t.Fatalf("changed records did not return through admission: %+v %v %v", started, already, err)
 				}
 			} else {
 				if found {

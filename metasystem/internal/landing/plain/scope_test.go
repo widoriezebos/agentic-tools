@@ -263,7 +263,7 @@ func TestARecordsOnlyBatchIsProvedScopedOnMainsGreen(t *testing.T) {
 				}
 				return
 			}
-			if result.Result != Green || result.Scope != "scoped" || !strings.Contains(result.ScopeReason, "records-only batch") || result.Base != b.base.Tree || result.FullTree != b.base.Tree || result.FullAt != b.base.At || strings.Join(result.Ran, " ") != groups || len(b.calls) != 1 {
+			if result.Result != Green || result.Scope != "scoped" || !strings.Contains(result.ScopeReason, "main moved by records only") || result.Base != b.base.Tree || result.FullTree != b.base.Tree || result.FullAt != b.base.At || strings.Join(result.Ran, " ") != groups || len(b.calls) != 1 {
 				t.Fatalf("records-only proof: %+v, calls %d", result, len(b.calls))
 			}
 			if record := b.record(t); record.Base != b.base.Tree || !reflect.DeepEqual(record.ChangedPaths, strings.Split(paths, "\n")) {
@@ -301,11 +301,12 @@ func TestARecordsOnlyBatchWithoutARecentGreenIsFull(t *testing.T) {
 			case "unreadable time":
 				b.base.At = "bad time"
 			}
+			b.base.FullAt = b.base.At
 			if name != "missing" {
 				b.save(t, b.base)
 			}
 			result := b.run(t)
-			if result.Result != Green || result.Scope != "full" || result.Base != "" || !strings.Contains(result.ScopeReason, "records-only batch") || !strings.Contains(result.ScopeReason, "no full green on main under an hour") || result.FullTree != result.Tree || result.FullAt != result.At || len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "full" {
+			if result.Result != Green || result.Scope != "full" || result.Base != "" || (name != "red" && !strings.Contains(result.ScopeReason, "no full green on main under an hour")) || result.FullTree != result.Tree || result.FullAt != result.At || len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "full" {
 				t.Fatalf("records without a recent green: %+v, calls %d", result, len(b.calls))
 			}
 		})
@@ -586,6 +587,8 @@ func TestALedgerInheritanceKeepsScopeAndOwesItsFullProof(t *testing.T) {
 			base := b.run(t)
 			b.base = base
 			b.git.tree, b.git.commit = "ledger-tree", "ledger-commit"
+			b.git.batches[b.git.commit] = "batch-a\nbatch-b"
+			b.setContract(t)
 			b.git.changed[[2]string{base.Tree, b.git.tree}] = "metasystem/plans/goals/fix.md"
 			b.seams.Git = b.git.run
 			b.seams.NewID = func() string { return "inherited" }
@@ -596,16 +599,17 @@ func TestALedgerInheritanceKeepsScopeAndOwesItsFullProof(t *testing.T) {
 				var ok bool
 				var err error
 				inherited, ok, err = Settled(b.install, b.checkout, b.seams)
-				if err != nil || !ok {
-					t.Fatalf("ledger settlement: %+v %v %v", inherited, ok, err)
+				if err != nil || ok {
+					t.Fatalf("changed ledger settled without execution: %+v %v %v", inherited, ok, err)
 				}
+				inherited = b.run(t)
 			}
-			if inherited.Result != Green || inherited.Scope != "scoped" || inherited.Base != base.Tree || inherited.FullTree != base.FullTree || inherited.FullAt != base.FullAt || inherited.Environment != base.Environment || len(inherited.Ran) != 0 || len(b.calls) != 1 || inherited.Reason != inheritedReason(base) {
+			if inherited.Result != Green || inherited.Scope != "scoped" || inherited.Base != base.Tree || inherited.FullTree != base.FullTree || inherited.FullAt != base.FullAt || inherited.Environment != base.Environment || !reflect.DeepEqual(inherited.Ran, []string{"plans", "shared"}) || len(b.calls) != 2 {
 				t.Fatalf("inherited proof lost its source or ran again: %+v, calls %d", inherited, len(b.calls))
 			}
 			data, err := os.ReadFile(scopePath(b.install, inherited.Attempt))
 			var record scopeRecord
-			if err != nil || json.Unmarshal(data, &record) != nil || len(record.Groups) != 3 || record.Groups[0].State != "kept" || record.Groups[0].From != base.Tree || record.Groups[0].DurationMS != 12 {
+			if err != nil || json.Unmarshal(data, &record) != nil || len(record.Groups) != 3 || record.Groups[0].State != "ran" || record.Groups[0].From != inherited.Tree || record.Groups[0].DurationMS != 12 {
 				t.Fatalf("inherited group provenance: %+v %v", record, err)
 			}
 			writePushRecords(t, b.install, Pushed{Tree: inherited.Tree, At: bedNow.Format(time.RFC3339)})
@@ -627,7 +631,7 @@ func TestALedgerInheritanceKeepsScopeAndOwesItsFullProof(t *testing.T) {
 				t.Fatalf("owed proof did not start: %+v %v %v, launches %d", running, already, err, launches)
 			}
 			paid, err := Run(b.install, b.checkout, "proof-command", running.Attempt, b.output, b.seams)
-			if err != nil || paid.Result != Green || paid.Scope != "full" || paid.FullTree != paid.Tree || paid.FullAt != now.Format(time.RFC3339) || len(b.calls) != 2 || commandEnv(b.calls[1], "LANDING_PROOF_SCOPE") != "full" {
+			if err != nil || paid.Result != Green || paid.Scope != "full" || paid.FullTree != paid.Tree || paid.FullAt != now.Format(time.RFC3339) || len(b.calls) != 3 || commandEnv(b.calls[2], "LANDING_PROOF_SCOPE") != "full" {
 				t.Fatalf("owed full proof: %+v %v, calls %d", paid, err, len(b.calls))
 			}
 			if reasons, err := WakeReasons(b.install, b.checkout, bedNow, now); err != nil || !reflect.DeepEqual(reasons, []string{WakeFullDue}) {

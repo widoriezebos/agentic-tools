@@ -75,6 +75,9 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 				return b.head, nil
 			case joined == "rev-parse --verify HEAD^{tree}":
 				return b.head + "-tree", nil
+			// RecoverMovedMain resolves the refreshed remote commit.
+			case joined == "rev-parse --verify origin/main^{commit}":
+				return "main", nil
 			case joined == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}":
 				return "main", nil
 			case len(args) == 3 && args[0] == "rev-parse" && strings.HasSuffix(args[2], "^{tree}"):

@@ -221,7 +221,7 @@ func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 				t.Fatal(err)
 			}
 			reason := "src/unit failed once and passed when run again alone; seen 3 times; goal fix-flaky-src-unit fixes it"
-			result := plain.Result{Commit: "old", Tree: "old-tree", Result: plain.Green, Reason: reason, At: laneTestNow.Format(time.RFC3339)}
+			result := plain.Result{Commit: "head", Tree: "tree", Result: plain.Green, Reason: reason, At: laneTestNow.Format(time.RFC3339)}
 			if action == "refusal" || action == "status json" {
 				result.Commit, result.Tree, result.Result = "head", "tree", plain.Red
 				result.Failed = []plain.FailedUnit{{Unit: "src/unit", Tests: []string{"TestOne"}, Surfaces: []string{"consumer"}}}

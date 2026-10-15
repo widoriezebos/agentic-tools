@@ -8,16 +8,20 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // proveCommandKey is the project's proof command, run in a worktree of the
@@ -136,7 +140,7 @@ func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
 	if seams.RecordMain == nil {
 		seams.RecordMain = owners.landingIncidentRecorder(installation)
 	}
-	return seams
+	return plain.WithContractCache(seams)
 }
 
 func landingProveCommand() intentCommand {
@@ -145,13 +149,13 @@ func landingProveCommand() intentCommand {
 		usage: []string{"metasystem landing prove [--impact|--gate|--trunk] [--wait] [--fresh]"},
 		details: []string{"Runs the shell command set as proof.full in a fresh worktree of the lane checkout at HEAD's commit, from its installation folder, with LANDING_TREE and LANDING_COMMIT naming what it proves, LANDING_PROOF_SCOPE naming full, scoped or impact, LANDING_PROOF_BASE naming the base tree (empty for full), LANDING_PROOF_GROUPS naming space-separated declared group ids, and LANDING_PROOF_PACKAGES naming space-separated packages or package=TestA,TestB selections (both empty for full), LANDING_ONLY naming failed units when they are checked again alone, and LANDING_ONLY_TESTS naming space-separated tests for a single Go unit replay; exit 0 is green, anything else red. Changes not committed in the lane checkout are not seen.",
 			"It starts in the background and the command returns at once, so it outlives the session that asked for it; the keeper wakes the landing agent when it ends. landing status shows it while it runs.",
-			"A current green, or a tree that differs from it only in goal ledger files, is reported at once so landing push can follow in the same turn. An inherited or scoped green needs a full check no more than an hour old. After record or ledger changes under a proven batch, the check runs only the groups whose declared inputs cover what main gained, while that batch's full check is under an hour old.",
+			"A current green is reported at once so landing push can follow in the same turn. Changed record inputs run their affected checks; unchanged inputs retain a full check no more than an hour old. After record or ledger changes under a proven batch, the check runs only the groups whose declared inputs cover what main gained, while that batch's full check is under an hour old.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
 			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait starts the same background check and waits for its saved result. A recorded selection may continue through its standing pause; a direct person may request one check while it stays stopped.",
 			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full check. When the batch decided full depth, an explicit impact green does not satisfy landing push.",
 			"--fresh bypasses saved and inherited green proofs and runs the requested check again, including the baseline for --gate. A full proof runs in full, and the result records fresh.",
-			"--trunk fetches origin/main and runs a fresh full check there, even after a green or red; the lane checkout stays where it is. --gate and --trunk cannot be used together."},
-		flags: []intentFlag{{name: "fresh", usage: "run the requested check again without reusing a saved proof"}, {name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "fetch and freshly prove main in full"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "wait for the detached check's result"},
+			"--trunk checks main when it lacks applicable proof; with --fresh, a new full check. --gate and --trunk cannot be used together."},
+		flags: []intentFlag{{name: "fresh", usage: "run the requested check again without reusing a saved proof"}, {name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "checks main when it lacks applicable proof; with --fresh, a new full check"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "wait for the detached check's result"},
 			{name: "classify", value: "ATTEMPT", usage: "classify one saved red; a person supplies this act"},
 			{name: "attempt", value: "ID", hidden: true, usage: "the attempt id a background start chose"}},
 		maxArgs:  0,
@@ -203,6 +207,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	if personProblem != nil && len(personProblem.next) >= 3 && personProblem.next[1] == "system" && personProblem.next[2] == "enroll" {
 		seams.CallerRefusal = personProblem.Summary
 	}
+	inv.notifyRepairOverride(&seams)
 	if person != nil {
 		seams.Person = person
 		seams.FenceCheck = nil
@@ -255,7 +260,7 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 			summary += "; its next full check is " + string(full.Result)
 			if full.Trunk && full.Result == plain.Green {
 				if err := admitted.owners.clearLandingIncidents(admitted.installation, *full); err != nil {
-					return inv.render(landingLaneFailure(targets, "main passed its full check, but its incidents could not be cleared", err))
+					return inv.render(landingLaneFailure(targets, "main passed its checks, but its incidents could not be cleared", err))
 				}
 			}
 		}
@@ -320,6 +325,9 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		if err != nil {
 			return inv.render(proofRefusal(err))
 		}
+		if ok && seams.Trunk {
+			return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: settled, Summary: settledMainLine(commit, settled)})
+		}
 		if ok {
 			summary := provedWords(settled.Commit, settled.Tree) + " is already proven green"
 			if settled.Reason != "" {
@@ -347,8 +355,8 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(result)
 	}
 	var result plain.Result
+	var settled bool
 	if attempt == "" {
-		var settled bool
 		result, settled, err = plain.Settled(admitted.installation, checkout, seams)
 		if err != nil {
 			return inv.render(proofRefusal(err))
@@ -377,6 +385,9 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	if err != nil {
 		return inv.render(proofRefusal(err))
 	}
+	if settled && seams.Trunk {
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: result, Summary: settledMainLine(commit, result)})
+	}
 	words := provedWords(result.Commit, result.Tree)
 	if result.Result == plain.Skipped {
 		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: words + ": " + result.Reason})
@@ -389,6 +400,12 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 				}
 			}
 			summary := "main passed its full check; no push is needed"
+			if result.Scope == "scoped" {
+				summary = result.ScopeReason
+				if result.Minutes != nil {
+					summary = strings.Replace(summary, " run,", fmt.Sprintf(" run (%.0f min),", *result.Minutes), 1)
+				}
+			}
 			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, view: landingDone(summary, result.Log)})
 		}
 		summary := words + " is proven green" + landingRedReason(result.Reason) + "; landing push may put it on main"
@@ -421,6 +438,11 @@ func landingProveRefusal(inv *intentInvocation, targets []intentTarget, err erro
 	if errors.As(err, &noRepeat) {
 		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: noRepeat.Error(),
 			next: proofRetryArgv(inv), nextReason: "a person requests one execution while the prior allowance stays spent"}
+	}
+	var repair *plain.RepairPending
+	if errors.As(err, &repair) {
+		return intentResult{Outcome: intentRefused, code: 1, Targets: targets, Summary: repair.Error(),
+			next: inv.publicArgv("landing", "status"), nextReason: "shows the candidate's repair"}
 	}
 	var busy *plain.Busy
 	if errors.As(err, &busy) {
@@ -465,4 +487,24 @@ func proofRetryArgv(inv *intentInvocation) []string {
 		argv = append(argv, "--trunk")
 	}
 	return argv
+}
+
+func settledMainLine(commit string, result plain.Result) string {
+	at, _ := time.Parse(time.RFC3339, result.At)
+	return fmt.Sprintf("main at %s is proven by the %s check of the same tree;\nlanding prove --trunk --fresh runs a new full check", plain.Short(commit), at.Local().Format("15:04"))
+}
+
+func (inv *intentInvocation) notifyRepairOverride(seams *plain.ProveSeams) {
+	notify := seams.NotifyRepairOverride
+	seams.NotifyRepairOverride = func(impact string) error {
+		page := textui.NewLegacy(inv.textEnv(inv.stderr))
+		page.Legacy(impact)
+		if _, err := io.WriteString(inv.stderr, page.String()); err != nil {
+			return err
+		}
+		if notify != nil {
+			return notify(impact)
+		}
+		return nil
+	}
 }

@@ -154,7 +154,7 @@ func TestLandingKeeperProvesMovedMainBeforeExceptionGitAdapter(t *testing.T) {
 			keeper.Start = func(string, lane.Wake) (string, error) { t.Fatal("agent started before trunk result"); return "", nil }
 			keeper.Fingerprint, keeper.BarrenStop, keeper.Waiting = nil, nil, nil
 			run := keeper.Run()
-			expected := scenario != "records only" && scenario != "same main" && scenario != "paused"
+			expected := scenario != "paused"
 			if (launches == 1) != expected {
 				t.Fatalf("tick: %+v launches=%d initial=%s main=%s", run, launches, initial, b.main)
 			}
@@ -169,7 +169,11 @@ func TestLandingKeeperProvesMovedMainBeforeExceptionGitAdapter(t *testing.T) {
 			}
 			current, err := channel.ReadQuestion(b.installation, old.ID)
 			helmMust(t, err)
-			if scenario != "no question" && (current.State != "closed" || current.ClosedBecause != "main moved to "+b.main+"; proving it again") {
+			wantClosure := "main moved to " + b.main + "; proving it again"
+			if scenario == "records only" || scenario == "same main" {
+				wantClosure = "superseded by current lane state"
+			}
+			if scenario != "no question" && (current.State != "closed" || current.ClosedBecause != wantClosure) {
 				t.Fatalf("stale question: %+v", current)
 			}
 			if qs, _ := channel.WalkOpenQuestions(b.installation); len(qs) != 0 {
@@ -177,7 +181,11 @@ func TestLandingKeeperProvesMovedMainBeforeExceptionGitAdapter(t *testing.T) {
 			}
 			running, recorded, _, err := plain.ReadRunning(b.installation, seams)
 			helmMust(t, err)
-			if !recorded || !running.Trunk || running.Commit != b.main || running.Admission.Command != "printf 'LANDING-CHECKED\\t0\\n'; : fixed" {
+			wantCommand := "printf 'LANDING-CHECKED\\t0\\n'; : fixed"
+			if scenario == "records only" || scenario == "same main" {
+				wantCommand = "printf 'LANDING-CHECKED\\t0\\n'"
+			}
+			if !recorded || !running.Trunk || running.Commit != b.main || running.Admission.Command != wantCommand {
 				t.Fatalf("wrong admission: %+v", running)
 			}
 			if scenario != "red" && scenario != "green" {

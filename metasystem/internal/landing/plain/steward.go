@@ -16,6 +16,7 @@ import (
 )
 
 type Intervention struct {
+	Person                                    *ActProvenance `json:",omitempty"`
 	At, Row, Subject, What, Why, How, Outcome string
 	Shadow                                    string
 }
@@ -169,7 +170,11 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 					trunk = stewardTrunk
 				}
 				entry.Outcome, actErr = trunk(record.Install, record.Root, seams)
-				proofRunning = actErr == nil
+				proofRunning = actErr == nil && entry.Outcome != stewardAlreadyProven
+				if actErr == nil && !proofRunning && row.Row != "stale-question" {
+					lines = append(lines, row.Row+": "+entry.Outcome)
+					continue
+				}
 			}
 		}
 		if actErr != nil {
@@ -207,10 +212,19 @@ func stewardEffect(effect func(lane.Record) (string, error), record lane.Record)
 	return effect(record)
 }
 
+const stewardAlreadyProven = "main already has applicable proof"
+
 func stewardTrunk(install, checkout string, seams ProveSeams) (string, error) {
 	seams.Trunk, seams.Gate, seams.Impact = true, false, false
 	if err := seams.fetchMain(checkout); err != nil {
 		return "", err
+	}
+	commit, tree, err := seams.subject(checkout)
+	if err != nil {
+		return "", err
+	}
+	if _, ok := applicableMainProof(install, commit, tree, seams, true); ok {
+		return stewardAlreadyProven, nil
 	}
 	running, _, err := Start(install, checkout, seams)
 	return landingstate.Phrase("proving-main-2") + running.Attempt, err

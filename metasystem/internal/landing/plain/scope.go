@@ -2,9 +2,11 @@ package plain
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -46,19 +48,39 @@ type scopeDecision struct {
 	affected testpolicy.AffectedResult
 }
 
+// WithContractCache reuses immutable contract bytes while admission rereads current proof facts.
+func WithContractCache(seams ProveSeams) ProveSeams {
+	seams.contractCache = make(map[string]string)
+	return seams
+}
+
+func scopeContract(checkout, ref string, seams ProveSeams) (string, error) {
+	if data, ok := seams.contractCache[ref]; ok {
+		return data, nil
+	}
+	data, err := seams.git(checkout, "show", ref)
+	if err == nil && seams.contractCache != nil {
+		seams.contractCache[ref] = data
+	}
+	return data, err
+}
+
 // decideScope keeps a batch's full green for at most an hour. Any unreadable
 // selection fact widens the proof to full; no language rule lives here.
 func decideScope(install, checkout string, running Running, seams ProveSeams) scopeDecision {
 	d := scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "no green proof of this batch yet"}}
-	results, err := Results(install)
-	if err != nil {
+	results, damaged, err := countedLines[Result](resultsPath(install))
+	if err != nil || damaged != 0 {
 		return d
 	}
-	batch, err := seams.git(checkout, "rev-list", "--no-merges", running.Commit, "^origin/main")
-	if err != nil || strings.TrimSpace(batch) == "" {
-		return d
+	batch := ""
+	if !running.Trunk {
+		batch, err = seams.git(checkout, "rev-list", "--no-merges", running.Commit, "^origin/main")
+		if err != nil || strings.TrimSpace(batch) == "" {
+			return d
+		}
 	}
-	for i := len(results) - 1; i >= 0; i-- {
+	for i := len(results) - 1; !running.Trunk && i >= 0; i-- {
 		candidate := results[i]
 		if candidate.Result != Green || candidate.Scope == "" {
 			continue
@@ -71,26 +93,41 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 	}
 	recordsOnly := false
 	if d.base.Scope == "" {
-		changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", "origin/main", running.Tree)
-		if err != nil || strings.TrimSpace(changed) == "" || !recordsOnlyPaths(install, checkout, strings.Split(strings.TrimSpace(changed), "\n")) {
-			return d
+		if !running.Trunk {
+			changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", "origin/main", running.Tree)
+			if err != nil || strings.TrimSpace(changed) == "" || !recordsOnlyPaths(install, checkout, strings.Split(strings.TrimSpace(changed), "\n")) {
+				return d
+			}
 		}
 		recordsOnly = true
 		d.ScopeReason = "records-only batch has no full green on main under an hour old"
+		target := "origin/main"
+		if running.Trunk {
+			target = running.Commit
+		}
 		for i := len(results) - 1; i >= 0; i-- {
 			candidate := results[i]
-			if candidate.Result != Green || candidate.Scope != "full" {
+			if candidate.Commit == "" || candidate.didNotRun() || candidate.Result != Red && (candidate.Result != Green || candidate.Scope != "full" || candidate.FullTree == "") {
 				continue
 			}
-			at, err := time.Parse(time.RFC3339, candidate.At)
+			if _, err := seams.git(checkout, "merge-base", "--is-ancestor", candidate.Commit, target); err != nil {
+				var exit *exec.ExitError
+				if errors.As(err, &exit) && exit.ExitCode() == 1 {
+					continue
+				}
+				return d
+			}
+			if candidate.Result == Red && !candidate.didNotRun() {
+				d.ScopeReason = "a later failed check still needs resolution"
+				return d
+			}
+			at, err := time.Parse(time.RFC3339, candidate.FullAt)
 			if age := seams.now().Sub(at); err != nil || age < 0 || age >= time.Hour {
 				continue
 			}
-			if _, err := seams.git(checkout, "merge-base", "--is-ancestor", candidate.Commit, "origin/main"); err == nil {
-				d.base = candidate
-				d.base.FullTree, d.base.FullAt = candidate.Tree, candidate.At
-				break
-			}
+			d.base = candidate
+			d.base.Tree = candidate.FullTree
+			break
 		}
 		if d.base.Scope == "" {
 			return d
@@ -101,7 +138,7 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		d.ScopeReason = "the batch's full proof time cannot be read"
 		return d
 	}
-	if age := seams.now().Sub(fullAt); age > time.Hour {
+	if age := seams.now().Sub(fullAt); age < 0 || age > time.Hour {
 		d.ScopeReason = fmt.Sprintf("the batch's full proof is %s old, more than one hour", age.Round(time.Second))
 		return d
 	}
@@ -144,7 +181,7 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		return d
 	}
 	path := filepath.ToSlash(filepath.Join(prefix, relative))
-	data, err := seams.git(checkout, "show", running.Tree+":"+path)
+	data, err := scopeContract(checkout, running.Tree+":"+path, seams)
 	if err != nil {
 		d.ScopeReason = "the testing contract cannot be read: " + err.Error()
 		return d
@@ -191,7 +228,15 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		d.Scope, d.Base = "scoped", d.base.Tree
 		d.ScopeReason = "the batch's full proof is under an hour old; only groups whose inputs cover changed paths run"
 		if recordsOnly {
-			d.ScopeReason = "records-only batch; main's full green is under an hour old; only groups whose inputs cover changed paths run"
+			plan, err := testpolicy.WithPrerequisiteClosure(d.contract, testpolicy.Plan{SelectedGroups: d.groupIDs(), Stages: []testpolicy.Stage{{ID: "affected", Groups: d.groupIDs()}}})
+			if err != nil {
+				return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "the required checks cannot be read"}}
+			}
+			noun := "checks"
+			if len(plan.SelectedGroups) == 1 {
+				noun = "check"
+			}
+			d.ScopeReason = fmt.Sprintf("main moved by records only; %d %s run, the rest holds from the %s check", len(plan.SelectedGroups), noun, fullAt.Local().Format("15:04"))
 		}
 	}
 	return d
@@ -416,24 +461,4 @@ func (d scopeDecision) describe(result Result, observed *proofOutput) Result {
 		result.FullTree, result.FullAt = "", ""
 	}
 	return result
-}
-
-func inheritScope(install string, result, from Result) (Result, error) {
-	result.Scope, result.ScopeReason = from.Scope, result.Reason
-	result.Base, result.FullTree, result.FullAt = from.Tree, from.FullTree, from.FullAt
-	result.Environment = from.Environment
-	if from.Scope != "" && from.Scope != "full" {
-		result.Scope = "scoped"
-	}
-	decision := scopeDecision{scopeRecord: scopeRecord{Scope: result.Scope, ScopeReason: result.ScopeReason, Base: result.Base}}
-	if data, err := os.ReadFile(scopePath(install, from.Attempt)); err == nil {
-		var prior scopeRecord
-		if json.Unmarshal(data, &prior) == nil {
-			for _, group := range prior.Groups {
-				group.State, group.Why = "kept", nil
-				decision.Groups = append(decision.Groups, group)
-			}
-		}
-	}
-	return result, decision.writeRecord(install, result, &proofOutput{})
 }
