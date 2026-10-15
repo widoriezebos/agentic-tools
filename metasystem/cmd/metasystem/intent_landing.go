@@ -533,6 +533,9 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 		if data.Root == nil {
 			return
 		}
+		if reason := plain.ClockReason(install); page.Verbose() && reason != "" {
+			page.Section("", "").Text(reason)
+		}
 		if data.AgentProgress != nil {
 			page.Section("Agent", "").Text(data.AgentProgress.Line)
 			if data.AgentProgress.Finding != "" {

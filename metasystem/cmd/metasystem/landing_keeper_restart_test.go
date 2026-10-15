@@ -153,6 +153,7 @@ func landingRestartBed(t *testing.T) (*laneVerbBed, *lane.AgentKeeper, *time.Tim
 		}
 	}}
 	now, starts, proofAlive := laneTestNow, 0, false
+	seedCurrentTrunkClock(t, root, now)
 	// Lane policy observation reads the same main and incident facts as selection
 	// (plans/designs/lane-reads-its-policies.md, Decisions 3 and 5).
 	keeper := newLandingAgentKeeper(root, home, newTestLandingAgent(func(agent *landingAgent) {

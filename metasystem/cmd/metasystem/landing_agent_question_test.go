@@ -53,6 +53,7 @@ func TestLandingAgentQuestionHoldsTheRelaunch(t *testing.T) {
 		agent.nonce = func() (string, error) { return "0011223344556677", nil }
 		agent.machine = func(string) (string, error) { return "m-lane", nil }
 	})
+	seedCurrentTrunkClock(t, module, now)
 	keeper := newLandingAgentKeeper(module, home, agent)
 	keeper.Sources.Reasons = func(string) ([]string, error) { return []string{"queued"}, nil }
 	ask := func(about, machine string) channel.Question {
@@ -143,6 +144,7 @@ func TestLaneQuestionAnswerIsPolledByTheLanesSteward(t *testing.T) {
 		agent.nonce = func() (string, error) { return "0011223344556677", nil }
 		agent.machine = goal.ResolveMachine
 	})
+	seedCurrentTrunkClock(t, module, now)
 	keeper := newLandingAgentKeeper(module, home, agent)
 	keeper.Sources.Reasons = func(string) ([]string, error) { return []string{"queued"}, nil }
 	// The steward's tick: the keeper step, then the channel duty on its root.

@@ -64,6 +64,7 @@ type Batch struct {
 	State         string         `json:"state"`
 	ClosureReason string         `json:"closure-reason,omitempty"`
 	DepthClass    string         `json:"depth-class,omitempty"`
+	ClockFull     bool           `json:"clock-full,omitempty"`
 	Person        *ActProvenance `json:"person,omitempty"`
 }
 

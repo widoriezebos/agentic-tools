@@ -64,6 +64,7 @@ func TestLandingAgentStartsOnTheLaneWithItsRoster(t *testing.T) {
 	registerLane(t, home, checkout, "a-person", time.Date(2026, 9, 30, 12, 0, 0, 0, time.UTC))
 	checkout, module = resolvedPath(checkout), resolvedPath(module)
 	now := time.Date(2026, 9, 30, 13, 0, 0, 0, time.UTC)
+	seedCurrentTrunkClock(t, module, now)
 	store := launch.Store{Root: filepath.Join(base, "launches")}
 	manager := &launch.Manager{Store: store, Adapters: map[string]launch.Adapter{"claude-headless": launch.ClaudeHeadless{Binary: "/fixture/bin/claude", ProjectsRoot: filepath.Join(base, "projects")}},
 		Supervisor: recordingSupervisor{store}, Now: func() time.Time { return now }, Sleep: func(time.Duration) {}, Poll: time.Second, StartCap: time.Minute,

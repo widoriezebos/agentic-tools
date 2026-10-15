@@ -105,6 +105,9 @@ type AgentKeeper struct {
 	Observe func(Record) error
 	// Prepare records the work selection before launch, outside the home lock.
 	Prepare func(Record) error
+	// Clock coordinates a due main check with preparation outside the home lock.
+	// A nonempty line holds this wake after starting or waiting for a proof.
+	Clock func(Record, func(Record) error) (string, error)
 	// AdmitWake rereads execution fences under the home lock, without taking the install lock.
 	AdmitWake func(string, Wake) (Wake, error)
 	// Explicit is a start asked for by name (landing run), not the keeper's
@@ -233,7 +236,17 @@ func (k AgentKeeper) Run() (out AgentRun) {
 		}
 	}
 	if k.own(registered) && !gone(root) && k.Prepare != nil {
-		if err := k.Prepare(registered); err != nil {
+		var err error
+		if k.Clock != nil && !k.Explicit && result.Outcome != AgentPaused && result.Outcome != AgentRunning {
+			var line string
+			line, err = k.Clock(registered, k.Prepare)
+			if err == nil && line != "" {
+				return agentRun(AgentHeld, root, line)
+			}
+		} else {
+			err = k.Prepare(registered)
+		}
+		if err != nil {
 			if k.Observe != nil {
 				_ = k.Observe(registered)
 			}

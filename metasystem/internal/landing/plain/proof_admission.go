@@ -110,6 +110,9 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 // BatchProofDepth chooses inheritance and cadence before the ordinary batch policy.
 // An empty scope leaves the existing scoped-proof selector in charge.
 func BatchProofDepth(install, checkout string, running Running, seams ProveSeams) (string, string) {
+	if batch, err := ReadBatch(install); err == nil && batch != nil && batch.ID == running.BatchID && batch.ClockFull {
+		return "full", "main's clock is due; this batch needs a full check"
+	}
 	previous, found, _ := resultFor(seams.resultsPath(install), running.Tree)
 	from, ok := ledgerOnlySinceGreen(seams.git, install, checkout, running.Tree)
 	canInherit := (!found || previous.Result == Green) && !strings.HasPrefix(previous.ScopeReason, "full check pending:") && ok && from.fullCurrent(seams.now())

@@ -303,6 +303,20 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		},
 		Helmed:       func(root string) bool { return helm.Active(root).Active },
 		Continuation: func(record lane.Record) string { return plain.PersonBatchContinuation(record.Install, record, home) },
+		Clock: func(record lane.Record, prepare func(lane.Record) error) (string, error) {
+			proof := (laneVerbOwners{plainProve: seams}).proveSeams(record.Install)
+			proof.FenceCheck = func() error {
+				current, err := seams.Lane()
+				if err == nil && (current != record || seams.TimerHeld()) {
+					err = errors.New("clock check permission changed")
+				}
+				return err
+			}
+			proof.CommandForCommit = func(commit string) (string, error) {
+				return landingProofCommand(record.Install, record.Root, commit, proveCommandKey, proof.Git)
+			}
+			return plain.KeeperClock(record, prepare, proof)
+		},
 		Prepare: func(record lane.Record) error {
 			selection := seams
 			selection.AgentRunning = func() (bool, error) { _, running, err := agent.running(); return running, err }

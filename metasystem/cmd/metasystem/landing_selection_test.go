@@ -53,6 +53,7 @@ func newSelectionBed(t *testing.T) *selectionBed {
 	b.record, _, err = lane.Read(b.home)
 	helmMust(t, err)
 	helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("landing.batch=person\nproof.trunk-every=1h\n"), 0600))
+	seedCurrentTrunkClock(t, b.lane, b.now)
 	b.owners.processes.question = channel.ReadQuestion
 	b.owners.policies.Registry = func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{Lane: b.lane}, b.policyErr }
 	falseState := replayFalseState(t)
@@ -620,6 +621,7 @@ func TestLandingSelectionBarrenWithoutEligibleGoalsOffersTrunkProof(t *testing.T
 		t.Run(subject, func(t *testing.T) {
 			t.Parallel()
 			b := newSelectionBed(t)
+			b.now = b.now.Add(5 * time.Hour)
 			if subject == "all waiting lines held" {
 				b.owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
 					return []goal.TrunkRedEntry{{Identity: "red-main"}}, nil
