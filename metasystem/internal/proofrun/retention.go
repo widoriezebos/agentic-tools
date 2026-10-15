@@ -122,6 +122,8 @@ type Retention struct {
 	// Alive reads a recorded process's liveness.
 	Alive func(identity.Ref) identity.Liveness
 
+	readRecord func(string) ([]byte, error)
+
 	count int
 	bytes int64
 	// seen is every attempt record's modification time at the plan, so
@@ -131,10 +133,25 @@ type Retention struct {
 }
 
 type attemptUnit struct {
-	attempt Attempt
-	records []string
-	bytes   int64
-	ended   time.Time
+	id                 string
+	ended              time.Time
+	terminal           bool
+	references         []string
+	freshnessExpiresAt string
+	records            []string
+	bytes              int64
+}
+
+func retainedFacts(attempt Attempt, records []string) *attemptUnit {
+	return &attemptUnit{id: attempt.AttemptID, ended: attemptEnded(attempt), terminal: attempt.Terminal != nil,
+		references: AttemptReferences(attempt), freshnessExpiresAt: attempt.FreshnessExpiresAt, records: records}
+}
+
+func (r *Retention) readRetentionRecord(path string) ([]byte, error) {
+	if r.readRecord != nil {
+		return r.readRecord(path)
+	}
+	return os.ReadFile(path)
 }
 
 func (*Retention) Name() string { return "proof attempt payloads" }
@@ -187,35 +204,38 @@ func (r *Retention) hold(reason string) []diskstore.Item {
 		Reason: reason + "; no attempt payload is released this pass", Command: "metasystem test status"}}}
 }
 
-// Plan reads every attempt record and its process records, measures, and,
-// over the target, names the oldest payloads nothing needs until the store
-// would be under it. Any record it cannot read holds the class. It writes
-// nothing.
+// Plan measures and counts without reading records at or below the target.
+// Over the target it retains each record's facts and names the oldest
+// payloads nothing needs until the store would be under it. Any unreadable
+// record holds the class. It writes nothing.
 func (r *Retention) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore.Item, error) {
 	r.count, r.bytes, r.units, r.seen = 0, 0, map[string]*attemptUnit{}, map[string]time.Time{}
 	if _, err := os.Stat(r.root()); errors.Is(err, os.ErrNotExist) {
 		return nil, nil
 	}
 	r.bytes, _, _ = diskstore.Measure(ctx, r.root())
-	records, err := r.attemptRecords()
-	if err != nil {
-		return r.hold(err.Error()), nil
-	}
 	paths, err := filepath.Glob(filepath.Join(attemptsDir(r.Control), "*.json"))
 	if err != nil {
 		return nil, err
+	}
+	r.count = len(paths)
+	if r.bytes <= r.Target {
+		return nil, nil
+	}
+	records, err := r.attemptRecords()
+	if err != nil {
+		return r.hold(err.Error()), nil
 	}
 	for _, path := range paths {
 		id := strings.TrimSuffix(filepath.Base(path), ".json")
 		if info, err := os.Stat(path); err == nil {
 			r.seen[path] = info.ModTime()
 		}
-		r.count++
-		attempt, err := readRetainedAttempt(r.Control, id)
+		attempt, err := readRetainedAttempt(r.Control, id, r.readRetentionRecord)
 		if err != nil {
 			return r.hold("attempt record " + id + " cannot be read (" + err.Error() + "), so what it needs is unknown"), nil
 		}
-		r.units[id] = &attemptUnit{attempt: attempt, records: records[id], ended: attemptEnded(attempt)}
+		r.units[id] = retainedFacts(attempt, records[id])
 	}
 	payloads, err := r.payloads()
 	if err != nil {
@@ -225,9 +245,6 @@ func (r *Retention) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore
 		if payloads[id] {
 			unit.bytes = payloadBytes(ctx, r.payload(id))
 		}
-	}
-	if r.bytes <= r.Target {
-		return nil, nil
 	}
 	roots := map[string]bool{}
 	for _, namer := range r.Namers {
@@ -253,7 +270,7 @@ func (r *Retention) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore
 		if !order[i].ended.Equal(order[j].ended) {
 			return order[i].ended.Before(order[j].ended)
 		}
-		return order[i].attempt.AttemptID < order[j].attempt.AttemptID
+		return order[i].id < order[j].id
 	})
 	var items []diskstore.Item
 	over := r.bytes - r.Target
@@ -261,7 +278,7 @@ func (r *Retention) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore
 		if over <= 0 || ctx.Err() != nil {
 			break
 		}
-		id := unit.attempt.AttemptID
+		id := unit.id
 		if roots[id] || unit.bytes == 0 {
 			continue
 		}
@@ -285,11 +302,11 @@ func (r *Retention) Plan(ctx context.Context, pass *diskstore.Pass) ([]diskstore
 // isRoot reports the retention roots an attempt is by itself: live,
 // younger than the window, or fresh.
 func (r *Retention) isRoot(unit *attemptUnit, now time.Time) bool {
-	if unit.attempt.Terminal == nil || unit.ended.IsZero() || now.Sub(unit.ended) < r.Keep {
+	if !unit.terminal || unit.ended.IsZero() || now.Sub(unit.ended) < r.Keep {
 		return true
 	}
-	if unit.attempt.FreshnessExpiresAt != "" {
-		expires, err := time.Parse(time.RFC3339Nano, unit.attempt.FreshnessExpiresAt)
+	if unit.freshnessExpiresAt != "" {
+		expires, err := time.Parse(time.RFC3339Nano, unit.freshnessExpiresAt)
 		if err != nil || expires.After(now) {
 			return true
 		}
@@ -310,7 +327,7 @@ func closeOver(roots map[string]bool, units map[string]*attemptUnit) {
 		if unit == nil {
 			continue
 		}
-		for _, named := range AttemptReferences(unit.attempt) {
+		for _, named := range unit.references {
 			if !roots[named] {
 				roots[named] = true
 				queue = append(queue, named)
@@ -323,7 +340,7 @@ func closeOver(roots map[string]bool, units map[string]*attemptUnit) {
 // proven dead; an unreadable process record counts as alive.
 func (r *Retention) processesAlive(unit *attemptUnit) string {
 	for _, path := range unit.records {
-		data, err := os.ReadFile(path)
+		data, err := r.readRetentionRecord(path)
 		if err != nil {
 			return "process record unreadable, so its process counts as alive: " + err.Error()
 		}
@@ -362,7 +379,7 @@ func (r *Retention) attemptRecords() (map[string][]string, error) {
 				continue
 			}
 			path := filepath.Join(dir, entry.Name())
-			data, err := os.ReadFile(path)
+			data, err := r.readRetentionRecord(path)
 			var record Record
 			if err == nil {
 				err = decodeStrict(data, &record)
@@ -438,7 +455,7 @@ func (r *Retention) Apply(ctx context.Context, pass *diskstore.Pass, item diskst
 	}
 	defer held.Release()
 	id := item.Key
-	attempt, err := readRetainedAttempt(r.Control, id)
+	attempt, err := readRetainedAttempt(r.Control, id, r.readRetentionRecord)
 	if err != nil {
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "attempt record unreadable: " + err.Error(), Command: "metasystem test status"}
 	}
@@ -446,7 +463,7 @@ func (r *Retention) Apply(ctx context.Context, pass *diskstore.Pass, item diskst
 	if err != nil {
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: err.Error(), Command: "metasystem test status"}
 	}
-	unit := &attemptUnit{attempt: attempt, records: records[id], ended: attemptEnded(attempt)}
+	unit := retainedFacts(attempt, records[id])
 	if r.isRoot(unit, pass.Now) {
 		return diskstore.Verdict{Decision: diskstore.Keep, Reason: "the attempt changed since the plan", Command: "metasystem disk show"}
 	}
@@ -492,7 +509,7 @@ func (r *Retention) newerReferrer(id string) string {
 			continue
 		}
 		other := strings.TrimSuffix(filepath.Base(path), ".json")
-		attempt, err := readRetainedAttempt(r.Control, other)
+		attempt, err := readRetainedAttempt(r.Control, other, r.readRetentionRecord)
 		if err != nil {
 			return other
 		}
@@ -510,12 +527,12 @@ func (r *Retention) newerReferrer(id string) string {
 // does not decode strictly into the attempt type (an unknown field
 // included), names another attempt, or carries a schema this engine does
 // not know is unreadable: what it needs is then unknown.
-func readRetainedAttempt(control, id string) (Attempt, error) {
+func readRetainedAttempt(control, id string, readRecord func(string) ([]byte, error)) (Attempt, error) {
 	path, err := AttemptPath(control, id)
 	if err != nil {
 		return Attempt{}, err
 	}
-	data, err := os.ReadFile(path)
+	data, err := readRecord(path)
 	if err != nil {
 		return Attempt{}, err
 	}
