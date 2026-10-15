@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 53
+- Sequence: 52
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="finding 300/313 and lane-clock-prefers-work D3 (amended 10-15 08:40, Astra R2-04): the to-do must clear only on evidence of the requested effect, never on the attempt; lane-clock-prefers-work delivered U1 and is concluded, its D3/D4 are this goal's delivery"
 - Tier: 2
 - Intent: a person's ask in the lane's status clears only when the lane holds evidence of the requested effect, and an act that ran without its effect keeps the ask and names what did not happen
 - Origin: human
 - Next step: U1 = lane-clock U2 as amended: brief, Astra, Codex by hand, Opus read, land by hand, deploy
 - OpenedAt: 2026-10-15T06:38:38Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-15T06:39:07Z revision=2 opid=QFFTVGTD1CRAZN06TM51CVRZ55-m1e-670f65d0 authority=proven digest=2a26aad5fa2203ae740e34640f51aee23d8394fc638259772599d5a7083c4abf episode=2
@@ -19,4 +19,5 @@ History:
 - 2026-10-15T06:39:07Z QFFTVGTD1CRAZN06TM51CVRZ55-m1e-670f65d0 approve actor=human:Wido targets=asks-clear-on-their-effect
 - 2026-10-15T06:39:25Z JGS0WRN57TKT9ECWFE1ZSC7DGM-m1e-670f65d0 set-priority actor=human:Wido targets=asks-clear-on-their-effect reason=priority-order subject=asks-clear-on-their-effect from=unranked to=1:54 requested-sequence=append
 - 2026-10-15T08:14:38Z 1FAA39GRBBSHDHG15EPFF0G3KK-m1e-670f65d0 done actor=human:Wido targets=a-records-change-runs-its-affected-checks,asks-clear-on-their-effect,lane-proof-finds-its-own-engine,red-names-what-failed,steward-duties-run-on-every-tick,the-lane-says-what-it-does reason=priority-order from=1:54 to=1:53
-Integrity: sha256=fd61bd90351ba8f033286ba7b733028908574a191d449500928b91e5f1226c1a
+- 2026-10-15T17:26:41Z PBN8F2SMFXX3YKV3CCXEFQRK61-m1e-670f65d0 done actor=human:Wido targets=a-proof-compiles-a-package-once,a-records-change-runs-its-affected-checks,asks-clear-on-their-effect,fixture-app-reads-its-whole-release,red-names-what-failed,steward-duties-run-on-every-tick,the-lane-says-what-it-does,the-reconciler-reads-attempt-headers reason=priority-order from=1:53 to=1:52
+Integrity: sha256=c30781038da32575d12513e443d8b40a2d296779907fba3624165d9459efbe71
