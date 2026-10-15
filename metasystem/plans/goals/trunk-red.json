@@ -2852,6 +2852,96 @@
       ],
       "opened": "2026-10-15T11:22:22Z",
       "closed": null
+    },
+    {
+      "id": "red:metasystem/internal/proofrun:TestTestEnvironmentStandardInventoryMatchesObserved",
+      "identity": "red:metasystem/internal/proofrun:TestTestEnvironmentStandardInventoryMatchesObserved",
+      "group": "metasystem/internal/proofrun",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261015T130431.912370000Z.log",
+          "classname": "metasystem/internal/proofrun",
+          "name": "TestTestEnvironmentStandardInventoryMatchesObserved",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261015T130431.912370000Z",
+          "batch": "20261015T130431.912370000Z",
+          "baseCommit": "17d0d295688a67c999f7f9fd8d0a96ca935186fc",
+          "baseTree": "e7c8de03bd8b4562fd5f33a17d627a4f81b3f4cf",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261015T130431.912370000Z.log",
+          "logDigest": "e80ef3b13aba1bf6c90bfba764fb3c588f40216d0db5f72347569c102a3737f6",
+          "seenAt": "2026-10-15T13:48:58Z",
+          "opid": "P9H33838KBARH8C0B0GZ35CA6R-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261015T130431.912370000Z"
+      ],
+      "opened": "2026-10-15T13:48:58Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/internal/testenv:TestTestExecutablesAreWrittenUnderTheForkLock",
+      "identity": "red:metasystem/internal/testenv:TestTestExecutablesAreWrittenUnderTheForkLock",
+      "group": "metasystem/internal/testenv",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261015T130431.912370000Z.log",
+          "classname": "metasystem/internal/testenv",
+          "name": "TestTestExecutablesAreWrittenUnderTheForkLock",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261015T130431.912370000Z",
+          "batch": "20261015T130431.912370000Z",
+          "baseCommit": "17d0d295688a67c999f7f9fd8d0a96ca935186fc",
+          "baseTree": "e7c8de03bd8b4562fd5f33a17d627a4f81b3f4cf",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261015T130431.912370000Z.log",
+          "logDigest": "e80ef3b13aba1bf6c90bfba764fb3c588f40216d0db5f72347569c102a3737f6",
+          "seenAt": "2026-10-15T13:48:58Z",
+          "opid": "P9H33838KBARH8C0B0GZ35CA6R-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261015T130431.912370000Z"
+      ],
+      "opened": "2026-10-15T13:48:58Z",
+      "closed": null
     }
   ],
   "cadence": {
