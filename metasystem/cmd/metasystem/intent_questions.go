@@ -12,6 +12,8 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -56,7 +58,7 @@ func (inv *intentInvocation) noChannelQuestion(targets []intentTarget, id string
 func (inv *intentInvocation) resolveQuestion(ref string) (questionRef, *intentResult) {
 	targets := []intentTarget{{Kind: "question", ID: ref}}
 	if id, explicit := strings.CutPrefix(ref, "channel:"); explicit {
-		q, err := inv.owners.processes.question(inv.stateRoot, id)
+		q, err := inv.owners.processes.question(inv.layout.InstallationRoot.Path(), id)
 		if err != nil {
 			return questionRef{}, inv.noChannelQuestion(targets, id, err)
 		}
@@ -75,7 +77,7 @@ func (inv *intentInvocation) resolveQuestion(ref string) (questionRef, *intentRe
 		return questionRef{kind: "mission", id: id, mission: mission, ask: ask}, nil
 	}
 	var matches []questionRef
-	if q, err := inv.owners.processes.question(inv.stateRoot, ref); err == nil {
+	if q, err := inv.owners.processes.question(inv.layout.InstallationRoot.Path(), ref); err == nil {
 		matches = append(matches, questionRef{kind: "channel", id: ref, channel: q})
 	}
 	if missionIDRe.MatchString(ref) {
@@ -129,6 +131,9 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data}
 		var headline, fact string
 		switch {
+		case c.Answer != nil && (c.State != "closed" || c.ClosedBecause == ""):
+			result.Summary = "question " + c.ID + " " + channel.AnswerSummary(c)
+			headline = result.Summary
 		case c.State == "closed" && (channel.LaneStopCommand(c) != "" || c.Recovery != nil) && c.ClosedBecause != "":
 			result.Summary = fmt.Sprintf("channel question %s: %s", c.ID, c.ClosedBecause)
 			headline = result.Summary
@@ -151,12 +156,12 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 		if channel.LaneStopCommand(c) != "" {
 			act = c.Facts[0]
 		}
-		if command := act; command != "" && c.State != "closed" {
+		if command := act; command != "" && c.State != "closed" && c.Answer == nil {
 			result.Summary, result.next, result.nextReason, result.text = command, nil, "", nil
 		}
 		result.view = func(page *textui.Page) {
 			instructions := channel.ReplyInstructionsAt(inv.stateRoot, c)
-			if command := act; command != "" && c.State != "closed" {
+			if command := act; command != "" && c.State != "closed" && c.Answer == nil {
 				page.Headline(command, "")
 				if channel.LaneStopCommand(c) == "" {
 					page.Section("", "").Text(strings.Join(c.Facts[1:], "\n"))
@@ -167,6 +172,9 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 				return
 			}
 			page.Headline(headline, fact)
+			if act != "" && c.Answer != nil {
+				return
+			}
 			rows := []textui.KV{}
 			if c.Goal != "" {
 				rows = append(rows, textui.KV{Key: "goal", Value: []textui.Span{textui.Plain(c.Goal)}})
@@ -201,12 +209,52 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 		}}
 }
 
+func (inv *intentInvocation) settleQuestionReplies() *intentResult {
+	root := inv.layout.InstallationRoot.Path()
+	ctx, cancel, err := channelPollContext(root)
+	if err == nil {
+		defer cancel()
+		_, err = phase.SettleReplies(ctx, root, inv.owners.dependencies.endpoint)
+	}
+	if err != nil {
+		inv.replySettleErr = err
+	}
+	return nil
+}
+
+func replySettleCause(err error) string {
+	if many, ok := err.(interface{ Unwrap() []error }); ok {
+		var causes []string
+		for _, cause := range many.Unwrap() {
+			causes = append(causes, replySettleCause(cause))
+		}
+		return strings.Join(causes, "; ")
+	}
+	if failure, ok := err.(*channel.ReplyPublicationError); ok {
+		return fmt.Sprintf("%q: %s", oneLine(failure.Question), replySettleCause(failure.Err))
+	}
+	var unreachable goal.PublicationCaptureFailure
+	switch {
+	case errors.As(err, &unreachable):
+		return "the reply service cannot be reached"
+	case errors.Is(err, errChannelPollTimeout):
+		return "the reply check timeout setting is invalid"
+	case goal.RefusalCode(err) == goal.AnswerGoalClosedCode:
+		return "the goal is no longer open"
+	default:
+		return "an unexpected error (details with --verbose)"
+	}
+}
+
 func runIntentShowQuestion(inv *intentInvocation, args []string) int {
 	if len(args) != 1 || inv.input.has("history") || inv.input.has("id") {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "question show takes one question id (or M/Q) and nothing else; nothing was done",
 			next: inv.publicArgv("question", "list"), nextReason: "lists the open questions with their ids"})
 	}
 	if problem := inv.selectLayoutRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	if problem := inv.settleQuestionReplies(); problem != nil {
 		return inv.render(*problem)
 	}
 	q, problem := inv.resolveQuestion(args[0])

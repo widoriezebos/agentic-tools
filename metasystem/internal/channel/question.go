@@ -30,6 +30,9 @@ type Rejection struct {
 	PostRef *MessageRef `json:"postRef"`
 }
 type Answer struct {
+	Machine      string     `json:"machine,omitempty"`
+	Lineage      string     `json:"lineage,omitempty"`
+	Provider     string     `json:"provider,omitempty"`
 	Text         string     `json:"text"`
 	UserID       string     `json:"userID"`
 	Ref          MessageRef `json:"ref"`
@@ -648,4 +651,24 @@ func Close(repo, id, because string, p Provider, d DestinationConfig, successful
 		q.Answer.Phase = "closed"
 	}
 	return writeJSON(questionPath(repo, id), q)
+}
+
+// AnswerSummary describes the reply and any act that still belongs to the person.
+func AnswerSummary(q Question) string {
+	if q.Answer == nil {
+		return ""
+	}
+	verb := "answered"
+	act := ActCommand(q)
+	if act != "" && q.State != "closed" {
+		verb = "replied"
+	}
+	text := fmt.Sprintf("%s '%s' at %s", verb, q.Answer.Text, q.Answer.At.Local().Format("15:04"))
+	if verb == "replied" {
+		if LaneStopCommand(q) != "" {
+			act = q.Facts[0]
+		}
+		text += "; the act is still needed: " + act
+	}
+	return text
 }

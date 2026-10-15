@@ -428,7 +428,7 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		if err != nil || step < 1 {
 			return PublishRequest{}, fmt.Errorf("the stored answer step is invalid; close it by hand")
 		}
-		proof := AnswerProof{Provider: in.Args["provider"], User: in.Args["user"], Ref: in.Args["ref"], Step: step}
+		proof := AnswerProof{Provider: in.Args["provider"], User: in.Args["user"], Ref: in.Args["ref"], Step: step, OperationID: in.Args["answer-operation"]}
 		if proof.Provider == "" || proof.User == "" || proof.Ref == "" || strings.TrimSpace(in.Args["question"]) == "" || strings.TrimSpace(in.Args["text"]) == "" {
 			return PublishRequest{}, fmt.Errorf("the stored answer intent is incomplete; close it by hand")
 		}

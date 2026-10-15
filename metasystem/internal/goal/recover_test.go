@@ -1233,3 +1233,83 @@ func TestRecoveryCompletesADeadOwnersBlockerOpen(t *testing.T) {
 		t.Fatalf("the park rides the original opid: %+v", held.History[len(held.History)-1])
 	}
 }
+
+func TestRecoveryRebuildsAnswerRetryIdentity(t *testing.T) {
+	t.Parallel()
+	endpoint, _ := fakeGoalEndpoint(t)
+	if result, err := Open(verbReqFor(endpoint, "01J5X0000000000000000000M0", "mac-a"), "answer-retry", "Record an answer once.", "main", "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	original := Opid("01J5X0000000000000000000M1", "mac-a", "lin-1")
+	req := answerRequest(verbReqFor(endpoint, "01J5X0000000000000000000M2", "mac-a"), "answer-retry", "question-1", "yes", "", AnswerProof{Provider: "fake", User: "person", Ref: "1/2", Step: 42, OperationID: original})
+	entry, err := CreateEntry(endpoint.Root, req.Opid, req.Machine, req.Lineage, req.Intent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rebuilt, err := requestForEntry(endpoint, entry)
+	if err != nil || rebuilt.Opid != req.Opid || !reflect.DeepEqual(rebuilt.Intent, req.Intent) {
+		t.Fatalf("retry changed stored intent: %+v %v", rebuilt, err)
+	}
+	if result, err := CompleteEntry(endpoint, rebuilt); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("complete: %+v %v", result, err)
+	}
+	// A second attempt with its own journal still records the same answer only once.
+	repeated := verbReqFor(endpoint, "01J5X0000000000000000000M3", "mac-a")
+	if result, err := Answer(repeated, "answer-retry", "question-1", "yes", "", AnswerProof{Provider: "fake", User: "person", Ref: "1/2", Step: 42, OperationID: original}); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("repeat: %+v %v", result, err)
+	}
+	projection, err := projectFetched(endpoint, repeated.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	answers := 0
+	for _, h := range projection.Tree.Live["answer-retry"].History {
+		if h.Verb == "answer" {
+			answers++
+			if h.Opid != original {
+				t.Fatalf("original identity lost: %+v", h)
+			}
+		}
+	}
+	if answers != 1 {
+		t.Fatalf("answers=%d", answers)
+	}
+}
+
+func TestAnswerRetryKeepsStoredOperation(t *testing.T) {
+	t.Parallel()
+	endpoint, _ := fakeGoalEndpoint(t)
+	original := Opid("01J5X0000000000000000000N0", "original", "session")
+	req := verbReqFor(endpoint, "01J5X0000000000000000000N1", "mac-a")
+	proof := AnswerProof{Provider: "fake", User: "person", Ref: "1/2", Step: 42, OperationID: original}
+	if result, err := Answer(req, "answer-retry", "q", "yes", "", proof); err != nil || result.Outcome != OutcomeRejected {
+		t.Fatalf("first attempt: %+v %v", result, err)
+	}
+	if result, err := Open(verbReqFor(endpoint, "01J5X0000000000000000000N2", "mac-a"), "answer-retry", "Record the retry.", "main", "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("open: %+v %v", result, err)
+	}
+	if result, err := Answer(req, "answer-retry", "q", "yes", "", proof); err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("retry: %+v %v", result, err)
+	}
+	entries, err := Entries(endpoint.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	attempts := 0
+	for _, entry := range entries {
+		if entry.Intent.Verb != "answer" {
+			continue
+		}
+		attempts++
+		if entry.Intent.Args["answer-operation"] != original {
+			t.Fatalf("stored retry changed original identity: %+v", entry)
+		}
+		rebuilt, err := requestForEntry(endpoint, entry)
+		if err != nil || rebuilt.Opid != entry.Opid || !reflect.DeepEqual(rebuilt.Intent, entry.Intent) {
+			t.Fatalf("rebuild changed retry: %+v %v", rebuilt, err)
+		}
+	}
+	if attempts != 2 {
+		t.Fatalf("attempts=%d", attempts)
+	}
+}

@@ -784,7 +784,7 @@ func ReadChannelInboxAtTip(e Endpoint, nonce string) (map[string]*ChannelInbound
 	repository := e.repository()
 	tip, err := repository.Capture(nonce)
 	if err != nil {
-		return nil, err
+		return nil, PublicationCaptureFailure{Cause: err, Local: e.LocalMode()}
 	}
 	defer repository.Release(nonce)
 	return ReadChannelInbox(e, tip)

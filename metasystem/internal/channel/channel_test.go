@@ -1245,8 +1245,10 @@ func TestPollRecordsAuthenticatedReply(t *testing.T) {
 	})
 }
 func TestPollCrashRecoveryExactlyOnce(t *testing.T) {
+	t.Parallel()
 	for _, phase := range []string{"matched", "recorded-commit", "recorded", "closed"} {
 		t.Run(phase, func(t *testing.T) {
+			t.Parallel()
 			bed, p, q, now := pollLedgerBed(t)
 			root := bed.root
 			code, _ := TOTPCode("JBSWY3DPEHPK3PXP", now)
@@ -1263,6 +1265,16 @@ func TestPollCrashRecoveryExactlyOnce(t *testing.T) {
 			if _, err := bed.poll(context.Background(), cfg); err == nil {
 				t.Fatal("crash injection did not stop the pass")
 			}
+			// Older answer records carry the operation id without the caller fields.
+			legacy, err := ReadQuestion(root, q.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			legacy.Answer.Machine, legacy.Answer.Lineage, legacy.Answer.Provider = "", "", ""
+			if err := writeJSON(questionPath(root, q.ID), legacy); err != nil {
+				t.Fatal(err)
+			}
+			cfg.Machine, cfg.Lineage = "retry-machine", "retry-lineage"
 			cfg.FailurePoint = nil
 			if _, err := bed.poll(context.Background(), cfg); err != nil {
 				t.Fatal(err)

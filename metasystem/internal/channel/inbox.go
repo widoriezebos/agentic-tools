@@ -519,14 +519,15 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 	})
 	handledPath := filepath.Join(channelRoot(c.RepoRoot), c.Destination, "inbox-handled.json")
 	handled := readHandled(handledPath)
+	var publicationErrors error
 	for _, record := range records {
 		if result.Dispositions >= c.MaxDispositions {
-			return nil
+			return publicationErrors
 		}
 		in := record.in
 		questions, err = listQuestions(c.RepoRoot)
 		if err != nil {
-			return err
+			return errors.Join(publicationErrors, err)
 		}
 		var match *Question
 		if in.ReplyTo != nil {
@@ -543,11 +544,11 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 			}
 			if !threaded && status.GoalID != "" && statusRoot != "" && (replyTo == statusRoot || replyTo == status.Ref.ID) && !handled[record.path] {
 				if err := disposeStatusReplyWithEndpoint(ctx, c, status, in, resolveEndpoint); err != nil {
-					return scrubErr(err, c)
+					return errors.Join(publicationErrors, scrubErr(err, c))
 				}
 				handled[record.path] = true
 				if err := writeJSON(handledPath, sortedHandled(handled)); err != nil {
-					return err
+					return errors.Join(publicationErrors, err)
 				}
 				result.Dispositions++
 				continue
@@ -569,11 +570,12 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 			continue
 		}
 		if err := recordMatch(ctx, c, match, in, resolveEndpoint); err != nil {
-			return err
+			publicationErrors = errors.Join(publicationErrors, &ReplyPublicationError{Question: strings.Join(match.Facts, " "), Err: err})
+			continue
 		}
 		result.Dispositions++
 	}
-	return nil
+	return publicationErrors
 }
 
 func threadRoot(ref MessageRef) string {
@@ -590,6 +592,15 @@ func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.Channe
 	if err != nil {
 		return err
 	}
+	if c.Machine == "" {
+		c.Machine = q.Machine
+	}
+	if c.Lineage == "" {
+		c.Lineage = q.Lineage
+		if c.Lineage == "" {
+			c.Lineage = "steward"
+		}
+	}
 	opid := goal.Opid(ulid, c.Machine, c.Lineage)
 	approvalULID := ""
 	if q.Kind == "budget-above-norm" && strings.TrimSpace(in.Text) == q.Wants {
@@ -601,8 +612,15 @@ func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.Channe
 	if in.ReplyTo != nil {
 		ref.ThreadID = *in.ReplyTo
 	}
-	q.Answer = &Answer{Text: in.Text, UserID: in.UserID, Ref: ref, At: c.Now, Step: *in.Step, ULID: ulid, Opid: opid, ApprovalULID: approvalULID, Phase: "matched"}
+	sent, err := time.Parse(time.RFC3339, in.SentAt)
+	if err != nil {
+		return err
+	}
+	q.Answer = &Answer{Machine: c.Machine, Lineage: c.Lineage, Provider: in.Provider, Text: in.Text, UserID: in.UserID, Ref: ref, At: sent, Step: *in.Step, ULID: ulid, Opid: opid, ApprovalULID: approvalULID, Phase: "matched"}
 	q.State = "answered"
+	if LaneStopCommand(*q) != "" {
+		q.State = "open"
+	}
 	if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
 		return err
 	}

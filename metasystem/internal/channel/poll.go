@@ -27,6 +27,15 @@ type PollConfig struct {
 	// validateInbox replaces the inbox commit validation in tests.
 	validateInbox func(goal.Endpoint, string) error
 }
+
+type ReplyPublicationError struct {
+	Question string
+	Err      error
+}
+
+func (e *ReplyPublicationError) Error() string { return fmt.Sprintf("%s: %v", e.Question, e.Err) }
+func (e *ReplyPublicationError) Unwrap() error { return e.Err }
+
 type PollResult struct {
 	Busy                                bool
 	Received, Dispositions, Undelivered int
@@ -40,7 +49,20 @@ func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
 	return pollWithEndpoint(ctx, c, goal.ResolveEndpoint)
 }
 
+// SettleReplies matches committed replies and finishes answers without receiving
+// messages, delivering questions or applying status commands. No session is needed.
+func SettleReplies(ctx context.Context, c PollConfig, resolveEndpoint func(string) (goal.Endpoint, error)) (PollResult, error) {
+	if resolveEndpoint == nil {
+		resolveEndpoint = goal.ResolveEndpoint
+	}
+	return runPoll(ctx, c, resolveEndpoint, false)
+}
+
 func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointResolver) (PollResult, error) {
+	return runPoll(ctx, c, resolveEndpoint, true)
+}
+
+func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointResolver, receive bool) (PollResult, error) {
 	var result PollResult
 	if c.MaxDispositions <= 0 {
 		c.MaxDispositions = 5
@@ -59,8 +81,10 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 		return result, err
 	}
 	defer held.Release()
-	if c.answerCodeOff, err = AnswerCodeOff(c.RepoRoot); err != nil {
-		return result, err
+	if receive {
+		if c.answerCodeOff, err = AnswerCodeOff(c.RepoRoot); err != nil {
+			return result, err
+		}
 	}
 	questions, err := listQuestions(c.RepoRoot)
 	if err != nil {
@@ -71,7 +95,7 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 			break
 		}
 		q := &questions[i]
-		if q.State == "open" && q.Thread == nil {
+		if receive && q.State == "open" && q.Thread == nil {
 			ref, postErr := c.Provider.Post(ctx, c.DestinationConfig, renderQuestion(*q, c.answerCodeOff), nil)
 			if postErr != nil {
 				q.Undelivered++
@@ -85,19 +109,24 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 			result.Dispositions++
 		}
 	}
+	var publicationErrors error
 	for i := range questions {
 		if result.Dispositions >= c.MaxDispositions {
 			break
 		}
 		q := &questions[i]
-		if q.Answer != nil && q.Answer.Phase != "closed" {
+		if unfinishedAnswer(*q) {
 			if err = advanceAnswerWithEndpoint(ctx, c, q, resolveEndpoint); err != nil {
-				return result, scrubErr(err, c)
+				publicationErrors = errors.Join(publicationErrors, &ReplyPublicationError{Question: strings.Join(q.Facts, " "), Err: scrubErr(err, c)})
+				continue
 			}
 			result.Dispositions++
 		}
 	}
-	status := LoadStatusState(c.RepoRoot)
+	status := StatusState{}
+	if receive {
+		status = LoadStatusState(c.RepoRoot)
+	}
 	statusRoot := status.Ref.ThreadID
 	if statusRoot == "" {
 		statusRoot = status.Ref.ID
@@ -123,13 +152,11 @@ func pollWithEndpoint(ctx context.Context, c PollConfig, resolveEndpoint pollEnd
 		return *ep, nil
 	}
 	var receiveErr error
-	if c.receiveConfigured() {
+	if receive && c.receiveConfigured() {
 		receiveErr = receiveToInbox(ctx, c, threads, endpoint, &result)
 	}
-	if err = matchInbox(ctx, c, status, statusRoot, endpoint, resolveEndpoint, &result); err != nil {
-		return result, errors.Join(receiveErr, err)
-	}
-	return result, receiveErr
+	err = matchInbox(ctx, c, status, statusRoot, endpoint, resolveEndpoint, &result)
+	return result, errors.Join(publicationErrors, receiveErr, err)
 }
 
 // disposeStatusReplyWithEndpoint answers a verified inbox record that replies
@@ -184,6 +211,12 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 	if a == nil {
 		return nil
 	}
+	if a.Machine != "" {
+		c.Machine, c.Lineage = a.Machine, a.Lineage
+	}
+	if a.Provider != "" {
+		c.ProviderName = a.Provider
+	}
 	if a.Phase == "matched" && q.Goal == "" {
 		// A question without a goal has no goal file: its answer is recorded
 		// on the question record alone.
@@ -207,12 +240,12 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 		if q.Kind == "carry" {
 			wants = ""
 		}
-		published, err := goal.Answer(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage}, Ulid: a.ULID, Now: a.At}, q.Goal, q.ID, a.Text, wants, goal.AnswerProof{Provider: c.ProviderName, User: a.UserID, Ref: a.Ref.ThreadID + "/" + a.Ref.ID, Step: a.Step})
+		published, err := goal.Answer(goal.VerbRequest{Endpoint: ep, Actor: goal.Actor{Machine: c.Machine, Lineage: c.Lineage}, Ulid: a.ULID, Now: a.At}, q.Goal, q.ID, a.Text, wants, goal.AnswerProof{Provider: c.ProviderName, User: a.UserID, Ref: a.Ref.ThreadID + "/" + a.Ref.ID, Step: a.Step, OperationID: a.Opid})
 		if err != nil {
 			return err
 		}
 		if published.Outcome != goal.OutcomeConfirmed {
-			return fmt.Errorf("goal answer was not confirmed: %s", published.Detail)
+			return goal.Coded(published.Code, fmt.Errorf("goal answer was not confirmed: %s", published.Detail))
 		}
 		if q.Kind == "budget-above-norm" && strings.TrimSpace(a.Text) == q.Wants {
 			if q.Budget == nil {
@@ -247,7 +280,7 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 	// Decision 7: the answer receipt is no longer posted; a recorded answer,
 	// or a receipted one from an older engine, closes locally.
 	if a.Phase == "recorded" || a.Phase == "receipted" {
-		if q.UnitStop != nil {
+		if q.UnitStop != nil || LaneStopCommand(*q) != "" {
 			return nil
 		}
 		a.Phase = "closed"
@@ -269,5 +302,15 @@ func fail(c PollConfig, phase string) error {
 	return nil
 }
 func scrubErr(err error, c PollConfig) error {
-	return fmt.Errorf("%s", Scrub(err.Error(), append(c.DestinationConfig.Secrets, c.TOTPSecret)...))
+	if capture, ok := err.(goal.PublicationCaptureFailure); ok {
+		return goal.PublicationCaptureFailure{Cause: fmt.Errorf("%s", Scrub(capture.Cause.Error(), append(c.DestinationConfig.Secrets, c.TOTPSecret)...)), Local: capture.Local}
+	}
+	return goal.Coded(goal.RefusalCode(err), fmt.Errorf("%s", Scrub(err.Error(), append(c.DestinationConfig.Secrets, c.TOTPSecret)...)))
+}
+
+// Recorded replies to action requests are complete even while the act is pending.
+func unfinishedAnswer(q Question) bool {
+	return q.Answer != nil && q.Answer.Phase != "closed" &&
+		!((q.Answer.Phase == "recorded" || q.Answer.Phase == "receipted") && (q.UnitStop != nil || LaneStopCommand(q) != "")) &&
+		q.ProcessAct == "" && q.Recovery == nil
 }

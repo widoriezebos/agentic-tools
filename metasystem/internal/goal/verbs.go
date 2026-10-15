@@ -11,6 +11,7 @@ package goal
 // and actor. Arc cascades land with the arcs layer.
 
 import (
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -40,6 +41,8 @@ import (
 )
 
 type AnswerProof struct {
+	// OperationID preserves the identity stored before an interrupted publication.
+	OperationID         string
 	Provider, User, Ref string
 	Step                int64
 }
@@ -149,6 +152,8 @@ func containsContiguousFields(text, token string) bool {
 	return matches == 1
 }
 
+const AnswerGoalClosedCode = "ANSWER_GOAL_CLOSED"
+
 // Answer records an authenticated channel reply and its next-step marker in
 // the same goal transaction. Replaying its operation identifier is a no-op.
 func Answer(r VerbRequest, id, qid, text, wants string, proof AnswerProof) (PublishResult, error) {
@@ -158,15 +163,35 @@ func Answer(r VerbRequest, id, qid, text, wants string, proof AnswerProof) (Publ
 	if proof.Provider == "" || proof.User == "" || proof.Ref == "" || proof.Step < 1 || strings.TrimSpace(text) == "" {
 		return PublishResult{}, errors.New("an answer needs its text and the signed-in channel message it came from")
 	}
-	return Publish(r.Endpoint, answerRequest(r, id, qid, text, wants, proof))
+	if proof.OperationID != "" && !validOpidShape(proof.OperationID) {
+		return PublishResult{}, errors.New("an answer needs a valid recorded operation id")
+	}
+	req := answerRequest(r, id, qid, text, wants, proof)
+	if entry, err := ReadEntry(r.Endpoint.Root, req.Opid); err == nil && entry.Phase == PhaseTerminal && entry.Outcome != OutcomeConfirmed && entry.Outcome != OutcomeConfirmedLate {
+		// A failed attempt stays terminal; the recorded answer keeps its identity.
+		attempt, err := NewOperationULID()
+		if err != nil {
+			return PublishResult{}, err
+		}
+		req.Intent.Args["answer-operation"] = cmp.Or(req.Intent.Args["answer-operation"], req.Opid)
+		req.Opid = Opid(attempt, r.Actor.Machine, r.Actor.Lineage)
+	}
+	return Publish(r.Endpoint, req)
 }
 
 func answerRequest(r VerbRequest, id, qid, text, wants string, proof AnswerProof) PublishRequest {
+	opid := r.opid()
+	if proof.OperationID != "" {
+		opid = proof.OperationID
+	}
 	reason := text
 	if wants != "" && !strings.Contains(reason, wants) {
 		reason += " " + wants
 	}
 	args := map[string]string{"question": qid, "text": text, "wants": wants, "provider": proof.Provider, "user": proof.User, "ref": proof.Ref, "step": strconv.FormatInt(proof.Step, 10)}
+	if opid != r.opid() {
+		args["answer-operation"] = opid
+	}
 	return PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: Intent{Verb: "answer", Targets: []string{id}, Args: args}, Message: "goal answer " + id, Mutate: func(tip string) ([]Change, error) {
 		t, err := loadTreeFor(r.Endpoint, tip)
 		if err != nil {
@@ -174,12 +199,14 @@ func answerRequest(r VerbRequest, id, qid, text, wants string, proof AnswerProof
 		}
 		f := t.Live[id]
 		if f == nil {
-			return nil, fmt.Errorf("goal %s is not live", id)
+			return nil, coded(AnswerGoalClosedCode, fmt.Errorf("goal %s is not live", id))
 		}
-		if opidLanded(f, r) {
-			return nil, AlreadyApplied{}
+		for _, h := range f.History {
+			if h.Opid == opid {
+				return nil, AlreadyApplied{}
+			}
 		}
-		change, err := answerGoalChange(t, id, qid, text, reason, r.opid(), r.stamp(), proof)
+		change, err := answerGoalChange(t, id, qid, text, reason, opid, r.stamp(), proof)
 		if err != nil {
 			return nil, err
 		}

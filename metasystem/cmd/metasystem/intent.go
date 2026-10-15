@@ -651,6 +651,7 @@ type intentInvocation struct {
 	entrants []*diskstore.Entrant
 	// notices holds the helm and grant admission notices until the result
 	// says whether the act proceeded; nil prints them at once.
+	replySettleErr                       error
 	notices                              *admissionNotices
 	laneException                        *lanePersonObservation
 	landingWords                         string
@@ -869,6 +870,9 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
+	if inv.replySettleErr != nil {
+		result.Details = append(result.Details, inv.replySettleErr.Error())
+	}
 	result = inv.observeLandingRefusal(result)
 	result = result.withClaimPreparation(inv.claimPreparation)
 	inv.laneSkipShadow = result.Outcome == intentUnchanged || result.code == 2 || result.Outcome == intentRefused && !inv.laneCallerPerson
@@ -940,6 +944,9 @@ func (inv *intentInvocation) render(result intentResult) int {
 		inv.legacyConfirmed(page, result)
 	default:
 		inv.legacyRefused(page, result)
+	}
+	if inv.replySettleErr != nil {
+		page.Section("", "").Fixed("Replies could not be checked just now: " + replySettleCause(inv.replySettleErr) + "; questions are as last known.")
 	}
 	if verbose {
 		page.Legacy(detailLines(result.Details)...)

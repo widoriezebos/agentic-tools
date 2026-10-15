@@ -2243,6 +2243,9 @@ func runIntentAnswerQuestion(inv *intentInvocation) int {
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
 	}
+	if problem := inv.settleQuestionReplies(); problem != nil {
+		return inv.render(*problem)
+	}
 	q, problem := inv.resolveQuestion(args[0])
 	if problem != nil {
 		return inv.render(*problem)
@@ -2449,17 +2452,26 @@ func runIntentQuestionList(inv *intentInvocation) int {
 	if problem := inv.selectLayoutRoot(); problem != nil {
 		return inv.render(*problem)
 	}
+	if problem := inv.settleQuestionReplies(); problem != nil {
+		return inv.render(*problem)
+	}
 	if inv.input.switched("answered") {
 		return inv.render(inv.answeredQuestions())
 	}
-	questions, unreadable := channel.WalkOpenQuestions(inv.stateRoot)
+	all, unreadable := channel.WalkQuestions(inv.layout.InstallationRoot.Path())
+	questions := []channel.Question{}
+	for _, q := range all {
+		if q.State == "open" || q.Answer != nil {
+			questions = append(questions, q)
+		}
+	}
 	lines, views := []string{}, []map[string]any{}
 	for _, q := range questions {
 		first := ""
 		if len(q.Facts) > 0 {
 			first = q.Facts[0]
 		}
-		lines = append(lines, fmt.Sprintf("  channel:%s  %s  goal %s  %s", q.ID, q.State, q.Goal, first))
+		lines = append(lines, fmt.Sprintf("  channel:%s  %s  goal %s  %s", q.ID, q.State, q.Goal, first+" "+channel.AnswerSummary(q)))
 		views = append(views, map[string]any{"reference": "channel:" + q.ID, "state": q.State, "goal": q.Goal, "question": first,
 			"show": inv.publicArgv("question", "show", "channel:"+q.ID)})
 	}
@@ -2487,7 +2499,11 @@ func questionListView(questions []channel.Question) func(*textui.Page) {
 			page.Headline("No questions wait for a person")
 			return
 		}
-		page.Headline(textui.Count(len(questions), "question waits", "questions wait") + " for a person")
+		headline := textui.Count(len(questions), "question waits", "questions wait") + " for a person"
+		if slices.ContainsFunc(questions, func(q channel.Question) bool { return q.Answer != nil }) {
+			headline = textui.Count(len(questions), "question", "questions")
+		}
+		page.Headline(headline)
 		section := page.Section("", "")
 		for _, q := range questions {
 			facts := []string{"channel:" + q.ID}
@@ -2498,6 +2514,9 @@ func questionListView(questions []channel.Question) func(*textui.Page) {
 			separator := " · "
 			if env.ASCII {
 				separator = ", "
+			}
+			if answer := channel.AnswerSummary(q); answer != "" {
+				facts = append(facts, answer)
 			}
 			card := section.Item(textui.Alert, strings.Join(facts, separator))
 			if len(q.Facts) > 0 {

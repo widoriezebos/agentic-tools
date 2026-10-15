@@ -44,6 +44,8 @@ func channelIdentityFor(root string, resolveMachine func(string) (string, error)
 	return m, lin, nil
 }
 
+var errChannelPollTimeout = errors.New("channel.poll-timeout-sec must be a positive integer of seconds")
+
 func channelPollContext(root string) (context.Context, context.CancelFunc, error) {
 	raw, err := phase.Get(root, "channel.poll-timeout-sec", "15")
 	if err != nil {
@@ -52,7 +54,7 @@ func channelPollContext(root string) (context.Context, context.CancelFunc, error
 	seconds, err := strconv.ParseInt(raw, 10, 64)
 	const maxSeconds = int64(^uint64(0)>>1) / int64(time.Second)
 	if err != nil || seconds < 1 || seconds > maxSeconds {
-		return nil, nil, fmt.Errorf("channel.poll-timeout-sec must be a positive integer of seconds")
+		return nil, nil, errChannelPollTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(seconds)*time.Second)
 	return ctx, cancel, nil

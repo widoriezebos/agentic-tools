@@ -174,6 +174,20 @@ func Load(root string, withHuman bool) (Loaded, error) {
 	return loaded, err
 }
 
+// SettleReplies consumes only replies already authenticated by the receiver.
+// It needs neither channel credentials nor an agent session.
+func SettleReplies(ctx context.Context, root string, endpoint func(string) (goal.Endpoint, error)) (int, error) {
+	adapter, err := Get(root, "channel.destination.fleet.adapter", "")
+	if errors.Is(err, config.ErrNoValue) {
+		return 0, nil
+	}
+	if err != nil || adapter == "" {
+		return 0, err
+	}
+	res, err := channel.SettleReplies(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: adapter}, endpoint)
+	return res.Dispositions, err
+}
+
 // Run performs the bounded channel duty after every other tick duty.
 func Run(ctx context.Context, root string) (int, error) {
 	return run(ctx, root, time.Now(), goal.ResolveMachine, goal.ResolveEndpoint)

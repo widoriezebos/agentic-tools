@@ -55,6 +55,7 @@ type Prose struct {
 type Defect struct{ Code, Why string }
 
 var Rows = []Row{
+	{Code: "ANSWER_GOAL_CLOSED", Owner: "internal/goal", Site: "verbs.go#answerRequest", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_NOT_FINISHED", Owner: "cmd/metasystem", Site: "intent_delivery.go#handLandingSubject", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_NO_END", Owner: "cmd/metasystem", Site: "intent_delivery.go#handLandingSubject", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_PROGRESS_UNREADABLE", Owner: "cmd/metasystem", Site: "intent_delivery.go#handLandingSubject", Shape: Question, H1: StandingInput},

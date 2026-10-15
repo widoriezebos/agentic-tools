@@ -27,6 +27,7 @@ import (
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -167,6 +168,8 @@ type runnerLoopDependencies struct {
 	DeliverPending func(string) (int, error)
 	Resumable      func(string) (string, bool, error)
 	Channel        func(context.Context, string) (int, error)
+	SettleReplies  func(context.Context, string) (int, error)
+	ReplyEndpoint  func(string) (goal.Endpoint, error)
 	// TrimCaches trims the machine caches as the cycle's last step; nil
 	// trims nothing.
 	TrimCaches           func(context.Context, string, TickConfig) error
@@ -216,6 +219,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	}
 	if deps.Resumable == nil {
 		deps.Resumable = ResumableIntent
+	}
+	if deps.SettleReplies == nil {
+		deps.SettleReplies = func(ctx context.Context, root string) (int, error) {
+			return channelphase.SettleReplies(ctx, root, deps.ReplyEndpoint)
+		}
 	}
 	if deps.Channel == nil {
 		deps.Channel = channelphase.Run
@@ -359,6 +367,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				bridgeLine = line
 			}
 		}
+		settleContext, cancelSettle := context.WithTimeout(context.Background(), 15*time.Second)
+		if _, settleErr := deps.SettleReplies(settleContext, top); settleErr != nil {
+			fmt.Fprintf(os.Stderr, "question replies: %v\n", settleErr)
+		}
+		cancelSettle()
 		// The helm is resolved here, after the tick returned and before any
 		// post-tick act, whatever the tick's outcome: a take that lands during
 		// the tick holds this pass, and the tick's decision stays on disk for
