@@ -61,6 +61,16 @@ func TestLaneMergeRealImpactCheckGitAdapter(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(home, "host"), 0o755); err != nil {
 				t.Fatal(err)
 			}
+			// The lane launches its checks with the installation's own bin first on the child's search path
+			// (then /usr/bin:/bin when the child inherits no PATH) and refuses when that binary is missing; this
+			// fixture's installation is the repository root, so it carries one. The check names the test
+			// executable explicitly, so the stub must never run: it fails loudly if a check ever calls bare metasystem.
+			if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("#!/bin/sh\necho 'fixture engine must not run' >&2\nexit 127\n"), 0o755); err != nil {
+				t.Fatal(err)
+			}
 			err = plain.CompleteMerge(home, root, root, fix, check, seams)
 			logs, globErr := filepath.Glob(filepath.Join(plain.Dir(root), "merge-check-*.log"))
 			if globErr != nil || len(logs) != 1 {
