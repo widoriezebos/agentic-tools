@@ -2,13 +2,21 @@ package testenv
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"golang.org/x/sys/unix"
 )
 
 // toolchainSlot is this test binary's one Go toolchain slot. Every go
@@ -18,6 +26,7 @@ import (
 // -p packages times -parallel tests, and each toolchain adds hundreds of MB
 // and CPU-seconds. Across package binaries the suite's -p bounds them.
 var toolchainSlot = make(chan struct{}, 1)
+var toolchainTempRoot = filepath.Clean(os.TempDir())
 
 // HoldToolchain takes this binary's toolchain slot for a fixture that drives
 // a real toolchain itself (the engine building a candidate, a go gate running
@@ -31,33 +40,109 @@ func HoldToolchain() (release func()) {
 
 // GoCmd is one go toolchain command for a test. Run, Output and
 // CombinedOutput hold the binary's toolchain slot for the command's life.
-type GoCmd struct{ *exec.Cmd }
+type GoCmd struct {
+	*exec.Cmd
+	ctx context.Context
+}
 
 // Go is exec.Command("go", args...) under the toolchain slot.
-func Go(args ...string) *GoCmd { return &GoCmd{exec.Command("go", args...)} }
+func Go(args ...string) *GoCmd { return GoContext(context.Background(), args...) }
 
 // GoContext is exec.CommandContext(ctx, "go", args...) under the toolchain
 // slot.
 func GoContext(ctx context.Context, args ...string) *GoCmd {
-	return &GoCmd{exec.CommandContext(ctx, "go", args...)}
+	return &GoCmd{Cmd: exec.CommandContext(ctx, "go", args...), ctx: ctx}
 }
 
 // Run runs the command while it holds the toolchain slot.
 func (command *GoCmd) Run() error {
-	defer HoldToolchain()()
-	return command.Cmd.Run()
+	_, err := command.execute(func() ([]byte, error) { return nil, command.Cmd.Run() })
+	return err
 }
 
 // Output runs the command while it holds the toolchain slot.
-func (command *GoCmd) Output() ([]byte, error) {
-	defer HoldToolchain()()
-	return command.Cmd.Output()
-}
+func (command *GoCmd) Output() ([]byte, error) { return command.execute(command.Cmd.Output) }
 
 // CombinedOutput runs the command while it holds the toolchain slot.
 func (command *GoCmd) CombinedOutput() ([]byte, error) {
-	defer HoldToolchain()()
-	return command.Cmd.CombinedOutput()
+	return command.execute(command.Cmd.CombinedOutput)
+}
+
+func (command *GoCmd) execute(run func() ([]byte, error)) ([]byte, error) {
+	select {
+	case toolchainSlot <- struct{}{}:
+	case <-command.ctx.Done():
+		return nil, command.ctx.Err()
+	}
+	defer func() { <-toolchainSlot }()
+	if len(command.Args) > 1 && command.Args[1] == "build" {
+		release, err := buildLock(command.ctx, command)
+		if err != nil {
+			return nil, fmt.Errorf("build lock: %w", err)
+		}
+		defer release()
+	}
+	return run()
+}
+
+// buildLock's record describes the holder; only flock establishes exclusion.
+func buildLock(ctx context.Context, variant *GoCmd) (release func(), err error) {
+	caches, err := gocache.Resolve(variant.Environ())
+	if err != nil {
+		return nil, err
+	}
+	module, err := moduleRoot(variant.Dir)
+	if err != nil {
+		return nil, err
+	}
+	directory, _ := filepath.Abs(variant.Dir) // moduleRoot resolved the same directory above.
+	args := []string{module}
+	for i, arg := range variant.Args[1:] {
+		if arg == "-o" || variant.Args[i] == "-o" || strings.HasPrefix(arg, "-o=") {
+			continue
+		}
+		if strings.HasPrefix(arg, ".") {
+			path, _ := filepath.Rel(module, filepath.Join(directory, arg))
+			arg = "./" + filepath.ToSlash(path)
+		}
+		for _, field := range strings.Fields(arg) {
+			value := field[strings.Index(field, "=")+1:]
+			if strings.HasPrefix(value, toolchainTempRoot+string(filepath.Separator)) || strings.HasPrefix(value, os.TempDir()+string(filepath.Separator)) || strings.Contains(value, string(filepath.Separator)+processNamespacePrefix) {
+				arg = strings.ReplaceAll(arg, value, "<temporary>")
+			}
+		}
+		args = append(args, arg)
+	}
+	key, _ := json.Marshal(args)
+	path := filepath.Join(caches.GoCache, fmt.Sprintf("metasystem-build-%x.lock", sha256.Sum256(key)))
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			_ = unlockAndClose(file)
+		}
+	}()
+	for err = ctx.Err(); err == nil; err = ctx.Err() {
+		err = unix.Flock(int(file.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if err != unix.EWOULDBLOCK && err != unix.EINTR {
+			break
+		}
+		select {
+		case <-ctx.Done():
+		case <-time.After(10 * time.Millisecond):
+		}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	self, _, err := (identity.KernelProber{}).ReadStart(int64(os.Getpid()))
+	if err == nil {
+		record, _ := json.Marshal(map[string]any{"pid": os.Getpid(), "startTicks": self.StartTicks, "startMicro": self.StartedAt.UnixMicro(), "variant": fmt.Sprintf("%x", sha256.Sum256(key)), "since": time.Now().UTC()})
+		err = os.WriteFile(path, record, 0o600)
+	}
+	return func() { _ = unlockAndClose(file) }, err
 }
 
 type sharedBuild struct {
@@ -136,8 +221,11 @@ func buildShared(pkg string) (string, error) {
 
 // moduleRoot is the nearest directory at or above the test's working
 // directory that holds go.mod and cmd/metasystem: the engine's module.
-func moduleRoot() (string, error) {
+func moduleRoot(at ...string) (string, error) {
 	directory, err := os.Getwd()
+	if len(at) > 0 && at[0] != "" {
+		directory, err = filepath.Abs(at[0])
+	}
 	if err != nil {
 		return "", err
 	}

@@ -3,9 +3,12 @@ package testenv
 import (
 	"os"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv/testdata/buildlock"
 )
 
 func TestMain(m *testing.M) {
+	buildlock.Command()
 	if os.Getenv(setupCustodySleeperEnv) != "" {
 		setupCustodySleeper()
 		os.Exit(0)

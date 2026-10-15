@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"debug/buildinfo"
 	"fmt"
 	"os"
@@ -10,8 +11,10 @@ import (
 	"syscall"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv/testdata/buildlock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -23,6 +26,7 @@ var declaredContextCostCandidateEngine string
 // whose candidate is a package-level input; its proof flag declares that
 // input before the ambient selector is removed.
 func TestMain(m *testing.M) {
+	buildlock.Command()
 	executable, err := os.Executable()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "locate command test executable:", err)
@@ -66,7 +70,9 @@ func TestMain(m *testing.M) {
 		declarations = testenv.DeclareInheritedControls()
 	}
 	var setup func() error
-	if buildWaitCandidate {
+	if os.Getenv("TEST_WAIT_BUILD_LOCK_MODE") != "" {
+		setup = setUpWaitCandidateBuildLockChild
+	} else if buildWaitCandidate {
 		setup = setUpWaitCandidate
 	}
 	status := testenv.MainWithSetup(m, setup, declarations...)
@@ -79,6 +85,8 @@ func TestMain(m *testing.M) {
 // waitCandidateBuiltHere names the wait candidate this package built in its
 // setup, empty when it reuses a parent's.
 var waitCandidateBuiltHere string
+
+var waitCandidateGo = testenv.Go
 
 // setUpWaitCandidate builds the package's wait candidate inside the test
 // namespace, under custody (disk-lifetimes A9, DL3A-08): the build runs
@@ -96,7 +104,7 @@ func setUpWaitCandidate() error {
 		return fmt.Errorf("create wait candidate directory: %w", err)
 	}
 	candidate := filepath.Join(directory, "metasystem")
-	build := testenv.Go("build", "-trimpath", "-o", candidate, ".")
+	build := waitCandidateGo("build", "-trimpath", "-o", candidate, ".")
 	build.Env = append(os.Environ(), tag)
 	build.Stdout, build.Stderr = os.Stderr, os.Stderr
 	if err := build.Run(); err != nil {
@@ -295,4 +303,107 @@ func firstArgument() string {
 		return os.Args[1]
 	}
 	return ""
+}
+
+// The candidate uses Run, while the shared fixture engine uses CombinedOutput.
+// Both must exclude real command entry in both directions across processes.
+func TestWaitCandidateBuildLockExcludesCommandEntry(t *testing.T) {
+	t.Parallel()
+	cache := t.TempDir()
+	start := func(mode string) (string, func()) {
+		root := t.TempDir()
+		command := exec.Command(os.Args[0], "-test.run=^TestWaitCandidateBuildLockChild$", "-test.count=1", "-test.timeout=30m")
+		for _, entry := range os.Environ() {
+			if !strings.HasPrefix(entry, gocache.ContextEnv+"=") {
+				command.Env = append(command.Env, entry)
+			}
+		}
+		command.Env = append(command.Env, "GOCACHE="+cache, "TEST_WAIT_BUILD_LOCK_MODE="+mode, buildlock.Root+"="+root)
+		log, err := os.Create(filepath.Join(root, "log"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		command.Stdout, command.Stderr = log, log
+		if err := command.Start(); err != nil {
+			t.Fatal(err)
+		}
+		done := make(chan error, 1)
+		go func() { done <- command.Wait() }()
+		t.Cleanup(func() { _ = command.Process.Kill(); _ = log.Close() })
+		return root, func() {
+			t.Helper()
+			if err := <-done; err != nil {
+				data, _ := os.ReadFile(log.Name())
+				t.Fatalf("candidate lock child: %v\n%s", err, data)
+			}
+		}
+	}
+	await := func(root, name string) {
+		t.Helper()
+		testenv.Await(t, name, func() bool { _, err := os.Stat(filepath.Join(root, name)); return err == nil })
+	}
+	release := func(root string) {
+		t.Helper()
+		if err := os.WriteFile(filepath.Join(root, "release"), nil, 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	absent := func(root string) {
+		t.Helper()
+		if _, err := os.Stat(filepath.Join(root, "entered")); !os.IsNotExist(err) {
+			t.Fatalf("candidate entered while lock was held: %v", err)
+		}
+	}
+	holder, joinHolder := start("holder")
+	await(holder, "entered")
+	candidate, joinCandidate := start("candidate")
+	testenv.Await(t, "candidate blocked or entered", func() bool {
+		_, waiting := os.Stat(filepath.Join(candidate, "waiting"))
+		_, entered := os.Stat(filepath.Join(candidate, "entered"))
+		return waiting == nil || entered == nil
+	})
+	absent(candidate)
+	release(holder)
+	joinHolder()
+	await(candidate, "entered")
+	third, joinThird := start("holder")
+	testenv.Await(t, "third process blocked or entered", func() bool {
+		_, waiting := os.Stat(filepath.Join(third, "waiting"))
+		_, entered := os.Stat(filepath.Join(third, "entered"))
+		return waiting == nil || entered == nil
+	})
+	absent(third)
+	release(candidate)
+	joinCandidate()
+	await(third, "entered")
+	release(third)
+	joinThird()
+}
+
+func setUpWaitCandidateBuildLockChild() error {
+	mode, root := os.Getenv("TEST_WAIT_BUILD_LOCK_MODE"), os.Getenv(buildlock.Root)
+	factory := func(args ...string) *testenv.GoCmd {
+		traced := &buildlock.TraceContext{Context: context.Background(), Root: root}
+		command := testenv.GoContext(traced, args...)
+		traced.Arm()
+		command.Cmd = exec.Command(os.Args[0], args...)
+		return command
+	}
+	if mode == "candidate" {
+		waitCandidateGo = factory
+		return setUpWaitCandidate()
+	} else {
+		command := factory("build", "-trimpath", "-o", filepath.Join(os.TempDir(), "holder-engine"), ".")
+		if output, err := command.CombinedOutput(); err != nil {
+			return fmt.Errorf("holder build: %w\n%s", err, output)
+		}
+	}
+	return nil
+}
+
+func TestWaitCandidateBuildLockChild(t *testing.T) {
+	t.Parallel()
+	if os.Getenv("TEST_WAIT_BUILD_LOCK_MODE") == "candidate" && (waitCandidateBuiltHere == "" || !strings.HasPrefix(waitCandidateBuiltHere, os.TempDir()+string(filepath.Separator))) {
+		t.Fatalf("candidate outside its namespace: %s", waitCandidateBuiltHere)
+	}
 }
