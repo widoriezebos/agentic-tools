@@ -2287,11 +2287,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261014T204618.765619000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-14T21:30:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T00:50:52Z",
+        "attempt": "20261015T000302.815095000Z",
+        "baseCommit": "f691fcd5ace63303c584e7c08dddea88a65852b0",
+        "how": "green",
+        "opid": "PRFFNMCJ3TRD9AJYN57AYYN1SD-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestPendingWaitFromChildShell-2",
@@ -2332,11 +2338,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261014T204618.765619000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-14T21:30:30Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-15T00:50:52Z",
+        "attempt": "20261015T000302.815095000Z",
+        "baseCommit": "f691fcd5ace63303c584e7c08dddea88a65852b0",
+        "how": "green",
+        "opid": "PRFFNMCJ3TRD9AJYN57AYYN1SD-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
