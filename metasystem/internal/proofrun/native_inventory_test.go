@@ -54,10 +54,13 @@ type inventoryOverlapWriter struct {
 }
 
 func (w *inventoryOverlapWriter) Write(data []byte) (int, error) {
+	n, err := w.Writer.Write(data)
 	if strings.Contains(string(data), "native worker started") {
+		// Forward the run event before awaiting the other worker's output.
+		// Its package readiness is what permits that worker to launch.
 		w.once.Do(func() { close(w.started); <-w.other })
 	}
-	return w.Writer.Write(data)
+	return n, err
 }
 
 func TestNativeInventoryReportsMissingTerminalsAsRed(t *testing.T) {

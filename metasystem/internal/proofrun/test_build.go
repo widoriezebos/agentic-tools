@@ -1304,9 +1304,81 @@ type goShardLifecycleHooks struct {
 	prepareCoverage func(index int, directory, groupID string) error
 	openLog         func(path string) (*os.File, error)
 	wrapOutput      func(index int, writer io.Writer) io.Writer
+	waitReadiness   func(index, predecessor int, pkg string)
 }
 
 type goShardLifecycleHooksKey struct{}
+
+// Each package has its own readiness chain: go test emits start before its
+// build check, but run and package terminals certify that check has finished.
+type goPackageReadiness struct {
+	done   chan struct{}
+	once   sync.Once
+	shard  int
+	pkg    string
+	reason string
+}
+
+func (ready *goPackageReadiness) resolve(reason string) {
+	ready.once.Do(func() { ready.reason = reason; close(ready.done) })
+}
+
+type goReadinessWriter struct {
+	writer io.Writer
+	ready  map[string]*goPackageReadiness
+	mu     sync.Mutex
+	line   []byte
+}
+
+func (writer *goReadinessWriter) Write(data []byte) (int, error) {
+	writer.mu.Lock()
+	defer writer.mu.Unlock()
+	n, err := writer.writer.Write(data)
+	writer.line = append(writer.line, data[:n]...)
+	for {
+		end := bytes.IndexByte(writer.line, '\n')
+		if end < 0 {
+			break
+		}
+		var event goEvent
+		if json.Unmarshal(writer.line[:end], &event) == nil {
+			if ready := writer.ready[event.Package]; ready != nil {
+				if event.Action == "run" {
+					ready.resolve("begin running")
+				} else if event.Test == "" && (event.Action == "pass" || event.Action == "skip" || event.Action == "fail") {
+					ready.resolve("end its package")
+				}
+			}
+		}
+		writer.line = writer.line[end+1:]
+	}
+	return n, err
+}
+
+func waitGoReadiness(ctx context.Context, index int, predecessors []*goPackageReadiness) (string, error) {
+	start := time.Now()
+	var waited []string
+	for _, ready := range predecessors {
+		select {
+		case <-ready.done:
+			continue
+		default:
+		}
+		if hooks, ok := ctx.Value(goShardLifecycleHooksKey{}).(goShardLifecycleHooks); ok && hooks.waitReadiness != nil {
+			hooks.waitReadiness(index, ready.shard, ready.pkg)
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ready.done:
+		}
+		waited = append(waited, fmt.Sprintf("shard %d of %s to %s", ready.shard+1, ready.pkg, ready.reason))
+	}
+	if len(waited) == 0 {
+		return "no wait", ctx.Err()
+	}
+	return fmt.Sprintf("waited %.0f s for %s", time.Since(start).Seconds(), strings.Join(waited, "; ")), ctx.Err()
+}
 
 func prepareGoShardCoverage(ctx context.Context, index int, directory, groupID string) error {
 	if hooks, ok := ctx.Value(goShardLifecycleHooksKey{}).(goShardLifecycleHooks); ok && hooks.prepareCoverage != nil {
@@ -1429,6 +1501,19 @@ func runGoPartitions(ctx context.Context, request TestRunRequest, group testpoli
 		"GOMAXPROCS":           "1",
 		TestWorkersEnvironment: "1",
 	})
+	predecessors := make([][]*goPackageReadiness, len(partitions))
+	readiness := make([]map[string]*goPackageReadiness, len(partitions))
+	last := map[string]*goPackageReadiness{}
+	for index, partition := range partitions {
+		readiness[index] = map[string]*goPackageReadiness{}
+		for _, pkg := range partition.Packages {
+			if previous := last[pkg]; previous != nil {
+				predecessors[index] = append(predecessors[index], previous)
+			}
+			ready := &goPackageReadiness{done: make(chan struct{}), shard: index, pkg: pkg}
+			readiness[index][pkg], last[pkg] = ready, ready
+		}
+	}
 	for index := range partitions {
 		countOne, reason := reusePolicy(request, group, index+1, facts)
 		runs[index].reason = reason
@@ -1456,6 +1541,16 @@ func runGoPartitions(ctx context.Context, request TestRunRequest, group testpoli
 		wg.Add(1)
 		go func(index int, args []string) {
 			defer wg.Done()
+			defer func() {
+				for _, ready := range readiness[index] {
+					ready.resolve("exit without a test event")
+				}
+			}()
+			wait, err := waitGoReadiness(shardCtx, index, predecessors[index])
+			if err != nil {
+				runs[index].launchErr = fmt.Errorf("wait for Go package readiness: %w", err)
+				return
+			}
 			release, err := acquireTestWorkers(shardCtx, 1)
 			if err != nil {
 				runs[index].launchErr = fmt.Errorf("acquire Go test worker: %w", err)
@@ -1484,8 +1579,14 @@ func runGoPartitions(ctx context.Context, request TestRunRequest, group testpoli
 				cancelShards()
 				return
 			}
+			if _, err := fmt.Fprintln(logFile, wait); err != nil {
+				runs[index].launchErr = fmt.Errorf("write shard readiness: %w", err)
+				runs[index].closeErr = logFile.Close()
+				cancelShards()
+				return
+			}
 			activity := newOutputActivity(time.Now())
-			var outputWriter io.Writer = io.MultiWriter(&runs[index].output, logFile)
+			var outputWriter io.Writer = &goReadinessWriter{writer: io.MultiWriter(&runs[index].output, logFile), ready: readiness[index]}
 			if hooks, ok := shardCtx.Value(goShardLifecycleHooksKey{}).(goShardLifecycleHooks); ok && hooks.wrapOutput != nil {
 				outputWriter = hooks.wrapOutput(index, outputWriter)
 			}
