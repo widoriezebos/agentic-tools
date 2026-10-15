@@ -2202,7 +2202,15 @@
       },
       "holds": [],
       "opened": "2026-10-13T10:33:27Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-10-15T05:56:18Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "MX27X8QN2DPK8G62QBPN8S3V23-m1e-670f65d0",
+        "by": "Wido",
+        "why": "fixed by goal flake-fix-metasystem-internal-adopt-testadoptgitintegrationvendoredwritersuseapplicationstate (done 14:41 10-14, commit 9369d03b9); the full proofs of main at 17:39 10-14 (attempt 20261014T145837) and 02:50 10-15 (20261015T000302) and 07:48 10-15 (20261015T045613) ran green with the test passing; closed by the steward under the standing delegation (S113, S125)"
+      },
       "class": "flake"
     },
     {
