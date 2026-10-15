@@ -494,6 +494,11 @@ func TestAppRunThatEndsByItself(t *testing.T) {
 	if code, startOut := bed.run("app", "start"); code != 0 {
 		t.Fatalf("the next start closes the ended run and begins again: %d\n%s", code, startOut)
 	}
+	// The gate was released once, for the first instance; the second finds
+	// the pipe empty and stays alive until it is released or stopped.
+	if _, statusOut := bed.run("app", "status"); !strings.Contains(statusOut, "The application is running") {
+		t.Fatalf("the second instance stays alive after the next start:\n%s", statusOut)
+	}
 }
 
 // appSays reports whether an app page holds the fact key with a value that

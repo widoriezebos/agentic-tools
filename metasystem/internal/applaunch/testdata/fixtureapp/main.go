@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
 	"net"
@@ -148,8 +149,11 @@ func main() {
 			go func() {
 				gate, err := os.Open(*exitFIFO)
 				if err == nil {
-					var event [1]byte
-					_, err = gate.Read(event[:])
+					// One release is one line: this instance consumes the
+					// whole line, so a later instance of the same contract
+					// (the next start after an exit) finds the pipe empty
+					// and stays alive until it is released or stopped.
+					_, err = bufio.NewReader(gate).ReadString('\n')
 					gate.Close()
 				}
 				exit <- err
