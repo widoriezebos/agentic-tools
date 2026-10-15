@@ -22,8 +22,9 @@ D4. UX: the person reads "main's last check could not run (<plain reason>)" and 
 
 ## Units
 
-- U1 (D1–D4): brief `evidence/briefs/lane-proof-finds-its-own-engine-U1-brief.md` (Astra 7 → 4 → 3 → 3 material, stopped on the non-falling count, the last three folded). ≤160 production lines.
-- U2 (truth of a red): a red names the check that failed and nothing else (the 23:30 10-14 mislabel: a flake entry on a test that passed); a confirmed-flake incident closes once its fix goal is done and a full proof is green without it (finding 327). ≤120 lines.
+- U1 (D1–D4): brief `evidence/briefs/lane-proof-finds-its-own-engine-U1-brief.md` (Astra 7 → 4 → 3 → 3 material, stopped on the non-falling count, the last three folded). ≤160 production lines. U1 is this goal's whole delivery; the goal is done at its landing.
+
+Delivery boundary (2026-10-15 08:40, Astra's critique of the 24-hour plan, F1: a goal integrates once, when its declared work is complete): the former U2 (a red names the check that failed; a flake entry names only a test that failed; full-proof passes of the affected test feed the existing three-pass flake closure; finding 327) is goal red-names-what-failed with its own page.
 
 ## Not in scope
 
