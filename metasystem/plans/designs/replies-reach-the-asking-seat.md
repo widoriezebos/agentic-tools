@@ -3,7 +3,7 @@
 - Id: 01M4WX5C0B3QFP1781C941SRYD
 - Kind: design
 - Status: accepted
-- Goals: replies-reach-the-asking-seat
+- Goals: replies-reach-the-asking-seat replies-reach-the-asking-seat-2
 - Evidence: lane test finding 309 (2026-10-14), intervention S122; question ST3A0X3NRH82TY3499EPS8TXA6, inbox record telegram-1217 (records commit c701317a9).
 
 ## Problem
@@ -25,6 +25,8 @@ D4. UX (Wido 2026-10-14: intent, not internal structure): no record paths, ledge
 - U1 (D1 + D3 rendering): settle-replies as one operation (match + resume unfinished answers); action requests are left outstanding with the reply recorded (RRS-7 fixture); the helm tick and the question verbs run it; an answered closure renders as the answer, never as a withdrawal; tests: a reply committed by another seat matched by this seat under the helm and by `question list` without a tick, with the rendered line asserted; the recovery fixture (interrupt after matching, retry) through each new entry point. ≤200 lines.
 - U2 (D2 + D4): the shared handled-reply marker written by answered closures and by the status-reply path; the activation cutover (notices only for replies received after it; the closed-answer/unmatched-inbox fixture); the one notice for an unmatched reply after the interval, listing the host's open questions in plain words; test with two seats' question stores, a reply handled by the other seat, and a matched action reply whose request is still outstanding (no notice, landing records unchanged; Astra round 4, RRS-9). ≤180 lines.
 - U3 (D3 closes-on-act): the action binding of a person-act question and its closure by the act's success; the awaiting-match line; a reply to a closed question acknowledged. ≤180 lines.
+
+Delivery boundary (2026-10-15 10:58): replies-reach-the-asking-seat delivers U1 (with its correction 1: settling never blocks a person's question verbs) and is concluded at its landing; U2 and U3 are delivered by goal replies-reach-the-asking-seat-2, so each goal integrates once (Astra's critique of the 24-hour plan, F1).
 
 ## Not in scope
 
