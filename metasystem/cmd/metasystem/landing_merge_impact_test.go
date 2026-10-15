@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"os"
 	"path/filepath"
 	"strings"
@@ -68,7 +69,7 @@ func TestLaneMergeRealImpactCheckGitAdapter(t *testing.T) {
 			if err := os.MkdirAll(filepath.Join(root, "bin"), 0o755); err != nil {
 				t.Fatal(err)
 			}
-			if err := os.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("#!/bin/sh\necho 'fixture engine must not run' >&2\nexit 127\n"), 0o755); err != nil {
+			if err := testexec.WriteFile(filepath.Join(root, "bin", "metasystem"), []byte("#!/bin/sh\necho 'fixture engine must not run' >&2\nexit 127\n"), 0o755); err != nil {
 				t.Fatal(err)
 			}
 			err = plain.CompleteMerge(home, root, root, fix, check, seams)
