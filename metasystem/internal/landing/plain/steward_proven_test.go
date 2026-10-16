@@ -2,6 +2,7 @@ package plain
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -76,5 +77,66 @@ func TestLandingStewardAlreadyProvenKeepsWithdrawalAndBound(t *testing.T) {
 	entries, err := readLines[Intervention](interventionsPath(b.install))
 	if err != nil || len(entries) != 1 || entries[0].Row != "stale-question" {
 		t.Fatalf("withdrawal record=%+v err=%v", entries, err)
+	}
+}
+
+func TestLandingStewardAdmissionDistinguishesCompletionAndLiveJoin(t *testing.T) {
+	t.Parallel()
+	for _, completed := range []bool{true, false} {
+		t.Run(fmt.Sprintf("completed=%v", completed), func(t *testing.T) {
+			t.Parallel()
+			b, scoped := changedMainStewardFixture(t)
+			scoped.seams.ProcessRef = func(pid int64) string { return syntheticTrunkProcess(t, pid) }
+			scoped.seams.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
+				return []goal.TrunkRedEntry{
+					{ID: "first", Class: goal.TrunkRedClassTrunkRed, Sightings: []goal.TrunkRedSighting{{BaseCommit: "older-main"}}},
+					{ID: "later", Class: goal.TrunkRedClassTrunkRed, Sightings: []goal.TrunkRedSighting{{BaseCommit: "older-main"}}},
+				}, nil
+			}
+			calls, launches := 0, 0
+			scoped.seams.Launch = func([]string, string, string) (int64, error) { launches++; return int64(os.Getpid()), nil }
+			outcome := ""
+			scoped.seams.Steward.Trunk = func(install, checkout string, s ProveSeams) (string, error) {
+				calls++
+				if calls > 1 {
+					return "proving later row", nil
+				}
+				git, reads := s.Git, 0
+				s.Git = func(dir string, args ...string) (string, error) {
+					if strings.Join(args, " ") == "rev-parse --verify origin/main^{commit}" {
+						reads++
+						if reads == 2 {
+							if completed {
+								savedTrunkProof(t, scoped)
+							} else {
+								live := s
+								live.Git = git
+								if running, already, err := Start(install, checkout, live); err != nil || already || running.Reused != nil {
+									t.Fatalf("live admission: %+v already=%v err=%v", running, already, err)
+								}
+							}
+						}
+					}
+					return git(dir, args...)
+				}
+				var err error
+				outcome, err = stewardTrunk(install, checkout, s)
+				if reads != 3 {
+					t.Fatalf("did not cross steward read and admission: reads=%d", reads)
+				}
+				return outcome, err
+			}
+			run, err := StewardStep(b.home, bedNow, scoped.seams)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if completed {
+				if outcome != stewardAlreadyProven || calls != 2 || launches != 0 || len(run.Interventions) != 1 || run.Interventions[0].Subject != "later" {
+					t.Fatalf("completion blocked later row: %+v outcome=%q calls=%d launches=%d", run, outcome, calls, launches)
+				}
+			} else if outcome == stewardAlreadyProven || calls != 1 || launches != 1 || len(run.Interventions) != 1 || run.Interventions[0].Subject != "first" || !strings.Contains(run.Line, "later; bounded:") {
+				t.Fatalf("live join lost proofRunning: %+v outcome=%q calls=%d launches=%d", run, outcome, calls, launches)
+			}
+		})
 	}
 }

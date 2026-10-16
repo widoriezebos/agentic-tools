@@ -226,6 +226,9 @@ func stewardTrunk(install, checkout string, seams ProveSeams) (string, error) {
 	if _, ok := applicableMainProof(install, checkout, commit, tree, seams, true); ok {
 		return stewardAlreadyProven, nil
 	}
-	running, _, err := Start(install, checkout, seams)
+	running, already, err := Start(install, checkout, seams)
+	if err == nil && already && running.Reused != nil {
+		return stewardAlreadyProven, nil
+	}
 	return landingstate.Phrase("proving-main-2") + running.Attempt, err
 }

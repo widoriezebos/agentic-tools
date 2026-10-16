@@ -15,6 +15,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -363,5 +364,137 @@ func TestLandingTrunkMachineWaitsForCandidateRepair(t *testing.T) {
 				t.Fatalf("machine changed checkpoint: %+v recorded=%v err=%v", stored, recorded, err)
 			}
 		})
+	}
+}
+
+func TestLandingTrunkMachineReportsCompletedReuse(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"trunk green", "trunk red", "batch green"} {
+		for _, wait := range []bool{false, true} {
+			for _, jsonOutput := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/wait=%v/json=%v", scenario, wait, jsonOutput), func(t *testing.T) {
+					t.Parallel()
+					b := newResolveVerbFixture(t)
+					b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+						return humanauthority.Proof{}, errors.New("agent caller")
+					}
+					seams := b.owners.landing.plainProve
+					git := seams.Git
+					seams.Git = func(dir string, args ...string) (string, error) {
+						if args[0] == "fetch" {
+							return "", nil
+						}
+						if args[0] == "show" {
+							return "proof.full=fixture-proof\n", nil
+						}
+						return git(dir, args...)
+					}
+					seams.Now = func() time.Time { return laneTestNow }
+					seams.Alive = func(r plain.Running) bool { return r.Process != "" && !r.Checkpoint }
+					seams.WaitPoll = func() { t.Fatal("completed reuse waited for a process") }
+					seams.Launch = func([]string, string, string) (int64, error) {
+						t.Fatal("completed reuse launched a check")
+						return 0, nil
+					}
+					seams.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
+						return []goal.TrunkRedEntry{{ID: "incident", Identity: "red:fixture-unit"}}, nil
+					}
+					b.owners.landing.plainProve = seams
+					at := laneTestNow.Add(-34 * time.Second).Format(time.RFC3339)
+					r := plain.Result{Attempt: "saved-attempt", Commit: "head", Tree: "head", Result: plain.Green, Trunk: true,
+						Scope: "full", FullTree: "head", FullAt: at, At: at, Environment: "fixture"}
+					if scenario == "batch green" {
+						r.Trunk, r.Commit = false, "batch-source"
+					}
+					if scenario == "trunk red" {
+						r.Result, r.Cause, r.Failed = plain.Red, &plain.Cause{Kind: "main"}, []plain.FailedUnit{{Unit: "fixture-unit"}}
+						checkpoint, err := json.Marshal(plain.Running{Checkpoint: true, Attempt: r.Attempt, Tree: r.Tree, Commit: r.Commit, Trunk: true})
+						helmMust(t, err)
+						helmMust(t, os.MkdirAll(plain.Dir(b.install), 0700))
+						helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.install), "running.json"), checkpoint, 0600))
+					}
+					writeCauseProof(t, b.install, "results.jsonl", r)
+					args := []string{"--trunk"}
+					if wait {
+						args = append(args, "--wait")
+					}
+					if jsonOutput {
+						args = append(args, "--json")
+					}
+					var output bytes.Buffer
+					code := runIntentIn(mustIntentCommand(t, "landing prove"), args, &output, &output, b.root, b.owners)
+					if code != 0 {
+						t.Fatalf("reuse exit=%d: %s", code, &output)
+					}
+					line := output.String()
+					if jsonOutput {
+						var response struct {
+							Summary string
+							Data    map[string]json.RawMessage
+						}
+						helmMust(t, json.Unmarshal(output.Bytes(), &response))
+						line = response.Summary
+						for key, want := range map[string]string{"commit": r.Commit, "attempt": r.Attempt, "at": r.At, "result": r.Result} {
+							var got string
+							if err := json.Unmarshal(response.Data[key], &got); err != nil || got != want {
+								t.Errorf("data.%s=%s want=%q err=%v", key, response.Data[key], want, err)
+							}
+						}
+						var trunk bool
+						_, present := response.Data["trunk"]
+						if present {
+							helmMust(t, json.Unmarshal(response.Data["trunk"], &trunk))
+						}
+						if present != r.Trunk || trunk != r.Trunk {
+							t.Errorf("source trunk=%s want=%v", response.Data["trunk"], r.Trunk)
+						}
+					}
+					for _, want := range []string{"main at head", r.Commit, r.Attempt, r.Result, lane.LocalText(r.At), "nothing started"} {
+						if !strings.Contains(strings.Join(strings.Fields(line), " "), want) {
+							t.Errorf("missing %q: %s", want, line)
+						}
+					}
+					if strings.Contains(line, "landing push may put it on main") || strings.Contains(line, "already proving") {
+						t.Fatalf("wrong reuse message: %s", line)
+					}
+				})
+			}
+		}
+	}
+}
+
+func TestLandingTrunkMachineLiveJoinStillReportsRunning(t *testing.T) {
+	t.Parallel()
+	b := newResolveVerbFixture(t)
+	b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+		return humanauthority.Proof{}, errors.New("agent caller")
+	}
+	seams := b.owners.landing.plainProve
+	git := seams.Git
+	seams.Git = func(dir string, args ...string) (string, error) {
+		if args[0] == "fetch" {
+			return "", nil
+		}
+		if args[0] == "show" {
+			return "proof.full=fixture-proof\n", nil
+		}
+		return git(dir, args...)
+	}
+	seams.Alive = func(r plain.Running) bool { return r.Process != "" }
+	seams.Launch = func([]string, string, string) (int64, error) { t.Fatal("live join launched again"); return 0, nil }
+	b.owners.landing.plainProve = seams
+	running := plain.Running{Attempt: "live", Commit: "head", Tree: "head", Trunk: true, Process: "fixture-process", Pid: 42, Since: laneTestNow.Format(time.RFC3339)}
+	data, err := json.Marshal(running)
+	helmMust(t, err)
+	helmMust(t, os.MkdirAll(plain.Dir(b.install), 0700))
+	helmMust(t, os.WriteFile(filepath.Join(plain.Dir(b.install), "running.json"), data, 0600))
+	code, out := b.run(t, b.root, "prove", "--trunk", "--json")
+	var response struct {
+		Summary string
+		Data    plain.Running
+	}
+	err = json.Unmarshal([]byte(out), &response)
+	if err != nil || code != 0 || !strings.Contains(response.Summary, "already proving") || !strings.Contains(response.Summary, "since "+lane.LocalText(running.Since)) || response.Data.Attempt != running.Attempt || response.Data.Reused != nil || strings.Contains(response.Summary, "nothing started") {
+		t.Fatalf("live join: code=%d response=%+v err=%v output=%s", code, response, err, out)
 	}
 }

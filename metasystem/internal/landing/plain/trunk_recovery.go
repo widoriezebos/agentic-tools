@@ -92,7 +92,10 @@ func RecoverMovedMain(install, checkout string, seams ProveSeams) error {
 	if seams.TimerHeld != nil && seams.TimerHeld() {
 		return nil
 	}
-	_, _, err = Start(install, checkout, seams)
+	running, already, err := Start(install, checkout, seams)
+	if seams.RecoveryStarted != nil {
+		seams.RecoveryStarted(running, already)
+	}
 	var busy *Busy
 	var repair *RepairPending
 	if errors.As(err, &busy) || errors.As(err, &repair) {

@@ -1,9 +1,15 @@
 package plain
 
 import (
+	"bytes"
+	"encoding/json"
+	"runtime"
+
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -784,5 +790,196 @@ func TestChangedMainPendingFixOnlyHasTrueReason(t *testing.T) {
 	}
 	if !notified {
 		t.Fatal("fix-only override was not explained")
+	}
+}
+
+// Admission fixtures give the launch owner and child distinct exact identities.
+func trunkAdmissionBed(t *testing.T) (*scopeBed, *int, string, string) {
+	t.Helper()
+	b := changedMainBed(t)
+	launches := 0
+	const child = int64(1 << 29)
+	ownerRef, childRef := syntheticTrunkProcess(t, int64(os.Getpid())), syntheticTrunkProcess(t, child)
+	b.seams.ProcessRef = func(pid int64) string {
+		switch pid {
+		case int64(os.Getpid()):
+			return ownerRef
+		case child:
+			return childRef
+		default:
+			t.Fatalf("unexpected identity read: %d", pid)
+			return ""
+		}
+	}
+	b.seams.Alive = func(r Running) bool { return r.Process != "" && !r.Checkpoint }
+	b.seams.Launch = func([]string, string, string) (int64, error) { launches++; return child, nil }
+	git := b.seams.Git
+	b.seams.Git = func(dir string, args ...string) (string, error) {
+		if args[0] == "fetch" {
+			return "", nil
+		}
+		return git(dir, args...)
+	}
+	return b, &launches, ownerRef, childRef
+}
+
+func syntheticTrunkProcess(t *testing.T, pid int64) string {
+	t.Helper()
+	ref := identity.Ref{Pid: pid, StartedAtUnixMicro: bedNow.UnixMicro()}
+	if runtime.GOOS == "linux" {
+		ref.StartedAtUnixMicro, ref.StartTicks, ref.BootID = 0, 12345, "fixture-boot"
+	}
+	encoded, err := identity.EncodeRef(ref)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return encoded
+}
+
+func savedTrunkProof(t *testing.T, b *scopeBed) Result {
+	t.Helper()
+	r := b.base
+	r.Trunk, r.Commit, r.Tree = true, b.git.commit, b.git.tree
+	r.FullTree, r.At = r.Tree, bedNow.Add(-34*time.Second).Format(time.RFC3339)
+	r.FullAt, r.Attempt = r.At, "completed"
+	b.save(t, r)
+	return r
+}
+
+func assertTrunkAdmission(t *testing.T, b *scopeBed, launches *int, owner, child string) {
+	t.Helper()
+	running, already, err := Start(b.install, b.checkout, b.seams)
+	if err != nil || already || running.Reused != nil || *launches != 1 || running.Launch == nil || running.Launch.Owner != owner || running.Process != child {
+		t.Fatalf("admission: %+v already=%v launches=%d err=%v", running, already, *launches, err)
+	}
+	stored, recorded, _, err := ReadRunning(b.install, b.seams)
+	if err != nil || !recorded || !reflect.DeepEqual(stored, running) {
+		t.Fatalf("stored admission: %+v recorded=%v err=%v", stored, recorded, err)
+	}
+}
+
+func TestTrunkAdmissionPersonStillLaunches(t *testing.T) {
+	t.Parallel()
+	b, launches, owner, child := trunkAdmissionBed(t)
+	savedTrunkProof(t, b)
+	b.seams.Person = &ActProvenance{Person: "Wido"}
+	assertTrunkAdmission(t, b, launches, owner, child)
+}
+
+func TestTrunkAdmissionFreshStillLaunches(t *testing.T) {
+	t.Parallel()
+	b, launches, owner, child := trunkAdmissionBed(t)
+	savedTrunkProof(t, b)
+	b.seams.Fresh = true
+	assertTrunkAdmission(t, b, launches, owner, child)
+}
+
+func TestTrunkAdmissionRecordsMoveStillLaunchesScoped(t *testing.T) {
+	t.Parallel()
+	b, launches, owner, child := trunkAdmissionBed(t)
+	assertTrunkAdmission(t, b, launches, owner, child)
+	r, _, _, err := ReadRunning(b.install, b.seams)
+	if err != nil || r.Admission == nil || r.Admission.Scope != "scoped" || !reflect.DeepEqual(r.Admission.Groups, []string{"plans", "shared"}) {
+		t.Fatalf("records admission: %+v %v", r, err)
+	}
+}
+
+func TestTrunkAdmissionReusesCompletion34SecondsAgo(t *testing.T) {
+	t.Parallel()
+	b, launches, _, _ := trunkAdmissionBed(t)
+	saved := savedTrunkProof(t, b)
+	running, already, err := Start(b.install, b.checkout, b.seams)
+	if err != nil || !already || *launches != 0 || running.Reused == nil || !reflect.DeepEqual(*running.Reused, saved) || running.Attempt != saved.Attempt || running.Tree != saved.Tree || running.Commit != saved.Commit || running.Log != saved.Log || running.Since != saved.At || !running.Trunk || running.Process != "" {
+		t.Fatalf("completed reuse: %+v already=%v launches=%d err=%v", running, already, *launches, err)
+	}
+	if _, recorded, _, err := ReadRunning(b.install, b.seams); err != nil || recorded {
+		t.Fatalf("reuse wrote a running record: recorded=%v err=%v", recorded, err)
+	}
+	encoded, err := json.Marshal(running)
+	withoutMarker := running
+	withoutMarker.Reused = nil
+	want, _ := json.Marshal(withoutMarker)
+	if err != nil || !bytes.Equal(encoded, want) {
+		t.Fatalf("transient result serialized: %s %v", encoded, err)
+	}
+	var decoded Running
+	if err := json.Unmarshal(encoded, &decoded); err != nil || decoded.Reused != nil {
+		t.Fatalf("transient result round-tripped: %+v %v", decoded, err)
+	}
+}
+
+func TestTrunkRecoveryRechecksAfterProofFinalizes(t *testing.T) {
+	t.Parallel()
+	b, launches, _, _ := trunkAdmissionBed(t)
+	// Run authenticates its child against this process before claiming admission.
+	b.seams.ProcessRef = processRef
+	b.seams.Launch = func([]string, string, string) (int64, error) { *launches++; return int64(os.Getpid()), nil }
+	first, already, err := Start(b.install, b.checkout, b.seams)
+	if err != nil || already || *launches != 1 {
+		t.Fatalf("first admission: %+v %v", first, err)
+	}
+	paused, resume, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+	var recovered Running
+	var joined bool
+	recovery := b.seams
+	recovery.TimerHeld = func() bool { close(paused); <-resume; return false }
+	recovery.RecoveryStarted = func(r Running, already bool) { recovered, joined = r, already }
+	go func() { done <- RecoverMovedMain(b.install, b.checkout, recovery) }()
+	<-paused
+	defer func() {
+		if resume != nil {
+			close(resume)
+			<-done
+		}
+	}()
+	log, err := os.Create(first.Log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = log.Close() })
+	saved, err := Run(b.install, b.checkout, "fixture-proof", first.Attempt, log, b.seams)
+	if err != nil || saved.Result != Green || saved.Attempt != first.Attempt {
+		t.Fatalf("first finalization: %+v %v", saved, err)
+	}
+	if _, recorded, _, err := ReadRunning(b.install, b.seams); err != nil || recorded {
+		t.Fatalf("finalization retained running record: %v %v", recorded, err)
+	}
+	last, found, err := LastResult(b.install)
+	if err != nil || !found || !reflect.DeepEqual(last, saved) {
+		t.Fatalf("finalization lost result: %+v %v", last, err)
+	}
+	if _, ok := applicableMainProof(b.install, b.checkout, b.git.commit, b.git.tree, b.seams, true); !ok {
+		t.Fatalf("finalized result is not applicable: %+v", saved)
+	}
+	close(resume)
+	resume = nil
+	err = <-done
+	if err != nil || *launches != 1 || !joined || recovered.Reused == nil || !reflect.DeepEqual(*recovered.Reused, saved) {
+		t.Fatalf("recovery admitted again: %+v already=%v launches=%d err=%v", recovered, joined, *launches, err)
+	}
+}
+
+func TestTrunkAdmissionApplicabilityHoldsLaneLock(t *testing.T) {
+	t.Parallel()
+	b, launches, _, _ := trunkAdmissionBed(t)
+	r := b.base
+	r.Trunk, r.Commit, r.Tree, r.Attempt = true, b.git.commit, b.git.tree, "red"
+	r.Result, r.Cause, r.Failed = Red, &Cause{Kind: "main"}, []FailedUnit{{Unit: "fixture-unit"}}
+	b.save(t, r)
+	calls := 0
+	b.seams.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
+		calls++
+		held, err := lock.File(lockPath(b.install), 0600, lock.TryExclusive)
+		if held != nil {
+			_ = held.Release()
+		}
+		if !lock.Busy(err) {
+			t.Errorf("applicability read outside lock: %v", err)
+		}
+		return []goal.TrunkRedEntry{{ID: "incident", Identity: "red:fixture-unit"}}, nil
+	}
+	running, already, err := Start(b.install, b.checkout, b.seams)
+	if err != nil || !already || running.Reused == nil || running.Reused.Attempt != r.Attempt || *launches != 0 || calls == 0 {
+		t.Fatalf("locked red reuse: %+v already=%v launches=%d incidents=%d err=%v", running, already, *launches, calls, err)
 	}
 }

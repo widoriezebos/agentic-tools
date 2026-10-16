@@ -121,6 +121,7 @@ func TestTrunkStartPreservesSubjectAndRefusesConcurrentBatch(t *testing.T) {
 		return original(dir, args...)
 	}
 	b.seams.Trunk = true
+	b.seams.Fresh = true
 	b.seams.Alive = func(Running) bool { return true }
 	b.seams.Executable = func() (string, error) { return "engine", nil }
 	var argv []string

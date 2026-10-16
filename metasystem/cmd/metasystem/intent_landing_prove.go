@@ -352,9 +352,13 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 			result.Outcome = intentUnchanged
 			result.Summary = landingstate.Phrase("already-proving") + provedWords(running.Commit, running.Tree) + " since " + lane.LocalText(running.Since)
 		}
+		if running.Reused != nil {
+			result.Data, result.Summary = *running.Reused, reusedMainLine(commit, *running.Reused)
+		}
 		return inv.render(result)
 	}
 	var result plain.Result
+	var running plain.Running
 	var settled bool
 	if attempt == "" {
 		result, settled, err = plain.Settled(admitted.installation, checkout, seams)
@@ -362,7 +366,8 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 			return inv.render(proofRefusal(err))
 		}
 		if !settled {
-			running, _, startErr := plain.Start(admitted.installation, checkout, seams)
+			var startErr error
+			running, _, startErr = plain.Start(admitted.installation, checkout, seams)
 			_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 			if startErr != nil {
 				return inv.render(proofRefusal(startErr))
@@ -384,6 +389,9 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	_ = plain.SyncPolicyQuestion(admitted.installation, admitted.owners.machine, admitted.owners.now())
 	if err != nil {
 		return inv.render(proofRefusal(err))
+	}
+	if running.Reused != nil {
+		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: *running.Reused, Summary: reusedMainLine(commit, *running.Reused)})
 	}
 	if settled && seams.Trunk {
 		return inv.render(intentResult{Outcome: intentUnchanged, Targets: targets, Data: result, Summary: settledMainLine(commit, result)})
@@ -492,6 +500,10 @@ func proofRetryArgv(inv *intentInvocation) []string {
 func settledMainLine(commit string, result plain.Result) string {
 	at, _ := time.Parse(time.RFC3339, result.At)
 	return fmt.Sprintf("main at %s is proven by the %s check of the same tree;\nlanding prove --trunk --fresh runs a new full check", plain.Short(commit), at.Local().Format("15:04"))
+}
+
+func reusedMainLine(commit string, result plain.Result) string {
+	return fmt.Sprintf("main at %s reuses the %s check of commit %s, attempt %s, completed %s; nothing started", plain.Short(commit), result.Result, plain.Short(result.Commit), result.Attempt, lane.LocalText(result.At))
 }
 
 func (inv *intentInvocation) notifyRepairOverride(seams *plain.ProveSeams) {

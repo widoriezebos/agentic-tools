@@ -47,6 +47,7 @@ const (
 
 // Running is the proof that runs, as running.json keeps it.
 type Running struct {
+	Reused            *Result              `json:"-"`
 	BatchBase         string               `json:"batch-base,omitempty"`
 	Launch            *LaunchRecord        `json:"launch,omitempty"`
 	Fresh             bool                 `json:"fresh,omitempty"`
@@ -245,6 +246,10 @@ type ProveSeams struct {
 	// Alive says whether a running proof's process runs; nil reads its
 	// recorded identity.
 	Alive func(Running) bool
+	// ProcessRef replaces identity reads at detached launch; nil probes the kernel.
+	ProcessRef func(int64) string
+	// RecoveryStarted observes the admission returned to main recovery.
+	RecoveryStarted func(Running, bool)
 	// EndProof ends and confirms both recorded process groups.
 	EndProof                   func(Running) error
 	checkInstall, checkAttempt string
@@ -325,6 +330,13 @@ func processRef(pid int64) string {
 		return ""
 	}
 	return encoded
+}
+
+func (s ProveSeams) processRef(pid int64) string {
+	if s.ProcessRef != nil {
+		return s.ProcessRef(pid)
+	}
+	return processRef(pid)
 }
 
 // OwnProcess reports whether this process is the recorded proof child.
@@ -555,6 +567,12 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			}
 		}
 		if seams.Trunk {
+			if seams.Person == nil && !seams.Fresh {
+				if result, ok := applicableMainProof(install, checkout, commit, tree, seams, true); ok {
+					started, already = Running{Trunk: true, Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At, Reused: &result}, true
+					return nil
+				}
+			}
 			prior, found, err := resultFor(seams.resultsPath(install), tree)
 			if err != nil && seams.Person == nil {
 				return err
@@ -603,7 +621,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if err := admitExecutionLocked(install, checkout, command, &started, proofScope(install, checkout, started, seams), seams); err != nil {
 			return err
 		}
-		started.Launch.Owner = processRef(int64(os.Getpid()))
+		started.Launch.Owner = seams.processRef(int64(os.Getpid()))
 		started.setAdmissionState("pending")
 		fixEffect, checkpointEffect, launchEffect := "fix not closed", "checkpoint retained", "launch not attempted"
 		if repair != nil {
@@ -656,7 +674,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 			}
 			return fmt.Errorf(landingstate.Phrase("start-proving-tree-s-w"), Short(tree), err)
 		}
-		process := processRef(pid)
+		process := seams.processRef(pid)
 		if pid <= 0 || process == "" {
 			started.Launch.Error = "the check process has no readable identity"
 			launchEffect = "launch failed: " + started.Launch.Error
