@@ -26,7 +26,11 @@ func TestLandingProofStatusNamesPendingAndFailedAdmission(t *testing.T) {
 			helmMust(t, err, os.WriteFile(filepath.Join(plain.Dir(b.installation), "running.json"), raw, 0600))
 			code, text := b.plainVerbBed.run(t, "landing", "status", "--verbose")
 			text = strings.Join(strings.Fields(text), " ")
-			if code != 0 || !strings.Contains(text, state) || !strings.Contains(text, "to do: metasystem landing resume") || strings.Contains(text, "check admission") || strings.Contains(text, "proving tree ") {
+			want := state
+			if state == "pending" {
+				want = "starting the check"
+			}
+			if code != 0 || !strings.Contains(text, want) || strings.Contains(text, "to do: metasystem landing resume") != (state == "failed") || strings.Contains(text, "check admission") || strings.Contains(text, "proving tree ") {
 				t.Fatalf("%s status: %d %s", state, code, text)
 			}
 			status := plain.ReadRunningProof(b.installation, b.owners.landing.plainProve)

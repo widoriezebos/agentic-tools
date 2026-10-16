@@ -165,16 +165,19 @@ func TestReadStatusSaysWhenEachHandInLanded(t *testing.T) {
 	t.Parallel()
 	b := newStatusBed(t)
 	b.lines("queue.jsonl",
+		Line{Goal: "goal-e", SHA: "sha-e", At: "2026-09-27T20:00:00Z"},
 		Line{Goal: "goal-a", SHA: "sha-a", Seat: "m1e", At: "2026-10-01T20:00:00Z", Delivered: "Stuck agents now ask you on Telegram."},
 		Line{Goal: "goal-b", SHA: "sha-b", Seat: "ui", At: "2026-10-01T20:30:00Z"},
 		Line{Goal: "goal-c", SHA: "sha-c", Seat: "m1f", At: "2026-10-01T21:00:00Z"},
 		Line{Goal: "goal-d", SHA: "sha-d", Seat: "m1g", At: "2026-10-01T21:10:00Z"})
 	b.lines("pushes.jsonl",
+		Pushed{Old: "before", Commit: "m0", At: "2026-09-28T21:20:00Z"},
 		Pushed{Old: "m0", Commit: "m1", At: "2026-10-01T21:20:00Z"},
 		Pushed{Old: "m1", Commit: "m2", At: "2026-10-01T21:54:00Z"})
-	git := b.git([]string{"sha-a", "sha-b", "sha-d"}, map[string][]string{
-		"m0..m1": {"m1", "sha-a"},
-		"m1..m2": {"m2", "sha-b", "x1"},
+	git := b.git([]string{"sha-a", "sha-b", "sha-d", "sha-e"}, map[string][]string{
+		"before..m0": {"sha-e"},
+		"m0..m1":     {"m1", "sha-a"},
+		"m1..m2":     {"m2", "sha-b", "x1"},
 	})
 
 	status := b.read(ProveSeams{Now: func() time.Time { return bedNow }}, git)
@@ -182,6 +185,9 @@ func TestReadStatusSaysWhenEachHandInLanded(t *testing.T) {
 	got := map[string]Entry{}
 	for _, entry := range status.Queue {
 		got[entry.Goal] = entry
+	}
+	if got["goal-e"].State != StateLanded || got["goal-e"].LandedAt != "2026-09-28T21:20:00Z" {
+		t.Fatalf("goal-e = %+v; want the old landing's recorded push time", got["goal-e"])
 	}
 	if got["goal-a"].State != StateLanded || got["goal-a"].LandedAt != "2026-10-01T21:20:00Z" {
 		t.Fatalf("goal-a = %+v; want landed by the first push, at its time", got["goal-a"])
@@ -561,8 +567,7 @@ func TestLandingTimesNameAPushLineTheyCannotRead(t *testing.T) {
 }
 
 // A goal handed in again after its earlier hand-in landed keeps that
-// landing in today's list; a hand-in superseded before the last day is not
-// asked again.
+// landing in history regardless of the age of its replacement.
 func TestReadStatusKeepsALandingItsGoalHandedInAgain(t *testing.T) {
 	t.Parallel()
 	b := newStatusBed(t)
@@ -574,9 +579,7 @@ func TestReadStatusKeepsALandingItsGoalHandedInAgain(t *testing.T) {
 		Line{Goal: "goal-a", SHA: "sha-a1", Seat: "ui", At: "2026-10-01T20:00:00Z", Delivered: "Step one."},
 		Line{Goal: "goal-a", SHA: "sha-a2", Seat: "ui", At: "2026-10-01T22:00:00Z"})
 	b.lines("pushes.jsonl", Pushed{Old: "m0", Commit: "m1", At: "2026-10-01T21:00:00Z"})
-	git := b.git([]string{"sha-a1", "sha-z1", "sha-z2"}, map[string][]string{"m0..m1": {"m1", "sha-a1"}})
-
-	status := b.read(ProveSeams{Now: func() time.Time { return bedNow }}, git)
+	status, _ := b.readParents([]string{"main", "m1", "m0"}, "main sha-z2 m1\nsha-z2 sha-z1\nsha-z1 m0\nm1 sha-a1\nsha-a1 m0\nm0", nil)
 
 	got := map[string]Entry{}
 	for _, entry := range status.Queue {
@@ -588,8 +591,8 @@ func TestReadStatusKeepsALandingItsGoalHandedInAgain(t *testing.T) {
 	if got["sha-a2"].State != StateWaiting {
 		t.Fatalf("sha-a2 = %+v; want the new hand-in waiting", got["sha-a2"])
 	}
-	if got["sha-z1"].State != StateSuperseded {
-		t.Fatalf("sha-z1 = %+v; want superseded: its goal was handed in again before the last day", got["sha-z1"])
+	if got["sha-z1"].State != StateLanded || got["sha-z1"].LandedAt != "" {
+		t.Fatalf("sha-z1 = %+v; want landed in history even though its goal was handed in again before the last day", got["sha-z1"])
 	}
 	if len(status.Problems) != 0 {
 		t.Fatalf("problems %v; want none", status.Problems)

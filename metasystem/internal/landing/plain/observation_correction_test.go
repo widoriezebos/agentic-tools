@@ -151,6 +151,9 @@ func TestObservationExternalLandingKeepsFirstSeenTime(t *testing.T) {
 	b.lines("queue.jsonl", Line{Goal: "A", SHA: "sha", At: bedNow.Format(time.RFC3339)})
 	seams := shadowSeams()
 	seams.Git = func(_ string, args ...string) (string, error) {
+		if args[0] == "rev-list" {
+			return "tip sha\nsha", nil
+		}
 		if args[0] == "rev-parse" {
 			return "tip", nil
 		}
@@ -454,6 +457,12 @@ func TestObservationUsesSameTipForQueueAndQuestion(t *testing.T) {
 				tip = strings.Repeat("b", 40)
 			}
 			return "", nil
+		}
+		if len(args) > 3 && strings.Join(args[:3], " ") == "rev-list --parents --ignore-missing" {
+			if args[3] == old {
+				return old, nil
+			}
+			return args[3] + " " + old + "\n" + old, nil
 		}
 		return base(dir, args...)
 	}

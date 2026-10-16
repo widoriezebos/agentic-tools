@@ -66,7 +66,8 @@ func TestDescribeLaneGoldenRecords(t *testing.T) {
 		headline, verb, person string
 	}{
 		{"idle", Record{Agent: Agent{Word: Ended}}, RenderInputs{}, "idle; its landing agent starts when there is work", "none", "nothing to do"},
-		{"proving", Record{Proof: Proof{Fact: Fact{Word: Running, Since: Since{At: at}}}}, RenderInputs{UnitsDone: 233, UnitsTotal: &total, Minutes: &minutes}, "proving (233 of 234 units, 52.0 min); proving main (233 of 234 units, 52.0 min); the lane proves main; the agent waits for the keeper; nothing to do", "none", "nothing to do"},
+		{"proving", Record{Proof: Proof{Fact: Fact{Word: Running, Since: Since{At: at}}}}, RenderInputs{UnitsDone: 233, UnitsTotal: &total, Minutes: &minutes}, "proving main (233 of 234 units, 52.0 min); nothing to do", "none", "nothing to do"},
+		{"starting", Record{Proof: Proof{Fact: Fact{Word: Pending}}}, RenderInputs{}, "starting the check; nothing to do", "none", "nothing to do"},
 		{"red proof with incidents", Record{Main: Main{Fact: Fact{Word: Red}, Reason: "TestBroken", OpenIncidents: []string{"incident-x"}}}, RenderInputs{}, "main is red (incident incident-x): TestBroken; land a fix on main, then metasystem landing prove --trunk", "landing prove", "land a fix on main, then metasystem landing prove --trunk"},
 		{"person's pause", Record{Lane: Lane{Fact: Fact{Word: Paused, Since: Since{At: at}}, By: "Wido", Reason: "inspect the proof"}, Agent: Agent{Word: Ended}}, RenderInputs{}, "paused by Wido (inspect the proof)", "landing resume", "resume when the pause is no longer needed"},
 		{"barren hold", Record{Holds: Holds{Barren: 2}}, RenderInputs{}, "held after 2 runs that left the lane unchanged; a person runs metasystem landing resume", "landing run --goals", "choose the waiting goals to run"},
@@ -110,7 +111,7 @@ func TestDescribeQuestionsAndBatchCarryTheirOwnDetails(t *testing.T) {
 	at := time.Date(2026, 10, 12, 19, 2, 0, 0, time.UTC)
 	r := Record{Agent: Agent{Word: Ended}, Questions: []Question{{ID: "q", Premise: Current, Since: Since{At: at}}}, Batch: Batch{SealedAt: at, Admission: Fact{Word: Sealed, Since: Since{At: at}}, Members: []Member{{Goal: "g"}}}, HandIns: []HandIn{{Goal: "h", Fact: Fact{Word: Waiting}}}}
 	d := Describe(r, RenderInputs{Questions: map[string]QuestionInput{"q": {FirstLine: "May I restore the checkout? Private details."}}, HandIns: map[int]HandInInput{0: {WaitNext: true}}})
-	for _, want := range []string{"question q since " + at.Local().Format("2006-01-02 15:04 MST"), "May I restore the checkout?", "question show channel:q", "batch sealed " + at.Local().Format("15:04") + ": 1 members", "h waits for the next batch"} {
+	for _, want := range []string{"question q since " + at.Local().Format("2006-01-02 15:04 MST"), "May I restore the checkout?", "question show channel:q", "batch selected " + at.Local().Format("15:04") + ": 1 goals", "h waits for the next batch"} {
 		if !strings.Contains(d.Summary, want) {
 			t.Errorf("missing %q: %s", want, d.Summary)
 		}

@@ -70,6 +70,9 @@ func newSelectionBed(t *testing.T) *selectionBed {
 		Alive:      func(r plain.Running) bool { return r.Pid == int64(os.Getpid()) },
 		Incidents:  func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil },
 		Git: func(_ string, args ...string) (string, error) {
+			if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil}); ok {
+				return listed, nil
+			}
 			// landingProofCommand reads the declaration at the observed main commit.
 			if slices.Equal(args, []string{"show", "main:metasystem.conf"}) {
 				b.proofReads++

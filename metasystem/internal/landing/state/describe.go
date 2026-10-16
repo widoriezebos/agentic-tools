@@ -53,13 +53,13 @@ var Words = map[WordKey]Wording{
 	{"agent", "ended"}:              {"idle; its landing agent starts when there is work", "none", "nothing to do", "wait for the keeper"},
 	{"agent", "stepping"}:           {"The landing lane's agent is at work", "none", "nothing to do", "finish the step"},
 	{"agent", "step-process-gone"}:  {"the landing agent's step process ended; run: metasystem landing resume", "landing resume", "resume the lane after examining the step", "settle the step"},
-	{"batch.execution", "prepared"}: {"the batch is prepared; the keeper starts its checks", "none", "nothing to do", "start checks"},
-	{"batch.execution", "running"}:  {"the batch is running; the keeper waits for its checks", "none", "nothing to do", "wait for checks"},
-	{"batch.execution", "closed"}:   {"the batch is closed; the keeper selects the next work", "none", "nothing to do", "select work"},
-	{"batch.admission", "open"}:     {"the batch is open; eligible hand-ins may join it", "none", "nothing to do", "admit eligible work"},
-	{"batch.admission", "sealed"}:   {"the batch is sealed; later hand-ins wait for the next batch", "none", "nothing to do", "finish this batch"},
+	{"batch.execution", "prepared"}: {"the lane is ready to check the selected goals", "none", "nothing to do", "start checks"},
+	{"batch.execution", "running"}:  {"the lane is checking the selected goals", "none", "nothing to do", "wait for checks"},
+	{"batch.execution", "closed"}:   {"the lane is selecting the next work", "none", "nothing to do", "select work"},
+	{"batch.admission", "open"}:     {"new work can join the selected goals", "none", "nothing to do", "admit eligible work"},
+	{"batch.admission", "sealed"}:   {"later hand-ins wait for the next batch", "none", "nothing to do", "finish this batch"},
 	{"hand_in", "waiting"}:          {"waiting for admission to the batch", "none", "nothing to do", "admit eligible work"},
-	{"hand_in", "returned"}:         {"returned to its seat; repair the reason before handing it in again", "none", "examine the return reason", "wait for repaired work"},
+	{"hand_in", "returned"}:         {"returned for repair; fix the reason before handing it in again", "none", "examine the return reason", "wait for repaired work"},
 	{"hand_in", "landed"}:           {"landed on main; the keeper selects the next work", "none", "nothing to do", "select work"},
 	{"hand_in", "superseded"}:       {"superseded by a newer hand-in; the keeper uses that hand-in", "none", "nothing to do", "use the newer hand-in"},
 	{"resolution", "resolving"}:     {"Resolving {conflicts} conflicts of {goal} ({paths})", "none", "nothing to do", "resolve the conflicts"},
@@ -70,9 +70,9 @@ var Words = map[WordKey]Wording{
 	{"resolution", "abandoned"}:     {"the resolution was abandoned: {abandoned}; run: metasystem landing resume", "landing resume", "resume on the current main", "rebuild the batch"},
 	{"resolution", "done"}:          {"the fix is done; the keeper continues the lane", "none", "nothing to do", "continue the lane"},
 	{"resolution", "closed"}:        {"the fix is closed; the keeper continues the lane", "none", "nothing to do", "continue the lane"},
-	{"proof", "running"}:            {"proving ({done} of {total} units, {minutes} min); proving {subject} ({done} of {total} units, {minutes} min); {trunk}the agent waits for the keeper; nothing to do", "none", "nothing to do", "proving; the agent waits for the keeper"},
+	{"proof", "running"}:            {"proving {subject} ({done} of {total} units, {minutes} min); nothing to do", "none", "nothing to do", "proving; the agent waits for the keeper"},
 	{"proof", "died"}:               {"the lane's check died; run: metasystem landing resume", "landing resume", "resume the failed check", "repeat the proof"},
-	{"proof", "pending"}:            {"the lane's check pending; run: metasystem landing resume", "landing resume", "resume the pending check", "admit the proof"},
+	{"proof", "pending"}:            {"starting the check; nothing to do", "none", "nothing to do", "wait for the check to start"},
 	{"proof", "failed"}:             {"the lane's check failed; run: metasystem landing resume", "landing resume", "resume after examining the failure", "repeat the proof"},
 	{"proof", "green"}:              {"the check is green; the keeper continues the lane", "none", "nothing to do", "continue the lane"},
 	{"proof", "held"}:               {"the check is held; examine the reason before resuming", "landing resume", "resume after examining the reason", "wait for the hold to end"},
@@ -292,8 +292,8 @@ func Describe(r Record, inputs RenderInputs) Description {
 	if inputs.UnreadHandIn != "" {
 		d.Summary = d.Headline
 	}
-	if !r.Batch.SealedAt.IsZero() {
-		d.Summary += fmt.Sprintf("; batch sealed %s: %d members", r.Batch.SealedAt.Local().Format("15:04"), len(r.Batch.Members))
+	if r.Batch.Execution.Word != Closed && !r.Batch.SealedAt.IsZero() {
+		d.Summary += fmt.Sprintf("; batch selected %s: %d goals", r.Batch.SealedAt.Local().Format("15:04"), len(r.Batch.Members))
 	}
 	for _, reason := range inputs.WaitingReasons {
 		d.Summary += "; " + reason
@@ -414,6 +414,7 @@ func stopText(s Stop) string {
 
 // Phrases owns the lane's person-facing state messages outside the recorded word rows.
 var Phrases = map[string]string{
+	"unfinished-conflict-repair-ignored":                                 "An unfinished conflict repair was ignored; conflicting work is returned for repair.",
 	"landing-reservation-held":                                           "the landing agent's start is held: %s (reservation %s); %s",
 	"goal-s-cannot-be-proven-held-repair-the-base":                       "goal %s cannot be proven held; repair the base tree, then take it over with metasystem goal claim %s --take-over --reason TEXT",
 	"carry-debt-is-unpaid-word-s-landed-as-s":                            "carry debt is unpaid: word %s landed as %s without a carried row; run metasystem work land %s --using-exception %s",

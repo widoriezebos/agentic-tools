@@ -17,6 +17,8 @@ import (
 func TestLandingKeeperTickRetiresStopsWhilePaused(t *testing.T) {
 	t.Parallel()
 	b := shadowCorrectionVerbBed(t)
+	b.parents["main"] = []string{"sha"}
+	b.parents["sha"] = nil
 	r, _, err := lane.Read(b.home)
 	helmMust(t, err)
 	_, err = lane.SetPause(b.home, "Wido", laneTestNow)

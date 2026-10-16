@@ -58,6 +58,9 @@ func newDrainVerbBed(t *testing.T) *drainVerbBed {
 		Executable: func() (string, error) { return "fixture-engine", nil },
 		Launch:     func([]string, string, string) (int64, error) { b.trunkLaunches++; return int64(os.Getpid()), nil },
 		Incidents:  func(string, string, string) ([]goal.TrunkRedEntry, error) { return b.incidents, nil }, Now: func() time.Time { return laneTestNow }, Alive: func(r plain.Running) bool { return r.Pid == 42 || r.Pid == int64(os.Getpid()) }, Git: func(_ string, args ...string) (string, error) {
+			if listed, ok := landingFixtureParents(args, drainFixtureParents(b.landed)); ok {
+				return listed, nil
+			}
 			// landingProofCommand reads this bed's nested installation declaration.
 			if len(args) == 2 && args[0] == "show" && args[1] == "main:metasystem/metasystem.conf" {
 				b.proofReads++
@@ -589,6 +592,15 @@ func TestLandingDrainFinishesAdmittedProofAndPush(t *testing.T) {
 	// All Git operations are injected; proof execution and push use their real owners.
 	git := b.owners.landing.plainProve.Git
 	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+		parents := map[string][]string{"main": nil}
+		if len(members) == 2 {
+			parents["merge-a"] = []string{"main", members[0].SHA}
+			parents["merge-b"] = []string{"merge-a", members[1].SHA}
+			parents[members[0].SHA], parents[members[1].SHA] = nil, nil
+		}
+		if listed, ok := landingFixtureParents(args, parents); ok {
+			return listed, nil
+		}
 		if args[0] == "log" || args[0] == "rev-list" && len(args) == 5 && args[1] == "--first-parent" {
 			return "merge-a main " + members[0].SHA + "\nmerge-b merge-a " + members[1].SHA, nil
 		}

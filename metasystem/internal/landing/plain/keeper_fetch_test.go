@@ -46,6 +46,8 @@ func TestKeeperFetchesMissingHandInBeforeReadingIt(t *testing.T) {
 						return "", errors.New("missing")
 					}
 					return "", nil
+				case "rev-list":
+					return "main", nil
 				case "rev-parse":
 					return "main", nil
 				case "merge-base":

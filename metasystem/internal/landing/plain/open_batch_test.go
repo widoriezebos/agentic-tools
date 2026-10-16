@@ -349,7 +349,7 @@ func TestOpenBatchSavedHandInsAdmitEveryWaitingGoal(t *testing.T) {
 				t.Fatalf("sealed selection admitted a newcomer: %+v", sealed)
 			}
 			status := ReadStatus(t.TempDir(), record, lane.View{Root: &install}, seams)
-			if !strings.Contains(status.Summary, "batch sealed "+now.Local().Format("15:04")+": 3 members") || !strings.Contains(status.Summary, "late waits for the next batch") {
+			if !strings.Contains(status.Summary, "batch selected "+now.Local().Format("15:04")+": 3 goals") || !strings.Contains(status.Summary, "late waits for the next batch") {
 				t.Fatalf("sealed status: %s", status.Summary)
 			}
 		})

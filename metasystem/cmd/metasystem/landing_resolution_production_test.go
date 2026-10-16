@@ -85,6 +85,9 @@ func TestLandingResolutionReadProductionGate(t *testing.T) {
 			owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }
 			pushes := 0
 			owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+				if listed, ok := landingFixtureParents(args, map[string][]string{"merge": {"member"}, "member": nil}); ok {
+					return listed, nil
+				}
 				if args[0] == "cat-file" {
 					return "", nil
 				}

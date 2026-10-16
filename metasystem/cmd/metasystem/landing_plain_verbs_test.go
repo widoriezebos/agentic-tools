@@ -382,8 +382,8 @@ func TestPlainLaneProveStartsDetachedOnce(t *testing.T) {
 	if running, _ := bed.status(t)["running_proof"].(map[string]any); running == nil || running["tree"] == nil || running["since"] == nil {
 		t.Fatalf("running_proof = %v", running)
 	}
-	wantHeadline := "proving (0 of counting units, "
-	if code, text := bed.run(t, "landing", "status"); code != 0 || !strings.HasPrefix(text, wantHeadline) || !strings.Contains(strings.Split(text, "\n\n")[0], "the agent waits for the keeper") {
+	wantHeadline := "proving main (0 of counting units, "
+	if code, text := bed.run(t, "landing", "status"); code != 0 || !strings.HasPrefix(text, wantHeadline) || !strings.Contains(strings.Split(text, "\n\n")[0], "; nothing to do") {
 		t.Fatalf("status while the proof runs must say so in its first line = %d\n%s", code, text)
 	}
 	if err := os.WriteFile(filepath.Join(bed.installation, "other.txt"), []byte("other\n"), 0o644); err != nil {

@@ -177,10 +177,13 @@ func TestLandingStatusSaysRecords(t *testing.T) {
 		page := textui.New(textui.Env{Verbose: true})
 		withPlainLane(func(*textui.Page) {}, landingStatusData{View: lane.View{Root: &install}, Queue: entries}, install)(page)
 		words := oneSpaced(page.String())
-		for _, want := range []string{"goal/design records at bbbbbbbbbbbb from ui · " + state, "goal/code at bbbbbbbbbbbb from ui · " + state} {
+		for _, want := range []string{"goal/design records at bbbbbbbbbbbb · " + state, "goal/code at bbbbbbbbbbbb · " + state} {
 			if !strings.Contains(words, want) {
 				t.Fatalf("status %s lacks %q: %s", state, want, words)
 			}
+		}
+		if strings.Contains(words, "from ui") {
+			t.Fatal("status names an internal seat: " + words)
 		}
 		if state == plain.StateReturned && !strings.Contains(words, "returned: records check failed") {
 			t.Fatal(words)

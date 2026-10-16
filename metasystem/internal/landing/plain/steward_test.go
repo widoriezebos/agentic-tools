@@ -42,10 +42,19 @@ func TestLandingStewardSeventeenRetiredLoopStopsDoNotBound(t *testing.T) {
 	b.incidents()
 	at := bedNow.Add(-time.Hour).Format(time.RFC3339Nano)
 	var stops, queue []any
+	parents := "main"
 	for i := range 17 {
 		name := fmt.Sprintf("landed-%d", i)
+		parents += " " + name
 		stops = append(stops, Stop{Loop: "lane-proof", Subject: name, Decision: "stop", At: at})
 		queue = append(queue, Line{Goal: name, SHA: name, At: at})
+	}
+	git := b.seams.Git
+	b.seams.Git = func(dir string, args ...string) (string, error) {
+		if len(args) > 2 && strings.Join(args[:3], " ") == "rev-list --parents --ignore-missing" {
+			return parents, nil
+		}
+		return git(dir, args...)
 	}
 	b.lines("stops.jsonl", stops...)
 	b.lines("queue.jsonl", queue...)

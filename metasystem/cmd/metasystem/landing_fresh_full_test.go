@@ -58,6 +58,9 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 		},
 		Judge: func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) { return nil, nil },
 		Git: func(_ string, args ...string) (string, error) {
+			if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil}); ok {
+				return listed, nil
+			}
 			switch strings.Join(args, " ") {
 			case "symbolic-ref --quiet --short HEAD":
 				return "main", nil

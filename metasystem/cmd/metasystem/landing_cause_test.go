@@ -252,6 +252,9 @@ func TestLandingStatusReadsCauseAndNamesOtherGoal(t *testing.T) {
 	proof := plain.Result{Result: plain.Red, At: laneTestNow.Format(time.RFC3339), Goals: goals, Cause: &plain.Cause{Kind: "own", Goal: "culprit", SHA: "culprit-sha"}}
 	writeCauseProof(t, b.install, "results.jsonl", proof)
 	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil}); ok {
+			return listed, nil
+		}
 		if len(args) > 0 && args[0] == "rev-parse" {
 			return "main", nil
 		}
@@ -301,6 +304,9 @@ func TestLandingPushReturnedCommitBoundaries(t *testing.T) {
 			// Push reads fresh main and incident inputs before checking returns (lane-reads-its-policies.md:145).
 			notAncestor := replayFalseState(t)
 			b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+				if listed, ok := landingFixtureParents(args, map[string][]string{"old": nil, "head": {"old"}}); ok {
+					return listed, nil
+				}
 				if args[0] == "symbolic-ref" {
 					return "main", nil
 				}

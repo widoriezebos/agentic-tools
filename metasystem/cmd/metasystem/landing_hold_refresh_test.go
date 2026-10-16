@@ -146,6 +146,9 @@ func TestLandingKeeperRefreshesIncidentClosure(t *testing.T) {
 			cachedMain, fetches := "main", 0
 			git := l.owners.landing.plainProve.Git
 			l.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
+				if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil, "remote-main": {"main"}, "head": {"main", "sha-goal"}, "sha-goal": nil}); ok {
+					return listed, nil
+				}
 				path := "metasystem/plans/goals/trunk-red.json"
 				if args[0] == "rev-parse" {
 					return cachedMain, nil

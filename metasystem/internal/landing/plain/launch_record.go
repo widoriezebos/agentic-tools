@@ -7,6 +7,7 @@ import (
 
 // LaunchRecord belongs to the record of the act requesting the process.
 type LaunchRecord struct {
+	Owner   string `json:"owner,omitempty"`
 	Attempt string `json:"attempt,omitempty"`
 	Job     string `json:"job,omitempty"`
 	What    string `json:"what"`

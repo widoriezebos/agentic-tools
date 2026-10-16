@@ -53,6 +53,9 @@ func newResolveVerbFixture(t *testing.T) *resolveVerbFixture {
 	b.owners = (&laneVerbBed{home: b.home}).owners()
 	notAncestor := replayFalseState(t)
 	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		if listed, ok := landingFixtureParents(args, map[string][]string{"head": nil}); ok {
+			return listed, nil
+		}
 		switch args[0] {
 		case "symbolic-ref":
 			return "main", nil

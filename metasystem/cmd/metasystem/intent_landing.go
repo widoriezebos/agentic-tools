@@ -521,6 +521,7 @@ type landingStatusData = plain.Status
 // one line.
 func landingQueueWords(queue []plain.Entry) string {
 	waiting, returned := 0, 0
+	queue, _ = plain.QueueHistory(queue)
 	for _, entry := range queue {
 		switch entry.State {
 		case plain.StateWaiting:
@@ -554,14 +555,14 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			page.Section("Finding", "").Text(data.MergeReadFinding)
 		}
 		if policy := data.BatchPolicy; policy != nil {
-			page.Section("Batch policy", "").Text(policy.Value + " from " + policy.Source)
+			page.Section("Batch policy", "").Text(policy.Value)
 		}
 		for _, request := range data.PendingActions {
 			page.Section("Person act", "").Text("run: " + request.Remedy())
 		}
-		if batch, ok := data.Batch.(*plain.Batch); ok && batch != nil {
+		if batch, ok := data.Batch.(*plain.Batch); ok && batch != nil && batch.State != plain.BatchClosed {
 			section := page.Section("Selected batch", "")
-			section.Text(batch.ID + ": " + batch.State + "; base main " + shortLandingID(batch.Base))
+			section.Text("based on main " + shortLandingID(batch.Base))
 			for _, member := range batch.Members {
 				section.Text(member.Goal + " at " + shortLandingID(member.SHA))
 			}
@@ -579,24 +580,40 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			section.Text(plain.StopHeadline(*stop))
 		}
 		if run := data.RunningRegeneration; run != nil {
-			regeneration := fmt.Sprintf("%s: %s (%s); log %s, %d bytes", run.Goal, strings.Join(run.Command, " "), run.State, run.Log, run.LogBytes)
+			regeneration := run.Goal + ": rebuilding generated files"
 			if run.Launch != nil && run.Launch.Error != "" {
 				regeneration += "; launch failed: " + oneLineLanding(run.Launch.Error)
 			}
 			page.Section("Regenerating", "").Text(regeneration)
 		}
 		if _, err := os.Lstat(filepath.Join(plain.Dir(install), "resolve-begun.json")); err == nil {
-			page.Section("", "").Text("Stale resolve-begun.json: ignored; every merge conflict returns to its seat.")
+			page.Section("", "").Text(landingstate.Phrase("unfinished-conflict-repair-ignored"))
 		}
-		rows := [][2]string{}
+		rows, historyRows := [][2]string{}, [][2]string{}
+		queue, history := plain.QueueHistory(data.Queue)
 		for _, finding := range data.Findings {
 			page.Section("", "").Text(finding)
 		}
-		for _, entry := range data.Queue {
-			if (entry.State == plain.StateLanded || entry.State == plain.StateSuperseded) && !page.Verbose() {
+		for i, entry := range append(queue, history...) {
+			historical := i >= len(queue)
+			if historical && !page.Verbose() {
 				continue
 			}
 			state := entry.State
+			if state == plain.StateSuperseded {
+				state = "replaced by a newer hand-in"
+			}
+			if historical {
+				stamp := entry.LandedAt
+				if entry.State == plain.StateReturned {
+					stamp = entry.ReturnedAt
+				}
+				when := "time not recorded"
+				if stamp != "" {
+					when = lane.LocalText(stamp)
+				}
+				state += ", " + when
+			}
 			if entry.Held {
 				state += landingstate.Phrase("held-2")
 			}
@@ -613,7 +630,12 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			if entry.Records {
 				branch += " records"
 			}
-			rows = append(rows, [2]string{entry.Goal, branch + " at " + shortLandingID(entry.SHA) + " from " + entry.Seat + " · " + state})
+			rows = append(rows, [2]string{entry.Goal, branch + " at " + shortLandingID(entry.SHA) + " · " + state})
+			if historical {
+				historyRows = append(historyRows, rows[len(rows)-1])
+				rows = rows[:len(rows)-1]
+				continue
+			}
 			for _, unit := range entry.Units {
 				causes := make([]string, 0, len(unit.Machinery))
 				for cause := range unit.Machinery {
@@ -632,8 +654,14 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			}
 		}
 		if len(rows) > 0 {
-			table := page.Section("Queue", "").Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})
+			table := page.Section("Queue", landingQueueWords(data.Queue)).Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})
 			for _, row := range rows {
+				table.Row(textui.Plain(row[0]), textui.Plain(row[1]))
+			}
+		}
+		if len(historyRows) > 0 {
+			table := page.Section("History", "").Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})
+			for _, row := range historyRows {
 				table.Row(textui.Plain(row[0]), textui.Plain(row[1]))
 			}
 		}
@@ -662,10 +690,11 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			}
 			section.KV("proven", textui.Plain(proof.Result+landingRedReason(proof.Reason)+" for "+provedWords(proof.Commit, proof.Tree)+", "+lane.LocalText(proof.At)))
 			if len(proof.FlakeRepeats) > 0 {
-				section.KV("original", textui.Plain(proof.Attempt+"; evidence: "+proof.Log))
+				section.KV("original", textui.Plain(proof.Attempt))
 				for _, repeat := range proof.FlakeRepeats {
-					section.KV("repeat", textui.Plain(repeat.Attempt+"; evidence: "+repeat.Log))
+					section.KV("repeat", textui.Plain(repeat.Attempt))
 				}
+				section.Text("Run metasystem landing status --json to reveal the original and repeat log paths.")
 			}
 		}
 		if gate := data.LastGate; gate != nil {
@@ -724,7 +753,7 @@ func (inv *intentInvocation) landingStatusView(view lane.View, unreadable bool, 
 		} else {
 			page.Headline(d.Headline)
 		}
-		if remedy := plain.LaneStatusRemedy(view, running != nil && running.State == "running", d.Headline); remedy != "" {
+		if remedy := plain.LaneStatusRemedy(view, running != nil && (running.State == "running" || running.State == "pending"), d.Headline); remedy != "" {
 			if len(owner.Fix) > 0 {
 				remedy = lane.Remedy(textui.Command(owner.Fix))
 			}

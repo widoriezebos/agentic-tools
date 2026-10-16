@@ -23,7 +23,8 @@ import (
 
 type shadowCorrectionBed struct {
 	*laneVerbBed
-	owners intentOwners
+	owners  intentOwners
+	parents map[string][]string
 }
 
 func (b *shadowCorrectionBed) run(t *testing.T, args ...string) (int, string, string) {
@@ -40,7 +41,7 @@ func (b *shadowCorrectionBed) run(t *testing.T, args ...string) (int, string, st
 func shadowCorrectionVerbBed(t *testing.T) *shadowCorrectionBed {
 	t.Helper()
 	root, home := realpath.Resolve(t.TempDir()), realpath.Resolve(t.TempDir())
-	b := &shadowCorrectionBed{laneVerbBed: &laneVerbBed{cwd: root, landingA: root, home: home}}
+	b := &shadowCorrectionBed{laneVerbBed: &laneVerbBed{cwd: root, landingA: root, home: home}, parents: map[string][]string{"main": nil}}
 	install := filepath.Join(root, "metasystem")
 	for _, dir := range []string{install, filepath.Join(root, ".git"), lane.HostDir(home)} {
 		helmMust(t, os.MkdirAll(dir, 0700))
@@ -50,6 +51,9 @@ func shadowCorrectionVerbBed(t *testing.T) *shadowCorrectionBed {
 	helmMust(t, err)
 	helmMust(t, os.WriteFile(lane.RecordPath(home), data, 0600))
 	b.plainProve.Git = func(_ string, args ...string) (string, error) {
+		if listed, ok := landingFixtureParents(args, b.parents); ok {
+			return listed, nil
+		}
 		if args[0] == "rev-parse" || args[0] == "symbolic-ref" {
 			return "main", nil
 		}

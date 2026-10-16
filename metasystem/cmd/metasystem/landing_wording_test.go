@@ -12,7 +12,7 @@ import (
 
 func TestLandingStatusToDoImmediatelyFollowsHeadline(t *testing.T) {
 	t.Parallel()
-	for _, state := range []string{"held", "stopped", "unready", "unready spaced", "question", "proving", "resolving", "fixing", "resolved", "reviewing", "idle"} {
+	for _, state := range []string{"held", "stopped", "unready", "unready spaced", "question", "proving", "starting", "failed", "resolving", "fixing", "resolved", "reviewing", "idle"} {
 		t.Run(state, func(t *testing.T) {
 			t.Parallel()
 			bed, _, _, _, _ := landingRestartBed(t)
@@ -42,8 +42,14 @@ func TestLandingStatusToDoImmediatelyFollowsHeadline(t *testing.T) {
 				case "resolving", "fixing", "resolved", "reviewing":
 					status.Summary = state + " g; nothing to do"
 				case "proving":
-					status.Summary = "the lane proves main (7.0 min); nothing to do"
+					status.Summary = "proving main (7.0 min); nothing to do"
 					status.RunningProof = &plain.RunningProof{State: "running"}
+				case "starting":
+					status.Summary = "starting the check; nothing to do"
+					status.RunningProof = &plain.RunningProof{State: "pending"}
+				case "failed":
+					status.Summary = "the lane's check failed; run: metasystem landing resume"
+					status.RunningProof = &plain.RunningProof{State: "failed"}
 				}
 				return status
 			}
@@ -61,7 +67,7 @@ func TestLandingStatusToDoImmediatelyFollowsHeadline(t *testing.T) {
 			if state == "unready spaced" {
 				want = "metasystem system start --repo 'fixture with space'"
 			}
-			act := state == "held" || state == "stopped" || state == "question" || state == "unready" || state == "unready spaced"
+			act := state == "failed" || state == "held" || state == "stopped" || state == "question" || state == "unready" || state == "unready spaced"
 			if code != 0 || act && (len(sections) < 2 || strings.TrimSpace(sections[1]) != "to do: "+want) || !act && strings.Contains(out.String(), "to do:") {
 				t.Fatalf("state=%s exit=%d output=%q error=%q", state, code, out.String(), errOut.String())
 			}

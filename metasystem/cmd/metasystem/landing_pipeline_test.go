@@ -184,7 +184,7 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 				t.Fatalf("checkout dirty: %s", got)
 			}
 			code, text = b.plainVerbBed.run(t, "landing", "status")
-			if code != 0 || !strings.Contains(oneSpaced(text), "Stale resolve-begun.json: ignored") {
+			if code != 0 || !strings.Contains(oneSpaced(text), "An unfinished conflict repair was ignored; conflicting work is returned for repair.") {
 				t.Fatalf("stale record status=%d %s", code, text)
 			}
 			pipelineSeatSeesReturn(t, b, "c", third, []string{"metasystem/out/bundle", "work rebase c"})

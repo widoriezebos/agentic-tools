@@ -286,6 +286,14 @@ func (s ProveSeams) alive(running Running) bool {
 	if running.Checkpoint {
 		return false
 	}
+	if running.Admission != nil && running.Admission.State == "pending" && running.Launch != nil && running.Launch.Owner != "" {
+		running.Process = running.Launch.Owner
+		ref, err := identity.ParseRef(running.Process)
+		if err != nil {
+			return false
+		}
+		running.Pid = ref.Pid
+	}
 	if s.Alive != nil {
 		return s.Alive(running)
 	}
@@ -595,6 +603,7 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		if err := admitExecutionLocked(install, checkout, command, &started, proofScope(install, checkout, started, seams), seams); err != nil {
 			return err
 		}
+		started.Launch.Owner = processRef(int64(os.Getpid()))
 		started.setAdmissionState("pending")
 		fixEffect, checkpointEffect, launchEffect := "fix not closed", "checkpoint retained", "launch not attempted"
 		if repair != nil {

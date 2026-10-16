@@ -105,7 +105,7 @@ func ShadowOf(observation Status, raw RawFacts) state.Record {
 	if !agentAlive {
 		next.Agent.Since = since(raw.Agent.ReapedAt, "landing-agent-keeper.json")
 	}
-	if batch := raw.Batch; batch != nil && !(batch.State == BatchClosed && len(batch.Members) == 0) {
+	if batch := raw.Batch; batch != nil && batch.State != BatchClosed {
 		next.Batch.ID, next.Batch.Base = batch.ID, batch.Base
 		next.Batch.SealedAt, _ = time.Parse(time.RFC3339Nano, batch.SealedAt)
 		next.Batch.MainMove = observation.MainMove.Kind
@@ -286,7 +286,7 @@ func RenderInputsOf(observation Status, raw RawFacts) state.RenderInputs {
 		inputs.UnitsDone, inputs.UnitsTotal, inputs.Minutes = proof.UnitsDone, proof.UnitsTotal, proof.Minutes
 	}
 	inputs.ReadMinutes, inputs.CheckMinutes = raw.Fix.ReadMinutes, raw.Fix.CheckMinutes
-	if batch := raw.Batch; batch != nil {
+	if batch := raw.Batch; batch != nil && batch.State != BatchClosed {
 		inputs.MainCommits = observation.MainMove.Count
 		inputs.WaitingReasons = append([]string(nil), batch.Waiting...)
 		if len(batch.Restarts) > 0 {

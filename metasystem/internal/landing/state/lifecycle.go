@@ -51,8 +51,8 @@ var Lifecycle = []LifecycleRow{
 	{"agent-step", "retires when its command process is gone", "retired", func(f LifecycleFacts, _ time.Time) (bool, string) {
 		return f.ProcessGone, "its command process is gone"
 	}},
-	{"batch", "retires when closed with no members", "retired", func(f LifecycleFacts, _ time.Time) (bool, string) {
-		return f.Word == "closed" && f.Empty, "its closed batch has no members"
+	{"batch", "retires when closure is recorded", "retired", func(f LifecycleFacts, _ time.Time) (bool, string) {
+		return f.Word == "closed", "its batch closure is recorded"
 	}},
 }
 

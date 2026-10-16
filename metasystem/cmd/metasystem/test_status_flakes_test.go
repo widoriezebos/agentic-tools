@@ -259,10 +259,11 @@ func TestFlakeAttemptsAppearInLandingStatus(t *testing.T) {
 	}
 	path := filepath.Join(plain.Dir(b.install), "results.jsonl")
 	writeTestingFixtureFile(t, path, append(data, '\n'), 0600)
+	var hinted []string
 	for _, jsonOutput := range []bool{false, true} {
 		words := []string{"status"}
 		if jsonOutput {
-			words = append(words, "--json")
+			words = hinted
 		}
 		code, text := b.run(t, b.root, words...)
 		if code != 0 {
@@ -279,11 +280,17 @@ func TestFlakeAttemptsAppearInLandingStatus(t *testing.T) {
 			}
 		} else {
 			normalized := strings.Join(strings.Fields(text), " ")
-			for _, words := range []string{proof.Reason, "red", "original-red", "repeat-green", "original.log", "repeat.log"} {
+			for _, words := range []string{proof.Reason, "red", "original-red", "repeat-green", "Run metasystem landing status --json to reveal the original and repeat log paths."} {
 				if !strings.Contains(normalized, words) {
 					t.Fatalf("landing status omitted %q: %s", words, text)
 				}
 			}
+			_, command, ok := strings.Cut(normalized, "Run ")
+			if !ok {
+				t.Fatal("status omitted the evidence command")
+			}
+			command, _, _ = strings.Cut(command, " to reveal")
+			hinted = strings.Fields(command)[2:]
 		}
 	}
 	after, err := os.ReadFile(path)

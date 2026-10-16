@@ -103,6 +103,9 @@ func holdLaneFixture(t *testing.T, entries []goal.TrunkRedEntry) (*resolveVerbFi
 	}
 	falseState := replayFalseState(t)
 	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil, "head": {"main", "sha-goal"}, "sha-goal": nil}); ok {
+			return listed, nil
+		}
 		switch strings.Join(args, " ") {
 		case "symbolic-ref --quiet --short HEAD":
 			return "main", nil

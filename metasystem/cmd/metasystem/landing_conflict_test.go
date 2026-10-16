@@ -28,6 +28,9 @@ func TestLandingResolveBatchConflictWaitsThenReturnsAgainstMain(t *testing.T) {
 	notAncestor := exec.Command("/usr/bin/false").Run()
 	trunk, head, aborts, probes := "main-sha", "batch-sha", 0, 0
 	git := func(_ string, args ...string) (string, error) {
+		if listed, ok := landingFixtureParents(args, map[string][]string{"main-sha": nil, "A-sha": {"main-sha"}, "B-sha": {"main-sha"}, "batch-sha": {"main-sha", "A-sha"}}); ok {
+			return listed, nil
+		}
 		switch strings.Join(args, " ") {
 		case "symbolic-ref --quiet --short HEAD":
 			return "main", nil
@@ -118,6 +121,9 @@ func TestLandingResolveGeneratedReturnShowsPathsInStatus(t *testing.T) {
 		return git(dir, args...)
 	}
 	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
+		if listed, ok := landingFixtureParents(args, map[string][]string{"main-sha": nil}); ok {
+			return listed, nil
+		}
 		if args[0] == "symbolic-ref" {
 			return "main", nil
 		}

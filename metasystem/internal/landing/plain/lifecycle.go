@@ -161,7 +161,7 @@ func retireLifecycle(install string, status Status, now time.Time, seams ProveSe
 					}
 				case "batch":
 					b := status.Raw.Batch
-					if b != nil && shadow.Batch.ID == b.ID && shadow.Batch.Execution.Word == BatchClosed && len(shadow.Batch.Members) == 0 {
+					if b != nil && shadow.Batch.ID == b.ID && shadow.Batch.Execution.Word == BatchClosed {
 						shadow.Batch.Execution.Word = record.to
 					}
 				}

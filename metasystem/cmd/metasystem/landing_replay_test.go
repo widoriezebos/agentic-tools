@@ -46,6 +46,9 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 		NewID: func() string { id++; return fmt.Sprintf("proof-%d", id) },
 		Judge: func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) { return nil, nil },
 		Git: func(_ string, args ...string) (string, error) {
+			if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil, "merge-a": {"main", "sha-a"}, "merge-b": {"merge-a", "sha-b"}, "merge-c": {"merge-b", "sha-c"}, "sha-a": nil, "sha-b": nil, "sha-c": nil}); ok {
+				return listed, nil
+			}
 			joined := strings.Join(args, " ")
 			switch {
 			// Proof declarations come from the checked commit, including in replay fixtures.

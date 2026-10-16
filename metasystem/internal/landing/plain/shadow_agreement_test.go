@@ -52,6 +52,9 @@ func shadowSeams() ProveSeams {
 	notAncestor := exec.Command("/usr/bin/false").Run()
 	return ProveSeams{Now: func() time.Time { return bedNow }, Machine: func(string) (string, error) { return "fixture", nil },
 		Git: func(_ string, args ...string) (string, error) {
+			if len(args) > 2 && strings.Join(args[:3], " ") == "rev-list --parents --ignore-missing" {
+				return "main", nil
+			}
 			if args[0] == "merge-base" {
 				return "", notAncestor
 			}
@@ -138,7 +141,7 @@ func assertShadowAgrees(t *testing.T, home string, seams ProveSeams) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if batch != nil && !(batch.State == BatchClosed && len(batch.Members) == 0) {
+	if batch != nil && batch.State != BatchClosed {
 		equal("batch.id", shadow.Batch.ID, batch.ID)
 		equal("batch.execution.word", shadow.Batch.Execution.Word, batch.State)
 		admission := "sealed"
@@ -345,6 +348,9 @@ func TestShadowAgreementLifecycleAndEverySince(t *testing.T) {
 	b.lines("pushes.jsonl", Pushed{Commit: "main", Old: "before", At: bedNow.Format(time.RFC3339)})
 	seams.Git = func(_ string, args ...string) (string, error) {
 		if args[0] == "rev-list" {
+			if slices.Contains(args, "--ignore-missing") {
+				return "main a\na before\nbefore", nil
+			}
 			return "a", nil
 		}
 		if args[0] == "rev-parse" {
@@ -360,7 +366,13 @@ func TestShadowAgreementLifecycleAndEverySince(t *testing.T) {
 		t.Fatal(err)
 	}
 	r = read()
-	transition("batch.execution", r.Batch.Execution.Since, batch.ClosedAt)
+	if r.Batch.ID != "" {
+		t.Fatalf("closed batch remained current: %+v", r.Batch)
+	}
+	retained, err := ReadBatch(b.install)
+	if err != nil || retained == nil || retained.ClosedAt != batch.ClosedAt || !slices.Equal(retained.Members, batch.Members) {
+		t.Fatalf("closed record lost its members or time: %+v %v", retained, err)
+	}
 	observation("holds", r.Holds.Since, "landing-agent-keeper.json")
 }
 
@@ -639,7 +651,7 @@ func TestShadowOfProjectsRecordedPayloadsAndHonestClocks(t *testing.T) {
 		Queue:         []Entry{{Goal: "A", SHA: "a", State: StateReturned, At: stamp, ReturnedAt: stamp, Reason: "own failure"}, {Goal: "A", SHA: "a", State: StateLanded, At: stamp}},
 		RunningProof:  &RunningProof{Attempt: "proof", State: "running", Since: stamp}}
 	raw := RawFacts{Now: bedNow, Agent: lane.AgentState{Launch: "session", Barren: 2}, Ordinals: []int{1, 3}, Main: "external", Engine: "recorded-engine",
-		Batch:   &Batch{ID: "batch", State: BatchClosed, Open: false, SealedAt: stamp, Base: "base", Members: []GoalSHA{{Goal: "A", SHA: "a"}}},
+		Batch:   &Batch{ID: "batch", State: BatchClosed, ClosedAt: stamp, Open: false, SealedAt: stamp, Base: "base", Members: []GoalSHA{{Goal: "A", SHA: "a"}}},
 		Running: Running{Gate: true}, Fix: Fix{Attempt: "resolution", Goal: "A", Job: "job", State: "resolving"},
 		Incidents: []goal.TrunkRedEntry{{ID: "incident"}}, Questions: []state.Question{{ID: "question", Premise: "current", Since: state.Since{At: started}}},
 		Stops: []Stop{{Loop: "lane-return", Subject: "lane", Attempt: 2, At: stamp}}}
@@ -647,7 +659,7 @@ func TestShadowOfProjectsRecordedPayloadsAndHonestClocks(t *testing.T) {
 	if got.Agent.Session != "session" || got.Agent.Step.Verb != "prove" || !slices.Equal(got.Agent.Step.Args, []string{"--gate"}) || got.Agent.Since.Observed || !got.Agent.Since.At.Equal(started) {
 		t.Fatalf("agent: %+v", got.Agent)
 	}
-	if got.Batch.Execution.Word != BatchClosed || !got.Batch.Execution.Since.Observed || got.Batch.Execution.Since.Source != "batch.json" || got.Batch.Admission.Word != "sealed" || got.Batch.Admission.Since.Observed || !got.Batch.Admission.Since.At.Equal(started) || got.Batch.Base != "base" {
+	if got.Batch.ID != "" || len(raw.Batch.Members) != 1 || raw.Batch.SealedAt != stamp || raw.Batch.ClosedAt != stamp {
 		t.Fatalf("batch: %+v", got.Batch)
 	}
 	if got.HandIns[0].Reason != "own failure" || got.HandIns[0].Since.Observed || !got.HandIns[0].At.Equal(started) || !got.HandIns[1].Since.Observed || got.HandIns[1].Since.Source != "queue.jsonl" {

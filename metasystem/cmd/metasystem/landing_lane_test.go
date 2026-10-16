@@ -101,6 +101,9 @@ func TestLandingPushChecksDesign(t *testing.T) {
 				}
 				notAncestor := replayFalseState(t)
 				admitted := laneAdmitted{home: laneHome, record: record, layout: laneLayout, installation: install, owners: laneVerbOwners{now: func() time.Time { return laneTestNow }, machine: func(string) (string, error) { return "fixture", nil }, push: push, plainProve: plain.ProveSeams{Git: func(_ string, args ...string) (string, error) {
+					if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil, "head": {"main", bed.id}, bed.id: nil}); ok {
+						return listed, nil
+					}
 					if args[0] == "rev-parse" {
 						return "main", nil
 					}

@@ -97,6 +97,12 @@ func TestKeeperAbandonedFixRemainsVisibleAcrossTenTicks(t *testing.T) {
 	notAncestor := exec.CommandContext(t.Context(), "/usr/bin/false").Run()
 	git := b.seams.Git
 	b.seams.Git = func(dir string, args ...string) (string, error) {
+		if len(args) > 2 && strings.Join(args[:3], " ") == "rev-list --parents --ignore-missing" {
+			if landed {
+				return "main sha\nsha", nil
+			}
+			return "main", nil
+		}
 		if args[0] == "merge-base" {
 			if landed {
 				return "", nil
@@ -185,7 +191,7 @@ func TestKeeperLatestResultsSurviveRetention(t *testing.T) {
 	at := bedNow.Add(-20 * 24 * time.Hour).Format(time.RFC3339Nano)
 	b.lines("results.jsonl", Result{Attempt: "old-trunk", Trunk: true, Commit: "main", At: at, Result: Green}, Result{Attempt: "trunk", Trunk: true, Commit: "main", At: at, Result: Red}, Result{Attempt: "batch", Commit: "batch", At: at, Result: Green})
 	b.lines("gates.jsonl", Result{Attempt: "gate", Requested: "main", At: at, Result: Green})
-	b.lines("pushes.jsonl", Pushed{Commit: "main", At: at})
+	b.lines("pushes.jsonl", Pushed{Old: "before", Commit: "main", At: at})
 	if err := RefreshLifecycle(b.home, bedNow, b.seams); err != nil {
 		t.Fatal(err)
 	}

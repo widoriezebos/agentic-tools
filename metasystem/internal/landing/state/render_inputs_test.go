@@ -82,7 +82,7 @@ func TestDescribeRunningProofNamesItsOwnSubject(t *testing.T) {
 			if !trunk {
 				want = "proving the batch of 2 — lane-rehearsal-before-landing, shared-state-in-the-ledger (3 of 10 units, 5.0 min)"
 			}
-			if !strings.HasPrefix(d.Headline, "proving (") || !strings.Contains(d.Headline, want) || strings.Contains(d.Headline, "the lane proves main") != trunk {
+			if d.Headline != want+"; nothing to do" {
 				t.Fatal(d.Headline)
 			}
 		})

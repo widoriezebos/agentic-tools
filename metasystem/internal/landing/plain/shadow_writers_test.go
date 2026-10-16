@@ -49,6 +49,9 @@ func TestShadowWriterTimesPreserveBatchAndDetachedProof(t *testing.T) {
 			}
 			return "", nil
 		case "rev-list":
+			if slices.Contains(args, "--ignore-missing") {
+				return "main", nil
+			}
 			if slices.Contains(args, "--parents") {
 				return "commit parent tip", nil
 			}
@@ -112,7 +115,14 @@ func TestShadowWriterTimesPreserveBatchAndDetachedProof(t *testing.T) {
 	if _, err := SelectBatch(b.install, b.checkout, registered, s); err != nil {
 		t.Fatal(err)
 	}
-	check(BatchClosed, now)
+	if _, err := RefreshShadow(home, now, "fixture", shadowSeams()); err != nil {
+		t.Fatal(err)
+	}
+	current, _, err := state.Read(Dir(b.install))
+	closed, readErr := ReadBatch(b.install)
+	if err != nil || readErr != nil || current.Batch.ID != "" || closed == nil || closed.State != BatchClosed || closed.ClosedAt != now.Format(time.RFC3339Nano) || !slices.Equal(closed.Members, batch.Members) {
+		t.Fatalf("closed batch retirement: current=%+v retained=%+v errors=%v %v", current.Batch, closed, err, readErr)
+	}
 }
 
 func TestShadowKeeperTransitionDoesNotDrift(t *testing.T) {

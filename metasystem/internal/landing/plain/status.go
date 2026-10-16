@@ -44,8 +44,8 @@ type Status struct {
 	// Queue is every hand-in of queue.jsonl, oldest first, with its state:
 	// waiting, returned, superseded by a newer hand-in of its goal, or
 	// landed when origin's main (as the lane checkout last fetched it)
-	// contains its sha. A landed hand-in a push of the last day brought
-	// carries that push's time.
+	// contains its sha. A landed hand-in carries its recorded push time.
+	// QueueHistory partitions these observations for the current view.
 	Queue               []Entry              `json:"queue"`
 	RunningFix          *Fix                 `json:"running_fix,omitempty"`
 	RunningProof        *RunningProof        `json:"running_proof"`
@@ -96,9 +96,6 @@ type RunningProof struct {
 	Minutes    *float64 `json:"minutes,omitempty"`
 }
 
-// landedWindow is the lifecycle table's completed submission window.
-const landedWindow = landingstate.SubmissionWindow
-
 // laneGit is what a status read asks the lane checkout's Git: origin's main
 // as the checkout last fetched it, whether that main contains a commit, and
 // which commits one push brought to main.
@@ -106,11 +103,15 @@ type laneGit struct {
 	main     func() (string, error)
 	contains func(main, sha string) (bool, error)
 	brought  func(old, commit string) ([]string, error)
+	parents  func(roots []string) (string, error)
 }
 
 // checkoutGit answers laneGit from the lane checkout at dir.
 func checkoutGit(dir string, seams ProveSeams) laneGit {
 	return laneGit{
+		parents: func(roots []string) (string, error) {
+			return seams.git(dir, append([]string{"rev-list", "--parents", "--ignore-missing"}, roots...)...)
+		},
 		main: func() (string, error) {
 			return seams.git(dir, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
 		},
@@ -138,6 +139,70 @@ func checkoutGit(dir string, seams ProveSeams) laneGit {
 			return strings.Fields(listed), nil
 		},
 	}
+}
+
+// ancestry shares one complete parent listing across main containment and push
+// ranges. Push endpoints remain roots even when main has been force-reset.
+func (git laneGit) ancestry(main string, pushes []Pushed) (laneGit, error) {
+	roots := []string{main}
+	for _, push := range pushes {
+		for _, endpoint := range []string{push.Commit, push.Old} {
+			if endpoint != "" && !slices.Contains(roots, endpoint) {
+				roots = append(roots, endpoint)
+			}
+		}
+	}
+	listed, err := git.parents(roots)
+	parents := map[string][]string{}
+	for _, line := range strings.Split(listed, "\n") {
+		if fields := strings.Fields(line); len(fields) > 0 {
+			parents[fields[0]] = fields[1:]
+		}
+	}
+	reachable := func(root string) map[string]bool {
+		seen := map[string]bool{}
+		pending := []string{root}
+		for len(pending) > 0 {
+			commit := pending[len(pending)-1]
+			pending = pending[:len(pending)-1]
+			if seen[commit] {
+				continue
+			}
+			seen[commit] = true
+			pending = append(pending, parents[commit]...)
+		}
+		return seen
+	}
+	if _, ok := parents[main]; err == nil && !ok {
+		err = fmt.Errorf("main %s is absent from the parent listing", Short(main))
+	}
+	inside := reachable(main)
+	contains := git.contains
+	git.contains = func(tip, sha string) (bool, error) {
+		if tip == main {
+			return inside[sha], err
+		}
+		return contains(tip, sha)
+	}
+	git.brought = func(old, commit string) ([]string, error) {
+		if err != nil {
+			return nil, err
+		}
+		for _, endpoint := range []string{old, commit} {
+			if _, ok := parents[endpoint]; !ok {
+				return nil, fmt.Errorf("commit %s is absent from the parent listing", Short(endpoint))
+			}
+		}
+		before := reachable(old)
+		var brought []string
+		for sha := range reachable(commit) {
+			if !before[sha] {
+				brought = append(brought, sha)
+			}
+		}
+		return brought, nil
+	}
+	return git, err
 }
 
 // ReadStatus reads the plain lane around its view: home is the lane's home
@@ -454,8 +519,16 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			raw.Ordinals[i] = lineOrdinals[ordinal-1]
 		}
 	}
+	pushes, pushSkipped, pushErr := countedLines[Pushed](pushesPath(install))
+	if len(pushes) > 0 {
+		last := pushes[len(pushes)-1]
+		status.LastPush = &last
+	}
 	if len(status.Queue) > 0 {
 		main, err := git.main()
+		if err == nil && git.parents != nil {
+			git, err = git.ancestry(main, pushes)
+		}
 		if err == nil {
 			contains := func(sha string) (bool, error) { return git.contains(main, sha) }
 			var again error
@@ -465,7 +538,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			if readErr == nil {
 				status.Queue = HoldEntries(status.Queue, incidents, seams)
 			}
-			status.Queue, again = landedBeforeAgain(status.Queue, seams.now().Add(-landedWindow), contains)
+			status.Queue, again = landedBeforeAgain(status.Queue, time.Time{}, contains)
 			err = errors.Join(err, again)
 		}
 		unread("whether main holds the queued work", err)
@@ -528,13 +601,10 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 			}
 		}
 	}
-	pushes, skipped, err := countedLines[Pushed](pushesPath(install))
-	unread("the push record", err)
-	damaged("the push record has", skipped, pushesPath(install))
-	if err == nil && len(pushes) > 0 {
-		last := pushes[len(pushes)-1]
-		status.LastPush = &last
-		status.Queue, err = LandingTimes(status.Queue, pushes, seams.now().Add(-landedWindow), git.brought)
+	unread("the push record", pushErr)
+	damaged("the push record has", pushSkipped, pushesPath(install))
+	if pushErr == nil && len(pushes) > 0 {
+		status.Queue, err = LandingTimes(status.Queue, pushes, time.Time{}, git.brought)
 		unread(landingstate.Phrase("when-the-queued-work-landed"), err)
 	}
 	if running != nil && running.State == "running" {

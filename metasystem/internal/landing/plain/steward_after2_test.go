@@ -104,6 +104,9 @@ func TestLandingStewardClosesGoneLoopStops(t *testing.T) {
 			b := newStewardBed(t)
 			// The landed subject is derived by the real status reader from Git's answer.
 			b.seams.Git = func(_ string, args ...string) (string, error) {
+				if len(args) > 2 && strings.Join(args[:3], " ") == "rev-list --parents --ignore-missing" {
+					return "main landed-sha\nlanded-sha", nil
+				}
 				if args[0] == "merge-base" && args[len(args)-2] == "landed-sha" {
 					return "", nil
 				}

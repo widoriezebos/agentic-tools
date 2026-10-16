@@ -262,6 +262,23 @@ func entriesAndOrdinals(lines []Line) ([]Entry, []int) {
 	return entries, ordinals
 }
 
+// QueueHistory separates current work from completed or replaced hand-ins.
+// An unresolved return stays current until its goal is handed in again.
+func QueueHistory(entries []Entry) (queue, history []Entry) {
+	latest := make(map[string]int)
+	for i, entry := range entries {
+		latest[entry.Goal] = i
+	}
+	for i, entry := range entries {
+		if latest[entry.Goal] != i || entry.State == StateLanded || entry.State == StateSuperseded {
+			history = append(history, entry)
+		} else {
+			queue = append(queue, entry)
+		}
+	}
+	return queue, history
+}
+
 // Waiting are the hand-ins not returned, landed or not.
 func Waiting(install string) ([]Entry, error) {
 	entries, err := Entries(install)

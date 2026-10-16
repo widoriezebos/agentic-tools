@@ -188,6 +188,9 @@ func TestLandingWriterTransitionsDriveThrough(t *testing.T) {
 	main := "main"
 	git := s.Git
 	s.Git = func(dir string, args ...string) (string, error) {
+		if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil, "merge-a": {"main", "sha-a"}, "merge-b": {"merge-a", "sha-b"}, "sha-a": nil, "sha-b": nil}); ok {
+			return listed, nil
+		}
 		if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/testing.json") {
 			return b.contract, nil
 		}
