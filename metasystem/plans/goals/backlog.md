@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 190
+- Revision: 191
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -260,4 +260,5 @@ History:
 - 2026-10-16T16:22:06Z 950VCTW1MP06S6MJPX8CPAZHBX-ui-71c5cb39 ack actor=ui+steward-seat targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-04T21:13:12Z ack
 - 2026-10-16T16:22:06Z 950VCTW1MP06S6MJPX8CPAZHBX-ui-71c5cb39 ack actor=ui+steward-seat targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-05T00:14:22Z ack
 - 2026-10-16T16:22:06Z 950VCTW1MP06S6MJPX8CPAZHBX-ui-71c5cb39 ack actor=ui+steward-seat targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-05T03:15:42Z ack
-Integrity: sha256=e1a8b5c3f6312705323d9a76cc872f39ac299a5d8cd472908f4b3f330cccc96f
+- 2026-10-16T16:55:34Z K2GVTSW7K6GCEF8MQWJERHYBDV-ui-71c5cb39 ack actor=ui+steward-seat targets=commit-goal-binding displaced=ui+steward-seat@2026-10-16T16:22:06Z ack
+Integrity: sha256=c6b1ca9e275e7823868fa4c3cd20b60cbf1c27e7bc0da1b2217f2ab71b6cb613
