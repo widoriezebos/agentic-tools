@@ -352,9 +352,12 @@ func TestWitnessDeathOfANonChildWhoseParentNeverReaps(t *testing.T) {
 	if eventCalls != 1 {
 		t.Fatalf("grandchild death event calls=%d, want 1", eventCalls)
 	}
+	// Unreaped means terminal and still readable: a zombie, or a process the
+	// kernel is still tearing down (Exiting), the two states the wait above
+	// accepts as released; which of the two the probe meets depends on load.
 	zombie, state, err := (KernelProber{}).Probe(pid)
-	if err != nil || state != Alive || !SameIdentity(zombie, ref) || !zombie.Zombie {
-		t.Fatalf("unreaped grandchild pid %d: state=%s same=%t zombie=%t err=%v",
-			pid, state, SameIdentity(zombie, ref), zombie.Zombie, err)
+	if err != nil || state != Alive || !SameIdentity(zombie, ref) || !(zombie.Zombie || zombie.Exiting) {
+		t.Fatalf("unreaped grandchild pid %d: state=%s same=%t zombie=%t exiting=%t err=%v",
+			pid, state, SameIdentity(zombie, ref), zombie.Zombie, zombie.Exiting, err)
 	}
 }
