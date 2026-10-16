@@ -1157,7 +1157,8 @@ func installPendingWaitHookFixture(t *testing.T, root, binary string) (hook, can
 
 type installedWaitFixture struct {
 	*testutil.ProcessFixture
-	ownerLineage string
+	ownerLineage  string
+	disarmSteward func(string) (steward.RunnerStopOutcome, error)
 }
 
 func newInstalledWaitFixture(t *testing.T, ownerLineage string) *installedWaitFixture {
@@ -1213,11 +1214,7 @@ func runRecordedInstalledWaitCommand(fixture *installedWaitFixture, command *exe
 
 func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFixture, canonical, root string) func() error {
 	t.Helper()
-	stopped := false
 	stop := func() error {
-		if stopped {
-			return nil
-		}
 		environment := make([]string, 0, len(os.Environ())+1)
 		for _, value := range os.Environ() {
 			if !strings.HasPrefix(value, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=") {
@@ -1241,11 +1238,17 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 		}
 		// The steward's disarm owner, which the retired internal steward
 		// disarm ran.
-		if _, err := steward.Disarm(root); err != nil {
-			failures = append(failures, fmt.Errorf("steward disarm: %w", err))
+		disarm := fixture.disarmSteward
+		if disarm == nil {
+			disarm = steward.Disarm
 		}
-		if len(failures) == 0 {
-			stopped = true
+		outcome, err := disarm(root)
+		if err != nil {
+			failures = append(failures, fmt.Errorf("steward disarm: %w", err))
+		} else if err := awaitInstalledWaitStewardExit(outcome, func(ref identity.Ref) error {
+			return testutil.AwaitExactExit(identity.KernelProber{}, ref)
+		}); err != nil {
+			failures = append(failures, err)
 		}
 		return errors.Join(failures...)
 	}
@@ -1263,7 +1266,108 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 	return stop
 }
 
+func awaitInstalledWaitStewardExit(outcome steward.RunnerStopOutcome, awaitExit func(identity.Ref) error) error {
+	var stopErr error
+	if outcome.Result != "stopped" && outcome.Result != "already-gone" {
+		stopErr = fmt.Errorf("steward disarm: %s", outcome.LongForm())
+		if outcome.Result != "not-stopped" || outcome.Signal != "kill" || outcome.Record.Pid <= 0 {
+			return stopErr
+		}
+	}
+	if outcome.Record.Pid > 0 {
+		ref := identity.Ref{Pid: outcome.Record.Pid, StartedAtSec: outcome.Record.PidStartedAt, StartTicks: outcome.Record.StartTicks, BootID: outcome.Record.BootID}
+		if err := awaitExit(ref); err != nil {
+			return errors.Join(stopErr, fmt.Errorf("join stopped steward: %w", err))
+		}
+	}
+	return nil
+}
+
+func TestInstalledWaitStewardStopOutcome(t *testing.T) {
+	t.Parallel()
+	awaitFailure := errors.New("recorded steward still alive")
+	for _, tc := range []struct {
+		name      string
+		signal    string
+		pid       int64
+		zombie    bool
+		awaitErr  error
+		wantError bool
+		wantAwait bool
+	}{
+		{name: "killed-dead", signal: "kill", pid: 356, wantAwait: true},
+		{name: "killed-zombie", signal: "kill", pid: 356, zombie: true, wantAwait: true},
+		{name: "exit-unconfirmed", signal: "kill", pid: 356, awaitErr: awaitFailure, wantError: true, wantAwait: true},
+		{name: "missing-pid", signal: "kill", wantError: true},
+		{name: "no-signal", signal: "none", pid: 356, wantError: true},
+		{name: "term-only", signal: "term", pid: 356, wantError: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			outcome := steward.RunnerStopOutcome{
+				Result: "not-stopped", Signal: tc.signal, Reason: "runner remained alive after KILL",
+				Record: steward.RunnerRecord{Pid: tc.pid, PidStartedAt: 123, StartTicks: 456, BootID: "fixture-boot"},
+			}
+			wantRef := identity.Ref{Pid: tc.pid, StartedAtSec: 123, StartTicks: 456, BootID: "fixture-boot"}
+			called := false
+			err := awaitInstalledWaitStewardExit(outcome, func(ref identity.Ref) error {
+				called = true
+				if ref != wantRef {
+					t.Fatalf("exit wait identity = %+v, want recorded %+v", ref, wantRef)
+				}
+				if tc.awaitErr != nil {
+					return tc.awaitErr
+				}
+				prober := processRefProber{state: identity.Dead}
+				if tc.zombie {
+					prober = processRefProber{state: identity.Alive, exact: identity.Exact{
+						Pid: tc.pid, StartedAt: time.Unix(123, 0), StartTicks: 456, BootID: "fixture-boot", Zombie: true,
+					}}
+				}
+				return testutil.AwaitExactExit(prober, ref)
+			})
+			if called != tc.wantAwait {
+				t.Errorf("exit wait called = %t, want %t", called, tc.wantAwait)
+			}
+			if (err != nil) != tc.wantError {
+				t.Fatalf("stop outcome error = %v, want error %t", err, tc.wantError)
+			}
+			if err != nil && !strings.Contains(err.Error(), outcome.LongForm()) {
+				t.Errorf("disarm diagnostic missing: %v", err)
+			}
+			if tc.awaitErr != nil && (!errors.Is(err, tc.awaitErr) || !strings.Contains(err.Error(), tc.awaitErr.Error())) {
+				t.Errorf("exit wait diagnostic missing: %v", err)
+			}
+		})
+	}
+}
+
 func TestInstalledWaitCleanupRetainsChildrenAfterEarlyShutdown(t *testing.T) {
+	t.Parallel()
+	t.Run("early-shutdown-child", installedWaitCleanupCollectsChild)
+	t.Run("rearmed-producer", installedWaitCleanupJoinsRearmedProducer)
+}
+
+func TestInstalledWaitCleanupRejectsUnstoppedSteward(t *testing.T) {
+	t.Parallel()
+	fixture := newInstalledWaitFixture(t, "unstopped-steward")
+	root := t.TempDir()
+	canonical := filepath.Join(root, "metasystem")
+	if err := testexec.WriteFile(canonical, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fixture.disarmSteward = func(string) (steward.RunnerStopOutcome, error) {
+		return steward.RunnerStopOutcome{Result: "not-stopped", Reason: "runner remained alive after KILL"}, nil
+	}
+	stop := installPendingWaitSupervisionCleanup(t, fixture, canonical, root)
+	err := stop()
+	fixture.disarmSteward = nil
+	if err == nil || !strings.Contains(err.Error(), "runner remained alive after KILL") {
+		t.Fatalf("unstopped steward accepted: %v", err)
+	}
+}
+
+func installedWaitCleanupCollectsChild(t *testing.T) {
 	t.Parallel()
 	var child *exec.Cmd
 	var input io.WriteCloser
@@ -1301,6 +1405,70 @@ func TestInstalledWaitCleanupRetainsChildrenAfterEarlyShutdown(t *testing.T) {
 	if err := testexec.StartReady(child); err != nil {
 		t.Fatal(err)
 	}
+}
+
+func installedWaitCleanupJoinsRearmedProducer(t *testing.T) {
+	t.Parallel()
+	fixture := newInstalledWaitFixture(t, "rearmed-shutdown-producer")
+	root := t.TempDir()
+	canonical := filepath.Join(root, "metasystem")
+	if err := testexec.WriteFile(canonical, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	producer := fixture.Shell(testexec.ReadyPrologue + `read -r action
+if [ "$action" = launch ]; then
+  /bin/sh -c 'printf "launched\n"; read -r _' <&0 &
+  wait
+fi`)
+	input, err := producer.StdinPipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, outputWriter, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	producer.Stdout = outputWriter
+	t.Cleanup(func() { _ = output.Close(); _ = outputWriter.Close() })
+	var joined chan error
+	// This observer runs after the final custody snapshot and before recorded
+	// process teardown. EOF acknowledges a joined producer; a launched child
+	// acknowledges the ordering defect without awaiting a prevented event.
+	t.Cleanup(func() {
+		if joined == nil {
+			return
+		}
+		_, _ = io.WriteString(input, "launch\n")
+		line, err := bufio.NewReader(output).ReadString('\n')
+		if line != "" || err != io.EOF {
+			t.Errorf("producer could launch after final custody snapshot: acknowledgement=%q err=%v", line, err)
+		}
+		if err := fixture.HoldOwnedChildren(); err != nil {
+			t.Error(err)
+		}
+		_ = producer.Process.Kill()
+		<-joined
+		_ = input.Close()
+	})
+	stop := installPendingWaitSupervisionCleanup(t, fixture, canonical, root)
+	if err := stop(); err != nil {
+		t.Fatal(err)
+	}
+	if err := testexec.StartReady(producer); err != nil {
+		t.Fatal(err)
+	}
+	_ = outputWriter.Close()
+	joined = make(chan error, 1)
+	go func() { joined <- producer.Wait() }()
+	fixture.Record(producer.Process.Pid)
+	process, state, err := (identity.KernelProber{}).Probe(int64(producer.Process.Pid))
+	if err != nil || state != identity.Alive {
+		t.Fatalf("rearmed producer identity: state=%s err=%v", state, err)
+	}
+	// Publish the new generation only after the early shutdown, just as a
+	// later Stop hook can rearm supervision.
+	record := steward.RunnerRecord{Pid: process.Pid, PidStartedAt: process.StartedAt.Unix(), StartTicks: process.StartTicks, BootID: process.BootID}
+	fleetWriteJSON(t, filepath.Join(root, "artifacts", "agents", "steward", "runner.json"), record)
 }
 
 // retireUnpublishedPendingWaitOwner settles the one owner state up --shutdown
