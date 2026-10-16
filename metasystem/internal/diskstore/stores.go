@@ -2,11 +2,86 @@ package diskstore
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
+
+// AdmitDelegate finds a registered delegate or admits a legacy job worktree
+// under this checkout, after proving that it belongs to this repository.
+func AdmitDelegate(ctx context.Context, registry Registry, top, gitRoot, path string, git WorkspaceGit, now time.Time) (Record, error) {
+	path, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return Record{}, err
+	}
+	records, unreadable := registry.Inventory()
+	if len(unreadable) > 0 {
+		return Record{}, fmt.Errorf("the store registry cannot be read: %s", unreadable[0].Reason)
+	}
+	for _, record := range records {
+		if under(path, record.Path) && under(record.Path, path) && record.State != StateReleased {
+			if record.Owner.Kind != OwnerDelegate || record.Class != DelegateClass {
+				return Record{}, fmt.Errorf("the path is not a registered delegate workspace")
+			}
+			return record, nil
+		}
+	}
+	root := filepath.Join(top, "artifacts", "agents", "worktrees")
+	if !under(path, root) || under(root, path) {
+		return Record{}, fmt.Errorf("a legacy job worktree must lie under %s", root)
+	}
+	identity, err := ReadGitIdentity(path)
+	if err != nil {
+		return Record{}, err
+	}
+	backlink, err := os.ReadFile(filepath.Join(identity.Gitdir, "gitdir"))
+	if err != nil {
+		return Record{}, err
+	}
+	owner := strings.TrimSpace(string(backlink))
+	if !filepath.IsAbs(owner) {
+		owner = filepath.Join(identity.Gitdir, owner)
+	}
+	owner, err = filepath.EvalSymlinks(owner)
+	if err != nil || owner != filepath.Join(path, ".git") {
+		return Record{}, fmt.Errorf("the git directory does not belong to this worktree")
+	}
+	common := func(dir string) (string, error) {
+		out, err := git(ctx, dir, "rev-parse", "--git-common-dir")
+		if err != nil {
+			return "", err
+		}
+		name := strings.TrimSpace(string(out))
+		if !filepath.IsAbs(name) {
+			name = filepath.Join(dir, name)
+		}
+		return filepath.EvalSymlinks(name)
+	}
+	ours, err := common(gitRoot)
+	if err != nil {
+		return Record{}, err
+	}
+	theirs, err := common(path)
+	if err != nil {
+		return Record{}, err
+	}
+	if theirs != ours {
+		return Record{}, fmt.Errorf("the worktree belongs to another repository")
+	}
+	record, err := registry.Register(Registration{Path: path, Git: true, Class: DelegateClass, Owner: Owner{Kind: OwnerDelegate, Ref: filepath.Base(path)},
+		Checkout: top, Lifetime: LifetimeOwner, CapBytes: 8 << 30, CapKind: CapTarget, Layout: LayoutCopy, Adopted: true}, now, rand.Reader)
+	if err != nil {
+		return Record{}, err
+	}
+	if record.State == StateReserved {
+		return registry.Transition(record.ID, []State{StateReserved}, StateAccepted, func(record *Record) { record.Identity = identity })
+	}
+	return record, nil
+}
 
 // RegisteredStores is the class of every record in one registry. A store is
 // released only by its owner kind's proof (R3); a git worktree store and a
@@ -73,6 +148,14 @@ func (s RegisteredStores) observe(ctx context.Context, pass *Pass, record Record
 		return Verdict{Decision: Pending, Reason: "an engine verb is inside the store (its record lock is held)", Command: "metasystem disk clean, once that verb has ended"}
 	}
 	verdict := proof.Observe(ctx, record)
+	if verdict.Absorbable {
+		if use := judgeUse(pass.Census(ctx), record); use.Decision != Release {
+			use.Absorbable = true
+			use.Reason += "; " + verdict.Reason
+			return use
+		}
+		return verdict
+	}
 	if verdict.Decision != Release || record.State == StateReleasing {
 		return verdict
 	}
@@ -127,6 +210,12 @@ type SelfReleaser interface {
 	Release(ctx context.Context, critical *Critical, census *UseCensus) Verdict
 }
 
+// QuarantineAbsorber publishes a delegate's objects without releasing it.
+type QuarantineAbsorber interface {
+	Reclaim(Record) error
+	Absorb(context.Context, Record) error
+}
+
 // Apply is the critical section of 3.1 for one store: the record lock taken
 // without waiting, the record reloaded and its identity revalidated, the
 // content and use proofs re-run (unless the record is already releasing),
@@ -145,8 +234,32 @@ func (s RegisteredStores) Apply(ctx context.Context, pass *Pass, item Item) Verd
 	defer critical.Release()
 	record := critical.Record()
 	proof := s.Proofs[record.Owner.Kind]
+	var fresh *UseCensus
+	if absorber, ok := proof.(QuarantineAbsorber); ok && record.State != StateReleased {
+		if err := Revalidate(record); err != nil {
+			return Verdict{Decision: Pending, Reason: err.Error(), Command: "metasystem disk show"}
+		}
+		if err := absorber.Reclaim(record); err != nil {
+			return Verdict{Decision: Pending, Absorbable: true, Reason: err.Error(), Command: "metasystem disk clean"}
+		}
+		verdict := proof.Observe(ctx, record)
+		if verdict.Absorbable {
+			fresh = pass.FreshCensus(ctx)
+			if use := judgeUse(fresh, record); use.Decision != Release {
+				use.Absorbable = true
+				use.Reason += "; " + verdict.Reason
+				return use
+			}
+			if err := absorber.Absorb(ctx, record); err != nil {
+				return Verdict{Decision: Pending, Absorbable: true, Reason: err.Error() + "; " + verdict.Reason, Command: "metasystem disk clean"}
+			}
+		}
+	}
 	if releaser, ok := proof.(SelfReleaser); ok && record.State != StateReleased {
-		census := pass.Census(ctx)
+		census := fresh
+		if census == nil {
+			census = pass.Census(ctx)
+		}
 		if census != nil && census.Taken && pass.CensusReader() != nil {
 			if err := census.ReadNew(ctx, *pass.CensusReader()); err != nil {
 				return Verdict{Decision: Pending, Reason: "processes started since the census could not be read: " + err.Error(), Command: "metasystem disk clean"}

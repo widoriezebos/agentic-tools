@@ -165,6 +165,12 @@ func (p *Pass) Census(ctx context.Context) *UseCensus {
 // section.
 func (p *Pass) CensusReader() *CensusReader { return p.options.CensusReader }
 
+// FreshCensus reads every process again inside a store's critical section.
+func (p *Pass) FreshCensus(ctx context.Context) *UseCensus {
+	p.censusTried = false
+	return p.Census(ctx)
+}
+
 type cursors struct {
 	Next    string            `json:"next,omitempty"`
 	Classes map[string]string `json:"classes,omitempty"`
@@ -246,7 +252,7 @@ func RunPass(ctx context.Context, options PassOptions) (Report, error) {
 	}
 }
 
-// visit plans one class and, in ModeApply, acts on its releasable items,
+// visit plans one class and, in ModeApply, releases items or absorbs their objects,
 // resuming at the class's cursor. It reports whether the class finished.
 func (p *Pass) visit(ctx context.Context, class Class, report *Report, positions map[string]string) bool {
 	name := class.Name()
@@ -274,6 +280,8 @@ func (p *Pass) visit(ctx context.Context, class Class, report *Report, positions
 		summary.Items++
 		summary.Bytes += item.Bytes
 		switch {
+		case p.Mode == ModeApply && item.Verdict.Absorbable:
+			releasable = append(releasable, item)
 		case item.Verdict.Decision == Wait:
 		case item.Stray:
 			report.Strays = append(report.Strays, item)

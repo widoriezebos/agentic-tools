@@ -3,10 +3,9 @@ package steward
 // Delegate workspaces in the checkout pass (engine-owns-disk-lifetimes Part
 // B, 3.1's delegate row, 3.10, U5f): the job worktrees dispatch registers
 // at creation are released by the delegate proof; the ones made before
-// registration existed are adopted here, at apply and never by a preview,
-// when their chain's job record is present, and are strays a person
-// decides about when it is gone (DL2-14): never released by machinery and
-// never wedging the collector.
+// registration existed are adopted here at apply, never by a preview.
+// Confirmed records-gone worktrees are absorbed and kept for a person's
+// guarded discard through disk clean.
 
 import (
 	"context"
@@ -14,7 +13,6 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -67,15 +65,21 @@ func (c DelegateWorktrees) Plan(ctx context.Context, pass *diskstore.Pass) ([]di
 			continue
 		}
 		item := diskstore.Item{Class: c.Name(), Key: entry.Name(), Path: path}
-		if _, err := os.Stat(filepath.Join(c.Top, "artifacts", "agents", "jobs", entry.Name()+".json")); err != nil {
-			bytes, newest, _ := diskstore.Measure(ctx, path)
-			if newest.IsZero() {
-				newest = info.ModTime()
+		gone, recordErr := dispatch.DelegateRecordsGone(c.Top, entry.Name(), path)
+		if recordErr != nil {
+			item.Verdict = diskstore.Verdict{Decision: diskstore.Pending, Absorbable: errors.Is(recordErr, dispatch.ErrDispatchLockReclaim), Reason: recordErr.Error(), Command: "metasystem disk show"}
+			items = append(items, item)
+			continue
+		}
+		if gone {
+			proof, err := DelegateProof(c.Top, pass.Now)
+			identity, identityErr := diskstore.ReadGitIdentity(path)
+			if err != nil || identityErr != nil {
+				item.Verdict = diskstore.Verdict{Decision: diskstore.Pending, Reason: "its identity or delegate proof cannot be read: " + errors.Join(err, identityErr).Error(), Command: "metasystem disk show"}
+			} else {
+				item.Verdict = proof.Observe(ctx, diskstore.Record{Path: path, Class: diskstore.DelegateClass, Layout: diskstore.LayoutCopy,
+					Identity: identity, Owner: diskstore.Owner{Kind: diskstore.OwnerDelegate, Ref: entry.Name()}})
 			}
-			item.Bytes, item.Stray, item.IdleSecs = bytes, true, int64(pass.Now.Sub(newest).Seconds())
-			item.Verdict = diskstore.Verdict{Decision: diskstore.Keep,
-				Reason:  "a job worktree whose chain's records are gone: nothing can prove its work captured, so machinery never releases it",
-				Command: "a person decides: git -C '" + strings.ReplaceAll(path, "'", `'\''`) + "' status, then git worktree remove it once nothing is needed"}
 			items = append(items, item)
 			continue
 		}
@@ -92,8 +96,21 @@ func (c DelegateWorktrees) Plan(ctx context.Context, pass *diskstore.Pass) ([]di
 
 // Apply writes the adopted record, accepted with the worktree's identity;
 // a path registered meanwhile is left to its record (Register answers it).
-func (c DelegateWorktrees) Apply(_ context.Context, pass *diskstore.Pass, item diskstore.Item) diskstore.Verdict {
+func (c DelegateWorktrees) Apply(ctx context.Context, pass *diskstore.Pass, item diskstore.Item) diskstore.Verdict {
 	registry := diskstore.CheckoutRegistry(c.Top)
+	if item.Verdict.Absorbable {
+		proof, err := DelegateProof(c.Top, pass.Now)
+		if err != nil {
+			return diskstore.Verdict{Decision: diskstore.Pending, Reason: err.Error(), Command: "metasystem disk show"}
+		}
+		record, err := diskstore.AdmitDelegate(ctx, registry, c.Top, proof.GitRoot, item.Path, proof.Git, pass.Now)
+		if err != nil {
+			return diskstore.Verdict{Decision: diskstore.Pending, Reason: err.Error(), Command: "metasystem disk show"}
+		}
+		stores := diskstore.RegisteredStores{Registry: registry, Proofs: map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerDelegate: proof}}
+		item.Record = record.ID
+		return stores.Apply(ctx, pass, item)
+	}
 	identity, err := diskstore.ReadGitIdentity(item.Path)
 	if err != nil {
 		return diskstore.Verdict{Decision: diskstore.Pending, Reason: "its identity cannot be read: " + err.Error(), Command: "metasystem disk show"}

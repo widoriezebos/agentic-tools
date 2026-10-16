@@ -167,7 +167,7 @@ func diskIntentCommands() []intentCommand {
 				{name: "plan", value: "ID", usage: "the preview to act on (default: the newest)"},
 				{name: "release", value: "ID", usage: "a person's act: release the registered store ID that only an incomplete use check keeps"},
 				{name: "leases", usage: "a person's act: settle the host's dirty proof-admission leases whose owners are proven ended"},
-				{name: "discard", value: "j2:ID", advanced: true, usage: "a person's act: drop chain ID's uncommitted work and release its workspace now"},
+				{name: "discard", value: "j2:ID|PATH", advanced: true, usage: "a person's act: discard a delegate workspace's uncommitted work and release it now"},
 				{name: "reason", value: "TEXT", advanced: true, usage: "why the work may be dropped (with --discard)"},
 				{name: "go-cache", usage: "only trim the Go and staticcheck caches to their caps"},
 				intentVerboseFlag,
@@ -739,17 +739,18 @@ func runDiskRelease(inv *intentInvocation, owners diskOwners, top string) int {
 }
 
 func runDiskDiscard(inv *intentInvocation, owners diskOwners, top string) int {
-	chain, found := strings.CutPrefix(inv.input.text("discard"), "j2:")
-	if !found || chain == "" {
-		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--discard names a kept workspace by its chain, which starts with j2:; nothing was done",
+	target := inv.input.text("discard")
+	chain, found := strings.CutPrefix(target, "j2:")
+	if target == "" || found && chain == "" {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--discard names a delegate workspace by its j2: chain or path; nothing was done",
 			next: inv.publicArgv("disk", "show"), nextReason: "the reports name each kept workspace with its chain"})
 	}
 	reason := strings.TrimSpace(inv.input.text("reason"))
 	if reason == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--discard records why the work may be dropped, and no --reason was given; nothing was done",
-			next: inv.publicArgv("disk", "clean", "--discard", "j2:"+chain, "--reason", "TEXT"), nextReason: "say why the work may be dropped"})
+			next: inv.publicArgv("disk", "clean", "--discard", target, "--reason", "TEXT"), nextReason: "say why the work may be dropped"})
 	}
-	by, problem := diskPerson(inv, owners, top, "--discard j2:"+chain)
+	by, problem := diskPerson(inv, owners, top, "--discard "+target)
 	if problem != nil {
 		return inv.render(*problem)
 	}
@@ -761,9 +762,21 @@ func runDiskDiscard(inv *intentInvocation, owners diskOwners, top string) int {
 	}
 	var record *diskstore.Record
 	for index := range records {
-		if records[index].Owner == (diskstore.Owner{Kind: diskstore.OwnerDelegate, Ref: chain}) && records[index].State != diskstore.StateReleased {
+		if found && records[index].Class == diskstore.DelegateClass && records[index].Owner == (diskstore.Owner{Kind: diskstore.OwnerDelegate, Ref: chain}) && records[index].State != diskstore.StateReleased {
 			record = &records[index]
 		}
+	}
+	if !found {
+		path := target
+		if !filepath.IsAbs(path) {
+			path = filepath.Join(inv.layout.GitRoot, path)
+		}
+		admitted, err := diskstore.AdmitDelegate(context.Background(), registry, top, inv.layout.GitRoot, path, steward.ExecWorkspaceGit, owners.now())
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "the path is not an admitted delegate workspace: " + err.Error() + "; nothing was removed",
+				next: inv.publicArgv("disk", "show"), nextReason: "the reports name the delegate workspaces this checkout owns"})
+		}
+		record, chain = &admitted, admitted.Owner.Ref
 	}
 	if record == nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "chain j2:" + chain + " has no registered workspace to discard; nothing was done",

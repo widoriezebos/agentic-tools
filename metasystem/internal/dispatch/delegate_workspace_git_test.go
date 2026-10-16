@@ -6,8 +6,11 @@ package dispatch
 // claim; the chain's close check and custody proof are stubbed by seam.
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
+	"errors"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,6 +19,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
@@ -23,7 +27,7 @@ var delegateNow = time.Date(2026, 9, 29, 12, 0, 0, 0, time.UTC)
 
 func delegateGit(ctx context.Context, dir string, args ...string) ([]byte, error) {
 	command := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-	command.Env = append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+	command.Env = gittree.ScrubbedEnviron("GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
 		"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com")
 	var stderr strings.Builder
 	command.Stderr = &stderr
@@ -71,7 +75,7 @@ func newDelegateBed(t *testing.T, closed bool) delegateBed {
 	must := func(env []string, dir string, args ...string) string {
 		t.Helper()
 		command := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
-		command.Env = append(append(os.Environ(), "GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
+		command.Env = append(gittree.ScrubbedEnviron("GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1",
 			"GIT_AUTHOR_NAME=t", "GIT_AUTHOR_EMAIL=t@example.com", "GIT_COMMITTER_NAME=t", "GIT_COMMITTER_EMAIL=t@example.com"), env...)
 		out, err := command.CombinedOutput()
 		if err != nil {
@@ -155,8 +159,13 @@ func cleanCensus(holder string) *diskstore.CensusReader {
 
 func (bed delegateBed) pass(t *testing.T, proof DelegateWorkspaceProof, census *diskstore.CensusReader) diskstore.Report {
 	t.Helper()
+	return bed.passMode(t, proof, census, diskstore.ModeApply)
+}
+
+func (bed delegateBed) passMode(t *testing.T, proof DelegateWorkspaceProof, census *diskstore.CensusReader, mode diskstore.Mode) diskstore.Report {
+	t.Helper()
 	report, err := diskstore.RunPass(context.Background(), diskstore.PassOptions{Kind: "checkout", Name: bed.repo, Registry: bed.registry,
-		LockPath: filepath.Join(bed.registry.Dir, ".sweep.flock"), ReportPath: diskstore.CheckoutReportPath(bed.repo), Mode: diskstore.ModeApply,
+		LockPath: filepath.Join(bed.registry.Dir, ".sweep.flock"), ReportPath: diskstore.CheckoutReportPath(bed.repo), Mode: mode, PlanDir: filepath.Join(bed.repo, "preview-plans"),
 		Now: delegateNow, Clock: func() time.Time { return delegateNow }, Entropy: rand.Reader, CensusReader: census,
 		Classes: []diskstore.Class{diskstore.RegisteredStores{Registry: bed.registry, Proofs: map[diskstore.OwnerKind]diskstore.OwnerProof{diskstore.OwnerDelegate: proof}}}})
 	if err != nil {
@@ -244,8 +253,9 @@ func TestADelegateWorkspaceIsKeptUntilEveryClauseHolds(t *testing.T) {
 			}
 			report := bed.pass(t, bed.proof(c.dead), cleanCensus(holder))
 			bed.kept(t, report, c.reason)
-			if alternates, _ := os.ReadFile(filepath.Join(bed.repo, ".git", "objects", "info", "alternates")); !strings.Contains(string(alternates), bed.quarantine) {
-				t.Fatal("a kept workspace keeps its quarantine borrowed")
+			bed.borrowed(t, !(c.dirty || c.records))
+			if c.dirty || c.records {
+				bed.absorbed(t)
 			}
 		})
 	}
@@ -293,4 +303,235 @@ func TestAnUnreadableJobRecordHoldsTheDelegateClass(t *testing.T) {
 	}
 	report := bed.pass(t, bed.proof(CustodyDeathProven), cleanCensus(""))
 	bed.kept(t, report, "cannot be read")
+}
+
+func (bed delegateBed) borrowed(t *testing.T, want bool) {
+	t.Helper()
+	alternates, err := os.ReadFile(filepath.Join(bed.repo, ".git", "objects", "info", "alternates"))
+	if err != nil && !os.IsNotExist(err) {
+		t.Fatal(err)
+	}
+	if got := strings.Contains(string(alternates), bed.quarantine); got != want {
+		t.Fatalf("borrowed = %v, want %v: %s", got, want, alternates)
+	}
+}
+
+// Compare the quarantine's actual compressed objects with their common-store
+// copies; reading through git's alternates cannot satisfy this assertion.
+func (bed delegateBed) absorbed(t *testing.T) {
+	t.Helper()
+	bed.borrowed(t, false)
+	count := 0
+	err := filepath.WalkDir(bed.quarantine, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(bed.quarantine, path)
+		if err != nil {
+			return err
+		}
+		if entry.IsDir() || len(filepath.Dir(rel)) != 2 || len(entry.Name()) != 38 {
+			return nil
+		}
+		source, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		target, err := os.ReadFile(filepath.Join(bed.repo, ".git", "objects", rel))
+		if err != nil {
+			return err
+		}
+		if !bytes.Equal(source, target) {
+			t.Errorf("common object differs: %s", rel)
+		}
+		count++
+		return nil
+	})
+	if err != nil || count == 0 {
+		t.Fatalf("verified %d objects: %v", count, err)
+	}
+}
+
+func TestDelegateAbsorbPreviewAndReportAreReadOnly(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []diskstore.Mode{diskstore.ModePreview, diskstore.ModeReport} {
+		t.Run(string(mode), func(t *testing.T) {
+			t.Parallel()
+			bed := newDelegateBed(t, true)
+			if err := os.WriteFile(filepath.Join(bed.worktree, "dirty"), []byte("keep"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			before, err := os.ReadFile(filepath.Join(bed.quarantine, bed.commit[:2], bed.commit[2:]))
+			if err != nil {
+				t.Fatal(err)
+			}
+			report := bed.passMode(t, bed.proof(CustodyDeathProven), cleanCensus(""), mode)
+			bed.borrowed(t, true)
+			if _, err := os.Stat(filepath.Join(bed.repo, ".git", "objects", bed.commit[:2], bed.commit[2:])); !os.IsNotExist(err) {
+				t.Fatalf("preview published an object: %v", err)
+			}
+			after, err := os.ReadFile(filepath.Join(bed.quarantine, bed.commit[:2], bed.commit[2:]))
+			if err != nil || !bytes.Equal(before, after) {
+				t.Fatalf("quarantine changed: %v", err)
+			}
+			if len(report.Kept) != 1 || !report.Kept[0].Item.Verdict.Absorbable || !strings.Contains(strings.Join(report.VerboseLines(), "\n"), "absorbable: its chain is closed and custody dead") {
+				t.Fatalf("eligibility missing: %+v", report)
+			}
+		})
+	}
+}
+
+func TestDelegateAbsorbsBeforeDurabilityAndContentKeeps(t *testing.T) {
+	t.Parallel()
+	for _, durable := range []bool{false, true} {
+		t.Run(map[bool]string{false: "durability pending", true: "content kept"}[durable], func(t *testing.T) {
+			t.Parallel()
+			bed := newDelegateBed(t, true)
+			proof := bed.proof(CustodyDeathProven)
+			if durable {
+				if err := os.WriteFile(filepath.Join(bed.worktree, "dirty"), []byte("keep"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				proof.Closed = func(string, string) error { return errors.New("fixture capture missing") }
+			}
+			observed := proof.Observe(context.Background(), bed.record)
+			if !observed.Absorbable {
+				t.Fatalf("not absorbable: %+v", observed)
+			}
+			bed.borrowed(t, true)
+			report := bed.pass(t, proof, cleanCensus(""))
+			reason := "uncommitted"
+			if !durable {
+				reason = "evidence is not durable (fixture capture missing)"
+				if len(report.Pending) != 1 {
+					t.Fatalf("not pending: %+v", report)
+				}
+			}
+			bed.kept(t, report, reason)
+			bed.absorbed(t)
+		})
+	}
+}
+
+func TestDelegateAbsorbRequiresFreshCompleteWorkspaceAndQuarantineCensus(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"workspace", "late entrant", "quarantine file", "incomplete", "not taken"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			bed := newDelegateBed(t, true)
+			if err := os.WriteFile(filepath.Join(bed.worktree, "dirty"), []byte("keep"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			reader := cleanCensus("")
+			reads := 0
+			reader.Use = func(int64) (identity.ProcessUse, error) {
+				reads++
+				switch scenario {
+				case "workspace":
+					return identity.ProcessUse{Cwd: bed.worktree}, nil
+				case "late entrant":
+					if reads > 1 {
+						return identity.ProcessUse{Cwd: bed.worktree}, nil
+					}
+				case "quarantine file":
+					return identity.ProcessUse{Cwd: "/", Files: []string{filepath.Join(bed.quarantine, bed.commit[:2], bed.commit[2:])}}, nil
+				case "incomplete":
+					return identity.ProcessUse{}, errors.New("fixture permission denied")
+				}
+				return identity.ProcessUse{Cwd: "/"}, nil
+			}
+			if scenario == "not taken" {
+				reader.Pids = func() ([]int64, error) { return nil, errors.New("fixture process table denied") }
+			}
+			report := bed.pass(t, bed.proof(CustodyDeathProven), reader)
+			want := "in use by pid 4242"
+			if scenario == "incomplete" {
+				want = "fixture permission denied"
+			}
+			if scenario == "not taken" {
+				want = "fixture process table denied"
+			}
+			if len(report.Pending) != 1 || !strings.Contains(report.Pending[0].Reason, want) || !strings.Contains(report.Pending[0].Reason, "the repository borrows its objects; remove it only through metasystem disk clean") || !report.Pending[0].Item.Verdict.Absorbable {
+				t.Fatalf("pending cause %q: %+v", want, report)
+			}
+			bed.borrowed(t, true)
+			if _, err := os.Stat(filepath.Join(bed.repo, ".git", "objects", bed.commit[:2], bed.commit[2:])); !os.IsNotExist(err) {
+				t.Fatalf("published while in use: %v", err)
+			}
+		})
+	}
+}
+
+func TestDelegateAbsorbFailureKeepsAlternateAndWorkspace(t *testing.T) {
+	t.Parallel()
+	bed := newDelegateBed(t, true)
+	object := filepath.Join(bed.quarantine, "aa", strings.Repeat("b", 38))
+	if err := os.MkdirAll(filepath.Dir(object), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(object, []byte("corrupt"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	report := bed.pass(t, bed.proof(CustodyDeathProven), cleanCensus(""))
+	if len(report.Pending) != 1 || !strings.Contains(report.Pending[0].Reason, "quarantine could not be absorbed") || !strings.Contains(report.Pending[0].Reason, "the repository borrows its objects; remove it only through metasystem disk clean") || !report.Pending[0].Item.Verdict.Absorbable {
+		t.Fatalf("corruption not reported: %+v", report)
+	}
+	bed.borrowed(t, true)
+	bed.kept(t, report, "could not be absorbed")
+}
+
+func TestDelegateAbsorbWaitsForEveryRoundAndBorrower(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"live follow-up", "another borrower"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			bed := newDelegateBed(t, true)
+			proof := bed.proof(CustodyDeathProven)
+			reason := "still runs"
+			if scenario == "live follow-up" {
+				path := filepath.Join(bed.repo, "artifacts", "agents", "jobs", "round-2.json")
+				if err := os.WriteFile(path, []byte(`{"jobId":"round-2","parentJob":"`+bed.chain+`"}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				proof.CustodyDead = func(record map[string]any) CustodyDeathResult {
+					if asString(record["jobId"]) == "round-2" {
+						return CustodyDeathResult{Outcome: CustodyDeathAlive, Reason: "follow-up lives"}
+					}
+					return CustodyDeathResult{Outcome: CustodyDeathProven}
+				}
+			} else {
+				borrower := filepath.Join(bed.repo, ".git", "worktrees", "borrower", diskstore.QuarantineName, "info", "alternates")
+				if err := os.MkdirAll(filepath.Dir(borrower), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(borrower, []byte(bed.quarantine+"\n"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				reason = "still borrowed through"
+			}
+			report := bed.pass(t, proof, cleanCensus(""))
+			bed.kept(t, report, reason)
+			bed.borrowed(t, true)
+			if _, err := os.Stat(filepath.Join(bed.repo, ".git", "objects", bed.commit[:2], bed.commit[2:])); !os.IsNotExist(err) {
+				t.Fatalf("published before eligibility: %v", err)
+			}
+		})
+	}
+}
+
+func TestDelegatePreviewNamesUseWithoutMutating(t *testing.T) {
+	t.Parallel()
+	bed := newDelegateBed(t, true)
+	report := bed.passMode(t, bed.proof(CustodyDeathProven), cleanCensus(bed.worktree), diskstore.ModePreview)
+	if len(report.Pending) != 1 || !report.Pending[0].Item.Verdict.Absorbable || !strings.Contains(report.Pending[0].Reason, "in use by pid 4242") || !strings.Contains(report.Pending[0].Reason, "the repository borrows its objects; remove it only through metasystem disk clean") {
+		t.Fatalf("preview does not name the user and retained objects: %+v", report)
+	}
+	if len(report.Planned) != 0 {
+		t.Fatalf("a used workspace was planned for release: %+v", report.Planned)
+	}
+	bed.borrowed(t, true)
+	if _, err := os.Stat(filepath.Join(bed.repo, ".git", "objects", bed.commit[:2], bed.commit[2:])); !os.IsNotExist(err) {
+		t.Fatalf("preview published objects: %v", err)
+	}
 }

@@ -64,6 +64,8 @@ const (
 type Verdict struct {
 	Decision Decision `json:"decision"`
 	Reason   string   `json:"reason"`
+	// Absorbable reports final delegate objects even when the workspace stays.
+	Absorbable bool `json:"absorbable,omitempty"`
 	// Command is the public command a person runs to end the owner, capture
 	// the work, or settle what kept the store. Every Keep and Pending carries
 	// one (H1: a bare pid is never a remedy).

@@ -112,6 +112,11 @@ func releaseInSection(ctx context.Context, critical *Critical, request Workspace
 		}
 	}
 	discard := request.Discard != nil
+	if discard && record.Layout == LayoutCopy {
+		if reason := discardProtected(record, critical.registry); reason != "" {
+			return keep(Verdict{Decision: Keep, Reason: reason, Command: "metasystem disk show"})
+		}
+	}
 	if record.Layout != LayoutCopy || workspaceTreeExists(record) {
 		if verdict := judgeContent(ctx, request.Git, record, discard); verdict.Decision != Release {
 			return keep(verdict)
@@ -179,6 +184,36 @@ func releaseInSection(ctx context.Context, critical *Critical, request Workspace
 func workspaceTreeExists(record Record) bool {
 	_, err := os.Lstat(filepath.Join(record.Path, ".git"))
 	return err == nil
+}
+
+// discardProtected keeps repositories and stores with independent lifetimes.
+func discardProtected(record Record, registry Registry) string {
+	records, unreadable := registry.Inventory()
+	if len(unreadable) != 0 {
+		return "the descendant store inventory cannot be read: " + unreadable[0].Reason
+	}
+	for _, child := range records {
+		if child.ID != record.ID && child.State != StateReleased && under(child.Path, record.Path) {
+			return "it contains an independently registered descendant store: " + child.Path
+		}
+	}
+	modules := filepath.Join(record.Identity.Gitdir, "modules")
+	if _, err := os.Lstat(modules); !errors.Is(err, os.ErrNotExist) {
+		return "it holds submodule history: " + modules
+	}
+	err := filepath.WalkDir(record.Path, func(path string, entry os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if path != filepath.Join(record.Path, ".git") && entry.Name() == ".git" {
+			return fmt.Errorf("it contains a nested repository: %s", path)
+		}
+		return nil
+	})
+	if err != nil {
+		return err.Error()
+	}
+	return ""
 }
 
 // judgeLanded checks, for a landing's release, that the copy's branch tip
@@ -249,11 +284,19 @@ func containsString(values []string, want string) bool {
 func judgeUse(census *UseCensus, record Record) Verdict {
 	switch {
 	case census == nil || !census.Taken:
-		return Verdict{Decision: Pending, Reason: "use census not taken", Command: "metasystem disk clean --release " + record.ID}
+		reason := "use census not taken"
+		if census != nil && census.NotTaken != "" {
+			reason = census.NotTaken
+		}
+		return Verdict{Decision: Pending, Reason: reason, Command: "metasystem disk clean --release " + record.ID}
 	case !census.Complete():
 		return Verdict{Decision: Pending, Reason: "use census incomplete: " + joinLines(census.GapLines()), Command: "metasystem disk clean --release " + record.ID}
 	}
-	for _, path := range []string{record.Path, WorkspaceTmp(record)} {
+	paths := []string{record.Path, WorkspaceTmp(record)}
+	if record.Class == DelegateClass && record.Identity.Gitdir != "" {
+		paths = append(paths, filepath.Join(record.Identity.Gitdir, QuarantineName))
+	}
+	for _, path := range paths {
 		if holders := census.Holders(path); len(holders) != 0 {
 			holder := holders[0]
 			return Verdict{Decision: Pending, Reason: fmt.Sprintf("in use by pid %d (uid %d, %s)", holder.Pid, holder.UID, holder.Command),
@@ -506,10 +549,14 @@ func archiveWorkspace(ctx context.Context, gitRoot string, git WorkspaceGit, rec
 	if worktree {
 		if out, err := git(ctx, record.Path, "log", "-g", "--format=%H", "HEAD"); err == nil {
 			reflogs = append(reflogs, strings.Fields(string(out))...)
+		} else if _, absent := os.Stat(filepath.Join(record.Identity.Gitdir, "logs", "HEAD")); !errors.Is(absent, os.ErrNotExist) {
+			return nil, 0, fmt.Errorf("HEAD reflog enumeration: %w", err)
 		}
 	}
 	if out, err := git(ctx, gitRoot, "log", "-g", "--format=%H", "refs/heads/"+branch); err == nil {
 		reflogs = append(reflogs, strings.Fields(string(out))...)
+	} else if _, absent := os.Stat(filepath.Join(filepath.Dir(filepath.Dir(record.Identity.Gitdir)), "logs", "refs", "heads", filepath.FromSlash(branch))); !errors.Is(absent, os.ErrNotExist) {
+		return nil, 0, fmt.Errorf("branch reflog enumeration: %w", err)
 	}
 	for _, sha := range reflogs {
 		tips = append(tips, tip{base + "-reflog-" + shortSHA(sha), sha})

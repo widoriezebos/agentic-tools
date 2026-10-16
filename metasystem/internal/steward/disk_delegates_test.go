@@ -2,8 +2,8 @@ package steward
 
 // U5f/U5g (engine-owns-disk-lifetimes Part B, 3.10, DL2-14): a job worktree
 // that predates registration is adopted at apply when its chain's job
-// record is present, and is a stray, never released or wedged, when the
-// record is gone; a preview adopts nothing.
+// record is present; an unreadable proof stays pending and a preview
+// adopts nothing. Records-gone absorption is exercised with real git.
 
 import (
 	"context"
@@ -48,7 +48,7 @@ func delegatePass(top string, mode diskstore.Mode) diskstore.PassOptions {
 		Clock: func() time.Time { return now }, Entropy: rand.Reader, Classes: []diskstore.Class{DelegateWorktrees{Top: top}}}
 }
 
-func TestDelegateWorktreesAreAdoptedOrReportedAsStrays(t *testing.T) {
+func TestDelegateWorktreesAdoptRecordsAndKeepUnknownProofPending(t *testing.T) {
 	t.Parallel()
 	top := canonicalPath(t.TempDir())
 	adoptable := delegateWorktree(t, top, "chain-with-records", true)
@@ -64,8 +64,8 @@ func TestDelegateWorktreesAreAdoptedOrReportedAsStrays(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(report.Strays) != 1 || report.Strays[0].Path != stray {
-			t.Fatalf("the worktree whose records were pruned is a stray: %+v", report.Strays)
+		if len(report.Pending) != 1 || report.Pending[0].Path != stray {
+			t.Fatalf("the worktree whose proof cannot be read is pending: %+v", report.Pending)
 		}
 	}
 	records, unreadable := diskstore.CheckoutRegistry(top).Inventory()
