@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/adapter/supervisor"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"golang.org/x/sys/unix"
 )
 
@@ -399,6 +400,17 @@ func TestDevinHostACPOrphanHoldingStderrDoesNotStrandTheTurn(t *testing.T) {
 	if readField(t, filepath.Join(dir, "result.json"), "outcome") != "completed" {
 		t.Fatal("the turn did not complete")
 	}
+	// Keep the wakeup buffered even if the orphan has not opened its FIFO yet.
+	fifo, err := os.OpenFile(release, os.O_RDWR, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer fifo.Close()
+	releaseOrphan()
+	testenv.Await(t, "the orphan to acknowledge release before fixture removal", func() bool {
+		_, err := os.Stat(released)
+		return err == nil
+	})
 }
 
 // TestDevinHostRunsInTheCheckout: the Devin host CLI runs in the

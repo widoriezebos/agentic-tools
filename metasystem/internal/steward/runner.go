@@ -814,7 +814,9 @@ func canonicalPath(path string) string {
 // announcement, and restores the runner without minting a generation.
 // The watcher owns tick freshness after startup.
 func EnsureRunner(repoRoot string, enrolled *EnrolledBinary) (EnsureRunnerResult, error) {
-	return ensureRunnerWithDependencies(repoRoot, enrolled, defaultRearmResolverDeps(), runnerNow, runnerSleep)
+	deps := defaultRearmResolverDeps()
+	deps.launch = nil
+	return ensureRunnerWithDependencies(repoRoot, enrolled, deps, runnerNow, runnerSleep)
 }
 
 func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, deps rearmResolverDeps, now func() time.Time, sleep func(time.Duration)) (EnsureRunnerResult, error) {
@@ -835,22 +837,29 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, dep
 	if enrolled == nil || enrolled.file == nil {
 		return EnsureRunnerResult{}, fmt.Errorf("the enrolled engine is not pinned")
 	}
-	record, wasAlive := liveRunner(top)
+	if deps.prober == nil {
+		deps.prober = identity.KernelProber{}
+	}
+	record, wasAlive := liveRunnerWithProber(top, deps.prober)
 	if wasAlive {
-		verdict := checkStewardRunner(top, now(), identity.KernelProber{})
+		execution := ReadRunnerExecution(top, deps.prober)
+		if execution.Digest == "" {
+			return EnsureRunnerResult{}, fmt.Errorf("steward runner execution is unknown: %s", execution.Cause)
+		}
+		verdict := checkStewardRunner(top, now(), deps.prober)
 		evidence, evidenceErr := loadComponentEvidence(ComponentEvidencePath(top, "steward-tick"))
 		started, startErr := time.Parse(time.RFC3339, record.StartedAt)
 		minted, mintErr := time.Parse(time.RFC3339, enrolled.Install.MintedAt)
 		announced := startErr == nil && mintErr == nil && !started.Before(minted) && evidenceErr == nil &&
 			(evidence.Generation != enrolled.Install.Generation || evidence.LastAttempt.Before(started))
-		if verdict.Status == HealthAlive || errors.Is(evidenceErr, os.ErrNotExist) || announced {
+		if execution.Digest == enrolled.Install.InstallDigest && (verdict.Status == HealthAlive || errors.Is(evidenceErr, os.ErrNotExist) || announced) {
 			return EnsureRunnerResult{Action: "verified", Pid: record.Pid, Generation: enrolled.Install.Generation}, nil
 		}
-		if verdict.Status == HealthUnknown {
+		if execution.Digest == enrolled.Install.InstallDigest && verdict.Status == HealthUnknown {
 			return EnsureRunnerResult{}, fmt.Errorf("steward runner cannot be verified: %s", verdict.Reason)
 		}
 	}
-	repair, err := repairPinnedRunnerWithClock(top, enrolled, nil, now, sleep)
+	repair, err := repairPinnedRunnerWithDependencies(top, enrolled, nil, now, sleep, deps)
 	if err != nil {
 		return EnsureRunnerResult{}, err
 	}
@@ -865,7 +874,7 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, dep
 			action = "replaced"
 		}
 	}
-	record, alive := liveRunner(top)
+	record, alive := liveRunnerWithProber(top, deps.prober)
 	if !alive {
 		return EnsureRunnerResult{}, fmt.Errorf("steward runner announced its start but its process identity is no longer live")
 	}
@@ -926,6 +935,15 @@ func repairPinnedRunner(top string, pinned *EnrolledBinary, beforeLock func()) (
 }
 
 func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock func(), now func() time.Time, sleep func(time.Duration)) (RunnerRepairOutcome, error) {
+	deps := defaultRearmResolverDeps()
+	deps.launch = nil
+	return repairPinnedRunnerWithDependencies(top, pinned, beforeLock, now, sleep, deps)
+}
+
+func repairPinnedRunnerWithDependencies(top string, pinned *EnrolledBinary, beforeLock func(), now func() time.Time, sleep func(time.Duration), deps rearmResolverDeps) (RunnerRepairOutcome, error) {
+	if deps.prober == nil {
+		deps.prober = identity.KernelProber{}
+	}
 	installed := pinned.Install
 	if beforeLock != nil {
 		beforeLock()
@@ -961,25 +979,39 @@ func repairPinnedRunnerWithClock(top string, pinned *EnrolledBinary, beforeLock 
 		return RunnerRepairOutcome{Status: AutoHealEnded, Generation: installed.Generation}, nil
 	}
 
-	verdict := checkStewardRunner(top, now(), identity.KernelProber{})
-	if verdict.Status == HealthAlive {
-		record, _ := liveRunner(top)
+	previous, alive := liveRunnerWithProber(top, deps.prober)
+	execution := ReadRunnerExecution(top, deps.prober)
+	if alive && execution.Digest == "" {
+		return RunnerRepairOutcome{}, fmt.Errorf("steward runner execution is unknown: %s", execution.Cause)
+	}
+	obsolete := alive && execution.Digest != installed.InstallDigest
+	verdict := checkStewardRunner(top, now(), deps.prober)
+	if !obsolete && verdict.Status == HealthAlive {
+		record, _ := liveRunnerWithProber(top, deps.prober)
 		return RunnerRepairOutcome{Status: "CURRENT", Generation: installed.Generation, ReplacementPid: record.Pid}, nil
 	}
-	if verdict.Status == HealthUnknown {
+	if !obsolete && verdict.Status == HealthUnknown {
 		return RunnerRepairOutcome{}, fmt.Errorf("steward freshness is unknown: %s", verdict.Reason)
 	}
-	previous, alive := liveRunner(top)
 	if alive {
-		if err := stopRunnerForReplacement(top, previous, syscall.Kill); err != nil {
+		if err := stopRunnerForReplacementWithClock(top, previous, deps.signal, now, sleep, deps.prober); err != nil {
 			return RunnerRepairOutcome{}, err
 		}
 	}
 	// A watcher repair relaunches without an arming caller, so the
 	// replacement runner reports no-lease until the next arm.
-	replacement, err := launchRunner(top, pinned, "", sleep)
+	if deps.launch == nil {
+		deps.launch = func(root string, binary *EnrolledBinary, lineage string) (RunnerRecord, error) {
+			return launchRunner(root, binary, lineage, sleep)
+		}
+	}
+	replacement, err := deps.launch(top, pinned, "")
 	if err != nil {
 		return RunnerRepairOutcome{}, err
+	}
+	observed := ReadRunnerExecution(top, deps.prober)
+	if observed.Digest != installed.InstallDigest {
+		return RunnerRepairOutcome{}, fmt.Errorf("replacement runner execution not verified: got %s (%s), want %s", observed.Digest, observed.Cause, installed.InstallDigest)
 	}
 	return RunnerRepairOutcome{
 		Status: "RESTORED", Generation: installed.Generation,
@@ -1266,6 +1298,10 @@ const runnerReplacementKillWait = 2 * time.Second
 // stopRunnerForReplacement stops a runner the caller replaces; signal is
 // the per-call sender; nil resolves to syscall.Kill.
 func stopRunnerForReplacement(repoRoot string, runner RunnerRecord, signal func(int, syscall.Signal) error) error {
+	return stopRunnerForReplacementWithClock(repoRoot, runner, signal, runnerNow, runnerSleep, identity.KernelProber{})
+}
+
+func stopRunnerForReplacementWithClock(repoRoot string, runner RunnerRecord, signal func(int, syscall.Signal) error, now func() time.Time, sleep func(time.Duration), prober identity.Prober) error {
 	if signal == nil {
 		signal = syscall.Kill
 	}
@@ -1278,24 +1314,24 @@ func stopRunnerForReplacement(repoRoot string, runner RunnerRecord, signal func(
 	// A stalled runner may itself be stopped, so let it receive the termination
 	// signal before deciding whether a hard stop is necessary.
 	_ = signal(int(runner.Pid), syscall.SIGCONT)
-	deadline := runnerNow().Add(runnerReplacementKillWait)
-	for runnerNow().Before(deadline) {
-		if _, alive := liveRunner(repoRoot); !alive {
+	deadline := now().Add(runnerReplacementKillWait)
+	for now().Before(deadline) {
+		if _, alive := liveRunnerWithProber(repoRoot, prober); !alive {
 			return nil
 		}
-		runnerSleep(50 * time.Millisecond)
+		sleep(50 * time.Millisecond)
 	}
-	if current, alive := liveRunner(repoRoot); alive && current.Pid == runner.Pid {
+	if current, alive := liveRunnerWithProber(repoRoot, prober); alive && current.Pid == runner.Pid {
 		if err := signal(int(runner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
 			return fmt.Errorf("kill stalled runner pid %d for replacement: %w", runner.Pid, err)
 		}
 	}
-	deadline = runnerNow().Add(runnerReplacementKillWait)
-	for runnerNow().Before(deadline) {
-		if _, alive := liveRunner(repoRoot); !alive {
+	deadline = now().Add(runnerReplacementKillWait)
+	for now().Before(deadline) {
+		if _, alive := liveRunnerWithProber(repoRoot, prober); !alive {
 			return nil
 		}
-		runnerSleep(50 * time.Millisecond)
+		sleep(50 * time.Millisecond)
 	}
 	return fmt.Errorf("runner pid %d remained alive after replacement stop", runner.Pid)
 }

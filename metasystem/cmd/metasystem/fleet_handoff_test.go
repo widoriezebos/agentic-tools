@@ -768,6 +768,9 @@ func testFleetUnreservedStartFailure(t *testing.T) {
 	owners.machines.registryPath = func() (string, error) { return registryPath, nil }
 	owners.machines.nickname = func(path string) (string, bool) { return "m1", path == root }
 	owners.machines.seatCensus = fleetHandoffCensus{}
+	owners.machines.runnerRepair = func(string) (steward.RunnerRepairOutcome, error) {
+		return steward.RunnerRepairOutcome{Status: "CURRENT"}, nil
+	}
 	payload, _ := json.Marshal(map[string]any{"schemaVersion": 1, "event": registry.EventRelaunched, "checkoutPath": root, "ownerTag": "revive", "at": now.Format(time.RFC3339), "generation": 1, "watcherTag": "w", "reaperTag": "r", "retiredThrough": 0})
 	if err := registry.AppendFrame(registryPath, payload); err != nil {
 		t.Fatal(err)

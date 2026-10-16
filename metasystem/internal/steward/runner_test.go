@@ -1,7 +1,6 @@
 package steward
 
 import (
-	"bufio"
 	"context"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
@@ -364,159 +363,62 @@ func TestKilledStewardIsRestoredByOneWatcherRepairPass(t *testing.T) {
 }
 
 func TestSlowFirstAttemptSurvivesSecondEnsureAndWatcherRepair(t *testing.T) {
-	root := canonicalPath(t.TempDir())
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+	t.Parallel()
+	bed := newExecutionBed(t)
+	self := bed.old
+	self.Exe = bed.replacement.Exe
+	bed.processes[self.Pid] = self
+	before := bed.record(t, self)
+	if err := os.Remove(ComponentEvidencePath(bed.root, "steward-tick")); err != nil {
 		t.Fatal(err)
 	}
-	bin, err := os.Executable()
-	if err != nil {
+	if _, err := beginComponentAttempt(bed.root, "steward-tick", 148, identity.Ref{Pid: self.Pid, StartedAtSec: self.StartedAt.Unix()}, bed.now.Add(-11*time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	bin = canonicalPath(bin)
-	now := time.Now()
-	digest, err := installDigest(bin)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(runnerDir(root), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
-		RepoIdentity: mustAbs(t, root), Generation: 1, InstallPath: bin, InstallDigest: digest, MintedAt: now.UTC().Format(time.RFC3339),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	self, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("read fixture process: %v %s", err, state)
-	}
-	if err := writeJSONAtomic(runnerRecordPath(root), RunnerRecord{
-		Pid: self.Pid, PidStartedAt: self.StartedAt.Unix(), StartTicks: self.StartTicks, BootID: self.BootID,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := beginComponentAttempt(root, "steward-tick", 1, self.Ref(), now.Add(-11*time.Second)); err != nil {
-		t.Fatal(err)
-	}
-	attempt, err := loadComponentEvidence(ComponentEvidencePath(root, "steward-tick"))
-	if err != nil || attempt.AttemptSeq != 1 || attempt.Outcome != "ATTEMPTING" || attempt.Generation != 1 || attempt.Pid != self.Pid || !attempt.LastAttempt.Equal(now.Add(-11*time.Second)) {
+	attempt, err := loadComponentEvidence(ComponentEvidencePath(bed.root, "steward-tick"))
+	if err != nil || attempt.AttemptSeq != 1 || attempt.Outcome != "ATTEMPTING" || attempt.Generation != 148 || attempt.Pid != self.Pid || !attempt.LastAttempt.Equal(bed.now.Add(-11*time.Second)) {
 		t.Fatalf("the first attempt must be recorded before ensure: %+v %v", attempt, err)
 	}
-	before, alive := liveRunner(root)
-	if !alive || before.Pid != self.Pid {
-		t.Fatalf("the current process must own the runner record: %+v alive=%t", before, alive)
-	}
-	pinned, err := OpenEnrolledBinary(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer pinned.Close()
-	clock := func() time.Time { return now }
 	noSleep := func(d time.Duration) { t.Fatalf("slow attempt waited for %s", d) }
-	deps := runnerPolicyDeps(t, root, &runnerPolicyNotify{output: "true\n"})
-	ensured, err := ensureRunnerWithDependencies(root, pinned, deps, clock, noSleep)
-	if err != nil || ensured.Action != "verified" || ensured.Pid != self.Pid || ensured.Generation != 1 {
+	ensured, err := ensureRunnerWithDependencies(bed.root, bed.pinned, bed.deps, bed.clock, noSleep)
+	if err != nil || ensured.Action != "verified" || ensured.Pid != self.Pid || ensured.Generation != 148 {
 		t.Fatalf("a second up must verify the slow first attempt without replacement: %+v %v", ensured, err)
 	}
-	repaired, err := repairEnrolledRunnerWithClock(root, nil, clock, noSleep)
-	if err != nil || repaired.Status != "CURRENT" || repaired.ReplacementPid != self.Pid || repaired.Generation != 1 {
+	repaired, err := repairPinnedRunnerWithDependencies(bed.root, bed.pinned, nil, bed.clock, noSleep, bed.deps)
+	if err != nil || repaired.Status != "CURRENT" || repaired.ReplacementPid != self.Pid || repaired.Generation != 148 {
 		t.Fatalf("a watcher cycle must preserve the slow first attempt: %+v %v", repaired, err)
 	}
-	after, alive := liveRunner(root)
-	if !alive || after != before {
+	after, alive := liveRunnerWithProber(bed.root, bed.processes)
+	if !alive || after != before || bed.launches != 0 || bed.stops != 0 {
 		t.Fatalf("ensure and repair must keep the same runner identity: before=%+v after=%+v alive=%t", before, after, alive)
 	}
-	persisted, err := loadComponentEvidence(ComponentEvidencePath(root, "steward-tick"))
+	persisted, err := loadComponentEvidence(ComponentEvidencePath(bed.root, "steward-tick"))
 	if err != nil || !reflect.DeepEqual(persisted, attempt) {
 		t.Fatalf("ensure and repair changed the attempting evidence: before=%+v after=%+v err=%v", attempt, persisted, err)
 	}
-	installed, err := VerifyIdentity(RepoIdentityPath(root), root)
-	if err != nil || installed.Generation != 1 {
+	installed, err := VerifyIdentity(RepoIdentityPath(bed.root), bed.root)
+	if err != nil || installed.Generation != 148 {
 		t.Fatalf("ensure and repair changed enrollment: %+v %v", installed, err)
 	}
 }
 
 func TestWatcherReplacesAliveRunnerWithOverdueAttempt(t *testing.T) {
-	root := newProcessGitFixture(t)
-	reapStewardRunnerFixture(t, root)
-	// The engine is built for the test (a skip on a missing checkout binary
-	// counts as red in a proof tree that has none); enrollment wants its
-	// canonical path.
-	bin := canonicalPath(testenv.Engine(t))
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("steward.tick-patience-sec=1\n"), 0o644); err != nil {
+	t.Parallel()
+	bed := newExecutionBed(t)
+	self := bed.old
+	self.Exe = bed.replacement.Exe
+	bed.processes[self.Pid] = self
+	bed.record(t, self)
+	if err := os.WriteFile(filepath.Join(bed.root, "metasystem.conf"), []byte("steward.tick-patience-sec=1\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	digest, err := installDigest(bin)
-	if err != nil {
+	if _, err := beginComponentAttempt(bed.root, "steward-tick", 148, identity.Ref{Pid: self.Pid, StartedAtSec: self.StartedAt.Unix()}, bed.now.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.MkdirAll(runnerDir(root), 0o755); err != nil {
-		t.Fatal(err)
+	repaired, err := repairPinnedRunnerWithDependencies(bed.root, bed.pinned, nil, bed.clock, bed.sleep, bed.deps)
+	if err != nil || repaired.Status != "RESTORED" || repaired.PreviousPid != self.Pid || repaired.ReplacementPid == self.Pid || bed.stops != 1 || bed.launches != 1 {
+		t.Fatalf("the watcher must replace an alive runner past its configured patience: %+v %v (stops=%d launches=%d)", repaired, err, bed.stops, bed.launches)
 	}
-	if err := MintIdentity(RepoIdentityPath(root), InstallIdentity{
-		RepoIdentity: mustAbs(t, root), Generation: 1, InstallPath: bin, InstallDigest: digest, MintedAt: time.Now().UTC().Format(time.RFC3339),
-	}); err != nil {
-		t.Fatal(err)
-	}
-	readyRead, readyWrite, err := os.Pipe()
-	if err != nil {
-		t.Fatal(err)
-	}
-	releaseRead, releaseWrite, err := os.Pipe()
-	if err != nil {
-		_ = readyRead.Close()
-		_ = readyWrite.Close()
-		t.Fatal(err)
-	}
-	stuck := exec.Command("/bin/sh", "-c", "printf 'ready\\n' >&3; IFS= read -r _ <&4")
-	stuck.ExtraFiles = []*os.File{readyWrite, releaseRead}
-	if err := stuck.Start(); err != nil {
-		_ = readyRead.Close()
-		_ = readyWrite.Close()
-		_ = releaseRead.Close()
-		_ = releaseWrite.Close()
-		t.Fatal(err)
-	}
-	_ = readyWrite.Close()
-	_ = releaseRead.Close()
-	stuckDone := make(chan struct{})
-	go func() {
-		_, _ = stuck.Process.Wait()
-		close(stuckDone)
-	}()
-	stuckJoined := false
-	t.Cleanup(func() {
-		_ = releaseWrite.Close()
-		if !stuckJoined {
-			_ = stuck.Process.Kill()
-			<-stuckDone
-		}
-	})
-	ready, readyErr := bufio.NewReader(readyRead).ReadString('\n')
-	_ = readyRead.Close()
-	if readyErr != nil || ready != "ready\n" {
-		t.Fatalf("overdue runner readiness=%q err=%v", ready, readyErr)
-	}
-	exact, state, err := identity.KernelProber{}.Probe(int64(stuck.Process.Pid))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("read stuck fixture process: %v %s", err, state)
-	}
-	if err := writeJSONAtomic(runnerRecordPath(root), RunnerRecord{
-		Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), StartTicks: exact.StartTicks, BootID: exact.BootID,
-	}); err != nil {
-		t.Fatal(err)
-	}
-	// The attempt began at a fixed instant long past any configured patience.
-	if _, err := beginComponentAttempt(root, "steward-tick", 1, exact.Ref(), time.Date(2026, time.January, 1, 0, 0, 0, 0, time.UTC)); err != nil {
-		t.Fatal(err)
-	}
-	repaired, err := RepairEnrolledRunner(root)
-	if err != nil || repaired.Status != "RESTORED" || repaired.PreviousPid != exact.Pid || repaired.ReplacementPid == exact.Pid {
-		t.Fatalf("the watcher must replace an alive runner past its configured patience: %+v %v", repaired, err)
-	}
-	<-stuckDone
-	stuckJoined = true
-	_ = releaseWrite.Close()
 }
 
 func TestWatcherRepairStopsWhenTheStewardBreakerEndsHealing(t *testing.T) {

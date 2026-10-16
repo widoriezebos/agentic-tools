@@ -323,6 +323,9 @@ esac
 				return "other-seat", path == other.root()
 			}
 			owners.machines.seatLauncher, owners.machines.seatCensus = &launcher, seatTickCensus{}
+			owners.machines.runnerRepair = func(string) (steward.RunnerRepairOutcome, error) {
+				return steward.RunnerRepairOutcome{Status: "CURRENT"}, nil
+			}
 			owners.prove = enrolledPersonProver(t, root, at)
 			owners.commandNow = func(string) (time.Time, error) { return at, nil }
 			for _, argv := range [][]string{{"question", "list", "--json"}, {"question", "show", q.ID, "--json"}} {

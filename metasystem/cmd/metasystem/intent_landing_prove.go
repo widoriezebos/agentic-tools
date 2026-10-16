@@ -119,7 +119,7 @@ func (inv *intentInvocation) lanePaused(admitted laneAdmitted, what string) *int
 // proveSeams are landing prove's effects: the test's, else this engine
 // started detached.
 func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
-	seams := batchDepthSeams(owners.plainProve)
+	seams := landingExecutionSeams(batchDepthSeams(owners.plainProve))
 	if seams.Executable == nil {
 		seams.Executable = os.Executable
 	}

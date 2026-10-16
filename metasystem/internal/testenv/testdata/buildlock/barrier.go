@@ -21,7 +21,10 @@ func Command() {
 	}
 	directory, _ := os.Getwd()
 	record, _ := json.Marshal(map[string]any{"args": os.Args[1:], "directory": directory, "home": os.Getenv("HOME"), "tmp": os.TempDir(), "pid": os.Getpid()})
-	if err := os.WriteFile(filepath.Join(root, "entered"), record, 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "entered.tmp"), record, 0o600); err != nil {
+		panic(err)
+	}
+	if err := os.Rename(filepath.Join(root, "entered.tmp"), filepath.Join(root, "entered")); err != nil {
 		panic(err)
 	}
 	for {

@@ -28,7 +28,6 @@ func startSidecarCustodian(t *testing.T, logPath string) func() {
 	checkTestenv(t, err)
 	command.Stderr = log
 	checkTestenv(t, command.Start())
-	checkTestenv(t, log.Close())
 	stopped := false
 	stop := func() {
 		if stopped {
@@ -37,6 +36,8 @@ func startSidecarCustodian(t *testing.T, logPath string) func() {
 		stopped = true
 		checkTestenv(t, stdin.Close())
 		checkTestenv(t, command.Wait())
+		// Explicit unlock releases copies inherited by other parallel forks.
+		checkTestenv(t, unlockAndClose(log))
 	}
 	t.Cleanup(stop)
 	return stop

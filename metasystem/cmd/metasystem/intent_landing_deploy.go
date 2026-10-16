@@ -25,7 +25,7 @@ func runIntentLandingDeploy(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(*problem)
 	}
 	provenance := plain.ActProvenance{Kind: "deploy", Person: person.Name, Root: person.Root, CheckedAt: person.At, TerminalGeneration: person.Proof.TerminalGeneration, TerminalRef: person.Proof.TerminalRef, Destination: admitted.record}
-	seams := admitted.owners.plainProve
+	seams := landingExecutionSeams(admitted.owners.plainProve)
 	keeper := admitted.owners.keeper(admitted.home, admitted.record.Root)
 	seams.ResumeKeeper = &keeper
 	opts := plain.DeployOptions{Now: inv.input.switched("now"), MergeSettled: func(fix *plain.Fix) (bool, error) {

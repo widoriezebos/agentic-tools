@@ -114,7 +114,7 @@ func runIntentMachineRevive(inv *intentInvocation) int {
 	if supplied := inv.machineSeams().seatLauncher; supplied != nil {
 		launcher = *supplied
 	}
-	if _, err := steward.RepairEnrolledRunner(root); err != nil {
+	if _, err := inv.machineSeams().runnerRepair(root); err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the enrolled runner could not be repaired: " + err.Error(), next: inv.publicArgv("system", "start", "--repo", target.Checkout)})
 	}
 	record, err := steward.ReviveSeat(root, steward.TickConfig{Now: now, Seat: launcher, ProviderHome: home}, census, inv.input.text("after"), person, reading.Registry)
@@ -130,6 +130,7 @@ func runIntentMachineRevive(inv *intentInvocation) int {
 
 // machineOwners are the machine verbs' seams; the zero value is production.
 type machineOwners struct {
+	runnerRepair    func(string) (steward.RunnerRepairOutcome, error)
 	seatCensus      steward.WorkerCensus
 	seatLauncher    *stewardSeatLauncher
 	capacitySources hostcapacity.Sources
@@ -141,6 +142,9 @@ type machineOwners struct {
 
 func (inv *intentInvocation) machineSeams() machineOwners {
 	owners := inv.owners.machines
+	if owners.runnerRepair == nil {
+		owners.runnerRepair = steward.RepairEnrolledRunner
+	}
 	if owners.registryPath == nil {
 		owners.registryPath = registry.DefaultPath
 	}
