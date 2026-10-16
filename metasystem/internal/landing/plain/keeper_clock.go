@@ -84,7 +84,11 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 	if err != nil {
 		return "", err
 	}
-	if !last.IsZero() && seams.now().Sub(last) < every {
+	debt, err := scopedProofDue(install, seams.now())
+	if err != nil {
+		return "", err
+	}
+	if !debt && !last.IsZero() && seams.now().Sub(last) < every {
 		state = clockWake{At: state.At, Reason: "clock check skipped; main's full check is current"}
 		return "", prepare(record)
 	}
@@ -172,6 +176,19 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 	seams.Trunk, seams.Gate, seams.Impact = true, false, false
 	seams.Person, seams.Fresh = nil, true
 	state.Reason = "clock due; no batch completed within its wake; " + landingstate.Phrase("proving-main")
+	if debt {
+		results, _ := Results(install)
+		for i := len(results) - 1; i >= 0; i-- {
+			if results[i].Scope == "scoped" {
+				at := results[i].OwedSince
+				if at.IsZero() {
+					at, _ = time.Parse(time.RFC3339, results[i].FullAt)
+				}
+				state.Reason = "the hourly debt of the " + at.Local().Format("15:04") + " check is due"
+				break
+			}
+		}
+	}
 	_, _, err = Start(install, checkout, seams)
 	if err != nil {
 		state.Reason = "clock due; main's check could not start: " + err.Error()

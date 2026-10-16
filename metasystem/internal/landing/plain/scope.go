@@ -46,6 +46,7 @@ type scopeDecision struct {
 	base     Result
 	contract testpolicy.Contract
 	affected testpolicy.AffectedResult
+	standing *standingEvidence
 }
 
 // WithContractCache reuses immutable contract bytes while admission rereads current proof facts.
@@ -72,6 +73,14 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 	results, damaged, err := countedLines[Result](resultsPath(install))
 	if err != nil || damaged != 0 {
 		return d
+	}
+	if running.Trunk {
+		var reason string
+		d.standing, reason = selectStanding(install, checkout, running, results, seams)
+		if reason != "" {
+			d.ScopeReason = reason
+			return d
+		}
 	}
 	batch := ""
 	if !running.Trunk {
@@ -117,43 +126,52 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 				}
 				return d
 			}
-			if candidate.Result == Red && !candidate.didNotRun() {
+			if candidate.Result == Red && !candidate.didNotRun() && d.standing == nil {
 				d.ScopeReason = "a later failed check still needs resolution"
 				return d
 			}
+			if candidate.Result == Red {
+				continue
+			}
 			at, err := time.Parse(time.RFC3339, candidate.FullAt)
 			if age := seams.now().Sub(at); err != nil || age < 0 || age >= time.Hour {
-				continue
+				break
 			}
 			d.base = candidate
 			d.base.Tree = candidate.FullTree
 			break
 		}
-		if d.base.Scope == "" {
+		if d.base.Scope == "" && d.standing == nil {
 			return d
 		}
 	}
 	fullAt, err := time.Parse(time.RFC3339, d.base.FullAt)
-	if err != nil {
+	if err != nil && d.standing == nil {
 		d.ScopeReason = "the batch's full proof time cannot be read"
 		return d
 	}
-	if age := seams.now().Sub(fullAt); age < 0 || age > time.Hour {
+	if age := seams.now().Sub(fullAt); (age < 0 || age > time.Hour) && d.standing == nil {
 		d.ScopeReason = fmt.Sprintf("the batch's full proof is %s old, more than one hour", age.Round(time.Second))
 		return d
 	}
-	changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", d.base.Tree, running.Tree)
+	from := d.base.Tree
+	if d.standing != nil {
+		from = d.standing.Tree
+	}
+	changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", from, running.Tree)
 	if err != nil {
 		d.ScopeReason = "the changed paths cannot be read: " + err.Error()
 		return d
 	}
-	if strings.TrimSpace(changed) == "" {
+	if strings.TrimSpace(changed) == "" && d.standing == nil {
 		d.ScopeReason = "the tree comparison names no changed paths"
 		return d
 	}
-	d.ChangedPaths = strings.Split(strings.TrimSpace(changed), "\n")
+	if strings.TrimSpace(changed) != "" {
+		d.ChangedPaths = strings.Split(strings.TrimSpace(changed), "\n")
+	}
 	executablePaths := d.ChangedPaths
-	if d.base.FullTree != "" && d.base.FullTree != d.base.Tree {
+	if d.standing == nil && d.base.FullTree != "" && d.base.FullTree != d.base.Tree {
 		changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", d.base.FullTree, running.Tree)
 		if err != nil {
 			d.ScopeReason = "the paths changed since the full proof cannot be read: " + err.Error()
@@ -205,7 +223,7 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 			return language.Closure(root, base, tree)
 		}
 	}
-	units, err := closure(checkout, d.base.Tree, running.Tree)
+	units, err := closure(checkout, from, running.Tree)
 	if err != nil {
 		d.ScopeReason = "the language closure cannot be read: " + err.Error()
 		return d
@@ -222,10 +240,13 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		d.ScopeReason = "changed paths have no declared test inputs: " + strings.Join(d.affected.Uncovered, ", ")
 	case len(d.affected.TemplateCovered) != 0:
 		d.ScopeReason = "changed paths reach a test group template: " + strings.Join(d.affected.TemplateCovered, ", ")
-	case len(d.affected.Groups) == 0:
+	case len(d.affected.Groups) == 0 && d.standing == nil:
 		d.ScopeReason = "no test groups cover the changed paths"
 	default:
-		d.Scope, d.Base = "scoped", d.base.Tree
+		d.Scope, d.Base = "scoped", from
+		if d.standing != nil {
+			return finishStandingScope(install, checkout, running, d, seams)
+		}
 		d.ScopeReason = "the batch's full proof is under an hour old; only groups whose inputs cover changed paths run"
 		if recordsOnly {
 			plan, err := testpolicy.WithPrerequisiteClosure(d.contract, testpolicy.Plan{SelectedGroups: d.groupIDs(), Stages: []testpolicy.Stage{{ID: "affected", Groups: d.groupIDs()}}})
@@ -287,7 +308,9 @@ func scopePath(install, attempt string) string {
 }
 
 func (d scopeDecision) writeRecord(install string, result Result, observed *proofOutput) error {
-	if d.Scope == "scoped" {
+	if d.Scope == "scoped" && d.standing != nil {
+		d.Groups = d.standingGroups(result, observed)
+	} else if d.Scope == "scoped" {
 		var previous scopeRecord
 		if data, err := os.ReadFile(scopePath(install, d.base.Attempt)); err == nil {
 			_ = json.Unmarshal(data, &previous)
@@ -338,6 +361,8 @@ type proofOutput struct {
 	ran         []string
 	durations   map[string]int64
 	packages    []PackageTiming
+	outcomes    []testOutcome
+	events      map[string][]testOutcome
 	report      checkReport
 }
 
@@ -391,6 +416,7 @@ func (p *proofOutput) finish() {
 }
 
 func (p *proofOutput) line(line string) {
+	p.testLine(line)
 	if environment, ok := strings.CutPrefix(line, "landing environment "); ok && !p.envSeen {
 		p.environment, p.envSeen = environment, true
 	}
@@ -425,6 +451,17 @@ func (p *proofOutput) line(line string) {
 	if fields[2] == "fast-static-build" {
 		p.static = fields[3]
 	}
+	if fields[3] == "blocked" {
+		return
+	}
+	status := fields[3]
+	if status == "green" || status == "passed" {
+		status = "pass"
+	}
+	if status == "red" || status == "failed" {
+		status = "fail"
+	}
+	p.outcomes = append(p.outcomes, testOutcome{Unit: fields[2], Status: status})
 	p.ran = append(p.ran, fields[2])
 	p.durations[fields[2]] = duration
 }
@@ -440,7 +477,7 @@ func (r Result) fullCurrent(now time.Time) bool {
 }
 
 func (r Result) reusableGreen(now time.Time) bool {
-	if r.Result != Green {
+	if r.Result != Green || len(r.Unproved) != 0 {
 		return false
 	}
 	if r.Scope == "scoped" || strings.HasPrefix(r.Reason, "inherits green from tree ") {
@@ -449,10 +486,23 @@ func (r Result) reusableGreen(now time.Time) bool {
 	return true
 }
 
-func (d scopeDecision) describe(result Result, observed *proofOutput) Result {
+func (d scopeDecision) describe(result Result, observed *proofOutput, install, checkout string, seams ProveSeams) Result {
 	result.Scope, result.ScopeReason, result.Base = d.Scope, d.ScopeReason, d.Base
 	result.BaseCommit, result.PlanHash = d.BaseCommit, d.PlanHash
 	result.Ran, result.Environment = observed.ran, observed.environment
+	if len(result.Outcomes) == 0 {
+		result.Outcomes = observed.outcomes
+	}
+	result = seams.retainOutcomes(install, checkout, result)
+	if d.standing != nil && d.Scope == "scoped" {
+		result.OwedSince = d.standing.OwedSince
+		result.Unproved = nil
+		for _, group := range d.standingGroups(result, observed) {
+			if group.State == "unproved" {
+				result.Unproved = append(result.Unproved, group.ID)
+			}
+		}
+	}
 	if d.Scope == "scoped" {
 		result.FullTree, result.FullAt = d.base.FullTree, d.base.FullAt
 	} else if result.Result == Green && d.Scope != "gate" && d.Scope != "impact" {

@@ -148,7 +148,8 @@ func fullProofClock(install string) (time.Time, time.Duration, error) {
 }
 
 // scopedProofDue keeps the original execution deadline for main or the newest push.
-// A later executed full green pays that debt, including a batch proof.
+// Main needs a later full trunk check, including a completed red. A scoped
+// push can also use an executed full green batch proof.
 func scopedProofDue(install string, now time.Time) (bool, error) {
 	results, err := Results(install)
 	if err != nil {
@@ -168,6 +169,9 @@ func scopedProofDue(install string, now time.Time) (bool, error) {
 		return false, nil
 	}
 	fullAt, err := time.Parse(time.RFC3339, result.FullAt)
+	if !result.OwedSince.IsZero() {
+		fullAt, err = result.OwedSince, nil
+	}
 	if err != nil || now.Sub(fullAt) <= time.Hour {
 		return false, nil
 	}
@@ -179,7 +183,10 @@ func scopedProofDue(install string, now time.Time) (bool, error) {
 		pushedAt, _ = time.Parse(time.RFC3339, push.At)
 	}
 	for _, proof := range results {
-		if proof.Scope == "full" && proof.Result == Green && !proof.didNotRun() && !strings.HasPrefix(proof.Reason, "inherits green from tree ") {
+		if result.Trunk && !proof.Trunk {
+			continue
+		}
+		if proof.Scope == "full" && (proof.Result == Green || proof.Trunk && proof.Result == Red && proof.CountedFull) && !proof.didNotRun() && !strings.HasPrefix(proof.Reason, "inherits green from tree ") {
 			if at, err := time.Parse(time.RFC3339, proof.At); err == nil && at.After(pushedAt) {
 				return false, nil
 			}

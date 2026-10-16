@@ -86,7 +86,7 @@ func RecoverMovedMain(install, checkout string, seams ProveSeams) error {
 	if err != nil {
 		return err
 	}
-	if _, ok := applicableMainProof(install, main, tree, seams, true); ok {
+	if _, ok := applicableMainProof(install, checkout, main, tree, seams, true); ok {
 		return nil
 	}
 	if seams.TimerHeld != nil && seams.TimerHeld() {
@@ -102,7 +102,7 @@ func RecoverMovedMain(install, checkout string, seams ProveSeams) error {
 }
 
 // applicableMainProof uses only recorded execution facts; cadence detects environment changes.
-func applicableMainProof(install, commit, tree string, seams ProveSeams, red bool) (Result, bool) {
+func applicableMainProof(install, checkout, commit, tree string, seams ProveSeams, red bool) (Result, bool) {
 	results, damaged, err := countedLines[Result](resultsPath(install))
 	if err != nil || damaged != 0 || commit == "" || tree == "" {
 		return Result{}, false
@@ -126,6 +126,12 @@ func applicableMainProof(install, commit, tree string, seams ProveSeams, red boo
 			break
 		}
 		if r.Result == Red {
+			if r.Cause != nil && r.Cause.Kind == "main" && len(r.Failed) > 0 {
+				incidents, err := seams.incidents(install, checkout, commit)
+				if err != nil || len(r.incidentIDs(incidents)) == 0 {
+					return Result{}, false
+				}
+			}
 			return r, red && r.Trunk && r.Commit == commit
 		}
 		fullAt, err := time.Parse(time.RFC3339, r.FullAt)

@@ -21,7 +21,7 @@ import (
 // isolated replay over its subject's trees; every repeat uses its existing
 // allowance, including a registered flake's repeat in the current worktree.
 func classifyRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, output io.Writer, observed *proofOutput, result, previous Result, report checkReport, runErr error, replay func(Result, Result) Result) Result {
-	result = observeRed(seams, install, running, decision, observed, result, previous, report, runErr)
+	result = observeRed(seams, install, checkout, running, decision, observed, result, previous, report, runErr)
 	if result.executionErr != nil || result.Result == "cancelled" {
 		return result
 	}
@@ -36,7 +36,7 @@ func (r *Result) allowEnvironmentRepeat(previous Result) {
 	}
 }
 
-func observeRed(seams ProveSeams, install string, running Running, decision scopeDecision, observed *proofOutput, result, previous Result, report checkReport, runErr error) Result {
+func observeRed(seams ProveSeams, install, checkout string, running Running, decision scopeDecision, observed *proofOutput, result, previous Result, report checkReport, runErr error) Result {
 	result.LoadStart, result.LoadEnd = report.loadStart, report.loadEnd
 	result = timedResult(result, running.Since, seams.now())
 	result.Result, result.Reason, result.Load = Red, runErr.Error(), report.load
@@ -53,9 +53,10 @@ func observeRed(seams ProveSeams, install string, running Running, decision scop
 		result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
 		result.CountedFull = false
 	}
-	result = decision.describe(result, observed)
+	result = decision.describe(result, observed, install, checkout, seams)
 	result.allowEnvironmentRepeat(previous)
-	result.Failed = report.failed
+	result.Failed = slices.Clone(report.failed)
+	result = decision.carryStanding(result, observed)
 	if slices.ContainsFunc(result.Failed, func(unit FailedUnit) bool { return unit.Unit == "fast-static-build" }) {
 		result.Reason = "fast-static-build: " + result.Reason
 	}
@@ -86,6 +87,20 @@ func observeRed(seams ProveSeams, install string, running Running, decision scop
 
 // continueRed uses the recorded report; it never repeats the original full admission.
 func continueRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, output io.Writer, result, previous Result, replay func(Result, Result) Result) Result {
+	carried := slices.DeleteFunc(slices.Clone(result.Failed), func(f FailedUnit) bool { return !f.Inherited })
+	result.Failed = slices.DeleteFunc(slices.Clone(result.Failed), func(f FailedUnit) bool { return f.Inherited })
+	result = continueExecutedRed(seams, install, checkout, command, dir, running, decision, output, result, previous, replay)
+	result.Failed = append(result.Failed, carried...)
+	if len(carried) > 0 {
+		result.Result = Red
+		if result.Cause == nil || result.Cause.Kind == "unclassified" {
+			result.Cause = &Cause{Kind: "main"}
+		}
+	}
+	return result
+}
+
+func continueExecutedRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, output io.Writer, result, previous Result, replay func(Result, Result) Result) Result {
 	result.ClassificationPending = false
 	// Only a flake repeat (it carries FlakeRepeats) is held here; a whole-check,
 	// environment or person re-proof is also "started" and keeps the lane's attribution.
@@ -104,7 +119,7 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 		if !slices.ContainsFunc(result.Failed, func(unit FailedUnit) bool { return len(unit.Tests) > 0 }) {
 			return replay(result, previous)
 		}
-		repeated := repeatRed(seams, install, command, dir, running, decision, result, true)
+		repeated := repeatRed(seams, install, checkout, command, dir, running, decision, result, true)
 		if repeated.Result == Red && repeated.Cause.Kind == "unclassified" {
 			return replay(repeated, previous)
 		}
@@ -126,7 +141,7 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 	if !known || previous.Result != "" {
 		return replay(result, previous)
 	}
-	repeated := repeatRed(seams, install, command, dir, running, decision, result, false)
+	repeated := repeatRed(seams, install, checkout, command, dir, running, decision, result, false)
 	if len(repeated.FlakeRepeats) == 0 {
 		return replay(repeated, previous)
 	}
@@ -135,7 +150,9 @@ func continueRed(seams ProveSeams, install, checkout, command, dir string, runni
 
 // repeatRed spends one repeat in the same worktree before a red is attributed.
 // Main checks bind the allowance to the attempt; batch checks bind it to the tree.
-func repeatRed(seams ProveSeams, install, command, dir string, running Running, decision scopeDecision, result Result, main bool) Result {
+func repeatRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, result Result, main bool) Result {
+	result = seams.retainOutcomes(install, checkout, result)
+	retain := func(r Result) Result { return decision.carryStanding(r, &proofOutput{outcomes: r.Outcomes}) }
 	ordinary, ordinaryRepeat := *result.Cause, result.Repeat
 	var retained *Result
 	result.FlakeRepeats = make([]Running, len(result.Failed))
@@ -156,6 +173,7 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 		for i := len(history) - 1; i >= 0; i-- {
 			prior := history[i]
 			if main && prior.Attempt == result.Attempt && (prior.Repeat == "started" || prior.FlakePublished) {
+				prior.Failed = slices.DeleteFunc(slices.Clone(prior.Failed), func(f FailedUnit) bool { return f.Inherited })
 				retained = &prior
 				return &NoRepeat{}
 			}
@@ -166,7 +184,7 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 		if err := recordProofStop(install, result, seams); err != nil {
 			return err
 		}
-		return appendLine(seams.resultsPath(install), result, seams)
+		return appendLine(seams.resultsPath(install), retain(result), seams)
 	}); err != nil {
 		var refused *NoRepeat
 		if errors.As(err, &refused) {
@@ -201,7 +219,10 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 		file, err := os.OpenFile(repeat.Log, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0o644)
 		if err == nil {
 			tests, _ := namedUnitTests(unit, contract)
-			report, err = runCheck(seams, install, dir, command, repeat, unit.Unit, decision, file, &proofOutput{output: io.Discard}, tests...)
+			observed := &proofOutput{output: io.Discard}
+			report, err = runCheck(seams, install, dir, command, repeat, unit.Unit, decision, file, observed, tests...)
+			result.Outcomes = append(result.Outcomes, observed.outcomes...)
+			result = seams.retainOutcomes(install, checkout, result)
 			if err == nil && (report.kind != "complete" || len(report.failed) != 0) {
 				err = fmt.Errorf("the repeat has no complete passing report")
 			}
@@ -227,7 +248,7 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 		result.Reason = strings.Join(failures, "; ")
 		result = recordFlakes(seams, result, result, "alone", repeats)
 		if main {
-			if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result, seams) }); err != nil {
+			if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), retain(result), seams) }); err != nil {
 				result.Cause.Kind = "flake"
 				result.Reason += "; " + err.Error()
 			}
@@ -235,7 +256,7 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 		return result
 	}
 	result.RepeatComplete = true
-	if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), result, seams) }); err != nil {
+	if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), retain(result), seams) }); err != nil {
 		result.Reason = "the repeat's outcome could not be recorded: " + err.Error()
 		return result
 	}
@@ -243,7 +264,7 @@ func repeatRed(seams ProveSeams, install, command, dir string, running Running, 
 	green.Result, green.Repeat, green.Failed, green.Load, green.Reason, green.Cause = Green, "", nil, 0, "", nil
 	green = recordFlakes(seams, result, green, "alone", repeats)
 	if main {
-		if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), green) }); err != nil {
+		if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), retain(green)) }); err != nil {
 			result.Reason = "the repeat publication could not be recorded: " + err.Error()
 			return result
 		}
@@ -466,7 +487,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 				}
 				if slices.ContainsFunc(report.failed, func(unit FailedUnit) bool { return len(unit.Tests) > 0 }) {
 					prefix.Trunk = true
-					check = repeatRed(seams, install, command, dir, prefix.Running, scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, check, true)
+					check = repeatRed(seams, install, checkout, command, dir, prefix.Running, scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, check, true)
 					failed = check.Result == Red
 					complete = !failed || check.Cause.Kind == "unclassified"
 				}
@@ -511,6 +532,14 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 
 // Recording an incident preserves the proof's verdict and repeat allowance.
 func recordMainFailures(seams ProveSeams, result Result, checks []Result) Result {
+	checks = slices.Clone(checks)
+	for i := range checks {
+		checks[i].Failed = slices.DeleteFunc(slices.Clone(checks[i].Failed), func(f FailedUnit) bool { return f.Inherited })
+	}
+	checks = slices.DeleteFunc(checks, func(r Result) bool { return len(r.Failed) == 0 })
+	if len(checks) == 0 {
+		return result
+	}
 	if seams.RecordMain != nil {
 		if err := seams.RecordMain(checks); err != nil {
 			result.Reason += "; main's failed tests could not be recorded: " + err.Error()

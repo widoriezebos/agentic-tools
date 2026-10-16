@@ -60,7 +60,7 @@ func TestRepeatUsesOnlySelectablePackageTests(t *testing.T) {
 			}
 			unit := FailedUnit{Unit: tc.unit, Tests: tc.tests}
 			red := Result{Attempt: "selection", Tree: "tree", Result: Red, Failed: []FailedUnit{unit}, Cause: &Cause{Kind: "unclassified"}}
-			repeatRed(b.seams, b.install, "fixture", b.install, Running{Attempt: red.Attempt}, scopeDecision{}, red, true)
+			repeatRed(b.seams, b.install, b.install, "fixture", b.install, Running{Attempt: red.Attempt}, scopeDecision{}, red, true)
 			if calls != 1 {
 				t.Fatalf("repeat ran %d times", calls)
 			}

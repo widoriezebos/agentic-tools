@@ -109,6 +109,15 @@ func TestGreen(t *testing.T) { t.Log("green test diagnostic") }
 		if err != nil || len(results) != 1 || results[0].Status != "red" {
 			t.Fatalf("results %+v, error %v", results, err)
 		}
+		if !buildFailed {
+			statuses := map[string]string{}
+			for _, test := range results[0].Observed {
+				statuses[test.Name] = test.Status
+			}
+			if statuses["TestPresent"] != "failed" || statuses["TestGreen"] != "passed" || !strings.Contains(string(results[0].NativeOutput), `"Action":"pass"`) {
+				t.Fatalf("native outcomes lost: %+v", results[0])
+			}
+		}
 		want := "failed test diagnostic"
 		if buildFailed {
 			want = "undefinedBuildDiagnostic"
@@ -142,6 +151,9 @@ func TestNamedGroupsRunPrerequisitesAndCommands(t *testing.T) {
 		if got := results[i].ID + " " + results[i].Status; got != want || results[i].DurationMS < 0 {
 			t.Errorf("result %d = %+v, want %s", i, results[i], want)
 		}
+	}
+	if !results[2].NotRun || len(results[2].Observed) != 0 || len(results[2].NativeOutput) != 0 {
+		t.Fatalf("blocked group supplied evidence: %+v", results[2])
 	}
 	if !strings.Contains(strings.Join(results[1].Reasons, " "), "exit status 1") ||
 		!strings.Contains(strings.Join(results[2].Reasons, " "), "prerequisite red") {

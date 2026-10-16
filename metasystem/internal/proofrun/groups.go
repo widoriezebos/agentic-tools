@@ -25,7 +25,10 @@ type NamedGroupResult struct {
 	DurationMS int64
 	Reasons    []string
 	// Output is empty for green groups; red groups keep the last 200 diagnostic lines.
-	Output string
+	Output       string
+	NotRun       bool
+	NativeOutput []byte
+	Observed     []NativeTestIdentity
 }
 
 // RunNamedGroups runs concrete groups and their prerequisites in a plain
@@ -110,6 +113,9 @@ func RunNamedGroups(ctx context.Context, installation string, contract testpolic
 			if known[dependency] != "green" {
 				result.Reasons = append(result.Reasons, "prerequisite "+dependency+" is red; not run")
 			}
+		}
+		if len(result.Reasons) != 0 {
+			result.NotRun = true
 		}
 		if len(result.Reasons) == 0 {
 			var err error
@@ -202,6 +208,10 @@ func runNamedGroup(ctx context.Context, request TestRunRequest, root string, gro
 		if err != nil {
 			return result, err
 		}
+	}
+	if group.Adapter == "go" {
+		result.NativeOutput = append([]byte{}, output.Bytes()...)
+		result.Observed = observed
 	}
 	for _, test := range missing {
 		name := test.Name

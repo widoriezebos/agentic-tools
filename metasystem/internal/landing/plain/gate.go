@@ -129,7 +129,7 @@ func gateBaseline(seams ProveSeams, install, checkout, command string, running R
 	baseline.Result, baseline.Cause = Green, nil
 	baseline = proveInWorktree(seams, install, checkout, baseCommand, baseRun, &baseDecision, file, &proofOutput{output: io.Discard}, baseline, previous)
 	baseline.At = seams.now().Format(time.RFC3339Nano)
-	baseline = baseDecision.describe(baseline, &proofOutput{})
+	baseline = baseDecision.describe(baseline, &proofOutput{}, install, checkout, seams)
 	if baseline.Result != Green {
 		return baseline, false, decision
 	}

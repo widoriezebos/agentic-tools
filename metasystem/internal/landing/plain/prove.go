@@ -19,6 +19,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"syscall"
@@ -122,26 +123,31 @@ type Result struct {
 	// how the proving command ended ("the proving command exited 1") or why it
 	// could not run; for an inherited green, the tree it inherits from. An
 	// ordinary green has none.
-	Reason      string       `json:"reason,omitempty"`
-	Failed      []FailedUnit `json:"failed,omitempty"`
-	Load        float64      `json:"load,omitempty"`
-	Repeat      string       `json:"repeat,omitempty"`
-	Scope       string       `json:"scope,omitempty"`
-	ScopeReason string       `json:"scopeReason,omitempty"`
-	Base        string       `json:"base,omitempty"`
-	BaseCommit  string       `json:"baseCommit,omitempty"`
-	PlanHash    string       `json:"planHash,omitempty"`
-	FullTree    string       `json:"fullTree,omitempty"`
-	FullAt      string       `json:"fullAt,omitempty"`
-	Ran         []string     `json:"ran,omitempty"`
-	Environment string       `json:"environment,omitempty"`
+	Reason      string        `json:"reason,omitempty"`
+	Failed      []FailedUnit  `json:"failed,omitempty"`
+	Load        float64       `json:"load,omitempty"`
+	Repeat      string        `json:"repeat,omitempty"`
+	Scope       string        `json:"scope,omitempty"`
+	ScopeReason string        `json:"scopeReason,omitempty"`
+	Base        string        `json:"base,omitempty"`
+	BaseCommit  string        `json:"baseCommit,omitempty"`
+	PlanHash    string        `json:"planHash,omitempty"`
+	FullTree    string        `json:"fullTree,omitempty"`
+	OwedSince   time.Time     `json:"owedSince,omitzero"`
+	Unproved    []string      `json:"unproved,omitempty"`
+	Outcomes    []testOutcome `json:"outcomes,omitempty"`
+	FullAt      string        `json:"fullAt,omitempty"`
+	Ran         []string      `json:"ran,omitempty"`
+	Environment string        `json:"environment,omitempty"`
 }
 
 // FailedUnit names the tests that failed and the surfaces the judge read.
 type FailedUnit struct {
-	Unit     string   `json:"unit"`
-	Tests    []string `json:"tests"`
-	Surfaces []string `json:"surfaces"`
+	Inherited bool     `json:"inherited,omitempty"`
+	Attempt   string   `json:"attempt,omitempty"`
+	Unit      string   `json:"unit"`
+	Tests     []string `json:"tests"`
+	Surfaces  []string `json:"surfaces"`
 }
 
 // UnitJudgement says whether the batch affects a unit and all its failures are registered.
@@ -695,7 +701,7 @@ func Settled(install, checkout string, seams ProveSeams) (Result, bool, error) {
 			return err
 		}
 		if seams.Trunk {
-			settled, found = applicableMainProof(install, commit, tree, seams, false)
+			settled, found = applicableMainProof(install, checkout, commit, tree, seams, false)
 			return nil
 		}
 		if result, ok, err := seams.checkBound(install, tree); err != nil || ok {
@@ -977,13 +983,16 @@ func Run(install, checkout, command, attempt string, output io.Writer, seams Pro
 	}
 	decision := proofScope(install, checkout, running, seams)
 	observed := &proofOutput{output: io.Discard}
+	if running.Admission != nil && len(running.Executions) > 0 && !reflect.DeepEqual(running.Admission.Decision, running.Executions[len(running.Executions)-1].Decision) {
+		return result, fmt.Errorf("the admitted check scope changed; request a fresh check")
+	}
 	if running.Admission != nil && (running.Admission.Scope != decision.Scope || running.Admission.Base != decision.Base || running.Admission.BaseSHA != decision.BaseCommit || !slices.Equal(running.Admission.Groups, decision.groupIDs())) {
 		return result, fmt.Errorf("the admitted check scope changed; request a fresh check")
 	}
 	seams.checkInstall, seams.checkAttempt = install, running.Attempt
 	result = proveInWorktree(seams, install, checkout, command, running, &decision, output, observed, result, previous)
 	result = timedResult(result, running.Since, seams.now())
-	result = decision.describe(result, observed)
+	result = decision.describe(result, observed, install, checkout, seams)
 	if seams.Gate {
 		result.Requested, result.Attributed = running.Commit, result.Commit
 	}
@@ -1319,15 +1328,20 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		result.allowEnvironmentRepeat(previous)
 		return result
 	}
-	if (runErr == nil || report.kind == "complete") && decision.Scope == "scoped" && (observed.environment == "" || decision.base.Environment == "" || observed.environment != decision.base.Environment) {
+	expectedEnvironment := decision.base.Environment
+	if decision.standing != nil {
+		expectedEnvironment = decision.standing.Environment
+	}
+	if (runErr == nil || report.kind == "complete") && decision.Scope == "scoped" && (observed.environment == "" || expectedEnvironment == "" || observed.environment != expectedEnvironment) {
 		if runErr != nil {
-			result = observeRed(seams, install, running, *decision, observed, result, previous, report, runErr)
+			result = observeRed(seams, install, checkout, running, *decision, observed, result, previous, report, runErr)
 			if result.executionErr != nil {
 				return result
 			}
 		}
 		full := *decision
-		full.Scope, full.Base = "full", ""
+		full.Scope, full.Base, full.standing = "full", "", nil
+		full.Groups = nil
 		next := seams
 		next.Person = nil
 		err := withLock(install, func() error {
@@ -1342,8 +1356,11 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 			result.Result, result.Reason, result.executionErr = Held, err.Error(), err
 			return result
 		}
-		decision.Scope, decision.ScopeReason = "full", fmt.Sprintf("the proof environment changed from %q to %q", decision.base.Environment, observed.environment)
+		decision.Scope, decision.ScopeReason = "full", fmt.Sprintf("the proof environment changed from %q to %q", expectedEnvironment, observed.environment)
+		decision.standing, decision.Groups = nil, nil
 		decision.Base = ""
+		result.Result, result.Failed, result.Cause = Green, nil, nil
+		result.OwedSince, result.Unproved, result.Outcomes = time.Time{}, nil, nil
 		*observed = proofOutput{output: io.Discard}
 		report, runErr = runCheck(seams, install, dir, command, running, "", *decision, output, observed)
 	}
@@ -1353,6 +1370,10 @@ func proveInWorktree(seams ProveSeams, install, checkout, command string, runnin
 		result.Repeat = "started"
 	}
 	if runErr == nil {
+		result = decision.carryStanding(result, observed)
+		if result.Result == Red {
+			return result
+		}
 		if previous.Result == Red && len(previous.FlakeRepeats) == 0 && len(previous.Failed) > 0 && (previous.Cause == nil || previous.Cause.Kind != "environment") {
 			return recordFlakes(seams, previous, result, "whole", []Running{running})
 		}

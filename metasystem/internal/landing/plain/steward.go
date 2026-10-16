@@ -223,7 +223,7 @@ func stewardTrunk(install, checkout string, seams ProveSeams) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if _, ok := applicableMainProof(install, commit, tree, seams, true); ok {
+	if _, ok := applicableMainProof(install, checkout, commit, tree, seams, true); ok {
 		return stewardAlreadyProven, nil
 	}
 	running, _, err := Start(install, checkout, seams)

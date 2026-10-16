@@ -26,7 +26,7 @@ func TestMainRepeatRetainsItsOneExecution(t *testing.T) {
 			}
 			b.seams.Command = func(*exec.Cmd) error { t.Fatal("a retained main repeat ran again"); return nil }
 			red := Result{Attempt: prior.Attempt, Tree: prior.Tree, Result: Red, Cause: &Cause{Kind: "unclassified"}, Failed: prior.Failed}
-			got := repeatRed(b.seams, b.install, "fixture", b.install, Running{Attempt: prior.Attempt, Trunk: true}, scopeDecision{}, red, true)
+			got := repeatRed(b.seams, b.install, b.install, "fixture", b.install, Running{Attempt: prior.Attempt, Trunk: true}, scopeDecision{}, red, true)
 			if got.Result != prior.Result || got.FlakePublished != prior.FlakePublished || (got.Cause == nil) != (prior.Cause == nil) || got.Cause != nil && got.Cause.Kind != prior.Cause.Kind {
 				t.Fatalf("retained outcome lost: %+v cause=%+v", got, got.Cause)
 			}

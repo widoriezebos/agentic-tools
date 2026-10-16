@@ -42,6 +42,7 @@ type ExecutionAdmission struct {
 // admittedScope keeps the selection and its source facts for the admitted execution.
 type admittedScope struct {
 	scopeRecord
+	Standing *standingEvidence         `json:"standing,omitempty"`
 	Source   Result                    `json:"source,omitempty"`
 	Contract testpolicy.Contract       `json:"contract,omitempty"`
 	Affected testpolicy.AffectedResult `json:"affected,omitempty"`
@@ -60,12 +61,12 @@ func proofCommand(gate, trunk bool) string {
 func proofScope(install, checkout string, running Running, seams ProveSeams) scopeDecision {
 	if running.Admission != nil && running.Admission.Decision != nil {
 		pinned := running.Admission.Decision
-		return scopeDecision{scopeRecord: pinned.scopeRecord, base: pinned.Source, contract: pinned.Contract, affected: pinned.Affected}
+		return scopeDecision{scopeRecord: pinned.scopeRecord, base: pinned.Source, contract: pinned.Contract, affected: pinned.Affected, standing: pinned.Standing}
 	}
 	if running.Gate {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "gate"}}
 	}
-	if running.Fresh && !running.Impact {
+	if (running.Fresh || seams.ClassificationOf != "") && !running.Impact {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "fresh full check requested"}}
 	}
 	if running.Trunk {
@@ -137,7 +138,7 @@ func admitExecutionLocked(install, checkout, command string, running *Running, d
 	}
 	admission := ExecutionAdmission{Attempt: running.Attempt, Commit: running.Commit, Tree: running.Tree, BatchID: running.BatchID, Gate: running.Gate, Trunk: running.Trunk, Groups: decision.groupIDs(), Scope: decision.Scope, Reason: decision.ScopeReason, Base: decision.Base, BaseSHA: decision.BaseCommit, Command: command, At: seams.now().Format(time.RFC3339Nano), State: "pending"}
 	// Keep only the source facts needed by a scoped proof, without its execution history.
-	pinned := admittedScope{scopeRecord: decision.scopeRecord, Contract: decision.contract, Affected: decision.affected, Source: Result{Tree: decision.base.Tree, Attempt: decision.base.Attempt, FullTree: decision.base.FullTree, FullAt: decision.base.FullAt, Environment: decision.base.Environment}}
+	pinned := admittedScope{scopeRecord: decision.scopeRecord, Contract: decision.contract, Affected: decision.affected, Standing: decision.standing, Source: Result{Tree: decision.base.Tree, Attempt: decision.base.Attempt, FullTree: decision.base.FullTree, FullAt: decision.base.FullAt, Environment: decision.base.Environment}}
 	admission.Decision = &pinned
 	admission.DepthScope = seams.DepthScope
 	if seams.DepthScope != "" {

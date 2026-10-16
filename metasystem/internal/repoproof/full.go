@@ -98,7 +98,12 @@ func run(stdout, stderr io.Writer, getenv func(string) string, command Command, 
 
 // RunHost proves the extracted candidate without consulting the host lane again.
 func RunHost(stdout, stderr io.Writer, getenv func(string) string, command Command, runners ...HostRunners) int {
-	return runHost(stdout, stderr, getenv, command, "testing.json", runners...)
+	return RunHostAt(".", stdout, stderr, getenv, command, runners...)
+}
+
+// RunHostAt proves an extracted installation using its committed contract.
+func RunHostAt(root string, stdout, stderr io.Writer, getenv func(string) string, command Command, runners ...HostRunners) int {
+	return runHost(stdout, stderr, getenv, command, filepath.Join(root, "testing.json"), runners...)
 }
 
 func runHost(stdout, stderr io.Writer, getenv func(string) string, command Command, contractPath string, runners ...HostRunners) int {
@@ -177,9 +182,24 @@ func runHost(stdout, stderr io.Writer, getenv func(string) string, command Comma
 			return notRun(err)
 		}
 		for _, group := range results {
-			fmt.Fprintf(stdout, "landing group %s %s %d\n", group.ID, group.Status, group.DurationMS)
+			stdout.Write(group.NativeOutput)
+			status := group.Status
+			if group.NotRun {
+				status = "blocked"
+			}
+			fmt.Fprintf(stdout, "landing group %s %s %d\n", group.ID, status, group.DurationMS)
 			if group.Status != "green" {
-				failed[group.ID] = nil
+				named := false
+				for _, test := range group.Observed {
+					if test.Status == "failed" {
+						unit := packageUnit(test.Classname)
+						failed[unit] = append(failed[unit], test.Name)
+						named = true
+					}
+				}
+				if !named {
+					failed[group.ID] = nil
+				}
 				fmt.Fprintln(stderr, group.Output)
 			}
 		}

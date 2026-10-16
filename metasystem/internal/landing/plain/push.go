@@ -354,6 +354,9 @@ func provenGreen(install, tree string) *Refusal {
 	case result.Result != Green:
 		return &Refusal{Code: CodeRed, Reason: "HEAD's tree " + Short(tree) + " was proven " + result.Result + ", not green, so nothing was pushed", Next: "landing status"}
 	}
+	if len(result.Unproved) != 0 || result.Scope == "scoped" && result.FullTree == "" {
+		return &Refusal{Code: CodeUnproven, Reason: "the scoped check leaves unproved groups", Next: "landing prove"}
+	}
 	if result.Scope == "impact" {
 		batch, err := ReadBatch(install)
 		if err != nil {

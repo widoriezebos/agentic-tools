@@ -6,6 +6,7 @@ import (
 	"os"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
@@ -21,6 +22,9 @@ const (
 )
 
 func TestMain(m *testing.M) {
+	if exit, handled := repoproof.Custodian(os.Args[1:], os.Stderr); handled {
+		os.Exit(exit)
+	}
 	if install := os.Getenv(proveChildEnv); install != "" {
 		os.Exit(runProveChild(install, os.Getenv(proveChildCommand), os.Args[1:]))
 	}
