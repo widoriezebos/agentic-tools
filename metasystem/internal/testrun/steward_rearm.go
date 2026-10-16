@@ -6,7 +6,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -50,18 +49,44 @@ func RearmStewardAtBoundary(projectRoot string, boundary func() (bool, error)) (
 	if err != nil {
 		return false, nil
 	}
-	installed, err := steward.VerifyIdentity(steward.RepoIdentityPath(projectRoot), projectRoot)
-	if err != nil {
-		return false, err
+	return rearmStewardWithDependencies(projectRoot, stewardBoundaryDependencies(ctx, projectRoot, prefix, boundary, steward.RearmOperations{Clock: landedRearmClock}))
+}
+
+func stewardBoundaryDependencies(ctx context.Context, projectRoot, prefix string, boundary func() (bool, error), ops steward.RearmOperations) stewardRearmDependencies {
+	installation := projectRoot
+	if ops.Git != nil {
+		ctx = context.WithValue(ctx, landedRearmGitOutputContextKey{}, ops.Git)
 	}
-	source := installed.EngineBuild
-	if installed.LandedCommit != "" {
-		source = installed.LandedCommit
-	}
-	return rearmStewardWithDependencies(projectRoot, stewardRearmDependencies{
-		now: time.Now,
+	return stewardRearmDependencies{
+		now: ops.Clock.Now,
 		facts: func() (landedRearmFacts, error) {
-			return readLandedRearmFacts(ctx, landedRearmClock, steward.RearmResolveSeconds(installation), installation, projectRoot, prefix, source, func(tip string) (bool, error) { return false, nil })
+			installed, err := steward.VerifyIdentity(steward.RepoIdentityPath(projectRoot), projectRoot)
+			if err != nil {
+				return landedRearmFacts{}, err
+			}
+			source := installed.LandedCommit
+			if source == "" {
+				source = installed.EngineBuild
+			}
+			pinned, openErr := steward.OpenEnrolledBinary(projectRoot)
+			if openErr != nil && !errors.Is(openErr, steward.ErrEngineRebuilt) {
+				return landedRearmFacts{}, openErr
+			}
+			if pinned != nil {
+				defer pinned.Close()
+			}
+			return readLandedRearmFacts(ctx, ops.Clock, ops.ResolveSeconds(installation), installation, projectRoot, prefix, source, landedRearmReadOptions{RequireFetchedTip: true}, func(tip string) (bool, error) {
+				// Changed installed bytes must take the guarded rebuild path. They cannot
+				// establish equivalence on behalf of the enrolled executable.
+				if errors.Is(openErr, steward.ErrEngineRebuilt) {
+					return false, nil
+				}
+				verifyErr := ops.VerifySourceAtDestination(pinned, installation, tip)
+				if errors.Is(verifyErr, steward.ErrNotOwned) {
+					return false, nil
+				}
+				return verifyErr == nil, verifyErr
+			})
 		},
 		boundary: boundary,
 		lock:     func() (func(), error) { return landedRearmMutationLock(installation) },
@@ -82,7 +107,7 @@ func RearmStewardAtBoundary(projectRoot string, boundary func() (bool, error)) (
 			}
 			return command.Process.Release()
 		},
-	})
+	}
 }
 
 func rearmStewardWithDependencies(root string, deps stewardRearmDependencies) (replaced bool, err error) {
@@ -99,7 +124,11 @@ func rearmStewardWithDependencies(root string, deps stewardRearmDependencies) (r
 	if err != nil {
 		return false, err
 	}
-	if facts.Head == facts.Tip && facts.Source != "" && strings.HasPrefix(facts.Tip, facts.Source) {
+	decision := decideLandedRearm(facts, root)
+	if facts.FetchErr != nil {
+		return false, decision.Refusal
+	}
+	if !decision.Rearm && decision.Refusal == nil {
 		return false, steward.ClearDeferredRearm(root)
 	}
 	if facts.Head != facts.Tip {
@@ -111,8 +140,7 @@ func rearmStewardWithDependencies(root string, deps stewardRearmDependencies) (r
 	if err != nil || !ready {
 		return false, err
 	}
-	facts.SourceOwnsTip = false
-	if decision := decideLandedRearm(facts, root); decision.Refusal != nil {
+	if decision.Refusal != nil {
 		return false, decision.Refusal
 	}
 	unlock, err := deps.lock()

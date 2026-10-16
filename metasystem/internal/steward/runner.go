@@ -715,6 +715,9 @@ func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReAr
 
 func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRoot, invokingBinary string, clocks ...func() time.Time) (ReArmOutcome, error) {
 	now := time.Now
+	if deps.clock != nil {
+		now = deps.clock.Now
+	}
 	if len(clocks) > 0 {
 		now = clocks[0]
 	}
@@ -739,7 +742,7 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 			}
 			return mintPlan{}, fmt.Errorf("%w: %w", ErrEnrollmentDrift, err)
 		}
-		sourceCommit, err := resolveLandedBuildWithDeps(deps, SystemRearmClock(), repoRoot, installationRoot, landingRef, bytes.Stamp)
+		sourceCommit, err := resolveLandedBuildWithDeps(deps, deps.clock, repoRoot, installationRoot, landingRef, bytes.Stamp)
 		if err != nil {
 			if !errors.Is(err, ErrNotOwned) {
 				return mintPlan{}, fmt.Errorf("resolve landed build: %w", err)
@@ -756,7 +759,7 @@ func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRo
 		if sourceCommit != landedCommit {
 			return mintPlan{}, deferRearm(repoRoot, sourceCommit, landedCommit, now())
 		}
-		if err := verifyEnrollmentBuildSourceWithDeps(deps, SystemRearmClock(), installationRoot, bytes.Stamp, sourceCommit, landedCommit); err != nil {
+		if err := verifyEnrollmentBuildSourceWithDeps(deps, deps.clock, installationRoot, bytes.Stamp, sourceCommit, landedCommit); err != nil {
 			if !errors.Is(err, ErrNotOwned) {
 				return mintPlan{}, fmt.Errorf("verify enrollment build source: %w", err)
 			}
@@ -1011,6 +1014,14 @@ func arm(repoRoot, binaryPath string, replace, machine, allowFixture bool, linea
 }
 
 func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixture bool, lineage string, decide mintDecision, deps rearmResolverDeps) (armOutcome, error) {
+	if deps.prober == nil {
+		deps.prober = identity.KernelProber{}
+	}
+	if deps.launch == nil {
+		deps.launch = func(root string, binary *EnrolledBinary, lineage string) (RunnerRecord, error) {
+			return launchRunner(root, binary, lineage)
+		}
+	}
 	outcome := armOutcome{ReArmOutcome: ReArmOutcome{Stage: StageBeforeMint}}
 	top, err := filepath.Abs(repoRoot)
 	if err != nil {
@@ -1097,14 +1108,14 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 		outcome.Status = "already-current"
 		outcome.Generation = prior.Generation
 		outcome.Message = plan.Message
-		if rec, alive := liveRunner(top); alive {
+		if rec, alive := liveRunnerWithProber(top, deps.prober); alive {
 			outcome.RunnerPid = rec.Pid
 			outcome.Message += fmt.Sprintf(", runner pid %d", rec.Pid)
 		}
 		return outcome, nil
 	}
 	replaceForHumanTerminalWitness := false
-	if rec, alive := liveRunner(top); alive {
+	if rec, alive := liveRunnerWithProber(top, deps.prober); alive {
 		if !replace {
 			humanTerminalBytesChanged := priorErr == nil && plan.MintedBy == "human-terminal" &&
 				bytesPath == prior.InstallPath && bytes.Digest != prior.InstallDigest
@@ -1126,7 +1137,11 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 		outcome.Stage = StageStopped
 	}
 	generation := prior.Generation + 1
-	mintedAt := time.Now().UTC().Format(time.RFC3339)
+	now := time.Now
+	if deps.clock != nil {
+		now = deps.clock.Now
+	}
+	mintedAt := now().UTC().Format(time.RFC3339)
 	witnessed, witnessedAt := plan.Witnessed, plan.WitnessedAt
 	if plan.MintedBy != "machine-rebuild" {
 		witnessed, witnessedAt = generation, mintedAt
@@ -1160,7 +1175,7 @@ func armWithRearmDeps(repoRoot, binaryPath string, replace, machine, allowFixtur
 	if err := pinned.PrepareForExecution(); err != nil {
 		return outcome, err
 	}
-	record, err := launchRunner(top, pinned, lineage)
+	record, err := deps.launch(top, pinned, lineage)
 	if err != nil {
 		return outcome, err
 	}
@@ -1474,11 +1489,15 @@ func disarmSignalling(repoRoot string, signal func(int, syscall.Signal) error) (
 // liveRunner reads the record and proves the process by the
 // clock-step-immune pair; a dead or reused pid is not a runner.
 func liveRunner(repoRoot string) (RunnerRecord, bool) {
+	return liveRunnerWithProber(repoRoot, identity.KernelProber{})
+}
+
+func liveRunnerWithProber(repoRoot string, prober identity.Prober) (RunnerRecord, bool) {
 	var rec RunnerRecord
 	if err := readJSON(runnerRecordPath(repoRoot), &rec); err != nil {
 		return rec, false
 	}
-	live, state, err := identity.KernelProber{}.Probe(rec.Pid)
+	live, state, err := prober.Probe(rec.Pid)
 	if err != nil || state != identity.Alive {
 		return rec, false
 	}

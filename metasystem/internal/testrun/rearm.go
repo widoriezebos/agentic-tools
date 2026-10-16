@@ -83,12 +83,12 @@ func DevgateBootstrapBuildArgv() []string {
 // checkout has commits the remote lacks, or is dirty in an engine input,
 // refuses with the typed reason naming the two commits and the one command.
 func decideLandedRearm(facts landedRearmFacts, checkout string) landedRearmDecision {
-	if facts.SourceOwnsTip {
-		return landedRearmDecision{}
-	}
 	observed := []enginecause.Fact{
 		enginecause.Value("source", facts.Source), enginecause.Value("landing-ref", facts.LandingRef), enginecause.Value("tip", facts.Tip),
 		enginecause.Value("remote", facts.Remote), enginecause.Path("checkout", checkout),
+	}
+	if facts.SourceOwnsTip {
+		return landedRearmDecision{}
 	}
 	if facts.FetchErr != nil {
 		outcomeFacts := append(observed, enginecause.Value("fact", "fetch-failed"))
@@ -165,6 +165,7 @@ var landedRearmGitPins = []string{"-c", "core.useReplaceRefs=false", "-c", "core
 
 type landedRearmGitCommandFactory func(context.Context, ...string) *exec.Cmd
 type landedRearmGitCommandContextKey struct{}
+type landedRearmGitOutputContextKey struct{}
 type landedRearmGitCommandSettledContextKey struct{}
 
 func landedRearmGitCommand(ctx context.Context, args ...string) *exec.Cmd {
@@ -180,6 +181,15 @@ func landedRearmGitStep(ctx context.Context, clock steward.RearmClock, seconds i
 }
 
 func landedRearmGitOutputStep(ctx context.Context, clock steward.RearmClock, seconds int, step, dir string, args ...string) (string, error) {
+	if run, ok := ctx.Value(landedRearmGitOutputContextKey{}).(func(context.Context, string, ...string) ([]byte, error)); ok {
+		var out []byte
+		err := steward.RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, step, func(ctx context.Context, progress func()) error {
+			var err error
+			out, err = run(ctx, dir, args...)
+			return err
+		})
+		return string(out), err
+	}
 	var stdout, stderr bytes.Buffer
 	err := steward.RunRearmStep(ctx, clock, time.Duration(seconds)*time.Second, step, func(stepContext context.Context, progress func()) error {
 		command := landedRearmGitCommand(stepContext, append(append([]string{"-C", dir}, landedRearmGitPins...), args...)...)
@@ -321,10 +331,16 @@ var (
 	landedRearmAttempts = proofrun.ReadAttempts
 )
 
+type landedRearmReadOptions struct {
+	// RequireFetchedTip prevents the steward boundary from comparing cached
+	// ownership after a failed fetch. Preparation may use the last fetched tip.
+	RequireFetchedTip bool
+}
+
 // readLandedRearmFacts fetches the landing ref and reads the three facts the
 // decision needs: source names the enrolled engine's commit, ownsTip says
 // whether that engine still owns the ENGINE projection at a commit.
-func readLandedRearmFacts(ctx context.Context, clock steward.RearmClock, seconds int, installation, projectRoot, prefix, source string, ownsTip func(tip string) (bool, error)) (landedRearmFacts, error) {
+func readLandedRearmFacts(ctx context.Context, clock steward.RearmClock, seconds int, installation, projectRoot, prefix, source string, options landedRearmReadOptions, ownsTip func(tip string) (bool, error)) (landedRearmFacts, error) {
 	ref, remote, branch, err := landingRefParts(ctx, clock, seconds, projectRoot)
 	if err != nil {
 		return landedRearmFacts{}, err
@@ -350,6 +366,9 @@ func readLandedRearmFacts(ctx context.Context, clock steward.RearmClock, seconds
 		return facts, fmt.Errorf("resolve-checkout-head: %w", err)
 	}
 	facts.Head = head
+	if options.RequireFetchedTip && facts.FetchErr != nil {
+		return facts, nil
+	}
 	facts.SourceOwnsTip, err = ownsTip(facts.Tip)
 	if err != nil {
 		return facts, err
@@ -602,7 +621,7 @@ func landedRearm(notes notices, installation, projectRoot, prefix string, namedD
 	if source == "" {
 		source = pinned.BuildStamp()
 	}
-	facts, err := readLandedRearmFacts(context.Background(), landedRearmClock, seconds, installation, projectRoot, prefix, source, func(tip string) (bool, error) {
+	facts, err := readLandedRearmFacts(context.Background(), landedRearmClock, seconds, installation, projectRoot, prefix, source, landedRearmReadOptions{}, func(tip string) (bool, error) {
 		verifyErr := pinned.VerifySourceAtDestinationWithClock(landedRearmClock, installation, tip)
 		if errors.Is(verifyErr, steward.ErrNotOwned) {
 			return false, nil

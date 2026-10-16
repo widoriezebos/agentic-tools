@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 const (
@@ -49,6 +50,9 @@ type rearmResolverDeps struct {
 	runnerExcluded       func(string, bool) (string, bool)
 	// signal stops a runner the arm replaces (syscall.Kill in production).
 	signal func(int, syscall.Signal) error
+	clock  RearmClock
+	launch func(string, *EnrolledBinary, string) (RunnerRecord, error)
+	prober identity.Prober
 }
 
 func defaultRearmResolverDeps() rearmResolverDeps {
@@ -72,6 +76,11 @@ func defaultRearmResolverDeps() rearmResolverDeps {
 		notifyAvailable:      func(root string) bool { _, ok := NotifyCommand(root); return ok },
 		runnerExcluded:       runnerExclusion,
 		signal:               syscall.Kill,
+		clock:                SystemRearmClock(),
+		launch: func(root string, binary *EnrolledBinary, lineage string) (RunnerRecord, error) {
+			return launchRunner(root, binary, lineage)
+		},
+		prober: identity.KernelProber{},
 	}
 }
 
@@ -120,7 +129,13 @@ var (
 // forgiving shape as the runner cadence: a positive integer wins and every
 // absent or malformed value falls back to the default.
 func RearmResolveSeconds(installationRoot string) int {
-	out, err := exec.Command("git", "-C", installationRoot, "config", "--get", rearmResolveSecondsConfig).Output()
+	return rearmResolveSecondsWithGit(installationRoot, func(root string, args ...string) ([]byte, error) {
+		return exec.Command("git", append([]string{"-C", root}, args...)...).Output()
+	})
+}
+
+func rearmResolveSecondsWithGit(installationRoot string, git func(string, ...string) ([]byte, error)) int {
+	out, err := git(installationRoot, "config", "--get", rearmResolveSecondsConfig)
 	if err == nil {
 		if seconds, parseErr := strconv.Atoi(strings.TrimSpace(string(out))); parseErr == nil && seconds > 0 {
 			return seconds
@@ -618,8 +633,84 @@ func projectionChange(entries []projectionDiffEntry, policy behaviorsurface.Poli
 	return "", false, nil
 }
 
+func engineProjectionDiffArgs(source, destination string) []string {
+	return []string{"diff-tree", "-r", "-z", "--no-commit-id", "--no-abbrev", "--no-renames", "--no-ext-diff", "--ignore-submodules=none", "--relative", source, destination}
+}
+
+// RearmOperations supplies the external operations shared by source verification
+// and generation publication. Omitted operations retain their system adapters.
+type RearmOperations struct {
+	Clock        RearmClock
+	Git          func(context.Context, string, ...string) ([]byte, error)
+	LaunchRunner func(string, *EnrolledBinary, string) (RunnerRecord, error)
+	Prober       identity.Prober
+}
+
+func (ops RearmOperations) dependencies() rearmResolverDeps {
+	deps := defaultRearmResolverDeps()
+	if ops.Clock != nil {
+		deps.clock = ops.Clock
+	}
+	if ops.LaunchRunner != nil {
+		deps.launch = ops.LaunchRunner
+	}
+	if ops.Prober != nil {
+		deps.prober = ops.Prober
+	}
+	if ops.Git != nil {
+		raw := func(root string, args ...string) ([]byte, error) { return ops.Git(context.Background(), root, args...) }
+		deps.resolveSeconds = func(root string) int { return rearmResolveSecondsWithGit(root, raw) }
+		text := func(root string, args ...string) (string, error) {
+			out, err := raw(root, args...)
+			return strings.TrimSpace(string(out)), err
+		}
+		deps.localLandingRef = func(root string) (string, error) {
+			return text(root, "config", "--local", "--no-includes", "--get", landingRefConfigKey)
+		}
+		deps.resolvingRef = func(root, ref string) (string, error) {
+			return text(root, "rev-parse", "--verify", "--quiet", ref+"^{commit}")
+		}
+		deps.checkoutHead = func(root string) (string, error) { return text(root, "rev-parse", "--verify", "HEAD^{commit}") }
+		deps.deadlineGit = func(clock RearmClock, seconds int, step, root string, args ...string) (out string, err error) {
+			err = RunRearmStep(context.Background(), clock, time.Duration(seconds)*time.Second, step, func(ctx context.Context, progress func()) error {
+				data, runErr := ops.Git(ctx, root, args...)
+				out = strings.TrimSpace(string(data))
+				return runErr
+			})
+			return
+		}
+		deps.projectionDiff = func(ctx context.Context, root, source, destination string, progress func()) ([]byte, error) {
+			return ops.Git(ctx, root, engineProjectionDiffArgs(source, destination)...)
+		}
+		deps.runnerExcluded = func(root string, allow bool) (string, bool) { return runnerExclusionWithGit(root, allow, raw) }
+		deps.notifyAvailable = func(root string) bool {
+			_, ok := notifyCommandWithDependencies(root, notificationDependencies{configuredCommand: func(root string) ([]byte, error) {
+				return raw(root, "config", "--get", "metasystem.steward.notify-command")
+			}})
+			return ok
+		}
+	}
+	return deps
+}
+
+// ResolveSeconds reads the judgment bound through the same Git adapter.
+func (ops RearmOperations) ResolveSeconds(root string) int {
+	return ops.dependencies().resolveSeconds(root)
+}
+
+// VerifySourceAtDestination authenticates ownership using the pinned bytes.
+func (ops RearmOperations) VerifySourceAtDestination(binary *EnrolledBinary, installation, tip string) error {
+	deps := ops.dependencies()
+	return binary.verifySourceAtDestinationWithDeps(deps, deps.clock, installation, tip)
+}
+
+// ReArmRebuiltEngine retains production arbitration, minting and notification.
+func (ops RearmOperations) ReArmRebuiltEngine(root, installation, binary string) (ReArmOutcome, error) {
+	return reArmRebuiltEngineWithDeps(ops.dependencies(), root, installation, binary)
+}
+
 func diffEngineProjection(ctx context.Context, installationRoot, sourceCommit, destinationCommit string, progress func()) ([]byte, error) {
-	args := []string{"diff-tree", "-r", "-z", "--no-commit-id", "--no-abbrev", "--no-renames", "--no-ext-diff", "--ignore-submodules=none", "--relative", sourceCommit, destinationCommit}
+	args := engineProjectionDiffArgs(sourceCommit, destinationCommit)
 	cmd := exec.CommandContext(ctx, "git", append([]string{"-C", installationRoot}, args...)...)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = RearmProgressWriter(&stdout, progress), RearmProgressWriter(&stderr, progress)

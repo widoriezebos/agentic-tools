@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginebuild"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -168,7 +169,18 @@ func newProcessGitFixtureEnvironment(t *testing.T) (string, []string) {
 func TestStewardBoundaryRefreshUsesServedInstallation(t *testing.T) {
 	t.Parallel()
 	root, environment := newProcessGitFixtureEnvironment(t)
-	bin := canonicalPath(testenv.Engine(t))
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Source verification reads the executable's linked stamp, so the fixture
+	// enrollment and its executable must name the same source.
+	bin := filepath.Join(canonicalPath(t.TempDir()), "metasystem")
+	build := testenv.Go("build", "-buildvcs=false", "-ldflags", enginebuild.StampLinkerFlags(processGitHead), "-o", bin, "./cmd/metasystem")
+	build.Dir = filepath.Clean(filepath.Join(cwd, "..", ".."))
+	if output, err := build.CombinedOutput(); err != nil {
+		t.Fatalf("build stamped fixture engine: %v\n%s", err, output)
+	}
 	if filepath.Dir(filepath.Dir(bin)) == root {
 		t.Fatal("the enrolled binary must belong to a different installation")
 	}
@@ -190,10 +202,6 @@ func TestStewardBoundaryRefreshUsesServedInstallation(t *testing.T) {
 	if err := json.Unmarshal(data, &config); err != nil {
 		t.Fatal(err)
 	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
 	pins := []string{"-C", root, "-c", "core.useReplaceRefs=false", "-c", "core.hooksPath=/dev/null", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 	for _, reply := range []struct {
 		args   []string
@@ -211,6 +219,18 @@ func TestStewardBoundaryRefreshUsesServedInstallation(t *testing.T) {
 		config.Replies = append(config.Replies, processGitReply{Cwd: cwd, Args: append(append([]string(nil), pins...), reply.args...), Stdout: []byte(reply.output)})
 	}
 	config.Replies = append(config.Replies, processGitReply{Cwd: cwd, Args: []string{"-C", root, "config", "--get", "metasystem.steward.rearm-resolve-seconds"}, Exit: 1})
+	for _, args := range [][]string{
+		{"rev-parse", "--verify", "--quiet", processGitHead + "^{commit}"},
+		{"merge-base", "--is-ancestor", processGitHead, processGitHead},
+		{"diff-tree", "-r", "-z", "--no-commit-id", "--no-abbrev", "--no-renames", "--no-ext-diff", "--ignore-submodules=none", "--relative", processGitHead, processGitHead},
+	} {
+		output := ""
+		if args[0] == "rev-parse" {
+			output = processGitHead + "\n"
+		}
+		config.Replies = append(config.Replies, processGitReply{Cwd: cwd, Args: append([]string{"-C", root}, args...), Stdout: []byte(output)})
+	}
+
 	data, err = json.Marshal(config)
 	if err != nil {
 		t.Fatal(err)

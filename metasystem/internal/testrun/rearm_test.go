@@ -142,7 +142,7 @@ type landedRearmFixture struct {
 }
 
 func readLandedRearmFactsForTest(ctx context.Context, installation, projectRoot, prefix, source string, ownsTip func(string) bool) (landedRearmFacts, error) {
-	return readLandedRearmFacts(ctx, steward.SystemRearmClock(), 20, installation, projectRoot, prefix, source, func(tip string) (bool, error) {
+	return readLandedRearmFacts(ctx, steward.SystemRearmClock(), 20, installation, projectRoot, prefix, source, landedRearmReadOptions{}, func(tip string) (bool, error) {
 		return ownsTip(tip), nil
 	})
 }
@@ -400,6 +400,7 @@ func landFixturePath(t *testing.T, fixture landedRearmFixture, path, content str
 }
 
 func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
+	t.Parallel()
 	fixture := newLandedRearmFixture(t)
 	head := landedGit(t, fixture.projectRoot, "rev-parse", "HEAD")
 	notOwned := func(string) bool { return false }
@@ -443,8 +444,8 @@ func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
 	if err != nil || facts.HeadIsAncestor {
 		t.Fatalf("a checkout with a local commit was read as an ancestor of the tip: %+v %v", facts, err)
 	}
-	// A landing ref that cannot be fetched is judged as last fetched: an
-	// engine that owns it runs, a re-arm from it is refused.
+	// A landing ref that cannot be fetched is judged as last fetched:
+	// an engine that owns it runs, but cannot re-arm from it.
 	landedGit(t, fixture.projectRoot, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "absent.git"))
 	facts, err = readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, notOwned)
 	if err != nil || facts.FetchErr == nil || facts.Tip != remoteTip {
@@ -453,8 +454,13 @@ func TestLandedRearmReadsTheCheckoutAgainstItsRemote(t *testing.T) {
 	if d := decideLandedRearm(facts, fixture.projectRoot); d.Rearm || !strings.Contains(fullRefusal(d.Refusal), "fact=fetch-failed") || !strings.Contains(fullRefusal(d.Refusal), "could not be fetched") {
 		t.Fatalf("a re-arm from an unfetchable tip was not refused: %+v", d)
 	}
-	if owned, err := readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { return true }); err != nil || !owned.SourceOwnsTip {
-		t.Fatalf("an engine owning the last fetched tip was refused for the fetch: %+v %v", owned, err)
+	compared := false
+	owned, err = readLandedRearmFactsForTest(context.Background(), fixture.installation, fixture.projectRoot, "metasystem", head, func(string) bool { compared = true; return true })
+	if err != nil || !compared || !owned.SourceOwnsTip || owned.FetchErr == nil || owned.Tip != remoteTip {
+		t.Fatalf("failed fetch lost ownership of the last fetched tip: %+v compared=%t err=%v", owned, compared, err)
+	}
+	if d := decideLandedRearm(owned, fixture.projectRoot); d.Rearm || d.Refusal != nil {
+		t.Fatalf("an engine owning the last fetched tip was not left alone: %+v", d)
 	}
 }
 
@@ -522,7 +528,7 @@ func TestLandedRearmRefusesARepositoryFailureReadingTheLandingRefWithGitDetail(t
 		clock := newScheduledRearmClock()
 		result := make(chan error, 1)
 		go func() {
-			_, err := readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", strings.Repeat("a", 40), func(string) (bool, error) { return false, nil })
+			_, err := readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", strings.Repeat("a", 40), landedRearmReadOptions{}, func(string) (bool, error) { return false, nil })
 			result <- err
 		}()
 		startedToken := make([]byte, len("started"))
@@ -585,7 +591,7 @@ func TestLandedRearmRefusesARepositoryFailureResolvingCheckoutHeadWithGitDetail(
 		clock := newScheduledRearmClock()
 		result := make(chan error, 1)
 		go func() {
-			_, err := readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", strings.Repeat("a", 40), func(string) (bool, error) { return false, nil })
+			_, err := readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", strings.Repeat("a", 40), landedRearmReadOptions{}, func(string) (bool, error) { return false, nil })
 			result <- err
 		}()
 		startedToken := make([]byte, len("started"))
@@ -831,7 +837,7 @@ func TestLandedRearmJudgmentIsProgressBounded(t *testing.T) {
 			return nil
 		})
 	}
-	facts, err := readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", head, func(string) (bool, error) {
+	facts, err := readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", head, landedRearmReadOptions{}, func(string) (bool, error) {
 		err := steward.RunRearmStep(context.Background(), clock, 20*time.Second, "compare", func(_ context.Context, funcProgress func()) error {
 			clock.advance(15 * time.Second)
 			funcProgress()
@@ -863,7 +869,7 @@ func TestLandedRearmRefusesAStalledTipCompareByName(t *testing.T) {
 	}
 	clock := newScheduledRearmClock()
 	ctx, _, _ := scriptedLandedGit(t, landedJudgmentResponses(projectRoot, head, tip)...)
-	_, err := readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", head, func(string) (bool, error) {
+	_, err := readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", head, landedRearmReadOptions{}, func(string) (bool, error) {
 		stall := steward.RunRearmStep(context.Background(), clock, 20*time.Second, "compare", func(ctx context.Context, _ func()) error {
 			clock.advance(21 * time.Second)
 			<-ctx.Done()
@@ -877,7 +883,7 @@ func TestLandedRearmRefusesAStalledTipCompareByName(t *testing.T) {
 	}
 
 	ctx, _, _ = scriptedLandedGit(t, landedJudgmentResponses(projectRoot, head, tip)...)
-	_, err = readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", head, func(string) (bool, error) {
+	_, err = readLandedRearmFacts(ctx, clock, 20, installation, projectRoot, "metasystem", head, landedRearmReadOptions{}, func(string) (bool, error) {
 		return false, errors.New("compare process failed")
 	})
 	refusal = judgmentRefusal(err, engineCheckoutFacts(projectRoot), "compare the enrolled engine with the landed tip")
