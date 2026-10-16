@@ -3087,6 +3087,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-10-16T18:57:51Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestPendingWaitFromChildShell",
       "id": "flake:fa6e0d56a3b2cfd2f1323973e445f1a3d4d58289569895d70c0cd745a1c90565",
@@ -3169,7 +3170,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell",
       "fixBranch": {
         "name": "",
         "commit": "",
