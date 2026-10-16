@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -172,7 +173,7 @@ func observeDirectValidationWindowWithLinker(repoRoot string, now time.Time, lin
 }
 
 func linkCadenceFailure(repoRoot string, observation validationWindowObservation, now time.Time) error {
-	return linkCadenceFailureWithOwners(repoRoot, observation, now, goal.NewWorld, goal.ResolveEndpoint, goal.NewOperationULID)
+	return linkCadenceFailureWithOwners(repoRoot, observation, now, goal.NewWorld, project.PublicationEndpoint, goal.NewOperationULID)
 }
 
 func linkCadenceFailureWithOwners(repoRoot string, observation validationWindowObservation, now time.Time,
@@ -212,7 +213,7 @@ func linkCadenceFailureWithOwners(repoRoot string, observation validationWindowO
 	result, err := goal.DeferFindings(request, record.GoalId, []goal.ReviewObligation{{Finding: finding, Chain: chain,
 		Artifact: "retained cadence result " + observation.RunID, Test: "focused repair for testing attempt " + observation.AttemptID}})
 	if err != nil || (result.Outcome != goal.OutcomeConfirmed && result.Outcome != goal.OutcomeConfirmedLate) {
-		return fmt.Errorf("link cadence failure %s to goal %s: outcome=%s: %w", observation.RunID, record.GoalId, result.Outcome, err)
+		return fmt.Errorf("link cadence failure %s to goal %s: outcome=%s: %s: %w", observation.RunID, record.GoalId, result.Outcome, result.Detail, err)
 	}
 	return nil
 }

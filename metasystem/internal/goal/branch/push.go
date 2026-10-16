@@ -106,6 +106,7 @@ type PushHooks struct {
 }
 
 type PushRequest struct {
+	CheckCandidate                          func(root, commit string) error
 	Repo, Remote, EndpointTip, GoalID, OpID string
 	CheckClaim                              func() error
 	Transport                               PushTransport
@@ -458,6 +459,11 @@ func pushWithRepository(req PushRequest, repository pushRepository) (PushResult,
 	expected := remoteTip
 	if !remotePresent {
 		expected = ""
+	}
+	if req.CheckCandidate != nil {
+		if err := req.CheckCandidate(req.Repo, localTip); err != nil {
+			return PushResult{}, err
+		}
 	}
 	txn := pushTxn{SchemaVersion: 1, Goal: req.GoalID, Remote: req.Remote, Ref: ref, Expected: expected, New: localTip}
 	if err := repository.WriteTxn(req.Repo, req.OpID, txn); err != nil {

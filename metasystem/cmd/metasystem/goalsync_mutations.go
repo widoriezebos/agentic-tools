@@ -39,6 +39,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -546,7 +547,7 @@ func (d syncRequestDependencies) errStream() io.Writer {
 func defaultSyncRequestDependencies() syncRequestDependencies {
 	return syncRequestDependencies{
 		authorityFacts: defaultGoalAuthorityReadFacts(),
-		endpoint:       goal.ResolveEndpoint,
+		endpoint:       project.PublicationEndpoint,
 		machine:        goal.ResolveMachine,
 		ensureGuard:    ensureGuardEnrolled,
 		ownerLineage:   func() string { return os.Getenv("METASYSTEM_OWNER_LINEAGE") },

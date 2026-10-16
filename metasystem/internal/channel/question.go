@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
 type Option struct {
@@ -333,7 +334,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	}
 	// A question without a goal has no goal file to mark.
 	if r.Lineage != "" && r.Goal != "" && r.ProcessAct == "" {
-		ep, e := goal.ResolveEndpoint(r.RepoRoot)
+		ep, e := project.PublicationEndpoint(r.RepoRoot)
 		if e != nil {
 			return q, false, e
 		}

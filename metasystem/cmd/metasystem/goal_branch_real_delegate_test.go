@@ -231,17 +231,23 @@ func realDelegateRosterFields(fields map[string]any) map[string]any {
 }
 
 // realDelegateGoalWorktree builds the claimed, approved goal fixture with a
-// breach-stop capability, the repository's real docs and skills and a placeholder
+// breach-stop capability, synthetic docs and the repository's skills and a placeholder
 // worktree roster, then creates goal/standing-validation with one pushed unit
 // commit and the built engine installed and enrolled in the worktree.
 func realDelegateGoalWorktree(t *testing.T, moduleRoot, engine string) (string, string) {
 	t.Helper()
 	main, _, _ := goalBranchMainCLIFixtureBelow(t, "m1", ".")
-	for _, dir := range []string{"docs", "skills"} {
+	for _, dir := range []string{"skills"} {
 		if output, err := exec.Command("cp", "-R", filepath.Join(moduleRoot, dir), main).CombinedOutput(); err != nil {
 			t.Fatalf("install %s: %v: %s", dir, err, output)
 		}
 	}
+	// This root-layout fixture binds its own chapters inside its checkout.
+	for _, kind := range []string{"intent", "doctrine"} {
+		body := "# Fixture " + kind + "\n\n- Kind: " + kind + "\n- Id: fixture-" + kind + "\n- Status: accepted\n\n## Chapters\n\n- doc:docs/fixture.md — Fixture chapter\n"
+		writeTestingFixtureFile(t, filepath.Join(main, "docs", kind, "index.md"), []byte(body), 0o644)
+	}
+	writeTestingFixtureFile(t, filepath.Join(main, "docs", "fixture.md"), []byte("# Fixture chapter\n"), 0o644)
 	conf := filepath.Join(main, "metasystem.conf")
 	existing, err := os.ReadFile(conf)
 	if err != nil {

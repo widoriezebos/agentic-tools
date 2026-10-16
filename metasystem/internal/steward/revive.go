@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
 
@@ -282,7 +283,7 @@ func claimSeatIdleGoal(repoRoot string, intent Intent) error {
 	if intent.SeatActor == nil || intent.SeatActor.Machine == "" || intent.SeatActor.Lineage == "" || intent.SeatClaimEpoch < 1 {
 		return errors.New("the seat that holds the checkout is not recorded")
 	}
-	endpoint, err := goal.ResolveEndpoint(repoRoot)
+	endpoint, err := project.PublicationEndpoint(repoRoot)
 	if err != nil {
 		return err
 	}

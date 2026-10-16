@@ -116,9 +116,9 @@ func newRecordsBed(t *testing.T) *recordsBed {
 			}
 			return manualCapture{source: top, head: head, tree: "captured", paths: slices.Clone(paths), patch: patch}, nil
 		},
-		recordsCheck: func(string) error {
-			if !b.section || (b.staged == "" && b.tip != strings.Repeat("b", 40)) {
-				t.Fatal("check must read staged records inside the checkout lock")
+		recordsCheck: func(_ string, commit string) error {
+			if b.section || commit != b.tip {
+				t.Fatal("check must read the push-selected commit after the checkout lock")
 			}
 			b.checked = true
 			return nil
@@ -142,8 +142,8 @@ func newRecordsBed(t *testing.T) *recordsBed {
 			return nil
 		},
 		commit: func(req branch.CommitRequest) (string, error) {
-			if !b.section || !b.token || !b.checked || b.staged == "" {
-				t.Fatal("commit needs checked staging and the commit owner's authority")
+			if !b.section || !b.token || b.staged == "" {
+				t.Fatal("commit needs staging and the commit owner's authority")
 			}
 			b.requests = append(b.requests, req)
 			b.tip = strings.Repeat("b", 40)
@@ -153,6 +153,12 @@ func newRecordsBed(t *testing.T) *recordsBed {
 		push: func(req branch.PushRequest) (branch.PushResult, error) {
 			if b.section {
 				t.Fatal("publication ran inside checkout lock")
+			}
+			if req.CheckCandidate == nil {
+				t.Fatal("records publication has no candidate check")
+			}
+			if err := req.CheckCandidate(req.Repo, b.tip); err != nil {
+				return branch.PushResult{}, err
 			}
 			b.pushes = append(b.pushes, req)
 			if b.failPush {
@@ -480,10 +486,12 @@ func TestRecordsExistingGoalStagesTheDiffFromItsTip(t *testing.T) {
 func TestRecordsRefuseABadRecordHead(t *testing.T) {
 	t.Parallel()
 	b := newRecordsBed(t)
-	b.owners.connection.recordsCheck = func(string) error { return fmt.Errorf("%s:3: record head is missing Id", recordsPath) }
+	b.owners.connection.recordsCheck = func(string, string) error {
+		return fmt.Errorf("the page records.md: record head is missing Id; the push waits — fix the page")
+	}
 	code, result := b.land(recordsPath)
-	if code == 0 || !strings.Contains(result.Summary, recordsPath+":3") || len(b.requests) != 0 || len(b.pushes) != 0 || !b.restored {
-		t.Fatalf("bad record refuses and restores staging: %d %+v restored=%v", code, result, b.restored)
+	if code == 0 || !strings.Contains(result.Summary, "record head is missing Id") || len(b.requests) != 1 || len(b.pushes) != 0 || b.restored || result.Outcome != intentPartial {
+		t.Fatalf("bad candidate stays committed without publication: %d %+v restored=%v", code, result, b.restored)
 	}
 }
 func TestRecordsStartTheGoalBranchAtMain(t *testing.T) {

@@ -10,7 +10,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
@@ -113,7 +112,7 @@ func landingFlakeJudgeFor(installation string, git func(string, ...string) (stri
 func (owners laneVerbOwners) landingFlakeRecorder(installation string) func(plain.FlakeRecord) (plain.FlakeRecorded, error) {
 	endpoint, record := owners.mainEndpoint, owners.recordFlake
 	if endpoint == nil {
-		endpoint = branch.MainEndpoint
+		endpoint = mainPublicationEndpoint
 	}
 	if record == nil {
 		record = goal.RecordFlake
@@ -145,7 +144,7 @@ func (owners laneVerbOwners) landingFlakeFixer(installation string) func(goal.Fl
 	return func(f goal.FlakeFact, fix goal.FlakeFix, now time.Time) (goal.FlakeFact, error) {
 		endpoint := owners.mainEndpoint
 		if endpoint == nil {
-			endpoint = branch.MainEndpoint
+			endpoint = mainPublicationEndpoint
 		}
 		e, err := endpoint(installation)
 		if err != nil {

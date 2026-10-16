@@ -98,6 +98,7 @@ func TestBrainBedActorSeamCoverage(t *testing.T) {
 // The incident writer uses the lane machine and agent lineage, with no human authority.
 // intent_planning.go uses only the machine and claim lineage to check area admission.
 // landing_plain.go uses an empty actor for area admission, so it cannot inherit a claimant's arc exemption or human authority.
+// The publication fixture supplies only a test machine and session, with no human authority.
 // Claim preparation uses brainHumanWordClassificationWithFacts, the ledger command's classification owner,
 // before and after session start; it adds no separate caller-classification site.
 const expectedBrainActorSites = `cmd/metasystem/goal.go:			return goal.Actor{}, 0, errors.New("the session holding this checkout hasn't announced itself; start it with metasystem session start")
@@ -135,5 +136,6 @@ internal/goal/recover.go:		r.Actor.Human = by
 internal/missionrunner/launch.go:	if view, err := lease.ClassifyVerbAt(e.installation(), e.classifierInstallation(), int64(pid)); err == nil {
 internal/steward/revive.go:		Actor: goal.Actor{
 internal/steward/validation_window.go:	request := goal.VerbRequest{Endpoint: endpoint, Actor: goal.Actor{Machine: file.Claimed.Machine, Lineage: file.Claimed.Lineage}, Ulid: ulid, Now: now}
+internal/testgoal/publication_fixture.go:	return goal.VerbRequest{Endpoint: e, Actor: goal.Actor{Machine: "fixture", Lineage: "session"}, Ulid: "01J5X000000000000000000002", Now: f.Now}
 internal/ui/act/act.go:		Actor:           goal.Actor{Machine: machine, Lineage: a.lineage, Human: a.human},
 `

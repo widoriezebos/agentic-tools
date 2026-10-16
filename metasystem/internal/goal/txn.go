@@ -45,6 +45,7 @@ func (f PublicationCaptureFailure) Unwrap() error { return f.Cause }
 
 // Endpoint is the resolved synchronization endpoint.
 type Endpoint struct {
+	CheckCandidate func(string) error
 	// ProjectionDeadline supplies fresh-read deadlines; nil uses production timers.
 	ProjectionDeadline func(time.Duration) <-chan time.Time
 	// SplitConfirmed requests child approval after a committed split; delivery
@@ -926,6 +927,13 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			}
 		}
 
+		if e.CheckCandidate != nil {
+			if err := e.CheckCandidate(commit); err != nil {
+				_ = MarkTerminal(e.Root, req.Opid, OutcomeRejected, RecordText(err))
+				CleanupRefs(e, req.Opid)
+				return PublishResult{Outcome: OutcomeRejected, Tip: tip, Commit: commit, Detail: err.Error()}, nil
+			}
+		}
 		if req.BeforePush != nil {
 			if err := req.BeforePush(attempt); err != nil {
 				return PublishResult{}, err

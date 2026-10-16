@@ -27,7 +27,7 @@ import (
 type intentConnectionOwners struct {
 	laneFix        func(root, checkout, goal string) *plain.Fix
 	captureChanges func(top, head, brief string, paths ...string) (manualCapture, error)
-	recordsCheck   func(installation string) error
+	recordsCheck   func(installation, commit string) error
 	applyIndex     func(dir string, patch []byte, reverse bool) error
 	askRebase      func(string, channelAskInput) (channel.Question, []string, int, error)
 	recordRebase   func(*intentInvocation, string, branch.RebaseResult) error

@@ -5,6 +5,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
 // ReceiptAdmissionSource names the repository coordinates used by receipt policy.
@@ -74,7 +75,7 @@ type goalAdmissionReads struct {
 
 func concreteGoalAdmissionReads() goalAdmissionReads {
 	return goalAdmissionReads{
-		NewWorld: goal.NewWorld, ResolveEndpoint: goal.ResolveEndpoint, ResolveMachine: goal.ResolveMachine,
+		NewWorld: goal.NewWorld, ResolveEndpoint: project.PublicationEndpoint, ResolveMachine: goal.ResolveMachine,
 		Receipt: concreteReceiptAdmissionReads(),
 	}
 }

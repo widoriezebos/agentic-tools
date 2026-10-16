@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/governance"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
 type PollConfig struct {
@@ -46,14 +47,14 @@ const channelPollInterval = 2 * time.Minute
 type pollEndpointResolver func(string) (goal.Endpoint, error)
 
 func Poll(ctx context.Context, c PollConfig) (PollResult, error) {
-	return pollWithEndpoint(ctx, c, goal.ResolveEndpoint)
+	return pollWithEndpoint(ctx, c, project.PublicationEndpoint)
 }
 
 // SettleReplies matches committed replies and finishes answers without receiving
 // messages, delivering questions or applying status commands. No session is needed.
 func SettleReplies(ctx context.Context, c PollConfig, resolveEndpoint func(string) (goal.Endpoint, error)) (PollResult, error) {
 	if resolveEndpoint == nil {
-		resolveEndpoint = goal.ResolveEndpoint
+		resolveEndpoint = project.PublicationEndpoint
 	}
 	return runPoll(ctx, c, resolveEndpoint, false)
 }

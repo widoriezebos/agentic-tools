@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/sha256"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"os"
 	"strings"
 
@@ -15,7 +16,7 @@ import (
 func (owners laneVerbOwners) incidentRequest(installation string) (goal.VerbRequest, error) {
 	endpoint := owners.mainEndpoint
 	if endpoint == nil {
-		endpoint = branch.MainEndpoint
+		endpoint = mainPublicationEndpoint
 	}
 	e, err := endpoint(installation)
 	if err != nil {
@@ -128,4 +129,8 @@ func (owners laneVerbOwners) clearLandingIncidents(installation string, proof pl
 		}
 	}
 	return nil
+}
+
+func mainPublicationEndpoint(root string) (goal.Endpoint, error) {
+	return project.CheckedEndpoint(branch.MainEndpoint(root))
 }

@@ -29,7 +29,7 @@ func (inv *intentInvocation) landRecords(id string) intentResult {
 	}
 	recordsCheck := conn.recordsCheck
 	if recordsCheck == nil {
-		recordsCheck = checkRecordFiles
+		recordsCheck = project.CheckCommit
 	}
 	classes, err := pathclass.Load()
 	if err != nil {
@@ -189,9 +189,6 @@ func (inv *intentInvocation) landRecords(id string) intentResult {
 			return err
 		}
 		if len(matching) == 0 {
-			if err := recordsCheck(install); err != nil {
-				return err
-			}
 			commit = tip
 			return nil
 		}
@@ -215,9 +212,6 @@ func (inv *intentInvocation) landRecords(id string) intentResult {
 				return nil
 			}
 			return cause
-		}
-		if err := recordsCheck(install); err != nil {
-			return undo(err)
 		}
 		digest := sha256.Sum256(append([]byte(tip), capture.patch...))
 		err = withToken(func() error {
@@ -243,31 +237,10 @@ func (inv *intentInvocation) landRecords(id string) intentResult {
 	if failure != nil {
 		return *failure
 	}
-	_, err = conn.push(branch.PushRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base, GoalID: id, OpID: "records-" + commit + "-push", CheckClaim: check, Transport: conn.transport})
+	_, err = conn.push(branch.PushRequest{Repo: install, Remote: endpoint.Remote, EndpointTip: base, GoalID: id, OpID: "records-" + commit + "-push", CheckCandidate: recordsCheck, CheckClaim: check, Transport: conn.transport})
 	if err != nil {
-		return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Summary: fmt.Sprintf("goal %s's records are committed as %s but not published: %s", id, shortSHA(commit), oneLine(err.Error())),
+		return intentResult{Targets: targets, Outcome: intentPartial, code: 1, Summary: fmt.Sprintf("goal %s's records are committed as %s but not published: %s", id, shortSHA(commit), strings.Join(strings.Fields(err.Error()), " ")),
 			next: inv.sameCommand(), nextReason: "the same command publishes this commit; it never makes another"}
 	}
 	return inv.landGoal(id, "")
-}
-
-// checkRecordFiles is the static gate's project reader over the staged
-// goal worktree, so invalid heads refuse before the plan is committed.
-func checkRecordFiles(installation string) error {
-	roots, err := project.ResolveRoots(installation)
-	if err != nil {
-		return err
-	}
-	read, err := project.Read(roots)
-	if err != nil {
-		return err
-	}
-	problems := []string{}
-	for _, problem := range read.Problems {
-		problems = append(problems, problem.String())
-	}
-	if len(problems) > 0 {
-		return fmt.Errorf("%s", strings.Join(problems, "; "))
-	}
-	return nil
 }

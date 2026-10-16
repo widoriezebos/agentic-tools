@@ -41,6 +41,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ledgerfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -96,7 +97,7 @@ func (r reads) resolveEndpoint(root string) (goal.Endpoint, error) {
 	if r.endpoint != nil {
 		return r.endpoint(root)
 	}
-	return goal.ResolveEndpoint(root)
+	return project.PublicationEndpoint(root)
 }
 
 func (r reads) resolveMachine(root string) (string, error) {
