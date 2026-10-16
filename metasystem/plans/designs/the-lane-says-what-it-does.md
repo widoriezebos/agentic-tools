@@ -34,6 +34,24 @@ Bounds count changed production lines; behavioural tests and golden fixtures are
 
 - Astra (gpt-6-astra), 2026-10-15: round 1 (08:55) 8 material LS-1..LS-8, folded; round 2 (09:01) 2 material LS-9, LS-10 + 2 minor, folded; round 3 (09:06) 2 material LS-12, LS-13 — the count did not fall, the critique stopped by the stop rule and both were folded by the steward (the unstable-check remedy is `landing prove --trunk --fresh`; an engine incident's corrective hint is `landing incident clear ID` after `landing incident list`). Logs scratchpad/codex-crit-lanesays-{1,2,3}.log.
 
+## Amendment: the headline names the admitted scope; times and durations are for people (2026-10-16, accepted after Astra 2 → 3, stop rule)
+
+### The evidence
+
+- 347: during the scoped check of main c0487ef65 (07:01:45–07:06:05, "main moved by records only; 5 checks run, the rest holds from the 06:08 check") the headline read "proving (0 of counting units, 4.0 min); proving main (0 of counting units, 4.0 min); the lane proves main" for the whole run: the unit count never resolved and the scope was never named; the scope reason exists only in the result afterwards (results.jsonl `scopeReason`). A scoped 5-check run and a 235-unit full proof look the same to a person until they end.
+- 345: `landing health` ends "steward: prove main before asking anything 874.5796184666667 min ago" (`internal/landing/plain/health.go:565`, `measured(elapsedMinutes(...))` rendered with %s); the same line says "lane running since 07:54" for a start 22 hours earlier, without the day.
+
+### The amendment
+
+D1 (the headline is the lane's current state) gains: **the headline names the admitted scope and its progress.** While a check runs, the headline reads the scope pinned at admission (records-scope U1's `admittedScope`: full or scoped, with the selected checks and the reason) and the progress of THAT scope: "proving main (scoped: 5 affected checks of a records-only move, 2 of 5 done, 2 min)" or "proving main (full: 118 of 235 units, 12 min)". "counting" appears at most in the first tick before the plan is known, never after the plan exists; when the plan is known and no unit has finished, the headline says "0 of 5 done", not "counting". The same scope words appear in the result line when the check ends ("main green in scope: 5 affected checks, the rest holds from the 06:08 full check").
+
+D5 (every line a person reads says what the lane does now) gains: **times and durations are for people.** A duration is rendered as whole minutes under an hour, as hours and minutes above ("14 h 34 min"), never as an unrounded number; a time of day older than today carries its day ("since Wed 07:54"); one renderer owns both, used by `landing status`, `landing health` and the describer, with an audit that scans every rendered line of the status, health and describe outputs in the existing fixtures for a bare float or a bare time older than the fixture's day.
+
+U1's scope grows by these two items (its brief is amended accordingly; the brief's inventory sets the bound). Tests: a scoped check fixture whose headline is read at the first tick, mid-run and at the end (the scope words and the progress of the admitted plan, no "counting" after the plan); a full check fixture (the unit progress as today); the health line with a steward row aged 874.58 minutes ("14 h 35 min ago") and a lane start on the previous day ("since Wed 07:54"); mutation: drop the scope words from the running headline (the scoped fixture fails); render the raw float (the audit fails).
+
+### Critique record of the amendment
+- Round 2 (Astra, 10:43–10:52, scratchpad/codex-lanesays-amend-2.log; 3 material, 2 minor; 2 → 3, not falling: stopped by the stop rule, all folded as decisions): LS-A1 the named-group execution owner publishes completions live and status consumes them, with the unfinished-later-group fixture; LS-A2 the denominator is the prerequisite closure of the pinned selection, with a prerequisite fixture; LS-A3 the audit checks duration and timestamp fields against source facts and the injected date, permits fractional load, with a fractional-load fixture; LS-A4 U1 keeps 180 with an inventory and a recorded split if needed; LS-A5 the example reads "2 min". ACCEPTED; the lanesays U1 brief is amended before its build.
+
 ## Not in scope
 
 Clearing asks on evidence of their effect (asks-clear-on-their-effect); incident attribution and non-run truth (lane-proof-finds-its-own-engine); flake closure (red-names-what-failed); records-change scoping (a-records-change-runs-its-affected-checks).
