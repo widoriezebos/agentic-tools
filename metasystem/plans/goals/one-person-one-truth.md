@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 50
+- Sequence: 51
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Lane-test findings 283, 286, 292-300: on 2026-10-13 every step of handing a goal to the machinery was refused to the person, from two roots (three notions of the person; facts kept as files nobody verifies). The resolver admits per act a superset of what each verb admits today, ownership checks are untouched, and every act stays logged in the person's name."
 - Tier: 2
 - Intent: The machine recognises the person once and verifies the facts it acts on. One resolver answers who is present (the proof classes the goal library admits plus a live grant at terminal entry points; --by optional and checked; ownership untouched); dead runs end and release their worktree; a breach stop publishes its record to the ledger; a lane return releases the claim; lane reads count as unit reads; every remedy names a different verb or state, cheapest check first; the engine stamp follows the code tree, so records-only pushes stale nothing. Design: plans/designs/one-person-one-truth.md (Astra critique converged in four rounds).
 - Origin: human
 - Next step: U1: the person resolver and the terminal verbs that call it (brief: agentic-tools-evidence/lane-test-20261009/designs/one-person-one-truth-u1-brief.md), built by Codex in a worktree on main, read, handed to the landing lane with work land --whole; then U2 dead runs, U3 stops and returns, U4 remedies, U5 engine stamp, each through the lane.
 - OpenedAt: 2026-10-14T06:21:01Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-14T06:21:12Z revision=2 opid=PJHP185AAB58DBYDWEJK11GFVF-m1e-c6925449 authority=proven digest=9c8700953e9c630fb96c6a82fcb26e25ec999c4652dfa0646332e8b2fee2e16d episode=2
@@ -19,4 +19,5 @@ History:
 - 2026-10-14T06:21:12Z PJHP185AAB58DBYDWEJK11GFVF-m1e-c6925449 approve actor=human:Wido targets=one-person-one-truth
 - 2026-10-14T06:21:22Z 65ZJJQMNRAV1N6ETGY7TTPD6VQ-m1e-c6925449 set-priority actor=human:Wido targets=one-person-one-truth reason=priority-order subject=one-person-one-truth from=unranked to=1:51 requested-sequence=append
 - 2026-10-14T12:41:39Z BSNXB97A8ZMAX19BF421YHA53H-m1e-c6925449 done actor=m1e+main-1788680071-18713-e76d5d targets=flake-fix-metasystem-internal-adopt-testadoptgitintegrationvendoredwritersuseapplicationstate,one-person-one-truth,unit-run-truthful-and-self-advancing reason=priority-order from=1:51 to=1:50
-Integrity: sha256=8e7f3bc439416cd5ff4f9f23b791fa8b95616abf981f350cd3444778738318fd
+- 2026-10-16T16:30:29Z 135QXTY3TD7XK33ZC4WF6FWBXJ-m1e-670f65d0 set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,asks-clear-on-their-effect,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=asks-clear-on-their-effect from=1:50 to=1:51 requested-sequence=1
+Integrity: sha256=6866b1dc31102465e596f03686e27d8fd276c64a6cfac7d15b0897d14a936dab

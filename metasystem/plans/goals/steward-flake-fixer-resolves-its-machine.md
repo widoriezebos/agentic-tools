@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 49
+- Sequence: 50
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="A nine-line default inside one function the steward already calls; the guard already contains the panic; no data is written differently."
 - Tier: 1
 - Intent: The steward's flake fixer resolves the checkout's machine when the landing agent wires it from empty owners, instead of dereferencing a nil seam on a flake's second sighting (engine incident 20261013T151839-run on 5793734b8).
 - Origin: human
 - Next step: U1 is built on goal/steward-flake-fixer-resolves-its-machine (7e7e04e23): the machine seam defaults like the endpoint seam, with a mutation-checked test; hand it to the landing lane.
 - OpenedAt: 2026-10-13T16:18:04Z
-- Revision: 4
+- Revision: 5
 - Budget: elapsedLimit=4h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-13T16:19:37Z revision=4 opid=9PM56VFKR3D8QEK914YYSAHJPM-m1e-c6925449 authority=proven digest=f6fd0962382baa7d973f6949a839d5faf10f443edd37c785ff653d98ed2852cf episode=4
@@ -19,4 +19,5 @@ History:
 - 2026-10-13T16:18:19Z 8FYK6YQBYA4K3FB7EHFYWRHBBH-m1e-c6925449 approve actor=human:Wido targets=steward-flake-fixer-resolves-its-machine
 - 2026-10-13T16:18:40Z Z1Y92JHNZJ0J5HH7KB0BHGF9CZ-m1e-c6925449 set-priority actor=human:Wido targets=steward-flake-fixer-resolves-its-machine reason=priority-order subject=steward-flake-fixer-resolves-its-machine from=unranked to=1:49 requested-sequence=append
 - 2026-10-13T16:19:37Z 9PM56VFKR3D8QEK914YYSAHJPM-m1e-c6925449 approve actor=human:Wido targets=steward-flake-fixer-resolves-its-machine
-Integrity: sha256=1b48f7ecc9f07b8c1cad30e58ace5dbb756ef678870b87737c189f7c089eab64
+- 2026-10-16T16:30:29Z 135QXTY3TD7XK33ZC4WF6FWBXJ-m1e-670f65d0 set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,asks-clear-on-their-effect,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=asks-clear-on-their-effect from=1:49 to=1:50 requested-sequence=1
+Integrity: sha256=124670cc6ea89cbbb0d54e620157fabc7a0cb3db1761d7b2c6c82b6d3880a503
