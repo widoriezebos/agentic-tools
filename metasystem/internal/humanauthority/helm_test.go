@@ -143,3 +143,34 @@ func TestHelmProofNeedsAHolderAndATime(t *testing.T) {
 		t.Fatal("a helm proof with an empty holder is valid")
 	}
 }
+
+func TestRecordedEnrolledProofNeverRestoresAuthority(t *testing.T) {
+	t.Parallel()
+	root := authorityRoot(t)
+	reader := agentShellReader()
+	enrollTestTerminal(t, root, reader)
+	for _, pid := range []int64{30, 80} {
+		reader.reads = map[int64]int{}
+		proof, err := prove(root, pid, reader, time.Unix(1100, 0), func(string, int64) (HelmGrant, bool) {
+			return HelmGrant{By: "Wido", Class: "DELEGATE", Checkout: root}, true
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+		data, err := json.Marshal(proof)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var recorded Proof
+		if err := json.Unmarshal(data, &recorded); err != nil {
+			t.Fatal(err)
+		}
+		if !recorded.RecordedEnrolled() || recorded.ValidFor(root) {
+			t.Fatalf("recorded proof lost shape or became authority: %+v", recorded)
+		}
+		recorded.CheckedAt = time.Time{}
+		if recorded.RecordedEnrolled() {
+			t.Fatal("malformed recorded proof accepted")
+		}
+	}
+}

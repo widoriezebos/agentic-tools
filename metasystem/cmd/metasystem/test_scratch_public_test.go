@@ -18,9 +18,11 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"golang.org/x/sys/unix"
 )
 
@@ -37,6 +39,10 @@ input="$2"
 report="$3"
 probe="$SCRATCH_PROBE"
 token="$id-$$"
+if [ -f "$probe/observe-admission" ]; then
+  mkdir -p "$probe/at-start/artifacts/agents/proof-runs/attempts"
+  cp "$SCRATCH_CONTROL"/artifacts/agents/proof-runs/attempts/*.json "$probe/at-start/artifacts/agents/proof-runs/attempts/"
+fi
 mkdir -p "$report"
 printf '%s\n' "$$" > "$probe/pid"
 for name in HOME TMPDIR GOCACHE XDG_CACHE_HOME XDG_CONFIG_HOME STATICCHECK_CACHE; do
@@ -210,6 +216,7 @@ func newScratchPublicFixture(t *testing.T, input string, blocking bool) *scratch
 		base.contract.Surfaces[0].Paths = append(base.contract.Surfaces[0].Paths, "scripts/check.sh")
 		env := base.contract.Groups[0].Env
 		env["SCRATCH_PROBE"] = fixture.probe
+		env["SCRATCH_CONTROL"] = base.root
 		if blocking {
 			env["SCRATCH_READY"], env["SCRATCH_RELEASE"] = fixture.ready, fixture.release
 		}
@@ -547,6 +554,71 @@ func TestTestRunScratchFailureKeepsEvidenceNotScratch(t *testing.T) {
 	if stored.TestResult != nil && (stored.TestResult.AttemptID != result.AttemptID || stored.TestResult.Groups[0].Status != "failed") {
 		t.Fatalf("retained ledger result differs from the CLI result: %+v", stored.TestResult)
 	}
+
+	priorPath, _ := proofrun.AttemptPath(f.control, result.AttemptID)
+	priorBytes, err := os.ReadFile(priorPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	priorLog, err := os.ReadFile(result.Groups[0].LogPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = humanauthority.Enroll(f.root, 20, person(), "Wido", helmNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	agentResult := filepath.Join(t.TempDir(), "agent.json")
+	if code, out := f.humanCommand("agent", f.runArgs(agentResult)...); code != proofrun.ExitRetryRequired {
+		t.Fatalf("ordinary agent bypassed the failed producer: %d %s", code, out)
+	}
+	if err := os.WriteFile(filepath.Join(f.probe, "observe-admission"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	takeHelmAt(t, f.control)
+	previous := result.AttemptID
+	for _, route := range []string{"terminal", "helm"} {
+		who := map[string]string{"terminal": "Wido", "helm": "wido"}[route]
+		planOut := f.requireHumanCommand(route, append(append([]string{"test", "plan"}, f.args...), "--json")...)
+		var plan struct{ Data testrun.PlanOutput }
+		if err := json.Unmarshal([]byte(planOut), &plan); err != nil || plan.Data.Admission == nil || plan.Data.Admission.GoalID != "portable" || plan.Data.Admission.AccountingRevision != 2 {
+			t.Fatalf("%s plan lost human accounting: %v %s", route, err, planOut)
+		}
+		rerunPath := filepath.Join(t.TempDir(), route+".json")
+		code, out := f.humanCommand(route, f.runArgs(rerunPath)...)
+		if code == 0 || code == proofrun.ExitRetryRequired || code == proofrun.ExitAdmissionRefused {
+			t.Fatalf("%s did not execute the failing native check: %d %s", route, code, out)
+		}
+		rerun := readScratchResult(t, rerunPath)
+		if len(rerun.Groups) != 1 || rerun.Groups[0].Status != "failed" || rerun.Groups[0].NativeExitStatus == nil || *rerun.Groups[0].NativeExitStatus != 9 {
+			t.Fatalf("%s rerun did not execute the failed native producer: %+v", route, rerun.Groups)
+		}
+		attempt, err := proofrun.ReadAttempt(f.control, rerun.AttemptID)
+		if err != nil || attempt.Admission == nil || attempt.Admission.By != who || attempt.Admission.Authority != map[string]string{"terminal": "enrolled-terminal", "helm": "helm"}[route] || attempt.Admission.Rerun != previous || attempt.PreviousAttempt != previous || attempt.Retry != nil || rerun.Admission == nil || rerun.Admission.Rerun != previous || attempt.TestResult == nil {
+			t.Fatalf("%s rerun lost admission: %+v result=%+v err=%v", route, attempt, rerun, err)
+		}
+		startedPath, _ := proofrun.AttemptPath(filepath.Join(f.probe, "at-start"), rerun.AttemptID)
+		startedBytes, err := os.ReadFile(startedPath)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var started proofrun.Attempt
+		err = json.Unmarshal(startedBytes, &started)
+		if err != nil || started.Terminal != nil || started.PreviousAttempt != previous || started.Admission == nil || started.Admission.Rerun != previous || started.Admission.By != who || started.ReservedMinutes == 0 {
+			t.Fatalf("%s execution began without a recorded override and predecessor: %+v %v", route, started, err)
+		}
+		if !strings.Contains(out, "rerun for "+who+" over the failed attempt "+previous+": its evidence is kept") {
+			t.Fatalf("rerun was not explained: %s", out)
+		}
+		f.requireCommand("test", "status", "--result", rerunPath, "--expensive-ms", "5000")
+		previous = rerun.AttemptID
+	}
+	if after, err := os.ReadFile(priorPath); err != nil || !bytes.Equal(priorBytes, after) {
+		t.Fatalf("failed attempt changed: %v", err)
+	}
+	if after, err := os.ReadFile(result.Groups[0].LogPath); err != nil || !bytes.Equal(priorLog, after) {
+		t.Fatalf("failed log changed: %v", err)
+	}
 }
 
 // blockedScratchRun is one real `test run` whose workload waits on a FIFO.
@@ -837,4 +909,79 @@ func TestTestRunScratchLauncherCrashWaitsForDrainThenRecovers(t *testing.T) {
 	f.requirePreserved(peer, sentinel, prefixed)
 	f.requireGroupsDrained()
 	f.requireWorkloadReleased()
+}
+
+// Only process observations and their clock are injected; preparation, admission,
+// execution and strict record readers are the public command's real owners.
+func init() {
+	testHelperCommands["fixture-human-test"] = func(args []string) int {
+		route, root := args[0], resolvedHelmRoot(args[1])
+		prepareTestingForCommand = func(request testrun.SelectionRequest) (testrun.Preparation, error) {
+			request.AuthorityReader, request.AuthorityNow, request.CallerPID = person(), helmNow, 20
+			if route != "terminal" {
+				request.CallerPID = 80
+			}
+			return testrun.Prepare(request)
+		}
+		if route == "helm" {
+			useHelmAdmitter(root, newFakeHelm(root, filepath.Join(root, ".git"), "DELEGATE").admitter)
+		}
+		return dispatch(args[2:])
+	}
+}
+
+func (f *scratchPublicFixture) humanCommand(route string, args ...string) (int, string) {
+	f.t.Helper()
+	command := f.proofCommand.command(fixtureCommandEnvironment(f.t, f.commandEnvironment()...), commandTestExecutable(f.t), append([]string{"fixture-human-test", route, f.root}, args...)...)
+	command.Dir = f.root
+	output, err := command.CombinedOutput()
+	if err == nil {
+		return 0, string(output)
+	}
+	var exit *exec.ExitError
+	if errors.As(err, &exit) {
+		return exit.ExitCode(), string(output)
+	}
+	f.t.Fatalf("human command: %v %s", err, output)
+	return 1, ""
+}
+
+func (f *scratchPublicFixture) requireHumanCommand(route string, args ...string) string {
+	f.t.Helper()
+	code, out := f.humanCommand(route, args...)
+	if code != 0 {
+		f.t.Fatalf("%s command: %d %s", route, code, out)
+	}
+	return out
+}
+
+func TestHumanTestPreparationKeepsProtectedCheck(t *testing.T) {
+	t.Parallel()
+	f := newScratchPublicFixture(t, "red a", false)
+	_, err := humanauthority.Enroll(f.root, 20, person(), "Wido", helmNow)
+	if err != nil {
+		t.Fatal(err)
+	}
+	takeHelmAt(t, f.control)
+	// The candidate keeps the adapter and unknown-path fallback, but removes
+	// the requirements for these known paths.
+	f.contract.Always.Canary, f.contract.Cadence = nil, nil
+	f.contract.Surfaces[0].Standard, f.contract.Surfaces[0].Critical = nil, nil
+	f.writeContract()
+	tree := f.commit("candidate removes protected check requirements")
+	f.args = []string{"--root", f.root, "--goal", "portable", "--tree", tree, "--mode", "auto", "--purpose", "delivery"}
+	planOut := f.requireHumanCommand("terminal", append(append([]string{"test", "plan"}, f.args...), "--json")...)
+	var plan struct{ Data testrun.PlanOutput }
+	if err := json.Unmarshal([]byte(planOut), &plan); err != nil || !slices.Contains(plan.Data.Plan.RequiredGroups, "app-a") || plan.Data.Admission == nil {
+		t.Fatalf("person's plan dropped protected check: %v %s", err, planOut)
+	}
+	resultPath := filepath.Join(t.TempDir(), "protected.json")
+	code, out := f.humanCommand("terminal", f.runArgs(resultPath)...)
+	if code == 0 || code == proofrun.ExitAdmissionRefused {
+		t.Fatalf("protected check not enforced: %d %s", code, out)
+	}
+	result := readScratchResult(t, resultPath)
+	if len(result.Groups) != 1 || result.Groups[0].ID != "app-a" || result.Groups[0].Status != "failed" {
+		t.Fatalf("protected check not executed: %+v", result)
+	}
 }

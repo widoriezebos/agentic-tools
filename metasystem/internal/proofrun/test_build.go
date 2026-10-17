@@ -54,6 +54,7 @@ const (
 )
 
 type TestRunRequest struct {
+	Admission      *TestAdmission `json:",omitempty"`
 	nativeProgress func(planned int, completed []PackageExecution)
 	ProjectRoot    string
 	openCandidate  func(projectRoot, candidateTree string) (candidateWorkspace, error)
@@ -1901,7 +1902,7 @@ func newTestResult(request TestRunRequest, semanticNow time.Time) TestResult {
 		resolvedAdmissionMaximum := request.AdmissionMaximum
 		admissionMaximum = &resolvedAdmissionMaximum
 	}
-	return TestResult{SchemaVersion: schemaVersion, AttemptID: request.AttemptID, EngineRearm: request.EngineRearm,
+	return TestResult{Admission: request.Admission, SchemaVersion: schemaVersion, AttemptID: request.AttemptID, EngineRearm: request.EngineRearm,
 		WorkerPolicyVersion: workerPolicyVersion, Workers: workers, AdmissionMaximum: admissionMaximum,
 		Purpose: request.Plan.Purpose, RequestedMode: request.Plan.RequestedMode, RequiredMode: request.Plan.RequiredMode,
 		ExecutedMode: request.Plan.ExecutedMode, ProjectRoot: request.ProjectRoot, InstallationPrefix: request.InstallationPrefix,

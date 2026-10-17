@@ -823,7 +823,7 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	freshnessProjection := preRequest.FreshnessCandidateProjection
 	freshBinding := testrun.FreshnessBinding(preRequest, identities, request.FreshEpisode)
 	preRequest.FreshnessBinding = freshBinding
-	admission := proofLaunchAdmission{ControlRoot: controlRoot,
+	admission := proofLaunchAdmission{Admission: prepared.Admission, ControlRoot: controlRoot,
 		ExecutionRoot: prepared.ProjectRoot, ConfPath: prepared.ConfPath, GoalID: request.GoalID, AuthorityGoalID: request.AuthorityGoalID,
 		CandidateRevision: prepared.AccountingRevision, RetryDecision: request.RetryDecision,
 		CapMin: request.CapMin, ExpectedGoalRevision: request.ExpectedGoalRevision,
@@ -922,7 +922,11 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		invocation.fail("metasystem test run:", err)
 		return retainIncompleteProofAttempt(invocation.stderr, controlRoot, attempt.AttemptID, joined, 1)
 	}
+	if attempt.Admission != nil && attempt.Admission.Rerun != "" {
+		fmt.Fprintf(invocation.stderr, "rerun for %s over the failed attempt %s: its evidence is kept\n", attempt.Admission.By, attempt.Admission.Rerun)
+	}
 	runRequest := testrun.RunRequest(prepared, attempt.AttemptID, filepath.Join(pathsRoot, "groups"), candidateEngine.Path, candidateEngine.Digest, candidateEngine.Commit)
+	runRequest.Admission = attempt.Admission
 	runRequest.FreshnessEpisode, runRequest.FreshnessBinding, runRequest.FreshnessExpiresAt = request.FreshEpisode, freshBinding, request.FreshExpiresAt
 	runRequest.FreshGroups = freshGroups
 	runRequest.FreshnessCandidateProjection = freshnessProjection

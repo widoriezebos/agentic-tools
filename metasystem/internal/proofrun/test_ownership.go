@@ -499,7 +499,7 @@ func sharedComponentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchRe
 			}
 		}
 	}
-	if failed != nil && request.RetryDecisionPath == "" {
+	if failed != nil && request.RetryDecisionPath == "" && !request.Admission.authorizes(request.ControlRoot) {
 		return failed, LaunchResult{SchemaVersion: 1, Disposition: DispositionRetryRequired,
 			AttemptID: failed.AttemptID, PriorAttempt: failed.AttemptID,
 			EvidencePath: mustAttemptPath(request.ControlRoot, failed.AttemptID), ExitStatus: ExitRetryRequired}, true, nil
@@ -570,6 +570,9 @@ func WaitForTestProducerWithWaitCheck(ctx context.Context, root string, consumer
 }
 
 func validateAdmittedTestResult(attempt Attempt, result TestResult, now time.Time) error {
+	if !sameTestAdmission(attempt.Admission, result.Admission) {
+		return fmt.Errorf("test run results differ from admitted human authority")
+	}
 	if len(attempt.TestInventory) == 0 {
 		return nil
 	}

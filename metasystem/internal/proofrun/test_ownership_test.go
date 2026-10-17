@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -1106,5 +1107,87 @@ func TestSharedNativeProducerLaunchesOnce(t *testing.T) {
 	data, err = os.ReadFile(counter)
 	if err != nil || string(data) != "xx" {
 		t.Fatalf("native launches after fresh diagnosis %q err=%v", data, err)
+	}
+}
+
+func TestHumanRetryAdmissionIsRecordedAndStrictlyRead(t *testing.T) {
+	t.Parallel()
+	f := newOwnershipFixture(t)
+	f.now = time.Date(2026, 10, 16, 10, 0, 0, 0, time.UTC)
+	groups := map[string]string{"check": strings.Repeat("a", 64)}
+	prior := f.reserveExecuted("goal-a", "red", groups, "", "", 0)
+	f.finish(prior, map[string]string{"check": "failed"}, f.now.Add(time.Second))
+	proof, err := humanauthority.HelmProof(f.root, humanauthority.HelmGrant{By: "Wido", Class: "DELEGATE", Checkout: f.root}, f.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	admission := &TestAdmission{By: "Wido", Authority: "helm", CheckedAt: f.now.Format(time.RFC3339Nano), GoalID: "goal-a", AccountingRevision: 1, Proof: proof}
+	request := candidateAdmission(AdmissionRequest{ControlRoot: f.root, ExecutionRoot: f.root, GoalID: "goal-a", GoalRevision: 1, AccountingRevision: 1, ReservedMinutes: 2,
+		Identity: prior.ProofIdentity, Launcher: f.launcher, Now: f.now.Add(2 * time.Second), ComponentIdentities: groups, SharedComponents: true})
+	request.CandidateGoalID, request.CandidateRevision = "candidate-b", 7
+	request = WithTestHostAdmissionDirectory(request, f.admissionDir)
+	if decision, decided, err := NoChildDecisionLocked(request); err != nil || !decided || decision.Disposition != DispositionRetryRequired {
+		t.Fatalf("agent retry = %+v %t %v", decision, decided, err)
+	}
+	request.Admission = admission
+	data, err := json.Marshal(admission)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var parsed TestAdmission
+	if err := json.Unmarshal(data, &parsed); err != nil {
+		t.Fatal(err)
+	}
+	request.Admission = &parsed
+	if decision, decided, err := NoChildDecisionLocked(request); err != nil || !decided || decision.Disposition != DispositionRetryRequired {
+		t.Fatalf("parsed record authorized retry: %+v %t %v", decision, decided, err)
+	}
+	request.Admission = admission
+	if decision, decided, err := NoChildDecisionLocked(request); err != nil || decided {
+		t.Fatalf("human early retry = %+v %t %v", decision, decided, err)
+	}
+	attempt, decision, err := reserveLocked(request)
+	if err != nil || decision.Disposition != DispositionExecuted {
+		t.Fatalf("human reservation = %+v %v", decision, err)
+	}
+	recorded, err := ReadAttempt(f.root, attempt.AttemptID)
+	if err != nil || recorded.Terminal != nil || recorded.Admission == nil || recorded.Admission.Rerun != prior.AttemptID || recorded.Admission.GoalID != "goal-a" || recorded.Admission.AccountingRevision != 1 || recorded.CandidateGoalID != "candidate-b" || recorded.Retry != nil {
+		t.Fatalf("reserved human retry = %+v %v", recorded, err)
+	}
+	result := componentAttemptResult(attempt.AttemptID, "check", groups["check"], "passed")
+	result.Admission = attempt.Admission
+	if _, err := FinalizeAttemptWithTestResultLocked(f.root, attempt.AttemptID, TerminalSuccess, 0, "human rerun", nil, &result, f.now.Add(3*time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	recorded, err = ReadAttempt(f.root, attempt.AttemptID)
+	if err != nil || recorded.TestResult == nil || !sameTestAdmission(recorded.Admission, recorded.TestResult.Admission) {
+		t.Fatalf("terminal admission = %+v %v", recorded, err)
+	}
+	for _, mutate := range []func(*Attempt){
+		func(a *Attempt) { a.Admission = nil },
+		func(a *Attempt) { a.PreviousAttempt = "" },
+		func(a *Attempt) { a.Retry = &RetryEvidence{SchemaVersion: 1, PriorAttempt: prior.AttemptID} },
+		func(a *Attempt) { a.Admission.By = "" },
+		func(a *Attempt) { a.Admission.Authority = "agent" },
+		func(a *Attempt) { a.Admission.AccountingRevision++ },
+		func(a *Attempt) { a.Admission.Proof.CheckedAt = time.Time{} },
+		func(a *Attempt) { a.TestResult.Admission = nil },
+	} {
+		encoded, err := json.Marshal(recorded)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var broken Attempt
+		if err := json.Unmarshal(encoded, &broken); err != nil {
+			t.Fatal(err)
+		}
+		broken.TestResult.Admission = broken.Admission
+		mutate(&broken)
+		if err := validateAttempt(broken); err == nil {
+			t.Fatalf("malformed human record accepted: %+v", broken)
+		}
+	}
+	if legacy, err := ReadAttempt(f.root, prior.AttemptID); err != nil || legacy.Admission != nil {
+		t.Fatalf("legacy agent record unreadable: %+v %v", legacy, err)
 	}
 }

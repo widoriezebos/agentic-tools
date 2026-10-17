@@ -22,12 +22,14 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/digest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginecause"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -44,6 +46,7 @@ import (
 const PolicyProbeWorkerEnvironment = "METASYSTEM_POLICY_PROBE_WORKER"
 
 type Preparation struct {
+	Admission                                                *proofrun.TestAdmission
 	Installation, ControlRoot, ProjectRoot, Prefix, ConfPath string
 	GoalID                                                   string
 	AccountingRevision                                       uint64
@@ -73,17 +76,18 @@ type UnmatchedInput struct {
 }
 
 type PlanOutput struct {
-	SchemaVersion      int                `json:"schemaVersion"`
-	ProjectRoot        string             `json:"projectRoot"`
-	InstallationPrefix string             `json:"installationPrefix"`
-	BaseCommit         string             `json:"baseCommit"`
-	PolicyBaseCommit   string             `json:"policyBaseCommit"`
-	CandidateTree      string             `json:"candidateTree"`
-	ContractDigest     string             `json:"contractDigest"`
-	BaseContractDigest string             `json:"baseContractDigest"`
-	Plan               testpolicy.Plan    `json:"plan"`
-	Groups             []testpolicy.Group `json:"groups"`
-	UnmatchedInputs    []UnmatchedInput   `json:"unmatchedInputs,omitempty"`
+	Admission          *proofrun.TestAdmission `json:"admission,omitempty"`
+	SchemaVersion      int                     `json:"schemaVersion"`
+	ProjectRoot        string                  `json:"projectRoot"`
+	InstallationPrefix string                  `json:"installationPrefix"`
+	BaseCommit         string                  `json:"baseCommit"`
+	PolicyBaseCommit   string                  `json:"policyBaseCommit"`
+	CandidateTree      string                  `json:"candidateTree"`
+	ContractDigest     string                  `json:"contractDigest"`
+	BaseContractDigest string                  `json:"baseContractDigest"`
+	Plan               testpolicy.Plan         `json:"plan"`
+	Groups             []testpolicy.Group      `json:"groups"`
+	UnmatchedInputs    []UnmatchedInput        `json:"unmatchedInputs,omitempty"`
 }
 
 func (prepared Preparation) ProofControlRoot() string {
@@ -94,6 +98,8 @@ func (prepared Preparation) ProofControlRoot() string {
 }
 
 type SelectionRequest struct {
+	AuthorityReader                                                                     humanauthority.Reader
+	AuthorityNow                                                                        time.Time
 	Root, ControlRoot, GoalID, AuthorityGoalID, Tree, CapMin, RetryDecision, ResultPath string
 	// Verbose asks for the details behind a refusal: its code and facts.
 	Verbose                                                    bool
@@ -284,6 +290,11 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 	if err != nil || unborn {
 		return Preparation{}, fmt.Errorf("testing requires a committed project HEAD")
 	}
+	authorityNow := request.AuthorityNow
+	if authorityNow.IsZero() {
+		authorityNow = time.Now().UTC()
+	}
+	admission := proofrun.AuthenticateTestAdmission(controlRoot, request.EffectiveCallerPID(), request.AuthorityReader, authorityNow)
 	goalID := request.GoalID
 	accountToGoal, err := accountsToGoal(request)
 	if err != nil {
@@ -413,6 +424,12 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 			return Preparation{}, err
 		}
 	}
+	if !accountToGoal {
+		admission = nil
+	}
+	if admission != nil {
+		admission.GoalID, admission.AccountingRevision = goalID, accountingRevision
+	}
 	plan, err := testpolicy.Select(effective, testpolicy.SelectionRequest{ChangedPaths: changedPaths, GoalRisk: risk,
 		RequestedMode: request.Mode, Purpose: request.Purpose, Groups: request.Groups})
 	if err != nil {
@@ -469,7 +486,7 @@ func prepareOnce(request SelectionRequest) (Preparation, error) {
 		plan.Uncertainty = append(plan.Uncertainty, "trusted destination policy base unavailable: "+policyBaseErr.Error())
 	}
 	return Preparation{Installation: installation, ControlRoot: controlRoot, ProjectRoot: projectRoot, Prefix: strings.TrimSuffix(prefix, "/"),
-		GoalID: goalID, AccountingRevision: accountingRevision,
+		GoalID: goalID, AccountingRevision: accountingRevision, Admission: admission,
 		ConfPath: confPath, BaseCommit: baseCommit, PolicyBaseCommit: policyBaseCommit, CandidateTree: candidateTree, BaseContract: baseContract,
 		CandidateContract: candidateContract, EffectiveContract: effective, ContractDigest: digest.SHA256(candidateBytes),
 		BaseContractDigest: baseContractDigest, PolicyEngineDigest: policyEngineDigest, PolicyEngine: policyEngine,
@@ -876,13 +893,13 @@ func PlanOutputOf(prepared Preparation) PlanOutput {
 	for _, id := range prepared.Plan.SelectedGroups {
 		groups = append(groups, groupsByID[id])
 	}
-	return PlanOutput{SchemaVersion: 1, ProjectRoot: prepared.ProjectRoot, InstallationPrefix: prepared.Prefix,
+	return PlanOutput{Admission: prepared.Admission, SchemaVersion: 1, ProjectRoot: prepared.ProjectRoot, InstallationPrefix: prepared.Prefix,
 		BaseCommit: prepared.BaseCommit, PolicyBaseCommit: prepared.PolicyBaseCommit, CandidateTree: prepared.CandidateTree, ContractDigest: prepared.ContractDigest,
 		BaseContractDigest: prepared.BaseContractDigest, Plan: prepared.Plan, Groups: groups, UnmatchedInputs: prepared.UnmatchedInputs}
 }
 
 func RunRequest(prepared Preparation, attemptID, logRoot, candidateEngine, candidateEngineDigest, candidateEngineBuildIdentity string) proofrun.TestRunRequest {
-	request := proofrun.TestRunRequest{ProjectRoot: prepared.ProjectRoot, InstallationPrefix: prepared.Prefix,
+	request := proofrun.TestRunRequest{Admission: prepared.Admission, ProjectRoot: prepared.ProjectRoot, InstallationPrefix: prepared.Prefix,
 		ControlRoot:   prepared.ProofControlRoot(),
 		CandidateTree: prepared.CandidateTree, BaseCommit: prepared.BaseCommit, PolicyBaseCommit: prepared.PolicyBaseCommit,
 		Contract: prepared.EffectiveContract, Plan: prepared.Plan, AttemptID: attemptID, Environment: prepared.Environment,

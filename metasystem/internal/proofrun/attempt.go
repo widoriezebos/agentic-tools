@@ -173,6 +173,7 @@ type Attempt struct {
 	Terminal             *AttemptTerminal  `json:"terminal,omitempty"`
 	PreviousAttempt      string            `json:"previousAttempt,omitempty"`
 	Retry                *RetryEvidence    `json:"retryEvidence,omitempty"`
+	Admission            *TestAdmission    `json:"admission,omitempty"`
 	ReservationOwner     *ReservationOwner `json:"reservationOwner,omitempty"`
 	CancellationIntent   string            `json:"cancellationIntent,omitempty"`
 	PendingCoverage      *PendingCoverage  `json:"pendingCoverage,omitempty"`
@@ -220,6 +221,7 @@ type RetryDecision struct {
 }
 
 type AdmissionRequest struct {
+	Admission            *TestAdmission
 	ControlRoot          string
 	ExecutionRoot        string
 	ConfPath             string
@@ -535,6 +537,9 @@ func validateAttempt(attempt Attempt) error {
 		return fmt.Errorf("test run record of schema %d cannot claim fresh groups", attempt.SchemaVersion)
 	}
 	if attempt.TestResult != nil {
+		if !sameTestAdmission(attempt.Admission, attempt.TestResult.Admission) {
+			return fmt.Errorf("test run results differ from admitted human authority")
+		}
 		if err := ValidateTestResult(*attempt.TestResult); err != nil {
 			return fmt.Errorf("test run results: %w", err)
 		}
@@ -575,8 +580,16 @@ func validateAttempt(attempt Attempt) error {
 		}
 		seenProcesses[key] = true
 	}
+	if err := attempt.Admission.validate(); err != nil {
+		return err
+	}
+	if admission := attempt.Admission; admission != nil {
+		if admission.GoalID != attempt.GoalID || admission.AccountingRevision != attempt.AccountingRevision || admission.Rerun != attempt.PreviousAttempt || attempt.Retry != nil || attempt.ProofIdentity.CommandClass != "testing" {
+			return fmt.Errorf("test run human admission contradicts its accounting or rerun")
+		}
+	}
 	if attempt.PreviousAttempt != "" {
-		if !safeAttemptID(attempt.PreviousAttempt) || attempt.Retry == nil || attempt.Retry.PriorAttempt != attempt.PreviousAttempt {
+		if !safeAttemptID(attempt.PreviousAttempt) || (attempt.Retry == nil && (attempt.Admission == nil || attempt.Admission.Rerun != attempt.PreviousAttempt)) || attempt.Retry != nil && attempt.Retry.PriorAttempt != attempt.PreviousAttempt {
 			return fmt.Errorf("test run retry does not name the run it retries")
 		}
 	} else if attempt.Retry != nil {
@@ -741,7 +754,7 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 		}
 	}
 	var retry *RetryEvidence
-	if previous != nil {
+	if previous != nil && !request.Admission.authorizes(request.ControlRoot) {
 		retry, err = readRetryDecision(request.RetryDecisionPath, request.ControlRoot, request, previous.ProofIdentity.IdentityDigest, previous.AttemptID)
 		if err != nil {
 			return Attempt{}, LaunchResult{}, err
@@ -801,6 +814,16 @@ func ReserveLocked(request AdmissionRequest) (Attempt, LaunchResult, error) {
 		Launcher: request.Launcher, ProcessKeys: []string{}, Retry: retry, ReservationOwner: request.ReservationOwner,
 		Load: &AttemptLoad{Start: start},
 	}
+	if request.Admission != nil {
+		if !request.Admission.authorizes(request.ControlRoot) {
+			return Attempt{}, LaunchResult{}, fmt.Errorf("test run human admission has no fresh authority")
+		}
+		copy := *request.Admission
+		if previous != nil {
+			copy.Rerun = previous.AttemptID
+		}
+		attempt.Admission = &copy
+	}
 	if request.SharedComponents {
 		if err := allocateTestOwnershipLocked(&attempt, request); err != nil {
 			return Attempt{}, LaunchResult{}, err
@@ -834,6 +857,9 @@ func JoinedComponentDecisionLocked(request AdmissionRequest) (LaunchResult, bool
 	previous, decision, decided, err := componentDecisionLocked(request)
 	if err != nil || decided || previous == nil {
 		return decision, decided, err
+	}
+	if request.Admission.authorizes(request.ControlRoot) {
+		return LaunchResult{}, false, nil
 	}
 	if _, err := readRetryDecision(request.RetryDecisionPath, request.ControlRoot, request,
 		previous.ProofIdentity.IdentityDigest, previous.AttemptID); err != nil {
@@ -945,7 +971,7 @@ func componentDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, 
 			AttemptID: newestLive.AttemptID, ExitStatus: ExitLiveDuplicate}, true, nil
 	}
 	if newestFailed != nil {
-		if request.RetryDecisionPath == "" {
+		if request.RetryDecisionPath == "" && !request.Admission.authorizes(request.ControlRoot) {
 			return newestFailed, LaunchResult{SchemaVersion: 1, Disposition: DispositionRetryRequired,
 				AttemptID: newestFailed.AttemptID, PriorAttempt: newestFailed.AttemptID,
 				EvidencePath: mustAttemptPath(request.ControlRoot, newestFailed.AttemptID), ExitStatus: ExitRetryRequired}, true, nil
@@ -1184,7 +1210,7 @@ func noChildDecisionLocked(request AdmissionRequest) (*Attempt, LaunchResult, bo
 			AttemptID: previous.AttemptID, EvidencePath: mustAttemptPath(request.ControlRoot, previous.AttemptID),
 			ExitStatus: ExitReusableSuccess}, true, nil
 	}
-	if request.RetryDecisionPath == "" {
+	if request.RetryDecisionPath == "" && !request.Admission.authorizes(request.ControlRoot) {
 		return previous, LaunchResult{SchemaVersion: 1, Disposition: DispositionRetryRequired,
 			AttemptID: previous.AttemptID, PriorAttempt: previous.AttemptID,
 			EvidencePath: mustAttemptPath(request.ControlRoot, previous.AttemptID), ExitStatus: ExitRetryRequired}, true, nil

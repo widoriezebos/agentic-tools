@@ -564,6 +564,7 @@ func authenticatedProofReporter(root string, caller int64) bool {
 }
 
 type proofLaunchAdmission struct {
+	Admission                                                                            *proofrun.TestAdmission
 	ControlRoot, ExecutionRoot, ConfPath, GoalID, AuthorityGoalID, CapMin, RetryDecision string
 	CandidateTree                                                                        string
 	ScopeClass, CommandClass                                                             string
@@ -1196,13 +1197,18 @@ func admitProofLaunchWithReadsAndClassifier(request proofLaunchAdmission, makeRe
 		CandidateGoalID: request.GoalID, CandidateRevision: candidateRevision, CandidateBudgetEpoch: candidateProjection.WeightEpoch,
 		CandidateTree:   candidateTree,
 		ReservedMinutes: uint64(capValue), Identity: proofIdentity, Launcher: launcher, ReservationOwner: reservationOwner,
-		RetryDecisionPath: request.RetryDecision, Now: now,
+		RetryDecisionPath: request.RetryDecision, Now: now, Admission: request.Admission,
 		ComponentIdentities: request.ComponentIdentities, ForceAttempt: request.ForceAttempt, ForceGroups: request.ForceGroups,
 		SharedComponents: request.CommandClass == "testing" && len(request.ComponentIdentities) > 0,
 		ManagedCapacity:  request.ManagedCapacity,
 		FreshnessEpisode: request.FreshnessEpisode, FreshnessBinding: request.FreshnessBinding,
 		FreshnessExpiresAt: request.FreshnessExpiresAt,
 		FreshGroups:        request.FreshGroups,
+	}
+	if reservation.Admission != nil {
+		admission := *reservation.Admission
+		admission.GoalID, admission.AccountingRevision = authorityGoalID, accountingRevision
+		reservation.Admission = &admission
 	}
 	decision, noChild, err := proofrun.NoChildDecisionLocked(reservation)
 	if err != nil {

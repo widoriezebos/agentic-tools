@@ -229,6 +229,9 @@ func stripExecutionRecord(result *TestResult) {
 }
 
 func ValidateTestResult(result TestResult) error {
+	if err := result.Admission.validate(); err != nil {
+		return err
+	}
 	if result.SchemaVersion > TestResultSchemaVersion {
 		return fmt.Errorf("unsupported future test result schema %d", result.SchemaVersion)
 	}
@@ -385,6 +388,7 @@ type TestCost struct {
 }
 
 type TestResult struct {
+	Admission                      *TestAdmission            `json:"admission,omitempty"`
 	SchemaVersion                  int                       `json:"schemaVersion"`
 	WorkerPolicyVersion            int                       `json:"workerPolicyVersion,omitempty"`
 	Workers                        int                       `json:"workers,omitempty"`

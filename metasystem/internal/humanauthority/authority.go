@@ -173,6 +173,13 @@ func (p Proof) Valid() bool {
 	return terminalSeen
 }
 
+// RecordedEnrolled validates the retained proof's shape without granting
+// authority to its reader. Only an observed proof can pass ValidFor.
+func (p Proof) RecordedEnrolled() bool {
+	p.observed = true
+	return !p.FixtureOnly && p.AuthorityGrade() == GradeEnrolled && p.Valid()
+}
+
 // AuthorityGrade reports the grade carried by a proof. Proof records written
 // before grades were introduced are enrolled proofs when their outcome says
 // that human authority was proven.
