@@ -298,15 +298,25 @@ func (b *bed) fifo(name string) string {
 // awaitHeld waits until a call has taken its scripted step and holds one
 // of the FIFOs the bed made, so a pause cannot leave that step for the
 // next call.
-func (b *bed) awaitHeld() {
-	b.t.Helper()
-	testenv.Await(b.t, "an adapter call to hold a FIFO the bed made", func() bool {
+func (b *bed) awaitHeld(tb testenv.AwaitTB, adapter int) {
+	tb.Helper()
+	testenv.AwaitFrom(tb, "an adapter call to hold a FIFO the bed made", func() bool {
 		for _, fifo := range b.fifos {
 			if _, err := os.Stat(fifo + ".held"); err == nil {
 				return true
 			}
 		}
 		return false
+	}, testenv.ProcessGroupProducer(adapter), func() string {
+		var states []string
+		for _, fifo := range b.fifos {
+			state := "not held"
+			if _, err := os.Stat(fifo + ".held"); err == nil {
+				state = "held"
+			}
+			states = append(states, strings.TrimSuffix(filepath.Base(fifo), ".fifo")+" "+state)
+		}
+		return "FIFOs: " + strings.Join(states, ", ") + "; calls: " + strings.Join(b.calls(), "; ")
 	})
 }
 
