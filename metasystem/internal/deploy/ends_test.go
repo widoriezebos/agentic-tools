@@ -160,7 +160,7 @@ func stalled(t *testing.T, b *bed, calls string, act func(*bed, *Runner)) {
 		stalling = awaitStart(t, started, operation, commit)
 	}
 	t.Cleanup(func() { _ = syscall.Kill(-stalling.PID, syscall.SIGKILL) })
-	b.awaitHeld()
+	b.awaitHeld(b.t, stalling.PID)
 	if _, err := b.runner("Ann", nil).Pause("it hangs"); err != nil {
 		t.Fatal(err)
 	}

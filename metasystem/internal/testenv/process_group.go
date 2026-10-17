@@ -230,3 +230,19 @@ func AwaitProcessTargetGone(target int) error {
 	}
 	return nil
 }
+
+// ProcessGroupProducer observes the group on every call. Only ESRCH proves
+// it gone; permission failures and other uncertain answers count as alive.
+func ProcessGroupProducer(pgid int) func() (bool, string) {
+	return processGroupProducer(pgid, syscall.Kill)
+}
+
+func processGroupProducer(pgid int, kill func(int, syscall.Signal) error) func() (bool, string) {
+	return func() (bool, string) {
+		err := kill(-pgid, 0)
+		if errors.Is(err, syscall.ESRCH) {
+			return false, fmt.Sprintf("process group %d has no member", pgid)
+		}
+		return true, fmt.Sprintf("process group %d: %v", pgid, err)
+	}
+}

@@ -9,6 +9,54 @@ import (
 	"time"
 )
 
+func TestProcessGroupProducerReadsTheGroup(t *testing.T) {
+	t.Parallel()
+	answers := []struct {
+		err    error
+		alive  bool
+		detail string
+	}{
+		{nil, true, "process group 77: <nil>"},
+		{syscall.EPERM, true, "process group 77: " + syscall.EPERM.Error()},
+		{syscall.EINVAL, true, "process group 77: " + syscall.EINVAL.Error()},
+		{syscall.ESRCH, false, "process group 77 has no member"},
+	}
+	for _, row := range answers {
+		t.Run(fmt.Sprint(row.err), func(t *testing.T) {
+			t.Parallel()
+			calls := 0
+			producer := processGroupProducer(77, func(target int, signal syscall.Signal) error {
+				calls++
+				if target != -77 || signal != 0 {
+					t.Fatalf("kill(%d, %v), want kill(-77, 0)", target, signal)
+				}
+				return row.err
+			})
+			if alive, detail := producer(); alive != row.alive || calls != 1 || detail != row.detail {
+				t.Fatalf("probe with %v = (%t, %q), calls=%d; want alive=%t, the group and error, and one call", row.err, alive, detail, calls, row.alive)
+			}
+		})
+	}
+	calls := 0
+	producer := processGroupProducer(77, func(target int, signal syscall.Signal) error {
+		if target != -77 || signal != 0 {
+			t.Fatalf("kill(%d, %v), want kill(-77, 0)", target, signal)
+		}
+		err := answers[calls].err
+		calls++
+		return err
+	})
+	for _, row := range answers {
+		alive, detail := producer()
+		if alive != row.alive || detail != row.detail {
+			t.Fatalf("probe with %v = (%t, %q), want (%t, %q)", row.err, alive, detail, row.alive, row.detail)
+		}
+	}
+	if calls != 4 {
+		t.Fatalf("kernel calls=%d, want 4", calls)
+	}
+}
+
 // TestExpiredOrderlyStopEscalatesToTheKill: an orderly stop whose bound has
 // expired is not a failure; cleanup moves on to the group kill. The stop's
 // context is already cancelled, so nothing is timed.
