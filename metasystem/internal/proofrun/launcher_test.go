@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
@@ -479,6 +480,7 @@ func TestLaunchSuiteRefusesAClosedFenceBeforeStartingAnything(t *testing.T) {
 
 func TestLaunchSuiteCreationClaimSpansBothStartsAndSecondFenceRead(t *testing.T) {
 	root := t.TempDir()
+	injectProcessTable(t, filepath.Join(root, "metasystem.conf"), nil)
 	watchdog := filepath.Join(root, "watchdog.sh")
 	writeExecutable(t, watchdog, `#!/usr/bin/env bash
 done_path=
@@ -1059,62 +1061,98 @@ func TestLaunchSuiteAuthenticatesLegacyWorker(t *testing.T) {
 		}
 		os.Exit(0)
 	}
-	root := t.TempDir()
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.MkdirAll(filepath.Join(root, "artifacts"), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	marker := filepath.Join(root, "artifacts", "legacy-worker-authorized")
-	releasePath := filepath.Join(root, "artifacts", "legacy-worker-release.fifo")
-	if err := syscall.Mkfifo(releasePath, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	release, err := os.OpenFile(releasePath, os.O_RDWR, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = release.Close() })
-	watchdog := filepath.Join(root, "artifacts", "legacy-worker-watchdog.sh")
-	writeExecutable(t, watchdog, `#!/usr/bin/env bash
+	base := int64(os.Getpid()) * 20
+	owner := proofSurvivorRef(base+1, 11)
+	stale := proofSurvivorProcess(base+10, 100)
+	stale.Environ = []string{proofSurvivorTag(t, identity.FixtureKey{Owner: owner, Test: "TestForeignPackage", Nonce: "00000382"})}
+	fresh := proofSurvivorProcess(base+10, 210)
+	fresh.Environ = stale.Environ
+	afterEveryLaunch := time.Date(2100, time.January, 1, 0, 0, 0, 0, time.UTC)
+	fresh.Started, fresh.StartedExactMicro = afterEveryLaunch.Unix(), afterEveryLaunch.UnixMicro()
+	for _, test := range []struct {
+		name     string
+		rows     []census.Process
+		wantExit int
+		stale    bool
+	}{
+		{name: "stale", rows: []census.Process{stale}, wantExit: 0, stale: true},
+		{name: "fresh", rows: []census.Process{fresh}, wantExit: 1},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			root := t.TempDir()
+			injectProcessTable(t, filepath.Join(root, "metasystem.conf"), test.rows)
+			if err := os.MkdirAll(filepath.Join(root, "artifacts"), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			marker := filepath.Join(root, "artifacts", "legacy-worker-authorized")
+			releasePath := filepath.Join(root, "artifacts", "legacy-worker-release.fifo")
+			if err := syscall.Mkfifo(releasePath, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			release, err := os.OpenFile(releasePath, os.O_RDWR, 0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = release.Close() })
+			watchdog := filepath.Join(root, "artifacts", "legacy-worker-watchdog.sh")
+			writeExecutable(t, watchdog, `#!/usr/bin/env bash
 done_path=
 while (($#)); do
   if [[ "$1" == --done ]]; then done_path=$2; shift 2; else shift; fi
 done
 while [[ ! -e "$done_path" ]]; do sleep 0.005; done
 `)
-	t.Setenv("GO_WANT_LEGACY_PROOF_WORKER", "1")
-	t.Setenv("LEGACY_PROOF_WORKER_MARKER", marker)
-	t.Setenv("LEGACY_PROOF_EXPECTED_ROOT", root)
-	t.Setenv("LEGACY_PROOF_RELEASE", releasePath)
-	// Model the exact environment in which the full validator runs package
-	// tests. The legacy launcher must replace every enclosing proof locator
-	// with the context it owns.
-	t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", filepath.Join(root, "foreign-control"))
-	t.Setenv("METASYSTEM_PROOF_ATTEMPT", "proof-inherited")
-	t.Setenv("METASYSTEM_PROOF_RECORD_KEY", "inherited-record")
-	t.Setenv("METASYSTEM_PROOF_CREATION_CLAIM", "inherited-claim")
-	t.Setenv("METASYSTEM_PROOF_AUTH_BIN", "inherited-engine")
-	t.Setenv("METASYSTEM_PROOF_RUN_ROOT", filepath.Join(root, "foreign-governed"))
-	t.Setenv("METASYSTEM_PROOF_RUN_ID", "foreign-governed")
-	result := LaunchSuite(LaunchOptions{Suite: "legacy-worker-launch", Root: root, ConfPath: filepath.Join(root, "metasystem.conf"),
-		ProgressPath: filepath.Join(root, "artifacts", "legacy.progress.jsonl"), LogPath: filepath.Join(root, "artifacts", "legacy.log"),
-		Banner: "legacy worker fixture", Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
-		Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second, WatchdogExecutable: watchdog,
-		Command: []string{os.Args[0], "-test.run=^TestLaunchSuiteAuthenticatesLegacyWorker$"}, ErrorOutput: os.Stderr,
-		ClaimCreator: func(root, verb string, generation int64, ref identity.Ref) (CreationClaim, error) {
-			claim, err := stopfence.Creating(root, verb, generation, ref)
-			if err != nil {
-				return nil, err
+			t.Setenv("GO_WANT_LEGACY_PROOF_WORKER", "1")
+			t.Setenv("LEGACY_PROOF_WORKER_MARKER", marker)
+			t.Setenv("LEGACY_PROOF_EXPECTED_ROOT", root)
+			t.Setenv("LEGACY_PROOF_RELEASE", releasePath)
+			// Model the exact environment in which the full validator runs package
+			// tests. The legacy launcher must replace every enclosing proof locator
+			// with the context it owns.
+			t.Setenv("METASYSTEM_PROOF_CONTROL_ROOT", filepath.Join(root, "foreign-control"))
+			t.Setenv("METASYSTEM_PROOF_ATTEMPT", "proof-inherited")
+			t.Setenv("METASYSTEM_PROOF_RECORD_KEY", "inherited-record")
+			t.Setenv("METASYSTEM_PROOF_CREATION_CLAIM", "inherited-claim")
+			t.Setenv("METASYSTEM_PROOF_AUTH_BIN", "inherited-engine")
+			t.Setenv("METASYSTEM_PROOF_RUN_ROOT", filepath.Join(root, "foreign-governed"))
+			t.Setenv("METASYSTEM_PROOF_RUN_ID", "foreign-governed")
+			var signalled []int
+			result := LaunchSuite(LaunchOptions{Suite: "legacy-worker-launch", Root: root, ConfPath: filepath.Join(root, "metasystem.conf"),
+				ProgressPath: filepath.Join(root, "artifacts", "legacy.progress.jsonl"), LogPath: filepath.Join(root, "artifacts", "legacy.log"),
+				Banner: "legacy worker fixture", Silence: time.Second, SectionCap: time.Second, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+				Poll: 5 * time.Millisecond, TermGrace: time.Second, KillGrace: time.Second, WatchdogExecutable: watchdog,
+				Command: []string{os.Args[0], "-test.run=^TestLaunchSuiteAuthenticatesLegacyWorker$"}, ErrorOutput: os.Stderr,
+				Signal: func(pid int, _ syscall.Signal) error { signalled = append(signalled, pid); return nil },
+				ClaimCreator: func(root, verb string, generation int64, ref identity.Ref) (CreationClaim, error) {
+					claim, err := stopfence.Creating(root, verb, generation, ref)
+					if err != nil {
+						return nil, err
+					}
+					return &releasingCreationClaim{CreationClaim: claim, release: release, root: root, suite: "legacy-worker-launch"}, nil
+				}})
+			if result != test.wantExit {
+				t.Errorf("legacy worker launch exit=%d, want %d", result, test.wantExit)
 			}
-			return &releasingCreationClaim{CreationClaim: claim, release: release, root: root, suite: "legacy-worker-launch"}, nil
-		}})
-	if result != 0 {
-		t.Fatalf("legacy worker launch exit=%d", result)
-	}
-	if data, err := os.ReadFile(marker); err != nil || string(data) != "authorized\n" {
-		t.Fatalf("legacy launch did not authenticate its worker: marker=%q err=%v", data, err)
+			if data, err := os.ReadFile(marker); err != nil || string(data) != "authorized\n" {
+				t.Fatalf("legacy launch did not authenticate its worker: marker=%q err=%v", data, err)
+			}
+			if len(signalled) != 1 || signalled[0] != int(base+10) {
+				t.Errorf("survivor signals=%v, want [%d]", signalled, base+10)
+			}
+			log, err := os.ReadFile(filepath.Join(root, "artifacts", "legacy.log"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			var survivorLines []string
+			for _, line := range strings.Split(string(log), "\n") {
+				if strings.Contains(line, fmt.Sprintf("fixture-survivor pid=%d ", base+10)) {
+					survivorLines = append(survivorLines, line)
+				}
+			}
+			if len(survivorLines) != 1 || strings.HasSuffix(survivorLines[0], " stale") != test.stale {
+				t.Errorf("survivor lines=%q, want one line with stale=%t", survivorLines, test.stale)
+			}
+		})
 	}
 }
 
@@ -1194,6 +1232,7 @@ printf '{"suite":"fixture","section":"only","event":"end","at":"%s","depth":0}\n
 		if err := os.MkdirAll(bed, 0o755); err != nil {
 			t.Fatal(err)
 		}
+		injectProcessTable(t, filepath.Join(bed, "metasystem.conf"), nil)
 		progress := filepath.Join(bed, "progress.jsonl")
 		var output, errors bytes.Buffer
 		result := LaunchSuite(LaunchOptions{
