@@ -25,7 +25,7 @@ func TestAwaitReturnsOnTheObservedEventWhateverItTook(t *testing.T) {
 	await(recorder, "the third observation", func() bool {
 		observations++
 		return observations == 3
-	}, func() { pauses++ }, remaining, nil)
+	}, func() { pauses++ }, remaining, nil, nil)
 	if len(recorder.failures) != 0 || observations != 3 || pauses != 2 {
 		t.Fatalf("failures=%q observations=%d pauses=%d, want none, 3 and 2", recorder.failures, observations, pauses)
 	}
@@ -44,7 +44,7 @@ func TestAwaitFailsOnlyAtTheTestBinaryDeadline(t *testing.T) {
 	await(recorder, "the release file", func() bool {
 		observations++
 		return false
-	}, func() {}, remaining, nil)
+	}, func() {}, remaining, nil, nil)
 	if observations != 3 || len(recorder.failures) != 1 || !strings.Contains(recorder.failures[0], "the release file") || !strings.Contains(recorder.failures[0], "deadline") {
 		t.Fatalf("observations=%d failures=%q, want 3 and one failure naming the awaited event and the deadline", observations, recorder.failures)
 	}
@@ -57,7 +57,7 @@ func TestAwaitWithoutADeadlineNeverGivesUp(t *testing.T) {
 	await(recorder, "the thousandth observation", func() bool {
 		observations++
 		return observations == 1000
-	}, func() {}, func() (time.Duration, bool) { return 0, false }, nil)
+	}, func() {}, func() (time.Duration, bool) { return 0, false }, nil, nil)
 	if len(recorder.failures) != 0 || observations != 1000 {
 		t.Fatalf("failures=%q observations=%d, want none and 1000", recorder.failures, observations)
 	}
@@ -68,10 +68,89 @@ func TestAwaitOrReportsWhatItsGiveUpGathers(t *testing.T) {
 	recorder := &awaitRecorder{}
 	gathered := 0
 	await(recorder, "the launcher's exit", func() bool { return false }, func() {}, func() (time.Duration, bool) { return awaitReserve, true },
-		func() string { gathered++; return "goroutine dump" })
+		nil, func() string { gathered++; return "goroutine dump" })
 	if gathered != 1 || len(recorder.failures) != 1 || !strings.Contains(recorder.failures[0], "goroutine dump") {
 		t.Fatalf("gathered=%d failures=%q, want the give-up's report in the one failure", gathered, recorder.failures)
 	}
+}
+
+type deadlineAwaitRecorder struct {
+	awaitRecorder
+	deadline func() (time.Time, bool)
+}
+
+func (r *deadlineAwaitRecorder) Deadline() (time.Time, bool) { return r.deadline() }
+
+func TestAwaitFromFollowsItsProducer(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name      string
+		fact, end int
+		afterGone bool
+		pauses    int
+	}{
+		{"slow-alive", 100001, 0, false, 100000},
+		{"gone", 0, 3, false, 2},
+		{"gone-after-fact", 0, 3, true, 2},
+		{"no-producer", 1000, 0, false, 999},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			recorder := &awaitRecorder{}
+			observations, polls, pauses, readings, gathered := 0, 0, 0, 0, 0
+			gone, rechecked := false, false
+			var guard []string
+			producer := func() (bool, string) {
+				polls++
+				gone = row.end > 0 && polls >= row.end
+				if gone {
+					return false, "process group 4242 has no member"
+				}
+				if polls >= 40000 && polls <= 60000 {
+					return true, "stopped"
+				}
+				return true, "running"
+			}
+			if row.name == "no-producer" {
+				producer = nil
+			}
+			await(recorder, "the hold", func() bool {
+				observations++
+				rechecked = rechecked || gone
+				return row.fact > 0 && observations == row.fact || row.afterGone && gone
+			}, func() {
+				pauses++
+				if row.name == "gone" && pauses >= 3 {
+					guard = append(guard, "paused past the producer's end")
+				}
+			}, func() (time.Duration, bool) {
+				readings++
+				return awaitReserve, row.name == "gone" && readings > 10
+			}, producer, func() string {
+				gathered++
+				return "FIFOs: stalled not held; calls: build c2"
+			})
+			if row.name == "gone" {
+				want := "the hold: its producer is gone (process group 4242 has no member); FIFOs: stalled not held; calls: build c2"
+				if len(recorder.failures) != 1 || !strings.Contains(recorder.failures[0], want) || gathered != 1 || !rechecked || len(guard) != 0 {
+					t.Fatalf("failures=%q gathered=%d rechecked=%t guard=%q; want one producer failure with evidence after recheck, one giveUp and no guard", recorder.failures, gathered, rechecked, guard)
+				}
+			} else if len(recorder.failures) != 0 || gathered != 0 {
+				t.Fatalf("failures=%q gathered=%d, want neither", recorder.failures, gathered)
+			}
+			if pauses != row.pauses {
+				t.Fatalf("pauses=%d, want %d", pauses, row.pauses)
+			}
+		})
+	}
+	t.Run("through-AwaitFrom", func(t *testing.T) {
+		t.Parallel()
+		recorder := &deadlineAwaitRecorder{deadline: t.Deadline}
+		AwaitFrom(recorder, "the hold", func() bool { return false }, func() (bool, string) { return false, "gone" }, nil)
+		if len(recorder.failures) != 1 || !strings.Contains(recorder.failures[0], "its producer is gone") {
+			t.Fatalf("failures=%q, want one producer-gone failure", recorder.failures)
+		}
+	})
 }
 
 type awaitDeadline struct {

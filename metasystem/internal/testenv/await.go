@@ -29,6 +29,7 @@ type AwaitTB interface {
 // bound is the test binary's own deadline (go test -timeout, read through
 // t.Deadline): when less than awaitReserve of it is left, Await fails naming
 // what it awaited. A t without a deadline waits for the event alone.
+// A wait given a producer also ends when that producer is gone.
 func Await(t AwaitTB, what string, observed func() bool) {
 	t.Helper()
 	AwaitOr(t, what, observed, nil)
@@ -39,13 +40,23 @@ func Await(t AwaitTB, what string, observed func() bool) {
 // only then.
 func AwaitOr(t AwaitTB, what string, observed func() bool, giveUp func() string) {
 	t.Helper()
-	await(t, what, observed, awaitPause, deadlineRemaining(t), giveUp)
+	await(t, what, observed, awaitPause, deadlineRemaining(t), nil, giveUp)
+}
+
+// AwaitFrom waits like AwaitOr, checking producer after each false observation
+// and the binary deadline check. If the producer is gone, it rechecks observed
+// before failing with the producer's detail and giveUp's report. A nil producer
+// waits like AwaitOr. Under R-35-m3, a slow producer that is alive never fails,
+// and a stopped one is alive.
+func AwaitFrom(t AwaitTB, what string, observed func() bool, producer func() (alive bool, detail string), giveUp func() string) {
+	t.Helper()
+	await(t, what, observed, awaitPause, deadlineRemaining(t), producer, giveUp)
 }
 
 // AwaitError waits like Await but returns a deadline error instead of failing
 // the test, so worker goroutines can finish their cleanup and return to callers.
 func AwaitError(t interface{ Deadline() (time.Time, bool) }, what string, observed func() bool) error {
-	return awaitError(what, observed, awaitPause, deadlineRemaining(t), nil)
+	return awaitError(what, observed, awaitPause, deadlineRemaining(t), nil, nil)
 }
 
 // DeadlineRemaining reports the time left before the test binary's deadline,
@@ -66,14 +77,14 @@ func deadlineRemaining(t any) func() (time.Duration, bool) {
 	return remaining
 }
 
-func await(t AwaitTB, what string, observed func() bool, pause func(), remaining func() (time.Duration, bool), giveUp func() string) {
+func await(t AwaitTB, what string, observed func() bool, pause func(), remaining func() (time.Duration, bool), producer func() (bool, string), giveUp func() string) {
 	t.Helper()
-	if err := awaitError(what, observed, pause, remaining, giveUp); err != nil {
+	if err := awaitError(what, observed, pause, remaining, producer, giveUp); err != nil {
 		t.Fatalf("%v", err)
 	}
 }
 
-func awaitError(what string, observed func() bool, pause func(), remaining func() (time.Duration, bool), giveUp func() string) error {
+func awaitError(what string, observed func() bool, pause func(), remaining func() (time.Duration, bool), producer func() (bool, string), giveUp func() string) error {
 	for !observed() {
 		if left, bounded := remaining(); bounded && left <= awaitReserve {
 			report := ""
@@ -81,6 +92,18 @@ func awaitError(what string, observed func() bool, pause func(), remaining func(
 				report = "; " + giveUp()
 			}
 			return fmt.Errorf("still awaiting %s with %s left before the test binary's deadline%s", what, left.Round(time.Millisecond), report)
+		}
+		if producer != nil {
+			if alive, detail := producer(); !alive {
+				if observed() {
+					return nil
+				}
+				report := ""
+				if giveUp != nil {
+					report = "; " + giveUp()
+				}
+				return fmt.Errorf("%s: its producer is gone (%s)%s", what, detail, report)
+			}
 		}
 		pause()
 	}
