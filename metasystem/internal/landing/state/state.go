@@ -122,7 +122,21 @@ type Engine struct {
 	Incidents []EngineIncident `json:"incidents"`
 	Stamp     string           `json:"stamp"`
 }
+type GenerationRole struct {
+	Role       string `json:"role"`
+	Digest     string `json:"digest"`
+	Generation int    `json:"generation"`
+	Source     string `json:"source"`
+	Cause      string `json:"cause"`
+}
+type Generation struct {
+	Target  string           `json:"target"`
+	Verdict string           `json:"verdict"`
+	Attempt string           `json:"attempt,omitempty"`
+	Roles   []GenerationRole `json:"roles"`
+}
 type Record struct {
+	Generation      *Generation  `json:"generation,omitempty"`
 	Stop            *Stop        `json:"stop,omitempty"`
 	RemedyCommand   string       `json:"remedy_command,omitempty"`
 	Lane            Lane         `json:"lane"`
@@ -146,14 +160,15 @@ type Stop struct {
 	Tests   []string `json:"tests"`
 }
 type Event struct {
-	RecordID string    `json:"record_id,omitempty"`
-	At       time.Time `json:"at"`
-	Kind     string    `json:"kind"`
-	From     string    `json:"from"`
-	To       string    `json:"to"`
-	By       string    `json:"by"`
-	Evidence string    `json:"evidence"`
-	Rebuild  bool      `json:"rebuild"`
+	Generation *Generation `json:"generation,omitempty"`
+	RecordID   string      `json:"record_id,omitempty"`
+	At         time.Time   `json:"at"`
+	Kind       string      `json:"kind"`
+	From       string      `json:"from"`
+	To         string      `json:"to"`
+	By         string      `json:"by"`
+	Evidence   string      `json:"evidence"`
+	Rebuild    bool        `json:"rebuild"`
 }
 type Refused struct{ Kind, Actual, Expected string }
 
@@ -338,7 +353,7 @@ func (w *Writer) Transition(now time.Time, kind, from, to, by, evidence string, 
 				}
 			}
 		} else {
-			if kind == "hand_ins" || kind == "questions" || kind == "stop" || kind == "holds" || kind == "engine" {
+			if kind == "hand_ins" || kind == "questions" || kind == "stop" || kind == "holds" || kind == "engine" || kind == "generation" {
 				actual = Word(record, kind)
 			} else {
 				field := reflect.ValueOf(record)
@@ -374,6 +389,9 @@ func (w *Writer) Transition(now time.Time, kind, from, to, by, evidence string, 
 		if apply != nil {
 			apply(&record)
 		}
+		if kind == "generation" {
+			event.Generation = record.Generation
+		}
 		record.Version = version + 1
 		if err := appendEvent(dir, event); err != nil {
 			return err
@@ -386,6 +404,11 @@ func (w *Writer) Transition(now time.Time, kind, from, to, by, evidence string, 
 // Word names the state of a collection or the lane's current stop.
 func Word(record Record, kind string) string {
 	switch kind {
+	case "generation":
+		if record.Generation != nil {
+			return record.Generation.Verdict
+		}
+		return ""
 	case "holds":
 		return fmt.Sprintf("barren=%d, selection_pending=%t", record.Holds.Barren, record.Holds.SelectionPending)
 	case "engine":
@@ -491,6 +514,7 @@ func Carry(previous *Record, next Record) Record {
 	if previous == nil {
 		return next
 	}
+	next.Generation = previous.Generation
 	p := previous
 	keep := func(old Since, candidate *Since, same bool) {
 		if same && candidate.Observed && !old.At.IsZero() {

@@ -4,11 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -39,11 +41,40 @@ func generationVerified(supervise.EnsureOptions) (supervise.EnsureResult, error)
 	return supervise.EnsureResult{Action: "verified"}, nil
 }
 
+func assertStartupGeneration(t *testing.T, root, target, verdict string, observed map[string]enginepin.Execution, count int) {
+	t.Helper()
+	record, found, err := state.Read(plain.Dir(root))
+	if err != nil || !found {
+		t.Fatalf("generation record missing: %t %v", found, err)
+	}
+	events, skipped, err := state.ReadEvents(plain.Dir(root))
+	if err != nil || skipped != 0 {
+		t.Fatalf("generation events: %v skipped=%d", err, skipped)
+	}
+	var generations []state.Event
+	for _, event := range events {
+		if event.Kind == "generation" {
+			generations = append(generations, event)
+		}
+	}
+	if len(generations) != count {
+		t.Fatalf("generation event count=%d want=%d: %+v", len(generations), count, events)
+	}
+	want := &state.Generation{Target: target, Verdict: verdict}
+	for _, role := range []string{"owner", "watcher", "reaper", "runner"} {
+		e := observed[role]
+		want.Roles = append(want.Roles, state.GenerationRole{Role: role, Digest: e.Digest, Generation: e.Generation, Source: e.Source, Cause: e.Cause})
+	}
+	if !reflect.DeepEqual(record.Generation, want) || !reflect.DeepEqual(generations[count-1].Generation, want) || generations[count-1].To != verdict {
+		t.Fatalf("generation provenance: record=%+v event=%+v want=%+v", record.Generation, generations[count-1], want)
+	}
+}
+
 func TestLandingStartupHalfFailsOnAStaleProcessAfterSuccess(t *testing.T) {
 	t.Parallel()
 	root := realpath.Resolve(t.TempDir())
 	home := t.TempDir()
-	binary, _ := startfixture.Stage(t, root)
+	binary, digest := startfixture.Stage(t, root)
 	startfixture.Register(t, home, root)
 	read := startfixture.Executions(t, root, binary, map[string]string{"reaper": "obsolete"})
 	effects := generationArmEffects(t, home, read)
@@ -52,15 +83,19 @@ func TestLandingStartupHalfFailsOnAStaleProcessAfterSuccess(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "reaper") || !strings.Contains(err.Error(), read(root)["reaper"].Digest) {
 		t.Fatalf("stale startup: %v", err)
 	}
-	effects = generationArmEffects(t, home, startfixture.Executions(t, root, binary, nil))
+	assertStartupGeneration(t, root, digest, "mismatch", read(root), 1)
+	current := startfixture.Executions(t, root, binary, nil)
+	effects = generationArmEffects(t, home, current)
 	first, err := restartLandingSupervisor(scope, effects, generationVerified)
 	if err != nil {
 		t.Fatalf("current startup: %+v %v", first, err)
 	}
+	assertStartupGeneration(t, root, digest, "one generation", current(root), 2)
 	second, err := restartLandingSupervisor(scope, effects, generationVerified)
 	if err != nil || !second.unchanged {
 		t.Fatalf("current repeat: %+v %v", second, err)
 	}
+	assertStartupGeneration(t, root, digest, "one generation", current(root), 3)
 }
 
 func TestSystemRestartFailsOnAStaleOrUnverifiableProcess(t *testing.T) {
@@ -70,7 +105,7 @@ func TestSystemRestartFailsOnAStaleOrUnverifiableProcess(t *testing.T) {
 			t.Parallel()
 			b := newProcessBed(t)
 			root := b.root()
-			binary, _ := startfixture.Stage(t, root)
+			binary, digest := startfixture.Stage(t, root)
 			// Public process scope resolves bin/metasystem; enroll those same bytes there.
 			enrolled, err := steward.OpenEnrolledBinary(root)
 			if err != nil {
@@ -103,6 +138,11 @@ func TestSystemRestartFailsOnAStaleOrUnverifiableProcess(t *testing.T) {
 			if !strings.Contains(result.Summary, want) {
 				t.Fatalf("restart cause lost: %+v", result)
 			}
+			verdict := "mismatch"
+			if fault == "unknown" {
+				verdict = "unverifiable"
+			}
+			assertStartupGeneration(t, root, digest, verdict, read(root), 1)
 		})
 	}
 }

@@ -208,6 +208,25 @@ func TestStartDefersSupervisorReplacementDuringALiveProof(t *testing.T) {
 				}
 			}
 			result := recovery(options)
+			if fault != "bad-registration" {
+				verdict, attempt := "deferred", "proof-148"
+				if fault == "ended" {
+					verdict, attempt = "one generation", ""
+				}
+				if fault == "changed-unknown" {
+					verdict, attempt = "unverifiable", ""
+				}
+				if fault == "bad-running" {
+					verdict, attempt = "mismatch", ""
+				}
+				enrolled, err := steward.OpenEnrolledBinary(options.Root)
+				if err != nil {
+					t.Fatal(err)
+				}
+				target := enrolled.Install.InstallDigest
+				_ = enrolled.Close()
+				assertGenerationObservation(t, options.Root, target, verdict, attempt, options.Executions(options.Root))
+			}
 			after, err := supervise.ReadArmingOwner(options.Root)
 			if err != nil {
 				t.Fatal(err)
