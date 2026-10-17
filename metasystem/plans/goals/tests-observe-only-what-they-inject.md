@@ -1,6 +1,6 @@
 # tests-observe-only-what-they-inject
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 59
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="Lane test findings 368, 373, 375, 377, 382 (twice), 384 (2026-10-17): six load or leftover reds in one night; two of two hand gates failed on the legacy-worker test killing testenv's own witness child found in the host process table; every gate and proof is a coin toss until tests observe only injected facts. Step-back analysis of 08:05, Astra-critiqued."
@@ -9,11 +9,13 @@
 - Origin: human
 - Next step: U1 (D1): the legacy-worker launch test and two siblings take the injected process table (0 production lines); brief FINAL; Codex build in -inject, Opus read, gate, hand landing. U2 (D2): the supervise arming helpers register with the fixture custodian. U3 (D3): the audit with its baseline.
 - OpenedAt: 2026-10-17T08:10:36Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-17T08:11:14Z revision=3 opid=87931EGN3PHGYAW9EP4MKGAPJG-m1e-c6925449 authority=proven digest=5e7012c2dd3c88e81d101b55ecba55977a551562f6d9e1a7cd84ca51baef3792 episode=3
 
 History:
 - 2026-10-17T08:10:36Z HVE3V00E5T0CE8GAC8JQGHC6TR-m1e-c5a1e456 open actor=human:Wido targets=tests-observe-only-what-they-inject
 - 2026-10-17T08:10:45Z 9HR77N83TYN5CTNQ66A3TW4QB0-m1e-c5a1e456 set-priority actor=human:Wido targets=tests-observe-only-what-they-inject reason=priority-order subject=tests-observe-only-what-they-inject from=unranked to=1:59 requested-sequence=append
-Integrity: sha256=fac8c2cbf013e3e075fe9c41022c206c3b9c99e4a177a6e3c0bc5e502d062825
+- 2026-10-17T08:11:14Z 87931EGN3PHGYAW9EP4MKGAPJG-m1e-c6925449 approve actor=human:Wido targets=tests-observe-only-what-they-inject
+Integrity: sha256=37d4736ee2b81393914c5a744492a485bd341b6dc43b1f432e72ac04309931fe
