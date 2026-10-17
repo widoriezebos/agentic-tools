@@ -380,3 +380,46 @@ func TestPersonTerminalStartup(t *testing.T) {
 		})
 	}
 }
+
+type terminalCensusProbe struct{}
+
+func (terminalCensusProbe) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	startedAt := int64(1800)
+	if pid == 4300 {
+		startedAt = 1700
+	} else if pid == 4200 {
+		startedAt = 1600
+	}
+	return identity.Exact{Pid: pid, StartedAt: time.Unix(startedAt, 0), Argv: []string{"owner-t watcher-t reaper-t"}}, identity.Alive, nil
+}
+
+func TestPersonTerminalStartupLeavesACompleteEmptyCensus(t *testing.T) {
+	t.Parallel()
+	if terminalOwnedChild(t) {
+		return
+	}
+	options, _ := terminalFixtureOptions(t)
+	if _, err := census.Fingerprint(options.Root, options.Root); err != nil {
+		t.Fatal(err)
+	}
+	armed, stewarded := 0, 0
+	options.EnsureArmed = func(supervise.EnsureOptions) (supervise.EnsureResult, error) {
+		terminalNoMain(t, options.Root)
+		armed++
+		return supervise.EnsureResult{Action: "verified"}, nil
+	}
+	options.EnsureStewardRunner = func(string, *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
+		stewarded++
+		return steward.EnsureRunnerResult{Action: "verified"}, nil
+	}
+	result := Run(options)
+	if result.ExitCode() != 0 || result.Outcome != "person-terminal" || armed != 1 || stewarded != 1 {
+		t.Fatalf("terminal startup: %+v callbacks=%d,%d", result, armed, stewarded)
+	}
+	terminalFixtureWrite(t, options.Root, "artifacts/agents/supervision/state.json", `{"generation":1,"owner":{"pid":4400,"pidStartedAt":1800,"instanceTag":"owner-t"},"components":{"watcher":{"pid":4401,"pidStartedAt":1800,"instanceTag":"watcher-t"},"reaper":{"pid":4402,"pidStartedAt":1800,"instanceTag":"reaper-t"}}}`)
+	terminalFixtureWrite(t, options.Root, "census-processes.json", `[{"pid":4300,"pidStartedAt":1700,"argv":"/bin/zsh","alive":true},{"pid":4200,"pidStartedAt":1600,"argv":"/bin/zsh","alive":true}]`)
+	workers, err := (steward.RuntimeWorkerCensus{MetasystemRoot: options.Root, ProcessFile: filepath.Join(options.Root, "census-processes.json"), Prober: terminalCensusProbe{}, Now: func() time.Time { return time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC) }}).Workers(options.Root)
+	if err != nil || !workers.CensusComplete || workers.Live != 0 || workers.LiveSeatMains != 0 || workers.Untracked != 0 || workers.Unprovable != 0 {
+		t.Fatalf("person terminal census: %+v %v", workers, err)
+	}
+}

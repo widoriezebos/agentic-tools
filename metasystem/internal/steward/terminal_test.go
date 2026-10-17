@@ -28,7 +28,7 @@ func TestPersonTerminalRecordsAreNotSupplementaryWorkers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "malformed.json"), []byte("{"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	live, mains, unknown := supplementWorkers(root)
+	live, mains, unknown := supplementWorkers(root, identity.KernelProber{})
 	if live != 0 || mains != 0 || unknown != 0 {
 		t.Fatalf("terminals entered the worker universe: live=%d mains=%d unprovable=%d", live, mains, unknown)
 	}

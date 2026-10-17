@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 // RuntimeWorkerCensus scans the live process table in production. Tests may
@@ -19,6 +20,8 @@ import (
 type RuntimeWorkerCensus struct {
 	MetasystemRoot string
 	ProcessFile    string
+	Prober         identity.Prober
+	Now            func() time.Time
 }
 
 // stewardCensusInterval is the telemetry interval stamped into the
@@ -30,11 +33,20 @@ func (c RuntimeWorkerCensus) Workers(repoRoot string) (Workers, error) {
 	if err != nil {
 		return Workers{Unprovable: 1}, nil
 	}
+	prober := c.Prober
+	if prober == nil {
+		prober = identity.KernelProber{}
+	}
+	now := time.Now
+	if c.Now != nil {
+		now = c.Now
+	}
+	timestamp := now()
 	var verdict census.Verdict
 	if c.ProcessFile != "" {
-		verdict, err = census.RunFixtureCensus(c.MetasystemRoot, repoRoot, c.ProcessFile, fingerprint, stewardCensusInterval, time.Now())
+		verdict, err = census.RunFixtureCensusProbed(c.MetasystemRoot, repoRoot, c.ProcessFile, fingerprint, stewardCensusInterval, timestamp, prober)
 	} else {
-		verdict, err = census.RunProductionCensus(c.MetasystemRoot, repoRoot, fingerprint, stewardCensusInterval, time.Now())
+		verdict, err = census.RunProductionCensus(c.MetasystemRoot, repoRoot, fingerprint, stewardCensusInterval, timestamp)
 	}
 	if err != nil {
 		return Workers{Unprovable: 1}, nil
@@ -42,7 +54,7 @@ func (c RuntimeWorkerCensus) Workers(repoRoot string) (Workers, error) {
 	w := workersFromVerdict(verdict)
 	// The runtime census sees runtime-shaped processes; runners,
 	// monitored runs, and gates keep records it never reads.
-	extraLive, extraLiveSeatMains, extraUnprovable := supplementWorkers(repoRoot)
+	extraLive, extraLiveSeatMains, extraUnprovable := supplementWorkers(repoRoot, prober)
 	w.Live += extraLive
 	w.LiveSeatMains += extraLiveSeatMains
 	w.Unprovable += extraUnprovable
@@ -57,11 +69,12 @@ func workersFromVerdict(v census.Verdict) Workers {
 	w := Workers{CensusComplete: v.Verdict == "SUCCESS"}
 	// A diagnostic the census could not fully account for (an
 	// unresolved cwd, an unreadable run record, an unknown leader)
-	// blocks a death proof. RACED-EXIT alone is benign: the process
+	// blocks a death proof. HUMAN-TERMINAL records a repair; RACED-EXIT
+	// is benign because the process
 	// PROVABLY exited during the scan, which is evidence of death,
 	// not doubt about it.
 	for _, d := range v.Diagnostics {
-		if !strings.HasPrefix(d, "RACED-EXIT") {
+		if !strings.HasPrefix(d, "RACED-EXIT") && !strings.HasPrefix(d, census.HumanTerminalNotice+" ") {
 			w.Unprovable++
 		}
 	}

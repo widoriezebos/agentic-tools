@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 func runnerVolume(t *testing.T, root string, alerts, payloads int) {
@@ -42,7 +44,7 @@ func TestRunnerPassCost(t *testing.T) {
 			if _, err := loadAlertEpisodesUnlocked(root); err != nil {
 				t.Fatal(err)
 			}
-			supplementWorkers(root)
+			supplementWorkers(root, identity.KernelProber{})
 			t.Logf("%d open alerts, %d proof payloads (1 MiB each): records read and census supplemented", counts[0], counts[1])
 		})
 	}
@@ -205,7 +207,7 @@ func TestRunnerSecondTickDoesNotScanUnchangedRecords(t *testing.T) {
 		return TickResult{}, nil
 	}
 	if err := runLoopWithDependencies(loop.root, idleCensus(func(root string) (Workers, error) {
-		live, mains, unknown := supplementWorkers(root)
+		live, mains, unknown := supplementWorkers(root, identity.KernelProber{})
 		return Workers{Live: live, LiveSeatMains: mains, Unprovable: unknown}, nil
 	}), nil, time.Second, TickConfig{Now: now}, deps); err != nil {
 		t.Fatal(err)

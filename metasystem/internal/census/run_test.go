@@ -79,6 +79,10 @@ func TestRunFixtureCensusSuccessPath(t *testing.T) {
 	// regardless of its fixture entry — the semantics stop verification
 	// depends on). Use three genuinely live pids.
 	ownPid, parentPid, initPid := os.Getpid(), os.Getppid(), 1
+	command, err := processCommand(int64(ownPid))
+	if err != nil || strings.Contains(command, "owner-t") {
+		t.Fatalf("owner command must be readable and lack the recorded tag: %q %v", command, err)
+	}
 	// Valid supervision state.
 	os.WriteFile(filepath.Join(root, "artifacts", "agents", "supervision", "state.json"),
 		[]byte(fmt.Sprintf(`{"generation":2,"owner":{"pid":%d,"pidStartedAt":100,"instanceTag":"owner-t"},
@@ -87,7 +91,7 @@ func TestRunFixtureCensusSuccessPath(t *testing.T) {
 			ownPid, parentPid, initPid)), 0o644)
 	// The identity file supplies the expected start times, so liveness reads
 	// from it while the tag check still consults the real process table (a
-	// tag mismatch there is a real, faithful error this test tolerates).
+	// tag mismatch there must remain a verification error).
 	idFile := filepath.Join(t.TempDir(), "identity.json")
 	os.WriteFile(idFile, []byte(fmt.Sprintf(
 		`{"%d":{"pidStartedAt":100},"%d":{"pidStartedAt":100},"%d":{"pidStartedAt":100}}`,
@@ -107,6 +111,9 @@ func TestRunFixtureCensusSuccessPath(t *testing.T) {
 		if len(e) >= len("supervision-not-live") && e[:len("supervision-not-live")] == "supervision-not-live" {
 			t.Fatalf("identity file should mark supervision live: %v", v.Errors)
 		}
+	}
+	if v.Verdict != "CENSUS-FAILED" || !strings.Contains(strings.Join(v.Errors, "\n"), fmt.Sprintf("supervision-tag-mismatch:owner:pid=%d", ownPid)) {
+		t.Fatalf("kernel wrapper lost the owner's tag mismatch: %+v", v)
 	}
 	if v.Generation == nil || *v.Generation != 2 {
 		t.Fatalf("generation not read: %+v", v.Generation)

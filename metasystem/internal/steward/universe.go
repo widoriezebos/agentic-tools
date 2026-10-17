@@ -53,7 +53,7 @@ func loadWorkerRecord(path string) (record workerRecord, err error) {
 // cannot see. Live adds workers, live mains are identified separately,
 // and malformed records or failed probes add unprovables — unknown
 // dominates dead at this layer too.
-func supplementWorkers(repoRoot string) (live, liveSeatMains, unprovable int) {
+func supplementWorkers(repoRoot string, prober identity.Prober) (live, liveSeatMains, unprovable int) {
 	for _, store := range recordStores {
 		dir := filepath.Join(repoRoot, store)
 		entries, err := readRunnerRecords(repoRoot, dir, loadWorkerRecord)
@@ -92,7 +92,7 @@ func supplementWorkers(repoRoot string) (live, liveSeatMains, unprovable int) {
 				}
 				continue
 			}
-			exact, state, err := identity.KernelProber{}.Probe(*record.Pid)
+			exact, state, err := prober.Probe(*record.Pid)
 			if err != nil || state == identity.Unknown {
 				unprovable++
 				continue

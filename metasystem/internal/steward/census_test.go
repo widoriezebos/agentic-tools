@@ -90,7 +90,7 @@ func TestRecordedRunnersAndRunsCountAsWorkers(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "artifacts/agents/runs/torn.json"), []byte("{"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	live, liveSeatMains, unprovable := supplementWorkers(root)
+	live, liveSeatMains, unprovable := supplementWorkers(root, identity.KernelProber{})
 	if live != 1 || liveSeatMains != 0 {
 		t.Fatalf("the live monitored run must count as adoptable work: live=%d liveSeatMains=%d", live, liveSeatMains)
 	}
@@ -119,7 +119,7 @@ func TestDrainingRunWithDeadLeaderBlocksTheProof(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "drain.json"), rec, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	live, liveSeatMains, unprovable := supplementWorkers(root)
+	live, liveSeatMains, unprovable := supplementWorkers(root, identity.KernelProber{})
 	if live != 0 || liveSeatMains != 0 || unprovable != 1 {
 		t.Fatalf("a draining record's timestamps are not a terminal proof: live=%d liveSeatMains=%d unprovable=%d", live, liveSeatMains, unprovable)
 	}
@@ -143,7 +143,7 @@ func TestClosedRunWithDeadLeaderDoesNotBlockTheProof(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "closed.json"), rec, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	live, liveSeatMains, unprovable := supplementWorkers(root)
+	live, liveSeatMains, unprovable := supplementWorkers(root, identity.KernelProber{})
 	if live != 0 || liveSeatMains != 0 || unprovable != 0 {
 		t.Fatalf("a green run is closed; its dead leader proves nothing open: live=%d liveSeatMains=%d unprovable=%d", live, liveSeatMains, unprovable)
 	}
@@ -169,7 +169,7 @@ func TestRecordedLiveMainCountsAsASeatHolder(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(dir, "live-main.json"), record, 0o644); err != nil {
 		t.Fatal(err)
 	}
-	live, liveSeatMains, unprovable := supplementWorkers(root)
+	live, liveSeatMains, unprovable := supplementWorkers(root, identity.KernelProber{})
 	if live != 1 || liveSeatMains != 1 || unprovable != 0 {
 		t.Fatalf("the live main must be the one non-displaceable seat holder: live=%d liveSeatMains=%d unprovable=%d", live, liveSeatMains, unprovable)
 	}
