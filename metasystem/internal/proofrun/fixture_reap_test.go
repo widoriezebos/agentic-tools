@@ -265,6 +265,16 @@ func writeProofProcessTable(t *testing.T, path string, rows []census.Process) {
 	}
 }
 
+func injectProcessTable(t *testing.T, confPath string, rows []census.Process) {
+	t.Helper()
+	if err := os.WriteFile(confPath, []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	processFile := filepath.Join(filepath.Dir(confPath), "processes.json")
+	writeProofProcessTable(t, processFile, rows)
+	t.Setenv("METASYSTEM_CENSUS_PROCESS_FILE", processFile)
+}
+
 func strconvInt(value int64) string {
 	return strconv.FormatInt(value, 10)
 }
