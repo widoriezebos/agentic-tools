@@ -128,6 +128,15 @@ func RunFixtureCensus(metasystemRoot, repo, processFile, fingerprint string, int
 	return RunFixtureCensusAt(metasystemRoot, metasystemRoot, repo, processFile, fingerprint, interval, now)
 }
 
+// RunFixtureCensusProbed uses injected supervision observations for a guarded fixture census.
+func RunFixtureCensusProbed(metasystemRoot, repo, processFile, fingerprint string, interval int, now time.Time, prober identity.Prober) (Verdict, error) {
+	if prober == nil {
+		prober = identity.KernelProber{}
+	}
+	return runCensusVerifying(metasystemRoot, metasystemRoot, repo, fingerprint, interval, now,
+		func(root string) ([]Process, error) { return enumerateFixture(root, processFile) }, nil, verifySupervisionWith(prober))
+}
+
 // RunFixtureCensusAt separates installed configuration from repository state
 // for a vendored metasystem layout.
 func RunFixtureCensusAt(metasystemRoot, stateRoot, repo, processFile, fingerprint string, interval int, now time.Time) (Verdict, error) {
@@ -231,6 +240,8 @@ func runCensusVerifying(metasystemRoot, stateRoot, repo, fingerprint string, int
 	return assembleVerdict(verdictLabelFor(errors), fingerprint, interval, generation, stateDigest,
 		counts, inventory, diagnostics, errors, now), nil
 }
+
+const HumanTerminalNotice = "HUMAN-TERMINAL"
 
 // classifyProcess applies the census's per-process decision: liveness, scope
 // (cwd or argv below the repo), and ownership (CUSTODY/ANNOUNCED/UNTRACKED).
@@ -541,16 +552,26 @@ func supervisionComponent(name string) bool {
 // command must carry its tag. A dead identity yields supervision-not-live; a
 // live one whose command lacks the tag yields supervision-tag-mismatch.
 func verifySupervisionSnapshot(ids map[string]identityRecord, probe identity.FixtureProbe, errors *[]string) {
+	verifySupervisionProbed(ids, probe, identity.KernelProber{}, errors)
+}
+
+func verifySupervisionWith(prober identity.Prober) supervisionVerifier {
+	return func(ids map[string]identityRecord, probe identity.FixtureProbe, errors *[]string) {
+		verifySupervisionProbed(ids, probe, prober, errors)
+	}
+}
+
+func verifySupervisionProbed(ids map[string]identityRecord, probe identity.FixtureProbe, prober identity.Prober, errors *[]string) {
 	for _, name := range append([]string{"owner"}, supervisionComponentOrder...) {
 		id, present := ids[name]
 		if !present {
 			continue
 		}
-		if !identityAlive(id.Pid, id.Started, probe) {
+		if !alivePairWith(prober, id.Pid, id.Started, 0, "", probe) {
 			*errors = append(*errors, fmt.Sprintf("supervision-not-live:%s:pid=%d", name, id.Pid))
 			continue
 		}
-		command, err := processCommand(id.Pid)
+		command, err := commandWith(prober, id.Pid)
 		if err != nil {
 			*errors = append(*errors, fmt.Sprintf("supervision-command-unavailable:%s:pid=%d", name, id.Pid))
 			continue
@@ -579,7 +600,11 @@ func identityAlive(pid, expectedStart int64, probe identity.FixtureProbe) bool {
 // darwin (no pair) and old records are unchanged. The fixture identity file
 // carries no pair, so when it answers, its second is the only signal.
 func alivePair(pid, expectedStart, expectedTicks int64, expectedBootID string, probe identity.FixtureProbe) bool {
-	if _, state, err := kernelProbe(pid); err == nil && state == probeDead {
+	return alivePairWith(identity.KernelProber{}, pid, expectedStart, expectedTicks, expectedBootID, probe)
+}
+
+func alivePairWith(prober identity.Prober, pid, expectedStart, expectedTicks int64, expectedBootID string, probe identity.FixtureProbe) bool {
+	if _, state, err := probeWith(prober, pid); err == nil && state == probeDead {
 		return false
 	}
 	if entry, ok := probeFixture(probe, pid); ok {
@@ -588,12 +613,12 @@ func alivePair(pid, expectedStart, expectedTicks int64, expectedBootID string, p
 	if expectedTicks > 0 && expectedBootID != "" {
 		// The pair decides; a btime step between recording expectedStart
 		// and this check no longer reads a live process as dead.
-		return identity.AliveRef(identity.KernelProber{}, identity.Ref{
+		return identity.AliveRef(prober, identity.Ref{
 			Pid: pid, StartedAtSec: expectedStart,
 			StartTicks: expectedTicks, BootID: expectedBootID,
 		}) == identity.Alive
 	}
-	exact, state, err := kernelProbe(pid)
+	exact, state, err := probeWith(prober, pid)
 	if err != nil || state != probeAlive {
 		return false
 	}
@@ -810,7 +835,11 @@ const (
 
 // kernelProbe returns a pid's exact start second and three-way liveness.
 func kernelProbe(pid int64) (int64, probeState, error) {
-	exact, state, err := identity.KernelProber{}.Probe(pid)
+	return probeWith(identity.KernelProber{}, pid)
+}
+
+func probeWith(prober identity.Prober, pid int64) (int64, probeState, error) {
+	exact, state, err := prober.Probe(pid)
 	switch state {
 	case identity.Alive:
 		return exact.StartedAt.Unix(), probeAlive, nil
@@ -824,7 +853,11 @@ func kernelProbe(pid int64) (int64, probeState, error) {
 // processCommand reads a pid's command NATIVELY (kernel argv), for the tag
 // check in verifySupervisionSnapshot. A dead or unreadable pid yields an error.
 func processCommand(pid int64) (string, error) {
-	exact, state, err := identity.KernelProber{}.Probe(pid)
+	return commandWith(identity.KernelProber{}, pid)
+}
+
+func commandWith(prober identity.Prober, pid int64) (string, error) {
+	exact, state, err := prober.Probe(pid)
 	if err != nil || state != identity.Alive {
 		return "", fmt.Errorf("no command for pid %d", pid)
 	}
