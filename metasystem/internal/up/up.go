@@ -4,6 +4,7 @@
 package up
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -13,10 +14,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
@@ -47,6 +50,12 @@ type Options struct {
 	CallerPid             int64
 	AdoptionRemedy        string
 	RestampStopCapability func(root, lineage string, claimEpoch int64) (StopCapabilityRestampResult, error)
+	// TerminalReader proves an explicit terminal pair; nil reads the kernel.
+	TerminalReader humanauthority.Reader
+	// Getpgid observes a fresh announcement's process group; nil reads the kernel.
+	Getpgid func(int) (int, error)
+	// SelfProber observes the arming process before supervision; nil reads the kernel.
+	SelfProber processidentity.Prober
 	// FindSessionAncestor infers the session's main from the caller's
 	// runtime-signature ancestry when no --pid/--start-time pair is given;
 	// nil means the census's production ancestry walk.
@@ -106,6 +115,7 @@ type Result struct {
 	Authority         string
 	ReArmed           string
 	DurabilityPending bool
+	TerminalPid       int64
 	Holder            string
 	Worktree          string
 	Failed            string
@@ -167,6 +177,9 @@ func (r Result) Lines() []string {
 		}
 	}
 	lines = append(lines, r.RawLines...)
+	if r.Outcome == "person-terminal" {
+		lines = append(lines, r.PersonTerminalSummary())
+	}
 	if r.Adoption != nil && r.Adoption.Status == "pending" {
 		lines = append(lines, "session preparation partial: adoption pending; "+r.Adoption.Cause+"; remedy="+quoteField(r.Adoption.Remedy))
 	}
@@ -191,6 +204,11 @@ func (r Result) Lines() []string {
 	}
 	lines = append(lines, aggregate)
 	return lines
+}
+
+// PersonTerminalSummary is the successful terminal startup answer.
+func (r Result) PersonTerminalSummary() string {
+	return fmt.Sprintf("your terminal %d is a person's; no agent main is announced; the steward's ladder may start a seat", r.TerminalPid)
 }
 
 func failure(components []ComponentOutcome, component string, err error, remedy string) Result {
@@ -563,7 +581,11 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 		failed := failure(components, "supervision-owner", err, "repair the process-creation fence, then rerun metasystem system start")
 		return nil, supervise.EnsureResult{}, &failed
 	}
-	exact, state, probeErr := (processidentity.KernelProber{}).Probe(int64(os.Getpid()))
+	selfProber := options.SelfProber
+	if selfProber == nil {
+		selfProber = processidentity.KernelProber{}
+	}
+	exact, state, probeErr := selfProber.Probe(int64(os.Getpid()))
 	if probeErr != nil || state != processidentity.Alive {
 		failed := failure(components, "supervision-owner", fmt.Errorf("cannot prove the arming process identity: %v", probeErr), "retry from the same terminal")
 		return nil, supervise.EnsureResult{}, &failed
@@ -791,6 +813,36 @@ func ordinary(options Options) Result {
 	return result
 }
 
+func startPersonTerminal(options Options, session sessionIdentity, enrolled *steward.EnrolledBinary, components []ComponentOutcome) Result {
+	record := struct {
+		Kind               string `json:"kind"`
+		Pid                int64  `json:"pid"`
+		PidStartedAt       int64  `json:"pidStartedAt"`
+		PidStartTicks      int64  `json:"pidStartTicks"`
+		BootID             string `json:"bootId"`
+		CallerPid          int64  `json:"callerPid"`
+		CallerPidStartedAt int64  `json:"callerPidStartedAt"`
+	}{"person-terminal", session.Pid, session.StartTime, session.StartTicks, session.BootID, session.Provenance.CallerPid, session.Provenance.CallerPidStartedAt}
+	path := filepath.Join(options.Root, "artifacts/agents/terminals", fmt.Sprintf("%d-%d.json", session.Pid, session.StartTime))
+	data, err := json.Marshal(record)
+	if err == nil {
+		_, err = atomicfile.WriteFile(path, data, 0o600, atomicfile.AnchorForArtifacts(path))
+	}
+	if err != nil {
+		return failure(components, "person-terminal", err, "repair "+path+", then rerun metasystem session start")
+	}
+	components = append(components, ComponentOutcome{Component: "person-terminal", Outcome: "recorded"})
+	components, _, failed := ensureSupervision(options, enrolled, components)
+	if failed != nil {
+		return *failed
+	}
+	components, failed = ensureStewardRunner(options, enrolled, components)
+	if failed != nil {
+		return *failed
+	}
+	return Result{Components: components, Outcome: "person-terminal", TerminalPid: session.Pid}
+}
+
 func ordinaryBody(options Options) (Result, rearmFact) {
 	components := []ComponentOutcome{}
 	fact := rearmFact{}
@@ -861,8 +913,12 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 		Component: "session-identity", Outcome: "verified",
 		Detail: fmt.Sprintf("runtime=%s pid=%d start=%d", session.Runtime, session.Pid, session.StartTime),
 	})
-	announcement, err := lease.AnnounceWithProofAt(options.Root, installationRoot(options), session.Session, session.Pid, session.StartTime,
-		session.StartTicks, session.BootID, session.Tag, session.Runtime, session.OwnerLineage, &session.Provenance)
+	if session.Provenance.Source == "explicit-ancestry-fallback" && lease.PersonTerminalAt(options.Root, installationRoot(options),
+		humanauthority.ProcessRef{PID: session.Pid, PIDStartedAt: session.StartTime, StartTicks: session.StartTicks, BootID: session.BootID}, options.TerminalReader) == lease.PersonTerminal {
+		return finish(startPersonTerminal(options, session, enrolled, components))
+	}
+	announcement, err := lease.AnnounceWithProofAndGetpgidAt(options.Root, installationRoot(options), session.Session, session.Pid, session.StartTime,
+		session.StartTicks, session.BootID, session.Tag, session.Runtime, session.OwnerLineage, &session.Provenance, options.Getpgid)
 	if err != nil {
 		return finish(failure(components, "session-announcement", err, "repair the named announcement or lease state, then rerun metasystem session start"))
 	}

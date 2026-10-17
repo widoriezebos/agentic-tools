@@ -47,3 +47,16 @@ func TestUpEnvelopeOfAFailedUpNamesItsStep(t *testing.T) {
 		t.Fatalf("failed envelope = %+v (%s)", failed, failed.Data)
 	}
 }
+
+func TestUpPersonTerminalEnvelopeUsesTheTerminalAnswer(t *testing.T) {
+	t.Parallel()
+	result := up.Result{Outcome: "person-terminal", TerminalPid: 4300}
+	envelope := upEnvelope(result)
+	if envelope.Summary != "your terminal 4300 is a person's; no agent main is announced; the steward's ladder may start a seat" {
+		t.Fatalf("terminal summary = %q", envelope.Summary)
+	}
+	var data up.Data
+	if err := envelope.DecodeData(&data); err != nil || data.Outcome != "person-terminal" || result.ExitCode() != 0 {
+		t.Fatalf("terminal envelope lost its successful typed answer: %+v %v", data, err)
+	}
+}

@@ -462,7 +462,7 @@ func syntheticFingerprintRoot(t *testing.T) string {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=\nwatch.interval-sec=60\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\nwatch.interval-sec=60\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	return root

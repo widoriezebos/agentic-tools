@@ -87,6 +87,9 @@ func upEnvelope(result up.Result) verbresult.Result {
 	envelope := verbresult.FromError(upVerb, result.ExitCode(), nil, result.Data())
 	if result.ExitCode() == 0 {
 		envelope.Summary = "supervision is " + result.Outcome
+		if result.Outcome == "person-terminal" {
+			envelope.Summary = result.PersonTerminalSummary()
+		}
 		return envelope
 	}
 	step := result.Failed

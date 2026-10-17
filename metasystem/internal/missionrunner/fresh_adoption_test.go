@@ -2,7 +2,10 @@ package missionrunner
 
 import (
 	"bytes"
+	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up/uptest"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
@@ -23,5 +26,13 @@ func TestRequireArmedAcceptsActualPendingAdoption(t *testing.T) {
 	result.Outcome = "partial"
 	if err := requireArmed(verbresult.FromError("up", result.ExitCode(), nil, result.Data()), nil); err == nil {
 		t.Fatal("mission launch accepted partial supervision")
+	}
+}
+
+func TestRequireArmedRefusesPersonTerminal(t *testing.T) {
+	t.Parallel()
+	result := up.Result{Outcome: "person-terminal", TerminalPid: 4300}
+	if err := requireArmed(verbresult.FromError("up", result.ExitCode(), nil, result.Data()), nil); err == nil || !strings.Contains(err.Error(), "person-terminal, not armed") {
+		t.Fatalf("a terminal cannot launch a mission as an agent main: %v", err)
 	}
 }

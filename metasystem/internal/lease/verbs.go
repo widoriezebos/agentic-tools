@@ -73,6 +73,15 @@ func AnnounceWithProof(root, session string, pid, start, startTicks int64, bootI
 // AnnounceWithProofAt keeps mutable announcement state at stateRoot while it
 // loads runtime and fixture authority from the installed metasystem root.
 func AnnounceWithProofAt(stateRoot, metasystemRoot, session string, pid, start, startTicks int64, bootID, tag, runtime, ownerLineage string, provenance *IdentityProvenance) (string, error) {
+	return AnnounceWithProofAndGetpgidAt(stateRoot, metasystemRoot, session, pid, start, startTicks, bootID, tag, runtime, ownerLineage, provenance, nil)
+}
+
+// AnnounceWithProofAndGetpgidAt accepts the process-group observation used
+// for a fresh announcement. A nil observation reads the kernel.
+func AnnounceWithProofAndGetpgidAt(stateRoot, metasystemRoot, session string, pid, start, startTicks int64, bootID, tag, runtime, ownerLineage string, provenance *IdentityProvenance, getpgid func(int) (int, error)) (string, error) {
+	if getpgid == nil {
+		getpgid = unix.Getpgid
+	}
 	root := resolveRoot(stateRoot)
 	metasystemRoot = resolveRoot(metasystemRoot)
 	if ownerLineage != "" && !validLineage(ownerLineage) {
@@ -181,7 +190,7 @@ func AnnounceWithProofAt(stateRoot, metasystemRoot, session string, pid, start, 
 	}
 
 	// Not previously announced: mint a fresh identity.
-	pgid, err := unix.Getpgid(int(pid))
+	pgid, err := getpgid(int(pid))
 	if err != nil {
 		return "", fmt.Errorf("announcement identity is not a live, readable process")
 	}

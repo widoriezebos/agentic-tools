@@ -90,7 +90,7 @@ func TestSupCArmingAnnouncesBeforeTheFirstCensus(t *testing.T) {
 			name = function.Sel.Name
 		}
 		switch name {
-		case "AnnounceWithProofAt", "ensureSupervision":
+		case "AnnounceWithProofAndGetpgidAt", "ensureSupervision":
 			if _, seen := positions[name]; !seen {
 				positions[name] = call.Pos()
 			}
@@ -116,12 +116,12 @@ func TestSupCArmingAnnouncesBeforeTheFirstCensus(t *testing.T) {
 		}
 		return true
 	})
-	for _, name := range []string{"AnnounceWithProofAt", "announcement-written", "ensureSupervision", "first-census-complete"} {
+	for _, name := range []string{"AnnounceWithProofAndGetpgidAt", "announcement-written", "ensureSupervision", "first-census-complete"} {
 		if _, ok := positions[name]; !ok {
 			t.Fatalf("ordinaryBody no longer carries %s: %v", name, positions)
 		}
 	}
-	if !(positions["AnnounceWithProofAt"] < positions["announcement-written"] &&
+	if !(positions["AnnounceWithProofAndGetpgidAt"] < positions["announcement-written"] &&
 		positions["announcement-written"] < positions["ensureSupervision"] &&
 		positions["ensureSupervision"] < positions["first-census-complete"]) {
 		t.Fatalf("arming does not announce before the first census: %v", positions)
