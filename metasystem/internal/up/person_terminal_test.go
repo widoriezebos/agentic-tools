@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up/testdata/startfixture"
 )
 
 // Each observation is independent: a failed Read hides the start, whereas
@@ -122,7 +123,8 @@ func terminalFixtureOptions(t *testing.T) (Options, *terminalTreeReader) {
 	}
 	sessionParentPid = func(pid int64) (int64, bool) { return 4300, pid == 4301 }
 	return Options{Root: root, MetasystemRoot: root, Scope: root, Binary: binary, Pid: 4300, StartTime: 1700,
-		CallerPid: 4301, Runtime: "fake", Session: "terminal-fixture", NoRuntimeSession: true,
+		Executions: startfixture.Current(fmt.Sprintf("sha256:%x", digest[:])),
+		CallerPid:  4301, Runtime: "fake", Session: "terminal-fixture", NoRuntimeSession: true,
 		TerminalReader: reader, Getpgid: func(int) (int, error) { return 4300, nil }, SelfProber: terminalSelfProber{}}, reader
 }
 

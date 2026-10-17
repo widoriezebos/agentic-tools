@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
@@ -55,6 +56,9 @@ type EnsureOptions struct {
 	Fingerprint     string
 	IntervalSec     int
 	WatcherCap      int64
+	TargetDigest    string
+	Executions      func(string) map[string]enginepin.Execution
+	ProofGate       func(stop func() error) (attempt string, err error)
 	OnlyIfDown      bool
 	WaitScaleMilli  int
 	OwnerTagPrefix  string
@@ -66,6 +70,7 @@ type EnsureOptions struct {
 // EnsureResult describes whether arming joined, established, took over, or
 // replaced the supervision generation.
 type EnsureResult struct {
+	Attempt    string
 	Action     string
 	Owner      ArmingOwner
 	Generation int64
@@ -344,6 +349,31 @@ func generationMatches(generation PublishedGeneration, options EnsureOptions) bo
 	return generation.Fingerprint == options.Fingerprint &&
 		generation.IntervalSec == options.IntervalSec &&
 		generation.WatcherCap == int(options.WatcherCap)
+}
+
+// obsoleteExecution refuses unknown evidence before allowing any replacement.
+func obsoleteExecution(options EnsureOptions) (bool, error) {
+	if options.TargetDigest == "" {
+		return false, nil
+	}
+	read := options.Executions
+	if read == nil {
+		read = func(root string) map[string]enginepin.Execution { return ReadExecutions(root, nil) }
+	}
+	observations := read(options.Root)
+	obsolete := false
+	for _, role := range []string{"owner", "watcher", "reaper"} {
+		execution := observations[role]
+		if execution.Digest == "" {
+			cause := execution.Cause
+			if cause == "" {
+				cause = "no execution observation"
+			}
+			return false, fmt.Errorf("%s execution is unverifiable: %s; a person runs metasystem system restart", role, cause)
+		}
+		obsolete = obsolete || execution.Digest != options.TargetDigest
+	}
+	return obsolete, nil
 }
 
 func waitUntilArmed(options EnsureOptions, owner ArmingOwner) ArmedInspection {
@@ -1210,35 +1240,52 @@ func EnsureArmed(options EnsureOptions) (result EnsureResult, err error) {
 			return EnsureResult{}, err
 		}
 
-		if options.OnlyIfDown {
-			generation, err := publishedForOwner(options.Root, owner, scaledWait(5, options.WaitScaleMilli))
-			if err != nil {
-				return EnsureResult{}, fmt.Errorf("the running supervisor did not publish a readable install number: %w", err)
-			}
-			inspection := waitUntilArmed(options, owner)
-			return EnsureResult{
-				Action: "not-needed", Owner: owner, Generation: generation.Generation,
-				Inspection: inspection,
-			}, nil
-		}
 		generation, err := publishedForOwner(options.Root, owner, scaledWait(5, options.WaitScaleMilli))
 		if err != nil {
 			return EnsureResult{}, fmt.Errorf("the running supervisor did not publish a readable install number: %w", err)
 		}
-		if generationMatches(generation, options) {
-			inspection := waitUntilArmed(options, owner)
-			return EnsureResult{Action: "verified", Owner: owner, Generation: generation.Generation, Inspection: inspection}, nil
+		inspection := ArmedInspection{}
+		if options.TargetDigest != "" || options.OnlyIfDown || generationMatches(generation, options) {
+			inspection = waitUntilArmed(options, owner)
+		}
+		obsolete, err := obsoleteExecution(options)
+		if err != nil {
+			return EnsureResult{}, err
+		}
+		if !obsolete && (options.OnlyIfDown || generationMatches(generation, options)) {
+			action := "verified"
+			if options.OnlyIfDown {
+				action = "not-needed"
+			}
+			return EnsureResult{Action: action, Owner: owner, Generation: generation.Generation, Inspection: inspection}, nil
 		}
 		if err := requireCeilingClear(options.Root, options.MetasystemRoot, options.WatcherCap); err != nil {
 			return EnsureResult{}, err
 		}
-		if _, err := stopOwner(options.Root, owner, options.WaitScaleMilli, "an engine-generation replacement at session start"); err != nil {
+		released := false
+		stop := func() error {
+			if _, err := stopOwner(options.Root, owner, options.WaitScaleMilli, "an engine-generation replacement at session start"); err != nil {
+				return err
+			}
+			if _, err := stopTakeoverComponents(kernelComponentControl(), options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
+				return fmt.Errorf("the supervisor was not replaced: %w", err)
+			}
+			released = releaseDeadOwnerLock(options.Root, owner) == nil
+			return nil
+		}
+		if obsolete && options.ProofGate != nil {
+			attempt, err := options.ProofGate(stop)
+			if err != nil {
+				return EnsureResult{}, err
+			}
+			if attempt != "" {
+				return EnsureResult{Action: "deferred", Attempt: attempt, Owner: owner, Generation: generation.Generation, Inspection: inspection}, nil
+			}
+		} else if err := stop(); err != nil {
 			return EnsureResult{}, err
 		}
-		if _, err := stopTakeoverComponents(kernelComponentControl(), options.Root, options.MetasystemRoot, owner.InstanceTag, options.WaitScaleMilli, false); err != nil {
-			return EnsureResult{}, fmt.Errorf("the supervisor was not replaced: %w", err)
-		}
-		if err := releaseDeadOwnerLock(options.Root, owner); err != nil {
+
+		if !released {
 			continue
 		}
 		action = "replaced"

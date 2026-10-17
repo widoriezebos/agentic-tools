@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up/testdata/startfixture"
 	"os"
 	"path/filepath"
 	"testing"
@@ -50,7 +51,7 @@ func Pending(t testing.TB) up.Result {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 	e := goal.Endpoint{Root: root, Remote: "origin", Repository: testgoal.New(nil, time.Now(), "seed")}
-	result := up.Run(up.Options{Root: root, Scope: root, Binary: binary, Session: "pending-reader", OwnerLineage: "pending-reader", CallerPid: exact.Pid,
+	result := up.Run(up.Options{Executions: startfixture.Current(fmt.Sprintf("sha256:%x", digest)), Root: root, Scope: root, Binary: binary, Session: "pending-reader", OwnerLineage: "pending-reader", CallerPid: exact.Pid,
 		FindSessionAncestor: func(string, int64, string) (census.AgentAncestor, error) {
 			return census.AgentAncestor{Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), PidStartTicks: exact.StartTicks, BootID: exact.BootID, Runtime: "fake"}, nil
 		},

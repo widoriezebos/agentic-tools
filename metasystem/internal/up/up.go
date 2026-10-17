@@ -15,12 +15,16 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	processidentity "github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/shellquote"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
@@ -63,6 +67,10 @@ type Options struct {
 	// ReArmRebuiltEngine, EnsureArmed and EnsureStewardRunner replace the
 	// steward re-arm, supervision arming and steward-runner owners for one
 	// call. Production leaves them nil and uses the owners directly.
+	Executions          func(string) map[string]enginepin.Execution
+	RepairStewardRunner func(string) (steward.RunnerRepairOutcome, error)
+	ProofAlive          func(plain.Running) bool
+	LaneHome            func() (string, error)
 	ReArmRebuiltEngine  func(repoRoot, installationRoot, invokingBinary string) (steward.ReArmOutcome, error)
 	EnsureArmed         func(supervise.EnsureOptions) (supervise.EnsureResult, error)
 	EnsureStewardRunner func(repoRoot string, enrolled *steward.EnrolledBinary) (steward.EnsureRunnerResult, error)
@@ -570,6 +578,86 @@ func supervisionOptions(options Options) (supervise.EnsureOptions, error) {
 	}, nil
 }
 
+func registeredLane(options Options) (bool, error) {
+	home := options.LaneHome
+	if home == nil {
+		home = board.Home
+	}
+	path, err := home()
+	if err != nil {
+		return false, err
+	}
+	record, found, err := lane.Read(path)
+	return found && record.Install == options.Root, err
+}
+
+func supervisorProofGate(options Options) func(func() error) (string, error) {
+	return func(stop func() error) (attempt string, err error) {
+		registered, err := registeredLane(options)
+		if err != nil {
+			return "", err
+		}
+		if !registered {
+			return "", stop()
+		}
+		err = plain.WithLaneLock(options.Root, func() error {
+			running, _, alive, err := plain.ReadRunning(options.Root, plain.ProveSeams{Alive: options.ProofAlive})
+			if err != nil {
+				return err
+			}
+			if alive {
+				attempt = running.Attempt
+				return nil
+			}
+			return stop()
+		})
+		return attempt, err
+	}
+}
+
+func verifyGeneration(options Options, enrolled *steward.EnrolledBinary, components []ComponentOutcome, deferred ...string) ([]ComponentOutcome, *Result) {
+	registered, err := registeredLane(options)
+	if err != nil {
+		failed := failure(components, "engine-generation", err, "repair the host lane registration")
+		return nil, &failed
+	}
+	read := options.Executions
+	if read == nil {
+		read = func(root string) map[string]enginepin.Execution { return steward.ReadExecutions(root, nil) }
+	}
+	observations := read(options.Root)
+	if len(deferred) > 0 {
+		failed := failure(components, "engine-generation", fmt.Errorf("engine install %d replacement deferred for running check %s", enrolled.Install.Generation, deferred[0]), "the replacement waits for the check to end")
+		return nil, &failed
+	}
+	roles := []string{"owner", "watcher", "reaper", "runner"}
+	if !registered {
+		for _, component := range components {
+			if component.Component == "steward-runner" && component.Outcome == "excluded" {
+				roles = roles[:3]
+			}
+		}
+	}
+	failures := []string{}
+	for _, role := range roles {
+		execution := observations[role]
+		if execution.Digest == "" {
+			cause := execution.Cause
+			if cause == "" {
+				cause = "no execution observation"
+			}
+			failures = append(failures, role+" unverifiable: "+cause)
+		} else if execution.Digest != enrolled.Install.InstallDigest {
+			failures = append(failures, role+" executes "+execution.Digest)
+		}
+	}
+	if len(failures) > 0 {
+		failed := failure(components, "engine-generation", fmt.Errorf("%s", strings.Join(failures, "; ")), "run metasystem system restart")
+		return nil, &failed
+	}
+	return append(components, ComponentOutcome{Component: "engine-generation", Outcome: "verified", Detail: fmt.Sprintf("generation=%d digest=%s roles=%s", enrolled.Install.Generation, enrolled.Install.InstallDigest, strings.Join(roles, ","))}), nil
+}
+
 func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, components []ComponentOutcome) ([]ComponentOutcome, supervise.EnsureResult, *Result) {
 	armingOptions, err := supervisionOptions(options)
 	if err != nil {
@@ -598,6 +686,9 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 	defer claim.Close()
 	armingOptions.FenceGeneration = fence.Generation
 	armingOptions.Command = enrolledCommand(enrolled)
+	armingOptions.TargetDigest = enrolled.Install.InstallDigest
+	armingOptions.Executions = options.Executions
+	armingOptions.ProofGate = supervisorProofGate(options)
 	ensureArmed := supervise.EnsureArmed
 	if options.EnsureArmed != nil {
 		ensureArmed = options.EnsureArmed
@@ -644,6 +735,10 @@ func ensureSupervision(options Options, enrolled *steward.EnrolledBinary, compon
 	ownerOutcome := ComponentOutcome{
 		Component: "supervision-owner", Outcome: result.Action,
 		Detail: fmt.Sprintf("pid=%d generation=%d", result.Owner.Pid, result.Generation),
+	}
+	if result.Action == "deferred" {
+		_, failed := verifyGeneration(options, enrolled, components, result.Attempt)
+		return nil, result, failed
 	}
 	if !result.Inspection.Armed() {
 		if result.Inspection.Component != "supervision-owner" {
@@ -987,6 +1082,10 @@ func ordinaryBody(options Options) (Result, rearmFact) {
 	if stewardFailed != nil {
 		return finish(*stewardFailed)
 	}
+	components, generationFailed := verifyGeneration(options, enrolled, components)
+	if generationFailed != nil {
+		return finish(*generationFailed)
+	}
 	if authority == "read-only" {
 		return finish(Result{
 			Components: components, Outcome: "advisor", Authority: authority, Holder: holderName,
@@ -1025,7 +1124,11 @@ func recovery(options Options) Result {
 		failed.Outcome = "recovery-partial"
 		return *failed
 	}
-	repair, err := steward.RepairEnrolledRunner(options.Root)
+	repairRunner := options.RepairStewardRunner
+	if repairRunner == nil {
+		repairRunner = steward.RepairEnrolledRunner
+	}
+	repair, err := repairRunner(options.Root)
 	if err != nil {
 		result := failure(components, "steward-runner", err, "run ordinary metasystem session start from a session to repair steward enrollment")
 		result.Outcome = "recovery-partial"
@@ -1041,8 +1144,13 @@ func recovery(options Options) Result {
 		Component: "steward-runner", Outcome: strings.ToLower(repair.Status),
 		Detail: fmt.Sprintf("pid=%d generation=%d", repair.ReplacementPid, repair.Generation),
 	})
+	components, generationFailed := verifyGeneration(options, enrolled, components)
+	if generationFailed != nil {
+		generationFailed.Outcome = "recovery-partial"
+		return *generationFailed
+	}
 	outcome := "recovery-not-needed"
-	if supervision.Action != "not-needed" || repair.Status == "RESTORED" {
+	if (supervision.Action != "not-needed" && supervision.Action != "verified") || repair.Status == "RESTORED" {
 		outcome = "recovery-started"
 	}
 	return Result{Components: components, Outcome: outcome, Authority: "none"}

@@ -2,6 +2,7 @@ package up
 
 import (
 	"encoding/json"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up/testdata/startfixture"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -31,10 +32,11 @@ func seatUpOptions(t *testing.T) Options {
 	if err := testexec.WriteFile(binary, []byte("engine\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	stageEnrollment(t, root, binary, 1)
+	installed := stageEnrollment(t, root, binary, 1)
 	pid, started := liveSelf(t)
 	return Options{
-		Root: root, MetasystemRoot: syntheticFingerprintRoot(t), Scope: root, Binary: binary, WaitScaleMilli: 1,
+		Executions: startfixture.Current(installed.InstallDigest),
+		Root:       root, MetasystemRoot: syntheticFingerprintRoot(t), Scope: root, Binary: binary, WaitScaleMilli: 1,
 		Pid: pid, StartTime: started, CallerPid: pid, Runtime: "claude",
 		EnsureArmed: func(armed supervise.EnsureOptions) (supervise.EnsureResult, error) {
 			return supervise.EnsureResult{Action: "verified", Owner: supervise.ArmingOwner{Pid: 6161}, Generation: armed.FenceGeneration}, nil

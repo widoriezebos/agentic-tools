@@ -399,7 +399,13 @@ func (effects processArmEffects) steps(scope processScope, scale int, authority 
 	})
 	lines = append(lines, upResult.Lines()...)
 	if upResult.ExitCode() != 0 {
-		return processArmResult{lines: lines}, fmt.Errorf("up ended with outcome %s", upResult.Outcome)
+		detail := ""
+		for _, component := range upResult.Components {
+			if component.Component == upResult.Failed {
+				detail = component.Detail
+			}
+		}
+		return processArmResult{lines: lines}, fmt.Errorf("up ended with outcome %s: %s: %s", upResult.Outcome, upResult.Failed, detail)
 	}
 	return processArmResult{lines: lines, unchanged: stewardKept && upResult.Outcome == "recovery-not-needed", runnerPid: afterPid}, nil
 }

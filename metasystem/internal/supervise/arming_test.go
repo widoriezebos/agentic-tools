@@ -19,6 +19,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise/testdata/ownerfixture"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -173,24 +174,13 @@ func signalTakeoverComponentReady() {
 
 func armingOwnerHelper(args []string) error {
 	root := processArgument(args, "--repo")
-	gate := processArgument(args, "--gate")
 	tag := processArgument(args, "--tag")
 	fingerprint := processArgument(args, "--fingerprint")
 	interval, _ := strconv.Atoi(processArgument(args, "--interval"))
 	watcherCap, _ := strconv.Atoi(processArgument(args, "--watcher-cap"))
-	gateReader, err := os.Open(gate)
+	exact, err := ownerfixture.AwaitPublication(args)
 	if err != nil {
-		return fmt.Errorf("open owner publication gate: %w", err)
-	}
-	defer gateReader.Close()
-	defer os.Remove(gate)
-	var release [1]byte
-	if _, err := gateReader.Read(release[:]); err != nil {
-		return fmt.Errorf("read owner publication gate: %w", err)
-	}
-	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
-	if err != nil || state != identity.Alive {
-		return fmt.Errorf("read helper identity: state=%s err=%v", state, err)
+		return err
 	}
 	checkout := &DiskCheckout{
 		Root: root, Self: exact.Ref(), SelfTag: tag, IntervalSec: interval,
@@ -200,20 +190,11 @@ func armingOwnerHelper(args []string) error {
 	held := make([]Held, 0, len(productionComponentSet))
 	for _, component := range productionComponentSet {
 		componentTag := tag + "-" + string(component) + "-1"
-		command := exec.Command(os.Args[0], "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", componentTag, takeoverComponentReadyFlag)
-		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
-		// Its tag is read from argv by whatever sweeps the published
-		// state, so it is published only once the image is running.
-		if err := testexec.StartReady(command); err != nil {
+		ref, err := ownerfixture.Component("--takeover-component-helper", componentTag, takeoverComponentReadyFlag)
+		if err != nil {
 			return err
 		}
-		componentExact, componentState, componentErr := (identity.KernelProber{}).Probe(int64(command.Process.Pid))
-		if componentErr != nil || componentState != identity.Alive {
-			_ = command.Process.Kill()
-			return fmt.Errorf("read %s helper identity: state=%s err=%v", component, componentState, componentErr)
-		}
-		held = append(held, Held{Component: component, Tag: componentTag, Identity: componentExact.Ref(), Generation: generation})
-		go func() { _ = command.Wait() }()
+		held = append(held, Held{Component: component, Tag: componentTag, Identity: ref, Generation: generation})
 	}
 	if err := checkout.PublishState(held); err != nil {
 		return err
@@ -241,12 +222,7 @@ func armingOwnerHelper(args []string) error {
 }
 
 func armingOwnerCommand(args ...string) (*exec.Cmd, error) {
-	gate := processArgument(args, "--gate")
-	if err := syscall.Mkfifo(gate, 0o600); err != nil {
-		return nil, fmt.Errorf("create owner publication gate: %w", err)
-	}
-	arguments := append([]string{"-test.run=^TestArmingOwnerHelper$", "--", "--arming-owner-helper"}, args...)
-	return exec.Command(os.Args[0], arguments...), nil
+	return ownerfixture.Command("--arming-owner-helper", args...)
 }
 
 func armingOptions(root string) EnsureOptions {

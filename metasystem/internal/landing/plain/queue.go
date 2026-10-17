@@ -121,6 +121,9 @@ type Entry struct {
 	Landing  *Clock `json:"landing,omitempty"`
 }
 
+// WithLaneLock serializes a lane transition with proof admission.
+func WithLaneLock(install string, fn func() error) error { return withLock(install, fn) }
+
 // withLock runs fn under the lane's file lock, creating its folder.
 func withLock(install string, fn func() error) error {
 	if err := os.MkdirAll(Dir(install), 0o755); err != nil {

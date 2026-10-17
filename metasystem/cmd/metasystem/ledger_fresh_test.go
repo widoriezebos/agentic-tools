@@ -7,6 +7,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/up/testdata/startfixture"
 	"os"
 	"path/filepath"
 	"strings"
@@ -412,10 +414,14 @@ func freshUpFixture(t *testing.T, b *goalCLIBed, d syncRequestDependencies) upCo
 		options.FindSessionAncestor = func(string, int64, string) (census.AgentAncestor, error) {
 			return census.AgentAncestor{Pid: exact.Pid, PidStartedAt: exact.StartedAt.Unix(), PidStartTicks: exact.StartTicks, BootID: exact.BootID, Runtime: "fake"}, nil
 		}
+		executionDigest := ""
+		options.Executions = func(root string) map[string]enginepin.Execution { return startfixture.Current(executionDigest)(root) }
+
 		options.EnsureArmed = func(supervise.EnsureOptions) (supervise.EnsureResult, error) {
 			return supervise.EnsureResult{Action: "joined", Generation: 1}, nil
 		}
-		options.EnsureStewardRunner = func(string, *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
+		options.EnsureStewardRunner = func(_ string, enrolled *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
+			executionDigest = enrolled.Install.InstallDigest
 			return steward.EnsureRunnerResult{Action: "already-running", Generation: 1}, nil
 		}
 		return up.Run(options)
