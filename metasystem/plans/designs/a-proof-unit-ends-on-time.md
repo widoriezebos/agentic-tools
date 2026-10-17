@@ -2,7 +2,7 @@
 
 - Kind: design
 - Id: 01M5A0PR00FVN1TEND50NT1ME0
-- Status: draft
+- Status: accepted
 - Goals: a-proof-unit-ends-on-time
 
 The goal a-proof-unit-ends-on-time was opened by the steward in Wido's name on 2026-10-17 (lane test, finding 374); the Id above is permanent.
@@ -160,3 +160,9 @@ Mutations: floor or ceiling removed; recovery suppressed; observations keyed by 
 ## Steward decisions after round 5 (07:12, Wido's name)
 
 12. U2's finish record carries a private test-only `beforeLock` hook (nil in production, an injection seam under R-104) for the overlap fixture's barrier; mutation 11 is caught by a `TryLock` check inside `publish`, the deterministic proof that quiet is published under the lock.
+
+## Folded after round 7 (07:58, Wido's name)
+
+- The build briefs this page names (U1, U2) live with the lane test's evidence at /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/ (a-proof-unit-ends-on-time-U1-brief.md FINAL by the stop rule; a-proof-unit-ends-on-time-U2-brief.md DRAFT); their production-line inventories and numbered mutation fixtures are verified by each unit's build report and accountable read, not by this page.
+- Incident certainty: the retained dump proves that `awaitHeld` remained blocked for 74 minutes; the other observations (no open files, no custodian observation after 04:40:39) suggest the producer was lost but do not prove that its process group had disappeared; D1's ESRCH condition is what the new wait tests.
+- Round 7 (Astra, gpt-6-astra, 07:56, scratchpad/codex-crit-unitbound-7.log, against the registered page on main 0128fc34d; 0 material, 2 minor): both folded here. Lineage 6 → 4 → 3 → 2 → 1 → (admission) → 0: the critique stops; Status accepted.
