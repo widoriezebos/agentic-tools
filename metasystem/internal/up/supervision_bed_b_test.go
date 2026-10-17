@@ -194,7 +194,7 @@ func TestSupBSurvivingMainJoinsTheReArmedSupervisionAsVerified(t *testing.T) {
 			return supervise.EnsureResult{Action: "verified", Owner: supervise.ArmingOwner{Pid: 6161}, Generation: 5}, nil
 		},
 	}
-	components, _, failed := ensureSupervision(options, enrolled, nil)
+	components, _, failed := ensureSupervision(options, enrolled, &generationRun{}, nil)
 	if failed != nil {
 		t.Fatalf("join failed: %#v", failed)
 	}

@@ -489,7 +489,7 @@ func TestTypedDriftAtBothLaunchSitesRoutesToEnrollmentDrift(t *testing.T) {
 		}
 		t.Cleanup(func() { enrolledCommand = prior })
 		options := Options{Root: root, MetasystemRoot: syntheticFingerprintRoot(t), Scope: root, Binary: binary, WaitScaleMilli: 1}
-		_, _, failed := ensureSupervision(options, enrolled, nil)
+		_, _, failed := ensureSupervision(options, enrolled, &generationRun{}, nil)
 		if failed == nil || failed.Outcome != "ENROLLMENT_DRIFT" ||
 			!strings.Contains(failed.Components[len(failed.Components)-1].Detail, "supervision-owner launch") {
 			t.Fatalf("supervision command drift lost its typed mapping: %+v", failed)
