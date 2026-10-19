@@ -3,7 +3,7 @@
 - Kind: design
 - Id: 01M5B0TESTS0BSERVE0NLY0INJ
 - Status: accepted
-- Goals: tests-observe-only-what-they-inject
+- Goals: tests-observe-only-what-they-inject tests-observe-only-what-they-inject-2
 
 The goal tests-observe-only-what-they-inject is opened by the steward in Wido's name (step-back 2026-10-17, cause C1, remedy R1). The Id above is permanent.
 
@@ -176,3 +176,7 @@ The SIGSTOP of the inner custodian is part of the witness, not of the change: it
 1. The production legacy `proof-run launch` (proof_run.go:139) kills foreign fixture survivors on the host under today's rule, which an existing test asserts; this page does not change production behaviour. Whether a launch without an attempt id should scope its reaping to its own owner is a product question recorded for Wido in Not in scope; the lane test's steward does not decide it.
 2. Who printed the unrelated lease line and whether 384's engine child gets an injected table are not U1's business; U3's inventory names them if they matter.
 3. Build order: U1 after the U1.2b build (one Codex build at a time); its landing follows the queue (U1.2a → seat U1b → a-proof-unit U1 → this U1 → U1.2b).
+
+## Recut (2026-10-19, steward in Wido's name)
+
+U1 (D1) landed on main by the hand route on 2026-10-19: sharded gate GATE OK 16:02 on code tree 34e658d5 (evidence lane-test-20261009/gates/tests-observe-u1-20261019), then a fresh full proof of main. The goal tests-observe-only-what-they-inject concludes with U1 under the whole-goal rule (a goal delivers what landed). U2 (D2) and U3 (D3) keep their inventories and bounds above and are delivered under tests-observe-only-what-they-inject-2, opened in Wido's name with the same risk answers; the two flake incidents this goal owned pass to it, with the lane-fix flake the lane registered on 2026-10-19 (TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch, its third record); the proofrun inventory red cleared in the alone proof of 17:00.
