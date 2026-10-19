@@ -3937,12 +3937,12 @@
         }
       ],
       "owner": {
-        "machine": "",
-        "since": "",
-        "how": "",
-        "by": ""
+        "machine": "m1e",
+        "since": "2026-10-19T11:01:31Z",
+        "how": "hand",
+        "by": "Wido"
       },
-      "fixGoal": "",
+      "fixGoal": "tests-observe-only-what-they-inject",
       "fixBranch": {
         "name": "",
         "commit": "",
