@@ -3,7 +3,7 @@
 - Kind: design
 - Id: 01M4ZD0000000000000000SET1
 - Status: accepted
-- Goals: a-persons-terminal-is-not-a-seat-main
+- Goals: a-persons-terminal-is-not-a-seat-main a-persons-terminal-is-not-a-seat-main-2
 
 Provenance: 2026-10-16 22:48; findings 355, 357, 363, 365 (+ addenda) of the lane test; Wido 22:30 ("watch the normal seat too; intervene; common root cause; design and fix"); author: the m1e seat as Wido's steward. Round 5: 2026-10-16 23:23, anchors read at origin/main 7f368a8d9. Rulings relied on: R-104, R-121, R-124, R-129, R-136.
 
@@ -69,3 +69,7 @@ Deferred: D4.
 - Steward decision (23:18): the designer's added rule stands — a launch counts as closed only when a NON-seat actor (a person, or a seat of another lineage) acted on its goal after the launch started; the 365 pause was `goal pause commit-goal-binding --by Wido`, a person's act. When PlanSeat holds two claims, its existing order decides; D5 reads the hold for the selected goal only.
 - Round 4 (Astra, gpt-6-astra, 23:18–23:22, scratchpad/codex-crit-seat-4.log, run from the -reads worktree; 2 material, 1 minor; all folded): SEAT-R4-01 guard covers older generations and epoch-less continuations (D1 Generation guard; U1c fixtures, narrowed-guard mutation); RULING-R-129-ui fallback repeat reconciles its own launch (D5 Replay; U3 lost-response tests); SEAT-R4-03 the launch check at `seat_start.go:741` takes the selection, the fixture observes G2's launch (D5 Ladder and launch; Problem 6; U3). Anchors re-read at 7f368a8d9.
 - Accepted 2026-10-16 23:23 by the stop rule (6 → 3 → 1 → 2 material; the last two are D5's new surface, folded); the unit briefs' own critiques and the accountable reads decide from here.
+
+## Recut (2026-10-19, steward in Wido's name)
+
+U1a (D1 predicate and branch) landed on main on 2026-10-17 (6e1b555cb3) and U1b (D1 counts) on 2026-10-19 (0138a313ee, rebased by hand from 00e45f4bfe; sharded gate on code tree e14969739378daa9d671c75f4b00ace4f0fa0c3b ended 20:10 red on one load flake, TestPersonScopeCompletionReadersAndRestore, green alone in 11.5 s and never red in a proof, finding 403; marker by decision, S468; evidence lane-test-20261009/gates/seat-u1b-20261019), both by the hand route while the lane lands nothing on its own. The goal a-persons-terminal-is-not-a-seat-main is concluded with U1a and U1b. U1c (D1 repair), U2 (D3) and U3 (D5) continue under a-persons-terminal-is-not-a-seat-main-2, opened, approved and ranked first the same day in Wido's name. The design is unchanged; D4 stays deferred.
