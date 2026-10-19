@@ -4035,6 +4035,96 @@
       ],
       "opened": "2026-10-19T12:52:10Z",
       "closed": null
+    },
+    {
+      "id": "red:metasystem/internal/testenv:TestDeadRegistryHomeIsRemovedByAnotherProcessMain-2",
+      "identity": "red:metasystem/internal/testenv:TestDeadRegistryHomeIsRemovedByAnotherProcessMain",
+      "group": "metasystem/internal/testenv",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T125317.693781000Z.log",
+          "classname": "metasystem/internal/testenv",
+          "name": "TestDeadRegistryHomeIsRemovedByAnotherProcessMain",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261019T125317.693781000Z",
+          "batch": "20261019T125317.693781000Z",
+          "baseCommit": "bde6f2ad07342d0024eb0dfa443fdc193d377b76",
+          "baseTree": "91b383fbea64c676f8c2ed0590983ee8348946a4",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T125317.693781000Z.log",
+          "logDigest": "1a95b972ee3ad27dd2ade33101699e8a71e9f957defe79ea4636341d7e6631ff",
+          "seenAt": "2026-10-19T13:43:58Z",
+          "opid": "XXGH7TGREG6WQKMN3ZAGV31VQ3-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261019T125317.693781000Z"
+      ],
+      "opened": "2026-10-19T13:43:58Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/internal/testenv:TestSetupChildIsEndedWhenTheBinaryIsKilled-2",
+      "identity": "red:metasystem/internal/testenv:TestSetupChildIsEndedWhenTheBinaryIsKilled",
+      "group": "metasystem/internal/testenv",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T125317.693781000Z.log",
+          "classname": "metasystem/internal/testenv",
+          "name": "TestSetupChildIsEndedWhenTheBinaryIsKilled",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261019T125317.693781000Z",
+          "batch": "20261019T125317.693781000Z",
+          "baseCommit": "bde6f2ad07342d0024eb0dfa443fdc193d377b76",
+          "baseTree": "91b383fbea64c676f8c2ed0590983ee8348946a4",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T125317.693781000Z.log",
+          "logDigest": "1a95b972ee3ad27dd2ade33101699e8a71e9f957defe79ea4636341d7e6631ff",
+          "seenAt": "2026-10-19T13:43:58Z",
+          "opid": "XXGH7TGREG6WQKMN3ZAGV31VQ3-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261019T125317.693781000Z"
+      ],
+      "opened": "2026-10-19T13:43:58Z",
+      "closed": null
     }
   ],
   "cadence": {
