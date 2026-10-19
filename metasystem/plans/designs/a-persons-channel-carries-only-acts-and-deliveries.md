@@ -5,7 +5,7 @@
 - Status: accepted
 - Goals: a-persons-channel-carries-only-acts-and-deliveries
 
-Tier 2, revision 3 (final text after one Astra round). Read in `/Users/wido/LocalStorage/GitHub/agentic-tools-m1e` at 7f0f5f3e0e on 2026-10-19, 13:10-14:30 CEST. Rulings relied on: R-104-m1e (artificial clocks) and R-129-ui (a request that already holds is not asked again, `internal/channel/question.go:252-257`).
+Tier 2, revision 4 (revision 3 was accepted at the stop; revision 4 folds the U1 brief's reading of the code, see the section at the end). Read in `/Users/wido/LocalStorage/GitHub/agentic-tools-m1e` at 7f0f5f3e0e on 2026-10-19, 13:10-14:30 CEST. Rulings relied on: R-104-m1e (artificial clocks) and R-129-ui (a request that already holds is not asked again, `internal/channel/question.go:252-257`).
 
 Wido's binding words, verbatim as given to this page:
 - **Word 10 (2026-10-19 13:05):** "I also need much better telegram messages. The current ones are technical blurps that don't mean anything to me. I need plain english ones that I can act on, or I really care about (as in: goal delivered). The rest is rubbish."
@@ -126,15 +126,18 @@ No single place asks whether a message is his. Below, every route to a person is
 
 ## Units
 
-Inventory: the sites in Problem and Decisions (grep of non-test Go, 13:1x-14:20). 11 test files name the transport result or the fixture log; those that expect a health or pattern send change their expectation. Order: U1, then U2, then U3. Withholding switches on only in U3, once the words and the asks exist (PC-09).
+Inventory: the sites in Problem and Decisions (grep of non-test Go, 13:1x-14:20). 12 test files name the transport result or the fixture log (Astra's count at fe3deb5b45); those that expect a health or pattern send change their expectation. Order: U1a, U1b, then U2, then U3. Withholding switches on only in U3, once the words and the asks exist (PC-09).
 
-- **U1 Groundwork: result contract and decision identity (D4, D6 identity). About 112 production lines, ~150 test lines. Groundwork only: every class is still allowed, so behaviour is unchanged.**
-  - Funnel outcome type and return, ~20.
-  - `submitEpisode` decides before the attempt; `TRANSPORT_WITHHELD`, ~20.
-  - Queue settle without delivery, ~12. `tick.go:310` caller, ~3.
-  - `episodeSettled` and its seven sites, ~12.
-  - Clock injected at `alert_episode.go:562` and `notify.go:380`, ~15.
-  - `Question.Decision`, AskOrFind matching and persistence, ~30.
+- **U1a Groundwork, one result contract and one clock (D4). 179-205 production lines (stop line 210; Astra round 2 recounted the funnel type), tests new only. Groundwork only: every class is still allowed, so behaviour is unchanged. Usable alone: a test can withhold a notice and time the funnel.**
+  - `TransportWithheld` (`alert_episode.go:19-27`), 3. Funnel type with `decide` (the only caller of the injected decider) and `send` (takes the decision as a value), outcome type (`notify.go:118-144`), 45-47.
+  - Journal `withheld` field and clocked journal time (`notify.go:350-386`), 7-9. `submitEpisode` decides once, before it saves the attempt (`alert_episode.go:540-579`; the attempt-changed guard at :564-566 stays), 22-28.
+  - `episodeSettled` and its eight sites (`alert_episode.go:299,524,657`, `signal_channel.go:136,177`, `lane_silent.go:266`, `pattern_episode.go:204,326`), 20.
+  - Queue return contract: `deliverPendingNotification` returns (sent, err); withheld is (false, nil) and never counts as delivered; the two existing retirements without delivery (`notify.go:223-230`, `:258-262`) keep no send, no journal line, no decision (`notify.go:200-305`), 26-32. Provider-stale caller (`tick.go:309-311`), 6.
+  - The clock is a function threaded to every `submitEpisode` caller and read when the journal line is written (`alert_episode.go:563`, `notify.go:380`; callers `tick.go:715-726`), 50-60.
+- **U1b Groundwork, one decision identity (D6 identity, BO-1, BO-2, BO-4). 70-81 production lines (stop line 100). Builds after U1a (different lines of `tick.go`).**
+  - BO-1 cause constants for the seven `degradedTick` callers and `PendingNotification.Cause` (`tick.go:324-507`, `:800-811`, `intervene.go:315-319`), 29-32.
+  - BO-2 table of the 17 remedy causes beside `health.go:146-162`, with the source test, 20-24.
+  - `Question.Decision`, `RetiredAt`, `AskRequest.Decision` (`question.go:48-91`), 9-11; decision match in `askOrFind`, facts match excludes decisions, validation, persistence (`question.go:270-313`), 12-14.
 - **U2 The words (D3, PC-10). About 205 production lines, ~250 test lines. Usable alone: every act and delivery becomes readable.**
   - `AskRequest.Plain` and the three-line renderer, replacing `question.go:444-519` for posts, ~70.
   - Nine producers fill `Plain` (`policy_question.go:347`, `drift.go:137`, `check.go:143,315`, `setting.go:139`, `recovery_request.go:155`, `intent_unit_stop.go:336`, `intent_unit_questions.go:197`, `channel_verbs.go:244` with new `--decision`/`--if-nothing` flags), ~45.
@@ -242,3 +245,15 @@ These are what the code could not settle here.
 
 ## Accepted at the stop (steward in Wido's name, 2026-10-19 14:20 CEST)
 Astra round 1 on revision 2: 11 material, 1 minor, all folded from the code into revision 3 (persons-channel-critique-1.log); Astra's own verdict: acceptable at the stop without a second round once folded. Wido's words 10 (13:05 Telegram), 11 (13:40 banners follow the same two classes) and 12 (13:40 a machine that cannot heal itself asks) are the binding block. Remaining obligations BO-1..BO-9 go into the unit briefs. The formal `metasystem design review` runs at the next engine start; a material finding there reopens the page. The amendment this page requires of plans/designs/a-stop-waits-for-the-unit-boundary.md is recorded on that page the same day.
+
+## Revision 4 (steward in Wido's name, 2026-10-19, folded from the U1 brief and its Astra rounds)
+
+Read at fe3deb5b45 by the Opus designer and verified by Astra (briefs/a-persons-channel-carries-only-acts-and-deliveries-U1-critique-1.findings.md and critique-2.findings.md):
+- U1 is cut into U1a and U1b under Wido's ceiling of 250: the clock must be a function threaded to every caller, not an instant handed in earlier (a time taken before a ten-second post would sort a line as already read: `notifications.ts:122,206`), which costs 50-60 lines, and BO-1 and BO-2 add about 50 more.
+- `episodeSettled` has eight sites, not seven: `pattern_episode.go:326` was missing above.
+- BO-4's premise was false: `listQuestions` and `WalkQuestions` read the same checkout-local folder (`question.go:129,165`); they differ in tolerance and sort order. Resolution in U1b: keep `listQuestions`; its strict read refuses an ask rather than asking twice.
+- The queue already retires without delivery in two places (`notify.go:223-230` stalled-dead, `:258-262` unauthorized handoff); withheld is a third disposition and those two keep their behaviour.
+- `submitEpisode` returns nil on a transport failure and records it on the episode only (`alert_episode.go:571-579`); callers cannot tell from the return. The U1a result contract fixes that; its other error, the attempt-changed guard (:564-566), stays.
+- Stream resumption is an exact id match plus a byte offset (`notifications.go:140-150`, `:187-202`), so the fresh clock protects sort order and unread counts, not the stream.
+- Lines that drifted: completion `alert_episode.go:563` (not :562); `degradedTick` `tick.go:800-811`; remedy causes `health.go:146-162`; `remedyFor` `remedy.go:53-86`; escalation `health.go:933-950`; `deliverPendingNotification` `notify.go:288`. The fixture transport log time `notify.go:186` reads the wall and stays in the transport, outside the funnel clock.
+- Open for U3: whether `stop-fence-closed` is an exempt person-ordered hold (who closes the fence), and whether an agent may run `incident claim` or `goal release` on its own (classing `trunk-red-unowned` and `foreign-lineage` as a person's).
