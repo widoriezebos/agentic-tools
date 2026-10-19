@@ -3438,11 +3438,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261017T063540.745828000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-17T08:09:17Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-19T10:56:59Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "D0ZR5SMPXBNA76PS9F2A0GX68C-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "induced: proof attempt 20261017T063540.745828000Z of b520ec17f ran while the steward cleared the Go caches and the test registries on the host (lane-test finding 391, 2026-10-17 09:09-09:34 CEST); the test is not failing on its own; each of these tests PASSED in the full proof 20261019T100545.011463000Z of 7999ceaeb (12:05-12:50 CEST, code unchanged on main since: records-only moves)"
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestDeployRollbackAndResumeDuringADeployAreRefusedNamingPause",
