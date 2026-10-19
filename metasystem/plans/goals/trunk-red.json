@@ -3897,11 +3897,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261019T100545.011463000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-19T10:50:00Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-19T11:01:25Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "JW877JZ2BYFNM23FTEMACWG1PN-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "host repair, not code: after the reboot the module cache lacked the pinned go1.27.1 toolchain and two tool modules (finding 393); devgate warm and a hand download restored them at 12:20; fast-static-build is green in attempt 20261019T105029.683135000Z"
+      }
     },
     {
       "id": "red:metasystem/internal/proofrun:TestTestEnvironmentStandardInventoryMatchesObserved-2",
