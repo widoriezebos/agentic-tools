@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 191
+- Revision: 192
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -261,4 +261,5 @@ History:
 - 2026-10-16T16:22:06Z 950VCTW1MP06S6MJPX8CPAZHBX-ui-71c5cb39 ack actor=ui+steward-seat targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-05T00:14:22Z ack
 - 2026-10-16T16:22:06Z 950VCTW1MP06S6MJPX8CPAZHBX-ui-71c5cb39 ack actor=ui+steward-seat targets=records-land-through-the-lane displaced=ui+steward-seat@2026-10-05T03:15:42Z ack
 - 2026-10-16T16:55:34Z K2GVTSW7K6GCEF8MQWJERHYBDV-ui-71c5cb39 ack actor=ui+steward-seat targets=commit-goal-binding displaced=ui+steward-seat@2026-10-16T16:22:06Z ack
-Integrity: sha256=c6b1ca9e275e7823868fa4c3cd20b60cbf1c27e7bc0da1b2217f2ab71b6cb613
+- 2026-10-19T11:09:34Z R7AT362KYEFJ7W121SCJ9VXDHJ-m1e-f456f182 ack actor=human:Wido targets=unit-run-truthful-and-self-advancing displaced=m1e+main-1790454088-93948-21671b@2026-10-14T19:01:16Z ack
+Integrity: sha256=2e050d6ebb37c2ab60f614dc4eb0d02e28a80b099b6c57a4294d59988bd058c3
