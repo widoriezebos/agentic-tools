@@ -1,6 +1,6 @@
 # the-lane-deploys-the-engine-it-runs
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 4
 - Risk: severity=3 novelty=2 exposure=2 accumulation=2 basis="Lane test finding 344 and its addendum (2026-10-16: the lane ran two engine generations twice, landing deploy answered 'nothing to deploy' from the binary on disk, the machine-rebuild re-armed only the steward runner at 07:03:53); memory landing-deploy-nothing-to-deploy-needs-a-restart."
@@ -9,10 +9,13 @@
 - Origin: human
 - Next step: U1 brief (briefs/the-lane-deploys-the-engine-it-runs-U1-brief.md, Astra rounds in progress, split U1a/U1b recorded) from the accepted page (designs/the-lane-deploys-the-engine-it-runs.md, Astra 3 → 3, stop rule); Codex build by hand in -deploy after sweep U1, Opus read, gate, hand landing.
 - OpenedAt: 2026-10-16T09:24:05Z
-- Revision: 5
+- FirstClaimAt: 2026-10-19T18:16:53Z
+- Revision: 6
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-16T09:24:13Z revision=2 opid=9WY73PJXDEGZZM3K2SF9TYHBEM-m1e-670f65d0 authority=proven digest=280467978d21c803d22fce699d3e19b018939901f98420636e6e8ea77a5a2c25 episode=2
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-19T18:16:53Z by=human:Wido areas="null" areas-source="01M4ZD0000000000000000DPL1@aa8ec777b081a7c32052ecf94ec126151038ff47255a41a091ca415eef23c3d5" areas-known=false areas-warnings="[\"areas unknown for goal the-lane-deploys-the-engine-it-runs in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-lane-deploys-the-engine-it-runs.md\",\"areas unknown for goal asks-clear-on-their-effect\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=6 accountingRevision=6 episodeAt=2026-10-19T18:16:53Z episodeRevision=6
+- StopCapability: generation=6 revision=6 machine=m1e claimEpoch=0 fenceEpoch=0
 
 History:
 - 2026-10-16T09:24:05Z BTN2QW0TVD0F41BNSZAR0PBCZ5-m1e-670f65d0 open actor=human:Wido targets=the-lane-deploys-the-engine-it-runs
@@ -20,4 +23,5 @@ History:
 - 2026-10-16T09:24:20Z NN9EPTB9QVJZRY9TP6Y70T6674-m1e-670f65d0 set-priority actor=human:Wido targets=the-lane-deploys-the-engine-it-runs reason=priority-order subject=the-lane-deploys-the-engine-it-runs from=unranked to=1:56 requested-sequence=append
 - 2026-10-16T13:50:22Z QFQDE3W9XPYGPW7G66PC9ESSNX-m1e-670f65d0 done actor=human:Wido targets=a-done-goals-branch-is-swept,a-records-change-runs-its-affected-checks,the-lane-deploys-the-engine-it-runs reason=priority-order from=1:56 to=1:55
 - 2026-10-16T16:31:23Z YJ4Z0EP9AQ4SEECEKSXK8RR63K-m1e-670f65d0 set-priority actor=human:Wido targets=a-red-main-is-known-once,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,the-lane-deploys-the-engine-it-runs,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=the-lane-deploys-the-engine-it-runs from=1:55 to=1:4 requested-sequence=4
-Integrity: sha256=33bd55d43ad6dc9afb6d71be94231f4b8cb9f8abbac979606cace0b49fb4eec0
+- 2026-10-19T18:16:53Z 2J7AQWN5SZR2MMB2QY8V5JBXKJ-m1e-f456f182 claim actor=human:Wido targets=the-lane-deploys-the-engine-it-runs authorityOutcome=HUMAN_AUTHORITY_PROVEN authorityGeneration=99 reason=areas unknown for goal the-lane-deploys-the-engine-it-runs in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-lane-deploys-the-engine-it-runs.md; areas unknown for goal asks-clear-on-their-effect; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses
+Integrity: sha256=be05bc1bc1e8be4368f705d9bb5b4dde60dee3cc6fcfac832dc48b7848d60d3f
