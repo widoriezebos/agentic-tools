@@ -1,8 +1,9 @@
 # A stop waits for the unit boundary, and a seat pauses at its daily spend line
 
 - Kind: design
+- Id: 01M5BD000000000000000STP01
 - Status: accepted
-- Goals: a-stop-waits-for-the-unit-boundary, a-seat-pauses-at-its-spend-line
+- Goals: a-stop-waits-for-the-unit-boundary a-seat-pauses-at-its-spend-line
 - Amends: metasystem/plans/token-spend-fence-design.md (Id 01M3A2YHDN94AP79J2RT1875W1, goal token-spend-fence, abandoned): this page is its step 2, kept for Wido's word (R-60-m1) and given on 2026-10-19.
 
 Written 2026-10-19 by the opus-designer for the steward (m1e, Wido's name) from Wido's four decisions of 2026-10-19 (10:10, 12:50, 13:40). Critique: three Astra rounds by hand (gpt-6-astra; every machine was stopped before the reboot, so `design review` could not run): 11 -> 6 -> 5 material, each round folded from the code the designer read; revision 4 is the final text. Accepted at the stop by the steward in Wido's name on 2026-10-19 at 15:00 CEST; the remaining points are brief obligations BO-1..BO-5 below. The formal `metasystem design review` runs at the first engine start; a material finding there reopens this page. Goal split (Wido's rule: a goal has at most five units): a-stop-waits-for-the-unit-boundary = U1a, U1b (no automatic stop cuts a unit; the breached unit finishes); a-seat-pauses-at-its-spend-line = U2, U3, U4 (or U4a, U4b), blocked by the first. Logs: agentic-tools-evidence/lane-test-20261009/analysis/spend-fence-amendment-critique-{1,2,3}.log.
