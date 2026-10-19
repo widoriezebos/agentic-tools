@@ -1,6 +1,6 @@
 # tests-observe-only-what-they-inject
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 58
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="Lane test findings 368, 373, 375, 377, 382 (twice), 384 (2026-10-17): six load or leftover reds in one night; two of two hand gates failed on the legacy-worker test killing testenv's own witness child found in the host process table; every gate and proof is a coin toss until tests observe only injected facts. Step-back analysis of 08:05, Astra-critiqued."
@@ -9,14 +9,18 @@
 - Origin: human
 - Next step: U1 (D1): the legacy-worker launch test and two siblings take the injected process table (0 production lines); brief FINAL; Codex build in -inject, Opus read, gate, hand landing. U2 (D2): the supervise arming helpers register with the fixture custodian. U3 (D3): the audit with its baseline.
 - OpenedAt: 2026-10-17T08:10:36Z
-- Revision: 4
+- FirstClaimAt: 2026-10-19T12:37:18Z
+- Revision: 5
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-17T08:11:14Z revision=3 opid=87931EGN3PHGYAW9EP4MKGAPJG-m1e-c6925449 authority=proven digest=5e7012c2dd3c88e81d101b55ecba55977a551562f6d9e1a7cd84ca51baef3792 episode=3
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-19T12:37:18Z by=human:Wido areas="null" areas-source="01M5B0TESTS0BSERVE0NLY0INJ@75dc007da6039ec29d57592326bb1d1f589b4abf80bd3ac4767b9f6baf6add80" areas-known=false areas-warnings="[\"areas unknown for goal tests-observe-only-what-they-inject in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/tests-observe-only-what-they-inject.md\",\"areas unknown for goal asks-clear-on-their-effect\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=5 accountingRevision=5 episodeAt=2026-10-19T12:37:18Z episodeRevision=5
+- StopCapability: generation=5 revision=5 machine=m1e claimEpoch=0 fenceEpoch=0
 
 History:
 - 2026-10-17T08:10:36Z HVE3V00E5T0CE8GAC8JQGHC6TR-m1e-c5a1e456 open actor=human:Wido targets=tests-observe-only-what-they-inject
 - 2026-10-17T08:10:45Z 9HR77N83TYN5CTNQ66A3TW4QB0-m1e-c5a1e456 set-priority actor=human:Wido targets=tests-observe-only-what-they-inject reason=priority-order subject=tests-observe-only-what-they-inject from=unranked to=1:59 requested-sequence=append
 - 2026-10-17T08:11:14Z 87931EGN3PHGYAW9EP4MKGAPJG-m1e-c6925449 approve actor=human:Wido targets=tests-observe-only-what-they-inject
 - 2026-10-19T12:33:39Z F40E38EKT8XF89X65TNPJ5RYKR-m1e-f2f350ed done actor=human:Wido targets=a-persons-channel-carries-only-acts-and-deliveries,a-proof-unit-ends-on-time,a-proof-unit-ends-on-time-2,a-seat-pauses-at-its-spend-line,a-stop-waits-for-the-unit-boundary,tests-observe-only-what-they-inject reason=priority-order from=1:59 to=1:58
-Integrity: sha256=0ba47271ae2a011eb416da9127abb710d9d0754700bb8a64a3cea76208469c8c
+- 2026-10-19T12:37:18Z QVA5V5793TYJ311RBDP4TQFAFG-m1e-f456f182 claim actor=human:Wido targets=tests-observe-only-what-they-inject authorityOutcome=HUMAN_AUTHORITY_PROVEN authorityGeneration=99 reason=areas unknown for goal tests-observe-only-what-they-inject in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/tests-observe-only-what-they-inject.md; areas unknown for goal asks-clear-on-their-effect; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses
+Integrity: sha256=4ccaea22dabf8d1e655a6c365e5160668ab24f234b5d5523882552815837769f
