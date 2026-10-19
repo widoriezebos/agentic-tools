@@ -3948,11 +3948,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261019T100545.011463000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-19T10:50:00Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-19T15:01:13Z",
+        "attempt": "20261019T141912.003815000Z",
+        "baseCommit": "fe3deb5b45dd6020343fba4b665968ccc445a8fe",
+        "how": "green",
+        "opid": "RDE8FR0ECNAK5ZB81V55DF8R1D-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:fast-static-build-3",
@@ -3985,11 +3991,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261019T120511.105631000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-19T12:52:10Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-19T15:01:13Z",
+        "attempt": "20261019T141912.003815000Z",
+        "baseCommit": "fe3deb5b45dd6020343fba4b665968ccc445a8fe",
+        "how": "green",
+        "opid": "RDE8FR0ECNAK5ZB81V55DF8R1D-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch-3",
@@ -4030,11 +4042,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261019T120511.105631000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-19T12:52:10Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-19T15:01:13Z",
+        "attempt": "20261019T141912.003815000Z",
+        "baseCommit": "fe3deb5b45dd6020343fba4b665968ccc445a8fe",
+        "how": "green",
+        "opid": "RDE8FR0ECNAK5ZB81V55DF8R1D-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/testenv:TestDeadRegistryHomeIsRemovedByAnotherProcessMain-2",
@@ -4075,11 +4093,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261019T125317.693781000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-19T13:43:58Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-19T15:01:13Z",
+        "attempt": "20261019T141912.003815000Z",
+        "baseCommit": "fe3deb5b45dd6020343fba4b665968ccc445a8fe",
+        "how": "green",
+        "opid": "RDE8FR0ECNAK5ZB81V55DF8R1D-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/testenv:TestSetupChildIsEndedWhenTheBinaryIsKilled-2",
@@ -4120,11 +4144,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261019T125317.693781000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-19T13:43:58Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-19T15:01:13Z",
+        "attempt": "20261019T141912.003815000Z",
+        "baseCommit": "fe3deb5b45dd6020343fba4b665968ccc445a8fe",
+        "how": "green",
+        "opid": "RDE8FR0ECNAK5ZB81V55DF8R1D-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "testUnit": "metasystem/cmd/metasystem",
