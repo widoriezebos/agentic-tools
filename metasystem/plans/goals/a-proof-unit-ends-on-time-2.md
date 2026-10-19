@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: U3a is BUILT (BLOCKED on its test allocation 321 vs 250: recut U3a/U3b first), U2 brief exists (after the-lane-says U1a), U4 and U5a-d briefs FINAL; design plans/designs/a-proof-unit-ends-on-time.md (accepted, amended 10-17); one unit at a time by the hand route until the lane lands hand-built units
 - OpenedAt: 2026-10-19T11:40:51Z
-- Revision: 1
+- Revision: 2
 - BlockedBy: a-proof-unit-ends-on-time
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-19T11:41:01Z revision=2 opid=T3M2V822FCQVBJFRRP25PQZJA3-m1e-f2f350ed authority=proven digest=2c909e0604c025fa77132ed0389d1102ed70c93b5a55dfd72d193ba1e9228f47 episode=2
 - Parked: by=human:Wido at=2026-10-19T11:40:51Z blocker=a-proof-unit-ends-on-time because=blocked by a-proof-unit-ends-on-time; returns when it is done
 
 History:
 - 2026-10-19T11:40:51Z SJ6W4W0RFG6RXF8YY45HGM5A9H-m1e-f2f350ed open actor=human:Wido targets=a-proof-unit-ends-on-time-2,a-proof-unit-ends-on-time
-Integrity: sha256=10a58bd3a9c0058472fedfd749d598d98e72a9504856b664dedf66c85b7fabaf
+- 2026-10-19T11:41:01Z T3M2V822FCQVBJFRRP25PQZJA3-m1e-f2f350ed approve actor=human:Wido targets=a-proof-unit-ends-on-time-2
+Integrity: sha256=de21148548c394cf925d0ce8558a1844d58f3e1e3db939838877a46ca060b96b
