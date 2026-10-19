@@ -3178,7 +3178,15 @@
       },
       "holds": [],
       "opened": "2026-10-16T17:25:03Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-10-19T10:57:55Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "1CFY0HFT53ATADGHD1256C9148-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "stale: the fix goal flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell was done on 2026-10-16 (e870edc51e) and the test passed in the full proof 20261019T100545.011463000Z of 7999ceaeb (12:05-12:50 CEST)"
+      },
       "class": "flake"
     },
     {
