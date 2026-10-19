@@ -4,6 +4,7 @@
 - Id: 01M5A0PR00FVN1TEND50NT1ME0
 - Status: accepted
 - Goals: a-proof-unit-ends-on-time a-proof-unit-ends-on-time-2
+
 The goal a-proof-unit-ends-on-time was opened by the steward in Wido's name on 2026-10-17 (lane test, finding 374); the Id above is permanent.
 
 Anchors were read at origin/main 6e1b555cb in /Users/wido/LocalStorage/GitHub/agentic-tools-m1e-reads/metasystem. Proof records were read in the landing checkout, `artifacts/agents/landing/proofs/`. Rulings:
