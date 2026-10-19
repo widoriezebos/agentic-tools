@@ -3,8 +3,7 @@
 - Kind: design
 - Id: 01M5A0PR00FVN1TEND50NT1ME0
 - Status: accepted
-- Goals: a-proof-unit-ends-on-time
-
+- Goals: a-proof-unit-ends-on-time a-proof-unit-ends-on-time-2
 The goal a-proof-unit-ends-on-time was opened by the steward in Wido's name on 2026-10-17 (lane test, finding 374); the Id above is permanent.
 
 Anchors were read at origin/main 6e1b555cb in /Users/wido/LocalStorage/GitHub/agentic-tools-m1e-reads/metasystem. Proof records were read in the landing checkout, `artifacts/agents/landing/proofs/`. Rulings:
@@ -166,3 +165,6 @@ Mutations: floor or ceiling removed; recovery suppressed; observations keyed by 
 - The build briefs this page names (U1, U2) live with the lane test's evidence at /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/ (a-proof-unit-ends-on-time-U1-brief.md FINAL by the stop rule; a-proof-unit-ends-on-time-U2-brief.md DRAFT); their production-line inventories and numbered mutation fixtures are verified by each unit's build report and accountable read, not by this page.
 - Incident certainty: the retained dump proves that `awaitHeld` remained blocked for 74 minutes; the other observations (no open files, no custodian observation after 04:40:39) suggest the producer was lost but do not prove that its process group had disappeared; D1's ESRCH condition is what the new wait tests.
 - Round 7 (Astra, gpt-6-astra, 07:56, scratchpad/codex-crit-unitbound-7.log, against the registered page on main 0128fc34d; 0 material, 2 minor): both folded here. Lineage 6 → 4 → 3 → 2 → 1 → (admission) → 0: the critique stops; Status accepted.
+
+## Delivery recut (2026-10-19 14:05, steward in Wido's name, decision 9)
+U1 lands alone as the whole delivery of a-proof-unit-ends-on-time (hand route; finding 395 and 396 closed the lane route for a hand-built unit). U2, U3 (U3a built, BLOCKED on its test allocation 321 vs 250: recut U3a/U3b), U4 (conditional on a current defect: its finding 378 was withdrawn) and U5a-d move to the follow-up goal a-proof-unit-ends-on-time-2 (opened, approved, priority 1, blocked by the first).

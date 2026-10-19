@@ -264,3 +264,9 @@ The steward cannot settle these from this page's reads. Each brief verifies them
 - D9's predicate lives in steward (steward.BreachStopEligible), reached by every producer through one composer in cmd/metasystem: dispatch cannot import steward, delegation already does. The internal/unitboundary move is dropped. Completion evidence comes from one composed units reader (stewardUnitStages, factored from steward_seat.go:186-195) carrying published-review status; the predicate takes the stop reason, matches <run>/<round>, and has an explicit "no unit run" outcome.
 - The fenced-goal successor rule needs no production line: goal/project.go:793-795 already keeps a fenced claim out of Claimed.
 - U1a is cut: U1a.1 (D12 prober and signaller seams on every production path, the heldWorkCompleted extraction with the shared reader; 113-146 lines, usable alone) and U1a.2 (eligibility in all four producers, the DEFERRED route and words, the persisted terminal reason BO-2; 172-221 lines). Brief: agentic-tools-evidence/lane-test-20261009/briefs/a-stop-waits-for-the-unit-boundary-U1a-brief.md (FINAL).
+
+## Amendment from the design a-persons-channel-carries-only-acts-and-deliveries (2026-10-19 14:20, PC-08)
+- A spend hold that waits for a person (the pause) is an ACT and reaches him in that design's words; routine daily-line crossings are withheld, including those of exempt seats (D8 of this page no longer notifies a crossing).
+- DEFERRED work that still progresses is status, not a message (D9).
+- The person's-channel design owns the wording of every stop and pause notice; this page owns their facts; a stuck unit raises no ask while its goal has a stop open, so one decision identity serves both.
+- The cost shown to a person is elapsedOverrun; diagnostic minutes never appear in a message.
