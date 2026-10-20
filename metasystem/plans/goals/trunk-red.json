@@ -4840,11 +4840,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261020T091537.088976000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-20T10:04:19Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-20T11:50:03Z",
+        "attempt": "20261020T105817.013957000Z",
+        "baseCommit": "6b651880a4d3399d2dd8ae56c538b9d1a326ede8",
+        "how": "green",
+        "opid": "V54WAE1VRKF5YC9JKE68G0SPDS-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/identity:TestCustodianReapsStoppedAndDetached",
@@ -4885,11 +4891,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261020T091537.088976000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-20T10:04:19Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-20T11:50:03Z",
+        "attempt": "20261020T105817.013957000Z",
+        "baseCommit": "6b651880a4d3399d2dd8ae56c538b9d1a326ede8",
+        "how": "green",
+        "opid": "V54WAE1VRKF5YC9JKE68G0SPDS-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/identity:TestKilledTestBinaryLeavesNoFixtureChild",
@@ -4930,11 +4942,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261020T091537.088976000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-20T10:04:19Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-20T11:50:03Z",
+        "attempt": "20261020T105817.013957000Z",
+        "baseCommit": "6b651880a4d3399d2dd8ae56c538b9d1a326ede8",
+        "how": "green",
+        "opid": "V54WAE1VRKF5YC9JKE68G0SPDS-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/identity:TestQuietCustodianRemovesItsLog",
@@ -4975,11 +4993,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261020T091537.088976000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-20T10:04:19Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-20T11:50:03Z",
+        "attempt": "20261020T105817.013957000Z",
+        "baseCommit": "6b651880a4d3399d2dd8ae56c538b9d1a326ede8",
+        "how": "green",
+        "opid": "V54WAE1VRKF5YC9JKE68G0SPDS-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/testenv:TestSetupChildIsEndedWhenTheBinaryIsKilled-3",
@@ -5020,11 +5044,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261020T091537.088976000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-20T10:04:19Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-20T11:50:03Z",
+        "attempt": "20261020T105817.013957000Z",
+        "baseCommit": "6b651880a4d3399d2dd8ae56c538b9d1a326ede8",
+        "how": "green",
+        "opid": "V54WAE1VRKF5YC9JKE68G0SPDS-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "testUnit": "metasystem/internal/launch",
