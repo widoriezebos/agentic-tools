@@ -5057,6 +5057,7 @@
       }
     },
     {
+      "fixOpenedAt": "2026-10-20T14:39:53Z",
       "testUnit": "metasystem/internal/launch",
       "testName": "TestUnitCheckFindsRunningEngineWithoutCallerPath",
       "id": "flake:0f16dab0411a5f8e6d94828deb646e5d70477ded98ffc594878deb6394dd924f",
@@ -5139,7 +5140,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-internal-launch-testunitcheckfindsrunningenginewithoutcallerpath",
       "fixBranch": {
         "name": "",
         "commit": "",
