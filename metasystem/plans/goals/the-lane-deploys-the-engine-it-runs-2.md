@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 62
+- Sequence: 61
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="The same design and the same answers as the-lane-deploys-the-engine-it-runs: a swap beside a running proof voids the proof or runs two engines (severity 3); the swap record joins existing keeper and cancellation forms (novelty 2); every automatic proof start passes it (exposure 3); one record per swap, completed and removed by the keeper (accumulation 2)."
 - Tier: 3
 - Intent: The lane deploys the engine it runs, part 2: the pending-swap record, distinct from the cancellation request, and its completion by the keeper before every automatic proof-start path, so an engine built during a running proof is swapped in at the proof's end and never beside it (U2b, design decision D3). Design: plans/designs/the-lane-deploys-the-engine-it-runs.md (accepted 2026-10-16; U2a landed 2026-10-16, U1.1 and U1.2a 2026-10-17, U1.2b 2026-10-19 under the first goal).
@@ -10,7 +10,7 @@
 - Next step: Brief U2b from the design page's D3 section and the U2 test list (arm during a running proof waits; the keeper completes the swap before moved-main recovery; mutations for both orders); Codex builds it in a registered workspace, Opus reads, sharded gate, hand landing. Flaky: metasystem/cmd/metasystem TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch; attempt 20261019T212050.742776000Z; log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T212050.742776000Z.log; load 5.310546875; seen 7 times. Flaky: metasystem/cmd/metasystem TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch; attempt 20261020T054219.063899000Z; log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T054219.063899000Z.log; load 4.70703125; seen 8 times. Flaky: metasystem/cmd/metasystem TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch; attempt 20261020T072937.156672000Z; log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T072937.156672000Z.log; load 4.85986328125; seen 9 times.
 - OpenedAt: 2026-10-19T21:21:32Z
 - FirstClaimAt: 2026-10-20T09:44:54Z
-- Revision: 7
+- Revision: 8
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-19T21:21:41Z revision=2 opid=X1BGZS7CRR2Z4JMKJXJ701MTM2-m1e-f2f350ed authority=proven digest=6e5b7ceca67f9c674f4a50a4a0b3648afd6f8acb1e0736e31f56bde952c02307 episode=2
@@ -25,5 +25,5 @@ History:
 - 2026-10-20T06:29:05Z D52AEA35C74678560A853A52D7-landing-41ad7d6c record-flake actor=landing+landing-agent targets=the-lane-deploys-the-engine-it-runs-2
 - 2026-10-20T08:14:53Z 1E249C29FE4DB215C694F330E7-landing-41ad7d6c record-flake actor=landing+landing-agent targets=the-lane-deploys-the-engine-it-runs-2
 - 2026-10-20T09:44:54Z 8WMYM3QSE43EM8F8HEFXNXEB9X-m1e-f456f182 claim actor=human:Wido targets=the-lane-deploys-the-engine-it-runs-2 authorityOutcome=HUMAN_AUTHORITY_PROVEN authorityGeneration=99 reason=areas unknown for goal the-lane-deploys-the-engine-it-runs-2 in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-lane-deploys-the-engine-it-runs.md; areas unknown for goal a-stop-waits-for-the-unit-boundary; areas unknown for goal asks-clear-on-their-effect; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; machine m1e already claims a-stop-waits-for-the-unit-boundary, and a machine holds one claim at a time
-run: metasystem goal release a-stop-waits-for-the-unit-boundary, then metasystem goal claim the-lane-deploys-the-engine-it-runs-2
-Integrity: sha256=fe25f36b20d045aa25ce053e8a4eea37dd0081659e6666828df6911785a41c88
+- 2026-10-20T13:31:29Z DJD55PZJZ60N4JW5H4275YH500-m1e-f2f350ed done actor=human:Wido targets=a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-proof-unit-ends-on-time-2,a-seat-pauses-at-its-spend-line,a-stop-waits-for-the-unit-boundary,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2 reason=priority-order from=1:62 to=1:61
+Integrity: sha256=32c6861d17d207a572f56121818a922697c835c92dc72567d6f0e12d65537c35
