@@ -246,7 +246,7 @@ func (b *healthBed) health(now time.Time) HealthVerdict {
 	}
 	view := verdict
 	view.ShouldAlert = false
-	if _, err := updateAlertEpisodesWith(b.root, view, verdict.Line(), now, b.deliver); err != nil {
+	if _, err := updateAlertEpisodesWith(b.root, view, verdict.Line(), now, noticeFunnel{}, b.deliver); err != nil {
 		b.t.Fatalf("alert episode state is unknown: %v", err)
 	}
 	return verdict

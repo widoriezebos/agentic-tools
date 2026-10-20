@@ -972,14 +972,14 @@ func healthSummary(roles []RoleVerdict) (string, bool) {
 	return aggregate, alert
 }
 
-func fileStandingDefects(repoRoot string, health HealthVerdict, now time.Time, deliver func(string, string) error) error {
+func fileStandingDefects(repoRoot string, health HealthVerdict, now time.Time, f noticeFunnel, deliver func(string, string) error) error {
 	standing := make(map[HealthRole]RoleVerdict)
 	for _, role := range health.Roles {
 		if role.Standing {
 			standing[role.Role] = role
 		}
 	}
-	_, err := UpdatePatterns(repoRoot, PatternCycle{Now: now, ClearTicks: 1, Deliver: deliver,
+	_, err := UpdatePatterns(repoRoot, PatternCycle{Now: now, ClearTicks: 1, Deliver: deliver, funnel: f,
 		Step: func([]byte) ([]byte, []PatternRun, error) {
 			observations := make([]PatternObservation, 0, len(healthRoleOrder))
 			for _, name := range healthRoleOrder {

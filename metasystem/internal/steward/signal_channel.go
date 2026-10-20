@@ -111,7 +111,7 @@ func breachStopNotice(goalID string) string {
 // resumes the goal; with no channel configured the tick report is all.
 // Every pass first retries, from its own record, each notice whose post did
 // not go through: a stop completes in one tick and is not reported again.
-func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Time) error {
+func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Time, f noticeFunnel) error {
 	var stopped []BreachStopReport
 	for _, report := range reports {
 		if report.State == "COMPLETE" && report.GoalID != "" {
@@ -133,7 +133,7 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 		return err
 	}
 	unsent := func(episode AlertEpisode) bool {
-		return episode.Owner == breachStopAlertOwner && !episode.Cleared && episode.TransportResult != TransportSubmitted
+		return episode.Owner == breachStopAlertOwner && !episode.Cleared && !episodeSettled(episode)
 	}
 	retry := false
 	for _, episode := range episodes {
@@ -150,7 +150,7 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 		if !unsent(episodes[index]) {
 			continue
 		}
-		if err := submitEpisode(repoRoot, &episodes[index], now, channel.transport(episodes[index].Message)); err != nil {
+		if err := submitEpisode(repoRoot, &episodes[index], f, channel.transport(episodes[index].Message)); err != nil {
 			return err
 		}
 	}
@@ -174,10 +174,10 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 				return err
 			}
 		}
-		if episode.Cleared || episode.TransportResult == TransportSubmitted {
+		if episode.Cleared || episodeSettled(*episode) {
 			continue
 		}
-		if err := submitEpisode(repoRoot, episode, now, channel.transport(episode.Message)); err != nil {
+		if err := submitEpisode(repoRoot, episode, f, channel.transport(episode.Message)); err != nil {
 			return err
 		}
 	}
@@ -188,8 +188,8 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 // already happened and its report stands whatever the notice does. A
 // transport failure is kept on the episode and retried on the next pass; a
 // store failure is said on the runner's error stream.
-func reportBreachStopNotices(repoRoot string, reports []BreachStopReport, now time.Time) {
-	if err := noticeBreachStops(repoRoot, reports, now); err != nil {
+func reportBreachStopNotices(repoRoot string, reports []BreachStopReport, now time.Time, f noticeFunnel) {
+	if err := noticeBreachStops(repoRoot, reports, now, f); err != nil {
 		fmt.Fprintf(os.Stderr, "breach-stop notice not recorded: %v\n", err)
 	}
 }

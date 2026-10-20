@@ -208,7 +208,7 @@ func custodialBreachStops(repoRoot string, cfg TickConfig, scanner func(string, 
 	reports := runBreachStopCustodianWithScanner(repoRoot, cfg.now(), scanner, cfg.BreachStop, cfg.Stopping)
 	// The stop producer is unchanged; a completed stop also tells the
 	// person, once per stopped goal revision.
-	reportBreachStopNotices(repoRoot, reports, cfg.now())
+	reportBreachStopNotices(repoRoot, reports, cfg.now(), noticeFunnel{clock: cfg.now})
 	return reports
 }
 
@@ -315,8 +315,9 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	}()
 
 	if err := outage.ExpireAndNotify(cfg.ProviderHome, repoRoot, cfg.now(), func(provider string, interval outage.Interval) error {
-		return deliverNoticeWith(repoRoot, Notice{Source: NoticeAlert, Ref: "provider-stale-" + provider + "-" + interval.Since,
-			Message: fmt.Sprintf("provider %s: the stale outage mark expired without a provider answer", provider)}, deliver)
+		outcome := deliverNoticeWith(repoRoot, Notice{Source: NoticeAlert, Ref: "provider-stale-" + provider + "-" + interval.Since,
+			Message: fmt.Sprintf("provider %s: the stale outage mark expired without a provider answer", provider)}, deliver, noticeFunnel{clock: cfg.now})
+		return outcome.Err
 	}); err != nil {
 		if logErr := logOrphanSeatRun(repoRoot, "provider expiry or stale alert failed: "+strings.ReplaceAll(err.Error(), "\n", "; "), cfg.now()); logErr != nil {
 			fmt.Fprintf(os.Stderr, "provider expiry or stale alert failed: %v; recording the failure: %v\n", err, logErr)
@@ -673,6 +674,7 @@ func completeTickHealthWithConfig(repoRoot string, result *TickResult, generatio
 }
 
 type tickHealthDependencies struct {
+	funnel   noticeFunnel
 	prober   identity.Prober
 	evaluate healthRoleEvaluator
 	now      func() time.Time
@@ -694,6 +696,8 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 		}
 		return now.UTC()
 	}
+	funnel := dependencies.funnel
+	funnel.clock = healthNow
 	health, err := observeHealthWithEvaluation(repoRoot, healthNow(), (TickConfig{Prober: dependencies.prober}).withDefaults().Prober, dependencies.evaluate)
 	if err != nil {
 		return fmt.Errorf("compute health: %w", err)
@@ -724,18 +728,18 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 		ComponentOK, "EMITTED", line, nil, healthNow()); err != nil {
 		return fmt.Errorf("record narrator completion: %w", err)
 	}
-	if _, err := updateAlertEpisodesWith(repoRoot, health, line, healthNow(), dependencies.deliver); err != nil {
+	if _, err := updateAlertEpisodesWith(repoRoot, health, line, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
-	if err := fileStandingDefects(repoRoot, health, healthNow(), dependencies.deliver); err != nil {
+	if err := fileStandingDefects(repoRoot, health, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("file standing health defects: %w", err)
 	}
-	if err := updateSpendEpisodesWith(repoRoot, health.Spend, healthNow(), dependencies.deliver); err != nil {
+	if err := updateSpendEpisodesWith(repoRoot, health.Spend, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("update spend alert episodes: %w", err)
 	}
 	if dependencies.lane != nil {
 		at := healthNow()
-		if err := updateLaneSilentEpisodes(repoRoot, dependencies.lane(repoRoot, at), at); err != nil {
+		if err := updateLaneSilentEpisodes(repoRoot, dependencies.lane(repoRoot, at), at, funnel); err != nil {
 			return fmt.Errorf("update lane-silent alert episode: %w", err)
 		}
 	}

@@ -17,7 +17,7 @@ func TestHealthAlertAlternatingConditionsNotifyOnceEach(t *testing.T) {
 	for reading := 0; reading < 7; reading++ {
 		condition := []string{"runner stale", "watcher stale"}[reading%2]
 		health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: evidenceDigest(condition), ShouldAlert: true}
-		episode, err := updateAlertEpisodesWith(root, health, condition, now.Add(time.Duration(reading)*time.Minute), deliver)
+		episode, err := updateAlertEpisodesWith(root, health, condition, now.Add(time.Duration(reading)*time.Minute), noticeFunnel{}, deliver)
 		if err != nil || episode.Cleared || episode.Resolved || !episode.ClearedAt.IsZero() || !episode.ResolvedAt.IsZero() {
 			t.Fatalf("reading %d did not open its condition: %+v %v", reading, episode, err)
 		}
@@ -30,11 +30,11 @@ func TestHealthAlertAlternatingConditionsNotifyOnceEach(t *testing.T) {
 		t.Fatalf("seven alternating readings sent %d notices, want 2", sent)
 	}
 	// Recovery also retires the condition that is already closed.
-	if _, err := updateAlertEpisodesWith(root, HealthVerdict{Aggregate: "healthy"}, "healthy", now.Add(7*time.Minute), deliver); err != nil {
+	if _, err := updateAlertEpisodesWith(root, HealthVerdict{Aggregate: "healthy"}, "healthy", now.Add(7*time.Minute), noticeFunnel{}, deliver); err != nil {
 		t.Fatal(err)
 	}
 	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: evidenceDigest("watcher stale"), ShouldAlert: true}
-	if episode, err := updateAlertEpisodesWith(root, health, "watcher stale", now.Add(8*time.Minute), deliver); err != nil ||
+	if episode, err := updateAlertEpisodesWith(root, health, "watcher stale", now.Add(8*time.Minute), noticeFunnel{}, deliver); err != nil ||
 		episode.EpisodeID == ids["watcher stale"] || sent != 3 {
 		t.Fatalf("a recurrence after recovery is a new alert: %+v %d sent, %v", episode, sent, err)
 	}
@@ -146,7 +146,7 @@ func TestManualClearSuppressesLiveHealthAlert(t *testing.T) {
 	now := time.Date(2026, 9, 30, 21, 0, 0, 0, time.UTC)
 	unhealthy := HealthVerdict{Aggregate: "unhealthy", FindingDigest: evidenceDigest("runner stale"), ShouldAlert: true,
 		Roles: []RoleVerdict{{Role: RoleStewardRunner, Status: HealthDead, Reason: "runner stale"}}}
-	episode, err := updateAlertEpisodesWith(root, unhealthy, "HEALTH unhealthy — runner stale", now, deliverTo)
+	episode, err := updateAlertEpisodesWith(root, unhealthy, "HEALTH unhealthy — runner stale", now, noticeFunnel{}, deliverTo)
 	if err != nil || sent != 1 {
 		t.Fatalf("first alert: %v, %d sent", err, sent)
 	}
@@ -154,7 +154,7 @@ func TestManualClearSuppressesLiveHealthAlert(t *testing.T) {
 		t.Fatalf("clear: %v %v", changed, err)
 	}
 	for minute := 2; minute < 6; minute++ {
-		if _, err := updateAlertEpisodesWith(root, unhealthy, "HEALTH unhealthy — runner stale", now.Add(time.Duration(minute)*time.Minute), deliverTo); err != nil {
+		if _, err := updateAlertEpisodesWith(root, unhealthy, "HEALTH unhealthy — runner stale", now.Add(time.Duration(minute)*time.Minute), noticeFunnel{}, deliverTo); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -163,10 +163,10 @@ func TestManualClearSuppressesLiveHealthAlert(t *testing.T) {
 		t.Fatalf("the cleared alert reopened: %d episodes, %d sent, %v", len(episodes), sent, err)
 	}
 	healthy := HealthVerdict{Aggregate: "healthy", FindingDigest: evidenceDigest("")}
-	if _, err := updateAlertEpisodesWith(root, healthy, "HEALTH healthy", now.Add(6*time.Minute), deliverTo); err != nil {
+	if _, err := updateAlertEpisodesWith(root, healthy, "HEALTH healthy", now.Add(6*time.Minute), noticeFunnel{}, deliverTo); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := updateAlertEpisodesWith(root, unhealthy, "HEALTH unhealthy — runner stale", now.Add(7*time.Minute), deliverTo); err != nil {
+	if _, err := updateAlertEpisodesWith(root, unhealthy, "HEALTH unhealthy — runner stale", now.Add(7*time.Minute), noticeFunnel{}, deliverTo); err != nil {
 		t.Fatal(err)
 	}
 	if episodes, _ := AlertEpisodes(root); len(episodes) != 2 || sent != 2 {
@@ -183,7 +183,7 @@ func TestManualClearSuppressesLiveSpendAlert(t *testing.T) {
 	deliverTo := func(string, string) error { sent++; return nil }
 	now := time.Date(2026, 9, 30, 21, 0, 0, 0, time.UTC)
 	crossing := SpendObservation{Valid: true, Crossings: []SpendCrossing{{ScopeID: "machine.m1e", Scope: "machine", Ceiling: "tokens", Multiple: 1, Machine: "m1e", Spend: 2, Limit: 1, Day: "2026-09-30"}}}
-	if err := updateSpendEpisodesWith(root, crossing, now, deliverTo); err != nil || sent != 1 {
+	if err := updateSpendEpisodesWith(root, crossing, now, noticeFunnel{}, deliverTo); err != nil || sent != 1 {
 		t.Fatalf("first crossing: %v %d", err, sent)
 	}
 	episodes, _ := AlertEpisodes(root)
@@ -191,17 +191,17 @@ func TestManualClearSuppressesLiveSpendAlert(t *testing.T) {
 		t.Fatal(err)
 	}
 	for minute := 1; minute < 4; minute++ {
-		if err := updateSpendEpisodesWith(root, crossing, now.Add(time.Duration(minute)*time.Minute), deliverTo); err != nil {
+		if err := updateSpendEpisodesWith(root, crossing, now.Add(time.Duration(minute)*time.Minute), noticeFunnel{}, deliverTo); err != nil {
 			t.Fatal(err)
 		}
 	}
 	if episodes, _ := AlertEpisodes(root); len(episodes) != 1 || sent != 1 {
 		t.Fatalf("the cleared crossing reopened: %d episodes, %d sent", len(episodes), sent)
 	}
-	if err := updateSpendEpisodesWith(root, SpendObservation{Valid: true}, now.Add(5*time.Minute), deliverTo); err != nil {
+	if err := updateSpendEpisodesWith(root, SpendObservation{Valid: true}, now.Add(5*time.Minute), noticeFunnel{}, deliverTo); err != nil {
 		t.Fatal(err)
 	}
-	if err := updateSpendEpisodesWith(root, crossing, now.Add(6*time.Minute), deliverTo); err != nil {
+	if err := updateSpendEpisodesWith(root, crossing, now.Add(6*time.Minute), noticeFunnel{}, deliverTo); err != nil {
 		t.Fatal(err)
 	}
 	if episodes, _ := AlertEpisodes(root); len(episodes) != 2 || sent != 2 {

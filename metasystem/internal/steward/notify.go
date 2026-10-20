@@ -137,10 +137,48 @@ const (
 	NoticeSteward = "steward"
 )
 
-func deliverNoticeWith(repoRoot string, notice Notice, transport func(string, string) error) error {
-	err := transport(repoRoot, notice.Message)
-	journalNotice(repoRoot, notice, err)
-	return err
+type noticeFunnel struct {
+	clock   func() time.Time
+	decider func(Notice) (class string, allowed bool)
+}
+type noticeDecision struct {
+	Class   string
+	Allowed bool
+}
+type NoticeOutcome struct {
+	Result AlertTransportResult
+	Class  string
+	Err    error
+}
+
+func (f noticeFunnel) now() time.Time {
+	if f.clock == nil {
+		return time.Now()
+	}
+	return f.clock()
+}
+func (f noticeFunnel) decide(n Notice) noticeDecision {
+	if f.decider == nil {
+		return noticeDecision{Allowed: true}
+	}
+	class, allowed := f.decider(n)
+	return noticeDecision{class, allowed}
+}
+func (f noticeFunnel) send(repoRoot string, n Notice, d noticeDecision, transport func(string, string) error) NoticeOutcome {
+	if !d.Allowed {
+		journalNotice(repoRoot, n, nil, d, f.now())
+		return NoticeOutcome{Result: TransportWithheld, Class: d.Class}
+	}
+	err := transport(repoRoot, n.Message)
+	result := TransportSubmitted
+	if err != nil {
+		result = TransportFailed
+	}
+	journalNotice(repoRoot, n, err, d, f.now())
+	return NoticeOutcome{result, d.Class, err}
+}
+func deliverNoticeWith(repoRoot string, n Notice, transport func(string, string) error, f noticeFunnel) NoticeOutcome {
+	return f.send(repoRoot, n, f.decide(n), transport)
 }
 
 // deliver selects the native transport without writing a journal entry.
@@ -208,6 +246,7 @@ func deliverPendingWith(repoRoot string, deliver func(string, string) error) (in
 type pendingDeliveryDependencies struct {
 	transport     func(string, string) error
 	afterSnapshot func()
+	funnel        noticeFunnel
 }
 
 func deliverPendingWithDependencies(repoRoot string, deps pendingDeliveryDependencies) (int, error) {
@@ -233,7 +272,7 @@ func deliverPendingWithDependencies(repoRoot string, deps pendingDeliveryDepende
 			if deps.afterSnapshot != nil {
 				deps.afterSnapshot()
 			}
-			wasDelivered, err := deliverPendingHandoff(repoRoot, n, deps.transport)
+			wasDelivered, err := deliverPendingHandoff(repoRoot, n, deps.transport, deps.funnel)
 			if err != nil {
 				return delivered, err
 			}
@@ -242,15 +281,18 @@ func deliverPendingWithDependencies(repoRoot string, deps pendingDeliveryDepende
 			}
 			continue
 		}
-		if err := deliverPendingNotification(repoRoot, n, deps.transport); err != nil {
+		sent, err := deliverPendingNotification(repoRoot, n, deps.transport, deps.funnel)
+		if err != nil {
 			return delivered, err
 		}
-		delivered++
+		if sent {
+			delivered++
+		}
 	}
 	return delivered, nil
 }
 
-func deliverPendingHandoff(repoRoot string, snapshot PendingNotification, deliver func(string, string) error) (bool, error) {
+func deliverPendingHandoff(repoRoot string, snapshot PendingNotification, deliver func(string, string) error, f noticeFunnel) (bool, error) {
 	authorized, err := handoffNoticeIsAuthorized(repoRoot, snapshot.Nonce)
 	if err != nil {
 		return false, err
@@ -261,10 +303,7 @@ func deliverPendingHandoff(repoRoot string, snapshot PendingNotification, delive
 		}
 		return false, nil
 	}
-	if err := deliverPendingNotification(repoRoot, snapshot, deliver); err != nil {
-		return false, err
-	}
-	return true, nil
+	return deliverPendingNotification(repoRoot, snapshot, deliver, f)
 }
 
 func handoffNoticeIsAuthorized(repoRoot, noticeNonce string) (bool, error) {
@@ -285,23 +324,27 @@ func handoffNoticeIsAuthorized(repoRoot, noticeNonce string) (bool, error) {
 	return false, nil
 }
 
-func deliverPendingNotification(repoRoot string, n PendingNotification, deliver func(string, string) error) error {
-	if err := deliverNoticeWith(repoRoot, Notice{
+func deliverPendingNotification(repoRoot string, n PendingNotification, deliver func(string, string) error, f noticeFunnel) (bool, error) {
+	outcome := deliverNoticeWith(repoRoot, Notice{
 		Message: n.Message, Source: noticeSourceOf(n.Nonce), Ref: n.Nonce,
-	}, deliver); err != nil {
-		return err
+	}, deliver, f)
+	if outcome.Err != nil {
+		return false, outcome.Err
+	}
+	if outcome.Result == TransportWithheld {
+		return false, MarkDelivered(repoRoot, n.Nonce)
 	}
 	// The intent acknowledges FIRST: a crash between these two
 	// writes then repeats a delivery (benign) instead of
 	// stranding an undelivered-looking intent with no pending
 	// message (a permanent suppression).
 	if err := markIntentNotified(repoRoot, n.Nonce); err != nil {
-		return err
+		return false, err
 	}
 	if err := MarkDelivered(repoRoot, n.Nonce); err != nil {
-		return err
+		return false, err
 	}
-	return nil
+	return true, nil
 }
 
 // markIntentNotified flips the live intent matching a delivered
@@ -355,6 +398,7 @@ type journalRecord struct {
 	Ref       string `json:"ref,omitempty"`
 	Delivered bool   `json:"delivered"`
 	Error     string `json:"error,omitempty"`
+	Withheld  string `json:"withheld,omitempty"`
 }
 
 // noticeSourceOf reads the origin out of a pending nonce. The queue's nonces
@@ -372,19 +416,21 @@ func noticeSourceOf(nonce string) string {
 
 // journalNotice appends one line for one attempt. Its errors are dropped on
 // purpose: see DeliverNotice.
-func journalNotice(repoRoot string, notice Notice, delivery error) {
+func journalNotice(repoRoot string, notice Notice, delivery error, d noticeDecision, now time.Time) {
 	source := notice.Source
 	if strings.TrimSpace(source) == "" {
 		source = NoticeSteward
 	}
-	now := time.Now()
 	record := journalRecord{
 		ID:        nextNotificationID(now),
 		At:        now.UTC().Format(time.RFC3339),
 		Message:   notice.Message,
 		Source:    source,
 		Ref:       notice.Ref,
-		Delivered: delivery == nil,
+		Delivered: delivery == nil && d.Allowed,
+	}
+	if !d.Allowed {
+		record.Withheld = d.Class
 	}
 	if delivery != nil {
 		record.Error = delivery.Error()

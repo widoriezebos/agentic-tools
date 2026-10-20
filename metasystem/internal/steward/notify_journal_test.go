@@ -33,12 +33,12 @@ func TestEveryDeliveryPathLeavesOneJournalLine(t *testing.T) {
 	t.Parallel()
 	f := configuredNotifyFixture(t, 4, "default")
 	root, sink := f.root, f.sink
-	if err := deliverNoticeWith(root, Notice{Message: "the steward speaks", Source: NoticeSteward}, f.deliver); err != nil {
+	if err := deliverNoticeWith(root, Notice{Message: "the steward speaks", Source: NoticeSteward}, f.deliver, noticeFunnel{}).Err; err != nil {
 		t.Fatal(err)
 	}
 	if err := deliverNoticeWith(root, Notice{
 		Message: "HEALTH unhealthy — runner stale", Source: NoticeAlert, Ref: "alert-abc-1",
-	}, f.deliver); err != nil {
+	}, f.deliver, noticeFunnel{}).Err; err != nil {
 		t.Fatal(err)
 	}
 	for _, nonce := range []string{"handoff-5000", "verdict-stalled", "reap-7"} {
@@ -87,7 +87,7 @@ func TestAFailedDeliveryIsJournaledWithItsReason(t *testing.T) {
 	t.Parallel()
 	f := configuredNotifyFixture(t, 1, "exit 1")
 	root := f.root
-	if err := deliverNoticeWith(root, Notice{Message: "nobody heard this", Source: NoticeSteward}, f.deliver); err == nil {
+	if err := deliverNoticeWith(root, Notice{Message: "nobody heard this", Source: NoticeSteward}, f.deliver, noticeFunnel{}).Err; err == nil {
 		t.Fatal("a failing notifier must not claim delivery")
 	}
 	records := journalOf(t, root)
@@ -125,7 +125,7 @@ func TestAlertRetriesAndSpendSubmissionJournalTheirEpisodeIDs(t *testing.T) {
 	observation := SpendObservation{Valid: true, Crossings: []SpendCrossing{
 		crossing("day-2026-09-23", "day", "tokens", 1, 125, 100),
 	}}
-	if err := updateSpendEpisodesWith(f.root, observation, now.Add(2*time.Minute), f.deliver); err != nil {
+	if err := updateSpendEpisodesWith(f.root, observation, now.Add(2*time.Minute), noticeFunnel{}, f.deliver); err != nil {
 		t.Fatal(err)
 	}
 	episodes, err := AlertEpisodes(f.root)
@@ -182,7 +182,7 @@ func TestTheFixtureLogKeepsItsOwnLineBesideTheJournal(t *testing.T) {
 	f := absentNotifyFixture(t, 1)
 	root := f.root
 	notifyIdentity(t, root, EnrollmentFixture)
-	if err := deliverNoticeWith(root, Notice{Message: "HEALTH unhealthy", Source: NoticeSteward}, f.deliver); err != nil {
+	if err := deliverNoticeWith(root, Notice{Message: "HEALTH unhealthy", Source: NoticeSteward}, f.deliver, noticeFunnel{}).Err; err != nil {
 		t.Fatal(err)
 	}
 	log, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "steward", "notifications.log"))
@@ -207,7 +207,7 @@ func TestAJournalThatCannotBeWrittenDoesNotFailTheDelivery(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "artifacts", "agents", "steward"), []byte("not a directory"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	if err := deliverNoticeWith(root, Notice{Message: "the channel still works"}, f.deliver); err != nil {
+	if err := deliverNoticeWith(root, Notice{Message: "the channel still works"}, f.deliver, noticeFunnel{}).Err; err != nil {
 		t.Fatalf("a journal that cannot be written must not gate delivery: %v", err)
 	}
 	if data, err := os.ReadFile(sink); err != nil || !strings.Contains(string(data), "the channel still works") {
@@ -220,7 +220,7 @@ func TestJournalIdentitiesIncrease(t *testing.T) {
 	f := configuredNotifyFixture(t, 8, "default")
 	root := f.root
 	for index := 0; index < 8; index++ {
-		if err := deliverNoticeWith(root, Notice{Message: "line"}, f.deliver); err != nil {
+		if err := deliverNoticeWith(root, Notice{Message: "line"}, f.deliver, noticeFunnel{}).Err; err != nil {
 			t.Fatal(err)
 		}
 	}

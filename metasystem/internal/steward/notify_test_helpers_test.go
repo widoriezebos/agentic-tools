@@ -101,5 +101,5 @@ func (f *notifyFixture) pending() (int, error) {
 }
 
 func (f *notifyFixture) alert(health HealthVerdict, message string, now time.Time) (AlertEpisode, error) {
-	return updateAlertEpisodesWith(f.root, health, message, now, f.deliver)
+	return updateAlertEpisodesWith(f.root, health, message, now, noticeFunnel{}, f.deliver)
 }

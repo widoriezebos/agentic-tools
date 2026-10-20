@@ -206,7 +206,7 @@ func laneSilentNotice(reading LaneSilence, now time.Time) string {
 // it once to the channel; an interval that ended (progress, nothing
 // queued, a proof, a pause or a lane question) clears its episode. With no
 // channel configured nothing opens.
-func updateLaneSilentEpisodes(repoRoot string, reading LaneSilence, now time.Time) error {
+func updateLaneSilentEpisodes(repoRoot string, reading LaneSilence, now time.Time, f noticeFunnel) error {
 	if !reading.Known {
 		return nil
 	}
@@ -263,8 +263,8 @@ func updateLaneSilentEpisodes(repoRoot string, reading LaneSilence, now time.Tim
 			return err
 		}
 	}
-	if current.Cleared || current.TransportResult == TransportSubmitted {
+	if current.Cleared || episodeSettled(*current) {
 		return nil
 	}
-	return submitEpisode(repoRoot, current, now, channel.transport(current.Message))
+	return submitEpisode(repoRoot, current, f, channel.transport(current.Message))
 }

@@ -67,6 +67,7 @@ type PatternRun struct {
 // lock: it receives the pattern state the last cycle kept (nil when none)
 // and returns its successor with this cycle's runs.
 type PatternCycle struct {
+	funnel     noticeFunnel
 	Now        time.Time
 	ClearTicks int
 	// Deliver is the notifier; nil is the steward's own.
@@ -84,6 +85,7 @@ type PatternReport struct {
 // work: OpenAlert is the one opening path, for patterns and any other opener
 // (the lane's stop-loss opens with Owner "lane:stoploss").
 type AlertOpening struct {
+	funnel   noticeFunnel
 	Owner    string
 	Work     string
 	Since    time.Time
@@ -201,8 +203,8 @@ func openAlertLocked(repoRoot string, episodes *[]AlertEpisode, opening AlertOpe
 					return AlertEpisode{}, false, err
 				}
 			}
-			if episode.TransportResult != TransportSubmitted {
-				if err := submitEpisode(repoRoot, episode, now, deliverTo); err != nil {
+			if !episodeSettled(*episode) {
+				if err := submitEpisode(repoRoot, episode, opening.funnel, deliverTo); err != nil {
 					return AlertEpisode{}, false, err
 				}
 			}
@@ -226,7 +228,7 @@ func openAlertLocked(repoRoot string, episodes *[]AlertEpisode, opening AlertOpe
 	}
 	*episodes = append(*episodes, episode)
 	stored := &(*episodes)[len(*episodes)-1]
-	if err := submitEpisode(repoRoot, stored, now, deliverTo); err != nil {
+	if err := submitEpisode(repoRoot, stored, opening.funnel, deliverTo); err != nil {
 		return *stored, true, err
 	}
 	return *stored, true, nil
@@ -310,7 +312,7 @@ func applyPatternObservation(repoRoot string, episodes *[]AlertEpisode, run Patt
 		if open == nil {
 			// openAlertLocked opens nothing for suppressed work.
 			episode, created, err := openAlertLocked(repoRoot, episodes, AlertOpening{Owner: owner, Work: observation.Work, Since: observation.Since,
-				Evidence: observation.Evidence, Message: observation.Message, Now: cycle.Now, Deliver: cycle.Deliver})
+				Evidence: observation.Evidence, Message: observation.Message, Now: cycle.Now, Deliver: cycle.Deliver, funnel: cycle.funnel})
 			if err != nil || !created {
 				return nil, err
 			}
@@ -323,12 +325,12 @@ func applyPatternObservation(repoRoot string, episodes *[]AlertEpisode, run Patt
 				return nil, err
 			}
 		}
-		if open.TransportResult != TransportSubmitted {
+		if !episodeSettled(*open) {
 			deliverTo := cycle.Deliver
 			if deliverTo == nil {
 				deliverTo = deliver
 			}
-			if err := submitEpisode(repoRoot, open, cycle.Now, deliverTo); err != nil {
+			if err := submitEpisode(repoRoot, open, cycle.funnel, deliverTo); err != nil {
 				return nil, err
 			}
 		}

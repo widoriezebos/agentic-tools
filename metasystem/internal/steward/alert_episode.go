@@ -24,7 +24,14 @@ const (
 	TransportPending   AlertTransportResult = "PENDING"
 	TransportSubmitted AlertTransportResult = "TRANSPORT_SUBMITTED"
 	TransportFailed    AlertTransportResult = "TRANSPORT_FAILED"
+	// TransportWithheld settles a notice without submitting it.
+	TransportWithheld AlertTransportResult = "TRANSPORT_WITHHELD"
 )
+
+// episodeSettled recognizes durable success with or without transport.
+func episodeSettled(e AlertEpisode) bool {
+	return e.TransportResult == TransportSubmitted || e.TransportResult == TransportWithheld
+}
 
 // AlertAttempt is one durable attempt to submit an episode to the notifier.
 type AlertAttempt struct {
@@ -266,7 +273,7 @@ func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time
 			if err := saveAlertEpisode(repoRoot, episodes[index]); err != nil {
 				return AlertEpisode{}, err
 			}
-			if err := postSeatIdleEpisode(repoRoot, &episodes[index], now); err != nil {
+			if err := postSeatIdleEpisode(repoRoot, &episodes[index], noticeFunnel{}); err != nil {
 				return AlertEpisode{}, err
 			}
 			return episodes[index], nil
@@ -287,7 +294,7 @@ func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time
 	if err := saveAlertEpisode(repoRoot, episode); err != nil {
 		return AlertEpisode{}, err
 	}
-	if err := postSeatIdleEpisode(repoRoot, &episode, now); err != nil {
+	if err := postSeatIdleEpisode(repoRoot, &episode, noticeFunnel{}); err != nil {
 		return AlertEpisode{}, err
 	}
 	return episode, nil
@@ -295,15 +302,15 @@ func RecordSeatIdleIncident(repoRoot string, incident SeatIdleIncident, now time
 
 // postSeatIdleEpisode submits an idle episode not yet submitted, through the
 // channel only: with no channel configured it submits nothing.
-func postSeatIdleEpisode(repoRoot string, episode *AlertEpisode, now time.Time) error {
-	if episode.TransportResult == TransportSubmitted {
+func postSeatIdleEpisode(repoRoot string, episode *AlertEpisode, f noticeFunnel) error {
+	if episodeSettled(*episode) {
 		return nil
 	}
 	channel := loadSignalChannel(repoRoot)
 	if !channel.configured {
 		return nil
 	}
-	return submitEpisode(repoRoot, episode, now, channel.transport(seatIdleNotice(*episode.SeatIdle)))
+	return submitEpisode(repoRoot, episode, f, channel.transport(seatIdleNotice(*episode.SeatIdle)))
 }
 
 func seatIdleIncidentMessage(incident SeatIdleIncident) string {
@@ -378,7 +385,7 @@ func migrateHeldHealthNotifications(repoRoot string, episodes *[]AlertEpisode, n
 	return nil
 }
 
-func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message string, now time.Time, deliver func(string, string) error) (AlertEpisode, error) {
+func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message string, now time.Time, f noticeFunnel, deliver func(string, string) error) (AlertEpisode, error) {
 	active := health
 	active.Roles = nil
 	for _, role := range health.Roles {
@@ -521,7 +528,7 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 		unlockAlerts(lock)
 		return episode, nil
 	}
-	if episode.TransportResult == TransportSubmitted {
+	if episodeSettled(episode) {
 		if err := saveAlertEpisode(repoRoot, episode); err != nil {
 			unlockAlerts(lock)
 			return AlertEpisode{}, err
@@ -529,7 +536,7 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 		unlockAlerts(lock)
 		return episode, nil
 	}
-	if err := submitEpisode(repoRoot, &episode, now, deliver); err != nil {
+	if err := submitEpisode(repoRoot, &episode, f, deliver); err != nil {
 		unlockAlerts(lock)
 		return AlertEpisode{}, err
 	}
@@ -537,7 +544,17 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 	return episode, nil
 }
 
-func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time, deliver func(string, string) error) error {
+func submitEpisode(repoRoot string, episode *AlertEpisode, f noticeFunnel, deliver func(string, string) error) error {
+	notice := Notice{Message: episode.Message, Source: NoticeAlert, Ref: episode.EpisodeID}
+	decision := f.decide(notice)
+	if !decision.Allowed {
+		if len(episode.Attempts) > 0 && episode.Attempts[len(episode.Attempts)-1].Result == TransportPending {
+			last := &episode.Attempts[len(episode.Attempts)-1]
+			last.Result, last.CompletedAt = TransportWithheld, f.now().UTC()
+		}
+		episode.TransportResult = f.send(repoRoot, notice, decision, deliver).Result
+		return saveAlertEpisode(repoRoot, *episode)
+	}
 	var attempt AlertAttempt
 	if len(episode.Attempts) > 0 && episode.Attempts[len(episode.Attempts)-1].Result == TransportPending {
 		// A pending journal entry means a process may have stopped after the
@@ -546,7 +563,7 @@ func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time, delive
 		// submission for the episode.
 		attempt = episode.Attempts[len(episode.Attempts)-1]
 	} else {
-		attempt = AlertAttempt{Sequence: len(episode.Attempts) + 1, AttemptedAt: now.UTC(), Result: TransportPending}
+		attempt = AlertAttempt{Sequence: len(episode.Attempts) + 1, AttemptedAt: f.now().UTC(), Result: TransportPending}
 		episode.Attempts = append(episode.Attempts, attempt)
 		episode.TransportResult = TransportPending
 		if err := saveAlertEpisode(repoRoot, *episode); err != nil {
@@ -557,21 +574,16 @@ func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time, delive
 	// The alert names itself in the journal: source alert, and the episode
 	// id the acknowledgment verb takes, so the interface's row and the
 	// episode on disk are the same event.
-	transportErr := deliverNoticeWith(repoRoot, Notice{
-		Message: episode.Message, Source: NoticeAlert, Ref: episode.EpisodeID,
-	}, deliver)
-	completedAt := time.Now().UTC()
+	outcome := f.send(repoRoot, notice, decision, deliver)
+	completedAt := f.now().UTC()
 	if len(episode.Attempts) < attempt.Sequence || episode.Attempts[attempt.Sequence-1].Result != TransportPending {
 		return fmt.Errorf("alert episode %s transport attempt changed before completion", episode.EpisodeID)
 	}
 	episode.Attempts[attempt.Sequence-1].CompletedAt = completedAt
-	if transportErr == nil {
-		episode.Attempts[attempt.Sequence-1].Result = TransportSubmitted
-		episode.TransportResult = TransportSubmitted
-	} else {
-		episode.Attempts[attempt.Sequence-1].Result = TransportFailed
-		episode.Attempts[attempt.Sequence-1].Problem = transportErr.Error()
-		episode.TransportResult = TransportFailed
+	episode.Attempts[attempt.Sequence-1].Result = outcome.Result
+	episode.TransportResult = outcome.Result
+	if outcome.Err != nil {
+		episode.Attempts[attempt.Sequence-1].Problem = outcome.Err.Error()
 	}
 	if err := saveAlertEpisode(repoRoot, *episode); err != nil {
 		return err
@@ -579,7 +591,7 @@ func submitEpisode(repoRoot string, episode *AlertEpisode, now time.Time, delive
 	return nil
 }
 
-func updateSpendEpisodesWith(repoRoot string, observation SpendObservation, now time.Time, deliver func(string, string) error) error {
+func updateSpendEpisodesWith(repoRoot string, observation SpendObservation, now time.Time, f noticeFunnel, deliver func(string, string) error) error {
 	if !observation.Valid {
 		return nil
 	}
@@ -654,12 +666,12 @@ func updateSpendEpisodesWith(repoRoot string, observation SpendObservation, now 
 				return err
 			}
 		}
-		if episode.TransportResult == TransportSubmitted {
+		if episodeSettled(*episode) {
 			continue
 		}
 		// With a channel configured the crossing is posted there; without
 		// one it takes the local notifier, as before.
-		if err := submitEpisode(repoRoot, episode, now, signalTransport(repoRoot, spendNotice(crossing), deliver)); err != nil {
+		if err := submitEpisode(repoRoot, episode, f, signalTransport(repoRoot, spendNotice(crossing), deliver)); err != nil {
 			return err
 		}
 	}
