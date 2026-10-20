@@ -1,6 +1,6 @@
 # the-lane-deploys-the-engine-it-runs-2
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 62
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="The same design and the same answers as the-lane-deploys-the-engine-it-runs: a swap beside a running proof voids the proof or runs two engines (severity 3); the swap record joins existing keeper and cancellation forms (novelty 2); every automatic proof start passes it (exposure 3); one record per swap, completed and removed by the keeper (accumulation 2)."
@@ -9,10 +9,13 @@
 - Origin: main
 - Next step: Brief U2b from the design page's D3 section and the U2 test list (arm during a running proof waits; the keeper completes the swap before moved-main recovery; mutations for both orders); Codex builds it in a registered workspace, Opus reads, sharded gate, hand landing. Flaky: metasystem/cmd/metasystem TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch; attempt 20261019T212050.742776000Z; log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261019T212050.742776000Z.log; load 5.310546875; seen 7 times. Flaky: metasystem/cmd/metasystem TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch; attempt 20261020T054219.063899000Z; log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T054219.063899000Z.log; load 4.70703125; seen 8 times. Flaky: metasystem/cmd/metasystem TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch; attempt 20261020T072937.156672000Z; log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T072937.156672000Z.log; load 4.85986328125; seen 9 times.
 - OpenedAt: 2026-10-19T21:21:32Z
-- Revision: 6
+- FirstClaimAt: 2026-10-20T09:44:54Z
+- Revision: 7
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-19T21:21:41Z revision=2 opid=X1BGZS7CRR2Z4JMKJXJ701MTM2-m1e-f2f350ed authority=proven digest=6e5b7ceca67f9c674f4a50a4a0b3648afd6f8acb1e0736e31f56bde952c02307 episode=2
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-20T09:44:54Z by=human:Wido areas="null" areas-source="01M4ZD0000000000000000DPL1@961105a96442230d24abbccedfb1bac675e39e6d9719c7eecf514af81f50881b" areas-known=false areas-warnings="[\"areas unknown for goal the-lane-deploys-the-engine-it-runs-2 in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-lane-deploys-the-engine-it-runs.md\",\"areas unknown for goal a-stop-waits-for-the-unit-boundary\",\"areas unknown for goal asks-clear-on-their-effect\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"machine m1e already claims a-stop-waits-for-the-unit-boundary, and a machine holds one claim at a time\\nrun: metasystem goal release a-stop-waits-for-the-unit-boundary, then metasystem goal claim the-lane-deploys-the-engine-it-runs-2\"]" revision=7 accountingRevision=7 episodeAt=2026-10-20T09:44:54Z episodeRevision=7
+- StopCapability: generation=7 revision=7 machine=m1e claimEpoch=0 fenceEpoch=0
 
 History:
 - 2026-10-19T21:21:32Z J9F6RMBXEX513RR92RTG9QR6FW-m1e-f2f350ed open actor=human:Wido targets=the-lane-deploys-the-engine-it-runs-2
@@ -21,4 +24,6 @@ History:
 - 2026-10-19T22:02:56Z E2D0417F669BF16D953D2E2DE5-landing-41ad7d6c record-flake actor=landing+landing-agent targets=the-lane-deploys-the-engine-it-runs-2
 - 2026-10-20T06:29:05Z D52AEA35C74678560A853A52D7-landing-41ad7d6c record-flake actor=landing+landing-agent targets=the-lane-deploys-the-engine-it-runs-2
 - 2026-10-20T08:14:53Z 1E249C29FE4DB215C694F330E7-landing-41ad7d6c record-flake actor=landing+landing-agent targets=the-lane-deploys-the-engine-it-runs-2
-Integrity: sha256=52d864db73ad8c41f03d934f960ca3117b882f41916e719bea001b4516de230a
+- 2026-10-20T09:44:54Z 8WMYM3QSE43EM8F8HEFXNXEB9X-m1e-f456f182 claim actor=human:Wido targets=the-lane-deploys-the-engine-it-runs-2 authorityOutcome=HUMAN_AUTHORITY_PROVEN authorityGeneration=99 reason=areas unknown for goal the-lane-deploys-the-engine-it-runs-2 in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-lane-deploys-the-engine-it-runs.md; areas unknown for goal a-stop-waits-for-the-unit-boundary; areas unknown for goal asks-clear-on-their-effect; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; machine m1e already claims a-stop-waits-for-the-unit-boundary, and a machine holds one claim at a time
+run: metasystem goal release a-stop-waits-for-the-unit-boundary, then metasystem goal claim the-lane-deploys-the-engine-it-runs-2
+Integrity: sha256=fe25f36b20d045aa25ce053e8a4eea37dd0081659e6666828df6911785a41c88
