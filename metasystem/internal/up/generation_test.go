@@ -102,7 +102,7 @@ func TestStartVerifiesTheFourProcessesAfterReconciliation(t *testing.T) {
 			result, _ := ordinaryBody(options)
 			line := component(result, "engine-generation")
 			if registered {
-				if result.ExitCode() != 1 || !strings.Contains(line.Detail, "runner unverifiable") {
+				if result.Outcome != "armed" || result.ExitCode() != 0 || line.Outcome != "verified" || !strings.Contains(line.Detail, "roles=owner,watcher,reaper") || strings.Contains(line.Detail, "runner") {
 					t.Fatalf("excluded lane: %+v", result)
 				}
 			} else if result.Outcome != "armed" || result.ExitCode() != 0 || strings.Contains(line.Detail, "runner") {

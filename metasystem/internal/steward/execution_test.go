@@ -249,3 +249,80 @@ func TestRunnerExecutionReplacementWithNativePins(t *testing.T) {
 		})
 	}
 }
+
+func TestWatcherRepairLaunchesNothingWhereTheRunnerIsExcluded(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"absent", "live", "not-excluded"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newExecutionBed(t)
+			b.deps.runnerExcluded = func(string, bool) (string, bool) { return "fixture runtime", name != "not-excluded" }
+			path := runnerRecordPath(b.root)
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if name != "live" {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			}
+			signals := 0
+			signal := b.deps.signal
+			b.deps.signal = func(pid int, sig syscall.Signal) error {
+				signals++
+				return signal(pid, sig)
+			}
+			got, err := repairPinnedRunnerWithDependencies(b.root, b.pinned, nil, b.clock, b.sleep, b.deps)
+			if name == "not-excluded" {
+				if err != nil || got.Status != "RESTORED" || got.Generation != 148 || b.launches != 1 || signals != 0 {
+					t.Fatalf("ordinary repair: %+v err=%v launches=%d signals=%d", got, err, b.launches, signals)
+				}
+				return
+			}
+			if err != nil || got.Status != "EXCLUDED" || got.Generation != 148 || b.launches != 0 || signals != 0 {
+				t.Fatalf("excluded repair: %+v err=%v launches=%d signals=%d", got, err, b.launches, signals)
+			}
+			after, err := os.ReadFile(path)
+			if name == "live" {
+				if err != nil || string(after) != string(before) {
+					t.Fatalf("excluded live record changed: %s %v", after, err)
+				}
+			} else if !os.IsNotExist(err) {
+				t.Fatalf("excluded repair wrote a runner record: %s %v", after, err)
+			}
+		})
+	}
+}
+
+func TestRunnerExecutionDistinguishesMissingAndUnreadableRecords(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"missing", "malformed", "unreadable", "stale"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			path := runnerRecordPath(root)
+			if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+				t.Fatal(err)
+			}
+			switch name {
+			case "malformed":
+				if err := os.WriteFile(path, []byte("{"), 0600); err != nil {
+					t.Fatal(err)
+				}
+			case "unreadable":
+				if err := os.Mkdir(path, 0700); err != nil {
+					t.Fatal(err)
+				}
+			case "stale":
+				if err := writeJSONAtomic(path, RunnerRecord{Pid: 41, PidStartedAt: 1800000000}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			got := ReadRunnerExecution(root, pinfixture.Prober{})
+			if got.Absent != (name == "missing") || got.Digest != "" || got.Cause == "" {
+				t.Fatalf("%s record: %+v", name, got)
+			}
+		})
+	}
+}

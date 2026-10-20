@@ -247,3 +247,43 @@ func TestGenerationSampleIsReadOnce(t *testing.T) {
 		})
 	}
 }
+
+func TestRecoveryOnALaneDropsAnExcludedAbsentRunner(t *testing.T) {
+	t.Parallel()
+	options, home, digest := generationStartBed(t, "recovery")
+	startfixture.Register(t, home, options.Root)
+	if err := os.Remove(filepath.Join(options.Root, "artifacts/agents/steward/runner.json")); err != nil {
+		t.Fatal(err)
+	}
+	options.RepairStewardRunner = func(string) (steward.RunnerRepairOutcome, error) {
+		return steward.RunnerRepairOutcome{Status: "EXCLUDED", Generation: 148}, nil
+	}
+	observed := options.Executions(options.Root)
+	result := generationStart(options)
+	generation := component(result, "engine-generation")
+	if result.ExitCode() != 0 || component(result, "steward-runner").Outcome != "excluded" || generation.Outcome != "verified" || !strings.Contains(generation.Detail, "roles=owner,watcher,reaper") || strings.Contains(generation.Detail, "runner") {
+		t.Fatalf("excluded recovery: %+v", result)
+	}
+	observed["runner"] = enginepin.Execution{Cause: "excluded"}
+	assertGenerationObservation(t, options.Root, digest, "one generation", "", observed)
+}
+
+func TestExcludedRunnerThatRunsIsStillVerified(t *testing.T) {
+	t.Parallel()
+	options := seatUpOptions(t)
+	binary, digest := startfixture.Stage(t, options.Root)
+	options.Binary = binary
+	home := t.TempDir()
+	options.LaneHome = func() (string, error) { return home, nil }
+	startfixture.Register(t, home, options.Root)
+	options.Executions = startfixture.Executions(t, options.Root, binary, map[string]string{"runner": "obsolete"})
+	options.EnsureStewardRunner = func(string, *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
+		return steward.EnsureRunnerResult{Action: "excluded"}, nil
+	}
+	observed := options.Executions(options.Root)
+	result, _ := ordinaryBody(options)
+	if result.ExitCode() != 1 || !strings.Contains(component(result, "engine-generation").Detail, "runner executes "+observed["runner"].Digest) {
+		t.Fatalf("obsolete excluded runner accepted: %+v", result)
+	}
+	assertGenerationObservation(t, options.Root, digest, "mismatch", "", observed)
+}

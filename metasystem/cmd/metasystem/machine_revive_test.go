@@ -385,6 +385,9 @@ func TestMachineReviveRefusesUnknownRunnerExecution(t *testing.T) {
 	t.Parallel()
 	bed := newWorkBedWith(t, func(f *goal.GoalFile) { workApprovedBox(f); f.Claimed.Lineage = steward.SeatLineage })
 	root, home, now := bed.root(), bed.manager.CapacityHome, bed.manager.Now()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude,codex\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	owners := bed.owners()
 	owners.processes.launches = func() *launch.Manager { return bed.manager }
 	owners.processes.process.repositoryTop = fakeTop(root)

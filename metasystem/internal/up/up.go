@@ -645,6 +645,10 @@ func (run *generationRun) finish(options Options, result Result) Result {
 	payload := state.Generation{Target: run.target, Verdict: "one generation", Attempt: run.attempt}
 	for _, role := range []string{"owner", "watcher", "reaper", "runner"} {
 		e := run.observations[role]
+		if role == "runner" && runnerRoleExcluded(result.Components, e) {
+			payload.Roles = append(payload.Roles, state.GenerationRole{Role: role, Cause: "excluded"})
+			continue
+		}
 		payload.Roles = append(payload.Roles, state.GenerationRole{Role: role, Digest: e.Digest, Generation: e.Generation, Source: e.Source, Cause: e.Cause})
 		if e.Digest == "" {
 			payload.Verdict = "unverifiable"
@@ -686,24 +690,31 @@ func (run *generationRun) finish(options Options, result Result) Result {
 	return result
 }
 
+func runnerRoleExcluded(components []ComponentOutcome, runner enginepin.Execution) bool {
+	if runner.Absent {
+		for _, component := range components {
+			if component.Component == "steward-runner" && component.Outcome == "excluded" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 func verifyGeneration(options Options, enrolled *steward.EnrolledBinary, run *generationRun, components []ComponentOutcome, deferred ...string) ([]ComponentOutcome, *Result) {
 	run.sample(options)
 	if run.registrationErr != nil {
 		failed := failure(components, "engine-generation", run.registrationErr, "repair the host lane registration")
 		return nil, &failed
 	}
-	registered, observations := run.registered, run.observations
+	observations := run.observations
 	if len(deferred) > 0 {
 		failed := failure(components, "engine-generation", fmt.Errorf("engine install %d replacement deferred for running check %s", enrolled.Install.Generation, deferred[0]), "the replacement waits for the check to end")
 		return nil, &failed
 	}
 	roles := []string{"owner", "watcher", "reaper", "runner"}
-	if !registered {
-		for _, component := range components {
-			if component.Component == "steward-runner" && component.Outcome == "excluded" {
-				roles = roles[:3]
-			}
-		}
+	if runnerRoleExcluded(components, observations["runner"]) {
+		roles = roles[:3]
 	}
 	failures := []string{}
 	for _, role := range roles {
@@ -1213,9 +1224,12 @@ func recovery(options Options) (result Result) {
 		result.Outcome = "recovery-partial"
 		return result
 	}
+	detail := fmt.Sprintf("pid=%d generation=%d", repair.ReplacementPid, repair.Generation)
+	if repair.Status == "EXCLUDED" {
+		detail = "standing runner is excluded by fixture or linked-worktree policy"
+	}
 	components = append(components, ComponentOutcome{
-		Component: "steward-runner", Outcome: strings.ToLower(repair.Status),
-		Detail: fmt.Sprintf("pid=%d generation=%d", repair.ReplacementPid, repair.Generation),
+		Component: "steward-runner", Outcome: strings.ToLower(repair.Status), Detail: detail,
 	})
 	components, generationFailed := verifyGeneration(options, enrolled, run, components)
 	if generationFailed != nil {

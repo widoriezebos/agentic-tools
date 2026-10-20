@@ -17,6 +17,7 @@ import (
 // Execution retains facts from the executable itself. An empty digest means
 // UNKNOWN; Cause explains why the process could not be authenticated.
 type Execution struct {
+	Absent     bool   `json:"absent,omitempty"`
 	Digest     string `json:"digest,omitempty"`
 	Generation int    `json:"generation,omitempty"`
 	Source     string `json:"source,omitempty"`

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
@@ -421,5 +422,49 @@ func TestPersonTerminalStartupLeavesACompleteEmptyCensus(t *testing.T) {
 	workers, err := (steward.RuntimeWorkerCensus{MetasystemRoot: options.Root, ProcessFile: filepath.Join(options.Root, "census-processes.json"), Prober: terminalCensusProbe{}, Now: func() time.Time { return time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC) }}).Workers(options.Root)
 	if err != nil || !workers.CensusComplete || workers.Live != 0 || workers.LiveSeatMains != 0 || workers.Untracked != 0 || workers.Unprovable != 0 {
 		t.Fatalf("person terminal census: %+v %v", workers, err)
+	}
+}
+
+func TestPersonTerminalStartRecordsAnExcludedRunner(t *testing.T) {
+	t.Parallel()
+	if terminalOwnedChild(t) {
+		return
+	}
+	for _, name := range []string{"absent", "obsolete"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			if terminalOwnedChild(t) {
+				return
+			}
+			options, _ := terminalFixtureOptions(t)
+			home := t.TempDir()
+			options.LaneHome = func() (string, error) { return home, nil }
+			startfixture.Register(t, home, options.Root)
+			digest := fmt.Sprintf("sha256:%x", sha256.Sum256([]byte("fixture engine\n")))
+			observed := map[string]enginepin.Execution{
+				"owner": {Digest: digest}, "watcher": {Digest: digest}, "reaper": {Digest: digest},
+				"runner": {Absent: true, Cause: "no runner record"},
+			}
+			verdict := "one generation"
+			if name == "obsolete" {
+				observed["runner"] = enginepin.Execution{Digest: "sha256:obsolete"}
+				verdict = "mismatch"
+			}
+			options.Executions = func(string) map[string]enginepin.Execution { return observed }
+			options.EnsureArmed = func(supervise.EnsureOptions) (supervise.EnsureResult, error) {
+				return supervise.EnsureResult{Action: "verified"}, nil
+			}
+			options.EnsureStewardRunner = func(string, *steward.EnrolledBinary) (steward.EnsureRunnerResult, error) {
+				return steward.EnsureRunnerResult{Action: "excluded"}, nil
+			}
+			result := Run(options)
+			if result.ExitCode() != 0 || result.Outcome != "person-terminal" {
+				t.Fatalf("person terminal: %+v", result)
+			}
+			if name == "absent" {
+				observed["runner"] = enginepin.Execution{Cause: "excluded"}
+			}
+			assertGenerationObservation(t, options.Root, digest, verdict, "", observed)
+		})
 	}
 }

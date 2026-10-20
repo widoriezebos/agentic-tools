@@ -882,7 +882,7 @@ func ensureRunnerWithDependencies(repoRoot string, enrolled *EnrolledBinary, dep
 }
 
 // RunnerRepairOutcome says whether the watcher found the enrolled steward
-// current or restored that same installation generation.
+// current, excluded by policy, or restored at that same installation generation.
 type RunnerRepairOutcome struct {
 	Status         string
 	Generation     int
@@ -977,6 +977,9 @@ func repairPinnedRunnerWithDependencies(top string, pinned *EnrolledBinary, befo
 	}
 	if ended {
 		return RunnerRepairOutcome{Status: AutoHealEnded, Generation: installed.Generation}, nil
+	}
+	if _, excluded := deps.runnerExcluded(top, false); excluded {
+		return RunnerRepairOutcome{Status: "EXCLUDED", Generation: installed.Generation}, nil
 	}
 
 	previous, alive := liveRunnerWithProber(top, deps.prober)
