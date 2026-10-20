@@ -4555,6 +4555,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-10-20T06:36:34Z",
       "testUnit": "metasystem/internal/testenv",
       "testName": "TestDeadRegistryHomeIsRemovedByAnotherProcessMain",
       "id": "flake:fc336f3cf63f7c2f364e4467459e49c2860969629c6a75016639c06f9d8bb3a2",
@@ -4637,7 +4638,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain",
       "fixBranch": {
         "name": "",
         "commit": "",
