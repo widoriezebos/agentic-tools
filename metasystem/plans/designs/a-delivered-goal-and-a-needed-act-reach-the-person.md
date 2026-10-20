@@ -217,11 +217,14 @@ Fixture rules (DG-05):
 - **Changing the per-sha landing post** (channel page U2). It stays as it is.
 - **A free-text message verb.** None is added.
 
-## Open questions for Wido
+## Questions decided by Wido (2026-10-20)
 
 - **Q1 Degraded: never, or ask once?** The goal record says degraded never reaches you. The accepted channel page (D6, row 4) asks once when a degraded tick stands, as your Word 12 asks. This page now follows the accepted page (DG-06) and asks you only to confirm. Today that would have been one question at about 00:24, and its closure line an hour after 05:36, instead of 34 lines. My advice: keep the one ask. The raw `steward: degraded` line stays withheld, as this page tests.
+  **Decided by Wido, 2026-10-20 19:01 (asked with the pros and cons): ask once when the degradation persists, with the remedy; the raw degraded lines stay held back.**
 - **Q2 Two lines for one finished goal?** When the lane lands a goal's last unit, the channel page's landing post says `Delivered: G: <what changed>`. When the goal is concluded, this page adds `Delivered at HH:MM: goal G is done`. A hand landing gets only the second line. My advice: keep both. The first says what changed, the second says the goal is finished, and they come from two different acts. If it reads as noise, drop the per-sha post later; this page does not depend on it.
+  **Decided by Wido, 2026-10-20 19:01: keep both lines; they come from two different acts, and a hand landing gets only the second.**
 - **Q3 No lane registered?** D2 lets each steward announce when the host has no lane. On a host with one checkout that is right. On a host with several checkouts and no lane, it sends one line per checkout. My advice: accept that. A host with several checkouts registers a lane in practice. The other choice, a host-wide mark file under `~/.metasystem/host` beside `landing-lane.json`, costs about 30 more lines and a lock.
+  **Decided by Wido, 2026-10-20 19:01: accept one line per checkout on a host with several checkouts and no lane; no host-wide mark file.**
 
 ## Critique record
 
