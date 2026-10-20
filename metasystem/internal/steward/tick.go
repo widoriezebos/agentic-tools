@@ -330,16 +330,16 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	goalStops := custodialBreachStops(repoRoot, cfg, dispatch.FindBreachStops)
 	governedRefreshFailures := refreshGovernedObligations(repoRoot, cfg.now())
 	if len(governedRefreshFailures) > 0 {
-		return degradedTick(repoRoot, "governed-obligation observation failed: "+strings.Join(governedRefreshFailures, "; "))
+		return degradedTick(repoRoot, degradedGovernedObligations, "governed-obligation observation failed: "+strings.Join(governedRefreshFailures, "; "))
 	}
 	if err := observeDirectValidationWindow(repoRoot, cfg.now()); err != nil {
-		return degradedTick(repoRoot, "direct-validation observation failed: "+err.Error())
+		return degradedTick(repoRoot, degradedDirectValidation, "direct-validation observation failed: "+err.Error())
 	}
 	if err := sweepRulingReviews(repoRoot, cfg.now()); err != nil {
-		return degradedTick(repoRoot, "ruling review sweep failed: "+err.Error())
+		return degradedTick(repoRoot, degradedRulingReviews, "ruling review sweep failed: "+err.Error())
 	}
 	if err := sweepCounselorBrief(repoRoot, cfg.now()); err != nil {
-		return degradedTick(repoRoot, "counselor brief carriage failed: "+err.Error())
+		return degradedTick(repoRoot, degradedCounselorBrief, "counselor brief carriage failed: "+err.Error())
 	}
 	result, tickCompleted, returnErr = runTickAfterCustodial(repoRoot, cfg, census, generation, selfExact.Ref(), tickAttempt.AttemptSeq, goalStops, defaultTickContinuationDependencies(cfg))
 	return result, returnErr
@@ -480,7 +480,7 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	// not suppress this same tick's decision.
 	reaped, err := ReapContinuations(repoRoot)
 	if err != nil {
-		result, degradedErr := degradedTick(repoRoot, "reaping failed: "+err.Error())
+		result, degradedErr := degradedTick(repoRoot, degradedContinuationReap, "reaping failed: "+err.Error())
 		return result, false, degradedErr
 	}
 	ledgerAttempt, err := beginComponentAttempt(repoRoot, "ledger-attention", generation, process, cfg.now())
@@ -510,12 +510,12 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	prev, err := LoadEvidence(evPath)
 	if err != nil {
 		// A torn store degrades honestly: report, do not guess ages.
-		result, degradedErr := degradedTick(repoRoot, err.Error())
+		result, degradedErr := degradedTick(repoRoot, degradedEvidenceStore, err.Error())
 		return result, false, degradedErr
 	}
 	marks, err := currentMarksWithReader(repoRoot, dependencies.readMarks)
 	if err != nil {
-		result, degradedErr := degradedTick(repoRoot, err.Error())
+		result, degradedErr := degradedTick(repoRoot, degradedProgressMarks, err.Error())
 		return result, false, degradedErr
 	}
 	if cfg.Seat != nil {
@@ -810,13 +810,27 @@ func requestWatcherRepair(repoRoot string, health HealthVerdict, now time.Time) 
 	return nil
 }
 
+// degradedCause identifies the failing step independently of its error text.
+type degradedCause string
+
+const (
+	degradedGovernedObligations degradedCause = "governed-obligations"
+	degradedDirectValidation    degradedCause = "direct-validation"
+	degradedRulingReviews       degradedCause = "ruling-reviews"
+	degradedCounselorBrief      degradedCause = "counselor-brief"
+	degradedContinuationReap    degradedCause = "continuation-reap"
+	degradedEvidenceStore       degradedCause = "evidence-store"
+	degradedProgressMarks       degradedCause = "progress-marks"
+)
+
 // degradedTick is every degraded early exit's one shape: the
 // incident reaches the durable queue BEFORE the tick returns, so a
 // broken store or unreadable repository is never a silent verdict.
-func degradedTick(repoRoot, reason string) (TickResult, error) {
+func degradedTick(repoRoot string, cause degradedCause, reason string) (TickResult, error) {
 	d := Decision{VerdictDegraded, ActNotify, reason}
 	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce:   "verdict-" + string(VerdictDegraded),
+		Cause:   cause,
 		Message: fmt.Sprintf("steward: %s — %s", d.Verdict, d.Reason),
 	}); err != nil {
 		// Neither queued nor silent: the caller surfaces a tick that

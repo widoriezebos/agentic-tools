@@ -45,6 +45,10 @@ type Answer struct {
 	Receipt      string     `json:"receipt,omitempty"`
 	Phase        string     `json:"phase"`
 }
+
+// Decision identifies the machine state that needs a person.
+type Decision struct{ Kind, Subject, State string }
+
 type Question struct {
 	Recovery *RecoverySubject `json:"recovery,omitempty"`
 	ID       string           `json:"id"`
@@ -72,9 +76,12 @@ type Question struct {
 	LedgerCursor   string            `json:"ledgerCursor,omitempty"`
 	UnitStop       *UnitStopQuestion `json:"unitStop,omitempty"`
 	ProcessAct     string            `json:"processAct,omitempty"`
+	Decision       *Decision         `json:"decision,omitempty"`
+	RetiredAt      time.Time         `json:"retiredAt,omitzero"`
 }
 
 type AskRequest struct {
+	Decision                                      *Decision
 	Recovery                                      *RecoverySubject
 	ProcessAct                                    string
 	Context                                       context.Context
@@ -263,6 +270,11 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 }
 
 func askOrFind(r AskRequest) (Question, bool, error) {
+	if r.Decision != nil {
+		if r.About != "machine" || r.Decision.Kind == "" || r.Decision.Subject == "" || r.Decision.State == "" {
+			return Question{}, false, fmt.Errorf("a decision requires a machine question and a kind, subject, and state")
+		}
+	}
 	if r.Now.IsZero() {
 		r.Now = time.Now().UTC()
 	}
@@ -296,13 +308,16 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 		return Question{}, false, err
 	}
 	for _, q := range existing {
+		if r.Decision != nil && q.Decision != nil && *r.Decision == *q.Decision && q.RetiredAt.IsZero() {
+			return q, true, nil
+		}
 		if r.Recovery != nil && q.Recovery != nil && *r.Recovery == *q.Recovery {
 			return q, true, nil
 		}
 		if r.UnitStop != nil && q.UnitStop != nil && q.Goal == r.Goal && q.UnitStop.sameKey(*r.UnitStop) {
 			return q, true, nil
 		}
-		if r.UnitStop == nil && q.UnitStop == nil && q.State == "open" && q.Goal == r.Goal && q.About == r.About && q.Kind == r.Kind && q.FactsDigest == digest && sameAsk(q, r) {
+		if r.Decision == nil && q.Decision == nil && r.UnitStop == nil && q.UnitStop == nil && q.State == "open" && q.Goal == r.Goal && q.About == r.About && q.Kind == r.Kind && q.FactsDigest == digest && sameAsk(q, r) {
 			return q, true, nil
 		}
 	}
@@ -310,7 +325,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{Recovery: r.Recovery, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
+	q := Question{Decision: r.Decision, Recovery: r.Recovery, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}

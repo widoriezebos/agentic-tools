@@ -313,9 +313,10 @@ func LiveIntents(repoRoot string) ([]Intent, error) {
 // PendingNotification is one undelivered operator message, durable
 // until delivery succeeds; retried every tick, never redispatching.
 type PendingNotification struct {
-	Nonce         string `json:"nonce"`
-	Message       string `json:"message"`
-	DeliveryOwner string `json:"deliveryOwner,omitempty"`
+	Cause         degradedCause `json:"cause,omitempty"`
+	Nonce         string        `json:"nonce"`
+	Message       string        `json:"message"`
+	DeliveryOwner string        `json:"deliveryOwner,omitempty"`
 }
 
 // L3 used this literal to mark held health findings for L4. The episode

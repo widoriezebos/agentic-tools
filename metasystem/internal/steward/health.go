@@ -162,6 +162,27 @@ const (
 	CauseStopCapabilityMissing RemedyCause = "stop-capability-missing"
 )
 
+// remedyCauseNeedsAPerson names who can clear each declared health cause.
+var remedyCauseNeedsAPerson = map[RemedyCause]bool{
+	CauseUnavailable:           false,
+	CauseUnreadable:            true,
+	CauseSettingsInvalid:       true,
+	CauseClockRegressed:        false,
+	CauseObservationPending:    false,
+	CauseStopFenceClosed:       true,
+	CauseJobProcessDead:        true,
+	CauseTrunkRedUnowned:       true,
+	CauseBudgetMissing:         true,
+	CauseBudgetMalformed:       true,
+	CauseBudgetUnknown:         true,
+	CauseBudgetBreach:          false,
+	CauseBreachStopOpen:        false,
+	CauseBreachStopUnresolved:  true,
+	CauseEpochMismatch:         false,
+	CauseForeignLineage:        true,
+	CauseStopCapabilityMissing: true,
+}
+
 const (
 	AutoHealEligible = "AUTO_HEAL_ELIGIBLE"
 	AutoHealEnded    = "AUTO_HEAL_ENDED"

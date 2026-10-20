@@ -209,7 +209,7 @@ func TestCorruptGraceTickEscalatesWithoutCancellingLawfulWork(t *testing.T) {
 
 func TestDegradedTickQueuesTheIncidentOrSurfacesQueueFailure(t *testing.T) {
 	root := t.TempDir()
-	result, err := degradedTick(root, "evidence store is torn")
+	result, err := degradedTick(root, degradedEvidenceStore, "evidence store is torn")
 	if err != nil || result.Decision.Verdict != VerdictDegraded || result.Decision.Action != ActNotify {
 		t.Fatalf("degraded tick did not return its notify verdict: result=%+v err=%v", result, err)
 	}
@@ -221,7 +221,7 @@ func TestDegradedTickQueuesTheIncidentOrSurfacesQueueFailure(t *testing.T) {
 	if err := os.WriteFile(blocked, []byte("file"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	result, err = degradedTick(blocked, "repository is unreadable")
+	result, err = degradedTick(blocked, degradedProgressMarks, "repository is unreadable")
 	if err == nil || result.Decision.Verdict != VerdictDegraded || !strings.Contains(err.Error(), "could not queue") {
 		t.Fatalf("queue failure hid the degraded verdict: result=%+v err=%v", result, err)
 	}
