@@ -5152,6 +5152,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-10-20T14:39:53Z",
       "testUnit": "metasystem/internal/proofrun",
       "testName": "TestSupervisorKillSparesTheFixtureCustodian",
       "id": "flake:12d084d2add247ec4cd5aae29efab29a7bfa6f28023304cc6129fe8205ba2ec2",
@@ -5234,7 +5235,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian",
       "fixBranch": {
         "name": "",
         "commit": "",
