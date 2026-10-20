@@ -3,7 +3,7 @@
 - Kind: design
 - Id: 01M5BD000000000000000STP01
 - Status: accepted
-- Goals: a-stop-waits-for-the-unit-boundary a-seat-pauses-at-its-spend-line
+- Goals: a-stop-waits-for-the-unit-boundary a-stop-waits-for-the-unit-boundary-2 a-seat-pauses-at-its-spend-line
 - Amends: metasystem/plans/token-spend-fence-design.md (Id 01M3A2YHDN94AP79J2RT1875W1, goal token-spend-fence, abandoned): this page is its step 2, kept for Wido's word (R-60-m1) and given on 2026-10-19.
 
 Written 2026-10-19 by the opus-designer for the steward (m1e, Wido's name) from Wido's four decisions of 2026-10-19 (10:10, 12:50, 13:40). Critique: three Astra rounds by hand (gpt-6-astra; every machine was stopped before the reboot, so `design review` could not run): 11 -> 6 -> 5 material, each round folded from the code the designer read; revision 4 is the final text. Accepted at the stop by the steward in Wido's name on 2026-10-19 at 15:00 CEST; the remaining points are brief obligations BO-1..BO-5 below. The formal `metasystem design review` runs at the first engine start; a material finding there reopens this page. Goal split (Wido's rule: a goal has at most five units): a-stop-waits-for-the-unit-boundary = U1a, U1b (no automatic stop cuts a unit; the breached unit finishes); a-seat-pauses-at-its-spend-line = U2, U3, U4 (or U4a, U4b), blocked by the first. Logs: agentic-tools-evidence/lane-test-20261009/analysis/spend-fence-amendment-critique-{1,2,3}.log.
@@ -270,3 +270,9 @@ The steward cannot settle these from this page's reads. Each brief verifies them
 - DEFERRED work that still progresses is status, not a message (D9).
 - The person's-channel design owns the wording of every stop and pause notice; this page owns their facts; a stuck unit raises no ask while its goal has a stop open, so one decision identity serves both.
 - The cost shown to a person is elapsedOverrun; diagnostic minutes never appear in a message.
+
+## Recut (2026-10-20, steward in Wido's name)
+
+U1a.1 (D12: every probe on the runner's path is injected) landed on main on 2026-10-20 (a0f587dc6f, by hand: unit commit in the registered workspace u1a1, sharded gate GATE OK (evidence gates/stopwaits-u1a1-20261020), the lane route refused at the claim (finding 413)).
+
+The goal a-stop-waits-for-the-unit-boundary is concluded with U1a.1. U1a.2 (D9, BO-2: no automatic elapsed stop cuts a unit) and U1b (D10: the current unit finishes past the limit) continue under a-stop-waits-for-the-unit-boundary-2, opened, approved and ranked first the same day in Wido's name. U2, U3, U4 and the root conf switch stay with a-seat-pauses-at-its-spend-line. The design is unchanged; the cut of U1a into U1a.1 and U1a.2 is the one recorded in the correction of 2026-10-19 12:40.
