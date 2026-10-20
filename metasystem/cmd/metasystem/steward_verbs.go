@@ -41,8 +41,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 )
 
-func stewardCensusFor(repo string) steward.WorkerCensus {
+func stewardCensusFor(repo string, probers ...identity.Prober) steward.WorkerCensus {
+	var prober identity.Prober
+	if len(probers) > 0 {
+		prober = probers[0]
+	}
 	return steward.RuntimeWorkerCensus{
+		Prober:         prober,
 		MetasystemRoot: repo,
 		ProcessFile:    os.Getenv("METASYSTEM_CENSUS_PROCESS_FILE"),
 	}
@@ -185,9 +190,9 @@ func completeHookAttempt(request hooks.HookCompletion, stderr io.Writer) int {
 // stewardReviveOwner is one revival called in the caller's process (the
 // steward runner or tick), with its output returned as the former child's
 // combined output was.
-func stewardReviveOwner(repo string) (string, error) {
+func stewardReviveOwner(repo string, cfg steward.TickConfig, launch steward.LaunchSeam) (string, error) {
 	var output strings.Builder
-	if status := stewardRevive(cleanOwnerRoot(repo), &output, &output); status != 0 {
+	if status := stewardRevive(cleanOwnerRoot(repo), &output, &output, cfg, launch); status != 0 {
 		return output.String(), fmt.Errorf("steward revive exited %d", status)
 	}
 	return output.String(), nil
@@ -197,7 +202,7 @@ func stewardReviveOwner(repo string) (string, error) {
 // dispatch stays its own process in its own session (delegate --revive), so
 // the delegate chain classifies STEWARD from the steward process that calls
 // this, as it did from the revive child.
-func stewardRevive(repo string, stdout, stderr io.Writer) int {
+func stewardRevive(repo string, stdout, stderr io.Writer, cfg steward.TickConfig, launch steward.LaunchSeam) int {
 
 	// Resume an already-minted intent before minting another: the
 	// one-active-continuation guard would otherwise refuse forever.
@@ -247,8 +252,8 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 		}
 	}
 
-	outcome, err := steward.CompleteRevival(repo, steward.TickConfig{}, stewardCensusFor(repo), nonce,
-		func(it steward.Intent) error {
+	if launch == nil {
+		launch = func(it steward.Intent) error {
 			binary, binaryErr := os.Executable()
 			if binaryErr != nil {
 				return binaryErr
@@ -267,15 +272,17 @@ func stewardRevive(repo string, stdout, stderr io.Writer) int {
 				return fmt.Errorf("delegate revival: %v", err)
 			}
 			return nil
-		}, func(it steward.Intent) error {
-			return admitStewardContinuation(repo, it, func(root string, args ...string) (string, error) {
-				result := landingPathGit(landpath.GitCall{Dir: root, Args: args})
-				if result.Code != 0 {
-					return "", fmt.Errorf("continuation admission cannot read Git facts: %s", result.Stderr)
-				}
-				return strings.TrimSpace(string(result.Stdout)), nil
-			})
+		}
+	}
+	outcome, err := steward.CompleteRevival(repo, cfg, stewardCensusFor(repo, cfg.Prober), nonce, launch, func(it steward.Intent) error {
+		return admitStewardContinuation(repo, it, func(root string, args ...string) (string, error) {
+			result := landingPathGit(landpath.GitCall{Dir: root, Args: args})
+			if result.Code != 0 {
+				return "", fmt.Errorf("continuation admission cannot read Git facts: %s", result.Stderr)
+			}
+			return strings.TrimSpace(string(result.Stdout)), nil
 		})
+	})
 	if err != nil {
 		fmt.Fprintf(stderr, "steward revive: %v\n", err)
 		return 1
@@ -348,10 +355,16 @@ func runStewardRunWith(args []string, stdout, stderr io.Writer,
 	return runStewardRunWithDependencies(args, stdout, stderr, runLoop, probeRuntime, nil, steward.TickSeconds, nil)
 }
 
+type stewardRunDependencies struct {
+	Prober       identity.Prober
+	Signal       identity.SignalFunc
+	ReviveLaunch steward.LaunchSeam
+}
+
 func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 	runLoop func(string, steward.WorkerCensus, func() error, time.Duration, steward.TickConfig) error,
 	probeRuntime func(string, string) error,
-	clock *steward.HandoffClock, tickSeconds func(string) int, refresh func() (bool, error)) int {
+	clock *steward.HandoffClock, tickSeconds func(string) int, refresh func() (bool, error), supplied ...stewardRunDependencies) int {
 	flags := newFlagSet("steward run", stdout, stderr)
 	repo := pathFlag(flags, "repo", "", "checkout root")
 	// The arming caller's handoff. The runner keeps the value in memory and
@@ -379,6 +392,11 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 	if tickConfig.ProbeRuntime == nil {
 		tickConfig.ProbeRuntime = probeRuntime
 	}
+	var dependencies stewardRunDependencies
+	if len(supplied) > 0 {
+		dependencies = supplied[0]
+	}
+	tickConfig.Prober, tickConfig.Signal = dependencies.Prober, dependencies.Signal
 	tickConfig.ArmedLineage = *lineage
 	tickConfig.RunnerClock = clock
 	tickConfig.RearmAtBoundary = func() (bool, error) {
@@ -398,7 +416,7 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 			if clock != nil {
 				now = clock.Now()
 			}
-			return steward.SeatAtUnitBoundary(*repo, home, now)
+			return steward.SeatAtUnitBoundary(*repo, home, now, tickConfig.Prober)
 		})
 	}
 	if refresh != nil {
@@ -418,8 +436,8 @@ func runStewardRunWithDependencies(args []string, stdout, stderr io.Writer,
 		return stewardProviderProbe(top, installationSettings, (*exec.Cmd).Output)
 	}
 	interval := time.Duration(tickSeconds(*repo)) * time.Second
-	err := runLoop(*repo, stewardCensusFor(*repo), func() error {
-		out, err := stewardReviveOwner(*repo)
+	err := runLoop(*repo, stewardCensusFor(*repo, tickConfig.Prober), func() error {
+		out, err := stewardReviveOwner(*repo, tickConfig, dependencies.ReviveLaunch)
 		if err != nil {
 			return fmt.Errorf("%v (%s)", err, strings.TrimSpace(string(out)))
 		}

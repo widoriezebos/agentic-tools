@@ -151,6 +151,7 @@ func RunLoop(repoRoot string, census WorkerCensus, revive func() error, interval
 		now, sleep = cfg.RunnerClock.Now, cfg.RunnerClock.Sleep
 	}
 	return runLoopWithDependencies(repoRoot, census, revive, interval, cfg, runnerLoopDependencies{
+		Self: cfg.withDefaults().Prober,
 		Tick: RunTick, DeliverPending: DeliverPending, Resumable: ResumableIntent, Channel: channelphase.Run,
 		TrimCaches: machineCacheTrimmer(nil, ""),
 		Now:        now, Sleep: sleep, AfterRecordPublished: runnerAfterRecordPublished, SweepDisk: runnerSweepDisk,

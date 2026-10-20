@@ -410,7 +410,12 @@ func acceptedGoalWorld(root string) (bool, error) {
 // ReadClaimableBudgetedWork performs the fresh canonical read and the one
 // process-liveness join used by every runtime-independent owner.
 func ReadClaimableBudgetedWork(root string, now time.Time) (ClaimableBudgetedWork, error) {
-	return readClaimableBudgetedWork(root, now, identity.KernelProber{}, projectionDependencies{})
+	return ReadClaimableBudgetedWorkWith(root, now, identity.KernelProber{})
+}
+
+// ReadClaimableBudgetedWorkWith joins the canonical work with the supplied process observations.
+func ReadClaimableBudgetedWorkWith(root string, now time.Time, prober identity.Prober) (ClaimableBudgetedWork, error) {
+	return readClaimableBudgetedWork(root, now, prober, projectionDependencies{})
 }
 
 func readClaimableBudgetedWork(root string, now time.Time, prober identity.Prober, dependencies projectionDependencies) (ClaimableBudgetedWork, error) {

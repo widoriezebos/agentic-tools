@@ -533,7 +533,7 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	if cfg.Units != nil {
 		dependencies.Units = cfg.Units
 	}
-	openWork := defaultTickContinuationDependencies().openWork
+	openWork := defaultTickContinuationDependencies(cfg).openWork
 	if cfg.GoalProjection != nil {
 		openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
 	}

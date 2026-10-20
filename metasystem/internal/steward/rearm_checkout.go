@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 var ErrRearmDeferred = errors.New("re-arm deferred")
@@ -56,17 +57,19 @@ func ClearDeferredRearm(root string) error {
 }
 
 // SeatAtUnitBoundary excludes running steps, critics and unreadable work.
-func SeatAtUnitBoundary(root, home string, now time.Time, observed ...goal.ClaimableBudgetedWork) (bool, error) {
+func SeatAtUnitBoundary(root, home string, now time.Time, prober identity.Prober, observed ...goal.ClaimableBudgetedWork) (bool, error) {
 	var work goal.ClaimableBudgetedWork
 	var err error
 	if len(observed) > 0 {
 		work = observed[0]
 	} else {
-		work, err = goal.ReadClaimableBudgetedWork(root, now)
+		work, err = goal.ReadClaimableBudgetedWorkWith(root, now, (TickConfig{Prober: prober}).withDefaults().Prober)
 	}
 	if err != nil {
 		return false, err
 	}
-	busy, _, skipped := SeatBusyAt(root, filepath.Join(home, "unit"), work, SeatBusyOptions{Now: now, AtBoundary: true})
+	busy, _, skipped := SeatBusyAt(root, filepath.Join(home, "unit"), work, SeatBusyOptions{Now: now, AtBoundary: true, Probe: func(ref identity.Ref) identity.Liveness {
+		return identity.AliveRef((TickConfig{Prober: prober}).withDefaults().Prober, ref)
+	}})
 	return !busy && skipped == 0, nil
 }

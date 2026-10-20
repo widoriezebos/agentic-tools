@@ -99,7 +99,7 @@ func TestUnitBoundaryHoldsALiveStepPastItsBudget(t *testing.T) {
 				}
 				writeStewardRecord(t, filepath.Join(units, "run-1", "run.json"), map[string]any{"id": "run-1", "goal": "held", "state": "running", "rounds": []launch.UnitRound{{Steps: []launch.UnitStep{step}}}})
 			}
-			ready, err := SeatAtUnitBoundary(bed.root, filepath.Dir(units), bed.now, work)
+			ready, err := SeatAtUnitBoundary(bed.root, filepath.Dir(units), bed.now, nil, work)
 			if err != nil || ready != (scenario == "orphan") {
 				t.Fatalf("%s boundary: ready=%t error=%v", scenario, ready, err)
 			}

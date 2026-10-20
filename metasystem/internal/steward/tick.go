@@ -34,6 +34,8 @@ type WorkerCensus interface {
 
 // TickConfig carries the thresholds; zero values take the defaults.
 type TickConfig struct {
+	Prober identity.Prober
+	Signal identity.SignalFunc
 	// GoalProjection supplies the accepted ledger read; nil uses the production repository.
 	GoalProjection   func(string, time.Time) (goal.Projection, error)
 	RecoveryRegistry string
@@ -111,6 +113,9 @@ type TickConfig struct {
 var tickHealthNow = time.Now
 
 func (c TickConfig) withDefaults() TickConfig {
+	if c.Prober == nil {
+		c.Prober = identity.KernelProber{}
+	}
 	if c.StaleTicks <= 0 {
 		c.StaleTicks = 5
 	}
@@ -137,6 +142,9 @@ func (c TickConfig) progressTicks(repoRoot string, ev Evidence) int {
 }
 
 func (c TickConfig) readClaimableBudgetedWork(root string, now time.Time) (goal.ClaimableBudgetedWork, error) {
+	if c.GoalProjection == nil {
+		return goal.ReadClaimableBudgetedWorkWith(root, now, c.withDefaults().Prober)
+	}
 	projection, err := c.GoalProjection(root, now)
 	if err != nil {
 		return goal.ClaimableBudgetedWork{}, err
@@ -145,7 +153,7 @@ func (c TickConfig) readClaimableBudgetedWork(root string, now time.Time) (goal.
 	if err != nil {
 		return goal.ClaimableBudgetedWork{}, err
 	}
-	return goal.ClaimableWorkFromProjection(projection, machine, identity.KernelProber{})
+	return goal.ClaimableWorkFromProjection(projection, machine, c.withDefaults().Prober)
 }
 
 func (c TickConfig) now() time.Time {
@@ -259,7 +267,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	}
 	defer tickLock.Release()
 
-	selfExact, selfState, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
+	selfExact, selfState, err := cfg.Prober.Probe(int64(os.Getpid()))
 	if err != nil || selfState != identity.Alive {
 		return TickResult{}, fmt.Errorf("the steward tick cannot read its own process identity")
 	}
@@ -332,7 +340,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	if err := sweepCounselorBrief(repoRoot, cfg.now()); err != nil {
 		return degradedTick(repoRoot, "counselor brief carriage failed: "+err.Error())
 	}
-	result, tickCompleted, returnErr = runTickAfterCustodial(repoRoot, cfg, census, generation, selfExact.Ref(), tickAttempt.AttemptSeq, goalStops, defaultTickContinuationDependencies())
+	result, tickCompleted, returnErr = runTickAfterCustodial(repoRoot, cfg, census, generation, selfExact.Ref(), tickAttempt.AttemptSeq, goalStops, defaultTickContinuationDependencies(cfg))
 	return result, returnErr
 }
 
@@ -435,16 +443,17 @@ type tickContinuationDependencies struct {
 	health           tickHealthDependencies
 }
 
-func defaultTickContinuationDependencies() tickContinuationDependencies {
+func defaultTickContinuationDependencies(cfg TickConfig) tickContinuationDependencies {
+	cfg = cfg.withDefaults()
 	return tickContinuationDependencies{
 		ledgerRepository: defaultLedgerAttentionRepository(),
 		ledgerWriter:     atomicfile.WriteText,
 		readMarks:        readMarksGit,
 		openWork: openWorkDependencies{
 			NewWorld:                  goal.NewWorld,
-			ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork,
-			Busy:                      seatBusyReader(""),
-			HandoffProber:             identity.KernelProber{},
+			ReadClaimableBudgetedWork: cfg.readClaimableBudgetedWork,
+			Busy:                      seatBusyReader(cfg.WorkStateRoot, cfg.Prober),
+			HandoffProber:             cfg.Prober,
 		},
 		resolveMachine: goal.ResolveMachine,
 		resolveLayout:  stateroot.ResolveLayout,
@@ -461,6 +470,7 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	if cfg.GoalProjection != nil {
 		dependencies.openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
 	}
+	dependencies.health.prober = cfg.withDefaults().Prober
 	dependencies.health.probeRuntime = cfg.ProbeRuntime
 	dependencies.health.examineLedger = func(root string, now time.Time) error {
 		return examineLedgerMoveWithRepositoryAndWriter(root, now, dependencies.ledgerRepository, dependencies.ledgerWriter)
@@ -655,6 +665,7 @@ func completeTickHealthWithConfig(repoRoot string, result *TickResult, generatio
 		deliver:      deliver,
 		lane:         hostLaneSilence,
 		probeRuntime: cfg.ProbeRuntime,
+		prober:       cfg.withDefaults().Prober,
 		examineLedger: func(root string, now time.Time) error {
 			return examineLedgerMoveWithRepositoryAndWriter(root, now, defaultLedgerAttentionRepository(), atomicfile.WriteText)
 		},
@@ -662,6 +673,7 @@ func completeTickHealthWithConfig(repoRoot string, result *TickResult, generatio
 }
 
 type tickHealthDependencies struct {
+	prober   identity.Prober
 	evaluate healthRoleEvaluator
 	now      func() time.Time
 	deliver  func(string, string) error
@@ -682,7 +694,7 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 		}
 		return now.UTC()
 	}
-	health, err := observeHealthWithEvaluation(repoRoot, healthNow(), identity.KernelProber{}, dependencies.evaluate)
+	health, err := observeHealthWithEvaluation(repoRoot, healthNow(), (TickConfig{Prober: dependencies.prober}).withDefaults().Prober, dependencies.evaluate)
 	if err != nil {
 		return fmt.Errorf("compute health: %w", err)
 	}
@@ -818,7 +830,7 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	cfg = cfg.withDefaults()
 	dependencies.Now = cfg.now
 	if cfg.WorkStateRoot != "" {
-		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot)
+		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot, cfg.withDefaults().Prober)
 	}
 	work, workReason, shared, err := readOpenWorkShared(repoRoot, dependencies)
 	if err != nil {

@@ -78,7 +78,8 @@ func BindUnitHandoff(root, session string) error {
 
 // FinishUnitHandoff ends only a headless predecessor with a durable boundary
 // binding. Successor admission still belongs to the exact-death check.
-func FinishUnitHandoff(root, session string) error {
+func FinishUnitHandoff(root, session string, prober identity.Prober, signal identity.SignalFunc) error {
+	prober = (TickConfig{Prober: prober}).withDefaults().Prober
 	held, err := AcquireArbitration(root)
 	if err != nil {
 		return err
@@ -92,7 +93,6 @@ func FinishUnitHandoff(root, session string) error {
 		return nil
 	}
 	binding := *intent.Handoff
-	prober := identity.KernelProber{}
 	exact, state := inspectHandoffPredecessor(binding, prober)
 	switch state {
 	case identity.Dead:
@@ -100,7 +100,7 @@ func FinishUnitHandoff(root, session string) error {
 	case identity.Unknown:
 		return fmt.Errorf("handoff %s held: predecessor pid %d identity is unknown; no signal sent", intent.Nonce, binding.Predecessor.Pid)
 	case identity.Alive:
-		if err := identity.SignalExact(prober, exact, syscall.SIGTERM); err != nil && !errors.Is(err, identity.ErrGone) {
+		if err := identity.SignalExact(prober, exact, syscall.SIGTERM, signal); err != nil && !errors.Is(err, identity.ErrGone) {
 			return fmt.Errorf("handoff %s held: predecessor signal failed: %w", intent.Nonce, err)
 		}
 	}

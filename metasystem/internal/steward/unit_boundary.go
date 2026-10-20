@@ -12,6 +12,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
@@ -60,7 +61,7 @@ func writeUnitBoundaries(root string, events []UnitBoundary) error {
 
 // ObserveUnitBoundary runs under the same arbitration as handoff capture.
 // Units supplies the current public work stages, including independent reads.
-func ObserveUnitBoundary(root, home, session string, started time.Time, work goal.ClaimableBudgetedWork, units func(string, string) ([]UnitStage, error), now time.Time) error {
+func ObserveUnitBoundary(root, home, session string, started time.Time, work goal.ClaimableBudgetedWork, units func(string, string) ([]UnitStage, error), now time.Time, prober identity.Prober) error {
 	held, err := AcquireArbitration(root)
 	if err != nil {
 		return err
@@ -69,7 +70,7 @@ func ObserveUnitBoundary(root, home, session string, started time.Time, work goa
 	if session == "" || started.IsZero() {
 		return nil
 	}
-	ready, err := SeatAtUnitBoundary(root, home, now, work)
+	ready, err := SeatAtUnitBoundary(root, home, now, prober, work)
 	if err != nil || !ready {
 		return err
 	}
@@ -85,57 +86,12 @@ func ObserveUnitBoundary(root, home, session string, started time.Time, work goa
 		return err
 	}
 	retained := len(events)
-	completed := map[string]bool{}
-	for _, id := range append(append([]string(nil), work.Claimed...), work.Landing...) {
-		stages, err := units(root, id)
-		if err != nil {
-			return err
-		}
-		for _, stage := range stages {
-			if stage.Stage == "committed, ready to land without a read" {
-				continue
-			}
-			if !strings.HasPrefix(stage.Stage, "reviewed; its read is collected and published") {
-				return nil
-			}
-			completed[id+"/"+stage.Run] = true
-		}
-	}
-	entries, err := os.ReadDir(filepath.Join(home, "unit"))
-	if err != nil && !os.IsNotExist(err) {
+	complete, runs, err := heldWorkCompleted(root, home, work, units, prober)
+	if err != nil || !complete {
 		return err
 	}
-	heldGoals := map[string]bool{}
-	for _, id := range append(append([]string(nil), work.Claimed...), work.Landing...) {
-		heldGoals[id] = true
-	}
-	for _, entry := range entries {
-		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
-			continue
-		}
-		var run launch.UnitRunRecord
-		selected, err := readHeldSeatRecord(filepath.Join(home, "unit", entry.Name(), "run.json"), "goal", heldGoals, &run)
-		if err != nil {
-			return err
-		}
-		if !selected {
-			continue
-		}
-		if !completed[run.Goal+"/"+run.ID] {
-			continue
-		}
-		if run.ID != entry.Name() || run.State != "awaiting-judgement" || len(run.Rounds) == 0 {
-			return nil
-		}
+	for _, run := range runs {
 		round := run.Rounds[len(run.Rounds)-1]
-		if !launch.UnitReviewReadyOutcomes[round.Outcome] || len(round.Steps) == 0 {
-			return nil
-		}
-		for _, step := range round.Steps {
-			if step.State != launch.StepPassed && step.State != launch.StepFailed && step.State != launch.StepSkipped {
-				return nil
-			}
-		}
 		finished, err := time.Parse(time.RFC3339Nano, round.Steps[len(round.Steps)-1].FinishedAt)
 		if err != nil {
 			return fmt.Errorf("unit %s completion time is unknown: %w", run.ID, err)
@@ -158,4 +114,67 @@ func ObserveUnitBoundary(root, home, session string, started time.Time, work goa
 		return nil
 	}
 	return writeUnitBoundaries(root, events)
+}
+
+// heldWorkCompleted requires published independent reads and terminal steps.
+func heldWorkCompleted(root, home string, work goal.ClaimableBudgetedWork, units func(string, string) ([]UnitStage, error), prober identity.Prober) (bool, []launch.UnitRunRecord, error) {
+	ready, err := SeatAtUnitBoundary(root, home, time.Time{}, prober, work)
+	if err != nil || !ready {
+		return false, nil, err
+	}
+	var completedRuns []launch.UnitRunRecord
+	completed := map[string]bool{}
+	for _, id := range append(append([]string(nil), work.Claimed...), work.Landing...) {
+		stages, err := units(root, id)
+		if err != nil {
+			return false, nil, err
+		}
+		for _, stage := range stages {
+			if stage.Stage == "committed, ready to land without a read" {
+				continue
+			}
+			if !strings.HasPrefix(stage.Stage, "reviewed; its read is collected and published") {
+				return false, nil, nil
+			}
+			completed[id+"/"+stage.Run] = true
+		}
+	}
+	entries, err := os.ReadDir(filepath.Join(home, "unit"))
+	if err != nil && !os.IsNotExist(err) {
+		return false, nil, err
+	}
+	heldGoals := map[string]bool{}
+	for _, id := range append(append([]string(nil), work.Claimed...), work.Landing...) {
+		heldGoals[id] = true
+	}
+	for _, entry := range entries {
+		if !entry.IsDir() || strings.HasPrefix(entry.Name(), ".") {
+			continue
+		}
+		var run launch.UnitRunRecord
+		selected, err := readHeldSeatRecord(filepath.Join(home, "unit", entry.Name(), "run.json"), "goal", heldGoals, &run)
+		if err != nil {
+			return false, nil, err
+		}
+		if !selected {
+			continue
+		}
+		if !completed[run.Goal+"/"+run.ID] {
+			continue
+		}
+		if run.ID != entry.Name() || run.State != "awaiting-judgement" || len(run.Rounds) == 0 {
+			return false, nil, nil
+		}
+		round := run.Rounds[len(run.Rounds)-1]
+		if !launch.UnitReviewReadyOutcomes[round.Outcome] || len(round.Steps) == 0 {
+			return false, nil, nil
+		}
+		for _, step := range round.Steps {
+			if step.State != launch.StepPassed && step.State != launch.StepFailed && step.State != launch.StepSkipped {
+				return false, nil, nil
+			}
+		}
+		completedRuns = append(completedRuns, run)
+	}
+	return len(completedRuns) > 0, completedRuns, nil
 }

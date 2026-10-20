@@ -80,8 +80,12 @@ func convertedOpenWorkWithDependencies(repoRoot string, dependencies openWorkDep
 	return answer, reason, &work, err
 }
 
-func seatBusyReader(home string) func(string, goal.ClaimableBudgetedWork, time.Time) (bool, string, int) {
+func seatBusyReader(home string, probers ...identity.Prober) func(string, goal.ClaimableBudgetedWork, time.Time) (bool, string, int) {
 	return func(root string, work goal.ClaimableBudgetedWork, now time.Time) (bool, string, int) {
+		var prober identity.Prober
+		if len(probers) > 0 {
+			prober = probers[0]
+		}
 		selected := home
 		if selected == "" {
 			var err error
@@ -90,7 +94,9 @@ func seatBusyReader(home string) func(string, goal.ClaimableBudgetedWork, time.T
 				return len(work.Claimed)+len(work.Landing) > 0, "dependent work custody is unknown; unreadable records: 1", 1
 			}
 		}
-		return SeatBusyAt(root, filepath.Join(selected, "unit"), work, SeatBusyOptions{Now: now})
+		return SeatBusyAt(root, filepath.Join(selected, "unit"), work, SeatBusyOptions{Now: now, Probe: func(ref identity.Ref) identity.Liveness {
+			return identity.AliveRef((TickConfig{Prober: prober}).withDefaults().Prober, ref)
+		}})
 	}
 }
 

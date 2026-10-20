@@ -178,22 +178,15 @@ func (l stewardSeatLauncher) SeatLaunch(id string) (steward.SeatLaunchState, err
 // wireStewardSeat arms the runner's tick with the seat launcher: the
 // steward starts its seat main when ready work has no seat.
 func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
+	if config.Prober == nil {
+		config.Prober = identity.KernelProber{}
+	}
 	config.Seat = newStewardSeatLauncher()
 	owners := defaultIntentOwners()
 	if len(supplied) > 0 {
 		owners = supplied[0]
 	}
-	config.Units = func(root, id string) ([]steward.UnitStage, error) {
-		inv := &intentInvocation{cwd: root, owners: owners}
-		if problem := inv.selectRoot(); problem != nil {
-			return nil, errors.New(problem.Summary)
-		}
-		_, _, _, _, units, problem := inv.goalUnitStages(id)
-		if problem != nil {
-			return nil, errors.New(problem.Summary)
-		}
-		return units, nil
-	}
+	config.Units = stewardUnitStages(owners)
 	config.CompletedBoundary = func(root string, now time.Time) error {
 		holder, err := lease.CurrentHolder(root)
 		if errors.Is(err, lease.ErrLeaseAbsent) {
@@ -226,7 +219,7 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 		if err != nil {
 			return err
 		}
-		work, err := goal.ClaimableWorkFromProjection(projection, machine, identity.KernelProber{})
+		work, err := goal.ClaimableWorkFromProjection(projection, machine, config.Prober)
 		if err != nil {
 			return err
 		}
@@ -237,10 +230,24 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 		if err != nil {
 			return err
 		}
-		if err := steward.ObserveUnitBoundary(root, home, holder.SessionId, started, work, config.Units, now); err != nil {
+		if err := steward.ObserveUnitBoundary(root, home, holder.SessionId, started, work, config.Units, now, config.Prober); err != nil {
 			return err
 		}
-		return steward.FinishUnitHandoff(root, holder.SessionId)
+		return steward.FinishUnitHandoff(root, holder.SessionId, config.Prober, config.Signal)
+	}
+}
+
+func stewardUnitStages(owners intentOwners) func(string, string) ([]steward.UnitStage, error) {
+	return func(root, id string) ([]steward.UnitStage, error) {
+		inv := &intentInvocation{cwd: root, owners: owners}
+		if problem := inv.selectRoot(); problem != nil {
+			return nil, errors.New(problem.Summary)
+		}
+		_, _, _, _, units, problem := inv.goalUnitStages(id)
+		if problem != nil {
+			return nil, errors.New(problem.Summary)
+		}
+		return units, nil
 	}
 }
 

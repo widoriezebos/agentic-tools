@@ -307,7 +307,7 @@ func TestFleetRearmPreservesContinuation(t *testing.T) {
 		if busy != want || unknown && !strings.Contains(reason, "unknown") {
 			t.Fatalf("dependency observation busy=%t reason=%q want=%t unknown=%t", busy, reason, want, unknown)
 		}
-		ready, err := SeatAtUnitBoundary(root, home, now, work)
+		ready, err := SeatAtUnitBoundary(root, home, now, nil, work)
 		if err != nil || ready == want {
 			t.Fatalf("dependency boundary: ready=%t wantBusy=%t %v", ready, want, err)
 		}

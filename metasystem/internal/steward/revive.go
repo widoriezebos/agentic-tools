@@ -17,7 +17,6 @@ import (
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/receipt"
 )
@@ -99,7 +98,7 @@ func prepareIntentUnderLock(repoRoot, receiptFile string, it Intent) error {
 // merely to announce work that the machinery can do itself.
 func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, admit AdmitSeam, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
 	return completeRevivalWithDependencies(repoRoot, cfg, census, nonce, launch, admit, openWorkDependencies{
-		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: goal.ReadClaimableBudgetedWork, HandoffProber: identity.KernelProber{}, Busy: seatBusyReader(cfg.WorkStateRoot),
+		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: cfg.readClaimableBudgetedWork, HandoffProber: cfg.withDefaults().Prober, Busy: seatBusyReader(cfg.WorkStateRoot, cfg.withDefaults().Prober),
 	}, claimOption...)
 }
 
@@ -312,7 +311,7 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 	cfg = cfg.withDefaults()
 	dependencies.Now = cfg.now
 	if cfg.WorkStateRoot != "" {
-		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot)
+		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot, cfg.withDefaults().Prober)
 	}
 	dependentBusy := false
 	if observe := dependencies.Busy; observe != nil {
