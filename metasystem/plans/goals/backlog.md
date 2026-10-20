@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 196
+- Revision: 197
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -266,4 +266,5 @@ History:
 - 2026-10-19T15:12:40Z D4YHWKSAD6J6YK00TE4X3S376K-m1e-f456f182 ack actor=human:Wido targets=tests-observe-only-what-they-inject displaced=m1e+main-1790454088-93948-21671b@2026-10-19T12:37:18Z ack
 - 2026-10-19T18:16:53Z 2J7AQWN5SZR2MMB2QY8V5JBXKJ-m1e-f456f182 ack actor=human:Wido targets=a-persons-terminal-is-not-a-seat-main displaced=m1e+main-1790454088-93948-21671b@2026-10-19T15:12:40Z ack
 - 2026-10-20T09:42:57Z 22ZNZTH9D7YKZT9AE3Y9ZGJQRH-m1e-f456f182 ack actor=human:Wido targets=the-lane-deploys-the-engine-it-runs displaced=m1e+main-1790454088-93948-21671b@2026-10-19T18:16:53Z ack
-Integrity: sha256=88420ad9b6ae5afa3d4551828da210bb61ad4e386a384f3719f2ea0a1b219c9d
+- 2026-10-20T16:11:18Z E5YD73W244T1M8EX3K9TE1K1N5-m1e-f456f182 ack actor=human:Wido targets=a-stop-waits-for-the-unit-boundary displaced=m1e+main-1790454088-93948-21671b@2026-10-20T09:42:57Z ack
+Integrity: sha256=071087469ede0e7b10a4b82c7c1597f4599f9e0c3807fb5ccd5057b36cebfa92
