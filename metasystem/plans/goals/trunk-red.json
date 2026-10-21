@@ -6204,11 +6204,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T134303.496948000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T14:39:04Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T16:01:14Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "6BWMMWQ0SY8C7DPFAXDMEDHA9P-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "load flake of the custodian family: green alone 3/3 on main ac51e0f59f at 18:12 (analysis/red-alone-1810.txt); owned by the-fixture-custodian-settles-its-home"
+      }
     }
   ],
   "cadence": {
