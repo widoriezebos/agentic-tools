@@ -407,10 +407,13 @@ var retiredWithDeletedLibrary = map[string]string{
 // must exist and say "- Status: accepted". Nothing without such a citation
 // may leave the legacy floor this way.
 var retiredWithDesignDecision = map[string]string{
-	"authority-standard/TestStatusCadenceAndDigestGate":                   "plans/designs/blocked-agent-asks-the-human.md Decision 7 (a quiet channel: no periodic status post); digest behaviour kept as TestStatusDigestIgnoresHeaderTime",
-	"authority-standard/TestRejectionRecordsItsPostRef":                   "plans/designs/blocked-agent-asks-the-human.md Decision 8 (one bot, ledger inbox: no per-installation cursor, no saved rejection-post reference)",
-	"authority-standard/TestCursorFromAnotherProviderIsIgnored":           "plans/designs/blocked-agent-asks-the-human.md Decision 8 (one bot, ledger inbox: no per-installation cursor, no saved rejection-post reference)",
-	"authority-standard/TestPollKeepsPassingSavedCursorWithoutConfirming": "plans/designs/blocked-agent-asks-the-human.md Decision 8 (one bot, ledger inbox: no per-installation cursor, no saved rejection-post reference)",
+	"authority-standard/TestStatusCadenceAndDigestGate":                                         "plans/designs/blocked-agent-asks-the-human.md Decision 7 (a quiet channel: no periodic status post); digest behaviour kept as TestStatusDigestIgnoresHeaderTime",
+	"authority-standard/TestRejectionRecordsItsPostRef":                                         "plans/designs/blocked-agent-asks-the-human.md Decision 8 (one bot, ledger inbox: no per-installation cursor, no saved rejection-post reference)",
+	"authority-standard/TestCursorFromAnotherProviderIsIgnored":                                 "plans/designs/blocked-agent-asks-the-human.md Decision 8 (one bot, ledger inbox: no per-installation cursor, no saved rejection-post reference)",
+	"authority-standard/TestPollKeepsPassingSavedCursorWithoutConfirming":                       "plans/designs/blocked-agent-asks-the-human.md Decision 8 (one bot, ledger inbox: no per-installation cursor, no saved rejection-post reference)",
+	"authority-standard/TestRenderQuestionBoundsGoalRecordProseAndKeepsReplyTokenReachable":     "plans/designs/a-persons-channel-carries-only-acts-and-deliveries.md Decision D3 (a question posts its stored three-line Plain text; the long renderer and its bounds are gone)",
+	"authority-standard/TestRenderQuestionTrimNoticeDoesNotClaimDroppedFactsWhenAllFactsRemain": "plans/designs/a-persons-channel-carries-only-acts-and-deliveries.md Decision D3 (a question posts its stored three-line Plain text; the long renderer and its bounds are gone)",
+	"authority-standard/TestRenderQuestionLeavesShortAskSubstanceUnchanged":                     "plans/designs/a-persons-channel-carries-only-acts-and-deliveries.md Decision D3 (a question posts its stored three-line Plain text; the long renderer and its bounds are gone)",
 }
 
 // assertRetiringDesignsAccepted holds each retiredWithDesignDecision
