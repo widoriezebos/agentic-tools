@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 71
+- Sequence: 70
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="Severity 3: every proof of main is red on the first pass since 10-19 and the host runs an hourly 60-90 minute proof; novelty 2: the custodian and sweep exist, their halt and listing change; exposure 3: every package that uses the fixture bed; accumulation 3: 26,000 litter entries in two days and growing."
 - Tier: 3
 - Intent: A test's scratch folder has an owner at the end: the custodian's self-destruct times one stuck process check, not a slow pass, and the last one out (teardown or custodian) removes the folder through the existing guarded RemoveSettledHome; the fixture-bed tests that flaked observe what they inject. Design plans/designs/main-proves-green-on-a-quiet-host.md D1-D4 (revision 10).
 - Origin: human
 - Next step: Brief U1 (D1 per-probe timer + D2 last-out step, internal/identity and internal/testenv, 70-105 production lines, stop 130) from the design; Codex build in a registered workspace, Opus read, sharded gate, hand landing; measure one full proof of main (fixture-bed package times, halted folders left); then U2 (D3 test fixes). A1 was done 2026-10-21 10:13.
 - OpenedAt: 2026-10-21T10:07:52Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-21T10:08:27Z revision=2 opid=FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed authority=proven digest=35c003ddb8cb979e638bf477e5df02c2e4407b98f185e640a2d734b18181dc86 episode=2
@@ -18,4 +18,5 @@ History:
 - 2026-10-21T10:07:52Z 7R8TNNN0PB4GXJ3MGJ7WCMZWX4-m1e-f2f350ed open actor=human:Wido targets=the-fixture-custodian-settles-its-home
 - 2026-10-21T10:08:27Z FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed approve actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,the-fixture-custodian-settles-its-home
 - 2026-10-21T10:08:42Z VAC6JGZW3RRQQWW6PRNQN61P72-m1e-f2f350ed set-priority actor=human:Wido targets=the-fixture-custodian-settles-its-home reason=priority-order subject=the-fixture-custodian-settles-its-home from=unranked to=1:71 requested-sequence=append
-Integrity: sha256=ce8984bcf6c8c39f49e627fdc8179405c57980048f1a9eefc5b99ffd838e32ac
+- 2026-10-21T10:10:08Z CRG7YRWGEMBWQGNCQ32F17CGDD-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-launch-testunitcheckfindsrunningenginewithoutcallerpath,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:71 to=1:70
+Integrity: sha256=5c86bcd4c2ccc0ce0ee7f49d7e14b1fbd309a74fba6e0c5dedba74110d91a178
