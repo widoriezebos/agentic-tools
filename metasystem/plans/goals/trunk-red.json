@@ -6102,11 +6102,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T115835.935836000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T12:52:23Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T13:40:51Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "0QVFJYQ70C64H9NS9JZ4Z7Z88J-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "load flake (finding 410, the nested testenv run): green alone 3/3 on main 7942b1e28 at 15:38 (evidence /Users/wido/agentic-tools-evidence/lane-test-20261009/analysis/red-alone-1537.txt); owned by the-fixture-custodian-settles-its-home"
+      }
     }
   ],
   "cadence": {
