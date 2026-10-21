@@ -109,6 +109,49 @@ type custodianRuntime struct {
 	observed    map[string]Ref
 }
 
+// watchedProber halts the custodian when one probe has not returned within
+// bound plus margin: a stuck check ends it, a slow pass on a loaded host never.
+type watchedProber struct {
+	inner Prober
+	arm   func() custodianTimer
+}
+
+func (prober watchedProber) Probe(pid int64) (Exact, Liveness, error) {
+	timer := prober.arm()
+	exact, state, err := prober.inner.Probe(pid)
+	timer.Stop()
+	return exact, state, err
+}
+
+// ReadStart keeps readRef's start-only read when the inner prober has one.
+func (prober watchedProber) ReadStart(pid int64) (Exact, Liveness, error) {
+	reader, ok := prober.inner.(StartReader)
+	if !ok {
+		return prober.Probe(pid)
+	}
+	timer := prober.arm()
+	exact, state, err := reader.ReadStart(pid)
+	timer.Stop()
+	return exact, state, err
+}
+
+// watched routes every probe of the run through the halt timer. A runtime
+// without a halt (a unit test's), or one already watched, is returned as it is.
+func (runtime custodianRuntime) watched(log io.Writer) custodianRuntime {
+	if _, done := runtime.prober.(watchedProber); done || runtime.halt == nil {
+		return runtime
+	}
+	clock, margin := runtime.timing()
+	after := runtime.bound + margin
+	runtime.prober = watchedProber{inner: runtime.prober, arm: func() custodianTimer {
+		return clock.AfterFunc(after, func() {
+			fmt.Fprintf(log, "fixture-custodian action=halt after=%s\n", after)
+			runtime.halt(2)
+		})
+	}}
+	return runtime
+}
+
 type custodianScanConvergence struct {
 	unchanged int
 }
@@ -164,27 +207,13 @@ func RunCustodian(owner Ref, watch io.Reader, ready io.WriteCloser, log io.Write
 	if err != nil {
 		return err
 	}
-	prober := KernelProber{}
-	exact, state, err := prober.Probe(int64(os.Getpid()))
-	if err != nil || state != Alive || !exact.Ref().NativeExact() {
-		return fmt.Errorf("identity: fixture custodian cannot prove its own identity")
-	}
 	signal.Ignore(syscall.SIGTERM, syscall.SIGHUP)
-	chain, err := custodianChain(owner)
-	if err != nil {
-		return err
-	}
-	if ready != nil {
-		_, _ = io.WriteString(ready, "ready\n")
-		_ = ready.Close()
-	}
 	var closeWatch func() error
 	if closer, ok := watch.(io.Closer); ok {
 		closeWatch = closer.Close
 	}
-	return runCustodian(owner, watch, log, custodianRuntime{
-		prober: prober, self: exact.Ref(), chain: chain,
-		scan: FixtureSurvivorsOfDeadOwner, poll: poll, bound: bound, haltMargin: custodianHaltMargin,
+	return startCustodian(owner, watch, ready, log, ParentPid, custodianRuntime{
+		prober: KernelProber{}, scan: FixtureSurvivorsOfDeadOwner, poll: poll, bound: bound, haltMargin: custodianHaltMargin,
 		descendants: func(prober Prober, owner Ref) ([]Ref, error) {
 			return censusDescendants(prober, owner, TakeProcessCensus)
 		},
@@ -192,6 +221,25 @@ func RunCustodian(owner Ref, watch io.Reader, ready io.WriteCloser, log io.Write
 		records: os.Getenv(FixtureCustodianRecordsEnv), closeWatch: closeWatch,
 		leash: fixtureCustodianLeash(os.Getenv(FixtureCustodianLeashEnv)),
 	})
+}
+
+// startCustodian proves the custodian's own identity and its owner's launcher
+// chain through the halt timer, reports ready, and watches the owner.
+func startCustodian(owner Ref, watch io.Reader, ready io.WriteCloser, log io.Writer, parent func(int64) (int64, bool), runtime custodianRuntime) error {
+	runtime = runtime.watched(log)
+	exact, state, err := runtime.prober.Probe(int64(os.Getpid()))
+	if err != nil || state != Alive || !exact.Ref().NativeExact() {
+		return fmt.Errorf("identity: fixture custodian cannot prove its own identity")
+	}
+	runtime.self = exact.Ref()
+	if runtime.chain, err = custodianChain(runtime.prober, parent, owner); err != nil {
+		return err
+	}
+	if ready != nil {
+		_, _ = io.WriteString(ready, "ready\n")
+		_ = ready.Close()
+	}
+	return runCustodian(owner, watch, log, runtime)
 }
 
 func custodianTiming(lookup func(string) (string, bool)) (time.Duration, time.Duration, error) {
@@ -242,7 +290,7 @@ func (runtime custodianRuntime) timing() (custodianClock, time.Duration) {
 	return clock, margin
 }
 
-func custodianChain(owner Ref) ([]Ref, error) {
+func custodianChain(prober Prober, parent func(int64) (int64, bool), owner Ref) ([]Ref, error) {
 	if encoded, set := os.LookupEnv(FixtureCustodianChainEnv); set && os.Getenv(FixtureCustodianEnv) == "1" {
 		parts := strings.FieldsFunc(encoded, func(r rune) bool { return r == '|' })
 		chain := make([]Ref, len(parts))
@@ -256,10 +304,11 @@ func custodianChain(owner Ref) ([]Ref, error) {
 		return chain, nil
 	}
 	value, set := os.LookupEnv(RunOwnerEnv)
-	return ResolveRunOwner(owner, value, set)
+	return resolveRunOwner(prober, parent, owner, value, set)
 }
 
 func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRuntime) error {
+	runtime = runtime.watched(log)
 	if runtime.observed == nil {
 		runtime.observed = make(map[string]Ref)
 	}
@@ -278,7 +327,6 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 			watchEOF = nil
 		case <-clock.After(runtime.poll):
 		}
-		stop := armCustodianHalt(log, runtime)
 		var lostMember Ref
 		// The chain runs from the owner's parent outward to the run owner, so the outermost loss is the cause of the others.
 		for index := len(runtime.chain) - 1; index >= 0; index-- {
@@ -319,7 +367,6 @@ func runCustodian(owner Ref, watch io.Reader, log io.Writer, runtime custodianRu
 				}
 			}
 		}
-		stop()
 		if lostMember.Pid != 0 && ownerState != Unknown {
 			return reapLostLauncher(owner, lostMember, log, runtime)
 		}
@@ -448,8 +495,6 @@ func descendsFrom(pid, owner int64, parents map[int64]int64) bool {
 }
 
 func proveOwnerDead(owner Ref, log io.Writer, runtime custodianRuntime) (bool, error) {
-	stop := armCustodianHalt(log, runtime)
-	defer stop()
 	clock, _ := runtime.timing()
 	deadline := clock.Now().Add(runtime.bound)
 	for {
@@ -464,7 +509,6 @@ func proveOwnerDead(owner Ref, log io.Writer, runtime custodianRuntime) (bool, e
 }
 
 func reapLostLauncher(owner, member Ref, log io.Writer, runtime custodianRuntime) error {
-	stop := armCustodianHalt(log, runtime)
 	clock, _ := runtime.timing()
 	err := SignalExact(runtime.prober, owner, syscall.SIGKILL, runtime.sender)
 	memberValue, _ := EncodeRef(member)
@@ -472,26 +516,11 @@ func reapLostLauncher(owner, member Ref, log io.Writer, runtime custodianRuntime
 	deadline := clock.Now().Add(runtime.bound)
 	for AliveRef(runtime.prober, owner) != Dead {
 		if !clock.Now().Before(deadline) {
-			stop()
 			return fmt.Errorf("identity: fixture custodian owner survived launcher loss for %s", runtime.bound)
 		}
 		clock.Sleep(runtime.poll)
 	}
-	stop()
 	return reapDeadOwner(owner, log, runtime)
-}
-
-func armCustodianHalt(log io.Writer, runtime custodianRuntime) func() {
-	if runtime.halt == nil {
-		return func() {}
-	}
-	clock, margin := runtime.timing()
-	after := runtime.bound + margin
-	timer := clock.AfterFunc(after, func() {
-		fmt.Fprintf(log, "fixture-custodian action=halt after=%s\n", after)
-		runtime.halt(2)
-	})
-	return func() { timer.Stop() }
 }
 
 func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
@@ -550,7 +579,6 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 	}
 	for {
 		scanCount++
-		stop := armCustodianHalt(log, runtime)
 		pruneFixtureCustodianRecords(tracked, runtime.prober)
 		survivors, err := scan(runtime.prober, owner)
 		actionable := 0
@@ -580,7 +608,6 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 			fmt.Fprintf(log, "fixture-custodian scan=unavailable error=%v\n", err)
 			scanUnavailable = true
 		}
-		stop()
 		remaining := actionable + len(tracked)
 		passFinished := clock.Now()
 		if lowestRemaining < 0 || remaining < lowestRemaining {
@@ -625,7 +652,6 @@ func waitFixtureCustodianLeash(recorded map[string]Ref, log io.Writer, runtime c
 	var previousRunning map[string]Exact
 	bound := fixtureCustodianLeashBound(runtime.bound)
 	for {
-		stop := armCustodianHalt(log, runtime)
 		inactive := make(map[string]Ref, len(released)+len(signaled))
 		for identity, ref := range released {
 			inactive[identity] = ref
@@ -648,7 +674,6 @@ func waitFixtureCustodianLeash(recorded map[string]Ref, log io.Writer, runtime c
 		runningChanged := !sameFixtureCustodianRecordSet(previousRunning, running)
 		previousRunning = running
 		held, err := runtime.leash()
-		stop()
 		if err != nil {
 			fmt.Fprintf(log, "fixture-custodian leash=unavailable error=%v\n", err)
 			return released, signaled

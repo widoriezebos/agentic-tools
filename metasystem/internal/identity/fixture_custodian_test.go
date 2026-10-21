@@ -468,27 +468,25 @@ func TestCustodianKillsARunningOrphanWithoutAHeldLeashAfterSettledScans(t *testi
 
 func TestCustodianHardHaltBoundsBlockedLeashProbe(t *testing.T) {
 	t.Parallel()
-
 	clock := newManualCustodianClock()
 	var halted []int
 	leashCalls := 0
+	prober := &stuckProber{table: fixtureTable{702: fixtureExact(702, 72)}, clock: clock,
+		stall: 5*time.Millisecond + custodianHaltMargin, goneAt: map[int64]int{702: 1},
+		stuckCalls: map[stuckCall]bool{{"Probe", 702, 1}: true}}
 	runtime := custodianRuntime{
-		prober: fixtureTable{}, poll: time.Millisecond, bound: 5 * time.Millisecond,
+		prober: prober, records: watchdogRecords(t, fixtureExact(702, 72).Ref()), poll: time.Millisecond, bound: 5 * time.Millisecond,
 		clock: clock, halt: func(code int) { halted = append(halted, code) },
-		leash: func() (bool, error) {
-			leashCalls++
-			if leashCalls == 1 {
-				clock.Advance(5*time.Millisecond + custodianHaltMargin)
-			}
-			return false, nil
-		},
-		scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		leash: func() (bool, error) { leashCalls++; return false, nil },
+		scan:  func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
 	}
-	if err := reapDeadOwner(fixtureExact(700, 70).Ref(), io.Discard, runtime); err != nil {
+	if err := runCustodian(fixtureExact(700, 70).Ref(), strings.NewReader(""), io.Discard, runtime); err != nil {
 		t.Fatal(err)
 	}
-	if !slices.Equal(halted, []int{2}) || leashCalls != custodianSettledScans {
-		t.Fatalf("hard halt exits=%v, want one for a blocked leash probe", halted)
+	// The blocked probe spends the leash's whole time budget, so the leash
+	// ends after its first call.
+	if !slices.Equal(halted, []int{2}) || leashCalls != 1 {
+		t.Fatalf("hard halt exits=%v, leash calls=%d; want one halt and 1 call for a blocked leash probe", halted, leashCalls)
 	}
 }
 
@@ -1061,14 +1059,16 @@ func TestCustodianHardHaltBoundsBlockedScan(t *testing.T) {
 
 	clock := newManualCustodianClock()
 	var halted []int
-	runtime := custodianRuntime{prober: fixtureTable{}, poll: time.Millisecond, bound: 5 * time.Millisecond,
+	prober := &stuckProber{table: fixtureTable{}, clock: clock, stall: 5*time.Millisecond + custodianHaltMargin,
+		stuckCalls: map[stuckCall]bool{{"Probe", 901, 1}: true, {"Probe", 901, 2}: true}}
+	runtime := custodianRuntime{prober: prober, poll: time.Millisecond, bound: 5 * time.Millisecond,
 		clock: clock, halt: func(code int) { halted = append(halted, code) },
-		scan: func(Prober, Ref) ([]FixtureSurvivor, error) {
-			clock.Advance(5*time.Millisecond + custodianHaltMargin)
+		scan: func(prober Prober, _ Ref) ([]FixtureSurvivor, error) {
+			_, _, _ = prober.Probe(901)
 			return nil, nil
 		}}
 	var log strings.Builder
-	if err := reapDeadOwner(fixtureExact(700, 70).Ref(), &log, runtime); err != nil {
+	if err := runCustodian(fixtureExact(700, 70).Ref(), strings.NewReader(""), &log, runtime); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Equal(halted, []int{2, 2}) {
@@ -1081,6 +1081,7 @@ func TestCustodianHardHaltBoundsBlockedScan(t *testing.T) {
 }
 
 func TestCustodianSlowScansComplete(t *testing.T) {
+	t.Parallel()
 	owner, recorded := fixtureExact(700, 70).Ref(), fixtureExact(701, 71).Ref()
 	recordedValue, err := EncodeRef(recorded)
 	if err != nil {
@@ -1106,7 +1107,7 @@ func TestCustodianSlowScansComplete(t *testing.T) {
 		},
 	}
 	var log strings.Builder
-	if err := reapDeadOwner(owner, &log, runtime); err != nil {
+	if err := runCustodian(owner, strings.NewReader(""), &log, runtime); err != nil {
 		t.Fatalf("slow fixture scans returned %v: log=%q", err, log.String())
 	}
 	if want := FixtureCustodianCompletionLine(owner); !strings.HasSuffix(log.String(), want) {
