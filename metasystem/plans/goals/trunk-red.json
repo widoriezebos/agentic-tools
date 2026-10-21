@@ -6051,11 +6051,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T115835.935836000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T12:52:23Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T13:40:45Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "B6ZEZ32M3WKEXCJ6WJXATTR053-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "load flake: green alone 3/3 on main 7942b1e28 at 15:38 (evidence /Users/wido/agentic-tools-evidence/lane-test-20261009/analysis/red-alone-1537.txt); the lane itself classified it a flake on one pass"
+      }
     },
     {
       "id": "red:metasystem/internal/proofrun:TestTestEnvironmentStandardInventoryMatchesObserved-3",
