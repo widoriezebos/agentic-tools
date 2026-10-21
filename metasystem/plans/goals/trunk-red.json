@@ -6472,6 +6472,7 @@
       }
     },
     {
+      "fixOpenedAt": "2026-10-21T22:25:31Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestProviderRecoveryAskPublicLifecycle",
       "id": "flake:e590876356144aab245636ca3d65a3621fa44a4aab09ec87ab4d13d18e658123",
@@ -6554,7 +6555,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle",
       "fixBranch": {
         "name": "",
         "commit": "",
