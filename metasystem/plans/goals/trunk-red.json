@@ -3083,7 +3083,15 @@
       },
       "holds": [],
       "opened": "2026-10-16T11:12:25Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-10-21T10:09:51Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "DNGW9D3NKXY8ARGY7B3VPCS7NW-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "fixed by ad0a698155 (2026-10-16 13:25, NOTE_EXIT precedes the zombie state), 13 minutes after its only sighting; none since in 60 full proofs; closure by evidence (program decision 2)"
+      },
       "class": "flake"
     },
     {
