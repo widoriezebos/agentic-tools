@@ -5949,11 +5949,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T102231.355898000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T11:42:16Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T13:40:38Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "HENHGBATK69QEWM3KCGMKXXGRR-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "load flake: green alone in 58 s on the red tree, green in the 13:58 proof (1679 s under load); the cause is the host slowdown owned by the-fixture-custodian-settles-its-home"
+      }
     },
     {
       "id": "red:metasystem/internal/testpolicy:TestMetaSystemContractNamesOnlyUntaggedGoTests",
