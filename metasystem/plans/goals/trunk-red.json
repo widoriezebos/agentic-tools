@@ -4450,7 +4450,15 @@
       },
       "holds": [],
       "opened": "2026-10-19T15:00:49Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-10-21T10:09:24Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "62AD9MNRWCAHB3E1D49VK7SWB9-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "fixed by 6b651880a4 (the-lane-deploys-the-engine-it-runs-2, landed 2026-10-20 11:45): the ordering race the test caught; no sighting since 10:14 and ten full proofs of main green on it; closure by evidence (program decision 2)"
+      },
       "class": "flake"
     },
     {
