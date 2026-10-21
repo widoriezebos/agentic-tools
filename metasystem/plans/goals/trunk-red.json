@@ -6255,11 +6255,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T153912.539671000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T16:50:36Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T17:46:22Z",
+        "attempt": "20261021T165228.116174000Z",
+        "baseCommit": "affe4b4d6935724c17c21bdba6122f80e3c4cd34",
+        "how": "green",
+        "opid": "7NR5QCPF0CER16MZ8WS03Y8NM2-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProviderRecoveryAskPublicLifecycle-2",
@@ -6300,11 +6306,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T153912.539671000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T16:50:36Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T17:46:22Z",
+        "attempt": "20261021T165228.116174000Z",
+        "baseCommit": "affe4b4d6935724c17c21bdba6122f80e3c4cd34",
+        "how": "green",
+        "opid": "7NR5QCPF0CER16MZ8WS03Y8NM2-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/identity:TestQuietCustodianRemovesItsLog-2",
@@ -6345,11 +6357,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T153912.539671000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T16:50:36Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T17:46:22Z",
+        "attempt": "20261021T165228.116174000Z",
+        "baseCommit": "affe4b4d6935724c17c21bdba6122f80e3c4cd34",
+        "how": "green",
+        "opid": "7NR5QCPF0CER16MZ8WS03Y8NM2-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/testenv:TestDeadRegistryHomeIsRemovedByAnotherProcessMain-3",
@@ -6390,11 +6408,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T153912.539671000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T16:50:36Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T17:46:22Z",
+        "attempt": "20261021T165228.116174000Z",
+        "baseCommit": "affe4b4d6935724c17c21bdba6122f80e3c4cd34",
+        "how": "green",
+        "opid": "7NR5QCPF0CER16MZ8WS03Y8NM2-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/internal/testenv:TestSetupChildIsEndedWhenTheBinaryIsKilled-4",
@@ -6435,11 +6459,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T153912.539671000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T16:50:36Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T17:46:22Z",
+        "attempt": "20261021T165228.116174000Z",
+        "baseCommit": "affe4b4d6935724c17c21bdba6122f80e3c4cd34",
+        "how": "green",
+        "opid": "7NR5QCPF0CER16MZ8WS03Y8NM2-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
