@@ -1,20 +1,19 @@
 # a-flake-is-not-a-red
 
-- State: parked
+- State: approved
 - Priority: 1
-- Sequence: 67
+- Sequence: 66
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="Severity 2: wrong words and hourly red proofs mislead the person and starve the host but lose no record; novelty 2: new retire step and a no-launch admission; exposure 3: every seat's status and goal list and every lane proof; accumulation 2: 39 stale cards and 12 full proofs a day."
 - Tier: 2
 - Intent: What a person reads about main is true: a flake is called a flake (goal list), a seat card ends with its goal or its seat (system status), a green main move deploys whoever pushed it, and a flake record does not schedule a full proof of main. Design plans/designs/main-proves-green-on-a-quiet-host.md D5-D8.
 - Origin: human
 - Next step: After the-fixture-custodian-settles-its-home: brief U1 (D5 wording) and U4 (D8 cadence) first; then U2 (D6 card retirement on StateDone). Each: Codex build, Opus read, gate, hand landing.
 - OpenedAt: 2026-10-21T10:08:04Z
-- Revision: 8
+- Revision: 9
 - BlockedBy: the-fixture-custodian-settles-its-home
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-21T10:08:27Z revision=2 opid=FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed authority=proven digest=4878f92f42fd1942f91e7a8924bc58367c55c73462eec6539f9758923772d34e episode=2
-- Parked: by=human:Wido at=2026-10-21T10:08:04Z blocker=the-fixture-custodian-settles-its-home because=blocked by the-fixture-custodian-settles-its-home; returns when it is done
 
 History:
 - 2026-10-21T10:08:04Z WMQZHKET7T5M430CJ0GDTDNQHM-m1e-f2f350ed open actor=human:Wido targets=a-flake-is-not-a-red,the-fixture-custodian-settles-its-home
@@ -25,4 +24,5 @@ History:
 - 2026-10-21T10:10:53Z RWZCJNNF8T6HFJ59PWFZ2Q8NKK-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:70 to=1:69
 - 2026-10-21T10:11:12Z 75CQ2CGW1JRBQQNHRW73X5XW7D-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:69 to=1:68
 - 2026-10-21T10:11:30Z 78KVDMYQ8X1QFMC61WM3RCTS9Q-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,the-fixture-custodian-settles-its-home reason=priority-order from=1:68 to=1:67
-Integrity: sha256=c52f070bd04a46af83ecb2daa6bbb61f59a6e7162e0dfe331e2a4bf972d507a5
+- 2026-10-21T23:14:01Z JQG7XHPMJXFM0ME9Q4FS6ZPQZ8-m1e-6f5f3fe5 unpark actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,the-fixture-custodian-settles-its-home reason=blocker the-fixture-custodian-settles-its-home is done; the park lifts; priority-order from=1:67 to=1:66
+Integrity: sha256=1eb2455e6bf088b171a2c5e526470f4f4b4d9f78c993d3f668bc91cee19b5d98

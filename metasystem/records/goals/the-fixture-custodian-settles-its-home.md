@@ -1,6 +1,6 @@
 # the-fixture-custodian-settles-its-home
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 66
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="Severity 3: every proof of main is red on the first pass since 10-19 and the host runs an hourly 60-90 minute proof; novelty 2: the custodian and sweep exist, their halt and listing change; exposure 3: every package that uses the fixture bed; accumulation 3: 26,000 litter entries in two days and growing."
@@ -8,14 +8,13 @@
 - Intent: A test's scratch folder has an owner at the end: the custodian's self-destruct times one stuck process check, not a slow pass, and the last one out (teardown or custodian) removes the folder through the existing guarded RemoveSettledHome; the fixture-bed tests that flaked observe what they inject. Design plans/designs/main-proves-green-on-a-quiet-host.md D1-D4 (revision 10).
 - Origin: human
 - Next step: Brief U1 (D1 per-probe timer + D2 last-out step, internal/identity and internal/testenv, 70-105 production lines, stop 130) from the design; Codex build in a registered workspace, Opus read, sharded gate, hand landing; measure one full proof of main (fixture-bed package times, halted folders left); then U2 (D3 test fixes). A1 was done 2026-10-21 10:13.
+- Concluded: all three units landed by the hand route with an Opus read, a sharded gate and the lane's admission checks before each push: U1a 998a2a78ef (the halt times one stuck probe), U1b 292ba6a063 (the last one out removes its folder), U2 a3118b1819 (the fragile tests observe what they inject). Measured: no custodian halt and about a dozen stranded folders per full proof since U1a/U1b, against about 700 folders and some 2000 halts per proof before; testenv 2263 s -> 48-94 s, identity 1227 s -> 13-27 s per package in the lane's proofs. Design plans/designs/main-proves-green-on-a-quiet-host.md D1-D3; notes for later in the-fixture-custodian-settles-its-home-2.
 - OpenedAt: 2026-10-21T10:07:52Z
 - FirstClaimAt: 2026-10-21T11:25:55Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-21T10:08:27Z revision=2 opid=FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed authority=proven digest=35c003ddb8cb979e638bf477e5df02c2e4407b98f185e640a2d734b18181dc86 episode=2
-- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-21T11:25:55Z by=human:Wido areas="null" areas-source="01M5EQU1ETH0ST0GREEN0MAIN01@eba36d1e5e44e80b5cdce94209ddd18a06e67b1b29399ac69d3f34454cfb3aa0" areas-known=false areas-warnings="[\"areas unknown for goal the-fixture-custodian-settles-its-home in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/main-proves-green-on-a-quiet-host.md\",\"areas unknown for goal a-persons-channel-carries-only-acts-and-deliveries\",\"areas unknown for goal asks-clear-on-their-effect\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-lane-deploys-the-engine-it-runs-2\",\"machine m1e already claims a-persons-channel-carries-only-acts-and-deliveries, the-lane-deploys-the-engine-it-runs-2, and a machine holds one claim at a time\\nrun: metasystem goal release a-persons-channel-carries-only-acts-and-deliveries, then metasystem goal claim the-fixture-custodian-settles-its-home\"]" revision=9 accountingRevision=9 episodeAt=2026-10-21T11:25:55Z episodeRevision=9
-- StopCapability: generation=9 revision=9 machine=m1e claimEpoch=0 fenceEpoch=0
 
 History:
 - 2026-10-21T10:07:52Z 7R8TNNN0PB4GXJ3MGJ7WCMZWX4-m1e-f2f350ed open actor=human:Wido targets=the-fixture-custodian-settles-its-home
@@ -27,5 +26,5 @@ History:
 - 2026-10-21T10:11:12Z 75CQ2CGW1JRBQQNHRW73X5XW7D-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:68 to=1:67
 - 2026-10-21T10:11:30Z 78KVDMYQ8X1QFMC61WM3RCTS9Q-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,the-fixture-custodian-settles-its-home reason=priority-order from=1:67 to=1:66
 - 2026-10-21T11:25:55Z 3Y1TYD746PWTZXW6M6VTSQ8NZ7-m1e-f456f182 claim actor=human:Wido targets=the-fixture-custodian-settles-its-home authorityOutcome=HUMAN_AUTHORITY_PROVEN authorityGeneration=99 reason=areas unknown for goal the-fixture-custodian-settles-its-home in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/main-proves-green-on-a-quiet-host.md; areas unknown for goal a-persons-channel-carries-only-acts-and-deliveries; areas unknown for goal asks-clear-on-their-effect; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-lane-deploys-the-engine-it-runs-2; machine m1e already claims a-persons-channel-carries-only-acts-and-deliveries, the-lane-deploys-the-engine-it-runs-2, and a machine holds one claim at a time
-run: metasystem goal release a-persons-channel-carries-only-acts-and-deliveries, then metasystem goal claim the-fixture-custodian-settles-its-home
-Integrity: sha256=79b35d84962cd83afa53da918957c1c7ab471304ac89b58d54b6dc4b6795a96b
+- 2026-10-21T23:14:01Z JQG7XHPMJXFM0ME9Q4FS6ZPQZ8-m1e-6f5f3fe5 done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,the-fixture-custodian-settles-its-home displaced=m1e+main-1790454088-93948-21671b@2026-10-21T11:25:55Z
+Integrity: sha256=4cd3bf88498a16eee4099bc509878054448556c85f0b92b411c69a683e0bf4ce
