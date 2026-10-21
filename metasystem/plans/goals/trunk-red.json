@@ -6113,6 +6113,96 @@
         "by": "Wido",
         "why": "load flake (finding 410, the nested testenv run): green alone 3/3 on main 7942b1e28 at 15:38 (evidence /Users/wido/agentic-tools-evidence/lane-test-20261009/analysis/red-alone-1537.txt); owned by the-fixture-custodian-settles-its-home"
       }
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestGoalLandingHostContractRetainsPriorGroupsAndGoGate-2",
+      "identity": "red:metasystem/cmd/metasystem:TestGoalLandingHostContractRetainsPriorGroupsAndGoGate",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261021T134303.496948000Z.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestGoalLandingHostContractRetainsPriorGroupsAndGoGate",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261021T134303.496948000Z",
+          "batch": "20261021T134303.496948000Z",
+          "baseCommit": "b96ee7f4ec1af5bd56079de0fa468c5665074062",
+          "baseTree": "4ddb065e03f49da201926797d255130864621f6c",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261021T134303.496948000Z.log",
+          "logDigest": "a2ae04423a99330518ecf6366140cf0db898c841d0ad6609e1f45cf1b0447425",
+          "seenAt": "2026-10-21T14:39:04Z",
+          "opid": "33PKAERVBDHPWZJZ2SXMTB4Q6B-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261021T134303.496948000Z"
+      ],
+      "opened": "2026-10-21T14:39:04Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/internal/proofrun:TestSupervisorKillSparesTheFixtureCustodian",
+      "identity": "red:metasystem/internal/proofrun:TestSupervisorKillSparesTheFixtureCustodian",
+      "group": "metasystem/internal/proofrun",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261021T134303.496948000Z.log",
+          "classname": "metasystem/internal/proofrun",
+          "name": "TestSupervisorKillSparesTheFixtureCustodian",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261021T134303.496948000Z",
+          "batch": "20261021T134303.496948000Z",
+          "baseCommit": "b96ee7f4ec1af5bd56079de0fa468c5665074062",
+          "baseTree": "4ddb065e03f49da201926797d255130864621f6c",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261021T134303.496948000Z.log",
+          "logDigest": "a2ae04423a99330518ecf6366140cf0db898c841d0ad6609e1f45cf1b0447425",
+          "seenAt": "2026-10-21T14:39:04Z",
+          "opid": "33PKAERVBDHPWZJZ2SXMTB4Q6B-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261021T134303.496948000Z"
+      ],
+      "opened": "2026-10-21T14:39:04Z",
+      "closed": null
     }
   ],
   "cadence": {
