@@ -13,6 +13,7 @@ exit 0
   "summary": "question q2 is withdrawn",
   "data": {
     "question": {
+      "text": "Goal standing-validation needs your answer.\nTo answer: metasystem question answer q2\nIf you do nothing: this question stays open.\n- yes: split.",
       "id": "q2",
       "goal": "standing-validation",
       "kind": "other",

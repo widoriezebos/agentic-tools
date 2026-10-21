@@ -39,7 +39,7 @@ func TestAnswerCodeOffRecordsTheHumansAnswerWithoutACode(t *testing.T) {
 	if _, err := bed.poll(context.Background(), cfg); err != nil {
 		t.Fatal(err)
 	}
-	if len(p.posts) != 1 || strings.Contains(p.posts[0], "code") || !strings.Contains(p.posts[0], "Reply in this thread with your answer") {
+	if instructions := ReplyInstructionsAt(bed.root, q); strings.Contains(instructions, "code") || !strings.Contains(instructions, "Reply in this thread with your answer") {
 		t.Fatalf("question post: %q", p.posts)
 	}
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "2", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved", SentAt: now}}

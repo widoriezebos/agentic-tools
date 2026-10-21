@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -12,6 +13,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
@@ -50,6 +52,8 @@ type Answer struct {
 type Decision struct{ Kind, Subject, State string }
 
 type Question struct {
+	// Text is the post, stored before its first attempt; every attempt posts it.
+	Text     string           `json:"text,omitempty"`
 	Plain    *Plain           `json:"plain,omitempty"`
 	Recovery *RecoverySubject `json:"recovery,omitempty"`
 	ID       string           `json:"id"`
@@ -99,11 +103,8 @@ type AskRequest struct {
 	UnitStop                                      *UnitStopQuestion
 }
 
-const (
-	// This human-reading limit is intentionally independent of and smaller than provider transport limits.
-	questionMessageRuneLimit = 1600
-	questionFactLimit        = 4
-)
+// A post's first line is bounded for a phone.
+const plainDecisionRunes = 400
 
 // RecoverySubject binds a request to the host registration and the exact failed seat launch.
 type RecoverySubject struct {
@@ -339,6 +340,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}
+	q.Text = renderPlain(q)
 	if err = writeJSON(questionPath(r.RepoRoot, id), q); err != nil {
 		return Question{}, false, err
 	}
@@ -347,7 +349,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 		if postContext == nil {
 			postContext = context.Background()
 		}
-		ref, postErr := r.Provider.Post(postContext, r.Destination, renderQuestion(q, answerCodeOffOrOn(r.RepoRoot)), nil)
+		ref, postErr := r.Provider.Post(postContext, r.Destination, q.Text, nil)
 		if postErr == nil {
 			q.Thread = &ref
 		} else {
@@ -466,81 +468,54 @@ func replyInstructions(q Question, codeOff bool) string {
 	return "Reply in this thread with your answer followed by your code"
 }
 
-func renderQuestion(q Question, codeOff bool) string {
-	tail := replyInstructions(q, codeOff)
-
-	full := renderQuestionParts(q, q.Facts, optionConsequences(q.Options), q.Recommendation, "", tail)
-	if len([]rune(full)) <= questionMessageRuneLimit {
-		return full
+// renderPlain keeps the decision, act and consequences together in the post.
+func renderPlain(q Question) string {
+	var plain Plain
+	if q.Plain != nil {
+		plain = *q.Plain
 	}
-
-	factCount := len(q.Facts)
-	factLimit := questionFactLimit
-	if q.Kind == "carry" {
-		factLimit = 6
+	subject := QuestionSubject(q)
+	if q.Goal != "" {
+		subject = "Goal " + q.Goal
 	}
-	if factCount > factLimit {
-		factCount = factLimit
+	lines := []string{plainSentence(trimQuestionPart(cmp.Or(plain.Decision, subject+" needs your answer"), plainDecisionRunes), true)}
+	switch {
+	case plain.Act != "":
+		lines = append(lines, "To go on: "+plain.Act)
+	case ActCommand(q) != "":
+		lines = append(lines, "To go on: "+ActCommand(q))
+	case q.ProcessAct != "":
+		lines = append(lines, "To go on: "+q.Wants)
+	default:
+		lines = append(lines, "To answer: metasystem question answer "+q.ID)
 	}
-	noticeReserve := 0
-	for dropped := 0; dropped <= len(q.Facts); dropped++ {
-		if size := len([]rune(questionTrimNotice(questionDetailsHome(q), dropped))); size > noticeReserve {
-			noticeReserve = size
-		}
+	lines = append(lines, "If you do nothing: "+plainSentence(cmp.Or(plain.IfNothing, "this question stays open"), false))
+	for _, option := range q.Options {
+		lines = append(lines, "- "+option.Label+": "+plainSentence(option.Consequence, false))
 	}
-	mandatory := len([]rune(questionHead(q))) + len([]rune(questionBudgetLine(q))) + len([]rune(tail)) + noticeReserve + len([]rune("Recommendation: \n"))
-	for _, o := range q.Options {
-		mandatory += len([]rune(o.Label + ": \n"))
-	}
-	for factCount > 0 && mandatory+factCount*len([]rune("- \n")) > questionMessageRuneLimit {
-		factCount--
-	}
-	mandatory += factCount * len([]rune("- \n"))
-	remaining := questionMessageRuneLimit - mandatory
-	if remaining < 0 {
-		remaining = 0
-	}
-
-	consequenceBudget := remaining / 2
-	consequences := trimQuestionParts(optionConsequences(q.Options), consequenceBudget)
-	remaining -= questionPartsRunes(consequences)
-	recommendationBudget := remaining / 3
-	recommendation := trimQuestionPart(q.Recommendation, recommendationBudget)
-	remaining -= len([]rune(recommendation))
-	facts := trimQuestionParts(q.Facts[:factCount], remaining)
-	notice := questionTrimNotice(questionDetailsHome(q), len(q.Facts)-factCount)
-	return renderQuestionParts(q, facts, consequences, recommendation, notice, tail)
+	return strings.Join(lines, "\n")
 }
 
-func renderQuestionParts(q Question, facts, consequences []string, recommendation, notice, tail string) string {
-	if command := LaneStopCommand(q); command != "" {
-		facts = []string{q.Facts[0], "question " + q.ID}
+func plainSentence(s string, capital bool) string {
+	runes := []rune(strings.Join(strings.Fields(s), " "))
+	if len(runes) == 0 {
+		return ""
 	}
-	var b strings.Builder
-	b.WriteString(questionHead(q))
-	for _, f := range facts {
-		fmt.Fprintf(&b, "- %s\n", f)
+	if capital {
+		runes[0] = unicode.ToUpper(runes[0])
 	}
-	if notice != "" {
-		b.WriteString(notice)
+	if last := runes[len(runes)-1]; last != '.' && last != '?' && last != '!' {
+		runes = append(runes, '.')
 	}
-	for i, o := range q.Options {
-		fmt.Fprintf(&b, "%s: %s\n", o.Label, consequences[i])
-	}
-	b.WriteString(questionBudgetLine(q))
-	fmt.Fprintf(&b, "Recommendation: %s\n", recommendation)
-	b.WriteString(tail)
-	return b.String()
+	return string(runes)
 }
 
-func questionHead(q Question) string {
-	if command := LaneStopCommand(q); command != "" {
-		return q.Facts[0] + "\n"
+func ensureText(repo string, q *Question) error {
+	if q.Text == "" {
+		q.Text = renderPlain(*q)
+		return writeJSON(questionPath(repo, q.ID), q)
 	}
-	if command := ActCommand(q); command != "" {
-		return command + "\n"
-	}
-	return fmt.Sprintf("%s — %s\n", QuestionSubject(q), q.Kind)
+	return nil
 }
 
 // LaneStopCommand recognizes the lane's own stop question in its existing facts.
@@ -579,55 +554,6 @@ func questionSubjectKey(goalID, about string) string {
 	return goalID
 }
 
-func questionBudgetLine(q Question) string {
-	if q.Budget != nil {
-		return fmt.Sprintf("Proposed box: %s\n", ProposedBox(*q.Budget))
-	}
-	return ""
-}
-
-// questionDetailsHome is where a trimmed question's full text is kept: its
-// goal, or the question record for a question without one.
-func questionDetailsHome(q Question) string {
-	if q.Goal == "" {
-		return "question " + q.ID
-	}
-	return "goal " + q.Goal
-}
-
-func questionTrimNotice(home string, dropped int) string {
-	if dropped == 0 {
-		return fmt.Sprintf("Long text was trimmed for channel length; full details are in %s.\n", home)
-	}
-	factWord := "facts"
-	if dropped == 1 {
-		factWord = "fact"
-	}
-	return fmt.Sprintf("Trimmed for channel length: dropped %d %s; full details are in %s.\n", dropped, factWord, home)
-}
-
-func optionConsequences(options []Option) []string {
-	out := make([]string, len(options))
-	for i, option := range options {
-		out[i] = option.Consequence
-	}
-	return out
-}
-
-func trimQuestionParts(parts []string, budget int) []string {
-	out := make([]string, len(parts))
-	remaining := budget
-	for i, part := range parts {
-		share := 0
-		if count := len(parts) - i; count > 0 {
-			share = remaining / count
-		}
-		out[i] = trimQuestionPart(part, share)
-		remaining -= len([]rune(out[i]))
-	}
-	return out
-}
-
 func trimQuestionPart(text string, budget int) string {
 	runes := []rune(text)
 	if len(runes) <= budget {
@@ -637,14 +563,6 @@ func trimQuestionPart(text string, budget int) string {
 		return ""
 	}
 	return string(runes[:budget-1]) + "…"
-}
-
-func questionPartsRunes(parts []string) int {
-	total := 0
-	for _, part := range parts {
-		total += len([]rune(part))
-	}
-	return total
 }
 
 func ProposedBox(b goal.Budget) string {
@@ -661,7 +579,7 @@ func Close(repo, id, because string, p Provider, d DestinationConfig, successful
 		return nil
 	}
 	if q.Thread != nil && p != nil {
-		_, _ = p.Post(contextBackground{}, d, "closed: "+because, q.Thread)
+		_, _ = p.Post(contextBackground{}, d, "Closed: "+plainSentence(because, false), q.Thread)
 	}
 	q.State = "closed"
 	if q.UnitStop != nil && len(successfulAct) > 0 {

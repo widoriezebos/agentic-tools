@@ -76,6 +76,13 @@ func TestLaneQuestionsCarryTheirWords(t *testing.T) {
 			if err != nil || q.Plain == nil || *q.Plain != (channel.Plain{Decision: want, IfNothing: "the stop stays; this question closes when a later lane record closes it"}) {
 				t.Fatalf("lane words: %+v, want %q, %v", q.Plain, want, err)
 			}
+			post := want + ".\nTo go on: " + channel.LaneStopCommand(q) + "\nIf you do nothing: the stop stays; this question closes when a later lane record closes it."
+			if q.Text != post {
+				t.Fatalf("lane post = %q, want %q", q.Text, post)
+			}
+			if (name == "proof-hold-tree" || name == "proof-hold-batch") && (regexp.MustCompile(`[0-9a-f]{12}`).MatchString(q.Text) || strings.Contains(q.Text, batch)) {
+				t.Fatalf("identity in proof post: %s", q.Text)
+			}
 			words := q.Plain.Decision + q.Plain.IfNothing
 			if regexp.MustCompile(`[0-9a-f]{12}`).MatchString(words) || strings.Contains(words, "20261020T193000") {
 				t.Fatalf("identity in words: %s", words)

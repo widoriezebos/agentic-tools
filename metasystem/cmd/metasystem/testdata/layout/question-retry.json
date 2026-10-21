@@ -14,6 +14,7 @@ exit 0
   "data": {
     "outcome": "delivered",
     "question": {
+      "text": "Goal standing-validation needs your answer.\nTo answer: metasystem question answer q1\nIf you do nothing: this question stays open.\n- yes: land.",
       "id": "q1",
       "goal": "standing-validation",
       "kind": "other",

@@ -31,7 +31,7 @@ func plainAskSurface() channelAskSurface {
 
 func TestQuestionShowCarriesWhatThePostDrops(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"budget", "ordinary", "process", "lane-policy", "answered-awaiting-act"} {
+	for _, name := range []string{"budget", "ordinary", "process", "lane-policy", "open-unit-stop", "answered-awaiting-act", "answered-lane"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newProcessBed(t)
@@ -74,7 +74,7 @@ func TestQuestionShowCarriesWhatThePostDrops(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-			case "lane-policy":
+			case "lane-policy", "answered-lane":
 				f := newTrunkPermissionFixture(t)
 				_, _, handInErr := plain.HandIn(f.l.install, plain.Line{At: laneTestNow.Format(time.RFC3339Nano), Goal: bedGoal, SHA: f.tip.status.BranchTip, Seat: f.b.root()})
 				if handInErr != nil {
@@ -82,13 +82,20 @@ func TestQuestionShowCarriesWhatThePostDrops(t *testing.T) {
 				}
 				q = f.question(t)
 				root, owners = f.l.install, f.owners
-			case "answered-awaiting-act":
+				if name == "answered-lane" {
+					q.Answer = &channel.Answer{Text: "ok", Phase: "recorded", At: plainQuestionNow}
+					q.Recommendation = "run the matching act"
+					writeRunRootJSON(t, filepath.Join(root, "artifacts", "agents", "channel", "questions", q.ID+".json"), q)
+				}
+			case "answered-awaiting-act", "open-unit-stop":
 				var err error
 				q, err = channel.Ask(channel.AskRequest{RepoRoot: root, Goal: bedGoal, Kind: "other", Now: plainQuestionNow, Facts: []string{"finding remains unresolved", "S-1: missing behaviour"}, Recommendation: "accept the risk only if bounded", Plain: &channel.Plain{Decision: "Continue this unit?", IfNothing: "the unit waits"}, UnitStop: &channel.UnitStopQuestion{Loop: "unit-round", Subject: bedGoal + "/unit/run", Attempt: 1, Finding: "S-1", Needs: "metasystem work revise " + bedGoal + " --brief FILE --reason TEXT --by NAME", AcceptableActs: []string{"work-revise"}}})
 				if err != nil {
 					t.Fatal(err)
 				}
-				q.Answer, q.State = &channel.Answer{Text: "ok", Phase: "recorded", At: plainQuestionNow}, "open"
+				if name == "answered-awaiting-act" {
+					q.Answer, q.State = &channel.Answer{Text: "ok", Phase: "recorded", At: plainQuestionNow}, "open"
+				}
 				writeRunRootJSON(t, filepath.Join(root, "artifacts", "agents", "channel", "questions", q.ID+".json"), q)
 			}
 			code, stdout, stderr := b.run(owners, "question", "show", "channel:"+q.ID, "--repo", root)
@@ -97,6 +104,12 @@ func TestQuestionShowCarriesWhatThePostDrops(t *testing.T) {
 			}
 			text := stdout + stderr
 			wants := append([]string{}, q.Facts...)
+			if name == "answered-lane" {
+				wants = nil
+				if strings.Contains(text, "lane policy:") || strings.Contains(text, "evidence:") {
+					t.Fatalf("answered lane exposes its stop record: %s", text)
+				}
+			}
 			if q.Plain == nil {
 				t.Fatal("question has no plain words")
 			}
@@ -108,9 +121,9 @@ func TestQuestionShowCarriesWhatThePostDrops(t *testing.T) {
 				wants = append(wants, "Proposed box: 2h, 5 attempts, 600 reserved minutes, 1 active job, 0 review rounds")
 			}
 			if name == "ordinary" {
-				wants = append(wants, "If you do nothing: the release waits")
+				wants = append(wants, "Decision: Keep the release?", "If you do nothing: the release waits")
 			}
-			if name == "answered-awaiting-act" {
+			if name == "answered-awaiting-act" || name == "answered-lane" {
 				wants = append(wants, "the act is still needed", "replied")
 			}
 			for _, want := range wants {
@@ -137,6 +150,10 @@ func TestBuildStartQuestionCarriesItsCommand(t *testing.T) {
 	q, err := channel.ReadQuestion(installation, id)
 	if err != nil || result.Outcome != intentRefused || q.Plain == nil || q.Plain.Act != "metasystem work build goal" || q.Plain.IfNothing != "the build waits" {
 		t.Fatalf("build words: %+v %v, %+v", q, err, result)
+	}
+	want := "Start this build at your enrolled terminal?\nTo go on: metasystem work build goal\nIf you do nothing: the build waits.\n- start: run the exact build command at your enrolled terminal.\n- wait: leave this build waiting."
+	if q.Text != want {
+		t.Fatalf("build post = %q, want %q", q.Text, want)
 	}
 }
 
@@ -168,6 +185,14 @@ func TestRebaseQuestionNamesNoCommit(t *testing.T) {
 		if q.Options[1].Consequence != want || q.Plain == nil || q.Plain.IfNothing != "nothing lands until you answer" {
 			t.Fatalf("rebase words: %+v", q)
 		}
+		decision := fmt.Sprintf("Goal %s and main both changed lines 2 to 3 of source.go. Keep main's, keep the goal's, or write a third.", b.id)
+		if i == 1 {
+			decision = fmt.Sprintf("Goal %s and main both changed added.go where no common version exists. Keep main's, keep the goal's, or write a third.", b.id)
+		}
+		post := decision + "\nTo answer: metasystem question answer " + q.ID + "\nIf you do nothing: nothing lands until you answer.\n- keep main's: main's drops what " + b.id + " did there and unit u1 loses its read.\n- keep the goal's: " + want + ".\n- write a third: a third is read again."
+		if q.Text != post {
+			t.Fatalf("rebase post = %q, want %q", q.Text, post)
+		}
 		if i == 1 && !strings.HasSuffix(q.Facts[2], "; main commit another-commit.") {
 			t.Fatalf("lost commit evidence: %q", q.Facts[2])
 		}
@@ -185,6 +210,10 @@ func TestPolicyOverrideKeepsItsImpact(t *testing.T) {
 	want := channel.LaneStopCommand(q) + " (lets " + bedGoal + " land while main's failing checks remain unresolved; undo: metasystem landing give-back " + bedGoal + " --reason TEXT)"
 	if q.Plain == nil || q.Plain.Act != want || q.Plain.Decision != "The landing lane needs your word before it goes on" || q.Plain.IfNothing != "the lane does not do this; this question closes when the act is recorded" {
 		t.Fatalf("policy words: %+v", q.Plain)
+	}
+	post := "The landing lane needs your word before it goes on.\nTo go on: " + want + "\nIf you do nothing: the lane does not do this; this question closes when the act is recorded."
+	if q.Text != post {
+		t.Fatalf("policy post = %q, want %q", q.Text, post)
 	}
 	if strings.Contains(q.Plain.Act, "tr-") || regexp.MustCompile(`[0-9a-f]{12}`).MatchString(q.Plain.Act) {
 		t.Fatalf("identity in policy act: %s", q.Plain.Act)
@@ -228,6 +257,10 @@ func TestUnitAsksNameTheUnit(t *testing.T) {
 					if claim == "" || q.Plain == nil || *q.Plain != (channel.Plain{Decision: want, IfNothing: "the unit stays stopped; this question closes when the act is recorded or the unit closes"}) {
 						t.Fatalf("finding words: %+v, want %q", q.Plain, want)
 					}
+					post := want + ".\nTo go on: " + channel.ActCommand(q) + "\nIf you do nothing: the unit stays stopped; this question closes when the act is recorded or the unit closes."
+					if q.Text != post {
+						t.Fatalf("finding post = %q, want %q", q.Text, post)
+					}
 				}
 				return
 			} else {
@@ -252,6 +285,10 @@ func TestUnitAsksNameTheUnit(t *testing.T) {
 			nothing := "the unit stays held; this question closes when the act is recorded"
 			if name == "review-finding" {
 				nothing = "the unit stays stopped; this question closes when the act is recorded or the unit closes"
+			}
+			post := want + ".\nTo go on: " + channel.ActCommand(qs[0]) + "\nIf you do nothing: " + nothing + "."
+			if qs[0].Text != post {
+				t.Fatalf("unit post = %q, want %q", qs[0].Text, post)
 			}
 			if *qs[0].Plain != (channel.Plain{Decision: want, IfNothing: nothing}) {
 				t.Fatalf("unit words: %+v, want %q", qs[0].Plain, want)

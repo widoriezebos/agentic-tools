@@ -28,7 +28,7 @@ func TestGoallessAskRecordsTheQuestionAndNoLedgerAct(t *testing.T) {
 	if err != nil || stored.Goal != "" || stored.About != "lane" || stored.Machine != "m1" || stored.Lineage != "landing-agent" || stored.State != "open" || stored.Thread == nil {
 		t.Fatalf("stored goal-less question = %+v %v", stored, err)
 	}
-	if len(p.posts) != 1 || !strings.HasPrefix(p.posts[0], "the landing lane") || strings.Contains(p.posts[0], "goal ") {
+	if len(p.posts) != 1 || !strings.HasPrefix(p.posts[0], "The landing lane") || strings.Contains(p.posts[0], "goal ") {
 		t.Fatalf("posted text names no goal and says what it is about: %q", p.posts)
 	}
 	again, existing, err := AskOrFind(AskRequest{RepoRoot: root, About: "lane", Kind: "other", Machine: "m1", Lineage: "landing-agent",

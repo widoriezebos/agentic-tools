@@ -97,7 +97,10 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 		}
 		q := &questions[i]
 		if receive && q.State == "open" && q.Thread == nil {
-			ref, postErr := c.Provider.Post(ctx, c.DestinationConfig, renderQuestion(*q, c.answerCodeOff), nil)
+			if err = ensureText(c.RepoRoot, q); err != nil {
+				return result, err
+			}
+			ref, postErr := c.Provider.Post(ctx, c.DestinationConfig, q.Text, nil)
 			if postErr != nil {
 				q.Undelivered++
 				result.Undelivered++

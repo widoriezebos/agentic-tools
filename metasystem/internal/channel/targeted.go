@@ -43,8 +43,8 @@ const (
 
 // RetryDelivery posts one open question that has no thread yet, and only
 // that question, under the poll lock. It never asks a new question: the
-// stored question is rendered as Poll renders it, and its answer handling
-// stays with Poll.
+// stored text is posted as Poll posts it, and its answer handling stays
+// with Poll.
 func RetryDelivery(ctx context.Context, repo, id string, p Provider, d DestinationConfig) (Question, RetryOutcome, error) {
 	var q Question
 	var outcome RetryOutcome
@@ -63,7 +63,10 @@ func RetryDelivery(ctx context.Context, repo, id string, p Provider, d Destinati
 		case p == nil:
 			return errors.New("no channel provider is configured")
 		}
-		ref, postErr := p.Post(ctx, d, renderQuestion(q, answerCodeOffOrOn(repo)), nil)
+		if err = ensureText(repo, &q); err != nil {
+			return err
+		}
+		ref, postErr := p.Post(ctx, d, q.Text, nil)
 		if postErr != nil {
 			q.Undelivered++
 			outcome = RetryUndelivered

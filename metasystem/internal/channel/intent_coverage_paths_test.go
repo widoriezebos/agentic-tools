@@ -55,7 +55,7 @@ func TestRetryDeliveryPostsTheStoredQuestionOnlyUntilItIsDelivered(t *testing.T)
 	if err != nil || outcome != RetryDelivered || q.Thread == nil || q.Thread.ID != "1" {
 		t.Fatalf("a delivering retry = %q thread %v err %v; want delivered in thread 1", outcome, q.Thread, err)
 	}
-	if len(delivering.posts) != 1 || delivering.posts[0] != renderQuestion(asked, false) || delivering.postThreads[0] != nil {
+	if len(delivering.posts) != 1 || delivering.posts[0] != asked.Text || delivering.postThreads[0] != nil {
 		t.Fatalf("the retry posted %q in %v; want the stored question once as a new thread", delivering.posts, delivering.postThreads)
 	}
 	if stored, _ := ReadQuestion(root, asked.ID); stored.Thread == nil || stored.Thread.ID != "1" {
@@ -147,7 +147,7 @@ func TestWithdrawClosesTheQuestionAndSaysWhyInItsThread(t *testing.T) {
 	if err != nil || q.State != "closed" || q.Answer == nil || q.Answer.Phase != "closed" {
 		t.Fatalf("the withdrawn question = %+v err %v; want closed with a closed answer", q, err)
 	}
-	if len(p.posts) != 2 || p.posts[1] != "closed: the goal was parked" || p.postThreads[1] == nil || p.postThreads[1].ID != asked.Thread.ID {
+	if len(p.posts) != 2 || p.posts[1] != "Closed: the goal was parked." || p.postThreads[1] == nil || p.postThreads[1].ID != asked.Thread.ID {
 		t.Fatalf("the withdrawal posted %q in %v; want the reason in the question's thread", p.posts, p.postThreads)
 	}
 	if _, err := Withdraw(root, "NOSUCHQUESTION", "gone", p, DestinationConfig{}); !errors.Is(err, os.ErrNotExist) {
