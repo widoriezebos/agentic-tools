@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 1
-- Sequence: 68
+- Sequence: 67
 - Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="attempt 20261020T054219.063899000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T054219.063899000Z.log, load 4.70703125; attempt 20261021T082526.597524000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261021T082526.597524000Z.log, load 5.23779296875"
 - Tier: 3
 - Intent: the test TestTestEnvironmentStandardInventoryMatchesObserved in metasystem/internal/proofrun failed 2 times in the landing lane and was green on every named repeat (attempt 20261020T054219.063899000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T054219.063899000Z.log, load 4.70703125; attempt 20261021T082526.597524000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261021T082526.597524000Z.log, load 5.23779296875); make it hold under load without a wall clock (R-104: artificial clocks, never load-fragile tests)
 - Origin: main
 - Next step: fix the test, run it 20 times under -p 4 with the package, hand it in
 - OpenedAt: 2026-10-21T09:23:00Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 
@@ -17,4 +17,5 @@ History:
 - 2026-10-21T09:23:00Z D41B5C4F038907AC18F6EEC632-landing-41ad7d6c open actor=landing+landing-agent targets=flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved
 - 2026-10-21T10:10:08Z CRG7YRWGEMBWQGNCQ32F17CGDD-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-launch-testunitcheckfindsrunningenginewithoutcallerpath,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:70 to=1:69
 - 2026-10-21T10:10:28Z 5CJ5NSFWN1JXET5K2E4J91YC12-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,a-stop-waits-for-the-unit-boundary-2,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:69 to=1:68
-Integrity: sha256=45a4719d1e9ed3f29e5f8966d63c4e4e3b5413ca72f2858e73453f3532cf6bb8
+- 2026-10-21T10:10:53Z RWZCJNNF8T6HFJ59PWFZ2Q8NKK-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:68 to=1:67
+Integrity: sha256=a9fefd0fa109e2f9800d6bf5253eb41ec8441c707eef8422fd53f149ec68ad09

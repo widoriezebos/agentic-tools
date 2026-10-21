@@ -1,6 +1,6 @@
 # flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian
 
-- State: queued
+- State: done
 - Priority: 1
 - Sequence: 63
 - Risk: severity=3 novelty=1 exposure=3 accumulation=3 basis="attempt 20261020T114943.702998000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T114943.702998000Z.log, load 5.94677734375; attempt 20261020T133149.932272000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T133149.932272000Z.log, load 5.86669921875"
@@ -8,8 +8,9 @@
 - Intent: the test TestSupervisorKillSparesTheFixtureCustodian in metasystem/internal/proofrun failed 2 times in the landing lane and was green on every named repeat (attempt 20261020T114943.702998000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T114943.702998000Z.log, load 5.94677734375; attempt 20261020T133149.932272000Z, log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T133149.932272000Z.log, load 5.86669921875); make it hold under load without a wall clock (R-104: artificial clocks, never load-fragile tests)
 - Origin: main
 - Next step: fix the test, run it 20 times under -p 4 with the package, hand it in Flaky: metasystem/internal/proofrun TestSupervisorKillSparesTheFixtureCustodian; attempt 20261020T152947.568401000Z; log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261020T152947.568401000Z.log; load 4.55419921875; seen 3 times. Flaky: metasystem/internal/proofrun TestSupervisorKillSparesTheFixtureCustodian; attempt 20261021T053621.325487000Z; log /Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261021T053621.325487000Z.log; load 5.04443359375; seen 4 times.
+- Concluded: superseded by the-fixture-custodian-settles-its-home (design plans/designs/main-proves-green-on-a-quiet-host.md, 2026-10-21): the cause is the fixture custodian's halt and the registry sweep (D1, D2), not the test's clock; the test's own change, where one is needed, is that goal's U3 (D3)
 - OpenedAt: 2026-10-20T14:39:53Z
-- Revision: 5
+- Revision: 6
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 
@@ -19,4 +20,5 @@ History:
 - 2026-10-21T07:24:40Z 4B613A26C807D47C1C21569DEF-landing-41ad7d6c record-flake actor=landing+landing-agent targets=flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian
 - 2026-10-21T10:10:08Z CRG7YRWGEMBWQGNCQ32F17CGDD-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-launch-testunitcheckfindsrunningenginewithoutcallerpath,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:65 to=1:64
 - 2026-10-21T10:10:28Z 5CJ5NSFWN1JXET5K2E4J91YC12-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,a-stop-waits-for-the-unit-boundary-2,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:64 to=1:63
-Integrity: sha256=02e9f1aa3dbfb22df4cfa867a0cd84ee8e48de8bfe5118f976e7826e32357ae8
+- 2026-10-21T10:10:53Z RWZCJNNF8T6HFJ59PWFZ2Q8NKK-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home
+Integrity: sha256=9ae4d339017b143bb7f18712753bf0064e2007d85b47cc2399e4c9558981261a
