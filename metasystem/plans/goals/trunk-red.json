@@ -5994,11 +5994,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T102231.355898000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T11:42:16Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T13:40:31Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "MYMDMC49Z281NP5861N147H5XS-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "fixed by 52f8146416 (testing.json no longer names the three deleted renderer tests); green in the 13:58 proof"
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalLandingHostContractRetainsPriorGroupsAndGoGate",
