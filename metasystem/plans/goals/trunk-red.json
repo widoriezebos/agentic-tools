@@ -5479,6 +5479,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-10-21T05:15:32Z",
       "testUnit": "metasystem/internal/testenv",
       "testName": "TestSetupChildIsEndedWhenTheBinaryIsKilled",
       "id": "flake:3c593983a6cc85df8e962179dc3ac96714fbacbf2cf2c08aa610f4866835b368",
@@ -5561,7 +5562,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled",
       "fixBranch": {
         "name": "",
         "commit": "",
