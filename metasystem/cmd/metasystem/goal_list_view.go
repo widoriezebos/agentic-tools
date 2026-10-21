@@ -49,6 +49,16 @@ func goalListActive(file *goal.GoalFile) bool {
 	return false
 }
 
+// flakeEntry reads an incident's class, never its identifier: a red that
+// came back on main keeps the identifier it had as a flake.
+func flakeEntry(entry goal.TrunkRedEntry) bool {
+	switch entry.EntryClass() {
+	case goal.TrunkRedClassFlake, goal.TrunkRedClassPendingFlake, goal.TrunkRedClassKnownFlake:
+		return true
+	}
+	return false
+}
+
 func (listing goalListing) view(page *textui.Page) {
 	listing.rankWidth, listing.idWidth = 0, 0
 	env := page.Env()
@@ -65,11 +75,15 @@ func (listing goalListing) view(page *textui.Page) {
 		if owner == "" {
 			owner = "nobody"
 		}
-		text := fmt.Sprintf("main is red in %s, owned by %s", entry.Group, owner)
+		state, words := textui.Failed, "main is red in"
+		if flakeEntry(entry) {
+			state, words = textui.Alert, "a test flakes in"
+		}
+		text := fmt.Sprintf("%s %s, owned by %s", words, entry.Group, owner)
 		if opened, err := time.Parse(time.RFC3339, entry.Opened); err == nil {
 			text += ", " + env.Since(opened)
 		}
-		banners = append(banners, textui.Attention{State: textui.Failed, Text: text,
+		banners = append(banners, textui.Attention{State: state, Text: text,
 			Hint: textui.Hint{Argv: []string{"metasystem", "incident", "list"}, Reason: "who fixes it"}})
 	}
 	page.Banner(banners...)

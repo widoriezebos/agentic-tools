@@ -19,6 +19,7 @@ var _ = func() bool {
 func g2LayoutCases() []layoutCase {
 	return []layoutCase{
 		{name: "goal-list", args: []string{"goal", "list"}, bed: goalLayoutBed},
+		{name: "goal-list-incidents", args: []string{"goal", "list"}, bed: goalIncidentLayoutBed},
 		{name: "goal-list-all", args: []string{"goal", "list", "--all"}, bed: goalLayoutBed},
 		{name: "goal-list-refusal", args: []string{"goal", "list", "--label", "Not A Label"}, bed: goalLayoutBed},
 		{name: "goal-list-tiers", args: []string{"goal", "list", "--tiers"}, bed: goalLayoutBed},
@@ -115,6 +116,52 @@ func incidentLayoutBed(t *testing.T) layoutBed {
 	}
 	if outcome, err := b.repo.Publish(parent, tip); err != nil || outcome != goal.CASLanded {
 		t.Fatalf("publish incident fixture: %v %v", outcome, err)
+	}
+	if err := b.repo.AcceptedCAS(parent, tip); err != nil {
+		t.Fatal(err)
+	}
+	root := realpath.Resolve(b.root())
+	return layoutBed{owners: b.owners(), cwd: b.root(), replace: layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e")}
+}
+
+func goalIncidentLayoutBed(t *testing.T) layoutBed {
+	b := newIntentBed(t, false, nil)
+	stamp := layoutNow.Add(-3 * time.Hour).Format(time.RFC3339)
+	sighting := goal.TrunkRedSighting{Attempt: "attempt-1", Batch: "batch-1", BaseCommit: "base-1", BaseTree: "tree-1",
+		LogPath: "attempt-1.log", SeenAt: stamp, Opid: goal.Opid("01J5X0000000000000000000X1", "mac-cli", "m1"),
+		Rerun: &goal.TrunkRedRerun{Attempt: "attempt-2", LogPath: "attempt-2.log"}}
+	flaky := goal.TrunkRedEntry{ID: goal.FlakeIdentity("internal/identity", "TestCustodianHaltTimesOneProbe"),
+		Class: goal.TrunkRedClassFlake, Group: "internal/identity", TestUnit: "internal/identity", TestName: "TestCustodianHaltTimesOneProbe", Status: "failed",
+		Failures:  []goal.TrunkRedFailure{{Report: "report", Classname: "internal/identity", Name: "TestCustodianHaltTimesOneProbe"}},
+		Sightings: []goal.TrunkRedSighting{sighting}, Holds: []string{}, Opened: stamp,
+		Owner: goal.TrunkRedOwner{Machine: "m1e", Since: stamp, How: "hand", By: "Wido"}}
+	flaky.Identity = flaky.ID
+	red := goal.TrunkRedEntry{ID: "tr-goal-main000001", Identity: "tr-goal-main000001", Group: "internal/goal", Status: "failed",
+		Failures: []goal.TrunkRedFailure{}, Sightings: []goal.TrunkRedSighting{sighting}, Holds: []string{"batch-1"}, Opened: stamp}
+	promoted := red
+	promoted.ID = goal.FlakeIdentity("internal/testenv", "TestRegistryOwnerProcess")
+	promoted.Identity, promoted.Group = promoted.ID, "internal/testenv"
+	pending := red
+	pending.ID, pending.Identity, pending.Class, pending.Group = "tr-fast-tip0000002", "tr-fast-tip0000002", goal.TrunkRedClassPendingFlake, "fast"
+	pending.Holds = []string{}
+	pending.Sightings = []goal.TrunkRedSighting{sighting}
+	pending.Sightings[0].Where, pending.Sightings[0].Tree = "tip", "tree-1"
+	known := red
+	known.ID, known.Identity, known.Class, known.Group = "tr-launch-known0003", "tr-launch-known0003", goal.TrunkRedClassKnownFlake, "launch"
+	known.Holds, known.AllowanceUntil = []string{}, layoutNow.Add(72*time.Hour).Format(time.RFC3339)
+	known.Owner = goal.TrunkRedOwner{Machine: "approver", Since: stamp, How: "approver", By: "Wido"}
+	closed := flaky
+	closed.ID, closed.Identity = flaky.ID+"-2", flaky.Identity
+	closed.Closed = &goal.TrunkRedClosure{At: stamp, How: "hand", By: "Wido", Why: "fixed", Opid: sighting.Opid}
+	register := goal.RenderTrunkRed([]goal.TrunkRedEntry{flaky, red, promoted, pending, known, closed})
+	parent := b.repo.accepted
+	tip, err := b.repo.Build(goal.Opid("01J5X0000000000000000000X2", "mac-cli", "m1"), parent,
+		[]goal.Change{{Path: "plans/goals/trunk-red.json", Content: register}}, "goal incident layout fixture")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if outcome, err := b.repo.Publish(parent, tip); err != nil || outcome != goal.CASLanded {
+		t.Fatalf("publish goal incident fixture: %v %v", outcome, err)
 	}
 	if err := b.repo.AcceptedCAS(parent, tip); err != nil {
 		t.Fatal(err)

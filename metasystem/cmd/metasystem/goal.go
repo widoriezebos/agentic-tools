@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	usagepkg "github.com/widoriezebos/agentic-tools/metasystem/internal/usage"
 )
 
@@ -325,8 +326,9 @@ func nextSyncedWithInputs(stdout, stderr io.Writer, root, machine string, fetchF
 		fmt.Fprintln(stderr, "goal next could not answer: "+frontierErr.Error())
 		return 1
 	}
+	env := textui.Env{Now: now}
 	for _, entry := range frontier.TrunkRedOwned {
-		fmt.Fprintln(stdout, trunkRedOwnedLine(entry))
+		fmt.Fprintln(stdout, trunkRedOwnedLine(env, entry))
 	}
 	fenced := make([]*goal.GoalFile, 0, len(frontier.Fenced))
 	for _, id := range frontier.Fenced {
@@ -384,7 +386,11 @@ func nextSyncedWithInputs(stdout, stderr io.Writer, root, machine string, fetchF
 		if owner == "" {
 			owner = "nobody"
 		}
-		fmt.Fprintf(stdout, "trunk red %s owned by %s since %s\n", entry.ID, owner, entry.Owner.Since)
+		words := "trunk red " + entry.ID
+		if flakeEntry(entry) {
+			words = "a test flakes in " + entry.Group + ": " + entry.ID
+		}
+		fmt.Fprintf(stdout, "%s owned by %s%s\n", words, owner, ownerSince(env, entry.Owner.Since))
 	}
 	return 0
 }
@@ -398,7 +404,19 @@ func printOpenReadItemBlocks(stdout io.Writer, file *goal.GoalFile) {
 	}
 }
 
-func trunkRedOwnedLine(entry goal.TrunkRedEntry) string {
+// ownerSince is when an incident's owner took it, in the reader's local
+// time; a stamp that does not parse prints as it is, an empty one not at all.
+func ownerSince(env textui.Env, since string) string {
+	if since == "" {
+		return ""
+	}
+	if at, err := time.Parse(time.RFC3339, since); err == nil {
+		return " " + env.Since(at)
+	}
+	return " since " + since
+}
+
+func trunkRedOwnedLine(env textui.Env, entry goal.TrunkRedEntry) string {
 	observed := entry.Status
 	if len(entry.Failures) > 0 {
 		failure := entry.Failures[0]
@@ -412,7 +430,11 @@ func trunkRedOwnedLine(entry goal.TrunkRedEntry) string {
 	if fix == "" {
 		fix = "take it first"
 	}
-	line := fmt.Sprintf("trunk red %s: %s %s on %s, holds %d batches, since %s; fix it under %s", entry.ID, entry.Group, observed, sighting.BaseCommit, len(entry.Holds), entry.Owner.Since, fix)
+	words := "trunk red " + entry.ID + ": " + entry.Group
+	if flakeEntry(entry) {
+		words = "a test flakes in " + entry.Group + ": " + entry.ID
+	}
+	line := fmt.Sprintf("%s %s on %s, holds %d batches,%s; fix it under %s", words, observed, sighting.BaseCommit, len(entry.Holds), ownerSince(env, entry.Owner.Since), fix)
 	if entry.FixBranch.Name != "" {
 		line += fmt.Sprintf(" on branch %s@%s (%s)", entry.FixBranch.Name, entry.FixBranch.Commit, entry.FixBranch.State)
 	}

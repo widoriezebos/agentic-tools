@@ -1,0 +1,17 @@
+! single-machine mode: multi-machine guarantees are void here; joining a fleet is the
+  backlog-local-promotion goal
+! a test flakes in internal/identity, owned by m1e, since 07:58
+  → metasystem incident list  who fixes it
+✗ main is red in internal/testenv, owned by nobody, since 07:58
+  → metasystem incident list  who fixes it
+! a test flakes in fast, owned by nobody, since 07:58
+  → metasystem incident list  who fixes it
+✗ main is red in internal/goal, owned by nobody, since 07:58
+  → metasystem incident list  who fixes it
+! a test flakes in launch, owned by approver, since 07:58
+  → metasystem incident list  who fixes it
+
+1 open goal · 1 claimed
+
+Claimed
+  –     standing-validation   tier 3   mac-cli   Run it.

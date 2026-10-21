@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 func trunkRedNextFixture(t *testing.T) (*proofAdmissionRepository, goal.Projection) {
@@ -30,7 +31,7 @@ func trunkRedNextFixture(t *testing.T) (*proofAdmissionRepository, goal.Projecti
 			Verb: "breach-stop", Actor: "mac-cli+m1", Targets: []string{"standing-validation"}, Keep: -1,
 		})
 	})
-	now := time.Now()
+	now := time.Date(2026, 9, 17, 8, 0, 0, 0, time.UTC)
 	repository.mu.Lock()
 	committed := repository.commits[repository.accepted]
 	committed.at = now
@@ -143,7 +144,7 @@ func TestGoalTrunkRedCommandsAndJSON(t *testing.T) {
 		t.Fatalf("--to edge code=%d stderr=%q", code, stderr)
 	}
 }
-func renderTrunkRedNext(t *testing.T, repository *proofAdmissionRepository, machine string, p goal.Projection, labels ...string) string {
+func renderTrunkRedNext(t *testing.T, repository *proofAdmissionRepository, machine string, p goal.Projection, commandNow func(string) (time.Time, error), labels ...string) string {
 	t.Helper()
 	root := repository.root
 	resolve := func(candidate string) (goal.Endpoint, error) {
@@ -176,7 +177,7 @@ func renderTrunkRedNext(t *testing.T, repository *proofAdmissionRepository, mach
 		return endpoint, nil
 	}
 	out, code := captureStdout(t, func(stdout, stderr io.Writer) int {
-		return nextSyncedWithInputs(stdout, stderr, root, machine, false, resolve, goalCommandNow, func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return p, nil }, func(string, goal.Endpoint) (seat.Copy, error) { return seat.Copy{}, nil }, labels...)
+		return nextSyncedWithInputs(stdout, stderr, root, machine, false, resolve, commandNow, func(goal.Endpoint, bool, time.Time) (goal.Projection, error) { return p, nil }, func(string, goal.Endpoint) (seat.Copy, error) { return seat.Copy{}, nil }, labels...)
 	})
 	if code != 0 {
 		t.Fatalf("goal next code=%d output=%q", code, out)
@@ -191,17 +192,20 @@ func TestTrunkRedEmptyFieldChangesNothing(t *testing.T) {
 	want := "single-machine mode: multi-machine guarantees are void here; joining a fleet is the backlog-local-promotion goal\n" +
 		"FENCED standing-validation: breach-stopped by stop-standing-validation-r2-f1 (ELAPSED_LIMIT); only goal resume, a human act, clears it; the queue is open\n" +
 		"no claimable goal for machine mac-cli; no matching eligible work\n"
-	if without := renderTrunkRedNext(t, repository, "mac-cli", p); without != want {
+	if without := renderTrunkRedNext(t, repository, "mac-cli", p, goalCommandNow); without != want {
 		t.Fatalf("no-entry output\ngot:  %q\nwant: %q", without, want)
 	}
 	tree := *p.Tree
 	tree.TrunkRed = []goal.TrunkRedEntry{}
 	p.Tree = &tree
-	if with := renderTrunkRedNext(t, repository, "mac-cli", p); with != want {
+	if with := renderTrunkRedNext(t, repository, "mac-cli", p, goalCommandNow); with != want {
 		t.Fatalf("empty field output\ngot:  %q\nwant: %q", with, want)
 	}
 }
 func TestTrunkRedNextLinesAndPlacement(t *testing.T) {
+	fixed := time.Date(2026, 9, 17, 8, 0, 0, 0, time.UTC)
+	env := textui.Env{Now: fixed, Zone: time.FixedZone("CEST", 2*3600)}
+	commandNow := func(string) (time.Time, error) { return fixed, nil }
 	repository, p := trunkRedNextFixture(t)
 	if problems := goal.ValidateTree(p.Tree); len(problems) != 0 {
 		t.Fatalf("tree without trunk-red entries is invalid: %v", problems)
@@ -210,11 +214,11 @@ func TestTrunkRedNextLinesAndPlacement(t *testing.T) {
 		entry goal.TrunkRedEntry
 		want  string
 	}{
-		{goal.TrunkRedEntry{ID: "failed", Group: "fast", Failures: []goal.TrunkRedFailure{{Report: "report", Classname: "Class", Name: "Test"}}, Sightings: []goal.TrunkRedSighting{{BaseCommit: "old"}, {BaseCommit: "base"}}, Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-17T01:00:00Z"}, FixGoal: "fix-red", FixBranch: goal.TrunkRedBranch{Name: "fix/red", Commit: "abc", State: goal.TrunkRedBranchOpen}, Holds: []string{"b1", "b2"}}, "trunk red failed: fast report/Class/Test on base, holds 2 batches, since 2026-09-17T01:00:00Z; fix it under fix-red on branch fix/red@abc (open)"},
-		{goal.TrunkRedEntry{ID: "status", Group: "deep", Status: "not-run", Sightings: []goal.TrunkRedSighting{{BaseCommit: "base2"}}, Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-17T02:00:00Z"}}, "trunk red status: deep not-run on base2, holds 0 batches, since 2026-09-17T02:00:00Z; fix it under take it first"},
+		{goal.TrunkRedEntry{ID: "failed", Group: "fast", Failures: []goal.TrunkRedFailure{{Report: "report", Classname: "Class", Name: "Test"}}, Sightings: []goal.TrunkRedSighting{{BaseCommit: "old"}, {BaseCommit: "base"}}, Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-17T01:00:00Z"}, FixGoal: "fix-red", FixBranch: goal.TrunkRedBranch{Name: "fix/red", Commit: "abc", State: goal.TrunkRedBranchOpen}, Holds: []string{"b1", "b2"}}, "trunk red failed: fast report/Class/Test on base, holds 2 batches, since 03:00; fix it under fix-red on branch fix/red@abc (open)"},
+		{goal.TrunkRedEntry{ID: "status", Group: "deep", Status: "not-run", Sightings: []goal.TrunkRedSighting{{BaseCommit: "base2"}}, Owner: goal.TrunkRedOwner{Machine: "mac-cli", Since: "2026-09-17T02:00:00Z"}}, "trunk red status: deep not-run on base2, holds 0 batches, since 04:00; fix it under take it first"},
 	}
 	for _, test := range tests {
-		if got := trunkRedOwnedLine(test.entry); got != test.want {
+		if got := trunkRedOwnedLine(env, test.entry); got != test.want {
 			t.Fatalf("owned line\ngot:  %q\nwant: %q", got, test.want)
 		}
 	}
@@ -229,8 +233,8 @@ func TestTrunkRedNextLinesAndPlacement(t *testing.T) {
 		tree := *p.Tree
 		tree.TrunkRed = []goal.TrunkRedEntry{tests[0].entry, tests[1].entry, elsewhere.entry}
 		p.Tree = &tree
-		out := renderTrunkRedNext(t, repository, "mac-cli", p)
-		ordered := []string{tests[0].want, tests[1].want, "FENCED standing-validation:", "no claimable goal for machine mac-cli", elsewhere.want}
+		out := renderTrunkRedNext(t, repository, "mac-cli", p, commandNow)
+		ordered := []string{trunkRedOwnedLine(textui.Env{Now: fixed}, tests[0].entry), trunkRedOwnedLine(textui.Env{Now: fixed}, tests[1].entry), "FENCED standing-validation:", "no claimable goal for machine mac-cli", elsewhere.want}
 		position := -1
 		for _, text := range ordered {
 			next := strings.Index(out, text)
@@ -243,12 +247,91 @@ func TestTrunkRedNextLinesAndPlacement(t *testing.T) {
 	tree := *p.Tree
 	tree.TrunkRed = []goal.TrunkRedEntry{elsewhereTests[0].entry}
 	p.Tree = &tree
-	out := renderTrunkRedNext(t, repository, "mac-cli", p, "missing")
+	out := renderTrunkRedNext(t, repository, "mac-cli", p, commandNow, "missing")
 	noMatch := strings.Index(out, "no goal matches --label missing")
 	elsewhere := strings.Index(out, elsewhereTests[0].want)
 	if noMatch < 0 || elsewhere <= noMatch {
 		t.Fatalf("other-machine line must follow the label-no-match line: %q", out)
 	}
+	t.Run("flake-words-local-time", func(t *testing.T) {
+		t.Parallel()
+		repository, p := trunkRedNextFixture(t)
+		fixed := time.Date(2026, 10, 21, 19, 40, 0, 0, time.UTC)
+		commandNow := func(string) (time.Time, error) { return fixed, nil }
+		stamp := "2026-10-19T15:10:12Z"
+		at, err := time.Parse(time.RFC3339, stamp)
+		if err != nil {
+			t.Fatal(err)
+		}
+		since := (textui.Env{Now: fixed}).Since(at)
+		ownedFlake, elsewhereFlake, freeFlake := goal.FlakeIdentity("owned", "Test"), goal.FlakeIdentity("elsewhere", "Test"), goal.FlakeIdentity("free", "Test")
+		ownedPromoted, elsewherePromoted := goal.FlakeIdentity("owned", "TestPromoted"), goal.FlakeIdentity("elsewhere", "TestPromoted")
+		cases := []struct {
+			id, class, group, machine, fix, want string
+			branch                               bool
+		}{
+			{"tr-owned-red", "", "owned", "mac-cli", "fix-red", "trunk red tr-owned-red: owned report/owned/Test on base, holds 1 batches, " + since + "; fix it under fix-red on branch fix/red@abc (open)", true},
+			{ownedPromoted, "", "owned", "mac-cli", "fix-promoted", "trunk red " + ownedPromoted + ": owned report/owned/Test on base, holds 1 batches, " + since + "; fix it under fix-promoted", false},
+			{ownedFlake, goal.TrunkRedClassFlake, "owned", "mac-cli", "", "a test flakes in owned: " + ownedFlake + " report/owned/Test on base, holds 0 batches, " + since + "; fix it under take it first", false},
+			{"tr-owned-pending", goal.TrunkRedClassPendingFlake, "owned", "mac-cli", "", "a test flakes in owned: tr-owned-pending report/owned/Test on base, holds 0 batches, " + since + "; fix it under take it first", false},
+			{"tr-owned-known", goal.TrunkRedClassKnownFlake, "owned", "mac-cli", "", "a test flakes in owned: tr-owned-known report/owned/Test on base, holds 0 batches, " + since + "; fix it under take it first on branch fix/red@abc (open)", true},
+			{"tr-elsewhere-red", "", "elsewhere", "m1e", "", "trunk red tr-elsewhere-red owned by m1e " + since, false},
+			{elsewherePromoted, "", "elsewhere", "m1e", "", "trunk red " + elsewherePromoted + " owned by m1e " + since, false},
+			{elsewhereFlake, goal.TrunkRedClassFlake, "elsewhere", "m1e", "", "a test flakes in elsewhere: " + elsewhereFlake + " owned by m1e " + since, false},
+			{"tr-elsewhere-pending", goal.TrunkRedClassPendingFlake, "elsewhere", "m1e", "", "a test flakes in elsewhere: tr-elsewhere-pending owned by m1e " + since, false},
+			{"tr-elsewhere-known", goal.TrunkRedClassKnownFlake, "elsewhere", "m1e", "", "a test flakes in elsewhere: tr-elsewhere-known owned by m1e " + since, false},
+			{freeFlake, goal.TrunkRedClassFlake, "free", "", "", "a test flakes in free: " + freeFlake + " owned by nobody", false},
+		}
+		tree := *p.Tree
+		tree.TrunkRed = nil
+		for _, c := range cases {
+			entry := goal.TrunkRedEntry{ID: c.id, Identity: c.id, Class: c.class, Group: c.group, Status: "failed", Opened: stamp,
+				TestUnit: c.group, TestName: "Test", Failures: []goal.TrunkRedFailure{{Report: "report", Classname: c.group, Name: "Test"}},
+				Sightings: []goal.TrunkRedSighting{{Attempt: "attempt-1", Batch: "batch-1", BaseCommit: "base", BaseTree: "tree", LogPath: "attempt-1.log",
+					SeenAt: stamp, Opid: goal.Opid("01J5X0000000000000000000X1", "mac-cli", "m1"), Rerun: &goal.TrunkRedRerun{Attempt: "attempt-2", LogPath: "attempt-2.log"}}},
+				Holds: []string{}, FixGoal: c.fix}
+			if c.class == "" {
+				entry.Holds = []string{"batch-1"}
+			}
+			if c.machine != "" {
+				entry.Owner = goal.TrunkRedOwner{Machine: c.machine, Since: stamp, How: "hand", By: "Wido"}
+			}
+			if c.class == goal.TrunkRedClassKnownFlake {
+				entry.Owner.How, entry.AllowanceUntil = "approver", "2026-10-24T15:10:12Z"
+			}
+			if c.class == goal.TrunkRedClassPendingFlake {
+				entry.Sightings[0].Where, entry.Sightings[0].Tree = "tip", "tree"
+			}
+			if c.branch {
+				entry.FixBranch = goal.TrunkRedBranch{Name: "fix/red", Commit: "abc", State: goal.TrunkRedBranchOpen}
+			}
+			tree.TrunkRed = append(tree.TrunkRed, entry)
+		}
+		entries, problems := goal.ParseTrunkRed(goal.RenderTrunkRed(tree.TrunkRed))
+		if len(problems) != 0 {
+			t.Fatalf("incident register is invalid: %v", problems)
+		}
+		tree.TrunkRed = entries
+		p.Tree = &tree
+		if problems := goal.ValidateTree(p.Tree); len(problems) != 0 {
+			t.Fatalf("incident fixture is invalid: %v", problems)
+		}
+		out := renderTrunkRedNext(t, repository, "mac-cli", p, commandNow)
+		lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+		for _, c := range cases {
+			found := false
+			for _, line := range lines {
+				found = found || line == c.want
+			}
+			if !found {
+				t.Errorf("incident line missing\nwant: %q\noutput: %s", c.want, out)
+			}
+		}
+		if strings.Contains(out, "T15:10:12Z") {
+			t.Errorf("owner time is still a stored timestamp: %s", out)
+		}
+	})
+
 }
 func TestTrunkRedListCountsOpenEntriesOnly(t *testing.T) {
 	t.Parallel()
