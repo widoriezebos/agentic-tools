@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 69
+- Sequence: 68
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="Severity 2: wrong words and hourly red proofs mislead the person and starve the host but lose no record; novelty 2: new retire step and a no-launch admission; exposure 3: every seat's status and goal list and every lane proof; accumulation 2: 39 stale cards and 12 full proofs a day."
 - Tier: 2
 - Intent: What a person reads about main is true: a flake is called a flake (goal list), a seat card ends with its goal or its seat (system status), a green main move deploys whoever pushed it, and a flake record does not schedule a full proof of main. Design plans/designs/main-proves-green-on-a-quiet-host.md D5-D8.
 - Origin: human
 - Next step: After the-fixture-custodian-settles-its-home: brief U1 (D5 wording) and U4 (D8 cadence) first; then U2 (D6 card retirement on StateDone). Each: Codex build, Opus read, gate, hand landing.
 - OpenedAt: 2026-10-21T10:08:04Z
-- Revision: 6
+- Revision: 7
 - BlockedBy: the-fixture-custodian-settles-its-home
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -23,4 +23,5 @@ History:
 - 2026-10-21T10:10:08Z CRG7YRWGEMBWQGNCQ32F17CGDD-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-launch-testunitcheckfindsrunningenginewithoutcallerpath,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:72 to=1:71
 - 2026-10-21T10:10:28Z 5CJ5NSFWN1JXET5K2E4J91YC12-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,a-stop-waits-for-the-unit-boundary-2,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:71 to=1:70
 - 2026-10-21T10:10:53Z RWZCJNNF8T6HFJ59PWFZ2Q8NKK-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:70 to=1:69
-Integrity: sha256=611a869fcb2a99748bcff93b7b75d72933db5c4a2e37945c460cf5a8b04dc395
+- 2026-10-21T10:11:12Z 75CQ2CGW1JRBQQNHRW73X5XW7D-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:69 to=1:68
+Integrity: sha256=3ffebc18041effe09d7914d3960718323b5e595025d7535ddf3ae6c949edb674
