@@ -5632,6 +5632,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-10-21T07:44:17Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestProofRunCommandGovernedParentSharesOneCharge",
       "id": "flake:82963e23d4838e4748ca1f4d20885e742dad80cb39853f77d1798331c3d3b0ed",
@@ -5714,7 +5715,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge",
       "fixBranch": {
         "name": "",
         "commit": "",
