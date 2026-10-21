@@ -3,7 +3,7 @@
 - Kind: design
 - Id: 01M5EQU1ETH0ST0GREEN0MAIN01
 - Status: accepted
-- Goals: the-fixture-custodian-settles-its-home a-flake-is-not-a-red (a-proved-main-deploys-itself follows, its own page)
+- Goals: the-fixture-custodian-settles-its-home
 - Critique: accepted at the stop by the steward in Wido's name, 2026-10-21 12:10: rounds 1-8 (8, 6, 6, 4, 5, 3, 2, unread) critiqued the earlier D1/D2 and the moved D7; round 9 on the reset found 3, all in D2, resolved by subtraction (QH-R9-01 the age rule dropped, QH-R9-03 the existing quiet-log rule kept) and by evidence (QH-R9-02: the existing sweep already removes on the same evidence)
 
 Tier 2, revision 10 (accepted): D1 and D2 RESET (Wido 2026-10-21 11:4x: "why does the test not have a teardown that takes care of cleaning up? … this feels like a really backwards approach"). Revision 8 is kept beside this page as main-proves-green-on-a-quiet-host-revision-8.md. Earlier: (Astra round 1 folded: 8 material, 3 minor; rounds 2-7 at xhigh folded: 6, 6, 4, 5, 3 and 2 material; Wido 10:05: critique to convergence; Wido 10:4x: the automatic deploy moved to its own goal, right after), steward draft (Fable 5.1, Wido's model choice of 08:30) for Wido, who ordered on 2026-10-21 08:3x: "What is still flaky? We need to fix that. What is still wrong in the behavior … design this and then fix it … highest priority now." Evidence read 08:35-09:40 CEST at origin/main 7362bd6f61 (code identical to ec23794da6); the analysis is `agentic-tools-evidence/lane-test-20261009/analysis/behaviour-analysis-2026-10-21.md` with three root-cause reports beside it. Paths are relative to `metasystem/`.
