@@ -5639,6 +5639,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-10-21T05:15:32Z",
       "testUnit": "metasystem/internal/proofrun",
       "testName": "TestResourceCustodyStreamsLiveCapNoteAndRetainsSpools",
       "id": "flake:77c2e3934a7e567b537d410d1bebdd665e75230e1d3798b7a3e6ae729f4a13c5",
@@ -5721,7 +5722,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools",
       "fixBranch": {
         "name": "",
         "commit": "",
