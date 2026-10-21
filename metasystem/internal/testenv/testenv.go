@@ -253,9 +253,7 @@ func MainWithSetup(m *testing.M, setup func() error, declarations ...Declaration
 			fmt.Fprintln(os.Stderr, "run fixture custodian:", err)
 			return 2
 		}
-		if logPath := os.Getenv(identity.FixtureCustodianLogEnv); logPath != "" {
-			removeQuietFixtureCustodianLog(logPath, owner, os.Stderr)
-		}
+		finishFixtureCustodian(os.Getenv(identity.FixtureCustodianLogEnv), os.Getenv(supervisionRegistryHome), owner, os.Stderr)
 		return 0
 	}
 	cleanup, err := prepare(declarations)
@@ -474,10 +472,31 @@ func fixtureCustodianLogTail(path string) string {
 	return strings.Join(lines[max(0, len(lines)-8):], "\n")
 }
 
-func removeQuietFixtureCustodianLog(path string, owner identity.Ref, stderr *os.File) {
-	if quietFixtureCustodianLog(path, owner, stderr) {
-		_ = os.Remove(path)
+// removeQuietFixtureCustodianLog removes a quiet log and reports whether it did.
+func removeQuietFixtureCustodianLog(path string, owner identity.Ref, stderr *os.File) bool {
+	return quietFixtureCustodianLog(path, owner, stderr) && os.Remove(path) == nil
+}
+
+// finishFixtureCustodian is a custodian's last step after RunCustodian
+// succeeded: once its quiet log is removed it may be the last one out, and
+// RemoveSettledHome's guards decide whether the home goes.
+func finishFixtureCustodian(logPath, home string, owner identity.Ref, stderr *os.File) {
+	if logPath == "" || !removeQuietFixtureCustodianLog(logPath, owner, stderr) {
+		return
 	}
+	// Only the home this custodian's log is named for is its to remove.
+	if !strings.HasPrefix(filepath.Base(home), registryHomePrefix) || logPath != fmt.Sprintf("%s.custodian-%d.log", home, owner.Pid) {
+		return
+	}
+	_ = RemoveSettledHome(home, refusedReport{})
+}
+
+// refusedReport keeps another custodian's unquiet log for the start-up sweep,
+// which reports it where a person reads it; this stderr is a removed log.
+type refusedReport struct{}
+
+func (refusedReport) Write([]byte) (int, error) {
+	return 0, errors.New("testenv: a custodian does not report another custodian's log")
 }
 
 func quietFixtureCustodianLog(path string, owner identity.Ref, stderr *os.File) bool {

@@ -230,21 +230,72 @@ func TestTestEnvironmentStandardInventoryMatchesObserved(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	output, err := command.CombinedOutput()
+	output, runErr := command.CombinedOutput()
+	observed, notPassed, err := standardInventoryVerdict(output, runErr, expected)
 	if err != nil {
-		t.Fatalf("run test-environment-standard inventory: %v\n%s", err, output)
+		t.Fatalf("%v\n%s", err, output)
+	}
+	t.Logf("engine inventory matched: expected roots=%d observed terminals=%d not passed=%d exit=%v; pass and fail are the nested package's own verdict", len(expected), len(observed), notPassed, runErr)
+}
+
+// standardInventoryVerdict judges the nested whole-package run of
+// test-environment-standard as an inventory only: a test that fails there
+// is reported by the package's own run. It fails only when the run could not
+// start or the inventory does not match. notPassed counts the observed
+// terminals that did not pass, except the allowed opt-in skip.
+func standardInventoryVerdict(output []byte, runErr error, expected []NativeTestIdentity) (observed []NativeTestIdentity, notPassed int, err error) {
+	var exit *exec.ExitError
+	if runErr != nil && !errors.As(runErr, &exit) {
+		return nil, 0, fmt.Errorf("run test-environment-standard inventory: %w", runErr)
 	}
 	observed, missing, unexpected, complete := parseGoJSON(output, expected)
-	failed := false
+	if !complete || len(missing) != 0 || len(unexpected) != 0 {
+		return observed, 0, fmt.Errorf("test-environment-standard inventory mismatch: expected=%v observed=%v missing=%v unexpected=%v complete=%v", expected, observed, missing, unexpected, complete)
+	}
 	for _, evidence := range observed {
 		if evidence.Status != "passed" && (evidence.Name != "TestPackageWalkExternalCheckout" || evidence.Status != "skipped") {
-			failed = true
+			notPassed++
 		}
 	}
-	if !complete || len(missing) != 0 || len(unexpected) != 0 || failed {
-		t.Fatalf("test-environment-standard inventory mismatch: expected=%v observed=%v missing=%v unexpected=%v complete=%v", expected, observed, missing, unexpected, complete)
+	return observed, notPassed, nil
+}
+
+func TestStandardInventoryReportsARedNestedPackageWithoutFailing(t *testing.T) {
+	expected := []NativeTestIdentity{{Classname: "example/app", Name: "TestA", Status: "expected"}, {Classname: "example/app", Name: "TestB", Status: "expected"}}
+	exitErr := exec.Command("/bin/sh", "-c", "exit 1").Run()
+	var exit *exec.ExitError
+	if !errors.As(exitErr, &exit) {
+		t.Fatalf("fixture exit = %v, want an exit error", exitErr)
 	}
-	t.Logf("engine inventory matched: expected roots=%d observed terminals=%d missing=%d unexpected=%d; every observed terminal passed or was the allowed opt-in skip", len(expected), len(observed), len(missing), len(unexpected))
+	event := func(action, name string) string {
+		return fmt.Sprintf(`{"Action":%q,"Package":"example/app","Test":%q}`+"\n", action, name)
+	}
+	green := event("run", "TestA") + event("pass", "TestA") + event("run", "TestB") + event("pass", "TestB")
+	for _, test := range []struct {
+		name, output string
+		runErr       error
+		notPassed    int
+		wantError    string
+	}{
+		{"red", event("run", "TestA") + event("pass", "TestA") + event("run", "TestB") + event("fail", "TestB"), exitErr, 1, ""},
+		{"green", green, nil, 0, ""},
+		{"missing-terminal", event("run", "TestA") + event("pass", "TestA") + event("run", "TestB"), exitErr, 0, "inventory mismatch"},
+		{"unexpected", green + event("run", "TestC") + event("pass", "TestC"), nil, 0, "inventory mismatch"},
+		{"not-started", "", errors.New(`exec: "go": executable file not found`), 0, "run test-environment-standard inventory"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			observed, notPassed, err := standardInventoryVerdict([]byte(test.output), test.runErr, expected)
+			if test.wantError != "" {
+				if err == nil || !strings.Contains(err.Error(), test.wantError) {
+					t.Fatalf("inventory error = %v, want %q", err, test.wantError)
+				}
+				return
+			}
+			if err != nil || notPassed != test.notPassed || len(observed) != len(expected) {
+				t.Fatalf("inventory: observed=%v not passed=%d error=%v; want %d terminals and %d not passed", observed, notPassed, err, len(expected), test.notPassed)
+			}
+		})
+	}
 }
 
 func TestGoDiscoveryBindsDeclaredNamesToActualPackages(t *testing.T) {

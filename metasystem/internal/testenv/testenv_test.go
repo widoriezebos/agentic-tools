@@ -628,6 +628,8 @@ func TestRegistryOwnerProcess(t *testing.T) {
 	case "wait":
 		_, _ = io.Copy(io.Discard, os.Stdin)
 		os.Exit(0)
+	case "wait-return":
+		_, _ = io.Copy(io.Discard, os.Stdin)
 	default:
 		t.Fatalf("unknown registry helper mode %q", mode)
 	}
