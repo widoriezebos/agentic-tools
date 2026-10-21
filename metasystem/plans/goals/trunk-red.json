@@ -5898,11 +5898,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T100743.270415000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T10:12:45Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T13:40:24Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "CYFXFX41E084NAVFFMD5NFS4FR-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "fixed by 765c77faf5 (the design page names only ledger goals); fast-static-build green in the proofs of 12:22 and 13:58"
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestProviderRecoveryAskPublicLifecycle",
