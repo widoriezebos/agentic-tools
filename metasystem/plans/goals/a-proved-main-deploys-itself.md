@@ -1,13 +1,15 @@
 # a-proved-main-deploys-itself
 
 - State: parked
+- Priority: 1
+- Sequence: 73
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Severity 3: a wrong automatic deploy activates an unproved or older engine on the host; novelty 2: bound admission, push evidence and reconcile are new on an existing runner; exposure 3: every seat's engine; accumulation 2: each hand landing without deploy leaves the seats on an old engine."
 - Tier: 3
 - Intent: After a green proof of main, the project deploys the proved commit by itself when this computer pushed it (lane or hand landing), never over a newer active deployment and never losing a trigger while another deploy runs; another computer's push stays a person's deploy now (R-144-m1h decision 7). Wido 2026-10-21: its own goal, implemented right after a-flake-is-not-a-red. Starting material: D7 of main-proves-green-on-a-quiet-host with Astra's deploy findings (QH-04, R-144-m1h, QH-19, QH-21).
 - Origin: human
 - Next step: When a-flake-is-not-a-red is done: write its design page from the starting material (evidence designs/a-proved-main-deploys-itself-material.md), Astra xhigh to convergence, brief, Codex build, Opus read, gate, hand landing. Until then the steward runs deploy now and the engine unify after every hand landing (finding 418).
 - OpenedAt: 2026-10-21T10:08:17Z
-- Revision: 2
+- Revision: 3
 - BlockedBy: a-flake-is-not-a-red
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -17,4 +19,5 @@
 History:
 - 2026-10-21T10:08:17Z HSBYYTPHWNGRVM3AQFQTGWWDRG-m1e-f2f350ed open actor=human:Wido targets=a-proved-main-deploys-itself,a-flake-is-not-a-red
 - 2026-10-21T10:08:27Z FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed approve actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,the-fixture-custodian-settles-its-home
-Integrity: sha256=36166236487359a34945704e4f6a116187e714befd16d9657595d007bb51677a
+- 2026-10-21T10:09:01Z T26VYT7ZGGBYPWYGRB1FGCZJ0K-m1e-f2f350ed set-priority actor=human:Wido targets=a-proved-main-deploys-itself reason=priority-order subject=a-proved-main-deploys-itself from=unranked to=1:73 requested-sequence=append
+Integrity: sha256=c114072f9ce2499a3819fa8258a99cde41d08c00808dedbef6efb669a5635bd3
