@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -16,15 +17,31 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
 
 func TestResourceCustodyStreamsLiveCapNoteAndRetainsSpools(t *testing.T) {
 	engine := buildResourceCustodyEngine(t)
 	root, conf := isolatedHostResources(t)
+	base := int64(os.Getpid()) * 20
+	stale := proofSurvivorProcess(base+10, 100)
+	stale.Environ = []string{proofSurvivorTag(t, identity.FixtureKey{Owner: proofSurvivorRef(base+1, 11), Test: "TestForeignPackage", Nonce: "00000382"})}
+	injectProcessTable(t, filepath.Join(root, "metasystem.conf"), []census.Process{stale})
+	wrapper := filepath.Join(t.TempDir(), "watchdog")
+	if err := testexec.WriteFile(wrapper, []byte("#!/bin/sh\nfor arg in \"$@\"; do\n  if [ \"$arg\" = --resource-custody ]; then\n    echo 'custody wrapper ready' >&2\n  fi\ndone\nexec "+strconv.Quote(engine)+" \"$@\"\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	var signalMu sync.Mutex
+	type sentSignal struct {
+		pid    int
+		signal syscall.Signal
+	}
+	var signals []sentSignal
 	lease, err := acquireHostResourcesIn(context.Background(), root, root, conf, "heavy", nil, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -53,10 +70,16 @@ printf '{"suite":"chatty","section":"over-cap","event":"end","at":"%s","depth":0
 	go func() {
 		finished <- LaunchSuite(LaunchOptions{Suite: "chatty", Root: root, ConfPath: conf,
 			ProgressPath: progress, LogPath: logPath, Banner: "durable watchdog fixture",
-			Silence: 2 * time.Second, SectionCap: 300 * time.Millisecond,
+			Silence: 2 * time.Second, SectionCap: time.Hour,
 			EvidenceTimeout: time.Second, EvidenceMax: 1024 * 1024, Poll: 25 * time.Millisecond,
 			TermGrace: 100 * time.Millisecond, KillGrace: 100 * time.Millisecond,
-			WatchdogExecutable: engine, Command: []string{"sh", "-c", command, "sh", progress, release},
+			WatchdogExecutable: wrapper,
+			Signal: func(pid int, signal syscall.Signal) error {
+				signalMu.Lock()
+				defer signalMu.Unlock()
+				signals = append(signals, sentSignal{pid, signal})
+				return nil
+			}, Command: []string{"sh", "-c", command, "sh", progress, release},
 			ExpectedSections: []string{"over-cap"}, HostResourceFiles: lease.Files(),
 			Output: publicStdout, ErrorOutput: public})
 		close(ended)
@@ -65,35 +88,38 @@ printf '{"suite":"chatty","section":"over-cap","event":"end","at":"%s","depth":0
 		_ = os.WriteFile(release, nil, 0o600)
 		<-ended
 	})
-	note := "section over-cap passed its 300ms cap"
+	note := "custody wrapper ready"
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		data, _ := os.ReadFile(publicPath)
-		if bytes.Contains(data, []byte(note)) {
+		stdout, _ := os.ReadFile(publicStdoutPath)
+		if bytes.Contains(data, []byte(note)) && bytes.Contains(stdout, []byte("growing")) {
 			break
 		}
 		select {
 		case result := <-finished:
-			t.Fatalf("suite ended before its live cap note: status=%d output=%s", result, data)
+			t.Fatalf("suite ended before its live wrapper marker: status=%d output=%s", result, data)
 		case <-ticker.C:
 		case <-t.Context().Done():
-			t.Fatalf("live cap note missing from public output: %s", data)
+			t.Fatalf("live wrapper marker missing from public output: %s", data)
 		}
 	}
 	if err := os.WriteFile(release, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if result := <-finished; result != 0 {
-		t.Fatalf("released suite status=%d", result)
+		publicData, _ := os.ReadFile(publicPath)
+		logData, _ := os.ReadFile(logPath)
+		t.Fatalf("released suite status=%d public.err=%s suite.log=%s", result, publicData, logData)
 	}
 	publicData, err := os.ReadFile(publicPath)
 	if err != nil || strings.Count(string(publicData), note) != 1 {
-		t.Fatalf("public cap note count=%d err=%v", strings.Count(string(publicData), note), err)
+		t.Fatalf("public wrapper marker count=%d err=%v", strings.Count(string(publicData), note), err)
 	}
 	logData, err := os.ReadFile(logPath)
 	if err != nil || strings.Count(string(logData), note) != 1 {
-		t.Fatalf("durable log cap note count=%d err=%v", strings.Count(string(logData), note), err)
+		t.Fatalf("durable log wrapper marker count=%d err=%v", strings.Count(string(logData), note), err)
 	}
 	stdoutData, err := os.ReadFile(publicStdoutPath)
 	if err != nil || !bytes.Contains(stdoutData, []byte("growing")) || bytes.Contains(stdoutData, []byte(note)) {
@@ -111,8 +137,23 @@ printf '{"suite":"chatty","section":"over-cap","event":"end","at":"%s","depth":0
 	}
 	stderrSpool, err := os.ReadFile(run.Header.LogPaths[2])
 	if err != nil || strings.Count(string(stderrSpool), note) != 1 {
-		t.Fatalf("custodian stderr spool cap note count=%d err=%v", strings.Count(string(stderrSpool), note), err)
+		t.Fatalf("custodian stderr spool wrapper marker count=%d err=%v", strings.Count(string(stderrSpool), note), err)
 	}
+	signalMu.Lock()
+	defer signalMu.Unlock()
+	if len(signals) != 1 || signals[0].pid != int(stale.Pid) || signals[0].signal != syscall.SIGKILL {
+		t.Fatalf("survivor signals=%v, want one SIGKILL to %d", signals, stale.Pid)
+	}
+	staleLines := 0
+	for _, line := range strings.Split(string(logData), "\n") {
+		if strings.Contains(line, fmt.Sprintf("fixture-survivor pid=%d ", stale.Pid)) && strings.HasSuffix(line, " stale") {
+			staleLines++
+		}
+	}
+	if staleLines != 1 {
+		t.Fatalf("stale survivor lines=%d, want one: %s", staleLines, logData)
+	}
+
 }
 
 type refusingCustodyWriter struct{}

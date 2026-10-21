@@ -22,6 +22,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/behaviorsurface"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
@@ -2503,7 +2504,28 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 	admissionDir := filepath.Join(t.TempDir(), "host-admission")
 	result := filepath.Join(t.TempDir(), "result.json")
 	childOutput := filepath.Join(root, "child-ran")
+	base := int64(os.Getpid()) * 20
+	owner := identity.Ref{Pid: base + 1, StartedAtSec: 11, StartedAtUnixMicro: 11_000_000}
+	row := census.Process{Pid: base + 10, PPID: 1, PGID: base + 10, Started: 100, StartedExactMicro: 100_000_000, Argv: "/bin/sh", Alive: true}
+	if runtime.GOOS == "linux" {
+		owner = identity.Ref{Pid: base + 1, StartTicks: 11, BootID: "fixture-boot"}
+		row.StartTicks, row.BootID = 100, "fixture-boot"
+	}
+	encoded, err := identity.EncodeKey(identity.FixtureKey{Owner: owner, Test: "TestForeignPackage", Nonce: "00000382"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	row.Environ = []string{identity.FixtureOwnerEnv + "=" + encoded}
+	processTable := filepath.Join(t.TempDir(), "processes.json")
+	table, err := json.Marshal([]census.Process{row})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(processTable, table, 0o600); err != nil {
+		t.Fatal(err)
+	}
 	environment := append(receiptCanaryEnvironment(),
+		"METASYSTEM_CENSUS_PROCESS_FILE="+processTable,
 		"METASYSTEM_PROOF_ADMISSION_TEST_DIR="+admissionDir,
 		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
@@ -2601,6 +2623,19 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 	}
 	if count := strings.Count(output.String(), proofCapacityWaitLine); count != 1 {
 		t.Fatalf("public capacity wait messages = %d, want one: %s", count, output.String())
+	}
+	logData, err := os.ReadFile(result + ".log")
+	if err != nil {
+		t.Fatal(err)
+	}
+	staleLines := 0
+	for _, line := range strings.Split(string(logData), "\n") {
+		if strings.Contains(line, fmt.Sprintf("fixture-survivor pid=%d ", row.Pid)) && strings.HasSuffix(line, " stale") {
+			staleLines++
+		}
+	}
+	if staleLines != 1 {
+		t.Fatalf("stale survivor lines=%d, want one: %s", staleLines, logData)
 	}
 	assertHostAdmissionClean(t, admissionDir, 1)
 	t.Run("closed_fence_before_admission", func(t *testing.T) {
@@ -2864,7 +2899,7 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 		// The governed locators travel under the fixture's own names: the
 		// package's TestMain clears every METASYSTEM_PROOF_* control before
 		// a test runs, so the engine receives them here, not by inheritance.
-		environment := append(receiptCanaryEnvironment(), proofCommandFixtureMarker+"=1",
+		environment := append(receiptCanaryEnvironmentForRoot(t, root), proofCommandFixtureMarker+"=1",
 			proofCommandFixtureSnapshotEnv+"="+os.Getenv(proofCommandFixtureSnapshotEnv),
 			proofCommandFixtureTempRootEnv+"="+os.Getenv(proofCommandFixtureTempRootEnv),
 			"METASYSTEM_WAIT_BINARY="+os.Getenv("METASYSTEM_WAIT_BINARY"),
@@ -2955,6 +2990,9 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	child := exec.Command(os.Args[0], "-test.run=^TestProofRunCommandGovernedParentSharesOneCharge$")
 	child.Env = append(receiptCanaryEnvironment(), "GO_WANT_GOVERNED_COMMAND_PARENT=1", "GOVERNED_COMMAND_ROOT="+root, "GOVERNED_COMMAND_ENGINE="+engine,
 		"GOFLAGS=-buildvcs=false",
+		"METASYSTEM_GOAL_NOW="+now.Format(time.RFC3339Nano),
+		"METASYSTEM_WAIT_BINARY="+os.Getenv("METASYSTEM_WAIT_BINARY"),
+		"METASYSTEM_WAIT_BINARY_SOURCE="+os.Getenv("METASYSTEM_WAIT_BINARY_SOURCE"),
 		proofCommandFixtureSnapshotEnv+"="+snapshot,
 		proofCommandFixtureTempRootEnv+"="+os.TempDir(),
 		"GOVERNED_COMMAND_ADMISSION_DIR="+admissionDir,
@@ -3003,6 +3041,9 @@ func TestProofRunCommandGovernedParentSharesOneCharge(t *testing.T) {
 	if err != nil || len(attempts) != 1 || attempts[0].ReservationOwner == nil || attempts[0].ReservationOwner.RunID != "governed-command" ||
 		attempts[0].Terminal == nil || attempts[0].Terminal.Result != proofrun.TerminalSuccess {
 		t.Fatalf("governed command attempt=%+v err=%v output=%s", attempts, err, output.String())
+	}
+	if attempts[0].StartedAt != now.Format(time.RFC3339Nano) {
+		t.Fatalf("attempt start=%s, want fixture clock %s", attempts[0].StartedAt, now.Format(time.RFC3339Nano))
 	}
 	actualDigest, err := proofrun.FullDigest(root)
 	if err != nil || attempts[0].ProofIdentity.ManifestDigest != actualDigest {

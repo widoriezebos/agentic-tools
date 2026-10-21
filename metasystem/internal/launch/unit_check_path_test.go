@@ -48,14 +48,14 @@ func TestUnitCheckFindsRunningEngineWithoutCallerPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	engine := filepath.Join(t.TempDir(), "metasystem")
-	if err := testexec.WriteFile(engine, data, 0700); err != nil {
+	if err := testexec.WriteFile(engine, []byte("#!/bin/sh\necho \"engine found; value=$CHECK_VALUE; PATH=$PATH\"\n"), 0700); err != nil {
 		t.Fatal(err)
 	}
 	directory := t.TempDir()
 	check := UnitCheck{Directory: directory, Minutes: 1, Base: "fixture-parent",
 		Environment: commandenv.EngineEnvironmentInDirectory([]string{"PATH=" + directory, "CHECK_VALUE=kept"}, filepath.Dir(engine)),
-		Cheap:       `metasystem -test.run=^TestUnitCheckPathReporter$ -test.timeout=30m`,
-		Audits:      `metasystem -test.run=^TestUnitCheckPathReporter$ -test.timeout=30m`}
+		Cheap:       `metasystem`,
+		Audits:      `metasystem`}
 	record := filepath.Join(t.TempDir(), "check.json")
 	if err := writeUnitJSON(record, check, filepath.Dir(record)); err != nil {
 		t.Fatal(err)
@@ -68,12 +68,5 @@ func TestUnitCheckFindsRunningEngineWithoutCallerPath(t *testing.T) {
 	child.Env = append(child.Environ(), "PATH="+t.TempDir())
 	if output, err := child.CombinedOutput(); err != nil {
 		t.Fatalf("fixture engine: %v\n%s", err, output)
-	}
-}
-
-func TestUnitCheckPathReporter(t *testing.T) {
-	t.Parallel()
-	if os.Getenv("CHECK_VALUE") == "kept" {
-		println("engine found; value=" + os.Getenv("CHECK_VALUE") + "; PATH=" + os.Getenv("PATH"))
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"syscall"
@@ -29,6 +30,47 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
+
+var providerRecoveryScenarios = []string{"person", "automatic", "wrong-launch", "wrong-episode", "failed-start", "reserved", "text", "unknown-reset", "late-tick", "stopped", "helm", "person-held", "relapse", "released", "dependent", "registration", "delivery", "unreadable", "old-interval", "no-terminal", "bad-time"}
+
+func providerRecoveryChildArguments(selection string, remaining time.Duration) []string {
+	return []string{"-test.run=" + selection, "-test.timeout=" + remaining.String(),
+		"-test.parallel=" + strconv.Itoa(len(providerRecoveryScenarios)), "-test.v"}
+}
+
+func providerRecoveryChildCommand(t *testing.T, selection string) *exec.Cmd {
+	t.Helper()
+	return exec.CommandContext(t.Context(), os.Args[0], providerRecoveryChildArguments(selection, fixtureDeadlineRemaining(t))...)
+}
+
+func TestProviderRecoveryChildArgumentsTakeTheParentsBound(t *testing.T) {
+	t.Parallel()
+	if len(providerRecoveryScenarios) != 21 {
+		t.Fatalf("scenario count=%d, want 21", len(providerRecoveryScenarios))
+	}
+	for _, remaining := range []time.Duration{0, 90 * time.Second} {
+		want := []string{"-test.run=^X$", "-test.timeout=" + remaining.String(), "-test.parallel=21", "-test.v"}
+		if got := providerRecoveryChildArguments("^X$", remaining); !slices.Equal(got, want) {
+			t.Errorf("child arguments=%v, want %v", got, want)
+		}
+	}
+	before := fixtureDeadlineRemaining(t)
+	command := providerRecoveryChildCommand(t, "^X$")
+	after := fixtureDeadlineRemaining(t)
+	var timeout string
+	for _, arg := range command.Args {
+		if value, ok := strings.CutPrefix(arg, "-test.timeout="); ok {
+			timeout = value
+		}
+	}
+	bound, err := time.ParseDuration(timeout)
+	if err != nil || (before == 0 && bound != 0) || (before > 0 && (bound < after || bound > before)) {
+		t.Fatalf("child timeout=%q, want parent's remaining bound in [%s, %s]: %v", timeout, after, before, err)
+	}
+	if !slices.Contains(command.Args, "-test.parallel=21") {
+		t.Fatalf("child scenario parallelism missing: %v", command.Args)
+	}
+}
 
 func TestProviderRecoveryAskPublicLifecycle(t *testing.T) {
 	t.Parallel()
@@ -73,7 +115,7 @@ esac
 		if _, subtests, ok := strings.Cut(flag.Lookup("test.run").Value.String(), "/"); ok {
 			selection += "/" + subtests
 		}
-		command := exec.CommandContext(t.Context(), os.Args[0], "-test.run="+selection, "-test.timeout=30m", "-test.v")
+		command := providerRecoveryChildCommand(t, selection)
 		for _, entry := range os.Environ() {
 			name, _, _ := strings.Cut(entry, "=")
 			if name != "PATH" && name != "METASYSTEM_SUPERVISION_REGISTRY_HOME" && name != "METASYSTEM_TESTENV_REGISTRY_NONCE" {
@@ -95,9 +137,36 @@ esac
 		if err := command.Wait(); err != nil {
 			t.Fatalf("public machine revival: %v\n%s", err, &output)
 		}
+		t.Log(output.String())
+		if strings.Contains(output.String(), "--- FAIL") {
+			t.Fatalf("child reported a failed scenario:\n%s", &output)
+		}
+		// A run filtered to some scenarios requires a pass only for the
+		// scenarios the child started, and at least one of them.
+		filtered, started := strings.Contains(selection, "/"), 0
+		for _, scenario := range providerRecoveryScenarios {
+			name := strings.Split(t.Name(), "/")[0] + "/" + scenario
+			if filtered && !strings.Contains(output.String(), "=== RUN   "+name+"\n") {
+				continue
+			}
+			started++
+			if only == "" || only == scenario {
+				if !strings.Contains(output.String(), "--- PASS: "+name+" (") {
+					t.Errorf("child did not pass scenario %s", scenario)
+				}
+			}
+		}
+		if started == 0 {
+			t.Errorf("child started no scenario for %s", selection)
+		}
+		for _, line := range strings.Split(output.String(), "\n") {
+			if strings.HasPrefix(line, "--- PASS: "+strings.Split(t.Name(), "/")[0]+" (") {
+				t.Logf("child elapsed time: %s", line)
+			}
+		}
 		return
 	}
-	for _, scenario := range []string{"person", "automatic", "wrong-launch", "wrong-episode", "failed-start", "reserved", "text", "unknown-reset", "late-tick", "stopped", "helm", "person-held", "relapse", "released", "dependent", "registration", "delivery", "unreadable", "old-interval", "no-terminal", "bad-time"} {
+	for _, scenario := range providerRecoveryScenarios {
 		if only != "" && only != scenario {
 			continue
 		}

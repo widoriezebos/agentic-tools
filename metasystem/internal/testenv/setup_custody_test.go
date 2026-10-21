@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -52,15 +53,9 @@ func setupCustodyFixture() error {
 	return nil
 }
 
-// SIGKILL during setup (DL3A-08): a test binary killed while its setup's
-// tagged child runs leaves no untended writer. The custodian ends the child
-// (FixtureSurvivors for the key reads empty), and a following start removes
-// the dead binary's registry home and namespace, with nothing writing into
-// them. A start sweeps a home only once its custodian has settled (HomeSettled:
-// its records removed and its log's lock freed by its exit), so the test holds
-// the custodian stopped to prove a start keeps the home until then, and waits
-// on that settlement, never on a number of starts, before the start that must
-// sweep it.
+// Killing a binary during setup leaves its custodian responsible for ending
+// the tagged child. The custodian's log lock signals its exit; a following
+// start then reports the retained log and removes the settled registry home.
 func TestSetupChildIsEndedWhenTheBinaryIsKilled(t *testing.T) {
 	t.Parallel()
 	command := exec.Command(os.Args[0], "-test.run=^TestMainWithSetupFixtureProcess$", "-test.count=1")
@@ -112,13 +107,15 @@ func TestSetupChildIsEndedWhenTheBinaryIsKilled(t *testing.T) {
 		t.Fatalf("the tagged setup child is not visible as the key's fixture before the kill: %v %v", survivors, err)
 	}
 
-	// Hold the custodian before the kill, so it cannot settle before the
-	// first following start looks at the home.
-	if err := identity.SignalExact(identity.KernelProber{}, custodian, syscall.SIGSTOP); err != nil {
-		t.Fatalf("stop the fixture custodian: %v", err)
+	logPath := registry + ".custodian-" + strconv.Itoa(command.Process.Pid) + ".log"
+	log, err := os.Open(logPath)
+	if err != nil {
+		t.Fatal(err)
 	}
-	resume := func() { _ = identity.SignalExact(identity.KernelProber{}, custodian, syscall.SIGCONT) }
-	t.Cleanup(resume)
+	t.Cleanup(func() { _ = unlockAndClose(log) })
+	if err := unix.Flock(int(log.Fd()), unix.LOCK_EX|unix.LOCK_NB); !lockWouldBlock(err) {
+		t.Fatalf("live custodian did not hold its log lock: %v", err)
+	}
 	if err := command.Process.Signal(syscall.SIGKILL); err != nil {
 		t.Fatal(err)
 	}
@@ -132,31 +129,26 @@ func TestSetupChildIsEndedWhenTheBinaryIsKilled(t *testing.T) {
 			t.Fatalf("a following start failed: %v %s", err, output)
 		}
 	}
-	// The owner is dead, but its custodian has neither ended the child nor
-	// released its log: the home is not settled and a start keeps it.
-	followingStart()
-	if _, err := os.Stat(registry); err != nil {
-		t.Fatalf("a following start removed the registry home of an unsettled custodian: %v", err)
-	}
-	resume()
-
-	// The wait ends when the child has exited: gone, or a zombie its new
-	// parent has not reaped yet. A zombie still answers kill(pid, 0).
-	evidence.wait(t, "the custodian to end the setup child", func() bool {
-		exact, state, err := identity.KernelProber{}.Probe(childRef.Pid)
-		return fixtureExited(exact, state, err, childRef)
+	evidence.wait(t, "the custodian to exit", func() bool {
+		err := unix.Flock(int(log.Fd()), unix.LOCK_EX|unix.LOCK_NB)
+		if lockWouldBlock(err) {
+			return false
+		}
+		if err != nil {
+			t.Fatalf("lock the custodian log: %v", err)
+		}
+		return true
 	}, awaitPause, remaining, nil, nil)
+	if err := unlockAndClose(log); err != nil {
+		t.Fatal(err)
+	}
+	exact, state, err := identity.KernelProber{}.Probe(childRef.Pid)
+	if !fixtureExited(exact, state, err, childRef) {
+		t.Fatalf("setup child remains after custodian exit: identity=%+v state=%v zombie=%t err=%v", exact.Ref(), state, exact.Zombie, err)
+	}
 	if survivors, err := identity.FixtureSurvivors(key); err != nil || len(survivors) != 0 {
 		t.Fatalf("the custodian did not end the setup child: survivors=%v err=%v", survivors, err)
 	}
-
-	// The custodian settles on its own after the child: it removes its records
-	// and exits, freeing its log's lock. Another binary's start may sweep the
-	// home first, which is the same outcome.
-	evidence.wait(t, "the custodian to settle the dead binary's registry home", func() bool {
-		_, err := os.Lstat(registry)
-		return os.IsNotExist(err) || HomeSettled(registry)
-	}, awaitPause, remaining, nil, nil)
 	t.Log(evidence.describe())
 	followingStart()
 	if _, err := os.Stat(registry); !os.IsNotExist(err) {

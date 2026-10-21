@@ -2,10 +2,13 @@ package proofrun
 
 import (
 	"bufio"
+	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"testing"
 	"time"
@@ -245,6 +248,79 @@ func TestRunWatchdogLetsAPrintingSectionAndAnExpiredDeadlineRunOn(t *testing.T) 
 	}
 	if got := readNotes(); strings.Count(got, "passed its 1ms cap") != 1 || strings.Count(got, "the reservation's deadline") != 1 {
 		t.Fatalf("the notes were not written once each:\n%s", got)
+	}
+}
+
+func TestRunWatchdogNotesASectionCapOnceAcrossTicks(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	progress, done := filepath.Join(root, "progress.jsonl"), filepath.Join(root, "done")
+	start := watchdogFixtureNow
+	if err := AppendProgressHeader(progress, ProgressHeader{LogPaths: []string{filepath.Join(root, "suite.log")}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := AppendSectionEvent(progress, SectionEvent{Suite: "fixture", Section: "over-cap", Event: "start", At: start.Format(time.RFC3339Nano)}); err != nil {
+		t.Fatal(err)
+	}
+	var output bytes.Buffer
+	var mu sync.Mutex
+	notes := &lockedWriter{writers: []io.Writer{&output}}
+	count := func() int {
+		notes.mu.Lock()
+		defer notes.mu.Unlock()
+		return strings.Count(output.String(), "section over-cap passed its 300ms cap")
+	}
+	ticks := make(chan time.Time)
+	finished := make(chan error, 1)
+	calls, shutdowns := 0, 0
+	var signals []syscall.Signal
+	go func() {
+		finished <- RunWatchdog(WatchdogOptions{
+			Suite: "fixture", Root: root, ProgressPath: progress, DonePath: done, LogPaths: []string{filepath.Join(root, "suite.log")},
+			SuiteIdentity: identity.Ref{Pid: 999999, StartedAtSec: start.Unix()},
+			SectionCap:    300 * time.Millisecond, Silence: time.Hour, EvidenceTimeout: time.Second, EvidenceMax: 1024,
+			Poll: time.Millisecond, TermGrace: time.Millisecond, KillGrace: time.Millisecond,
+			Prober: fixedProbe{exact: identity.Exact{Pid: 999999, StartedAt: start}, state: identity.Alive},
+			Signal: func(_ int, signal syscall.Signal) error {
+				mu.Lock()
+				defer mu.Unlock()
+				signals = append(signals, signal)
+				return nil
+			},
+			Shutdown:    func() error { mu.Lock(); defer mu.Unlock(); shutdowns++; return nil },
+			ErrorOutput: notes,
+			Now: func() time.Time {
+				calls++
+				if calls <= 3 {
+					return start.Add([]time.Duration{100 * time.Millisecond, 200 * time.Millisecond, 250 * time.Millisecond}[calls-1])
+				}
+				return start.Add(time.Second)
+			},
+			NewTicker: func(time.Duration) (<-chan time.Time, func()) { return ticks, func() {} },
+		})
+	}()
+	for i := 1; i <= 5; i++ {
+		select {
+		case ticks <- start:
+		case err := <-finished:
+			t.Fatalf("watchdog ended before tick %d: %v", i, err)
+		}
+		if i == 2 && count() != 0 {
+			t.Errorf("cap noted before its boundary: count=%d", count())
+		}
+	}
+	if count() != 1 {
+		t.Errorf("cap note count=%d after five ticks, want one", count())
+	}
+	if err := os.WriteFile(done, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	close(ticks)
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+	if count() != 1 || len(signals) != 0 || shutdowns != 0 {
+		t.Fatalf("settled watchdog notes=%d signals=%v shutdowns=%d", count(), signals, shutdowns)
 	}
 }
 

@@ -83,7 +83,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/stopreport": 4,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/stoptransition": 42,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/supervise": 138,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv": 27,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/testenv": 26,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testexec": 0,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy": 32,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/contractgit": 4,

@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -39,8 +40,9 @@ func quiet(owner identity.Ref) string {
 }
 
 func TestACustodianIsTheLastOneOut(t *testing.T) {
+	t.Parallel()
 	a, b, c, h := custodianOwner(t, 4242), custodianOwner(t, 4343), custodianOwner(t, 4444), custodianOwner(t, 4545)
-	for _, name := range []string{"normal-end", "live-test", "second-custodian", "unquiet-own-log", "unquiet-other-log", "halted-sibling", "other-home"} {
+	for _, name := range []string{"normal-end", "live-test", "second-custodian", "unquiet-own-log", "unquiet-other-log", "halted-sibling", "other-home", "unprefixed-home"} {
 		t.Run(name, func(t *testing.T) {
 			root := t.TempDir()
 			var home *registryHomeLease
@@ -51,6 +53,11 @@ func TestACustodianIsTheLastOneOut(t *testing.T) {
 				t.Cleanup(func() { _ = unlockAndClose(home.lock) })
 			} else {
 				home = deadRegistryHomeUnder(t, root)
+			}
+			if name == "unprefixed-home" {
+				target := filepath.Join(root, "not-a-registry-home")
+				checkTestenv(t, os.Rename(home.path, target))
+				home.path = target
 			}
 			textA := quiet(a)
 			if name == "unquiet-own-log" {
@@ -106,6 +113,8 @@ func TestACustodianIsTheLastOneOut(t *testing.T) {
 				requireSidecars(t, false, home.path, logC)
 			case "halted-sibling":
 				requireSidecars(t, true, logH, recordsH)
+			case "unprefixed-home":
+				requireSidecars(t, true, home.path, filepath.Join(home.path, registryOwnerFile))
 			case "other-home":
 				requireSidecars(t, true, suppliedHome)
 			}
