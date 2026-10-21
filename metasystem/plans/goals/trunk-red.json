@@ -4737,6 +4737,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-10-21T09:23:00Z",
       "testUnit": "metasystem/internal/proofrun",
       "testName": "TestTestEnvironmentStandardInventoryMatchesObserved",
       "id": "flake:63335bb66d61177b5ea8d140d3030a329e3d38acda567e0c3859ba1fdabbe30c",
@@ -4819,7 +4820,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved",
       "fixBranch": {
         "name": "",
         "commit": "",
