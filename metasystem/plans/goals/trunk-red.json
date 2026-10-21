@@ -6153,11 +6153,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261021T134303.496948000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-21T14:39:04Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-21T15:58:59Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "YEVBJ21D9G8XBATN0TW53G6256-m1e-f2f350ed",
+        "by": "Wido",
+        "why": "real red, not a flake: fixed by the legacy-floor retirement of the three renderer tests (channel design D3), pushed to main just now; my 15:40 closure as a flake was wrong (the alone run used a stale tree)"
+      }
     },
     {
       "id": "red:metasystem/internal/proofrun:TestSupervisorKillSparesTheFixtureCustodian",
