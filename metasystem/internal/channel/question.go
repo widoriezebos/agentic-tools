@@ -50,6 +50,7 @@ type Answer struct {
 type Decision struct{ Kind, Subject, State string }
 
 type Question struct {
+	Plain    *Plain           `json:"plain,omitempty"`
 	Recovery *RecoverySubject `json:"recovery,omitempty"`
 	ID       string           `json:"id"`
 	Goal     string           `json:"goal"`
@@ -81,6 +82,7 @@ type Question struct {
 }
 
 type AskRequest struct {
+	Plain                                         *Plain
 	Decision                                      *Decision
 	Recovery                                      *RecoverySubject
 	ProcessAct                                    string
@@ -106,6 +108,14 @@ const (
 // RecoverySubject binds a request to the host registration and the exact failed seat launch.
 type RecoverySubject struct {
 	Host, Seat, Launch, Provider, Episode, Due string
+}
+
+// Plain is a question's words for a person (design D3): what he decides,
+// the act that goes on, and what happens if he does nothing.
+type Plain struct {
+	Decision  string `json:"decision"`
+	Act       string `json:"act,omitempty"`
+	IfNothing string `json:"ifNothing,omitempty"`
 }
 
 func channelRoot(repo string) string { return filepath.Join(repo, "artifacts", "agents", "channel") }
@@ -325,7 +335,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{Decision: r.Decision, Recovery: r.Recovery, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
+	q := Question{Plain: r.Plain, Decision: r.Decision, Recovery: r.Recovery, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}
@@ -571,7 +581,7 @@ func questionSubjectKey(goalID, about string) string {
 
 func questionBudgetLine(q Question) string {
 	if q.Budget != nil {
-		return fmt.Sprintf("Proposed box: %s\n", renderProposedBox(*q.Budget))
+		return fmt.Sprintf("Proposed box: %s\n", ProposedBox(*q.Budget))
 	}
 	return ""
 }
@@ -637,7 +647,7 @@ func questionPartsRunes(parts []string) int {
 	return total
 }
 
-func renderProposedBox(b goal.Budget) string {
+func ProposedBox(b goal.Budget) string {
 	return fmt.Sprintf("%s, %d attempts, %d reserved minutes, %d active job, %d review rounds", b.ElapsedLimit, b.AttemptLimit, b.ReservedJobMinutesLimit, b.ActiveJobLimit, b.ReviewRoundLimit)
 }
 

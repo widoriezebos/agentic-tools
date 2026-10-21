@@ -520,7 +520,7 @@ func landingPathCarried(request landpath.CarriedRequest) (string, int) {
 }
 
 func landingPathChannelAskCarry(root, goalID, wants, fact string) {
-	askChannelQuestion(root, channelAskInput{Goal: goalID, Kind: "carry", Wants: wants, Facts: []string{fact}})
+	askChannelQuestion(root, channelAskInput{IfNothing: "nothing is carried until you answer", Goal: goalID, Kind: "carry", Wants: wants, Facts: []string{fact}})
 }
 
 // landingPathOwners are the production owners of the landing path.

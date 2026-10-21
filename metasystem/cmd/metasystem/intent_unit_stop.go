@@ -333,7 +333,7 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 				findingNeeds[i] = f.ID
 			}
 		}
-		_, err := channel.Ask(channel.AskRequest{RepoRoot: inv.layout.InstallationRoot.Path(), Goal: record.Goal, Kind: "other", Machine: machine, Facts: []string{stop.Class, f.ID + ": " + f.Title, "Prepared dispositions: " + generated}, Recommendation: "Run the requested act; the recorded result closes only its matching finding or unit.", UnitStop: &channel.UnitStopQuestion{Loop: stop.Loop, Subject: stop.Subject, Attempt: stop.Attempt, Finding: f.ID, Review: reviewRoot, Needs: shellCommand(findingNeeds), AcceptableActs: findingActs}, Now: inv.unitStopNow()})
+		_, err := channel.Ask(channel.AskRequest{Plain: &channel.Plain{Decision: fmt.Sprintf("Unit %s of goal %s stopped on a review finding: %s", record.Unit, record.Goal, f.Title), IfNothing: "the unit stays stopped; this question closes when the act is recorded or the unit closes"}, RepoRoot: inv.layout.InstallationRoot.Path(), Goal: record.Goal, Kind: "other", Machine: machine, Facts: []string{stop.Class, f.ID + ": " + f.Title, "Prepared dispositions: " + generated}, Recommendation: "Run the requested act; the recorded result closes only its matching finding or unit.", UnitStop: &channel.UnitStopQuestion{Loop: stop.Loop, Subject: stop.Subject, Attempt: stop.Attempt, Finding: f.ID, Review: reviewRoot, Needs: shellCommand(findingNeeds), AcceptableActs: findingActs}, Now: inv.unitStopNow()})
 		if err != nil {
 			return &intentResult{Outcome: intentFailed, code: 1, Summary: "the stop is recorded, but its question is pending: " + err.Error()}
 		}

@@ -49,6 +49,44 @@ func (request PolicyRequest) Remedy() string {
 	return command
 }
 
+// lanePlain names the decision without copying record identities into its words.
+func lanePlain(facts []string) *channel.Plain {
+	p := &channel.Plain{Decision: "The landing lane needs your word before it goes on", IfNothing: "the lane does not do this; this question closes when the act is recorded"}
+	if strings.HasPrefix(facts[1], "lane stop: ") {
+		var stop Stop
+		_ = json.Unmarshal([]byte(strings.TrimPrefix(facts[1], "lane stop: ")), &stop)
+		noun := "landing lane"
+		switch stop.Loop {
+		case "lane-proof":
+			noun = "landing check"
+		case "lane-gate":
+			noun = "landing gate"
+		}
+		switch {
+		case stop.Loop == "lane-classify":
+			p.Decision = "The landing check failed and needs your classification"
+		case stop.Subject == "" || stop.Subject == stop.Tree || stop.Subject == stop.BatchID:
+			p.Decision = "The " + noun + " needs your decision"
+		case stop.Subject == "main":
+			p.Decision = "The " + noun + " of main needs your decision"
+		case stop.Subject == "lane":
+			p.Decision = "The landing lane needs your decision"
+		default:
+			p.Decision = "The " + noun + " for " + stop.Subject + " needs your decision"
+		}
+		p.IfNothing = "the stop stays; this question closes when a later lane record closes it"
+	} else {
+		var subject PolicySubject
+		_ = json.Unmarshal([]byte(strings.TrimPrefix(facts[1], "lane policy: ")), &subject)
+		p.Act = lane.Remedy(strings.Join(subject.Required, " "))
+		words := strings.Fields(p.Act)
+		if len(words) > 3 && words[1] == "landing" && words[2] == "land-anyway" {
+			p.Act += " (lets " + words[3] + " land while main's failing checks remain unresolved; undo: metasystem landing give-back " + words[3] + " --reason TEXT)"
+		}
+	}
+	return p
+}
+
 // PolicyQuestionSatisfied recognizes only the effect recorded for this subject.
 // A text answer or a withdrawn notification supplies no selection authority.
 func PolicyQuestionSatisfied(install string, q channel.Question) (bool, error) {
@@ -344,7 +382,7 @@ func SyncPolicyQuestion(install string, machine func(string) (string, error), no
 			var q channel.Question
 			err := transitionWrite(install, "questions", "ask", now, "", func() error {
 				var err error
-				q, err = channel.Ask(channel.AskRequest{RepoRoot: install, About: "lane", Kind: "other", Machine: name, Lineage: lane.AgentLineage, Facts: facts, Recommendation: "Run the command above; its recorded effect closes this request.", Now: now})
+				q, err = channel.Ask(channel.AskRequest{Plain: lanePlain(facts), RepoRoot: install, About: "lane", Kind: "other", Machine: name, Lineage: lane.AgentLineage, Facts: facts, Recommendation: "Run the command above; its recorded effect closes this request.", Now: now})
 				return err
 			}, effects...)
 			if err != nil {

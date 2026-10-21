@@ -178,6 +178,7 @@ func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, reso
 // channelAskInput is one question as its asker states it; Options are
 // "label: consequence".
 type channelAskInput struct {
+	Act, IfNothing string
 	// About is what a question without a goal is about: lane or machine.
 	Goal, About, Kind, Recommendation, Wants string
 	Facts, Options                           []string
@@ -241,7 +242,11 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 	if e != nil {
 		return channel.Question{}, warnings, 1, e
 	}
-	q, existing, e := channel.AskOrFind(channel.AskRequest{Context: ctx, RepoRoot: root, Goal: in.Goal, About: in.About, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
+	var plain *channel.Plain
+	if len(in.Facts) > 0 {
+		plain = &channel.Plain{Decision: in.Facts[0], Act: in.Act, IfNothing: in.IfNothing}
+	}
+	q, existing, e := channel.AskOrFind(channel.AskRequest{Plain: plain, Context: ctx, RepoRoot: root, Goal: in.Goal, About: in.About, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
 	if e != nil {
 		return q, warnings, 1, e
 	}

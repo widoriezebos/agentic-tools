@@ -304,16 +304,15 @@ func (inv *intentInvocation) rebaseJudgementQuestions(id string, conflict *branc
 		if path.FirstLine == 0 {
 			question = fmt.Sprintf("Goal %s and main both changed %s where no common version exists.\nKeep main's, keep the goal's, or write a third.", id, path.Path)
 		}
-		mainChange := path.MainGoal
-		if mainChange == "" {
-			mainChange = path.MainCommit
-		}
 		mainImpact := fmt.Sprintf("main's drops what %s did there and unit %s loses its read", id, conflict.Unit)
-		goalImpact := fmt.Sprintf("the goal's undoes main's change there (%s)", mainChange)
+		goalImpact := "the goal's undoes main's change there"
+		if path.MainGoal != "" {
+			goalImpact += " (" + path.MainGoal + ")"
+		}
 		thirdImpact := "a third is read again"
-		in := channelAskInput{Goal: id, Kind: "other", Facts: []string{question,
+		in := channelAskInput{IfNothing: "nothing lands until you answer", Goal: id, Kind: "other", Facts: []string{question,
 			"Impact: " + mainImpact + ";\n" + goalImpact + "; a third is read again.\nNothing lands until you answer.",
-			fmt.Sprintf("Blobs: original %s, main %s, goal %s.", path.Original, path.Main, path.Goal)},
+			fmt.Sprintf("Blobs: original %s, main %s, goal %s; main commit %s.", path.Original, path.Main, path.Goal, path.MainCommit)},
 			Options: []string{"keep main's: " + mainImpact, "keep the goal's: " + goalImpact, "write a third: " + thirdImpact}}
 		asked, warnings, code, err := inv.connection().askRebase(inv.layout.InstallationRoot.Path(), in)
 		recorded = slices.DeleteFunc(recorded, func(item map[string]string) bool { return item["path"] == path.Path })

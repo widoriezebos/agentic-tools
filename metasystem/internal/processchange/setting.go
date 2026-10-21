@@ -131,12 +131,12 @@ func ApplySetting(s Setting) (act ProcessAct, err error) {
 			return err
 		}
 		if !s.Person {
-			about := ""
+			about, who := "", "Goal "+act.Goal
 			if act.Goal == "" {
-				about = "machine"
+				about, who = "machine", "This machine"
 			}
 			delta, _ := json.Marshal(act.Before)
-			q, _, err := channel.AskOrFind(channel.AskRequest{RepoRoot: s.Root, Goal: act.Goal, About: about, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: s.Now, Facts: []string{"Process act " + act.ID + ": " + act.Key + " from " + string(delta) + " to " + act.After, act.Citation, act.Reason + "; expected measure: " + act.Measure}, Wants: s.Remedy(act.ID)})
+			q, _, err := channel.AskOrFind(channel.AskRequest{Plain: &channel.Plain{Decision: who + " wants " + act.Key + " set to " + act.After, IfNothing: "the setting stays as it is"}, RepoRoot: s.Root, Goal: act.Goal, About: about, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: s.Now, Facts: []string{"Process act " + act.ID + ": " + act.Key + " from " + string(delta) + " to " + act.After, act.Citation, act.Reason + "; expected measure: " + act.Measure}, Wants: s.Remedy(act.ID)})
 			act.Question = q.ID
 			if err != nil {
 				return err

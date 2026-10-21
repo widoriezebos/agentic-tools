@@ -1536,6 +1536,7 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 				next: again, nextReason: humanauthority.PersonActRemedy(shellCommand(again)) + "; settings stay in force"}
 			if launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
 				q, warnings, code, askErr := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), channelAskInput{Goal: targetID(targets, "goal", record.Goal), Kind: "other",
+					Act: shellCommand(again), IfNothing: "the build waits",
 					Facts: []string{"Start this build at your enrolled terminal?", plain, shellCommand(again)}, Options: []string{"start: run the exact build command at your enrolled terminal", "wait: leave this build waiting"}})
 				held.text, held.code = warnings, max(code, 1)
 				if askErr != nil {

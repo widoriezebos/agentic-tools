@@ -32,6 +32,16 @@ import (
 
 func TestProviderRecoveryAskPublicLifecycle(t *testing.T) {
 	t.Parallel()
+	providerRecoveryLifecycle(t, "")
+}
+
+func TestProviderRecoveryAskSaysAutomaticRecoveryMayRestart(t *testing.T) {
+	t.Parallel()
+	providerRecoveryLifecycle(t, "person")
+}
+
+func providerRecoveryLifecycle(t *testing.T, only string) {
+	t.Helper()
 	if os.Getenv("PROVIDER_RECOVERY_ISOLATED") == "" {
 		tools, home := t.TempDir(), t.TempDir()
 		// Only version-control process answers are replaced; every caller uses
@@ -59,7 +69,7 @@ esac
 		if err := testexec.WriteFile(filepath.Join(tools, "git"), []byte(git), 0700); err != nil {
 			t.Fatal(err)
 		}
-		selection := "^TestProviderRecoveryAskPublicLifecycle$"
+		selection := "^" + strings.Split(t.Name(), "/")[0] + "$"
 		if _, subtests, ok := strings.Cut(flag.Lookup("test.run").Value.String(), "/"); ok {
 			selection += "/" + subtests
 		}
@@ -88,6 +98,9 @@ esac
 		return
 	}
 	for _, scenario := range []string{"person", "automatic", "wrong-launch", "wrong-episode", "failed-start", "reserved", "text", "unknown-reset", "late-tick", "stopped", "helm", "person-held", "relapse", "released", "dependent", "registration", "delivery", "unreadable", "old-interval", "no-terminal", "bad-time"} {
+		if only != "" && only != scenario {
+			continue
+		}
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			bed := newWorkBedWith(t, func(f *goal.GoalFile) { workApprovedBox(f); f.Claimed.Lineage = steward.SeatLineage })
@@ -305,6 +318,10 @@ esac
 				return
 			}
 			q := assertCount(1)
+			wantPlain := channel.Plain{Decision: fmt.Sprintf("Seat %s still holds approved work after provider %s recovered", q.Machine, "anthropic"), IfNothing: "automatic recovery may still restart this seat; this question closes when a matching recovery succeeds"}
+			if q.Plain == nil || *q.Plain != wantPlain {
+				t.Fatalf("recovery words: %+v, want %+v", q.Plain, wantPlain)
+			}
 			if q.Recovery == nil || q.Recovery.Episode != mark.Since || q.Recovery.Due != success.Add(6*time.Minute).Format(time.RFC3339Nano) {
 				t.Fatalf("subject/deadline: %+v", q)
 			}

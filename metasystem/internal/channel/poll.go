@@ -261,7 +261,7 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 				if approveErr != nil {
 					a.Receipt = approveErr.Error()
 				} else if approved.Outcome == goal.OutcomeConfirmed {
-					a.Receipt = "recorded: " + q.Goal + " box raised to " + renderProposedBox(*q.Budget)
+					a.Receipt = "recorded: " + q.Goal + " box raised to " + ProposedBox(*q.Budget)
 				} else {
 					a.Receipt = approved.Detail
 				}

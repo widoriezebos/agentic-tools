@@ -194,7 +194,14 @@ func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 			}
 			continue
 		}
-		_, err := channel.Ask(channel.AskRequest{RepoRoot: root, Goal: record.Goal, Kind: "other", Facts: []string{round.Stop.Class, fmt.Sprintf("%d changed lines against %d declared", round.BuildLines, round.DeclaredLines), "Retained builder message: " + round.GapMessage}, Recommendation: "Run the requested act to continue this retained round.", UnitStop: &channel.UnitStopQuestion{Loop: "unit-build", Subject: subject, Attempt: round.Number, Finding: kind, Needs: shellCommand(next), AcceptableActs: []string{act}}, Now: inv.unitStopNow()})
+		decision := fmt.Sprintf("Unit %s of goal %s stopped after build round %d: a build step failed", record.Unit, record.Goal, round.Number)
+		switch kind {
+		case "build-size":
+			decision = fmt.Sprintf("Unit %s of goal %s changed %d lines against the %d it declared", record.Unit, record.Goal, round.BuildLines, round.DeclaredLines)
+		case "build-gap":
+			decision = fmt.Sprintf("Unit %s of goal %s stopped after build round %d: the builder reported a gap", record.Unit, record.Goal, round.Number)
+		}
+		_, err := channel.Ask(channel.AskRequest{Plain: &channel.Plain{Decision: decision, IfNothing: "the unit stays held; this question closes when the act is recorded"}, RepoRoot: root, Goal: record.Goal, Kind: "other", Facts: []string{round.Stop.Class, fmt.Sprintf("%d changed lines against %d declared", round.BuildLines, round.DeclaredLines), "Retained builder message: " + round.GapMessage}, Recommendation: "Run the requested act to continue this retained round.", UnitStop: &channel.UnitStopQuestion{Loop: "unit-build", Subject: subject, Attempt: round.Number, Finding: kind, Needs: shellCommand(next), AcceptableActs: []string{act}}, Now: inv.unitStopNow()})
 		if err != nil {
 			return err
 		}

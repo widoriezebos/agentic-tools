@@ -116,6 +116,28 @@ func (q questionRef) publicName() string {
 	return q.id
 }
 
+// questionDetails keeps the evidence and proposed terms with the question's words.
+func questionDetails(page *textui.Page, c channel.Question) {
+	section := page.Section("", "")
+	for _, fact := range c.Facts {
+		section.Text(fact)
+	}
+	if c.Plain != nil {
+		if c.Plain.Decision != "" {
+			section.Text("Decision: " + c.Plain.Decision)
+		}
+		if c.Plain.IfNothing != "" {
+			section.Text("If you do nothing: " + c.Plain.IfNothing)
+		}
+	}
+	if c.Recommendation != "" {
+		section.Text("Recommendation: " + c.Recommendation)
+	}
+	if c.Budget != nil {
+		section.Text("Proposed box: " + channel.ProposedBox(*c.Budget))
+	}
+}
+
 // questionView is one question's public state and how it is answered.
 func (inv *intentInvocation) questionView(q questionRef) intentResult {
 	targets := []intentTarget{{Kind: "question", ID: q.publicName()}}
@@ -125,6 +147,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			return intentResult{Outcome: intentConfirmed, Summary: c.State + ": " + c.Wants, Data: c, view: func(page *textui.Page) {
 				page.Headline(c.State + " process setting")
 				page.Section("", "").Fixed(c.Wants)
+				questionDetails(page, c)
 			}}
 		}
 		data := map[string]any{"kind": "channel", "question": c, "replyInstructions": channel.ReplyInstructionsAt(inv.stateRoot, c)}
@@ -164,15 +187,22 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 			if command := act; command != "" && c.State != "closed" && c.Answer == nil {
 				page.Headline(command, "")
 				if channel.LaneStopCommand(c) == "" {
-					page.Section("", "").Text(strings.Join(c.Facts[1:], "\n"))
+					questionDetails(page, c)
 				} else {
 					page.Section("", "").Text("question " + c.ID)
+					questionDetails(page, c)
 					page.Section("", "").Text(instructions)
 				}
 				return
 			}
 			page.Headline(headline, fact)
 			if act != "" && c.Answer != nil {
+				answered := c
+				if channel.LaneStopCommand(c) != "" {
+					// The headline carries the lane's first fact; its stop record stays out once it is answered.
+					answered.Facts = nil
+				}
+				questionDetails(page, answered)
 				return
 			}
 			rows := []textui.KV{}
@@ -183,6 +213,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 				rows = append(rows, textui.KV{Key: "asks", Value: []textui.Span{textui.Plain(strings.Join(c.Facts, " "))}})
 			}
 			page.Facts(rows...)
+			questionDetails(page, c)
 			if c.Thread != nil && c.Answer == nil && c.State != "closed" {
 				page.Section("", "").Text(instructions)
 			}

@@ -359,6 +359,7 @@ func processIntentCommands() []intentCommand {
 			flags: []intentFlag{
 				intentTargetFlag,
 				{name: "question", value: "TEXT", usage: "the question, the first line the person reads"},
+				{name: "if-nothing", value: "TEXT", usage: "what happens if you do nothing"},
 				fileFlag("question", "read the question from FILE"),
 				{name: "about", value: "lane|machine", usage: "with no goal: what the question is about"},
 				{name: "option", value: "TEXT", repeat: true, usage: "one answer, as 'label: consequence' (repeatable)"},
@@ -1567,7 +1568,7 @@ func runIntentAsk(inv *intentInvocation) int {
 		// An ordinary question; the other kinds carry authority.
 		kind = "other"
 	}
-	in := channelAskInput{Goal: id, About: about, Kind: kind, Facts: append([]string{question}, inv.input.values["fact"]...),
+	in := channelAskInput{IfNothing: inv.input.text("if-nothing"), Goal: id, About: about, Kind: kind, Facts: append([]string{question}, inv.input.values["fact"]...),
 		Options: inv.input.values["option"], Recommendation: inv.input.text("recommend"), Wants: inv.input.text("wants")}
 	if inv.input.has("budget") {
 		if kind != "stop" && kind != "budget-above-norm" {

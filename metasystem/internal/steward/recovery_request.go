@@ -153,6 +153,7 @@ func reconcileSeatRecovery(root string, cfg TickConfig, census WorkerCensus, pro
 		}
 		command := fmt.Sprintf("metasystem machine revive %q --after %q", last.Machine, last.LaunchID)
 		_, _, err = channel.AskOrFind(channel.AskRequest{RepoRoot: root, About: "machine", Kind: "other", Machine: last.Machine, Now: cfg.now(), Wants: command,
+			Plain:    &channel.Plain{Decision: fmt.Sprintf("Seat %s still holds approved work after provider %s recovered", last.Machine, provider), IfNothing: "automatic recovery may still restart this seat; this question closes when a matching recovery succeeds"},
 			Recovery: &channel.RecoverySubject{Host: string(host), Seat: root, Launch: last.LaunchID, Provider: provider, Episode: interval.Since, Due: due.UTC().Format(time.RFC3339Nano)},
 			Facts:    []string{command, fmt.Sprintf("Seat %s still holds approved work after provider %s recovered.", last.Machine, provider), "Failed launch: " + last.LaunchID + "; provider episode: " + interval.Since, "Recovery grace: " + interval.RecoveryAfter + "; due: " + due.Local().Format(time.RFC3339)}})
 		return err

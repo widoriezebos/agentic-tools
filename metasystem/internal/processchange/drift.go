@@ -120,11 +120,13 @@ func Observe(root string, installation roots.Installation, goal, episode string,
 		return err
 	}
 	driftTime, _ := time.Parse(time.RFC3339Nano, s.Stop.At)
+	plain := &channel.Plain{Decision: "Goal " + goal + " went past its process allowance: " + s.Stop.Class, Act: "decide the next scoped process change for goal " + goal, IfNothing: "ordinary admitted work goes on; the next process change waits for you"}
 	wants, impact := "A person must decide the next scoped process change; ordinary admitted work may continue.", "Consumed process-act attribution unavailable"
 	if s.Stop.Cause != nil && s.Stop.Cause.Kind == "process-change" {
 		for _, act := range state.Acts {
 			if act.ID == s.Stop.Cause.Name {
 				wants = settingReverse(act)
+				plain.Act, plain.IfNothing = wants, "the intervention hold stays"
 				before, _ := json.Marshal(act.Before)
 				if act.Before == nil {
 					before = []byte("inheritance (no local override)")
@@ -134,7 +136,7 @@ func Observe(root string, installation roots.Installation, goal, episode string,
 		}
 	}
 	s.Impact = impact
-	q, _, err := channel.AskOrFind(channel.AskRequest{RepoRoot: installation.Path(), Goal: goal, Kind: "other", Now: driftTime, Facts: []string{"Process drift " + id + ": " + s.Stop.Class, "Observed " + fmt.Sprint(s.Stop.Measure.Now) + "; allowance " + fmt.Sprint(s.Stop.Measure.Previous), impact}, Wants: wants})
+	q, _, err := channel.AskOrFind(channel.AskRequest{Plain: plain, RepoRoot: installation.Path(), Goal: goal, Kind: "other", Now: driftTime, Facts: []string{"Process drift " + id + ": " + s.Stop.Class, "Observed " + fmt.Sprint(s.Stop.Measure.Now) + "; allowance " + fmt.Sprint(s.Stop.Measure.Previous), impact}, Wants: wants})
 	if err != nil {
 		return err
 	}

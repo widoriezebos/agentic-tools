@@ -140,7 +140,7 @@ func AdmitCheck(c Check) (act ProcessAct, err error) {
 				return act, err
 			}
 			if !c.Person {
-				q, _, problem := channel.AskOrFind(channel.AskRequest{RepoRoot: c.Installation.Path(), Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Check from %q to %q", act.BeforeArgv, act.AfterArgv), act.Reason}, Wants: c.Remedy(act.ID)})
+				q, _, problem := channel.AskOrFind(channel.AskRequest{Plain: &channel.Plain{Decision: "Goal " + act.Goal + " wants to change a check it runs", IfNothing: "the check stays as it is"}, RepoRoot: c.Installation.Path(), Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Check from %q to %q", act.BeforeArgv, act.AfterArgv), act.Reason}, Wants: c.Remedy(act.ID)})
 				if problem != nil {
 					return act, problem
 				}
@@ -312,7 +312,7 @@ func AdmitDeclaration(c DeclarationAdmission) (act ProcessAct, err error) {
 			if act.Question != "" {
 				return act, nil
 			}
-			q, _, problem := channel.AskOrFind(channel.AskRequest{RepoRoot: c.Installation.Path(), Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Committed checks from %q to %q", act.BeforeDeclaration.Values, act.AfterDeclaration.Values), act.Reason}, Wants: c.Remedy(act.ID)})
+			q, _, problem := channel.AskOrFind(channel.AskRequest{Plain: &channel.Plain{Decision: "Goal " + act.Goal + " wants to change its committed checks", IfNothing: "the committed checks stay as they are"}, RepoRoot: c.Installation.Path(), Goal: act.Goal, Kind: "other", Lineage: act.Lineage, ProcessAct: act.ID, Now: c.Now, Facts: []string{fmt.Sprintf("Committed checks from %q to %q", act.BeforeDeclaration.Values, act.AfterDeclaration.Values), act.Reason}, Wants: c.Remedy(act.ID)})
 			if problem != nil {
 				return act, problem
 			}
