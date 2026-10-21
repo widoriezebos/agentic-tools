@@ -7,12 +7,14 @@
 - Origin: human
 - Next step: When a-flake-is-not-a-red is done: write its design page from the starting material (evidence designs/a-proved-main-deploys-itself-material.md), Astra xhigh to convergence, brief, Codex build, Opus read, gate, hand landing. Until then the steward runs deploy now and the engine unify after every hand landing (finding 418).
 - OpenedAt: 2026-10-21T10:08:17Z
-- Revision: 1
+- Revision: 2
 - BlockedBy: a-flake-is-not-a-red
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-21T10:08:27Z revision=2 opid=FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed authority=proven digest=f2b189fc5985b1cb67918c0a0986954ff3254359d0e6c33da4135785a2609068 episode=2
 - Parked: by=human:Wido at=2026-10-21T10:08:17Z blocker=a-flake-is-not-a-red because=blocked by a-flake-is-not-a-red; returns when it is done
 
 History:
 - 2026-10-21T10:08:17Z HSBYYTPHWNGRVM3AQFQTGWWDRG-m1e-f2f350ed open actor=human:Wido targets=a-proved-main-deploys-itself,a-flake-is-not-a-red
-Integrity: sha256=152da3c39781bcd640bd116ecaa142aae9acb665e333c6e502e922d745aa43d2
+- 2026-10-21T10:08:27Z FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed approve actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,the-fixture-custodian-settles-its-home
+Integrity: sha256=36166236487359a34945704e4f6a116187e714befd16d9657595d007bb51677a

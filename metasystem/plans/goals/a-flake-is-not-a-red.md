@@ -7,12 +7,14 @@
 - Origin: human
 - Next step: After the-fixture-custodian-settles-its-home: brief U1 (D5 wording) and U4 (D8 cadence) first; then U2 (D6 card retirement on StateDone). Each: Codex build, Opus read, gate, hand landing.
 - OpenedAt: 2026-10-21T10:08:04Z
-- Revision: 1
+- Revision: 2
 - BlockedBy: the-fixture-custodian-settles-its-home
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-21T10:08:27Z revision=2 opid=FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed authority=proven digest=4878f92f42fd1942f91e7a8924bc58367c55c73462eec6539f9758923772d34e episode=2
 - Parked: by=human:Wido at=2026-10-21T10:08:04Z blocker=the-fixture-custodian-settles-its-home because=blocked by the-fixture-custodian-settles-its-home; returns when it is done
 
 History:
 - 2026-10-21T10:08:04Z WMQZHKET7T5M430CJ0GDTDNQHM-m1e-f2f350ed open actor=human:Wido targets=a-flake-is-not-a-red,the-fixture-custodian-settles-its-home
-Integrity: sha256=03507870e0e45cfa42db173154c9851b95fdee6db70155f0d4812194868ff5eb
+- 2026-10-21T10:08:27Z FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed approve actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,the-fixture-custodian-settles-its-home
+Integrity: sha256=60eca7810417d6915ec0217a764eab23eb3e9639d70b5dccedf5c4e5fcb31bf2
