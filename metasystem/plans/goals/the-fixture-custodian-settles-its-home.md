@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 67
+- Sequence: 66
 - Risk: severity=3 novelty=2 exposure=3 accumulation=3 basis="Severity 3: every proof of main is red on the first pass since 10-19 and the host runs an hourly 60-90 minute proof; novelty 2: the custodian and sweep exist, their halt and listing change; exposure 3: every package that uses the fixture bed; accumulation 3: 26,000 litter entries in two days and growing."
 - Tier: 3
 - Intent: A test's scratch folder has an owner at the end: the custodian's self-destruct times one stuck process check, not a slow pass, and the last one out (teardown or custodian) removes the folder through the existing guarded RemoveSettledHome; the fixture-bed tests that flaked observe what they inject. Design plans/designs/main-proves-green-on-a-quiet-host.md D1-D4 (revision 10).
 - Origin: human
 - Next step: Brief U1 (D1 per-probe timer + D2 last-out step, internal/identity and internal/testenv, 70-105 production lines, stop 130) from the design; Codex build in a registered workspace, Opus read, sharded gate, hand landing; measure one full proof of main (fixture-bed package times, halted folders left); then U2 (D3 test fixes). A1 was done 2026-10-21 10:13.
 - OpenedAt: 2026-10-21T10:07:52Z
-- Revision: 7
+- Revision: 8
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-21T10:08:27Z revision=2 opid=FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed authority=proven digest=35c003ddb8cb979e638bf477e5df02c2e4407b98f185e640a2d734b18181dc86 episode=2
@@ -22,4 +22,5 @@ History:
 - 2026-10-21T10:10:28Z 5CJ5NSFWN1JXET5K2E4J91YC12-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,a-stop-waits-for-the-unit-boundary-2,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testdeadregistryhomeisremovedbyanotherprocessmain,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:70 to=1:69
 - 2026-10-21T10:10:53Z RWZCJNNF8T6HFJ59PWFZ2Q8NKK-m1e-f2f350ed done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testsupervisorkillsparesthefixturecustodian,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:69 to=1:68
 - 2026-10-21T10:11:12Z 75CQ2CGW1JRBQQNHRW73X5XW7D-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:68 to=1:67
-Integrity: sha256=24395d7e3a3cbccfe5848bfabb0a6542d7f006871b0fd74942ff6a8f57b0e35c
+- 2026-10-21T10:11:30Z 78KVDMYQ8X1QFMC61WM3RCTS9Q-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,the-fixture-custodian-settles-its-home reason=priority-order from=1:67 to=1:66
+Integrity: sha256=d84c55b7a868855f0293858e53bd3f975cfa9b43a1cd734e1c2b660cd6bf2682
