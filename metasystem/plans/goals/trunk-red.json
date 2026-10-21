@@ -5866,6 +5866,43 @@
       "opened": "2026-10-21T00:12:44Z",
       "closed": null,
       "class": "flake"
+    },
+    {
+      "id": "red:fast-static-build-4",
+      "identity": "red:fast-static-build",
+      "group": "fast-static-build",
+      "status": "failed",
+      "failures": [],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261021T100743.270415000Z",
+          "batch": "20261021T100743.270415000Z",
+          "baseCommit": "418c3e1e1a1793dfe38fe48a2494375a55f1746e",
+          "baseTree": "b05456b7e480afd6d515b60c12f4e46515b1e86c",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261021T100743.270415000Z.log",
+          "logDigest": "61e69d4b4a4c3fe1b86881f266c67f05cad317578cd67f55073f7afa2d1f2431",
+          "seenAt": "2026-10-21T10:12:45Z",
+          "opid": "JA8YABP39ZSC0EKMVCQA5VP3GZ-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261021T100743.270415000Z"
+      ],
+      "opened": "2026-10-21T10:12:45Z",
+      "closed": null
     }
   ],
   "cadence": {
