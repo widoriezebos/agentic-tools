@@ -439,40 +439,52 @@ func (b *deployVerbBed) push(overrides ...intentOwners) (int, intentResult) {
 func TestLandingPushStartsDeployNowWhenMainChanged(t *testing.T) {
 	t.Parallel()
 	b := newDeployVerbBed(t, true)
-	b.pushed = plain.PushOutcome{Old: "c0", Commit: "c1", Changed: true}
-	code, result := b.push()
-	want := []string{"/engines/metasystem", "deploy", "now", "--by", "the landing lane"}
+	automaticLane(b, commandA)
+	owners := b.pushOwners()
+	launch := owners.deploy.launch
+	owners.deploy.launch = func(argv []string, dir, log string) (int64, error) {
+		lines, err := deploy.AutomaticLines(b.dir())
+		if err != nil || len(lines) != 1 || lines[0].Commit != commandA || lines[0].Outcome != deploy.AutomaticLaunched {
+			t.Fatalf("before launch = %+v, %v", lines, err)
+		}
+		return launch(argv, dir, log)
+	}
+	b.pushed = plain.PushOutcome{Old: commandA0, Commit: commandA, Changed: true}
+	code, result := b.push(owners)
+	want := []string{"/engines/metasystem", "deploy", "now", "--commit", commandA, "--by", "the landing lane"}
 	if code != 0 || len(b.launched) != 2 || strings.Join(b.launched[0], " ") != strings.Join(want, " ") || b.launched[1][0] != b.root ||
-		b.launched[1][1] != filepath.Join(b.dir(), "lane.log") || !detailsHave(result, "started metasystem deploy now") {
+		b.launched[1][1] != filepath.Join(b.dir(), "lane.log") || !detailsHave(result, "started metasystem deploy now for "+deploy.Short(commandA)) {
 		t.Fatalf("push = %d %+v; launched %q", code, result, b.launched)
 	}
-	b.pushed = plain.PushOutcome{Old: "c1", Commit: "c1"}
+	b.pushed = plain.PushOutcome{Old: commandA, Commit: commandA}
 	if _, result := b.push(); len(b.launched) != 2 || detailsHave(result, "deploy") {
 		t.Fatalf("a push that changed nothing = %+v; launched %q", result, b.launched)
 	}
-	// The detached deploy of c1 fails its build; the next push tells it.
+	// The detached deploy of the pushed commit fails its build; the next push tells it.
 	if err := os.MkdirAll(filepath.Join(b.state, "script"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(filepath.Join(b.state, "script", "build.json"), []byte(`[{"exit":1,"reason":"compile error"}]`), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	b.tip = "c1"
+	b.tip = commandA
 	if code, text := b.run("deploy", "now", "--by", "the landing lane"); code != 1 || !strings.Contains(text, "build-failed") {
 		t.Fatalf("the failing deploy = %d\n%s", code, text)
 	}
-	b.pushed = plain.PushOutcome{Old: "c1", Commit: "c2", Changed: true}
-	if _, result := b.push(); !detailsHave(result, "the last deploy failed: build-failed of c1: the adapter's build failed: compile error") || len(b.launched) != 4 {
+	b.pushed = plain.PushOutcome{Old: commandA, Commit: commandB, Changed: true}
+	if _, result := b.push(); !detailsHave(result, "the last deploy failed: build-failed of "+deploy.Short(commandA)+": the adapter's build failed: compile error") || len(b.launched) != 4 {
 		t.Fatalf("the push after a failed deploy = %+v", result)
 	}
 	// While deploys are paused the lane starts nothing and says so.
 	if code, text := b.run("deploy", "pause"); code != 0 {
 		t.Fatalf("pause = %d\n%s", code, text)
 	}
-	b.pushed = plain.PushOutcome{Old: "c2", Commit: "c3", Changed: true}
+	b.pushed = plain.PushOutcome{Old: commandB, Commit: commandC, Changed: true}
 	if _, result := b.push(); !detailsHave(result, "deploys are paused by Wido, so no deploy was started") || len(b.launched) != 4 {
 		t.Fatalf("a push while paused = %+v; launched %q", result, b.launched)
 	}
+	automaticLane(b, commandC)
+	automaticStatus(b, 0, commandC, deploy.RunPaused, "its run ended paused: deploys are paused by Wido")
 }
 
 // A deploy whose first version call fails is told by its line: deploy now

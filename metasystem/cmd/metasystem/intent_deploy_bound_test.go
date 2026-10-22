@@ -261,7 +261,7 @@ func (b *boundCommandBed) laneSkip(reason string) {
 	b.t.Helper()
 	code, result := b.result("deploy", "now", "--commit", commandA, "--by", "the landing lane")
 	retry := "metasystem deploy now --commit " + commandA
-	want := "not deployed automatically: " + reason + "; to deploy it: " + retry
+	want := "not deployed automatically: " + reason
 	if code != 1 || result.Outcome != intentRefused || result.Summary != want || result.Next == nil || strings.Join(result.Next.Argv, " ") != retry {
 		b.t.Fatalf("lane skip = %d, %+v; want %q", code, result, want)
 	}

@@ -383,6 +383,11 @@ func provenGreen(install, tree string) *Refusal {
 	return nil
 }
 
+// Pushes reads the lane's pushes, oldest first, and counts damaged lines.
+func Pushes(install string) ([]Pushed, int, error) {
+	return countedLines[Pushed](pushesPath(install))
+}
+
 // LastPush is the newest push.
 func LastPush(install string) (Pushed, bool, error) {
 	pushes, err := readLines[Pushed](pushesPath(install))

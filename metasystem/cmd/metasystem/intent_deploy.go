@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
 // laneDeployer is who the record names for the lane's own deploy now.
@@ -226,9 +227,15 @@ func runIntentDeployStatus(inv *intentInvocation, project deployProject) int {
 		}
 		history = parsed
 	}
+	var next []string
 	status, err := deploy.ReadStatus(project.dir, history)
 	if err != nil {
-		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the deploy record can't be read: " + oneLine(err.Error()), retry: "reads it again", Details: []string{err.Error()}})
+		data := map[string]any{}
+		summary := "the deploy record can't be read: " + oneLine(err.Error())
+		if line := project.laneDeployLine("", data, &next); line != "" {
+			summary = line + "\n" + summary
+		}
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: summary, Data: data, next: next, retry: "reads it again", Details: []string{err.Error()}})
 	}
 	data := map[string]any{"project": project.key, "record": project.dir, "status": status}
 	summary := "nothing is deployed yet"
@@ -267,6 +274,14 @@ func runIntentDeployStatus(inv *intentInvocation, project deployProject) int {
 	if inv.input.switched("verify") {
 		lines = append(lines, inv.verifyDeploy(project, status, data))
 	}
+	running := ""
+	if status.Adapter != nil {
+		running = status.Adapter.Commit
+	}
+	if line := project.laneDeployLine(running, data, &next); line != "" {
+		lines = append(lines, summary)
+		summary = line
+	}
 	if hint := deployPathHint(project.home, project.owners.path()); hint != "" {
 		data["path"] = hint
 		lines = append(lines, filepath.Join(project.home, "bin")+" is not on PATH; add this line to your shell profile: "+hint)
@@ -274,7 +289,7 @@ func runIntentDeployStatus(inv *intentInvocation, project deployProject) int {
 	for _, line := range status.History {
 		lines = append(lines, "  "+line.EndedAt.Format(time.RFC3339)+"  "+line.Kind+" "+deploy.Short(line.Commit)+" "+line.Outcome+" by "+line.By)
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, Data: data, text: lines})
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: summary, Data: data, text: lines, next: next})
 }
 
 // verifyDeploy asks the adapter what is active and says whether the record
@@ -293,6 +308,84 @@ func (inv *intentInvocation) verifyDeploy(project deployProject, status deploy.S
 		line += ", which is not the record's current deploy; the next deploy now records it"
 	}
 	return line
+}
+
+// running is the commit the deploy record shows running, or "".
+func (p deployProject) laneDeployLine(running string, data map[string]any, next *[]string) string {
+	lines, err := deploy.Lines(p.dir)
+	if err != nil {
+		return "the lane's deploys can't be read: " + oneLine(err.Error())
+	}
+	owed, err := deploy.AutomaticLines(p.dir)
+	if err != nil {
+		return "the lane's deploys can't be read: " + oneLine(err.Error())
+	}
+	record, registered, err := lane.Read(p.home)
+	if err != nil || !registered {
+		line := ""
+		if err != nil {
+			line = "the lane's registration can't be read: " + oneLine(err.Error())
+		}
+		if len(owed) > 0 {
+			line = strings.TrimSpace(automaticLine(owed[len(owed)-1].Commit, running, owed, data, next) + "\n" + line)
+		}
+		return strings.TrimSuffix(line, "; ")
+	}
+	project, err := resolveDeployProject(p.owners, record.Install, record.Root)
+	if errors.Is(err, deploy.ErrNoContract) || err == nil && project.dir != p.dir {
+		return ""
+	}
+	var pushes []plain.Pushed
+	if err == nil {
+		pushes, _, err = plain.Pushes(record.Install)
+	}
+	if err != nil {
+		*next = []string{"metasystem", "deploy", "now", "--commit", "<main's tip>"}
+		return automaticSentence("the lane's push record can't be read: " + oneLine(err.Error()))
+	}
+	if len(pushes) == 0 {
+		return ""
+	}
+	commit := pushes[len(pushes)-1].Commit
+	if current := deploy.Current(lines); current != nil {
+		if current.Commit == commit {
+			return ""
+		}
+		if covered, err := p.owners.git(record.Root).Contains(commit, current.Commit); err == nil && covered {
+			return ""
+		}
+	}
+	return automaticLine(commit, running, owed, data, next)
+}
+
+func automaticLine(commit, running string, lines []deploy.Automatic, data map[string]any, next *[]string) string {
+	state, ok := deploy.AutomaticStates(lines)[commit]
+	if !ok || state.Last.Outcome == deploy.AutomaticLaunched && commit == running {
+		return ""
+	}
+	line := state.Last
+	if state.Settled != nil {
+		line = *state.Settled
+	}
+	if line.Outcome == deploy.RunDeployed || line.Outcome == deploy.RunCurrent {
+		return ""
+	}
+	data["automatic"] = line
+	reason := line.Reason
+	if line.Outcome == deploy.AutomaticLaunched {
+		reason = "its run has reported no outcome"
+	} else if !line.Settles() {
+		reason = "its run ended " + line.Outcome
+		if line.Reason != "" {
+			reason += ": " + line.Reason
+		}
+	}
+	*next = []string{"metasystem", "deploy", "now", "--commit", commit}
+	return automaticSentence(reason)
+}
+
+func automaticSentence(reason string) string {
+	return "not deployed automatically: " + reason
 }
 
 // deployPathHint is the line that puts ~/.metasystem/bin on the search
@@ -341,7 +434,23 @@ func runIntentDeployNow(inv *intentInvocation, project deployProject) int {
 		runner.Held = project.laneHeld
 	}
 	report, err := runner.Run()
+	if runner.Automatic && runner.Commit != "" {
+		// A failed write leaves the launch visible as a run with no outcome.
+		_ = deploy.AppendAutomatic(project.dir, automaticOutcome(runner.Commit, report, err, project.owners.now()))
+	}
 	return inv.render(inv.deployReport(project, report, err, ""))
+}
+
+func automaticOutcome(commit string, report deploy.Report, err error, at time.Time) deploy.Automatic {
+	line := deploy.Automatic{Commit: commit, Outcome: report.Outcome, Reason: report.Reason, At: at}
+	if count := len(report.Lines); count > 0 && report.Outcome != deploy.RunDeployed {
+		last := report.Lines[count-1]
+		line.Reason = last.Outcome + ": " + oneLine(last.Detail)
+	}
+	if err != nil {
+		line.Outcome, line.Reason = deploy.RunError, oneLine(err.Error())
+	}
+	return line
 }
 
 // deployRun runs the runner and says what it did; done prefixes what the
@@ -380,7 +489,7 @@ func (inv *intentInvocation) deployReport(project deployProject, report deploy.R
 		result.next, result.nextReason = inv.publicArgv("deploy", "status", "--verify"), "shows what is active"
 		if strings.TrimSpace(inv.input.text("by")) == laneDeployer {
 			result.next = inv.publicArgv("deploy", "now", "--commit", strings.TrimSpace(inv.input.text("commit")))
-			result.Summary = "not deployed automatically: " + report.Reason + "; to deploy it: " + strings.Join(result.next, " ")
+			result.Summary = "not deployed automatically: " + report.Reason
 			result.nextReason = "deploys this commit"
 		}
 	case deploy.RunBusy:
@@ -515,7 +624,7 @@ func runIntentDeployResume(inv *intentInvocation, project deployProject) int {
 // landing prove starts its proof, and says so in one detail line. A failed
 // deploy is told by one more line. A failure to start fails nothing, and a
 // project without the contract file does nothing more after its push.
-func (inv *intentInvocation) deployAfterPush(installation, checkout string, changed bool) []string {
+func (inv *intentInvocation) deployAfterPush(installation, checkout, commit string, changed bool) []string {
 	owners := inv.deploy()
 	project, err := resolveDeployProject(owners, installation, checkout)
 	if errors.Is(err, deploy.ErrNoContract) {
@@ -537,22 +646,23 @@ func (inv *intentInvocation) deployAfterPush(installation, checkout string, chan
 		return told
 	}
 	if pause, paused, _ := deploy.ReadPause(project.dir); paused {
+		_ = deploy.AppendAutomatic(project.dir, deploy.Automatic{Commit: commit, Outcome: deploy.RunPaused, Reason: "deploys are paused by " + pause.By, At: owners.now()})
 		return append(told, "deploys are paused by "+pause.By+", so no deploy was started; main's tip waits for metasystem deploy resume")
 	}
-	started, err := startDeployNow(owners, installation, project.dir)
+	started, err := startDeployNow(owners, installation, project.dir, commit)
 	if err != nil {
 		return append(told, "metasystem deploy now could not be started, so main's tip waits for the next push or deploy now: "+oneLine(err.Error()))
 	}
-	return append(told, fmt.Sprintf("started metasystem deploy now for main's tip (process %d); metasystem deploy status shows it", started))
+	return append(told, fmt.Sprintf("started metasystem deploy now for %s (process %d); metasystem deploy status shows it", deploy.Short(commit), started))
 }
 
-func startDeployNow(owners deployOwners, installation, dir string) (int64, error) {
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+func startDeployNow(owners deployOwners, installation, dir, commit string) (int64, error) {
+	if err := deploy.AppendAutomatic(dir, deploy.Automatic{Commit: commit, Outcome: deploy.AutomaticLaunched, At: owners.now()}); err != nil {
 		return 0, err
 	}
 	executable, err := owners.executable()
 	if err != nil {
 		return 0, err
 	}
-	return owners.launch([]string{executable, "deploy", "now", "--by", laneDeployer}, installation, filepath.Join(dir, "lane.log"))
+	return owners.launch([]string{executable, "deploy", "now", "--commit", commit, "--by", laneDeployer}, installation, filepath.Join(dir, "lane.log"))
 }

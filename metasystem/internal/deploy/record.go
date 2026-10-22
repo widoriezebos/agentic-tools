@@ -168,11 +168,15 @@ func (l Line) Failed() bool { return l.Outcome != OutcomeActive && l.Outcome != 
 
 // appendLine adds one line; the caller holds the project's lock.
 func appendLine(dir string, line Line) error {
-	data, err := json.Marshal(line)
+	return appendTo(recordPath(dir), line)
+}
+
+func appendTo(path string, value any) error {
+	data, err := json.Marshal(value)
 	if err != nil {
 		return err
 	}
-	file, err := os.OpenFile(recordPath(dir), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
 		return err
 	}
