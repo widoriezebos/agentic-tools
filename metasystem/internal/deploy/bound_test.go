@@ -326,3 +326,48 @@ func TestBoundRunDeploysOnlyItsCommitForward(t *testing.T) {
 		}
 	})
 }
+
+func TestBoundLaneHoldsForRecordedFailures(t *testing.T) {
+	t.Parallel()
+	for _, outcome := range []string{OutcomeBuildFailed, OutcomeActivateFailed, OutcomeVerifyFailed, OutcomeVersionFailed, OutcomeStopped} {
+		t.Run(outcome, func(t *testing.T) {
+			t.Parallel()
+			b := newBoundBed(t)
+			b.runner.Automatic = true
+			if err := appendLine(b.runner.Dir, Line{Kind: KindDeploy, Commit: boundA, Outcome: outcome}); err != nil {
+				t.Fatal(err)
+			}
+			report, err := b.runner.Run()
+			if err != nil || report.Outcome != RunSkipped || report.Reason != "its earlier attempt ended "+outcome {
+				t.Fatalf("recorded failure = %+v, %v", report, err)
+			}
+			b.wantCalls()
+		})
+	}
+	t.Run("another-commit", func(t *testing.T) {
+		t.Parallel()
+		b := newBoundBed(t)
+		b.runner.Automatic = true
+		if err := appendLine(b.runner.Dir, Line{Kind: KindDeploy, Commit: boundB, Outcome: OutcomeStopped}); err != nil {
+			t.Fatal(err)
+		}
+		report, err := b.runner.Run()
+		if err != nil || report.Outcome != RunDeployed {
+			t.Fatalf("other commit failure = %+v, %v", report, err)
+		}
+		b.wantCalls("version "+boundA, "build "+boundA, "activate "+boundA, "version "+boundA)
+	})
+	t.Run("unreadable-record", func(t *testing.T) {
+		t.Parallel()
+		b := newBoundBed(t)
+		b.runner.Automatic = true
+		if err := os.WriteFile(recordPath(b.runner.Dir), []byte("{\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		report, err := b.runner.Run()
+		if err != nil || report.Outcome != RunSkipped || !strings.Contains(report.Reason, "not a deploy") {
+			t.Fatalf("unreadable record = %+v, %v", report, err)
+		}
+		b.wantCalls()
+	})
+}

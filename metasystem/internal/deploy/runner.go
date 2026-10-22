@@ -31,6 +31,10 @@ type Runner struct {
 	// Commit is the one commit this run deploys, only forward from what is
 	// active; it never follows main's tip.
 	Commit string
+	// Automatic marks the lane's own run, which a recorded failure of Commit
+	// ends; Held, when set, is why its lane stops it.
+	Automatic bool
+	Held      func() string
 	// Transport starts the adapter's calls; nil starts real processes.
 	Transport Transport
 	Dir       string
@@ -254,8 +258,20 @@ func (r *Runner) pass(tried map[string]bool, report *Report) (again bool, outcom
 // unsafe is why a bound run, under the lock, does not try its commit
 // before it asks the adapter anything; "" when nothing stops it.
 func (r *Runner) unsafe(tip string) string {
+	if held := r.held(); held != "" {
+		return held
+	}
 	if _, err := readJSON(pendingPath(r.Dir), &Line{}); err != nil {
 		return err.Error()
+	}
+	lines, err := Lines(r.Dir)
+	if err != nil {
+		return err.Error()
+	}
+	for _, line := range lines {
+		if r.Automatic && line.Commit == r.Commit && line.Failed() {
+			return "its earlier attempt ended " + line.Outcome
+		}
 	}
 	if on, err := r.contains(r.Commit, tip); err != nil {
 		return "its ancestry to origin's main " + Short(tip) + " can't be read: " + err.Error()
@@ -283,7 +299,17 @@ func (r *Runner) forward(current *Line, asked answer) (string, string) {
 			return RunSkipped, "it is not after the active " + Short(current.Commit)
 		}
 	}
+	if held := r.held(); held != "" {
+		return RunSkipped, held
+	}
 	return "", ""
+}
+
+func (r *Runner) held() string {
+	if r.Held == nil {
+		return ""
+	}
+	return r.Held()
 }
 
 func (r *Runner) contains(commit, descendant string) (bool, error) {

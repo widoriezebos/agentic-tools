@@ -19,8 +19,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/deploy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
+
+// laneDeployer is who the record names for the lane's own deploy now.
+const laneDeployer = "the landing lane"
 
 // deployOwners are the deploy verbs' seams; the zero value is production.
 type deployOwners struct {
@@ -110,6 +115,19 @@ func resolveDeployProject(owners deployOwners, installation, root string) (deplo
 
 func (p deployProject) runner(by string) *deploy.Runner {
 	return &deploy.Runner{Dir: p.dir, Project: p.key, Installation: p.installation, Git: p.owners.git(p.root), By: by, Now: p.owners.now, Started: p.owners.started, Transport: p.owners.transport}
+}
+
+// laneHeld is why the lane's own deploy waits; empty when it may deploy.
+func (p deployProject) laneHeld() string {
+	record, registered, err := lane.Read(p.home)
+	if err != nil || !registered {
+		return "the lane is stopped: it is not registered here"
+	}
+	_, paused := lane.ReadPause(p.home)
+	if seat := helm.Active(record.Root); paused || seat.Active || seat.Diagnostic != "" {
+		return "the lane is stopped"
+	}
+	return ""
 }
 
 // deployCommand declares a deploy verb whose run starts once the checkout's
@@ -319,6 +337,9 @@ func runIntentDeployNow(inv *intentInvocation, project deployProject) int {
 	if inv.input.has("commit") && !regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`).MatchString(runner.Commit) {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--commit takes a full commit id, not " + strconv.Quote(runner.Commit) + "; nothing was done", retry: "git rev-parse prints the full id"})
 	}
+	if runner.Automatic = by == laneDeployer; runner.Automatic {
+		runner.Held = project.laneHeld
+	}
 	report, err := runner.Run()
 	return inv.render(inv.deployReport(project, report, err, ""))
 }
@@ -357,6 +378,11 @@ func (inv *intentInvocation) deployReport(project deployProject, report deploy.R
 		result.Outcome, result.code = intentRefused, 1
 		result.Summary = deploy.Short(inv.input.text("commit")) + " was not deployed: " + report.Reason + "; what is active stays"
 		result.next, result.nextReason = inv.publicArgv("deploy", "status", "--verify"), "shows what is active"
+		if strings.TrimSpace(inv.input.text("by")) == laneDeployer {
+			result.next = inv.publicArgv("deploy", "now", "--commit", strings.TrimSpace(inv.input.text("commit")))
+			result.Summary = "not deployed automatically: " + report.Reason + "; to deploy it: " + strings.Join(result.next, " ")
+			result.nextReason = "deploys this commit"
+		}
 	case deploy.RunBusy:
 		retry := inv.publicArgv("deploy", "now")
 		if inv.input.has("commit") {
@@ -528,5 +554,5 @@ func startDeployNow(owners deployOwners, installation, dir string) (int64, error
 	if err != nil {
 		return 0, err
 	}
-	return owners.launch([]string{executable, "deploy", "now", "--by", "the landing lane"}, installation, filepath.Join(dir, "lane.log"))
+	return owners.launch([]string{executable, "deploy", "now", "--by", laneDeployer}, installation, filepath.Join(dir, "lane.log"))
 }
