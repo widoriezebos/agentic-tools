@@ -1,6 +1,6 @@
 # asks-clear-on-their-effect
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="finding 300/313 and lane-clock-prefers-work D3 (amended 10-15 08:40, Astra R2-04): the to-do must clear only on evidence of the requested effect, never on the attempt; lane-clock-prefers-work delivered U1 and is concluded, its D3/D4 are this goal's delivery"
@@ -10,12 +10,10 @@
 - Next step: U1 = lane-clock U2 as amended: brief, Astra, Codex by hand, Opus read, land by hand, deploy
 - OpenedAt: 2026-10-15T06:38:38Z
 - FirstClaimAt: 2026-10-16T16:55:34Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-15T06:39:07Z revision=2 opid=QFFTVGTD1CRAZN06TM51CVRZ55-m1e-670f65d0 authority=proven digest=2a26aad5fa2203ae740e34640f51aee23d8394fc638259772599d5a7083c4abf episode=2
-- Claimed: machine=ui lineage=steward-seat at=2026-10-22T10:10:51Z revision=9 accountingRevision=9 episodeAt=2026-10-22T10:10:51Z episodeRevision=9
-- StopCapability: generation=9 revision=9 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-15T06:38:38Z CHS58528QA1GTB6CDD0V1S53AZ-m1e-670f65d0 open actor=human:Wido targets=asks-clear-on-their-effect
@@ -27,4 +25,5 @@ History:
 - 2026-10-16T16:55:34Z K2GVTSW7K6GCEF8MQWJERHYBDV-ui-71c5cb39 claim actor=ui+steward-seat targets=asks-clear-on-their-effect reason=areas unknown for goal asks-clear-on-their-effect in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/lane-clock-prefers-work.md; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses
 - 2026-10-19T10:06:24Z HX09SAD0HSK6104CN3HQ26TEMY-ui-43182c96 breach-stop actor=ui+goal-stop-custodian targets=asks-clear-on-their-effect
 - 2026-10-22T10:10:51Z 0BSY9W4ME9W1R0BFPR1ND5TTMJ-ui-1414a6a0 resume actor=human:Wido targets=asks-clear-on-their-effect reason=cleared stop fence stop-asks-clear-on-their-effect-r7-f1: ELAPSED_LIMIT
-Integrity: sha256=bd699c59fd9bd1650841ae55b8e4cd351276b55a519915001b431d50c3fe115d
+- 2026-10-22T10:10:59Z FBA038PBWKFD9M0KVK0E9NGRWY-ui-1414a6a0 release actor=human:Wido targets=asks-clear-on-their-effect displaced=ui+steward-seat@2026-10-22T10:10:51Z reason=Wido 2026-10-22: released for now; the ui seat takes no goal under the program freeze; the goal stays queued for later
+Integrity: sha256=cdac193e68a5da9b0f670128166f16313a99c637146157bd7243b2ef0b6d262d
