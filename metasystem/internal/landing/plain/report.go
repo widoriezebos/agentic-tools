@@ -172,15 +172,27 @@ func recordFlakes(seams ProveSeams, red, green Result, kind string, repeats []Ru
 
 // publishRepeatFlakes records, once per unit, the first-pass failures of a red
 // main check that passed their own repeat. Only a sound, complete repeat report
-// that names no other failure, and whole evidence from both runs, make a flake;
+// and whole evidence from both runs make a flake;
 // everything else stays red.
 func publishRepeatFlakes(seams ProveSeams, red Result, repeats []Running, reports []checkReport) Result {
-	red.Flakes, red.FlakePublished = nil, false
+	red.Flakes, red.FlakePublished, red.RepeatFailed = nil, false, nil
 	for i, unit := range red.Failed {
 		report := reports[i]
-		if report.kind != "complete" || seams.RecordFlake == nil || len(unit.Tests) == 0 || slices.ContainsFunc(report.failed, func(again FailedUnit) bool {
-			return again.Unit != unit.Unit || len(again.Tests) == 0 || slices.ContainsFunc(again.Tests, func(test string) bool { return !slices.Contains(unit.Tests, test) })
-		}) {
+		if report.kind != "complete" {
+			continue
+		}
+		for _, again := range report.failed {
+			names := again.Tests
+			if len(names) == 0 {
+				names = []string{""}
+			}
+			for _, name := range names {
+				if !failedIn(red.Failed, again.Unit, name) {
+					red.RepeatFailed = append(red.RepeatFailed, FailedUnit{Unit: again.Unit, Tests: nonEmpty(name), Attempt: repeats[i].Attempt})
+				}
+			}
+		}
+		if seams.RecordFlake == nil || len(unit.Tests) == 0 {
 			continue
 		}
 		first, err := repoproof.TestEvidence(red.Log, unit.Unit, unit.Tests, "fail")
@@ -196,7 +208,7 @@ func publishRepeatFlakes(seams ProveSeams, red Result, repeats []Running, report
 			Outputs: map[string]repoproof.TestOutput{}, RepeatOutputs: map[string]repoproof.TestOutput{}}
 		f.Tests = nil
 		for _, test := range unit.Tests {
-			if second[test].Outcome == "pass" && !slices.ContainsFunc(report.failed, func(again FailedUnit) bool { return slices.Contains(again.Tests, test) }) {
+			if second[test].Outcome == "pass" && !failedIn(report.failed, unit.Unit, test) {
 				f.Tests = append(f.Tests, test)
 				f.Outputs[test], f.RepeatOutputs[test] = first[test], second[test]
 			}
@@ -229,4 +241,17 @@ func withoutFlakes(failed []FailedUnit, flakes []FlakeRecord, attempt string) []
 		}
 	}
 	return kept
+}
+
+func failedIn(failed []FailedUnit, unit, test string) bool {
+	return slices.ContainsFunc(failed, func(f FailedUnit) bool {
+		return f.Unit == unit && (test == "" && len(f.Tests) == 0 || test != "" && slices.Contains(f.Tests, test))
+	})
+}
+
+func nonEmpty(name string) []string {
+	if name == "" {
+		return nil
+	}
+	return []string{name}
 }

@@ -73,7 +73,7 @@ func selectStanding(install, checkout string, running Running, results []Result,
 			}
 		}
 		open := false
-		for _, unit := range red.Failed {
+		for _, unit := range slices.Concat(red.Failed, red.RepeatFailed) {
 			names := unit.Tests
 			if len(names) == 0 {
 				names = []string{""}

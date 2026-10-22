@@ -32,6 +32,12 @@ func newAttributionBed(t *testing.T, mode string) *attributionBed {
 	if mode == "mixed-flake-first" {
 		b.first[0].Tests = []string{"TestA2", "TestA1"}
 	}
+	if mode == "new-subtest-in-whole-repeat" {
+		b.first[0].Tests = []string{"TestA1/sub"}
+	}
+	if mode == "no-double" {
+		b.first = []FailedUnit{{Unit: "u/a", Tests: []string{"TestA1"}}}
+	}
 	if err := os.Remove(resultsPath(b.install)); err != nil {
 		t.Fatal(err)
 	}
@@ -92,7 +98,11 @@ func newAttributionBed(t *testing.T, mode string) *attributionBed {
 		if index < 0 {
 			t.Fatalf("unexpected repeat unit %q", only)
 		}
-		if got := commandEnv(cmd, "LANDING_ONLY_TESTS"); got != strings.Join(b.first[index].Tests, " ") {
+		wantTests := strings.Join(b.first[index].Tests, " ")
+		if mode == "new-subtest-in-whole-repeat" && only == "u/a" {
+			wantTests = ""
+		}
+		if got := commandEnv(cmd, "LANDING_ONLY_TESTS"); got != wantTests {
 			t.Fatalf("repeat tests %q, want %v", got, b.first[index].Tests)
 		}
 		var failed []FailedUnit
@@ -101,7 +111,7 @@ func newAttributionBed(t *testing.T, mode string) *attributionBed {
 			if name == "TestA1" {
 				action = "fail"
 			}
-			if mode == "all-pass" || mode == "both-pass-in-unit" || mode == "other-failure-in-repeat" {
+			if mode == "all-pass" || mode == "both-pass-in-unit" || mode == "other-failure-in-repeat" || mode == "all-flake-package-red" {
 				action = "pass"
 			}
 			if mode == "all-fail" || mode == "both-pass-in-unit" && only == "u/b" {
@@ -125,6 +135,13 @@ func newAttributionBed(t *testing.T, mode string) *attributionBed {
 		}
 		if mode == "other-failure-in-repeat" && only == "u/a" {
 			failed = []FailedUnit{{Unit: only}}
+		}
+		if mode == "package-failure-beside-pass" && only == "u/a" || mode == "all-flake-package-red" && only == "u/b" {
+			failed = append(failed, FailedUnit{Unit: only})
+		}
+		if mode == "new-subtest-in-whole-repeat" && only == "u/a" {
+			fmt.Fprint(cmd.Stdout, plainTestEvents(only, []string{"TestA1/other"}, "fail"))
+			failed = []FailedUnit{{Unit: only, Tests: []string{"TestA1/other"}}}
 		}
 		packageAction := "pass"
 		if len(failed) > 0 {
@@ -206,8 +223,18 @@ func (b *attributionBed) assert(t *testing.T, r Result, wantRed, wantFlakes []st
 		t.Fatalf("retained flakes %+v, publications %+v", r.Flakes, b.records)
 	}
 	for _, check := range b.checks {
-		if check.Log != r.Log {
-			t.Fatalf("red log %q, want first-pass log %q", check.Log, r.Log)
+		wantLog := r.Log
+		for _, unit := range check.Failed {
+			if unit.Attempt != "" {
+				for _, repeat := range r.FlakeRepeats {
+					if repeat.Attempt == unit.Attempt {
+						wantLog = repeat.Log
+					}
+				}
+			}
+		}
+		if check.Log != wantLog {
+			t.Fatalf("red log %q, want %q", check.Log, wantLog)
 		}
 	}
 }
@@ -262,7 +289,10 @@ func TestTrunkRepeatAttributesEachTest(t *testing.T) {
 				wantRed = []string{"red:u/b:TestB1"}
 				wantFlakes = []string{"u/a:TestA1", "u/a:TestA2"}
 				calls = 1
-			case "missing-terminal", "skipped", "listed-but-passed", "other-failure-in-repeat":
+			case "other-failure-in-repeat":
+				wantRed = []string{"red:u/a"}
+				wantFlakes = []string{"u/a:TestA1", "u/a:TestA2", "u/b:TestB1"}
+			case "missing-terminal", "skipped", "listed-but-passed":
 				wantRed = []string{"red:u/a:TestA1", "red:u/a:TestA2"}
 				wantFlakes = []string{"u/b:TestB1"}
 				calls = 1
@@ -438,6 +468,94 @@ func TestMainPrefixRepeatAttributesEachTest(t *testing.T) {
 			}
 			if !slices.Equal(b.repeats, []string{"u/a", "u/b"}) {
 				t.Fatalf("prefix repeats %v", b.repeats)
+			}
+		})
+	}
+}
+
+func TestTrunkRepeatKeepsWhatOnlyTheRepeatSaw(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"package-failure-beside-pass", "new-subtest-in-whole-repeat", "all-flake-package-red", "no-double", "other-failure-in-repeat"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			b := newAttributionBed(t, mode)
+			r := b.detached(t)
+			wantRed := []string{"red:u/a:TestA1", "red:u/a"}
+			wantFlakes := []string{"u/a:TestA2", "u/b:TestB1"}
+			repeatIndex, identity := 0, "red:u/a"
+			switch mode {
+			case "new-subtest-in-whole-repeat":
+				identity = "red:u/a:TestA1/other"
+				wantRed = []string{"red:u/a:TestA1/sub", identity}
+				wantFlakes = []string{"u/b:TestB1"}
+			case "all-flake-package-red":
+				repeatIndex, identity = 1, "red:u/b"
+				wantRed = []string{identity}
+				wantFlakes = []string{"u/a:TestA1", "u/a:TestA2", "u/b:TestB1"}
+			case "no-double":
+				wantRed, wantFlakes = []string{"red:u/a:TestA1"}, nil
+			case "other-failure-in-repeat":
+				wantRed = []string{identity}
+				wantFlakes = []string{"u/a:TestA1", "u/a:TestA2", "u/b:TestB1"}
+			}
+			b.assert(t, r, wantRed, wantFlakes, "main")
+			var wantRepeat []FailedUnit
+			if mode != "no-double" {
+				wantRepeat = []FailedUnit{{Unit: b.first[repeatIndex].Unit, Attempt: r.FlakeRepeats[repeatIndex].Attempt}}
+				if mode == "new-subtest-in-whole-repeat" {
+					wantRepeat[0].Tests = []string{"TestA1/other"}
+				}
+			}
+			if !reflect.DeepEqual(r.RepeatFailed, wantRepeat) {
+				t.Fatalf("repeat-only failures %+v, want %+v", r.RepeatFailed, wantRepeat)
+			}
+			if r.Result != Red || r.RepeatComplete {
+				t.Fatalf("repeat changed the proof verdict: %+v", r)
+			}
+			for _, check := range b.checks {
+				wantLog := r.Log
+				if slices.Contains(attributionIDs([]Result{check}), identity) && mode != "no-double" {
+					wantLog = r.FlakeRepeats[repeatIndex].Log
+				}
+				if check.Log != wantLog || check.Commit != r.Commit || check.Tree != r.Tree || check.Attempt != r.Attempt {
+					t.Fatalf("incident evidence coordinates %+v, want log %s and original proof identity", check, wantLog)
+				}
+			}
+			last, ok, err := LastResult(b.install)
+			if err != nil || !ok || !reflect.DeepEqual(last, r) {
+				t.Fatalf("repeat attribution was not retained: %+v %v", last, err)
+			}
+			if mode != "package-failure-beside-pass" && mode != "new-subtest-in-whole-repeat" {
+				return
+			}
+			entry := goal.TrunkRedEntry{ID: "repeat-incident", Identity: identity, Class: goal.TrunkRedClassTrunkRed, Sightings: []goal.TrunkRedSighting{{Attempt: r.Attempt, BaseCommit: r.Commit}}}
+			h := newStatusBed(t)
+			h.lines("results.jsonl", r)
+			s := healthSeams(bedNow)
+			s.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return []goal.TrunkRedEntry{entry}, nil }
+			git := h.git(nil, nil)
+			git.main = func() (string, error) { return r.Commit, nil }
+			status, raw := observe(h.home, h.record, h.view, s, git)
+			shadow := ShadowOf(status, raw)
+			if !slices.Equal(status.TrunkIncidents, []string{entry.ID}) || !slices.Equal(shadow.Main.OpenIncidents, []string{entry.ID}) {
+				t.Fatalf("repeat incident missing from status %v or shadow %v", status.TrunkIncidents, shadow.Main.OpenIncidents)
+			}
+			b.incidents = []goal.TrunkRedEntry{entry}
+			pkg := b.contract.Groups[0]
+			pkg.ID, pkg.Inputs = "u/a", []string{"metasystem/records/a/**"}
+			b.contract.Groups = append(b.contract.Groups, pkg)
+			b.git.tree, b.git.commit = "next-tree", "next-commit"
+			b.git.changed[[2]string{r.Tree, b.git.tree}] = "metasystem/records/shared/next.md"
+			b.setContract(t)
+			b.seams.NewID = func() string { return "next-attempt" }
+			b.seams.Command = func(cmd *exec.Cmd) error {
+				fmt.Fprintln(cmd.Stdout, "landing environment "+b.environment+"\nlanding group shared green 1\nLANDING-CHECKED\t0")
+				return nil
+			}
+			b.checks = nil
+			next := b.detached(t)
+			if next.Scope != "scoped" || !slices.Equal(attributionIDs([]Result{next}), []string{identity}) || len(next.Failed) != 1 || !next.Failed[0].Inherited || next.Failed[0].Attempt != r.Attempt || len(b.checks) != 0 {
+				t.Fatalf("repeat-only identity did not stay standing: %+v, recorded checks %+v", next, b.checks)
 			}
 		})
 	}

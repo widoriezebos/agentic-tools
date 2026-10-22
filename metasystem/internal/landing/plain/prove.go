@@ -93,6 +93,7 @@ type Result struct {
 	RepeatComplete        bool                 `json:"repeat-complete,omitempty"`
 	FlakePublished        bool                 `json:"flake-published,omitempty"`
 	Flakes                []FlakeRecord        `json:"flakes,omitempty"`
+	RepeatFailed          []FailedUnit         `json:"repeat-failed,omitempty"`
 	ClassificationOf      string               `json:"classification-of,omitempty"`
 	NextFull              *Result              `json:"next-full,omitempty"`
 	ClassificationPolicy  PolicyValue          `json:"classification-policy,omitempty,omitzero"`
@@ -1518,7 +1519,7 @@ func (r Result) incidentIDs(incidents []goal.TrunkRedEntry) (ids []string) {
 		return nil
 	}
 	identities := make(map[string]bool)
-	for _, failed := range r.Failed {
+	for _, failed := range slices.Concat(r.Failed, r.RepeatFailed) {
 		identities["red:"+failed.Unit] = true
 		for _, test := range failed.Tests {
 			identities["red:"+failed.Unit+":"+test] = true

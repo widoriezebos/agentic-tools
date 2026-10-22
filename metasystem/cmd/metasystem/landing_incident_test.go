@@ -161,6 +161,76 @@ func TestIncidentPlainProofOfMainsMergeTipRecordsItsRed(t *testing.T) {
 	}
 }
 
+func TestIncidentLandingProveRecordsRepeatOnlyFailureWithItsLog(t *testing.T) {
+	t.Parallel()
+	b, register, _ := incidentProveFixture(t, true)
+	b.trunk = true
+	exit := &exec.ExitError{ProcessState: replayFalseState(t)}
+	var flakes []plain.FlakeRecord
+	b.owners.landing.plainProve.RecordFlake = func(f plain.FlakeRecord) (plain.FlakeRecorded, error) {
+		flakes = append(flakes, f)
+		return plain.FlakeRecorded{Seen: 1}, nil
+	}
+	events := func(unit string, names []string, action string) string {
+		var out strings.Builder
+		for _, name := range append(append([]string{}, names...), "") {
+			data, err := json.Marshal(map[string]string{"Action": action, "Package": unit, "Test": name})
+			if err != nil {
+				t.Fatal(err)
+			}
+			fmt.Fprintln(&out, string(data))
+		}
+		return out.String()
+	}
+	b.fail = func(_ *exec.Cmd, only string) (string, error) {
+		switch only {
+		case "":
+			return events("u/a", []string{"TestA1", "TestA2"}, "fail") + events("u/b", []string{"TestB1"}, "fail") + "LANDING-FAILED\tu/a\tTestA1 TestA2\nLANDING-FAILED\tu/b\tTestB1\nLANDING-CHECKED\t2\n", exit
+		case "u/a":
+			return events("u/a", []string{"TestA1", "TestA2"}, "pass") + "LANDING-CHECKED\t0\n", nil
+		case "u/b":
+			return events("u/b", []string{"TestB1"}, "pass") + events("u/b", nil, "fail") + "LANDING-FAILED\tu/b\t\nLANDING-CHECKED\t1\n", exit
+		default:
+			t.Fatalf("unexpected repeat %q", only)
+			return "", nil
+		}
+	}
+	proof := b.prove(t)
+	if proof.Cause == nil || proof.Cause.Kind != "main" || proof.Cause.Name != "red:u/b" || len(flakes) != 2 || len(flakes[0].Tests) != 2 || len(flakes[1].Tests) != 1 {
+		t.Fatalf("repeat-only red and flakes were not attributed: %+v flakes=%+v", proof, flakes)
+	}
+	code, result := register.runJSON(register.owners(), "incident", "list")
+	data, err := json.Marshal(result.Data)
+	helmMust(t, err)
+	var listed struct{ Incidents []goal.TrunkRedEntry }
+	helmMust(t, json.Unmarshal(data, &listed))
+	if code != 0 || len(listed.Incidents) != 1 || listed.Incidents[0].Identity != "red:u/b" {
+		t.Fatalf("repeat-only incident list: code=%d data=%s", code, data)
+	}
+	entry := listed.Incidents[0]
+	log := proof.FlakeRepeats[1].Log
+	contents, err := os.ReadFile(log)
+	helmMust(t, err)
+	if log == proof.Log || len(entry.Failures) != 0 || len(entry.Sightings) != 1 || entry.Sightings[0].LogPath != log || entry.Sightings[0].LogDigest != fmt.Sprintf("%x", sha256.Sum256(contents)) {
+		t.Fatalf("repeat-only incident lost its own log and digest: %+v want %s", entry, log)
+	}
+	b.owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return listed.Incidents, nil }
+	_, _, err = plain.HandIn(b.install, plain.Line{Goal: "waiting", SHA: "waiting-sha"})
+	helmMust(t, err)
+	code, out := b.run(t, b.root, "status", "--json")
+	var status struct{ Data plain.Status }
+	helmMust(t, json.Unmarshal([]byte(out), &status))
+	held := false
+	for _, queued := range status.Data.Queue {
+		if queued.Goal == "waiting" {
+			held = queued.Held
+		}
+	}
+	if code != 0 || !held {
+		t.Fatalf("repeat-only package failure did not hold landing: code=%d %s", code, out)
+	}
+}
+
 func TestIncidentLandingProveListsEachMainFailureAndKeepsMainUnchangedOnRepeat(t *testing.T) {
 	t.Parallel()
 	for _, unchanged := range []bool{false, true} {

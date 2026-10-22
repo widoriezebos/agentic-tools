@@ -541,12 +541,26 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 // Recording an incident preserves the proof's verdict and repeat allowance.
 func recordMainFailures(seams ProveSeams, result Result, checks []Result) Result {
 	checks = slices.Clone(checks)
+	var seen []Result
 	for i := range checks {
-		checks[i].Failed = slices.DeleteFunc(slices.Clone(checks[i].Failed), func(f FailedUnit) bool { return f.Inherited })
-		if checks[i].Result == Red && checks[i].FlakePublished {
-			checks[i].Failed = withoutFlakes(checks[i].Failed, checks[i].Flakes, checks[i].Attempt)
+		check := &checks[i]
+		check.Failed = slices.DeleteFunc(slices.Clone(check.Failed), func(f FailedUnit) bool { return f.Inherited })
+		if check.Result == Red && check.FlakePublished {
+			check.Failed = withoutFlakes(check.Failed, check.Flakes, check.Attempt)
+		}
+		// A failure only a repeat saw is red under its own identity and log.
+		for _, repeat := range check.FlakeRepeats {
+			again := *check
+			again.Log, again.Failed = repeat.Log, nil
+			for _, unit := range check.RepeatFailed {
+				if unit.Attempt == repeat.Attempt {
+					again.Failed = append(again.Failed, unit)
+				}
+			}
+			seen = append(seen, again)
 		}
 	}
+	checks = append(checks, seen...)
 	checks = slices.DeleteFunc(checks, func(r Result) bool { return len(r.Failed) == 0 })
 	if len(checks) == 0 {
 		return result
