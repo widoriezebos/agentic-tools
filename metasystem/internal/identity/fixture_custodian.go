@@ -561,6 +561,11 @@ func reapDeadOwner(owner Ref, log io.Writer, runtime custodianRuntime) error {
 			continue
 		}
 		if probeErr == nil && state == Alive && SameIdentity(exact, ref) && !exact.Zombie {
+			// Another fixture custodian bounds itself and reaps its own owner's
+			// fixtures; this one neither signals it nor waits for it.
+			if isFixtureCustodian(exact) {
+				continue
+			}
 			signalErr := SignalExact(runtime.prober, ref, syscall.SIGKILL, runtime.sender)
 			fmt.Fprintf(log, "fixture-custodian action=kill pid=%d carrier=descendant result=%v\n", ref.Pid, signalErr)
 		}

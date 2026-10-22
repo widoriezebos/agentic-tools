@@ -1054,6 +1054,54 @@ func TestNestedCustodiansDoNotSignalEachOther(t *testing.T) {
 	}
 }
 
+func TestCustodianLeavesADescendantCustodianAlone(t *testing.T) {
+	t.Parallel()
+
+	owner, self := fixtureExact(700, 70), fixtureExact(701, 71)
+	innerOwner, innerCustodian := fixtureExact(702, 72), fixtureExact(703, 73)
+	marker := FixtureCustodianEnv + "=1"
+	self.Environ, self.EnvironKnown = []string{marker}, true
+	innerOwner.EnvironKnown, innerCustodian.EnvironKnown = true, true
+	processes := fixtureTable{700: owner, 701: self, 702: innerOwner, 703: innerCustodian}
+	parents := map[int64]int64{701: 700, 702: 700, 703: 702}
+	table := &custodianTable{fixtureTable: processes, ownerStates: []Liveness{Alive, Alive, Alive, Dead}}
+	var signaled []int64
+	runtime := custodianRuntime{
+		prober: table, self: self.Ref(), poll: time.Millisecond, bound: 5 * time.Millisecond,
+		clock: newManualCustodianClock(),
+		descendants: func(prober Prober, root Ref) ([]Ref, error) {
+			refs, err := fixtureDescendants(prober, root,
+				func() ([]int64, error) { return []int64{700, 701, 702, 703}, nil },
+				func(pid int64) (int64, bool) { parent, ok := parents[pid]; return parent, ok })
+			innerCustodian.Environ = []string{marker}
+			processes[703] = innerCustodian
+			return refs, err
+		},
+		scan: func(Prober, Ref) ([]FixtureSurvivor, error) { return nil, nil },
+		sender: func(pid int, _ syscall.Signal) error {
+			signaled = append(signaled, int64(pid))
+			delete(processes, int64(pid))
+			return nil
+		},
+	}
+	var log strings.Builder
+	if err := runCustodian(owner.Ref(), strings.NewReader(""), &log, runtime); err != nil {
+		t.Fatalf("custodian reap: %v; log=%q", err, log.String())
+	}
+	if !slices.Equal(signaled, []int64{702}) || AliveRef(processes, innerCustodian.Ref()) != Alive {
+		t.Fatalf("signaled=%v inner custodian state=%s; want only 702 killed and inner custodian alive; log=%q",
+			signaled, AliveRef(processes, innerCustodian.Ref()), log.String())
+	}
+	for _, want := range []string{"action=observe pid=703 carrier=descendant", "action=kill pid=702 carrier=descendant", "action=complete"} {
+		if !strings.Contains(log.String(), want) {
+			t.Fatalf("custodian log=%q omits %q", log.String(), want)
+		}
+	}
+	if strings.Contains(log.String(), "pid=703 carrier=descendant result=") {
+		t.Fatalf("custodian signaled the inner custodian: %q", log.String())
+	}
+}
+
 func TestCustodianHardHaltBoundsBlockedScan(t *testing.T) {
 	t.Parallel()
 

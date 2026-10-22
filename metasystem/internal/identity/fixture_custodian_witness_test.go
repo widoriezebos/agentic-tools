@@ -163,15 +163,16 @@ func TestCustodianObservesAPlatformBinaryChild(t *testing.T) {
 	command.Env = witnessEnvironment(append(os.Environ(), platformBinaryWitnessMode+"="+dir))
 	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	startWitnessCommand(t, command, filepath.Join(dir, "owner.stderr"), true)
-	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() })
+	stopOwnerGroup := func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() }
+	t.Cleanup(stopOwnerGroup)
 	owner := waitWitnessRef(t, dir, filepath.Join(dir, "ownerpid"), filepath.Join(dir, "owner.stderr"))
 	child := waitWitnessRef(t, dir, filepath.Join(dir, "platformpid"), filepath.Join(dir, "owner.stderr"), filepath.Join(dir, "platform.stderr"))
-	t.Cleanup(func() { _ = SignalExact(KernelProber{}, child, syscall.SIGKILL) })
+	stopChild := func() { _ = SignalExact(KernelProber{}, child, syscall.SIGKILL) }
+	t.Cleanup(stopChild)
 	custodian := waitWitnessCustodian(t, dir, owner)
-	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
 	logPath, err := os.ReadFile(filepath.Join(dir, "logpath"))
 	checkWitness(t, err)
-	t.Cleanup(func() { _ = os.Remove(string(logPath)) })
+	ownWitnessCustodian(t, dir, custodian, string(logPath), stopOwnerGroup, stopChild)
 	waitWitnessCustodianObserved(t, dir, string(logPath), child)
 }
 
@@ -482,11 +483,14 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 	child := waitWitnessRef(t, dir, filepath.Join(dir, "pid0"), filepath.Join(dir, "launcher.stderr"))
 	childDeath := own(child, false)
 	logPath, _ := os.ReadFile(filepath.Join(dir, "logpath"))
-	cleanup.files = append(cleanup.files, func() error { return removeSettledWitnessFile(string(logPath)) })
 	other := waitWitnessRef(t, dir, filepath.Join(dir, "pid1"), filepath.Join(dir, "launcher.stderr"))
 	otherDeath := own(other, false)
-	custodian := waitWitnessCustodian(t, dir, owner)
-	own(custodian, true)
+	var custodian Ref
+	checkWitness(t, ownLauncherWitnessSidecars(cleanup, func() error {
+		custodian = waitWitnessCustodian(t, dir, owner)
+		own(custodian, true)
+		return nil
+	}, func() error { return removeWitnessSidecars(t.Logf, string(logPath)) }))
 	if len(cleanup.writers) != 1 || cleanup.writers[0].ref != custodian {
 		t.Fatal("custodian exit join missing from launcher cleanup")
 	}
@@ -503,7 +507,7 @@ func runLauncherDeathWitness(t *testing.T, exported bool) {
 		own(waitWitnessCustodian(t, dir, launcherRef), true)
 		launcherLog, err := os.ReadFile(filepath.Join(dir, "launcher-logpath"))
 		checkWitness(t, err)
-		cleanup.files = append(cleanup.files, func() error { return removeSettledWitnessFile(string(launcherLog)) })
+		cleanup.files = append(cleanup.files, func() error { return removeWitnessSidecars(t.Logf, string(launcherLog)) })
 		waitWitnessCustodianObserved(t, dir, string(launcherLog), shell)
 	}
 	launcherValue := liveWitnessProcessRef(t, int64(command.Process.Pid), owner.Pid)
@@ -545,14 +549,14 @@ func TestQuietCustodianRemovesItsLog(t *testing.T) {
 	command := exec.Command(os.Args[0], "-test.run=^"+t.Name()+"$", "-test.count=1")
 	command.Env = witnessEnvironment(append(os.Environ(), "FIXTURE_QUIET_CUSTODIAN_WITNESS="+dir))
 	startWitnessCommand(t, command, filepath.Join(dir, "owner.stderr"), true)
-	t.Cleanup(func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() })
+	stopOwner := func() { _ = command.Process.Kill(); _, _ = command.Process.Wait() }
+	t.Cleanup(stopOwner)
 	custodian := waitWitnessRef(t, dir, filepath.Join(dir, "custodianpid"), filepath.Join(dir, "owner.stderr"))
-	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
 	logPath, err := os.ReadFile(filepath.Join(dir, "logpath"))
 	checkWitness(t, err)
 	recordsPath, err := os.ReadFile(filepath.Join(dir, "recordspath"))
 	checkWitness(t, err)
-	t.Cleanup(func() { _ = os.Remove(string(logPath)) })
+	ownWitnessCustodian(t, dir, custodian, string(logPath), stopOwner)
 	waitWitnessFile(t, dir, string(logPath))
 	waitWitnessFile(t, dir, string(recordsPath))
 	custodianDeath := armWitnessDeath(t, custodian)
@@ -634,7 +638,8 @@ func custodianWitness(t *testing.T, hard bool) {
 	ownerValue, err := EncodeRef(owner.Ref())
 	checkWitness(t, err)
 	checkWitness(t, recordWitnessRef(dir, "owner", owner.Ref()))
-	t.Cleanup(func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() })
+	stopOwnerGroup := func() { _ = syscall.Kill(-command.Process.Pid, syscall.SIGKILL); _, _ = command.Process.Wait() }
+	t.Cleanup(stopOwnerGroup)
 	refs := make([]Ref, 3)
 	var logPath []byte
 	for i := range refs {
@@ -643,11 +648,10 @@ func custodianWitness(t *testing.T, hard bool) {
 		t.Cleanup(func() { _ = SignalExact(KernelProber{}, refs[i], syscall.SIGKILL) })
 		if i == 0 {
 			logPath, _ = os.ReadFile(filepath.Join(dir, "logpath"))
-			t.Cleanup(func() { _ = os.Remove(string(logPath)) })
 		}
 	}
 	custodian := waitWitnessCustodian(t, dir, owner.Ref())
-	t.Cleanup(func() { _ = SignalExact(KernelProber{}, custodian, syscall.SIGKILL) })
+	ownWitnessCustodian(t, dir, custodian, string(logPath), stopOwnerGroup)
 	waitWitnessCustodianObserved(t, dir, string(logPath), refs...)
 	deaths := make([]witnessDeath, 0, len(refs)+1)
 	for _, ref := range refs {
@@ -1179,4 +1183,204 @@ func removeSettledWitnessFile(path string) error {
 		return err
 	}
 	return nil
+}
+
+// witnessRecordsPath names the records file beside a custodian log; both
+// carry the owner pid. A name that is not a custodian log gives "".
+func witnessRecordsPath(logPath string) string {
+	last := strings.LastIndex(logPath, ".custodian-")
+	if last < 0 || !strings.HasSuffix(logPath, ".log") {
+		return ""
+	}
+	stem, pid := logPath[:last], logPath[last+len(".custodian-"):]
+	return stem + ".fixture-refs-" + strings.TrimSuffix(pid, ".log")
+}
+
+// removeWitnessSidecars removes a custodian's log and records together;
+// absent is settled, and an empty path removes nothing.
+func removeWitnessSidecars(logf func(string, ...any), logPath string) error {
+	if logPath == "" {
+		return nil
+	}
+	records := witnessRecordsPath(logPath)
+	err := errors.Join(removeSettledWitnessFile(logPath), removeSettledWitnessFile(records))
+	if err == nil {
+		logf("witness custodian sidecars removed log=%s records=%s", logPath, records)
+	}
+	return err
+}
+
+// errWitnessSidecarsKept marks a custodian that could not be shown dead.
+// Its log and records stay for unresolved settlement to be reported.
+var errWitnessSidecarsKept = errors.New("custodian not shown dead; its log and records stay for the sweep")
+
+// witnessCustodianSettle stops what the custodian guards, then the custodian,
+// and removes its sidecars only after it is joined.
+type witnessCustodianSettle struct {
+	stop     []func()
+	released func() bool
+	signal   func() error
+	join     func() error
+	remove   func() error
+}
+
+func (settle witnessCustodianSettle) run() error {
+	for _, stop := range settle.stop {
+		stop()
+	}
+	if !settle.released() {
+		if err := settle.signal(); err != nil && !settle.released() {
+			return fmt.Errorf("%w: signal: %v", errWitnessSidecarsKept, err)
+		}
+	}
+	if err := settle.join(); err != nil {
+		return fmt.Errorf("%w: join: %v", errWitnessSidecarsKept, err)
+	}
+	return settle.remove()
+}
+
+// ownWitnessCustodian gives a test ownership of the sidecars of a custodian
+// it may kill. The owner stops first so a surviving custodian can reap it.
+func ownWitnessCustodian(t *testing.T, dir string, custodian Ref, logPath string, stop ...func()) {
+	t.Helper()
+	death := armWitnessDeath(t, custodian)
+	settle := witnessCustodianSettle{
+		stop:     stop,
+		released: func() bool { released, _ := witnessIdentityReleased(custodian); return released },
+		signal:   func() error { return SignalExact(KernelProber{}, custodian, syscall.SIGKILL) },
+		join:     func() error { return joinLauncherWitnessProcess(dir, death) },
+		remove:   func() error { return removeWitnessSidecars(t.Logf, logPath) },
+	}
+	t.Cleanup(func() {
+		if err := settle.run(); errors.Is(err, errWitnessSidecarsKept) {
+			t.Logf("custodian %d: %v", custodian.Pid, err)
+		} else if err != nil {
+			t.Errorf("custodian %d: %v", custodian.Pid, err)
+		}
+	})
+}
+
+// ownLauncherWitnessSidecars registers removal only after the writer is owned.
+func ownLauncherWitnessSidecars(cleanup *launcherWitnessCleanup, own func() error, remove func() error) error {
+	if err := own(); err != nil {
+		return err
+	}
+	cleanup.files = append(cleanup.files, remove)
+	return nil
+}
+
+func TestWitnessSidecarsAreRemovedTogether(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	logPath := filepath.Join(dir, "metasystem-test-registry-1.custodian-42.log")
+	records := filepath.Join(dir, "metasystem-test-registry-1.fixture-refs-42")
+	if got := witnessRecordsPath(logPath); got != records {
+		t.Fatalf("records path=%q, want %q", got, records)
+	}
+	if got := witnessRecordsPath(filepath.Join(dir, "x.log")); got != "" {
+		t.Fatalf("non-custodian log has records path %q", got)
+	}
+	for _, path := range []string{logPath, records} {
+		checkWitness(t, os.WriteFile(path, nil, 0o600))
+	}
+	var lines []string
+	recorder := func(format string, args ...any) { lines = append(lines, fmt.Sprintf(format, args...)) }
+	checkWitness(t, removeWitnessSidecars(recorder, logPath))
+	for _, path := range []string{logPath, records} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("sidecar %s remains: %v", path, err)
+		}
+	}
+	want := fmt.Sprintf("witness custodian sidecars removed log=%s records=%s", logPath, records)
+	if !slices.Equal(lines, []string{want}) {
+		t.Fatalf("removal lines=%q, want one line %q", lines, want)
+	}
+	checkWitness(t, removeWitnessSidecars(recorder, logPath))
+	before := len(lines)
+	checkWitness(t, removeWitnessSidecars(recorder, ""))
+	if len(lines) != before {
+		t.Fatalf("empty sidecar path logged removal: %q", lines[before:])
+	}
+}
+
+func TestWitnessCustodianSettlesInOrder(t *testing.T) {
+	t.Parallel()
+	failure := errors.New("injected failure")
+	for _, test := range []struct {
+		name         string
+		released     []bool
+		signal, join error
+		want         []string
+		kept         bool
+	}{
+		{"normal", []bool{false}, nil, nil, []string{"stop", "released", "signal", "join", "remove"}, false},
+		{"join fails", []bool{false}, nil, failure, []string{"stop", "released", "signal", "join"}, true},
+		{"signal refused still alive", []bool{false, false}, failure, nil, []string{"stop", "released", "signal", "released"}, true},
+		{"signal refused already gone", []bool{false, true}, failure, nil, []string{"stop", "released", "signal", "released", "join", "remove"}, false},
+		{"already released", []bool{true}, nil, nil, []string{"stop", "released", "join", "remove"}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			var order []string
+			next := 0
+			settle := witnessCustodianSettle{
+				stop: []func(){func() { order = append(order, "stop") }},
+				released: func() bool {
+					order = append(order, "released")
+					if next >= len(test.released) {
+						t.Fatal("unexpected release probe")
+					}
+					answer := test.released[next]
+					next++
+					return answer
+				},
+				signal: func() error { order = append(order, "signal"); return test.signal },
+				join:   func() error { order = append(order, "join"); return test.join },
+				remove: func() error { order = append(order, "remove"); return nil },
+			}
+			err := settle.run()
+			if !slices.Equal(order, test.want) {
+				t.Errorf("settlement order=%v, want %v", order, test.want)
+			}
+			if errors.Is(err, errWitnessSidecarsKept) != test.kept || (!test.kept && err != nil) {
+				t.Errorf("settlement error=%v, want sidecars kept=%v", err, test.kept)
+			}
+		})
+	}
+}
+
+func TestLauncherWitnessKeepsSidecarsUntilCustodianIsOwned(t *testing.T) {
+	t.Parallel()
+	for _, failed := range []bool{false, true} {
+		t.Run(fmt.Sprintf("setup-failed=%t", failed), func(t *testing.T) {
+			t.Parallel()
+			cleanup := &launcherWitnessCleanup{}
+			owned, removed := false, false
+			failure := errors.New("injected ownership failure")
+			err := ownLauncherWitnessSidecars(cleanup, func() error {
+				if len(cleanup.files) != 0 {
+					t.Error("sidecar removal registered before custodian ownership")
+				}
+				if failed {
+					return failure
+				}
+				owned = true
+				cleanup.writers = append(cleanup.writers, launcherWitnessWriter{join: func() error { return nil }})
+				return nil
+			}, func() error {
+				if !owned {
+					t.Error("sidecars removed without custodian ownership")
+				}
+				removed = true
+				return nil
+			})
+			if errors.Is(err, failure) != failed {
+				t.Fatalf("ownership error=%v, setup failed=%t", err, failed)
+			}
+			checkWitness(t, cleanup.run())
+			if removed == failed {
+				t.Fatalf("sidecars removed=%t, setup failed=%t", removed, failed)
+			}
+		})
+	}
 }
