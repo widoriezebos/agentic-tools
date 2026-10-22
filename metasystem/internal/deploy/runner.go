@@ -1,6 +1,7 @@
 package deploy
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -16,6 +17,8 @@ import (
 type Git struct {
 	// FetchMain fetches origin's main and returns its tip.
 	FetchMain func() (string, error)
+	// Contains says whether commit is descendant or its ancestor.
+	Contains func(commit, descendant string) (bool, error)
 	// AddTree checks commit out, detached, at dir.
 	AddTree func(dir, commit string) error
 	// RemoveTree removes the tree at dir, whether this checkout registered
@@ -23,12 +26,15 @@ type Git struct {
 	RemoveTree func(dir string) error
 }
 
-// Runner deploys origin's main for one project. Every trigger starts it and
-// none carries a commit: its target is always main's tip as it fetches it,
-// landed by construction and never behind what is active.
+// Runner deploys origin's main for one project, optionally bound to a commit.
 type Runner struct {
-	Dir     string
-	Project string
+	// Commit is the one commit this run deploys, only forward from what is
+	// active; it never follows main's tip.
+	Commit string
+	// Transport starts the adapter's calls; nil starts real processes.
+	Transport Transport
+	Dir       string
+	Project   string
 	// Installation is where the installation lies in a tree of the
 	// repository ("." at its root): deploy.json is read there in the clean
 	// tree of the commit an adapter call is about, never in a working tree.
@@ -57,11 +63,12 @@ type landedTree struct {
 
 // The outcomes of a run.
 const (
-	RunBusy     = "busy"     // another run holds the lock and deploys main's newest tip before it ends
+	RunBusy     = "busy"     // another run holds the lock
 	RunPaused   = "paused"   // deploys are paused; nothing was built
 	RunCurrent  = "current"  // main's tip is already active; nothing was built or written
 	RunDeployed = "deployed" // main's tip is active now
 	RunStopped  = "stopped"  // a pause stopped the run in progress
+	RunSkipped  = "skipped"  // a bound run could not tell that its commit is safe; Reason says why
 	RunFailed   = "failed"   // the attempt on main's tip failed; its line says why
 )
 
@@ -69,6 +76,8 @@ const (
 type Report struct {
 	Outcome string `json:"outcome"`
 	Tip     string `json:"tip,omitempty"`
+	// Reason is why a bound run skipped, or what covers its commit.
+	Reason string `json:"reason,omitempty"`
 	// Lines are the attempts this run made; Recorded are the lines it wrote
 	// to bring the record in line with what the adapter reports active.
 	Lines    []Line  `json:"lines,omitempty"`
@@ -138,7 +147,12 @@ func (r *Runner) pass(tried map[string]bool, report *Report) (again bool, outcom
 		return false, "", err
 	}
 	defer held.Release()
-	if leftover, ok, _ := ReadActive(r.Dir); ok && leftover.AdapterAlive() {
+	leftover, ok, err := ReadActive(r.Dir)
+	if err != nil && r.Commit != "" {
+		report.Reason = err.Error()
+		return false, RunSkipped, nil
+	}
+	if ok && leftover.AdapterAlive() {
 		// A run that died left its adapter running: it is the run in
 		// progress until it ends, so no second one starts beside it.
 		report.Holder, report.Orphaned = &leftover, true
@@ -151,6 +165,12 @@ func (r *Runner) pass(tried map[string]bool, report *Report) (again bool, outcom
 	tip, err := r.Git.FetchMain()
 	if err != nil {
 		return false, "", fmt.Errorf("origin's main can't be fetched: %w", err)
+	}
+	if r.Commit != "" {
+		if report.Reason = r.unsafe(tip); report.Reason != "" {
+			return false, RunSkipped, nil
+		}
+		tip = r.Commit
 	}
 	defer r.unland()
 	if err := r.clear(); err != nil {
@@ -188,6 +208,11 @@ func (r *Runner) pass(tried map[string]bool, report *Report) (again bool, outcom
 			outcome = RunFailed
 			break
 		}
+		if r.Commit != "" {
+			if outcome, report.Reason = r.forward(current, asked); outcome != "" {
+				break
+			}
+		}
 		tried[tip] = true
 		line, err := r.attempt(tip, current, log)
 		if err != nil {
@@ -199,6 +224,9 @@ func (r *Runner) pass(tried map[string]bool, report *Report) (again bool, outcom
 			break
 		}
 		current = &line
+		if r.Commit != "" {
+			break
+		}
 		if tip, err = r.Git.FetchMain(); err != nil {
 			return false, "", fmt.Errorf("origin's main can't be fetched: %w", err)
 		}
@@ -212,7 +240,7 @@ func (r *Runner) pass(tried map[string]bool, report *Report) (again bool, outcom
 	if err := held.Release(); err != nil {
 		return false, outcome, err
 	}
-	if paused, err := r.paused(); err != nil || paused {
+	if paused, err := r.paused(); err != nil || paused || r.Commit != "" {
 		return false, outcome, err
 	}
 	next, err := r.Git.FetchMain()
@@ -221,6 +249,48 @@ func (r *Runner) pass(tried map[string]bool, report *Report) (again bool, outcom
 		return false, outcome, nil
 	}
 	return (current == nil || next != current.Commit) && !tried[next], outcome, nil
+}
+
+// unsafe is why a bound run, under the lock, does not try its commit
+// before it asks the adapter anything; "" when nothing stops it.
+func (r *Runner) unsafe(tip string) string {
+	if _, err := readJSON(pendingPath(r.Dir), &Line{}); err != nil {
+		return err.Error()
+	}
+	if on, err := r.contains(r.Commit, tip); err != nil {
+		return "its ancestry to origin's main " + Short(tip) + " can't be read: " + err.Error()
+	} else if !on {
+		return "it is not on origin's main " + Short(tip)
+	}
+	return ""
+}
+
+// forward decides a bound run against what is active: covered is current,
+// after it is tried, and anything else is skipped.
+func (r *Runner) forward(current *Line, asked answer) (string, string) {
+	if current == nil && !asked.done(OutcomeNone) {
+		return RunSkipped, "the adapter reports an active deploy the record never saw"
+	}
+	if current != nil {
+		covered, err := r.contains(r.Commit, current.Commit)
+		after, err2 := r.contains(current.Commit, r.Commit)
+		switch {
+		case err != nil || err2 != nil:
+			return RunSkipped, "its ancestry to the active " + Short(current.Commit) + " can't be read: " + errors.Join(err, err2).Error()
+		case covered:
+			return RunCurrent, "already covered by " + Short(current.Commit)
+		case !after:
+			return RunSkipped, "it is not after the active " + Short(current.Commit)
+		}
+	}
+	return "", ""
+}
+
+func (r *Runner) contains(commit, descendant string) (bool, error) {
+	if r.Git.Contains == nil {
+		return false, errors.New("ancestry can't be read")
+	}
+	return r.Git.Contains(commit, descendant)
 }
 
 // reconcile asks the adapter of the current deploy, or of main's tip while

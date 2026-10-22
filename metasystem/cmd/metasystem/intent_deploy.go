@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -38,7 +39,8 @@ type deployOwners struct {
 	executable func() (string, error)
 	launch     func(argv []string, dir, log string) (int64, error)
 	// started hears each adapter process a run starts.
-	started func(deploy.Active)
+	started   func(deploy.Active)
+	transport deploy.Transport
 }
 
 func (inv *intentInvocation) deploy() deployOwners {
@@ -107,7 +109,7 @@ func resolveDeployProject(owners deployOwners, installation, root string) (deplo
 }
 
 func (p deployProject) runner(by string) *deploy.Runner {
-	return &deploy.Runner{Dir: p.dir, Project: p.key, Installation: p.installation, Git: p.owners.git(p.root), By: by, Now: p.owners.now, Started: p.owners.started}
+	return &deploy.Runner{Dir: p.dir, Project: p.key, Installation: p.installation, Git: p.owners.git(p.root), By: by, Now: p.owners.now, Started: p.owners.started, Transport: p.owners.transport}
 }
 
 // deployCommand declares a deploy verb whose run starts once the checkout's
@@ -161,9 +163,9 @@ func deployIntentCommands() []intentCommand {
 			object: "deploy", action: "now", audience: "both", summary: "deploy origin's main tip through the project's deploy adapter",
 			usage: []string{"metasystem deploy now"},
 			details: []string{"Fetches origin's main and builds, activates and verifies its tip in a clean tree; it waits for the adapter however long a build takes.",
-				"When main's tip is already active nothing is built or written. While another run holds the deploy, this one exits: that run deploys main's newest tip before it ends.",
-				"The landing lane starts it after every push that changed main. Refused while deploys are paused."},
-			flags:    []intentFlag{{name: "by", value: "NAME", advanced: true, hidden: true, usage: "who the record names as the deploy's actor"}},
+				"When main's tip is already active nothing is built or written. While another run holds the deploy, this one exits and names the command to run once it ended.",
+				"--commit deploys that landed commit only, never main's newer tip, and only forward from what is active. The landing lane starts it after every push that changed main. Refused while deploys are paused."},
+			flags:    []intentFlag{{name: "commit", value: "SHA", advanced: true, usage: "deploy this full commit of origin's main, and nothing newer"}, {name: "by", value: "NAME", advanced: true, hidden: true, usage: "who the record names as the deploy's actor"}},
 			maxArgs:  0,
 			examples: []string{"metasystem deploy now"},
 		}, runIntentDeployNow),
@@ -312,7 +314,13 @@ func runIntentDeployNow(inv *intentInvocation, project deployProject) int {
 			by = "the seat at " + project.root
 		}
 	}
-	return inv.render(inv.deployRun(project, by, ""))
+	runner := project.runner(by)
+	runner.Commit = strings.TrimSpace(inv.input.text("commit"))
+	if inv.input.has("commit") && !regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`).MatchString(runner.Commit) {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--commit takes a full commit id, not " + strconv.Quote(runner.Commit) + "; nothing was done", retry: "git rev-parse prints the full id"})
+	}
+	report, err := runner.Run()
+	return inv.render(inv.deployReport(project, report, err, ""))
 }
 
 // deployRun runs the runner and says what it did; done prefixes what the
@@ -338,10 +346,29 @@ func (inv *intentInvocation) deployReport(project deployProject, report deploy.R
 	switch report.Outcome {
 	case deploy.RunCurrent:
 		result.Outcome, result.Summary = intentUnchanged, done+"the deploy already holds: main's tip "+deploy.Short(report.Tip)+" is active, so nothing was built"
+		if report.Reason != "" || inv.input.has("commit") {
+			reason := report.Reason
+			if reason == "" {
+				reason = "active"
+			}
+			result.Summary = done + "the deploy already holds: " + deploy.Short(report.Tip) + " is " + reason + ", so nothing was built"
+		}
+	case deploy.RunSkipped:
+		result.Outcome, result.code = intentRefused, 1
+		result.Summary = deploy.Short(inv.input.text("commit")) + " was not deployed: " + report.Reason + "; what is active stays"
+		result.next, result.nextReason = inv.publicArgv("deploy", "status", "--verify"), "shows what is active"
 	case deploy.RunBusy:
-		result.Outcome, result.Summary = intentUnchanged, done+"a deploy run is in progress; it deploys main's newest tip before it ends"
+		retry := inv.publicArgv("deploy", "now")
+		if inv.input.has("commit") {
+			retry = inv.publicArgv("deploy", "now", "--commit", strings.TrimSpace(inv.input.text("commit")))
+		}
+		holderText := ""
 		if holder := report.Holder; holder != nil {
-			result.Details = append(result.Details, fmt.Sprintf("the run in progress: %s of %s, process %d", holder.Operation, deploy.Short(holder.Commit), holder.PID))
+			holderText = fmt.Sprintf(" (%s of %s, process %d)", holder.Operation, deploy.Short(holder.Commit), holder.PID)
+		}
+		result.Outcome, result.Summary = intentUnchanged, done+"a deploy run is in progress"+holderText+", so nothing was done; when deploy status shows it ended, run "+strings.Join(retry, " ")
+		result.next = retry
+		if holder := report.Holder; holder != nil {
 			if report.Orphaned {
 				result.Summary = fmt.Sprintf("%sthe %s of %s that an ended run left running (process %d) still holds the deploy, so nothing was started", done, holder.Operation, deploy.Short(holder.Commit), holder.PID)
 				result.next, result.nextReason = inv.publicArgv("deploy", "pause"), "a person ends it; deploy resume then deploys main's tip"

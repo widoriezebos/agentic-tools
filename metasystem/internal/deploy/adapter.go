@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
@@ -114,7 +115,6 @@ func (r *Runner) call(operation, commit, artifact string, previous *Line, log st
 	command.Stdin = bytes.NewReader(body)
 	var stdout bytes.Buffer
 	command.Stdout, command.Stderr = &stdout, logFile
-	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	if active != nil {
 		*active = Active{Runner: os.Getpid(), Kind: active.Kind, Operation: operation, Commit: active.Commit, StartedAt: r.Now(), Log: log}
 		active.RunnerBorn, _ = identity.ProcessBirth(int64(active.Runner))
@@ -133,14 +133,18 @@ func (r *Runner) call(operation, commit, artifact string, previous *Line, log st
 			return result
 		}
 	}
-	if err := command.Start(); err != nil {
+	start := r.Transport
+	if start == nil {
+		start = startProcess
+	}
+	process, err := start(command)
+	if err != nil {
 		// Nothing ran, so nothing changed.
 		result.state, result.Reason = stateFailed, "the adapter can't be started: "+err.Error()
 		return result
 	}
 	if active != nil {
-		active.PID = command.Process.Pid
-		active.Born, _ = identity.ProcessBirth(int64(active.PID))
+		active.PID, active.Born = process.PID, process.Born
 		if err := writeJSON(activePath(r.Dir), active); err != nil {
 			fmt.Fprintf(logFile, "run.json can't name the adapter, so deploy pause can't end this %s: %v\n", operation, err)
 		}
@@ -148,11 +152,10 @@ func (r *Runner) call(operation, commit, artifact string, previous *Line, log st
 			r.Started(*active)
 		}
 		if paused, _ := r.paused(); paused && !r.acting {
-			_ = syscall.Kill(-active.PID, syscall.SIGKILL)
+			process.Kill()
 		}
 	}
-	_ = command.Wait()
-	result.exit = command.ProcessState.ExitCode()
+	result.exit = process.Wait()
 	output := bytes.TrimSpace(stdout.Bytes())
 	readable := len(output) > 0 && json.Unmarshal(output, &result.Response) == nil
 	switch {
@@ -185,4 +188,28 @@ func Short(commit string) string {
 		return commit[:12]
 	}
 	return commit
+}
+
+// Process is one started adapter call: its process and birth time, its
+// wait for the exit code, and the end of its process group.
+type Process struct {
+	PID  int
+	Born time.Time
+	Wait func() int
+	Kill func()
+}
+
+// Transport starts one prepared adapter command; nil starts it as a process
+// in a group of its own.
+type Transport func(command *exec.Cmd) (Process, error)
+
+func startProcess(command *exec.Cmd) (Process, error) {
+	command.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+	if err := command.Start(); err != nil {
+		return Process{}, err
+	}
+	pid := command.Process.Pid
+	born, _ := identity.ProcessBirth(int64(pid))
+	return Process{PID: pid, Born: born, Wait: func() int { _ = command.Wait(); return command.ProcessState.ExitCode() },
+		Kill: func() { _ = syscall.Kill(-pid, syscall.SIGKILL) }}, nil
 }

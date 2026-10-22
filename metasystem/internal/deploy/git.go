@@ -2,6 +2,7 @@ package deploy
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -26,6 +27,14 @@ func CheckoutGit(root string) Git {
 				return "", err
 			}
 			return git(root, "rev-parse", "--verify", "refs/remotes/origin/main^{commit}")
+		},
+		Contains: func(commit, descendant string) (bool, error) {
+			_, err := git(root, "merge-base", "--is-ancestor", commit, descendant)
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				return false, nil
+			}
+			return err == nil, err
 		},
 		AddTree: func(dir, commit string) error {
 			_, err := git(root, "worktree", "add", "--detach", "--force", dir, commit)

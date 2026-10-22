@@ -29,7 +29,19 @@ func witnessDeployRepeat(t *testing.T, words ...string) {
 	idemSameTree(t, "a repeated "+words[0]+" "+words[1], before, idemTreeDigest(t, b.home))
 }
 
-func witnessDeployNowRepeat(t *testing.T) { witnessDeployRepeat(t, "deploy", "now") }
+func witnessDeployNowRepeat(t *testing.T) {
+	witnessDeployRepeat(t, "deploy", "now")
+	b := newBoundCommandBed(t)
+	words := []string{"deploy", "now", "--commit", commandA}
+	if code, text := b.run(words...); code != 0 {
+		t.Fatalf("first bound deploy = %d\n%s", code, text)
+	}
+	before := idemTreeDigest(t, b.home)
+	if code, text := b.run(words...); code != 0 {
+		t.Fatalf("repeated bound deploy = %d\n%s", code, text)
+	}
+	idemSameTree(t, "a repeated bound deploy", before, idemTreeDigest(t, b.home))
+}
 
 func witnessDeployRollbackRepeat(t *testing.T) { witnessDeployRepeat(t, "deploy", "rollback") }
 

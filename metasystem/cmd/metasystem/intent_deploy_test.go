@@ -38,8 +38,10 @@ type deployVerbBed struct {
 	path   string
 	clock  time.Time
 	// launched are the detached starts the lane made: argv, then dir and log.
-	launched [][]string
-	pushed   plain.PushOutcome
+	launched  [][]string
+	pushed    plain.PushOutcome
+	transport deploy.Transport
+	git       func(string) deploy.Git
 }
 
 func newDeployVerbBed(t *testing.T, declared bool) *deployVerbBed {
@@ -71,7 +73,7 @@ func newDeployVerbBed(t *testing.T, declared bool) *deployVerbBed {
 
 func (b *deployVerbBed) owners() intentOwners {
 	notARepository := func(string) (string, error) { return "", errors.New("not a repository") }
-	return intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), deploy: deployOwners{
+	owners := intentOwners{resolver: stateroot.NewResolver(notARepository, os.Executable), deploy: deployOwners{
 		home: func() (string, error) { return b.home, nil },
 		person: func(string) (string, error) {
 			if b.person != nil {
@@ -97,6 +99,7 @@ func (b *deployVerbBed) owners() intentOwners {
 				return nil
 			}, RemoveTree: os.RemoveAll}
 		},
+		transport:  b.transport,
 		path:       func() string { return b.path },
 		executable: func() (string, error) { return "/engines/metasystem", nil },
 		launch: func(argv []string, dir, log string) (int64, error) {
@@ -104,6 +107,10 @@ func (b *deployVerbBed) owners() intentOwners {
 			return 4242, nil
 		},
 	}}
+	if b.git != nil {
+		owners.deploy.git = b.git
+	}
+	return owners
 }
 
 func (b *deployVerbBed) run(words ...string) (int, string) {
