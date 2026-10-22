@@ -149,10 +149,10 @@ func TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody(t
 		t.Fatal("killed launcher exited successfully")
 	}
 	launcherWaited = true
-	if identity.AliveRef(prober, worker) == identity.Alive {
-		if err := identity.SignalExact(prober, worker, syscall.SIGKILL); err != nil {
-			t.Fatal(err)
-		}
+	// The worker may exit, or be ended by the custodian, between any check
+	// and the signal; gone is the outcome this kill wants.
+	if err := identity.SignalExact(prober, worker, syscall.SIGKILL); err != nil && !errors.Is(err, identity.ErrGone) {
+		t.Fatal(err)
 	}
 	waitCustodyTerminal(t, prober, watchdogProcess)
 	markerData, err := os.ReadFile(markerPath)

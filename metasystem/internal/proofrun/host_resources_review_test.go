@@ -208,10 +208,9 @@ func TestHostResourceNestedCompletionCannotClearLostOuterCustody(t *testing.T) {
 	}
 	assertDirty("after nested completion")
 	for _, ref := range []identity.Ref{custodian, launcherExact.Ref(), worker} {
-		if liveCustodyRef(prober, ref) {
-			if err := identity.SignalExact(prober, ref, syscall.SIGKILL); err != nil {
-				t.Fatalf("kill exact custody process %+v: %v", ref, err)
-			}
+		// Killing one may end the next before its signal; gone is the aim.
+		if err := identity.SignalExact(prober, ref, syscall.SIGKILL); err != nil && !errors.Is(err, identity.ErrGone) {
+			t.Fatalf("kill exact custody process %+v: %v", ref, err)
 		}
 	}
 	if err := launcher.Wait(); err == nil {

@@ -723,6 +723,10 @@ func TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch(t *testing.T) {
 	fixture := pinProofBinaryFixture(t, b.root())
 	env := append(os.Environ(), "HOME="+b.registry, "METASYSTEM_BIN="+engine, "METASYSTEM_SUPERVISION_REGISTRY_HOME="+b.registry, "METASYSTEM_AGENT_RUNTIME=fake")
 	arm := []string{"up", "--metasystem-root", b.root(), "--repo", b.root()}
+	// The dispatched job's supervisor runs in a process group of its own that
+	// no shutdown stops; it writes under the root until it ends, so the root
+	// is removed only after the whole group is gone.
+	jobGroup := 0
 	t.Cleanup(func() {
 		cmd := fixture.command(env, engine, append(arm, "--shutdown")...)
 		if output, err := cmd.CombinedOutput(); err != nil {
@@ -730,6 +734,11 @@ func TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch(t *testing.T) {
 		}
 		if _, err := steward.Disarm(b.root()); err != nil {
 			t.Errorf("disarm fixture steward: %v", err)
+		}
+		if jobGroup > 0 {
+			if err := testenv.AwaitProcessTargetGone(-jobGroup); err != nil {
+				t.Errorf("dispatched job: %v", err)
+			}
 		}
 	})
 	exact, state, err := (identity.KernelProber{}).Probe(int64(os.Getpid()))
@@ -818,6 +827,11 @@ func TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(b.root(), "artifacts", "agents", "jobs", job+".json"))
 	if err != nil || json.Unmarshal(data, &record) != nil {
 		t.Fatalf("dispatched job %q: %v", job, err)
+	}
+	if pgid, _ := record["pgid"].(float64); pgid > 0 {
+		jobGroup = int(pgid)
+	} else {
+		t.Fatalf("dispatched job %q records no process group: %v", job, record["pgid"])
 	}
 	if record["goalId"] != nil || record["reviewRoundLimit"] != float64(6) || record["capMin"] != float64(7) || record["reviews"] != "commit:"+commit || record["runtime"] != "fake" || record["requestedModel"] != "fake-model" {
 		t.Fatalf("lane read allowance/roster: %+v", record)
