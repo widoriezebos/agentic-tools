@@ -4773,7 +4773,15 @@
       },
       "holds": [],
       "opened": "2026-10-19T22:03:02Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-10-22T09:51:38Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "GVVBDRNMF71YRX8032XGDYT371-m1e-4a1ba1c4",
+        "by": "Wido",
+        "why": "fixed by the-fixture-custodian-settles-its-home U1a 998a2a78ef and U1b 292ba6a063 (the custodian no longer halts; the last one out removes its folder) (TestDeadRegistryHomeIsRemovedByAnotherProcessMain); no sighting since the fix landed and every full proof of main since then green (2026-10-22 01:13-11:28); closure by evidence (program decision 2)"
+      },
       "class": "flake"
     },
     {
