@@ -5730,7 +5730,15 @@
       },
       "holds": [],
       "opened": "2026-10-20T14:28:18Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-10-22T10:00:41Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "2ZVCMS828GEN708DCXYS87PBSD-m1e-4a1ba1c4",
+        "by": "Wido",
+        "why": "fixed by the-fixture-custodian-settles-its-home U2 a3118b1819 (the test observes only what it injects) (TestSetupChildIsEndedWhenTheBinaryIsKilled); no sighting since the fix landed and every full proof of main since then green (2026-10-22 01:13-11:28); closure by evidence (program decision 2)"
+      },
       "class": "flake"
     },
     {
