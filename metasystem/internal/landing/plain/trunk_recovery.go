@@ -166,8 +166,9 @@ func applicableMainProof(install, checkout, commit, tree string, seams ProveSeam
 	return Result{}, false
 }
 
-// flakeRecordsReason marks a main check inherited across the lane's own
-// flake records; proof.trunk-every, not the scoped hour, bounds it.
+// flakeRecordsReason marks a main check inherited across goal records and the
+// incident register only; proof.trunk-every, not the scoped hour, bounds it.
+// The value is stored in results and stays as first written.
 const flakeRecordsReason = "main moved by flake records only; the last full green stands"
 
 func (r Result) flakeInherited() bool {
@@ -175,8 +176,8 @@ func (r Result) flakeInherited() bool {
 }
 
 // inheritFlakeRecords records that tree inherits main's last executed full
-// green when every change since it is a flake record. A later red, any other
-// change or any unreadable fact records nothing, and the check runs.
+// green when every change since it is a goal record or the incident register.
+// A later red, any other change or any unreadable fact records nothing, and the check runs.
 func inheritFlakeRecords(install, checkout, commit, tree string, seams ProveSeams) error {
 	results, damaged, err := countedLines[Result](resultsPath(install))
 	if err != nil || damaged != 0 {
@@ -221,27 +222,26 @@ func inheritFlakeRecords(install, checkout, commit, tree string, seams ProveSeam
 	if err != nil || relErr != nil || strings.TrimSpace(changed) == "" || !recordsOnlyPaths(install, checkout, paths) {
 		return nil
 	}
-	before, after := map[string][]byte{}, map[string][]byte{}
+	after := map[string][]byte{}
 	for _, path := range paths {
 		name, inside := strings.CutPrefix(path, filepath.ToSlash(prefix)+"/")
 		if prefix == "." {
 			name, inside = path, true
 		}
-		if !inside || !goal.FlakeRecordPath(name) {
+		if !inside || !goal.GoalRecordPath(name) {
 			return nil
 		}
-		old, oldErr := seams.git(checkout, "show", base.FullTree+":"+path)
-		now, nowErr := seams.git(checkout, "show", tree+":"+path)
-		if oldErr != nil || nowErr != nil {
+		now, err := seams.git(checkout, "show", tree+":"+path)
+		if err != nil {
 			return nil
 		}
-		before[name], after[name] = []byte(old), []byte(now)
+		after[name] = []byte(now)
 	}
-	if !goal.FlakeRecordsOnly(before, after) {
+	if !goal.GoalRecordsOnly(after) {
 		return nil
 	}
 	return appendLine(resultsPath(install), Result{Trunk: true, Commit: commit, Tree: tree, Result: Green, Attempt: seams.newID(),
 		At: seams.now().Format(time.RFC3339), Log: base.Log, Scope: "inherited", ScopeReason: flakeRecordsReason,
-		Reason: "inherits green from tree " + Short(base.FullTree) + "; main moved by flake records only", Base: base.FullTree, BaseCommit: base.Commit,
+		Reason: "inherits green from tree " + Short(base.FullTree) + "; main moved by goal records only", Base: base.FullTree, BaseCommit: base.Commit,
 		FullTree: base.FullTree, FullAt: base.FullAt, Environment: base.Environment}, seams)
 }

@@ -193,7 +193,7 @@ human return restores no automatic allowance.
    On `main_move.kind: records-only`, continue the current step and run `landing push`
    when its proof is green; the engine folds the records with one merge and checks the tree.
    Never check out new main or rebuild for a records-only move.
-   A recorded flake makes main inherit its last full green and starts no check (`inherits green from tree …; main moved by flake records only`); `proof.trunk-every` schedules main's next proof.
+   Main inherits its last full green without a check when only present, parseable goal pages under `plans/goals/` or `plans/goals/trunk-red.json` change, including a recorded flake; `proof.trunk-every` schedules its next proof.
    On `main_move.kind: code`, check out the new main, merge the same recorded batch members,
    and run `landing prove --gate --wait` and read `last_gate`: green or skipped continues to
    `landing prove`; none means the merge gate has not run for this merge. When other files moved and
