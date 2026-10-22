@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/ui/httpd"
 )
@@ -49,6 +50,7 @@ func (source HostPipeline) View(now time.Time) board.View {
 	view.Readable, view.Reason, view.Bridge = picture.Readable, picture.Reason, board.BridgeAbsent
 	if home, err := source.Home(); err == nil {
 		view.Bridge = board.BridgeState(home)
+		view.Kept = board.Kept(home)
 	}
 	return view
 }
@@ -129,6 +131,51 @@ func PipelineStall(installation string) time.Duration {
 		return withPipeline.Pipeline.Stall
 	}
 	return config.DefaultPipelineSettings().Stall
+}
+
+// RetireDone is the steward's pass that moves the cards of done goals off
+// the board, each armed seat judged by its own accepted ledger at its
+// installation's state root (resolve and ledger are seams for tests).
+// Nothing is retired when the registry or the board home cannot be read.
+func (source HostPipeline) RetireDone(resolve func(stateroot.Installation) (stateroot.State, error), ledger func(string) (*goal.TreeGoals, error)) func(string, time.Time) error {
+	return func(_ string, now time.Time) error {
+		seats, seatsErr := source.Seats()
+		home, homeErr := source.Home()
+		if seatsErr != nil || homeErr != nil {
+			return nil
+		}
+		return board.Retire(home, seats, func(seat board.Seat) (map[string]string, error) {
+			installation, err := stateroot.ParseInstallation(seat.Installation)
+			if err != nil {
+				return nil, err
+			}
+			root, err := resolve(installation)
+			if err != nil {
+				return nil, err
+			}
+			tree, err := ledger(root.Path())
+			if err != nil || tree == nil {
+				return nil, err
+			}
+			ended := map[string]string{}
+			for id, file := range tree.Done {
+				if file != nil && file.State == goal.StateDone && tree.Live[id] == nil {
+					ended[id] = board.ReasonDone
+				}
+			}
+			return ended, nil
+		}, now)
+	}
+}
+
+// AcceptedTree is the accepted ledger at root; nil when there is none yet.
+func AcceptedTree(root string) (*goal.TreeGoals, error) {
+	tip, exists, err := goal.AcceptedLedgerTip(root)
+	if err != nil || !exists {
+		return nil, err
+	}
+	projection, err := goal.ProjectAt(root, tip)
+	return projection.Tree, err
 }
 
 // AcceptedClaims maps every live claimed goal of the accepted ledger to its

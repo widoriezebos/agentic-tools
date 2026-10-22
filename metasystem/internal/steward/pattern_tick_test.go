@@ -86,3 +86,28 @@ func TestTickRunsStuckUnitsAfterHealth(t *testing.T) {
 		t.Fatalf("failed passes calls=%d error=%v", calls, err)
 	}
 }
+
+func TestTickReportsRunCardRetirement(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	calls, healthy := 0, false
+	cfg := TickConfig{Now: now, RetireCards: func(got string, at time.Time) error {
+		calls++
+		if !healthy || got != root || !at.Equal(now) {
+			t.Errorf("retirement before health or wrong inputs: %s %s", got, at)
+		}
+		return errors.New("board full")
+	}}
+	err := runTickReports(root, cfg, func() error { healthy = true; return nil })
+	if calls != 1 || err == nil || !strings.Contains(err.Error(), "card retirement: board full") {
+		t.Fatalf("calls %d, error %v", calls, err)
+	}
+	healthErr := errors.New("health failed")
+	if err := runTickReports(root, cfg, func() error { return healthErr }); err != healthErr || calls != 2 {
+		t.Fatalf("health precedence: %v calls %d", err, calls)
+	}
+	if err := runPatterns(root, cfg); err != nil || calls != 2 {
+		t.Fatalf("helm reports retired cards: %v calls %d", err, calls)
+	}
+}

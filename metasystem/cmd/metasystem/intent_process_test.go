@@ -847,3 +847,48 @@ func TestSystemStopIsPartialWhenTheWorktreesCannotBeListed(t *testing.T) {
 		t.Fatalf("a launch the stop could not place was cancelled: %+v", record)
 	}
 }
+
+func TestStatusShowsTheKeptCards(t *testing.T) {
+	t.Parallel()
+	for _, content := range []string{"card kept: m1b/*: ledger unreadable\ncard kept: m1b/goal-x: archive exists", ""} {
+		t.Run(map[bool]string{true: "kept", false: "empty"}[content != ""], func(t *testing.T) {
+			t.Parallel()
+			host := newPipelineHost(t)
+			host.checkout(t, "b", "m1b", false, false)
+			dir := filepath.Join(board.Dir(host.home), board.RetiredNamespace)
+			if err := os.MkdirAll(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "kept.txt"), []byte(content), 0600); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+			b := newProcessBed(t)
+			owners := b.owners()
+			owners.delivery.now = func() time.Time { return now }
+			owners.delivery.boardView = func(string, time.Time) board.View { return host.source(nil).View(now) }
+			code, stdout, stderr := b.run(owners, "status")
+			if code != 0 {
+				t.Fatalf("status %d: %s", code, stderr)
+			}
+			_, data := b.runJSON(owners, "status")
+			encoded, _ := json.Marshal(data.Data.(map[string]any)["board"])
+			var view board.View
+			if err := json.Unmarshal(encoded, &view); err != nil {
+				t.Fatal(err)
+			}
+			if content == "" {
+				if strings.Contains(stdout, "card kept:") || len(view.Kept) != 0 || strings.Contains(string(encoded), `"kept"`) {
+					t.Fatalf("empty kept report: %s %s", stdout, encoded)
+				}
+			} else {
+				section := strings.Index(stdout, "Seats on this host")
+				for _, line := range strings.Split(content, "\n") {
+					if section < 0 || !strings.Contains(stdout[section:], line) || !slices.Contains(view.Kept, line) {
+						t.Errorf("missing kept line %q: %s %s", line, stdout, encoded)
+					}
+				}
+			}
+		})
+	}
+}

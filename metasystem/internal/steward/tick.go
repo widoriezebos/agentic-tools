@@ -99,6 +99,9 @@ type TickConfig struct {
 	Seat SeatLauncher
 	// Units reads the same unit stages as the public status verb.
 	Units func(root, goalID string) ([]UnitStage, error)
+	// RetireCards moves the cards of finished goals off the host board; nil
+	// retires nothing. It does not run under the helm.
+	RetireCards func(repoRoot string, now time.Time) error
 	// Patterns is the behaviour-pattern pass (design
 	// steward-acts-on-behaviour-patterns): it reports and decides nothing.
 	// It runs after the tick's health pass and, as a report, under the helm
@@ -377,6 +380,11 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 func runTickReports(repoRoot string, cfg TickConfig, health func() error) error {
 	healthErr := health()
 	patternErr := runPatterns(repoRoot, cfg)
+	if cfg.RetireCards != nil {
+		if err := cfg.RetireCards(repoRoot, cfg.now()); err != nil {
+			patternErr = errors.Join(patternErr, fmt.Errorf("card retirement: %w", err))
+		}
+	}
 	if healthErr != nil {
 		return healthErr
 	}

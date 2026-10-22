@@ -86,6 +86,8 @@ func CheckClaims(picture Picture, seats []Seat, claims map[string]string) Pictur
 // Bridge are the caller's: whether the registry could be read, and the
 // bridge's state.
 type View struct {
+	// Kept are the cards the last retirement pass left in place, and why.
+	Kept     []string   `json:"kept,omitempty"`
 	Readable bool       `json:"readable"`
 	Reason   string     `json:"reason,omitempty"`
 	Bridge   string     `json:"bridge"`

@@ -183,7 +183,11 @@ func (b statusBoard) drawSeats(page *textui.Page, env textui.Env) {
 		page.Section("Seats on this host", aside).Text("no armed seat on this host")
 		return
 	}
-	table := page.Section("Seats on this host", aside).Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})
+	section := page.Section("Seats on this host", aside)
+	for _, line := range b.view.Kept {
+		section.Text(line)
+	}
+	table := section.Table(textui.Column{}, textui.Column{Flex: true, Wrap: true})
 	for _, seat := range b.view.Seats {
 		table.Row(textui.Marked(seatState(seat), seat.Machine), textui.Plain(seat.Text(b.now, env.Zone)))
 		if !page.Verbose() {
