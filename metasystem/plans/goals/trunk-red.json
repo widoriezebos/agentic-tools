@@ -4612,7 +4612,15 @@
       },
       "holds": [],
       "opened": "2026-10-19T20:38:07Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-10-22T09:50:30Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "DPZNXPXYEV6R8X96KRKZ0P10AS-m1e-4a1ba1c4",
+        "by": "Wido",
+        "why": "fixed by the-fixture-custodian-settles-its-home U1a 998a2a78ef and U1b 292ba6a063 (the custodian no longer halts; the last one out removes its folder) (TestKilledTestBinaryLeavesNoFixtureChild); no sighting since the fix landed and every full proof of main since then green (2026-10-22 01:13-11:28); closure by evidence (program decision 2)"
+      },
       "class": "flake"
     },
     {
