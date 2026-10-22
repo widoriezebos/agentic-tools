@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 
@@ -715,7 +716,7 @@ func TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	configBytes = append(configBytes, []byte("\nrole.code-critic.runtime=fake\nrole.code-critic.model.fake=fake-model\nlanding.fix-minutes=7\nmetasystem.budget.review-round-max=6\nevidence.root="+t.TempDir()+"\n")...)
+	configBytes = append(configBytes, []byte("\nrole.code-critic.runtime=fake\nrole.code-critic.model.fake=fake-model\nlanding.fix-minutes=7\nmetasystem.budget.review-round-max=6\nwatch.interval-sec=600\nevidence.root="+t.TempDir()+"\n")...)
 	if err := os.WriteFile(conf, configBytes, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -736,9 +737,72 @@ func TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch(t *testing.T) {
 		t.Fatalf("probe fixture holder: %s %v", state, err)
 	}
 	start := append(append([]string{}, arm...), "--session", "landing", "--pid", fmt.Sprint(exact.Pid), "--start-time", fmt.Sprint(exact.StartedAt.Unix()), "--tag", "landing", "--owner-lineage", lane.AgentLineage)
-	if output, err := fixture.command(env, engine, start...).CombinedOutput(); err != nil {
-		t.Fatalf("arm real dispatcher: %v %s", err, output)
+	upRun := fixture.command(env, engine, start...)
+	var upOutput bytes.Buffer
+	upRun.Stdout, upRun.Stderr = &upOutput, &upOutput
+	if err := upRun.Start(); err != nil {
+		t.Fatalf("arm real dispatcher: %v", err)
 	}
+	upDone := make(chan struct{})
+	var upErr error
+	go func() { upErr = upRun.Wait(); close(upDone) }()
+	upExited := func() bool {
+		select {
+		case <-upDone:
+			return true
+		default:
+			return false
+		}
+	}
+	t.Cleanup(func() {
+		if !upExited() {
+			_ = upRun.Process.Kill()
+			<-upDone
+		}
+	})
+	supervision := filepath.Join(b.root(), "artifacts", "agents", "supervision")
+	var watcherPid int
+	testenv.AwaitFrom(t, "the first watcher heartbeat", func() bool {
+		var state struct {
+			Components map[string]struct {
+				Pid       int    `json:"pid"`
+				Heartbeat string `json:"heartbeat"`
+			} `json:"components"`
+		}
+		data, err := os.ReadFile(filepath.Join(supervision, "state.json"))
+		if err != nil || json.Unmarshal(data, &state) != nil {
+			return false
+		}
+		watcher := state.Components["watcher"]
+		if watcher.Pid <= 0 {
+			return false
+		}
+		if _, err := os.Stat(watcher.Heartbeat); err != nil {
+			return false
+		}
+		watcherPid = watcher.Pid
+		return true
+	}, func() (bool, string) {
+		if upExited() {
+			return false, upOutput.String()
+		}
+		return true, ""
+	}, nil)
+	if err := syscall.Kill(watcherPid, syscall.SIGUSR1); err != nil {
+		t.Fatalf("wake the watcher: %v", err)
+	}
+	testenv.Await(t, "the arming of the real dispatcher", upExited)
+	if upErr != nil {
+		t.Fatalf("arm real dispatcher: %v %s", upErr, upOutput.String())
+	}
+	var census struct {
+		ScanSeq int64 `json:"scanSeq"`
+	}
+	testenv.Await(t, "the census the wake asked for", func() bool {
+		data, err := os.ReadFile(filepath.Join(supervision, "last-census.json"))
+		return err == nil && json.Unmarshal(data, &census) == nil && census.ScanSeq >= 2
+	})
+	t.Logf("woken watcher census: scanSeq=%d", census.ScanSeq)
 	executable, err := os.Executable()
 	if err != nil {
 		t.Fatal(err)

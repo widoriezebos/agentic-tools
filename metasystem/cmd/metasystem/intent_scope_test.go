@@ -26,6 +26,7 @@ func requiredScopeFixture(t *testing.T, inherited string) (*dropFixture, string)
 	f := newDropFixture(t)
 	f.connect()
 	f.bed.manager.Seat = board.Seat{Machine: filepath.Base(filepath.Dir(t.TempDir())), Installation: f.bed.root()}
+	f.owners.dependencies.projectionDeadline = checkedProjectionDeadline(t)
 	if code, result := f.review(t); code != 1 {
 		t.Fatalf("prepare: %d %+v", code, result)
 	}
@@ -251,11 +252,15 @@ func scopeCompletionBed(t *testing.T, f *dropFixture, file *goal.GoalFile) (*del
 		git("update-ref", goal.AcceptedRef, main)
 	}
 	publishScope(file)
-	bed.owners.branchState = productionIntentBranchState
+	ownerDeadline := checkedProjectionDeadline(t)
+	bed.owners.branchState = func(root, id string) (intentBranchState, error) {
+		return intentBranchStateWithDeadline(root, id, ownerDeadline)
+	}
 	bed.owners.laneRoot = func(string, time.Time) (string, bool, error) { return "", false, nil }
 	var candidate string
+	candidateDeadline := checkedProjectionDeadline(t)
 	bed.owners.landCandidate = func(args []string) (goalBranchLandPrepOutcome, int, error) {
-		state, err := productionIntentBranchState(root, f.bed.id)
+		state, err := intentBranchStateWithDeadline(root, f.bed.id, candidateDeadline)
 		if err != nil {
 			return goalBranchLandPrepOutcome{}, 1, err
 		}
@@ -353,7 +358,7 @@ func TestPersonScopeCompletionReadersAndRestore(t *testing.T) {
 		return "", nil
 	}, EndpointTip: func(string, goal.Endpoint) (string, error) { return f.base, nil }, OriginTip: func(string, goal.Endpoint, string) (string, bool, error) { return f.bed.head, true, nil }, ResolveCommit: func(_, commit string) (string, error) { return commit, nil }, HolderRoot: func(string) string { return holder }, Linked: func(string) bool { return true }, HeadRef: func(string) ([]byte, error) { return []byte("refs/heads/main"), nil }, ReadRepository: scopeReadRepository{f}, ReadInputs: &branch.ReadCommitInputs{}, Transport: dropTransport{}}
 	f.owners.delivery.branchRead = func(args []string) (branch.BranchReadResult, int, error) {
-		return goalBranchReadRun(args, goalBranchReadDependencies{Raw: raw})
+		return goalBranchReadRun(args, goalBranchReadDependencies{Raw: raw, ProjectionDeadline: neverProjectionDeadline})
 	}
 	if code, result := transferPublic(t, f.bed, f.owners, "work", "review", "--commit", f.commit, "--goal", f.bed.id); code != 0 || !strings.Contains(result.Summary, "dropped") {
 		t.Fatalf("read admission: %d %+v", code, result)
