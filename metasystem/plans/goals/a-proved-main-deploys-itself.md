@@ -1,20 +1,19 @@
 # a-proved-main-deploys-itself
 
-- State: parked
+- State: approved
 - Priority: 1
-- Sequence: 67
+- Sequence: 66
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Severity 3: a wrong automatic deploy activates an unproved or older engine on the host; novelty 2: bound admission, push evidence and reconcile are new on an existing runner; exposure 3: every seat's engine; accumulation 2: each hand landing without deploy leaves the seats on an old engine."
 - Tier: 3
 - Intent: After a green proof of main, the project deploys by itself every commit this computer's lane pushed, never over a newer active deployment and never losing a trigger while another deploy runs; a hand landing ends with deploy now --commit <sha>; anything it cannot establish as safe deploys nothing and says why in deploy status; another computer's push stays a person's deploy now (R-144-m1h decision 7). Wido 2026-10-22: hand landings narrowed (Q4).
 - Origin: human
 - Next step: Build U1 (deploy tied to one commit) from its FINAL brief after a-flake-is-not-a-red is done; design plans/designs/a-proved-main-deploys-itself.md (accepted revision 4).
 - OpenedAt: 2026-10-21T10:08:17Z
-- Revision: 12
+- Revision: 13
 - BlockedBy: a-flake-is-not-a-red
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-22T07:44:10Z revision=12 opid=JCV3JQEMFA8VWRP0GP8WJ3KNHS-m1e-e820f7ca authority=proven digest=8c9b023eecd3efb818c31a9763b19d5a6adf8da1fa791eec248551b064dcc0e5 episode=12
-- Parked: by=human:Wido at=2026-10-21T10:08:17Z blocker=a-flake-is-not-a-red because=blocked by a-flake-is-not-a-red; returns when it is done
 
 History:
 - 2026-10-21T10:08:17Z HSBYYTPHWNGRVM3AQFQTGWWDRG-m1e-f2f350ed open actor=human:Wido targets=a-proved-main-deploys-itself,a-flake-is-not-a-red
@@ -29,4 +28,5 @@ History:
 - 2026-10-22T07:43:56Z 1T3W56A9PB54XFE6X8YJ9PBY8N-m1e-e820f7ca unapprove actor=human:Wido targets=a-proved-main-deploys-itself reason=Wido narrowed the intent (Q4, 2026-10-22): hand landings end with deploy now --commit
 - 2026-10-22T07:44:04Z K37RE77VMJZ8XR577H69G41FT1-m1e-e820f7ca edit actor=human:Wido targets=a-proved-main-deploys-itself
 - 2026-10-22T07:44:10Z JCV3JQEMFA8VWRP0GP8WJ3KNHS-m1e-e820f7ca approve actor=human:Wido targets=a-proved-main-deploys-itself
-Integrity: sha256=91e6fe5f5b6305ee5a72ea07a3abfe3eecb1614dad20f3dd9feac9672af88fa1
+- 2026-10-22T09:30:06Z XP6X3FM2QE47ST79J0A7SJVAYN-m1e-4a1ba1c4 unpark actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle reason=blocker a-flake-is-not-a-red is done; the park lifts; priority-order from=1:67 to=1:66
+Integrity: sha256=98e7fd45386843bcf7d1bc1cf2c5743b3f151a3d1a81ce6dbbb588341fa15438

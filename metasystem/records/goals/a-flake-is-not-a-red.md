@@ -1,6 +1,6 @@
 # a-flake-is-not-a-red
 
-- State: approved
+- State: done
 - Priority: 1
 - Sequence: 66
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="Severity 2: wrong words and hourly red proofs mislead the person and starve the host but lose no record; novelty 2: new retire step and a no-launch admission; exposure 3: every seat's status and goal list and every lane proof; accumulation 2: 39 stale cards and 12 full proofs a day."
@@ -8,8 +8,9 @@
 - Intent: What a person reads about main is true: a flake is called a flake (goal list), a seat card ends with its goal or its seat (system status), a green main move deploys whoever pushed it, and a flake record does not schedule a full proof of main. Design plans/designs/main-proves-green-on-a-quiet-host.md D5-D8.
 - Origin: human
 - Next step: After the-fixture-custodian-settles-its-home: brief U1 (D5 wording) and U4 (D8 cadence) first; then U2 (D6 card retirement on StateDone). Each: Codex build, Opus read, gate, hand landing.
+- Concluded: all five units landed by the hand route with an Opus read, a sharded gate and the lane's admission checks before each push: U1 ff62651818 (a flake is called a flake in goal list and goal next, local time), U5a 71b1f65055 and U5b ae6074f48e (a test that passes its repeat is a flake whatever else is red; a repeat-only failure is red under its own name), U4 95047fae63 (a flake record is not a reason to prove main), U2a 44a52cafe2 (a done goal's seat card is retired). Measured: five full proofs of main in a row green on the first pass with no flake (2026-10-22 01:13-08:41). Design plans/designs/main-proves-green-on-a-quiet-host.md D5, D6, D8, D10; U2b and the reads' notes in a-flake-is-not-a-red-2.
 - OpenedAt: 2026-10-21T10:08:04Z
-- Revision: 9
+- Revision: 10
 - BlockedBy: the-fixture-custodian-settles-its-home
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -25,4 +26,5 @@ History:
 - 2026-10-21T10:11:12Z 75CQ2CGW1JRBQQNHRW73X5XW7D-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:69 to=1:68
 - 2026-10-21T10:11:30Z 78KVDMYQ8X1QFMC61WM3RCTS9Q-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,the-fixture-custodian-settles-its-home reason=priority-order from=1:68 to=1:67
 - 2026-10-21T23:14:01Z JQG7XHPMJXFM0ME9Q4FS6ZPQZ8-m1e-6f5f3fe5 unpark actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,the-fixture-custodian-settles-its-home reason=blocker the-fixture-custodian-settles-its-home is done; the park lifts; priority-order from=1:67 to=1:66
-Integrity: sha256=1eb2455e6bf088b171a2c5e526470f4f4b4d9f78c993d3f668bc91cee19b5d98
+- 2026-10-22T09:30:06Z XP6X3FM2QE47ST79J0A7SJVAYN-m1e-4a1ba1c4 done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle
+Integrity: sha256=3b8cf126b582a925496e6d0fecf591c64852ad45e810fa3966c725f6c9a02060
