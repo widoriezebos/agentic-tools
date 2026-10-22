@@ -5466,7 +5466,15 @@
       },
       "holds": [],
       "opened": "2026-10-20T11:49:30Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-10-22T09:56:01Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "82SHFWV25C55PER0VP2AG39STK-m1e-4a1ba1c4",
+        "by": "Wido",
+        "why": "fixed by the-fixture-custodian-settles-its-home U2 a3118b1819 (the test observes only what it injects) (TestUnitCheckFindsRunningEngineWithoutCallerPath); no sighting since the fix landed and every full proof of main since then green (2026-10-22 01:13-11:28); closure by evidence (program decision 2)"
+      },
       "class": "flake"
     },
     {
