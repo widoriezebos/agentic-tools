@@ -1250,6 +1250,8 @@ func runCheck(seams ProveSeams, install, dir, command string, running Running, o
 	observed.finish()
 	report := observed.report
 	report.loadStart, report.loadEnd = &start, &end
+	var exited *exec.ExitError
+	report.exited = err == nil || errors.As(err, &exited) && exited.Exited()
 	// A named static group reports its completed verdict with a group line;
 	// it does not emit the test command's LANDING-CHECKED report.
 	if report.kind == "" && only == "fast-static-build" && (observed.static == Green || observed.static == Red) {

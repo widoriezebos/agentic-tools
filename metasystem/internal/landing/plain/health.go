@@ -424,6 +424,13 @@ func healthRepeat(r Result) string {
 	if r.RepeatComplete && len(r.FlakeRepeats) > 0 {
 		return Green
 	}
+	// A repeat that left a red is not green, whatever flakes it published.
+	if r.Result == Red && len(r.FlakeRepeats) > 0 {
+		if r.Cause != nil && r.Cause.Kind != "flake" && r.Cause.Kind != "environment" {
+			return Red
+		}
+		return "none"
+	}
 	passed := false
 	for _, f := range r.Flakes {
 		if len(f.Tests) == 0 {

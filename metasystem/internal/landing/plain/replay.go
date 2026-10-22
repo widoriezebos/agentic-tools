@@ -209,6 +209,7 @@ func repeatRed(seams ProveSeams, install, checkout, command, dir string, running
 		return result
 	}
 	repeats := result.FlakeRepeats
+	reports := make([]checkReport, len(repeats))
 	contract, _ := testpolicy.Load(filepath.Join(dir, "testing.json"))
 	var failures []string
 	uncertain := false
@@ -221,6 +222,9 @@ func repeatRed(seams ProveSeams, install, checkout, command, dir string, running
 			tests, _ := namedUnitTests(unit, contract)
 			observed := &proofOutput{output: io.Discard}
 			report, err = runCheck(seams, install, dir, command, repeat, unit.Unit, decision, file, observed, tests...)
+			if report.exited {
+				reports[i] = report
+			}
 			result.Outcomes = append(result.Outcomes, observed.outcomes...)
 			result = seams.retainOutcomes(install, checkout, result)
 			if err == nil && (report.kind != "complete" || len(report.failed) != 0) {
@@ -246,7 +250,11 @@ func repeatRed(seams ProveSeams, install, checkout, command, dir string, running
 			result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
 		}
 		result.Reason = strings.Join(failures, "; ")
-		result = recordFlakes(seams, result, result, "alone", repeats)
+		if main {
+			result = publishRepeatFlakes(seams, result, repeats, reports)
+		} else {
+			result = recordFlakes(seams, result, result, "alone", repeats)
+		}
 		if main {
 			if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), retain(result), seams) }); err != nil {
 				result.Cause.Kind = "flake"
@@ -535,6 +543,9 @@ func recordMainFailures(seams ProveSeams, result Result, checks []Result) Result
 	checks = slices.Clone(checks)
 	for i := range checks {
 		checks[i].Failed = slices.DeleteFunc(slices.Clone(checks[i].Failed), func(f FailedUnit) bool { return f.Inherited })
+		if checks[i].Result == Red && checks[i].FlakePublished {
+			checks[i].Failed = withoutFlakes(checks[i].Failed, checks[i].Flakes, checks[i].Attempt)
+		}
 	}
 	checks = slices.DeleteFunc(checks, func(r Result) bool { return len(r.Failed) == 0 })
 	if len(checks) == 0 {

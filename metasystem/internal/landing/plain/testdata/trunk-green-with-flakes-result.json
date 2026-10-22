@@ -1,0 +1,652 @@
+{
+  "at": "\u003ctime\u003e",
+  "attempt": "attempt",
+  "commit": "head-commit",
+  "countedFull": true,
+  "environment": "image toolchain",
+  "executions": [
+    {
+      "at": "\u003ctime\u003e",
+      "attempt": "attempt",
+      "command": "",
+      "commit": "head-commit",
+      "decision": {
+        "affected": {
+          "Groups": null,
+          "TemplateCovered": null,
+          "Uncovered": null
+        },
+        "changedPaths": null,
+        "contract": {
+          "always": {
+            "canary": null,
+            "standard": null
+          },
+          "cadence": null,
+          "groups": null,
+          "projectRisk": {
+            "detection": "",
+            "exposure": 0,
+            "recovery": "",
+            "reversibility": "",
+            "severity": 0
+          },
+          "schemaVersion": 0,
+          "surfaces": null,
+          "unknown": null
+        },
+        "durations": null,
+        "packages": null,
+        "scope": "full",
+        "scopeReason": "records-only batch has no full green on main under an hour old",
+        "source": {
+          "at": "\u003ctime\u003e",
+          "commit": "",
+          "goals": null,
+          "log": "",
+          "minutes": 0,
+          "result": "",
+          "tree": ""
+        }
+      },
+      "policy": {
+        "at": "\u003ctime\u003e",
+        "checkout": "",
+        "set-by": "",
+        "source": "default",
+        "value": "auto"
+      },
+      "reason": "records-only batch has no full green on main under an hour old",
+      "scope": "full",
+      "state": "claimed",
+      "tree": "head-tree",
+      "trunk": true
+    }
+  ],
+  "flake-published": true,
+  "flake-repeats": [
+    {
+      "admission": {
+        "at": "\u003ctime\u003e",
+        "attempt": "attempt",
+        "command": "",
+        "commit": "head-commit",
+        "decision": {
+          "affected": {
+            "Groups": null,
+            "TemplateCovered": null,
+            "Uncovered": null
+          },
+          "changedPaths": null,
+          "contract": {
+            "always": {
+              "canary": null,
+              "standard": null
+            },
+            "cadence": null,
+            "groups": null,
+            "projectRisk": {
+              "detection": "",
+              "exposure": 0,
+              "recovery": "",
+              "reversibility": "",
+              "severity": 0
+            },
+            "schemaVersion": 0,
+            "surfaces": null,
+            "unknown": null
+          },
+          "durations": null,
+          "packages": null,
+          "scope": "full",
+          "scopeReason": "records-only batch has no full green on main under an hour old",
+          "source": {
+            "at": "\u003ctime\u003e",
+            "commit": "",
+            "goals": null,
+            "log": "",
+            "minutes": 0,
+            "result": "",
+            "tree": ""
+          }
+        },
+        "policy": {
+          "at": "\u003ctime\u003e",
+          "checkout": "",
+          "set-by": "",
+          "source": "default",
+          "value": "auto"
+        },
+        "reason": "records-only batch has no full green on main under an hour old",
+        "scope": "full",
+        "state": "claimed",
+        "tree": "head-tree",
+        "trunk": true
+      },
+      "attempt": "attempt-repeat-1",
+      "commit": "head-commit",
+      "executions": [
+        {
+          "at": "\u003ctime\u003e",
+          "attempt": "attempt",
+          "command": "",
+          "commit": "head-commit",
+          "decision": {
+            "affected": {
+              "Groups": null,
+              "TemplateCovered": null,
+              "Uncovered": null
+            },
+            "changedPaths": null,
+            "contract": {
+              "always": {
+                "canary": null,
+                "standard": null
+              },
+              "cadence": null,
+              "groups": null,
+              "projectRisk": {
+                "detection": "",
+                "exposure": 0,
+                "recovery": "",
+                "reversibility": "",
+                "severity": 0
+              },
+              "schemaVersion": 0,
+              "surfaces": null,
+              "unknown": null
+            },
+            "durations": null,
+            "packages": null,
+            "scope": "full",
+            "scopeReason": "records-only batch has no full green on main under an hour old",
+            "source": {
+              "at": "\u003ctime\u003e",
+              "commit": "",
+              "goals": null,
+              "log": "",
+              "minutes": 0,
+              "result": "",
+              "tree": ""
+            }
+          },
+          "policy": {
+            "at": "\u003ctime\u003e",
+            "checkout": "",
+            "set-by": "",
+            "source": "default",
+            "value": "auto"
+          },
+          "reason": "records-only batch has no full green on main under an hour old",
+          "scope": "full",
+          "state": "claimed",
+          "tree": "head-tree",
+          "trunk": true
+        }
+      ],
+      "launch": {
+        "at": "\u003ctime\u003e",
+        "by": "landing",
+        "owner": "\u003cprocess\u003e",
+        "what": "proof"
+      },
+      "log": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt-repeat-1.log",
+      "minutes": 0,
+      "observed-incidents": [
+        {
+          "closed": null,
+          "failures": null,
+          "fixBranch": {
+            "commit": "",
+            "name": "",
+            "state": ""
+          },
+          "fixGoal": "",
+          "group": "",
+          "holds": null,
+          "id": "plans-incident",
+          "identity": "red:plans",
+          "notRunReason": "",
+          "opened": "",
+          "owner": {
+            "by": "",
+            "how": "",
+            "machine": "",
+            "since": "\u003ctime\u003e"
+          },
+          "sightings": [
+            {
+              "attempt": "",
+              "baseCommit": "red-commit",
+              "baseTree": "",
+              "batch": "",
+              "logDigest": "",
+              "logPath": "",
+              "opid": "",
+              "seenAt": ""
+            }
+          ],
+          "status": ""
+        },
+        {
+          "closed": null,
+          "failures": null,
+          "fixBranch": {
+            "commit": "",
+            "name": "",
+            "state": ""
+          },
+          "fixGoal": "",
+          "group": "",
+          "holds": null,
+          "id": "package-incident",
+          "identity": "red:metasystem/cmd/metasystem:TestX",
+          "notRunReason": "",
+          "opened": "",
+          "owner": {
+            "by": "",
+            "how": "",
+            "machine": "",
+            "since": "\u003ctime\u003e"
+          },
+          "sightings": [
+            {
+              "attempt": "",
+              "baseCommit": "red-commit",
+              "baseTree": "",
+              "batch": "",
+              "logDigest": "",
+              "logPath": "",
+              "opid": "",
+              "seenAt": ""
+            }
+          ],
+          "status": ""
+        }
+      ],
+      "pid": 0,
+      "process": "\u003cprocess\u003e",
+      "since": "\u003ctime\u003e",
+      "tree": "head-tree",
+      "trunk": true
+    },
+    {
+      "admission": {
+        "at": "\u003ctime\u003e",
+        "attempt": "attempt",
+        "command": "",
+        "commit": "head-commit",
+        "decision": {
+          "affected": {
+            "Groups": null,
+            "TemplateCovered": null,
+            "Uncovered": null
+          },
+          "changedPaths": null,
+          "contract": {
+            "always": {
+              "canary": null,
+              "standard": null
+            },
+            "cadence": null,
+            "groups": null,
+            "projectRisk": {
+              "detection": "",
+              "exposure": 0,
+              "recovery": "",
+              "reversibility": "",
+              "severity": 0
+            },
+            "schemaVersion": 0,
+            "surfaces": null,
+            "unknown": null
+          },
+          "durations": null,
+          "packages": null,
+          "scope": "full",
+          "scopeReason": "records-only batch has no full green on main under an hour old",
+          "source": {
+            "at": "\u003ctime\u003e",
+            "commit": "",
+            "goals": null,
+            "log": "",
+            "minutes": 0,
+            "result": "",
+            "tree": ""
+          }
+        },
+        "policy": {
+          "at": "\u003ctime\u003e",
+          "checkout": "",
+          "set-by": "",
+          "source": "default",
+          "value": "auto"
+        },
+        "reason": "records-only batch has no full green on main under an hour old",
+        "scope": "full",
+        "state": "claimed",
+        "tree": "head-tree",
+        "trunk": true
+      },
+      "attempt": "attempt-repeat-2",
+      "commit": "head-commit",
+      "executions": [
+        {
+          "at": "\u003ctime\u003e",
+          "attempt": "attempt",
+          "command": "",
+          "commit": "head-commit",
+          "decision": {
+            "affected": {
+              "Groups": null,
+              "TemplateCovered": null,
+              "Uncovered": null
+            },
+            "changedPaths": null,
+            "contract": {
+              "always": {
+                "canary": null,
+                "standard": null
+              },
+              "cadence": null,
+              "groups": null,
+              "projectRisk": {
+                "detection": "",
+                "exposure": 0,
+                "recovery": "",
+                "reversibility": "",
+                "severity": 0
+              },
+              "schemaVersion": 0,
+              "surfaces": null,
+              "unknown": null
+            },
+            "durations": null,
+            "packages": null,
+            "scope": "full",
+            "scopeReason": "records-only batch has no full green on main under an hour old",
+            "source": {
+              "at": "\u003ctime\u003e",
+              "commit": "",
+              "goals": null,
+              "log": "",
+              "minutes": 0,
+              "result": "",
+              "tree": ""
+            }
+          },
+          "policy": {
+            "at": "\u003ctime\u003e",
+            "checkout": "",
+            "set-by": "",
+            "source": "default",
+            "value": "auto"
+          },
+          "reason": "records-only batch has no full green on main under an hour old",
+          "scope": "full",
+          "state": "claimed",
+          "tree": "head-tree",
+          "trunk": true
+        }
+      ],
+      "launch": {
+        "at": "\u003ctime\u003e",
+        "by": "landing",
+        "owner": "\u003cprocess\u003e",
+        "what": "proof"
+      },
+      "log": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt-repeat-2.log",
+      "minutes": 0,
+      "observed-incidents": [
+        {
+          "closed": null,
+          "failures": null,
+          "fixBranch": {
+            "commit": "",
+            "name": "",
+            "state": ""
+          },
+          "fixGoal": "",
+          "group": "",
+          "holds": null,
+          "id": "plans-incident",
+          "identity": "red:plans",
+          "notRunReason": "",
+          "opened": "",
+          "owner": {
+            "by": "",
+            "how": "",
+            "machine": "",
+            "since": "\u003ctime\u003e"
+          },
+          "sightings": [
+            {
+              "attempt": "",
+              "baseCommit": "red-commit",
+              "baseTree": "",
+              "batch": "",
+              "logDigest": "",
+              "logPath": "",
+              "opid": "",
+              "seenAt": ""
+            }
+          ],
+          "status": ""
+        },
+        {
+          "closed": null,
+          "failures": null,
+          "fixBranch": {
+            "commit": "",
+            "name": "",
+            "state": ""
+          },
+          "fixGoal": "",
+          "group": "",
+          "holds": null,
+          "id": "package-incident",
+          "identity": "red:metasystem/cmd/metasystem:TestX",
+          "notRunReason": "",
+          "opened": "",
+          "owner": {
+            "by": "",
+            "how": "",
+            "machine": "",
+            "since": "\u003ctime\u003e"
+          },
+          "sightings": [
+            {
+              "attempt": "",
+              "baseCommit": "red-commit",
+              "baseTree": "",
+              "batch": "",
+              "logDigest": "",
+              "logPath": "",
+              "opid": "",
+              "seenAt": ""
+            }
+          ],
+          "status": ""
+        }
+      ],
+      "pid": 0,
+      "process": "\u003cprocess\u003e",
+      "since": "\u003ctime\u003e",
+      "tree": "head-tree",
+      "trunk": true
+    }
+  ],
+  "flakes": [
+    {
+      "Attempt": "attempt",
+      "Commit": "head-commit",
+      "Load": 0,
+      "Log": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt.log",
+      "Outputs": {
+        "TestA1": {
+          "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "fail",
+          "path": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt.log.96e7938e9a0241ebe7996dda34507868fa2346b3a6dbcec0efe60bab4654d3f3.output"
+        },
+        "TestA2": {
+          "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "fail",
+          "path": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt.log.523d87dccce23e00202dda0e0d1100b790c6c059fca741ab3edbc0f4d43ddab1.output"
+        }
+      },
+      "Repeat": "alone",
+      "RepeatAttempt": "attempt-repeat-1",
+      "RepeatLog": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt-repeat-1.log",
+      "RepeatOutputs": {
+        "TestA1": {
+          "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "path": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt-repeat-1.log.96e7938e9a0241ebe7996dda34507868fa2346b3a6dbcec0efe60bab4654d3f3.output"
+        },
+        "TestA2": {
+          "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "path": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt-repeat-1.log.523d87dccce23e00202dda0e0d1100b790c6c059fca741ab3edbc0f4d43ddab1.output"
+        }
+      },
+      "Tree": "head-tree",
+      "Where": "main",
+      "surfaces": null,
+      "tests": [
+        "TestA1",
+        "TestA2"
+      ],
+      "unit": "u/a"
+    },
+    {
+      "Attempt": "attempt",
+      "Commit": "head-commit",
+      "Load": 0,
+      "Log": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt.log",
+      "Outputs": {
+        "TestB1": {
+          "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "fail",
+          "path": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt.log.634b5c17733f08a549e19d8246cf29c48616b48dce91083b373cdaeac5d29d72.output"
+        }
+      },
+      "Repeat": "alone",
+      "RepeatAttempt": "attempt-repeat-2",
+      "RepeatLog": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt-repeat-2.log",
+      "RepeatOutputs": {
+        "TestB1": {
+          "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "outcome": "pass",
+          "path": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt-repeat-2.log.634b5c17733f08a549e19d8246cf29c48616b48dce91083b373cdaeac5d29d72.output"
+        }
+      },
+      "Tree": "head-tree",
+      "Where": "main",
+      "surfaces": null,
+      "tests": [
+        "TestB1"
+      ],
+      "unit": "u/b"
+    }
+  ],
+  "fullAt": "\u003ctime\u003e",
+  "fullTree": "head-tree",
+  "goals": null,
+  "load_end": {},
+  "load_start": {},
+  "log": "\u003croot\u003e/metasystem/artifacts/agents/landing/proofs/attempt.log",
+  "minutes": 0,
+  "observed-incidents": [
+    {
+      "closed": null,
+      "failures": null,
+      "fixBranch": {
+        "commit": "",
+        "name": "",
+        "state": ""
+      },
+      "fixGoal": "",
+      "group": "",
+      "holds": null,
+      "id": "plans-incident",
+      "identity": "red:plans",
+      "notRunReason": "",
+      "opened": "",
+      "owner": {
+        "by": "",
+        "how": "",
+        "machine": "",
+        "since": "\u003ctime\u003e"
+      },
+      "sightings": [
+        {
+          "attempt": "",
+          "baseCommit": "red-commit",
+          "baseTree": "",
+          "batch": "",
+          "logDigest": "",
+          "logPath": "",
+          "opid": "",
+          "seenAt": ""
+        }
+      ],
+      "status": ""
+    },
+    {
+      "closed": null,
+      "failures": null,
+      "fixBranch": {
+        "commit": "",
+        "name": "",
+        "state": ""
+      },
+      "fixGoal": "",
+      "group": "",
+      "holds": null,
+      "id": "package-incident",
+      "identity": "red:metasystem/cmd/metasystem:TestX",
+      "notRunReason": "",
+      "opened": "",
+      "owner": {
+        "by": "",
+        "how": "",
+        "machine": "",
+        "since": "\u003ctime\u003e"
+      },
+      "sightings": [
+        {
+          "attempt": "",
+          "baseCommit": "red-commit",
+          "baseTree": "",
+          "batch": "",
+          "logDigest": "",
+          "logPath": "",
+          "opid": "",
+          "seenAt": ""
+        }
+      ],
+      "status": ""
+    }
+  ],
+  "outcomes": [
+    {
+      "Status": "pass",
+      "Test": "",
+      "Unit": "plans"
+    }
+  ],
+  "ran": [
+    "plans",
+    "unrelated",
+    "shared",
+    "packages"
+  ],
+  "reason": "flake on main: TestA1, TestA2, green on repeat; registered; flake on main: TestB1, green on repeat; registered",
+  "repeat-complete": true,
+  "result": "green",
+  "scope": "full",
+  "scopeReason": "records-only batch has no full green on main under an hour old",
+  "started_at": "\u003ctime\u003e",
+  "tree": "head-tree",
+  "trunk": true
+}

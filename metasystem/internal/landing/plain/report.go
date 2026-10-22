@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -39,6 +40,8 @@ type checkReport struct {
 	reason             string
 	failed             []FailedUnit
 	load               float64
+	// exited is true when the proving process ended by itself, with any status.
+	exited bool
 }
 
 // FailedChecks reads test identities only from a complete command report.
@@ -165,4 +168,65 @@ func recordFlakes(seams ProveSeams, red, green Result, kind string, repeats []Ru
 		}
 	}
 	return green
+}
+
+// publishRepeatFlakes records, once per unit, the first-pass failures of a red
+// main check that passed their own repeat. Only a sound, complete repeat report
+// that names no other failure, and whole evidence from both runs, make a flake;
+// everything else stays red.
+func publishRepeatFlakes(seams ProveSeams, red Result, repeats []Running, reports []checkReport) Result {
+	red.Flakes, red.FlakePublished = nil, false
+	for i, unit := range red.Failed {
+		report := reports[i]
+		if report.kind != "complete" || seams.RecordFlake == nil || len(unit.Tests) == 0 || slices.ContainsFunc(report.failed, func(again FailedUnit) bool {
+			return again.Unit != unit.Unit || len(again.Tests) == 0 || slices.ContainsFunc(again.Tests, func(test string) bool { return !slices.Contains(unit.Tests, test) })
+		}) {
+			continue
+		}
+		first, err := repoproof.TestEvidence(red.Log, unit.Unit, unit.Tests, "fail")
+		if err != nil {
+			continue
+		}
+		second, err := repoproof.TestEvidence(repeats[i].Log, unit.Unit, unit.Tests, "")
+		if err != nil {
+			continue
+		}
+		f := FlakeRecord{FailedUnit: unit, Commit: red.Commit, Tree: red.Tree, Attempt: red.Attempt, Log: red.Log, Load: red.Load,
+			Where: "main", Repeat: "alone", RepeatAttempt: repeats[i].Attempt, RepeatLog: repeats[i].Log,
+			Outputs: map[string]repoproof.TestOutput{}, RepeatOutputs: map[string]repoproof.TestOutput{}}
+		f.Tests = nil
+		for _, test := range unit.Tests {
+			if second[test].Outcome == "pass" && !slices.ContainsFunc(report.failed, func(again FailedUnit) bool { return slices.Contains(again.Tests, test) }) {
+				f.Tests = append(f.Tests, test)
+				f.Outputs[test], f.RepeatOutputs[test] = first[test], second[test]
+			}
+		}
+		if len(f.Tests) == 0 {
+			continue
+		}
+		if _, err := seams.RecordFlake(f); err != nil {
+			red.Reason += "; the flaky tests of " + unit.Unit + " could not be recorded: " + err.Error()
+			continue
+		}
+		red.Flakes = append(red.Flakes, f)
+	}
+	red.FlakePublished = len(red.Flakes) > 0
+	return red
+}
+
+// withoutFlakes leaves out of failed the tests a published flake of attempt names.
+func withoutFlakes(failed []FailedUnit, flakes []FlakeRecord, attempt string) []FailedUnit {
+	var kept []FailedUnit
+	for _, unit := range failed {
+		tests := slices.DeleteFunc(slices.Clone(unit.Tests), func(test string) bool {
+			return slices.ContainsFunc(flakes, func(f FlakeRecord) bool {
+				return f.Attempt == attempt && f.Unit == unit.Unit && slices.Contains(f.Tests, test)
+			})
+		})
+		if len(unit.Tests) == 0 || len(tests) > 0 {
+			unit.Tests = tests
+			kept = append(kept, unit)
+		}
+	}
+	return kept
 }
