@@ -9,11 +9,9 @@
 - Origin: human
 - Next step: When a-flake-is-not-a-red is done: write its design page from the starting material (evidence designs/a-proved-main-deploys-itself-material.md), Astra xhigh to convergence, brief, Codex build, Opus read, gate, hand landing. Until then the steward runs deploy now and the engine unify after every hand landing (finding 418).
 - OpenedAt: 2026-10-21T10:08:17Z
-- Revision: 9
+- Revision: 10
 - BlockedBy: a-flake-is-not-a-red
-- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-21T10:08:27Z revision=2 opid=FJ22EME9QDYYG7RZT61B0XC3PB-m1e-f2f350ed authority=proven digest=f2b189fc5985b1cb67918c0a0986954ff3254359d0e6c33da4135785a2609068 episode=2
 - Parked: by=human:Wido at=2026-10-21T10:08:17Z blocker=a-flake-is-not-a-red because=blocked by a-flake-is-not-a-red; returns when it is done
 
 History:
@@ -26,4 +24,5 @@ History:
 - 2026-10-21T10:11:12Z 75CQ2CGW1JRBQQNHRW73X5XW7D-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,flake-fix-metasystem-internal-testenv-testsetupchildisendedwhenthebinaryiskilled,the-fixture-custodian-settles-its-home reason=priority-order from=1:70 to=1:69
 - 2026-10-21T10:11:30Z 78KVDMYQ8X1QFMC61WM3RCTS9Q-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,the-fixture-custodian-settles-its-home reason=priority-order from=1:69 to=1:68
 - 2026-10-21T23:14:01Z JQG7XHPMJXFM0ME9Q4FS6ZPQZ8-m1e-6f5f3fe5 done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,the-fixture-custodian-settles-its-home reason=priority-order from=1:68 to=1:67
-Integrity: sha256=11d6e7f810a9634cf0d53fe47faeae957ffeeae5b2ba4409b2b1c9e417b9ce4d
+- 2026-10-22T07:43:56Z 1T3W56A9PB54XFE6X8YJ9PBY8N-m1e-e820f7ca unapprove actor=human:Wido targets=a-proved-main-deploys-itself reason=Wido narrowed the intent (Q4, 2026-10-22): hand landings end with deploy now --commit
+Integrity: sha256=dc9b1df419c846bfefa59a90e25b2c6dfa1490f27ecd4cd406ec688a2b5104fc
