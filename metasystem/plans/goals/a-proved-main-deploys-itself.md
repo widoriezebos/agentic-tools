@@ -9,9 +9,11 @@
 - Origin: human
 - Next step: Build U1 (deploy tied to one commit) from its FINAL brief after a-flake-is-not-a-red is done; design plans/designs/a-proved-main-deploys-itself.md (accepted revision 4).
 - OpenedAt: 2026-10-21T10:08:17Z
-- Revision: 11
+- Revision: 12
 - BlockedBy: a-flake-is-not-a-red
+- Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-22T07:44:10Z revision=12 opid=JCV3JQEMFA8VWRP0GP8WJ3KNHS-m1e-e820f7ca authority=proven digest=8c9b023eecd3efb818c31a9763b19d5a6adf8da1fa791eec248551b064dcc0e5 episode=12
 - Parked: by=human:Wido at=2026-10-21T10:08:17Z blocker=a-flake-is-not-a-red because=blocked by a-flake-is-not-a-red; returns when it is done
 
 History:
@@ -26,4 +28,5 @@ History:
 - 2026-10-21T23:14:01Z JQG7XHPMJXFM0ME9Q4FS6ZPQZ8-m1e-6f5f3fe5 done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,the-fixture-custodian-settles-its-home reason=priority-order from=1:68 to=1:67
 - 2026-10-22T07:43:56Z 1T3W56A9PB54XFE6X8YJ9PBY8N-m1e-e820f7ca unapprove actor=human:Wido targets=a-proved-main-deploys-itself reason=Wido narrowed the intent (Q4, 2026-10-22): hand landings end with deploy now --commit
 - 2026-10-22T07:44:04Z K37RE77VMJZ8XR577H69G41FT1-m1e-e820f7ca edit actor=human:Wido targets=a-proved-main-deploys-itself
-Integrity: sha256=33c6b648fadff2f14752b681a074804e62c15235d5f5a927da15e3f406c14472
+- 2026-10-22T07:44:10Z JCV3JQEMFA8VWRP0GP8WJ3KNHS-m1e-e820f7ca approve actor=human:Wido targets=a-proved-main-deploys-itself
+Integrity: sha256=91e6fe5f5b6305ee5a72ea07a3abfe3eecb1614dad20f3dd9feac9672af88fa1
