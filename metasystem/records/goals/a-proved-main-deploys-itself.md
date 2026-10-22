@@ -1,6 +1,6 @@
 # a-proved-main-deploys-itself
 
-- State: approved
+- State: done
 - Priority: 1
 - Sequence: 66
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Severity 3: a wrong automatic deploy activates an unproved or older engine on the host; novelty 2: bound admission, push evidence and reconcile are new on an existing runner; exposure 3: every seat's engine; accumulation 2: each hand landing without deploy leaves the seats on an old engine."
@@ -8,8 +8,9 @@
 - Intent: After a green proof of main, the project deploys by itself every commit this computer's lane pushed, never over a newer active deployment and never losing a trigger while another deploy runs; a hand landing ends with deploy now --commit <sha>; anything it cannot establish as safe deploys nothing and says why in deploy status; another computer's push stays a person's deploy now (R-144-m1h decision 7). Wido 2026-10-22: hand landings narrowed (Q4).
 - Origin: human
 - Next step: Build U1 (deploy tied to one commit) from its FINAL brief after a-flake-is-not-a-red is done; design plans/designs/a-proved-main-deploys-itself.md (accepted revision 4).
+- Concluded: landed by the lane as 9349ac8b1c at 19:13 and deployed by the lane itself at 19:15 (U1a, U1b, U2a; U2b moved to a follow-up goal by decision 27)
 - OpenedAt: 2026-10-21T10:08:17Z
-- Revision: 14
+- Revision: 15
 - BlockedBy: a-flake-is-not-a-red
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
@@ -30,4 +31,5 @@ History:
 - 2026-10-22T07:44:10Z JCV3JQEMFA8VWRP0GP8WJ3KNHS-m1e-e820f7ca approve actor=human:Wido targets=a-proved-main-deploys-itself
 - 2026-10-22T09:30:06Z XP6X3FM2QE47ST79J0A7SJVAYN-m1e-4a1ba1c4 unpark actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle reason=blocker a-flake-is-not-a-red is done; the park lifts; priority-order from=1:67 to=1:66
 - 2026-10-22T14:45:16Z 9VCKER87K85FFD379BX3ZR09K6-m1e-c4754098 approve actor=human:Wido targets=a-proved-main-deploys-itself
-Integrity: sha256=e61b3b64a0f784652a506375056e7090f325f409bd407a4e47399e1212c2b08d
+- 2026-10-22T18:23:23Z N93H3TM4RBARTKM3EFR213N6WE-m1e-c951e3fd done actor=human:Wido targets=a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle
+Integrity: sha256=19b9aa7a3944d598f886f32ac58fc1af41b9aea672595598c66179025e095d45
