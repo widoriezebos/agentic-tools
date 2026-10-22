@@ -63,8 +63,9 @@ Inventory read at 95047fae63, additions and deletions counted, comments included
 
 | Unit | Decisions | Production lines (inventory) | Stop | Usable and safe alone |
 |---|---|---|---|---|
-| U1 bound forward run | D0 (runner side), D1-D5, D10, D11 runner seams | runner.go: bound target and no-follow ~12, forward decision with the D0 cases in one skip path ~28, `run.json` error kept ~3, failed-line skip for lane runs only ~10, `RunSkipped`/`Reason` ~5, `Held` hook ~6; git.go `Contains` ~14; adapter.go transport seam ~25; probe seam ~6; intent_deploy.go flag and validation ~10, runner wiring and lane `Held` ~12, skipped/current report with the D0 sentence ~8, busy text with the bound or plain retry ~9 → **135-155** | 200 | Yes. The hand-landing step `deploy now --commit <sha>` is safe from day one, and the steward's pane scripts use it. No automatic trigger changes. |
-| U2 the keeper deploys this lane's pushes | D0 (record side), D6-D9, D11 `deployLaunch` | push.go `Published` field and the one setter ~6; internal/deploy automatic.go (line type, append, read, terminal-wins per commit) ~45; `deploy.Running` ~12; bound command writes its outcome ~10; status lines ~15; cmd deploy_reconcile.go (guards, newest-first walk, stop at contained, `Published` filter, D0 line for an unpublished newest, `launched`, launch) ~70; `plain` read of all pushes with its damage count ~10; landing_agent.go call and field ~10; deployAfterPush launch removed (−20), sentence (+6) → **182-207** | 240 | Yes. Every lane push is deployed by the keeper. A busy or restarted keeper loses nothing; every outcome is on `deploy status`. Switch and recovery ship together. |
+| U1a bound forward run, a person's run | D0 (runner side), D1, D2, D4, D10 | 180 measured (U1 brief, U1a) | 200 | yes: deploy now --commit is safe on its own |
+| U1b the lane's failure rule and stop check | D3, D5 | 54 measured (U1 brief, U1b) | 70 | yes, with U1a |
+| U2a the lane's push deploys exactly what it pushed; status shows every outcome | D0 (record side), D6, D7 (without Published), D9 (status) | 226 measured (U2 brief, revision 5) | 240 | yes: a missed trigger shows the D0 line with deploy now --commit |
 
 Goal: two units, 317-362 production lines, each under 250. Revision 2's U3 (60-75) is dropped. Allocation (tests included) is set by each brief.
 
@@ -139,3 +140,8 @@ Q-verdicts: Q1, Q2 and Q3 sound; Q4 a reasonable recommendation that needs Wido'
 - Q4: yes, the intent is narrowed: lane landings deploy by themselves; a hand landing ends with `deploy now --commit <sha>`.
 - Q1: a separate later goal (the central/source engine choice of R-144-m1h comes first).
 - Q2 and Q3: accepted as recommended (another computer's push stays a person's deploy now; skipping records-only commits is a follow-up).
+
+
+## Revision 5 (steward in Wido's name, 2026-10-22): units as built
+
+The Units table names the units as they were cut and built: U1 became U1a and U1b when its brief measured 232 lines (stop 200); U2 became U2a after Astra's three rounds on the full U2 did not converge (Wido's decision 27, "Ship U2a, defer U2b"). U2b — the keeper re-deploying a lane push missed while another deploy was busy or across a keeper restart, the Published flag, the keeper's line — moves to a follow-up goal; its design text is in briefs/a-proved-main-deploys-itself-U2-brief.md ("Moved to the follow-up goal") and briefs/a-proved-main-deploys-itself-U2-brief-revision-3-full.md.
