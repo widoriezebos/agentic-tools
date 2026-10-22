@@ -231,7 +231,7 @@ func runIntentLandingPushWithOwners(inv *intentInvocation, admitted laneAdmitted
 	// The project's deploy follows a push that changed main; a failed
 	// deploy is told here and by deploy status, never on the channel.
 	if err == nil || outcome.Changed {
-		told = append(told, inv.deployAfterPush(admitted.installation, checkout, outcome.Changed)...)
+		told = append(told, inv.deployAfterPush(admitted.installation, checkout, outcome.Commit, outcome.Changed)...)
 	}
 	var refusal *plain.Refusal
 	switch {
