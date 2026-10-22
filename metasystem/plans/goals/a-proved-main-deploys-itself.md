@@ -5,11 +5,11 @@
 - Sequence: 67
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Severity 3: a wrong automatic deploy activates an unproved or older engine on the host; novelty 2: bound admission, push evidence and reconcile are new on an existing runner; exposure 3: every seat's engine; accumulation 2: each hand landing without deploy leaves the seats on an old engine."
 - Tier: 3
-- Intent: After a green proof of main, the project deploys the proved commit by itself when this computer pushed it (lane or hand landing), never over a newer active deployment and never losing a trigger while another deploy runs; another computer's push stays a person's deploy now (R-144-m1h decision 7). Wido 2026-10-21: its own goal, implemented right after a-flake-is-not-a-red. Starting material: D7 of main-proves-green-on-a-quiet-host with Astra's deploy findings (QH-04, R-144-m1h, QH-19, QH-21).
+- Intent: After a green proof of main, the project deploys by itself every commit this computer's lane pushed, never over a newer active deployment and never losing a trigger while another deploy runs; a hand landing ends with deploy now --commit <sha>; anything it cannot establish as safe deploys nothing and says why in deploy status; another computer's push stays a person's deploy now (R-144-m1h decision 7). Wido 2026-10-22: hand landings narrowed (Q4).
 - Origin: human
-- Next step: When a-flake-is-not-a-red is done: write its design page from the starting material (evidence designs/a-proved-main-deploys-itself-material.md), Astra xhigh to convergence, brief, Codex build, Opus read, gate, hand landing. Until then the steward runs deploy now and the engine unify after every hand landing (finding 418).
+- Next step: Build U1 (deploy tied to one commit) from its FINAL brief after a-flake-is-not-a-red is done; design plans/designs/a-proved-main-deploys-itself.md (accepted revision 4).
 - OpenedAt: 2026-10-21T10:08:17Z
-- Revision: 10
+- Revision: 11
 - BlockedBy: a-flake-is-not-a-red
 - BudgetExceptions: 0
 - Parked: by=human:Wido at=2026-10-21T10:08:17Z blocker=a-flake-is-not-a-red because=blocked by a-flake-is-not-a-red; returns when it is done
@@ -25,4 +25,5 @@ History:
 - 2026-10-21T10:11:30Z 78KVDMYQ8X1QFMC61WM3RCTS9Q-m1e-f2f350ed done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-internal-proofrun-testresourcecustodystreamslivecapnoteandretainsspools,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,the-fixture-custodian-settles-its-home reason=priority-order from=1:69 to=1:68
 - 2026-10-21T23:14:01Z JQG7XHPMJXFM0ME9Q4FS6ZPQZ8-m1e-6f5f3fe5 done actor=human:Wido targets=a-flake-is-not-a-red,a-proved-main-deploys-itself,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,the-fixture-custodian-settles-its-home reason=priority-order from=1:68 to=1:67
 - 2026-10-22T07:43:56Z 1T3W56A9PB54XFE6X8YJ9PBY8N-m1e-e820f7ca unapprove actor=human:Wido targets=a-proved-main-deploys-itself reason=Wido narrowed the intent (Q4, 2026-10-22): hand landings end with deploy now --commit
-Integrity: sha256=dc9b1df419c846bfefa59a90e25b2c6dfa1490f27ecd4cd406ec688a2b5104fc
+- 2026-10-22T07:44:04Z K37RE77VMJZ8XR577H69G41FT1-m1e-e820f7ca edit actor=human:Wido targets=a-proved-main-deploys-itself
+Integrity: sha256=33c6b648fadff2f14752b681a074804e62c15235d5f5a927da15e3f406c14472
