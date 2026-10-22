@@ -1,0 +1,86 @@
+{
+  "schema": 1,
+  "entries": [
+    {
+      "fixOpenedAt": "2026-08-20T10:00:00Z",
+      "testUnit": "metasystem/internal/proofrun",
+      "testName": "TestOne",
+      "id": "flake:42db2496b1c94a194edfb348530c9ba4165017c9d0e58cc4adf758071728f64f",
+      "identity": "flake:42db2496b1c94a194edfb348530c9ba4165017c9d0e58cc4adf758071728f64f",
+      "group": "metasystem/internal/proofrun",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "logs/red",
+          "classname": "metasystem/internal/proofrun",
+          "name": "TestOne",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "red-0",
+          "batch": "batch-1",
+          "baseCommit": "commit-1",
+          "baseTree": "tree-1",
+          "logPath": "logs/red",
+          "logDigest": "red-digest",
+          "seenAt": "2026-10-04T12:00:00Z",
+          "opid": "01J5X0000000000000000000F0-lane-eecc0a50",
+          "tree": "tree-1",
+          "rerun": {
+            "attempt": "green-0",
+            "logPath": "logs/green",
+            "logDigest": "green-digest",
+            "sample": ""
+          },
+          "load": 2.5,
+          "surfaces": [
+            "checks"
+          ],
+          "repeat": "alone"
+        },
+        {
+          "attempt": "red-1",
+          "batch": "batch-1",
+          "baseCommit": "commit-1",
+          "baseTree": "tree-1",
+          "logPath": "logs/red",
+          "logDigest": "red-digest",
+          "seenAt": "2026-10-04T12:01:00Z",
+          "opid": "01J5X0000000000000000000F1-lane-eecc0a50",
+          "tree": "tree-1",
+          "rerun": {
+            "attempt": "green-1",
+            "logPath": "logs/green",
+            "logDigest": "green-digest",
+            "sample": ""
+          },
+          "load": 2.5,
+          "surfaces": [
+            "checks"
+          ],
+          "repeat": "alone"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "tests-observe-only-what-they-inject-2",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-10-04T12:00:00Z",
+      "closed": null,
+      "class": "flake"
+    }
+  ]
+}

@@ -161,7 +161,10 @@ func scopedProofDue(install string, now time.Time) (bool, error) {
 	}
 	var result Result
 	for _, proof := range results {
-		if !proof.didNotRun() && (proof.Trunk && (proof.Scope == "scoped" || strings.HasPrefix(proof.Reason, "inherits green from tree ")) || pushed && proof.Tree == push.Tree) {
+		if proof.flakeInherited() && result.Trunk && result.FullAt == proof.FullAt {
+			result = Result{}
+		}
+		if !proof.flakeInherited() && !proof.didNotRun() && (proof.Trunk && (proof.Scope == "scoped" || strings.HasPrefix(proof.Reason, "inherits green from tree ")) || pushed && proof.Tree == push.Tree) {
 			result = proof
 		}
 	}

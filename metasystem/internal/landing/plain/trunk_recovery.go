@@ -2,6 +2,8 @@ package plain
 
 import (
 	"errors"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -137,8 +139,18 @@ func applicableMainProof(install, checkout, commit, tree string, seams ProveSeam
 			}
 			return r, red && r.Trunk && r.Commit == commit
 		}
+		if r.flakeInherited() {
+			for _, later := range results[i+1:] {
+				if later.Result == Red && !later.didNotRun() {
+					ancestor, err := checkoutGit(checkout, seams).contains(commit, later.Commit)
+					if err != nil || ancestor {
+						return Result{}, false
+					}
+				}
+			}
+		}
 		fullAt, err := time.Parse(time.RFC3339, r.FullAt)
-		currentFull := err == nil && seams.now().Sub(fullAt) >= 0 && seams.now().Sub(fullAt) < time.Hour
+		currentFull := err == nil && seams.now().Sub(fullAt) >= 0 && (r.flakeInherited() || seams.now().Sub(fullAt) < time.Hour)
 		inherited := r.Scope == "scoped" || r.Scope == "inherited" || strings.HasPrefix(r.Reason, "inherits green from tree ")
 		if inherited && !currentFull {
 			continue
@@ -152,4 +164,84 @@ func applicableMainProof(install, checkout, commit, tree string, seams ProveSeam
 		}
 	}
 	return Result{}, false
+}
+
+// flakeRecordsReason marks a main check inherited across the lane's own
+// flake records; proof.trunk-every, not the scoped hour, bounds it.
+const flakeRecordsReason = "main moved by flake records only; the last full green stands"
+
+func (r Result) flakeInherited() bool {
+	return r.Trunk && r.Result == Green && r.Scope == "inherited" && r.ScopeReason == flakeRecordsReason
+}
+
+// inheritFlakeRecords records that tree inherits main's last executed full
+// green when every change since it is a flake record. A later red, any other
+// change or any unreadable fact records nothing, and the check runs.
+func inheritFlakeRecords(install, checkout, commit, tree string, seams ProveSeams) error {
+	results, damaged, err := countedLines[Result](resultsPath(install))
+	if err != nil || damaged != 0 {
+		return nil
+	}
+	var base Result
+	newest, seen := "", false
+	for i := len(results) - 1; i >= 0 && base.Commit == ""; i-- {
+		r := results[i]
+		if r.Tree == tree {
+			return nil
+		}
+		inherited := r.Scope == "inherited" || strings.HasPrefix(r.Reason, "inherits green from tree ")
+		if !seen && !r.didNotRun() && (r.Result == Green || r.Result == Red) && !inherited {
+			newest, seen = r.Environment, true
+			if newest == "" {
+				return nil
+			}
+		}
+		if r.Commit == "" || r.didNotRun() || r.Result != Red && (r.Result != Green || r.Scope != "full" || r.FullTree != r.Tree) {
+			continue
+		}
+		if _, err := seams.git(checkout, "merge-base", "--is-ancestor", r.Commit, commit); err != nil {
+			var exit *exec.ExitError
+			if errors.As(err, &exit) && exit.ExitCode() == 1 {
+				continue
+			}
+			return nil
+		}
+		if r.Result == Red || r.Environment == "" {
+			return nil
+		}
+		base = r
+	}
+	fullAt, err := time.Parse(time.RFC3339, base.FullAt)
+	if base.Commit == "" || base.Environment != newest || err != nil || seams.now().Before(fullAt) {
+		return nil
+	}
+	changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", base.FullTree, tree)
+	paths := strings.Split(strings.TrimSpace(changed), "\n")
+	prefix, relErr := filepath.Rel(checkout, install)
+	if err != nil || relErr != nil || strings.TrimSpace(changed) == "" || !recordsOnlyPaths(install, checkout, paths) {
+		return nil
+	}
+	before, after := map[string][]byte{}, map[string][]byte{}
+	for _, path := range paths {
+		name, inside := strings.CutPrefix(path, filepath.ToSlash(prefix)+"/")
+		if prefix == "." {
+			name, inside = path, true
+		}
+		if !inside || !goal.FlakeRecordPath(name) {
+			return nil
+		}
+		old, oldErr := seams.git(checkout, "show", base.FullTree+":"+path)
+		now, nowErr := seams.git(checkout, "show", tree+":"+path)
+		if oldErr != nil || nowErr != nil {
+			return nil
+		}
+		before[name], after[name] = []byte(old), []byte(now)
+	}
+	if !goal.FlakeRecordsOnly(before, after) {
+		return nil
+	}
+	return appendLine(resultsPath(install), Result{Trunk: true, Commit: commit, Tree: tree, Result: Green, Attempt: seams.newID(),
+		At: seams.now().Format(time.RFC3339), Log: base.Log, Scope: "inherited", ScopeReason: flakeRecordsReason,
+		Reason: "inherits green from tree " + Short(base.FullTree) + "; main moved by flake records only", Base: base.FullTree, BaseCommit: base.Commit,
+		FullTree: base.FullTree, FullAt: base.FullAt, Environment: base.Environment}, seams)
 }

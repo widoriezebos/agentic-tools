@@ -473,7 +473,7 @@ func (r Result) fullCurrent(now time.Time) bool {
 		return true
 	}
 	fullAt, err := time.Parse(time.RFC3339, r.FullAt)
-	return err == nil && now.Sub(fullAt) <= time.Hour
+	return err == nil && (now.Sub(fullAt) <= time.Hour && !r.flakeInherited() || r.flakeInherited() && now.Sub(fullAt) >= 0)
 }
 
 func (r Result) reusableGreen(now time.Time) bool {

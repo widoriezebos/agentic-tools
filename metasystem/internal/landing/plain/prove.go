@@ -571,6 +571,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 		}
 		if seams.Trunk {
 			if seams.Person == nil && !seams.Fresh {
+				if err := inheritFlakeRecords(install, checkout, commit, tree, seams); err != nil {
+					return err
+				}
 				if result, ok := applicableMainProof(install, checkout, commit, tree, seams, true); ok {
 					started, already = Running{Trunk: true, Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At, Reused: &result}, true
 					return nil
