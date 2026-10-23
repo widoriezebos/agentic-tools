@@ -73,6 +73,9 @@ type Components interface {
 	// GroupCount counts live members of the held components' process
 	// groups (the ceiling's input).
 	GroupCount(held []Held) (int, error)
+	// Wake asks one held watcher for a census now, once it can take the
+	// request; before that its first census is still to come.
+	Wake(held Held)
 	// Stop signals one held identity's group TERM-then-KILL within
 	// the component stop ceiling and reports whether it is PROVEN
 	// gone (three-way: false only on definitive survival or unknown).
@@ -376,6 +379,13 @@ func (o *Owner) establish() error {
 	}
 	if err := o.Checkout.PublishState(o.held); err != nil {
 		return fmt.Errorf("first publication: %w", err)
+	}
+	// A watcher whose first census ran before this publication waits a
+	// whole interval for the next one unless it is woken.
+	for _, held := range o.currentGenerationHeld() {
+		if held.Component == Watcher {
+			o.Components.Wake(held)
+		}
 	}
 	return nil
 }

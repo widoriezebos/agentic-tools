@@ -28,6 +28,7 @@ type fakeWorld struct {
 	groupCountErr   error
 	stopProven      bool
 	stopped         []Held
+	woken           []Held
 	relaunchedErr   error
 	relaunched      []relaunchedRecord
 	launchedAppend  map[string]error
@@ -80,6 +81,7 @@ func (w *fakeWorld) Launch(component Component, tag string, generation int64) (i
 }
 func (w *fakeWorld) Observe(Held) Observation       { return w.observation }
 func (w *fakeWorld) GroupCount([]Held) (int, error) { return w.groupCount, w.groupCountErr }
+func (w *fakeWorld) Wake(held Held)                 { w.woken = append(w.woken, held) }
 func (w *fakeWorld) Stop(held Held) bool {
 	w.stopped = append(w.stopped, held)
 	return w.stopProven
@@ -549,5 +551,41 @@ func TestCeilingCountErrorIsIndeterminable(t *testing.T) {
 	}
 	if owner.Breaker.Consecutive != 2 {
 		t.Fatalf("an indeterminable count must hold the breaker, not reset or advance it: %d", owner.Breaker.Consecutive)
+	}
+}
+
+func TestTakeoverWakesOnlyTheCurrentWatcher(t *testing.T) {
+	t.Parallel()
+	for _, refused := range []bool{false, true} {
+		name := "published"
+		if refused {
+			name = "refused-publication"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			world := newWorld()
+			world.stopProven = false
+			if refused {
+				world.publishErr = errors.New("publication refused")
+			}
+			owner := newOwner(world)
+			owner.SeedGeneration, owner.generation = 1, 1
+			owner.held = []Held{
+				{Component: Watcher, Generation: 1, Identity: identity.Ref{Pid: 90, StartedAtSec: 1000}},
+				{Component: Reaper, Generation: 1, Identity: identity.Ref{Pid: 91, StartedAtSec: 1000}},
+			}
+			if exit := owner.Cycle(time.Unix(20, 0)); exit != nil {
+				t.Fatalf("takeover exited: %+v", exit)
+			}
+			if refused {
+				if len(world.woken) != 0 {
+					t.Fatalf("failed publication sent wakes: %+v", world.woken)
+				}
+				return
+			}
+			if len(world.woken) != 1 || world.woken[0].Component != Watcher || world.woken[0].Generation != 2 {
+				t.Fatalf("wakes = %+v, want only the generation-two watcher", world.woken)
+			}
+		})
 	}
 }
