@@ -6930,6 +6930,51 @@
         "by": "",
         "why": ""
       }
+    },
+    {
+      "id": "red:metasystem/internal/testutil:TestFixtureSourcesHaveNoBareBusyLoop",
+      "identity": "red:metasystem/internal/testutil:TestFixtureSourcesHaveNoBareBusyLoop",
+      "group": "metasystem/internal/testutil",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261023T215301.963246000Z.log",
+          "classname": "metasystem/internal/testutil",
+          "name": "TestFixtureSourcesHaveNoBareBusyLoop",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261023T215301.963246000Z",
+          "batch": "20261023T215301.963246000Z",
+          "baseCommit": "600c58e31e117433ca8a46cac7f76d33ea7038d3",
+          "baseTree": "f1f7ae6a3717ec67b1b2b8551e557aabecaa96b4",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261023T215301.963246000Z.log",
+          "logDigest": "8f72996023b8f36d41bee049f088d832b31fae0a64353ba47ab3908354da0dd3",
+          "seenAt": "2026-10-23T22:37:40Z",
+          "opid": "89JDZNESYBQ69YXA6NMC47RKSH-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261023T215301.963246000Z"
+      ],
+      "opened": "2026-10-23T22:37:40Z",
+      "closed": null
     }
   ],
   "cadence": {
