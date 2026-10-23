@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
@@ -53,7 +54,7 @@ func ReadCheckExecutions(root string) ([]CheckExecution, []string) {
 		if err != nil {
 			return err
 		}
-		if entry.IsDir() && len(entry.Name()) > 6 && entry.Name()[:6] == "check-" {
+		if entry.IsDir() && strings.HasPrefix(strings.TrimPrefix(entry.Name(), "builder-"), "check-") {
 			if _, err := os.Stat(filepath.Join(path, "observation.json")); err != nil {
 				unknown = append(unknown, "check observation unavailable: "+path)
 			}
@@ -74,4 +75,37 @@ func ReadCheckExecutions(root string) ([]CheckExecution, []string) {
 		unknown = append(unknown, "check evidence unavailable: "+root+": "+err.Error())
 	}
 	return records, unknown
+}
+
+// checkCause makes a failed step's cause environment when the newest frozen
+// check of its own launch stopped at proof.deadline and nothing in it failed.
+// Unreadable evidence or any other outcome leaves the step as it is.
+func checkCause(step *UnitStep, round string) bool {
+	executions, unknown := ReadCheckExecutions(round)
+	if len(unknown) > 0 || step.LaunchID == "" {
+		return false
+	}
+	var newest time.Time
+	deadline := false
+	for _, execution := range executions {
+		started, err := time.Parse(time.RFC3339Nano, execution.Steps[0].Start)
+		if err != nil && execution.Steps[0].Parent == step.LaunchID {
+			return false
+		}
+		if execution.Steps[0].Parent != step.LaunchID || !started.After(newest) {
+			continue
+		}
+		newest, deadline = started, false
+		for _, check := range execution.Steps {
+			if check.Outcome != "passed" && check.Outcome != "deadline" {
+				deadline = false
+				break
+			}
+			deadline = deadline || check.Outcome == "deadline"
+		}
+	}
+	if deadline {
+		step.Cause, step.Deadline = "environment", true
+	}
+	return deadline
 }

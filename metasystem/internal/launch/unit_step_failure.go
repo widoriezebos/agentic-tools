@@ -107,6 +107,9 @@ func (runner *UnitRunner) holdFailedStep(record *UnitRunRecord, round *UnitRound
 		if step.State == StepFailed {
 			round.Stop.Class = step.Name + ": " + step.Reason
 			round.Stop.Cause.Evidence = step.LaunchID
+			if step.Deadline {
+				round.Stop.Handoff = "stopped deadline"
+			}
 			break
 		}
 	}

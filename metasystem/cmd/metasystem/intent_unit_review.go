@@ -51,7 +51,14 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 				return *problem
 			}
 			person, reason := unitStopActor(actor), inv.input.text("reason")
-			impact := "Impact: rerun the retained failed step with the same inputs and fresh output, without another build.\nThe environment may still fail; automatic correction limits remain unchanged.\nStop this run to end the continuation; retained evidence remains."
+			again := "rerun the retained check with the same inputs and fresh output, without another build"
+			for _, step := range round.Steps {
+				if step.State == launch.StepFailed && step.Kind != "attest" {
+					again = "start another builder turn with the same brief and inputs, keeping its worktree changes"
+					break
+				}
+			}
+			impact := "Impact: " + again + ".\nThe environment may still fail; automatic correction limits remain unchanged.\nStop this run to end the continuation; retained evidence remains."
 			resumed, err := runner.RetryFailedStep(run, person, reason, func() error {
 				return inv.recordUnitStopOverride(current.Goal, "work-review-retry", reason, impact, person)
 			})

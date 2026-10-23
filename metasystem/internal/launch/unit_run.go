@@ -950,6 +950,7 @@ func (runner *UnitRunner) judgeBuildResult(record *UnitRunRecord, round *UnitRou
 	switch word {
 	case "PARTIAL", "FAILED":
 		step.State, step.Cause, step.Reason = StepFailed, "unclassified", "build-"+strings.ToLower(word)
+		checkCause(step, round.Directory)
 	case "":
 		step.Reason = "no-result-block"
 	}

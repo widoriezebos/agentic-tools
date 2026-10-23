@@ -51,6 +51,26 @@ type CheckContext struct {
 	CheckExecution
 	Parent string
 	Now    func() time.Time
+	// After is the check's timer; nil is time.After.
+	After func(time.Duration) <-chan time.Time
+}
+
+// checkCeilingFactor bounds a check that keeps writing: it ends at this many times proof.deadline after its start.
+const checkCeilingFactor = 8
+
+type outputProgress struct {
+	buffer bytes.Buffer
+	wrote  chan struct{}
+}
+
+func (output *outputProgress) Write(data []byte) (int, error) {
+	if len(data) > 0 {
+		select {
+		case output.wrote <- struct{}{}:
+		default:
+		}
+	}
+	return output.buffer.Write(data)
 }
 
 func (check UnitCheck) Run(directory, records string, context CheckContext) (string, []CheckExit, error) {
@@ -66,6 +86,9 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	}
 	if context.Now == nil {
 		context.Now = time.Now
+	}
+	if context.After == nil {
+		context.After = time.After
 	}
 	observation := context.CheckExecution
 	observation.ExecutionID = filepath.Base(execution)
@@ -83,8 +106,8 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 		if command.name == "cheap" && check.Base != "" {
 			process.Env = append(slices.Clone(process.Env), "LANDING_PROOF_BASE="+check.Base)
 		}
-		var output bytes.Buffer
-		process.Stdout, process.Stderr = &output, &output
+		output := &outputProgress{wrote: make(chan struct{}, 1)}
+		process.Stdout, process.Stderr = output, output
 		started := context.Now()
 		step := processmeasure.Step{ID: context.Run + "/" + context.Round + "/" + observation.ExecutionID + ":" + command.name, Kind: "attest", Parent: context.Parent, Act: check.ProcessAct, Start: started.UTC().Format(time.RFC3339Nano), Argv: []string{"/bin/sh", "-c", command.text}, FullArgv: check.FullArgv, Coverage: "unknown"}
 		if check.Declaration != nil {
@@ -94,9 +117,11 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 		if err := save(); err != nil {
 			return execution, exits, err
 		}
-		err := boundedexec.Run(process, boundedexec.FixedBound(time.Duration(check.Minutes)*time.Minute, "proof.deadline"), command.name)
+		bound := boundedexec.FixedBound(time.Duration(check.Minutes)*time.Minute, "proof.deadline")
+		bound.Progress, bound.Ceiling = output.wrote, checkCeilingFactor*bound.Limit
+		err := boundedexec.RunWithDeadline(process, bound, command.name, context.After)
 		ended := context.Now()
-		result := CheckExit{Name: command.name, Output: output.String(), Minutes: ended.Sub(started).Minutes()}
+		result := CheckExit{Name: command.name, Output: output.buffer.String(), Minutes: ended.Sub(started).Minutes()}
 		step.End, step.Terminal, step.Outcome = ended.UTC().Format(time.RFC3339Nano), true, "passed"
 		if err != nil {
 			step.Outcome = "failed"

@@ -49,6 +49,11 @@ var ErrTimedOut = errors.New("timed out")
 type Bound struct {
 	Limit time.Duration
 	Key   string
+	// Progress, when set, restarts Limit on each receive: Limit is then the longest
+	// the command may go without progress. Ceiling, when set, ends the command
+	// that long after its start, whatever its progress.
+	Progress <-chan struct{}
+	Ceiling  time.Duration
 	// TotalDeadline includes process termination and reaping.
 	TotalDeadline time.Time
 }
@@ -118,11 +123,23 @@ func runContext(ctx context.Context, cmd *exec.Cmd, bound Bound, what string, de
 	}
 	done := make(chan error, 1)
 	go func() { done <- cmd.Wait() }()
-	select {
-	case err := <-done:
-		return err
-	case <-deadline(bound.Limit):
-	case <-ctx.Done():
+	expiry, ceiling, ceilingEnded := deadline(bound.Limit), (<-chan time.Time)(nil), false
+	if bound.Ceiling > 0 {
+		ceiling = deadline(bound.Ceiling)
+	}
+	for waiting := true; waiting; {
+		select {
+		case err := <-done:
+			return err
+		case <-bound.Progress:
+			expiry = deadline(bound.Limit)
+		case <-expiry:
+			waiting = false
+		case <-ceiling:
+			waiting, ceilingEnded = false, true
+		case <-ctx.Done():
+			waiting = false
+		}
 	}
 	// The bound expired: signal the GROUP so the command's children die with
 	// it rather than outliving the bound holding pipes open. A negative pid
@@ -142,6 +159,12 @@ func runContext(ctx context.Context, cmd *exec.Cmd, bound Bound, what string, de
 	}
 	if ctx.Err() != nil {
 		return fmt.Errorf("%s: %w", what, ctx.Err())
+	}
+	if ceilingEnded {
+		return fmt.Errorf("%s %w: still running after %s (%s)", what, ErrTimedOut, bound.Ceiling, bound.Key)
+	}
+	if bound.Progress != nil {
+		return fmt.Errorf("%s %w: no output for %s (%s)", what, ErrTimedOut, bound.Limit, bound.Key)
 	}
 	if bound.Key == "" {
 		return fmt.Errorf("%s %w after %s", what, ErrTimedOut, bound.Limit)

@@ -29,6 +29,10 @@ type unitComparison struct {
 // Attribution reads retained executions; it never rebuilds a completed step.
 func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound, index int, base string, deadline time.Time) (bool, error) {
 	step := &round.Steps[index]
+	if step.State == StepFailed && step.Cause == "unclassified" && checkCause(step, round.Directory) {
+		step.Reason = "the frozen check stopped at proof.deadline"
+		return false, runner.save(*record)
+	}
 	if step.State != StepFailed || step.Cause != "unclassified" || step.Retained == nil {
 		return false, nil
 	}
