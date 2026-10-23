@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 1
+- Sequence: 2
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="finding 300/313 and lane-clock-prefers-work D3 (amended 10-15 08:40, Astra R2-04): the to-do must clear only on evidence of the requested effect, never on the attempt; lane-clock-prefers-work delivered U1 and is concluded, its D3/D4 are this goal's delivery"
 - Tier: 2
 - Intent: a person's ask in the lane's status clears only when the lane holds evidence of the requested effect, and an act that ran without its effect keeps the ask and names what did not happen
@@ -10,7 +10,7 @@
 - Next step: U1 = lane-clock U2 as amended: brief, Astra, Codex by hand, Opus read, land by hand, deploy
 - OpenedAt: 2026-10-15T06:38:38Z
 - FirstClaimAt: 2026-10-16T16:55:34Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-15T06:39:07Z revision=2 opid=QFFTVGTD1CRAZN06TM51CVRZ55-m1e-670f65d0 authority=proven digest=2a26aad5fa2203ae740e34640f51aee23d8394fc638259772599d5a7083c4abf episode=2
@@ -26,4 +26,5 @@ History:
 - 2026-10-19T10:06:24Z HX09SAD0HSK6104CN3HQ26TEMY-ui-43182c96 breach-stop actor=ui+goal-stop-custodian targets=asks-clear-on-their-effect
 - 2026-10-22T10:10:51Z 0BSY9W4ME9W1R0BFPR1ND5TTMJ-ui-1414a6a0 resume actor=human:Wido targets=asks-clear-on-their-effect reason=cleared stop fence stop-asks-clear-on-their-effect-r7-f1: ELAPSED_LIMIT
 - 2026-10-22T10:10:59Z FBA038PBWKFD9M0KVK0E9NGRWY-ui-1414a6a0 release actor=human:Wido targets=asks-clear-on-their-effect displaced=ui+steward-seat@2026-10-22T10:10:51Z reason=Wido 2026-10-22: released for now; the ui seat takes no goal under the program freeze; the goal stays queued for later
-Integrity: sha256=cdac193e68a5da9b0f670128166f16313a99c637146157bd7243b2ef0b6d262d
+- 2026-10-23T06:41:24Z W57QP00VFN8N2GV84Z3RZGS286-m1e-c951e3fd set-priority actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-done-goals-branch-is-swept,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-red-main-is-known-once,a-seat-pauses-at-its-spend-line,a-stop-waits-for-the-unit-boundary-2,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,asks-clear-on-their-effect,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=an-outside-read-is-a-read-record from=1:1 to=1:2 requested-sequence=1
+Integrity: sha256=ea68de41a1151f0ecf66d1410267d64a6d8d7e188c558e1b2a6cc59603eba26f
