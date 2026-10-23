@@ -6745,7 +6745,15 @@
       },
       "holds": [],
       "opened": "2026-10-22T08:36:40Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-10-23T06:13:06Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "7Z9665J4EM9PP2MBZ02SWWKXZ1-m1e-c951e3fd",
+        "by": "Wido",
+        "why": "the cleanup now waits for the dispatched job's process group (TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch); fixed by a-flake-is-not-a-red-2 U3 045d610bdb (landed 2026-10-22 21:52); three full proofs of main since, all green on the first pass with no flake (21:52, 02:34, 07:16); closure by evidence (program decision 2)"
+      },
       "class": "flake"
     },
     {
