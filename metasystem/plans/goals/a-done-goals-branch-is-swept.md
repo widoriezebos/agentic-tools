@@ -9,11 +9,12 @@
 - Origin: human
 - Next step: Machine route (Wido 2026-10-23, the machinery's first unattended goal): build U1.1 with work build from the accepted design plans/designs/a-done-goals-branch-is-swept.md and the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-done-goals-branch-is-swept-U1.1-brief.md (read with its parent /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-done-goals-branch-is-swept-U1-brief.md); the brief's hand-route lines (worktree -sweep, leave changes uncommitted, hand gate, hand landing) do not apply: work build in the seat's own workspace, work review, then U1.2 and U2 the same way, then work land --whole
 - OpenedAt: 2026-10-16T09:23:44Z
-- Revision: 13
+- Revision: 14
 - Pinned: ui
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-16T09:23:51Z revision=2 opid=PF3501P9JFTR99WVYR8CYJB9Y9-m1e-670f65d0 authority=proven digest=49adcbe9be195a9e489f87ef6ca892a261421c4d2094491642186557db8dda9e episode=2
+- NormApproval: approvedRef=F3GS4TH3C8R0JX44TPTAX4Q6W5-m1e-c951e3fd minutes=2400 reviewRounds=20 goalRevision=13
+- Approved: by=human:Wido at=2026-10-23T06:54:53Z revision=14 opid=F3GS4TH3C8R0JX44TPTAX4Q6W5-m1e-c951e3fd authority=proven digest=3811b4f1d49d696f8ee4fee3d6223b11d6190edf788eaae0f6a34199e85561f8 episode=14
 
 History:
 - 2026-10-16T09:23:44Z N14DNVCX29QBNGN4ZCRBGA4MHG-m1e-670f65d0 open actor=human:Wido targets=a-done-goals-branch-is-swept
@@ -29,4 +30,5 @@ History:
 - 2026-10-23T06:45:01Z BWT2ECQ8Z5GFRME6M1ATYBAVNR-m1e-c951e3fd set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-2,a-proved-main-deploys-itself-2,an-outside-read-is-a-read-record,seat-engines-follow-the-deployed-engine,the-lane-says-what-it-does reason=priority-order subject=a-done-goals-branch-is-swept from=1:6 to=1:1 requested-sequence=1
 - 2026-10-23T06:54:34Z 1YBN7784QG9EZH169AADDKCH3H-m1e-c951e3fd edit actor=human:Wido targets=a-done-goals-branch-is-swept
 - 2026-10-23T06:54:43Z ZVZ9D5RQ86Y112Y58KEPJ6FTZG-m1e-c951e3fd set-pin actor=human:Wido targets=a-done-goals-branch-is-swept
-Integrity: sha256=d8a6c56bc1d2e57afb0008ade8d3e00a94ed4d33f56c96c57f886f3920440600
+- 2026-10-23T06:54:53Z F3GS4TH3C8R0JX44TPTAX4Q6W5-m1e-c951e3fd approve actor=human:Wido targets=a-done-goals-branch-is-swept
+Integrity: sha256=48f76abb13f419c3c16f4e795ade1f02dc872b8edb0c9980d899bd0341f54981
