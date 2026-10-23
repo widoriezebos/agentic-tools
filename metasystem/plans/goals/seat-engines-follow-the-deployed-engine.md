@@ -1,13 +1,15 @@
 # seat-engines-follow-the-deployed-engine
 
 - State: approved
+- Priority: 1
+- Sequence: 2
 - Risk: severity=2 novelty=1 exposure=1 accumulation=1 basis="changes which engine binary the seats run on this computer; a wrong pin stops a seat until a person restarts it"
 - Tier: 2
 - Intent: Every seat on this computer runs the deployed engine after a deploy, without the steward copying it into each checkout's bin by hand; the central or per-checkout engine source is declared first (R-144-m1h decisions 2, 3, 5). Wido 2026-10-22: Q1 of a-proved-main-deploys-itself, a separate goal.
 - Origin: human
 - Next step: Write the design: which engine each seat pins (system restart, enrolment), the declared source choice, and the smallest change; Astra critique under the rare-case rule.
 - OpenedAt: 2026-10-22T10:07:14Z
-- Revision: 3
+- Revision: 4
 - BlockedBy: a-proved-main-deploys-itself
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -17,4 +19,5 @@ History:
 - 2026-10-22T10:07:14Z XDV95WF4M98N9HWFSQSV7ES7PJ-m1e-4a1ba1c4 open actor=human:Wido targets=seat-engines-follow-the-deployed-engine,a-proved-main-deploys-itself
 - 2026-10-22T10:07:59Z YAWVSCJGBSH5J8F40Y5N5A9Q4D-m1e-4a1ba1c4 approve actor=human:Wido targets=seat-engines-follow-the-deployed-engine
 - 2026-10-22T18:23:23Z N93H3TM4RBARTKM3EFR213N6WE-m1e-c951e3fd unpark actor=human:Wido targets=seat-engines-follow-the-deployed-engine reason=blocker a-proved-main-deploys-itself is done; the park lifts
-Integrity: sha256=2bd5a9ac159e847d7fba233d652969f0dbdd36e67fd04a1d6f47d1b512165cf9
+- 2026-10-23T06:41:36Z G9BCQKWCZ78KZAZTRWT1FHZKZ5-m1e-c951e3fd set-priority actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-done-goals-branch-is-swept,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-red-main-is-known-once,a-seat-pauses-at-its-spend-line,a-stop-waits-for-the-unit-boundary-2,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,asks-clear-on-their-effect,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-engines-follow-the-deployed-engine,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=seat-engines-follow-the-deployed-engine from=unranked to=1:2 requested-sequence=2
+Integrity: sha256=fce29e3988f90205dc5d16698f93b2878e4989bcdaec39c56cf4caf90c4ec417
