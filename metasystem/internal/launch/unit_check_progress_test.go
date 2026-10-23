@@ -312,7 +312,7 @@ func TestUnitCheckProgressCeilingDoesNotRestart(t *testing.T) {
 	if ceilings != 2 {
 		t.Fatalf("scheduled %d ceilings, want one per command", ceilings)
 	}
-	b := newProgressCheckBed(t, "while :; do printf x; done")
+	b := newProgressCheckBed(t, "yes x")
 	b.timer(15 * time.Minute)
 	ceiling := b.timer(120 * time.Minute)
 	b.timer(15 * time.Minute)
