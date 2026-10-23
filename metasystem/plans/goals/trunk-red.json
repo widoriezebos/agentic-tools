@@ -6828,6 +6828,96 @@
         "why": "a worker already gone counts as killed (TestGLEHostResourceKilledLauncherAndWorkerKeepOrdinaryGrandchildInCustody); fixed by a-flake-is-not-a-red-2 U3 045d610bdb (landed 2026-10-22 21:52); three full proofs of main since, all green on the first pass with no flake (21:52, 02:34, 07:16); closure by evidence (program decision 2)"
       },
       "class": "flake"
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestGoalBranchReadRealDelegateReachesSelectedClaude-2",
+      "identity": "red:metasystem/cmd/metasystem:TestGoalBranchReadRealDelegateReachesSelectedClaude",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261023T175455.446602000Z.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestGoalBranchReadRealDelegateReachesSelectedClaude",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261023T175455.446602000Z",
+          "batch": "20261023T175455.446602000Z",
+          "baseCommit": "f9521b9de158895926ab2f9d6c232c2a3720828e",
+          "baseTree": "e7fff779672991a9c6873781e40cea43accb52c5",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261023T175455.446602000Z.log",
+          "logDigest": "fc6c76dc47a8289cebd80f32d0554c5248c62b9188d9f430fb34114bedf106b7",
+          "seenAt": "2026-10-23T19:09:01Z",
+          "opid": "RHDQBCAVRNAAG4SHWRM5DGW5G2-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261023T175455.446602000Z"
+      ],
+      "opened": "2026-10-23T19:09:01Z",
+      "closed": null
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestGoalBranchReadRealDelegateReachesSelectedClaude/headerless-2",
+      "identity": "red:metasystem/cmd/metasystem:TestGoalBranchReadRealDelegateReachesSelectedClaude/headerless",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261023T175455.446602000Z.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestGoalBranchReadRealDelegateReachesSelectedClaude/headerless",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261023T175455.446602000Z",
+          "batch": "20261023T175455.446602000Z",
+          "baseCommit": "f9521b9de158895926ab2f9d6c232c2a3720828e",
+          "baseTree": "e7fff779672991a9c6873781e40cea43accb52c5",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261023T175455.446602000Z.log",
+          "logDigest": "fc6c76dc47a8289cebd80f32d0554c5248c62b9188d9f430fb34114bedf106b7",
+          "seenAt": "2026-10-23T19:09:01Z",
+          "opid": "RHDQBCAVRNAAG4SHWRM5DGW5G2-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261023T175455.446602000Z"
+      ],
+      "opened": "2026-10-23T19:09:01Z",
+      "closed": null
     }
   ],
   "cadence": {
