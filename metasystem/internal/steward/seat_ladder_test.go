@@ -695,6 +695,113 @@ func TestAutomaticRevivalStopsAfterClaimReleaseWithoutWorkProgress(t *testing.T)
 	}
 }
 
+// redirectedSeat starts another goal after a person parks the old launch's goal.
+func redirectedSeat(t *testing.T, gap time.Duration) (*seatBed, SeatRecord) {
+	t.Helper()
+	bed := newSeatBed(t, seatReadyGoal("g1", "Build it."))
+	bed.now = time.Date(2026, time.October, 20, 10, 0, 0, 0, time.UTC)
+	start := func(want string) SeatRecord {
+		t.Helper()
+		result := bed.tick(deadWorkers)
+		if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != want {
+			t.Fatalf("seat for %s was not admitted: %+v", want, result)
+		}
+		record, err := bed.startUnder(*result.Seat, fakeCensus{workers: deadWorkers})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return record
+	}
+	first := start("g1")
+	bed.end(first.LaunchID, "failed", `{"type":"result","is_error":true,"result":"blocked"}`)
+	bed.now = bed.now.Add(time.Minute)
+	second := start("g1")
+	file := bed.goals["g1"]
+	file.State, file.Claimed = goal.StateParked, nil
+	file.Revision++
+	file.Parked = &goal.ParkRecord{By: "human:Wido", At: bed.now.Format(time.RFC3339), Because: "Work on the other goal."}
+	file.History = append(file.History, goal.HistoryLine{At: bed.now.Format(time.RFC3339),
+		Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC4", seatBedMachine, "human"), Verb: "park",
+		Actor: "human:Wido", Targets: []string{file.Id}, Keep: -1})
+	bed.end(second.LaunchID, "cancelled", `{"type":"result","is_error":false,"result":"stopped"}`)
+	bed.put(seatReadyGoal("g2", "Build the other goal."))
+	bed.now = bed.now.Add(gap)
+	third := start("g2")
+	starts := bed.launcher.starts
+	if len(starts) != 3 || starts[2].ID != third.LaunchID || third.Goal != "g2" {
+		t.Fatalf("the launcher did not start the selected goal: %+v %+v", third, starts)
+	}
+	ev, err := LoadEvidence(EvidencePath(bed.root))
+	if err != nil || ev.AbnormalCount != 1 || ev.CurrentSeat != third.LaunchID {
+		t.Fatalf("redirection spent restart history or lost the current launch: %+v %v", ev, err)
+	}
+	return bed, third
+}
+
+func TestAnOldLaunchHoldsOnlyItsOwnGoal(t *testing.T) {
+	t.Parallel()
+	redirectedSeat(t, 7*24*time.Hour)
+}
+
+func TestAnOldRestartEntryDoesNotSpeakForALaterLaunch(t *testing.T) {
+	t.Parallel()
+	bed, previous := redirectedSeat(t, time.Minute)
+	bed.end(previous.LaunchID, "completed", `{"type":"result","is_error":false,"result":"blocked"}`)
+	bed.now = bed.now.Add(time.Minute)
+	result := bed.tick(deadWorkers)
+	if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "g2" {
+		t.Fatalf("an older launch's restart entry held this launch: %+v", result)
+	}
+	record, err := bed.startUnder(*result.Seat, fakeCensus{workers: deadWorkers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	ev, err := LoadEvidence(EvidencePath(bed.root))
+	if err != nil || ev.AbnormalCount != 2 || ev.Abnormal[1].Pending || ev.Abnormal[1].Class != SeatNoProgress ||
+		!ev.Abnormal[1].At.Equal(bed.now) || ev.CurrentSeat != record.LaunchID || len(bed.launcher.starts) != 4 {
+		t.Fatalf("the later launch did not reserve and finish its own restart: %+v %v", ev, err)
+	}
+}
+
+func TestAHoldIsBoundToItsApproval(t *testing.T) {
+	t.Parallel()
+	bed := newSeatBed(t, seatReadyGoal("a-stuck", "Build it."))
+	bed.now = time.Date(2026, time.October, 20, 10, 0, 0, 0, time.UTC)
+	for range 2 {
+		result := bed.tick(deadWorkers)
+		if result.Decision.Action != ActRevive || result.Seat == nil {
+			t.Fatalf("seat was not admitted: %+v", result)
+		}
+		record := bed.start(result.Seat)
+		file := bed.goals["a-stuck"]
+		file.NextStep = "Blocked: the fixture is missing."
+		file.Revision++
+		for _, verb := range []string{"claim", "release"} {
+			file.History = append(file.History, goal.HistoryLine{At: bed.now.Format(time.RFC3339),
+				Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC4", seatBedMachine, SeatLineage), Verb: verb,
+				Actor: seatBedMachine + "+" + SeatLineage, Targets: []string{file.Id}, Keep: -1})
+		}
+		bed.end(record.LaunchID, "completed", `{"type":"result","is_error":false,"result":"released"}`)
+		bed.now = bed.now.Add(time.Minute)
+	}
+	result := bed.tick(deadWorkers)
+	if result.Decision.Action != ActNotify || result.Seat != nil || !strings.Contains(result.Decision.Reason, "no retained work progress") {
+		t.Fatalf("the same approval must hold: %+v", result)
+	}
+	file := bed.goals["a-stuck"]
+	oldApproval := file.Approved.Opid
+	file.Approved.Opid = goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC5", seatBedMachine, "human")
+	for i := range file.History {
+		if file.History[i].Opid == oldApproval {
+			file.History[i].Opid = file.Approved.Opid
+		}
+	}
+	result = bed.tick(deadWorkers)
+	if result.Decision.Action != ActRevive || result.Seat == nil || result.Seat.Goal != "a-stuck" {
+		t.Fatalf("the old approval held a newly approved start: %+v", result)
+	}
+}
+
 // Test 19.
 func TestStartNoticeNamesTheStops(t *testing.T) {
 	t.Parallel()

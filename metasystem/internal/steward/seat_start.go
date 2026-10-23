@@ -481,12 +481,14 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
 	}
-	if _, reason, err := abnormalRestartState(repoRoot, ev, now); err != nil {
-		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
-	} else if reason != "" {
-		return Decision{verdict, ActNotify, reason}, nil, true
-	}
 	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned)
+	if d.Action == ActRevive && selection != nil {
+		if _, reason, err := abnormalRestartState(repoRoot, ev, now, selection); err != nil {
+			return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+		} else if reason != "" {
+			return Decision{verdict, ActNotify, reason}, nil, true
+		}
+	}
 	return d, selection, true
 }
 
@@ -611,6 +613,42 @@ func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) 
 		selection.Goal, boundary, selection.Goal, why) + handoff + strings.Join(facts, "")
 }
 
+// SeatRevivalClosed confirms a person's close without starting a replacement.
+type SeatRevivalClosed struct {
+	Launch, Goal, Why string
+	Cleared           bool
+}
+
+func (c SeatRevivalClosed) Error() string {
+	line := "this seat has no launch on record"
+	if c.Launch != "" {
+		line = fmt.Sprintf("launch %s on %s is closed by your word: %s", c.Launch, c.Goal, c.Why)
+	}
+	history := "restart history was already clear"
+	if c.Cleared {
+		history = "restart history cleared"
+	}
+	return line + "; " + history + "; the steward's next tick starts the next ready goal"
+}
+
+func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string) error {
+	ev, err := LoadEvidence(EvidencePath(repoRoot))
+	if err != nil {
+		return err
+	}
+	closed := SeatRevivalClosed{Why: why, Cleared: ev.AbnormalCount > 0}
+	if last != nil {
+		closed.Launch, closed.Goal = last.LaunchID, last.Goal
+	}
+	if closed.Cleared {
+		ev.Abnormal, ev.AbnormalCount = [2]AbnormalRestart{}, 0
+		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+			return err
+		}
+	}
+	return closed
+}
+
 func startSeatWithDependencies(repoRoot string, selection SeatSelection, dependencies seatDependencies) (SeatRecord, error) {
 	person := dependencies.Person.Helm == nil && dependencies.Person.EnrolledTerminalFor(repoRoot)
 	if !person && helm.Active(repoRoot).Active {
@@ -659,7 +697,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return SeatRecord{}, fmt.Errorf("the seat's enrollment cannot be verified: %w", err)
 		}
 		if len(records) == 0 {
-			return SeatRecord{}, errors.New("this seat has no failed launch to revive")
+			return SeatRecord{}, closeUnboundLaunch(repoRoot, nil, "")
 		}
 		last := records[len(records)-1]
 		state, err := dependencies.Launcher.SeatLaunch(last.LaunchID)
@@ -680,6 +718,9 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return SeatRecord{}, fmt.Errorf("failed launch %s is stale; current seat launch is %s", after, last.LaunchID)
 		}
 		if state.Found && (!state.Terminal || state.State != "failed" && state.State != "cancelled") {
+			if state.Terminal {
+				return SeatRecord{}, closeUnboundLaunch(repoRoot, &last, "it ended "+state.State+", not failed")
+			}
 			return SeatRecord{}, errors.New("the current seat launch is not a confirmed failed launch; no replacement starts")
 		}
 		w, err := dependencies.Census.Workers(repoRoot)
@@ -700,7 +741,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		}
 		file, held := work.OwnedClaim(last.Goal)
 		if !held || claimLineage(file) != SeatLineage || file.Approved == nil || approvalOpid(file) != last.ApprovalOpid {
-			return SeatRecord{}, errors.New("the failed seat's approved held work is no longer held by this seat")
+			return SeatRecord{}, closeUnboundLaunch(repoRoot, &last, last.Goal+" is no longer held by this seat under that approval")
 		}
 		if busy, reason, _ := seatBusyReader(dependencies.WorkStateRoot)(repoRoot, work, dependencies.Now()); busy {
 			return SeatRecord{}, errors.New(reason)
@@ -738,7 +779,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	class := ""
 	if !person && (len(records) > 0 || ev.AbnormalCount > 0) {
 		var reason string
-		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now())
+		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now(), &selection)
 		if err != nil {
 			return SeatRecord{}, err
 		}

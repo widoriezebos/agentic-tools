@@ -99,9 +99,11 @@ esac
 			}
 		}
 		command.Env = append(command.Env, "FLEET_HANDOFF_ISOLATED=1", "PATH="+tools+string(os.PathListSeparator)+os.Getenv("PATH"))
-		if output, err := command.CombinedOutput(); err != nil {
+		output, err := command.CombinedOutput()
+		if err != nil {
 			t.Fatalf("isolated public handoff: %v\n%s", err, output)
 		}
+		t.Logf("isolated public handoff:\n%s", output)
 		return
 	}
 	t.Run("driver-read-failure", func(t *testing.T) {
@@ -406,7 +408,7 @@ func fleetSeatBrief(t *testing.T, driver string, now time.Time) string {
 	t.Helper()
 	root := fleetSeatFixture(t, driver, now)
 	launcher := &fleetBriefLauncher{}
-	record, err := steward.StartSeat(root, steward.TickConfig{Now: now, ProviderHome: testprovider.Home(root), Seat: launcher, WorkStateRoot: t.TempDir()}, fleetHandoffCensus{}, steward.SeatSelection{Goal: "brief-goal"})
+	record, err := steward.StartSeat(root, steward.TickConfig{Now: now, ProviderHome: testprovider.Home(root), Seat: launcher, WorkStateRoot: t.TempDir()}, fleetHandoffCensus{}, fleetSeatSelection())
 	if err != nil || record.LaunchID == "" || launcher.spec.Brief == "" {
 		t.Fatalf("public seat start: %+v %v", record, err)
 	}
@@ -417,6 +419,10 @@ func fleetSeatBrief(t *testing.T, driver string, now time.Time) string {
 	return string(brief)
 }
 
+func fleetSeatSelection() steward.SeatSelection {
+	return steward.SeatSelection{Goal: "brief-goal", ApprovalOpid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAV", "m1", "approval")}
+}
+
 func fleetSeatFixture(t *testing.T, driver string, now time.Time) string {
 	t.Helper()
 	root := t.TempDir()
@@ -424,7 +430,7 @@ func fleetSeatFixture(t *testing.T, driver string, now time.Time) string {
 	file := &goal.GoalFile{Id: "brief-goal", State: goal.StateApproved, Tier: 1, Intent: "Continue the unit.", Origin: goal.OriginMain,
 		NextStep: "Build it.", OpenedAt: now.Add(-time.Hour).Format(time.RFC3339), Revision: 1,
 		Budget: &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 4, ReservedJobMinutesLimit: 240, ActiveJobLimit: 2}}
-	opid := goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FAV", "m1", "approval")
+	opid := fleetSeatSelection().ApprovalOpid
 	at := now.Add(-time.Hour).Format(time.RFC3339)
 	file.History = []goal.HistoryLine{{At: at, Opid: opid, Verb: "approve", Actor: "human:Wido", Targets: []string{file.Id}, Keep: -1}}
 	file.Approved = &goal.ApprovalRecord{By: "human:Wido", At: at, Revision: 1, Opid: opid,
@@ -577,7 +583,7 @@ func testFleetAbnormalSeatRestarts(t *testing.T) {
 				return nil
 			}
 			cfg := steward.TickConfig{Now: now, ProviderHome: testprovider.Home(root), Seat: launcher, WorkStateRoot: t.TempDir()}
-			first, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, steward.SeatSelection{Goal: "brief-goal"})
+			first, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, fleetSeatSelection())
 			if err != nil || first.LaunchID == "" {
 				t.Fatalf("initial seat: %+v %v", first, err)
 			}
@@ -657,7 +663,7 @@ func testFleetCompletedSeatProgress(t *testing.T) {
 		return nil
 	}
 	cfg := steward.TickConfig{Now: now, ProviderHome: testprovider.Home(root), Seat: launcher, WorkStateRoot: t.TempDir()}
-	selection := steward.SeatSelection{Goal: "brief-goal"}
+	selection := fleetSeatSelection()
 	for i := 0; i < 4; i++ {
 		if record, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, selection); err != nil || record.LaunchID == "" {
 			t.Fatalf("normal seat start %d: %+v %v", i, record, err)
@@ -707,7 +713,7 @@ func testFleetUnreservedStartFailure(t *testing.T) {
 		return errors.New("child-start: executable unavailable")
 	}
 	cfg := steward.TickConfig{Now: now, ProviderHome: testprovider.Home(root), Seat: launcher, WorkStateRoot: t.TempDir()}
-	selection := steward.SeatSelection{Goal: "brief-goal"}
+	selection := fleetSeatSelection()
 	record, err := steward.StartSeat(root, cfg, fleetHandoffCensus{}, selection)
 	if err == nil || record.Outcome != steward.SeatStartFailed || record.LaunchState != "" {
 		t.Fatalf("unreserved failed start: %+v %v", record, err)

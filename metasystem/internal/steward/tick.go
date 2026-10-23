@@ -635,7 +635,7 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 		d.Reason += "\n" + outageMark.LastDetail
 	}
 	if d.Action == ActRevive && selection == nil {
-		if _, reason, readErr := abnormalRestartState(repoRoot, ev, cfg.now()); readErr != nil {
+		if _, reason, readErr := abnormalRestartState(repoRoot, ev, cfg.now(), nil); readErr != nil {
 			d = Decision{VerdictDegraded, ActNotify, readErr.Error()}
 		} else if reason != "" {
 			d.Action, d.Reason = ActNotify, reason

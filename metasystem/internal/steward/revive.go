@@ -211,7 +211,7 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 		}
 	}
 	if abnormal {
-		class, reason, readErr := abnormalRestartState(repoRoot, ev, cfg.now())
+		class, reason, readErr := abnormalRestartState(repoRoot, ev, cfg.now(), nil)
 		if readErr != nil {
 			return ReviveOutcome{}, readErr
 		}
@@ -450,9 +450,10 @@ func abnormalRemedy(root, reason string) string {
 	return reason + fmt.Sprintf("; person's remedy: metasystem machine revive %s", root)
 }
 
-// abnormalRestartState reads the latest death and retained progress, never
-// a notification or a re-arm generation. Arbitration protects its callers.
-func abnormalRestartState(root string, ev Evidence, now time.Time) (string, string, error) {
+// abnormalRestartState reads a seat launch that holds only a start of its own
+// goal under its own approval; an abnormal restart entry speaks only for the
+// launch it reserved. Arbitration protects its callers.
+func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSelection) (string, string, error) {
 	class, progressed := "process-lost", false
 	if ev.AbnormalCount < 0 || ev.AbnormalCount > len(ev.Abnormal) {
 		return class, abnormalRemedy(root, "the abnormal restart history is unreadable"), nil
@@ -488,6 +489,14 @@ func abnormalRestartState(root string, ev Evidence, now time.Time) (string, stri
 			}
 			if !found {
 				return "", "", fmt.Errorf("current seat launch %s is missing from the retained records", ev.CurrentSeat)
+			}
+		}
+		if start != nil {
+			if current.Goal != start.Goal || current.ApprovalOpid != start.ApprovalOpid {
+				return "", "", nil
+			}
+			if last != nil && last.At.Before(seatTime(current.StartedAt)) {
+				last = nil
 			}
 		}
 		if current.Outcome == SeatStartFailed {

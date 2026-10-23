@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -57,7 +58,12 @@ esac
 		if err := testexec.WriteFile(filepath.Join(tools, "git"), []byte(git), 0700); err != nil {
 			t.Fatal(err)
 		}
-		command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestMachineRevivePublicAct$", "-test.timeout=30m", "-test.v")
+		selection := "^TestMachineRevivePublicAct$"
+		parts, depth := strings.Split(flag.Lookup("test.run").Value.String(), "/"), strings.Count(t.Name(), "/")+1
+		if len(parts) > depth {
+			selection += "/" + strings.Join(parts[depth:], "/")
+		}
+		command := exec.CommandContext(t.Context(), os.Args[0], "-test.run="+selection, "-test.timeout="+fixtureDeadlineRemaining(t).String(), "-test.v")
 		for _, entry := range os.Environ() {
 			name, _, _ := strings.Cut(entry, "=")
 			if name != "PATH" && name != "METASYSTEM_SUPERVISION_REGISTRY_HOME" && name != "METASYSTEM_TESTENV_REGISTRY_NONCE" {
@@ -65,15 +71,23 @@ esac
 			}
 		}
 		command.Env = append(command.Env, "PATH="+tools+":"+os.Getenv("PATH"), "MACHINE_REVIVE_ISOLATED=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME="+home)
-		if out, err := command.CombinedOutput(); err != nil {
+		out, err := command.CombinedOutput()
+		if err != nil {
 			t.Fatalf("public machine revival: %v\n%s", err, out)
 		}
+		t.Logf("public machine revival:\n%s", out)
 		return
 	}
-	for _, scenario := range []string{"person", "omitted", "agent", "stale", "stopped", "unreadable", "missing-episode", "invalid-finished", "unreadable-episode", "automatic-missing-episode", "automatic-invalid-finished", "automatic-old-interval", "missing-launch", "missing-launch-live", "older-start-failed", "launcher-refused", "reservation", "response-loss", "automatic"} {
+	for _, scenario := range []string{"closed-not-held", "closed-completed", "person", "omitted", "agent", "stale", "stopped", "unreadable", "missing-episode", "invalid-finished", "unreadable-episode", "automatic-missing-episode", "automatic-invalid-finished", "automatic-old-interval", "missing-launch", "missing-launch-live", "older-start-failed", "launcher-refused", "reservation", "response-loss", "automatic"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
-			bed := newWorkBedWith(t, func(f *goal.GoalFile) { workApprovedBox(f); f.Claimed.Lineage = steward.SeatLineage })
+			bed := newWorkBedWith(t, func(f *goal.GoalFile) {
+				workApprovedBox(f)
+				f.Claimed.Lineage = steward.SeatLineage
+				if scenario == "closed-not-held" {
+					f.Claimed.Lineage = "other-seat"
+				}
+			})
 			root, home, now := bed.root(), bed.manager.CapacityHome, bed.manager.Now()
 			bed.manager.Adapters["codex-exec"] = launch.CodexExec{Binary: "codex", Now: bed.manager.Now}
 			bed.manager.Adapters["claude-headless"] = launch.ClaudeHeadless{Binary: "claude"}
@@ -132,7 +146,11 @@ esac
 			if err := os.WriteFile(filepath.Join(seats, "failed-seat.json"), data, 0600); err != nil {
 				t.Fatal(err)
 			}
-			if err := bed.manager.Store.Create(launch.Record{ID: failed.LaunchID, Kind: "seat", State: launch.Failed, Adapter: "claude-headless", WorkingDirectory: root, StartedAt: failed.StartedAt, FinishedAt: now.Add(-time.Minute).Format(time.RFC3339)}); err != nil {
+			launchState := launch.Failed
+			if scenario == "closed-completed" {
+				launchState = launch.Completed
+			}
+			if err := bed.manager.Store.Create(launch.Record{ID: failed.LaunchID, Kind: "seat", State: launchState, Adapter: "claude-headless", WorkingDirectory: root, StartedAt: failed.StartedAt, FinishedAt: now.Add(-time.Minute).Format(time.RFC3339)}); err != nil {
 				t.Fatal(err)
 			}
 			before := steward.Evidence{AbnormalCount: 2, DryRevivals: 3}
@@ -288,6 +306,37 @@ esac
 				return
 			}
 			code, result := run(scenario != "omitted")
+			if strings.HasPrefix(scenario, "closed-") {
+				if code != 0 || result.Outcome != intentConfirmed || result.Next != nil ||
+					!strings.Contains(result.Summary, "is closed by your word") || !strings.Contains(result.Summary, "restart history cleared") ||
+					len(bed.starter.launched()) != 0 {
+					t.Fatalf("unbound launch was not closed without a start: %d %+v", code, result)
+				}
+				if scenario == "closed-completed" && !strings.Contains(result.Summary, "it ended completed, not failed") {
+					t.Fatalf("the completed launch's close lost its reason: %+v", result)
+				}
+				after, err := steward.LoadEvidence(steward.EvidencePath(root))
+				if err != nil || after.AbnormalCount != 0 || after.Abnormal != [2]steward.AbnormalRestart{} || after.CurrentSeat != before.CurrentSeat || after.DryRevivals != before.DryRevivals {
+					t.Fatalf("close did not clear only restart history: %+v %v", after, err)
+				}
+				path := steward.EvidencePath(root)
+				data, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// Lawful whitespace makes an unnecessary rewrite observable.
+				data = append(data, '\n')
+				if err := os.WriteFile(path, data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				againCode, again := run(true)
+				unchanged, err := os.ReadFile(path)
+				if againCode != 0 || again.Outcome != intentConfirmed || again.Next != nil ||
+					!strings.Contains(again.Summary, "was already clear") || len(bed.starter.launched()) != 0 || err != nil || !bytes.Equal(data, unchanged) {
+					t.Fatalf("close repeat wrote or started work: %d %+v %v", againCode, again, err)
+				}
+				return
+			}
 			if scenario == "agent" || scenario == "stale" || scenario == "stopped" || scenario == "unreadable" || scenario == "missing-launch-live" || scenario == "reservation" {
 				if code == 0 || scenario != "reservation" && len(bed.starter.launched()) != 0 {
 					t.Fatalf("%s reported a start: %d %+v", scenario, code, result)
