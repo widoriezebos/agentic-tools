@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
@@ -34,11 +36,8 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 		return path
 	}
 	release, done, record := fifo("release"), fifo("done"), filepath.Join(t.TempDir(), "builds")
-	t.Cleanup(func() {
-		if file, err := os.OpenFile(release, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
-			_ = file.Close()
-		}
-	})
+	releaseEnd := testenv.HoldFIFO(t, release)
+	testenv.HoldFIFO(t, done)
 	if err := os.MkdirAll(filepath.Join(installation, "cmd", "devgate"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -65,6 +64,29 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 	if err != nil || !hookProcessAlive(builder) {
 		t.Fatalf("the fence names %q, not a live builder: %v", target, err)
 	}
+	var status syscall.WaitStatus
+	reaped := false
+	t.Cleanup(func() {
+		if !reaped {
+			_ = syscall.Kill(-builder, syscall.SIGKILL)
+			_, _ = syscall.Wait4(builder, &status, 0, nil)
+		}
+	})
+	reap := func() (bool, string) {
+		if !reaped {
+			pid, err := syscall.Wait4(builder, &status, syscall.WNOHANG, nil)
+			if err != nil {
+				t.Fatalf("reap the builder: %v", err)
+			}
+			reaped = pid == builder
+		}
+		return !reaped, fmt.Sprintf("the build exited with status %d", status.ExitStatus())
+	}
+	giveUp := func() string {
+		builds, _ := os.ReadFile(record)
+		log, _ := os.ReadFile(filepath.Join(installation, filepath.FromSlash(hooks.BootstrapLogPath)))
+		return fmt.Sprintf("builds %q; bootstrap log %q", builds, log)
+	}
 	if group, err := syscall.Getpgid(builder); err != nil || group != builder {
 		t.Fatalf("the builder %d is not detached into its own session: group %d %v", builder, group, err)
 	}
@@ -75,19 +97,18 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 		t.Fatalf("a second start while the build runs = %v", err)
 	}
 
-	releaseFile, err := os.OpenFile(release, os.O_WRONLY, 0)
-	if err != nil {
+	if _, err := releaseEnd.WriteString("go\n"); err != nil {
 		t.Fatal(err)
 	}
-	_ = releaseFile.Close()
-	doneFile, err := os.Open(done)
-	if err != nil {
-		t.Fatal(err)
+	if line := testenv.AwaitLine(t, "the fixture build to write done", done, reap, giveUp); line != "done" {
+		t.Fatalf("done line = %q", line)
 	}
-	_, _ = io.Copy(io.Discard, doneFile)
-	_ = doneFile.Close()
+	testenv.AwaitOr(t, "the fixture build to exit", func() bool { alive, _ := reap(); return !alive }, giveUp)
+	if status.ExitStatus() != 0 {
+		t.Fatalf("the build exited with status %d", status.ExitStatus())
+	}
 	// The lock is released when the build exits; waiting for it is waiting
-	// for the build, never for a clock.
+	// for the build, never for a clock (the binary deadline bounds it).
 	lock, err := proofrun.AcquireMutation(installation)
 	if err != nil {
 		t.Fatal(err)
@@ -97,12 +118,6 @@ func TestStartEngineRebuildReturnsWhileTheBuildRunsDetached(t *testing.T) {
 	log, _ := os.ReadFile(filepath.Join(installation, filepath.FromSlash(hooks.BootstrapLogPath)))
 	if string(builds) != target+"\n" || !strings.Contains(string(log), "go-build: bin/metasystem @ fixture") {
 		t.Fatalf("builds %q (fence %s) log %q", builds, target, log)
-	}
-	// The hook process exits right after starting the build, so init reaps
-	// the builder; this test process outlives it and reaps it itself.
-	var status syscall.WaitStatus
-	if _, err := syscall.Wait4(builder, &status, 0, nil); err != nil || status.ExitStatus() != 0 {
-		t.Fatalf("reap the builder: %v status %d", err, status.ExitStatus())
 	}
 	if hooks.BootstrapFenceHeld(enrolled, hookProcessAlive) {
 		t.Fatal("a finished build still holds the fence")

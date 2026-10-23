@@ -3,7 +3,7 @@ package gaterun
 import (
 	"bytes"
 	"errors"
-	"io"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +13,8 @@ import (
 	"time"
 
 	"golang.org/x/sys/unix"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 // makeFifo creates one named pipe under dir; the launched shells below use
@@ -26,33 +28,20 @@ func makeFifo(t *testing.T, dir, name string) string {
 	return path
 }
 
-// readFifo opens the fifo for reading (blocking until the writer opens it)
-// and returns everything written before the writer closed it.
-func readFifo(t *testing.T, path string) string {
-	t.Helper()
-	file, err := os.Open(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer file.Close()
-	data, err := io.ReadAll(file)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return string(data)
-}
-
-// releaseFifo opens the fifo for writing (blocking until the reader opens it)
-// and closes it at once, handing the reader EOF.
-func releaseFifo(t *testing.T, path string) {
-	t.Helper()
-	file, err := os.OpenFile(path, os.O_WRONLY, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := file.Close(); err != nil {
-		t.Fatal(err)
-	}
+// launchCompletion keeps the exit after the launch's channel delivers it.
+func launchCompletion(done <-chan error) (func() (bool, string), *error) {
+	finished := false
+	var exit error
+	return func() (bool, string) {
+		if !finished {
+			select {
+			case exit = <-done:
+				finished = true
+			default:
+			}
+		}
+		return !finished, fmt.Sprintf("the launched shell exited: %v", exit)
+	}, &exit
 }
 
 func TestLaunchDetachedRefusesAnIncompleteLaunch(t *testing.T) {
@@ -85,7 +74,11 @@ func TestLaunchDetachedStartsItsOwnSessionAndAppendsOutputToTheLog(t *testing.T)
 	dir := t.TempDir()
 	work := t.TempDir()
 	ready := makeFifo(t, dir, "ready")
+	testenv.HoldFIFO(t, ready)
 	release := makeFifo(t, dir, "release")
+	releaseEnd := testenv.HoldFIFO(t, release)
+	done := make(chan error, 1)
+	completed, exit := launchCompletion(done)
 	logPath := filepath.Join(dir, "launch.log")
 	if err := os.WriteFile(logPath, []byte("earlier line\n"), 0o600); err != nil {
 		t.Fatal(err)
@@ -93,14 +86,15 @@ func TestLaunchDetachedStartsItsOwnSessionAndAppendsOutputToTheLog(t *testing.T)
 	script := `read -r stdin_line || stdin_line="<eof>"
 echo "out $LAUNCH_MARK $(pwd -P) $stdin_line"
 echo "err line" >&2
-printf ready > "$1"
+printf 'ready\n' > "$1"
 read -r _ < "$2"
 `
 	pid, err := LaunchDetached(DetachedLaunch{
-		Argv: []string{"/bin/sh", "-c", script, "launched", ready, release},
-		Dir:  work,
-		Log:  logPath,
-		Env:  []string{"LAUNCH_MARK=marked"},
+		Argv:      []string{"/bin/sh", "-c", script, "launched", ready, release},
+		Dir:       work,
+		Log:       logPath,
+		Env:       []string{"LAUNCH_MARK=marked"},
+		Completed: done,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -108,7 +102,12 @@ read -r _ < "$2"
 	if pid <= 0 {
 		t.Fatalf("pid = %d", pid)
 	}
-	if got := readFifo(t, ready); got != "ready" {
+	t.Cleanup(func() {
+		if alive, _ := completed(); alive {
+			_ = syscall.Kill(-int(pid), syscall.SIGKILL)
+		}
+	})
+	if got := testenv.AwaitLine(t, "the launched shell to report ready", ready, completed, nil); got != "ready" {
 		t.Fatalf("ready fifo = %q", got)
 	}
 	// The child is parked on the release fifo: its group and session are
@@ -121,7 +120,13 @@ read -r _ < "$2"
 	if err != nil || int64(sid) != pid {
 		t.Fatalf("sid = %d err=%v, want the pid %d", sid, err, pid)
 	}
-	releaseFifo(t, release)
+	if _, err := releaseEnd.WriteString("go\n"); err != nil {
+		t.Fatal(err)
+	}
+	testenv.AwaitFrom(t, "the launched shell to exit", func() bool { alive, _ := completed(); return !alive }, completed, nil)
+	if *exit != nil {
+		t.Fatal(*exit)
+	}
 
 	data, err := os.ReadFile(logPath)
 	if err != nil {
@@ -148,15 +153,23 @@ func TestLaunchDetachedRegistersTheChildInTheExecutionGuard(t *testing.T) {
 		t.Fatalf("acquire: result=%v err=%v", result, err)
 	}
 	release := makeFifo(t, dir, "release")
+	releaseEnd := testenv.HoldFIFO(t, release)
+	done := make(chan error, 1)
+	completed, exit := launchCompletion(done)
 	pid, err := LaunchDetached(DetachedLaunch{
 		Argv:       []string{"/bin/sh", "-c", `read -r _ < "$1"`, "member", release},
 		GuardRoot:  root,
 		GuardOwner: "dispatch supervisor",
+		Completed:  done,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer releaseFifo(t, release)
+	t.Cleanup(func() {
+		if alive, _ := completed(); alive {
+			_ = syscall.Kill(-int(pid), syscall.SIGKILL)
+		}
+	})
 	record, err := readExecutionGuardRecord(root)
 	if err != nil {
 		t.Fatal(err)
@@ -182,6 +195,13 @@ func TestLaunchDetachedRegistersTheChildInTheExecutionGuard(t *testing.T) {
 	}
 	if _, err := readExecutionGuardRecord(root); !os.IsNotExist(err) {
 		t.Fatalf("guard still held after the last member released: %v", err)
+	}
+	if _, err := releaseEnd.WriteString("go\n"); err != nil {
+		t.Fatal(err)
+	}
+	testenv.AwaitFrom(t, "the launched shell to exit", func() bool { alive, _ := completed(); return !alive }, completed, nil)
+	if *exit != nil {
+		t.Fatal(*exit)
 	}
 }
 
