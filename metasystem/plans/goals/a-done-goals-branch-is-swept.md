@@ -7,10 +7,10 @@
 - Tier: 2
 - Intent: A done goal's branch disappears with the goal: repeating goal done on a concluded goal reconciles its branch references through the existing guarded sweep without republishing the conclusion; a unit landed under another id is recognised by its Goal-Source provenance or by an exact, distinct, ordered equivalence proof, and an unproven commit keeps every reference and names work status; the steward's disk pass discovers and sweeps the remaining references of done goals one per pass.
 - Origin: human
-- Next step: Machine route (Wido 2026-10-23, the machinery's first unattended goal): build U1.1 with work build from the accepted design plans/designs/a-done-goals-branch-is-swept.md and the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-done-goals-branch-is-swept-U1.1-brief.md (read with its parent /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-done-goals-branch-is-swept-U1-brief.md); the brief's hand-route lines (worktree -sweep, leave changes uncommitted, hand gate, hand landing) do not apply: work build in the seat's own workspace, work review, then U1.2 and U2 the same way, then work land --whole
+- Next step: Machine route (Wido 2026-10-23, the machinery's first unattended goal): build U1.1 with work build from the accepted design plans/designs/a-done-goals-branch-is-swept.md and the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-done-goals-branch-is-swept-U1.1-brief.md (read with its parent /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-done-goals-branch-is-swept-U1-brief.md); the brief's hand-route lines (worktree -sweep, leave changes uncommitted, hand gate, hand landing) do not apply: work build in the seat's own workspace, work review, then U1.2 and U2 the same way, then work land --whole; ASKED B9AEXKF8RX1T2K0KZEP8QNMGCM (other): The first build of a-done-goals-branch-is-swept cannot start: this Mac's one-minute load stays at 15-35 and automatic builds need it below 8. Wait, or start it yourself?
 - OpenedAt: 2026-10-16T09:23:44Z
 - FirstClaimAt: 2026-10-23T07:04:47Z
-- Revision: 15
+- Revision: 16
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -35,4 +35,5 @@ History:
 - 2026-10-23T06:54:43Z ZVZ9D5RQ86Y112Y58KEPJ6FTZG-m1e-c951e3fd set-pin actor=human:Wido targets=a-done-goals-branch-is-swept
 - 2026-10-23T06:54:53Z F3GS4TH3C8R0JX44TPTAX4Q6W5-m1e-c951e3fd approve actor=human:Wido targets=a-done-goals-branch-is-swept
 - 2026-10-23T07:04:47Z 0BXHFR4E2K1Z5NF7S35M6ZQ5AJ-ui-71c5cb39 claim actor=ui+steward-seat targets=a-done-goals-branch-is-swept reason=areas unknown for goal a-done-goals-branch-is-swept in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/a-done-goals-branch-is-swept.md; areas unknown for goal a-persons-channel-carries-only-acts-and-deliveries; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-lane-deploys-the-engine-it-runs-2
-Integrity: sha256=db43823ebcf73415575d962d29f9320546b8d4d7ddac6e4cbb97e433dd9971e2
+- 2026-10-23T07:37:41Z JEQTBW4XDGVM6DN1P1CA6E4NCZ-ui-71c5cb39 ask actor=ui+steward-seat targets=a-done-goals-branch-is-swept
+Integrity: sha256=967edf76ffccda6fb2378b7d9ddc0d495347e51a100a7a80b26d3f37b067dba0
