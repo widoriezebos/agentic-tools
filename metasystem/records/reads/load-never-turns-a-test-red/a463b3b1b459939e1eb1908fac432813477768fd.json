@@ -1,0 +1,26 @@
+{
+  "schemaVersion": 1,
+  "goal": "load-never-turns-a-test-red",
+  "unit": "U3",
+  "subject": {
+    "commit": "a463b3b1b459939e1eb1908fac432813477768fd",
+    "parent": "50f5b70cacc6c9e2fac6ddcbc2ec811c4ee7e4a7",
+    "tree": "d309988ea93662fdcaeb0fc516bd76ed7376f5c0",
+    "patchDigest": "604e12baff5061bc1ed38f5dcd743163fb5672751a1933a70aaa68f21f7270ca",
+    "unitDigest": "88d8671113f35d66dd6f60b36496dc8a5fe7a71f40ad636106914f499a146cfa"
+  },
+  "source": {
+    "kind": "reader-record",
+    "readerRecord": "metasystem/records/misc/load-never-turns-a-test-red-u3-read.md",
+    "recordSha256": "d170026c8c232a97a27e946be0b8f70bca24f3b41d6f7573906b734f86b1a18d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "d309988ea93662fdcaeb0fc516bd76ed7376f5c0",
+    "runId": "goal-read-gate-20261023t233915z-fdf60a7dfefa563f"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "871e5ea6b5f16f601d8faca2c7c0b59e1b53ab8c16722afd93057301d115765a"
+}
