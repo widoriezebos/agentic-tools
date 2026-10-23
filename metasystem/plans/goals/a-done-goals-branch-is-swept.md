@@ -1,6 +1,6 @@
 # a-done-goals-branch-is-swept
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Lane test finding 343 (2026-10-16 05:32: two goal done acts reported 'branch was not swept', one with work land as the recovery for work already on main; the advertised repeat swept nothing; twenty goal/* branches of done goals linger on origin); memory goal-done-by-hand-needs-a-hand-sweep."
@@ -9,12 +9,15 @@
 - Origin: human
 - Next step: Machine route (Wido 2026-10-23, the machinery's first unattended goal): build U1.1 with work build from the accepted design plans/designs/a-done-goals-branch-is-swept.md and the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-done-goals-branch-is-swept-U1.1-brief.md (read with its parent /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-done-goals-branch-is-swept-U1-brief.md); the brief's hand-route lines (worktree -sweep, leave changes uncommitted, hand gate, hand landing) do not apply: work build in the seat's own workspace, work review, then U1.2 and U2 the same way, then work land --whole
 - OpenedAt: 2026-10-16T09:23:44Z
-- Revision: 14
+- FirstClaimAt: 2026-10-23T07:04:47Z
+- Revision: 15
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=F3GS4TH3C8R0JX44TPTAX4Q6W5-m1e-c951e3fd minutes=2400 reviewRounds=20 goalRevision=13
 - Approved: by=human:Wido at=2026-10-23T06:54:53Z revision=14 opid=F3GS4TH3C8R0JX44TPTAX4Q6W5-m1e-c951e3fd authority=proven digest=3811b4f1d49d696f8ee4fee3d6223b11d6190edf788eaae0f6a34199e85561f8 episode=14
+- Claimed: machine=ui lineage=steward-seat at=2026-10-23T07:04:47Z areas="null" areas-source="01M4ZD0000000000000000SWP1@94e6d6ba3830d73957f0f4e070dfe77e27a51769ba97a0e779c1784b1d3d54a7" areas-known=false areas-warnings="[\"areas unknown for goal a-done-goals-branch-is-swept in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/a-done-goals-branch-is-swept.md\",\"areas unknown for goal a-persons-channel-carries-only-acts-and-deliveries\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-lane-deploys-the-engine-it-runs-2\"]" revision=15 accountingRevision=15 episodeAt=2026-10-23T07:04:47Z episodeRevision=15
+- StopCapability: generation=15 revision=15 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-16T09:23:44Z N14DNVCX29QBNGN4ZCRBGA4MHG-m1e-670f65d0 open actor=human:Wido targets=a-done-goals-branch-is-swept
@@ -31,4 +34,5 @@ History:
 - 2026-10-23T06:54:34Z 1YBN7784QG9EZH169AADDKCH3H-m1e-c951e3fd edit actor=human:Wido targets=a-done-goals-branch-is-swept
 - 2026-10-23T06:54:43Z ZVZ9D5RQ86Y112Y58KEPJ6FTZG-m1e-c951e3fd set-pin actor=human:Wido targets=a-done-goals-branch-is-swept
 - 2026-10-23T06:54:53Z F3GS4TH3C8R0JX44TPTAX4Q6W5-m1e-c951e3fd approve actor=human:Wido targets=a-done-goals-branch-is-swept
-Integrity: sha256=48f76abb13f419c3c16f4e795ade1f02dc872b8edb0c9980d899bd0341f54981
+- 2026-10-23T07:04:47Z 0BXHFR4E2K1Z5NF7S35M6ZQ5AJ-ui-71c5cb39 claim actor=ui+steward-seat targets=a-done-goals-branch-is-swept reason=areas unknown for goal a-done-goals-branch-is-swept in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/a-done-goals-branch-is-swept.md; areas unknown for goal a-persons-channel-carries-only-acts-and-deliveries; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-lane-deploys-the-engine-it-runs-2
+Integrity: sha256=db43823ebcf73415575d962d29f9320546b8d4d7ddac6e4cbb97e433dd9971e2
