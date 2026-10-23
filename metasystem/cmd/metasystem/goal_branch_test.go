@@ -833,7 +833,7 @@ func TestGoalBranchLandPrepRoutesLocalRedCandidate(t *testing.T) {
 		t.Fatal(err)
 	}
 	readerRecord := "metasystem/records/misc/red-command-read.md"
-	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(root), filepath.FromSlash(readerRecord)), []byte(unit+" "+digest+"\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(root), filepath.FromSlash(readerRecord)), []byte(unit+" "+digest+"\nVerdict: LAND\n"), 0o644)
 	unitTree := goalSyncMutationGit(t, root, "rev-parse", unit+"^{tree}")
 	if _, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: root, Remote: "upstream", EndpointTip: base,
 		GoalID: "standing-validation", Unit: "u1", OpID: "red-command-read", ReaderRecord: readerRecord,

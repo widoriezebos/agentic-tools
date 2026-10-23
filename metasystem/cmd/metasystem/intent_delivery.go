@@ -100,6 +100,7 @@ func intentDeliveryCommands() []intentCommand {
 				{name: "check", value: "COMMAND...", rest: true, usage: "with --commit --check-only: explicit person repair; ends the options"},
 				{name: "commit", value: "SHA", usage: "review one committed version of a goal's work, with --goal"},
 				{name: "units", value: "U1,U2,…", usage: "with --commit: units covered by this branch examination, stored with its read"},
+				{name: "reader-record", value: "PATH", usage: "with --commit: the outside reader's record under metasystem/records/misc, recorded as the commit's read"},
 				{name: "dispositions", value: "FILE", usage: "the author's decisions, in the bound file the review wrote"},
 				{name: "retry", value: "N", usage: "examine the subject once more after examination N failed without findings"},
 				reasonFlag("because", "the reason a person accepts the builder's measured size"),
@@ -1280,6 +1281,16 @@ func (inv *intentInvocation) collectReview(targets []intentTarget, outcome deleg
 }
 
 func (inv *intentInvocation) reviewCommit(unit string) intentResult {
+	if inv.input.has("reader-record") {
+		if strings.TrimSpace(inv.input.text("reader-record")) == "" {
+			return intentResult{Outcome: intentRefused, code: 2, Summary: "the reader's record path is empty; nothing was recorded", next: inv.retryWith([]string{"reader-record"}, "--reader-record", "metasystem/records/misc/FILE")}
+		}
+		for _, option := range []string{"brief", "model", "retry", "units", "dispositions"} {
+			if inv.input.has(option) {
+				return intentResult{Outcome: intentRefused, code: 2, Summary: "--reader-record records an existing read, so it takes no critic options; nothing was done", next: inv.typedArgvLess("brief", "model", "retry", "units", "dispositions")}
+			}
+		}
+	}
 	if inv.input.has("units") && strings.TrimSpace(inv.input.text("units")) == "" {
 		return intentResult{Outcome: intentRefused, code: 2, Summary: "the covered unit list is empty; nothing was reviewed", next: inv.typedArgvWith("--units", "U1,U2")}
 	}
@@ -1299,7 +1310,30 @@ func (inv *intentInvocation) reviewCommit(unit string) intentResult {
 	// The review runs where goal/G is checked out, as review run and review
 	// --changes do: a goal worktree's installation, with this one selected.
 	root := inv.goalBranchInstallation(goalID)
+	if inv.input.has("reader-record") {
+		worktree, problem := inv.goalWorktree(goalID)
+		if problem != nil {
+			if problem.Outcome == intentFailed {
+				return *problem
+			}
+			problem.Summary = fmt.Sprintf("no worktree has the goal/%s branch checked out; nothing was recorded", goalID)
+			if _, err := inv.work().git(inv.layout.GitRoot, "rev-parse", "--verify", "-q", "refs/heads/goal/"+goalID); err != nil {
+				endpoint, err := branch.MainEndpoint(inv.layout.InstallationRoot.Path())
+				if err != nil {
+					return intentResult{Outcome: intentFailed, code: 1, Summary: err.Error(), next: inv.sameCommand()}
+				}
+				target := filepath.Join(filepath.Dir(inv.layout.GitRoot), filepath.Base(inv.layout.GitRoot)+"-"+goalID)
+				problem.Details = []string{shellCommand([]string{"git", "-C", inv.layout.GitRoot, "worktree", "add", target, "goal/" + goalID})}
+				problem.next = []string{"git", "-C", inv.layout.GitRoot, "fetch", endpoint.Remote, "refs/heads/goal/" + goalID + ":refs/heads/goal/" + goalID}
+			}
+			return *problem
+		}
+		root = inv.goalWorktreeInstallation(worktree)
+	}
 	args := []string{"--root", root, "--goal", goalID, "--unit", unit}
+	if inv.input.has("reader-record") {
+		args = append(args, "--reader-record", inv.input.text("reader-record"))
+	}
 	if inv.input.has("units") {
 		args = append(args, "--units", inv.input.text("units"))
 	}

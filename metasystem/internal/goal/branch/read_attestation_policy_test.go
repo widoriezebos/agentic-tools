@@ -219,7 +219,7 @@ func (f *attestationPolicyFixture) write(path string, data []byte) {
 	}
 }
 func (f *attestationPolicyFixture) writeReaderRecord() []byte {
-	data := []byte("Read commit " + f.unit + " with unit digest " + digestRawEntries(f.raw[f.unit]) + " and found it clean.\n")
+	data := []byte("Read commit " + f.unit + " with unit digest " + digestRawEntries(f.raw[f.unit]) + " and found it clean.\nVerdict: LAND\n")
 	f.write(f.record, data)
 	return data
 }

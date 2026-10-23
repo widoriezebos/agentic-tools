@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"slices"
@@ -280,6 +282,16 @@ func safeReaderRecord(path string) bool {
 	return clean == path && strings.HasPrefix(clean, "metasystem/records/misc/") && !strings.Contains(clean, "../")
 }
 
+func readerRecordEndsLand(text string) bool {
+	lines := strings.Split(text, "\n")
+	for i := len(lines) - 1; i >= 0; i-- {
+		if line := strings.TrimSpace(lines[i]); line != "" {
+			return strings.ToLower(line) == "verdict: land"
+		}
+	}
+	return false
+}
+
 func fileSHA256(path string) (string, []byte, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
@@ -351,6 +363,9 @@ func directSource(r attestationReads, req CommitReadRequest, subject Attestation
 	text := string(data)
 	if !strings.Contains(text, subject.Commit) || !strings.Contains(text, subject.UnitDigest) {
 		return AttestationSource{}, nil, fmt.Errorf("the reader's record must name commit %s and change %s", subject.Commit, subject.UnitDigest)
+	}
+	if !readerRecordEndsLand(text) {
+		return AttestationSource{}, nil, operationRefusal(ReadInvalidCode, "the reader's record does not end with Verdict: LAND, so nothing was recorded\nrun: metasystem work review --commit %s --goal %s --reader-record %s", subject.Commit, req.GoalID, req.ReaderRecord)
 	}
 	return AttestationSource{Kind: "reader-record", ReaderRecord: req.ReaderRecord, RecordSHA256: digest}, nil, nil
 }
@@ -1107,7 +1122,19 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
 			return "", Attestation{}, rollbackMaterialized(err)
 		}
-		if err := os.WriteFile(abs, contents, 0o644); err != nil {
+		if att.Source.Kind == "reader-record" {
+			file, err := os.OpenFile(abs, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o644)
+			if errors.Is(err, fs.ErrExist) {
+				return "", Attestation{}, operationRefusal(ReadInvalidCode, "an earlier read file is in the way at %s; move it aside, then repeat this command\nrun: metasystem work status %s", path, req.GoalID)
+			}
+			if err == nil {
+				_, err = file.Write(contents)
+				err = errors.Join(err, file.Close())
+			}
+			if err != nil {
+				return "", Attestation{}, rollbackMaterialized(err)
+			}
+		} else if err := os.WriteFile(abs, contents, 0o644); err != nil {
 			return "", Attestation{}, rollbackMaterialized(err)
 		}
 	}
@@ -1117,6 +1144,12 @@ func commitRead(req CommitReadRequest, r attestationReads, e readCommitEffects) 
 	}
 	if att.Source.Kind == "reader-record" && att.Carry == nil {
 		paths = append(paths, att.Source.ReaderRecord)
+	}
+	if readerRecord != "" {
+		digest, _, err := fileSHA256(filepath.Join(projectRoot, filepath.FromSlash(readerRecord)))
+		if err != nil || digest != att.Source.RecordSHA256 {
+			return "", Attestation{}, rollbackMaterialized(operationRefusal(ReadInvalidCode, "the reader record changed while it was being recorded; nothing was recorded; run the command again\nrun: metasystem work review --commit %s --goal %s --reader-record %s", unitCommit, req.GoalID, req.ReaderRecord))
+		}
 	}
 	if err := e.Stage(req.Repo, paths); err != nil {
 		return "", Attestation{}, rollbackMaterialized(err)

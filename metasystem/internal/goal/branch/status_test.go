@@ -15,7 +15,7 @@ func readUnit(t *testing.T, f *branchFixture, unit, commit string) {
 		t.Fatal(err)
 	}
 	record := fmt.Sprintf("metasystem/records/misc/goal-a-%s-read.md", unit)
-	write(t, f.root, record, "Read commit "+commit+" with unit digest "+digest+" and found it clean.\n")
+	write(t, f.root, record, "Read commit "+commit+" with unit digest "+digest+" and found it clean.\nVerdict: LAND\n")
 	if _, _, err := branch.CommitRead(branch.CommitReadRequest{
 		Repo: f.root, Remote: "origin", EndpointTip: f.base, GoalID: "goal-a", Units: strings.Split(unit, "+"),
 		OpID: "read-" + unit, CheckClaim: claimAllowed, ReaderRecord: record,

@@ -225,7 +225,7 @@ func TestWorkRebaseOmitsProvenLandedReadGitAdapter(t *testing.T) {
 				t.Fatal(err)
 			}
 			readPath := "metasystem/records/misc/read.md"
-			writeUnitCarryFile(t, filepath.Join(repo, readPath), "Read "+original+" change "+digest)
+			writeUnitCarryFile(t, filepath.Join(repo, readPath), "Read "+original+" change "+digest+"\nVerdict: LAND\n")
 			read, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: repo, Remote: "origin", EndpointTip: base, GoalID: b.id, Unit: "u1", OpID: "read", ReaderRecord: readPath, CheckClaim: func() error { return nil }, GateRunID: "gate", GateTree: connectionGit(t, repo, "rev-parse", original+"^{tree}")})
 			if err != nil {
 				t.Fatal(err)

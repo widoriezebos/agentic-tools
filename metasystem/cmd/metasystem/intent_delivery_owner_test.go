@@ -85,7 +85,7 @@ func newWholeOwnerLanding(t *testing.T, declaredChecks ...bool) *wholeOwnerLandi
 		t.Fatal(err)
 	}
 	readerRecord := "metasystem/records/misc/owner-read.md"
-	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(root), filepath.FromSlash(readerRecord)), []byte(f.unit+" "+digest+"\n"), 0o644)
+	writeTestingFixtureFile(t, filepath.Join(filepath.Dir(root), filepath.FromSlash(readerRecord)), []byte(f.unit+" "+digest+"\nVerdict: LAND\n"), 0o644)
 	unitTree := goalSyncMutationGit(t, root, "rev-parse", f.unit+"^{tree}")
 	if _, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: root, Remote: "upstream", EndpointTip: f.base,
 		GoalID: "standing-validation", Unit: "u1", OpID: "owner-read", ReaderRecord: readerRecord,

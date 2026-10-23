@@ -15,7 +15,7 @@ func reviewedAmendBed(t *testing.T) (*branchFixture, string, string, string) {
 	for _, unit := range []string{"u1", "u2"} {
 		commit := commitUnit(t, f, unit, "metasystem/"+unit+".go", "one\n")
 		record := "metasystem/records/misc/" + unit + "-read.md"
-		write(t, f.root, record, "Reviewed commit "+commit+".\nChange "+mustUnitDigest(t, f.root, commit)+".\nFound it clean.\n")
+		write(t, f.root, record, "Reviewed commit "+commit+".\nChange "+mustUnitDigest(t, f.root, commit)+".\nFound it clean.\nVerdict: LAND\n")
 		read, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: f.root, Remote: "origin", EndpointTip: f.base,
 			GoalID: "goal-a", Unit: unit, OpID: "read-" + unit, ReaderRecord: record, CheckClaim: claimAllowed,
 			GateRunID: "first-gate", GateTree: unitTree(t, f, commit)})

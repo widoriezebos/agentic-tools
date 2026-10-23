@@ -300,7 +300,7 @@ func scopeCompletionBed(t *testing.T, f *dropFixture, file *goal.GoalFile) (*del
 			t.Fatal(err)
 		}
 		record := "metasystem/records/misc/independent-read.md"
-		bed.writeFile(filepath.Join(root, record), "Read "+independent+" with digest "+digest+" and found it clean.\n")
+		bed.writeFile(filepath.Join(root, record), "Read "+independent+" with digest "+digest+" and found it clean.\nVerdict: LAND\n")
 		read, _, err := branch.CommitRead(branch.CommitReadRequest{Repo: root, Remote: "origin", EndpointTip: main, GoalID: f.bed.id, Unit: "required-other", OpID: "scope-independent-read", ReaderRecord: record, GateRunID: "scope-independent-proof", GateTree: git("rev-parse", independent+"^{tree}"), CheckClaim: func() error { return nil }})
 		if err != nil {
 			t.Fatal(err)

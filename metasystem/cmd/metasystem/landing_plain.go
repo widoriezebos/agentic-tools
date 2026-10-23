@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
+	"slices"
 	"strings"
 	"time"
 
@@ -282,6 +283,11 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	work, problem := inv.goalWork(goalID)
 	if problem != nil {
 		return *problem
+	}
+	for index, committed := range state.Status.Units {
+		if index < len(state.Sources) && !slices.ContainsFunc(work, func(one launch.NamedWork) bool { return one.Unit == committed.Unit }) {
+			work = append(work, launch.NamedWork{Unit: committed.Unit})
+		}
 	}
 	for _, one := range work {
 		unit := handInUnitRounds(one)

@@ -944,6 +944,26 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 			installed.State = "already-collected"
 			return installed, 0, nil
 		}
+	} else if check == nil && slices.Contains(args, "--reader-record") {
+		runner := inv.unitRunner()
+		release, err := runner.ReserveMutation(root, goalID, "read-publication")
+		if err != nil {
+			return inv.treeFailure(err)
+		}
+		defer release()
+		branchRead = func(args []string) (result branch.BranchReadResult, code int, err error) {
+			err = runner.MutationSection(root, func(_ *launch.UnitRunner) error {
+				var readErr error
+				result, code, readErr = owners.branchRead(args)
+				return readErr
+			})
+			return
+		}
+		wait = func(publish func() error) error {
+			return runner.MutationSection(root, func(bound *launch.UnitRunner) error {
+				return bound.CommandWait(publish)
+			})
+		}
 	} else if check == nil {
 		runner := inv.unitRunner()
 		release, err := runner.ReserveMutation(root, goalID, "read-publication")

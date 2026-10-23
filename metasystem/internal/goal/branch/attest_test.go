@@ -22,7 +22,7 @@ func readerRecord(t *testing.T, f *branchFixture, commit string) string {
 		t.Fatal(err)
 	}
 	path := "metasystem/records/misc/goal-a-u1-read.md"
-	write(t, f.root, path, "Read commit "+commit+" with unit digest "+digest+" and found it clean.\n")
+	write(t, f.root, path, "Read commit "+commit+" with unit digest "+digest+" and found it clean.\nVerdict: LAND\n")
 	return path
 }
 
@@ -76,7 +76,7 @@ func TestReadAdoptionRefusalsLeaveCheckoutUntouched(t *testing.T) {
 
 			record := readerRecord(t, f, unit)
 			if test.remoteRead {
-				write(t, f.root, record, "Independent read of commit "+unit+" with unit digest "+mustUnitDigest(t, f.root, unit)+".\n")
+				write(t, f.root, record, "Independent read of commit "+unit+" with unit digest "+mustUnitDigest(t, f.root, unit)+".\nVerdict: LAND\n")
 			}
 			before := snapshotCheckout(t, f.root)
 			checkClaim := claimAllowed

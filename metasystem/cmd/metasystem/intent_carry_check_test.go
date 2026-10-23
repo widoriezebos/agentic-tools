@@ -54,7 +54,7 @@ func declaredCarryBed(t *testing.T, declaration string, cached bool, candidate .
 		t.Fatal(err)
 	}
 	readPath := "metasystem/records/misc/read.md"
-	writeUnitCarryFile(t, filepath.Join(repo, readPath), "Read "+unit+" change "+digest)
+	writeUnitCarryFile(t, filepath.Join(repo, readPath), "Read "+unit+" change "+digest+"\nVerdict: LAND\n")
 	_, _, err = branch.CommitRead(branch.CommitReadRequest{Repo: repo, Remote: "origin", EndpointTip: base, GoalID: b.id, Unit: "u1", OpID: "read", ReaderRecord: readPath, CheckClaim: func() error { return nil }, GateRunID: "old-static-gate", GateTree: connectionGit(t, repo, "rev-parse", unit+"^{tree}")})
 	if err != nil {
 		t.Fatal(err)

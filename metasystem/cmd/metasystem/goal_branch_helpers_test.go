@@ -67,6 +67,9 @@ func goalBranchTestCommit(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	// The fixture owns the fetch deadline: a loaded host must not turn a
+	// fixture commit into a transport timeout (gate red 2026-10-23 19:08).
+	endpoint.ProjectionDeadline = neverProjectionDeadline
 	check := goalBranchClaimCheck(*root, *goalID, endpoint)
 	if err := branch.CheckCommitAccess(*goalID, check); err != nil {
 		fmt.Fprintln(stderr, err)
@@ -112,6 +115,7 @@ func goalBranchTestPush(args []string, stdout, stderr io.Writer) int {
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	endpoint.ProjectionDeadline = neverProjectionDeadline
 	check := goalBranchClaimCheck(*root, *goalID, endpoint)
 	if err := branch.CheckHolder(check); err != nil {
 		fmt.Fprintln(stderr, err)

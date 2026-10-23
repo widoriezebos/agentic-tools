@@ -6,11 +6,13 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -249,6 +251,8 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	unit := flags.String("unit", "", "Goal-Unit commit")
 	units := flags.String("units", "", "comma-separated units covered by this read")
 	unitRead := flags.String("unit-read", "", "bundle of the build's clean read to record as the unit's read")
+	readerRecord := &goalBranchReadOption{name: "reader-record"}
+	flags.Var(readerRecord, "reader-record", "repository-relative reader's record to record as the unit's read")
 	brief, runtime, model := &goalBranchReadOption{name: "brief"}, &goalBranchReadOption{name: "runtime"}, &goalBranchReadOption{name: "model"}
 	flags.Var(brief, "brief", "accepted implementation brief to freeze into the critic dispatch")
 	buildDigest := flags.String("build-brief-sha256", "", "digest recorded by the unit's build")
@@ -264,6 +268,15 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	}
 	if parseErr != nil || flags.NArg() != 0 || *goalID == "" || *unit == "" {
 		return branch.BranchReadResult{}, 2, fmt.Errorf("goal branch read needs --goal and --unit")
+	}
+	if readerRecord.value != "" {
+		var incompatible bool
+		flags.Visit(func(f *flag.Flag) {
+			incompatible = incompatible || slices.Contains([]string{"unit-read", "brief", "runtime", "model", "collect", "join", "retry", "units"}, f.Name)
+		})
+		if incompatible {
+			return branch.BranchReadResult{}, 2, fmt.Errorf("--reader-record takes no critic or bundle options")
+		}
 	}
 	endpoint, err := dependencies.Raw.endpoint(*root)
 	if err != nil {
@@ -335,7 +348,7 @@ func goalBranchReadRun(args []string, dependencies goalBranchReadDependencies) (
 	endpoint.ProjectionDeadline = dependencies.ProjectionDeadline
 	result, err := branch.RunBranchRead(branch.BranchReadRequest{Scope: projection.Tree.Live[*goalID], Repo: *root, Remote: endpoint.Remote,
 		EndpointTip: endpointTip, BranchTip: branchTip, GoalID: *goalID, UnitCommit: commit, Collect: *collect, Join: *join,
-		BriefPath: brief.value, BuildBriefSHA256: *buildDigest, Runtime: runtime.value, Model: model.value, Selected: *selected, UnitRead: bundle,
+		BriefPath: brief.value, BuildBriefSHA256: *buildDigest, Runtime: runtime.value, Model: model.value, Selected: *selected, UnitRead: bundle, ReaderRecord: readerRecord.value,
 		Units: coveredUnitNames(*units),
 		CheckClaim: func() error {
 			if fix := landingFixFor(*root, checkout, *goalID, int64(os.Getpid())); fix != nil && fix.Commit == *unit {
@@ -732,10 +745,17 @@ func goalBranchSweepLandedAt(root, goalID, landing string, endpoint goal.Endpoin
 // goalBranchPublishRead publishes a collected read's attestation through the
 // goal-branch push owner and returns the remote tip that now contains it.
 func goalBranchPublishRead(root, goalID, unit string) (branch.PublishReadResult, error) {
+	return goalBranchPublishReadWithDeadline(root, goalID, unit, nil)
+}
+
+// goalBranchPublishReadWithDeadline is goalBranchPublishRead with the ledger
+// fetch's deadline source; nil keeps the production bound.
+func goalBranchPublishReadWithDeadline(root, goalID, unit string, deadline func(time.Duration) <-chan time.Time) (branch.PublishReadResult, error) {
 	endpoint, err := branch.MainEndpoint(root)
 	if err != nil {
 		return branch.PublishReadResult{}, err
 	}
+	endpoint.ProjectionDeadline = deadline
 	endpointTip, err := goalBranchEndpointTip(root, endpoint)
 	if err != nil {
 		return branch.PublishReadResult{}, err

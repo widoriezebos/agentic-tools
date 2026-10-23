@@ -38,8 +38,10 @@ type BranchReadRequest struct {
 	BriefPath, Runtime, Model                                string
 	BuildBriefSHA256                                         string
 	Collect                                                  bool
-	UnitRead                                                 []byte
-	InheritedFindings                                        []goal.ReviewObligation
+	// ReaderRecord names the outside reader's repository-relative record.
+	ReaderRecord      string
+	UnitRead          []byte
+	InheritedFindings []goal.ReviewObligation
 	// Join has BriefPath start a read only: a read of this build already
 	// started (by the other review form, under its own brief) is joined.
 	Join bool
@@ -624,7 +626,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		return result, err
 	}
 	inherited := branchReadTransfers(repository, request, info.Units)
-	if len(inherited) > 0 && request.UnitRead != nil {
+	if len(inherited) > 0 && (request.UnitRead != nil || request.ReaderRecord != "") {
 		return result, operationRefusal(ReadInvalidCode, "destination %s needs a committed read of its inherited change\nrun: metasystem work review %s --work %s", inherited[0].TargetUnit, request.GoalID, inherited[0].TargetUnit)
 	}
 	common, recordPath, briefPath, err := branchReadPathsWithRepository(repository, request.Repo, request.GoalID, request.UnitCommit)
@@ -691,7 +693,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 	record.Goal, record.UnitCommit, record.Tree = request.GoalID, request.UnitCommit, subject.Tree
 	result.GateRunID, result.RootJob, result.AttestationCommit = record.GateRunID, record.RootJob, record.AttestationCommit
 	result.TransferCoverage = record.TransferCoverage
-	if request.UnitRead != nil && record.RootJob != "" {
+	if (request.UnitRead != nil || request.ReaderRecord != "") && record.RootJob != "" {
 		return result, operationRefusal(ReadInvalidCode, "this build's review already started with a critic; its unit read cannot replace that critic\nrun: metasystem work review %s", request.GoalID)
 	}
 	if request.Retry > 0 {
@@ -712,12 +714,18 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		result.State = "already-collected"
 		return result, nil
 	}
-	if request.UnitRead != nil {
+	if request.UnitRead != nil || request.ReaderRecord != "" {
 		if len(record.CoveredUnits) > 0 {
 			return result, fmt.Errorf("a read naming covered units needs an independent branch critic")
 		}
-		bundle, err := validateUnitReadBundle(request.UnitRead, request.GoalID, subject)
-		if err != nil {
+		readerWord := "reviewed by reader record " + request.ReaderRecord
+		if request.UnitRead != nil {
+			bundle, err := validateUnitReadBundle(request.UnitRead, request.GoalID, subject)
+			if err != nil {
+				return result, err
+			}
+			readerWord = "reviewed by unit read " + bundle.ReadLaunch
+		} else if err := checkReaderRecord(request, subject); err != nil {
 			return result, err
 		}
 		record, _, err = resolveReadGate(ReadGateRequest{Repo: request.Repo, GoalID: request.GoalID,
@@ -731,7 +739,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		}
 		var tests []TestChange
 		for _, path := range testPathsFromEntries(entries) {
-			tests = append(tests, TestChange{Path: path, ReaderWord: "reviewed by unit read " + bundle.ReadLaunch})
+			tests = append(tests, TestChange{Path: path, ReaderWord: readerWord})
 		}
 		commit := request.Commit
 		if commit == nil {
@@ -739,7 +747,7 @@ func RunBranchRead(request BranchReadRequest) (result BranchReadResult, err erro
 		}
 		attestation, _, err := commit(CommitReadRequest{Repo: request.Repo, Remote: request.Remote,
 			EndpointTip: request.EndpointTip, GoalID: request.GoalID, Units: info.Units, OpID: record.GateRunID + "-collect",
-			CheckClaim: request.CheckClaim, UnitRead: request.UnitRead, GateRunID: record.GateRunID, GateTree: record.Tree, TestsChanged: tests})
+			CheckClaim: request.CheckClaim, UnitRead: request.UnitRead, ReaderRecord: request.ReaderRecord, GateRunID: record.GateRunID, GateTree: record.Tree, TestsChanged: tests})
 		if err != nil {
 			return result, err
 		}
@@ -1188,4 +1196,30 @@ func criticInheritedCoverage(store, root, goalID string, subject AttestationSubj
 		}
 	}
 	return findings, commits, nil
+}
+
+func checkReaderRecord(request BranchReadRequest, subject AttestationSubject) error {
+	refuse := func(line string) error {
+		return operationRefusal(ReadInvalidCode, "%s\nrun: metasystem work review --commit %s --goal %s --reader-record %s", line, subject.Commit, request.GoalID, request.ReaderRecord)
+	}
+	if !safeReaderRecord(request.ReaderRecord) {
+		return refuse("reader record must be a repository-relative path under metasystem/records/misc")
+	}
+	top, err := gitOutput(request.Repo, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return err
+	}
+	absolute := filepath.Join(strings.TrimSpace(string(top)), filepath.FromSlash(request.ReaderRecord))
+	data, err := os.ReadFile(absolute)
+	if err != nil {
+		return refuse(fmt.Sprintf("no reader's record at %s; the reader writes it there", absolute))
+	}
+	text := string(data)
+	if !strings.Contains(text, subject.Commit) || !strings.Contains(text, subject.UnitDigest) {
+		return refuse(fmt.Sprintf("the reader's record must name commit %s and change %s", subject.Commit, subject.UnitDigest))
+	}
+	if !readerRecordEndsLand(text) {
+		return refuse("the reader's record does not end with Verdict: LAND, so nothing was recorded")
+	}
+	return nil
 }
