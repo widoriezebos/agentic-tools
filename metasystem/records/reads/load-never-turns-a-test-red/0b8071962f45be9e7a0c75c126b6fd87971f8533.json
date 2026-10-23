@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "goal": "load-never-turns-a-test-red",
+  "unit": "U4",
+  "subject": {
+    "commit": "0b8071962f45be9e7a0c75c126b6fd87971f8533",
+    "parent": "8d41c5a6b6f4d2f0ee80ba3d1bab02e46669df90",
+    "tree": "65fa77d62579dd4e864ad0edbb8683ed2f73466c",
+    "patchDigest": "34a478e05f8df632de257b5fe36067bd89448b97854db53bae8dcf491c366a5c",
+    "unitDigest": "1996fc9cd31952a933184c971b2544f69420578c4ec07d789967f0482895176b"
+  },
+  "source": {
+    "kind": "reader-record",
+    "readerRecord": "metasystem/records/misc/load-never-turns-a-test-red-u4-read.md",
+    "recordSha256": "e4535feec6f62fc05b209df6c908999c21f9cf38f9e1b4eb4ea6c9a5ea496745"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "65fa77d62579dd4e864ad0edbb8683ed2f73466c",
+    "runId": "goal-read-gate-20261023t232031z-2187c9241cb87ab2"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/launch/unit_check_progress_test.go",
+      "readerWord": "reviewed by reader record metasystem/records/misc/load-never-turns-a-test-red-u4-read.md"
+    }
+  ],
+  "sha256": "b77b2acbbf15455d779798975fa86b5a8f141fd53a428745a06ebd1bc4016a9e"
+}
