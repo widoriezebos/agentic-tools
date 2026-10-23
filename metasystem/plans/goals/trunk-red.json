@@ -6868,11 +6868,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261023T175455.446602000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-23T19:09:01Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-23T19:58:14Z",
+        "attempt": "20261023T191608.447071000Z",
+        "baseCommit": "0e9bd28f7325c3c69e600f730cdea975b824ce57",
+        "how": "green",
+        "opid": "4HDD134NB8XGDYPGDX3NEB956R-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestGoalBranchReadRealDelegateReachesSelectedClaude/headerless-2",
@@ -6913,11 +6919,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261023T175455.446602000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-23T19:09:01Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-23T19:58:14Z",
+        "attempt": "20261023T191608.447071000Z",
+        "baseCommit": "0e9bd28f7325c3c69e600f730cdea975b824ce57",
+        "how": "green",
+        "opid": "4HDD134NB8XGDYPGDX3NEB956R-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
