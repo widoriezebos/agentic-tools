@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: A unit's frozen check ends on its result, not on a wall clock that load or selection size can exhaust: proof.deadline means minutes without a finished unit (a hang still stops), the check runs after the builder's turn instead of inside it, a stop carries its real cause (deadline, environment) and offers the retry, one machine retry for a deadline stop, and the ask to a person states what happened with real line counts and a ready command. From the machinery's first run 2026-10-23 (landed-proof killed twice at exactly 15m0s after 28 of 46 green units); analyses: first-machinery-run-20261023/partial-build-1042.md and outside-read-fable-partial-build.md.
 - Origin: human
-- Next step: Design and brief from the two analyses (Fable's fixes 2-6), Astra under the rare-case rule, build by hand (it blocks the machinery's first run), then round 4 of a-done-goals-branch-is-swept on the new engine
+- Next step: Machine route on ui, one unit at a time (plan 2.3): U2 from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-unit-check-ends-on-progress-U2-brief.md, then U3a (items 1-4 and 9) and U3b (items 5-8) from ...-U3-brief.md (both FINAL, Astra closed at the three-round stop 2026-10-24). The seat runs work review --reader-record itself; the lane lands each unit.
 - OpenedAt: 2026-10-23T09:59:14Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=5RNFZTW1AAPJ40BH94191RAKP9-m1e-cca12454 minutes=2400 reviewRounds=20 goalRevision=4
@@ -22,4 +22,5 @@ History:
 - 2026-10-23T10:00:15Z 0P9EN7XSNK3XCH2K38V1M4HC2V-m1e-79fa16f1 set-pin actor=human:Wido targets=a-unit-check-ends-on-progress
 - 2026-10-23T22:35:38Z 5RNFZTW1AAPJ40BH94191RAKP9-m1e-cca12454 approve actor=human:Wido targets=a-unit-check-ends-on-progress
 - 2026-10-23T22:37:36Z 9RZ8PYC79FFHEKCADBJTG4C5WK-m1e-cca12454 set-pin actor=human:Wido targets=a-unit-check-ends-on-progress
-Integrity: sha256=fcc29a1384355cce844ea1d96604bc1ac9c1452599d618c8390a47bcf5e6e71b
+- 2026-10-24T04:53:17Z WRH64YWE4ZG0HJMY04XGBFKGNV-m1e-e91103bc edit actor=human:Wido targets=a-unit-check-ends-on-progress
+Integrity: sha256=901f1d5df45bf3f9131e2b34c7509c07eeab4bbc22193beec5aa4c6dd1d88480
