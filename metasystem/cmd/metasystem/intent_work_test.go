@@ -934,8 +934,10 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 			t.Fatalf("%s changed on repeat", path)
 		}
 	}
-	// From a folder below the checkout's top, the check runs in the goal
-	// worktree's copy of that folder, where a module below the top is found.
+	// From a folder below the checkout's top, a declared check (no --check)
+	// still runs at the goal worktree's installation folder, where the lane
+	// proves it. This bed's installation is the checkout root, so that is the
+	// worktree's top.
 	for _, dir := range []string{filepath.Join(bed.root(), "module"), filepath.Join(bed.worktree, "module")} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
@@ -959,8 +961,8 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 	}
 	bed.recordReadDirs(nested)
 	if nestedPlan, err := launch.ReadUnitPlan(resultData(t, nested)["plan"].(string)); err != nil || len(nestedPlan.Proof) != 1 ||
-		nestedPlan.Proof[0].Dir != filepath.Join(bed.worktree, "module") {
-		t.Fatalf("the check from a folder below the top runs in the worktree's copy of it: %+v %v", nestedPlan.Proof, err)
+		nestedPlan.Proof[0].Dir != bed.worktree {
+		t.Fatalf("the declared check from a folder below the top runs at the worktree's installation: %+v %v", nestedPlan.Proof, err)
 	}
 
 }
