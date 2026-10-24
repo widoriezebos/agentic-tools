@@ -1,6 +1,6 @@
 # a-round-survives-a-restart
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="ui seat 2026-10-23/24 (journal first-machinery-run-20261023, rows 04:00-04:41): the 13:24 restart cancelled round 3's completed launch, the run contradicted itself and the budget read unknown; the hold returned 6 minutes after revive; round 4 refused as still running after work stop run:; the remedy path was refused by revive. Plan item 2.5."
@@ -9,8 +9,11 @@
 - Origin: human
 - Next step: Build U1, then U2 with --last, from the briefs on the machine route on ui (Read each round: yes); the goal lands once.
 - OpenedAt: 2026-10-24T04:45:40Z
-- Revision: 7
+- Revision: 8
+- Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- NormApproval: approvedRef=3Q37TSC8CQSZMTSMJ9WBC5M32D-m1e-294bbb33 minutes=2400 reviewRounds=20 goalRevision=7
+- Approved: by=human:Wido at=2026-10-24T07:58:23Z revision=8 opid=3Q37TSC8CQSZMTSMJ9WBC5M32D-m1e-294bbb33 authority=proven digest=9d6255f119e49598b032844e0d9c2dc4725c03f5c180f843a467a4d7d4a8997f episode=8
 
 History:
 - 2026-10-24T04:45:40Z S93F9C1YC78TR7RCW73V0WR8T4-m1e-e91103bc open actor=human:Wido targets=a-round-survives-a-restart
@@ -20,4 +23,5 @@ History:
 - 2026-10-24T07:33:56Z XYPD9C6VXCCVW3HP15TF86PRJW-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-round-survives-a-restart reason=priority-order subject=a-round-survives-a-restart from=1:6 to=1:3 requested-sequence=3
 - 2026-10-24T07:58:10Z ARCR9RE1NDSNXD5SZGQM1Y9DZM-m1e-294bbb33 unapprove actor=human:Wido targets=a-round-survives-a-restart reason=row 3 adds U2 (a hold asks once) to the goal's intent
 - 2026-10-24T07:58:16Z ARQ474ASMZW2R62XDAV7WZAKBR-m1e-294bbb33 edit actor=human:Wido targets=a-round-survives-a-restart
-Integrity: sha256=9462a206606a0d3d2a6c48692d61a282608bad304941052e569faddfa7f83f1e
+- 2026-10-24T07:58:23Z 3Q37TSC8CQSZMTSMJ9WBC5M32D-m1e-294bbb33 approve actor=human:Wido targets=a-round-survives-a-restart
+Integrity: sha256=2b408d3b3d47b71feb28070c153a978c447492fe07f1d7b72489e26c68d7af43
