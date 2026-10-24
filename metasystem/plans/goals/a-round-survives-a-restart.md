@@ -5,11 +5,11 @@
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="ui seat 2026-10-23/24 (journal first-machinery-run-20261023, rows 04:00-04:41): the 13:24 restart cancelled round 3's completed launch, the run contradicted itself and the budget read unknown; the hold returned 6 minutes after revive; round 4 refused as still running after work stop run:; the remedy path was refused by revive. Plan item 2.5."
 - Tier: 2
-- Intent: A unit's round survives an engine or seat restart, and a seat start or revive never strands a continuation: a restart's cancel settles a finished launch from the launch store instead of overwriting it, revive clears a continuation with no running job, a cancelled run reads as cancelled in status and revise, and the hold's remedy line names the seat. Brief: /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-round-survives-a-restart-U1-brief.md (revision 2, Astra closed at round 2 on 0 material).
+- Intent: A unit's round survives an engine or seat restart, a seat start or revive never strands a continuation, and a hold asks once: a restart's cancel settles a finished launch from the launch store, revive clears a continuation with no running job, a cancelled run reads cancelled, the hold names the seat (U1); a hold, a restart-limit stall or admission closed at the box becomes one machine question through the channel, asked once while it stands (U2). Briefs: /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-round-survives-a-restart-U1-brief.md and -U2-brief.md; U1 then U2 on one branch, one landing.
 - Origin: human
-- Next step: U1 on the machine route on ui (plan phase 2, one goal at a time): build from the brief, the seat runs work review itself, the lane lands
+- Next step: Build U1, then U2 with --last, from the briefs on the machine route on ui (Read each round: yes); the goal lands once.
 - OpenedAt: 2026-10-24T04:45:40Z
-- Revision: 6
+- Revision: 7
 - BudgetExceptions: 0
 
 History:
@@ -19,4 +19,5 @@ History:
 - 2026-10-24T07:31:13Z CK6X1XV8FX623A86WT8CVNK3VM-m1e-e91103bc approve actor=human:Wido targets=a-round-survives-a-restart
 - 2026-10-24T07:33:56Z XYPD9C6VXCCVW3HP15TF86PRJW-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-round-survives-a-restart reason=priority-order subject=a-round-survives-a-restart from=1:6 to=1:3 requested-sequence=3
 - 2026-10-24T07:58:10Z ARCR9RE1NDSNXD5SZGQM1Y9DZM-m1e-294bbb33 unapprove actor=human:Wido targets=a-round-survives-a-restart reason=row 3 adds U2 (a hold asks once) to the goal's intent
-Integrity: sha256=40e71f0ad1f2e73d1fc74ab78d48355efed0147085e1f204453f67004e180ce9
+- 2026-10-24T07:58:16Z ARQ474ASMZW2R62XDAV7WZAKBR-m1e-294bbb33 edit actor=human:Wido targets=a-round-survives-a-restart
+Integrity: sha256=9462a206606a0d3d2a6c48692d61a282608bad304941052e569faddfa7f83f1e
