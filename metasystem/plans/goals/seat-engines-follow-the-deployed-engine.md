@@ -1,6 +1,6 @@
 # seat-engines-follow-the-deployed-engine
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=1 exposure=1 accumulation=1 basis="changes which engine binary the seats run on this computer; a wrong pin stops a seat until a person restarts it"
@@ -9,12 +9,10 @@
 - Origin: human
 - Next step: Write the design: which engine each seat pins (system restart, enrolment), the declared source choice, and the smallest change; Astra critique under the rare-case rule.
 - OpenedAt: 2026-10-22T10:07:14Z
-- Revision: 15
+- Revision: 16
 - BlockedBy: a-proved-main-deploys-itself
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-22T10:07:59Z revision=2 opid=YAWVSCJGBSH5J8F40Y5N5A9Q4D-m1e-4a1ba1c4 authority=proven digest=9e01dff9b53c7779dd594b77528790b1d4f0102705efc0f5a03a0f2f120d50a5 episode=2
 
 History:
 - 2026-10-22T10:07:14Z XDV95WF4M98N9HWFSQSV7ES7PJ-m1e-4a1ba1c4 open actor=human:Wido targets=seat-engines-follow-the-deployed-engine,a-proved-main-deploys-itself
@@ -32,4 +30,5 @@ History:
 - 2026-10-24T07:34:04Z K6FFB95XB1JH2N8WQ8GCGR89MR-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-seat-pauses-at-its-spend-line,an-outside-read-is-a-read-record,seat-engines-follow-the-deployed-engine reason=priority-order subject=seat-engines-follow-the-deployed-engine from=1:9 to=1:4 requested-sequence=4
 - 2026-10-24T07:57:59Z MT5A3PM807D3BYCR3JZ3008H3M-m1e-294bbb33 unpark actor=human:Wido targets=seat-engines-follow-the-deployed-engine
 - 2026-10-24T07:58:40Z Q50TD8JPB29HAPTS6Y93N2WVCW-m1e-294bbb33 set-pin actor=human:Wido targets=seat-engines-follow-the-deployed-engine
-Integrity: sha256=4b5d5eb8d638cc1304088a282f3789efdc332d1b6fb622ed0ad65739b955f4a1
+- 2026-10-24T07:58:48Z EFBA09H62KGDPTZHVR4SSV0SZB-m1e-294bbb33 unapprove actor=human:Wido targets=seat-engines-follow-the-deployed-engine reason=row 6: intent changes to the drafted design and brief
+Integrity: sha256=f2d8fe7f90fc4b838f41c195e4ab097b1d1a3df0ec99a4ced0acde95db534344
