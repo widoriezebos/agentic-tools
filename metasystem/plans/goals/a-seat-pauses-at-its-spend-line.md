@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 8
+- Sequence: 7
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A wrong hold delays a seat by at most one day window and a person can resume it (severity 2); it reuses the spend reader, alert episodes and the seat ladder (novelty 2); every automatic seat passes the guard (exposure 3); one new record and one episode kind (accumulation 2)"
 - Tier: 2
 - Intent: A seat that passes its daily spend line finishes its unit, writes its handoff, pauses and tells the person in local time; it resumes at the next day window or, on a person's word, for the rest of the day
 - Origin: main
 - Next step: U2 dry run (pause refused, would-hold calibration, helm report-only pass, exempt states), U3 the machine list and status surfaces, U4 the hold with machine resume and the clock exclusion (U4a/U4b if the measured inventory passes 250), then spend.mode=pause in the root conf; blocked by a-stop-waits-for-the-unit-boundary; design plans/designs/a-stop-waits-for-the-unit-boundary.md
 - OpenedAt: 2026-10-19T09:44:31Z
-- Revision: 24
+- Revision: 25
 - BlockedBy: a-stop-waits-for-the-unit-boundary
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -41,4 +41,5 @@ History:
 - 2026-10-24T05:02:21Z K0VM13PV3ABJMQ1YW9RBB87SWF-m1e-e91103bc set-priority actor=human:Wido targets=a-persons-test-run-is-admitted,a-proved-main-deploys-itself-2,a-red-main-is-known-once,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-engines-follow-the-deployed-engine,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=a-seat-pauses-at-its-spend-line from=1:64 to=1:7 requested-sequence=7
 - 2026-10-24T07:31:23Z QBBBCMS55YSMSWSEZ9MVC6F0NQ-m1e-e91103bc approve actor=human:Wido targets=a-seat-pauses-at-its-spend-line
 - 2026-10-24T07:34:04Z K6FFB95XB1JH2N8WQ8GCGR89MR-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-seat-pauses-at-its-spend-line,an-outside-read-is-a-read-record,seat-engines-follow-the-deployed-engine reason=priority-order subject=seat-engines-follow-the-deployed-engine from=1:7 to=1:8 requested-sequence=4
-Integrity: sha256=2c2589e806cd8de326b02139e6bdbd8e36de6528e5c4e203841a879639b1fc6e
+- 2026-10-24T07:34:30Z YVBQP59MY4NMJ47KQZFKQQ1PJE-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-seat-pauses-at-its-spend-line reason=priority-order subject=a-seat-pauses-at-its-spend-line from=1:8 to=1:7 requested-sequence=7
+Integrity: sha256=524439e5a95f9ae61533fad99ebd9254aeb25fb74a8d4e1b57b1a8e261a65753
