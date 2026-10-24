@@ -12,10 +12,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/deploy"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -970,6 +972,11 @@ func runIntentDone(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	if !slices.Contains(actor, "--by") && !inv.input.switched("force") {
+		if err := inv.goalDeployReady(id); err != nil {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: err.Error(), next: inv.publicArgv("deploy", "status")})
+		}
+	}
 	var reviewTrees []string
 	var treeErr error
 	concluded, recorded := false, false
@@ -1039,4 +1046,59 @@ func runIntentDoneJob(inv *intentInvocation, ref string) int {
 		return inv.render(*problem)
 	}
 	return inv.render(inv.closeChain(job))
+}
+
+func (inv *intentInvocation) goalDeployReady(id string) error {
+	project, err := resolveDeployProject(inv.deploy(), inv.layout.InstallationRoot.Path(), inv.layout.GitRoot)
+	if errors.Is(err, deploy.ErrNoContract) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	root, configured, problem := inv.laneCheck(inv.targets(id))
+	if problem != nil {
+		return errors.New(problem.Summary)
+	}
+	if !configured {
+		return nil
+	}
+	install, err := inv.laneInstallOf(root)
+	if err != nil {
+		return err
+	}
+	projection, _, problem := inv.projection()
+	if problem != nil {
+		return errors.New(problem.Summary)
+	}
+	entry, found, err := inv.latestLaneGoalEntry(install, id, projection.Tip)
+	if err != nil || !found || entry.State != plain.StateLanded {
+		return err
+	}
+	status, err := deploy.ReadStatus(project.dir, 0)
+	if err != nil {
+		return err
+	}
+	contains := func(commit string) (bool, error) {
+		if read := inv.delivery().laneContains; read != nil {
+			return read(entry.SHA, commit)
+		}
+		return plain.ContainedIn(inv.layout.GitRoot, commit)(entry.SHA)
+	}
+	if status.Current != nil {
+		deployed, err := contains(status.Current.Commit)
+		if err != nil || deployed {
+			return err
+		}
+	}
+	if status.LastFailure != nil {
+		failed, err := contains(status.LastFailure.Commit)
+		if err != nil {
+			return err
+		}
+		if failed {
+			return fmt.Errorf("goal %s is on main, but its deploy failed (%s of %s); goal done waits for a deploy that contains it", id, status.LastFailure.Outcome, status.LastFailure.Commit)
+		}
+	}
+	return fmt.Errorf("goal %s is on main but not deployed yet; goal done waits until deploy status shows it deployed", id)
 }

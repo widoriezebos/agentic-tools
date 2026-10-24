@@ -278,7 +278,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 		}
 	}
 	if inv.input.switched("whole") {
-		line.WholeBy = strings.TrimPrefix(inv.input.text("by"), "human:")
+		line.WholeBy = inv.wholeBy
 	}
 	work, problem := inv.goalWork(goalID)
 	if problem != nil {

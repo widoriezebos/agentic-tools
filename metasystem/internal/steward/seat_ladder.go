@@ -103,6 +103,8 @@ func SeatWorldFrom(work goal.ClaimableBudgetedWork, live map[string]*goal.GoalFi
 			held.Wait = "it waits under a review sitting by " + holds[0].By
 		case len(steps) == 0:
 			held.Wait = gateWait(file, settings, now)
+		case steps[0].Conclude:
+			held.StepDue = true
 		case !steps[0].Revise:
 			if _, err := goal.Gate(file, tips[id], settings); err != nil {
 				var refusal *goal.GateRefusal

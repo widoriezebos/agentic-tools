@@ -2875,8 +2875,8 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
 					return nil, err
 				}
 			}
-			if f.Origin == OriginHuman {
-				missing := fmt.Sprintf("goal %s was opened by the human; concluding it is a human act", id)
+			if f.Origin == OriginHuman && !(r.Actor.Human == "" && f.State == StateClaimed && ownPair(f.Claimed, r.Actor) && landedSinceLanding(f)) {
+				missing := fmt.Sprintf("goal %s was opened by a person; the session holding it concludes it once its landing is recorded (metasystem work land %s records it when the lane has landed it), or a person concludes it", id, id)
 				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of a human-origin goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
 					return nil, err
 				}

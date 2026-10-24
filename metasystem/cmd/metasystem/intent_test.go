@@ -644,9 +644,9 @@ func TestIntentDoneNeedsTheHumansProof(t *testing.T) {
 	if code == 0 || result.Outcome != intentRefused || forged.repo.publications != 0 || forged.goalFile(bedGoal).State != goal.StateClaimed {
 		t.Fatalf("forged human done = %d %+v", code, result)
 	}
-	// The owning agent without a name cannot conclude the person's goal either.
+	// The owning agent waits until its landing is recorded.
 	code, result = forged.runJSON(forged.owners(), "goal", "done", bedGoal, "--reason", "closed", "--lineage", "m1")
-	if code == 0 || !strings.Contains(result.Summary, "opened by the human") || forged.repo.publications != 0 {
+	if code == 0 || !strings.Contains(result.Summary, "opened by a person; the session holding it concludes it once its landing is recorded") || forged.repo.publications != 0 {
 		t.Fatalf("agent done of a human-origin goal = %d %+v", code, result)
 	}
 	// The person at the enrolled terminal concludes it with no name typed.
