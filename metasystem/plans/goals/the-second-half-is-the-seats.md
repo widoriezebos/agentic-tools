@@ -1,6 +1,6 @@
 # the-second-half-is-the-seats
 
-- State: approved
+- State: queued
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="2026-10-24: a-flake-is-not-a-red-2 had to be split into a follow-up goal to land one unit (no verb lands a unit while its goal continues, against decision 47b); --whole and goal done on a human-opened goal need a person (intent_delivery.go:1887-1891, verbs.go:2878); every hand-in since 10-16 carried --whole --by Wido. Plan item 2.1."
@@ -9,15 +9,13 @@
 - Origin: human
 - Next step: U1 (parts: a unit lands alone through the lane), then U2 (the claim-holding seat declares the end and runs goal done; AGENTS.md:35 changes, impact line to Wido first). Machine route on ui, one unit at a time; the seat runs work review --reader-record itself.
 - OpenedAt: 2026-10-24T05:00:13Z
-- Revision: 4
-- Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
+- Revision: 5
 - BudgetExceptions: 0
-- NormApproval: approvedRef=DED1R5RAM28X5SJFC88N84S3T6-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=3
-- Approved: by=human:Wido at=2026-10-24T07:30:45Z revision=4 opid=DED1R5RAM28X5SJFC88N84S3T6-m1e-e91103bc authority=proven digest=ab4169768d94c654c34fb64d6d45ae3b155ffcc27e56fab8df9e33620c465899 episode=4
 
 History:
 - 2026-10-24T05:00:13Z X57VQEP54H1AH2B6CEY2CG1XDF-m1e-e91103bc open actor=human:Wido targets=the-second-half-is-the-seats
 - 2026-10-24T05:00:51Z YKEGEXQFTQFXJQ39YXXASMSRHN-m1e-e91103bc approve actor=human:Wido targets=the-second-half-is-the-seats
 - 2026-10-24T05:01:17Z 92J2PAETJVZWGNGCE6BP3JBE5Z-m1e-e91103bc set-priority actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-red-main-is-known-once,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,a-stop-waits-for-the-unit-boundary-2,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-engines-follow-the-deployed-engine,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2,the-lane-says-what-it-does,the-second-half-is-the-seats,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=the-second-half-is-the-seats from=unranked to=1:3 requested-sequence=3
 - 2026-10-24T07:30:45Z DED1R5RAM28X5SJFC88N84S3T6-m1e-e91103bc approve actor=human:Wido targets=the-second-half-is-the-seats
-Integrity: sha256=4e1c09314752a1db5d3d9c93d5c080aed7c898b45e8e32a8677c18d7c11f6483
+- 2026-10-24T07:33:08Z 7Q8RCA0BVNS2DEF43HSB3QAZY6-m1e-e91103bc unapprove actor=human:Wido targets=the-second-half-is-the-seats reason=decision 49 recut: the intent changes to one unit, no parts
+Integrity: sha256=38ca389dbcd103505343f0360b4dd3ef996b421f829231a42d1228671a34f598
