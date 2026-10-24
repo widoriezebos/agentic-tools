@@ -1,13 +1,15 @@
 # a-round-survives-a-restart
 
 - State: approved
+- Priority: 1
+- Sequence: 6
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="ui seat 2026-10-23/24 (journal first-machinery-run-20261023, rows 04:00-04:41): the 13:24 restart cancelled round 3's completed launch, the run contradicted itself and the budget read unknown; the hold returned 6 minutes after revive; round 4 refused as still running after work stop run:; the remedy path was refused by revive. Plan item 2.5."
 - Tier: 2
 - Intent: A unit's round survives an engine or seat restart, and a seat start or revive never strands a continuation: a restart's cancel settles a finished launch from the launch store instead of overwriting it, revive clears a continuation with no running job, a cancelled run reads as cancelled in status and revise, and the hold's remedy line names the seat. Brief: /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-round-survives-a-restart-U1-brief.md (revision 2, Astra closed at round 2 on 0 material).
 - Origin: human
 - Next step: U1 on the machine route on ui (plan phase 2, one goal at a time): build from the brief, the seat runs work review itself, the lane lands
 - OpenedAt: 2026-10-24T04:45:40Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=R8Z9Y090E6FKX04K1CT3HKMP6A-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +18,5 @@
 History:
 - 2026-10-24T04:45:40Z S93F9C1YC78TR7RCW73V0WR8T4-m1e-e91103bc open actor=human:Wido targets=a-round-survives-a-restart
 - 2026-10-24T04:48:13Z R8Z9Y090E6FKX04K1CT3HKMP6A-m1e-e91103bc approve actor=human:Wido targets=a-round-survives-a-restart
-Integrity: sha256=652225768b1ce864d08962a1ed28b2bf95eb08523186fba1526da687de865439
+- 2026-10-24T05:01:58Z T8G7H64Y879102DW7MFVG69PB8-m1e-e91103bc set-priority actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-red-main-is-known-once,a-round-survives-a-restart,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,a-stop-waits-for-the-unit-boundary-2,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-engines-follow-the-deployed-engine,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=a-round-survives-a-restart from=unranked to=1:6 requested-sequence=6
+Integrity: sha256=317b60b5e3a377083af440780496992534052a6927e82731119a1485211b7927
