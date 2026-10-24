@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 198
+- Revision: 199
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -268,4 +268,5 @@ History:
 - 2026-10-20T09:42:57Z 22ZNZTH9D7YKZT9AE3Y9ZGJQRH-m1e-f456f182 ack actor=human:Wido targets=the-lane-deploys-the-engine-it-runs displaced=m1e+main-1790454088-93948-21671b@2026-10-19T18:16:53Z ack
 - 2026-10-20T16:11:18Z E5YD73W244T1M8EX3K9TE1K1N5-m1e-f456f182 ack actor=human:Wido targets=a-stop-waits-for-the-unit-boundary displaced=m1e+main-1790454088-93948-21671b@2026-10-20T09:42:57Z ack
 - 2026-10-23T07:04:47Z 0BXHFR4E2K1Z5NF7S35M6ZQ5AJ-ui-71c5cb39 ack actor=ui+steward-seat targets=asks-clear-on-their-effect displaced=ui+steward-seat@2026-10-22T10:10:51Z ack
-Integrity: sha256=91bb66ef5537aee64c7ca51c2bc63da4555e4f0cee4103ea20f847f1823ce2d5
+- 2026-10-24T02:31:37Z VXQ2TJ7KFKKK9WBHG9D14NDECF-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=load-never-turns-a-test-red displaced=m1e+main-1792389436-6018-51cc28@2026-10-23T22:48:03Z ack
+Integrity: sha256=26e108d87e62c8dfe46aa8d27b278abd76a617e14227338ef97fbfcd106bbf79
