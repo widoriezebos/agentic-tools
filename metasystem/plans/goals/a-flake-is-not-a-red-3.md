@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 7
+- Sequence: 5
 - Risk: severity=2 novelty=1 exposure=1 accumulation=1 basis="Lane cadence and card-retirement changes; a wrong one costs a proof run or shows a stale card, visible at once and reversible."
 - Tier: 2
 - Intent: The split follow-up of a-flake-is-not-a-red-2, whose end is declared at U5 (the watcher wake, landed alone under decision 47b): U4 (D12, no full proof by age or by the records rule alone; plan item 2.4), U2b of the card-retirement brief, and the Opus reads' non-material notes for U1, U5a, U5b, U4 and U2a.
 - Origin: main
 - Next step: Build U4 (D12) from briefs/a-flake-is-not-a-red-2-U4 (brief FINAL) on the machine route, one goal at a time on ui (plan 2.4); then re-cut U2b from briefs/a-flake-is-not-a-red-U2-brief.md under the rare-case rule; the follow-ups and notes as listed on a-flake-is-not-a-red-2's page (goal done and goal claim moves in backlog.md, removing U4's flake-only classifier).
 - OpenedAt: 2026-10-24T02:41:05Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=HZS7TF6PPJ2B54T2CB91XPKF7F-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=3
@@ -22,4 +22,5 @@ History:
 - 2026-10-24T07:31:04Z HZS7TF6PPJ2B54T2CB91XPKF7F-m1e-e91103bc approve actor=human:Wido targets=a-flake-is-not-a-red-3
 - 2026-10-24T07:33:56Z XYPD9C6VXCCVW3HP15TF86PRJW-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-round-survives-a-restart reason=priority-order subject=a-round-survives-a-restart from=1:5 to=1:6 requested-sequence=3
 - 2026-10-24T07:34:04Z K6FFB95XB1JH2N8WQ8GCGR89MR-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-seat-pauses-at-its-spend-line,an-outside-read-is-a-read-record,seat-engines-follow-the-deployed-engine reason=priority-order subject=seat-engines-follow-the-deployed-engine from=1:6 to=1:7 requested-sequence=4
-Integrity: sha256=e9e154362e03100bd05e0f508e4068a77433bbeb1a73c733c9b16c878aa9e55c
+- 2026-10-24T07:34:13Z P7M28CNWCT66FV3S8DYS4NDT9Y-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries reason=priority-order subject=a-flake-is-not-a-red-3 from=1:7 to=1:5 requested-sequence=5
+Integrity: sha256=c68e237565c58b148f085f20320baad3029ada7546024377755cb5e92b91404a

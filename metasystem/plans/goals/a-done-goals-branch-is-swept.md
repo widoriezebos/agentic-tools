@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 5
+- Sequence: 6
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Lane test finding 343 (2026-10-16 05:32: two goal done acts reported 'branch was not swept', one with work land as the recovery for work already on main; the advertised repeat swept nothing; twenty goal/* branches of done goals linger on origin); memory goal-done-by-hand-needs-a-hand-sweep."
 - Tier: 2
 - Intent: A done goal's branch disappears with the goal: repeating goal done on a concluded goal reconciles its branch references through the existing guarded sweep without republishing the conclusion; a unit landed under another id is recognised by its Goal-Source provenance or by an exact, distinct, ordered equivalence proof, and an unproven commit keeps every reference and names work status; the steward's disk pass discovers and sweeps the remaining references of done goals one per pass.
@@ -10,7 +10,7 @@
 - Next step: Row 8 of the Fable root-cause read (2026-10-24): after the-second-half-is-the-seats and a-round-survives-a-restart U1 land, unpin to ui and re-run claim to done from the backed-up round-1 code (/Users/wido/metasystem-evidence/agentic-tools-ui/sweep-20261023/round1-code-backup-20261024, base 068fa764f); new work name; Read each round: yes; build the last unit with --last; target zero CARRIED and zero CAUSED rows
 - OpenedAt: 2026-10-16T09:23:44Z
 - FirstClaimAt: 2026-10-23T07:04:47Z
-- Revision: 22
+- Revision: 23
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -43,4 +43,5 @@ History:
 - 2026-10-24T07:33:46Z M8FHA9D2X2SMS440C710K86AQZ-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-unit-check-ends-on-progress,the-second-half-is-the-seats reason=priority-order subject=the-second-half-is-the-seats from=1:2 to=1:3 requested-sequence=1
 - 2026-10-24T07:33:56Z XYPD9C6VXCCVW3HP15TF86PRJW-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-round-survives-a-restart reason=priority-order subject=a-round-survives-a-restart from=1:3 to=1:4 requested-sequence=3
 - 2026-10-24T07:34:04Z K6FFB95XB1JH2N8WQ8GCGR89MR-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-seat-pauses-at-its-spend-line,an-outside-read-is-a-read-record,seat-engines-follow-the-deployed-engine reason=priority-order subject=seat-engines-follow-the-deployed-engine from=1:4 to=1:5 requested-sequence=4
-Integrity: sha256=0dc5291ce68eb6cc67ae19c0146c5589c87e925f6c759ad37fdd3229bce8f6fb
+- 2026-10-24T07:34:13Z P7M28CNWCT66FV3S8DYS4NDT9Y-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries reason=priority-order subject=a-flake-is-not-a-red-3 from=1:5 to=1:6 requested-sequence=5
+Integrity: sha256=34195a97cd83369e9b395b5d057a2aacd7fc6df3b49d14b988a1ad097238aaea

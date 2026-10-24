@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 6
+- Sequence: 7
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A wrongly withheld act delays a person's decision until he reads status (severity 2, recoverable); the funnel, episodes and question route exist and are reused (novelty 2); every message a person ever gets passes through it (exposure 3); one new question kind and one result state (accumulation 2)"
 - Tier: 2
 - Intent: Only two things reach a person on any transport (Telegram, Mac banner, browser toast): an act that is his, in one plain sentence with the command or answer that carries it and what happens if he does nothing; and a goal delivered, said as what changed for him; everything else stays in alert list and status; a machine that cannot heal itself asks him
@@ -10,7 +10,7 @@
 - Next step: Design plans/designs/a-persons-channel-carries-only-acts-and-deliveries.md accepted at the stop 2026-10-19 (Astra 11 material folded); U1 groundwork (result contract, decision identity, ~112 lines), U2 the words (~205), U3 activation: withhold and ask (~217); brief obligations BO-1..BO-9 on the page; hand route until the lane lands hand-built units
 - OpenedAt: 2026-10-19T11:41:52Z
 - FirstClaimAt: 2026-10-20T16:11:18Z
-- Revision: 24
+- Revision: 25
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=FADE1BD58EEE5QCBF30C01J2QD-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=21
@@ -41,4 +41,5 @@ History:
 - 2026-10-24T07:30:54Z FADE1BD58EEE5QCBF30C01J2QD-m1e-e91103bc approve actor=human:Wido targets=a-persons-channel-carries-only-acts-and-deliveries
 - 2026-10-24T07:33:56Z XYPD9C6VXCCVW3HP15TF86PRJW-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-round-survives-a-restart reason=priority-order subject=a-round-survives-a-restart from=1:4 to=1:5 requested-sequence=3
 - 2026-10-24T07:34:04Z K6FFB95XB1JH2N8WQ8GCGR89MR-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-seat-pauses-at-its-spend-line,an-outside-read-is-a-read-record,seat-engines-follow-the-deployed-engine reason=priority-order subject=seat-engines-follow-the-deployed-engine from=1:5 to=1:6 requested-sequence=4
-Integrity: sha256=198a04e2d7f39301d7fc097c16dad6b7a959db5d3edbef3a0c1f1ef30ea762ff
+- 2026-10-24T07:34:13Z P7M28CNWCT66FV3S8DYS4NDT9Y-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries reason=priority-order subject=a-flake-is-not-a-red-3 from=1:6 to=1:7 requested-sequence=5
+Integrity: sha256=476bc1108d4e9fa0b759b918f147670a103d161fbddd6753955239326bd69c40
