@@ -93,7 +93,7 @@ func (git *attributionGit) Run(dir string, env []string, args ...string) ([]byte
 func attributionFixture(t *testing.T, baseRed bool, script string, resume ...bool) (unitFixture, *attributionGit) {
 	t.Helper()
 	events := []string{"branch", "round"}
-	if len(resume) > 0 {
+	for range resume {
 		events = append(events, "branch")
 	}
 	f := newUnitFixture(t, "", events...)

@@ -47,7 +47,7 @@ func TestBudgetUnitReservationUsesPhysicalLaunchProvider(t *testing.T) {
 	file.StopCapability = &goal.StopCapability{Generation: 3, Revision: 3, Machine: file.Claimed.Machine, ClaimEpoch: 1}
 	start := time.Date(2026, 8, 28, 8, 10, 0, 0, time.UTC)
 	end, now := start.Add(time.Minute), start.Add(5*time.Minute)
-	if err := ReserveUnitLaunch(root, "execution", "unit", file, 1, 5, start); err != nil {
+	if err := ReserveUnitLaunch(root, "execution", "unit", file, 1, 5, start, false); err != nil {
 		t.Fatal(err)
 	}
 	if err := ReconcileUnitLaunch(root, "execution", "unit", file.Id, file.Claimed.Revision, "failed", "environment", start.Format(time.RFC3339Nano), end.Format(time.RFC3339Nano), true); err != nil {

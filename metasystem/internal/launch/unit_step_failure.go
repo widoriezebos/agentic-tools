@@ -86,8 +86,14 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 			return false, err
 		}
 	}
-	if step.State != StepFailed || step.Cause != "environment" || len(step.LaunchIDs) >= 2 || step.Deadline {
+	// A unit check that reached proof.deadline is retried once by the machine;
+	// any other deadline, a builder turn's included, waits for a person.
+	machine := step.Name == "proof:unit-check" && step.Deadline && step.Cause == "environment"
+	if step.State != StepFailed || step.Cause != "environment" || len(step.LaunchIDs) >= 2 || step.Deadline && !machine {
 		return false, nil
+	}
+	if machine {
+		step.RetryBy, step.RetryReason = "machine", "one retry after the check reached proof.deadline"
 	}
 	step.Moved = nil
 	step.State, step.Reason, step.Cause, step.FinishedAt = StepPending, "", "", ""
@@ -170,6 +176,10 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 		step.RetryBy, step.RetryReason, step.RetryLaunch = person, reason, step.LaunchID
 		step.State, step.Reason, step.Cause, step.FinishedAt = StepPending, "", "", ""
 		step.Before, step.Moved, step.Deadline = nil, nil, false
+		// A retried builder turn is counted afresh when it passes.
+		if step.Kind == "build" || step.Kind == "correction" {
+			round.BuildLines, round.DeclaredLines, round.GapMessage = 0, 0, ""
+		}
 		for later := index + 1; later < len(round.Steps); later++ {
 			if round.Steps[later].State == StepSkipped {
 				round.Steps[later].State, round.Steps[later].Reason = StepPending, ""

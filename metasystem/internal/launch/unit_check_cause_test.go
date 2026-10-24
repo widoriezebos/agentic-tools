@@ -50,7 +50,7 @@ func TestUnitBuildCheckDeadlineCause(t *testing.T) {
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
-			f := newUnitFixture(t, "", "branch", "before", "branch")
+			f := newUnitFixture(t, "", "branch", "before", "branch", "failed")
 			f.starter.holdKind = "build"
 			first, err := f.runner.Advance(UnitRequest{Plan: f.plan})
 			if err != nil || !first.Capped {

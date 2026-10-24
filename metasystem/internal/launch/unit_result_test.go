@@ -83,6 +83,8 @@ func TestUnitBuildResultBlock(t *testing.T) {
 			events := []string{"branch", "before", "branch"}
 			if test.passed {
 				events = append(events, "round")
+			} else {
+				events = append(events, "failed")
 			}
 			f := newUnitFixture(t, "", events...)
 			f.starter.holdKind = "build"

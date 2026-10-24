@@ -454,7 +454,7 @@ func TestRevisionRequestReplay(t *testing.T) {
 // empty.
 func TestRevisionRetainsReviewedFindingsAfterFailure(t *testing.T) {
 	t.Parallel()
-	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "before", "branch", "before", "round")
+	fixture := newUnitFixture(t, "", "branch", "branch", "round", "branch", "before", "failed", "branch", "before", "round")
 	first, err := fixture.runner.AdvanceNamed(fixture.plan)
 	if err != nil {
 		t.Fatal(err)

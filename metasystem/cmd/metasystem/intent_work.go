@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -94,6 +95,9 @@ type intentWorkOwners struct {
 	// waitClock replaces the default wait owner's clock (see
 	// runWaitCommandOnClock); nil keeps the kernel clock.
 	waitClock func(*metarun.WaitOptions)
+	// laneProof is the host landing lane's running proof; nil when there is
+	// no lane or its proof cannot be read.
+	laneProof func() *plain.RunningProof
 }
 
 // intentConfPath is the selected installation's configuration file.
@@ -124,6 +128,19 @@ func (inv *intentInvocation) work() intentWorkOwners {
 	}
 	if owners.inspectRead == nil {
 		owners.inspectRead = branch.InspectBranchRead
+	}
+	if owners.laneProof == nil {
+		owners.laneProof = func() *plain.RunningProof {
+			home, err := inv.landing().home()
+			if err != nil {
+				return nil
+			}
+			record, registered, err := lane.Read(home)
+			if err != nil || !registered {
+				return nil
+			}
+			return plain.ReadRunningProof(record.Install, plain.ProveSeams{})
+		}
 	}
 	if owners.units == nil {
 		// The serving installation supplies launch settings; launch and unit
@@ -528,6 +545,11 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if err := inv.unitLaunchAuthority(record, spec, settings); err != nil {
 			return err
 		}
+		if spec.HostGated && strings.HasSuffix(spec.ID, "-retry") && runner.Actor != "person" {
+			if proof := inv.work().laneProof(); proof != nil && proof.State == "running" {
+				return refusal.New("LAUNCH_BUILD_CAPACITY", "run="+record.ID+" launch="+spec.ID, errors.New("the landing lane is proving main; the unit check's retry waits until it ends"))
+			}
+		}
 		if spec.Kind == "build" {
 			if fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), record.Worktree, record.Goal); fix != nil {
 				if record.Unit != fix.Unit() || len(record.Rounds) != 1 || fix.Job != "" {
@@ -741,7 +763,10 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	if err != nil {
 		return err
 	}
-	return dispatchcore.ReserveUnitLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, record.Rounds[len(record.Rounds)-1].Number, cap, now)
+	// The machine's one retry of a unit check is charged as an attempt of its own.
+	round := record.Rounds[len(record.Rounds)-1]
+	retry := strings.HasSuffix(spec.ID, "-retry") && slices.ContainsFunc(round.Steps, func(step launch.UnitStep) bool { return step.LaunchID == spec.ID && step.RetryBy == "machine" })
+	return dispatchcore.ReserveUnitLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, round.Number, cap, now, retry)
 }
 
 // build
@@ -1111,7 +1136,14 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	if problem != nil {
 		return unitRequest{}, problem
 	}
+	// The declared check runs from the installation, as the lane proves it;
+	// a manual check runs from the folder its caller chose.
 	checkDir := inv.worktreeFolderHere(worktree)
+	if installed := filepath.Join(worktree, inv.layout.InstallationRel); len(inv.input.values["check"]) == 0 {
+		if info, err := os.Stat(installed); err == nil && info.IsDir() {
+			checkDir = installed
+		}
+	}
 	sizeSource, lines, problem := inv.unitSize(unit, briefPath, designs)
 	if problem != nil {
 		return unitRequest{}, problem

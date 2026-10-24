@@ -516,7 +516,7 @@ func TestIntentDeclaredCheckBuilderUsesModuleDirectory(t *testing.T) {
 		if err := os.MkdirAll(filepath.Join(tree, "module"), 0700); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(tree, "module", "module-only"), []byte("module check\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(tree, "module-only"), []byte("module check\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -524,10 +524,12 @@ func TestIntentDeclaredCheckBuilderUsesModuleDirectory(t *testing.T) {
 	b.manager.Supervisor = starter
 	code, built := declaredCheckAt(t, b, filepath.Join(b.root(), "module"), "", "work", "build", b.id, "module", "--brief", filepath.Join(b.root(), b.brief("module.md", "Build.\n")), "--lines", "100")
 	if code != 0 || !slices.Equal(starter.calls, []int{0, 0}) {
-		t.Fatalf("builder from the tree root and proof from the module: %d %+v calls=%v", code, built, starter.calls)
+		t.Fatalf("builder and proof from the installation: %d %+v calls=%v", code, built, starter.calls)
 	}
+	// A build started from a folder below the installation freezes the
+	// installation, the folder the lane proves from.
 	plan, err := launch.ReadUnitPlan(resultData(t, built)["plan"].(string))
-	if err != nil || plan.Check.Directory != filepath.Join(b.worktree, "module") {
+	if err != nil || plan.Check.Directory != b.worktree {
 		t.Fatalf("frozen module: %+v %v", plan.Check, err)
 	}
 	run := resultData(t, built)["run"].(string)
@@ -551,10 +553,10 @@ func TestIntentDeclaredCheckBuilderUsesModuleDirectory(t *testing.T) {
 		if index == len(starter.results)-1 {
 			tree = b.root()
 		}
-		want, err := filepath.EvalSymlinks(filepath.Join(tree, "module"))
+		want, err := filepath.EvalSymlinks(tree)
 		actual, actualErr := filepath.EvalSymlinks(retained.Directory)
 		if err != nil || actualErr != nil || actual != want || len(retained.Exits) != 2 || retained.Exits[0].Output != "module check\n" || retained.Exits[1].Output != want+"\n" {
-			t.Fatalf("execution %d did not use the calling tree's module: %+v want=%s err=%v", index, retained, want, err)
+			t.Fatalf("execution %d did not use the calling tree's installation: %+v want=%s err=%v", index, retained, want, err)
 		}
 	}
 }

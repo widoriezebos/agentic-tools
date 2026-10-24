@@ -6,8 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
@@ -201,10 +204,84 @@ func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 		case "build-gap":
 			decision = fmt.Sprintf("Unit %s of goal %s stopped after build round %d: the builder reported a gap", record.Unit, record.Goal, round.Number)
 		}
-		_, err := channel.Ask(channel.AskRequest{Plain: &channel.Plain{Decision: decision, IfNothing: "the unit stays held; this question closes when the act is recorded"}, RepoRoot: root, Goal: record.Goal, Kind: "other", Facts: []string{round.Stop.Class, fmt.Sprintf("%d changed lines against %d declared", round.BuildLines, round.DeclaredLines), "Retained builder message: " + round.GapMessage}, Recommendation: "Run the requested act to continue this retained round.", UnitStop: &channel.UnitStopQuestion{Loop: "unit-build", Subject: subject, Attempt: round.Number, Finding: kind, Needs: shellCommand(next), AcceptableActs: []string{act}}, Now: inv.unitStopNow()})
+		facts := []string{round.Stop.Class, fmt.Sprintf("%d changed lines against %d declared", round.BuildLines, round.DeclaredLines), "Retained builder message: " + round.GapMessage}
+		if failure {
+			decision, facts, next = inv.failureAsk(record, round, act, next)
+		}
+		_, err := channel.Ask(channel.AskRequest{Plain: &channel.Plain{Decision: decision, IfNothing: "the unit stays held; this question closes when the act is recorded"}, RepoRoot: root, Goal: record.Goal, Kind: "other", Facts: facts, Recommendation: "Run the requested act to continue this retained round.", UnitStop: &channel.UnitStopQuestion{Loop: "unit-build", Subject: subject, Attempt: round.Number, Finding: kind, Needs: shellCommand(next), AcceptableActs: []string{act}}, Now: inv.unitStopNow()})
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// failureAsk says what stopped a failed round and gives the person a command
+// to paste: the machinery's reason, the known person and, for a correction,
+// a prepared brief the person may edit first.
+func (inv *intentInvocation) failureAsk(record launch.UnitRunRecord, round launch.UnitRound, act string, next []string) (string, []string, []string) {
+	decision := fmt.Sprintf("Unit %s of goal %s stopped after build round %d: %s", record.Unit, record.Goal, round.Number, round.Stop.Class)
+	var facts []string
+	if round.DeclaredLines > 0 {
+		facts = append(facts, fmt.Sprintf("%d changed lines against %d declared", round.BuildLines, round.DeclaredLines))
+	}
+	if round.GapMessage != "" {
+		facts = append(facts, "The builder's last words: "+lastParagraph(round.GapMessage))
+	}
+	if act == "work-revise" {
+		path := filepath.Join(round.Directory, "correction-brief.md")
+		if err := writeCorrectionBrief(path, record, round); err != nil {
+			facts = append(facts, "A correction brief could not be prepared ("+err.Error()+"); write one and give its path for FILE.")
+		} else {
+			next = replaceWord(next, "FILE", path)
+			facts = append(facts, "A correction brief is prepared at "+path+"; edit it before you run the command if you want a different correction.")
+		}
+	}
+	if inv.stateRoot == "" {
+		_ = inv.selectRoot()
+	}
+	next = replaceWord(replaceWord(next, "TEXT", "the machinery stopped: "+round.Stop.Class), "NAME", inv.knownPerson())
+	return decision, facts, next
+}
+
+// writeCorrectionBrief prepares the correction brief once; a person's edits
+// survive every later question sync.
+func writeCorrectionBrief(path string, record launch.UnitRunRecord, round launch.UnitRound) error {
+	if regularFile(path) {
+		return nil
+	}
+	text := fmt.Sprintf("Correct unit %s of goal %s after build round %d. The round stopped: %s.\n", record.Unit, record.Goal, round.Number, round.Stop.Class)
+	if round.GapMessage != "" {
+		text += "\nThe builder's last words: " + lastParagraph(round.GapMessage) + "\n"
+	}
+	if open := filepath.Join(round.Directory, "open.md"); regularFile(open) {
+		text += "\nThe builder's open items are in " + open + ".\n"
+	}
+	_, err := atomicfile.WriteText(path, text+"\nThe change so far is in the worktree; keep what is right and finish the unit.\n", round.Directory)
+	return err
+}
+
+// lastParagraph is the builder message's last paragraph, at most its last
+// 600 bytes; a Claude result file gives its result text.
+func lastParagraph(path string) string {
+	data, err := os.ReadFile(path)
+	text := string(data)
+	if err == nil && filepath.Base(path) == "result.json" {
+		var result struct {
+			Result string `json:"result"`
+		}
+		err = json.Unmarshal(data, &result)
+		text = result.Result
+	}
+	paragraphs := regexp.MustCompile(`\n[ \t\r]*\n`).Split(strings.TrimSpace(text), -1)
+	last := strings.TrimSpace(paragraphs[len(paragraphs)-1])
+	if err != nil || last == "" {
+		return "The builder left no readable last message."
+	}
+	for cut := len(last) - 600; cut > 0 && cut < len(last); cut++ {
+		if utf8.RuneStart(last[cut]) {
+			return last[cut:]
+		}
+	}
+	return last[max(len(last)-600, 0):]
 }
