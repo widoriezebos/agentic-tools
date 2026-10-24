@@ -609,7 +609,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 				return UnitResult{}, err
 			}
 		}
-		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath, Round: round.Number, MaxRounds: record.MaxRounds, AdapterData: checkAct}
+		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath, Round: round.Number, MaxRounds: record.MaxRounds, AdapterData: checkAct, HostGated: true}
 		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}

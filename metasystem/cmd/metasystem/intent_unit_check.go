@@ -71,7 +71,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 	plan.Check = check
 	plan.Proof = []launch.ProofCommand{{Name: "unit-check", Dir: check.Directory, Argv: []string{executable, "test", "run", "--unit-run", run, "--repo", inv.layout.InstallationRoot.Path()}, Env: check.Environment}}
 	publish := func() error {
-		if _, err := atomicfile.WriteText(plan.Build.Brief, fmt.Sprintf("Before returning, run: metasystem test run --unit-run %s\n\n%s", run, brief), directory); err != nil {
+		if _, err := atomicfile.WriteText(plan.Build.Brief, fmt.Sprintf("The engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to %s/check-*/output.log while it runs.\n\n%s", directory, brief), directory); err != nil {
 			return err
 		}
 		data, err := json.Marshal(plan)

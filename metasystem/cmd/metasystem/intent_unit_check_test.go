@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
@@ -50,15 +51,17 @@ func (s *declaredCheckStarter) StartSupervisor(id, state string) (identity.Ref, 
 		if err != nil {
 			s.t.Fatal(err)
 		}
-		prefix := "Before returning, run: metasystem test run --unit-run "
 		if strings.Contains(string(data), "Proof after the build, run without a shell") {
 			s.t.Fatal("builder received a second, unfrozen check")
 		}
 		line := strings.SplitN(string(data), "\n", 2)[0]
-		if !strings.HasPrefix(line, prefix) {
-			s.t.Fatalf("builder has no frozen-check invocation: %s", line)
+		head, tail := "The engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to ", "/check-*/output.log while it runs."
+		round := strings.TrimSuffix(strings.TrimPrefix(line, head), tail)
+		if _, err := os.Stat(filepath.Join(round, "plan.json")); err != nil || line != head+round+tail || strings.Contains(string(data), "Before returning, run:") {
+			s.t.Fatalf("builder brief does not leave the check to the engine and name the round's output log: %v\n%s", err, data)
 		}
-		run := strings.TrimPrefix(line, prefix)
+		// A builder that still runs the check takes the run from its launch id.
+		run := regexp.MustCompile(`-r[0-9]+-s[0-9]+$`).ReplaceAllString(record.ID, "")
 		// Candidate settings and a later tip must not choose this round's checks.
 		s.bed.head = "candidate-commit"
 		if err := os.WriteFile(filepath.Join(s.bed.worktree, "metasystem.conf"), []byte("proof.cheap=true\nproof.audits=true\nproof.deadline=1\n"), 0600); err != nil {

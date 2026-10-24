@@ -31,6 +31,8 @@ type Input struct {
 	EstimateMinutes *float64
 	Questions       []Interval
 	Unknown         []string
+	// LaunchEnds is the end of every finished launch of the run's steps, earlier launches of a retried step included.
+	LaunchEnds map[string]string
 }
 type Measures struct {
 	ObservedAt       time.Time
@@ -82,6 +84,12 @@ func Read(in Input) Measures {
 			}
 			in.Questions = append(in.Questions, run.Questions...)
 			in.Unknown = append(in.Unknown, run.Unknown...)
+			for id, end := range run.LaunchEnds {
+				if in.LaunchEnds == nil {
+					in.LaunchEnds = map[string]string{}
+				}
+				in.LaunchEnds[id] = end
+			}
 			suiteUnknown = suiteUnknown || len(run.FullArgv) == 0
 		}
 		for range revisions {
@@ -119,6 +127,18 @@ func Read(in Input) Measures {
 	revisions := slices.Clone(in.Revisions)
 	slices.Sort(revisions)
 	m.Corrections = len(slices.Compact(revisions))
+	// A check killed with its launch has no end of its own; it ends where that launch ended.
+	parentEnds := map[string]time.Time{}
+	for _, step := range in.Steps {
+		if at, err := time.Parse(time.RFC3339Nano, step.End); step.Terminal && err == nil {
+			parentEnds[step.ID] = at
+		}
+	}
+	for id, end := range in.LaunchEnds {
+		if at, err := time.Parse(time.RFC3339Nano, end); err == nil {
+			parentEnds[id] = at
+		}
+	}
 	for _, step := range in.Steps {
 		if seen[step.ID] || step.ID == "" {
 			continue
@@ -127,7 +147,9 @@ func Read(in Input) Measures {
 		m.Sources = append(m.Sources, step.ID)
 		start, _ := time.Parse(time.RFC3339Nano, step.Start)
 		end, _ := time.Parse(time.RFC3339Nano, step.End)
-		if step.End == "" && !step.Terminal {
+		if parentEnd, found := parentEnds[step.Parent]; step.End == "" && !step.Terminal && step.Kind == "attest" && found {
+			end = parentEnd
+		} else if step.End == "" && !step.Terminal {
 			end, m.WorkLowerBound = in.Now, true
 		}
 		if (step.Kind == "build" || step.Kind == "correction") && !start.IsZero() && (firstBuild.IsZero() || start.Before(firstBuild)) {

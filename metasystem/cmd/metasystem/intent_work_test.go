@@ -916,8 +916,11 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 			t.Fatalf("read brief lacks %q:\n%s", want, readBrief)
 		}
 	}
-	if !strings.HasPrefix(string(buildBrief), "Before returning, run: metasystem test run --unit-run "+data["run"].(string)+"\n") || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
+	if !strings.HasPrefix(string(buildBrief), "The engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to "+filepath.Dir(plan.Build.Brief)+"/check-*/output.log while it runs.\n\n") || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
 		t.Fatalf("build brief:\n%s", buildBrief)
+	}
+	if !strings.Contains(string(buildBrief), "- Check: the engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to this round's check-*/output.log, named on the brief's first line.\n") || strings.Contains(string(buildBrief), "run the frozen command") {
+		t.Fatalf("the binding still asks the builder to run the check:\n%s", buildBrief)
 	}
 	before := map[string][]byte{}
 	for _, path := range []string{planPath, plan.Build.Brief, plan.Read.Brief} {

@@ -3,6 +3,8 @@ package launch
 import (
 	"bytes"
 	"errors"
+	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -61,9 +63,18 @@ const checkCeilingFactor = 8
 type outputProgress struct {
 	buffer bytes.Buffer
 	wrote  chan struct{}
+	log    io.Writer
+}
+
+// newOutputProgress copies every write to log, when there is one, before it signals.
+func newOutputProgress(log io.Writer) *outputProgress {
+	return &outputProgress{wrote: make(chan struct{}, 1), log: log}
 }
 
 func (output *outputProgress) Write(data []byte) (int, error) {
+	if output.log != nil {
+		_, _ = output.log.Write(data)
+	}
 	if len(data) > 0 {
 		select {
 		case output.wrote <- struct{}{}:
@@ -83,6 +94,12 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	execution, err := os.MkdirTemp(records, "check-")
 	if err != nil {
 		return "", nil, err
+	}
+	// The log is what a reader sees while the check runs; without it the check runs as before.
+	var log io.Writer = io.Discard
+	if file, openErr := os.OpenFile(filepath.Join(execution, "output.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0600); openErr == nil {
+		defer file.Close()
+		log = file
 	}
 	if context.Now == nil {
 		context.Now = time.Now
@@ -106,7 +123,8 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 		if command.name == "cheap" && check.Base != "" {
 			process.Env = append(slices.Clone(process.Env), "LANDING_PROOF_BASE="+check.Base)
 		}
-		output := &outputProgress{wrote: make(chan struct{}, 1)}
+		_, _ = fmt.Fprintf(log, "== %s: %s\n", command.name, command.text)
+		output := newOutputProgress(log)
 		process.Stdout, process.Stderr = output, output
 		started := context.Now()
 		step := processmeasure.Step{ID: context.Run + "/" + context.Round + "/" + observation.ExecutionID + ":" + command.name, Kind: "attest", Parent: context.Parent, Act: check.ProcessAct, Start: started.UTC().Format(time.RFC3339Nano), Argv: []string{"/bin/sh", "-c", command.text}, FullArgv: check.FullArgv, Coverage: "unknown"}

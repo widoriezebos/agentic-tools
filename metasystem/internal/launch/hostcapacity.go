@@ -32,9 +32,10 @@ func (m *Manager) CapacityBuilds() ([]hostcapacity.Build, error) {
 // createAdmitted keeps the current observation and Starting reservation under
 // one host-wide lock. The lock is released before a supervisor can start.
 func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
-	if spec.Kind != "build" {
+	if spec.Kind != "build" && !spec.HostGated {
 		return m.Store.Create(record)
 	}
+	buildKind := spec.Kind == "build"
 	root, err := m.Store.root()
 	if err != nil {
 		return err
@@ -60,8 +61,11 @@ func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
 	}
 	params := m.BuildPolicy
 	params.Key = "host.builds"
-	policy, err := config.ResolvePolicy(params)
-	if err != nil {
+	var policy config.PolicyResolution
+	if buildKind {
+		policy, err = config.ResolvePolicy(params)
+	}
+	if buildKind && err != nil {
 		// Seat policy state is advisory; configuration errors still hold agents.
 		params.Policy = &config.PolicyContext{Readers: config.PolicyReaders{Helm: func(string) helm.State { return helm.State{} }}}
 		policy.Value, _, err = config.Get(params)
@@ -74,10 +78,13 @@ func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
 	limit, parseErr := strconv.ParseFloat(raw, 64)
 	snapshot := hostcapacity.Read(m.CapacityHome, m, m.Now(), m.CapacitySources)
 	facts := fmt.Sprintf("load=%g limit=%s host.builds=%s host.load-max=%s", snapshot.Load.Load1m, raw, policy.Value, raw)
+	if !buildKind {
+		facts = fmt.Sprintf("load=%g limit=%s host.load-max=%s", snapshot.Load.Load1m, raw, raw)
+	}
 	refuse := func(code, why string) error {
 		return coded(code, facts, fmt.Errorf("%s (%s); %s", why, facts, humanauthority.PersonActRemedy("the original work build command")))
 	}
-	if policy.Value == "person" {
+	if buildKind && policy.Value == "person" {
 		return refuse("LAUNCH_BUILD_PERSON", "host.builds=person requires the person's exact build act; ask through a question")
 	}
 	if err != nil || parseErr != nil || math.IsNaN(limit) || math.IsInf(limit, 0) || limit <= 0 {
@@ -89,7 +96,7 @@ func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
 	if snapshot.Load.Load1m >= limit {
 		return refuse("LAUNCH_BUILD_CAPACITY", "current host load meets or exceeds host.load-max")
 	}
-	if policy.Value != "auto" {
+	if buildKind && policy.Value != "auto" {
 		goals := map[string]bool{}
 		for _, build := range snapshot.Builds {
 			key := "goal:" + build.Goal

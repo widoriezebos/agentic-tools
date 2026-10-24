@@ -1458,7 +1458,7 @@ func (b unitBinding) buildBrief(brief []byte) string {
 	} else {
 		fmt.Fprintf(&text, "- Size: the %s row of the units table in %s (%d changed lines)\n", b.unit, b.unitsPage, b.lines)
 	}
-	text.WriteString("- Check: run the frozen command at the start of this round's brief before returning.\n")
+	text.WriteString("- Check: the engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to this round's check-*/output.log, named on the brief's first line.\n")
 	fmt.Fprintf(&text, "- Rounds: at most %d, the goal's approved review-round limit\n", b.rounds)
 	fmt.Fprintf(&text, "- Caller's brief: %s\n\nLeave the change in the worktree, uncommitted. The run ends awaiting judgement; it is not approved or landed by the build.\n\n---\n\n", b.brief)
 	text.Write(brief)
@@ -1532,7 +1532,11 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		plain, details := launchAccount(err)
 		switch {
 		case launch.IsCode(err, "LAUNCH_BUILD_CAPACITY"), launch.IsCode(err, "LAUNCH_BUILD_PERSON"):
-			held := intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + "; no build was launched", Details: details,
+			waits := "; no build was launched"
+			if len(record.Rounds) > 0 && slices.ContainsFunc(record.Rounds[len(record.Rounds)-1].Steps, func(step launch.UnitStep) bool { return step.State == launch.StepStarting && step.Kind == "attest" }) {
+				waits = "; the unit check waits for the host"
+			}
+			held := intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + waits, Details: details,
 				next: again, nextReason: humanauthority.PersonActRemedy(shellCommand(again)) + "; settings stay in force"}
 			if launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
 				q, warnings, code, askErr := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), channelAskInput{Goal: targetID(targets, "goal", record.Goal), Kind: "other",
