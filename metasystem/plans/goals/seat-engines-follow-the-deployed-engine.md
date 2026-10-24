@@ -1,6 +1,6 @@
 # seat-engines-follow-the-deployed-engine
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=1 exposure=1 accumulation=1 basis="changes which engine binary the seats run on this computer; a wrong pin stops a seat until a person restarts it"
@@ -9,10 +9,13 @@
 - Origin: human
 - Next step: Pinned to m1e (holding) until Wido answers Q1 and Q2 and the design is accepted; then unpin to ui, build U1 then U2 with --last, one landing; then the bootstrap deploy (P4).
 - OpenedAt: 2026-10-22T10:07:14Z
-- Revision: 17
+- Revision: 18
 - BlockedBy: a-proved-main-deploys-itself
 - Pinned: m1e
+- Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- NormApproval: approvedRef=XQ0KXC0XK39ZTZ6YZWY5WX0PDE-m1e-294bbb33 minutes=2400 reviewRounds=20 goalRevision=17
+- Approved: by=human:Wido at=2026-10-24T07:59:02Z revision=18 opid=XQ0KXC0XK39ZTZ6YZWY5WX0PDE-m1e-294bbb33 authority=proven digest=360797a0a2d1dc7aaac2ea56fd684e048b18549ebf49483d3e26594a8e2f1259 episode=18
 
 History:
 - 2026-10-22T10:07:14Z XDV95WF4M98N9HWFSQSV7ES7PJ-m1e-4a1ba1c4 open actor=human:Wido targets=seat-engines-follow-the-deployed-engine,a-proved-main-deploys-itself
@@ -32,4 +35,5 @@ History:
 - 2026-10-24T07:58:40Z Q50TD8JPB29HAPTS6Y93N2WVCW-m1e-294bbb33 set-pin actor=human:Wido targets=seat-engines-follow-the-deployed-engine
 - 2026-10-24T07:58:48Z EFBA09H62KGDPTZHVR4SSV0SZB-m1e-294bbb33 unapprove actor=human:Wido targets=seat-engines-follow-the-deployed-engine reason=row 6: intent changes to the drafted design and brief
 - 2026-10-24T07:58:55Z D4NR8M7GD1T7BS53C1AK502TBB-m1e-294bbb33 edit actor=human:Wido targets=seat-engines-follow-the-deployed-engine
-Integrity: sha256=f2b2ba49b053d85dc07026f8c579f297fdf4d8b0af9bda75dca9fdd2c2b5a1c1
+- 2026-10-24T07:59:02Z XQ0KXC0XK39ZTZ6YZWY5WX0PDE-m1e-294bbb33 approve actor=human:Wido targets=seat-engines-follow-the-deployed-engine
+Integrity: sha256=a6feadcbd00853f916ad990efdce0d54cc5e2cea666d2d7159c64c564d208be7
