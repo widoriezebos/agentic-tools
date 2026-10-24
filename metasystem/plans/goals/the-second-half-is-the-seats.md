@@ -7,10 +7,10 @@
 - Tier: 2
 - Intent: The second half of a goal belongs to the seat (decision 38, recut by decision 49): the session holding the claim declares the goal's end with work land G --whole --delivered (every unit read), the lane lands it, the seat's repeat records the landed line, and the seat concludes with goal done; a records landing never writes the landed line; a person can still do every step. No parts: a unit does not land alone. Brief: /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-second-half-is-the-seats-brief.md (one unit, ~63 lines; the U1 brief is retired, the U2 brief superseded).
 - Origin: human
-- Next step: Build the one unit from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-second-half-is-the-seats-brief.md on the machine route on ui with work build --last (the goal has no Units table); the brief carries Read each round: yes so the engine starts the read; then the seat hands in with work land --whole --delivered (today still a person's act: CARRIED until this unit lands) and the lane lands it.; ASKED 5B530FQ4CAVVYM5HWWBZR53FVE (other): the-second-half-is-the-seats round 1 stopped PARTIAL: the seat's end and conclusion (D1-D8) are built but came to 152 code lines against the brief's stop line of 140 (your ceiling is 250), the deploy-retry step D9 is not built yet, and the final check was cut off after 18 minutes with no failing test (the deadline problem a-unit-check-ends-on-progress fixes). A correction round needs a person. May round 2 run with the stop line raised to 200?
+- Next step: Build the one unit from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-second-half-is-the-seats-brief.md on the machine route on ui with work build --last (the goal has no Units table); the brief carries Read each round: yes so the engine starts the read; then the seat hands in with work land --whole --delivered (today still a person's act: CARRIED until this unit lands) and the lane lands it.; ASKED 5B530FQ4CAVVYM5HWWBZR53FVE (other): the-second-half-is-the-seats round 1 stopped PARTIAL: the seat's end and conclusion (D1-D8) are built but came to 152 code lines against the brief's stop line of 140 (your ceiling is 250), the deploy-retry step D9 is not built yet, and the final check was cut off after 18 minutes with no failing test (the deadline problem a-unit-check-ends-on-progress fixes). A correction round needs a person. May round 2 run with the stop line raised to 200?; ASKED HC92HSC55FJXSRHPE04MVRTZZE (other): The-second-half-is-the-seats is built and has a clean read (0 material findings, published 22:5x). The next step is the hand-in, which is still your act today. May it be handed in now?
 - OpenedAt: 2026-10-24T05:00:13Z
 - FirstClaimAt: 2026-10-24T08:13:12Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=D7XR3W0NYABSSC9HC9RE401RS6-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=6
@@ -32,4 +32,5 @@ History:
 - 2026-10-24T08:51:32Z 6CS1XSARRYNYTR6C5YFWC0S44A-ui-71c5cb39 ask actor=ui+steward-seat targets=the-second-half-is-the-seats
 - 2026-10-24T20:27:38Z 5PJBK2RN59HNE5K6MHX4FSV7PG-ui-71c5cb39 restamp actor=ui+steward-seat targets=the-second-half-is-the-seats reason=stop capability claimEpoch 3->5
 - 2026-10-24T20:40:21Z 5H71YSGPCXCCPVZC0K4T3DSWJR-ui-71c5cb39 slice-start actor=ui+steward-seat targets=the-second-half-is-the-seats
-Integrity: sha256=1c01e3797a428eba8de019e4b90fdfc59bcfec70be980d5f5e714a46ae0cd0a5
+- 2026-10-24T20:55:01Z X23FWARJQTGAK2F3S09YVMHHMB-ui-71c5cb39 ask actor=ui+steward-seat targets=the-second-half-is-the-seats
+Integrity: sha256=7f2f436eea039297a914bdb4e419918a6f1d0ddd7ccc2eaba5a02e85f482c172
