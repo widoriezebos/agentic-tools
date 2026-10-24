@@ -1,6 +1,6 @@
 # the-second-half-is-the-seats
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="2026-10-24: a-flake-is-not-a-red-2 had to be split into a follow-up goal to land one unit (no verb lands a unit while its goal continues, against decision 47b); --whole and goal done on a human-opened goal need a person (intent_delivery.go:1887-1891, verbs.go:2878); every hand-in since 10-16 carried --whole --by Wido. Plan item 2.1."
@@ -9,11 +9,14 @@
 - Origin: human
 - Next step: Build the one unit from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-second-half-is-the-seats-brief.md on the machine route on ui with work build --last (the goal has no Units table); the brief carries Read each round: yes so the engine starts the read; then the seat hands in with work land --whole --delivered (today still a person's act: CARRIED until this unit lands) and the lane lands it.
 - OpenedAt: 2026-10-24T05:00:13Z
-- Revision: 8
+- FirstClaimAt: 2026-10-24T08:13:12Z
+- Revision: 9
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=D7XR3W0NYABSSC9HC9RE401RS6-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=6
 - Approved: by=human:Wido at=2026-10-24T07:33:22Z revision=7 opid=D7XR3W0NYABSSC9HC9RE401RS6-m1e-e91103bc authority=proven digest=3485e2f723fc8d162a087b47e28aada94a8b217c78ff523ab69f9d2fd74093ca episode=7
+- Claimed: machine=ui lineage=steward-seat at=2026-10-24T08:13:12Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-second-half-is-the-seats: no accepted design declares areas\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=9 accountingRevision=9 episodeAt=2026-10-24T08:13:12Z episodeRevision=9
+- StopCapability: generation=9 revision=9 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-24T05:00:13Z X57VQEP54H1AH2B6CEY2CG1XDF-m1e-e91103bc open actor=human:Wido targets=the-second-half-is-the-seats
@@ -24,4 +27,5 @@ History:
 - 2026-10-24T07:33:15Z KN6D00ZWW5SVYRAXPH3NWSGK81-m1e-e91103bc edit actor=human:Wido targets=the-second-half-is-the-seats
 - 2026-10-24T07:33:22Z D7XR3W0NYABSSC9HC9RE401RS6-m1e-e91103bc approve actor=human:Wido targets=the-second-half-is-the-seats
 - 2026-10-24T07:33:46Z M8FHA9D2X2SMS440C710K86AQZ-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-unit-check-ends-on-progress,the-second-half-is-the-seats reason=priority-order subject=the-second-half-is-the-seats from=1:3 to=1:1 requested-sequence=1
-Integrity: sha256=01f3fc56b27ee0b02b4b8be25036d6408e218694bf0707013e662e56e267288c
+- 2026-10-24T08:13:12Z DGA6PC0HQACBQS6TKYJJJPR58S-ui-71c5cb39 claim actor=ui+steward-seat targets=the-second-half-is-the-seats reason=areas unknown for goal the-second-half-is-the-seats: no accepted design declares areas; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses
+Integrity: sha256=47e0a566eeb94a91f42f340182d2c6fe8069287c281742d8fe2e4c4c075e0cc1
