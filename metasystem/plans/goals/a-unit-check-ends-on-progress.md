@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 1
+- Sequence: 2
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="changes when every unit check is ended and how a stopped unit is classified and asked about; a wrong progress clock lets a hung check run on, a wrong cause retries a real failure"
 - Tier: 2
 - Intent: A unit's frozen check ends on its result, not on a wall clock that load or selection size can exhaust: proof.deadline means minutes without a finished unit (a hang still stops), the check runs after the builder's turn instead of inside it, a stop carries its real cause (deadline, environment) and offers the retry, one machine retry for a deadline stop, and the ask to a person states what happened with real line counts and a ready command. From the machinery's first run 2026-10-23 (landed-proof killed twice at exactly 15m0s after 28 of 46 green units); analyses: first-machinery-run-20261023/partial-build-1042.md and outside-read-fable-partial-build.md.
 - Origin: human
 - Next step: Machine route on ui, one unit at a time (plan 2.3): U2 from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-unit-check-ends-on-progress-U2-brief.md, then U3a (items 1-4 and 9) and U3b (items 5-8) from ...-U3-brief.md (both FINAL, Astra closed at the three-round stop 2026-10-24). The seat runs work review --reader-record itself; the lane lands each unit.
 - OpenedAt: 2026-10-23T09:59:14Z
-- Revision: 8
+- Revision: 9
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=59J15TAG2HWZAA5VAQB0KSYNZR-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=7
@@ -24,4 +24,5 @@ History:
 - 2026-10-23T22:37:36Z 9RZ8PYC79FFHEKCADBJTG4C5WK-m1e-cca12454 set-pin actor=human:Wido targets=a-unit-check-ends-on-progress
 - 2026-10-24T04:53:17Z WRH64YWE4ZG0HJMY04XGBFKGNV-m1e-e91103bc edit actor=human:Wido targets=a-unit-check-ends-on-progress
 - 2026-10-24T07:30:35Z 59J15TAG2HWZAA5VAQB0KSYNZR-m1e-e91103bc approve actor=human:Wido targets=a-unit-check-ends-on-progress
-Integrity: sha256=1c30a4839c562edee63b4aafb0f1e1e187e5ba7ed6c401b4de736c0ed328a3ad
+- 2026-10-24T07:33:46Z M8FHA9D2X2SMS440C710K86AQZ-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-unit-check-ends-on-progress,the-second-half-is-the-seats reason=priority-order subject=the-second-half-is-the-seats from=1:1 to=1:2 requested-sequence=1
+Integrity: sha256=c4c23d56cfc9d593addb01c3d72f29c053b80c818850afe1d7826cece1342595
