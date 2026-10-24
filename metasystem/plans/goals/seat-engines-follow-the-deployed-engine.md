@@ -5,11 +5,11 @@
 - Sequence: 4
 - Risk: severity=2 novelty=1 exposure=1 accumulation=1 basis="changes which engine binary the seats run on this computer; a wrong pin stops a seat until a person restarts it"
 - Tier: 2
-- Intent: The lane's deployed engine reaches every seat with no person act: at its tick, a seat in a project declared engine-delivery=central with no non-terminal or unreadable job record fetches, checks the deployed commit's ancestry, installs the active deployed engine into its checkout bin (copy-then-rename) and re-arms; no seat rebuilds its own engine (devgate build refuses in a central checkout without --out). Design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/seat-engines-follow-the-deployed-engine.md (DRAFT, prerequisites P1-P4: Wido's Q1 central and Q2 helm); brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/seat-engines-follow-the-deployed-engine-U1-brief.md; U1 then U2 on one branch, one landing.
+- Intent: The lane's deployed engine reaches every seat with no person act (decisions 53-54): this repository is central (metasystem.engine-delivery=central, committed inside U1a with rulings row R-150-m1e); at its tick a seat, at the helm too, with no non-terminal or unreadable job record fetches, checks the deployed commit's ancestry, installs the active deployed engine into its checkout bin (copy-then-rename) and re-arms; a clean checkout is still fast-forwarded at the boundary, only the build is dropped; a follow failure asks once; no seat rebuilds its own engine. Design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/seat-engines-follow-the-deployed-engine.md (accepted 2026-10-24); brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/seat-engines-follow-the-deployed-engine-U1-brief.md (FINAL revision 5).
 - Origin: human
-- Next step: Pinned to m1e (holding) until Wido answers Q1 and Q2 and the design is accepted; then unpin to ui, build U1 then U2 with --last, one landing; then the bootstrap deploy (P4).
+- Next step: Machine route on ui after a-round-survives-a-restart lands (prerequisite P0: its Decision ask and Retire): build U1a (follow, ~230), U1b (tell, ~40), then U2 (devgate build refuses, ~20) with --last, one branch, one landing; then the steward runs the one-time bootstrap deploy (P4).
 - OpenedAt: 2026-10-22T10:07:14Z
-- Revision: 19
+- Revision: 20
 - BlockedBy: a-proved-main-deploys-itself
 - Pinned: m1e
 - BudgetExceptions: 0
@@ -34,4 +34,5 @@ History:
 - 2026-10-24T07:58:55Z D4NR8M7GD1T7BS53C1AK502TBB-m1e-294bbb33 edit actor=human:Wido targets=seat-engines-follow-the-deployed-engine
 - 2026-10-24T07:59:02Z XQ0KXC0XK39ZTZ6YZWY5WX0PDE-m1e-294bbb33 approve actor=human:Wido targets=seat-engines-follow-the-deployed-engine
 - 2026-10-24T09:04:20Z 9WYTYB698A6TVZYTAPEATYPEKW-m1e-294bbb33 unapprove actor=human:Wido targets=seat-engines-follow-the-deployed-engine reason=decisions 53-54: design accepted, units U1a/U1b/U2
-Integrity: sha256=21684e4cd5e4c1b8b09f970c6fb831d68f7ad6bc6ee75e22ce9aee5ede84d725
+- 2026-10-24T09:04:27Z HETKTT70R4SB12AJ9AX92PGNJN-m1e-294bbb33 edit actor=human:Wido targets=seat-engines-follow-the-deployed-engine
+Integrity: sha256=b936e7db1c62c572e8b3e4cebc8250f1c235a25ee0921299e92484d4ea1bc9e4
