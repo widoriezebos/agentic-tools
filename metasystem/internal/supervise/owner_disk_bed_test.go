@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,10 +25,31 @@ import (
 // launches mint identities, stops are proven, and the observation is the
 // bed's to choose (a crash-on-start component never beats: Failing).
 type diskBedComponents struct {
+	repo        string
+	woken       []diskBedWake
 	nextPid     int64
 	observation Observation
 	launched    []Held
 	stopped     map[int64]bool
+}
+
+type diskBedWake struct {
+	held         Held
+	statePresent bool
+	watcherPid   int64
+}
+
+func (c *diskBedComponents) Wake(held Held) {
+	wake := diskBedWake{held: held}
+	content, err := os.ReadFile(filepath.Join(c.repo, "artifacts", "agents", "supervision", "state.json"))
+	if err == nil {
+		var state stateDocument
+		if json.Unmarshal(content, &state) == nil {
+			wake.statePresent = true
+			wake.watcherPid = state.Components[string(Watcher)].Pid
+		}
+	}
+	c.woken = append(c.woken, wake)
 }
 
 func (c *diskBedComponents) Launch(component Component, tag string, generation int64) (identity.Ref, error) {
@@ -73,13 +95,10 @@ func newDiskBed(t *testing.T, tag string) *diskBed {
 		t.Fatal(err)
 	}
 	repo := filepath.Join(base, "checkout")
-	exact, state, err := identity.KernelProber{}.Probe(int64(os.Getpid()))
-	if err != nil || state != identity.Alive {
-		t.Fatalf("probe the owner's own identity: %v %v", state, err)
-	}
+	self := identity.Ref{Pid: 4242, StartedAtSec: 1_759_000_000}
 	bed := &diskBed{
-		t: t, repo: repo, registry: filepath.Join(base, "registry.jsonl"), tag: tag, self: exact.Ref(),
-		components: &diskBedComponents{nextPid: 70000, observation: Healthy, stopped: map[int64]bool{}},
+		t: t, repo: repo, registry: filepath.Join(base, "registry.jsonl"), tag: tag, self: self,
+		components: &diskBedComponents{repo: repo, nextPid: 70000, observation: Healthy, stopped: map[int64]bool{}},
 		clock:      time.Date(2026, time.September, 28, 12, 0, 0, 0, time.UTC),
 	}
 	// The armer publishes the lock naming the owner before the owner runs.
@@ -269,4 +288,44 @@ func TestDiskOwnerGivesUpOnACrashLoop(t *testing.T) {
 	if relaunched := bed.registryRecords("relaunched"); len(relaunched) < 2 {
 		t.Fatalf("the breaker never relaunched the failing set: %d relaunched rows", len(relaunched))
 	}
+}
+
+func TestEstablishWakesTheWatcherAfterTheFirstPublication(t *testing.T) {
+	t.Parallel()
+	t.Run("establish", func(t *testing.T) {
+		t.Parallel()
+		bed := newDiskBed(t, "wake-establish")
+		bed.cycle()
+		if len(bed.components.woken) != 1 {
+			t.Fatalf("wakes = %+v, want exactly one watcher wake", bed.components.woken)
+		}
+		wake := bed.components.woken[0]
+		if wake.held.Component != Watcher || wake.held.Generation != 1 || !wake.statePresent || wake.watcherPid != wake.held.Identity.Pid {
+			t.Fatalf("wake = %+v, want generation-one watcher after its state publication", wake)
+		}
+		for range 3 {
+			bed.cycle()
+		}
+		if len(bed.components.woken) != 1 {
+			t.Fatalf("stable cycles sent more wakes: %+v", bed.components.woken)
+		}
+	})
+	t.Run("refused-publication", func(t *testing.T) {
+		t.Parallel()
+		bed := newDiskBed(t, "wake-refused")
+		bed.writeLockOwner(999999, 1, "another-owner")
+		bed.cycle()
+		failed := false
+		for _, trace := range bed.traces {
+			for _, action := range trace.Actions {
+				failed = failed || strings.HasPrefix(action, "establish-failed:")
+			}
+		}
+		if !failed {
+			t.Fatalf("cycle did not record a failed establishment: %+v", bed.traces)
+		}
+		if len(bed.components.woken) != 0 {
+			t.Fatalf("refused publication sent wakes: %+v", bed.components.woken)
+		}
+	})
 }

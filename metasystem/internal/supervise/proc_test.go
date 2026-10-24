@@ -272,3 +272,69 @@ func TestGroupMemberPids(t *testing.T) {
 		t.Fatal("an unreadable probe must refuse, not undercount")
 	}
 }
+
+type wakeRecordingProber struct {
+	prober procProber
+	asked  []int64
+}
+
+func (p *wakeRecordingProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	p.asked = append(p.asked, pid)
+	return p.prober.Probe(pid)
+}
+
+func TestProcWakeSignalsOnlyAWatcherThatListens(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name       string
+		beat       *heartbeatRecord
+		malformed  bool
+		liveness   identity.Liveness
+		wantSignal bool
+	}{
+		{name: "listening", beat: &heartbeatRecord{Pid: 50, PidStartedAt: 200}, liveness: identity.Alive, wantSignal: true},
+		{name: "no-heartbeat", liveness: identity.Alive},
+		{name: "older-watcher", beat: &heartbeatRecord{Pid: 49, PidStartedAt: 200}, liveness: identity.Alive},
+		{name: "reused-pid", beat: &heartbeatRecord{Pid: 50, PidStartedAt: 199}, liveness: identity.Alive},
+		{name: "unreadable", malformed: true, liveness: identity.Alive},
+		{name: "dead", beat: &heartbeatRecord{Pid: 50, PidStartedAt: 200}, liveness: identity.Dead},
+		{name: "unknown", beat: &heartbeatRecord{Pid: 50, PidStartedAt: 200}, liveness: identity.Unknown},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			prober := &wakeRecordingProber{prober: procProber{50: tc.liveness}}
+			type signal struct {
+				pid int64
+				sig syscall.Signal
+			}
+			var signals []signal
+			comps := &ProcComponents{SupervisionDir: t.TempDir(), Prober: prober,
+				signal: func(pid int64, sig syscall.Signal) error { signals = append(signals, signal{pid, sig}); return nil },
+			}
+			if tc.beat != nil || tc.malformed {
+				content := []byte("{")
+				if tc.beat != nil {
+					var err error
+					content, err = json.Marshal(tc.beat)
+					if err != nil {
+						t.Fatal(err)
+					}
+				}
+				if err := os.WriteFile(comps.heartbeatPath(Watcher), content, 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			comps.Wake(Held{Component: Watcher, Identity: identity.Ref{Pid: 50, StartedAtSec: 200}})
+			if tc.wantSignal {
+				if len(signals) != 1 || signals[0].pid != 50 || signals[0].sig != syscall.SIGUSR1 {
+					t.Fatalf("signals = %+v, want one SIGUSR1 to pid 50", signals)
+				}
+				if len(prober.asked) != 1 || prober.asked[0] != 50 {
+					t.Fatalf("probed pids = %v, want only pid 50", prober.asked)
+				}
+			} else if len(signals) != 0 {
+				t.Fatalf("watcher without a matching live heartbeat received signals: %+v", signals)
+			}
+		})
+	}
+}

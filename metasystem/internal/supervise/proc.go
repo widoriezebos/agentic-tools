@@ -44,7 +44,7 @@ type ProcComponents struct {
 	// kernel's. A test hands it exactly the processes it describes.
 	Processes identity.ProcessTable
 	// clock, sleep, and signal are injectable; nil means real time and a real
-	// sleep or group signal.
+	// sleep, group signal, or watcher wake.
 	clock  func() time.Time
 	sleep  func(time.Duration)
 	signal func(pid int64, sig syscall.Signal) error
@@ -172,6 +172,29 @@ func (p *ProcComponents) Observe(held Held) Observation {
 		return Failing
 	}
 	return Healthy
+}
+
+// Wake sends SIGUSR1 to the held watcher itself, never its group, only when
+// its heartbeat names that exact process: the watcher beats after it listens
+// for the signal, whose default action would end it. Without such a beat its
+// first census has not started, so it reads what was published before.
+func (p *ProcComponents) Wake(held Held) {
+	content, err := os.ReadFile(p.heartbeatPath(held.Component))
+	if err != nil {
+		return
+	}
+	var beat heartbeatRecord
+	if json.Unmarshal(content, &beat) != nil || beat.Pid != held.Identity.Pid || beat.PidStartedAt != held.Identity.StartedAtSec {
+		return
+	}
+	if identity.AliveRef(p.Prober, held.Identity) != identity.Alive {
+		return
+	}
+	if p.signal != nil {
+		_ = p.signal(held.Identity.Pid, syscall.SIGUSR1)
+		return
+	}
+	_ = syscall.Kill(int(held.Identity.Pid), syscall.SIGUSR1)
 }
 
 func (p *ProcComponents) processTable() identity.ProcessTable {
