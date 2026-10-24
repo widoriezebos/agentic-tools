@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "goal": "a-flake-is-not-a-red-2",
+  "unit": "U5",
+  "subject": {
+    "commit": "5042d0bb0c066fc3e7809cd53ebb46fcfdacf55b",
+    "parent": "4df6ecf9ca9fbe69e0eb1db7afc85d878de0ab0c",
+    "tree": "caefb76cca79d65cb9add8831ec10c9ee56a3a17",
+    "patchDigest": "4bfdea3ed2012402b23672def77eb26ef280c1f3a20fb9a63f5f786ce56e93db",
+    "unitDigest": "726ad11f0c9c16f97dbba9e87ca41ba0c3c805f25a20d8ab0a17a7599d984b68"
+  },
+  "source": {
+    "kind": "reader-record",
+    "readerRecord": "metasystem/records/misc/a-flake-is-not-a-red-2-u5-read.md",
+    "recordSha256": "71bea354cca9c9bc5404fb73209b21c2eb3b7a0c97ef01f0d4f8fe5003b6afb1"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "caefb76cca79d65cb9add8831ec10c9ee56a3a17",
+    "runId": "goal-read-gate-20261024t023953z-477525331f01bb1c"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/supervise/owner_disk_bed_test.go",
+      "readerWord": "reviewed by reader record metasystem/records/misc/a-flake-is-not-a-red-2-u5-read.md"
+    },
+    {
+      "path": "metasystem/internal/supervise/owner_test.go",
+      "readerWord": "reviewed by reader record metasystem/records/misc/a-flake-is-not-a-red-2-u5-read.md"
+    },
+    {
+      "path": "metasystem/internal/supervise/proc_test.go",
+      "readerWord": "reviewed by reader record metasystem/records/misc/a-flake-is-not-a-red-2-u5-read.md"
+    }
+  ],
+  "sha256": "7c616f4059931e60cf24c69155fb92bcacdd17d5993a0f17dbd861bbe1da129c"
+}
