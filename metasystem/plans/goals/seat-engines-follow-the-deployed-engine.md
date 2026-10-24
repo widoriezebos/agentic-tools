@@ -1,6 +1,6 @@
 # seat-engines-follow-the-deployed-engine
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 4
 - Risk: severity=2 novelty=1 exposure=1 accumulation=1 basis="changes which engine binary the seats run on this computer; a wrong pin stops a seat until a person restarts it"
@@ -9,10 +9,13 @@
 - Origin: human
 - Next step: Machine route on ui after a-round-survives-a-restart lands (prerequisite P0: its Decision ask and Retire): build U1a (follow, ~230), U1b (tell, ~40), then U2 (devgate build refuses, ~20) with --last, one branch, one landing; then the steward runs the one-time bootstrap deploy (P4).
 - OpenedAt: 2026-10-22T10:07:14Z
-- Revision: 20
+- Revision: 21
 - BlockedBy: a-proved-main-deploys-itself
 - Pinned: m1e
+- Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- NormApproval: approvedRef=WFMQC3FNY4Q2GWF90FYCS1HTMF-m1e-294bbb33 minutes=2400 reviewRounds=20 goalRevision=20
+- Approved: by=human:Wido at=2026-10-24T09:04:35Z revision=21 opid=WFMQC3FNY4Q2GWF90FYCS1HTMF-m1e-294bbb33 authority=proven digest=605d695f55d156d362683859168093601d274389eb87a07a7a9b8656ef12909c episode=21
 
 History:
 - 2026-10-22T10:07:14Z XDV95WF4M98N9HWFSQSV7ES7PJ-m1e-4a1ba1c4 open actor=human:Wido targets=seat-engines-follow-the-deployed-engine,a-proved-main-deploys-itself
@@ -35,4 +38,5 @@ History:
 - 2026-10-24T07:59:02Z XQ0KXC0XK39ZTZ6YZWY5WX0PDE-m1e-294bbb33 approve actor=human:Wido targets=seat-engines-follow-the-deployed-engine
 - 2026-10-24T09:04:20Z 9WYTYB698A6TVZYTAPEATYPEKW-m1e-294bbb33 unapprove actor=human:Wido targets=seat-engines-follow-the-deployed-engine reason=decisions 53-54: design accepted, units U1a/U1b/U2
 - 2026-10-24T09:04:27Z HETKTT70R4SB12AJ9AX92PGNJN-m1e-294bbb33 edit actor=human:Wido targets=seat-engines-follow-the-deployed-engine
-Integrity: sha256=b936e7db1c62c572e8b3e4cebc8250f1c235a25ee0921299e92484d4ea1bc9e4
+- 2026-10-24T09:04:35Z WFMQC3FNY4Q2GWF90FYCS1HTMF-m1e-294bbb33 approve actor=human:Wido targets=seat-engines-follow-the-deployed-engine
+Integrity: sha256=97880992cc33b572081776c855c8ba6c45c74d1cf86f4ea2d75914db4e920da1
