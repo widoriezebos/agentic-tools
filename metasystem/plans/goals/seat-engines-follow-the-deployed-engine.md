@@ -5,11 +5,11 @@
 - Sequence: 4
 - Risk: severity=2 novelty=1 exposure=1 accumulation=1 basis="changes which engine binary the seats run on this computer; a wrong pin stops a seat until a person restarts it"
 - Tier: 2
-- Intent: Every seat on this computer runs the deployed engine after a deploy, without the steward copying it into each checkout's bin by hand; the central or per-checkout engine source is declared first (R-144-m1h decisions 2, 3, 5). Wido 2026-10-22: Q1 of a-proved-main-deploys-itself, a separate goal.
+- Intent: The lane's deployed engine reaches every seat with no person act: at its tick, a seat in a project declared engine-delivery=central with no non-terminal or unreadable job record fetches, checks the deployed commit's ancestry, installs the active deployed engine into its checkout bin (copy-then-rename) and re-arms; no seat rebuilds its own engine (devgate build refuses in a central checkout without --out). Design /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/seat-engines-follow-the-deployed-engine.md (DRAFT, prerequisites P1-P4: Wido's Q1 central and Q2 helm); brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/seat-engines-follow-the-deployed-engine-U1-brief.md; U1 then U2 on one branch, one landing.
 - Origin: human
-- Next step: Write the design: which engine each seat pins (system restart, enrolment), the declared source choice, and the smallest change; Astra critique under the rare-case rule.
+- Next step: Pinned to m1e (holding) until Wido answers Q1 and Q2 and the design is accepted; then unpin to ui, build U1 then U2 with --last, one landing; then the bootstrap deploy (P4).
 - OpenedAt: 2026-10-22T10:07:14Z
-- Revision: 16
+- Revision: 17
 - BlockedBy: a-proved-main-deploys-itself
 - Pinned: m1e
 - BudgetExceptions: 0
@@ -31,4 +31,5 @@ History:
 - 2026-10-24T07:57:59Z MT5A3PM807D3BYCR3JZ3008H3M-m1e-294bbb33 unpark actor=human:Wido targets=seat-engines-follow-the-deployed-engine
 - 2026-10-24T07:58:40Z Q50TD8JPB29HAPTS6Y93N2WVCW-m1e-294bbb33 set-pin actor=human:Wido targets=seat-engines-follow-the-deployed-engine
 - 2026-10-24T07:58:48Z EFBA09H62KGDPTZHVR4SSV0SZB-m1e-294bbb33 unapprove actor=human:Wido targets=seat-engines-follow-the-deployed-engine reason=row 6: intent changes to the drafted design and brief
-Integrity: sha256=f2d8fe7f90fc4b838f41c195e4ab097b1d1a3df0ec99a4ced0acde95db534344
+- 2026-10-24T07:58:55Z D4NR8M7GD1T7BS53C1AK502TBB-m1e-294bbb33 edit actor=human:Wido targets=seat-engines-follow-the-deployed-engine
+Integrity: sha256=f2b2ba49b053d85dc07026f8c579f297fdf4d8b0af9bda75dca9fdd2c2b5a1c1
