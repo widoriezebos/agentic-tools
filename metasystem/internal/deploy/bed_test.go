@@ -44,12 +44,13 @@ func fixtureAdapter(t *testing.T) string {
 // bed is one project on one computer: its deploy directory, the fixture
 // adapter's state, and origin's main as each fetch finds it.
 type bed struct {
-	t       *testing.T
-	base    string
-	dir     string
-	state   string
-	adapter string
-	fifos   []string
+	t        *testing.T
+	base     string
+	dir      string
+	state    string
+	adapter  string
+	fifos    []string
+	fifoEnds map[string]*os.File
 	// adapters names, per commit, the adapter its tree holds and its
 	// deploy.json calls; any other commit's names the fixture by its path.
 	adapters map[string]string
@@ -291,6 +292,10 @@ func (b *bed) fifo(name string) string {
 	if err := syscall.Mkfifo(path, 0o600); err != nil {
 		b.t.Fatal(err)
 	}
+	if b.fifoEnds == nil {
+		b.fifoEnds = make(map[string]*os.File)
+	}
+	b.fifoEnds[path] = testenv.HoldFIFO(b.t, path)
 	b.fifos = append(b.fifos, path)
 	return path
 }
@@ -320,15 +325,10 @@ func (b *bed) awaitHeld(tb testenv.AwaitTB, adapter int) {
 	})
 }
 
-// release lets a call held on fifo go on: it opens the FIFO for writing,
-// which waits for the call to open it, and closes it.
+// release lets one call held on fifo go on by writing its handoff line.
 func (b *bed) release(fifo string) {
 	b.t.Helper()
-	writer, err := os.OpenFile(fifo, os.O_WRONLY, 0)
-	if err != nil {
-		b.t.Fatal(err)
-	}
-	if err := writer.Close(); err != nil {
+	if _, err := b.fifoEnds[fifo].WriteString("go\n"); err != nil {
 		b.t.Fatal(err)
 	}
 }
@@ -336,8 +336,8 @@ func (b *bed) release(fifo string) {
 // releaseIfHeld lets go a call still held on fifo, for a test that ends
 // before its own release; with no call holding it, it does nothing.
 func (b *bed) releaseIfHeld(fifo string) {
-	if writer, err := os.OpenFile(fifo, os.O_WRONLY|syscall.O_NONBLOCK, 0); err == nil {
-		_ = writer.Close()
+	if _, err := os.Stat(fifo + ".held"); err == nil {
+		b.release(fifo)
 	}
 }
 

@@ -28,7 +28,7 @@ func goalBranchTestCommand(args []string, stdout, stderr io.Writer) int {
 	case "push":
 		return goalBranchTestPush(args[1:], stdout, stderr)
 	case "land-push":
-		result, endpoint, code, err := goalBranchLandPushRun(args[1:])
+		result, endpoint, code, err := goalBranchLandPushRun(args[1:], goalBranchSweepOptions{Deadline: neverProjectionDeadline})
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return code
@@ -198,6 +198,7 @@ func goalBranchTestCommitWith(args []string, raw *goalBranchRawDependencies, std
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	endpoint.ProjectionDeadline = neverProjectionDeadline
 	check := goalBranchClaimCheckWith(*root, *goalID, endpoint, raw.Config, raw.HolderRoot)
 	if err := branch.CheckCommitAccess(*goalID, check); err != nil {
 		fmt.Fprintln(stderr, err)

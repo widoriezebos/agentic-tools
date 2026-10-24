@@ -169,7 +169,12 @@ func hold(fifo, call string) {
 	if err != nil {
 		fail(err)
 	}
-	_, _ = io.Copy(io.Discard, file)
+	var one [1]byte
+	for {
+		if n, err := file.Read(one[:]); n == 0 || err != nil || one[0] == '\n' {
+			break
+		}
+	}
 	_ = file.Close()
 }
 

@@ -376,19 +376,89 @@ func obsoleteExecution(options EnsureOptions) (bool, error) {
 	return obsolete, nil
 }
 
-func waitUntilArmed(options EnsureOptions, owner ArmingOwner) ArmedInspection {
-	deadline := armingNow().Add(scaledWait(options.IntervalSec+10, options.WaitScaleMilli))
-	inspection := ArmedInspection{Component: "repo-watcher", Reason: "the supervision generation has not completed its first census"}
-	for armingNow().Before(deadline) {
-		now := armingNow()
-		inspection = InspectArmedAt(filepath.Join(options.Root, "artifacts", "agents"), options.MetasystemRoot, owner.Pid,
-			owner.PidStartedAt, owner.InstanceTag, int64(options.IntervalSec), now)
-		if inspection.Armed() {
-			return inspection
+// armingLook binds an inspection and census to the generation this owner published.
+type armingLook struct {
+	inspection ArmedInspection
+	published  int64
+	census     armingCensus
+}
+
+// armingCensus is the latest published census as arming judges it.
+type armingCensus struct {
+	present    bool
+	generation int64
+	scanSeq    int64
+	succeeded  bool
+	firstError string
+}
+
+// awaitArmed ends on verification, two failed censuses of the published
+// generation, or the hang ceiling with the latest census evidence.
+func awaitArmed(look func(time.Time) armingLook, now func() time.Time, sleep func(time.Duration), ceiling time.Duration) ArmedInspection {
+	deadline := now().Add(ceiling)
+	var firstFailedSeq int64
+	haveFailure := false
+	for {
+		at := now()
+		l := look(at)
+		if l.inspection.Armed() {
+			return l.inspection
 		}
-		armingSleep(50 * time.Millisecond)
+		if l.published > 0 && l.census.present && l.census.generation == l.published && !l.census.succeeded {
+			if haveFailure && l.census.scanSeq > firstFailedSeq {
+				return ArmedInspection{Component: "repo-watcher", Reason: fmt.Sprintf("two censuses of supervision generation %d failed; the latest: %s", l.published, l.census.firstError)}
+			}
+			if !haveFailure {
+				firstFailedSeq, haveFailure = l.census.scanSeq, true
+			}
+		}
+		if !at.Before(deadline) {
+			if l.census.present {
+				verdict := "CENSUS-FAILED"
+				if l.census.succeeded {
+					verdict = "SUCCESS"
+				}
+				l.inspection.Reason += fmt.Sprintf("; latest census: scanSeq %d, generation %d, verdict %s, %s", l.census.scanSeq, l.census.generation, verdict, l.census.firstError)
+			} else {
+				l.inspection.Reason += "; no census published"
+			}
+			return l.inspection
+		}
+		sleep(50 * time.Millisecond)
 	}
-	return inspection
+}
+
+// armingLookAt reads the owner's published generation and latest census;
+// inspect supplies the arming verdict for the same observation time.
+func armingLookAt(root string, owner ArmingOwner, inspect func(time.Time) ArmedInspection) func(time.Time) armingLook {
+	return func(at time.Time) armingLook {
+		l := armingLook{inspection: inspect(at)}
+		if generation, err := ReadPublishedGeneration(root); err == nil && sameArmingOwner(generation.Owner, owner) {
+			l.published = generation.Generation
+		}
+		if census, err := readObjectFile(filepath.Join(SupervisionDir(root), "last-census.json")); err == nil {
+			l.census.present = true
+			l.census.generation, _ = intField(census["generation"])
+			l.census.scanSeq, _ = intField(census["scanSeq"])
+			l.census.succeeded = census["verdict"] == "SUCCESS"
+			if errors, ok := census["errors"].([]any); ok && len(errors) > 0 {
+				l.census.firstError, _ = errors[0].(string)
+			}
+		}
+		return l
+	}
+}
+
+func armingWaitCeiling(options EnsureOptions) time.Duration {
+	return scaledWait(3*options.IntervalSec+10, options.WaitScaleMilli)
+}
+
+func waitUntilArmed(options EnsureOptions, owner ArmingOwner) ArmedInspection {
+	agents := filepath.Join(options.Root, "artifacts", "agents")
+	inspect := func(now time.Time) ArmedInspection {
+		return InspectArmedAt(agents, options.MetasystemRoot, owner.Pid, owner.PidStartedAt, owner.InstanceTag, int64(options.IntervalSec), now)
+	}
+	return awaitArmed(armingLookAt(options.Root, owner, inspect), armingNow, armingSleep, armingWaitCeiling(options))
 }
 
 func writeShutdownIntent(root string, owner ArmingOwner, requester string) error {

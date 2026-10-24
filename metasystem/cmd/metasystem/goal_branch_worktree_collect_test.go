@@ -105,7 +105,7 @@ func (f worktreeCollectFixture) writeClosedCritic(t *testing.T, installation str
 // checked out in another worktree.
 func TestGoalWorktreeCollectReadsTheCriticRecordedByItsPrimaryCheckout(t *testing.T) {
 	f := newWorktreeCollectFixture(t)
-	deps := goalBranchReadDependencies{Gate: func(string) (string, error) { return "green", nil },
+	deps := goalBranchReadDependencies{ProjectionDeadline: neverProjectionDeadline, Gate: func(string) (string, error) { return "green", nil },
 		Delegate: func(_, _, _, _, _ string) (string, error) { f.writeClosedCritic(t, f.primary); return f.job, nil }}
 	read := func(root string, extra ...string) (int, string, string) {
 		args := append([]string{"--root", root, "--goal", "standing-validation", "--unit", f.unit}, extra...)
@@ -172,7 +172,7 @@ func TestGoalWorktreeCollectReadsTheCriticRecordedByItsPrimaryCheckout(t *testin
 // unstaged change, and the production publication owner pushes it.
 func TestReviewCommitFromThePrimaryCollectsInTheGoalWorktree(t *testing.T) {
 	f := newWorktreeCollectFixture(t)
-	deps := goalBranchReadDependencies{Gate: func(string) (string, error) { return "green", nil },
+	deps := goalBranchReadDependencies{ProjectionDeadline: neverProjectionDeadline, Gate: func(string) (string, error) { return "green", nil },
 		Delegate: func(_, _, _, _, _ string) (string, error) { f.writeClosedCritic(t, f.primary); return f.job, nil }}
 	code, stdout, stderr := runOnOwnStreams(func(stdout, stderr io.Writer) int {
 		return runGoalBranchReadWith([]string{"--root", f.primary, "--goal", "standing-validation", "--unit", f.unit}, deps, stdout, stderr)
@@ -187,12 +187,14 @@ func TestReviewCommitFromThePrimaryCollectsInTheGoalWorktree(t *testing.T) {
 		layout:    stateroot.Layout{GitRoot: f.primary, RepositoryRoot: f.primary, InstallationRoot: stateroottest.Installation(t, f.primary)},
 		stateRoot: f.primary,
 		input:     intentInput{values: map[string][]string{"goal": {"standing-validation"}}},
-		owners: intentOwners{dependencies: syncRequestDependencies{endpoint: goal.ResolveEndpoint}, commandNow: goalCommandNow, resolver: stateroot.NewResolver(fakeTop(f.primary), noExecutable), delivery: &intentDeliveryOwners{
+		owners: intentOwners{dependencies: syncRequestDependencies{endpoint: goal.ResolveEndpoint, projectionDeadline: neverProjectionDeadline}, commandNow: goalCommandNow, resolver: stateroot.NewResolver(fakeTop(f.primary), noExecutable), delivery: &intentDeliveryOwners{
 			branchRead: func(args []string) (branch.BranchReadResult, int, error) {
 				reads = append(reads, args)
 				return goalBranchReadRun(args, deps)
 			},
-			publishRead: goalBranchPublishRead,
+			publishRead: func(root, goalID, unit string) (branch.PublishReadResult, error) {
+				return goalBranchPublishReadWithDeadline(root, goalID, unit, neverProjectionDeadline)
+			},
 		}},
 	}
 	result := inv.reviewCommit(f.unit)
