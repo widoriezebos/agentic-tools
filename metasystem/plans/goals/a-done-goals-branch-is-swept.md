@@ -1,6 +1,6 @@
 # a-done-goals-branch-is-swept
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 8
 - Risk: severity=2 novelty=1 exposure=2 accumulation=2 basis="Lane test finding 343 (2026-10-16 05:32: two goal done acts reported 'branch was not swept', one with work land as the recovery for work already on main; the advertised repeat swept nothing; twenty goal/* branches of done goals linger on origin); memory goal-done-by-hand-needs-a-hand-sweep."
@@ -10,14 +10,12 @@
 - Next step: Row 8 of the Fable root-cause read (2026-10-24): after the-second-half-is-the-seats and a-round-survives-a-restart U1 land, unpin to ui and re-run claim to done from the backed-up round-1 code (/Users/wido/metasystem-evidence/agentic-tools-ui/sweep-20261023/round1-code-backup-20261024, base 068fa764f); new work name; Read each round: yes; build the last unit with --last; target zero CARRIED and zero CAUSED rows
 - OpenedAt: 2026-10-16T09:23:44Z
 - FirstClaimAt: 2026-10-23T07:04:47Z
-- Revision: 26
+- Revision: 27
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=F3GS4TH3C8R0JX44TPTAX4Q6W5-m1e-c951e3fd minutes=2400 reviewRounds=20 goalRevision=13
 - Approved: by=human:Wido at=2026-10-23T06:54:53Z revision=14 opid=F3GS4TH3C8R0JX44TPTAX4Q6W5-m1e-c951e3fd authority=proven digest=3811b4f1d49d696f8ee4fee3d6223b11d6190edf788eaae0f6a34199e85561f8 episode=14
-- Claimed: machine=ui lineage=steward-seat at=2026-10-24T07:34:59Z revision=26 accountingRevision=26 episodeAt=2026-10-24T07:34:59Z episodeRevision=26
-- StopCapability: generation=26 revision=26 machine=ui claimEpoch=3 fenceEpoch=0
 
 History:
 - 2026-10-16T09:23:44Z N14DNVCX29QBNGN4ZCRBGA4MHG-m1e-670f65d0 open actor=human:Wido targets=a-done-goals-branch-is-swept
@@ -46,4 +44,5 @@ History:
 - 2026-10-24T07:34:22Z CHEYRYZ2PRBVG2667D3HMRDQ5N-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-persons-channel-carries-only-acts-and-deliveries reason=priority-order subject=a-persons-channel-carries-only-acts-and-deliveries from=1:6 to=1:7 requested-sequence=6
 - 2026-10-24T07:34:30Z YVBQP59MY4NMJ47KQZFKQQ1PJE-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-seat-pauses-at-its-spend-line reason=priority-order subject=a-seat-pauses-at-its-spend-line from=1:7 to=1:8 requested-sequence=7
 - 2026-10-24T07:34:59Z J6QCTEJJ0Z5KSKYFWBN3TK4RMB-ui-33915e94 resume actor=human:Wido targets=a-done-goals-branch-is-swept reason=cleared stop fence stop-a-done-goals-branch-is-swept-r15-f1: ELAPSED_LIMIT
-Integrity: sha256=fc000456af300a4c30a443175942be6d8f20049825f3f3f59f9248ae4320a080
+- 2026-10-24T07:35:07Z ZGBPTC0M087M21G9Y0HK5VW7W1-ui-33915e94 release actor=human:Wido targets=a-done-goals-branch-is-swept displaced=ui+steward-seat@2026-10-24T07:34:59Z reason=Row 0a of the Fable root-cause read 2026-10-24: run cancelled 04:20, round-1 code backed up (round1-code-backup-20261024, tracked.patch d4bdf613); released so ui's goal next names the-second-half-is-the-seats; re-run claim to done after rows 1 and 2 land as the first zero-act proof
+Integrity: sha256=dd79d9596d00208b4107f4eb364927bb3145df2ff398458a5472c3657bdecf85
