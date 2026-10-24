@@ -9,11 +9,11 @@
 - Origin: human
 - Next step: Machine route on ui, one unit at a time (plan 2.3): U2 from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-unit-check-ends-on-progress-U2-brief.md, then U3a (items 1-4 and 9) and U3b (items 5-8) from ...-U3-brief.md (both FINAL, Astra closed at the three-round stop 2026-10-24). The seat runs work review --reader-record itself; the lane lands each unit.
 - OpenedAt: 2026-10-23T09:59:14Z
-- Revision: 7
-- Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
+- Revision: 8
+- Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- NormApproval: approvedRef=5RNFZTW1AAPJ40BH94191RAKP9-m1e-cca12454 minutes=2400 reviewRounds=20 goalRevision=4
-- Approved: by=human:Wido at=2026-10-23T22:35:38Z revision=5 opid=5RNFZTW1AAPJ40BH94191RAKP9-m1e-cca12454 authority=proven digest=23dc09b2e05a527e501291f541f8d90212dd79dd67b6e2697d960acecdc7712a episode=5
+- NormApproval: approvedRef=59J15TAG2HWZAA5VAQB0KSYNZR-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=7
+- Approved: by=human:Wido at=2026-10-24T07:30:35Z revision=8 opid=59J15TAG2HWZAA5VAQB0KSYNZR-m1e-e91103bc authority=proven digest=ce0919acd6bbd44618652a0b917ef2ad0c3ec086516f95f0ef0f15a9b89f97a9 episode=8
 
 History:
 - 2026-10-23T09:59:14Z D7PCCK2WZZKFTA7T9Y9DCMND2R-m1e-79fa16f1 open actor=human:Wido targets=a-unit-check-ends-on-progress
@@ -23,4 +23,5 @@ History:
 - 2026-10-23T22:35:38Z 5RNFZTW1AAPJ40BH94191RAKP9-m1e-cca12454 approve actor=human:Wido targets=a-unit-check-ends-on-progress
 - 2026-10-23T22:37:36Z 9RZ8PYC79FFHEKCADBJTG4C5WK-m1e-cca12454 set-pin actor=human:Wido targets=a-unit-check-ends-on-progress
 - 2026-10-24T04:53:17Z WRH64YWE4ZG0HJMY04XGBFKGNV-m1e-e91103bc edit actor=human:Wido targets=a-unit-check-ends-on-progress
-Integrity: sha256=901f1d5df45bf3f9131e2b34c7509c07eeab4bbc22193beec5aa4c6dd1d88480
+- 2026-10-24T07:30:35Z 59J15TAG2HWZAA5VAQB0KSYNZR-m1e-e91103bc approve actor=human:Wido targets=a-unit-check-ends-on-progress
+Integrity: sha256=1c30a4839c562edee63b4aafb0f1e1e187e5ba7ed6c401b4de736c0ed328a3ad
