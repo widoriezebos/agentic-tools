@@ -10,13 +10,13 @@
 - Next step: Build the one unit from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-second-half-is-the-seats-brief.md on the machine route on ui with work build --last (the goal has no Units table); the brief carries Read each round: yes so the engine starts the read; then the seat hands in with work land --whole --delivered (today still a person's act: CARRIED until this unit lands) and the lane lands it.; ASKED 5B530FQ4CAVVYM5HWWBZR53FVE (other): the-second-half-is-the-seats round 1 stopped PARTIAL: the seat's end and conclusion (D1-D8) are built but came to 152 code lines against the brief's stop line of 140 (your ceiling is 250), the deploy-retry step D9 is not built yet, and the final check was cut off after 18 minutes with no failing test (the deadline problem a-unit-check-ends-on-progress fixes). A correction round needs a person. May round 2 run with the stop line raised to 200?
 - OpenedAt: 2026-10-24T05:00:13Z
 - FirstClaimAt: 2026-10-24T08:13:12Z
-- Revision: 10
+- Revision: 11
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=D7XR3W0NYABSSC9HC9RE401RS6-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=6
 - Approved: by=human:Wido at=2026-10-24T07:33:22Z revision=7 opid=D7XR3W0NYABSSC9HC9RE401RS6-m1e-e91103bc authority=proven digest=3485e2f723fc8d162a087b47e28aada94a8b217c78ff523ab69f9d2fd74093ca episode=7
 - Claimed: machine=ui lineage=steward-seat at=2026-10-24T08:13:12Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-second-half-is-the-seats: no accepted design declares areas\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=9 accountingRevision=9 episodeAt=2026-10-24T08:13:12Z episodeRevision=9
-- StopCapability: generation=9 revision=9 machine=ui claimEpoch=3 fenceEpoch=0
+- StopCapability: generation=9 revision=9 machine=ui claimEpoch=5 fenceEpoch=0
 
 History:
 - 2026-10-24T05:00:13Z X57VQEP54H1AH2B6CEY2CG1XDF-m1e-e91103bc open actor=human:Wido targets=the-second-half-is-the-seats
@@ -29,4 +29,5 @@ History:
 - 2026-10-24T07:33:46Z M8FHA9D2X2SMS440C710K86AQZ-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-unit-check-ends-on-progress,the-second-half-is-the-seats reason=priority-order subject=the-second-half-is-the-seats from=1:3 to=1:1 requested-sequence=1
 - 2026-10-24T08:13:12Z DGA6PC0HQACBQS6TKYJJJPR58S-ui-71c5cb39 claim actor=ui+steward-seat targets=the-second-half-is-the-seats reason=areas unknown for goal the-second-half-is-the-seats: no accepted design declares areas; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses
 - 2026-10-24T08:51:32Z 6CS1XSARRYNYTR6C5YFWC0S44A-ui-71c5cb39 ask actor=ui+steward-seat targets=the-second-half-is-the-seats
-Integrity: sha256=b676bd4eba6344427a5964bee7bad9ef7e1c4ddd4b51200aae905fc4953dc333
+- 2026-10-24T20:27:38Z 5PJBK2RN59HNE5K6MHX4FSV7PG-ui-71c5cb39 restamp actor=ui+steward-seat targets=the-second-half-is-the-seats reason=stop capability claimEpoch 3->5
+Integrity: sha256=a9c72e9bf4bc2a0b5f9993904eef17045280e598d8817946623fbdf03975fd40
