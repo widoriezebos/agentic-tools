@@ -9,9 +9,8 @@
 - Origin: human
 - Next step: Machine route on ui after a-round-survives-a-restart lands (prerequisite P0: its Decision ask and Retire): build U1a (follow, ~230), U1b (tell, ~40), then U2 (devgate build refuses, ~20) with --last, one branch, one landing; then the steward runs the one-time bootstrap deploy (P4).
 - OpenedAt: 2026-10-22T10:07:14Z
-- Revision: 21
+- Revision: 22
 - BlockedBy: a-proved-main-deploys-itself
-- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=WFMQC3FNY4Q2GWF90FYCS1HTMF-m1e-294bbb33 minutes=2400 reviewRounds=20 goalRevision=20
@@ -39,4 +38,5 @@ History:
 - 2026-10-24T09:04:20Z 9WYTYB698A6TVZYTAPEATYPEKW-m1e-294bbb33 unapprove actor=human:Wido targets=seat-engines-follow-the-deployed-engine reason=decisions 53-54: design accepted, units U1a/U1b/U2
 - 2026-10-24T09:04:27Z HETKTT70R4SB12AJ9AX92PGNJN-m1e-294bbb33 edit actor=human:Wido targets=seat-engines-follow-the-deployed-engine
 - 2026-10-24T09:04:35Z WFMQC3FNY4Q2GWF90FYCS1HTMF-m1e-294bbb33 approve actor=human:Wido targets=seat-engines-follow-the-deployed-engine
-Integrity: sha256=97880992cc33b572081776c855c8ba6c45c74d1cf86f4ea2d75914db4e920da1
+- 2026-10-24T09:04:44Z K6E40WKQ1AMEZS388K4CSVWN8J-m1e-294bbb33 set-pin actor=human:Wido targets=seat-engines-follow-the-deployed-engine
+Integrity: sha256=b4cfea99d01d874bb04e2ccec72f2b74684000536f76387f18c80b910285a54a
