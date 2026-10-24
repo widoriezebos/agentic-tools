@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 5
+- Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="A wrongly withheld act delays a person's decision until he reads status (severity 2, recoverable); the funnel, episodes and question route exist and are reused (novelty 2); every message a person ever gets passes through it (exposure 3); one new question kind and one result state (accumulation 2)"
 - Tier: 2
 - Intent: Only two things reach a person on any transport (Telegram, Mac banner, browser toast): an act that is his, in one plain sentence with the command or answer that carries it and what happens if he does nothing; and a goal delivered, said as what changed for him; everything else stays in alert list and status; a machine that cannot heal itself asks him
@@ -10,7 +10,7 @@
 - Next step: Design plans/designs/a-persons-channel-carries-only-acts-and-deliveries.md accepted at the stop 2026-10-19 (Astra 11 material folded); U1 groundwork (result contract, decision identity, ~112 lines), U2 the words (~205), U3 activation: withhold and ask (~217); brief obligations BO-1..BO-9 on the page; hand route until the lane lands hand-built units
 - OpenedAt: 2026-10-19T11:41:52Z
 - FirstClaimAt: 2026-10-20T16:11:18Z
-- Revision: 23
+- Revision: 24
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=FADE1BD58EEE5QCBF30C01J2QD-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=21
@@ -40,4 +40,5 @@ History:
 - 2026-10-24T05:01:32Z F4JAN02X58AFVQNWZXFSSYZCXA-m1e-e91103bc set-priority actor=human:Wido targets=a-persons-channel-carries-only-acts-and-deliveries,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-red-main-is-known-once,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-engines-follow-the-deployed-engine,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=a-persons-channel-carries-only-acts-and-deliveries from=1:63 to=1:4 requested-sequence=4
 - 2026-10-24T07:30:54Z FADE1BD58EEE5QCBF30C01J2QD-m1e-e91103bc approve actor=human:Wido targets=a-persons-channel-carries-only-acts-and-deliveries
 - 2026-10-24T07:33:56Z XYPD9C6VXCCVW3HP15TF86PRJW-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-round-survives-a-restart reason=priority-order subject=a-round-survives-a-restart from=1:4 to=1:5 requested-sequence=3
-Integrity: sha256=c9556fd53d1311568491c7e278624ec86af5076e42a3fe2385609104e7f79cf9
+- 2026-10-24T07:34:04Z K6FFB95XB1JH2N8WQ8GCGR89MR-m1e-e91103bc set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-seat-pauses-at-its-spend-line,an-outside-read-is-a-read-record,seat-engines-follow-the-deployed-engine reason=priority-order subject=seat-engines-follow-the-deployed-engine from=1:5 to=1:6 requested-sequence=4
+Integrity: sha256=198a04e2d7f39301d7fc097c16dad6b7a959db5d3edbef3a0c1f1ef30ea762ff
