@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -655,6 +656,8 @@ type intentInvocation struct {
 	notices                              *admissionNotices
 	laneException                        *lanePersonObservation
 	landingWords                         string
+	wholeBy                              string
+	landingCode                          plain.Entry
 	laneCallerObserved, laneCallerPerson bool
 	laneRecord                           *lane.Record
 	laneSkipShadow                       bool

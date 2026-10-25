@@ -184,7 +184,7 @@ func intentDeliveryCommands() []intentCommand {
 				"While this computer has a landing lane it is refused, as is work land j2:J, except with --local or --recertification.",
 			},
 			flags: append([]intentFlag{
-				{name: "whole", usage: "with --by NAME: declare the end of a goal whose design has no Units table"},
+				{name: "whole", usage: "declare the end of a goal whose design has no Units table: a person with --by NAME, or the session holding the goal with --delivered"},
 				{name: "records", value: "PATH", repeat: true, usage: "commit these record files on the goal branch, publish it and hand it in; repeat for each path, relative to the checkout top"},
 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
 				{name: "queue-only", usage: "only mark the held goal waiting to land, for a later work land G"},
@@ -1797,10 +1797,18 @@ func runIntentLand(inv *intentInvocation) int {
 	if refused := inv.deliveredRefusal(); refused != nil {
 		return inv.render(*refused)
 	}
+	lineage := ""
+	if inv.owners.dependencies.ownerLineage != nil {
+		lineage = inv.owners.dependencies.ownerLineage()
+	}
 	if inv.input.switched("whole") {
-		if !inv.input.has("by") || inv.input.text("by") == "" {
+		if lineage == "" && (!inv.input.has("by") || inv.input.text("by") == "") {
 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
 				Summary: "--whole needs the name of the person declaring the goal's end (--by); nothing was done", next: inv.typedArgvWith("--by", "NAME")})
+		}
+		if lineage != "" && !inv.input.has("by") && strings.TrimSpace(inv.input.text("delivered")) == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+				Summary: "the end of a goal says what it delivers: add --delivered with one plain sentence; nothing was done", next: inv.typedArgvWith("--delivered", "WHAT IT DELIVERS, IN ONE PLAIN SENTENCE")})
 		}
 		for _, option := range []string{"records", "message", "queue-only", "exception", "using-exception"} {
 			if inv.input.has(option) {
@@ -1885,11 +1893,26 @@ func runIntentLand(inv *intentInvocation) int {
 		return inv.render(*result)
 	}
 	if inv.input.switched("whole") {
-		if inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != "" {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1,
-				Summary: "declaring a goal's end is a person's act; this agent session cannot do it", next: inv.publicArgv("work", "land", args[0]), nextReason: "after a person has declared its end"})
-		}
-		if _, _, problem := inv.actingAs("work land --whole", args[0], actorHuman); problem != nil {
+		inv.wholeBy = strings.TrimPrefix(inv.input.text("by"), "human:")
+		if lineage != "" {
+			if inv.input.has("by") {
+				return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this agent session cannot name a person with --by; nothing was done", next: inv.typedArgvLess("by")})
+			}
+			projection, _, problem := inv.projection()
+			if problem != nil {
+				return inv.render(*problem)
+			}
+			held, _, err := inv.heldGoals(projection)
+			file := projection.Tree.Live[args[0]]
+			holder := "nobody"
+			if file != nil && file.Claimed != nil {
+				holder = file.Claimed.Machine + "+" + file.Claimed.Lineage
+			}
+			if err != nil || !slices.Contains(held, args[0]) {
+				return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "goal " + args[0] + " is claimed by " + holder + "; only the session holding it declares its end; nothing was done", next: inv.publicArgv("goal", "show", args[0])})
+			}
+			inv.wholeBy = "seat:" + holder
+		} else if _, _, problem := inv.actingAs("work land --whole", args[0], actorHuman); problem != nil {
 			return inv.render(*problem)
 		}
 	}
@@ -2118,7 +2141,14 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult 
 				return *queued
 			}
 			if data, ok := queued.Data.(map[string]any); ok {
-				if entry, ok := data["queue"].(plain.Entry); ok && entry.Records {
+				if entry, ok := data["queue"].(plain.Entry); ok && (entry.Records || entry.State == plain.StateLanded) {
+					if entry.Records {
+						inv.landingCode, _, err = inv.latestLaneGoalEntry(laneInstall, goalID, state.EndpointTip)
+						if err != nil {
+							return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: "the landing lane's code entry can't be read; nothing was recorded", Details: []string{err.Error()},
+								next: inv.sameCommand(), nextReason: "tries reading the lane's code entry again"}
+						}
+					}
 					return *queued
 				}
 			}

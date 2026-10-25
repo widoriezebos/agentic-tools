@@ -514,7 +514,11 @@ func TestLaneLandingRefusalDoesNotRecordALandedLine(t *testing.T) {
 	state.status.Status.Units = nil
 	state.status.Status.Commits = nil
 	helmMust(t, os.Remove(filepath.Join(b.root(), "plans", "designs", "landing-work.md")))
-	_, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: state.status.BranchTip, At: laneTestNow.UTC().Format(time.RFC3339)})
+	// An older landed tip cannot answer a request at a different branch tip.
+	olderTip := strings.Repeat("1", 40)
+	b.owners.laneLatest = nil
+	b.owners.laneContains = func(sha, main string) (bool, error) { return sha == olderTip || sha == main, nil }
+	_, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: olderTip, At: laneTestNow.UTC().Format(time.RFC3339)})
 	helmMust(t, err)
 	b.owners.recordLanded = func(*intentInvocation, string) error {
 		t.Fatal("a refusal recorded a landed line")

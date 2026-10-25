@@ -92,6 +92,7 @@ type UnitRounds struct {
 
 // Entry is one hand-in and what became of it.
 type Entry struct {
+	WholeBy      string        `json:"wholeBy,omitempty"`
 	ReturnOrigin *ReturnOrigin `json:"return-origin,omitempty"`
 	goal.AreaSnapshot
 	DrainBy   string           `json:"drainBy,omitempty"`
@@ -246,7 +247,7 @@ func entriesAndOrdinals(lines []Line) ([]Entry, []int) {
 				}
 				index[key] = len(entries)
 				ordinals = append(ordinals, ordinal+1)
-				entries = append(entries, Entry{AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
+				entries = append(entries, Entry{WholeBy: line.WholeBy, AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
 			}
 			continue
 		}
@@ -435,7 +436,7 @@ func handIn(install string, line Line, person []string, effects ...ProveSeams) (
 		if err := closeGoalStopsWithSeamsLocked(install, line.Goal, "hand-in "+line.Goal, firstEffects(effects).now(), firstEffects(effects)); err != nil {
 			return err
 		}
-		entry, added = Entry{AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
+		entry, added = Entry{WholeBy: line.WholeBy, AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
 		return nil
 	})
 	return entry, added, err

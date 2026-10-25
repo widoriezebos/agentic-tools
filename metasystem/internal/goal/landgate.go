@@ -212,6 +212,15 @@ func since(f *GoalFile) int {
 	return 0
 }
 
+func landedSinceLanding(f *GoalFile) bool {
+	for _, h := range f.History[since(f):] {
+		if h.Verb == LandedVerb {
+			return true
+		}
+	}
+	return false
+}
+
 func newestWord(f *GoalFile) *word {
 	if f == nil {
 		return nil
@@ -309,11 +318,7 @@ func ReadGate(f *GoalFile, s GateSettings, now time.Time) GateReading {
 	if said := newestWord(f); said != nil {
 		read.Word, read.WordBy, read.WordTip = said.kind, said.by, said.tip
 	}
-	for _, h := range f.History[since(f):] {
-		if h.Verb == LandedVerb {
-			read.Landed = true
-		}
-	}
+	read.Landed = landedSinceLanding(f)
 	if read.WaitsForHuman || len(read.HeldBy) > 0 || f.Landing == nil {
 		return read
 	}
@@ -538,10 +543,8 @@ func landedRequest(r VerbRequest, id, reason string) PublishRequest {
 			if f.State != StateClaimed || f.Claimed == nil || !ownPair(f.Claimed, r.Actor) {
 				return nil, fmt.Errorf("goal %s is not this seat's claim; its landing is recorded by the seat that holds it", id)
 			}
-			for _, h := range f.History[since(f):] {
-				if h.Verb == LandedVerb {
-					return nil, AlreadyHolds{Reason: "goal " + id + "'s landing is already recorded"}
-				}
+			if landedSinceLanding(f) {
+				return nil, AlreadyHolds{Reason: "goal " + id + "'s landing is already recorded"}
 			}
 			touch(f, r, LandedVerb, []string{id})
 			f.History[len(f.History)-1].Reason = reason
@@ -599,8 +602,10 @@ func ResolveGateSettings(confPath string) (GateSettings, error) {
 // (g1-s70 D3): a due landing, or the revision of a sent-back goal.
 type HolderStep struct {
 	Goal string
-	// Revise is a send-back's revision; otherwise the step is a due landing.
+	// Revise is a send-back's revision.
 	Revise bool
+	// Conclude finishes a goal whose landing is recorded; otherwise it lands.
+	Conclude bool
 	// Why is what makes the step due, as the Stop says it.
 	Why string
 }
@@ -616,6 +621,10 @@ func HolderStepsDue(files []*GoalFile, s GateSettings, now time.Time) []HolderSt
 	for _, file := range files {
 		if review, standing := SentBackOf(file); standing {
 			steps = append(steps, HolderStep{Goal: file.Id, Revise: true, Why: fmt.Sprintf("sent back by %s at %s", review.By, short(review.Tip))})
+			continue
+		}
+		if file.IsLandingClaim() && landedSinceLanding(file) {
+			steps = append(steps, HolderStep{Goal: file.Id, Conclude: true, Why: "its landing is recorded; it is concluded once its deploy shows"})
 			continue
 		}
 		if due, why := LandingDue(file, s, now); due {
@@ -648,6 +657,8 @@ func (s *Store) takeHolderSteps(files []*GoalFile) []string {
 			lines = append(lines, s.TakeHolderStep(step))
 		case step.Revise:
 			lines = append(lines, fmt.Sprintf("SENT BACK %s, %s: metasystem work revise %s", step.Goal, step.Why, step.Goal))
+		case step.Conclude:
+			lines = append(lines, fmt.Sprintf("CONCLUSION DUE %s: metasystem goal done %s --reason TEXT", step.Goal, step.Goal))
 		default:
 			lines = append(lines, fmt.Sprintf("LANDING DUE %s, %s: metasystem work land %s", step.Goal, step.Why, step.Goal))
 		}

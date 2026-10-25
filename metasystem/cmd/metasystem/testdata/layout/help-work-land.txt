@@ -36,8 +36,8 @@ MetaSystem administration
   metasystem work land G --exception CODE --reason TEXT --by NAME --upgrade-goals [--expires 2h] [--replace-exception ID [--transfer]]
 
 Options  before or after the target; -- ends them
-  --whole                       with --by NAME: declare the end of a goal whose design has no Units
-                                table
+  --whole                       declare the end of a goal whose design has no Units table: a person
+                                with --by NAME, or the session holding the goal with --delivered
   --records PATH (repeatable)   commit these record files on the goal branch, publish it and hand it
                                 in; repeat for each path, relative to the checkout top
   --through COMMIT              land a human-approved prefix ending at this unit commit

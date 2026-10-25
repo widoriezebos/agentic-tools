@@ -26,17 +26,21 @@ import (
 // process and answers the line the Stop shows.
 func holderStepTaker(cwd string, owners intentOwners) func(goal.HolderStep) string {
 	return func(step goal.HolderStep) string {
-		verb := "land"
+		group, verb := "work", "land"
+		args := []string{step.Goal, "--json"}
 		if step.Revise {
 			verb = "revise"
+		} else if step.Conclude {
+			group, verb = "goal", "done"
+			args = append(args, "--reason", "landed through the lane and deployed; concluded by the session holding it")
 		}
-		command, _ := findIntentAction("work", verb)
+		command, _ := findIntentAction(group, verb)
 		var stdout, stderr bytes.Buffer
-		runIntentIn(command, []string{step.Goal, "--json"}, &stdout, &stderr, cwd, owners)
+		runIntentIn(command, args, &stdout, &stderr, cwd, owners)
 		var result intentResult
 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
-			result = intentResult{Outcome: intentFailed, Summary: "work " + verb + " gave no answer the Stop could read",
-				next: []string{"metasystem", "work", verb, step.Goal}, nextReason: "shows its answer",
+			result = intentResult{Outcome: intentFailed, Summary: group + " " + verb + " gave no answer the Stop could read",
+				next: []string{"metasystem", group, verb, step.Goal}, nextReason: "shows its answer",
 				Details: []string{strings.TrimSpace(stderr.String())}}
 		}
 		return holderStepLine(step, result)
@@ -48,6 +52,10 @@ func holderStepLine(step goal.HolderStep, result intentResult) string {
 	taken := result.Outcome != intentRefused && result.Outcome != intentFailed
 	data, _ := result.Data.(map[string]any)
 	switch {
+	case step.Conclude && taken:
+		return "CONCLUDED " + step.Goal
+	case step.Conclude:
+		return fmt.Sprintf("CONCLUSION WAITS %s: %s", step.Goal, result.Summary)
 	case step.Revise && taken:
 		return fmt.Sprintf("REVISION STARTED %s, %s: %s", step.Goal, step.Why, result.Summary)
 	case step.Revise:

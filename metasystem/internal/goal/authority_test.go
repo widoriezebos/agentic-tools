@@ -180,9 +180,9 @@ func TestHumanOriginGoalsAreHumanReserved(t *testing.T) {
 	if res, err := Open(verbReqFor(a, "01J5X00000000000000000HG00", "mac-a"), "human-owned", "Wido's standing wish.", OriginHuman, "Go."); err != nil || res.Outcome != OutcomeConfirmed {
 		t.Fatalf("open: %+v %v", res, err)
 	}
-	// An agent can neither conclude nor park the human's goal.
+	// Without a recorded landing, an agent cannot conclude; parking stays a person's act.
 	res, err := Done(verbReqFor(a, "01J5X00000000000000000HG10", "mac-a"), "human-owned", "Presumed done.")
-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "human act") {
+	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "the session holding it concludes it once its landing is recorded") {
 		t.Fatalf("agent done on human-origin refuses: %+v %v", res, err)
 	}
 	res, err = Park(verbReqFor(a, "01J5X00000000000000000HG20", "mac-a"), "human-owned", "agent tidy-up")

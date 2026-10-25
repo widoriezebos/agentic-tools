@@ -190,6 +190,13 @@ func landed(result intentResult) bool {
 func (inv *intentInvocation) noteLanded(goalID string, result intentResult) intentResult {
 	data, _ := result.Data.(map[string]any)
 	if entry, ok := data["queue"].(plain.Entry); ok && entry.State == plain.StateLanded && result.Outcome == intentUnchanged {
+		if entry.Records {
+			if inv.landingCode.State != plain.StateLanded {
+				return result
+			}
+			entry = inv.landingCode
+		}
+		inv.wholeBy = entry.WholeBy
 		inv.landingWords = entry.Landing.Words()
 	}
 	if !landed(result) && inv.landingWords == "" {
@@ -238,6 +245,9 @@ func productionRecordLanded(inv *intentInvocation, goalID string) error {
 		return err
 	}
 	under := goal.LandedUnder(file, settings)
+	if inv.wholeBy != "" {
+		under += "; end declared by " + inv.wholeBy
+	}
 	if inv.landingWords != "" {
 		under += "; " + inv.landingWords
 	}
