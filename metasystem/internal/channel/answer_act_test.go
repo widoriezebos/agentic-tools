@@ -3,6 +3,7 @@ package channel
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -359,6 +360,75 @@ func TestChannelChoiceRunsItsActInTheFullPoll(t *testing.T) {
 			t.Fatalf("the fresh reply did not act: %q %+v", b.act.calls, b.question())
 		}
 		b.wantPosted("Continue it is; it waits: the goal's budget is used up. When that is fixed, reply Continue again.", confirmation(b))
+	})
+	t.Run("retry and accept the size say what went on", func(t *testing.T) {
+		t.Parallel()
+		for label, did := range map[string]string{"Retry": `The failed step of "g" started again`, "Accept the size": `The checks of "g" went on`} {
+			b := newChoiceBed(t)
+			q := b.question()
+			q.Options[1].Label, q.Recommendation = label, label
+			if err := writeJSON(questionPath(b.repo.root, q.ID), q); err != nil {
+				t.Fatal(err)
+			}
+			b.reply(strings.ToLower(label))
+			b.poll()
+			b.poll()
+			b.wantPosted(label + " it is. " + did + " at " + b.now.Local().Format("15:04") + ". If it stops again, I ask here. Undo: metasystem work stop g.")
+		}
+	})
+	t.Run("a reply to the executor's own line is a reply to the question", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		b.act.reply = func([]string) string { return `{"outcome":"refused","summary":"the goal's budget is closed"}` }
+		b.reply("continue")
+		b.poll()
+		b.poll()
+		// The test provider names each post by its count; the refusal line
+		// is the last post.
+		notice := fmt.Sprint(len(b.provider.posts))
+		if len(b.posted()) != 1 || notice == b.question().Thread.ID {
+			t.Fatalf("the refusal line was not posted: %q", b.posted())
+		}
+		b.act.reply = func([]string) string { return b.started() }
+		b.provider.inbound = append(b.provider.inbound, Inbound{Ref: MessageRef{ID: "to-the-notice", ThreadID: notice}, ThreadID: notice, UserID: "UWIDO", Text: "continue", SentAt: b.now})
+		b.poll()
+		if len(b.act.calls) != 2 || b.question().Answer.Phase != "acted" {
+			t.Fatalf("a reply to the refusal line did not act: %q %+v", b.act.calls, b.question())
+		}
+	})
+	t.Run("a reply to a question its unit closed says when", func(t *testing.T) {
+		t.Parallel()
+		for _, kept := range []bool{true, false} {
+			b := newChoiceBed(t)
+			// Another open question keeps the inbox read.
+			other := contractRequest(b.repo.root)
+			other.Facts = []string{"another stop"}
+			if _, err := Ask(other); err != nil {
+				t.Fatal(err)
+			}
+			closed := b.now.Add(-time.Hour)
+			if err := RecordUnitStopAct(b.repo.root, UnitStopAct{ID: "closure", Goal: "g", Loop: "unit-build", Subject: "g/u/run", Attempt: 1, Findings: []string{"build-partial"}, Kind: "work-revise", Reason: "continued at the terminal", At: closed}); err != nil {
+				t.Fatal(err)
+			}
+			want := "This was settled at " + closed.Local().Format("15:04") + ": work-revise: continued at the terminal."
+			if !kept {
+				q := b.question()
+				q.ClosedAt = time.Time{}
+				if err := writeJSON(questionPath(b.repo.root, q.ID), q); err != nil {
+					t.Fatal(err)
+				}
+				want = "This was settled: work-revise: continued at the terminal."
+			}
+			if q := b.question(); q.State != "closed" || kept && !q.ClosedAt.Equal(closed) {
+				t.Fatalf("the closure kept no time: %+v", q)
+			}
+			b.reply("continue")
+			b.poll()
+			b.poll()
+			if posted := b.posted(); len(posted) == 0 || posted[len(posted)-1] != want || len(b.act.calls) != 0 {
+				t.Fatalf("settled line = %q, want %q (calls %q)", posted, want, b.act.calls)
+			}
+		}
 	})
 	t.Run("a reply after the act is answered for one day", func(t *testing.T) {
 		t.Parallel()

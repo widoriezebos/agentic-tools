@@ -442,7 +442,7 @@ func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 			view: func(page *textui.Page) { page.Done(joinFacts(page, headline...)) }})
 	}
 	provider, destination := inv.owners.processes.channelLink(inv.stateRoot)
-	q, err := channel.Withdraw(inv.stateRoot, id, reason, provider, destination)
+	q, err := channel.Withdraw(inv.stateRoot, id, reason, provider, destination, inv.unitStopNow())
 	switch {
 	case errors.Is(err, channel.ErrChannelBusy):
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: err.Error(), next: inv.sameCommand(), nextReason: "the same withdrawal runs once the poll finishes"})

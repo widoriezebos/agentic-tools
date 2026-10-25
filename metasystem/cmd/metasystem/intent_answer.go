@@ -93,8 +93,7 @@ func (inv *intentInvocation) answerAdmitted() bool {
 }
 
 // answerProgress puts what came of the chosen act in the result, read from
-// the run's own record: accepted once this correction is retained, started
-// once its round's build has launched.
+// the run's own record by actProgress.
 func (inv *intentInvocation) answerProgress(result intentResult) intentResult {
 	progress := map[string]string{"state": "refused"}
 	choice := inv.chosenAnswer()
@@ -102,17 +101,10 @@ func (inv *intentInvocation) answerProgress(result intentResult) intentResult {
 		subject := choice.question.UnitStop.Subject
 		after, _ := strconv.Atoi(inv.input.text("after"))
 		record, err := inv.unitRunner().Status(subject[strings.LastIndex(subject, "/")+1:])
-		index := slices.IndexFunc(record.Revisions, func(revision launch.UnitRevision) bool {
-			return revision.After == after && revision.Person == choice.person && revision.Reason == inv.input.text("reason")
-		})
-		if err == nil && index >= 0 {
-			progress["state"], progress["hold"] = "accepted", answerHold(result)
-			for _, round := range record.Rounds {
-				if round.Number == record.Revisions[index].Attempt && slices.ContainsFunc(round.Steps, func(step launch.UnitStep) bool {
-					return step.Name == "build" && (step.State == launch.StepRunning || step.State == launch.StepPassed || step.State == launch.StepFailed)
-				}) {
-					progress = map[string]string{"state": "started"}
-				}
+		if state := actProgress(record, inv.command.action == "review", choice.person, inv.input.text("reason"), after); err == nil && state != "" {
+			progress["state"] = state
+			if state == "accepted" {
+				progress["hold"] = answerHold(result)
 			}
 		}
 	}
@@ -123,6 +115,80 @@ func (inv *intentInvocation) answerProgress(result intentResult) intentResult {
 	data["answer"] = progress
 	result.Data = data
 	return result
+}
+
+// launchedStep is a step past its start.
+func launchedStep(step launch.UnitStep) bool {
+	return step.State == launch.StepRunning || step.State == launch.StepPassed || step.State == launch.StepFailed
+}
+
+// heldRequest says the person's retry or size acceptance is retained in
+// round and its work has not started.
+func heldRequest(round launch.UnitRound, person, reason string) bool {
+	held := round.SizeAcceptedBy == person && len(round.Steps) > 0 && !slices.ContainsFunc(round.Steps[1:], launchedStep)
+	for _, step := range round.Steps {
+		held = held || step.RetryBy == person && step.RetryReason == reason && step.RetryLaunch != "" && (step.State == launch.StepPending || step.State == launch.StepStarting) && step.ExecutionStartedAt == ""
+	}
+	return held
+}
+
+func progressWord(started bool) string {
+	if started {
+		return "started"
+	}
+	return "accepted"
+}
+
+// actProgress is what the run's record says of the person's act: accepted
+// once it is retained, started once its work launched. A correction starts a
+// new round's build; a retry starts the retried step again in its own round;
+// a size acceptance starts the round's next step.
+func actProgress(record launch.UnitRunRecord, review bool, person, reason string, after int) string {
+	if review && len(record.Rounds) > 0 {
+		round := record.Rounds[len(record.Rounds)-1]
+		for _, step := range round.Steps {
+			if step.RetryBy == person && step.RetryReason == reason {
+				return progressWord(step.LaunchID != step.RetryLaunch && launchedStep(step))
+			}
+		}
+		if round.SizeAcceptedBy == person && len(round.Steps) > 0 {
+			return progressWord(slices.ContainsFunc(round.Steps[1:], launchedStep))
+		}
+		return ""
+	}
+	index := slices.IndexFunc(record.Revisions, func(revision launch.UnitRevision) bool {
+		return revision.After == after && revision.Person == person && revision.Reason == reason
+	})
+	if review || index < 0 {
+		return ""
+	}
+	for _, round := range record.Rounds {
+		if round.Number == record.Revisions[index].Attempt && slices.ContainsFunc(round.Steps, func(step launch.UnitStep) bool { return step.Name == "build" && launchedStep(step) }) {
+			return "started"
+		}
+	}
+	return "accepted"
+}
+
+// answerReplay continues a person's retained, unstarted retry or size
+// acceptance when a fresh answer chose it again, as the person; it never
+// records the request twice. Anything else keeps the verb's own result.
+func (inv *intentInvocation) answerReplay(id string, work launch.NamedWork) *intentResult {
+	if !inv.input.has("answer") || work.Record == nil || len(work.Record.Rounds) == 0 {
+		return nil
+	}
+	actor, _, problem := inv.actingAs("work review", id, actorHuman)
+	if problem != nil {
+		return problem
+	}
+	if !heldRequest(work.Record.Rounds[len(work.Record.Rounds)-1], unitStopActor(actor), inv.input.text("reason")) {
+		return nil
+	}
+	runner := inv.unitRunner()
+	runner.Actor = "person"
+	resumed, err := runner.Continue(launch.UnitRequest{Resume: work.Run})
+	result := inv.unitOutcome(runner, resumed, err, workTargets(id, work), inv.workArgv(*work.Record, "wait"))
+	return &result
 }
 
 // answerHold is why an accepted act waits, in plain words.

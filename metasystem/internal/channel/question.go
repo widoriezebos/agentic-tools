@@ -98,6 +98,10 @@ type Question struct {
 	RetiredAt      time.Time         `json:"retiredAt,omitzero"`
 	Contract       bool              `json:"contract,omitempty"`
 	Attempts       []Attempt         `json:"attempts,omitempty"`
+	// Notices are the executor's own posts in the thread; a reply to one is
+	// a reply to the question.
+	Notices  []string  `json:"notices,omitempty"`
+	ClosedAt time.Time `json:"closedAt,omitzero"`
 }
 
 type AskRequest struct {
@@ -675,6 +679,11 @@ func ProposedBox(b goal.Budget) string {
 }
 
 func Close(repo, id, because string, p Provider, d DestinationConfig, successfulAct ...string) error {
+	return closeAt(repo, id, because, p, d, time.Now(), successfulAct...)
+}
+
+// closeAt is Close at the given time, which the question keeps.
+func closeAt(repo, id, because string, p Provider, d DestinationConfig, at time.Time, successfulAct ...string) error {
 	q, err := ReadQuestion(repo, id)
 	if err != nil {
 		return err
@@ -686,11 +695,11 @@ func Close(repo, id, because string, p Provider, d DestinationConfig, successful
 	if q.Thread != nil && p != nil {
 		_, _ = p.Post(contextBackground{}, d, "Closed: "+plainSentence(because, false), q.Thread)
 	}
-	q.State = "closed"
+	q.State, q.ClosedAt = "closed", at.UTC()
 	if q.UnitStop != nil && len(successfulAct) > 0 {
 		q.UnitStop.ClosedBy = successfulAct[0]
 	}
-	if LaneStopCommand(q) != "" || q.Recovery != nil {
+	if LaneStopCommand(q) != "" || q.Recovery != nil || q.Contract {
 		q.ClosedBecause = because
 		if q.Recovery != nil {
 			q.Facts = append(q.Facts, because)
