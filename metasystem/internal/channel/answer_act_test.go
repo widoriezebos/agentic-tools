@@ -1,11 +1,17 @@
 package channel
 
 import (
+	"context"
+	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
 func contractRequest(root string) AskRequest {
@@ -93,5 +99,323 @@ func TestContractQuestionRendersInContractOrder(t *testing.T) {
 		if got := ReplyInstructionsAt(root, q); got != answer {
 			t.Fatalf("question show's answer line = %q, want %q", got, answer)
 		}
+	}
+}
+
+// actScript stands in for the act's verb: it records each argv and answers
+// with the envelope the row scripts.
+type actScript struct {
+	calls [][]string
+	reply func(argv []string) string
+}
+
+func (s *actScript) run(_ context.Context, _ string, argv []string) ([]byte, error) {
+	s.calls = append(s.calls, argv)
+	return []byte(s.reply(argv)), nil
+}
+
+type choiceBed struct {
+	t        *testing.T
+	repo     *pollRepository
+	provider *testProvider
+	act      *actScript
+	q        Question
+	now      time.Time
+	sent     int
+}
+
+func newChoiceBed(t *testing.T) *choiceBed {
+	t.Helper()
+	repo, provider, legacy, now := pollLedgerBed(t)
+	if err := os.Remove(questionPath(repo.root, legacy.ID)); err != nil {
+		t.Fatal(err)
+	}
+	conf := filepath.Join(repo.root, "metasystem.conf")
+	data, _ := os.ReadFile(conf)
+	if err := os.WriteFile(conf, append(data, []byte("channel.human.answer-code=off\n")...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	request := contractRequest(repo.root)
+	request.UnitStop = &UnitStopQuestion{Loop: "unit-build", Subject: "g/u/run", Attempt: 1, Finding: "build-partial", Needs: "metasystem work revise g --by Wido", AcceptableActs: []string{"work-revise"}}
+	q, err := Ask(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	b := &choiceBed{t: t, repo: repo, provider: provider, q: q, now: now}
+	b.act = &actScript{reply: func([]string) string { return b.started() }}
+	b.poll()
+	if b.question().Thread == nil {
+		t.Fatal("the question was not posted")
+	}
+	return b
+}
+
+// started is the act closing its own typed question, as work revise's
+// record does, and saying so with a later stop's outcome word.
+func (b *choiceBed) started() string {
+	act := UnitStopAct{ID: "revise-" + b.q.ID, Goal: "g", Loop: "unit-build", Subject: "g/u/run", Attempt: 1, Findings: []string{"build-partial"}, Kind: "work-revise", Reason: "continued", At: b.now}
+	if err := RecordUnitStopAct(b.repo.root, act); err != nil {
+		b.t.Fatal(err)
+	}
+	return `{"outcome":"refused","summary":"the next round stopped","data":{"answer":{"state":"started"}}}`
+}
+
+func (b *choiceBed) config() PollConfig {
+	c := pollBedConfig(b.repo, b.provider, b.now)
+	c.RunAct = b.act.run
+	return c
+}
+
+func (b *choiceBed) poll() {
+	b.t.Helper()
+	if _, err := b.repo.poll(context.Background(), b.config()); err != nil {
+		b.t.Fatal(err)
+	}
+}
+
+// reply is the person's new message in the question's thread.
+func (b *choiceBed) reply(text string) {
+	b.sent++
+	id := "reply-" + string(rune('a'+b.sent))
+	b.provider.inbound = append(b.provider.inbound, Inbound{Ref: MessageRef{ID: id, ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: text, SentAt: b.now})
+}
+
+func (b *choiceBed) question() Question {
+	q, err := ReadQuestion(b.repo.root, b.q.ID)
+	if err != nil {
+		b.t.Fatal(err)
+	}
+	return q
+}
+
+func (b *choiceBed) lastAttempt() Attempt {
+	attempts := b.question().Attempts
+	if len(attempts) == 0 {
+		b.t.Fatal("no attempt recorded")
+	}
+	return attempts[len(attempts)-1]
+}
+
+// posted is every line posted after the question itself.
+func (b *choiceBed) posted() []string { return b.provider.posts[1:] }
+
+func (b *choiceBed) wantPosted(lines ...string) {
+	b.t.Helper()
+	if !slices.Equal(b.posted(), lines) {
+		b.t.Fatalf("thread = %q, want %q", b.posted(), lines)
+	}
+}
+
+func TestChannelChoiceRunsItsActInTheFullPoll(t *testing.T) {
+	t.Parallel()
+	confirmation := func(b *choiceBed) string {
+		return `Continue it is. The builder's next round of "g" started at ` + b.now.Local().Format("15:04") + ". If it stops again, I ask here. Undo: metasystem work stop g."
+	}
+	t.Run("continue acts once and a second continue is already done", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		b.reply(" continue ")
+		b.poll()
+		want := append(slices.Clone(b.q.Options[1].Act), "--answer", b.q.ID, "--json")
+		q := b.question()
+		if len(b.act.calls) != 1 || !slices.Equal(b.act.calls[0], want) {
+			t.Fatalf("act runs = %q, want %q", b.act.calls, want)
+		}
+		if q.Answer == nil || q.Answer.Phase != "acted" || q.State != "closed" || b.lastAttempt().Outcome != "acted" || b.lastAttempt().Label != "Continue" {
+			t.Fatalf("after the act: %+v", q)
+		}
+		b.poll()
+		b.wantPosted(confirmation(b))
+		b.reply("Continue")
+		b.poll()
+		b.poll()
+		b.wantPosted(confirmation(b), "Already done at "+b.now.Local().Format("15:04")+" (Continue).")
+		if len(b.act.calls) != 1 {
+			t.Fatalf("a repeat reply ran the act again: %q", b.act.calls)
+		}
+		b.poll()
+		if len(b.posted()) != 2 {
+			t.Fatalf("a handled reply was read again: %q", b.posted())
+		}
+	})
+	t.Run("stop here keeps the question and a later continue acts", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		b.reply("stop here")
+		b.poll()
+		q := b.question()
+		if q.State != "open" || q.Answer != nil || b.lastAttempt().Outcome != "chosen" || len(b.act.calls) != 0 || len(GoalOpenQuestions(b.repo.root)) != 1 {
+			t.Fatalf("stop here: %+v calls=%q", q, b.act.calls)
+		}
+		b.poll()
+		b.wantPosted("Stop here it is. Nothing runs until you choose again; this question stays open.")
+		b.reply("continue")
+		b.poll()
+		if len(b.act.calls) != 1 || b.question().Answer.Phase != "acted" {
+			t.Fatalf("a later continue did not act: %q %+v", b.act.calls, b.question())
+		}
+	})
+	t.Run("an unknown word is not caught and never read again", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		b.reply("maybe")
+		b.poll()
+		b.poll()
+		b.poll()
+		q := b.question()
+		if q.Answer != nil || q.State != "open" || len(q.Attempts) != 0 || len(b.act.calls) != 0 {
+			t.Fatalf("an unknown word was recorded: %+v", q)
+		}
+		b.wantPosted("I did not catch that. Reply: Continue / Stop here")
+		b.reply("continue")
+		b.poll()
+		if len(b.act.calls) != 1 {
+			t.Fatalf("the next reply was not matched: %q", b.act.calls)
+		}
+	})
+	t.Run("a refused act leaves the question answerable", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		b.act.reply = func([]string) string {
+			return `{"outcome":"refused","summary":"the goal's budget is closed (5 days used)","data":{"answer":{"state":"refused"}}}`
+		}
+		b.reply("continue")
+		b.poll()
+		q := b.question()
+		if q.Answer != nil || q.State != "open" || b.lastAttempt().Outcome != "refused" || b.lastAttempt().Message != goal.ChannelInboxPath("fleet", &goal.ChannelInbound{Provider: "fake", MessageID: "reply-b"}) {
+			t.Fatalf("refused: %+v", q)
+		}
+		b.reply("stop here")
+		b.poll()
+		b.act.reply = func([]string) string { return b.started() }
+		b.poll()
+		b.poll()
+		if len(b.act.calls) != 1 {
+			t.Fatalf("the original continue ran again once the act could: %q", b.act.calls)
+		}
+		b.wantPosted("I could not continue: the goal's budget is closed (5 days used). The question above is still open; reply Continue again once that is fixed.",
+			"Stop here it is. Nothing runs until you choose again; this question stays open.")
+		b.reply("continue")
+		b.poll()
+		if len(b.act.calls) != 2 || b.question().Answer.Phase != "acted" {
+			t.Fatalf("a new continue did not act: %q", b.act.calls)
+		}
+	})
+	t.Run("a refusal in words a person cannot read is said plainly", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		b.act.reply = func([]string) string { return `{"outcome":"refused","summary":"run 20261024abcdef0123 is busy"}` }
+		b.reply("continue")
+		b.poll()
+		b.poll()
+		b.wantPosted("I could not continue: the command refused it; metasystem status g at your terminal says why. The question above is still open; reply Continue again once that is fixed.")
+	})
+	t.Run("the settlement pass records and never acts", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		b.reply("continue")
+		c := b.config()
+		c.answerCodeOff, c.MaxDispositions = true, 5
+		endpoint := func() (goal.Endpoint, error) { return b.repo.endpoint, nil }
+		if err := receiveToInbox(context.Background(), c, nil, endpoint, &PollResult{}); err != nil {
+			t.Fatal(err)
+		}
+		settle := b.config()
+		settle.Provider = nil
+		if _, err := SettleReplies(context.Background(), settle, b.repo.resolve); err != nil {
+			t.Fatal(err)
+		}
+		if q := b.question(); q.Answer == nil || q.Answer.Phase != "recorded" || len(b.act.calls) != 0 {
+			t.Fatalf("the settlement pass: %+v calls=%q", q, b.act.calls)
+		}
+		b.poll()
+		b.poll()
+		if len(b.act.calls) != 1 || b.question().Answer.Phase != "acted" {
+			t.Fatalf("the full poll did not act once: %q", b.act.calls)
+		}
+	})
+	t.Run("an accepted act waits for a fresh reply", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		b.act.reply = func([]string) string {
+			return `{"outcome":"refused","summary":"refused","data":{"answer":{"state":"accepted","hold":"the goal's budget is used up"}}}`
+		}
+		b.reply("continue")
+		b.poll()
+		if q := b.question(); q.State != "open" || q.Answer == nil || q.Answer.Phase != "accepted" || b.lastAttempt().Outcome != "accepted" {
+			t.Fatalf("accepted: %+v", q)
+		}
+		b.act.reply = func([]string) string { return b.started() }
+		b.poll()
+		b.poll()
+		if len(b.act.calls) != 1 {
+			t.Fatalf("a poll restarted the held request by itself: %q", b.act.calls)
+		}
+		b.wantPosted("Continue it is; it waits: the goal's budget is used up. When that is fixed, reply Continue again.")
+		b.reply("continue")
+		b.poll()
+		b.poll()
+		if len(b.act.calls) != 2 || b.question().Answer.Phase != "acted" {
+			t.Fatalf("the fresh reply did not act: %q %+v", b.act.calls, b.question())
+		}
+		b.wantPosted("Continue it is; it waits: the goal's budget is used up. When that is fixed, reply Continue again.", confirmation(b))
+	})
+	t.Run("a reply after the act is answered for one day", func(t *testing.T) {
+		t.Parallel()
+		for _, late := range []bool{false, true} {
+			b := newChoiceBed(t)
+			b.reply("continue")
+			b.poll()
+			b.poll()
+			acted := b.now
+			b.now = acted.Add(24*time.Hour - time.Minute)
+			if late {
+				b.now = acted.Add(24*time.Hour + time.Minute)
+			}
+			b.reply("continue")
+			b.poll()
+			b.poll()
+			want := []string{confirmation(&choiceBed{now: acted}), "Already done at " + acted.Local().Format("15:04") + " (Continue)."}
+			if late {
+				want = want[:1]
+			}
+			b.wantPosted(want...)
+		}
+	})
+}
+
+func TestDefaultActRunnerRunsTheEngineInTheRepository(t *testing.T) {
+	t.Parallel()
+	engine, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	var name string
+	var args []string
+	var cancelled error
+	runner := engineActRunner(func(ctx context.Context, path string, words ...string) *exec.Cmd {
+		name, args, cancelled = path, words, ctx.Err()
+		return exec.CommandContext(ctx, "true")
+	})
+	duty, cancel := context.WithCancel(context.Background())
+	cancel()
+	dir := t.TempDir()
+	if _, err := runner(duty, dir, []string{"metasystem", "work", "revise", "g"}); err != nil && !errors.Is(err, context.Canceled) {
+		t.Fatal(err)
+	}
+	if name != engine || !slices.Equal(args, []string{"work", "revise", "g"}) || cancelled != nil {
+		t.Fatalf("default act runner: %q %q cancelled=%v", name, args, cancelled)
+	}
+	var seenDir string
+	runner = engineActRunner(func(ctx context.Context, _ string, _ ...string) *exec.Cmd {
+		cmd := exec.CommandContext(ctx, "pwd")
+		cmd.Dir = "elsewhere"
+		return cmd
+	})
+	out, err := runner(context.Background(), dir, []string{"metasystem"})
+	seenDir = strings.TrimSpace(string(out))
+	resolved, _ := filepath.EvalSymlinks(dir)
+	if err != nil || (seenDir != dir && seenDir != resolved) {
+		t.Fatalf("the act ran in %q (%v), want %q", seenDir, err, dir)
 	}
 }

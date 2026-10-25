@@ -909,7 +909,7 @@ func runIntentRevise(inv *intentInvocation) int {
 			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to record its run"})
 	}
 	person, reason, impact := "", inv.input.text("reason"), ""
-	if strings.TrimSpace(reason) != "" || inv.input.has("by") {
+	if strings.TrimSpace(reason) != "" || inv.input.has("by") || inv.input.has("answer") {
 		actor, proof, problem := inv.actingAs("revise", id, actorHuman)
 		if problem != nil {
 			return inv.render(*problem)

@@ -76,11 +76,20 @@ func (inv *intentInvocation) answerActor(args []string) ([]string, *humanauthori
 	enrollment, err := humanauthority.ReadEnrollment(inv.stateRoot)
 	proof, proofErr := humanauthority.VerifiedChannelAnswerProof(inv.stateRoot, governance.RecordedChannelAuthority{Outcome: governance.AuthorityOutcomeVerifiedChannelAnswer,
 		Provider: answer.Provider, UserID: answer.UserID, MessageRef: answer.Ref.ThreadID + "/" + answer.Ref.ID, ContextID: choice.question.ID, Step: answer.Step}, inv.unitStopNow())
-	if err != nil || enrollment.Human == "" || proofErr != nil {
-		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Summary: "nobody is enrolled on this machine, so the answer names no person; the person enrols at his terminal first; nothing was done"}
+	if err != nil || enrollment.Human == "" {
+		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Summary: "nobody is enrolled on this machine, so the answer names no person; enrol at the terminal first; nothing was done"}
+	}
+	if proofErr != nil {
+		return nil, nil, &intentResult{Outcome: intentRefused, code: 1, Summary: "the answer in the channel could not be proved as the person's word; nothing was done", Details: []string{proofErr.Error()}}
 	}
 	choice.person = enrollment.Human
 	return append(args, "--by", choice.person), &proof, nil
+}
+
+// answerAdmitted says the person's channel answer was proved for this act
+// by actingAs.
+func (inv *intentInvocation) answerAdmitted() bool {
+	return inv.input.has("answer") && inv.choice != nil && inv.choice.person != ""
 }
 
 // answerProgress puts what came of the chosen act in the result, read from

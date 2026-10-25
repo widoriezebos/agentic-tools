@@ -158,8 +158,12 @@ func TestChannelAnswerBindsExactlyTheChosenAct(t *testing.T) {
 		amend func(*channel.Question)
 		argv  func(act []string, b *workBed) []string
 		id    string
+		want  string
+		setup func(*testing.T, *workBed)
 	}{
 		{name: "another user", amend: func(q *channel.Question) { q.Answer.UserID = "USOMEONE" }},
+		{name: "nobody enrolled", setup: unenrol, want: "nobody is enrolled on this machine"},
+		{name: "an answer that does not prove", amend: func(q *channel.Question) { q.Answer.Provider = "" }, want: "could not be proved as the person's word"},
 		{name: "an answer not yet recorded", amend: func(q *channel.Question) { q.Answer.Phase = "matched" }},
 		{name: "a closed question", amend: func(q *channel.Question) { q.State = "closed" }},
 		{name: "a question outside the contract", amend: func(q *channel.Question) { q.Contract = false }},
@@ -181,9 +185,12 @@ func TestChannelAnswerBindsExactlyTheChosenAct(t *testing.T) {
 			if row.id != "" {
 				id = row.id
 			}
+			if row.setup != nil {
+				row.setup(t, b)
+			}
 			code, refused := answerAct(t, b, argv, id)
 			r := onlyRun(t, b)
-			if code == 0 || refused.Outcome != intentRefused || !strings.Contains(refused.Summary, "nothing was done") || len(r.Revisions) != 0 || len(r.Rounds) != 1 {
+			if code == 0 || refused.Outcome != intentRefused || !strings.Contains(refused.Summary, "nothing was done") || !strings.Contains(refused.Summary, row.want) || len(r.Revisions) != 0 || len(r.Rounds) != 1 {
 				t.Fatalf("a foreign answer was admitted: %d %+v revisions=%+v", code, refused, r.Revisions)
 			}
 			if state, _ := answerState(t, refused); state != "refused" {
@@ -290,7 +297,7 @@ func TestChannelAnswerPassesTheHolderGateWithGoalOwnership(t *testing.T) {
 			return goalBranchClaimCheckWith(root, id, endpoint, machine, holder)
 		},
 		ownershipCheck: func(root, id string, endpoint goal.Endpoint) func() error {
-			return goalBranchOwnership(root, id, endpoint, machine, holder, nil, false)
+			return goalBranchOwnershipCheckWith(root, id, endpoint, machine, holder)
 		},
 	}
 	gate := func(answer bool) error {
@@ -304,6 +311,11 @@ func TestChannelAnswerPassesTheHolderGateWithGoalOwnership(t *testing.T) {
 			t.Fatalf("parse %q: %+v", argv, problem)
 		}
 		inv := &intentInvocation{command: command, raw: rest, input: input, cwd: bed.root, owners: bed.owners(&bytes.Buffer{}, &bytes.Buffer{})}
+		if answer {
+			if _, _, problem := inv.actingAs("revise", "fix-docs", actorHuman); problem != nil {
+				t.Fatalf("the answer was not admitted as the person's act: %+v", problem)
+			}
+		}
 		return inv.laneClaimCheck(conn, bed.root, "fix-docs", endpoint)()
 	}
 	if err := gate(true); err != nil {
@@ -316,5 +328,31 @@ func TestChannelAnswerPassesTheHolderGateWithGoalOwnership(t *testing.T) {
 	seatStandIn(t, bed.root, "seat-two", "person-terminal")
 	if err := gate(true); err == nil {
 		t.Fatal("the answer passed for a goal claimed by another lineage")
+	}
+}
+
+func TestChannelAnswerActNeedsItsReason(t *testing.T) {
+	t.Parallel()
+	for _, form := range []string{"goal", "run"} {
+		t.Run(form, func(t *testing.T) {
+			t.Parallel()
+			b := failedBuildQuestionBed(t)
+			var argv []string
+			q, _ := answeredCorrection(t, b, func(q *channel.Question) {
+				argv = withoutOption(q.Options[0].Act, "reason")
+				if form == "run" {
+					argv = []string{"metasystem", "work", "revise", "run:" + onlyRun(t, b).ID, "--brief", argv[slices.Index(argv, "--brief")+1]}
+				}
+				q.Options[0].Act = argv
+			})
+			if slices.Contains(argv, "--reason") {
+				t.Fatalf("the act still holds its reason: %q", argv)
+			}
+			code, refused := answerAct(t, b, argv, q.ID)
+			r := onlyRun(t, b)
+			if code == 0 || refused.Outcome != intentRefused || !strings.Contains(refused.Summary, "reason") || len(r.Revisions) != 0 || len(r.Rounds) != 1 {
+				t.Fatalf("an answer act without its reason was not refused: %d %+v revisions=%+v", code, refused, r.Revisions)
+			}
+		})
 	}
 }

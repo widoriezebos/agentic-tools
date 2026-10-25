@@ -33,8 +33,10 @@ type Option struct {
 // Attempt is one executed choice of a contract question's option; Message
 // is the inbox record that chose it.
 type Attempt struct {
-	At                      time.Time
-	Label, Outcome, Message string
+	At      time.Time `json:"at"`
+	Label   string    `json:"label"`
+	Outcome string    `json:"outcome"`
+	Message string    `json:"message"`
 }
 type Rejection struct {
 	Ref     MessageRef  `json:"ref"`
