@@ -498,7 +498,8 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return time.Duration(minutes) * time.Minute, nil
 	}
 	runner.Manager = &manager
-	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && inv.checkDirectPersonProof("work "+inv.command.action, false) == nil {
+	answered := inv.command.action == "revise" && inv.input.has("answer") && inv.chosenAnswer().problem == nil
+	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && (answered || inv.checkDirectPersonProof("work "+inv.command.action, false) == nil) {
 		runner.Actor = "person"
 	}
 	runner.AdmitDetached = func(plan launch.UnitPlan) bool {

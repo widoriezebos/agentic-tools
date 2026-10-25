@@ -437,7 +437,8 @@ func (b *workBed) workOwners() intentOwners {
 		endpoint: func(string) (goal.Endpoint, error) {
 			return goal.Endpoint{Remote: "origin", Branch: "refs/heads/main"}, nil
 		},
-		claimCheck: func(string, string, goal.Endpoint) func() error { return func() error { return nil } },
+		claimCheck:     func(string, string, goal.Endpoint) func() error { return func() error { return nil } },
+		ownershipCheck: func(string, string, goal.Endpoint) func() error { return func() error { return nil } },
 	}
 	owners.work = intentWorkOwners{
 		adapter:    func(string) (adapter.Adapter, error) { return b.testingAdapter, nil },

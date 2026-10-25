@@ -540,13 +540,24 @@ func goalBranchClaimCheckWith(root, goalID string, endpoint goal.Endpoint, confi
 }
 
 func goalBranchClaimCheckWithDeadline(root, goalID string, endpoint goal.Endpoint, config func(string, string) (string, error), holderRoot func(string) string, deadline func(time.Duration) <-chan time.Time) func() error {
+	return goalBranchOwnership(root, goalID, endpoint, config, holderRoot, deadline, true)
+}
+
+// goalBranchOwnershipCheck is the claim check of an act a person's channel
+// answer chose: the goal is this machine's and the checkout holder's lineage,
+// whoever runs it.
+func goalBranchOwnershipCheck(root, goalID string, endpoint goal.Endpoint) func() error {
+	return goalBranchOwnership(root, goalID, endpoint, func(root, _ string) (string, error) { return goal.ResolveMachine(root) }, goalBranchHolderRoot, nil, false)
+}
+
+func goalBranchOwnership(root, goalID string, endpoint goal.Endpoint, config func(string, string) (string, error), holderRoot func(string) string, deadline func(time.Duration) <-chan time.Time, caller bool) func() error {
 	return func() error {
 		machine, err := goal.ResolveMachineWithConfig(root, config)
 		if err != nil {
 			return err
 		}
 		holder := holderRoot(root)
-		if _, err := lease.RequireHolder(holder, int64(os.Getpid()), nil); err != nil {
+		if _, err := lease.RequireHolder(holder, int64(os.Getpid()), nil); caller && err != nil {
 			return err
 		}
 		current, err := lease.CurrentHolder(holder)

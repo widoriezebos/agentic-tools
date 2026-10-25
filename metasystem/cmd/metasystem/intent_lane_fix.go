@@ -114,6 +114,11 @@ func (inv *intentInvocation) laneClaimCheck(conn intentConnectionOwners, root, g
 		if err == nil && conn.laneFix(root, caller.GitRoot, goalID) != nil {
 			return nil
 		}
+		// A person's channel answer acts from the steward's process, which
+		// never holds the checkout; the goal must still be this checkout's.
+		if inv.input.has("answer") && inv.chosenAnswer().problem == nil {
+			return conn.ownershipCheck(root, goalID, endpoint)()
+		}
 		return conn.claimCheck(root, goalID, endpoint)()
 	}
 }

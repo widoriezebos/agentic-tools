@@ -155,6 +155,7 @@ func intentDeliveryCommands() []intentCommand {
 				reasonFlag("because", "the reason a person requests a correction despite the recorded review"),
 				{name: "by", value: "NAME", usage: "the proven person requesting the reasoned correction"},
 				{name: "dispositions", value: "FILE", usage: "the bound decisions file of the reviewed examination"},
+				{name: "answer", value: "Q", advanced: true, usage: "the answer that chose this act"},
 			},
 			maxArgs:  1,
 			accepts:  []string{refGoal, refJ2, refRun},
