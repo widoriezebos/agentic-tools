@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 201
+- Revision: 202
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -272,4 +272,5 @@ History:
 - 2026-10-24T08:13:12Z DGA6PC0HQACBQS6TKYJJJPR58S-ui-71c5cb39 ack actor=ui+steward-seat targets=a-done-goals-branch-is-swept displaced=ui+steward-seat@2026-10-23T07:04:47Z ack
 - 2026-10-24T08:13:12Z DGA6PC0HQACBQS6TKYJJJPR58S-ui-71c5cb39 ack actor=ui+steward-seat targets=a-done-goals-branch-is-swept displaced=ui+steward-seat@2026-10-24T07:34:59Z ack
 - 2026-10-24T15:04:29Z 0S5JNC70ZC8DS0XKKXS2HGANKA-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=a-flake-is-not-a-red-2 displaced=m1e+main-1792389436-6018-51cc28@2026-10-24T02:31:37Z ack
-Integrity: sha256=9165f387100e839f6f1eed8e292e292340642fb5f29ff6cfdfa2d31d532a2431
+- 2026-10-25T11:51:16Z 448BCTVZB7EK7JR7TEQ9PE9RJS-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=a-unit-check-ends-on-progress displaced=m1e+main-1792389436-6018-51cc28@2026-10-24T15:04:29Z ack
+Integrity: sha256=b796e64379bd7463bba9aa1be98f57b6443db08b184ed9c15c64f30c9c1e0962
