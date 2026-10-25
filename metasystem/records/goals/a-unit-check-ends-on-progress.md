@@ -1,6 +1,6 @@
 # a-unit-check-ends-on-progress
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 3
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="changes when every unit check is ended and how a stopped unit is classified and asked about; a wrong progress clock lets a hung check run on, a wrong cause retries a real failure"
@@ -8,16 +8,15 @@
 - Intent: A unit's frozen check ends on its result, not on a wall clock that load or selection size can exhaust: proof.deadline means minutes without a finished unit (a hang still stops), the check runs after the builder's turn instead of inside it, a stop carries its real cause (deadline, environment) and offers the retry, one machine retry for a deadline stop, and the ask to a person states what happened with real line counts and a ready command. From the machinery's first run 2026-10-23 (landed-proof killed twice at exactly 15m0s after 28 of 46 green units); analyses: first-machinery-run-20261023/partial-build-1042.md and outside-read-fable-partial-build.md.
 - Origin: human
 - Next step: Steward's build lane now (decision 62), in parallel with ui: U2 from briefs/a-unit-check-ends-on-progress-U2-brief.md, then U3 with --last from briefs/a-unit-check-ends-on-progress-U3-brief.md (item 12 removed), on one branch, one landing by the lane; Read each round: yes
+- Concluded: Landed through the landing lane on 2026-10-25 12:25 (merge b051a3591ac2) with the-second-half-is-the-seats: U2, U3, U3b and U3c, every read clean or LAND; deployed by the lane.
 - OpenedAt: 2026-10-23T09:59:14Z
 - FirstClaimAt: 2026-10-24T15:04:29Z
-- Revision: 14
+- Revision: 15
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=59J15TAG2HWZAA5VAQB0KSYNZR-m1e-e91103bc minutes=2400 reviewRounds=20 goalRevision=7
 - Approved: by=human:Wido at=2026-10-24T07:30:35Z revision=8 opid=59J15TAG2HWZAA5VAQB0KSYNZR-m1e-e91103bc authority=proven digest=ce0919acd6bbd44618652a0b917ef2ad0c3ec086516f95f0ef0f15a9b89f97a9 episode=8
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=13 at=2026-10-24T20:54:47Z
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-24T15:04:29Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-unit-check-ends-on-progress: no accepted design declares areas\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-second-half-is-the-seats\"]" revision=13 accountingRevision=13 episodeAt=2026-10-24T15:04:29Z episodeRevision=13
-- StopCapability: generation=13 revision=13 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-10-23T09:59:14Z D7PCCK2WZZKFTA7T9Y9DCMND2R-m1e-79fa16f1 open actor=human:Wido targets=a-unit-check-ends-on-progress
@@ -34,4 +33,5 @@ History:
 - 2026-10-24T15:04:04Z 8FRMC30BY6QW2KMW4E528K7W35-m1e-c47a14c3 edit actor=human:Wido targets=a-unit-check-ends-on-progress
 - 2026-10-24T15:04:29Z 0S5JNC70ZC8DS0XKKXS2HGANKA-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-unit-check-ends-on-progress reason=areas unknown for goal a-unit-check-ends-on-progress: no accepted design declares areas; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-second-half-is-the-seats
 - 2026-10-24T20:54:47Z HA20XZW4SR8QFBBZY43206SDY7-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-unit-check-ends-on-progress
-Integrity: sha256=d119dc3fc468db632609de2061c48de5ac70402cdf3b01476e3a0578ac28e138
+- 2026-10-25T11:28:03Z V39GH2DKGQBJDCQMAE6MNMMSJD-m1e-0d7d9bcd done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-red-main-is-known-once,a-round-survives-a-restart,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,a-slow-ledger-read-is-a-wait,a-stop-waits-for-the-unit-boundary-2,a-unit-check-ends-on-progress,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-engines-follow-the-deployed-engine,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-answer-is-the-act,the-elapsed-clock-excludes-waits,the-lane-deploys-the-engine-it-runs-2,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory displaced=m1e+main-1792389436-6018-51cc28@2026-10-24T15:04:29Z
+Integrity: sha256=adf9f102e20d142400b0c0e422154314043ac4b5171c805c106dd83bde3708e9
