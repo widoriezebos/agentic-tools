@@ -52,7 +52,7 @@ func TestUnknownExaminationFollowUpAdmitsFullGoalAllowanceOnce(t *testing.T) {
 	if before.Attempts != 1 {
 		t.Fatalf("fixture did not reach the goal attempt allowance: %+v", before)
 	}
-	if err := dispatch.ReserveUnknownExaminationRetry(b.root, "unknown-source"); err != nil {
+	if err := dispatch.ReserveUnknownExaminationRetry(b.root, "unknown-source", dispatch.CustodyDeathDependencies{}); err != nil {
 		t.Fatal(err)
 	}
 	message := b.brief("retry-read.md", "implement", "Examine the same accepted commit with readable stop inputs.")
@@ -67,7 +67,7 @@ func TestUnknownExaminationFollowUpAdmitsFullGoalAllowanceOnce(t *testing.T) {
 		t.Fatalf("fresh read spent goal allowance or lost its active slot: before=%+v after=%+v", before, after)
 	}
 	b.completeJob("unknown-source-r2")
-	if err := dispatch.ReserveUnknownExaminationRetry(b.root, "unknown-source-r2"); err == nil {
+	if err := dispatch.ReserveUnknownExaminationRetry(b.root, "unknown-source-r2", dispatch.CustodyDeathDependencies{}); err == nil {
 		t.Fatal("a second unavailable read granted another automatic retry")
 	}
 	third := b.runEnv(b.budgetEnv("follow-up"), "follow-up", "--job", "unknown-source", "--message", message)

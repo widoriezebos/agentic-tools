@@ -37,7 +37,9 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 			return problem
 		}
 	}
-	if !personDrop && stop != nil && (stop.Handoff == "stopped unreadable-policy" || stop.Handoff == "stopped unreadable-inherited-findings") && work.subject != nil {
+	// A read an older engine could not collect is read again from the same
+	// retained return before a fresh examination is offered.
+	if !personDrop && stop != nil && (stop.Handoff == "stopped unreadable-policy" || stop.Handoff == "stopped unreadable-inherited-findings" || stop.Handoff == "stopped unavailable-stop-inputs") && work.subject != nil {
 		if err := work.retain(*work.subject); err != nil {
 			return &intentResult{Outcome: intentFailed, code: 1, Summary: "the review decision could not be retained", Details: []string{err.Error()}, next: inv.workArgv(record, "review")}
 		}

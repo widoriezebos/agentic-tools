@@ -88,15 +88,16 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 
 // ReserveUnknownExaminationRetry consumes the one fresh examination before
 // dispatch. Failure after this record leaves the unit held, never granting a
-// second automatic launch.
-func ReserveUnknownExaminationRetry(repoRoot, jobID string) error {
+// second automatic launch. Admission proves death with the caller's custody
+// dependencies.
+func ReserveUnknownExaminationRetry(repoRoot, jobID string, custody CustodyDeathDependencies) error {
 	_, err := withFindingRegisterLock(repoRoot, func() (string, error) {
 		state := loadCritiqueState(repoRoot)
 		latest, present := state.records[jobID]
 		if !present || asString(latest["status"]) != "completed" {
 			return "", fmt.Errorf("unknown-input retry needs its completed examination")
 		}
-		if err := ExaminationRetryAdmissible(repoRoot, latest); err != nil {
+		if err := ExaminationRetryAdmissibleWith(repoRoot, latest, custody); err != nil {
 			return "", err
 		}
 		rootID := state.chainRoot(jobID)

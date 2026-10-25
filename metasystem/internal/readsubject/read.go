@@ -45,6 +45,7 @@ func Collect(id string, subject ReadSubject, engine, model, output string, data 
 	var raw struct {
 		Findings json.RawMessage `json:"findings"`
 		Count    *int            `json:"verdictMaterialCount"`
+		Version  int             `json:"schemaVersion"`
 	}
 	if err := json.Unmarshal(data, &raw); err != nil {
 		return r, err
@@ -61,8 +62,15 @@ func Collect(id string, subject ReadSubject, engine, model, output string, data 
 	}
 	for i := range r.Findings {
 		f := &r.Findings[i]
-		if (string(fields[i]["material"]) != "true" && string(fields[i]["material"]) != "false") || !slices.Contains(FindingClasses, f.Class) || !slices.Contains([]string{"critical", "high", "medium", "low"}, f.Severity) || strings.TrimSpace(f.Claim) == "" || strings.TrimSpace(f.Evidence) == "" || strings.TrimSpace(f.Change) == "" {
+		// A v4 or v5 critic has no class, where or change: its non-material
+		// row without them is a note, which the stop never reads further.
+		note := (raw.Version == 4 || raw.Version == 5) && string(fields[i]["material"]) == "false" && f.Class == "" && f.Where == "" && f.Change == ""
+		if (string(fields[i]["material"]) != "true" && string(fields[i]["material"]) != "false") || !note && (!slices.Contains(FindingClasses, f.Class) || strings.TrimSpace(f.Change) == "") || !slices.Contains([]string{"critical", "high", "medium", "low"}, f.Severity) || strings.TrimSpace(f.Claim) == "" || strings.TrimSpace(f.Evidence) == "" {
 			return r, fmt.Errorf("finding %d has incomplete stop evidence", i+1)
+		}
+		if note {
+			f.ID = id + ":" + strconv.Itoa(i+1)
+			continue
 		}
 		f.Where = path.Clean(f.Where)
 		if f.Where == "" || path.IsAbs(f.Where) || strings.Contains(f.Where, "\\") || slices.Contains(strings.Split(f.Where, "/"), "..") || f.Where == "." || regexp.MustCompile(`(^[A-Za-z]:|:[0-9]+(?:-[0-9]+)?$)`).MatchString(f.Where) {

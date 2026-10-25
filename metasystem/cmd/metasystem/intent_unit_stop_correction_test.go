@@ -12,6 +12,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -385,5 +386,139 @@ func testIntentReviewPolicyRepair(t *testing.T, source string) {
 	after, err := fixture.runner.Status(fixture.run)
 	if err != nil || len(after.Rounds) != len(before.Rounds) || len(b.starter.launched()) != launches || after.Rounds[1].Stop.Attempt != before.Rounds[1].Stop.Attempt || after.Subjects[0].Examination != before.Subjects[0].Examination {
 		t.Fatalf("repair changed the attempt or examination: %+v %v", after, err)
+	}
+}
+
+// stoppedReadWithNotes reproduces a unit an older engine left stopped: its
+// committed, published subject retains a completed v4 examination, and the
+// round says unavailable-stop-inputs with no read.
+func stoppedReadWithNotes(t *testing.T, material bool) (*workBed, intentOwners, *launch.UnitRunner, string, *int) {
+	t.Helper()
+	bed := newWorkBed(t)
+	brief := bed.brief("build.md", "Build the unit.\n")
+	code, built, _ := bed.work(append([]string{"work", "build", bed.id, "--work", "u1", "--brief", brief, "--lines", "5"}, workCheck...)...)
+	if code != 0 || built.Outcome != intentConfirmed {
+		t.Fatalf("build: exit=%d result=%+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	unit := strings.Repeat("b", 40)
+	const critic = "old-critic"
+	repository := correctedBriefRepository{root: bed.worktree, unit: unit, goal: bed.id}
+	subject, err := repository.Subject(bed.worktree, unit)
+	if err != nil {
+		t.Fatal(err)
+	}
+	roundDir := filepath.Join(bed.worktree, "artifacts", "agents", critic, "rounds", "1")
+	returnPath := filepath.Join(roundDir, "return.json")
+	fresh := 0
+	request := branch.BranchReadRequest{Repo: bed.worktree, Remote: "origin", EndpointTip: subject.Parent, BranchTip: unit,
+		GoalID: bed.id, UnitCommit: unit, Repository: repository, BriefPath: filepath.Join(bed.root(), brief),
+		CheckClaim: func() error { return nil }, Gate: func(string) (string, error) { return "green", nil },
+		Delegate: func(string, string, string, string, string) (string, error) {
+			transferWriteJSON(t, filepath.Join(bed.worktree, "artifacts", "agents", "jobs", critic+".json"), map[string]any{
+				"jobId": critic, "role": "code-critic", "round": 1, "status": "completed", "reviews": "commit:" + unit,
+				"goalId": bed.id, "engineBuild": "fixture-engine", "effectiveModel": "fixture-reader", "findingRegister": []any{},
+				"findingRegisterRound": 0, "reviewRoundLimit": 6, "criticRoundsConsumed": 0,
+			})
+			transferWriteJSON(t, filepath.Join(roundDir, "subject.json"), readsubject.ReadSubject{
+				Kind: readsubject.SubjectCommit, Commit: unit, Parent: subject.Parent, Tree: subject.Tree, DiffDigest: subject.PatchDigest,
+			})
+			// A v4 row has no class, where or change.
+			count, verdict := 0, "VERDICT: land\n"
+			if material {
+				count, verdict = 1, "VERDICT: REVISE material=1\n"
+			}
+			transferWriteJSON(t, returnPath, map[string]any{"schemaVersion": 4, "jobId": critic, "round": 1, "reviewedTree": subject.Tree, "verdictMaterialCount": count,
+				"findings": []any{map[string]any{"id": "N-1", "severity": "low", "material": material, "claim": "A name reads oddly.", "evidence": "unit.go:3", "relation": "new"}}})
+			if err := os.WriteFile(filepath.Join(roundDir, "return.md"), []byte(verdict), 0600); err != nil {
+				t.Fatal(err)
+			}
+			return critic, nil
+		},
+		FollowUp: func(string, string) (string, error) { fresh++; return critic + "-r2", nil },
+	}
+	if result, err := branch.RunBranchRead(request); err != nil || result.State != "dispatched" {
+		t.Fatalf("initial examination: result=%+v err=%v", result, err)
+	}
+	// Immutable repository facts bind the register to the fixture commit.
+	if _, err := dispatchcore.CritiqueRegisterAdvanceWithFacts(bed.worktree, critic, critic, transferCritiqueFacts{paths: []string{"metasystem/unit.go"}, tree: subject.Tree}); err != nil {
+		t.Fatal(err)
+	}
+	runner := &launch.UnitRunner{Root: bed.unitRoot, Manager: bed.manager, Git: workGit{bed},
+		ReviewPolicy: func() (string, error) { return "auto", nil }}
+	if err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		return retain(launch.UnitSubject{Round: review.Round.Number, Commit: unit, Tip: unit, Published: unit,
+			StagedTree: subject.Tree, DiffDigest: review.DiffDigest, Examination: critic, ExaminationJob: critic,
+			ExaminationRound: 1, ExaminationReturnPath: returnPath})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	// The older engine could not read the v4 row, so its round stopped.
+	record, err := runner.Status(run)
+	if err != nil || len(record.Rounds) != 1 || record.Rounds[0].Stop == nil {
+		t.Fatalf("retained round: %+v %v", record, err)
+	}
+	old := &record.Rounds[0]
+	old.Reads, old.Material = nil, -1
+	old.Stop.Decision, old.Stop.Class, old.Stop.Handoff = "stop", "unknown read inputs", "stopped unavailable-stop-inputs"
+	old.Stop.Measure.Name, old.Stop.Measure.Now = "", nil
+	transferWriteJSON(t, filepath.Join(bed.unitRoot, run, "run.json"), record)
+	bed.head = unit
+	// The review's checkout is an installation, as a goal worktree is.
+	if err := os.WriteFile(filepath.Join(bed.worktree, "metasystem.conf"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	owners := bed.workOwners()
+	owners.work.inspectRead = func(string, string, string) (branch.BranchReadResult, error) {
+		return branch.BranchReadResult{RootJob: critic}, nil
+	}
+	owners.delivery = &intentDeliveryOwners{recordWriter: humanRecordWriter, branchRead: func(args []string) (branch.BranchReadResult, int, error) {
+		next := request
+		next.BriefPath = flagValue(args, "--brief")
+		next.Join = slices.Contains(args, "--join")
+		next.Retry, _ = strconv.ParseInt(flagValue(args, "--retry"), 10, 64)
+		result, err := branch.RunBranchRead(next)
+		if err != nil {
+			return result, 1, err
+		}
+		return result, 0, nil
+	}}
+	return bed, owners, runner, run, &fresh
+}
+
+// TestWorkReviewCollectsAStoppedReadWithNotes: a round an older engine
+// stopped because its v4 critic wrote only notes is collected again from the
+// same return on the next review, closes, and asks for the notes' decisions,
+// without a new build or examination. A v4 material row still stops.
+func TestWorkReviewCollectsAStoppedReadWithNotes(t *testing.T) {
+	t.Parallel()
+	bed, owners, runner, run, fresh := stoppedReadWithNotes(t, false)
+	launches := bed.starter.launched()
+	code, result := bed.runJSON(owners, "work", "review", bed.id, "--work", "u1")
+	template, _ := resultData(t, result)["template"].(string)
+	if code != 1 || result.Outcome != intentInProgress || !strings.Contains(result.Summary, "found 1 finding(s)") || template == "" || result.Next == nil ||
+		!slices.Contains(result.Next.Argv, "--dispositions") || slices.Contains(result.Next.Argv, "--retry") || resultData(t, result)["retry"] != nil {
+		t.Fatalf("the stopped read was not collected again: exit=%d result=%+v", code, result)
+	}
+	record, err := runner.Status(run)
+	round := record.Rounds[len(record.Rounds)-1]
+	if err != nil || round.Stop == nil || round.Stop.Decision != "close" || round.Material != 0 || len(round.Reads) != 1 ||
+		len(round.Reads[0].Findings) != 1 || round.Reads[0].Findings[0].Material || *fresh != 0 || !slices.Equal(launches, bed.starter.launched()) {
+		t.Fatalf("the collected round: %+v %+v %v fresh=%d", round, round.Stop, err, *fresh)
+	}
+	// The bed's fixture commit has no git checkout for the close owner, so
+	// the notes' decisions are asserted up to the close.
+	decisions := strings.ReplaceAll(string(mustRead(t, template)), "DECIDE", "noted")
+	code, result = bed.runJSON(owners, "work", "review", bed.id, "--work", "u1", "--dispositions", bed.brief("noted.md", decisions))
+	if code != 1 || !strings.HasPrefix(result.Summary, "the examination finished, but the review's completion is pending") ||
+		string(mustRead(t, template)) != decisions || *fresh != 0 || !slices.Equal(launches, bed.starter.launched()) {
+		t.Fatalf("the noted decisions did not reach the close: exit=%d result=%+v fresh=%d", code, result, *fresh)
+	}
+	// A v4 material row still has no stop evidence: one fresh examination.
+	bed, owners, runner, run, _ = stoppedReadWithNotes(t, true)
+	code, result = bed.runJSON(owners, "work", "review", bed.id, "--work", "u1")
+	record, err = runner.Status(run)
+	if code != 1 || result.Next == nil || !slices.Contains(result.Next.Argv, "--retry") || err != nil || record.Rounds[0].Stop.Handoff != "stopped unavailable-stop-inputs" {
+		t.Fatalf("a v4 material row: exit=%d result=%+v stop=%+v %v", code, result, record.Rounds[0].Stop, err)
 	}
 }
