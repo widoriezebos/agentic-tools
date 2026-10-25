@@ -1,0 +1,64 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-answer-is-the-act",
+  "unit": "U1b",
+  "subject": {
+    "commit": "0d91819e429e46008d0fe8b5531a2be52fab5536",
+    "parent": "7309eb7ffb06ea65a730f76eaaae597762012785",
+    "tree": "aa5163009ac4efce59ffb7851cd1c55efa717af2",
+    "patchDigest": "56e16661f2d1e0bfe1b5e04669c6919c042b81dd28e74a36b023e5af1aa93764",
+    "unitDigest": "e1f64c23149c608341bacbcfce694bfc4a84293323d2735def28c7a0d0efccd9"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-ff9930022ba0cbed02c651ad",
+    "round": 1,
+    "closureSha256": "356b8036f5fca966af2b7e0de0c2b7db5c7184520fcacc67881567933808210e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "aa5163009ac4efce59ffb7851cd1c55efa717af2",
+    "runId": "goal-read-gate-20261025t225533z-db37e5aa58c9bea0"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "3816101da99bff84c761e9033c21e3b87a545ded",
+      "digest": "da55d19ffe4aaf6c203747b75c3b5a3792486d19115ce40618bfdd4035376dcc"
+    },
+    {
+      "kind": "read",
+      "commit": "0023494738183b251af89e9736f7ce8e11bf8753",
+      "digest": "20a9b90cfac9d0132df9fe2ca11323c1d1a9c3f9eafe12b85dbaa5cdbc17494c"
+    },
+    {
+      "kind": "read",
+      "commit": "7309eb7ffb06ea65a730f76eaaae597762012785",
+      "digest": "9d5a796289238732a090edbee79644dabbd9494a305a50c442952e0a65a10f5f"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_answer_test.go",
+      "readerWord": "reviewed by critic root code-critic-ff9930022ba0cbed02c651ad"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_build_outcome_test.go",
+      "readerWord": "reviewed by critic root code-critic-ff9930022ba0cbed02c651ad"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/question_plain_test.go",
+      "readerWord": "reviewed by critic root code-critic-ff9930022ba0cbed02c651ad"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/question-withdraw.json",
+      "readerWord": "reviewed by critic root code-critic-ff9930022ba0cbed02c651ad"
+    },
+    {
+      "path": "metasystem/internal/channel/answer_act_test.go",
+      "readerWord": "reviewed by critic root code-critic-ff9930022ba0cbed02c651ad"
+    }
+  ],
+  "sha256": "0d92f2a2f299ce4e2b51d142d22a82c2a82a77962dd8be45e422f792ddd99983"
+}
