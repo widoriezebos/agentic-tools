@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "goal": "a-read-with-notes-is-collected",
+  "unit": "U1",
+  "subject": {
+    "commit": "d24d2989fd6aaecff0dcb9fd12126bd848987e23",
+    "parent": "56a355726ab0d435a5160eadd293d9fd5b50fed9",
+    "tree": "e463864cd50b5a5ec021127e197eb11ee4a3eed0",
+    "patchDigest": "c040fadcf2ee0c0f3880924477b37cb2c480e552148117d1dd5bfbb9c0d6731f",
+    "unitDigest": "d5840e25aefc44abc51faa909beca45639cfa8c9544f70c35e21445f3bff35ef"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d78fe0cb098a049c40097577",
+    "round": 1,
+    "closureSha256": "b81d11cddf8d0516e910f5ac21530a1e4974e7646dc628243ce14aca42c11f64"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e463864cd50b5a5ec021127e197eb11ee4a3eed0",
+    "runId": "goal-read-gate-20261025t233213z-190758a4c2568425"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_stop_correction_test.go",
+      "readerWord": "reviewed by critic root code-critic-d78fe0cb098a049c40097577"
+    },
+    {
+      "path": "metasystem/internal/delegation/unknown_examination_integration_test.go",
+      "readerWord": "reviewed by critic root code-critic-d78fe0cb098a049c40097577"
+    },
+    {
+      "path": "metasystem/internal/dispatch/examination_admission_test.go",
+      "readerWord": "reviewed by critic root code-critic-d78fe0cb098a049c40097577"
+    },
+    {
+      "path": "metasystem/internal/dispatch/examination_read_test.go",
+      "readerWord": "reviewed by critic root code-critic-d78fe0cb098a049c40097577"
+    },
+    {
+      "path": "metasystem/internal/dispatch/inherited_findings_test.go",
+      "readerWord": "reviewed by critic root code-critic-d78fe0cb098a049c40097577"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/read_retry_test.go",
+      "readerWord": "reviewed by critic root code-critic-d78fe0cb098a049c40097577"
+    },
+    {
+      "path": "metasystem/internal/readsubject/read_test.go",
+      "readerWord": "reviewed by critic root code-critic-d78fe0cb098a049c40097577"
+    }
+  ],
+  "sha256": "5d0827b923c28d748e98fca44b59468f7d48c6b556fa2a4a24dbd96aae0977b3"
+}
