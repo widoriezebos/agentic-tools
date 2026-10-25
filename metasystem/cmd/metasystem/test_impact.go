@@ -155,7 +155,7 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		}
 		output.Base, output.Subject = sha, subject
 		fmt.Fprintf(stdout, "plan: base %s (%s)\n", sha, subject)
-		impact, err := goadapter.UnitImpact(installation, sha)
+		impact, err := goadapter.UnitImpact(installation, sha, os.Getenv("LANDING_PROOF_SCOPE") == "impact")
 		if err != nil {
 			fmt.Fprintln(stderr, err)
 			return 1
@@ -470,7 +470,7 @@ func batchDepth(install, checkout, commit string, seams plain.ProveSeams) (bool,
 	if err != nil {
 		return fallback(err)
 	}
-	plan, err := plain.ReadImpactPlan(seams, dir, batch.Base)
+	plan, err := plain.ReadImpactPlan(seams, dir, batch.Base, "impact")
 	if err != nil {
 		return fallback(err)
 	}

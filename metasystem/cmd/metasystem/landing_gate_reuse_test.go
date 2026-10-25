@@ -300,7 +300,7 @@ func TestLandingStatusGateLastSection(t *testing.T) {
 
 func TestLandingProveReusesGateOnlyAtBatchBaseWithStaticAndEnvironment(t *testing.T) {
 	t.Parallel()
-	for _, mutation := range []string{"one member", "two members", "static red", "static absent", "environment", "depth", "tree", "gate red", "fresh"} {
+	for _, mutation := range []string{"one member", "two members", "static red", "static absent", "environment", "depth", "tree", "gate red", "fresh", "different plan", "missing plan"} {
 		t.Run(mutation, func(t *testing.T) {
 			t.Parallel()
 			b := newMergeGateBed(t)
@@ -325,8 +325,23 @@ func TestLandingProveReusesGateOnlyAtBatchBaseWithStaticAndEnvironment(t *testin
 			}
 			// A single merge has the batch's fetched main as its comparison base.
 			b.fail = func(*exec.Cmd, string) (string, error) { return "LANDING-CHECKED\t0\n", nil }
+			command := b.owners.landing.plainProve.Command
+			b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+				if len(cmd.Args) > 1 && cmd.Args[1] == "test" && commandEnv(cmd, "LANDING_PROOF_SCOPE") != "gate" {
+					t.Fatal("gate read its plan without the gate scope")
+				}
+				return command(cmd)
+			}
 			gate := gateResult(t, b, 0)
+			b.owners.landing.plainProve.Command = command
+			if gate.PlanHash == "" {
+				t.Fatal("gate did not record its selection hash")
+			}
 			switch mutation {
+			case "different plan":
+				gate.PlanHash = "other-plan"
+			case "missing plan":
+				gate.PlanHash = ""
 			case "static red":
 				gate.Static = plain.Red
 			case "static absent":

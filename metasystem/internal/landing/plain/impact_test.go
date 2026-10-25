@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os/exec"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -16,11 +17,15 @@ func TestReadImpactPlanHashTracksContentAcrossRuns(t *testing.T) {
 	t.Parallel()
 	selection := "internal/a=TestA"
 	pretty := false
+	scope := "impact"
 	seams := ProveSeams{
 		Executable: func() (string, error) { return "/fixture/engine", nil },
 		Command: func(command *exec.Cmd) error {
 			if !reflect.DeepEqual(command.Args[1:], []string{"test", "impact", "--plan", "--json", "--base", "base"}) || command.Dir != "fixture" {
 				t.Fatalf("plan command: %v dir=%q", command.Args, command.Dir)
+			}
+			if !slices.Contains(command.Env, "LANDING_PROOF_SCOPE="+scope) {
+				t.Fatalf("plan scope %q missing from environment", scope)
 			}
 			plan := ImpactPlan{Base: "base", Subject: "batch base", Selections: []string{selection}}
 			result := verbresult.FromError("test impact", 0, nil, plan)
@@ -48,7 +53,7 @@ func TestReadImpactPlanHashTracksContentAcrossRuns(t *testing.T) {
 	}
 	hash := func() string {
 		t.Helper()
-		decision := scopeDecision{scopeRecord: scopeRecord{BaseCommit: "base"}}
+		decision := scopeDecision{scopeRecord: scopeRecord{BaseCommit: "base", Scope: "impact"}}
 		if err := decision.impactPlan(seams, "fixture"); err != nil || decision.PlanHash == "" {
 			t.Fatalf("plan hash=%q error=%v", decision.PlanHash, err)
 		}
@@ -65,6 +70,10 @@ func TestReadImpactPlanHashTracksContentAcrossRuns(t *testing.T) {
 	selection = "internal/a=TestB"
 	if changed := hash(); changed == first {
 		t.Fatalf("changed selection kept hash %s", first)
+	}
+	scope = "gate"
+	if _, err := ReadImpactPlan(seams, "fixture", "base", scope); err != nil {
+		t.Fatal(err)
 	}
 }
 

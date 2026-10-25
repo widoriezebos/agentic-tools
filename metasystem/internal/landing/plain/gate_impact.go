@@ -64,7 +64,7 @@ func prepareGate(seams ProveSeams, install, checkout, dir, command string, runni
 			if seams.ImpactCost == nil {
 				err = fmt.Errorf("the impact cost reader is unavailable")
 			} else {
-				plan, planErr := ReadImpactPlan(seams, dir, decision.BaseCommit)
+				plan, planErr := ReadImpactPlan(seams, dir, decision.BaseCommit, decision.Scope)
 				err = planErr
 				if err == nil {
 					decision.PlanHash = fmt.Sprintf("%x", sha256.Sum256([]byte(plan)))
@@ -101,7 +101,7 @@ func prepareGate(seams ProveSeams, install, checkout, dir, command string, runni
 // reuseGate requires complete impact evidence for the batch's exact comparison.
 func reuseGate(seams ProveSeams, install, dir string, running Running, decision scopeDecision, output io.Writer, observed *proofOutput) bool {
 	gate, found, err := LastGate(install)
-	if err != nil || !found || gate.Result != Green || gate.Tree != running.Tree || gate.Depth != "impact" || gate.Static != Green || gate.Base != decision.Base || gate.BaseCommit != decision.BaseCommit || gate.Environment == "" {
+	if err != nil || !found || gate.Result != Green || gate.Tree != running.Tree || gate.Depth != "impact" || gate.Static != Green || gate.Base != decision.Base || gate.BaseCommit != decision.BaseCommit || gate.Environment == "" || gate.PlanHash == "" || gate.PlanHash != decision.PlanHash {
 		return false
 	}
 	environment := &proofOutput{output: io.Discard}

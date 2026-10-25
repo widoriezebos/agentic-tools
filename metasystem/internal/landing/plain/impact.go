@@ -53,7 +53,7 @@ func impactScope(install, checkout string, seams ProveSeams) scopeDecision {
 }
 
 func (d *scopeDecision) impactPlan(seams ProveSeams, dir string) error {
-	plan, err := ReadImpactPlan(seams, dir, d.BaseCommit)
+	plan, err := ReadImpactPlan(seams, dir, d.BaseCommit, d.Scope)
 	if err == nil {
 		d.PlanHash = fmt.Sprintf("%x", sha256.Sum256([]byte(plan)))
 	}
@@ -61,7 +61,7 @@ func (d *scopeDecision) impactPlan(seams ProveSeams, dir string) error {
 }
 
 // ReadImpactPlan asks the serving engine for its exact impact selection.
-func ReadImpactPlan(seams ProveSeams, dir, base string) (string, error) {
+func ReadImpactPlan(seams ProveSeams, dir, base, scope string) (string, error) {
 	executable := seams.Executable
 	if executable == nil {
 		executable = os.Executable
@@ -72,7 +72,7 @@ func ReadImpactPlan(seams ProveSeams, dir, base string) (string, error) {
 	}
 	command := exec.Command(engine, "test", "impact", "--plan", "--json", "--base", base)
 	command.Dir = dir
-	command.Env = append(os.Environ(), "LANDING_ONLY=", "LANDING_PROOF_BASE="+base)
+	command.Env = append(os.Environ(), "LANDING_ONLY=", "LANDING_PROOF_BASE="+base, "LANDING_PROOF_SCOPE="+scope)
 	read := verbresult.Capture(command, "test impact")
 	run := seams.Command
 	if run == nil {

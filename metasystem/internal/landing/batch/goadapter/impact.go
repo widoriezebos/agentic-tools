@@ -50,8 +50,9 @@ func TestPackagePaths(moduleRoot string, buildTags []string) ([]string, error) {
 	return packages, nil
 }
 
-// UnitImpact selects tests from the current working snapshot against the unit's base.
-func UnitImpact(moduleRoot, base string) (impact Impact, err error) {
+// UnitImpact selects changed packages and their readers against the unit's base.
+// Whole internal dependents are included when proving a combined batch.
+func UnitImpact(moduleRoot, base string, wholeDependents bool) (impact Impact, err error) {
 	workspace := gittree.Workspace{Dir: moduleRoot}
 	commit, err := workspace.ResolveCommit(base)
 	if err != nil {
@@ -92,7 +93,7 @@ func UnitImpact(moduleRoot, base string) (impact Impact, err error) {
 				pkg = "."
 			}
 			if _, fixture, ok := strings.Cut("/"+dir, "/testdata/"); ok {
-				symbols[dir], symbols["testdata/"+fixture], symbols[filepath.Base(dir)] = true, true, true
+				symbols[dir], symbols["testdata/"+fixture], symbols["literal/"+filepath.Base(dir)] = true, true, true
 			}
 			if imports[pkg] != nil {
 				changed[pkg] = true
@@ -123,7 +124,7 @@ func UnitImpact(moduleRoot, base string) (impact Impact, err error) {
 			wholeFile = wholeFile || whole
 		}
 		tests := slices.Sorted(maps.Keys(names))
-		whole := full || wholeFile || strings.HasPrefix(pkg, "./internal/") && slices.Contains(dependents, pkg) || changed[pkg] && (strings.HasPrefix(pkg, "./internal/") || len(tests) == 0)
+		whole := full || wholeFile || wholeDependents && strings.HasPrefix(pkg, "./internal/") && slices.Contains(dependents, pkg) || changed[pkg] && (strings.HasPrefix(pkg, "./internal/") || len(tests) == 0)
 		if !whole && len(tests) == 0 {
 			continue
 		}
@@ -136,8 +137,14 @@ func UnitImpact(moduleRoot, base string) (impact Impact, err error) {
 	return impact, nil
 }
 
-// impactFile reads both sides so removed declarations and messages select their readers.
+// impactFile reads both sides to find readers of changed declarations, fields and messages.
 func impactFile(workspace gittree.Workspace, base, path string, changed bool, symbols map[string]bool) (map[string]bool, bool, error) {
+	addSymbol := func(name string) {
+		if !token.IsExported(name) {
+			name = filepath.Dir(path) + "#" + name
+		}
+		symbols[name] = true
+	}
 	after, err := os.ReadFile(filepath.Join(workspace.Dir, path))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, false, err
@@ -181,7 +188,33 @@ func impactFile(workspace gittree.Workspace, base, path string, changed bool, sy
 		}
 		for name, object := range file.Scope.Objects {
 			if node, ok := object.Decl.(ast.Node); ok && !isTest && overlaps(node) {
-				symbols[name] = true
+				if spec, ok := node.(*ast.TypeSpec); ok {
+					if structure, ok := spec.Type.(*ast.StructType); ok && !overlaps(spec.Name) {
+						onlyFields := true
+						for _, hunk := range hunks {
+							start, _ := strconv.Atoi(hunk[1+2*side])
+							count := 1
+							if hunk[2+2*side] != "" {
+								count, _ = strconv.Atoi(hunk[2+2*side])
+							}
+							end := start + count - 1
+							if count > 0 && start <= positions.Position(spec.End()).Line && end >= positions.Position(spec.Pos()).Line {
+								onlyFields = onlyFields && start > positions.Position(structure.Fields.Opening).Line && end < positions.Position(structure.Fields.Closing).Line
+							}
+						}
+						if onlyFields {
+							for _, field := range structure.Fields.List {
+								if overlaps(field) {
+									for _, name := range field.Names {
+										addSymbol(name.Name)
+									}
+								}
+							}
+							continue
+						}
+					}
+				}
+				addSymbol(name)
 			}
 		}
 		ast.Inspect(file, func(node ast.Node) bool {
@@ -193,7 +226,7 @@ func impactFile(workspace gittree.Workspace, base, path string, changed bool, sy
 				}
 				entrypoint := isTest && node.Recv == nil && testpolicy.GoTestName(node.Name.Name)
 				if overlaps(node) && !entrypoint {
-					symbols[node.Name.Name] = true
+					addSymbol(node.Name.Name)
 				} else if side == 1 && entrypoint {
 					all[node.Name.Name] = true
 					if overlaps(node) {
@@ -201,12 +234,12 @@ func impactFile(workspace gittree.Workspace, base, path string, changed bool, sy
 					}
 				}
 			case *ast.Ident:
-				referenced = referenced || isTest && side == 1 && symbols[node.Name]
+				referenced = referenced || isTest && side == 1 && (token.IsExported(node.Name) && symbols[node.Name] || symbols[filepath.Dir(path)+"#"+node.Name])
 			case *ast.BasicLit:
 				if node.Kind == token.STRING {
 					value, _ := strconv.Unquote(node.Value)
-					referenced = referenced || isTest && side == 1 && symbols[value]
-					if !isTest && overlaps(node) && len([]rune(value)) >= 3 {
+					referenced = referenced || isTest && side == 1 && (symbols[value] || symbols["literal/"+value])
+					if !isTest && overlaps(node) && strings.Contains(strings.TrimSpace(value), " ") && len([]rune(value)) >= 3 {
 						symbols[value] = true
 					}
 				}
