@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -444,10 +445,17 @@ func flushNotices(ctx context.Context, c PollConfig, result *PollResult) error {
 			}
 			thread = &MessageRef{ID: notice.ReplyTo, ThreadID: root}
 		}
-		if _, err := c.Provider.Post(ctx, c.DestinationConfig, notice.Text, thread); err != nil {
+		ref, err := c.Provider.Post(ctx, c.DestinationConfig, notice.Text, thread)
+		if err != nil {
 			result.Undelivered++
 			kept = append(kept, notice)
 			continue
+		}
+		if id, _, ok := strings.Cut(strings.TrimPrefix(notice.Record, "answer:"), ":"); ok && strings.HasPrefix(notice.Record, "answer:") {
+			if q, err := ReadQuestion(c.RepoRoot, id); err == nil {
+				q.Notices = append(q.Notices, ref.ID)
+				_ = writeJSON(questionPath(c.RepoRoot, id), q)
+			}
 		}
 		ledger.Posted = append(ledger.Posted, notice.Record)
 	}
@@ -536,7 +544,7 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 			var contract *Question
 			for i := range questions {
 				q := &questions[i]
-				if q.Thread != nil && (replyTo == q.Thread.ID || replyTo == threadRoot(*q.Thread)) {
+				if q.Thread != nil && (replyTo == q.Thread.ID || replyTo == threadRoot(*q.Thread) || slices.Contains(q.Notices, replyTo)) {
 					threaded = true
 					if q.State == "open" && q.Answer == nil {
 						match = q
@@ -620,8 +628,21 @@ func contractReply(c PollConfig, q Question, text string) (bool, string) {
 		return false, fmt.Sprintf("Already done at %s (%s).", last.At.Local().Format("15:04"), last.Label)
 	case last.Outcome == "acted" || q.State != "closed":
 		return false, ""
-	case q.ClosedBecause != "":
-		return false, "This was settled: " + plainSentence(q.ClosedBecause, false)
+	}
+	settled := "This was settled"
+	if !q.ClosedAt.IsZero() {
+		settled += " at " + q.ClosedAt.Local().Format("15:04")
+	}
+	because := q.ClosedBecause
+	if _, reason, ok := strings.Cut(because, ": "); ok && q.UnitStop != nil && q.UnitStop.ClosedBy != "" {
+		// An act's record closes with "<act kind>: <reason>"; the line says the reason.
+		because = reason
+	}
+	if because != "" {
+		return false, settled + ": " + plainSentence(because, false)
+	}
+	if !q.ClosedAt.IsZero() {
+		return false, settled + "."
 	}
 	return false, "This was settled already."
 }

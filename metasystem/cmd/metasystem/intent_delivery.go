@@ -104,6 +104,7 @@ func intentDeliveryCommands() []intentCommand {
 				{name: "dispositions", value: "FILE", usage: "the author's decisions, in the bound file the review wrote"},
 				{name: "retry", value: "N", usage: "examine the subject once more after examination N failed without findings"},
 				reasonFlag("because", "the reason a person accepts the builder's measured size"),
+				{name: "answer", value: "Q", advanced: true, usage: "the answer that chose this act"},
 				{name: "after", value: "COMMIT", usage: "with --changes or --patch: the version (commit) being corrected"},
 				{name: "finding", value: "F", usage: "with G: discharge this finding's obligation with --test (or the fixture proof)"},
 				{name: "test", value: "NAME", usage: "with --finding: the test that proves the finding resolved"},

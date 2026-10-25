@@ -67,6 +67,9 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 			}
 			step.LaunchIDs = append(step.LaunchIDs, step.LaunchID)
 		}
+		// The execution start speaks for the current launch; a new one has
+		// not started.
+		step.ExecutionStartedAt = ""
 		step.State, step.StartedAt = StepStarting, driver.manager.Now().UTC().Format(time.RFC3339Nano)
 		if err := driver.save(); err != nil {
 			return Record{}, err

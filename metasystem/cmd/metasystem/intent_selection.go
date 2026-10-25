@@ -767,6 +767,11 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		result.next, result.nextReason = inv.publicArgv("status", id), "the goal's work and what each needs next"
 		return inv.render(result)
 	}
+	if selected.Running() {
+		if replay := inv.answerReplay(id, *selected); replay != nil {
+			return inv.render(*replay)
+		}
+	}
 	if selected.Running() || selected.Run == "" {
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: workTargets(id, *selected),
 			Summary: fmt.Sprintf("work %s of goal %s is still running; it is reviewed once built", selected.Unit, id),

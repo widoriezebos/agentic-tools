@@ -1,6 +1,7 @@
 package channel
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -356,7 +357,8 @@ func settleChoice(ctx context.Context, c PollConfig, q *Question) error {
 		switch attempt.Outcome {
 		case "started":
 			attempt.Outcome = "acted"
-			line = fmt.Sprintf("%s it is. The builder's next round of \"%s\" started at %s. If it stops again, I ask here. Undo: %s.", label, QuestionSubject(*q), c.Now.Local().Format("15:04"), strings.TrimSuffix(undo, "."))
+			did := map[string]string{"Retry": "The failed step of \"%s\" started again", "Accept the size": "The checks of \"%s\" went on"}[label]
+			line = fmt.Sprintf("%s it is. "+cmp.Or(did, "The builder's next round of \"%s\" started")+" at %s. If it stops again, I ask here. Undo: %s.", label, QuestionSubject(*q), c.Now.Local().Format("15:04"), strings.TrimSuffix(undo, "."))
 		case "accepted":
 			line = fmt.Sprintf("%s it is; it waits: %s. When that is fixed, reply %s again.", label, plainReason(envelope.Data.Answer.Hold, *q), label)
 		default:

@@ -167,7 +167,7 @@ func TestIntentBuildSizeAcceptanceResumesProofAfterRecordedImpact(t *testing.T) 
 	}
 
 	questions, unreadable := channel.WalkOpenQuestions(b.root())
-	if len(unreadable) != 0 || len(questions) != 1 || questions[0].UnitStop == nil || !strings.Contains(channel.ActCommand(questions[0]), "work review") || !strings.Contains(channel.ActCommand(questions[0]), "--reason TEXT --by NAME") || !slices.Equal(questions[0].UnitStop.AcceptableActs, []string{"work-review-size"}) {
+	if len(unreadable) != 0 || len(questions) != 1 || questions[0].UnitStop == nil || !strings.Contains(channel.ActCommand(questions[0]), "work review") || !strings.Contains(channel.ActCommand(questions[0]), "--reason 'accepted at 3 lines' --by NAME") || !slices.Equal(questions[0].UnitStop.AcceptableActs, []string{"work-review-size"}) {
 		t.Fatalf("size question has no person's act: %+v %v", questions, unreadable)
 	}
 	run := resultData(t, result)["run"].(string)

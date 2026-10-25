@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
@@ -80,11 +81,12 @@ func RetryDelivery(ctx context.Context, repo, id string, p Provider, d Destinati
 }
 
 // Withdraw is Close under the poll lock, so a withdrawal and a concurrent
-// poll never both write the question.
-func Withdraw(repo, id, because string, p Provider, d DestinationConfig) (Question, error) {
+// poll never both write the question. The question keeps the caller's
+// clock, when given, as its closing time.
+func Withdraw(repo, id, because string, p Provider, d DestinationConfig, at ...time.Time) (Question, error) {
 	var q Question
 	err := withPollLock(repo, func() error {
-		if err := Close(repo, id, because, p, d); err != nil {
+		if err := closeAt(repo, id, because, p, d, append(at, time.Now())[0]); err != nil {
 			return err
 		}
 		var err error
