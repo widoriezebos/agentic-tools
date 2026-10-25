@@ -10,6 +10,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -24,6 +26,15 @@ import (
 type Option struct {
 	Label       string `json:"label"`
 	Consequence string `json:"consequence"`
+	// Act is the public argv the option runs, without --by.
+	Act []string `json:"act,omitempty"`
+}
+
+// Attempt is one executed choice of a contract question's option; Message
+// is the inbox record that chose it.
+type Attempt struct {
+	At                      time.Time
+	Label, Outcome, Message string
 }
 type Rejection struct {
 	Ref     MessageRef  `json:"ref"`
@@ -83,6 +94,8 @@ type Question struct {
 	ProcessAct     string            `json:"processAct,omitempty"`
 	Decision       *Decision         `json:"decision,omitempty"`
 	RetiredAt      time.Time         `json:"retiredAt,omitzero"`
+	Contract       bool              `json:"contract,omitempty"`
+	Attempts       []Attempt         `json:"attempts,omitempty"`
 }
 
 type AskRequest struct {
@@ -101,6 +114,7 @@ type AskRequest struct {
 	Now                                           time.Time
 	LedgerCursor                                  string
 	UnitStop                                      *UnitStopQuestion
+	Contract                                      bool
 }
 
 // A post's first line is bounded for a phone.
@@ -274,6 +288,9 @@ func Ask(r AskRequest) (Question, error) {
 // is written, posted or published again. The same facts with any other
 // parameter is a different question and is asked.
 func AskOrFind(r AskRequest) (Question, bool, error) {
+	if err := validateContract(r); err != nil {
+		return Question{}, false, err
+	}
 	if r.UnitStop != nil {
 		return askUnitStop(r)
 	}
@@ -336,11 +353,11 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 	if err != nil {
 		return Question{}, false, err
 	}
-	q := Question{Plain: r.Plain, Decision: r.Decision, Recovery: r.Recovery, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop}
+	q := Question{Plain: r.Plain, Decision: r.Decision, Recovery: r.Recovery, ProcessAct: r.ProcessAct, ID: id, Goal: r.Goal, About: r.About, Kind: r.Kind, Machine: r.Machine, Lineage: r.Lineage, OpenedAt: r.Now.UTC(), Facts: r.Facts, Options: r.Options, Recommendation: r.Recommendation, Wants: r.Wants, Budget: r.Budget, State: "open", FactsDigest: digest, LedgerCursor: r.LedgerCursor, UnitStop: r.UnitStop, Contract: r.Contract}
 	if err = validateQuestionBudget(q); err != nil {
 		return Question{}, false, err
 	}
-	q.Text = renderPlain(q)
+	q.Text = renderQuestion(r.RepoRoot, q)
 	if err = writeJSON(questionPath(r.RepoRoot, id), q); err != nil {
 		return Question{}, false, err
 	}
@@ -390,7 +407,7 @@ func sameAsk(q Question, r AskRequest) bool {
 		return false
 	}
 	for index := range q.Options {
-		if q.Options[index] != r.Options[index] {
+		if !reflect.DeepEqual(q.Options[index], r.Options[index]) {
 			return false
 		}
 	}
@@ -444,6 +461,9 @@ func ReplyInstructionsAt(root string, q Question) string {
 }
 
 func replyInstructions(q Question, codeOff bool) string {
+	if q.Contract {
+		return answerLine(q, codeOff)
+	}
 	if q.Recovery != nil {
 		return "Run " + q.Wants + "; only a matching successful seat recovery closes this question. A text answer leaves it open."
 	}
@@ -496,6 +516,89 @@ func renderPlain(q Question) string {
 	return strings.Join(lines, "\n")
 }
 
+// unplainWords are what a person cannot read on his phone: a commit or run
+// id, a local path, a process number, a seat generation.
+var unplainWords = regexp.MustCompile(`[0-9a-fA-F]{10}|/Users/|\bpid\b|\bgeneration [0-9]+`)
+
+// validateContract refuses a contract question a person cannot read on one
+// screen, saying what to shorten or remove.
+func validateContract(r AskRequest) error {
+	if !r.Contract {
+		return nil
+	}
+	if r.Plain == nil || strings.TrimSpace(r.Plain.Decision) == "" || strings.TrimSpace(r.Plain.IfNothing) == "" {
+		return fmt.Errorf("a question for a person says what he decides and what happens if he does nothing")
+	}
+	if len([]rune(r.Plain.Decision)) > 280 {
+		return fmt.Errorf("shorten the decision to 280 characters")
+	}
+	words, labels := []string{r.Plain.Decision, r.Plain.IfNothing}, map[string]bool{}
+	for _, option := range r.Options {
+		switch {
+		case strings.TrimSpace(option.Consequence) == "":
+			return fmt.Errorf("say what option %q does, what it costs and how it is undone", option.Label)
+		case len([]rune(option.Consequence)) > 200:
+			return fmt.Errorf("shorten what option %q does to 200 characters", option.Label)
+		case labels[strings.ToLower(option.Label)]:
+			return fmt.Errorf("offer option %q once", option.Label)
+		}
+		labels[strings.ToLower(option.Label)] = true
+		words = append(words, option.Consequence)
+	}
+	if len(r.Options) == 0 || r.Recommendation != "" && !slices.ContainsFunc(r.Options, func(o Option) bool { return o.Label == r.Recommendation }) {
+		return fmt.Errorf("offer at least one option and recommend one of them by its label")
+	}
+	for _, text := range words {
+		if found := unplainWords.FindString(text); found != "" {
+			return fmt.Errorf("remove %q from the question's words: a person reads no ids, paths or process numbers", found)
+		}
+	}
+	return nil
+}
+
+// renderQuestion is the post: a contract question in the contract's order,
+// any other as it always was.
+func renderQuestion(repo string, q Question) string {
+	if !q.Contract {
+		return renderPlain(q)
+	}
+	lines := []string{plainSentence(q.Plain.Decision, true), ""}
+	for _, option := range shownOptions(q) {
+		line := option.Label + " — " + plainSentence(option.Consequence, false)
+		if option.Label == q.Recommendation {
+			line = "★ " + line
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(append(lines, "", "If you do nothing: "+plainSentence(q.Plain.IfNothing, false), answerLine(q, answerCodeOffOrOn(repo))), "\n")
+}
+
+// shownOptions are the options in the order shown: the recommended first.
+func shownOptions(q Question) []Option {
+	var first, rest []Option
+	for _, option := range q.Options {
+		if option.Label == q.Recommendation {
+			first = append(first, option)
+		} else {
+			rest = append(rest, option)
+		}
+	}
+	return append(first, rest...)
+}
+
+// answerLine is how a contract question is answered, generated from its
+// labels in the order shown.
+func answerLine(q Question, codeOff bool) string {
+	var labels []string
+	for _, option := range shownOptions(q) {
+		labels = append(labels, option.Label)
+	}
+	if codeOff {
+		return "Reply: " + strings.Join(labels, " / ")
+	}
+	return "Reply with the word and your code: " + strings.Join(labels, " / ")
+}
+
 func plainSentence(s string, capital bool) string {
 	runes := []rune(strings.Join(strings.Fields(s), " "))
 	if len(runes) == 0 {
@@ -512,7 +615,7 @@ func plainSentence(s string, capital bool) string {
 
 func ensureText(repo string, q *Question) error {
 	if q.Text == "" {
-		q.Text = renderPlain(*q)
+		q.Text = renderQuestion(repo, *q)
 		return writeJSON(questionPath(repo, q.ID), q)
 	}
 	return nil
@@ -591,7 +694,7 @@ func Close(repo, id, because string, p Provider, d DestinationConfig, successful
 			q.Facts = append(q.Facts, because)
 		}
 	}
-	if q.Answer != nil {
+	if q.Answer != nil && q.Answer.Phase != "acted" {
 		q.Answer.Phase = "closed"
 	}
 	return writeJSON(questionPath(repo, id), q)

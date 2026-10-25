@@ -57,7 +57,11 @@ func askUnitStop(r AskRequest) (q Question, found bool, err error) {
 	if r.Goal == "" || stop.Loop == "" || stop.Subject == "" || stop.Attempt < 1 || stop.Finding == "" || strings.TrimSpace(stop.Needs) == "" || len(stop.AcceptableActs) == 0 {
 		return q, false, fmt.Errorf("a unit stop question needs its goal, loop, subject, attempt, finding and executable act")
 	}
-	r.Facts = append(slices.Clone(r.Facts), "Acceptable acts: "+strings.Join(stop.AcceptableActs, ", ")+". Only a successful act addressing this finding and subject, or this unit's closure, closes this question; a text answer does not.")
+	closes := "Only a successful act addressing this finding and subject, or this unit's closure, closes this question; a text answer does not."
+	if r.Contract {
+		closes = "The act of the option the person chooses closes this question, as does this unit's closure."
+	}
+	r.Facts = append(slices.Clone(r.Facts), "Acceptable acts: "+strings.Join(stop.AcceptableActs, ", ")+". "+closes)
 	err = withUnitStopLock(r.RepoRoot, func() error {
 		var e error
 		q, found, e = askOrFind(r)

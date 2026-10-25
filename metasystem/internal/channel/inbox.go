@@ -618,7 +618,7 @@ func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.Channe
 	}
 	q.Answer = &Answer{Machine: c.Machine, Lineage: c.Lineage, Provider: in.Provider, Text: in.Text, UserID: in.UserID, Ref: ref, At: sent, Step: *in.Step, ULID: ulid, Opid: opid, ApprovalULID: approvalULID, Phase: "matched"}
 	q.State = "answered"
-	if LaneStopCommand(*q) != "" {
+	if LaneStopCommand(*q) != "" || q.Contract {
 		q.State = "open"
 	}
 	if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
