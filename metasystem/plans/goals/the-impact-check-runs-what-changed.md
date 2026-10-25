@@ -10,11 +10,12 @@
 - Next step: Build the one unit from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-impact-check-runs-what-changed-brief.md (FINAL r2, ~41 of 250 lines) with work build --last on ui right after the-second-half-is-the-seats lands; machine route.; ASKED KY9PDMKC4H9M4AMH1EHCBYN54C (other): May the impact-check build go on past its size hold? I declared 41 lines; the change has 1221.
 - OpenedAt: 2026-10-24T11:24:03Z
 - FirstClaimAt: 2026-10-25T14:30:00Z
-- Revision: 8
+- Revision: 9
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=MM15Y0ND5F9XRQ7W15H25JA0ER-m1e-5ea50bdc minutes=2400 reviewRounds=20 goalRevision=1
 - Approved: by=human:Wido at=2026-10-24T11:24:13Z revision=2 opid=MM15Y0ND5F9XRQ7W15H25JA0ER-m1e-5ea50bdc authority=proven digest=0a1efd8b9d723812ff00941a94586437c093b7f85969d319886dedf2b8479c75 episode=2
+- Sliced: machine=ui lineage=steward-seat revision=6 at=2026-10-25T18:50:23Z
 - Claimed: machine=ui lineage=steward-seat at=2026-10-25T14:30:00Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-impact-check-runs-what-changed: no accepted design declares areas\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-answer-is-the-act\"]" revision=6 accountingRevision=6 episodeAt=2026-10-25T14:30:00Z episodeRevision=6
 - StopCapability: generation=6 revision=6 machine=ui claimEpoch=7 fenceEpoch=0
 
@@ -27,4 +28,5 @@ History:
 - 2026-10-25T14:30:00Z B3ZAPRZKKS82KJZVB14NMDN7VR-ui-71c5cb39 claim actor=ui+steward-seat targets=the-impact-check-runs-what-changed reason=areas unknown for goal the-impact-check-runs-what-changed: no accepted design declares areas; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-answer-is-the-act
 - 2026-10-25T15:12:27Z 2NEXM15HSDT95Q8K36Q1K3EJ3R-ui-71c5cb39 ask actor=ui+steward-seat targets=the-impact-check-runs-what-changed
 - 2026-10-25T18:09:05Z C2MAE2RXHAM774PV758618GRSH-ui-71c5cb39 restamp actor=ui+steward-seat targets=the-impact-check-runs-what-changed reason=stop capability claimEpoch 5->7
-Integrity: sha256=2b9921b5e8b9f5e65591f0adb0d313d62602fceaced61c53b5fa94ec0c97cbfb
+- 2026-10-25T18:50:23Z 92C4S7NV2REP7QCWGV90PZAN0B-ui-71c5cb39 slice-start actor=ui+steward-seat targets=the-impact-check-runs-what-changed
+Integrity: sha256=3a6fd27578e9af0f4f2426f3a71d44ad4924d5ce62f755e7ad3bc31ba46116b1
