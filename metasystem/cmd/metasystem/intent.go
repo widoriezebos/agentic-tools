@@ -661,6 +661,7 @@ type intentInvocation struct {
 	laneCallerObserved, laneCallerPerson bool
 	laneRecord                           *lane.Record
 	laneSkipShadow                       bool
+	choice                               *channelChoice
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -873,6 +874,9 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
+	if inv.command.name == "work revise" && inv.input.has("answer") {
+		result = inv.answerProgress(result)
+	}
 	if inv.replySettleErr != nil {
 		result.Details = append(result.Details, inv.replySettleErr.Error())
 	}
