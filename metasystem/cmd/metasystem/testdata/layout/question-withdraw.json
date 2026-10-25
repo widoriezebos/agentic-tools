@@ -38,7 +38,8 @@ exit 0
       "undelivered": 0,
       "answer": null,
       "rejected": null,
-      "factsDigest": ""
+      "factsDigest": "",
+      "closedAt": "2026-09-01T10:00:00Z"
     }
   }
 }

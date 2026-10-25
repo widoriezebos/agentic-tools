@@ -154,7 +154,7 @@ func reconcileUnitStopQuestions(root string) error {
 			if !act.UnitClosed && (stop.Attempt != act.Attempt || !slices.Contains(stop.AcceptableActs, act.Kind) || !slices.Contains(act.Findings, stop.Finding)) {
 				continue
 			}
-			if err := Close(root, q.ID, act.Kind+": "+act.Reason, nil, DestinationConfig{}, act.ID); err != nil {
+			if err := closeAt(root, q.ID, act.Kind+": "+act.Reason, nil, DestinationConfig{}, act.At, act.ID); err != nil {
 				return err
 			}
 		}

@@ -17,6 +17,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -49,28 +51,60 @@ func TestUnitStopQuestionsOfferSolutions(t *testing.T) {
 			}
 		}
 	})
-	for _, row := range []struct{ name, diff string }{
-		{"a gap", ""},
-		{"a size stop", "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n-old\n+new\ndiff --git a/a_test.go b/a_test.go\n--- /dev/null\n+++ b/a_test.go\n+test\n"},
-	} {
-		t.Run(row.name, func(t *testing.T) {
-			t.Parallel()
-			b := outcomeBed(t, row.diff)
-			if code, result, _ := outcomeBuild(t, b); code != 1 {
-				t.Fatalf("build: %d %+v", code, result)
+	t.Run("a gap", func(t *testing.T) {
+		t.Parallel()
+		b := outcomeBed(t, "")
+		if code, result, _ := outcomeBuild(t, b); code != 1 {
+			t.Fatalf("build: %d %+v", code, result)
+		}
+		if qs, _ := channel.WalkOpenQuestions(b.root()); len(qs) != 1 || qs[0].Contract || len(qs[0].Options) != 0 {
+			t.Fatalf("the gap asks differently than before: %+v", qs)
+		}
+	})
+	solution := func(t *testing.T, q channel.Question, label, decision, consequence string) {
+		t.Helper()
+		act := withoutOption(shellWords(q.UnitStop.Needs), "by")
+		if !q.Contract || q.Recommendation != label || q.Plain.Decision != decision || len(q.Options) != 2 || q.Options[0].Label != label || !slices.Equal(q.Options[0].Act, act) ||
+			!strings.HasPrefix(q.Options[0].Consequence, consequence) || q.Options[1].Label != "Stop here" || q.Options[1].Act != nil {
+			t.Fatalf("the question does not offer %s: %+v %+v", label, q.Plain, q.Options)
+		}
+		for _, word := range []string{"FILE", "TEXT", "NAME", "--by"} {
+			if slices.Contains(act, word) {
+				t.Fatalf("the act keeps %s: %q", word, act)
 			}
-			if qs, _ := channel.WalkOpenQuestions(b.root()); len(qs) != 1 || qs[0].Contract || len(qs[0].Options) != 0 {
-				t.Fatalf("%s asks differently than before: %+v", row.name, qs)
-			}
-		})
+		}
 	}
+	t.Run("a size stop", func(t *testing.T) {
+		t.Parallel()
+		b := outcomeBed(t, "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n-old\n+new\ndiff --git a/a_test.go b/a_test.go\n--- /dev/null\n+++ b/a_test.go\n+test\n")
+		outcomeBuild(t, b)
+		qs, _ := channel.WalkOpenQuestions(b.root())
+		if len(qs) != 1 || !strings.Contains(qs[0].UnitStop.Needs, "--reason 'accepted at 3 lines' --by NAME") {
+			t.Fatalf("the size act is not filled: %+v", qs)
+		}
+		solution(t, qs[0], "Accept the size", fmt.Sprintf("%s: the build of unit outcome grew to 3 changed lines against the 1 planned, at %s.", strings.ReplaceAll(b.id, "-", " "), qs[0].OpenedAt.Local().Format("15:04")),
+			"the checks and the review go on with this size")
+	})
 	t.Run("a check deadline", func(t *testing.T) {
 		t.Parallel()
 		b, _, _ := deadlineCheckBed(t, 4, everyCheckDeadline)
 		agentBuild(t, b)
-		if qs, _ := channel.WalkOpenQuestions(b.root()); len(qs) != 1 || qs[0].Contract || !slices.Contains(qs[0].UnitStop.AcceptableActs, "work-review-retry") {
-			t.Fatalf("the retry asks differently than before: %+v", qs)
+		qs, _ := channel.WalkOpenQuestions(b.root())
+		if len(qs) != 1 || !slices.Contains(qs[0].UnitStop.AcceptableActs, "work-review-retry") {
+			t.Fatalf("no retry question: %+v", qs)
 		}
+		class := onlyRun(t, b).Rounds[0].Stop.Class
+		solution(t, qs[0], "Retry", fmt.Sprintf("%s: the check of unit outcome could not finish at %s (%s).", strings.ReplaceAll(b.id, "-", " "), qs[0].OpenedAt.Local().Format("15:04"), class),
+			"I run the failed check again with the same inputs")
+	})
+	t.Run("a builder turn's deadline", func(t *testing.T) {
+		t.Parallel()
+		at := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
+		next := []string{"metasystem", "work", "review", "g-x", "--work", "u", "--reason", "the machinery stopped: deadline", "--by", "Wido"}
+		round := launch.UnitRound{Number: 1, Stop: &loopstop.Stop{Class: "deadline"}, Steps: []launch.UnitStep{{Name: "build", Kind: "build", State: launch.StepFailed}}}
+		q := correctionChoice(channel.AskRequest{Now: at, UnitStop: &channel.UnitStopQuestion{AcceptableActs: []string{"work-review-retry"}, Needs: shellCommand(next)}}, launch.UnitRunRecord{Goal: "g-x", Unit: "u"}, round, next)
+		solution(t, channel.Question{Contract: q.Contract, Recommendation: q.Recommendation, Plain: q.Plain, Options: q.Options, UnitStop: q.UnitStop},
+			"Retry", "g x: the build of unit u could not finish at "+at.Local().Format("15:04")+" (deadline).", "the builder takes another turn with the same brief, keeping its changes")
 	})
 }
 
@@ -354,5 +388,187 @@ func TestChannelAnswerActNeedsItsReason(t *testing.T) {
 				t.Fatalf("an answer act without its reason was not refused: %d %+v revisions=%+v", code, refused, r.Revisions)
 			}
 		})
+	}
+}
+
+// setMinutes is the person's goal budget act at the terminal: the box keeps
+// its other limits and reserves at most minutes job minutes.
+func setMinutes(t *testing.T, b *workBed, minutes int) {
+	t.Helper()
+	box := fmt.Sprintf("4h/6/%dm/2/2", minutes)
+	if code, raised, out := b.work("goal", "budget", b.id, "--budget", box, "--by", "Wido"); code != 0 {
+		t.Fatalf("goal budget %s: %d %+v %s", box, code, raised, out)
+	}
+}
+
+// heldReview asks the bed's one held review question, answers its first
+// option with a fresh message, and runs the act that answer chose.
+func heldReview(t *testing.T, b *workBed, message string) (channel.Question, intentResult) {
+	t.Helper()
+	open, _ := channel.WalkOpenQuestions(b.root())
+	if len(open) != 1 || !open[0].Contract {
+		t.Fatalf("no held contract question: %+v", open)
+	}
+	q := recordChoice(t, b.root(), open[0], func(q *channel.Question) {
+		q.Answer.Text, q.Answer.Ref.ID, q.Answer.ULID = q.Options[0].Label, message, "01J5X0000000000000000000"+strings.ToUpper(message)
+	})
+	_, result := answerAct(t, b, q.Options[0].Act, q.ID)
+	return q, result
+}
+
+func TestChannelAnswerReviewActsReplayAsThePerson(t *testing.T) {
+	t.Parallel()
+	t.Run("retry", func(t *testing.T) {
+		t.Parallel()
+		b, p, _ := deadlineCheckBed(t, 4, everyCheckDeadline)
+		enrol(t, b, "Wido")
+		channelFor(t, b.root())
+		agentBuild(t, b)
+		setMinutes(t, b, 1)
+		q, held := heldReview(t, b, "M2")
+		if state, hold := answerState(t, held); state != "accepted" || hold != "the goal's budget is used up" || q.Options[0].Label != "Retry" {
+			t.Fatalf("the retry under a spent budget reads %s (%s): %+v", state, hold, held)
+		}
+		impacts := func() int {
+			found, _ := filepath.Glob(filepath.Join(b.root(), "artifacts", "agents", "channel", "unit-stop-overrides", "*.json"))
+			return len(found)
+		}
+		before, step := impacts(), onlyRun(t, b).Rounds[0].Steps[1]
+		setMinutes(t, b, 1000)
+		b.manager.CapacitySources.Load = loadedHost
+		p.outcomes = func(string) []string { return []string{"passed"} }
+		_, started := heldReview(t, b, "M3")
+		r := onlyRun(t, b)
+		after := r.Rounds[0].Steps[1]
+		if state, _ := answerState(t, started); state != "started" || len(r.Rounds) != 1 || after.RetryBy != "Wido" || after.LaunchID != step.LaunchID || !launchedStep(after) || impacts() != before {
+			t.Fatalf("the fresh retry did not continue the held one once, as the person: %+v step=%+v before=%+v impacts %d -> %d", started, after, step, before, impacts())
+		}
+	})
+	t.Run("accept the size", func(t *testing.T) {
+		t.Parallel()
+		b := newWorkBedWith(t, func(file *goal.GoalFile) {
+			file.Budget = &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 6, ReservedJobMinutesLimit: 1000, ActiveJobLimit: 2}
+			workApprovedBox(file)
+		})
+		b.workOwnersHook = func(o *intentWorkOwners) {
+			units := o.units
+			o.units = func(layout stateroot.Layout) *launch.UnitRunner {
+				r := units(layout)
+				r.Git = outcomeGit{workGit{b}, "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n-old\n+new\ndiff --git a/a_test.go b/a_test.go\n--- /dev/null\n+++ b/a_test.go\n+test\n"}
+				return r
+			}
+		}
+		b.manager.Supervisor = outcomeStarter{bed: b}
+		enrol(t, b, "Wido")
+		channelFor(t, b.root())
+		outcomeBuild(t, b)
+		setMinutes(t, b, 1)
+		q, held := heldReview(t, b, "M2")
+		if state, hold := answerState(t, held); state != "accepted" || hold != "the goal's budget is used up" || q.Options[0].Label != "Accept the size" || !slices.Contains(q.Options[0].Act, "accepted at 3 lines") {
+			t.Fatalf("the size acceptance under a spent budget: %+v %+v", held, q.Options)
+		}
+		impacts := func() int {
+			found, _ := filepath.Glob(filepath.Join(b.root(), "artifacts", "agents", "channel", "unit-stop-overrides", "*.json"))
+			return len(found)
+		}
+		before := impacts()
+		setMinutes(t, b, 1000)
+		b.manager.CapacitySources.Load = loadedHost
+		_, started := heldReview(t, b, "M3")
+		r := onlyRun(t, b)
+		if state, _ := answerState(t, started); state != "started" || r.Rounds[0].SizeAcceptedBy != "Wido" || impacts() != before {
+			t.Fatalf("the fresh acceptance did not continue the held one once: %+v accepted=%q impacts %d -> %d", started, r.Rounds[0].SizeAcceptedBy, before, impacts())
+		}
+	})
+}
+
+func TestAReviewAnswerBindsItsOwnAct(t *testing.T) {
+	t.Parallel()
+	t.Run("a retry answer meets the size act", func(t *testing.T) {
+		t.Parallel()
+		b, _, _ := deadlineCheckBed(t, 4, everyCheckDeadline)
+		enrol(t, b, "Wido")
+		channelFor(t, b.root())
+		agentBuild(t, b)
+		open, _ := channel.WalkOpenQuestions(b.root())
+		q := recordChoice(t, b.root(), open[0], func(q *channel.Question) { q.Answer.Text = "retry" })
+		size := append(withoutOption(q.Options[0].Act, "reason"), "--reason", "accepted at 1 lines")
+		code, refused := answerAct(t, b, size, q.ID)
+		if step := onlyRun(t, b).Rounds[0].Steps[1]; code == 0 || !strings.Contains(refused.Summary, `authorizes "Retry"`) || step.RetryBy == "Wido" {
+			t.Fatalf("a size act was admitted by a retry answer: %d %+v", code, refused)
+		}
+	})
+	b := outcomeBed(t, "diff --git a/a.go b/a.go\n--- a/a.go\n+++ b/a.go\n-old\n+new\ndiff --git a/a_test.go b/a_test.go\n--- /dev/null\n+++ b/a_test.go\n+test\n")
+	enrol(t, b, "Wido")
+	channelFor(t, b.root())
+	outcomeBuild(t, b)
+	open, _ := channel.WalkOpenQuestions(b.root())
+	q := recordChoice(t, b.root(), open[0], func(q *channel.Question) { q.Answer.Text = "accept the size" })
+	retry := withoutOption(q.Options[0].Act, "reason")
+	code, refused := answerAct(t, b, append(retry, "--reason", "the machinery stopped: deadline"), q.ID)
+	if r := onlyRun(t, b); code == 0 || !strings.Contains(refused.Summary, `authorizes "Accept the size"`) || r.Rounds[0].SizeAcceptedBy != "" {
+		t.Fatalf("a retry was admitted by a size answer: %d %+v", code, refused)
+	}
+}
+
+func TestActProgressJudgesARetryInItsOwnRound(t *testing.T) {
+	t.Parallel()
+	record := launch.UnitRunRecord{Rounds: []launch.UnitRound{{Number: 1, Steps: []launch.UnitStep{
+		{Name: "build", Kind: "build", State: launch.StepStarting, LaunchID: "run-r1-s1-retry", RetryLaunch: "run-r1-s1", RetryBy: "Wido", RetryReason: "the machinery stopped: deadline"}}}}}
+	if got := actProgress(record, "work-review-retry", "run-r1-s1", "Wido", "the machinery stopped: deadline", 0); got != "accepted" {
+		t.Fatalf("a retry not yet launched reads %q", got)
+	}
+	record.Rounds[0].Steps[0].State = launch.StepRunning
+	if got := actProgress(record, "work-review-retry", "run-r1-s1", "Wido", "the machinery stopped: deadline", 0); got != "started" {
+		t.Fatalf("a retry launched in its own round reads %q", got)
+	}
+	if got := actProgress(record, "work-review-retry", "run-r1-s1", "machine", "the machinery stopped: deadline", 0); got != "" {
+		t.Fatalf("the machine's retry reads as the person's: %q", got)
+	}
+	// Another hold of the same step: the earlier retry is not this answer's.
+	if got := actProgress(record, "work-review-retry", "run-r1-s1-retry", "Wido", "the machinery stopped: deadline", 0); got != "" {
+		t.Fatalf("an earlier retry reads as the answer to a later hold: %q", got)
+	}
+	// A size acceptance is not a retry, and a retry is not a size acceptance.
+	sized := launch.UnitRunRecord{Rounds: []launch.UnitRound{{Number: 1, SizeAcceptedBy: "Wido", Steps: []launch.UnitStep{{Name: "build", State: launch.StepPassed}, {Name: "proof:unit-check", Kind: "attest", State: launch.StepFailed, LaunchID: "run-r1-s2"}}}}}
+	if got := actProgress(sized, "work-review-retry", "run-r1-s2", "Wido", "the machinery stopped: deadline", 0); got != "" {
+		t.Fatalf("an earlier size acceptance reads as a retry: %q", got)
+	}
+	if got := actProgress(record, "work-review-size", "run-r1-s1", "Wido", "the machinery stopped: deadline", 0); got != "" {
+		t.Fatalf("a retry reads as a size acceptance: %q", got)
+	}
+	held := record.Rounds[0]
+	held.Steps[0].State = launch.StepStarting
+	if !heldRequest(held, "Wido", "the machinery stopped: deadline") {
+		t.Fatal("a retained retry that never started is not held")
+	}
+	held.Steps[0].ExecutionStartedAt = "2026-10-25T09:00:00Z"
+	if heldRequest(held, "Wido", "the machinery stopped: deadline") {
+		t.Fatal("a retry that has started would be run again")
+	}
+}
+
+func TestARefusedRetryAfterAnEarlierOneReadsRefused(t *testing.T) {
+	t.Parallel()
+	b, _, _ := deadlineCheckBed(t, 6, everyCheckDeadline)
+	enrol(t, b, "Wido")
+	channelFor(t, b.root())
+	agentBuild(t, b)
+	if _, first := heldReview(t, b, "M2"); first.Outcome == "" {
+		t.Fatalf("the first retry did not run: %+v", first)
+	}
+	r := onlyRun(t, b)
+	step := r.Rounds[0].Steps[1]
+	if step.RetryBy != "Wido" || step.LaunchID == step.RetryLaunch || !launchedStep(step) {
+		t.Fatalf("the first retry did not run and stop again: %+v", step)
+	}
+	held, err := lock.File(filepath.Join(b.unitRoot, r.ID, ".lock"), 0o600, lock.TryExclusive)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer held.Release()
+	q, busy := heldReview(t, b, "M3")
+	if state, _ := answerState(t, busy); state != "refused" || q.UnitStop.Finding != step.LaunchID {
+		t.Fatalf("a retry refused as busy reads %q after an earlier retry: %+v", state, busy)
 	}
 }
