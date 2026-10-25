@@ -295,3 +295,80 @@ func TestBranchReadCompletedUnknownInputsRetryOnceAndRejoinPending(t *testing.T)
 		})
 	}
 }
+
+// TestBranchReadRetriesACompletedExaminationWhoseProcessIsDead: a completed
+// round with unavailable stop inputs and a recorded process is retried once
+// the caller's custody dependencies prove that process dead, at admission and
+// again at the reservation, and is refused while they show it alive.
+func TestBranchReadRetriesACompletedExaminationWhoseProcessIsDead(t *testing.T) {
+	t.Parallel()
+	r := newReadFactRepository(t, false)
+	r.expectStart()
+	r.expectGateAndBrief()
+	for range 3 {
+		r.expectStart()
+	}
+	input := filepath.Join(t.TempDir(), "brief.md")
+	if err := os.WriteFile(input, []byte("Examine retained stop inputs.\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	primary := identity.Exact{Pid: 4343, StartedAt: time.UnixMicro(100_000_001)}
+	if runtime.GOOS == "linux" {
+		primary = identity.Exact{Pid: 4343, StartedAt: time.Unix(100, 0), StartTicks: 7001, BootID: "boot-a"}
+	}
+	table := &retryProcessTable{process: primary, pgid: 4343, live: true}
+	matches := func(argv []string, tag string) bool { return len(argv) == 2 && argv[0] == "owned" && argv[1] == tag }
+	followUps := 0
+	request := branch.BranchReadRequest{Repo: r.root, Remote: "origin", EndpointTip: r.base, BranchTip: r.unit,
+		GoalID: "goal-a", UnitCommit: r.unit, Repository: r, BriefPath: input,
+		CheckClaim: claimAllowed, Gate: func(string) (string, error) { return "green", nil },
+		NewID: func(string) (string, error) { return "retry-gate", nil },
+		Delegate: func(string, string, string, string, string) (string, error) {
+			record := map[string]any{"jobId": "critic", "role": "code-critic", "round": 1, "status": "completed",
+				"reviews": "commit:" + r.unit, "goalId": "goal-a", "findingRegister": []any{}, "instanceTag": "critic-tag", "pgid": 4343}
+			ref := primary.Ref()
+			record["pid"], record["pidStartedAt"] = ref.Pid, ref.StartedAtSec
+			if ref.StartTicks > 0 {
+				record["pidStartTicks"], record["bootId"] = ref.StartTicks, ref.BootID
+			} else {
+				record["pidStartedAtExactMicro"] = ref.StartedAtUnixMicro
+			}
+			writeJSONFixture(t, r.root, "artifacts/agents/jobs/critic.json", record)
+			writeJSONFixture(t, r.root, "artifacts/agents/critic/rounds/1/subject.json", r.readSubject())
+			writeJSONFixture(t, r.root, "artifacts/agents/critic/rounds/1/return.json", map[string]any{"jobId": "critic", "round": 1, "reviewedTree": r.readSubject().Tree, "verdictMaterialCount": 1,
+				"findings": []any{map[string]any{"id": "F1", "severity": "high", "material": true, "claim": "A reader is missing.", "evidence": "Observed it.", "where": "metasystem/test.go", "change": "Read it."}}})
+			if err := os.WriteFile(filepath.Join(r.root, "artifacts/agents/critic/rounds/1/return.md"), []byte("VERDICT: REVISE material=1\n"), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			return "critic", nil
+		},
+		FollowUp: func(string, string) (string, error) {
+			followUps++
+			return "critic-r2", nil
+		},
+		CustodyDeath: dispatch.CustodyDeathDependencies{Reader: table, Processes: table, MatchesTag: matches,
+			TaggedScan: func(tag string) census.TaggedProcessCensus {
+				return census.ScanTaggedProcesses(tag, census.TaggedScanDependencies{Processes: table, Reader: table,
+					Signal: func(int64) error { return nil }, MatchesTag: matches})
+			}},
+	}
+	if _, err := branch.RunBranchRead(request); err != nil {
+		t.Fatal(err)
+	}
+	retried := request
+	retried.BriefPath, retried.Retry = "", 1
+	reserved := func() bool {
+		data, err := os.ReadFile(filepath.Join(r.root, "artifacts/agents/jobs/critic.json"))
+		return err == nil && strings.Contains(string(data), "unknownExaminationRetryFrom")
+	}
+	if _, err := branch.RunBranchRead(retried); err == nil || !strings.Contains(err.Error(), "not proven quiescent") || followUps != 0 || reserved() {
+		t.Fatalf("a completed round whose recorded process is alive was retried: %v %d", err, followUps)
+	}
+	table.live = false
+	if result, err := branch.RunBranchRead(retried); err != nil || result.State != "dispatched" || result.Retry != "critic-r2" || followUps != 1 || !reserved() {
+		t.Fatalf("a completed round whose recorded process is dead: %+v %v %d", result, err, followUps)
+	}
+	if result, err := branch.RunBranchRead(retried); err != nil || result.State != "retry-joined" || followUps != 1 {
+		t.Fatalf("a replayed retry: %+v %v %d", result, err, followUps)
+	}
+}

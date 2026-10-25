@@ -198,7 +198,7 @@ func TestCompletedUnknownExaminationRetriesOnlyOnce(t *testing.T) {
 	if err := ExaminationRetryAdmissible(repo, record); err != nil {
 		t.Fatalf("unknown completed return cannot recover: %v", err)
 	}
-	if err := ReserveUnknownExaminationRetry(repo, job); err != nil {
+	if err := ReserveUnknownExaminationRetry(repo, job, CustodyDeathDependencies{}); err != nil {
 		t.Fatal(err)
 	}
 	retained := readJSONFile(t, filepath.Join(repo, "artifacts", "agents", "jobs", root+".json"))
@@ -208,7 +208,7 @@ func TestCompletedUnknownExaminationRetriesOnlyOnce(t *testing.T) {
 	if err := ExaminationRetryAdmissible(repo, record); err == nil {
 		t.Fatal("second automatic retry admitted")
 	}
-	if err := ReserveUnknownExaminationRetry(repo, job); err == nil {
+	if err := ReserveUnknownExaminationRetry(repo, job, CustodyDeathDependencies{}); err == nil {
 		t.Fatal("second retry reservation admitted")
 	}
 }

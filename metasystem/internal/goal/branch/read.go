@@ -1073,7 +1073,7 @@ func retryBranchRead(request BranchReadRequest, common, recordPath string, recor
 		return result, err
 	}
 	if newest["status"] == "completed" && !reservedUnknown {
-		if err := dispatch.ReserveUnknownExaminationRetry(request.Repo, newestID); err != nil {
+		if err := dispatch.ReserveUnknownExaminationRetry(request.Repo, newestID, deps); err != nil {
 			return result, operationRefusal(ReadInvalidCode, "%v", err)
 		}
 	}

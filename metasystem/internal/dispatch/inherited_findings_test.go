@@ -96,7 +96,7 @@ func TestFreshUnknownExaminationKeepsGoalAllowanceAndCriticCount(t *testing.T) {
 	if err := writeRecord(originalPath, original); err != nil {
 		t.Fatal(err)
 	}
-	if err := ReserveUnknownExaminationRetry(repo, "original"); err != nil {
+	if err := ReserveUnknownExaminationRetry(repo, "original", CustodyDeathDependencies{}); err != nil {
 		t.Fatal(err)
 	}
 	writeBudgetJob(t, repo, "fresh", "fresh-op", 3, 30, "running", budgetJobLife{})

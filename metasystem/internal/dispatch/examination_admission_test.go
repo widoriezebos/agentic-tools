@@ -37,7 +37,7 @@ func TestReservedUnknownReadAdmissionPreservesAuthorityLimits(t *testing.T) {
 				t.Fatal(err)
 			}
 			if variation != "unreserved" {
-				if err := ReserveUnknownExaminationRetry(bed.root, "original"); err != nil {
+				if err := ReserveUnknownExaminationRetry(bed.root, "original", CustodyDeathDependencies{}); err != nil {
 					t.Fatal(err)
 				}
 			}
