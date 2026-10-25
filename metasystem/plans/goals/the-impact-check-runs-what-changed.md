@@ -7,10 +7,10 @@
 - Tier: 2
 - Intent: The unit check's impact selection runs what a change touches: a dependent internal package runs only the tests that reference a changed exported symbol, never whole; a changed string literal selects a test file only when it is a message (contains a space); a fixture directory name is no longer a symbol. Changed packages keep today's rule. One unit, about 25 production lines, built with --last.
 - Origin: human
-- Next step: Build the one unit from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-impact-check-runs-what-changed-brief.md (FINAL r2, ~41 of 250 lines) with work build --last on ui right after the-second-half-is-the-seats lands; machine route.; ASKED KY9PDMKC4H9M4AMH1EHCBYN54C (other): May the impact-check build go on past its size hold? I declared 41 lines; the change has 1221.
+- Next step: Build the one unit from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-impact-check-runs-what-changed-brief.md (FINAL r2, ~41 of 250 lines) with work build --last on ui right after the-second-half-is-the-seats lands; machine route.; ASKED KY9PDMKC4H9M4AMH1EHCBYN54C (other): May the impact-check build go on past its size hold? I declared 41 lines; the change has 1221.; ASKED QDJM7NGDER8NGPPP1WGQETJ67W (other): The impact-check work passed its review, but an engine fault keeps the engine from recording that. Wait for m1e's fix, or hand it in yourself?
 - OpenedAt: 2026-10-24T11:24:03Z
 - FirstClaimAt: 2026-10-25T14:30:00Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=MM15Y0ND5F9XRQ7W15H25JA0ER-m1e-5ea50bdc minutes=2400 reviewRounds=20 goalRevision=1
@@ -29,4 +29,5 @@ History:
 - 2026-10-25T15:12:27Z 2NEXM15HSDT95Q8K36Q1K3EJ3R-ui-71c5cb39 ask actor=ui+steward-seat targets=the-impact-check-runs-what-changed
 - 2026-10-25T18:09:05Z C2MAE2RXHAM774PV758618GRSH-ui-71c5cb39 restamp actor=ui+steward-seat targets=the-impact-check-runs-what-changed reason=stop capability claimEpoch 5->7
 - 2026-10-25T18:50:23Z 92C4S7NV2REP7QCWGV90PZAN0B-ui-71c5cb39 slice-start actor=ui+steward-seat targets=the-impact-check-runs-what-changed
-Integrity: sha256=3a6fd27578e9af0f4f2426f3a71d44ad4924d5ce62f755e7ad3bc31ba46116b1
+- 2026-10-25T20:26:21Z 11N1W73C1RD7GR7XNDMMED0KRJ-ui-71c5cb39 ask actor=ui+steward-seat targets=the-impact-check-runs-what-changed
+Integrity: sha256=3059c1e87d01786fb68601a19014a07649686b87d46e568fd24d66ae01590e2b
