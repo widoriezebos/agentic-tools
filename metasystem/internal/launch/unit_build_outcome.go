@@ -38,20 +38,9 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 	}
 	gap := false
 	if round.DeclaredLines == 0 {
-		diff, err := runner.diffSince(UnitRunRecord{Worktree: plan.Worktree, Base: plan.Base}, UnitRound{Directory: filepath.Join(round.Directory, "build-before")}, *round, "records", "metasystem/records")
-		if err != nil {
+		var err error
+		if gap, err = runner.countBuildLines(round, plan, builds, round.Directory); err != nil {
 			return false, err
-		}
-		gap = len(strings.TrimSpace(string(diff))) == 0
-		for _, step := range round.Steps[:builds] {
-			launch, err := runner.Manager.Store.Read(step.LaunchID)
-			if err != nil {
-				return false, err
-			}
-			round.DeclaredLines += launch.DeclaredLines
-		}
-		for _, block := range parseDiff(diff) {
-			round.BuildLines += block.lines
 		}
 	}
 	oversized := round.BuildLines > round.DeclaredLines && round.BuildLines-round.DeclaredLines > round.DeclaredLines
@@ -75,19 +64,11 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 	s.Measure.Name, s.Measure.Now, s.Measure.Previous = "changed lines", []string{fmt.Sprint(round.BuildLines)}, []string{fmt.Sprint(round.DeclaredLines)}
 	if gap {
 		round.Outcome, s.Handoff, s.Class = "build-gap", "stopped (gap)", "the builder left no change"
-		last, err := runner.Manager.Store.Read(round.Steps[builds-1].LaunchID)
+		message, err := runner.builderMessage(*round, builds)
 		if err != nil {
 			return true, err
 		}
-		state, err := runner.Manager.Store.StateDir(last.ID)
-		if err != nil {
-			return true, err
-		}
-		name := "last-message.txt"
-		if last.Adapter == "claude-headless" {
-			name = "result.json"
-		}
-		round.GapMessage = filepath.Join(state, name)
+		round.GapMessage = message
 	}
 	s.Cause = &loopstop.Cause{Kind: "unclassified", Goal: record.Goal, Evidence: path}
 	round.Stop = &s
@@ -96,6 +77,63 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 	}
 	runner.publishJudgement(*record, round.Number)
 	return true, nil
+}
+
+// countBuildLines adds the builder's changed lines, from directory's
+// worktree.diff against the round's starting diff, and its declared lines;
+// gap is a change that is empty.
+func (runner *UnitRunner) countBuildLines(round *UnitRound, plan UnitPlan, builds int, directory string) (bool, error) {
+	diff, err := runner.diffSince(UnitRunRecord{Worktree: plan.Worktree, Base: plan.Base}, UnitRound{Directory: filepath.Join(round.Directory, "build-before")}, UnitRound{Number: round.Number, Directory: directory}, "records", "metasystem/records")
+	if err != nil {
+		return false, err
+	}
+	for _, step := range round.Steps[:builds] {
+		launch, err := runner.Manager.Store.Read(step.LaunchID)
+		if err != nil {
+			return false, err
+		}
+		round.DeclaredLines += launch.DeclaredLines
+	}
+	for _, block := range parseDiff(diff) {
+		round.BuildLines += block.lines
+	}
+	return len(strings.TrimSpace(string(diff))) == 0, nil
+}
+
+// countFailedBuild counts a stopped build's change for the person's question
+// from its own diff; the round's worktree.diff stays the frozen result of a
+// build that passes. A count that fails leaves no counts: the stop never
+// waits on it.
+func (runner *UnitRunner) countFailedBuild(round *UnitRound, plan UnitPlan, builds int) {
+	directory := filepath.Join(round.Directory, "failed-build")
+	round.BuildLines, round.DeclaredLines, round.GapMessage = 0, 0, ""
+	err := runner.writeDiff(plan.Worktree, plan.Base, filepath.Join(directory, "worktree.diff"))
+	if err == nil {
+		_, err = runner.countBuildLines(round, plan, builds, directory)
+	}
+	if err == nil {
+		round.GapMessage, err = runner.builderMessage(*round, builds)
+	}
+	if err != nil {
+		round.BuildLines, round.DeclaredLines, round.GapMessage = 0, 0, ""
+	}
+}
+
+// builderMessage is the path of the last builder turn's final message.
+func (runner *UnitRunner) builderMessage(round UnitRound, builds int) (string, error) {
+	last, err := runner.Manager.Store.Read(round.Steps[builds-1].LaunchID)
+	if err != nil {
+		return "", err
+	}
+	state, err := runner.Manager.Store.StateDir(last.ID)
+	if err != nil {
+		return "", err
+	}
+	name := "last-message.txt"
+	if last.Adapter == "claude-headless" {
+		name = "result.json"
+	}
+	return filepath.Join(state, name), nil
 }
 
 // AcceptBuildSize validates the retained builder change and records the

@@ -31,7 +31,18 @@ func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound
 	step := &round.Steps[index]
 	if step.State == StepFailed && step.Cause == "unclassified" && checkCause(step, round.Directory) {
 		step.Reason = "the frozen check stopped at proof.deadline"
-		return false, runner.save(*record)
+		// The collecting save books this launch as environment before a
+		// retry replaces the step's launch id.
+		driver := runner.driver(record, round)
+		if err := driver.save(); err != nil {
+			return false, err
+		}
+		launches := len(step.LaunchIDs)
+		capped, err := driver.retryFailedStep(index, deadline)
+		if err != nil || capped || len(step.LaunchIDs) == launches {
+			return capped, err
+		}
+		return runner.attributeProof(record, round, index, base, deadline)
 	}
 	if step.State != StepFailed || step.Cause != "unclassified" || step.Retained == nil {
 		return false, nil

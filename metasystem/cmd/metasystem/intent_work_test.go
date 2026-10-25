@@ -916,8 +916,11 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 			t.Fatalf("read brief lacks %q:\n%s", want, readBrief)
 		}
 	}
-	if !strings.HasPrefix(string(buildBrief), "Before returning, run: metasystem test run --unit-run "+data["run"].(string)+"\n") || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
+	if !strings.HasPrefix(string(buildBrief), "The engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to "+filepath.Dir(plan.Build.Brief)+"/check-*/output.log while it runs.\n\n") || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
 		t.Fatalf("build brief:\n%s", buildBrief)
+	}
+	if !strings.Contains(string(buildBrief), "- Check: the engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to this round's check-*/output.log, named on the brief's first line.\n") || strings.Contains(string(buildBrief), "run the frozen command") {
+		t.Fatalf("the binding still asks the builder to run the check:\n%s", buildBrief)
 	}
 	before := map[string][]byte{}
 	for _, path := range []string{planPath, plan.Build.Brief, plan.Read.Brief} {
@@ -931,8 +934,10 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 			t.Fatalf("%s changed on repeat", path)
 		}
 	}
-	// From a folder below the checkout's top, the check runs in the goal
-	// worktree's copy of that folder, where a module below the top is found.
+	// From a folder below the checkout's top, a declared check (no --check)
+	// still runs at the goal worktree's installation folder, where the lane
+	// proves it. This bed's installation is the checkout root, so that is the
+	// worktree's top.
 	for _, dir := range []string{filepath.Join(bed.root(), "module"), filepath.Join(bed.worktree, "module")} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			t.Fatal(err)
@@ -956,8 +961,8 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 	}
 	bed.recordReadDirs(nested)
 	if nestedPlan, err := launch.ReadUnitPlan(resultData(t, nested)["plan"].(string)); err != nil || len(nestedPlan.Proof) != 1 ||
-		nestedPlan.Proof[0].Dir != filepath.Join(bed.worktree, "module") {
-		t.Fatalf("the check from a folder below the top runs in the worktree's copy of it: %+v %v", nestedPlan.Proof, err)
+		nestedPlan.Proof[0].Dir != bed.worktree {
+		t.Fatalf("the declared check from a folder below the top runs at the worktree's installation: %+v %v", nestedPlan.Proof, err)
 	}
 
 }

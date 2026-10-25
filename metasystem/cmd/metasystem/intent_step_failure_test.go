@@ -172,7 +172,7 @@ func TestIntentUnattributedRedHoldsForProvenPerson(t *testing.T) {
 		t.Fatalf("exit was charged as own: %d %+v", code, r)
 	}
 	questions, damaged := channel.WalkOpenQuestions(b.root())
-	if len(damaged) != 0 || len(questions) != 1 || !strings.Contains(channel.ActCommand(questions[0]), "--reason TEXT --by NAME") {
+	if len(damaged) != 0 || len(questions) != 1 || !strings.Contains(channel.ActCommand(questions[0]), shellCommand([]string{"--reason", "the machinery stopped: " + r.Rounds[0].Stop.Class, "--by", "Wido"})) {
 		t.Fatalf("missing retained person remedy: %+v %v", questions, damaged)
 	}
 	brief := b.brief("correction.md", "Correct the retained failure.\n")
@@ -306,7 +306,8 @@ func TestIntentEnvironmentPersonActRerunsRetainedStep(t *testing.T) {
 		t.Fatalf("missing failed-step remedy: %d %+v", code, result)
 	}
 	questions, damaged := channel.WalkOpenQuestions(b.root())
-	if len(damaged) != 0 || len(questions) != 1 || channel.ActCommand(questions[0]) != shellCommand(result.Next.Argv) {
+	// The question fills in the machinery's reason and the bed's enrolled person.
+	if len(damaged) != 0 || len(questions) != 1 || channel.ActCommand(questions[0]) != shellCommand(replaceWord(replaceWord(result.Next.Argv, "TEXT", "the machinery stopped: "+r.Rounds[0].Stop.Class), "NAME", "Wido")) {
 		t.Fatalf("question and printed remedy differ: %+v %+v", questions, result.Next)
 	}
 	args := append([]string(nil), result.Next.Argv[1:]...)

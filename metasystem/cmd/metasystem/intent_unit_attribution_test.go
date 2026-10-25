@@ -136,7 +136,10 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain bool) *workBed {
 			t.Fatal(err)
 		}
 	}
-	if err := os.WriteFile(filepath.Join(bed.worktree, "u", "a", "red"), nil, 0600); err != nil {
+	// A declared check runs from the worktree's installation folder (U3 item
+	// 11), which in this bed is the checkout root, whatever folder the build
+	// is called from.
+	if err := os.WriteFile(filepath.Join(bed.worktree, "red"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
 	script := "#!/bin/sh\nif [ ! -f red ]; then exit 0; fi\nif [ -f '" + counter + "' ]; then exit 0; fi\ntouch '" + counter + "'\nprintf 'LANDING-FAILED\\tu/a\\tTestBroken\\nLANDING-CHECKED\\t1\\n'\nexit 1\n"

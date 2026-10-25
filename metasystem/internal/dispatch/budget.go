@@ -529,7 +529,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if !goalbudget.ReservationConsumesBudget(TerminalStatus(status), lens.Phase(), lens.RefusalClass()) {
 			continue
 		}
-		unitAttempt := ""
+		unitAttempt, retryAttempt := "", false
 		if run, present := record["unitRun"]; present {
 			runID, typed := run.(string)
 			round, roundOK := numInt(record["unitRound"])
@@ -544,13 +544,21 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 					continue
 				}
 			}
+			// A retry is an attempt of its own, counted even when its
+			// environment stop excludes its minutes.
+			retryAttempt = record["unitRetryAttempt"] == true
 			if excluded, present := record["unitEnvironment"]; present {
 				if excluded != true || !TerminalStatus(status) {
 					return unknownBudget(file.Id, revision, logicalPath, "the unit environment exclusion has no terminal execution")
 				}
-				continue
+				if !retryAttempt {
+					continue
+				}
 			}
 			unitAttempt = fmt.Sprintf("%s/%d", runID, round)
+			if retryAttempt {
+				unitAttempt += "/" + jobID
+			}
 		}
 		if consumes && (unitAttempt == "" || !unitAttempts[unitAttempt]) {
 			unitAttempts[unitAttempt] = true
@@ -618,6 +626,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 					return unknownBudget(file.Id, revision, logicalPath, "CLOCK_REGRESSED: the terminal reservation ended before its ownership was proven")
 				}
 				charge = settledJobMinutes(start, end, capMinutes)
+			}
+			if retryAttempt && record["unitEnvironment"] == true {
+				charge = 0
 			}
 		}
 		if consumes {

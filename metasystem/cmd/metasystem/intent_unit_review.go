@@ -50,6 +50,7 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 			if problem != nil {
 				return *problem
 			}
+			runner.Actor = "person"
 			person, reason := unitStopActor(actor), inv.input.text("reason")
 			again := "rerun the retained check with the same inputs and fresh output, without another build"
 			for _, step := range round.Steps {
@@ -75,6 +76,7 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 			if problem != nil {
 				return *problem
 			}
+			runner.Actor = "person"
 			impact := fmt.Sprintf("Impact: accept %d changed lines against %d declared and resume the pending checks.\nThe larger change still needs checks and review; later automatic limits remain.\nStop this run to undo the continuation; its retained change remains.", round.BuildLines, round.DeclaredLines)
 			person := unitStopActor(actor)
 			var impactErr error

@@ -68,6 +68,8 @@ type StartSpec struct {
 	// FenceRoot is the installation state root whose process-creation
 	// fence a seat launch binds to; empty is the working directory.
 	FenceRoot string
+	// HostGated makes a launch that is no build wait for host load as a build does; it never takes a host.builds place.
+	HostGated bool
 }
 type Manager struct {
 	BuildPolicy      config.GetParams

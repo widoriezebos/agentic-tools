@@ -72,6 +72,31 @@ func TestIntentUnitCheckDeadlineRetryNamesNextStep(t *testing.T) {
 			}); err != nil {
 				t.Fatal(err)
 			}
+			if kind == "proof" {
+				// The machine retries a unit check's first deadline once; its
+				// second deadline is the person's.
+				_, retried, _ := stopPublic(t, b, "auto", "work", "wait", "run:"+run)
+				record, err = runner.Status(run)
+				if err != nil || len(record.Rounds[0].Steps[1].LaunchIDs) != 2 || record.Rounds[0].Steps[1].RetryBy != "machine" || record.Rounds[0].Stop != nil {
+					t.Fatalf("no machine retry: %+v record=%+v err=%v", retried, record, err)
+				}
+				retry := record.Rounds[0].Steps[1].LaunchID
+				second := launch.CheckExecution{ExecutionID: "check-machine", Role: "builder", Steps: []processmeasure.Step{{Parent: retry, Start: "2026-10-23T09:30:00Z", Outcome: "deadline"}, {Outcome: "passed"}}}
+				data, _ := json.Marshal(second)
+				if err := os.MkdirAll(filepath.Join(round.Directory, "builder-check-machine"), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(round.Directory, "builder-check-machine", "observation.json"), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := b.manager.Store.Update(retry, func(r *launch.Record) error {
+					code := 1
+					r.State, r.Reason, r.ExitCode, r.FinishedAt = launch.Failed, "exit-1", &code, b.manager.Now().UTC().Format(time.RFC3339Nano)
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
 			b.starter.hold = ""
 			_, held, _ := stopPublic(t, b, "auto", "work", "wait", "run:"+run)
 			record, err = runner.Status(run)

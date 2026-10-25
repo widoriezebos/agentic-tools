@@ -108,6 +108,7 @@ var immutableFields = map[string]bool{
 var dedicatedMetadataFields = map[string]bool{
 	"unitUnaccounted":           true,
 	"unitEnvironment":           true,
+	"unitRetryAttempt":          true,
 	"unitExecuted":              true,
 	"findingRegister":           true,
 	"findingRegisterRound":      true,

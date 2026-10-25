@@ -297,9 +297,37 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	add := func(dir string, output string, check func(testgit.Call) error, args ...string) {
 		expected = append(expected, testgit.Expectation{Call: testgit.Call{Dir: dir, Args: args}, Result: testgit.Result{Stdout: []byte(output)}, Check: check})
 	}
+	// A stopped build writes its own diff and counts it against the round's
+	// starting diff.
+	failedBuild := func() {
+		check := isolatedGitEnvironment(fixture.worktree, objects, false)
+		add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
+		add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+		add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
+		add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "base", "--", ".")
+		verify := isolatedGitEnvironment(fixture.worktree, objects, false)
+		fold := func(call testgit.Call) error {
+			if call.Args[0] == "read-tree" {
+				if err := os.WriteFile(strings.TrimPrefix(call.Env[0], "GIT_INDEX_FILE="), []byte("index"), 0600); err != nil {
+					return err
+				}
+			}
+			return verify(call)
+		}
+		add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
+		add(fixture.worktree, "", fold, "read-tree", "base")
+		add(fixture.worktree, "previous-tree\n", fold, "write-tree")
+		add(fixture.worktree, "", fold, "read-tree", "base")
+		if diff != "" {
+			add(fixture.worktree, "", fold, "apply", "--cached", "--binary", "retained-worktree.diff")
+		}
+		add(fixture.worktree, diff, fold, "diff", "--cached", "--binary", "previous-tree", "--", ".", ":(exclude,literal)records", ":(exclude,literal)metasystem/records")
+	}
 	for _, event := range events {
 		switch event {
 		case "new", "resolve":
+		case "failed":
+			failedBuild()
 		case "branch":
 			add(fixture.worktree, "goal/goal\n", nil, "symbolic-ref", "--short", "HEAD")
 		case "main":
@@ -387,9 +415,13 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 	}
 	// Each physical proof/read execution takes fresh snapshots, including a
 	// retained step retry. Every snapshot must complete this strict Git sequence.
+	start := len(expected)
+	failedBuild()
+	failed := slices.Clone(expected[start:])
+	expected = expected[:start]
 	fixture.git = &stubGit{worktree: fixture.worktree, snapshot: snapshot, reporter: t, makeStub: func() *testgit.Stub {
 		if defaultEvents && fixture.starter.failKind == "build" {
-			return testgit.New(t, expected[:6]...)
+			return testgit.New(t, append(slices.Clone(expected[:6]), failed...)...)
 		}
 		return testgit.New(t, expected...)
 	}}
@@ -680,7 +712,7 @@ func TestEveryOutcomeEndsAtAwaitingJudgement(t *testing.T) {
 		t.Run(row.want, func(t *testing.T) {
 			events := []string{"branch", "round"}
 			if row.want == "build-failed" {
-				events = []string{"branch", "before"}
+				events = []string{"branch", "before", "failed"}
 			}
 			fixture := newUnitFixture(t, "", events...)
 			fixture.starter.failKind = row.fail

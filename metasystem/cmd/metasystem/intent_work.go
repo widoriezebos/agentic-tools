@@ -30,6 +30,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
@@ -94,6 +95,9 @@ type intentWorkOwners struct {
 	// waitClock replaces the default wait owner's clock (see
 	// runWaitCommandOnClock); nil keeps the kernel clock.
 	waitClock func(*metarun.WaitOptions)
+	// laneProof is the host landing lane's running proof; nil when there is
+	// no lane or its proof cannot be read.
+	laneProof func() *plain.RunningProof
 }
 
 // intentConfPath is the selected installation's configuration file.
@@ -124,6 +128,19 @@ func (inv *intentInvocation) work() intentWorkOwners {
 	}
 	if owners.inspectRead == nil {
 		owners.inspectRead = branch.InspectBranchRead
+	}
+	if owners.laneProof == nil {
+		owners.laneProof = func() *plain.RunningProof {
+			home, err := inv.landing().home()
+			if err != nil {
+				return nil
+			}
+			record, registered, err := lane.Read(home)
+			if err != nil || !registered {
+				return nil
+			}
+			return plain.ReadRunningProof(record.Install, plain.ProveSeams{})
+		}
 	}
 	if owners.units == nil {
 		// The serving installation supplies launch settings; launch and unit
@@ -528,6 +545,11 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if err := inv.unitLaunchAuthority(record, spec, settings); err != nil {
 			return err
 		}
+		if spec.HostGated && strings.HasSuffix(spec.ID, "-retry") && runner.Actor != "person" {
+			if proof := inv.work().laneProof(); proof != nil && proof.State == "running" {
+				return refusal.New("LAUNCH_BUILD_CAPACITY", "run="+record.ID+" launch="+spec.ID, errors.New("the landing lane is proving main; the unit check's retry waits until it ends"))
+			}
+		}
 		if spec.Kind == "build" {
 			if fix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), record.Worktree, record.Goal); fix != nil {
 				if record.Unit != fix.Unit() || len(record.Rounds) != 1 || fix.Job != "" {
@@ -741,7 +763,10 @@ func (inv *intentInvocation) unitLaunchAuthority(record launch.UnitRunRecord, sp
 	if err != nil {
 		return err
 	}
-	return dispatchcore.ReserveUnitLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, record.Rounds[len(record.Rounds)-1].Number, cap, now)
+	// The machine's one retry of a unit check is charged as an attempt of its own.
+	round := record.Rounds[len(record.Rounds)-1]
+	retry := strings.HasSuffix(spec.ID, "-retry") && slices.ContainsFunc(round.Steps, func(step launch.UnitStep) bool { return step.LaunchID == spec.ID && step.RetryBy == "machine" })
+	return dispatchcore.ReserveUnitLaunch(inv.layout.InstallationRoot.Path(), spec.ID, record.ID, file, round.Number, cap, now, retry)
 }
 
 // build
@@ -1111,7 +1136,14 @@ func (inv *intentInvocation) unitRequest(runner *launch.UnitRunner, id, unit str
 	if problem != nil {
 		return unitRequest{}, problem
 	}
+	// The declared check runs from the installation, as the lane proves it;
+	// a manual check runs from the folder its caller chose.
 	checkDir := inv.worktreeFolderHere(worktree)
+	if installed := filepath.Join(worktree, inv.layout.InstallationRel); len(inv.input.values["check"]) == 0 {
+		if info, err := os.Stat(installed); err == nil && info.IsDir() {
+			checkDir = installed
+		}
+	}
 	sizeSource, lines, problem := inv.unitSize(unit, briefPath, designs)
 	if problem != nil {
 		return unitRequest{}, problem
@@ -1458,7 +1490,7 @@ func (b unitBinding) buildBrief(brief []byte) string {
 	} else {
 		fmt.Fprintf(&text, "- Size: the %s row of the units table in %s (%d changed lines)\n", b.unit, b.unitsPage, b.lines)
 	}
-	text.WriteString("- Check: run the frozen command at the start of this round's brief before returning.\n")
+	text.WriteString("- Check: the engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to this round's check-*/output.log, named on the brief's first line.\n")
 	fmt.Fprintf(&text, "- Rounds: at most %d, the goal's approved review-round limit\n", b.rounds)
 	fmt.Fprintf(&text, "- Caller's brief: %s\n\nLeave the change in the worktree, uncommitted. The run ends awaiting judgement; it is not approved or landed by the build.\n\n---\n\n", b.brief)
 	text.Write(brief)
@@ -1532,7 +1564,11 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		plain, details := launchAccount(err)
 		switch {
 		case launch.IsCode(err, "LAUNCH_BUILD_CAPACITY"), launch.IsCode(err, "LAUNCH_BUILD_PERSON"):
-			held := intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + "; no build was launched", Details: details,
+			waits := "; no build was launched"
+			if len(record.Rounds) > 0 && slices.ContainsFunc(record.Rounds[len(record.Rounds)-1].Steps, func(step launch.UnitStep) bool { return step.State == launch.StepStarting && step.Kind == "attest" }) {
+				waits = "; the unit check waits for the host"
+			}
+			held := intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + waits, Details: details,
 				next: again, nextReason: humanauthority.PersonActRemedy(shellCommand(again)) + "; settings stay in force"}
 			if launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
 				q, warnings, code, askErr := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), channelAskInput{Goal: targetID(targets, "goal", record.Goal), Kind: "other",

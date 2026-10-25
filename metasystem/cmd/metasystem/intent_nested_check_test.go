@@ -231,7 +231,7 @@ func TestNestedCheckPublicCostReport(t *testing.T) {
 	if p.Measures.SuiteMinutes == nil || *p.Measures.SuiteMinutes != 0 {
 		t.Fatalf("suite inferred by name: %+v", p.Measures)
 	}
-	// A newer unfinished physical execution cannot inherit any old end.
+	// A newer unfinished physical execution inherits no old end of its own; its launch has finished, so it ends there.
 	child.ExecutionID = "check-new"
 	child.Steps = child.Steps[:1]
 	child.Steps[0].ID = "check-new:cheap"
@@ -246,8 +246,8 @@ func TestNestedCheckPublicCostReport(t *testing.T) {
 	write()
 	p = status()
 	assertMinutes(*p.Measures, 4, 7)
-	if !p.Measures.WorkLowerBound {
-		t.Fatal("unfinished child borrowed completion")
+	if p.Measures.WorkLowerBound {
+		t.Fatal("an unfinished child of a finished launch stayed open")
 	}
 	// A child beginning before the parent contributes only its clipped interval.
 	child.ExecutionID = "check-clipped"

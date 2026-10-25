@@ -62,6 +62,14 @@ func unitMeasureInput(work launch.NamedWork, runner *launch.UnitRunner, root str
 				}
 			}
 			for _, step := range round.Steps {
+				for _, id := range step.LaunchIDs {
+					if record, err := runner.Manager.Store.Read(id); err == nil && record.State.Terminal() {
+						if in.LaunchEnds == nil {
+							in.LaunchEnds = map[string]string{}
+						}
+						in.LaunchEnds[id] = record.FinishedAt
+					}
+				}
 				one := processmeasure.Step{ID: step.LaunchID, Kind: step.Kind, Pending: step.StartedAt, Collected: step.FinishedAt, FullArgv: in.FullArgv, Terminal: step.State == launch.StepPassed || step.State == launch.StepFailed}
 				if step.Command != nil {
 					one.Argv = step.Command.Argv

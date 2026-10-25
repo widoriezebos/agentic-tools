@@ -11,7 +11,8 @@ import (
 
 // ReserveUnitLaunch binds a physical execution to its goal revision and unit
 // round before it starts. Repeating the same admission joins that reservation.
-func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap int64, now time.Time) error {
+// A retry is its own attempt, not part of the round's counted one.
+func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap int64, now time.Time, retry bool) error {
 	if file == nil || file.Claimed == nil {
 		return fmt.Errorf("the unit launch has no claimed goal")
 	}
@@ -46,17 +47,20 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 			return refusal.New("BUDGET_UNKNOWN", "record="+projection.Unknown.Record+" reason="+projection.Unknown.Reason,
 				fmt.Errorf("goal %s has unreadable spending evidence in %s, so this launch does not start; repair that record; %s", goal, projection.Unknown.Record, remedy))
 		}
-		admission := projection
+		admission, attempt := projection, fmt.Sprintf("%s/%d", run, round)
+		if retry {
+			attempt += "/" + id
+		}
 		// Joining a pending reservation requests only its existing capacity.
 		if joined {
-			if projection.unitAttempts[fmt.Sprintf("%s/%d", run, round)] {
+			if projection.unitAttempts[attempt] {
 				admission.ReservedJobMinutes -= uint64(cap)
 			}
 			admission.OpenCapMinutes -= uint64(cap)
 			admission.ActiveJobs--
 		}
 		// A round already counted by another execution uses no new attempt.
-		if projection.unitAttempts[fmt.Sprintf("%s/%d", run, round)] && admission.Attempts <= admission.Limits.AttemptLimit {
+		if projection.unitAttempts[attempt] && admission.Attempts <= admission.Limits.AttemptLimit {
 			admission.Attempts--
 		}
 		breaches := budgetAdmissionBreaches(admission)
@@ -71,9 +75,13 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 		if joined {
 			return nil
 		}
-		return writeRecord(path, map[string]any{"jobId": id, "operationId": "unit-launch:" + id, "unitRun": run, "unitRound": round,
+		reservation := map[string]any{"jobId": id, "operationId": "unit-launch:" + id, "unitRun": run, "unitRound": round,
 			"goalId": goal, "goalRevision": revision, "machineId": file.Claimed.Machine, "claimEpoch": file.StopCapability.ClaimEpoch,
-			"capMin": cap, "status": "pending", "createdAt": now.UTC().Format(time.RFC3339Nano)})
+			"capMin": cap, "status": "pending", "createdAt": now.UTC().Format(time.RFC3339Nano)}
+		if retry {
+			reservation["unitRetryAttempt"] = true
+		}
+		return writeRecord(path, reservation)
 	})
 }
 

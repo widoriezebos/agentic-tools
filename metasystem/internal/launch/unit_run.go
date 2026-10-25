@@ -554,6 +554,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			if step.Reason == "build-partial" {
 				outcome = step.Reason
 			}
+			runner.countFailedBuild(round, plan, index+1)
 			return runner.finish(record, round, outcome)
 		}
 	}
@@ -609,7 +610,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 				return UnitResult{}, err
 			}
 		}
-		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath, Round: round.Number, MaxRounds: record.MaxRounds, AdapterData: checkAct}
+		spec := StartSpec{Kind: "proof", Goal: plan.Goal, Tag: plan.Unit, WorkingDirectory: command.Dir, Brief: briefPath, Round: round.Number, MaxRounds: record.MaxRounds, AdapterData: checkAct, HostGated: true}
 		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
@@ -778,7 +779,7 @@ func (runner *UnitRunner) driver(record *UnitRunRecord, round *UnitRound) stepDr
 		before: func(spec StartSpec) error {
 			if runner.BeforeModelLaunch != nil {
 				if err := runner.BeforeModelLaunch(*record, spec); err != nil {
-					if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
+					if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") || IsCode(err, "LAUNCH_BUILD_CAPACITY") {
 						return err
 					}
 					return coded("UNIT_LAUNCH_UNAUTHORIZED", unitFacts(record.Unit, record.Goal, "run="+record.ID), fmt.Errorf("unit %s may not start a launch: %w", record.Unit, err))
@@ -885,7 +886,7 @@ func appendReadPacket(data []byte, record Record) []byte {
 		data = append(data, []byte("\nWrite your complete report, ending with its VERDICT line, to exactly this file: "+outputs[0]+"\nThe read is not complete until that file exists.\n")...)
 	}
 	if record.Kind == "read" && len(outputs) == 2 {
-		data = append(data, []byte("\nAlso write structured findings to "+outputs[1]+". The JSON object requires findings (an array, including empty) and verdictMaterialCount. Each finding requires severity, boolean material, class (regression, weakened-test, incomplete-item, false-premise, faked-seam, missing-reader, scope, other), claim, evidence, where (repository-relative path without line suffix), change, and optional resolves (prior read-qualified finding id) or relation. Class other requires relation naming its rule. The prose VERDICT must agree with the structured material count.\n")...)
+		data = append(data, []byte("\nAlso write structured findings to "+outputs[1]+". The JSON object requires findings (an array, including empty) and verdictMaterialCount. Each finding requires severity (critical, high, medium or low), boolean material, class (regression, weakened-test, incomplete-item, false-premise, faked-seam, missing-reader, scope, other), claim, evidence, where (repository-relative path without line suffix), change, and optional resolves (prior read-qualified finding id) or relation. Class other requires relation naming its rule. The prose VERDICT must agree with the structured material count.\n")...)
 	}
 	return data
 }

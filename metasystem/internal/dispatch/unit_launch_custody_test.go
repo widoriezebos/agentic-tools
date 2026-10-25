@@ -23,7 +23,7 @@ func TestReserveUnitLaunchRefusesWithoutProvenCustody(t *testing.T) {
 			t.Parallel()
 			root := t.TempDir()
 			file := &goal.GoalFile{Id: "custody", Claimed: claim, StopCapability: capability}
-			err := ReserveUnitLaunch(root, "launch-1", "run-1", file, 1, 100, time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC))
+			err := ReserveUnitLaunch(root, "launch-1", "run-1", file, 1, 100, time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC), false)
 			if err == nil || !strings.Contains(err.Error(), "no proven claim custody") || !strings.Contains(err.Error(), "resume or re-claim it before dispatch") {
 				t.Fatalf("custody not refused: %v", err)
 			}
