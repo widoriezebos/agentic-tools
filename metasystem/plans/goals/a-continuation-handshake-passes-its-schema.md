@@ -10,7 +10,7 @@
 - Next step: Build now on ui, ahead of lane-steward U6b: ui releases lane-steward at its boundary, claims this goal, and runs work build a-continuation-handshake-passes-its-schema --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-continuation-handshake-passes-its-schema-brief.md --lines 40 --last (FINAL revision 2 after one Astra round; one production line: the steward-continuation schema declares draft-07 like the other eight schemas; one test in internal/protocol pins that every shipped schema declares draft-07 and none declares 2020-12; three mutations). Read each round: yes. Then hand in; the lane lands and deploys; the steward deploys the engine to ui; ui reclaims lane-steward and builds U6b. Live proof: the first steward-continuation job staged by the deployed engine passes its handshake and no hand clear follows; a stale intent minted by the old engine may refuse once on schema-digest drift (rare case in the brief), which is CARRIED and not the proof.
 - OpenedAt: 2026-10-26T11:00:30Z
 - FirstClaimAt: 2026-10-26T11:13:19Z
-- Revision: 7
+- Revision: 8
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -28,4 +28,5 @@ History:
 - 2026-10-26T11:13:19Z 3489SKNMF2BNV497S68KP8C1Z9-ui-71c5cb39 claim actor=ui+steward-seat targets=a-continuation-handshake-passes-its-schema reason=areas unknown for goal a-continuation-handshake-passes-its-schema: no accepted design declares areas; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-answer-is-the-act
 - 2026-10-26T11:17:06Z A46J4YQKQ26ZZFSMWM3ZC9BVJT-m1e-acb921fd edit actor=human:Wido targets=a-continuation-handshake-passes-its-schema displaced=ui+steward-seat@2026-10-26T11:13:19Z
 - 2026-10-26T11:43:00Z YT9NY01ZS1D3TWE9S8SHA5G180-ui-71c5cb39 slice-start actor=ui+steward-seat targets=a-continuation-handshake-passes-its-schema
-Integrity: sha256=1c72cf536e507840bc2c73101df1cc823432231f8000224890c54b1354135dbd
+- 2026-10-26T12:59:20Z VNMX4ZE1YRKDXVPWZHZSQ5V7E1-ui-71c5cb39 landed actor=ui+steward-seat targets=a-continuation-handshake-passes-its-schema reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 56.0 min: hand-in to merge 1.9, cheap gate not run, push unknown
+Integrity: sha256=1fbb3d5d9238010cfba61734ac5bab6986978e91c0438ca4678f90e19ef98a8c
