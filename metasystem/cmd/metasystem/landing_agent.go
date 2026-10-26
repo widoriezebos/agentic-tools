@@ -226,6 +226,9 @@ func (a landingAgent) questionHold(module string) (string, error) {
 	open, _ := channel.WalkQuestions(module)
 	var lane []channel.Question
 	for _, q := range open {
+		if len(q.Facts) > 1 && strings.HasPrefix(q.Facts[1], "lane steward: ") {
+			continue
+		}
 		if satisfied, err := plain.PolicyQuestionSatisfied(module, q); err != nil {
 			return "", err
 		} else if satisfied {

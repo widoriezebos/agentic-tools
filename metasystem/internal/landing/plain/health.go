@@ -29,6 +29,8 @@ type Health struct {
 	ReportPath          string               `json:"-"`
 	Interventions       []Intervention       `json:"interventions,omitempty"`
 	Refusals            []Intervention       `json:"refusals,omitempty"`
+	PersonActs          []PersonAct          `json:"person_acts,omitempty"`
+	OwnRed              []OwnRed             `json:"own_red,omitempty"`
 	observedAt          time.Time
 	StateReason         string           `json:"state_reason,omitempty"`
 	AdmissibleWaiting   []string         `json:"admissible_waiting,omitempty"`
@@ -48,6 +50,13 @@ type Health struct {
 	LastPush            string           `json:"last_push,omitempty"`
 	AbandonedResolution string           `json:"abandoned_resolution,omitempty"`
 	LastProof           *Result          `json:"last_proof,omitempty"`
+}
+type PersonAct struct {
+	Verb, At string
+	Minutes  *float64
+}
+type OwnRed struct {
+	Goal, SHA, Replay string
 }
 type GoalHealth struct {
 	Goal    string   `json:"goal"`
@@ -84,6 +93,7 @@ type PauseHealth struct {
 	Minutes *float64 `json:"minutes"`
 }
 type QuestionHealth struct {
+	Policy   bool    `json:"policy,omitempty"`
 	ID       string  `json:"id"`
 	Kind     string  `json:"kind"`
 	Minutes  float64 `json:"minutes"`
@@ -159,6 +169,58 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	}
 	results = retainedResults(results, now)
 	h.observedAt = now
+	var personAct PersonAct
+	var acted, progressed time.Time
+	remember := func(verb, stamp string) {
+		if at, err := time.Parse(time.RFC3339Nano, stamp); err == nil && !at.Before(acted) {
+			acted, personAct = at, PersonAct{Verb: verb, At: at.UTC().Format(time.RFC3339Nano)}
+		}
+	}
+	if batch != nil {
+		if p := batch.Person; p != nil && p.Kind == "selection" {
+			remember("landing run", p.CheckedAt.Format(time.RFC3339Nano))
+		}
+		for _, a := range batch.Actions {
+			if a.By != "" && (a.Kind == "restart" || a.Kind == "reopen" || a.Kind == "give-back" && a.Person != nil) {
+				remember("landing "+a.Kind, a.At)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	for i := len(queue) - 1; i >= 0; i-- {
+		q := queue[i]
+		if !seen[q.Goal] && q.ReturnOrigin != nil && q.ReturnOrigin.Person != nil {
+			verb := "landing return"
+			if q.Cause != nil && q.Cause.Kind == "unclassified" && q.Cause.Name == q.ReturnOrigin.Person.Person {
+				verb = "landing give-back"
+			}
+			remember(verb, q.At)
+		}
+		seen[q.Goal] = true
+	}
+	starts := []string{}
+	if p := status.AgentProgress; p != nil {
+		for _, step := range []*AgentStep{p.Step, p.LastStep} {
+			if step != nil {
+				starts = append(starts, step.StartedAt)
+			}
+		}
+	}
+	if status.RunningProof != nil {
+		starts = append(starts, status.RunningProof.Since)
+	}
+	if status.LastProof != nil {
+		starts = append(starts, status.LastProof.StartedAt)
+	}
+	for _, stamp := range starts {
+		if at, err := time.Parse(time.RFC3339Nano, stamp); err == nil && at.After(progressed) {
+			progressed = at
+		}
+	}
+	if minutes := now.Sub(acted).Minutes(); !acted.IsZero() && minutes >= 5 && progressed.Before(acted) && status.Raw.Agent.Barren > 0 {
+		personAct.Minutes = &minutes
+		h.PersonActs = append(h.PersonActs, personAct)
+	}
 	h.ReportPath = filepath.Join(Dir(install), "steward-report.md")
 	report, err := readStewardReport(install)
 	if err != nil {
@@ -170,6 +232,25 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		return nil, err
 	}
 	for _, stop := range stops {
+		words := strings.Fields(stop.Handoff)
+		if len(words) == 3 && words[0] == "return" && words[2] == "own" {
+			g := words[1]
+			waiting, ok, err := Latest(install, g)
+			if err != nil {
+				return nil, err
+			}
+			proof, err := lastGoalProof(install, g)
+			if err != nil {
+				return nil, err
+			}
+			if c := proof.Cause; ok && waiting.State == StateWaiting && proof.Result == Red && c != nil && c.Kind == "own" && c.Goal == g && c.SHA == waiting.SHA {
+				replay := stop.Replay
+				if replay == "" {
+					replay = proof.Replay
+				}
+				h.OwnRed = append(h.OwnRed, OwnRed{Goal: g, SHA: waiting.SHA, Replay: replay})
+			}
+		}
 		if landingstate.StopOwner(landingstate.StopFacts{Recorded: true, Loop: stop.Loop}).Word == landingstate.Loop {
 			h.Stops = append(h.Stops, stop)
 		}
@@ -182,7 +263,10 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	if err != nil {
 		return nil, err
 	}
-	for _, entry := range interventions {
+	for i, entry := range interventions {
+		if entry.Row == "steward-act-failed" && !slices.ContainsFunc(interventions[i+1:], func(p Intervention) bool { return p.Row == entry.Subject }) {
+			h.Drift = append(h.Drift, Fired{Row: "steward-act-failed", Subject: entry.Subject, Act: "stopped acting on " + entry.Subject + ": " + entry.What + "; asked once"})
+		}
 		if entry.Row != "person-refused" && entry.Row != "person-protected" {
 			h.Interventions = append(h.Interventions, entry)
 		}
@@ -476,6 +560,13 @@ func (h Health) Rows() []Fired {
 	if h.LoopRuns > 0 {
 		fire("lane-loop", "lane", nil, fmt.Sprintf("%d barren runs on an unchanged lane fingerprint; the stop and its one question stay open; nothing is re-asked until it changes", h.LoopRuns))
 	}
+	for _, a := range h.PersonActs {
+		at, _ := time.Parse(time.RFC3339Nano, a.At)
+		fire("person-act-no-effect", a.Verb+" at "+at.Local().Format("2006-01-02 15:04 MST"), a.Minutes, "the verb took no effect: the agent started and did nothing; recorded as a person-refusal defect; no second wake")
+	}
+	for _, red := range h.OwnRed {
+		fire("own-red-held", red.Goal, nil, "return "+red.Goal+" as the lane: "+red.Replay)
+	}
 	if len(h.AdmissibleWaiting) > 0 {
 		fire("barren-hold", strings.Join(h.AdmissibleWaiting, ","), nil, "metasystem landing run --goals "+strings.Join(h.AdmissibleWaiting, ","))
 	}
@@ -498,7 +589,7 @@ func (h Health) Rows() []Fired {
 		fire("person-refused", subject, nil, fmt.Sprintf("a person was refused %d times in 24 h: %s; each is a defect to fix upstream, not a rule to add", len(h.Refusals), strings.Join(verbs, ", ")))
 	}
 	for _, q := range h.Questions {
-		if q.Premise == "gone" {
+		if q.Premise == "gone" && !q.Policy {
 			fire("stale-question", q.ID, &q.Minutes, "withdraw it, prove main, re-ask only if red")
 		}
 	}

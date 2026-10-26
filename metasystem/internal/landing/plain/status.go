@@ -716,7 +716,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 				raw.QuestionInputs = map[string]landingstate.QuestionInput{}
 			}
 			raw.QuestionInputs[q.ID] = landingstate.QuestionInput{FirstLine: firstQuestionLine(q), Policy: channel.LaneStopCommand(q) != ""}
-			raw.QuestionHealth = append(raw.QuestionHealth, QuestionHealth{ID: q.ID, Kind: q.Kind, Minutes: seams.now().Sub(q.OpenedAt).Minutes(), Premise: premise, WaitsFor: LaneQuestionHeadline(q)})
+			raw.QuestionHealth = append(raw.QuestionHealth, QuestionHealth{Policy: channel.LaneStopCommand(q) != "", ID: q.ID, Kind: q.Kind, Minutes: seams.now().Sub(q.OpenedAt).Minutes(), Premise: premise, WaitsFor: LaneQuestionHeadline(q)})
 
 		}
 	}
