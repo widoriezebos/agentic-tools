@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-impact-check-runs-what-changed",
+  "unit": "main",
+  "subject": {
+    "commit": "4e690dba7f183c95f185e1d33d173c3ba5963c90",
+    "parent": "f06cecd1ecdfbc64a439083f755e781b8e68c626",
+    "tree": "6955efe466ac81da132819e751db83cc72cf7291",
+    "patchDigest": "43b0db0c074021845403f49334a6c310a38a73877bf51906606fa3e0af2cf484",
+    "unitDigest": "8caee6f87836d1584b989c8d289203d8cee66756ab9a1a8668fb2ab825be050a"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-dec357c96c9dda5d110dd5a1",
+    "round": 1,
+    "closureSha256": "dda6233f7293c5f46849846754a40dc2be4982c1770a86e961308a5c52e6219b"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "6955efe466ac81da132819e751db83cc72cf7291",
+    "runId": "goal-read-gate-20261025t185020z-6aadc72084d4ee33"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_gate_reuse_test.go",
+      "readerWord": "reviewed by critic root code-critic-dec357c96c9dda5d110dd5a1"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/test_impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-dec357c96c9dda5d110dd5a1"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-dec357c96c9dda5d110dd5a1"
+    }
+  ],
+  "sha256": "b9687721be3156eeeebefebf982c1e650d6e8671525342bcdb7e7bf2a1311d98"
+}
