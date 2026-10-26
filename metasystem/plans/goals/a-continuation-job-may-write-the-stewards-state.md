@@ -1,6 +1,6 @@
 # a-continuation-job-may-write-the-stewards-state
 
-- State: approved
+- State: parked
 - Priority: 1
 - Sequence: 5
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="a permission envelope of one launch role; too wide lets a continuation write where it should not, too narrow keeps every handoff blocked as today; both are caught by the unit's tests before main"
@@ -9,12 +9,13 @@
 - Origin: main
 - Next step: Build on ui after the-impact-check-selects-only-tests-this-host-can-run (priority 1.5), from /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-continuation-job-may-write-the-stewards-state-brief.md once FINAL (revision 2 in Astra round 1; about 15 production lines, --lines 130, --last): on the steward's own dispatch path the steward-continuation job runs in the shared checkout at its top, that checkout its one write root, as a Codex seat does (not a builder's worktree sandbox, which denied session handoff --verify, memory/receipts.log, plans/goals.md and .git/metasystem); builders and critics keep the worktree envelope; the workspace preset is reused so a staged intent's digest does not drift. Live proof: the next boundary handoff's continuation job passes verify and its next steps; currentContinuation is cleared by the next seat start (or a-round-survives-a-restart U1 D5). Open for the steward: two writers in one checkout after the double launch (a-round-survives-a-restart input).
 - OpenedAt: 2026-10-26T16:08:13Z
-- Revision: 6
+- Revision: 7
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=X36JVFN9B996851H9H5ANJ15NV-m1e-acb921fd minutes=2400 reviewRounds=20 goalRevision=1
 - Approved: by=human:Wido at=2026-10-26T16:10:40Z revision=2 opid=X36JVFN9B996851H9H5ANJ15NV-m1e-acb921fd authority=proven digest=b37a53cff313bba70316c475ef7b6d376a8289367c115f8d057e1882ba7ad787 episode=2
+- Parked: by=human:Wido at=2026-10-26T17:36:55Z because=Not a repair: Astra round 1 (designs/continuation-writes-critique-1.findings.md) shows the continuation stays a DELEGATE that cannot claim, landing and receipts write outside any checkout, and two writers remain possible after the double launch. The continuation's contract (authority, reach, exclusivity) is a design question folded into a-round-survives-a-restart's input; U1 D5 settles a terminal-job continuation meanwhile. Briefs kept as input.
 
 History:
 - 2026-10-26T16:08:13Z 9YZJQ27TQ66R4JW25M18G4ARFY-m1e-acb921fd open actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state
@@ -23,4 +24,5 @@ History:
 - 2026-10-26T16:16:18Z ZEERNYMHVG86FEYM8K06Z5KYSZ-m1e-acb921fd set-pin actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state
 - 2026-10-26T16:24:48Z TGE2SWNTS6M497BMWFFAAK8Q85-m1e-acb921fd set-priority actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-proved-main-deploys-itself-2,a-round-survives-a-restart,a-seat-pauses-at-its-spend-line,a-slow-ledger-read-is-a-wait,an-outside-read-is-a-read-record,every-critic-reads-in-one-form,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-ui-bundle-builds-again reason=priority-order subject=a-continuation-job-may-write-the-stewards-state from=1:17 to=1:5 requested-sequence=5
 - 2026-10-26T17:24:10Z HAE05RQB9V6YM9T7Z85486TMPC-m1e-acb921fd edit actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state
-Integrity: sha256=12554758c2d1088a99c328884f6eb7b495b8ab4f51ab91a5200d9b968595afef
+- 2026-10-26T17:36:55Z NZZK1XDMWDY0R8YMS0RY8MWEQS-m1e-acb921fd park actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state reason=Not a repair: Astra round 1 (designs/continuation-writes-critique-1.findings.md) shows the continuation stays a DELEGATE that cannot claim, landing and receipts write outside any checkout, and two writers remain possible after the double launch. The continuation's contract (authority, reach, exclusivity) is a design question folded into a-round-survives-a-restart's input; U1 D5 settles a terminal-job continuation meanwhile. Briefs kept as input.
+Integrity: sha256=acacf7dc5d58b5208e1d0f4e0fbb386b62645c384b37ea939e7f88499e51b628
