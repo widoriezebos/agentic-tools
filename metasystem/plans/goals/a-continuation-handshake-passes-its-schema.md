@@ -10,12 +10,13 @@
 - Next step: Build now on ui, ahead of lane-steward U6b: ui releases lane-steward at its boundary, claims this goal, and runs work build a-continuation-handshake-passes-its-schema --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-continuation-handshake-passes-its-schema-brief.md --lines 40 --last (FINAL revision 2 after one Astra round; one production line: the steward-continuation schema declares draft-07 like the other eight schemas; one test in internal/protocol pins that every shipped schema declares draft-07 and none declares 2020-12; three mutations). Read each round: yes. Then hand in; the lane lands and deploys; the steward deploys the engine to ui; ui reclaims lane-steward and builds U6b. Live proof: the first steward-continuation job staged by the deployed engine passes its handshake and no hand clear follows; a stale intent minted by the old engine may refuse once on schema-digest drift (rare case in the brief), which is CARRIED and not the proof.
 - OpenedAt: 2026-10-26T11:00:30Z
 - FirstClaimAt: 2026-10-26T11:13:19Z
-- Revision: 6
+- Revision: 7
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=ZDQMTR3P2M27HE1WQTS2HJWK4A-m1e-acb921fd minutes=2400 reviewRounds=20 goalRevision=1
 - Approved: by=human:Wido at=2026-10-26T11:00:41Z revision=2 opid=ZDQMTR3P2M27HE1WQTS2HJWK4A-m1e-acb921fd authority=proven digest=ae5aa7d799c700d1d9081a6612c92730ef39390ffdf1c8656632e592ab499acf episode=2
+- Sliced: machine=ui lineage=steward-seat revision=5 at=2026-10-26T11:43:00Z
 - Claimed: machine=ui lineage=steward-seat at=2026-10-26T11:13:19Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-continuation-handshake-passes-its-schema: no accepted design declares areas\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-answer-is-the-act\"]" revision=5 accountingRevision=5 episodeAt=2026-10-26T11:13:19Z episodeRevision=5
 - StopCapability: generation=5 revision=5 machine=ui claimEpoch=7 fenceEpoch=0
 
@@ -26,4 +27,5 @@ History:
 - 2026-10-26T11:01:03Z 4CRXSQ4SW0JTJ9467124CFT7WA-m1e-acb921fd set-pin actor=human:Wido targets=a-continuation-handshake-passes-its-schema
 - 2026-10-26T11:13:19Z 3489SKNMF2BNV497S68KP8C1Z9-ui-71c5cb39 claim actor=ui+steward-seat targets=a-continuation-handshake-passes-its-schema reason=areas unknown for goal a-continuation-handshake-passes-its-schema: no accepted design declares areas; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-answer-is-the-act
 - 2026-10-26T11:17:06Z A46J4YQKQ26ZZFSMWM3ZC9BVJT-m1e-acb921fd edit actor=human:Wido targets=a-continuation-handshake-passes-its-schema displaced=ui+steward-seat@2026-10-26T11:13:19Z
-Integrity: sha256=73dc18b2b90e6ab0bdff1a3b40e849bb686d0bcccc29dfa9df0ab25f69fc2142
+- 2026-10-26T11:43:00Z YT9NY01ZS1D3TWE9S8SHA5G180-ui-71c5cb39 slice-start actor=ui+steward-seat targets=a-continuation-handshake-passes-its-schema
+Integrity: sha256=1c72cf536e507840bc2c73101df1cc823432231f8000224890c54b1354135dbd
