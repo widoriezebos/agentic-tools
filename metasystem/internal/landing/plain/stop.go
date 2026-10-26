@@ -60,6 +60,12 @@ func stopLifecycleFacts(s Stop, status Status, proofs, gates []Result) state.Lif
 
 	if s.Loop == "lane-return" && s.Subject == "lane" {
 		f.Attempt, f.CurrentAttempt = fmt.Sprint(s.Attempt), fmt.Sprint(status.Owner.Barren)
+		if s.Measure.Name == "lane fingerprint" && len(s.Measure.Now) == 1 {
+			f.Fingerprint = s.Measure.Now[0]
+		}
+		if status.Raw.Agent.Barren > 0 {
+			f.CurrentFingerprint = status.Raw.Agent.BarrenFingerprint
+		}
 		return f
 	}
 	results := proofs
@@ -344,9 +350,17 @@ func RecordBarrenStop(install string, state lane.AgentState, evidence string, no
 			s.Required = []string{"metasystem", "landing", "run", "--goals", strings.Join(goals, ",")}
 		}
 		s.Measure.Name, s.Measure.Previous, s.Measure.Now = "lane fingerprint", []string{state.Fingerprint}, []string{state.BarrenFingerprint}
-		last, err := NewestStop(install)
-		if err != nil || last != nil && last.Loop == s.Loop && last.Evidence == s.Evidence && slices.Equal(last.Required, s.Required) {
+		stops, err := OpenStops(install)
+		if err != nil {
 			return err
+		}
+		for _, last := range stops {
+			if last.Loop == s.Loop && last.Subject == s.Subject {
+				if last.Evidence == s.Evidence && slices.Equal(last.Required, s.Required) && slices.Equal(last.Measure.Now, s.Measure.Now) {
+					return nil
+				}
+				break
+			}
 		}
 		if err := closeSubjectStopsLocked(install, s.Loop, s.Subject, "superseded by current lane remedy", now, effects...); err != nil {
 			return err

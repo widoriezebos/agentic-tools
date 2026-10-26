@@ -62,6 +62,12 @@ func TestLifecycleRows(t *testing.T) {
 	if got, _ := LifecycleDue("loop-stop", LifecycleFacts{Owner: Loop, Attempt: "old", CurrentAttempt: "new"}, now); !got {
 		t.Fatal("obsolete proof survived")
 	}
+	for _, fingerprint := range []string{"A", "B", ""} {
+		f := LifecycleFacts{Owner: Loop, Attempt: "2", CurrentAttempt: "0", Fingerprint: fingerprint, CurrentFingerprint: "A"}
+		if got, _ := LifecycleDue("loop-stop", f, now); got != (fingerprint != "A") {
+			t.Fatalf("fingerprint %q: due=%v", fingerprint, got)
+		}
+	}
 	for _, word := range []string{"returned", "landed", "waiting"} {
 		if got, _ := LifecycleDue("submission", LifecycleFacts{Word: word, At: now.Add(-SubmissionWindow)}, now); got {
 			t.Fatal("day boundary retired")

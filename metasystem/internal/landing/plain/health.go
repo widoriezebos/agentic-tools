@@ -18,6 +18,7 @@ import (
 // Health is the lane's recorded evidence and measured ages; reading it acts on nothing.
 type Health struct {
 	LineText            string `json:"line"`
+	LoopRuns            int    `json:"loop_runs,omitempty"`
 	description         landingstate.Description
 	Drift               []Fired              `json:"drift,omitempty"`
 	ObservationProblem  string               `json:"observation_problem,omitempty"`
@@ -171,6 +172,10 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	for _, stop := range stops {
 		if landingstate.StopOwner(landingstate.StopFacts{Recorded: true, Loop: stop.Loop}).Word == landingstate.Loop {
 			h.Stops = append(h.Stops, stop)
+		}
+		facts := stopLifecycleFacts(stop, status, nil, nil)
+		if facts.Fingerprint != "" && facts.Fingerprint == facts.CurrentFingerprint {
+			h.LoopRuns = status.Raw.Agent.Barren
 		}
 	}
 	interventions, err := readLines[Intervention](interventionsPath(install))
@@ -467,6 +472,9 @@ func (h Health) Rows() []Fired {
 	rows := append([]Fired{}, h.Drift...)
 	fire := func(row, subject string, minutes *float64, act string) {
 		rows = append(rows, Fired{Row: row, Subject: subject, Minutes: measured(minutes), Act: act})
+	}
+	if h.LoopRuns > 0 {
+		fire("lane-loop", "lane", nil, fmt.Sprintf("%d barren runs on an unchanged lane fingerprint; the stop and its one question stay open; nothing is re-asked until it changes", h.LoopRuns))
 	}
 	if len(h.AdmissibleWaiting) > 0 {
 		fire("barren-hold", strings.Join(h.AdmissibleWaiting, ","), nil, "metasystem landing run --goals "+strings.Join(h.AdmissibleWaiting, ","))

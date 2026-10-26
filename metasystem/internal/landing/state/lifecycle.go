@@ -7,6 +7,7 @@ import (
 
 type LifecycleFacts struct {
 	Owner, Premise, Word, Attempt, CurrentAttempt, Subject, Detail string
+	Fingerprint, CurrentFingerprint                                string
 	At                                                             time.Time
 	ProcessGone, Empty, Latest                                     bool
 	Subjects                                                       []string
@@ -24,6 +25,9 @@ const ResultRetention = 14 * SubmissionWindow
 var Lifecycle = []LifecycleRow{
 	{"loop-stop", Phrase("closes-when-its-subjects-landed-returned-or-were-superseded"), "closed", func(f LifecycleFacts, _ time.Time) (bool, string) {
 		if f.Owner != Loop {
+			return false, ""
+		}
+		if f.Fingerprint != "" && f.Fingerprint == f.CurrentFingerprint {
 			return false, ""
 		}
 		if f.Attempt != "" && f.CurrentAttempt != "" && f.Attempt != f.CurrentAttempt {
