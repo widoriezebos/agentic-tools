@@ -586,6 +586,10 @@ func (inv *intentInvocation) budgetOwner(id, box string, before *goal.GoalFile) 
 		dependencies.answerProof = answer
 		return runGoalBudgetWithInputs(args, inv.owners.prove, inv.owners.commandNow, dependencies, inv.owners.binding)
 	}, func() intentResult { return inv.afterGoalAct(id, "budget") })
+	if result.Outcome == intentUnchanged {
+		// The goal already moved on: its box question is settled too.
+		inv.afterGoalAct(id, "budget")
+	}
 	return inv.render(result)
 }
 
