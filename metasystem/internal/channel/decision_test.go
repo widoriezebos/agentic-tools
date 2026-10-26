@@ -92,14 +92,14 @@ func TestDecisionMatchesAcrossProse(t *testing.T) {
 	}
 	t.Run("refused", func(t *testing.T) {
 		t.Parallel()
-		for _, field := range []string{"goal", "kind", "subject", "state"} {
+		for _, field := range []string{"lane", "kind", "subject", "state"} {
 			t.Run(field, func(t *testing.T) {
 				t.Parallel()
 				decision := Decision{Kind: "health", Subject: "runner", State: "dead"}
 				request := AskRequest{RepoRoot: t.TempDir(), About: "machine", Kind: "other", Facts: []string{"fact"}, Decision: &decision}
 				switch field {
-				case "goal":
-					request.About, request.Goal = "", "g"
+				case "lane":
+					request.About = "lane"
 				case "kind":
 					decision.Kind = ""
 				case "subject":

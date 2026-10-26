@@ -1827,7 +1827,7 @@ func SetBudgetApproved(r VerbRequest, id string, budget Budget, proof *humanauth
 	if r.Actor.Human == "" {
 		return PublishResult{}, fmt.Errorf("goal budget is the human's approval act and requires --by")
 	}
-	authority, reviewBy, temporary, err := approvalProofClass(r.Endpoint.Root, proof)
+	authority, reviewBy, temporary, err := approvalProofClassForApprove(r.Endpoint.Root, proof)
 	if err != nil {
 		return PublishResult{}, err
 	}

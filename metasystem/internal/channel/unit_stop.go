@@ -180,3 +180,17 @@ func CloseGoalUnitStopQuestions(root, goalID, reason string, at time.Time) error
 	}
 	return nil
 }
+
+// CloseGoalStopQuestions closes a goal's open budget-stop questions once the
+// goal's own record has moved it on; nothing is posted.
+func CloseGoalStopQuestions(root, goalID, because string, at time.Time) error {
+	open, _ := WalkOpenQuestions(root)
+	for _, q := range open {
+		if q.Goal == goalID && q.Decision != nil && q.Decision.Kind == "breach-stop" {
+			if err := closeAt(root, q.ID, because, nil, DestinationConfig{}, at); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}

@@ -305,8 +305,8 @@ func AskOrFind(r AskRequest) (Question, bool, error) {
 
 func askOrFind(r AskRequest) (Question, bool, error) {
 	if r.Decision != nil {
-		if r.About != "machine" || r.Decision.Kind == "" || r.Decision.Subject == "" || r.Decision.State == "" {
-			return Question{}, false, fmt.Errorf("a decision requires a machine question and a kind, subject, and state")
+		if (r.About != "machine") == (r.Goal == "" || r.About != "") || r.Decision.Kind == "" || r.Decision.Subject == "" || r.Decision.State == "" {
+			return Question{}, false, fmt.Errorf("a decision requires a machine or goal question and a kind, subject, and state")
 		}
 	}
 	if r.Now.IsZero() {

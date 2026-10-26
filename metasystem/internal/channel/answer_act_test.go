@@ -376,6 +376,22 @@ func TestChannelChoiceRunsItsActInTheFullPoll(t *testing.T) {
 			b.wantPosted(label + " it is. " + did + " at " + b.now.Local().Format("15:04") + ". If it stops again, I ask here. Undo: metasystem work stop g.")
 		}
 	})
+	t.Run("one more day names the new time box", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		q := b.question()
+		q.Options[1].Label, q.Recommendation = "One more day", "One more day"
+		if err := writeJSON(questionPath(b.repo.root, q.ID), q); err != nil {
+			t.Fatal(err)
+		}
+		b.act.reply = func([]string) string {
+			return `{"outcome":"confirmed","data":{"answer":{"state":"started"},"budget":{"box":"7d4h/4/240m/2/3"}}}`
+		}
+		b.reply("one more day")
+		b.poll()
+		b.poll()
+		b.wantPosted(`One more day it is. "g" has one more working day and goes on (its time box is now 7d4h) at ` + b.now.Local().Format("15:04") + ". If it stops again, I ask here. Undo: metasystem work stop g.")
+	})
 	t.Run("a reply to the executor's own line is a reply to the question", func(t *testing.T) {
 		t.Parallel()
 		b := newChoiceBed(t)

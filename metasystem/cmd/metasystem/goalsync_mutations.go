@@ -502,6 +502,9 @@ type syncRequestDependencies struct {
 	proveHuman         func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	proveTerminal      func(string, int64, humanauthority.Reader, time.Time) (humanauthority.Proof, error)
 	presence           func(string, goal.Endpoint) (seat.Copy, error)
+	// answerProof is a person's proved channel answer for exactly this act;
+	// it stands in for the terminal proof.
+	answerProof *humanauthority.Proof
 	// helm reads whether the act's seat is at the helm; nil is helm.Active.
 	helm func(root string) helm.State
 	// seatCapped reads whether a steward has stopped starting seats for a
@@ -1376,7 +1379,7 @@ func extractGoalBudgetBox(args []string) ([]string, string, error) {
 			cleaned = append(cleaned, args[index])
 			continue
 		}
-		if token == "norm" || token == "keep" || strings.Contains(token, "/") {
+		if token == "norm" || token == "keep" || token == "one-more-day" || strings.Contains(token, "/") {
 			if box != "" {
 				return nil, "", fmt.Errorf("takes one box, not both %q and %q", box, token)
 			}
@@ -1601,6 +1604,16 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 		return refuseHumanVerb(values, 2, "a compact box and the five long-form limits cannot be combined", completedBudgetRemedy(values, file, parsed, goalbudget.FormatBox(parsed), approvalHorizon))
 	case boxToken == "norm":
 		budget = tierBox
+	case boxToken == "one-more-day":
+		if file.StopFence == nil || file.Budget == nil {
+			return dependencies.publish(goal.PublishResult{Outcome: goal.OutcomeAbandoned, Unchanged: true, Detail: flags.id + " is not stopped by its budget; one-more-day is for a stopped goal"}, nil)
+		}
+		spent := dispatchcore.ProjectBudget(flags.root, file, now)
+		if spent.Status != dispatchcore.BudgetKnown {
+			return refuseHumanVerb(values, 1, "the time this goal used cannot be counted: "+spent.Unknown.Reason, values.showRemedy())
+		}
+		budget = *file.Budget
+		budget.ElapsedLimit = goalbudget.FormatWorkingDuration((spent.Elapsed + time.Minute - 1).Truncate(time.Minute) + 8*time.Hour)
 	case boxToken == "keep":
 		if file.Budget == nil {
 			return refuseHumanVerb(values, 2, "keep needs a standing budget", humanVerbRemedy{command: values.budgetCommand(goalbudget.FormatBox(tierBox))})
@@ -1631,15 +1644,16 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 		}
 	}
 	values.box = &budget
-	if file.StopFence != nil && file.Budget != nil && budget != *file.Budget {
-		return refuseHumanVerb(values, 1, "a breach-stopped goal resumes under its standing box before a new box is recorded", humanVerbRemedy{command: values.budgetCommandWithoutApprovedRef("keep")})
-	}
-	if _, err := classifyGoalAuthorityFirstWithFacts(values.verb, flags, dependencies.authorityFacts); err != nil {
-		return refuseHumanVerb(values, 1, values.cause(err), personRemedy(values, err))
-	}
-	proof, err := proveGoalHumanAuthorityAt("budget", flags, prove, commandNow)
-	if err != nil {
-		return refuseHumanVerb(values, 1, values.cause(err), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy, err))
+	var proof humanauthority.Proof
+	if dependencies.answerProof != nil {
+		proof = *dependencies.answerProof
+	} else {
+		if _, err := classifyGoalAuthorityFirstWithFacts(values.verb, flags, dependencies.authorityFacts); err != nil {
+			return refuseHumanVerb(values, 1, values.cause(err), personRemedy(values, err))
+		}
+		if proof, err = proveGoalHumanAuthorityAt("budget", flags, prove, commandNow); err != nil {
+			return refuseHumanVerb(values, 1, values.cause(err), humanProofRemedy(values, flags.fixtureHumanAuthority, flags.temporaryWord, flags.reviewBy, err))
+		}
 	}
 	if err := resolveGoalHuman(flags, proof); err != nil {
 		return refuseHumanVerb(values, 2, values.cause(err), personRemedy(values, err))
@@ -1657,7 +1671,9 @@ func runGoalBudgetPreparedWithInputs(values *humanVerbValues, flags *syncFlags, 
 		result, err = goal.Approve(req, []string{flags.id}, &budget, &proof)
 		action = "goal approve"
 	case goal.StateClaimed:
-		if file.StopFence == nil {
+		// A stopped goal given a bigger box takes it in one act: the fence
+		// lifts and its episode goes on; its standing box resumes it.
+		if file.StopFence == nil || file.Budget != nil && budget != *file.Budget {
 			result, err = goal.SetBudgetApproved(req, flags.id, budget, &proof)
 			action = "goal set-budget"
 		} else {
@@ -2481,7 +2497,7 @@ func recordGoalApprovalProof(root, operationID, action string, proof humanauthor
 	if proof.ValidFor(root) {
 		return humanauthority.RecordProof(root, operationID, action, proof)
 	}
-	if !proof.AuthorizesResume(root) || !proof.TemporaryResumeFor(root) || operationID == "" || filepath.Base(operationID) != operationID {
+	if !proof.ChannelWordFor(root) && (!proof.AuthorizesResume(root) || !proof.TemporaryResumeFor(root)) || operationID == "" || filepath.Base(operationID) != operationID {
 		return errors.New("the record of who authorized this is incomplete, so it wasn't saved")
 	}
 	record := struct {

@@ -109,6 +109,9 @@ func (inv *intentInvocation) answerProgress(result intentResult) intentResult {
 			}
 		}
 	}
+	if choice.problem == nil && choice.person != "" && choice.question.UnitStop == nil && (result.Outcome == intentConfirmed || result.Outcome == intentUnchanged) {
+		progress["state"] = "started"
+	}
 	data, _ := result.Data.(map[string]any)
 	if data == nil {
 		data = map[string]any{}
