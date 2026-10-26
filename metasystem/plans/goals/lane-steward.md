@@ -7,10 +7,10 @@
 - Tier: 3
 - Intent: The landing lane has a steward of its own that notices everything the human steward noticed between 2026-10-09 and 2026-10-12 and acts with the lane's verbs, asking the person once and plainly only when no verb resolves the situation
 - Origin: main
-- Next step: Build U6a on ui from the accepted plans/designs/lane-steward.md revision 3 (committed ad88635ff0) and the brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/lane-steward-U6a-brief.md (about 244 production lines, stop line 250, read each round: yes); then U6b (about 212, --last). U1-U4 are built; the skill file is not.
+- Next step: U6a1 is reviewed and published on ui (unit commit 3d2ce798b, attestation 2f7aa3c29): defects 1-5 and the Go half of D8, 180 production lines. Next: write the U6a2 brief, then build U6a2 on ui on that tip: D9 from /Users/wido/agentic-tools-evidence/lane-test-20261009/builds/lane-steward-U6a-20261025/u6a2-d9-draft.patch, D10 from the step 0.1 diagnosis in result-round2.md beside it, with T6, T7 and mutations M10-M12. The browser line in LaneBlock (u6a2-d8b-browser-draft.patch, same folder) waits for goal the-ui-bundle-builds-again. Then U6b (about 212 lines, --last). U1-U4 are built; the skill file is not.
 - OpenedAt: 2026-10-12T06:57:57Z
 - FirstClaimAt: 2026-10-26T04:43:24Z
-- Revision: 12
+- Revision: 13
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-12T06:58:06Z revision=2 opid=Z7AXJ1VZ92Q5NKBASPZC4NVS8A-m1e-9c08b0e5 authority=proven digest=5f080748d71c48584773528036f3e59e4d19f33abe01425fb56776dc26ee18fb episode=2
@@ -31,4 +31,5 @@ History:
 - 2026-10-26T04:04:39Z K6KQC4SS0R54HMZ6WJ9NVS37H5-m1e-0708d265 edit actor=human:Wido targets=lane-steward
 - 2026-10-26T04:43:24Z 709M2ZN6PC4P4F5B52X91DSHD6-ui-71c5cb39 claim actor=ui+steward-seat targets=lane-steward reason=areas unknown for goal lane-steward in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/lane-steward.md; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-answer-is-the-act
 - 2026-10-26T07:56:14Z HQDJY8YH54T8ET5EZHNHGK5B51-ui-71c5cb39 slice-start actor=ui+steward-seat targets=lane-steward
-Integrity: sha256=df4f012759f33902c0b38401088da31b100fafc8e927656fea956f6be6bebb3d
+- 2026-10-26T08:13:39Z NXPBYV7RNAETHK4ZNPN49NNH8R-ui-71c5cb39 edit actor=ui+steward-seat targets=lane-steward
+Integrity: sha256=8b490410851f7c8e0a2ced6096021d543b70561f59241b72f8d76a72640ea27d
