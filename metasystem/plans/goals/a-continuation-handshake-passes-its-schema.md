@@ -1,6 +1,6 @@
 # a-continuation-handshake-passes-its-schema
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 2
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="one line in a protocol schema the steward's own continuation launch passes to the CLI; a wrong draft keeps the handshake failing as today, a right one is proved at the next unit boundary"
@@ -10,15 +10,14 @@
 - Next step: BUILT AND LANDED; only the live proof and goal done remain. Unit main 76119e05e (1 production line, 36 changed against --lines 40; M1-M3 fail by assertion; frozen check green), read code-critic-f6691fd0 on Opus 5.5, material 0, published; landed through the lane 2026-10-26 13:42 (merge 34318a4f5, goal landed 03d052e71) and deployed by the lane at 13:43. The ui session ended at 14:0x WITHOUT staging a handoff, at m1e's request, so no old-engine intent exists to drift. Next: m1e copies the deployed engine into ui's bin and restarts; the fresh ui seat reclaims lane-steward for U6b. Live proof (brief, section Live proof): that seat's first boundary handoff under the deployed engine leaves a new steward-*.log under ui's metasystem/artifacts/agents/jobs/ with no 'is not a valid JSON Schema' line, its round folder holds a claude-result.json result, the job reaches a terminal result, and no hand clear of currentContinuation follows. Then goal done a-continuation-handshake-passes-its-schema, naming that log. A digest-drift refusal there is CSR1-1 (CARRIED, measurement restarts at the next fresh intent), not this defect.
 - OpenedAt: 2026-10-26T11:00:30Z
 - FirstClaimAt: 2026-10-26T11:13:19Z
-- Revision: 9
+- Revision: 10
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=ZDQMTR3P2M27HE1WQTS2HJWK4A-m1e-acb921fd minutes=2400 reviewRounds=20 goalRevision=1
 - Approved: by=human:Wido at=2026-10-26T11:00:41Z revision=2 opid=ZDQMTR3P2M27HE1WQTS2HJWK4A-m1e-acb921fd authority=proven digest=ae5aa7d799c700d1d9081a6612c92730ef39390ffdf1c8656632e592ab499acf episode=2
 - Sliced: machine=ui lineage=steward-seat revision=5 at=2026-10-26T11:43:00Z
-- Claimed: machine=ui lineage=steward-seat at=2026-10-26T11:13:19Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-continuation-handshake-passes-its-schema: no accepted design declares areas\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-answer-is-the-act\"]" revision=5 accountingRevision=5 episodeAt=2026-10-26T11:13:19Z episodeRevision=5
-- StopCapability: generation=5 revision=5 machine=ui claimEpoch=7 fenceEpoch=0
+- Episode: machine=ui lineage=steward-seat accountingRevision=5 episodeAt=2026-10-26T11:13:19Z episodeRevision=5 idleSeconds=0 released=2026-10-26T13:13:54Z
 
 History:
 - 2026-10-26T11:00:30Z XBH8T5E3S5AA739GAM8NWN6MXB-m1e-acb921fd open actor=human:Wido targets=a-continuation-handshake-passes-its-schema
@@ -30,4 +29,5 @@ History:
 - 2026-10-26T11:43:00Z YT9NY01ZS1D3TWE9S8SHA5G180-ui-71c5cb39 slice-start actor=ui+steward-seat targets=a-continuation-handshake-passes-its-schema
 - 2026-10-26T12:59:20Z VNMX4ZE1YRKDXVPWZHZSQ5V7E1-ui-71c5cb39 landed actor=ui+steward-seat targets=a-continuation-handshake-passes-its-schema reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 56.0 min: hand-in to merge 1.9, cheap gate not run, push unknown
 - 2026-10-26T13:04:09Z CNB43HA4W4T7ZRAS0P7GJXG2JM-ui-71c5cb39 edit actor=ui+steward-seat targets=a-continuation-handshake-passes-its-schema
-Integrity: sha256=d6c602b297f7b95bbcda953a99fa771c28567ae1b9051f4709bc55e879e1e50c
+- 2026-10-26T13:13:54Z 3V1NQS23T3GG2CVXVEJZ6WDF1T-ui-71c5cb39 release actor=ui+steward-seat targets=a-continuation-handshake-passes-its-schema reason=built and landed (34318a4f5, deployed to ui 14:06); its live proof is this seat's next boundary handoff on lane-steward U6b; goal done names that steward log
+Integrity: sha256=57e314688a3df011961361ae18dc9e4474c817a9fe25b9e3e523a24be33cfc1e
