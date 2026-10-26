@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "goal": "a-continuation-handshake-passes-its-schema",
+  "unit": "main",
+  "subject": {
+    "commit": "76119e05e9a5aeebc24657f18396f127f5101577",
+    "parent": "e7dc06dcc46f9d84dc3853ada9d65332f68a296a",
+    "tree": "4d2943b0bcfdf67e5c3f70497d33ce6cbc90e473",
+    "patchDigest": "1503b92c764716500cbc4e4f8cc5e51e8f6142673d4cf79478e8fdd149fb88cc",
+    "unitDigest": "b60ebb4def69c53f7ec3967a78d2e97efe2560f82acc8907620b0cd6ad1a0e4c"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-f6691fd0d6808e9feaf35af9",
+    "round": 1,
+    "closureSha256": "9d5370904592707bf61763c31e47b274fc6179ed41c3648566c4c937f5d7175b"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "4d2943b0bcfdf67e5c3f70497d33ce6cbc90e473",
+    "runId": "goal-read-gate-20261026t114258z-0f926e8bf8f001bb"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/protocol/protocol_test.go",
+      "readerWord": "reviewed by critic root code-critic-f6691fd0d6808e9feaf35af9"
+    }
+  ],
+  "sha256": "ffcf9e9c5e361087f3431b61d3baf5beb7794e98140b95757b932e33cfb9aa53"
+}

@@ -137,3 +137,37 @@ func TestFilesIsTheWholeProtocol(t *testing.T) {
 		t.Fatalf("embedded protocol holds %d files", count)
 	}
 }
+
+// The Claude CLI's --json-schema refuses 2020-12 and accepts draft-07.
+func TestEmbeddedSchemasDeclareDraft07(t *testing.T) {
+	t.Parallel()
+	names, err := fs.Glob(Files(), "schemas/*.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sawContinuation := false
+	for _, name := range names {
+		if name == "schemas/steward-continuation.schema.json" {
+			sawContinuation = true
+		}
+		data, err := fs.ReadFile(Files(), name)
+		if err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		var declaration struct {
+			Schema string `json:"$schema"`
+		}
+		if err := json.Unmarshal(data, &declaration); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+		if declaration.Schema != "http://json-schema.org/draft-07/schema#" {
+			t.Errorf("%s declares $schema %q, want draft-07", name, declaration.Schema)
+		}
+		if strings.Contains(string(data), "2020-12") {
+			t.Errorf("%s contains 2020-12; the Claude CLI refuses that draft at the handshake", name)
+		}
+	}
+	if len(names) < 9 || !sawContinuation {
+		t.Fatalf("schema walk saw %d files, steward-continuation present: %v; want at least 9 files including steward-continuation.schema.json", len(names), sawContinuation)
+	}
+}
