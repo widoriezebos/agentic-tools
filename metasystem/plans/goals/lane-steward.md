@@ -7,10 +7,10 @@
 - Tier: 3
 - Intent: The landing lane has a steward of its own that notices everything the human steward noticed between 2026-10-09 and 2026-10-12 and acts with the lane's verbs, asking the person once and plainly only when no verb resolves the situation
 - Origin: main
-- Next step: U6a1 is reviewed and published on ui (unit commit 3d2ce798b, attestation 2f7aa3c29): defects 1-5 and the Go half of D8, 180 production lines. Next: build U6a2 on ui on that tip from the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/lane-steward-U6a2-brief.md: D10 alone (the loop is one situation; the lifecycle reads the keeper's record; the duplicate check), about 25 production lines and about 130 changed lines in total (work build lane-steward --work U6a2 --brief that file --lines 130), stop line 250, read each round; report folder builds/lane-steward-U6a2-20261026/. D9 (the wait ends on the lane's word) is out of U6a2: when internal/run changes, the impact check selects Linux-only test files and the Mac check is red by construction; D9 becomes its own unit after goal the-impact-check-selects-only-tests-this-host-can-run lands (its draft: builds/lane-steward-U6a-20261025/u6a2-d9-draft.patch; carried notes at the end of the U6a2 brief). The browser line in LaneBlock (u6a2-d8b-browser-draft.patch) waits for goal the-ui-bundle-builds-again. Then U6b (about 212 lines, --last). U1-U5 are built.
+- Next step: U6a2 is reviewed and published on ui in one round (unit commit 8a82d3ec4, attestation 01e8cbcfd): D10 alone, 30 production lines, 146 changed (estimate 25 and 130); frozen check green; read Opus 5.5 (code-critic-cd400706), material 0, N-1..N-3 noted. Next: the brief for the next unit. Two parts remain outside U6b: D9 (the wait ends on the lane's word), which waits for goal the-impact-check-selects-only-tests-this-host-can-run (draft builds/lane-steward-U6a-20261025/u6a2-d9-draft.patch; carried notes at the end of the U6a2 brief), and the browser line in LaneBlock (u6a2-d8b-browser-draft.patch), which waits for goal the-ui-bundle-builds-again. The steward decides whether they become units here (then U6b is not --last) or a follow-up goal (then U6b, about 212 lines, carries --last). Later list: health.go:177 repeats the loop-stop row's fingerprint test from state/lifecycle.go:30; the lane-loop act says the question stays open without reading questions; the T7 test never reaches the owner view's held branch (the view reads 0 every minute); the Barren > 0 guard on CurrentFingerprint in stopLifecycleFacts has no test that fails without it; U6a1's N-1 (the digest cursor keeps its old identity when the rows clear). U1-U5 are built; the skill file is not.
 - OpenedAt: 2026-10-12T06:57:57Z
 - FirstClaimAt: 2026-10-26T04:43:24Z
-- Revision: 14
+- Revision: 15
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-12T06:58:06Z revision=2 opid=Z7AXJ1VZ92Q5NKBASPZC4NVS8A-m1e-9c08b0e5 authority=proven digest=5f080748d71c48584773528036f3e59e4d19f33abe01425fb56776dc26ee18fb episode=2
@@ -33,4 +33,5 @@ History:
 - 2026-10-26T07:56:14Z HQDJY8YH54T8ET5EZHNHGK5B51-ui-71c5cb39 slice-start actor=ui+steward-seat targets=lane-steward
 - 2026-10-26T08:13:39Z NXPBYV7RNAETHK4ZNPN49NNH8R-ui-71c5cb39 edit actor=ui+steward-seat targets=lane-steward
 - 2026-10-26T08:45:50Z P8Z83PZD5920RJYF6AHS5HQ4PW-m1e-acb921fd edit actor=human:Wido targets=lane-steward displaced=ui+steward-seat@2026-10-26T04:43:24Z
-Integrity: sha256=bbf3c59f36e26a17aa62cbea09528d0a3c4d19eaea6f80909b34df932aad72c1
+- 2026-10-26T10:04:32Z 2HDV5GV43D6HAAW8SN9ZD5K9NG-ui-71c5cb39 edit actor=ui+steward-seat targets=lane-steward
+Integrity: sha256=a950211bb48838021bac6ff6cf18bc258cf76c826c24aa067a219b7b3489bac6
