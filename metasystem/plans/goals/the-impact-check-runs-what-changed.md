@@ -7,10 +7,10 @@
 - Tier: 2
 - Intent: The unit check's impact selection runs what a change touches: a dependent internal package runs only the tests that reference a changed exported symbol, never whole; a changed string literal selects a test file only when it is a message (contains a space); a fixture directory name is no longer a symbol. Changed packages keep today's rule. One unit, about 25 production lines, built with --last.
 - Origin: human
-- Next step: Handed to the landing lane 2026-10-26 (work land, tip 84a9145ddd43, waiting; delivery sentence set). Next: repeat work land the-impact-check-runs-what-changed to see landed or returned; once main contains it, goal done. Residuals for goal done: align the intent's 'a fixture directory name is no longer a symbol' with brief item 3 (N-1); later list: add the type name when an embedded field changes (N-2).
+- Next step: Landed on main through the landing lane 2026-10-26 03:18 UTC (ledger d4cd1d5b3, tip 84a9145ddd43). Next: goal done. R-4 needs N-2 (embedded struct field change adds no symbol) linked as goal:<id>; a seat cannot open a non-blocking goal, so m1e was asked to open an-embedded-field-change-selects-its-type (agent ask d-10f8454ef9ee50e9940df28b90). Once it exists, goal done with goal:an-embedded-field-change-selects-its-type; record N-1 (intent wording vs brief item 3) in the conclusion as a note.
 - OpenedAt: 2026-10-24T11:24:03Z
 - FirstClaimAt: 2026-10-25T14:30:00Z
-- Revision: 15
+- Revision: 16
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=MM15Y0ND5F9XRQ7W15H25JA0ER-m1e-5ea50bdc minutes=2400 reviewRounds=20 goalRevision=1
@@ -35,4 +35,5 @@ History:
 - 2026-10-26T02:11:43Z 18Y02F15NDJB45KM3JPG7T28S0-ui-71c5cb39 edit actor=ui+steward-seat targets=the-impact-check-runs-what-changed
 - 2026-10-26T02:21:35Z 5VVJDDH544DZSNHR7ECPA5WQ14-ui-71c5cb39 edit actor=ui+steward-seat targets=the-impact-check-runs-what-changed
 - 2026-10-26T03:18:23Z RQKE3GB0ETPE62NKPQ9CKKH6TM-ui-71c5cb39 landed actor=ui+steward-seat targets=the-impact-check-runs-what-changed reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 56.7 min: hand-in to merge 2.0, cheap gate not run, push unknown
-Integrity: sha256=a03f4b5c01ef5cc57ff5acf4d35dbb4cbe4bda176ca3adcbee55faa907e45e5e
+- 2026-10-26T03:20:50Z FKM39K98AEZCHW319SDC8NZ39M-ui-71c5cb39 edit actor=ui+steward-seat targets=the-impact-check-runs-what-changed
+Integrity: sha256=db5ce415c5041cda92c2fa19a169ea809ea6f368294363aac5f88c9537cf2e45
