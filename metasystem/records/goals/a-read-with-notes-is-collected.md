@@ -1,6 +1,6 @@
 # a-read-with-notes-is-collected
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="A machinery repair in the read collection path: it blocks one finished goal and every later machine-route unit whose critic writes a note; no data loss, a person can still land by hand."
@@ -8,16 +8,15 @@
 - Intent: A unit's read is collected and published whatever its critic finds: every code critic gets the return form whose findings carry class, where and change (today a Claude critic gets v4, lifecycle.go:232-236, so a read with one note is unreadable to the finding register and readsubject.Collect); a completed examination whose critic processes are proven dead may be retried (examination_retry.go:59 refuses 'not proven quiescent'); a round with several package reads can promote (intent_unit_review.go:647 'exactly one read step'). Acceptance: after the deploy, ui's stuck round of the-impact-check-runs-what-changed moves on without a rebuild and without new reads.
 - Origin: human
 - Next step: Steward cuts one brief (at most 250 production lines; split if more) from ui's evidence (peer messages d-5228407c5c186978fa128ba27e and d-dd9ff9b50ae2e395053b951a5f; the run 20261025t143500-f8df542e7e), one Astra round, build on m1e's build lane, land through the lane, deploy to ui; then tell ui and withdraw its question QDJM7NGDER8NGPPP1WGQETJ67W.
+- Concluded: Landed through the landing lane on 2026-10-26 01:38 (merge da985e0768): U1 (D1 notes kept from v4 returns, D4 re-read on unavailable-stop-inputs, D5 retry custody), read with two notes; deployed by the lane. D2/D3 and multi-read promotion follow in every-critic-reads-in-one-form.
 - OpenedAt: 2026-10-25T21:50:41Z
 - FirstClaimAt: 2026-10-25T23:25:37Z
-- Revision: 6
+- Revision: 7
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-25T21:50:51Z revision=2 opid=A71VMB78B37M2CARSPXRPVCXJ6-m1e-41287342 authority=proven digest=f3f30a08f7fc0a35283dced26a01875d34632991ec06089f3069faa58b3c4314 episode=2
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=5 at=2026-10-25T23:32:16Z
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-25T23:25:37Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-read-with-notes-is-collected: no accepted design declares areas\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-impact-check-runs-what-changed\"]" revision=5 accountingRevision=5 episodeAt=2026-10-25T23:25:37Z episodeRevision=5
-- StopCapability: generation=5 revision=5 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-10-25T21:50:41Z CDYQEYJPK6ZBC15BQ13Y8HVXGJ-m1e-41287342 open actor=human:Wido targets=a-read-with-notes-is-collected
@@ -26,4 +25,5 @@ History:
 - 2026-10-25T21:51:12Z B66Z22E6H6DEZWX3EKCPNDZH7X-m1e-41287342 set-pin actor=human:Wido targets=a-read-with-notes-is-collected
 - 2026-10-25T23:25:37Z C776QBCKYD76TSGD7VA3PFF3KK-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-read-with-notes-is-collected reason=areas unknown for goal a-read-with-notes-is-collected: no accepted design declares areas; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-impact-check-runs-what-changed
 - 2026-10-25T23:32:16Z VBKSRKWDR5D5SS305KFNW7HPAK-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-read-with-notes-is-collected
-Integrity: sha256=9a9e38d4f39439992c2e418ec5704117edf74490283b691f01ca9e801e3834ec
+- 2026-10-26T00:59:05Z YK6BFZKKBXXD4TBP4VZD0XRFPJ-m1e-5bb8b20f done actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-read-with-notes-is-collected,a-red-main-is-known-once,a-round-survives-a-restart,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,a-slow-ledger-read-is-a-wait,a-stop-waits-for-the-unit-boundary-2,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,lane-steward,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-engines-follow-the-deployed-engine,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-answer-is-the-act,the-elapsed-clock-excludes-waits,the-impact-check-runs-what-changed,the-lane-deploys-the-engine-it-runs-2,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory displaced=m1e+main-1792389436-6018-51cc28@2026-10-25T23:25:37Z
+Integrity: sha256=855a051f641fdf5e11c6db45a20472a4008547d8634f1aff94901ca475434d8c
