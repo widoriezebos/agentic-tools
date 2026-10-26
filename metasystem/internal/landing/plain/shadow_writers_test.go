@@ -170,8 +170,8 @@ func TestLandingStewardReportDayDrift(t *testing.T) {
 	t.Parallel()
 	b := newReportBed(t)
 	for _, event := range []state.Event{
-		{Kind: "drift", By: "keeper", At: b.now.Add(-2 * time.Hour), Evidence: "lane.word: running → paused"},
-		{Kind: "drift", By: "keeper", At: b.now.Add(-2 * time.Hour), Evidence: "lane.since.at: " + b.now.Add(-time.Hour).String() + " → " + b.now.String()},
+		{Kind: "drift", By: "keeper", At: b.now.Add(-30 * time.Minute), Evidence: "lane.word: running → paused"},
+		{Kind: "drift", By: "keeper", At: b.now.Add(-30 * time.Minute), Evidence: "lane.since.at: " + b.now.Add(-time.Hour).String() + " → " + b.now.String()},
 		{Kind: "drift", By: "keeper", At: b.now.Add(-24 * time.Hour), Evidence: "yesterday"},
 		{Kind: "drift", By: "keeper", At: b.now.Add(time.Hour), Evidence: "future"},
 		{Kind: "drift", By: "landing stop", At: b.now, Evidence: "published stop"},
@@ -182,7 +182,7 @@ func TestLandingStewardReportDayDrift(t *testing.T) {
 	}
 	b.report(b.now)
 	text := b.text()
-	if !strings.Contains(text, "### drift\n- "+b.now.Add(-2*time.Hour).Local().Format("15:04")+": lane.word: running → paused") || strings.Contains(text, "yesterday") || strings.Contains(text, "future") || strings.Contains(text, "rebuilt") || strings.Contains(text, "published stop") || strings.Contains(text, "unknown publisher") {
+	if !strings.Contains(text, "### drift\n- "+b.now.Add(-30*time.Minute).Local().Format("15:04")+": lane.word: running → paused") || strings.Contains(text, "yesterday") || strings.Contains(text, "future") || strings.Contains(text, "rebuilt") || strings.Contains(text, "published stop") || strings.Contains(text, "unknown publisher") {
 		t.Fatal(text)
 	}
 	if !strings.Contains(text, "lane.since.at: "+b.now.Add(-time.Hour).Local().Format("2006-01-02 15:04 MST")+" → "+b.now.Local().Format("2006-01-02 15:04 MST")) {

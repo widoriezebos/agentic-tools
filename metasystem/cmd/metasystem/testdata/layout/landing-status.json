@@ -13,6 +13,7 @@ exit 0
   "summary": "The landing lane's agent is at work; 0 waiting, 0 returned in the queue; admission open",
   "data": {
     "health": {
+      "line": "lane agent running; 1 rows fire: drift: no state record yet; 0 goals, oldest 0 min; load 2",
       "drift": [
         {
           "row": "drift",

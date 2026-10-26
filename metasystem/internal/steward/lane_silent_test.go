@@ -131,6 +131,16 @@ func writeLaneRecord(t *testing.T, home, root string) {
 	if err := os.WriteFile(lane.RecordPath(home), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
+	line, err := json.Marshal(plain.StewardLine{At: laneSilentT0, Line: "lane idle; nothing fires", Identity: "quiet"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(plain.Dir(root), 0700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(root), "steward-line.json"), line, 0600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func (f laneFixture) handIn(t *testing.T, goal string, at time.Time) {

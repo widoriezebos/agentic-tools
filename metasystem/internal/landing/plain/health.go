@@ -17,6 +17,7 @@ import (
 
 // Health is the lane's recorded evidence and measured ages; reading it acts on nothing.
 type Health struct {
+	LineText            string `json:"line"`
 	description         landingstate.Description
 	Drift               []Fired              `json:"drift,omitempty"`
 	ObservationProblem  string               `json:"observation_problem,omitempty"`
@@ -212,7 +213,10 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	if status.RunningProof != nil && status.RunningProof.State == "running" {
 		h.State = "proving"
 	}
-	for _, e := range status.Queue {
+	for i, e := range status.Queue {
+		if (e.State == StateReturned || e.State == StateLanded) && slices.ContainsFunc(status.Queue[i+1:], func(later Entry) bool { return later.Goal == e.Goal }) {
+			continue
+		}
 		if e.State != StateWaiting && e.State != StateReturned && e.State != StateLanded {
 			continue
 		}

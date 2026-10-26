@@ -491,6 +491,7 @@ var (
 )
 
 type syncRequestDependencies struct {
+	laneHome           func() (string, error)
 	projectionDeadline func(time.Duration) <-chan time.Time
 	ctx                context.Context
 	authorityFacts     goalAuthorityReadFacts

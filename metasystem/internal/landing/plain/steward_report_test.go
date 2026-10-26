@@ -144,7 +144,7 @@ func TestLandingStewardReportQualitySpeedAndSummary(t *testing.T) {
 	if strings.Contains(b.text(), "before-hour") || strings.Contains(b.text(), "future") || strings.Count(b.text(), "Red main-red:") != 1 {
 		t.Fatal(b.text())
 	}
-	want := "hour to " + b.now.Local().Format("15:04") + ": 2 landed, 1 returned, 4 red (goal 1, main 1, flake 1, unknown 1), oldest goal 75 min, 1 acts, 0 overdue records"
+	want := "hour to " + b.now.Local().Format("15:04") + ": 2 landed, 1 returned, 4 red (goal 1, main 1, flake 1, unknown 1), oldest goal 75 min, 1 acts, 1 overdue goals, 0 overdue records"
 	if summary != want {
 		t.Fatalf("got %s; want %s", summary, want)
 	}
@@ -176,7 +176,7 @@ func TestLandingStewardReportTokensFromSessionRecords(t *testing.T) {
 			b.report(b.now)
 			text := b.text()
 			if measured {
-				for _, want := range []string{"quick landing: 60 tokens", "slow landing: 60 tokens", "slow critics: 20 tokens", "shared across goals"} {
+				for _, want := range []string{"quick landing: 60 tokens", "slow landing: 60 tokens", "slow critics: 1019 tokens", "shared across goals"} {
 					if !strings.Contains(text, want) {
 						t.Fatalf("missing %q: %s", want, text)
 					}
@@ -184,10 +184,10 @@ func TestLandingStewardReportTokensFromSessionRecords(t *testing.T) {
 				if strings.Count(text, "- slow critics:") != 1 || !strings.Contains(text, "session critic-session") || !strings.Contains(text, "session critic-second") {
 					t.Fatal(text)
 				}
-				if strings.Contains(text, "999 tokens") {
+				if strings.Contains(text, "session foreign-session") || strings.Contains(text, "session foreign-critic") || strings.Contains(text, "session critic-foreign-install") {
 					t.Fatal("measured another checkout's session")
 				}
-			} else if !strings.Contains(text, "slow landing: unmeasured: "+filepath.Join(b.store.Root, "*", "record.json")) {
+			} else if !strings.Contains(text, "slow landing: unmeasured: no session record in "+b.store.Root) {
 				t.Fatal(text)
 			}
 		})

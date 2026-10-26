@@ -197,7 +197,7 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		store = *effects.UsageStore
 	}
 	summary, reportErr := StewardReport(record.Install, record.Root, status, history, now, seams, store)
-	err = errors.Join(err, reportErr)
+	err = errors.Join(err, reportErr, writeStewardLine(record.Install, *status.Health, now))
 	if summary != "" {
 		lines = append(lines, summary)
 	}
