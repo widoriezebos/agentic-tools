@@ -7,10 +7,10 @@
 - Tier: 2
 - Intent: The unit check's impact selection runs what a change touches: a dependent internal package runs only the tests that reference a changed exported symbol, never whole; a changed string literal selects a test file only when it is a message (contains a space); a fixture directory name is no longer a symbol. Changed packages keep today's rule. One unit, about 25 production lines, built with --last.
 - Origin: human
-- Next step: Landed on main through the landing lane 2026-10-26 03:18 UTC (ledger d4cd1d5b3, tip 84a9145ddd43). Next: goal done. R-4 needs N-2 (embedded struct field change adds no symbol) linked as goal:<id>; a seat cannot open a non-blocking goal, so m1e was asked to open an-embedded-field-change-selects-its-type (agent ask d-10f8454ef9ee50e9940df28b90). Once it exists, goal done with goal:an-embedded-field-change-selects-its-type; record N-1 (intent wording vs brief item 3) in the conclusion as a note.
+- Next step: Landed on main through the landing lane 2026-10-26 03:18 UTC (ledger d4cd1d5b3, tip 84a9145ddd43). Next: goal done. R-4 needs N-2 (embedded struct field change adds no symbol) linked as goal:<id>; a seat cannot open a non-blocking goal, so m1e was asked to open an-embedded-field-change-selects-its-type (agent ask d-10f8454ef9ee50e9940df28b90). Once it exists, goal done with goal:an-embedded-field-change-selects-its-type; record N-1 (intent wording vs brief item 3) in the conclusion as a note.; ASKED 4S2XD9VF7Q7S06RJSQ95C2XXZQ (other): the-impact-check-runs-what-changed is on main. To conclude it, should the critic's one low note N-2 get its own goal, or be dropped?
 - OpenedAt: 2026-10-24T11:24:03Z
 - FirstClaimAt: 2026-10-25T14:30:00Z
-- Revision: 16
+- Revision: 17
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=MM15Y0ND5F9XRQ7W15H25JA0ER-m1e-5ea50bdc minutes=2400 reviewRounds=20 goalRevision=1
@@ -36,4 +36,5 @@ History:
 - 2026-10-26T02:21:35Z 5VVJDDH544DZSNHR7ECPA5WQ14-ui-71c5cb39 edit actor=ui+steward-seat targets=the-impact-check-runs-what-changed
 - 2026-10-26T03:18:23Z RQKE3GB0ETPE62NKPQ9CKKH6TM-ui-71c5cb39 landed actor=ui+steward-seat targets=the-impact-check-runs-what-changed reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 56.7 min: hand-in to merge 2.0, cheap gate not run, push unknown
 - 2026-10-26T03:20:50Z FKM39K98AEZCHW319SDC8NZ39M-ui-71c5cb39 edit actor=ui+steward-seat targets=the-impact-check-runs-what-changed
-Integrity: sha256=db5ce415c5041cda92c2fa19a169ea809ea6f368294363aac5f88c9537cf2e45
+- 2026-10-26T03:50:24Z TXWRH88K9GN4QKH7KD5H46TQ5K-ui-71c5cb39 ask actor=ui+steward-seat targets=the-impact-check-runs-what-changed
+Integrity: sha256=d857288d99df23764d637505a036b9d48e64cf0af502e7b3a6251fd2acdb5066
