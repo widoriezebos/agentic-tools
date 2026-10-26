@@ -16,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
 func impactAdapterBed(t *testing.T) string {
@@ -74,6 +75,130 @@ func impactPublic(t *testing.T, root string, args ...string) (int, string, strin
 	var stdout, stderr bytes.Buffer
 	code := dispatchWithFamilies(append([]string{"test", "impact", "--root", root}, args...), &stdout, &stderr, families())
 	return code, stdout.String(), stderr.String()
+}
+
+func TestTestImpactDependentRunsOnlyItsReadersGitAdapter(t *testing.T) {
+	t.Parallel()
+	root, _ := impactGitAdapterBed(t)
+	impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = true\nconst pace = 1\n")
+	for path, source := range map[string]string{
+		"internal/direct/value.go":          "package direct\nimport _ \"example.invalid/impact/internal/launch\"\n",
+		"internal/direct/reader_test.go":    "package direct_test\nimport (\"testing\"; \"example.invalid/impact/internal/launch\")\nfunc TestReader(t *testing.T) { t.Parallel(); _ = launch.Value }\n",
+		"internal/direct/noise_test.go":     "package direct\nimport \"testing\"\nfunc TestNoise(t *testing.T) { t.Parallel() }\n",
+		"internal/direct/local_test.go":     "package direct\nimport \"testing\"\nfunc TestLocal(t *testing.T) { t.Parallel(); pace := 1; _ = pace }\n",
+		"internal/transitive/value.go":      "package transitive\nimport _ \"example.invalid/impact/internal/direct\"\n",
+		"internal/transitive/noise_test.go": "package transitive\nimport \"testing\"\nfunc TestTransitive(t *testing.T) { t.Parallel() }\n",
+	} {
+		impactWrite(t, root, path, source)
+	}
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "readers")
+	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = false\nconst pace = 2\n")
+	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
+	if code != 0 || !strings.Contains(out, "selection: internal/launch\n") || !strings.Contains(out, "selection: internal/direct=TestReader\n") || strings.Contains(out, "selection: internal/direct\n") || strings.Contains(out, "internal/transitive") || strings.Contains(out, "TestLocal") || strings.Contains(out, "TestNoise") {
+		t.Fatalf("dependent readers exit=%d out=%s problem=%s", code, out, problem)
+	}
+}
+
+func TestTestImpactTokenLiteralsSelectNoReadersGitAdapter(t *testing.T) {
+	t.Parallel()
+	root, _ := impactGitAdapterBed(t)
+	source := "package main\nfunc changed() { _, _, _ = \"status\", \"goal \", \"goal is on main but not deployed yet\" }\n"
+	impactWrite(t, root, "cmd/metasystem/changed.go", source)
+	for name, literal := range map[string]string{"Token": "status", "Padded": "goal ", "Message": "goal is on main but not deployed yet"} {
+		impactWrite(t, root, "cmd/metasystem/"+strings.ToLower(name)+"_test.go", fmt.Sprintf("package main\nimport \"testing\"\nfunc Test%s(t *testing.T) { t.Parallel(); _ = %q }\n", name, literal))
+	}
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "literals")
+	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	impactWrite(t, root, "cmd/metasystem/changed.go", "package main\nfunc changed() { _, _, _, _ = \"status\", \"goal \", \"goal is on main but not deployed yet\", 1 }\n")
+	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
+	if code != 0 || !strings.Contains(out, "selection: cmd/metasystem=TestMessage\n") {
+		t.Fatalf("literal readers exit=%d out=%s problem=%s", code, out, problem)
+	}
+}
+
+func TestTestImpactFixtureNameIsNotAnIdentifierGitAdapter(t *testing.T) {
+	t.Parallel()
+	root, _ := impactGitAdapterBed(t)
+	impactWrite(t, root, "cmd/metasystem/testdata/layout/help-x.txt", "before\n")
+	impactWrite(t, root, "cmd/metasystem/ident_test.go", "package main\nimport \"testing\"\nfunc TestIdentifier(t *testing.T) { t.Parallel(); layout := 1; _ = layout }\n")
+	impactWrite(t, root, "cmd/metasystem/golden_test.go", "package main\nimport (\"testing\"; \"path/filepath\"; \"os\")\nfunc TestGolden(t *testing.T) { t.Parallel(); _, _ = os.ReadFile(filepath.Join(\"testdata\", \"layout\", \"help-x.txt\")) }\n")
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "fixture readers")
+	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+	impactWrite(t, root, "cmd/metasystem/testdata/layout/help-x.txt", "after\n")
+	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
+	if code != 0 || !strings.Contains(out, "selection: cmd/metasystem=TestGolden\n") {
+		t.Fatalf("fixture readers exit=%d out=%s problem=%s", code, out, problem)
+	}
+}
+
+func TestTestImpactStructFieldSelectsFieldReadersGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct{ name, after, want string }{
+		{"field", "type invocation struct {\n a int\n b string\n}\n", "TestField"},
+		{"type name", "type renamed struct {\n a int\n}\n", "TestField,TestType"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			root, _ := impactGitAdapterBed(t)
+			impactWrite(t, root, "cmd/metasystem/changed.go", "package main\ntype invocation struct {\n a int\n}\n")
+			impactWrite(t, root, "cmd/metasystem/type_test.go", "package main\nimport \"testing\"\nfunc TestType(t *testing.T) { t.Parallel(); _ = invocation{} }\n")
+			impactWrite(t, root, "cmd/metasystem/field_test.go", "package main\nimport \"testing\"\nfunc TestField(t *testing.T) { t.Parallel(); _ = invocation{}.b }\n")
+			testingFixtureGit(t, root, "add", ".")
+			testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "struct readers")
+			base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+			impactWrite(t, root, "cmd/metasystem/changed.go", "package main\n"+row.after)
+			code, out, problem := impactPublic(t, root, "--base", base, "--plan")
+			if code != 0 || !strings.Contains(out, "selection: cmd/metasystem="+row.want+"\n") {
+				t.Fatalf("struct readers exit=%d out=%s problem=%s", code, out, problem)
+			}
+		})
+	}
+}
+
+func TestTestImpactSecondHalfPlanGitAdapter(t *testing.T) {
+	t.Parallel()
+	var saved struct{ Base, Commit, Package string }
+	data, err := os.ReadFile("testdata/work-commit-impact/second-half.json")
+	helmMust(t, err)
+	helmMust(t, json.Unmarshal(data, &saved))
+	module := realImpactArchive(t, saved.Base)
+	root := filepath.Dir(module)
+	connectionGit(t, root, "read-tree", saved.Base)
+	patch, err := os.ReadFile("testdata/work-commit-impact/second-half.patch")
+	helmMust(t, err)
+	path := filepath.Join(t.TempDir(), "second-half.patch")
+	helmMust(t, os.WriteFile(path, patch, 0600))
+	connectionGit(t, root, "apply", path)
+	code, out, problem := impactPublic(t, module, "--base", saved.Base, "--plan", "--json")
+	result, err := verbresult.Read([]byte(out), "test impact", code, problem)
+	var plan plain.ImpactPlan
+	if err != nil || code != 0 || result.DecodeData(&plan) != nil {
+		t.Fatalf("second half plan exit=%d stderr=%s error=%v", code, problem, err)
+	}
+	var groups, whole []string
+	cmdCount, namedCount := 0, 0
+	for _, selection := range plan.Selections {
+		pkg, names, named := strings.Cut(selection, "=")
+		if named {
+			count := len(strings.Split(names, ","))
+			namedCount += count
+			if pkg == saved.Package {
+				cmdCount = count
+			}
+		} else if strings.HasPrefix(pkg, "metasystem/") {
+			whole = append(whole, pkg)
+		} else {
+			groups = append(groups, pkg)
+		}
+	}
+	if !slices.Equal(groups, []string{"policy-canary", "adapter-canary", "command-interface-smoke"}) || !slices.Equal(whole, []string{"metasystem/internal/goal", "metasystem/internal/landing/plain", "metasystem/internal/steward"}) || cmdCount == 0 || cmdCount > 300 {
+		t.Fatalf("second half %s: groups=%v whole=%v cmd tests=%d plan=%+v", saved.Commit, groups, whole, cmdCount, plan)
+	}
+	t.Logf("second half: %d command tests; %d named tests; %d selections; groups=%v; whole=%v", cmdCount, namedCount, len(plan.Selections), groups, whole)
 }
 
 func TestTestImpactWorkingSnapshotGoesRedGitAdapter(t *testing.T) {
@@ -214,20 +339,20 @@ func TestTestImpactCmdFixtureBasenameGitAdapter(t *testing.T) {
 func TestTestImpactImportersAndDeletedSymbolsGitAdapter(t *testing.T) {
 	t.Parallel()
 	root, _ := impactGitAdapterBed(t)
-	impactWrite(t, root, "internal/launch/messages.go", "package launch\nfunc Removed() string { return \"removed-message\" }\nfunc Retained() string { return \"unchanged-message\" }\n")
+	impactWrite(t, root, "internal/launch/messages.go", "package launch\nfunc Removed() string { return \"removed message\" }\nfunc Retained() string { return \"unchanged message\" }\n")
 	impactWrite(t, root, "cmd/metasystem/read_test.go", "package main\nimport (\"testing\"; \"example.invalid/impact/internal/launch\")\nfunc TestImporter(t *testing.T) { t.Parallel(); _ = launch.Removed }\n")
-	impactWrite(t, root, "cmd/metasystem/string_test.go", "package main\nimport \"testing\"\nfunc TestOldMessage(t *testing.T) { t.Parallel(); _ = \"removed-message\" }\n")
-	impactWrite(t, root, "cmd/metasystem/new_message_test.go", "package main\nimport \"testing\"\nfunc TestNewMessage(t *testing.T) { t.Parallel(); _ = \"replacement-message\" }\n")
-	impactWrite(t, root, "cmd/metasystem/noise_test.go", "package main\nimport \"testing\"\nfunc TestNoise(t *testing.T) { t.Parallel(); _ = \"unchanged-message\"; _ = \"ok\" }\n")
+	impactWrite(t, root, "cmd/metasystem/string_test.go", "package main\nimport \"testing\"\nfunc TestOldMessage(t *testing.T) { t.Parallel(); _ = \"removed message\" }\n")
+	impactWrite(t, root, "cmd/metasystem/new_message_test.go", "package main\nimport \"testing\"\nfunc TestNewMessage(t *testing.T) { t.Parallel(); _ = \"replacement message\" }\n")
+	impactWrite(t, root, "cmd/metasystem/noise_test.go", "package main\nimport \"testing\"\nfunc TestNoise(t *testing.T) { t.Parallel(); _ = \"unchanged message\"; _ = \"ok\" }\n")
 	impactWrite(t, root, "internal/reader/reader_test.go", "package reader\nimport (\"testing\"; \"example.invalid/impact/internal/launch\")\nfunc TestInternalImporter(t *testing.T) { t.Parallel(); _ = launch.Removed }\n")
 	impactWrite(t, root, "internal/reader/noise_test.go", "package reader\nimport \"testing\"\nfunc TestInternalNoise(t *testing.T) { t.Parallel() }\n")
-	impactWrite(t, root, "cmd/unrelated/noise_test.go", "package unrelated\nimport \"testing\"\nfunc TestUnrelated(t *testing.T) { t.Parallel(); _ = \"removed-message\" }\n")
+	impactWrite(t, root, "cmd/unrelated/noise_test.go", "package unrelated\nimport \"testing\"\nfunc TestUnrelated(t *testing.T) { t.Parallel(); _ = \"removed message\" }\n")
 	testingFixtureGit(t, root, "add", ".")
 	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "importers")
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
-	impactWrite(t, root, "internal/launch/messages.go", "package launch\nfunc Added() string { return \"replacement-message\" }\nfunc Short() string { return \"ok\" }\nfunc Retained() string { return \"unchanged-message\" }\n")
+	impactWrite(t, root, "internal/launch/messages.go", "package launch\nfunc Added() string { return \"replacement message\" }\nfunc Short() string { return \"ok\" }\nfunc Retained() string { return \"unchanged message\" }\n")
 	code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-	if code != 0 || !strings.Contains(out, "selection: internal/launch\n") || !strings.Contains(out, "selection: cmd/metasystem=TestImporter,TestNewMessage,TestOldMessage") || strings.Contains(out, "selection: cmd/metasystem\n") || !strings.Contains(out, "selection: internal/reader\n") || strings.Contains(out, "TestNoise") || strings.Contains(out, "TestUnrelated") {
+	if code != 0 || !strings.Contains(out, "selection: internal/launch\n") || !strings.Contains(out, "selection: cmd/metasystem=TestImporter,TestNewMessage,TestOldMessage") || strings.Contains(out, "selection: cmd/metasystem\n") || !strings.Contains(out, "selection: internal/reader=TestInternalImporter\n") || strings.Contains(out, "TestNoise") || strings.Contains(out, "TestUnrelated") {
 		t.Fatalf("importer selection exit=%d out=%s problem=%s", code, out, problem)
 	}
 }
@@ -460,7 +585,7 @@ func TestTestImpactDeletedPackageSelectsImporterGitAdapter(t *testing.T) {
 				t.Fatal(err)
 			}
 			code, out, problem := impactPublic(t, root, "--base", base, "--plan")
-			if code != 0 || !strings.Contains(out, "selection: internal/reader\n") {
+			if code != 0 || !strings.Contains(out, "selection: internal/reader=TestDeletedImporter\n") {
 				t.Fatalf("deleted package importer exit=%d out=%s problem=%s", code, out, problem)
 			}
 			code, out, problem = impactPublic(t, root, "--base", base)
@@ -472,8 +597,18 @@ func TestTestImpactDeletedPackageSelectsImporterGitAdapter(t *testing.T) {
 }
 
 func TestTestImpactReverseDependentsRunWholeGitAdapter(t *testing.T) {
-	t.Parallel()
+	t.Setenv("LANDING_PROOF_SCOPE", "impact")
 	root, _ := impactGitAdapterBed(t)
+	data, err := os.ReadFile(filepath.Join(root, "testing.json"))
+	helmMust(t, err)
+	var contract testpolicy.Contract
+	helmMust(t, json.Unmarshal(data, &contract))
+	static := contract.Groups[0]
+	static.ID = "fast-static-build"
+	contract.Groups = append(contract.Groups, static)
+	data, err = json.Marshal(contract)
+	helmMust(t, err)
+	impactWrite(t, root, "testing.json", string(data))
 	bridge := t.TempDir()
 	impactWrite(t, bridge, "go.mod", "module example.invalid/impact/bridge\n\ngo 1.27\n")
 	impactWrite(t, bridge, "bridge.go", "package bridge\nimport _ \"example.invalid/impact/internal/launch\"\n")
@@ -539,7 +674,7 @@ func TestTestImpactNonCommitBaseRefusesGitAdapter(t *testing.T) {
 	}
 }
 
-func TestTestImpactInternalImporterRunsWholeGitAdapter(t *testing.T) {
+func TestTestImpactInternalImporterRunsOnlyItsReadersGitAdapter(t *testing.T) {
 	t.Parallel()
 	root, _ := impactGitAdapterBed(t)
 	impactWrite(t, root, "internal/reader/reader.go", "package reader\nimport _ \"example.invalid/impact/internal/launch\"\n")
@@ -549,7 +684,7 @@ func TestTestImpactInternalImporterRunsWholeGitAdapter(t *testing.T) {
 	base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 	impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = true // changed implementation\n")
 	code, out, problem := impactPublic(t, root, "--base", base)
-	if code != 1 || !strings.Contains(out, "selection: internal/reader\n") || !strings.Contains(out, "landing group unit/internal/reader red ") || !strings.Contains(problem, "TestInternalNoise") {
+	if code != 0 || strings.Contains(out, "selection: internal/reader") || strings.Contains(problem, "TestInternalNoise") {
 		t.Fatalf("internal importer exit=%d out=%s problem=%s", code, out, problem)
 	}
 }

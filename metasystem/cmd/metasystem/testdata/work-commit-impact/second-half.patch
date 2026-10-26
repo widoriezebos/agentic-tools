@@ -1,0 +1,979 @@
+diff --git a/metasystem/AGENTS.md b/metasystem/AGENTS.md
+index ad56d14ca..6fec1dbd7 100644
+--- a/metasystem/AGENTS.md
++++ b/metasystem/AGENTS.md
+@@ -32,7 +32,7 @@ Use `wow.md` as the only routing index. Read just the guidance and skills releva
+ Every backlog item's intake tier sets its budget (R-54-m1): severity and
+ novelty derive the tier; exposure and accumulation weight its proof.
+ 
+-Programs START with `metasystem goal open` by a person: a multi-session effort gets a ledger goal before its first commit so intent survives turns; a seat's own `open` only names the claimed goal it blocks (`--blocks`) and parks it until that blocker is done, and non-blocking ideas go to `memory/backlog-notes.md`. At turn end, read `metasystem goal list --ready`, one line every runtime has, hooks or none; a free seat runs `metasystem goal claim`, taking only that ready goal. Records explain work but never select it, nor do scanning, kickoff order or pin preference. If another seat wins, claim again. Concluding or parking a human-opened goal is human-reserved. The ledger mutates only through goal actions; a person publishes reviewed manual edits through `metasystem goal sync --publish --goal G --by NAME`.
++Programs START with `metasystem goal open` by a person: a multi-session effort gets a ledger goal before its first commit so intent survives turns; a seat's own `open` only names the claimed goal it blocks (`--blocks`) and parks it until that blocker is done, and non-blocking ideas go to `memory/backlog-notes.md`. At turn end, read `metasystem goal list --ready`, one line every runtime has, hooks or none; a free seat runs `metasystem goal claim`, taking only that ready goal. Records explain work but never select it, nor do scanning, kickoff order or pin preference. If another seat wins, claim again. Parking a human-opened goal is human-reserved; the session holding it concludes it once its landing is recorded. The ledger mutates only through goal actions; a person publishes reviewed manual edits through `metasystem goal sync --publish --goal G --by NAME`.
+ 
+ When the one obvious step fails, `metasystem question ask` (refusal line 1, what you tried, the decision), then wait inside the turn; don't fight it (docs/working-with-agents.md). A headless seat ends with its turn: wait with `metasystem work wait` or `question wait` (--timeout).
+ 
+diff --git a/metasystem/cmd/metasystem/goal_boundary_test.go b/metasystem/cmd/metasystem/goal_boundary_test.go
+index 0106b547d..9792632e2 100644
+--- a/metasystem/cmd/metasystem/goal_boundary_test.go
++++ b/metasystem/cmd/metasystem/goal_boundary_test.go
+@@ -4,9 +4,12 @@ import (
+ 	"encoding/json"
+ 	"os"
+ 	"path/filepath"
++	"slices"
+ 	"strings"
+ 	"testing"
++	"time"
+ 
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+@@ -142,3 +145,116 @@ func TestWorkLandWholeCannotSkipDeclaredBuilds(t *testing.T) {
+ 		t.Fatalf("incomplete declared goal reached delivery: %+v %v", entries, err)
+ 	}
+ }
++
++func holdingBoundaryBed(t *testing.T) (*deliveryBed, *landingOwners, string) {
++	t.Helper()
++	b, owners, install := tablelessBoundaryBed(t, "lane")
++	b.lineage = "agent-session"
++	file := b.goalFile("standing-validation")
++	file.Origin, file.Claimed.Lineage = goal.OriginHuman, b.lineage
++	b.addGoal(file)
++	return b, owners, install
++}
++
++func TestHoldingSessionDeclaresTheEnd(t *testing.T) {
++	t.Parallel()
++	b, _, install := holdingBoundaryBed(t)
++	code, result := b.do("work", "land", "standing-validation", "--whole")
++	expectOutcome(t, "end without delivery sentence", code, result, intentRefused)
++	if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", "standing-validation", "--whole", "--json", "--delivered", "WHAT IT DELIVERS, IN ONE PLAIN SENTENCE"}) {
++		t.Fatalf("missing delivery sentence's next step: %+v", result)
++	}
++	if entries, err := plain.Entries(install); err != nil || len(entries) != 0 {
++		t.Fatalf("refusal queued work: %+v %v", entries, err)
++	}
++	code, result = b.do("work", "land", "standing-validation", "--whole", "--delivered", "x")
++	expectOutcome(t, "holder declares end", code, result, intentConfirmed)
++	data, err := os.ReadFile(filepath.Join(plain.Dir(install), "queue.jsonl"))
++	var line plain.Line
++	if err != nil || json.Unmarshal(data, &line) != nil || line.WholeBy != "seat:mac-cli+agent-session" || line.Delivered != "x" {
++		t.Fatalf("holder's declaration: %s %v", data, err)
++	}
++}
++
++func TestOtherSessionCannotDeclareTheEnd(t *testing.T) {
++	t.Parallel()
++	b, _, install := holdingBoundaryBed(t)
++	b.lineage = "other-session"
++	code, result := b.do("work", "land", "standing-validation", "--whole", "--delivered", "x")
++	expectOutcome(t, "other session declares end", code, result, intentRefused)
++	if !strings.Contains(result.Summary, "mac-cli+agent-session") {
++		t.Fatalf("claim holder unnamed: %+v", result)
++	}
++	if entries, err := plain.Entries(install); err != nil || len(entries) != 0 {
++		t.Fatalf("refusal queued work: %+v %v", entries, err)
++	}
++}
++
++func TestHoldingSessionEndNeedsEveryRead(t *testing.T) {
++	t.Parallel()
++	b, owners, install := holdingBoundaryBed(t)
++	owners.status.Status.Prefix = 1
++	code, result := b.do("work", "land", "standing-validation", "--whole", "--delivered", "x")
++	expectOutcome(t, "holder with unread unit", code, result, intentRefused)
++	if !strings.Contains(result.Summary, "u2") {
++		t.Fatalf("unread unit unnamed: %+v", result)
++	}
++	if entries, err := plain.Entries(install); err != nil || len(entries) != 0 {
++		t.Fatalf("refusal queued work: %+v %v", entries, err)
++	}
++}
++
++func TestTheSeatsRepeatRecordsItsLanding(t *testing.T) {
++	t.Parallel()
++	b, owners, _ := holdingBoundaryBed(t)
++	calls := 0
++	b.owners.recordLanded = func(inv *intentInvocation, id string) error {
++		calls++
++		return productionRecordLanded(inv, id)
++	}
++	code, result := b.do("work", "land", "standing-validation", "--whole", "--delivered", "x")
++	expectOutcome(t, "holder hand-in", code, result, intentConfirmed)
++	owners.status.EndpointTip = owners.status.BranchTip
++	owners.status.Status = branch.Status{}
++	owners.status.Sources = nil
++	code, result = b.do("work", "land", "standing-validation")
++	expectOutcome(t, "holder reads landing", code, result, intentUnchanged)
++	file := b.goalFile("standing-validation")
++	last := file.History[len(file.History)-1]
++	if calls != 1 || !strings.Contains(result.Summary, "landed on main") || last.Verb != goal.LandedVerb || !strings.Contains(last.Reason, "end declared by seat:mac-cli+agent-session") {
++		t.Fatalf("landing not recorded: calls=%d last=%+v result=%+v", calls, last, result)
++	}
++	before := len(file.History)
++	code, result = b.do("work", "land", "standing-validation")
++	expectOutcome(t, "holder repeats recorded landing", code, result, intentUnchanged)
++	if file = b.goalFile("standing-validation"); len(file.History) != before {
++		t.Fatalf("repeat added another landed line: %+v", file.History)
++	}
++}
++
++func TestARecordsLandingWritesNoLandedLine(t *testing.T) {
++	t.Parallel()
++	b, owners, install := holdingBoundaryBed(t)
++	code, result := b.do("work", "land", "standing-validation", "--whole", "--delivered", "x")
++	expectOutcome(t, "holder hand-in waits", code, result, intentConfirmed)
++	codeTip, recordsTip := owners.status.BranchTip, strings.Repeat("4", 40)
++	if _, added, err := plain.HandIn(install, plain.Line{At: b.owners.now().Format(time.RFC3339), Goal: "standing-validation", Branch: "goal/standing-validation", SHA: recordsTip, Records: true}); err != nil || !added {
++		t.Fatalf("records hand-in: added=%v err=%v", added, err)
++	}
++	owners.status.BranchTip, owners.status.EndpointTip = recordsTip, recordsTip
++	owners.status.Status, owners.status.Sources = branch.Status{}, nil
++	codeLanded, calls := false, 0
++	b.owners.laneContains = func(sha, main string) (bool, error) { return sha == recordsTip || codeLanded && sha == codeTip, nil }
++	b.owners.recordLanded = func(*intentInvocation, string) error { calls++; return nil }
++	code, result = b.do("work", "land", "standing-validation")
++	expectOutcome(t, "records landed alone", code, result, intentUnchanged)
++	if calls != 0 {
++		t.Fatal("records landing wrote the goal's landed line")
++	}
++	codeLanded = true
++	code, result = b.do("work", "land", "standing-validation")
++	expectOutcome(t, "code landed too", code, result, intentUnchanged)
++	if calls != 1 {
++		t.Fatalf("code landing not recorded: calls=%d result=%+v", calls, result)
++	}
++}
+diff --git a/metasystem/cmd/metasystem/goal_done_deploy_test.go b/metasystem/cmd/metasystem/goal_done_deploy_test.go
+new file mode 100644
+index 000000000..09c98a007
+--- /dev/null
++++ b/metasystem/cmd/metasystem/goal_done_deploy_test.go
+@@ -0,0 +1,191 @@
++package main
++
++import (
++	"encoding/json"
++	"path/filepath"
++	"strings"
++	"testing"
++	"time"
++
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/deploy"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
++)
++
++func landedHolderWithDeploy(t *testing.T, lineage ...string) (*deliveryBed, func(...deploy.Line), string) {
++	t.Helper()
++	b, owners, _ := holdingBoundaryBed(t)
++	if len(lineage) > 0 {
++		b.lineage = lineage[0]
++		file := b.goalFile("standing-validation")
++		file.Claimed.Lineage = b.lineage
++		waitingToLandBed(file)
++		last := &file.History[len(file.History)-1]
++		last.Actor, last.Opid = "mac-cli+"+b.lineage, goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FRV", "mac-cli", b.lineage)
++		file.Landing.Opid = last.Opid
++		b.addGoal(file)
++	}
++	b.owners.recordLanded = productionRecordLanded
++	code, result := b.do("work", "land", "standing-validation", "--whole", "--delivered", "x")
++	expectOutcome(t, "holder's end declaration", code, result, intentConfirmed)
++	landing := owners.status.BranchTip
++	owners.status.EndpointTip = landing
++	owners.status.Status, owners.status.Sources = branch.Status{}, nil
++	code, result = b.do("work", "land", "standing-validation")
++	expectOutcome(t, "holder records landing", code, result, intentUnchanged)
++	file := b.goalFile("standing-validation")
++	if file.History[len(file.History)-1].Verb != goal.LandedVerb {
++		t.Fatalf("landing unrecorded: %+v", result)
++	}
++	home, origin := t.TempDir(), "https://example.test/team/project.git"
++	key, err := deploy.ProjectKey(origin)
++	if err != nil {
++		t.Fatal(err)
++	}
++	b.writeFile(filepath.Join(b.root(), "deploy.json"), `{"schema":1,"adapter":{"argv":["fixture-adapter"]}}`)
++	laneInputs := b.laneInputs
++	b.laneInputs = func(owners *intentOwners) {
++		laneInputs(owners)
++		owners.deploy = deployOwners{home: func() (string, error) { return home, nil }, origin: func(string) (string, error) { return origin, nil }, now: b.owners.now}
++	}
++	old := strings.Repeat("0", 40)
++	b.owners.laneContains = func(sha, main string) (bool, error) { return sha == main || sha == landing && main != old, nil }
++	write := func(lines ...deploy.Line) {
++		t.Helper()
++		var record strings.Builder
++		for _, line := range lines {
++			line.Kind, line.StartedAt, line.EndedAt = deploy.KindDeploy, b.owners.now(), b.owners.now()
++			data, err := json.Marshal(line)
++			if err != nil {
++				t.Fatal(err)
++			}
++			record.Write(data)
++			record.WriteByte('\n')
++		}
++		b.writeFile(filepath.Join(deploy.Dir(home, key), "deploys.jsonl"), record.String())
++	}
++	return b, write, landing
++}
++
++func TestTheSeatsDoneWaitsForTheDeploy(t *testing.T) {
++	t.Parallel()
++	for _, state := range []string{"pending", "failed", "successful", "person"} {
++		t.Run(state, func(t *testing.T) {
++			t.Parallel()
++			b, write, landing := landedHolderWithDeploy(t)
++			old := deploy.Line{Commit: strings.Repeat("0", 40), Outcome: deploy.OutcomeActive}
++			write(old)
++			switch state {
++			case "failed":
++				write(old, deploy.Line{Commit: landing, Outcome: deploy.OutcomeBuildFailed})
++			case "successful":
++				write(old, deploy.Line{Commit: strings.Repeat("9", 40), Outcome: deploy.OutcomeActive})
++			}
++			args := []string{"goal", "done", "standing-validation", "--reason", "r"}
++			if state == "person" {
++				b.lineage = ""
++				_, reader := enrollGoalSyncTerminal(t, b.root(), "ttys:fixture_deploy_done")
++				b.facts.reader = &reader
++				laneInputs := b.laneInputs
++				b.laneInputs = func(owners *intentOwners) {
++					laneInputs(owners)
++					owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
++						return humanauthority.Prove(root, reader.exact.Pid, reader, at)
++					}
++				}
++				args = append(args, "--by", "Wido")
++			}
++			code, result := b.do(args...)
++			if state == "successful" || state == "person" {
++				expectOutcome(t, state, code, result, intentConfirmed)
++				if b.goalFile("standing-validation").State != goal.StateDone {
++					t.Fatal("conclusion left the goal live")
++				}
++				return
++			}
++			expectOutcome(t, state, code, result, intentRefused)
++			want := "not deployed yet"
++			if state == "failed" {
++				want = "its deploy failed (build-failed of " + landing + ")"
++			}
++			if !strings.Contains(result.Summary, want) || result.Next == nil || strings.Join(result.Next.Argv, " ") != "metasystem deploy status" || b.goalFile("standing-validation").State != goal.StateClaimed {
++				t.Fatalf("deploy refusal: %+v", result)
++			}
++		})
++	}
++}
++
++func TestTheSeatFinishesAGoalWithNoPerson(t *testing.T) {
++	t.Parallel()
++	b, write, landing := landedHolderWithDeploy(t)
++	write(deploy.Line{Commit: landing, Outcome: deploy.OutcomeActive})
++	code, result := b.do("goal", "done", "standing-validation", "--reason", "r")
++	expectOutcome(t, "holder concludes deployed goal", code, result, intentConfirmed)
++	file := b.goalFile("standing-validation")
++	last := file.History[len(file.History)-1]
++	if file.State != goal.StateDone || last.Verb != "done" || last.Actor != "mac-cli+agent-session" {
++		t.Fatalf("goal not concluded by its holder: %+v %+v", file, last)
++	}
++}
++
++func TestALandedGoalIsConcludedAfterItsDeploy(t *testing.T) {
++	t.Parallel()
++	seatLineage := func() string {
++		for _, entry := range launch.SeatEnvironment() {
++			if lineage, ok := strings.CutPrefix(entry, "METASYSTEM_OWNER_LINEAGE="); ok {
++				return lineage
++			}
++		}
++		t.Fatal("the seat launch supplies no owner lineage")
++		return ""
++	}
++	b, write, landing := landedHolderWithDeploy(t, seatLineage())
++	old := deploy.Line{Commit: strings.Repeat("0", 40), Outcome: deploy.OutcomeActive}
++	write(old)
++	stop := func(session string) string {
++		t.Helper()
++		owners := b.deliveryOwners()
++		b.laneInputs(&owners)
++		endpoint, err := owners.dependencies.endpoint(b.root())
++		if err != nil {
++			t.Fatal(err)
++		}
++		steps := goal.HolderStepsDue([]*goal.GoalFile{b.goalFile("standing-validation")}, goal.GateSettings{}, b.owners.now())
++		if len(steps) != 1 || !steps[0].Conclude || steps[0].Revise {
++			t.Fatalf("the holder has no completion step: %+v", steps)
++		}
++		store := &goal.Store{Root: b.root(), Now: b.owners.now, TakeHolderStep: holderStepTaker(b.root(), owners)}
++		verdict, err := store.TurnVerdictAtEndpoint(endpoint, "mac-cli", goal.ScanResult{}, session, "", "main-1",
++			goal.TurnVerdictOptions{SeatActor: goal.Actor{Machine: "mac-cli", Lineage: b.lineage}})
++		if err != nil {
++			t.Fatal(err)
++		}
++		t.Log(verdict.Display)
++		return verdict.Display
++	}
++	if display := stop("seat-before-deploy"); !strings.Contains(display, "CONCLUSION WAITS standing-validation:") || !strings.Contains(display, "not deployed yet") || b.goalFile("standing-validation").State != goal.StateClaimed {
++		t.Fatalf("pending deploy did not keep the goal live: %s", display)
++	}
++	// A new seat gets the same owner lineage from the launch environment.
++	b.lineage = seatLineage()
++	write(old, deploy.Line{Commit: landing, Outcome: deploy.OutcomeBuildFailed})
++	for _, session := range []string{"successor-failed-deploy", "successor-failed-deploy-again"} {
++		if display := stop(session); !strings.Contains(display, "CONCLUSION WAITS standing-validation:") || !strings.Contains(display, "its deploy failed") || b.goalFile("standing-validation").State != goal.StateClaimed {
++			t.Fatalf("failed deploy did not keep the step due: %s", display)
++		}
++	}
++	write(old, deploy.Line{Commit: landing, Outcome: deploy.OutcomeActive})
++	if display := stop("successor-deployed"); !strings.Contains(display, "CONCLUDED standing-validation") {
++		t.Fatalf("the successor did not conclude: %s", display)
++	}
++	file := b.goalFile("standing-validation")
++	last := file.History[len(file.History)-1]
++	if file.State != goal.StateDone || last.Verb != "done" || last.Actor != "mac-cli+"+seatLineage() {
++		t.Fatalf("the successor did not conclude as the holder: %+v %+v", file, last)
++	}
++	if steps := goal.HolderStepsDue([]*goal.GoalFile{file}, goal.GateSettings{}, b.owners.now()); len(steps) != 0 {
++		t.Fatalf("the concluded goal still has a due step: %+v", steps)
++	}
++}
+diff --git a/metasystem/cmd/metasystem/holder_step.go b/metasystem/cmd/metasystem/holder_step.go
+index 1d655ce6a..89368b32c 100644
+--- a/metasystem/cmd/metasystem/holder_step.go
++++ b/metasystem/cmd/metasystem/holder_step.go
+@@ -26,17 +26,21 @@ import (
+ // process and answers the line the Stop shows.
+ func holderStepTaker(cwd string, owners intentOwners) func(goal.HolderStep) string {
+ 	return func(step goal.HolderStep) string {
+-		verb := "land"
++		group, verb := "work", "land"
++		args := []string{step.Goal, "--json"}
+ 		if step.Revise {
+ 			verb = "revise"
++		} else if step.Conclude {
++			group, verb = "goal", "done"
++			args = append(args, "--reason", "landed through the lane and deployed; concluded by the session holding it")
+ 		}
+-		command, _ := findIntentAction("work", verb)
++		command, _ := findIntentAction(group, verb)
+ 		var stdout, stderr bytes.Buffer
+-		runIntentIn(command, []string{step.Goal, "--json"}, &stdout, &stderr, cwd, owners)
++		runIntentIn(command, args, &stdout, &stderr, cwd, owners)
+ 		var result intentResult
+ 		if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+-			result = intentResult{Outcome: intentFailed, Summary: "work " + verb + " gave no answer the Stop could read",
+-				next: []string{"metasystem", "work", verb, step.Goal}, nextReason: "shows its answer",
++			result = intentResult{Outcome: intentFailed, Summary: group + " " + verb + " gave no answer the Stop could read",
++				next: []string{"metasystem", group, verb, step.Goal}, nextReason: "shows its answer",
+ 				Details: []string{strings.TrimSpace(stderr.String())}}
+ 		}
+ 		return holderStepLine(step, result)
+@@ -48,6 +52,10 @@ func holderStepLine(step goal.HolderStep, result intentResult) string {
+ 	taken := result.Outcome != intentRefused && result.Outcome != intentFailed
+ 	data, _ := result.Data.(map[string]any)
+ 	switch {
++	case step.Conclude && taken:
++		return "CONCLUDED " + step.Goal
++	case step.Conclude:
++		return fmt.Sprintf("CONCLUSION WAITS %s: %s", step.Goal, result.Summary)
+ 	case step.Revise && taken:
+ 		return fmt.Sprintf("REVISION STARTED %s, %s: %s", step.Goal, step.Why, result.Summary)
+ 	case step.Revise:
+diff --git a/metasystem/cmd/metasystem/intent.go b/metasystem/cmd/metasystem/intent.go
+index f454d7224..dc706a21e 100644
+--- a/metasystem/cmd/metasystem/intent.go
++++ b/metasystem/cmd/metasystem/intent.go
+@@ -22,6 +22,7 @@ import (
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hookswitch"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+@@ -655,6 +656,8 @@ type intentInvocation struct {
+ 	notices                              *admissionNotices
+ 	laneException                        *lanePersonObservation
+ 	landingWords                         string
++	wholeBy                              string
++	landingCode                          plain.Entry
+ 	laneCallerObserved, laneCallerPerson bool
+ 	laneRecord                           *lane.Record
+ 	laneSkipShadow                       bool
+diff --git a/metasystem/cmd/metasystem/intent_delivery.go b/metasystem/cmd/metasystem/intent_delivery.go
+index 8b0a4c110..a4558729c 100644
+--- a/metasystem/cmd/metasystem/intent_delivery.go
++++ b/metasystem/cmd/metasystem/intent_delivery.go
+@@ -184,7 +184,7 @@ func intentDeliveryCommands() []intentCommand {
+ 				"While this computer has a landing lane it is refused, as is work land j2:J, except with --local or --recertification.",
+ 			},
+ 			flags: append([]intentFlag{
+-				{name: "whole", usage: "with --by NAME: declare the end of a goal whose design has no Units table"},
++				{name: "whole", usage: "declare the end of a goal whose design has no Units table: a person with --by NAME, or the session holding the goal with --delivered"},
+ 				{name: "records", value: "PATH", repeat: true, usage: "commit these record files on the goal branch, publish it and hand it in; repeat for each path, relative to the checkout top"},
+ 				{name: "through", value: "COMMIT", usage: "land a human-approved prefix ending at this unit commit"},
+ 				{name: "queue-only", usage: "only mark the held goal waiting to land, for a later work land G"},
+@@ -1797,11 +1797,19 @@ func runIntentLand(inv *intentInvocation) int {
+ 	if refused := inv.deliveredRefusal(); refused != nil {
+ 		return inv.render(*refused)
+ 	}
++	lineage := ""
++	if inv.owners.dependencies.ownerLineage != nil {
++		lineage = inv.owners.dependencies.ownerLineage()
++	}
+ 	if inv.input.switched("whole") {
+-		if !inv.input.has("by") || inv.input.text("by") == "" {
++		if lineage == "" && (!inv.input.has("by") || inv.input.text("by") == "") {
+ 			return inv.render(intentResult{Outcome: intentRefused, code: 2,
+ 				Summary: "--whole needs the name of the person declaring the goal's end (--by); nothing was done", next: inv.typedArgvWith("--by", "NAME")})
+ 		}
++		if lineage != "" && !inv.input.has("by") && strings.TrimSpace(inv.input.text("delivered")) == "" {
++			return inv.render(intentResult{Outcome: intentRefused, code: 2,
++				Summary: "the end of a goal says what it delivers: add --delivered with one plain sentence; nothing was done", next: inv.typedArgvWith("--delivered", "WHAT IT DELIVERS, IN ONE PLAIN SENTENCE")})
++		}
+ 		for _, option := range []string{"records", "message", "queue-only", "exception", "using-exception"} {
+ 			if inv.input.has(option) {
+ 				return inv.render(intentResult{Outcome: intentRefused, code: 2,
+@@ -1885,11 +1893,26 @@ func runIntentLand(inv *intentInvocation) int {
+ 		return inv.render(*result)
+ 	}
+ 	if inv.input.switched("whole") {
+-		if inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != "" {
+-			return inv.render(intentResult{Outcome: intentRefused, code: 1,
+-				Summary: "declaring a goal's end is a person's act; this agent session cannot do it", next: inv.publicArgv("work", "land", args[0]), nextReason: "after a person has declared its end"})
+-		}
+-		if _, _, problem := inv.actingAs("work land --whole", args[0], actorHuman); problem != nil {
++		inv.wholeBy = strings.TrimPrefix(inv.input.text("by"), "human:")
++		if lineage != "" {
++			if inv.input.has("by") {
++				return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "this agent session cannot name a person with --by; nothing was done", next: inv.typedArgvLess("by")})
++			}
++			projection, _, problem := inv.projection()
++			if problem != nil {
++				return inv.render(*problem)
++			}
++			held, _, err := inv.heldGoals(projection)
++			file := projection.Tree.Live[args[0]]
++			holder := "nobody"
++			if file != nil && file.Claimed != nil {
++				holder = file.Claimed.Machine + "+" + file.Claimed.Lineage
++			}
++			if err != nil || !slices.Contains(held, args[0]) {
++				return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "goal " + args[0] + " is claimed by " + holder + "; only the session holding it declares its end; nothing was done", next: inv.publicArgv("goal", "show", args[0])})
++			}
++			inv.wholeBy = "seat:" + holder
++		} else if _, _, problem := inv.actingAs("work land --whole", args[0], actorHuman); problem != nil {
+ 			return inv.render(*problem)
+ 		}
+ 	}
+@@ -2118,7 +2141,14 @@ func (inv *intentInvocation) landGoalRoute(goalID, through string) intentResult
+ 				return *queued
+ 			}
+ 			if data, ok := queued.Data.(map[string]any); ok {
+-				if entry, ok := data["queue"].(plain.Entry); ok && entry.Records {
++				if entry, ok := data["queue"].(plain.Entry); ok && (entry.Records || entry.State == plain.StateLanded) {
++					if entry.Records {
++						inv.landingCode, _, err = inv.latestLaneGoalEntry(laneInstall, goalID, state.EndpointTip)
++						if err != nil {
++							return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: "the landing lane's code entry can't be read; nothing was recorded", Details: []string{err.Error()},
++								next: inv.sameCommand(), nextReason: "tries reading the lane's code entry again"}
++						}
++					}
+ 					return *queued
+ 				}
+ 			}
+diff --git a/metasystem/cmd/metasystem/intent_goals.go b/metasystem/cmd/metasystem/intent_goals.go
+index adaa22bed..73e4d1785 100644
+--- a/metasystem/cmd/metasystem/intent_goals.go
++++ b/metasystem/cmd/metasystem/intent_goals.go
+@@ -12,10 +12,12 @@ import (
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/deploy"
+ 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+ 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
+ )
+@@ -970,6 +972,11 @@ func runIntentDone(inv *intentInvocation) int {
+ 	if problem != nil {
+ 		return inv.render(*problem)
+ 	}
++	if !slices.Contains(actor, "--by") && !inv.input.switched("force") {
++		if err := inv.goalDeployReady(id); err != nil {
++			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: err.Error(), next: inv.publicArgv("deploy", "status")})
++		}
++	}
+ 	var reviewTrees []string
+ 	var treeErr error
+ 	concluded, recorded := false, false
+@@ -1040,3 +1047,58 @@ func runIntentDoneJob(inv *intentInvocation, ref string) int {
+ 	}
+ 	return inv.render(inv.closeChain(job))
+ }
++
++func (inv *intentInvocation) goalDeployReady(id string) error {
++	project, err := resolveDeployProject(inv.deploy(), inv.layout.InstallationRoot.Path(), inv.layout.GitRoot)
++	if errors.Is(err, deploy.ErrNoContract) {
++		return nil
++	}
++	if err != nil {
++		return err
++	}
++	root, configured, problem := inv.laneCheck(inv.targets(id))
++	if problem != nil {
++		return errors.New(problem.Summary)
++	}
++	if !configured {
++		return nil
++	}
++	install, err := inv.laneInstallOf(root)
++	if err != nil {
++		return err
++	}
++	projection, _, problem := inv.projection()
++	if problem != nil {
++		return errors.New(problem.Summary)
++	}
++	entry, found, err := inv.latestLaneGoalEntry(install, id, projection.Tip)
++	if err != nil || !found || entry.State != plain.StateLanded {
++		return err
++	}
++	status, err := deploy.ReadStatus(project.dir, 0)
++	if err != nil {
++		return err
++	}
++	contains := func(commit string) (bool, error) {
++		if read := inv.delivery().laneContains; read != nil {
++			return read(entry.SHA, commit)
++		}
++		return plain.ContainedIn(inv.layout.GitRoot, commit)(entry.SHA)
++	}
++	if status.Current != nil {
++		deployed, err := contains(status.Current.Commit)
++		if err != nil || deployed {
++			return err
++		}
++	}
++	if status.LastFailure != nil {
++		failed, err := contains(status.LastFailure.Commit)
++		if err != nil {
++			return err
++		}
++		if failed {
++			return fmt.Errorf("goal %s is on main, but its deploy failed (%s of %s); goal done waits for a deploy that contains it", id, status.LastFailure.Outcome, status.LastFailure.Commit)
++		}
++	}
++	return fmt.Errorf("goal %s is on main but not deployed yet; goal done waits until deploy status shows it deployed", id)
++}
+diff --git a/metasystem/cmd/metasystem/intent_test.go b/metasystem/cmd/metasystem/intent_test.go
+index fbd0b27ba..ea6ad6a3f 100644
+--- a/metasystem/cmd/metasystem/intent_test.go
++++ b/metasystem/cmd/metasystem/intent_test.go
+@@ -644,9 +644,9 @@ func TestIntentDoneNeedsTheHumansProof(t *testing.T) {
+ 	if code == 0 || result.Outcome != intentRefused || forged.repo.publications != 0 || forged.goalFile(bedGoal).State != goal.StateClaimed {
+ 		t.Fatalf("forged human done = %d %+v", code, result)
+ 	}
+-	// The owning agent without a name cannot conclude the person's goal either.
++	// The owning agent waits until its landing is recorded.
+ 	code, result = forged.runJSON(forged.owners(), "goal", "done", bedGoal, "--reason", "closed", "--lineage", "m1")
+-	if code == 0 || !strings.Contains(result.Summary, "opened by the human") || forged.repo.publications != 0 {
++	if code == 0 || !strings.Contains(result.Summary, "opened by a person; the session holding it concludes it once its landing is recorded") || forged.repo.publications != 0 {
+ 		t.Fatalf("agent done of a human-origin goal = %d %+v", code, result)
+ 	}
+ 	// The person at the enrolled terminal concludes it with no name typed.
+diff --git a/metasystem/cmd/metasystem/landing_clock_test.go b/metasystem/cmd/metasystem/landing_clock_test.go
+index fb31cd322..ae5cd8afa 100644
+--- a/metasystem/cmd/metasystem/landing_clock_test.go
++++ b/metasystem/cmd/metasystem/landing_clock_test.go
+@@ -514,7 +514,11 @@ func TestLaneLandingRefusalDoesNotRecordALandedLine(t *testing.T) {
+ 	state.status.Status.Units = nil
+ 	state.status.Status.Commits = nil
+ 	helmMust(t, os.Remove(filepath.Join(b.root(), "plans", "designs", "landing-work.md")))
+-	_, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: state.status.BranchTip, At: laneTestNow.UTC().Format(time.RFC3339)})
++	// An older landed tip cannot answer a request at a different branch tip.
++	olderTip := strings.Repeat("1", 40)
++	b.owners.laneLatest = nil
++	b.owners.laneContains = func(sha, main string) (bool, error) { return sha == olderTip || sha == main, nil }
++	_, _, err := plain.HandIn(install, plain.Line{Goal: bedGoal, Branch: "goal/" + bedGoal, SHA: olderTip, At: laneTestNow.UTC().Format(time.RFC3339)})
+ 	helmMust(t, err)
+ 	b.owners.recordLanded = func(*intentInvocation, string) error {
+ 		t.Fatal("a refusal recorded a landed line")
+diff --git a/metasystem/cmd/metasystem/landing_gate.go b/metasystem/cmd/metasystem/landing_gate.go
+index 71c360b32..13d193df0 100644
+--- a/metasystem/cmd/metasystem/landing_gate.go
++++ b/metasystem/cmd/metasystem/landing_gate.go
+@@ -190,6 +190,13 @@ func landed(result intentResult) bool {
+ func (inv *intentInvocation) noteLanded(goalID string, result intentResult) intentResult {
+ 	data, _ := result.Data.(map[string]any)
+ 	if entry, ok := data["queue"].(plain.Entry); ok && entry.State == plain.StateLanded && result.Outcome == intentUnchanged {
++		if entry.Records {
++			if inv.landingCode.State != plain.StateLanded {
++				return result
++			}
++			entry = inv.landingCode
++		}
++		inv.wholeBy = entry.WholeBy
+ 		inv.landingWords = entry.Landing.Words()
+ 	}
+ 	if !landed(result) && inv.landingWords == "" {
+@@ -238,6 +245,9 @@ func productionRecordLanded(inv *intentInvocation, goalID string) error {
+ 		return err
+ 	}
+ 	under := goal.LandedUnder(file, settings)
++	if inv.wholeBy != "" {
++		under += "; end declared by " + inv.wholeBy
++	}
+ 	if inv.landingWords != "" {
+ 		under += "; " + inv.landingWords
+ 	}
+diff --git a/metasystem/cmd/metasystem/landing_plain.go b/metasystem/cmd/metasystem/landing_plain.go
+index 1c16eae94..bac3657a4 100644
+--- a/metasystem/cmd/metasystem/landing_plain.go
++++ b/metasystem/cmd/metasystem/landing_plain.go
+@@ -278,7 +278,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
+ 		}
+ 	}
+ 	if inv.input.switched("whole") {
+-		line.WholeBy = strings.TrimPrefix(inv.input.text("by"), "human:")
++		line.WholeBy = inv.wholeBy
+ 	}
+ 	work, problem := inv.goalWork(goalID)
+ 	if problem != nil {
+diff --git a/metasystem/cmd/metasystem/testdata/layout/help-work-land.txt b/metasystem/cmd/metasystem/testdata/layout/help-work-land.txt
+index 21d1454b5..6e652ec64 100644
+--- a/metasystem/cmd/metasystem/testdata/layout/help-work-land.txt
++++ b/metasystem/cmd/metasystem/testdata/layout/help-work-land.txt
+@@ -36,8 +36,8 @@ MetaSystem administration
+   metasystem work land G --exception CODE --reason TEXT --by NAME --upgrade-goals [--expires 2h] [--replace-exception ID [--transfer]]
+ 
+ Options  before or after the target; -- ends them
+-  --whole                       with --by NAME: declare the end of a goal whose design has no Units
+-                                table
++  --whole                       declare the end of a goal whose design has no Units table: a person
++                                with --by NAME, or the session holding the goal with --delivered
+   --records PATH (repeatable)   commit these record files on the goal branch, publish it and hand it
+                                 in; repeat for each path, relative to the checkout top
+   --through COMMIT              land a human-approved prefix ending at this unit commit
+diff --git a/metasystem/internal/goal/authority_test.go b/metasystem/internal/goal/authority_test.go
+index e9384dabd..ac4a81eff 100644
+--- a/metasystem/internal/goal/authority_test.go
++++ b/metasystem/internal/goal/authority_test.go
+@@ -180,9 +180,9 @@ func TestHumanOriginGoalsAreHumanReserved(t *testing.T) {
+ 	if res, err := Open(verbReqFor(a, "01J5X00000000000000000HG00", "mac-a"), "human-owned", "Wido's standing wish.", OriginHuman, "Go."); err != nil || res.Outcome != OutcomeConfirmed {
+ 		t.Fatalf("open: %+v %v", res, err)
+ 	}
+-	// An agent can neither conclude nor park the human's goal.
++	// Without a recorded landing, an agent cannot conclude; parking stays a person's act.
+ 	res, err := Done(verbReqFor(a, "01J5X00000000000000000HG10", "mac-a"), "human-owned", "Presumed done.")
+-	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "human act") {
++	if err != nil || res.Outcome != OutcomeRejected || !strings.Contains(res.Detail, "the session holding it concludes it once its landing is recorded") {
+ 		t.Fatalf("agent done on human-origin refuses: %+v %v", res, err)
+ 	}
+ 	res, err = Park(verbReqFor(a, "01J5X00000000000000000HG20", "mac-a"), "human-owned", "agent tidy-up")
+diff --git a/metasystem/internal/goal/done_holder_test.go b/metasystem/internal/goal/done_holder_test.go
+new file mode 100644
+index 000000000..24d5a4c98
+--- /dev/null
++++ b/metasystem/internal/goal/done_holder_test.go
+@@ -0,0 +1,121 @@
++package goal
++
++import (
++	"strings"
++	"testing"
++)
++
++func holderConclusionGoal() *GoalFile {
++	file := underReview("under-review")
++	file.Origin = OriginHuman
++	return file
++}
++
++func holderConclusionRequest(endpoint Endpoint, step int) VerbRequest {
++	request := verbReqFor(endpoint, reviewUlid(7, step), "mac-a")
++	request.Now = reviewNow
++	return request
++}
++
++func TestHolderConcludesAHumanGoalOnceItsLandingIsRecorded(t *testing.T) {
++	t.Parallel()
++	endpoint := reviewBed(t, holderConclusionGoal())
++	if result, err := Done(holderConclusionRequest(endpoint, 1), "under-review", "Delivered."); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "metasystem work land under-review") {
++		t.Fatalf("conclusion before landing: %+v %v", result, err)
++	}
++	if result, err := RecordLanded(holderConclusionRequest(endpoint, 2), "under-review", "the lane"); err != nil || result.Outcome != OutcomeConfirmed {
++		t.Fatalf("record landing: %+v %v", result, err)
++	}
++	if result, err := Done(holderConclusionRequest(endpoint, 3), "under-review", "Delivered."); err != nil || result.Outcome != OutcomeConfirmed {
++		t.Fatalf("holder concludes: %+v %v", result, err)
++	}
++	file := archivedGoal(t, endpoint, "under-review")
++	last := file.History[len(file.History)-1]
++	if last.Verb != "done" || last.Actor != "mac-a+lin-1" {
++		t.Fatalf("holder's conclusion: %+v", last)
++	}
++}
++
++func TestAnotherPairStillNeedsAPerson(t *testing.T) {
++	t.Parallel()
++	endpoint := reviewBed(t, holderConclusionGoal())
++	if result, err := RecordLanded(holderConclusionRequest(endpoint, 1), "under-review", "the lane"); err != nil || result.Outcome != OutcomeConfirmed {
++		t.Fatalf("record landing: %+v %v", result, err)
++	}
++	other := holderConclusionRequest(endpoint, 2)
++	other.Actor.Lineage = "other-session"
++	if result, err := Done(other, "under-review", "Delivered."); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "another's work") {
++		t.Fatalf("another lineage concluded: %+v %v", result, err)
++	}
++}
++
++func TestHolderConclusionKeepsTheGoalChecks(t *testing.T) {
++	t.Parallel()
++	for _, name := range []string{"read item", "review obligation", "parked"} {
++		t.Run(name, func(t *testing.T) {
++			t.Parallel()
++			file := holderConclusionGoal()
++			file.History = append(file.History, HistoryLine{At: reviewNow.Format("2006-01-02T15:04:05Z07:00"), Opid: Opid(reviewUlid(7, 1), "mac-a", "lin-1"), Verb: LandedVerb, Actor: "mac-a+lin-1", Targets: []string{file.Id}, Keep: -1, Reason: "landed under the lane"})
++			file.Revision++
++			want, wantCode := "", ""
++			switch name {
++			case "read item":
++				file.ReadItems = []ReadItem{{ID: "critic-a-1", Read: "critic-a", State: ReadItemOpen, Text: "Explain the fallback.", AddedAt: "2026-09-29T09:00:00Z"}}
++				want, wantCode = "open review notes", "GOAL_DONE_READ_ITEMS_OPEN"
++			case "review obligation":
++				file.ReviewObligations = []ReviewObligation{{Finding: "F-1", Chain: "critic-a", Artifact: "owner.go", Test: "prove the fallback", State: "open"}}
++				want = "open review obligation"
++			case "parked":
++				file.State, file.Claimed, file.Landing = StateParked, nil, nil
++				file.Parked = &ParkRecord{By: "human:Wido", At: "2026-09-29T09:00:00Z", Because: "paused"}
++				want = "parked"
++			}
++			endpoint := reviewBed(t, file)
++			if result, err := Done(holderConclusionRequest(endpoint, 2), file.Id, "Delivered."); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, want) || wantCode != "" && result.Code != wantCode {
++				t.Fatalf("%s allowed conclusion: %+v %v", name, result, err)
++			}
++		})
++	}
++}
++
++func TestALandingBeforeTheStandingLandingDoesNotCount(t *testing.T) {
++	t.Parallel()
++	file := holderConclusionGoal()
++	file.History = append(file.History,
++		HistoryLine{At: reviewNow.Format("2006-01-02T15:04:05Z07:00"), Opid: Opid(reviewUlid(7, 1), "mac-a", "lin-1"), Verb: LandedVerb, Actor: "mac-a+lin-1", Targets: []string{file.Id}, Keep: -1, Reason: "landed under the lane"},
++		HistoryLine{At: reviewNow.Format("2006-01-02T15:04:05Z07:00"), Opid: Opid(reviewUlid(7, 2), "mac-a", "lin-1"), Verb: "land-ready", Actor: "mac-a+lin-1", Targets: []string{file.Id}, Keep: -1})
++	file.Revision = uint64(len(file.History))
++	file.Landing = &LandingRecord{At: file.History[len(file.History)-1].At, Opid: file.History[len(file.History)-1].Opid}
++	endpoint := reviewBed(t, file)
++	if result, err := Done(holderConclusionRequest(endpoint, 3), file.Id, "Delivered."); err != nil || result.Outcome != OutcomeRejected || !strings.Contains(result.Detail, "metasystem work land") {
++		t.Fatalf("old landing allowed conclusion: %+v %v", result, err)
++	}
++}
++
++func TestHolderConclusionStepNeedsARecordedLandingAndNoSendBack(t *testing.T) {
++	t.Parallel()
++	for _, state := range []string{"unlanded", "landed", "sent back"} {
++		t.Run(state, func(t *testing.T) {
++			t.Parallel()
++			file := holderConclusionGoal()
++			if state != "unlanded" {
++				file.History = append(file.History, HistoryLine{At: reviewNow.Format("2006-01-02T15:04:05Z07:00"), Opid: Opid(reviewUlid(7, 1), "mac-a", "lin-1"), Verb: LandedVerb, Actor: "mac-a+lin-1", Targets: []string{file.Id}, Keep: -1, Reason: "landed under the lane"})
++				file.Revision++
++			}
++			if state == "sent back" {
++				humanLine(file, reviewNow.Format("2006-01-02T15:04:05Z07:00"), reviewUlid(7, 2)+"-mac-ui-human", "review",
++					"reviewed verdict=send-back tip="+reviewedTip+" record="+reviewPath+" by=Wido brief="+BriefPathFor(reviewPath))
++			}
++			steps := HolderStepsDue([]*GoalFile{file}, gateSettings, reviewNow)
++			if state == "unlanded" {
++				if len(steps) != 0 {
++					t.Fatalf("unlanded goal has a due step: %+v", steps)
++				}
++				return
++			}
++			if len(steps) != 1 || steps[0].Conclude != (state == "landed") || steps[0].Revise != (state == "sent back") {
++				t.Fatalf("%s: %+v", state, steps)
++			}
++		})
++	}
++}
+diff --git a/metasystem/internal/goal/landgate.go b/metasystem/internal/goal/landgate.go
+index 697845025..209f36ee2 100644
+--- a/metasystem/internal/goal/landgate.go
++++ b/metasystem/internal/goal/landgate.go
+@@ -212,6 +212,15 @@ func since(f *GoalFile) int {
+ 	return 0
+ }
+ 
++func landedSinceLanding(f *GoalFile) bool {
++	for _, h := range f.History[since(f):] {
++		if h.Verb == LandedVerb {
++			return true
++		}
++	}
++	return false
++}
++
+ func newestWord(f *GoalFile) *word {
+ 	if f == nil {
+ 		return nil
+@@ -309,11 +318,7 @@ func ReadGate(f *GoalFile, s GateSettings, now time.Time) GateReading {
+ 	if said := newestWord(f); said != nil {
+ 		read.Word, read.WordBy, read.WordTip = said.kind, said.by, said.tip
+ 	}
+-	for _, h := range f.History[since(f):] {
+-		if h.Verb == LandedVerb {
+-			read.Landed = true
+-		}
+-	}
++	read.Landed = landedSinceLanding(f)
+ 	if read.WaitsForHuman || len(read.HeldBy) > 0 || f.Landing == nil {
+ 		return read
+ 	}
+@@ -538,10 +543,8 @@ func landedRequest(r VerbRequest, id, reason string) PublishRequest {
+ 			if f.State != StateClaimed || f.Claimed == nil || !ownPair(f.Claimed, r.Actor) {
+ 				return nil, fmt.Errorf("goal %s is not this seat's claim; its landing is recorded by the seat that holds it", id)
+ 			}
+-			for _, h := range f.History[since(f):] {
+-				if h.Verb == LandedVerb {
+-					return nil, AlreadyHolds{Reason: "goal " + id + "'s landing is already recorded"}
+-				}
++			if landedSinceLanding(f) {
++				return nil, AlreadyHolds{Reason: "goal " + id + "'s landing is already recorded"}
+ 			}
+ 			touch(f, r, LandedVerb, []string{id})
+ 			f.History[len(f.History)-1].Reason = reason
+@@ -599,8 +602,10 @@ func ResolveGateSettings(confPath string) (GateSettings, error) {
+ // (g1-s70 D3): a due landing, or the revision of a sent-back goal.
+ type HolderStep struct {
+ 	Goal string
+-	// Revise is a send-back's revision; otherwise the step is a due landing.
++	// Revise is a send-back's revision.
+ 	Revise bool
++	// Conclude finishes a goal whose landing is recorded; otherwise it lands.
++	Conclude bool
+ 	// Why is what makes the step due, as the Stop says it.
+ 	Why string
+ }
+@@ -618,6 +623,10 @@ func HolderStepsDue(files []*GoalFile, s GateSettings, now time.Time) []HolderSt
+ 			steps = append(steps, HolderStep{Goal: file.Id, Revise: true, Why: fmt.Sprintf("sent back by %s at %s", review.By, short(review.Tip))})
+ 			continue
+ 		}
++		if file.IsLandingClaim() && landedSinceLanding(file) {
++			steps = append(steps, HolderStep{Goal: file.Id, Conclude: true, Why: "its landing is recorded; it is concluded once its deploy shows"})
++			continue
++		}
+ 		if due, why := LandingDue(file, s, now); due {
+ 			steps = append(steps, HolderStep{Goal: file.Id, Why: why})
+ 		}
+@@ -648,6 +657,8 @@ func (s *Store) takeHolderSteps(files []*GoalFile) []string {
+ 			lines = append(lines, s.TakeHolderStep(step))
+ 		case step.Revise:
+ 			lines = append(lines, fmt.Sprintf("SENT BACK %s, %s: metasystem work revise %s", step.Goal, step.Why, step.Goal))
++		case step.Conclude:
++			lines = append(lines, fmt.Sprintf("CONCLUSION DUE %s: metasystem goal done %s --reason TEXT", step.Goal, step.Goal))
+ 		default:
+ 			lines = append(lines, fmt.Sprintf("LANDING DUE %s, %s: metasystem work land %s", step.Goal, step.Why, step.Goal))
+ 		}
+diff --git a/metasystem/internal/goal/verbs.go b/metasystem/internal/goal/verbs.go
+index 7fd594c02..fc36f4597 100644
+--- a/metasystem/internal/goal/verbs.go
++++ b/metasystem/internal/goal/verbs.go
+@@ -2875,8 +2875,8 @@ func doneRequest(r VerbRequest, id, conclusion string) PublishRequest {
+ 					return nil, err
+ 				}
+ 			}
+-			if f.Origin == OriginHuman {
+-				missing := fmt.Sprintf("goal %s was opened by the human; concluding it is a human act", id)
++			if f.Origin == OriginHuman && !(r.Actor.Human == "" && f.State == StateClaimed && ownPair(f.Claimed, r.Actor) && landedSinceLanding(f)) {
++				missing := fmt.Sprintf("goal %s was opened by a person; the session holding it concludes it once its landing is recorded (metasystem work land %s records it when the lane has landed it), or a person concludes it", id, id)
+ 				if err := r.requireHuman(humanAuthorityRow{Verb: "done", Name: "conclusion of a human-origin goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+ 					return nil, err
+ 				}
+diff --git a/metasystem/internal/landing/plain/queue.go b/metasystem/internal/landing/plain/queue.go
+index 7a96e8099..f37f8815e 100644
+--- a/metasystem/internal/landing/plain/queue.go
++++ b/metasystem/internal/landing/plain/queue.go
+@@ -92,6 +92,7 @@ type UnitRounds struct {
+ 
+ // Entry is one hand-in and what became of it.
+ type Entry struct {
++	WholeBy      string        `json:"wholeBy,omitempty"`
+ 	ReturnOrigin *ReturnOrigin `json:"return-origin,omitempty"`
+ 	goal.AreaSnapshot
+ 	DrainBy   string           `json:"drainBy,omitempty"`
+@@ -246,7 +247,7 @@ func entriesAndOrdinals(lines []Line) ([]Entry, []int) {
+ 				}
+ 				index[key] = len(entries)
+ 				ordinals = append(ordinals, ordinal+1)
+-				entries = append(entries, Entry{AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
++				entries = append(entries, Entry{WholeBy: line.WholeBy, AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units})
+ 			}
+ 			continue
+ 		}
+@@ -435,7 +436,7 @@ func handIn(install string, line Line, person []string, effects ...ProveSeams) (
+ 		if err := closeGoalStopsWithSeamsLocked(install, line.Goal, "hand-in "+line.Goal, firstEffects(effects).now(), firstEffects(effects)); err != nil {
+ 			return err
+ 		}
+-		entry, added = Entry{AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
++		entry, added = Entry{WholeBy: line.WholeBy, AreaSnapshot: line.AreaSnapshot, DrainBy: line.DrainBy, Exception: line.Exception, Fix: line.Fix, Goal: line.Goal, Branch: line.Branch, SHA: line.SHA, Seat: line.Seat, Records: line.Records, At: line.At, State: StateWaiting, Delivered: line.Delivered, Units: line.Units}, true
+ 		return nil
+ 	})
+ 	return entry, added, err
+diff --git a/metasystem/internal/steward/seat_ladder.go b/metasystem/internal/steward/seat_ladder.go
+index 5c4cf9a8e..ee9e13c81 100644
+--- a/metasystem/internal/steward/seat_ladder.go
++++ b/metasystem/internal/steward/seat_ladder.go
+@@ -103,6 +103,8 @@ func SeatWorldFrom(work goal.ClaimableBudgetedWork, live map[string]*goal.GoalFi
+ 			held.Wait = "it waits under a review sitting by " + holds[0].By
+ 		case len(steps) == 0:
+ 			held.Wait = gateWait(file, settings, now)
++		case steps[0].Conclude:
++			held.StepDue = true
+ 		case !steps[0].Revise:
+ 			if _, err := goal.Gate(file, tips[id], settings); err != nil {
+ 				var refusal *goal.GateRefusal
+diff --git a/metasystem/internal/steward/seat_ladder_conclude_test.go b/metasystem/internal/steward/seat_ladder_conclude_test.go
+new file mode 100644
+index 000000000..8125b1e8e
+--- /dev/null
++++ b/metasystem/internal/steward/seat_ladder_conclude_test.go
+@@ -0,0 +1,28 @@
++package steward
++
++import (
++	"testing"
++	"time"
++
++	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
++)
++
++func TestHolderConclusionStartsASuccessorOnTheSeatLadder(t *testing.T) {
++	t.Parallel()
++	now := time.Date(2026, 10, 24, 9, 0, 0, 0, time.UTC)
++	file := seatLandingGoal("held", 3, now.Add(-time.Hour))
++	file.History = append(file.History, goal.HistoryLine{At: now.Format(time.RFC3339),
++		Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC4", seatBedMachine, SeatLineage), Verb: goal.LandedVerb,
++		Actor: seatBedMachine + "+" + SeatLineage, Targets: []string{file.Id}, Keep: -1, Reason: "landed under the lane"})
++	file.Revision++
++	bed := newSeatBed(t, file)
++	bed.now = now
++	result := bed.tick(deadWorkers)
++	if result.Decision.Action != ActRevive || result.Seat == nil || !result.Seat.Held || result.Seat.Goal != file.Id {
++		t.Fatalf("a recorded landing's completion starts no successor: %+v %+v", result.Decision, result.Seat)
++	}
++	bed.start(result.Seat)
++	if len(bed.launcher.starts) != 1 {
++		t.Fatalf("the steward did not start the holder's seat: %+v", bed.launcher.starts)
++	}
++}
