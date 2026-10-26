@@ -127,6 +127,8 @@ type Notice struct {
 	Source string
 	// Ref is the episode id or the pending nonce, where one is known.
 	Ref string
+	// Owner is the alert episode's owner, which names what the alert is.
+	Owner string
 }
 
 // The four sources a notification can carry.
@@ -158,11 +160,42 @@ func (f noticeFunnel) now() time.Time {
 	return f.clock()
 }
 func (f noticeFunnel) decide(n Notice) noticeDecision {
-	if f.decider == nil {
-		return noticeDecision{Allowed: true}
+	decider := f.decider
+	if decider == nil {
+		decider = personClass
 	}
-	class, allowed := f.decider(n)
+	class, allowed := decider(n)
 	return noticeDecision{class, allowed}
+}
+
+// personClass names what a notice is and keeps it from a person: every
+// question and delivery a person gets is posted by the channel package, so
+// nothing the steward raises reaches the phone, the banner or the browser.
+// It stays in the journal, alert list and status under its class.
+func personClass(n Notice) (string, bool) {
+	if n.Source == NoticeAlert {
+		switch {
+		case n.Owner == "":
+			return "health", false
+		case IsPatternOwner(n.Owner):
+			return "pattern", false
+		case n.Owner == breachStopAlertOwner:
+			return "act", true
+		}
+		if class, known := map[string]string{seatIdleAlertOwner: "seat-idle", string(RoleSpendFence): "spend", laneSilentAlertOwner: "lane-silent", "provider-stale": "provider"}[n.Owner]; known {
+			return class, false
+		}
+		return "unknown", false
+	}
+	for prefix, class := range map[string]string{"verdict-": "verdict", "handoff-": "handoff", "seat-start": "seat-start", "engine-rearm-": "re-arm", "revive-failure": "re-arm", "ledger-attention-": "ledger", "noticing-": "narration"} {
+		if strings.HasPrefix(n.Ref, prefix) {
+			return class, false
+		}
+	}
+	if strings.HasSuffix(n.Ref, "-reap") {
+		return "reap", false
+	}
+	return "unknown", false
 }
 func (f noticeFunnel) send(repoRoot string, n Notice, d noticeDecision, transport func(string, string) error) NoticeOutcome {
 	if !d.Allowed {

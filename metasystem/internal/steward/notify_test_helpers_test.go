@@ -97,9 +97,19 @@ func (f *notifyFixture) deliver(root, message string) error {
 }
 
 func (f *notifyFixture) pending() (int, error) {
-	return deliverPendingWith(f.root, f.deliver)
+	return deliverPendingAllowed(f.root, f.deliver)
+}
+
+// allowEveryNotice lets every notice through the funnel, for tests of the
+// transport itself; production keeps every class from a person.
+func allowEveryNotice(Notice) (string, bool) { return "", true }
+
+// deliverPendingAllowed is the queue's delivery pass with every notice let
+// through.
+func deliverPendingAllowed(root string, deliver func(string, string) error) (int, error) {
+	return deliverPendingWithDependencies(root, pendingDeliveryDependencies{transport: deliver, funnel: noticeFunnel{decider: allowEveryNotice}})
 }
 
 func (f *notifyFixture) alert(health HealthVerdict, message string, now time.Time) (AlertEpisode, error) {
-	return updateAlertEpisodesWith(f.root, health, message, now, noticeFunnel{}, f.deliver)
+	return updateAlertEpisodesWith(f.root, health, message, now, noticeFunnel{decider: allowEveryNotice}, f.deliver)
 }

@@ -39,6 +39,7 @@ func TestLandingDesignCheckDigestOnce(t *testing.T) {
 	var output strings.Builder
 	ledger := fixtureSpendLedger()
 	dependencies := tickHealthDependencies{
+		funnel:   noticeFunnel{decider: allowEveryNotice},
 		evaluate: tickHealthRoles(t, fixture.root, ledger.Machine, func(string, string, time.Time) (spend.Ledger, error) { return ledger, nil }),
 		now:      time.Now, deliver: func(string, string) error { return nil },
 		lane: func(self string, now time.Time) LaneSilence {
@@ -224,6 +225,7 @@ func tickLaneHealth(t *testing.T, root, home string, now time.Time) {
 	ledger := fixtureSpendLedger()
 	measure := func(string, string, time.Time) (spend.Ledger, error) { return ledger, nil }
 	dependencies := tickHealthDependencies{
+		funnel:   noticeFunnel{decider: allowEveryNotice},
 		evaluate: tickHealthRoles(t, root, ledger.Machine, measure), now: time.Now,
 		deliver: func(string, string) error { return nil },
 		lane:    func(self string, at time.Time) LaneSilence { return readLaneSilence(home, self, at) },

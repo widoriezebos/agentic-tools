@@ -41,6 +41,8 @@ type Notice struct {
 	Ref       string `json:"ref"`
 	Delivered bool   `json:"delivered"`
 	Error     string `json:"error"`
+	// Withheld names the class of a line kept from a person.
+	Withheld string `json:"withheld"`
 }
 
 // The page sizes the routes offer. A caller that asks for more than the
@@ -299,7 +301,7 @@ const rawHealthVerdict = "HEALTH "
 // the interface has, so the history, the stream and everything counted from
 // them agree.
 func ForAPerson(notice Notice) bool {
-	return !strings.HasPrefix(notice.Message, rawHealthVerdict)
+	return notice.Withheld == "" && !strings.HasPrefix(notice.Message, rawHealthVerdict)
 }
 
 // decode reads one line. A record with no id is not a notice: the id is what

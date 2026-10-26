@@ -160,6 +160,10 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 		case c.State == "closed" && (channel.LaneStopCommand(c) != "" || c.Recovery != nil) && c.ClosedBecause != "":
 			result.Summary = fmt.Sprintf("channel question %s: %s", c.ID, c.ClosedBecause)
 			headline = result.Summary
+		case c.State == "closed" && c.Contract && c.UnitStop != nil && c.UnitStop.ClosedBy != "" && !c.ClosedAt.IsZero():
+			act, _, _ := strings.Cut(c.ClosedBecause, ": ")
+			result.Summary = fmt.Sprintf("channel question %s was settled by %s at %s", c.ID, act, c.ClosedAt.Local().Format("15:04"))
+			headline = result.Summary
 		case c.State == "closed":
 			result.Summary = fmt.Sprintf("channel question %s is withdrawn", c.ID)
 			headline = "Channel question " + c.ID + " is withdrawn"

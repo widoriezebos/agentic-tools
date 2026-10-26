@@ -159,8 +159,8 @@ func TestAlertVerbsFromSeatCheckout(t *testing.T) {
 		t.Fatalf("alert list = %d %q %q", code, stdout, stderr)
 	}
 	for _, want := range []string{
-		"  " + laneID + "  The landing lane has worked on batch 4gr18 for 2 hours without landing it.\n    run: metasystem alert ack " + laneID + "\n",
-		"  " + seatID + "  The landing lane has worked on batch 00000 for 2 hours without landing it.\n    run: metasystem alert ack " + seatID + "\n",
+		"  " + laneID + "  The landing lane has worked on batch 4gr18 for 2 hours without landing it. (kept here; not sent to a person)\n    run: metasystem alert ack " + laneID + "\n",
+		"  " + seatID + "  The landing lane has worked on batch 00000 for 2 hours without landing it. (kept here; not sent to a person)\n    run: metasystem alert ack " + seatID + "\n",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Fatalf("alert list lacks %q:\n%s", want, stdout)
@@ -253,5 +253,18 @@ func TestSessionStatusNamesOpenPatternAlerts(t *testing.T) {
 	lines := strings.Split(stdout, "\n")
 	if code != 0 || !strings.Contains(lines[0], "2 behaviour alerts are open") || !strings.Contains(lines[1], "metasystem alert list") {
 		t.Fatalf("session status = %d:\n%s%s", code, stdout, stderr)
+	}
+}
+
+func TestAlertListSaysKeptHere(t *testing.T) {
+	t.Parallel()
+	bed := newAlertBed(t)
+	episode := bed.open(t, bed.seat, "0000000000000000000000000a")
+	if episode.TransportResult != steward.TransportWithheld {
+		t.Fatalf("the lane alert reached a person: %+v", episode)
+	}
+	code, stdout, stderr := bed.run(t, bed.seat, "alert", "list")
+	if code != 0 || !strings.Contains(stdout, "(kept here; not sent to a person)") {
+		t.Fatalf("alert list = %d %q %q", code, stdout, stderr)
 	}
 }

@@ -318,7 +318,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	}()
 
 	if err := outage.ExpireAndNotify(cfg.ProviderHome, repoRoot, cfg.now(), func(provider string, interval outage.Interval) error {
-		outcome := deliverNoticeWith(repoRoot, Notice{Source: NoticeAlert, Ref: "provider-stale-" + provider + "-" + interval.Since,
+		outcome := deliverNoticeWith(repoRoot, Notice{Source: NoticeAlert, Owner: "provider-stale", Ref: "provider-stale-" + provider + "-" + interval.Since,
 			Message: fmt.Sprintf("provider %s: the stale outage mark expired without a provider answer", provider)}, deliver, noticeFunnel{clock: cfg.now})
 		return outcome.Err
 	}); err != nil {

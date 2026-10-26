@@ -545,7 +545,7 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 }
 
 func submitEpisode(repoRoot string, episode *AlertEpisode, f noticeFunnel, deliver func(string, string) error) error {
-	notice := Notice{Message: episode.Message, Source: NoticeAlert, Ref: episode.EpisodeID}
+	notice := Notice{Message: episode.Message, Source: NoticeAlert, Ref: episode.EpisodeID, Owner: episode.Owner}
 	decision := f.decide(notice)
 	if !decision.Allowed {
 		if len(episode.Attempts) > 0 && episode.Attempts[len(episode.Attempts)-1].Result == TransportPending {

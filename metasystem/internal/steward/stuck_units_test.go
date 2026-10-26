@@ -69,6 +69,14 @@ func (f *stuckFixture) tick() []AlertEpisode {
 	return episodes
 }
 
+// kept is how many stuck-unit notices the journal kept from a person; none
+// is delivered.
+func (f *stuckFixture) kept() int {
+	f.t.Helper()
+	data, _ := os.ReadFile(NotificationJournalPath(f.root))
+	return strings.Count(string(data), `"withheld":"pattern"`)
+}
+
 func (f *stuckFixture) end() {
 	f.t.Helper()
 	if _, err := f.pass.Store.Update("build", func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
@@ -82,7 +90,7 @@ func TestStuckUnitsOpensOneEpisodePerUnit(t *testing.T) {
 	f.write("2", "build", "build", 52, 2)
 	f.write("3", "read", "read", 40, 1)
 	episodes := f.tick()
-	if len(episodes) != 2 || len(f.messages) != 2 {
+	if len(episodes) != 2 || f.kept() != 2 || len(f.messages) != 0 {
 		t.Fatalf("episodes=%+v notifications=%v", episodes, f.messages)
 	}
 	expected := "Seat m1l has run the build step of unit 2 of goal goal for 52 minutes (limit 45, round 2 of 4): stop it with `metasystem work stop j1:build`, cut the unit, or land with notes (`metasystem work land --message`)."
@@ -100,7 +108,7 @@ func TestStuckUnitsOpensOneEpisodePerUnit(t *testing.T) {
 	}
 	f.now = f.now.Add(time.Minute)
 	episodes = f.tick()
-	if len(episodes) != 2 || len(f.messages) != 2 {
+	if len(episodes) != 2 || f.kept() != 2 {
 		t.Fatal("a repeated stall notified again")
 	}
 	for _, e := range episodes {
@@ -141,7 +149,7 @@ func TestStuckUnitsSkipsUnclaimedGoals(t *testing.T) {
 	f := newStuckFixture(t)
 	f.write("2", "build", "build", 52, 1)
 	delete(f.claims, "goal")
-	if episodes := f.tick(); len(episodes) != 0 || len(f.messages) != 0 {
+	if episodes := f.tick(); len(episodes) != 0 || f.kept() != 0 {
 		t.Fatalf("another seat's work alerted: %+v", episodes)
 	}
 }
@@ -179,7 +187,7 @@ func TestStuckUnitsHoldsUnknownOnUnreadableRecords(t *testing.T) {
 				}
 			}
 			episodes := f.tick()
-			if len(episodes) != 1 || episodes[0].Cleared || episodes[0].Standing != StandingUnreadable || episodes[0].EpisodeID != before.EpisodeID || len(f.messages) != 1 {
+			if len(episodes) != 1 || episodes[0].Cleared || episodes[0].Standing != StandingUnreadable || episodes[0].EpisodeID != before.EpisodeID || f.kept() != 1 {
 				t.Fatalf("unreadable signal changed alert: %+v", episodes)
 			}
 		})
@@ -202,7 +210,7 @@ func TestStuckUnitsLimitsComeFromSettings(t *testing.T) {
 				t.Fatal(err)
 			}
 			episodes := f.tick()
-			if len(episodes) != 1 || len(f.messages) != 1 {
+			if len(episodes) != 1 || f.kept() != 1 {
 				t.Fatalf("override ignored: %+v", episodes)
 			}
 			if c.key == "rounds" && !strings.Contains(episodes[0].Message, "is on round 1 of unit 2 of goal goal (limit 1)") {
@@ -220,7 +228,7 @@ func TestStuckUnitsAlertsAgainAfterADismissal(t *testing.T) {
 	if _, _, err := ClearAlert(f.root, first.EpisodeID, AlertInvoker{}, f.now); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.tick()) != 1 || len(f.messages) != 1 {
+	if len(f.tick()) != 1 || f.kept() != 1 {
 		t.Fatal("dismissed stall notified again")
 	}
 	f.end()
@@ -230,7 +238,7 @@ func TestStuckUnitsAlertsAgainAfterADismissal(t *testing.T) {
 	}
 	f.write("2", "again", "build", 52, 1)
 	episodes = f.tick()
-	if len(episodes) != 2 || len(f.messages) != 2 {
+	if len(episodes) != 2 || f.kept() != 2 {
 		t.Fatalf("new stall did not open a new episode: %+v", episodes)
 	}
 }

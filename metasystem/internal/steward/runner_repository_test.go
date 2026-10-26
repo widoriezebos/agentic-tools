@@ -103,7 +103,7 @@ func runnerPendingDelivery(expectedRoot, command string) func(string) (int, erro
 			},
 			platform: "linux", commandContext: exec.CommandContext,
 		}
-		return deliverPendingWith(root, func(deliveryRoot, message string) error {
+		return deliverPendingAllowed(root, func(deliveryRoot, message string) error {
 			return deliverWithDependencies(deliveryRoot, message, deps)
 		})
 	}

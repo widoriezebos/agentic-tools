@@ -132,7 +132,7 @@ func seatIdleFixtureIncident(refusal int) SeatIdleIncident {
 	}
 }
 
-func TestSeatIdleThirdRefusalPostsOnceToTheChannel(t *testing.T) {
+func TestSeatIdleThirdRefusalIsKeptFromThePerson(t *testing.T) {
 	t.Parallel()
 	fixture := newChannelFixture(t)
 	now := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
@@ -140,23 +140,18 @@ func TestSeatIdleThirdRefusalPostsOnceToTheChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	posts := fixture.posts(t)
-	if len(posts) != 1 {
-		t.Fatalf("the third idle refusal posted %d times, want once: %q", len(posts), posts)
-	}
-	assertTwoLineNotice(t, posts[0], "seat-session", "metasystem status")
-	if !strings.Contains(posts[0], "next-goal") {
-		t.Fatalf("the idle notice does not name the ready goal: %q", posts[0])
+	if posts := fixture.posts(t); len(posts) != 0 || first.TransportResult != TransportWithheld {
+		t.Fatalf("the third idle refusal reached the channel: %q %+v", posts, first)
 	}
 	again, err := RecordSeatIdleIncident(fixture.root, seatIdleFixtureIncident(4), now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.EpisodeID != first.EpisodeID || again.TransportResult != TransportSubmitted {
-		t.Fatalf("the repeated refusal did not stay in the one submitted episode: %+v", again)
+	if again.EpisodeID != first.EpisodeID || again.TransportResult != TransportWithheld {
+		t.Fatalf("the repeated refusal did not stay in the one kept episode: %+v", again)
 	}
-	if posts := fixture.posts(t); len(posts) != 1 {
-		t.Fatalf("a repeated idle refusal posted again: %q", posts)
+	if posts := fixture.posts(t); len(posts) != 0 {
+		t.Fatalf("a repeated idle refusal posted: %q", posts)
 	}
 	if pending, err := PendingNotifications(fixture.root); err != nil || len(pending) != 0 {
 		t.Fatalf("the channel post also queued a local alarm: %+v %v", pending, err)
@@ -175,7 +170,7 @@ func TestSeatIdleWithoutChannelKeepsTheSilentEpisode(t *testing.T) {
 	}
 }
 
-func TestSpendCrossingPostsOnceToTheChannel(t *testing.T) {
+func TestSpendCrossingIsKeptFromThePerson(t *testing.T) {
 	t.Parallel()
 	fixture := newChannelFixture(t)
 	ledger := fixtureSpendLedger()
@@ -193,20 +188,14 @@ func TestSpendCrossingPostsOnceToTheChannel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var spendPosts []string
-	for _, text := range fixture.posts(t) {
-		if strings.Contains(text, "spend.ceiling.") {
-			spendPosts = append(spendPosts, text)
-		}
+	if posts := fixture.posts(t); len(posts) != 0 {
+		t.Fatalf("a spend crossing reached the channel: %q", posts)
 	}
-	if len(spendPosts) != 1 {
-		t.Fatalf("one spend crossing over two ticks posted %d times: %q", len(spendPosts), fixture.posts(t))
-	}
-	assertTwoLineNotice(t, spendPosts[0], "day-2026-09-02", "metasystem settings set spend.ceiling.day.tokens NEW-LIMIT")
 	owned := episodesOwnedBy(t, fixture.root, string(RoleSpendFence))
-	if len(owned) != 1 || owned[0].TransportResult != TransportSubmitted || len(owned[0].Attempts) != 1 {
-		t.Fatalf("the spend episode does not record its one channel submission: %+v", owned)
+	if len(owned) != 1 || owned[0].TransportResult != TransportWithheld {
+		t.Fatalf("the spend episode is not one kept episode: %+v", owned)
 	}
+
 }
 
 func breachFixtureConfig(stops *int) TickConfig {

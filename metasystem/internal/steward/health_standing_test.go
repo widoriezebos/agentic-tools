@@ -132,7 +132,7 @@ func standingTick(t *testing.T, bed *healthBed, roles []RoleVerdict, now time.Ti
 	}
 	var result TickResult
 	if err := completeTickHealthWithDependencies(bed.root, &result, bed.generation, bed.runner, now,
-		tickHealthDependencies{evaluate: evaluate, now: func() time.Time { return now }, deliver: deliver}); err != nil {
+		tickHealthDependencies{evaluate: evaluate, now: func() time.Time { return now }, deliver: deliver, funnel: noticeFunnel{decider: allowEveryNotice}}); err != nil {
 		t.Fatal(err)
 	}
 	return result.Health

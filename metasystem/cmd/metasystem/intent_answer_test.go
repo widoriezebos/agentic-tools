@@ -597,3 +597,28 @@ func TestAnActedContractQuestionShowsItsAnswer(t *testing.T) {
 		t.Fatalf("question show = %q, want %q", result.Summary, want)
 	}
 }
+
+func TestATerminalActSettlesARecordedContractQuestion(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	q, err := channel.Ask(channel.AskRequest{RepoRoot: root, Goal: "g", Kind: "other", Machine: "m", Facts: []string{"the build stopped"}, Now: time.Date(2026, 10, 25, 11, 0, 0, 0, time.UTC), Contract: true, Recommendation: "Continue",
+		Plain:    &channel.Plain{Decision: "g: the build of unit u stopped", IfNothing: "it waits"},
+		Options:  []channel.Option{{Label: "Continue", Consequence: "one more round.", Act: []string{"metasystem", "work", "revise", "g"}}, {Label: "Stop here", Consequence: "nothing runs"}},
+		UnitStop: &channel.UnitStopQuestion{Loop: "unit-build", Subject: "g/u/run", Attempt: 1, Finding: "build-partial", Needs: "metasystem work revise g --by Wido", AcceptableActs: []string{"work-revise"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	q = recordChoice(t, root, q, nil)
+	at := time.Date(2026, 10, 25, 12, 30, 0, 0, time.UTC)
+	if err := channel.RecordUnitStopAct(root, channel.UnitStopAct{ID: "terminal", Goal: "g", Loop: "unit-build", Subject: "g/u/run", Attempt: 1, Findings: []string{"build-partial"}, Kind: "work-revise", Reason: "corrected at the terminal", At: at}); err != nil {
+		t.Fatal(err)
+	}
+	closed, err := channel.ReadQuestion(root, q.ID)
+	if err != nil || closed.State != "closed" || closed.Answer == nil || closed.Answer.Phase != "closed" {
+		t.Fatalf("the terminal act did not close the question: %+v %v", closed, err)
+	}
+	want := "settled by work-revise at " + at.Local().Format("15:04")
+	if result := (&intentInvocation{stateRoot: root}).questionView(questionRef{kind: "channel", id: q.ID, channel: closed}); !strings.Contains(result.Summary, want) || strings.Contains(result.Summary, "withdrawn") {
+		t.Fatalf("question show = %q, want %q", result.Summary, want)
+	}
+}

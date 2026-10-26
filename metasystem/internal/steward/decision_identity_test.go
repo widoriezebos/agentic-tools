@@ -199,8 +199,8 @@ func TestProviderStaleNoticeUsesTickClock(t *testing.T) {
 	for _, record := range journalOf(t, root) {
 		if record.Ref == "provider-stale-anthropic-"+observed.Format(time.RFC3339Nano) {
 			found++
-			if !record.Delivered || record.At != funnelStart.Format(time.RFC3339) {
-				t.Errorf("provider-stale journal must use tick clock and be delivered: %+v", record)
+			if record.Delivered || record.Withheld != "provider" || record.At != funnelStart.Format(time.RFC3339) {
+				t.Errorf("provider-stale journal must use tick clock and be kept from a person: %+v", record)
 			}
 		}
 	}
