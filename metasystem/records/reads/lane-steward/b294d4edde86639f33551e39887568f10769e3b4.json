@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-steward",
+  "unit": "U6b",
+  "subject": {
+    "commit": "b294d4edde86639f33551e39887568f10769e3b4",
+    "parent": "01e8cbcfd3a0fab2cc49ad2cc1674d95e257afce",
+    "tree": "5624117502ed2df2e4eec074113197f5b36907a3",
+    "patchDigest": "ffb99b01dfa2958f4a848375cb167002bf170fb410d860e2afbc5edd31c7950c",
+    "unitDigest": "d59113895a4c3c27559d0184aa97af3962a38015afa56a8d5b73b961f8a26b79"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-c897cfd7794b262325386581",
+    "round": 1,
+    "closureSha256": "30521c5c3d207c50cdffdf587050535b0dd9066e912e110ce7403578ce4399d5"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "5624117502ed2df2e4eec074113197f5b36907a3",
+    "runId": "goal-read-gate-20261026t153004z-73c7be6bc63602fe"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "2f7aa3c29e66b4b58c52285a1bd344b9f79b242b",
+      "digest": "21f479a042e36ebb90a437917e208db0edca7f78a200cc1beaf81cc7a2cd5de2"
+    },
+    {
+      "kind": "read",
+      "commit": "01e8cbcfd3a0fab2cc49ad2cc1674d95e257afce",
+      "digest": "8a633893dc16140bdcd186fb0b81821b75bd0046fad6db876c593bb5173b41df"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "1b361298e944949da943b234bf7fd10df8170e6209ecc89de69df75fb5e22f17"
+}
