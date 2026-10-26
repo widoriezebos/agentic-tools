@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-steward",
+  "unit": "U6a2",
+  "subject": {
+    "commit": "8a82d3ec4f834f3e27b9f3cd22436c9a86b0c881",
+    "parent": "2f7aa3c29e66b4b58c52285a1bd344b9f79b242b",
+    "tree": "cb7c1a0d144052870c1b68f259083f03e21016ba",
+    "patchDigest": "af752337015db67caaed911533577e52219fe6c0fe9d2a938cf522336702d5b3",
+    "unitDigest": "2568722ceed4a2ae0f57c8022fab3ba7f14a8a1b5d6baf0f301c1986e2f1322e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-cd400706d5bb7e0aa239624e",
+    "round": 1,
+    "closureSha256": "79fbe810439247b5c2e0f6b44cbfa38071479f7d97b41659cc53615b1ecc2edf"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "cb7c1a0d144052870c1b68f259083f03e21016ba",
+    "runId": "goal-read-gate-20261026t095933z-0f910a6372f1015b"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "2f7aa3c29e66b4b58c52285a1bd344b9f79b242b",
+      "digest": "21f479a042e36ebb90a437917e208db0edca7f78a200cc1beaf81cc7a2cd5de2"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/landing/state/lifecycle_test.go",
+      "readerWord": "reviewed by critic root code-critic-cd400706d5bb7e0aa239624e"
+    }
+  ],
+  "sha256": "ba5c28117d646ce1c6b25e7f6a3c16473d97645d8f859100e5dc15a2fe853d9b"
+}
