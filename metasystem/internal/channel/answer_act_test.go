@@ -392,6 +392,18 @@ func TestChannelChoiceRunsItsActInTheFullPoll(t *testing.T) {
 		b.poll()
 		b.wantPosted(`One more day it is. "g" has one more working day and goes on (its time box is now 7d4h) at ` + b.now.Local().Format("15:04") + ". If it stops again, I ask here. Undo: metasystem work stop g.")
 	})
+	t.Run("an act that found the goal going on says so", func(t *testing.T) {
+		t.Parallel()
+		b := newChoiceBed(t)
+		b.act.reply = func([]string) string { return `{"outcome":"unchanged","data":{"answer":{"state":"settled"}}}` }
+		b.reply("continue")
+		b.poll()
+		b.poll()
+		if q := b.question(); q.Answer == nil || q.Answer.Phase != "acted" {
+			t.Fatalf("a settled act is not done: %+v", q)
+		}
+		b.wantPosted(`Continue it is. "g" is already going on; nothing more was needed.`)
+	})
 	t.Run("a reply to the executor's own line is a reply to the question", func(t *testing.T) {
 		t.Parallel()
 		b := newChoiceBed(t)

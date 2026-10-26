@@ -4,6 +4,9 @@ import (
 	"slices"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func TestOnlyActsAndDeliveriesReachAPerson(t *testing.T) {
@@ -33,7 +36,7 @@ func TestOnlyActsAndDeliveriesReachAPerson(t *testing.T) {
 	if outcome := deliverNoticeWith(root, Notice{Source: NoticeAlert, Owner: "provider-stale", Ref: "provider-stale-p", Message: "the stale mark expired"}, deliver, noticeFunnel{}); outcome.Result != TransportWithheld {
 		t.Fatalf("the provider notice was not kept: %+v", outcome)
 	}
-	for _, nonce := range []string{"verdict-degraded", "seat-start-a", "ledger-attention-1", "noticing-1"} {
+	for _, nonce := range []string{"verdict-degraded", "seat-start-a", "ledger-attention-1", "noticing-1", "engine-rearm-1", "revive-failure", "intent-1-reap", "seat-presence-m-held-1"} {
 		if err := QueueNotification(root, PendingNotification{Nonce: nonce, Message: "queued " + nonce}); err != nil {
 			t.Fatal(err)
 		}
@@ -51,7 +54,7 @@ func TestOnlyActsAndDeliveriesReachAPerson(t *testing.T) {
 		}
 		classes = append(classes, record.Withheld)
 	}
-	for _, class := range []string{"health", "pattern", "spend", "seat-idle", "lane-silent", "provider", "verdict", "seat-start", "ledger", "narration"} {
+	for _, class := range []string{"health", "pattern", "spend", "seat-idle", "lane-silent", "provider", "verdict", "seat-start", "ledger", "narration", "re-arm", "reap", "seat-presence"} {
 		if !slices.Contains(classes, class) {
 			t.Fatalf("no line kept as %s: %q", class, classes)
 		}
@@ -67,6 +70,26 @@ func TestOnlyActsAndDeliveriesReachAPerson(t *testing.T) {
 	}
 	if pending, err := PendingNotifications(root); err != nil || len(pending) != 0 {
 		t.Fatalf("the queue kept items: %+v %v", pending, err)
+	}
+}
+
+func TestAHandoffNoticeIsKeptFromThePerson(t *testing.T) {
+	t.Parallel()
+	root, intent := prepareRevivalHandoff(t, "5000000000000009")
+	home := testprovider.Register(t, root)
+	if held, err := completeHandoffRevival(root, handoffProbe(*intent.Handoff, identity.Alive, true, nil), TickConfig{ProviderHome: home}, deadCensus(), intent.Nonce, func(Intent) error {
+		t.Fatal("a live predecessor launched its successor")
+		return nil
+	}); err != nil || !held.Held {
+		t.Fatalf("fixture did not stage its hold notice: %+v %v", held, err)
+	}
+	transports := 0
+	if delivered, err := deliverPendingWithDependencies(root, pendingDeliveryDependencies{transport: func(string, string) error { transports++; return nil }}); err != nil || delivered != 0 || transports != 0 {
+		t.Fatalf("the handoff notice reached a person: %d delivered, %d transports, %v", delivered, transports, err)
+	}
+	records := journalOf(t, root)
+	if len(records) != 1 || records[0].Withheld != "handoff" {
+		t.Fatalf("the handoff notice was not kept as handoff: %+v", records)
 	}
 }
 

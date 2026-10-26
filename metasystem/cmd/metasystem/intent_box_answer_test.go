@@ -165,3 +165,19 @@ func TestResumedStoppedGoalClosesItsBreachQuestion(t *testing.T) {
 		t.Fatal(fmt.Sprint("the close queued a post: ", err))
 	}
 }
+
+func TestOneMoreDayForAGoalAlreadyGoingOnSettlesIt(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, nil)
+	channelFor(t, bed.root())
+	q := recordChoice(t, bed.root(), boxQuestion(t, bed.root(), bedGoal), func(q *channel.Question) { q.Answer.Text, q.Answer.Lineage = "one more day", "steward" })
+	before := bed.goalFile(bedGoal)
+	code, result := boxAnswer(t, bed, q.ID, "goal", "budget", bedGoal, "one-more-day")
+	closed, err := channel.ReadQuestion(bed.root(), q.ID)
+	if state, _ := answerState(t, result); code != 0 || result.Outcome != intentUnchanged || state != "settled" || goalBoxString(bed.goalFile(bedGoal)) != goalBoxString(before) {
+		t.Fatalf("one more day on a moving goal = %d %+v", code, result)
+	}
+	if err != nil || closed.State != "closed" {
+		t.Fatalf("the settled question stays open: %+v %v", closed, err)
+	}
+}

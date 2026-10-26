@@ -200,6 +200,10 @@ type BreachStopReport struct {
 	StopID   string `json:"stopId,omitempty"`
 	State    string `json:"state"`
 	Detail   string `json:"detail,omitempty"`
+	// Reason, Budget and Elapsed are the route's, for the person's question.
+	Reason  string        `json:"reason,omitempty"`
+	Budget  *goal.Budget  `json:"budget,omitempty"`
+	Elapsed time.Duration `json:"elapsed,omitempty"`
 }
 
 // custodialBreachStops is the tick's breach-stop pass: deferred, with no
@@ -211,7 +215,7 @@ func custodialBreachStops(repoRoot string, cfg TickConfig, scanner func(string, 
 	reports := runBreachStopCustodianWithScanner(repoRoot, cfg.now(), scanner, cfg.BreachStop, cfg.Stopping)
 	// The stop producer is unchanged; a completed stop also tells the
 	// person, once per stopped goal revision.
-	reportBreachStopNotices(repoRoot, reports, cfg.now(), noticeFunnel{clock: cfg.now})
+	reportBreachStopNotices(repoRoot, reports, cfg.now())
 	return reports
 }
 
@@ -223,7 +227,7 @@ func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
 	}
 	reports := make([]BreachStopReport, 0, len(routes))
 	for _, route := range routes {
-		report := BreachStopReport{GoalID: route.GoalID, Revision: route.Revision, StopID: route.StopID}
+		report := BreachStopReport{GoalID: route.GoalID, Revision: route.Revision, StopID: route.StopID, Reason: route.Reason, Budget: route.Budget, Elapsed: route.Elapsed}
 		if route.Condition == dispatch.StopRouteIndeterminate {
 			report.State, report.Detail = "INDETERMINATE", route.Failure
 			reports = append(reports, report)

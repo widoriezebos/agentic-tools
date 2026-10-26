@@ -179,15 +179,13 @@ func personClass(n Notice) (string, bool) {
 			return "health", false
 		case IsPatternOwner(n.Owner):
 			return "pattern", false
-		case n.Owner == breachStopAlertOwner:
-			return "act", true
 		}
 		if class, known := map[string]string{seatIdleAlertOwner: "seat-idle", string(RoleSpendFence): "spend", laneSilentAlertOwner: "lane-silent", "provider-stale": "provider"}[n.Owner]; known {
 			return class, false
 		}
 		return "unknown", false
 	}
-	for prefix, class := range map[string]string{"verdict-": "verdict", "handoff-": "handoff", "seat-start": "seat-start", "engine-rearm-": "re-arm", "revive-failure": "re-arm", "ledger-attention-": "ledger", "noticing-": "narration"} {
+	for prefix, class := range map[string]string{"verdict-": "verdict", "handoff-": "handoff", "seat-start": "seat-start", "engine-rearm-": "re-arm", "revive-failure": "re-arm", "ledger-attention-": "ledger", "noticing-": "narration", "seat-presence-": "seat-presence"} {
 		if strings.HasPrefix(n.Ref, prefix) {
 			return class, false
 		}

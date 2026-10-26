@@ -380,6 +380,10 @@ type StopRoute struct {
 	Reason    string
 	Condition StopRouteCondition
 	Failure   string
+	// Budget and Elapsed are the box and the time it counted, for the
+	// person's question; a fenced route counts nothing.
+	Budget  *goal.Budget
+	Elapsed time.Duration
 }
 
 // FindBreachStops supplies the steward's heal-before-notify routes.
@@ -426,7 +430,7 @@ func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionRea
 			}
 			route := StopRoute{
 				GoalID: id, Revision: file.Claimed.Revision, StopID: file.StopFence.StopID,
-				Reason: file.StopFence.Reason, Condition: StopRouteBreach,
+				Reason: file.StopFence.Reason, Condition: StopRouteBreach, Budget: file.Budget,
 			}
 			if readErr != nil && !os.IsNotExist(readErr) {
 				route.Condition = StopRouteIndeterminate
@@ -454,7 +458,7 @@ func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionRea
 			continue
 		}
 		route := StopRoute{
-			GoalID: id, Revision: file.Claimed.Revision, Reason: reason, Condition: StopRouteBreach,
+			GoalID: id, Revision: file.Claimed.Revision, Reason: reason, Condition: StopRouteBreach, Budget: file.Budget, Elapsed: budget.Elapsed,
 		}
 		if file.StopCapability == nil {
 			route.Condition = StopRouteIndeterminate

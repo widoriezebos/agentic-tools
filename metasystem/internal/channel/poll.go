@@ -363,6 +363,9 @@ func settleChoice(ctx context.Context, c PollConfig, q *Question) error {
 				did += " (its time box is now " + limit + ")"
 			}
 			line = fmt.Sprintf("%s it is. "+cmp.Or(did, "The builder's next round of \"%s\" started")+" at %s. If it stops again, I ask here. Undo: %s.", label, QuestionSubject(*q), c.Now.Local().Format("15:04"), strings.TrimSuffix(undo, "."))
+		case "settled":
+			attempt.Outcome = "acted"
+			line = fmt.Sprintf("%s it is. \"%s\" is already going on; nothing more was needed.", label, QuestionSubject(*q))
 		case "accepted":
 			line = fmt.Sprintf("%s it is; it waits: %s. When that is fixed, reply %s again.", label, plainReason(envelope.Data.Answer.Hold, *q), label)
 		default:
