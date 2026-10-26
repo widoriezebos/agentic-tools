@@ -1,13 +1,15 @@
 # a-capacity-refusal-is-an-environment-stop
 
 - State: approved
+- Priority: 1
+- Sequence: 15
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="classification of one failure kind on the unit step path every build uses; a wrong class costs one retry, never a landing"
 - Tier: 1
 - Intent: A build step that ends on a provider capacity refusal ("Selected model is at capacity", or the provider's equivalent words) is classified environment, not unclassified: the engine's one machine retry (decision 37, retryFailedStep in unit_step_failure.go:89) runs the round again after a counted wait, and only a second refusal stops the unit and asks the person, naming the provider's words. Evidence: lane-steward U6a round 2, 2026-10-26 07:35, cost a person's act for zero changed lines.
 - Origin: main
 - Next step: Steward cuts one brief (one unit, about 40 production lines): the step classifier reads the builder's exec log for the provider's capacity words, the retry waits a counted interval, the ask names the words; tests: a capacity refusal retries once, a second refusal asks, a real build failure still stops own. One Astra round, machine route on ui after the queue ahead of it, lane landing.
 - OpenedAt: 2026-10-26T07:13:20Z
-- Revision: 2
+- Revision: 3
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=SBX1SDWT81JEWAVEMWM2973Q53-m1e-acb921fd minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +18,5 @@
 History:
 - 2026-10-26T07:13:20Z 8M336VG5R8ESS42SM586A929NW-m1e-acb921fd open actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
 - 2026-10-26T07:14:07Z SBX1SDWT81JEWAVEMWM2973Q53-m1e-acb921fd approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop,the-impact-check-selects-only-tests-this-host-can-run,the-ui-bundle-builds-again
-Integrity: sha256=285a93c914ce1353c03f43f1b8173aa66c3017fab5bfb9ff96e4fec41c3aaa50
+- 2026-10-26T07:15:23Z P73SB7GTBAXJV4Q1QPZRNP4KRP-m1e-acb921fd set-priority actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop,a-delivered-goal-and-a-needed-act-reach-the-person,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-red-main-is-known-once,a-run-keeps-its-journal,a-stop-waits-for-the-unit-boundary-2,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=a-capacity-refusal-is-an-environment-stop from=unranked to=1:15 requested-sequence=15
+Integrity: sha256=e8a43061d36aa183691094e6888bd224638dd8b75f0988cdb888fff64e127956
