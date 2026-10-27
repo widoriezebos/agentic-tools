@@ -7,9 +7,9 @@
 - Tier: 2
 - Intent: A records-only move of main keeps main's full green: for a trunk proof the content rule (the diff from the proven tree is records only) replaces the one-hour limit at both age checks, a records-only scoped trunk result stays current, and the keeper's wake and clock use a keeper-specific debt calculation while scopedProofDue and batch admission are unchanged; the lane stops re-proving main in full every hour (gap 3 of design plans/designs/the-machinery-says-when-it-stands-still.md (accepted, revision 4), D3, G11)
 - Origin: main
-- Next step: Third on m1e's build lane, after a-stewards-failing-duty-is-a-row: opus-designer cuts the brief from the page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 50 production lines: landing/plain/scope.go (both age checks, fullCurrent), wake.go and keeper_clock.go (keeperProofDebt), trunk_recovery.go; the sibling page's G3 (push before the clock) is cut on this tip
+- Next step: Third on m1e's build lane, after a-stewards-failing-duty-is-a-row: opus-designer cuts the brief from the page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 65 production lines: landing/plain/scope.go (both age checks, fullCurrent), wake.go and keeper_clock.go (keeperProofDebt), trunk_recovery.go, and push.go (finding 439: a proven batch merged with record-only commits of main inherits its green instead of a second full proof); the sibling page's G3 (push before the clock) is cut on this tip
 - OpenedAt: 2026-10-27T17:40:28Z
-- Revision: 5
+- Revision: 6
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -22,4 +22,5 @@ History:
 - 2026-10-27T17:41:18Z YQ6MFXSWX2JEP5NRPN0XKD5BDM-m1e-55cdfc19 approve actor=human:Wido targets=a-records-only-move-keeps-mains-green
 - 2026-10-27T17:41:34Z KGWXTFZBMXVVWZH8S1S4M6WE8T-m1e-55cdfc19 set-pin actor=human:Wido targets=a-records-only-move-keeps-mains-green
 - 2026-10-27T17:41:44Z DNMHX2NKZCARPRYR3DXYDM6RK9-m1e-55cdfc19 set-priority actor=human:Wido targets=a-records-only-move-keeps-mains-green reason=priority-order subject=a-records-only-move-keeps-mains-green from=unranked to=1:91 requested-sequence=append
-Integrity: sha256=950efb095416de21c3f1281878c6a3fd7da4efae4125c5c5c01eaf8cdc76a954
+- 2026-10-27T20:16:08Z 520S943XST1DWGME08WDVBR9D0-m1e-75099fe5 edit actor=human:Wido targets=a-records-only-move-keeps-mains-green
+Integrity: sha256=152282ba2b365345bf1c463d5c79568e96d322a1bd4d76c082b012c99a5795fd
