@@ -10,11 +10,11 @@
 - Next step: Build on ui after lane-steward lands (priority 1.3): work build a-capacity-refusal-is-an-environment-stop --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-capacity-refusal-is-an-environment-stop-brief.md --lines 360 --last (FINAL revision 2 after one Astra round; about 95 production lines in internal/launch: Codex's terminal "Selected model is at capacity" block becomes a provider failure with the words kept in the record; the existing one machine retry waits 2 minutes from the refusal's end, bounded by the caller's wait allowance; a second refusal asks one question with a cleaned provider message and the exact retry command; a plain exit 1 stays unclassified; seam at 125: the wait and the message as a second unit). Read each round: yes. Open for Wido: the wait length (2 minutes kept; ruling R-31-m2's 20-30 minutes is the rejected alternative). Live proof: the next capacity refusal on any seat is retried by the machine once, with no person act.; ANSWERED FSPCF9RP889YY0HPM48F6TK2WS: Continue
 - OpenedAt: 2026-10-26T07:13:20Z
 - FirstClaimAt: 2026-10-27T14:44:39Z
-- Revision: 16
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- Revision: 17
+- Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- NormApproval: approvedRef=WM43S6QAPMCGV19S3ZYVZGTF0Z-ui-c1209269 minutes=2400 reviewRounds=20 goalRevision=13
-- Approved: by=human:Wido at=2026-10-27T18:13:57Z revision=16 opid=C9XFZT6VXV9R6SM9DMPDD48WST-ui-86d98738 authority=proven digest=7d669c12ba33c19a33b7759b5d7c42d6b061fc6073a81f22db306964e634402f episode=16
+- NormApproval: approvedRef=XGVB8KDXFDETA8J4AEV3E3RGAK-ui-86d98738 minutes=2400 reviewRounds=20 goalRevision=16
+- Approved: by=human:Wido at=2026-10-27T18:14:04Z revision=17 opid=XGVB8KDXFDETA8J4AEV3E3RGAK-ui-86d98738 authority=proven digest=4e21d1be6b23a5d4ee53272711f67fa02969bfde45962f4c9e8e1830f74bce5e episode=17
 
 History:
 - 2026-10-26T07:13:20Z 8M336VG5R8ESS42SM586A929NW-m1e-acb921fd open actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
@@ -33,4 +33,5 @@ History:
 - 2026-10-27T18:12:42Z WM43S6QAPMCGV19S3ZYVZGTF0Z-ui-c1209269 approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
 - 2026-10-27T18:13:46Z Q4FQS0WEGFXVQDB94587BX2ERT-ui-86d98738 unpark actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
 - 2026-10-27T18:13:57Z C9XFZT6VXV9R6SM9DMPDD48WST-ui-86d98738 approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
-Integrity: sha256=f49bcaec4469826b586e10fabaf2b1607ddfb06a085063fa813f26854728a921
+- 2026-10-27T18:14:04Z XGVB8KDXFDETA8J4AEV3E3RGAK-ui-86d98738 approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
+Integrity: sha256=cc86b4e74e761e37c1455f4402658bc1f4e02b42ed99936204c8330e08b8f5cf
