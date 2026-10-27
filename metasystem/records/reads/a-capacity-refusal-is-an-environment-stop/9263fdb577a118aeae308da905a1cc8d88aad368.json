@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "goal": "a-capacity-refusal-is-an-environment-stop",
+  "unit": "main",
+  "subject": {
+    "commit": "9263fdb577a118aeae308da905a1cc8d88aad368",
+    "parent": "c1268b56bf7de2af7050300e57343629929139d5",
+    "tree": "5de3baf333b65727b31745d83646928e3c9b4571",
+    "patchDigest": "9d1e692efc1bbf8e4ee0b9da3a6b47d904d952f6e80ad4fccc16ac4a1128d248",
+    "unitDigest": "a618ed5558c89e1c2dd982303cbc55c34a4473eb53728b55d18c5015f5c24957"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-3d83e92471ef93e019a9552b",
+    "round": 1,
+    "closureSha256": "f3408ee2e1123f8f8c89a3b08cdaf6e225ecafc57457952aeea2243700e4b104"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "5de3baf333b65727b31745d83646928e3c9b4571",
+    "runId": "goal-read-gate-20261027t173242z-d0a35f5d64c66369"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_answer_test.go",
+      "readerWord": "reviewed by critic root code-critic-3d83e92471ef93e019a9552b"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_retry_test.go",
+      "readerWord": "reviewed by critic root code-critic-3d83e92471ef93e019a9552b"
+    },
+    {
+      "path": "metasystem/internal/launch/cause_test.go",
+      "readerWord": "reviewed by critic root code-critic-3d83e92471ef93e019a9552b"
+    }
+  ],
+  "sha256": "cf60f247edb945d4f8701ca9379956f2af07a1ab723e6eafeac970810af58f8e"
+}

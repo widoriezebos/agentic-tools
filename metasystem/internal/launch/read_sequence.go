@@ -180,6 +180,9 @@ func (driver stepDriver) endStep(index int, launchRecord Record) {
 	if driver.unit && launchRecord.State != Completed {
 		step.Cause = failedStepCause(launchRecord)
 	}
+	if launchRecord.CauseWords != "" {
+		step.Reason += "; the provider said: " + providerMessage(launchRecord.CauseWords)
+	}
 	if launchRecord.State == Completed {
 		step.State = StepPassed
 	}

@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
 func (result UnitResult) BuildResultSummary() string {
@@ -86,8 +89,8 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 			return false, err
 		}
 	}
-	// A unit check that reached proof.deadline is retried once by the machine;
-	// any other deadline, a builder turn's included, waits for a person.
+	// The machine retries a provider refusal or a unit check's proof.deadline
+	// once; any other deadline waits for a person.
 	machine := step.Name == "proof:unit-check" && step.Deadline && step.Cause == "environment"
 	if step.State != StepFailed || step.Cause != "environment" || len(step.LaunchIDs) >= 2 || step.Deadline && !machine {
 		return false, nil
@@ -95,12 +98,42 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 	if machine {
 		step.RetryBy, step.RetryReason = "machine", "one retry after the check reached proof.deadline"
 	}
+	if record, err := driver.manager.Store.Read(step.LaunchID); err == nil && record.Cause == outage.ProviderLimit {
+		step.RetryBy, step.RetryReason = "machine", "one retry "+outage.ProbeInterval.String()+" after the provider refused"
+		ended, err := time.Parse(time.RFC3339Nano, step.ExecutionEndedAt)
+		if err != nil {
+			ended, err = time.Parse(time.RFC3339Nano, step.FinishedAt)
+		}
+		if err == nil && driver.manager.Now().Before(ended.Add(outage.ProbeInterval)) {
+			if err := driver.save(); err != nil {
+				return false, err
+			}
+			now := driver.manager.Now()
+			if wait := min(ended.Add(outage.ProbeInterval).Sub(now), deadline.Sub(now)); wait > 0 {
+				driver.manager.Sleep(wait)
+			}
+			if driver.manager.Now().Before(ended.Add(outage.ProbeInterval)) {
+				return true, nil
+			}
+		}
+	}
 	step.Moved = nil
 	step.State, step.Reason, step.Cause, step.FinishedAt = StepPending, "", "", ""
 	if err := driver.save(); err != nil {
 		return false, err
 	}
 	return driver.advanceStep(index, *step.Retained, deadline)
+}
+
+var providerOpaqueWords = regexp.MustCompile(`[| ]*[0-9a-fA-F]{10,}|\b[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})`)
+
+func providerMessage(words string) string {
+	message := strings.Join(strings.Fields(providerOpaqueWords.ReplaceAllString(strings.TrimPrefix(words, "ERROR: "), " ")), " ")
+	if runes := []rune(message); len(runes) > 100 {
+		message = string(runes[:100])
+		message = message[:max(0, strings.LastIndex(message, " "))]
+	}
+	return message
 }
 
 func (runner *UnitRunner) holdFailedStep(record *UnitRunRecord, round *UnitRound) error {
