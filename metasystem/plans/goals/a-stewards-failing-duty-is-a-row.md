@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: Second on m1e's build lane, after a-ready-goal-behind-a-claim-is-a-row (shares health.go and tick.go; cut on its tip): opus-designer cuts the brief from the page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 110 production lines: steward/runner.go (the writer at the nine duty sites), signal_channel.go, a duties_role.go, health.go (order, notification eligibility, the observed-set bound of the filer), tick.go (the helm path)
 - OpenedAt: 2026-10-27T17:39:40Z
-- Revision: 2
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- Revision: 3
+- Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-27T17:39:50Z revision=2 opid=Y5N8ANW5TRD013QE1S06PXB8P2-m1e-55cdfc19 authority=proven digest=a6790a531a2f68770d6c8413e9ff28c6842cf9bacfd70035c60fa2be91d7ad2c episode=2
+- NormApproval: approvedRef=BW2Y5AY88WC5DJVPWPK6YK88DM-m1e-55cdfc19 minutes=1200 reviewRounds=20 goalRevision=2
+- Approved: by=human:Wido at=2026-10-27T17:40:00Z revision=3 opid=BW2Y5AY88WC5DJVPWPK6YK88DM-m1e-55cdfc19 authority=proven digest=309c6713ca69e1ccf6b83c5dd28eb275f26352888c7a36f2f63b691b557c44bf episode=3
 
 History:
 - 2026-10-27T17:39:40Z 1BPMR8N9ET4WHCKQGHTDKF2EV5-m1e-55cdfc19 open actor=human:Wido targets=a-stewards-failing-duty-is-a-row
 - 2026-10-27T17:39:50Z Y5N8ANW5TRD013QE1S06PXB8P2-m1e-55cdfc19 approve actor=human:Wido targets=a-stewards-failing-duty-is-a-row
-Integrity: sha256=14a5d5cdd427cc56ddd74ee8a8d44315ec49cf311ed965bda639d328f9d6ead6
+- 2026-10-27T17:40:00Z BW2Y5AY88WC5DJVPWPK6YK88DM-m1e-55cdfc19 approve actor=human:Wido targets=a-stewards-failing-duty-is-a-row
+Integrity: sha256=18348a3ae4c46090c8f855f3ca58cfd29bf45e37ca604e389af8a90df8b1d05d
