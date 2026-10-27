@@ -7,8 +7,9 @@
 - Origin: main
 - Next step: After the-lane-returns-its-own-red lands: the steward writes this goal's design section (channel provenance in landing/plain/batch.go:254 and resume.go:164, the return record, the two verbs; about 100 production lines, estimate only) with one Astra round, then opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole)
 - OpenedAt: 2026-10-27T15:32:33Z
-- Revision: 3
+- Revision: 4
 - BlockedBy: the-lane-returns-its-own-red
+- Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=C14RG4T7DNPJPSQS22645Y7K9X-m1e-e06ab4ba minutes=2400 reviewRounds=20 goalRevision=2
@@ -19,4 +20,5 @@ History:
 - 2026-10-27T15:32:33Z 76XCH5Q01SBJTRFMX82N9DVDZN-m1e-e06ab4ba open actor=human:Wido targets=a-lane-act-runs-from-the-phone,the-lane-returns-its-own-red
 - 2026-10-27T15:32:48Z K1HG7RPCKVQMW39YSG1QQZXTDR-m1e-e06ab4ba approve actor=human:Wido targets=a-lane-act-runs-from-the-phone
 - 2026-10-27T15:32:59Z C14RG4T7DNPJPSQS22645Y7K9X-m1e-e06ab4ba approve actor=human:Wido targets=a-lane-act-runs-from-the-phone
-Integrity: sha256=5103a4e16a171bad91a8bbf937c5a5b9af8daad941dc2c1a345651ea48979e2f
+- 2026-10-27T15:33:08Z 60V14HGQDW301GFRKDEE6HFXTM-m1e-e06ab4ba set-pin actor=human:Wido targets=a-lane-act-runs-from-the-phone
+Integrity: sha256=760a58a7f2e54230674a397611dbb14f167eae98fb66739e1d723900255c0c43
