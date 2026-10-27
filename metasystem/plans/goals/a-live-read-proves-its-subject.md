@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: On m1e's build lane after a-settled-reply-names-its-machine and before a-ready-goal-behind-a-claim-is-a-row (one line, minutes): opus-builder adds --full-index to worktreeDiff (internal/launch/unit_run.go:1182) and a test that computes both digests from one committed unit through the production paths (worktreeDiff and read_subject_compute) and asserts they are equal, failing first; Read each round: yes; the steward submits with work review --changes --last
 - OpenedAt: 2026-10-27T17:41:56Z
-- Revision: 2
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- Revision: 3
+- Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-27T17:42:05Z revision=2 opid=BHMXNYRAVRWT0DA3EV4C3566R6-m1e-55cdfc19 authority=proven digest=be66f7384376660853758c492b3092a3bd38058a2fdd76a49bb4010002ea5803 episode=2
+- NormApproval: approvedRef=TGKGSFA630HZSQSQKQNQWP9877-m1e-55cdfc19 minutes=720 reviewRounds=20 goalRevision=2
+- Approved: by=human:Wido at=2026-10-27T17:42:15Z revision=3 opid=TGKGSFA630HZSQSQKQNQWP9877-m1e-55cdfc19 authority=proven digest=5cb30766684127890e6524486dd98855ceb83f5c1be36a00a2948841925893b7 episode=3
 
 History:
 - 2026-10-27T17:41:56Z 87D50ZJR623QVE7YY5N17HMQ1X-m1e-55cdfc19 open actor=human:Wido targets=a-live-read-proves-its-subject
 - 2026-10-27T17:42:05Z BHMXNYRAVRWT0DA3EV4C3566R6-m1e-55cdfc19 approve actor=human:Wido targets=a-live-read-proves-its-subject
-Integrity: sha256=afc99fc25341c27483fab41950961f651b0e5d8277c3e67c92e4cc81ae5768e3
+- 2026-10-27T17:42:15Z TGKGSFA630HZSQSQKQNQWP9877-m1e-55cdfc19 approve actor=human:Wido targets=a-live-read-proves-its-subject
+Integrity: sha256=eae7e7a3085b2a37eb1084ce904d9ff9edd649ae606e5bc8800265bc7cd47958
