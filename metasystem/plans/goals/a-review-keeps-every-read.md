@@ -1,13 +1,15 @@
 # a-review-keeps-every-read
 
 - State: approved
+- Priority: 1
+- Sequence: 81
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="It changes what a review publishes, on the path every corrected unit takes; the change adds retained evidence and a refusal, so a mistake blocks a publish and names why, and never lands an undisposed finding; the closure rules themselves are unchanged"
 - Tier: 2
 - Intent: A corrected unit's review brief is composed from every round's dispatched brief under their recorded digests, the unit's reads stay on the record beside the committed critic's, every material finding of every read is disposed under the existing closure before the review publishes, and a same-round withdrawal by the critic closes the round (finding 433; design plans/designs/the-stewards-act-on-what-they-see.md (accepted, revision 4) D9, G6)
 - Origin: main
 - Next step: On m1e's build lane after a-launched-job-is-never-a-main: opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); two units, U1 the composite brief (about 60 lines: launch/unit_review.go, goal/branch/read.go, launch/unit_run.go), U2 reads retained, the union register, the stop and the publish invariant (about 100: launch/unit_stop.go, loopstop/stop.go, cmd intent_unit_review.go, intent_review_binding.go, validate/critiqueclosed.go, goal/branch/attest.go); --last on U2
 - OpenedAt: 2026-10-27T15:11:22Z
-- Revision: 4
+- Revision: 5
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -19,4 +21,5 @@ History:
 - 2026-10-27T15:14:24Z JQYQRYHVHB936SARD39HHHGKWB-m1e-e06ab4ba approve actor=human:Wido targets=a-review-keeps-every-read
 - 2026-10-27T15:17:54Z HD261DM8M9GNKZW0PJEKNG5HRQ-m1e-e06ab4ba approve actor=human:Wido targets=a-review-keeps-every-read
 - 2026-10-27T15:18:51Z WRP31KS6EW7HT1MRVFPBZGQQAP-m1e-e06ab4ba set-pin actor=human:Wido targets=a-review-keeps-every-read
-Integrity: sha256=54fb48af6f05acd86fb878ae9dd93b813160a778b0d082015c0cef37531af9ff
+- 2026-10-27T15:19:27Z WCSR0MQM8BE3J8RV8S64XEN7W5-m1e-e06ab4ba set-priority actor=human:Wido targets=a-review-keeps-every-read reason=priority-order subject=a-review-keeps-every-read from=unranked to=1:81 requested-sequence=append
+Integrity: sha256=0ae720b57ba9d1f27d03dbe36ad0b38ce11ba0a7faa8912853741a900613e33a
