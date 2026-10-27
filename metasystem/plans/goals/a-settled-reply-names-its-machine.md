@@ -10,7 +10,7 @@
 - Next step: Build first on m1e's build lane (before a-question-reminds U4a and a-launched-job-is-never-a-main): opus-builder fixes SettleReplies to resolve the machine (goal.ResolveMachine) and lineage as run() does (phase.go:187 against :205-214), adds the refusal for an empty machine at the answer record (inbox.go:693-708), and tests the steward's real order (settlement pass before the channel poll, runner.go:371 then :455) for a tap and a typed reply on a contract question through to the act; about 10 production lines; Read each round: yes; the steward submits with work review --changes --last
 - OpenedAt: 2026-10-27T16:00:22Z
 - FirstClaimAt: 2026-10-27T16:55:06Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -18,6 +18,7 @@
 - Approved: by=human:Wido at=2026-10-27T16:00:42Z revision=3 opid=A9WRVGZKQVRW2E4H1FWAKQTHZ6-m1e-55cdfc19 authority=proven digest=d5750a2e36b819a1e6735b505803a67389413dd1657e6f985c732ffb86f60c62 episode=3
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=6 at=2026-10-27T18:11:16Z
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-27T16:55:06Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-settled-reply-names-its-machine: no accepted design declares areas\",\"areas unknown for goal a-capacity-refusal-is-an-environment-stop\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=6 accountingRevision=6 episodeAt=2026-10-27T16:55:06Z episodeRevision=6
+- Landing: at=2026-10-27T18:52:48Z opid=CDTY6ASKNQ27VJ2NADZV217X98-m1e-cc2e8fc8
 - StopCapability: generation=6 revision=6 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
@@ -28,4 +29,5 @@ History:
 - 2026-10-27T16:01:02Z 3BSQ40ZH3Z4XDJRQ6CC198WZB6-m1e-55cdfc19 set-priority actor=human:Wido targets=a-settled-reply-names-its-machine reason=priority-order subject=a-settled-reply-names-its-machine from=unranked to=1:88 requested-sequence=append
 - 2026-10-27T16:55:06Z EBJ8BEXHQPD1ZVNYZXDS2T7GA0-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-settled-reply-names-its-machine reason=areas unknown for goal a-settled-reply-names-its-machine: no accepted design declares areas; areas unknown for goal a-capacity-refusal-is-an-environment-stop; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses
 - 2026-10-27T18:11:16Z E7PGMY91F56934VF3HTZJRYZZE-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-settled-reply-names-its-machine
-Integrity: sha256=b42dedfebe7c9b6c484845e091800e13734202cb7448e017cfbc6d9af58fb027
+- 2026-10-27T18:52:48Z CDTY6ASKNQ27VJ2NADZV217X98-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=a-settled-reply-names-its-machine
+Integrity: sha256=d48b9d7046e29e444092584857b1d5cb774ccc9e82299c512205a9b25045af66
