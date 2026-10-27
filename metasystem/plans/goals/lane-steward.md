@@ -17,7 +17,7 @@ Open read items (fix unit 20261026t155532-b7ec017dff-r3-s3): 5
 - ReadItem: id=20261026t155532-b7ec017dff-r3-s3-1 read=20261026t155532-b7ec017dff-r3-s3 state=moved addedAt=2026-10-27T12:46:47Z changedAt=2026-10-27T14:36:10Z material=true closingReference="lane-steward-2" text="F1 (U6c run read r3-s3, material; landed as accepted risk under m1e decision 75 of 2026-10-27, fix is lane-steward-2's first unit): a real proof start never closes a commit's proof-beside-builds hold sequence. proof_admission.go:75 returns nil on a quiet host before reading records, so no release is written; :83 makes one release permanent for the commit; health.go:285 fires 'held' whenever no release follows. Effect: health row proof-beside-builds keeps saying 'held' after the proof started, and a later start of the same commit beside a running build is not held again. No steward act or cannot-heal question reads that row. Fix: proofContention takes the commit's latest start (running.json Since, newest result StartedAt) and ignores held/released records at or before it, for holdBesideBuildsLocked, health row (a) and ProofHoldUntil; add T11 cases 9 (host quiet inside the hold, proof starts at t+31 without a release, row gone) and 10 (second start of the same commit beside a running build is held again), with a mutation that fails both."
 - OpenedAt: 2026-10-12T06:57:57Z
 - FirstClaimAt: 2026-10-26T04:43:24Z
-- Revision: 28
+- Revision: 29
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=ACQYFNWEK0BHMYG524C74Z6296-m1e-acb921fd minutes=2400 reviewRounds=20 goalRevision=22
@@ -55,4 +55,5 @@ History:
 - 2026-10-27T12:46:47Z GAYWKYR0PQCGE66WZR5X1KDMMF-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=lane-steward
 - 2026-10-27T12:46:55Z RZVMNBGRE49Q44TFT4AF54473Z-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=lane-steward
 - 2026-10-27T14:36:10Z RFEJ0NGYXWT89FFFXX1P5F7XKM-ui-9ee6b543 read-items-close actor=human:Wido targets=lane-steward,lane-steward-2 displaced=ui+steward-seat@2026-10-26T17:11:38Z
-Integrity: sha256=30ea8c0c8284df668fdc0e8e401baf8b1a744405d09d0994d6a9f4965c890311
+- 2026-10-27T14:36:18Z SGJD7GP9CWBYPEMNATCS5WJTHH-ui-71c5cb39 landed actor=ui+steward-seat targets=lane-steward reason=landed under landing.review.auto-after=4h, tier 3 below human-from-tier=4; landing took 104.4 min: hand-in to merge 6.7, cheap gate not run, push unknown
+Integrity: sha256=5f2ebf95ea7460ff740537b437fd63806b8632d6acd25f183defafc0af9e66af
