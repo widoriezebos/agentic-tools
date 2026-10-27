@@ -372,7 +372,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 		if postContext == nil {
 			postContext = context.Background()
 		}
-		ref, postErr := r.Provider.Post(postContext, r.Destination, q.Text, nil)
+		ref, postErr := postQuestion(postContext, r.Provider, r.Destination, q, answerCodeOffOrOn(r.RepoRoot))
 		if postErr == nil {
 			q.Thread = &ref
 		} else {
@@ -541,6 +541,9 @@ func validateContract(r AskRequest) error {
 	words, labels := []string{r.Plain.Decision, r.Plain.IfNothing}, map[string]bool{}
 	for _, option := range r.Options {
 		switch {
+		case option.Label == "" || len(option.Label) > 64:
+			// A label is a button's words and its callback data.
+			return fmt.Errorf("keep option %q's label to one to three words (64 bytes at most)", option.Label)
 		case strings.TrimSpace(option.Consequence) == "":
 			return fmt.Errorf("say what option %q does, what it costs and how it is undone", option.Label)
 		case len([]rune(option.Consequence)) > 200:
@@ -603,6 +606,26 @@ func answerLine(q Question, codeOff bool) string {
 		return "Reply: " + strings.Join(labels, " / ")
 	}
 	return "Reply with the word and your code: " + strings.Join(labels, " / ")
+}
+
+// tapLine is answerLine where the options are buttons.
+func tapLine(q Question) string {
+	return "Tap a button, or reply: " + strings.TrimPrefix(answerLine(q, true), "Reply: ")
+}
+
+// postQuestion posts q's stored text, with one button per option for a
+// contract question asked with the code off to a provider that has buttons.
+// A text made while the code was on keeps its line and gets no buttons.
+func postQuestion(ctx context.Context, p Provider, d DestinationConfig, q Question, codeOff bool) (MessageRef, error) {
+	poster, buttons := p.(OptionPoster)
+	if !q.Contract || !codeOff || !buttons || !strings.HasSuffix(q.Text, answerLine(q, true)) {
+		return p.Post(ctx, d, q.Text, nil)
+	}
+	var labels []string
+	for _, option := range shownOptions(q) {
+		labels = append(labels, option.Label)
+	}
+	return poster.PostOptions(ctx, d, strings.TrimSuffix(q.Text, answerLine(q, true))+tapLine(q), labels, nil)
 }
 
 func plainSentence(s string, capital bool) string {

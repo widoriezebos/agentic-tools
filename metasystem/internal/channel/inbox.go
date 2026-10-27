@@ -623,6 +623,9 @@ func contractReply(c PollConfig, q Question, text string) (bool, string) {
 		if chosenOption(q, text) != nil {
 			return true, ""
 		}
+		if _, buttons := c.Provider.(OptionPoster); buttons && answerCodeOffOrOn(c.RepoRoot) {
+			return false, "I did not catch that. " + tapLine(q)
+		}
 		return false, "I did not catch that. " + answerLine(q, answerCodeOffOrOn(c.RepoRoot))
 	case last.Outcome == "acted" && recentlyActed(q, c.Now):
 		return false, fmt.Sprintf("Already done at %s (%s).", last.At.Local().Format("15:04"), last.Label)

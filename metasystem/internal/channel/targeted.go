@@ -67,7 +67,7 @@ func RetryDelivery(ctx context.Context, repo, id string, p Provider, d Destinati
 		if err = ensureText(repo, &q); err != nil {
 			return err
 		}
-		ref, postErr := p.Post(ctx, d, q.Text, nil)
+		ref, postErr := postQuestion(ctx, p, d, q, answerCodeOffOrOn(repo))
 		if postErr != nil {
 			q.Undelivered++
 			outcome = RetryUndelivered

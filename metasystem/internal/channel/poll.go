@@ -106,7 +106,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 			if err = ensureText(c.RepoRoot, q); err != nil {
 				return result, err
 			}
-			ref, postErr := c.Provider.Post(ctx, c.DestinationConfig, q.Text, nil)
+			ref, postErr := postQuestion(ctx, c.Provider, c.DestinationConfig, *q, c.answerCodeOff)
 			if postErr != nil {
 				q.Undelivered++
 				result.Undelivered++
@@ -372,6 +372,10 @@ func settleChoice(ctx context.Context, c PollConfig, q *Question) error {
 			attempt.Outcome = "refused"
 			line = fmt.Sprintf("I could not %s: %s. The question above is still open; reply %s again once that is fixed.", strings.ToLower(label), plainReason(envelope.Summary, *q), label)
 		}
+	}
+	if poster, ok := c.Provider.(OptionPoster); ok && attempt.Outcome == "acted" && c.answerCodeOff && q.Thread != nil {
+		// The act ran outside the duty's deadline; the adapter's own timeout bounds this.
+		_ = poster.ClearOptions(context.WithoutCancel(ctx), c.DestinationConfig, *q.Thread)
 	}
 	q.Answer.Phase = attempt.Outcome
 	if attempt.Outcome == "chosen" || attempt.Outcome == "refused" {

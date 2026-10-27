@@ -70,8 +70,17 @@ type message struct {
 }
 
 type wireUpdate struct {
-	UpdateID int64   `json:"update_id"`
-	Message  message `json:"message"`
+	UpdateID      int64          `json:"update_id"`
+	Message       message        `json:"message"`
+	CallbackQuery *callbackQuery `json:"callback_query"`
+}
+
+// callbackQuery is a tap on a button; Data is the button's label.
+type callbackQuery struct {
+	ID      string   `json:"id"`
+	From    user     `json:"from"`
+	Message *message `json:"message"`
+	Data    string   `json:"data"`
 }
 
 func (a *Adapter) request(ctx context.Context, dest channel.DestinationConfig, method string, body any, result any, kind channel.ErrorKind) error {
@@ -124,6 +133,30 @@ func (a *Adapter) request(ctx context.Context, dest channel.DestinationConfig, m
 }
 
 func (a *Adapter) Post(ctx context.Context, dest channel.DestinationConfig, text string, thread *channel.MessageRef) (channel.MessageRef, error) {
+	return a.post(ctx, dest, text, thread, nil)
+}
+
+// PostOptions posts text with one button per label on its first message,
+// the message that is the question's thread; a tap answers with the label.
+func (a *Adapter) PostOptions(ctx context.Context, dest channel.DestinationConfig, text string, labels []string, thread *channel.MessageRef) (channel.MessageRef, error) {
+	rows := [][]map[string]string{}
+	for _, label := range labels {
+		rows = append(rows, []map[string]string{{"text": label, "callback_data": label}})
+	}
+	return a.post(ctx, dest, text, thread, map[string]any{"inline_keyboard": rows})
+}
+
+// ClearOptions takes the buttons off the posted message.
+func (a *Adapter) ClearOptions(ctx context.Context, dest channel.DestinationConfig, posted channel.MessageRef) error {
+	id, err := strconv.ParseInt(posted.ID, 10, 64)
+	if err != nil {
+		return channel.ErrSendFailed("invalid Telegram message id")
+	}
+	body := map[string]any{"chat_id": dest.ChannelID, "message_id": id, "reply_markup": map[string]any{"inline_keyboard": [][]any{}}}
+	return a.request(ctx, dest, "editMessageReplyMarkup", body, nil, channel.SendFailed)
+}
+
+func (a *Adapter) post(ctx context.Context, dest channel.DestinationConfig, text string, thread *channel.MessageRef, keyboard any) (channel.MessageRef, error) {
 	if dest.ChannelID == "" || dest.Token == "" || dest.APIBase == "" {
 		return channel.MessageRef{}, channel.ErrUnconfigured("telegram destination is incomplete")
 	}
@@ -132,6 +165,9 @@ func (a *Adapter) Post(ctx context.Context, dest channel.DestinationConfig, text
 	parent := thread
 	for i, chunk := range chunks {
 		body := map[string]any{"chat_id": dest.ChannelID, "text": chunk}
+		if i == 0 && keyboard != nil {
+			body["reply_markup"] = keyboard
+		}
 		if parent != nil {
 			id, err := strconv.ParseInt(parent.ID, 10, 64)
 			if err != nil {
@@ -212,6 +248,18 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, r
 	}
 	var inbound []channel.Inbound
 	for _, update := range updates {
+		ack := channel.Cursor(strconv.FormatInt(update.UpdateID+1, 10))
+		if tap := update.CallbackQuery; tap != nil {
+			if tap.Message == nil || strconv.FormatInt(tap.Message.Chat.ID, 10) != dest.ChannelID || strconv.FormatInt(tap.From.ID, 10) == identity.UserID {
+				continue
+			}
+			// Best-effort: the answer only stops the phone waiting, and is
+			// usually too late by the next poll; the thread confirms the tap.
+			_ = a.request(ctx, dest, "answerCallbackQuery", map[string]any{"callback_query_id": tap.ID}, nil, channel.ReceiveFailed)
+			question := strconv.FormatInt(tap.Message.MessageID, 10)
+			inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: "tap-" + tap.ID, ThreadID: question}, ThreadID: roots[question], UserID: strconv.FormatInt(tap.From.ID, 10), Text: tap.Data, Ack: ack, UpdateID: update.UpdateID})
+			continue
+		}
 		m := update.Message
 		if strconv.FormatInt(m.Chat.ID, 10) != dest.ChannelID || strconv.FormatInt(m.From.ID, 10) == identity.UserID {
 			continue
@@ -222,7 +270,6 @@ func (a *Adapter) Receive(ctx context.Context, dest channel.DestinationConfig, r
 			parent = strconv.FormatInt(m.ReplyTo.MessageID, 10)
 			root = roots[parent]
 		}
-		ack := channel.Cursor(strconv.FormatInt(update.UpdateID+1, 10))
 		inbound = append(inbound, channel.Inbound{Ref: channel.MessageRef{ID: strconv.FormatInt(m.MessageID, 10), ThreadID: parent}, ThreadID: root, UserID: strconv.FormatInt(m.From.ID, 10), Text: m.Text, SentAt: time.Unix(m.Date, 0).UTC(), Ack: ack, UpdateID: update.UpdateID})
 	}
 	return inbound, next, nil
@@ -240,7 +287,7 @@ func (a *Adapter) updates(ctx context.Context, dest channel.DestinationConfig, a
 	if includePollingFields {
 		body["limit"] = 100
 		body["timeout"] = longPollSeconds
-		body["allowed_updates"] = []string{"message"}
+		body["allowed_updates"] = []string{"message", "callback_query"}
 	}
 	if longPollSeconds > 0 {
 		dest.HTTPTimeout = time.Duration(longPollSeconds+15) * time.Second
@@ -289,3 +336,4 @@ func (a *Adapter) Credential(ctx context.Context, dest channel.DestinationConfig
 }
 
 var _ channel.Provider = (*Adapter)(nil)
+var _ channel.OptionPoster = (*Adapter)(nil)

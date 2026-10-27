@@ -45,6 +45,8 @@ func TestContractAskRefusesWordsAPersonCannotRead(t *testing.T) {
 		{"a consequence of 201 runes", func(r *AskRequest) { r.Options[1].Consequence = strings.Repeat("é", 201) }},
 		{"a recommendation that is no label", func(r *AskRequest) { r.Recommendation = "Maybe" }},
 		{"a repeated label", func(r *AskRequest) { r.Options[0].Label = "continue" }},
+		{"an empty label", func(r *AskRequest) { r.Options[0].Label = "" }},
+		{"a label of 65 bytes", func(r *AskRequest) { r.Options[0].Label = strings.Repeat("a", 65) }},
 		{"a 10-hex run", func(r *AskRequest) { r.Plain.Decision += " at abcdef0123" }},
 		{"a path", func(r *AskRequest) { r.Options[0].Consequence = "the work stays in /Users/x" }},
 		{"a pid", func(r *AskRequest) { r.Plain.IfNothing = "pid 6378 waits" }},
