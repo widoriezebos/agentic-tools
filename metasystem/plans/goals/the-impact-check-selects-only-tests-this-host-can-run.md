@@ -9,7 +9,8 @@
 - Origin: main
 - Next step: Build on ui after a-capacity-refusal-is-an-environment-stop (priority 1.4): work build the-impact-check-selects-only-tests-this-host-can-run --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-impact-check-selects-only-tests-this-host-can-run-brief.md --lines 310 --last (FINAL revision 2 after one Astra round; about 115 production lines, 75 of them moving the existing build-context and file-decision code of internal/gopackages into two shared functions; the unit check resolves the effective build context once (go env, tags, GOFLAGS, cgo, the Go environment file) and drops tests from files this host cannot build, counting them only for packages that run by name; in the lane's whole-dependents mode the selection and the plan text are untouched; one "not runnable here" line and a JSON field; seam at 150: the gopackages extraction as the first unit). Read each round: yes. Live proof: the lane-steward U6a round-1 diff's selection on this Mac names no Linux-only test and counts none missing; lane-mode selection lines equal those of the old engine.
 - OpenedAt: 2026-10-26T07:13:34Z
-- Revision: 14
+- Revision: 15
+- Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=W6KCJAEHJ2P899NMXD617E5JFT-ui-141d7080 minutes=2400 reviewRounds=20 goalRevision=13
@@ -30,4 +31,5 @@ History:
 - 2026-10-27T20:54:33Z 60K44ZNNF6TGVGWY5SMAW36TW2-ui-141d7080 edit actor=human:Wido targets=the-impact-check-selects-only-tests-this-host-can-run reason=TierOverride: derived=1 set=2 why=tier 1 cannot complete a live read: digest mismatch, finding 436
 - 2026-10-27T20:54:40Z P59KE3K8T2SDNZHFF26M30SA1Q-ui-141d7080 approve actor=human:Wido targets=the-impact-check-selects-only-tests-this-host-can-run
 - 2026-10-27T20:54:48Z W6KCJAEHJ2P899NMXD617E5JFT-ui-141d7080 approve actor=human:Wido targets=the-impact-check-selects-only-tests-this-host-can-run
-Integrity: sha256=259b76ceb49f97b6c4f34dd96e5eaa528526c16f094cd7c8b85518edfdf0a997
+- 2026-10-27T20:54:55Z W9MNZZNY2MWECZ8T83F1G2E9AD-ui-141d7080 set-pin actor=human:Wido targets=the-impact-check-selects-only-tests-this-host-can-run
+Integrity: sha256=26bd8bc6cf6a1aba28e4b475c7d682ee82bae26780b9e89a8ef44b2a3521c0d1
