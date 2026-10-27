@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: Build first on m1e's build lane (before a-question-reminds U4a and a-launched-job-is-never-a-main): opus-builder fixes SettleReplies to resolve the machine (goal.ResolveMachine) and lineage as run() does (phase.go:187 against :205-214), adds the refusal for an empty machine at the answer record (inbox.go:693-708), and tests the steward's real order (settlement pass before the channel poll, runner.go:371 then :455) for a tap and a typed reply on a contract question through to the act; about 10 production lines; Read each round: yes; the steward submits with work review --changes --last
 - OpenedAt: 2026-10-27T16:00:22Z
-- Revision: 2
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Revision: 3
+- Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-27T16:00:32Z revision=2 opid=KM4V1ZQS6QKK04B8CCA7ZS1E2P-m1e-55cdfc19 authority=proven digest=37e5d4f7a5ad4104c30966f643d045c34dc7fe207dad4f427396178409d0b6db episode=2
+- NormApproval: approvedRef=A9WRVGZKQVRW2E4H1FWAKQTHZ6-m1e-55cdfc19 minutes=1200 reviewRounds=20 goalRevision=2
+- Approved: by=human:Wido at=2026-10-27T16:00:42Z revision=3 opid=A9WRVGZKQVRW2E4H1FWAKQTHZ6-m1e-55cdfc19 authority=proven digest=d5750a2e36b819a1e6735b505803a67389413dd1657e6f985c732ffb86f60c62 episode=3
 
 History:
 - 2026-10-27T16:00:22Z 11AKW3J08BWMFGEHHAA8CMW1RG-m1e-55cdfc19 open actor=human:Wido targets=a-settled-reply-names-its-machine
 - 2026-10-27T16:00:32Z KM4V1ZQS6QKK04B8CCA7ZS1E2P-m1e-55cdfc19 approve actor=human:Wido targets=a-settled-reply-names-its-machine
-Integrity: sha256=f4b910b1b64186bbab8e619437274260c2072e9e5b766511b8e9ca53eb6e4504
+- 2026-10-27T16:00:42Z A9WRVGZKQVRW2E4H1FWAKQTHZ6-m1e-55cdfc19 approve actor=human:Wido targets=a-settled-reply-names-its-machine
+Integrity: sha256=01c51c698024f9c31175449eec8bf64ff035ddde27f9b72c3ad515b109d8d174
