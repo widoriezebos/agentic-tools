@@ -48,8 +48,8 @@ func (git *readGit) Run(directory string, environment []string, args ...string) 
 		return []byte(filepath.Join(filepath.Dir(git.index), "objects") + "\n"), nil
 	case directory == git.top && joined == "add -A --sparse -- .":
 		return nil, nil
-	case directory == git.top && strings.HasPrefix(joined, "diff --cached --binary "+git.head+" -- ."):
-		git.excluded = append(git.excluded, args[6:]...)
+	case directory == git.top && strings.HasPrefix(joined, "diff --cached --binary --full-index "+git.head+" -- ."):
+		git.excluded = append(git.excluded, args[7:]...)
 		return git.diff, nil
 	case directory == git.top && joined == "read-tree "+git.head:
 		return nil, nil

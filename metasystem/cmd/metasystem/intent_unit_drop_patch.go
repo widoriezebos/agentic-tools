@@ -63,7 +63,7 @@ func (inv *intentInvocation) preparePendingRemoval(work *reviewWorkContext, dir 
 	if _, err := git(dir, "apply", "--reverse", "--index", "--binary", patch); err != nil {
 		return fail(err)
 	}
-	remaining, err := git(dir, "diff", "--cached", "--binary", "HEAD")
+	remaining, err := git(dir, "diff", "--cached", "--binary", "--full-index", "HEAD")
 	if err != nil {
 		return fail(err)
 	}

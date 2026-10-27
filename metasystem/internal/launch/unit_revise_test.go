@@ -28,11 +28,11 @@ func (git *rebaseFixtureGit) Run(dir string, env []string, args ...string) ([]by
 		}
 		dir = git.source
 	}
-	if len(args) > 3 && args[0] == "diff" && args[1] == "--cached" && args[2] == "--binary" {
-		if args[3] == "new-base" {
-			git.baseSeen = git.baseSeen || args[3] == "new-base"
+	if len(args) > 4 && args[0] == "diff" && args[1] == "--cached" && args[2] == "--binary" && args[3] == "--full-index" {
+		if args[4] == "new-base" {
+			git.baseSeen = true
 			args = append([]string(nil), args...)
-			args[3] = "base"
+			args[4] = "base"
 		}
 	}
 	if slices.Equal(args, []string{"rev-parse", "--verify", "new-base^{tree}"}) {
