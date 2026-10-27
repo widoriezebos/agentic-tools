@@ -223,7 +223,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	}
 	if deps.SettleReplies == nil {
 		deps.SettleReplies = func(ctx context.Context, root string) (int, error) {
-			return channelphase.SettleReplies(ctx, root, deps.ReplyEndpoint)
+			return channelphase.SettleReplies(ctx, root, goal.ResolveMachine, deps.ReplyEndpoint)
 		}
 	}
 	if deps.Channel == nil {

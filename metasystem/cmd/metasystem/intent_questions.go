@@ -249,7 +249,9 @@ func (inv *intentInvocation) settleQuestionReplies() *intentResult {
 	ctx, cancel, err := channelPollContext(root)
 	if err == nil {
 		defer cancel()
-		_, err = phase.SettleReplies(ctx, root, inv.owners.dependencies.endpoint)
+		// The machine is named at the state root, as every other intent resolves it.
+		machine := func(string) (string, error) { return inv.owners.dependencies.machine(inv.stateRoot) }
+		_, err = phase.SettleReplies(ctx, root, machine, inv.owners.dependencies.endpoint)
 	}
 	if err != nil {
 		inv.replySettleErr = err

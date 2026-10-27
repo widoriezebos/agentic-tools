@@ -75,6 +75,9 @@ func TestHelmDefaultSettlesReplies(t *testing.T) {
 		t.Run(phase, func(t *testing.T) {
 			t.Parallel()
 			loop := newHelmLoop(t)
+			// The settlement pass records under this machine's name, as the channel duty does.
+			orphanGit(t, loop.root, nil, "init", "-q")
+			orphanGit(t, loop.root, nil, "config", "metasystem.goal.machine", "helm")
 			replies := testchannel.New(t, loop.root)
 			replies.CommitReply(t, replies.Question)
 			if phase == "matched" {
