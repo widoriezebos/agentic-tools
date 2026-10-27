@@ -1,0 +1,77 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-answer-is-the-act",
+  "unit": "U2c",
+  "subject": {
+    "commit": "aa12ba13895526100961e4cbc5dc0542b0f668cb",
+    "parent": "ac1f0bc17dffd4027888d40e3f98ddd3471e8cd1",
+    "tree": "7effa9faec92f09a4b32add620ecd25b13d1bec5",
+    "patchDigest": "2f830d421babf1cfaf528c36e2bdff757b7973004c2916e9f98addc7cd2edf25",
+    "unitDigest": "04648be903e38f69c4a3bbac7b06415b91b4236dafedabd260d276251e810a03"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-709587918d1857a2c1f05a47",
+    "round": 1,
+    "closureSha256": "5335e134b4d77141eabfd6542cd77b283005c77aed2aa6d2433711a7907bf6e6"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "7effa9faec92f09a4b32add620ecd25b13d1bec5",
+    "runId": "goal-read-gate-20261027t095853z-90226182cf614537"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "3816101da99bff84c761e9033c21e3b87a545ded",
+      "digest": "da55d19ffe4aaf6c203747b75c3b5a3792486d19115ce40618bfdd4035376dcc"
+    },
+    {
+      "kind": "read",
+      "commit": "0023494738183b251af89e9736f7ce8e11bf8753",
+      "digest": "20a9b90cfac9d0132df9fe2ca11323c1d1a9c3f9eafe12b85dbaa5cdbc17494c"
+    },
+    {
+      "kind": "read",
+      "commit": "7309eb7ffb06ea65a730f76eaaae597762012785",
+      "digest": "9d5a796289238732a090edbee79644dabbd9494a305a50c442952e0a65a10f5f"
+    },
+    {
+      "kind": "read",
+      "commit": "0131c584d2fbe8a645198c6faed11b52c354e6ad",
+      "digest": "f7b558d7783a3b050e95bfd9de920a8814d5aec6074bc722d708e1b927f2a7b8"
+    },
+    {
+      "kind": "read",
+      "commit": "8493e601ffccf729236c14a31d9ebbd65533f69d",
+      "digest": "f25d562e162d2b72ef38442022db2cb4154d5b15354ea0d2825cabe19385626b"
+    },
+    {
+      "kind": "read",
+      "commit": "853c4533d0bf6bd6d6e31d548e455a0762395dfd",
+      "digest": "c7ffb0b035ec7fcd2e8c0654249a1f0610da23776ceb45fa79a1b853436e42d0"
+    },
+    {
+      "kind": "read",
+      "commit": "ee097e8cea5eae0a48f1171984163d5c9f32fc24",
+      "digest": "22b2207871a7504eb7e8555f31e216cbfd36ad2ac6caea0bf3f07a30188fceaf"
+    },
+    {
+      "kind": "read",
+      "commit": "ac1f0bc17dffd4027888d40e3f98ddd3471e8cd1",
+      "digest": "374fd6f5b067f9cdac70e73e0ad71c670284ec1c42d2a55c2055ca49171c9b66"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/pattern/churn_test.go",
+      "readerWord": "reviewed by critic root code-critic-709587918d1857a2c1f05a47"
+    },
+    {
+      "path": "metasystem/internal/pattern/helm_tick_test.go",
+      "readerWord": "reviewed by critic root code-critic-709587918d1857a2c1f05a47"
+    }
+  ],
+  "sha256": "fa5c04498ef04f30f5d32f37a0e1b18b4e58962d6db3376ff12093949ce930ff"
+}
