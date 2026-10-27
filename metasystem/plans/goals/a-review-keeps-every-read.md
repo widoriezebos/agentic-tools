@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: On m1e's build lane after a-launched-job-is-never-a-main: opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); two units, U1 the composite brief (about 60 lines: launch/unit_review.go, goal/branch/read.go, launch/unit_run.go), U2 reads retained, the union register, the stop and the publish invariant (about 100: launch/unit_stop.go, loopstop/stop.go, cmd intent_unit_review.go, intent_review_binding.go, validate/critiqueclosed.go, goal/branch/attest.go); --last on U2
 - OpenedAt: 2026-10-27T15:11:22Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=HD261DM8M9GNKZW0PJEKNG5HRQ-m1e-e06ab4ba minutes=2400 reviewRounds=20 goalRevision=2
@@ -17,4 +18,5 @@ History:
 - 2026-10-27T15:11:22Z NA85KEQH3N3AH9QRN6JCT8596Q-m1e-e06ab4ba open actor=human:Wido targets=a-review-keeps-every-read
 - 2026-10-27T15:14:24Z JQYQRYHVHB936SARD39HHHGKWB-m1e-e06ab4ba approve actor=human:Wido targets=a-review-keeps-every-read
 - 2026-10-27T15:17:54Z HD261DM8M9GNKZW0PJEKNG5HRQ-m1e-e06ab4ba approve actor=human:Wido targets=a-review-keeps-every-read
-Integrity: sha256=7f590a72ca0d434b2f32f1de2e233704b2c5167b1d43ced45ad03fd05d46bd58
+- 2026-10-27T15:18:51Z WRP31KS6EW7HT1MRVFPBZGQQAP-m1e-e06ab4ba set-pin actor=human:Wido targets=a-review-keeps-every-read
+Integrity: sha256=54fb48af6f05acd86fb878ae9dd93b813160a778b0d082015c0cef37531af9ff
