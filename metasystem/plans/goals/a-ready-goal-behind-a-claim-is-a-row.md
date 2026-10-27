@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: First on m1e's build lane after a-settled-reply-names-its-machine: opus-designer cuts the brief from the page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 105 production lines: goal/verbs.go (ClaimQuotaBlocker exported from claimQuotaRefusal, with outcome, command and landing markers), steward/health.go (the claim-quota role, the production lane-state reader), remedy.go, the deduplicated ask writer, steward/tick.go (the helm pass for this check); the sibling page's G1 and G7 build on this tip
 - OpenedAt: 2026-10-27T17:38:50Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=D1ENYWQ5728YY63ZFBTPY4QZXD-m1e-55cdfc19 minutes=1200 reviewRounds=20 goalRevision=2
@@ -17,4 +18,5 @@ History:
 - 2026-10-27T17:38:50Z VP2TFGHHV89FBF3WB16NGP61AV-m1e-55cdfc19 open actor=human:Wido targets=a-ready-goal-behind-a-claim-is-a-row
 - 2026-10-27T17:39:01Z QBN43ZJ85S07S1Y1MSKP3MDGN7-m1e-55cdfc19 approve actor=human:Wido targets=a-ready-goal-behind-a-claim-is-a-row
 - 2026-10-27T17:39:11Z D1ENYWQ5728YY63ZFBTPY4QZXD-m1e-55cdfc19 approve actor=human:Wido targets=a-ready-goal-behind-a-claim-is-a-row
-Integrity: sha256=28c9f585798d359bfc9e89ff8e4d9e5c32069de68387e6766b669f09ed248058
+- 2026-10-27T17:39:21Z S3YTVBW399TJHEQ72QHZ7MCA06-m1e-55cdfc19 set-pin actor=human:Wido targets=a-ready-goal-behind-a-claim-is-a-row
+Integrity: sha256=1bde0636417f2e188fbbfdcce04f663a81747b574b0339f53b81ae1a7f7af5f1
