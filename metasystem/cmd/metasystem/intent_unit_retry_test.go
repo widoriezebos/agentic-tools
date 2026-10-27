@@ -590,3 +590,82 @@ func checkAt(t *testing.T, b *workBed, owners intentOwners, directory string, ar
 	}
 	return code, result
 }
+
+const codexCapacityWords = "ERROR: Selected model is at capacity. Please try a different model."
+
+type capacityStarter struct {
+	bed    *workBed
+	words  string
+	builds int
+}
+
+func (s *capacityStarter) StartSupervisor(id, state string) (identity.Ref, error) {
+	r, err := s.bed.manager.Store.Read(id)
+	if err != nil {
+		return identity.Ref{}, err
+	}
+	if r.Kind != "build" {
+		return s.bed.starter.StartSupervisor(id, state)
+	}
+	s.builds++
+	_, err = s.bed.manager.Store.Update(id, func(r *launch.Record) error {
+		code := 1
+		r.State, r.ExitCode, r.Reason = launch.Failed, &code, "exit-1"
+		r.Cause, r.CauseWords = "provider-limit", s.words
+		r.FinishedAt = s.bed.manager.Now().UTC().Format(time.RFC3339Nano)
+		return nil
+	})
+	return workProcessRef(10), err
+}
+
+func capacityQuestionBed(t *testing.T, words string) (*workBed, *capacityStarter) {
+	t.Helper()
+	b := partialBuildBed(t, 3, "")
+	b.manager.Settings.WaitCapSeconds = 240
+	starter := &capacityStarter{bed: b, words: words}
+	b.manager.Supervisor = starter
+	enrol(t, b, "Wido")
+	return b, starter
+}
+
+func capacityQuestion(t *testing.T, b *workBed) channel.Question {
+	t.Helper()
+	code, held, output := outcomeBuild(t, b)
+	qs, damaged := channel.WalkOpenQuestions(b.root())
+	if code != 1 || len(qs) != 1 || len(damaged) != 0 {
+		t.Fatalf("capacity question: %d %+v %s questions=%+v damaged=%v", code, held, output, qs, damaged)
+	}
+	return qs[0]
+}
+
+func TestCapacityRefusedTwiceAsksToRetryWithTheProviderWords(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct{ name, words, message string }{
+		{"capacity", codexCapacityWords, "Selected model is at capacity. Please try a different model."},
+		{"Claude reset", "Claude AI usage limit reached|1759262400", "Claude AI usage limit reached"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			b, starter := capacityQuestionBed(t, row.words)
+			var sleeps []time.Duration
+			sleep := b.manager.Sleep
+			b.manager.Sleep = func(d time.Duration) { sleeps = append(sleeps, d); sleep(d) }
+			q := capacityQuestion(t, b)
+			r := onlyRun(t, b)
+			class := "build: exit-1; the provider said: " + row.message
+			decision := strings.ReplaceAll(b.id, "-", " ") + ": the build of unit outcome could not finish at " + q.OpenedAt.Local().Format("15:04") + " (" + class + ")."
+			if starter.builds != 2 || !slices.Equal(sleeps, []time.Duration{2 * time.Minute}) || !q.Contract || q.Plain == nil || q.Plain.Decision != decision || !slices.Equal(q.UnitStop.AcceptableActs, []string{"work-review-retry"}) {
+				t.Fatalf("retry question: builds=%d sleeps=%v question=%+v, want decision %q", starter.builds, sleeps, q, decision)
+			}
+			words := shellWords(channel.ActCommand(q))
+			want := []string{"metasystem", "work", "review", r.Goal, "--work", r.Unit, "--reason", "the machinery stopped: " + class, "--by", "Wido"}
+			if !slices.Equal(words, want) {
+				t.Fatalf("command=%q, want %q", words, want)
+			}
+			code, result, output := b.work(words[1:]...)
+			if starter.builds != 3 {
+				t.Fatalf("pasted retry did not start a third build: %d %+v %s builds=%d", code, result, output, starter.builds)
+			}
+		})
+	}
+}

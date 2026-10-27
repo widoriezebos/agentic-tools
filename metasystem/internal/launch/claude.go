@@ -142,14 +142,14 @@ func (ClaudeHeadless) Outcome(exitCode int, measureErr error) (State, string) {
 	}
 }
 
-func (ClaudeHeadless) StopCause(_ Record, stateDir string) string {
-	if _, _, ok := outage.ClassifyLogs(filepath.Join(stateDir, "stderr.log")); ok {
-		return outage.ProviderLimit
+func (ClaudeHeadless) StopCause(_ Record, stateDir string) (string, string) {
+	if _, words, ok := outage.ClassifyLogs(filepath.Join(stateDir, "stderr.log")); ok {
+		return outage.ProviderLimit, words
 	}
-	if _, _, ok := outage.ClassifyProviderResult(filepath.Join(stateDir, "result.json")); ok {
-		return outage.ProviderLimit
+	if _, words, ok := outage.ClassifyProviderResult(filepath.Join(stateDir, "result.json")); ok {
+		return outage.ProviderLimit, words
 	}
-	return ""
+	return "", ""
 }
 
 func measurePage(record Record, stateDir string) (Measurement, []Output, error) {

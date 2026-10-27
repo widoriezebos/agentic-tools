@@ -60,11 +60,43 @@ type CodexExec struct {
 	Scanner                             ProcessScanner
 }
 
-func (CodexExec) StopCause(_ Record, stateDir string) string {
-	if _, _, ok := outage.ClassifyLogs(filepath.Join(stateDir, "exec.log")); ok {
-		return outage.ProviderLimit
+var codexTokenCount = regexp.MustCompile(`^[0-9][0-9,]*$`)
+
+func (CodexExec) StopCause(_ Record, stateDir string) (string, string) {
+	path := filepath.Join(stateDir, "exec.log")
+	if _, words, ok := outage.ClassifyLogs(path); ok {
+		return outage.ProviderLimit, words
 	}
-	return ""
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return "", ""
+	}
+	// Codex prints terminal errors above "tokens used" at the log's end.
+	lines := strings.Split(string(data), "\n")
+	i := len(lines) - 1
+	for i >= 0 && strings.TrimSpace(lines[i]) == "" {
+		i--
+	}
+	if i >= 0 && codexTokenCount.MatchString(lines[i]) {
+		i--
+	}
+	if i >= 0 && lines[i] == "tokens used" {
+		i--
+	}
+	for i >= 0 && strings.TrimSpace(lines[i]) == "" {
+		i--
+	}
+	last := i
+	for i >= 0 && strings.HasPrefix(lines[i], "ERROR: ") {
+		if !strings.HasPrefix(lines[i], "ERROR: Selected model is at capacity") {
+			return "", ""
+		}
+		i--
+	}
+	if i < last {
+		return outage.ProviderLimit, lines[last]
+	}
+	return "", ""
 }
 
 func (adapter CodexExec) Command(record Record, stateDir string) (Command, error) {

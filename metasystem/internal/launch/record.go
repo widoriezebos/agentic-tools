@@ -92,6 +92,7 @@ type Record struct {
 	ExitCode            *int                       `json:"exitCode"`
 	Reason              string                     `json:"reason"`
 	Cause               string                     `json:"cause,omitempty"`
+	CauseWords          string                     `json:"causeWords,omitempty"` // The provider's diagnostic before log compression.
 	Measured            bool                       `json:"measured"`
 	Measurement         Measurement                `json:"measurement"`
 	Outputs             []Output                   `json:"outputs"`

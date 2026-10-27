@@ -97,6 +97,25 @@ func TestUnitStopQuestionsOfferSolutions(t *testing.T) {
 		solution(t, qs[0], "Retry", fmt.Sprintf("%s: the check of unit outcome could not finish at %s (%s).", strings.ReplaceAll(b.id, "-", " "), qs[0].OpenedAt.Local().Format("15:04"), class),
 			"I run the failed check again with the same inputs")
 	})
+	for _, row := range []struct{ name, words, message string }{
+		{"a second capacity refusal", codexCapacityWords, "Selected model is at capacity. Please try a different model."},
+		{"a Claude reset refusal", "Claude AI usage limit reached|1759262400", "Claude AI usage limit reached"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			b, _ := capacityQuestionBed(t, row.words)
+			q := capacityQuestion(t, b)
+			r := onlyRun(t, b)
+			class := "build: exit-1; the provider said: " + row.message
+			decision := strings.ReplaceAll(b.id, "-", " ") + ": the build of unit outcome could not finish at " + q.OpenedAt.Local().Format("15:04") + " (" + class + ")."
+			solution(t, q, "Retry", decision, "the builder takes another turn with the same brief, keeping its changes")
+			want := []string{"metasystem", "work", "review", r.Goal, "--work", r.Unit, "--reason", "the machinery stopped: " + class}
+			if !slices.Equal(q.Options[0].Act, want) || !slices.Equal(q.UnitStop.AcceptableActs, []string{"work-review-retry"}) {
+				t.Fatalf("retry act=%q, want %q", q.Options[0].Act, want)
+			}
+		})
+	}
+
 	t.Run("a builder turn's deadline", func(t *testing.T) {
 		t.Parallel()
 		at := time.Date(2026, 10, 25, 9, 0, 0, 0, time.UTC)
