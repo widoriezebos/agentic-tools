@@ -271,7 +271,7 @@ func classifyChannelPath(filePath string) (channelPath, bool) {
 	switch {
 	case len(parts) == 2 && parts[0] == "questions" && strings.HasSuffix(parts[1], ".json"):
 		id := strings.TrimSuffix(parts[1], ".json")
-		if validChannelULID(id) {
+		if ValidChannelULID(id) {
 			return channelPath{kind: "question", id: id}, true
 		}
 	case len(parts) == 3 && parts[0] == "inbox" && parts[1] != "" && strings.HasSuffix(parts[2], ".json"):
@@ -289,7 +289,8 @@ func classifyChannelPath(filePath string) (channelPath, bool) {
 	return channelPath{}, false
 }
 
-func validChannelULID(id string) bool {
+// ValidChannelULID says whether id has a channel question id's shape.
+func ValidChannelULID(id string) bool {
 	if len(id) != 26 {
 		return false
 	}

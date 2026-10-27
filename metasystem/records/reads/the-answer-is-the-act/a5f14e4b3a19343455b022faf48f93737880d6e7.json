@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-answer-is-the-act",
+  "unit": "U3",
+  "subject": {
+    "commit": "a5f14e4b3a19343455b022faf48f93737880d6e7",
+    "parent": "0131c584d2fbe8a645198c6faed11b52c354e6ad",
+    "tree": "f89d6eace7d7b2387053f927324f9f51ef20473c",
+    "patchDigest": "0aea1545e8556d779d35fe423897350fb401f4cce2792575e6f0bd482280c1f8",
+    "unitDigest": "852b7a95255a7f08ee89affea82747c6f8d4d01e937f51ea62f1942bf2e7c77b"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-e10621ce3efa58d069d56383",
+    "round": 1,
+    "closureSha256": "68001fbee8723b6bcbcd5554d575f0db5e69c07457650a759e27717e56c913b4"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "f89d6eace7d7b2387053f927324f9f51ef20473c",
+    "runId": "goal-read-gate-20261026t012521z-d81a77ff8b728161"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "3816101da99bff84c761e9033c21e3b87a545ded",
+      "digest": "da55d19ffe4aaf6c203747b75c3b5a3792486d19115ce40618bfdd4035376dcc"
+    },
+    {
+      "kind": "read",
+      "commit": "0023494738183b251af89e9736f7ce8e11bf8753",
+      "digest": "20a9b90cfac9d0132df9fe2ca11323c1d1a9c3f9eafe12b85dbaa5cdbc17494c"
+    },
+    {
+      "kind": "read",
+      "commit": "7309eb7ffb06ea65a730f76eaaae597762012785",
+      "digest": "9d5a796289238732a090edbee79644dabbd9494a305a50c442952e0a65a10f5f"
+    },
+    {
+      "kind": "read",
+      "commit": "0131c584d2fbe8a645198c6faed11b52c354e6ad",
+      "digest": "f7b558d7783a3b050e95bfd9de920a8814d5aec6074bc722d708e1b927f2a7b8"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/fleet_provider_pause_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_alert_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_answer_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/steward_rearm_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/alert_clear_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/decision_identity_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/handoff_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/health_bed_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/health_standing_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/lane_silent_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/notify_journal_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/notify_test_helpers_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/remedy_remaining_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_repository_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/signal_channel_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/spend_fence_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    },
+    {
+      "path": "metasystem/internal/steward/stuck_units_test.go",
+      "readerWord": "reviewed by critic root code-critic-e10621ce3efa58d069d56383"
+    }
+  ],
+  "sha256": "f6cf1adce1134588d05c99bf7b0cb34d805031546fbd7fdc4e7d0a79fd8798b5"
+}

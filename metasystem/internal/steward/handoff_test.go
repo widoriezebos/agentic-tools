@@ -268,6 +268,7 @@ func TestHandoffNoticeAuthorizationIsRecheckedBeforeDelivery(t *testing.T) {
 	releaseSnapshot := make(chan struct{})
 	var deliveryCalls atomic.Int32
 	deps := pendingDeliveryDependencies{
+		funnel: noticeFunnel{decider: allowEveryNotice},
 		afterSnapshot: func() {
 			close(snapshotRead)
 			<-releaseSnapshot
@@ -328,7 +329,7 @@ func TestHandoffNoticeDeliveryDoesNotReacquireArbitration(t *testing.T) {
 	beforeArbitrationWait = func() { t.Error("handoff notice delivery tried to acquire steward arbitration") }
 	t.Cleanup(func() { beforeArbitrationWait = previousWait })
 	go func() {
-		delivered, err := deliverPendingWith(root, func(_, _ string) error { return nil })
+		delivered, err := deliverPendingAllowed(root, func(_, _ string) error { return nil })
 		done <- deliveryResult{delivered: delivered, err: err}
 	}()
 	result := <-done
@@ -347,6 +348,7 @@ func TestHandoffNoticeDeliveryUsesTheInitialQueueSnapshot(t *testing.T) {
 
 	var deliveryCalls atomic.Int32
 	deps := pendingDeliveryDependencies{
+		funnel: noticeFunnel{decider: allowEveryNotice},
 		afterSnapshot: func() {
 			if err := os.WriteFile(filepath.Join(pendingDir(root), "late-malformed.json"), []byte("{"), 0o644); err != nil {
 				t.Fatal(err)
@@ -380,7 +382,7 @@ func TestHandoffNoticeDeliveryRequiresLiveAuthorization(t *testing.T) {
 		if held, err := completeHandoffRevival(root, prober, TickConfig{}, deadCensus(), intent.Nonce, func(Intent) error { return nil }); err != nil || !held.Held {
 			t.Fatalf("fixture handoff did not hold: %+v %v", held, err)
 		}
-		delivered, err := deliverPendingWith(root, deliver)
+		delivered, err := deliverPendingAllowed(root, deliver)
 		if err != nil || delivered != 1 || deliveryCalls.Load() != 1 {
 			t.Fatalf("a live bound handoff notice did not deliver: delivered=%d calls=%d err=%v", delivered, deliveryCalls.Load(), err)
 		}
@@ -401,7 +403,7 @@ func TestHandoffNoticeDeliveryRequiresLiveAuthorization(t *testing.T) {
 		if err := os.Remove(filepath.Join(intentsDir(root), intent.Nonce+".json")); err != nil {
 			t.Fatal(err)
 		}
-		delivered, err := deliverPendingWith(root, deliver)
+		delivered, err := deliverPendingAllowed(root, deliver)
 		if err != nil || delivered != 0 || deliveryCalls.Load() != 0 {
 			t.Fatalf("an orphaned terminal notice was delivered: delivered=%d calls=%d err=%v", delivered, deliveryCalls.Load(), err)
 		}
@@ -421,7 +423,7 @@ func TestHandoffNoticeDeliveryRequiresLiveAuthorization(t *testing.T) {
 		if err := UpdateIntent(root, intent); err != nil {
 			t.Fatal(err)
 		}
-		delivered, err := deliverPendingWith(root, deliver)
+		delivered, err := deliverPendingAllowed(root, deliver)
 		if err == nil || !strings.Contains(err.Error(), "does not name a live bound seatHandoff intent") || delivered != 0 || deliveryCalls.Load() != 0 {
 			t.Fatalf("malformed live authority did not refuse delivery: delivered=%d calls=%d err=%v", delivered, deliveryCalls.Load(), err)
 		}

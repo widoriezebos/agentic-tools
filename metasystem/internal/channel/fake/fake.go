@@ -61,6 +61,7 @@ type scripted struct {
 	ReplyTo  int64   `json:"reply_to"`
 	Chat     int64   `json:"chat"`
 	Date     *int64  `json:"date"`
+	Tap      string  `json:"tap"`
 }
 
 type slackAssigned struct {
@@ -291,6 +292,8 @@ func (s *server) serveTelegram(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"message_id": id, "chat": map[string]any{"id": intValue(body["chat_id"])}, "date": s.now().Unix(), "text": stringValue(body["text"])}})
 	case "getUpdates":
 		s.telegramUpdates(r.Context(), w, body, listener)
+	case "answerCallbackQuery", "editMessageReplyMarkup":
+		json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": true})
 	case "getMe":
 		json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": map[string]any{"id": 424242, "is_bot": true, "username": "fakebot"}})
 	default:
@@ -558,6 +561,16 @@ func (s *server) telegramUpdatesLocked(body map[string]any, listener string) []m
 			continue
 		}
 		if listeners, restricted := s.controls.DeliverOnlyTo[strconv.FormatInt(row.UpdateID, 10)]; restricted && !contains(listeners, listener) {
+			continue
+		}
+		if row.Scripted.Tap != "" {
+			// A tap on the button of message reply_to; its query id is the row's message id.
+			query := map[string]any{"id": strconv.FormatInt(row.MessageID, 10), "from": map[string]any{"id": intValue(row.Scripted.User), "is_bot": false}, "data": row.Scripted.Tap,
+				"message": map[string]any{"message_id": row.Scripted.ReplyTo, "date": 0, "chat": map[string]any{"id": row.Scripted.Chat}}}
+			updates = append(updates, map[string]any{"update_id": row.UpdateID, "callback_query": query})
+			if len(updates) == limit {
+				break
+			}
 			continue
 		}
 		message := map[string]any{"message_id": row.MessageID, "date": row.Date, "text": row.Scripted.Text, "chat": map[string]any{"id": row.Scripted.Chat}, "from": map[string]any{"id": intValue(row.Scripted.User), "is_bot": false}}

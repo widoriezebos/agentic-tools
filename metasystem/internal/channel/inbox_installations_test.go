@@ -61,10 +61,26 @@ func inboxGoalFile(id string) []byte {
 	return goal.RenderFile(&goal.GoalFile{Id: id, State: goal.StateQueued, Tier: 1, Intent: "Question target.", Origin: "main", NextStep: "Wait.", OpenedAt: "2026-09-03T00:00:00Z", Revision: 1, History: []goal.HistoryLine{opened}})
 }
 
-func newInboxBed(t *testing.T) *inboxBed {
+// inboxSetup adds configuration lines to the shared metasystem.conf and,
+// when now is set, fixes the bed's and the fake bot's clock.
+type inboxSetup struct {
+	conf string
+	now  time.Time
+}
+
+func newInboxBed(t *testing.T, setups ...inboxSetup) *inboxBed {
 	t.Helper()
+	var setup inboxSetup
+	if len(setups) > 0 {
+		setup = setups[0]
+	}
 	base := t.TempDir()
 	bed := &inboxBed{origin: filepath.Join(base, "origin.git"), now: time.Now().UTC().Truncate(time.Second), parked: make(chan fake.WaitPoint, 16)}
+	hooks := fake.ServeHooks{Parked: bed.parked}
+	if !setup.now.IsZero() {
+		bed.now = setup.now
+		hooks.Now = func() time.Time { return setup.now }
+	}
 	inboxGit(t, base, "init", "-q", "--bare", "-b", "main", bed.origin)
 	seed := filepath.Join(base, "seed")
 	inboxGit(t, base, "clone", "-q", bed.origin, seed)
@@ -77,7 +93,7 @@ func newInboxBed(t *testing.T) *inboxBed {
 		"plans/goals/backlog.md":   goal.RenderRoot(root),
 		"plans/goals/seat-goal.md": inboxGoalFile("seat-goal"),
 		"plans/goals/lane-goal.md": inboxGoalFile("lane-goal"),
-		"metasystem.conf":          []byte("metasystem.runtimes=fake\nmetasystem.budget.tier-1=1h/3/360m/1/0\nmetasystem.budget.review-round-max=3\n"),
+		"metasystem.conf":          []byte("metasystem.runtimes=fake\nmetasystem.budget.tier-1=1h/3/360m/1/0\nmetasystem.budget.review-round-max=3\n" + setup.conf),
 	}
 	for path, body := range files {
 		full := filepath.Join(seed, filepath.FromSlash(path))
@@ -96,8 +112,9 @@ func newInboxBed(t *testing.T) *inboxBed {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	ready := make(chan string, 1)
+	hooks.Ready = ready
 	go func() {
-		done <- fake.ServeWithHooks(ctx, bed.fakeDir, fake.ServeHooks{Ready: ready, Parked: bed.parked})
+		done <- fake.ServeWithHooks(ctx, bed.fakeDir, hooks)
 	}()
 	select {
 	case <-ready:

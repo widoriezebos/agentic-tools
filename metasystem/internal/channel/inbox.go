@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -444,10 +445,17 @@ func flushNotices(ctx context.Context, c PollConfig, result *PollResult) error {
 			}
 			thread = &MessageRef{ID: notice.ReplyTo, ThreadID: root}
 		}
-		if _, err := c.Provider.Post(ctx, c.DestinationConfig, notice.Text, thread); err != nil {
+		ref, err := c.Provider.Post(ctx, c.DestinationConfig, notice.Text, thread)
+		if err != nil {
 			result.Undelivered++
 			kept = append(kept, notice)
 			continue
+		}
+		if id, _, ok := strings.Cut(strings.TrimPrefix(notice.Record, "answer:"), ":"); ok && strings.HasPrefix(notice.Record, "answer:") {
+			if q, err := ReadQuestion(c.RepoRoot, id); err == nil {
+				q.Notices = append(q.Notices, ref.ID)
+				_ = writeJSON(questionPath(c.RepoRoot, id), q)
+			}
 		}
 		ledger.Posted = append(ledger.Posted, notice.Record)
 	}
@@ -481,7 +489,7 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 	}
 	open := 0
 	for _, q := range questions {
-		if q.State == "open" && q.Answer == nil {
+		if q.State == "open" && (q.Answer == nil || q.Contract && q.Answer.Phase == "accepted") || recentlyActed(q, c.Now) {
 			open++
 		}
 	}
@@ -533,13 +541,38 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 		if in.ReplyTo != nil {
 			replyTo := *in.ReplyTo
 			threaded := false
+			var contract *Question
 			for i := range questions {
 				q := &questions[i]
-				if q.Thread != nil && (replyTo == q.Thread.ID || replyTo == threadRoot(*q.Thread)) {
+				if q.Thread != nil && (replyTo == q.Thread.ID || replyTo == threadRoot(*q.Thread) || slices.Contains(q.Notices, replyTo)) {
 					threaded = true
 					if q.State == "open" && q.Answer == nil {
 						match = q
 					}
+					if q.Contract {
+						contract = q
+					}
+				}
+			}
+			if contract != nil {
+				chosen, line := contractReply(c, *contract, in.Text)
+				if handled[record.path] || !chosen && line == "" {
+					continue
+				}
+				match = contract
+				if !chosen {
+					match = nil
+					if err := queueNotice(noticesPath(c), "reply:"+record.path, line, in.ReplyTo, threadRoot(*contract.Thread)); err != nil {
+						return errors.Join(publicationErrors, err)
+					}
+				}
+				handled[record.path] = true
+				if err := writeJSON(handledPath, sortedHandled(handled)); err != nil {
+					return errors.Join(publicationErrors, err)
+				}
+				if !chosen {
+					result.Dispositions++
+					continue
 				}
 			}
 			if !threaded && status.GoalID != "" && statusRoot != "" && (replyTo == statusRoot || replyTo == status.Ref.ID) && !handled[record.path] {
@@ -576,6 +609,62 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 		result.Dispositions++
 	}
 	return publicationErrors
+}
+
+// contractReply is what a verified reply in a contract question's thread
+// does: choose an option, or only earn a line; neither leaves it unread.
+func contractReply(c PollConfig, q Question, text string) (bool, string) {
+	last := Attempt{}
+	if n := len(q.Attempts); n > 0 {
+		last = q.Attempts[n-1]
+	}
+	switch {
+	case q.State == "open" && (q.Answer == nil || q.Answer.Phase == "accepted"):
+		if chosenOption(q, text) != nil {
+			return true, ""
+		}
+		if _, buttons := c.Provider.(OptionPoster); buttons && answerCodeOffOrOn(c.RepoRoot) {
+			return false, "I did not catch that. " + tapLine(q)
+		}
+		return false, "I did not catch that. " + answerLine(q, answerCodeOffOrOn(c.RepoRoot))
+	case last.Outcome == "acted" && recentlyActed(q, c.Now):
+		return false, fmt.Sprintf("Already done at %s (%s).", last.At.Local().Format("15:04"), last.Label)
+	case last.Outcome == "acted" || q.State != "closed":
+		return false, ""
+	}
+	settled := "This was settled"
+	if !q.ClosedAt.IsZero() {
+		settled += " at " + q.ClosedAt.Local().Format("15:04")
+	}
+	because := q.ClosedBecause
+	if _, reason, ok := strings.Cut(because, ": "); ok && q.UnitStop != nil && q.UnitStop.ClosedBy != "" {
+		// An act's record closes with "<act kind>: <reason>"; the line says the reason.
+		because = reason
+	}
+	if because != "" {
+		return false, settled + ": " + plainSentence(because, false)
+	}
+	if !q.ClosedAt.IsZero() {
+		return false, settled + "."
+	}
+	return false, "This was settled already."
+}
+
+// recentlyActed is a contract question whose chosen act ran less than a day
+// ago: a reply in its thread is still read and answered.
+func recentlyActed(q Question, now time.Time) bool {
+	n := len(q.Attempts)
+	return q.Contract && n > 0 && q.Attempts[n-1].Outcome == "acted" && now.Before(q.Attempts[n-1].At.Add(24*time.Hour))
+}
+
+// chosenOption is the option whose label the reply is, ignoring case.
+func chosenOption(q Question, text string) *Option {
+	for i := range q.Options {
+		if strings.EqualFold(strings.TrimSpace(text), q.Options[i].Label) {
+			return &q.Options[i]
+		}
+	}
+	return nil
 }
 
 func threadRoot(ref MessageRef) string {
@@ -618,7 +707,7 @@ func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.Channe
 	}
 	q.Answer = &Answer{Machine: c.Machine, Lineage: c.Lineage, Provider: in.Provider, Text: in.Text, UserID: in.UserID, Ref: ref, At: sent, Step: *in.Step, ULID: ulid, Opid: opid, ApprovalULID: approvalULID, Phase: "matched"}
 	q.State = "answered"
-	if LaneStopCommand(*q) != "" {
+	if LaneStopCommand(*q) != "" || q.Contract {
 		q.State = "open"
 	}
 	if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {

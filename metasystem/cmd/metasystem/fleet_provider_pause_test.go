@@ -583,15 +583,13 @@ func fleetProviderExpiryPublic(t *testing.T) {
 				if err := os.MkdirAll(logPath, 0700); err != nil {
 					t.Fatal(err)
 				}
+				// The notice is kept from a person, so a broken local log fails
+				// nothing: the expiry is recorded and its notice kept once.
 				if err := tick(root, at); err != nil {
-					t.Fatalf("failed notification must not abort the tick: %v", err)
+					t.Fatalf("a broken local log must not abort the tick: %v", err)
 				}
-				if c := read(); c.Mark.ConsecutiveFailures != 0 || len(c.Intervals) != 1 || c.Intervals[0].AlertDelivered {
-					t.Fatalf("failed delivery lost retained expiry: %+v", c)
-				}
-				data, err := os.ReadFile(runnerLog)
-				if err != nil || !strings.Contains(string(data), "provider expiry or stale alert failed:") {
-					t.Fatalf("delivery failure must be recorded: %s, %v", data, err)
+				if c := read(); c.Mark.ConsecutiveFailures != 0 || len(c.Intervals) != 1 || !c.Intervals[0].AlertDelivered {
+					t.Fatalf("a kept notice lost its expiry: %+v", c)
 				}
 				if err := os.Remove(logPath); err != nil {
 					t.Fatal(err)
@@ -625,21 +623,39 @@ func fleetProviderExpiryPublic(t *testing.T) {
 			if c := read(); c.Mark.ConsecutiveFailures != 0 || len(c.Intervals) != 1 || c.Intervals[0].FirstSuccessAt != first.Format(time.RFC3339Nano) {
 				t.Fatalf("first genuine success overwritten or failure replay resurrected mark: %+v", c)
 			}
-			data, err := os.ReadFile(logPath)
-			if err != nil || strings.Count(string(data), "the stale outage mark expired") != 1 {
-				t.Fatalf("stale alert delivery: %s %v", data, err)
+			if kept := fleetStaleNoticesKept(t, root); kept != 1 {
+				t.Fatalf("stale alert kept %d times, want once", kept)
 			}
 			// A later outage has its own notification, even for the same provider.
 			observe(first.Add(4*time.Minute), outage.ProviderLimit)
 			if err := tick(root, first.Add(4*time.Minute+outage.Horizon)); err != nil {
 				t.Fatal(err)
 			}
-			data, err = os.ReadFile(logPath)
-			if err != nil || strings.Count(string(data), "the stale outage mark expired") != 2 {
-				t.Fatalf("later mark lost its alert: %s %v", data, err)
+			if kept := fleetStaleNoticesKept(t, root); kept != 2 {
+				t.Fatalf("later mark lost its alert: kept %d", kept)
 			}
 		})
 	}
+}
+
+// fleetStaleNoticesKept counts the stale-mark notices the journal kept from
+// a person; none reaches one.
+func fleetStaleNoticesKept(t *testing.T, root string) int {
+	t.Helper()
+	data, err := os.ReadFile(steward.NotificationJournalPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	kept := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.Contains(line, "the stale outage mark expired") {
+			if !strings.Contains(line, `"withheld":"provider"`) {
+				t.Fatalf("a stale notice was not kept: %s", line)
+			}
+			kept++
+		}
+	}
+	return kept
 }
 
 func fleetProviderClearPublic(t *testing.T) {
@@ -722,9 +738,8 @@ func fleetProviderClearAt(t *testing.T, expired bool) {
 				t.Fatal(err)
 			}
 		}
-		data, err := os.ReadFile(filepath.Join(filepath.Dir(steward.NotificationJournalPath(bed.root())), "notifications.log"))
-		if err != nil || strings.Count(string(data), "the stale outage mark expired") != 1 {
-			t.Fatalf("clear after expiry must retain exactly one stale alert: %s, %v", data, err)
+		if kept := fleetStaleNoticesKept(t, bed.root()); kept != 1 {
+			t.Fatalf("clear after expiry must retain exactly one stale alert: kept %d", kept)
 		}
 	}
 	for _, at := range []time.Time{now.Add(time.Minute), now.Add(4 * time.Minute)} {

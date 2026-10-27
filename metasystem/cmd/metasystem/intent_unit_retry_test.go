@@ -394,7 +394,11 @@ func TestFailedBuildQuestionSaysWhatHappened(t *testing.T) {
 			q, r := partialQuestion(t, b)
 			command := channel.ActCommand(q)
 			last := "The builder's last words: The error table is still open: it needs the codes from the design.\nRESULT: PARTIAL"
-			if q.Plain == nil || q.Plain.Decision != "Unit outcome of goal "+b.id+" stopped after build round 1: "+r.Rounds[0].Stop.Class || slices.Contains(q.Facts, r.Rounds[0].Stop.Class) {
+			decision := "Unit outcome of goal " + b.id + " stopped after build round 1: " + r.Rounds[0].Stop.Class
+			if enrolled {
+				decision = strings.ReplaceAll(b.id, "-", " ") + ": the build of unit outcome stopped at " + q.OpenedAt.Local().Format("15:04") + " (" + r.Rounds[0].Stop.Class + ")."
+			}
+			if q.Plain == nil || q.Plain.Decision != decision || slices.Contains(q.Facts, r.Rounds[0].Stop.Class) {
 				t.Fatalf("the decision does not name the class: %+v", q)
 			}
 			if !slices.Contains(q.Facts, "474 changed lines against 750 declared") || !slices.Contains(q.Facts, last) {

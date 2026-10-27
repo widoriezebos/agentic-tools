@@ -145,7 +145,7 @@ func spendOwned(episodes []AlertEpisode) []AlertEpisode {
 func TestSpendFenceHigherMultipleRearmsWhileLowerMultipleRemainsCrossed(t *testing.T) {
 	fixture := newSpendEpisodeFixture(t)
 	root := fixture.root
-	if err := updateSpendEpisodesWith(root, SpendObservation{}, spendFenceNow, noticeFunnel{}, fixture.deliver); err != nil {
+	if err := updateSpendEpisodesWith(root, SpendObservation{}, spendFenceNow, noticeFunnel{decider: allowEveryNotice}, fixture.deliver); err != nil {
 		t.Fatal(err)
 	}
 	if len(fixture.messages) != 0 {
@@ -162,7 +162,7 @@ func TestSpendFenceHigherMultipleRearmsWhileLowerMultipleRemainsCrossed(t *testi
 		{Valid: true, Crossings: []SpendCrossing{x1}},
 		{Valid: true, Crossings: []SpendCrossing{x2}},
 	} {
-		if err := updateSpendEpisodesWith(root, observation, spendFenceNow.Add(time.Duration(index)*time.Minute), noticeFunnel{}, fixture.deliver); err != nil {
+		if err := updateSpendEpisodesWith(root, observation, spendFenceNow.Add(time.Duration(index)*time.Minute), noticeFunnel{decider: allowEveryNotice}, fixture.deliver); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -203,29 +203,29 @@ func TestSpendFenceCrossingsHaveIndependentEpisodesAndRearmWhileOtherRoleDead(t 
 	retroDigest := evidenceDigest("retro debt remains dead")
 	dead := HealthVerdict{Aggregate: "unhealthy", FindingDigest: retroDigest,
 		Roles: []RoleVerdict{{Role: RoleRetroDebt, Status: HealthDead}}}
-	if _, err := updateAlertEpisodesWith(root, dead, "HEALTH unhealthy — retro debt", spendFenceNow, noticeFunnel{}, fixture.deliver); err != nil {
+	if _, err := updateAlertEpisodesWith(root, dead, "HEALTH unhealthy — retro debt", spendFenceNow, noticeFunnel{decider: allowEveryNotice}, fixture.deliver); err != nil {
 		t.Fatal(err)
 	}
 	tokens1 := crossing("day-2026-09-02", "day", "tokens", 1, 260000000, 250000000)
 	money1 := crossing("day-2026-09-02", "day", "money", 1, 760, 750)
 	first := SpendObservation{Valid: true, Crossings: []SpendCrossing{tokens1, money1}}
-	if err := updateSpendEpisodesWith(root, first, spendFenceNow.Add(time.Minute), noticeFunnel{}, fixture.deliver); err != nil {
+	if err := updateSpendEpisodesWith(root, first, spendFenceNow.Add(time.Minute), noticeFunnel{decider: allowEveryNotice}, fixture.deliver); err != nil {
 		t.Fatal(err)
 	}
-	if err := updateSpendEpisodesWith(root, first, spendFenceNow.Add(2*time.Minute), noticeFunnel{}, fixture.deliver); err != nil {
+	if err := updateSpendEpisodesWith(root, first, spendFenceNow.Add(2*time.Minute), noticeFunnel{decider: allowEveryNotice}, fixture.deliver); err != nil {
 		t.Fatal(err)
 	}
 	tokens2 := crossing("day-2026-09-02", "day", "tokens", 2, 510000000, 250000000)
-	if err := updateSpendEpisodesWith(root, SpendObservation{Valid: true, Crossings: []SpendCrossing{tokens2, money1}}, spendFenceNow.Add(3*time.Minute), noticeFunnel{}, fixture.deliver); err != nil {
+	if err := updateSpendEpisodesWith(root, SpendObservation{Valid: true, Crossings: []SpendCrossing{tokens2, money1}}, spendFenceNow.Add(3*time.Minute), noticeFunnel{decider: allowEveryNotice}, fixture.deliver); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := updateAlertEpisodesWith(root, dead, "HEALTH unhealthy — retro debt", spendFenceNow.Add(4*time.Minute), noticeFunnel{}, fixture.deliver); err != nil {
+	if _, err := updateAlertEpisodesWith(root, dead, "HEALTH unhealthy — retro debt", spendFenceNow.Add(4*time.Minute), noticeFunnel{decider: allowEveryNotice}, fixture.deliver); err != nil {
 		t.Fatal(err)
 	}
-	if err := updateSpendEpisodesWith(root, SpendObservation{Valid: true, Crossings: []SpendCrossing{money1}}, spendFenceNow.Add(5*time.Minute), noticeFunnel{}, fixture.deliver); err != nil {
+	if err := updateSpendEpisodesWith(root, SpendObservation{Valid: true, Crossings: []SpendCrossing{money1}}, spendFenceNow.Add(5*time.Minute), noticeFunnel{decider: allowEveryNotice}, fixture.deliver); err != nil {
 		t.Fatal(err)
 	}
-	if err := updateSpendEpisodesWith(root, first, spendFenceNow.Add(6*time.Minute), noticeFunnel{}, fixture.deliver); err != nil {
+	if err := updateSpendEpisodesWith(root, first, spendFenceNow.Add(6*time.Minute), noticeFunnel{decider: allowEveryNotice}, fixture.deliver); err != nil {
 		t.Fatal(err)
 	}
 
@@ -279,7 +279,7 @@ func TestTickCarriesSpendObservationAndUnknownDoesNotClearEpisodes(t *testing.T)
 		}
 		return ledger, nil
 	}
-	dependencies := tickHealthDependencies{evaluate: tickHealthRoles(t, root, ledger.Machine, measure), now: time.Now, deliver: fixture.deliver}
+	dependencies := tickHealthDependencies{evaluate: tickHealthRoles(t, root, ledger.Machine, measure), now: time.Now, deliver: fixture.deliver, funnel: noticeFunnel{decider: allowEveryNotice}}
 	result := TickResult{}
 	process := identity.Ref{Pid: 1, StartedAtSec: 1}
 	if err := completeTickHealthWithDependencies(root, &result, 1, process, spendFenceNow, dependencies); err != nil {

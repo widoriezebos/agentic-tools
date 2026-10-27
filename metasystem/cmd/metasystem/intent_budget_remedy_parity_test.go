@@ -93,10 +93,6 @@ func budgetRemedyCases() []budgetRemedyCase {
 			refuse: approveWithOtherBudget, oldBox: oldLiteralBox("norm"), wantBox: literalBox("norm"),
 		},
 		{
-			name: "a new box for a breach-stopped goal", stopped: true,
-			refuse: budget("8h/6/360m/2/3"), oldBox: oldLiteralBox("keep"), wantBox: literalBox("keep"),
-		},
-		{
 			name: "an incomplete compact box is completed", amend: makeQueued,
 			refuse: budget("8h/6"), oldBox: samePrintedBox,
 		},

@@ -154,11 +154,15 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 		result := intentResult{Outcome: intentConfirmed, Targets: targets, Data: data}
 		var headline, fact string
 		switch {
-		case c.Answer != nil && (c.State != "closed" || c.ClosedBecause == ""):
+		case c.Answer != nil && (c.State != "closed" || c.ClosedBecause == "" || c.Contract && (c.Answer.Phase == "accepted" || c.Answer.Phase == "acted")):
 			result.Summary = "question " + c.ID + " " + channel.AnswerSummary(c)
 			headline = result.Summary
 		case c.State == "closed" && (channel.LaneStopCommand(c) != "" || c.Recovery != nil) && c.ClosedBecause != "":
 			result.Summary = fmt.Sprintf("channel question %s: %s", c.ID, c.ClosedBecause)
+			headline = result.Summary
+		case c.State == "closed" && c.Contract && c.UnitStop != nil && c.UnitStop.ClosedBy != "" && !c.ClosedAt.IsZero():
+			act, _, _ := strings.Cut(c.ClosedBecause, ": ")
+			result.Summary = fmt.Sprintf("channel question %s was settled by %s at %s", c.ID, act, c.ClosedAt.Local().Format("15:04"))
 			headline = result.Summary
 		case c.State == "closed":
 			result.Summary = fmt.Sprintf("channel question %s is withdrawn", c.ID)
@@ -442,7 +446,7 @@ func runIntentAskWithdraw(inv *intentInvocation, id string) int {
 			view: func(page *textui.Page) { page.Done(joinFacts(page, headline...)) }})
 	}
 	provider, destination := inv.owners.processes.channelLink(inv.stateRoot)
-	q, err := channel.Withdraw(inv.stateRoot, id, reason, provider, destination)
+	q, err := channel.Withdraw(inv.stateRoot, id, reason, provider, destination, inv.unitStopNow())
 	switch {
 	case errors.Is(err, channel.ErrChannelBusy):
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: targets, Summary: err.Error(), next: inv.sameCommand(), nextReason: "the same withdrawal runs once the poll finishes"})

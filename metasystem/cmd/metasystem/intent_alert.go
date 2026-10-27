@@ -210,6 +210,8 @@ func alertSituation(episode steward.AlertEpisode) string {
 		line += " (its signal can't be read now)"
 	case episode.Acknowledged:
 		line += " (seen)"
+	case episode.TransportResult == steward.TransportWithheld:
+		line += " (kept here; not sent to a person)"
 	}
 	return line
 }

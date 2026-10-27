@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-answer-is-the-act",
+  "unit": "U1",
+  "subject": {
+    "commit": "986b4e954ea53ee582542333b99cb9259610e35b",
+    "parent": "41f9dd33b1739182b4683851a7dce5622660346b",
+    "tree": "a522b267115eb8fb155f04275875952b5b108994",
+    "patchDigest": "4f828522ceb517db6002770bc58477e9ca1b99ce3b639f77a9380b96946fa727",
+    "unitDigest": "8c28edefa23913fc6173a046991f34dc719b6e6c80cbe3250c1388b3ab69f801"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-2f26cd7d1e212ccae8ca71fc",
+    "round": 1,
+    "closureSha256": "5ed952045cc583132d8e54ca203c541975d8bbdbaa368f4b163a071884df86b2"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a522b267115eb8fb155f04275875952b5b108994",
+    "runId": "goal-read-gate-20261025t132820z-6e98233faf783525"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_retry_test.go",
+      "readerWord": "reviewed by critic root code-critic-2f26cd7d1e212ccae8ca71fc"
+    },
+    {
+      "path": "metasystem/internal/channel/question_text_test.go",
+      "readerWord": "reviewed by critic root code-critic-2f26cd7d1e212ccae8ca71fc"
+    }
+  ],
+  "sha256": "db4f0c1db9ea7b9144c5431f0fb3d16025ced42ebee5cabdeeb9fa1c5df7c058"
+}

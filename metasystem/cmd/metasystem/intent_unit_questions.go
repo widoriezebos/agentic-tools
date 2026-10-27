@@ -167,7 +167,7 @@ func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 		}
 		subject := record.Goal + "/" + record.Unit + "/" + record.ID
 		act := "work-review-size"
-		next := inv.workArgv(record, "review", "--reason", "TEXT", "--by", "NAME")
+		next := inv.workArgv(record, "review", "--reason", fmt.Sprintf("accepted at %d lines", round.BuildLines), "--by", "NAME")
 		if kind == "build-gap" {
 			act = "work-revise"
 			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
@@ -208,12 +208,54 @@ func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 		if failure {
 			decision, facts, next = inv.failureAsk(record, round, act, next)
 		}
-		_, err := channel.Ask(channel.AskRequest{Plain: &channel.Plain{Decision: decision, IfNothing: "the unit stays held; this question closes when the act is recorded"}, RepoRoot: root, Goal: record.Goal, Kind: "other", Facts: facts, Recommendation: "Run the requested act to continue this retained round.", UnitStop: &channel.UnitStopQuestion{Loop: "unit-build", Subject: subject, Attempt: round.Number, Finding: kind, Needs: shellCommand(next), AcceptableActs: []string{act}}, Now: inv.unitStopNow()})
+		request := channel.AskRequest{Plain: &channel.Plain{Decision: decision, IfNothing: "the unit stays held; this question closes when the act is recorded"}, RepoRoot: root, Goal: record.Goal, Kind: "other", Facts: facts, Recommendation: "Run the requested act to continue this retained round.", UnitStop: &channel.UnitStopQuestion{Loop: "unit-build", Subject: subject, Attempt: round.Number, Finding: kind, Needs: shellCommand(next), AcceptableActs: []string{act}}, Now: inv.unitStopNow()}
+		asked := correctionChoice(request, record, round, next)
+		_, err := channel.Ask(asked)
+		if err != nil && asked.Contract {
+			// Words a person cannot read ask as before.
+			_, err = channel.Ask(request)
+		}
 		if err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// correctionChoice asks a held build's remedy as solutions, when its command
+// is ready to run: Continue, Retry or Accept the size runs the pasteable act,
+// Stop here runs nothing.
+func correctionChoice(request channel.AskRequest, record launch.UnitRunRecord, round launch.UnitRound, next []string) channel.AskRequest {
+	act, words, at := request.UnitStop.AcceptableActs[0], strings.ReplaceAll(record.Goal, "-", " "), request.Now.Local().Format("15:04")
+	ready := next
+	if act == "work-review-size" {
+		ready = withoutOption(next, "by")
+	}
+	if slices.ContainsFunc(ready, func(word string) bool { return word == "FILE" || word == "TEXT" || word == "NAME" }) {
+		return request
+	}
+	label, decision := "Continue", fmt.Sprintf("%s: the build of unit %s stopped at %s (%s).", words, record.Unit, at, round.Stop.Class)
+	consequence := "the builder corrects and finishes the unit from the prepared brief; one more round of the goal's budget."
+	switch {
+	case act == "work-review-size":
+		label, decision = "Accept the size", fmt.Sprintf("%s: the build of unit %s grew to %d changed lines against the %d planned, at %s.", words, record.Unit, round.BuildLines, round.DeclaredLines, at)
+		consequence = "the checks and the review go on with this size; nothing else changes."
+	case act == "work-review-retry" && retriesBuilder(round):
+		label, decision = "Retry", fmt.Sprintf("%s: the build of unit %s could not finish at %s (%s).", words, record.Unit, at, round.Stop.Class)
+		consequence = "the builder takes another turn with the same brief, keeping its changes; no new round."
+	case act == "work-review-retry":
+		label, decision = "Retry", fmt.Sprintf("%s: the check of unit %s could not finish at %s (%s).", words, record.Unit, at, round.Stop.Class)
+		consequence = "I run the failed check again with the same inputs; no new build."
+	case act != "work-revise":
+		return request
+	}
+	request.Contract, request.Recommendation = true, label
+	request.Plain = &channel.Plain{Decision: decision, IfNothing: "it waits; nothing builds or lands until you choose."}
+	request.Options = []channel.Option{
+		{Label: label, Consequence: consequence + " Undo: metasystem work stop " + record.Goal + ".", Act: withoutOption(next, "by")},
+		{Label: "Stop here", Consequence: "the work stays in its worktree; nothing builds, lands or concludes. This question stays open."},
+	}
+	return request
 }
 
 // failureAsk says what stopped a failed round and gives the person a command

@@ -40,6 +40,8 @@ type intentConnectionOwners struct {
 	endpoint       func(root string) (goal.Endpoint, error)
 	endpointTip    func(root string, endpoint goal.Endpoint) (string, error)
 	claimCheck     func(root, goalID string, endpoint goal.Endpoint) func() error
+	// ownershipCheck is claimCheck without the caller's identity.
+	ownershipCheck func(root, goalID string, endpoint goal.Endpoint) func() error
 	commitToken    func(root string, commit func() error) error
 	// section is the checkout mutation section a manual submission stages
 	// and commits in; its withToken mints the commit token without another
@@ -106,6 +108,9 @@ func (inv *intentInvocation) connection() intentConnectionOwners {
 	}
 	if owners.claimCheck == nil {
 		owners.claimCheck = goalBranchClaimCheck
+	}
+	if owners.ownershipCheck == nil {
+		owners.ownershipCheck = goalBranchOwnershipCheck
 	}
 	if owners.commitToken == nil {
 		owners.commitToken = func(root string, commit func() error) error {

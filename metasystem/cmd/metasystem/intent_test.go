@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -428,25 +429,16 @@ func TestIntentGoalAuthorityAndState(t *testing.T) {
 		}
 	})
 
-	t.Run("stopped goal refuses a changed box and resumes under its standing box", func(t *testing.T) {
+	t.Run("a stopped goal takes a bigger box in one act", func(t *testing.T) {
 		bed := newIntentBed(t, true, nil)
+		before := bed.goalFile(bedGoal)
 		code, result := bed.runJSON(bed.owners(), append([]string{"goal", "budget", bedGoal, "5h/5/300m/2/3"}, human...)...)
-		if code != 1 || result.Outcome != intentRefused || result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "goal", "resume", bedGoal}) {
-			t.Fatalf("changed box on a stopped goal = %d %+v", code, result)
-		}
-		if bed.repo.publications != 0 || bed.goalFile(bedGoal).StopFence == nil {
-			t.Fatal("the refused box resumed the goal first")
-		}
-		bed.expectBindings(0)
-		// The printed remedy is the next command, and it works.
-		code, result = bed.runJSON(bed.owners(), append(result.Next.Argv[1:], human...)...)
 		file := bed.goalFile(bedGoal)
-		if code != 0 || result.Outcome != intentConfirmed || file.StopFence != nil || goalBoxString(file) != "4h/4/240m/2/3" {
-			t.Fatalf("resume = %d %+v; fence %+v box %s", code, result, file.StopFence, goalBoxString(file))
+		if code != 0 || result.Outcome != intentConfirmed || file.StopFence != nil || goalBoxString(file) != "5h/5/300m/2/3" || file.Claimed.EpisodeAt != cmp.Or(before.Claimed.EpisodeAt, before.Claimed.At) {
+			t.Fatalf("bigger box on a stopped goal = %d %+v; fence %+v box %s episode %s -> %s", code, result, file.StopFence, goalBoxString(file), before.Claimed.EpisodeAt, file.Claimed.EpisodeAt)
 		}
-		bed.expectBindings(1)
 		if bed.repo.publications != 1 {
-			t.Fatalf("resume published %d times", bed.repo.publications)
+			t.Fatalf("the raise published %d times", bed.repo.publications)
 		}
 	})
 

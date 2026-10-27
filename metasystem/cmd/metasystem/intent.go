@@ -215,11 +215,13 @@ func goalIntentCommands() []intentCommand {
 				"Without BOX: the standing box and what has been spent, the same block goal show prints.",
 				"BOX is norm (the tier's box), keep (the standing box) or the complete compact box 1d/10/720m/1/3.",
 				"A queued or parked goal is approved with the box; a running goal's box is changed.",
-				"A goal stopped by its budget resumes under its standing box first: metasystem goal resume G.",
+				"A goal stopped by its budget takes a bigger box in one act; goal resume G resumes it under the standing box.",
+				"one-more-day gives a stopped goal its time used so far plus one working day.",
 			},
 			flags: []intentFlag{
 				intentTargetFlag,
 				{name: "budget", value: "BOX", advanced: true, usage: "the box, as an alternative to naming it after G"},
+				{name: "answer", value: "Q", advanced: true, usage: "the answer that chose this act"},
 				{name: "under", value: "GRANT", advanced: true, usage: "act under this recorded power of attorney"},
 				intentByFlag, intentLineageFlag, intentApprovedRefFlag, intentTemporaryWordFlag, intentReviewByFlag, intentFixtureFlag,
 				intentLongBudgetFlags[0], intentLongBudgetFlags[1], intentLongBudgetFlags[2], intentLongBudgetFlags[3], intentLongBudgetFlags[4],
@@ -661,6 +663,7 @@ type intentInvocation struct {
 	laneCallerObserved, laneCallerPerson bool
 	laneRecord                           *lane.Record
 	laneSkipShadow                       bool
+	choice                               *channelChoice
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -873,6 +876,9 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
+	if (inv.command.name == "work revise" || inv.command.name == "work review" || inv.command.name == "goal budget") && inv.input.has("answer") {
+		result = inv.answerProgress(result)
+	}
 	if inv.replySettleErr != nil {
 		result.Details = append(result.Details, inv.replySettleErr.Error())
 	}

@@ -146,13 +146,15 @@ func TestReplay20260930Churn(t *testing.T) {
 	b.push(bare, late)
 	b.cycle(time.Date(2026, 9, 30, 16, 40, 0, 0, time.UTC))
 	churn := b.churn()
-	if len(churn) != 1 || len(b.sent) != 1 {
-		t.Fatalf("episodes %+v, notifications %q; want one of each", churn, b.sent)
+	// Only acts and deliveries reach the phone (the-answer-is-the-act D7):
+	// the episode is recorded and withheld, and stays in alert list.
+	if len(churn) != 1 || len(b.sent) != 0 || churn[0].TransportResult != steward.TransportWithheld {
+		t.Fatalf("episodes %+v, notifications %q; want one withheld episode and no notification", churn, b.sent)
 	}
 	episode := churn[0]
 	if episode.ScopeID != "landing-2b626e27:metasystem/plans/goals/trunk-red.json" ||
-		!strings.HasPrefix(b.sent[0], "The landing lane wrote the same record to main 6 times in 3 minutes") {
-		t.Fatalf("episode %s says %q", episode.ScopeID, b.sent[0])
+		!strings.HasPrefix(episode.Message, "The landing lane wrote the same record to main 6 times in 3 minutes") {
+		t.Fatalf("episode %s says %q", episode.ScopeID, episode.Message)
 	}
 	if episode.Digest != openingDigestFor(Churn, episode.ScopeID, time.Date(2026, 9, 30, 16, 17, 3, 0, time.UTC)) {
 		t.Fatalf("the episode's burst is not the sixth write at 16:17:03Z")
@@ -213,7 +215,7 @@ func TestSevenDayMainOneEpisode(t *testing.T) {
 		b.cycle(cycle)
 	}
 	churn := b.churn()
-	if len(churn) != 1 || len(b.sent) != 1 || churn[0].ScopeID != "landing-"+lineageHash(LaneLineage)+":metasystem/plans/goals/trunk-red.json" {
+	if len(churn) != 1 || len(b.sent) != 0 || churn[0].TransportResult != steward.TransportWithheld || churn[0].ScopeID != "landing-"+lineageHash(LaneLineage)+":metasystem/plans/goals/trunk-red.json" {
 		t.Fatalf("seven days of main: %+v, notifications %q", churn, b.sent)
 	}
 	if len(openOf(churn)) != 0 {

@@ -498,7 +498,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return time.Duration(minutes) * time.Minute, nil
 	}
 	runner.Manager = &manager
-	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && inv.checkDirectPersonProof("work "+inv.command.action, false) == nil {
+	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && (inv.answerAdmitted() || inv.checkDirectPersonProof("work "+inv.command.action, false) == nil) {
 		runner.Actor = "person"
 	}
 	runner.AdmitDetached = func(plan launch.UnitPlan) bool {
@@ -1799,8 +1799,13 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 		return inv.render(*problem)
 	}
 	brief := inv.callerPath(inv.input.text("brief"))
+	if inv.input.has("answer") {
+		if _, _, problem := inv.actingAs("revise", run, actorHuman); problem != nil {
+			return inv.render(*problem)
+		}
+	}
 	runner := inv.unitRunner()
-	if inv.input.has("reason") || inv.input.has("by") {
+	if inv.input.has("reason") || inv.input.has("by") || inv.input.has("answer") {
 		if problem := inv.selectRoot(); problem != nil {
 			return inv.render(*problem)
 		}

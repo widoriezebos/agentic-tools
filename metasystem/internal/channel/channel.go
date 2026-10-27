@@ -46,6 +46,13 @@ type Provider interface {
 	Credential(context.Context, DestinationConfig) (CredentialIdentity, error)
 }
 
+// OptionPoster is a provider that can post a question with one button
+// per option, and take the buttons away once the question is settled.
+type OptionPoster interface {
+	PostOptions(ctx context.Context, d DestinationConfig, text string, labels []string, thread *MessageRef) (MessageRef, error)
+	ClearOptions(ctx context.Context, d DestinationConfig, posted MessageRef) error
+}
+
 type ErrorKind string
 
 const (

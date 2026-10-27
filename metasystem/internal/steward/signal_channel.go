@@ -14,10 +14,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 )
 
 // channelPostTimeout bounds one channel post, as notifyTimeout bounds one
@@ -97,99 +99,55 @@ func spendNotice(crossing SpendCrossing) string {
 		crossing.ScopeID, crossing.Machine, crossing.Multiple, crossing.Ceiling, spendValue, limitValue, crossing.Scope, crossing.Ceiling)
 }
 
-// breachStopAlertOwner owns the breach-stop notice episodes: one per
-// stopped goal revision.
-const breachStopAlertOwner = "breach-stop"
-
-func breachStopNotice(goalID string) string {
-	return fmt.Sprintf("Goal %s was stopped: it spent its budget.\nmetasystem goal resume %s", goalID, goalID)
-}
-
-// noticeBreachStops opens one notice episode per stopped goal revision: a
-// COMPLETE report, keyed by goal and revision, which every report carries
-// (the first has no stop id). The stop itself is unchanged and nothing
-// resumes the goal; with no channel configured the tick report is all.
-// Every pass first retries, from its own record, each notice whose post did
-// not go through: a stop completes in one tick and is not reported again.
-func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Time, f noticeFunnel) error {
-	var stopped []BreachStopReport
+// noticeBreachStops asks the person, once per stopped goal revision, whether
+// the goal gets one more working day: a COMPLETE report with its box. The
+// stop itself is unchanged and nothing resumes the goal by itself; with no
+// channel configured the tick report is all. The channel duty's poll posts
+// the question in the same pass, and again after a failed post.
+func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Time) error {
+	var problems []error
 	for _, report := range reports {
-		if report.State == "COMPLETE" && report.GoalID != "" {
-			stopped = append(stopped, report)
+		if report.State != "COMPLETE" || report.GoalID == "" {
+			continue
 		}
-	}
-	if len(stopped) == 0 {
-		if _, err := os.Stat(alertDir(repoRoot)); os.IsNotExist(err) {
+		if !loadSignalChannel(repoRoot).configured {
 			return nil
 		}
-	}
-	held, err := lockAlerts(repoRoot, lock.Exclusive)
-	if err != nil {
-		return err
-	}
-	defer unlockAlerts(held)
-	episodes, err := loadAlertEpisodesUnlocked(repoRoot)
-	if err != nil {
-		return err
-	}
-	unsent := func(episode AlertEpisode) bool {
-		return episode.Owner == breachStopAlertOwner && !episode.Cleared && !episodeSettled(episode)
-	}
-	retry := false
-	for _, episode := range episodes {
-		retry = retry || unsent(episode)
-	}
-	if len(stopped) == 0 && !retry {
-		return nil
-	}
-	channel := loadSignalChannel(repoRoot)
-	if !channel.configured {
-		return nil
-	}
-	for index := range episodes {
-		if !unsent(episodes[index]) {
+		if report.Budget == nil {
+			problems = append(problems, fmt.Errorf("goal %s stopped with no box to ask about", report.GoalID))
 			continue
 		}
-		if err := submitEpisode(repoRoot, &episodes[index], f, channel.transport(episodes[index].Message)); err != nil {
-			return err
-		}
+		_, _, err := channel.AskOrFind(breachStopAsk(repoRoot, report, now))
+		problems = append(problems, err)
 	}
-	for _, report := range stopped {
-		digest := signalDigest(breachStopAlertOwner, report.GoalID, fmt.Sprint(report.Revision))
-		episode := (*AlertEpisode)(nil)
-		for index := range episodes {
-			if episodes[index].Owner == breachStopAlertOwner && episodes[index].Digest == digest {
-				episode = &episodes[index]
-				break
-			}
-		}
-		if episode == nil {
-			episodes = append(episodes, AlertEpisode{
-				Schema: 1, EpisodeID: nextEpisodeID(digest, episodes), Digest: digest,
-				Owner: breachStopAlertOwner, ScopeID: report.GoalID, Message: breachStopNotice(report.GoalID),
-				OpenedAt: now.UTC(), Attempts: []AlertAttempt{}, TransportResult: TransportPending,
-			})
-			episode = &episodes[len(episodes)-1]
-			if err := saveAlertEpisode(repoRoot, *episode); err != nil {
-				return err
-			}
-		}
-		if episode.Cleared || episodeSettled(*episode) {
-			continue
-		}
-		if err := submitEpisode(repoRoot, episode, f, channel.transport(episode.Message)); err != nil {
-			return err
-		}
-	}
-	return nil
+	return errors.Join(problems...)
 }
 
-// reportBreachStopNotices is the tick's best-effort notice pass: the stop
-// already happened and its report stands whatever the notice does. A
-// transport failure is kept on the episode and retried on the next pass; a
-// store failure is said on the runner's error stream.
-func reportBreachStopNotices(repoRoot string, reports []BreachStopReport, now time.Time, f noticeFunnel) {
-	if err := noticeBreachStops(repoRoot, reports, now, f); err != nil {
+// breachStopAsk is the stopped goal's question: the box it used, and one
+// more working day counted when the person chooses.
+func breachStopAsk(repoRoot string, report BreachStopReport, now time.Time) channel.AskRequest {
+	used := "its " + report.Budget.ElapsedLimit + " box"
+	if report.Elapsed > 0 {
+		used = goalbudget.FormatWorkingDuration(report.Elapsed) + " of " + used
+	}
+	return channel.AskRequest{RepoRoot: repoRoot, Goal: report.GoalID, Kind: "stop", Contract: true, Now: now, Recommendation: "One more day",
+		Decision: &channel.Decision{Kind: "breach-stop", Subject: report.GoalID, State: fmt.Sprint(report.Revision)},
+		Facts: []string{fmt.Sprintf("stopped at revision %d: %s", report.Revision, report.Reason),
+			"undo after One more day: metasystem goal budget " + report.GoalID + " " + goalbudget.FormatBox(*report.Budget)},
+		Plain: &channel.Plain{Decision: fmt.Sprintf("%s: it used %s and stopped at %s.", strings.ReplaceAll(report.GoalID, "-", " "), used, now.Local().Format("15:04")),
+			IfNothing: "it stays stopped; nothing resumes it."},
+		Options: []channel.Option{
+			{Label: "One more day", Consequence: "its time box becomes the time used so far plus one working day (8 hours), counted when you choose; the other limits stay. Undo: goal budget back to today's box (it stops again).",
+				Act: []string{"metasystem", "goal", "budget", report.GoalID, "one-more-day"}},
+			{Label: "Leave it stopped", Consequence: "nothing runs and nothing is spent; this question stays open, so you can still choose One more day."},
+		}}
+}
+
+// reportBreachStopNotices is the tick's best-effort question pass: the stop
+// already happened and its report stands whatever the question does. A
+// failed ask is said on the runner's error stream.
+func reportBreachStopNotices(repoRoot string, reports []BreachStopReport, now time.Time) {
+	if err := noticeBreachStops(repoRoot, reports, now); err != nil {
 		fmt.Fprintf(os.Stderr, "breach-stop notice not recorded: %v\n", err)
 	}
 }

@@ -4,11 +4,17 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel/fake"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -132,7 +138,7 @@ func seatIdleFixtureIncident(refusal int) SeatIdleIncident {
 	}
 }
 
-func TestSeatIdleThirdRefusalPostsOnceToTheChannel(t *testing.T) {
+func TestSeatIdleThirdRefusalIsKeptFromThePerson(t *testing.T) {
 	t.Parallel()
 	fixture := newChannelFixture(t)
 	now := time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)
@@ -140,23 +146,18 @@ func TestSeatIdleThirdRefusalPostsOnceToTheChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	posts := fixture.posts(t)
-	if len(posts) != 1 {
-		t.Fatalf("the third idle refusal posted %d times, want once: %q", len(posts), posts)
-	}
-	assertTwoLineNotice(t, posts[0], "seat-session", "metasystem status")
-	if !strings.Contains(posts[0], "next-goal") {
-		t.Fatalf("the idle notice does not name the ready goal: %q", posts[0])
+	if posts := fixture.posts(t); len(posts) != 0 || first.TransportResult != TransportWithheld {
+		t.Fatalf("the third idle refusal reached the channel: %q %+v", posts, first)
 	}
 	again, err := RecordSeatIdleIncident(fixture.root, seatIdleFixtureIncident(4), now.Add(time.Minute))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if again.EpisodeID != first.EpisodeID || again.TransportResult != TransportSubmitted {
-		t.Fatalf("the repeated refusal did not stay in the one submitted episode: %+v", again)
+	if again.EpisodeID != first.EpisodeID || again.TransportResult != TransportWithheld {
+		t.Fatalf("the repeated refusal did not stay in the one kept episode: %+v", again)
 	}
-	if posts := fixture.posts(t); len(posts) != 1 {
-		t.Fatalf("a repeated idle refusal posted again: %q", posts)
+	if posts := fixture.posts(t); len(posts) != 0 {
+		t.Fatalf("a repeated idle refusal posted: %q", posts)
 	}
 	if pending, err := PendingNotifications(fixture.root); err != nil || len(pending) != 0 {
 		t.Fatalf("the channel post also queued a local alarm: %+v %v", pending, err)
@@ -175,7 +176,7 @@ func TestSeatIdleWithoutChannelKeepsTheSilentEpisode(t *testing.T) {
 	}
 }
 
-func TestSpendCrossingPostsOnceToTheChannel(t *testing.T) {
+func TestSpendCrossingIsKeptFromThePerson(t *testing.T) {
 	t.Parallel()
 	fixture := newChannelFixture(t)
 	ledger := fixtureSpendLedger()
@@ -193,20 +194,14 @@ func TestSpendCrossingPostsOnceToTheChannel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	var spendPosts []string
-	for _, text := range fixture.posts(t) {
-		if strings.Contains(text, "spend.ceiling.") {
-			spendPosts = append(spendPosts, text)
-		}
+	if posts := fixture.posts(t); len(posts) != 0 {
+		t.Fatalf("a spend crossing reached the channel: %q", posts)
 	}
-	if len(spendPosts) != 1 {
-		t.Fatalf("one spend crossing over two ticks posted %d times: %q", len(spendPosts), fixture.posts(t))
-	}
-	assertTwoLineNotice(t, spendPosts[0], "day-2026-09-02", "metasystem settings set spend.ceiling.day.tokens NEW-LIMIT")
 	owned := episodesOwnedBy(t, fixture.root, string(RoleSpendFence))
-	if len(owned) != 1 || owned[0].TransportResult != TransportSubmitted || len(owned[0].Attempts) != 1 {
-		t.Fatalf("the spend episode does not record its one channel submission: %+v", owned)
+	if len(owned) != 1 || owned[0].TransportResult != TransportWithheld {
+		t.Fatalf("the spend episode is not one kept episode: %+v", owned)
 	}
+
 }
 
 func breachFixtureConfig(stops *int) TickConfig {
@@ -219,45 +214,83 @@ func breachFixtureConfig(stops *int) TickConfig {
 	}
 }
 
-func TestBreachStopNoticeOnNewStop(t *testing.T) {
+// breachBox is the stopped goal's box in the breach tests.
+var breachBox = goal.Budget{ElapsedLimit: "5d", AttemptLimit: 12, ReservedJobMinutesLimit: 2400, ActiveJobLimit: 1, ReviewRoundLimit: 20}
+
+func TestBreachStopAsksOncePerGoalRevision(t *testing.T) {
 	t.Parallel()
 	fixture := newChannelFixture(t)
 	stops := 0
 	cfg := breachFixtureConfig(&stops)
-	routes := []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4}}
+	routes := []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4, Reason: "elapsed-limit", Budget: &breachBox, Elapsed: 61 * time.Hour}}
 	scanner := func(string, time.Time) ([]dispatch.StopRoute, error) { return routes, nil }
-
-	// The first report of a stop has no stop id; it still posts.
-	reports := custodialBreachStops(fixture.root, cfg, scanner)
-	if len(reports) != 1 || reports[0].State != "COMPLETE" || reports[0].StopID != "" {
+	if reports := custodialBreachStops(fixture.root, cfg, scanner); len(reports) != 1 || reports[0].State != "COMPLETE" {
 		t.Fatalf("fixture stop did not complete: %+v", reports)
 	}
-	posts := fixture.posts(t)
-	if len(posts) != 1 {
-		t.Fatalf("a completed breach stop posted %d times, want once: %q", len(posts), posts)
+	asked, _ := channel.WalkOpenQuestions(fixture.root)
+	if len(asked) != 1 || len(fixture.posts(t)) != 0 {
+		t.Fatalf("a completed breach stop asked %d questions and posted %q", len(asked), fixture.posts(t))
 	}
-	assertTwoLineNotice(t, posts[0], "Goal budget-goal was stopped: it spent its budget.", "metasystem goal resume budget-goal")
+	q := asked[0]
+	decision := "Budget goal: it used 7d5h of its 5d box and stopped at " + cfg.Now.Local().Format("15:04") + "."
+	if !q.Contract || q.Goal != "budget-goal" || q.Recommendation != "One more day" || !strings.HasPrefix(q.Text, decision+"\n\n★ One more day — its time box becomes the time used so far plus one working day (8 hours), counted when you choose; the other limits stay. Undo: goal budget back to today's box (it stops again).\nLeave it stopped — nothing runs and nothing is spent;") ||
+		!strings.Contains(q.Text, "If you do nothing: it stays stopped; nothing resumes it.") ||
+		!slices.Equal(q.Facts, []string{"stopped at revision 4: elapsed-limit", "undo after One more day: metasystem goal budget budget-goal 5d/12/2400m/1/20"}) {
+		t.Fatalf("the box question:\n%s\nfacts: %q", q.Text, q.Facts)
+	}
+	if !slices.Equal(q.Options[0].Act, []string{"metasystem", "goal", "budget", "budget-goal", "one-more-day"}) || q.Options[1].Act != nil {
+		t.Fatalf("the options' acts: %+v", q.Options)
+	}
+	// The next tick reports the same revision with its stop id: nothing more.
+	routes[0].StopID = "stop-1"
+	custodialBreachStops(fixture.root, cfg, scanner)
+	if all, _ := channel.WalkQuestions(fixture.root); len(all) != 1 {
+		t.Fatalf("the same stopped revision asked again: %+v", all)
+	}
+	// A closed question still holds its revision.
+	if err := channel.Close(fixture.root, q.ID, "budget at 10:00", nil, channel.DestinationConfig{}); err != nil {
+		t.Fatal(err)
+	}
+	custodialBreachStops(fixture.root, cfg, scanner)
+	if all, _ := channel.WalkQuestions(fixture.root); len(all) != 1 {
+		t.Fatalf("a closed question's revision asked again: %+v", all)
+	}
+	// A new revision stopped asks again.
+	routes = []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 5, Reason: "elapsed-limit", Budget: &breachBox}}
+	custodialBreachStops(fixture.root, cfg, scanner)
+	asked, _ = channel.WalkOpenQuestions(fixture.root)
+	if len(asked) != 1 || !strings.HasPrefix(asked[0].Plain.Decision, "budget goal: it used its 5d box and stopped at") || stops != 4 {
+		t.Fatalf("a newly stopped revision: %+v, %d stops", asked, stops)
+	}
+}
 
-	// The next tick reports the same revision, now with its stop id: no
-	// duplicate.
-	routes = []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4, StopID: "stop-1"}}
-	custodialBreachStops(fixture.root, cfg, scanner)
-	custodialBreachStops(fixture.root, cfg, scanner)
-	if posts := fixture.posts(t); len(posts) != 1 {
-		t.Fatalf("the same stopped revision posted again: %q", posts)
+func TestBreachStopAskFitsALongGoalId(t *testing.T) {
+	t.Parallel()
+	fixture := newChannelFixture(t)
+	stops := 0
+	long := strings.Repeat("stopped-", 7) + "goal"
+	if utf8.RuneCountInString(long) != 60 {
+		t.Fatalf("fixture goal id is %d runes", utf8.RuneCountInString(long))
 	}
-
-	// A new revision stopped is a new stop: one more notice.
-	routes = []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 5}}
-	custodialBreachStops(fixture.root, cfg, scanner)
-	if posts := fixture.posts(t); len(posts) != 2 {
-		t.Fatalf("a newly stopped revision did not post once: %q", posts)
+	routes := []dispatch.StopRoute{{GoalID: long, Revision: 2, Reason: "elapsed-limit", Budget: &breachBox, Elapsed: 41 * time.Hour}}
+	scanner := func(string, time.Time) ([]dispatch.StopRoute, error) { return routes, nil }
+	reports := custodialBreachStops(fixture.root, breachFixtureConfig(&stops), scanner)
+	if len(reports) != 1 || reports[0].State != "COMPLETE" {
+		t.Fatalf("fixture stop did not complete: %+v", reports)
 	}
-	if stops != 4 {
-		t.Fatalf("the notice changed the stop producer: %d stops", stops)
+	if err := noticeBreachStops(fixture.root, reports, time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)); err != nil {
+		t.Fatalf("the long goal id's ask failed: %v", err)
 	}
-	if owned := episodesOwnedBy(t, fixture.root, "breach-stop"); len(owned) != 2 {
-		t.Fatalf("want one breach-stop episode per stopped revision, got %+v", owned)
+	asked, _ := channel.WalkOpenQuestions(fixture.root)
+	if len(asked) != 1 {
+		t.Fatalf("the long goal id asked %d questions", len(asked))
+	}
+	q := asked[0]
+	if n := utf8.RuneCountInString(q.Options[0].Consequence); n > 200 {
+		t.Fatalf("One more day's consequence is %d runes", n)
+	}
+	if !slices.Contains(q.Facts, "undo after One more day: metasystem goal budget "+long+" 5d/12/2400m/1/20") {
+		t.Fatalf("the facts carry no undo line: %q", q.Facts)
 	}
 }
 
@@ -266,15 +299,15 @@ func TestBreachStopNoticeOnlyForACompletedStop(t *testing.T) {
 	fixture := newChannelFixture(t)
 	cfg := TickConfig{Now: time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)}
 	scanner := func(string, time.Time) ([]dispatch.StopRoute, error) {
-		return []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4}}, nil
+		return []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4, Budget: &breachBox}}, nil
 	}
 	// No lifecycle wired: the report is FAILED, and nothing was stopped.
 	reports := custodialBreachStops(fixture.root, cfg, scanner)
 	if len(reports) != 1 || reports[0].State != "FAILED" {
 		t.Fatalf("fixture stop did not fail: %+v", reports)
 	}
-	if posts := fixture.posts(t); len(posts) != 0 {
-		t.Fatalf("a failed stop posted a stop notice: %q", posts)
+	if asked, _ := channel.WalkQuestions(fixture.root); len(asked) != 0 {
+		t.Fatalf("a failed stop asked: %+v", asked)
 	}
 }
 
@@ -283,48 +316,68 @@ func TestBreachStopWithoutChannelKeepsTheReportOnly(t *testing.T) {
 	root := t.TempDir()
 	stops := 0
 	scanner := func(string, time.Time) ([]dispatch.StopRoute, error) {
-		return []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4}}, nil
+		return []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4, Budget: &breachBox}}, nil
 	}
 	reports := custodialBreachStops(root, breachFixtureConfig(&stops), scanner)
 	if len(reports) != 1 || reports[0].State != "COMPLETE" {
 		t.Fatalf("fixture stop did not complete: %+v", reports)
+	}
+	if asked, _ := channel.WalkQuestions(root); len(asked) != 0 {
+		t.Fatalf("with no channel the stop asked: %+v", asked)
 	}
 	if _, err := os.Stat(alertDir(root)); !os.IsNotExist(err) {
 		t.Fatalf("with no channel the stop opened an alert episode: %v", err)
 	}
 }
 
-func TestBreachStopNoticeRetriesAFailedPostWithoutANewReport(t *testing.T) {
+func TestBreachStopQuestionPostsThroughThePoll(t *testing.T) {
 	t.Parallel()
 	fixture := newUnservedChannelFixture(t)
 	stops := 0
-	cfg := breachFixtureConfig(&stops)
-	routes := []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4}}
-	scanner := func(string, time.Time) ([]dispatch.StopRoute, error) { return routes, nil }
-
-	// The stop completes in one tick while the channel is down.
-	if reports := custodialBreachStops(fixture.root, cfg, scanner); len(reports) != 1 || reports[0].State != "COMPLETE" {
-		t.Fatalf("fixture stop did not complete: %+v", reports)
+	scanner := func(string, time.Time) ([]dispatch.StopRoute, error) {
+		return []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4, Budget: &breachBox}}, nil
 	}
-	owned := episodesOwnedBy(t, fixture.root, "breach-stop")
-	if len(owned) != 1 || owned[0].TransportResult != TransportFailed {
-		t.Fatalf("want one failed breach-stop episode: %+v", owned)
+	custodialBreachStops(fixture.root, breachFixtureConfig(&stops), scanner)
+	asked, _ := channel.WalkOpenQuestions(fixture.root)
+	if len(asked) != 1 || asked[0].Thread != nil {
+		t.Fatalf("the asked question was posted by the steward: %+v", asked)
 	}
-
-	// The goal is stopped: the scanner no longer reports it.
-	routes = nil
+	poll := func() {
+		// The poll's later inbox read needs a ledger this bed lacks; only
+		// its posting is read here.
+		// The fake that does not serve yet has no provider: one that
+		// cannot post stands in for it.
+		loaded := loadSignalChannel(fixture.root).loaded
+		provider := channel.Provider(downChannel{})
+		if loaded.Provider != nil {
+			provider = loaded.Provider
+		}
+		_, _ = channel.Poll(context.Background(), channel.PollConfig{RepoRoot: fixture.root, Destination: "fleet", ProviderName: "fake", Provider: provider, DestinationConfig: loaded.Destination, Now: breachFixtureConfig(&stops).Now})
+	}
+	poll()
+	if q, _ := channel.ReadQuestion(fixture.root, asked[0].ID); q.Thread != nil || q.Undelivered != 1 {
+		t.Fatalf("a failed post was not counted: %+v", q)
+	}
 	fixture.serve(t)
-	custodialBreachStops(fixture.root, cfg, scanner)
-	posts := fixture.posts(t)
-	if len(posts) != 1 {
-		t.Fatalf("the failed notice was not retried once with no report: %q", posts)
+	poll()
+	poll()
+	if q, _ := channel.ReadQuestion(fixture.root, asked[0].ID); q.Thread == nil || len(fixture.posts(t)) != 1 {
+		t.Fatalf("the poll did not post the question once: %+v %q", q, fixture.posts(t))
 	}
-	assertTwoLineNotice(t, posts[0], "Goal budget-goal was stopped: it spent its budget.", "metasystem goal resume budget-goal")
-	custodialBreachStops(fixture.root, cfg, scanner)
-	if posts := fixture.posts(t); len(posts) != 1 {
-		t.Fatalf("a submitted notice posted again: %q", posts)
-	}
-	if owned := episodesOwnedBy(t, fixture.root, "breach-stop"); len(owned) != 1 || owned[0].TransportResult != TransportSubmitted {
-		t.Fatalf("want the one episode submitted: %+v", owned)
-	}
+}
+
+// downChannel is a channel that cannot be reached.
+type downChannel struct{}
+
+func (downChannel) Post(context.Context, channel.DestinationConfig, string, *channel.MessageRef) (channel.MessageRef, error) {
+	return channel.MessageRef{}, errors.New("the channel is down")
+}
+func (downChannel) Receive(context.Context, channel.DestinationConfig, []channel.MessageRef, channel.Cursor) ([]channel.Inbound, channel.Cursor, error) {
+	return nil, "", errors.New("the channel is down")
+}
+func (downChannel) Confirm(context.Context, channel.DestinationConfig, channel.Cursor) error {
+	return errors.New("the channel is down")
+}
+func (downChannel) Credential(context.Context, channel.DestinationConfig) (channel.CredentialIdentity, error) {
+	return channel.CredentialIdentity{}, errors.New("the channel is down")
 }

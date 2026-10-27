@@ -57,7 +57,11 @@ func askUnitStop(r AskRequest) (q Question, found bool, err error) {
 	if r.Goal == "" || stop.Loop == "" || stop.Subject == "" || stop.Attempt < 1 || stop.Finding == "" || strings.TrimSpace(stop.Needs) == "" || len(stop.AcceptableActs) == 0 {
 		return q, false, fmt.Errorf("a unit stop question needs its goal, loop, subject, attempt, finding and executable act")
 	}
-	r.Facts = append(slices.Clone(r.Facts), "Acceptable acts: "+strings.Join(stop.AcceptableActs, ", ")+". Only a successful act addressing this finding and subject, or this unit's closure, closes this question; a text answer does not.")
+	closes := "Only a successful act addressing this finding and subject, or this unit's closure, closes this question; a text answer does not."
+	if r.Contract {
+		closes = "The act of the option the person chooses closes this question, as does this unit's closure."
+	}
+	r.Facts = append(slices.Clone(r.Facts), "Acceptable acts: "+strings.Join(stop.AcceptableActs, ", ")+". "+closes)
 	err = withUnitStopLock(r.RepoRoot, func() error {
 		var e error
 		q, found, e = askOrFind(r)
@@ -150,7 +154,7 @@ func reconcileUnitStopQuestions(root string) error {
 			if !act.UnitClosed && (stop.Attempt != act.Attempt || !slices.Contains(stop.AcceptableActs, act.Kind) || !slices.Contains(act.Findings, stop.Finding)) {
 				continue
 			}
-			if err := Close(root, q.ID, act.Kind+": "+act.Reason, nil, DestinationConfig{}, act.ID); err != nil {
+			if err := closeAt(root, q.ID, act.Kind+": "+act.Reason, nil, DestinationConfig{}, act.At, act.ID); err != nil {
 				return err
 			}
 		}
@@ -172,6 +176,20 @@ func CloseGoalUnitStopQuestions(root, goalID, reason string, at time.Time) error
 		stop := q.UnitStop
 		if err := RecordUnitStopAct(root, UnitStopAct{ID: "goal-done:" + goalID + ":" + stop.Subject + ":" + fmt.Sprint(stop.Attempt), Goal: goalID, Loop: stop.Loop, Subject: stop.Subject, Attempt: stop.Attempt, Kind: "goal-done", Reason: reason, At: at, UnitClosed: true}); err != nil {
 			return err
+		}
+	}
+	return nil
+}
+
+// CloseGoalStopQuestions closes a goal's open budget-stop questions once the
+// goal's own record has moved it on; nothing is posted.
+func CloseGoalStopQuestions(root, goalID, because string, at time.Time) error {
+	open, _ := WalkOpenQuestions(root)
+	for _, q := range open {
+		if q.Goal == goalID && q.Decision != nil && q.Decision.Kind == "breach-stop" {
+			if err := closeAt(root, q.ID, because, nil, DestinationConfig{}, at); err != nil {
+				return err
+			}
 		}
 	}
 	return nil

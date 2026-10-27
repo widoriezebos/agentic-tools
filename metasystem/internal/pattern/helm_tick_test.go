@@ -26,8 +26,8 @@ func TestHelmTickReports(t *testing.T) {
 	if result.Decision.Verdict != steward.VerdictHelm {
 		t.Fatalf("the tick was not a helm tick: %+v", result.Decision)
 	}
-	// The report the person at the helm needs: main churned while they held
-	// the lane, and the helm tick reports it.
+	// Main churned while the person held the lane: the helm tick records the
+	// episode, withheld from the phone (D7), so alert list and status show it.
 	bare := b.origin()
 	var commits []trunkCommit
 	for write := 0; write < 6; write++ {
@@ -37,8 +37,8 @@ func TestHelmTickReports(t *testing.T) {
 	if _, err := steward.RunTick(b.repo, steward.TickConfig{Now: at.Add(2 * cadence), Patterns: b.pass.Run}, quietCensus{}); err != nil {
 		t.Fatalf("the second helm tick failed: %v", err)
 	}
-	if churn := openOf(b.churn()); len(churn) != 1 || len(b.sent) != 1 {
-		t.Fatalf("the helm tick did not report the churn: %+v %q", churn, b.sent)
+	if churn := openOf(b.churn()); len(churn) != 1 || len(b.sent) != 0 || churn[0].TransportResult != steward.TransportWithheld {
+		t.Fatalf("the helm tick did not record the churn, withheld from the phone: %+v %q", churn, b.sent)
 	}
 }
 

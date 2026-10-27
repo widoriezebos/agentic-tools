@@ -767,6 +767,11 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		result.next, result.nextReason = inv.publicArgv("status", id), "the goal's work and what each needs next"
 		return inv.render(result)
 	}
+	if selected.Running() {
+		if replay := inv.answerReplay(id, *selected); replay != nil {
+			return inv.render(*replay)
+		}
+	}
 	if selected.Running() || selected.Run == "" {
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: workTargets(id, *selected),
 			Summary: fmt.Sprintf("work %s of goal %s is still running; it is reviewed once built", selected.Unit, id),
@@ -909,7 +914,7 @@ func runIntentRevise(inv *intentInvocation) int {
 			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to record its run"})
 	}
 	person, reason, impact := "", inv.input.text("reason"), ""
-	if strings.TrimSpace(reason) != "" || inv.input.has("by") {
+	if strings.TrimSpace(reason) != "" || inv.input.has("by") || inv.input.has("answer") {
 		actor, proof, problem := inv.actingAs("revise", id, actorHuman)
 		if problem != nil {
 			return inv.render(*problem)

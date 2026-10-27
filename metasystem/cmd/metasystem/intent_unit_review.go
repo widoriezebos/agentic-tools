@@ -34,6 +34,12 @@ import (
 // A clean read of the build by another model than the builder's is the
 // unit's read. Any other read is feedback and requests the committed critic.
 
+// retriesBuilder says a retry of round starts another builder turn: its
+// failed step is not a check.
+func retriesBuilder(round launch.UnitRound) bool {
+	return slices.ContainsFunc(round.Steps, func(step launch.UnitStep) bool { return step.State == launch.StepFailed && step.Kind != "attest" })
+}
+
 func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	targets := []intentTarget{{Kind: "unit", ID: run}}
 	runner := inv.unitRunner()
@@ -53,11 +59,8 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 			runner.Actor = "person"
 			person, reason := unitStopActor(actor), inv.input.text("reason")
 			again := "rerun the retained check with the same inputs and fresh output, without another build"
-			for _, step := range round.Steps {
-				if step.State == launch.StepFailed && step.Kind != "attest" {
-					again = "start another builder turn with the same brief and inputs, keeping its worktree changes"
-					break
-				}
+			if retriesBuilder(round) {
+				again = "start another builder turn with the same brief and inputs, keeping its worktree changes"
 			}
 			impact := "Impact: " + again + ".\nThe environment may still fail; automatic correction limits remain unchanged.\nStop this run to end the continuation; retained evidence remains."
 			resumed, err := runner.RetryFailedStep(run, person, reason, func() error {

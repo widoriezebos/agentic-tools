@@ -246,7 +246,7 @@ func (b *healthBed) health(now time.Time) HealthVerdict {
 	}
 	view := verdict
 	view.ShouldAlert = false
-	if _, err := updateAlertEpisodesWith(b.root, view, verdict.Line(), now, noticeFunnel{}, b.deliver); err != nil {
+	if _, err := updateAlertEpisodesWith(b.root, view, verdict.Line(), now, noticeFunnel{decider: allowEveryNotice}, b.deliver); err != nil {
 		b.t.Fatalf("alert episode state is unknown: %v", err)
 	}
 	return verdict
@@ -258,6 +258,7 @@ func (b *healthBed) tick(now time.Time) HealthVerdict {
 	b.t.Helper()
 	var result TickResult
 	if err := completeTickHealthWithDependencies(b.root, &result, b.generation, b.runner, now, tickHealthDependencies{
+		funnel:   noticeFunnel{decider: allowEveryNotice},
 		evaluate: b.evaluate, now: func() time.Time { return now }, deliver: b.deliver,
 	}); err != nil {
 		b.t.Fatalf("tick failed: %v", err)

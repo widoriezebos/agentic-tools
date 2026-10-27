@@ -1,11 +1,15 @@
 package channel
 
 import (
+	"cmp"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -23,6 +27,8 @@ type PollConfig struct {
 	Now                                                                            time.Time
 	MaxDispositions                                                                int
 	FailurePoint                                                                   func(string) error
+	// RunAct runs a chosen option's act in the repository; nil runs the engine.
+	RunAct func(ctx context.Context, dir string, argv []string) ([]byte, error)
 	// answerCodeOff is channel.human.answer-code=off, read once per poll.
 	answerCodeOff bool
 	// validateInbox replaces the inbox commit validation in tests.
@@ -100,7 +106,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 			if err = ensureText(c.RepoRoot, q); err != nil {
 				return result, err
 			}
-			ref, postErr := c.Provider.Post(ctx, c.DestinationConfig, q.Text, nil)
+			ref, postErr := postQuestion(ctx, c.Provider, c.DestinationConfig, *q, c.answerCodeOff)
 			if postErr != nil {
 				q.Undelivered++
 				result.Undelivered++
@@ -140,7 +146,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 		threads = append(threads, MessageRef{ID: status.Ref.ID, ThreadID: statusRoot})
 	}
 	for _, q := range questions {
-		if q.State == "open" && q.Thread != nil {
+		if (q.State == "open" || recentlyActed(q, c.Now)) && q.Thread != nil {
 			threads = append(threads, MessageRef{ID: q.Thread.ID, ThreadID: threadRoot(*q.Thread)})
 		}
 	}
@@ -284,6 +290,12 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 	// Decision 7: the answer receipt is no longer posted; a recorded answer,
 	// or a receipted one from an older engine, closes locally.
 	if a.Phase == "recorded" || a.Phase == "receipted" {
+		if q.Contract {
+			if c.Provider == nil || a.Phase != "recorded" {
+				return nil
+			}
+			return settleChoice(ctx, c, q)
+		}
 		if q.UnitStop != nil || LaneStopCommand(*q) != "" {
 			return nil
 		}
@@ -312,8 +324,104 @@ func scrubErr(err error, c PollConfig) error {
 	return goal.Coded(goal.RefusalCode(err), fmt.Errorf("%s", Scrub(err.Error(), append(c.DestinationConfig.Secrets, c.TOTPSecret)...)))
 }
 
+// settleChoice performs the option the person chose and tells him, in the
+// question's thread, what came of it; only the act's own read of its record
+// says whether it started.
+func settleChoice(ctx context.Context, c PollConfig, q *Question) error {
+	answer := *q.Answer
+	option := chosenOption(*q, answer.Text)
+	if option == nil {
+		option = &Option{}
+	}
+	label := option.Label
+	attempt := Attempt{At: c.Now, Label: label, Outcome: "chosen", Message: goal.ChannelInboxPath(c.Destination, &goal.ChannelInbound{Provider: answer.Provider, MessageID: answer.Ref.ID})}
+	line := label + " it is. Nothing runs until you choose again; this question stays open."
+	if len(option.Act) > 0 {
+		run := c.RunAct
+		if run == nil {
+			run = engineActRunner(exec.CommandContext)
+		}
+		out, _ := run(ctx, c.RepoRoot, append(slices.Clone(option.Act), "--answer", q.ID, "--json"))
+		var envelope struct {
+			Summary string `json:"summary"`
+			Data    struct {
+				Answer struct{ State, Hold string } `json:"answer"`
+				Budget struct{ Box string }         `json:"budget"`
+			} `json:"data"`
+		}
+		_ = json.Unmarshal(out, &envelope)
+		if fresh, err := ReadQuestion(c.RepoRoot, q.ID); err == nil && fresh.Answer != nil {
+			*q = fresh
+		}
+		_, undo, _ := strings.Cut(option.Consequence, "Undo: ")
+		attempt.Outcome = envelope.Data.Answer.State
+		switch attempt.Outcome {
+		case "started":
+			attempt.Outcome = "acted"
+			did := map[string]string{"Retry": "The failed step of \"%s\" started again", "Accept the size": "The checks of \"%s\" went on", "One more day": "\"%s\" has one more working day and goes on"}[label]
+			if limit, _, _ := strings.Cut(envelope.Data.Budget.Box, "/"); label == "One more day" && limit != "" {
+				did += " (its time box is now " + limit + ")"
+			}
+			line = fmt.Sprintf("%s it is. "+cmp.Or(did, "The builder's next round of \"%s\" started")+" at %s. If it stops again, I ask here. Undo: %s.", label, QuestionSubject(*q), c.Now.Local().Format("15:04"), strings.TrimSuffix(undo, "."))
+		case "settled":
+			attempt.Outcome = "acted"
+			line = fmt.Sprintf("%s it is. \"%s\" is already going on; nothing more was needed.", label, QuestionSubject(*q))
+		case "accepted":
+			line = fmt.Sprintf("%s it is; it waits: %s. When that is fixed, reply %s again.", label, plainReason(envelope.Data.Answer.Hold, *q), label)
+		default:
+			attempt.Outcome = "refused"
+			line = fmt.Sprintf("I could not %s: %s. The question above is still open; reply %s again once that is fixed.", strings.ToLower(label), plainReason(envelope.Summary, *q), label)
+		}
+	}
+	if poster, ok := c.Provider.(OptionPoster); ok && attempt.Outcome == "acted" && c.answerCodeOff && q.Thread != nil {
+		// The act ran outside the duty's deadline; the adapter's own timeout bounds this.
+		_ = poster.ClearOptions(context.WithoutCancel(ctx), c.DestinationConfig, *q.Thread)
+	}
+	q.Answer.Phase = attempt.Outcome
+	if attempt.Outcome == "chosen" || attempt.Outcome == "refused" {
+		q.Answer = nil
+	}
+	q.Attempts = append(q.Attempts, attempt)
+	if q.Thread != nil {
+		if err := queueNotice(noticesPath(c), "answer:"+q.ID+":"+answer.ULID, line, &q.Thread.ID, threadRoot(*q.Thread)); err != nil {
+			return err
+		}
+	}
+	if err := writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+		return err
+	}
+	return fail(c, "settled")
+}
+
+// plainReason is a refusal or hold as a person reads it; words he cannot
+// read send him to the goal's status instead.
+func plainReason(reason string, q Question) string {
+	reason = strings.TrimSuffix(strings.TrimSpace(reason), ".")
+	if reason == "" || unplainWords.MatchString(reason) {
+		return "the command refused it; metasystem status " + q.Goal + " at your terminal says why"
+	}
+	return reason
+}
+
+// engineActRunner runs an act's argv as this engine in the repository,
+// outside the channel duty's deadline, and returns what it printed.
+func engineActRunner(command func(context.Context, string, ...string) *exec.Cmd) func(context.Context, string, []string) ([]byte, error) {
+	return func(ctx context.Context, dir string, argv []string) ([]byte, error) {
+		engine, err := os.Executable()
+		if err != nil {
+			return nil, err
+		}
+		act := command(context.WithoutCancel(ctx), engine, argv[1:]...)
+		act.Dir = dir
+		return act.Output()
+	}
+}
+
 // Recorded replies to action requests are complete even while the act is pending.
 func unfinishedAnswer(q Question) bool {
+	if q.Contract && q.Answer != nil {
+		return q.Answer.Phase == "matched" || q.Answer.Phase == "recorded"
+	}
 	return q.Answer != nil && q.Answer.Phase != "closed" &&
 		!((q.Answer.Phase == "recorded" || q.Answer.Phase == "receipted") && (q.UnitStop != nil || LaneStopCommand(q) != "")) &&
 		q.ProcessAct == "" && q.Recovery == nil

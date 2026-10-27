@@ -563,19 +563,32 @@ func runIntentBudget(inv *intentInvocation) int {
 }
 
 func (inv *intentInvocation) budgetOwner(id, box string, before *goal.GoalFile) int {
-	args := append([]string{"--root", inv.stateRoot, "--id", id}, inv.forward("by", "lineage", "approved-ref", "temporary-human-word", "review-by", "fixture-human-authority")...)
-	args = append(args, box)
+	forwarded := inv.forward("by", "lineage", "approved-ref", "temporary-human-word", "review-by", "fixture-human-authority")
+	var answer *humanauthority.Proof
+	if inv.input.has("answer") {
+		// A person's channel answer acts from the session that recorded it.
+		actor, proof, problem := inv.actingAs("goal budget", id, actorHuman)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		lineage := inv.choice.question.Answer.Lineage
+		if lineage == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id), Summary: "the answer names no session to act from; nothing was done",
+				next: withoutOption(inv.typedArgv(), "answer"), nextReason: "the same act at your enrolled terminal"})
+		}
+		forwarded, answer = append(inv.forward("approved-ref"), actor...), proof
+		if !inv.input.has("lineage") {
+			forwarded = append(forwarded, "--lineage", lineage)
+		}
+	}
+	args := append(append([]string{"--root", inv.stateRoot, "--id", id}, forwarded...), box)
 	result := inv.ownerCall(inv.targets(id), func(dependencies syncRequestDependencies) int {
+		dependencies.answerProof = answer
 		return runGoalBudgetWithInputs(args, inv.owners.prove, inv.owners.commandNow, dependencies, inv.owners.binding)
 	}, func() intentResult { return inv.afterGoalAct(id, "budget") })
-	if result.Outcome == intentRefused && before.IsFencedClaim() && before.Budget != nil {
-		// A goal stopped by its budget resumes under its standing box before a
-		// new box is recorded; the public command for that is resume.
-		if asked, problem := inv.completeBox(box, before); problem == nil && asked != *before.Budget {
-			result.next = inv.publicArgv("goal", "resume", id)
-			result.nextReason = "resume under the standing box first, then change it with metasystem goal budget " + id + " BOX"
-			result.Decision = ""
-		}
+	if result.Outcome == intentUnchanged {
+		// The goal already moved on: its box question is settled too.
+		inv.afterGoalAct(id, "budget")
 	}
 	return inv.render(result)
 }
@@ -703,6 +716,13 @@ func (inv *intentInvocation) afterGoalAct(id, act string) intentResult {
 	}
 	view := inv.budgetView(file, now)
 	summary := fmt.Sprintf("%s: %s is %s", act, id, file.State)
+	var details []string
+	if inv.resolveLayout() == nil && !file.IsFencedClaim() {
+		// The goal moved on: its budget-stop question is settled.
+		if err := channel.CloseGoalStopQuestions(inv.layout.InstallationRoot.Path(), id, act+" at "+now.Local().Format("15:04"), now); err != nil {
+			details = append(details, "the goal's budget question could not be closed: "+err.Error())
+		}
+	}
 	if view.Box != "" {
 		summary += " under " + view.Box
 	}
@@ -710,7 +730,7 @@ func (inv *intentInvocation) afterGoalAct(id, act string) intentResult {
 		summary += "; " + strings.Join(file.Claimed.Warnings, "; ")
 	}
 	shown := goalShown{file: file, budget: view}
-	return intentResult{Summary: summary, text: view.lines(),
+	return intentResult{Summary: summary, text: view.lines(), Details: details,
 		Data: map[string]any{"where": where, "goal": goalDisplayRecord(file, false), "budget": view},
 		view: func(page *textui.Page) {
 			// The act's confirmation; --verbose adds the budget as spent of

@@ -274,11 +274,15 @@ func TestUnitAsksNameTheUnit(t *testing.T) {
 					t.Fatalf("build: %d %+v", code, result)
 				}
 				want = fmt.Sprintf("Unit outcome of goal %s stopped after build round 1: the builder reported a gap", b.id)
-				if name == "build-size" {
-					want = fmt.Sprintf("Unit outcome of goal %s changed 3 lines against the 1 it declared", b.id)
-				}
 			}
 			qs, unread := channel.WalkOpenQuestions(b.root())
+			if name == "build-size" {
+				want = fmt.Sprintf("%s: the build of unit outcome grew to 3 changed lines against the 1 planned, at %s.", strings.ReplaceAll(b.id, "-", " "), qs[0].OpenedAt.Local().Format("15:04"))
+				if len(unread) != 0 || len(qs) != 1 || !qs[0].Contract || qs[0].Plain.Decision != want || !strings.HasPrefix(qs[0].Text, "S"+want[1:]+"\n\n★ Accept the size — ") {
+					t.Fatalf("the size ask names no solution for the unit: %+v", qs)
+				}
+				return
+			}
 			if len(unread) != 0 || len(qs) != 1 || qs[0].Plain == nil {
 				t.Fatalf("unit questions: %+v %v", qs, unread)
 			}

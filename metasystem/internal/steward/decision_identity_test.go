@@ -8,9 +8,11 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
@@ -163,22 +165,14 @@ func TestBreachStopNoticeUsesTickClock(t *testing.T) {
 	fixture := newChannelFixture(t)
 	cfg := TickConfig{Now: funnelStart, BreachStop: func(string, uint64) (string, error) { return "stopped", nil }}
 	reports := custodialBreachStops(fixture.root, cfg, func(string, time.Time) ([]dispatch.StopRoute, error) {
-		return []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4}}, nil
+		return []dispatch.StopRoute{{GoalID: "budget-goal", Revision: 4, Budget: &breachBox}}, nil
 	})
-	if len(reports) != 1 || reports[0].State != "COMPLETE" || len(fixture.posts(t)) != 1 {
-		t.Fatalf("stop must complete and post: %+v", reports)
+	asked, _ := channel.WalkOpenQuestions(fixture.root)
+	if len(reports) != 1 || reports[0].State != "COMPLETE" || len(asked) != 1 {
+		t.Fatalf("stop must complete and ask: %+v %+v", reports, asked)
 	}
-	episodes := episodesOwnedBy(t, fixture.root, breachStopAlertOwner)
-	if len(episodes) != 1 || len(episodes[0].Attempts) != 1 {
-		t.Fatalf("expected one stop notice attempt: %+v", episodes)
-	}
-	attempt := episodes[0].Attempts[0]
-	if !attempt.AttemptedAt.Equal(funnelStart) || !attempt.CompletedAt.Equal(funnelStart) {
-		t.Errorf("breach-stop attempt must use tick clock: %+v", attempt)
-	}
-	records := journalOf(t, fixture.root)
-	if len(records) != 1 || records[0].At != funnelStart.Format(time.RFC3339) {
-		t.Errorf("breach-stop journal must use tick clock: %+v", records)
+	if !asked[0].OpenedAt.Equal(funnelStart) || !strings.Contains(asked[0].Plain.Decision, "stopped at "+funnelStart.Local().Format("15:04")) {
+		t.Errorf("the box question must use the tick clock: %s %q", asked[0].OpenedAt, asked[0].Plain.Decision)
 	}
 }
 
@@ -199,8 +193,8 @@ func TestProviderStaleNoticeUsesTickClock(t *testing.T) {
 	for _, record := range journalOf(t, root) {
 		if record.Ref == "provider-stale-anthropic-"+observed.Format(time.RFC3339Nano) {
 			found++
-			if !record.Delivered || record.At != funnelStart.Format(time.RFC3339) {
-				t.Errorf("provider-stale journal must use tick clock and be delivered: %+v", record)
+			if record.Delivered || record.Withheld != "provider" || record.At != funnelStart.Format(time.RFC3339) {
+				t.Errorf("provider-stale journal must use tick clock and be kept from a person: %+v", record)
 			}
 		}
 	}

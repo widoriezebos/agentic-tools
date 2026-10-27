@@ -95,9 +95,10 @@ func TestStewardRunPublicVerbRefreshRefusalStillRevivesAndDelivers(t *testing.T)
 		t.Fatal("runner verb called Git")
 		return "", nil
 	})
-	log, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "steward", "notifications.log"))
-	if code != 0 || refreshes != 1 || err != nil || !strings.Contains(string(log), "pending before refresh") {
-		t.Fatalf("exit=%d refreshes=%d deliveries=%q error=%v stderr=%s", code, refreshes, log, err, stderr.String())
+	// The queue is worked off: its notice is kept in the journal, from a person.
+	log, err := os.ReadFile(steward.NotificationJournalPath(root))
+	if code != 0 || refreshes != 1 || err != nil || !strings.Contains(string(log), `"message":"pending before refresh","source":"steward","ref":"pending","delivered":false,"withheld":"unknown"`) {
+		t.Fatalf("exit=%d refreshes=%d journal=%q error=%v stderr=%s", code, refreshes, log, err, stderr.String())
 	}
 	ended, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "steward", "cancelled", "prepared.json"))
 	if err != nil || !strings.Contains(string(ended), "cancelled:") {
