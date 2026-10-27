@@ -1,13 +1,15 @@
 # a-spent-box-asks-before-it-blocks
 
 - State: approved
+- Priority: 1
+- Sequence: 85
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="One new contract question through an existing admitted act (goal budget --answer); a projection-only pass that stops nothing and leaves the breach scanner unchanged; a wrong question costs one tap"
 - Tier: 1
 - Intent: A claimed goal whose elapsed box is spent asks the person once, in the contract, with Raise the box as the recommended act, on a helm seat too; the question is the first state of one budget-question lifecycle with the breach stop; the admission refusal and goal next name it (finding 427; design plans/designs/the-stewards-act-on-what-they-see.md (accepted, revision 4) D1, G1)
 - Origin: main
 - Next step: On ui's machine route after the-lane-returns-its-own-red: opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 85 production lines: dispatch/budget.go (FindAdmissionClosed, projection only), steward/signal_channel.go, channel/unit_stop.go, steward/tick.go (helm pass), goal next and the refusal text; goal budget already takes --answer
 - OpenedAt: 2026-10-27T15:30:33Z
-- Revision: 4
+- Revision: 5
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -19,4 +21,5 @@ History:
 - 2026-10-27T15:30:44Z ZKF57N353HQTN0RCD3YB1YYQ4D-m1e-e06ab4ba approve actor=human:Wido targets=a-spent-box-asks-before-it-blocks
 - 2026-10-27T15:30:55Z 5ETQW1TB7WBNEZ0QC2S08MFHF2-m1e-e06ab4ba approve actor=human:Wido targets=a-spent-box-asks-before-it-blocks
 - 2026-10-27T15:31:05Z 17R4VT296Y71H0EVNJTJN5P9KN-m1e-e06ab4ba set-pin actor=human:Wido targets=a-spent-box-asks-before-it-blocks
-Integrity: sha256=62378f82225ab6f5fd181de5fdb8b2e45b47526034486ff8004699a3247d89be
+- 2026-10-27T15:31:16Z DEQCVVDZ6RKBQ02BCQ6NHV5AZC-m1e-e06ab4ba set-priority actor=human:Wido targets=a-spent-box-asks-before-it-blocks reason=priority-order subject=a-spent-box-asks-before-it-blocks from=unranked to=1:85 requested-sequence=append
+Integrity: sha256=cbec09f42711df19f3a04b16777cfe2c812d6b2ddd22849c626b1767fa555533
