@@ -175,8 +175,9 @@ func Load(root string, withHuman bool) (Loaded, error) {
 }
 
 // SettleReplies consumes only replies already authenticated by the receiver.
-// It needs neither channel credentials nor an agent session.
-func SettleReplies(ctx context.Context, root string, endpoint func(string) (goal.Endpoint, error)) (int, error) {
+// It needs neither channel credentials nor an agent session; it records
+// answers under the machine and lineage the channel duty uses.
+func SettleReplies(ctx context.Context, root string, resolveMachine func(string) (string, error), endpoint func(string) (goal.Endpoint, error)) (int, error) {
 	adapter, err := Get(root, "channel.destination.fleet.adapter", "")
 	if errors.Is(err, config.ErrNoValue) {
 		return 0, nil
@@ -184,8 +185,25 @@ func SettleReplies(ctx context.Context, root string, endpoint func(string) (goal
 	if err != nil || adapter == "" {
 		return 0, err
 	}
-	res, err := channel.SettleReplies(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: adapter}, endpoint)
+	machine, lineage, err := answerActor(root, resolveMachine)
+	if err != nil {
+		return 0, err
+	}
+	res, err := channel.SettleReplies(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: adapter, Machine: machine, Lineage: lineage}, endpoint)
 	return res.Dispositions, err
+}
+
+// answerActor is the machine and lineage both channel passes record answers under.
+func answerActor(root string, resolveMachine func(string) (string, error)) (string, string, error) {
+	machine, err := resolveMachine(root)
+	if err != nil {
+		return "", "", err
+	}
+	lineage := os.Getenv("METASYSTEM_OWNER_LINEAGE")
+	if lineage == "" {
+		lineage = "steward"
+	}
+	return machine, lineage, nil
 }
 
 // Run performs the bounded channel duty after every other tick duty.
@@ -204,13 +222,9 @@ func run(ctx context.Context, root string, now time.Time, resolveMachine func(st
 	if err != nil {
 		return 1, err
 	}
-	machine, err := resolveMachine(root)
+	machine, lineage, err := answerActor(root, resolveMachine)
 	if err != nil {
 		return 1, err
-	}
-	lineage := os.Getenv("METASYSTEM_OWNER_LINEAGE")
-	if lineage == "" {
-		lineage = "steward"
 	}
 	res, err := channel.Poll(ctx, channel.PollConfig{RepoRoot: root, Destination: "fleet", ProviderName: loaded.Adapter, HumanUserID: loaded.HumanUserID, TOTPSecret: loaded.TOTPSecret, Machine: machine, Lineage: lineage, Provider: loaded.Provider, DestinationConfig: loaded.Destination, Now: now, MaxDispositions: 5})
 	if err != nil {

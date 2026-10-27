@@ -684,6 +684,9 @@ func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.Channe
 	if c.Machine == "" {
 		c.Machine = q.Machine
 	}
+	if c.Machine == "" {
+		return errors.New("an answer cannot be recorded with no machine; name this machine: git config metasystem.goal.machine <name>")
+	}
 	if c.Lineage == "" {
 		c.Lineage = q.Lineage
 		if c.Lineage == "" {
