@@ -10,6 +10,7 @@ package steward
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -57,6 +59,34 @@ func readLaneSilenceWithDesignChecks(home, self string, now time.Time, appendDig
 	return readLaneSilence(home, self, now)
 }
 
+func laneLineForDigest(install, self string) (*narratordigest.Entry, func() error, error) {
+	line, err := plain.ReadStewardLine(install)
+	if err != nil {
+		return nil, nil, err
+	}
+	path := filepath.Join(self, "artifacts", "agents", "steward", "lane-line-carried.json")
+	var previous plain.StewardLine
+	data, err := os.ReadFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		err = nil
+	} else if err == nil {
+		err = json.Unmarshal(data, &previous)
+	}
+	if err != nil {
+		return nil, nil, err
+	}
+	if line.Identity == previous.Identity || len(line.Rows) == 0 && !line.Report.At.After(previous.Report.At) {
+		return nil, nil, nil
+	}
+	return &narratordigest.Entry{Kind: "lowlight", Text: line.Line, SourceType: "lane-steward", SourceID: line.Identity}, func() error {
+		data, err := json.Marshal(line)
+		if err != nil {
+			return err
+		}
+		return atomicfile.WriteVolatileFile(path, data, 0600)
+	}, nil
+}
+
 // carryLaneDesignChecks offers the lane's warnings on every tick. The digest
 // keeps exact retries once, so a checkout reset needs no separate cursor.
 func carryLaneDesignChecks(home, self string, now time.Time, appendDigest func(string, []narratordigest.Entry, time.Time) error, output io.Writer) {
@@ -71,8 +101,19 @@ func carryLaneDesignChecks(home, self string, now time.Time, appendDigest func(s
 			entries = append(entries, narratordigest.Entry{Kind: "lowlight", Text: check.Reason, SourceType: "design-gate-landing", SourceID: check.Goal + "@" + check.Commit})
 		}
 	}
-	if err == nil {
-		err = appendDigest(self, entries, now)
+	line, carried, lineErr := laneLineForDigest(record.Install, self)
+	if line != nil {
+		entries = append(entries, *line)
+	}
+	if err == nil || line != nil {
+		appendErr := appendDigest(self, entries, now)
+		err = errors.Join(err, appendErr)
+		if appendErr == nil && carried != nil {
+			lineErr = carried()
+		}
+	}
+	if lineErr != nil {
+		fmt.Fprintf(output, "warning: lane line unreadable: %s; the tick goes on\nnothing to do: the next tick retries\n", strings.Join(strings.Fields(lineErr.Error()), " "))
 	}
 	if err != nil {
 		fmt.Fprintf(output, "warning: the lane's design warnings could not reach the narrator (%s); the tick goes on\nnothing to do: the next tick retries\n", strings.Join(strings.Fields(err.Error()), " "))

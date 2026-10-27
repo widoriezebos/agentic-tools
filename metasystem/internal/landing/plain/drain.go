@@ -259,6 +259,11 @@ func KeeperDrainHold(install string) (string, error) {
 
 // proofAdmission allows admitted work and incident recovery, but suppresses idle timer proofs.
 func proofAdmission(install, checkout, commit string, seams ProveSeams) error {
+	if seams.Person == nil {
+		if err := holdBesideBuildsLocked(install, commit, seams); err != nil {
+			return err
+		}
+	}
 	drain, err := ReadDrain(install)
 	if seams.Person != nil || drain == nil && err == nil {
 		return nil

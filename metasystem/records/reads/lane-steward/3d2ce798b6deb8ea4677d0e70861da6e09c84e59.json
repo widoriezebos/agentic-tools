@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-steward",
+  "unit": "U6a",
+  "subject": {
+    "commit": "3d2ce798b6deb8ea4677d0e70861da6e09c84e59",
+    "parent": "2a652167c1884d2b2a1baa4a466f1bf5e6780e5f",
+    "tree": "0dbc2ea0b8c3ec897d51528bfa9a319584b17e75",
+    "patchDigest": "ffd7b8befe0fd5cf55910864009080c56514b6dd9d075235a7280da57d2c139d",
+    "unitDigest": "3e710e2e141b2bef37667a5f08dfea11afeac7333b3e293b6ea18b74774c0af1"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-26af1bf2782f99491c98ab71",
+    "round": 1,
+    "closureSha256": "9a12976c0e7d8433c28469bfb0b357973fa242cbaccfffe7d9e016cc06f926d6"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0dbc2ea0b8c3ec897d51528bfa9a319584b17e75",
+    "runId": "goal-read-gate-20261026t075611z-5f5739d5287111ff"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/landing-status-stopped.json",
+      "readerWord": "reviewed by critic root code-critic-26af1bf2782f99491c98ab71"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/landing-status-verbose.json",
+      "readerWord": "reviewed by critic root code-critic-26af1bf2782f99491c98ab71"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/landing-status.json",
+      "readerWord": "reviewed by critic root code-critic-26af1bf2782f99491c98ab71"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/shadow_writers_test.go",
+      "readerWord": "reviewed by critic root code-critic-26af1bf2782f99491c98ab71"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/steward_report_test.go",
+      "readerWord": "reviewed by critic root code-critic-26af1bf2782f99491c98ab71"
+    },
+    {
+      "path": "metasystem/internal/steward/lane_silent_test.go",
+      "readerWord": "reviewed by critic root code-critic-26af1bf2782f99491c98ab71"
+    }
+  ],
+  "sha256": "b694729f5811165a565eb39f10d240a98c7542a1c3a3430ee4b95ebbad1e643e"
+}

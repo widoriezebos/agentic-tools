@@ -1,0 +1,56 @@
+{
+  "schemaVersion": 1,
+  "goal": "lane-steward",
+  "unit": "U6c",
+  "subject": {
+    "commit": "982f4dd00da86109a5a1cd234cb38146bf724048",
+    "parent": "4c3b70e8724d062cc360d62b37f9554de4da155c",
+    "tree": "189588ceb9601f21991836cae5dc0e6ff86ad9d4",
+    "patchDigest": "f9fcc4a202c734288abd491a0bd935b781a5171388f0637e75f7378a6e53a870",
+    "unitDigest": "dbb51e8b08c9d90fee5e8e5ff6a58c7f4b3e766f36e2caa776f80b2f347984c7"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-0f6818703f4c0b4105271f3e",
+    "round": 1,
+    "closureSha256": "fc3cdd46f550846f6860130ef84b0d8c8b5bfdd3ad6fd223d655b737ce4a0643"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "189588ceb9601f21991836cae5dc0e6ff86ad9d4",
+    "runId": "goal-read-gate-20261027t124313z-7a52a89a7a61c60e"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "2f7aa3c29e66b4b58c52285a1bd344b9f79b242b",
+      "digest": "21f479a042e36ebb90a437917e208db0edca7f78a200cc1beaf81cc7a2cd5de2"
+    },
+    {
+      "kind": "read",
+      "commit": "01e8cbcfd3a0fab2cc49ad2cc1674d95e257afce",
+      "digest": "8a633893dc16140bdcd186fb0b81821b75bd0046fad6db876c593bb5173b41df"
+    },
+    {
+      "kind": "read",
+      "commit": "4c3b70e8724d062cc360d62b37f9554de4da155c",
+      "digest": "76aaf39e71e6ee6f93b00dd316781c5588c3836a1699531ee0f19806fa31133a"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/ambient_controls_test.go",
+      "readerWord": "reviewed by critic root code-critic-0f6818703f4c0b4105271f3e"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_engine_execution_test.go",
+      "readerWord": "reviewed by critic root code-critic-0f6818703f4c0b4105271f3e"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/steward_rows_test.go",
+      "readerWord": "reviewed by critic root code-critic-0f6818703f4c0b4105271f3e"
+    }
+  ],
+  "sha256": "8ec2acfd313db0b1bfd35116c9b79cd964363ad6e114d4ebb9074e0042479fb8"
+}

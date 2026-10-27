@@ -226,6 +226,9 @@ func (a landingAgent) questionHold(module string) (string, error) {
 	open, _ := channel.WalkQuestions(module)
 	var lane []channel.Question
 	for _, q := range open {
+		if len(q.Facts) > 1 && strings.HasPrefix(q.Facts[1], "lane steward: ") {
+			continue
+		}
 		if satisfied, err := plain.PolicyQuestionSatisfied(module, q); err != nil {
 			return "", err
 		} else if satisfied {
@@ -385,6 +388,13 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 					return "", err
 				}
 				return plain.KeeperDrainHold(record.Install)
+			},
+			func(string) (string, error) {
+				record, _, err := lane.Read(home)
+				if err != nil {
+					return "", err
+				}
+				return plain.KeeperContentionHold(record.Install, plain.ProveSeams{Now: agent.now})
 			},
 
 			func(string) (string, error) {

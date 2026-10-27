@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gocache"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv/testdata/buildlock"
@@ -75,7 +76,19 @@ func TestMain(m *testing.M) {
 	} else if buildWaitCandidate {
 		setup = setUpWaitCandidate
 	}
-	status := testenv.MainWithSetup(m, setup, declarations...)
+	status := testenv.MainWithSetup(m, func() error {
+		root, err := launch.DefaultRoot()
+		if err == nil {
+			err = os.MkdirAll(root, 0o700)
+		}
+		if err != nil {
+			return fmt.Errorf("prepare command test launch store %q: %w", root, err)
+		}
+		if setup != nil {
+			return setup()
+		}
+		return nil
+	}, declarations...)
 	if proofCommandChild && status == 0 {
 		os.Exit(proofCommandFixtureChildStatus)
 	}

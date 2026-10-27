@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -112,10 +113,12 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 			}
 		}
 		if status.Health != nil {
+			seenFix := map[string]bool{}
 			for _, f := range status.Health.Flakes {
-				if f.FixGoal == "" {
+				if f.FixGoal == "" || seenFix[f.FixGoal] {
 					continue
 				}
+				seenFix[f.FixGoal] = true
 				file, err := readFlakeFixGoal(install, checkout, f.FixGoal, seams)
 				if err != nil {
 					fmt.Fprintf(&out, "- Flake fix goal %s cannot be read: %v\n", f.FixGoal, err)
@@ -149,9 +152,6 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 			if minutes != nil && *minutes > 60 {
 				target = "over 60 min"
 			}
-			if e.State == StateWaiting && minutes != nil {
-				oldest = max(oldest, *minutes)
-			}
 			fmt.Fprintf(&out, "- %s: %s, %s min; %s; %s\n", e.Goal, e.State, measured(minutes), target, e.Reason)
 		}
 		pushes, err := readLines[Pushed](pushesPath(install))
@@ -182,9 +182,8 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 		} else if skipped > 0 {
 			fmt.Fprintf(&out, "- %s\n", landingstate.SkippedEvidence(skipped))
 		}
-		day := now.Local().Format("2006-01-02")
 		for _, event := range events {
-			if event.Kind == "drift" && event.By == "keeper" && !event.At.After(now) && event.At.Local().Format("2006-01-02") == day {
+			if event.Kind == "drift" && event.By == "keeper" && event.At.After(from) && !event.At.After(now) {
 				differences := strings.Split(event.Evidence, "\n")
 				for i, difference := range differences {
 					field, values, _ := strings.Cut(difference, ": ")
@@ -199,11 +198,14 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 		if err != nil {
 			return err
 		}
+		if len(landings) == 0 {
+			fmt.Fprintln(&out, "no landing this hour")
+		}
 		for _, e := range landings {
-			criticFrom := e.At
+			criticFrom := ""
 			for _, old := range status.Queue {
 				distance := elapsedMinutes(old.LandedAt, e.LandedAt)
-				if old.Goal == e.Goal && old.State == StateLanded && distance != nil && *distance > 0 && elapsedMinutes(criticFrom, old.LandedAt) != nil {
+				if old.Goal == e.Goal && old.State == StateLanded && distance != nil && *distance > 0 && (criticFrom == "" || elapsedMinutes(criticFrom, old.LandedAt) != nil) {
 					criticFrom = old.LandedAt
 				}
 			}
@@ -216,8 +218,8 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 					if kind == "landing" {
 						match = r.Kind == launch.LandingKind && r.WorkingDirectory == checkout && elapsedMinutes(r.StartedAt, e.LandedAt) != nil && (r.FinishedAt == "" || elapsedMinutes(e.At, r.FinishedAt) != nil)
 					} else {
-						sinceHandIn := elapsedMinutes(criticFrom, r.StartedAt)
-						match = match && r.Goal == e.Goal && sinceHandIn != nil && elapsedMinutes(r.StartedAt, e.LandedAt) != nil && (criticFrom == e.At || *sinceHandIn > 0)
+						sincePrevious := elapsedMinutes(criticFrom, r.StartedAt)
+						match = match && r.Goal == e.Goal && elapsedMinutes(r.StartedAt, e.LandedAt) != nil && (criticFrom == "" || sincePrevious != nil && *sincePrevious > 0)
 					}
 					if !match {
 						continue
@@ -249,7 +251,11 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 					if err != nil {
 						return err
 					}
-					fmt.Fprintf(&out, "- %s %s: unmeasured: %s session record\n", e.Goal, kind, filepath.Join(filepath.Dir(dir), "*", "record.json"))
+					window := "first landing (no lower bound)"
+					if criticFrom != "" {
+						window = lane.LocalText(criticFrom)
+					}
+					fmt.Fprintf(&out, "- %s %s: unmeasured: no session record in %s; window %s to %s\n", e.Goal, kind, filepath.Dir(dir), window, lane.LocalText(e.LandedAt))
 				} else {
 					value := fmt.Sprintf("%d tokens", total)
 					if len(missing) > 0 {
@@ -265,15 +271,21 @@ func StewardReport(install, checkout string, status Status, acts []Intervention,
 				}
 			}
 		}
-		overdue := 0
+		overdueGoals, overdueRecords := 0, 0
 		if status.Health != nil {
 			for _, row := range status.Health.Rows() {
+				if row.Row == "overdue-goal" {
+					overdueGoals++
+					if minutes, err := strconv.ParseFloat(row.Minutes, 64); err == nil {
+						oldest = max(oldest, minutes)
+					}
+				}
 				if row.Row == "overdue-record" {
-					overdue++
+					overdueRecords++
 				}
 			}
 		}
-		summary = fmt.Sprintf(landingstate.Phrase("hour-to-s-d-landed-d-returned-d-red"), now.Local().Format("15:04"), landed, returned, reds, causes["goal"], causes["main"], causes["flake"], causes["unknown"], oldest, count, overdue)
+		summary = fmt.Sprintf(landingstate.Phrase("hour-to-s-d-landed-d-returned-d-red"), now.Local().Format("15:04"), landed, returned, reds, causes["goal"], causes["main"], causes["flake"], causes["unknown"], oldest, count, overdueGoals, overdueRecords)
 		fmt.Fprintf(&out, "\n%s\n\n", summary)
 		path := filepath.Join(Dir(install), "steward-report.md")
 		old, err := os.ReadFile(path)

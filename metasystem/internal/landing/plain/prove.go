@@ -176,6 +176,8 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
+	// HostWork observes host builds and unit checks; nil leaves proof starts unheld.
+	HostWork           func() (builds, checks int, err error)
 	Executions         func(string) map[string]enginepin.Execution
 	contractCache      map[string]string
 	TransitionBy       string

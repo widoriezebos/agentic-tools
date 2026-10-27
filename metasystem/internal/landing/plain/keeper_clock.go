@@ -193,6 +193,14 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 	if err != nil {
 		state.Reason = "clock due; main's check could not start: " + err.Error()
 		state.RetryAt = seams.now().Add(every)
+		var refusal *Refusal
+		if errors.As(err, &refusal) && refusal.Code == "LANE_PROOF_CONTENTION" {
+			until, _, readErr := ProofHoldUntil(install)
+			if readErr != nil {
+				return "", readErr
+			}
+			state.RetryAt = until
+		}
 		return "", prepare(record)
 	}
 	return state.Reason, err

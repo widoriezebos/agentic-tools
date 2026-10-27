@@ -536,7 +536,7 @@ var Phrases = map[string]string{
 	"the-running-proof-log":                                       "the running proof log",
 	"landed-with-lane-fix-d":                                      "landed with lane fix %d",
 	"proving-main-2":                                              "proving main: ",
-	"hour-to-s-d-landed-d-returned-d-red":                         "hour to %s: %d landed, %d returned, %d red (goal %d, main %d, flake %d, unknown %d), oldest goal %g min, %d acts, %d overdue records",
+	"hour-to-s-d-landed-d-returned-d-red":                         "hour to %s: %d landed, %d returned, %d red (goal %d, main %d, flake %d, unknown %d), oldest goal %g min, %d acts, %d overdue goals, %d overdue records",
 	"closes-when-its-subjects-landed-returned-or-were-superseded": "closes when its subjects landed, returned or were superseded, or its proof attempt is no longer current",
 	"closes-when-done-superseded-by-another-proof-or-its":         "closes when done, superseded by another proof, or its merge ownership is settled; an abandoned fix waits until its subject landed, returned or was superseded",
 	"leaves-the-views-after-the-day-window-when-landed":           "leaves the views after the day window when landed or returned; superseded submissions leave immediately; queue history stays",
@@ -595,6 +595,11 @@ var Phrases = map[string]string{
 	"held-ok-d-commit-s-above-s":                                  "held: ok %d commit(s) above %s\n",
 	"held-refused-s-s-s":                                          "held refused: %s: %s: %s\n",
 	"held-unreadable-unknown-verdict":                             "held: unreadable: unknown verdict",
+	"stopped-acting-on":                                           "stopped acting on ",
+	"d-builds-and-d-unit-checks-run-beside":                       "%d builds and %d unit checks run beside proof %s; reported, not held",
+	"the-lane-s-proof-start-is-held-beside":                       "the lane's proof start is held beside builds until ",
+	"bounded-the-proof-start-is-held-beside-builds":               "bounded: the proof start is held beside builds until ",
+	"the-landing-lane-s-steward-stopped-acting-on":                "The landing lane's steward stopped acting on ",
 }
 
 func Phrase(key string) string { return Phrases[key] }

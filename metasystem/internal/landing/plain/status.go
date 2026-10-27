@@ -247,6 +247,7 @@ func assembleHealth(status Status, record lane.Record, seams ProveSeams, git lan
 	if len(status.Problems) > 0 && status.Root != nil {
 		rows := shadowRows(status)
 		status.Health = &Health{State: "unknown", Shadow: status.Shadow, Drift: rows, ObservationProblem: rows[0].Subject}
+		status.Health.LineText = status.Health.Line()
 		return status
 	}
 	if len(status.Problems) == 0 && status.Root != nil {
@@ -259,6 +260,7 @@ func assembleHealth(status Status, record lane.Record, seams ProveSeams, git lan
 		}
 		if status.Health != nil {
 			status.Health.Shadow = status.Shadow
+			status.Health.LineText = status.Health.Line()
 		}
 	}
 	return status
@@ -714,7 +716,7 @@ func observe(home string, record lane.Record, view lane.View, seams ProveSeams, 
 				raw.QuestionInputs = map[string]landingstate.QuestionInput{}
 			}
 			raw.QuestionInputs[q.ID] = landingstate.QuestionInput{FirstLine: firstQuestionLine(q), Policy: channel.LaneStopCommand(q) != ""}
-			raw.QuestionHealth = append(raw.QuestionHealth, QuestionHealth{ID: q.ID, Kind: q.Kind, Minutes: seams.now().Sub(q.OpenedAt).Minutes(), Premise: premise, WaitsFor: LaneQuestionHeadline(q)})
+			raw.QuestionHealth = append(raw.QuestionHealth, QuestionHealth{Policy: channel.LaneStopCommand(q) != "", ID: q.ID, Kind: q.Kind, Minutes: seams.now().Sub(q.OpenedAt).Minutes(), Premise: premise, WaitsFor: LaneQuestionHeadline(q)})
 
 		}
 	}

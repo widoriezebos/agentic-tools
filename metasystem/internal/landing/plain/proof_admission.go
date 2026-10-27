@@ -7,7 +7,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -46,6 +48,95 @@ type admittedScope struct {
 	Source   Result                    `json:"source,omitempty"`
 	Contract testpolicy.Contract       `json:"contract,omitempty"`
 	Affected testpolicy.AffectedResult `json:"affected,omitempty"`
+}
+
+// proofContention reads the first hold and its later release in append order.
+// An empty subject selects the latest commit's hold.
+func proofContention(entries []Intervention, subject string) (held, released Intervention) {
+	for _, entry := range entries {
+		if entry.Row != "proof-beside-builds" || subject != "" && entry.Subject != subject {
+			continue
+		}
+		if strings.HasPrefix(entry.Outcome, "held") && (held.At == "" || held.Subject != entry.Subject) {
+			held, released = entry, Intervention{}
+		}
+		if strings.HasPrefix(entry.Outcome, "released") && held.At != "" && held.Subject == entry.Subject {
+			released = entry
+		}
+	}
+	return
+}
+
+func holdBesideBuildsLocked(install, commit string, seams ProveSeams) error {
+	if seams.HostWork == nil {
+		return nil
+	}
+	builds, checks, readErr := seams.HostWork()
+	if readErr == nil && builds == 0 && checks == 0 {
+		return nil
+	}
+	entries, err := readLines[Intervention](interventionsPath(install))
+	if err != nil {
+		return err
+	}
+	held, released := proofContention(entries, commit)
+	if released.At != "" {
+		return nil
+	}
+	now := seams.now()
+	work := fmt.Sprintf("%d builds and %d unit checks run", builds, checks)
+	if readErr != nil {
+		work = "the launch store cannot be read: " + readErr.Error()
+	}
+	record := func(outcome string) error {
+		load := "unmeasured"
+		reader := seams.Load
+		if reader == nil {
+			reader = hostload.Read
+		}
+		if sample := reader(now); sample.Available {
+			load = fmt.Sprintf("%g", sample.Load1m)
+		}
+		return appendLine(interventionsPath(install), Intervention{At: now.UTC().Format(time.RFC3339Nano), Row: "proof-beside-builds", Subject: commit, Outcome: outcome + work + "; load " + load}, seams)
+	}
+	if held.At == "" {
+		if err := record("held: "); err != nil {
+			return err
+		}
+		held.At = now.UTC().Format(time.RFC3339Nano)
+	}
+	at, err := time.Parse(time.RFC3339Nano, held.At)
+	if err != nil {
+		return err
+	}
+	until := at.Add(30 * time.Minute)
+	if !now.Before(until) {
+		return record("released after the 30-minute hold; ")
+	}
+	return &Refusal{Code: "LANE_PROOF_CONTENTION", Reason: "the lane holds its own proof start while " + work + ", until " + until.Local().Format("15:04 MST") + " at the latest", Next: proofCommand(seams.Gate, seams.Trunk)}
+}
+
+// ProofHoldUntil returns the deadline of the latest unreleased proof hold.
+func ProofHoldUntil(install string) (time.Time, bool, error) {
+	entries, err := readLines[Intervention](interventionsPath(install))
+	if err != nil {
+		return time.Time{}, false, err
+	}
+	held, released := proofContention(entries, "")
+	if held.At == "" || released.At != "" {
+		return time.Time{}, false, nil
+	}
+	at, err := time.Parse(time.RFC3339Nano, held.At)
+	return at.Add(30 * time.Minute), err == nil, err
+}
+
+// KeeperContentionHold keeps the agent out of a proof hold until its deadline.
+func KeeperContentionHold(install string, seams ProveSeams) (string, error) {
+	until, held, err := ProofHoldUntil(install)
+	if held && seams.now().Before(until) {
+		return landingstate.Phrase("the-lane-s-proof-start-is-held-beside") + until.Local().Format("15:04 MST"), err
+	}
+	return "", err
 }
 
 func proofCommand(gate, trunk bool) string {

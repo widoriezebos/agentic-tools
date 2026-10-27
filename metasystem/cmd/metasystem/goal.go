@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/authority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	dispatchpkg "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
@@ -24,6 +25,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
@@ -464,6 +467,26 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 	if err := goal.ValidateLabels(labels); err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1
+	}
+	homeReader := dependencies.laneHome
+	if homeReader == nil {
+		homeReader = board.Home
+	}
+	if home, err := homeReader(); err == nil {
+		record, registered, err := lane.Read(home)
+		if err != nil {
+			fmt.Fprintln(stdout, "lane line unreadable:", err)
+		} else if registered {
+			line, err := plain.ReadStewardLine(record.Install)
+			now, clockErr := commandNow(*root)
+			if err != nil || clockErr != nil {
+				fmt.Fprintln(stdout, "lane line unreadable:", errors.Join(err, clockErr))
+			} else if len(line.Rows) > 0 || !line.Report.At.IsZero() && now.Sub(line.Report.At) < time.Hour {
+				fmt.Fprintf(stdout, "lane: %s (%d min ago)\n", line.Line, max(0, int(now.Sub(line.At)/time.Minute)))
+			}
+		}
+	} else {
+		fmt.Fprintln(stdout, "lane line unreadable:", err)
 	}
 	if stateRoot, rootErr := goal.ResolveStateRoot(*root); rootErr == nil {
 		if waiting, waitErr := report.CurrentWaitingLines(stateRoot); waitErr == nil {
