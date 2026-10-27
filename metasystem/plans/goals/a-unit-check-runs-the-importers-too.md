@@ -7,14 +7,16 @@
 - Origin: main
 - Next step: On ui after the-impact-check-selects-only-tests-this-host-can-run lands (same files): opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 60 production lines: landing/batch/goadapter/unitgate.go, impact.go, cmd/metasystem/test_impact.go; reverses part of 4e690dba7f (decision 9.1 of the page)
 - OpenedAt: 2026-10-27T15:19:40Z
-- Revision: 2
+- Revision: 3
 - BlockedBy: the-impact-check-selects-only-tests-this-host-can-run
-- Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
+- Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-27T15:20:06Z revision=2 opid=D4RDME2PGN8JJF6C76QXJC7P9C-m1e-e06ab4ba authority=proven digest=748f896eaa9c577eb6e8fc8adc85b2eb573c80242bc9f3223106fcd2e9899ae9 episode=2
+- NormApproval: approvedRef=8AAEPZTDKBEJ7X3A6HVAEA1CAX-m1e-e06ab4ba minutes=1200 reviewRounds=20 goalRevision=2
+- Approved: by=human:Wido at=2026-10-27T15:20:22Z revision=3 opid=8AAEPZTDKBEJ7X3A6HVAEA1CAX-m1e-e06ab4ba authority=proven digest=7a7df6656225fb021fee2b293ba8eab47c7fa4fc2ee13ffabcf51047323c0ab3 episode=3
 - Parked: by=human:Wido at=2026-10-27T15:19:40Z blocker=the-impact-check-selects-only-tests-this-host-can-run because=blocked by the-impact-check-selects-only-tests-this-host-can-run; returns when it is done
 
 History:
 - 2026-10-27T15:19:40Z 35NQ8H80Z4X44CJ9KW0VH9PKZV-m1e-e06ab4ba open actor=human:Wido targets=a-unit-check-runs-the-importers-too,the-impact-check-selects-only-tests-this-host-can-run
 - 2026-10-27T15:20:06Z D4RDME2PGN8JJF6C76QXJC7P9C-m1e-e06ab4ba approve actor=human:Wido targets=a-unit-check-runs-the-importers-too
-Integrity: sha256=04dbb1055fa3b8ed062d917fbdd9ddf3dbd0903977848b5e407166ebf32dc91d
+- 2026-10-27T15:20:22Z 8AAEPZTDKBEJ7X3A6HVAEA1CAX-m1e-e06ab4ba approve actor=human:Wido targets=a-unit-check-runs-the-importers-too
+Integrity: sha256=b8eab1818e2f20e7e9d72516bd5d8e032a34e73217b4e82991378680fc11d225
