@@ -7,8 +7,9 @@
 - Origin: main
 - Next step: On ui's machine route after a-spent-box-asks-before-it-blocks lands (same files: signal_channel.go, tick.go): opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole) cut on that goal's tip; one unit, about 85 production lines: steward/seat_ladder.go, alert_episode.go, health.go, tick.go, the routing
 - OpenedAt: 2026-10-27T15:31:34Z
-- Revision: 3
+- Revision: 4
 - BlockedBy: a-spent-box-asks-before-it-blocks
+- Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=KWRFWEYXV8CYSH9E5PXFJKXFN6-m1e-e06ab4ba minutes=2400 reviewRounds=20 goalRevision=2
@@ -19,4 +20,5 @@ History:
 - 2026-10-27T15:31:34Z HSM5V266F52ZMB5MYVXFGXQXF3-m1e-e06ab4ba open actor=human:Wido targets=a-stewards-standing-defect-reaches-an-owner,a-spent-box-asks-before-it-blocks
 - 2026-10-27T15:31:49Z 93PHYKMYDW5WXDK90QHD5F1SG7-m1e-e06ab4ba approve actor=human:Wido targets=a-stewards-standing-defect-reaches-an-owner
 - 2026-10-27T15:32:01Z KWRFWEYXV8CYSH9E5PXFJKXFN6-m1e-e06ab4ba approve actor=human:Wido targets=a-stewards-standing-defect-reaches-an-owner
-Integrity: sha256=6228401ec8cc7f6085b7b25784ab7c41aa608ff02a685e28700665155b1cf75c
+- 2026-10-27T15:32:13Z ATBHEBTH98T29AVBJ7X2D2FDXR-m1e-e06ab4ba set-pin actor=human:Wido targets=a-stewards-standing-defect-reaches-an-owner
+Integrity: sha256=4e5edc72d9cafbb21c8b1e75a0cb460529d48a650bd80b0dadd9820dccd341d3
