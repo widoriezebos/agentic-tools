@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: On m1e's build lane after a-live-read-proves-its-subject: opus-builder changes the three defaults (internal/config/defaults.go:326, :328, :424) and, if a worktree's config resolution has no path to the installation's .local, adds that path in the config loader for engine-made goal worktrees; tests: the default table and a worktree bed that resolves role.code-critic.model.claude to the installation's local value; Read each round: yes; the steward submits with work review --changes --last; about 15 production lines
 - OpenedAt: 2026-10-27T18:39:32Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=RVVSSGAQFTCJAV0PP4TWN7B9WM-m1e-75099fe5 minutes=720 reviewRounds=20 goalRevision=2
@@ -17,4 +18,5 @@ History:
 - 2026-10-27T18:39:32Z ZHMBM767HBTA5B0VVKW87X2T5W-m1e-75099fe5 open actor=human:Wido targets=the-default-critic-is-opus
 - 2026-10-27T18:42:40Z K51MCDZ5PVF4EW7BZCP2V12Z4H-m1e-75099fe5 approve actor=human:Wido targets=the-default-critic-is-opus
 - 2026-10-27T18:45:26Z RVVSSGAQFTCJAV0PP4TWN7B9WM-m1e-75099fe5 approve actor=human:Wido targets=the-default-critic-is-opus
-Integrity: sha256=ba575b7a9f7b6e8a7cf658f76f8ee5493305654ea01909d985b0f0d73b79fc4b
+- 2026-10-27T18:46:34Z H5ZTHEXFMMPCSVDYE5FXSCY8BD-m1e-75099fe5 set-pin actor=human:Wido targets=the-default-critic-is-opus
+Integrity: sha256=05c4690ba6f3703d461dc7cf9c8f6eddea51146c8ce33484af2efbab6298ea74
