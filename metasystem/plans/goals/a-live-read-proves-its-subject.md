@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: On m1e's build lane after a-settled-reply-names-its-machine and before a-ready-goal-behind-a-claim-is-a-row (one line, minutes): opus-builder adds --full-index to worktreeDiff (internal/launch/unit_run.go:1182) and a test that computes both digests from one committed unit through the production paths (worktreeDiff and read_subject_compute) and asserts they are equal, failing first; Read each round: yes; the steward submits with work review --changes --last
 - OpenedAt: 2026-10-27T17:41:56Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=TGKGSFA630HZSQSQKQNQWP9877-m1e-55cdfc19 minutes=720 reviewRounds=20 goalRevision=2
@@ -17,4 +18,5 @@ History:
 - 2026-10-27T17:41:56Z 87D50ZJR623QVE7YY5N17HMQ1X-m1e-55cdfc19 open actor=human:Wido targets=a-live-read-proves-its-subject
 - 2026-10-27T17:42:05Z BHMXNYRAVRWT0DA3EV4C3566R6-m1e-55cdfc19 approve actor=human:Wido targets=a-live-read-proves-its-subject
 - 2026-10-27T17:42:15Z TGKGSFA630HZSQSQKQNQWP9877-m1e-55cdfc19 approve actor=human:Wido targets=a-live-read-proves-its-subject
-Integrity: sha256=eae7e7a3085b2a37eb1084ce904d9ff9edd649ae606e5bc8800265bc7cd47958
+- 2026-10-27T17:42:25Z 5NXJW9053AFPMZGKWZ50RFYH8W-m1e-55cdfc19 set-pin actor=human:Wido targets=a-live-read-proves-its-subject
+Integrity: sha256=db45da59f24c27996a9f8738dc0b764760bc143ab1cf0a3a2da83e41d4153026
