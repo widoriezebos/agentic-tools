@@ -1,6 +1,6 @@
 # a-capacity-refusal-is-an-environment-stop
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 1
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="classification of one failure kind on the unit step path every build uses; a wrong class costs one retry, never a landing"
@@ -10,8 +10,10 @@
 - Next step: Build on ui after lane-steward lands (priority 1.3): work build a-capacity-refusal-is-an-environment-stop --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-capacity-refusal-is-an-environment-stop-brief.md --lines 360 --last (FINAL revision 2 after one Astra round; about 95 production lines in internal/launch: Codex's terminal "Selected model is at capacity" block becomes a provider failure with the words kept in the record; the existing one machine retry waits 2 minutes from the refusal's end, bounded by the caller's wait allowance; a second refusal asks one question with a cleaned provider message and the exact retry command; a plain exit 1 stays unclassified; seam at 125: the wait and the message as a second unit). Read each round: yes. Open for Wido: the wait length (2 minutes kept; ruling R-31-m2's 20-30 minutes is the rejected alternative). Live proof: the next capacity refusal on any seat is retried by the machine once, with no person act.; ANSWERED FSPCF9RP889YY0HPM48F6TK2WS: Continue
 - OpenedAt: 2026-10-26T07:13:20Z
 - FirstClaimAt: 2026-10-27T14:44:39Z
-- Revision: 19
+- Revision: 20
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-27T18:15:20Z revision=20 opid=JCBD1E43SVJ28YED6HE0KM3RGJ-ui-5a7241f2 authority=proven digest=76d2ec2bbb9bfaea4a5484d7987c9ef3ac63e55b2c87fe5bdb076e2a70714602 episode=20
 
 History:
 - 2026-10-26T07:13:20Z 8M336VG5R8ESS42SM586A929NW-m1e-acb921fd open actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
@@ -33,4 +35,5 @@ History:
 - 2026-10-27T18:14:04Z XGVB8KDXFDETA8J4AEV3E3RGAK-ui-86d98738 approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
 - 2026-10-27T18:15:05Z WNWP44JNX6T1JT1GM49P99D4S2-ui-5a7241f2 unapprove actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop reason=tier 1 cannot complete a live read (finding 436): raised to tier 2 so the committed critic may read it
 - 2026-10-27T18:15:13Z 3ZSYKHFE81Y7B2MM4XHGCWNK8D-ui-5a7241f2 edit actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop reason=TierOverride: derived=1 set=2 why=tier 1 cannot complete a live read: digest mismatch, finding 436
-Integrity: sha256=cd0ebaf5c7aa219643e17806ffc5cfed46b8b6a999b3d8a9bcec8711f3e848a8
+- 2026-10-27T18:15:20Z JCBD1E43SVJ28YED6HE0KM3RGJ-ui-5a7241f2 approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
+Integrity: sha256=0837ff9d85764a1b18dc2445dbc24d61d064bed690665e0f44cfc3ac751673c6
