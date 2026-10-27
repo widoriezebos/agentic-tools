@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: On ui's machine route after the-lane-returns-its-own-red: opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 85 production lines: dispatch/budget.go (FindAdmissionClosed, projection only), steward/signal_channel.go, channel/unit_stop.go, steward/tick.go (helm pass), goal next and the refusal text; goal budget already takes --answer
 - OpenedAt: 2026-10-27T15:30:33Z
-- Revision: 3
+- Revision: 4
+- Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=5ETQW1TB7WBNEZ0QC2S08MFHF2-m1e-e06ab4ba minutes=2400 reviewRounds=20 goalRevision=2
@@ -17,4 +18,5 @@ History:
 - 2026-10-27T15:30:33Z T9216HRH3D0C076H3K0151703G-m1e-e06ab4ba open actor=human:Wido targets=a-spent-box-asks-before-it-blocks
 - 2026-10-27T15:30:44Z ZKF57N353HQTN0RCD3YB1YYQ4D-m1e-e06ab4ba approve actor=human:Wido targets=a-spent-box-asks-before-it-blocks
 - 2026-10-27T15:30:55Z 5ETQW1TB7WBNEZ0QC2S08MFHF2-m1e-e06ab4ba approve actor=human:Wido targets=a-spent-box-asks-before-it-blocks
-Integrity: sha256=05b26f5bd68215badad14240c00e8a71570c42dc1d0e0181fd91bc409cdfc276
+- 2026-10-27T15:31:05Z 17R4VT296Y71H0EVNJTJN5P9KN-m1e-e06ab4ba set-pin actor=human:Wido targets=a-spent-box-asks-before-it-blocks
+Integrity: sha256=62378f82225ab6f5fd181de5fdb8b2e45b47526034486ff8004699a3247d89be
