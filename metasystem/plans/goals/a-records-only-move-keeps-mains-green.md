@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Third on m1e's build lane, after a-stewards-failing-duty-is-a-row: opus-designer cuts the brief from the page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 50 production lines: landing/plain/scope.go (both age checks, fullCurrent), wake.go and keeper_clock.go (keeperProofDebt), trunk_recovery.go; the sibling page's G3 (push before the clock) is cut on this tip
 - OpenedAt: 2026-10-27T17:40:28Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=YQ6MFXSWX2JEP5NRPN0XKD5BDM-m1e-55cdfc19 minutes=1200 reviewRounds=20 goalRevision=2
@@ -17,4 +18,5 @@ History:
 - 2026-10-27T17:40:28Z 5R58CQ6FKHQRTRNAJWV7M1WG83-m1e-55cdfc19 open actor=human:Wido targets=a-records-only-move-keeps-mains-green
 - 2026-10-27T17:40:37Z RHZZAB0TK912H77QTN9EB7T3KE-m1e-55cdfc19 approve actor=human:Wido targets=a-records-only-move-keeps-mains-green
 - 2026-10-27T17:41:18Z YQ6MFXSWX2JEP5NRPN0XKD5BDM-m1e-55cdfc19 approve actor=human:Wido targets=a-records-only-move-keeps-mains-green
-Integrity: sha256=6d29b8ef04318906be71237866696f1d293c4fb4b46b218648e718fc69c7bb31
+- 2026-10-27T17:41:34Z KGWXTFZBMXVVWZH8S1S4M6WE8T-m1e-55cdfc19 set-pin actor=human:Wido targets=a-records-only-move-keeps-mains-green
+Integrity: sha256=4b4cce82471cfff8a7c815d49696ae0085b6df80067049ccbd14aa33d13bc589
