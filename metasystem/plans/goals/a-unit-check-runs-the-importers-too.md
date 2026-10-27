@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: On ui after the-impact-check-selects-only-tests-this-host-can-run lands (same files): opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 60 production lines: landing/batch/goadapter/unitgate.go, impact.go, cmd/metasystem/test_impact.go; reverses part of 4e690dba7f (decision 9.1 of the page)
 - OpenedAt: 2026-10-27T15:19:40Z
-- Revision: 1
+- Revision: 2
 - BlockedBy: the-impact-check-selects-only-tests-this-host-can-run
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-27T15:20:06Z revision=2 opid=D4RDME2PGN8JJF6C76QXJC7P9C-m1e-e06ab4ba authority=proven digest=748f896eaa9c577eb6e8fc8adc85b2eb573c80242bc9f3223106fcd2e9899ae9 episode=2
 - Parked: by=human:Wido at=2026-10-27T15:19:40Z blocker=the-impact-check-selects-only-tests-this-host-can-run because=blocked by the-impact-check-selects-only-tests-this-host-can-run; returns when it is done
 
 History:
 - 2026-10-27T15:19:40Z 35NQ8H80Z4X44CJ9KW0VH9PKZV-m1e-e06ab4ba open actor=human:Wido targets=a-unit-check-runs-the-importers-too,the-impact-check-selects-only-tests-this-host-can-run
-Integrity: sha256=1c2e05fdbf79dd74fddbdf88ba0010f693de85850d3833d0b20f4f9900d61182
+- 2026-10-27T15:20:06Z D4RDME2PGN8JJF6C76QXJC7P9C-m1e-e06ab4ba approve actor=human:Wido targets=a-unit-check-runs-the-importers-too
+Integrity: sha256=04dbb1055fa3b8ed062d917fbdd9ddf3dbd0903977848b5e407166ebf32dc91d
