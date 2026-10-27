@@ -6,8 +6,10 @@
 - Intent: The wait ends on the lane's word (lane-steward design D9, split out of lane-steward U6a2 on 2026-10-26): `work wait G --for landing` also returns when, after the wait's registration boundary, the lane records for G a return, a stop or a question, with the state word, so a seat steward's wait never sleeps through a stop. Split from lane-steward because D9 changes internal/run and the impact selection then picks Linux-only test files that do not exist on this Mac, making the frozen check red by construction (goadapter/impact.go:115, :237) until the-impact-check-selects-only-tests-this-host-can-run lands.
 - Origin: main
 - Next step: After the-impact-check-selects-only-tests-this-host-can-run lands: steward cuts one brief from the saved draft /Users/wido/agentic-tools-evidence/lane-test-20261009/builds/lane-steward-U6a-20261025/u6a2-d9-draft.patch (about 93 production lines measured) and the "Carried to the D9 unit" notes at the end of briefs/lane-steward-U6a2-brief.md (the command-level test asserts the persisted renewed selector keeps the first registration's LaneAfter; two small defects of the draft corrected); one Astra round; machine route on ui; lane landing. Lineage: lane-steward (D9 of its accepted design, revision 3).
+Open read items (fix unit 20261026t155532-b7ec017dff-r3-s3): 1
+- ReadItem: id=20261026t155532-b7ec017dff-r3-s3-1 read=20261026t155532-b7ec017dff-r3-s3 state=open addedAt=2026-10-27T14:36:10Z changedAt=- material=true closingReference="" text="F1 (U6c run read r3-s3, material; landed as accepted risk under m1e decision 75 of 2026-10-27, fix is lane-steward-2's first unit): a real proof start never closes a commit's proof-beside-builds hold sequence. proof_admission.go:75 returns nil on a quiet host before reading records, so no release is written; :83 makes one release permanent for the commit; health.go:285 fires 'held' whenever no release follows. Effect: health row proof-beside-builds keeps saying 'held' after the proof started, and a later start of the same commit beside a running build is not held again. No steward act or cannot-heal question reads that row. Fix: proofContention takes the commit's latest start (running.json Since, newest result StartedAt) and ignores held/released records at or before it, for holdBesideBuildsLocked, health row (a) and ProofHoldUntil; add T11 cases 9 (host quiet inside the hold, proof starts at t+31 without a release, row gone) and 10 (second start of the same commit beside a running build is held again), with a mutation that fails both. (moved from lane-steward)"
 - OpenedAt: 2026-10-26T10:06:51Z
-- Revision: 1
+- Revision: 2
 - BlockedBy: the-impact-check-selects-only-tests-this-host-can-run
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -15,4 +17,5 @@
 
 History:
 - 2026-10-26T10:06:51Z DM1YWYQNCHCGXX8CZHNQAMGVDQ-m1e-acb921fd open actor=human:Wido targets=lane-steward-2,the-impact-check-selects-only-tests-this-host-can-run
-Integrity: sha256=4cddc1f5da2570032cb62e0767ffcfedbd3c852a3f4fa26d42ca0fa4f66b6581
+- 2026-10-27T14:36:10Z RFEJ0NGYXWT89FFFXX1P5F7XKM-ui-9ee6b543 read-items-close actor=human:Wido targets=lane-steward,lane-steward-2
+Integrity: sha256=076d1b1f02e5ba6969553cc0ecd4bbecbd308ae0da5e89093dc1b9d287479d98
