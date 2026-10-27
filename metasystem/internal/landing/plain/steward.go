@@ -115,18 +115,25 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 	if err != nil {
 		return run, err
 	}
+	until, contentionHeld, holdErr := ProofHoldUntil(record.Install)
+	if holdErr != nil {
+		return run, holdErr
+	}
 	rows := status.Health.Rows()
 	for _, row := range rows {
-		act := row.Row == "own-red-held" || row.Row == "person-act-no-effect" || row.Row == "stale-question" || row.Row == "unproven-incidents" || row.Row == "silent-agent" || row.Row == "suspected-contention" || stewardFlakeReady(status.Health, row)
+		act := row.Row == "cannot-heal" || row.Row == "own-red-held" || row.Row == "person-act-no-effect" || row.Row == "stale-question" || row.Row == "unproven-incidents" || row.Row == "silent-agent" || row.Row == "suspected-contention" || stewardFlakeReady(status.Health, row)
 		reason := "report only"
 		if act {
 			reason = ""
 		}
-		if act && (person || young || proofRunning && row.Row != "silent-agent") {
+		if act && (person || young || proofRunning && row.Row != "silent-agent" && row.Row != "cannot-heal") {
 			reason = "bounded: a person's stop or proof, an agent step, or a proof is active"
 		}
 		if row.Row == "suspected-contention" && status.TrunkProof != nil && status.TrunkProof.Commit == main {
 			reason = "bounded: current main already proved"
+		}
+		if contentionHeld && now.Before(until) && (row.Row == "stale-question" || row.Row == "unproven-incidents" || row.Row == "suspected-contention") {
+			reason = landingstate.Phrase("bounded-the-proof-start-is-held-beside-builds") + until.Local().Format("15:04 MST")
 		}
 		var attempts []Intervention
 		var defect *Intervention
@@ -154,7 +161,7 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 					for _, p := range last {
 						tried = append(tried, p.Subject+": "+p.How+" ("+p.What+") → "+p.Outcome)
 					}
-					outcome, askErr := stewardAsk(record, seams, now, "steward-act-failed", row.Row, "", "The landing lane's steward stopped acting on "+row.Row+": its last two acts failed the same way", "the steward does not act on "+row.Row+" again until you act or the outcome changes; this question is withdrawn when "+row.Row+" no longer fires", strings.Join(tried, "; "))
+					outcome, askErr := stewardAsk(record, seams, now, "steward-act-failed", row.Row, "", landingstate.Phrase("the-landing-lane-s-steward-stopped-acting-on")+row.Row+": its last two acts failed the same way", "the steward does not act on "+row.Row+" again until you act or the outcome changes; this question is withdrawn when "+row.Row+" no longer fires", strings.Join(tried, "; "))
 					if askErr != nil {
 						return run, errors.Join(err, askErr)
 					}
@@ -171,7 +178,10 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		}
 		for _, previous := range history {
 			at, parseErr := time.Parse(time.RFC3339Nano, previous.At)
-			if act && reason == "" && !retry && previous.Row == row.Row && previous.Subject == row.Subject && (parseErr != nil || now.Sub(at) < time.Hour) {
+			if reason == "" && row.Row == "cannot-heal" && previous.Row == row.Row && previous.Subject == row.Subject && (parseErr != nil || now.Sub(at) < landingstate.SubmissionWindow) {
+				reason = "bounded: asked once for this situation"
+			}
+			if act && reason == "" && !retry && !strings.HasPrefix(previous.Outcome, "held: ") && previous.Row == row.Row && previous.Subject == row.Subject && (parseErr != nil || now.Sub(at) < time.Hour) {
 				reason = "bounded: already acted within 60 minutes"
 			}
 		}
@@ -183,6 +193,20 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		seams.ReadOnly, seams.Person = false, nil
 		var actErr error
 		switch row.Row {
+		case "cannot-heal":
+			underlying, subject, _ := strings.Cut(row.Subject, " ")
+			decision := "The landing lane cannot heal this: goal " + subject + " has waited in the lane more than 120 minutes"
+			if underlying == "silent-agent" {
+				decision = "The landing lane cannot heal this: the landing agent has been silent more than 80 minutes"
+			}
+			tried := "nothing: the row has no act of its own"
+			for _, p := range history {
+				if p.Row == underlying && p.Subject == subject {
+					tried = p.Subject + ": " + p.How + " (" + p.What + ") → " + p.Outcome
+				}
+			}
+			entry.How = "one question to the person"
+			entry.Outcome, actErr = stewardAsk(record, seams, now, "cannot-heal", underlying, subject, decision, "the lane keeps reporting it; this question is withdrawn when the situation ends", tried)
 		case "own-red-held":
 			red := status.Health.OwnRed[slices.IndexFunc(status.Health.OwnRed, func(r OwnRed) bool { return r.Goal == row.Subject })]
 			entry.How = "metasystem landing return " + red.Goal + " (as the lane, cause own)"
@@ -349,6 +373,10 @@ func stewardTrunk(install, checkout string, seams ProveSeams) (string, error) {
 		return stewardAlreadyProven, nil
 	}
 	running, already, err := Start(install, checkout, seams)
+	var refusal *Refusal
+	if errors.As(err, &refusal) && refusal.Code == "LANE_PROOF_CONTENTION" {
+		return "held: " + refusal.Reason, nil
+	}
 	if err == nil && already && running.Reused != nil {
 		return stewardAlreadyProven, nil
 	}

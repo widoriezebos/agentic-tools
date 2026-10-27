@@ -595,6 +595,11 @@ var Phrases = map[string]string{
 	"held-ok-d-commit-s-above-s":                                  "held: ok %d commit(s) above %s\n",
 	"held-refused-s-s-s":                                          "held refused: %s: %s: %s\n",
 	"held-unreadable-unknown-verdict":                             "held: unreadable: unknown verdict",
+	"stopped-acting-on":                                           "stopped acting on ",
+	"d-builds-and-d-unit-checks-run-beside":                       "%d builds and %d unit checks run beside proof %s; reported, not held",
+	"the-lane-s-proof-start-is-held-beside":                       "the lane's proof start is held beside builds until ",
+	"bounded-the-proof-start-is-held-beside-builds":               "bounded: the proof start is held beside builds until ",
+	"the-landing-lane-s-steward-stopped-acting-on":                "The landing lane's steward stopped acting on ",
 }
 
 func Phrase(key string) string { return Phrases[key] }

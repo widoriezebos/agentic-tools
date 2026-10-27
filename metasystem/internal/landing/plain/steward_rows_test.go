@@ -15,10 +15,30 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 func TestLandingStewardPersonActWithoutEffect(t *testing.T) {
 	t.Parallel()
+	payload, err := json.Marshal(Health{PersonActs: []PersonAct{{Verb: "landing run", At: "stamp"}}, OwnRed: []OwnRed{{Goal: "g", SHA: "sha", Replay: "green"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fields map[string]json.RawMessage
+	if err := json.Unmarshal(payload, &fields); err != nil {
+		t.Fatal(err)
+	}
+	for field, keys := range map[string][]string{"person_acts": {"verb", "at", "minutes"}, "own_red": {"goal", "sha", "replay"}} {
+		var rows []map[string]json.RawMessage
+		if err := json.Unmarshal(fields[field], &rows); err != nil || len(rows) != 1 {
+			t.Fatalf("health JSON %s=%s err=%v", field, fields[field], err)
+		}
+		for _, key := range keys {
+			if _, ok := rows[0][key]; !ok {
+				t.Fatalf("health JSON %s lacks lowercase %s: %s", field, key, fields[field])
+			}
+		}
+	}
 	stamp := bedNow.Format(time.RFC3339Nano)
 	for _, scenario := range []string{"selection", "step", "last-step", "proof", "running-proof", "no-hold", "restart", "reopen", "pending-give-back", "give-back", "return"} {
 		t.Run(scenario, func(t *testing.T) {
@@ -297,4 +317,265 @@ func TestLandingStewardStopsAnActThatFailsTheSameWay(t *testing.T) {
 			t.Fatalf("old ended question not retired: %+v %v", ended, err)
 		}
 	})
+}
+
+func contentionStewardBed(t *testing.T, kind string) (*stewardBed, string) {
+	t.Helper()
+	b := newStewardBed(t)
+	b.incidents()
+	b.seams.Steward.Trunk = nil
+	b.seams.Trunk, b.seams.Fresh = true, true
+	b.seams.Executable = func() (string, error) { return "/fixture/engine", nil }
+	b.seams.NewID = func() string { return "contention-proof" }
+	b.seams.Lane = func() (lane.Record, error) { return b.record, nil }
+	b.seams.CommandForCommit = func(string) (string, error) { return "the committed proof command", nil }
+	b.seams.Alive = func(Running) bool { return len(b.calls) > 0 }
+	b.seams.Launch = func(_ []string, _, log string) (int64, error) {
+		if err := os.WriteFile(log, nil, 0600); err != nil {
+			return 0, err
+		}
+		b.calls = append(b.calls, "launch")
+		return int64(os.Getpid()), nil
+	}
+	root := t.TempDir()
+	if kind == "missing" {
+		root = filepath.Join(root, "missing")
+	} else {
+		if err := (launch.Store{Root: root}).Create(launch.Record{ID: "host-work", Kind: kind, State: launch.Running}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b.seams.HostWork = (&launch.Manager{Store: launch.Store{Root: root}}).HostWork
+	return b, filepath.Join(root, "host-work", "record.json")
+}
+
+func TestLandingProofStartHeldBesideBuilds(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"build", "proof", "missing", "policy", "person"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			storeKind := kind
+			if kind == "policy" || kind == "person" {
+				storeKind = "build"
+			}
+			b, path := contentionStewardBed(t, storeKind)
+			before, err := os.ReadFile(path)
+			if err != nil && kind != "missing" {
+				t.Fatal(err)
+			}
+			history := func() []Intervention {
+				t.Helper()
+				all, err := readLines[Intervention](interventionsPath(b.install))
+				if err != nil {
+					t.Fatal(err)
+				}
+				var holds []Intervention
+				for _, p := range all {
+					if p.Row == "proof-beside-builds" {
+						holds = append(holds, p)
+					}
+				}
+				return holds
+			}
+			read := func(now time.Time) *Health {
+				b.seams.Now = func() time.Time { return now }
+				status := ReadStatus(b.home, b.record, b.view, b.seams)
+				if status.Health == nil || len(status.Problems) > 0 {
+					t.Fatalf("status problems=%v running=%+v health=%+v", status.Problems, status.RunningProof, status.Health)
+				}
+				return status.Health
+			}
+			if kind == "person" {
+				b.seams.Trunk = true
+				b.seams.Person = &ActProvenance{Kind: "proof", Person: "Wido", CheckedAt: bedNow}
+				if _, _, err := Start(b.install, b.checkout, b.seams); err != nil || len(b.calls) != 1 || len(history()) != 0 {
+					t.Fatalf("person held: calls=%v history=%+v err=%v", b.calls, history(), err)
+				}
+				return
+			}
+			run := b.step(bedNow)
+			records := history()
+			if len(b.calls) != 0 || len(records) != 1 || len(run.Interventions) != 1 || !strings.HasPrefix(run.Interventions[0].Outcome, "held:") || !strings.HasPrefix(records[0].Outcome, "held: ") || !strings.Contains(records[0].Outcome, "load 2") {
+				t.Fatalf("start not held once: calls=%v records=%+v run=%+v", b.calls, records, run)
+			}
+			if kind == "missing" && !strings.Contains(records[0].Outcome, "cannot be read") {
+				t.Fatalf("lost store read as quiet: %+v", records)
+			}
+			end := bedNow.Add(30 * time.Minute)
+			hold, err := KeeperContentionHold(b.install, b.seams)
+			if err != nil || !strings.Contains(hold, end.Local().Format("15:04 MST")) {
+				t.Fatalf("keeper missed hold end: %q %v", hold, err)
+			}
+			if _, err := KeeperClock(b.record, func(lane.Record) error { return nil }, b.seams); err != nil {
+				t.Fatal(err)
+			}
+			clock, err := readClock(b.install)
+			if err != nil || !clock.RetryAt.Equal(end) {
+				t.Fatalf("clock retry=%v want=%v err=%v", clock.RetryAt, end, err)
+			}
+			run = b.step(bedNow.Add(10 * time.Minute))
+			if len(run.Interventions) != 0 || len(history()) != 1 || len(b.calls) != 0 || !strings.Contains(run.Line, "bounded: the proof start is held beside builds until "+end.Local().Format("15:04 MST")) || healthRow(read(bedNow.Add(10*time.Minute)), "proof-beside-builds") == nil {
+				t.Fatalf("held tick acted or lost row: %+v history=%+v calls=%v", run, history(), b.calls)
+			}
+			if kind == "policy" {
+				b.seams.Policy = func(string) (PolicyValue, error) { return PolicyValue{Value: "person"}, nil }
+			}
+			now := bedNow.Add(31 * time.Minute)
+			run, err = StewardStep(b.home, now, b.seams)
+			records = history()
+			if len(records) != 2 || !strings.HasPrefix(records[1].Outcome, "released after the 30-minute hold") {
+				t.Fatalf("hold never released once: %+v run=%+v err=%v", records, run, err)
+			}
+			row := healthRow(read(now), "proof-beside-builds")
+			if kind == "policy" {
+				if err == nil || len(b.calls) != 0 || row == nil || !strings.Contains(row.Act, "no proof has started since") {
+					t.Fatalf("release claimed a refused start: row=%+v calls=%v err=%v", row, b.calls, err)
+				}
+				b.seams.Now = func() time.Time { return now.Add(time.Minute) }
+				_, _, err = Start(b.install, b.checkout, b.seams)
+				if err == nil || len(history()) != 2 {
+					t.Fatalf("retry duplicated release: %+v err=%v", history(), err)
+				}
+			} else {
+				running, recorded, _, readErr := ReadRunning(b.install, b.seams)
+				if err != nil || readErr != nil || !recorded || len(b.calls) != 1 || running.Since != now.Format(time.RFC3339Nano) || row == nil || row.Subject != running.Attempt || strings.Contains(row.Act, "held:") || strings.Contains(row.Act, "no proof has started") {
+					t.Fatalf("release did not start/report proof: running=%+v row=%+v calls=%v err=%v/%v", running, row, b.calls, err, readErr)
+				}
+				if storeKind != "missing" && !strings.Contains(row.Act, "reported, not held") || storeKind == "missing" && !strings.Contains(row.Act, "unmeasured") {
+					t.Fatalf("running work not reported: %+v", row)
+				}
+				if hold, err := KeeperContentionHold(b.install, b.seams); err != nil || hold != "" {
+					t.Fatalf("released keeper still held: %q %v", hold, err)
+				}
+			}
+			after, err := os.ReadFile(path)
+			if kind != "missing" && (err != nil || string(before) != string(after)) {
+				t.Fatalf("host work records changed: %v", err)
+			}
+		})
+	}
+}
+
+func TestLandingStewardAsksOnceWhenTheLaneCannotHeal(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"waiting", "silent", "landed", "returned", "proving", "person-proof", "old-question", "recent-act", "young-step", "person-stop"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			b := newStewardBed(t)
+			stamp := bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)
+			b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: stamp})
+			if scenario == "silent" {
+				b.lines("queue.jsonl")
+				b.seams.Steward.Owner = func(string) (lane.OwnerProbe, error) {
+					return lane.OwnerProbe{Alive: true, Since: bedNow.Add(-81 * time.Minute)}, nil
+				}
+			}
+			if scenario == "returned" {
+				b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: stamp}, Line{Goal: "g", SHA: "tip", At: bedNow.Add(9 * time.Minute).Format(time.RFC3339Nano), Outcome: StateReturned})
+			}
+			if scenario == "proving" || scenario == "person-proof" {
+				running := Running{Attempt: "proving", Commit: "candidate", Since: bedNow.Add(-time.Minute).Format(time.RFC3339Nano), Pid: 42}
+				if scenario == "person-proof" {
+					running.Person = &ActProvenance{Person: "Wido"}
+				}
+				b.lines("running.json", running)
+				b.seams.Alive = func(Running) bool { return true }
+			}
+			if scenario == "person-stop" {
+				if _, err := lane.SetPause(b.home, "Wido", bedNow); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if scenario == "young-step" {
+				b.lines("agent-step.json", AgentStep{Verb: "work wait", StartedAt: bedNow.Add(-time.Minute).Format(time.RFC3339Nano), PID: 42})
+				b.seams.Alive = func(Running) bool { return true }
+			}
+			if scenario == "recent-act" {
+				entries := []any{Intervention{At: bedNow.Add(-10 * time.Minute).Format(time.RFC3339Nano), Row: "overdue-goal", Subject: "g", Outcome: "reported"}}
+				for i := 0; i < 6; i++ {
+					entries = append(entries, Intervention{At: bedNow.Add(-time.Minute).Format(time.RFC3339Nano), Row: "other", Subject: "other"})
+				}
+				b.lines("interventions.jsonl", entries...)
+			}
+			questions := func() []channel.Question {
+				t.Helper()
+				qs, unreadable := channel.WalkQuestions(b.install)
+				if len(unreadable) > 0 {
+					t.Fatal(unreadable)
+				}
+				return qs
+			}
+			count := func() int {
+				t.Helper()
+				history, err := readLines[Intervention](interventionsPath(b.install))
+				if err != nil {
+					t.Fatal(err)
+				}
+				n := 0
+				for _, p := range history {
+					if p.Row == "cannot-heal" {
+						n++
+					}
+				}
+				return n
+			}
+			now := bedNow
+			if scenario == "returned" {
+				now = now.Add(9 * time.Minute)
+			}
+			run := b.step(now)
+			qs := questions()
+			if scenario == "returned" || scenario == "person-proof" || scenario == "recent-act" || scenario == "young-step" || scenario == "person-stop" {
+				if len(qs) != 0 || count() != 0 {
+					t.Fatalf("bounded or returned goal asked: %+v run=%+v", qs, run)
+				}
+				b.seams.Now = func() time.Time { return now }
+				status := ReadStatus(b.home, b.record, b.view, b.seams)
+				if (scenario == "returned" || scenario == "recent-act") && healthRow(status.Health, "cannot-heal") != nil {
+					t.Fatalf("ineligible row fired: %+v", status.Health)
+				}
+				return
+			}
+			words := "more than 120 minutes"
+			tried := "tried: nothing: the row has no act of its own"
+			if scenario == "silent" {
+				words = "more than 80 minutes"
+				tried = "tried: with nothing to do: settle the landing agent; keeper wake (end the silent landing agent session and wake the keeper) → keeper woken"
+			}
+			if len(qs) != 1 || count() != 1 || !strings.Contains(qs[0].Plain.Decision, words) || qs[0].Plain.IfNothing != "the lane keeps reporting it; this question is withdrawn when the situation ends" || qs[0].Facts[2] != tried {
+				t.Fatalf("cannot-heal did not ask with evidence: %+v run=%+v count=%d", qs, run, count())
+			}
+			if scenario == "landed" || scenario == "old-question" {
+				git := b.seams.Git
+				b.seams.Git = func(dir string, args ...string) (string, error) {
+					if len(args) > 2 && strings.Join(args[:3], " ") == "rev-list --parents --ignore-missing" {
+						return "main tip", nil
+					}
+					return git(dir, args...)
+				}
+				minute := 90
+				if scenario == "old-question" {
+					minute = 25 * 60
+				}
+				run = b.step(bedNow.Add(time.Duration(minute) * time.Minute))
+				closed, err := channel.ReadQuestion(b.install, qs[0].ID)
+				if err != nil || closed.State != "closed" || !strings.Contains(run.Line, "the situation ended") || count() != 1 {
+					t.Fatalf("ended situation kept asking: %+v run=%+v err=%v", closed, run, err)
+				}
+				return
+			}
+			run = b.step(bedNow.Add(61 * time.Minute))
+			if count() != 1 || len(questions()) != 1 || !strings.Contains(run.Line, "bounded: asked once for this situation") {
+				t.Fatalf("same situation asked twice: %+v count=%d questions=%+v", run, count(), questions())
+			}
+			b.seams.Now = func() time.Time { return bedNow.Add(70 * time.Minute) }
+			if _, err := channel.Withdraw(b.install, qs[0].ID, "person closed it at minute 70", nil, channel.DestinationConfig{}); err != nil {
+				t.Fatal(err)
+			}
+			b.step(bedNow.Add(131 * time.Minute))
+			if count() != 1 || len(questions()) != 1 || questions()[0].State != "closed" {
+				t.Fatalf("person's closed question was asked again: count=%d questions=%+v", count(), questions())
+			}
+		})
+	}
 }

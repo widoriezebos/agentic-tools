@@ -29,6 +29,33 @@ func (m *Manager) CapacityBuilds() ([]hostcapacity.Build, error) {
 	return builds, err
 }
 
+// HostWork observes active builds and unit checks without changing their records.
+func (m *Manager) HostWork() (builds, checks int, err error) {
+	root, err := m.Store.root()
+	if err == nil {
+		_, err = os.Stat(root)
+	}
+	if err != nil {
+		return 0, 0, fmt.Errorf("the launch store %s cannot be read: %w", root, err)
+	}
+	records, err := m.EffectiveList()
+	if err != nil {
+		return 0, 0, fmt.Errorf("the launch store %s cannot be read: %w", root, err)
+	}
+	for _, record := range records {
+		if record.State != Starting && record.State != Running {
+			continue
+		}
+		if record.Kind == "build" {
+			builds++
+		}
+		if record.Kind == "proof" {
+			checks++
+		}
+	}
+	return builds, checks, err
+}
+
 // createAdmitted keeps the current observation and Starting reservation under
 // one host-wide lock. The lock is released before a supervisor can start.
 func (m *Manager) createAdmitted(spec StartSpec, record Record) error {

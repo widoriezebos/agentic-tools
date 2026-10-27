@@ -12,5 +12,8 @@ func landingExecutionSeams(seams plain.ProveSeams) plain.ProveSeams {
 			return steward.ReadExecutions(root, nil)
 		}
 	}
+	if seams.HostWork == nil {
+		seams.HostWork = func() (int, int, error) { return launchManager().HostWork() }
+	}
 	return seams
 }

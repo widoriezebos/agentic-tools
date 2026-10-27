@@ -122,6 +122,7 @@ var Rows = []Row{
 	{Code: "LANE_BATCH_MEMBERSHIP", Owner: "internal/landing/plain", Site: "batch.go#batchRefusal", Shape: Question, H1: StandingAgent},
 	{Code: "LANE_DEPLOY_MERGE", Owner: "internal/landing/plain", Site: "deploy.go#deployMerge", Shape: Question, H1: StandingGuide, Forward: "landing give-back"},
 	{Code: "LANE_BATCH_PERSON", Owner: "internal/landing/plain", Site: "batch.go#PolicyDecision", Shape: Question, H1: StandingInput},
+	{Code: "LANE_PROOF_CONTENTION", Owner: "internal/landing/plain", Site: "proof_admission.go#holdBesideBuildsLocked", Shape: Agent, Override: "landing prove", Commands: 1},
 	{Code: "LANE_PROOF_PERSON", Owner: "internal/landing/plain", Site: "proof_admission.go#admitExecutionLocked", Shape: Agent, Override: "landing prove", Commands: 1},
 	{Code: "LANE_PROOF_BUDGET", Owner: "internal/landing/plain", Site: "proof_admission.go#admitExecutionLocked", Shape: Agent, Override: "landing prove", Commands: 1},
 	{Code: "LANE_RED_PERSON", Owner: "internal/landing/plain", Site: "red.go#redContinuationLocked", Shape: Agent, Override: "landing prove --classify", Commands: 1},

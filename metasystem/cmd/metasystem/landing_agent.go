@@ -389,6 +389,13 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				}
 				return plain.KeeperDrainHold(record.Install)
 			},
+			func(string) (string, error) {
+				record, _, err := lane.Read(home)
+				if err != nil {
+					return "", err
+				}
+				return plain.KeeperContentionHold(record.Install, plain.ProveSeams{Now: agent.now})
+			},
 
 			func(string) (string, error) {
 				record, _, err := lane.Read(home)

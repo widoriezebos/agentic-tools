@@ -32,6 +32,7 @@ type Health struct {
 	PersonActs          []PersonAct          `json:"person_acts,omitempty"`
 	OwnRed              []OwnRed             `json:"own_red,omitempty"`
 	observedAt          time.Time
+	recentActs          map[[2]string]bool
 	StateReason         string           `json:"state_reason,omitempty"`
 	AdmissibleWaiting   []string         `json:"admissible_waiting,omitempty"`
 	StalePendingMerge   string           `json:"stale_pending_merge,omitempty"`
@@ -52,11 +53,14 @@ type Health struct {
 	LastProof           *Result          `json:"last_proof,omitempty"`
 }
 type PersonAct struct {
-	Verb, At string
-	Minutes  *float64
+	Verb    string   `json:"verb"`
+	At      string   `json:"at"`
+	Minutes *float64 `json:"minutes"`
 }
 type OwnRed struct {
-	Goal, SHA, Replay string
+	Goal   string `json:"goal"`
+	SHA    string `json:"sha"`
+	Replay string `json:"replay"`
 }
 type GoalHealth struct {
 	Goal    string   `json:"goal"`
@@ -153,7 +157,7 @@ func measured(value *float64) string {
 }
 
 func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string, results []Result, queue []Line, install, checkout string, seams ProveSeams, git laneGit) (*Health, error) {
-	h := &Health{State: "idle", Shadow: status.Shadow, Drift: shadowRows(status), Goals: []GoalHealth{}, Questions: []QuestionHealth{}, Incidents: []IncidentHealth{}, AbandonedResolution: abandoned, LastProof: status.LastProof}
+	h := &Health{recentActs: map[[2]string]bool{}, State: "idle", Shadow: status.Shadow, Drift: shadowRows(status), Goals: []GoalHealth{}, Questions: []QuestionHealth{}, Incidents: []IncidentHealth{}, AbandonedResolution: abandoned, LastProof: status.LastProof}
 	if !status.Raw.Now.IsZero() {
 		h.description = landingstate.Describe(ShadowOf(status, status.Raw), RenderInputsOf(status, status.Raw))
 	}
@@ -265,14 +269,46 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 	}
 	for i, entry := range interventions {
 		if entry.Row == "steward-act-failed" && !slices.ContainsFunc(interventions[i+1:], func(p Intervention) bool { return p.Row == entry.Subject }) {
-			h.Drift = append(h.Drift, Fired{Row: "steward-act-failed", Subject: entry.Subject, Act: "stopped acting on " + entry.Subject + ": " + entry.What + "; asked once"})
+			h.Drift = append(h.Drift, Fired{Row: "steward-act-failed", Subject: entry.Subject, Act: landingstate.Phrase("stopped-acting-on") + entry.Subject + ": " + entry.What + "; asked once"})
 		}
 		if entry.Row != "person-refused" && entry.Row != "person-protected" {
 			h.Interventions = append(h.Interventions, entry)
 		}
 		at, err := time.Parse(time.RFC3339Nano, entry.At)
+		if err == nil && !at.After(now) && now.Sub(at) < time.Hour {
+			h.recentActs[[2]string{entry.Row, entry.Subject}] = true
+		}
 		if entry.Row == "person-refused" && err == nil && !at.After(now) && now.Sub(at) < 24*time.Hour {
 			h.Refusals = append(h.Refusals, entry)
+		}
+	}
+	held, released := proofContention(interventions, "")
+	if held.At != "" {
+		act := held.Outcome
+		if released.At != "" {
+			at, _ := time.Parse(time.RFC3339Nano, released.At)
+			act = "released at " + at.Local().Format("15:04 MST") + "; no proof has started since"
+			for _, stamp := range starts {
+				if (status.RunningProof == nil || status.RunningProof.Since != stamp) && (status.LastProof == nil || status.LastProof.StartedAt != stamp) {
+					continue
+				}
+				if started, err := time.Parse(time.RFC3339Nano, stamp); err == nil && !started.Before(at) {
+					act = ""
+				}
+			}
+		}
+		if act != "" {
+			h.Drift = append(h.Drift, Fired{Row: "proof-beside-builds", Subject: Short(held.Subject), Act: act})
+		}
+	}
+	if r := status.RunningProof; r != nil && r.State == "running" && seams.HostWork != nil {
+		builds, checks, err := seams.HostWork()
+		act := fmt.Sprintf(landingstate.Phrase("d-builds-and-d-unit-checks-run-beside"), builds, checks, r.Attempt)
+		if err != nil {
+			act = "unmeasured: " + err.Error()
+		}
+		if err != nil || builds+checks > 0 {
+			h.Drift = append(h.Drift, Fired{Row: "proof-beside-builds", Subject: r.Attempt, Act: act})
 		}
 	}
 	h.Interventions = h.Interventions[max(0, len(h.Interventions)-5):]
@@ -655,6 +691,23 @@ func (h Health) Rows() []Fired {
 	for _, q := range h.Questions {
 		if q.Minutes > 30 {
 			fire("question-open", q.ID, &q.Minutes, q.WaitsFor)
+		}
+	}
+	cannotHeal := func(row, subject string) {
+		if !h.recentActs[[2]string{row, subject}] {
+			fire("cannot-heal", row+" "+subject, nil, "the lane cannot heal this; one question to the person")
+		}
+	}
+	for _, g := range h.Goals {
+		if g.Overdue && g.Minutes != nil && *g.Minutes > 120 && (g.State == StateWaiting || g.State == "proving") {
+			cannotHeal("overdue-goal", g.Goal)
+		}
+	}
+	if h.Agent.Silent && h.Agent.Minutes != nil && *h.Agent.Minutes > 80 {
+		for _, row := range rows {
+			if row.Row == "silent-agent" {
+				cannotHeal(row.Row, row.Subject)
+			}
 		}
 	}
 	return rows
