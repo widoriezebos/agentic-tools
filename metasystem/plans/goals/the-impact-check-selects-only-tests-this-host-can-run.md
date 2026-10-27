@@ -1,6 +1,6 @@
 # the-impact-check-selects-only-tests-this-host-can-run
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="test selection tooling only; it can only remove a false red; the lane batch proof is unchanged"
@@ -9,12 +9,15 @@
 - Origin: main
 - Next step: Build on ui after a-capacity-refusal-is-an-environment-stop (priority 1.4): work build the-impact-check-selects-only-tests-this-host-can-run --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/the-impact-check-selects-only-tests-this-host-can-run-brief.md --lines 310 --last (FINAL revision 2 after one Astra round; about 115 production lines, 75 of them moving the existing build-context and file-decision code of internal/gopackages into two shared functions; the unit check resolves the effective build context once (go env, tags, GOFLAGS, cgo, the Go environment file) and drops tests from files this host cannot build, counting them only for packages that run by name; in the lane's whole-dependents mode the selection and the plan text are untouched; one "not runnable here" line and a JSON field; seam at 150: the gopackages extraction as the first unit). Read each round: yes. Live proof: the lane-steward U6a round-1 diff's selection on this Mac names no Linux-only test and counts none missing; lane-mode selection lines equal those of the old engine.
 - OpenedAt: 2026-10-26T07:13:34Z
-- Revision: 15
+- FirstClaimAt: 2026-10-27T20:56:01Z
+- Revision: 16
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=W6KCJAEHJ2P899NMXD617E5JFT-ui-141d7080 minutes=2400 reviewRounds=20 goalRevision=13
 - Approved: by=human:Wido at=2026-10-27T20:54:48Z revision=14 opid=W6KCJAEHJ2P899NMXD617E5JFT-ui-141d7080 authority=proven digest=0da4a716668799fc64fe1ef91363648494d859a37f111571eb2448c90808c834 episode=14
+- Claimed: machine=ui lineage=steward-seat at=2026-10-27T20:56:01Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-impact-check-selects-only-tests-this-host-can-run: no accepted design declares areas\",\"areas unknown for goal a-live-read-proves-its-subject\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal a-live-read-proves-its-subject\"]" revision=16 accountingRevision=16 episodeAt=2026-10-27T20:56:01Z episodeRevision=16
+- StopCapability: generation=16 revision=16 machine=ui claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-26T07:13:34Z 10E9HVQGNXAVED7EQE60PRBA7K-m1e-acb921fd open actor=human:Wido targets=the-impact-check-selects-only-tests-this-host-can-run
@@ -32,4 +35,5 @@ History:
 - 2026-10-27T20:54:40Z P59KE3K8T2SDNZHFF26M30SA1Q-ui-141d7080 approve actor=human:Wido targets=the-impact-check-selects-only-tests-this-host-can-run
 - 2026-10-27T20:54:48Z W6KCJAEHJ2P899NMXD617E5JFT-ui-141d7080 approve actor=human:Wido targets=the-impact-check-selects-only-tests-this-host-can-run
 - 2026-10-27T20:54:55Z W9MNZZNY2MWECZ8T83F1G2E9AD-ui-141d7080 set-pin actor=human:Wido targets=the-impact-check-selects-only-tests-this-host-can-run
-Integrity: sha256=26bd8bc6cf6a1aba28e4b475c7d682ee82bae26780b9e89a8ef44b2a3521c0d1
+- 2026-10-27T20:56:01Z SB2SMXTHEAZ30WBQNSBH4F787S-ui-71c5cb39 claim actor=ui+steward-seat targets=the-impact-check-selects-only-tests-this-host-can-run reason=areas unknown for goal the-impact-check-selects-only-tests-this-host-can-run: no accepted design declares areas; areas unknown for goal a-live-read-proves-its-subject; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal a-live-read-proves-its-subject
+Integrity: sha256=1ebfff2a5f7d7f2843c37fc2dca655700ac16d53dd1b45f21fd56a6615bdc21b
