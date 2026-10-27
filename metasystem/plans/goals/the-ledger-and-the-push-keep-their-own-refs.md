@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: On m1e's build lane after a-review-keeps-every-read: opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 35 production lines: goal/branch/push.go, push_repository.go, goal/txn.go, goal/recover.go
 - OpenedAt: 2026-10-27T15:28:28Z
-- Revision: 2
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Revision: 3
+- Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-27T15:29:19Z revision=2 opid=77TBXPFR74H2NYNS3SNGDCFDCG-m1e-e06ab4ba authority=proven digest=60dd7e887fee0ac6bb87d571d75b4ff1d20c4efc8fa99fd4b68b1f35ce399750 episode=2
+- NormApproval: approvedRef=A9VDW2P446TYHY55CGX3B193BB-m1e-e06ab4ba minutes=1200 reviewRounds=20 goalRevision=2
+- Approved: by=human:Wido at=2026-10-27T15:29:51Z revision=3 opid=A9VDW2P446TYHY55CGX3B193BB-m1e-e06ab4ba authority=proven digest=8cc83570babcf538a987c37e1bf84f08853deb385a921e9230a3fadd2fcefd54 episode=3
 
 History:
 - 2026-10-27T15:28:28Z VSAGRBYB5HS5RKZ9T4EA5J8ATR-m1e-e06ab4ba open actor=human:Wido targets=the-ledger-and-the-push-keep-their-own-refs
 - 2026-10-27T15:29:19Z 77TBXPFR74H2NYNS3SNGDCFDCG-m1e-e06ab4ba approve actor=human:Wido targets=the-ledger-and-the-push-keep-their-own-refs
-Integrity: sha256=6057304e6d9509f8ce7549dfbec8af6afe290e0b542f83b772fd4dd27f476127
+- 2026-10-27T15:29:51Z A9VDW2P446TYHY55CGX3B193BB-m1e-e06ab4ba approve actor=human:Wido targets=the-ledger-and-the-push-keep-their-own-refs
+Integrity: sha256=bfd271c0b26bb57e8eacf6e4a28fac27c519bb3fe53a07957a84570b804a8486
