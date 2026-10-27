@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 210
+- Revision: 211
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -281,4 +281,5 @@ History:
 - 2026-10-27T11:02:37Z 8KEMV00QABF4CSWYXAWVJXW944-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-answer-is-the-act displaced=m1e+main-1792389436-6018-51cc28@2026-10-26T01:00:13Z ack
 - 2026-10-27T12:46:47Z GAYWKYR0PQCGE66WZR5X1KDMMF-ui-71c5cb39 ack actor=ui+steward-seat targets=lane-steward displaced=ui+steward-seat@2026-10-26T14:29:54Z ack
 - 2026-10-27T14:36:18Z SGJD7GP9CWBYPEMNATCS5WJTHH-ui-71c5cb39 ack actor=ui+steward-seat targets=lane-steward displaced=ui+steward-seat@2026-10-26T17:11:38Z ack
-Integrity: sha256=11ddd63437d77632d1f539b3b32ef6cd3f8eee7fede130375c2b76036240114b
+- 2026-10-27T18:16:38Z AHX4YTXB7PGQ90FNV431TDE3Z2-ui-71c5cb39 ack actor=ui+steward-seat targets=a-capacity-refusal-is-an-environment-stop displaced=ui+steward-seat@2026-10-27T14:44:39Z ack
+Integrity: sha256=794a3a7e343ae7c81d168856468e911c02d8c2fc64611b0e9c225ffffff16f3e

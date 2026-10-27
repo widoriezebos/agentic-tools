@@ -1,6 +1,6 @@
 # a-capacity-refusal-is-an-environment-stop
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 1
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="classification of one failure kind on the unit step path every build uses; a wrong class costs one retry, never a landing"
@@ -10,12 +10,14 @@
 - Next step: Build on ui after lane-steward lands (priority 1.3): work build a-capacity-refusal-is-an-environment-stop --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-capacity-refusal-is-an-environment-stop-brief.md --lines 360 --last (FINAL revision 2 after one Astra round; about 95 production lines in internal/launch: Codex's terminal "Selected model is at capacity" block becomes a provider failure with the words kept in the record; the existing one machine retry waits 2 minutes from the refusal's end, bounded by the caller's wait allowance; a second refusal asks one question with a cleaned provider message and the exact retry command; a plain exit 1 stays unclassified; seam at 125: the wait and the message as a second unit). Read each round: yes. Open for Wido: the wait length (2 minutes kept; ruling R-31-m2's 20-30 minutes is the rejected alternative). Live proof: the next capacity refusal on any seat is retried by the machine once, with no person act.; ANSWERED FSPCF9RP889YY0HPM48F6TK2WS: Continue
 - OpenedAt: 2026-10-26T07:13:20Z
 - FirstClaimAt: 2026-10-27T14:44:39Z
-- Revision: 22
+- Revision: 23
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=JVVY1GNT4YEMAYBFWHDZCY3GMA-ui-5a7241f2 minutes=2400 reviewRounds=20 goalRevision=20
 - Approved: by=human:Wido at=2026-10-27T18:15:27Z revision=21 opid=JVVY1GNT4YEMAYBFWHDZCY3GMA-ui-5a7241f2 authority=proven digest=7b1a814c429286fa98a253c2477e76e8087c23cd279104daf809cf9a32797d84 episode=21
+- Claimed: machine=ui lineage=steward-seat at=2026-10-27T18:16:38Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-capacity-refusal-is-an-environment-stop: no accepted design declares areas\",\"areas unknown for goal a-settled-reply-names-its-machine\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=23 accountingRevision=23 episodeAt=2026-10-27T18:16:38Z episodeRevision=23
+- StopCapability: generation=23 revision=23 machine=ui claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-26T07:13:20Z 8M336VG5R8ESS42SM586A929NW-m1e-acb921fd open actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
@@ -40,4 +42,5 @@ History:
 - 2026-10-27T18:15:20Z JCBD1E43SVJ28YED6HE0KM3RGJ-ui-5a7241f2 approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
 - 2026-10-27T18:15:27Z JVVY1GNT4YEMAYBFWHDZCY3GMA-ui-5a7241f2 approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
 - 2026-10-27T18:15:34Z N3C1X4ZN177SAW6NC6MD6EAPA3-ui-5a7241f2 set-pin actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
-Integrity: sha256=80248c8a67bbe73f91fba5fe6951998d75c8c4ea79b60486665487d4691d8fd1
+- 2026-10-27T18:16:38Z AHX4YTXB7PGQ90FNV431TDE3Z2-ui-71c5cb39 claim actor=ui+steward-seat targets=a-capacity-refusal-is-an-environment-stop reason=areas unknown for goal a-capacity-refusal-is-an-environment-stop: no accepted design declares areas; areas unknown for goal a-settled-reply-names-its-machine; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses
+Integrity: sha256=ad4ecc33d899121e482c08dd7bded0652cff922e66d3e4f1f21b310b573acda8
