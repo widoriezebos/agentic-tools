@@ -55,7 +55,7 @@ func TestPostQuestionOffersButtonsOnlyForAContractText(t *testing.T) {
 			if row.plain {
 				p = &buttons.testProvider
 			}
-			if _, err := postQuestion(context.Background(), p, DestinationConfig{}, row.q, row.codeOff); err != nil {
+			if _, err := postQuestion(context.Background(), p, DestinationConfig{}, row.q, row.codeOff, nil); err != nil {
 				t.Fatal(err)
 			}
 			if !row.wantTaps {

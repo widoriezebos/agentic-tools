@@ -361,8 +361,10 @@ func TestBreachStopQuestionPostsThroughThePoll(t *testing.T) {
 	fixture.serve(t)
 	poll()
 	poll()
-	if q, _ := channel.ReadQuestion(fixture.root, asked[0].ID); q.Thread == nil || len(fixture.posts(t)) != 1 {
-		t.Fatalf("the poll did not post the question once: %+v %q", q, fixture.posts(t))
+	// The question failed to post before, so the poll that delivers it also
+	// says once that the channel is back.
+	if q, _ := channel.ReadQuestion(fixture.root, asked[0].ID); q.Thread == nil || len(fixture.posts(t)) != 2 || fixture.posts(t)[0] != q.Text || !strings.HasPrefix(fixture.posts(t)[1], "Back online at ") {
+		t.Fatalf("the poll did not post the question and the back-online line once: %+v %q", q, fixture.posts(t))
 	}
 }
 

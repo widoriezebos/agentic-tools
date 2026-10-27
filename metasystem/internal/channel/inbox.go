@@ -362,6 +362,7 @@ type pendingNotice struct {
 type noticeLedger struct {
 	Pending []pendingNotice `json:"pending"`
 	Posted  []string        `json:"posted"`
+	Down    time.Time       `json:"down,omitzero"`
 }
 
 func noticesPath(c PollConfig) string {
@@ -493,7 +494,7 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 			open++
 		}
 	}
-	if open == 0 && (status.GoalID == "" || statusRoot == "") {
+	if open == 0 && result.Received == 0 && (status.GoalID == "" || statusRoot == "") {
 		return nil
 	}
 	ep, err := endpoint()
@@ -586,6 +587,31 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 				result.Dispositions++
 				continue
 			}
+		} else if waitingWord(in.Text) {
+			// The waiting list is answered by the full poll, once, through the notice ledger.
+			if c.Provider == nil || handled[record.path] {
+				continue
+			}
+			if open, _ := WalkOpenQuestions(c.RepoRoot); !c.Now.After(record.sent.Add(time.Hour)) {
+				reply := waitingList(c.Machine, open)
+				if reply == "" && in.ReceivedBy == c.Machine {
+					reply = "Nothing waits for you on " + c.Machine + "."
+				}
+				if reply != "" {
+					if err := queueNotice(noticesPath(c), "waiting:"+record.path, reply, &in.MessageID, in.MessageID); err != nil {
+						return errors.Join(publicationErrors, err)
+					}
+				}
+			}
+			handled[record.path] = true
+			if err := writeJSON(handledPath, sortedHandled(handled)); err != nil {
+				return errors.Join(publicationErrors, err)
+			}
+			result.Dispositions++
+			if err := flushNotices(ctx, c, result); err != nil {
+				return errors.Join(publicationErrors, err)
+			}
+			continue
 		} else {
 			for i := range questions {
 				q := &questions[i]

@@ -268,6 +268,29 @@ func TestATapAnswersAContractQuestion(t *testing.T) {
 			t.Fatalf("act runs = %q", b.calls)
 		}
 	})
+	t.Run("the reminder carries the buttons and loses them after the act", func(t *testing.T) {
+		t.Parallel()
+		b := newTapBed(t, true)
+		b.now = time.Date(2026, 10, 26, 10, 0, 0, 0, time.Local)
+		q, _ := b.posted(t)
+		b.now = time.Date(2026, 10, 26, 13, 0, 0, 0, time.Local)
+		b.pollOnce(t)
+		sent := b.sent(t)
+		reminded := b.question(t, b.inst, q.ID).Reminded
+		if len(sent) != 2 || reminded == nil || !strings.HasPrefix(textOf(sent[1]), "Still waiting: ") || replyParent(sent[1]) != q.Thread.ID {
+			t.Fatalf("the reminder was posted as %+v (reminded %+v)", sent, reminded)
+		}
+		if got := keyboardOf(sent[1]); !slices.Equal(got, []string{"Continue", "Stop here"}) || !strings.HasSuffix(textOf(sent[1]), "\n"+tapAnswerLine) {
+			t.Fatalf("reminder keyboard = %q text %q", got, textOf(sent[1]))
+		}
+		b.tap(t, reminded.ID, "Continue", 7001)
+		b.pollOnce(t)
+		b.pollOnce(t)
+		edits := b.edits(t)
+		if len(b.calls) != 1 || len(edits) != 2 || messageID(edits[0]) != q.Thread.ID || messageID(edits[1]) != reminded.ID {
+			t.Fatalf("act runs %q, editMessageReplyMarkup rows %+v, want the question's %s and the reminder's %s", b.calls, edits, q.Thread.ID, reminded.ID)
+		}
+	})
 	t.Run("asking with a provider posts the buttons", func(t *testing.T) {
 		t.Parallel()
 		b := newTapBed(t, true)

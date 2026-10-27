@@ -97,6 +97,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 	if err != nil {
 		return result, err
 	}
+	redelivered := false
 	for i := range questions {
 		if result.Dispositions >= c.MaxDispositions {
 			break
@@ -106,18 +107,40 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 			if err = ensureText(c.RepoRoot, q); err != nil {
 				return result, err
 			}
-			ref, postErr := postQuestion(ctx, c.Provider, c.DestinationConfig, *q, c.answerCodeOff)
+			ref, postErr := postQuestion(ctx, c.Provider, c.DestinationConfig, *q, c.answerCodeOff, nil)
 			if postErr != nil {
 				q.Undelivered++
 				result.Undelivered++
 			} else {
-				q.Thread = &ref
+				q.Thread, redelivered = &ref, redelivered || q.Undelivered > 0
 			}
 			if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
 				return result, err
 			}
 			result.Dispositions++
 		}
+	}
+	// The one reminder, in waking hours: a failed post waits for the next one.
+	for i := range questions {
+		if !receive || !wakingHour(c.Now) || result.Dispositions >= c.MaxDispositions {
+			break
+		}
+		q := &questions[i]
+		if !remindable(*q) || q.State != "open" || q.Thread == nil || q.Reminded != nil || q.Answer != nil || len(q.Attempts) > 0 || c.Now.Before(reminderDue(q.OpenedAt)) {
+			continue
+		}
+		reminder := *q
+		reminder.Text = "Still waiting: " + strings.Replace(q.Text, reminderSentence(*q), " This is the one reminder.", 1)
+		ref, postErr := postQuestion(ctx, c.Provider, c.DestinationConfig, reminder, c.answerCodeOff, q.Thread)
+		if postErr != nil {
+			result.Undelivered++
+			continue
+		}
+		q.Reminded, q.Notices = &ref, append(q.Notices, ref.ID)
+		if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+			return result, err
+		}
+		result.Dispositions++
 	}
 	var publicationErrors error
 	for i := range questions {
@@ -166,7 +189,44 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 		receiveErr = receiveToInbox(ctx, c, threads, endpoint, &result)
 	}
 	err = matchInbox(ctx, c, status, statusRoot, endpoint, resolveEndpoint, &result)
+	if receive {
+		err = errors.Join(err, backOnline(ctx, c, &result, redelivered))
+	}
 	return result, errors.Join(publicationErrors, receiveErr, err)
+}
+
+// wakingHour is a poll between 08:00 and 21:59 local, when the channel posts unasked.
+func wakingHour(now time.Time) bool { return now.Local().Hour() >= 8 && now.Local().Hour() < 22 }
+
+// backOnline marks the channel down when a post of this poll failed and,
+// on the first good poll in waking hours after, or when a question that
+// failed before is delivered, says once what waits.
+func backOnline(ctx context.Context, c PollConfig, result *PollResult, redelivered bool) error {
+	ledger, err := readNotices(noticesPath(c))
+	if err != nil {
+		return err
+	}
+	was := ledger.Down
+	switch {
+	case result.Undelivered > 0:
+		ledger.Down = cmp.Or(ledger.Down, c.Now)
+	case (!ledger.Down.IsZero() || redelivered) && !wakingHour(c.Now):
+		ledger.Down = cmp.Or(ledger.Down, c.Now)
+	case !ledger.Down.IsZero() || redelivered:
+		if open, _ := WalkOpenQuestions(c.RepoRoot); len(open) > 0 {
+			list := waitingList(c.Machine, open)
+			if _, err := c.Provider.Post(ctx, c.DestinationConfig, "Back online at "+c.Now.Local().Format("15:04")+"; o"+strings.TrimPrefix(list, "O"), nil); err != nil {
+				result.Undelivered++
+				ledger.Down = cmp.Or(ledger.Down, c.Now)
+				break
+			}
+		}
+		ledger.Down = time.Time{}
+	}
+	if ledger.Down.Equal(was) {
+		return nil
+	}
+	return writeJSON(noticesPath(c), ledger)
 }
 
 // disposeStatusReplyWithEndpoint answers a verified inbox record that replies
@@ -376,6 +436,9 @@ func settleChoice(ctx context.Context, c PollConfig, q *Question) error {
 	if poster, ok := c.Provider.(OptionPoster); ok && attempt.Outcome == "acted" && c.answerCodeOff && q.Thread != nil {
 		// The act ran outside the duty's deadline; the adapter's own timeout bounds this.
 		_ = poster.ClearOptions(context.WithoutCancel(ctx), c.DestinationConfig, *q.Thread)
+		if q.Reminded != nil {
+			_ = poster.ClearOptions(context.WithoutCancel(ctx), c.DestinationConfig, *q.Reminded)
+		}
 	}
 	q.Answer.Phase = attempt.Outcome
 	if attempt.Outcome == "chosen" || attempt.Outcome == "refused" {

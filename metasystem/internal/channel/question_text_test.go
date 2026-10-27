@@ -22,10 +22,16 @@ type attemptProvider struct {
 	fail    int
 	attempt []string
 	durable []string
+	// back counts the back-online lines, which are no attempt at the question.
+	back int
 }
 
 func (p *attemptProvider) Post(_ context.Context, _ DestinationConfig, text string, _ *MessageRef) (MessageRef, error) {
 	p.t.Helper()
+	if strings.HasPrefix(text, "Back online at ") {
+		p.back++
+		return MessageRef{ID: "back"}, nil
+	}
 	questions, unread := WalkQuestions(p.root)
 	if len(unread) != 0 || len(questions) != 1 {
 		p.t.Fatalf("before post: questions=%+v unread=%v", questions, unread)
@@ -173,6 +179,10 @@ func TestQuestionTextIsDurableBeforeEveryAttempt(t *testing.T) {
 			stored, err := ReadQuestion(root, q.ID)
 			if err != nil || stored.Thread == nil || stored.Undelivered != 1 || len(p.attempt) != 2 {
 				t.Fatalf("retry state: %+v err=%v attempts=%q", stored, err, p.attempt)
+			}
+			// A poll that delivers a question whose post failed says once that the channel is back; a retry does not.
+			if want := map[bool]int{true: 0, false: 1}[strings.HasSuffix(name, "retry")]; p.back != want {
+				t.Fatalf("back-online lines = %d, want %d", p.back, want)
 			}
 			for i, text := range p.attempt {
 				if text == "" || text != p.durable[i] || text != p.attempt[0] || text != stored.Text {

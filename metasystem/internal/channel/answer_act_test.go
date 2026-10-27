@@ -95,7 +95,10 @@ func TestContractQuestionRendersInContractOrder(t *testing.T) {
 		want := strings.Join([]string{request.Plain.Decision, "",
 			"★ Continue — " + request.Options[1].Consequence,
 			"Stop here — " + request.Options[0].Consequence, "",
-			"If you do nothing: it waits; nothing builds or lands until you choose.", answer}, "\n")
+			"If you do nothing: it waits; nothing builds or lands until you choose." + reminderSentence(q), answer}, "\n")
+		if !strings.HasPrefix(reminderSentence(q), " I ask once more ") {
+			t.Fatalf("the contract question says no reminder time: %q", reminderSentence(q))
+		}
 		if q.Text != want {
 			t.Fatalf("contract text (code off %t):\n%s\nwant:\n%s", codeOff, q.Text, want)
 		}
@@ -129,7 +132,17 @@ type choiceBed struct {
 
 func newChoiceBed(t *testing.T) *choiceBed {
 	t.Helper()
+	return newChoiceBedOpened(t, time.Time{}, nil)
+}
+
+// newChoiceBedOpened is the choice bed with its question asked and first
+// polled at opened, when given, and its request amended.
+func newChoiceBedOpened(t *testing.T, opened time.Time, amend func(*AskRequest)) *choiceBed {
+	t.Helper()
 	repo, provider, legacy, now := pollLedgerBed(t)
+	if !opened.IsZero() {
+		now = opened
+	}
 	if err := os.Remove(questionPath(repo.root, legacy.ID)); err != nil {
 		t.Fatal(err)
 	}
@@ -140,6 +153,10 @@ func newChoiceBed(t *testing.T) *choiceBed {
 	}
 	request := contractRequest(repo.root)
 	request.UnitStop = &UnitStopQuestion{Loop: "unit-build", Subject: "g/u/run", Attempt: 1, Finding: "build-partial", Needs: "metasystem work revise g --by Wido", AcceptableActs: []string{"work-revise"}}
+	request.Now = now
+	if amend != nil {
+		amend(&request)
+	}
 	q, err := Ask(request)
 	if err != nil {
 		t.Fatal(err)

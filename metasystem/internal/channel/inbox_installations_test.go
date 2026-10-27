@@ -542,3 +542,178 @@ func TestKilledCommitterStillNoticesWhenTheOtherInstallationConfirms(t *testing.
 		t.Fatalf("inbox holds %d records", n)
 	}
 }
+
+// unthreaded has the human send text, in no thread, at sentAt.
+func (b *inboxBed) unthreaded(t *testing.T, text string, sentAt time.Time) {
+	t.Helper()
+	row, err := json.Marshal(map[string]any{"face": "telegram", "user": 7001, "text": text, "reply_to": 0, "date": sentAt.Unix()})
+	if err != nil {
+		t.Fatal(err)
+	}
+	f, err := os.OpenFile(filepath.Join(b.fakeDir, "replies.jsonl"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = f.Write(append(row, '\n')); err != nil {
+		t.Fatal(err)
+	}
+	if err = f.Close(); err != nil {
+		t.Fatal(err)
+	}
+	b.replies++
+}
+
+// repliesTo are the texts each listener posted in reply to message id.
+func (b *inboxBed) repliesTo(t *testing.T, id string) map[string][]string {
+	t.Helper()
+	out := map[string][]string{}
+	for _, row := range b.sent(t) {
+		if replyParent(row) == id {
+			out[row.Listener] = append(out[row.Listener], textOf(row))
+		}
+	}
+	return out
+}
+
+// failFirstPost is a provider whose first post fails.
+type failFirstPost struct {
+	channel.Provider
+	failed bool
+}
+
+func (p *failFirstPost) Post(ctx context.Context, d channel.DestinationConfig, text string, thread *channel.MessageRef) (channel.MessageRef, error) {
+	if !p.failed {
+		p.failed = true
+		return channel.MessageRef{}, errors.New("post failed")
+	}
+	return p.Provider.Post(ctx, d, text, thread)
+}
+
+func TestWaitingListsWhatWaitsHere(t *testing.T) {
+	t.Parallel()
+	waitClock := time.Date(2026, 10, 26, 12, 0, 0, 0, time.Local)
+	newBed := func(t *testing.T) *inboxBed {
+		return newInboxBed(t, inboxSetup{now: waitClock, conf: "channel.human.answer-code=off\n"})
+	}
+	// askAt opens n questions on inst, a minute apart, and posts them.
+	askAt := func(t *testing.T, b *inboxBed, inst inboxInstallation, n int) []channel.Question {
+		var asked []channel.Question
+		for i := range n {
+			q, err := channel.Ask(channel.AskRequest{RepoRoot: inst.root, Goal: "seat-goal", Kind: "other", Machine: inst.machine, Facts: []string{fmt.Sprintf("fact %d", i+1)}, Plain: &channel.Plain{Decision: fmt.Sprintf("Decision %d of the seat", i+1)}, Now: waitClock.Add(time.Duration(i-60) * time.Minute)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			asked = append(asked, q)
+		}
+		for range (n + 4) / 5 {
+			b.poll(t, inst)
+		}
+		return asked
+	}
+	handledHere := func(t *testing.T, b *inboxBed, inst inboxInstallation, text string) bool {
+		handled, _ := os.ReadFile(filepath.Join(inst.root, "artifacts", "agents", "channel", "fleet", "inbox-handled.json"))
+		return strings.Contains(string(handled), `"`+b.recordFor(t, text).Path+`"`)
+	}
+	list := func(machine string, asked []channel.Question) string {
+		lines := []string{fmt.Sprintf("On %s, %d questions wait for you, newest first:", machine, len(asked))}
+		for i := len(asked) - 1; i >= 0; i-- {
+			lines = append(lines, "- "+strings.SplitN(asked[i].Text, "\n", 2)[0]+" (asked "+asked[i].OpenedAt.Local().Format("15:04")+")")
+		}
+		return strings.Join(lines, "\n")
+	}
+	want := func(t *testing.T, b *inboxBed, text string, replies map[string][]string) {
+		t.Helper()
+		id := b.recordFor(t, text).MessageID
+		if got := b.repliesTo(t, id); fmt.Sprint(got) != fmt.Sprint(replies) {
+			t.Fatalf("replies to %q = %q, want %q", text, got, replies)
+		}
+	}
+	t.Run("the committer lists its questions newest first, once", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		asked := askAt(t, b, b.seat, 2)
+		for _, word := range []string{"/waiting", " Waiting ", "/WAITING@MetaBot"} {
+			b.unthreaded(t, word, waitClock)
+			b.poll(t, b.seat)
+			b.poll(t, b.lane)
+			b.poll(t, b.seat)
+			want(t, b, strings.TrimSpace(word), map[string][]string{"seat": {list("m1e", asked)}})
+		}
+	})
+	t.Run("the committer with nothing says so and the other lists its own", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		asked := askAt(t, b, b.seat, 2)
+		b.unthreaded(t, "/waiting", waitClock)
+		b.poll(t, b.lane)
+		b.poll(t, b.seat)
+		b.poll(t, b.lane)
+		want(t, b, "/waiting", map[string][]string{"lane": {"Nothing waits for you on landing."}, "seat": {list("m1e", asked)}})
+	})
+	t.Run("nothing open anywhere: only the committer answers", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		b.unthreaded(t, "/waiting", waitClock)
+		b.poll(t, b.seat)
+		b.poll(t, b.lane)
+		b.poll(t, b.seat)
+		want(t, b, "/waiting", map[string][]string{"seat": {"Nothing waits for you on m1e."}})
+	})
+	t.Run("an answer whose post failed is posted on the next poll", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		b.unthreaded(t, "/waiting", waitClock)
+		c := b.config(b.seat)
+		c.Provider = &failFirstPost{Provider: c.Provider}
+		if r, err := channel.Poll(context.Background(), c); err != nil || r.Undelivered != 1 {
+			t.Fatalf("first poll: %+v %v", r, err)
+		}
+		want(t, b, "/waiting", map[string][]string{})
+		b.poll(t, b.seat)
+		b.poll(t, b.seat)
+		want(t, b, "/waiting", map[string][]string{"seat": {"Nothing waits for you on m1e."}})
+		if len(b.sent(t)) != 1 {
+			t.Fatalf("posts = %+v", b.sent(t))
+		}
+	})
+	t.Run("eleven open: nine lines and the rest counted", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		asked := askAt(t, b, b.seat, 11)
+		b.unthreaded(t, "/waiting", waitClock)
+		b.poll(t, b.seat)
+		lines := strings.Split(list("m1e", asked), "\n")
+		want(t, b, "/waiting", map[string][]string{"seat": {strings.Join(append(lines[:10], "and 2 more; question list at your terminal shows them all."), "\n")}})
+	})
+	t.Run("a waiting sent two hours ago is not answered", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		askAt(t, b, b.seat, 1)
+		b.unthreaded(t, "/waiting", waitClock.Add(-2*time.Hour))
+		b.poll(t, b.seat)
+		b.poll(t, b.seat)
+		want(t, b, "/waiting", map[string][]string{})
+		if !handledHere(t, b, b.seat, "/waiting") {
+			t.Fatal("an old waiting was not marked handled")
+		}
+	})
+	t.Run("the settlement pass leaves it to the full poll", func(t *testing.T) {
+		t.Parallel()
+		b := newBed(t)
+		asked := askAt(t, b, b.seat, 2)
+		b.unthreaded(t, "/waiting", waitClock)
+		b.poll(t, b.lane)
+		settle := b.config(b.seat)
+		settle.Provider = nil
+		if _, err := channel.SettleReplies(context.Background(), settle, nil); err != nil {
+			t.Fatal(err)
+		}
+		want(t, b, "/waiting", map[string][]string{"lane": {"Nothing waits for you on landing."}})
+		if handledHere(t, b, b.seat, "/waiting") {
+			t.Fatal("the settlement pass marked the waiting handled")
+		}
+		b.poll(t, b.seat)
+		b.poll(t, b.seat)
+		want(t, b, "/waiting", map[string][]string{"lane": {"Nothing waits for you on landing."}, "seat": {list("m1e", asked)}})
+	})
+}

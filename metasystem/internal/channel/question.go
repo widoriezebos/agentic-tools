@@ -100,8 +100,10 @@ type Question struct {
 	Attempts       []Attempt         `json:"attempts,omitempty"`
 	// Notices are the executor's own posts in the thread; a reply to one is
 	// a reply to the question.
-	Notices  []string  `json:"notices,omitempty"`
-	ClosedAt time.Time `json:"closedAt,omitzero"`
+	Notices []string `json:"notices,omitempty"`
+	// Reminded is the one reminder's post.
+	Reminded *MessageRef `json:"reminded,omitempty"`
+	ClosedAt time.Time   `json:"closedAt,omitzero"`
 }
 
 type AskRequest struct {
@@ -372,7 +374,7 @@ func askOrFind(r AskRequest) (Question, bool, error) {
 		if postContext == nil {
 			postContext = context.Background()
 		}
-		ref, postErr := postQuestion(postContext, r.Provider, r.Destination, q, answerCodeOffOrOn(r.RepoRoot))
+		ref, postErr := postQuestion(postContext, r.Provider, r.Destination, q, answerCodeOffOrOn(r.RepoRoot), nil)
 		if postErr == nil {
 			q.Thread = &ref
 		} else {
@@ -579,7 +581,33 @@ func renderQuestion(repo string, q Question) string {
 		}
 		lines = append(lines, line)
 	}
-	return strings.Join(append(lines, "", "If you do nothing: "+plainSentence(q.Plain.IfNothing, false), answerLine(q, answerCodeOffOrOn(repo))), "\n")
+	return strings.Join(append(lines, "", "If you do nothing: "+plainSentence(q.Plain.IfNothing, false)+reminderSentence(q), answerLine(q, answerCodeOffOrOn(repo))), "\n")
+}
+
+// remindable is a contract question that holds an act: it is asked once more.
+func remindable(q Question) bool {
+	return q.Contract && slices.ContainsFunc(q.Options, func(o Option) bool { return len(o.Act) > 0 })
+}
+
+// reminderDue is three hours after opened, moved into 08:00-22:00 local.
+func reminderDue(opened time.Time) time.Time {
+	due := opened.Add(3 * time.Hour).In(time.Local)
+	if y, m, d := due.Date(); due.Hour() < 8 || due.Hour() >= 22 {
+		return time.Date(y, m, d+due.Hour()/22, 8, 0, 0, 0, time.Local)
+	}
+	return due
+}
+
+// reminderSentence says, on the if-nothing line, when the reminder comes.
+func reminderSentence(q Question) string {
+	if !remindable(q) {
+		return ""
+	}
+	due, when := reminderDue(q.OpenedAt), " at "
+	if due.YearDay() != q.OpenedAt.In(time.Local).YearDay() {
+		when = " tomorrow at "
+	}
+	return " I ask once more" + when + due.Format("15:04") + "."
 }
 
 // shownOptions are the options in the order shown: the recommended first.
@@ -616,16 +644,45 @@ func tapLine(q Question) string {
 // postQuestion posts q's stored text, with one button per option for a
 // contract question asked with the code off to a provider that has buttons.
 // A text made while the code was on keeps its line and gets no buttons.
-func postQuestion(ctx context.Context, p Provider, d DestinationConfig, q Question, codeOff bool) (MessageRef, error) {
+func postQuestion(ctx context.Context, p Provider, d DestinationConfig, q Question, codeOff bool, thread *MessageRef) (MessageRef, error) {
 	poster, buttons := p.(OptionPoster)
 	if !q.Contract || !codeOff || !buttons || !strings.HasSuffix(q.Text, answerLine(q, true)) {
-		return p.Post(ctx, d, q.Text, nil)
+		return p.Post(ctx, d, q.Text, thread)
 	}
 	var labels []string
 	for _, option := range shownOptions(q) {
 		labels = append(labels, option.Label)
 	}
-	return poster.PostOptions(ctx, d, strings.TrimSuffix(q.Text, answerLine(q, true))+tapLine(q), labels, nil)
+	return poster.PostOptions(ctx, d, strings.TrimSuffix(q.Text, answerLine(q, true))+tapLine(q), labels, thread)
+}
+
+// waitingWord is the message that asks what waits: /waiting or waiting.
+func waitingWord(text string) bool {
+	word := strings.ToLower(strings.TrimSpace(text))
+	if before, name, found := strings.Cut(word, "@"); found && before == "/waiting" && !strings.ContainsAny(name, " \n") {
+		word = before
+	}
+	return word == "/waiting" || word == "waiting"
+}
+
+// waitingList is the open questions of machine, newest first, one line each.
+func waitingList(machine string, open []Question) string {
+	if len(open) == 0 {
+		return ""
+	}
+	lines := []string{fmt.Sprintf("On %s, %d questions wait for you, newest first:", machine, len(open))}
+	if len(open) == 1 {
+		lines[0] = "On " + machine + ", 1 question waits for you, newest first:"
+	}
+	for i, q := range open {
+		if i == 9 {
+			lines = append(lines, fmt.Sprintf("and %d more; question list at your terminal shows them all.", len(open)-9))
+			break
+		}
+		first, _, _ := strings.Cut(q.Text, "\n")
+		lines = append(lines, "- "+first+" (asked "+q.OpenedAt.Local().Format("15:04")+")")
+	}
+	return strings.Join(lines, "\n")
 }
 
 func plainSentence(s string, capital bool) string {

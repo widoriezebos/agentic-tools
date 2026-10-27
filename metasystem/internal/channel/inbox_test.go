@@ -178,7 +178,9 @@ func TestTwoCodeFieldsDoNotBlockTheQueue(t *testing.T) {
 // F-2: a notice whose post failed is retried on the next tick, once.
 func TestFailedNoticeIsRetriedOnTheNextTick(t *testing.T) {
 	t.Parallel()
-	bed, p, _, now := pollLedgerBed(t)
+	bed, p, _, _ := pollLedgerBed(t)
+	// A clock in waking hours, when the back-online line is posted.
+	now := time.Date(2026, 9, 4, 10, 0, 0, 0, time.Local)
 	p.inbound = []Inbound{{Ref: MessageRef{ID: "5", ThreadID: "1"}, ThreadID: "1", UserID: "UWIDO", Text: "approved 000000", SentAt: now, Ack: "6", UpdateID: 5}}
 	p.failPosts = 1
 	cfg := pollBedConfig(bed, p, now)
@@ -191,8 +193,11 @@ func TestFailedNoticeIsRetriedOnTheNextTick(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(p.posts) != 1 || !strings.HasPrefix(p.posts[0], "not recorded: bad code.") || p.postThreads[0] == nil || p.postThreads[0].ID != "1" {
-		t.Fatalf("posts=%v", p.posts)
+	// The failed post marked the channel down; the bed's question is open,
+	// so the next good poll also says once that the channel is back.
+	if len(p.posts) != 2 || !strings.HasPrefix(p.posts[0], "not recorded: bad code.") || p.postThreads[0] == nil || p.postThreads[0].ID != "1" ||
+		!strings.HasPrefix(p.posts[1], "Back online at ") || p.postThreads[1] != nil {
+		t.Fatalf("posts=%q threads=%v", p.posts, p.postThreads)
 	}
 }
 
