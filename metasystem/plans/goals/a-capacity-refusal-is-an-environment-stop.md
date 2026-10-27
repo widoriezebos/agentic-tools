@@ -10,7 +10,8 @@
 - Next step: Build on ui after lane-steward lands (priority 1.3): work build a-capacity-refusal-is-an-environment-stop --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-capacity-refusal-is-an-environment-stop-brief.md --lines 360 --last (FINAL revision 2 after one Astra round; about 95 production lines in internal/launch: Codex's terminal "Selected model is at capacity" block becomes a provider failure with the words kept in the record; the existing one machine retry waits 2 minutes from the refusal's end, bounded by the caller's wait allowance; a second refusal asks one question with a cleaned provider message and the exact retry command; a plain exit 1 stays unclassified; seam at 125: the wait and the message as a second unit). Read each round: yes. Open for Wido: the wait length (2 minutes kept; ruling R-31-m2's 20-30 minutes is the rejected alternative). Live proof: the next capacity refusal on any seat is retried by the machine once, with no person act.; ANSWERED FSPCF9RP889YY0HPM48F6TK2WS: Continue
 - OpenedAt: 2026-10-26T07:13:20Z
 - FirstClaimAt: 2026-10-27T14:44:39Z
-- Revision: 21
+- Revision: 22
+- Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=JVVY1GNT4YEMAYBFWHDZCY3GMA-ui-5a7241f2 minutes=2400 reviewRounds=20 goalRevision=20
@@ -38,4 +39,5 @@ History:
 - 2026-10-27T18:15:13Z 3ZSYKHFE81Y7B2MM4XHGCWNK8D-ui-5a7241f2 edit actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop reason=TierOverride: derived=1 set=2 why=tier 1 cannot complete a live read: digest mismatch, finding 436
 - 2026-10-27T18:15:20Z JCBD1E43SVJ28YED6HE0KM3RGJ-ui-5a7241f2 approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
 - 2026-10-27T18:15:27Z JVVY1GNT4YEMAYBFWHDZCY3GMA-ui-5a7241f2 approve actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
-Integrity: sha256=916a554c4d3f94437fcfa15a81fb3787c994e1f91401f7a8e5a1129956ad3015
+- 2026-10-27T18:15:34Z N3C1X4ZN177SAW6NC6MD6EAPA3-ui-5a7241f2 set-pin actor=human:Wido targets=a-capacity-refusal-is-an-environment-stop
+Integrity: sha256=80248c8a67bbe73f91fba5fe6951998d75c8c4ea79b60486665487d4691d8fd1
