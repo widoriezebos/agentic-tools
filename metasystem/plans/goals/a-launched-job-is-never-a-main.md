@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: On m1e's build lane after a-question-reminds-and-anyone-can-ask: opus-designer cuts the brief from the page (BRIEF-CHECKLIST, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 24 production lines: hooks/runtime_hook_start.go, up/up.go, lease/sweep.go, dispatch/unit_launch.go; the steward submits with work review --changes --last
 - OpenedAt: 2026-10-27T15:02:51Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=V9TGZKVYFY8XJYSZNPM9MX44Y6-m1e-e06ab4ba minutes=1200 reviewRounds=20 goalRevision=2
@@ -17,4 +18,5 @@ History:
 - 2026-10-27T15:02:51Z YQ0CAVGJQ7G6XPN3ZSKHPRY3DC-m1e-e06ab4ba open actor=human:Wido targets=a-launched-job-is-never-a-main
 - 2026-10-27T15:05:15Z QMTE5VCJQP8MG36F39FPDKP6X7-m1e-e06ab4ba approve actor=human:Wido targets=a-launched-job-is-never-a-main
 - 2026-10-27T15:06:53Z V9TGZKVYFY8XJYSZNPM9MX44Y6-m1e-e06ab4ba approve actor=human:Wido targets=a-launched-job-is-never-a-main
-Integrity: sha256=6e8fcb5c092b0eb6fdfe6304f22443c62101b3c700964c6964ea3f4229fdc626
+- 2026-10-27T15:08:13Z 07ADZV8PVM6CACM65CWKTJEKWB-m1e-e06ab4ba set-pin actor=human:Wido targets=a-launched-job-is-never-a-main
+Integrity: sha256=40292bcb491ca2c166d7c55861d4c5fd45ccdcd1287cda89a1113293a9d562c8
