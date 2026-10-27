@@ -160,6 +160,7 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 			fmt.Fprintln(stderr, err)
 			return 1
 		}
+		output.NotRunnable = impact.NotRunnable
 		for i := range impact.Paths {
 			impact.Paths[i] = prefix + impact.Paths[i]
 		}
@@ -208,6 +209,9 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 		}
 		for _, selection := range selections {
 			fmt.Fprintln(stdout, "selection: "+selection)
+		}
+		if impact.NotRunnable > 0 {
+			fmt.Fprintf(stdout, "not runnable here: %d selected tests are in files Go does not build for %s/%s; not counted missing\n", impact.NotRunnable, impact.GOOS, impact.GOARCH)
 		}
 	}
 	if replay {

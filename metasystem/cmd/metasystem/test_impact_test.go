@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -75,6 +76,61 @@ func impactPublic(t *testing.T, root string, args ...string) (int, string, strin
 	var stdout, stderr bytes.Buffer
 	code := dispatchWithFamilies(append([]string{"test", "impact", "--root", root}, args...), &stdout, &stderr, families())
 	return code, stdout.String(), stderr.String()
+}
+
+func TestTestImpactSkipsTestsThisHostCannotBuildGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"plan", "run", "free"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			root, _ := impactGitAdapterBed(t)
+			reader := func(name string) string {
+				return "package direct_test\nimport (\"testing\"; \"example.invalid/impact/internal/launch\")\nfunc Test" + name + "(t *testing.T) { t.Parallel(); _ = launch.Value }\n"
+			}
+			impactWrite(t, root, "internal/direct/reader_test.go", reader("Reader"))
+			if mode != "free" {
+				impactWrite(t, root, "internal/direct/excluded_test.go", "//go:build !"+runtime.GOOS+"\n\n"+reader("ExcludedReader"))
+				impactWrite(t, root, "internal/direct/host_test.go", "//go:build "+runtime.GOOS+"\n\n"+reader("HostReader"))
+			}
+			testingFixtureGit(t, root, "add", ".")
+			testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "readers")
+			base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+			impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = true // edited\n")
+			args := []string{"--base", base}
+			if mode != "run" {
+				args = append(args, "--plan")
+			}
+			code, out, problem := impactPublic(t, root, args...)
+			if mode == "run" {
+				if code != 0 || strings.Contains(out+problem, "missing test") {
+					t.Fatalf("run exit=%d stdout=%s stderr=%s", code, out, problem)
+				}
+				return
+			}
+			want := "selection: internal/direct=TestHostReader,TestReader\n"
+			if mode == "free" {
+				want = "selection: internal/direct=TestReader\n"
+			}
+			if code != 0 || !strings.Contains(out, want) || strings.Contains(out, "TestExcludedReader") {
+				t.Fatalf("plan exit=%d stdout=%s stderr=%s; want %s", code, out, problem, want)
+			}
+			if mode == "free" {
+				if strings.Contains(out, "not runnable here") {
+					t.Fatalf("unconstrained plan reported exclusions: %s", out)
+				}
+				return
+			}
+			if !strings.Contains(out, "not runnable here: 1 selected tests") {
+				t.Fatalf("plan did not report the excluded test: %s", out)
+			}
+			code, out, problem = impactPublic(t, root, "--base", base, "--plan", "--json")
+			result, err := verbresult.Read([]byte(out), "test impact", code, problem)
+			var plan plain.ImpactPlan
+			if code != 0 || err != nil || result.DecodeData(&plan) != nil || plan.NotRunnable != 1 {
+				t.Fatalf("JSON excluded count: exit=%d plan=%+v error=%v stdout=%s stderr=%s", code, plan, err, out, problem)
+			}
+		})
+	}
 }
 
 func TestTestImpactDependentRunsOnlyItsReadersGitAdapter(t *testing.T) {

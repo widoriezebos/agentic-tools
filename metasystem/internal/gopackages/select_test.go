@@ -1,16 +1,96 @@
 package gopackages
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"go/build"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
 )
+
+func TestFileMayBuildMatchesThePackageInventory(t *testing.T) {
+	t.Parallel()
+	other := "plan9"
+	if runtime.GOOS == other {
+		other = "windows"
+	}
+	for _, row := range []struct {
+		name, file, constraint, setting string
+		cgoImport, want                 bool
+	}{
+		{name: "constraint", constraint: "!" + runtime.GOOS},
+		{name: "host", constraint: runtime.GOOS, want: true},
+		{name: "file name", file: "reader_" + other + "_test.go"},
+		{name: "GOFLAGS tag enabled", constraint: "fixturetag", setting: "GOFLAGS=-tags=fixturetag", want: true},
+		{name: "GOFLAGS tag disabled", constraint: "fixturetag"},
+		{name: "environment file", constraint: "fixturetag", setting: "GOENV", want: true},
+		{name: "cgo disabled", constraint: "cgo"},
+		{name: "cgo enabled", constraint: "cgo", setting: "CGO_ENABLED=1", want: true},
+		{name: "cgo import disabled", cgoImport: true},
+		{name: "cgo import enabled", cgoImport: true, setting: "CGO_ENABLED=1", want: true},
+		{name: "uncertain tool tag", constraint: "go1.999", want: true},
+		{name: "unconstrained", want: true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			root := t.TempDir()
+			writeSelectionFile(t, root, "go.mod", "module example.invalid/inventory\n\ngo 1.27\n")
+			file, source := row.file, "package fixture\n"
+			if file == "" {
+				file = "reader_test.go"
+			}
+			if row.constraint != "" {
+				source = "//go:build " + row.constraint + "\n\n" + source
+			}
+			if row.cgoImport {
+				file, source = "cgo.go", source+"import \"C\"\n"
+			}
+			writeSelectionFile(t, root, "fixture/"+file, source)
+			environment := slices.DeleteFunc(os.Environ(), func(entry string) bool {
+				name, _, _ := strings.Cut(entry, "=")
+				return slices.Contains([]string{"GOFLAGS", "GOENV", "GOOS", "GOARCH", "CGO_ENABLED", "GOEXPERIMENT"}, name)
+			})
+			environment = append(environment, "GOENV=off", "CGO_ENABLED=0")
+			if row.setting == "GOENV" {
+				settings := filepath.Join(t.TempDir(), "goenv")
+				writeSelectionFile(t, filepath.Dir(settings), filepath.Base(settings), "GOFLAGS=-tags=fixturetag\n")
+				environment = append(environment, "GOENV="+settings)
+			} else if row.setting != "" {
+				environment = append(environment, row.setting)
+			}
+			command := exec.Command("go", "env", "-json", "GOOS", "GOARCH", "CGO_ENABLED", "GOFLAGS", "GOEXPERIMENT")
+			command.Dir, command.Env = root, environment
+			output, err := command.Output()
+			if err != nil {
+				t.Fatal(err)
+			}
+			settings := map[string]string{}
+			if err := json.Unmarshal(output, &settings); err != nil {
+				t.Fatal(err)
+			}
+			var entries []string
+			for name, value := range settings {
+				entries = append(entries, name+"="+value)
+			}
+			context, err := EffectiveContext(nil, entries)
+			if err != nil {
+				t.Fatal(err)
+			}
+			mayBuild, err := FileMayBuild(context, filepath.Join(root, "fixture", file))
+			inventory, inventoryErr := runnablePackageInventory(root, nil, entries)
+			if err != nil || inventoryErr != nil || mayBuild != inventory["./fixture"] || mayBuild != row.want {
+				t.Fatalf("file may build=%v error=%v inventory=%v error=%v; want %v", mayBuild, err, inventory, inventoryErr, row.want)
+			}
+		})
+	}
+}
 
 func TestSnapshotSelectionStillWidensUnownedPaths(t *testing.T) {
 	t.Parallel()

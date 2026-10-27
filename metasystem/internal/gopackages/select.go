@@ -251,7 +251,8 @@ func runnablePattern(owner string, inventory map[string]bool) string {
 	}
 }
 
-func runnablePackageInventory(root string, buildTags, environment []string) (map[string]bool, error) {
+// EffectiveContext resolves the platform, cgo and tags used for Go file selection.
+func EffectiveContext(buildTags, environment []string) (*build.Context, error) {
 	context := build.Default
 	// The proof environment may scrub ambient GOOS/GOARCH; absent explicit
 	// values make the native go tool target this host, not the caller shell.
@@ -318,8 +319,16 @@ func runnablePackageInventory(root string, buildTags, environment []string) (map
 			}
 		}
 	}
+	return &context, nil
+}
+
+func runnablePackageInventory(root string, buildTags, environment []string) (map[string]bool, error) {
+	context, err := EffectiveContext(buildTags, environment)
+	if err != nil {
+		return nil, err
+	}
 	inventory := map[string]bool{}
-	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
+	err = filepath.WalkDir(root, func(path string, entry os.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr
 		}
@@ -351,40 +360,41 @@ func runnablePackageInventory(root string, buildTags, environment []string) (map
 		if !runnableGoPackage(pkg) || inventory[pkg] {
 			return nil
 		}
-		if !context.CgoEnabled {
-			file, parseErr := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
-			if parseErr != nil {
-				return fmt.Errorf("read Go imports in %s: %w", path, parseErr)
-			}
-			cgoOnly := false
-			for _, imported := range file.Imports {
-				cgoOnly = cgoOnly || imported.Path.Value == `"C"`
-			}
-			if cgoOnly {
-				return nil
-			}
-		}
-		matches, err := context.MatchFile(filepath.Dir(path), name)
+		matches, err := FileMayBuild(context, path)
 		if err != nil {
-			return fmt.Errorf("match Go build constraints in %s: %w", path, err)
+			return err
 		}
 		if matches {
 			inventory[pkg] = true
-		} else {
-			uncertain, err := mayMatchUnprovenGoToolTag(path, context)
-			if err != nil {
-				return err
-			}
-			if uncertain {
-				// A different declared Go tool may add release, compiler, or
-				// architecture feature tags. Run its native discovery rather
-				// than silently treating this package as absent.
-				inventory[pkg] = true
-			}
 		}
 		return nil
 	})
 	return inventory, err
+}
+
+// FileMayBuild keeps files whose constraints a different Go tool may satisfy.
+func FileMayBuild(context *build.Context, path string) (bool, error) {
+	if !context.CgoEnabled {
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return false, fmt.Errorf("read Go imports in %s: %w", path, err)
+		}
+		for _, imported := range file.Imports {
+			if imported.Path.Value == `"C"` {
+				return false, nil
+			}
+		}
+	}
+	matches, err := context.MatchFile(filepath.Dir(path), filepath.Base(path))
+	if err != nil {
+		return false, fmt.Errorf("match Go build constraints in %s: %w", path, err)
+	}
+	if matches {
+		return true, nil
+	}
+	// A different declared Go tool may add release, compiler, or architecture
+	// feature tags. Keep native discovery responsible for those answers.
+	return mayMatchUnprovenGoToolTag(path, *context)
 }
 
 func validGoSelectorTag(tag string) bool {
