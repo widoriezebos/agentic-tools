@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-impact-check-selects-only-tests-this-host-can-run",
+  "unit": "main",
+  "subject": {
+    "commit": "2c3faeeb1afe0b4dbc25b5dcbadfe16f139d9556",
+    "parent": "ccbbbd3d963e3bfa007899b1402ebc60e64359d7",
+    "tree": "93bb25da8694d4776ce7313830c97e86407b04ae",
+    "patchDigest": "0c865fdaf8b8da0fd351d7fc91930cf7026b6183d9adc1769c679b9d6dccb306",
+    "unitDigest": "2db47fb5e43c1b62ca1a299849878d2d8fe228149226b36b2d58953fadd11622"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-9b4def6d1f3b72b5bfa7076f",
+    "round": 1,
+    "closureSha256": "a7051f57b5f4d73c6149f25186b595f576e9f713cbbd8983c03d3539b7d1f0cc"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "93bb25da8694d4776ce7313830c97e86407b04ae",
+    "runId": "goal-read-gate-20261027t233437z-fad75218dcfe16f9"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/test_impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-9b4def6d1f3b72b5bfa7076f"
+    },
+    {
+      "path": "metasystem/internal/gopackages/select_test.go",
+      "readerWord": "reviewed by critic root code-critic-9b4def6d1f3b72b5bfa7076f"
+    },
+    {
+      "path": "metasystem/internal/landing/batch/goadapter/impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-9b4def6d1f3b72b5bfa7076f"
+    }
+  ],
+  "sha256": "2f9d3461baca3eaf86565af487676a963164ca8062299e76e5c619375ca3becb"
+}
