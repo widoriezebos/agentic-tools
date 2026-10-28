@@ -7176,6 +7176,51 @@
       "opened": "2026-10-25T15:02:36Z",
       "closed": null,
       "class": "flake"
+    },
+    {
+      "id": "red:metasystem/internal/deploy:TestAnAdapterLeftByADeadRunHoldsTheDeployUntilPaused",
+      "identity": "red:metasystem/internal/deploy:TestAnAdapterLeftByADeadRunHoldsTheDeployUntilPaused",
+      "group": "metasystem/internal/deploy",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261028T022318.208007000Z.log",
+          "classname": "metasystem/internal/deploy",
+          "name": "TestAnAdapterLeftByADeadRunHoldsTheDeployUntilPaused",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261028T022318.208007000Z",
+          "batch": "20261028T022318.208007000Z",
+          "baseCommit": "ba391fd9ac3b7edd4a5fbe3cf7032bb1d4afbbb1",
+          "baseTree": "e8cdf7b759585ecc86ee012efce76416246fd2d9",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261028T022318.208007000Z.log",
+          "logDigest": "2608e72d81ec6a3236fb5b40cfe1174506b654f8d8532c9b6bae98ae2f7b2f41",
+          "seenAt": "2026-10-28T03:06:48Z",
+          "opid": "6YRDN07WMBP0YK0NZWH22VFN20-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261028T022318.208007000Z"
+      ],
+      "opened": "2026-10-28T03:06:48Z",
+      "closed": null
     }
   ],
   "cadence": {
