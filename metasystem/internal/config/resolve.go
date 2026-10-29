@@ -371,7 +371,7 @@ func getLayered(p GetParams) (value string, code int, err error) {
 	// An empty ConfPath is no configuration file: the compiled defaults
 	// under the environment and the flag, nothing read from disk.
 	hasFile := p.ConfPath != ""
-	localPath := p.ConfPath + ".local"
+	localPath := localOverlay(p.ConfPath)
 	if hasFile && p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) && isFile(localPath) {
 		// The local overlay outranks the committed file for MODE-scoped
 		// role keys exactly as it does for base keys: a machine carrying
@@ -519,7 +519,7 @@ func Keys(confPath, prefix string, environ []string) []string {
 		}
 	}
 
-	for _, path := range []string{confPath, confPath + ".local"} {
+	for _, path := range []string{confPath, localOverlay(confPath)} {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			continue
@@ -578,6 +578,65 @@ func EnvName(key string) string {
 	upper := strings.ToUpper(key)
 	upper = strings.NewReplacer(".", "_", "-", "_").Replace(upper)
 	return "METASYSTEM_" + upper
+}
+
+// localOverlay is the .local file layered over confPath: its own sibling,
+// else, for a conf inside an engine-made worktree (a linked worktree under
+// its main checkout's <installation>/artifacts/agents/), the main
+// installation's sibling. Such a worktree never holds the untracked .local,
+// so without this its reads fell to the compiled defaults (finding 438).
+func localOverlay(confPath string) string {
+	own := confPath + ".local"
+	if confPath == "" || isFile(own) {
+		return own
+	}
+	if main := mainInstallationConf(confPath); main != "" && isFile(main+".local") {
+		return main + ".local"
+	}
+	return own
+}
+
+// mainInstallationConf answers the main checkout's conf at confPath's place
+// when confPath lies in an engine-made worktree, else "".
+func mainInstallationConf(confPath string) string {
+	conf, err := filepath.Abs(confPath)
+	if err != nil {
+		return ""
+	}
+	top := filepath.Dir(conf)
+	for !isFile(filepath.Join(top, ".git")) {
+		if _, err := os.Lstat(filepath.Join(top, ".git")); err == nil || filepath.Dir(top) == top {
+			return "" // a main checkout, or no repository at all
+		}
+		top = filepath.Dir(top)
+	}
+	pointer, err := os.ReadFile(filepath.Join(top, ".git"))
+	gitDir, linked := strings.CutPrefix(strings.TrimSpace(string(pointer)), "gitdir: ")
+	if err != nil || !linked {
+		return ""
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(top, gitDir)
+	}
+	common, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	commonDir := strings.TrimSpace(string(common))
+	if err != nil {
+		return ""
+	}
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(gitDir, commonDir)
+	}
+	rel, relErr := filepath.Rel(top, conf)
+	mainTop, mainErr := filepath.EvalSymlinks(filepath.Dir(filepath.Clean(commonDir)))
+	realTop, topErr := filepath.EvalSymlinks(top)
+	if filepath.Base(filepath.Clean(commonDir)) != ".git" || relErr != nil || mainErr != nil || topErr != nil {
+		return ""
+	}
+	agents := filepath.Join(mainTop, filepath.Dir(rel), "artifacts", "agents") + string(filepath.Separator)
+	if !strings.HasPrefix(realTop+string(filepath.Separator), agents) {
+		return ""
+	}
+	return filepath.Join(mainTop, rel)
 }
 
 func isFile(path string) bool {
@@ -643,7 +702,7 @@ func KeyOrigin(p GetParams) (string, error) {
 		// the compiled default.
 		return "default", nil
 	}
-	localPath := p.ConfPath + ".local"
+	localPath := localOverlay(p.ConfPath)
 	if isFile(localPath) {
 		_, found, err := ConfLookup(localPath, p.Key)
 		if err != nil {
