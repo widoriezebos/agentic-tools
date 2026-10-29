@@ -1,9 +1,12 @@
 package steward
 
 import (
+	"errors"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
@@ -87,4 +90,38 @@ func claimActivity(runRoot, held string) string {
 		}
 	}
 	return "has no job and no open question"
+}
+
+// askClaimQuotaHolders asks the goal that holds a blocking claim, once per
+// (ready, held) pair, to free it. With nothing blocked, or health stopped, it
+// reads neither the machine nor the board; an empty home is the host's board.
+func askClaimQuotaHolders(health HealthVerdict, repoRoot, home string, machine func(string) (string, error), now time.Time) error {
+	var facts []RemedyFact
+	for _, role := range health.Roles {
+		if !health.Stopped && role.Role == RoleClaimQuota && role.Status == HealthDead {
+			for _, fact := range role.RemedyFacts {
+				if fact.Cause == CauseClaimQuota {
+					facts = append(facts, fact)
+				}
+			}
+		}
+	}
+	if len(facts) == 0 {
+		return nil
+	}
+	name, err := machine(repoRoot)
+	if err == nil && home == "" {
+		home, err = board.Home()
+	}
+	if err != nil {
+		return err
+	}
+	var asks []error
+	for _, fact := range facts {
+		text := "Goal " + fact.Ready + " is ready at priority 1 and waits for this machine's one claim, which your goal " + fact.Goal +
+			" holds. Next: " + fact.Command + ", then metasystem goal claim " + fact.Ready + "."
+		asks = append(asks, askOnce(askedReceipts(repoRoot), home, board.Sender{Machine: name}, board.Address{Goal: fact.Goal},
+			"claim-quota\n"+fact.Ready+"\n"+fact.Goal, text, now))
+	}
+	return errors.Join(asks...)
 }

@@ -1,13 +1,18 @@
 package steward
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 )
 
 var claimQuotaClock = time.Date(2026, 8, 24, 9, 0, 0, 0, time.UTC)
@@ -78,7 +83,14 @@ func claimQuotaLane(t *testing.T, root string, states map[string]string) func(st
 // claim-quota verdict recorded by this tick's own observation.
 func claimQuotaTick(t *testing.T, root string, at time.Time, lane func(string, string, string) (string, error)) (HealthVerdict, RoleVerdict) {
 	t.Helper()
-	result, err := RunTick(root, TickConfig{Now: at, ClaimLaneState: lane}, fakeCensus{})
+	return claimQuotaTickWith(t, root, TickConfig{Now: at, ClaimLaneState: lane, AskHome: t.TempDir()})
+}
+
+// claimQuotaTickWith is claimQuotaTick with the whole configuration given.
+func claimQuotaTickWith(t *testing.T, root string, cfg TickConfig) (HealthVerdict, RoleVerdict) {
+	t.Helper()
+	at := cfg.Now
+	result, err := RunTick(root, cfg, fakeCensus{})
 	if err != nil {
 		t.Fatalf("tick: %v", err)
 	}
@@ -271,6 +283,386 @@ func TestAReadyPriorityOneGoalBehindAClaimIsARowThroughTheTick(t *testing.T) {
 		if _, second := claimQuotaTick(t, root, claimQuotaClock.Add(10*time.Minute), lane); second.Status != HealthDead ||
 			second.ConsecutiveFailures != 2 || !strings.Contains(second.Reason, "has a running job") {
 			t.Fatalf("second tick: %+v", second)
+		}
+	})
+}
+
+// claimQuotaAccept writes the goal files at the bed's accepted ref, as an
+// approval or an edit that was accepted does.
+func claimQuotaAccept(t *testing.T, root string, goals ...*goal.GoalFile) {
+	t.Helper()
+	for _, file := range goals {
+		if err := os.WriteFile(filepath.Join(root, "plans", "goals", file.Id+".md"), goal.RenderFile(file), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	seatGit(t, root, "add", "-A")
+	seatGit(t, root, "commit", "-qm", "accepted edit")
+	seatGit(t, root, "update-ref", goal.AcceptedRef, "HEAD")
+}
+
+// claimQuotaAsks is every ask in a goal's mailbox on the board under home.
+func claimQuotaAsks(t *testing.T, home, held string) []board.Message {
+	t.Helper()
+	threads, err := board.Threads(home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var asks []board.Message
+	for _, thread := range threads {
+		for _, message := range thread.Messages {
+			if message.Kind == board.KindAsk && message.To.Goal == held {
+				asks = append(asks, message)
+			}
+		}
+	}
+	return asks
+}
+
+func claimQuotaReceipts(t *testing.T, root string) []string {
+	t.Helper()
+	receipts, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "steward", "asked", "*.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	return receipts
+}
+
+// claimQuotaCompleted runs one tick that must end PASS_COMPLETE.
+func claimQuotaCompleted(t *testing.T, root string, cfg TickConfig) TickResult {
+	t.Helper()
+	result, err := RunTick(root, cfg, fakeCensus{})
+	if err != nil {
+		t.Fatalf("tick: %v", err)
+	}
+	evidence, err := os.ReadFile(ComponentEvidencePath(root, "steward-tick"))
+	if err != nil || !strings.Contains(strings.ReplaceAll(string(evidence), " ", ""), `"outcome":"PASS_COMPLETE"`) {
+		t.Fatalf("the tick did not complete normally: %s %v", evidence, err)
+	}
+	return result
+}
+
+func claimQuotaAskText(ready, held, command string) string {
+	return "Goal " + ready + " is ready at priority 1 and waits for this machine's one claim, which your goal " + held +
+		" holds. Next: " + command + ", then metasystem goal claim " + ready + "."
+}
+
+func TestTheHolderIsAskedOncePerPairThroughTheTick(t *testing.T) {
+	t.Parallel()
+	release := "metasystem goal release held-h --reason TEXT"
+
+	t.Run("one ask per pair, kept past the board's sweep", func(t *testing.T) {
+		t.Parallel()
+		root := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
+		home := filepath.Join(t.TempDir(), ".metasystem")
+		lane := claimQuotaLane(t, root, nil)
+		cfg := TickConfig{Now: claimQuotaClock, ClaimLaneState: lane, AskHome: home}
+		if _, role := claimQuotaTickWith(t, root, cfg); role.Status != HealthDead {
+			t.Fatalf("the first tick's claim-quota = %+v", role)
+		}
+		asks := claimQuotaAsks(t, home, "held-h")
+		if len(asks) != 1 || asks[0].PeerText() != claimQuotaAskText("ready-r", "held-h", release) || asks[0].From.Machine != "m1e" {
+			t.Fatalf("the holder's mailbox holds %d asks, want one naming the ready goal, the claim and the release: %+v", len(asks), asks)
+		}
+		if receipts := claimQuotaReceipts(t, root); len(receipts) != 1 {
+			t.Fatalf("the steward kept %d receipts, want 1: %v", len(receipts), receipts)
+		}
+		cfg.Now = claimQuotaClock.Add(10 * time.Minute)
+		claimQuotaTickWith(t, root, cfg)
+		if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 1 {
+			t.Fatalf("a second tick asked again: %d asks", len(asks))
+		}
+
+		// The holder reads and answers; the bridge sweeps the answered thread.
+		replyAt := claimQuotaClock.Add(20 * time.Minute)
+		if _, err := board.Publish(home, board.Request{Kind: board.KindReply, From: board.Sender{Machine: "m1e", Lineage: "coordinator"},
+			To: board.Address{Machine: asks[0].From.Machine}, Thread: asks[0].ID, Text: "releasing it now"}, replyAt); err != nil {
+			t.Fatal(err)
+		}
+		threads, err := board.Threads(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, thread := range threads {
+			for _, message := range thread.Messages {
+				if err := board.Mark(message, "m1e", "coordinator", "inbox", replyAt); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		bridge := &board.Bridge{Home: home, MailboxKeep: time.Hour, Now: func() time.Time { return replyAt.Add(2 * time.Hour) }}
+		if removed := bridge.SweepMessages(); len(removed) != 2 {
+			t.Fatalf("the bridge swept %v, want the ask and its reply", removed)
+		}
+		if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 0 {
+			t.Fatalf("the sweep left %d asks", len(asks))
+		}
+		cfg.Now = claimQuotaClock.Add(3 * time.Hour)
+		if _, role := claimQuotaTickWith(t, root, cfg); role.Status != HealthDead {
+			t.Fatalf("the pair is still blocked: %+v", role)
+		}
+		if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 0 {
+			t.Fatalf("the swept pair was asked again: %+v", asks)
+		}
+
+		// A second ready priority-1 goal behind the same claim is a new pair.
+		second := claimQuotaReady("ready-s", 1, "m1e")
+		second.Sequence = 2
+		claimQuotaAccept(t, root, second)
+		cfg.Now, cfg.ClaimLaneState = claimQuotaClock.Add(4*time.Hour), claimQuotaLane(t, root, nil)
+		claimQuotaTickWith(t, root, cfg)
+		asks = claimQuotaAsks(t, home, "held-h")
+		if len(asks) != 1 || asks[0].PeerText() != claimQuotaAskText("ready-s", "held-h", release) {
+			t.Fatalf("the new pair got %d asks, want one for ready-s: %+v", len(asks), asks)
+		}
+		if receipts := claimQuotaReceipts(t, root); len(receipts) != 2 {
+			t.Fatalf("the steward kept %d receipts, want 2: %v", len(receipts), receipts)
+		}
+	})
+
+	t.Run("a stopped health asks nothing", func(t *testing.T) {
+		t.Parallel()
+		root := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
+		closeProcessFence(t, root, 4)
+		home := filepath.Join(t.TempDir(), ".metasystem")
+		result := claimQuotaCompleted(t, root, TickConfig{Now: claimQuotaClock, ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home})
+		if !result.Health.Stopped || claimQuotaRole(t, result.Health).Status != HealthDead {
+			t.Fatalf("the fenced tick's health = %+v", result.Health)
+		}
+		if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 0 || len(claimQuotaReceipts(t, root)) != 0 {
+			t.Fatalf("a stopped health asked: %+v", asks)
+		}
+	})
+
+	t.Run("a seat with no machine enrolled reads none", func(t *testing.T) {
+		t.Parallel()
+		root := gitRepoWithCurrentGoal(t)
+		home := filepath.Join(t.TempDir(), ".metasystem")
+		claimQuotaCompleted(t, root, TickConfig{Now: claimQuotaClock, ClaimLaneState: func(string, string, string) (string, error) {
+			t.Error("a bootstrap ledger read the lane")
+			return "", nil
+		}, AskHome: home})
+		if _, err := os.Stat(home); !os.IsNotExist(err) {
+			t.Fatalf("the tick touched the board: %v", err)
+		}
+	})
+}
+
+// gitFails is a git that answers nothing: the tick cadence is its default.
+func gitFails(...string) (string, error) { return "", errors.New("no git") }
+
+func TestTheHelmSeesTheClaimQuotaRowAndAsksOnce(t *testing.T) {
+	t.Parallel()
+	release := "metasystem goal release held-h --reason TEXT"
+	// warmBed is the bed after one full tick with the ready goal at
+	// priority 2, at the helm, and the ready goal then raised to priority 1.
+	warmBed := func(t *testing.T) (root, home string, baseline healthRecord) {
+		t.Helper()
+		root = claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 2, "m1e"))
+		home = filepath.Join(t.TempDir(), ".metasystem")
+		if _, role := claimQuotaTickWith(t, root, TickConfig{Now: claimQuotaClock, ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home}); role.Status != HealthAlive {
+			t.Fatalf("the baseline's claim-quota = %+v", role)
+		}
+		baseline, err := loadHealthRecord(HealthRecordPath(root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		takeHelmFixture(t, root)
+		claimQuotaAccept(t, root, claimQuotaReady("ready-r", 1, "m1e"))
+		return root, home, baseline
+	}
+	helmTickAt := func(t *testing.T, root, home string, at time.Time) TickResult {
+		t.Helper()
+		result, err := RunTick(root, TickConfig{Now: at, ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home}, fakeCensus{})
+		if err != nil {
+			t.Fatalf("helm tick: %v", err)
+		}
+		if result.Decision.Verdict != VerdictHelm || result.Decision.Action != ActNone {
+			t.Fatalf("the helm tick decided %+v", result.Decision)
+		}
+		return result
+	}
+	readFile := func(t *testing.T, path string) []byte {
+		t.Helper()
+		data, err := os.ReadFile(path)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		return data
+	}
+	// otherRoles is the record without its claim-quota role and counters.
+	otherRoles := func(record healthRecord) ([]RoleVerdict, HealthObservationState) {
+		var roles []RoleVerdict
+		for _, role := range record.Verdict.Roles {
+			if role.Role != RoleClaimQuota {
+				roles = append(roles, role)
+			}
+		}
+		state := HealthObservationState{UnknownCounts: map[HealthRole]int{}, FailureCounts: map[HealthRole]int{},
+			FailureCauses: map[HealthRole]string{}, FailureEpisodes: map[HealthRole][]time.Time{}}
+		for role, count := range record.State.UnknownCounts {
+			if role != RoleClaimQuota && count != 0 {
+				state.UnknownCounts[role] = count
+			}
+		}
+		for role, count := range record.State.FailureCounts {
+			if role != RoleClaimQuota && count != 0 {
+				state.FailureCounts[role] = count
+			}
+		}
+		for role, cause := range record.State.FailureCauses {
+			if role != RoleClaimQuota {
+				state.FailureCauses[role] = cause
+			}
+		}
+		for role, episodes := range record.State.FailureEpisodes {
+			if role != RoleClaimQuota && len(episodes) != 0 {
+				state.FailureEpisodes[role] = episodes
+			}
+		}
+		return roles, state
+	}
+
+	t.Run("a warm record", func(t *testing.T) {
+		t.Parallel()
+		root, home, baseline := warmBed(t)
+		narrator := readFile(t, ComponentEvidencePath(root, "narrator"))
+		evidence := readFile(t, EvidencePath(root))
+		if len(narrator) == 0 || len(evidence) == 0 {
+			t.Fatalf("the baseline wrote no narrator record or evidence store")
+		}
+		if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 0 {
+			t.Fatalf("the baseline asked: %+v", asks)
+		}
+		baseRoles, baseState := otherRoles(baseline)
+		first := claimQuotaClock.Add(time.Hour)
+		helmTickAt(t, root, home, first)
+		record, err := loadHealthRecord(HealthRecordPath(root))
+		if err != nil {
+			t.Fatalf("the helm's record does not reload: %v", err)
+		}
+		role := claimQuotaRole(t, record.Verdict)
+		if role.Status != HealthDead || record.Verdict.Observation != baseline.Verdict.Observation+1 ||
+			!strings.Contains(role.Reason, "ready-r (priority 1) is ready but held-h holds this machine's one claim") {
+			t.Fatalf("the helm's claim-quota = %+v at observation %d", role, record.Verdict.Observation)
+		}
+		if !record.Verdict.Partial || !record.Verdict.FullObservedAt.Equal(baseline.Verdict.ObservedAt) {
+			t.Fatalf("the helm's record is partial=%t full=%s, want the baseline's %s", record.Verdict.Partial,
+				record.Verdict.FullObservedAt, baseline.Verdict.ObservedAt)
+		}
+		if roles, state := otherRoles(record); !reflect.DeepEqual(roles, baseRoles) || !reflect.DeepEqual(state, baseState) {
+			t.Fatalf("the helm changed other roles:\n%+v\n%+v\nwant\n%+v\n%+v", roles, state, baseRoles, baseState)
+		}
+		asks := claimQuotaAsks(t, home, "held-h")
+		if len(asks) != 1 || asks[0].PeerText() != claimQuotaAskText("ready-r", "held-h", release) {
+			t.Fatalf("the helm sent %d asks: %+v", len(asks), asks)
+		}
+		if !bytes.Equal(readFile(t, ComponentEvidencePath(root, "narrator")), narrator) || !bytes.Equal(readFile(t, EvidencePath(root)), evidence) {
+			t.Fatal("the helm tick narrated or wrote the evidence store")
+		}
+		if _, fresh := FreshHookHealthPreviewAt(root, root, first.Add(time.Minute), gitFails); fresh {
+			t.Fatal("a hook reads the helm's partial record as fresh")
+		}
+		preview := PreviewHealth(root, first.Add(time.Minute), nil)
+		if got := claimQuotaRole(t, preview); got.Status != HealthDead || got.Reason != role.Reason {
+			t.Fatalf("the preview's claim-quota = %+v, want the recorded %+v", got, role)
+		}
+
+		helmTickAt(t, root, home, claimQuotaClock.Add(2*time.Hour))
+		record, err = loadHealthRecord(HealthRecordPath(root))
+		if err != nil {
+			t.Fatalf("the second helm record does not reload: %v", err)
+		}
+		if got := claimQuotaRole(t, record.Verdict); got.ConsecutiveFailures != 2 || record.State.FailureCounts[RoleClaimQuota] != 2 ||
+			!record.Verdict.FullObservedAt.Equal(baseline.Verdict.ObservedAt) {
+			t.Fatalf("the second helm pass = %+v, full %s", got, record.Verdict.FullObservedAt)
+		}
+		if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 1 {
+			t.Fatalf("the second helm pass asked again: %d asks", len(asks))
+		}
+
+		if _, err := helm.Remove(root); err != nil {
+			t.Fatal(err)
+		}
+		full, role := claimQuotaTickWith(t, root, TickConfig{Now: claimQuotaClock.Add(3 * time.Hour), ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home})
+		if full.Partial || !full.FullObservedAt.IsZero() || role.ConsecutiveFailures != 3 {
+			t.Fatalf("the full tick after the helm = partial %t full %s, claim-quota %+v", full.Partial, full.FullObservedAt, role)
+		}
+		for _, other := range full.Roles {
+			if strings.Contains(other.Reason, "the prior health observation state was unreadable") {
+				t.Fatalf("the full tick found the helm's record unreadable: %+v", other)
+			}
+		}
+	})
+
+	t.Run("a cold record under the helm", func(t *testing.T) {
+		t.Parallel()
+		root := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
+		home := filepath.Join(t.TempDir(), ".metasystem")
+		seeded := HealthVerdict{Roles: []RoleVerdict{{Role: RoleStewardRunner, Status: HealthDead, Standing: true,
+			Reason: "the runner is gone", Remedy: "arm the steward"}}}
+		if err := fileStandingDefects(root, seeded, claimQuotaClock, noticeFunnel{clock: func() time.Time { return claimQuotaClock }},
+			func(string, string) error { return nil }); err != nil {
+			t.Fatal(err)
+		}
+		standingOpen := func() bool {
+			episodes, err := AlertEpisodes(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, episode := range episodes {
+				if episode.Owner == PatternOwner("health-standing-red") && episode.ScopeID == string(RoleStewardRunner) && !episode.Cleared {
+					return true
+				}
+			}
+			return false
+		}
+		if !standingOpen() {
+			t.Fatal("the seeded standing episode is not open")
+		}
+		takeHelmFixture(t, root)
+		for tick := 1; tick <= 3; tick++ {
+			helmTickAt(t, root, home, claimQuotaClock.Add(time.Duration(tick)*time.Hour))
+		}
+		record, err := loadHealthRecord(HealthRecordPath(root))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(record.Verdict.Roles) != 1 || record.Verdict.Roles[0].Role != RoleClaimQuota || record.Verdict.Roles[0].Status != HealthDead ||
+			!record.Verdict.Partial || !record.Verdict.FullObservedAt.IsZero() {
+			t.Fatalf("the cold helm record = %+v", record.Verdict)
+		}
+		for _, path := range []string{ComponentEvidencePath(root, "narrator"), EvidencePath(root)} {
+			if _, err := os.Stat(path); !os.IsNotExist(err) {
+				t.Fatalf("the helm wrote %s: %v", path, err)
+			}
+		}
+		if !standingOpen() {
+			t.Fatal("the helm cleared a standing episode it did not observe")
+		}
+		if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 1 {
+			t.Fatalf("the cold helm sent %d asks", len(asks))
+		}
+	})
+
+	t.Run("the fence closed under the helm", func(t *testing.T) {
+		t.Parallel()
+		root, home, _ := warmBed(t)
+		closeProcessFence(t, root, 4)
+		record := readFile(t, HealthRecordPath(root))
+		episodes, err := AlertEpisodes(root)
+		if err != nil {
+			t.Fatal(err)
+		}
+		helmTickAt(t, root, home, claimQuotaClock.Add(time.Hour))
+		if !bytes.Equal(readFile(t, HealthRecordPath(root)), record) {
+			t.Fatal("the fenced helm advanced the health record")
+		}
+		if after, err := AlertEpisodes(root); err != nil || !reflect.DeepEqual(after, episodes) {
+			t.Fatalf("the fenced helm changed the alert episodes: %v\n%+v\nwant\n%+v", err, after, episodes)
+		}
+		if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 0 {
+			t.Fatalf("the fenced helm asked: %+v", asks)
 		}
 	})
 }

@@ -224,6 +224,10 @@ type HealthVerdict struct {
 	FindingDigest  string                 `json:"findingDigest"`
 	State          HealthObservationState `json:"-"`
 	Spend          SpendObservation       `json:"-"`
+	// Partial marks a pass that observed some roles beside the last full
+	// observation's others; FullObservedAt is that full observation's time.
+	Partial        bool      `json:"partial,omitempty"`
+	FullObservedAt time.Time `json:"fullObservedAt,omitzero"`
 }
 
 // HookHealthPreview is the versioned, read-only health projection consumed by
@@ -310,10 +314,15 @@ func FreshHookHealthPreviewAt(repoRoot, metasystemRoot string, now time.Time, gi
 		return NewHookHealthPreview(*stopped), true
 	}
 	record, err := loadHealthRecord(HealthRecordPath(repoRoot))
-	if err != nil || record.Verdict.ObservedAt.After(now) {
+	// A partial pass is as fresh as the full observation it sits beside.
+	observedAt := record.Verdict.ObservedAt
+	if record.Verdict.Partial {
+		observedAt = record.Verdict.FullObservedAt
+	}
+	if err != nil || observedAt.IsZero() || observedAt.After(now) {
 		return HookHealthPreview{}, false
 	}
-	age := now.Sub(record.Verdict.ObservedAt).Seconds()
+	age := now.Sub(observedAt).Seconds()
 	if age >= 2*float64(tickSecondsWithGit(repoRoot, git)) {
 		return HookHealthPreview{}, false
 	}
@@ -450,6 +459,50 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 	}
 	verdict := applyHealthObservation(repoRoot, previous.State, roles, now.UTC())
 	verdict.Spend = spendObservation
+	if err := saveHealthRecord(repoRoot, HealthRecordPath(repoRoot), healthRecord{State: verdict.State, Verdict: verdict}); err != nil {
+		return HealthVerdict{}, err
+	}
+	return verdict, nil
+}
+
+// observePartialHealth records the roles one pass observed beside the other
+// roles of the record, whose counters it leaves as they are. Both halves keep
+// one observation time, so the record stays readable; FullObservedAt keeps
+// the last full observation's. It files no standing defect: the filer clears
+// every role its input lacks.
+func observePartialHealth(repoRoot string, now time.Time, observed []RoleVerdict) (HealthVerdict, error) {
+	if err := os.MkdirAll(filepath.Dir(healthLockPath(repoRoot)), 0o755); err != nil {
+		return HealthVerdict{}, err
+	}
+	lockFile, err := lock.File(healthLockPath(repoRoot), 0o644, lock.Exclusive)
+	if err != nil {
+		return HealthVerdict{}, err
+	}
+	defer lockFile.Release()
+	previous, err := loadHealthRecord(HealthRecordPath(repoRoot))
+	if err != nil && !os.IsNotExist(err) {
+		return HealthVerdict{}, err
+	}
+	applied := applyHealthObservation(repoRoot, previous.State, observed, now)
+	byRole := make(map[HealthRole]RoleVerdict, len(healthRoleOrder))
+	for _, role := range append(previous.Verdict.Roles, applied.Roles...) {
+		byRole[role.Role] = role
+	}
+	var roles []RoleVerdict
+	for _, name := range healthRoleOrder {
+		if role, ok := byRole[name]; ok {
+			roles = append(roles, role)
+		}
+	}
+	roles = standingRoles(applied.State, roles)
+	full := previous.Verdict.ObservedAt
+	if previous.Verdict.Partial {
+		full = previous.Verdict.FullObservedAt
+	}
+	verdict := HealthVerdict{Schema: 1, ObservedAt: applied.State.ObservedAt, Observation: applied.State.Sequence,
+		Roles: roles, FindingDigest: healthFindingDigest(roles), State: applied.State, Spend: previous.Verdict.Spend,
+		Partial: true, FullObservedAt: full}
+	verdict.Aggregate, verdict.ShouldAlert = healthSummary(roles)
 	if err := saveHealthRecord(repoRoot, HealthRecordPath(repoRoot), healthRecord{State: verdict.State, Verdict: verdict}); err != nil {
 		return HealthVerdict{}, err
 	}
