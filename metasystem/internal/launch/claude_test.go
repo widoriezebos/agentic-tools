@@ -136,8 +136,8 @@ func TestKindSelectsTheAdapterAndTheDefaultModel(t *testing.T) {
 	cases := []struct {
 		kind, adapter, model string
 	}{
-		{"design", "claude-headless", "claude-fable-5-1"},
-		{"read", "claude-headless", "claude-fable-5-1"},
+		{"design", "claude-headless", "claude-opus-5-5"},
+		{"read", "claude-headless", "claude-opus-5-5"},
 		{"build", "claude-headless", "claude-opus-5-5"},
 		{"critique", "claude-headless", "claude-opus-5-5"},
 	}
