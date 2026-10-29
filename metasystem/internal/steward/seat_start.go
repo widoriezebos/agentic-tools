@@ -549,8 +549,12 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	return startSeatWithDependencies(root, selection, dependencies)
 }
 
+func seatPerson(root string, p humanauthority.Proof) bool {
+	return p.Helm == nil && (p.EnrolledTerminalFor(root) || p.ChannelWordFor(root))
+}
+
 func ReviveSeat(root string, cfg TickConfig, census WorkerCensus, after string, person humanauthority.Proof, registryPath string) (SeatRecord, error) {
-	if person.Helm != nil || !person.EnrolledTerminalFor(root) || cfg.Seat == nil {
+	if !seatPerson(root, person) || cfg.Seat == nil {
 		return SeatRecord{}, errors.New("seat revival needs the person's enrolled terminal and a seat launcher")
 	}
 	d := defaultSeatDependencies(cfg.Seat)
@@ -733,7 +737,7 @@ func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string) error {
 }
 
 func startSeatWithDependencies(repoRoot string, selection SeatSelection, dependencies seatDependencies) (SeatRecord, error) {
-	person := dependencies.Person.Helm == nil && dependencies.Person.EnrolledTerminalFor(repoRoot)
+	person := seatPerson(repoRoot, dependencies.Person)
 	if !person && helm.Active(repoRoot).Active {
 		return SeatRecord{}, nil
 	}

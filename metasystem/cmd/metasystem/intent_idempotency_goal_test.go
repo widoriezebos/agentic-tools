@@ -136,9 +136,12 @@ func init() {
 				Actor: drop.Actor, Authority: "enrolled", Reason: drop.Reason, Impact: drop.Impact, At: at, Designs: []string{"design-evidence"}}}
 		}, nil, "already restored scope for unit evidence",
 			"goal", "scope", "restore", bedGoal, "evidence", "--by", "Wido"))
-	stateful("goal approve", "the same approval that stands is success with no record",
-		goalRepeatWitness(makeQueued, nil, "already has the same proven approval",
-			"goal", "approve", bedGoal, "--fixture-human-authority", "--lineage", "m1"))
+	stateful("goal approve", "the same terminal approval that stands is success with no record; a channel reapproval keeps its claim box and episode",
+		func(t *testing.T) {
+			goalRepeatWitness(makeQueued, nil, "already has the same proven approval",
+				"goal", "approve", bedGoal, "--fixture-human-authority", "--lineage", "m1")(t)
+			t.Run("channel answer", TestHoldAnswerApproveKeepsTheClaimBox)
+		})
 	stateful("goal budget", "the box the goal already has is success with no record; reading the budget is a read",
 		goalRepeatWitness(nil, nil, "already has exactly this budget",
 			"goal", "budget", bedGoal, "4h/4/240m/2/3", "--fixture-human-authority", "--lineage", "m1"))

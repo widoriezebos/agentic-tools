@@ -453,12 +453,14 @@ type AbnormalRestart struct {
 	Pending bool      `json:"pending"`
 }
 
+const personRemedyMark = "; person's remedy: "
+
 func abnormalRemedy(root, reason string) string {
 	seat := root
 	if machine, err := goal.ResolveMachine(root); err == nil {
 		seat = machine
 	}
-	return reason + fmt.Sprintf("; person's remedy: metasystem machine revive %s", seat)
+	return reason + personRemedyMark + "metasystem machine revive " + seat
 }
 
 // abnormalRestartState reads a seat launch that holds only a start of its own

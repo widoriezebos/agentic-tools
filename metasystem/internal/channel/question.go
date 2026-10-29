@@ -670,6 +670,8 @@ func QuestionSubject(q Question) string {
 	switch {
 	case q.Goal != "":
 		return strings.ReplaceAll(q.Goal, "-", " ")
+	case q.About == "machine" && q.Decision != nil && !strings.HasPrefix(q.Decision.Subject, "seat:"):
+		return strings.ReplaceAll(q.Decision.Subject, "-", " ")
 	case q.About == "lane":
 		return "the landing lane on " + q.Machine
 	default:
@@ -703,6 +705,23 @@ func ProposedBox(b goal.Budget) string {
 
 func Close(repo, id, because string, p Provider, d DestinationConfig, successfulAct ...string) error {
 	return closeAt(repo, id, because, p, d, time.Now(), successfulAct...)
+}
+
+// Retire ends a condition's question so a later occurrence can ask anew.
+func Retire(repo, id, because string, now time.Time) error {
+	q, err := ReadQuestion(repo, id)
+	if err != nil || !q.RetiredAt.IsZero() {
+		return err
+	}
+	if err := closeAt(repo, id, because, nil, DestinationConfig{}, now); err != nil {
+		return err
+	}
+	q, err = ReadQuestion(repo, id)
+	if err != nil {
+		return err
+	}
+	q.RetiredAt = now.UTC()
+	return writeJSON(questionPath(repo, id), q)
 }
 
 // closeAt is Close at the given time, which the question keeps.

@@ -303,7 +303,7 @@ func processIntentCommands() []intentCommand {
 			object: "machine", action: "revive", audience: "human", summary: "start one session on an existing seat, keeping its automatic policy",
 			usage:   []string{"metasystem machine revive SEAT [--after LAUNCH]"},
 			details: []string{"Requires your own enrolled terminal. Starts one session despite advisory provider, restart, helm and seat-policy holds; automatic policy and restart history stay unchanged.", "An intentional system stop requires system start --repo CHECKOUT first. Without --after, binds the current failed seat launch under arbitration."},
-			flags:   []intentFlag{{name: "after", value: "LAUNCH", usage: "the failed seat launch whose held work continues"}},
+			flags:   []intentFlag{{name: "after", value: "LAUNCH", usage: "the failed seat launch whose held work continues"}, {name: "answer", value: "Q", advanced: true, usage: "the recorded channel answer choosing this act"}},
 			maxArgs: 1, examples: []string{"metasystem machine revive m1e --after seat-123"},
 			run: runIntentMachineRevive,
 		},

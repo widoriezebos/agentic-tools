@@ -201,6 +201,7 @@ func goalIntentCommands() []intentCommand {
 				{name: "id", aliases: []string{"goal"}, value: "G", repeat: true, advanced: true, usage: "a goal to approve (repeatable)"},
 				{name: "budget", value: "BOX", usage: "the box: norm or the complete compact box"},
 				{name: "under", value: "GRANT", advanced: true, usage: "act under this recorded power of attorney"},
+				{name: "answer", value: "Q", advanced: true, usage: "the recorded channel answer choosing this act"},
 				intentByFlag, intentLineageFlag, intentApprovedRefFlag, intentTemporaryWordFlag, intentReviewByFlag, intentFixtureFlag,
 				intentLongBudgetFlags[0], intentLongBudgetFlags[1], intentLongBudgetFlags[2], intentLongBudgetFlags[3], intentLongBudgetFlags[4],
 			},
@@ -876,7 +877,7 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
-	if (inv.command.name == "work revise" || inv.command.name == "work review" || inv.command.name == "goal budget") && inv.input.has("answer") {
+	if (inv.command.name == "work revise" || inv.command.name == "work review" || inv.command.name == "goal budget" || inv.command.name == "machine revive" || inv.command.name == "goal approve") && inv.input.has("answer") {
 		result = inv.answerProgress(result)
 	}
 	if inv.replySettleErr != nil {

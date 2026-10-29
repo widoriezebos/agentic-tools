@@ -772,6 +772,20 @@ func runIntentApprove(inv *intentInvocation) int {
 	}
 	box, under := inv.input.text("budget"), inv.input.text("under")
 	common := append([]string{"--root", inv.stateRoot}, inv.forward("by", "lineage", "approved-ref", "temporary-human-word", "review-by", "fixture-human-authority", "under")...)
+	var answer *humanauthority.Proof
+	if inv.input.has("answer") {
+		actor, proof, problem := inv.actingAs("goal approve", ids[0], actorHuman)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		lineage := inv.choice.question.Answer.Lineage
+		if len(ids) != 1 || box != "" || lineage == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the answer needs one goal, no box and its recorded session; nothing was done",
+				next: withoutOption(inv.typedArgv(), "answer"), nextReason: "the same act at your enrolled terminal"})
+		}
+		common = append(append([]string{"--root", inv.stateRoot}, inv.forward("approved-ref")...), actor...)
+		common, answer = append(common, "--lineage", lineage), proof
+	}
 	var args []string
 	switch {
 	case box == "" || box == "norm":
@@ -804,6 +818,7 @@ func runIntentApprove(inv *intentInvocation) int {
 		args = append(args, "--id", id)
 	}
 	return inv.callOwner(inv.targets(ids...), func(dependencies syncRequestDependencies) int {
+		dependencies.answerProof = answer
 		return runGoalApproveWithInputs(args, inv.owners.prove, inv.owners.commandNow, dependencies, inv.owners.binding)
 	}, func() intentResult {
 		result := intentResult{Data: map[string]any{}}

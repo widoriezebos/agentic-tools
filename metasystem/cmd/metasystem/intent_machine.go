@@ -85,7 +85,13 @@ func runIntentMachineRevive(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	var person humanauthority.Proof
-	if problem := child.directPersonProof("machine revive", &person); problem != nil {
+	if inv.input.has("answer") {
+		_, proof, problem := inv.actingAs("machine revive", target.Name, actorHuman)
+		if problem != nil {
+			return inv.render(*problem)
+		}
+		person = *proof
+	} else if problem := child.directPersonProof("machine revive", &person); problem != nil {
 		return inv.render(*problem)
 	}
 	root, now := child.layout.InstallationRoot.Path(), person.CheckedAt

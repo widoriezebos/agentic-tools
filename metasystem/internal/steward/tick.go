@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"cmp"
 	"errors"
 	"fmt"
 	"os"
@@ -537,6 +538,11 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 		}
 		dependencies.openWork.Seat = &seat
 	}
+	machine := "this machine"
+	if enrolled, err := dependencies.resolveMachine(repoRoot); err == nil {
+		machine = enrolled
+	}
+	dependencies.openWork.Machine = machine
 	result, err := decideTickWithDependencies(repoRoot, cfg, census, prev, marks, dependencies.openWork)
 	if err != nil {
 		return TickResult{}, false, err
@@ -547,10 +553,6 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 	result.SeatPresence = seatReport
 	if err := narrateDigestWithReaders(repoRoot, prev, result, cfg.now(), dependencies.resolveMachine, dependencies.resolveLayout); err != nil {
 		return result, false, fmt.Errorf("the narrator summary could not be written: %w", err)
-	}
-	machine := "this machine"
-	if enrolled, err := dependencies.resolveMachine(repoRoot); err == nil {
-		machine = enrolled
 	}
 	var surfaced []string
 	for _, event := range ledgerReport.Pending {
@@ -586,6 +588,20 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 const degradedNoticeTicks = 2
 
 func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, prev Evidence, marks Marks, dependencies openWorkDependencies) (TickResult, error) {
+	var work goal.ClaimableBudgetedWork
+	var workErr error
+	readWork, read := dependencies.ReadClaimableBudgetedWork, false
+	dependencies.ReadClaimableBudgetedWork = func(root string, now time.Time) (goal.ClaimableBudgetedWork, error) {
+		if !read {
+			if readWork == nil {
+				workErr = errors.New("the work reader is missing")
+			} else {
+				work, workErr = readWork(root, now)
+			}
+			read = true
+		}
+		return work, workErr
+	}
 	if _, err := settleEndedContinuation(repoRoot, &prev); err != nil {
 		return TickResult{}, err
 	}
@@ -647,6 +663,13 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 		} else if reason != "" {
 			d.Action, d.Reason = ActNotify, reason
 		}
+	}
+	_, questionErr := dependencies.ReadClaimableBudgetedWork(repoRoot, cfg.now())
+	if questionErr == nil {
+		questionErr = askPersonWaits(repoRoot, cmp.Or(dependencies.Machine, "this machine"), d, ev, work, cfg.now())
+	}
+	if questionErr != nil {
+		_ = QueueNotification(repoRoot, PendingNotification{Nonce: "person-question", Message: "steward: a person's question could not be asked: " + questionErr.Error()})
 	}
 	// One degraded read, such as a ledger read inside a burst of ledger
 	// commits, reads fine at the next tick: the verdict is reported every

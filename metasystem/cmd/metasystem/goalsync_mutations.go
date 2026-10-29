@@ -2703,19 +2703,30 @@ func runGoalApproveWithInputs(args []string, prove goalAuthorityProver, commandN
 	if err != nil {
 		return refuseHumanVerb(values, 2, values.cause(err), humanVerbRemedy{words: "give each goal its budget with metasystem goal budget"})
 	}
-	classification, err := classifyGoalAuthorityFirstWithFacts("approve", f, dependencies.authorityFacts)
-	if err != nil {
-		return dependencies.fail(1, err)
-	}
-	proof, err := proveGoalHumanAuthorityAt("approve", f, prove, commandNow)
-	if err != nil {
-		return refuseHumanVerb(values, 1, values.cause(err), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy, err))
+	var classification lease.ClassifyResult
+	var proof humanauthority.Proof
+	if dependencies.answerProof != nil {
+		proof = *dependencies.answerProof
+	} else {
+		classification, err = classifyGoalAuthorityFirstWithFacts("approve", f, dependencies.authorityFacts)
+		if err != nil {
+			return dependencies.fail(1, err)
+		}
+		proof, err = proveGoalHumanAuthorityAt("approve", f, prove, commandNow)
+		if err != nil {
+			return refuseHumanVerb(values, 1, values.cause(err), humanProofRemedy(values, f.fixtureHumanAuthority, f.temporaryWord, f.reviewBy, err))
+		}
 	}
 	if err := resolveGoalHuman(f, proof); err != nil {
 		return refuseHumanVerb(values, 2, values.cause(err), personRemedy(values, err))
 	}
 	values.by = f.by
-	req, err := syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
+	var req goal.VerbRequest
+	if dependencies.answerProof != nil {
+		req, err = syncReqWithProofAtWithDependencies("approve", f.root, f.by, f.lineage, &proof, commandNow, dependencies)
+	} else {
+		req, err = syncReqClassifiedWithTerminalGradeAtWithDependencies(f.root, f.by, f.lineage, &proof, classification, false, commandNow, dependencies)
+	}
 	if err != nil {
 		return refuseHumanVerb(values, 1, values.cause(err), runRemedy("metasystem", "system", "status"))
 	}

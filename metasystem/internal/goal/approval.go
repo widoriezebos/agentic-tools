@@ -608,7 +608,11 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 					return nil, fmt.Errorf("goal %s is claimed; its tuple changes through metasystem goal budget", id)
 				}
 				nextBudget := budget
-				if nextBudget == nil {
+				keepClaimBox := authority == ApprovalAuthorityChannel && f.State == StateClaimed && f.Budget != nil
+				if keepClaimBox {
+					box := *f.Budget
+					nextBudget = &box
+				} else if nextBudget == nil {
 					if f.Tier == 0 {
 						return nil, fmt.Errorf("goal %s has no tier; classify it before approval", id)
 					}
@@ -671,7 +675,9 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				f.NormApproval = norm
 				// A person's budget act starts the box afresh: a kept
 				// episode from an earlier claim does not carry into it.
-				f.Episode = nil
+				if !keepClaimBox {
+					f.Episode = nil
+				}
 				if f.State == StateQueued {
 					f.State = StateApproved
 				}
@@ -680,7 +686,11 @@ func Approve(r VerbRequest, ids []string, budget *Budget, proof *humanauthority.
 				if entry != nil {
 					recordAttorney(f, entry.ID)
 				}
+				previousApproval := f.Approved
 				bindApproval(f, r, authority, reviewBy)
+				if keepClaimBox && previousApproval != nil {
+					f.Approved.EpisodeRevision = previousApproval.EpisodeRevision
+				}
 				changes = append(changes, Change{Path: livePath(id), Content: RenderFile(f)})
 				changed = true
 			}

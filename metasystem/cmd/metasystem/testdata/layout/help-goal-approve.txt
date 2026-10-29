@@ -17,6 +17,7 @@ Options  before or after the target; -- ends them
 Advanced
   --id G (repeatable)              a goal to approve (repeatable) (also --goal)
   --under GRANT                    act under this recorded power of attorney
+  --answer Q                       the recorded channel answer choosing this act
   --by NAME                        the acting person's name; filled from the enrolled terminal's
                                    proof when omitted
   --temporary-human-word WORD      recorded relayed words presented as the human's; resumes

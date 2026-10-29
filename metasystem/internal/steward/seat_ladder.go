@@ -249,8 +249,8 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 
 func seatCapped(verdict Verdict, id string, count int) Decision {
 	return Decision{verdict, ActNotify, fmt.Sprintf(
-		"%d seats ended without progress on %s; `metasystem goal approve %s` approves it afresh and seats start again, keeping its claim; `metasystem goal pause %s --reason TEXT` parks it",
-		count, id, id, id)}
+		"%d seats ended without progress on %s"+personRemedyMark+"metasystem goal approve %s\nmetasystem goal approve %s approves it afresh and seats start again, keeping its claim; metasystem goal pause %s --reason TEXT parks it",
+		count, id, id, id, id)}
 }
 
 // SeatCapped reports whether the steward of the installation at root has

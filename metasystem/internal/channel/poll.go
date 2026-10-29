@@ -358,7 +358,7 @@ func settleChoice(ctx context.Context, c PollConfig, q *Question) error {
 		switch attempt.Outcome {
 		case "started":
 			attempt.Outcome = "acted"
-			did := map[string]string{"Retry": "The failed step of \"%s\" started again", "Accept the size": "The checks of \"%s\" went on", "One more day": "\"%s\" has one more working day and goes on"}[label]
+			did := map[string]string{"Retry": "The failed step of \"%s\" started again", "Accept the size": "The checks of \"%s\" went on", "One more day": "\"%s\" has one more working day and goes on", "Revive it": "I revived the seat for %s", "Approve it again": "Seats start again for %s"}[label]
 			if limit, _, _ := strings.Cut(envelope.Data.Budget.Box, "/"); label == "One more day" && limit != "" {
 				did += " (its time box is now " + limit + ")"
 			}
