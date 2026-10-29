@@ -7398,11 +7398,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261029T171535.408311000Z"
-      ],
+      "holds": [],
       "opened": "2026-10-29T18:00:55Z",
-      "closed": null
+      "closed": {
+        "at": "2026-10-29T18:03:45Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "8CBT6KH0X8W6XD66ST1S4A1VXQ-landing-1d4c36fa",
+        "by": "Wido",
+        "why": "known flake, same test as the open flake incident of 10-28: red commit 2ccea6708e8c differs from c67fc3a09 by records only; the test passes 10 of 10 on that code at load 11; the red proof ran at load about 15 (process-group timing in the FIFO bed)"
+      }
     }
   ],
   "cadence": {
