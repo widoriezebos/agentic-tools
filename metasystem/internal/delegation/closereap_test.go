@@ -1,6 +1,8 @@
 package delegation_test
 
 import (
+	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -9,6 +11,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
@@ -80,6 +83,106 @@ func TestWatchKnowsAVanishedJobNowAndOtherwiseRidesTheWatcher(t *testing.T) {
 }
 
 // --- cancel -----------------------------------------------------------
+
+func unitCancelBed(t *testing.T) *bed {
+	t.Helper()
+	b := newBed(t)
+	b.writeRecord("unit-reader", map[string]any{"status": "pending", "unitRun": "unit", "operationId": "unit-launch:unit-reader", "goalId": "bounded", "goalRevision": 3})
+	return b
+}
+
+func endedUnitLaunch() delegation.UnitLaunchOutcome {
+	return delegation.UnitLaunchOutcome{State: "completed", StartedAt: "2026-10-24T22:14:00Z", FinishedAt: "2026-10-24T22:15:00Z", Executed: true}
+}
+
+func assertUnitCancelOutcome(t *testing.T, b *bed, outcome delegation.UnitLaunchOutcome) {
+	t.Helper()
+	requireExit(t, b.run("cancel", "--job", "unit-reader"), 0, b.stderr.String())
+	record := b.record("unit-reader")
+	if record["status"] != outcome.State || record["startedAt"] != outcome.StartedAt || record["endedAt"] != outcome.FinishedAt || record["unitExecuted"] != outcome.Executed || record["phase"] == "cancelled" || record["unitEnvironment"] != nil {
+		t.Fatalf("cancel lost the ended launch's outcome: %v", record)
+	}
+	if len(b.calls("host.CancelUnitLaunch")) != 1 || len(b.calls("adapter.Cancel")) != 0 {
+		t.Fatalf("cancel did not use launch custody: %v", b.doubles.Log.Calls())
+	}
+	if err := dispatch.ReconcileUnitLaunch(b.root, "unit-reader", "unit", "bounded", 3, outcome.State, "", outcome.StartedAt, outcome.FinishedAt, outcome.Executed); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCancelOfAnEndedUnitLaunchKeepsItsOutcome(t *testing.T) {
+	t.Parallel()
+	b := unitCancelBed(t)
+	outcome := endedUnitLaunch()
+	b.doubles.Host.CancelUnitLaunchFunc = func(string) (delegation.UnitLaunchOutcome, error) { return outcome, nil }
+	assertUnitCancelOutcome(t, b, outcome)
+}
+
+func TestCancelOfALiveUnitLaunchSettlesFromTheEndedLaunch(t *testing.T) {
+	t.Parallel()
+	b := unitCancelBed(t)
+	outcome := endedUnitLaunch()
+	outcome.State = "cancelled"
+	b.doubles.Host.CancelUnitLaunchFunc = func(string) (delegation.UnitLaunchOutcome, error) {
+		if got := b.record("unit-reader"); got["status"] != "pending" || got["phase"] != nil {
+			t.Fatalf("reservation changed before the launch ended: %v", got)
+		}
+		return outcome, nil
+	}
+	assertUnitCancelOutcome(t, b, outcome)
+}
+
+func TestCancelRefusesAUnitLaunchItCannotProveEnded(t *testing.T) {
+	t.Parallel()
+	for _, row := range []string{"unreadable", "running", "bad-times", "contradiction"} {
+		t.Run(row, func(t *testing.T) {
+			t.Parallel()
+			b := unitCancelBed(t)
+			outcome := endedUnitLaunch()
+			var hostErr error
+			switch row {
+			case "unreadable":
+				hostErr = errors.New("launch evidence unreadable")
+			case "running":
+				outcome.State = "running"
+			case "bad-times":
+				outcome.FinishedAt = ""
+			case "contradiction":
+				// A concurrent collection can finish while the launch is ending.
+			}
+			b.doubles.Host.CancelUnitLaunchFunc = func(string) (delegation.UnitLaunchOutcome, error) {
+				if row == "contradiction" {
+					if err := dispatch.ReconcileUnitLaunch(b.root, "unit-reader", "unit", "bounded", 3, "failed", "", outcome.StartedAt, outcome.FinishedAt, true); err != nil {
+						t.Fatal(err)
+					}
+				}
+				return outcome, hostErr
+			}
+			before, err := os.ReadFile(b.recordPath("unit-reader"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			requireExit(t, b.run("cancel", "--job", "unit-reader"), 1, b.stderr.String())
+			after, err := os.ReadFile(b.recordPath("unit-reader"))
+			if err != nil || (row != "contradiction" && !bytes.Equal(before, after)) || !strings.Contains(b.stderr.String(), "cancel refused: unit launch unit-reader could not be proven ended") {
+				t.Fatalf("cancel did not refuse unchanged: %s, %v, %s", after, err, b.stderr.String())
+			}
+		})
+	}
+}
+
+func TestCancelOfAnUnstartedUnitReservationIsUnchanged(t *testing.T) {
+	t.Parallel()
+	b := unitCancelBed(t)
+	b.doubles.Host.CancelUnitLaunchFunc = func(string) (delegation.UnitLaunchOutcome, error) {
+		return delegation.UnitLaunchOutcome{}, os.ErrNotExist
+	}
+	requireExit(t, b.run("cancel", "--job", "unit-reader"), 0, b.stderr.String())
+	record := b.record("unit-reader")
+	if record["status"] != "cancelled" || record["phase"] != "cancelled" || record["startedAt"] != nil || record["unitExecuted"] != nil {
+		t.Fatalf("an unstarted reservation lost its ordinary cancel: %v", record)
+	}
+}
 
 func TestCancelConcludesARecordThatNeverPublishedAProcess(t *testing.T) {
 	t.Parallel()

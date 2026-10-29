@@ -605,7 +605,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 			revision = file.Claimed.Revision
 		}
 		if err := dispatchcore.ReconcileUnitLaunch(inv.layout.InstallationRoot.Path(), execution.ID, unit.ID, unit.Goal, revision, string(execution.State), cause,
-			execution.StartedAt, execution.FinishedAt, execution.Child != nil || execution.ExitCode != nil); err != nil {
+			execution.StartedAt, execution.FinishedAt, execution.Executed()); err != nil {
 			return err
 		}
 		if err := inv.observeProcessDrift(unit); err != nil {

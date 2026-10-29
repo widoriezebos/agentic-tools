@@ -49,7 +49,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/landing": 85,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch": 1,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/launch": 72,
-    "github.com/widoriezebos/agentic-tools/metasystem/internal/lease": 78,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/lease": 80,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/lock": 21,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/metrics": 31,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/mission": 112,
@@ -843,6 +843,16 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes",
       "test": "TestAdoptionDefaultEmptyWithoutDefault",
       "reason": "swaps the process-wide runtime declaration registry with OverrideForTest"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/lease",
+      "test": "TestHookDelegateOwnsAUnitLaunchsProcesses",
+      "reason": "uses the serial readyChild bed and kernel process ancestry to keep launched process identities live during the assertion"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/lease",
+      "test": "TestATakeoverLeavesAUnitLaunchAlone",
+      "reason": "uses the serial readyChild bed and kernel process ancestry to keep launched process identities live during the assertion"
     }
   ]
 }

@@ -220,6 +220,11 @@ type WaitOutcome struct {
 	Output string
 }
 
+type UnitLaunchOutcome struct {
+	State, StartedAt, FinishedAt string
+	Executed                     bool
+}
+
 // HostOps are the operations whose owners still live in the engine's command
 // layer: the job waiter and watcher, the consumption-earned budget
 // extension, and the snapshot selection that probes the runtime.
@@ -227,7 +232,7 @@ type HostOps interface {
 	// UnitLaunchStatus reads the current execution, not its reservation.
 	UnitLaunchStatus(id string) (string, error)
 	// CancelUnitLaunch uses the launch manager to prove the execution ended.
-	CancelUnitLaunch(id string) error
+	CancelUnitLaunch(id string) (UnitLaunchOutcome, error)
 	// WaitJob blocks on a job to terminal as `internal wait --job` does.
 	WaitJob(ctx context.Context, root, job string, callerPid int64) WaitOutcome
 	// WatchJob is `job watch`: block to terminal, tailing the watched

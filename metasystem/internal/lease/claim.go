@@ -7,6 +7,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/events"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"golang.org/x/sys/unix"
 )
 
@@ -26,10 +27,11 @@ func isSupervisionTag(tag string) bool {
 // claimer reconciles the checkout lease with a main's announcement under the
 // lease lock. It emits lease lifecycle events as it goes.
 type claimer struct {
-	root    string
-	paths   Paths
-	emitter *events.Emitter
-	probe   identity.FixtureProbe
+	launches launch.Store
+	root     string
+	paths    Paths
+	emitter  *events.Emitter
+	probe    identity.FixtureProbe
 	// processes is the process table the takeover sweep proves a stale
 	// group's ownership against; nil is the kernel's. Signal authorization
 	// stays kernel-only in production: only a test sets it.

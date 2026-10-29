@@ -111,7 +111,7 @@ func ReconcileUnitLaunch(root, id, run, goal string, revision uint64, status, ca
 		if startErr != nil || endErr != nil || end.Before(start) {
 			return fmt.Errorf("the unit execution %s has unreadable or regressed execution times", id)
 		}
-		if TerminalStatus(asString(record["status"])) {
+		if _, owned := record["unitExecuted"]; owned && TerminalStatus(asString(record["status"])) {
 			if asString(record["status"]) != status || asString(record["startedAt"]) != started || asString(record["endedAt"]) != ended || record["unitExecuted"] != executed {
 				return fmt.Errorf("the unit execution %s contradicts its terminal reservation", id)
 			}

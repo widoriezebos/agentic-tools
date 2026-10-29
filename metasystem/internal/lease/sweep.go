@@ -43,9 +43,14 @@ func (c *claimer) cleanupStaleJobs(epoch int64) error {
 	swept := 0
 	for _, path := range paths {
 		stem := strings.TrimSuffix(filepath.Base(path), ".json")
-		done, err := c.sweepOne(path, stem, epoch, locksDir)
+		done, settle, err := c.sweepOne(path, stem, epoch, locksDir)
 		if err != nil {
 			return err
+		}
+		if settle != nil {
+			if err := settle(); err != nil {
+				return err
+			}
 		}
 		if done {
 			swept++
@@ -77,10 +82,10 @@ func (c *claimer) cleanupStaleRuns(epoch int64) error {
 		})
 }
 
-func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (bool, error) {
+func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (bool, func() error, error) {
 	lock, err := acquireRecordLock(filepath.Join(locksDir, stem+".lock"))
 	if err != nil {
-		return false, err
+		return false, nil, err
 	}
 	defer lock.release()
 
@@ -91,17 +96,17 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 		// sweep cannot prove cleared — and the function's own contract
 		// forbids certifying a generation it did not actually clear.
 		if os.IsNotExist(err) {
-			return false, nil
+			return false, nil, nil
 		}
-		return false, fmt.Errorf("claim sweep cannot read job record %s: %w", stem, err)
+		return false, nil, fmt.Errorf("claim sweep cannot read job record %s: %w", stem, err)
 	}
 	var job map[string]any
 	if json.Unmarshal(data, &job) != nil {
-		return false, fmt.Errorf("claim sweep cannot parse job record %s", stem)
+		return false, nil, fmt.Errorf("claim sweep cannot parse job record %s", stem)
 	}
 	status, _ := job["status"].(string)
 	if !terminalStatuses[status] && !sweepableStatuses[status] {
-		return false, fmt.Errorf("claim sweep refused: job record %s has an unknown status %q", stem, status)
+		return false, nil, fmt.Errorf("claim sweep refused: job record %s has an unknown status %q", stem, status)
 	}
 	// claimEpoch is NULLABLE by the writer's contract (dispatch's
 	// nullableEpoch: a human-dispatched job carries null): a null or
@@ -116,18 +121,34 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 		// generation must not inherit it — the arriving holder's
 		// sweep clears it like any stale job.
 		if role, _ := job["role"].(string); role == "steward-continuation" && !terminalStatuses[status] {
-			return true, c.concludeStaleJob(path, stem, job)
+			return true, nil, c.concludeStaleJob(path, stem, job)
 		}
-		return false, nil
+		return false, nil, nil
 	}
 	recordEpoch, ok := jsonInt(rawEpoch)
 	if !ok {
-		return false, fmt.Errorf("claim sweep refused: job record %s has a noninteger claimEpoch", stem)
+		return false, nil, fmt.Errorf("claim sweep refused: job record %s has a noninteger claimEpoch", stem)
 	}
 	if recordEpoch >= epoch || terminalStatuses[status] {
-		return false, nil
+		return false, nil, nil
 	}
-	return true, c.concludeStaleJob(path, stem, job)
+	if run, _ := job["unitRun"].(string); run != "" && job["operationId"] == "unit-launch:"+stem {
+		execution, err := c.launches.Read(stem)
+		if err != nil && !os.IsNotExist(err) {
+			return false, nil, fmt.Errorf("claim sweep cannot read unit launch %s: %w", stem, err)
+		}
+		if err == nil {
+			if !execution.State.Terminal() {
+				return false, nil, nil
+			}
+			return true, func() error {
+				record := dispatch.JobRecordOf(job)
+				revision, _ := record.GoalRevision()
+				return dispatch.ReconcileUnitLaunch(c.root, stem, run, record.GoalID(), revision, string(execution.State), "", execution.StartedAt, execution.FinishedAt, execution.Executed())
+			}, nil
+		}
+	}
+	return true, nil, c.concludeStaleJob(path, stem, job)
 }
 
 // concludeStaleJob stops a stale job's group and fails its record —

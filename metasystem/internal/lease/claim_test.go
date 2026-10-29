@@ -1,9 +1,16 @@
 package lease
 
 import (
+	"bytes"
+	"encoding/json"
 	"io"
+	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // readyChild starts a stand-in that reports readiness after exec and then
@@ -202,6 +209,82 @@ func TestForeignTakeover(t *testing.T) {
 	}
 	if len(lease.Takeovers) != 1 || lease.Takeovers[0].FromMainId != "main-1-1-aaaaaa" || lease.Takeovers[0].Reason != "holder-death" {
 		t.Fatalf("takeover must be recorded with its predecessor: %+v", lease.Takeovers)
+	}
+}
+
+func TestATakeoverLeavesAUnitLaunchAlone(t *testing.T) {
+	dead := deadPid(t)
+	pid, start := readyChild(t)
+	ref := hookExact(t, pid).Ref()
+	for _, state := range []launch.State{launch.Running, launch.Completed, "absent", "unreadable"} {
+		t.Run(string(state), func(t *testing.T) {
+			root := t.TempDir()
+			if err := saveLease(root, &Lease{HolderMainId: "main-old", OwnerLineage: "old", Pid: dead, PidStartedAt: 111, ClaimEpoch: 3, Revision: 3}); err != nil {
+				t.Fatal(err)
+			}
+			job := "unit-reader"
+			path := filepath.Join(root, "artifacts/agents/jobs", job+".json")
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			before := []byte(`{"jobId":"unit-reader","operationId":"unit-launch:unit-reader","unitRun":"unit","goalId":"bounded","goalRevision":3,"unitRound":1,"capMin":5,"status":"pending","claimEpoch":3}`)
+			if err := os.WriteFile(path, before, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			c, err := newClaimer(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			c.launches = launch.Store{Root: t.TempDir()}
+			execution := launch.Record{ID: job, State: state, Child: &ref, StartedAt: "2026-10-24T22:14:00Z", FinishedAt: "2026-10-24T22:15:00Z"}
+			if state != "absent" {
+				if err := c.launches.Create(execution); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if state == "unreadable" {
+				dir, _ := c.launches.StateDir(job)
+				if err := os.WriteFile(filepath.Join(dir, "record.json"), []byte("{"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			err = c.claim(ann("main-new", pid, start, "new"))
+			after, readErr := os.ReadFile(path)
+			if readErr != nil {
+				t.Fatal(readErr)
+			}
+			if state == "unreadable" {
+				if err == nil || !bytes.Equal(before, after) {
+					t.Fatalf("unreadable launch must refuse without changing the reservation: %v, %s", err, after)
+				}
+				return
+			}
+			lease, _ := loadLease(root, true)
+			if err != nil || lease.ClaimEpoch != 4 {
+				t.Fatalf("takeover = %+v, %v", lease, err)
+			}
+			var record map[string]any
+			if err := json.Unmarshal(after, &record); err != nil {
+				t.Fatal(err)
+			}
+			switch state {
+			case launch.Running:
+				if !bytes.Equal(before, after) {
+					t.Fatalf("the takeover changed a running launch's reservation: %s", after)
+				}
+			case launch.Completed:
+				if record["status"] != "completed" || record["startedAt"] != execution.StartedAt || record["endedAt"] != execution.FinishedAt || record["unitExecuted"] != true {
+					t.Fatalf("the takeover lost the launch's outcome: %s", after)
+				}
+				if err := dispatch.ReconcileUnitLaunch(root, job, "unit", "bounded", 3, "completed", "", execution.StartedAt, execution.FinishedAt, true); err != nil {
+					t.Fatal(err)
+				}
+			case "absent":
+				if record["status"] != "failed" || record["phase"] != "claim-sweep" {
+					t.Fatalf("an unstarted reservation did not keep the sweep: %s", after)
+				}
+			}
+		})
 	}
 }
 

@@ -174,6 +174,30 @@ func (s *session) internalCancel(job string) error {
 		s.releaseLifecycleLock(job)
 		return nil
 	}
+	if fieldOr(record, "unitRun") != "" && fieldOr(record, "operationId") == "unit-launch:"+job {
+		outcome, err := s.l.ports.Host.CancelUnitLaunch(job)
+		if err == nil {
+			revision, _ := strconv.ParseUint(fieldOr(record, "goalRevision"), 10, 64)
+			err = dispatch.ReconcileUnitLaunch(s.root, job, fieldOr(record, "unitRun"), fieldOr(record, "goalId"), revision,
+				outcome.State, "", outcome.StartedAt, outcome.FinishedAt, outcome.Executed)
+			if err == nil {
+				if missionID := fieldOr(record, "mission"); missionID != "" && missionID != "null" {
+					s.missionReleaseJob(missionID, job)
+				}
+				if s.stopCancelAuthorized == "" {
+					_ = s.mirrorRecordLocked(job) // cancel holds the lifecycle lock
+				}
+				s.releaseLifecycleLock(job)
+				return nil
+			}
+		} else if errors.Is(err, fs.ErrNotExist) {
+			err = nil
+		}
+		if err != nil {
+			s.releaseLifecycleLock(job)
+			return s.die(1, fmt.Sprintf("cancel refused: unit launch %s could not be proven ended (%v); its reservation is unchanged", job, err))
+		}
+	}
 	// The marker lands before the kill, so a reaper concluding the dead
 	// group first still reads the cancel. A marker that cannot land stops
 	// the cancel.
@@ -241,7 +265,7 @@ func (s *session) internalCancel(job string) error {
 		s.releaseLifecycleLock(job)
 		return exitWith(1)
 	}
-	// The cancelled reservation's fence slot is not abandoned debt.
+	// An ended reservation's fence slot is not abandoned debt.
 	if missionID := fieldOr(record, "mission"); missionID != "" && missionID != "null" {
 		s.missionReleaseJob(missionID, job)
 	}
@@ -291,7 +315,7 @@ func (s *session) breachStopRun(stopID string) error {
 			record := s.recordPath(job)
 			if fieldOr(record, "unitRun") != "" && fieldOr(record, "operationId") == "unit-launch:"+job {
 				// An absent execution leaves only its reservation to cancel.
-				if err := s.l.ports.Host.CancelUnitLaunch(job); err != nil && !errors.Is(err, fs.ErrNotExist) {
+				if _, err := s.l.ports.Host.CancelUnitLaunch(job); err != nil && !errors.Is(err, fs.ErrNotExist) {
 					return s.die(1, fmt.Sprintf("breach-stop %s could not cancel unit launch %s: %v", stopID, job, err))
 				}
 			}
