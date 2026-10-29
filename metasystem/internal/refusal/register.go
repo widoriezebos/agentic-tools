@@ -237,7 +237,7 @@ var Rows = []Row{
 	{Code: "GOAL_SPLIT_REFUSED", Owner: "internal/goal", Site: "split.go#splitRequest", Shape: Agent, H1: StandingGuide, Forward: "goal done"},
 	{Code: "RECONCILE_OUTSIDE_SCOPE", Owner: "internal/goal", Site: "reconcilepub.go#reconcileFor", Shape: Question, H1: StandingInput},
 	{Code: "GOAL_CLAIM_AREAS", Owner: "internal/goal", Site: "areas.go#ClaimAreas", Shape: Question, H1: StandingGuide, Forward: "goal claim"},
-	{Code: "GOAL_CLAIM_QUOTA", Owner: "internal/goal", Site: "verbs.go#claimQuotaRefusal", Shape: Question, H1: StandingGuide, Forward: "goal release"},
+	{Code: "GOAL_CLAIM_QUOTA", Owner: "internal/goal", Site: "verbs.go#claimQuotaRefusal", Shape: Question, H1: StandingGuide, Forward: "goal release", ForwardSite: "internal/goal/verbs.go#ClaimQuotaBlocker"},
 	{Code: "REBIND_EPOCH_UNAUTHENTICATED", Owner: "internal/goal", Site: "verbs.go#ClaimEpochForRebind", Shape: Identity},
 	{Code: "SET_BUDGET_FENCED_SAME_TUPLE", Owner: "internal/goal", Site: "verbs.go#setBudgetRequest", Shape: Question, H1: StandingGuide, Forward: "goal resume"},
 	{Code: "SPLIT_RATIFY_REFUSED", Owner: "internal/goal", Site: "split.go#validateSplitRatification", Shape: Question, H1: StandingInput},

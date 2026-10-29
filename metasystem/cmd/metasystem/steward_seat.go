@@ -187,6 +187,7 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 		owners = supplied[0]
 	}
 	config.Units = stewardUnitStages(owners)
+	config.ClaimLaneState = stewardClaimLaneState(owners)
 	config.CompletedBoundary = func(root string, now time.Time) error {
 		holder, err := lease.CurrentHolder(root)
 		if errors.Is(err, lease.ErrLeaseAbsent) {
@@ -248,6 +249,18 @@ func stewardUnitStages(owners intentOwners) func(string, string) ([]steward.Unit
 			return nil, errors.New(problem.Summary)
 		}
 		return units, nil
+	}
+}
+
+// stewardClaimLaneState is the claim's lane reader for the steward's health:
+// a checkout that can't be selected reads as no hand-in, as the claim does.
+func stewardClaimLaneState(owners intentOwners) func(string, string, string) (string, error) {
+	return func(root, id, main string) (string, error) {
+		inv := &intentInvocation{cwd: root, owners: owners}
+		if problem := inv.selectRoot(); problem != nil {
+			return "", nil
+		}
+		return inv.claimLaneReader()(id, main)
 	}
 }
 

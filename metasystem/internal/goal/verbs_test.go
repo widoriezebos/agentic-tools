@@ -986,7 +986,7 @@ func TestClaimQuotaRefusalNamesTheHeldGoalAndRelease(t *testing.T) {
 	before := acceptedTipForEndpoint(t, endpoint)
 	result, err := Claim(verbReqFor(endpoint, "01J5X00000000000000000CQ30", "mac-a"), "next-work")
 	if err != nil || result.Outcome != OutcomeRejected || result.Code != ClaimQuotaCode || strings.Contains(result.Detail, ClaimQuotaCode) ||
-		!strings.Contains(result.Detail, "held-work") || !strings.Contains(result.Detail, "run: metasystem goal release held-work, then metasystem goal claim next-work") {
+		!strings.Contains(result.Detail, "held-work") || !strings.Contains(result.Detail, "run: metasystem goal release held-work --reason TEXT, then metasystem goal claim next-work") {
 		t.Fatalf("quota refusal: %+v %v", result, err)
 	}
 	if after := acceptedTipForEndpoint(t, endpoint); after != before || result.Tip != before {

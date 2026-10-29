@@ -80,6 +80,8 @@ func remedyFor(role HealthRole, fact RemedyFact) Remedy {
 		return Remedy{Plain: "a person corrects the setting the reason above names in metasystem.conf, then runs metasystem system check", Clears: "a person corrects the invalid setting"}
 	case CauseObservationPending:
 		return Remedy{Plain: "nothing to do: the evidence producer completes its pending pass; the next observation reads that completion", Clears: "the evidence producer completes its pending pass"}
+	case CauseClaimQuota:
+		return Remedy{Plain: "the claiming session of goal " + fact.Goal + " runs: " + fact.Command + ", then metasystem goal claim " + fact.Ready, Clears: "the claiming session lands, concludes or releases its claim"}
 	case CauseClockRegressed:
 		return Remedy{Plain: "nothing to do: the next observation clears when the machine's clock catches up with the recorded evidence; a person corrects an inaccurate clock", Clears: "the next observation uses a clock at or after the recorded evidence"}
 	case "", CauseUnavailable:

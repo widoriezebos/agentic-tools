@@ -18,6 +18,9 @@ type healthLedger struct {
 	readWorld    func(string) bool
 	readEndpoint func(string) (goal.Endpoint, error)
 	project      func(goal.Endpoint, bool, time.Time) (goal.Projection, error)
+	// laneState reads a held goal's hand-in on the landing lane; nil reads
+	// no lane, and the claim-quota role then shows the tick's verdict.
+	laneState func(root, goalID, main string) (string, error)
 
 	newWorld      bool
 	endpoint      goal.Endpoint

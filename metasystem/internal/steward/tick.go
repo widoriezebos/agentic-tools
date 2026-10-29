@@ -99,6 +99,12 @@ type TickConfig struct {
 	Seat SeatLauncher
 	// Units reads the same unit stages as the public status verb.
 	Units func(root, goalID string) ([]UnitStage, error)
+	// ClaimLaneState reads a held goal's hand-in on the landing lane, as the
+	// claim does; nil evaluates no claim quota.
+	ClaimLaneState func(root, goalID, main string) (string, error)
+	// AskHome is the board the claim-quota ask is published on; empty is
+	// the host's board.
+	AskHome string
 	// RetireCards moves the cards of finished goals off the host board; nil
 	// retires nothing. It does not run under the helm.
 	RetireCards func(repoRoot string, now time.Time) error
@@ -291,8 +297,8 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// A seat at the helm is the person's: the tick publishes presence,
 	// completes its attempt as HELM and decides nothing (HM-7). The check
 	// sits after the attempt exists and before the completion defer, so no
-	// health, alert or narration pass runs either; helmTick makes the one
-	// report-only pattern call (D2).
+	// full health, narration or standing-defect pass runs; helmTick makes
+	// two report-only passes, the patterns and the claim quota.
 	if state := helm.Active(repoRoot); state.Active {
 		return helmTick(repoRoot, cfg, generation, selfExact.Ref(), tickAttempt.AttemptSeq, state)
 	}
@@ -358,8 +364,8 @@ const VerdictHelm Verdict = "helm"
 // helmTick is the whole tick of a seat at the helm: presence is still
 // published (the fleet sees the seat alive) and the tick attempt completes
 // with outcome HELM. No breach stop, reap, ledger attention, decision or
-// narration runs; the one notification it may send is the pattern pass's
-// report (D2).
+// narration runs; the notifications it may send are the two reports: the
+// pattern pass's and the claim-quota pass's alert and ask.
 func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.Ref, attemptSeq int64, state helm.State) (TickResult, error) {
 	reason := "human at the helm: " + state.By
 	result := TickResult{Decision: Decision{VerdictHelm, ActNone, reason}}
@@ -376,7 +382,28 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 	if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && presenceErr == nil {
 		presenceErr = patternErr
 	}
+	if quotaErr := helmHealthPass(repoRoot, cfg); quotaErr != nil && presenceErr == nil {
+		presenceErr = quotaErr
+	}
 	return result, presenceErr
+}
+
+// helmHealthPass is the helm's claim-quota report: the one role, recorded as
+// a partial observation, its alert and its ask. A closed fence stops it
+// before anything is recorded, as it stops a full observation.
+func helmHealthPass(repoRoot string, cfg TickConfig) error {
+	now := cfg.now()
+	if stopped, err := healthStopped(repoRoot, repoRoot, now, nil, SpendObservation{}, HealthObservationState{}); err != nil || stopped != nil {
+		return err
+	}
+	ledger := newHealthLedger(repoRoot, now)
+	ledger.laneState = cfg.ClaimLaneState
+	health, err := observePartialHealth(repoRoot, now, []RoleVerdict{checkClaimQuotaWith(repoRoot, repoRoot, ledger)})
+	if err != nil {
+		return fmt.Errorf("record the helm's claim quota: %w", err)
+	}
+	_, alertErr := updateAlertEpisodesWith(repoRoot, health, health.Line(), now, noticeFunnel{clock: cfg.now}, deliver)
+	return errors.Join(alertErr, tickHealthAsk(cfg)(repoRoot, health, now))
 }
 
 // runTickReports observes health before running either report-only pass.
@@ -471,7 +498,8 @@ func defaultTickContinuationDependencies(cfg TickConfig) tickContinuationDepende
 		resolveMachine: goal.ResolveMachine,
 		resolveLayout:  stateroot.ResolveLayout,
 		health: tickHealthDependencies{
-			evaluate: evaluateHealthRoles,
+			evaluate: tickHealthEvaluator(cfg),
+			ask:      tickHealthAsk(cfg),
 			now:      tickHealthNow,
 			deliver:  deliver,
 			lane:     hostLaneSilence,
@@ -673,7 +701,8 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 // the observation's dead or persistent-unknown boundary requires one.
 func completeTickHealthWithConfig(repoRoot string, result *TickResult, generation int, process identity.Ref, cfg TickConfig) error {
 	return completeTickHealthWithDependencies(repoRoot, result, generation, process, cfg.Now, tickHealthDependencies{
-		evaluate:     evaluateHealthRoles,
+		evaluate:     tickHealthEvaluator(cfg),
+		ask:          tickHealthAsk(cfg),
 		now:          tickHealthNow,
 		deliver:      deliver,
 		lane:         hostLaneSilence,
@@ -683,6 +712,24 @@ func completeTickHealthWithConfig(repoRoot string, result *TickResult, generatio
 			return examineLedgerMoveWithRepositoryAndWriter(root, now, defaultLedgerAttentionRepository(), atomicfile.WriteText)
 		},
 	})
+}
+
+// tickHealthEvaluator is the tick's health evaluation, on both of its paths:
+// the roles read the claim quota through the configured lane reader.
+func tickHealthEvaluator(cfg TickConfig) healthRoleEvaluator {
+	return func(repo, install string, at time.Time, probe identity.Prober, hook bool) ([]RoleVerdict, SpendObservation) {
+		ledger := newHealthLedger(repo, at)
+		ledger.laneState = cfg.ClaimLaneState
+		return evaluateHealthRolesWithLedger(repo, repo, install, at, probe, hook, measureSpend, ledger)
+	}
+}
+
+// tickHealthAsk tells the holder of a claim that blocks ready priority-1
+// work, on both of the tick's paths and under the helm.
+func tickHealthAsk(cfg TickConfig) func(string, HealthVerdict, time.Time) error {
+	return func(repoRoot string, health HealthVerdict, now time.Time) error {
+		return askClaimQuotaHolders(health, repoRoot, cfg.AskHome, goal.ResolveMachine, now)
+	}
 }
 
 type tickHealthDependencies struct {
@@ -697,6 +744,8 @@ type tickHealthDependencies struct {
 	probeRuntime  func(root, runtime string) error
 	lookPath      func(string) (string, error)
 	examineLedger func(string, time.Time) error
+	// ask runs after the standing-defect filer; nil asks nothing.
+	ask func(string, HealthVerdict, time.Time) error
 }
 
 func completeTickHealthWithDependencies(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time, dependencies tickHealthDependencies) error {
@@ -745,6 +794,9 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	}
 	if err := fileStandingDefects(repoRoot, health, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("file standing health defects: %w", err)
+	}
+	if dependencies.ask != nil {
+		remedyErr = errors.Join(remedyErr, dependencies.ask(repoRoot, health, healthNow()))
 	}
 	if err := updateSpendEpisodesWith(repoRoot, health.Spend, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("update spend alert episodes: %w", err)
