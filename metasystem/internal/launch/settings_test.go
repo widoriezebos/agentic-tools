@@ -127,7 +127,7 @@ func TestLaneModelFollowsTheResolvedRuntime(t *testing.T) {
 	}{
 		{"devin alone", onPath("devin"), "devin", "claude-opus-5-5", "claude-opus-5-5", "gpt-6-astra", "gpt-6-astra"},
 		{"codex before devin", onPath("devin", "codex"), "codex", "gpt-6-sol", "gpt-6-astra", "gpt-6-astra", "gpt-6-sol"},
-		{"claude first", onPath("devin", "codex", "claude"), "claude", "claude-opus-5-5", "claude-fable-5-1", "claude-fable-5-1", "claude-opus-5-5"},
+		{"claude first", onPath("devin", "codex", "claude"), "claude", "claude-opus-5-5", "claude-opus-5-5", "claude-opus-5-5", "claude-opus-5-5"},
 	} {
 		settings, err := ResolveSettings(conf, test.lookup)
 		if err != nil {

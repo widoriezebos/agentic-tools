@@ -371,7 +371,7 @@ func getLayered(p GetParams) (value string, code int, err error) {
 	// An empty ConfPath is no configuration file: the compiled defaults
 	// under the environment and the flag, nothing read from disk.
 	hasFile := p.ConfPath != ""
-	localPath := p.ConfPath + ".local"
+	localPath := localOverlay(p.ConfPath)
 	if hasFile && p.Mode != "" && (roleRuntimeKey.MatchString(p.Key) || roleModelKey.MatchString(p.Key)) && isFile(localPath) {
 		// The local overlay outranks the committed file for MODE-scoped
 		// role keys exactly as it does for base keys: a machine carrying
@@ -519,7 +519,7 @@ func Keys(confPath, prefix string, environ []string) []string {
 		}
 	}
 
-	for _, path := range []string{confPath, confPath + ".local"} {
+	for _, path := range []string{confPath, localOverlay(confPath)} {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			continue
@@ -578,6 +578,80 @@ func EnvName(key string) string {
 	upper := strings.ToUpper(key)
 	upper = strings.NewReplacer(".", "_", "-", "_").Replace(upper)
 	return "METASYSTEM_" + upper
+}
+
+// localOverlay is the .local file layered over confPath: its own sibling,
+// else, for a conf at the top of an engine-made goal or delegate worktree
+// (mainInstallationConf names the exact roots), the main installation's
+// sibling. Such a worktree never holds the untracked .local, so without
+// this its reads fell to the compiled defaults (finding 438).
+func localOverlay(confPath string) string {
+	own := confPath + ".local"
+	if confPath == "" || isFile(own) {
+		return own
+	}
+	if main := mainInstallationConf(confPath); main != "" && isFile(main+".local") {
+		return main + ".local"
+	}
+	return own
+}
+
+// mainInstallationConf answers the main checkout's conf at confPath's place
+// when confPath lies in an engine-made worktree, else "".
+func mainInstallationConf(confPath string) string {
+	conf, err := filepath.Abs(confPath)
+	if err != nil {
+		return ""
+	}
+	top := filepath.Dir(conf)
+	for !isFile(filepath.Join(top, ".git")) {
+		if _, err := os.Lstat(filepath.Join(top, ".git")); err == nil || filepath.Dir(top) == top {
+			return "" // a main checkout, or no repository at all
+		}
+		top = filepath.Dir(top)
+	}
+	pointer, err := os.ReadFile(filepath.Join(top, ".git"))
+	gitDir, linked := strings.CutPrefix(strings.TrimSpace(string(pointer)), "gitdir: ")
+	if err != nil || !linked {
+		return ""
+	}
+	if !filepath.IsAbs(gitDir) {
+		gitDir = filepath.Join(top, gitDir)
+	}
+	common, err := os.ReadFile(filepath.Join(gitDir, "commondir"))
+	commonDir := strings.TrimSpace(string(common))
+	if err != nil {
+		return ""
+	}
+	if !filepath.IsAbs(commonDir) {
+		commonDir = filepath.Join(gitDir, commonDir)
+	}
+	rel, relErr := filepath.Rel(top, conf)
+	mainTop, mainErr := filepath.EvalSymlinks(filepath.Dir(filepath.Clean(commonDir)))
+	realTop, topErr := filepath.EvalSymlinks(top)
+	if filepath.Base(filepath.Clean(commonDir)) != ".git" || relErr != nil || mainErr != nil || topErr != nil {
+		return ""
+	}
+	// Only goal and delegate worktrees, at their exact depth: a work
+	// workspace <state root>/artifacts/agents/workspaces/<owner>/<name> (the
+	// state root is the installation in template mode, the repository top
+	// when adopted; diskstore.WorkspacePath) and a dispatch job worktree
+	// <installation>/artifacts/agents/worktrees/<job> (delegation
+	// lifecycle). Landing proof trees and proof-run scratch trees, including
+	// one a seat makes inside its workspace, read their own sibling alone: a
+	// proof's input excludes local settings.
+	install := filepath.Join(mainTop, filepath.Dir(rel))
+	agents := func(root string) string { return filepath.Join(root, "artifacts", "agents") }
+	for _, root := range []struct {
+		dir   string
+		depth int
+	}{{filepath.Join(agents(install), "workspaces"), 2}, {filepath.Join(agents(install), "worktrees"), 1}, {filepath.Join(agents(mainTop), "workspaces"), 2}} {
+		below, err := filepath.Rel(root.dir, realTop)
+		if err == nil && below != "." && filepath.IsLocal(below) && len(strings.Split(below, string(filepath.Separator))) == root.depth {
+			return filepath.Join(mainTop, rel)
+		}
+	}
+	return ""
 }
 
 func isFile(path string) bool {
@@ -643,7 +717,7 @@ func KeyOrigin(p GetParams) (string, error) {
 		// the compiled default.
 		return "default", nil
 	}
-	localPath := p.ConfPath + ".local"
+	localPath := localOverlay(p.ConfPath)
 	if isFile(localPath) {
 		_, found, err := ConfLookup(localPath, p.Key)
 		if err != nil {
