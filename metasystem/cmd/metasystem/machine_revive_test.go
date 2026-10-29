@@ -78,7 +78,7 @@ esac
 		t.Logf("public machine revival:\n%s", out)
 		return
 	}
-	for _, scenario := range []string{"closed-not-held", "closed-completed", "person", "omitted", "agent", "stale", "stopped", "unreadable", "missing-episode", "invalid-finished", "unreadable-episode", "automatic-missing-episode", "automatic-invalid-finished", "automatic-old-interval", "missing-launch", "missing-launch-live", "older-start-failed", "launcher-refused", "reservation", "response-loss", "automatic"} {
+	for _, scenario := range []string{"closed-stranded-continuation", "closed-live-continuation", "closed-not-held", "closed-completed", "person", "omitted", "agent", "stale", "stopped", "unreadable", "missing-episode", "invalid-finished", "unreadable-episode", "automatic-missing-episode", "automatic-invalid-finished", "automatic-old-interval", "missing-launch", "missing-launch-live", "older-start-failed", "launcher-refused", "reservation", "response-loss", "automatic"} {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			bed := newWorkBedWith(t, func(f *goal.GoalFile) {
@@ -147,7 +147,7 @@ esac
 				t.Fatal(err)
 			}
 			launchState := launch.Failed
-			if scenario == "closed-completed" {
+			if scenario == "closed-completed" || strings.HasSuffix(scenario, "-continuation") {
 				launchState = launch.Completed
 			}
 			if err := bed.manager.Store.Create(launch.Record{ID: failed.LaunchID, Kind: "seat", State: launchState, Adapter: "claude-headless", WorkingDirectory: root, StartedAt: failed.StartedAt, FinishedAt: now.Add(-time.Minute).Format(time.RFC3339)}); err != nil {
@@ -159,6 +159,28 @@ esac
 			if strings.HasPrefix(scenario, "automatic") {
 				before = steward.Evidence{}
 				if err := outage.Clear(home, "anthropic", now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if strings.HasSuffix(scenario, "-continuation") {
+				before.CurrentContinuation = "stranded-continuation"
+				consumed := filepath.Join(root, "artifacts", "agents", "steward", "consumed")
+				jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+				for _, dir := range []string{consumed, jobs} {
+					if err := os.MkdirAll(dir, 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				data, _ := json.Marshal(steward.Intent{Nonce: before.CurrentContinuation, JobId: "steward-stranded", Reason: "seatHandoff"})
+				if err := os.WriteFile(filepath.Join(consumed, before.CurrentContinuation+".json"), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				job := map[string]any{"status": "failed", "phase": "handshake", "error": "runtime_error"}
+				if scenario == "closed-stranded-continuation" {
+					job["endedAt"] = now.Add(-time.Minute).Format(time.RFC3339)
+				}
+				data, _ = json.Marshal(job)
+				if err := os.WriteFile(filepath.Join(jobs, "steward-stranded.json"), data, 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -319,6 +341,13 @@ esac
 				if err != nil || after.AbnormalCount != 0 || after.Abnormal != [2]steward.AbnormalRestart{} || after.CurrentSeat != before.CurrentSeat || after.DryRevivals != before.DryRevivals {
 					t.Fatalf("close did not clear only restart history: %+v %v", after, err)
 				}
+				if strings.HasSuffix(scenario, "-continuation") {
+					live := scenario == "closed-live-continuation"
+					if live && (after.CurrentContinuation != before.CurrentContinuation || !strings.Contains(result.Summary, "still has running job steward-stranded")) ||
+						!live && (after.CurrentContinuation != "" || !strings.Contains(result.Summary, "continuation stranded-continuation settled")) {
+						t.Fatalf("continuation close lost its outcome: %+v %+v", after, result)
+					}
+				}
 				path := steward.EvidencePath(root)
 				data, err := os.ReadFile(path)
 				if err != nil {
@@ -334,6 +363,21 @@ esac
 				if againCode != 0 || again.Outcome != intentConfirmed || again.Next != nil ||
 					!strings.Contains(again.Summary, "was already clear") || len(bed.starter.launched()) != 0 || err != nil || !bytes.Equal(data, unchanged) {
 					t.Fatalf("close repeat wrote or started work: %d %+v %v", againCode, again, err)
+				}
+				if scenario == "closed-stranded-continuation" {
+					if _, err := helm.Remove(root); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude,codex\nlaunch.seat.runtime=claude\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if err := outage.Clear(home, "anthropic", now); err != nil {
+						t.Fatal(err)
+					}
+					record, err := steward.StartSeat(root, steward.TickConfig{Now: now, ProviderHome: home, Seat: launcher}, seatTickCensus{}, steward.SeatSelection{Goal: bed.id, Held: true, ApprovalOpid: failed.ApprovalOpid})
+					if err != nil || record.LaunchID == "" {
+						t.Fatalf("closed continuation still blocks a seat: %+v %v", record, err)
+					}
 				}
 				return
 			}

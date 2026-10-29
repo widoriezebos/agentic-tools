@@ -18,6 +18,7 @@ import (
 
 type tickContinuationFixture struct {
 	bed          *attentionPolicyBed
+	census       WorkerCensus
 	cfg          TickConfig
 	dependencies tickContinuationDependencies
 	writes       int
@@ -112,7 +113,11 @@ func (f *tickContinuationFixture) runAs(t *testing.T, process identity.Ref, gene
 	if err != nil {
 		t.Fatal(err)
 	}
-	return runTickAfterCustodial(f.bed.root, f.cfg, fakeCensus{}, generation, process, attempt.AttemptSeq, nil, f.dependencies)
+	census := f.census
+	if census == nil {
+		census = fakeCensus{}
+	}
+	return runTickAfterCustodial(f.bed.root, f.cfg, census, generation, process, attempt.AttemptSeq, nil, f.dependencies)
 }
 
 func TestTickAfterCustodialDegradedReturnRemainsIncomplete(t *testing.T) {

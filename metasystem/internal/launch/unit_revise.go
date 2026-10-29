@@ -122,6 +122,9 @@ func (runner *UnitRunner) reviseLocked(request UnitRevisionRequest) (UnitRevisio
 	if err != nil {
 		return UnitRevisionResult{}, err
 	}
+	if record.State == "cancelled" {
+		return UnitRevisionResult{}, coded("UNIT_CANCELLED", "run="+record.ID, errors.New("this run was cancelled; build new work under another name"))
+	}
 	plan, err := readUnitPlan(record.Plan, record.PlanDirectory)
 	if err != nil {
 		return UnitRevisionResult{}, err

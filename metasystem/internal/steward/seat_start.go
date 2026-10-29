@@ -481,6 +481,9 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
 	}
+	if _, err := settleEndedContinuation(repoRoot, &ev); err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+	}
 	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned)
 	if d.Action == ActRevive && selection != nil {
 		if _, reason, err := abnormalRestartState(repoRoot, ev, now, selection); err != nil {
@@ -617,6 +620,9 @@ func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) 
 type SeatRevivalClosed struct {
 	Launch, Goal, Why string
 	Cleared           bool
+	Continuation      string
+	ContinuationLive  bool
+	ContinuationJob   string
 }
 
 func (c SeatRevivalClosed) Error() string {
@@ -628,7 +634,68 @@ func (c SeatRevivalClosed) Error() string {
 	if c.Cleared {
 		history = "restart history cleared"
 	}
-	return line + "; " + history + "; the steward's next tick starts the next ready goal"
+	line += "; " + history + "; the steward's next tick starts the next ready goal"
+	if c.Continuation != "" {
+		if c.ContinuationLive {
+			return line + fmt.Sprintf("; continuation %s still has running job %s; the hold stays until it ends", c.Continuation, c.ContinuationJob)
+		}
+		line += fmt.Sprintf("; continuation %s settled: it has no running job", c.Continuation)
+	}
+	return line
+}
+
+// continuationJobEnd reads the job's end independently of the launch stamp.
+// Missing authorization or job records carry no running job for a person's close.
+func continuationJobEnd(root, nonce string) (string, string, error) {
+	intent, err := ConsumedIntent(root, nonce)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", intent.JobId+".json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", nil
+	}
+	var job struct {
+		EndedAt string `json:"endedAt"`
+	}
+	if err == nil {
+		err = json.Unmarshal(data, &job)
+	}
+	return intent.JobId, job.EndedAt, err
+}
+
+// settleEndedContinuation preserves the ended job's outcome for the next start.
+// A pending attempt keeps its charge even when dispatch never stamped its intent.
+func settleEndedContinuation(root string, ev *Evidence) (bool, error) {
+	next := *ev
+	nonces := []string{next.CurrentContinuation}
+	if next.AbnormalCount > 0 && next.AbnormalCount <= len(next.Abnormal) && next.Abnormal[next.AbnormalCount-1].Pending {
+		nonces = append(nonces, next.Abnormal[next.AbnormalCount-1].Nonce)
+	}
+	for _, nonce := range nonces {
+		if nonce == "" {
+			continue
+		}
+		_, ended, err := continuationJobEnd(root, nonce)
+		if err != nil {
+			return false, err
+		}
+		if ended == "" {
+			continue
+		}
+		if nonce == next.CurrentContinuation {
+			next.SettledContinuation, next.CurrentContinuation = nonce, ""
+		}
+		if next.AbnormalCount > 0 && next.AbnormalCount <= len(next.Abnormal) && next.Abnormal[next.AbnormalCount-1].Nonce == nonce {
+			next.Abnormal[next.AbnormalCount-1].Pending = false
+		}
+	}
+	changed := next != *ev
+	*ev = next
+	return changed, nil
 }
 
 func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string) error {
@@ -636,12 +703,28 @@ func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string) error {
 	if err != nil {
 		return err
 	}
-	closed := SeatRevivalClosed{Why: why, Cleared: ev.AbnormalCount > 0}
+	closed := SeatRevivalClosed{Why: why, Cleared: ev.AbnormalCount > 0, Continuation: ev.CurrentContinuation}
+	changed, err := settleEndedContinuation(repoRoot, &ev)
+	if err != nil {
+		return err
+	}
+	if ev.CurrentContinuation != "" {
+		job, ended, err := continuationJobEnd(repoRoot, ev.CurrentContinuation)
+		if err != nil {
+			return err
+		}
+		closed.ContinuationJob, closed.ContinuationLive = job, job != "" && ended == ""
+		if !closed.ContinuationLive {
+			ev.CurrentContinuation, changed = "", true
+		}
+	}
 	if last != nil {
 		closed.Launch, closed.Goal = last.LaunchID, last.Goal
 	}
 	if closed.Cleared {
 		ev.Abnormal, ev.AbnormalCount = [2]AbnormalRestart{}, 0
+	}
+	if closed.Cleared || changed {
 		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
 			return err
 		}
@@ -776,8 +859,15 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if err != nil {
 		return SeatRecord{}, err
 	}
+	if changed, err := settleEndedContinuation(repoRoot, &ev); err != nil {
+		return SeatRecord{}, err
+	} else if changed {
+		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+			return SeatRecord{}, err
+		}
+	}
 	class := ""
-	if !person && (len(records) > 0 || ev.AbnormalCount > 0) {
+	if !person && (len(records) > 0 || ev.AbnormalCount > 0 || ev.CurrentContinuation != "" || ev.SettledContinuation != "") {
 		var reason string
 		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now(), &selection)
 		if err != nil {
@@ -840,7 +930,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	}
 	// The steward's own root holds both its run state and the installation's
 	// settings, so it names that root as the seat's installation too.
-	ev.CurrentSeat, ev.CurrentContinuation = id, ""
+	ev.CurrentSeat, ev.CurrentContinuation, ev.SettledContinuation = id, "", ""
 	if class != "" {
 		ev = reserveAbnormalRestart(ev, dependencies.Now(), class, "")
 	}

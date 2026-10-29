@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -1147,5 +1148,54 @@ func TestResumableIntentNamesAPreparedUnlaunchedRevival(t *testing.T) {
 	nonce, ok, err := ResumableIntent(root)
 	if err != nil || !ok || nonce != "rs-1" {
 		t.Fatalf("the prepared-but-unlaunched intent is the one to resume: %q %v %v", nonce, ok, err)
+	}
+}
+
+func TestAbnormalRemedyNamesTheSeat(t *testing.T) {
+	t.Parallel()
+	root := os.Getenv("ABNORMAL_REMEDY_ROOT")
+	if root == "" {
+		root, environment := newProcessGitFixtureEnvironment(t)
+		path := filepath.Join(root, "git-replies.json")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var config processGitConfig
+		if err := json.Unmarshal(data, &config); err != nil {
+			t.Fatal(err)
+		}
+		for i := range config.Replies {
+			if config.Replies[i].Cwd == root && strings.Join(config.Replies[i].Args, " ") == "config --get metasystem.goal.machine" {
+				config.Replies[i].Stdout, config.Replies[i].Exit = []byte("ui\n"), 0
+			}
+		}
+		if err := os.Mkdir(filepath.Join(root, "unnamed"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		config.Replies = append(config.Replies, processGitReply{Cwd: root + "/unnamed", Args: []string{"config", "--get", "metasystem.goal.machine"}, Exit: 1})
+		data, _ = json.Marshal(config)
+		if err := os.WriteFile(path, data, 0600); err != nil {
+			t.Fatal(err)
+		}
+		command := exec.CommandContext(t.Context(), os.Args[0], "-test.run=^TestAbnormalRemedyNamesTheSeat$")
+		for _, entry := range os.Environ() {
+			name, _, _ := strings.Cut(entry, "=")
+			if name != "PATH" && name != processGitConfigEnv && name != "METASYSTEM_SUPERVISION_REGISTRY_HOME" && name != "METASYSTEM_TESTENV_REGISTRY_NONCE" {
+				command.Env = append(command.Env, entry)
+			}
+		}
+		command.Env = append(command.Env, environment...)
+		command.Env = append(command.Env, "ABNORMAL_REMEDY_ROOT="+root, "METASYSTEM_SUPERVISION_REGISTRY_HOME="+t.TempDir())
+		if out, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("seat remedy: %v\n%s", err, out)
+		}
+		return
+	}
+	if got := abnormalRemedy(root, "held"); !strings.HasSuffix(got, "metasystem machine revive ui") {
+		t.Fatalf("remedy cannot select the seat: %s", got)
+	}
+	if got := abnormalRemedy(root+"/unnamed", "held"); !strings.HasSuffix(got, "metasystem machine revive "+root+"/unnamed") {
+		t.Fatalf("unnamed seat lost its root: %s", got)
 	}
 }

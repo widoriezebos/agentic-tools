@@ -586,6 +586,9 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 const degradedNoticeTicks = 2
 
 func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, prev Evidence, marks Marks, dependencies openWorkDependencies) (TickResult, error) {
+	if _, err := settleEndedContinuation(repoRoot, &prev); err != nil {
+		return TickResult{}, err
+	}
 	ev := Observe(prev, marks)
 	// Age and decisions share one provider observation; progress still resets age.
 	// The seat launches are reaped before the outage is sampled: a seat the

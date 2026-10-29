@@ -629,7 +629,7 @@ func testFleetAbnormalSeatRestarts(t *testing.T) {
 				launcher.state.State = "failed"
 				tick = observe(strings.Repeat("d", 40))
 			}
-			if tick.Seat != nil || tick.Decision.Action != steward.ActNotify || !strings.Contains(tick.Decision.Reason, "metasystem machine revive "+root) {
+			if tick.Seat != nil || tick.Decision.Action != steward.ActNotify || !strings.Contains(tick.Decision.Reason, "metasystem machine revive m1") {
 				t.Fatalf("public seat tick did not stop: %+v", tick)
 			}
 			if restarts > 2 {
@@ -735,7 +735,7 @@ func testFleetUnreservedStartFailure(t *testing.T) {
 		t.Fatalf("unknown start launched %d automatic restarts; expected none", launched-1)
 	}
 	var output, problem bytes.Buffer
-	if code := runStewardStatus([]string{"--repo", root}, &output, &problem); code != 0 || !strings.Contains(output.String(), "unknown launch outcome") || !strings.Contains(output.String(), "metasystem machine revive "+root) {
+	if code := runStewardStatus([]string{"--repo", root}, &output, &problem); code != 0 || !strings.Contains(output.String(), "unknown launch outcome") || !strings.Contains(output.String(), "metasystem machine revive m1") {
 		t.Fatalf("unknown outcome hold missing from public status: %d %s %s", code, &output, &problem)
 	}
 	// The person's remedy uses the real launch owner with no launch record

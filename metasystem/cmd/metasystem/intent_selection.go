@@ -63,6 +63,8 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 	switch {
 	case work.Record == nil:
 		return "starting"
+	case work.Cancelled():
+		return "cancelled; new work starts under another name"
 	case work.Running():
 		return "running"
 	}
@@ -423,7 +425,7 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 			if subject := currentSubject(work[index]); subject != nil && subject.Commit == commit.ID && !dropped[commit.ID] {
 				continue
 			}
-			if subject := currentSubject(work[index]); subject == nil || subject.Commit == "" {
+			if subject := currentSubject(work[index]); !work[index].Cancelled() && (subject == nil || subject.Commit == "") {
 				continue
 			}
 			work = slices.Delete(work, index, index+1)
@@ -435,6 +437,10 @@ func (inv *intentInvocation) rangeWork(id string, work []launch.NamedWork) ([]la
 
 // workContinuation is the public command that moves one work item on.
 func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, named bool) ([]string, string) {
+	if work.Cancelled() {
+		result := inv.cancelledWorkResult(id)
+		return result.next, result.nextReason
+	}
 	suffix := []string{}
 	if named {
 		suffix = []string{"--work", work.Unit}
@@ -595,7 +601,7 @@ func (inv *intentInvocation) selectWork(id, verb string, work []launch.NamedWork
 }
 
 func builtWork(work launch.NamedWork) bool {
-	return !work.Running() && launch.UnitReviewReadyOutcomes[lastOutcome(work)]
+	return !work.Cancelled() && !work.Running() && launch.UnitReviewReadyOutcomes[lastOutcome(work)]
 }
 
 // currentSubject is the committed subject of the work's newest attempt.
@@ -615,6 +621,9 @@ func currentSubject(work launch.NamedWork) *launch.UnitSubject {
 // unreviewedWork is built work whose newest result has no collected read:
 // the work review G examines when no name is given.
 func unreviewedWork(work launch.NamedWork) bool {
+	if work.Cancelled() {
+		return false
+	}
 	if lastOutcome(work) == "build-size" {
 		return true
 	}
@@ -644,10 +653,19 @@ func unpublishedRead(work launch.NamedWork) bool {
 }
 
 func failedWork(work launch.NamedWork) bool {
-	return !work.Running() && work.Record != nil && !launch.UnitReviewReadyOutcomes[lastOutcome(work)]
+	return !work.Cancelled() && !work.Running() && work.Record != nil && !launch.UnitReviewReadyOutcomes[lastOutcome(work)]
 }
 
-func finishedWork(work launch.NamedWork) bool { return !work.Running() }
+func finishedWork(work launch.NamedWork) bool { return !work.Cancelled() && !work.Running() }
+
+func cancelledWork(work launch.NamedWork) bool { return work.Cancelled() }
+
+func (inv *intentInvocation) cancelledWorkResult(id string) intentResult {
+	return intentResult{Outcome: intentRefused, code: 1, Targets: inv.targets(id),
+		Summary:    "this run was cancelled; new work starts under another name",
+		next:       inv.publicArgv("work", "build", id, "--work", "NAME", "--brief", "FILE", "--check", "COMMAND"),
+		nextReason: "the run was cancelled; new work starts under another name"}
+}
 
 // runIntentReviewGoal reviews the goal's built work through the unit review:
 // the result is committed on the goal branch as the candidate and examined
@@ -757,7 +775,7 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 		}
 		return inv.render(result)
 	}
-	selected, problem := inv.selectWork(id, "review", built, unreviewedWork, unpublishedRead, builtWork)
+	selected, problem := inv.selectWork(id, "review", built, unreviewedWork, unpublishedRead, builtWork, cancelledWork)
 	if problem != nil {
 		return inv.render(*problem)
 	}
@@ -766,6 +784,9 @@ func runIntentReviewGoal(inv *intentInvocation, id string) int {
 			Summary: fmt.Sprintf("goal %s has no work waiting for review; nothing was started", id)}
 		result.next, result.nextReason = inv.publicArgv("status", id), "the goal's work and what each needs next"
 		return inv.render(result)
+	}
+	if selected.Cancelled() {
+		return inv.render(inv.cancelledWorkResult(id))
 	}
 	if selected.Running() {
 		if replay := inv.answerReplay(id, *selected); replay != nil {
@@ -898,7 +919,7 @@ func runIntentRevise(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
-	selected, problem := inv.selectWork(id, "revise", work, failedWork, finishedWork)
+	selected, problem := inv.selectWork(id, "revise", work, failedWork, finishedWork, cancelledWork)
 	if problem != nil {
 		return inv.render(*problem)
 	}
@@ -912,6 +933,9 @@ func runIntentRevise(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentInProgress, Targets: targets,
 			Summary: fmt.Sprintf("work %s of goal %s is still being reserved by its build; nothing was done", selected.Unit, id),
 			next:    inv.publicArgv("work", "wait", id, "--work", selected.Unit), nextReason: "wait for the build to record its run"})
+	}
+	if selected.Cancelled() {
+		return inv.render(inv.cancelledWorkResult(id))
 	}
 	person, reason, impact := "", inv.input.text("reason"), ""
 	if strings.TrimSpace(reason) != "" || inv.input.has("by") || inv.input.has("answer") {
