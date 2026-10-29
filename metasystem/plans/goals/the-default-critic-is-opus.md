@@ -10,13 +10,14 @@
 - Next step: On m1e's build lane after a-live-read-proves-its-subject: opus-builder changes the three defaults (internal/config/defaults.go:326, :328, :424) and, if a worktree's config resolution has no path to the installation's .local, adds that path in the config loader for engine-made goal worktrees; tests: the default table and a worktree bed that resolves role.code-critic.model.claude to the installation's local value; Read each round: yes; the steward submits with work review --changes --last; about 15 production lines
 - OpenedAt: 2026-10-27T18:39:32Z
 - FirstClaimAt: 2026-10-29T17:12:25Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=5GMVC51PAMRJ34GQ4WB3J3CRTQ-m1e-57b1aa12 minutes=1200 reviewRounds=20 goalRevision=9
 - Approved: by=human:Wido at=2026-10-29T17:07:59Z revision=10 opid=5GMVC51PAMRJ34GQ4WB3J3CRTQ-m1e-57b1aa12 authority=proven digest=bce31dde516382dd66f24532dd3e7cb6d41e1c6070c0e04146ee74e6201e6b61 episode=10
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-29T17:12:25Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-default-critic-is-opus: no accepted design declares areas\",\"areas unknown for goal a-ready-goal-behind-a-claim-is-a-row\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal a-ready-goal-behind-a-claim-is-a-row\"]" revision=11 accountingRevision=11 episodeAt=2026-10-29T17:12:25Z episodeRevision=11
+- Landing: at=2026-10-29T22:48:31Z opid=R4V5EH51YC11C4M2AXKR9S8P56-m1e-cc2e8fc8
 - StopCapability: generation=11 revision=11 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
@@ -32,4 +33,5 @@ History:
 - 2026-10-29T17:07:59Z 5GMVC51PAMRJ34GQ4WB3J3CRTQ-m1e-57b1aa12 approve actor=human:Wido targets=the-default-critic-is-opus
 - 2026-10-29T17:12:25Z 95HET0DC24Z0EP5MBZQ14QED4X-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=the-default-critic-is-opus reason=areas unknown for goal the-default-critic-is-opus: no accepted design declares areas; areas unknown for goal a-ready-goal-behind-a-claim-is-a-row; areas unknown for goal a-round-survives-a-restart; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal a-ready-goal-behind-a-claim-is-a-row
 - 2026-10-29T22:35:20Z HQ0EWRCCJB33921A6TCG4T0V9D-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=a-ready-goal-behind-a-claim-is-a-row,a-records-only-move-keeps-mains-green,a-stewards-failing-duty-is-a-row,the-default-critic-is-opus reason=priority-order from=1:89 to=1:88
-Integrity: sha256=541e8d091df632941babe6d61958d42694a6285aa559f4c0ec1ffd897684011a
+- 2026-10-29T22:48:31Z R4V5EH51YC11C4M2AXKR9S8P56-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=the-default-critic-is-opus
+Integrity: sha256=b64b2b8c263bce60176c50c7520499b085301ed2323d868f5defa8272c76205e
