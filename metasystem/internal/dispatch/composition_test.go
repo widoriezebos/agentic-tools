@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
@@ -1375,6 +1376,9 @@ func TestHazardConfigurationRefusesRuntimeWithoutExecutableMaximum(t *testing.T)
 }
 
 func TestHazardConfigurationAcceptsConfiguredMaximalModel(t *testing.T) {
+	// The model list is pinned: the checkout's own .local (or, in an
+	// engine-made worktree, its installation's) must not decide the input.
+	t.Setenv(config.EnvName("runtime.claude.maximal-models"), config.MustDefault("runtime.claude.maximal-models"))
 	root := compositionRepoRoot(t)
 	temp := t.TempDir()
 	brief := filepath.Join(temp, "brief.md")

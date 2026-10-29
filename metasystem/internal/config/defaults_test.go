@@ -113,7 +113,7 @@ func TestModeScopedDefaultsKeepTheirPrecedence(t *testing.T) {
 	conf := filepath.Join(t.TempDir(), "metasystem.conf")
 	putFile(t, conf, "role.implementer.model.claude=base-override\n")
 	params := GetParams{Key: "role.implementer.model.claude", Mode: "design", ConfPath: conf, LookupEnv: noEnv}
-	if value, _, err := Get(params); err != nil || value != "claude-fable-5-1" {
+	if value, _, err := Get(params); err != nil || value != "claude-opus-5-5" {
 		t.Fatalf("design-mode implementer model = %q, %v; want the compiled mode default", value, err)
 	}
 	if origin, _ := KeyOrigin(params); origin != "default" {
@@ -202,7 +202,7 @@ func TestCompiledModeRoleDefaultsAreTheDesignAuthor(t *testing.T) {
 			got = append(got, setting.Key+"="+setting.Default)
 		}
 	}
-	want := []string{"mode.design.role.implementer.runtime=auto", "mode.design.role.implementer.model.claude=claude-fable-5-1",
+	want := []string{"mode.design.role.implementer.runtime=auto", "mode.design.role.implementer.model.claude=claude-opus-5-5",
 		"mode.design.role.implementer.model.codex=gpt-6-astra", "mode.design.role.implementer.model.devin=claude-opus-5-5-xhigh"}
 	if !slices.Equal(got, want) {
 		t.Fatalf("compiled mode role defaults %q, want %q", got, want)
