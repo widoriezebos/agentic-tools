@@ -1,0 +1,72 @@
+{
+  "canonicalRead": {
+    "id": "20261029t152435-eae7cd2c7e-r2-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "a-round-survives-a-restart",
+      "reviewedProjectTree": "e9ac21c3c19a80ddbb6857100d70e65b0e8b6382ebdfa34984413c33ea4926ed",
+      "diffDigest": "e9ac21c3c19a80ddbb6857100d70e65b0e8b6382ebdfa34984413c33ea4926ed"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [],
+    "output": "/Users/wido/.metasystem/launch/20261029t152435-eae7cd2c7e-r2-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "7e0fd86fad7fc36383b4ecba32c9e2942b62e1ff61079ccf37fe374d87ac6bab",
+  "schemaVersion": 1,
+  "goal": "a-round-survives-a-restart",
+  "unit": "U1b",
+  "subject": {
+    "commit": "eb71191c083589ce1f838bcb303e9920ee316836",
+    "parent": "38590578bf82de39eb37d5477371e0112d43e2bc",
+    "tree": "5289e5f384318a666df04a1781bceddf934be712",
+    "patchDigest": "e9ac21c3c19a80ddbb6857100d70e65b0e8b6382ebdfa34984413c33ea4926ed",
+    "unitDigest": "034bccce05677a6b8ae07180715064d75287872789832ce31f65035d43564606"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261029t152435-eae7cd2c7e-r2-s3",
+    "closureSha256": "af096a4e4c52930e31dcc9d594734009fe5b1bb95a7dff421d28d265227fe050"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "5289e5f384318a666df04a1781bceddf934be712",
+    "runId": "goal-read-gate-20261029t195205z-61a4a64579be8b5a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "38590578bf82de39eb37d5477371e0112d43e2bc",
+      "digest": "b851e74a4eb12d0a7492bf07e48aee988a3449747c03a2fb249fe2f01dbb0269"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/fleet_handoff_test.go",
+      "readerWord": "reviewed by unit read 20261029t152435-eae7cd2c7e-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/machine_revive_test.go",
+      "readerWord": "reviewed by unit read 20261029t152435-eae7cd2c7e-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_named_test.go",
+      "readerWord": "reviewed by unit read 20261029t152435-eae7cd2c7e-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_revise_test.go",
+      "readerWord": "reviewed by unit read 20261029t152435-eae7cd2c7e-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/revive_test.go",
+      "readerWord": "reviewed by unit read 20261029t152435-eae7cd2c7e-r2-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/tick_continuation_fixture_test.go",
+      "readerWord": "reviewed by unit read 20261029t152435-eae7cd2c7e-r2-s3"
+    }
+  ],
+  "sha256": "11ec071becaf81cf53b69b740fc99e390b2645d3a62969e15aebd477fc81046b"
+}
