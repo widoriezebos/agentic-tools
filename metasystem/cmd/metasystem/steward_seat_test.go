@@ -147,7 +147,7 @@ func TestSeatCapResetsOnApproveKeepingTheClaim(t *testing.T) {
 	records = noProgressSeats(bedGoal, first, 3)
 	decision, selection, _ := seatPlan(t, bed, records, false, seatBedNow)
 	if decision.Action != steward.ActNotify || selection != nil || !strings.Contains(decision.Reason, "3 seats ended without progress on "+bedGoal) ||
-		!strings.Contains(decision.Reason, "`metasystem goal approve "+bedGoal+"`") {
+		!strings.Contains(decision.Reason, "; person's remedy: metasystem goal approve "+bedGoal+"\n") {
 		t.Fatalf("three no-progress seats cap the goal and name goal approve: %+v %+v", decision, selection)
 	}
 	if code, result := bed.runJSON(owners, append([]string{"goal", "approve", bedGoal}, human...)...); code != 0 {

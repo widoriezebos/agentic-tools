@@ -18,6 +18,7 @@ import (
 )
 
 type openWorkDependencies struct {
+	Machine                   string
 	NewWorld                  func(string) bool
 	ReadClaimableBudgetedWork func(string, time.Time) (goal.ClaimableBudgetedWork, error)
 	// Seat is the seat ladder's wiring (g1-s77); nil keeps the ladder
