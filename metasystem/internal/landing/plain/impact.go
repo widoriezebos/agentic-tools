@@ -17,6 +17,7 @@ type ImpactPlan struct {
 	Selections  []string `json:"selections"`
 	Check       string   `json:"check,omitempty"`
 	CheckReason string   `json:"check_reason,omitempty"`
+	NotRunnable int      `json:"not_runnable,omitempty"`
 }
 
 // Text renders the plan content independently of its envelope's formatting.

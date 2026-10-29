@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"go/ast"
+	"go/build"
 	"go/parser"
 	"go/token"
 	"io"
@@ -19,6 +20,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gittree"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/gopackages"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -26,6 +28,9 @@ import (
 type Impact struct {
 	Paths    []string
 	Packages []testpolicy.Group
+	// NotRunnable counts selected tests excluded from named groups by the Go build context.
+	NotRunnable  int
+	GOOS, GOARCH string
 }
 
 // TestPackagePaths names each test-bearing package relative to its module.
@@ -53,6 +58,10 @@ func TestPackagePaths(moduleRoot string, buildTags []string) ([]string, error) {
 // UnitImpact selects changed packages and their readers against the unit's base.
 // Whole internal dependents are included when proving a combined batch.
 func UnitImpact(moduleRoot, base string, wholeDependents bool) (impact Impact, err error) {
+	return unitImpact(moduleRoot, base, wholeDependents, os.Environ())
+}
+
+func unitImpact(moduleRoot, base string, wholeDependents bool, environment []string) (impact Impact, err error) {
 	workspace := gittree.Workspace{Dir: moduleRoot}
 	commit, err := workspace.ResolveCommit(base)
 	if err != nil {
@@ -63,6 +72,22 @@ func UnitImpact(moduleRoot, base string, wholeDependents bool) (impact Impact, e
 		return impact, err
 	}
 	base, impact.Paths = selection.base, selection.paths
+	var context *build.Context
+	if !wholeDependents {
+		command := exec.Command("go", "env", "-json", "GOOS", "GOARCH", "CGO_ENABLED", "GOFLAGS", "GOEXPERIMENT")
+		command.Dir, command.Env = moduleRoot, environment
+		settings := map[string]string{}
+		if output, err := command.Output(); err == nil && json.Unmarshal(output, &settings) == nil {
+			var entries []string
+			for name, value := range settings {
+				entries = append(entries, name+"="+value)
+			}
+			context, _ = gopackages.EffectiveContext(nil, entries)
+		}
+		if context != nil {
+			impact.GOOS, impact.GOARCH = context.GOOS, context.GOARCH
+		}
+	}
 	files, imports, module := selection.files, selection.imports, selection.ModulePath
 	if err := impactPackageImports(moduleRoot, module, imports); err != nil {
 		return impact, err
@@ -112,6 +137,7 @@ func UnitImpact(moduleRoot, base string, wholeDependents bool) (impact Impact, e
 		}
 		names := map[string]bool{}
 		wholeFile := false
+		notRunnable := 0
 		for path := range files {
 			if strings.TrimPrefix(pkg, "./") != filepath.ToSlash(filepath.Dir(path)) || !strings.HasSuffix(path, "_test.go") {
 				continue
@@ -120,11 +146,20 @@ func UnitImpact(moduleRoot, base string, wholeDependents bool) (impact Impact, e
 			if err != nil {
 				return impact, err
 			}
+			if context != nil {
+				if mayBuild, err := gopackages.FileMayBuild(context, filepath.Join(moduleRoot, path)); err == nil && !mayBuild {
+					notRunnable += len(selected)
+					continue
+				}
+			}
 			maps.Copy(names, selected)
 			wholeFile = wholeFile || whole
 		}
 		tests := slices.Sorted(maps.Keys(names))
 		whole := full || wholeFile || wholeDependents && strings.HasPrefix(pkg, "./internal/") && slices.Contains(dependents, pkg) || changed[pkg] && (strings.HasPrefix(pkg, "./internal/") || len(tests) == 0)
+		if !whole {
+			impact.NotRunnable += notRunnable
+		}
 		if !whole && len(tests) == 0 {
 			continue
 		}
