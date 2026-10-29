@@ -146,6 +146,13 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 	if err != nil {
 		return ReviveOutcome{}, err
 	}
+	if changed, err := settleEndedContinuation(repoRoot, &ev); err != nil {
+		return ReviveOutcome{}, err
+	} else if changed {
+		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+			return ReviveOutcome{}, err
+		}
+	}
 	abnormal := it.Reason != seatHandoffReason && it.Reason != "seatIdle"
 	if abnormal && ev.AbnormalCount > 0 && ev.AbnormalCount <= len(ev.Abnormal) && ev.Abnormal[ev.AbnormalCount-1].Pending {
 		return stopAbnormalRevival(repoRoot, *it, abnormalRemedy(repoRoot, "the previous automatic restart has an unknown launch outcome"))
@@ -226,7 +233,7 @@ func completeRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wor
 			return ReviveOutcome{}, err
 		}
 	}
-	ev.CurrentSeat, ev.CurrentContinuation = "", it.Nonce
+	ev.CurrentSeat, ev.CurrentContinuation, ev.SettledContinuation = "", it.Nonce, ""
 	if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
 		return ReviveOutcome{}, err
 	}
@@ -447,7 +454,11 @@ type AbnormalRestart struct {
 }
 
 func abnormalRemedy(root, reason string) string {
-	return reason + fmt.Sprintf("; person's remedy: metasystem machine revive %s", root)
+	seat := root
+	if machine, err := goal.ResolveMachine(root); err == nil {
+		seat = machine
+	}
+	return reason + fmt.Sprintf("; person's remedy: metasystem machine revive %s", seat)
 }
 
 // abnormalRestartState reads a seat launch that holds only a start of its own
@@ -474,6 +485,9 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 		return "", "", fmt.Errorf("current seat launch %s has no retained record", ev.CurrentSeat)
 	}
 	nonce := ev.CurrentContinuation
+	if nonce == "" {
+		nonce = ev.SettledContinuation
+	}
 	if nonce == "" && ev.CurrentSeat == "" && last != nil {
 		nonce = last.Nonce
 	}
@@ -521,11 +535,11 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 		if err != nil {
 			return "", "", err
 		}
-		if !intent.LaunchStamped {
-			return class, abnormalRemedy(root, "the previous automatic restart has an unknown launch outcome"), nil
-		}
 		data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", intent.JobId+".json"))
 		if err != nil {
+			if errors.Is(err, os.ErrNotExist) && !intent.LaunchStamped {
+				return class, abnormalRemedy(root, "the previous automatic restart has an unknown launch outcome"), nil
+			}
 			return "", "", err
 		}
 		var record struct {
@@ -534,6 +548,9 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 		}
 		if err := json.Unmarshal(data, &record); err != nil {
 			return "", "", err
+		}
+		if !intent.LaunchStamped && record.EndedAt == "" {
+			return class, abnormalRemedy(root, "the previous automatic restart has an unknown launch outcome"), nil
 		}
 		if record.Status == "" || record.EndedAt == "" {
 			return class, abnormalRemedy(root, "the previous automatic restart outcome is unknown"), nil

@@ -1828,6 +1828,9 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 		if err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
 		}
+		if current.State == "cancelled" {
+			return inv.render(inv.cancelledWorkResult(current.Goal))
+		}
 		if err := inv.recordUnitStopOverride(current.Goal, "work-revise", reason, impact, person); err != nil {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the revision could not be admitted", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "retries this admission without changing its inputs"})
 		}
