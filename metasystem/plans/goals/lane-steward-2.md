@@ -1,6 +1,6 @@
 # lane-steward-2
 
-- State: parked
+- State: queued
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="a change on the wait verb every seat steward uses and on the lane queue's record; a wrong return ends a wait early or never, caught by the unit's tests and the lane proof before main"
 - Tier: 2
 - Intent: The wait ends on the lane's word (lane-steward design D9, split out of lane-steward U6a2 on 2026-10-26): `work wait G --for landing` also returns when, after the wait's registration boundary, the lane records for G a return, a stop or a question, with the state word, so a seat steward's wait never sleeps through a stop. Split from lane-steward because D9 changes internal/run and the impact selection then picks Linux-only test files that do not exist on this Mac, making the frozen check red by construction (goadapter/impact.go:115, :237) until the-impact-check-selects-only-tests-this-host-can-run lands.
@@ -14,11 +14,10 @@ Open read items (fix unit 20261026t155532-b7ec017dff-r3-s3): 6
 - ReadItem: id=20261026t155532-b7ec017dff-r3-s3-5 read=20261026t155532-b7ec017dff-r3-s3 state=open addedAt=2026-10-27T14:36:51Z changedAt=- material=false closingReference="" text="F5 (U6c r3-s3, not material): the missing-store hold repeats its words ('the launch store cannot be read: the launch store <root> cannot be read: ...'); proof_admission.go:89 prefixes, hostcapacity.go:39/:43 wrap again. Fix: use readErr.Error() alone. (moved from lane-steward)"
 - ReadItem: id=20261026t155532-b7ec017dff-r3-s3-6 read=20261026t155532-b7ec017dff-r3-s3 state=open addedAt=2026-10-27T14:36:58Z changedAt=- material=false closingReference="" text="F6 (U6c r3-s3, not material, brief-specified): the keeper hold and steward bound last the full 30 minutes even when the host goes quiet earlier, and drain.go:261 runs the hold before ReadDrain, so an idle-timer proof drain would suppress is first recorded as held. For a later amendment. (moved from lane-steward)"
 - OpenedAt: 2026-10-26T10:06:51Z
-- Revision: 7
+- Revision: 8
 - BlockedBy: the-impact-check-selects-only-tests-this-host-can-run
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Parked: by=human:Wido at=2026-10-26T10:06:51Z blocker=the-impact-check-selects-only-tests-this-host-can-run because=blocked by the-impact-check-selects-only-tests-this-host-can-run; returns when it is done
 
 History:
 - 2026-10-26T10:06:51Z DM1YWYQNCHCGXX8CZHNQAMGVDQ-m1e-acb921fd open actor=human:Wido targets=lane-steward-2,the-impact-check-selects-only-tests-this-host-can-run
@@ -28,4 +27,5 @@ History:
 - 2026-10-27T14:36:44Z AXDCVYKKW3PS6FAGCAX0JBEFJQ-ui-9ee6b543 read-items-close actor=human:Wido targets=lane-steward,lane-steward-2
 - 2026-10-27T14:36:51Z 1052YAXRC54XFNDHAYQQ9MBZK4-ui-9ee6b543 read-items-close actor=human:Wido targets=lane-steward,lane-steward-2
 - 2026-10-27T14:36:58Z JCSGCDYYAE443A6FRVA7NJBM6C-ui-9ee6b543 read-items-close actor=human:Wido targets=lane-steward,lane-steward-2
-Integrity: sha256=1c2dbde9cf47dc683f41e99e2f82216fcb330045a1ec988dc00f7fd2a7ce1809
+- 2026-10-29T12:11:29Z Y4K7QABPKJXYDKQB5Y8V1YQBY3-ui-71c5cb39 unpark actor=ui+steward-seat targets=lane-steward-2 reason=blocker the-impact-check-selects-only-tests-this-host-can-run is done; the park lifts
+Integrity: sha256=d1ab8297afc4f8b4c3f44dd070aa509b86544c09f7c9ac8bbb5245075662ce66
