@@ -1179,7 +1179,7 @@ func (runner *UnitRunner) worktreeDiff(worktree, base string, excluded ...string
 	if _, err := git.Run(worktree, environment, "add", "-A", "--sparse", "--", "."); err != nil {
 		return nil, err
 	}
-	args := []string{"diff", "--cached", "--binary", base, "--", "."}
+	args := []string{"diff", "--cached", "--binary", "--full-index", base, "--", "."}
 	for _, path := range excluded {
 		args = append(args, ":(exclude,literal)"+path)
 	}

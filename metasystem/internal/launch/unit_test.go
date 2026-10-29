@@ -304,7 +304,7 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 		add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 		add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 		add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
-		add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "base", "--", ".")
+		add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "--full-index", "base", "--", ".")
 		verify := isolatedGitEnvironment(fixture.worktree, objects, false)
 		fold := func(call testgit.Call) error {
 			if call.Args[0] == "read-tree" {
@@ -340,13 +340,13 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			add(fixture.worktree, "", beforeCheck, "add", "-A", "--sparse", "--", ".")
-			add(fixture.worktree, "", beforeCheck, "diff", "--cached", "--binary", "base", "--", ".")
+			add(fixture.worktree, "", beforeCheck, "diff", "--cached", "--binary", "--full-index", "base", "--", ".")
 		case "round":
 			check := isolatedGitEnvironment(fixture.worktree, objects, false)
 			add(fixture.worktree, index+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "index")
 			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			add(fixture.worktree, "", check, "add", "-A", "--sparse", "--", ".")
-			add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "base", "--", ".")
+			add(fixture.worktree, diff, check, "diff", "--cached", "--binary", "--full-index", "base", "--", ".")
 			foldVerify := isolatedGitEnvironment(fixture.worktree, objects, false)
 			foldCheck := func(call testgit.Call) error {
 				if call.Args[0] == "read-tree" {
@@ -360,7 +360,7 @@ func newUnitFixture(t *testing.T, diff string, events ...string) unitFixture {
 			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			patchCheck := isolatedGitEnvironment(fixture.worktree, objects, false)
 			add(fixture.worktree, "", patchCheck, "add", "-A", "--sparse", "--", ".")
-			add(fixture.worktree, diff, patchCheck, "diff", "--cached", "--binary", "head", "--", ".")
+			add(fixture.worktree, diff, patchCheck, "diff", "--cached", "--binary", "--full-index", "head", "--", ".")
 			add(fixture.worktree, objects+"\n", nil, "rev-parse", "--path-format=absolute", "--git-path", "objects")
 			add(fixture.worktree, "", foldCheck, "read-tree", "base")
 			add(fixture.worktree, "previous-tree\n", foldCheck, "write-tree")
