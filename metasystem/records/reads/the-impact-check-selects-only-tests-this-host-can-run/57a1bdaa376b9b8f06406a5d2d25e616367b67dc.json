@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-impact-check-selects-only-tests-this-host-can-run",
+  "unit": "toolchain-slot",
+  "subject": {
+    "commit": "57a1bdaa376b9b8f06406a5d2d25e616367b67dc",
+    "parent": "eccf9ac2da77354c5068f1906bfc772fdf9e5076",
+    "tree": "43a37d4953410428547315d80af3752fe6b4bfb8",
+    "patchDigest": "f3721129a61c53c03bf6a309f6d62a87f7658f426044b5c404a9f5a3bb24502b",
+    "unitDigest": "3217da6ebae61437c4f5cdb8225e23c4d3f2484124c1051f823884b26c7fcfaa"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-67174e5f7d7f7b36d9f96a75",
+    "round": 1,
+    "closureSha256": "a0b6ff286473c0ecb0425dd691478efbf594230d024ed804c50cedb1eb6d131e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "43a37d4953410428547315d80af3752fe6b4bfb8",
+    "runId": "goal-read-gate-20261029t110515z-e568ef47ab703053"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "eccf9ac2da77354c5068f1906bfc772fdf9e5076",
+      "digest": "1e3ae84d4b34448f513d9153f488d7fa8689ff4f4dfc4361cf3ff521feec33d3"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/gopackages/select_test.go",
+      "readerWord": "reviewed by critic root code-critic-67174e5f7d7f7b36d9f96a75"
+    }
+  ],
+  "sha256": "04cccd46695da0eff94a63b8d5a3b51b602037dcc440e91ccb5354fbf4c4ab24"
+}
