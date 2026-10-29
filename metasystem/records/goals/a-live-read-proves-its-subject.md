@@ -1,6 +1,6 @@
 # a-live-read-proves-its-subject
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 89
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="One git flag so two existing digests of the same bytes agree; a mistake is the refusal we have today"
@@ -8,17 +8,15 @@
 - Intent: A unit run's live read proves the committed subject: the worktree diff the read digests is written with the same git flags as the commit's patch digest (--full-index), so a clean run-read is promoted at collection instead of refused and replaced by a committed critic; a tier-1 goal can complete its read (finding 436)
 - Origin: main
 - Next step: On m1e's build lane after a-settled-reply-names-its-machine and before a-ready-goal-behind-a-claim-is-a-row (one line, minutes): opus-builder adds --full-index to worktreeDiff (internal/launch/unit_run.go:1182) and a test that computes both digests from one committed unit through the production paths (worktreeDiff and read_subject_compute) and asserts they are equal, failing first; Read each round: yes; the steward submits with work review --changes --last
+- Concluded: Landed c67fc3a09 (unit 3ece42927631 plus correction 00ab9004d14b: worktreeDiff and the drop's remaining patch carry --full-index) and deployed to m1e at 17:34 (ui at its next boundary). A unit run's own clean live read is promoted again; a tier-1 goal completes its read (finding 436).
 - OpenedAt: 2026-10-27T17:41:56Z
 - FirstClaimAt: 2026-10-27T18:52:48Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=WJ44DP7ETHB83AED4KY3ADRY7R-ui-cfc9b80f minutes=1200 reviewRounds=20 goalRevision=12
 - Approved: by=human:Wido at=2026-10-29T14:11:03Z revision=13 opid=WJ44DP7ETHB83AED4KY3ADRY7R-ui-cfc9b80f authority=proven digest=02fa29364804d37d39f162a97a39c60c75fbc5944f1ba1efed287fa96bcb6c48 episode=13
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-29T14:11:03Z revision=13 accountingRevision=13 episodeAt=2026-10-29T14:08:51Z episodeRevision=12
-- Landing: at=2026-10-27T21:09:32Z opid=CCPKR24AATPSJT19HKGVFM0DB5-m1e-cc2e8fc8
-- StopCapability: generation=13 revision=13 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-10-27T17:41:56Z 87D50ZJR623QVE7YY5N17HMQ1X-m1e-55cdfc19 open actor=human:Wido targets=a-live-read-proves-its-subject
@@ -34,4 +32,5 @@ History:
 - 2026-10-29T12:11:29Z Y4K7QABPKJXYDKQB5Y8V1YQBY3-ui-71c5cb39 done actor=ui+steward-seat targets=a-continuation-job-may-write-the-stewards-state,a-delivered-goal-and-a-needed-act-reach-the-person,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-lane-act-runs-from-the-phone,a-launched-job-is-never-a-main,a-live-read-proves-its-subject,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-question-reminds-and-anyone-can-ask,a-ready-goal-behind-a-claim-is-a-row,a-records-only-move-keeps-mains-green,a-red-main-is-known-once,a-review-keeps-every-read,a-round-survives-a-restart,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,a-slow-ledger-read-is-a-wait,a-spent-box-asks-before-it-blocks,a-stewards-failing-duty-is-a-row,a-stewards-standing-defect-reaches-an-owner,a-stop-waits-for-the-unit-boundary-2,a-unit-check-runs-the-importers-too,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-critic-reads-in-one-form,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-engines-follow-the-deployed-engine,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-default-critic-is-opus,the-elapsed-clock-excludes-waits,the-impact-check-selects-only-tests-this-host-can-run,the-lane-deploys-the-engine-it-runs-2,the-lane-returns-its-own-red,the-lane-says-what-it-does,the-ledger-and-the-push-keep-their-own-refs,the-ui-bundle-builds-again,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order from=1:90 to=1:89
 - 2026-10-29T14:08:51Z GFYW1MAQQ43GYGQJWQRDM9T2TQ-ui-cfc9b80f resume actor=human:Wido targets=a-live-read-proves-its-subject reason=cleared stop fence stop-a-live-read-proves-its-subject-r6-f1: ELAPSED_LIMIT
 - 2026-10-29T14:11:03Z WJ44DP7ETHB83AED4KY3ADRY7R-ui-cfc9b80f set-budget actor=human:Wido targets=a-live-read-proves-its-subject displaced=m1e+main-1792389436-6018-51cc28@2026-10-29T14:08:51Z
-Integrity: sha256=d9f042917944b149dbe164f4e202c6b22015bc53b167dbd80c88021f5a3ddb54
+- 2026-10-29T16:34:42Z J8B9DDS8P8JHH9D737T80P3NK9-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=a-live-read-proves-its-subject,the-default-critic-is-opus
+Integrity: sha256=1c2fb186dae5da6cb358ab888468fec2a4431a965e43a13f9c5ed245dc82c96f
