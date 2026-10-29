@@ -88,6 +88,7 @@ var healthRoleOrder = []HealthRole{
 	RoleClaimedGoalBudget,
 	RoleStopCapabilityEpoch,
 	RoleClaimedGoalDelivery,
+	RoleClaimQuota,
 	RoleTrunkRed,
 	RoleSpendFence,
 	RoleGovernedObligations,
@@ -137,6 +138,7 @@ type RemedyFact struct {
 	Job      string      `json:"job,omitempty"`
 	Incident string      `json:"incident,omitempty"`
 	Command  string      `json:"command,omitempty"`
+	Ready    string      `json:"ready,omitempty"`
 }
 
 // RemedyCause names one actionable cause a health role reports.
@@ -160,6 +162,7 @@ const (
 	CauseEpochMismatch         RemedyCause = "epoch-mismatch"
 	CauseForeignLineage        RemedyCause = "foreign-lineage"
 	CauseStopCapabilityMissing RemedyCause = "stop-capability-missing"
+	CauseClaimQuota            RemedyCause = "claim-quota"
 )
 
 // remedyCauseNeedsAPerson names who can clear each declared health cause.
@@ -181,6 +184,7 @@ var remedyCauseNeedsAPerson = map[RemedyCause]bool{
 	CauseEpochMismatch:         false,
 	CauseForeignLineage:        true,
 	CauseStopCapabilityMissing: true,
+	CauseClaimQuota:            false,
 }
 
 const (
@@ -607,6 +611,7 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 		timed(RoleClaimedGoalBudget, func() RoleVerdict { return checkClaimedGoalBudgetsWith(repoRoot, now, ledger) }),
 		timed(RoleStopCapabilityEpoch, func() RoleVerdict { return checkStopCapabilityEpochWith(repoRoot, now, ledger) }),
 		timed(RoleClaimedGoalDelivery, func() RoleVerdict { return checkClaimedGoalDeliveryWith(repoRoot, now, ledger) }),
+		timed(RoleClaimQuota, func() RoleVerdict { return checkClaimQuotaWith(repoRoot, runRoot, ledger) }),
 		timed(RoleTrunkRed, func() RoleVerdict { return checkTrunkRedWith(repoRoot, now, ledger) }),
 		spendRole,
 		timed(RoleGovernedObligations, func() RoleVerdict { return checkGovernedObligations(repoRoot) }),

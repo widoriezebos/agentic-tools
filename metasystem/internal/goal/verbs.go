@@ -1446,35 +1446,49 @@ func Claim(r VerbRequest, id string, budgets ...Budget) (PublishResult, error) {
 	return publishedCard(Publish(r.Endpoint, claimRequest(r, id, nil)))(func() { writeOwnCard(r, id, board.StageClaimedIdle) })
 }
 
-func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id, tip string, recordWaiting ...bool) ([]Change, error) {
-	target := t.Live[id]
+// ClaimQuotaBlock is what the one-claim rule says about one target claim:
+// the claim in the way, its outcome, the one command that outcome needs and
+// the refusal text, and the hand-ins the lane reports waiting that the
+// ledger has not marked yet.
+type ClaimQuotaBlock struct {
+	Held, Outcome, Command, Text string
+	Waiting                      []*GoalFile
+}
+
+// ClaimQuotaBlocker answers the claim quota for target on machine without
+// recording anything. A lane read error reads as no lane answer.
+func ClaimQuotaBlocker(t *TreeGoals, target, machine, tip string, laneState func(goalID, main string) (string, error)) ClaimQuotaBlock {
+	block := func(held, outcome, command, sentence, tail string) ClaimQuotaBlock {
+		return ClaimQuotaBlock{Held: held, Outcome: outcome, Command: command, Text: sentence + "\nrun: " + command + tail}
+	}
+	targetFile := t.Live[target]
 	var held, slots []string
 	var waiting []*GoalFile
 	for _, heldID := range sortedGoalIds(t.Live) {
 		file := t.Live[heldID]
-		if heldID == id || file.State != StateClaimed || file.Claimed == nil || file.Claimed.Machine != r.Actor.Machine ||
+		if heldID == target || file.State != StateClaimed || file.Claimed == nil || file.Claimed.Machine != machine ||
 			file.Claimed.HandedOver.present() {
 			continue
 		}
 		if file.Landing != nil {
 			slots = append(slots, heldID)
 		}
-		if file.IsFencedClaim() || target.Arc != "" && file.Arc == target.Arc {
+		if file.IsFencedClaim() || targetFile.Arc != "" && file.Arc == targetFile.Arc {
 			continue
 		}
 		state := ""
-		if r.ClaimLaneState != nil {
-			var err error
-			state, err = r.ClaimLaneState(heldID, tip)
-			if err != nil {
-				state = ""
+		if laneState != nil {
+			if read, err := laneState(heldID, tip); err == nil {
+				state = read
 			}
 		}
 		switch state {
 		case "returned":
-			return nil, coded(ClaimQuotaCode, fmt.Errorf("goal %s was returned by the landing lane; it still counts as a held claim\nrun: metasystem work land %s  (shows the return)", heldID, heldID))
+			return block(heldID, "returned", "metasystem work land "+heldID,
+				"goal "+heldID+" was returned by the landing lane; it still counts as a held claim", "  (shows the return)")
 		case "landed":
-			return nil, coded(ClaimQuotaCode, fmt.Errorf("goal %s landed but is still claimed; conclude it before claiming another\nrun: metasystem goal done %s --reason TEXT  (concludes the landed goal)", heldID, heldID))
+			return block(heldID, "landed", "metasystem goal done "+heldID+" --reason TEXT",
+				"goal "+heldID+" landed but is still claimed; conclude it before claiming another", "  (concludes the landed goal)")
 		case "waiting":
 			if file.Landing == nil {
 				slots = append(slots, heldID)
@@ -1488,14 +1502,23 @@ func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id, tip string, recordWaitin
 		held = append(held, heldID)
 	}
 	if len(slots) > 1 {
-		return nil, coded(ClaimQuotaCode, fmt.Errorf("machine %s has %s waiting to land: one landing slot per machine\nrun: metasystem work land %s  (shows its landing state)", r.Actor.Machine, strings.Join(slots, ", "), slots[0]))
+		return block(slots[0], "slot", "metasystem work land "+slots[0],
+			fmt.Sprintf("machine %s has %s waiting to land: one landing slot per machine", machine, strings.Join(slots, ", ")), "  (shows its landing state)")
 	}
 	if len(held) > 0 {
-		return nil, coded(ClaimQuotaCode, fmt.Errorf("machine %s already claims %s, and a machine holds one claim at a time\nrun: metasystem goal release %s, then metasystem goal claim %s",
-			r.Actor.Machine, strings.Join(held, ", "), held[0], id))
+		return block(held[0], "held", "metasystem goal release "+held[0]+" --reason TEXT",
+			fmt.Sprintf("machine %s already claims %s, and a machine holds one claim at a time", machine, strings.Join(held, ", ")), ", then metasystem goal claim "+target)
+	}
+	return ClaimQuotaBlock{Waiting: waiting}
+}
+
+func claimQuotaRefusal(t *TreeGoals, r VerbRequest, id, tip string, recordWaiting ...bool) ([]Change, error) {
+	block := ClaimQuotaBlocker(t, id, r.Actor.Machine, tip, r.ClaimLaneState)
+	if block.Held != "" {
+		return nil, coded(ClaimQuotaCode, errors.New(block.Text))
 	}
 	var changes []Change
-	for _, file := range waiting {
+	for _, file := range block.Waiting {
 		if len(recordWaiting) == 0 || recordWaiting[0] {
 			changes = append(changes, recordLandReady(file, r))
 		}

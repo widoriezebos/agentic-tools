@@ -117,7 +117,7 @@ func TestGoalClaimLaneQuotaBoundAndStates(t *testing.T) {
 			bed, owners, lane := claimLaneBed(t)
 			delivery := owners.delivery
 			wantOutcome := intentRefused
-			wantGoal, wantRemedy := bedGoal, []string{"metasystem", "goal", "release", bedGoal + ",", "then", "metasystem", "goal", "claim", "second-goal"}
+			wantGoal, wantRemedy := bedGoal, []string{"metasystem", "goal", "release", bedGoal, "--reason", "TEXT,", "then", "metasystem", "goal", "claim", "second-goal"}
 			switch scenario {
 			case "two waiting", "existing slot":
 				queueClaimGoal(t, lane.install, bedGoal)

@@ -582,6 +582,11 @@ type backlogJobRecord struct {
 	CustodyProcesses []activityProcessRef `json:"custodyProcesses"`
 }
 
+// NonTerminalGoalJobs names the job records of one goal that have not ended.
+func NonTerminalGoalJobs(root, goalID string) ([]string, error) {
+	return nonTerminalGoalJobs(root, map[string]bool{goalID: true})
+}
+
 func nonTerminalGoalJobs(root string, goals map[string]bool) ([]string, error) {
 	paths, err := filepath.Glob(filepath.Join(root, "artifacts", "agents", "jobs", "*.json"))
 	if err != nil {

@@ -99,6 +99,9 @@ type TickConfig struct {
 	Seat SeatLauncher
 	// Units reads the same unit stages as the public status verb.
 	Units func(root, goalID string) ([]UnitStage, error)
+	// ClaimLaneState reads a held goal's hand-in on the landing lane, as the
+	// claim does; nil evaluates no claim quota.
+	ClaimLaneState func(root, goalID, main string) (string, error)
 	// RetireCards moves the cards of finished goals off the host board; nil
 	// retires nothing. It does not run under the helm.
 	RetireCards func(repoRoot string, now time.Time) error
@@ -471,7 +474,7 @@ func defaultTickContinuationDependencies(cfg TickConfig) tickContinuationDepende
 		resolveMachine: goal.ResolveMachine,
 		resolveLayout:  stateroot.ResolveLayout,
 		health: tickHealthDependencies{
-			evaluate: evaluateHealthRoles,
+			evaluate: tickHealthEvaluator(cfg),
 			now:      tickHealthNow,
 			deliver:  deliver,
 			lane:     hostLaneSilence,
@@ -673,7 +676,7 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 // the observation's dead or persistent-unknown boundary requires one.
 func completeTickHealthWithConfig(repoRoot string, result *TickResult, generation int, process identity.Ref, cfg TickConfig) error {
 	return completeTickHealthWithDependencies(repoRoot, result, generation, process, cfg.Now, tickHealthDependencies{
-		evaluate:     evaluateHealthRoles,
+		evaluate:     tickHealthEvaluator(cfg),
 		now:          tickHealthNow,
 		deliver:      deliver,
 		lane:         hostLaneSilence,
@@ -683,6 +686,16 @@ func completeTickHealthWithConfig(repoRoot string, result *TickResult, generatio
 			return examineLedgerMoveWithRepositoryAndWriter(root, now, defaultLedgerAttentionRepository(), atomicfile.WriteText)
 		},
 	})
+}
+
+// tickHealthEvaluator is the tick's health evaluation, on both of its paths:
+// the roles read the claim quota through the configured lane reader.
+func tickHealthEvaluator(cfg TickConfig) healthRoleEvaluator {
+	return func(repo, install string, at time.Time, probe identity.Prober, hook bool) ([]RoleVerdict, SpendObservation) {
+		ledger := newHealthLedger(repo, at)
+		ledger.laneState = cfg.ClaimLaneState
+		return evaluateHealthRolesWithLedger(repo, repo, install, at, probe, hook, measureSpend, ledger)
+	}
 }
 
 type tickHealthDependencies struct {
