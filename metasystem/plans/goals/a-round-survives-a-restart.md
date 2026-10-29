@@ -12,9 +12,11 @@ Open read items (fix unit U1-20261029t122624-8066d03df2): 3
 - ReadItem: id=U1-20261029t122624-8066d03df2-1 read=U1-20261029t122624-8066d03df2 state=open addedAt=2026-10-29T15:10:19Z changedAt=- material=false closingReference="" text="r1-s3:4: a unit whose frozen proof is /usr/bin/true exercises its change only through the builder logs and the read; freeze a focused go test check for such a unit."
 - ReadItem: id=U1-20261029t122624-8066d03df2-2 read=U1-20261029t122624-8066d03df2 state=open addedAt=2026-10-29T15:10:19Z changedAt=- material=false closingReference="" text="r1-s3:6: TestATakeoverLeavesAUnitLaunchAlone does not assert the sweep-completed sweptCount per row (a terminal launch counted as swept, a running one not)."
 - ReadItem: id=U1-20261029t122624-8066d03df2-3 read=U1-20261029t122624-8066d03df2 state=open addedAt=2026-10-29T15:10:19Z changedAt=- material=false closingReference="" text="r2-s3:1: no test pins that the public HookDelegate hands installationRoot, not stateRoot, to the unit-launch scan; it needs the launch store passed in, because HookDelegate uses launch.Store{}. The run-state audit guards it meanwhile."
+Open read items (fix unit U1b-20261029t152435-eae7cd2c7e): 1
+- ReadItem: id=U1b-20261029t152435-eae7cd2c7e-1 read=U1b-20261029t152435-eae7cd2c7e state=open addedAt=2026-10-29T19:52:48Z changedAt=- material=false closingReference="" text="r1-s3:3: the seat start's abnormal gate (seat_start.go:870) also opens for a retained CurrentContinuation or SettledContinuation with no seat record, and no test row pins that widened gate; add one (a settled continuation, no seat record: the next start reserves its class once)."
 - OpenedAt: 2026-10-24T04:45:40Z
 - FirstClaimAt: 2026-10-29T12:25:35Z
-- Revision: 34
+- Revision: 35
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=3Q37TSC8CQSZMTSMJ9WBC5M32D-m1e-294bbb33 minutes=2400 reviewRounds=20 goalRevision=7
@@ -58,4 +60,5 @@ History:
 - 2026-10-29T15:01:36Z 4130GCD7GCD2EZX346D87FHAGX-ui-71c5cb39 slice-start actor=ui+steward-seat targets=a-round-survives-a-restart
 - 2026-10-29T15:10:19Z 7FYFDS5HKG9C9AGZF8AAWHAPGP-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=a-round-survives-a-restart
 - 2026-10-29T15:13:12Z SQSZ46TWX56JX12SPD4SJ4ESXQ-ui-71c5cb39 edit actor=ui+steward-seat targets=a-round-survives-a-restart
-Integrity: sha256=56981c20968a08f0eaef123465c8f6c1e17db98b03eb7ccf44294edf5d90ff1a
+- 2026-10-29T19:52:48Z VSGEYTQP9X01PTCX5A0SEMD9GA-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=a-round-survives-a-restart
+Integrity: sha256=59f0aa03ec74e5401245003d5558fe8f5704e7508ff3426d783227c5c2440232
