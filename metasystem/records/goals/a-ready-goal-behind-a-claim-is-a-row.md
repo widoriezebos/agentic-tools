@@ -1,6 +1,6 @@
 # a-ready-goal-behind-a-claim-is-a-row
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 86
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="A health row and one agent ask computed from a query the claim path already runs; nothing changes a claim, a ledger or an authority; a wrong row is one wrong line, seen at the next observation"
@@ -8,17 +8,15 @@
 - Intent: A ready priority-1 goal that the one-claim rule holds back is a health row within one tick, on a helm seat too, naming the holding claim, its outcome's own command (land, done or release) and the claim command, alerting at once and sending one agent ask to the holding claim's holder; the quota query is exported from the claim path so the claim refusal, the row and the ask say the same (gap 2 of design plans/designs/the-machinery-says-when-it-stands-still.md (accepted, revision 4), D2, G10)
 - Origin: main
 - Next step: First on m1e's build lane after a-settled-reply-names-its-machine: opus-designer cuts the brief from the page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 105 production lines: goal/verbs.go (ClaimQuotaBlocker exported from claimQuotaRefusal, with outcome, command and landing markers), steward/health.go (the claim-quota role, the production lane-state reader), remedy.go, the deduplicated ask writer, steward/tick.go (the helm pass for this check); the sibling page's G1 and G7 build on this tip
+- Concluded: Landed in aa400dfca50125d4f8aacfe3bc6df398897338d6 (merge 460e25644 of d65c868385bf) at 21:39; deployed to both seats 23:35.
 - OpenedAt: 2026-10-27T17:38:50Z
 - FirstClaimAt: 2026-10-27T21:09:32Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=0M1GYPE4VQ3C2NHSYHMZPAGH7J-ui-cfc9b80f minutes=2400 reviewRounds=20 goalRevision=11
 - Approved: by=human:Wido at=2026-10-29T14:14:16Z revision=12 opid=0M1GYPE4VQ3C2NHSYHMZPAGH7J-ui-cfc9b80f authority=proven digest=5590cc605abb25c0f92c80342f91e88bb953c453872561a60d26d91b569ba8a4 episode=12
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-29T14:14:16Z revision=12 accountingRevision=12 episodeAt=2026-10-29T14:12:15Z episodeRevision=11
-- Landing: at=2026-10-29T17:07:06Z opid=0PYV3FJAWZXHPZ49KWDH2WRJSQ-m1e-cc2e8fc8
-- StopCapability: generation=12 revision=12 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-10-27T17:38:50Z VP2TFGHHV89FBF3WB16NGP61AV-m1e-55cdfc19 open actor=human:Wido targets=a-ready-goal-behind-a-claim-is-a-row
@@ -34,4 +32,5 @@ History:
 - 2026-10-29T14:12:15Z DT8HG81BTEBP7S8YFMMSDR2H2V-ui-cfc9b80f resume actor=human:Wido targets=a-ready-goal-behind-a-claim-is-a-row reason=cleared stop fence stop-a-ready-goal-behind-a-claim-is-a-row-r8-f1: ELAPSED_LIMIT
 - 2026-10-29T14:14:16Z 0M1GYPE4VQ3C2NHSYHMZPAGH7J-ui-cfc9b80f set-budget actor=human:Wido targets=a-ready-goal-behind-a-claim-is-a-row displaced=m1e+main-1792389436-6018-51cc28@2026-10-29T14:12:15Z
 - 2026-10-29T17:07:06Z 0PYV3FJAWZXHPZ49KWDH2WRJSQ-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=a-ready-goal-behind-a-claim-is-a-row
-Integrity: sha256=6a724577ffecaa1aedb1d72de2ebe825077e9e72d0c82a816d04a569ea0ccaed
+- 2026-10-29T22:35:20Z HQ0EWRCCJB33921A6TCG4T0V9D-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=a-ready-goal-behind-a-claim-is-a-row,a-records-only-move-keeps-mains-green,a-stewards-failing-duty-is-a-row,the-default-critic-is-opus
+Integrity: sha256=4cddf0f4abc7397914ed3ef487d94712c616b74c520c25cc85e36266e3dd69f9

@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 87
+- Sequence: 86
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="Observation only: a file of duty outcomes, health roles and the existing escalation; no act, no authority; a wrong role shows as a row and clears on the next success"
 - Tier: 1
 - Intent: A steward duty that fails writes its outcome to duties.json and is a health role of its own (steward-duty:<name>), counted per duty, notified only when standing at five consecutive same-cause ticks through the existing standing-defect pattern; the helm's report-only pass observes the duty roles and files only what it observed (gap 1 of design plans/designs/the-machinery-says-when-it-stands-still.md (accepted, revision 4), D1, G9)
@@ -10,7 +10,7 @@
 - Next step: Second on m1e's build lane, after a-ready-goal-behind-a-claim-is-a-row (shares health.go and tick.go; cut on its tip): opus-designer cuts the brief from the page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 110 production lines: steward/runner.go (the writer at the nine duty sites), signal_channel.go, a duties_role.go, health.go (order, notification eligibility, the observed-set bound of the filer), tick.go (the helm path)
 - OpenedAt: 2026-10-27T17:39:40Z
 - FirstClaimAt: 2026-10-29T17:07:06Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -30,4 +30,5 @@ History:
 - 2026-10-29T17:07:06Z 0PYV3FJAWZXHPZ49KWDH2WRJSQ-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-stewards-failing-duty-is-a-row reason=areas unknown for goal a-stewards-failing-duty-is-a-row in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-machinery-says-when-it-stands-still.md; areas unknown for goal a-ready-goal-behind-a-claim-is-a-row; areas unknown for goal a-round-survives-a-restart; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal a-ready-goal-behind-a-claim-is-a-row
 - 2026-10-29T17:07:49Z 64ZGQF11MPGSPM5HH7S9RFWE7J-m1e-57b1aa12 set-budget actor=human:Wido targets=a-stewards-failing-duty-is-a-row displaced=m1e+main-1792389436-6018-51cc28@2026-10-29T17:07:06Z
 - 2026-10-29T17:12:12Z X9KVKWQFFTQ27D934X1RFSE6KG-m1e-cc2e8fc8 release actor=m1e+main-1792389436-6018-51cc28 targets=a-stewards-failing-duty-is-a-row reason=set aside for minutes so the-default-critic-is-opus can be submitted and handed in (one claim per machine); U1a keeps building uncommitted in its workspace; reclaimed right after the hand-in
-Integrity: sha256=2b5d23900a60f0f41b0165cd054ddaa154678f164b5fbe8b6b4c8699ae9242d1
+- 2026-10-29T22:35:20Z HQ0EWRCCJB33921A6TCG4T0V9D-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=a-ready-goal-behind-a-claim-is-a-row,a-records-only-move-keeps-mains-green,a-stewards-failing-duty-is-a-row,the-default-critic-is-opus reason=priority-order from=1:87 to=1:86
+Integrity: sha256=11e1332a70ee6677e43a806e677bda48b2fce9800b05b798e1db14ff5717802e
