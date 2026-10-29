@@ -14,9 +14,16 @@ Open read items (fix unit U1-20261029t122624-8066d03df2): 3
 - ReadItem: id=U1-20261029t122624-8066d03df2-3 read=U1-20261029t122624-8066d03df2 state=open addedAt=2026-10-29T15:10:19Z changedAt=- material=false closingReference="" text="r2-s3:1: no test pins that the public HookDelegate hands installationRoot, not stateRoot, to the unit-launch scan; it needs the launch store passed in, because HookDelegate uses launch.Store{}. The run-state audit guards it meanwhile."
 Open read items (fix unit U1b-20261029t152435-eae7cd2c7e): 1
 - ReadItem: id=U1b-20261029t152435-eae7cd2c7e-1 read=U1b-20261029t152435-eae7cd2c7e state=open addedAt=2026-10-29T19:52:48Z changedAt=- material=false closingReference="" text="r1-s3:3: the seat start's abnormal gate (seat_start.go:870) also opens for a retained CurrentContinuation or SettledContinuation with no seat record, and no test row pins that widened gate; add one (a settled continuation, no seat record: the next start reserves its class once)."
+Open read items (fix unit U2-20261029t203802-2fa5154f06): 6
+- ReadItem: id=U2-20261029t203802-2fa5154f06-1 read=U2-20261029t203802-2fa5154f06 state=open addedAt=2026-10-29T22:28:07Z changedAt=- material=false closingReference="" text="r1-s3:1: a channel Revive it is still refused by the seat launcher's terminal-only person checks when launch.seat.runtime is off (cmd/metasystem/steward_seat.go:79 seatAllowed, :143); D7's predicate covers only the two steward sites. Safe (the refusal is posted, the terminal still works, and seat holds arise only while seats run); decide whether a phone tap may override seats-off or whether Revive it is not offered while the seat runtime is off."
+- ReadItem: id=U2-20261029t203802-2fa5154f06-2 read=U2-20261029t203802-2fa5154f06 state=open addedAt=2026-10-29T22:28:07Z changedAt=- material=false closingReference="" text="r1-s3:2: T8's queue-order assertion (person_wait_test.go:305) cannot fail: PendingNotifications lists in os.ReadDir name order and person-question.json sorts first; assert the order by modification time or a QueueNotification spy. Production order (tick.go:667-673 before :680-688) is right."
+- ReadItem: id=U2-20261029t203802-2fa5154f06-3 read=U2-20261029t203802-2fa5154f06 state=open addedAt=2026-10-29T22:28:07Z changedAt=- material=false closingReference="" text="r1-s3:3: a channel reapproval of a legacy claim whose approval has EpisodeRevision 0 can still move the budget episode (goal/approval.go:689-693 copies 0; file.go:232-247 then falls back to the new Approved.Revision); store goal.BudgetEpisodeRevision(f) computed before bindApproval."
+- ReadItem: id=U2-20261029t203802-2fa5154f06-4 read=U2-20261029t203802-2fa5154f06 state=open addedAt=2026-10-29T22:28:07Z changedAt=- material=false closingReference="" text="r1-s3:4: a standing hold whose cause or held-goal resolution changes asks a second question and leaves the first open until the hold clears (person_wait.go:59 keys on the cause; the non-cap retire reads abnormalRestartState machine-wide); decide whether a changed cause supersedes the earlier question."
+- ReadItem: id=U2-20261029t203802-2fa5154f06-5 read=U2-20261029t203802-2fa5154f06 state=open addedAt=2026-10-29T22:28:07Z changedAt=- material=false closingReference="" text="r1-s3:5: goal approve --answer with a hand-typed --lineage forwards two --lineage flags (intent_goals.go:784-786); guard the append with !inv.input.has(\"lineage\") as budgetOwner does (:579-581). The executor never types --lineage."
+- ReadItem: id=U2-20261029t203802-2fa5154f06-6 read=U2-20261029t203802-2fa5154f06 state=open addedAt=2026-10-29T22:28:07Z changedAt=- material=false closingReference="" text="r1-s3:6: machine revive's help (intent_process.go:264) and ReviveSeat's refusal (seat_start.go:558) still name only the enrolled terminal, though a recorded channel answer is accepted too."
 - OpenedAt: 2026-10-24T04:45:40Z
 - FirstClaimAt: 2026-10-29T12:25:35Z
-- Revision: 36
+- Revision: 37
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=3Q37TSC8CQSZMTSMJ9WBC5M32D-m1e-294bbb33 minutes=2400 reviewRounds=20 goalRevision=7
@@ -62,4 +69,5 @@ History:
 - 2026-10-29T15:13:12Z SQSZ46TWX56JX12SPD4SJ4ESXQ-ui-71c5cb39 edit actor=ui+steward-seat targets=a-round-survives-a-restart
 - 2026-10-29T19:52:48Z VSGEYTQP9X01PTCX5A0SEMD9GA-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=a-round-survives-a-restart
 - 2026-10-29T19:53:01Z X7YCPC280JXP39E1SP5X6N7F9M-ui-71c5cb39 edit actor=ui+steward-seat targets=a-round-survives-a-restart
-Integrity: sha256=5ff0acc2d1a2bdfec30ac869b786bcbc9b4bc9785be1f28e80e65d7747f04aa6
+- 2026-10-29T22:28:07Z E4WZYTN3E8NHPZ3MY5S89S11GE-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=a-round-survives-a-restart
+Integrity: sha256=4c8639d49a2ce4a33540fb6b8c3cceee0af5b13c9d948137a5be21e399ded601
