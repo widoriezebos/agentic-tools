@@ -41,8 +41,8 @@ type TickConfig struct {
 	RecoveryRegistry string
 	// ProviderHome selects the host registration; empty uses the registry home.
 	ProviderHome string
-	// WorkStateRoot selects the host unit and launch stores; empty uses the
-	// registry's production default.
+	// WorkStateRoot selects the host unit and launch stores, and the machine
+	// disk report health reads; empty uses the registry's production default.
 	WorkStateRoot string
 	// RunnerClock supplies the resident loop's clock; nil uses the system clock.
 	RunnerClock *HandoffClock
@@ -719,7 +719,7 @@ func completeTickHealthWithConfig(repoRoot string, result *TickResult, generatio
 func tickHealthEvaluator(cfg TickConfig) healthRoleEvaluator {
 	return func(repo, install string, at time.Time, probe identity.Prober, hook bool) ([]RoleVerdict, SpendObservation) {
 		ledger := newHealthLedger(repo, at)
-		ledger.laneState = cfg.ClaimLaneState
+		ledger.laneState, ledger.stateHome = cfg.ClaimLaneState, cfg.WorkStateRoot
 		return evaluateHealthRolesWithLedger(repo, repo, install, at, probe, hook, measureSpend, ledger)
 	}
 }
@@ -792,7 +792,7 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	if _, err := updateAlertEpisodesWith(repoRoot, health, line, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
-	if err := fileStandingDefects(repoRoot, health, healthNow(), funnel, dependencies.deliver); err != nil {
+	if err := fileStandingDefects(repoRoot, health, healthRoleOrder, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("file standing health defects: %w", err)
 	}
 	if dependencies.ask != nil {

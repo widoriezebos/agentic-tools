@@ -91,6 +91,9 @@ func remedyFor(role HealthRole, fact RemedyFact) Remedy {
 	if processHealthRole(role) {
 		return Remedy{Act: []string{"metasystem", "system", "start"}, Clears: "starting the checkout restores its process roles"}
 	}
+	if isDutyRole(role) {
+		return Remedy{Plain: "nothing to do while it is not standing: the steward runs the duty again on its next tick; a person repairs what the error above names when it stands", Clears: "the duty's next run succeeds"}
+	}
 	switch role {
 	case RoleLedgerAttention:
 		return Remedy{Plain: "nothing to do: the armed steward examines the move on its next tick", Clears: "the armed steward examines the move on its next tick"}

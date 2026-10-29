@@ -13,7 +13,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
@@ -103,16 +102,19 @@ func spendNotice(crossing SpendCrossing) string {
 // the goal gets one more working day: a COMPLETE report with its box. The
 // stop itself is unchanged and nothing resumes the goal by itself; with no
 // channel configured the tick report is all. The channel duty's poll posts
-// the question in the same pass, and again after a failed post.
-func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Time) error {
+// the question in the same pass, and again after a failed post. It also says
+// whether it attempted a notice: a pass with nothing to ask attempts none.
+func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Time) (bool, error) {
 	var problems []error
+	attempted := false
 	for _, report := range reports {
 		if report.State != "COMPLETE" || report.GoalID == "" {
 			continue
 		}
 		if !loadSignalChannel(repoRoot).configured {
-			return nil
+			return false, nil
 		}
+		attempted = true
 		if report.Budget == nil {
 			problems = append(problems, fmt.Errorf("goal %s stopped with no box to ask about", report.GoalID))
 			continue
@@ -120,7 +122,7 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 		_, _, err := channel.AskOrFind(breachStopAsk(repoRoot, report, now))
 		problems = append(problems, err)
 	}
-	return errors.Join(problems...)
+	return attempted, errors.Join(problems...)
 }
 
 // breachStopAsk is the stopped goal's question: the box it used, and one
@@ -144,10 +146,11 @@ func breachStopAsk(repoRoot string, report BreachStopReport, now time.Time) chan
 }
 
 // reportBreachStopNotices is the tick's best-effort question pass: the stop
-// already happened and its report stands whatever the question does. A
-// failed ask is said on the runner's error stream.
+// already happened and its report stands whatever the question does. A pass
+// that asked is the breach-stop-notice duty's outcome; one with nothing to ask
+// leaves the last outcome standing.
 func reportBreachStopNotices(repoRoot string, reports []BreachStopReport, now time.Time) {
-	if err := noticeBreachStops(repoRoot, reports, now); err != nil {
-		fmt.Fprintf(os.Stderr, "breach-stop notice not recorded: %v\n", err)
+	if attempted, err := noticeBreachStops(repoRoot, reports, now); attempted {
+		recordDuty(repoRoot, "breach-stop-notice", err, now)
 	}
 }

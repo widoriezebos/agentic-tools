@@ -601,7 +601,7 @@ func TestTheHelmSeesTheClaimQuotaRowAndAsksOnce(t *testing.T) {
 		home := filepath.Join(t.TempDir(), ".metasystem")
 		seeded := HealthVerdict{Roles: []RoleVerdict{{Role: RoleStewardRunner, Status: HealthDead, Standing: true,
 			Reason: "the runner is gone", Remedy: "arm the steward"}}}
-		if err := fileStandingDefects(root, seeded, claimQuotaClock, noticeFunnel{clock: func() time.Time { return claimQuotaClock }},
+		if err := fileStandingDefects(root, seeded, healthRoleOrder, claimQuotaClock, noticeFunnel{clock: func() time.Time { return claimQuotaClock }},
 			func(string, string) error { return nil }); err != nil {
 			t.Fatal(err)
 		}

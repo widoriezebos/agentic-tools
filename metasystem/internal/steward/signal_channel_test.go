@@ -278,7 +278,7 @@ func TestBreachStopAskFitsALongGoalId(t *testing.T) {
 	if len(reports) != 1 || reports[0].State != "COMPLETE" {
 		t.Fatalf("fixture stop did not complete: %+v", reports)
 	}
-	if err := noticeBreachStops(fixture.root, reports, time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)); err != nil {
+	if _, err := noticeBreachStops(fixture.root, reports, time.Date(2026, 10, 2, 9, 0, 0, 0, time.UTC)); err != nil {
 		t.Fatalf("the long goal id's ask failed: %v", err)
 	}
 	asked, _ := channel.WalkOpenQuestions(fixture.root)

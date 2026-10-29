@@ -179,7 +179,7 @@ type runnerLoopDependencies struct {
 	AfterRecordPublished func()
 	// SweepDisk runs the disk sweeper's passes after the tick has returned
 	// and released arbitration (Part B 3.3); helm reports without acting.
-	SweepDisk func(top string, now time.Time, helm bool)
+	SweepDisk func(top string, now time.Time, helm bool) error
 	// Bridge makes this runner's bridge role (batch-lane design D14-r2,
 	// R25); nil runs none.
 	Bridge func(top string) bridgeStepper
@@ -198,16 +198,15 @@ type bridgeStepper interface {
 	Close()
 }
 
-// runnerSweepDisk is the production sweep: both passes under the budget,
-// failures reported on stderr and never fatal to the loop.
-func runnerSweepDisk(top string, now time.Time, helmActive bool) {
+// runnerSweepDisk is the production sweep: both passes under the budget; a
+// failure is the disk-sweep duty's and never fatal to the loop.
+func runnerSweepDisk(top string, now time.Time, helmActive bool) error {
 	mode := diskstore.ModeApply
 	if helmActive {
 		mode = diskstore.ModeReport
 	}
-	if _, err := SweepDiskStores(context.Background(), top, DiskPass{Mode: mode, Now: now, Clock: time.Now}); err != nil {
-		fmt.Fprintf(os.Stderr, "disk sweep: %v\n", err)
-	}
+	_, err := SweepDiskStores(context.Background(), top, DiskPass{Mode: mode, Now: now, Clock: time.Now})
+	return err
 }
 
 func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func() error, interval time.Duration, cfg TickConfig, deps runnerLoopDependencies) error {
@@ -320,11 +319,10 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	var started time.Time
 	var result TickResult
 	logTick := func(work, slept time.Duration) {
-		if _, logErr := fmt.Fprintf(logFile, "tick %d: health %.3fms census %.3fms other %.3fms, slept %.3f s\n", reads.tick,
+		_, logErr := fmt.Fprintf(logFile, "tick %d: health %.3fms census %.3fms other %.3fms, slept %.3f s\n", reads.tick,
 			float64(result.healthElapsed)/float64(time.Millisecond), float64(timed.elapsed)/float64(time.Millisecond),
-			float64(work-result.healthElapsed-timed.elapsed)/float64(time.Millisecond), slept.Seconds()); logErr != nil {
-			fmt.Fprintf(os.Stderr, "tick timing: %v\n", logErr)
-		}
+			float64(work-result.healthElapsed-timed.elapsed)/float64(time.Millisecond), slept.Seconds())
+		recordDuty(top, "tick-timing", logErr, deps.Now())
 	}
 	wait := func(keeper *laneKeeping) bool {
 		work := deps.Now().Sub(started)
@@ -358,7 +356,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// the helm check: disk space belongs to the whole machine, so at the
 		// helm it still reports (the 2026-09-29 amendment) and acts on nothing.
 		if deps.SweepDisk != nil {
-			deps.SweepDisk(top, deps.Now(), helm.Active(top).Active)
+			recordDuty(top, "disk-sweep", deps.SweepDisk(top, deps.Now(), helm.Active(top).Active), deps.Now())
 		}
 		// The bridge role runs every cycle, at the helm too: it reports and
 		// decides nothing (R25). Its line is printed when it changes.
@@ -369,9 +367,8 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			}
 		}
 		settleContext, cancelSettle := context.WithTimeout(context.Background(), 15*time.Second)
-		if _, settleErr := deps.SettleReplies(settleContext, top); settleErr != nil {
-			fmt.Fprintf(os.Stderr, "question replies: %v\n", settleErr)
-		}
+		_, settleErr := deps.SettleReplies(settleContext, top)
+		recordDuty(top, "question-replies", settleErr, deps.Now())
 		cancelSettle()
 		// The helm is resolved here, after the tick returned and before any
 		// post-tick act, whatever the tick's outcome: a take that lands during
@@ -385,9 +382,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 			continue
 		}
 		if cfg.CompletedBoundary != nil {
-			if boundaryErr := cfg.CompletedBoundary(top, cfg.now()); boundaryErr != nil {
-				fmt.Fprintf(os.Stderr, "unit boundary: %v\n", boundaryErr)
-			}
+			recordDuty(top, "unit-boundary", cfg.CompletedBoundary(top, cfg.now()), deps.Now())
 		}
 		if cfg.RearmAtBoundary != nil {
 			if replaced, refreshErr := cfg.RearmAtBoundary(); refreshErr != nil {
@@ -443,27 +438,24 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 				}
 			}
 		}
-		if recoveryErr := ReconcileRecoveryRequests(top, cfg, timed); recoveryErr != nil {
-			fmt.Fprintf(os.Stderr, "seat recovery requests: %v\n", recoveryErr)
-		}
+		recordDuty(top, "seat-recovery-requests", ReconcileRecoveryRequests(top, cfg, timed), deps.Now())
 		// Recovery runs before delivery. A failed recovery queues its incident
 		// above and can reach the operator in this same pass; a successful one
 		// leaves only silent history.
-		if _, deliverErr := deps.DeliverPending(top); deliverErr != nil {
-			fmt.Fprintf(os.Stderr, "notifications pending: %v\n", deliverErr)
-		}
+		_, deliverErr := deps.DeliverPending(top)
+		recordDuty(top, "notifications-pending", deliverErr, deps.Now())
 		channelContext, cancelChannel := context.WithTimeout(context.Background(), 15*time.Second)
-		if undelivered, channelErr := deps.Channel(channelContext, top); channelErr != nil {
-			fmt.Fprintf(os.Stderr, "channel pending: %d undelivered: %v\n", undelivered, channelErr)
+		undelivered, channelErr := deps.Channel(channelContext, top)
+		if channelErr != nil {
+			channelErr = fmt.Errorf("%d undelivered: %w", undelivered, channelErr)
 		}
+		recordDuty(top, "channel-pending", channelErr, deps.Now())
 		cancelChannel()
 		// The machine caches are trimmed last, after the tick released
 		// arbitration; the trim holds only its own per-cache flock, runs
 		// under its budget and ends at the stop file.
 		if deps.TrimCaches != nil {
-			if trimErr := deps.TrimCaches(context.Background(), top, cfg); trimErr != nil {
-				fmt.Fprintf(os.Stderr, "cache trim: %v\n", trimErr)
-			}
+			recordDuty(top, "cache-trim", deps.TrimCaches(context.Background(), top, cfg), deps.Now())
 		}
 		if stopped := wait(keeping); stopped {
 			return nil
