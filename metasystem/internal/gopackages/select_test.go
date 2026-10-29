@@ -7,7 +7,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"go/build"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -65,7 +64,7 @@ func TestFileMayBuildMatchesThePackageInventory(t *testing.T) {
 			} else if row.setting != "" {
 				environment = append(environment, row.setting)
 			}
-			command := exec.Command("go", "env", "-json", "GOOS", "GOARCH", "CGO_ENABLED", "GOFLAGS", "GOEXPERIMENT")
+			command := testenv.Go("env", "-json", "GOOS", "GOARCH", "CGO_ENABLED", "GOFLAGS", "GOEXPERIMENT")
 			command.Dir, command.Env = root, environment
 			output, err := command.Output()
 			if err != nil {
