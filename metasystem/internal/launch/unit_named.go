@@ -536,8 +536,11 @@ type NamedWork struct {
 
 // Running reports whether the work's run is still advancing its round.
 func (work NamedWork) Running() bool {
-	return work.Record == nil || work.Record.State != "awaiting-judgement"
+	return work.Record == nil || work.Record.State != "awaiting-judgement" && !work.Cancelled()
 }
+
+// Cancelled reports whether the run was ended by cancellation.
+func (work NamedWork) Cancelled() bool { return work.Record != nil && work.Record.State == "cancelled" }
 
 // NamedWork lists the named units this store holds for one goal in one
 // worktree, ordered by name. It reads the named entries and the runs they

@@ -525,3 +525,55 @@ func TestNamedWorkListsOneGoalsWork(t *testing.T) {
 		t.Fatalf("a run of another goal behind the entry = %v", err)
 	}
 }
+
+type cancelledRevisionGit struct{ GitRunner }
+
+func (g cancelledRevisionGit) Run(dir string, env []string, args ...string) ([]byte, error) {
+	if slices.Equal(args, []string{"symbolic-ref", "--short", "HEAD"}) {
+		return []byte("goal/goal\n"), nil
+	}
+	return g.GitRunner.Run(dir, env, args...)
+}
+
+func TestReviseOfACancelledRunSaysBuildAnew(t *testing.T) {
+	t.Parallel()
+	for _, retained := range []bool{false, true} {
+		t.Run(fmt.Sprintf("retained=%t", retained), func(t *testing.T) {
+			t.Parallel()
+			events := []string{"branch", "branch", "round"}
+			if retained {
+				events = append(events, "branch", "before")
+			}
+			fixture := newUnitFixture(t, "", events...)
+			first, err := fixture.runner.AdvanceNamed(fixture.plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			request := UnitRevisionRequest{Run: first.Record.ID, After: 1, Brief: correctionBrief(first.Record, "Declared size: 1 changed lines\nRepair it.\n")}
+			if retained {
+				interrupted := *fixture.runner
+				interrupted.BeforeModelLaunch = func(UnitRunRecord, StartSpec) error { return errors.New("interrupted before launch") }
+				if _, err := interrupted.Revise(request); err == nil {
+					t.Fatal("fixture did not interrupt the retained request")
+				}
+			}
+			if _, err := fixture.runner.CancelRun(first.Record.ID); err != nil {
+				t.Fatal(err)
+			}
+			fixture.runner.Git = cancelledRevisionGit{fixture.runner.Git}
+			path := filepath.Join(fixture.runner.runDir(first.Record.ID), "run.json")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			launched := len(fixture.starter.order)
+			if _, err := fixture.runner.Revise(request); !IsCode(err, "UNIT_CANCELLED") {
+				t.Fatalf("cancelled revision: %v", err)
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || string(before) != string(after) || len(fixture.starter.order) != launched {
+				t.Fatalf("refused revision changed the run or launched: %v", err)
+			}
+		})
+	}
+}
