@@ -269,6 +269,10 @@ func (f *jobFamily) Stop(item Item) (Outcome, error) {
 		}
 		return Outcome{Line: "NOT STOPPED " + item.StatusLine + ": cancellation did not reach a terminal record; did: " + detail, Complete: false, Survivor: item.Survivor}, nil
 	}
+	unitRun, _ := record["unitRun"].(string)
+	if unitRun != "" && record["operationId"] == "unit-launch:"+id && lens.Status() != "cancelled" {
+		return Outcome{Line: jobIdentityLine(id, current.lens.Status(), current.pid, current.pgid, current.lens.Role()) + ": already ended " + lens.Status() + "; its reservation now carries the launch's outcome", Complete: true}, nil
+	}
 	killed, _ := record["cancelEscalatedToKill"].(bool)
 	mechanism := "cancel path, TERM"
 	if killed {

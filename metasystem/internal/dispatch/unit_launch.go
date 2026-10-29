@@ -118,7 +118,7 @@ func ReconcileUnitLaunch(root, id, run, goal string, revision uint64, status, ca
 			delete(record, "phase")
 			delete(record, "error")
 		}
-		if TerminalStatus(asString(record["status"])) && !swept {
+		if _, owned := record["unitExecuted"]; owned && TerminalStatus(asString(record["status"])) && !swept {
 			if asString(record["status"]) != status || asString(record["startedAt"]) != started || asString(record["endedAt"]) != ended || record["unitExecuted"] != executed {
 				return fmt.Errorf("the unit execution %s contradicts its terminal reservation", id)
 			}

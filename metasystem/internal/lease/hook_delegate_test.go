@@ -6,7 +6,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegatecustody"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 func hookExact(t *testing.T, pid int64) identity.Exact {
@@ -16,6 +18,68 @@ func hookExact(t *testing.T, pid int64) identity.Exact {
 		t.Fatalf("probe pid %d = %s, %v", pid, state, err)
 	}
 	return exact
+}
+
+func TestHookDelegateOwnsAUnitLaunchsProcesses(t *testing.T) {
+	child, _ := readyChild(t)
+	self := hookExact(t, int64(os.Getpid())).Ref()
+	for _, row := range []string{"supervisor", "child", "completed", "absent", "unreadable", "failed"} {
+		t.Run(row, func(t *testing.T) {
+			root, installation := t.TempDir(), t.TempDir()
+			store := launch.Store{Root: t.TempDir()}
+			job := "unit-reader"
+			status := "pending"
+			if row == "failed" {
+				status = "failed"
+			}
+			path := filepath.Join(installation, "artifacts/agents/jobs", job+".json")
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatal(err)
+			}
+			data, _ := json.Marshal(map[string]any{"jobId": job, "operationId": "unit-launch:" + job, "unitRun": "unit", "status": status})
+			if err := os.WriteFile(path, data, 0o644); err != nil {
+				t.Fatal(err)
+			}
+			if row != "absent" {
+				record := launch.Record{ID: job, State: launch.Running, Supervisor: &self}
+				if row == "completed" {
+					record.State = launch.Completed
+				}
+				if row == "child" {
+					ref := hookExact(t, child).Ref()
+					record.Supervisor, record.Child = nil, &ref
+				}
+				if err := store.Create(record); err != nil {
+					t.Fatal(err)
+				}
+				if row == "unreadable" {
+					dir, _ := store.StateDir(job)
+					if err := os.WriteFile(filepath.Join(dir, "record.json"), []byte("{"), 0o600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			owned, err := delegatecustody.Read(root, "", nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			probe, err := fixtureProbe(installation)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got, err := hookDelegateWith(owned, installation, "", child, probe, store)
+			if row == "unreadable" {
+				if err == nil {
+					t.Fatal("an unreadable launch did not refuse the hook")
+				}
+				return
+			}
+			want := row == "supervisor" || row == "child"
+			if err != nil || got.Delegate != want || (want && got.JobID != job) {
+				t.Fatalf("unit process custody = %+v, %v; delegate wanted %v", got, err, want)
+			}
+		})
+	}
 }
 
 func writeHookJob(t *testing.T, root, job string, exact identity.Exact, custody bool) {
@@ -143,5 +207,24 @@ func TestHookDelegateToleratesDisappearingRecordOnlyDuringUnhintedScan(t *testin
 	writeHookJob(t, root, job, self, true)
 	if _, err := HookDelegate(root, installation, job, int64(os.Getpid())); err == nil {
 		t.Fatal("explicitly hinted disappearing job record did not fail closed")
+	}
+	reads := 0
+	hookDelegateReadFile = func(candidate string) ([]byte, error) {
+		if candidate == path {
+			reads++
+			if reads == 2 {
+				if err := os.Remove(candidate); err != nil {
+					return nil, err
+				}
+			}
+		}
+		return os.ReadFile(candidate)
+	}
+	writeHookJob(t, root, job, self, true)
+	// Both scans read the same directory on this layout, and the second scan
+	// must preserve the ordinary scan's disappearance rule.
+	result, err = HookDelegate(root, root, "", int64(os.Getpid()))
+	if err != nil || !result.Delegate || reads != 2 {
+		t.Fatalf("disappearance during the added scan = %+v, %v; reads=%d", result, err, reads)
 	}
 }

@@ -460,7 +460,7 @@ func (f *Clock) Sleep(d time.Duration) {
 // Host doubles delegation.HostOps.
 type Host struct {
 	UnitLaunchStatusFunc func(string) (string, error)
-	CancelUnitLaunchFunc func(string) error
+	CancelUnitLaunchFunc func(string) (delegation.UnitLaunchOutcome, error)
 	Log                  *Log
 	WaitFunc             func(root, job string, callerPid int64) delegation.WaitOutcome
 	WatchFunc            func(root, job string, callerPid int64, progressRoot string) int
@@ -478,10 +478,10 @@ func (f *Host) UnitLaunchStatus(id string) (string, error) {
 	return f.UnitLaunchStatusFunc(id)
 }
 
-func (f *Host) CancelUnitLaunch(id string) error {
+func (f *Host) CancelUnitLaunch(id string) (delegation.UnitLaunchOutcome, error) {
 	f.Log.add("host.CancelUnitLaunch id=%s", id)
 	if f.CancelUnitLaunchFunc == nil {
-		return fmt.Errorf("launch %s record is unavailable", id)
+		return delegation.UnitLaunchOutcome{}, fmt.Errorf("launch %s record is unavailable", id)
 	}
 	return f.CancelUnitLaunchFunc(id)
 }
