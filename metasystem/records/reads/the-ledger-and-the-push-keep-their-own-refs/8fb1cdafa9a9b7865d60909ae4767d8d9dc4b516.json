@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-ledger-and-the-push-keep-their-own-refs",
+  "unit": "U1",
+  "subject": {
+    "commit": "8fb1cdafa9a9b7865d60909ae4767d8d9dc4b516",
+    "parent": "a01468a5f403afb79485506574c737649ddcd8bd",
+    "tree": "df2cd960e6c9442a8e8e4a320dfbe9ca53c2e0fd",
+    "patchDigest": "199acddb7ebe6da2ffe56fe33112f6d2811a258d8416dca4d71abe7afcbd40e6",
+    "unitDigest": "af425718ac942b0ced1258409bab76ee54ce7dc7a905dfc5ba9236691afea747"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-f4f50dc94c6607dd56c85569",
+    "round": 1,
+    "closureSha256": "0ddca41d6ad1004fdcb6e940684681c8c99c8cfedcd723ee7f99d63ee879701a"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "df2cd960e6c9442a8e8e4a320dfbe9ca53c2e0fd",
+    "runId": "goal-read-gate-20261030t075815z-f210471dc60acaa9"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/goal/branch/push_adapter_test.go",
+      "readerWord": "reviewed by critic root code-critic-f4f50dc94c6607dd56c85569"
+    },
+    {
+      "path": "metasystem/internal/goal/branch/push_commit_policy_test.go",
+      "readerWord": "reviewed by critic root code-critic-f4f50dc94c6607dd56c85569"
+    },
+    {
+      "path": "metasystem/internal/goal/recover_test.go",
+      "readerWord": "reviewed by critic root code-critic-f4f50dc94c6607dd56c85569"
+    },
+    {
+      "path": "metasystem/internal/goal/trunkred_test.go",
+      "readerWord": "reviewed by critic root code-critic-f4f50dc94c6607dd56c85569"
+    }
+  ],
+  "sha256": "e562671b5ea6e77040a4bb9be7c513f45403742d3a8fb602848a8de8cfafd4ab"
+}
