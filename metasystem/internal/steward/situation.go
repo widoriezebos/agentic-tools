@@ -6,20 +6,28 @@ package steward
 // still read. Nothing here writes.
 
 import (
+	"cmp"
 	"errors"
+	"path/filepath"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
 // Situation is one read's parts. GoalFacts are the seat brief's facts of
 // each goal this seat holds. Unavailable names each part whose reader failed
-// (lane, hold, ledger, waiting, quota, facts, asks) with the reason.
+// (lane, hold, ledger, waiting, quota, facts, asks, host, engine) with the
+// reason.
 type Situation struct {
 	At      time.Time
 	Machine string
@@ -35,6 +43,28 @@ type Situation struct {
 	GoalFacts   map[string]string
 	Asks        []SituationAsk
 	Unavailable map[string]string
+
+	Load       hostload.Sample
+	Processes  []HostProcess
+	Executions map[string]enginepin.Execution
+	Holders    []SeatHolder
+}
+
+// HostProcess is one test process on the host: its kind by argv, the
+// registered checkout its working directory lies in (else elsewhere) and the
+// workspace (owner/name) or worktree under that checkout.
+type HostProcess struct {
+	Pid                       int64
+	Kind, Checkout, Workspace string
+	Started                   time.Time
+}
+
+// SeatHolder is who holds an armed checkout's lease; Unavailable is this
+// seat's read error.
+type SeatHolder struct {
+	Checkout, MainId, SessionId, Lineage string
+	Pid                                  int64
+	Unavailable                          string
 }
 
 // ClaimQuotaBlock is one holding goal, the ready goals its claim holds back
@@ -70,6 +100,16 @@ type SituationSources struct {
 	// nil leaves the seat brief's own reader, which says it is unavailable.
 	Units     func(root, goalID string, projection goal.Projection, now time.Time) ([]UnitStage, error)
 	BoardHome func() (string, error)
+	// The host's reads; a nil one reads the kernel and the host registry.
+	Load       func(time.Time) hostload.Sample
+	Processes  identity.ProcessTable
+	Argv       func(int64) ([]string, bool)
+	Cwd        func(int64) (string, bool)
+	Prober     identity.Prober
+	Registry   func() (string, error)
+	Executions func(root string) map[string]enginepin.Execution
+	// Holder reads an armed checkout's lease; nil leaves the part unavailable.
+	Holder func(checkout string) (SeatHolder, error)
 }
 
 // ReadSituation reads every part once, in a fixed order, at one clock.
@@ -83,6 +123,7 @@ func ReadSituation(root string, src SituationSources) Situation {
 	if src.BoardHome == nil {
 		src.BoardHome = board.Home
 	}
+	src = withHostReaders(src)
 	now := src.Now()
 	s := Situation{At: now, Unavailable: map[string]string{}}
 	machine, machineErr := src.Machine(root)
@@ -108,12 +149,140 @@ func ReadSituation(root string, src SituationSources) Situation {
 		for _, part := range []string{"quota", "facts", "asks"} {
 			s.Unavailable[part] = s.Unavailable["ledger"]
 		}
-		return s
+	} else {
+		s.readQuota(root, ledger)
+		s.readFacts(root, src, ledger, now)
+		s.readAsks(src, now)
 	}
-	s.readQuota(root, ledger)
-	s.readFacts(root, src, ledger, now)
-	s.readAsks(src, now)
+	s.readHost(root, src, now)
 	return s
+}
+
+// withHostReaders gives each nil host read the kernel's or the host
+// registry's own reader.
+func withHostReaders(src SituationSources) SituationSources {
+	if src.Load == nil {
+		src.Load = hostload.Read
+	}
+	if src.Processes == nil {
+		src.Processes = identity.KernelProcessTable{}
+	}
+	if src.Argv == nil {
+		src.Argv = identity.KernelProber{}.ReadArgv
+	}
+	if src.Cwd == nil {
+		src.Cwd = identity.ProcessCwd
+	}
+	if src.Prober == nil {
+		src.Prober = identity.KernelProber{}
+	}
+	if src.Registry == nil {
+		src.Registry = registry.DefaultPath
+	}
+	if src.Executions == nil {
+		src.Executions = func(root string) map[string]enginepin.Execution { return ReadExecutions(root, nil) }
+	}
+	return src
+}
+
+// readHost reads the load, the engine roles, then from one registry read
+// each test process by checkout and each armed seat's holder. A failed
+// registry read leaves the load and the engine roles.
+func (s *Situation) readHost(root string, src SituationSources, now time.Time) {
+	s.Load = src.Load(now)
+	s.Executions = src.Executions(root)
+	path, err := src.Registry()
+	var checkouts []registry.HostCheckout
+	if err == nil {
+		checkouts, err = registry.HostCheckouts(path)
+	}
+	if err != nil {
+		s.Unavailable["host"] = "the host registry: " + err.Error()
+		s.Unavailable["engine"] = s.Unavailable["host"]
+		return
+	}
+	s.readProcesses(src, checkouts)
+	if src.Holder == nil {
+		s.Unavailable["engine"] = "no reader"
+		return
+	}
+	for _, checkout := range checkouts {
+		if !checkout.Armed {
+			continue
+		}
+		holder, err := src.Holder(checkout.Path)
+		if holder.Checkout = checkout.Path; err != nil {
+			holder.Unavailable = err.Error()
+		}
+		s.Holders = append(s.Holders, holder)
+	}
+}
+
+// readProcesses lists each test process by its argv, and only for those
+// reads the start and the working directory: the longest registered
+// checkout holding it, else elsewhere.
+func (s *Situation) readProcesses(src SituationSources, checkouts []registry.HostCheckout) {
+	pids, err := src.Processes.Pids()
+	if err != nil {
+		s.Unavailable["host"] = "the process table: " + err.Error()
+	}
+	for _, pid := range pids {
+		argv, ok := src.Argv(pid)
+		process := HostProcess{Pid: pid, Kind: testProcessKind(argv, ok), Checkout: "elsewhere"}
+		if process.Kind == "" {
+			continue
+		}
+		if exact, _, err := src.Prober.Probe(pid); err == nil {
+			process.Started = exact.StartedAt
+		}
+		cwd, ok := src.Cwd(pid)
+		for _, checkout := range checkouts {
+			inside := cwd == checkout.Path || strings.HasPrefix(cwd, checkout.Path+string(filepath.Separator))
+			if ok && inside && (process.Checkout == "elsewhere" || len(checkout.Path) > len(process.Checkout)) {
+				process.Checkout, process.Workspace = checkout.Path, workspaceUnder(checkout.Path, cwd)
+			}
+		}
+		s.Processes = append(s.Processes, process)
+	}
+	slices.SortFunc(s.Processes, func(a, b HostProcess) int {
+		return cmp.Or(strings.Compare(a.Checkout, b.Checkout), cmp.Compare(a.Pid, b.Pid))
+	})
+}
+
+// testProcessKind names a go test, a test binary or a go-build process by
+// its argv; anything else is no test process.
+func testProcessKind(argv []string, ok bool) string {
+	if !ok || len(argv) == 0 {
+		return ""
+	}
+	switch base := filepath.Base(argv[0]); {
+	case base == "go" && len(argv) > 1 && argv[1] == "test":
+		return "go test"
+	case strings.HasSuffix(base, ".test"):
+		return "test binary"
+	case strings.Contains(argv[0], "/go-build"):
+		return "go-build"
+	}
+	return ""
+}
+
+// workspaceUnder is the first workspace (owner/name) or worktree (name) on
+// the way from checkout down to cwd; empty is none.
+func workspaceUnder(checkout, cwd string) string {
+	rel, err := filepath.Rel(checkout, cwd)
+	parts := strings.Split(filepath.ToSlash(rel), "/")
+	for i := 0; err == nil && i+3 < len(parts); i++ {
+		if parts[i] != "artifacts" || parts[i+1] != "agents" {
+			continue
+		}
+		if parts[i+2] == "workspaces" && i+4 < len(parts) {
+			return parts[i+3] + "/" + parts[i+4]
+		}
+		if parts[i+2] == "worktrees" {
+			return parts[i+3]
+		}
+	}
+	return ""
 }
 
 // readLane reads the lane's status and its current hold at the read's clock

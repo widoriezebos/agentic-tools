@@ -74,13 +74,13 @@ func TestTheSituationReadsTheLedgerAndTheQuotaLive(t *testing.T) {
 		}
 		return []UnitStage{{Unit: "first", Stage: "built"}, {Unit: "second", Stage: "reading"}}, nil
 	}
-	src := SituationSources{Now: func() time.Time { return situationNow }, LaneHome: func() (string, error) { return t.TempDir(), nil },
+	src := withEmptyHost(t, SituationSources{Now: func() time.Time { return situationNow }, LaneHome: func() (string, error) { return t.TempDir(), nil },
 		Project: countedProject(&projections), ClaimLaneState: claimQuotaLane(t, root, states), Units: units,
 		BoardHome: func() (string, error) { return t.TempDir(), nil },
-		Waiting:   func(string) ([]string, error) { return []string{"a durable wait"}, nil }}
+		Waiting:   func(string) ([]string, error) { return []string{"a durable wait"}, nil }})
 	release := ClaimQuotaBlock{Held: "held-h", Ready: []string{"ready-c", "ready-a", "ready-b"}, Command: "metasystem goal release held-h --reason TEXT"}
 
-	s := ReadSituation(root, src)
+	s := readSituation(t, root, src)
 	if !slices.Equal(s.Next.Claimed, []string{"held-h"}) || s.Ledger.Tip == "" || !s.At.Equal(situationNow) || s.Machine != "m1e" {
 		t.Fatalf("the ledger part: claimed=%v tip=%q at=%v machine=%q unavailable=%v", s.Next.Claimed, s.Ledger.Tip, s.At, s.Machine, s.Unavailable)
 	}
@@ -101,18 +101,18 @@ func TestTheSituationReadsTheLedgerAndTheQuotaLive(t *testing.T) {
 	}
 
 	states["held-h"] = "waiting"
-	if s = ReadSituation(root, src); len(s.Quota) != 0 || projections != 2 {
+	if s = readSituation(t, root, src); len(s.Quota) != 0 || projections != 2 {
 		t.Fatalf("a waiting hand-in frees the claim: quota=%+v projections=%d", s.Quota, projections)
 	}
 	states["held-h"] = "returned"
 	land := release
 	land.Command = "metasystem work land held-h"
-	if s = ReadSituation(root, src); !reflect.DeepEqual(s.Quota, []ClaimQuotaBlock{land}) || projections != 3 {
+	if s = readSituation(t, root, src); !reflect.DeepEqual(s.Quota, []ClaimQuotaBlock{land}) || projections != 3 {
 		t.Fatalf("a returned hand-in blocks again: quota=%+v projections=%d, want %+v", s.Quota, projections, land)
 	}
 
 	src.ClaimLaneState = nil
-	if s = ReadSituation(root, src); s.Unavailable["quota"] != "no lane reader" || len(s.Quota) != 0 {
+	if s = readSituation(t, root, src); s.Unavailable["quota"] != "no lane reader" || len(s.Quota) != 0 {
 		t.Fatalf("no lane reader: quota=%+v unavailable=%q, want none and no saved verdict", s.Quota, s.Unavailable["quota"])
 	}
 }
@@ -126,18 +126,18 @@ func TestASituationPartFailsAlone(t *testing.T) {
 	}
 	// Units is nil: the seat brief's own reader says the units are unavailable.
 	src := func() SituationSources {
-		return SituationSources{Now: func() time.Time { return situationNow }, LaneHome: func() (string, error) { return laneHome, nil },
+		return withEmptyHost(t, SituationSources{Now: func() time.Time { return situationNow }, LaneHome: func() (string, error) { return laneHome, nil },
 			LaneStatus:     func(string, time.Time) plain.Status { return plain.Status{Problems: []string{"the lane read"}} },
 			HostWork:       func() (int, int, error) { return 0, 0, nil },
 			BoardHome:      func() (string, error) { return boardHome, nil },
-			ClaimLaneState: claimQuotaLane(t, root, nil), Waiting: func(string) ([]string, error) { return []string{"a durable wait"}, nil }}
+			ClaimLaneState: claimQuotaLane(t, root, nil), Waiting: func(string) ([]string, error) { return []string{"a durable wait"}, nil }})
 	}
 	read := func(s Situation) (lane, ledger, quota, waiting, asks bool) {
 		return slices.Equal(s.Lane.Problems, []string{"the lane read"}), slices.Equal(s.Next.Claimed, []string{"held-h"}), len(s.Quota) == 1, len(s.Waiting) == 1, len(s.Asks) == 1
 	}
 
 	whole := src()
-	s := ReadSituation(root, whole)
+	s := readSituation(t, root, whole)
 	if lane, ledger, quota, waiting, asks := read(s); !lane || !ledger || !quota || !waiting || !asks {
 		t.Fatalf("the whole read: lane=%v ledger=%v quota=%v waiting=%v asks=%v unavailable=%v", lane, ledger, quota, waiting, asks, s.Unavailable)
 	}
@@ -147,21 +147,21 @@ func TestASituationPartFailsAlone(t *testing.T) {
 
 	noLane := src()
 	noLane.LaneHome = func() (string, error) { return "", errors.New("no host home") }
-	s = ReadSituation(root, noLane)
+	s = readSituation(t, root, noLane)
 	if lane, ledger, quota, waiting, asks := read(s); lane || !ledger || !quota || !waiting || !asks || s.Unavailable["lane"] == "" {
 		t.Fatalf("a failed lane home: lane=%v ledger=%v quota=%v waiting=%v asks=%v unavailable=%v", lane, ledger, quota, waiting, asks, s.Unavailable)
 	}
 
 	noBoard := src()
 	noBoard.BoardHome = func() (string, error) { return "", errors.New("no board home") }
-	s = ReadSituation(root, noBoard)
+	s = readSituation(t, root, noBoard)
 	if lane, ledger, quota, waiting, asks := read(s); !lane || !ledger || !quota || !waiting || asks || s.Unavailable["asks"] != "no board home" || s.GoalFacts["held-h"] == "" {
 		t.Fatalf("a failed board home: lane=%v ledger=%v quota=%v waiting=%v asks=%v unavailable=%v", lane, ledger, quota, waiting, asks, s.Unavailable)
 	}
 
 	noMachine := src()
 	noMachine.Machine = func(string) (string, error) { return "", errors.New("no nickname") }
-	s = ReadSituation(root, noMachine)
+	s = readSituation(t, root, noMachine)
 	if lane, ledger, quota, _, asks := read(s); !lane || ledger || quota || asks || len(s.GoalFacts) != 0 || s.Unavailable["lane"] != "" {
 		t.Fatalf("a failed machine read: lane=%v ledger=%v quota=%v asks=%v facts=%d unavailable=%v", lane, ledger, quota, asks, len(s.GoalFacts), s.Unavailable)
 	}
@@ -173,7 +173,7 @@ func TestASituationPartFailsAlone(t *testing.T) {
 
 	noWaiting := src()
 	noWaiting.Waiting = func(string) ([]string, error) { return nil, errors.New("the waits cannot be read") }
-	s = ReadSituation(root, noWaiting)
+	s = readSituation(t, root, noWaiting)
 	if lane, ledger, quota, _, asks := read(s); !lane || !ledger || !quota || !asks || s.Unavailable["waiting"] != "the waits cannot be read" {
 		t.Fatalf("a failed waiting read: lane=%v ledger=%v quota=%v asks=%v unavailable=%v", lane, ledger, quota, asks, s.Unavailable)
 	}
@@ -215,12 +215,12 @@ func TestTheSituationKeepsEveryAskOfThisSeat(t *testing.T) {
 	publish(board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Goal: "ready-a"}, Text: "Who takes ready-a?"}, situationNow)
 	outgoing := publish(board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1e"}, To: board.Address{Machine: "m1x"}, Text: "Can you read it?"}, situationNow)
 	now := situationNow.Add(10 * time.Minute)
-	src := SituationSources{Now: func() time.Time { return now }, LaneHome: func() (string, error) { return t.TempDir(), nil },
-		ClaimLaneState: claimQuotaLane(t, root, nil), BoardHome: func() (string, error) { return home, nil }}
+	src := withEmptyHost(t, SituationSources{Now: func() time.Time { return now }, LaneHome: func() (string, error) { return t.TempDir(), nil },
+		ClaimLaneState: claimQuotaLane(t, root, nil), BoardHome: func() (string, error) { return home, nil }})
 	read := func() map[string]SituationAsk {
 		t.Helper()
 		before := boardTree(t, home)
-		s := ReadSituation(root, src)
+		s := readSituation(t, root, src)
 		if after := boardTree(t, home); !reflect.DeepEqual(before, after) {
 			t.Fatalf("the read changed the board:\nbefore %v\nafter  %v", before, after)
 		}
