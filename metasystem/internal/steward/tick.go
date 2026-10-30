@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -41,8 +42,8 @@ type TickConfig struct {
 	RecoveryRegistry string
 	// ProviderHome selects the host registration; empty uses the registry home.
 	ProviderHome string
-	// WorkStateRoot selects the host unit and launch stores; empty uses the
-	// registry's production default.
+	// WorkStateRoot selects the host unit and launch stores, and the machine
+	// disk report health reads; empty uses the registry's production default.
 	WorkStateRoot string
 	// RunnerClock supplies the resident loop's clock; nil uses the system clock.
 	RunnerClock *HandoffClock
@@ -295,10 +296,10 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 		return TickResult{}, fmt.Errorf("record tick attempt: %w", err)
 	}
 	// A seat at the helm is the person's: the tick publishes presence,
-	// completes its attempt as HELM and decides nothing (HM-7). The check
-	// sits after the attempt exists and before the completion defer, so no
-	// full health, narration or standing-defect pass runs; helmTick makes
-	// two report-only passes, the patterns and the claim quota.
+	// completes its attempt as HELM and decides nothing. The check sits
+	// after the attempt exists and before the completion defer, so no full
+	// health or narration runs; helmTick runs three report passes instead:
+	// the patterns, the claim quota, and the duties that run at the helm.
 	if state := helm.Active(repoRoot); state.Active {
 		return helmTick(repoRoot, cfg, generation, selfExact.Ref(), tickAttempt.AttemptSeq, state)
 	}
@@ -364,8 +365,9 @@ const VerdictHelm Verdict = "helm"
 // helmTick is the whole tick of a seat at the helm: presence is still
 // published (the fleet sees the seat alive) and the tick attempt completes
 // with outcome HELM. No breach stop, reap, ledger attention, decision or
-// narration runs; the notifications it may send are the two reports: the
-// pattern pass's and the claim-quota pass's alert and ask.
+// narration runs. It runs three report passes: the patterns, the claim quota
+// and the duties that run at the helm. It may send the pattern pass's
+// notices, the claim-quota alert and ask, and a standing duty defect.
 func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.Ref, attemptSeq int64, state helm.State) (TickResult, error) {
 	reason := "human at the helm: " + state.By
 	result := TickResult{Decision: Decision{VerdictHelm, ActNone, reason}}
@@ -375,10 +377,9 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 		ComponentOK, "HELM", reason, nil, cfg.now()); err != nil {
 		return result, fmt.Errorf("record helm tick completion: %w", err)
 	}
-	// The one exception to HM-7 (design D2): the pattern pass reports under
-	// the helm, because the person at the helm is who needs the report. A
-	// report is not a decision. It runs after the attempt completed, so a
-	// slow fetch never reads as a stuck tick.
+	// The reports run under the helm, because the person at the helm is who
+	// needs them; a report decides nothing. They run after the attempt
+	// completed, so a slow fetch never reads as a stuck tick.
 	if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && presenceErr == nil {
 		presenceErr = patternErr
 	}
@@ -388,22 +389,43 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 	return result, presenceErr
 }
 
-// helmHealthPass is the helm's claim-quota report: the one role, recorded as
-// a partial observation, its alert and its ask. A closed fence stops it
-// before anything is recorded, as it stops a full observation.
+// helmHealthPass records the helm's partial observation: the duties that run
+// at the helm and, with a lane reader, the claim quota. It files and clears
+// standing defects for those roles only, and asks only with a lane reader. A
+// closed fence stops it before anything is recorded, as it stops a full one.
 func helmHealthPass(repoRoot string, cfg TickConfig) error {
 	now := cfg.now()
 	if stopped, err := healthStopped(repoRoot, repoRoot, now, nil, SpendObservation{}, HealthObservationState{}); err != nil || stopped != nil {
 		return err
 	}
-	ledger := newHealthLedger(repoRoot, now)
-	ledger.laneState = cfg.ClaimLaneState
-	health, err := observePartialHealth(repoRoot, now, []RoleVerdict{checkClaimQuotaWith(repoRoot, repoRoot, ledger)})
+	var observed []RoleVerdict
+	started := time.Now()
+	for _, duty := range checkDuties(repoRoot) {
+		if slices.Contains(helmDuties, strings.TrimPrefix(string(duty.Role), dutyRolePrefix)) {
+			duty.DurationMillis = elapsedRoleMillis(started)
+			observed = append(observed, duty)
+		}
+	}
+	if cfg.ClaimLaneState != nil {
+		ledger := newHealthLedger(repoRoot, now)
+		ledger.laneState = cfg.ClaimLaneState
+		observed = append(observed, checkClaimQuotaWith(repoRoot, repoRoot, ledger))
+	}
+	health, err := observePartialHealth(repoRoot, now, observed)
 	if err != nil {
-		return fmt.Errorf("record the helm's claim quota: %w", err)
+		return fmt.Errorf("record the helm's observation: %w", err)
 	}
 	_, alertErr := updateAlertEpisodesWith(repoRoot, health, health.Line(), now, noticeFunnel{clock: cfg.now}, deliver)
-	return errors.Join(alertErr, tickHealthAsk(cfg)(repoRoot, health, now))
+	roles := make([]HealthRole, 0, len(observed))
+	for _, role := range observed {
+		roles = append(roles, role.Role)
+	}
+	fileErr := fileStandingDefects(repoRoot, health, roles, now, noticeFunnel{clock: cfg.now}, deliver)
+	var askErr error
+	if cfg.ClaimLaneState != nil {
+		askErr = tickHealthAsk(cfg)(repoRoot, health, now)
+	}
+	return errors.Join(alertErr, fileErr, askErr)
 }
 
 // runTickReports observes health before running either report-only pass.
@@ -719,7 +741,7 @@ func completeTickHealthWithConfig(repoRoot string, result *TickResult, generatio
 func tickHealthEvaluator(cfg TickConfig) healthRoleEvaluator {
 	return func(repo, install string, at time.Time, probe identity.Prober, hook bool) ([]RoleVerdict, SpendObservation) {
 		ledger := newHealthLedger(repo, at)
-		ledger.laneState = cfg.ClaimLaneState
+		ledger.laneState, ledger.stateHome = cfg.ClaimLaneState, cfg.WorkStateRoot
 		return evaluateHealthRolesWithLedger(repo, repo, install, at, probe, hook, measureSpend, ledger)
 	}
 }
@@ -792,7 +814,7 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	if _, err := updateAlertEpisodesWith(repoRoot, health, line, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("update health alert episodes: %w", err)
 	}
-	if err := fileStandingDefects(repoRoot, health, healthNow(), funnel, dependencies.deliver); err != nil {
+	if err := fileStandingDefects(repoRoot, health, healthRoleOrder, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("file standing health defects: %w", err)
 	}
 	if dependencies.ask != nil {

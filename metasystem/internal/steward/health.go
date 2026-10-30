@@ -73,7 +73,8 @@ const (
 	RoleProofAdmission      HealthRole = "proof-admission"
 )
 
-var healthRoleOrder = []HealthRole{
+// healthRoleOrder ends with one role per steward duty, in the duties' order.
+var healthRoleOrder = append([]HealthRole{
 	RoleStewardRunner,
 	RoleSupervisionOwner,
 	RoleRepoWatcher,
@@ -97,6 +98,14 @@ var healthRoleOrder = []HealthRole{
 	RoleProofAdmission,
 	RoleCapabilitySnapshots,
 	RoleDisk,
+}, dutyRoles()...)
+
+func dutyRoles() []HealthRole {
+	roles := make([]HealthRole, 0, len(stewardDuties))
+	for _, name := range stewardDuties {
+		roles = append(roles, dutyRole(name))
+	}
+	return roles
 }
 
 // KnownHealthRole reports whether role belongs to the closed health schema.
@@ -468,8 +477,8 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 // observePartialHealth records the roles one pass observed beside the other
 // roles of the record, whose counters it leaves as they are. Both halves keep
 // one observation time, so the record stays readable; FullObservedAt keeps
-// the last full observation's. It files no standing defect: the filer clears
-// every role its input lacks.
+// the last full observation's. It files no standing defect itself; its caller
+// hands the filer only the roles this pass observed.
 func observePartialHealth(repoRoot string, now time.Time, observed []RoleVerdict) (HealthVerdict, error) {
 	if err := os.MkdirAll(filepath.Dir(healthLockPath(repoRoot)), 0o755); err != nil {
 		return HealthVerdict{}, err
@@ -672,7 +681,16 @@ func evaluateHealthRolesWithLedger(repoRoot, runRoot, metasystemRoot string, now
 		timed(RoleProofAttempts, func() RoleVerdict { return checkProofAttempts(runRoot, prober) }),
 		timed(RoleProofAdmission, func() RoleVerdict { return checkProofAdmission(runRoot, now, inspectHostLeases) }),
 		timed(RoleCapabilitySnapshots, func() RoleVerdict { return checkCapabilitySnapshots(runRoot, metasystemRoot, now) }),
-		timed(RoleDisk, func() RoleVerdict { return checkDisk(runRoot) }),
+		timed(RoleDisk, func() RoleVerdict {
+			if ledger.stateHome != "" {
+				return checkDiskAt(runRoot, ledger.stateHome)
+			}
+			return checkDisk(runRoot)
+		}),
+	}
+	duties := checkDuties(runRoot)
+	for index := range duties {
+		roles = append(roles, timed(duties[index].Role, func() RoleVerdict { return duties[index] }))
 	}
 	return slices.DeleteFunc(roles, func(role RoleVerdict) bool { return role.Role == "" }), spendObservation
 }
@@ -1040,7 +1058,8 @@ func healthSummary(roles []RoleVerdict) (string, bool) {
 		switch role.Status {
 		case HealthDead:
 			aggregate = "unhealthy"
-			alert = alert || role.FailureEscalation != AutoHealEligible
+			// A duty notifies only once it stands, through its defect.
+			alert = alert || (role.FailureEscalation != AutoHealEligible && !isDutyRole(role.Role))
 		case HealthUnknown:
 			if aggregate == "healthy" {
 				aggregate = "unknown"
@@ -1051,7 +1070,9 @@ func healthSummary(roles []RoleVerdict) (string, bool) {
 	return aggregate, alert
 }
 
-func fileStandingDefects(repoRoot string, health HealthVerdict, now time.Time, f noticeFunnel, deliver func(string, string) error) error {
+// fileStandingDefects files the standing roles among observed and clears the
+// other observed roles; a role it was not given keeps its defect.
+func fileStandingDefects(repoRoot string, health HealthVerdict, observed []HealthRole, now time.Time, f noticeFunnel, deliver func(string, string) error) error {
 	standing := make(map[HealthRole]RoleVerdict)
 	for _, role := range health.Roles {
 		if role.Standing {
@@ -1060,8 +1081,8 @@ func fileStandingDefects(repoRoot string, health HealthVerdict, now time.Time, f
 	}
 	_, err := UpdatePatterns(repoRoot, PatternCycle{Now: now, ClearTicks: 1, Deliver: deliver, funnel: f,
 		Step: func([]byte) ([]byte, []PatternRun, error) {
-			observations := make([]PatternObservation, 0, len(healthRoleOrder))
-			for _, name := range healthRoleOrder {
+			observations := make([]PatternObservation, 0, len(observed))
+			for _, name := range observed {
 				observation := PatternObservation{Kind: ObsClear, Work: string(name)}
 				if role, ok := standing[name]; ok {
 					observation.Kind = ObsFinding
@@ -2272,7 +2293,7 @@ func healthInt(value any) (int64, bool) {
 func healthFindingDigest(roles []RoleVerdict) string {
 	var fields []string
 	for _, role := range roles {
-		if role.Status != HealthAlive && !role.Standing {
+		if role.Status != HealthAlive && !role.Standing && (role.Status != HealthDead || !isDutyRole(role.Role)) {
 			fields = append(fields, string(role.Role)+"="+string(role.Status))
 		}
 	}

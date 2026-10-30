@@ -21,6 +21,9 @@ type healthLedger struct {
 	// laneState reads a held goal's hand-in on the landing lane; nil reads
 	// no lane, and the claim-quota role then shows the tick's verdict.
 	laneState func(root, goalID, main string) (string, error)
+	// stateHome is the host state home whose machine disk report the disk
+	// role reads; empty is the registry's home.
+	stateHome string
 
 	newWorld      bool
 	endpoint      goal.Endpoint

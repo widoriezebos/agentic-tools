@@ -49,12 +49,13 @@ func TestRunnerSweepsDiskAfterTheTickReleasedArbitration(t *testing.T) {
 			}
 			loop.stop(t)
 		},
-		SweepDisk: func(top string, _ time.Time, helm bool) {
+		SweepDisk: func(top string, _ time.Time, helm bool) error {
 			free, err := ProbeArbitration(top)
 			if err != nil {
 				t.Error(err)
 			}
 			sweeps = append(sweeps, sweep{free: free, helm: helm})
+			return nil
 		},
 	}
 	if err := runLoopWithDependencies(loop.root, fakeCensus{}, nil, 200*time.Millisecond, TickConfig{Now: now}, deps); err != nil {

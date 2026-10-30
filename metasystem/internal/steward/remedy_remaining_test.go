@@ -240,7 +240,7 @@ func TestHealthRemedyTableOwnsEveryRole(t *testing.T) {
 		standing := open.Roles[0]
 		standing.Standing = true
 		var message string
-		if err := fileStandingDefects(b.root, HealthVerdict{Roles: []RoleVerdict{standing}}, now, noticeFunnel{decider: allowEveryNotice}, func(_, text string) error { message = text; return nil }); err != nil || !strings.Contains(message, standing.Remedy) {
+		if err := fileStandingDefects(b.root, HealthVerdict{Roles: []RoleVerdict{standing}}, healthRoleOrder, now, noticeFunnel{decider: allowEveryNotice}, func(_, text string) error { message = text; return nil }); err != nil || !strings.Contains(message, standing.Remedy) {
 			t.Fatalf("standing defect lost the table words: %q %v", message, err)
 		}
 	}
