@@ -7,6 +7,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
@@ -14,9 +15,10 @@ import (
 // situationSources fills the situation's reads the steward cannot reach:
 // the clock, the host's launch store as the launch verbs count it, the lane
 // status over that same observation, the claim's lane reader, the units over
-// the read's projection and the durable waiting lines of the checkout's
-// installation. A source the caller gave is kept; the lane and board homes,
-// the ledger and the machine take the steward's own readers.
+// the read's projection, the durable waiting lines of the checkout's
+// installation and each seat's lease holder. A source the caller gave is
+// kept; the lane and board homes, the ledger, the machine and the host take
+// the steward's own readers.
 func situationSources(owners intentOwners, src steward.SituationSources) steward.SituationSources {
 	if src.Now == nil {
 		src.Now = time.Now
@@ -35,6 +37,9 @@ func situationSources(owners intentOwners, src steward.SituationSources) steward
 	}
 	if src.Units == nil {
 		src.Units = situationUnitStages(owners)
+	}
+	if src.Holder == nil {
+		src.Holder = situationHolder
 	}
 	if src.Waiting == nil {
 		// Waiting rows are run state, kept under the checkout's installation.
@@ -63,4 +68,13 @@ func situationUnitStages(owners intentOwners) func(string, string, goal.Projecti
 		}
 		return units, nil
 	}
+}
+
+// situationHolder is an armed checkout's lease holder; no lease is no holder.
+func situationHolder(checkout string) (steward.SeatHolder, error) {
+	view, err := lease.CurrentHolder(checkout)
+	if errors.Is(err, lease.ErrLeaseAbsent) {
+		return steward.SeatHolder{}, nil
+	}
+	return steward.SeatHolder{MainId: view.MainId, SessionId: view.SessionId, Lineage: view.OwnerLineage, Pid: view.Pid}, err
 }

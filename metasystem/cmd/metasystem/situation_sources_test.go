@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -9,10 +10,15 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -180,4 +186,68 @@ func TestTheSituationReadsTheLedgerOnce(t *testing.T) {
 	if projections != 1 || endpoints != 0 || clocks != 0 {
 		t.Fatalf("the read projected %d times and read the endpoint %d and the clock %d times, want one projection and neither", projections, endpoints, clocks)
 	}
+}
+
+// situationDeadProber finds every process dead.
+type situationDeadProber struct{}
+
+func (situationDeadProber) Probe(int64) (identity.Exact, identity.Liveness, error) {
+	return identity.Exact{}, identity.Dead, nil
+}
+
+func TestTheSituationComposesHostAndRecords(t *testing.T) {
+	t.Parallel()
+	leased, free := t.TempDir(), t.TempDir()
+	pid := int64(os.Getpid())
+	started, ok := lease.StartedAt(pid, nil)
+	if !ok {
+		t.Fatal("this test's own start cannot be read")
+	}
+	if _, err := lease.Announce(leased, "situation-session", pid, started, "situation", "fake", "lin-situation"); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "armed-checkouts.jsonl")
+	for i, checkout := range []string{leased, free} {
+		tag := fmt.Sprintf("tag-%d", i)
+		payload, err := json.Marshal(map[string]any{"schemaVersion": 1, "event": registry.EventRelaunched, "checkoutPath": checkout, "ownerTag": tag,
+			"at": "2026-09-29T08:00:00Z", "generation": 1, "watcherTag": tag + "-w", "reaperTag": tag + "-r", "retiredThrough": 0})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := registry.AppendFrame(path, payload); err != nil {
+			t.Fatal(err)
+		}
+	}
+	given := steward.SituationSources{Now: func() time.Time { return situationNow }, HostWork: func() (int, int, error) { return 0, 0, nil },
+		LaneHome:  func() (string, error) { return t.TempDir(), nil },
+		Load:      func(now time.Time) hostload.Sample { return hostload.Sample{Available: true} },
+		Processes: identity.FixedProcessTable{}, Argv: func(int64) ([]string, bool) { return nil, false }, Cwd: func(int64) (string, bool) { return "", false },
+		Prober: situationDeadProber{}, Registry: func() (string, error) { return path, nil },
+		Executions: func(string) map[string]enginepin.Execution {
+			return map[string]enginepin.Execution{"runner": {Generation: 3}}
+		}}
+	s := steward.ReadSituation(t.TempDir(), situationSources(defaultIntentOwners(), given))
+	holders := map[string]steward.SeatHolder{}
+	for _, holder := range s.Holders {
+		holders[holder.Checkout] = holder
+	}
+	if holder := holders[leased]; holder.MainId == "" || holder.Lineage != "lin-situation" || holder.Pid != pid || holder.Unavailable != "" {
+		t.Fatalf("the leased checkout's holder = %+v, want this test's main", holder)
+	}
+	if holder, ok := holders[free]; !ok || holder.MainId != "" || holder.Unavailable != "" || s.Unavailable["engine"] != "" || s.Executions["runner"].Generation != 3 {
+		t.Fatalf("the free checkout's holder = %+v (listed %v), unavailable %q, want no holder and no error", holder, ok, s.Unavailable["engine"])
+	}
+
+	given.Holder = func(string) (steward.SeatHolder, error) { return steward.SeatHolder{MainId: "given"}, nil }
+	if s = steward.ReadSituation(t.TempDir(), situationSources(defaultIntentOwners(), given)); holdersMain(s.Holders) != "given given" {
+		t.Fatalf("a given holder reader was replaced: holders %+v", s.Holders)
+	}
+}
+
+func holdersMain(holders []steward.SeatHolder) string {
+	var mains []string
+	for _, holder := range holders {
+		mains = append(mains, holder.MainId)
+	}
+	return strings.Join(mains, " ")
 }
