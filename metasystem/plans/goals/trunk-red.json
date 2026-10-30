@@ -7409,6 +7409,71 @@
         "by": "Wido",
         "why": "known flake, same test as the open flake incident of 10-28: red commit 2ccea6708e8c differs from c67fc3a09 by records only; the test passes 10 of 10 on that code at load 11; the red proof ran at load about 15 (process-group timing in the FIFO bed)"
       }
+    },
+    {
+      "testUnit": "metasystem/cmd/metasystem",
+      "testName": "TestPendingWaitFromChildShell",
+      "id": "flake:fa6e0d56a3b2cfd2f1323973e445f1a3d4d58289569895d70c0cd745a1c90565-2",
+      "identity": "flake:fa6e0d56a3b2cfd2f1323973e445f1a3d4d58289569895d70c0cd745a1c90565",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261030T055005.176814000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestPendingWaitFromChildShell",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261030T055005.176814000Z-replay-1",
+          "batch": "",
+          "baseCommit": "33be2da9688902ffedf07cb2eb6fb487be0e16b9",
+          "baseTree": "b52064388cbf88ae106c76395682608e338aa286",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261030T055005.176814000Z-replay-1.log",
+          "logDigest": "",
+          "seenAt": "2026-10-30T07:03:11Z",
+          "opid": "73203FC8D2DD9791AD9A998D73-landing-41ad7d6c",
+          "tree": "b52064388cbf88ae106c76395682608e338aa286",
+          "rerun": {
+            "attempt": "20261030T055005.176814000Z-replay-1-repeat-1",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261030T055005.176814000Z-replay-1-repeat-1.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261030T055005.176814000Z-replay-1-repeat-1.log.fa6e0d56a3b2cfd2f1323973e445f1a3d4d58289569895d70c0cd745a1c90565.output",
+              "digest": "8c65aab49087ec5686b71e840750fc298bd71d491a0fa52c5a75897ce9361311",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261030T055005.176814000Z-replay-1.log.fa6e0d56a3b2cfd2f1323973e445f1a3d4d58289569895d70c0cd745a1c90565.output",
+            "digest": "9e2e2650a8c8d44a40899a0cfc38eef818f59a8c3c680dfbb5ab7fe3a8c21e59",
+            "outcome": "fail"
+          },
+          "load": 6.23291015625,
+          "repeat": "alone"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-10-30T07:03:11Z",
+      "closed": null,
+      "class": "flake"
     }
   ],
   "cadence": {
