@@ -150,7 +150,7 @@ func applicableMainProof(install, checkout, commit, tree string, seams ProveSeam
 			}
 		}
 		fullAt, err := time.Parse(time.RFC3339, r.FullAt)
-		currentFull := err == nil && seams.now().Sub(fullAt) >= 0 && (r.flakeInherited() || seams.now().Sub(fullAt) < time.Hour)
+		currentFull := err == nil && seams.now().Sub(fullAt) >= 0 && (r.kept() || seams.now().Sub(fullAt) < time.Hour)
 		inherited := r.Scope == "scoped" || r.Scope == "inherited" || strings.HasPrefix(r.Reason, "inherits green from tree ")
 		if inherited && !currentFull {
 			continue
@@ -213,14 +213,24 @@ func inheritFlakeRecords(install, checkout, commit, tree string, seams ProveSeam
 		base = r
 	}
 	fullAt, err := time.Parse(time.RFC3339, base.FullAt)
-	if base.Commit == "" || base.Environment != newest || err != nil || seams.now().Before(fullAt) {
+	if base.Commit == "" || base.Environment != newest || err != nil || seams.now().Before(fullAt) || !goalRecordsBetween(install, checkout, base.FullTree, tree, seams) {
 		return nil
 	}
-	changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", base.FullTree, tree)
+	return appendLine(resultsPath(install), Result{Trunk: true, Commit: commit, Tree: tree, Result: Green, Attempt: seams.newID(),
+		At: seams.now().Format(time.RFC3339), Log: base.Log, Scope: "inherited", ScopeReason: flakeRecordsReason,
+		Reason: "inherits green from tree " + Short(base.FullTree) + "; main moved by goal records only", Base: base.FullTree, BaseCommit: base.Commit,
+		FullTree: base.FullTree, FullAt: base.FullAt, Environment: base.Environment}, seams)
+}
+
+// goalRecordsBetween says every path changed from one tree to the next is a
+// goal page or the incident register, present in the new tree and read
+// without problems by the ledger. Only the new tree is read.
+func goalRecordsBetween(install, checkout, from, to string, seams ProveSeams) bool {
+	changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", from, to)
 	paths := strings.Split(strings.TrimSpace(changed), "\n")
 	prefix, relErr := filepath.Rel(checkout, install)
 	if err != nil || relErr != nil || strings.TrimSpace(changed) == "" || !recordsOnlyPaths(install, checkout, paths) {
-		return nil
+		return false
 	}
 	after := map[string][]byte{}
 	for _, path := range paths {
@@ -229,19 +239,13 @@ func inheritFlakeRecords(install, checkout, commit, tree string, seams ProveSeam
 			name, inside = path, true
 		}
 		if !inside || !goal.GoalRecordPath(name) {
-			return nil
+			return false
 		}
-		now, err := seams.git(checkout, "show", tree+":"+path)
+		now, err := seams.git(checkout, "show", to+":"+path)
 		if err != nil {
-			return nil
+			return false
 		}
 		after[name] = []byte(now)
 	}
-	if !goal.GoalRecordsOnly(after) {
-		return nil
-	}
-	return appendLine(resultsPath(install), Result{Trunk: true, Commit: commit, Tree: tree, Result: Green, Attempt: seams.newID(),
-		At: seams.now().Format(time.RFC3339), Log: base.Log, Scope: "inherited", ScopeReason: flakeRecordsReason,
-		Reason: "inherits green from tree " + Short(base.FullTree) + "; main moved by goal records only", Base: base.FullTree, BaseCommit: base.Commit,
-		FullTree: base.FullTree, FullAt: base.FullAt, Environment: base.Environment}, seams)
+	return goal.GoalRecordsOnly(after)
 }

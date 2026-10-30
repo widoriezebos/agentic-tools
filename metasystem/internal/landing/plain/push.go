@@ -180,8 +180,12 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 			if refusal := provenGreen(install, tree); refusal != nil {
 				return refusal
 			}
+			proven := tree
 			head, tree, err = foldRecords(install, checkout, old, tree, move, seams)
-			return err
+			if err != nil {
+				return err
+			}
+			return inheritFold(install, checkout, proven, head, tree, now, seams)
 		})
 		if err != nil {
 			return outcome, err
@@ -226,6 +230,33 @@ func PushChecked(install, checkout string, now time.Time, before func(old, head 
 		return completePush(install, checkout, batch, old, head, tree, now, seams)
 	})
 	return outcome, err
+}
+
+// foldRecordsReason marks a batch's green kept across goal records the push
+// took from main. The value is stored in results and stays as first written.
+const foldRecordsReason = "the batch took goal records from main; its green stands"
+
+// inheritFold records that the folded tree inherits the proven tree's green
+// when the fold took goal pages or the incident register only. A folded tree
+// with a result keeps it; any other fold records nothing and stays unproven.
+func inheritFold(install, checkout, proven, head, tree string, now time.Time, seams ProveSeams) error {
+	if _, ok, err := ResultFor(install, tree); err != nil || ok {
+		return err
+	}
+	base, ok, err := ResultFor(install, proven)
+	if err != nil || !ok || !goalRecordsBetween(install, checkout, proven, tree, seams) {
+		return err
+	}
+	return appendLine(resultsPath(install), Result{Commit: head, Tree: tree, Result: Green, Attempt: seams.newID(), At: now.Format(time.RFC3339),
+		Scope: "inherited", ScopeReason: foldRecordsReason, Reason: "inherits green from tree " + Short(proven) + "; the batch took goal records from main",
+		Base: proven, BaseCommit: base.Commit, Log: base.Log, FullTree: base.FullTree, FullAt: base.FullAt, Environment: base.Environment,
+		Goals: base.Goals, BatchID: base.BatchID, BatchMembers: base.BatchMembers}, seams)
+}
+
+// foldOfFull is a fold of a batch whose green was a full proof: it owes what
+// that push owes, nothing.
+func (r Result) foldOfFull() bool {
+	return r.ScopeReason == foldRecordsReason && r.Result == Green && r.FullTree == r.Base
 }
 
 // completePush finishes a confirmed publication; its commit identifies one record.

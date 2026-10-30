@@ -80,7 +80,7 @@ func TestStandingResolvedRedAdmission(t *testing.T) {
 					t.Fatalf("fresh green scope %+v", a)
 				}
 			case "expired":
-				if a.Scope != "full" || a.Reason != "records-only batch has no full green on main under an hour old" {
+				if a.Scope != "scoped" || a.Reason != fmt.Sprintf("main moved by records only; 1 check run, the rest holds from the %s check", bedNow.Add(-2*time.Hour).Local().Format("15:04")) {
 					t.Fatalf("expired green scope %+v", a)
 				}
 			case "closed":

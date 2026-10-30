@@ -396,7 +396,8 @@ func TestLandingScopedLedgerRefreshAdapterRunsAffectedChecksAndKeepsClock(t *tes
 			assertDue(originAt.Add(31*time.Minute), true)
 			b.policy(t, "auto")
 			assertDue(originAt.Add(59*time.Minute), false)
-			assertDue(originAt.Add(time.Hour+time.Second), true)
+			// Main's own records check keeps its full green; a scoped push owes.
+			assertDue(originAt.Add(time.Hour+time.Second), !keeperRoute)
 			t.Logf("%s; executed prerequisite and ledger; unaffected retained; original full tree/time and clock retained", scoped.ScopeReason)
 		})
 	}
