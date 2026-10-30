@@ -13,6 +13,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 // SessionStart outcome tests, ported from the Bash 3.2 start-boundary matrix
@@ -672,4 +674,48 @@ func firedTimer(time.Duration) <-chan time.Time {
 	fired := make(chan time.Time, 1)
 	fired <- time.Unix(0, 0)
 	return fired
+}
+
+// hook-start-case: a launched job's start keeps its context and never arms;
+// a seat, the landing agent, a person's terminal and a mission host arm.
+func TestALaunchedKindNeverArms(t *testing.T) {
+	t.Parallel()
+	const packet = `{"hookSpecificOutput":{"additionalContext":"role packet","hookEventName":"SessionStart"}}` + "\n"
+	mission := map[string]string{"METASYSTEM_MISSION_ID": "mission-1", "METASYSTEM_OWNER_LINEAGE": "lineage-1",
+		"METASYSTEM_MISSION_LEASE": "lease-1", "METASYSTEM_MISSION_TURN": "1", "METASYSTEM_HOST_START_GATE": "gate"}
+	tests := []struct {
+		name string
+		env  map[string]string
+		ups  int
+	}{
+		{name: "read", env: map[string]string{launch.KindEnv: "read"}},
+		{name: "build", env: map[string]string{launch.KindEnv: "build"}},
+		{name: "critique", env: map[string]string{launch.KindEnv: "critique"}},
+		{name: "design", env: map[string]string{launch.KindEnv: "design"}},
+		{name: "proof", env: map[string]string{launch.KindEnv: "proof"}},
+		{name: "probe", env: map[string]string{launch.KindEnv: "probe"}},
+		{name: "unknown", env: map[string]string{launch.KindEnv: "later-kind"}},
+		{name: "seat", env: map[string]string{launch.KindEnv: "seat"}, ups: 1},
+		{name: "landing", env: map[string]string{launch.KindEnv: "landing"}, ups: 1},
+		{name: "no kind", env: map[string]string{}, ups: 1},
+		{name: "mission host", env: mission, ups: 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			installation := newHookInstallation(t)
+			ops := fullPathOps(t, installation, "context")
+			run := runHook(t, installation, ops, hookCall{runtime: "claude", event: "start", env: test.env,
+				payload: `{"session_id":"full-path","source":"startup"}` + "\n"})
+			if run.status != 0 || run.stdout != packet || run.stderr != "" {
+				t.Fatalf("start = status %d stdout %q stderr %q", run.status, run.stdout, run.stderr)
+			}
+			if len(ops.upRequests) != test.ups {
+				t.Fatalf("start armed %d times, want %d: %s", len(ops.upRequests), test.ups, ops.trace())
+			}
+			if !ops.called("session start ") {
+				t.Fatalf("start skipped its wait rows: %s", ops.trace())
+			}
+		})
+	}
 }

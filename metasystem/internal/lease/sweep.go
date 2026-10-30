@@ -103,6 +103,11 @@ func (c *claimer) sweepOne(path, stem string, epoch int64, locksDir string) (boo
 	if !terminalStatuses[status] && !sweepableStatuses[status] {
 		return false, fmt.Errorf("claim sweep refused: job record %s has an unknown status %q", stem, status)
 	}
+	// The launch store owns a unit reservation, and the unit runner's
+	// collection is its one terminal writer.
+	if operation, _ := job["operationId"].(string); operation == "unit-launch:"+stem {
+		return false, nil
+	}
 	// claimEpoch is NULLABLE by the writer's contract (dispatch's
 	// nullableEpoch: a human-dispatched job carries null): a null or
 	// absent epoch means the job belongs to NO lease generation, so an

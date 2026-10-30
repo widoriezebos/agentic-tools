@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
@@ -607,9 +608,14 @@ func (s *startRun) main() {
 	s.preparePeer()
 	s.prepareContextObject()
 
-	if s.deferredIdentityRead {
+	switch {
+	case !launch.MainKind(inv.env(launch.KindEnv)):
+		// A launched job's step keeps its context, notices and wait rows, but
+		// never arms: only a person's terminal, a mission host, a seat and the
+		// landing agent may take the checkout's lease.
+	case s.deferredIdentityRead:
 		s.collectNotice("Metasystem supervision could not identify the immediate " + inv.Runtime + " agent process; arming was refused.")
-	} else {
+	default:
 		s.armingStarted = true
 		var output capturedOutput
 		request := UpRequest{

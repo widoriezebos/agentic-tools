@@ -1,6 +1,7 @@
 package dispatch
 
 import (
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -68,5 +69,69 @@ func TestAdmittedUnitRetryKeepsItsAttempt(t *testing.T) {
 	}
 	if excluded := ProjectBudget(root, file, later); excluded.Attempts != 2 || excluded.ReservedJobMinutes != settled.ReservedJobMinutes {
 		t.Fatalf("an uncharged environment relaunch was counted: %+v", excluded)
+	}
+}
+
+// A reservation a takeover failed before its collection takes the real
+// outcome; a collected or started record still refuses a contradiction.
+func TestASweptReservationTakesItsRealOutcome(t *testing.T) {
+	t.Parallel()
+	root := budgetProjectionRoot(t)
+	file := budgetGoal()
+	file.StopCapability = &goal.StopCapability{Generation: 3, Revision: 3, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+	file.Budget.AttemptLimit, file.Budget.ReservedJobMinutesLimit, file.Budget.ActiveJobLimit = 5, 1000, 5
+	reserved := time.Date(2026, 8, 28, 8, 10, 0, 0, time.UTC)
+	sweep := func(id string, fields map[string]any) string {
+		t.Helper()
+		if err := ReserveUnitLaunch(root, id, "run", file, 1, 5, reserved, false); err != nil {
+			t.Fatal(err)
+		}
+		_, path, _ := paths(root, id)
+		record, err := readObject(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		record["status"], record["phase"], record["error"], record["endedAt"] = "failed", "claim-sweep", "stale-claim-epoch", "2026-08-28T08:11:00Z"
+		for key, value := range fields {
+			record[key] = value
+		}
+		if err := writeRecord(path, record); err != nil {
+			t.Fatal(err)
+		}
+		return path
+	}
+	started, ended := reserved.Add(time.Minute).Format(time.RFC3339Nano), reserved.Add(3*time.Minute).Format(time.RFC3339Nano)
+	reconcile := func(id, status string) error {
+		return ReconcileUnitLaunch(root, id, "run", file.Id, file.Claimed.Revision, status, "", started, ended, true)
+	}
+
+	path := sweep("unit-read", nil)
+	if err := reconcile("unit-read", "completed"); err != nil {
+		t.Fatalf("the collection refused a swept reservation: %v", err)
+	}
+	record, _ := readObject(path)
+	_, phase := record["phase"]
+	_, failure := record["error"]
+	if record["status"] != "completed" || record["startedAt"] != started || record["endedAt"] != ended || record["unitExecuted"] != true || phase || failure {
+		t.Fatalf("the swept reservation did not take its real outcome: %v", record)
+	}
+	before, _ := os.ReadFile(path)
+	if err := reconcile("unit-read", "completed"); err != nil {
+		t.Fatalf("a repeated collection was refused: %v", err)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatalf("a repeated collection changed the record:\nbefore %s\nafter  %s", before, after)
+	}
+	if err := reconcile("unit-read", "failed"); err == nil || !strings.Contains(err.Error(), "contradicts its terminal reservation") {
+		t.Fatalf("a contradicting outcome on a collected record = %v", err)
+	}
+
+	path = sweep("job-started", map[string]any{"startedAt": "2026-08-28T08:10:30Z"})
+	before, _ = os.ReadFile(path)
+	if err := reconcile("job-started", "completed"); err == nil || !strings.Contains(err.Error(), "contradicts its terminal reservation") {
+		t.Fatalf("a started record the sweep failed took a different outcome: %v", err)
+	}
+	if after, _ := os.ReadFile(path); string(after) != string(before) {
+		t.Fatalf("a refused collection changed the started record:\nbefore %s\nafter  %s", before, after)
 	}
 }

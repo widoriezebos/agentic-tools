@@ -67,6 +67,11 @@ func noFenceRoot(kind string) string {
 // the steward's seat and the keeper's landing agent.
 func fencedKind(kind string) bool { return kind == "seat" || kind == LandingKind }
 
+// MainKind reports whether a session of this launch kind may arm: a session
+// with no launch kind, a seat and the landing agent; every other launched
+// session is a step of a job.
+func MainKind(kind string) bool { return kind == "" || fencedKind(kind) }
+
 func samePath(a, b string) bool {
 	if a == "" || b == "" {
 		return false
