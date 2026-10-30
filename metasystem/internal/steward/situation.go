@@ -17,8 +17,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
-// Situation is one read's parts. Unavailable names each part whose reader
-// failed (lane, hold, ledger, waiting, quota) with the reason.
+// Situation is one read's parts. GoalFacts are the seat brief's facts of
+// each goal this seat holds. Unavailable names each part whose reader failed
+// (lane, hold, ledger, waiting, quota, facts, asks) with the reason.
 type Situation struct {
 	At      time.Time
 	Machine string
@@ -31,6 +32,8 @@ type Situation struct {
 	ClaimLines  []string
 	Waiting     []string
 	Quota       []ClaimQuotaBlock
+	GoalFacts   map[string]string
+	Asks        []SituationAsk
 	Unavailable map[string]string
 }
 
@@ -40,6 +43,15 @@ type ClaimQuotaBlock struct {
 	Held    string
 	Ready   []string
 	Command string
+}
+
+// SituationAsk is one thread of this seat or its goals: its state at the
+// read, when it closed, and whether this machine was offered its ask.
+type SituationAsk struct {
+	Thread    board.Thread
+	State     string
+	Since     time.Time
+	Delivered bool
 }
 
 // SituationSources are the reads the situation makes outside the steward. A
@@ -54,6 +66,10 @@ type SituationSources struct {
 	ClaimLaneState func(root, goalID, main string) (string, error)
 	// Waiting reads the durable waiting lines of the checkout at root.
 	Waiting func(root string) ([]string, error)
+	// Units reads a goal's units over the read's one projection and clock;
+	// nil leaves the seat brief's own reader, which says it is unavailable.
+	Units     func(root, goalID string, projection goal.Projection, now time.Time) ([]UnitStage, error)
+	BoardHome func() (string, error)
 }
 
 // ReadSituation reads every part once, in a fixed order, at one clock.
@@ -63,6 +79,9 @@ func ReadSituation(root string, src SituationSources) Situation {
 	}
 	if src.LaneHome == nil {
 		src.LaneHome = board.Home
+	}
+	if src.BoardHome == nil {
+		src.BoardHome = board.Home
 	}
 	now := src.Now()
 	s := Situation{At: now, Unavailable: map[string]string{}}
@@ -86,10 +105,14 @@ func ReadSituation(root string, src SituationSources) Situation {
 	}
 	if machineErr != nil {
 		s.Unavailable["ledger"] = "this machine cannot be named: " + machineErr.Error()
-		s.Unavailable["quota"] = s.Unavailable["ledger"]
+		for _, part := range []string{"quota", "facts", "asks"} {
+			s.Unavailable[part] = s.Unavailable["ledger"]
+		}
 		return s
 	}
 	s.readQuota(root, ledger)
+	s.readFacts(root, src, ledger, now)
+	s.readAsks(src, now)
 	return s
 }
 
@@ -154,6 +177,60 @@ func (s *Situation) readLedger(root, machine string, ledger *healthLedger, now t
 		return out
 	}
 	s.ClaimLines = append(goal.FencedClaimLines(files(s.Next.Fenced)), goal.LandingClaimLines(files(s.Next.Landing), now, dispatch.LandingOverdue(root))...)
+}
+
+// seatGoals are the goals this seat holds: claimed, landing and fenced.
+func (s *Situation) seatGoals() []string {
+	return slices.Concat(s.Next.Claimed, s.Next.Landing, s.Next.Fenced)
+}
+
+// readFacts writes each seat goal's facts as the seat brief writes them,
+// over the read's one projection and clock.
+func (s *Situation) readFacts(root string, src SituationSources, ledger *healthLedger, now time.Time) {
+	if reason := s.Unavailable["ledger"]; reason != "" {
+		s.Unavailable["facts"] = reason
+		return
+	}
+	d := defaultSeatDependencies(nil)
+	d.Now = func() time.Time { return now }
+	d.Project = func(string, time.Time) (goal.Projection, error) { return ledger.projection, nil }
+	d.Machine = func(string) (string, error) { return s.Machine, nil }
+	if src.Units != nil {
+		d.Units = func(root, id string) ([]UnitStage, error) { return src.Units(root, id, ledger.projection, now) }
+	}
+	ids := s.seatGoals()
+	tips, err := d.Tips(root, ids)
+	if err != nil {
+		s.Unavailable["facts"] = "goal tips: " + err.Error()
+	}
+	s.GoalFacts = map[string]string{}
+	for _, id := range ids {
+		s.GoalFacts[id] = seatFacts(root, SeatSelection{Goal: id}, s.Machine, tips, d)
+	}
+}
+
+// readAsks keeps every thread to or from this seat or to its goals, in
+// every state, with this machine's own delivery marker. It marks nothing.
+func (s *Situation) readAsks(src SituationSources, now time.Time) {
+	home, err := src.BoardHome()
+	var threads []board.Thread
+	if err == nil {
+		threads, err = board.Threads(home)
+	}
+	if err != nil {
+		s.Unavailable["asks"] = err.Error()
+		return
+	}
+	goals := s.seatGoals()
+	for _, thread := range threads {
+		if !slices.ContainsFunc(thread.Messages, func(m board.Message) bool {
+			return m.To.Machine == s.Machine || m.From.Machine == s.Machine || slices.Contains(goals, m.To.Goal)
+		}) {
+			continue
+		}
+		state, since := thread.State(now)
+		s.Asks = append(s.Asks, SituationAsk{Thread: thread, State: state, Since: since, Delivered: thread.Root != nil && thread.Root.Offered(s.Machine)})
+	}
 }
 
 // readQuota asks the claim quota on the read's ledger through the live lane

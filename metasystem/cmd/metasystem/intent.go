@@ -664,6 +664,11 @@ type intentInvocation struct {
 	laneRecord                           *lane.Record
 	laneSkipShadow                       bool
 	choice                               *channelChoice
+
+	// givenProjection and givenNow are a caller's one ledger read, which
+	// every projection of this invocation returns.
+	givenProjection *goal.Projection
+	givenNow        time.Time
 }
 
 // runIntent routes one public command. Help needs no repository, identity or

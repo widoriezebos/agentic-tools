@@ -608,6 +608,9 @@ func markers(mailbox, id string) []string {
 	return machines
 }
 
+// Offered reports whether this machine's delivery marker is on the message.
+func (m Message) Offered(machine string) bool { return m.offered(machine) }
+
 func (m Message) offered(machine string) bool {
 	for _, name := range m.offeredTo {
 		if name == machine {

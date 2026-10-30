@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"reflect"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -65,9 +67,17 @@ func TestTheSituationReadsTheLedgerAndTheQuotaLive(t *testing.T) {
 	root := situationQuotaBed(t)
 	states := map[string]string{}
 	projections := 0
+	tip := seatGit(t, root, "rev-parse", goal.AcceptedRef)
+	units := func(gotRoot, id string, projection goal.Projection, now time.Time) ([]UnitStage, error) {
+		if gotRoot != root || id != "held-h" || projection.Tip != tip || !now.Equal(situationNow) {
+			t.Errorf("units read root=%q goal=%q tip=%q now=%v, want the read's projection %q at %v", gotRoot, id, projection.Tip, now, tip, situationNow)
+		}
+		return []UnitStage{{Unit: "first", Stage: "built"}, {Unit: "second", Stage: "reading"}}, nil
+	}
 	src := SituationSources{Now: func() time.Time { return situationNow }, LaneHome: func() (string, error) { return t.TempDir(), nil },
-		Project: countedProject(&projections), ClaimLaneState: claimQuotaLane(t, root, states),
-		Waiting: func(string) ([]string, error) { return []string{"a durable wait"}, nil }}
+		Project: countedProject(&projections), ClaimLaneState: claimQuotaLane(t, root, states), Units: units,
+		BoardHome: func() (string, error) { return t.TempDir(), nil },
+		Waiting:   func(string) ([]string, error) { return []string{"a durable wait"}, nil }}
 	release := ClaimQuotaBlock{Held: "held-h", Ready: []string{"ready-c", "ready-a", "ready-b"}, Command: "metasystem goal release held-h --reason TEXT"}
 
 	s := ReadSituation(root, src)
@@ -82,6 +92,12 @@ func TestTheSituationReadsTheLedgerAndTheQuotaLive(t *testing.T) {
 	}
 	if !slices.Equal(s.Waiting, []string{"a durable wait"}) || projections != 1 {
 		t.Fatalf("waiting=%v projections=%d, want the wait and one projection", s.Waiting, projections)
+	}
+	facts := s.GoalFacts["held-h"]
+	for _, want := range []string{"Next step: Build it.", "first: built", "second: reading", "Hand-in"} {
+		if !strings.Contains(facts, want) {
+			t.Fatalf("the held goal's facts lack %q:\n%s", want, facts)
+		}
 	}
 
 	states["held-h"] = "waiting"
@@ -104,40 +120,153 @@ func TestTheSituationReadsTheLedgerAndTheQuotaLive(t *testing.T) {
 func TestASituationPartFailsAlone(t *testing.T) {
 	t.Parallel()
 	root := situationQuotaBed(t)
-	laneHome := situationLaneHome(t)
+	laneHome, boardHome := situationLaneHome(t), t.TempDir()
+	if _, err := board.Publish(boardHome, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "m1e"}, Text: "Is it built?"}, situationNow); err != nil {
+		t.Fatal(err)
+	}
+	// Units is nil: the seat brief's own reader says the units are unavailable.
 	src := func() SituationSources {
 		return SituationSources{Now: func() time.Time { return situationNow }, LaneHome: func() (string, error) { return laneHome, nil },
 			LaneStatus:     func(string, time.Time) plain.Status { return plain.Status{Problems: []string{"the lane read"}} },
 			HostWork:       func() (int, int, error) { return 0, 0, nil },
+			BoardHome:      func() (string, error) { return boardHome, nil },
 			ClaimLaneState: claimQuotaLane(t, root, nil), Waiting: func(string) ([]string, error) { return []string{"a durable wait"}, nil }}
 	}
-	read := func(s Situation) (lane, ledger, quota, waiting bool) {
-		return slices.Equal(s.Lane.Problems, []string{"the lane read"}), slices.Equal(s.Next.Claimed, []string{"held-h"}), len(s.Quota) == 1, len(s.Waiting) == 1
+	read := func(s Situation) (lane, ledger, quota, waiting, asks bool) {
+		return slices.Equal(s.Lane.Problems, []string{"the lane read"}), slices.Equal(s.Next.Claimed, []string{"held-h"}), len(s.Quota) == 1, len(s.Waiting) == 1, len(s.Asks) == 1
 	}
 
 	whole := src()
-	if lane, ledger, quota, waiting := read(ReadSituation(root, whole)); !lane || !ledger || !quota || !waiting {
-		t.Fatalf("the whole read: lane=%v ledger=%v quota=%v waiting=%v", lane, ledger, quota, waiting)
+	s := ReadSituation(root, whole)
+	if lane, ledger, quota, waiting, asks := read(s); !lane || !ledger || !quota || !waiting || !asks {
+		t.Fatalf("the whole read: lane=%v ledger=%v quota=%v waiting=%v asks=%v unavailable=%v", lane, ledger, quota, waiting, asks, s.Unavailable)
+	}
+	if facts := s.GoalFacts["held-h"]; !strings.Contains(facts, "Units unavailable") || !strings.Contains(facts, "Next step:") {
+		t.Fatalf("no unit reader: the held goal's facts are %q, want the units unavailable and the rest", facts)
 	}
 
 	noLane := src()
 	noLane.LaneHome = func() (string, error) { return "", errors.New("no host home") }
-	s := ReadSituation(root, noLane)
-	if lane, ledger, quota, waiting := read(s); lane || !ledger || !quota || !waiting || s.Unavailable["lane"] == "" {
-		t.Fatalf("a failed lane home: lane=%v ledger=%v quota=%v waiting=%v unavailable=%v", lane, ledger, quota, waiting, s.Unavailable)
+	s = ReadSituation(root, noLane)
+	if lane, ledger, quota, waiting, asks := read(s); lane || !ledger || !quota || !waiting || !asks || s.Unavailable["lane"] == "" {
+		t.Fatalf("a failed lane home: lane=%v ledger=%v quota=%v waiting=%v asks=%v unavailable=%v", lane, ledger, quota, waiting, asks, s.Unavailable)
+	}
+
+	noBoard := src()
+	noBoard.BoardHome = func() (string, error) { return "", errors.New("no board home") }
+	s = ReadSituation(root, noBoard)
+	if lane, ledger, quota, waiting, asks := read(s); !lane || !ledger || !quota || !waiting || asks || s.Unavailable["asks"] != "no board home" || s.GoalFacts["held-h"] == "" {
+		t.Fatalf("a failed board home: lane=%v ledger=%v quota=%v waiting=%v asks=%v unavailable=%v", lane, ledger, quota, waiting, asks, s.Unavailable)
 	}
 
 	noMachine := src()
 	noMachine.Machine = func(string) (string, error) { return "", errors.New("no nickname") }
 	s = ReadSituation(root, noMachine)
-	if lane, ledger, quota, _ := read(s); !lane || ledger || quota || s.Unavailable["ledger"] == "" || s.Unavailable["quota"] == "" || s.Unavailable["lane"] != "" {
-		t.Fatalf("a failed machine read: lane=%v ledger=%v quota=%v unavailable=%v", lane, ledger, quota, s.Unavailable)
+	if lane, ledger, quota, _, asks := read(s); !lane || ledger || quota || asks || len(s.GoalFacts) != 0 || s.Unavailable["lane"] != "" {
+		t.Fatalf("a failed machine read: lane=%v ledger=%v quota=%v asks=%v facts=%d unavailable=%v", lane, ledger, quota, asks, len(s.GoalFacts), s.Unavailable)
+	}
+	for _, part := range []string{"ledger", "quota", "facts", "asks"} {
+		if s.Unavailable[part] == "" {
+			t.Fatalf("a failed machine read leaves %s readable: %v", part, s.Unavailable)
+		}
 	}
 
 	noWaiting := src()
 	noWaiting.Waiting = func(string) ([]string, error) { return nil, errors.New("the waits cannot be read") }
 	s = ReadSituation(root, noWaiting)
-	if lane, ledger, quota, _ := read(s); !lane || !ledger || !quota || s.Unavailable["waiting"] != "the waits cannot be read" {
-		t.Fatalf("a failed waiting read: lane=%v ledger=%v quota=%v unavailable=%v", lane, ledger, quota, s.Unavailable)
+	if lane, ledger, quota, _, asks := read(s); !lane || !ledger || !quota || !asks || s.Unavailable["waiting"] != "the waits cannot be read" {
+		t.Fatalf("a failed waiting read: lane=%v ledger=%v quota=%v asks=%v unavailable=%v", lane, ledger, quota, asks, s.Unavailable)
+	}
+}
+
+// boardTree is every path under the board home with its size.
+func boardTree(t *testing.T, home string) map[string]int64 {
+	t.Helper()
+	tree := map[string]int64{}
+	if err := filepath.Walk(home, func(path string, info os.FileInfo, err error) error {
+		if err == nil {
+			tree[path] = info.Size()
+		}
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return tree
+}
+
+func TestTheSituationKeepsEveryAskOfThisSeat(t *testing.T) {
+	t.Parallel()
+	root, home := situationQuotaBed(t), t.TempDir()
+	if err := askOnce(askedReceipts(root), home, board.Sender{Machine: "m1e"}, board.Address{Goal: "held-h"}, "the claim on held-h", "Release held-h?", situationNow); err != nil {
+		t.Fatal(err)
+	}
+	publish := func(request board.Request, at time.Time) board.Message {
+		t.Helper()
+		published, err := board.Publish(home, request, at)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return published.Message
+	}
+	deadline := publish(board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "m1e"}, Text: "Is it built?", Deadline: 30 * time.Minute}, situationNow)
+	if err := board.Mark(deadline, "m1e", "coordinator", "inbox", situationNow.Add(time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	publish(board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Goal: "ready-a"}, Text: "Who takes ready-a?"}, situationNow)
+	outgoing := publish(board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1e"}, To: board.Address{Machine: "m1x"}, Text: "Can you read it?"}, situationNow)
+	now := situationNow.Add(10 * time.Minute)
+	src := SituationSources{Now: func() time.Time { return now }, LaneHome: func() (string, error) { return t.TempDir(), nil },
+		ClaimLaneState: claimQuotaLane(t, root, nil), BoardHome: func() (string, error) { return home, nil }}
+	read := func() map[string]SituationAsk {
+		t.Helper()
+		before := boardTree(t, home)
+		s := ReadSituation(root, src)
+		if after := boardTree(t, home); !reflect.DeepEqual(before, after) {
+			t.Fatalf("the read changed the board:\nbefore %v\nafter  %v", before, after)
+		}
+		for path := range boardTree(t, home) {
+			if strings.Contains(path, "concluded") {
+				t.Fatalf("the read concluded a message: %s", path)
+			}
+		}
+		asks := map[string]SituationAsk{}
+		for _, ask := range s.Asks {
+			asks[ask.Thread.Messages[0].PeerText()] = ask
+		}
+		if s.Unavailable["asks"] != "" {
+			t.Fatalf("the asks do not read: %q", s.Unavailable["asks"])
+		}
+		return asks
+	}
+	asks := read()
+	if len(asks) != 3 {
+		t.Fatalf("asks = %v, want this seat's three and not the other seat's", asks)
+	}
+	if ask := asks["Is it built?"]; ask.State != board.ThreadOpen || !ask.Delivered {
+		t.Fatalf("the read deadline ask: %+v, want open and delivered", ask)
+	}
+	if ask := asks["Release held-h?"]; ask.State != board.ThreadOpen || ask.Delivered {
+		t.Fatalf("the goal's deadline-free ask: %+v, want open and not delivered", ask)
+	}
+	if ask := asks["Can you read it?"]; ask.State != board.ThreadOpen {
+		t.Fatalf("this seat's own ask: %+v, want open", ask)
+	}
+
+	// Another machine reads the goal's ask: it is still not delivered here.
+	if err := board.Mark(*asks["Release held-h?"].Thread.Root, "ui", "coordinator", "inbox", now); err != nil {
+		t.Fatal(err)
+	}
+	if ask := read()["Release held-h?"]; ask.Delivered || ask.State != board.ThreadOpen {
+		t.Fatalf("the goal's ask marked for ui: %+v, want open and not delivered for m1e", ask)
+	}
+
+	now = situationNow.Add(31 * time.Minute)
+	publish(board.Request{Kind: board.KindReply, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "m1e"}, Thread: outgoing.ID, Text: "Yes."}, now)
+	asks = read()
+	if ask := asks["Is it built?"]; ask.State != board.ThreadExpired || !ask.Since.Equal(situationNow.Add(30*time.Minute)) {
+		t.Fatalf("the deadline ask at +31m: %+v, want expired at +30m", ask)
+	}
+	if ask := asks["Can you read it?"]; ask.State != board.ThreadReplied || !ask.Since.Equal(now) || len(asks) != 3 {
+		t.Fatalf("the answered ask: %+v (%d asks), want replied at %v", ask, len(asks), now)
 	}
 }

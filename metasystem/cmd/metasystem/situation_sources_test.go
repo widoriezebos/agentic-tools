@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -100,5 +101,83 @@ func TestTheSituationAndTheLaneSayOneHold(t *testing.T) {
 	now = situationNow.Add(2 * time.Minute)
 	if s = read(); s.Hold == nil || !strings.Contains(s.Unavailable["hold"], store.Root) {
 		t.Fatalf("an unreadable store holds: hold=%+v unavailable=%q", s.Hold, s.Unavailable["hold"])
+	}
+}
+
+// countedLedgerOwners are the work bed's owners with the endpoint reader and
+// the command clock counted.
+func countedLedgerOwners(bed *workBed, endpoints, clocks *int) intentOwners {
+	owners := bed.workOwners()
+	endpoint, commandNow := owners.dependencies.endpoint, owners.commandNow
+	owners.dependencies.endpoint = func(root string) (goal.Endpoint, error) { *endpoints++; return endpoint(root) }
+	owners.commandNow = func(root string) (time.Time, error) { *clocks++; return commandNow(root) }
+	return owners
+}
+
+func TestTheSituationReadsAGivenProjection(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	endpoints, clocks := 0, 0
+	owners := countedLedgerOwners(bed, &endpoints, &clocks)
+	read := &intentInvocation{cwd: bed.root(), owners: owners}
+	if problem := read.selectRoot(); problem != nil {
+		t.Fatal(problem.Summary)
+	}
+	projection, at, problem := read.projectionWithFetch(false)
+	if problem != nil || projection.Tip == "" || endpoints != 1 || clocks != 1 {
+		t.Fatalf("no given projection reads as today: tip=%q problem=%+v endpoints=%d clocks=%d", projection.Tip, problem, endpoints, clocks)
+	}
+	given := &intentInvocation{cwd: bed.root(), owners: owners, givenProjection: &projection, givenNow: at.Add(time.Hour)}
+	if problem := given.selectRoot(); problem != nil {
+		t.Fatal(problem.Summary)
+	}
+	for _, fetch := range []bool{false, true} {
+		got, now, problem := given.projectionWithFetch(fetch)
+		if problem != nil || got.Tip != projection.Tip || !now.Equal(at.Add(time.Hour)) || endpoints != 1 || clocks != 1 {
+			t.Fatalf("a given projection (fetch %v): tip=%q now=%v problem=%+v endpoints=%d clocks=%d, want it and no read", fetch, got.Tip, now, problem, endpoints, clocks)
+		}
+	}
+}
+
+func TestTheSituationReadsTheLedgerOnce(t *testing.T) {
+	t.Parallel()
+	bed := newWorkBed(t)
+	brief := bed.brief("once.md", "Working Mode: implement\n\nBuild the unit.\n\n| Unit | Lines |\n| --- | --- |\n| first | 40 |\n")
+	if code, result, _ := bed.work(append([]string{"work", "build", bed.id, "first", "--brief", brief}, workCheck...)...); code != 0 {
+		t.Fatalf("build: %+v", result)
+	}
+	// The steward's ledger asks Git whether the checkout has an accepted
+	// ledger and names its machine; the projection itself is the bed's.
+	root := bed.root()
+	for _, args := range [][]string{{"init", "-q"}, {"config", "metasystem.goal.machine", "mac-cli"}, {"add", "plans/goals/backlog.md"},
+		{"-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "ledger"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
+		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v %s", args, err, out)
+		}
+	}
+	units, err := stewardUnitStages(bed.workOwners())(root, bed.id)
+	if err != nil || len(units) != 1 {
+		t.Fatalf("the seat's unit reader: units=%+v err=%v", units, err)
+	}
+	endpoints, clocks, projections := 0, 0, 0
+	owners := countedLedgerOwners(bed, &endpoints, &clocks)
+	ledger := bed.workOwners().dependencies.endpoint
+	project := func(_ goal.Endpoint, fetch bool, now time.Time) (goal.Projection, error) {
+		projections++
+		endpoint, err := ledger(root)
+		if err != nil {
+			return goal.Projection{}, err
+		}
+		return goal.Project(endpoint, fetch, now)
+	}
+	src := situationSources(owners, steward.SituationSources{Now: func() time.Time { return situationNow }, Project: project,
+		HostWork: func() (int, int, error) { return 0, 0, nil }, LaneHome: func() (string, error) { return t.TempDir(), nil }})
+	s := steward.ReadSituation(root, src)
+	facts := s.GoalFacts[bed.id]
+	if !strings.Contains(facts, strings.TrimSpace(units[0].Line)) || !strings.Contains(facts, units[0].Stage) {
+		t.Fatalf("the claimed goal's facts lack its unit %+v:\n%s\nunavailable=%v", units[0], facts, s.Unavailable)
+	}
+	if projections != 1 || endpoints != 0 || clocks != 0 {
+		t.Fatalf("the read projected %d times and read the endpoint %d and the clock %d times, want one projection and neither", projections, endpoints, clocks)
 	}
 }
