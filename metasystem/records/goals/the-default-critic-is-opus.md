@@ -1,6 +1,6 @@
 # the-default-critic-is-opus
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 88
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="Three default strings and a config lookup path; a wrong value shows as the model name on the next critic's record"
@@ -8,17 +8,15 @@
 - Intent: The engine's default models for the code critic, the design implementer and the design launch are claude-opus-5-5, not claude-fable-5-1 (decision 20: Opus 5.5 only, Fable is not used), so a worktree without the installation's local roster still reads on Opus; and a worktree made by the engine for a goal reads the installation's metasystem.conf.local roster rather than falling back to defaults (finding 438)
 - Origin: main
 - Next step: On m1e's build lane after a-live-read-proves-its-subject: opus-builder changes the three defaults (internal/config/defaults.go:326, :328, :424) and, if a worktree's config resolution has no path to the installation's .local, adds that path in the config loader for engine-made goal worktrees; tests: the default table and a worktree bed that resolves role.code-critic.model.claude to the installation's local value; Read each round: yes; the steward submits with work review --changes --last; about 15 production lines
+- Concluded: Landed in f02587e59 at 23:54, pushed with the batch as 6fe3c3c49 at 01:33.
 - OpenedAt: 2026-10-27T18:39:32Z
 - FirstClaimAt: 2026-10-29T17:12:25Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=5GMVC51PAMRJ34GQ4WB3J3CRTQ-m1e-57b1aa12 minutes=1200 reviewRounds=20 goalRevision=9
 - Approved: by=human:Wido at=2026-10-29T17:07:59Z revision=10 opid=5GMVC51PAMRJ34GQ4WB3J3CRTQ-m1e-57b1aa12 authority=proven digest=bce31dde516382dd66f24532dd3e7cb6d41e1c6070c0e04146ee74e6201e6b61 episode=10
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-29T17:12:25Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-default-critic-is-opus: no accepted design declares areas\",\"areas unknown for goal a-ready-goal-behind-a-claim-is-a-row\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal a-ready-goal-behind-a-claim-is-a-row\"]" revision=11 accountingRevision=11 episodeAt=2026-10-29T17:12:25Z episodeRevision=11
-- Landing: at=2026-10-29T22:48:31Z opid=R4V5EH51YC11C4M2AXKR9S8P56-m1e-cc2e8fc8
-- StopCapability: generation=11 revision=11 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-10-27T18:39:32Z ZHMBM767HBTA5B0VVKW87X2T5W-m1e-75099fe5 open actor=human:Wido targets=the-default-critic-is-opus
@@ -34,4 +32,5 @@ History:
 - 2026-10-29T17:12:25Z 95HET0DC24Z0EP5MBZQ14QED4X-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=the-default-critic-is-opus reason=areas unknown for goal the-default-critic-is-opus: no accepted design declares areas; areas unknown for goal a-ready-goal-behind-a-claim-is-a-row; areas unknown for goal a-round-survives-a-restart; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal a-ready-goal-behind-a-claim-is-a-row
 - 2026-10-29T22:35:20Z HQ0EWRCCJB33921A6TCG4T0V9D-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=a-ready-goal-behind-a-claim-is-a-row,a-records-only-move-keeps-mains-green,a-stewards-failing-duty-is-a-row,the-default-critic-is-opus reason=priority-order from=1:89 to=1:88
 - 2026-10-29T22:48:31Z R4V5EH51YC11C4M2AXKR9S8P56-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=the-default-critic-is-opus
-Integrity: sha256=b64b2b8c263bce60176c50c7520499b085301ed2323d868f5defa8272c76205e
+- 2026-10-30T01:15:53Z 5BS9XPE6MTWTPTD41PGD4FSNS1-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=the-default-critic-is-opus
+Integrity: sha256=5412a295b692121d0cdfa4ba3c7bbefe3d835681dd5285f99c8b971d7e4fb457
