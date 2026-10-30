@@ -464,7 +464,7 @@ func (c *followonClient) mustState(goal, origin, head, stringStatus string) {
 		c.s.t.Fatalf("transactions remain: %+v", p.txns)
 	}
 	for ref := range p.refs {
-		if strings.HasPrefix(ref, "refs/metasystem/goals/fetch/") {
+		if strings.HasPrefix(ref, "refs/metasystem/goals/branch-fetch/") {
 			c.s.t.Fatalf("fetch ref remains: %s", ref)
 		}
 	}

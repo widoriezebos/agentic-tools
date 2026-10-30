@@ -129,11 +129,11 @@ type pushTxn struct {
 
 func init() { pushProtocolAvailable = true }
 
-func txnRef(opid string) string { return "refs/metasystem/goals/txn/" + opid }
+func txnRef(opid string) string { return "refs/metasystem/goals/branch-txn/" + opid }
 
 func originTipRef(goalID string) string { return "refs/metasystem/goals/origin/" + goalID }
 
-func fetchRef(opid string) string { return "refs/metasystem/goals/fetch/" + opid }
+func fetchRef(opid string) string { return "refs/metasystem/goals/branch-fetch/" + opid }
 
 func writePushTxn(repo, opid string, txn pushTxn) error {
 	encoded, err := json.Marshal(txn)

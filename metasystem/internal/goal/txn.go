@@ -692,6 +692,7 @@ func Publish(e Endpoint, req PublishRequest) (PublishResult, error) {
 		return PublishResult{}, errors.New("a ledger write needs an id and a change")
 	}
 	req.Mutate = guardAttorneyEffect(e, req.Mutate)
+	recoverDeadCreated(e, req.Opid)
 	if err := clearDeadBlocker(e, req.Opid); err != nil {
 		return PublishResult{}, err
 	}
@@ -905,6 +906,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 			return PublishResult{}, err
 		}
 		if err := RecordSteps(e.Root, req.Opid, "", commit); err != nil {
+			CleanupRefs(e, req.Opid)
 			return PublishResult{}, err
 		}
 		if err := validateLegacyArchiveFor(e, tip, commit); err != nil {
@@ -942,6 +944,7 @@ func runTransaction(e Endpoint, req PublishRequest) (PublishResult, error) {
 
 		// Durable BEFORE the push leaves this process.
 		if err := MarkPushed(e.Root, req.Opid, tip, attempt, stopAt); err != nil {
+			CleanupRefs(e, req.Opid)
 			return PublishResult{}, err
 		}
 		outcome, pushErr := PublishCAS(e, tip, commit)
