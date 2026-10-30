@@ -38,7 +38,7 @@
         "durations": null,
         "packages": null,
         "scope": "full",
-        "scopeReason": "records-only batch has no full green on main under an hour old",
+        "scopeReason": "main has no full green to keep",
         "source": {
           "at": "\u003ctime\u003e",
           "commit": "",
@@ -56,7 +56,7 @@
         "source": "default",
         "value": "auto"
       },
-      "reason": "records-only batch has no full green on main under an hour old",
+      "reason": "main has no full green to keep",
       "scope": "full",
       "state": "claimed",
       "tree": "head-tree",
@@ -99,7 +99,7 @@
           "durations": null,
           "packages": null,
           "scope": "full",
-          "scopeReason": "records-only batch has no full green on main under an hour old",
+          "scopeReason": "main has no full green to keep",
           "source": {
             "at": "\u003ctime\u003e",
             "commit": "",
@@ -117,7 +117,7 @@
           "source": "default",
           "value": "auto"
         },
-        "reason": "records-only batch has no full green on main under an hour old",
+        "reason": "main has no full green to keep",
         "scope": "full",
         "state": "claimed",
         "tree": "head-tree",
@@ -159,7 +159,7 @@
             "durations": null,
             "packages": null,
             "scope": "full",
-            "scopeReason": "records-only batch has no full green on main under an hour old",
+            "scopeReason": "main has no full green to keep",
             "source": {
               "at": "\u003ctime\u003e",
               "commit": "",
@@ -177,7 +177,7 @@
             "source": "default",
             "value": "auto"
           },
-          "reason": "records-only batch has no full green on main under an hour old",
+          "reason": "main has no full green to keep",
           "scope": "full",
           "state": "claimed",
           "tree": "head-tree",
@@ -304,7 +304,7 @@
           "durations": null,
           "packages": null,
           "scope": "full",
-          "scopeReason": "records-only batch has no full green on main under an hour old",
+          "scopeReason": "main has no full green to keep",
           "source": {
             "at": "\u003ctime\u003e",
             "commit": "",
@@ -322,7 +322,7 @@
           "source": "default",
           "value": "auto"
         },
-        "reason": "records-only batch has no full green on main under an hour old",
+        "reason": "main has no full green to keep",
         "scope": "full",
         "state": "claimed",
         "tree": "head-tree",
@@ -364,7 +364,7 @@
             "durations": null,
             "packages": null,
             "scope": "full",
-            "scopeReason": "records-only batch has no full green on main under an hour old",
+            "scopeReason": "main has no full green to keep",
             "source": {
               "at": "\u003ctime\u003e",
               "commit": "",
@@ -382,7 +382,7 @@
             "source": "default",
             "value": "auto"
           },
-          "reason": "records-only batch has no full green on main under an hour old",
+          "reason": "main has no full green to keep",
           "scope": "full",
           "state": "claimed",
           "tree": "head-tree",
@@ -645,7 +645,7 @@
   "repeat-complete": true,
   "result": "green",
   "scope": "full",
-  "scopeReason": "records-only batch has no full green on main under an hour old",
+  "scopeReason": "main has no full green to keep",
   "started_at": "\u003ctime\u003e",
   "tree": "head-tree",
   "trunk": true

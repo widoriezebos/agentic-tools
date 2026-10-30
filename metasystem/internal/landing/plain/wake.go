@@ -82,7 +82,7 @@ func wakeReasons(install string, queued bool, lastLaunch, now time.Time, timerHe
 	if len(timerHeld) > 0 && timerHeld[0] || drain != nil || drainErr != nil {
 		return reasons, nil
 	}
-	due, err := fullProofDue(install, now)
+	due, err := keeperFullProofDue(install, now)
 	if err != nil {
 		return nil, err
 	}
@@ -94,7 +94,16 @@ func wakeReasons(install string, queued bool, lastLaunch, now time.Time, timerHe
 
 // fullProofDue preserves the hourly debt and checks main's independent clock.
 func fullProofDue(install string, now time.Time) (bool, error) {
-	due, err := scopedProofDue(install, now)
+	return clockDue(install, now, scopedProofDue)
+}
+
+// keeperFullProofDue is fullProofDue with the keeper's own debt.
+func keeperFullProofDue(install string, now time.Time) (bool, error) {
+	return clockDue(install, now, keeperProofDebt)
+}
+
+func clockDue(install string, now time.Time, debt func(string, time.Time) (bool, error)) (bool, error) {
+	due, err := debt(install, now)
 	if err != nil || due {
 		return due, err
 	}
@@ -151,6 +160,16 @@ func fullProofClock(install string) (time.Time, time.Duration, error) {
 // Main needs a later full trunk check, including a completed red. A scoped
 // push can also use an executed full green batch proof.
 func scopedProofDue(install string, now time.Time) (bool, error) {
+	return proofDebt(install, now, false)
+}
+
+// keeperProofDebt is the debt the keeper pays: main's own records check keeps
+// main's full green, so it owes nothing and never hides a push's debt.
+func keeperProofDebt(install string, now time.Time) (bool, error) {
+	return proofDebt(install, now, true)
+}
+
+func proofDebt(install string, now time.Time, keeper bool) (bool, error) {
 	results, err := Results(install)
 	if err != nil {
 		return false, err
@@ -161,6 +180,12 @@ func scopedProofDue(install string, now time.Time) (bool, error) {
 	}
 	var result Result
 	for _, proof := range results {
+		if keeper && proof.recordsKept() {
+			if result.Trunk {
+				result = Result{}
+			}
+			continue
+		}
 		if proof.flakeInherited() && result.Trunk && result.FullAt == proof.FullAt {
 			result = Result{}
 		}
@@ -168,7 +193,7 @@ func scopedProofDue(install string, now time.Time) (bool, error) {
 			result = proof
 		}
 	}
-	if result.Scope != "scoped" && !strings.HasPrefix(result.Reason, "inherits green from tree ") {
+	if result.Scope != "scoped" && !strings.HasPrefix(result.Reason, "inherits green from tree ") || result.foldOfFull() {
 		return false, nil
 	}
 	fullAt, err := time.Parse(time.RFC3339, result.FullAt)

@@ -84,7 +84,7 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 	if err != nil {
 		return "", err
 	}
-	debt, err := scopedProofDue(install, seams.now())
+	debt, err := keeperProofDebt(install, seams.now())
 	if err != nil {
 		return "", err
 	}

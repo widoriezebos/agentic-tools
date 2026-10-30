@@ -119,7 +119,7 @@ func TestChangedMainAdmissionPinsAffectedChecks(t *testing.T) {
 
 func TestChangedMainFullFallbacks(t *testing.T) {
 	t.Parallel()
-	for _, failure := range []string{"unreadable results", "unreadable paths", "damaged history", "unreadable ancestry", "unreadable contract", "code", "contract", "environment", "uncovered", "newer red", "expired inherited full"} {
+	for _, failure := range []string{"unreadable results", "unreadable paths", "damaged history", "unreadable ancestry", "unreadable contract", "code", "contract", "environment", "uncovered", "newer red"} {
 		t.Run(failure, func(t *testing.T) {
 			t.Parallel()
 			b := changedMainBed(t)
@@ -177,16 +177,6 @@ func TestChangedMainFullFallbacks(t *testing.T) {
 				red.At = bedNow.Add(-time.Minute).Format(time.RFC3339)
 				red.Failed = []FailedUnit{{Unit: "outside"}}
 				b.save(t, red)
-			case "expired inherited full":
-				if err := os.Remove(resultsPath(b.install)); err != nil {
-					t.Fatal(err)
-				}
-				b.base.At = bedNow.Add(-time.Minute).Format(time.RFC3339)
-				b.base.FullAt = bedNow.Add(-61 * time.Minute).Format(time.RFC3339)
-				b.base.FullTree = "original"
-				b.git.changed[[2]string{b.base.FullTree, b.git.tree}] = "metasystem/plans/page.md"
-				b.base.Reason = "inherits green from tree original"
-				b.save(t, b.base)
 			}
 			result, err := Run(b.install, b.checkout, "fixture-proof", "", b.output, b.seams)
 			if failure == "unreadable results" {
@@ -202,6 +192,29 @@ func TestChangedMainFullFallbacks(t *testing.T) {
 				t.Fatal("changed environment did not execute full fallback")
 			}
 		})
+	}
+}
+
+// Main keeps an inherited full green past the hour: the check of main runs
+// only the groups whose inputs changed since that green's full tree.
+func TestChangedMainKeepsAnExpiredInheritedFull(t *testing.T) {
+	t.Parallel()
+	b := changedMainBed(t)
+	if err := os.Remove(resultsPath(b.install)); err != nil {
+		t.Fatal(err)
+	}
+	b.base.At = bedNow.Add(-time.Minute).Format(time.RFC3339)
+	b.base.FullAt = bedNow.Add(-61 * time.Minute).Format(time.RFC3339)
+	b.base.FullTree = "original"
+	b.git.changed[[2]string{b.base.FullTree, b.git.tree}] = "metasystem/plans/page.md"
+	b.base.Reason = "inherits green from tree original"
+	b.save(t, b.base)
+	b.seams.Closure = func(string, string, string) (adapter.Closure, error) {
+		return adapter.Closure{Unowned: []string{"metasystem/plans/page.md"}}, nil
+	}
+	result, err := Run(b.install, b.checkout, "fixture-proof", "", b.output, b.seams)
+	if err != nil || result.Result != Green || result.Scope != "scoped" || result.Base != "original" || result.FullTree != "original" || result.FullAt != b.base.FullAt {
+		t.Fatalf("expired inherited full: %+v %v", result, err)
 	}
 }
 

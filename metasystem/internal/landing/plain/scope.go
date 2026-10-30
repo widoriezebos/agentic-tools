@@ -66,8 +66,9 @@ func scopeContract(checkout, ref string, seams ProveSeams) (string, error) {
 	return data, err
 }
 
-// decideScope keeps a batch's full green for at most an hour. Any unreadable
-// selection fact widens the proof to full; no language rule lives here.
+// decideScope keeps main's full green across records until main's clock runs,
+// and a batch's for at most an hour. Any unreadable selection fact widens the
+// proof to full; no language rule lives here.
 func decideScope(install, checkout string, running Running, seams ProveSeams) scopeDecision {
 	d := scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "no green proof of this batch yet"}}
 	results, damaged, err := countedLines[Result](resultsPath(install))
@@ -110,6 +111,9 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		}
 		recordsOnly = true
 		d.ScopeReason = "records-only batch has no full green on main under an hour old"
+		if running.Trunk {
+			d.ScopeReason = "main has no full green to keep"
+		}
 		target := "origin/main"
 		if running.Trunk {
 			target = running.Commit
@@ -134,7 +138,8 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 				continue
 			}
 			at, err := time.Parse(time.RFC3339, candidate.FullAt)
-			if age := seams.now().Sub(at); err != nil || age < 0 || age >= time.Hour {
+			hourBound := !running.Trunk || d.standing != nil
+			if age := seams.now().Sub(at); err != nil || age < 0 || age >= time.Hour && hourBound {
 				break
 			}
 			d.base = candidate
@@ -150,7 +155,7 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		d.ScopeReason = "the batch's full proof time cannot be read"
 		return d
 	}
-	if age := seams.now().Sub(fullAt); (age < 0 || age > time.Hour) && d.standing == nil {
+	if age := seams.now().Sub(fullAt); (age < 0 || age > time.Hour && !running.Trunk) && d.standing == nil {
 		d.ScopeReason = fmt.Sprintf("the batch's full proof is %s old, more than one hour", age.Round(time.Second))
 		return d
 	}
@@ -468,12 +473,25 @@ func (p *proofOutput) line(line string) {
 
 // fullCurrent retains the legacy ledger shortcut; records with scope carry
 // the original full proof's clock through every inherited or scoped result.
+// A kept green stays current until main's clock replaces it.
 func (r Result) fullCurrent(now time.Time) bool {
 	if r.Scope == "" {
 		return true
 	}
 	fullAt, err := time.Parse(time.RFC3339, r.FullAt)
-	return err == nil && (now.Sub(fullAt) <= time.Hour && !r.flakeInherited() || r.flakeInherited() && now.Sub(fullAt) >= 0)
+	return err == nil && (now.Sub(fullAt) <= time.Hour && !r.kept() || r.kept() && now.Sub(fullAt) >= 0)
+}
+
+// recordsKept is main's own scoped check after a records move: its full green
+// stands with no hour. A standing debt or an unproved group is never kept.
+func (r Result) recordsKept() bool {
+	return r.Trunk && r.Result == Green && r.Scope == "scoped" && r.OwedSince.IsZero() && len(r.Unproved) == 0
+}
+
+// kept are the greens main reuses with no hour: goal records on main, main's
+// own records check, and a batch's full green across goal records it took.
+func (r Result) kept() bool {
+	return r.flakeInherited() || r.recordsKept() || r.foldOfFull()
 }
 
 func (r Result) reusableGreen(now time.Time) bool {

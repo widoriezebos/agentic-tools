@@ -191,7 +191,8 @@ human return restores no automatic allowance.
    Read the outcome and reason, then continue with the remaining waiting work.
 5. **Main moved during the proof:** fetch, then read `landing status --json` again.
    On `main_move.kind: records-only`, continue the current step and run `landing push`
-   when its proof is green; the engine folds the records with one merge and checks the tree.
+   when its proof is green; one merge folds the records. Goal pages alone keep the
+   batch's green; other records need `landing prove` of the fold.
    Never check out new main or rebuild for a records-only move.
    Main inherits its last full green without a check when only present, parseable goal pages under `plans/goals/` or `plans/goals/trunk-red.json` change, including a recorded flake; `proof.trunk-every` schedules its next proof.
    On `main_move.kind: code`, check out the new main, merge the same recorded batch members,
