@@ -326,7 +326,7 @@ func TestTrunkRedRecoveryLegacyClearIgnoresChangedOwner(t *testing.T) {
 	root := endpoint.Root
 	createDeadTrunkRedEntry(t, root, request)
 
-	reassign := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000V2", "mac-b")
+	reassign := trunkRedVerbReqFor(localTrunkRedPeer(t, endpoint), "01J5X0000000000000000000V2", "mac-b")
 	reassign.Actor.Human = "Wido"
 	reassign.Now = at.Add(time.Hour)
 	result, err := OwnTrunkRed(reassign, TrunkRedOwnArgs{Entry: entry.ID, Goal: "solo-goal", To: "mac-b", By: "Wido"})
@@ -350,13 +350,16 @@ func TestTrunkRedRecoveryLegacyClearRejectsClosedEntry(t *testing.T) {
 	root := endpoint.Root
 	createDeadTrunkRedEntry(t, root, request)
 
-	other := trunkRedVerbReqFor(endpoint, "01J5X0000000000000000000V3", "mac-b")
+	peer := localTrunkRedPeer(t, endpoint)
+	other := trunkRedVerbReqFor(peer, "01J5X0000000000000000000V3", "mac-b")
 	other.Now = at.Add(time.Hour)
 	result, err := ClearTrunkRed(other, TrunkRedClearArgs{Entry: entry.ID, Attempt: "other-attempt", BaseCommit: "other-base",
 		BaseTree: "other-tree", Group: entry.Group, ExpectedEntry: entry})
 	if err != nil || result.Outcome != OutcomeConfirmed {
 		t.Fatalf("other clear: %+v %v", result, err)
 	}
+	// This clone reads the peer's clear before it recovers.
+	endpoint.Repository.(*fakeGoalRepository).accepted = recoveryCanonicalTip(t, endpoint)
 	closedBefore := projectedTrunkRedEntryFor(t, endpoint, at.Add(2*time.Hour)).Closed
 	if reports, err := Recover(endpoint); err != nil {
 		t.Fatal(err)

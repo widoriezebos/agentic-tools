@@ -28,8 +28,17 @@ type pushRepository struct {
 func gitPushRepository() pushRepository {
 	return pushRepository{
 		TxnRefs: func(repo string) ([]string, error) {
-			out, err := gitOutput(repo, "for-each-ref", "--format=%(refname)", "refs/metasystem/goals/txn/")
-			return strings.Fields(string(out)), err
+			// The ledger's transaction commits share the old prefix; a push
+			// blob there was written before the push had its own prefix, and
+			// is reconciled once.
+			out, err := gitOutput(repo, "for-each-ref", "--format=%(objecttype) %(refname)", "refs/metasystem/goals/branch-txn/", "refs/metasystem/goals/txn/")
+			var refs []string
+			for _, line := range strings.Split(string(out), "\n") {
+				if kind, ref, ok := strings.Cut(line, " "); ok && kind == "blob" {
+					refs = append(refs, ref)
+				}
+			}
+			return refs, err
 		},
 		Txn: readPushTxn, Tip: localBranchTip, Ancestor: ancestor, Range: ValidateRange,
 		HeadRef: func(repo string) string {

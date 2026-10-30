@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 )
 
@@ -31,7 +32,7 @@ func TestPushGitAdapter(t *testing.T) {
 		if got := git(t, other.root, "rev-parse", "refs/heads/goal/goal-a"); got != tip {
 			t.Fatalf("adopted ref = %s, want %s", got, tip)
 		}
-		if got := goalRef(t, other.root, "refs/metasystem/goals/fetch/"); got != "" {
+		if got := goalRef(t, other.root, "refs/metasystem/goals/branch-fetch/"); got != "" {
 			t.Fatalf("adoption left fetch ref %s", got)
 		}
 		bytes, err := os.ReadFile(filepath.Join(other.root, "notes/scratch.txt"))
@@ -54,7 +55,7 @@ func TestPushGitAdapter(t *testing.T) {
 		if _, present, _ := localFixtureRef(invalidClone.root, "refs/heads/goal/goal-a"); present {
 			t.Fatal("invalid remote tip was adopted")
 		}
-		if got := goalRef(t, invalidClone.root, "refs/metasystem/goals/fetch/"); got != "" {
+		if got := goalRef(t, invalidClone.root, "refs/metasystem/goals/branch-fetch/"); got != "" {
 			t.Fatalf("invalid adoption left fetch ref %s", got)
 		}
 	})
@@ -157,7 +158,7 @@ func TestPushCommitFollowonGitAdapter(t *testing.T) {
 		if !errors.As(err, &refusal) || refusal.Code != branch.LeaseMovedCode || remoteGoalTip(t, f) != competitor || remoteGoalTip(t, f) == local {
 			t.Fatalf("lease refusal=%v remote=%s competitor=%s local=%s", err, remoteGoalTip(t, f), competitor, local)
 		}
-		if got := goalRef(t, f.root, "refs/metasystem/goals/txn/"); got != "" {
+		if got := goalRef(t, f.root, "refs/metasystem/goals/branch-txn/"); got != "" {
 			t.Fatalf("lease refusal left transaction %s", got)
 		}
 	})
@@ -208,7 +209,7 @@ func TestPushCommitFollowonGitAdapter(t *testing.T) {
 		if _, err := branch.Push(req); err == nil || remoteGoalTip(t, f) != landed {
 			t.Fatalf("landed crash=%v remote=%s", err, remoteGoalTip(t, f))
 		}
-		if got := goalRef(t, f.root, "refs/metasystem/goals/txn/"); got == "" {
+		if got := goalRef(t, f.root, "refs/metasystem/goals/branch-txn/"); got == "" {
 			t.Fatal("crash did not retain transaction")
 		}
 		other := cloneBranchFixture(t, f)
@@ -223,7 +224,7 @@ func TestPushCommitFollowonGitAdapter(t *testing.T) {
 		if result, err := branch.Push(pushRequest(f, "adapter-crash-recover")); err != nil || result.State != "reconciled" || result.Tip != remote {
 			t.Fatalf("recovery=%+v,%v", result, err)
 		}
-		if got := goalRef(t, f.root, "refs/metasystem/goals/txn/"); got != "" {
+		if got := goalRef(t, f.root, "refs/metasystem/goals/branch-txn/"); got != "" {
 			t.Fatalf("recovery left transaction %s", got)
 		}
 		if got := git(t, f.root, "rev-parse", "refs/metasystem/goals/origin/goal-a"); got != remote {
@@ -305,5 +306,83 @@ func TestPushCarriesKeptRefsGitAdapter(t *testing.T) {
 	}
 	if got := git(t, plainClone.root, "rev-parse", "refs/metasystem/goals/fetch/plain-test"); got != newTip {
 		t.Fatalf("plain fetch tip = %s, want %s", got, newTip)
+	}
+}
+
+// fetchRecorder delegates every transport call to Git and records where each
+// fetch landed and whether that ref existed right after the fetch.
+type fetchRecorder struct {
+	branch.GitPushTransport
+	destinations []string
+	existed      []bool
+}
+
+func (r *fetchRecorder) Fetch(repo, remote, ref, destination string) error {
+	err := r.GitPushTransport.Fetch(repo, remote, ref, destination)
+	_, present, _ := localFixtureRef(repo, destination)
+	r.destinations = append(r.destinations, destination)
+	r.existed = append(r.existed, present)
+	return err
+}
+
+// TestTheBranchPushPublishesBesideALedgerCommit runs a unit's branch push in a
+// checkout where the ledger left its transaction commit.
+func TestTheBranchPushPublishesBesideALedgerCommit(t *testing.T) {
+	t.Parallel()
+	f := newBranchFixture(t)
+	ledgerRef := "refs/metasystem/goals/txn/ledger-write"
+	ledgerCommit, err := goal.BuildCommit(goal.Endpoint{Root: f.root}, "ledger-write", git(t, f.root, "rev-parse", "HEAD"),
+		[]goal.Change{{Path: "goals/backlog.md", Content: []byte("ledger\n")}}, "goal edit")
+	if err != nil || git(t, f.root, "rev-parse", ledgerRef) != ledgerCommit {
+		t.Fatalf("ledger commit = %s, %v", ledgerCommit, err)
+	}
+
+	tip := commitUnit(t, f, "u1", "metasystem/code.go", "one")
+	result, err := branch.Push(pushRequest(f, "beside-ledger"))
+	if err != nil || result.Tip != tip || remoteGoalTip(t, f) != tip {
+		t.Fatalf("the push beside a ledger commit = %+v, %v", result, err)
+	}
+	if got := git(t, f.root, "rev-parse", ledgerRef); got != ledgerCommit {
+		t.Fatalf("the ledger's ref names %s, want %s", got, ledgerCommit)
+	}
+	for _, prefix := range []string{"refs/metasystem/goals/branch-txn/", "refs/metasystem/goals/branch-fetch/"} {
+		if got := goalRef(t, f.root, prefix); got != "" {
+			t.Fatalf("the push left %s", got)
+		}
+	}
+
+	// A push blob written under the old prefix, whose commit is already on the remote.
+	old := `{"schemaVersion":1,"goal":"goal-a","remote":"origin","ref":"refs/heads/goal/goal-a","expected":"` + f.base + `","new":"` + tip + `"}`
+	hash := exec.Command("git", "-C", f.root, "hash-object", "-w", "--stdin")
+	hash.Stdin = strings.NewReader(old)
+	blob, err := hash.Output()
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldRef := "refs/metasystem/goals/txn/old-push"
+	git(t, f.root, "update-ref", oldRef, strings.TrimSpace(string(blob)))
+	result, err = branch.Push(pushRequest(f, "after-old-blob"))
+	if err != nil || result.State != "reconciled" || result.Tip != tip {
+		t.Fatalf("the old blob's reconciliation = %+v, %v", result, err)
+	}
+	if got := goalRef(t, f.root, oldRef); got != "" {
+		t.Fatalf("the old push blob %s was not cleared", got)
+	}
+	if got := git(t, f.root, "rev-parse", ledgerRef); got != ledgerCommit {
+		t.Fatalf("the ledger's ref names %s after the sweep, want %s", got, ledgerCommit)
+	}
+
+	other := cloneBranchFixture(t, f)
+	recorder := &fetchRecorder{}
+	adopt := pushRequest(other, "adapter-adopt")
+	adopt.Transport = recorder
+	if result, err := branch.Push(adopt); err != nil || result.State != "adopted" || result.Tip != tip {
+		t.Fatalf("the second clone's adoption = %+v, %v", result, err)
+	}
+	if len(recorder.destinations) != 1 || recorder.destinations[0] != "refs/metasystem/goals/branch-fetch/adapter-adopt" || !recorder.existed[0] {
+		t.Fatalf("fetch destinations = %v, existed = %v", recorder.destinations, recorder.existed)
+	}
+	if _, present, _ := localFixtureRef(other.root, "refs/metasystem/goals/branch-fetch/adapter-adopt"); present {
+		t.Fatal("the adoption left its fetch ref")
 	}
 }

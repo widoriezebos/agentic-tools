@@ -3,6 +3,8 @@ package goal
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -1312,4 +1314,138 @@ func TestAnswerRetryKeepsStoredOperation(t *testing.T) {
 	if attempts != 2 {
 		t.Fatalf("attempts=%d", attempts)
 	}
+}
+
+// TestAPublishRecoversADeadOwnersCreatedEntry strands a dead owner's created
+// entry and lets the clone's next ordinary verb publish.
+func TestAPublishRecoversADeadOwnersCreatedEntry(t *testing.T) {
+	t.Parallel()
+	at := time.Date(2026, 8, 20, 22, 0, 0, 0, time.UTC)
+	openIntent := func(id string) Intent {
+		return Intent{Verb: "open", Targets: []string{id},
+			Args: map[string]string{"intent": "The dead owner's work.", "origin": "main", "next": "Continue."}}
+	}
+	released := func(client *fakeGoalRepository, opid string) bool {
+		client.store.mu.Lock()
+		defer client.store.mu.Unlock()
+		for _, got := range client.released {
+			if got == opid {
+				return true
+			}
+		}
+		return false
+	}
+	phase := func(root, opid string) Phase {
+		entry, err := ReadEntry(root, opid)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return entry.Phase
+	}
+
+	t.Run("a dead owner's open is completed", func(t *testing.T) {
+		e, client := fakeGoalEndpoint(t)
+		opid := Opid("01J5X0000000000000000G5A01", "mac-a", "lin-1")
+		strandEntry(t, e.Root, opid, PhaseCreated, openIntent("orphaned"))
+		if result, err := Open(verbReqFor(e, "01J5X0000000000000000G5A02", "mac-a"), "unrelated", "Unrelated work.", "main", "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("the next publish = %+v, %v", result, err)
+		}
+		entry, err := ReadEntry(e.Root, opid)
+		if err != nil || entry.Phase != PhaseTerminal || entry.Outcome != OutcomeConfirmed {
+			t.Fatalf("the stranded open ended as %+v, %v", entry, err)
+		}
+		p, err := projectFetched(e, at)
+		if err != nil || p.Tree.Live["orphaned"] == nil || p.Tree.Live["orphaned"].History[0].Opid != opid {
+			t.Fatalf("the stranded open is not on the canonical branch: %v", err)
+		}
+		if !released(client, opid) {
+			t.Fatalf("the stranded open's refs were not cleaned: %v", client.released)
+		}
+		history := len(p.Tree.Live["orphaned"].History)
+		reports, err := Recover(e)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, report := range reports {
+			if report.Opid == opid {
+				t.Fatalf("a later recovery reports the ended entry: %+v", report)
+			}
+		}
+		after, err := ReadEntry(e.Root, opid)
+		if err != nil || !reflect.DeepEqual(after, entry) {
+			t.Fatalf("a later recovery changed the entry: %+v, %v", after, err)
+		}
+		if p, err := projectFetched(e, at); err != nil || len(p.Tree.Live["orphaned"].History) != history {
+			t.Fatalf("a later recovery changed the goal: %v", err)
+		}
+	})
+
+	t.Run("a budget stop without its policy and a live owner's entry stay", func(t *testing.T) {
+		e, client := fakeGoalEndpoint(t)
+		stopOpid := Opid("01J5X0000000000000000G5B01", "mac-a", "lin-1")
+		strandEntry(t, e.Root, stopOpid, PhaseCreated, Intent{Verb: "breach-stop", Targets: []string{"stopped"}, Args: map[string]string{"reason": "budget"}})
+		liveOpid := Opid("01J5X0000000000000000G5B02", "mac-a", "lin-1")
+		if _, err := CreateEntry(e.Root, liveOpid, "mac-a", "lin-1", openIntent("live")); err != nil {
+			t.Fatal(err)
+		}
+		if result, err := Open(verbReqFor(e, "01J5X0000000000000000G5B03", "mac-a"), "unrelated", "Unrelated work.", "main", "Wait."); err != nil || result.Outcome != OutcomeConfirmed {
+			t.Fatalf("the next publish = %+v, %v", result, err)
+		}
+		if got := phase(e.Root, stopOpid); got != PhaseCreated {
+			t.Fatalf("the budget stop without its policy was touched: %s", got)
+		}
+		if got := phase(e.Root, liveOpid); got != PhaseCreated || released(client, liveOpid) {
+			t.Fatalf("the live owner's entry was touched: %s, released %v", got, client.released)
+		}
+	})
+
+	t.Run("a replay that loses its push outcome stops the publish", func(t *testing.T) {
+		e, client := fakeGoalEndpoint(t)
+		first := Opid("01J5X0000000000000000G5C01", "mac-a", "lin-1")
+		second := Opid("01J5X0000000000000000G5C02", "mac-a", "lin-1")
+		strandEntry(t, e.Root, first, PhaseCreated, openIntent("orphaned-1"))
+		strandEntry(t, e.Root, second, PhaseCreated, openIntent("orphaned-2"))
+		client.unknownNext = true
+		_, err := Open(verbReqFor(e, "01J5X0000000000000000G5C03", "mac-a"), "unrelated", "Unrelated work.", "main", "Wait.")
+		if err == nil || !strings.Contains(err.Error(), "was pushed, but whether it took effect is unknown") {
+			t.Fatalf("the publish after an unknown replay = %v", err)
+		}
+		if got := phase(e.Root, first); got != PhasePushed {
+			t.Fatalf("the first replay is %s, want pushed", got)
+		}
+		if got := phase(e.Root, second); got != PhaseCreated {
+			t.Fatalf("the second entry is %s, want created", got)
+		}
+		if p, err := projectFetched(e, at); err != nil || p.Tree.Live["unrelated"] != nil {
+			t.Fatalf("the refused publish landed: %v", err)
+		}
+	})
+
+	t.Run("the exits after the build clean their refs", func(t *testing.T) {
+		e, client := fakeGoalEndpoint(t)
+		journal := filepath.Join(e.Root, "artifacts", "agents", "goal-transactions")
+		t.Cleanup(func() { _ = os.Chmod(journal, 0o755) })
+		readOnly := func() error { return os.Chmod(journal, 0o555) }
+		steps := fakeRootPublishRequest(e, "exit-record-steps")
+		mutate := steps.Mutate
+		steps.Mutate = func(tip string) ([]Change, error) {
+			if err := readOnly(); err != nil {
+				return nil, err
+			}
+			return mutate(tip)
+		}
+		pushed := fakeRootPublishRequest(e, "exit-mark-pushed")
+		pushed.BeforePush = func(int) error { return readOnly() }
+		for _, req := range []PublishRequest{steps, pushed} {
+			if err := os.Chmod(journal, 0o755); err != nil && !os.IsNotExist(err) {
+				t.Fatal(err)
+			}
+			if _, err := Publish(e, req); err == nil {
+				t.Fatalf("%s published with a read-only journal", req.Opid)
+			}
+			if got := phase(e.Root, req.Opid); got != PhaseCreated || !released(client, req.Opid) {
+				t.Fatalf("%s is %s, released %v", req.Opid, got, client.released)
+			}
+		}
+	})
 }

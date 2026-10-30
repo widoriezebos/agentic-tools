@@ -78,13 +78,13 @@ func RecoverWithPolicy(e Endpoint, policy SensitiveRecoveryPolicy) ([]RecoveryRe
 	return reports, nil
 }
 
-// RecoverDeadBlocker runs the one rule for a single pushed entry that
-// blocks this clone, and only when its owner is provably dead: the opid on a
+// RecoverDeadBlocker runs the one rule for a single created or pushed entry
+// of this clone, and only when its owner is provably dead: the opid on a
 // fresh capture decides first, and a dead owner's work is completed from its
 // stored intent, never pushed blindly. It reports whether it acted; a live
 // owner, or one whose liveness cannot be proved, is left alone.
 func RecoverDeadBlocker(e Endpoint, blocking Entry, policy SensitiveRecoveryPolicy) (RecoveryReport, bool, error) {
-	if blocking.Phase != PhasePushed || OwnerAlive(blocking) {
+	if (blocking.Phase != PhasePushed && blocking.Phase != PhaseCreated) || OwnerAlive(blocking) {
 		return RecoveryReport{}, false, nil
 	}
 	nonce, err := readNonce()
@@ -101,11 +101,28 @@ func RecoverDeadBlocker(e Endpoint, blocking Entry, policy SensitiveRecoveryPoli
 	if err != nil {
 		return RecoveryReport{}, false, err
 	}
-	if entry.Phase != PhasePushed || OwnerAlive(entry) {
+	if entry.Phase != blocking.Phase || OwnerAlive(entry) {
 		return RecoveryReport{}, false, nil
 	}
 	report, err := recoverEntry(e, tip, entry, policy)
 	return report, true, err
+}
+
+// recoverDeadCreated runs the one rule over every other created entry of this
+// clone whose owner is provably dead. A created entry never blocks a publish,
+// so a failed recovery leaves it for goal sync --recover; a replay that leaves
+// its entry pushed stops the pass, and the pushed-blocker check decides.
+func recoverDeadCreated(e Endpoint, opid string) {
+	entries, _ := Entries(e.Root)
+	for _, entry := range entries {
+		if entry.Phase != PhaseCreated || entry.Opid == opid || (entry.Intent.Verb == "breach-stop" && e.blockedRecovery == nil) {
+			continue
+		}
+		if _, stands, err := PushedBlocking(e.Root); err != nil || stands {
+			return
+		}
+		_, _, _ = RecoverDeadBlocker(e, entry, e.blockedRecovery)
+	}
 }
 
 // recoverEntry is the one rule for one entry on the captured tip.
