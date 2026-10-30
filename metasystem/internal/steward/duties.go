@@ -26,6 +26,10 @@ var dutyLabels = map[string]string{
 	"cache-trim": "cache trim", "breach-stop-notice": "breach-stop notice not recorded",
 }
 
+// helmDuties are the duties that still run at the helm, so the helm's
+// partial observation reads them.
+var helmDuties = []string{"disk-sweep", "question-replies", "tick-timing"}
+
 const dutyRolePrefix = "steward-duty:"
 
 func dutyRole(name string) HealthRole { return HealthRole(dutyRolePrefix + name) }

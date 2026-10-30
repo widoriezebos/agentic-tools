@@ -477,8 +477,8 @@ func observeHealthWithEvaluation(repoRoot string, now time.Time, prober identity
 // observePartialHealth records the roles one pass observed beside the other
 // roles of the record, whose counters it leaves as they are. Both halves keep
 // one observation time, so the record stays readable; FullObservedAt keeps
-// the last full observation's. It files no standing defect: the filer clears
-// every role its input lacks.
+// the last full observation's. It files no standing defect itself; its caller
+// hands the filer only the roles this pass observed.
 func observePartialHealth(repoRoot string, now time.Time, observed []RoleVerdict) (HealthVerdict, error) {
 	if err := os.MkdirAll(filepath.Dir(healthLockPath(repoRoot)), 0o755); err != nil {
 		return HealthVerdict{}, err

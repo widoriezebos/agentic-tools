@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -490,33 +491,35 @@ func TestTheHelmSeesTheClaimQuotaRowAndAsksOnce(t *testing.T) {
 		}
 		return data
 	}
-	// otherRoles is the record without its claim-quota role and counters.
+	// otherRoles is the record without the roles the helm observes, and
+	// without their counters.
+	helmRoles := []HealthRole{RoleClaimQuota, "steward-duty:disk-sweep", "steward-duty:tick-timing", "steward-duty:question-replies"}
 	otherRoles := func(record healthRecord) ([]RoleVerdict, HealthObservationState) {
 		var roles []RoleVerdict
 		for _, role := range record.Verdict.Roles {
-			if role.Role != RoleClaimQuota {
+			if !slices.Contains(helmRoles, role.Role) {
 				roles = append(roles, role)
 			}
 		}
 		state := HealthObservationState{UnknownCounts: map[HealthRole]int{}, FailureCounts: map[HealthRole]int{},
 			FailureCauses: map[HealthRole]string{}, FailureEpisodes: map[HealthRole][]time.Time{}}
 		for role, count := range record.State.UnknownCounts {
-			if role != RoleClaimQuota && count != 0 {
+			if !slices.Contains(helmRoles, role) && count != 0 {
 				state.UnknownCounts[role] = count
 			}
 		}
 		for role, count := range record.State.FailureCounts {
-			if role != RoleClaimQuota && count != 0 {
+			if !slices.Contains(helmRoles, role) && count != 0 {
 				state.FailureCounts[role] = count
 			}
 		}
 		for role, cause := range record.State.FailureCauses {
-			if role != RoleClaimQuota {
+			if !slices.Contains(helmRoles, role) {
 				state.FailureCauses[role] = cause
 			}
 		}
 		for role, episodes := range record.State.FailureEpisodes {
-			if role != RoleClaimQuota && len(episodes) != 0 {
+			if !slices.Contains(helmRoles, role) && len(episodes) != 0 {
 				state.FailureEpisodes[role] = episodes
 			}
 		}
@@ -628,7 +631,11 @@ func TestTheHelmSeesTheClaimQuotaRowAndAsksOnce(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(record.Verdict.Roles) != 1 || record.Verdict.Roles[0].Role != RoleClaimQuota || record.Verdict.Roles[0].Status != HealthDead ||
+		var cold []HealthRole
+		for _, role := range record.Verdict.Roles {
+			cold = append(cold, role.Role)
+		}
+		if !reflect.DeepEqual(cold, helmRoles) || record.Verdict.Roles[0].Status != HealthDead ||
 			!record.Verdict.Partial || !record.Verdict.FullObservedAt.IsZero() {
 			t.Fatalf("the cold helm record = %+v", record.Verdict)
 		}
@@ -665,4 +672,73 @@ func TestTheHelmSeesTheClaimQuotaRowAndAsksOnce(t *testing.T) {
 			t.Fatalf("the fenced helm asked: %+v", asks)
 		}
 	})
+}
+
+func TestTheHelmWithNoLaneReaderObservesNoClaimQuota(t *testing.T) {
+	t.Parallel()
+	root := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
+	home := filepath.Join(t.TempDir(), ".metasystem")
+	ledger := newHealthLedger(root, claimQuotaClock)
+	ledger.laneState = claimQuotaLane(t, root, nil)
+	seeded, err := observePartialHealth(root, claimQuotaClock, []RoleVerdict{checkClaimQuotaWith(root, root, ledger)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	seededRole := claimQuotaRole(t, seeded)
+	if seededRole.Status != HealthDead || len(claimQuotaReceipts(t, root)) != 0 {
+		t.Fatalf("the seeded claim-quota = %+v with receipts %v", seededRole, claimQuotaReceipts(t, root))
+	}
+	takeHelmFixture(t, root)
+	result, err := RunTick(root, TickConfig{Now: claimQuotaClock.Add(time.Hour), AskHome: home}, fakeCensus{})
+	if err != nil || result.Decision.Verdict != VerdictHelm {
+		t.Fatalf("helm tick: %+v %v", result.Decision, err)
+	}
+	record, err := loadHealthRecord(HealthRecordPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := claimQuotaRole(t, record.Verdict); !reflect.DeepEqual(got, seededRole) ||
+		record.State.FailureCounts[RoleClaimQuota] != seeded.State.FailureCounts[RoleClaimQuota] {
+		t.Fatalf("the helm with no lane reader observed the claim quota: %+v count %d, want %+v count %d", got,
+			record.State.FailureCounts[RoleClaimQuota], seededRole, seeded.State.FailureCounts[RoleClaimQuota])
+	}
+	var roles []HealthRole
+	for _, role := range record.Verdict.Roles {
+		roles = append(roles, role.Role)
+	}
+	want := []HealthRole{RoleClaimQuota, "steward-duty:disk-sweep", "steward-duty:tick-timing", "steward-duty:question-replies"}
+	if !reflect.DeepEqual(roles, want) || record.Verdict.Observation != seeded.Observation+1 {
+		t.Fatalf("the helm observed %v at observation %d, want %v at %d", roles, record.Verdict.Observation, want, seeded.Observation+1)
+	}
+	if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 0 || len(claimQuotaReceipts(t, root)) != 0 {
+		t.Fatalf("the helm with no lane reader asked: %+v, receipts %v", asks, claimQuotaReceipts(t, root))
+	}
+}
+
+func TestTheDeferredHealthCarriesTheAsk(t *testing.T) {
+	t.Parallel()
+	root := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
+	home := filepath.Join(t.TempDir(), ".metasystem")
+	path := EvidencePath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("{torn"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	result, err := RunTick(root, TickConfig{Now: claimQuotaClock, ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home}, fakeCensus{})
+	if err != nil || result.Decision.Verdict != VerdictDegraded {
+		t.Fatalf("the torn store's tick: %+v %v", result.Decision, err)
+	}
+	record, err := loadHealthRecord(HealthRecordPath(root))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if role := claimQuotaRole(t, record.Verdict); role.Status != HealthDead || !record.Verdict.ObservedAt.Equal(claimQuotaClock) {
+		t.Fatalf("the deferred health = %+v at %s", role, record.Verdict.ObservedAt)
+	}
+	asks := claimQuotaAsks(t, home, "held-h")
+	if len(asks) != 1 || asks[0].PeerText() != claimQuotaAskText("ready-r", "held-h", "metasystem goal release held-h --reason TEXT") {
+		t.Fatalf("the deferred health sent %d asks: %+v", len(asks), asks)
+	}
 }

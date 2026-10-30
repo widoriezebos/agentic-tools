@@ -2,6 +2,7 @@ package steward
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
@@ -34,7 +36,7 @@ var (
 func dutyTestRole(name string) HealthRole { return HealthRole("steward-duty:" + name) }
 
 // dutyCycle is what the injected duties return on one cycle.
-type dutyCycle struct{ replies, channel, trim error }
+type dutyCycle struct{ replies, channel, trim, pending error }
 
 type dutyBed struct {
 	t        *testing.T
@@ -45,6 +47,7 @@ type dutyBed struct {
 	now      time.Time
 	cycle    int
 	verdicts map[int]HealthVerdict
+	records  map[int]healthRecord
 	journal  map[int]int
 	alerts   map[int][]AlertEpisode
 }
@@ -75,7 +78,7 @@ func newDutyBed(t *testing.T, goals ...*goal.GoalFile) *dutyBed {
 		t.Fatal(err)
 	}
 	return &dutyBed{t: t, root: root, health: health, now: health.base,
-		cfg: TickConfig{ProviderHome: testprovider.Home(root), AskHome: t.TempDir(), WorkStateRoot: home}, verdicts: map[int]HealthVerdict{}, journal: map[int]int{}, alerts: map[int][]AlertEpisode{}}
+		cfg: TickConfig{ProviderHome: testprovider.Home(root), AskHome: t.TempDir(), WorkStateRoot: home}, verdicts: map[int]HealthVerdict{}, records: map[int]healthRecord{}, journal: map[int]int{}, alerts: map[int][]AlertEpisode{}}
 }
 
 // run drives the runner loop for cycles more cycles. after runs inside each
@@ -101,7 +104,16 @@ func (b *dutyBed) run(cycles int, plan func(int) dutyCycle, after func(int)) {
 			if episodesErr != nil {
 				t.Errorf("cycle %d: %v", b.cycle, episodesErr)
 			}
-			b.verdicts[b.cycle], b.journal[b.cycle], b.alerts[b.cycle] = result.Health, b.journalLines(), episodes
+			record, recordErr := loadHealthRecord(HealthRecordPath(top))
+			if recordErr != nil {
+				t.Errorf("cycle %d: the health record does not load: %v", b.cycle, recordErr)
+			}
+			// A helm tick returns no health; its observation is the record's.
+			observed := result.Health
+			if observed.Schema == 0 {
+				observed = record.Verdict
+			}
+			b.verdicts[b.cycle], b.records[b.cycle], b.journal[b.cycle], b.alerts[b.cycle] = observed, record, b.journalLines(), episodes
 			return result, err
 		},
 		SettleReplies: func(context.Context, string) (int, error) { return 0, plan(b.cycle).replies },
@@ -111,7 +123,7 @@ func (b *dutyBed) run(cycles int, plan func(int) dutyCycle, after func(int)) {
 			}
 			return 0, nil
 		},
-		DeliverPending: func(string) (int, error) { return 0, nil },
+		DeliverPending: func(string) (int, error) { return 0, plan(b.cycle).pending },
 		Resumable:      func(string) (string, bool, error) { return "", false, nil },
 		TrimCaches:     func(context.Context, string, TickConfig) error { return plan(b.cycle).trim },
 		SweepDisk:      func(string, time.Time, bool) error { return nil },
@@ -506,4 +518,96 @@ func TestAFailingDutyIsARowAndStandsAtFive(t *testing.T) {
 			t.Fatalf("a successful write kept the outcomes in memory: %+v", held)
 		}
 	})
+}
+
+// TestTheHelmCountsItsOwnDuties takes the helm after full cycles, in the
+// order a seat lives them: the helm observes the duties that run at the helm,
+// files their standing defects, and leaves every other role as it was.
+func TestTheHelmCountsItsOwnDuties(t *testing.T) {
+	t.Parallel()
+	replies, channel, pending := dutyTestRole("question-replies"), dutyTestRole("channel-pending"), dutyTestRole("notifications-pending")
+	standing := PatternOwner("health-standing-red")
+	errPending := errors.New("the outbox is locked")
+	bed := newDutyBed(t)
+	bed.quiet()
+
+	// Full cycles 3 to 8: the channel fails on five cycles and stands on the
+	// sixth tick; the notifications fail once.
+	bed.run(6, func(cycle int) dutyCycle {
+		switch {
+		case cycle == 7:
+			return dutyCycle{channel: errDutyC, pending: errPending}
+		case cycle >= 3 && cycle <= 7:
+			return dutyCycle{channel: errDutyC}
+		}
+		return dutyCycle{}
+	}, nil)
+	scoped := func(cycle int, role HealthRole) []AlertEpisode {
+		var found []AlertEpisode
+		for _, episode := range bed.episodes(cycle, standing) {
+			if episode.ScopeID == string(role) {
+				found = append(found, episode)
+			}
+		}
+		return found
+	}
+	if got := bed.role(8, channel); !got.Standing {
+		t.Fatalf("the channel did not stand on the sixth tick: %+v", got)
+	}
+	channelDefect := scoped(8, channel)
+	if len(channelDefect) != 1 || channelDefect[0].Cleared {
+		t.Fatalf("the channel's standing defect: %+v", channelDefect)
+	}
+	channelEvidence, err := json.Marshal(channelDefect[0].Evidence)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bed.failing(8, pending, "notifications-pending failed: "+errPending.Error(), 1)
+
+	// Helm cycles 9 to 14: the replies fail on the first five.
+	takeHelmFixture(t, bed.root)
+	bed.run(6, func(cycle int) dutyCycle {
+		if cycle >= 9 && cycle <= 13 {
+			return dutyCycle{replies: errDutyA}
+		}
+		return dutyCycle{}
+	}, nil)
+	for cycle := 9; cycle <= 14; cycle++ {
+		if !bed.records[cycle].Verdict.Partial {
+			t.Fatalf("helm cycle %d: the record is not partial", cycle)
+		}
+		open := scoped(cycle, channel)
+		if len(open) != 1 || open[0].EpisodeID != channelDefect[0].EpisodeID || open[0].Cleared {
+			t.Fatalf("helm cycle %d: the channel's defect is %+v, want it open as before", cycle, open)
+		}
+		if evidence, err := json.Marshal(open[0].Evidence); err != nil || !bytes.Equal(evidence, channelEvidence) {
+			t.Fatalf("helm cycle %d: the channel's evidence changed:\n%s\nwant\n%s", cycle, evidence, channelEvidence)
+		}
+		if got := bed.role(cycle, pending); got.ConsecutiveFailures != 1 {
+			t.Fatalf("helm cycle %d: notifications-pending counts %d, want 1", cycle, got.ConsecutiveFailures)
+		}
+	}
+	bed.failing(13, replies, "question-replies failed: "+errDutyA.Error(), 4)
+	if got := bed.role(14, replies); !got.Standing || got.ConsecutiveFailures != healthFailureLimit {
+		t.Fatalf("helm cycle 14: %+v, want the replies standing at five", got)
+	}
+	if defects := scoped(14, replies); len(defects) != 1 || defects[0].Cleared || bed.journal[14] != bed.journal[13]+1 {
+		t.Fatalf("helm cycle 14: replies defects %+v and %d deliveries, want one open, delivered once", defects, bed.journal[14]-bed.journal[13])
+	}
+
+	// Released: the next full tick reads every role, and the replies' success
+	// clears their defect.
+	if _, err := helm.Remove(bed.root); err != nil {
+		t.Fatal(err)
+	}
+	bed.run(1, func(int) dutyCycle { return dutyCycle{} }, nil)
+	if verdict := bed.verdicts[15]; verdict.Partial || len(verdict.Roles) != len(bed.verdicts[2].Roles) {
+		t.Fatalf("the tick after release: partial %t with %d roles, want a full %d", verdict.Partial, len(verdict.Roles), len(bed.verdicts[2].Roles))
+	}
+	if got := bed.role(15, replies); got.Status != HealthAlive {
+		t.Fatalf("after the release: %+v, want the replies alive", got)
+	}
+	if defects := scoped(15, replies); len(defects) != 1 || !defects[0].Cleared {
+		t.Fatalf("after the release the replies defect is %+v, want it closed", defects)
+	}
 }
