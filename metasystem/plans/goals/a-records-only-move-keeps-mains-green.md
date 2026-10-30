@@ -10,12 +10,13 @@
 - Next step: Third on m1e's build lane, after a-stewards-failing-duty-is-a-row: opus-designer cuts the brief from the page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 65 production lines: landing/plain/scope.go (both age checks, fullCurrent), wake.go and keeper_clock.go (keeperProofDebt), trunk_recovery.go, and push.go (finding 439: a proven batch merged with record-only commits of main inherits its green instead of a second full proof); the sibling page's G3 (push before the clock) is cut on this tip
 - OpenedAt: 2026-10-27T17:40:28Z
 - FirstClaimAt: 2026-10-30T01:20:04Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=YQ6MFXSWX2JEP5NRPN0XKD5BDM-m1e-55cdfc19 minutes=1200 reviewRounds=20 goalRevision=2
 - Approved: by=human:Wido at=2026-10-27T17:41:18Z revision=3 opid=YQ6MFXSWX2JEP5NRPN0XKD5BDM-m1e-55cdfc19 authority=proven digest=888ff5f2eaa9cb906705c6562b877de90560650148f09141711ecdd6caf175ba episode=3
+- Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=11 at=2026-10-30T03:25:07Z
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-30T01:20:04Z areas="null" areas-source="01M5Z5FMS2JWJQKHYC4MBXJWKT@5e493961a239e7c6381087eb038a31a88d93651fac004eb55f4c675b603bd2b9" areas-known=false areas-warnings="[\"areas unknown for goal a-records-only-move-keeps-mains-green in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-machinery-says-when-it-stands-still.md\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal a-stewards-failing-duty-is-a-row\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal a-stewards-failing-duty-is-a-row\"]" revision=11 accountingRevision=11 episodeAt=2026-10-30T01:20:04Z episodeRevision=11
 - StopCapability: generation=11 revision=11 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -32,4 +33,5 @@ History:
 - 2026-10-29T22:35:20Z HQ0EWRCCJB33921A6TCG4T0V9D-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=a-ready-goal-behind-a-claim-is-a-row,a-records-only-move-keeps-mains-green,a-stewards-failing-duty-is-a-row,the-default-critic-is-opus reason=priority-order from=1:88 to=1:87
 - 2026-10-30T01:20:04Z A06DM5E4K3Z057WZ0GE5EPQ614-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-records-only-move-keeps-mains-green reason=areas unknown for goal a-records-only-move-keeps-mains-green in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-machinery-says-when-it-stands-still.md; areas unknown for goal a-round-survives-a-restart; areas unknown for goal a-stewards-failing-duty-is-a-row; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal a-stewards-failing-duty-is-a-row
 - 2026-10-30T02:35:51Z H1RT9Z1S8TYPNSKSQBFP7JNZGV-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=a-records-only-move-keeps-mains-green,a-stewards-failing-duty-is-a-row reason=priority-order from=1:87 to=1:86
-Integrity: sha256=c9c151be134e955f9602d4267af41e7e82d1722d838e7aed6c25c1abb142840c
+- 2026-10-30T03:25:07Z NBCQZVJB32KBDRACZJ71JDJSGG-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-records-only-move-keeps-mains-green
+Integrity: sha256=5c64aecb464c1b817ad20fae2e7309d74b41266d9591f02f41a77adf71fc7861
