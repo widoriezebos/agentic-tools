@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: On m1e's build lane after the-steward-sees lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); U2a first, grant classes, --lineage seat and the class table tested on each row's real verb (about 100 production lines: goal/root.go, the ledger codec, intent_grant_everything.go, attorney_admits.go); then U2b1 decision record with the child act and the owner's publication as its effect (about 95), U2b2 the disposition contract and the overrule screen (about 60, --last)
 - OpenedAt: 2026-10-30T08:43:57Z
-- Revision: 1
+- Revision: 2
 - BlockedBy: the-steward-sees
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-30T08:44:40Z revision=2 opid=F2XEXJDY27WGCTKQKN22Y3ADDE-m1e-afd9d95a authority=proven digest=d84b3a81158eedcd9e120306e9e2a190d39170609fb4a13e283b48a15c0cd153 episode=2
 - Parked: by=human:Wido at=2026-10-30T08:43:57Z blocker=the-steward-sees because=blocked by the-steward-sees; returns when it is done
 
 History:
 - 2026-10-30T08:43:57Z 232RAMA5F1H33NTP1MHC14VJHF-m1e-afd9d95a open actor=human:Wido targets=the-steward-decides,the-steward-sees
-Integrity: sha256=36ed40c0bb2c85f20352b0b4737d067dc0b221a941b44c75e11c6c87e97b8165
+- 2026-10-30T08:44:40Z F2XEXJDY27WGCTKQKN22Y3ADDE-m1e-afd9d95a approve actor=human:Wido targets=the-steward-decides
+Integrity: sha256=f6e694e0dd2e8a5e48b54605f9249e9dbb41368e11707076d343a81407a8b965
