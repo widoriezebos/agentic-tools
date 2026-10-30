@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: On m1e's build lane after the-steward-decides lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); U3a first, the ladder with the census for stewardship work, outstanding asks with or without a deadline included (about 100 production lines: steward/seat_ladder.go PlanSeat and its counter, seat_start.go seatDecision and the recheck, tick.go's census); then U3b progress from the child's outcome, the brief and the steward skill (about 50 plus the skill), U4a occurrences and routing (about 90), U4b the fail-safe, the answered occurrence and a machine withdrawal that re-arms it (about 100), U4c the claim quota once per observed blocking interval (about 70, --last)
 - OpenedAt: 2026-10-30T08:49:32Z
-- Revision: 1
+- Revision: 2
 - BlockedBy: the-steward-decides
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-30T08:50:33Z revision=2 opid=ZFXC93QKAM617BWHZ643AXEDKR-m1e-afd9d95a authority=proven digest=0f8cdb2636bd7ebf782d5ea56207e4e41145eb743113973d7e365bcb6b4de2ac episode=2
 - Parked: by=human:Wido at=2026-10-30T08:49:32Z blocker=the-steward-decides because=blocked by the-steward-decides; returns when it is done
 
 History:
 - 2026-10-30T08:49:32Z 74E2ZZWJ275Y4DN55F51R6R78Y-m1e-afd9d95a open actor=human:Wido targets=the-steward-acts,the-steward-decides
-Integrity: sha256=5734a07b4e4a94a40132e34fa78a8fb0ca51a8a844a30aae4e8f03cfba85a527
+- 2026-10-30T08:50:33Z ZFXC93QKAM617BWHZ643AXEDKR-m1e-afd9d95a approve actor=human:Wido targets=the-steward-acts
+Integrity: sha256=c2a145a88b6ca52d18e9ce538ad8ad1f0faa1f6cb48a11f0814170258ac393d8
