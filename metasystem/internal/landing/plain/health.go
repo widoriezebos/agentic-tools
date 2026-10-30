@@ -282,24 +282,8 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			h.Refusals = append(h.Refusals, entry)
 		}
 	}
-	held, released := proofContention(interventions, "")
-	if held.At != "" {
-		act := held.Outcome
-		if released.At != "" {
-			at, _ := time.Parse(time.RFC3339Nano, released.At)
-			act = "released at " + at.Local().Format("15:04 MST") + "; no proof has started since"
-			for _, stamp := range starts {
-				if (status.RunningProof == nil || status.RunningProof.Since != stamp) && (status.LastProof == nil || status.LastProof.StartedAt != stamp) {
-					continue
-				}
-				if started, err := time.Parse(time.RFC3339Nano, stamp); err == nil && !started.Before(at) {
-					act = ""
-				}
-			}
-		}
-		if act != "" {
-			h.Drift = append(h.Drift, Fired{Row: "proof-beside-builds", Subject: Short(held.Subject), Act: act})
-		}
+	if hold, held, _ := currentHold(interventions, now, seams.HostWork); held {
+		h.Drift = append(h.Drift, Fired{Row: "proof-beside-builds", Subject: Short(hold.Subject), Act: hold.Outcome})
 	}
 	if r := status.RunningProof; r != nil && r.State == "running" && seams.HostWork != nil {
 		builds, checks, err := seams.HostWork()

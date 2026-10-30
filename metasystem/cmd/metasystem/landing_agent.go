@@ -394,7 +394,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				if err != nil {
 					return "", err
 				}
-				return plain.KeeperContentionHold(record.Install, plain.ProveSeams{Now: agent.now})
+				return plain.KeeperContentionHold(record.Install, landingExecutionSeams(plain.ProveSeams{Now: agent.now, HostWork: agent.proofEffects.HostWork}))
 			},
 
 			func(string) (string, error) {

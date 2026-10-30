@@ -428,7 +428,7 @@ func TestLandingProofStartHeldBesideBuilds(t *testing.T) {
 			}
 			row := healthRow(read(now), "proof-beside-builds")
 			if kind == "policy" {
-				if err == nil || len(b.calls) != 0 || row == nil || !strings.Contains(row.Act, "no proof has started since") {
+				if err == nil || len(b.calls) != 0 || row != nil {
 					t.Fatalf("release claimed a refused start: row=%+v calls=%v err=%v", row, b.calls, err)
 				}
 				b.seams.Now = func() time.Time { return now.Add(time.Minute) }
