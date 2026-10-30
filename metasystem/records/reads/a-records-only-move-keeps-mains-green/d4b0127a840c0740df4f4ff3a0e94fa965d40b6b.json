@@ -1,0 +1,44 @@
+{
+  "schemaVersion": 1,
+  "goal": "a-records-only-move-keeps-mains-green",
+  "unit": "U1",
+  "subject": {
+    "commit": "d4b0127a840c0740df4f4ff3a0e94fa965d40b6b",
+    "parent": "1635e91864111583a46203342307b33b18c4030d",
+    "tree": "aa833ecd265bfbf1e7abdfb6a9d46f667bbf9e78",
+    "patchDigest": "b274ec08fe076098c386ca183525463d35d2de7da6e4b131f20e4d6ba88169cd",
+    "unitDigest": "54c5035d9bffd0ebaeeb4fcbc2cd11da5113dfdcd2195c7bfd1b2d18e65f7da7"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-e1e11a79e36b6821e7cf5aa3",
+    "round": 1,
+    "closureSha256": "42276e3ae1c306c83e17c9dbce07e16dd90427875db60ff706433bda5c42449c"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "aa833ecd265bfbf1e7abdfb6a9d46f667bbf9e78",
+    "runId": "goal-read-gate-20261030t032426z-d5b868e7a2498a09"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_depth_class_test.go",
+      "readerWord": "reviewed by critic root code-critic-e1e11a79e36b6821e7cf5aa3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/changed_main_test.go",
+      "readerWord": "reviewed by critic root code-critic-e1e11a79e36b6821e7cf5aa3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/standing_correction_test.go",
+      "readerWord": "reviewed by critic root code-critic-e1e11a79e36b6821e7cf5aa3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/testdata/trunk-green-with-flakes-result.json",
+      "readerWord": "reviewed by critic root code-critic-e1e11a79e36b6821e7cf5aa3"
+    }
+  ],
+  "sha256": "9d481221ca2849c36e09130f254185fe39c491de529a4f52873ca4a36593bb45"
+}
