@@ -111,7 +111,14 @@ func ReconcileUnitLaunch(root, id, run, goal string, revision uint64, status, ca
 		if startErr != nil || endErr != nil || end.Before(start) {
 			return fmt.Errorf("the unit execution %s has unreadable or regressed execution times", id)
 		}
-		if TerminalStatus(asString(record["status"])) {
+		// A takeover's sweep failed this reservation before sweeps left unit
+		// reservations alone; it never started, so its real outcome replaces it.
+		swept := TerminalStatus(asString(record["status"])) && asString(record["phase"]) == "claim-sweep" && asString(record["startedAt"]) == ""
+		if swept {
+			delete(record, "phase")
+			delete(record, "error")
+		}
+		if TerminalStatus(asString(record["status"])) && !swept {
 			if asString(record["status"]) != status || asString(record["startedAt"]) != started || asString(record["endedAt"]) != ended || record["unitExecuted"] != executed {
 				return fmt.Errorf("the unit execution %s contradicts its terminal reservation", id)
 			}

@@ -1,12 +1,16 @@
 package lease
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/sys/unix"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 )
@@ -179,5 +183,70 @@ func TestCleanupStaleJobsHonorsTheCancellingMarker(t *testing.T) {
 	p, _ := readObject(filepath.Join(jobs, "job-plain.json"))
 	if p["status"] != "failed" || p["error"] != "stale-claim-epoch" {
 		t.Fatalf("an unmarked stale job still fails: %v", p)
+	}
+}
+
+// A takeover leaves a unit reservation to the unit runner's collection and
+// concludes every other stale record as before.
+func TestATakeoverLeavesAUnitReservationToItsCollection(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	file := &goal.GoalFile{
+		Id: "bounded", State: goal.StateClaimed, Revision: 5,
+		Claimed:        &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: "2026-08-28T08:00:00Z", Revision: 3},
+		Budget:         &goal.Budget{ElapsedLimit: "4h", AttemptLimit: 5, ReservedJobMinutesLimit: 1000, ActiveJobLimit: 5},
+		Approved:       &goal.ApprovalRecord{Revision: 3},
+		StopCapability: &goal.StopCapability{Generation: 3, Revision: 3, Machine: "bed-m1", ClaimEpoch: 1},
+		History:        []goal.HistoryLine{{At: "2026-08-28T06:00:00Z"}, {At: "2026-08-28T07:00:00Z"}, {At: "2026-08-28T08:00:00Z"}},
+	}
+	reserved := time.Date(2026, 8, 28, 8, 10, 0, 0, time.UTC)
+	if err := dispatch.ReserveUnitLaunch(root, "unit-read", "run", file, 1, 5, reserved, false); err != nil {
+		t.Fatal(err)
+	}
+	jobs := filepath.Join(root, "artifacts/agents/jobs")
+	reservation := filepath.Join(jobs, "unit-read.json")
+	before, err := os.ReadFile(reservation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeJSON(t, filepath.Join(jobs, "job-setup.json"), `{"jobId":"job-setup","claimEpoch":1,"status":"pending-setup"}`)
+	writeJSON(t, filepath.Join(jobs, "job-continuation.json"), `{"jobId":"job-continuation","claimEpoch":null,"role":"steward-continuation","status":"running"}`)
+	writeJSON(t, filepath.Join(jobs, "job-running.json"), `{"jobId":"job-running","claimEpoch":1,"status":"running"}`)
+
+	seed := &Lease{
+		HolderMainId: "main-1-1-aaaaaa", OwnerLineage: "main-1-1-aaaaaa",
+		Pid: deadPid(t), PidStartedAt: 111, CommandHash: "x",
+		ClaimedAt: "t", RenewedAt: "t", Takeovers: []Takeover{}, Revision: 3, ClaimEpoch: 1,
+	}
+	if err := saveLease(root, seed); err != nil {
+		t.Fatal(err)
+	}
+	pid, start := liveChild(t)
+	mustClaim(t, root, ann("main-9-9-eeeeee", pid, start, ""))
+	if lease, _ := loadLease(root, true); lease == nil || lease.ClaimEpoch != 2 {
+		t.Fatalf("the foreign claim did not take the lease over: %+v", lease)
+	}
+
+	after, err := os.ReadFile(reservation)
+	if err != nil || string(after) != string(before) {
+		t.Fatalf("the takeover changed the unit reservation: %v\nbefore %s\nafter  %s", err, before, after)
+	}
+	for _, stem := range []string{"job-setup", "job-continuation", "job-running"} {
+		record, _ := readObject(filepath.Join(jobs, stem+".json"))
+		if record["status"] != "failed" || record["phase"] != "claim-sweep" || record["error"] != "stale-claim-epoch" {
+			t.Fatalf("the takeover did not conclude %s: %v", stem, record)
+		}
+	}
+
+	started, ended := reserved.Add(time.Minute).Format(time.RFC3339Nano), reserved.Add(3*time.Minute).Format(time.RFC3339Nano)
+	if err := dispatch.ReconcileUnitLaunch(root, "unit-read", "run", file.Id, file.Claimed.Revision, "completed", "", started, ended, true); err != nil {
+		t.Fatalf("the collection refused the reservation the takeover left: %v", err)
+	}
+	collected, _ := readObject(reservation)
+	if collected["status"] != "completed" || collected["startedAt"] != started || collected["endedAt"] != ended || collected["unitExecuted"] != true {
+		t.Fatalf("the collection did not record the outcome: %v", collected)
 	}
 }
