@@ -90,8 +90,8 @@ func TestTheSituationReadsTheLedgerAndTheQuotaLive(t *testing.T) {
 	if !reflect.DeepEqual(s.Quota, []ClaimQuotaBlock{release}) || s.Unavailable["quota"] != "" {
 		t.Fatalf("quota = %+v (unavailable %q), want one block %+v", s.Quota, s.Unavailable["quota"], release)
 	}
-	if !slices.Equal(s.Waiting, []string{"a durable wait"}) || projections != 1 {
-		t.Fatalf("waiting=%v projections=%d, want the wait and one projection", s.Waiting, projections)
+	if !slices.Equal(s.Waiting, []string{"a durable wait"}) || projections != 1 || s.Unavailable["authority"] != "" {
+		t.Fatalf("waiting=%v projections=%d authority=%q, want the wait, one projection and the grants read from it", s.Waiting, projections, s.Unavailable["authority"])
 	}
 	facts := s.GoalFacts["held-h"]
 	for _, want := range []string{"Next step: Build it.", "first: built", "second: reading", "Hand-in"} {

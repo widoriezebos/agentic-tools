@@ -232,6 +232,23 @@ func (situationDeadProber) Probe(int64) (identity.Exact, identity.Liveness, erro
 
 func TestTheSituationComposesHostAndRecords(t *testing.T) {
 	t.Parallel()
+	store := launch.Store{Root: filepath.Join(t.TempDir(), "launch")}
+	if err := store.Create(launch.Record{ID: "build-1", Kind: "build", State: launch.Running}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Update("build-1", func(r *launch.Record) error {
+		r.State, r.Outputs = launch.Completed, []launch.Output{{Path: "report.md"}, {Path: "return.json"}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Create(launch.Record{ID: "read-1", Kind: "read", State: launch.Running,
+		Supervisor: &identity.Ref{Pid: 10, StartedAtSec: 1}, Child: &identity.Ref{Pid: 20, StartedAtSec: 1}}); err != nil {
+		t.Fatal(err)
+	}
+	owners := defaultIntentOwners()
+	owners.processes.launches = func() *launch.Manager { return &launch.Manager{Store: store, Prober: situationDeadProber{}} }
+
 	leased, free := t.TempDir(), t.TempDir()
 	pid := int64(os.Getpid())
 	started, ok := lease.StartedAt(pid, nil)
@@ -261,7 +278,17 @@ func TestTheSituationComposesHostAndRecords(t *testing.T) {
 		Executions: func(string) map[string]enginepin.Execution {
 			return map[string]enginepin.Execution{"runner": {Generation: 3}}
 		}}
-	s := readTestSituation(t, t.TempDir(), situationSources(defaultIntentOwners(), given))
+	s := readTestSituation(t, t.TempDir(), situationSources(owners, given))
+	launches := map[string]launch.Record{}
+	for _, record := range s.Launches {
+		launches[record.ID] = record
+	}
+	if build := launches["build-1"]; build.State != launch.Completed || len(build.Outputs) != 2 || s.Unavailable["launches"] != "" {
+		t.Fatalf("the owners' completed build = %+v, unavailable %q", build, s.Unavailable["launches"])
+	}
+	if read := launches["read-1"]; read.State != launch.Failed || read.Reason != "supervisor-lost" {
+		t.Fatalf("the dead running read = %+v, want failed by supervisor-lost", read)
+	}
 	holders := map[string]steward.SeatHolder{}
 	for _, holder := range s.Holders {
 		holders[holder.Checkout] = holder
@@ -273,9 +300,10 @@ func TestTheSituationComposesHostAndRecords(t *testing.T) {
 		t.Fatalf("the free checkout's holder = %+v (listed %v), unavailable %q, want no holder and no error", holder, ok, s.Unavailable["engine"])
 	}
 
+	given.Launches = func() ([]launch.Record, error) { return []launch.Record{{ID: "given"}}, nil }
 	given.Holder = func(string) (steward.SeatHolder, error) { return steward.SeatHolder{MainId: "given"}, nil }
-	if s = readTestSituation(t, t.TempDir(), situationSources(defaultIntentOwners(), given)); holdersMain(s.Holders) != "given given" {
-		t.Fatalf("a given holder reader was replaced: holders %+v", s.Holders)
+	if s = readTestSituation(t, t.TempDir(), situationSources(owners, given)); len(s.Launches) != 1 || s.Launches[0].ID != "given" || holdersMain(s.Holders) != "given given" {
+		t.Fatalf("a given reader was replaced: launches %+v holders %+v", s.Launches, s.Holders)
 	}
 }
 

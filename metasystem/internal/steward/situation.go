@@ -8,26 +8,35 @@ package steward
 import (
 	"cmp"
 	"errors"
+	"fmt"
+	"io/fs"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
 )
 
 // Situation is one read's parts. GoalFacts are the seat brief's facts of
 // each goal this seat holds. Unavailable names each part whose reader failed
-// (lane, hold, ledger, waiting, quota, facts, asks, host, engine) with the
-// reason.
+// (lane, hold, ledger, waiting, quota, facts, asks, host, engine, launches,
+// designs, questions, authority, alerts) with the reason.
 type Situation struct {
 	At      time.Time
 	Machine string
@@ -44,10 +53,22 @@ type Situation struct {
 	Asks        []SituationAsk
 	Unavailable map[string]string
 
-	Load       hostload.Sample
-	Processes  []HostProcess
-	Executions map[string]enginepin.Execution
-	Holders    []SeatHolder
+	// LaneInstall is the registered lane's installation; empty is none.
+	LaneInstall    string
+	Load           hostload.Sample
+	Processes      []HostProcess
+	Executions     map[string]enginepin.Execution
+	Holders        []SeatHolder
+	Launches       []launch.Record
+	Designs        []SituationDesign
+	DesignProblems []project.Problem
+	// Questions and Alerts are keyed here and, when it is another
+	// installation, lane.
+	Questions map[string][]channel.Question
+	Grants    []goal.PowerOfAttorneyEntry
+	Answered  []string
+	Rulings   []rulings.Row
+	Alerts    map[string][]AlertEpisode
 }
 
 // HostProcess is one test process on the host: its kind by argv, the
@@ -65,6 +86,14 @@ type SeatHolder struct {
 	Checkout, MainId, SessionId, Lineage string
 	Pid                                  int64
 	Unavailable                          string
+}
+
+// SituationDesign is one design record with its revision and critique head
+// lines and the design-critic chains of its goals.
+type SituationDesign struct {
+	Record             project.Record
+	Revision, Critique string
+	Reviews            []dispatch.DesignCritiqueChain
 }
 
 // ClaimQuotaBlock is one holding goal, the ready goals its claim holds back
@@ -108,8 +137,10 @@ type SituationSources struct {
 	Prober     identity.Prober
 	Registry   func() (string, error)
 	Executions func(root string) map[string]enginepin.Execution
-	// Holder reads an armed checkout's lease; nil leaves the part unavailable.
-	Holder func(checkout string) (SeatHolder, error)
+	// Holder reads an armed checkout's lease and Launches the launches as
+	// the launch verbs see them; nil leaves the part unavailable.
+	Holder   func(checkout string) (SeatHolder, error)
+	Launches func() ([]launch.Record, error)
 }
 
 // ReadSituation reads every part once, in a fixed order, at one clock.
@@ -155,6 +186,17 @@ func ReadSituation(root string, src SituationSources) Situation {
 		s.readAsks(src, now)
 	}
 	s.readHost(root, src, now)
+	err = errors.New("no reader")
+	if src.Launches != nil {
+		s.Launches, err = src.Launches()
+	}
+	if err != nil {
+		s.Unavailable["launches"] = err.Error()
+	}
+	s.readDesigns(root)
+	s.readQuestions(root)
+	s.readAuthority(root, now)
+	s.readAlerts(root)
 	return s
 }
 
@@ -285,6 +327,145 @@ func workspaceUnder(checkout, cwd string) string {
 	return ""
 }
 
+// readDesigns lists every design record with its revision, critique line
+// and review chains. A design home's problems make the part incomplete;
+// the readable designs stay.
+func (s *Situation) readDesigns(root string) {
+	roots, err := project.ResolveRoots(root)
+	var read *project.Project
+	if err == nil {
+		read, err = project.Read(roots)
+	}
+	if err != nil {
+		s.Unavailable["designs"] = err.Error()
+		return
+	}
+	var problems []string
+	for _, home := range project.Homes(roots) {
+		for _, problem := range read.Problems {
+			if home.Kind == project.KindDesign && strings.HasPrefix(problem.Path, home.Rel+"/") {
+				s.DesignProblems = append(s.DesignProblems, problem)
+			}
+		}
+	}
+	if len(s.DesignProblems) > 0 {
+		problems = append(problems, fmt.Sprintf("incomplete: %d problem(s); first: %s", len(s.DesignProblems), s.DesignProblems[0].String()))
+	}
+	var chainErr error
+	for _, record := range read.Records {
+		if record.Kind != project.KindDesign {
+			continue
+		}
+		design := SituationDesign{Record: record, Revision: headValue(record, "Revision"), Critique: headValue(record, "Critique")}
+		goals := record.Goals
+		if len(goals) == 0 {
+			goals = []string{""}
+		}
+		for _, id := range goals {
+			chains, err := dispatch.ReadDesignCritiqueChains(root, id, filepath.Join(roots.Checkout, record.Path))
+			design.Reviews, chainErr = append(design.Reviews, chains...), cmp.Or(chainErr, err)
+		}
+		s.Designs = append(s.Designs, design)
+	}
+	if chainErr != nil {
+		problems = append(problems, "review chains: "+chainErr.Error())
+	}
+	if len(problems) > 0 {
+		s.Unavailable["designs"] = strings.Join(problems, "; ")
+	}
+}
+
+// headValue is a record head key's value; empty when the head has none.
+func headValue(record project.Record, key string) string {
+	for _, field := range record.Head {
+		if strings.EqualFold(field.Key, key) {
+			return field.Value
+		}
+	}
+	return ""
+}
+
+// stores are here and, when it is another installation, the lane's.
+func (s *Situation) stores(here string) [][2]string {
+	stores := [][2]string{{"here", here}}
+	if s.LaneInstall != "" && realpath.Resolve(s.LaneInstall) != realpath.Resolve(here) {
+		stores = append(stores, [2]string{"lane", s.LaneInstall})
+	}
+	return stores
+}
+
+// readQuestions reads every question, open or ended, here and in the lane.
+func (s *Situation) readQuestions(root string) {
+	here, err := goal.ResolveStateRoot(root)
+	if err != nil {
+		s.Unavailable["questions"] = err.Error()
+		return
+	}
+	s.Questions = map[string][]channel.Question{}
+	var unreadable []string
+	for _, store := range s.stores(here) {
+		questions, bad := channel.WalkQuestions(store[1])
+		s.Questions[store[0]], unreadable = questions, append(unreadable, bad...)
+	}
+	if len(unreadable) > 0 {
+		s.Unavailable["questions"] = "unreadable: " + strings.Join(unreadable, "; ")
+	}
+}
+
+// readAuthority keeps the grants live at the read from the read's one
+// ledger, the attorney log's last 20 lines and the last 10 rulings.
+func (s *Situation) readAuthority(root string, now time.Time) {
+	var problems []string
+	if reason := s.Unavailable["ledger"]; reason != "" {
+		problems = append(problems, "grants: "+reason)
+	} else if s.Ledger.Tree.Root != nil {
+		for _, entry := range s.Ledger.Tree.Root.PowerOfAttorney {
+			if live, _ := entry.LiveAt(now); live {
+				s.Grants = append(s.Grants, entry)
+			}
+		}
+	}
+	data, err := os.ReadFile(humanauthority.AttorneyLogPath(root))
+	if text := strings.TrimRight(string(data), "\n"); err == nil && text != "" {
+		lines := strings.Split(text, "\n")
+		s.Answered = lines[max(0, len(lines)-20):]
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		problems = append(problems, "the attorney log: "+err.Error())
+	}
+	register, err := rulings.Read(root)
+	if err != nil {
+		problems = append(problems, "the rulings: "+err.Error())
+	}
+	s.Rulings = register.Rows[max(0, len(register.Rows)-10):]
+	if len(problems) > 0 {
+		s.Unavailable["authority"] = strings.Join(problems, "; ")
+	}
+}
+
+// readAlerts keeps the uncleared episodes here and in the lane. A store
+// with no alerts folder has none and is not locked, so no folder is made.
+func (s *Situation) readAlerts(root string) {
+	s.Alerts = map[string][]AlertEpisode{}
+	var problems []string
+	for _, store := range s.stores(root) {
+		if _, err := os.Stat(alertDir(store[1])); errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		episodes, err := AlertEpisodes(store[1])
+		if err != nil {
+			problems = append(problems, store[0]+": "+err.Error())
+		}
+		for _, episode := range episodes {
+			if !episode.Cleared {
+				s.Alerts[store[0]] = append(s.Alerts[store[0]], episode)
+			}
+		}
+	}
+	if len(problems) > 0 {
+		s.Unavailable["alerts"] = strings.Join(problems, "; ")
+	}
+}
+
 // readLane reads the lane's status and its current hold at the read's clock
 // and through the given observation, so the two agree. Unknown is held.
 func (s *Situation) readLane(src SituationSources, now time.Time) {
@@ -300,6 +481,7 @@ func (s *Situation) readLane(src SituationSources, now time.Time) {
 		s.Unavailable["lane"], s.Unavailable["hold"] = err.Error(), err.Error()
 		return
 	}
+	s.LaneInstall = record.Install
 	if src.LaneStatus == nil {
 		s.Unavailable["lane"] = "no reader"
 	} else {
