@@ -7,12 +7,14 @@
 - Origin: main
 - Next step: On ui's machine route after the-steward-sees lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first trace why a pane holder's shell read does not mark delivery today (intent_agent.go:536-547); one unit, about 40 production lines: the caller test in intent_agent.go, the overdue-ask row
 - OpenedAt: 2026-10-30T08:55:55Z
-- Revision: 1
+- Revision: 2
 - BlockedBy: the-steward-sees
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-10-30T08:56:05Z revision=2 opid=B7A9VYK47BZERT7DGFP1TD14M8-m1e-afd9d95a authority=proven digest=d0a48ab61624b68b6026b43efa6aed0a184e0e48a81b1ba52eee685cc0d33456 episode=2
 - Parked: by=human:Wido at=2026-10-30T08:55:55Z blocker=the-steward-sees because=blocked by the-steward-sees; returns when it is done
 
 History:
 - 2026-10-30T08:55:55Z NYMGVMTJPZCHDF8VMHR4CQX24B-m1e-afd9d95a open actor=human:Wido targets=an-ask-reaches-the-holder,the-steward-sees reason=TierOverride: derived=1 set=2 why=Recorded tier 2 so the goal gets the machinery's tier-2 review; its parts of the steward redesign touch delivery and test custody on every seat (decision 95).
-Integrity: sha256=c1b77fb3a7f8c26fbb1f7ce764bf2c35515214325aef4a9355817f2cbae760c4
+- 2026-10-30T08:56:05Z B7A9VYK47BZERT7DGFP1TD14M8-m1e-afd9d95a approve actor=human:Wido targets=an-ask-reaches-the-holder
+Integrity: sha256=091b3edce2ebc42e68b1d19bb240e7b576829eb73d3f92f4df8a1ea85c54fb94
