@@ -10,13 +10,14 @@
 - Next step: Second on m1e's build lane, after a-ready-goal-behind-a-claim-is-a-row (shares health.go and tick.go; cut on its tip): opus-designer cuts the brief from the page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 110 production lines: steward/runner.go (the writer at the nine duty sites), signal_channel.go, a duties_role.go, health.go (order, notification eligibility, the observed-set bound of the filer), tick.go (the helm path)
 - OpenedAt: 2026-10-27T17:39:40Z
 - FirstClaimAt: 2026-10-29T17:07:06Z
-- Revision: 13
+- Revision: 14
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=64ZGQF11MPGSPM5HH7S9RFWE7J-m1e-57b1aa12 minutes=2400 reviewRounds=20 goalRevision=9
 - Approved: by=human:Wido at=2026-10-29T17:07:49Z revision=10 opid=64ZGQF11MPGSPM5HH7S9RFWE7J-m1e-57b1aa12 authority=proven digest=24203388f4f2a497700da1a2fe6d04cc46638d3011122bdc3c7519f6b6648838 episode=10
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-29T22:48:31Z areas="null" areas-source="01M5Z5FMS2JWJQKHYC4MBXJWKT@5e493961a239e7c6381087eb038a31a88d93651fac004eb55f4c675b603bd2b9" areas-known=false areas-warnings="[\"areas unknown for goal a-stewards-failing-duty-is-a-row in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-machinery-says-when-it-stands-still.md\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-default-critic-is-opus\",\"areas unknown for goal the-default-critic-is-opus\"]" revision=13 accountingRevision=10 episodeAt=2026-10-29T17:07:06Z episodeRevision=9 idleSeconds=20179
+- Landing: at=2026-10-30T01:20:04Z opid=A06DM5E4K3Z057WZ0GE5EPQ614-m1e-cc2e8fc8
 - StopCapability: generation=13 revision=13 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
@@ -33,4 +34,5 @@ History:
 - 2026-10-29T17:12:12Z X9KVKWQFFTQ27D934X1RFSE6KG-m1e-cc2e8fc8 release actor=m1e+main-1792389436-6018-51cc28 targets=a-stewards-failing-duty-is-a-row reason=set aside for minutes so the-default-critic-is-opus can be submitted and handed in (one claim per machine); U1a keeps building uncommitted in its workspace; reclaimed right after the hand-in
 - 2026-10-29T22:35:20Z HQ0EWRCCJB33921A6TCG4T0V9D-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=a-ready-goal-behind-a-claim-is-a-row,a-records-only-move-keeps-mains-green,a-stewards-failing-duty-is-a-row,the-default-critic-is-opus reason=priority-order from=1:87 to=1:86
 - 2026-10-29T22:48:31Z R4V5EH51YC11C4M2AXKR9S8P56-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-stewards-failing-duty-is-a-row reason=areas unknown for goal a-stewards-failing-duty-is-a-row in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-machinery-says-when-it-stands-still.md; areas unknown for goal a-round-survives-a-restart; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-default-critic-is-opus; areas unknown for goal the-default-critic-is-opus
-Integrity: sha256=0a9433cbe77b4ea93588b7b77e09a4762f1f40dcf322645660a10435593883c9
+- 2026-10-30T01:20:04Z A06DM5E4K3Z057WZ0GE5EPQ614-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=a-stewards-failing-duty-is-a-row
+Integrity: sha256=259161cf27f69a959b7f1b7e4ee0f9f5a2da4d1022927be5d21255b2a7ee66f5
