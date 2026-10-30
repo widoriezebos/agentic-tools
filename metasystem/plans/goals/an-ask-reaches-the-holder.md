@@ -7,16 +7,18 @@
 - Origin: main
 - Next step: On ui's machine route after the-steward-sees lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first trace why a pane holder's shell read does not mark delivery today (intent_agent.go:536-547); one unit, about 40 production lines: the caller test in intent_agent.go, the overdue-ask row
 - OpenedAt: 2026-10-30T08:55:55Z
-- Revision: 3
+- Revision: 4
 - BlockedBy: the-steward-sees
 - Pinned: ui
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-30T08:56:05Z revision=2 opid=B7A9VYK47BZERT7DGFP1TD14M8-m1e-afd9d95a authority=proven digest=d0a48ab61624b68b6026b43efa6aed0a184e0e48a81b1ba52eee685cc0d33456 episode=2
+- NormApproval: approvedRef=TA1D6B83CJV6ZSAWN7PNHZ1GN6-m1e-afd9d95a minutes=1200 reviewRounds=20 goalRevision=3
+- Approved: by=human:Wido at=2026-10-30T08:56:25Z revision=4 opid=TA1D6B83CJV6ZSAWN7PNHZ1GN6-m1e-afd9d95a authority=proven digest=35738edddcad74310d605ce2a7c3aeba004d5f1f8cf16597137f1497df7bfe16 episode=4
 - Parked: by=human:Wido at=2026-10-30T08:55:55Z blocker=the-steward-sees because=blocked by the-steward-sees; returns when it is done
 
 History:
 - 2026-10-30T08:55:55Z NYMGVMTJPZCHDF8VMHR4CQX24B-m1e-afd9d95a open actor=human:Wido targets=an-ask-reaches-the-holder,the-steward-sees reason=TierOverride: derived=1 set=2 why=Recorded tier 2 so the goal gets the machinery's tier-2 review; its parts of the steward redesign touch delivery and test custody on every seat (decision 95).
 - 2026-10-30T08:56:05Z B7A9VYK47BZERT7DGFP1TD14M8-m1e-afd9d95a approve actor=human:Wido targets=an-ask-reaches-the-holder
 - 2026-10-30T08:56:15Z ZDQ7WWQSJBW8Z7PNJ9P474083N-m1e-afd9d95a set-pin actor=human:Wido targets=an-ask-reaches-the-holder
-Integrity: sha256=70f8a146c6e020510b8813640baf3d8ec9e4e7fc84bf3f5d3e3e4716d22fa8cc
+- 2026-10-30T08:56:25Z TA1D6B83CJV6ZSAWN7PNHZ1GN6-m1e-afd9d95a approve actor=human:Wido targets=an-ask-reaches-the-holder
+Integrity: sha256=ea6249d2a098389e5b037dfbe9bb623023f1161e71e02f8a107f88d321aa1ad3
