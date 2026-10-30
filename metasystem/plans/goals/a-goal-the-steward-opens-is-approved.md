@@ -7,16 +7,18 @@
 - Origin: main
 - Next step: On m1e's build lane after the-steward-acts lands (it needs the-steward-decides' U2a class table and the-steward-acts' U4a routing): opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 50 production lines: the pin in landing/plain/steward_flake.go, the route, the class row for goal approve of a lane-opened flake fix
 - OpenedAt: 2026-10-30T08:52:19Z
-- Revision: 3
+- Revision: 4
 - BlockedBy: the-steward-acts
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-10-30T08:52:30Z revision=2 opid=91TDEXCBQW80B90QQMVY9JS5Y8-m1e-afd9d95a authority=proven digest=92fad191858a1c120a266a8644e16e5565c164ad609cf28fb472482c6e2a360e episode=2
+- NormApproval: approvedRef=8NRM8GC4W7T6NPY69DFH0RHJXN-m1e-afd9d95a minutes=1200 reviewRounds=20 goalRevision=3
+- Approved: by=human:Wido at=2026-10-30T08:53:08Z revision=4 opid=8NRM8GC4W7T6NPY69DFH0RHJXN-m1e-afd9d95a authority=proven digest=195818bc74565f8aa704958feec9a6dbc72be285db7a09ba0d830497731eb427 episode=4
 - Parked: by=human:Wido at=2026-10-30T08:52:19Z blocker=the-steward-acts because=blocked by the-steward-acts; returns when it is done
 
 History:
 - 2026-10-30T08:52:19Z GAWQFHAV14ATVKCQSCCHQRFX4S-m1e-afd9d95a open actor=human:Wido targets=a-goal-the-steward-opens-is-approved,the-steward-acts
 - 2026-10-30T08:52:30Z 91TDEXCBQW80B90QQMVY9JS5Y8-m1e-afd9d95a approve actor=human:Wido targets=a-goal-the-steward-opens-is-approved
 - 2026-10-30T08:52:53Z R50ZMB47GQ800FPHSRVN0FPD3B-m1e-afd9d95a set-pin actor=human:Wido targets=a-goal-the-steward-opens-is-approved
-Integrity: sha256=30297f2df5da31b4b8c23e3c46a338c7bd7f07f1c25dac70229ca0b3121054db
+- 2026-10-30T08:53:08Z 8NRM8GC4W7T6NPY69DFH0RHJXN-m1e-afd9d95a approve actor=human:Wido targets=a-goal-the-steward-opens-is-approved
+Integrity: sha256=18915d31036f484a86dd58eeb003d2299466146efb1630e92acb13a6646e8fa8
