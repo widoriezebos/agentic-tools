@@ -121,7 +121,7 @@ func HostBoardSource(installation string) *httpd.BoardSource {
 			}
 			return launch.UnitStandings("", launch.Store{}, limits, now)
 		},
-		Lane: func(now time.Time) plain.Status { return landingLaneStatus(LandingLaneHome, now) }}
+		Lane: func(now time.Time) plain.Status { return LandingLaneStatus(LandingLaneHome, now, LandingLaneHostWork) }}
 }
 
 // PipelineStall is the stall bound the installation's configuration sets,
