@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Design through the engine: metasystem design write attempts-are-bounded-per-unit --brief agentic-tools-evidence/lane-test-20261009/designs/attempts-are-bounded-per-unit-request.md, then design review rounds (Astra is the design critic) to zero material findings, acceptance by hand until an-accepted-design-is-a-record lands; then one or two units on m1e behind the-steward-sees and the-steward-decides
 - OpenedAt: 2026-10-31T20:49:44Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=A5HFCY6REGTTR6TVXD9E6Z9569-m1e-ad960d25 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-10-31T20:49:44Z E778V71KD29KJWRZ5265EHR8BX-m1e-ad960d25 open actor=human:Wido targets=attempts-are-bounded-per-unit
 - 2026-10-31T20:50:53Z A5HFCY6REGTTR6TVXD9E6Z9569-m1e-ad960d25 approve actor=human:Wido targets=attempts-are-bounded-per-unit,revive-starts-the-seat-clean
-Integrity: sha256=42163fe22a14cba0036ff5b791b83f82b95367f4bcafb92f8d188a2dda153d3f
+- 2026-10-31T20:51:08Z EDZNZS747Q30N4J94RVGM1B95G-m1e-ad960d25 set-pin actor=human:Wido targets=attempts-are-bounded-per-unit
+Integrity: sha256=34e43446202d5b34c10fc0cb0837af02fc5c74d90522617e5e7a97a373c38660
