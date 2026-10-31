@@ -1,0 +1,46 @@
+{
+  "coveredUnits": [
+    "U1a1b"
+  ],
+  "schemaVersion": 1,
+  "goal": "the-steward-sees",
+  "unit": "U1a1d",
+  "subject": {
+    "commit": "cdee01cbdb9e4511477413654191a0cdf2ac82aa",
+    "parent": "752b24d5f5ece696bb3875629d568c1405d8c41e",
+    "tree": "4bc677cc8dbe67df6e12eabf9ffa341c66d66b0d",
+    "patchDigest": "e34c65936d750f15065f9ad19feaf2800593865b43b0bc9109390869ee6bb206",
+    "unitDigest": "2899b06a1f1e174e7fc9e3b523440b1fb5f87c32ccbd6a7733da538da526b271"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-3505e8ed1be6cd53ec0e4606",
+    "round": 1,
+    "closureSha256": "4245013046c5356eaaf823e38a9c51ed3f895ace327d408123a1676916d21a58"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "4bc677cc8dbe67df6e12eabf9ffa341c66d66b0d",
+    "runId": "goal-read-gate-20261031t010840z-b937039dce8d01b4"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "52da720756e8bb1d902f7a91b5051c633a5b12a1",
+      "digest": "47197a1ee413141a38a62d1dff252042313917a0f9a60ea7973bde35d6a1da03"
+    },
+    {
+      "kind": "read",
+      "commit": "9db3b559e40365b528a358520b7dcea7a0cc6ad2",
+      "digest": "f775f71ff026e4ae2a780fd9b00951e59b8dc5d9de436e99134daa3f21d9303d"
+    },
+    {
+      "kind": "read",
+      "commit": "28761eda757ed939d36000a39a625cf91c5a156f",
+      "digest": "80f71c7da87c6ad03f85787c5f2d2708d31ece4d88d011e297dc7584f166aea2"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "5fdab76dfed3d0c78d1bc0ebbd8367495e246bb2ff0716f77e9e779a37ac02a8"
+}
