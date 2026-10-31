@@ -34,6 +34,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // SeatLaunchSpec is the seat start the steward asks for: the launch lane's
@@ -535,6 +536,11 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	if cfg.Units != nil {
 		dependencies.Units = cfg.Units
 	}
+	if cfg.Situation != nil {
+		dependencies.Situation = func(root string, now time.Time) (SituationRecord, error) {
+			return SituationPage(root, func(t time.Time) Situation { return cfg.Situation(root, t) }, now, SituationFresh)
+		}
+	}
 	openWork := defaultTickContinuationDependencies(cfg).openWork
 	if cfg.GoalProjection != nil {
 		openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
@@ -817,7 +823,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	}
 	policy, policyErr := config.ResolvePolicy(config.GetParams{Key: "seat.driver", ConfPath: filepath.Join(repoRoot, "metasystem.conf")})
 	automaticHandoff := policyErr != nil || policy.Value != "person"
-	facts := seatFacts(repoRoot, selection, machine, tips, dependencies)
+	facts := pageFacts(repoRoot, selection, machine, tips, dependencies)
 	if policyErr != nil {
 		facts += "Seat driver unavailable: " + policyErr.Error() + "\n"
 	}
@@ -889,6 +895,7 @@ type seatDependencies struct {
 	ProviderHome string
 	Launcher     SeatLauncher
 	Units        func(root, goalID string) ([]UnitStage, error)
+	Situation    func(root string, now time.Time) (SituationRecord, error)
 	Main         func(root string) (string, error)
 	Contains     func(root, sha, main string) (bool, error)
 	Lane         func(root, goalID string) (plain.Entry, bool, error)
@@ -1005,6 +1012,29 @@ func seatList(lines []seatFactLine, count, limit int, command string) string {
 		}
 		keep--
 	}
+}
+
+// pageFacts are the shared page's first thing and each part's summary, then
+// the selected goal's facts: the page's, else seatFacts' own. A page that
+// cannot be read leaves seatFacts alone.
+func pageFacts(root string, selection SeatSelection, machine string, tips map[string]string, d seatDependencies) string {
+	record, err := SituationRecord{}, errors.New("no page reader")
+	if d.Situation != nil {
+		record, err = d.Situation(root, d.Now())
+	}
+	facts := record.Situation.GoalFacts[selection.Goal]
+	if facts == "" {
+		facts = seatFacts(root, selection, machine, tips, d)
+	}
+	if err != nil {
+		return facts
+	}
+	page := record.Composition
+	lines := []string{"\nSituation (read " + textui.Env{Now: d.Now(), Zone: page.ReadAt.Location()}.Time(page.ReadAt) + "; metasystem system situation --verbose prints all of it):"}
+	for _, part := range page.Parts {
+		lines = append(lines, part.Summary...)
+	}
+	return strings.Join(lines, "\n") + "\n" + facts
 }
 
 func seatFacts(root string, selection SeatSelection, machine string, tips map[string]string, d seatDependencies) string {

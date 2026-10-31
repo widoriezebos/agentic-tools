@@ -98,7 +98,8 @@ func runWaitCommand(args []string, poll func(context.Context) error, callerPID i
 // runWaitCommandOnClock is runWaitCommand with the wait's clock replaced when
 // clock is not nil. The replacement sets Now, BootClock, Sleep and
 // WithTimeout together, so every deadline the wait derives is measured and
-// enforced on that one clock; production passes nil and keeps the kernel's.
+// enforced on that one clock; production passes nil and keeps the kernel's
+// (metarun.NormalizeWaitOptions), as system situation --wait does.
 func runWaitCommandOnClock(args []string, poll func(context.Context) error, callerPID int64, printResult func(metarun.WaitResult, bool), clock func(*metarun.WaitOptions), stdout, stderr io.Writer) int {
 	flags := newFlagSet("wait", stdout, stderr)
 	root := pathFlag(flags, "root", ".", "checkout or installation state root")

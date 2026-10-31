@@ -172,6 +172,13 @@ func (s Situation) wake() (lines []string, deadlines []time.Time) {
 				cross(g.Minutes, 120)
 			}
 		}
+		// A person's act fires at five minutes, a proof's drift at 1.5 medians.
+		if h.PendingAct != nil {
+			cross(h.PendingAct.Minutes, 5)
+		}
+		if p := h.Proofs; p.Median != nil && !p.Drift {
+			cross(p.Running, 1.5**p.Median)
+		}
 	}
 	hold := "none"
 	if s.Hold != nil {
@@ -244,6 +251,9 @@ func newestRound(design SituationDesign) (round int64) {
 // failed. A summary counts; the detail names every item.
 func (s Situation) parts(first FirstThing) []SituationPart {
 	env, live := s.env(), map[string]*goal.GoalFile{}
+	several := func(n int, one, many string) string {
+		return fmt.Sprint(n, " ", map[bool]string{true: one, false: many}[n == 1])
+	}
 	if s.Ledger.Tree != nil {
 		live = s.Ledger.Tree.Live
 	}
@@ -320,7 +330,7 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 			asks = append(asks, ask.Thread.ID+" "+ask.State+": "+s.askLine(ask))
 		}
 	}
-	add("asks", []string{"asks"}, []string{fmt.Sprintf("%d asks: %s", len(s.Asks), counts(asked))}, asks)
+	add("asks", []string{"asks"}, []string{several(len(s.Asks), "ask", "asks") + ": " + counts(asked)}, asks)
 	launched, launches := map[string]int{}, []string(nil)
 	for _, record := range s.Launches {
 		launched[string(record.State)]++
@@ -330,13 +340,13 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 		}
 		launches = append(launches, line)
 	}
-	add("launches", []string{"launches"}, []string{fmt.Sprintf("%d launches: %s", len(s.Launches), counts(launched))}, launches)
+	add("launches", []string{"launches"}, []string{several(len(s.Launches), "launch", "launches") + ": " + counts(launched)}, launches)
 	statuses, designs := map[string]int{}, []string(nil)
 	for _, design := range s.Designs {
 		statuses[design.Record.Status]++
 		designs = append(designs, fmt.Sprintf("%s: %s, revision %s, review round %d", design.Record.Path, design.Record.Status, cmp.Or(design.Revision, "none"), newestRound(design)))
 	}
-	add("designs", []string{"designs"}, []string{fmt.Sprintf("%d designs: %s", len(s.Designs), counts(statuses))}, designs)
+	add("designs", []string{"designs"}, []string{several(len(s.Designs), "design", "designs") + ": " + counts(statuses)}, designs)
 	states, questions := map[string]int{}, []string(nil)
 	for _, store := range slices.Sorted(maps.Keys(s.Questions)) {
 		for _, question := range s.Questions[store] {
@@ -344,7 +354,7 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 			questions = append(questions, fmt.Sprintf("%s %s %s: %s", store, question.ID, question.State, cmp.Or(question.Goal, question.About)))
 		}
 	}
-	add("questions", []string{"questions"}, []string{fmt.Sprintf("%d questions: %s", len(questions), counts(states))}, questions)
+	add("questions", []string{"questions"}, []string{several(len(questions), "question", "questions") + ": " + counts(states)}, questions)
 
 	byCheckout, processes := map[string]int{}, []string(nil)
 	for _, process := range s.Processes {
@@ -379,7 +389,7 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 			alerts = append(alerts, store+" "+episode.EpisodeID+": "+episode.Message)
 		}
 	}
-	add("alerts", []string{"alerts"}, []string{fmt.Sprintf("%d open alerts", len(alerts))}, alerts)
+	add("alerts", []string{"alerts"}, []string{several(len(alerts), "open alert", "open alerts")}, alerts)
 	return parts
 }
 

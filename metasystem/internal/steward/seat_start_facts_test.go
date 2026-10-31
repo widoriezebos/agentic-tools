@@ -5,14 +5,17 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 	"unicode/utf8"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
 func TestTheSeatPromptIsWrittenFromTheGoalsRecord(t *testing.T) {
@@ -116,4 +119,89 @@ func TestTheSeatPromptIsWrittenFromTheGoalsRecord(t *testing.T) {
 			}
 		})
 	}
+}
+
+// pageSeatBrief starts selection through StartSeat on the claim-quota ledger
+// with one ready goal and one this seat claims, its page read over the
+// U1a1 sources when page is set, and returns the brief the seat was given.
+// The page's unit reader words its stage apart from the seat's own.
+// With blocked, a folder stands where the page is saved.
+func pageSeatBrief(t *testing.T, selection SeatSelection, page, blocked bool) string {
+	t.Helper()
+	// The seat's other goal is claimed with its step due, or, for a ready
+	// start beside it, waits at the landing gate for a person's word.
+	held := claimQuotaHeld("held-h")
+	held.Claimed.Lineage = SeatLineage
+	held.History[len(held.History)-1].Opid, held.History[len(held.History)-1].Actor = goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC1", "m1e", SeatLineage), "m1e+"+SeatLineage
+	if !selection.Held {
+		held = seatLandingGoal("held-h", 3, situationNow.Add(-time.Hour))
+		held.Claimed.Machine, held.StopCapability.Machine = "m1e", "m1e"
+		for i := len(held.History) - 2; i < len(held.History); i++ {
+			held.History[i].Opid, held.History[i].Actor = strings.ReplaceAll(held.History[i].Opid, seatBedMachine, "m1e"), strings.ReplaceAll(held.History[i].Actor, seatBedMachine, "m1e")
+		}
+		held.Landing.Opid = held.History[len(held.History)-1].Opid
+	}
+	root := canonicalPath(claimQuotaTickBed(t, nil, held, claimQuotaReady("ready-r", 1, "")))
+	testprovider.Register(t, root)
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("launch.seat.runtime=claude\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	launcher := &fakeSeatLauncher{}
+	units := func(_, id string) ([]UnitStage, error) { return []UnitStage{{Unit: id + "-unit", Stage: "built"}}, nil }
+	cfg := TickConfig{Now: situationNow, Seat: launcher, ProviderHome: testprovider.Home(root), AskHome: t.TempDir(), ClaimLaneState: claimQuotaLane(t, root, nil), Units: units}
+	if page {
+		cfg.Situation = func(root string, now time.Time) Situation {
+			src := withEmptyHost(t, SituationSources{Now: func() time.Time { return now }, LaneHome: func() (string, error) { return t.TempDir(), nil },
+				ClaimLaneState: claimQuotaLane(t, root, nil), BoardHome: func() (string, error) { return t.TempDir(), nil },
+				Units: func(_, id string, _ goal.Projection, _ time.Time) ([]UnitStage, error) {
+					return []UnitStage{{Unit: id + "-unit", Stage: "built, as the page read it"}}, nil
+				}})
+			return readSituation(t, root, src)
+		}
+	}
+	if blocked {
+		if err := os.MkdirAll(filepath.Join(situationPagePath(root), "blocked"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := StartSeat(root, cfg, deadCensus(), selection); err != nil || len(launcher.starts) != 1 {
+		t.Fatalf("the seat for %s did not start: %v (%d starts)", selection.Goal, err, len(launcher.starts))
+	}
+	data, err := os.ReadFile(launcher.starts[0].Brief)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func TestTheSeatBriefCarriesThePage(t *testing.T) {
+	t.Parallel()
+	ready, held := SeatSelection{Goal: "ready-r"}, SeatSelection{Goal: "held-h", Held: true}
+	t.Run("a ready goal", func(t *testing.T) {
+		t.Parallel()
+		brief := pageSeatBrief(t, ready, true, false)
+		for _, want := range []string{"The steward started you for goal ready-r", "Situation (read 09:00; metasystem system situation --verbose prints all of it):",
+			"claim ready-r: ready-r is ready to claim", "the lane is unread", "0 asks: none", "0 open alerts", "Next step: Build it.", "ready-r-unit: built", "Hand-in: none"} {
+			if !strings.Contains(brief, want) {
+				t.Fatalf("the brief lacks %q:\n%s", want, brief)
+			}
+		}
+		if strings.Contains(brief, "held-h-unit") {
+			t.Fatalf("the brief carries another goal's facts:\n%s", brief)
+		}
+	})
+	t.Run("a held goal", func(t *testing.T) {
+		t.Parallel()
+		brief := pageSeatBrief(t, held, true, false)
+		if !strings.Contains(brief, "Situation (read ") || !strings.Contains(brief, "held-h-unit: built, as the page read it") || strings.Contains(brief, "ready-r-unit") {
+			t.Fatalf("the held goal's brief lacks its facts from the page:\n%s", brief)
+		}
+	})
+	t.Run("no page", func(t *testing.T) {
+		t.Parallel()
+		without, unread := pageSeatBrief(t, ready, false, false), pageSeatBrief(t, ready, true, true)
+		if strings.Contains(without, "Situation (") || without != unread || !strings.Contains(without, "ready-r-unit: built") {
+			t.Fatalf("without a page the brief is not today's facts:\n%s\n---\n%s", without, unread)
+		}
+	})
 }

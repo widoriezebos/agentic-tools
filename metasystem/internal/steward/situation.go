@@ -145,6 +145,8 @@ type SituationSources struct {
 	Launches func() ([]launch.Record, error)
 	// RedLine words an owned red as goal next does; nil leaves it unworded.
 	RedLine func(goal.TrunkRedEntry, time.Time) string
+	// Critiques reads the job records once and answers each design's chains.
+	Critiques func(root string) (func(goalID, designPath string) []dispatch.DesignCritiqueChain, error)
 }
 
 // ReadSituation reads every part once, in a fixed order, at one clock.
@@ -157,6 +159,9 @@ func ReadSituation(root string, src SituationSources) Situation {
 	}
 	if src.BoardHome == nil {
 		src.BoardHome = board.Home
+	}
+	if src.Critiques == nil {
+		src.Critiques = dispatch.DesignCritiqueReader
 	}
 	src = withHostReaders(src)
 	now := src.Now()
@@ -200,7 +205,7 @@ func ReadSituation(root string, src SituationSources) Situation {
 	if err != nil {
 		s.Unavailable["launches"] = err.Error()
 	}
-	s.readDesigns(root)
+	s.readDesigns(root, src.Critiques)
 	s.readQuestions(root)
 	s.readAuthority(root, now)
 	s.readAlerts(root)
@@ -337,7 +342,7 @@ func workspaceUnder(checkout, cwd string) string {
 // readDesigns lists every design record with its revision, critique line
 // and review chains. A design home's problems make the part incomplete;
 // the readable designs stay.
-func (s *Situation) readDesigns(root string) {
+func (s *Situation) readDesigns(root string, critiques func(string) (func(string, string) []dispatch.DesignCritiqueChain, error)) {
 	roots, err := project.ResolveRoots(root)
 	var read *project.Project
 	if err == nil {
@@ -356,7 +361,7 @@ func (s *Situation) readDesigns(root string) {
 	if len(s.DesignProblems) > 0 {
 		problems = append(problems, fmt.Sprintf("incomplete: %d problem(s); first: %s", len(s.DesignProblems), s.DesignProblems[0].String()))
 	}
-	var chainErr error
+	chains, chainErr := critiques(root)
 	for _, record := range read.Records {
 		if record.Kind != project.KindDesign {
 			continue
@@ -367,8 +372,7 @@ func (s *Situation) readDesigns(root string) {
 			goals = []string{""}
 		}
 		for _, id := range goals {
-			chains, err := dispatch.ReadDesignCritiqueChains(root, id, filepath.Join(roots.Checkout, record.Path))
-			design.Reviews, chainErr = append(design.Reviews, chains...), cmp.Or(chainErr, err)
+			design.Reviews = append(design.Reviews, chains(id, filepath.Join(roots.Checkout, record.Path))...)
 		}
 		s.Designs = append(s.Designs, design)
 	}

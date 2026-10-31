@@ -2,6 +2,7 @@ package steward
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -19,6 +20,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 )
 
 // composePublish publishes one board message at the time given.
@@ -426,6 +428,73 @@ func TestADeadlineMarksWhenAPauseRowFires(t *testing.T) {
 	for _, want := range []time.Time{situationNow.Add(15*time.Minute + time.Second), situationNow.Add(75*time.Minute + time.Second)} {
 		if slices.ContainsFunc(s.Lane.Health.Rows(), func(row plain.Fired) bool { return row.Row == "overdue-goal" }) || !slices.ContainsFunc(deadlines, want.Equal) {
 			t.Fatalf("a hand-in 45 minutes waiting: goals %+v, deadlines %v, want %v and no overdue row yet", s.Lane.Health.Goals, deadlines, want)
+		}
+	}
+}
+
+func TestAFailedObservationKeepsItsWakeAcrossReads(t *testing.T) {
+	t.Parallel()
+	laneHome := situationLaneHome(t)
+	record, _, err := lane.Read(laneHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := composeLane(t, record.Install, func() (int, int, error) { return 0, 0, nil }, lane.OwnerView{State: lane.OwnerRunning})
+	if err := os.MkdirAll(filepath.Join(plain.Dir(record.Install), "queue.jsonl"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var digests []string
+	for _, at := range []time.Time{situationNow, situationNow.Add(time.Minute)} {
+		s := Situation{At: at, Machine: "m1e", Lane: status(laneHome, at)}
+		if s.Lane.Health == nil || !slices.ContainsFunc(s.Lane.Health.Rows(), func(row plain.Fired) bool { return row.Row == "observation-failed" }) {
+			t.Fatalf("an unreadable queue at %v fires no observation-failed row: %+v", at, s.Lane.Health)
+		}
+		digests = append(digests, Compose(s).Digest)
+	}
+	if digests[0] != digests[1] {
+		t.Fatal("two failed observations a minute apart give two wake digests")
+	}
+}
+
+func TestADeadlineMarksWhenAPersonActAndAProofDriftFire(t *testing.T) {
+	t.Parallel()
+	minutes := func(m float64) *float64 { return &m }
+	s := Situation{At: situationNow, Machine: "m1e", Lane: plain.Status{Health: &plain.Health{PendingAct: &plain.PersonAct{Verb: "landing run", Minutes: minutes(4)},
+		Proofs: plain.ProofHealth{Running: minutes(10), Median: minutes(10)}}}}
+	// The act fires at five minutes; the proof drifts past one and a half
+	// times its median.
+	for _, want := range []time.Time{situationNow.Add(time.Minute + time.Second), situationNow.Add(5*time.Minute + time.Second)} {
+		if !slices.ContainsFunc(Compose(s).Deadlines, want.Equal) {
+			t.Fatalf("deadlines = %v, want %v", Compose(s).Deadlines, want)
+		}
+	}
+	s.Lane.Health.Proofs.Drift = true
+	if deadlines := Compose(s).Deadlines; len(deadlines) != 1 {
+		t.Fatalf("a proof that drifts already has no deadline: %v", deadlines)
+	}
+}
+
+func TestTheSummariesCountInWords(t *testing.T) {
+	t.Parallel()
+	for n, want := range map[int][]string{1: {"1 ask: 1 open", "1 launch: 1 completed", "1 design: 1 accepted", "1 question: 1 open", "1 open alert"},
+		2: {"2 asks: 2 open", "2 launches: 2 completed", "2 designs: 2 accepted", "2 questions: 2 open", "2 open alerts"}} {
+		s := Situation{At: situationNow, Machine: "m1e", Questions: map[string][]channel.Question{}, Alerts: map[string][]AlertEpisode{}}
+		for i := range n {
+			id := fmt.Sprint(i)
+			s.Asks = append(s.Asks, SituationAsk{Thread: board.Thread{ID: id}, State: board.ThreadOpen})
+			s.Launches = append(s.Launches, launch.Record{ID: id, State: launch.Completed})
+			s.Designs = append(s.Designs, SituationDesign{Record: project.Record{Status: "accepted"}})
+			s.Questions["here"] = append(s.Questions["here"], channel.Question{ID: id, State: "open"})
+			s.Alerts["here"] = append(s.Alerts["here"], AlertEpisode{EpisodeID: id})
+		}
+		var summaries []string
+		for _, part := range Compose(s).Parts {
+			summaries = append(summaries, part.Summary...)
+		}
+		for _, line := range want {
+			if !slices.Contains(summaries, line) {
+				t.Fatalf("with %d of each the summaries lack %q: %q", n, line, summaries)
+			}
 		}
 	}
 }

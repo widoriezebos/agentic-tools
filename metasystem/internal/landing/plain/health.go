@@ -30,6 +30,7 @@ type Health struct {
 	Interventions       []Intervention       `json:"interventions,omitempty"`
 	Refusals            []Intervention       `json:"refusals,omitempty"`
 	PersonActs          []PersonAct          `json:"person_acts,omitempty"`
+	PendingAct          *PersonAct           `json:"pending_act,omitempty"`
 	OwnRed              []OwnRed             `json:"own_red,omitempty"`
 	observedAt          time.Time
 	recentActs          map[[2]string]bool
@@ -221,9 +222,12 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			progressed = at
 		}
 	}
-	if minutes := now.Sub(acted).Minutes(); !acted.IsZero() && minutes >= 5 && progressed.Before(acted) && status.Raw.Agent.Barren > 0 {
-		personAct.Minutes = &minutes
-		h.PersonActs = append(h.PersonActs, personAct)
+	// An act with no effect yet fires at five minutes; until then it waits.
+	if minutes := now.Sub(acted).Minutes(); !acted.IsZero() && progressed.Before(acted) && status.Raw.Agent.Barren > 0 {
+		personAct.Minutes, h.PendingAct = &minutes, &personAct
+		if minutes >= 5 {
+			h.PersonActs, h.PendingAct = append(h.PersonActs, personAct), nil
+		}
 	}
 	h.ReportPath = filepath.Join(Dir(install), "steward-report.md")
 	report, err := readStewardReport(install)

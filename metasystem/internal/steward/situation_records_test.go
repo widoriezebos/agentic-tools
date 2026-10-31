@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
@@ -469,5 +470,25 @@ func TestTheSituationPartsFailAlone(t *testing.T) {
 	s = readSituation(t, t.TempDir(), src)
 	if !strings.Contains(s.Unavailable["host"], "the process table cannot be read") || len(s.Holders) != 1 || s.Holders[0].MainId != "m-1" || s.Unavailable["engine"] != "" {
 		t.Fatalf("a failed process table: unavailable %v, holders %+v, want the seats still read", s.Unavailable, s.Holders)
+	}
+}
+
+func TestTheSituationReadsTheCritiqueStateOnce(t *testing.T) {
+	t.Parallel()
+	root, laneHome, _ := situationRecordsBed(t)
+	src := situationHostSources(t, filepath.Join(t.TempDir(), "absent.jsonl"))
+	src.LaneHome = func() (string, error) { return laneHome, nil }
+	reads := 0
+	src.Critiques = func(root string) (func(string, string) []dispatch.DesignCritiqueChain, error) {
+		reads++
+		return dispatch.DesignCritiqueReader(root)
+	}
+	s := readSituation(t, root, src)
+	var rounds []int64
+	for _, design := range s.Designs {
+		rounds = append(rounds, newestRound(design))
+	}
+	if reads != 1 || !slices.Equal(rounds, []int64{0, 2, 0}) {
+		t.Fatalf("the critique state was read %d times for designs with rounds %v, want once for the three designs' rounds 0, 2 and 0", reads, rounds)
 	}
 }

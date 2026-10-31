@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -17,7 +18,9 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
@@ -40,15 +43,11 @@ func situationArmed(t *testing.T, checkouts ...string) string {
 }
 
 // situationTree is every path under root with its size and change time,
-// outside Git's own directory: the units reader reads the remote's main
-// through a disposable ref, which Git records as its fetch.
+// Git's own directory included: the read fetches nothing.
 func situationTree(t *testing.T, root string) map[string]string {
 	t.Helper()
 	tree := map[string]string{}
 	if err := filepath.Walk(root, func(path string, info os.FileInfo, err error) error {
-		if err == nil && info.IsDir() && info.Name() == ".git" {
-			return filepath.SkipDir
-		}
 		if err == nil {
 			tree[path] = fmt.Sprintf("%d %v", info.Size(), info.ModTime())
 		}
@@ -205,4 +204,123 @@ func situationLayoutBed(t *testing.T) layoutBed {
 		BoardHome: func() (string, error) { return home, nil }, Launches: (&launch.Manager{Store: store}).EffectiveList,
 		Holder: func(string) (steward.SeatHolder, error) { return steward.SeatHolder{}, nil }})
 	return bed
+}
+
+// situationWaitBed is a checkout whose page is read over counted sources on
+// a virtual wait clock given through work wait's clock seam; after each
+// sleep, event runs at the clock's new time.
+type situationWaitBed struct {
+	t                    *testing.T
+	root, install, board string
+	owners               intentOwners
+	clock                *virtualWaitClock
+	projections          int
+	event                func(at time.Time)
+}
+
+func newSituationWaitBed(t *testing.T) *situationWaitBed {
+	t.Helper()
+	bed := newWorkBed(t)
+	b := &situationWaitBed{t: t, root: bed.root(), install: situationCheckout(t, bed), board: t.TempDir(), clock: newVirtualWaitClock(situationNow)}
+	clock := situationNow
+	b.owners = countedSituationOwners(t, bed, &clock, &b.projections)
+	b.owners.situation.Now = b.clock.Now
+	b.owners.situation.BoardHome = func() (string, error) { return b.board, nil }
+	b.owners.work.waitClock = func(options *metarun.WaitOptions) {
+		b.clock.apply(options)
+		options.Sleep = func(ctx context.Context, d time.Duration) error {
+			err := b.clock.Sleep(ctx, d)
+			if b.event != nil {
+				b.event(b.clock.Now())
+			}
+			return err
+		}
+	}
+	return b
+}
+
+func (b *situationWaitBed) run(args ...string) (int, string) {
+	b.t.Helper()
+	command, _, _ := resolveIntentArgv([]string{"system", "situation"})
+	var stdout, stderr bytes.Buffer
+	code := runIntentIn(command, args, &stdout, &stderr, b.root, b.owners)
+	return code, stdout.String() + stderr.String()
+}
+
+func (b *situationWaitBed) receipts() []string {
+	b.t.Helper()
+	data, err := os.ReadFile(filepath.Join(b.install, "artifacts", "agents", "steward", "situation-reads.jsonl"))
+	if err != nil && !os.IsNotExist(err) {
+		b.t.Fatal(err)
+	}
+	return strings.Fields(string(data))
+}
+
+func TestSystemSituationWaitIsBounded(t *testing.T) {
+	t.Parallel()
+	b := newSituationWaitBed(t)
+	for _, bad := range []string{"61m", "0", "soon"} {
+		code, out := b.run("--wait", bad)
+		if _, err := os.Stat(filepath.Join(b.install, "artifacts", "agents", "steward", "situation.json")); code != 2 || !os.IsNotExist(err) || b.projections != 0 ||
+			!strings.Contains(out, "--wait takes a duration up to 60m, such as 10m; nothing was done") || !strings.Contains(out, "--wait 60m") {
+			t.Fatalf("--wait %s = %d (page %v, ledger read %d times), want refused with code 2 and nothing read:\n%s", bad, code, err, b.projections, out)
+		}
+	}
+	code, out := b.run("--wait", "5m", "--json")
+	var result struct{ Data struct{ Woke string } }
+	if err := json.Unmarshal([]byte(out), &result); err != nil || code != 0 || result.Data.Woke != "nothing changed in 5m" || !b.clock.Now().Equal(situationNow.Add(5*time.Minute)) {
+		t.Fatalf("--wait 5m with nothing changing = %d, woke %q (%v) at %v:\n%s", code, result.Data.Woke, err, b.clock.Now(), out)
+	}
+	var ask board.Message
+	at := situationNow.Add(7 * time.Minute)
+	b.event = func(now time.Time) {
+		if ask.ID == "" && !now.Before(at) {
+			published, err := board.Publish(b.board, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "mac-cli"}, Text: "Is it built?"}, now)
+			if err != nil {
+				t.Error(err)
+			}
+			ask = published.Message
+		}
+	}
+	if code, out := b.run("--wait", "10m"); code != 0 || strings.SplitN(out, "\n", 2)[0] != "woke: changed: ask|"+ask.ID+"|open" || !strings.Contains(out, "First thing") {
+		t.Fatalf("a new ask two minutes into the wait = %d, want the page led by the ask:\n%s", code, out)
+	}
+}
+
+func TestASituationReadByTheMainLeavesAReceipt(t *testing.T) {
+	t.Parallel()
+	b := newSituationWaitBed(t)
+	caller := lease.ClassifyResult{Class: lease.ClassMain, Holder: true, MainId: "main-1"}
+	b.owners.dependencies.claimHolder.Caller = func(string, int64) (lease.ClassifyResult, error) { return caller, nil }
+	b.owners.dependencies.claimHolder.Holder = func(string) (lease.CurrentHolderView, error) {
+		return lease.CurrentHolderView{MainId: "main-1", SessionId: "s-1"}, nil
+	}
+	for want := 1; want <= 2; want++ {
+		if code, out := b.run(); code != 0 || len(b.receipts()) != want {
+			t.Fatalf("call %d by the main = %d with receipts %v, want %d:\n%s", want, code, b.receipts(), want, out)
+		}
+	}
+	var line struct {
+		Session string
+		At      time.Time
+		First   struct{ Kind, Subject string }
+	}
+	if err := json.Unmarshal([]byte(b.receipts()[0]), &line); err != nil || line.Session != "s-1" || !line.At.Equal(situationNow) || line.First.Kind == "" {
+		t.Fatalf("the receipt %s (%v), want session s-1 at %v with the first thing", b.receipts()[0], err, situationNow)
+	}
+	caller = lease.ClassifyResult{Class: lease.ClassDelegate, Pid: 7}
+	if code, _ := b.run(); code != 0 || len(b.receipts()) != 2 {
+		t.Fatalf("a delegate's call = %d with receipts %v, want none added", code, b.receipts())
+	}
+	caller = lease.ClassifyResult{Class: lease.ClassMain, Holder: true, MainId: "main-1"}
+	folder := filepath.Join(b.install, "artifacts", "agents", "steward")
+	if err := os.Rename(folder, folder+"-aside"); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(folder, []byte("not a folder"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if code, out := b.run("--verbose"); code != 0 || !strings.Contains(out, "First thing") || !strings.Contains(out, "the read receipt was not written: ") {
+		t.Fatalf("an unwritable receipt = %d, want the page with the error as a detail:\n%s", code, out)
+	}
 }

@@ -24,7 +24,7 @@ Asks
   0 asks: none
 
 Launches
-  1 launches: 1 completed
+  1 launch: 1 completed
   1 more; metasystem system situation --verbose
 
 Designs

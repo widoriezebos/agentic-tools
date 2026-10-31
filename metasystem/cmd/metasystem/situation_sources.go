@@ -70,9 +70,12 @@ func situationSources(owners intentOwners, src steward.SituationSources) steward
 }
 
 // situationUnitStages is the seat's unit reader over the situation's one
-// projection and clock: the invocation projects nothing of its own.
+// projection and clock: the invocation projects nothing of its own. Goal
+// branches land only on main, which the accepted ledger rides, so the
+// projection's tip is the base of each goal's range and nothing is fetched.
 func situationUnitStages(owners intentOwners) func(string, string, goal.Projection, time.Time) ([]steward.UnitStage, error) {
 	return func(root, id string, projection goal.Projection, now time.Time) ([]steward.UnitStage, error) {
+		owners.connection.endpointTip = func(string, goal.Endpoint) (string, error) { return projection.Tip, nil }
 		inv := &intentInvocation{cwd: root, owners: owners, givenProjection: &projection, givenNow: now}
 		if problem := inv.selectRoot(); problem != nil {
 			return nil, errors.New(problem.Summary)

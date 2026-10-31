@@ -74,7 +74,7 @@ exit 0
         {
           "Name": "launches",
           "Summary": [
-            "1 launches: 1 completed"
+            "1 launch: 1 completed"
           ],
           "Detail": [
             "build-1 build for switch-on-trial: completed, report.md"

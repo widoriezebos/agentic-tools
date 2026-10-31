@@ -424,6 +424,10 @@ func defaultWaitSleep(ctx context.Context, duration time.Duration) error {
 	}
 }
 
+// NormalizeWaitOptions fills each clock and effect a caller left nil with the
+// kernel's, as every wait does.
+func NormalizeWaitOptions(options WaitOptions) WaitOptions { return normalizeWaitOptions(options) }
+
 func normalizeWaitOptions(options WaitOptions) WaitOptions {
 	if options.Now == nil {
 		options.Now = defaultWaitNow
