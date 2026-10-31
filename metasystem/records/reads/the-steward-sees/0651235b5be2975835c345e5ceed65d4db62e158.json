@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-steward-sees",
+  "unit": "U1a2b",
+  "subject": {
+    "commit": "0651235b5be2975835c345e5ceed65d4db62e158",
+    "parent": "99ee7804f02fd5168e98d1c12aa1a44cd3e297be",
+    "tree": "e36128c2e017be2ddb227e1f89a571a84058a7ef",
+    "patchDigest": "b7e426b7b63db08a493708faf7b0a77c2683a59c47af24978b47de8386f345ba",
+    "unitDigest": "94d4a06e5022a33070a813cb84f88c6d4a8b2dc1765e5d8dfb6dc3cf87351104"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-fe1dc620f8adb21fce59f8cc",
+    "round": 1,
+    "closureSha256": "79589c676a1f4ee731dd38279b451d7664551daec11d1763edb32a0cf3efeef7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e36128c2e017be2ddb227e1f89a571a84058a7ef",
+    "runId": "goal-read-gate-20261031t021500z-c96315f06c20a4ca"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "52da720756e8bb1d902f7a91b5051c633a5b12a1",
+      "digest": "47197a1ee413141a38a62d1dff252042313917a0f9a60ea7973bde35d6a1da03"
+    },
+    {
+      "kind": "read",
+      "commit": "9db3b559e40365b528a358520b7dcea7a0cc6ad2",
+      "digest": "f775f71ff026e4ae2a780fd9b00951e59b8dc5d9de436e99134daa3f21d9303d"
+    },
+    {
+      "kind": "read",
+      "commit": "28761eda757ed939d36000a39a625cf91c5a156f",
+      "digest": "80f71c7da87c6ad03f85787c5f2d2708d31ece4d88d011e297dc7584f166aea2"
+    },
+    {
+      "kind": "read",
+      "commit": "cdee01cbdb9e4511477413654191a0cdf2ac82aa",
+      "digest": "2899b06a1f1e174e7fc9e3b523440b1fb5f87c32ccbd6a7733da538da526b271"
+    },
+    {
+      "kind": "read",
+      "commit": "8bf0fa2efeaac26e50cab28a3e59c6c474eaee84",
+      "digest": "6dfcd628899923a7d19a9a87134fceb290d63a3bb0a00d39fd736f52c87f36af"
+    },
+    {
+      "kind": "read",
+      "commit": "99ee7804f02fd5168e98d1c12aa1a44cd3e297be",
+      "digest": "4160e5303a537223bf554f9e02b481692818c500c9f14ce379dbc73696a4e9ac"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/situation_compose_test.go",
+      "readerWord": "reviewed by critic root code-critic-fe1dc620f8adb21fce59f8cc"
+    }
+  ],
+  "sha256": "34ead0ae45e802649e7fcdf7f6684d8fa3b9da69d690164bec3de14bc7952495"
+}
