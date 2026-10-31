@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 var situationNow = time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
@@ -313,4 +314,19 @@ func holdersMain(holders []steward.SeatHolder) string {
 		mains = append(mains, holder.MainId)
 	}
 	return strings.Join(mains, " ")
+}
+
+func TestTheSituationWordsAnOwnedRedAsGoalNext(t *testing.T) {
+	t.Parallel()
+	entry := goal.TrunkRedEntry{ID: "tr-fast", Group: "fast", Status: "failed", FixGoal: "fix-fast", Holds: []string{"batch-1"},
+		Sightings: []goal.TrunkRedSighting{{BaseCommit: "base-1"}}, Owner: goal.TrunkRedOwner{Machine: "m1e", Since: "2026-10-30T08:00:00Z"}}
+	now := situationNow.In(time.FixedZone("CET", 3600))
+	src := situationSources(defaultIntentOwners(), steward.SituationSources{})
+	if src.RedLine == nil {
+		t.Fatal("the sources leave an owned red unworded")
+	}
+	want := trunkRedOwnedLine(textui.Env{Now: now, Zone: now.Location()}, entry)
+	if got := src.RedLine(entry, now); got != want || !strings.Contains(got, "since 09:00") || !strings.Contains(got, "fix it under fix-fast") {
+		t.Fatalf("the red reads %q, want goal next's line in the read's zone %q", got, want)
+	}
 }

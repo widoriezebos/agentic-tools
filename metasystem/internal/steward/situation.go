@@ -69,6 +69,8 @@ type Situation struct {
 	Answered  []string
 	Rulings   []rulings.Row
 	Alerts    map[string][]AlertEpisode
+	// RedLine is how goal next says this seat's first owned red.
+	RedLine string
 }
 
 // HostProcess is one test process on the host: its kind by argv, the
@@ -141,6 +143,8 @@ type SituationSources struct {
 	// the launch verbs see them; nil leaves the part unavailable.
 	Holder   func(checkout string) (SeatHolder, error)
 	Launches func() ([]launch.Record, error)
+	// RedLine words an owned red as goal next does; nil leaves it unworded.
+	RedLine func(goal.TrunkRedEntry, time.Time) string
 }
 
 // ReadSituation reads every part once, in a fixed order, at one clock.
@@ -167,6 +171,9 @@ func ReadSituation(root string, src SituationSources) Situation {
 	}
 	if machineErr == nil {
 		s.readLedger(root, machine, ledger, now)
+	}
+	if len(s.Next.TrunkRedOwned) > 0 && src.RedLine != nil {
+		s.RedLine = src.RedLine(s.Next.TrunkRedOwned[0], now)
 	}
 	err := errors.New("no reader")
 	if src.Waiting != nil {

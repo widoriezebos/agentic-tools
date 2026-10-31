@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // situationSources fills the situation's reads the steward cannot reach:
@@ -18,8 +19,9 @@ import (
 // status over that same observation, the claim's lane reader, the units over
 // the read's projection, the durable waiting lines of the checkout's
 // installation, the owners' launches as launch list sees them and each
-// seat's lease holder. A source the caller gave is kept; the lane and board
-// homes, the ledger, the machine and the host take the steward's own readers.
+// seat's lease holder, and goal next's wording of an owned red. A source
+// the caller gave is kept; the lane and board homes, the ledger, the
+// machine and the host take the steward's own readers.
 func situationSources(owners intentOwners, src steward.SituationSources) steward.SituationSources {
 	if src.Now == nil {
 		src.Now = time.Now
@@ -48,6 +50,11 @@ func situationSources(owners intentOwners, src steward.SituationSources) steward
 	}
 	if src.Holder == nil {
 		src.Holder = situationHolder
+	}
+	if src.RedLine == nil {
+		src.RedLine = func(entry goal.TrunkRedEntry, now time.Time) string {
+			return trunkRedOwnedLine(textui.Env{Now: now, Zone: now.Location()}, entry)
+		}
 	}
 	if src.Waiting == nil {
 		// Waiting rows are run state, kept under the checkout's installation.
