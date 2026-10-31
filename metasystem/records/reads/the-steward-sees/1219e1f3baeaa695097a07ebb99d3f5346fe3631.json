@@ -1,0 +1,58 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-steward-sees",
+  "unit": "U1a2",
+  "subject": {
+    "commit": "1219e1f3baeaa695097a07ebb99d3f5346fe3631",
+    "parent": "8bf0fa2efeaac26e50cab28a3e59c6c474eaee84",
+    "tree": "33931873dcced393e632f953e63745e93be86536",
+    "patchDigest": "5a54849b08507b03d56ded52566d2b6d75dab41ebb1dd46d6fe033561d5a20c4",
+    "unitDigest": "cc0ae87190c994c214ee1891b605c57ef3ecec5e48965ad469dc7d07e6f84b59"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-dcd53ba23f5c7a11f17e56ab",
+    "round": 1,
+    "closureSha256": "4c41acbb5336146db26d6eeab8e9f1b3b375499dde1a4e98a4ca9f1855022272"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "33931873dcced393e632f953e63745e93be86536",
+    "runId": "goal-read-gate-20261031t012907z-8b9aaa24209eb136"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "52da720756e8bb1d902f7a91b5051c633a5b12a1",
+      "digest": "47197a1ee413141a38a62d1dff252042313917a0f9a60ea7973bde35d6a1da03"
+    },
+    {
+      "kind": "read",
+      "commit": "9db3b559e40365b528a358520b7dcea7a0cc6ad2",
+      "digest": "f775f71ff026e4ae2a780fd9b00951e59b8dc5d9de436e99134daa3f21d9303d"
+    },
+    {
+      "kind": "read",
+      "commit": "28761eda757ed939d36000a39a625cf91c5a156f",
+      "digest": "80f71c7da87c6ad03f85787c5f2d2708d31ece4d88d011e297dc7584f166aea2"
+    },
+    {
+      "kind": "read",
+      "commit": "cdee01cbdb9e4511477413654191a0cdf2ac82aa",
+      "digest": "2899b06a1f1e174e7fc9e3b523440b1fb5f87c32ccbd6a7733da538da526b271"
+    },
+    {
+      "kind": "read",
+      "commit": "8bf0fa2efeaac26e50cab28a3e59c6c474eaee84",
+      "digest": "6dfcd628899923a7d19a9a87134fceb290d63a3bb0a00d39fd736f52c87f36af"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/situation_sources_test.go",
+      "readerWord": "reviewed by critic root code-critic-dcd53ba23f5c7a11f17e56ab"
+    }
+  ],
+  "sha256": "1c8099263c91e30a8b4bd862543be78a08a0326d32b0bbc7fd7136ffb7dc71a6"
+}
