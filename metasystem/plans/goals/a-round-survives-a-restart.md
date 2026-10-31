@@ -23,14 +23,14 @@ Open read items (fix unit U2-20261029t203802-2fa5154f06): 6
 - ReadItem: id=U2-20261029t203802-2fa5154f06-6 read=U2-20261029t203802-2fa5154f06 state=open addedAt=2026-10-29T22:28:07Z changedAt=- material=false closingReference="" text="r1-s3:6: machine revive's help (intent_process.go:264) and ReviveSeat's refusal (seat_start.go:558) still name only the enrolled terminal, though a recorded channel answer is accepted too."
 - OpenedAt: 2026-10-24T04:45:40Z
 - FirstClaimAt: 2026-10-29T12:25:35Z
-- Revision: 54
-- Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- NormApproval: approvedRef=3Q37TSC8CQSZMTSMJ9WBC5M32D-m1e-294bbb33 minutes=2400 reviewRounds=20 goalRevision=7
-- Approved: by=human:Wido at=2026-10-24T07:58:23Z revision=8 opid=3Q37TSC8CQSZMTSMJ9WBC5M32D-m1e-294bbb33 authority=proven digest=9d6255f119e49598b032844e0d9c2dc4725c03f5c180f843a467a4d7d4a8997f episode=8
+- Revision: 55
+- Budget: elapsedLimit=8d2h attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- NormApproval: approvedRef=19C1YNY1GKM827THJWBWBQMEHN-ui-7c9fbc8a minutes=2400 reviewRounds=20 goalRevision=54
+- Approved: by=human:Wido at=2026-10-31T20:45:01Z revision=55 opid=19C1YNY1GKM827THJWBWBQMEHN-ui-7c9fbc8a authority=proven digest=351e2b72829a16194ee5cf314396e800184ceb6970cb44af41c3e5ca25b573f7 episode=55
 - Sliced: machine=ui lineage=steward-seat revision=31 at=2026-10-29T15:01:36Z
-- Claimed: machine=ui lineage=steward-seat at=2026-10-29T12:25:35Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-round-survives-a-restart: no accepted design declares areas\",\"areas unknown for goal a-live-read-proves-its-subject\",\"areas unknown for goal a-ready-goal-behind-a-claim-is-a-row\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=31 accountingRevision=31 episodeAt=2026-10-29T12:25:35Z episodeRevision=31
-- StopCapability: generation=31 revision=31 machine=ui claimEpoch=9 fenceEpoch=0
+- Claimed: machine=ui lineage=steward-seat at=2026-10-31T20:45:01Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-round-survives-a-restart: no accepted design declares areas\",\"areas unknown for goal a-live-read-proves-its-subject\",\"areas unknown for goal a-ready-goal-behind-a-claim-is-a-row\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=55 accountingRevision=55 episodeAt=2026-10-29T12:25:35Z episodeRevision=31
+- StopCapability: generation=55 revision=55 machine=ui claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-24T04:45:40Z S93F9C1YC78TR7RCW73V0WR8T4-m1e-e91103bc open actor=human:Wido targets=a-round-survives-a-restart
@@ -87,4 +87,5 @@ History:
 - 2026-10-31T04:39:58Z A6WP5STT8954WS9QCEHFANWM0E-ui-71c5cb39 ask actor=ui+steward-seat targets=a-round-survives-a-restart
 - 2026-10-31T04:40:17Z J00NF9070THMX3JNXX90HS2K1B-ui-71c5cb39 edit actor=ui+steward-seat targets=a-round-survives-a-restart
 - 2026-10-31T06:51:57Z T0QJ1F7WENQGQSTJXEB8SEFPYH-ui-76faa029 answer actor=human:wido targets=a-round-survives-a-restart authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1348/1349 channelStep=1793429517 question=V9AWCCKX7Q3Z94W0XRPVV7W6Z9 reason=Raise it
-Integrity: sha256=971999dff3685a5decdf4c32e463ddee2dd4ad0a16c6ec0d4aa065789003269c
+- 2026-10-31T20:45:01Z 19C1YNY1GKM827THJWBWBQMEHN-ui-7c9fbc8a set-budget actor=human:Wido targets=a-round-survives-a-restart displaced=ui+steward-seat@2026-10-29T12:25:35Z
+Integrity: sha256=84ec51ec502546af5efc23cc3991791bd01b3ec6e848dd98fe61011486182955
