@@ -1,0 +1,110 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-steward-sees",
+  "unit": "U1b",
+  "subject": {
+    "commit": "bab6e2fdd9d9be2d9c43e38d15cd799976695601",
+    "parent": "2b0f92285b7d8baec7b7f7c69411806b7a51dedd",
+    "tree": "9d998d7ae07316216f1af8962bb53f84f68cfa5b",
+    "patchDigest": "8d0b4034d44180dc067d4037f7cb287400500321579aa769255d801eccc72d9f",
+    "unitDigest": "a0a08334858b11c482e4e582e81dae5f7004a67beaeb342e717c8aed5d39c2e3"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-aa04a4dc3c85408ab4face90",
+    "round": 1,
+    "closureSha256": "7b309111370bf27d9c881b5a57b279a5a4cc11e9127014d6bef49ba9b5843e5d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "9d998d7ae07316216f1af8962bb53f84f68cfa5b",
+    "runId": "goal-read-gate-20261031t082323z-d3f09ed6e820bf88"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "52da720756e8bb1d902f7a91b5051c633a5b12a1",
+      "digest": "47197a1ee413141a38a62d1dff252042313917a0f9a60ea7973bde35d6a1da03"
+    },
+    {
+      "kind": "read",
+      "commit": "9db3b559e40365b528a358520b7dcea7a0cc6ad2",
+      "digest": "f775f71ff026e4ae2a780fd9b00951e59b8dc5d9de436e99134daa3f21d9303d"
+    },
+    {
+      "kind": "read",
+      "commit": "28761eda757ed939d36000a39a625cf91c5a156f",
+      "digest": "80f71c7da87c6ad03f85787c5f2d2708d31ece4d88d011e297dc7584f166aea2"
+    },
+    {
+      "kind": "read",
+      "commit": "cdee01cbdb9e4511477413654191a0cdf2ac82aa",
+      "digest": "2899b06a1f1e174e7fc9e3b523440b1fb5f87c32ccbd6a7733da538da526b271"
+    },
+    {
+      "kind": "read",
+      "commit": "8bf0fa2efeaac26e50cab28a3e59c6c474eaee84",
+      "digest": "6dfcd628899923a7d19a9a87134fceb290d63a3bb0a00d39fd736f52c87f36af"
+    },
+    {
+      "kind": "read",
+      "commit": "99ee7804f02fd5168e98d1c12aa1a44cd3e297be",
+      "digest": "4160e5303a537223bf554f9e02b481692818c500c9f14ce379dbc73696a4e9ac"
+    },
+    {
+      "kind": "read",
+      "commit": "24581b17a4b55dd078df65fbc00f41dfe4412b1c",
+      "digest": "efb1aff2265cfaa194509c34b84f93eb8ca55cbb5d50135e046c0eaa3a86371c"
+    },
+    {
+      "kind": "read",
+      "commit": "34ccf49ea0af27049cde4e187c76cd17fe1fdd85",
+      "digest": "62008d0d3e619553e2fb81105659696679da1bcc6dc1433089948a8aa909eea3"
+    },
+    {
+      "kind": "read",
+      "commit": "2b0f92285b7d8baec7b7f7c69411806b7a51dedd",
+      "digest": "bb121a7a1250c77199cd958ca69fffecb3e75a5b5de77c75a8025f8f2f845b69"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_run_test.go",
+      "readerWord": "reviewed by critic root code-critic-aa04a4dc3c85408ab4face90"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_situation_test.go",
+      "readerWord": "reviewed by critic root code-critic-aa04a4dc3c85408ab4face90"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/system-situation.json",
+      "readerWord": "reviewed by critic root code-critic-aa04a4dc3c85408ab4face90"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/system-situation.txt",
+      "readerWord": "reviewed by critic root code-critic-aa04a4dc3c85408ab4face90"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/shadow_health_test.go",
+      "readerWord": "reviewed by critic root code-critic-aa04a4dc3c85408ab4face90"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/steward_rows_test.go",
+      "readerWord": "reviewed by critic root code-critic-aa04a4dc3c85408ab4face90"
+    },
+    {
+      "path": "metasystem/internal/steward/seat_start_facts_test.go",
+      "readerWord": "reviewed by critic root code-critic-aa04a4dc3c85408ab4face90"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_compose_test.go",
+      "readerWord": "reviewed by critic root code-critic-aa04a4dc3c85408ab4face90"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_records_test.go",
+      "readerWord": "reviewed by critic root code-critic-aa04a4dc3c85408ab4face90"
+    }
+  ],
+  "sha256": "7fc57059f97d526fcc6e8cf9ca9465ec1ca442dc7670a328032a6b57234dfd16"
+}
