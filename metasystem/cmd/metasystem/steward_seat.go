@@ -188,6 +188,11 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 	}
 	config.Units = stewardUnitStages(owners)
 	config.ClaimLaneState = stewardClaimLaneState(owners)
+	config.Situation = func(root string, now time.Time) steward.Situation {
+		src := owners.situation
+		src.Now = func() time.Time { return now }
+		return steward.ReadSituation(root, situationSources(owners, src))
+	}
 	config.CompletedBoundary = func(root string, now time.Time) error {
 		holder, err := lease.CurrentHolder(root)
 		if errors.Is(err, lease.ErrLeaseAbsent) {

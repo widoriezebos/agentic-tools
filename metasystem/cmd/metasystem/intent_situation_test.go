@@ -19,7 +19,6 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // situationArmed is a host registry naming each checkout armed.
@@ -68,23 +67,8 @@ func TestSystemSituationPrintsThePage(t *testing.T) {
 		t.Fatalf("build: %+v", result)
 	}
 	root := bed.root()
-	for _, args := range [][]string{{"init", "-q"}, {"config", "metasystem.goal.machine", "mac-cli"}, {"add", "plans/goals/backlog.md"},
-		{"-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "ledger"}, {"update-ref", goal.AcceptedRef, "HEAD"}} {
-		if out, err := exec.Command("git", append([]string{"-C", root}, args...)...).CombinedOutput(); err != nil {
-			t.Fatalf("git %v: %v %s", args, err, out)
-		}
-	}
-	layout, err := bed.workOwners().resolver.ResolveLayout(root)
-	if err != nil {
-		t.Fatal(err)
-	}
-	engine := filepath.Join(layout.InstallationRoot.Path(), "bin", "metasystem")
-	if err := os.MkdirAll(filepath.Dir(engine), 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := testexec.WriteFile(engine, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
-		t.Fatal(err)
-	}
+	install := situationCheckout(t, bed)
+	pagePath := filepath.Join(install, "artifacts", "agents", "steward", "situation.json")
 	boardHome := t.TempDir()
 	ask, err := board.Publish(boardHome, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "mac-cli"}, Text: "Is it built?", Deadline: 30 * time.Minute}, situationNow.Add(-5*time.Minute))
 	if err != nil {
@@ -109,7 +93,8 @@ func TestSystemSituationPrintsThePage(t *testing.T) {
 		t.Error("the verb read the live launch manager, not the given sources")
 		return &launch.Manager{Store: store}
 	}
-	owners.situation = situationEmptyHost(t, steward.SituationSources{Now: func() time.Time { return situationNow },
+	clock := situationNow
+	owners.situation = situationEmptyHost(t, steward.SituationSources{Now: func() time.Time { return clock },
 		Project: func(_ goal.Endpoint, fetch bool, now time.Time) (goal.Projection, error) {
 			projections++
 			endpoint, err := ledger(root)
@@ -137,7 +122,7 @@ func TestSystemSituationPrintsThePage(t *testing.T) {
 		}
 		if after := situationTree(t, root); !reflect.DeepEqual(before, after) {
 			for path, was := range after {
-				if before[path] != was {
+				if before[path] != was && path != pagePath && path != filepath.Dir(pagePath) {
 					t.Errorf("system situation %v wrote %s", args, path)
 				}
 			}
@@ -145,8 +130,10 @@ func TestSystemSituationPrintsThePage(t *testing.T) {
 		return stdout.String()
 	}
 
+	// The first call reads and saves the shared page; a call within two
+	// minutes prints it and reads nothing, and one at three reads again.
 	page := run()
-	for _, want := range []string{"First thing", "ask " + ask.Message.ID, "Program", "Host", "Engine", "Alerts", "more; metasystem system situation --verbose"} {
+	for _, want := range []string{", 0s ago", "First thing", "ask " + ask.Message.ID, "Program", "Host", "Engine", "Alerts", "more; metasystem system situation --verbose"} {
 		if !strings.Contains(page, want) {
 			t.Fatalf("the page lacks %q:\n%s", want, page)
 		}
@@ -154,8 +141,9 @@ func TestSystemSituationPrintsThePage(t *testing.T) {
 	if strings.Contains(page, "pid 4242") || projections != 1 {
 		t.Fatalf("the default page holds a detail line or read the ledger %d times:\n%s", projections, page)
 	}
-	if verbose := run("--verbose"); !strings.Contains(verbose, "pid 4242 go test") || !strings.Contains(verbose, "1. "+bed.id) || projections != 2 {
-		t.Fatalf("--verbose lacks the process or the queue (ledger read %d times):\n%s", projections, verbose)
+	clock = situationNow.Add(time.Minute)
+	if verbose := run("--verbose"); !strings.Contains(verbose, "pid 4242 go test") || !strings.Contains(verbose, "1. "+bed.id) || !strings.Contains(verbose, ", 1m ago") || projections != 1 {
+		t.Fatalf("--verbose lacks the process, the queue or the page's age (ledger read %d times):\n%s", projections, verbose)
 	}
 
 	var result struct {
@@ -173,7 +161,7 @@ func TestSystemSituationPrintsThePage(t *testing.T) {
 			}
 		}
 	}
-	if err := json.Unmarshal([]byte(run("--json")), &result); err != nil || projections != 3 {
+	if err := json.Unmarshal([]byte(run("--json")), &result); err != nil || projections != 1 {
 		t.Fatalf("--json: %v (ledger read %d times)", err, projections)
 	}
 	data := result.Data
@@ -185,6 +173,10 @@ func TestSystemSituationPrintsThePage(t *testing.T) {
 	}
 	if asks := data.Situation.Asks; len(asks) != 1 || asks[0].Thread.ID != ask.Message.ID || asks[0].Thread.Root.DeadlineAt == nil || !asks[0].Thread.Root.DeadlineAt.Equal(*ask.Message.DeadlineAt) {
 		t.Fatalf("--json: asks %+v, want %s with its deadline %v", asks, ask.Message.ID, ask.Message.DeadlineAt)
+	}
+	clock = situationNow.Add(3 * time.Minute)
+	if stale := run(); !strings.Contains(stale, ", 0s ago") || projections != 2 {
+		t.Fatalf("a page three minutes old was kept (ledger read %d times):\n%s", projections, stale)
 	}
 }
 

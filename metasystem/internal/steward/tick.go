@@ -103,6 +103,9 @@ type TickConfig struct {
 	// ClaimLaneState reads a held goal's hand-in on the landing lane, as the
 	// claim does; nil evaluates no claim quota.
 	ClaimLaneState func(root, goalID, main string) (string, error)
+	// Situation reads this checkout's situation for the page the runner
+	// writes each pass; nil writes no page.
+	Situation func(root string, now time.Time) Situation
 	// AskHome is the board the claim-quota ask is published on; empty is
 	// the host's board.
 	AskHome string

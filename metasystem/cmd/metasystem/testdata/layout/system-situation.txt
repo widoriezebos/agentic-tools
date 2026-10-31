@@ -1,4 +1,4 @@
-The situation of m1e · read 10:58
+The situation of m1e · read 10:58, 0s ago
 
 First thing
   unknown: ledger unavailable: the bootstrap ledger has no claims

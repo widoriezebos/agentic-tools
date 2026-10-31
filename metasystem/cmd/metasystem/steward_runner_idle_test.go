@@ -64,7 +64,7 @@ func TestStewardRunPublicVerbSleepsAndLogsATick(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := dispatchWithFamiliesAndRepositoryTop([]string{"steward", "run", "--repo", root}, &stdout, &stderr, registered, func(string) (string, error) { t.Fatal("runner verb called Git"); return "", nil })
 	log, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "steward", "runner.log"))
-	if code != 0 || err != nil || now.Sub(start) != time.Second || string(log) != "tick 1: health 0.000ms census 0.000ms other 0.000ms, slept 1.000 s\n" {
+	if code != 0 || err != nil || now.Sub(start) != time.Second || string(log) != "tick 1: health 0.000ms census 0.000ms other 0.000ms situation 0.000ms, slept 1.000 s\n" {
 		t.Fatalf("exit=%d elapsed=%s log=%q error=%v stderr=%s", code, now.Sub(start), log, err, stderr.String())
 	}
 	data, err := os.ReadFile(steward.ComponentEvidencePath(root, "steward-tick"))

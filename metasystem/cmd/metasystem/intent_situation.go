@@ -1,8 +1,9 @@
 package main
 
-// system situation reads this seat's situation once, composes it once and
-// prints the page: the first thing to do, then each part's summary, its
-// detail with --verbose. It acts on nothing and writes nothing.
+// system situation prints this seat's shared situation page, reading and
+// saving it again when it is older than the steward's freshness: the first
+// thing to do, then each part's summary, its detail with --verbose. It acts
+// on nothing.
 
 import (
 	"cmp"
@@ -41,17 +42,27 @@ func runIntentSystemSituation(inv *intentInvocation) int {
 	if src.Now == nil {
 		src.Now = func() time.Time { return now }
 	}
-	s := steward.ReadSituation(root, situationSources(inv.owners, src))
-	page := steward.Compose(s)
-	return inv.render(intentResult{Outcome: intentConfirmed, Targets: inv.checkoutTarget(scope), Summary: "the situation of " + s.Machine,
-		Data: map[string]any{"composition": page, "situation": s}, view: situationView(page)})
+	now = src.Now()
+	read := func(at time.Time) steward.Situation {
+		src.Now = func() time.Time { return at }
+		return steward.ReadSituation(root, situationSources(inv.owners, src))
+	}
+	record, saveErr := steward.SituationPage(root, read, now, steward.SituationFresh)
+	result := intentResult{Outcome: intentConfirmed, Targets: inv.checkoutTarget(scope), Summary: "the situation of " + record.Situation.Machine,
+		Data: map[string]any{"composition": record.Composition, "situation": record.Situation}, view: situationView(record.Composition, now)}
+	if saveErr != nil {
+		result.Details = []string{"the shared page was not saved: " + saveErr.Error()}
+	}
+	return inv.render(result)
 }
 
 // situationView prints the first thing at the top and each part as a
 // section; a part's detail only with --verbose, else how many lines it holds.
-func situationView(page steward.Composition) func(*textui.Page) {
+func situationView(page steward.Composition, now time.Time) func(*textui.Page) {
 	return func(p *textui.Page) {
-		p.Headline("The situation of "+cmp.Or(page.Machine, "this seat"), "read "+p.Env().Time(page.ReadAt))
+		env := p.Env()
+		env.Now = now
+		p.Headline("The situation of "+cmp.Or(page.Machine, "this seat"), "read "+env.Time(page.ReadAt)+", "+env.Ago(page.ReadAt))
 		for _, part := range page.Parts {
 			title := strings.ToUpper(part.Name[:1]) + part.Name[1:]
 			if part.Name == "first" {

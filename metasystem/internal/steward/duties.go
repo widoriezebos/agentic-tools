@@ -14,7 +14,7 @@ import (
 // latest outcome, and health reads one role per duty from that record.
 var stewardDuties = []string{
 	"disk-sweep", "tick-timing", "question-replies", "unit-boundary", "seat-recovery-requests",
-	"notifications-pending", "channel-pending", "cache-trim", "breach-stop-notice",
+	"notifications-pending", "channel-pending", "cache-trim", "breach-stop-notice", "situation",
 }
 
 // dutyLabels are the words each duty's failure has always been said with on
@@ -24,11 +24,12 @@ var dutyLabels = map[string]string{
 	"unit-boundary": "unit boundary", "seat-recovery-requests": "seat recovery requests",
 	"notifications-pending": "notifications pending", "channel-pending": "channel pending",
 	"cache-trim": "cache trim", "breach-stop-notice": "breach-stop notice not recorded",
+	"situation": "situation page",
 }
 
 // helmDuties are the duties that still run at the helm, so the helm's
 // partial observation reads them.
-var helmDuties = []string{"disk-sweep", "question-replies", "tick-timing"}
+var helmDuties = []string{"disk-sweep", "question-replies", "tick-timing", "situation"}
 
 const dutyRolePrefix = "steward-duty:"
 

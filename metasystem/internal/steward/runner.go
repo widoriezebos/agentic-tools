@@ -318,10 +318,11 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 	keeping := &laneKeeping{step: cfg.KeepLandingLane}
 	var started time.Time
 	var result TickResult
+	var paged time.Duration
 	logTick := func(work, slept time.Duration) {
-		_, logErr := fmt.Fprintf(logFile, "tick %d: health %.3fms census %.3fms other %.3fms, slept %.3f s\n", reads.tick,
+		_, logErr := fmt.Fprintf(logFile, "tick %d: health %.3fms census %.3fms other %.3fms situation %.3fms, slept %.3f s\n", reads.tick,
 			float64(result.healthElapsed)/float64(time.Millisecond), float64(timed.elapsed)/float64(time.Millisecond),
-			float64(work-result.healthElapsed-timed.elapsed)/float64(time.Millisecond), slept.Seconds())
+			float64(work-result.healthElapsed-timed.elapsed-paged)/float64(time.Millisecond), float64(paged)/float64(time.Millisecond), slept.Seconds())
 		recordDuty(top, "tick-timing", logErr, deps.Now())
 	}
 	wait := func(keeper *laneKeeping) bool {
@@ -341,7 +342,7 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		reads.Lock()
 		reads.tick++
 		reads.Unlock()
-		started, timed.elapsed = deps.Now(), 0
+		started, timed.elapsed, paged = deps.Now(), 0, 0
 		result, err = deps.Tick(top, cfg, timed)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tick failed: %v\n", err)
@@ -370,6 +371,13 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		_, settleErr := deps.SettleReplies(settleContext, top)
 		recordDuty(top, "question-replies", settleErr, deps.Now())
 		cancelSettle()
+		// The shared situation page, read fresh each pass, at the helm too.
+		if cfg.Situation != nil {
+			at := deps.Now()
+			_, pageErr := SituationPage(top, func(t time.Time) Situation { return cfg.Situation(top, t) }, at, 0)
+			recordDuty(top, "situation", pageErr, deps.Now())
+			paged = deps.Now().Sub(at)
+		}
 		// The helm is resolved here, after the tick returned and before any
 		// post-tick act, whatever the tick's outcome: a take that lands during
 		// the tick holds this pass, and the tick's decision stays on disk for
