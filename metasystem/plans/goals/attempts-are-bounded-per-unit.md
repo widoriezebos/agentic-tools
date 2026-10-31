@@ -10,13 +10,14 @@
 - Next step: Design through the engine: metasystem design write attempts-are-bounded-per-unit --brief agentic-tools-evidence/lane-test-20261009/designs/attempts-are-bounded-per-unit-request.md, then design review rounds (Astra is the design critic) to zero material findings, acceptance by hand until an-accepted-design-is-a-record lands; then one or two units on m1e behind the-steward-sees and the-steward-decides Revision 2 of the page folds design review round 1 (2 material, 1 minor); a fresh design review examines it.
 - OpenedAt: 2026-10-31T20:49:44Z
 - FirstClaimAt: 2026-10-31T21:19:44Z
-- Revision: 12
+- Revision: 13
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=T2X5AE78YTHCDFMGHA4MM0NP9X-m1e-e3096c64 minutes=2400 reviewRounds=20 goalRevision=9
 - Approved: by=human:Wido at=2026-10-31T21:52:40Z revision=10 opid=T2X5AE78YTHCDFMGHA4MM0NP9X-m1e-e3096c64 authority=proven digest=7f2b8525ce1d28140822e377c671f086d0c1de8ebdcfe827bc74bc30953053a4 episode=10
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=5 at=2026-10-31T21:20:04Z
+- AcceptedRisk: finding=RULING-goal-budget-follows-its-plan chain=design-critic-ca2b018515f1f2ed77983943 by=Wido opid=7XD4XCBF51FC0W3RN6D2JXWHMP-m1e-3a9b6e57
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-31T22:01:42Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal attempts-are-bounded-per-unit: no accepted design declares areas\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-steward-sees\",\"areas unknown for goal the-steward-sees\"]" revision=12 accountingRevision=12 episodeAt=2026-10-31T22:01:42Z episodeRevision=12
 - StopCapability: generation=12 revision=12 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -33,4 +34,5 @@ History:
 - 2026-10-31T21:52:40Z T2X5AE78YTHCDFMGHA4MM0NP9X-m1e-e3096c64 approve actor=human:Wido targets=attempts-are-bounded-per-unit
 - 2026-10-31T21:56:46Z F90XN8ANMBJTRR0H3065H4SY6Z-m1e-843dda08 unpark actor=human:Wido targets=attempts-are-bounded-per-unit
 - 2026-10-31T22:01:42Z 8V6BTP5XEVNPXN2HTW8KAMCGZ5-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=attempts-are-bounded-per-unit reason=areas unknown for goal attempts-are-bounded-per-unit: no accepted design declares areas; areas unknown for goal a-round-survives-a-restart; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-steward-sees; areas unknown for goal the-steward-sees
-Integrity: sha256=1f70d24241c662506748b20107b297f784b700303642cf7747fab06957588cb1
+- 2026-10-31T22:05:22Z 7XD4XCBF51FC0W3RN6D2JXWHMP-m1e-3a9b6e57 accept-risk actor=human:Wido targets=attempts-are-bounded-per-unit reason=Not a risk kept: the finding is folded in revision 2 of the page (a set-budget act keeps the counts, per Wido ruling of 2026-10-03; the test flips; D6 then grants what it names). The engine admits no second design round for a high finding, so this closes round 1; a fresh design read of revision 2 verifies the fold.
+Integrity: sha256=e0fcb40d09eb518afaa4bc8f5fc86eefd7974aee1413320cf6474c47441067f2
