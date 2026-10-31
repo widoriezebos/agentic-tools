@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Design through the engine after a-round-survives-a-restart lands (its U1b settle is the base): metasystem design write revive-starts-the-seat-clean --brief agentic-tools-evidence/lane-test-20261009/designs/revive-starts-the-seat-clean-request.md, design review rounds (Astra) to zero material findings, acceptance by hand until an-accepted-design-is-a-record lands; then one or two units on m1e
 - OpenedAt: 2026-10-31T20:50:31Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=A5HFCY6REGTTR6TVXD9E6Z9569-m1e-ad960d25 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-10-31T20:50:31Z Y2P6076FCT7C1DH5FENN8ZZZPD-m1e-ad960d25 open actor=human:Wido targets=revive-starts-the-seat-clean
 - 2026-10-31T20:50:53Z A5HFCY6REGTTR6TVXD9E6Z9569-m1e-ad960d25 approve actor=human:Wido targets=attempts-are-bounded-per-unit,revive-starts-the-seat-clean
-Integrity: sha256=aa947027bc561967af51aa477bb8002750561e2371eb2704406a01dc95321f36
+- 2026-10-31T20:51:23Z 5N9WR3WKNNNNW0YCVRX3KVGKA6-m1e-ad960d25 set-pin actor=human:Wido targets=revive-starts-the-seat-clean
+Integrity: sha256=79fc94c674229ce101afe2311efdef7090928a3f473cea22b4ee289fd3481e14
