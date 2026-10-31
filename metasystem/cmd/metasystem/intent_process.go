@@ -115,6 +115,7 @@ func processIntentCommands() []intentCommand {
 			examples: []string{"metasystem system status", "metasystem system status --steward"},
 			run:      runIntentSystemStatus,
 		},
+		systemSituationCommand(),
 		{
 			object: "system", action: "check", primary: true, audience: "both", summary: "diagnose problems with this checkout, changing nothing",
 			usage:    []string{"metasystem system check"},

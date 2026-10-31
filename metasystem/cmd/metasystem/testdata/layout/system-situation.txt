@@ -1,0 +1,48 @@
+The situation of m1e · read 10:58
+
+First thing
+  unknown: ledger unavailable: the bootstrap ledger has no claims
+
+Lane
+  the lane is unread
+  hold: none
+  unavailable: lane: this host has no home for the lane; hold: this host has no home for the lane
+
+Ledger
+  claimed none; landing none; fenced none; 0 ready, 0 blocked
+  unavailable: ledger: the bootstrap ledger has no claims
+
+Program
+  0 open goals in the queue
+  unavailable: ledger: the bootstrap ledger has no claims
+
+Goal
+  this seat holds no goal
+  unavailable: facts: the bootstrap ledger has no claims
+
+Asks
+  0 asks: none
+
+Launches
+  1 launches: 1 completed
+  1 more; metasystem system situation --verbose
+
+Designs
+  0 designs: none
+
+Questions
+  0 questions: none
+
+Host
+  load 0.00; 0 test processes: none
+
+Engine
+  none
+  0 seats
+
+Authority
+  0 live grants; newest ruling none; 0 answered lines
+  unavailable: authority: grants: the bootstrap ledger has no claims
+
+Alerts
+  0 open alerts

@@ -123,14 +123,18 @@ func TestTheFirstThingIsTheOldestOutstandingAsk(t *testing.T) {
 		t.Fatalf("nothing to do: %+v, want wait", got)
 	}
 	emptySrc.BoardHome = func() (string, error) { return "", errors.New("no board home") }
-	if got := Compose(readSituation(t, empty, emptySrc)).First; got.Kind != "unknown" || !strings.HasPrefix(got.Why, "unknown: asks unavailable") {
+	page := Compose(readSituation(t, empty, emptySrc))
+	if got := page.First; got.Kind != "unknown" || !strings.HasPrefix(got.Why, "unknown: asks unavailable") {
 		t.Fatalf("the asks unreadable: %+v, want unknown, never wait", got)
+	}
+	if line := page.Parts[0].Summary[0]; line != page.First.Why {
+		t.Fatalf("the page's first line is %q, want the unknown said once: %q", line, page.First.Why)
 	}
 }
 
 // composeLane makes the registered lane's checkout a Git checkout and reads
 // its status as landing status does, over the given host observation.
-func composeLane(t *testing.T, laneInstall string, hostWork func() (int, int, error)) func(string, time.Time) plain.Status {
+func composeLane(t *testing.T, laneInstall string, hostWork func() (int, int, error), owner lane.OwnerView) func(string, time.Time) plain.Status {
 	t.Helper()
 	if err := os.MkdirAll(laneInstall, 0o755); err != nil {
 		t.Fatal(err)
@@ -139,7 +143,7 @@ func composeLane(t *testing.T, laneInstall string, hostWork func() (int, int, er
 		t.Fatal(err)
 	}
 	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "metasystem/metasystem.conf"}, {"-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "lane"},
-		{"update-ref", "refs/remotes/origin/main", "HEAD"}} {
+		{"update-ref", "refs/remotes/origin/main", "HEAD"}, {"config", "metasystem.goal.machine", "m1e"}} {
 		seatGit(t, filepath.Dir(laneInstall), args...)
 	}
 	return func(home string, at time.Time) plain.Status {
@@ -147,7 +151,7 @@ func composeLane(t *testing.T, laneInstall string, hostWork func() (int, int, er
 		if err != nil {
 			t.Fatal(err)
 		}
-		return plain.ReadStatus(home, record, lane.View{Root: &record.Root, Owner: lane.OwnerView{State: "running"}}, plain.ProveSeams{Now: func() time.Time { return at }, HostWork: hostWork})
+		return plain.ReadStatus(home, record, lane.View{Root: &record.Root, Owner: owner}, plain.ProveSeams{Now: func() time.Time { return at }, HostWork: hostWork})
 	}
 }
 
@@ -162,7 +166,7 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 		}
 	}
 	manager := &launch.Manager{Store: store}
-	laneStatus := composeLane(t, laneInstall, manager.HostWork)
+	laneStatus := composeLane(t, laneInstall, manager.HostWork, lane.OwnerView{State: "running"})
 	held := func(at time.Time) {
 		t.Helper()
 		if err := plain.RecordIntervention(laneInstall, plain.Intervention{At: at.Format(time.RFC3339Nano), Row: "proof-beside-builds", Subject: "main", Outcome: "held: 1 builds and 0 unit checks run"}); err != nil {
@@ -392,7 +396,13 @@ func TestADeadlineMarksWhenAPauseRowFires(t *testing.T) {
 	}
 	src := withEmptyHost(t, SituationSources{Now: func() time.Time { return situationNow }, LaneHome: func() (string, error) { return laneHome, nil },
 		HostWork: func() (int, int, error) { return 0, 0, nil }, BoardHome: func() (string, error) { return t.TempDir(), nil }})
-	src.LaneStatus = composeLane(t, record.Install, src.HostWork)
+	// The landing agent has run three minutes with no step: silent at 20, past healing at 80.
+	since := situationNow.Add(-3 * time.Minute).Format(time.RFC3339)
+	src.LaneStatus = composeLane(t, record.Install, src.HostWork, lane.OwnerView{State: lane.OwnerRunning, Since: &since})
+	// A lane question open 12 minutes is overdue at 30.
+	if _, err := channel.Ask(channel.AskRequest{RepoRoot: record.Install, About: "lane", Kind: "other", Machine: "m1e", Facts: []string{"Is the lane stopped?"}, Now: situationNow.Add(-12 * time.Minute)}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := lane.SetPauseBecause(laneHome, "Wido", "a test pause", situationNow.Add(-20*time.Minute)); err != nil {
 		t.Fatal(err)
 	}
@@ -400,8 +410,11 @@ func TestADeadlineMarksWhenAPauseRowFires(t *testing.T) {
 	if s.Lane.Health == nil || s.Lane.Health.Paused == nil || slices.ContainsFunc(s.Lane.Health.Rows(), func(row plain.Fired) bool { return row.Row == "paused" }) {
 		t.Fatalf("a pause 20 minutes in: health %+v, want it paused and its row not yet fired", s.Lane.Health)
 	}
-	if want := situationNow.Add(10*time.Minute + time.Second); !slices.ContainsFunc(Compose(s).Deadlines, want.Equal) {
-		t.Fatalf("deadlines = %v, want the pause row's firing at %v", Compose(s).Deadlines, want)
+	for row, want := range map[string]time.Time{"paused": situationNow.Add(10*time.Minute + time.Second), "question-open": situationNow.Add(18*time.Minute + time.Second),
+		"silent-agent": situationNow.Add(17*time.Minute + time.Second), "cannot-heal silent-agent": situationNow.Add(77*time.Minute + time.Second)} {
+		if !slices.ContainsFunc(Compose(s).Deadlines, want.Equal) {
+			t.Fatalf("deadlines = %v, want the %s row's firing at %v (health %+v)", Compose(s).Deadlines, row, want, s.Lane.Health)
+		}
 	}
 
 	// A hand-in waiting 45 minutes turns overdue at 60 and cannot heal at 120.

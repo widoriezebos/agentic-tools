@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
@@ -584,6 +585,8 @@ type intentOwners struct {
 	attorney attorneyIntentOwners
 	// agent are the agent verbs' seams; the zero value is production.
 	agent agentOwners
+	// situation are system situation's sources; the zero value is production.
+	situation steward.SituationSources
 	// ownEngine checks whether this engine may run the public verb; zero is production.
 	ownEngine ownEngineOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
@@ -1589,7 +1592,7 @@ var intentActionIntents = map[string][]struct {
 		{"Shape", []string{"set", "unset"}},
 	},
 	"system": {
-		{"Read", []string{"status", "check"}},
+		{"Read", []string{"status", "situation", "check"}},
 		{"Decide", []string{"enroll"}},
 		{"Work", []string{"start", "stop", "restart"}},
 		{"Shape", []string{"setup", "adopt", "completion"}},

@@ -43,7 +43,7 @@ type Situation struct {
 	Lane    plain.Status
 	// Hold is the lane's current proof-beside-builds hold; nil is none.
 	Hold        *plain.ContentionHold
-	Ledger      goal.Projection
+	Ledger      goal.Projection `json:"-"`
 	Next        goal.NextVerdict
 	Order       []string
 	ClaimLines  []string

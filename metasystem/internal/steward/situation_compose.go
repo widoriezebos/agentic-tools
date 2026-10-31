@@ -261,6 +261,9 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 		parts = append(parts, SituationPart{Name: name, Summary: summary, Detail: detail, Unavailable: strings.Join(reasons, "; ")})
 	}
 	firstLines := []string{strings.TrimSpace(first.Kind+" "+first.Subject) + ": " + first.Why}
+	if first.Kind == "unknown" {
+		firstLines[0] = first.Why
+	}
 	if first.Command != "" {
 		firstLines = append(firstLines, "next: "+first.Command)
 	}

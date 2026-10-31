@@ -1,0 +1,276 @@
+exit 0
+--
+{
+  "schemaVersion": 1,
+  "verb": "system situation",
+  "targets": [
+    {
+      "kind": "checkout",
+      "id": "/Users/wido/GitHub/agentic-tools-m1e"
+    }
+  ],
+  "outcome": "confirmed",
+  "summary": "the situation of m1e",
+  "data": {
+    "composition": {
+      "ReadAt": "2026-09-30T10:58:00+02:00",
+      "Machine": "m1e",
+      "First": {
+        "Kind": "unknown",
+        "Subject": "",
+        "Why": "unknown: ledger unavailable: the bootstrap ledger has no claims",
+        "Command": ""
+      },
+      "Parts": [
+        {
+          "Name": "first",
+          "Summary": [
+            "unknown: ledger unavailable: the bootstrap ledger has no claims"
+          ],
+          "Detail": null,
+          "Unavailable": ""
+        },
+        {
+          "Name": "lane",
+          "Summary": [
+            "the lane is unread",
+            "hold: none"
+          ],
+          "Detail": null,
+          "Unavailable": "lane: this host has no home for the lane; hold: this host has no home for the lane"
+        },
+        {
+          "Name": "ledger",
+          "Summary": [
+            "claimed none; landing none; fenced none; 0 ready, 0 blocked"
+          ],
+          "Detail": null,
+          "Unavailable": "ledger: the bootstrap ledger has no claims"
+        },
+        {
+          "Name": "program",
+          "Summary": [
+            "0 open goals in the queue"
+          ],
+          "Detail": null,
+          "Unavailable": "ledger: the bootstrap ledger has no claims"
+        },
+        {
+          "Name": "goal",
+          "Summary": [
+            "this seat holds no goal"
+          ],
+          "Detail": null,
+          "Unavailable": "facts: the bootstrap ledger has no claims"
+        },
+        {
+          "Name": "asks",
+          "Summary": [
+            "0 asks: none"
+          ],
+          "Detail": null,
+          "Unavailable": ""
+        },
+        {
+          "Name": "launches",
+          "Summary": [
+            "1 launches: 1 completed"
+          ],
+          "Detail": [
+            "build-1 build for switch-on-trial: completed, report.md"
+          ],
+          "Unavailable": ""
+        },
+        {
+          "Name": "designs",
+          "Summary": [
+            "0 designs: none"
+          ],
+          "Detail": null,
+          "Unavailable": ""
+        },
+        {
+          "Name": "questions",
+          "Summary": [
+            "0 questions: none"
+          ],
+          "Detail": null,
+          "Unavailable": ""
+        },
+        {
+          "Name": "host",
+          "Summary": [
+            "load 0.00; 0 test processes: none"
+          ],
+          "Detail": null,
+          "Unavailable": ""
+        },
+        {
+          "Name": "engine",
+          "Summary": [
+            "none",
+            "0 seats"
+          ],
+          "Detail": null,
+          "Unavailable": ""
+        },
+        {
+          "Name": "authority",
+          "Summary": [
+            "0 live grants; newest ruling none; 0 answered lines"
+          ],
+          "Detail": null,
+          "Unavailable": "authority: grants: the bootstrap ledger has no claims"
+        },
+        {
+          "Name": "alerts",
+          "Summary": [
+            "0 open alerts"
+          ],
+          "Detail": null,
+          "Unavailable": ""
+        }
+      ],
+      "Wake": [
+        "hold|none",
+        "lane|",
+        "launch|build-1|completed",
+        "unavailable|authority",
+        "unavailable|facts",
+        "unavailable|hold",
+        "unavailable|lane",
+        "unavailable|ledger"
+      ],
+      "Digest": "bcce9d654c6881f7b0b9d24fabd96632fe48f87477eac839fad51bc4c9479301",
+      "Deadlines": null
+    },
+    "situation": {
+      "At": "2026-09-30T10:58:00+02:00",
+      "Machine": "m1e",
+      "Lane": {
+        "root": null,
+        "registered_by": null,
+        "registered_at": null,
+        "owner": {
+          "state": "",
+          "pid": null,
+          "since": null,
+          "last_exit": null,
+          "stopped_by": null,
+          "retry_hint": null
+        },
+        "batch": null,
+        "next": null,
+        "wake": null,
+        "summary": "",
+        "main_move": {
+          "kind": "",
+          "count": 0
+        },
+        "paused": false,
+        "agent_alive": false,
+        "queue": null,
+        "running_proof": null,
+        "last_proof": null,
+        "last_push": null,
+        "problems": null
+      },
+      "Hold": null,
+      "Next": {
+        "Claimed": null,
+        "Fenced": null,
+        "Landing": null,
+        "Ready": null,
+        "Blocked": null,
+        "Awaiting": null,
+        "Refused": null,
+        "TrunkRedOwned": null,
+        "TrunkRedElsewhere": null
+      },
+      "Order": null,
+      "ClaimLines": null,
+      "Waiting": null,
+      "Quota": null,
+      "GoalFacts": null,
+      "Asks": null,
+      "Unavailable": {
+        "authority": "grants: the bootstrap ledger has no claims",
+        "facts": "the bootstrap ledger has no claims",
+        "hold": "this host has no home for the lane",
+        "lane": "this host has no home for the lane",
+        "ledger": "the bootstrap ledger has no claims"
+      },
+      "LaneInstall": "",
+      "Load": {
+        "at": "",
+        "load1m": 0,
+        "load5m": 0,
+        "load15m": 0,
+        "cores": 0,
+        "available": true
+      },
+      "Processes": null,
+      "Executions": {},
+      "Holders": null,
+      "Launches": [
+        {
+          "id": "build-1",
+          "kind": "build",
+          "adapter": "",
+          "goal": "switch-on-trial",
+          "tag": "",
+          "workingDirectory": "",
+          "inputs": null,
+          "state": "completed",
+          "supervisor": null,
+          "child": null,
+          "processGroup": null,
+          "startedAt": "",
+          "finishedAt": "",
+          "exitCode": null,
+          "reason": "",
+          "measured": false,
+          "measurement": {
+            "calls": 0,
+            "toolCalls": 0,
+            "inputTokens": 0,
+            "cacheReadTokens": 0,
+            "cacheCreationTokens": 0,
+            "outputTokens": 0,
+            "compactions": 0,
+            "peakContext": 0,
+            "callsAbove200K": 0,
+            "turns": 0,
+            "resultLines": 0,
+            "resultWords": 0,
+            "resultTail": "",
+            "pageLines": 0,
+            "pageWords": 0,
+            "pageMissing": false,
+            "materialCount": 0,
+            "verdict": ""
+          },
+          "outputs": [
+            {
+              "path": "report.md",
+              "bytes": 10
+            }
+          ],
+          "adapterData": null
+        }
+      ],
+      "Designs": null,
+      "DesignProblems": null,
+      "Questions": {
+        "here": null
+      },
+      "Grants": null,
+      "Answered": null,
+      "Rulings": null,
+      "Alerts": {},
+      "RedLine": ""
+    }
+  }
+}
+
+--

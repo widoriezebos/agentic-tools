@@ -28,6 +28,7 @@ var _ = func() bool {
 func g1aLayoutCases() []layoutCase {
 	return []layoutCase{
 		{name: "system-status", args: []string{"system", "status"}, bed: statusLayoutBed(false)},
+		{name: "system-situation", args: []string{"system", "situation"}, bed: situationLayoutBed},
 		{name: "system-start", args: []string{"system", "start"}, bed: processLayoutBed()},
 		{name: "system-start-again", args: []string{"system", "start"}, bed: processLayoutBed("system", "start")},
 		{name: "system-start-refusal", args: []string{"system", "start", "--if-down", "--temporary-human-word", "yes"}, bed: processLayoutBed()},
