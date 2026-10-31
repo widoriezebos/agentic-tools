@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: One unit on the m1e build lane right after the-steward-sees lands, before the-steward-decides: internal/steward/seat_idle.go:113-115 treats a StepStarting step whose launch record is absent and whose StartedAt is older than one tick like the orphan branch at :126-128 (about 15 production lines plus one test with an artificial clock and an injected store, and the mutation that marks it busy again); brief by the steward, Read each round: yes, lane landing, deploy both seats
 - OpenedAt: 2026-10-31T21:23:46Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=2NHRJDX1XQQDSV9KP2PRCEGPF7-m1e-ce2f570e minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-10-31T21:23:46Z FZ7BZ1FJ1N1TD8BB222V0KA2VW-m1e-ce2f570e open actor=human:Wido targets=a-start-that-never-launched-is-not-busy
 - 2026-10-31T21:24:03Z 2NHRJDX1XQQDSV9KP2PRCEGPF7-m1e-ce2f570e approve actor=human:Wido targets=a-start-that-never-launched-is-not-busy
-Integrity: sha256=7a24535021d179b78d71ed5d2df410bf80e698da5c63a670905fc0ebec39ae96
+- 2026-10-31T21:24:13Z V3Y8EE7QQR8CSQPQNYQ6DX341R-m1e-ce2f570e set-pin actor=human:Wido targets=a-start-that-never-launched-is-not-busy
+Integrity: sha256=8183273a9c772d15916784b94c180338382bfc8b67258f119c1bac53d368bd54
