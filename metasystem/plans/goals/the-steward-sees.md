@@ -8,9 +8,12 @@
 - Intent: Any seat's agent and any person read the whole situation in one page, `metasystem system situation` (the lane with its true current hold, the ledger and the program's order with one line for the goals waiting behind this seat's claim, this seat's asks with reply and deadline state, engine launches and results, design records and reviews, questions, the host's load and test processes by checkout, the grant and decisions, alerts, and the first thing to do), with a bounded --wait that wakes only on what matters, and a seat session starts with that page as its brief (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D4, D11, D13's line; goal G1)
 - Origin: main
 - Next step: First on m1e's build lane (decision 91: lands first and alone): opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); U0 first, the one current hold state (about 70 production lines: landing/plain/proof_admission.go currentHold and its release line, health.go, the keeper's KeeperContentionHold); then U1a1 the readers (about 110), U1a2 the composition and the verb, with outstanding asks (deadline-free included) as a first thing and the claim-quota line read through the live lane reader (about 100), U1b --wait, the read receipt and the seat brief (about 75, --last)
+Open read items (fix unit U1b): 2
+- ReadItem: id=U1b-1 read=U1b state=open addedAt=2026-10-31T21:06:30Z changedAt=- material=false closingReference="" text="A page read correctly whose save failed is dropped from the seat brief while the verb shows it with a detail line: pageFacts should use the returned record when the error is a save error (about 5 lines in internal/steward/seat_start.go); U1b review N-1"
+- ReadItem: id=U1b-2 read=U1b state=open addedAt=2026-10-31T21:06:30Z changedAt=- material=false closingReference="" text="When the local accepted tip lags the remote main, the units reader shows units from build records instead of the branch and says nothing: add a stale-tip line to the page when the range check fails; U1b review N-3"
 - OpenedAt: 2026-10-30T08:17:12Z
 - FirstClaimAt: 2026-10-30T11:49:32Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=16 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -29,4 +32,5 @@ History:
 - 2026-10-30T11:49:32Z TH5G8NWRTDNP61BBD5FQMZFFKV-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-sees reason=areas unknown for goal the-steward-sees in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-steward-sees-and-acts.md; areas unknown for goal a-round-survives-a-restart; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses
 - 2026-10-30T11:56:52Z 73HMCE0W93MBARNBV2CPYTA3YN-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-sees
 - 2026-10-31T20:43:40Z AD1BRB88P4HDQ7PW8ABJE45JW4-m1e-fb4fa543 set-budget actor=human:Wido targets=the-steward-sees displaced=m1e+main-1792389436-6018-51cc28@2026-10-30T11:49:32Z
-Integrity: sha256=2b81ff27995011f48b35901b7f9d9294d418b58e4afabce5319a361077ee2c0a
+- 2026-10-31T21:06:30Z GMKDYYCRP1B6Q4ERE4TYSPSWP7-m1e-cc2e8fc8 read-items-add actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-sees
+Integrity: sha256=ab7ef1a31f84085340927a670a1597bab7cc4788c3bfe72655a0487539eddb33
