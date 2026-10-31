@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -127,6 +128,29 @@ func TestTheFirstThingIsTheOldestOutstandingAsk(t *testing.T) {
 	}
 }
 
+// composeLane makes the registered lane's checkout a Git checkout and reads
+// its status as landing status does, over the given host observation.
+func composeLane(t *testing.T, laneInstall string, hostWork func() (int, int, error)) func(string, time.Time) plain.Status {
+	t.Helper()
+	if err := os.MkdirAll(laneInstall, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(laneInstall, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "metasystem/metasystem.conf"}, {"-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "lane"},
+		{"update-ref", "refs/remotes/origin/main", "HEAD"}} {
+		seatGit(t, filepath.Dir(laneInstall), args...)
+	}
+	return func(home string, at time.Time) plain.Status {
+		record, _, err := lane.Read(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return plain.ReadStatus(home, record, lane.View{Root: &record.Root, Owner: lane.OwnerView{State: "running"}}, plain.ProveSeams{Now: func() time.Time { return at }, HostWork: hostWork})
+	}
+}
+
 func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 	t.Parallel()
 	root, laneHome, laneInstall := situationRecordsBed(t)
@@ -138,15 +162,7 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 		}
 	}
 	manager := &launch.Manager{Store: store}
-	// The lane's checkout is a Git checkout its status reads.
-	checkout := filepath.Dir(laneInstall)
-	if err := os.WriteFile(filepath.Join(laneInstall, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	for _, args := range [][]string{{"init", "-q", "-b", "main"}, {"add", "metasystem/metasystem.conf"}, {"-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "lane"},
-		{"update-ref", "refs/remotes/origin/main", "HEAD"}} {
-		seatGit(t, checkout, args...)
-	}
+	laneStatus := composeLane(t, laneInstall, manager.HostWork)
 	held := func(at time.Time) {
 		t.Helper()
 		if err := plain.RecordIntervention(laneInstall, plain.Intervention{At: at.Format(time.RFC3339Nano), Row: "proof-beside-builds", Subject: "main", Outcome: "held: 1 builds and 0 unit checks run"}); err != nil {
@@ -175,13 +191,7 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 	src.Prober = prober
 	src.LaneHome = func() (string, error) { return laneHome, nil }
 	src.HostWork = manager.HostWork
-	src.LaneStatus = func(home string, at time.Time) plain.Status {
-		record, _, err := lane.Read(home)
-		if err != nil {
-			t.Fatal(err)
-		}
-		return plain.ReadStatus(home, record, lane.View{Root: &record.Root, Owner: lane.OwnerView{State: "running"}}, plain.ProveSeams{Now: func() time.Time { return at }, HostWork: manager.HostWork})
-	}
+	src.LaneStatus = laneStatus
 	src.ClaimLaneState = claimQuotaLane(t, root, nil)
 	src.BoardHome = func() (string, error) { return home, nil }
 	src.Launches = manager.EffectiveList
@@ -303,5 +313,106 @@ func TestTheWakeExcludesPresentation(t *testing.T) {
 	}
 	if len(want.Wake) == 0 || !slices.Contains(want.Wake, "unavailable|designs") {
 		t.Fatalf("the wake = %v, want the part that failed by name", want.Wake)
+	}
+	age := func(after time.Duration) []string {
+		s := base()
+		s.At = t0.Add(after)
+		for _, part := range Compose(s).Parts {
+			if part.Name == "host" {
+				return part.Detail
+			}
+		}
+		return nil
+	}
+	for after, word := range map[time.Duration]string{3 * time.Minute: "3m ago", 5 * time.Minute: "5m ago"} {
+		if lines := age(after); !slices.ContainsFunc(lines, func(line string) bool { return strings.HasSuffix(line, "started "+word) }) {
+			t.Errorf("at t0+%v the host's detail is %q, want a process started %s", after, lines, word)
+		}
+	}
+}
+
+func TestTheProgramPartSaysTheQuotaOnce(t *testing.T) {
+	t.Parallel()
+	program := func(root string, states map[string]string) []string {
+		t.Helper()
+		now := situationNow
+		src := composeSources(t, root, t.TempDir(), &now)
+		src.ClaimLaneState = claimQuotaLane(t, root, states)
+		var lines []string
+		for _, part := range Compose(readSituation(t, root, src)).Parts {
+			if part.Name == "program" {
+				for _, line := range part.Summary {
+					if strings.Contains(line, "behind this seat's claim") {
+						lines = append(lines, line)
+					}
+				}
+			}
+		}
+		return lines
+	}
+	release := "metasystem goal release held-h --reason TEXT"
+	root := situationQuotaBed(t)
+	if lines, want := program(root, nil), "3 ready goals wait behind this seat's claim on held-h; next: "+release; !slices.Equal(lines, []string{want}) {
+		t.Fatalf("three ready goals behind one claim: %q, want one line %q", lines, want)
+	}
+	one := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
+	if lines, want := program(one, nil), "1 ready goal waits behind this seat's claim on held-h; next: "+release; !slices.Equal(lines, []string{want}) {
+		t.Fatalf("one ready goal: %q, want %q", lines, want)
+	}
+	if lines := program(root, map[string]string{"held-h": "waiting"}); len(lines) != 0 {
+		t.Fatalf("a waiting hand-in frees the claim: %q, want no line", lines)
+	}
+}
+
+func TestTheEnginePartKeepsTheExecutionsWithoutTheRegistry(t *testing.T) {
+	t.Parallel()
+	src := situationHostSources(t, "")
+	src.Registry = func() (string, error) { return "", errors.New("no host home") }
+	src.Executions = func(string) map[string]enginepin.Execution {
+		return map[string]enginepin.Execution{"runner": {Generation: 7}}
+	}
+	for _, part := range Compose(readSituation(t, t.TempDir(), src)).Parts {
+		if part.Name != "engine" {
+			continue
+		}
+		if !slices.Contains(part.Summary, "runner generation 7") || !strings.HasPrefix(part.Unavailable, "seat holders: ") || !strings.Contains(part.Unavailable, "no host home") {
+			t.Fatalf("the engine part = %+v, want the executions kept and only the seat holders unavailable", part)
+		}
+		return
+	}
+	t.Fatal("the page has no engine part")
+}
+
+func TestADeadlineMarksWhenAPauseRowFires(t *testing.T) {
+	t.Parallel()
+	laneHome := situationLaneHome(t)
+	record, _, err := lane.Read(laneHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := withEmptyHost(t, SituationSources{Now: func() time.Time { return situationNow }, LaneHome: func() (string, error) { return laneHome, nil },
+		HostWork: func() (int, int, error) { return 0, 0, nil }, BoardHome: func() (string, error) { return t.TempDir(), nil }})
+	src.LaneStatus = composeLane(t, record.Install, src.HostWork)
+	if _, err := lane.SetPauseBecause(laneHome, "Wido", "a test pause", situationNow.Add(-20*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	s := readSituation(t, t.TempDir(), src)
+	if s.Lane.Health == nil || s.Lane.Health.Paused == nil || slices.ContainsFunc(s.Lane.Health.Rows(), func(row plain.Fired) bool { return row.Row == "paused" }) {
+		t.Fatalf("a pause 20 minutes in: health %+v, want it paused and its row not yet fired", s.Lane.Health)
+	}
+	if want := situationNow.Add(10*time.Minute + time.Second); !slices.ContainsFunc(Compose(s).Deadlines, want.Equal) {
+		t.Fatalf("deadlines = %v, want the pause row's firing at %v", Compose(s).Deadlines, want)
+	}
+
+	// A hand-in waiting 45 minutes turns overdue at 60 and cannot heal at 120.
+	if _, _, err := plain.HandIn(record.Install, plain.Line{Goal: "g-late", SHA: strings.Repeat("ab", 20), At: situationNow.Add(-45 * time.Minute).Format(time.RFC3339)}); err != nil {
+		t.Fatal(err)
+	}
+	s = readSituation(t, t.TempDir(), src)
+	deadlines := Compose(s).Deadlines
+	for _, want := range []time.Time{situationNow.Add(15*time.Minute + time.Second), situationNow.Add(75*time.Minute + time.Second)} {
+		if slices.ContainsFunc(s.Lane.Health.Rows(), func(row plain.Fired) bool { return row.Row == "overdue-goal" }) || !slices.ContainsFunc(deadlines, want.Equal) {
+			t.Fatalf("a hand-in 45 minutes waiting: goals %+v, deadlines %v, want %v and no overdue row yet", s.Lane.Health.Goals, deadlines, want)
+		}
 	}
 }

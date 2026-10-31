@@ -1,20 +1,22 @@
 package steward
 
-// The composition is the page one situation makes: the first thing to do
-// and the wake fields a wait compares. It reads nothing: every input is in
-// the situation and every time comes from its clock.
+// The composition is the page one situation makes: the first thing to do,
+// each part's lines, and the wake fields a wait compares. It reads nothing:
+// every input is in the situation and every time comes from its clock.
 
 import (
 	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -25,6 +27,7 @@ type Composition struct {
 	ReadAt    time.Time
 	Machine   string
 	First     FirstThing
+	Parts     []SituationPart
 	Wake      []string
 	Digest    string
 	Deadlines []time.Time
@@ -34,12 +37,21 @@ type Composition struct {
 // claim or wait, or unknown when a part the rule needs could not be read.
 type FirstThing struct{ Kind, Subject, Why, Command string }
 
+// SituationPart is one part's lines: Summary fits a screen, Detail holds
+// every item.
+type SituationPart struct {
+	Name            string
+	Summary, Detail []string
+	Unavailable     string
+}
+
 // Compose makes the page from one situation.
 func Compose(s Situation) Composition {
 	c := Composition{ReadAt: s.At, Machine: s.Machine, First: s.firstThing()}
 	c.Wake, c.Deadlines = s.wake()
 	sum := sha256.Sum256([]byte(strings.Join(c.Wake, "\n")))
 	c.Digest = hex.EncodeToString(sum[:])
+	c.Parts = s.parts(c.First)
 	return c
 }
 
@@ -131,9 +143,34 @@ func (s Situation) wake() (lines []string, deadlines []time.Time) {
 	if proof := s.Lane.RunningProof; proof != nil {
 		add("proof|%s|%s", proof.Attempt, proof.State)
 	}
-	if s.Lane.Health != nil {
-		for _, row := range s.Lane.Health.Rows() {
+	if h := s.Lane.Health; h != nil {
+		for _, row := range h.Rows() {
 			add("row|%s|%s", row.Row, row.Subject)
+		}
+		// A row that fires on its threshold changes with no file change: its
+		// deadline is the first second past the threshold, from the minutes
+		// the lane read measured at this clock.
+		cross := func(minutes *float64, threshold float64) {
+			if minutes != nil {
+				later(s.At.Add(time.Duration((threshold-*minutes)*float64(time.Minute)) + time.Second))
+			}
+		}
+		if h.Paused != nil {
+			cross(h.Paused.Minutes, 30)
+		}
+		for _, question := range h.Questions {
+			cross(&question.Minutes, 30)
+		}
+		if h.Agent.Alive && h.Agent.WaitingOn == "" {
+			cross(h.Agent.Minutes, 20)
+			cross(h.Agent.Minutes, 80)
+		}
+		// Only a waiting or proving hand-in's minutes run on with the clock.
+		for _, g := range h.Goals {
+			if g.State == plain.StateWaiting || g.State == "proving" {
+				cross(g.Minutes, 60)
+				cross(g.Minutes, 120)
+			}
 		}
 	}
 	hold := "none"
@@ -201,4 +238,156 @@ func newestRound(design SituationDesign) (round int64) {
 		round = max(round, review.NewestRound)
 	}
 	return round
+}
+
+// parts are the page's parts in order, each with the reasons its readers
+// failed. A summary counts; the detail names every item.
+func (s Situation) parts(first FirstThing) []SituationPart {
+	env, live := s.env(), map[string]*goal.GoalFile{}
+	if s.Ledger.Tree != nil {
+		live = s.Ledger.Tree.Live
+	}
+	var parts []SituationPart
+	// An unreadable engine reader leaves only the seat holders unread; the
+	// executions are read before them.
+	labels := map[string]string{"engine": "seat holders"}
+	add := func(name string, readers []string, summary, detail []string) {
+		var reasons []string
+		for _, reader := range readers {
+			if reason := s.Unavailable[reader]; reason != "" {
+				reasons = append(reasons, cmp.Or(labels[reader], reader)+": "+reason)
+			}
+		}
+		parts = append(parts, SituationPart{Name: name, Summary: summary, Detail: detail, Unavailable: strings.Join(reasons, "; ")})
+	}
+	firstLines := []string{strings.TrimSpace(first.Kind+" "+first.Subject) + ": " + first.Why}
+	if first.Command != "" {
+		firstLines = append(firstLines, "next: "+first.Command)
+	}
+	add("first", nil, firstLines, nil)
+
+	lane, rows := []string{"the lane is " + cmp.Or(s.Lane.Owner.State, "unread")}, s.Lane.Problems
+	if proof := s.Lane.RunningProof; proof != nil {
+		lane = append(lane, "proof "+proof.Attempt+" is "+proof.State)
+	}
+	hold := "hold: none"
+	if s.Hold != nil {
+		hold = "hold: " + s.Hold.Subject + ", " + s.Hold.Outcome + ", " + env.Until(s.Hold.Until)
+	}
+	lane = append(lane, hold)
+	if s.Lane.Health != nil {
+		for _, row := range s.Lane.Health.Rows() {
+			rows = append(rows, fmt.Sprintf("%s on %s: %s", row.Row, row.Subject, row.Act))
+		}
+	}
+	add("lane", []string{"lane", "hold"}, lane, rows)
+	add("ledger", []string{"ledger", "waiting"}, []string{fmt.Sprintf("claimed %s; landing %s; fenced %s; %d ready, %d blocked",
+		names(s.Next.Claimed), names(s.Next.Landing), names(s.Next.Fenced), len(s.Next.Ready), len(s.Next.Blocked))}, slices.Concat(s.ClaimLines, s.Waiting))
+
+	var program, order, goals, facts []string
+	for _, block := range s.Quota {
+		waits := fmt.Sprintf("%d ready goals wait", len(block.Ready))
+		if len(block.Ready) == 1 {
+			waits = "1 ready goal waits"
+		}
+		program = append(program, fmt.Sprintf("%s behind this seat's claim on %s; next: %s", waits, block.Held, block.Command))
+	}
+	for index, id := range s.Order {
+		if file := live[id]; file != nil {
+			order = append(order, strings.TrimSuffix(fmt.Sprintf("%d. %s, priority %d, pinned %s", index+1, id, file.Priority, file.Pinned), ", pinned "))
+		}
+	}
+	add("program", []string{"quota", "ledger"}, append(program, fmt.Sprintf("%d open goals in the queue", len(s.Order))), order)
+	for _, id := range s.seatGoals() {
+		if file := live[id]; file != nil {
+			goals = append(goals, id+": "+file.NextStep)
+		}
+		if text := strings.TrimSpace(s.GoalFacts[id]); text != "" {
+			facts = append(facts, strings.Split(text, "\n")...)
+		}
+	}
+	if len(goals) == 0 {
+		goals = []string{"this seat holds no goal"}
+	}
+	add("goal", []string{"facts"}, goals, facts)
+
+	asked, asks := map[string]int{}, []string(nil)
+	for _, ask := range s.Asks {
+		if asked[ask.State]++; ask.Thread.Root != nil {
+			asks = append(asks, ask.Thread.ID+" "+ask.State+": "+s.askLine(ask))
+		}
+	}
+	add("asks", []string{"asks"}, []string{fmt.Sprintf("%d asks: %s", len(s.Asks), counts(asked))}, asks)
+	launched, launches := map[string]int{}, []string(nil)
+	for _, record := range s.Launches {
+		launched[string(record.State)]++
+		line := fmt.Sprintf("%s %s for %s: %s", record.ID, record.Kind, cmp.Or(record.Goal, "no goal"), record.State)
+		for _, output := range record.Outputs {
+			line += ", " + output.Path
+		}
+		launches = append(launches, line)
+	}
+	add("launches", []string{"launches"}, []string{fmt.Sprintf("%d launches: %s", len(s.Launches), counts(launched))}, launches)
+	statuses, designs := map[string]int{}, []string(nil)
+	for _, design := range s.Designs {
+		statuses[design.Record.Status]++
+		designs = append(designs, fmt.Sprintf("%s: %s, revision %s, review round %d", design.Record.Path, design.Record.Status, cmp.Or(design.Revision, "none"), newestRound(design)))
+	}
+	add("designs", []string{"designs"}, []string{fmt.Sprintf("%d designs: %s", len(s.Designs), counts(statuses))}, designs)
+	states, questions := map[string]int{}, []string(nil)
+	for _, store := range slices.Sorted(maps.Keys(s.Questions)) {
+		for _, question := range s.Questions[store] {
+			states[question.State]++
+			questions = append(questions, fmt.Sprintf("%s %s %s: %s", store, question.ID, question.State, cmp.Or(question.Goal, question.About)))
+		}
+	}
+	add("questions", []string{"questions"}, []string{fmt.Sprintf("%d questions: %s", len(questions), counts(states))}, questions)
+
+	byCheckout, processes := map[string]int{}, []string(nil)
+	for _, process := range s.Processes {
+		byCheckout[process.Checkout]++
+		processes = append(processes, fmt.Sprintf("pid %d %s in %s, started %s", process.Pid, process.Kind, strings.TrimSpace(process.Checkout+" "+process.Workspace), env.Ago(process.Started)))
+	}
+	load := "load unread"
+	if s.Load.Available {
+		load = fmt.Sprintf("load %.2f", s.Load.Load1m)
+	}
+	add("host", []string{"host"}, []string{fmt.Sprintf("%s; %d test processes: %s", load, len(s.Processes), counts(byCheckout))}, processes)
+	var roles, holders []string
+	for _, role := range slices.Sorted(maps.Keys(s.Executions)) {
+		roles = append(roles, fmt.Sprintf("%s generation %d", role, s.Executions[role].Generation))
+	}
+	for _, holder := range s.Holders {
+		holders = append(holders, strings.TrimSuffix(fmt.Sprintf("%s: main %s, lineage %s, pid %d %s", holder.Checkout, cmp.Or(holder.MainId, "none"), holder.Lineage, holder.Pid, holder.Unavailable), " "))
+	}
+	add("engine", []string{"engine"}, []string{names(roles), fmt.Sprintf("%d seats", len(s.Holders))}, holders)
+	authority, newest := []string(nil), "none"
+	for _, grant := range s.Grants {
+		authority = append(authority, "grant "+grant.ID)
+	}
+	for _, ruling := range s.Rulings {
+		authority, newest = append(authority, ruling.ID+": "+ruling.Words), ruling.ID
+	}
+	add("authority", []string{"authority"}, []string{fmt.Sprintf("%d live grants; newest ruling %s; %d answered lines", len(s.Grants), newest, len(s.Answered))},
+		append(authority, s.Answered...))
+	var alerts []string
+	for _, store := range slices.Sorted(maps.Keys(s.Alerts)) {
+		for _, episode := range s.Alerts[store] {
+			alerts = append(alerts, store+" "+episode.EpisodeID+": "+episode.Message)
+		}
+	}
+	add("alerts", []string{"alerts"}, []string{fmt.Sprintf("%d open alerts", len(alerts))}, alerts)
+	return parts
+}
+
+// names are ids joined, or none.
+func names(ids []string) string { return cmp.Or(strings.Join(ids, ", "), "none") }
+
+// counts are a tally's keys with their counts, sorted, or none.
+func counts(tally map[string]int) string {
+	var words []string
+	for _, key := range slices.Sorted(maps.Keys(tally)) {
+		words = append(words, fmt.Sprintf("%d %s", tally[key], key))
+	}
+	return names(words)
 }
