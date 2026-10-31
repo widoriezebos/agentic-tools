@@ -1,6 +1,6 @@
 # attempts-are-bounded-per-unit
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 18
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="It changes the admission path every goal passes through (exposure), and a wrong bound either blocks a healthy goal or lets a unit loop (severity); it reshapes counters and caps that exist today rather than adding a mechanism (novelty); it leaves no record that grows (accumulation)."
@@ -10,13 +10,15 @@
 - Next step: Design through the engine: metasystem design write attempts-are-bounded-per-unit --brief agentic-tools-evidence/lane-test-20261009/designs/attempts-are-bounded-per-unit-request.md, then design review rounds (Astra is the design critic) to zero material findings, acceptance by hand until an-accepted-design-is-a-record lands; then one or two units on m1e behind the-steward-sees and the-steward-decides Revision 2 of the page folds design review round 1 (2 material, 1 minor); a fresh design review examines it.
 - OpenedAt: 2026-10-31T20:49:44Z
 - FirstClaimAt: 2026-10-31T21:19:44Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=T2X5AE78YTHCDFMGHA4MM0NP9X-m1e-e3096c64 minutes=2400 reviewRounds=20 goalRevision=9
 - Approved: by=human:Wido at=2026-10-31T21:52:40Z revision=10 opid=T2X5AE78YTHCDFMGHA4MM0NP9X-m1e-e3096c64 authority=proven digest=7f2b8525ce1d28140822e377c671f086d0c1de8ebdcfe827bc74bc30953053a4 episode=10
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=5 at=2026-10-31T21:20:04Z
+- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-31T22:01:42Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal attempts-are-bounded-per-unit: no accepted design declares areas\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-steward-sees\",\"areas unknown for goal the-steward-sees\"]" revision=12 accountingRevision=12 episodeAt=2026-10-31T22:01:42Z episodeRevision=12
+- StopCapability: generation=12 revision=12 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-10-31T20:49:44Z E778V71KD29KJWRZ5265EHR8BX-m1e-ad960d25 open actor=human:Wido targets=attempts-are-bounded-per-unit
@@ -30,4 +32,5 @@ History:
 - 2026-10-31T21:49:49Z 8A0S66VTGCVW663TR3NCN5R7SD-m1e-e3096c64 edit actor=human:Wido targets=attempts-are-bounded-per-unit
 - 2026-10-31T21:52:40Z T2X5AE78YTHCDFMGHA4MM0NP9X-m1e-e3096c64 approve actor=human:Wido targets=attempts-are-bounded-per-unit
 - 2026-10-31T21:56:46Z F90XN8ANMBJTRR0H3065H4SY6Z-m1e-843dda08 unpark actor=human:Wido targets=attempts-are-bounded-per-unit
-Integrity: sha256=7087c797c2aa75c910c0144a0c391c968d32fa866d09475398078377d959b482
+- 2026-10-31T22:01:42Z 8V6BTP5XEVNPXN2HTW8KAMCGZ5-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=attempts-are-bounded-per-unit reason=areas unknown for goal attempts-are-bounded-per-unit: no accepted design declares areas; areas unknown for goal a-round-survives-a-restart; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-steward-sees; areas unknown for goal the-steward-sees
+Integrity: sha256=1f70d24241c662506748b20107b297f784b700303642cf7747fab06957588cb1
