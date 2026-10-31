@@ -13,7 +13,7 @@ Open read items (fix unit U1b): 2
 - ReadItem: id=U1b-2 read=U1b state=open addedAt=2026-10-31T21:06:30Z changedAt=- material=false closingReference="" text="When the local accepted tip lags the remote main, the units reader shows units from build records instead of the branch and says nothing: add a stale-tip line to the page when the range check fails; U1b review N-3"
 - OpenedAt: 2026-10-30T08:17:12Z
 - FirstClaimAt: 2026-10-30T11:49:32Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=16 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -21,6 +21,7 @@ Open read items (fix unit U1b): 2
 - Approved: by=human:Wido at=2026-10-31T20:43:40Z revision=8 opid=AD1BRB88P4HDQ7PW8ABJE45JW4-m1e-fb4fa543 authority=proven digest=1288cb6c181420be06d1cb8b79e1edc69a11a995ad108ffbb77992f2386a5ed3 episode=8
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=6 at=2026-10-30T11:56:52Z
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-31T20:43:40Z areas="null" areas-source="01M65TB73G4MP10FSPZ8GJNCW4@33eee8bb9d39c4374f2185c45854fa4c9a8b1cda01cc8869d4aac40d014778f5" areas-known=false areas-warnings="[\"areas unknown for goal the-steward-sees in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-steward-sees-and-acts.md\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=8 accountingRevision=8 episodeAt=2026-10-30T11:49:32Z episodeRevision=6
+- Landing: at=2026-10-31T21:19:44Z opid=57W49WWW1C6DBQD4MDGJDNE2AC-m1e-cc2e8fc8
 - StopCapability: generation=8 revision=8 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
@@ -33,4 +34,5 @@ History:
 - 2026-10-30T11:56:52Z 73HMCE0W93MBARNBV2CPYTA3YN-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-sees
 - 2026-10-31T20:43:40Z AD1BRB88P4HDQ7PW8ABJE45JW4-m1e-fb4fa543 set-budget actor=human:Wido targets=the-steward-sees displaced=m1e+main-1792389436-6018-51cc28@2026-10-30T11:49:32Z
 - 2026-10-31T21:06:30Z GMKDYYCRP1B6Q4ERE4TYSPSWP7-m1e-cc2e8fc8 read-items-add actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-sees
-Integrity: sha256=ab7ef1a31f84085340927a670a1597bab7cc4788c3bfe72655a0487539eddb33
+- 2026-10-31T21:19:44Z 57W49WWW1C6DBQD4MDGJDNE2AC-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-sees
+Integrity: sha256=dd782b0aa99f76dc5fe83761d028f0dad78f194044c97b00032b3771a0b2367f
