@@ -1,6 +1,6 @@
 # a-hand-in-stands-on-main
 
-- State: claimed
+- State: approved
 - Priority: 1
 - Sequence: 20
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="engine code on the hand-in path and the landing merge; a wrong rebase breaks a goal branch (recoverable from origin); every hand-in is exposed; it recurs whenever main moves under a goal"
@@ -10,7 +10,7 @@
 - Next step: Design through the engine: metasystem design write a-hand-in-stands-on-main --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-hand-in-stands-on-main-request.md; then design review; then units
 - OpenedAt: 2026-11-01T06:39:06Z
 - FirstClaimAt: 2026-11-01T09:57:24Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -20,8 +20,7 @@
 - AcceptedRisk: finding=RULING-a-hand-in-stands-on-main chain=design-critic-a2839c682869b4ba3dc55866 by=Wido opid=SG1RSNTWFM5957TYR7ERZBT0AX-m1e-8894445d
 - AcceptedRisk: finding=IMPACT-TRANSITIVE-READERS chain=design-critic-a2839c682869b4ba3dc55866 by=Wido opid=6RGQ73BVDVPBCVQXSZJV7ZBJCN-m1e-8894445d
 - AcceptedRisk: finding=MOVED-EFFECTS-CARRY-AND-INTEGRATION chain=design-critic-a2839c682869b4ba3dc55866 by=Wido opid=F5SJEX8SNKRV97VJ0JCJZ8KE71-m1e-8894445d
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-01T09:57:24Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-hand-in-stands-on-main: no accepted design declares areas\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal a-start-that-never-launched-is-not-busy\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal a-start-that-never-launched-is-not-busy\"]" revision=5 accountingRevision=5 episodeAt=2026-11-01T09:57:24Z episodeRevision=5
-- StopCapability: generation=5 revision=5 machine=m1e claimEpoch=10 fenceEpoch=0
+- Episode: machine=m1e lineage=main-1792389436-6018-51cc28 accountingRevision=5 episodeAt=2026-11-01T09:57:24Z episodeRevision=5 idleSeconds=0 released=2026-11-01T10:25:38Z
 
 History:
 - 2026-11-01T06:39:06Z 84C0KGPTF0M9T5FT0MBYRB96ZP-m1e-b2c714f5 open actor=human:Wido targets=a-hand-in-stands-on-main
@@ -33,4 +32,5 @@ History:
 - 2026-11-01T10:24:47Z SG1RSNTWFM5957TYR7ERZBT0AX-m1e-8894445d accept-risk actor=human:Wido targets=a-hand-in-stands-on-main reason=Not a risk kept: folded in revision 2. The move is read where it reaches the unit (the unit reader runs once more on the rebased commit with main move in the reached packages; a material finding stops the carry at that unit); where the move reaches nothing of the unit no read runs, by D3 own argument. Decided in Wido name under his rule of 2026-10-24; he overrules.
 - 2026-11-01T10:24:57Z 6RGQ73BVDVPBCVQXSZJV7ZBJCN-m1e-8894445d accept-risk actor=human:Wido targets=a-hand-in-stands-on-main reason=Not a risk kept: folded in revision 2. The move reach is the package-level reverse-dependency closure of the packages main changed, never symbol-level; the intersection is package by package and every test of a selected package runs; T1 gains the wrapper case with the mutation that narrows to symbols.
 - 2026-11-01T10:25:06Z F5SJEX8SNKRV97VJ0JCJZ8KE71-m1e-8894445d accept-risk actor=human:Wido targets=a-hand-in-stands-on-main reason=Not a risk kept: folded in revision 2. The page gains the Moved effects table (carry check execution, retained result, log, gate observation and worktree lifetime; the move onto main at work land; the conflict return command; the red-on-main correction; the attestation witness) and design review --check-only passes before revision 2 is published.
-Integrity: sha256=634945ec1632705bf04407ec8cc10493cd631862993b08ad979dbfd8ab9ea095
+- 2026-11-01T10:25:38Z 28NVF7RHFJ144RCP831EXP6XQ1-m1e-cc2e8fc8 release actor=m1e+main-1792389436-6018-51cc28 targets=a-hand-in-stands-on-main reason=design critique round 1 closed (3 material and 1 non-material accepted, folded in revision 2 by the author); the claim was the critique's, the goal builds after acceptance
+Integrity: sha256=c96c921622dd5e92bebfa9de3809f10ff74628976041284a40190f2b74846d17
