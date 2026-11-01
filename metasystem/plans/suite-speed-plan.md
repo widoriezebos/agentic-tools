@@ -4,7 +4,7 @@
 - Goal and current status: a goal delivery's required proof completes in under 2 minutes wall on the 18-core Mac, and the deep battery completes in under 10 minutes, without any group leaving the test law. Status: investigated and measured, no code changed.
 - In flight right now: nothing.
 - Decisions made (and who made them): none yet. Section 6 lists the decisions Wido has to make before slice 1 can land.
-- Waiting on the human: the per-landing depth law (section 6, decision 1). Slices 2 to 5 do not wait on it.
+- Waiting on the human: nothing: the per-landing depth law (section 6, decision 1) waits for a slice that needs it; slices 2 to 5 do not (line closed 2026-11-01, decision 114).
 - Dead ends (do not retry without new evidence): none.
 - Next step: Wido answers section 6; the assigned agent lands slice 1, then slices 2 to 5 in order.
 
