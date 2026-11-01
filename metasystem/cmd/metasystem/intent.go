@@ -551,10 +551,13 @@ func editDistance(left, right string) int {
 	return previous[len(right)]
 }
 
+type decisionOwners struct{ home func() (string, error) }
+
 // intentOwners are the existing owners a public command calls. Production
 // uses the real ones; tests give each invocation its own fakes.
 type intentOwners struct {
-	policies config.PolicyReaders
+	decisions decisionOwners
+	policies  config.PolicyReaders
 
 	contractReady func(string, bool) (string, int, error)
 

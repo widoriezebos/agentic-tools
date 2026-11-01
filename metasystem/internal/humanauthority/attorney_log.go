@@ -15,7 +15,10 @@ func AttorneyLogPath(root string) string {
 
 // AppendAttorneyLog appends one line and makes it durable before returning.
 func AppendAttorneyLog(root, line string) error {
-	path := AttorneyLogPath(root)
+	return appendAuthorityLine(AttorneyLogPath(root), line)
+}
+
+func appendAuthorityLine(path, line string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}

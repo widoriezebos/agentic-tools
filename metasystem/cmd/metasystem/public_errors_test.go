@@ -224,6 +224,9 @@ func TestExperimentCheckNamesTheMissingLedger(t *testing.T) {
 // decisions.
 func TestDesignAndDecisionShowNameWhatIsMissing(t *testing.T) {
 	b := newIntentBed(t, false, nil)
+	home := t.TempDir()
+	owners := b.owners()
+	owners.decisions.home = func() (string, error) { return home, nil }
 	for _, row := range []struct {
 		args       []string
 		code       int
@@ -235,7 +238,7 @@ func TestDesignAndDecisionShowNameWhatIsMissing(t *testing.T) {
 		{[]string{"decision", "show"}, 2, "decision show takes one record id", "metasystem decision list"},
 		{[]string{"decision", "show", "NOSUCH"}, 1, "the project has no record NOSUCH", "metasystem decision list"},
 	} {
-		code, stdout, stderr := b.run(b.owners(), row.args...)
+		code, stdout, stderr := b.run(owners, row.args...)
 		text := stdout + stderr
 		if code != row.code || !strings.Contains(text, row.want) || row.next != "" && !strings.Contains(text, row.next) {
 			t.Errorf("%v: code %d text %q", row.args, code, text)
