@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: fix the test bed in metasystem/internal/missionrunner/verification_git_adapter_test.go, run the test 20 times under -p 4 with its package, hand it in
 - OpenedAt: 2026-11-01T10:03:05Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=N061JBB0PJMGH8ASQ6S2V06CJ3-m1e-89919481 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-01T10:03:05Z 58F681F503WJ50PPT39DNWGPEY-m1e-89919481 open actor=human:Wido targets=flake-fix-missionrunner-committed-ledger-tamper-cleanup reason=TierOverride: derived=1 set=3 why=the lane steward opens its flake-fix goals at tier 3 (internal/landing/plain/steward_flake.go:63); this goal stands in for that one
 - 2026-11-01T10:05:27Z N061JBB0PJMGH8ASQ6S2V06CJ3-m1e-89919481 approve actor=human:Wido targets=flake-fix-missionrunner-committed-ledger-tamper-cleanup
-Integrity: sha256=20c40dc4235cf19a64e2a5432e3b19a03c4651381e0ce1a06deee301696f3358
+- 2026-11-01T10:06:06Z 672B9CBDQM2HF19F00XH4MAF4W-m1e-89919481 set-pin actor=human:Wido targets=flake-fix-missionrunner-committed-ledger-tamper-cleanup
+Integrity: sha256=1ff8c7ed450b099aba2602c6eb36f84b4e4738a2f5c9b6a0f1d543df2a862b9e
