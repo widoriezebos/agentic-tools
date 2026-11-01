@@ -4,11 +4,13 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 )
 
 func heldGoal(root, machine, command string, ev Evidence) (string, error) {
@@ -101,6 +103,53 @@ func askPersonWaits(root, machine string, d Decision, ev Evidence, work goal.Cla
 	}
 	for _, id := range retire {
 		if err := channel.Retire(root, id, "the condition cleared", now); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func askUncollectedRounds(root, machine string, cfg TickConfig, work goal.ClaimableBudgetedWork, selection *SeatSelection, orphans map[UncollectedRun]string) error {
+	questions, unreadable := channel.WalkQuestions(root)
+	if len(unreadable) > 0 {
+		return fmt.Errorf("question store: %s", strings.Join(unreadable, "; "))
+	}
+	var goals []string
+	for _, q := range questions {
+		if q.Machine == machine && q.Decision != nil && q.Decision.Kind == "uncollected-round" && q.RetiredAt.IsZero() {
+			goals = append(goals, q.Decision.Subject)
+		}
+	}
+	home := cfg.WorkStateRoot
+	if home == "" {
+		var err error
+		home, err = HomeStateRoot()
+		if err != nil {
+			return err
+		}
+	}
+	runs, err := uncollectedRunsAt(home, goals, func(ref identity.Ref) identity.Liveness { return identity.AliveRef(cfg.withDefaults().Prober, ref) })
+	if err != nil {
+		return err
+	}
+	for _, q := range questions {
+		if q.Machine == machine && q.Decision != nil && q.Decision.Kind == "uncollected-round" && q.RetiredAt.IsZero() && !slices.ContainsFunc(runs, func(run UncollectedRun) bool {
+			return run.LaunchID == q.Decision.State && run.Goal == q.Decision.Subject
+		}) {
+			if err := channel.Retire(root, q.ID, "collected", cfg.now()); err != nil {
+				return err
+			}
+		}
+	}
+	for run, person := range orphans {
+		if person == "" || selection != nil && selection.Goal == run.Goal || !slices.Contains(work.InFlight, "claim:"+run.Goal) {
+			continue
+		}
+		_, _, err := channel.AskOrFind(channel.AskRequest{RepoRoot: root, About: "machine", Kind: "other", Machine: machine, Contract: true, Now: cfg.now(), Facts: []string{"run " + run.Run + " step " + run.Step + " launch " + run.LaunchID},
+			Decision: &channel.Decision{Kind: "uncollected-round", Subject: run.Goal, State: run.LaunchID}, Recommendation: "Collect it",
+			Plain:   &channel.Plain{Decision: strings.ReplaceAll(run.Goal, "-", " ") + ": your " + run.Step + " round finished at " + seatTime(run.EndedAt).Local().Format("15:04") + " and nobody collected it.", IfNothing: "it waits until the seat or you collect it."},
+			Options: []channel.Option{{Label: "Collect it", Act: []string{"metasystem", "work", "wait", "run:" + run.Run, "--timeout", "1m"}, Consequence: "I collect the finished round and its next step starts; nothing is lost. Undo: metasystem work stop on the goal."}, {Label: "Leave it", Consequence: "the round waits, finished; this question stays open."}}})
+		if err != nil {
 			return err
 		}
 	}

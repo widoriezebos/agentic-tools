@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -48,11 +49,13 @@ func SeatBusy(root string, work goal.ClaimableBudgetedWork) (string, error) {
 }
 
 type SeatBusyOptions struct {
-	Now   time.Time
-	Alive func(identity.Ref) bool
-	Probe func(identity.Ref) identity.Liveness
+	Now    time.Time
+	Alive  func(identity.Ref) bool
+	Probe  func(identity.Ref) identity.Liveness
+	Orphan func(UncollectedRun, string)
 	// Tick is one steward interval; zero keeps starts without launches busy.
-	Tick time.Duration
+	Tick      time.Duration
+	unitsOnly bool
 	// AtBoundary is retained for boundary callers; all callers hold live steps.
 	AtBoundary bool
 }
@@ -110,7 +113,7 @@ func SeatBusyAt(root, units string, work goal.ClaimableBudgetedWork, options Sea
 			busy, reason = true, "dependent unit custody is unknown"
 			continue
 		}
-		step, _ := currentSeatRunStep(run)
+		step, launchRecord, orphan := orphanStep(store, run, options.Probe)
 		if step == nil {
 			continue
 		}
@@ -124,18 +127,26 @@ func SeatBusyAt(root, units string, work goal.ClaimableBudgetedWork, options Sea
 			busy, reason = true, fmt.Sprintf("unit %s step %s for goal %s is starting", run.ID, step.Name, run.Goal)
 			continue
 		}
-		launchRecord, err := store.Read(step.LaunchID)
-		if err != nil || launchRecord.State == launch.Running && (launchRecord.Supervisor == nil || options.Probe(*launchRecord.Supervisor) == identity.Unknown) {
+		if launchRecord.ID == "" {
 			skipped++
 			busy, reason = true, "dependent launch custody is unknown"
 			continue
 		}
-		live := launchRecord.State == launch.Starting || launchRecord.State == launch.Running && options.Probe(*launchRecord.Supervisor) == identity.Alive
-		if live {
+		if !orphan {
 			busy, reason = true, fmt.Sprintf("unit %s step %s for goal %s is running", run.ID, step.Name, run.Goal)
-		} else if err := logOrphanSeatRun(root, fmt.Sprintf("orphan run %s of goal %s (step %s since %s)", run.ID, run.Goal, step.Name, step.StartedAt), options.Now); err != nil {
-			skipped++
+		} else {
+			if options.Orphan != nil {
+				options.Orphan(UncollectedRun{Goal: run.Goal, Run: run.ID, LaunchID: step.LaunchID, Step: step.Name, EndedAt: launchRecord.FinishedAt}, roundPerson(run))
+			}
+			if !options.unitsOnly {
+				if err := logOrphanSeatRun(root, fmt.Sprintf("orphan run %s of goal %s (step %s since %s)", run.ID, run.Goal, step.Name, step.StartedAt), options.Now); err != nil {
+					skipped++
+				}
+			}
 		}
+	}
+	if options.unitsOnly {
+		return
 	}
 	jobs := filepath.Join(root, "artifacts", "agents", "jobs")
 	entries, err = os.ReadDir(jobs)
@@ -207,6 +218,54 @@ func seatReservationEnded(store launch.Store, id, createdAt string, options Seat
 		return "no launch record", true
 	}
 	return "", false
+}
+
+type UncollectedRun = goal.UncollectedRun
+
+func orphanStep(store launch.Store, run launch.UnitRunRecord, probe func(identity.Ref) identity.Liveness) (*launch.UnitStep, launch.Record, bool) {
+	step, _ := currentSeatRunStep(run)
+	if run.State != "running" || step == nil || step.State == launch.StepStarting {
+		return step, launch.Record{}, false
+	}
+	record, err := store.Read(step.LaunchID)
+	if err != nil || record.State == launch.Running && (record.Supervisor == nil || probe(*record.Supervisor) == identity.Unknown) {
+		return step, launch.Record{}, false
+	}
+	live := record.State == launch.Starting || record.State == launch.Running && probe(*record.Supervisor) == identity.Alive
+	return step, record, !live
+}
+
+func roundPerson(run launch.UnitRunRecord) string {
+	round := run.Rounds[len(run.Rounds)-1]
+	for _, revision := range run.Revisions {
+		if revision.Attempt == round.Number && revision.Person != "" {
+			return revision.Person
+		}
+	}
+	if slices.ContainsFunc(round.Steps, func(step launch.UnitStep) bool {
+		return strings.HasPrefix(step.Name, "build") && step.Retained != nil && step.Retained.Actor == "person"
+	}) {
+		return "person"
+	}
+	return ""
+}
+
+// UncollectedRuns reads only the supplied goals from the host's unit store.
+func UncollectedRuns(_ string, goals []string) ([]UncollectedRun, error) {
+	home, err := HomeStateRoot()
+	if err != nil {
+		return nil, err
+	}
+	return uncollectedRunsAt(home, goals, func(ref identity.Ref) identity.Liveness { return identity.AliveRef(identity.KernelProber{}, ref) })
+}
+
+func uncollectedRunsAt(home string, goals []string, probe func(identity.Ref) identity.Liveness) ([]UncollectedRun, error) {
+	var runs []UncollectedRun
+	_, _, skipped := SeatBusyAt("", filepath.Join(home, "unit"), goal.ClaimableBudgetedWork{Claimed: goals}, SeatBusyOptions{unitsOnly: true, Probe: probe, Orphan: func(run UncollectedRun, _ string) { runs = append(runs, run) }})
+	if skipped > 0 {
+		return nil, fmt.Errorf("uncollected rounds: %d unreadable records", skipped)
+	}
+	return runs, nil
 }
 
 func currentSeatRunStep(run launch.UnitRunRecord) (*launch.UnitStep, time.Time) {
