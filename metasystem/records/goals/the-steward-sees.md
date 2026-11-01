@@ -1,6 +1,6 @@
 # the-steward-sees
 
-- State: claimed
+- State: done
 - Priority: 1
 - Sequence: 1
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="One read verb over existing readers and one hold state shared by the lane's admission, keeper and health; nothing gains authority; a wrong hold or a wrong page line is seen on the next tick"
@@ -11,18 +11,16 @@
 Open read items (fix unit U1b): 2
 - ReadItem: id=U1b-1 read=U1b state=open addedAt=2026-10-31T21:06:30Z changedAt=- material=false closingReference="" text="A page read correctly whose save failed is dropped from the seat brief while the verb shows it with a detail line: pageFacts should use the returned record when the error is a save error (about 5 lines in internal/steward/seat_start.go); U1b review N-1"
 - ReadItem: id=U1b-2 read=U1b state=open addedAt=2026-10-31T21:06:30Z changedAt=- material=false closingReference="" text="When the local accepted tip lags the remote main, the units reader shows units from build records instead of the branch and says nothing: add a stale-tip line to the page when the range check fails; U1b review N-3"
+- Concluded: all eight units (U1a, U1b, U1c, U2a, U2b, U3a, U3b, U4) built, read and landed through the landing lane: merge 26854e1663 on main at 06:32 after the proven batch at 48fd56c20980; the steward situation page and its readers are in place
 - OpenedAt: 2026-10-30T08:17:12Z
 - FirstClaimAt: 2026-10-30T11:49:32Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=16 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - NormApproval: approvedRef=AD1BRB88P4HDQ7PW8ABJE45JW4-m1e-fb4fa543 minutes=2400 reviewRounds=20 goalRevision=7
 - Approved: by=human:Wido at=2026-10-31T20:43:40Z revision=8 opid=AD1BRB88P4HDQ7PW8ABJE45JW4-m1e-fb4fa543 authority=proven digest=1288cb6c181420be06d1cb8b79e1edc69a11a995ad108ffbb77992f2386a5ed3 episode=8
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=6 at=2026-10-30T11:56:52Z
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-10-31T20:43:40Z areas="null" areas-source="01M65TB73G4MP10FSPZ8GJNCW4@33eee8bb9d39c4374f2185c45854fa4c9a8b1cda01cc8869d4aac40d014778f5" areas-known=false areas-warnings="[\"areas unknown for goal the-steward-sees in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-steward-sees-and-acts.md\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=8 accountingRevision=8 episodeAt=2026-10-30T11:49:32Z episodeRevision=6
-- Landing: at=2026-10-31T21:19:44Z opid=57W49WWW1C6DBQD4MDGJDNE2AC-m1e-cc2e8fc8
-- StopCapability: generation=8 revision=8 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-10-30T08:17:12Z NHGWSS37NQNYQDTEBG25MHJ6Q9-m1e-afd9d95a open actor=human:Wido targets=the-steward-sees
@@ -35,4 +33,5 @@ History:
 - 2026-10-31T20:43:40Z AD1BRB88P4HDQ7PW8ABJE45JW4-m1e-fb4fa543 set-budget actor=human:Wido targets=the-steward-sees displaced=m1e+main-1792389436-6018-51cc28@2026-10-30T11:49:32Z
 - 2026-10-31T21:06:30Z GMKDYYCRP1B6Q4ERE4TYSPSWP7-m1e-cc2e8fc8 read-items-add actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-sees
 - 2026-10-31T21:19:44Z 57W49WWW1C6DBQD4MDGJDNE2AC-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-sees
-Integrity: sha256=dd782b0aa99f76dc5fe83761d028f0dad78f194044c97b00032b3771a0b2367f
+- 2026-11-01T05:34:39Z J3DWCPVR9RSX6FQMCA5ZJ0TSDS-m1e-cc2e8fc8 done actor=m1e+main-1792389436-6018-51cc28 targets=a-continuation-job-may-write-the-stewards-state,a-delivered-goal-and-a-needed-act-reach-the-person,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-goal-the-steward-opens-is-approved,a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-question-reminds-and-anyone-can-ask,a-red-main-is-known-once,a-review-keeps-every-read,a-round-survives-a-restart,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,a-slow-ledger-read-is-a-wait,a-spent-box-asks-before-it-blocks,a-start-that-never-launched-is-not-busy,a-stewards-standing-defect-reaches-an-owner,a-stop-is-read-where-the-goal-is,a-stop-waits-for-the-unit-boundary-2,a-test-helper-dies-with-its-test,a-unit-check-runs-the-importers-too,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-accepted-design-is-a-record,an-ask-reaches-the-holder,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,attempts-are-bounded-per-unit,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-critic-reads-in-one-form,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,revive-starts-the-seat-clean,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-engines-follow-the-deployed-engine,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-elapsed-clock-excludes-waits,the-lane-deploys-the-engine-it-runs-2,the-lane-returns-its-own-red,the-lane-says-what-it-does,the-lanes-proof-goes-first,the-steward-acts,the-steward-decides,the-steward-sees,the-ui-bundle-builds-again,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory
+Integrity: sha256=a2753a36ae217fd1622e879e3ec93c886aaae51df2fa322e2906f4dbb8d08bc3
