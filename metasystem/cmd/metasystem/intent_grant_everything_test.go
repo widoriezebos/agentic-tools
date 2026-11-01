@@ -13,8 +13,10 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
 // enrolledPersonProver enrolls the person() tree's zsh (20) at root and
@@ -135,6 +137,93 @@ func TestGrantEverythingAtTheEnrolledTerminal(t *testing.T) {
 	if code != 0 || result.Outcome != intentUnchanged {
 		t.Fatalf("a second revoke = %d %+v", code, result)
 	}
+}
+
+func TestGrantAddNamesClassesAndTheSeatLineage(t *testing.T) {
+	t.Parallel()
+	b := newGrantEverythingBed(t)
+	code, ordinary := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--for", "24h")
+	if code != 0 || ordinary.Outcome != intentConfirmed {
+		t.Fatalf("ordinary grant = %d %+v", code, ordinary)
+	}
+	if _, present := ordinary.Data.(map[string]any)["classes"]; present {
+		t.Fatal("an unrestricted grant reports classes")
+	}
+	b.holder = lease.CurrentHolderView{}
+	owners := b.owners()
+	owners.attorney.holder = func(string) (lease.CurrentHolderView, error) {
+		t.Fatal("a seat grant read the lease holder")
+		return lease.CurrentHolderView{}, nil
+	}
+	args := []string{"grant", "add", "--acts", "everything", "--classes", " ordering,acks,ordering ", "--lineage", "seat", "--for", "24h"}
+	code, added := b.runJSON(owners, args...)
+	if code != 0 || added.Outcome != intentConfirmed || len(added.Targets) != 1 {
+		t.Fatalf("seat grant = %d %+v", code, added)
+	}
+	entries := b.rootRecord().PowerOfAttorney
+	entry := entries[slices.IndexFunc(entries, func(e goal.PowerOfAttorneyEntry) bool { return e.ID == added.Targets[0].ID })]
+	if !slices.Equal(entry.Classes, []string{"acks", "ordering"}) || entry.Lineage != launch.SeatOwnerLineage || entry.ID != added.Targets[0].ID {
+		t.Fatalf("seat grant entry = %+v", entry)
+	}
+	if strings.SplitN(entry.ID, "-", 2)[1] != strings.SplitN(ordinary.Targets[0].ID, "-", 2)[1] {
+		t.Fatalf("grant flag changed the request's actor lineage: %s versus %s", entry.ID, ordinary.Targets[0].ID)
+	}
+	if !strings.Contains(added.Summary, "every steward-started main session of ") || !strings.Contains(added.Summary, "acts for Wido in acks and ordering until ") {
+		t.Fatalf("seat grant summary = %q", added.Summary)
+	}
+	if data, _ := json.Marshal(added.Data); !bytes.Contains(data, []byte(`"classes":["acks","ordering"]`)) {
+		t.Fatalf("grant JSON = %s", data)
+	}
+	code, listed, _ := b.run(owners, "grant", "list")
+	if code != 0 || !strings.Contains(strings.Join(strings.Fields(listed), " "), "acks, ordering") || !strings.Contains(listed, "steward-started") {
+		t.Fatalf("grant list = %d %q", code, listed)
+	}
+	code, list := b.runJSON(owners, "grant", "list")
+	if data, _ := json.Marshal(list.Data); code != 0 || !bytes.Contains(data, []byte(`"classes":["acks","ordering"]`)) {
+		t.Fatalf("grant list JSON = %d %s", code, data)
+	}
+	now, _ := b.commandNow(b.root())
+	if line, attention := attorneyLine(entry, time.UTC), grantAttention(entry, textui.Env{Now: now, Zone: time.UTC}); !strings.Contains(line, "acks, ordering") || !strings.Contains(attention.Text, "acks, ordering") {
+		t.Fatalf("grant status = %q; attention = %+v", line, attention)
+	}
+	before := b.repo.accepted
+	if code, repeat := b.runJSON(owners, args...); code != 0 || repeat.Outcome != intentUnchanged || b.repo.accepted != before {
+		t.Fatalf("repeat = %d %+v", code, repeat)
+	}
+	args[5] = "ordering"
+	if code, replaced := b.runJSON(owners, args...); code != 0 || replaced.Outcome != intentConfirmed {
+		t.Fatalf("replacement = %d %+v", code, replaced)
+	}
+	entries = b.rootRecord().PowerOfAttorney
+	if len(entries) != 3 {
+		t.Fatalf("replacement entries = %+v", entries)
+	}
+	for _, e := range entries {
+		if e.ID == entry.ID && e.Revoked == "" || e.Revoked == "" && !slices.Equal(e.Classes, []string{"ordering"}) {
+			t.Fatalf("replacement entry = %+v", e)
+		}
+	}
+	owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+		t.Fatal("invalid grant asked for proof")
+		return humanauthority.Proof{}, nil
+	}
+	before = b.repo.accepted
+	for _, row := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"--acts", "everything", "--for", "24h", "--classes", "values"}, "class values is not one of acks, mechanical, ordering, recovery, stale-releases"},
+		{[]string{"--acts", "everything", "--for", "24h", "--classes", "acks,"}, "class  is not one of"},
+		{[]string{"--acts", "everything", "--for", "24h", "--classes", ""}, "--classes names at least one class; nothing was done"},
+		{[]string{"--acts", "everything", "--for", "24h", "--lineage", "other"}, "--lineage takes seat: the steward's seat sessions; nothing was done"},
+		{[]string{"--tiers", "1", "--acts", "approve", "--until", "2026-09-05", "--classes", "ordering"}, "--classes narrows --acts everything; nothing was done"},
+	} {
+		code, refused := b.runJSON(owners, append([]string{"grant", "add"}, row.args...)...)
+		if code != 2 || refused.Outcome != intentRefused || !strings.Contains(refused.Summary, row.want) || b.repo.accepted != before {
+			t.Errorf("invalid %v = %d %+v", row.args, code, refused)
+		}
+	}
+	t.Logf("$ metasystem grant add --acts everything --classes ' ordering,acks,ordering ' --lineage seat --for 24h --json\n%s\n$ metasystem grant list\n%s", added.Summary, listed)
 }
 
 // W5 at the command edge: a general grant is refused, with the examples,

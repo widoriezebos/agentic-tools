@@ -208,7 +208,7 @@ func init() {
 	stateful("goal sync", "a clean journal or an agreeing ledger is success with nothing to do; the preview is a read",
 		goalRepeatWitness(nil, nil, "nothing was recovered",
 			"goal", "sync", "--recover"))
-	stateful("grant add", "the same live power of attorney from the same person is success with no second entry",
+	stateful("grant add", "the same live power of attorney from the same person is success with no second entry; the same classes again hold; other classes replace the grant",
 		goalRepeatWitness(nil, nil, "already grants exactly this",
 			"grant", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05"))
 	stateful("grant revoke", "a revoked power of attorney revoked again is success with no record",

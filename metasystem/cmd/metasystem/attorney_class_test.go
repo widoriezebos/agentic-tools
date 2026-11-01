@@ -66,21 +66,9 @@ func TestTheClassTableRunsEachRowsRealVerb(t *testing.T) {
 			ordinary := flake
 			ordinary.ID, ordinary.Identity, ordinary.Class, ordinary.FixGoal = "tr-fast-main000001", "tr-fast-main000001", goal.TrunkRedClassTrunkRed, "n"
 			b.repo.commit(b.repo.accepted).files["plans/goals/trunk-red.json"] = goal.RenderTrunkRed([]goal.TrunkRedEntry{flake, ordinary})
-			proof, err := b.prove(b.root(), 20, person(), "", "", now)
-			if err != nil {
-				t.Fatal(err)
-			}
-			request, err := syncReqWithProofAtWithDependencies("grant", b.root(), "Wido", "", &proof, b.commandNow, b.dependencies())
-			if err != nil {
-				t.Fatal(err)
-			}
-			checkout, err := canonicalCheckout(b.root())
-			if err != nil {
-				t.Fatal(err)
-			}
-			result, err := goal.GrantGeneral(request, &proof, goal.GeneralGrant{Machine: "mac-cli", Checkout: checkout, Lineage: launch.SeatOwnerLineage, Classes: []string{row.class}, Until: now.Add(24 * time.Hour)})
-			if err != nil || result.Outcome != goal.OutcomeConfirmed {
-				t.Fatalf("person's grant: %+v %v", result, err)
+			grantCode, result := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--classes", row.class, "--lineage", "seat", "--for", "24h")
+			if grantCode != 0 || result.Outcome != intentConfirmed {
+				t.Fatalf("person's grant: %d %+v", grantCode, result)
 			}
 			grant := b.rootRecord().PowerOfAttorney[0].ID
 			b.lineage, b.holder.OwnerLineage = launch.SeatOwnerLineage, launch.SeatOwnerLineage
@@ -191,20 +179,11 @@ func TestTheClassTableRunsEachRowsRealVerb(t *testing.T) {
 			t.Fatal(err)
 		}
 		personProof := enrolledPersonProver(t, bed.cwd, now)
-		proof, err := personProof(bed.cwd, 20, person(), "", "", now)
-		if err != nil {
-			t.Fatal(err)
-		}
-		req, err := syncReqWithProofAtWithDependencies("grant", bed.cwd, "Wido", "", &proof, bed.owners.commandNow, bed.owners.dependencies)
-		if err != nil {
-			t.Fatal(err)
-		}
-		checkout, err := canonicalCheckout(bed.cwd)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if result, err := goal.GrantGeneral(req, &proof, goal.GeneralGrant{Machine: req.Actor.Machine, Checkout: checkout, Lineage: launch.SeatOwnerLineage, Classes: []string{row.class}, Until: now.Add(24 * time.Hour)}); err != nil || result.Outcome != goal.OutcomeConfirmed {
-			t.Fatalf("grant for %v: %+v %v", row.argv, result, err)
+		personOwners := bed.owners
+		personOwners.prove = personProof
+		var granted bytes.Buffer
+		if code := runIntentIn(mustIntentCommand(t, "grant add"), []string{"--acts", "everything", "--classes", row.class, "--lineage", "seat", "--for", "24h", "--json"}, &granted, &granted, bed.cwd, personOwners); code != 0 {
+			t.Fatalf("grant for %v: %d %s", row.argv, code, granted.String())
 		}
 		a := &attorneyAdmitter{owners: attorneyAdmitOwners{endpoint: bed.owners.dependencies.endpoint, args: func() []string { return row.argv }, machine: bed.owners.dependencies.machine,
 			fixture: func(string) bool { return false }, holder: func(string) (lease.CurrentHolderView, error) {

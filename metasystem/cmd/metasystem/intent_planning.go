@@ -268,15 +268,20 @@ func intentPlanningCommands() []intentCommand {
 				"--acts everything: the main session holding this checkout's lease acts for you in every person's act, bar granting, enrolling and taking the helm, until the end.",
 				"Its end is --for 8h, 24h, 7d or 1w (elapsed), or --until 18:00 (today, or tomorrow once passed), --until tomorrow or --until YYYY-MM-DD (the end of that day), at most one week.",
 				"Only you at the enrolled terminal grant it. Rebuild every seat's engine before the first: older engines refuse a ledger that holds one.",
+				"--classes narrows it to classes of act; rebuild every seat's engine and the lane's before the first grant with classes: older engines refuse a ledger that holds one.",
 				"--acts from approve, budget and resume-parked: a seat then acts with --under GRANT on approve, budget and resume of a parked goal.",
 				"There --until is the last day covered, YYYY-MM-DD, at most seven days out. The grant's id is printed.",
 			},
 			flags: withFlags([]intentFlag{
 				{name: "tiers", value: "LIST", usage: "the tiers covered, for example 1 or 1,2"},
 				{name: "acts", value: "LIST", usage: "everything, or the acts covered: approve, budget, resume-parked"},
+				{name: "classes", value: "LIST", usage: "with everything: only these classes of act: mechanical, recovery, ordering, acks, stale-releases"},
+				intentByFlag,
+				{name: "lineage", value: "LINEAGE", usage: "with everything: seat binds the grant to the steward's seat sessions"},
+				intentFixtureFlag,
 				{name: "for", value: "DURATION", usage: "with everything: how long, 8h, 24h, 7d or 1w"},
 				{name: "until", aliases: []string{"expires"}, value: "DATE", usage: "the end: HH:MM, tomorrow or YYYY-MM-DD"},
-			}, intentHumanActFlags, intentRelayFlags),
+			}, intentRelayFlags),
 			maxArgs:  0,
 			examples: []string{"metasystem grant add --acts everything --for 24h", "metasystem grant add --acts everything --until 18:00", "metasystem grant add --tiers 1 --acts approve,budget --until 2026-10-01"},
 			run:      runIntentGrant,
@@ -1947,6 +1952,10 @@ func runIntentGrant(inv *intentInvocation) int {
 	if isGeneralActs(inv.input.text("acts")) {
 		return runIntentGrantEverything(inv)
 	}
+	if inv.input.has("classes") {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--classes narrows --acts everything; nothing was done",
+			next: withoutOption(inv.typedArgv(), "classes")})
+	}
 	if inv.input.has("for") {
 		tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "a grant of named acts ends on a date (--until), not after --for; nothing was done",
@@ -2576,6 +2585,9 @@ func runIntentGrantList(inv *intentInvocation) int {
 		if entry.General() {
 			views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "acts": entry.Verbs, "for": entry.For, "checkout": entry.Checkout,
 				"lineage": entry.Lineage, "since": entry.Since, "until": entry.Until, "revoked": entry.Revoked, "live": live})
+			if len(entry.Classes) != 0 {
+				views[len(views)-1]["classes"] = entry.Classes
+			}
 			continue
 		}
 		views = append(views, map[string]any{"grant": entry.ID, "by": entry.By, "tiers": entry.Tiers, "acts": entry.Verbs, "since": entry.Since,
@@ -2640,12 +2652,16 @@ func grantListView(grants []grantShown, all bool) func(*textui.Page) {
 					until, _ := time.Parse(time.RFC3339, entry.Until)
 					end = env.Until(until)
 				}
-				card := section.Item(state, strings.Join([]string{goal.GeneralAct, "by " + by, end}, " · "))
+				card := section.Item(state, strings.Join([]string{attorneyActs(entry), "by " + by, end}, " · "))
 				// A checkout is named from the home directory, never
 				// relative to the repository it may itself be inside.
 				outside := env
 				outside.Repo = ""
-				card.KV("for", textui.Plain("the main session of "+entry.For+" ("+outside.Path(entry.Checkout)+")"))
+				session := "the main session"
+				if entry.Lineage == launch.SeatOwnerLineage {
+					session = "every steward-started main session"
+				}
+				card.KV("for", textui.Plain(session+" of "+entry.For+" ("+outside.Path(entry.Checkout)+")"))
 				card.KV("id", textui.Plain(entry.ID))
 				continue
 			}
