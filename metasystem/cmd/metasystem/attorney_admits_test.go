@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,10 @@ import (
 )
 
 type attorneyAdmitBed struct {
+	args       []string
+	subject    attorneySubject
+	subjectErr error
+
 	root     string
 	entries  []goal.PowerOfAttorneyEntry
 	class    lease.Classification
@@ -46,7 +51,9 @@ func newAttorneyAdmitBed(t *testing.T) *attorneyAdmitBed {
 
 func (b *attorneyAdmitBed) admitter() *attorneyAdmitter {
 	return &attorneyAdmitter{owners: attorneyAdmitOwners{
-		grants: func(string) ([]goal.PowerOfAttorneyEntry, error) { return b.entries, b.readErr },
+		args:    func() []string { return b.args },
+		subject: func(string, []string, time.Time) (attorneySubject, error) { return b.subject, b.subjectErr },
+		grants:  func(string) ([]goal.PowerOfAttorneyEntry, error) { return b.entries, b.readErr },
 		machine: func(string) (string, error) {
 			return b.machine, nil
 		},
@@ -64,6 +71,62 @@ func (b *attorneyAdmitBed) admitter() *attorneyAdmitter {
 		},
 		lockShared: func(string) error { b.locks++; return b.lockErr },
 	}}
+}
+
+func TestTheAdmitterAdmitsOnlyTheGrantsClasses(t *testing.T) {
+	t.Parallel()
+	rows := []struct{ argv, class string }{
+		{"goal approve F", "recovery"}, {"goal approve F F --json --verbose", "recovery"},
+		{"goal prioritize G 1", "ordering"}, {"goal pin G m1e", "ordering"}, {"goal group G arc-1", "ordering"},
+		{"alert ack a1", "acks"}, {"question withdraw q1", "acks"},
+		{"work stop j2:j1", "recovery"}, {"work stop read:r1", "recovery"}, {"work stop G", "recovery"},
+		{"goal release C --because=x", "stale-releases"},
+	}
+	for _, argv := range []string{
+		"goal budget G 1d/10/720m/1/3", "landing resume", "machine revive m1e", "work stop run:r1",
+		"goal approve F --budget norm", "goal approve F N", "goal approve N", "goal approve F -- N",
+		"goal release D --reason x", "goal release G --reason x", "goal release missing --reason x",
+		"goal release F --reason x", "goal release C --reason-file x", "goal release C --reason x --repo /elsewhere",
+		"--json goal approve F", "", "goal approve F --under grant", "goal approve F --approved-ref abc",
+		"goal approve F --elapsed-limit 1d", "goal approve F --unknown", "goal approve --help",
+	} {
+		rows = append(rows, struct{ argv, class string }{argv, ""})
+	}
+	for _, flag := range []string{"--id N", "-id N", "--id=N", "--goal N", "-goal=N"} {
+		rows = append(rows, struct{ argv, class string }{"goal approve F " + flag, ""})
+	}
+	for _, flag := range []string{"--arc", "-arc", "--arc=true"} {
+		rows = append(rows, struct{ argv, class string }{"goal release C --reason x " + flag, ""})
+	}
+	for _, row := range rows {
+		for _, classes := range [][]string{nil, goal.AttorneyClasses, {row.class}, slices.DeleteFunc(slices.Clone(goal.AttorneyClasses), func(c string) bool { return c == row.class })} {
+			if len(classes) == 1 && classes[0] == "" {
+				continue
+			}
+			b := newAttorneyAdmitBed(t)
+			b.args, b.entries[0].Classes = strings.Fields(row.argv), classes
+			b.subject = attorneySubject{"F": {flakeFix: true}, "C": {machine: "m1e", lineage: "lin-dead"}, "D": {machine: "m1b", lineage: "lin-dead"}, "G": {machine: "m1e", lineage: "lin-main"}}
+			_, ok := b.admitter().admit(b.root, 80, attorneyAdmitNow)
+			want := len(classes) == 0 || row.class != "" && slices.Contains(classes, row.class)
+			if ok != want {
+				t.Errorf("%s under %v: admitted %v, want %v", row.argv, classes, ok, want)
+			}
+			if !want && (b.locks != 0 || len(b.logLines) != 0 || b.stderr.Len() != 0) {
+				t.Errorf("%s: declined act left locks=%d log=%v stderr=%q", row.argv, b.locks, b.logLines, b.stderr.String())
+			}
+		}
+	}
+	b := newAttorneyAdmitBed(t)
+	b.entries[0].Classes, b.entries[0].Lineage = []string{"ordering"}, "steward-seat"
+	b.class.MainId, b.holder.MainId, b.holder.OwnerLineage = "main-2", "main-2", "steward-seat"
+	b.args = []string{"goal", "prioritize", "G", "2"}
+	if _, ok := b.admitter().admit(b.root, 80, attorneyAdmitNow); !ok {
+		t.Fatal("successor refused")
+	}
+	b.args, b.entries[0].Classes, b.subjectErr = []string{"goal", "approve", "F"}, []string{"recovery"}, errors.New("unreadable subjects")
+	if _, ok := b.admitter().admit(b.root, 80, attorneyAdmitNow); ok {
+		t.Fatal("unreadable subject admitted")
+	}
 }
 
 // W4: the admitter admits only the lease-holding main of the checkout and

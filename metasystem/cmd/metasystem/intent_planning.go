@@ -501,9 +501,9 @@ func (inv *intentInvocation) actingAs(verb, target string, actor intentActor) ([
 	if typed == "" && actor == actorEither && agent && !inv.input.has("lineage") && verb != "claim" {
 		// A live general grant that admits this session makes a dual act
 		// the granting person's, before the session's own shortcut (M6),
-		// as pause and done already do; the owner proves it again.
+		// as pause and done already do; carry the proof to the owner's effect check.
 		if by, ok := inv.attorneyActor(); ok {
-			return append(args, "--by", by), nil, nil
+			typed = by
 		}
 	}
 	if typed == "" && (actor == actorAgent || actor == actorEither && agent) {
@@ -1757,7 +1757,7 @@ func runIntentPrioritize(inv *intentInvocation) int {
 	args := append([]string{"--root", inv.stateRoot, "--id", id, "--priority", priority}, actor...)
 	args = append(args, inv.forward("sequence")...)
 	return inv.render(inv.goalAct(id, "prioritize", func(dependencies syncRequestDependencies) int {
-		return runGoalSetPriorityWithAuthorityAndInputs(args, inv.owners.prove, dependencies)
+		return runGoalSetPriorityWithAuthorityAtAndInputs(args, inv.owners.prove, inv.owners.commandNow, dependencies)
 	}))
 }
 

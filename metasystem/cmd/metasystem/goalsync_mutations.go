@@ -2416,6 +2416,10 @@ func runGoalCarryAbandonedWithInputs(args []string, prove goalAuthorityProver, c
 }
 
 func runGoalSetPriorityWithAuthorityAndInputs(args []string, prove goalAuthorityProver, dependencies syncRequestDependencies) int {
+	return runGoalSetPriorityWithAuthorityAtAndInputs(args, prove, goalCommandNow, dependencies)
+}
+
+func runGoalSetPriorityWithAuthorityAtAndInputs(args []string, prove goalAuthorityProver, commandNow func(string) (time.Time, error), dependencies syncRequestDependencies) int {
 	flags := newFlagSet("goal set-priority", dependencies.outStream(), dependencies.errStream())
 	root := pathFlag(flags, "root", ".", "checkout root")
 	id := flags.String("id", "", "goal id")
@@ -2464,12 +2468,12 @@ func runGoalSetPriorityWithAuthorityAndInputs(args []string, prove goalAuthority
 		return 1
 	}
 	shared := &syncFlags{root: *root, id: *id, by: *by, lineage: *lineage, fixtureHumanAuthority: *fixtureAuthority}
-	proof, err := proveGoalHumanAuthority("set-priority", shared, prove)
+	proof, err := proveGoalHumanAuthorityAt("set-priority", shared, prove, commandNow)
 	if err != nil {
 		dependencies.complain(err)
 		return 1
 	}
-	request, err := syncReqWithProofAtWithDependencies("set-priority", *root, *by, *lineage, &proof, goalCommandNow, dependencies)
+	request, err := syncReqWithProofAtWithDependencies("set-priority", *root, *by, *lineage, &proof, commandNow, dependencies)
 	if err != nil {
 		dependencies.complain(err)
 		return 1

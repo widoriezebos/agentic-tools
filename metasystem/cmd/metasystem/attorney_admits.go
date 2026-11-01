@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +39,9 @@ type attorneyAdmitter struct {
 // attorneyAdmitOwners are the facts the admitter reads; zero values are the
 // production readers.
 type attorneyAdmitOwners struct {
+	args     func() []string
+	endpoint func(root string) (goal.Endpoint, error)
+	subject  func(root string, ids []string, now time.Time) (attorneySubject, error)
 	grants   func(root string) ([]goal.PowerOfAttorneyEntry, error)
 	machine  func(root string) (string, error)
 	classify func(root string, pid int64) (lease.Classification, error)
@@ -53,8 +57,30 @@ type attorneyAdmitOwners struct {
 }
 
 func (o attorneyAdmitOwners) withDefaults() attorneyAdmitOwners {
+	if o.args == nil {
+		o.args = func() []string { return os.Args[1:] }
+	}
+	if o.endpoint == nil {
+		o.endpoint = goal.ResolveEndpoint
+	}
+	if o.subject == nil {
+		o.subject = func(root string, ids []string, now time.Time) (attorneySubject, error) {
+			end, err := o.endpoint(root)
+			if err != nil {
+				return nil, err
+			}
+			return readAttorneySubject(end, ids, now)
+		}
+	}
 	if o.grants == nil {
-		o.grants = acceptedAttorneyEntries
+		o.grants = func(root string) ([]goal.PowerOfAttorneyEntry, error) {
+			end, err := o.endpoint(root)
+			if err != nil {
+				return nil, err
+			}
+			_, entries, err := goal.GeneralGrantsAt(end)
+			return entries, err
+		}
 	}
 	if o.machine == nil {
 		o.machine = goal.ResolveMachine
@@ -150,6 +176,14 @@ func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanau
 	holder, err := o.holder(checkout)
 	if err != nil || holder.MainId != class.MainId || holder.OwnerLineage != entry.Lineage {
 		return humanauthority.HelmGrant{}, false
+	}
+	if len(entry.Classes) != 0 {
+		act, ok := attorneyActClass(o.args(), func(ids []string) (attorneySubject, error) {
+			return o.subject(checkout, ids, now)
+		}, machine, holder.OwnerLineage)
+		if !ok || !slices.Contains(entry.Classes, act) {
+			return humanauthority.HelmGrant{}, false
+		}
 	}
 	// Only the grantee takes the grant lock, and only on the checkout the
 	// grant binds; the grant is read again under it, so a local revoke that
