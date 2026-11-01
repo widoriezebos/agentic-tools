@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Design through the engine: metasystem design write a-red-is-classified-once --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-red-is-classified-once-request.md; then design review; then units
 - OpenedAt: 2026-11-01T06:38:56Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=EFEHA56G9A5YV5EQQAC3RGGDPP-m1e-b2c714f5 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-01T06:38:56Z YGYTHR8A1P4PY6NSW8S3S7VF5F-m1e-b2c714f5 open actor=human:Wido targets=a-red-is-classified-once
 - 2026-11-01T06:39:15Z EFEHA56G9A5YV5EQQAC3RGGDPP-m1e-b2c714f5 approve actor=human:Wido targets=a-hand-in-stands-on-main,a-red-is-classified-once
-Integrity: sha256=aa4863c5a546a935683a6f905c4a16c07be3fa056d30131b0b59bcccc5c7da22
+- 2026-11-01T06:39:26Z FH553SWTZR6YRY04H34RCXYZSZ-m1e-b2c714f5 set-pin actor=human:Wido targets=a-red-is-classified-once
+Integrity: sha256=f4ecee7dfa409a46716ab645bb1a30565a43aacb0f3c92b91aec5a5d843260ca
