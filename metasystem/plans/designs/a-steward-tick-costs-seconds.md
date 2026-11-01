@@ -141,9 +141,9 @@ U2: named when D7 is filled; at least one test through the tick that bounds the 
 
 | Effect | From | To | Code |
 |---|---|---|---|
-| saying a cycle's cost | four words, the rest as "other" (`runner.go:322-326`) | exclusive phases with included subtotals, the wait's keeper steps and remainder timed (U1, D1 to D3; T1 to T3, T5) | `metasystem/internal/steward/tick_phases.go`, `metasystem/internal/steward/runner.go:322-334`, `:521-574` |
-| the process CPU reader | a SELF-only test helper (`cpu_time_unix_test.go:11-18`) | production, SELF and CHILDREN, behind an injected reader (U1, D5; T6) | `metasystem/internal/steward/tick_cpu_unix.go` |
-| knowing the ledger's read cost | a historical comment (`health_ledger.go:11-12`) | a counted and timed figure per cycle (U1, D6; T7) | `metasystem/internal/goal/ledgerreads.go`, `metasystem/internal/goal/validate.go:99`, `:254`, `:691` |
+| saying a cycle's cost | four words, the rest as "other" (`runner.go:322-326`) | exclusive phases with included subtotals, the wait's keeper steps and remainder timed (U1, D1 to D3; T1 to T3, T5) | `metasystem/internal/steward/runner.go:322-334`, `:521-574` (the new owner, `tick_phases.go`, does not exist yet) |
+| the process CPU reader | a SELF-only test helper (`cpu_time_unix_test.go:11-18`) | production, SELF and CHILDREN, behind an injected reader (U1, D5; T6) | `metasystem/internal/steward/cpu_time_unix_test.go:11-18` (the new owner, `tick_cpu_unix.go`, does not exist yet) |
+| knowing the ledger's read cost | a historical comment (`health_ledger.go:11-12`) | a counted and timed figure per cycle (U1, D6; T7) | `metasystem/internal/steward/health_ledger.go:11-12`, `metasystem/internal/goal/validate.go:99`, `:254`, `:691` (the new owner, `ledgerreads.go`, does not exist yet) |
 
 U2's moved effects are named when D7 is filled.
 
