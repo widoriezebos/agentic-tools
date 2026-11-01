@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build without a design: the barren test reads the acts the launch recorded; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:43:40Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=5V2GEQ6JC8G6QRDN41T5XWNSX2-m1e-37ae1684 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-01T06:43:40Z SFB6S0DYR4P4EF9XJR4PRQS88T-m1e-37ae1684 open actor=human:Wido targets=a-real-act-is-not-barren reason=TierOverride: derived=1 set=2 why=a small engine fix on the lane or steward path, recorded at tier 2 like the other follow-ups of the night of 2026-10-31 so they sit in one frontier (decision 111c)
 - 2026-11-01T06:44:15Z 5V2GEQ6JC8G6QRDN41T5XWNSX2-m1e-37ae1684 approve actor=human:Wido targets=a-folded-design-finding-is-re-read,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-unit-check-runs-the-audits,one-question-per-refused-admission
-Integrity: sha256=30b713b801304c0b13e38c129a1550c8731b7bdbcdd3d35502c6d76a0bfcbf24
+- 2026-11-01T06:45:26Z R8NTCGZXTW1BT7DWA2819S3W5F-m1e-37ae1684 set-pin actor=human:Wido targets=a-real-act-is-not-barren
+Integrity: sha256=a98e08d1da21400b5036345b8ca8da169d326516f14a6eaa31bf5d61582c171a
