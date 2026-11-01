@@ -10,7 +10,7 @@
 - Next step: Design through the engine: metasystem design write a-red-is-classified-once --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-red-is-classified-once-request.md; then design review; then units
 - OpenedAt: 2026-11-01T06:38:56Z
 - FirstClaimAt: 2026-11-01T08:30:44Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -18,6 +18,7 @@
 - Approved: by=human:Wido at=2026-11-01T06:39:15Z revision=2 opid=EFEHA56G9A5YV5EQQAC3RGGDPP-m1e-b2c714f5 authority=proven digest=1757fe4f6c1baded45d1e2840efe3e89025be8c59d671d32d5378002f7c39086 episode=2
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=5 at=2026-11-01T08:31:04Z
 - AcceptedRisk: finding=RULING-a-red-is-classified-once chain=design-critic-9af085c2ddd725804f70147a by=Wido opid=SCAVMWB2S8QZ9699B3BT74JY8M-m1e-21d12397
+- AcceptedRisk: finding=RULING-R-142-m1e chain=design-critic-9af085c2ddd725804f70147a by=Wido opid=5WA4YMF8F9T0JDXCYNVHKGVB2A-m1e-21d12397
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-01T08:30:44Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-red-is-classified-once: no accepted design declares areas\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal a-start-that-never-launched-is-not-busy\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal a-start-that-never-launched-is-not-busy\"]" revision=5 accountingRevision=5 episodeAt=2026-11-01T08:30:44Z episodeRevision=5
 - StopCapability: generation=5 revision=5 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -29,4 +30,5 @@ History:
 - 2026-11-01T08:30:44Z 5D1C9FJ7ZWGT8GHA5F8DSWCYP9-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-red-is-classified-once reason=areas unknown for goal a-red-is-classified-once: no accepted design declares areas; areas unknown for goal a-round-survives-a-restart; areas unknown for goal a-start-that-never-launched-is-not-busy; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal a-start-that-never-launched-is-not-busy
 - 2026-11-01T08:31:04Z DR38HK4AQGS9PWA4M1GBD89M36-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-red-is-classified-once
 - 2026-11-01T09:44:52Z SCAVMWB2S8QZ9699B3BT74JY8M-m1e-21d12397 accept-risk actor=human:Wido targets=a-red-is-classified-once reason=Not a risk kept: folded in revision 2. Q1 is answered in Wido's name (the table decides for every test; registration is naming evidence; a registered test red twice alone and green on the base is own, with the person's Retry as the fail-safe); the goal's intent sentence is amended at acceptance so the record and the page agree. Rejected alternative: registration decides, which would let a deterministic break of a registered flaky test reach main red.
-Integrity: sha256=48be230e1fd56e64a0c664438a739f5c8757e10a02237a621d4546ffda602ed0
+- 2026-11-01T09:46:53Z 5WA4YMF8F9T0JDXCYNVHKGVB2A-m1e-21d12397 accept-risk actor=human:Wido targets=a-red-is-classified-once reason=Not a risk kept: folded in revision 2. The main-stop Retry and its two gates (RetryFailedStep and work review) move into U1 with a test that executes Retry on a main stop in production order; U2 keeps the generic any-stop retry with a person's reason.
+Integrity: sha256=a6c664ad188a478f3867918ce470b463f67157262deb08a4d48f89a4a9c30572
