@@ -10,7 +10,7 @@
 - Next step: Design through the engine after a-round-survives-a-restart lands (its U1b settle is the base): metasystem design write revive-starts-the-seat-clean --brief agentic-tools-evidence/lane-test-20261009/designs/revive-starts-the-seat-clean-request.md, design review rounds (Astra) to zero material findings, acceptance by hand until an-accepted-design-is-a-record lands; then one or two units on m1e
 - OpenedAt: 2026-10-31T20:50:31Z
 - FirstClaimAt: 2026-11-01T01:02:56Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -18,6 +18,7 @@
 - Approved: by=human:Wido at=2026-10-31T20:50:53Z revision=2 opid=A5HFCY6REGTTR6TVXD9E6Z9569-m1e-ad960d25 authority=proven digest=f94c05480a810f55079920c1e15f5557580e1c44515d576bc2af45f3be2a95a0 episode=2
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=6 at=2026-11-01T01:03:16Z
 - AcceptedRisk: finding=REVIVE-CENSUS-CONFIRMATION chain=design-critic-ec573be9e5f906d28e29da15 by=Wido opid=01SHCASWG783T8Z7KBSQQ3AXM0-m1e-cc2e8fc8
+- AcceptedRisk: finding=RULING-R-143-m1e chain=design-critic-ec573be9e5f906d28e29da15 by=Wido opid=6N204EDRBDKE9DKDEHQR5KNJ0A-m1e-cc2e8fc8
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-01T01:02:56Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal revive-starts-the-seat-clean: no accepted design declares areas\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-steward-sees\",\"areas unknown for goal the-steward-sees\"]" revision=6 accountingRevision=6 episodeAt=2026-11-01T01:02:56Z episodeRevision=6
 - StopCapability: generation=6 revision=6 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -30,4 +31,5 @@ History:
 - 2026-11-01T01:02:56Z K2Q545JEAAAPPAW4AVB1F5VS20-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=revive-starts-the-seat-clean reason=areas unknown for goal revive-starts-the-seat-clean: no accepted design declares areas; areas unknown for goal a-round-survives-a-restart; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-steward-sees; areas unknown for goal the-steward-sees
 - 2026-11-01T01:03:16Z 2N0VNMCMX1HGAEJB730E1N0QZS-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=revive-starts-the-seat-clean
 - 2026-11-01T01:18:20Z 01SHCASWG783T8Z7KBSQQ3AXM0-m1e-cc2e8fc8 accept-risk actor=human:Wido targets=revive-starts-the-seat-clean reason=accepted and folded into revision 2 of the page (steward's dispositions of 2026-11-01, in Wido's name under decision 102); the engine admits no second examination for a non-critical finding (finding 458)
-Integrity: sha256=63690a508408bcaa5aa33bee3846aad5296441a7508905d0d96deb23a25c1336
+- 2026-11-01T01:19:43Z 6N204EDRBDKE9DKDEHQR5KNJ0A-m1e-cc2e8fc8 accept-risk actor=human:Wido targets=revive-starts-the-seat-clean reason=accepted and folded into revision 2 of the page (steward's dispositions of 2026-11-01, in Wido's name under decision 102); the engine admits no second examination for a non-critical finding (finding 458)
+Integrity: sha256=1175d1d80974269ad6d10b7a0ddb9f3845fe3fa6e6040399d0d0a0a7d31a1b2c
