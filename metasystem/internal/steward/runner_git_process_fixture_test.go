@@ -130,6 +130,10 @@ func newProcessGitFixtureEnvironment(t *testing.T) (string, []string) {
 		add(root, args, "", 1)
 	}
 	add(root, []string{"rev-parse", "--path-format=absolute", "--git-common-dir"}, filepath.Join(root, ".git")+"\n", 0)
+	// The tick's situation page builds the engine's launch manager, which
+	// resolves the installation of the pinned engine under the runner's
+	// folder.
+	config.Replies = append(config.Replies, engineInstallationReads(runnerDir(root), root)...)
 	add(root, []string{"ls-tree", "-r", "--name-only", "HEAD", "--", "plans/goals/", "records/goals/"}, "", 0)
 	pins := []string{"-c", "core.fileMode=true", "-c", "diff.noprefix=false", "-c", "diff.mnemonicPrefix=false", "-c", "apply.ignoreWhitespace=no", "-c", "core.logAllRefUpdates=false", "-c", "core.useReplaceRefs=false", "-c", "gc.auto=0", "-c", "maintenance.auto=false"}
 	for _, reply := range []struct {
@@ -219,6 +223,7 @@ func TestStewardBoundaryRefreshUsesServedInstallation(t *testing.T) {
 		config.Replies = append(config.Replies, processGitReply{Cwd: cwd, Args: append(append([]string(nil), pins...), reply.args...), Stdout: []byte(reply.output)})
 	}
 	config.Replies = append(config.Replies, processGitReply{Cwd: cwd, Args: []string{"-C", root, "config", "--get", "metasystem.steward.rearm-resolve-seconds"}, Exit: 1})
+	config.Replies = append(config.Replies, engineInstallationReads(filepath.Dir(filepath.Dir(bin)), "")...)
 	for _, args := range [][]string{
 		{"rev-parse", "--verify", "--quiet", processGitHead + "^{commit}"},
 		{"merge-base", "--is-ancestor", processGitHead, processGitHead},
@@ -446,4 +451,24 @@ func processGitHelperGone(ref identity.Ref) bool {
 		return false
 	}
 	return !identity.Compare(exact, ref).Matches
+}
+
+// engineInstallationReads are the Git reads that resolve the installation an
+// engine runs from, at dir: inside the checkout top they answer as Git
+// would, and outside any checkout (an empty top) they fail as Git does.
+func engineInstallationReads(dir, top string) []processGitReply {
+	reads := []struct {
+		args   []string
+		output string
+	}{{[]string{"rev-parse", "--path-format=absolute", "--git-common-dir"}, filepath.Join(top, ".git") + "\n"},
+		{[]string{"rev-parse", "--show-toplevel"}, top + "\n"}}
+	var replies []processGitReply
+	for _, read := range reads {
+		reply := processGitReply{Cwd: dir, Args: read.args, Stdout: []byte(read.output)}
+		if top == "" {
+			reply = processGitReply{Cwd: dir, Args: read.args, Stderr: []byte("fatal: not a git repository\n"), Exit: 128}
+		}
+		replies = append(replies, reply)
+	}
+	return append(replies, processGitReply{Cwd: dir, Args: []string{"config", "--get", "metasystem.goal.machine"}, Exit: 1})
 }

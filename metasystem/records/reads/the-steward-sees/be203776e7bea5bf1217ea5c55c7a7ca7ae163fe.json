@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-steward-sees",
+  "unit": "U1a1",
+  "subject": {
+    "commit": "be203776e7bea5bf1217ea5c55c7a7ca7ae163fe",
+    "parent": "52da720756e8bb1d902f7a91b5051c633a5b12a1",
+    "tree": "38cf4ec2321ff22723d889dc9cfb848b4b22931a",
+    "patchDigest": "3055ddd1baf8808052709e0600e12967571b40a4ee9354500815f8e8c03a3a2e",
+    "unitDigest": "4d1d29b87a343948ee9982e63d1d1f980178b4fd7759b53c6ff0c38f6efc6bef"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-cc2606d2e3176bfb8cbb3bea",
+    "round": 1,
+    "closureSha256": "eeaf94143ef6b629f67753c4d8eaed6d52e3246aefbe89273bf1a780ed0471da"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "38cf4ec2321ff22723d889dc9cfb848b4b22931a",
+    "runId": "goal-read-gate-20261030t142013z-c332519e23400d1d"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "52da720756e8bb1d902f7a91b5051c633a5b12a1",
+      "digest": "47197a1ee413141a38a62d1dff252042313917a0f9a60ea7973bde35d6a1da03"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/landing/batchowner/testmain_test.go",
+      "readerWord": "reviewed by critic root code-critic-cc2606d2e3176bfb8cbb3bea"
+    }
+  ],
+  "sha256": "cc9ab382fefa38bfe48363478450dd915b1ff4ce5b4aded40cd372163c66bd34"
+}

@@ -1,0 +1,105 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-steward-sees",
+  "unit": "U1a3",
+  "subject": {
+    "commit": "dfa3d9307cf988d685da369a671673f480367157",
+    "parent": "34ccf49ea0af27049cde4e187c76cd17fe1fdd85",
+    "tree": "6a8486ebd0be883ef92d0355f13e2bc7c51c92d9",
+    "patchDigest": "262f113fa7975554d11c74ab098f5ddd42d7fae0614e0b5324c833965ce4a4f2",
+    "unitDigest": "7fdf51dafe1c015a8e9a007ad0242809d11ff78e4ecff91f70e3869b40734d44"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-f9b408361ecf2ebd4c150be2",
+    "round": 1,
+    "closureSha256": "62432b9c38bb80c3466f973fd0f3721638c79f3ea5274a87cfdd47a46f1afe81"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "6a8486ebd0be883ef92d0355f13e2bc7c51c92d9",
+    "runId": "goal-read-gate-20261031t070223z-d7bcd3b764dcc71a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "52da720756e8bb1d902f7a91b5051c633a5b12a1",
+      "digest": "47197a1ee413141a38a62d1dff252042313917a0f9a60ea7973bde35d6a1da03"
+    },
+    {
+      "kind": "read",
+      "commit": "9db3b559e40365b528a358520b7dcea7a0cc6ad2",
+      "digest": "f775f71ff026e4ae2a780fd9b00951e59b8dc5d9de436e99134daa3f21d9303d"
+    },
+    {
+      "kind": "read",
+      "commit": "28761eda757ed939d36000a39a625cf91c5a156f",
+      "digest": "80f71c7da87c6ad03f85787c5f2d2708d31ece4d88d011e297dc7584f166aea2"
+    },
+    {
+      "kind": "read",
+      "commit": "cdee01cbdb9e4511477413654191a0cdf2ac82aa",
+      "digest": "2899b06a1f1e174e7fc9e3b523440b1fb5f87c32ccbd6a7733da538da526b271"
+    },
+    {
+      "kind": "read",
+      "commit": "8bf0fa2efeaac26e50cab28a3e59c6c474eaee84",
+      "digest": "6dfcd628899923a7d19a9a87134fceb290d63a3bb0a00d39fd736f52c87f36af"
+    },
+    {
+      "kind": "read",
+      "commit": "99ee7804f02fd5168e98d1c12aa1a44cd3e297be",
+      "digest": "4160e5303a537223bf554f9e02b481692818c500c9f14ce379dbc73696a4e9ac"
+    },
+    {
+      "kind": "read",
+      "commit": "24581b17a4b55dd078df65fbc00f41dfe4412b1c",
+      "digest": "efb1aff2265cfaa194509c34b84f93eb8ca55cbb5d50135e046c0eaa3a86371c"
+    },
+    {
+      "kind": "read",
+      "commit": "34ccf49ea0af27049cde4e187c76cd17fe1fdd85",
+      "digest": "62008d0d3e619553e2fb81105659696679da1bcc6dc1433089948a8aa909eea3"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_run_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9b408361ecf2ebd4c150be2"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_situation_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9b408361ecf2ebd4c150be2"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/steward_runner_idle_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9b408361ecf2ebd4c150be2"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/help-system.txt",
+      "readerWord": "reviewed by critic root code-critic-f9b408361ecf2ebd4c150be2"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/help.txt",
+      "readerWord": "reviewed by critic root code-critic-f9b408361ecf2ebd4c150be2"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/system-situation.txt",
+      "readerWord": "reviewed by critic root code-critic-f9b408361ecf2ebd4c150be2"
+    },
+    {
+      "path": "metasystem/internal/steward/claim_quota_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9b408361ecf2ebd4c150be2"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_git_process_fixture_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9b408361ecf2ebd4c150be2"
+    },
+    {
+      "path": "metasystem/internal/steward/runner_idle_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9b408361ecf2ebd4c150be2"
+    }
+  ],
+  "sha256": "29e4be673e581d0a649f91a7544d2863844bc3a10efbd2e5d67f992abc4d3dc3"
+}

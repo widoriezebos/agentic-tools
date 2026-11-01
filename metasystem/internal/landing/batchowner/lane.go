@@ -21,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
 )
@@ -29,6 +30,10 @@ import (
 // error leaves this host on each seat's own landing.batch-root, as before
 // U12.
 var LandingLaneHome = board.Home
+
+// LandingLaneHostWork is the host's launch store counted as the launch verbs'
+// manager counts it: the observation the keeper's hold reads.
+var LandingLaneHostWork = (&launch.Manager{Prober: identity.KernelProber{}}).HostWork
 
 // LandingLaneSeams are the reads a lane resolution makes beyond the lane
 // itself: the host's home.
@@ -153,17 +158,18 @@ func LandingLaneArmed(root string) (bool, error) {
 	return false, fmt.Errorf("whether the supervision owner pid %d of %s runs is unknown", owner.Pid, root)
 }
 
-// landingLaneStatus is the lane as landing status --json and /api/board
+// LandingLaneStatus is the lane as landing status --json and /api/board
 // show it: its view and the plain lane around it (plain.ReadStatus), the one
-// reader both use.
-func landingLaneStatus(home func() (string, error), now time.Time) plain.Status {
+// reader both use, at now and through the given host observation.
+func LandingLaneStatus(home func() (string, error), now time.Time, hostWork func() (int, int, error)) plain.Status {
 	laneHome, err := home()
 	if err != nil {
 		return plain.Status{View: lane.View{Owner: lane.OwnerView{State: lane.OwnerUnready}, Summary: "the landing lane cannot be read: this host has no home for it (" + err.Error() + ")",
 			Unreadable: "this host has no home for it (" + err.Error() + ")"}, Queue: []plain.Entry{}, Problems: []string{"the lane's registration can't be read: this host has no home for it (" + err.Error() + ")"}}
 	}
 	record, _, _ := lane.Read(laneHome)
-	return plain.ReadStatus(laneHome, record, lane.BuildView(LandingLaneViewSources(laneHome, now)), plain.ProveSeams{})
+	return plain.ReadStatus(laneHome, record, lane.BuildView(LandingLaneViewSources(laneHome, now)),
+		plain.ProveSeams{Now: func() time.Time { return now }, HostWork: hostWork})
 }
 
 // LandingLaneViewSources are the production reads of the lane's view as the

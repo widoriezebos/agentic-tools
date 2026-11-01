@@ -106,6 +106,10 @@ func TestLandingStewardPersonActWithoutEffect(t *testing.T) {
 			}
 			run := b.step(bedNow.Add(5 * time.Minute))
 			want := !strings.Contains(scenario, "step") && scenario != "proof" && scenario != "running-proof" && scenario != "no-hold"
+			// Before its five minutes the act that will fire waits, with its age.
+			if pending := read(bedNow.Add(4 * time.Minute)).Health.PendingAct; (pending != nil) != want || want && (pending.Minutes == nil || *pending.Minutes != 4) {
+				t.Fatalf("the act's wait at four minutes: %+v, want one with its minutes: %t", pending, want)
+			}
 			row := healthRow(read(bedNow.Add(5*time.Minute)).Health, "person-act-no-effect")
 			if (row != nil) != want || len(run.Interventions) != map[bool]int{true: 1, false: 0}[want] {
 				t.Fatalf("effect evidence: row=%+v run=%+v", row, run)
@@ -428,7 +432,7 @@ func TestLandingProofStartHeldBesideBuilds(t *testing.T) {
 			}
 			row := healthRow(read(now), "proof-beside-builds")
 			if kind == "policy" {
-				if err == nil || len(b.calls) != 0 || row == nil || !strings.Contains(row.Act, "no proof has started since") {
+				if err == nil || len(b.calls) != 0 || row != nil {
 					t.Fatalf("release claimed a refused start: row=%+v calls=%v err=%v", row, b.calls, err)
 				}
 				b.seams.Now = func() time.Time { return now.Add(time.Minute) }

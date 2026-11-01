@@ -30,6 +30,7 @@ type Health struct {
 	Interventions       []Intervention       `json:"interventions,omitempty"`
 	Refusals            []Intervention       `json:"refusals,omitempty"`
 	PersonActs          []PersonAct          `json:"person_acts,omitempty"`
+	PendingAct          *PersonAct           `json:"pending_act,omitempty"`
 	OwnRed              []OwnRed             `json:"own_red,omitempty"`
 	observedAt          time.Time
 	recentActs          map[[2]string]bool
@@ -221,9 +222,12 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			progressed = at
 		}
 	}
-	if minutes := now.Sub(acted).Minutes(); !acted.IsZero() && minutes >= 5 && progressed.Before(acted) && status.Raw.Agent.Barren > 0 {
-		personAct.Minutes = &minutes
-		h.PersonActs = append(h.PersonActs, personAct)
+	// An act with no effect yet fires at five minutes; until then it waits.
+	if minutes := now.Sub(acted).Minutes(); !acted.IsZero() && progressed.Before(acted) && status.Raw.Agent.Barren > 0 {
+		personAct.Minutes, h.PendingAct = &minutes, &personAct
+		if minutes >= 5 {
+			h.PersonActs, h.PendingAct = append(h.PersonActs, personAct), nil
+		}
 	}
 	h.ReportPath = filepath.Join(Dir(install), "steward-report.md")
 	report, err := readStewardReport(install)
@@ -282,24 +286,8 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			h.Refusals = append(h.Refusals, entry)
 		}
 	}
-	held, released := proofContention(interventions, "")
-	if held.At != "" {
-		act := held.Outcome
-		if released.At != "" {
-			at, _ := time.Parse(time.RFC3339Nano, released.At)
-			act = "released at " + at.Local().Format("15:04 MST") + "; no proof has started since"
-			for _, stamp := range starts {
-				if (status.RunningProof == nil || status.RunningProof.Since != stamp) && (status.LastProof == nil || status.LastProof.StartedAt != stamp) {
-					continue
-				}
-				if started, err := time.Parse(time.RFC3339Nano, stamp); err == nil && !started.Before(at) {
-					act = ""
-				}
-			}
-		}
-		if act != "" {
-			h.Drift = append(h.Drift, Fired{Row: "proof-beside-builds", Subject: Short(held.Subject), Act: act})
-		}
+	if hold, held, _ := currentHold(interventions, now, seams.HostWork); held {
+		h.Drift = append(h.Drift, Fired{Row: "proof-beside-builds", Subject: Short(hold.Subject), Act: hold.Outcome})
 	}
 	if r := status.RunningProof; r != nil && r.State == "running" && seams.HostWork != nil {
 		builds, checks, err := seams.HostWork()

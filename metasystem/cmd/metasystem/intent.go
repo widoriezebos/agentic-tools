@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/up"
 )
@@ -584,6 +585,8 @@ type intentOwners struct {
 	attorney attorneyIntentOwners
 	// agent are the agent verbs' seams; the zero value is production.
 	agent agentOwners
+	// situation are system situation's sources; the zero value is production.
+	situation steward.SituationSources
 	// ownEngine checks whether this engine may run the public verb; zero is production.
 	ownEngine ownEngineOwners
 	// hookSwitch adjusts system setup's seams; nil keeps production.
@@ -664,6 +667,11 @@ type intentInvocation struct {
 	laneRecord                           *lane.Record
 	laneSkipShadow                       bool
 	choice                               *channelChoice
+
+	// givenProjection and givenNow are a caller's one ledger read, which
+	// every projection of this invocation returns.
+	givenProjection *goal.Projection
+	givenNow        time.Time
 }
 
 // runIntent routes one public command. Help needs no repository, identity or
@@ -1414,7 +1422,7 @@ var intentObjectSummaries = map[string]string{
 	"helm":       "human at the helm: take the whole seat out of the machinery's hands, and give it back",
 	"session":    "this agent session: start, stop, whether it may stop, and its handoff",
 	"mission":    "autonomous missions",
-	"system":     "MetaSystem for this checkout: set up, start, stop, restart, status, check, enroll, adopt, completion",
+	"system":     "MetaSystem for this checkout: set up, start, stop, restart, status, situation, check, enroll, adopt, completion",
 	"landing":    "the landing lane on this computer: where every seat's work is proved and pushed",
 	"deploy":     "this project's deploy of main: status, now, rollback, pause and resume",
 	"alert":      "what the steward reported and a person should see: list, acknowledge and clear",
@@ -1584,7 +1592,7 @@ var intentActionIntents = map[string][]struct {
 		{"Shape", []string{"set", "unset"}},
 	},
 	"system": {
-		{"Read", []string{"status", "check"}},
+		{"Read", []string{"status", "situation", "check"}},
 		{"Decide", []string{"enroll"}},
 		{"Work", []string{"start", "stop", "restart"}},
 		{"Shape", []string{"setup", "adopt", "completion"}},

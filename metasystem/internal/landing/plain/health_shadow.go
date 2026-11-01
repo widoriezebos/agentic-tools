@@ -17,7 +17,7 @@ func shadowRows(status Status) []Fired {
 		if shadow != nil {
 			from = "shadow from " + shadow.Lane.Since.At.Local().Format("15:04")
 		}
-		return []Fired{{Row: "observation-failed", Subject: fmt.Sprintf("%s; the observation at %s failed: %s", from, status.Raw.Now.Local().Format("15:04"), strings.Join(status.Problems, "; "))}}
+		return []Fired{{Row: "observation-failed", Subject: from + "; the observation failed: " + strings.Join(status.Problems, "; "), Act: "the observation at " + status.Raw.Now.Local().Format("15:04") + " failed"}}
 	}
 	if shadow == nil {
 		return []Fired{{Row: "drift", Subject: "no state record yet"}}

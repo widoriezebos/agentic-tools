@@ -67,28 +67,68 @@ func proofContention(entries []Intervention, subject string) (held, released Int
 	return
 }
 
+// ContentionHold is the lane's open proof hold: the held commit, the held
+// line's text, when it started and its deadline.
+type ContentionHold struct {
+	Subject, Outcome string
+	Since, Until     time.Time
+}
+
+// currentHold says whether the lane holds its proof start now. A release line,
+// the 30-minute deadline, or a quiet host ends the hold; an unreadable host
+// holds, and an unreadable hold time holds with its error. The host is read only for an open hold
+// inside its deadline.
+func currentHold(entries []Intervention, now time.Time, hostWork func() (int, int, error)) (ContentionHold, bool, error) {
+	held, released := proofContention(entries, "")
+	if held.At == "" || released.At != "" {
+		return ContentionHold{}, false, nil
+	}
+	hold := ContentionHold{Subject: held.Subject, Outcome: held.Outcome}
+	at, err := time.Parse(time.RFC3339Nano, held.At)
+	if err != nil {
+		return hold, true, err
+	}
+	hold.Since, hold.Until = at, at.Add(30*time.Minute)
+	if !now.Before(hold.Until) {
+		return ContentionHold{}, false, nil
+	}
+	if hostWork != nil {
+		if builds, checks, err := hostWork(); err == nil && builds == 0 && checks == 0 {
+			return ContentionHold{}, false, nil
+		}
+	}
+	return hold, true, nil
+}
+
+// CurrentHold reads the lane's current proof hold from its log, its clock and
+// its observation of host work.
+func CurrentHold(install string, seams ProveSeams) (ContentionHold, bool, error) {
+	entries, err := readLines[Intervention](interventionsPath(install))
+	if err != nil {
+		return ContentionHold{}, false, err
+	}
+	return currentHold(entries, seams.now(), seams.HostWork)
+}
+
 func holdBesideBuildsLocked(install, commit string, seams ProveSeams) error {
 	if seams.HostWork == nil {
 		return nil
 	}
 	builds, checks, readErr := seams.HostWork()
-	if readErr == nil && builds == 0 && checks == 0 {
+	quiet := readErr == nil && builds == 0 && checks == 0
+	entries, err := readLines[Intervention](interventionsPath(install))
+	if err != nil && quiet {
 		return nil
 	}
-	entries, err := readLines[Intervention](interventionsPath(install))
 	if err != nil {
 		return err
-	}
-	held, released := proofContention(entries, commit)
-	if released.At != "" {
-		return nil
 	}
 	now := seams.now()
 	work := fmt.Sprintf("%d builds and %d unit checks run", builds, checks)
 	if readErr != nil {
 		work = "the launch store cannot be read: " + readErr.Error()
 	}
-	record := func(outcome string) error {
+	record := func(subject, outcome string) error {
 		load := "unmeasured"
 		reader := seams.Load
 		if reader == nil {
@@ -97,10 +137,20 @@ func holdBesideBuildsLocked(install, commit string, seams ProveSeams) error {
 		if sample := reader(now); sample.Available {
 			load = fmt.Sprintf("%g", sample.Load1m)
 		}
-		return appendLine(interventionsPath(install), Intervention{At: now.UTC().Format(time.RFC3339Nano), Row: "proof-beside-builds", Subject: commit, Outcome: outcome + work + "; load " + load}, seams)
+		return appendLine(interventionsPath(install), Intervention{At: now.UTC().Format(time.RFC3339Nano), Row: "proof-beside-builds", Subject: subject, Outcome: outcome + work + "; load " + load}, seams)
+	}
+	if quiet {
+		if open, held, _ := currentHold(entries, now, nil); held {
+			return record(open.Subject, "released: cause ended; ")
+		}
+		return nil
+	}
+	held, released := proofContention(entries, commit)
+	if released.At != "" {
+		return nil
 	}
 	if held.At == "" {
-		if err := record("held: "); err != nil {
+		if err := record(commit, "held: "); err != nil {
 			return err
 		}
 		held.At = now.UTC().Format(time.RFC3339Nano)
@@ -111,32 +161,21 @@ func holdBesideBuildsLocked(install, commit string, seams ProveSeams) error {
 	}
 	until := at.Add(30 * time.Minute)
 	if !now.Before(until) {
-		return record("released after the 30-minute hold; ")
+		return record(commit, "released after the 30-minute hold; ")
 	}
 	return &Refusal{Code: "LANE_PROOF_CONTENTION", Reason: "the lane holds its own proof start while " + work + ", until " + until.Local().Format("15:04 MST") + " at the latest", Next: proofCommand(seams.Gate, seams.Trunk)}
 }
 
-// ProofHoldUntil returns the deadline of the latest unreleased proof hold.
-func ProofHoldUntil(install string) (time.Time, bool, error) {
-	entries, err := readLines[Intervention](interventionsPath(install))
-	if err != nil {
-		return time.Time{}, false, err
-	}
-	held, released := proofContention(entries, "")
-	if held.At == "" || released.At != "" {
-		return time.Time{}, false, nil
-	}
-	at, err := time.Parse(time.RFC3339Nano, held.At)
-	return at.Add(30 * time.Minute), err == nil, err
-}
-
-// KeeperContentionHold keeps the agent out of a proof hold until its deadline.
+// KeeperContentionHold keeps the agent out while the lane holds its proof start.
 func KeeperContentionHold(install string, seams ProveSeams) (string, error) {
-	until, held, err := ProofHoldUntil(install)
-	if held && seams.now().Before(until) {
-		return landingstate.Phrase("the-lane-s-proof-start-is-held-beside") + until.Local().Format("15:04 MST"), err
+	hold, held, err := CurrentHold(install, seams)
+	if err != nil {
+		return "", err
 	}
-	return "", err
+	if held {
+		return landingstate.Phrase("the-lane-s-proof-start-is-held-beside") + hold.Until.Local().Format("15:04 MST"), nil
+	}
+	return "", nil
 }
 
 func proofCommand(gate, trunk bool) string {

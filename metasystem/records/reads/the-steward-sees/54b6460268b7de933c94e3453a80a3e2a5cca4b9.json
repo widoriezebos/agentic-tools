@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-steward-sees",
+  "unit": "U0",
+  "subject": {
+    "commit": "54b6460268b7de933c94e3453a80a3e2a5cca4b9",
+    "parent": "15399bac575e47b888ea944bb23c7f7aebb11540",
+    "tree": "4ef7e190f8f3f5b000ff3c2cf1714a09daeb3f4d",
+    "patchDigest": "39861aa91d965cb311fee5431e5d4c2cc9190baf825b502ba8497d2fc8b1005f",
+    "unitDigest": "1d085103b93499d51d01bd0d9ad218cb4904bbb01583a9a167ba11db368944e7"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-220634ace39fe1d60cf1986f",
+    "round": 1,
+    "closureSha256": "752aa38cd1513bc4a3135332894a290508b933435cbf25749d4ca29b286333cf"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "4ef7e190f8f3f5b000ff3c2cf1714a09daeb3f4d",
+    "runId": "goal-read-gate-20261030t115649z-eb2894c82441c7ff"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_contention_test.go",
+      "readerWord": "reviewed by critic root code-critic-220634ace39fe1d60cf1986f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/steward_rows_test.go",
+      "readerWord": "reviewed by critic root code-critic-220634ace39fe1d60cf1986f"
+    }
+  ],
+  "sha256": "859a99814b01ca8221754ab632b45384bb703fff5ea7e75aa2d4c7f0bd645ee6"
+}

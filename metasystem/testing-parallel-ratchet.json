@@ -48,6 +48,7 @@
     "github.com/widoriezebos/agentic-tools/metasystem/internal/jsonedit": 5,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/landing": 85,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch": 1,
+    "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batchowner": 1,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/launch": 72,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/lease": 78,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/lock": 21,

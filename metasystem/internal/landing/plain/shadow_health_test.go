@@ -89,9 +89,9 @@ func TestLandingHealthShadowDrift(t *testing.T) {
 			case "members":
 				want = []string{"batch.members", "{A a}", "{B b}"}
 			case "failed observation":
-				want = []string{"shadow from " + bedNow.Local().Format("15:04"), "observation at " + s.now().Local().Format("15:04") + " failed:", "queue"}
+				want = []string{"shadow from " + bedNow.Local().Format("15:04"), "the observation failed:", "queue"}
 			case "failed without shadow":
-				want = []string{"no state record yet", "observation at " + s.now().Local().Format("15:04") + " failed:", "queue"}
+				want = []string{"no state record yet", "the observation failed:", "queue"}
 			}
 			data, err := json.Marshal(status.Health)
 			if err != nil {
@@ -103,6 +103,10 @@ func TestLandingHealthShadowDrift(t *testing.T) {
 						t.Fatalf("missing %q: %s", part, text)
 					}
 				}
+			}
+			// The failed observation's time is its detail, never its subject.
+			if at := "the observation at " + s.now().Local().Format("15:04") + " failed"; strings.HasPrefix(scenario, "failed") && (drift[0].Act != at || strings.Contains(drift[0].Subject, "observation at") || !strings.Contains(string(data), at)) {
+				t.Fatalf("the failed observation's row: %+v, want its time %q in the detail only", drift[0], at)
 			}
 		})
 	}

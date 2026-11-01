@@ -28,6 +28,15 @@ func DesignCritiqueChains(repoRoot, goalID, designPath string) []DesignCritiqueC
 	return designCritiqueChains(state, repoRoot, goalID, designPath)
 }
 
+// DesignCritiqueReader reads the job records once and answers each design's
+// chains from that one read, with the first record that could not be read.
+func DesignCritiqueReader(repoRoot string) (func(goalID, designPath string) []DesignCritiqueChain, error) {
+	state, err := readCritiqueStateAt(filepath.Join(repoRoot, "artifacts", "agents"))
+	return func(goalID, designPath string) []DesignCritiqueChain {
+		return designCritiqueChains(state, repoRoot, goalID, designPath)
+	}, err
+}
+
 // ReadDesignCritiqueChains returns the readable chains and reports the first job
 // record that could not be read or parsed, naming the file so a gate can distinguish
 // absent critique evidence from a broken check.

@@ -1,0 +1,88 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-steward-sees",
+  "unit": "U1a2c",
+  "subject": {
+    "commit": "639644a4d3c596d27e4ea81761990e37c3b09f30",
+    "parent": "24581b17a4b55dd078df65fbc00f41dfe4412b1c",
+    "tree": "b70319c5c18e3515301377959240285ac04b6377",
+    "patchDigest": "9370925764ce0b4b3591074aa6c3577e708033c2bd1e3333f60dd48233ff41c7",
+    "unitDigest": "c1d08011aeba9b247491514534ec745fcbc66ea845473c33c7187b38f495853c"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-9779c750a5b6c9b5e5fec98a",
+    "round": 1,
+    "closureSha256": "7c44ee5796da12609237e2c273ac38b1f054aaf0fac8812d376bdf5c554cd11c"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "b70319c5c18e3515301377959240285ac04b6377",
+    "runId": "goal-read-gate-20261031t043719z-f484aab0aefc2819"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "52da720756e8bb1d902f7a91b5051c633a5b12a1",
+      "digest": "47197a1ee413141a38a62d1dff252042313917a0f9a60ea7973bde35d6a1da03"
+    },
+    {
+      "kind": "read",
+      "commit": "9db3b559e40365b528a358520b7dcea7a0cc6ad2",
+      "digest": "f775f71ff026e4ae2a780fd9b00951e59b8dc5d9de436e99134daa3f21d9303d"
+    },
+    {
+      "kind": "read",
+      "commit": "28761eda757ed939d36000a39a625cf91c5a156f",
+      "digest": "80f71c7da87c6ad03f85787c5f2d2708d31ece4d88d011e297dc7584f166aea2"
+    },
+    {
+      "kind": "read",
+      "commit": "cdee01cbdb9e4511477413654191a0cdf2ac82aa",
+      "digest": "2899b06a1f1e174e7fc9e3b523440b1fb5f87c32ccbd6a7733da538da526b271"
+    },
+    {
+      "kind": "read",
+      "commit": "8bf0fa2efeaac26e50cab28a3e59c6c474eaee84",
+      "digest": "6dfcd628899923a7d19a9a87134fceb290d63a3bb0a00d39fd736f52c87f36af"
+    },
+    {
+      "kind": "read",
+      "commit": "99ee7804f02fd5168e98d1c12aa1a44cd3e297be",
+      "digest": "4160e5303a537223bf554f9e02b481692818c500c9f14ce379dbc73696a4e9ac"
+    },
+    {
+      "kind": "read",
+      "commit": "24581b17a4b55dd078df65fbc00f41dfe4412b1c",
+      "digest": "efb1aff2265cfaa194509c34b84f93eb8ca55cbb5d50135e046c0eaa3a86371c"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/audit_modes_test.go",
+      "readerWord": "reviewed by critic root code-critic-9779c750a5b6c9b5e5fec98a"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/audit_output_layout_g1a_test.go",
+      "readerWord": "reviewed by critic root code-critic-9779c750a5b6c9b5e5fec98a"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_coverage_test.go",
+      "readerWord": "reviewed by critic root code-critic-9779c750a5b6c9b5e5fec98a"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_run_test.go",
+      "readerWord": "reviewed by critic root code-critic-9779c750a5b6c9b5e5fec98a"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/help-system.txt",
+      "readerWord": "reviewed by critic root code-critic-9779c750a5b6c9b5e5fec98a"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_compose_test.go",
+      "readerWord": "reviewed by critic root code-critic-9779c750a5b6c9b5e5fec98a"
+    }
+  ],
+  "sha256": "0aaa4a2bde43fe278071556357a29ce4932d05b30161e7808add56eef8e19968"
+}

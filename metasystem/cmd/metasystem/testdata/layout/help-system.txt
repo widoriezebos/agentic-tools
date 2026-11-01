@@ -1,8 +1,9 @@
-metasystem system · MetaSystem for this checkout: set up, start, stop, restart, status, check,
-  enroll, adopt, completion
+metasystem system · MetaSystem for this checkout: set up, start, stop, restart, status, situation,
+  check, enroll, adopt, completion
 
 Read
   status       whether MetaSystem runs for this checkout, and its watchdog's view
+  situation    one page with everything this seat should know, and the first thing to do
   check        diagnose problems with this checkout, changing nothing
 
 Decide

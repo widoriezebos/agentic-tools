@@ -115,7 +115,7 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 	if err != nil {
 		return run, err
 	}
-	until, contentionHeld, holdErr := ProofHoldUntil(record.Install)
+	hold, contentionHeld, holdErr := CurrentHold(record.Install, seams)
 	if holdErr != nil {
 		return run, holdErr
 	}
@@ -132,8 +132,8 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		if row.Row == "suspected-contention" && status.TrunkProof != nil && status.TrunkProof.Commit == main {
 			reason = "bounded: current main already proved"
 		}
-		if contentionHeld && now.Before(until) && (row.Row == "stale-question" || row.Row == "unproven-incidents" || row.Row == "suspected-contention") {
-			reason = landingstate.Phrase("bounded-the-proof-start-is-held-beside-builds") + until.Local().Format("15:04 MST")
+		if contentionHeld && (row.Row == "stale-question" || row.Row == "unproven-incidents" || row.Row == "suspected-contention") {
+			reason = landingstate.Phrase("bounded-the-proof-start-is-held-beside-builds") + hold.Until.Local().Format("15:04 MST")
 		}
 		var attempts []Intervention
 		var defect *Intervention

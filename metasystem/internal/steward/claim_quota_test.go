@@ -493,7 +493,7 @@ func TestTheHelmSeesTheClaimQuotaRowAndAsksOnce(t *testing.T) {
 	}
 	// otherRoles is the record without the roles the helm observes, and
 	// without their counters.
-	helmRoles := []HealthRole{RoleClaimQuota, "steward-duty:disk-sweep", "steward-duty:tick-timing", "steward-duty:question-replies"}
+	helmRoles := []HealthRole{RoleClaimQuota, "steward-duty:disk-sweep", "steward-duty:tick-timing", "steward-duty:question-replies", "steward-duty:situation"}
 	otherRoles := func(record healthRecord) ([]RoleVerdict, HealthObservationState) {
 		var roles []RoleVerdict
 		for _, role := range record.Verdict.Roles {
@@ -706,7 +706,7 @@ func TestTheHelmWithNoLaneReaderObservesNoClaimQuota(t *testing.T) {
 	for _, role := range record.Verdict.Roles {
 		roles = append(roles, role.Role)
 	}
-	want := []HealthRole{RoleClaimQuota, "steward-duty:disk-sweep", "steward-duty:tick-timing", "steward-duty:question-replies"}
+	want := []HealthRole{RoleClaimQuota, "steward-duty:disk-sweep", "steward-duty:tick-timing", "steward-duty:question-replies", "steward-duty:situation"}
 	if !reflect.DeepEqual(roles, want) || record.Verdict.Observation != seeded.Observation+1 {
 		t.Fatalf("the helm observed %v at observation %d, want %v at %d", roles, record.Verdict.Observation, want, seeded.Observation+1)
 	}

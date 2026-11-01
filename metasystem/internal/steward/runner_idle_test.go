@@ -158,7 +158,7 @@ func TestRunnerSleepsOnlyTheRemainder(t *testing.T) {
 				t.Fatalf("ticks=%d slept=%s elapsed=%s; want 1, %s, %s", ticks, slept, now.Sub(start), wantSleep, wantElapsed)
 			}
 			log, err := os.ReadFile(runnerLogPath(loop.root))
-			want := fmt.Sprintf("tick 1: health 100.000ms census 200.000ms other %.3fms, slept %.3f s\n", float64(wantElapsed-wantSleep-300*time.Millisecond)/float64(time.Millisecond), wantSleep.Seconds())
+			want := fmt.Sprintf("tick 1: health 100.000ms census 200.000ms other %.3fms situation 0.000ms, slept %.3f s\n", float64(wantElapsed-wantSleep-300*time.Millisecond)/float64(time.Millisecond), wantSleep.Seconds())
 			if err != nil || string(log) != want {
 				t.Fatalf("timing log=%q err=%v; want %q", log, err, want)
 			}

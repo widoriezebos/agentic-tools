@@ -42,6 +42,7 @@ var auditModes = map[string]auditMode{
 	"cmd/metasystem/intent_process.go#runIntentSystemStop":    {layout: auditEnforce},
 	"cmd/metasystem/intent_process.go#runIntentSystemRestart": {layout: auditEnforce},
 	"cmd/metasystem/intent_process.go#runIntentSystemStatus":  {layout: auditEnforce},
+	"cmd/metasystem/intent_situation.go":                      {group: "G1a", layout: auditEnforce},
 	"cmd/metasystem/intent_process.go#runIntentWorkStatus":    {layout: auditEnforce},
 	"cmd/metasystem/intent_process.go#runIntentQuestionList":  {layout: auditEnforce},
 	// machine start, converted at integration (round 2).
