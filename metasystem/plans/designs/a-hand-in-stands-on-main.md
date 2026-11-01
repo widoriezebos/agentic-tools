@@ -4,7 +4,7 @@
 - Id: 01M6AXEFKYM6M2CE1MVFYGWQMN
 - Status: accepted
 - Goals: a-hand-in-stands-on-main
-- Critique: design review round 1 (Astra, design-critic-a2839c682869b4ba3dc55866): 3 material accepted, 1 non-material accepted; folded in revision 2
+- Critique: closed at round 1 (Astra, design-critic-a2839c682869b4ba3dc55866; every finding decided, the chain closed 2026-11-01): 3 material accepted, 1 non-material accepted; folded in revision 2
 
 Draft revision 2, written 2026-11-01 around 11:40 CET by the engine's design author (Claude Opus 5.5) from the steward's revision request of 2026-11-01 after design review round 1 ("Revision request: a-hand-in-stands-on-main, revision 2 after design review round 1", a1, written in Wido's name; the steward's dispositions are in `agentic-tools-evidence/lane-test-20261009/designs/a-hand-in-design-r1-dispositions.md`, outside the repository). Revision 2 folds the four accepted findings. Fold 1 puts the move read into D3, D2, D5, section 1.2, T1, the unit table and Moved effects. Fold 2 makes the move's reach a package-level closure, in D3 and T1. Fold 3 adds section 8, Moved effects. Fold 4 puts the round's read into D4, U3 and T3. Q1 is answered (section 4), and D4, section 1.2, U3 and T3 follow the answer. Three changes go beyond the folds. Every backticked path is now a full repository path. The angle-bracket placeholders are gone. D9 names a-red-is-classified-once's accepted design. Code was read again at main `9e26670fca`, and origin/main `9f36e302ed` changes nothing under `metasystem/internal/` or `metasystem/cmd/` since then. `metasystem design review --check-only`, run from `metasystem/` on this draft, ends with the line "moved-effects: inventory=present rows=12 problems=0".
 
