@@ -65,6 +65,8 @@ func (r *strictAbsentRepository) requireAccepted(t *testing.T) {
 func legacyVerdictStore(t *testing.T, expectProbe bool) *Store {
 	t.Helper()
 	store := testStore(t)
+	store.ResolveIdleSeat = func() (Actor, int64, error) { return Actor{Machine: "mac-a", Lineage: "coordinator"}, 1, nil }
+	store.UncollectedRuns = func([]string) ([]UncollectedRun, error) { return nil, nil }
 	repository := &strictAbsentRepository{t: t}
 	store.projectionDeps.source = &projectionSource{
 		endpoint: Endpoint{Root: store.Root, Repository: repository},

@@ -164,6 +164,7 @@ func readSeatRecords(repoRoot string) ([]SeatRecord, error) {
 func defaultSeatDependencies(launcher SeatLauncher) seatDependencies {
 	return seatDependencies{
 		Launcher: launcher,
+		Home:     HomeStateRoot,
 		Project: func(root string, now time.Time) (goal.Projection, error) {
 			stateRoot, err := goal.ResolveStateRoot(root)
 			if err != nil {
@@ -531,8 +532,22 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 		return SeatRecord{}, errors.New("no seat launcher is wired to this steward")
 	}
 	root := canonicalPath(repoRoot)
+	dependencies := seatDependenciesForConfig(cfg)
+	openWork := defaultTickContinuationDependencies(cfg).openWork
+	if cfg.GoalProjection != nil {
+		openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
+	}
+	openWork.Seat = &dependencies
+	dependencies.Recheck = func(records []SeatRecord) (Decision, *SeatSelection, error) {
+		return seatRecheck(root, cfg, census, openWork, records)
+	}
+	return startSeatWithDependencies(root, selection, dependencies)
+}
+
+func seatDependenciesForConfig(cfg TickConfig) seatDependencies {
 	dependencies := defaultSeatDependencies(cfg.Seat)
 	dependencies.Now, dependencies.ProviderHome = cfg.now, cfg.ProviderHome
+	dependencies.WorkStateRoot, dependencies.Prober = cfg.WorkStateRoot, cfg.Prober
 	if cfg.GoalProjection != nil {
 		dependencies.Project = cfg.GoalProjection
 	}
@@ -544,15 +559,7 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 			return SituationPage(root, func(t time.Time) Situation { return cfg.Situation(root, t) }, now, SituationFresh)
 		}
 	}
-	openWork := defaultTickContinuationDependencies(cfg).openWork
-	if cfg.GoalProjection != nil {
-		openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
-	}
-	openWork.Seat = &dependencies
-	dependencies.Recheck = func(records []SeatRecord) (Decision, *SeatSelection, error) {
-		return seatRecheck(root, cfg, census, openWork, records)
-	}
-	return startSeatWithDependencies(root, selection, dependencies)
+	return dependencies
 }
 
 func seatPerson(root string, p humanauthority.Proof) bool {
@@ -565,6 +572,7 @@ func ReviveSeat(root string, cfg TickConfig, census WorkerCensus, after string, 
 	}
 	d := defaultSeatDependencies(cfg.Seat)
 	d.Now, d.ProviderHome, d.Person, d.After, d.RegistryPath, d.Census, d.WorkStateRoot = cfg.now, cfg.ProviderHome, person, after, registryPath, census, cfg.WorkStateRoot
+	d.Prober = cfg.Prober
 	return startSeatWithDependencies(root, SeatSelection{}, d)
 }
 
@@ -985,6 +993,9 @@ type seatDependencies struct {
 	Person                             humanauthority.Proof
 	After, WorkStateRoot, RegistryPath string
 	Census                             WorkerCensus
+	Prober                             identity.Prober
+	// Home resolves the host's stores when WorkStateRoot is empty; nil reads none.
+	Home func() (string, error)
 
 	ProviderHome string
 	Launcher     SeatLauncher
@@ -1190,6 +1201,32 @@ func seatFacts(root string, selection SeatSelection, machine string, tips map[st
 		}
 	}
 	facts.WriteString("Units:\n" + seatList(unitLines, 20, 3000, status))
+	var collect []string
+	storeRoot := d.WorkStateRoot
+	if storeRoot == "" && d.Home != nil {
+		storeRoot, err = d.Home()
+		if err != nil {
+			unavailable("Collect first", status)
+			storeRoot = ""
+		}
+	}
+	if storeRoot != "" {
+		for _, unit := range units {
+			run, err := (&launch.UnitRunner{Root: filepath.Join(storeRoot, "unit")}).Status(unit.Run)
+			if err != nil {
+				continue
+			}
+			step, record, orphan := orphanStep(launch.Store{Root: filepath.Join(storeRoot, "launch")}, run, func(ref identity.Ref) identity.Liveness {
+				return identity.AliveRef((TickConfig{Prober: d.Prober}).withDefaults().Prober, ref)
+			})
+			if orphan {
+				collect = append(collect, fmt.Sprintf("metasystem work wait run:%s --timeout 30m — its %s launch ended at %s; nobody collected it", run.ID, step.Name, seatTime(record.FinishedAt).Local().Format("15:04")))
+			}
+		}
+	}
+	if len(collect) > 0 {
+		facts.WriteString("Collect first:\n" + strings.Join(collect, "\n") + "\n")
+	}
 	jobs, readErr := d.Jobs(root)
 	if readErr != nil {
 		unavailable("Dispatch refusals", status)

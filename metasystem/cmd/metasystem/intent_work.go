@@ -317,6 +317,7 @@ func intentWorkCommands() []intentCommand {
 			},
 			flags: []intentFlag{
 				{name: "work", value: "NAME", usage: "the goal's named work to wait for"},
+				{name: "answer", value: "QUESTION", usage: "collect the round chosen by the person's channel answer"},
 				{name: "timeout", value: "DURATION", usage: "how long this invocation waits (for example 20s or 10m)"},
 				{name: "for", aliases: []string{"event"}, value: "EVENT", usage: "landing or human-act: wait for that goal event instead of work"},
 				{name: "since", aliases: []string{"after"}, value: "TIP", usage: "with --for: the goal-ledger revision to wait after (default: the current one)"},
@@ -498,7 +499,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		return time.Duration(minutes) * time.Minute, nil
 	}
 	runner.Manager = &manager
-	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise") && (inv.answerAdmitted() || inv.checkDirectPersonProof("work "+inv.command.action, false) == nil) {
+	if inv.command.object == "work" && (inv.command.action == "build" || inv.command.action == "revise" || inv.command.action == "wait") && (inv.answerAdmitted() || inv.checkDirectPersonProof("work "+inv.command.action, false) == nil) {
 		runner.Actor = "person"
 	}
 	runner.AdmitDetached = func(plan launch.UnitPlan) bool {
@@ -1951,6 +1952,15 @@ func runIntentWorkWait(inv *intentInvocation) int {
 	case refRead:
 		return runIntentReviewRef(inv, "wait", ref.id)
 	case refRun:
+		if inv.input.has("answer") {
+			record, err := inv.unitRunner().Status(ref.id)
+			if err != nil {
+				return inv.render(intentResult{Outcome: intentRefused, code: 1, Summary: "the unit run could not be read; nothing was collected", Details: []string{err.Error()}, next: inv.publicArgv("work", "status", ref.qualified()), nextReason: "read the run before collecting it"})
+			}
+			if _, _, problem := inv.actingAs("work wait", record.Goal, actorHuman); problem != nil {
+				return inv.render(*problem)
+			}
+		}
 		timeout, problem := inv.waitTimeout()
 		if problem != nil {
 			return inv.render(*problem)

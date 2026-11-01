@@ -648,6 +648,8 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 const degradedNoticeTicks = 2
 
 func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCensus, prev Evidence, marks Marks, dependencies openWorkDependencies) (TickResult, error) {
+	orphans := map[UncollectedRun]string{}
+	dependencies.Orphan = func(run UncollectedRun, person string) { orphans[run] = person }
 	var work goal.ClaimableBudgetedWork
 	var workErr error
 	readWork, read := dependencies.ReadClaimableBudgetedWork, false
@@ -725,8 +727,14 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 		}
 	}
 	_, questionErr := dependencies.ReadClaimableBudgetedWork(repoRoot, cfg.now())
+	if questionErr == nil && cfg.WorkStateRoot == "" {
+		seatBusyOrphanReader("", cfg.busyTick(), cfg.withDefaults().Prober, dependencies.Orphan)(repoRoot, work, cfg.now())
+	}
 	if questionErr == nil {
 		questionErr = askPersonWaits(repoRoot, cmp.Or(dependencies.Machine, "this machine"), d, ev, work, cfg.now())
+	}
+	if questionErr == nil {
+		questionErr = askUncollectedRounds(repoRoot, cmp.Or(dependencies.Machine, "this machine"), cfg, work, selection, orphans)
 	}
 	if questionErr != nil {
 		_ = QueueNotification(repoRoot, PendingNotification{Nonce: "person-question", Message: "steward: a person's question could not be asked: " + questionErr.Error()})
@@ -970,7 +978,7 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	cfg = cfg.withDefaults()
 	dependencies.Now = cfg.now
 	if cfg.WorkStateRoot != "" {
-		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot, cfg.busyTick(), cfg.withDefaults().Prober)
+		dependencies.Busy = seatBusyOrphanReader(cfg.WorkStateRoot, cfg.busyTick(), cfg.withDefaults().Prober, dependencies.Orphan)
 	}
 	work, workReason, shared, err := readOpenWorkShared(repoRoot, dependencies)
 	if err != nil {

@@ -557,7 +557,28 @@ func (s *Store) TurnVerdict(scan ScanResult, sessionId, watchdogDigest, mainId s
 		session := state.touch(sessionId, s.nowISO())
 
 		brainLines := append(s.brainSummary(scan, brainState), designCritiqueLines(scan.Jobs)...)
-		runLines := s.decideRuns(&verdict, scan, session, mainId, watches)
+		var uncollected []UncollectedRun
+		if workRead && workErr == nil {
+			var readErr error
+			if s.ResolveIdleSeat == nil || s.UncollectedRuns == nil {
+				readErr = fmt.Errorf("the seat identity or uncollected round reader is unavailable")
+			} else if actor, _, err := s.ResolveIdleSeat(); err != nil || actor.Machine == "" || actor.Lineage == "" {
+				readErr = fmt.Errorf("the seat identity could not be resolved: %v", err)
+			} else {
+				var held []string
+				for _, id := range work.Claimed {
+					if file, ok := work.OwnedClaim(id); ok && file.Claimed != nil && file.Claimed.Machine == actor.Machine && file.Claimed.Lineage == actor.Lineage {
+						held = append(held, id)
+					}
+				}
+				uncollected, readErr = s.UncollectedRuns(held)
+			}
+			if readErr != nil {
+				uncollected = nil
+				verdict.Diagnostics = append(verdict.Diagnostics, "uncollected rounds: "+readErr.Error())
+			}
+		}
+		runLines := s.decideRuns(&verdict, scan, session, mainId, watches, uncollected)
 		s.decide(&verdict, scan, session, &work, brainSeat, waits, asked)
 		if len(waitDropReasons) > 0 && strings.HasPrefix(waitDropReasons[0], "registered waits not credited at work-unreadable:") {
 			verdict.Diagnostics = append(waitDropReasons, verdict.Diagnostics...)
@@ -1585,7 +1606,9 @@ func (s *Store) escalateIdleBacklog(verdict *Verdict, session *sessionState, ses
 // run warnings always surface, and unwatched work blocks once — BEFORE
 // Busy can suppress anything (a watched active run is Busy; an unwatched
 // one blocks despite being busy, which is the point).
-func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionState, mainId string, watches authenticatedWatches) runDisplayLines {
+type UncollectedRun struct{ Goal, Run, LaunchID, Step, EndedAt string }
+
+func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionState, mainId string, watches authenticatedWatches, uncollected []UncollectedRun) runDisplayLines {
 	var warnings runDisplayLines
 	warn := func(class runWarningClass, id, format string, args ...any) {
 		line := fmt.Sprintf(format, args...)
@@ -1636,6 +1659,9 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 			unwatchedIds = append(unwatchedIds, runFact.Id)
 		}
 	}
+	for _, run := range uncollected {
+		unwatchedTags = append(unwatchedTags, "unit:"+run.Run+"@"+run.LaunchID)
+	}
 	if len(unwatchedTags) > 0 {
 		sort.Strings(unwatchedTags)
 		digest := sha256Hex([]byte(strings.Join(unwatchedTags, "\n")))
@@ -1644,10 +1670,17 @@ func (s *Store) decideRuns(verdict *Verdict, scan ScanResult, session *sessionSt
 			verdict.ShouldBlock = true
 			source := "unwatched-work"
 			verdict.BlockSource = &source
-			warnings.actionable = append(warnings.actionable, fmt.Sprintf(
-				"work you launched is unwatched: %s; arm the printed watch command or conclude the runs",
-				strings.Join(unwatchedIds, ", ")))
-			warnings.lines = append(warnings.lines, warnings.actionable[len(warnings.actionable)-1])
+			if len(unwatchedIds) > 0 {
+				warnings.actionable = append(warnings.actionable, fmt.Sprintf(
+					"work you launched is unwatched: %s; arm the printed watch command or conclude the runs",
+					strings.Join(unwatchedIds, ", ")))
+				warnings.lines = append(warnings.lines, warnings.actionable[len(warnings.actionable)-1])
+			}
+			for _, run := range uncollected {
+				line := "a round you hold finished and is not collected: metasystem work wait run:" + run.Run + " --timeout 30m"
+				warnings.actionable = append(warnings.actionable, line)
+				warnings.lines = append(warnings.lines, line)
+			}
 		}
 	}
 	return warnings
