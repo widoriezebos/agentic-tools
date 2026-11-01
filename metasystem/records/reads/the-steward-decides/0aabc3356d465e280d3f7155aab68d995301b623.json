@@ -1,0 +1,123 @@
+{
+  "canonicalRead": {
+    "id": "20261101t162617-992564fc7d-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-steward-decides",
+      "reviewedProjectTree": "df63c92c0cfcb836c2147529a3923713759b373e1689b6a6a13570d9e1ec76bc",
+      "diffDigest": "df63c92c0cfcb836c2147529a3923713759b373e1689b6a6a13570d9e1ec76bc"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261101t162617-992564fc7d-r1-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "U2b1b's production is about 157 lines (intent_decision.go 140 non-blank, intent_delivery.go +4, intent_table.go +13) against an estimate of 100. Checklist 11 says that past 125, the one --json rule and the context rules (B3, B5) go into their own commit.",
+        "evidence": "git diff --numstat; grep -cv blank cmd/metasystem/intent_decision.go = 140; brief checklist 11 and its Size table (U2b1b 100)",
+        "where": "metasystem/cmd/metasystem/intent_decision.go",
+        "change": "The steward decides the commit shape when it commits. The code needs no change: it stays under the 250-line stop line and the 680-line total.",
+        "relation": "new; rule: the brief's size rule (checklist 11): past 125 production lines U2b1b names B3 and B5 as its split seam"
+      },
+      {
+        "id": "20261101t162617-992564fc7d-r1-s3:2",
+        "class": "false-premise",
+        "severity": "low",
+        "material": false,
+        "claim": "For the refused child (goal pin NOSUCH m1e), the brief expects effect.targets, but the test asserts effect.owner. The test matches what the code really does: ownerResult keeps data.owner on a refusal whenever the owner returned a publication record, and B6 records owner whenever data.owner is an object.",
+        "evidence": "cmd/metasystem/intent.go:1260-1262 (refusal keeps data.owner when report.result != nil); intent_decision_test.go line 208 of the new test (bytes.Contains(log()[4].Effect, \"owner\":)); brief Tests bullet 'A child that refuses ... effect.targets'",
+        "where": "metasystem/cmd/metasystem/intent_decision_test.go",
+        "change": "None in the code. The empty-targets fallback is still proven by the alert ack case.",
+        "relation": "new"
+      },
+      {
+        "id": "20261101t162617-992564fc7d-r1-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "A child's parse error is refused with the child parser's summary plus '; nothing was done'. Several of those summaries already end in 'Nothing was done' and do not name the child's command, so the person can read 'does not take --bogus; it takes .... Nothing was done; nothing was done'. Sibling: the 'two repositories' wording is also used when the child's --repo does not resolve at all.",
+        "evidence": "intent_decision.go refuse(problem.summary); cmd/metasystem/intent.go unknownIntentFlag summaries end 'Nothing was done'; the different-values summary ends '; nothing was done'",
+        "where": "metasystem/cmd/metasystem/intent_decision.go",
+        "change": "Optional, fix forward: put the child's command name before its parse summary and leave out the suffix when it is already there; say 'cannot be resolved' when the child's --repo fails to resolve.",
+        "relation": "new; rule: every message human-readable"
+      },
+      {
+        "id": "20261101t162617-992564fc7d-r1-s3:4",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The code refuses a blank --text, --rejected or --undo (TrimSpace), but the tests cover only a missing one. A whitespace-only value is untested.",
+        "evidence": "intent_decision.go strings.TrimSpace(inv.input.text(key)) == \"\"; the test rows use withoutOption only",
+        "where": "metasystem/cmd/metasystem/intent_decision_test.go",
+        "change": "Optional: add one row with --text ' '.",
+        "relation": "new; rule: the brief's input rule B2 (given and not blank)"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261101t162617-992564fc7d-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "f97b1e261bce3381655e8cf70a05e3cbcf313cdc138e6767e301097d7fcca86b",
+  "schemaVersion": 1,
+  "goal": "the-steward-decides",
+  "unit": "U2b1b",
+  "subject": {
+    "commit": "0aabc3356d465e280d3f7155aab68d995301b623",
+    "parent": "b69c31d815b27e47f7fefddc8dab568af994b891",
+    "tree": "2143348e58a6dc0c358d716015aaeaef82ea8a38",
+    "patchDigest": "df63c92c0cfcb836c2147529a3923713759b373e1689b6a6a13570d9e1ec76bc",
+    "unitDigest": "9635933ee8ffaf809d6a4bda03544b0d8f1dbfa311f0dd8e27a7d04af06f0618"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261101t162617-992564fc7d-r1-s3",
+    "closureSha256": "e45e31d098a2efba31ec6fc4557f329fa923b555b4ef474aa64500bd77b22368"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "2143348e58a6dc0c358d716015aaeaef82ea8a38",
+    "runId": "goal-read-gate-20261101t172629z-445c8f1cb8c5f9ce"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "f39c234363e49ffaa60f38b53213ff1fc2a79538",
+      "digest": "f5c4f123d2197eb31cf7c12bd5d492e858a2e70be4081347fd9e05632d2398e7"
+    },
+    {
+      "kind": "read",
+      "commit": "a2f51e973522330eaeabb183b89f556c54af175a",
+      "digest": "5af43a57ce1ca13345ad585fa322c63b21a40a7e35581292246c2246801a46c9"
+    },
+    {
+      "kind": "read",
+      "commit": "b69c31d815b27e47f7fefddc8dab568af994b891",
+      "digest": "3f9e6b50bb4b8eeda76e8cf995d47a1982076f92bebe9d99620fdb77defb0f41"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/audit_modes_test.go",
+      "readerWord": "reviewed by unit read 20261101t162617-992564fc7d-r1-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_coverage_test.go",
+      "readerWord": "reviewed by unit read 20261101t162617-992564fc7d-r1-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_decision_test.go",
+      "readerWord": "reviewed by unit read 20261101t162617-992564fc7d-r1-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_goal_test.go",
+      "readerWord": "reviewed by unit read 20261101t162617-992564fc7d-r1-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/verb_ratchet_test.go",
+      "readerWord": "reviewed by unit read 20261101t162617-992564fc7d-r1-s3"
+    }
+  ],
+  "sha256": "c0460b80aa0f04d5aeaa452cfe7cd39c6d846d715d76b996265de52a8e8093d6"
+}
