@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 (one receiver per bot and the notice lock) from the accepted page plans/designs/a-tap-is-answered-at-once.md; then U2 the poller, U3 the inbox pass, U4 the owner applies at once.
 - OpenedAt: 2026-11-01T21:58:02Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=E83M4GR4XAPVNF45CXRQC83Z2F-m1e-da3eeaa2 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-01T21:58:02Z HMYMJ2KHMY39SRDJCVCCMAFQM7-m1e-da3eeaa2 open actor=human:Wido targets=a-tap-is-answered-at-once reason=TierOverride: derived=3 set=2 why=every person act through the channel is affected; tier 2 by the steward reading of severity 3 exposure 3
 - 2026-11-01T21:58:13Z E83M4GR4XAPVNF45CXRQC83Z2F-m1e-da3eeaa2 approve actor=human:Wido targets=a-tap-is-answered-at-once
-Integrity: sha256=cdebc088430c32698cfcd4122e5ebf7be318481a0314f2706e529698c0e7618c
+- 2026-11-01T21:58:40Z 4XB3THP72AJW89A3WWJ3H4RD0E-m1e-da3eeaa2 set-pin actor=human:Wido targets=a-tap-is-answered-at-once
+Integrity: sha256=f610a41456ab7aee58837ee6fd7d89e40446839e7d19934d2c4549a686d54590
