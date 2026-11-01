@@ -140,6 +140,7 @@ var auditModes = map[string]auditMode{
 	"cmd/metasystem/intent_app.go":               {group: "G5", layout: auditEnforce},
 	"cmd/metasystem/intent_adopt.go":             {group: "G5"},
 	"cmd/metasystem/intent_questions.go":         {group: "G5"},
+	"cmd/metasystem/intent_decision.go":          {group: "G5"},
 	"cmd/metasystem/intent_operations.go":        {group: "G5"},
 	"cmd/metasystem/intent_exception.go":         {group: "G5"},
 	"cmd/metasystem/intent_exception_release.go": {group: "G5"},
