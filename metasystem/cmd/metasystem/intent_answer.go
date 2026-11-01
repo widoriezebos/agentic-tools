@@ -117,6 +117,21 @@ func (inv *intentInvocation) answerProgress(result intentResult) intentResult {
 		}
 	}
 	data, _ := result.Data.(map[string]any)
+	if inv.command.name == "work wait" && choice.problem == nil && choice.person != "" {
+		progress["state"] = "refused"
+		if decision := choice.question.Decision; decision != nil && decision.Kind == "uncollected-round" {
+			record, err := inv.unitRunner().Status(strings.TrimPrefix(inv.input.args[0], "run:"))
+			if err == nil {
+				for _, round := range record.Rounds {
+					for _, step := range round.Steps {
+						if step.LaunchID == decision.State && step.State != launch.StepRunning {
+							progress["state"] = "started"
+						}
+					}
+				}
+			}
+		}
+	}
 	if data == nil {
 		data = map[string]any{}
 	}

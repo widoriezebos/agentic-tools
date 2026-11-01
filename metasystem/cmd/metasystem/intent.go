@@ -877,7 +877,7 @@ type intentResult struct {
 }
 
 func (inv *intentInvocation) render(result intentResult) int {
-	if (inv.command.name == "work revise" || inv.command.name == "work review" || inv.command.name == "goal budget" || inv.command.name == "machine revive" || inv.command.name == "goal approve") && inv.input.has("answer") {
+	if (inv.command.name == "work revise" || inv.command.name == "work review" || inv.command.name == "work wait" || inv.command.name == "goal budget" || inv.command.name == "machine revive" || inv.command.name == "goal approve") && inv.input.has("answer") {
 		result = inv.answerProgress(result)
 	}
 	if inv.replySettleErr != nil {

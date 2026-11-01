@@ -121,6 +121,8 @@ func newPendingWaitVerdictFixture(t *testing.T, kind string, readyBacklog bool) 
 	}
 	baseStore, _, endpoint := fakeServingFixture(t, "bed-m1", files)
 	store := *baseStore
+	store.ResolveIdleSeat = func() (Actor, int64, error) { return Actor{Machine: "bed-m1", Lineage: pendingWaitLineage}, 7, nil }
+	store.UncollectedRuns = func([]string) ([]UncollectedRun, error) { return nil, nil }
 	root := store.Root
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
 		t.Fatal(err)

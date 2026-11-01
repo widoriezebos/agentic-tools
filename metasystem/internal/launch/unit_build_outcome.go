@@ -43,6 +43,19 @@ func (runner *UnitRunner) freezeBuildOutcome(record *UnitRunRecord, round *UnitR
 			return false, err
 		}
 	}
+	if gap {
+		last, err := runner.Manager.Store.Read(round.Steps[builds-1].LaunchID)
+		if err != nil {
+			return false, err
+		}
+		if last.Measurement.Verdict == "DONE" {
+			diff, err := runner.worktreeDiff(plan.Worktree, plan.Base, "records", "metasystem/records")
+			if err != nil {
+				return false, err
+			}
+			gap = len(strings.TrimSpace(string(diff))) == 0
+		}
+	}
 	oversized := round.BuildLines > round.DeclaredLines && round.BuildLines-round.DeclaredLines > round.DeclaredLines
 	if !gap && (!oversized || round.SizeAcceptedBy != "") {
 		if len(record.Rounds) > 1 {
