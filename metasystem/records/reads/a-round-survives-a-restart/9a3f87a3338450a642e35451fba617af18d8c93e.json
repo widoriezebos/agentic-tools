@@ -1,0 +1,104 @@
+{
+  "canonicalRead": {
+    "id": "20261031t025009-f32daf2f1a-r4-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "a-round-survives-a-restart",
+      "reviewedProjectTree": "9aa2fe41f28e2279a4c868d78bd5532767ae5108fba45b942d1c0ec91829c657",
+      "diffDigest": "9aa2fe41f28e2279a4c868d78bd5532767ae5108fba45b942d1c0ec91829c657"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261031t025009-f32daf2f1a-r4-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "ReviveSeat is called without a Units reader, so a revived seat's brief says 'Units unavailable' and carries no 'Collect first:' line.",
+        "evidence": "cmd/metasystem/intent_machine.go:127 passes TickConfig{Now, Seat, ProviderHome} with no Units; seat_start.go:179 defaults Units to an error. The steward's own seat start (runner.go:406-411 -\u003e StartSeat -\u003e seatDependenciesForConfig) is wired by steward_seat.go:189.",
+        "where": "metasystem/cmd/metasystem/intent_machine.go",
+        "change": "Optionally wire the steward's unit-stage reader into machine revive; later list.",
+        "relation": "pre-existing reader gap on the person's revive path, outside the changed lines"
+      },
+      {
+        "id": "20261031t025009-f32daf2f1a-r4-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "TestTheTickAsksForAPersonsRoundFromTheHostStore is not parallel, because t.Setenv forbids it.",
+        "evidence": "uncollected_round_test.go: the test opens with t.Setenv(\"METASYSTEM_SUPERVISION_REGISTRY_HOME\", ...) and no t.Parallel(). The package already has non-parallel tests, and the redirect is what makes the host-store branch hermetic.",
+        "where": "metasystem/internal/steward/uncollected_round_test.go",
+        "change": "None needed.",
+        "relation": "brief checklist 1: all tests t.Parallel()"
+      },
+      {
+        "id": "20261031t025009-f32daf2f1a-r4-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "With Home defaulted to HomeStateRoot, tests that build seat readers through defaultSeatDependencies with an empty WorkStateRoot now read the real host unit store, read-only.",
+        "evidence": "seat_start.go:166 and :1175-1181. Fixture run ids miss in the host store and are skipped at :1185-1187; nothing is written.",
+        "where": "metasystem/internal/steward/seat_start.go",
+        "change": "None needed.",
+        "relation": "test hermeticity: read-only host store reads"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261031t025009-f32daf2f1a-r4-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "be94b6ad54c173108c16a7bd1cabdad5caf89b63a9e7a8b484a8e2dfaad80e47",
+  "schemaVersion": 1,
+  "goal": "a-round-survives-a-restart",
+  "unit": "U3",
+  "subject": {
+    "commit": "9a3f87a3338450a642e35451fba617af18d8c93e",
+    "parent": "44a18cd1e912a5051295505e0f36cc86a261be19",
+    "tree": "45f685989dd61842dd067ba96d4f47912319bb73",
+    "patchDigest": "9aa2fe41f28e2279a4c868d78bd5532767ae5108fba45b942d1c0ec91829c657",
+    "unitDigest": "e31e20cd976544ae4eb23698a3de723474d6047695c334515498cc7951ea4b42"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261031t025009-f32daf2f1a-r4-s3",
+    "closureSha256": "56ded5e67583fe2e2a88f9713ebbe0a780973a13e36a880a2685746e37a2322c"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "45f685989dd61842dd067ba96d4f47912319bb73",
+    "runId": "goal-read-gate-20261101t053738z-051551c8b5644356"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "38590578bf82de39eb37d5477371e0112d43e2bc",
+      "digest": "b851e74a4eb12d0a7492bf07e48aee988a3449747c03a2fb249fe2f01dbb0269"
+    },
+    {
+      "kind": "read",
+      "commit": "6e3c937657af8552950bb34ba345709d518b1263",
+      "digest": "fa36bcad3a0fa3c362671b2d8bd198b270b43ffb018d09e6453d03e1c12aa1a0"
+    },
+    {
+      "kind": "read",
+      "commit": "44a18cd1e912a5051295505e0f36cc86a261be19",
+      "digest": "cc980382d7cfff7cfd27b2bf539ac74f1f290d5065fcbb5533e484fc8b4daa6a"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_idempotency_work_test.go",
+      "readerWord": "reviewed by unit read 20261031t025009-f32daf2f1a-r4-s3"
+    },
+    {
+      "path": "metasystem/internal/goal/legacy_projection_fixture_test.go",
+      "readerWord": "reviewed by unit read 20261031t025009-f32daf2f1a-r4-s3"
+    },
+    {
+      "path": "metasystem/internal/goal/turnverdict_test.go",
+      "readerWord": "reviewed by unit read 20261031t025009-f32daf2f1a-r4-s3"
+    }
+  ],
+  "sha256": "bcc245ae9a126b7b743836c678a4a1a3710f8a26a29fdf0c5070c206b76b2778"
+}
