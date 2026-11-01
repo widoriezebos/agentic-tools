@@ -11,7 +11,7 @@
 - Next step: One unit on the m1e build lane right after the-steward-sees lands, before the-steward-decides: internal/steward/seat_idle.go:113-115 treats a StepStarting step whose launch record is absent and whose StartedAt is older than one tick like the orphan branch at :126-128 (about 15 production lines plus one test with an artificial clock and an injected store, and the mutation that marks it busy again); brief by the steward, Read each round: yes, lane landing, deploy both seats; ASKED GSMA7NZKH17GFE4Y9EWASPD8AN (other): Start this build at your enrolled terminal?; ASKED 3YVD0N7GXFAXB8XZQ7XPFRX0KB (other): Start this build at your enrolled terminal?; ANSWERED 3YVD0N7GXFAXB8XZQ7XPFRX0KB: Start
 - OpenedAt: 2026-10-31T21:23:46Z
 - FirstClaimAt: 2026-11-01T05:43:12Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -33,4 +33,5 @@ History:
 - 2026-11-01T05:58:35Z ME2H9FM2CMG0E0NRTZQX1VYEKY-m1e-cc2e8fc8 ask actor=m1e+main-1792389436-6018-51cc28 targets=a-start-that-never-launched-is-not-busy
 - 2026-11-01T06:20:36Z TADAFASMW93W9TRZX5WP5F4NG2-m1e-76faa029 answer actor=human:wido targets=a-start-that-never-launched-is-not-busy authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1355/1356 channelStep=1793514036 question=3YVD0N7GXFAXB8XZQ7XPFRX0KB reason=Start
 - 2026-11-01T08:30:44Z 5D1C9FJ7ZWGT8GHA5F8DSWCYP9-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=a-start-that-never-launched-is-not-busy
-Integrity: sha256=c1a0a4f8ca607772889db0d78f55a76d780a24440b41d3f0145bedffb2801986
+- 2026-11-01T11:15:52Z MCMVGJNDGC6ADABBY06M8893Y2-m1e-cc2e8fc8 landed actor=m1e+main-1792389436-6018-51cc28 targets=a-start-that-never-launched-is-not-busy reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 162.8 min: hand-in to merge 163.2, cheap gate not run, fix round 15.1, push unknown
+Integrity: sha256=d1fedcf827bf29dbe901780fad305ee8e1c1ffc539abf42289c8696d36187aad
