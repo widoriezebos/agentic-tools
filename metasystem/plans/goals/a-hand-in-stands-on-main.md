@@ -10,7 +10,7 @@
 - Next step: Design through the engine: metasystem design write a-hand-in-stands-on-main --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-hand-in-stands-on-main-request.md; then design review; then units
 - OpenedAt: 2026-11-01T06:39:06Z
 - FirstClaimAt: 2026-11-01T09:57:24Z
-- Revision: 7
+- Revision: 8
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -18,6 +18,7 @@
 - Approved: by=human:Wido at=2026-11-01T06:39:15Z revision=2 opid=EFEHA56G9A5YV5EQQAC3RGGDPP-m1e-b2c714f5 authority=proven digest=fae1cf8f5f7af721302738e3d948489a9a7d07d03e5526787ebddd5ed3af2e77 episode=2
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=5 at=2026-11-01T10:08:36Z
 - AcceptedRisk: finding=RULING-a-hand-in-stands-on-main chain=design-critic-a2839c682869b4ba3dc55866 by=Wido opid=SG1RSNTWFM5957TYR7ERZBT0AX-m1e-8894445d
+- AcceptedRisk: finding=IMPACT-TRANSITIVE-READERS chain=design-critic-a2839c682869b4ba3dc55866 by=Wido opid=6RGQ73BVDVPBCVQXSZJV7ZBJCN-m1e-8894445d
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-01T09:57:24Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-hand-in-stands-on-main: no accepted design declares areas\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal a-start-that-never-launched-is-not-busy\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal a-start-that-never-launched-is-not-busy\"]" revision=5 accountingRevision=5 episodeAt=2026-11-01T09:57:24Z episodeRevision=5
 - StopCapability: generation=5 revision=5 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -29,4 +30,5 @@ History:
 - 2026-11-01T09:57:24Z 7J6ZB6K86ACFEG0CBC2VA09V02-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-hand-in-stands-on-main reason=areas unknown for goal a-hand-in-stands-on-main: no accepted design declares areas; areas unknown for goal a-round-survives-a-restart; areas unknown for goal a-start-that-never-launched-is-not-busy; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal a-start-that-never-launched-is-not-busy
 - 2026-11-01T10:08:36Z KWXEEXS12PSXX8KBT4B3QYTB7G-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-hand-in-stands-on-main
 - 2026-11-01T10:24:47Z SG1RSNTWFM5957TYR7ERZBT0AX-m1e-8894445d accept-risk actor=human:Wido targets=a-hand-in-stands-on-main reason=Not a risk kept: folded in revision 2. The move is read where it reaches the unit (the unit reader runs once more on the rebased commit with main move in the reached packages; a material finding stops the carry at that unit); where the move reaches nothing of the unit no read runs, by D3 own argument. Decided in Wido name under his rule of 2026-10-24; he overrules.
-Integrity: sha256=5241bcce2010741fec70a451e46dcaeed020f777f1c43b384a42091fb286cc48
+- 2026-11-01T10:24:57Z 6RGQ73BVDVPBCVQXSZJV7ZBJCN-m1e-8894445d accept-risk actor=human:Wido targets=a-hand-in-stands-on-main reason=Not a risk kept: folded in revision 2. The move reach is the package-level reverse-dependency closure of the packages main changed, never symbol-level; the intersection is package by package and every test of a selected package runs; T1 gains the wrapper case with the mutation that narrows to symbols.
+Integrity: sha256=926dec5043258b52050ba5226f9033a01c536d15caed33e817eb1afbf471fed6
