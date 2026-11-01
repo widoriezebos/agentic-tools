@@ -1,13 +1,15 @@
 # a-lane-returns-on-its-own-proof
 
 - State: queued
+- Priority: 1
+- Sequence: 22
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="lane return admission; a wrong admission lets the lane return a goal it should not (recoverable: hand in again); every return is exposed; recurs on every own-red return"
 - Tier: 2
 - Intent: The landing agent returns a goal whose newest check demonstrates its own defect without a person: landing return --cause own from the lane install is admitted on the lane own proof (the verb documents this; today it is refused with "this terminal is not enrolled for the landing install" and asks a person, 2026-11-01 07:20, finding 464)
 - Origin: human
 - Next step: Build without a design from finding 464: the return admission for the lane actor; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:41:06Z
-- Revision: 2
+- Revision: 3
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -15,4 +17,5 @@
 History:
 - 2026-11-01T06:41:06Z 194J0STWEAZYC99B0VPCXS3555-m1e-cbd14c5a open actor=human:Wido targets=a-lane-returns-on-its-own-proof
 - 2026-11-01T06:41:46Z M055H5V59RSC3MC7J5G3RZ5XY0-m1e-cbd14c5a set-pin actor=human:Wido targets=a-lane-returns-on-its-own-proof
-Integrity: sha256=500e006b5c7e8ee9c0089d6589862c365762eac45236cac6d8dad7f5ff6499f8
+- 2026-11-01T06:41:54Z C6EVFYVGKH8T0SMMTK5Z9849WC-m1e-cbd14c5a set-priority actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-lane-act-runs-from-the-phone,a-lane-returns-on-its-own-proof,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-question-reminds-and-anyone-can-ask,a-red-main-is-known-once,a-review-keeps-every-read,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,a-spent-box-asks-before-it-blocks,a-stewards-standing-defect-reaches-an-owner,a-stop-waits-for-the-unit-boundary-2,a-unit-check-runs-the-importers-too,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2,the-lane-returns-its-own-red,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=a-lane-returns-on-its-own-proof from=unranked to=1:22 requested-sequence=22
+Integrity: sha256=3c983dd8e25b5051c529b0c657f2f5a83811a89a8bb682912273a07970393c84
