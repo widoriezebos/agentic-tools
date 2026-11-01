@@ -133,18 +133,25 @@ func canonicalCheckout(root string) (string, error) {
 	return filepath.EvalSymlinks(abs)
 }
 
-func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanauthority.HelmGrant, bool) {
+type attorneyDecision struct {
+	entry  goal.PowerOfAttorneyEntry
+	caller lease.Classification
+	act    string
+	live   func() (goal.PowerOfAttorneyEntry, bool)
+}
+
+func (a *attorneyAdmitter) grantFor(root string, pid int64, now time.Time, argv []string) (attorneyDecision, bool) {
 	o := a.owners.withDefaults()
 	if now.IsZero() {
-		return humanauthority.HelmGrant{}, false
+		return attorneyDecision{}, false
 	}
 	checkout, err := canonicalCheckout(root)
 	if err != nil || o.fixture(checkout) {
-		return humanauthority.HelmGrant{}, false
+		return attorneyDecision{}, false
 	}
 	machine, err := o.machine(checkout)
 	if err != nil || machine == "" {
-		return humanauthority.HelmGrant{}, false
+		return attorneyDecision{}, false
 	}
 	live := func() (goal.PowerOfAttorneyEntry, bool) {
 		entries, err := o.grants(checkout)
@@ -167,31 +174,39 @@ func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanau
 	}
 	entry, ok := live()
 	if !ok {
-		return humanauthority.HelmGrant{}, false
+		return attorneyDecision{}, false
 	}
 	class, err := o.classify(checkout, pid)
 	if err != nil || class.Class != lease.ClassMain || class.MainId == "" {
-		return humanauthority.HelmGrant{}, false
+		return attorneyDecision{}, false
 	}
 	holder, err := o.holder(checkout)
 	if err != nil || holder.MainId != class.MainId || holder.OwnerLineage != entry.Lineage {
+		return attorneyDecision{}, false
+	}
+	act, ok := attorneyActClass(argv, func(ids []string) (attorneySubject, error) {
+		return o.subject(checkout, ids, now)
+	}, machine, holder.OwnerLineage)
+	if !ok {
+		act = ""
+	}
+	return attorneyDecision{entry: entry, caller: class, act: act, live: live}, true
+}
+
+func (a *attorneyAdmitter) admit(root string, pid int64, now time.Time) (humanauthority.HelmGrant, bool) {
+	o := a.owners.withDefaults()
+	d, ok := a.grantFor(root, pid, now, o.args())
+	if !ok || len(d.entry.Classes) != 0 && !slices.Contains(d.entry.Classes, d.act) {
 		return humanauthority.HelmGrant{}, false
 	}
-	if len(entry.Classes) != 0 {
-		act, ok := attorneyActClass(o.args(), func(ids []string) (attorneySubject, error) {
-			return o.subject(checkout, ids, now)
-		}, machine, holder.OwnerLineage)
-		if !ok || !slices.Contains(entry.Classes, act) {
-			return humanauthority.HelmGrant{}, false
-		}
-	}
+	entry, class, checkout := d.entry, d.caller, d.entry.Checkout
 	// Only the grantee takes the grant lock, and only on the checkout the
 	// grant binds; the grant is read again under it, so a local revoke that
 	// returned is seen and one that starts waits for this act.
 	if err := o.lockShared(checkout); err != nil {
 		return humanauthority.HelmGrant{}, false
 	}
-	if again, ok := live(); !ok || again.ID != entry.ID {
+	if again, ok := d.live(); !ok || again.ID != entry.ID {
 		return humanauthority.HelmGrant{}, false
 	}
 	person := strings.TrimPrefix(entry.By, "human:")

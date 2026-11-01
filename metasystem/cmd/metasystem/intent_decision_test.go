@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
@@ -238,18 +239,12 @@ func TestAPersonsDecisionRecordRunsTheAct(t *testing.T) {
 		{withoutOption(flags, "text"), act, "--text"},
 		{withoutOption(flags, "rejected"), act, "--rejected"},
 		{withoutOption(flags, "undo"), act, "--undo"},
-		{append(slices.Clone(flags), "--lineage", "seat"), act, "grant check"},
 		{flags, []string{"goal", "pin", bedGoal, "m1e", "--repo", t.TempDir()}, "two repositories"},
 	} {
 		if code, got, _ := run(row.flags, row.act); code != 2 || got.Outcome != intentRefused || !strings.Contains(got.Summary, row.want) {
 			t.Errorf("%v %v: %d %+v want %q", row.flags, row.act, code, got, row.want)
 		}
 	}
-	b.lineage = "agent"
-	if code, got, _ := run(flags, act); code != 2 || !strings.Contains(got.Summary, "grant check") {
-		t.Fatalf("agent: %d %+v", code, got)
-	}
-	b.lineage = ""
 	owners.prove = fixedFixtureGoalAuthority
 	if code, got, _ := run(flags, act); code != 2 || got.Outcome != intentRefused {
 		t.Fatalf("fixture proof: %d %+v", code, got)
@@ -361,12 +356,13 @@ func decisionChildProbe(words []string) int {
 		},
 	}}
 	admitted, ok := admitter.admit(facts.Root, parent, facts.Now)
+	act, _ := attorneyActClass(os.Args[1:], nil, "mac-cli", facts.Holder.OwnerLineage)
 	cwd, err := os.Getwd()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		return 1
 	}
-	seen := map[string]any{"argv": os.Args[1:], "cwd": cwd, "lineage": os.Getenv("METASYSTEM_OWNER_LINEAGE"), "parent": parent, "grant": admitted.Grant, "admitted": ok, "proof": proof.Outcome}
+	seen := map[string]any{"argv": os.Args[1:], "cwd": cwd, "lineage": os.Getenv("METASYSTEM_OWNER_LINEAGE"), "parent": parent, "grant": admitted.Grant, "class": act, "admitted": ok, "proof": proof.Outcome}
 	if proofErr != nil {
 		seen["proofError"] = proofErr.Error()
 	}
@@ -440,4 +436,272 @@ func TestAPersonsDecisionRunsInARealChild(t *testing.T) {
 			t.Logf("decision record --json --text choose --rejected leave --undo restore -- goal prioritize %s 3: outcome=%s, child parent=%d, proof=%s, effect=%s", bedGoal, result.Outcome, data.Seen.Parent, data.Seen.Proof, lines[0].Effect)
 		})
 	}
+}
+
+type decisionAgentBed struct {
+	*grantEverythingBed
+	owners       intentOwners
+	home, grant  string
+	admitter     *attorneyAdmitter
+	trace        bytes.Buffer
+	process      intentProcess
+	child        verbresult.Result
+	calls, locks int
+}
+
+func newDecisionAgentBed(t *testing.T) *decisionAgentBed {
+	t.Helper()
+	b := newGrantEverythingBed(t)
+	g := b.goalFile(bedGoal)
+	makeQueued(g)
+	b.addGoal(g)
+	code, got := b.runJSON(b.owners(), "grant", "add", "--acts", "everything", "--classes", "ordering,recovery", "--lineage", "seat", "--for", "24h")
+	if code != 0 || got.Outcome != intentConfirmed {
+		t.Fatalf("person's grant: %d %+v", code, got)
+	}
+	d := &decisionAgentBed{grantEverythingBed: b, home: t.TempDir(), grant: got.Targets[0].ID}
+	b.lineage, b.holder.OwnerLineage = launch.SeatOwnerLineage, launch.SeatOwnerLineage
+	d.admitter = &attorneyAdmitter{owners: attorneyAdmitOwners{
+		endpoint: b.dependencies().endpoint, machine: b.dependencies().machine,
+		args:    func() []string { return d.process.argv[1:] },
+		verb:    func() string { return publicVerb(d.process.argv[1:]) },
+		fixture: func(string) bool { return false },
+		holder:  func(string) (lease.CurrentHolderView, error) { return b.holder, nil },
+		classify: func(_ string, pid int64) (lease.Classification, error) {
+			if pid != int64(os.Getppid()) {
+				t.Fatalf("preflight pid=%d, want parent %d", pid, os.Getppid())
+			}
+			return lease.Classification{Class: lease.ClassMain, MainId: b.holder.MainId}, nil
+		},
+		lockShared: func(string) error { d.locks++; return nil }, stderr: &d.trace,
+		notice: func(n admissionNotice) { fmt.Fprintln(n.w, n.line) },
+	}}
+	d.owners = b.owners()
+	d.owners.decisions = decisionOwners{home: func() (string, error) { return d.home, nil }, grant: d.admitter.grantFor}
+	d.owners.attorney.admit = d.admitter.admit
+	d.owners.prove = func(root string, _ int64, _ humanauthority.Reader, _, _ string, at time.Time) (humanauthority.Proof, error) {
+		p, err := humanauthority.Prove(root, 95, person(), at)
+		if err == nil {
+			t.Fatal("agent reached the enrolled terminal")
+		}
+		if grant, ok := d.admitter.admit(root, int64(os.Getppid()), at); ok {
+			return humanauthority.HelmProof(root, grant, at)
+		}
+		return p, err
+	}
+	d.owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return "ENGINE", nil }, ownerEnvelope: func(p intentProcess, verb string) (verbresult.Result, error) {
+		d.calls++
+		d.process = p
+		command, rest, ok := resolveIntentArgv(p.argv[1:])
+		if !ok {
+			t.Fatalf("child argv: %v", p.argv)
+		}
+		childOwners := d.owners
+		for _, env := range p.env {
+			if strings.HasPrefix(env, "METASYSTEM_OWNER_LINEAGE=") {
+				lineage := strings.TrimPrefix(env, "METASYSTEM_OWNER_LINEAGE=")
+				childOwners.dependencies.ownerLineage = func() string { return lineage }
+			}
+		}
+		var out, errout bytes.Buffer
+		code := runIntentIn(command, rest, &out, &errout, p.dir, childOwners)
+		var err error
+		d.child, err = verbresult.Read(out.Bytes(), verb, code, errout.String())
+		return d.child, err
+	}}
+	return d
+}
+
+func (b *decisionAgentBed) record(flags, act []string) (int, intentResult) {
+	b.t.Helper()
+	words := append([]string{"decision", "record", "--json", "--text", "G before H", "--rejected", "leave G at 2", "--undo", "metasystem goal prioritize G 2"}, flags...)
+	code, out, errout := b.run(b.owners, append(append(words, "--"), act...)...)
+	var got intentResult
+	if err := json.Unmarshal([]byte(out), &got); err != nil {
+		b.t.Fatalf("record: %d %s %s %v", code, out, errout, err)
+	}
+	return code, got
+}
+
+func TestAnAgentsDecisionRecordRunsUnderItsGrant(t *testing.T) {
+	t.Parallel()
+	b := newDecisionAgentBed(t)
+	now, _ := b.commandNow(b.root())
+	preflight, ok := b.admitter.grantFor(b.root(), int64(os.Getppid()), now, []string{"goal", "prioritize", "--json", bedGoal, "3"})
+	if !ok || preflight.entry.ID != b.grant || preflight.act != "ordering" || b.locks != 0 || b.trace.Len() != 0 {
+		t.Fatalf("preflight: %+v ok=%v locks=%d notice=%s", preflight, ok, b.locks, b.trace.String())
+	}
+	if _, err := os.Stat(humanauthority.AttorneyLogPath(b.root())); !os.IsNotExist(err) {
+		t.Fatalf("preflight wrote an admission log: %v", err)
+	}
+	for i, priority := range []string{"3", "1", "2", "3"} {
+		flags := []string{"--class", "ordering"}
+		if i == 1 {
+			b.holder.MainId = "main-2"
+		}
+		if i == 2 {
+			b.lineage = ""
+			flags = append(flags, "--lineage", "lin-x")
+		}
+		if i == 3 {
+			b.lineage = launch.SeatOwnerLineage
+			run := b.owners.delivery.ownerEnvelope
+			b.owners.delivery.ownerEnvelope = func(p intentProcess, verb string) (verbresult.Result, error) {
+				child, err := run(p, verb)
+				b.lineage = ""
+				if code, got := b.runJSON(b.grantEverythingBed.owners(), "grant", "revoke", b.grant); code != 0 || got.Outcome != intentConfirmed {
+					t.Fatalf("revoke after act: %d %+v", code, got)
+				}
+				return child, err
+			}
+		}
+		act := []string{"goal", "prioritize", bedGoal, priority}
+		code, got := b.record(flags, act)
+		if code != 0 || got.Outcome != intentConfirmed || b.calls != i+1 {
+			t.Fatalf("agent act: %d %+v calls=%d", code, got, b.calls)
+		}
+		if !slices.Equal(b.process.argv, []string{"ENGINE", "goal", "prioritize", "--json", bedGoal, priority}) || b.process.dir != b.root() {
+			t.Fatalf("child: %+v", b.process)
+		}
+		if i == 2 && !slices.Equal(b.process.env, []string{"METASYSTEM_OWNER_LINEAGE=lin-x"}) || i != 2 && len(b.process.env) != 0 {
+			t.Fatalf("child environment: %v", b.process.env)
+		}
+		lines, bad, err := humanauthority.ReadDecisions(b.home)
+		if err != nil || bad != 0 || len(lines) != i+1 {
+			t.Fatalf("lines: %+v %d %v", lines, bad, err)
+		}
+		d := lines[i]
+		if d.Actor != b.holder.MainId || d.Lineage != launch.SeatOwnerLineage || d.Grant != b.grant || d.By != "Wido" || d.Class != "ordering" || d.Outcome != intentConfirmed || d.Rejected != "leave G at 2" || !slices.Equal(d.Argv, act) {
+			t.Fatalf("agent decision: %+v", d)
+		}
+		var effect, published struct{ Owner struct{ Tip, Detail string } }
+		if err := json.Unmarshal(d.Effect, &effect); err != nil {
+			t.Fatal(err)
+		}
+		if err := json.Unmarshal(b.child.Data, &published); err != nil {
+			t.Fatal(err)
+		}
+		if effect.Owner != published.Owner || effect.Owner.Tip == "" {
+			t.Fatalf("effect=%+v child=%+v", effect, published)
+		}
+		if i != 3 && effect.Owner.Tip != b.repo.accepted {
+			t.Fatalf("effect tip=%s ledger=%s", effect.Owner.Tip, b.repo.accepted)
+		}
+		history := b.goalFile(bedGoal).History
+		if history[len(history)-1].Actor != "human:Wido" || !strings.Contains(b.trace.String(), "grant "+b.grant) {
+			t.Fatalf("history=%+v notice=%s", history, b.trace.String())
+		}
+	}
+	t.Run("unrestricted grant", func(t *testing.T) {
+		t.Parallel()
+		b := newDecisionAgentBed(t)
+		b.lineage = ""
+		code, got := b.runJSON(b.grantEverythingBed.owners(), "grant", "add", "--acts", "everything", "--lineage", "seat", "--for", "24h")
+		if code != 0 || got.Outcome != intentConfirmed {
+			t.Fatalf("unrestricted grant: %d %+v", code, got)
+		}
+		b.lineage = launch.SeatOwnerLineage
+		if code, got := b.record([]string{"--class", "ordering"}, []string{"goal", "prioritize", bedGoal, "3"}); code != 0 || got.Outcome != intentConfirmed {
+			t.Fatalf("act under unrestricted grant: %d %+v", code, got)
+		}
+	})
+}
+
+func TestAnAgentIsRefusedBeforeTheChild(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name       string
+		flags, act []string
+		want       string
+		revoke     bool
+	}{
+		{"mismatch", []string{"--class", "recovery"}, []string{"goal", "prioritize", bedGoal, "3"}, "ordering, not recovery", false},
+		{"unknown", []string{"--class", "values"}, []string{"goal", "prioritize", bedGoal, "3"}, strings.Join(goal.AttorneyClasses, ", "), false},
+		{"unclassified", []string{"--class", "ordering"}, []string{"goal", "budget", bedGoal, "1d/10/720m/1/3"}, "in no class", false},
+		{"resume", []string{"--class", "recovery"}, []string{"landing", "resume"}, "in no class", false},
+		{"revive", []string{"--class", "recovery"}, []string{"machine", "revive", "mac-cli"}, "in no class", false},
+		{"stop-run", []string{"--class", "recovery"}, []string{"work", "stop", "run:ID"}, "in no class", false},
+		{"revoked", []string{"--class", "ordering"}, []string{"goal", "prioritize", bedGoal, "3"}, "grant", true},
+		{"missing", nil, []string{"goal", "prioritize", bedGoal, "3"}, strings.Join(goal.AttorneyClasses, ", "), false},
+		{"repository", []string{"--class", "ordering", "--repo", "."}, []string{"goal", "prioritize", bedGoal, "3"}, "own checkout", false},
+		{"child-repository", []string{"--class", "ordering"}, []string{"goal", "prioritize", bedGoal, "3", "--repo", "."}, "own checkout", false},
+		{"grant-class", []string{"--class", "acks"}, []string{"alert", "ack", "A"}, "acks", false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			b := newDecisionAgentBed(t)
+			if row.revoke {
+				b.lineage = ""
+				if code, got := b.runJSON(b.grantEverythingBed.owners(), "grant", "revoke", b.grant); code != 0 {
+					t.Fatalf("revoke: %d %+v", code, got)
+				}
+				b.lineage = launch.SeatOwnerLineage
+			}
+			before := b.repo.accepted
+			code, got := b.record(row.flags, row.act)
+			if code != 2 || got.Outcome != intentRefused || !strings.Contains(got.Summary, row.want) {
+				t.Errorf("refusal: %d %+v want %q", code, got, row.want)
+			}
+			lines, bad, err := humanauthority.ReadDecisions(b.home)
+			if b.calls != 0 || b.locks != 0 || b.trace.Len() != 0 || b.repo.accepted != before || len(lines) != 0 || bad != 0 || err != nil {
+				t.Fatalf("refusal changed state: calls=%d locks=%d lines=%+v err=%v", b.calls, b.locks, lines, err)
+			}
+		})
+	}
+}
+
+func TestAnAgentsDecisionRunsInARealChild(t *testing.T) {
+	t.Parallel()
+	b := newDecisionAgentBed(t)
+	now, _ := b.commandNow(b.root())
+	facts := decisionChildFacts{Root: b.root(), Now: now, Parent: int64(os.Getpid()), Agent: true, Entry: b.rootRecord().PowerOfAttorney[0], Holder: b.holder, Owner: map[string]any{"outcome": "confirmed", "tip": "agent-child-tip", "detail": "agent child detail"}}
+	raw, _ := json.Marshal(facts)
+	path := filepath.Join(t.TempDir(), "facts.json")
+	helmMust(t, os.WriteFile(path, raw, 0600))
+	binary, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrapper := filepath.Join(t.TempDir(), "engine")
+	helmMust(t, testexec.WriteFile(wrapper, []byte("#!/bin/sh\nexport GO_WANT_BATCH_E2E_COMMAND=1\nexec "+shellQuote(binary)+" decision-child-probe \"$@\"\n"), 0700))
+	fixture := testutil.Fixture(t)
+	var answer verbresult.Result
+	b.lineage = ""
+	b.owners.delivery = &intentDeliveryOwners{executable: func() (string, error) { return wrapper, nil }, ownerEnvelope: func(p intentProcess, verb string) (verbresult.Result, error) {
+		p.env = append(fixture.Env(p.env), "METASYSTEM_DECISION_FACTS="+path)
+		var err error
+		answer, err = runIntentOwnerEnvelope(p, verb)
+		return answer, err
+	}}
+	code, got := b.record([]string{"--class", "ordering", "--lineage", "lin-x"}, []string{"goal", "prioritize", bedGoal, "3"})
+	if code != 0 || got.Outcome != intentConfirmed {
+		t.Fatalf("real child: %d %+v", code, got)
+	}
+	var data struct {
+		Seen struct {
+			Argv                              []string
+			Cwd, Lineage, Grant, Class, Proof string
+			Parent                            int64
+			Admitted                          bool
+		}
+	}
+	if err := json.Unmarshal(answer.Data, &data); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(data.Seen.Argv, []string{"goal", "prioritize", "--json", bedGoal, "3"}) || data.Seen.Cwd != b.root() || data.Seen.Lineage != "lin-x" || data.Seen.Parent != int64(os.Getpid()) || !data.Seen.Admitted || data.Seen.Grant != b.grant || data.Seen.Class != "ordering" || data.Seen.Proof != humanauthority.OutcomeAgent {
+		t.Fatalf("child context: %+v", data.Seen)
+	}
+	lines, bad, err := humanauthority.ReadDecisions(b.home)
+	if err != nil || bad != 0 || len(lines) != 1 || lines[0].Grant != b.grant || !bytes.Contains(lines[0].Effect, []byte(`"tip":"agent-child-tip"`)) || !bytes.Contains(lines[0].Effect, []byte(`"detail":"agent child detail"`)) {
+		t.Fatalf("line: %+v %d %v", lines, bad, err)
+	}
+	lock := &grantLock{}
+	acquired, err := lock.exclusive(b.root(), 0, func(time.Duration) { t.Fatal("child kept the lock after exit") })
+	if err != nil || !acquired {
+		t.Fatalf("child lock after exit: %v %v", acquired, err)
+	}
+	for _, file := range lock.file {
+		helmMust(t, file.Close())
+	}
+	t.Logf("agent decision: grant=%s class=%s lineage=%s parent=%d effect=%s; child lock released", data.Seen.Grant, data.Seen.Class, data.Seen.Lineage, data.Seen.Parent, lines[0].Effect)
 }
