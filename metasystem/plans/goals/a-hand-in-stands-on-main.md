@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Design through the engine: metasystem design write a-hand-in-stands-on-main --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-hand-in-stands-on-main-request.md; then design review; then units
 - OpenedAt: 2026-11-01T06:39:06Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=EFEHA56G9A5YV5EQQAC3RGGDPP-m1e-b2c714f5 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-01T06:39:06Z 84C0KGPTF0M9T5FT0MBYRB96ZP-m1e-b2c714f5 open actor=human:Wido targets=a-hand-in-stands-on-main
 - 2026-11-01T06:39:15Z EFEHA56G9A5YV5EQQAC3RGGDPP-m1e-b2c714f5 approve actor=human:Wido targets=a-hand-in-stands-on-main,a-red-is-classified-once
-Integrity: sha256=3e7df2a0daf8a14355152e1db3c36db9a8b1595817a00115088a9c28a73fc9cd
+- 2026-11-01T06:39:35Z DJ0H55683N25H5TPNQ3QRA6DQT-m1e-b2c714f5 set-pin actor=human:Wido targets=a-hand-in-stands-on-main
+Integrity: sha256=abbd0bf2f861d1428edc713c72c3248e81fe75907658b40421d1c6954557d65d
