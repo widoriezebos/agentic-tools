@@ -3,8 +3,10 @@ package steward
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -49,6 +51,8 @@ type SeatBusyOptions struct {
 	Now   time.Time
 	Alive func(identity.Ref) bool
 	Probe func(identity.Ref) identity.Liveness
+	// Tick is one steward interval; zero keeps starts without launches busy.
+	Tick time.Duration
 	// AtBoundary is retained for boundary callers; all callers hold live steps.
 	AtBoundary bool
 }
@@ -111,6 +115,12 @@ func SeatBusyAt(root, units string, work goal.ClaimableBudgetedWork, options Sea
 			continue
 		}
 		if step.State == launch.StepStarting {
+			if _, err := store.Read(step.LaunchID); errors.Is(err, fs.ErrNotExist) && seatOlderThanTick(step.StartedAt, options) {
+				if err := logOrphanSeatRun(root, fmt.Sprintf("start never launched: run %s of goal %s (step %s since %s, no launch record)", run.ID, run.Goal, step.Name, step.StartedAt), options.Now); err != nil {
+					skipped++
+				}
+				continue
+			}
 			busy, reason = true, fmt.Sprintf("unit %s step %s for goal %s is starting", run.ID, step.Name, run.Goal)
 			continue
 		}
@@ -140,6 +150,7 @@ func SeatBusyAt(root, units string, work goal.ClaimableBudgetedWork, options Sea
 		path := filepath.Join(jobs, entry.Name())
 		var job struct {
 			Status, GoalID                                           string
+			OperationID, CreatedAt                                   string
 			Pid, PidStartedAt, PidStartedAtExactMicro, PidStartTicks int64
 			BootID                                                   string
 		}
@@ -153,6 +164,14 @@ func SeatBusyAt(root, units string, work goal.ClaimableBudgetedWork, options Sea
 		}
 		ref := identity.Ref{Pid: job.Pid, StartedAtSec: job.PidStartedAt, StartedAtUnixMicro: job.PidStartedAtExactMicro, StartTicks: job.PidStartTicks, BootID: job.BootID}
 		if selected && job.Status == "pending" {
+			if id, ok := strings.CutPrefix(job.OperationID, "unit-launch:"); ok {
+				if ended, ok := seatReservationEnded(store, id, job.CreatedAt, options); ok {
+					if err := logOrphanSeatRun(root, fmt.Sprintf("ended reservation %s of goal %s (launch %s: %s)", filepath.Base(path), job.GoalID, id, ended), options.Now); err != nil {
+						skipped++
+					}
+					continue
+				}
+			}
 			busy, reason = true, fmt.Sprintf("dependent job %s is starting", filepath.Base(path))
 		}
 		if selected && job.Status == "running" {
@@ -166,6 +185,28 @@ func SeatBusyAt(root, units string, work goal.ClaimableBudgetedWork, options Sea
 		}
 	}
 	return
+}
+
+func seatOlderThanTick(at string, options SeatBusyOptions) bool {
+	if options.Tick <= 0 {
+		return false
+	}
+	parsed, err := time.Parse(time.RFC3339, at)
+	return err == nil && options.Now.Sub(parsed) > options.Tick
+}
+
+func seatReservationEnded(store launch.Store, id, createdAt string, options SeatBusyOptions) (string, bool) {
+	if options.Tick <= 0 {
+		return "", false
+	}
+	record, err := store.Read(id)
+	if err == nil && record.State.Terminal() {
+		return string(record.State), true
+	}
+	if errors.Is(err, fs.ErrNotExist) && seatOlderThanTick(createdAt, options) {
+		return "no launch record", true
+	}
+	return "", false
 }
 
 func currentSeatRunStep(run launch.UnitRunRecord) (*launch.UnitStep, time.Time) {

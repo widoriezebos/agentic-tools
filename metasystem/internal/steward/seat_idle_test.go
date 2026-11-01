@@ -11,6 +11,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/seat"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
@@ -89,6 +90,141 @@ func TestSeatBusyOrphanDoesNotHoldTheSeat(t *testing.T) {
 	message := "orphan run run-1 of goal held (step build since 2026-09-01T08:59:00Z)"
 	if strings.Count(string(data), message) != 1 {
 		t.Fatalf("orphan must be reported once: %s", data)
+	}
+}
+
+func seatBusyReadBed(t *testing.T, state launch.UnitStepState, age time.Duration) (*seatBed, TickConfig, openWorkDependencies) {
+	t.Helper()
+	bed, units, work, _ := seatBusyFixture(t)
+	if state != "" {
+		writeStewardRecord(t, filepath.Join(units, "run-1", "run.json"), map[string]any{"id": "run-1", "goal": "held", "state": "running", "rounds": []launch.UnitRound{{Steps: []launch.UnitStep{{Name: "r1-s3", Kind: "read", LaunchID: "launch-r1-s3", State: state, StartedAt: bed.now.Add(-age).Format(time.RFC3339)}}}}})
+	}
+	deps := bed.dependencies()
+	deps.ReadClaimableBudgetedWork = func(string, time.Time) (goal.ClaimableBudgetedWork, error) { return work, nil }
+	cfg := TickConfig{WorkStateRoot: filepath.Dir(units), Prober: seatBusyDeadProber{}, Runner: &seat.RunnerContext{TickSeconds: 300}}
+	return bed, cfg, deps
+}
+
+func assertSeatBusyRead(t *testing.T, bed *seatBed, cfg TickConfig, deps openWorkDependencies, wantBusy bool, wantReason string) {
+	t.Helper()
+	cfg.Now = bed.now
+	d, selection, reason, err := decideNowWithSeat(bed.root, cfg, fakeCensus{workers: deadWorkers}, &Evidence{}, func(runtime string, err error) (outage.Mark, bool) {
+		return standingProviderOutage(runtime, bed.now, nil, testprovider.Home(bed.root))
+	}, deps, &seatTickState{})
+	if err != nil || d.Verdict == VerdictDegraded {
+		t.Fatalf("seat decision failed: %+v %v", d, err)
+	}
+	if wantBusy && (selection != nil || d.Verdict != VerdictHealthy || d.Action != ActNone || reason != wantReason) || !wantBusy && (selection == nil || selection.Goal != "held") {
+		t.Errorf("seat decision: %+v selection=%+v reason=%q; want busy=%v reason=%q", d, selection, reason, wantBusy, wantReason)
+	}
+	work, err := deps.ReadClaimableBudgetedWork(bed.root, bed.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	busy, reason, skipped := defaultTickContinuationDependencies(cfg).openWork.Busy(bed.root, work, bed.now)
+	if busy != wantBusy || skipped != 0 || wantBusy && reason != wantReason {
+		t.Errorf("continuation reader: busy=%v reason=%q skipped=%d; want busy=%v reason=%q", busy, reason, skipped, wantBusy, wantReason)
+	}
+}
+
+func TestAStartThatNeverLaunchedDoesNotHoldTheSeat(t *testing.T) {
+	t.Parallel()
+	bed, cfg, deps := seatBusyReadBed(t, launch.StepStarting, 6*time.Minute)
+	message := "start never launched: run run-1 of goal held (step r1-s3 since " + bed.now.Add(-6*time.Minute).Format(time.RFC3339) + ", no launch record)"
+	for tick := 0; tick < 2; tick++ {
+		assertSeatBusyRead(t, bed, cfg, deps, false, "")
+		bed.now = bed.now.Add(time.Minute)
+	}
+	data, err := os.ReadFile(runnerLogPath(bed.root))
+	if err != nil || strings.Count(string(data), message) != 1 {
+		t.Fatalf("unlaunched start must be reported once: %s %v", data, err)
+	}
+}
+
+func TestAStartYoungerThanOneTickStillHoldsTheSeat(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name            string
+		age             time.Duration
+		manual, present bool
+		busy            bool
+	}{
+		{"expired-control", 6 * time.Minute, false, false, false},
+		{"young", 4 * time.Minute, false, false, true},
+		{"manual-tick", 6 * time.Minute, true, false, true},
+		{"launch-present", 6 * time.Minute, false, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			bed, cfg, deps := seatBusyReadBed(t, launch.StepStarting, tc.age)
+			if tc.manual {
+				cfg.Runner = nil
+			}
+			if tc.present {
+				if err := (launch.Store{Root: filepath.Join(cfg.WorkStateRoot, "launch")}).Create(launch.Record{ID: "launch-r1-s3", State: launch.Starting}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			assertSeatBusyRead(t, bed, cfg, deps, tc.busy, "unit run-1 step r1-s3 for goal held is starting")
+			if data, err := os.ReadFile(runnerLogPath(bed.root)); tc.busy && (!os.IsNotExist(err) || len(data) != 0) {
+				t.Fatalf("held start logged as orphan: %s %v", data, err)
+			}
+		})
+	}
+}
+
+func TestAnEndedUnitLaunchReservationDoesNotHoldTheSeat(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name         string
+		state        launch.State
+		age          time.Duration
+		operation    string
+		manual, busy bool
+	}{
+		{"ended", launch.Completed, time.Minute, "unit-launch:launch-r1-s3", false, false},
+		{"never-started", "", 6 * time.Minute, "unit-launch:launch-r1-s3", false, false},
+		{"still-running", launch.Running, 30 * time.Minute, "unit-launch:launch-r1-s3", false, true},
+		{"young", "", 4 * time.Minute, "unit-launch:launch-r1-s3", false, true},
+		{"other-operation", "", 6 * time.Hour, "reserve-two", false, true},
+		{"ended-zero-tick", launch.Completed, 6 * time.Hour, "unit-launch:launch-r1-s3", true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			bed, cfg, deps := seatBusyReadBed(t, "", 0)
+			writeStewardRecord(t, filepath.Join(bed.root, "artifacts", "agents", "jobs", "launch-r1-s3.json"), map[string]any{
+				"jobId": "launch-r1-s3", "operationId": tc.operation, "unitRun": "run-1", "unitRound": 1,
+				"goalId": "held", "goalRevision": 1, "machineId": seatBedMachine, "claimEpoch": 1,
+				"capMin": 20, "status": "pending", "createdAt": bed.now.Add(-tc.age).Format(time.RFC3339Nano),
+			})
+			if tc.state != "" {
+				if err := (launch.Store{Root: filepath.Join(cfg.WorkStateRoot, "launch")}).Create(launch.Record{ID: "launch-r1-s3", State: tc.state, Supervisor: &identity.Ref{Pid: 41, StartedAtSec: 100}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tc.manual {
+				cfg.Runner = nil
+			}
+			for tick := 0; tick < 2; tick++ {
+				assertSeatBusyRead(t, bed, cfg, deps, tc.busy, "dependent job launch-r1-s3.json is starting")
+				bed.now = bed.now.Add(time.Minute)
+			}
+			data, err := os.ReadFile(runnerLogPath(bed.root))
+			if tc.busy {
+				if !os.IsNotExist(err) || len(data) != 0 {
+					t.Fatalf("held reservation logged as ended: %s %v", data, err)
+				}
+			} else {
+				ended := string(tc.state)
+				if ended == "" {
+					ended = "no launch record"
+				}
+				message := "ended reservation launch-r1-s3.json of goal held (launch launch-r1-s3: " + ended + ")"
+				if err != nil || strings.Count(string(data), message) != 1 {
+					t.Fatalf("ended reservation must be reported once: %s %v", data, err)
+				}
+			}
+		})
 	}
 }
 

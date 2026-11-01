@@ -98,7 +98,7 @@ func prepareIntentUnderLock(repoRoot, receiptFile string, it Intent) error {
 // merely to announce work that the machinery can do itself.
 func CompleteRevival(repoRoot string, cfg TickConfig, census WorkerCensus, nonce string, launch LaunchSeam, admit AdmitSeam, claimOption ...SeatIdleClaimSeam) (ReviveOutcome, error) {
 	return completeRevivalWithDependencies(repoRoot, cfg, census, nonce, launch, admit, openWorkDependencies{
-		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: cfg.readClaimableBudgetedWork, HandoffProber: cfg.withDefaults().Prober, Busy: seatBusyReader(cfg.WorkStateRoot, cfg.withDefaults().Prober),
+		NewWorld: goal.NewWorld, ReadClaimableBudgetedWork: cfg.readClaimableBudgetedWork, HandoffProber: cfg.withDefaults().Prober, Busy: seatBusyReader(cfg.WorkStateRoot, cfg.busyTick(), cfg.withDefaults().Prober),
 	}, claimOption...)
 }
 
@@ -311,7 +311,7 @@ func decideForRevivalWithDependencies(repoRoot string, cfg TickConfig, census Wo
 	cfg = cfg.withDefaults()
 	dependencies.Now = cfg.now
 	if cfg.WorkStateRoot != "" {
-		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot, cfg.withDefaults().Prober)
+		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot, cfg.busyTick(), cfg.withDefaults().Prober)
 	}
 	dependentBusy := false
 	if observe := dependencies.Busy; observe != nil {

@@ -138,6 +138,13 @@ func (c TickConfig) withDefaults() TickConfig {
 	return c
 }
 
+func (c TickConfig) busyTick() time.Duration {
+	if c.Runner != nil && c.Runner.TickSeconds > 0 {
+		return time.Duration(c.Runner.TickSeconds) * time.Second
+	}
+	return 0
+}
+
 // The sampled elapsed age excludes partial provider waits. Evidence without
 // a time sample uses its retained tick count.
 func (c TickConfig) progressTicks(repoRoot string, ev Evidence) int {
@@ -517,7 +524,7 @@ func defaultTickContinuationDependencies(cfg TickConfig) tickContinuationDepende
 		openWork: openWorkDependencies{
 			NewWorld:                  goal.NewWorld,
 			ReadClaimableBudgetedWork: cfg.readClaimableBudgetedWork,
-			Busy:                      seatBusyReader(cfg.WorkStateRoot, cfg.Prober),
+			Busy:                      seatBusyReader(cfg.WorkStateRoot, cfg.busyTick(), cfg.Prober),
 			HandoffProber:             cfg.Prober,
 		},
 		resolveMachine: goal.ResolveMachine,
@@ -937,7 +944,7 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	cfg = cfg.withDefaults()
 	dependencies.Now = cfg.now
 	if cfg.WorkStateRoot != "" {
-		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot, cfg.withDefaults().Prober)
+		dependencies.Busy = seatBusyReader(cfg.WorkStateRoot, cfg.busyTick(), cfg.withDefaults().Prober)
 	}
 	work, workReason, shared, err := readOpenWorkShared(repoRoot, dependencies)
 	if err != nil {

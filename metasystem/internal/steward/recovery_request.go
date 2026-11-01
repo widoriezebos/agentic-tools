@@ -133,7 +133,7 @@ func reconcileSeatRecovery(root string, cfg TickConfig, census WorkerCensus, pro
 	if !owned || claimLineage(file) != SeatLineage || file.Approved == nil || approvalOpid(file) != last.ApprovalOpid {
 		return nil
 	}
-	if busy, _, _ := seatBusyReader(cfg.WorkStateRoot)(root, work, cfg.now()); busy {
+	if busy, _, _ := seatBusyReader(cfg.WorkStateRoot, cfg.busyTick())(root, work, cfg.now()); busy {
 		return nil
 	}
 	for _, interval := range condition.Intervals {
