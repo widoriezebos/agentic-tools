@@ -54,11 +54,15 @@ func situationLaneHome(t *testing.T) string {
 	return home
 }
 
+// neverProjectionDeadline keeps a fresh projection on the bed's clock: the
+// deadline never fires, so no situation test depends on wall time.
+func neverProjectionDeadline(time.Duration) <-chan time.Time { return make(chan time.Time) }
+
 // countedProject is the production projection counted per call.
 func countedProject(calls *int) func(goal.Endpoint, bool, time.Time) (goal.Projection, error) {
 	return func(endpoint goal.Endpoint, fetch bool, now time.Time) (goal.Projection, error) {
 		*calls++
-		return goal.Project(endpoint, fetch, now)
+		return goal.ProjectWithDeadline(endpoint, fetch, now, neverProjectionDeadline)
 	}
 }
 

@@ -100,7 +100,7 @@ func TestSystemSituationPrintsThePage(t *testing.T) {
 			if err != nil {
 				return goal.Projection{}, err
 			}
-			return goal.Project(endpoint, fetch, now)
+			return goal.ProjectWithDeadline(endpoint, fetch, now, neverProjectionDeadline)
 		},
 		HostWork: func() (int, int, error) { return 0, 0, nil }, LaneHome: func() (string, error) { return situationLaneBed(t), nil },
 		BoardHome: func() (string, error) { return boardHome, nil }, Launches: (&launch.Manager{Store: store}).EffectiveList,

@@ -60,7 +60,7 @@ func countedSituationOwners(t *testing.T, bed *workBed, clock *time.Time, projec
 			if err != nil {
 				return goal.Projection{}, err
 			}
-			return goal.Project(endpoint, fetch, now)
+			return goal.ProjectWithDeadline(endpoint, fetch, now, neverProjectionDeadline)
 		},
 		HostWork: func() (int, int, error) { return 0, 0, nil }, LaneHome: func() (string, error) { return t.TempDir(), nil },
 		BoardHome: func() (string, error) { return board, nil }, Launches: func() ([]launch.Record, error) { return nil, nil },

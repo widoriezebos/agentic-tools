@@ -210,7 +210,7 @@ func TestTheSituationReadsTheLedgerOnce(t *testing.T) {
 		if err != nil {
 			return goal.Projection{}, err
 		}
-		return goal.Project(endpoint, fetch, now)
+		return goal.ProjectWithDeadline(endpoint, fetch, now, neverProjectionDeadline)
 	}
 	src := situationSources(owners, situationEmptyHost(t, steward.SituationSources{Now: func() time.Time { return situationNow }, Project: project,
 		HostWork: func() (int, int, error) { return 0, 0, nil }, LaneHome: func() (string, error) { return t.TempDir(), nil }}))
