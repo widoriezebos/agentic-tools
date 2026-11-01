@@ -7,10 +7,12 @@
 - Origin: human
 - Next step: Build without a design from finding 460: the push path reuses the records-only classifier; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:40:58Z
-- Revision: 1
+- Revision: 2
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 
 History:
 - 2026-11-01T06:40:58Z T05J239XGRNW745CQ4PGG88T1B-m1e-cbd14c5a open actor=human:Wido targets=a-push-folds-a-records-only-move
-Integrity: sha256=0001ae7098e2b79c4db18ab983f172e4971ae49db93701e9b1268cfa58ea54c1
+- 2026-11-01T06:41:25Z 2WWFF10F3FF6QGNJ2193M16T0G-m1e-cbd14c5a set-pin actor=human:Wido targets=a-push-folds-a-records-only-move
+Integrity: sha256=54ddf42e14929e7a664bee0c4e8d7f3b1ac4812591f8c48973a92e16ee773aa6
