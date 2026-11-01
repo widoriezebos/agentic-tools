@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build without a design from the lane-steward design: the row table gains acts; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:43:22Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=5V2GEQ6JC8G6QRDN41T5XWNSX2-m1e-37ae1684 minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-01T06:43:22Z 3JCVYZ65C3CNQAXG4MWC434Y6S-m1e-37ae1684 open actor=human:Wido targets=a-lane-row-carries-its-act reason=TierOverride: derived=1 set=2 why=a small engine fix on the lane or steward path, recorded at tier 2 like the other follow-ups of the night of 2026-10-31 so they sit in one frontier (decision 111c)
 - 2026-11-01T06:44:15Z 5V2GEQ6JC8G6QRDN41T5XWNSX2-m1e-37ae1684 approve actor=human:Wido targets=a-folded-design-finding-is-re-read,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-unit-check-runs-the-audits,one-question-per-refused-admission
-Integrity: sha256=1ae32d4dfeaa24223a4c19c4a45ff8ce90c99ff20338339303c606da78a47c83
+- 2026-11-01T06:44:41Z X9ZV18WMG0XWTPF1WCGC0F2Y7Z-m1e-37ae1684 set-pin actor=human:Wido targets=a-lane-row-carries-its-act
+Integrity: sha256=599e80ad978fcd8bc8d81b549c8efcc7a320b95a2f7963780e0ef156ac4298e1
