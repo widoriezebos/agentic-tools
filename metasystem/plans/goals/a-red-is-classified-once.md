@@ -1,6 +1,6 @@
 # a-red-is-classified-once
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 18
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="engine code on the unit-check and lane red paths; a wrong classification lets a real red pass as a flake (bounded by the lane proof on main) or keeps asking people; every unit on both seats is exposed; the defect recurs every flake"
@@ -10,7 +10,7 @@
 - Next step: Design through the engine: metasystem design write a-red-is-classified-once --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-red-is-classified-once-request.md; then design review; then units
 - OpenedAt: 2026-11-01T06:38:56Z
 - FirstClaimAt: 2026-11-01T08:30:44Z
-- Revision: 14
+- Revision: 15
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -20,6 +20,8 @@
 - AcceptedRisk: finding=RULING-a-red-is-classified-once chain=design-critic-9af085c2ddd725804f70147a by=Wido opid=SCAVMWB2S8QZ9699B3BT74JY8M-m1e-21d12397
 - AcceptedRisk: finding=RULING-R-142-m1e chain=design-critic-9af085c2ddd725804f70147a by=Wido opid=5WA4YMF8F9T0JDXCYNVHKGVB2A-m1e-21d12397
 - AcceptedRisk: finding=RED-UNNAMED-VERDICT chain=design-critic-9af085c2ddd725804f70147a by=Wido opid=6XHDHQ1REWPWW241YC130ZG86N-m1e-21d12397
+- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-01T14:10:08Z by=human:Wido areas="null" areas-source="01M6AXDP8D36CB9H53DJE8ADDZ@5b8b36c465d014b1a0fd88cd73705a4f1974074edbeb9ce28d01a77bbdd29f53" areas-known=false areas-warnings="[\"areas unknown for goal a-red-is-classified-once in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/a-red-is-classified-once.md\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-steward-decides\",\"machine m1e already claims the-steward-decides, and a machine holds one claim at a time\\nrun: metasystem goal release the-steward-decides --reason TEXT, then metasystem goal claim a-red-is-classified-once\"]" revision=15 accountingRevision=15 episodeAt=2026-11-01T14:10:08Z episodeRevision=15
+- StopCapability: generation=15 revision=15 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-11-01T06:38:56Z YGYTHR8A1P4PY6NSW8S3S7VF5F-m1e-b2c714f5 open actor=human:Wido targets=a-red-is-classified-once
@@ -36,4 +38,6 @@ History:
 - 2026-11-01T11:18:15Z 7YX0MF6C9BC203B7ZKSD6X2RQ1-m1e-eb7744f1 unapprove actor=human:Wido targets=a-red-is-classified-once reason=to amend the intent sentence after Q1 of its accepted design was answered (decision 115); approved again in the same act
 - 2026-11-01T11:18:23Z Z9HJZTN616FH61PXX8HP1B9SQA-m1e-eb7744f1 edit actor=human:Wido targets=a-red-is-classified-once
 - 2026-11-01T11:18:31Z R16ND5HKZQXBWJHQ95Y20CNZAF-m1e-eb7744f1 approve actor=human:Wido targets=a-red-is-classified-once
-Integrity: sha256=67df855b39a77a20743af524400b09f3e9ea028350333932b640d67c7de9b22a
+- 2026-11-01T14:10:08Z 8N4FCJMA7GNN6WMKHXHGVMQ7S0-m1e-cc2e8fc8 claim actor=human:Wido targets=a-red-is-classified-once authorityOutcome=HUMAN_AUTHORITY_PROVEN authorityGeneration=231 reason=areas unknown for goal a-red-is-classified-once in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/a-red-is-classified-once.md; areas unknown for goal a-round-survives-a-restart; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-steward-decides; machine m1e already claims the-steward-decides, and a machine holds one claim at a time
+run: metasystem goal release the-steward-decides --reason TEXT, then metasystem goal claim a-red-is-classified-once
+Integrity: sha256=2eb2628396ba1e5264222c279689d51b050c3058c96005341f6f1b8a05685d0c
