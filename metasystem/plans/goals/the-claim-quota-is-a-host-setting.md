@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1a from the accepted page plans/designs/the-claim-quota-is-a-host-setting.md: the setting, its resolver, the quota unit in both owners, the steward argument; then U1b.
 - OpenedAt: 2026-11-01T14:36:23Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=S9JADGQ6K1PCJSMJGQ32KWHP5H-m1e-c9ae359b minutes=2400 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-01T14:36:23Z E2DV6P0CDDYHJ50656N7CVHCNT-m1e-c9ae359b open actor=human:Wido targets=the-claim-quota-is-a-host-setting
 - 2026-11-01T14:37:47Z S9JADGQ6K1PCJSMJGQ32KWHP5H-m1e-c9ae359b approve actor=human:Wido targets=the-claim-quota-is-a-host-setting
-Integrity: sha256=e6cfaf962b3814b584afb5223a4883b1c034d1707dd934d6c7e75a5747236322
+- 2026-11-01T14:39:35Z MC079W7X5BA1JVD6X4A0SM0NZQ-m1e-c9ae359b set-pin actor=human:Wido targets=the-claim-quota-is-a-host-setting
+Integrity: sha256=967762aeaa0aca991f095069563e1e0772a9307bfcd1499f032a2796cd4c8f26
