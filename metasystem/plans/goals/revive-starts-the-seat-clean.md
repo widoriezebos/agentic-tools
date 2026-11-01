@@ -10,7 +10,7 @@
 - Next step: Design through the engine after a-round-survives-a-restart lands (its U1b settle is the base): metasystem design write revive-starts-the-seat-clean --brief agentic-tools-evidence/lane-test-20261009/designs/revive-starts-the-seat-clean-request.md, design review rounds (Astra) to zero material findings, acceptance by hand until an-accepted-design-is-a-record lands; then one or two units on m1e
 - OpenedAt: 2026-10-31T20:50:31Z
 - FirstClaimAt: 2026-11-01T01:02:56Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -19,6 +19,7 @@
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=6 at=2026-11-01T01:03:16Z
 - AcceptedRisk: finding=REVIVE-CENSUS-CONFIRMATION chain=design-critic-ec573be9e5f906d28e29da15 by=Wido opid=01SHCASWG783T8Z7KBSQQ3AXM0-m1e-cc2e8fc8
 - AcceptedRisk: finding=RULING-R-143-m1e chain=design-critic-ec573be9e5f906d28e29da15 by=Wido opid=6N204EDRBDKE9DKDEHQR5KNJ0A-m1e-cc2e8fc8
+- AcceptedRisk: finding=REVIVE-REAPER-PREMISE chain=design-critic-ec573be9e5f906d28e29da15 by=Wido opid=B67MCHPD1XD9HFDF9ETWJQ4S11-m1e-cc2e8fc8
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-01T01:02:56Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal revive-starts-the-seat-clean: no accepted design declares areas\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-steward-sees\",\"areas unknown for goal the-steward-sees\"]" revision=6 accountingRevision=6 episodeAt=2026-11-01T01:02:56Z episodeRevision=6
 - StopCapability: generation=6 revision=6 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -32,4 +33,5 @@ History:
 - 2026-11-01T01:03:16Z 2N0VNMCMX1HGAEJB730E1N0QZS-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=revive-starts-the-seat-clean
 - 2026-11-01T01:18:20Z 01SHCASWG783T8Z7KBSQQ3AXM0-m1e-cc2e8fc8 accept-risk actor=human:Wido targets=revive-starts-the-seat-clean reason=accepted and folded into revision 2 of the page (steward's dispositions of 2026-11-01, in Wido's name under decision 102); the engine admits no second examination for a non-critical finding (finding 458)
 - 2026-11-01T01:19:43Z 6N204EDRBDKE9DKDEHQR5KNJ0A-m1e-cc2e8fc8 accept-risk actor=human:Wido targets=revive-starts-the-seat-clean reason=accepted and folded into revision 2 of the page (steward's dispositions of 2026-11-01, in Wido's name under decision 102); the engine admits no second examination for a non-critical finding (finding 458)
-Integrity: sha256=1175d1d80974269ad6d10b7a0ddb9f3845fe3fa6e6040399d0d0a0a7d31a1b2c
+- 2026-11-01T01:21:11Z B67MCHPD1XD9HFDF9ETWJQ4S11-m1e-cc2e8fc8 accept-risk actor=human:Wido targets=revive-starts-the-seat-clean reason=accepted and folded into revision 2 of the page (steward's dispositions of 2026-11-01, in Wido's name under decision 102); the engine admits no second examination for a non-critical finding (finding 458)
+Integrity: sha256=bf1d969262d639c12e9b5c0e8f4aa5e7f94479a74a098b62126749348f249a49
