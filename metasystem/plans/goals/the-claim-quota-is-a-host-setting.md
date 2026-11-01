@@ -1,16 +1,19 @@
 # the-claim-quota-is-a-host-setting
 
-- State: queued
+- State: approved
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="decision 124 and 125 (a1 in Wido name, 2026-11-01): a hard quota of one serialised two ready redesigns behind one build while the host carried two rounds; a person claim from the pane was the stopgap."
 - Tier: 2
 - Intent: The one-claim-per-machine rule becomes the host setting host.claims (default 1, bounds 1 to 6), set only by a person at the enrolled terminal; one quota unit is an independent goal or one arc, counted the same way in the claim path and the ledger validation; the steward names every holder; a person is never refused by it.
 - Origin: human
 - Next step: Build U1a from the accepted page plans/designs/the-claim-quota-is-a-host-setting.md: the setting, its resolver, the quota unit in both owners, the steward argument; then U1b.
 - OpenedAt: 2026-11-01T14:36:23Z
-- Revision: 1
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Revision: 2
+- Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- NormApproval: approvedRef=S9JADGQ6K1PCJSMJGQ32KWHP5H-m1e-c9ae359b minutes=2400 reviewRounds=20 goalRevision=1
+- Approved: by=human:Wido at=2026-11-01T14:37:47Z revision=2 opid=S9JADGQ6K1PCJSMJGQ32KWHP5H-m1e-c9ae359b authority=proven digest=c0b73918567d40a195ed860e8fd196d78bbe208da7db4bf96bbce3501340d133 episode=2
 
 History:
 - 2026-11-01T14:36:23Z E2DV6P0CDDYHJ50656N7CVHCNT-m1e-c9ae359b open actor=human:Wido targets=the-claim-quota-is-a-host-setting
-Integrity: sha256=a87f06ebe9fc8b078a21b0811d863cde7e951e2d3fff76617c39a5f3e039d5f8
+- 2026-11-01T14:37:47Z S9JADGQ6K1PCJSMJGQ32KWHP5H-m1e-c9ae359b approve actor=human:Wido targets=the-claim-quota-is-a-host-setting
+Integrity: sha256=e6cfaf962b3814b584afb5223a4883b1c034d1707dd934d6c7e75a5747236322
