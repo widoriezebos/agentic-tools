@@ -1,0 +1,69 @@
+{
+  "canonicalRead": {
+    "id": "20261101t054332-8964e248b5-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "a-start-that-never-launched-is-not-busy",
+      "reviewedProjectTree": "3caf2bfb6b3af36565af87ae12ecc536af2496391a2ce16fe7eed5726fe8ebeb",
+      "diffDigest": "3caf2bfb6b3af36565af87ae12ecc536af2496391a2ce16fe7eed5726fe8ebeb"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261101t054332-8964e248b5-r1-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "No test pins the empty or invalid launch-id guard under a positive tick, so a mutation from errors.Is(err, fs.ErrNotExist) to err != nil in Case A or in seatReservationEnded would survive every test.",
+        "evidence": "The only test with an empty launch id is TestFleetRearmPreservesContinuation (fleet_recovery_test.go:302), and it runs without cfg.Runner, so its tick is zero. Only seat_idle_test.go sets Runner: \u0026seat.RunnerContext, and none of its rows uses an empty or invalid id. The brief's mutation list (M1 to M8) does not ask for this, so it is not material.",
+        "where": "metasystem/internal/steward/seat_idle_test.go",
+        "change": "Optional: add one row with LaunchID \"\" (Case A), or operationId \"unit-launch:\" with an empty suffix (Case B), under the 300-second tick, and assert that it stays busy.",
+        "relation": "new: a kept guard needs a test under the condition that reaches it (the empty or invalid launch-id guard, brief checklist 3)"
+      },
+      {
+        "id": "20261101t054332-8964e248b5-r1-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The proof command named for this read, /usr/bin/true, runs no tests.",
+        "evidence": "The evidence for checklist item 2 comes from the frozen unit check (round-1/check-705975453/output.log: unit/internal/steward green, the impacted cmd/metasystem tests green, ^TestAudit ok) and from this read's own go test run of the new and pinned tests (all PASS). This is not caused by the unit's diff, and the diff cannot fix it.",
+        "where": "metasystem/internal/steward/seat_idle_test.go",
+        "change": "None in the unit. The machinery could name the frozen unit check as the proof for reads.",
+        "relation": "new: the proof a read names must exercise the changed behavior (read checklist item 2)"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261101t054332-8964e248b5-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "3558433b951955e04fdbdd8ede7743d84302ec508eee555d33a3d23248789a74",
+  "schemaVersion": 1,
+  "goal": "a-start-that-never-launched-is-not-busy",
+  "unit": "U1",
+  "subject": {
+    "commit": "f79ef96f1ef0f0fc757799fb471a53f675ba73c8",
+    "parent": "2017a7f5791872bdcb36de0c021beaa3e5ae4d60",
+    "tree": "8f0fb1eb0964d11d219bc8b95a62ed9ea6d20058",
+    "patchDigest": "3caf2bfb6b3af36565af87ae12ecc536af2496391a2ce16fe7eed5726fe8ebeb",
+    "unitDigest": "430fb3794ce72fab92d211ffade76c0ccb289820ade59f4e7503db789543e9bd"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261101t054332-8964e248b5-r1-s3",
+    "closureSha256": "59b1e4d6af6b9bb6ee2e2c7440492c745423aad76c8018031145b701143eb9ff"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "8f0fb1eb0964d11d219bc8b95a62ed9ea6d20058",
+    "runId": "goal-read-gate-20261101t082923z-272fe897ddff7908"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/seat_idle_test.go",
+      "readerWord": "reviewed by unit read 20261101t054332-8964e248b5-r1-s3"
+    }
+  ],
+  "sha256": "924db068f763b89cbc47c35bd456ed1ac42f6adc5daf0daf24869c729b4a1d54"
+}
