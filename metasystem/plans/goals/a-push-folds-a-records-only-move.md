@@ -1,13 +1,15 @@
 # a-push-folds-a-records-only-move
 
 - State: queued
+- Priority: 1
+- Sequence: 21
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="lane push path; a wrong fold pushes an unproven code change (bounded by the trunk check); every landing is exposed; recurs on every records move during a proof"
 - Tier: 2
 - Intent: The lane push folds a records-only move of main into a proven batch without a second proof: when every commit main gained since the batch base is records-only by the classifier of a-records-only-move-keeps-mains-green, the merged tree is pushed on the batch proof (or after the cheap check that classifier already prescribes); the-steward-sees stood an hour green at 03:55-06:32 on 2026-11-01 for one goal-edit commit (finding 460)
 - Origin: human
 - Next step: Build without a design from finding 460: the push path reuses the records-only classifier; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:40:58Z
-- Revision: 2
+- Revision: 3
 - Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -15,4 +17,5 @@
 History:
 - 2026-11-01T06:40:58Z T05J239XGRNW745CQ4PGG88T1B-m1e-cbd14c5a open actor=human:Wido targets=a-push-folds-a-records-only-move
 - 2026-11-01T06:41:25Z 2WWFF10F3FF6QGNJ2193M16T0G-m1e-cbd14c5a set-pin actor=human:Wido targets=a-push-folds-a-records-only-move
-Integrity: sha256=54ddf42e14929e7a664bee0c4e8d7f3b1ac4812591f8c48973a92e16ee773aa6
+- 2026-11-01T06:41:34Z MJDBKZ9QEZVA4ART15DEX14P41-m1e-cbd14c5a set-priority actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-push-folds-a-records-only-move,a-question-reminds-and-anyone-can-ask,a-red-main-is-known-once,a-review-keeps-every-read,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,a-spent-box-asks-before-it-blocks,a-stewards-standing-defect-reaches-an-owner,a-stop-waits-for-the-unit-boundary-2,a-unit-check-runs-the-importers-too,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2,the-lane-returns-its-own-red,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=a-push-folds-a-records-only-move from=unranked to=1:21 requested-sequence=21
+Integrity: sha256=5c23585c8bc0b23ac3d3e2469b6dd62341245a68e9248363471cc96bf57ac55b
