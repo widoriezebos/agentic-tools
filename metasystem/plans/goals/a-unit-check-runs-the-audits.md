@@ -1,6 +1,6 @@
 # a-unit-check-runs-the-audits
 
-- State: queued
+- State: approved
 - Priority: 1
 - Sequence: 27
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="unit check selection; a wrong selection runs extra tests (cost only) or misses one (the lane still catches it); every unit is exposed; recurs on every audit-relevant change"
@@ -9,13 +9,16 @@
 - Origin: human
 - Next step: Build without a design from finding 459: the unit check selects the audit tests with the impacted packages; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:41:16Z
-- Revision: 3
+- Revision: 4
 - Pinned: m1e
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- NormApproval: approvedRef=5V2GEQ6JC8G6QRDN41T5XWNSX2-m1e-37ae1684 minutes=2400 reviewRounds=20 goalRevision=3
+- Approved: by=human:Wido at=2026-11-01T06:44:15Z revision=4 opid=5V2GEQ6JC8G6QRDN41T5XWNSX2-m1e-37ae1684 authority=proven digest=da390938f42e2ea416001a6c318febc6e19520a237127db2a494b5038461e8fe episode=4
 
 History:
 - 2026-11-01T06:41:16Z P00WV97EC6XYPH02Q25ZPD7AKM-m1e-cbd14c5a open actor=human:Wido targets=a-unit-check-runs-the-audits
 - 2026-11-01T06:42:26Z DBH8NWNRTMH4QW9TEWKBHTJKC0-m1e-cbd14c5a set-pin actor=human:Wido targets=a-unit-check-runs-the-audits
 - 2026-11-01T06:42:34Z 1YYJVHRSGK63KW8Q2H1GJ7V8JJ-m1e-cbd14c5a set-priority actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-lane-act-runs-from-the-phone,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-question-reminds-and-anyone-can-ask,a-red-main-is-known-once,a-review-keeps-every-read,a-run-keeps-its-journal,a-spent-box-asks-before-it-blocks,a-stewards-standing-defect-reaches-an-owner,a-stop-waits-for-the-unit-boundary-2,a-unit-check-runs-the-audits,a-unit-check-runs-the-importers-too,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2,the-lane-returns-its-own-red,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=a-unit-check-runs-the-audits from=unranked to=1:27 requested-sequence=27
-Integrity: sha256=43d17913493c1ba27ff598510bb3fb99fa9b2150ab5f3e46923900e81f42f915
+- 2026-11-01T06:44:15Z 5V2GEQ6JC8G6QRDN41T5XWNSX2-m1e-37ae1684 approve actor=human:Wido targets=a-folded-design-finding-is-re-read,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-unit-check-runs-the-audits,one-question-per-refused-admission
+Integrity: sha256=839d03b563c0f1a5ecbfd13c99d79210b61e38d487c3b1d63e30a9275bbe6b4a
