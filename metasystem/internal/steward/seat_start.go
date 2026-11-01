@@ -749,7 +749,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		if !held || claimLineage(file) != SeatLineage || file.Approved == nil || approvalOpid(file) != last.ApprovalOpid {
 			return SeatRecord{}, closeUnboundLaunch(repoRoot, &last, last.Goal+" is no longer held by this seat under that approval")
 		}
-		if busy, reason, _ := seatBusyReader(dependencies.WorkStateRoot)(repoRoot, work, dependencies.Now()); busy {
+		if busy, reason, _ := seatBusyReader(dependencies.WorkStateRoot, 0)(repoRoot, work, dependencies.Now()); busy {
 			return SeatRecord{}, errors.New(reason)
 		}
 		selection = SeatSelection{Goal: last.Goal, Held: true, ApprovalOpid: last.ApprovalOpid}
