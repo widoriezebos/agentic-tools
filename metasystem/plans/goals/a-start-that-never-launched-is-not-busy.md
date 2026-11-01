@@ -11,13 +11,14 @@
 - Next step: One unit on the m1e build lane right after the-steward-sees lands, before the-steward-decides: internal/steward/seat_idle.go:113-115 treats a StepStarting step whose launch record is absent and whose StartedAt is older than one tick like the orphan branch at :126-128 (about 15 production lines plus one test with an artificial clock and an injected store, and the mutation that marks it busy again); brief by the steward, Read each round: yes, lane landing, deploy both seats; ASKED GSMA7NZKH17GFE4Y9EWASPD8AN (other): Start this build at your enrolled terminal?; ASKED 3YVD0N7GXFAXB8XZQ7XPFRX0KB (other): Start this build at your enrolled terminal?; ANSWERED 3YVD0N7GXFAXB8XZQ7XPFRX0KB: Start
 - OpenedAt: 2026-10-31T21:23:46Z
 - FirstClaimAt: 2026-11-01T05:43:12Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=2NHRJDX1XQQDSV9KP2PRCEGPF7-m1e-ce2f570e minutes=2400 reviewRounds=20 goalRevision=1
 - Approved: by=human:Wido at=2026-10-31T21:24:03Z revision=2 opid=2NHRJDX1XQQDSV9KP2PRCEGPF7-m1e-ce2f570e authority=proven digest=7302ca7b4932a6af76ec7ea2e9fa9d68a85eb1f81b99d0609c6718f615c1e003 episode=2
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-01T05:43:12Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-start-that-never-launched-is-not-busy: no accepted design declares areas\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=7 accountingRevision=7 episodeAt=2026-11-01T05:43:12Z episodeRevision=7
+- Landing: at=2026-11-01T08:30:44Z opid=5D1C9FJ7ZWGT8GHA5F8DSWCYP9-m1e-cc2e8fc8
 - StopCapability: generation=7 revision=7 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
@@ -31,4 +32,5 @@ History:
 - 2026-11-01T05:43:36Z HX45WJSY612ZH915VM3CHTBRMR-m1e-cc2e8fc8 ask actor=m1e+main-1792389436-6018-51cc28 targets=a-start-that-never-launched-is-not-busy
 - 2026-11-01T05:58:35Z ME2H9FM2CMG0E0NRTZQX1VYEKY-m1e-cc2e8fc8 ask actor=m1e+main-1792389436-6018-51cc28 targets=a-start-that-never-launched-is-not-busy
 - 2026-11-01T06:20:36Z TADAFASMW93W9TRZX5WP5F4NG2-m1e-76faa029 answer actor=human:wido targets=a-start-that-never-launched-is-not-busy authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1355/1356 channelStep=1793514036 question=3YVD0N7GXFAXB8XZQ7XPFRX0KB reason=Start
-Integrity: sha256=24cf851de14df3aedf42fe398bd2d2c2e2266e0a3736075deffc63fab90a1c6e
+- 2026-11-01T08:30:44Z 5D1C9FJ7ZWGT8GHA5F8DSWCYP9-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=a-start-that-never-launched-is-not-busy
+Integrity: sha256=c1a0a4f8ca607772889db0d78f55a76d780a24440b41d3f0145bedffb2801986

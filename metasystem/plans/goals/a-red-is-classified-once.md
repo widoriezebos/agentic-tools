@@ -1,6 +1,6 @@
 # a-red-is-classified-once
 
-- State: approved
+- State: claimed
 - Priority: 1
 - Sequence: 19
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="engine code on the unit-check and lane red paths; a wrong classification lets a real red pass as a flake (bounded by the lane proof on main) or keeps asking people; every unit on both seats is exposed; the defect recurs every flake"
@@ -9,16 +9,20 @@
 - Origin: human
 - Next step: Design through the engine: metasystem design write a-red-is-classified-once --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-red-is-classified-once-request.md; then design review; then units
 - OpenedAt: 2026-11-01T06:38:56Z
-- Revision: 4
+- FirstClaimAt: 2026-11-01T08:30:44Z
+- Revision: 5
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=EFEHA56G9A5YV5EQQAC3RGGDPP-m1e-b2c714f5 minutes=2400 reviewRounds=20 goalRevision=1
 - Approved: by=human:Wido at=2026-11-01T06:39:15Z revision=2 opid=EFEHA56G9A5YV5EQQAC3RGGDPP-m1e-b2c714f5 authority=proven digest=1757fe4f6c1baded45d1e2840efe3e89025be8c59d671d32d5378002f7c39086 episode=2
+- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-01T08:30:44Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-red-is-classified-once: no accepted design declares areas\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal a-start-that-never-launched-is-not-busy\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal a-start-that-never-launched-is-not-busy\"]" revision=5 accountingRevision=5 episodeAt=2026-11-01T08:30:44Z episodeRevision=5
+- StopCapability: generation=5 revision=5 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-11-01T06:38:56Z YGYTHR8A1P4PY6NSW8S3S7VF5F-m1e-b2c714f5 open actor=human:Wido targets=a-red-is-classified-once
 - 2026-11-01T06:39:15Z EFEHA56G9A5YV5EQQAC3RGGDPP-m1e-b2c714f5 approve actor=human:Wido targets=a-hand-in-stands-on-main,a-red-is-classified-once
 - 2026-11-01T06:39:26Z FH553SWTZR6YRY04H34RCXYZSZ-m1e-b2c714f5 set-pin actor=human:Wido targets=a-red-is-classified-once
 - 2026-11-01T06:39:43Z PTDN99DJWVH1G5MVG5G5VVZ4NE-m1e-b2c714f5 set-priority actor=human:Wido targets=a-delivered-goal-and-a-needed-act-reach-the-person,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-lane-act-runs-from-the-phone,a-persons-channel-carries-only-acts-and-deliveries,a-persons-terminal-is-not-a-seat-main-2,a-persons-test-run-is-admitted,a-proof-unit-ends-on-time-2,a-proved-main-deploys-itself-2,a-question-reminds-and-anyone-can-ask,a-red-is-classified-once,a-red-main-is-known-once,a-review-keeps-every-read,a-run-keeps-its-journal,a-seat-pauses-at-its-spend-line,a-spent-box-asks-before-it-blocks,a-stewards-standing-defect-reaches-an-owner,a-stop-waits-for-the-unit-boundary-2,a-unit-check-runs-the-importers-too,agent-works-as-project-partner,agents-show-one-line-of-what-they-do,an-outside-read-is-a-read-record,approval-stays-and-waiting-goals-return-by-themselves,backlog-holds-only-work-that-can-start,blocked-seats-route-to-the-machinery-not-a-supervisor,builder-proves-each-rule-by-mutation,busy-seat-shells-are-ended,channel-questions-stand-alone,commit-goal-binding,critique-stops-on-convergence,cross-cutting-change-inventories-its-readers,engine-owns-disk-lifetimes,every-launched-agent-waits-inside-its-turn,evidence-and-build-output-have-retention-and-stay-unindexed,first-headless-run,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,flake-fix-metasystem-cmd-metasystem-testproofruncommandgovernedparentsharesonecharge,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,flake-fix-metasystem-internal-proofrun-testtestenvironmentstandardinventorymatchesobserved,fleet-doctor-repairs-what-stops-other-seats,fleet-forgets-an-unreachable-seat,fleet-page-redesign,fleet-steward-reasons-over-all-seats,goal-budget-follows-its-plan,headless-continuous-delivery-proof,host-setup-from-scratch,machine-concurrency-governor,machinery-blocks-of-2026-10-02,no-code-carries-the-relayed-word-path,notifications-can-be-dismissed,one-folder-deployed-and-evolved,one-person-one-truth,one-steward-per-checkout-on-its-own-root,overrides-state-their-impact,partner-runtime-defaults-to-an-available-one,questions-carry-what-they-ask-about,questions-reach-the-person-only-when-his,questions-with-a-default-do-not-block,receipt-writer-follows-the-worktree-it-runs-in,recovery-to-good-state,red-names-what-failed,review-agent-shows-the-green-pulse,rosters-are-configuration-items,round-proof-feeds-the-next-brief,rulings-are-project-wide-and-current,seat-path-lands-without-help,seat-sessions-stay-small,seat-works-without-a-person,steward-acts-on-behaviour-patterns,steward-flake-fixer-resolves-its-machine,switch-on-trial,testing-surfaces-declare-their-mirror,tests-observe-only-what-they-inject-2,the-lane-deploys-the-engine-it-runs-2,the-lane-returns-its-own-red,the-lane-says-what-it-does,ui-connects-to-a-running-agent,units-are-sized-from-a-measured-inventory reason=priority-order subject=a-red-is-classified-once from=unranked to=1:19 requested-sequence=19
-Integrity: sha256=7cdb52efded96a7aa5ceca723a829346b2dc07987c3095dc35309e195de64e65
+- 2026-11-01T08:30:44Z 5D1C9FJ7ZWGT8GHA5F8DSWCYP9-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-red-is-classified-once reason=areas unknown for goal a-red-is-classified-once: no accepted design declares areas; areas unknown for goal a-round-survives-a-restart; areas unknown for goal a-start-that-never-launched-is-not-busy; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal a-start-that-never-launched-is-not-busy
+Integrity: sha256=5afb8562d4107092c07dab59ea6a44af3d490189acfb98b94172eb5e972dc7d8
