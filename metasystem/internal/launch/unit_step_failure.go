@@ -122,8 +122,11 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 		after, err := driver.snapshot(step.Retained.WorkingDirectory)
 		if err != nil {
 			step.State, step.Cause, step.Reason = StepFailed, "unclassified", err.Error()
-		} else if step.Moved = step.Before.changed(after); len(step.Moved) > 0 {
-			step.State, step.Cause, step.Reason = StepFailed, "environment", "the check's inputs changed during the step: "+inputNames(*step.Before, after)
+		} else {
+			noteRefMoves(driver.round, step.Name, *step.Before, after)
+			if step.Moved = step.Before.changed(after); len(step.Moved) > 0 {
+				step.State, step.Cause, step.Reason = StepFailed, "environment", "the check's inputs changed during the step: "+inputNames(*step.Before, after)
+			}
 		}
 		step.Before = nil
 		if err := driver.save(); err != nil {
@@ -254,6 +257,7 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 				return result, err
 			}
 		}
+		round.ProofRefsNoted = false
 		step.RetryBy, step.RetryReason, step.RetryLaunch = person, reason, step.LaunchID
 		step.State, step.Reason, step.Cause, step.FinishedAt = StepPending, "", "", ""
 		step.Before, step.Moved, step.Deadline = nil, nil, false

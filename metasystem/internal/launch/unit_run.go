@@ -72,7 +72,16 @@ type UnitRunRecord struct {
 	Mutation  *identity.Ref  `json:"mutation,omitempty"`
 }
 
+type RefMove struct {
+	Ref    string `json:"ref"`
+	Before string `json:"before,omitempty"`
+	After  string `json:"after,omitempty"`
+	Step   string `json:"step"`
+}
+
 type UnitRound struct {
+	RefMoves         []RefMove          `json:"refMoves,omitempty"`
+	ProofRefsNoted   bool               `json:"proofRefsNoted,omitempty"`
 	InputsChanged    string             `json:"inputsChanged,omitempty"`
 	Result           *RoundResult       `json:"result,omitempty"`
 	GapMessage       string             `json:"gapMessage,omitempty"`
@@ -633,6 +642,10 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if err != nil {
 		return UnitResult{}, err
 	}
+	if !round.ProofRefsNoted {
+		noteRefMoves(round, "proof:"+commands[0].Name, beforeProof, afterProof)
+		round.ProofRefsNoted = true
+	}
 	var moved []string
 	round.InputsChanged = inputNames(beforeProof, afterProof)
 	if round.InputsChanged != "" {
@@ -691,14 +704,31 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if err != nil {
 		return UnitResult{}, err
 	}
-	if packet != "" && plan.HasRead() {
+	if plan.HasRead() && (packet != "" || len(round.RefMoves) > 0) {
 		brief, err := os.ReadFile(plan.Read.Brief)
 		if err != nil {
 			return UnitResult{}, err
 		}
-		brief = []byte(strings.Replace(string(brief), "Not this read. A follow-up round of this unit is read again by the unit runner with this brief.", "Check the follow-up packet below before reading new changes.", 1))
+		text := string(brief)
+		if packet != "" {
+			text = strings.Replace(text, "Not this read. A follow-up round of this unit is read again by the unit runner with this brief.", "Check the follow-up packet below before reading new changes.", 1) + packet
+		}
+		if len(round.RefMoves) > 0 {
+			var moves []string
+			for _, move := range round.RefMoves {
+				before, after := fmt.Sprintf("%.10s", move.Before), fmt.Sprintf("%.10s", move.After)
+				if before == "" {
+					before = "created"
+				}
+				if after == "" {
+					after = "deleted"
+				}
+				moves = append(moves, move.Ref+" "+before+" to "+after)
+			}
+			text += "\n\nWhile the checks ran, these refs moved; the check reads none of them: " + strings.Join(moves, "; ") + ".\n"
+		}
 		path := filepath.Join(round.Directory, "read-brief.md")
-		if _, err := atomicfile.WriteText(path, string(brief)+packet, runner.root()); err != nil {
+		if _, err := atomicfile.WriteText(path, text, runner.root()); err != nil {
 			return UnitResult{}, err
 		}
 		sequence.spec.Brief = path
@@ -1215,6 +1245,39 @@ func (snapshot repositorySnapshot) changed(after repositorySnapshot) []string {
 		}
 	}
 	return changed
+}
+
+func noteRefMoves(round *UnitRound, step string, before, after repositorySnapshot) {
+	refs := func(snapshot repositorySnapshot) map[string]string {
+		result := map[string]string{}
+		for _, line := range strings.Split(snapshot.Refs, "\n") {
+			if fields := strings.Fields(line); len(fields) == 2 {
+				result[fields[0]] = fields[1]
+			}
+		}
+		return result
+	}
+	left, right := refs(before), refs(after)
+	for ref := range left {
+		if _, exists := right[ref]; !exists {
+			right[ref] = ""
+		}
+	}
+	var names []string
+	for ref, after := range right {
+		if left[ref] != after {
+			names = append(names, ref)
+		}
+	}
+	sort.Strings(names)
+	for _, ref := range names {
+		index := slices.IndexFunc(round.RefMoves, func(move RefMove) bool { return move.Ref == ref })
+		if index < 0 {
+			round.RefMoves = append(round.RefMoves, RefMove{Ref: ref, Before: left[ref], After: right[ref], Step: step})
+		} else {
+			round.RefMoves[index].After, round.RefMoves[index].Step = right[ref], step
+		}
+	}
 }
 
 func inputNames(before, after repositorySnapshot) string {

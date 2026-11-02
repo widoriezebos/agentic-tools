@@ -94,6 +94,7 @@ func (git *recordingOSGit) Run(directory string, environment []string, args ...s
 type completingStarter struct {
 	m                  *Manager
 	failKind, holdKind string
+	failCause          string
 	order, ids         []string
 	readOutput         string
 	readVerdict        string
@@ -129,6 +130,9 @@ func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, e
 		code := 0
 		if record.Kind == starter.failKind {
 			current.State, current.Reason, code = Failed, "fixture-red", 1
+			if starter.failCause != "" {
+				current.Cause = starter.failCause
+			}
 		}
 		current.ExitCode = &code
 		if record.Kind == "read" {
@@ -1123,11 +1127,26 @@ func newLinkedGitUnitFixture(t *testing.T) (unitFixture, string) {
 
 func TestAMoveOutsideTheCheckDoesNotStopIt(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"main", "ledger", "goal", "tag", "read-main"} {
+	for _, name := range []string{"main", "ledger", "goal", "tag", "deleted-tag", "read-main"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			fixture, primary := newLinkedGitUnitFixture(t)
 			fixture.starter.readVerdict = "land"
+			before := strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD"))
+			want := RefMove{Ref: "refs/heads/main", Before: before, Step: "proof:check"}
+			if name == "read-main" {
+				want.Step = "read"
+			}
+			if name == "goal" || name == "tag" {
+				want.Ref, want.Before = "refs/heads/goal/another", ""
+				if name == "tag" {
+					want.Ref = "refs/tags/published"
+				}
+			}
+			if name == "deleted-tag" {
+				runGit(t, primary, "tag", "published")
+				want.Ref = "refs/tags/published"
+			}
 			moved := false
 			fixture.starter.onStart = func(record Record) error {
 				kind := "proof"
@@ -1150,6 +1169,8 @@ func TestAMoveOutsideTheCheckDoesNotStopIt(t *testing.T) {
 					runGit(t, primary, "branch", "goal/another")
 				case "tag":
 					runGit(t, primary, "tag", "published")
+				case "deleted-tag":
+					runGit(t, primary, "tag", "-d", "published")
 				}
 				return nil
 			}
@@ -1161,8 +1182,112 @@ func TestAMoveOutsideTheCheckDoesNotStopIt(t *testing.T) {
 			if round.Outcome != "green" || len(stepNamed(t, round, "proof:check").LaunchIDs) != 1 {
 				t.Fatalf("unrelated move stopped the check: %+v", round)
 			}
+			if name != "deleted-tag" {
+				want.After = strings.TrimSpace(runGit(t, primary, "rev-parse", want.Ref))
+			}
+			if !reflect.DeepEqual(round.RefMoves, []RefMove{want}) || !round.ProofRefsNoted {
+				t.Fatalf("ref observation: got %+v, want %+v; noted=%t", round.RefMoves, want, round.ProofRefsNoted)
+			}
+			if name == "main" || name == "goal" || name == "tag" || name == "deleted-tag" {
+				read := stepNamed(t, round, "read")
+				brief, err := os.ReadFile(read.Retained.Brief)
+				from, to := "created", "deleted"
+				if want.Before != "" {
+					from = want.Before[:10]
+				}
+				if want.After != "" {
+					to = want.After[:10]
+				}
+				paragraph := "While the checks ran, these refs moved; the check reads none of them: " + want.Ref + " " + from + " to " + to
+				if err != nil || !strings.Contains(string(brief), paragraph) || !strings.HasPrefix(string(brief), "read it\n") {
+					t.Fatalf("round-one read brief: %q, error=%v; want %q", brief, err, paragraph)
+				}
+			}
 		})
 	}
+}
+
+func TestTheFactKeepsTheLatestMove(t *testing.T) {
+	t.Parallel()
+	for _, returns := range []bool{false, true} {
+		t.Run(fmt.Sprintf("returns=%t", returns), func(t *testing.T) {
+			t.Parallel()
+			fixture, primary := newLinkedGitUnitFixture(t)
+			a := strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD"))
+			var c string
+			fixture.starter.failKind, fixture.starter.failCause, fixture.starter.readVerdict = "read", "environment", "land"
+			fixture.starter.onStart = func(record Record) error {
+				if record.Kind == "read" && strings.Contains(record.ID, "-retry") {
+					fixture.starter.holdKind = "read"
+					return nil
+				}
+				if record.Kind == "proof" || record.Kind == "read" {
+					writeFile(t, filepath.Join(primary, "records"), record.ID)
+					runGit(t, primary, "add", "records")
+					runGit(t, primary, "commit", "-m", "records")
+					if record.Kind == "read" {
+						if returns {
+							runGit(t, primary, "update-ref", "refs/heads/main", a)
+						}
+						c = strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD"))
+					}
+				}
+				return nil
+			}
+			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil || !first.Capped {
+				t.Fatalf("held reader retry: %+v %v", first, err)
+			}
+			again, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil || !again.Capped {
+				t.Fatalf("reader continuation: %+v %v", again, err)
+			}
+			fixture.starter.failKind, fixture.starter.holdKind = "", ""
+			if _, err := fixture.manager.Store.Update(first.Launch, func(record *Record) error { record.State = Completed; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			last, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := last.Record.Rounds[0]
+			want := []RefMove{{Ref: "refs/heads/main", Before: a, After: c, Step: "read"}}
+			if round.Outcome != "green" || !round.ProofRefsNoted || !reflect.DeepEqual(round.RefMoves, want) {
+				t.Fatalf("continuation replaced the latest move: got %+v, want %+v; round=%+v", round.RefMoves, want, round)
+			}
+		})
+	}
+	t.Run("person-retry", func(t *testing.T) {
+		t.Parallel()
+		fixture, primary := newLinkedGitUnitFixture(t)
+		a := strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD"))
+		fixture.starter.failKind, fixture.starter.failCause, fixture.starter.readVerdict = "proof", "environment", "land"
+		first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+		if err != nil || !first.Record.Rounds[0].ProofRefsNoted || first.Record.Rounds[0].Stop == nil {
+			t.Fatalf("failed proof: %+v %v", first, err)
+		}
+		retry, err := fixture.runner.RetryFailedStep(first.Record.ID, "Wido", "retry the check", func() error { return nil })
+		if err != nil || retry.Record.Rounds[0].ProofRefsNoted {
+			t.Fatalf("person's retry kept the consumed proof window: %+v %v", retry, err)
+		}
+		fixture.starter.failKind = ""
+		fixture.starter.onStart = func(record Record) error {
+			if record.Kind == "proof" {
+				writeFile(t, filepath.Join(primary, "records"), record.ID)
+				runGit(t, primary, "add", "records")
+				runGit(t, primary, "commit", "-m", "records")
+			}
+			return nil
+		}
+		last, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []RefMove{{Ref: "refs/heads/main", Before: a, After: strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD")), Step: "proof:check"}}
+		if round := last.Record.Rounds[0]; round.Outcome != "green" || !round.ProofRefsNoted || !reflect.DeepEqual(round.RefMoves, want) {
+			t.Fatalf("person's retry lost its ref move: %+v, want %+v", round, want)
+		}
+	})
 }
 
 func TestAChangedWorktreeFileStopsTheRoundByName(t *testing.T) {
