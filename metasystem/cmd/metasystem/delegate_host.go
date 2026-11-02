@@ -32,13 +32,13 @@ func (h engineHost) UnitLaunchStatus(id string) (string, error) {
 	return string(record.State), err
 }
 
-func (h engineHost) CancelUnitLaunch(id string) error {
+func (h engineHost) CancelUnitLaunch(id string) (delegation.UnitLaunchOutcome, error) {
 	manager := h.launches
 	if manager == nil {
 		manager = newLaunchManager()
 	}
-	_, err := manager.Cancel(id)
-	return err
+	record, err := manager.Cancel(id)
+	return delegation.UnitLaunchOutcome{State: string(record.State), StartedAt: record.StartedAt, FinishedAt: record.FinishedAt, Executed: record.Executed()}, err
 }
 
 // WaitJob is `internal wait --root R --job J` for the supplied caller; the

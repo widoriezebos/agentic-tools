@@ -126,7 +126,18 @@ func TestASweptReservationTakesItsRealOutcome(t *testing.T) {
 		t.Fatalf("a contradicting outcome on a collected record = %v", err)
 	}
 
-	path = sweep("job-started", map[string]any{"startedAt": "2026-08-28T08:10:30Z"})
+	path = sweep("unit-owned", map[string]any{"unitExecuted": false})
+	if err := reconcile("unit-owned", "completed"); err != nil {
+		t.Fatalf("the collection refused a swept reservation with execution ownership: %v", err)
+	}
+	record, _ = readObject(path)
+	_, phase = record["phase"]
+	_, failure = record["error"]
+	if record["status"] != "completed" || record["unitExecuted"] != true || phase || failure {
+		t.Fatalf("the owned swept reservation did not take its real outcome: %v", record)
+	}
+
+	path = sweep("job-started", map[string]any{"startedAt": "2026-08-28T08:10:30Z", "unitExecuted": true})
 	before, _ = os.ReadFile(path)
 	if err := reconcile("job-started", "completed"); err == nil || !strings.Contains(err.Error(), "contradicts its terminal reservation") {
 		t.Fatalf("a started record the sweep failed took a different outcome: %v", err)

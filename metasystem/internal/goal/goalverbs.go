@@ -61,6 +61,7 @@ type Store struct {
 	projectionDeps  projectionDependencies
 	registryWriter  sessionStopRegistryWriterFunc
 	ResolveIdleSeat func() (Actor, int64, error)
+	UncollectedRuns func(goals []string) ([]UncollectedRun, error)
 	// ObserveIdleSeat reads the seat's work and identity before idle counting.
 	ObserveIdleSeat func(ClaimableBudgetedWork) (busy bool, source string, err error)
 	// ClaimIdleGoal exposes the external claim boundary for tests and callers

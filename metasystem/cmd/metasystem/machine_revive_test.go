@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -31,6 +32,11 @@ var _ = addLayoutCases(layoutCase{name: "machine-revive-refusal", args: []string
 
 func TestMachineRevivePublicAct(t *testing.T) {
 	t.Parallel()
+	machineRevivePublicAct(t, []string{"closed-stranded-continuation", "closed-live-continuation", "closed-not-held", "closed-completed", "person", "omitted", "agent", "stale", "stopped", "unreadable", "missing-episode", "invalid-finished", "unreadable-episode", "automatic-missing-episode", "automatic-invalid-finished", "automatic-old-interval", "missing-launch", "missing-launch-live", "older-start-failed", "launcher-refused", "reservation", "response-loss", "automatic"})
+}
+
+func machineRevivePublicAct(t *testing.T, scenarios []string) {
+	t.Helper()
 	if os.Getenv("MACHINE_REVIVE_ISOLATED") == "" {
 		tools, home := t.TempDir(), t.TempDir()
 		// Only version-control process answers are replaced; every caller uses
@@ -58,7 +64,7 @@ esac
 		if err := testexec.WriteFile(filepath.Join(tools, "git"), []byte(git), 0700); err != nil {
 			t.Fatal(err)
 		}
-		selection := "^TestMachineRevivePublicAct$"
+		selection := "^" + strings.ReplaceAll(t.Name(), "/", "$/^") + "$"
 		parts, depth := strings.Split(flag.Lookup("test.run").Value.String(), "/"), strings.Count(t.Name(), "/")+1
 		if len(parts) > depth {
 			selection += "/" + strings.Join(parts[depth:], "/")
@@ -78,7 +84,7 @@ esac
 		t.Logf("public machine revival:\n%s", out)
 		return
 	}
-	for _, scenario := range []string{"closed-not-held", "closed-completed", "person", "omitted", "agent", "stale", "stopped", "unreadable", "missing-episode", "invalid-finished", "unreadable-episode", "automatic-missing-episode", "automatic-invalid-finished", "automatic-old-interval", "missing-launch", "missing-launch-live", "older-start-failed", "launcher-refused", "reservation", "response-loss", "automatic"} {
+	for _, scenario := range scenarios {
 		t.Run(scenario, func(t *testing.T) {
 			t.Parallel()
 			bed := newWorkBedWith(t, func(f *goal.GoalFile) {
@@ -147,7 +153,7 @@ esac
 				t.Fatal(err)
 			}
 			launchState := launch.Failed
-			if scenario == "closed-completed" {
+			if scenario == "closed-completed" || strings.HasSuffix(scenario, "-continuation") {
 				launchState = launch.Completed
 			}
 			if err := bed.manager.Store.Create(launch.Record{ID: failed.LaunchID, Kind: "seat", State: launchState, Adapter: "claude-headless", WorkingDirectory: root, StartedAt: failed.StartedAt, FinishedAt: now.Add(-time.Minute).Format(time.RFC3339)}); err != nil {
@@ -159,6 +165,28 @@ esac
 			if strings.HasPrefix(scenario, "automatic") {
 				before = steward.Evidence{}
 				if err := outage.Clear(home, "anthropic", now); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if strings.HasSuffix(scenario, "-continuation") {
+				before.CurrentContinuation = "stranded-continuation"
+				consumed := filepath.Join(root, "artifacts", "agents", "steward", "consumed")
+				jobs := filepath.Join(root, "artifacts", "agents", "jobs")
+				for _, dir := range []string{consumed, jobs} {
+					if err := os.MkdirAll(dir, 0700); err != nil {
+						t.Fatal(err)
+					}
+				}
+				data, _ := json.Marshal(steward.Intent{Nonce: before.CurrentContinuation, JobId: "steward-stranded", Reason: "seatHandoff"})
+				if err := os.WriteFile(filepath.Join(consumed, before.CurrentContinuation+".json"), data, 0600); err != nil {
+					t.Fatal(err)
+				}
+				job := map[string]any{"status": "failed", "phase": "handshake", "error": "runtime_error"}
+				if scenario == "closed-stranded-continuation" || scenario == "answer-stranded-continuation" {
+					job["endedAt"] = now.Add(-time.Minute).Format(time.RFC3339)
+				}
+				data, _ = json.Marshal(job)
+				if err := os.WriteFile(filepath.Join(jobs, "steward-stranded.json"), data, 0600); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -278,6 +306,24 @@ esac
 			run := func(after bool) (int, intentResult) {
 				t.Helper()
 				args := []string{"machine", "revive", "mac-cli", "--json"}
+				if strings.HasPrefix(scenario, "answer-") {
+					channelFor(t, root)
+					act := []string{"metasystem", "machine", "revive", "mac-cli"}
+					if scenario == "answer-other-seat" {
+						act[3] = "another-seat"
+					}
+					q := holdAnswerQuestion(t, root, bed.id, "Revive it", act)
+					if scenario == "answer-closed" {
+						if err := channel.Close(root, q.ID, "settled", nil, channel.DestinationConfig{}); err != nil {
+							t.Fatal(err)
+						}
+					}
+					owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+						return humanauthority.Proof{}, errors.New("an agent process is an ancestor of this shell")
+					}
+					args = append(args, "--answer", q.ID)
+					after = false
+				}
 				if scenario == "stopped" {
 					args[2] = root
 				}
@@ -306,7 +352,18 @@ esac
 				return
 			}
 			code, result := run(scenario != "omitted")
-			if strings.HasPrefix(scenario, "closed-") {
+			if scenario == "answer-closed" || scenario == "answer-other-seat" {
+				if code == 0 || len(bed.starter.launched()) != 0 || scenario == "answer-other-seat" && !strings.Contains(result.Summary, "this answer authorizes") {
+					t.Fatalf("invalid answer acted: %d %+v", code, result)
+				}
+				return
+			}
+			if scenario == "answer-stranded-continuation" {
+				if state, _ := answerState(t, result); state != "started" {
+					t.Fatalf("revival answer did not act: %d %+v", code, result)
+				}
+			}
+			if strings.HasPrefix(scenario, "closed-") || scenario == "answer-stranded-continuation" {
 				if code != 0 || result.Outcome != intentConfirmed || result.Next != nil ||
 					!strings.Contains(result.Summary, "is closed by your word") || !strings.Contains(result.Summary, "restart history cleared") ||
 					len(bed.starter.launched()) != 0 {
@@ -319,7 +376,17 @@ esac
 				if err != nil || after.AbnormalCount != 0 || after.Abnormal != [2]steward.AbnormalRestart{} || after.CurrentSeat != before.CurrentSeat || after.DryRevivals != before.DryRevivals {
 					t.Fatalf("close did not clear only restart history: %+v %v", after, err)
 				}
+				if strings.HasSuffix(scenario, "-continuation") {
+					live := scenario == "closed-live-continuation"
+					if live && (after.CurrentContinuation != before.CurrentContinuation || !strings.Contains(result.Summary, "still has running job steward-stranded")) ||
+						!live && (after.CurrentContinuation != "" || !strings.Contains(result.Summary, "continuation stranded-continuation settled")) {
+						t.Fatalf("continuation close lost its outcome: %+v %+v", after, result)
+					}
+				}
 				path := steward.EvidencePath(root)
+				if scenario == "answer-stranded-continuation" {
+					return
+				}
 				data, err := os.ReadFile(path)
 				if err != nil {
 					t.Fatal(err)
@@ -334,6 +401,21 @@ esac
 				if againCode != 0 || again.Outcome != intentConfirmed || again.Next != nil ||
 					!strings.Contains(again.Summary, "was already clear") || len(bed.starter.launched()) != 0 || err != nil || !bytes.Equal(data, unchanged) {
 					t.Fatalf("close repeat wrote or started work: %d %+v %v", againCode, again, err)
+				}
+				if scenario == "closed-stranded-continuation" {
+					if _, err := helm.Remove(root); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=claude,codex\nlaunch.seat.runtime=claude\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
+					if err := outage.Clear(home, "anthropic", now); err != nil {
+						t.Fatal(err)
+					}
+					record, err := steward.StartSeat(root, steward.TickConfig{Now: now, ProviderHome: home, Seat: launcher}, seatTickCensus{}, steward.SeatSelection{Goal: bed.id, Held: true, ApprovalOpid: failed.ApprovalOpid})
+					if err != nil || record.LaunchID == "" {
+						t.Fatalf("closed continuation still blocks a seat: %+v %v", record, err)
+					}
 				}
 				return
 			}

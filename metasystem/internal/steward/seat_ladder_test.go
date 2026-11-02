@@ -396,7 +396,7 @@ func TestReadyWorkHonoursTheGuardsInOrder(t *testing.T) {
 		result := bed.tick(deadWorkers)
 		if result.Decision.Action != ActNotify || result.Seat != nil ||
 			!strings.Contains(result.Decision.Reason, "3 seats ended without progress on alpha") ||
-			!strings.Contains(result.Decision.Reason, "`metasystem goal approve alpha` approves it afresh") ||
+			!strings.Contains(result.Decision.Reason, personRemedyMark+"metasystem goal approve alpha\nmetasystem goal approve alpha approves it afresh") ||
 			strings.Contains(result.Decision.Reason, "unapprove") {
 			t.Fatalf("a capped goal starts no seat and names the reset: %+v", result.Decision)
 		}

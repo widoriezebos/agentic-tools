@@ -107,6 +107,8 @@ type Record struct {
 	MaxRounds           int                        `json:"maxRounds,omitempty"`
 }
 
+func (r Record) Executed() bool { return r.Child != nil || r.ExitCode != nil }
+
 func (record *Record) UnmarshalJSON(data []byte) error {
 	type recordJSON Record
 	record.Measured = true

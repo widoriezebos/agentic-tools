@@ -672,3 +672,11 @@ func TestNamedUnitRepeatPreservesAdmittedPlan(t *testing.T) {
 	}
 	requireLaunchedOnce(t, fixture, 3)
 }
+
+func TestCancelledNamedWorkIsNotRunning(t *testing.T) {
+	t.Parallel()
+	work := NamedWork{Record: &UnitRunRecord{State: "cancelled"}}
+	if !work.Cancelled() || work.Running() {
+		t.Fatalf("cancelled run is still active: %+v", work)
+	}
+}

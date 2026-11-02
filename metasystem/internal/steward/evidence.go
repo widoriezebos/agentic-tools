@@ -30,6 +30,7 @@ type Evidence struct {
 	Abnormal            [2]AbnormalRestart `json:"abnormal,omitempty"`
 	CurrentSeat         string             `json:"currentSeat,omitempty"`
 	CurrentContinuation string             `json:"currentContinuation,omitempty"`
+	SettledContinuation string             `json:"settledContinuation,omitempty"`
 	AbnormalCount       int                `json:"abnormalCount,omitempty"`
 
 	SampledAt string        `json:"sampledAt,omitempty"`

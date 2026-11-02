@@ -164,6 +164,7 @@ func readSeatRecords(repoRoot string) ([]SeatRecord, error) {
 func defaultSeatDependencies(launcher SeatLauncher) seatDependencies {
 	return seatDependencies{
 		Launcher: launcher,
+		Home:     HomeStateRoot,
 		Project: func(root string, now time.Time) (goal.Projection, error) {
 			stateRoot, err := goal.ResolveStateRoot(root)
 			if err != nil {
@@ -482,6 +483,9 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
 	}
+	if _, err := settleEndedContinuation(repoRoot, &ev); err != nil {
+		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
+	}
 	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned)
 	if d.Action == ActRevive && selection != nil {
 		if _, reason, err := abnormalRestartState(repoRoot, ev, now, selection); err != nil {
@@ -528,19 +532,7 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 		return SeatRecord{}, errors.New("no seat launcher is wired to this steward")
 	}
 	root := canonicalPath(repoRoot)
-	dependencies := defaultSeatDependencies(cfg.Seat)
-	dependencies.Now, dependencies.ProviderHome = cfg.now, cfg.ProviderHome
-	if cfg.GoalProjection != nil {
-		dependencies.Project = cfg.GoalProjection
-	}
-	if cfg.Units != nil {
-		dependencies.Units = cfg.Units
-	}
-	if cfg.Situation != nil {
-		dependencies.Situation = func(root string, now time.Time) (SituationRecord, error) {
-			return SituationPage(root, func(t time.Time) Situation { return cfg.Situation(root, t) }, now, SituationFresh)
-		}
-	}
+	dependencies := seatDependenciesForConfig(cfg)
 	openWork := defaultTickContinuationDependencies(cfg).openWork
 	if cfg.GoalProjection != nil {
 		openWork.ReadClaimableBudgetedWork = cfg.readClaimableBudgetedWork
@@ -552,12 +544,35 @@ func StartSeat(repoRoot string, cfg TickConfig, census WorkerCensus, selection S
 	return startSeatWithDependencies(root, selection, dependencies)
 }
 
+func seatDependenciesForConfig(cfg TickConfig) seatDependencies {
+	dependencies := defaultSeatDependencies(cfg.Seat)
+	dependencies.Now, dependencies.ProviderHome = cfg.now, cfg.ProviderHome
+	dependencies.WorkStateRoot, dependencies.Prober = cfg.WorkStateRoot, cfg.Prober
+	if cfg.GoalProjection != nil {
+		dependencies.Project = cfg.GoalProjection
+	}
+	if cfg.Units != nil {
+		dependencies.Units = cfg.Units
+	}
+	if cfg.Situation != nil {
+		dependencies.Situation = func(root string, now time.Time) (SituationRecord, error) {
+			return SituationPage(root, func(t time.Time) Situation { return cfg.Situation(root, t) }, now, SituationFresh)
+		}
+	}
+	return dependencies
+}
+
+func seatPerson(root string, p humanauthority.Proof) bool {
+	return p.Helm == nil && (p.EnrolledTerminalFor(root) || p.ChannelWordFor(root))
+}
+
 func ReviveSeat(root string, cfg TickConfig, census WorkerCensus, after string, person humanauthority.Proof, registryPath string) (SeatRecord, error) {
-	if person.Helm != nil || !person.EnrolledTerminalFor(root) || cfg.Seat == nil {
+	if !seatPerson(root, person) || cfg.Seat == nil {
 		return SeatRecord{}, errors.New("seat revival needs the person's enrolled terminal and a seat launcher")
 	}
 	d := defaultSeatDependencies(cfg.Seat)
 	d.Now, d.ProviderHome, d.Person, d.After, d.RegistryPath, d.Census, d.WorkStateRoot = cfg.now, cfg.ProviderHome, person, after, registryPath, census, cfg.WorkStateRoot
+	d.Prober = cfg.Prober
 	return startSeatWithDependencies(root, SeatSelection{}, d)
 }
 
@@ -623,6 +638,9 @@ func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) 
 type SeatRevivalClosed struct {
 	Launch, Goal, Why string
 	Cleared           bool
+	Continuation      string
+	ContinuationLive  bool
+	ContinuationJob   string
 }
 
 func (c SeatRevivalClosed) Error() string {
@@ -634,7 +652,68 @@ func (c SeatRevivalClosed) Error() string {
 	if c.Cleared {
 		history = "restart history cleared"
 	}
-	return line + "; " + history + "; the steward's next tick starts the next ready goal"
+	line += "; " + history + "; the steward's next tick starts the next ready goal"
+	if c.Continuation != "" {
+		if c.ContinuationLive {
+			return line + fmt.Sprintf("; continuation %s still has running job %s; the hold stays until it ends", c.Continuation, c.ContinuationJob)
+		}
+		line += fmt.Sprintf("; continuation %s settled: it has no running job", c.Continuation)
+	}
+	return line
+}
+
+// continuationJobEnd reads the job's end independently of the launch stamp.
+// Missing authorization or job records carry no running job for a person's close.
+func continuationJobEnd(root, nonce string) (string, string, error) {
+	intent, err := ConsumedIntent(root, nonce)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", nil
+	}
+	if err != nil {
+		return "", "", err
+	}
+	data, err := os.ReadFile(filepath.Join(root, "artifacts", "agents", "jobs", intent.JobId+".json"))
+	if errors.Is(err, os.ErrNotExist) {
+		return "", "", nil
+	}
+	var job struct {
+		EndedAt string `json:"endedAt"`
+	}
+	if err == nil {
+		err = json.Unmarshal(data, &job)
+	}
+	return intent.JobId, job.EndedAt, err
+}
+
+// settleEndedContinuation preserves the ended job's outcome for the next start.
+// A pending attempt keeps its charge even when dispatch never stamped its intent.
+func settleEndedContinuation(root string, ev *Evidence) (bool, error) {
+	next := *ev
+	nonces := []string{next.CurrentContinuation}
+	if next.AbnormalCount > 0 && next.AbnormalCount <= len(next.Abnormal) && next.Abnormal[next.AbnormalCount-1].Pending {
+		nonces = append(nonces, next.Abnormal[next.AbnormalCount-1].Nonce)
+	}
+	for _, nonce := range nonces {
+		if nonce == "" {
+			continue
+		}
+		_, ended, err := continuationJobEnd(root, nonce)
+		if err != nil {
+			return false, err
+		}
+		if ended == "" {
+			continue
+		}
+		if nonce == next.CurrentContinuation {
+			next.SettledContinuation, next.CurrentContinuation = nonce, ""
+		}
+		if next.AbnormalCount > 0 && next.AbnormalCount <= len(next.Abnormal) && next.Abnormal[next.AbnormalCount-1].Nonce == nonce {
+			next.Abnormal[next.AbnormalCount-1].Pending = false
+		}
+	}
+	changed := next != *ev
+	*ev = next
+	return changed, nil
 }
 
 func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string) error {
@@ -642,12 +721,28 @@ func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string) error {
 	if err != nil {
 		return err
 	}
-	closed := SeatRevivalClosed{Why: why, Cleared: ev.AbnormalCount > 0}
+	closed := SeatRevivalClosed{Why: why, Cleared: ev.AbnormalCount > 0, Continuation: ev.CurrentContinuation}
+	changed, err := settleEndedContinuation(repoRoot, &ev)
+	if err != nil {
+		return err
+	}
+	if ev.CurrentContinuation != "" {
+		job, ended, err := continuationJobEnd(repoRoot, ev.CurrentContinuation)
+		if err != nil {
+			return err
+		}
+		closed.ContinuationJob, closed.ContinuationLive = job, job != "" && ended == ""
+		if !closed.ContinuationLive {
+			ev.CurrentContinuation, changed = "", true
+		}
+	}
 	if last != nil {
 		closed.Launch, closed.Goal = last.LaunchID, last.Goal
 	}
 	if closed.Cleared {
 		ev.Abnormal, ev.AbnormalCount = [2]AbnormalRestart{}, 0
+	}
+	if closed.Cleared || changed {
 		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
 			return err
 		}
@@ -656,7 +751,7 @@ func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string) error {
 }
 
 func startSeatWithDependencies(repoRoot string, selection SeatSelection, dependencies seatDependencies) (SeatRecord, error) {
-	person := dependencies.Person.Helm == nil && dependencies.Person.EnrolledTerminalFor(repoRoot)
+	person := seatPerson(repoRoot, dependencies.Person)
 	if !person && helm.Active(repoRoot).Active {
 		return SeatRecord{}, nil
 	}
@@ -782,8 +877,15 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if err != nil {
 		return SeatRecord{}, err
 	}
+	if changed, err := settleEndedContinuation(repoRoot, &ev); err != nil {
+		return SeatRecord{}, err
+	} else if changed {
+		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
+			return SeatRecord{}, err
+		}
+	}
 	class := ""
-	if !person && (len(records) > 0 || ev.AbnormalCount > 0) {
+	if !person && (len(records) > 0 || ev.AbnormalCount > 0 || ev.CurrentContinuation != "" || ev.SettledContinuation != "") {
 		var reason string
 		class, reason, err = abnormalRestartState(repoRoot, ev, dependencies.Now(), &selection)
 		if err != nil {
@@ -846,7 +948,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	}
 	// The steward's own root holds both its run state and the installation's
 	// settings, so it names that root as the seat's installation too.
-	ev.CurrentSeat, ev.CurrentContinuation = id, ""
+	ev.CurrentSeat, ev.CurrentContinuation, ev.SettledContinuation = id, "", ""
 	if class != "" {
 		ev = reserveAbnormalRestart(ev, dependencies.Now(), class, "")
 	}
@@ -891,6 +993,9 @@ type seatDependencies struct {
 	Person                             humanauthority.Proof
 	After, WorkStateRoot, RegistryPath string
 	Census                             WorkerCensus
+	Prober                             identity.Prober
+	// Home resolves the host's stores when WorkStateRoot is empty; nil reads none.
+	Home func() (string, error)
 
 	ProviderHome string
 	Launcher     SeatLauncher
@@ -1096,6 +1201,32 @@ func seatFacts(root string, selection SeatSelection, machine string, tips map[st
 		}
 	}
 	facts.WriteString("Units:\n" + seatList(unitLines, 20, 3000, status))
+	var collect []string
+	storeRoot := d.WorkStateRoot
+	if storeRoot == "" && d.Home != nil {
+		storeRoot, err = d.Home()
+		if err != nil {
+			unavailable("Collect first", status)
+			storeRoot = ""
+		}
+	}
+	if storeRoot != "" {
+		for _, unit := range units {
+			run, err := (&launch.UnitRunner{Root: filepath.Join(storeRoot, "unit")}).Status(unit.Run)
+			if err != nil {
+				continue
+			}
+			step, record, orphan := orphanStep(launch.Store{Root: filepath.Join(storeRoot, "launch")}, run, func(ref identity.Ref) identity.Liveness {
+				return identity.AliveRef((TickConfig{Prober: d.Prober}).withDefaults().Prober, ref)
+			})
+			if orphan {
+				collect = append(collect, fmt.Sprintf("metasystem work wait run:%s --timeout 30m — its %s launch ended at %s; nobody collected it", run.ID, step.Name, seatTime(record.FinishedAt).Local().Format("15:04")))
+			}
+		}
+	}
+	if len(collect) > 0 {
+		facts.WriteString("Collect first:\n" + strings.Join(collect, "\n") + "\n")
+	}
 	jobs, readErr := d.Jobs(root)
 	if readErr != nil {
 		unavailable("Dispatch refusals", status)

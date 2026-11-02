@@ -18,6 +18,8 @@ import (
 )
 
 type openWorkDependencies struct {
+	Orphan                    func(UncollectedRun, string)
+	Machine                   string
 	NewWorld                  func(string) bool
 	ReadClaimableBudgetedWork func(string, time.Time) (goal.ClaimableBudgetedWork, error)
 	// Seat is the seat ladder's wiring (g1-s77); nil keeps the ladder
@@ -81,11 +83,15 @@ func convertedOpenWorkWithDependencies(repoRoot string, dependencies openWorkDep
 }
 
 func seatBusyReader(home string, tick time.Duration, probers ...identity.Prober) func(string, goal.ClaimableBudgetedWork, time.Time) (bool, string, int) {
+	var prober identity.Prober
+	if len(probers) > 0 {
+		prober = probers[0]
+	}
+	return seatBusyOrphanReader(home, tick, prober, nil)
+}
+
+func seatBusyOrphanReader(home string, tick time.Duration, prober identity.Prober, orphan func(UncollectedRun, string)) func(string, goal.ClaimableBudgetedWork, time.Time) (bool, string, int) {
 	return func(root string, work goal.ClaimableBudgetedWork, now time.Time) (bool, string, int) {
-		var prober identity.Prober
-		if len(probers) > 0 {
-			prober = probers[0]
-		}
 		selected := home
 		if selected == "" {
 			var err error
@@ -94,7 +100,7 @@ func seatBusyReader(home string, tick time.Duration, probers ...identity.Prober)
 				return len(work.Claimed)+len(work.Landing) > 0, "dependent work custody is unknown; unreadable records: 1", 1
 			}
 		}
-		return SeatBusyAt(root, filepath.Join(selected, "unit"), work, SeatBusyOptions{Now: now, Tick: tick, Probe: func(ref identity.Ref) identity.Liveness {
+		return SeatBusyAt(root, filepath.Join(selected, "unit"), work, SeatBusyOptions{Now: now, Tick: tick, Orphan: orphan, Probe: func(ref identity.Ref) identity.Liveness {
 			return identity.AliveRef((TickConfig{Prober: prober}).withDefaults().Prober, ref)
 		}})
 	}

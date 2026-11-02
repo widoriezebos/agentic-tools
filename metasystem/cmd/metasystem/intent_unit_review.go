@@ -1373,7 +1373,7 @@ func (inv *intentInvocation) workOfCommit(goalID, commit string) *launch.NamedWo
 		return nil
 	}
 	for _, work := range works {
-		if work.Record == nil || work.Running() || len(work.Record.Rounds) == 0 {
+		if work.Record == nil || work.Running() || work.Cancelled() || len(work.Record.Rounds) == 0 {
 			continue
 		}
 		newest := work.Record.Rounds[len(work.Record.Rounds)-1].Number

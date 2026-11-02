@@ -665,6 +665,7 @@ func reportTurnVerdict(request hooks.TurnVerdictRequest, stdout, stderr io.Write
 			return steward.LiveHandoffForSession(stateRoot, session)
 		}
 		store.PrepareIdleContinuation = prepareSeatIdleContinuation(stateRoot)
+		store.UncollectedRuns = func(goals []string) ([]goal.UncollectedRun, error) { return steward.UncollectedRuns(stateRoot, goals) }
 		store.RecordIdleIncident = recordSeatIdleIncident(stateRoot, now)
 		store.RaiseIdleAlarm = raiseSeatIdleAlarm(stateRoot)
 		store.ResolveIdleSeat = resolveSeatIdleActorWithMachine(stateRoot, *mainId, resolveMachine)
