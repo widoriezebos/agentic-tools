@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 (the lock knows its holder) then U2 (--last, every row says who acts) from the accepted page plans/designs/a-remedy-names-who-acts.md with its FINAL brief; work review between parts; one hand-in.
 - OpenedAt: 2026-11-02T09:01:53Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-02T09:02:04Z revision=2 opid=FCKQZX2DC56YVZDGK3K7YPKXJW-m1e-2b797a61 authority=proven digest=084ca7ee58462ffa1800615619d2533161b9f71186a76940b7c8556e9501c4e3 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-02T09:01:53Z 3468CMXNSSG9T6WGE22Y0TKHVV-m1e-2b797a61 open actor=human:Wido targets=a-remedy-names-who-acts
 - 2026-11-02T09:02:04Z FCKQZX2DC56YVZDGK3K7YPKXJW-m1e-2b797a61 approve actor=human:Wido targets=a-remedy-names-who-acts
-Integrity: sha256=f76e3b024b67e61218a624bdaa7600c1bfed4cc65f527429312e26461ef0559b
+- 2026-11-02T09:02:15Z YR7CKPCFWTAA00WZMWCYGC7D28-m1e-2b797a61 set-pin actor=human:Wido targets=a-remedy-names-who-acts
+Integrity: sha256=d7fa27250e9877c9ce440a176475b9b009e0d4bd3dcff1ad92a47fd3dbbd98b5
