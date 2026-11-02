@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -38,11 +39,24 @@ func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 		if _, err := s.bed.manager.Store.Update(id, func(r *launch.Record) error { r.Child = &child; return nil }); err != nil {
 			return identity.Ref{}, err
 		}
-		code, result := declaredCheckAt(s.t, s.bed, spec.Directory, "proof", spec.Args...)
+		code := 0
 		var data []byte
-		for _, raw := range resultData(s.t, result)["exits"].([]any) {
-			command := raw.(map[string]any)
-			data = append(data, []byte(command["output"].(string))...)
+		if _, _, public := resolveIntentArgv(spec.Args); public {
+			var result intentResult
+			code, result = declaredCheckAt(s.t, s.bed, spec.Directory, "proof", spec.Args...)
+			for _, raw := range resultData(s.t, result)["exits"].([]any) {
+				data = append(data, []byte(raw.(map[string]any)["output"].(string))...)
+			}
+		} else {
+			command := exec.Command(spec.Program, spec.Args...)
+			command.Dir, command.Env = spec.Directory, append(os.Environ(), spec.Environment...)
+			data, err = command.CombinedOutput()
+			var exit *exec.ExitError
+			if errors.As(err, &exit) {
+				code = exit.ExitCode()
+			} else if err != nil {
+				return identity.Ref{}, err
+			}
 		}
 		s.bed.starter.fail["proof"] = code != 0
 		if err := os.WriteFile(spec.LogPath, data, 0600); err != nil {
@@ -91,7 +105,7 @@ func TestAUnitCheckFlakeStopsNothingAndAsksNobody(t *testing.T) {
 		t.Fatalf("read result not collected: %+v err=%v", read, err)
 	}
 	executions, unknown := launch.ReadCheckExecutions(round.Directory)
-	if len(unknown) != 0 || len(executions) != 2 {
+	if len(unknown) != 0 || len(executions) != 1 {
 		t.Fatalf("check executions=%+v unknown=%v", executions, unknown)
 	}
 	for _, execution := range executions {
@@ -206,6 +220,7 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain, flake bool) *workBed {
 		script = "#!/bin/sh\nif [ ! -f red ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\nprintf 'LANDING-FAILED\\tu/a\\tTestBroken\\nLANDING-CHECKED\\t1\\n'\nexit 1\n"
 	}
 	if flake {
+		script = strings.Replace(script, "if [ ! -f red ]", "if [ -n \"$LANDING_ONLY\" ]; then\nfor pair in u/a=TestA u/b=TestB u/a=TestOther; do\ncase \" $LANDING_ONLY \" in *\" $pair \"*) printf '%s %s\\n' \"${pair%=*}\" \"${pair#*=}\" >> '"+counter+".selected';; esac\ndone\n[ \"$LANDING_ONLY_TESTS\" = 'TestA TestB' ] || exit 3\nfi\nif [ ! -f red ]", 1)
 		script = strings.ReplaceAll(script, "LANDING-FAILED\\tu/a\\tTestBroken\\nLANDING-CHECKED\\t1", "LANDING-FAILED\\tu/a\\tTestA\\nLANDING-FAILED\\tu/b\\tTestB\\nLANDING-CHECKED\\t2")
 	}
 	if err := testexec.WriteFile(check, []byte(script), 0700); err != nil {
@@ -295,6 +310,23 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain, flake bool) *workBed {
 	}
 	if err != nil || !complete || len(units) != wantUnits || !slices.Equal(units[0].Tests, []string{wantTest}) || !slices.Equal(units[0].Registered, []string{registration}) {
 		t.Fatalf("red facts=%+v complete=%v err=%v", units, complete, err)
+	}
+	step := record.Rounds[0].Steps[1]
+	if step.Alone == nil || step.Alone.LaunchID != step.LaunchID+"-alone" || !slices.Equal(step.LaunchIDs, []string{step.LaunchID, step.Alone.LaunchID}) {
+		t.Fatalf("second proof is not the retained rerun alone: %+v", step)
+	}
+	if flake {
+		if step.Alone.Outcome != string(launch.Completed) || !slices.Equal(step.Flakes, []string{"u/a TestA", "u/b TestB"}) || !strings.Contains(step.Reason, "passed alone on this tree") {
+			t.Fatalf("flake evidence=%+v", step)
+		}
+		selection, err := os.ReadFile(counter + ".selected")
+		if err != nil || string(selection) != "u/a TestA\nu/b TestB\n" {
+			t.Fatalf("rerun selection=%q err=%v", selection, err)
+		}
+		reservation, err := os.ReadFile(filepath.Join(bed.root(), "artifacts", "agents", "jobs", step.Alone.LaunchID+".json"))
+		if err != nil || !bytes.Contains(reservation, []byte(`"unitExecuted": true`)) || !bytes.Contains(reservation, []byte(`"status": "completed"`)) {
+			t.Fatalf("rerun was not collected: %s err=%v", reservation, err)
+		}
 	}
 	return bed
 }

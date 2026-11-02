@@ -398,7 +398,7 @@ func TestUnitContinueGreenFlakeKeepsAdvancing(t *testing.T) {
 		t.Fatal(err)
 	}
 	round := got.Record.Rounds[0]
-	if got.Record.State != "awaiting-judgement" || round.Outcome != "green" || round.Cause != "" || round.Steps[1].State != StepPassed || !round.Steps[1].FlakeRepeat || git.exports != 0 || len(f.starter.ids) != 3 {
+	if round.Steps[1].Alone == nil || round.Steps[1].Alone.LaunchID != round.Steps[1].LaunchID+"-alone" || len(round.Steps[1].Flakes) != 1 || got.Record.State != "awaiting-judgement" || round.Outcome != "green" || round.Cause != "" || round.Steps[1].State != StepPassed || !round.Steps[1].FlakeRepeat || git.exports != 0 || len(f.starter.ids) != 3 {
 		t.Fatalf("green retry stopped: %+v exports=%d launches=%v", got, git.exports, f.starter.ids)
 	}
 }

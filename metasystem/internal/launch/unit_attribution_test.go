@@ -115,7 +115,10 @@ func attributionFixture(t *testing.T, baseRed bool, script string, resume ...boo
 	}
 	plan.Read = UnitReadPlan{}
 	plan.Proof[0].Argv, plan.Proof[0].Env = []string{executable, "arg with spaces"}, []string{"CHECK_ENV=exact"}
-	f.runner.AdmitEstimate = func(plan *UnitPlan) error { plan.FullArgv = slices.Clone(plan.Proof[0].Argv); return nil }
+	f.runner.FreezeCheck = func(plan UnitPlan, _ string) (UnitPlan, error) {
+		plan.FullArgv = slices.Clone(plan.Proof[0].Argv)
+		return plan, nil
+	}
 	f.runner.RedUnits = func(record Record) ([]loopstop.RedUnit, bool, error) {
 		state, err := f.manager.Store.StateDir(record.ID)
 		if err != nil {
@@ -198,7 +201,7 @@ func TestAFailedCheckSectionIsNeverAFlake(t *testing.T) {
 				if err := start(record); err != nil {
 					return err
 				}
-				if record.Kind != "proof" || strings.HasSuffix(record.ID, "-base") || scenario == "missing" {
+				if record.Kind != "proof" || (strings.HasSuffix(record.ID, "-base") || strings.HasSuffix(record.ID, "-alone")) || scenario == "missing" {
 					return nil
 				}
 				round := filepath.Join(f.runner.Root, strings.Split(record.ID, "-r1-")[0], "round-1")
@@ -238,10 +241,14 @@ func TestAFailedCheckSectionIsNeverAFlake(t *testing.T) {
 			}
 			step := result.Record.Rounds[0].Steps[1]
 			cause, exports, launches := "own", 1, 3
+			repeated := scenario == "audits" || scenario == "newest"
+			if repeated {
+				launches++
+			}
 			if scenario == "unreadable" || scenario == "missing" || scenario == "other-parent" {
 				cause, exports, launches = "unclassified", 0, 2
 			}
-			if step.State != StepFailed || step.FlakeRepeat || step.Cause != cause || git.exports != exports || len(f.starter.ids) != launches || result.Record.Rounds[0].Outcome != "proof-red" {
+			if step.State != StepFailed || step.FlakeRepeat != repeated || step.Cause != cause || git.exports != exports || len(f.starter.ids) != launches || result.Record.Rounds[0].Outcome != "proof-red" {
 				t.Fatalf("failed section lost: step=%+v exports=%d launches=%v", step, git.exports, f.starter.ids)
 			}
 			if (scenario == "missing" || scenario == "other-parent") && !strings.Contains(step.Reason, "no frozen-check execution of launch "+step.LaunchID) {
@@ -365,7 +372,7 @@ func TestUnitProofRefusesStaleComparison(t *testing.T) {
 	}
 }
 
-func TestUnitProofRepeatsRegisteredFlakeOnce(t *testing.T) {
+func TestUnitProofRerunsARedAloneOnce(t *testing.T) {
 	t.Parallel()
 	for _, repeatGreen := range []bool{true, false} {
 		t.Run(fmt.Sprint(repeatGreen), func(t *testing.T) {
@@ -385,7 +392,7 @@ func TestUnitProofRepeatsRegisteredFlakeOnce(t *testing.T) {
 			if !repeatGreen {
 				launches, exports = 4, 1
 			}
-			if len(f.starter.ids) != launches || len(round.Steps[1].LaunchIDs) != 2 || git.exports != exports || !round.Steps[1].FlakeRepeat {
+			if round.Steps[1].Alone == nil || round.Steps[1].Alone.LaunchID != round.Steps[1].LaunchID+"-alone" || len(f.starter.ids) != launches || len(round.Steps[1].LaunchIDs) != 2 || git.exports != exports || !round.Steps[1].FlakeRepeat {
 				t.Fatalf("repeat=%+v launches=%v exports=%d", round, f.starter.ids, git.exports)
 			}
 			cause, outcome := "own", "proof-red"
@@ -396,7 +403,7 @@ func TestUnitProofRepeatsRegisteredFlakeOnce(t *testing.T) {
 				t.Fatalf("round=%+v", round)
 			}
 			if !repeatGreen {
-				if _, err := f.manager.Store.Update(round.Steps[1].LaunchID, func(r *Record) error { r.ExitCode = nil; return nil }); err != nil {
+				if _, err := f.manager.Store.Update(round.Steps[1].Alone.LaunchID, func(r *Record) error { r.ExitCode = nil; return nil }); err != nil {
 					t.Fatal(err)
 				}
 				plan, err := ReadUnitPlan(f.plan)
@@ -405,7 +412,7 @@ func TestUnitProofRepeatsRegisteredFlakeOnce(t *testing.T) {
 				}
 				_, err = f.runner.compareProof(&result.Record, &result.Record.Rounds[0], 1, plan, f.manager.Now().Add(time.Minute))
 				step := result.Record.Rounds[0].Steps[1]
-				if err != nil || step.Cause != "environment" || !strings.Contains(step.Reason, "the check repeat has no completed exit evidence") {
+				if err != nil || step.Cause != "environment" || !strings.Contains(step.Reason, "the rerun alone could not finish") {
 					t.Fatalf("unfinished repeat reason=%q cause=%s err=%v", step.Reason, step.Cause, err)
 				}
 			}
@@ -528,5 +535,175 @@ func TestUnitProofExportGitAdapterIntegration(t *testing.T) {
 	baseline, err := f.manager.Store.Read(comparison.LaunchID)
 	if err != nil || baseline.ExitCode == nil || *baseline.ExitCode != 0 || !comparison.Verified {
 		t.Fatalf("base exit not retained: %+v comparison=%+v err=%v", baseline, comparison, err)
+	}
+}
+
+func TestAUnitCheckRedIsRerunAloneBeforeTheBase(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"red", "manual", "deadline", "restart", "restart-before-list", "retained-intent", "refused", "incomplete", "budget"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			var resumes []bool
+			if strings.HasPrefix(scenario, "restart") || scenario == "retained-intent" {
+				resumes = []bool{true}
+			}
+			f, git := attributionFixture(t, false, "", resumes...)
+			f.runner.Git = resultAttributionGit{git}
+			var collected []Record
+			f.runner.CollectLaunch = func(_ UnitRunRecord, launch Record, _ string) error {
+				collected = append(collected, launch)
+				return nil
+			}
+			start := f.starter.onStart
+			f.starter.onStart = func(r Record) error {
+				if err := start(r); err != nil {
+					return err
+				}
+				if strings.HasSuffix(r.ID, "-alone") && (strings.HasPrefix(scenario, "restart") || scenario == "deadline") {
+					f.starter.holdKind = "proof"
+				}
+				return nil
+			}
+			var intent UnitRunRecord
+			f.runner.BeforeModelLaunch = func(record UnitRunRecord, spec StartSpec) error {
+				if !strings.HasSuffix(spec.ID, "-alone") {
+					return nil
+				}
+				if spec.HostGated || spec.Actor != f.runner.Actor {
+					t.Fatalf("rerun authority=%+v", spec)
+				}
+				if record.Rounds[0].Steps[1].Alone == nil || slices.Contains(record.Rounds[0].Steps[1].LaunchIDs, spec.ID) {
+					t.Fatalf("rerun intent not saved before start: %+v", record)
+				}
+				intent = record
+				if scenario == "refused" {
+					f.manager.Supervisor = nil
+				}
+				if scenario == "budget" || scenario == "retained-intent" {
+					return coded("BUDGET_REFUSED", "", errors.New("wait for budget"))
+				}
+				return nil
+			}
+			if scenario == "manual" {
+				plan, err := ReadUnitPlan(f.plan)
+				if err != nil {
+					t.Fatal(err)
+				}
+				selected, audited := filepath.Join(t.TempDir(), "selected"), filepath.Join(t.TempDir(), "audited")
+				cheap := filepath.Join(t.TempDir(), "cheap")
+				script := fmt.Sprintf("#!/bin/sh\nif [ -n \"$LANDING_ONLY\" ]; then printf '%%s|%%s|%%s\\n' \"$LANDING_ONLY\" \"$LANDING_ONLY_TESTS\" \"$CHECK_ENV\" > '%s'; printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\nprintf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'\nexit 1\n", selected)
+				if err := testexec.WriteFile(cheap, []byte(script), 0700); err != nil {
+					t.Fatal(err)
+				}
+				plan.FullArgv = nil
+				f.runner.FreezeCheck = nil
+				plan.Check = &UnitCheck{Cheap: "'" + cheap + "'", Audits: "printf audited", Directory: f.worktree, Environment: []string{"CHECK_ENV=frozen", "LANDING_ONLY=", "LANDING_ONLY_TESTS="}}
+				plan.Proof[0].Argv = []string{"/bin/sh", "-c", "'" + cheap + "'; code=$?; printf audited >> '" + audited + "'; exit $code"}
+				if err := writeUnitJSON(f.plan, plan, f.runner.Root); err != nil {
+					t.Fatal(err)
+				}
+				previous := f.starter.onStart
+				f.starter.onStart = func(r Record) error {
+					if err := previous(r); err != nil {
+						return err
+					}
+					if r.Kind != "proof" || strings.HasSuffix(r.ID, "-alone") || strings.HasSuffix(r.ID, "-base") {
+						return nil
+					}
+					round := filepath.Join(f.runner.Root, strings.Split(r.ID, "-r1-")[0], "round-1")
+					return writeUnitJSON(filepath.Join(round, "check-manual", "observation.json"), CheckExecution{ExecutionID: "check-manual", Steps: []processmeasure.Step{{ID: "manual:cheap", Parent: r.ID, Start: f.manager.Now().Format(time.RFC3339Nano), Outcome: "failed", Terminal: true}, {ID: "manual:audits", Parent: r.ID, Outcome: "passed", Terminal: true}}}, f.runner.Root)
+				}
+				t.Cleanup(func() {
+					selection, err := os.ReadFile(selected)
+					audits, auditErr := os.ReadFile(audited)
+					if err != nil || auditErr != nil || string(selection) != "pkg/unit|TestRed|frozen\n" || string(audits) != "audited" {
+						t.Errorf("manual rerun selection=%q audits=%q err=%v/%v", selection, audits, err, auditErr)
+					}
+				})
+			}
+			if scenario == "incomplete" {
+				previous := f.starter.onStart
+				f.starter.onStart = func(r Record) error {
+					if err := previous(r); err != nil {
+						return err
+					}
+					if !strings.HasSuffix(r.ID, "-alone") {
+						return nil
+					}
+					state, _ := f.manager.Store.StateDir(r.ID)
+					return os.WriteFile(filepath.Join(state, "exec.log"), []byte("LANDING-FAILED\tpkg/unit\tTestRed\n"), 0600)
+				}
+			}
+			if scenario == "deadline" {
+				sleep := f.manager.Sleep
+				f.manager.Sleep = func(wait time.Duration) {
+					sleep(wait)
+					if len(intent.Rounds) > 0 {
+						_, err := f.manager.Store.Update(intent.Rounds[0].Steps[1].Alone.LaunchID, func(r *Record) error { r.State, r.Cause, r.ExitCode = Failed, "deadline", nil; return nil })
+						if err != nil {
+							t.Fatal(err)
+						}
+					}
+				}
+			}
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if scenario == "budget" || scenario == "retained-intent" {
+				if !IsCode(err, "BUDGET_REFUSED") || len(f.starter.ids) != 2 || result.Record.Rounds[0].Steps[1].Alone == nil {
+					t.Fatalf("budget refusal result=%+v launches=%v err=%v", result, f.starter.ids, err)
+				}
+				if scenario == "budget" {
+					return
+				}
+				f.runner.BeforeModelLaunch = nil
+				result, err = f.runner.Continue(UnitRequest{Resume: result.Record.ID})
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if strings.HasPrefix(scenario, "restart") {
+				step := &result.Record.Rounds[0].Steps[1]
+				if !result.Capped || step.Alone == nil || step.Alone.Outcome != "" || len(f.starter.ids) != 3 || git.exports != 0 {
+					t.Fatalf("rerun not retained: %+v", result)
+				}
+				if scenario == "restart-before-list" {
+					step.LaunchIDs = slices.DeleteFunc(step.LaunchIDs, func(id string) bool { return id == step.Alone.LaunchID })
+					if err := f.runner.save(result.Record); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if _, err := f.manager.Store.Update(step.Alone.LaunchID, func(r *Record) error { code := 1; r.State, r.ExitCode = Failed, &code; return nil }); err != nil {
+					t.Fatal(err)
+				}
+				f.starter.holdKind = ""
+				result, err = f.runner.Continue(UnitRequest{Resume: result.Record.ID})
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			step := result.Record.Rounds[0].Steps[1]
+			cause, launches, exports := "own", 4, 1
+			if scenario == "manual" {
+				cause, launches, exports = "", 3, 0
+			}
+			if scenario == "deadline" || scenario == "incomplete" || scenario == "refused" {
+				cause, launches, exports = "environment", 3, 0
+			}
+			if scenario == "refused" {
+				launches = 2
+			}
+			if step.Cause != cause || len(f.starter.ids) != launches || git.exports != exports || step.Alone == nil || step.Alone.LaunchID != step.LaunchID+"-alone" || !slices.Equal(step.Alone.Selectors, []string{"LANDING_ONLY=pkg/unit", "LANDING_ONLY_TESTS=TestRed"}) {
+				t.Fatalf("rerun=%+v launches=%v exports=%d", step, f.starter.ids, git.exports)
+			}
+			if !slices.ContainsFunc(collected, func(r Record) bool { return r.ID == step.Alone.LaunchID && r.State.Terminal() }) {
+				t.Fatalf("rerun not collected: %+v", collected)
+			}
+			if scenario == "refused" {
+				if _, err := f.manager.Store.Read(step.Alone.LaunchID); !os.IsNotExist(err) || len(step.LaunchIDs) != 1 || step.Alone.FinishedAt == "" {
+					t.Fatalf("refusal invented a launch: %+v err=%v", step, err)
+				}
+			} else if !slices.Equal(step.LaunchIDs, []string{step.LaunchID, step.Alone.LaunchID}) {
+				t.Fatalf("rerun launch list=%v", step.LaunchIDs)
+			}
+		})
 	}
 }

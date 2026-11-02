@@ -97,34 +97,44 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 			}
 		}
 	}
-	if step.FlakeRepeat {
+	if step.Alone != nil {
+		var capped bool
+		evidence.Alone, capped, err = runner.rerunAlone(record, round, index, plan, deadline)
+		if err != nil || capped {
+			return capped, err
+		}
+	} else if step.FlakeRepeat {
 		evidence.Alone = loopstop.RedRun{Attempted: true, Exited: launch.ExitCode != nil && launch.Cause == "" && (launch.State == Completed || launch.State == Failed), Wrapper: true, Launch: launch.ID, Failed: evidence.Failed}
 	}
 	verdict := loopstop.ClassifyRed(evidence)
+	if verdict.Next == "alone" && !step.FlakeRepeat {
+		step.FlakeRepeat = true
+		step.Alone = &UnitAlone{LaunchID: step.LaunchID + "-alone", Selectors: verdict.Selectors}
+		if err := runner.save(*record); err != nil {
+			return false, err
+		}
+		var capped bool
+		evidence.Alone, capped, err = runner.rerunAlone(record, round, index, plan, deadline)
+		if err != nil || capped {
+			return capped, err
+		}
+		verdict = loopstop.ClassifyRed(evidence)
+	}
 	if verdict.Cause != nil {
 		step.Cause, step.Reason = verdict.Cause.Kind, verdict.Words
+		step.Flakes = verdict.Flaked
+		if step.Cause == "flake" {
+			step.State, step.Cause = StepPassed, ""
+		}
 		if step.Reason == "" {
 			step.Reason = "the red could not be classified: " + evidence.CannotRun
 			if step.Cause == "environment" {
-				step.Reason = "the check repeat has no completed exit evidence: " + launch.ID
+				step.Reason = "the rerun alone could not finish or has no complete report: " + evidence.Alone.Launch
 			}
 		}
-		return false, runner.save(*record)
+		return false, runner.driver(record, round).save()
 	}
-	if verdict.Next == "alone" && !step.FlakeRepeat {
-		// A whole repeat could hide a failed section when another section passes.
-		if !slices.ContainsFunc(evidence.Failed, func(unit loopstop.RedUnit) bool { return len(unit.Tests) == 0 }) {
-			step.FlakeRepeat, step.State, step.Cause, step.Reason = true, StepPending, "", ""
-			if err := runner.save(*record); err != nil {
-				return false, err
-			}
-			capped, err := runner.advanceStep(record, round, index, *step.Retained, deadline)
-			if err != nil || capped {
-				return capped, err
-			}
-			return runner.attributeProof(record, round, index, plan, deadline)
-		}
-	}
+
 	var command PlainBrief
 	data, err := os.ReadFile(step.Retained.Brief)
 	if err != nil {
@@ -300,6 +310,84 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 	}
 	step.Cause = cause
 	return false, runner.save(*record)
+}
+
+// rerunAlone retains a separate execution without replacing the failed check.
+func (runner *UnitRunner) rerunAlone(record *UnitRunRecord, round *UnitRound, index int, plan UnitPlan, deadline time.Time) (loopstop.RedRun, bool, error) {
+	step := &round.Steps[index]
+	alone := step.Alone
+	run := loopstop.RedRun{Attempted: true, Launch: alone.LaunchID, Selectors: alone.Selectors}
+	if alone.Outcome == "environment" {
+		return run, false, nil
+	}
+	launch, err := runner.Manager.Store.Read(alone.LaunchID)
+	if os.IsNotExist(err) && alone.Outcome == "" {
+		var command PlainBrief
+		data, err := os.ReadFile(step.Retained.Brief)
+		if err != nil {
+			return run, false, err
+		}
+		if err := json.Unmarshal(data, &command); err != nil {
+			return run, false, err
+		}
+		if plan.Check != nil {
+			command.Argv = []string{"/bin/sh", "-c", plan.Check.Cheap}
+			command.Dir, command.Env = plan.Check.Directory, plan.Check.Environment
+		}
+		if len(plan.FullArgv) > 0 {
+			command.Argv = plan.FullArgv
+		}
+		command.Env = childEnvironment(command.Env, alone.Selectors)
+		brief := filepath.Join(round.Directory, fmt.Sprintf("alone-%d.json", index))
+		if err := writeUnitJSON(brief, command, runner.root()); err != nil {
+			return run, false, err
+		}
+		spec := StartSpec{ID: alone.LaunchID, Actor: runner.Actor, Kind: "proof", Goal: record.Goal, Tag: record.Unit, WorkingDirectory: command.Dir, Brief: brief, Round: round.Number, MaxRounds: record.MaxRounds}
+		if runner.BeforeModelLaunch != nil {
+			if err := runner.BeforeModelLaunch(*record, spec); err != nil {
+				return run, false, err
+			}
+		}
+		alone.StartedAt = runner.Manager.Now().UTC().Format(time.RFC3339Nano)
+		spec.wait = runner.CommandWait
+		launch, err = runner.Manager.Start(spec)
+		if err != nil && launch.ID == "" {
+			if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
+				return run, false, err
+			}
+			alone.Outcome, alone.FinishedAt = "environment", runner.Manager.Now().UTC().Format(time.RFC3339Nano)
+			if err := runner.save(*record); err != nil {
+				return run, false, err
+			}
+			if runner.CollectLaunch != nil {
+				err = runner.CollectLaunch(*record, Record{ID: alone.LaunchID, State: Failed, StartedAt: alone.StartedAt, FinishedAt: alone.FinishedAt}, "environment")
+			}
+			return run, false, err
+		}
+	}
+	if err != nil && launch.ID == "" {
+		return run, false, err
+	}
+	if !slices.Contains(step.LaunchIDs, alone.LaunchID) {
+		step.LaunchIDs = append(step.LaunchIDs, alone.LaunchID)
+		if err := runner.driver(record, round).save(); err != nil {
+			return run, false, err
+		}
+	}
+	launch, terminal, err := runner.waitLaunch(alone.LaunchID, max(time.Duration(0), deadline.Sub(runner.Manager.Now())))
+	if err != nil || !terminal {
+		return run, !terminal, err
+	}
+	alone.Outcome, alone.StartedAt, alone.FinishedAt = string(launch.State), launch.StartedAt, launch.FinishedAt
+	run.Exited = launch.ExitCode != nil && launch.Cause == "" && (launch.State == Completed || launch.State == Failed)
+	if runner.RedUnits != nil && run.Exited {
+		run.Failed, run.Complete, err = runner.RedUnits(launch)
+		if err != nil {
+			return run, false, err
+		}
+	}
+	run.Passed = run.Exited && *launch.ExitCode == 0 && run.Complete && len(run.Failed) == 0
+	return run, false, runner.driver(record, round).save()
 }
 
 func (result UnitResult) AttributionSummary(now time.Time) string {

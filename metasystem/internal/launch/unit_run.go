@@ -96,6 +96,14 @@ type UnitRound struct {
 	Steps      []UnitStep `json:"steps"`
 }
 
+type UnitAlone struct {
+	LaunchID   string   `json:"launchId"`
+	Selectors  []string `json:"selectors"`
+	Outcome    string   `json:"outcome,omitempty"`
+	StartedAt  string   `json:"startedAt,omitempty"`
+	FinishedAt string   `json:"finishedAt,omitempty"`
+}
+
 type UnitStep struct {
 	Kind               string        `json:"kind,omitempty"`
 	ExecutionStartedAt string        `json:"executionStartedAt,omitempty"`
@@ -129,6 +137,8 @@ type UnitStep struct {
 	Before      *repositorySnapshot `json:"before,omitempty"`
 	Comparison  *unitComparison     `json:"comparison,omitempty"`
 	FlakeRepeat bool                `json:"flakeRepeat,omitempty"`
+	Alone       *UnitAlone          `json:"alone,omitempty"`
+	Flakes      []string            `json:"flakes,omitempty"`
 }
 
 type UnitRequest struct{ Plan, Resume, FollowUp string }
