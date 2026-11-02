@@ -1,0 +1,16 @@
+{
+  "provider": "telegram",
+  "destination": "fleet",
+  "messageId": "1381",
+  "updateId": "896422422",
+  "replyTo": "1378",
+  "userId": "1365582",
+  "sentAt": "2026-11-02T08:19:27Z",
+  "text": "Yes, raise it",
+  "step": 1793607567,
+  "outcome": "verified",
+  "question": "unmatched",
+  "opid": "7TV3KZR5M5F3DERH1SRR3A23WV-ui-76faa029",
+  "receivedBy": "ui",
+  "receivedAt": "2026-11-02T08:23:20Z"
+}
