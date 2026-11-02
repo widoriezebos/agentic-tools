@@ -10,6 +10,9 @@ func (runner *UnitRunner) collectLaunches(record UnitRunRecord, round UnitRound)
 	}
 	for _, step := range round.Steps {
 		ids := append([]string(nil), step.LaunchIDs...)
+		if step.Unadmitted != "" && step.State == StepFailed {
+			ids = append(ids, step.Unadmitted)
+		}
 		if step.Comparison != nil {
 			ids = append(ids, step.Comparison.LaunchID)
 		}
@@ -25,7 +28,7 @@ func (runner *UnitRunner) collectLaunches(record UnitRunRecord, round UnitRound)
 			if os.IsNotExist(err) && id == step.LaunchID && step.State == StepStarting {
 				continue
 			}
-			if os.IsNotExist(err) && id == step.LaunchID && step.State == StepFailed && step.FinishedAt != "" {
+			if os.IsNotExist(err) && (id == step.LaunchID || id == step.Unadmitted) && step.State == StepFailed && step.FinishedAt != "" {
 				execution = Record{ID: id, State: Failed, StartedAt: step.StartedAt, FinishedAt: step.FinishedAt}
 				err = nil
 			}
@@ -36,7 +39,7 @@ func (runner *UnitRunner) collectLaunches(record UnitRunRecord, round UnitRound)
 				continue
 			}
 			cause := failedStepCause(execution)
-			if id == step.LaunchID && step.Cause != "" {
+			if (id == step.LaunchID || id == step.Unadmitted) && step.Cause != "" {
 				cause = step.Cause
 			}
 			if err := runner.CollectLaunch(record, execution, cause); err != nil {

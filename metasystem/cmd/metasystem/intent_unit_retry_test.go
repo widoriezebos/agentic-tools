@@ -167,13 +167,13 @@ func TestUnitCheckRetryWaitsForTheLaneProof(t *testing.T) {
 		code, held := agentBuild(t, b)
 		r := onlyRun(t, b)
 		step := r.Rounds[0].Steps[1]
-		if code != 1 || held.Outcome != intentRefused || !strings.HasSuffix(held.Summary, "; the unit check waits for the host") || step.State != launch.StepStarting || len(step.LaunchIDs) != 2 || !strings.HasSuffix(step.LaunchID, "-retry") || step.RetryBy != "machine" || len(p.launches) != 1 {
+		if code != 1 || held.Outcome != intentRefused || !strings.HasSuffix(held.Summary, "; the unit check waits for the host") || step.State != launch.StepStarting || len(step.LaunchIDs) != 1 || !strings.HasSuffix(step.LaunchID, "-retry") || step.RetryBy != "machine" || len(p.launches) != 1 {
 			t.Fatalf("the retry started while the lane proves: %d %+v step=%+v launches=%v", code, held, step, p.launches)
 		}
 		*lane = false
 		code, stopped := agentWork(t, b, "work", "build", "run:"+r.ID)
 		r = onlyRun(t, b)
-		if code != 1 || !slices.Equal(p.launches, step.LaunchIDs) || r.Rounds[0].Stop == nil || r.Rounds[0].Stop.Handoff != "stopped deadline" {
+		if code != 1 || !slices.Equal(p.launches, r.Rounds[0].Steps[1].LaunchIDs) || r.Rounds[0].Stop == nil || r.Rounds[0].Stop.Handoff != "stopped deadline" {
 			t.Fatalf("the idle lane did not start the retry: %d %+v launches=%v", code, stopped, p.launches)
 		}
 		questions, damaged := channel.WalkOpenQuestions(b.root())
@@ -239,7 +239,7 @@ func TestUnitCheckRetryIsChargedAsAnAttempt(t *testing.T) {
 		if !strings.Contains(details, "BUDGET_REFUSED") || !strings.Contains(details, "attemptLimit used=1 limit=1") || strings.Contains(details, "reservedJobMinutesLimit") {
 			t.Fatalf("the refusal does not say the attempts are used up: %s", details)
 		}
-		if step.State != launch.StepStarting || step.RetryBy != "machine" || len(step.LaunchIDs) != 2 || len(p.launches) != 1 || reservation(t, b, step.LaunchID) != nil {
+		if step.State != launch.StepStarting || step.RetryBy != "machine" || len(step.LaunchIDs) != 1 || len(p.launches) != 1 || reservation(t, b, step.LaunchID) != nil {
 			t.Fatalf("a refused retry launched or reserved: step=%+v launches=%v", step, p.launches)
 		}
 		projection := dispatchcore.ProjectBudget(b.root(), b.goalFile(b.id), b.manager.Now())
@@ -258,7 +258,7 @@ func TestUnitCheckRetryIsChargedAsAnAttempt(t *testing.T) {
 		*lane = true
 		code, _ := agentBuild(t, b)
 		r := onlyRun(t, b)
-		original, retry := r.Rounds[0].Steps[1].LaunchIDs[0], r.Rounds[0].Steps[1].LaunchIDs[1]
+		original, retry := r.Rounds[0].Steps[1].LaunchIDs[0], r.Rounds[0].Steps[1].LaunchID
 		if code != 1 || reservation(t, b, retry)["unitRetryAttempt"] != true || reservation(t, b, original)["unitEnvironment"] != true || reservation(t, b, original)["unitRetryAttempt"] != nil {
 			t.Fatalf("the machine retry is not charged, or its first deadline not excluded: %+v %+v", reservation(t, b, retry), reservation(t, b, original))
 		}

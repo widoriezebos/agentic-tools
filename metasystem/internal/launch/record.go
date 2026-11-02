@@ -181,6 +181,10 @@ func (s Store) Create(record Record) error {
 	})
 }
 func (s Store) Read(id string) (Record, error) {
+	// An unadmitted step has no launch to read.
+	if id == "" {
+		return Record{}, os.ErrNotExist
+	}
 	dir, err := s.StateDir(id)
 	if err != nil {
 		return Record{}, err
@@ -239,6 +243,9 @@ func (s Store) List() ([]Record, error) {
 			continue
 		}
 		record, err := s.Read(entry.Name())
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			return nil, err
 		}

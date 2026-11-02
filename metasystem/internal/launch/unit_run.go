@@ -134,11 +134,23 @@ type UnitStep struct {
 	RetryReason string              `json:"retryReason,omitempty"`
 	RetryLaunch string              `json:"retryLaunch,omitempty"`
 	Deadline    bool                `json:"deadline,omitempty"`
+	Unadmitted  string              `json:"unadmitted,omitempty"`
+	Holds       int                 `json:"holds,omitempty"`
 	LaunchIDs   []string            `json:"launchIds,omitempty"`
 	Retained    *StartSpec          `json:"retained,omitempty"`
 	Before      *repositorySnapshot `json:"before,omitempty"`
 	Comparison  *unitComparison     `json:"comparison,omitempty"`
 	FlakeRepeat bool                `json:"flakeRepeat,omitempty"`
+}
+
+// HoldFinding names what a hold asks a person to retry: the failed launch,
+// or this step's N-th refused admission of its candidate. Every refusal asks
+// its own question, and the act that answers it closes only that one.
+func (step UnitStep) HoldFinding() string {
+	if step.Unadmitted != "" {
+		return fmt.Sprintf("%s#%d", step.Unadmitted, step.Holds)
+	}
+	return step.LaunchID
 }
 
 type UnitRequest struct{ Plan, Resume, FollowUp string }
@@ -1041,7 +1053,7 @@ func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcom
 	if round.Cause == "" {
 		round.Cause = roundCause(round.Steps)
 	}
-	if strings.HasPrefix(outcome, "build-") || strings.HasPrefix(outcome, "proof-") || !slices.ContainsFunc(round.Steps, func(step UnitStep) bool { return strings.HasPrefix(step.Name, "read") }) {
+	if strings.HasPrefix(outcome, "build-") || strings.HasPrefix(outcome, "proof-") || outcome == "read-failed" && round.Cause == "environment" || !slices.ContainsFunc(round.Steps, func(step UnitStep) bool { return strings.HasPrefix(step.Name, "read") }) {
 		round.Material = -1
 	} else {
 		if err := runner.collectRoundRead(record, round); err != nil {

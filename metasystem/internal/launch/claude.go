@@ -197,6 +197,19 @@ func textMeasure(text string) (int, int, string) {
 	return lines, len(strings.Fields(text)), strings.Join(parts, " | ")
 }
 
+func (adapter ClaudeHeadless) Transcript(record Record, _ string) (string, error) {
+	paths, err := transcriptFiles(adapter.ProjectsRoot)
+	if err != nil {
+		return "", err
+	}
+	for _, path := range paths {
+		if filepath.Base(path) == readString(record.AdapterData, "sessionID")+".jsonl" {
+			return path, nil
+		}
+	}
+	return "", fmt.Errorf("claude transcript for launch %s was not found", record.ID)
+}
+
 func (adapter ClaudeHeadless) measureTranscript(sessionID string, measurement *Measurement, files func(string) ([]string, error)) error {
 	all, err := files(adapter.ProjectsRoot)
 	var paths []string

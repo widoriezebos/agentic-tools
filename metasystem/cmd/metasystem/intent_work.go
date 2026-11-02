@@ -1630,11 +1630,12 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 		}
 		return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, next: again, nextReason: "once that is settled", Details: details}
 	}
-	if err := inv.syncBuildHolds(record); err != nil {
-		return intentResult{Outcome: intentFailed, code: 1, Summary: "the build hold questions could not be reconciled", Details: []string{err.Error()}, next: inv.workArgv(record, "wait")}
-	}
 	targets = append(targets, intentTarget{Kind: "unit", ID: record.ID})
 	data := unitData(record, runner.Manager)
+	if err := inv.syncBuildHolds(record); err != nil {
+		return intentResult{Outcome: intentFailed, Targets: targets, code: 1, Data: data,
+			Summary: "the build is held, but no hold question was posted: " + err.Error(), Details: []string{err.Error()}, next: inv.workArgv(record, "wait")}
+	}
 	if result.Capped {
 		summary := result.AttributionSummary(runner.Manager.Now())
 		if summary == "" {

@@ -136,7 +136,7 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 	// The machine retries a provider refusal or a unit check's proof.deadline
 	// once; any other deadline waits for a person.
 	machine := step.Name == "proof:unit-check" && step.Deadline && step.Cause == "environment"
-	if step.State != StepFailed || step.Cause != "environment" || len(step.LaunchIDs) >= 2 || step.Deadline && !machine {
+	if step.State != StepFailed || step.Cause != "environment" || step.Unadmitted != "" || len(step.LaunchIDs) >= 2 || step.Deadline && !machine {
 		return false, nil
 	}
 	if machine {
@@ -233,8 +233,8 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 	for index := range round.Steps {
 		step := &round.Steps[index]
 		// A replay answers the same hold: the step is no longer failed, or the
-		// retry was recorded for its current launch. A new hold is retried again.
-		if step.RetryBy == person && step.RetryReason == reason && (step.State != StepFailed || step.RetryLaunch == step.LaunchID) {
+		// retry was recorded for its current hold. A new hold is retried again.
+		if step.RetryBy == person && step.RetryReason == reason && (step.State != StepFailed || step.RetryLaunch == step.HoldFinding()) {
 			return result, nil
 		}
 		if step.State != StepFailed {
@@ -258,7 +258,7 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 			}
 		}
 		round.ProofRefsNoted = false
-		step.RetryBy, step.RetryReason, step.RetryLaunch = person, reason, step.LaunchID
+		step.RetryBy, step.RetryReason, step.RetryLaunch = person, reason, step.HoldFinding()
 		step.State, step.Reason, step.Cause, step.FinishedAt = StepPending, "", "", ""
 		step.Before, step.Moved, step.Deadline = nil, nil, false
 		// A retried builder turn is counted afresh when it passes.

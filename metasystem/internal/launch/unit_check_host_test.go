@@ -104,8 +104,8 @@ func TestUnitCheckWaitsForHostLoad(t *testing.T) {
 				t.Fatalf("status: %+v %v", record, statusErr)
 			}
 			step := stepNamed(t, record.Rounds[0], "proof:check")
-			if step.State != StepStarting || len(step.LaunchIDs) != 1 || step.LaunchIDs[0] != step.LaunchID {
-				t.Fatalf("the waiting check is not a starting step with one launch: %+v", step)
+			if step.State != StepStarting || len(step.LaunchIDs) != 0 || step.LaunchID == "" {
+				t.Fatalf("the waiting check is not a starting step with an unlisted candidate: %+v", step)
 			}
 			if _, err := fixture.manager.Store.Read(step.LaunchID); !errors.Is(err, os.ErrNotExist) {
 				t.Fatalf("the waiting check left a launch record: %v", err)

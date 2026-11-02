@@ -160,7 +160,7 @@ func actProgress(record launch.UnitRunRecord, act, finding, person, reason strin
 		round := record.Rounds[len(record.Rounds)-1]
 		for _, step := range round.Steps {
 			if act == "work-review-retry" && step.RetryBy == person && step.RetryReason == reason && step.RetryLaunch == finding {
-				return progressWord(step.LaunchID != step.RetryLaunch && launchedStep(step))
+				return progressWord(step.Unadmitted == "" && step.LaunchID != step.RetryLaunch && launchedStep(step))
 			}
 		}
 		if act == "work-review-size" && round.SizeAcceptedBy == person && len(round.Steps) > 0 {

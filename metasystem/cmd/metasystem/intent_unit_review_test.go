@@ -144,6 +144,11 @@ func (c *connectionBed) StartSupervisor(id, state string) (identity.Ref, error) 
 		if record.Kind == "read" && c.readFails {
 			failed := 1
 			current.State, current.Reason, current.ExitCode = launch.Failed, "fixture-read-failed", &failed
+			report := filepath.Join(state, "report.md")
+			if err := os.WriteFile(report, []byte("The reader failed after producing these notes.\n"), 0600); err != nil {
+				return err
+			}
+			current.Outputs = []launch.Output{{Path: report}}
 		} else if record.Kind == "read" {
 			yes := true
 			// Successful fixture reads supply the structured evidence required by collection.
