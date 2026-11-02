@@ -47,6 +47,7 @@ func comparisonAccountingBed(t *testing.T, limit uint64) (*workBed, []string) {
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
 	bed.manager.Adapters["plain-exec"] = launch.PlainExec{}
+	bed.manager.Prober = unitProofProber{exact: identity.Exact{Pid: int64(os.Getpid()), StartedAt: bed.manager.Now()}}
 	bed.manager.Supervisor = unitProofStarter{bed: bed, t: t}
 	bed.workOwnersHook = func(owners *intentWorkOwners) {
 		units := owners.units

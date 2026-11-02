@@ -26,12 +26,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/roots"
 	metarun "github.com/widoriezebos/agentic-tools/metasystem/internal/run"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testutil"
 )
@@ -1222,7 +1222,7 @@ func installPendingWaitSupervisionCleanup(t *testing.T, fixture *installedWaitFi
 			}
 		}
 		environment = fixture.Env(append(environment, "METASYSTEM_FIXTURE_CAP_SCALE_MILLI=1"))
-		if err := retireUnpublishedPendingWaitOwner(root, environment); err != nil {
+		if err := retirePendingWaitOwner(t, root); err != nil {
 			return err
 		}
 		var failures []error
@@ -1471,17 +1471,12 @@ fi`)
 	fleetWriteJSON(t, filepath.Join(root, "artifacts", "agents", "steward", "runner.json"), record)
 }
 
-// retireUnpublishedPendingWaitOwner settles the one owner state up --shutdown
-// refuses: a live owner the registry does not yet name ("with no registry
-// checkout"). The fixture's SessionStart arms with a one-second scaled budget,
-// so on a loaded machine the recorded owner can still be unscheduled, before
-// its write-ahead relaunched row, when the stop runs. The owner is frozen
-// first, so the registry read and the decision cannot race its append. If the
-// row exists, the owner resumes and the orderly shutdown stops it. If not, the
-// owner has launched no component (the row precedes every launch), so the
-// fixture ends its own process and awaits that exact exit; the shutdown then
-// takes the recorded dead-owner path. The production refusal is unchanged.
-func retireUnpublishedPendingWaitOwner(root string, environment []string) error {
+// retirePendingWaitOwner ends the fixture's recorded producer before the
+// installed shutdown sweeps its components. The scaled production shutdown
+// budget cannot prove a real process has exited on a loaded host; this fixture
+// waits for that exact identity on the test's own deadline instead.
+func retirePendingWaitOwner(t *testing.T, root string) error {
+	t.Helper()
 	owner, err := supervise.ReadArmingOwner(root)
 	if os.IsNotExist(err) {
 		return nil
@@ -1489,43 +1484,25 @@ func retireUnpublishedPendingWaitOwner(root string, environment []string) error 
 	if err != nil {
 		return fmt.Errorf("read the recorded supervision owner before shutdown: %w", err)
 	}
-	registryPath := ""
-	for _, entry := range environment {
-		if value, ok := strings.CutPrefix(entry, "METASYSTEM_SUPERVISION_REGISTRY_HOME="); ok {
-			registryPath = filepath.Join(value, ".metasystem", "armed-checkouts.jsonl")
-		}
-	}
-	if registryPath == "" {
-		if registryPath, err = registry.DefaultPath(); err != nil {
-			return err
-		}
-	}
 	prober := identity.KernelProber{}
 	ref := identity.Ref{Pid: owner.Pid, StartedAtSec: owner.PidStartedAt, StartTicks: owner.PidStartTicks, BootID: owner.BootID}
-	if identity.AliveTaggedRef(prober, ref, owner.InstanceTag) != identity.Alive {
+	var state identity.Liveness
+	if err := testenv.AwaitError(t, fmt.Sprintf("fixture supervision owner %s (pid %d) identity", owner.InstanceTag, owner.Pid), func() bool {
+		state = identity.AliveTaggedRef(prober, ref, owner.InstanceTag)
+		return state != identity.Unknown
+	}); err != nil {
+		return err
+	}
+	if state == identity.Dead {
 		return nil
 	}
-	if err := syscall.Kill(int(owner.Pid), syscall.SIGSTOP); err != nil {
-		return nil // already gone: the shutdown's dead-owner path applies
+	if err := syscall.Kill(int(owner.Pid), syscall.SIGKILL); err != nil && err != syscall.ESRCH {
+		return fmt.Errorf("end the fixture supervision owner %s (pid %d): %w", owner.InstanceTag, owner.Pid, err)
 	}
-	// A stopped process keeps its pid, so this probe decides whether the
-	// frozen process is still the recorded owner.
-	if identity.AliveTaggedRef(prober, ref, owner.InstanceTag) != identity.Alive {
-		_ = syscall.Kill(int(owner.Pid), syscall.SIGCONT)
-		return nil
-	}
-	_, published, readErr := registry.OwnerCheckoutPath(registryPath, owner.InstanceTag)
-	if readErr != nil || published {
-		_ = syscall.Kill(int(owner.Pid), syscall.SIGCONT)
-		return nil
-	}
-	if err := syscall.Kill(int(owner.Pid), syscall.SIGKILL); err != nil {
-		return fmt.Errorf("end the unpublished supervision owner %s (pid %d): %w", owner.InstanceTag, owner.Pid, err)
-	}
-	if err := testutil.AwaitExactExit(prober, ref); err != nil {
-		return fmt.Errorf("unpublished supervision owner %s did not exit: %w", owner.InstanceTag, err)
-	}
-	return nil
+	return testenv.AwaitError(t, fmt.Sprintf("fixture supervision owner %s (pid %d) to exit", owner.InstanceTag, owner.Pid), func() bool {
+		exact, state, err := prober.Probe(ref.Pid)
+		return err == nil && (state == identity.Dead || state == identity.Alive && (!identity.SameIdentity(exact, ref) || exact.Zombie))
+	})
 }
 
 // pendingWaitHealthyPreview is the healthy hook preview the installed wait
@@ -2290,6 +2267,24 @@ func TestPendingWaitFromChildShell(t *testing.T) {
 	if err != nil || strings.Count(string(logData), "stop response decision=block") != beforeBlock+1 {
 		t.Fatalf("sessionless Stop hook log=%s err=%v", logData, err)
 	}
+	// The transcript is the probe's readiness signal. Keep its producer alive
+	// until it appears, with only the test binary's deadline bounding the wait.
+	canonicalRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	testenv.AwaitFrom(t, "child-shell Git machine-config probe", func() bool {
+		calls, err := os.ReadFile(os.Getenv("METASYSTEM_WAIT_GIT_SUPPORTED"))
+		return err == nil && strings.Contains(string(calls), "cwd="+canonicalRoot+" arg=<config> arg=<--get> arg=<metasystem.goal.machine>")
+	}, func() (bool, string) {
+		select {
+		case childWaitErr = <-childExit:
+			childObserved = true
+			return false, fmt.Sprintf("child wait exited: %v", childWaitErr)
+		default:
+			return true, ""
+		}
+	}, nil)
 	if err := finishChild(); err != nil {
 		output, _ := os.ReadFile(childStdoutPath)
 		problem, _ := os.ReadFile(childStderrPath)

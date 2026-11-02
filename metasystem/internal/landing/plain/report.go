@@ -10,6 +10,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
 // commandTail retains only the command's last 64 KiB as it copies its output.
@@ -46,6 +47,18 @@ type checkReport struct {
 
 // FailedChecks reads test identities only from a complete command report.
 func FailedChecks(data []byte) []FailedUnit { return readReport(data).failed }
+
+// CheckReport reads the failures and completeness of the last protocol report.
+func CheckReport(data []byte) ([]FailedUnit, bool) {
+	report := readReport(data)
+	return report.failed, report.kind == "complete"
+}
+
+// NamedUnitTests returns Go test names that can be selected within a package.
+func NamedUnitTests(unit FailedUnit, contract testpolicy.Contract) []string {
+	names, _ := namedUnitTests(unit, contract)
+	return names
+}
 
 func readReport(tail []byte) checkReport {
 	lines := strings.Split(strings.TrimSuffix(string(tail), "\n"), "\n")

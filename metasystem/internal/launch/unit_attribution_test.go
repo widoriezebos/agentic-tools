@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testgit"
 )
@@ -113,6 +115,26 @@ func attributionFixture(t *testing.T, baseRed bool, script string, resume ...boo
 	}
 	plan.Read = UnitReadPlan{}
 	plan.Proof[0].Argv, plan.Proof[0].Env = []string{executable, "arg with spaces"}, []string{"CHECK_ENV=exact"}
+	f.runner.AdmitEstimate = func(plan *UnitPlan) error { plan.FullArgv = slices.Clone(plan.Proof[0].Argv); return nil }
+	f.runner.RedUnits = func(record Record) ([]loopstop.RedUnit, bool, error) {
+		state, err := f.manager.Store.StateDir(record.ID)
+		if err != nil {
+			return nil, false, err
+		}
+		data, err := os.ReadFile(filepath.Join(state, "exec.log"))
+		var units []loopstop.RedUnit
+		for _, line := range strings.Split(string(data), "\n") {
+			fields := strings.Split(line, "\t")
+			if len(fields) == 3 && fields[0] == "LANDING-FAILED" {
+				units = append(units, loopstop.RedUnit{Unit: fields[1], Tests: strings.Fields(fields[2])})
+			}
+		}
+		complete := strings.HasSuffix(string(data), fmt.Sprintf("LANDING-CHECKED\t%d\n", len(units)))
+		if !complete {
+			units = nil
+		}
+		return units, complete, err
+	}
 	data, _ := json.Marshal(plan)
 	if err := os.WriteFile(f.plan, data, 0600); err != nil {
 		t.Fatal(err)
@@ -151,6 +173,84 @@ func attributionFixture(t *testing.T, baseRed bool, script string, resume ...boo
 	return f, git
 }
 
+func TestAFailedCheckSectionIsNeverAFlake(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"audits", "cheap-incomplete", "unreadable", "missing", "other-parent", "newest"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			counter := filepath.Join(t.TempDir(), "counter")
+			script := fmt.Sprintf("if [ -f '%s' ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\ntouch '%s'\nprintf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'\nexit 1\n", counter, counter)
+			if scenario == "cheap-incomplete" {
+				script = strings.ReplaceAll(script, "LANDING-CHECKED\\t1\\n", "")
+			}
+			f, git := attributionFixture(t, false, script)
+			plan, err := ReadUnitPlan(f.plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			plan.Check = &UnitCheck{Cheap: "check", Audits: "audits", Minutes: 1, Directory: f.worktree, Environment: []string{}}
+			data, _ := json.Marshal(plan)
+			if err := os.WriteFile(f.plan, data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			start := f.starter.onStart
+			f.starter.onStart = func(record Record) error {
+				if err := start(record); err != nil {
+					return err
+				}
+				if record.Kind != "proof" || strings.HasSuffix(record.ID, "-base") || scenario == "missing" {
+					return nil
+				}
+				round := filepath.Join(f.runner.Root, strings.Split(record.ID, "-r1-")[0], "round-1")
+				parent := record.ID
+				if scenario == "other-parent" {
+					parent = "different-launch"
+				}
+				observation := CheckExecution{ExecutionID: "check-sections", Steps: []processmeasure.Step{
+					{ID: record.ID + ":cheap", Parent: parent, Start: f.manager.Now().Format(time.RFC3339Nano), Outcome: "failed", Terminal: true},
+					{ID: record.ID + ":audits", Parent: parent, Outcome: "failed", Terminal: true},
+				}}
+				if scenario == "cheap-incomplete" {
+					observation.Steps[1].Outcome = "passed"
+				}
+				if scenario == "newest" {
+					older := observation
+					older.ExecutionID = "check-older"
+					older.Steps = slices.Clone(observation.Steps)
+					older.Steps[0].Start = f.manager.Now().Add(-time.Minute).Format(time.RFC3339Nano)
+					older.Steps[1].Outcome = "passed"
+					if err := writeUnitJSON(filepath.Join(round, older.ExecutionID, "observation.json"), older, f.runner.Root); err != nil {
+						return err
+					}
+				}
+				path := filepath.Join(round, observation.ExecutionID, "observation.json")
+				if err := writeUnitJSON(path, observation, f.runner.Root); err != nil {
+					return err
+				}
+				if scenario == "unreadable" {
+					return os.WriteFile(path, []byte("{"), 0600)
+				}
+				return nil
+			}
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			step := result.Record.Rounds[0].Steps[1]
+			cause, exports, launches := "own", 1, 3
+			if scenario == "unreadable" || scenario == "missing" || scenario == "other-parent" {
+				cause, exports, launches = "unclassified", 0, 2
+			}
+			if step.State != StepFailed || step.FlakeRepeat || step.Cause != cause || git.exports != exports || len(f.starter.ids) != launches || result.Record.Rounds[0].Outcome != "proof-red" {
+				t.Fatalf("failed section lost: step=%+v exports=%d launches=%v", step, git.exports, f.starter.ids)
+			}
+			if (scenario == "missing" || scenario == "other-parent") && !strings.Contains(step.Reason, "no frozen-check execution of launch "+step.LaunchID) {
+				t.Fatalf("missing execution did not name its launch: %s", step.Reason)
+			}
+		})
+	}
+}
+
 func TestUnitProofAttributesBaseAndOwn(t *testing.T) {
 	t.Parallel()
 	for _, baseRed := range []bool{true, false} {
@@ -169,7 +269,7 @@ func TestUnitProofAttributesBaseAndOwn(t *testing.T) {
 			}
 			round := result.Record.Rounds[0]
 			count, _ := countedRounds(result.Record)
-			if round.Cause != cause || count != charged || round.Stop == nil || incidents != 0 || git.exports != 1 || len(f.starter.ids) != 3 {
+			if round.Cause != cause || count != charged || round.Stop == nil || incidents != 0 || git.exports != 1 || len(f.starter.ids) != 4 {
 				t.Fatalf("cause=%s counted=%d incident=%d exports=%d launches=%v round=%+v", round.Cause, count, incidents, git.exports, f.starter.ids, round)
 			}
 		})
@@ -199,7 +299,7 @@ func TestUnitProofRecoversRetainedComparison(t *testing.T) {
 		t.Fatal(err)
 	}
 	second, err := f.runner.Advance(UnitRequest{Resume: first.Record.ID})
-	if err != nil || second.Record.Rounds[0].Cause != "own" || len(f.starter.ids) != 3 || git.exports != 1 {
+	if err != nil || second.Record.Rounds[0].Cause != "own" || len(f.starter.ids) != 4 || git.exports != 1 {
 		t.Fatalf("recovery=%+v launches=%v exports=%d err=%v", second, f.starter.ids, git.exports, err)
 	}
 	retention := &Retention{Manager: f.manager, UnitRoot: f.runner.Root}
@@ -258,7 +358,7 @@ func TestUnitProofRefusesStaleComparison(t *testing.T) {
 			}
 			round := result.Record.Rounds[0]
 			count, _ := countedRounds(result.Record)
-			if round.Cause != "unclassified" || count != 0 || !strings.Contains(round.Steps[1].Reason, "different base tree or command") || git.exports != 1 || len(f.starter.ids) != 3 {
+			if round.Cause != "unclassified" || count != 0 || !strings.Contains(round.Steps[1].Reason, "different base tree or command") || git.exports != 1 || len(f.starter.ids) != 4 {
 				t.Fatalf("stale %s accepted: round=%+v counted=%d launches=%v", stale, round, count, f.starter.ids)
 			}
 		})
@@ -271,19 +371,11 @@ func TestUnitProofRepeatsRegisteredFlakeOnce(t *testing.T) {
 		t.Run(fmt.Sprint(repeatGreen), func(t *testing.T) {
 			t.Parallel()
 			counter := filepath.Join(t.TempDir(), "counter")
-			script := fmt.Sprintf("if [ -f '%s' ]; then %s; fi\ntouch '%s'\nprintf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'\nexit 1\n", counter, map[bool]string{true: "exit 0", false: "exit 1"}[repeatGreen], counter)
+			script := fmt.Sprintf("if [ -f '%s' ]; then %s; fi\ntouch '%s'\nprintf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'\nexit 1\n", counter, map[bool]string{true: "printf 'LANDING-CHECKED\\t0\\n'; exit 0", false: "exit 1"}[repeatGreen], counter)
 			if !repeatGreen {
 				script = "if [ -f red ]; then printf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'; exit 1; fi\n"
 			}
 			f, git := attributionFixture(t, false, script)
-			f.runner.KnownFlake = func(record Record) (bool, error) {
-				state, err := f.manager.Store.StateDir(record.ID)
-				if err != nil {
-					return false, err
-				}
-				data, err := os.ReadFile(filepath.Join(state, "exec.log"))
-				return strings.HasSuffix(string(data), "LANDING-FAILED\tpkg/unit\tTestRed\nLANDING-CHECKED\t1\n"), err
-			}
 			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
 			if err != nil {
 				t.Fatal(err)
@@ -302,6 +394,20 @@ func TestUnitProofRepeatsRegisteredFlakeOnce(t *testing.T) {
 			}
 			if round.Cause != cause || round.Outcome != outcome {
 				t.Fatalf("round=%+v", round)
+			}
+			if !repeatGreen {
+				if _, err := f.manager.Store.Update(round.Steps[1].LaunchID, func(r *Record) error { r.ExitCode = nil; return nil }); err != nil {
+					t.Fatal(err)
+				}
+				plan, err := ReadUnitPlan(f.plan)
+				if err != nil {
+					t.Fatal(err)
+				}
+				_, err = f.runner.compareProof(&result.Record, &result.Record.Rounds[0], 1, plan, f.manager.Now().Add(time.Minute))
+				step := result.Record.Rounds[0].Steps[1]
+				if err != nil || step.Cause != "environment" || !strings.Contains(step.Reason, "the check repeat has no completed exit evidence") {
+					t.Fatalf("unfinished repeat reason=%q cause=%s err=%v", step.Reason, step.Cause, err)
+				}
 			}
 		})
 	}
@@ -358,7 +464,7 @@ func TestUnitProofResumesAfterMainRecording(t *testing.T) {
 	}
 	f.runner.RecordMain = func(Record, string, string) error { sightings++; return nil }
 	result, err := f.runner.Advance(UnitRequest{Resume: record.ID})
-	if err != nil || sightings != 1 || result.Record.Rounds[0].Cause != "main" || len(f.starter.ids) != 3 {
+	if err != nil || sightings != 1 || result.Record.Rounds[0].Cause != "main" || len(f.starter.ids) != 4 {
 		t.Fatalf("resume: %+v sightings=%d launches=%v err=%v", result, sightings, f.starter.ids, err)
 	}
 }

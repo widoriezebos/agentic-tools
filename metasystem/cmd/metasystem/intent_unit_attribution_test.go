@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
@@ -33,6 +34,10 @@ func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 		if err != nil {
 			return identity.Ref{}, err
 		}
+		child := identity.Exact{Pid: int64(os.Getpid()), StartedAt: s.bed.manager.Now()}.Ref()
+		if _, err := s.bed.manager.Store.Update(id, func(r *launch.Record) error { r.Child = &child; return nil }); err != nil {
+			return identity.Ref{}, err
+		}
 		code, result := declaredCheckAt(s.t, s.bed, spec.Directory, "proof", spec.Args...)
 		var data []byte
 		for _, raw := range resultData(s.t, result)["exits"].([]any) {
@@ -47,27 +52,81 @@ func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 			return identity.Ref{}, err
 		}
 	}
-	return s.bed.starter.StartSupervisor(id, state)
+	supervisor, err := s.bed.starter.StartSupervisor(id, state)
+	if err == nil && record.Kind == "read" {
+		_, err = s.bed.manager.Store.Update(id, func(r *launch.Record) error { r.Measurement.Verdict = "VERDICT: LAND"; return nil })
+	}
+	return supervisor, err
+}
+
+type unitProofProber struct {
+	workProber
+	exact identity.Exact
+}
+
+func (p unitProofProber) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
+	if pid == p.exact.Pid {
+		return p.exact, identity.Alive, nil
+	}
+	return p.workProber.Probe(pid)
+}
+
+func TestAUnitCheckFlakeStopsNothingAndAsksNobody(t *testing.T) {
+	t.Parallel()
+	bed := unitFlakeBuild(t, true, false, true)
+	paths, err := filepath.Glob(filepath.Join(bed.unitRoot, "*", "run.json"))
+	if err != nil || len(paths) != 1 {
+		t.Fatalf("runs=%v err=%v", paths, err)
+	}
+	record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(filepath.Base(filepath.Dir(paths[0])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	round := record.Rounds[0]
+	if round.Cause != "" || round.Stop == nil || round.Stop.Loop != "unit-round" || round.Stop.Decision != "close" || round.Steps[2].Verdict != "VERDICT: LAND" || round.Steps[2].State != launch.StepPassed || len(round.Reads) != 1 || round.Reads[0].ID != round.Steps[2].LaunchID {
+		t.Fatalf("flake did not reach a clean read: %+v", round)
+	}
+	read, err := bed.manager.Store.Read(round.Steps[2].LaunchID)
+	if err != nil || read.State != launch.Completed || len(read.Outputs) == 0 {
+		t.Fatalf("read result not collected: %+v err=%v", read, err)
+	}
+	executions, unknown := launch.ReadCheckExecutions(round.Directory)
+	if len(unknown) != 0 || len(executions) != 2 {
+		t.Fatalf("check executions=%+v unknown=%v", executions, unknown)
+	}
+	for _, execution := range executions {
+		if !slices.Contains(round.Steps[1].LaunchIDs, execution.Steps[0].Parent) {
+			t.Fatalf("check has no parent launch: %+v", execution)
+		}
+	}
+	questions, problems := channel.WalkQuestions(bed.root())
+	if len(questions) != 0 || len(problems) != 0 {
+		t.Fatalf("flake asked somebody: %+v %v", questions, problems)
+	}
+	if _, err := os.Stat(filepath.Join(round.Directory, "stop-register.json")); !os.IsNotExist(err) {
+		t.Fatalf("flake left a stop register: %v", err)
+	}
 }
 
 func TestUnitBuildRepeatsFlakeFromMainRegister(t *testing.T) {
 	t.Parallel()
-	unitFlakeBuild(t, false, false)
+	unitFlakeBuild(t, false, false, false)
 }
 
 func TestUnitBuildAttributesAffectedRegisteredFlake(t *testing.T) {
 	t.Parallel()
-	unitFlakeBuild(t, true, false)
+	unitFlakeBuild(t, true, false, false)
 }
 
 func TestUnitBuildAttributesUnitNewOnMainAfterJudgeError(t *testing.T) {
 	t.Parallel()
-	unitFlakeBuild(t, true, true)
+	unitFlakeBuild(t, true, true, false)
 }
 
-func unitFlakeBuild(t *testing.T, affected, newOnMain bool) *workBed {
+func unitFlakeBuild(t *testing.T, affected, newOnMain, flake bool) *workBed {
 	t.Helper()
 	bed := newWorkBed(t)
+	bed.manager.Prober = unitProofProber{exact: identity.Exact{Pid: int64(os.Getpid()), StartedAt: bed.manager.Now()}}
 	bed.manager.Adapters["plain-exec"] = launch.PlainExec{}
 	bed.manager.Supervisor = unitProofStarter{bed: bed, t: t}
 	if err := os.WriteFile(filepath.Join(bed.root(), "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0600); err != nil {
@@ -110,13 +169,13 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain bool) *workBed {
 					t.Fatalf("main register read in %s, want repository root %s", dir, bed.worktree)
 				}
 				reads++
-				if newOnMain {
+				if newOnMain || flake {
 					return goal.RenderTrunkRed(nil), nil
 				}
 				return goal.RenderTrunkRed([]goal.TrunkRedEntry{entry}), nil
 			case strings.Join(args, " ") == "diff --name-only origin/main...HEAD":
 				if affected {
-					return []byte("u/a/unit.go\n"), nil
+					return []byte("u/a/unit.go\nu/b/unit.go\n"), nil
 				}
 				return nil, nil
 			case strings.Join(args, " ") == "ls-tree -z origin/main:u/a":
@@ -142,15 +201,23 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain bool) *workBed {
 	if err := os.WriteFile(filepath.Join(bed.worktree, "red"), nil, 0600); err != nil {
 		t.Fatal(err)
 	}
-	script := "#!/bin/sh\nif [ ! -f red ]; then exit 0; fi\nif [ -f '" + counter + "' ]; then exit 0; fi\ntouch '" + counter + "'\nprintf 'LANDING-FAILED\\tu/a\\tTestBroken\\nLANDING-CHECKED\\t1\\n'\nexit 1\n"
-	if affected {
-		script = "#!/bin/sh\nif [ ! -f red ]; then exit 0; fi\nprintf 'LANDING-FAILED\\tu/a\\tTestBroken\\nLANDING-CHECKED\\t1\\n'\nexit 1\n"
+	script := "#!/bin/sh\nif [ ! -f red ] || [ -f '" + counter + "' ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\ntouch '" + counter + "'\nprintf 'LANDING-FAILED\\tu/a\\tTestBroken\\nLANDING-CHECKED\\t1\\n'\nexit 1\n"
+	if affected && !flake {
+		script = "#!/bin/sh\nif [ ! -f red ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\nprintf 'LANDING-FAILED\\tu/a\\tTestBroken\\nLANDING-CHECKED\\t1\\n'\nexit 1\n"
+	}
+	if flake {
+		script = strings.ReplaceAll(script, "LANDING-FAILED\\tu/a\\tTestBroken\\nLANDING-CHECKED\\t1", "LANDING-FAILED\\tu/a\\tTestA\\nLANDING-FAILED\\tu/b\\tTestB\\nLANDING-CHECKED\\t2")
 	}
 	if err := testexec.WriteFile(check, []byte(script), 0700); err != nil {
 		t.Fatal(err)
 	}
-	brief := filepath.Join(bed.root(), bed.brief("flake.md", "Build the unit.\n"))
+	text := "Build the unit.\n"
+	if flake {
+		text += "\nRead each round: yes\n"
+	}
+	brief := filepath.Join(bed.root(), bed.brief("flake.md", text))
 	bed.declaredCheap = shellCommand([]string{check})
+	bed.declaredFull = bed.declaredCheap + " # full"
 	command, rest, ok := resolveIntentArgv([]string{"work", "build", bed.id, "flake", "--brief", brief, "--lines", "5"})
 	if !ok {
 		t.Fatal("build command unavailable")
@@ -162,20 +229,24 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain bool) *workBed {
 		t.Fatalf("build JSON: %v stdout=%s stderr=%s", err, &stdout, &stderr)
 	}
 	outcome, wantCode := "green", 0
-	if affected {
+	if affected && !flake {
 		outcome, wantCode = "proof-red", 1
 	}
-	if code != wantCode || resultData(t, result)["outcome"] != outcome || reads != 2 {
+	wantReads := 2
+	if affected && !flake {
+		wantReads = 4
+	}
+	if code != wantCode || resultData(t, result)["outcome"] != outcome || reads != wantReads {
 		t.Fatalf("build exit=%d result=%+v main reads=%d", code, result, reads)
 	}
-	if affected {
+	if affected && !flake {
 		record, err := (&launch.UnitRunner{Root: bed.unitRoot}).Status(resultData(t, result)["run"].(string))
-		if err != nil || record.Rounds[0].Cause != "own" || record.Rounds[0].Steps[1].FlakeRepeat || record.Rounds[0].Steps[1].Comparison == nil {
+		if err != nil || record.Rounds[0].Cause != "own" || !record.Rounds[0].Steps[1].FlakeRepeat || record.Rounds[0].Steps[1].Comparison == nil {
 			t.Fatalf("failed check attribution: %+v err=%v", record, err)
 		}
 		if newOnMain {
 			step := record.Rounds[0].Steps[1]
-			if missingUnitReads != 1 || step.Cause != "own" || !step.Comparison.Verified {
+			if missingUnitReads != 2 || step.Cause != "own" || !step.Comparison.Verified {
 				t.Fatalf("new unit attribution: missing unit reads=%d step=%+v", missingUnitReads, step)
 			}
 			base, err := bed.manager.Store.Read(step.Comparison.LaunchID)
@@ -185,8 +256,45 @@ func unitFlakeBuild(t *testing.T, affected, newOnMain bool) *workBed {
 		}
 	}
 	kinds := bed.starter.launched()
-	if strings.Join(kinds, ",") != "build,proof,proof" {
+	wantKinds := "build,proof,proof"
+	if affected && !flake {
+		wantKinds += ",proof"
+	}
+	if flake {
+		wantKinds += ",read"
+	}
+	if strings.Join(kinds, ",") != wantKinds {
 		t.Fatalf("launches=%v", kinds)
+	}
+	input, problem := parseIntentArgs(command, rest)
+	if problem != nil {
+		t.Fatal(problem)
+	}
+	inv := &intentInvocation{command: command, input: input, raw: rest, owners: bed.workOwners(), cwd: bed.root(), stdout: &stdout, stderr: &stderr}
+	factsRunner := inv.unitRunner()
+	paths, _ := filepath.Glob(filepath.Join(bed.unitRoot, "*", "run.json"))
+	if len(paths) != 1 || factsRunner.RedUnits == nil {
+		t.Fatalf("missing run or facts reader: %v", paths)
+	}
+	record, err := factsRunner.Status(filepath.Base(filepath.Dir(paths[0])))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := bed.manager.Store.Read(record.Rounds[0].Steps[1].LaunchIDs[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	units, complete, err := factsRunner.RedUnits(first)
+	registration := ""
+	if !newOnMain && !flake {
+		registration = goal.FlakeIdentity("u/a", "TestBroken")
+	}
+	wantUnits, wantTest := 1, "TestBroken"
+	if flake {
+		wantUnits, wantTest = 2, "TestA"
+	}
+	if err != nil || !complete || len(units) != wantUnits || !slices.Equal(units[0].Tests, []string{wantTest}) || !slices.Equal(units[0].Registered, []string{registration}) {
+		t.Fatalf("red facts=%+v complete=%v err=%v", units, complete, err)
 	}
 	return bed
 }

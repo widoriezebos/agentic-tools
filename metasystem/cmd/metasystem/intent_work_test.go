@@ -43,6 +43,7 @@ type workBed struct {
 	*intentBed
 	id, worktree  string
 	declaredCheap string
+	declaredFull  string
 	// declaredAudits and declaredDeadline replace the default proof.audits=true
 	// and proof.deadline=15 when set.
 	declaredAudits, declaredDeadline string
@@ -480,7 +481,11 @@ func (b *workBed) workOwners() intentOwners {
 				if audits == "" {
 					audits, deadline = "true", "15"
 				}
-				return []byte("proof.cheap=" + cheap + "\nproof.audits=" + audits + "\nproof.deadline=" + deadline + "\nproof.full=true # full\n"), nil
+				full := b.declaredFull
+				if full == "" {
+					full = "true # full"
+				}
+				return []byte("proof.cheap=" + cheap + "\nproof.audits=" + audits + "\nproof.deadline=" + deadline + "\nproof.full=" + full + "\n"), nil
 			case joined == "rev-parse HEAD" && dir == b.worktree:
 				return []byte(b.head + "\n"), nil
 			case strings.HasPrefix(joined, "rev-parse --verify -q refs/heads/goal/"):

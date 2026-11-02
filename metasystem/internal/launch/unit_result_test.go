@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 )
 
 func TestUnitBuildResultJudgement(t *testing.T) {
@@ -314,7 +316,7 @@ func TestUnitContinueFinishesRecordedProofFailure(t *testing.T) {
 				t.Fatal(err)
 			}
 			finished := got.Record.Rounds[0]
-			if !completed || got.Record.State != "awaiting-judgement" || finished.Outcome != "proof-red" || finished.Cause != "own" || !finished.Steps[1].Comparison.Verified || finished.Stop == nil || git.exports != 1 || len(f.starter.ids) != 3 {
+			if !completed || got.Record.State != "awaiting-judgement" || finished.Outcome != "proof-red" || finished.Cause != "own" || !finished.Steps[1].Comparison.Verified || finished.Stop == nil || git.exports != 1 || len(f.starter.ids) != 4 {
 				t.Fatalf("continued=%+v exports=%d launches=%v", got, git.exports, f.starter.ids)
 			}
 
@@ -379,17 +381,18 @@ func TestUnitContinueRecordedDeadlineAllowsRetry(t *testing.T) {
 func TestUnitContinueGreenFlakeKeepsAdvancing(t *testing.T) {
 	t.Parallel()
 	counter := filepath.Join(t.TempDir(), "counter")
-	script := fmt.Sprintf("if [ -f '%s' ]; then exit 0; fi\ntouch '%s'\nexit 1\n", counter, counter)
+	script := fmt.Sprintf("if [ -f '%s' ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\ntouch '%s'\nprintf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'\nexit 1\n", counter, counter)
 	f, git := attributionFixture(t, false, script, true)
 	f.runner.Git = resultAttributionGit{git}
-	f.runner.KnownFlake = func(Record) (bool, error) {
-		return false, coded("BUDGET_REFUSED", "", fmt.Errorf("comparison interrupted"))
+	redUnits := f.runner.RedUnits
+	f.runner.RedUnits = func(Record) ([]loopstop.RedUnit, bool, error) {
+		return nil, false, coded("BUDGET_REFUSED", "", fmt.Errorf("comparison interrupted"))
 	}
 	first, err := f.runner.Advance(UnitRequest{Plan: f.plan})
 	if !IsCode(err, "BUDGET_REFUSED") || first.Record.Rounds[0].Steps[1].State != StepFailed {
 		t.Fatalf("first=%+v err=%v", first, err)
 	}
-	f.runner.KnownFlake = func(Record) (bool, error) { return true, nil }
+	f.runner.RedUnits = redUnits
 	got, err := f.runner.Continue(UnitRequest{Resume: first.Record.ID})
 	if err != nil {
 		t.Fatal(err)

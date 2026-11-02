@@ -7,10 +7,12 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 )
 
 type unitComparison struct {
@@ -27,7 +29,7 @@ type unitComparison struct {
 }
 
 // Attribution reads retained executions; it never rebuilds a completed step.
-func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound, index int, base string, deadline time.Time) (bool, error) {
+func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound, index int, plan UnitPlan, deadline time.Time) (bool, error) {
 	step := &round.Steps[index]
 	if step.State == StepFailed && step.Cause == "unclassified" && checkCause(step, round.Directory) {
 		step.Reason = "the frozen check stopped at proof.deadline"
@@ -42,12 +44,12 @@ func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound
 		if err != nil || capped || len(step.LaunchIDs) == launches {
 			return capped, err
 		}
-		return runner.attributeProof(record, round, index, base, deadline)
+		return runner.attributeProof(record, round, index, plan, deadline)
 	}
 	if step.State != StepFailed || step.Cause != "unclassified" || step.Retained == nil {
 		return false, nil
 	}
-	capped, err := runner.compareProof(record, round, index, base, deadline)
+	capped, err := runner.compareProof(record, round, index, plan, deadline)
 	if err != nil {
 		if IsCode(err, "BUDGET_REFUSED") || IsCode(err, "BUDGET_UNKNOWN") {
 			return false, err
@@ -58,18 +60,60 @@ func (runner *UnitRunner) attributeProof(record *UnitRunRecord, round *UnitRound
 	return capped, nil
 }
 
-func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, index int, base string, deadline time.Time) (capped bool, err error) {
+func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, index int, plan UnitPlan, deadline time.Time) (capped bool, err error) {
+	base := plan.Base
 	step := &round.Steps[index]
 	launch, err := runner.Manager.Store.Read(step.LaunchID)
 	if err != nil {
 		return false, err
 	}
-	if runner.KnownFlake != nil && !step.FlakeRepeat {
-		known, err := runner.KnownFlake(launch)
+	evidence := loopstop.RedEvidence{Goal: record.Goal, Replays: []loopstop.RedReplay{{Role: "base", Named: loopstop.RedRun{Wrapper: true, Whole: true}}}}
+	complete := false
+	if runner.RedUnits != nil {
+		evidence.Failed, complete, err = runner.RedUnits(launch)
 		if err != nil {
 			return false, err
 		}
-		if known {
+	}
+	if plan.Check != nil {
+		latest, unknown := newestCheckExecution(round.Directory, step.LaunchID)
+		if len(unknown) > 0 {
+			evidence.CannotRun = "the frozen check's execution evidence cannot be read: " + strings.Join(unknown, "; ")
+		} else if latest == nil {
+			evidence.CannotRun = "no frozen-check execution of launch " + step.LaunchID
+		} else {
+			failed := evidence.Failed
+			evidence.Failed = nil
+			for i, section := range latest.Steps {
+				if section.Outcome == "passed" {
+					continue
+				}
+				if i == 0 && complete && len(failed) > 0 {
+					evidence.Failed = append(evidence.Failed, failed...)
+				} else {
+					name := section.ID[strings.LastIndex(section.ID, ":")+1:]
+					evidence.Failed = append(evidence.Failed, loopstop.RedUnit{Unit: "section/" + name})
+				}
+			}
+		}
+	}
+	if step.FlakeRepeat {
+		evidence.Alone = loopstop.RedRun{Attempted: true, Exited: launch.ExitCode != nil && launch.Cause == "" && (launch.State == Completed || launch.State == Failed), Wrapper: true, Launch: launch.ID, Failed: evidence.Failed}
+	}
+	verdict := loopstop.ClassifyRed(evidence)
+	if verdict.Cause != nil {
+		step.Cause, step.Reason = verdict.Cause.Kind, verdict.Words
+		if step.Reason == "" {
+			step.Reason = "the red could not be classified: " + evidence.CannotRun
+			if step.Cause == "environment" {
+				step.Reason = "the check repeat has no completed exit evidence: " + launch.ID
+			}
+		}
+		return false, runner.save(*record)
+	}
+	if verdict.Next == "alone" && !step.FlakeRepeat {
+		// A whole repeat could hide a failed section when another section passes.
+		if !slices.ContainsFunc(evidence.Failed, func(unit loopstop.RedUnit) bool { return len(unit.Tests) == 0 }) {
 			step.FlakeRepeat, step.State, step.Cause, step.Reason = true, StepPending, "", ""
 			if err := runner.save(*record); err != nil {
 				return false, err
@@ -78,7 +122,7 @@ func (runner *UnitRunner) compareProof(record *UnitRunRecord, round *UnitRound, 
 			if err != nil || capped {
 				return capped, err
 			}
-			return runner.attributeProof(record, round, index, base, deadline)
+			return runner.attributeProof(record, round, index, plan, deadline)
 		}
 	}
 	var command PlainBrief
