@@ -650,6 +650,119 @@ func TestAnAgentIsRefusedBeforeTheChild(t *testing.T) {
 	}
 }
 
+func TestADispositionIsARecord(t *testing.T) {
+	t.Parallel()
+	b := newDecisionAgentBed(t)
+	agentProver := b.owners.prove
+	base := []string{"decision", "record", "--json", "--text", "wait for proof", "--rejected", "act before proof"}
+	keys := []string{"--row", "overdue-goal", "--subject", bedGoal, "--occurrence", "2026-09-01T10:00:00Z"}
+	run := func(flags, act []string) (int, intentResult) {
+		t.Helper()
+		words := append(append(slices.Clone(base), keys...), flags...)
+		if act != nil {
+			words = append(append(words, "--"), act...)
+		}
+		code, out, errout := b.run(b.owners, words...)
+		var got intentResult
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("record: %d %s %s %v", code, out, errout, err)
+		}
+		return code, got
+	}
+	// A session may wait or ask after its authority to act has ended.
+	b.lineage = ""
+	if code, got := b.runJSON(b.grantEverythingBed.owners(), "grant", "revoke", b.grant); code != 0 {
+		t.Fatalf("revoke: %d %+v", code, got)
+	}
+	b.lineage = launch.SeatOwnerLineage
+	before := b.repo.accepted
+	if code, got := run([]string{"--dispose", "wait", "--trigger", "proof P ends", "--until", "19:30"}, nil); code != 0 || got.Outcome != intentConfirmed {
+		t.Fatalf("wait without a grant: %d %+v", code, got)
+	}
+	lines, bad, err := humanauthority.ReadDecisions(b.home)
+	if err != nil || bad != 0 || len(lines) != 1 {
+		t.Fatalf("wait log: %+v %d %v", lines, bad, err)
+	}
+	now, _ := b.commandNow(b.root())
+	zone := b.owners.helm.zone
+	local := now.In(zone)
+	waitUntil := time.Date(local.Year(), local.Month(), local.Day(), 19, 30, 0, 0, zone)
+	d := lines[0]
+	if d.Actor != launch.SeatOwnerLineage || d.Grant != "" || d.Lineage != launch.SeatOwnerLineage || d.Class != "" || !d.At.Equal(now) || len(d.Argv) != 0 || d.Disposition == nil || d.Disposition.Row != "overdue-goal" || d.Disposition.Subject != bedGoal || d.Disposition.Occurrence != "2026-09-01T10:00:00Z" || d.Disposition.Kind != humanauthority.DisposeWait || d.Disposition.Trigger != "proof P ends" || !d.Disposition.WaitUntil.Equal(waitUntil) || d.Disposition.Decision != d.ID {
+		t.Fatalf("wait record: %+v disposition=%+v, want end %s", d, d.Disposition, waitUntil)
+	}
+	if code, got := run([]string{"--dispose", "ask", "--class", "values", "--lineage", "explicit-seat"}, nil); code != 0 || got.Outcome != intentConfirmed {
+		t.Fatalf("ask without a grant: %d %+v", code, got)
+	}
+	lines, _, _ = humanauthority.ReadDecisions(b.home)
+	if len(lines) != 2 || lines[1].Actor != "explicit-seat" || lines[1].Grant != "" || lines[1].Class != "values" || len(lines[1].Argv) != 0 || lines[1].Disposition == nil || lines[1].Disposition.Kind != humanauthority.DisposeAsk || lines[1].Disposition.Trigger != "" || !lines[1].Disposition.WaitUntil.IsZero() || lines[1].Disposition.Decision != lines[1].ID || b.calls != 0 || b.repo.accepted != before {
+		t.Fatalf("ask record: %+v child calls=%d", lines, b.calls)
+	}
+	for _, row := range []struct {
+		name       string
+		flags, act []string
+		missing    string
+	}{
+		{"too long", []string{"--dispose", "wait", "--trigger", "proof ends", "--until", "2026-09-03"}, nil, "24 hours"},
+		{"past", []string{"--dispose", "wait", "--trigger", "proof ends", "--until", "2026-08-30"}, nil, "--until"},
+		{"bad time", []string{"--dispose", "wait", "--trigger", "proof ends", "--until", "never"}, nil, "time like"},
+		{"no trigger", []string{"--dispose", "wait", "--until", "19:30"}, nil, "--trigger"},
+		{"no end", []string{"--dispose", "wait", "--trigger", "proof ends"}, nil, "--until"},
+		{"wait child", []string{"--dispose", "wait", "--trigger", "proof ends", "--until", "19:30"}, []string{"goal", "prioritize", bedGoal, "3"}, "no act"},
+		{"ask end", []string{"--dispose", "ask", "--until", "19:30"}, nil, "--until"},
+		{"ask trigger", []string{"--dispose", "ask", "--trigger", "proof ends"}, nil, "--trigger"},
+		{"act missing", []string{"--dispose", "act"}, nil, "act after --"},
+		{"wrong kind", []string{"--dispose", "ignore"}, nil, "act, wait or ask"},
+	} {
+		code, got := run(row.flags, row.act)
+		if code != 2 || got.Outcome != intentRefused || !strings.Contains(got.Summary, row.missing) {
+			t.Errorf("%s: %d %+v, want %q", row.name, code, got, row.missing)
+		}
+	}
+	for _, key := range []string{"row", "subject", "occurrence", "dispose", "text", "rejected"} {
+		words := append(append(slices.Clone(base), keys...), "--dispose", "ask")
+		code, out, _ := b.run(b.owners, withoutOption(words, key)...)
+		if code != 2 || !strings.Contains(out, "--"+key) {
+			t.Errorf("missing %s: %d %s", key, code, out)
+		}
+	}
+	for _, flag := range []string{"trigger", "until"} {
+		code, out, _ := b.run(b.owners, append(slices.Clone(base), "--"+flag, "19:30")...)
+		if code != 2 || !strings.Contains(out, "--dispose wait") {
+			t.Errorf("orphan %s: %d %s", flag, code, out)
+		}
+	}
+	if got, _, err := humanauthority.ReadDecisions(b.home); err != nil || len(got) != 2 || b.calls != 0 || b.repo.accepted != before {
+		t.Fatalf("refusals changed state: %d lines, %d calls, %v", len(got), b.calls, err)
+	}
+	// The person's own proof still identifies a disposition without an act.
+	b.lineage = ""
+	b.owners.prove = b.prove
+	if code, got := run([]string{"--dispose", "ask"}, nil); code != 0 || got.Outcome != intentConfirmed {
+		t.Fatalf("person asks: %d %+v", code, got)
+	}
+	lines, _, _ = humanauthority.ReadDecisions(b.home)
+	if len(lines) != 3 || lines[2].Actor != "human:Wido" || lines[2].By != "Wido" || lines[2].Grant != "" {
+		t.Fatalf("person's record: %+v", lines)
+	}
+	if code, got := b.runJSON(b.grantEverythingBed.owners(), "grant", "add", "--acts", "everything", "--classes", "ordering,recovery", "--lineage", "seat", "--for", "24h"); code != 0 || got.Outcome != intentConfirmed {
+		t.Fatalf("restore grant: %d %+v", code, got)
+	}
+	b.lineage = launch.SeatOwnerLineage
+	b.owners.prove = agentProver
+	for i, act := range [][]string{{"goal", "prioritize", bedGoal, "3"}, {"goal", "pin", "NOSUCH", "m1e"}} {
+		code, got := run([]string{"--dispose", "act", "--class", "ordering", "--undo", "restore priority"}, act)
+		if i == 0 && (code != 0 || got.Outcome != intentConfirmed) || i == 1 && (code != 1 || got.Outcome != intentRefused) {
+			t.Fatalf("act %v: %d %+v", act, code, got)
+		}
+		lines, _, _ = humanauthority.ReadDecisions(b.home)
+		last := lines[len(lines)-1]
+		if len(lines) != 4+i || last.Grant == "" || last.Actor != b.holder.MainId || last.Disposition == nil || last.Disposition.Kind != humanauthority.DisposeAct || last.Disposition.Decision != last.ID || humanauthority.ActHandled(last.Outcome) != (i == 0) {
+			t.Fatalf("act record: %+v disposition=%+v", last, last.Disposition)
+		}
+	}
+}
+
 func TestAnAgentsDecisionRunsInARealChild(t *testing.T) {
 	t.Parallel()
 	b := newDecisionAgentBed(t)

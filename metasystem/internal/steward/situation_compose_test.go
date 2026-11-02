@@ -41,6 +41,85 @@ func composeSources(t *testing.T, root, home string, now *time.Time) SituationSo
 		ClaimLaneState: claimQuotaLane(t, root, nil), BoardHome: func() (string, error) { return home, nil }})
 }
 
+func TestTheSituationReadsTheDecisions(t *testing.T) {
+	t.Parallel()
+	root, home := situationQuotaBed(t), t.TempDir()
+	now := situationNow.In(time.FixedZone("CEST", 2*60*60))
+	src := composeSources(t, root, home, &now)
+	read := func() (Situation, Composition, SituationPart) {
+		t.Helper()
+		s := ReadSituation(root, src)
+		c := Compose(s)
+		for _, p := range c.Parts {
+			if p.Name == "authority" {
+				return s, c, p
+			}
+		}
+		t.Fatal("authority part missing")
+		return s, c, SituationPart{}
+	}
+	if s, _, _ := read(); len(s.Decisions) != 0 {
+		t.Fatalf("missing log: %+v", s.Decisions)
+	}
+	appendLine := func(id, kind, outcome string) {
+		t.Helper()
+		d := humanauthority.Decision{ID: id, At: now, Class: "ordering", Outcome: outcome, Words: "G waits for proof", Disposition: &humanauthority.Disposition{Row: "overdue-goal", Subject: "G", Occurrence: "occurrence-1", Kind: kind, Decision: id}}
+		if kind == humanauthority.DisposeWait {
+			d.Disposition.WaitUntil = now.Add(time.Hour)
+		}
+		if err := humanauthority.AppendDecision(home, d); err != nil {
+			t.Fatal(err)
+		}
+	}
+	appendLine("wait-1", humanauthority.DisposeWait, "confirmed")
+	appendLine("act-2", humanauthority.DisposeAct, "refused")
+	s, c, part := read()
+	words := strings.Join(append(part.Summary, part.Detail...), "\n")
+	if len(s.Decisions) != 2 || s.Decisions[0].ID != "wait-1" || s.Decisions[1].ID != "act-2" {
+		t.Fatalf("read decisions: %+v", s.Decisions)
+	}
+	for _, want := range []string{"2 decisions", "wait-1", "ordering", "refused", "G waits for proof", "overdue-goal G occurrence-1: wait until", now.Add(time.Hour).Format("15:04 MST (2006-01-02)"), "not handled"} {
+		if !strings.Contains(words, want) {
+			t.Errorf("authority lacks %q: %s", want, words)
+		}
+	}
+	appendLine("act-3", humanauthority.DisposeAct, "unchanged")
+	_, next, part := read()
+	if next.Digest == c.Digest || !slices.Contains(next.Wake, "decision|act-3") || !strings.Contains(strings.Join(part.Detail, "\n"), "act-3") || !strings.Contains(strings.Join(part.Detail, "\n"), "act: handled") {
+		t.Fatalf("new decision's wake and handled state: %+v %+v", next.Wake, part)
+	}
+	for i := 4; i <= 22; i++ {
+		appendLine(fmt.Sprintf("ask-%d", i), humanauthority.DisposeAsk, "confirmed")
+	}
+	if s, _, _ := read(); len(s.Decisions) != 20 || s.Decisions[0].ID != "act-3" || s.Decisions[19].ID != "ask-22" {
+		t.Fatalf("last 20: %+v", s.Decisions)
+	}
+	f, err := os.OpenFile(humanauthority.DecisionLogPath(home), os.O_APPEND|os.O_WRONLY, 0600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, writeErr := f.WriteString("{torn\n")
+	closeErr := f.Close()
+	if writeErr != nil || closeErr != nil {
+		t.Fatalf("torn fixture: %v %v", writeErr, closeErr)
+	}
+	if s, _, p := read(); len(s.Decisions) != 20 || !strings.Contains(p.Unavailable, "1 undecodable") {
+		t.Fatalf("torn log: %d %+v", len(s.Decisions), p)
+	}
+	src.BoardHome = func() (string, error) { return "", errors.New("board home unavailable") }
+	if _, c, p := read(); !strings.Contains(p.Unavailable, "board home unavailable") || len(c.Parts) < 2 {
+		t.Fatalf("home error lost the rest: %+v", c)
+	}
+	unreadable := t.TempDir()
+	if err := os.MkdirAll(humanauthority.DecisionLogPath(unreadable), 0700); err != nil {
+		t.Fatal(err)
+	}
+	src.BoardHome = func() (string, error) { return unreadable, nil }
+	if _, c, p := read(); p.Unavailable == "" || len(c.Parts) < 2 {
+		t.Fatalf("unreadable log lost the rest: %+v", c)
+	}
+}
+
 func TestTheFirstThingIsTheOldestOutstandingAsk(t *testing.T) {
 	t.Parallel()
 	root, home := situationQuotaBed(t), t.TempDir()

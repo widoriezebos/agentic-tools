@@ -19,6 +19,7 @@ func TestADecisionLineIsDurableAndReadBack(t *testing.T) {
 	first := Decision{ID: "first", At: time.Date(2026, 9, 30, 8, 0, 0, 0, time.UTC), Actor: "main-1", Lineage: "seat", Machine: "m1e", Grant: "grant-1", By: "Wido", Class: "ordering", Text: "G first", Rejected: "leave G last", Context: "queue", Undo: "goal prioritize G 2", Argv: []string{"goal", "prioritize", "G", "3"}, Outcome: "confirmed", Words: "G prioritized", Effect: json.RawMessage(`{"owner":{"tip":"abc123","detail":"published"}}`)}
 	second := first
 	second.ID, second.At, second.Outcome, second.Effect = "second", first.At.Add(time.Minute), "unchanged", json.RawMessage(`{"targets":[]}`)
+	second.Disposition = &Disposition{Row: "overdue-goal", Subject: "G", Occurrence: "2026-09-01T10:00:00Z", Kind: DisposeWait, Trigger: "proof ends", WaitUntil: first.At.Add(time.Hour), Decision: second.ID}
 	want := []Decision{first, second}
 	for _, d := range want {
 		if err := AppendDecision(home, d); err != nil {
@@ -48,5 +49,11 @@ func TestADecisionLineIsDurableAndReadBack(t *testing.T) {
 	}
 	if got, err := os.ReadFile(AttorneyLogPath(home)); err != nil || string(got) != "answered grant=grant-1\n" {
 		t.Fatalf("attorney log: %q, %v", got, err)
+	}
+	for _, outcome := range []string{"confirmed", "partial", "unchanged", "in-progress", "refused", "failed", "unknown"} {
+		want := outcome == "confirmed" || outcome == "partial" || outcome == "unchanged"
+		if got := ActHandled(outcome); got != want {
+			t.Errorf("handled %s = %v, want %v", outcome, got, want)
+		}
 	}
 }

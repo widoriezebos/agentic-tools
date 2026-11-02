@@ -24,6 +24,13 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 	refuse := func(words string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: words + "; nothing was done"})
 	}
+	disposition, dispositionProblem := decisionDisposition(inv)
+	if dispositionProblem != "" {
+		return refuse(dispositionProblem)
+	}
+	if disposition != nil && disposition.Kind != humanauthority.DisposeAct {
+		return runIntentDecisionDisposition(inv, disposition)
+	}
 	separator := slices.Index(inv.raw, "--")
 	if separator < 0 || separator+1 == len(inv.raw) {
 		return refuse("decision record needs the act after --")
@@ -171,6 +178,9 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 	if agent {
 		d.Grant, d.Actor, d.Lineage = admitted.entry.ID, admitted.caller.MainId, admitted.entry.Lineage
 	}
+	if disposition != nil {
+		disposition.Decision, d.Disposition = id, disposition
+	}
 	result := intentResult{Outcome: child.Outcome, code: child.Exit, Summary: "decision " + d.ID + " recorded: " + child.Summary,
 		Targets: []intentTarget{{Kind: "decision", ID: d.ID}}, Data: map[string]any{"decision": d}}
 	for _, target := range child.Targets {
@@ -186,4 +196,104 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 		}
 	}
 	return inv.render(result)
+}
+
+func decisionDisposition(inv *intentInvocation) (*humanauthority.Disposition, string) {
+	keys := []string{"row", "subject", "occurrence", "dispose"}
+	if !inv.input.has("dispose") && (inv.input.has("trigger") || inv.input.has("until")) {
+		return nil, "--trigger and --until require --dispose wait"
+	}
+	if !slices.ContainsFunc(keys, inv.input.has) {
+		return nil, ""
+	}
+	for _, key := range keys {
+		if strings.TrimSpace(inv.input.text(key)) == "" {
+			return nil, "a disposition needs --" + key
+		}
+	}
+	d := &humanauthority.Disposition{Row: inv.input.text("row"), Subject: inv.input.text("subject"), Occurrence: inv.input.text("occurrence"), Kind: inv.input.text("dispose"), Trigger: inv.input.text("trigger")}
+	if d.Kind != humanauthority.DisposeAct && d.Kind != humanauthority.DisposeWait && d.Kind != humanauthority.DisposeAsk {
+		return nil, "--dispose takes act, wait or ask"
+	}
+	if d.Kind == humanauthority.DisposeWait {
+		for _, key := range []string{"trigger", "until"} {
+			if strings.TrimSpace(inv.input.text(key)) == "" {
+				return nil, "a wait needs --" + key
+			}
+		}
+	} else if inv.input.has("trigger") || inv.input.has("until") {
+		return nil, "--trigger and --until require --dispose wait"
+	}
+	if d.Kind != humanauthority.DisposeAct && len(inv.input.args) > 0 {
+		return nil, "a wait or ask takes no act or positional words"
+	}
+	return d, ""
+}
+
+func runIntentDecisionDisposition(inv *intentInvocation, disposition *humanauthority.Disposition) int {
+	refuse := func(words string) int {
+		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: words + "; nothing was done"})
+	}
+	for _, key := range []string{"text", "rejected"} {
+		if strings.TrimSpace(inv.input.text(key)) == "" {
+			return refuse("decision record needs --" + key + " TEXT")
+		}
+	}
+	if problem := inv.selectRoot(); problem != nil {
+		return inv.render(*problem)
+	}
+	lineage := inv.input.text("lineage")
+	if lineage == "" && inv.owners.dependencies.ownerLineage != nil {
+		lineage = inv.owners.dependencies.ownerLineage()
+	}
+	actor, by := lineage, ""
+	if !inv.input.has("lineage") && lineage == "" {
+		args, proof, denied := inv.actingAs("decision", "", actorHuman)
+		if denied != nil {
+			return inv.render(*denied)
+		}
+		if proof == nil || proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
+			return refuse("record this decision from your own enrolled terminal")
+		}
+		by = actorValue(args, "--by")
+		actor = "human:" + by
+	}
+	now, err := inv.owners.commandNow(inv.layout.InstallationRoot.Path())
+	if err != nil {
+		return refuse("the clock could not be read: " + err.Error())
+	}
+	if disposition.Kind == humanauthority.DisposeWait {
+		zone := inv.owners.helm.withDefaults().zone
+		end, err := parseGrantEnd(now, zone, "", inv.input.text("until"))
+		bounds := fmt.Sprintf("choose an end after %s and within 24 hours, by %s", now.In(zone).Format("15:04 MST (2006-01-02)"), now.Add(humanauthority.DispositionMaxWait).In(zone).Format("15:04 MST (2006-01-02)"))
+		if err != nil {
+			return refuse("--until needs a time like 19:30, tomorrow or a date; given " + inv.input.text("until") + "; " + bounds)
+		}
+		if !end.After(now) || end.After(now.Add(humanauthority.DispositionMaxWait)) {
+			return refuse("--until " + end.In(zone).Format("15:04 MST (2006-01-02)") + ": " + bounds)
+		}
+		disposition.WaitUntil = end.UTC()
+	}
+	machine, err := inv.owners.dependencies.machine(inv.stateRoot)
+	if err != nil {
+		return refuse("the machine could not be read: " + err.Error())
+	}
+	home := inv.owners.decisions.home
+	if home == nil {
+		home = board.Home
+	}
+	dir, err := home()
+	if err != nil {
+		return refuse("the decision log's home could not be read: " + err.Error())
+	}
+	id, err := project.NewID()
+	if err != nil {
+		return refuse("the decision id could not be made: " + err.Error())
+	}
+	disposition.Decision = id
+	d := humanauthority.Decision{ID: id, At: now.UTC(), Actor: actor, Lineage: lineage, By: by, Machine: machine, Class: inv.input.text("class"), Text: inv.input.text("text"), Rejected: inv.input.text("rejected"), Context: inv.input.text("context"), Outcome: intentConfirmed, Words: inv.input.text("text"), Effect: json.RawMessage(`{"targets":[]}`), Disposition: disposition}
+	if err := humanauthority.AppendDecision(dir, d); err != nil {
+		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the disposition could not be saved: " + err.Error()})
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "decision " + id + " recorded: " + d.Words, Targets: []intentTarget{{Kind: "decision", ID: id}}, Data: map[string]any{"decision": d}})
 }

@@ -26,6 +26,31 @@ type Decision struct {
 	Outcome  string          `json:"outcome"`
 	Words    string          `json:"words"`
 	Effect   json.RawMessage `json:"effect"`
+
+	Disposition *Disposition `json:"disposition,omitempty"`
+}
+
+// Disposition records how one occurrence of a situation was addressed.
+type Disposition struct {
+	Row        string    `json:"row"`
+	Subject    string    `json:"subject"`
+	Occurrence string    `json:"occurrence"`
+	Kind       string    `json:"kind"`
+	Trigger    string    `json:"trigger"`
+	WaitUntil  time.Time `json:"wait_until"`
+	Decision   string    `json:"decision"`
+}
+
+const (
+	DisposeAct         = "act"
+	DisposeWait        = "wait"
+	DisposeAsk         = "ask"
+	DispositionMaxWait = 24 * time.Hour
+)
+
+// ActHandled says whether an act's outcome addresses its occurrence.
+func ActHandled(outcome string) bool {
+	return outcome == "confirmed" || outcome == "partial" || outcome == "unchanged"
 }
 
 // DecisionLogPath names the host's append-only decision log.

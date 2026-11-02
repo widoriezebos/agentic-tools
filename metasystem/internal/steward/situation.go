@@ -67,6 +67,7 @@ type Situation struct {
 	Questions map[string][]channel.Question
 	Grants    []goal.PowerOfAttorneyEntry
 	Answered  []string
+	Decisions []humanauthority.Decision
 	Rulings   []rulings.Row
 	Alerts    map[string][]AlertEpisode
 	// RedLine is how goal next says this seat's first owned red.
@@ -207,7 +208,7 @@ func ReadSituation(root string, src SituationSources) Situation {
 	}
 	s.readDesigns(root, src.Critiques)
 	s.readQuestions(root)
-	s.readAuthority(root, now)
+	s.readAuthority(root, src, now)
 	s.readAlerts(root)
 	return s
 }
@@ -422,8 +423,9 @@ func (s *Situation) readQuestions(root string) {
 }
 
 // readAuthority keeps the grants live at the read from the read's one
-// ledger, the attorney log's last 20 lines and the last 10 rulings.
-func (s *Situation) readAuthority(root string, now time.Time) {
+// ledger, the attorney log's last 20 lines, the host's last 20 decisions
+// and the last 10 rulings.
+func (s *Situation) readAuthority(root string, src SituationSources, now time.Time) {
 	var problems []string
 	if reason := s.Unavailable["ledger"]; reason != "" {
 		problems = append(problems, "grants: "+reason)
@@ -441,6 +443,19 @@ func (s *Situation) readAuthority(root string, now time.Time) {
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		problems = append(problems, "the attorney log: "+err.Error())
 	}
+	home, err := src.BoardHome()
+	var decisions []humanauthority.Decision
+	var bad int
+	if err == nil {
+		decisions, bad, err = humanauthority.ReadDecisions(home)
+	}
+	if err != nil {
+		problems = append(problems, "the decision log: "+err.Error())
+	}
+	if bad > 0 {
+		problems = append(problems, fmt.Sprintf("the decision log: %d undecodable lines", bad))
+	}
+	s.Decisions = decisions[max(0, len(decisions)-20):]
 	register, err := rulings.Read(root)
 	if err != nil {
 		problems = append(problems, "the rulings: "+err.Error())
