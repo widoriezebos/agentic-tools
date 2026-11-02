@@ -473,6 +473,20 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 	if ev.CurrentSeat != "" && len(records) == 0 {
 		return "", "", fmt.Errorf("current seat launch %s has no retained record", ev.CurrentSeat)
 	}
+	if start != nil && start.Kind == "steward" {
+		ended := 0
+		for _, record := range records {
+			if record.Kind == "steward" && seatTime(record.StartedAt).After(now.Add(-time.Hour)) && record.Outcome == SeatNoProgress {
+				ended++
+			}
+		}
+		if ended >= 2 || ev.AbnormalCount == len(ev.Abnormal) && ev.Abnormal[0].At.After(now.Add(-time.Hour)) {
+			return class, abnormalRemedy(root, "two automatic abnormal restarts were attempted in the rolling hour"), nil
+		}
+		if last != nil && !last.At.After(now.Add(-time.Hour)) {
+			last = nil
+		}
+	}
 	nonce := ev.CurrentContinuation
 	if nonce == "" && ev.CurrentSeat == "" && last != nil {
 		nonce = last.Nonce
@@ -492,7 +506,8 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 			}
 		}
 		if start != nil {
-			if current.Goal != start.Goal || current.ApprovalOpid != start.ApprovalOpid {
+			if current.Goal != start.Goal || current.ApprovalOpid != start.ApprovalOpid ||
+				current.Kind != start.Kind || current.Subject != start.Subject || current.Occurrence != start.Occurrence {
 				return "", "", nil
 			}
 			if last != nil && last.At.Before(seatTime(current.StartedAt)) {

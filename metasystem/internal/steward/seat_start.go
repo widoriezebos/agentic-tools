@@ -91,6 +91,9 @@ type SeatRecovery struct {
 
 // SeatRecord is one seat start under artifacts/agents/steward/seats.
 type SeatRecord struct {
+	Kind         string            `json:"kind,omitempty"`
+	Subject      string            `json:"subject,omitempty"`
+	Occurrence   string            `json:"occurrence,omitempty"`
 	RecoveryOf   *SeatRecovery     `json:"recoveryOf,omitempty"`
 	Schema       int               `json:"schema"`
 	LaunchID     string            `json:"launchId"`
@@ -261,6 +264,7 @@ func gitGoalTips(root string, goals []string) (map[string]string, error) {
 // seatTickState is what the tick's seat pass read before its decision: the
 // unreaped seat launch, if any, and every seat record after the reap.
 type seatTickState struct {
+	Steward  *SeatSteward
 	Unreaped string
 	Records  []SeatRecord
 	Err      error
@@ -398,11 +402,32 @@ func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Clai
 	return seatDecision(repoRoot, cfg, work, shared, workers, providerCheck, dependencies, state)
 }
 
+func stewardshipWork(root string, dependencies seatDependencies, now time.Time) *SeatSteward {
+	if dependencies.Situation == nil {
+		return nil
+	}
+	page, err := dependencies.Situation(root, now)
+	if err != nil {
+		return nil
+	}
+	first := page.Composition.First
+	if first.Kind != "row" && first.Kind != "ask" && first.Kind != "red" {
+		return nil
+	}
+	task := &SeatSteward{Kind: first.Kind, Subject: first.Subject}
+	// Routed rows name their occurrence in the page's disposition command.
+	if _, rest, found := strings.Cut(first.Command, "--occurrence "); found {
+		task.Occurrence, _, _ = strings.Cut(rest, " ")
+	}
+	return task
+}
+
 // seatDecision owns the start guards for both the tick and its health reading.
 func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerCheck func(string, error) (outage.Mark, bool),
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
 	owned := work == WorkOwned || work == WorkWaiting
-	if work != WorkClaimable && !owned {
+	stewardOnly := work != WorkClaimable && !owned
+	if work == WorkDegraded || stewardOnly && state.Steward == nil {
 		return Decision{}, nil, false
 	}
 	// A seat is opt-in per seat and the landing lane never starts one
@@ -419,7 +444,7 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	}
 	doubt := !workers.CensusComplete || workers.Untracked > 0 || workers.Unprovable > 0
 	if owned {
-		if workers.Live > 0 || doubt || !holdsUnderSeatLineage(shared) {
+		if workers.Live > 0 || doubt || state.Steward == nil && !holdsUnderSeatLineage(shared) {
 			return Decision{}, nil, false
 		}
 	}
@@ -447,7 +472,8 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 		shared.MarkAskedOpen(dependencies.OpenQuestions(repoRoot))
 	}
 	world := SeatWorldFrom(shared, live, settings, tips, now)
-	if work != WorkWaiting && owned && !seatStepDue(world) && holdsForeign(world) {
+	world.Steward = state.Steward
+	if state.Steward == nil && work != WorkWaiting && owned && !seatStepDue(world) && holdsForeign(world) {
 		return Decision{}, nil, false
 	}
 	verdict := VerdictIdleBacklogDead
@@ -482,7 +508,7 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	if err != nil {
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
 	}
-	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned)
+	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned, stewardOnly)
 	if d.Action == ActRevive && selection != nil {
 		if _, reason, err := abnormalRestartState(repoRoot, ev, now, selection); err != nil {
 			return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
@@ -660,7 +686,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if !person && helm.Active(repoRoot).Active {
 		return SeatRecord{}, nil
 	}
-	if !person && selection.Goal == "" {
+	if !person && selection.Goal == "" && selection.Kind != "steward" {
 		return SeatRecord{}, errors.New("a seat start names its goal")
 	}
 	arbitration, err := AcquireArbitration(repoRoot)
@@ -774,7 +800,8 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		if err != nil {
 			return SeatRecord{}, fmt.Errorf("no seat starts for %s: its grounds cannot be read again: %w", selection.Goal, err)
 		}
-		if d.Action != ActRevive || now == nil || now.Goal != selection.Goal || now.Held != selection.Held {
+		if d.Action != ActRevive || now == nil || now.Goal != selection.Goal || now.Held != selection.Held ||
+			now.Kind != selection.Kind || now.Subject != selection.Subject || now.Occurrence != selection.Occurrence {
 			return SeatRecord{}, fmt.Errorf("no seat starts for %s: its grounds changed since the tick: %s", selection.Goal, d.Reason)
 		}
 	}
@@ -814,7 +841,10 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if err != nil || machine == "" {
 		machine = "this machine"
 	}
-	goals := append(append([]string{selection.Goal}, selection.Ready...), selection.SeatHeld...)
+	goals := append(append([]string{}, selection.Ready...), selection.SeatHeld...)
+	if selection.Goal != "" {
+		goals = append([]string{selection.Goal}, goals...)
+	}
 	read, err := dependencies.Tips(repoRoot, goals)
 	tipsError := err
 	tips := map[string]string{}
@@ -834,6 +864,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		return SeatRecord{}, err
 	}
 	record := SeatRecord{RecoveryOf: recovery, Schema: 1, LaunchID: id, Goal: selection.Goal, Held: selection.Held, ApprovalOpid: selection.ApprovalOpid,
+		Kind: selection.Kind, Subject: selection.Subject, Occurrence: selection.Occurrence,
 		Machine: machine, Tips: tips, StartedAt: dependencies.Now().UTC().Format(seatStartedAtLayout)}
 	for i := len(records) - 1; i >= 0; i-- {
 		if records[i].Goal == selection.Goal {
@@ -875,6 +906,9 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		if err := SaveEvidence(repoRoot, EvidencePath(repoRoot), ev); err != nil {
 			return record, err
 		}
+	}
+	if selection.Kind == "steward" {
+		return record, nil
 	}
 	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce: "seat-start-" + id,
@@ -925,6 +959,14 @@ type seatDependencies struct {
 // census, the outage mark and the ladder over the ledger read now. The
 // records are the seat records the start just read, none unreaped.
 func seatRecheck(repoRoot string, cfg TickConfig, census WorkerCensus, openWork openWorkDependencies, records []SeatRecord) (Decision, *SeatSelection, error) {
+	if cfg.Situation != nil && openWork.Seat != nil {
+		fresh := *openWork.Seat
+		fresh.Situation = func(root string, now time.Time) (SituationRecord, error) {
+			s := cfg.Situation(root, now)
+			return SituationRecord{Situation: s, Composition: Compose(s)}, nil
+		}
+		openWork.Seat = &fresh
+	}
 	providerCheck := func(runtime string, err error) (outage.Mark, bool) {
 		if err != nil {
 			return providerOutageFrom(outage.Providers{}, err, runtime, cfg.now(), nil)

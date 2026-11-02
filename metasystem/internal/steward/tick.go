@@ -595,6 +595,11 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 		if cfg.GoalProjection != nil {
 			seat.Project = cfg.GoalProjection
 		}
+		if cfg.Situation != nil {
+			seat.Situation = func(root string, now time.Time) (SituationRecord, error) {
+				return SituationPage(root, func(at time.Time) Situation { return cfg.Situation(root, at) }, now, SituationFresh)
+			}
+		}
 		dependencies.openWork.Seat = &seat
 	}
 	result, err := decideTickWithDependencies(repoRoot, cfg, census, prev, marks, dependencies.openWork)
@@ -952,7 +957,10 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	}
 
 	workers := Workers{}
-	if work == WorkOwned || work == WorkClaimable || work == WorkWaiting {
+	if dependencies.Seat != nil && seat != nil {
+		seat.Steward = stewardshipWork(repoRoot, *dependencies.Seat, cfg.now())
+	}
+	if work == WorkOwned || work == WorkClaimable || work == WorkWaiting || seat != nil && seat.Steward != nil {
 		w, err := census.Workers(repoRoot)
 		if err != nil {
 			// An unreadable census can never prove death.
