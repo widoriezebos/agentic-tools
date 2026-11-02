@@ -25,6 +25,137 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
+func TestAnOverruleShowsItsImpactFirst(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"text", "json", "child", "targets", "disposition"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			b := newDecisionAgentBed(t)
+			if code, got := b.record([]string{"--class", "ordering"}, []string{"goal", "prioritize", bedGoal, "3"}); code != 0 || got.Outcome != intentConfirmed {
+				t.Fatalf("original act: %d %+v", code, got)
+			}
+			read := func() []humanauthority.Decision {
+				t.Helper()
+				lines, bad, err := humanauthority.ReadDecisions(b.home)
+				if err != nil || bad != 0 {
+					t.Fatalf("log: %d %v", bad, err)
+				}
+				return lines
+			}
+			original := read()[0]
+			if mode == "targets" || mode == "disposition" {
+				original.ID = "other"
+				original.Effect = json.RawMessage(`{"targets":[{"kind":"goal","id":"G"}]}`)
+				if mode == "disposition" {
+					original.Argv = nil
+					original.Actor, original.By, original.Grant, original.Class = launch.SeatOwnerLineage, "", "", ""
+					original.Disposition = &humanauthority.Disposition{Row: "overdue-goal", Subject: bedGoal, Kind: humanauthority.DisposeAsk}
+				}
+				if err := humanauthority.AppendDecision(b.home, original); err != nil {
+					t.Fatal(err)
+				}
+			}
+			before, calls, count := b.repo.accepted, b.calls, len(read())
+			b.lineage, b.owners.prove = "", b.prove
+			words := []string{"--overrules", original.ID, "--text", "G stays at 2"}
+			if mode != "text" {
+				words = append(words, "--json")
+			}
+			if mode == "child" {
+				words = append(words, "--undo", "restore priority", "--", "goal", "prioritize", bedGoal, "2")
+			}
+			impact := ""
+			visible := &unitImpactWriter{observe: func(text string) {
+				if impact != "" {
+					return
+				}
+				impact = text
+				if !strings.HasPrefix(text, "Decision "+original.ID+" (") || len(read()) != count || b.calls != calls || b.repo.accepted != before || b.goalFile(bedGoal).Priority != 3 {
+					t.Fatalf("impact must precede the act and append: %q lines=%d calls=%d", text, len(read()), b.calls)
+				}
+			}}
+			var out, errout bytes.Buffer
+			var stdout, stderr io.Writer = &out, &errout
+			if mode == "text" {
+				stdout = visible
+			} else {
+				stderr = visible
+			}
+			command, _ := findIntentAction("decision", "record")
+			if code := runIntentIn(command, words, stdout, stderr, b.root(), b.owners); code != 0 {
+				t.Fatalf("overrule: %d %s %s", code, out.String(), errout.String())
+			}
+			lines := read()
+			last := lines[len(lines)-1]
+			if len(lines) != count+1 || impact == "" || last.Overrules != original.ID || last.Impact+"\n" != impact || last.Rejected != "decision "+original.ID+" as recorded" || last.Actor != "human:Wido" || last.Grant != "" {
+				t.Fatalf("overrule: %+v impact=%q", last, impact)
+			}
+			expect := []string{"in Wido's name under grant " + original.Grant, "class ordering"}
+			if mode == "disposition" {
+				expect = []string{"by " + launch.SeatOwnerLineage, "disposed of overdue-goal for " + bedGoal + ": ask", "it changes nothing that ran"}
+			} else {
+				expect = append(expect, "ran goal prioritize "+bedGoal+" 3: confirmed", "it does not undo that act", "To undo it: "+original.Undo)
+				if mode == "targets" {
+					expect = append(expect, "goal G")
+				} else {
+					var effect struct{ Owner struct{ Tip, Detail string } }
+					if err := json.Unmarshal(original.Effect, &effect); err != nil {
+						t.Fatal(err)
+					}
+					expect = append(expect, effect.Owner.Tip, effect.Owner.Detail)
+				}
+			}
+			for _, text := range expect {
+				if !strings.Contains(impact, text) {
+					t.Errorf("impact lacks %q: %s", text, impact)
+				}
+			}
+			if mode != "text" {
+				var got struct {
+					Data struct {
+						Impact   string
+						Decision humanauthority.Decision
+					}
+				}
+				decoder := json.NewDecoder(&out)
+				if err := decoder.Decode(&got); err != nil || got.Data.Impact != last.Impact || got.Data.Decision.ID != last.ID {
+					t.Fatalf("envelope: %+v %v", got, err)
+				}
+				if err := decoder.Decode(new(any)); err != io.EOF {
+					t.Fatalf("stdout must contain one envelope: %v", err)
+				}
+			}
+			if mode == "child" {
+				if b.calls != calls+1 || b.goalFile(bedGoal).Priority != 2 {
+					t.Fatal("the replacement act did not run")
+				}
+			} else if b.calls != calls || b.repo.accepted != before {
+				t.Fatal("an overrule without a child changed the ledger")
+			}
+			for _, row := range []struct {
+				flags            []string
+				lineage, problem string
+			}{
+				{[]string{"--overrules", original.ID, "--text", "retain it"}, launch.SeatOwnerLineage, "an overrule is a person's decision"},
+				{[]string{"--overrules", original.ID, "--lineage", "seat", "--text", "retain it"}, "", "an overrule is a person's decision"},
+				{[]string{"--overrules", "NOSUCH", "--text", "retain it"}, "", "NOSUCH"},
+				{[]string{"--overrules", original.ID}, "", "--text"},
+			} {
+				b.lineage = row.lineage
+				before, calls, count := b.repo.accepted, b.calls, len(read())
+				code, output, errors := b.run(b.owners, append([]string{"decision", "record", "--json"}, row.flags...)...)
+				var got intentResult
+				if err := json.Unmarshal([]byte(output), &got); err != nil || code != 2 || got.Outcome != intentRefused || !strings.Contains(got.Summary, row.problem) || errors != "" || len(read()) != count || b.calls != calls || b.repo.accepted != before {
+					t.Fatalf("refused overrule: %d %+v %s %v", code, got, errors, err)
+				}
+				if row.problem == "NOSUCH" && (got.Next == nil || !slices.Equal(got.Next.Argv, []string{"metasystem", "decision", "list"})) {
+					t.Fatalf("missing recovery command: %s", output)
+				}
+			}
+		})
+	}
+}
+
 func TestDecisionListAndShowReadTheLog(t *testing.T) {
 	t.Parallel()
 	bed := recordsLayoutBed(t)

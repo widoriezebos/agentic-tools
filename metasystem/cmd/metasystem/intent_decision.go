@@ -24,11 +24,23 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 	refuse := func(words string) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: words + "; nothing was done"})
 	}
+	agent := inv.input.has("lineage") || inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != ""
+	if inv.input.has("overrules") {
+		if agent {
+			return refuse("an overrule is a person's decision; an agent records its own decision instead")
+		}
+		if strings.TrimSpace(inv.input.text("overrules")) == "" {
+			return refuse("an overrule needs --overrules ID")
+		}
+		if !inv.input.has("rejected") {
+			inv.input.values["rejected"] = []string{"decision " + inv.input.text("overrules") + " as recorded"}
+		}
+	}
 	disposition, dispositionProblem := decisionDisposition(inv)
 	if dispositionProblem != "" {
 		return refuse(dispositionProblem)
 	}
-	if disposition != nil && disposition.Kind != humanauthority.DisposeAct {
+	if disposition != nil && disposition.Kind != humanauthority.DisposeAct || disposition == nil && inv.input.has("overrules") && len(inv.input.args) == 0 {
 		return runIntentDecisionDisposition(inv, disposition)
 	}
 	separator := slices.Index(inv.raw, "--")
@@ -61,7 +73,6 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 	if input.has("json") && !input.switched("json") {
 		return refuse("decision record reads the act's JSON result; drop --json=false")
 	}
-	agent := inv.input.has("lineage") || inv.owners.dependencies.ownerLineage != nil && inv.owners.dependencies.ownerLineage() != ""
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
@@ -149,6 +160,10 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 		}
 		by = strings.TrimPrefix(admitted.entry.By, "human:")
 	}
+	impact, denied := decisionOverrule(inv, dir)
+	if denied != nil {
+		return inv.render(*denied)
+	}
 	envelope := inv.delivery().ownerEnvelope
 	if envelope == nil {
 		envelope = runIntentOwnerEnvelope
@@ -174,7 +189,7 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 	rawEffect, _ := json.Marshal(effect)
 	d := humanauthority.Decision{ID: id, At: now.UTC(), Actor: "human:" + by, By: by, Machine: machine,
 		Class: inv.input.text("class"), Text: inv.input.text("text"), Rejected: inv.input.text("rejected"), Undo: inv.input.text("undo"), Context: inv.input.text("context"),
-		Argv: typed, Outcome: child.Outcome, Words: child.Summary, Effect: rawEffect}
+		Argv: typed, Outcome: child.Outcome, Words: child.Summary, Effect: rawEffect, Overrules: inv.input.text("overrules"), Impact: impact}
 	if agent {
 		d.Grant, d.Actor, d.Lineage = admitted.entry.ID, admitted.caller.MainId, admitted.entry.Lineage
 	}
@@ -183,6 +198,9 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 	}
 	result := intentResult{Outcome: child.Outcome, code: child.Exit, Summary: "decision " + d.ID + " recorded: " + child.Summary,
 		Targets: []intentTarget{{Kind: "decision", ID: d.ID}}, Data: map[string]any{"decision": d}}
+	if impact != "" {
+		result.Data.(map[string]any)["impact"] = impact
+	}
 	for _, target := range child.Targets {
 		result.Targets = append(result.Targets, intentTarget{Kind: target.Kind, ID: target.ID})
 	}
@@ -262,7 +280,7 @@ func runIntentDecisionDisposition(inv *intentInvocation, disposition *humanautho
 	if err != nil {
 		return refuse("the clock could not be read: " + err.Error())
 	}
-	if disposition.Kind == humanauthority.DisposeWait {
+	if disposition != nil && disposition.Kind == humanauthority.DisposeWait {
 		zone := inv.owners.helm.withDefaults().zone
 		end, err := parseGrantEnd(now, zone, "", inv.input.text("until"))
 		bounds := fmt.Sprintf("choose an end after %s and within 24 hours, by %s", now.In(zone).Format("15:04 MST (2006-01-02)"), now.Add(humanauthority.DispositionMaxWait).In(zone).Format("15:04 MST (2006-01-02)"))
@@ -290,10 +308,80 @@ func runIntentDecisionDisposition(inv *intentInvocation, disposition *humanautho
 	if err != nil {
 		return refuse("the decision id could not be made: " + err.Error())
 	}
-	disposition.Decision = id
-	d := humanauthority.Decision{ID: id, At: now.UTC(), Actor: actor, Lineage: lineage, By: by, Machine: machine, Class: inv.input.text("class"), Text: inv.input.text("text"), Rejected: inv.input.text("rejected"), Context: inv.input.text("context"), Outcome: intentConfirmed, Words: inv.input.text("text"), Effect: json.RawMessage(`{"targets":[]}`), Disposition: disposition}
+	if disposition != nil {
+		disposition.Decision = id
+	}
+	impact, denied := decisionOverrule(inv, dir)
+	if denied != nil {
+		return inv.render(*denied)
+	}
+	d := humanauthority.Decision{ID: id, At: now.UTC(), Actor: actor, Lineage: lineage, By: by, Machine: machine, Class: inv.input.text("class"), Text: inv.input.text("text"), Rejected: inv.input.text("rejected"), Context: inv.input.text("context"), Outcome: intentConfirmed, Words: inv.input.text("text"), Effect: json.RawMessage(`{"targets":[]}`), Disposition: disposition, Overrules: inv.input.text("overrules"), Impact: impact}
 	if err := humanauthority.AppendDecision(dir, d); err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the disposition could not be saved: " + err.Error()})
 	}
-	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "decision " + id + " recorded: " + d.Words, Targets: []intentTarget{{Kind: "decision", ID: id}}, Data: map[string]any{"decision": d}})
+	data := map[string]any{"decision": d}
+	if impact != "" {
+		data["impact"] = impact
+	}
+	return inv.render(intentResult{Outcome: intentConfirmed, Summary: "decision " + id + " recorded: " + d.Words, Targets: []intentTarget{{Kind: "decision", ID: id}}, Data: data})
+}
+
+func decisionOverrule(inv *intentInvocation, home string) (string, *intentResult) {
+	id := inv.input.text("overrules")
+	if id == "" {
+		return "", nil
+	}
+	lines, _, err := humanauthority.ReadDecisions(home)
+	if err != nil {
+		return "", &intentResult{Outcome: intentRefused, code: 2, Summary: "the decision log could not be read: " + err.Error() + "; nothing was done"}
+	}
+	for _, d := range lines {
+		if d.ID != id {
+			continue
+		}
+		who := "by " + d.Actor
+		if d.By != "" {
+			who = "in " + d.By + "'s name"
+		}
+		if d.Grant != "" {
+			who += " under grant " + d.Grant
+		}
+		if d.Class != "" {
+			who += ", class " + d.Class
+		}
+		impact := fmt.Sprintf("Decision %s (%s, %s)", d.ID, d.At.In(inv.owners.helm.withDefaults().zone).Format("15:04 MST (2006-01-02)"), who)
+		if len(d.Argv) == 0 {
+			action := "recorded " + d.Text
+			if d.Disposition != nil {
+				action = fmt.Sprintf("disposed of %s for %s: %s", d.Disposition.Row, d.Disposition.Subject, d.Disposition.Kind)
+			}
+			impact += " " + action + ". Overruling records your decision; it changes nothing that ran."
+		} else {
+			var effect struct {
+				Owner   *struct{ Tip, Detail string }
+				Targets []intentTarget
+			}
+			_ = json.Unmarshal(d.Effect, &effect)
+			shown := "none"
+			if effect.Owner != nil {
+				shown = effect.Owner.Tip + ": " + effect.Owner.Detail
+			} else if len(effect.Targets) > 0 {
+				var targets []string
+				for _, target := range effect.Targets {
+					targets = append(targets, target.Kind+" "+target.ID)
+				}
+				shown = strings.Join(targets, ", ")
+			}
+			impact += fmt.Sprintf(" ran %s: %s; %s. Overruling records your decision; it does not undo that act. To undo it: %s.", shellCommand(d.Argv), d.Outcome, shown, d.Undo)
+		}
+		out := inv.stdout
+		if inv.input.switched("json") {
+			out = inv.stderr
+		}
+		if _, err := fmt.Fprintln(out, impact); err != nil {
+			return "", &intentResult{Outcome: intentFailed, code: 1, Summary: "the impact could not be shown: " + err.Error() + "; nothing was done"}
+		}
+		return impact, nil
+	}
+	return "", &intentResult{Outcome: intentRefused, code: 2, Summary: "the decision log has no decision " + id + "; nothing was done", next: inv.publicArgv("decision", "list"), nextReason: "lists the decisions with their ids"}
 }

@@ -28,6 +28,8 @@ type Decision struct {
 	Effect   json.RawMessage `json:"effect"`
 
 	Disposition *Disposition `json:"disposition,omitempty"`
+	Overrules   string       `json:"overrules,omitempty"`
+	Impact      string       `json:"impact,omitempty"`
 }
 
 // Disposition records how one occurrence of a situation was addressed.
