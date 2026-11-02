@@ -26,6 +26,7 @@ import (
 type declaredCheckStarter struct {
 	bed         *workBed
 	t           *testing.T
+	engine      string
 	results     []intentResult
 	calls       []int
 	beforeBuild func()
@@ -85,7 +86,7 @@ func (s *declaredCheckStarter) StartSupervisor(id, state string) (identity.Ref, 
 		if s.beforeCheck != nil {
 			defer s.beforeCheck(record)()
 		}
-		code, result := declaredCheckAt(s.t, s.bed, directory, record.Kind, args...)
+		code, result := declaredCheckAtEngine(s.t, s.bed, directory, record.Kind, s.engine, args...)
 		s.results, s.calls = append(s.results, result), append(s.calls, code)
 		if record.Kind == "proof" {
 			s.bed.starter.fail["proof"] = code != 0
@@ -140,7 +141,8 @@ func TestIntentDeclaredCheckFrozenAcrossBuilderAndProof(t *testing.T) {
 			}
 			body := "proof.cheap=" + shellCommand([]string{script, "cheap"}) + "\nproof.audits=" + shellCommand([]string{script, "audits"}) + "\nproof.deadline=15\n"
 			b := declaredCheckBed(t, body)
-			starter := &declaredCheckStarter{bed: b, t: t}
+			engine := filepath.Join(t.TempDir(), "metasystem")
+			starter := &declaredCheckStarter{bed: b, t: t, engine: engine}
 			b.manager.Supervisor = starter
 			brief := b.brief("declared.md", "Build the declared check.\n")
 			code, built, _ := b.work("work", "build", b.id, "declared", "--brief", brief, "--lines", "100")
@@ -167,6 +169,7 @@ func TestIntentDeclaredCheckFrozenAcrossBuilderAndProof(t *testing.T) {
 				t.Fatal(err)
 			}
 			var first string
+			executionPath := filepath.Dir(engine) + string(os.PathListSeparator) + wantPath
 			for _, result := range starter.results {
 				data := resultData(t, result)
 				execution := data["execution"].(string)
@@ -186,7 +189,7 @@ func TestIntentDeclaredCheckFrozenAcrossBuilderAndProof(t *testing.T) {
 					t.Fatalf("exits lost: %+v", retained.Exits)
 				}
 				for _, exit := range retained.Exits {
-					if exit.Minutes < 0 || exit.Output != exit.Name+"|"+canonicalDirectory+"|"+wantPath+"\n" {
+					if exit.Minutes < 0 || exit.Output != exit.Name+"|"+canonicalDirectory+"|"+executionPath+"\n" {
 						t.Fatalf("different environment/directory/output: %+v", exit)
 					}
 				}
@@ -362,12 +365,20 @@ func TestIntentDeclaredCheckNextRoundUsesNewDeclarations(t *testing.T) {
 // declaredCheckAt enters the public verb with the plain adapter's actual directory.
 func declaredCheckAt(t *testing.T, b *workBed, directory, kind string, args ...string) (int, intentResult) {
 	t.Helper()
+	return declaredCheckAtEngine(t, b, directory, kind, "", args...)
+}
+
+func declaredCheckAtEngine(t *testing.T, b *workBed, directory, kind, engine string, args ...string) (int, intentResult) {
+	t.Helper()
 	command, rest, ok := resolveIntentArgv(args)
 	if !ok {
 		t.Fatalf("no public command %q", args)
 	}
 	var stdout, stderr bytes.Buffer
 	owners := b.workOwners()
+	if engine != "" {
+		owners.processes.executable = func() (string, error) { return engine, nil }
+	}
 	owners.lookupEnv = func(key string) (string, bool) { return kind, key == launch.KindEnv }
 	git := owners.work.git
 	owners.work.git = func(root string, args ...string) ([]byte, error) {
@@ -397,6 +408,26 @@ func declaredCheckAt(t *testing.T, b *workBed, directory, kind string, args ...s
 	return code, result
 }
 
+func TestTheCheckRunsTheStepsEngine(t *testing.T) {
+	t.Parallel()
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	if err := testexec.WriteFile(engine, []byte("#!/bin/sh\nexit 0\n"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	b := declaredCheckBed(t, "proof.cheap=command -v metasystem\nproof.audits=true\nproof.deadline=15\n")
+	starter := &declaredCheckStarter{bed: b, t: t, engine: engine}
+	b.manager.Supervisor = starter
+	code, built, _ := b.work("work", "build", b.id, "engine", "--brief", b.brief("engine.md", "Build.\n"), "--lines", "100")
+	if code != 0 || len(starter.results) != 2 {
+		t.Fatalf("check verb: %d %+v calls=%v", code, built, starter.calls)
+	}
+	data, err := json.Marshal(resultData(t, starter.results[1])["exits"])
+	var exits []launch.CheckExit
+	if err != nil || json.Unmarshal(data, &exits) != nil || len(exits) != 2 || strings.TrimSpace(exits[0].Output) != engine {
+		t.Fatalf("check selected another engine: %s %v", data, err)
+	}
+}
+
 func TestIntentDeclaredCheckPublicationRunsInCommitWorktree(t *testing.T) {
 	t.Parallel()
 	phase := filepath.Join(t.TempDir(), "publication")
@@ -406,7 +437,8 @@ func TestIntentDeclaredCheckPublicationRunsInCommitWorktree(t *testing.T) {
 		t.Fatal(err)
 	}
 	b := declaredCheckBed(t, "proof.cheap="+shellCommand([]string{script})+"\nproof.audits=printf '%s' \"$PATH\"\nproof.deadline=15\n")
-	starter := &declaredCheckStarter{bed: b, t: t}
+	engine := filepath.Join(t.TempDir(), "metasystem")
+	starter := &declaredCheckStarter{bed: b, t: t, engine: engine}
 	b.manager.Supervisor = starter
 	code, built, _ := b.work("work", "build", b.id, "publication", "--brief", b.brief("publication.md", "Build.\n"), "--lines", "100")
 	if code != 0 {
@@ -447,7 +479,7 @@ func TestIntentDeclaredCheckPublicationRunsInCommitWorktree(t *testing.T) {
 	if err != nil || json.Unmarshal(raw, &retained) != nil {
 		t.Fatalf("gate record: %s %v", raw, err)
 	}
-	wantPath := filepath.Join(b.root(), "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
+	wantPath := filepath.Dir(engine) + string(os.PathListSeparator) + filepath.Join(b.root(), "bin") + string(os.PathListSeparator) + os.Getenv("PATH")
 	wantEnvironment := slices.DeleteFunc(slices.Clone(os.Environ()), func(entry string) bool { return strings.HasPrefix(entry, "PATH=") })
 	wantEnvironment = append(wantEnvironment, "PATH="+wantPath)
 	if retained.Directory != gate || retained.Check.Directory != b.worktree || retained.Check.SourceTree != "declaration-tree" || retained.Check.Minutes != 15 || !slices.Equal(retained.Check.Environment, wantEnvironment) || len(retained.Exits) != 2 || retained.Exits[0].Output != "commit tree\n" || retained.Exits[1].Output != wantPath {

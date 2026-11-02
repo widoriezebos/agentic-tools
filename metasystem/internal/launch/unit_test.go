@@ -1105,6 +1105,237 @@ func TestFollowUpStartsTheNextRoundOnTheSameWorktree(t *testing.T) {
 	}
 }
 
+func newLinkedGitUnitFixture(t *testing.T) (unitFixture, string) {
+	t.Helper()
+	fixture, primary := newGitUnitFixture(t)
+	if err := os.MkdirAll(filepath.Join(primary, "metasystem"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(primary, "metasystem/testing.json"), "original\n")
+	runGit(t, primary, "add", "metasystem/testing.json")
+	runGit(t, primary, "commit", "-m", "check input")
+	runGit(t, primary, "branch", "-m", "main")
+	linked := filepath.Join(t.TempDir(), "goal")
+	runGit(t, primary, "worktree", "add", "-b", "goal/goal", linked)
+	setUnitPlanWorktree(t, &fixture, linked)
+	return fixture, primary
+}
+
+func TestAMoveOutsideTheCheckDoesNotStopIt(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"main", "ledger", "goal", "tag", "read-main"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			fixture, primary := newLinkedGitUnitFixture(t)
+			fixture.starter.readVerdict = "land"
+			moved := false
+			fixture.starter.onStart = func(record Record) error {
+				kind := "proof"
+				if name == "read-main" {
+					kind = "read"
+				}
+				if record.Kind != kind || moved {
+					return nil
+				}
+				moved = true
+				switch name {
+				case "main", "ledger", "read-main":
+					writeFile(t, filepath.Join(primary, "records"), record.ID)
+					runGit(t, primary, "add", "records")
+					runGit(t, primary, "commit", "-m", "records")
+					if name == "ledger" {
+						runGit(t, primary, "update-ref", "refs/metasystem/goals/accepted", "HEAD")
+					}
+				case "goal":
+					runGit(t, primary, "branch", "goal/another")
+				case "tag":
+					runGit(t, primary, "tag", "published")
+				}
+				return nil
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := result.Record.Rounds[0]
+			if round.Outcome != "green" || len(stepNamed(t, round, "proof:check").LaunchIDs) != 1 {
+				t.Fatalf("unrelated move stopped the check: %+v", round)
+			}
+		})
+	}
+}
+
+func TestAChangedWorktreeFileStopsTheRoundByName(t *testing.T) {
+	t.Parallel()
+	for _, primaryChange := range []bool{false, true} {
+		t.Run(fmt.Sprintf("primary=%t", primaryChange), func(t *testing.T) {
+			t.Parallel()
+			fixture, primary := newLinkedGitUnitFixture(t)
+			fixture.starter.readVerdict = "land"
+			fixture.starter.onStart = func(record Record) error {
+				if record.Kind == "proof" && !strings.Contains(record.ID, "-retry") {
+					tree := fixture.worktree
+					if primaryChange {
+						tree = primary
+					}
+					writeFile(t, filepath.Join(tree, "metasystem/testing.json"), "changed\n")
+				}
+				return nil
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := result.Record.Rounds[0]
+			proof := stepNamed(t, round, "proof:check")
+			if primaryChange {
+				if round.Outcome != "green" || len(proof.LaunchIDs) != 1 {
+					t.Fatalf("another worktree stopped the check: %+v", round)
+				}
+				return
+			}
+			if proof.State != StepPassed || len(proof.Moved) != 0 || len(proof.LaunchIDs) != 2 || round.Outcome != "proof-wrote" || round.Cause != "environment" || round.Stop == nil || round.Stop.Class != "proof: the check's inputs changed during the checks: worktree file metasystem/testing.json" || stepNamed(t, round, "read").Reason != "proof-wrote:worktree file metasystem/testing.json" {
+				t.Fatalf("changed file lost its name through the retry: %+v", round)
+			}
+		})
+	}
+}
+
+func TestARefOnlyReentryKeepsTheBaseline(t *testing.T) {
+	t.Parallel()
+	for _, changedFile := range []bool{false, true} {
+		t.Run(fmt.Sprintf("file=%t", changedFile), func(t *testing.T) {
+			t.Parallel()
+			fixture, primary := newLinkedGitUnitFixture(t)
+			fixture.starter.holdKind, fixture.starter.readVerdict = "proof", "land"
+			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil || !first.Capped {
+				t.Fatalf("held proof: %+v %v", first, err)
+			}
+			path := filepath.Join(first.Record.Rounds[0].Directory, "proof-before.json")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changedFile {
+				writeFile(t, filepath.Join(fixture.worktree, "tracked"), "changed\n")
+			} else {
+				writeFile(t, filepath.Join(primary, "records"), "records\n")
+				runGit(t, primary, "add", "records")
+				runGit(t, primary, "commit", "-m", "records")
+			}
+			again, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changedFile {
+				step := stepNamed(t, again.Record.Rounds[0], "proof:check")
+				if step.State != StepFailed || step.Reason != "the check's inputs changed during the step: worktree file tracked" {
+					t.Fatalf("reentry lost changed input: %+v", again.Record)
+				}
+				return
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || string(after) != string(before) || !again.Capped || again.Record.Rounds[0].Stop != nil {
+				t.Fatalf("ref-only reentry replaced its baseline or failed: %+v %v", again.Record, err)
+			}
+			fixture.starter.holdKind = ""
+			if _, err := fixture.manager.Store.Update(first.Launch, func(record *Record) error { record.State = Completed; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			last, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil || last.Record.Rounds[0].Outcome != "green" {
+				t.Fatalf("released proof: %+v %v", last.Record, err)
+			}
+		})
+	}
+}
+
+func TestAStepKeepsItsEngineWhenTheInstallationIsReplaced(t *testing.T) {
+	t.Parallel()
+	fixture, repo := newGitUnitFixture(t)
+	engine := filepath.Join(t.TempDir(), "bin", "metasystem")
+	if err := os.MkdirAll(filepath.Dir(engine), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, engine, "original engine\n")
+	plan, err := ReadUnitPlan(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Proof[0].Name, plan.Proof[0].Argv = "unit-check", []string{engine}
+	if err := writeUnitJSON(fixture.plan, plan, ""); err != nil {
+		t.Fatal(err)
+	}
+	var retained string
+	fixture.starter.onStart = func(record Record) error {
+		if record.Kind != "proof" {
+			return nil
+		}
+		var brief PlainBrief
+		data, err := os.ReadFile(readString(record.AdapterData, "brief"))
+		if err != nil || json.Unmarshal(data, &brief) != nil {
+			t.Fatalf("proof brief: %s %v", data, err)
+		}
+		if retained == "" {
+			retained = filepath.Join(filepath.Dir(filepath.Dir(readString(record.AdapterData, "brief"))), "step-2-inputs/bin/metasystem")
+			writeFile(t, engine+".stage", "replacement engine\n")
+			if err := os.Rename(engine+".stage", engine); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(repo, "tracked"), "changed\n")
+		}
+		data, err = os.ReadFile(brief.Argv[0])
+		if brief.Argv[0] != retained || err != nil || string(data) != "original engine\n" {
+			t.Fatalf("step executed replaced engine: argv=%v bytes=%q error=%v", brief.Argv, data, err)
+		}
+		return nil
+	}
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil || len(stepNamed(t, result.Record.Rounds[0], "proof:unit-check").LaunchIDs) != 2 {
+		t.Fatalf("retained engine retry: %+v %v", result.Record, err)
+	}
+}
+
+func TestAGenericProofKeepsItsCommand(t *testing.T) {
+	t.Parallel()
+	for _, absolute := range []bool{false, true} {
+		t.Run(fmt.Sprintf("absolute=%t", absolute), func(t *testing.T) {
+			t.Parallel()
+			fixture, _ := newGitUnitFixture(t)
+			fixture.starter.readVerdict = "land"
+			plan, err := ReadUnitPlan(fixture.plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if absolute {
+				engine := filepath.Join(t.TempDir(), "metasystem")
+				writeFile(t, engine, "generic program\n")
+				plan.Proof[0].Argv = []string{engine}
+				if err := writeUnitJSON(fixture.plan, plan, ""); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := result.Record.Rounds[0]
+			step := stepNamed(t, round, "proof:check")
+			original, err := os.ReadFile(filepath.Join(round.Directory, "proof-check.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			retained, err := os.ReadFile(step.Retained.Brief)
+			var brief PlainBrief
+			_, binErr := os.Stat(filepath.Join(round.Directory, "step-2-inputs/bin"))
+			if err != nil || string(retained) != string(original) || json.Unmarshal(retained, &brief) != nil || brief.Argv[0] != plan.Proof[0].Argv[0] || !os.IsNotExist(binErr) || round.Outcome != "green" {
+				t.Fatalf("generic command changed: %s %v bin=%v round=%+v", retained, err, binErr, round)
+			}
+		})
+	}
+}
+
 func TestProofThatMovesTheRepositoryRetriesTheStep(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
@@ -1116,8 +1347,6 @@ func TestProofThatMovesTheRepositoryRetriesTheStep(t *testing.T) {
 			runGit(t, repo, "add", "committed")
 			runGit(t, repo, "commit", "-m", "proof commit")
 		}},
-		{"ref", "refs", func(t *testing.T, repo string) { runGit(t, repo, "update-ref", "refs/heads/x", "HEAD") }},
-		{"tag", "refs", func(t *testing.T, repo string) { runGit(t, repo, "update-ref", "refs/tags/x", "HEAD") }},
 		// The presence publisher and the goal ledger's fetch move these refs
 		// while any proof runs; the proof wrote none of them.
 		{"background-refs", "", func(t *testing.T, repo string) {
@@ -1192,6 +1421,10 @@ func TestProofThatMovesTheRepositoryRetriesTheStep(t *testing.T) {
 			proof := stepNamed(t, round, "proof:check")
 			if round.Outcome != "proof-wrote" || round.Cause != "environment" || round.Stop == nil || len(proof.LaunchIDs) != 2 || stepNamed(t, round, "read").State != StepSkipped {
 				t.Fatalf("tree movement did not hold the changed result after one proof retry: %+v", round)
+			}
+			name := map[string]string{"head": "the goal branch head", "index": "the worktree's staged state", "tree": "worktree file tracked"}[row.moved]
+			if !strings.Contains(round.Stop.Class, name) {
+				t.Fatalf("changed input lost its name: %s", round.Stop.Class)
 			}
 		})
 	}

@@ -248,6 +248,10 @@ func TestIntentMovedTreeRetryUsesCurrentSnapshot(t *testing.T) {
 			if r.Rounds[0].Result == nil || r.Rounds[0].Result.Parent != originalHead {
 				t.Fatalf("retry rewrote the builder's parent: %+v", r.Rounds[0].Result)
 			}
+			class := r.Rounds[0].Stop.Class
+			if !strings.Contains(class, "the goal branch head ("+originalHead[:10]+" to moved-head)") || !strings.Contains(class, "the check's inputs changed during the checks:") || !pass && !strings.HasPrefix(class, step.Name+": "+step.Reason+"; ") {
+				t.Fatalf("retry lost the named input or failed step: %s", class)
+			}
 			data, err := os.ReadFile(filepath.Join(r.Rounds[0].Directory, "proof-before.json"))
 			var retained struct {
 				Head string `json:"head"`

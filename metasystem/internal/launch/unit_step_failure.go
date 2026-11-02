@@ -2,11 +2,13 @@ package launch
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
@@ -71,6 +73,45 @@ func (driver stepDriver) retainStep(index int, spec StartSpec) (StartSpec, error
 		}
 		*path = target
 	}
+	if step.Name == "proof:unit-check" {
+		data, err := os.ReadFile(spec.Brief)
+		var brief PlainBrief
+		if err == nil {
+			err = json.Unmarshal(data, &brief)
+		}
+		if err != nil {
+			return spec, err
+		}
+		if len(brief.Argv) > 0 && filepath.IsAbs(brief.Argv[0]) {
+			if info, err := os.Stat(brief.Argv[0]); err == nil && info.Mode().IsRegular() {
+				target := filepath.Join(directory, "bin", "metasystem")
+				if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+					return spec, err
+				}
+				if _, err := os.Lstat(target); err != nil {
+					if !os.IsNotExist(err) {
+						return spec, err
+					}
+					if err := os.Link(brief.Argv[0], target); err != nil && !os.IsExist(err) {
+						if !errors.Is(err, syscall.EXDEV) {
+							return spec, err
+						}
+						data, err := os.ReadFile(brief.Argv[0])
+						if err != nil {
+							return spec, err
+						}
+						if _, err := atomicfile.WriteFile(target, data, 0755, ""); err != nil {
+							return spec, err
+						}
+					}
+				}
+				brief.Argv[0] = target
+				if err := writeUnitJSON(spec.Brief, brief, ""); err != nil {
+					return spec, err
+				}
+			}
+		}
+	}
 	step.Retained = &spec
 	return spec, driver.save()
 }
@@ -82,7 +123,7 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 		if err != nil {
 			step.State, step.Cause, step.Reason = StepFailed, "unclassified", err.Error()
 		} else if step.Moved = step.Before.changed(after); len(step.Moved) > 0 {
-			step.State, step.Cause, step.Reason = StepFailed, "environment", "the tree moved during the step"
+			step.State, step.Cause, step.Reason = StepFailed, "environment", "the check's inputs changed during the step: "+inputNames(*step.Before, after)
 		}
 		step.Before = nil
 		if err := driver.save(); err != nil {
@@ -150,6 +191,13 @@ func (runner *UnitRunner) holdFailedStep(record *UnitRunRecord, round *UnitRound
 				round.Stop.Handoff = "stopped deadline"
 			}
 			break
+		}
+	}
+	if round.InputsChanged != "" {
+		if round.Stop.Class == "the failed step needs a person's decision" {
+			round.Stop.Class = "proof: the check's inputs changed during the checks: " + round.InputsChanged
+		} else {
+			round.Stop.Class += "; the check's inputs changed during the checks: " + round.InputsChanged
 		}
 	}
 	return runner.saveDecision(record, round)

@@ -396,12 +396,13 @@ func (runner *UnitRunner) recoverTree(real string) (treeReservation, error) {
 	return owner, nil
 }
 
-func (runner *UnitRunner) treeMoved(record *UnitRunRecord, round *UnitRound) (UnitResult, error) {
+func (runner *UnitRunner) treeMoved(record *UnitRunRecord, round *UnitRound, names string) (UnitResult, error) {
 	round.Cause = "environment"
+	round.InputsChanged = names
 	for i := range round.Steps {
 		step := &round.Steps[i]
 		if step.State == StepRunning || i == len(round.Steps)-1 {
-			step.State, step.Cause, step.Reason = StepFailed, "environment", "the worktree bytes changed across this step"
+			step.State, step.Cause, step.Reason = StepFailed, "environment", "the check's inputs changed during the step: "+names
 			break
 		}
 	}
