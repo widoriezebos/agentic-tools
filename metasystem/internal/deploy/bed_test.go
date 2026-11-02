@@ -104,7 +104,15 @@ func (b *bed) fetchCount() int {
 // whose fetches of main find tip.
 func (b *bed) child(act, tip string) *exec.Cmd {
 	b.t.Helper()
-	config, err := json.Marshal(childConfig{Dir: b.dir, Argv: []string{b.adapter, b.state}, Tip: tip, Act: act})
+	return b.gatedChild(act, tip, "", "")
+}
+
+// gatedChild is child whose adapter calls of operation gated get their
+// request, after their process started, only once the FIFO gate has a line
+// (b.release); "" gates nothing.
+func (b *bed) gatedChild(act, tip, gated, gate string) *exec.Cmd {
+	b.t.Helper()
+	config, err := json.Marshal(childConfig{Dir: b.dir, Argv: []string{b.adapter, b.state}, Tip: tip, Act: act, Gated: gated, Gate: gate})
 	if err != nil {
 		b.t.Fatal(err)
 	}

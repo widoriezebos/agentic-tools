@@ -175,7 +175,7 @@ func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 		if failure {
 			act = "work-revise"
 			next, _ = inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)
-			if round.Cause == "environment" || round.Cause == "deadline" {
+			if round.Cause == "environment" || round.Cause == "deadline" || round.Cause == "main" {
 				act = "work-review-retry"
 			}
 			if act == "work-review-retry" {
@@ -243,6 +243,9 @@ func correctionChoice(request channel.AskRequest, record launch.UnitRunRecord, r
 	case act == "work-review-retry" && retriesBuilder(round):
 		label, decision = "Retry", fmt.Sprintf("%s: the build of unit %s could not finish at %s (%s).", words, record.Unit, at, round.Stop.Class)
 		consequence = "the builder takes another turn with the same brief, keeping its changes; no new round."
+	case act == "work-review-retry" && round.Cause == "main":
+		label, decision = "Retry", fmt.Sprintf("%s: the check of unit %s is red on main too at %s (%s).", words, record.Unit, at, round.Stop.Class)
+		consequence = "I run the failed check again on this tree with the same inputs; it can pass only once main's fix is in this goal's branch; no new build."
 	case act == "work-review-retry":
 		label, decision = "Retry", fmt.Sprintf("%s: the check of unit %s could not finish at %s (%s).", words, record.Unit, at, round.Stop.Class)
 		consequence = "I run the failed check again with the same inputs; no new build."

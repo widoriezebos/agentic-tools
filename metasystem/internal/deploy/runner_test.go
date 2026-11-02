@@ -189,11 +189,17 @@ func TestAnAdapterLeftByADeadRunHoldsTheDeployUntilPaused(t *testing.T) {
 	b := newBed(t)
 	b.deployed("c1")
 	b.script("build", step{HoldBefore: b.fifo("stalled")}, step{})
-	child := b.child("run", "c2")
+	// The build's process starts before its runner has written its request;
+	// the runner dies only once that build took its request and holds, so
+	// the build the dead run leaves is a running one, not one that ends at
+	// once on a request cut short.
+	request := b.fifo("request")
+	child := b.gatedChild("run", "c2", "build", request)
 	building := b.inFlight("build", "")
-	b.crash(child, building, false)
 	t.Cleanup(func() { _ = syscall.Kill(-building.PID, syscall.SIGKILL) })
+	b.release(request)
 	b.awaitHeld(b.t, building.PID)
+	b.crash(child, building, false)
 	if status, err := ReadStatus(b.dir, 0); err != nil || status.Adapter == nil || status.Adapter.PID != building.PID {
 		t.Fatalf("status with the adapter left running = %+v %v", status, err)
 	}

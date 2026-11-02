@@ -21,8 +21,9 @@ import (
 )
 
 type unitProofStarter struct {
-	bed *workBed
-	t   *testing.T
+	bed    *workBed
+	t      *testing.T
+	before func(launch.Record)
 }
 
 func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error) {
@@ -31,6 +32,9 @@ func (s unitProofStarter) StartSupervisor(id, state string) (identity.Ref, error
 		return identity.Ref{}, err
 	}
 	if record.Kind == "proof" {
+		if s.before != nil {
+			s.before(record)
+		}
 		spec, err := (launch.PlainExec{}).Command(record, state)
 		if err != nil {
 			return identity.Ref{}, err

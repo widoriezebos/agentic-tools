@@ -139,6 +139,8 @@ type UnitStep struct {
 	FlakeRepeat bool                `json:"flakeRepeat,omitempty"`
 	Alone       *UnitAlone          `json:"alone,omitempty"`
 	Flakes      []string            `json:"flakes,omitempty"`
+	Red         string              `json:"red,omitempty"`
+	RedCause    *loopstop.Cause     `json:"redCause,omitempty"`
 }
 
 type UnitRequest struct{ Plan, Resume, FollowUp string }

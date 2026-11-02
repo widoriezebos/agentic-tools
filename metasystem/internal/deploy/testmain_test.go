@@ -1,9 +1,12 @@
 package deploy
 
 import (
+	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
@@ -22,6 +25,11 @@ type childConfig struct {
 	Tip  string   `json:"tip"`
 	// Act is run or rollback.
 	Act string `json:"act"`
+	// Gated, when set, is an operation whose adapter request the runner
+	// writes only after it read a line from the FIFO Gate, so a test decides
+	// when the request reaches an adapter whose process has started.
+	Gated string `json:"gated,omitempty"`
+	Gate  string `json:"gate,omitempty"`
 }
 
 func TestMain(m *testing.M) {
@@ -45,6 +53,14 @@ func runRunnerChild(raw string) int {
 	runner := &Runner{Dir: config.Dir, Project: "fixture", Installation: ".",
 		Git: Git{FetchMain: func() (string, error) { return config.Tip, nil }, AddTree: fakeTree(config.Argv), RemoveTree: os.RemoveAll},
 		By:  "child", Now: func() time.Time { return at }}
+	if config.Gated != "" {
+		runner.Transport = func(command *exec.Cmd) (Process, error) {
+			if command.Args[len(command.Args)-1] == config.Gated {
+				command.Stdin = io.MultiReader(gate{path: config.Gate}, command.Stdin)
+			}
+			return startProcess(command)
+		}
+	}
 	var err error
 	if config.Act == "rollback" {
 		_, err = runner.Rollback()
@@ -56,6 +72,22 @@ func runRunnerChild(raw string) int {
 		return 1
 	}
 	return 0
+}
+
+// gate is a reader that yields nothing, after reading one line from the FIFO
+// at path.
+type gate struct{ path string }
+
+func (g gate) Read([]byte) (int, error) {
+	file, err := os.Open(g.path)
+	if err != nil {
+		return 0, err
+	}
+	defer file.Close()
+	if _, err := bufio.NewReader(file).ReadString('\n'); err != nil {
+		return 0, err
+	}
+	return 0, io.EOF
 }
 
 // fakeTree stands in for a detached worktree: a directory naming its

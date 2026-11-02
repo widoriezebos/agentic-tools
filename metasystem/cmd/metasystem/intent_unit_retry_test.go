@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processmeasure"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
 // deadlineCheckProcesses runs each unit check launch as a check that reached
@@ -297,6 +298,126 @@ func TestUnitCheckRetryIsChargedAsAnAttempt(t *testing.T) {
 			t.Fatalf("the person's retry was charged as the machine's: %+v", retry)
 		}
 	})
+}
+
+type mainUnitProofGit struct{ *unitProofBaseGit }
+
+func (git mainUnitProofGit) Run(dir string, env []string, args ...string) ([]byte, error) {
+	if slices.Equal(args, []string{"rev-parse", "--verify", "origin/main"}) {
+		return []byte("main-commit"), nil
+	}
+	if slices.Equal(args, []string{"rev-parse", "--verify", "main-commit^{tree}"}) {
+		return []byte("base-tree"), nil
+	}
+	return git.unitProofBaseGit.Run(dir, env, args...)
+}
+
+func TestAMainStopRetriesThroughWorkReview(t *testing.T) {
+	t.Parallel()
+	for _, fixed := range []bool{true, false} {
+		t.Run(fmt.Sprint(fixed), func(t *testing.T) {
+			t.Parallel()
+			b := newWorkBed(t)
+			b.manager.Prober = unitProofProber{exact: identity.Exact{Pid: int64(os.Getpid()), StartedAt: b.manager.Now()}}
+			b.manager.Adapters["plain-exec"] = launch.PlainExec{}
+			reset := false
+			b.manager.Supervisor = unitProofStarter{bed: b, t: t, before: func(r launch.Record) {
+				if strings.Contains(r.ID, "-retry") && !strings.HasSuffix(r.ID, "-alone") && !strings.HasSuffix(r.ID, "-base") {
+					step := onlyRun(t, b).Rounds[0].Steps[1]
+					if step.Alone != nil || step.Comparison != nil || step.Red != "" || step.FlakeRepeat || step.RetryBy != "Wido" {
+						t.Fatalf("retry kept attribution: %+v", step)
+					}
+					reset = true
+				}
+			}}
+			b.workOwnersHook = func(o *intentWorkOwners) {
+				previous := o.git
+				o.git = func(dir string, args ...string) ([]byte, error) {
+					if slices.Equal(args, []string{"rev-parse", "--show-toplevel"}) {
+						return []byte(b.worktree), nil
+					}
+					return previous(dir, args...)
+				}
+				units := o.units
+				o.units = func(layout stateroot.Layout) *launch.UnitRunner {
+					r := units(layout)
+					r.Git = mainUnitProofGit{&unitProofBaseGit{workGit: workGit{b}}}
+					return r
+				}
+			}
+			script := filepath.Join(t.TempDir(), "check")
+			fixedPath := filepath.Join(b.worktree, "fixed")
+			if err := testexec.WriteFile(script, []byte("#!/bin/sh\nif [ -f '"+fixedPath+"' ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\nprintf 'LANDING-FAILED\\tu/a\\tTestRed\\nLANDING-CHECKED\\t1\\n'\nexit 1\n"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			b.declaredCheap, b.declaredFull = shellCommand([]string{script}), shellCommand([]string{script})+" # full"
+			incidents := 0
+			run := func(args ...string) (int, intentResult) {
+				o := b.workOwners()
+				o.landing.mainEndpoint = func(string) (goal.Endpoint, error) { return goal.Endpoint{}, nil }
+				o.landing.machine = func(string) (string, error) { return "fixture", nil }
+				o.landing.now = b.manager.Now
+				o.landing.recordMain = func(_ goal.VerbRequest, args goal.TrunkRedRecordArgs) (goal.PublishResult, error) {
+					if len(args.Groups) != 1 || args.Groups[0].Identity != "red:u/a:TestRed" {
+						t.Fatalf("main incident=%+v", args)
+					}
+					incidents++
+					return goal.PublishResult{Outcome: goal.OutcomeConfirmed}, nil
+				}
+				command, rest, _ := resolveIntentArgv(args)
+				var stdout, stderr bytes.Buffer
+				code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, b.root(), o)
+				var result intentResult
+				if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+					t.Fatalf("result=%s stderr=%s err=%v", &stdout, &stderr, err)
+				}
+				return code, result
+			}
+			code, built := run("work", "build", b.id, "main-red", "--brief", b.brief("main.md", "Build the unit.\n"), "--lines", "5")
+			r := onlyRun(t, b)
+			questions, damaged := channel.WalkOpenQuestions(b.root())
+			if code != 1 || r.Rounds[0].Cause != "main" || incidents != 1 || len(damaged) != 0 || len(questions) != 1 || !slices.Contains(questions[0].UnitStop.AcceptableActs, "work-review-retry") {
+				t.Fatalf("main stop did not offer retry: code=%d result=%+v round=%+v questions=%+v incidents=%d", code, built, r.Rounds[0], questions, incidents)
+			}
+			q := questions[0]
+			inv := &intentInvocation{owners: b.workOwners(), cwd: b.root(), stateRoot: b.root()}
+			next, why := inv.workContinuation(b.id, launch.NamedWork{Unit: r.Unit, Record: &r}, true)
+			if q.Options[0].Label != "Retry" || !strings.Contains(q.Plain.Decision, "is red on main too at") || !strings.Contains(q.Options[0].Consequence, "once main's fix is in this goal's branch") || built.Next == nil || !slices.Equal(built.Next.Argv, next) || !slices.Contains(next, "--reason") || !strings.Contains(why, "once main's fix") {
+				t.Fatalf("main question=%+v next=%+v", q, built)
+			}
+			old := r.Rounds[0].Steps[1]
+			if fixed {
+				if err := os.WriteFile(fixedPath, nil, 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			code, retried := run("work", "review", "run:"+r.ID, "--reason", "main is fixed", "--by", "Wido")
+			r = onlyRun(t, b)
+			step := r.Rounds[0].Steps[1]
+			wantCode, wantIncidents, wantKinds := 0, 1, "build,proof,proof,proof,proof"
+			if !fixed {
+				wantCode, wantIncidents, wantKinds = 1, 2, wantKinds+",proof,proof"
+			}
+			if code != wantCode || !reset || incidents != wantIncidents || len(r.Rounds) != 1 || step.RetryReason != "main is fixed" || strings.Join(b.starter.launched(), ",") != wantKinds || !slices.Contains(step.LaunchIDs, old.Alone.LaunchID) {
+				t.Fatalf("retry=%+v reset=%v incidents=%d step=%+v kinds=%v", retried, reset, incidents, step, b.starter.launched())
+			}
+			if !fixed && (r.Rounds[0].Cause != "main" || step.Alone == nil || step.Alone.LaunchID == old.Alone.LaunchID || step.Comparison == nil || step.Comparison.LaunchID == old.Comparison.LaunchID) {
+				t.Fatalf("retry did not classify afresh: %+v", step)
+			}
+			questions, damaged = channel.WalkOpenQuestions(b.root())
+			if len(damaged) != 0 || fixed && len(questions) != 0 || !fixed && (len(questions) != 1 || !slices.Contains(questions[0].UnitStop.AcceptableActs, "work-review-retry")) {
+				t.Fatalf("retry question was not reconciled: %+v %v", questions, damaged)
+			}
+			impacts, err := filepath.Glob(filepath.Join(b.root(), "artifacts", "agents", "channel", "unit-stop-overrides", "*.json"))
+			if err != nil || len(impacts) != 1 {
+				t.Fatalf("retry impact records=%v err=%v", impacts, err)
+			}
+			data, err := os.ReadFile(impacts[0])
+			if err != nil || !bytes.Contains(data, []byte("Main's red may still fail it; this change was not the cause.")) {
+				t.Fatalf("retry impact=%s err=%v", data, err)
+			}
+		})
+	}
 }
 
 // partialBuildBed is a work bed whose builder reports PARTIAL with message

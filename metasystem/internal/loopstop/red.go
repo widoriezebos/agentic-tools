@@ -70,9 +70,13 @@ func (r RedReplay) run(alone RedRun) (RedRun, bool) {
 
 // ClassifyRed decides only from retained facts. Callers declare replay trees
 // oldest first and perform the next execution the verdict asks for.
-func ClassifyRed(e RedEvidence) RedVerdict {
-	v := RedVerdict{}
+func ClassifyRed(e RedEvidence) (v RedVerdict) {
 	var remaining []RedUnit
+	defer func() {
+		if v.Cause != nil && v.Cause.Kind != "flake" {
+			v.Words = redWords(remaining, v.Cause, e.CannotRun)
+		}
+	}()
 	var tests, flakeWords []string
 	unnamed := false
 	for _, unit := range e.Failed {
@@ -83,12 +87,17 @@ func ClassifyRed(e RedEvidence) RedVerdict {
 			continue
 		}
 		left := RedUnit{Unit: unit.Unit}
-		for _, test := range unit.Tests {
+		for i, test := range unit.Tests {
 			if e.Alone.complete() && (e.Alone.Passed || len(e.Alone.Failed) > 0 && !redContains(e.Alone.Failed, unit.Unit, test)) {
 				v.Flaked = append(v.Flaked, unit.Unit+" "+test)
 				flakeWords = append(flakeWords, test+" ("+unit.Unit+") failed in the check and passed alone on this tree")
 			} else {
 				left.Tests = append(left.Tests, test)
+				registration := ""
+				if i < len(unit.Registered) {
+					registration = unit.Registered[i]
+				}
+				left.Registered = append(left.Registered, registration)
 				tests = append(tests, unit.Unit+" "+test)
 			}
 		}
@@ -164,6 +173,53 @@ func ClassifyRed(e RedEvidence) RedVerdict {
 	v = answer("own")
 	v.Cause.Goal = e.Goal
 	return v
+}
+
+func redWords(units []RedUnit, cause *Cause, why string) string {
+	if cause.Kind == "unclassified" {
+		if why == "" {
+			why = "no completed, comparable base replay is available"
+		}
+		return "the red could not be classified: " + why
+	}
+	if len(units) == 0 {
+		units = []RedUnit{{Unit: "the check"}}
+	}
+	var words []string
+	for _, unit := range units {
+		names := unit.Tests
+		if len(names) == 0 {
+			names = []string{""}
+		}
+		for i, test := range names {
+			name := unit.Unit
+			if test != "" {
+				name = test + " in " + unit.Unit
+			}
+			if cause.Kind == "own" && i < len(unit.Registered) && unit.Registered[i] != "" {
+				identity := unit.Registered[i]
+				name += ", registered as flake:" + strings.TrimPrefix(identity, "flake:")[:min(8, len(strings.TrimPrefix(identity, "flake:")))] + ","
+				if cause.Name == "" {
+					cause.Name = identity
+				}
+			}
+			suffix := " failed in the check, failed again alone on this tree, and passed on the unit's base: the change causes it"
+			switch cause.Kind {
+			case "own":
+				if test == "" {
+					suffix = " failed in the check and passed on the unit's base; no rerun alone is possible for a failure that names no test"
+				}
+			case "main":
+				suffix = " fails on main too (main's incident " + cause.Name + "); this change is not the cause"
+			case "other":
+				suffix = " failed in the check and on the unit's base, which is not main"
+			case "environment":
+				suffix = ": the rerun or the base run could not finish (no completed exit evidence or complete report)"
+			}
+			words = append(words, name+suffix)
+		}
+	}
+	return strings.Join(words, "; ")
 }
 
 // RedSelectors uses the lane's combined selector form, omitting unnamed units.

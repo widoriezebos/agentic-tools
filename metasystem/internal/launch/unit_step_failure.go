@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -145,6 +146,23 @@ func (runner *UnitRunner) holdFailedStep(record *UnitRunRecord, round *UnitRound
 	for _, step := range round.Steps {
 		if step.State == StepFailed {
 			round.Stop.Class = step.Name + ": " + step.Reason
+			if step.Red != "" {
+				round.Stop.Class = step.Red
+				if step.RedCause != nil {
+					cause := *step.RedCause
+					round.Stop.Cause = &cause
+				}
+				var replay []string
+				if step.Alone != nil && slices.Contains(step.LaunchIDs, step.Alone.LaunchID) {
+					replay = append(replay, "rerun alone: "+step.Alone.LaunchID)
+				}
+				if step.Comparison != nil {
+					if _, err := runner.Manager.Store.Read(step.Comparison.LaunchID); err == nil {
+						replay = append(replay, "base: "+step.Comparison.LaunchID)
+					}
+				}
+				round.Stop.Replay = strings.Join(replay, "; ")
+			}
 			round.Stop.Cause.Evidence = step.LaunchID
 			if step.Deadline {
 				round.Stop.Handoff = "stopped deadline"
@@ -189,7 +207,7 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 		if step.State != StepFailed {
 			continue
 		}
-		if round.Stop == nil || round.Stop.Loop != "unit-build" || step.Retained == nil || (round.Cause != "environment" && round.Cause != "deadline") {
+		if round.Stop == nil || round.Stop.Loop != "unit-build" || step.Retained == nil || (round.Cause != "environment" && round.Cause != "deadline" && round.Cause != "main") {
 			return result, fmt.Errorf("this step needs a correction rather than an environment retry")
 		}
 		if err := recordImpact(); err != nil {
@@ -209,6 +227,8 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 		step.RetryBy, step.RetryReason, step.RetryLaunch = person, reason, step.LaunchID
 		step.State, step.Reason, step.Cause, step.FinishedAt = StepPending, "", "", ""
 		step.Before, step.Moved, step.Deadline = nil, nil, false
+		step.Alone, step.Comparison, step.RedCause = nil, nil, nil
+		step.FlakeRepeat, step.Red, step.Flakes = false, "", nil
 		// A retried builder turn is counted afresh when it passes.
 		if step.Kind == "build" || step.Kind == "correction" {
 			round.BuildLines, round.DeclaredLines, round.GapMessage = 0, 0, ""

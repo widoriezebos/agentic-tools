@@ -104,7 +104,7 @@ func attributionFixture(t *testing.T, baseRed bool, script string, resume ...boo
 	f.manager.Adapters["plain-exec"] = PlainExec{}
 	executable := filepath.Join(t.TempDir(), "check")
 	if script == "" {
-		script = "[ \"$CHECK_ENV\" = exact ] && [ \"$1\" = 'arg with spaces' ] || exit 3\nif [ -f red ]; then printf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'; exit 1; fi\n"
+		script = "[ \"$CHECK_ENV\" = exact ] && [ \"$1\" = 'arg with spaces' ] || exit 3\nif [ -f red ]; then printf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'; exit 1; fi\nprintf 'LANDING-CHECKED\\t0\\n'\n"
 	}
 	if err := testexec.WriteFile(executable, []byte("#!/bin/sh\n"+script), 0700); err != nil {
 		t.Fatal(err)
@@ -174,6 +174,125 @@ func attributionFixture(t *testing.T, baseRed bool, script string, resume ...boo
 		return os.WriteFile(spec.LogPath, data, 0600)
 	}
 	return f, git
+}
+
+func TestAUnitCheckStopNamesItsTestsAndEvidence(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"own", "registered", "main", "other", "mixed", "no-exit", "incomplete", "wrapper-green", "wrapper-red", "legacy-green", "legacy-red"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			wrapper := strings.HasPrefix(scenario, "wrapper")
+			legacy := strings.HasPrefix(scenario, "legacy")
+			redBase := scenario == "main" || scenario == "other" || scenario == "incomplete" || scenario == "wrapper-red" || scenario == "legacy-red"
+			f, git := attributionFixture(t, redBase, "")
+			if scenario == "main" {
+				git.mainTree = git.tree
+			}
+			readUnits := f.runner.RedUnits
+			f.runner.RedUnits = func(r Record) ([]loopstop.RedUnit, bool, error) {
+				units, complete, err := readUnits(r)
+				if scenario == "registered" && len(units) > 0 {
+					units[0].Registered = []string{"flake:6373c392abcdef00"}
+				}
+				return units, complete, err
+			}
+			if legacy {
+				f.runner.RedUnits = nil
+			}
+			start := f.starter.onStart
+			f.starter.onStart = func(r Record) error {
+				if err := start(r); err != nil {
+					return err
+				}
+				if r.Kind != "proof" {
+					return nil
+				}
+				state, _ := f.manager.Store.StateDir(r.ID)
+				if wrapper {
+					if !strings.HasSuffix(r.ID, "-base") {
+						round := filepath.Join(f.runner.Root, strings.Split(r.ID, "-r1-")[0], "round-1")
+						if err := writeUnitJSON(filepath.Join(round, "check-audit", "observation.json"), CheckExecution{ExecutionID: "check-audit", Steps: []processmeasure.Step{{ID: "check:cheap", Parent: r.ID, Start: f.manager.Now().Format(time.RFC3339Nano), Outcome: "passed"}, {ID: "check:audits", Parent: r.ID, Outcome: "failed"}}}, f.runner.Root); err != nil {
+							return err
+						}
+					}
+					return os.WriteFile(filepath.Join(state, "exec.log"), []byte("audit output without a report\n"), 0600)
+				}
+				if scenario == "mixed" && !strings.HasSuffix(r.ID, "-alone") && !strings.HasSuffix(r.ID, "-base") {
+					return os.WriteFile(filepath.Join(state, "exec.log"), []byte("LANDING-FAILED\tpkg/unit\tTestRed TestFlake\nLANDING-CHECKED\t1\n"), 0600)
+				}
+				if strings.HasSuffix(r.ID, "-base") {
+					if scenario == "no-exit" {
+						_, err := f.manager.Store.Update(r.ID, func(r *Record) error { r.Cause = "lost-process"; return nil })
+						return err
+					}
+					if scenario == "incomplete" {
+						return os.WriteFile(filepath.Join(state, "exec.log"), []byte("LANDING-FAILED\tpkg/unit\tTestRed\n"), 0600)
+					}
+				}
+				return nil
+			}
+			if wrapper {
+				plan, _ := ReadUnitPlan(f.plan)
+				plan.Check = &UnitCheck{Directory: f.worktree}
+				if err := writeUnitJSON(f.plan, plan, f.runner.Root); err != nil {
+					t.Fatal(err)
+				}
+			}
+			incidents := 0
+			f.runner.RecordMain = func(Record, string, string) error { incidents++; return nil }
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := result.Record.Rounds[0]
+			step, stop := round.Steps[1], round.Stop
+			if stop == nil || step.Comparison == nil || !wrapper && !legacy && step.Alone == nil {
+				t.Fatalf("missing attribution evidence: %+v", step)
+			}
+			kind, name := "own", ""
+			words := "TestRed in pkg/unit failed in the check, failed again alone on this tree, and passed on the unit's base: the change causes it"
+			switch scenario {
+			case "registered":
+				name = "flake:6373c392abcdef00"
+				words = strings.Replace(words, "pkg/unit failed", "pkg/unit, registered as flake:6373c392, failed", 1)
+			case "main":
+				kind, name = "main", "red:pkg/unit:TestRed"
+				words = "TestRed in pkg/unit fails on main too (main's incident red:pkg/unit:TestRed); this change is not the cause"
+			case "other":
+				kind, words = "other", "TestRed in pkg/unit failed in the check and on the unit's base, which is not main"
+			case "no-exit", "incomplete":
+				kind, words = "environment", "TestRed in pkg/unit: the rerun or the base run could not finish (no completed exit evidence or complete report)"
+			case "wrapper-green":
+				words = "section/audits failed in the check and passed on the unit's base; no rerun alone is possible for a failure that names no test"
+			case "wrapper-red":
+				kind, words = "other", "section/audits failed in the check and on the unit's base, which is not main"
+			case "legacy-green":
+				words = "proof:check failed in the check and passed on the unit's base; no rerun alone is possible for a failure that names no test"
+			case "legacy-red":
+				kind, words = "other", "proof:check failed in the check and on the unit's base, which is not main"
+			}
+			replay := "base: " + step.Comparison.LaunchID
+			tests := []string{"section/audits (package)"}
+			if legacy {
+				tests = []string{"proof:check (package)"}
+			}
+			if !wrapper && !legacy {
+				replay = "rerun alone: " + step.Alone.LaunchID + "; " + replay
+				tests = []string{"pkg/unit TestRed"}
+				var command PlainBrief
+				data, err := os.ReadFile(filepath.Join(round.Directory, "base-1.json"))
+				if err != nil || json.Unmarshal(data, &command) != nil || !slices.Equal(command.Env, append([]string{"CHECK_ENV=exact"}, step.Alone.Selectors...)) {
+					t.Fatalf("base selectors differ from rerun: %+v err=%v", command, err)
+				}
+			}
+			if stop == nil || stop.Class != words || stop.Replay != replay || stop.Cause.Kind != kind || stop.Cause.Name != name || !slices.Equal(stop.Cause.Tests, tests) || stop.Cause.Evidence != step.LaunchID || incidents != map[bool]int{true: 1}[scenario == "main"] {
+				t.Fatalf("stop=%+v cause=%+v incidents=%d; want %s %q replay=%q", stop, stop.Cause, incidents, kind, words, replay)
+			}
+			if (wrapper || legacy) && step.Alone != nil || scenario == "mixed" && !slices.Equal(step.Flakes, []string{"pkg/unit TestFlake"}) {
+				t.Fatalf("rerun evidence=%+v", step)
+			}
+		})
+	}
 }
 
 func TestAFailedCheckSectionIsNeverAFlake(t *testing.T) {
@@ -320,7 +439,7 @@ func TestUnitProofRecoversRetainedComparison(t *testing.T) {
 
 func TestUnitProofRefusesStaleComparison(t *testing.T) {
 	t.Parallel()
-	for _, stale := range []string{"base", "tree", "argv", "environment", "directory"} {
+	for _, stale := range []string{"base", "tree", "argv", "environment", "directory", "selectors"} {
 		t.Run(stale, func(t *testing.T) {
 			t.Parallel()
 			f, git := attributionFixture(t, false, "", true)
@@ -349,6 +468,8 @@ func TestUnitProofRefusesStaleComparison(t *testing.T) {
 				comparison.Command.Argv[1] = "different-argument"
 			case "environment":
 				comparison.Command.Env[0] = "CHECK_ENV=different"
+			case "selectors":
+				comparison.Selectors = []string{"LANDING_ONLY=different"}
 			case "directory":
 				comparison.Command.Dir = filepath.Dir(comparison.Command.Dir)
 			}
@@ -380,7 +501,7 @@ func TestUnitProofRerunsARedAloneOnce(t *testing.T) {
 			counter := filepath.Join(t.TempDir(), "counter")
 			script := fmt.Sprintf("if [ -f '%s' ]; then %s; fi\ntouch '%s'\nprintf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'\nexit 1\n", counter, map[bool]string{true: "printf 'LANDING-CHECKED\\t0\\n'; exit 0", false: "exit 1"}[repeatGreen], counter)
 			if !repeatGreen {
-				script = "if [ -f red ]; then printf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'; exit 1; fi\n"
+				script = "if [ -f red ]; then printf 'LANDING-FAILED\\tpkg/unit\\tTestRed\\nLANDING-CHECKED\\t1\\n'; exit 1; fi\nprintf 'LANDING-CHECKED\\t0\\n'\n"
 			}
 			f, git := attributionFixture(t, false, script)
 			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
@@ -412,7 +533,7 @@ func TestUnitProofRerunsARedAloneOnce(t *testing.T) {
 				}
 				_, err = f.runner.compareProof(&result.Record, &result.Record.Rounds[0], 1, plan, f.manager.Now().Add(time.Minute))
 				step := result.Record.Rounds[0].Steps[1]
-				if err != nil || step.Cause != "environment" || !strings.Contains(step.Reason, "the rerun alone could not finish") {
+				if err != nil || step.Cause != "environment" || !strings.Contains(step.Reason, "the rerun or the base run could not finish") {
 					t.Fatalf("unfinished repeat reason=%q cause=%s err=%v", step.Reason, step.Cause, err)
 				}
 			}

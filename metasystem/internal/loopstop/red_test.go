@@ -83,7 +83,7 @@ func TestARedIsClassifiedByOneTable(t *testing.T) {
 		{name: "package failure rerun green base", in: input(packageFailure, base(green)), kind: "own", goal: "subject", tests: []string{"internal/foo TestX"}},
 		{name: "unreported test rerun green base", in: input(unreportedTest, base(green)), kind: "own", goal: "subject", tests: []string{"internal/foo TestX"}},
 		{name: "package failure rerun red main", in: input(packageFailure, []RedReplay{{Role: "main", Named: failed}}), kind: "main", incident: "red:internal/foo:TestX", tests: []string{"internal/foo TestX"}},
-		{name: "registered red twice", in: registered, kind: "own", goal: "subject", tests: []string{"internal/foo TestX"}},
+		{name: "registered red twice", in: registered, kind: "own", goal: "subject", incident: "flake:6373c392", tests: []string{"internal/foo TestX"}},
 		{name: "green needs whole fallback", in: input(different, base(green)), next: "replay", whole: true},
 		{name: "incomplete needs whole fallback", in: input(different, base(partial)), next: "replay", whole: true},
 		{name: "lost named needs whole fallback", in: input(different, base(lost)), next: "replay", whole: true},
@@ -158,5 +158,54 @@ func TestRedSelectorsOmitUnnamedUnits(t *testing.T) {
 	got := RedSelectors([]RedUnit{{Unit: "section/audits"}, {Unit: "internal/foo", Tests: []string{"TestX", "TestY"}}})
 	if !slices.Equal(got, []string{"LANDING_ONLY=internal/foo", "LANDING_ONLY_TESTS=TestX TestY"}) {
 		t.Fatalf("mixed selectors: %v", got)
+	}
+}
+
+func TestRedWordsNameTheEvidence(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"own", "registered", "main", "other", "environment", "unclassified", "unnamed", "several"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			units := []RedUnit{{Unit: "internal/foo", Tests: []string{"TestX"}}}
+			selectors := RedSelectors(units)
+			run := RedRun{Attempted: true, Exited: true, Complete: true, Selectors: selectors, Failed: units}
+			e := RedEvidence{Goal: "subject", Failed: units, Alone: run, Replays: []RedReplay{{Role: "base", Named: run}}}
+			e.Replays[0].Named.Passed = true
+			e.Replays[0].Named.Failed = nil
+			want := "TestX in internal/foo failed in the check, failed again alone on this tree, and passed on the unit's base: the change causes it"
+			switch kind {
+			case "registered":
+				e.Failed[0].Registered = []string{"flake:6373c392abcdef00"}
+				want = strings.Replace(want, "internal/foo failed", "internal/foo, registered as flake:6373c392, failed", 1)
+			case "main":
+				e.Replays[0].Role, e.Replays[0].Named.Passed = "main", false
+				e.Replays[0].Named.Failed = units
+				want = "TestX in internal/foo fails on main too (main's incident red:internal/foo:TestX); this change is not the cause"
+			case "other":
+				e.Replays[0].Named.Passed = false
+				e.Replays[0].Named.Failed = units
+				want = "TestX in internal/foo failed in the check and on the unit's base, which is not main"
+			case "environment":
+				e.Replays[0].Named.Exited = false
+				want = "TestX in internal/foo: the rerun or the base run could not finish (no completed exit evidence or complete report)"
+			case "unclassified":
+				e.CannotRun = "the base cannot be read"
+				want = "the red could not be classified: the base cannot be read"
+			case "unnamed":
+				e.Failed, e.Alone = []RedUnit{{Unit: "section/audits"}}, RedRun{}
+				e.Replays[0].Named = RedRun{Attempted: true, Exited: true, Passed: true, Wrapper: true}
+				want = "section/audits failed in the check and passed on the unit's base; no rerun alone is possible for a failure that names no test"
+			case "several":
+				e.Failed = append(e.Failed, RedUnit{Unit: "internal/bar", Tests: []string{"TestY"}})
+				e.Alone.Failed = e.Failed
+				e.Alone.Selectors = RedSelectors(e.Failed)
+				e.Replays[0].Named.Selectors = e.Alone.Selectors
+				want += "; " + strings.ReplaceAll(strings.ReplaceAll(want, "TestX", "TestY"), "internal/foo", "internal/bar")
+			}
+			v := ClassifyRed(e)
+			if v.Words != want || kind == "registered" && v.Cause.Name != "flake:6373c392abcdef00" {
+				t.Fatalf("words=%q cause=%+v; want %q", v.Words, v.Cause, want)
+			}
+		})
 	}
 }
