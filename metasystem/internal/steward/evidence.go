@@ -32,6 +32,8 @@ type Evidence struct {
 	CurrentContinuation string             `json:"currentContinuation,omitempty"`
 	AbnormalCount       int                `json:"abnormalCount,omitempty"`
 
+	StewardStopCleared *StewardStopCleared `json:"steward-stop-cleared,omitempty"`
+
 	SampledAt string        `json:"sampledAt,omitempty"`
 	Age       time.Duration `json:"age,omitempty"`
 	// Degraded counts the ticks in a row whose verdict was degraded.

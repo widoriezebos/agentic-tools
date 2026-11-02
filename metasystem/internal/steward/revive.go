@@ -446,6 +446,13 @@ type AbnormalRestart struct {
 	Pending bool      `json:"pending"`
 }
 
+// StewardStopCleared records the person's latest clearance for this root.
+type StewardStopCleared struct {
+	At   time.Time `json:"at"`
+	Root string    `json:"root"`
+	By   string    `json:"by"`
+}
+
 func abnormalRemedy(root, reason string) string {
 	return reason + fmt.Sprintf("; person's remedy: metasystem machine revive %s", root)
 }
@@ -475,12 +482,19 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 	}
 	if start != nil && start.Kind == "steward" {
 		ended := 0
+		since := now.Add(-time.Hour)
+		if mark := ev.StewardStopCleared; mark != nil && mark.Root == canonicalPath(root) && mark.At.After(since) {
+			since = mark.At
+		}
 		for _, record := range records {
-			if record.Kind == "steward" && seatTime(record.StartedAt).After(now.Add(-time.Hour)) && record.Outcome == SeatNoProgress {
+			if record.Kind == "steward" && record.Subject == start.Subject && record.Occurrence == start.Occurrence && seatTime(record.StartedAt).After(since) && record.Outcome == SeatNoProgress {
 				ended++
 			}
 		}
-		if ended >= 2 || ev.AbnormalCount == len(ev.Abnormal) && ev.Abnormal[0].At.After(now.Add(-time.Hour)) {
+		if ended >= 2 {
+			return class, fmt.Sprintf("the steward started twice for %s without progress in the last hour; metasystem machine revive %s lifts the stop, or a new occurrence starts again", start.Subject, root), nil
+		}
+		if ev.AbnormalCount == len(ev.Abnormal) && ev.Abnormal[0].At.After(now.Add(-time.Hour)) {
 			return class, abnormalRemedy(root, "two automatic abnormal restarts were attempted in the rolling hour"), nil
 		}
 		if last != nil && !last.At.After(now.Add(-time.Hour)) {
@@ -518,6 +532,9 @@ func abnormalRestartState(root string, ev Evidence, now time.Time, start *SeatSe
 			return class, abnormalRemedy(root, "the previous seat start has an unknown launch outcome"), nil
 		}
 		class = current.LaunchState
+		if mark := ev.StewardStopCleared; class == "missing" && current.Kind == "steward" && mark != nil && mark.Root == canonicalPath(root) && !seatTime(current.StartedAt).After(mark.At) {
+			class = ""
+		}
 		if class == "missing" {
 			return class, abnormalRemedy(root, "the seat launch outcome is unknown"), nil
 		}

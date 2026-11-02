@@ -49,6 +49,10 @@ type SeatWorld struct {
 	Held    []SeatHeld
 	Ready   []SeatReady
 	Steward *SeatSteward
+	// StewardClearedAt is the time of a person's steward-stop clearance for
+	// this root (zero when none): steward records started at or before it do
+	// not count toward the no-progress cap, so the person's revive takes effect.
+	StewardClearedAt time.Time
 }
 
 // SeatSteward names the situation's first stewardship task.
@@ -212,7 +216,7 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 		return Decision{verdict, ActRevive, fmt.Sprintf("this seat's main is dead holding %s; starting its successor", candidate.Goal)}, &selection
 	}
 	if task := world.Steward; task != nil {
-		if count := StewardNoProgressCount(records, task.Subject, task.Occurrence); count >= maxRevivals {
+		if count := StewardNoProgressCountSince(records, task.Subject, task.Occurrence, world.StewardClearedAt); count >= maxRevivals {
 			return Decision{verdict, ActNotify, fmt.Sprintf("%d seats ended without progress on %s; no steward starts for this occurrence", count, task.Subject)}, nil
 		}
 		selection.Kind, selection.Subject, selection.Occurrence = "steward", task.Subject, task.Occurrence
@@ -314,11 +318,21 @@ func SeatNoProgressCount(records []SeatRecord, goalID, approvalOpid string) int 
 
 // StewardNoProgressCount counts only this subject's occurrence.
 func StewardNoProgressCount(records []SeatRecord, subject, occurrence string) int {
+	return StewardNoProgressCountSince(records, subject, occurrence, time.Time{})
+}
+
+// StewardNoProgressCountSince counts only this subject's occurrence, and only
+// records started after a person's clearance (since zero counts them all).
+func StewardNoProgressCountSince(records []SeatRecord, subject, occurrence string, since time.Time) int {
 	var matching []SeatRecord
 	for _, record := range records {
-		if record.Kind == "steward" && record.Subject == subject && record.Occurrence == occurrence {
-			matching = append(matching, record)
+		if record.Kind != "steward" || record.Subject != subject || record.Occurrence != occurrence {
+			continue
 		}
+		if !since.IsZero() && !seatTime(record.StartedAt).After(since) {
+			continue
+		}
+		matching = append(matching, record)
 	}
 	return SeatNoProgressCount(matching, "", "")
 }

@@ -17,10 +17,12 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
@@ -79,6 +81,7 @@ type seatBed struct {
 	situation func(string, time.Time) Situation
 	page      func(string, time.Time) (SituationRecord, error)
 	busy      bool
+	boardHome string
 }
 
 func newSeatBed(t *testing.T, goals ...*goal.GoalFile) *seatBed {
@@ -161,6 +164,10 @@ func (b *seatBed) seatDependencies() *seatDependencies {
 	}
 	if b.page != nil {
 		d.Situation = b.page
+	}
+	if b.boardHome != "" {
+		d.Decisions = func() ([]humanauthority.Decision, int, error) { return humanauthority.ReadDecisions(b.boardHome) }
+		d.Threads = func() ([]board.Thread, error) { return board.Threads(b.boardHome) }
 	}
 	return d
 }
@@ -319,6 +326,7 @@ func stewardshipBed(t *testing.T, files ...*goal.GoalFile) (*seatBed, string) {
 	b := newSeatBed(t, files...)
 	b.now = time.Date(2026, 11, 2, 8, 0, 0, 0, time.UTC)
 	home := t.TempDir()
+	b.boardHome = home
 	src := withEmptyHost(t, SituationSources{Now: func() time.Time { return b.now },
 		LaneHome: func() (string, error) { return home, nil }, BoardHome: func() (string, error) { return home, nil },
 		ClaimLaneState: func(string, string, string) (string, error) { return "", nil }})
@@ -347,6 +355,236 @@ func stewardSelected(t *testing.T, result TickResult) SeatSelection {
 		t.Fatalf("expected stewardship with no goal: %+v %+v", result.Decision, result.Seat)
 	}
 	return *result.Seat
+}
+
+func TestAStewardSessionsProgressIsItsHandledDecision(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name, outcome, dispose, lineage, machine string
+		before, reply, receipt, progress         bool
+	}{
+		{name: "confirmed", outcome: "confirmed", progress: true},
+		{name: "partial", outcome: "partial", progress: true},
+		{name: "unchanged", outcome: "unchanged", progress: true},
+		{name: "refused", outcome: "refused"},
+		{name: "failed", outcome: "failed"},
+		{name: "wait", dispose: humanauthority.DisposeWait, progress: true},
+		{name: "ask", dispose: humanauthority.DisposeAsk, progress: true},
+		{name: "before", outcome: "confirmed", before: true},
+		{name: "another lineage", outcome: "confirmed", lineage: "builder"},
+		{name: "another machine", outcome: "confirmed", machine: "elsewhere"},
+		{name: "read receipt", receipt: true},
+		{name: "reply", reply: true, progress: true},
+		{name: "other lineage reply", reply: true, lineage: "builder"},
+		{name: "other machine reply", reply: true, machine: "elsewhere"},
+		{name: "old reply", reply: true, before: true},
+	} {
+		for _, kind := range []string{"steward", ""} {
+			t.Run(row.name+"/"+kind, func(t *testing.T) {
+				t.Parallel()
+				b, home := stewardshipBed(t, seatReadyGoal("ready", "Build it."))
+				selection := SeatSelection{Kind: kind, Subject: "subject"}
+				if kind == "" {
+					selection.Goal = "ready"
+				}
+				record := b.start(&selection)
+				at := b.now.Add(time.Second)
+				if row.before {
+					at = b.now.Add(-time.Second)
+				}
+				lineage, machine := SeatLineage, seatBedMachine
+				if row.lineage != "" {
+					lineage = row.lineage
+				}
+				if row.machine != "" {
+					machine = row.machine
+				}
+				switch {
+				case row.reply:
+					composePublish(t, home, board.Request{ID: "ask", Kind: board.KindAsk, From: board.Sender{Machine: "peer"}, To: board.Address{Machine: machine}, Text: "Decide"}, at.Add(-time.Minute))
+					composePublish(t, home, board.Request{Kind: board.KindReply, Thread: "ask", From: board.Sender{Machine: machine, Lineage: lineage}, To: board.Address{Machine: "peer"}, Text: "Handled"}, at)
+				case row.receipt:
+					if err := RecordSituationRead(b.root, record.LaunchID, at, FirstThing{Kind: "ask", Subject: "subject"}); err != nil {
+						t.Fatal(err)
+					}
+				default:
+					d := humanauthority.Decision{ID: "decision", At: at, Lineage: lineage, Machine: machine, Outcome: row.outcome}
+					if row.dispose != "" {
+						d.Disposition = &humanauthority.Disposition{Kind: row.dispose, WaitUntil: at.Add(time.Hour)}
+					}
+					if err := humanauthority.AppendDecision(home, d); err != nil {
+						t.Fatal(err)
+					}
+				}
+				b.now = b.now.Add(time.Minute)
+				b.end(record.LaunchID, "completed", `{"is_error":false}`)
+				b.tick(deadWorkers)
+				got := b.records()[0]
+				if (got.Outcome == SeatProgress) != row.progress {
+					t.Fatalf("progress=%v: %+v", row.progress, got)
+				}
+			})
+		}
+	}
+}
+
+func stewardStopBed(t *testing.T, state string) (*seatBed, *string, *string) {
+	t.Helper()
+	b, _ := stewardshipBed(t)
+	b.situation = nil
+	subject, occurrence := "overdue-goal held", "first"
+	b.page = func(string, time.Time) (SituationRecord, error) {
+		return SituationRecord{Composition: Composition{First: FirstThing{Kind: "row", Subject: subject, Command: "metasystem decision record --occurrence " + occurrence + " --dispose wait"}}}, nil
+	}
+	for i, ago := range []time.Duration{20 * time.Minute, 10 * time.Minute} {
+		record := SeatRecord{Schema: 1, LaunchID: fmt.Sprintf("ended-%d", i), Kind: "steward", Subject: subject, Occurrence: occurrence,
+			Machine: seatBedMachine, StartedAt: b.now.Add(-ago).Format(seatStartedAtLayout), ReapedAt: b.now.Add(-ago + time.Minute).Format(time.RFC3339), LaunchState: state, Outcome: SeatNoProgress}
+		if err := writeSeatRecord(b.root, record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return b, &subject, &occurrence
+}
+
+func TestANewOccurrenceStartsInsideTheHour(t *testing.T) {
+	t.Parallel()
+	for _, change := range []string{"same", "occurrence", "subject"} {
+		t.Run(change, func(t *testing.T) {
+			t.Parallel()
+			b, subject, occurrence := stewardStopBed(t, "completed")
+			if change == "occurrence" {
+				*occurrence = "second"
+			}
+			if change == "subject" {
+				*subject = "overdue-goal another"
+			}
+			r := b.tick(deadWorkers)
+			if change == "same" {
+				want := "the steward started twice for " + *subject + " without progress in the last hour; metasystem machine revive " + b.root + " lifts the stop, or a new occurrence starts again"
+				if r.Seat != nil || !strings.Contains(r.Decision.Reason, want) {
+					t.Fatalf("same occurrence must name its working remedy: %+v", r.Decision)
+				}
+				return
+			}
+			if record, err := b.startUnder(stewardSelected(t, r), fakeCensus{workers: deadWorkers}); err != nil || record.LaunchID == "" {
+				t.Fatalf("new stewardship work must start: %+v %v", record, err)
+			}
+		})
+	}
+}
+
+type stewardPersonTree struct{}
+
+func (stewardPersonTree) SessionLeader(int64) (int64, error) { return 10, nil }
+func (stewardPersonTree) Read(pid int64) (humanauthority.Snapshot, error) {
+	parent, command, terminal := int64(0), "launchd", ""
+	switch pid {
+	case 10:
+		parent, command, terminal = 1, "login", "tty-1"
+	case 20:
+		parent, command, terminal = 10, "zsh", "tty-1"
+	case 1:
+	default:
+		return humanauthority.Snapshot{}, os.ErrNotExist
+	}
+	return humanauthority.Snapshot{Exact: identity.Exact{Pid: pid, StartedAt: time.Unix(pid*10, 0), ArgvKnown: true, Argv: []string{command}},
+		Executable: "/fixture/bin/" + command, ExecutableKnown: true, OwnerUID: 501, OwnerKnown: true,
+		ParentPID: parent, ParentKnown: true, TerminalID: terminal, TerminalKnown: true}, nil
+}
+
+func TestAPersonReviveLiftsTheStewardStop(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"completed", "failed", "cancelled", "missing"} {
+		t.Run(state, func(t *testing.T) {
+			t.Parallel()
+			b, _, _ := stewardStopBed(t, state)
+			b.root = canonicalPath(b.root)
+			if r := b.tick(deadWorkers); r.Seat != nil || !strings.Contains(r.Decision.Reason, "hour") {
+				t.Fatalf("expected the steward stop: %+v", r.Decision)
+			}
+			closed := personRevivesTheSteward(t, b, state)
+			if _, ok := closed.(SeatRevivalClosed); !ok {
+				t.Fatalf("person's revive must close the steward launch: %v", closed)
+			}
+			data, err := os.ReadFile(EvidencePath(b.root))
+			if err != nil || !strings.Contains(string(data), `"steward-stop-cleared"`) || !strings.Contains(string(data), `"by": "Wido"`) || !strings.Contains(string(data), b.root) || !strings.Contains(string(data), b.now.Format(time.RFC3339)) {
+				t.Fatalf("missing durable person clearance: %s %v", data, err)
+			}
+			want := "steward launch ended-1 ended " + state
+			if state == "missing" {
+				want = "steward launch ended-1 record is missing"
+			}
+			want += "; the steward stop is lifted by your word; the steward's next tick selects again"
+			if closed.Error() != want {
+				t.Fatalf("person's revive must explain the steward close: got %q, want %q", closed, want)
+			}
+			b.now = b.now.Add(time.Second)
+			if record, err := b.startUnder(stewardSelected(t, b.tick(deadWorkers)), fakeCensus{workers: deadWorkers}); err != nil || record.LaunchID == "" {
+				t.Fatalf("person's revive did not lift the stop: %+v %v", record, err)
+			}
+		})
+	}
+}
+
+// personRevivesTheSteward runs a person's machine revive at the enrolled
+// terminal against the bed's last steward launch in the given state and
+// returns what the revive answered.
+func personRevivesTheSteward(t *testing.T, b *seatBed, state string) error {
+	t.Helper()
+	bin := filepath.Join(b.root, "fixture-engine")
+	if err := os.WriteFile(bin, []byte("fixture engine"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := installDigest(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := MintIdentity(RepoIdentityPath(b.root), InstallIdentity{RepoIdentity: b.root, Generation: 1, InstallPath: bin, InstallDigest: digest}); err != nil {
+		t.Fatal(err)
+	}
+	d := *b.seatDependencies()
+	d.Census = fakeCensus{workers: deadWorkers}
+	d.RegistryPath = filepath.Join(b.root, "host-registry")
+	frame, _ := json.Marshal(map[string]any{"schemaVersion": 1, "event": registry.EventRelaunched, "checkoutPath": b.root, "ownerTag": "revive", "at": b.now.Format(time.RFC3339), "generation": 1, "watcherTag": "w", "reaperTag": "r", "retiredThrough": 0})
+	if err := registry.AppendFrame(d.RegistryPath, frame); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := humanauthority.Enroll(b.root, 20, stewardPersonTree{}, "Wido", b.now); err != nil {
+		t.Fatal(err)
+	}
+	d.Person, err = humanauthority.Prove(b.root, 20, stewardPersonTree{}, b.now)
+	if err != nil || !d.Person.EnrolledTerminalFor(b.root) {
+		t.Fatalf("person proof: %+v %v", d.Person, err)
+	}
+	b.launcher.states = map[string]SeatLaunchState{}
+	if state != "missing" {
+		b.launcher.states["ended-1"] = SeatLaunchState{Found: true, Terminal: true, State: state}
+	}
+	_, err = startSeatWithDependencies(b.root, SeatSelection{}, d)
+	return err
+}
+
+// Past the three-start cap, a person's revive lifts the steward cap as well:
+// the ladder counts only steward records started after the clearance.
+func TestAPersonReviveLiftsTheStewardCap(t *testing.T) {
+	t.Parallel()
+	b, subject, occurrence := stewardStopBed(t, "failed")
+	third := SeatRecord{Schema: 1, LaunchID: "ended-2", Kind: "steward", Subject: *subject, Occurrence: *occurrence,
+		Machine: seatBedMachine, StartedAt: b.now.Add(-30 * time.Minute).Format(seatStartedAtLayout), ReapedAt: b.now.Add(-29 * time.Minute).Format(time.RFC3339), LaunchState: "failed", Outcome: SeatNoProgress}
+	if err := writeSeatRecord(b.root, third); err != nil {
+		t.Fatal(err)
+	}
+	b.root = canonicalPath(b.root)
+	if r := b.tick(deadWorkers); r.Seat != nil || !strings.Contains(r.Decision.Reason, "no steward starts for this occurrence") {
+		t.Fatalf("expected the steward cap: %+v", r.Decision)
+	}
+	if closed := personRevivesTheSteward(t, b, "failed"); closed == nil || !strings.Contains(closed.Error(), "the steward stop is lifted by your word") {
+		t.Fatalf("person's revive must lift the stop: %v", closed)
+	}
+	b.now = b.now.Add(time.Second)
+	if record, err := b.startUnder(stewardSelected(t, b.tick(deadWorkers)), fakeCensus{workers: deadWorkers}); err != nil || record.LaunchID == "" {
+		t.Fatalf("person's revive did not lift the cap: %+v %v", record, err)
+	}
 }
 
 func TestAnOutstandingAskStartsTheStewardBesideAWaitingClaim(t *testing.T) {
@@ -491,7 +729,7 @@ func TestTheStewardCapCountsPerOccurrence(t *testing.T) {
 	composePublish(t, home, board.Request{Kind: board.KindReply, Thread: "ask-one", To: board.Address{Machine: "peer"}, From: board.Sender{Machine: seatBedMachine}, Text: "Handled"}, b.now)
 	stewardAsk(t, b, home, "ask-two", 0)
 	stewardSelected(t, b.tick(deadWorkers))
-	t.Run("two subjects keep the rolling hour limit", func(t *testing.T) {
+	t.Run("different subjects start inside the hour", func(t *testing.T) {
 		t.Parallel()
 		b, home := stewardshipBed(t)
 		for _, id := range []string{"one", "two"} {
@@ -509,8 +747,8 @@ func TestTheStewardCapCountsPerOccurrence(t *testing.T) {
 			b.now = b.now.Add(10 * time.Minute)
 		}
 		stewardAsk(t, b, home, "three", 0)
-		if r := b.tick(deadWorkers); r.Seat != nil || !strings.Contains(r.Decision.Reason, "two automatic abnormal restarts were attempted in the rolling hour") {
-			t.Fatalf("restart limit: %+v", r.Decision)
+		if record, err := b.startUnder(stewardSelected(t, b.tick(deadWorkers)), fakeCensus{workers: deadWorkers}); err != nil || record.LaunchID == "" {
+			t.Fatalf("different subject must start: %+v %v", record, err)
 		}
 	})
 	t.Run("a goal ending is a different start", func(t *testing.T) {
