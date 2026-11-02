@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 from the accepted page plans/designs/a-health-record-outlives-a-role-change.md with work build --last and its FINAL brief.
 - OpenedAt: 2026-11-02T01:04:34Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-02T01:04:44Z revision=2 opid=TR9AA3RPV089V9Q0CNSBKH14EP-m1e-a85867ef authority=proven digest=d9b07aa5003a4bda3e0665a7c4e1595a4e2bddb1dfc5378f271ae5e98885d5e0 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-02T01:04:34Z NH3QD9K46REKPG5YEBPME1ZSSX-m1e-a85867ef open actor=human:Wido targets=a-health-record-outlives-a-role-change
 - 2026-11-02T01:04:44Z TR9AA3RPV089V9Q0CNSBKH14EP-m1e-a85867ef approve actor=human:Wido targets=a-health-record-outlives-a-role-change
-Integrity: sha256=4b676fce54a069a397f12bea8e7c2ea68dae58bbd5c080ba659be5f93c4386ae
+- 2026-11-02T01:04:53Z N4F6PG44R96YGR675EEQE3RVT7-m1e-a85867ef set-pin actor=human:Wido targets=a-health-record-outlives-a-role-change
+Integrity: sha256=c9cd749fc226717df8a2e65490c6e37955cc10fe4e3c85b2461822f9932a7da2
