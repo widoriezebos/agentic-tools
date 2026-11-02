@@ -26,7 +26,7 @@ Open read items (fix unit U3-20261031t025009-f32daf2f1a): 2
 - ReadItem: id=U3-20261031t025009-f32daf2f1a-2 read=U3-20261031t025009-f32daf2f1a state=open addedAt=2026-11-01T05:41:22Z changedAt=- material=false closingReference="" text="r4-s3:3: with seatDependencies.Home defaulted to HomeStateRoot, a test that builds seat readers through defaultSeatDependencies with an empty WorkStateRoot reads the host unit store (read-only, or the run-scoped registry home when the test binary sets it); give such tests a temporary root."
 - OpenedAt: 2026-10-24T04:45:40Z
 - FirstClaimAt: 2026-10-29T12:25:35Z
-- Revision: 71
+- Revision: 72
 - Budget: elapsedLimit=9d2h attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 2
 - NormApproval: approvedRef=FZAAARCXYRJMSQS9GX9NP6V2DQ-ui-721459c1 minutes=2400 reviewRounds=20 goalRevision=61
@@ -107,4 +107,5 @@ History:
 - 2026-11-02T08:03:33Z 6KQBNYZCV0D5NYHYR5AZ39QFAX-ui-71c5cb39 edit actor=ui+steward-seat targets=a-round-survives-a-restart
 - 2026-11-02T08:11:59Z CM74M1Q9DREZJ3ZKCTW84DXWJ8-ui-76faa029 answer actor=human:wido targets=a-round-survives-a-restart authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1378/1379 channelStep=1793607119 question=PJPMNRKNDGE174VXHCDZ1YQJ0T reason=yes, continue
 - 2026-11-02T08:17:03Z MMDABGGMC16DD9NE9RD9ZAKZPF-ui-71c5cb39 ask actor=ui+steward-seat targets=a-round-survives-a-restart
-Integrity: sha256=9fcfadd7246e45763fc03184381aac704c572be23801dcc34305569d242cd586
+- 2026-11-02T08:18:47Z V3YPBSQ2FVQYY103KVCZYE980Z-ui-71c5cb39 rebase actor=ui+steward-seat targets=a-round-survives-a-restart reason=rebased 08d04ac57631 onto main 5b62d46e51c2; needs review: U1, U1b, U2, U3
+Integrity: sha256=1ac04c133827be1b6a898c20c44dd3e9176411b48b14ad180c2cba92cd0b0934
