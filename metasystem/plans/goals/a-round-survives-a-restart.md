@@ -26,7 +26,7 @@ Open read items (fix unit U3-20261031t025009-f32daf2f1a): 2
 - ReadItem: id=U3-20261031t025009-f32daf2f1a-2 read=U3-20261031t025009-f32daf2f1a state=open addedAt=2026-11-01T05:41:22Z changedAt=- material=false closingReference="" text="r4-s3:3: with seatDependencies.Home defaulted to HomeStateRoot, a test that builds seat readers through defaultSeatDependencies with an empty WorkStateRoot reads the host unit store (read-only, or the run-scoped registry home when the test binary sets it); give such tests a temporary root."
 - OpenedAt: 2026-10-24T04:45:40Z
 - FirstClaimAt: 2026-10-29T12:25:35Z
-- Revision: 75
+- Revision: 76
 - Budget: elapsedLimit=14d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 3
 - NormApproval: approvedRef=0RYSC5N980WMHMN5CRBHNT3TZK-ui-dfad20b6 minutes=2400 reviewRounds=20 goalRevision=73
@@ -111,4 +111,5 @@ History:
 - 2026-11-02T08:19:15Z VZ5FQ60DD0XMG6AKKEW8HRBJC3-ui-71c5cb39 edit actor=ui+steward-seat targets=a-round-survives-a-restart
 - 2026-11-02T12:32:52Z 0RYSC5N980WMHMN5CRBHNT3TZK-ui-dfad20b6 set-budget actor=human:Wido targets=a-round-survives-a-restart displaced=ui+steward-seat@2026-11-01T05:47:18Z
 - 2026-11-02T13:24:40Z 9KDREP9H29TQYZ6C7ZP0WVNYSS-ui-71c5cb39 edit actor=ui+steward-seat targets=a-round-survives-a-restart
-Integrity: sha256=b4769fc0480226c84aa2ffd3bc0cb9b3d2633e475ef50f8addfa5f24c7750266
+- 2026-11-02T15:21:37Z 4Y484X3TQ9NBV5Y7QRVKBEKF4A-ui-71c5cb39 landed actor=ui+steward-seat targets=a-round-survives-a-restart reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 2006.0 min: hand-in to merge 2006.6, cheap gate not run, fix round 1872.0, push unknown
+Integrity: sha256=0edc4652db836be05f57f3d463c44f1754fa88e01bff83fd771d42e8451e6105
