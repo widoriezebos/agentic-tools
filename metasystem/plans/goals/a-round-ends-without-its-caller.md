@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 then U2 (--last) from the accepted page plans/designs/a-round-ends-without-its-caller.md with its FINAL brief; work review between parts; one hand-in.
 - OpenedAt: 2026-11-02T08:22:04Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=8 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=8
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-02T08:22:15Z revision=2 opid=NFQQA3RRE3E1FTHWZDSV3F6K7F-m1e-f644c013 authority=proven digest=0e96cad4bf882f949a4ca86ebb5697b9ff22af1a8bd078af008fdf9997da0885 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-02T08:22:04Z 7MQEC6W6A5SJMM6ZX6BX3C3F3M-m1e-f644c013 open actor=human:Wido targets=a-round-ends-without-its-caller reason=TierOverride: derived=3 set=2 why=every unit round on every machine; tier 2 by the steward reading of severity 3 exposure 3
 - 2026-11-02T08:22:15Z NFQQA3RRE3E1FTHWZDSV3F6K7F-m1e-f644c013 approve actor=human:Wido targets=a-round-ends-without-its-caller
-Integrity: sha256=8e7694c5bfc8eb8ce9e4705a8c019c744eb87801f0a33f5251625a0a0eb26f6a
+- 2026-11-02T08:22:25Z DAQVPG5EHQYX2T9XA3TEFFASPG-m1e-f644c013 set-pin actor=human:Wido targets=a-round-ends-without-its-caller
+Integrity: sha256=67cae645b9b484213aa8f2856919bb1f82681937bdd4162277eced1771f99b82
