@@ -117,7 +117,7 @@ exit 0
         {
           "Name": "authority",
           "Summary": [
-            "0 live grants; newest ruling none; 0 answered lines"
+            "0 live grants; newest ruling none; 0 answered lines; 0 decisions"
           ],
           "Detail": null,
           "Unavailable": "authority: grants: the bootstrap ledger has no claims"
@@ -266,6 +266,7 @@ exit 0
       },
       "Grants": null,
       "Answered": null,
+      "Decisions": null,
       "Rulings": null,
       "Alerts": {},
       "RedLine": ""

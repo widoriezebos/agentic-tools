@@ -9,6 +9,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -76,6 +77,28 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--acts everything covers every tier and takes no --tiers; nothing was done",
 			next: withoutOption(retry, "tiers")})
 	}
+	var classes []string
+	if inv.input.has("classes") {
+		next := append(withoutOption(retry, "classes"), "--classes", "ordering")
+		if strings.TrimSpace(inv.input.text("classes")) == "" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--classes names at least one class; nothing was done",
+				next: next, nextReason: "an example; choose the classes of act you mean"})
+		}
+		var err error
+		classes, err = goal.ParseAttorneyClasses(inv.input.text("classes"))
+		if err != nil {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: err.Error() + "; nothing was done",
+				next: next, nextReason: "an example; choose the classes of act you mean"})
+		}
+	}
+	lineage := ""
+	if inv.input.has("lineage") {
+		if inv.input.text("lineage") != "seat" {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "--lineage takes seat: the steward's seat sessions; nothing was done",
+				next: append(withoutOption(retry, "lineage"), "--lineage", "seat")})
+		}
+		lineage = launch.SeatOwnerLineage
+	}
 	if problem := inv.selectRoot(); problem != nil {
 		return inv.render(*problem)
 	}
@@ -94,6 +117,7 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 	if problem != nil {
 		return inv.render(*problem)
 	}
+	actor = withoutOption(actor, "lineage")
 	if proof == nil || proof.Helm != nil || !proof.EnrolledTerminalFor(inv.stateRoot) {
 		cause := humanauthority.Refused(humanauthority.OutcomeTerminalMissing, nil)
 		if proof != nil {
@@ -113,21 +137,24 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "this checkout's path can't be resolved, so nothing was done",
 			next: retry, nextReason: "try again", Details: []string{err.Error()}})
 	}
-	holder, err := owners.holder(checkout)
-	if err != nil || holder.MainId == "" || holder.OwnerLineage == "" {
-		refusal := intentResult{Outcome: intentRefused, code: 2, Summary: "no session holds this checkout's lease, so there is no one to grant to; nothing was done",
-			Decision: "start the agent session in this checkout, then run " + shellCommand(retry) + " again"}
-		if err != nil {
-			refusal.Details = []string{err.Error()}
+	if lineage == "" {
+		holder, err := owners.holder(checkout)
+		if err != nil || holder.MainId == "" || holder.OwnerLineage == "" {
+			refusal := intentResult{Outcome: intentRefused, code: 2, Summary: "no session holds this checkout's lease, so there is no one to grant to; nothing was done",
+				Decision: "start the agent session in this checkout, then run " + shellCommand(retry) + " again"}
+			if err != nil {
+				refusal.Details = []string{err.Error()}
+			}
+			return inv.render(refusal)
 		}
-		return inv.render(refusal)
+		lineage = holder.OwnerLineage
 	}
 	machine, err := inv.owners.dependencies.machine(inv.stateRoot)
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentRefused, code: 2, Summary: "this machine's name can't be read, so nothing was done",
 			Decision: "metasystem machine list shows this machine's name; then run " + shellCommand(retry) + " again", Details: []string{err.Error()}})
 	}
-	grant := goal.GeneralGrant{Machine: machine, Checkout: checkout, Lineage: holder.OwnerLineage, Until: end}
+	grant := goal.GeneralGrant{Machine: machine, Checkout: checkout, Lineage: lineage, Classes: classes, Until: end}
 	args := append([]string{"--root", inv.stateRoot}, actor...)
 	report := &ownerReport{}
 	dependencies := inv.owners.dependencies
@@ -135,9 +162,20 @@ func runIntentGrantEverything(inv *intentInvocation) int {
 	code := runGoalGrantGeneralWithInputs(args, grant, inv.owners.prove, inv.owners.commandNow, dependencies)
 	local := end.In(zone).Format("15:04 MST (2006-01-02)")
 	by := strings.TrimPrefix(actorValue(actor, "--by"), "human:")
+	session, scope := "the main session", ""
+	if inv.input.has("lineage") {
+		session = "every steward-started main session"
+	}
+	if len(classes) != 0 {
+		scope = " in " + strings.Join(classes, " and ")
+	}
+	data := map[string]any{"grant": report.entry, "acts": []string{goal.GeneralAct}, "for": machine, "checkout": checkout, "lineage": lineage, "until": end.UTC().Format(time.RFC3339)}
+	if len(classes) != 0 {
+		data["classes"] = classes
+	}
 	result := ownerResult(report, code, intentResult{
-		Summary: fmt.Sprintf("granted %s: the main session of %s on %s acts for %s until %s", report.entry, checkout, machine, by, local),
-		Data:    map[string]any{"grant": report.entry, "acts": []string{goal.GeneralAct}, "for": machine, "checkout": checkout, "lineage": holder.OwnerLineage, "until": end.UTC().Format(time.RFC3339)}})
+		Summary: fmt.Sprintf("granted %s: %s of %s on %s acts for %s%s until %s", report.entry, session, checkout, machine, by, scope, local),
+		Data:    data})
 	if report.entry != "" {
 		result.Targets = []intentTarget{{Kind: "grant", ID: report.entry}}
 	}
@@ -215,15 +253,26 @@ func (inv *intentInvocation) attorneyStatusLine(paths ...string) string {
 // attorneyLine is a live general grant as --json's status carries it.
 func attorneyLine(entry goal.PowerOfAttorneyEntry, zone *time.Location) string {
 	until, _ := time.Parse(time.RFC3339, entry.Until)
-	return fmt.Sprintf("POWER OF ATTORNEY: %s acts for %s until %s (grant %s) — metasystem grant revoke %s ends it",
-		entry.For, strings.TrimPrefix(entry.By, "human:"), until.In(zone).Format("15:04 MST (2006-01-02)"), entry.ID, entry.ID)
+	scope := ""
+	if len(entry.Classes) != 0 {
+		scope = " in " + attorneyActs(entry)
+	}
+	return fmt.Sprintf("POWER OF ATTORNEY: %s acts for %s%s until %s (grant %s) — metasystem grant revoke %s ends it",
+		entry.For, strings.TrimPrefix(entry.By, "human:"), scope, until.In(zone).Format("15:04 MST (2006-01-02)"), entry.ID, entry.ID)
+}
+
+func attorneyActs(entry goal.PowerOfAttorneyEntry) string {
+	if len(entry.Classes) != 0 {
+		return strings.Join(entry.Classes, ", ")
+	}
+	return goal.GeneralAct
 }
 
 // grantAttention is a live general grant in the banner: informational,
 // since it widens what the seat may do rather than asking anything.
 func grantAttention(entry goal.PowerOfAttorneyEntry, env textui.Env) textui.Attention {
 	until, _ := time.Parse(time.RFC3339, entry.Until)
-	return textui.Attention{State: textui.Live, Text: fmt.Sprintf("%s's grant is live: everything, %s", strings.TrimPrefix(entry.By, "human:"), env.Until(until)),
+	return textui.Attention{State: textui.Live, Text: fmt.Sprintf("%s's grant is live: %s, %s", strings.TrimPrefix(entry.By, "human:"), attorneyActs(entry), env.Until(until)),
 		Detail: []string{"for the main session of " + entry.For + " · grant " + entry.ID}}
 }
 

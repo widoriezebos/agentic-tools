@@ -263,9 +263,9 @@ func TestCompleteOffersEachCommandsOwnFlags(t *testing.T) {
 	for _, command := range publicIntentCommands() {
 		got := completedWords(completeLines(t, owners, append(command.words(), "--")...))
 		var want []string
-		declared := false
+		visibleLineage := false
 		for _, definition := range command.helpFlags() {
-			declared = declared || definition.name == "lineage"
+			visibleLineage = visibleLineage || definition.name == "lineage" && !definition.hidden
 			if !definition.hidden {
 				want = append(want, "--"+definition.name)
 			}
@@ -276,8 +276,11 @@ func TestCompleteOffersEachCommandsOwnFlags(t *testing.T) {
 		if slices.Contains(got, "--fixture-human-authority") {
 			t.Errorf("%s offers the hidden --fixture-human-authority", command.name)
 		}
-		if shown := slices.Contains(got, "--lineage"); shown != (declared && (command.audience == "agent" || command.audience == "both")) {
-			t.Errorf("%s: --lineage offered %v, declared %v, audience %s", command.name, shown, declared, command.audience)
+		if shown := slices.Contains(got, "--lineage"); shown != visibleLineage {
+			t.Errorf("%s: --lineage offered %v, declared visible %v", command.name, shown, visibleLineage)
+		}
+		if command.name == "grant add" && !visibleLineage {
+			t.Error("grant add must show --lineage for --lineage seat (plans/designs/the-steward-sees-and-acts.md, D2)")
 		}
 		if command.passthrough != nil {
 			continue

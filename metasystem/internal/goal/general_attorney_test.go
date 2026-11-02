@@ -1,6 +1,8 @@
 package goal
 
 import (
+	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -207,4 +209,86 @@ func TestAnActUnderAGrantRechecksItAtTheEffect(t *testing.T) {
 	expectRefusal(t, "revoked at the effect", res, err, "revoked")
 	res, err = open(endpoint.WithAttorneyEffect("01M-unknown", func() (time.Time, error) { return clock, nil }), 54, "unknown-grant")
 	expectRefusal(t, "unknown grant", res, err, "not recorded")
+}
+
+func TestAGeneralGrantNamesItsClasses(t *testing.T) {
+	t.Parallel()
+	end, human, proof := generalGrantBed(t)
+	entry := generalEntry(human.Now, human.Now.Add(24*time.Hour).Truncate(time.Minute))
+	old := renderAttorneyEntry(entry)
+	entry.Classes = []string{"acks", "ordering"}
+	line := renderAttorneyEntry(entry)
+	parsed, err := parseAttorneyEntry(strings.TrimPrefix(line, "- "))
+	if err != nil || !reflect.DeepEqual(parsed, entry) || !strings.Contains(line, "lineage=lin-main classes=acks,ordering since=") {
+		t.Fatalf("class round trip: %q %+v %v", line, parsed, err)
+	}
+	parsed, err = parseAttorneyEntry(strings.TrimPrefix(old, "- "))
+	if err != nil || len(parsed.Classes) != 0 || renderAttorneyEntry(parsed) != old {
+		t.Fatalf("old entry changed: %+v %v", parsed, err)
+	}
+	parsed, err = parseAttorneyEntry(strings.Replace(strings.TrimPrefix(line, "- "), "acks,ordering", "ordering,acks,ordering", 1))
+	if err != nil || !slices.Equal(parsed.Classes, entry.Classes) {
+		t.Fatalf("normalization: %+v %v", parsed, err)
+	}
+	if got, err := ParseAttorneyClasses(" ordering, acks, ordering "); err != nil || !slices.Equal(got, entry.Classes) {
+		t.Fatalf("trim classes: %v %v", got, err)
+	}
+	root := &RootRecord{Identity: "01ARZ3NDEKTSV4RRFFQ69G5FAV", FormatVersion: "1", SyncMode: SyncLocal, Revision: 1, PowerOfAttorney: []PowerOfAttorneyEntry{entry}}
+	for _, bad := range []string{"", "values", "acks,,ordering"} {
+		data := strings.Replace(string(RenderRoot(root)), "classes=acks,ordering", "classes="+bad, 1)
+		if _, problems := ParseRoot([]byte(data)); len(problems) == 0 {
+			t.Errorf("classes=%s is not a root problem", bad)
+		}
+	}
+	scoped := entry
+	scoped.Verbs, scoped.Tiers, scoped.Expires = []string{"approve"}, []uint8{1}, "2026-09-30"
+	if _, err := parseAttorneyEntry(strings.TrimPrefix(renderAttorneyEntry(scoped), "- ") + " classes=acks"); err == nil {
+		t.Fatal("scoped classes parsed")
+	}
+	if ok, _ := scoped.WithinBounds(); ok {
+		t.Fatal("scoped classes within bounds")
+	}
+	for _, bad := range [][]string{{"values"}, {"ordering", "acks"}, {"acks", "acks"}} {
+		entry.Classes = bad
+		if ok, why := entry.WithinBounds(); ok || bad[0] == "values" && !strings.Contains(why, "class values is not one of acks, mechanical, ordering, recovery, stale-releases") {
+			t.Errorf("bounds %v: %v %s", bad, ok, why)
+		}
+		if live, _ := entry.LiveAt(human.Now); live {
+			t.Errorf("invalid classes %v live", bad)
+		}
+	}
+	g := GeneralGrant{Machine: "mac-a", Checkout: "/seat/checkout", Lineage: "lin-main", Until: human.Now.Add(24 * time.Hour).Truncate(time.Minute), Classes: []string{"acks", "ordering"}}
+	result, err := GrantGeneral(human, proof, g)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("class grant: %+v %v", result, err)
+	}
+	tree, err := loadTreeFor(end, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorded, _ := rootAttorney(tree.Root, human.opid())
+	if !slices.Equal(recorded.Classes, g.Classes) || !strings.Contains(tree.Root.History[len(tree.Root.History)-1].Reason, "classes=acks,ordering") {
+		t.Fatalf("recorded classes: %+v", tree.Root)
+	}
+	journal, err := ReadEntry(end.Root, human.opid())
+	if err != nil || journal.Intent.Args["classes"] != "acks,ordering" {
+		t.Fatalf("grant intent: %+v %v", journal, err)
+	}
+	if result, err := GrantGeneral(withUlid(human, 41), proof, g); err != nil || result.Outcome == OutcomeConfirmed {
+		t.Fatalf("repeat: %+v %v", result, err)
+	}
+	g.Classes = []string{"ordering"}
+	result, err = GrantGeneral(withUlid(human, 42), proof, g)
+	if err != nil || result.Outcome != OutcomeConfirmed {
+		t.Fatalf("changed classes: %+v %v", result, err)
+	}
+	tree, err = loadTreeFor(end, result.Tip)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _ := rootAttorney(tree.Root, human.opid())
+	second, _ := rootAttorney(tree.Root, withUlid(human, 42).opid())
+	if first.Revoked == "" || first.RevokedBy != "human:Wido" || !slices.Equal(second.Classes, g.Classes) {
+		t.Fatalf("replacement: %+v", tree.Root.PowerOfAttorney)
+	}
 }

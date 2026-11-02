@@ -96,7 +96,8 @@ const (
 	// test run child; the owner's launches go when unit D deletes the owner.
 	// engineActRunner (internal/channel/poll.go): the channel answer runs the
 	// chosen act as an engine self-subprocess (the-answer-is-the-act U1).
-	verbRatchetSelfSubprocessCeiling = 103
+	// A decision record runs its act through the engine and reads its envelope.
+	verbRatchetSelfSubprocessCeiling = 104
 	// R6: instruction text naming a form whose first word is not public, over
 	// the vocabulary frozen when the witness landed. Batch 9 (u9a's public
 	// homes, c3's plan deletions, distill's record removal): measured 12.

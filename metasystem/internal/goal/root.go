@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -62,6 +63,8 @@ type PowerOfAttorneyEntry struct {
 	Checkout string // the canonical absolute path of that checkout
 	Lineage  string // the lease holder's lineage at the grant
 	Until    string // RFC3339 UTC, exclusive
+	// Classes optionally narrows a general entry to sorted, unique classes of act.
+	Classes []string
 }
 
 // GeneralAct is the one act of a general power of attorney: every act a
@@ -80,6 +83,23 @@ func (e PowerOfAttorneyEntry) General() bool {
 // AttorneyVerbs are the verbs a delegation may cover in this build.
 var AttorneyVerbs = []string{"approve", "set-budget", "unpark"}
 
+// AttorneyClasses are the classes a general grant may name.
+var AttorneyClasses = []string{"acks", "mechanical", "ordering", "recovery", "stale-releases"}
+
+// ParseAttorneyClasses reads a comma list, trimming, deduplicating and sorting it.
+func ParseAttorneyClasses(value string) ([]string, error) {
+	var classes []string
+	for _, part := range strings.Split(value, ",") {
+		part = strings.TrimSpace(part)
+		if !slices.Contains(AttorneyClasses, part) {
+			return nil, fmt.Errorf("class %s is not one of %s", part, strings.Join(AttorneyClasses, ", "))
+		}
+		classes = append(classes, part)
+	}
+	slices.Sort(classes)
+	return slices.Compact(classes), nil
+}
+
 // AttorneyMaxDays bounds an entry's life: expires is at most this many days
 // after since (R-95-m1e: no entry lives longer than seven days).
 const AttorneyMaxDays = 7
@@ -97,6 +117,9 @@ func (e PowerOfAttorneyEntry) Covers(verb string, tier uint8) bool {
 func (e PowerOfAttorneyEntry) WithinBounds() (bool, string) {
 	if e.General() {
 		return e.generalWithinBounds()
+	}
+	if len(e.Classes) != 0 {
+		return false, "classes belong to a general entry only"
 	}
 	for _, tier := range e.Tiers {
 		if tier != 1 && tier != 2 {
@@ -157,6 +180,14 @@ func (e PowerOfAttorneyEntry) LiveAt(now time.Time) (bool, string) {
 // until, at most one week apart, until on a whole minute, an absolute
 // checkout and a named machine and lineage.
 func (e PowerOfAttorneyEntry) generalWithinBounds() (bool, string) {
+	for i, class := range e.Classes {
+		if !slices.Contains(AttorneyClasses, class) {
+			return false, fmt.Sprintf("class %s is not one of %s", class, strings.Join(AttorneyClasses, ", "))
+		}
+		if i > 0 && e.Classes[i-1] >= class {
+			return false, "classes must be sorted and unique"
+		}
+	}
 	if len(e.Tiers) != 0 || e.Expires != "" {
 		return false, "a general entry names no tiers and no expiry day"
 	}
@@ -259,7 +290,7 @@ func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 		return PowerOfAttorneyEntry{}, errors.New("a grant line isn't in either recorded form (named acts with tiers, or everything for a machine)")
 	}
 	rec, err := parseKVRecord(strings.Join(fields[1:], " "), []string{"by", "verbs", "since"},
-		[]string{"tiers", "expires", "for", "checkout", "lineage", "until", "revoked", "revokedBy"}, "")
+		[]string{"tiers", "expires", "for", "checkout", "lineage", "classes", "until", "revoked", "revokedBy"}, "")
 	if err != nil {
 		return PowerOfAttorneyEntry{}, err
 	}
@@ -281,6 +312,12 @@ func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 		}
 	}
 	if entry.General() {
+		if value, present := rec["classes"]; present {
+			entry.Classes, err = ParseAttorneyClasses(value)
+			if err != nil {
+				return PowerOfAttorneyEntry{}, err
+			}
+		}
 		for _, key := range []string{"for", "checkout", "lineage", "until"} {
 			if rec[key] == "" {
 				return PowerOfAttorneyEntry{}, fmt.Errorf("a general entry requires %s=", key)
@@ -294,7 +331,7 @@ func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 		}
 		return entry, nil
 	}
-	for _, key := range []string{"for", "checkout", "lineage", "until"} {
+	for _, key := range []string{"for", "checkout", "lineage", "classes", "until"} {
 		if _, present := rec[key]; present {
 			return PowerOfAttorneyEntry{}, fmt.Errorf("%s= belongs to a general entry only", key)
 		}
@@ -315,7 +352,11 @@ func parseAttorneyEntry(value string) (PowerOfAttorneyEntry, error) {
 
 func renderAttorneyEntry(e PowerOfAttorneyEntry) string {
 	if e.General() {
-		line := fmt.Sprintf("- %s by=%s verbs=%s for=%s checkout=%s lineage=%s since=%s until=%s", e.ID, e.By, GeneralAct, e.For, e.Checkout, e.Lineage, e.Since, e.Until)
+		line := fmt.Sprintf("- %s by=%s verbs=%s for=%s checkout=%s lineage=%s", e.ID, e.By, GeneralAct, e.For, e.Checkout, e.Lineage)
+		if len(e.Classes) != 0 {
+			line += " classes=" + strings.Join(e.Classes, ",")
+		}
+		line += " since=" + e.Since + " until=" + e.Until
 		if e.Revoked != "" {
 			line += " revoked=" + e.Revoked + " revokedBy=" + e.RevokedBy
 		}

@@ -233,6 +233,7 @@ func intentDeliveryCommands() []intentCommand {
 type intentProcess struct {
 	argv []string
 	dir  string
+	env  []string
 }
 
 type intentProcessResult struct {
@@ -414,6 +415,9 @@ func inProcessCloseOwner(root string, args []string) intentProcessResult {
 func runIntentOwnerEnvelope(process intentProcess, verb string) (verbresult.Result, error) {
 	command := exec.Command(process.argv[0], process.argv[1:]...)
 	command.Dir = process.dir
+	if len(process.env) != 0 {
+		command.Env = append(os.Environ(), process.env...)
+	}
 	command.Stdin = nil
 	return verbresult.Run(command, verb)
 }

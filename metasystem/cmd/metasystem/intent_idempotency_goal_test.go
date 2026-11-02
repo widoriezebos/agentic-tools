@@ -123,6 +123,7 @@ func init() {
 	read("goal status", "shows the goal's recorded process cost")
 	read("decision list", "lists the recorded decisions")
 	read("decision show", "shows one record")
+	registerIdempotency("decision record", idemCreation, "each call records one decision and the outcome its act had at that call; a repeated act answers unchanged from its own owner, and the second line records that", nil)
 	read("grant list", "lists the powers of attorney")
 
 	stateful("goal scope", "a unit whose excluded scope is already restored succeeds without another record",
@@ -208,7 +209,7 @@ func init() {
 	stateful("goal sync", "a clean journal or an agreeing ledger is success with nothing to do; the preview is a read",
 		goalRepeatWitness(nil, nil, "nothing was recovered",
 			"goal", "sync", "--recover"))
-	stateful("grant add", "the same live power of attorney from the same person is success with no second entry",
+	stateful("grant add", "the same live power of attorney from the same person is success with no second entry; the same classes again hold; other classes replace the grant",
 		goalRepeatWitness(nil, nil, "already grants exactly this",
 			"grant", "add", "--tiers", "1", "--acts", "approve", "--until", "2026-09-05"))
 	stateful("grant revoke", "a revoked power of attorney revoked again is success with no record",

@@ -20,7 +20,7 @@ var publicPairs = []string{
 	"goal claim", "goal release", "goal accept-risk", "goal pin", "goal prioritize", "goal reopen", "goal abandon", "goal review", "goal land-without-sitting", "goal block",
 	"goal unblock", "goal unapprove", "goal split", "goal group", "goal ungroup", "goal notes", "goal sync", "goal allow", "goal disallow", "goal scope",
 	"grant add", "grant revoke", "grant list",
-	"decision list", "decision show",
+	"decision list", "decision show", "decision record",
 	"design write", "design show", "design list", "design check", "design review", "design stop",
 	"work brief", "work commit", "work revert", "work build", "work wait", "work review", "work revise", "work land", "work finish", "work rebase", "work status", "work stop", "work workspace",
 	"test run", "test impact", "test groups", "test wait", "test declare-moves", "test plan", "test add", "test remove", "test baseline", "test list", "test status",

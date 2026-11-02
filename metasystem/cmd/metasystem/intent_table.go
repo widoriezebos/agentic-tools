@@ -214,6 +214,23 @@ func designIntentCommands() []intentCommand {
 			},
 		},
 		{
+			object: "decision", action: "record", audience: "both", summary: "record a decision with the act's outcome and effect",
+			usage:   []string{"metasystem decision record --class C --text TEXT --rejected TEXT --undo TEXT [--context TEXT] -- VERB ARGS…"},
+			maxArgs: -1,
+			flags: withFlags([]intentFlag{
+				{name: "class", value: "C", usage: "the decision's class"}, {name: "text", value: "TEXT", usage: "the decision"},
+				{name: "rejected", value: "TEXT", usage: "the rejected alternative"}, {name: "undo", value: "TEXT", usage: "how to undo the act"},
+				{name: "context", value: "TEXT", usage: "the decision's context"},
+				{name: "overrules", value: "ID", usage: "show a decision's impact, then record your overrule"},
+				{name: "row", value: "ROW", usage: "the situation row"}, {name: "subject", value: "SUBJECT", usage: "the row's subject"},
+				{name: "occurrence", value: "OCCURRENCE", usage: "the occurrence being addressed"}, {name: "dispose", value: "KIND", usage: "act, wait or ask"},
+				{name: "trigger", value: "TEXT", usage: "what ends the wait"}, {name: "until", value: "TIME", usage: "when the wait ends, within 24 hours"},
+			}, intentHumanActFlags),
+			examples: []string{"metasystem decision record --class ordering --text 'G goes first' --rejected 'leave G at 2' --undo 'metasystem goal prioritize G 2' -- goal prioritize G 3"},
+			details:  []string{"The act runs as its own command; its outcome and effect are recorded whatever they are. The record's own options go before --."},
+			run:      runIntentDecisionRecord,
+		},
+		{
 			object: "decision", action: "list", audience: "both", summary: "the project's recorded decisions",
 			usage:    []string{"metasystem decision list"},
 			maxArgs:  0,

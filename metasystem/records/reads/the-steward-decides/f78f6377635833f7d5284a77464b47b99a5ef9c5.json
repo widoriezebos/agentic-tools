@@ -1,0 +1,95 @@
+{
+  "canonicalRead": {
+    "id": "20261101t133625-8715326d96-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-steward-decides",
+      "reviewedProjectTree": "ab9d65969477eefed78eb93d58d8b40b2889c03bafef01a22922f76c3b000748",
+      "diffDigest": "ab9d65969477eefed78eb93d58d8b40b2889c03bafef01a22922f76c3b000748"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261101t133625-8715326d96-r1-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "decision show of a log line prints each fact as its own spaced block, keys unaligned, empty grant and context as bare keys",
+        "evidence": "decisionLogView calls page.Facts once per fact inside the loop; textui Section.spaced is true, so Page.Lines puts a blank line between blocks. A temporary probe through runLayoutCase printed: Decision first: confirmed / blank / by Wido / blank / grant / blank / class values ... Every value shows, so the read works and is safe",
+        "where": "metasystem/cmd/metasystem/intent_operations.go",
+        "change": "collect the KV rows, skip empty values, call page.Facts(rows...) once, as the project-record view does",
+        "relation": "one facts block per record view, as the project-record show in the same function"
+      },
+      {
+        "id": "20261101t133625-8715326d96-r1-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "decision list --goal G lists every host log line under a summary that says for goal G",
+        "evidence": "the log section is added whenever len(log) \u003e 0, regardless of goalID; the brief asks for no filter",
+        "where": "metasystem/cmd/metasystem/intent_operations.go",
+        "change": "under --goal, leave the log section out, or say in its aside that it covers the whole host",
+        "relation": "a list's sections answer the filter its summary names"
+      },
+      {
+        "id": "20261101t133625-8715326d96-r1-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "an unreadable decision log is silent in text mode without --verbose",
+        "evidence": "render prints result.Details only when verbose; this matches the brief's adds one detail and the system's summary/detail convention, and JSON always carries it",
+        "where": "metasystem/cmd/metasystem/intent.go",
+        "change": "none required; noted so U2b2a's situation read does not count on a person seeing it",
+        "relation": "details print only under --verbose in text mode"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261101t133625-8715326d96-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "6f4ad5c31640e25ad6ed7d3fe0657dd5c489faa48b0ca065ef42d1b1a86f64b5",
+  "schemaVersion": 1,
+  "goal": "the-steward-decides",
+  "unit": "U2b1a",
+  "subject": {
+    "commit": "f78f6377635833f7d5284a77464b47b99a5ef9c5",
+    "parent": "a2f51e973522330eaeabb183b89f556c54af175a",
+    "tree": "4ef814e4a302f9c6d8f59880988b4b7967bab34b",
+    "patchDigest": "ab9d65969477eefed78eb93d58d8b40b2889c03bafef01a22922f76c3b000748",
+    "unitDigest": "64535248cdfca2f69da52d9a85810784b935d38b0ee67d1e68cbfa58d0c905e7"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261101t133625-8715326d96-r1-s3",
+    "closureSha256": "f63bf1997c4b201f890e9781e9cca275f7a1fb947a79acb4684a4b0850a6fd29"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "4ef814e4a302f9c6d8f59880988b4b7967bab34b",
+    "runId": "goal-read-gate-20261101t162408z-5d00ef0a9a14d1c2"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "f39c234363e49ffaa60f38b53213ff1fc2a79538",
+      "digest": "f5c4f123d2197eb31cf7c12bd5d492e858a2e70be4081347fd9e05632d2398e7"
+    },
+    {
+      "kind": "read",
+      "commit": "a2f51e973522330eaeabb183b89f556c54af175a",
+      "digest": "5af43a57ce1ca13345ad585fa322c63b21a40a7e35581292246c2246801a46c9"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/audit_output_layout_g5_test.go",
+      "readerWord": "reviewed by unit read 20261101t133625-8715326d96-r1-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/public_errors_test.go",
+      "readerWord": "reviewed by unit read 20261101t133625-8715326d96-r1-s3"
+    }
+  ],
+  "sha256": "91dc2a482b5fdb5d8ba57c4da9097230e58a410495a32419a0daf0ef009a38a1"
+}

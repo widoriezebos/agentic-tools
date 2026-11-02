@@ -12,9 +12,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/missionrunner"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -636,15 +638,41 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 	if err != nil {
 		return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the project's records cannot be read: " + err.Error(), next: inv.publicArgv("system", "check"), nextReason: "diagnose the record homes"})
 	}
+	var log []humanauthority.Decision
+	var details []string
+	if kind == "decisions" || kind == "record" {
+		home := inv.owners.decisions.home
+		if home == nil {
+			home = board.Home
+		}
+		var bad int
+		dir, homeErr := home()
+		err = homeErr
+		if err == nil {
+			log, bad, err = humanauthority.ReadDecisions(dir)
+		}
+		if err != nil {
+			details = append(details, "the decision log could not be read: "+err.Error())
+		} else if bad > 0 {
+			details = append(details, fmt.Sprintf("the decision log skipped %d unreadable line(s)", bad))
+		}
+		slices.Reverse(log)
+	}
 	if kind == "record" {
 		record := read.Record(args[0])
 		if record == nil {
-			return inv.render(intentResult{Outcome: intentRefused, code: 1, Targets: []intentTarget{{Kind: "record", ID: args[0]}},
+			for _, d := range log {
+				if d.ID == args[0] {
+					return inv.render(intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "decision", ID: d.ID}}, Details: details,
+						Summary: "Decision " + d.ID + ": " + d.Outcome, Data: map[string]any{"decision": d}, view: decisionLogView(d)})
+				}
+			}
+			return inv.render(intentResult{Outcome: intentRefused, code: 1, Details: details, Targets: []intentTarget{{Kind: "record", ID: args[0]}},
 				Summary: fmt.Sprintf("the project has no record %s; nothing was read", shellCommand(args[:1])), next: inv.publicArgv("decision", "list"), nextReason: "lists the decision records with their ids"})
 		}
 		referencedBy := read.ReferencedBy(record.ID)
 		shown := *record
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: []intentTarget{{Kind: "record", ID: record.ID}},
+		return inv.render(intentResult{Outcome: intentConfirmed, Details: details, Targets: []intentTarget{{Kind: "record", ID: record.ID}},
 			Summary: fmt.Sprintf("%s %s (%s): %s", record.Kind, record.ID, record.Status, record.Title),
 			text:    []string{"path: " + record.Path, "goals: " + strings.Join(record.Goals, ", ")},
 			Data:    map[string]any{"record": recordView(*record), "referencedBy": referencedBy},
@@ -674,8 +702,19 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 	if goalID != "" {
 		summary += " for goal " + goalID
 	}
-	result := intentResult{Outcome: intentConfirmed, Data: map[string]any{"kind": recordKind, "goal": goalID, "records": views}, text: lines, Summary: summary,
+	result := intentResult{Outcome: intentConfirmed, Details: details, Data: map[string]any{"kind": recordKind, "goal": goalID, "records": views}, text: lines, Summary: summary,
 		view: recordListView(records, string(recordKind), goalID)}
+	if len(log) > 0 {
+		result.Data.(map[string]any)["log"] = log
+		projectView := result.view
+		result.view = func(page *textui.Page) {
+			projectView(page)
+			table := page.Section("Decisions in a person's name", "").Table(textui.Column{}, textui.Column{}, textui.Column{}, textui.Column{}, textui.Column{Flex: true, Wrap: true})
+			for _, d := range log {
+				table.Row(textui.Plain(d.ID), textui.Plain(page.Env().Time(d.At)), textui.Plain(d.Class), textui.Plain(d.Outcome), textui.Plain(d.Words))
+			}
+		}
+	}
 	if kind == "design" && len(records) == 0 {
 		// A goal the ledger does not know is named as unknown, not as a
 		// goal without designs.
@@ -689,6 +728,30 @@ func runIntentShowRecords(inv *intentInvocation, kind string, args []string) int
 		result.Summary = fmt.Sprintf("goal %s has no design record", goalID)
 	}
 	return inv.render(result)
+}
+
+func decisionLogView(d humanauthority.Decision) func(*textui.Page) {
+	return func(page *textui.Page) {
+		page.Headline("Decision " + d.ID + ": " + d.Outcome)
+		var effect struct {
+			Owner   *struct{ Tip, Detail string }
+			Targets []intentTarget
+		}
+		_ = json.Unmarshal(d.Effect, &effect)
+		shown := "none"
+		if effect.Owner != nil {
+			shown = effect.Owner.Tip + ": " + effect.Owner.Detail
+		} else if len(effect.Targets) > 0 {
+			var targets []string
+			for _, target := range effect.Targets {
+				targets = append(targets, target.Kind+" "+target.ID)
+			}
+			shown = strings.Join(targets, ", ")
+		}
+		for _, fact := range [][2]string{{"by", d.By}, {"grant", d.Grant}, {"class", d.Class}, {"decision", d.Text}, {"rejected", d.Rejected}, {"undo", d.Undo}, {"context", d.Context}, {"act", shellCommand(d.Argv)}, {"effect", shown}} {
+			page.Facts(textui.KV{Key: fact[0], Value: []textui.Span{textui.Plain(fact[1])}})
+		}
+	}
 }
 
 // recordListView is a list of project records: the count, then one row per

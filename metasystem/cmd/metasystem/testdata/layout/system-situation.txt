@@ -41,7 +41,7 @@ Engine
   0 seats
 
 Authority
-  0 live grants; newest ruling none; 0 answered lines
+  0 live grants; newest ruling none; 0 answered lines; 0 decisions
   unavailable: authority: grants: the bootstrap ledger has no claims
 
 Alerts

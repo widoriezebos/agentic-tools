@@ -114,6 +114,8 @@ func recordsLayoutBed(t *testing.T) layoutBed {
 	// records are read from one home.
 	root := realpath.Resolve(b.root())
 	owners := b.owners()
+	home := t.TempDir()
+	owners.decisions.home = func() (string, error) { return home, nil }
 	owners.resolver = stateroot.NewResolver(fakeTop(root), noExecutable)
 	return layoutBed{owners: owners, cwd: root, replace: layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e")}
 }

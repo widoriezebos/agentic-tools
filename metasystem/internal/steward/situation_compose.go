@@ -16,6 +16,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -220,6 +221,9 @@ func (s Situation) wake() (lines []string, deadlines []time.Time) {
 	if len(s.Answered) > 0 {
 		add("answered|%x", sha256.Sum256([]byte(s.Answered[len(s.Answered)-1])))
 	}
+	if len(s.Decisions) > 0 {
+		add("decision|%s", s.Decisions[len(s.Decisions)-1].ID)
+	}
 	for role, execution := range s.Executions {
 		add("engine|%s|%d", role, execution.Generation)
 	}
@@ -381,7 +385,24 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 	for _, ruling := range s.Rulings {
 		authority, newest = append(authority, ruling.ID+": "+ruling.Words), ruling.ID
 	}
-	add("authority", []string{"authority"}, []string{fmt.Sprintf("%d live grants; newest ruling %s; %d answered lines", len(s.Grants), newest, len(s.Answered))},
+	for _, d := range s.Decisions {
+		line := fmt.Sprintf("%s %s %s: %s", d.ID, d.Class, d.Outcome, d.Words)
+		if disposition := d.Disposition; disposition != nil {
+			line += fmt.Sprintf("; %s %s %s: %s", disposition.Row, disposition.Subject, disposition.Occurrence, disposition.Kind)
+			if disposition.Kind == humanauthority.DisposeWait {
+				line += " until " + disposition.WaitUntil.In(env.Zone).Format("15:04 MST (2006-01-02)")
+			}
+			if disposition.Kind == humanauthority.DisposeAct {
+				handled := "not handled"
+				if humanauthority.ActHandled(d.Outcome) {
+					handled = "handled"
+				}
+				line += ": " + handled
+			}
+		}
+		authority = append(authority, line)
+	}
+	add("authority", []string{"authority"}, []string{fmt.Sprintf("%d live grants; newest ruling %s; %d answered lines; %d decisions", len(s.Grants), newest, len(s.Answered), len(s.Decisions))},
 		append(authority, s.Answered...))
 	var alerts []string
 	for _, store := range slices.Sorted(maps.Keys(s.Alerts)) {

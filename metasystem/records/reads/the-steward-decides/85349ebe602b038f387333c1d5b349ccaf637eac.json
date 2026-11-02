@@ -1,0 +1,94 @@
+{
+  "canonicalRead": {
+    "id": "20261101t172658-638f6b9f88-r3-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-steward-decides",
+      "reviewedProjectTree": "404cb25010a3b8bb7c5d0d0246e641f12d62491b361caecc88a512c8341fe03c",
+      "diffDigest": "404cb25010a3b8bb7c5d0d0246e641f12d62491b361caecc88a512c8341fe03c"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261101t172658-638f6b9f88-r3-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "A new test diagnostic in TestCompleteOffersEachCommandsOwnFlags cites a design page path and section id (plans/designs/the-steward-sees-and-acts.md, D2).",
+        "evidence": "completion_test.go:283: t.Error(\"grant add must show --lineage for --lineage seat (plans/designs/the-steward-sees-and-acts.md, D2)\"). AGENTS.md:16 keeps provenance out of code. The brief says test diagnostics carry no ruling, design, decision or finding ids. This is the only such diagnostic in the diff.",
+        "where": "metasystem/cmd/metasystem/completion_test.go",
+        "change": "Reword the diagnostic to the behaviour, for example: grant add must offer --lineage: a person binds the grant to the seat with --lineage seat.",
+        "relation": "AGENTS.md:16 provenance stays out of code; brief: test diagnostics carry no design ids"
+      },
+      {
+        "id": "20261101t172658-638f6b9f88-r3-s3:2",
+        "class": "weakened-test",
+        "severity": "low",
+        "material": false,
+        "claim": "The completion test now checks only that --lineage is offered exactly when declared visible. It no longer checks that agent and both rows un-hide it.",
+        "evidence": "completion_test.go:264-281 replaced the rule shown == declared \u0026\u0026 audience in {agent, both} with shown == visibleLineage. If the un-hiding loop at intent.go:141-149 were lost, this test would stay green. The loop is still pinned by the help golden testdata/layout/help-work-land.txt, which carries its un-hidden usage text.",
+        "where": "metasystem/cmd/metasystem/completion_test.go",
+        "change": "None needed for this unit. Optionally also check that every agent or both row that declares --lineage offers it.",
+        "relation": "new"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261101t172658-638f6b9f88-r3-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "e5b38a0b65b33f99f59f591cb451abfd2ae57814290d23c498c68321966aac30",
+  "schemaVersion": 1,
+  "goal": "the-steward-decides",
+  "unit": "U2b1c",
+  "subject": {
+    "commit": "85349ebe602b038f387333c1d5b349ccaf637eac",
+    "parent": "2baf99932b8bfda86b07d6814fa5e61db305ea0f",
+    "tree": "0c7e503e447a747ee8bdd16f6be58af8e7a097ec",
+    "patchDigest": "404cb25010a3b8bb7c5d0d0246e641f12d62491b361caecc88a512c8341fe03c",
+    "unitDigest": "f6037812417d07637d84e263e0252d44fc8096cd65b9cb36cea75e1b2ed30a5b"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261101t172658-638f6b9f88-r3-s3",
+    "closureSha256": "a2c5bf18c35da2153fc2fec2a650d36dc25a4b67f054af3b1079c8164adf11a0"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0c7e503e447a747ee8bdd16f6be58af8e7a097ec",
+    "runId": "goal-read-gate-20261101t210351z-94f53cdeed93014c"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "f39c234363e49ffaa60f38b53213ff1fc2a79538",
+      "digest": "f5c4f123d2197eb31cf7c12bd5d492e858a2e70be4081347fd9e05632d2398e7"
+    },
+    {
+      "kind": "read",
+      "commit": "a2f51e973522330eaeabb183b89f556c54af175a",
+      "digest": "5af43a57ce1ca13345ad585fa322c63b21a40a7e35581292246c2246801a46c9"
+    },
+    {
+      "kind": "read",
+      "commit": "b69c31d815b27e47f7fefddc8dab568af994b891",
+      "digest": "3f9e6b50bb4b8eeda76e8cf995d47a1982076f92bebe9d99620fdb77defb0f41"
+    },
+    {
+      "kind": "read",
+      "commit": "2baf99932b8bfda86b07d6814fa5e61db305ea0f",
+      "digest": "7b45d7050f80e7e81977a2f477d2f0af6d051eb970e0cb16876079074181f963"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/completion_test.go",
+      "readerWord": "reviewed by unit read 20261101t172658-638f6b9f88-r3-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_decision_test.go",
+      "readerWord": "reviewed by unit read 20261101t172658-638f6b9f88-r3-s3"
+    }
+  ],
+  "sha256": "821514b8e4918c55eb5d56a78273f94f14540c34b3a7bcec7664518ef1865e34"
+}
