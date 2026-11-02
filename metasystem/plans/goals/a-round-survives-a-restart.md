@@ -26,14 +26,14 @@ Open read items (fix unit U3-20261031t025009-f32daf2f1a): 2
 - ReadItem: id=U3-20261031t025009-f32daf2f1a-2 read=U3-20261031t025009-f32daf2f1a state=open addedAt=2026-11-01T05:41:22Z changedAt=- material=false closingReference="" text="r4-s3:3: with seatDependencies.Home defaulted to HomeStateRoot, a test that builds seat readers through defaultSeatDependencies with an empty WorkStateRoot reads the host unit store (read-only, or the run-scoped registry home when the test binary sets it); give such tests a temporary root."
 - OpenedAt: 2026-10-24T04:45:40Z
 - FirstClaimAt: 2026-10-29T12:25:35Z
-- Revision: 73
-- Budget: elapsedLimit=9d2h attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 2
-- NormApproval: approvedRef=FZAAARCXYRJMSQS9GX9NP6V2DQ-ui-721459c1 minutes=2400 reviewRounds=20 goalRevision=61
-- Approved: by=human:Wido at=2026-11-01T05:47:18Z revision=62 opid=FZAAARCXYRJMSQS9GX9NP6V2DQ-ui-721459c1 authority=proven digest=7580376a8176caa647f640fcafac082453428f73874f6b183d70eec214a982a1 episode=62
+- Revision: 74
+- Budget: elapsedLimit=14d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 3
+- NormApproval: approvedRef=0RYSC5N980WMHMN5CRBHNT3TZK-ui-dfad20b6 minutes=2400 reviewRounds=20 goalRevision=73
+- Approved: by=human:Wido at=2026-11-02T12:32:52Z revision=74 opid=0RYSC5N980WMHMN5CRBHNT3TZK-ui-dfad20b6 authority=proven digest=2857f32805babc82519d044c91871f30df89960b560ff4cba3b728896d7ccb11 episode=74
 - Sliced: machine=ui lineage=steward-seat revision=31 at=2026-10-29T15:01:36Z
-- Claimed: machine=ui lineage=steward-seat at=2026-11-01T05:47:18Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-round-survives-a-restart: no accepted design declares areas\",\"areas unknown for goal a-live-read-proves-its-subject\",\"areas unknown for goal a-ready-goal-behind-a-claim-is-a-row\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=62 accountingRevision=62 episodeAt=2026-10-29T12:25:35Z episodeRevision=31
-- StopCapability: generation=62 revision=62 machine=ui claimEpoch=11 fenceEpoch=0
+- Claimed: machine=ui lineage=steward-seat at=2026-11-02T12:32:52Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-round-survives-a-restart: no accepted design declares areas\",\"areas unknown for goal a-live-read-proves-its-subject\",\"areas unknown for goal a-ready-goal-behind-a-claim-is-a-row\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\"]" revision=74 accountingRevision=74 episodeAt=2026-10-29T12:25:35Z episodeRevision=31
+- StopCapability: generation=74 revision=74 machine=ui claimEpoch=11 fenceEpoch=0
 
 History:
 - 2026-10-24T04:45:40Z S93F9C1YC78TR7RCW73V0WR8T4-m1e-e91103bc open actor=human:Wido targets=a-round-survives-a-restart
@@ -109,4 +109,5 @@ History:
 - 2026-11-02T08:17:03Z MMDABGGMC16DD9NE9RD9ZAKZPF-ui-71c5cb39 ask actor=ui+steward-seat targets=a-round-survives-a-restart
 - 2026-11-02T08:18:47Z V3YPBSQ2FVQYY103KVCZYE980Z-ui-71c5cb39 rebase actor=ui+steward-seat targets=a-round-survives-a-restart reason=rebased 08d04ac57631 onto main 5b62d46e51c2; needs review: U1, U1b, U2, U3
 - 2026-11-02T08:19:15Z VZ5FQ60DD0XMG6AKKEW8HRBJC3-ui-71c5cb39 edit actor=ui+steward-seat targets=a-round-survives-a-restart
-Integrity: sha256=c2f04625379ebd57b6080df52bcd7b1e226f387c8d655ecfe98bb266ab097aa5
+- 2026-11-02T12:32:52Z 0RYSC5N980WMHMN5CRBHNT3TZK-ui-dfad20b6 set-budget actor=human:Wido targets=a-round-survives-a-restart displaced=ui+steward-seat@2026-11-01T05:47:18Z
+Integrity: sha256=4c8d4b417bad9622c158734a290c93bc0ef879321b4377a3896c290dbebfdbbf
