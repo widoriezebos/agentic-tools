@@ -1,0 +1,16 @@
+{
+  "provider": "telegram",
+  "destination": "fleet",
+  "messageId": "1405",
+  "updateId": "896422426",
+  "replyTo": "1404",
+  "userId": "1365582",
+  "sentAt": "2026-11-02T19:19:30Z",
+  "text": "Yes",
+  "step": 1793647170,
+  "outcome": "verified",
+  "question": "unmatched",
+  "opid": "9PY2XW9VZP9E462DRZSEYMCQMZ-ui-71c5cb39",
+  "receivedBy": "ui",
+  "receivedAt": "2026-11-02T19:19:41Z"
+}
