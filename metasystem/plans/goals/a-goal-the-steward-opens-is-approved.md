@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 7
+- Sequence: 8
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="The granted seat agent approves only lane-opened flake fixes under the existing admission and the ledger's re-check; a fault approves one test-fix goal a person can unapprove"
 - Tier: 2
 - Intent: A flake-fix goal the lane opens is pinned to the seat whose last landed change touched its package, routed to that seat, and approved by that seat's steward agent under a live recovery grant (logged against the grant, re-checked at publication), so no flake fix waits days for a tap; without a grant a person approves as today (decision 90; design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D7, V8; goal G5)
 - Origin: main
 - Next step: On m1e's build lane after the-steward-acts lands (it needs the-steward-decides' U2a class table and the-steward-acts' U4a routing): opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); one unit, about 50 production lines: the pin in landing/plain/steward_flake.go, the route, the class row for goal approve of a lane-opened flake fix
 - OpenedAt: 2026-10-30T08:52:19Z
-- Revision: 13
+- Revision: 14
 - BlockedBy: the-steward-acts
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
@@ -32,4 +32,5 @@ History:
 - 2026-11-03T08:15:11Z VSJ94CHHYXSDDSJHT44NA2KXSJ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-remedy-names-who-acts,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-unit-stop-asks-its-steward-first from=1:4 to=1:5 requested-sequence=4
 - 2026-11-03T08:15:21Z AW4ABSD56Z44AVC3EHENE4XHTZ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-remedy-names-who-acts,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-remedy-names-who-acts from=1:5 to=1:6 requested-sequence=5
 - 2026-11-03T08:15:30Z 2W7GJ4B1T8FPC8T0Q7VV4CHGVA-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=the-claim-quota-is-a-host-setting from=1:6 to=1:7 requested-sequence=6
-Integrity: sha256=ced76e7a25cf5d9cecce9bd9b2a1d20fa9e78af567c021b6d049bdeb09376e6e
+- 2026-11-03T08:15:40Z DVZ9E3PGATBPPJPWAN2GAN2ZSF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-tap-is-answered-at-once from=1:7 to=1:8 requested-sequence=7
+Integrity: sha256=ccf54d9863e6f6a2c559d8abcfb4cd7871dd67b47b241122d592d0e26504dc9d
