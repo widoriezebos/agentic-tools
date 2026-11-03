@@ -93,6 +93,13 @@ func (s Situation) askLine(ask SituationAsk) string {
 	} else if root.DeadlineAt != nil {
 		due = "due " + env.Time(*root.DeadlineAt)
 	}
+	if root.Kind == board.KindAsk && root.From.Machine == s.Machine && root.To.Machine != "" && (ask.State == board.ThreadOpen || ask.State == board.ThreadExpired) {
+		word := "not delivered yet"
+		if ask.Delivered {
+			word = "delivered"
+		}
+		due += ", " + word
+	}
 	return fmt.Sprintf("from %s to %s, asked %s, %s", root.From.Machine, to, env.Ago(root.At), due)
 }
 
