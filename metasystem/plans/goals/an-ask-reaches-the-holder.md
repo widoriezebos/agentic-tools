@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 18
+- Sequence: 19
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="A wider caller test for the delivery marker and one routed row; no act, no authority; a fault is a message marked or left unmarked, seen in agent inbox --all"
 - Tier: 2
 - Intent: Whoever holds a seat's lease as its main, a pane session under a grant included, marks the seat's inbox delivered when it reads it, and an ask past its deadline is the first thing on the holder's page and a health row routed to the holder (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D8; goal G6)
@@ -14,7 +14,7 @@ Open read items (fix unit 20261102t164341-402fe74aaa-r3-s3): 3
 - ReadItem: id=20261102t164341-402fe74aaa-r3-s3-3 read=20261102t164341-402fe74aaa-r3-s3 state=open addedAt=2026-11-03T07:15:41Z changedAt=- material=false closingReference="" text="Unit U1's proof command is /usr/bin/true and exercises nothing itself; the frozen unit check and the read's reruns and mutations carried the proof."
 - OpenedAt: 2026-10-30T08:55:55Z
 - FirstClaimAt: 2026-11-02T15:35:19Z
-- Revision: 28
+- Revision: 29
 - BlockedBy: the-steward-sees
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
@@ -53,4 +53,5 @@ History:
 - 2026-11-03T08:16:36Z KNJT1Y8ZGS48YK3V4W8YRGEE8F-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-push-folds-a-records-only-move from=1:15 to=1:16 requested-sequence=13
 - 2026-11-03T08:16:46Z T6G4XH3TS99621GYYNEF0SR1VS-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-note-to-a-concluded-goal-is-not-sent,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-note-to-a-concluded-goal-is-not-sent from=1:16 to=1:17 requested-sequence=14
 - 2026-11-03T08:16:55Z BB53V9WGGFR2D8JRE19Z2EP5YC-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-health-record-outlives-a-role-change,a-persons-channel-carries-only-acts-and-deliveries,a-red-is-classified-once,a-seat-pauses-at-its-spend-line,a-slow-ledger-read-is-a-wait,a-steward-tick-costs-seconds,a-test-helper-dies-with-its-test,a-unit-check-runs-the-audits,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,flake-fix-missionrunner-committed-ledger-tamper-cleanup,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-unit-check-runs-the-audits from=1:17 to=1:18 requested-sequence=15
-Integrity: sha256=876f2b9b87834dfe7911ee8fc4fae7e4f2cdec36e644211bebe343b0e24f14f5
+- 2026-11-03T08:17:04Z 06MCGYPXJDKZ8YF38X1FQQ63JJ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-flake-is-not-a-red-3,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-folded-design-finding-is-re-read from=1:18 to=1:19 requested-sequence=16
+Integrity: sha256=437ecc237fb9c0ccdd7851d918995f4a2afdf256860af976060ab02053b32645
