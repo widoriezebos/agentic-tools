@@ -96,6 +96,14 @@ type UnitRound struct {
 	Steps      []UnitStep `json:"steps"`
 }
 
+type UnitAlone struct {
+	LaunchID   string   `json:"launchId"`
+	Selectors  []string `json:"selectors"`
+	Outcome    string   `json:"outcome,omitempty"`
+	StartedAt  string   `json:"startedAt,omitempty"`
+	FinishedAt string   `json:"finishedAt,omitempty"`
+}
+
 type UnitStep struct {
 	Kind               string        `json:"kind,omitempty"`
 	ExecutionStartedAt string        `json:"executionStartedAt,omitempty"`
@@ -129,6 +137,10 @@ type UnitStep struct {
 	Before      *repositorySnapshot `json:"before,omitempty"`
 	Comparison  *unitComparison     `json:"comparison,omitempty"`
 	FlakeRepeat bool                `json:"flakeRepeat,omitempty"`
+	Alone       *UnitAlone          `json:"alone,omitempty"`
+	Flakes      []string            `json:"flakes,omitempty"`
+	Red         string              `json:"red,omitempty"`
+	RedCause    *loopstop.Cause     `json:"redCause,omitempty"`
 }
 
 type UnitRequest struct{ Plan, Resume, FollowUp string }
@@ -182,7 +194,7 @@ type UnitRunner struct {
 	InheritedFindings func(string, string) ([]readsubject.Finding, error)
 	ReviewPolicy      func() (string, error)
 	ExaminationRead   func(string, string) (readsubject.Read, error)
-	KnownFlake        func(Record) (bool, error)
+	RedUnits          func(Record) ([]loopstop.RedUnit, bool, error)
 	RecordMain        func(Record, string, string) error
 	// named is set only on the per-call copy AdvanceNamed hands to Advance.
 	named *namedBinding
@@ -331,7 +343,7 @@ func (runner *UnitRunner) Advance(request UnitRequest) (UnitResult, error) {
 					return runner.result(record, round, step, capped), err
 				}
 			}
-			if capped, err := runner.attributeProof(&record, round, index, plan.Base, deadline); err != nil || capped {
+			if capped, err := runner.attributeProof(&record, round, index, plan, deadline); err != nil || capped {
 				return runner.result(record, round, step, capped), err
 			}
 			if step.State == StepFailed {
@@ -614,7 +626,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		if capped, err := runner.advanceStep(record, round, index, spec, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
-		if capped, err := runner.attributeProof(record, round, index, plan.Base, deadline); err != nil || capped {
+		if capped, err := runner.attributeProof(record, round, index, plan, deadline); err != nil || capped {
 			return runner.result(*record, round, &round.Steps[index], capped), err
 		}
 		red = red || round.Steps[index].State != StepPassed

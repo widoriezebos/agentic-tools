@@ -468,8 +468,12 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 	switch {
 	case work.Record != nil && len(work.Record.Rounds) > 0 && work.Record.Rounds[len(work.Record.Rounds)-1].Stop != nil && work.Record.Rounds[len(work.Record.Rounds)-1].Stop.Loop == "unit-build" && lastOutcome(work) != "build-size" && lastOutcome(work) != "build-gap":
 		round := work.Record.Rounds[len(work.Record.Rounds)-1]
-		if round.Cause == "environment" || round.Cause == "deadline" {
-			return inv.workArgv(*work.Record, "review", "--reason", "TEXT", "--by", "NAME"), "a person reruns the retained failed step after repairing its environment"
+		if round.Cause == "environment" || round.Cause == "deadline" || round.Cause == "main" {
+			why := "a person reruns the retained failed step after repairing its environment"
+			if round.Cause == "main" {
+				why = "a person reruns the retained check once main's fix is in this goal's branch"
+			}
+			return inv.workArgv(*work.Record, "review", "--reason", "TEXT", "--by", "NAME"), why
 		}
 		return inv.workArgv(*work.Record, "revise", "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), "a person decides how to continue the failed step"
 	case lastOutcome(work) == "build-gap" && gapPerson:

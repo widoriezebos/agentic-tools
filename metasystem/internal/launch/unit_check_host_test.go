@@ -128,13 +128,13 @@ func TestUnitComparisonProofIgnoresHostLoad(t *testing.T) {
 	f.manager.CapacitySources.Load = host.sample
 	start := f.starter.onStart
 	f.starter.onStart = func(record Record) error {
-		if record.Kind == "proof" && !strings.HasSuffix(record.ID, "-base") {
+		if record.Kind == "proof" && strings.HasSuffix(record.ID, "-retry") {
 			host.set(9)
 		}
 		return start(record)
 	}
 	result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
-	if err != nil || len(f.starter.ids) != 3 || !strings.HasSuffix(f.starter.ids[2], "-base") || result.Record.Rounds[0].Cause != "own" {
+	if err != nil || len(f.starter.ids) != 4 || !strings.HasSuffix(f.starter.ids[3], "-base") || result.Record.Rounds[0].Cause != "own" {
 		t.Fatalf("the comparison waited for the host: launches=%v result=%+v err=%v", f.starter.ids, result, err)
 	}
 }

@@ -81,8 +81,15 @@ func TestUnitCheckDeadlineRetriesOnce(t *testing.T) {
 					proofs++
 				}
 			}
-			if proofs != 2 || len(step.LaunchIDs) != 2 {
-				t.Fatalf("%s: a third check launch: %v", row, f.starter.ids)
+			wantProofs := 2
+			if row == "cheap_failed" {
+				wantProofs = 3
+				if !step.FlakeRepeat {
+					t.Fatal("the named red after the deadline retry was not repeated")
+				}
+			}
+			if proofs != wantProofs || len(step.LaunchIDs) != wantProofs || step.RetryBy != "machine" {
+				t.Fatalf("%s: unexpected deadline retry or flake repeat: %v", row, f.starter.ids)
 			}
 			switch row {
 			case "deadline":

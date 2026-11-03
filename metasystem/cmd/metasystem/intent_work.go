@@ -33,6 +33,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/protocol"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -41,6 +42,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/runtimes/external"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/supervise"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
@@ -647,34 +649,37 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		data, err := inv.work().git(root, args...)
 		return string(data), err
 	}, inv.layout.InstallationRel)
-	runner.KnownFlake = func(record launch.Record) (bool, error) {
+	runner.RedUnits = func(record launch.Record) ([]loopstop.RedUnit, bool, error) {
 		state, err := runner.Manager.Store.StateDir(record.ID)
 		if err != nil {
-			return false, err
+			return nil, false, err
 		}
 		data, err := os.ReadFile(filepath.Join(state, "exec.log"))
 		if err != nil {
-			return false, err
+			return nil, false, err
 		}
-		failed := plain.FailedChecks(data)
+		failed, complete := plain.CheckReport(data)
 		if len(failed) == 0 {
-			return false, nil
+			return nil, complete, nil
 		}
 		root, err := inv.work().git(record.WorkingDirectory, "rev-parse", "--show-toplevel")
 		if err != nil {
-			return false, err
+			return nil, complete, err
 		}
-		// A judge error (a unit new on main, a unit id that is not a path) means
-		// "not a known flake", as at landing (plain/replay.go): the base comparison decides.
+		contract, _ := testpolicy.Load(filepath.Join(record.WorkingDirectory, "testing.json"))
 		judgements, err := judge(strings.TrimSpace(string(root)), "HEAD", failed)
-		if err != nil {
-			return false, nil
-		}
-		known := true
+		var units []loopstop.RedUnit
 		for _, unit := range failed {
-			known = known && judgements[unit.Unit].Known && !judgements[unit.Unit].Affected
+			names := plain.NamedUnitTests(unit, contract)
+			red := loopstop.RedUnit{Unit: unit.Unit, Tests: names, Registered: make([]string, len(names))}
+			if err == nil && judgements[unit.Unit].Known {
+				for i, test := range names {
+					red.Registered[i] = goal.FlakeIdentity(unit.Unit, test)
+				}
+			}
+			units = append(units, red)
 		}
-		return known, nil
+		return units, complete, nil
 	}
 	runner.RecordMain = func(record launch.Record, commit, tree string) error {
 		state, err := runner.Manager.Store.StateDir(record.ID)

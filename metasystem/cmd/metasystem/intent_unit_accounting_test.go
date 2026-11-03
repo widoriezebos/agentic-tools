@@ -427,10 +427,12 @@ func TestIntentUnitLaunchAccountingEnvironmentRetry(t *testing.T) {
 
 func TestIntentUnitLaunchAccountingBaseline(t *testing.T) {
 	t.Parallel()
-	bed := unitFlakeBuild(t, true, false)
+	bed := unitFlakeBuild(t, true, false, false)
 	projection := dispatchcore.ProjectBudget(bed.root(), bed.goalFile(bed.id), bed.manager.Now())
-	if projection.Status != dispatchcore.BudgetKnown || projection.Attempts != 1 || projection.ReservedJobMinutes != 3 || projection.ObservedJobMinutes != 3 || projection.ActiveJobs != 0 {
-		t.Fatalf("the branch and baseline executions were not settled: %+v unknown=%+v", projection, projection.Unknown)
+	// The affected check stays red on repeat, so the base comparison also runs.
+	// Build, check, repeat and base each spend this round's budget.
+	if projection.Status != dispatchcore.BudgetKnown || projection.Attempts != 1 || projection.ReservedJobMinutes != 4 || projection.ObservedJobMinutes != 4 || projection.ActiveJobs != 0 {
+		t.Fatalf("the build, check, repeat and base executions were not settled: %+v unknown=%+v", projection, projection.Unknown)
 	}
 }
 

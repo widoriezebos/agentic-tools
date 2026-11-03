@@ -45,7 +45,7 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	runner := inv.unitRunner()
 	if current, err := runner.Status(run); err == nil && len(current.Rounds) > 0 {
 		round := current.Rounds[len(current.Rounds)-1]
-		retryRequested := round.Stop != nil && round.Stop.Loop == "unit-build" && (round.Cause == "environment" || round.Cause == "deadline")
+		retryRequested := round.Stop != nil && round.Stop.Loop == "unit-build" && (round.Cause == "environment" || round.Cause == "deadline" || round.Cause == "main")
 		for _, step := range round.Steps {
 			if step.RetryReason != "" && step.RetryReason == inv.input.text("reason") {
 				retryRequested = true
@@ -63,6 +63,9 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 				again = "start another builder turn with the same brief and inputs, keeping its worktree changes"
 			}
 			impact := "Impact: " + again + ".\nThe environment may still fail; automatic correction limits remain unchanged.\nStop this run to end the continuation; retained evidence remains."
+			if round.Cause == "main" {
+				impact = "Impact: " + again + ".\nMain's red may still fail it; this change was not the cause.\nStop this run to end the continuation; retained evidence remains."
+			}
 			resumed, err := runner.RetryFailedStep(run, person, reason, func() error {
 				return inv.recordUnitStopOverride(current.Goal, "work-review-retry", reason, impact, person)
 			})

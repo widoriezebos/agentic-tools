@@ -1,0 +1,54 @@
+{
+  "coveredUnits": [
+    "U1a2b"
+  ],
+  "schemaVersion": 1,
+  "goal": "a-red-is-classified-once",
+  "unit": "U1a2b",
+  "subject": {
+    "commit": "9e2239c2a7b3bdcb25e4412240f381dbff2b4d9d",
+    "parent": "b197611f8b10b3102aec09fe79bce2a0c0bbad45",
+    "tree": "a2b5e71c7e752a4f1c5fdd20232e62713b0f7769",
+    "patchDigest": "d68cdcb426762d455767970de9a45cfcf2e87b40f353f50d89af80eb200c3165",
+    "unitDigest": "2a1f2c948a385c71178c2ad3b262131a1bb5b8798abf8523059299632c2bc573"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-2f7f199a490ba9a99253fb0a",
+    "round": 1,
+    "closureSha256": "60565790a3fa0b0f497b277cc72d8e46acdd143400d253cf79a47758cc5d789d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a2b5e71c7e752a4f1c5fdd20232e62713b0f7769",
+    "runId": "check-2613687543"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "82635a7e8de60735de3ce10b7af48714f435968c",
+      "digest": "a287d18908cc67d581ad86b17653822c87641fcc66abb35d48a3b091c5e5c0c5"
+    },
+    {
+      "kind": "read",
+      "commit": "b197611f8b10b3102aec09fe79bce2a0c0bbad45",
+      "digest": "41c2e1fd7704b345e65b9ed2a350c5ae5442bbcd693d7339d747e00fec184e1c"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_attribution_test.go",
+      "readerWord": "reviewed by critic root code-critic-2f7f199a490ba9a99253fb0a"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_attribution_test.go",
+      "readerWord": "reviewed by critic root code-critic-2f7f199a490ba9a99253fb0a"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_result_test.go",
+      "readerWord": "reviewed by critic root code-critic-2f7f199a490ba9a99253fb0a"
+    }
+  ],
+  "sha256": "00411b73bfc9db4466c053e13b0194c4c1562e58813de187cdba949677941243"
+}

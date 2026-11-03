@@ -77,32 +77,40 @@ func ReadCheckExecutions(root string) ([]CheckExecution, []string) {
 	return records, unknown
 }
 
+func newestCheckExecution(round, launchID string) (*CheckExecution, []string) {
+	executions, unknown := ReadCheckExecutions(round)
+	var latest *CheckExecution
+	var newest time.Time
+	for i, execution := range executions {
+		if execution.Steps[0].Parent != launchID {
+			continue
+		}
+		started, err := time.Parse(time.RFC3339Nano, execution.Steps[0].Start)
+		if err != nil {
+			unknown = append(unknown, "the check's start time cannot be read")
+			continue
+		}
+		if started.After(newest) {
+			latest, newest = &executions[i], started
+		}
+	}
+	return latest, unknown
+}
+
 // checkCause makes a failed step's cause environment when the newest frozen
 // check of its own launch stopped at proof.deadline and nothing in it failed.
 // Unreadable evidence or any other outcome leaves the step as it is.
 func checkCause(step *UnitStep, round string) bool {
-	executions, unknown := ReadCheckExecutions(round)
-	if len(unknown) > 0 || step.LaunchID == "" {
+	execution, unknown := newestCheckExecution(round, step.LaunchID)
+	if len(unknown) > 0 || execution == nil || step.LaunchID == "" {
 		return false
 	}
-	var newest time.Time
 	deadline := false
-	for _, execution := range executions {
-		started, err := time.Parse(time.RFC3339Nano, execution.Steps[0].Start)
-		if err != nil && execution.Steps[0].Parent == step.LaunchID {
+	for _, check := range execution.Steps {
+		if check.Outcome != "passed" && check.Outcome != "deadline" {
 			return false
 		}
-		if execution.Steps[0].Parent != step.LaunchID || !started.After(newest) {
-			continue
-		}
-		newest, deadline = started, false
-		for _, check := range execution.Steps {
-			if check.Outcome != "passed" && check.Outcome != "deadline" {
-				deadline = false
-				break
-			}
-			deadline = deadline || check.Outcome == "deadline"
-		}
+		deadline = deadline || check.Outcome == "deadline"
 	}
 	if deadline {
 		step.Cause, step.Deadline = "environment", true
