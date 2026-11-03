@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "goal": "a-test-helper-dies-with-its-test",
+  "unit": "parallel-guard",
+  "subject": {
+    "commit": "b4149c645d26f23b9af50b7810c123b537ee164f",
+    "parent": "eff9cd33e009770d6ca72512e77642b0a1b9005d",
+    "tree": "7bd60b732ae812575e16a47720f1dd01d2723d82",
+    "patchDigest": "cdb38fed1f9df30cbfb3f7066cbfbd2b8b8a435aecd5ca86359ec3ce1adb2869",
+    "unitDigest": "2e4d87b51871d5acc0fa766e7b66f2a71c8cb981585fb2379072cd08c08d61a7"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-21c48b2c540532be66c9f134",
+    "round": 1,
+    "closureSha256": "2a1ad940bdd0ad81b5307c581d1c7b91a715f795ba6d33e27118a94050c08c03"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "7bd60b732ae812575e16a47720f1dd01d2723d82",
+    "runId": "goal-read-gate-20261103t201012z-6d2716718aa8d8aa"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "eff9cd33e009770d6ca72512e77642b0a1b9005d",
+      "digest": "0e87baa97c9250ddbe2bc6fac6574d4d4935cc461c116617777287cca68da2ed"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/supervise/helper_custody_test.go",
+      "readerWord": "reviewed by critic root code-critic-21c48b2c540532be66c9f134"
+    }
+  ],
+  "sha256": "b3a1b66e2d133e5aa7f8c2752456299ca174d4a78afedc767b1c4aa65ea49636"
+}
