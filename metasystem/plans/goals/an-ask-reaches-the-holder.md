@@ -8,9 +8,13 @@
 - Intent: Whoever holds a seat's lease as its main, a pane session under a grant included, marks the seat's inbox delivered when it reads it, and an ask past its deadline is the first thing on the holder's page and a health row routed to the holder (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D8; goal G6)
 - Origin: main
 - Next step: On ui's machine route after the-steward-sees lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first trace why a pane holder's shell read does not mark delivery today (intent_agent.go:536-547); one unit, about 40 production lines: the caller test in intent_agent.go, the overdue-ask row; ASKED M9D2SK8710GRYDX683X99DXFC3 (other): Goal an-ask-reaches-the-holder: may its 'row for an overdue ask' be the line already at the top of the seat's situation page, instead of a new row?; ASKED 3R0JFXNK2GH2P47D6T3B26GN87 (other): Goal an-ask-reaches-the-holder: may unit U1 run one comments-only round so its clean review can be recorded?; ANSWERED 3R0JFXNK2GH2P47D6T3B26GN87: Yes; ASKED 7QA6P3SAXYM74BVMZCG99R3STG (other): Goal an-ask-reaches-the-holder: may its 'row for an overdue ask' be the line already at the top of the seat's situation page, instead of a new row? (Asked again: yesterday's question closed overnight with no answer.)
+Open read items (fix unit 20261102t164341-402fe74aaa-r3-s3): 3
+- ReadItem: id=20261102t164341-402fe74aaa-r3-s3-1 read=20261102t164341-402fe74aaa-r3-s3 state=open addedAt=2026-11-03T07:15:41Z changedAt=- material=false closingReference="" text="A holder that reads its inbox from inside a goal worktree still marks nothing: agentPath selects the worktree's own installation, where no session is announced, so it reads as DELEGATE (cmd/metasystem/intent_agent.go agentHolds). Safe side: nothing is swallowed and Claude's tool gate still marks. Revisit only if holders read from goal worktrees."
+- ReadItem: id=20261102t164341-402fe74aaa-r3-s3-2 read=20261102t164341-402fe74aaa-r3-s3 state=open addedAt=2026-11-03T07:15:41Z changedAt=- material=false closingReference="" text="The own-engine and person checks now read the installation's real lease and announcements; a corrupt lease or announcement file there gives the empty class, so the caller reads as a person (no own-engine refusal, no 'name your session'). The brief chose this ('an error gives the zero result'); it needs a corrupt file."
+- ReadItem: id=20261102t164341-402fe74aaa-r3-s3-3 read=20261102t164341-402fe74aaa-r3-s3 state=open addedAt=2026-11-03T07:15:41Z changedAt=- material=false closingReference="" text="Unit U1's proof command is /usr/bin/true and exercises nothing itself; the frozen unit check and the read's reruns and mutations carried the proof."
 - OpenedAt: 2026-10-30T08:55:55Z
 - FirstClaimAt: 2026-11-02T15:35:19Z
-- Revision: 14
+- Revision: 15
 - BlockedBy: the-steward-sees
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
@@ -35,4 +39,5 @@ History:
 - 2026-11-02T19:01:30Z MZ3SHC2PPYYHATYXRH22JECF0C-ui-71c5cb39 ask actor=ui+steward-seat targets=an-ask-reaches-the-holder
 - 2026-11-02T19:19:30Z F2F6HYCZV64ER3BZRHAKSVGAZW-ui-71c5cb39 answer actor=human:wido targets=an-ask-reaches-the-holder authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1404/1405 channelStep=1793647170 question=3R0JFXNK2GH2P47D6T3B26GN87 reason=Yes
 - 2026-11-03T07:15:13Z HMVHJ941ARXCEBJ0F8TSBXBNAA-ui-71c5cb39 ask actor=ui+steward-seat targets=an-ask-reaches-the-holder
-Integrity: sha256=537db67bea8dfd30562a4f53ef1350c19253ee8c3936eb751e69cf818c0420ed
+- 2026-11-03T07:15:41Z 3K21WSS44GCBZSMQQFR38AJM7J-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=an-ask-reaches-the-holder
+Integrity: sha256=a22b58904dec84eb0e15f92ded247dae9e43df5ff32adae590877d3d557a1111
