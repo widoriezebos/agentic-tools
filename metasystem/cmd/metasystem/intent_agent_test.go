@@ -13,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 // agentBed is one seat of a fixture host: its board home, its checkout, the
@@ -52,7 +53,7 @@ func (b *agentBed) as(self string) *agentBed {
 }
 
 func (b *agentBed) owners() intentOwners {
-	return intentOwners{agent: agentOwners{
+	return intentOwners{resolver: stateroot.NewResolver(fakeTop(b.root), noExecutable), agent: agentOwners{
 		root:    func(*intentInvocation) (string, error) { return b.root, nil },
 		home:    func() (string, error) { return b.home, nil },
 		machine: func(string) (string, error) { return b.self, nil },
@@ -66,11 +67,12 @@ func (b *agentBed) owners() intentOwners {
 		lineage: func() string { return "lineage-" + b.self },
 		now:     func() time.Time { b.mu.Lock(); defer b.mu.Unlock(); return b.now },
 		publish: b.publish,
-		caller: func(*intentInvocation, string) string {
-			if b.caller == "" {
-				return lease.ClassMain
+		getenv:  func(string) string { return "" },
+		classify: func(string, string, int64) (lease.ClassifyResult, error) {
+			if b.caller == "" || b.caller == lease.ClassMain {
+				return lease.ClassifyResult{Class: lease.ClassMain, Holder: true}, nil
 			}
-			return b.caller
+			return lease.ClassifyResult{Class: b.caller}, nil
 		},
 	}}
 }

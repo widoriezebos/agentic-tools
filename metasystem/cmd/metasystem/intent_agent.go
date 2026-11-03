@@ -33,9 +33,12 @@ type agentOwners struct {
 	lineage func() string
 	now     func() time.Time
 	publish func(home string, request board.Request, now time.Time) (board.Published, error)
-	// caller classifies who runs the command at the checkout: only the
-	// seat's own agent session (lease MAIN) marks what the inbox prints.
+	// caller is the class the own-engine and person checks read; the inbox marker reads agentHolds instead.
 	caller func(inv *intentInvocation, checkout string) string
+	// classify answers the caller's lease class and holder status at the installation.
+	classify func(root, installation string, pid int64) (lease.ClassifyResult, error)
+	// getenv reads the delegate-job marker from the process environment.
+	getenv func(string) string
 }
 
 func (o agentOwners) withDefaults() agentOwners {
@@ -66,17 +69,18 @@ func (o agentOwners) withDefaults() agentOwners {
 	if o.caller == nil {
 		o.caller = agentCaller
 	}
+	if o.classify == nil {
+		o.classify = lease.ClassifyVerbAt
+	}
+	if o.getenv == nil {
+		o.getenv = os.Getenv
+	}
 	return o
 }
 
 // agentCheckout is the checkout the command runs in, or the one --repo names.
 func agentCheckout(inv *intentInvocation) (string, error) {
-	path := inv.cwd
-	if inv.input.has("repo") {
-		if path = inv.input.text("repo"); !filepath.IsAbs(path) {
-			path = filepath.Join(inv.cwd, path)
-		}
-	}
+	path := agentPath(inv)
 	layout, err := inv.owners.resolver.ResolveLayout(path)
 	if err != nil {
 		return "", fmt.Errorf("%s", notAnInstallation(path, err))
@@ -84,22 +88,45 @@ func agentCheckout(inv *intentInvocation) (string, error) {
 	return layout.GitRoot, nil
 }
 
+func agentPath(inv *intentInvocation) string {
+	path := inv.cwd
+	if inv.input.has("repo") {
+		if path = inv.input.text("repo"); !filepath.IsAbs(path) {
+			path = filepath.Join(inv.cwd, path)
+		}
+	}
+	return path
+}
+
 // agentCaller is the lease class of this command's caller: a delegate job
 // by its marker, else the lease's classification of this process; "" when
 // it cannot be told.
 func agentCaller(inv *intentInvocation, checkout string) string {
-	if os.Getenv("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
-		return lease.ClassDelegate
+	return agentClassification(inv, checkout).Class
+}
+
+// agentHolds reports whether the caller is the main session that holds the lease at the selected installation.
+func agentHolds(inv *intentInvocation, path string) bool {
+	result := agentClassification(inv, path)
+	return result.Class == lease.ClassMain && result.Holder
+}
+
+// agentClassification reads the lease beside the selected installation's
+// session announcements.
+func agentClassification(inv *intentInvocation, path string) lease.ClassifyResult {
+	owners := inv.owners.agent.withDefaults()
+	if owners.getenv("METASYSTEM_HOOK_DELEGATE_JOB") != "" {
+		return lease.ClassifyResult{Class: lease.ClassDelegate}
 	}
-	installation := checkout
-	if layout, err := inv.owners.resolver.ResolveLayout(checkout); err == nil {
+	installation := path
+	if layout, err := inv.owners.resolver.ResolveLayout(path); err == nil {
 		installation = layout.InstallationRoot.Path()
 	}
-	result, err := lease.ClassifyVerbAt(checkout, installation, int64(os.Getpid()))
+	result, err := owners.classify(installation, installation, int64(os.Getpid()))
 	if err != nil {
-		return ""
+		return lease.ClassifyResult{}
 	}
-	return result.Class
+	return result
 }
 
 // armedNicknames are the nicknames of the host registry's armed checkouts.
@@ -122,6 +149,7 @@ func ownerLineageFromEnvironment() string { return os.Getenv("METASYSTEM_OWNER_L
 type agentSeat struct {
 	owners  agentOwners
 	root    string
+	path    string
 	machine string
 	lineage string
 	home    string
@@ -149,7 +177,7 @@ func (inv *intentInvocation) agentSeat() (agentSeat, *intentResult) {
 	if lineage == "" {
 		lineage = owners.lineage()
 	}
-	return agentSeat{owners: owners, root: root, machine: machine, lineage: lineage, home: home, now: owners.now().UTC()}, nil
+	return agentSeat{owners: owners, root: root, path: agentPath(inv), machine: machine, lineage: lineage, home: home, now: owners.now().UTC()}, nil
 }
 
 // ownership is the goals' ownership as a checkout's ledger records it. The
@@ -535,11 +563,11 @@ func runAgentInbox(inv *intentInvocation) int {
 	}
 	// Printed, then marked: a marker exists only for what this run showed,
 	// nothing is marked when the output could not be written, and only the
-	// seat's own agent session marks: a person or a delegate job looking
-	// never swallows the agent's messages (the read's N-6).
+	// main session that holds the seat's lease marks: a person or a delegate
+	// job looking never swallows the agent's messages (the read's N-6).
 	printed := &agentWriteGuard{w: inv.stdout}
 	inv.stdout = printed
-	marks := !all && seat.owners.caller(inv, seat.root) == lease.ClassMain
+	marks := !all && agentHolds(inv, seat.path)
 	if !all && !marks && len(messages) > 0 {
 		result.text = append(result.text, "shown, not marked read: only this seat's own agent session marks its messages read, so they still reach it")
 		notes = append(notes, "Shown, not marked read: only this seat's own agent session marks its messages read, so they still reach it.")

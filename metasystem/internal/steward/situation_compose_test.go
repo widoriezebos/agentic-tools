@@ -33,6 +33,70 @@ func composePublish(t *testing.T, home string, request board.Request, at time.Ti
 	return published.Message
 }
 
+func TestTheAskersPageSaysWhetherItsAskWasDelivered(t *testing.T) {
+	t.Parallel()
+	home, now := t.TempDir(), situationNow
+	outgoing := composePublish(t, home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1e"}, To: board.Address{Machine: "m1x"}, Text: "Can you read it?", Deadline: 30 * time.Minute}, now)
+	incoming := composePublish(t, home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "m1e"}, Text: "Is it built?"}, now)
+	composePublish(t, home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1e"}, To: board.Address{Goal: "held-h"}, Text: "Release held-h?"}, now)
+	read := func(delivered, answered bool) {
+		t.Helper()
+		s := Situation{At: now, Machine: "m1e", Unavailable: map[string]string{}}
+		s.readAsks(SituationSources{BoardHome: func() (string, error) { return home, nil }}, now)
+		if len(s.Asks) != 3 || s.Unavailable["asks"] != "" {
+			t.Fatalf("asks: %+v", s)
+		}
+		for _, ask := range s.Asks {
+			if ask.Thread.ID == outgoing.ID && ask.Delivered != delivered || ask.Thread.ID == incoming.ID && ask.Delivered != delivered {
+				t.Fatalf("delivery (want %t): %+v", delivered, ask)
+			}
+		}
+		for _, part := range Compose(s).Parts {
+			if part.Name != "asks" {
+				continue
+			}
+			for _, to := range []string{"from m1e to m1x,", "from m1x to m1e,", "from m1e to goal held-h,"} {
+				line := ""
+				for _, candidate := range part.Detail {
+					if strings.Contains(candidate, to) {
+						line = candidate
+						break
+					}
+				}
+				if line == "" {
+					t.Fatalf("missing %s in %+v", to, part)
+				}
+				want := ""
+				if to == "from m1e to m1x," && !answered {
+					want = ", not delivered yet"
+					if delivered {
+						want = ", delivered"
+					}
+				}
+				if want != "" && !strings.HasSuffix(line, want) || want == "" && strings.Contains(line, "delivered") {
+					t.Fatalf("line %q, want delivery suffix %q", line, want)
+				}
+			}
+			return
+		}
+		t.Fatal("asks part missing")
+	}
+	read(false, false)
+	for _, offer := range []struct {
+		message board.Message
+		machine string
+	}{{outgoing, "m1x"}, {incoming, "m1e"}} {
+		if err := board.Mark(offer.message, offer.machine, "lineage-"+offer.machine, "inbox", now); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read(true, false)
+	now = now.Add(31 * time.Minute)
+	read(true, false)
+	composePublish(t, home, board.Request{Kind: board.KindReply, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "m1e"}, Thread: outgoing.ID, Text: "Yes."}, now)
+	read(true, true)
+}
+
 // composeSources read root's ledger with the live lane reader and the board
 // at home, on an injected empty host, at *now.
 func composeSources(t *testing.T, root, home string, now *time.Time) SituationSources {

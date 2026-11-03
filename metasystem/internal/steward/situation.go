@@ -108,7 +108,8 @@ type ClaimQuotaBlock struct {
 }
 
 // SituationAsk is one thread of this seat or its goals: its state at the
-// read, when it closed, and whether this machine was offered its ask.
+// read, when it closed, and whether the asked seat was offered its ask
+// (this machine for an ask to a goal).
 type SituationAsk struct {
 	Thread    board.Thread
 	State     string
@@ -585,7 +586,8 @@ func (s *Situation) readFacts(root string, src SituationSources, ledger *healthL
 }
 
 // readAsks keeps every thread to or from this seat or to its goals, in
-// every state, with this machine's own delivery marker. It marks nothing.
+// every state, with the asked seat's delivery marker (this machine for an
+// ask to a goal). It marks nothing.
 func (s *Situation) readAsks(src SituationSources, now time.Time) {
 	home, err := src.BoardHome()
 	var threads []board.Thread
@@ -604,7 +606,7 @@ func (s *Situation) readAsks(src SituationSources, now time.Time) {
 			continue
 		}
 		state, since := thread.State(now)
-		s.Asks = append(s.Asks, SituationAsk{Thread: thread, State: state, Since: since, Delivered: thread.Root != nil && thread.Root.Offered(s.Machine)})
+		s.Asks = append(s.Asks, SituationAsk{Thread: thread, State: state, Since: since, Delivered: thread.Root != nil && thread.Root.Offered(cmp.Or(thread.Root.To.Machine, s.Machine))})
 	}
 }
 
