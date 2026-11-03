@@ -18,38 +18,48 @@ import (
 
 func TestAKilledTestBinarysHelpersAreEndedByItsCustodian(t *testing.T) {
 	t.Parallel()
-	const marker = "SUPERVISE_CUSTODY_CHILD"
-	if os.Getenv(marker) == t.Name() {
-		options, started := prepareExecutionOwner(t)
-		key, err := identity.EncodeKey(armingHelpers.key)
-		if err != nil {
-			t.Fatal(err)
-		}
-		held, err := recordedHeld(options.Root)
-		if err != nil {
-			t.Fatal(err)
-		}
-		reportRef := func(name string, recorded identity.Ref) {
-			exact, state, err := (identity.KernelProber{}).Probe(recorded.Pid)
-			if err != nil || state != identity.Alive || !identity.SameIdentity(exact, recorded) {
-				t.Fatalf("report %s identity: state=%v err=%v", name, state, err)
-			}
-			ref, err := identity.EncodeRef(exact.Ref())
-			if err != nil {
-				t.Fatal(err)
-			}
-			fmt.Printf("%s=%s\n", name, ref)
-		}
-		fmt.Printf("key=%s\n", key)
-		reportRef("owner", identity.Ref{Pid: started.Owner.Pid, StartedAtSec: started.Owner.PidStartedAt, StartTicks: started.Owner.PidStartTicks, BootID: started.Owner.BootID})
-		for _, component := range held {
-			reportRef("component", component.Identity)
-		}
-		fmt.Println("ready")
-		_, _ = io.Copy(io.Discard, os.Stdin)
+	if killTheCustodyChild(t) {
 		return
 	}
+	options, started := prepareExecutionOwner(t)
+	key, err := identity.EncodeKey(armingHelpers.key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	held, err := recordedHeld(options.Root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reportRef := func(name string, recorded identity.Ref) {
+		exact, state, err := (identity.KernelProber{}).Probe(recorded.Pid)
+		if err != nil || state != identity.Alive || !identity.SameIdentity(exact, recorded) {
+			t.Fatalf("report %s identity: state=%v err=%v", name, state, err)
+		}
+		ref, err := identity.EncodeRef(exact.Ref())
+		if err != nil {
+			t.Fatal(err)
+		}
+		fmt.Printf("%s=%s\n", name, ref)
+	}
+	fmt.Printf("key=%s\n", key)
+	reportRef("owner", identity.Ref{Pid: started.Owner.Pid, StartedAtSec: started.Owner.PidStartedAt, StartTicks: started.Owner.PidStartTicks, BootID: started.Owner.BootID})
+	for _, component := range held {
+		reportRef("component", component.Identity)
+	}
+	fmt.Println("ready")
+	_, _ = io.Copy(io.Discard, os.Stdin)
+}
 
+// killTheCustodyChild runs the test again in a child binary, kills that
+// binary once its helpers are in fixture custody and waits for the
+// custodian to end them. It returns false in the child, which reports its
+// helpers and blocks on stdin.
+func killTheCustodyChild(t *testing.T) bool {
+	t.Helper()
+	const marker = "SUPERVISE_CUSTODY_CHILD"
+	if os.Getenv(marker) == t.Name() {
+		return false
+	}
 	timeout, _ := testenv.DeadlineRemaining(t)
 	command := exec.Command(os.Args[0], "-test.run=^"+regexp.QuoteMeta(t.Name())+"$", "-test.timeout="+timeout.String())
 	command.Env = append(os.Environ(), marker+"="+t.Name())
@@ -135,4 +145,5 @@ func TestAKilledTestBinarysHelpersAreEndedByItsCustodian(t *testing.T) {
 		}
 		return true
 	})
+	return true
 }
