@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 13
+- Sequence: 14
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A priority for the lane's proof inside the existing host admission replaces a separate hold; no second lease; a fault shows as a proof or build that waits, visible in lane status"
 - Tier: 2
 - Intent: The lane's proof reserves in the existing host admission ahead of builds and checks instead of being held beside them, the proof-beside-builds hold retires, and agent-run tests go through `test run` with a bare `go test` under a checkout shown as a bypass (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D5; goal G3)
 - Origin: main
 - Next step: On ui's machine route after a-round-survives-a-restart and the sibling page's G3, and after the-steward-sees (it retires that goal's U0 hold): opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first verify whether proof/full.sh already runs through test run; one unit, about 90 production lines: proofrun/host_resources.go reservation priority, landing/plain/proof_admission.go hold retired, the bypass line in the situation's host part
 - OpenedAt: 2026-10-30T08:54:36Z
-- Revision: 16
+- Revision: 17
 - BlockedBy: the-steward-sees
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
@@ -34,4 +34,5 @@ History:
 - 2026-11-03T08:15:21Z AW4ABSD56Z44AVC3EHENE4XHTZ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-remedy-names-who-acts,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-remedy-names-who-acts from=1:10 to=1:11 requested-sequence=5
 - 2026-11-03T08:15:30Z 2W7GJ4B1T8FPC8T0Q7VV4CHGVA-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=the-claim-quota-is-a-host-setting from=1:11 to=1:12 requested-sequence=6
 - 2026-11-03T08:15:40Z DVZ9E3PGATBPPJPWAN2GAN2ZSF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-tap-is-answered-at-once from=1:12 to=1:13 requested-sequence=7
-Integrity: sha256=53aa9d440cfcb099435fb0fdf8636e7af87074febde861108d0a0defc00c1e94
+- 2026-11-03T08:15:50Z DBS543PJYMY494VRFWSPSM54F1-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-hand-in-stands-on-main from=1:13 to=1:14 requested-sequence=8
+Integrity: sha256=661dcd1e93540cc2043b93a6ba35e37cc5dbf16fd173ec50037ab804373bbeee

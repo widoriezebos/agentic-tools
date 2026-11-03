@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 23
+- Sequence: 8
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="engine code on the hand-in path and the landing merge; a wrong rebase breaks a goal branch (recoverable from origin); every hand-in is exposed; it recurs whenever main moves under a goal"
 - Tier: 2
 - Intent: A goal is handed in on main: before work land the engine brings the goal branch onto main tip (rebase or merge of main), runs the unit check there and reads that merge at the seat, so the lane proves only trees that already stand on main and a semantic conflict is found at the seat, not after a full lane cycle and a return (a-round-survives-a-restart was returned 2026-11-01 07:22 for a conflict with a Thursday commit in internal/lease/sweep.go that merged without text conflict; finding 464 context)
@@ -10,7 +10,7 @@
 - Next step: Design through the engine: metasystem design write a-hand-in-stands-on-main --brief /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/a-hand-in-stands-on-main-request.md; then design review; then units
 - OpenedAt: 2026-11-01T06:39:06Z
 - FirstClaimAt: 2026-11-01T09:57:24Z
-- Revision: 19
+- Revision: 20
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -42,4 +42,5 @@ History:
 - 2026-11-03T08:15:01Z QFMZT767WV3XKT15NETPKXYVP7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-round-ends-without-its-caller,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-round-ends-without-its-caller from=1:20 to=1:21 requested-sequence=3
 - 2026-11-03T08:15:11Z VSJ94CHHYXSDDSJHT44NA2KXSJ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-remedy-names-who-acts,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-unit-stop-asks-its-steward-first from=1:21 to=1:22 requested-sequence=4
 - 2026-11-03T08:15:21Z AW4ABSD56Z44AVC3EHENE4XHTZ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-remedy-names-who-acts,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-remedy-names-who-acts from=1:22 to=1:23 requested-sequence=5
-Integrity: sha256=65b8af5af1d341c5e163d4a5d9e85723a5b66b7eaf47848da75014339c7caf1b
+- 2026-11-03T08:15:50Z DBS543PJYMY494VRFWSPSM54F1-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-hand-in-stands-on-main from=1:23 to=1:8 requested-sequence=8
+Integrity: sha256=76118383f333499d817333326b780d85b5dc0eba141732ff44385230b04bd41a
