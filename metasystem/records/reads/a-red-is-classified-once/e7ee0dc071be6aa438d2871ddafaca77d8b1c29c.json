@@ -1,0 +1,75 @@
+{
+  "coveredUnits": [
+    "U1b"
+  ],
+  "schemaVersion": 1,
+  "goal": "a-red-is-classified-once",
+  "unit": "U1b",
+  "subject": {
+    "commit": "e7ee0dc071be6aa438d2871ddafaca77d8b1c29c",
+    "parent": "ebf5fc6840d3b9d826d14d35d538e0c0b83a8050",
+    "tree": "aef43fee4df1fa3b274a6bbbb1fe9f2e054bb243",
+    "patchDigest": "42db0f568d4b7d2f7d3c59fc46a06974e6a339d238b443bfd4133339eb3bc50f",
+    "unitDigest": "261a56182fc78bbda95142aa2cd37ee783785bbdff19af52015662d6fbdecc81"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-bfad8f15a2c520fc1eeb4e0f",
+    "round": 1,
+    "closureSha256": "235b6b27235f785a09e8cf62414fb7ec7fb479d0f6376c8b3a949e0dbcf69132"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "aef43fee4df1fa3b274a6bbbb1fe9f2e054bb243",
+    "runId": "check-4257507670"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "82635a7e8de60735de3ce10b7af48714f435968c",
+      "digest": "a287d18908cc67d581ad86b17653822c87641fcc66abb35d48a3b091c5e5c0c5"
+    },
+    {
+      "kind": "read",
+      "commit": "b197611f8b10b3102aec09fe79bce2a0c0bbad45",
+      "digest": "41c2e1fd7704b345e65b9ed2a350c5ae5442bbcd693d7339d747e00fec184e1c"
+    },
+    {
+      "kind": "read",
+      "commit": "ebf5fc6840d3b9d826d14d35d538e0c0b83a8050",
+      "digest": "b3d6fad8af716b1f5ae416214c8d886e19ad94b45774973193b5d8a082208e76"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_attribution_test.go",
+      "readerWord": "reviewed by critic root code-critic-bfad8f15a2c520fc1eeb4e0f"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_retry_test.go",
+      "readerWord": "reviewed by critic root code-critic-bfad8f15a2c520fc1eeb4e0f"
+    },
+    {
+      "path": "metasystem/internal/deploy/bed_test.go",
+      "readerWord": "reviewed by critic root code-critic-bfad8f15a2c520fc1eeb4e0f"
+    },
+    {
+      "path": "metasystem/internal/deploy/runner_test.go",
+      "readerWord": "reviewed by critic root code-critic-bfad8f15a2c520fc1eeb4e0f"
+    },
+    {
+      "path": "metasystem/internal/deploy/testmain_test.go",
+      "readerWord": "reviewed by critic root code-critic-bfad8f15a2c520fc1eeb4e0f"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_attribution_test.go",
+      "readerWord": "reviewed by critic root code-critic-bfad8f15a2c520fc1eeb4e0f"
+    },
+    {
+      "path": "metasystem/internal/loopstop/red_test.go",
+      "readerWord": "reviewed by critic root code-critic-bfad8f15a2c520fc1eeb4e0f"
+    }
+  ],
+  "sha256": "863f71f2482a0175c0e96d2d3eda8e0ee51b6694ab5d7a1f66315008fbaf79ca"
+}
