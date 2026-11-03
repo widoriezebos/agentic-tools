@@ -7,10 +7,10 @@
 - Tier: 2
 - Intent: Whoever holds a seat's lease as its main, a pane session under a grant included, marks the seat's inbox delivered when it reads it, and an ask past its deadline is the first thing on the holder's page and a health row routed to the holder (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D8; goal G6)
 - Origin: main
-- Next step: On ui's machine route after the-steward-sees lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first trace why a pane holder's shell read does not mark delivery today (intent_agent.go:536-547); one unit, about 40 production lines: the caller test in intent_agent.go, the overdue-ask row; ASKED M9D2SK8710GRYDX683X99DXFC3 (other): Goal an-ask-reaches-the-holder: may its 'row for an overdue ask' be the line already at the top of the seat's situation page, instead of a new row?; ASKED 3R0JFXNK2GH2P47D6T3B26GN87 (other): Goal an-ask-reaches-the-holder: may unit U1 run one comments-only round so its clean review can be recorded?; ANSWERED 3R0JFXNK2GH2P47D6T3B26GN87: Yes
+- Next step: On ui's machine route after the-steward-sees lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first trace why a pane holder's shell read does not mark delivery today (intent_agent.go:536-547); one unit, about 40 production lines: the caller test in intent_agent.go, the overdue-ask row; ASKED M9D2SK8710GRYDX683X99DXFC3 (other): Goal an-ask-reaches-the-holder: may its 'row for an overdue ask' be the line already at the top of the seat's situation page, instead of a new row?; ASKED 3R0JFXNK2GH2P47D6T3B26GN87 (other): Goal an-ask-reaches-the-holder: may unit U1 run one comments-only round so its clean review can be recorded?; ANSWERED 3R0JFXNK2GH2P47D6T3B26GN87: Yes; ASKED 7QA6P3SAXYM74BVMZCG99R3STG (other): Goal an-ask-reaches-the-holder: may its 'row for an overdue ask' be the line already at the top of the seat's situation page, instead of a new row? (Asked again: yesterday's question closed overnight with no answer.)
 - OpenedAt: 2026-10-30T08:55:55Z
 - FirstClaimAt: 2026-11-02T15:35:19Z
-- Revision: 13
+- Revision: 14
 - BlockedBy: the-steward-sees
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
@@ -34,4 +34,5 @@ History:
 - 2026-11-02T16:43:14Z 49XCZWGTMF29RMXSY6SXHBV9MC-ui-71c5cb39 ask actor=ui+steward-seat targets=an-ask-reaches-the-holder
 - 2026-11-02T19:01:30Z MZ3SHC2PPYYHATYXRH22JECF0C-ui-71c5cb39 ask actor=ui+steward-seat targets=an-ask-reaches-the-holder
 - 2026-11-02T19:19:30Z F2F6HYCZV64ER3BZRHAKSVGAZW-ui-71c5cb39 answer actor=human:wido targets=an-ask-reaches-the-holder authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1404/1405 channelStep=1793647170 question=3R0JFXNK2GH2P47D6T3B26GN87 reason=Yes
-Integrity: sha256=6add79f90a9f77334b868794bcda9f956c4c165f33a1764c0a3ed33d8b28c4ae
+- 2026-11-03T07:15:13Z HMVHJ941ARXCEBJ0F8TSBXBNAA-ui-71c5cb39 ask actor=ui+steward-seat targets=an-ask-reaches-the-holder
+Integrity: sha256=537db67bea8dfd30562a4f53ef1350c19253ee8c3936eb751e69cf818c0420ed
