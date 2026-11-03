@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 24
+- Sequence: 25
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="finding 474 (2026-11-01, a1): two checks of the-steward-decides U2b1a were stopped by the steward own records commit and goal opens; step.moved was refs; the stopped retry differed only in refs/heads/main."
 - Tier: 2
 - Intent: A unit check guards only what it reads: the goal branch head, the worktree index and its bytes; a move of main, a ledger act or another goal refs during the check is a recorded fact on the round, never a stop; a changed input in the worktree still fails as environment naming the file.
@@ -10,7 +10,7 @@
 - Next step: Accept the design page (drafted, Astra read it once) at the next boundary; then build U1 from it.
 - OpenedAt: 2026-11-01T16:24:47Z
 - FirstClaimAt: 2026-11-02T05:18:48Z
-- Revision: 16
+- Revision: 17
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -37,4 +37,5 @@ History:
 - 2026-11-03T08:15:40Z DVZ9E3PGATBPPJPWAN2GAN2ZSF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-tap-is-answered-at-once from=1:21 to=1:22 requested-sequence=7
 - 2026-11-03T08:15:50Z DBS543PJYMY494VRFWSPSM54F1-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-hand-in-stands-on-main from=1:22 to=1:23 requested-sequence=8
 - 2026-11-03T08:15:59Z 2Z28P73XDGQX5YQEQZMA5GVQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=one-question-per-refused-admission from=1:23 to=1:24 requested-sequence=9
-Integrity: sha256=7a11bf451ebd346de1fecf37bd3e4597a583f117e84b9ec2d64f856d6dd0ea62
+- 2026-11-03T08:16:09Z RRB4SDRDZ4RPYP1NYYW4GQETRF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-lane-row-carries-its-act from=1:24 to=1:25 requested-sequence=10
+Integrity: sha256=e810f44cae49e288d2f5a82dcd28098fe5c7f34088915a9a77d3aac25b19fe15
