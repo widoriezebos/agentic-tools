@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 23
+- Sequence: 24
 - Risk: severity=2 novelty=2 exposure=1 accumulation=1 basis="A wrong settle could start a seat beside a live continuation (severity); the state table and the settle-on-refusal are new behaviour (novelty); the verb runs rarely and only on a seat that is already stopped (exposure); it clears records rather than adding them (accumulation)."
 - Tier: 2
 - Intent: metasystem machine revive SEAT is idempotent and complete for its one scenario, the seat does not start: from any state of the steward own seat records it either starts the seat or refuses naming the one record in the way and the one command that resolves it, and it never leaves a state whose tick remedy is revive itself (finding 454: a consumed, never-launched restart pinned ui dead for 29 h and revive could not clear it; decision 102(e)); it touches only the steward own records, so it is one verb for one scenario, not a record editor
@@ -10,7 +10,7 @@
 - Next step: Design through the engine after a-round-survives-a-restart lands (its U1b settle is the base): metasystem design write revive-starts-the-seat-clean --brief agentic-tools-evidence/lane-test-20261009/designs/revive-starts-the-seat-clean-request.md, design review rounds (Astra) to zero material findings, acceptance by hand until an-accepted-design-is-a-record lands; then one or two units on m1e
 - OpenedAt: 2026-10-31T20:50:31Z
 - FirstClaimAt: 2026-11-01T01:02:56Z
-- Revision: 25
+- Revision: 26
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -50,4 +50,5 @@ History:
 - 2026-11-03T08:15:50Z DBS543PJYMY494VRFWSPSM54F1-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-hand-in-stands-on-main from=1:20 to=1:21 requested-sequence=8
 - 2026-11-03T08:15:59Z 2Z28P73XDGQX5YQEQZMA5GVQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=one-question-per-refused-admission from=1:21 to=1:22 requested-sequence=9
 - 2026-11-03T08:16:09Z RRB4SDRDZ4RPYP1NYYW4GQETRF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-lane-row-carries-its-act from=1:22 to=1:23 requested-sequence=10
-Integrity: sha256=f3cb292c96eef2117a04ec9e0913df98785a2f1684323c63eb1c775fa0a1c7ce
+- 2026-11-03T08:16:18Z AVYNC7EDAHD6ADSWJ62WCHCQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-real-act-is-not-barren from=1:23 to=1:24 requested-sequence=11
+Integrity: sha256=c07f5bd45507c819a6194c82ea33daf450f3ac083a697849992a6a081ad69c37

@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 12
+- Sequence: 13
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Design pages ride the lane's next batch under its own proof; inheritance stays to goal pages (decision 86); a fault is a page that waits or a batch that refuses, visible in lane status"
 - Tier: 2
 - Intent: `metasystem design accept PAGE --by NAME` sets a design page accepted with its Critique line, checks its goals exist, and hands it to the landing lane as a records hand-in that lands in the next batch under that batch's proof, so an accepted page reaches main without a person's commit; decision 86 stands (finding 446; design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D9, V7; goal G7)
 - Origin: main
 - Next step: On m1e's build lane after a-records-only-move-keeps-mains-green (G11, same records path): opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first check the records-only batch's proof scope against finding 321's fold guard; one unit, about 110 production lines: the verb, the records hand-in kind and its batch membership in landing/plain
 - OpenedAt: 2026-10-30T08:53:34Z
-- Revision: 17
+- Revision: 18
 - BlockedBy: a-records-only-move-keeps-mains-green
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
@@ -35,4 +35,5 @@ History:
 - 2026-11-03T08:15:50Z DBS543PJYMY494VRFWSPSM54F1-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-hand-in-stands-on-main from=1:9 to=1:10 requested-sequence=8
 - 2026-11-03T08:15:59Z 2Z28P73XDGQX5YQEQZMA5GVQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=one-question-per-refused-admission from=1:10 to=1:11 requested-sequence=9
 - 2026-11-03T08:16:09Z RRB4SDRDZ4RPYP1NYYW4GQETRF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-lane-row-carries-its-act from=1:11 to=1:12 requested-sequence=10
-Integrity: sha256=028109de9f650e8323a12036c56a3ced7c9adc2fb414c76255851118efbc3dc9
+- 2026-11-03T08:16:18Z AVYNC7EDAHD6ADSWJ62WCHCQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-real-act-is-not-barren from=1:12 to=1:13 requested-sequence=11
+Integrity: sha256=293ddc6fb83fb7eb9fed8a5dee37aab6a00e32592caa2838906d02bfe9a61eb6

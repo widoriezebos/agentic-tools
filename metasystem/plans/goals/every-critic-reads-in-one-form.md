@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 17
+- Sequence: 18
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="A machinery change on the read and attestation path every unit uses; designed and critiqued before it is built."
 - Tier: 2
 - Intent: every code critic gets the v6 return form and a unit with several package reads promotes as one read: landability comes from the validated critic closure, zero-material is enforced only for directly promoted unit reads (attest.go:1250), a v6 return without a subject keeps its ID normalisation so register and decisions IDs agree (finding_register.go:311), and a v6 collection is tested through the real attestation owner, including an out-of-scope and an accepted-risk material finding on the --changes then --dispositions route.
 - Origin: main
 - Next step: the steward cuts one design and brief from a-read-with-notes-is-collected-brief.md (F1, Astra round 1 R1-1 and R1-2, revision 1's D2, D3 and T2-T3 in its .before-astra-r1 copy), one Astra round, then builds on m1e after a-read-with-notes-is-collected lands.
 - OpenedAt: 2026-10-25T22:21:05Z
-- Revision: 35
+- Revision: 36
 - BlockedBy: a-read-with-notes-is-collected
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
@@ -53,4 +53,5 @@ History:
 - 2026-11-03T08:15:50Z DBS543PJYMY494VRFWSPSM54F1-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-hand-in-stands-on-main from=1:14 to=1:15 requested-sequence=8
 - 2026-11-03T08:15:59Z 2Z28P73XDGQX5YQEQZMA5GVQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=one-question-per-refused-admission from=1:15 to=1:16 requested-sequence=9
 - 2026-11-03T08:16:09Z RRB4SDRDZ4RPYP1NYYW4GQETRF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-lane-row-carries-its-act from=1:16 to=1:17 requested-sequence=10
-Integrity: sha256=cb9c8846f88bc1a08994ec78bfbf20a4a051faac41611a2e1d9265077e4135d0
+- 2026-11-03T08:16:18Z AVYNC7EDAHD6ADSWJ62WCHCQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-real-act-is-not-barren from=1:17 to=1:18 requested-sequence=11
+Integrity: sha256=583d63e029c9ce6fe1313f3818b58d8df47bed905bb40beaa0ff4ebefbbb44a1
