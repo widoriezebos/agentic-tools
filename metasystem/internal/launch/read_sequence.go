@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -65,7 +66,6 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 					step.LaunchID += fmt.Sprintf("-%d", len(step.LaunchIDs))
 				}
 			}
-			step.LaunchIDs = append(step.LaunchIDs, step.LaunchID)
 		}
 		// The execution start speaks for the current launch; a new one has
 		// not started.
@@ -75,7 +75,12 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 			return Record{}, err
 		}
 	}
+	var replacements []string
+	var hookErr error
 	launchRecord, err := driver.manager.Store.Read(step.LaunchID)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return Record{}, err
+	}
 	if errors.Is(err, fs.ErrNotExist) {
 		spec.ID = step.LaunchID
 		if driver.unit {
@@ -92,35 +97,76 @@ func (driver stepDriver) startStep(index int, spec StartSpec) (Record, error) {
 				return Record{}, stateErr
 			}
 			spec.Outputs = append([]string(nil), spec.Outputs...)
-			if len(step.LaunchIDs) > 1 {
+			if len(step.LaunchIDs) > 0 {
 				for i, output := range spec.Outputs {
 					spec.Outputs[i] = filepath.Join(state, "declared", filepath.Base(output))
+					replacements = append(replacements, output+".json", spec.Outputs[i]+".json", output, spec.Outputs[i])
 				}
-			}
-			if err := prepareReadOutputDirectories(spec.Outputs); err != nil {
-				return Record{}, err
 			}
 			if err := driver.save(); err != nil {
 				return Record{}, err
 			}
 		}
-		if driver.before != nil {
-			if err := driver.before(spec); err != nil {
-				return Record{}, err
+		launchRecord, err = func() (Record, error) {
+			if driver.before != nil {
+				if err := driver.before(spec); err != nil {
+					hookErr = err
+					return Record{}, err
+				}
 			}
-		}
-		launchRecord, err = driver.start(spec)
+			if driver.unit {
+				if len(replacements) > 0 {
+					if err := driver.manager.Admit(spec); err != nil {
+						return Record{}, err
+					}
+				}
+				if err := prepareReadOutputDirectories(spec.Outputs); err != nil {
+					return Record{}, err
+				}
+				if len(replacements) > 0 {
+					data, err := os.ReadFile(spec.Brief)
+					if err != nil {
+						return Record{}, err
+					}
+					state, _ := driver.manager.Store.StateDir(step.LaunchID)
+					spec.Brief = filepath.Join(state, "brief-"+filepath.Base(spec.Brief))
+					if err := os.WriteFile(spec.Brief, []byte(strings.NewReplacer(replacements...).Replace(string(data))), 0600); err != nil {
+						return Record{}, err
+					}
+				}
+			}
+			return driver.start(spec)
+		}()
 	}
 	if IsCode(err, "UNIT_WAIT_RETRY") || IsCode(err, "LAUNCH_BUILD_CAPACITY") || IsCode(err, "LAUNCH_BUILD_PERSON") {
 		return launchRecord, err
 	}
 	if err != nil && launchRecord.ID == "" {
-		if driver.unit {
-			step.State, step.Cause, step.Reason = StepFailed, "unclassified", err.Error()
+		// A failed start, a missing record or a refused reservation of the
+		// launch itself holds the step with its candidate unadmitted (page
+		// D8). An error the before hook returns, a refusal or an interruption,
+		// returns to the caller as before this design (brief V2): the step
+		// stays starting with its unlisted candidate and the next call starts
+		// it, so a raised budget admits the same command and an interrupted
+		// request fails instead of holding.
+		if driver.unit && hookErr == nil {
+			step.Holds++
+			step.Unadmitted = step.LaunchID
+			step.LaunchID = ""
+			if len(step.LaunchIDs) > 0 {
+				step.LaunchID = step.LaunchIDs[len(step.LaunchIDs)-1]
+			}
+			step.State, step.Cause, step.Reason = StepFailed, "environment", err.Error()
 			step.FinishedAt = driver.manager.Now().UTC().Format(time.RFC3339Nano)
 			return Record{}, driver.save()
 		}
 		return Record{}, err
+	}
+	if driver.unit && launchRecord.ID != "" {
+		if !slices.Contains(step.LaunchIDs, step.LaunchID) {
+			step.LaunchIDs = append(step.LaunchIDs, step.LaunchID)
+		}
+		step.Unadmitted = ""
 	}
 	step.ExecutionStartedAt = launchRecord.StartedAt
 	if launchRecord.State.Terminal() {
@@ -179,6 +225,20 @@ func (driver stepDriver) endStep(index int, launchRecord Record) {
 	step.Deadline = launchRecord.Cause == "deadline"
 	if driver.unit && launchRecord.State != Completed {
 		step.Cause = failedStepCause(launchRecord)
+		if launchRecord.State == Failed && strings.HasPrefix(step.Name, "read") && readFindingsMissing(launchRecord) {
+			paths, _ := declaredOutputPaths(launchRecord)
+			if len(paths) > 0 {
+				state, _ := driver.manager.Store.StateDir(launchRecord.ID)
+				transcript := state
+				if adapter, ok := driver.manager.Adapters[launchRecord.Adapter].(Transcript); ok {
+					if path, err := adapter.Transcript(launchRecord, state); err == nil {
+						transcript = path
+					}
+				}
+				step.Cause = "environment"
+				step.Reason = "the reader " + launchRecord.ID + " ended without writing its declared output " + paths[0] + "; transcript " + transcript
+			}
+		}
 	}
 	if launchRecord.CauseWords != "" {
 		step.Reason += "; the provider said: " + providerMessage(launchRecord.CauseWords)

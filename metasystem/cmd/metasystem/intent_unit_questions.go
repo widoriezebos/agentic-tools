@@ -181,7 +181,11 @@ func (inv *intentInvocation) syncBuildHolds(record launch.UnitRunRecord) error {
 			if act == "work-review-retry" {
 				for _, step := range round.Steps {
 					if step.State == launch.StepFailed {
-						kind = step.LaunchID
+						kind = step.HoldFinding()
+						if kind == "" {
+							kind = step.Reason
+							next = inv.workArgv(record, "review", "--reason", "TEXT", "--by", "NAME")
+						}
 						break
 					}
 				}

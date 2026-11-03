@@ -905,6 +905,11 @@ func adapterOutcome(adapter Adapter, exitCode int, measureErr error) (State, str
 	return Failed, fmt.Sprintf("exit-%d", exitCode)
 }
 
+// Transcript locates the adapter's retained conversation for a launch.
+type Transcript interface {
+	Transcript(Record, string) (string, error)
+}
+
 // stopCause names an environmental failure without changing the launch's outcome.
 // No deadline is classified until a real step deadline exists; a supervisor
 // readiness timeout is an environment failure that permits the step retry.

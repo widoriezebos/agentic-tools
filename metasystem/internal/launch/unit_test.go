@@ -94,6 +94,7 @@ func (git *recordingOSGit) Run(directory string, environment []string, args ...s
 type completingStarter struct {
 	m                  *Manager
 	failKind, holdKind string
+	failCause          string
 	order, ids         []string
 	readOutput         string
 	readVerdict        string
@@ -129,6 +130,9 @@ func (starter *completingStarter) StartSupervisor(id, _ string) (identity.Ref, e
 		code := 0
 		if record.Kind == starter.failKind {
 			current.State, current.Reason, code = Failed, "fixture-red", 1
+			if starter.failCause != "" {
+				current.Cause = starter.failCause
+			}
 		}
 		current.ExitCode = &code
 		if record.Kind == "read" {
@@ -756,9 +760,9 @@ func TestRoundCauseOnlyWhenNothingWasJudged(t *testing.T) {
 		// to unclassified; every failed step uses that shared cause vocabulary.
 		{"lost-build", "build", "build", "", "environment", "environment", false},
 		{"red-proof", "proof", "proof", "", "environment", "environment", false},
-		{"no-findings", "read", "", "", "environment", "unclassified", false},
+		{"no-findings", "read", "", "", "environment", "environment", false},
 		{"findings", "read", "", "report", "environment", "unclassified", false},
-		{"counted-read", "read", "", "", "environment", "unclassified", true},
+		{"counted-read", "read", "", "", "environment", "environment", true},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -1105,6 +1109,358 @@ func TestFollowUpStartsTheNextRoundOnTheSameWorktree(t *testing.T) {
 	}
 }
 
+func newLinkedGitUnitFixture(t *testing.T) (unitFixture, string) {
+	t.Helper()
+	fixture, primary := newGitUnitFixture(t)
+	if err := os.MkdirAll(filepath.Join(primary, "metasystem"), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, filepath.Join(primary, "metasystem/testing.json"), "original\n")
+	runGit(t, primary, "add", "metasystem/testing.json")
+	runGit(t, primary, "commit", "-m", "check input")
+	runGit(t, primary, "branch", "-m", "main")
+	linked := filepath.Join(t.TempDir(), "goal")
+	runGit(t, primary, "worktree", "add", "-b", "goal/goal", linked)
+	setUnitPlanWorktree(t, &fixture, linked)
+	return fixture, primary
+}
+
+func TestAMoveOutsideTheCheckDoesNotStopIt(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"main", "ledger", "goal", "tag", "deleted-tag", "read-main"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			fixture, primary := newLinkedGitUnitFixture(t)
+			fixture.starter.readVerdict = "land"
+			before := strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD"))
+			want := RefMove{Ref: "refs/heads/main", Before: before, Step: "proof:check"}
+			if name == "read-main" {
+				want.Step = "read"
+			}
+			if name == "goal" || name == "tag" {
+				want.Ref, want.Before = "refs/heads/goal/another", ""
+				if name == "tag" {
+					want.Ref = "refs/tags/published"
+				}
+			}
+			if name == "deleted-tag" {
+				runGit(t, primary, "tag", "published")
+				want.Ref = "refs/tags/published"
+			}
+			moved := false
+			fixture.starter.onStart = func(record Record) error {
+				kind := "proof"
+				if name == "read-main" {
+					kind = "read"
+				}
+				if record.Kind != kind || moved {
+					return nil
+				}
+				moved = true
+				switch name {
+				case "main", "ledger", "read-main":
+					writeFile(t, filepath.Join(primary, "records"), record.ID)
+					runGit(t, primary, "add", "records")
+					runGit(t, primary, "commit", "-m", "records")
+					if name == "ledger" {
+						runGit(t, primary, "update-ref", "refs/metasystem/goals/accepted", "HEAD")
+					}
+				case "goal":
+					runGit(t, primary, "branch", "goal/another")
+				case "tag":
+					runGit(t, primary, "tag", "published")
+				case "deleted-tag":
+					runGit(t, primary, "tag", "-d", "published")
+				}
+				return nil
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := result.Record.Rounds[0]
+			if round.Outcome != "green" || len(stepNamed(t, round, "proof:check").LaunchIDs) != 1 {
+				t.Fatalf("unrelated move stopped the check: %+v", round)
+			}
+			if name != "deleted-tag" {
+				want.After = strings.TrimSpace(runGit(t, primary, "rev-parse", want.Ref))
+			}
+			if !reflect.DeepEqual(round.RefMoves, []RefMove{want}) || !round.ProofRefsNoted {
+				t.Fatalf("ref observation: got %+v, want %+v; noted=%t", round.RefMoves, want, round.ProofRefsNoted)
+			}
+			if name == "main" || name == "goal" || name == "tag" || name == "deleted-tag" {
+				read := stepNamed(t, round, "read")
+				brief, err := os.ReadFile(read.Retained.Brief)
+				from, to := "created", "deleted"
+				if want.Before != "" {
+					from = want.Before[:10]
+				}
+				if want.After != "" {
+					to = want.After[:10]
+				}
+				paragraph := "While the checks ran, these refs moved; the check reads none of them: " + want.Ref + " " + from + " to " + to
+				if err != nil || !strings.Contains(string(brief), paragraph) || !strings.HasPrefix(string(brief), "read it\n") {
+					t.Fatalf("round-one read brief: %q, error=%v; want %q", brief, err, paragraph)
+				}
+			}
+		})
+	}
+}
+
+func TestTheFactKeepsTheLatestMove(t *testing.T) {
+	t.Parallel()
+	for _, returns := range []bool{false, true} {
+		t.Run(fmt.Sprintf("returns=%t", returns), func(t *testing.T) {
+			t.Parallel()
+			fixture, primary := newLinkedGitUnitFixture(t)
+			a := strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD"))
+			var c string
+			fixture.starter.failKind, fixture.starter.failCause, fixture.starter.readVerdict = "read", "environment", "land"
+			fixture.starter.onStart = func(record Record) error {
+				if record.Kind == "read" && strings.Contains(record.ID, "-retry") {
+					fixture.starter.holdKind = "read"
+					return nil
+				}
+				if record.Kind == "proof" || record.Kind == "read" {
+					writeFile(t, filepath.Join(primary, "records"), record.ID)
+					runGit(t, primary, "add", "records")
+					runGit(t, primary, "commit", "-m", "records")
+					if record.Kind == "read" {
+						if returns {
+							runGit(t, primary, "update-ref", "refs/heads/main", a)
+						}
+						c = strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD"))
+					}
+				}
+				return nil
+			}
+			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil || !first.Capped {
+				t.Fatalf("held reader retry: %+v %v", first, err)
+			}
+			again, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil || !again.Capped {
+				t.Fatalf("reader continuation: %+v %v", again, err)
+			}
+			fixture.starter.failKind, fixture.starter.holdKind = "", ""
+			if _, err := fixture.manager.Store.Update(first.Launch, func(record *Record) error { record.State = Completed; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			last, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := last.Record.Rounds[0]
+			want := []RefMove{{Ref: "refs/heads/main", Before: a, After: c, Step: "read"}}
+			if round.Outcome != "green" || !round.ProofRefsNoted || !reflect.DeepEqual(round.RefMoves, want) {
+				t.Fatalf("continuation replaced the latest move: got %+v, want %+v; round=%+v", round.RefMoves, want, round)
+			}
+		})
+	}
+	t.Run("person-retry", func(t *testing.T) {
+		t.Parallel()
+		fixture, primary := newLinkedGitUnitFixture(t)
+		a := strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD"))
+		fixture.starter.failKind, fixture.starter.failCause, fixture.starter.readVerdict = "proof", "environment", "land"
+		first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+		if err != nil || !first.Record.Rounds[0].ProofRefsNoted || first.Record.Rounds[0].Stop == nil {
+			t.Fatalf("failed proof: %+v %v", first, err)
+		}
+		retry, err := fixture.runner.RetryFailedStep(first.Record.ID, "Wido", "retry the check", func() error { return nil })
+		if err != nil || retry.Record.Rounds[0].ProofRefsNoted {
+			t.Fatalf("person's retry kept the consumed proof window: %+v %v", retry, err)
+		}
+		fixture.starter.failKind = ""
+		fixture.starter.onStart = func(record Record) error {
+			if record.Kind == "proof" {
+				writeFile(t, filepath.Join(primary, "records"), record.ID)
+				runGit(t, primary, "add", "records")
+				runGit(t, primary, "commit", "-m", "records")
+			}
+			return nil
+		}
+		last, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := []RefMove{{Ref: "refs/heads/main", Before: a, After: strings.TrimSpace(runGit(t, primary, "rev-parse", "HEAD")), Step: "proof:check"}}
+		if round := last.Record.Rounds[0]; round.Outcome != "green" || !round.ProofRefsNoted || !reflect.DeepEqual(round.RefMoves, want) {
+			t.Fatalf("person's retry lost its ref move: %+v, want %+v", round, want)
+		}
+	})
+}
+
+func TestAChangedWorktreeFileStopsTheRoundByName(t *testing.T) {
+	t.Parallel()
+	for _, primaryChange := range []bool{false, true} {
+		t.Run(fmt.Sprintf("primary=%t", primaryChange), func(t *testing.T) {
+			t.Parallel()
+			fixture, primary := newLinkedGitUnitFixture(t)
+			fixture.starter.readVerdict = "land"
+			fixture.starter.onStart = func(record Record) error {
+				if record.Kind == "proof" && !strings.Contains(record.ID, "-retry") {
+					tree := fixture.worktree
+					if primaryChange {
+						tree = primary
+					}
+					writeFile(t, filepath.Join(tree, "metasystem/testing.json"), "changed\n")
+				}
+				return nil
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := result.Record.Rounds[0]
+			proof := stepNamed(t, round, "proof:check")
+			if primaryChange {
+				if round.Outcome != "green" || len(proof.LaunchIDs) != 1 {
+					t.Fatalf("another worktree stopped the check: %+v", round)
+				}
+				return
+			}
+			if proof.State != StepPassed || len(proof.Moved) != 0 || len(proof.LaunchIDs) != 2 || round.Outcome != "proof-wrote" || round.Cause != "environment" || round.Stop == nil || round.Stop.Class != "proof: the check's inputs changed during the checks: worktree file metasystem/testing.json" || stepNamed(t, round, "read").Reason != "proof-wrote:worktree file metasystem/testing.json" {
+				t.Fatalf("changed file lost its name through the retry: %+v", round)
+			}
+		})
+	}
+}
+
+func TestARefOnlyReentryKeepsTheBaseline(t *testing.T) {
+	t.Parallel()
+	for _, changedFile := range []bool{false, true} {
+		t.Run(fmt.Sprintf("file=%t", changedFile), func(t *testing.T) {
+			t.Parallel()
+			fixture, primary := newLinkedGitUnitFixture(t)
+			fixture.starter.holdKind, fixture.starter.readVerdict = "proof", "land"
+			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil || !first.Capped {
+				t.Fatalf("held proof: %+v %v", first, err)
+			}
+			path := filepath.Join(first.Record.Rounds[0].Directory, "proof-before.json")
+			before, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changedFile {
+				writeFile(t, filepath.Join(fixture.worktree, "tracked"), "changed\n")
+			} else {
+				writeFile(t, filepath.Join(primary, "records"), "records\n")
+				runGit(t, primary, "add", "records")
+				runGit(t, primary, "commit", "-m", "records")
+			}
+			again, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if changedFile {
+				step := stepNamed(t, again.Record.Rounds[0], "proof:check")
+				if step.State != StepFailed || step.Reason != "the check's inputs changed during the step: worktree file tracked" {
+					t.Fatalf("reentry lost changed input: %+v", again.Record)
+				}
+				return
+			}
+			after, err := os.ReadFile(path)
+			if err != nil || string(after) != string(before) || !again.Capped || again.Record.Rounds[0].Stop != nil {
+				t.Fatalf("ref-only reentry replaced its baseline or failed: %+v %v", again.Record, err)
+			}
+			fixture.starter.holdKind = ""
+			if _, err := fixture.manager.Store.Update(first.Launch, func(record *Record) error { record.State = Completed; return nil }); err != nil {
+				t.Fatal(err)
+			}
+			last, err := fixture.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil || last.Record.Rounds[0].Outcome != "green" {
+				t.Fatalf("released proof: %+v %v", last.Record, err)
+			}
+		})
+	}
+}
+
+func TestAStepKeepsItsEngineWhenTheInstallationIsReplaced(t *testing.T) {
+	t.Parallel()
+	fixture, repo := newGitUnitFixture(t)
+	engine := filepath.Join(t.TempDir(), "bin", "metasystem")
+	if err := os.MkdirAll(filepath.Dir(engine), 0700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, engine, "original engine\n")
+	plan, err := ReadUnitPlan(fixture.plan)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan.Proof[0].Name, plan.Proof[0].Argv = "unit-check", []string{engine}
+	if err := writeUnitJSON(fixture.plan, plan, ""); err != nil {
+		t.Fatal(err)
+	}
+	var retained string
+	fixture.starter.onStart = func(record Record) error {
+		if record.Kind != "proof" {
+			return nil
+		}
+		var brief PlainBrief
+		data, err := os.ReadFile(readString(record.AdapterData, "brief"))
+		if err != nil || json.Unmarshal(data, &brief) != nil {
+			t.Fatalf("proof brief: %s %v", data, err)
+		}
+		if retained == "" {
+			retained = filepath.Join(filepath.Dir(filepath.Dir(readString(record.AdapterData, "brief"))), "step-2-inputs/bin/metasystem")
+			writeFile(t, engine+".stage", "replacement engine\n")
+			if err := os.Rename(engine+".stage", engine); err != nil {
+				t.Fatal(err)
+			}
+			writeFile(t, filepath.Join(repo, "tracked"), "changed\n")
+		}
+		data, err = os.ReadFile(brief.Argv[0])
+		if brief.Argv[0] != retained || err != nil || string(data) != "original engine\n" {
+			t.Fatalf("step executed replaced engine: argv=%v bytes=%q error=%v", brief.Argv, data, err)
+		}
+		return nil
+	}
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil || len(stepNamed(t, result.Record.Rounds[0], "proof:unit-check").LaunchIDs) != 2 {
+		t.Fatalf("retained engine retry: %+v %v", result.Record, err)
+	}
+}
+
+func TestAGenericProofKeepsItsCommand(t *testing.T) {
+	t.Parallel()
+	for _, absolute := range []bool{false, true} {
+		t.Run(fmt.Sprintf("absolute=%t", absolute), func(t *testing.T) {
+			t.Parallel()
+			fixture, _ := newGitUnitFixture(t)
+			fixture.starter.readVerdict = "land"
+			plan, err := ReadUnitPlan(fixture.plan)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if absolute {
+				engine := filepath.Join(t.TempDir(), "metasystem")
+				writeFile(t, engine, "generic program\n")
+				plan.Proof[0].Argv = []string{engine}
+				if err := writeUnitJSON(fixture.plan, plan, ""); err != nil {
+					t.Fatal(err)
+				}
+			}
+			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := result.Record.Rounds[0]
+			step := stepNamed(t, round, "proof:check")
+			original, err := os.ReadFile(filepath.Join(round.Directory, "proof-check.json"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			retained, err := os.ReadFile(step.Retained.Brief)
+			var brief PlainBrief
+			_, binErr := os.Stat(filepath.Join(round.Directory, "step-2-inputs/bin"))
+			if err != nil || string(retained) != string(original) || json.Unmarshal(retained, &brief) != nil || brief.Argv[0] != plan.Proof[0].Argv[0] || !os.IsNotExist(binErr) || round.Outcome != "green" {
+				t.Fatalf("generic command changed: %s %v bin=%v round=%+v", retained, err, binErr, round)
+			}
+		})
+	}
+}
+
 func TestProofThatMovesTheRepositoryRetriesTheStep(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
@@ -1116,8 +1472,6 @@ func TestProofThatMovesTheRepositoryRetriesTheStep(t *testing.T) {
 			runGit(t, repo, "add", "committed")
 			runGit(t, repo, "commit", "-m", "proof commit")
 		}},
-		{"ref", "refs", func(t *testing.T, repo string) { runGit(t, repo, "update-ref", "refs/heads/x", "HEAD") }},
-		{"tag", "refs", func(t *testing.T, repo string) { runGit(t, repo, "update-ref", "refs/tags/x", "HEAD") }},
 		// The presence publisher and the goal ledger's fetch move these refs
 		// while any proof runs; the proof wrote none of them.
 		{"background-refs", "", func(t *testing.T, repo string) {
@@ -1192,6 +1546,10 @@ func TestProofThatMovesTheRepositoryRetriesTheStep(t *testing.T) {
 			proof := stepNamed(t, round, "proof:check")
 			if round.Outcome != "proof-wrote" || round.Cause != "environment" || round.Stop == nil || len(proof.LaunchIDs) != 2 || stepNamed(t, round, "read").State != StepSkipped {
 				t.Fatalf("tree movement did not hold the changed result after one proof retry: %+v", round)
+			}
+			name := map[string]string{"head": "the goal branch head", "index": "the worktree's staged state", "tree": "worktree file tracked"}[row.moved]
+			if !strings.Contains(round.Stop.Class, name) {
+				t.Fatalf("changed input lost its name: %s", round.Stop.Class)
 			}
 		})
 	}
@@ -1743,5 +2101,328 @@ func TestRoundMaterialAndJudgement(t *testing.T) {
 	card = judgementRound(record, 2)
 	if card.N != 2 || card.Max == nil || *card.Max != 20 {
 		t.Fatalf("legacy judgement=%+v", card)
+	}
+}
+
+func TestARefusedAdmissionLeavesTheStepsLaunchesUnchanged(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"load", "hook", "hook-error", "hook-refusal", "start"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			f, _ := newGitUnitFixture(t)
+			f.starter.readVerdict = "land"
+			gate, attempts := false, map[string]int{}
+			var retained, saved string
+			f.runner.BeforeModelLaunch = func(_ UnitRunRecord, spec StartSpec) error {
+				attempts[spec.ID]++
+				if mode == "start" && strings.HasSuffix(spec.ID, "-retry") && attempts[spec.ID] > 1 {
+					t.Fatalf("the machine repeated an unadmitted start: %s", spec.ID)
+				}
+				if gate && mode == "hook" {
+					return coded("LAUNCH_BUILD_CAPACITY", "", errors.New("host busy"))
+				}
+				if gate && mode == "hook-error" {
+					return errors.New("the hook died here")
+				}
+				if gate && mode == "hook-refusal" {
+					return coded("BUDGET_REFUSED", "", errors.New("reservation unavailable"))
+				}
+				return nil
+			}
+			host := &checkHostLoad{}
+			f.manager.CapacitySources.Load = host.sample
+			f.starter.onStart = func(r Record) error {
+				if r.Kind == "proof" && !strings.HasSuffix(r.ID, "-retry") {
+					gate = true
+					f.starter.failKind, f.starter.failCause = "proof", "process-lost"
+					if mode == "load" {
+						host.set(20)
+					}
+					if mode == "start" {
+						retained = r.Inputs[0].Path
+						saved = retained + ".saved"
+						return os.Rename(retained, saved)
+					}
+				} else {
+					f.starter.failKind = ""
+				}
+				return nil
+			}
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if mode != "start" && result.Record.Rounds[0].Steps[1].LaunchID != result.Record.ID+"-r1-s2-retry" {
+				t.Fatalf("the wait returned the prior launch instead of its candidate: %+v", result.Record.Rounds[0].Steps[1])
+			}
+			r, statusErr := f.runner.Status(result.Record.ID)
+			if statusErr != nil {
+				t.Fatal(statusErr)
+			}
+			step, round := r.Rounds[0].Steps[1], r.Rounds[0]
+			original := r.ID + "-r1-s2"
+			candidate := original + "-retry"
+			if !slices.Equal(step.LaunchIDs, []string{original}) {
+				t.Fatalf("unstarted candidate was listed: %+v", step)
+			}
+			if _, readErr := f.manager.Store.Read(candidate); !errors.Is(readErr, fs.ErrNotExist) {
+				t.Fatalf("unstarted launch: %v", readErr)
+			}
+			if mode != "start" {
+				returned := IsCode(err, "LAUNCH_BUILD_CAPACITY")
+				if mode == "hook-error" {
+					returned = IsCode(err, "UNIT_LAUNCH_UNAUTHORIZED") && strings.Contains(err.Error(), "the hook died here")
+				}
+				if mode == "hook-refusal" {
+					returned = IsCode(err, "BUDGET_REFUSED")
+				}
+				if !returned || step.State != StepStarting || step.LaunchID != candidate || step.Unadmitted != "" || round.Stop != nil {
+					t.Fatalf("a wait or a hook refusal became a stop: %+v %v", round, err)
+				}
+				gate = false
+				host.set(0)
+				result, err = f.runner.Advance(UnitRequest{Resume: r.ID})
+				step = result.Record.Rounds[0].Steps[1]
+				if err != nil || !slices.Equal(step.LaunchIDs, []string{original, candidate}) || step.State != StepPassed {
+					t.Fatalf("candidate did not resume: %+v %v", step, err)
+				}
+				return
+			}
+			if err != nil || step.State != StepFailed || step.Cause != "environment" || step.Unadmitted != candidate || step.Holds != 1 || step.LaunchID != original || round.Stop == nil || round.Stop.Class != step.Name+": "+step.Reason || (mode == "start" && !strings.Contains(step.Reason, retained)) || step.FinishedAt == "" || attempts[candidate] != 1 {
+				t.Fatalf("failed admission was not held: %+v %v attempts=%v", round, err, attempts)
+			}
+			for pass := range 2 {
+				if pass == 1 {
+					if mode == "start" {
+						if err := os.Rename(saved, retained); err != nil {
+							t.Fatal(err)
+						}
+					}
+					gate = false
+					f.starter.holdKind = "proof"
+				}
+				if _, err := f.runner.RetryFailedStep(r.ID, "Wido", "start again", func() error { return nil }); err != nil {
+					t.Fatal(err)
+				}
+				attempts = map[string]int{}
+				result, err = f.runner.Advance(UnitRequest{Resume: r.ID})
+				step = result.Record.Rounds[0].Steps[1]
+				if err != nil || step.RetryLaunch != candidate+"#"+strconv.Itoa(pass+1) || attempts[candidate] != 1 {
+					t.Fatalf("person's retry: %+v %v attempts=%v", step, err, attempts)
+				}
+				if pass == 0 && (step.Unadmitted != candidate || step.Holds != 2 || step.State != StepFailed) {
+					t.Fatalf("refused person's retry: %+v", step)
+				}
+			}
+			if step.State != StepRunning || step.Unadmitted != "" || !slices.Equal(step.LaunchIDs, []string{original, candidate}) {
+				t.Fatalf("identical retry never admitted: %+v", step)
+			}
+			before, _ := json.Marshal(result.Record)
+			again, err := f.runner.RetryFailedStep(r.ID, "Wido", "start again", func() error { t.Fatal("identical retry recorded twice"); return nil })
+			after, _ := json.Marshal(again.Record)
+			if err != nil || string(before) != string(after) {
+				t.Fatalf("running retry changed: %v", err)
+			}
+		})
+	}
+	for _, mode := range []string{"hook", "admit"} {
+		t.Run("read-"+mode+"-and-store", func(t *testing.T) {
+			t.Parallel()
+			f, _ := newGitUnitFixture(t)
+			plan, _ := ReadUnitPlan(f.plan)
+			plan.Read.Outputs = []string{filepath.Join(t.TempDir(), "findings.md")}
+			if err := writeUnitJSON(f.plan, plan, ""); err != nil {
+				t.Fatal(err)
+			}
+			f.starter.failKind, f.starter.failCause = "read", "process-lost"
+			f.runner.BeforeModelLaunch = func(_ UnitRunRecord, spec StartSpec) error {
+				if strings.HasSuffix(spec.ID, "-retry") {
+					if mode == "admit" {
+						f.manager.Settings.BriefCap = 1
+						return nil
+					}
+					return coded("BUDGET_REFUSED", "", errors.New("budget exhausted"))
+				}
+				return nil
+			}
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if mode == "hook" && !IsCode(err, "BUDGET_REFUSED") {
+				t.Fatalf("the read retry's budget refusal did not return to the caller: %v", err)
+			}
+			if mode == "admit" && err != nil {
+				t.Fatalf("read retry did not reach its hold: %v", err)
+			}
+			r, err := f.runner.Status(result.Record.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			step := stepNamed(t, r.Rounds[0], "read")
+			candidate := step.LaunchIDs[0] + "-retry"
+			reason := "budget exhausted"
+			if mode == "admit" {
+				reason = "over the cap of 1"
+			}
+			round := r.Rounds[0]
+			if mode == "hook" && (step.State != StepStarting || step.LaunchID != candidate || step.Unadmitted != "" || round.Stop != nil) {
+				t.Fatalf("the read retry's budget refusal became a stop: %+v", round)
+			}
+			if mode == "admit" && (step.State != StepFailed || step.Cause != "environment" || step.Unadmitted != candidate || step.LaunchID != step.LaunchIDs[0] || step.FinishedAt == "" || !strings.Contains(step.Reason, reason) || round.Stop == nil || round.Stop.Class != "read: "+step.Reason) {
+				t.Fatalf("read admission was not held by name: %+v", round)
+			}
+			state, _ := f.manager.Store.StateDir(candidate)
+			if _, err := os.Stat(state); !errors.Is(err, fs.ErrNotExist) || len(step.LaunchIDs) != 1 {
+				t.Fatalf("refused read created a folder or listed its candidate: %+v %v", step, err)
+			}
+			if err := os.MkdirAll(filepath.Join(f.manager.Store.Root, "never-started"), 0700); err != nil {
+				t.Fatal(err)
+			}
+			listed, err := f.manager.Store.List()
+			if err != nil || len(listed) != len(f.starter.ids) {
+				t.Fatalf("empty folder stopped listing: %d %v", len(listed), err)
+			}
+			writeFile(t, filepath.Join(f.manager.Store.Root, "never-started", "record.json"), "unreadable json")
+			if _, err := f.manager.Store.List(); err == nil {
+				t.Fatal("damaged record was silently skipped")
+			}
+		})
+	}
+}
+
+type unitReaderAdapter struct {
+	fakeAdapter
+	transcript string
+}
+
+// A hold is named by the admission it refused, with or without a listed
+// launch (U1c1 read 2, F-1 and F-2); a failed launch keeps its own id.
+func TestHoldFindingNamesTheRefusedAdmission(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		step UnitStep
+		want string
+	}{
+		{UnitStep{Unadmitted: "run-r1-s2", Holds: 1}, "run-r1-s2#1"},
+		{UnitStep{LaunchID: "run-r1-s2", LaunchIDs: []string{"run-r1-s2"}, Unadmitted: "run-r1-s2-retry", Holds: 2}, "run-r1-s2-retry#2"},
+		{UnitStep{LaunchID: "run-r1-s2-retry", LaunchIDs: []string{"run-r1-s2", "run-r1-s2-retry"}}, "run-r1-s2-retry"},
+	} {
+		if got := row.step.HoldFinding(); got != row.want {
+			t.Fatalf("hold finding %q, want %q for %+v", got, row.want, row.step)
+		}
+	}
+}
+
+func (a unitReaderAdapter) Transcript(Record, string) (string, error) {
+	if a.transcript == "" {
+		return "", errors.New("transcript missing")
+	}
+	return a.transcript, nil
+}
+func (a unitReaderAdapter) Command(r Record, state string) (Command, error) {
+	data, err := os.ReadFile(readString(r.AdapterData, "brief"))
+	return Command{Stdin: string(data), LogPath: filepath.Join(state, "log")}, err
+}
+func (a unitReaderAdapter) Measure(Record, string) (Measurement, []Output, map[string]json.RawMessage, error) {
+	return Measurement{Verdict: "land"}, nil, nil, nil
+}
+
+type supervisingUnitReader struct{ *completingStarter }
+
+func (s supervisingUnitReader) StartSupervisor(id, state string) (identity.Ref, error) {
+	r, err := s.m.Store.Read(id)
+	if err != nil {
+		return identity.Ref{}, err
+	}
+	if r.Kind != "read" {
+		return s.completingStarter.StartSupervisor(id, state)
+	}
+	s.ids, s.order = append(s.ids, id), append(s.order, r.Kind)
+	_, err = s.m.Supervise(id)
+	return ref(10), err
+}
+
+func TestASilentReaderIsRetriedOnceThenStopsByName(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"silent", "retry-writes", "transcript-missing", "no-transcript-adapter"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			f, _ := newGitUnitFixture(t)
+			plan, _ := ReadUnitPlan(f.plan)
+			output := filepath.Join(t.TempDir(), "findings.md")
+			plan.Read.Outputs = []string{output}
+			writeFile(t, plan.Read.Brief, "Write findings to: "+output+"\nStructured findings: "+output+".json\n")
+			if err := writeUnitJSON(f.plan, plan, ""); err != nil {
+				t.Fatal(err)
+			}
+			transcript := filepath.Join(t.TempDir(), "transcript.jsonl")
+			f.manager.Adapters["claude-headless"] = unitReaderAdapter{transcript: transcript}
+			if mode == "transcript-missing" {
+				f.manager.Adapters["claude-headless"] = unitReaderAdapter{}
+			}
+			if mode == "no-transcript-adapter" {
+				f.manager.Adapters["claude-headless"] = struct{ Adapter }{unitReaderAdapter{}}
+			}
+			f.manager.Supervisor = supervisingUnitReader{f.starter}
+			processes := f.manager.Processes.(*fakeProcesses)
+			reads := 0
+			processes.onStart = func(c Command) {
+				reads++
+				if mode == "retry-writes" && reads == 2 {
+					path := strings.Split(strings.TrimPrefix(c.Stdin, "Write findings to: "), "\n")[0]
+					writeFile(t, path, "Verdict: land\n")
+					writeFile(t, path+".json", structuredUnitReturn(0, "regression", "unit.go"))
+				}
+			}
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := result.Record.Rounds[0]
+			step := stepNamed(t, round, "read")
+			if reads != 2 || len(step.LaunchIDs) != 2 {
+				t.Fatalf("reader was not retried once: reads=%d round=%+v", reads, round)
+			}
+			retry, err := f.manager.Store.Read(step.LaunchID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			paths, _ := declaredOutputPaths(retry)
+			want := "read: the reader " + retry.ID + " ended without writing its declared output " + paths[0] + "; transcript " + transcript
+			if mode != "retry-writes" {
+				if mode != "silent" {
+					state, _ := f.manager.Store.StateDir(retry.ID)
+					want = "read: the reader " + retry.ID + " ended without writing its declared output " + paths[0] + "; transcript " + state
+				}
+				if round.Outcome != "read-failed" || round.Cause != "environment" || round.Material != -1 || round.Stop == nil || round.Stop.Class != want {
+					t.Fatalf("silent reader lost its named hold: %+v want=%s", round, want)
+				}
+				return
+			}
+			briefData, _ := os.ReadFile(retry.Inputs[0].Path)
+			retained, _ := os.ReadFile(step.Retained.Brief)
+			if round.Outcome != "green" || len(round.Reads) != 1 || !strings.Contains(string(briefData), "Write findings to: "+paths[0]+"\n") || !strings.Contains(string(briefData), "Structured findings: "+paths[0]+".json\n") || !strings.Contains(string(retained), output) || paths[0] == output {
+				t.Fatalf("reader's brief and collected output disagree: round=%+v brief=%s paths=%v", round, briefData, paths)
+			}
+		})
+	}
+}
+
+func TestClaudeTranscriptNamesTheRecordedSession(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	project := filepath.Join(root, "project")
+	if err := os.Mkdir(project, 0700); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(project, "session.jsonl")
+	writeFile(t, path, "{}\n")
+	r := Record{ID: "reader", AdapterData: map[string]json.RawMessage{"sessionID": rawString("session")}}
+	adapter := ClaudeHeadless{ProjectsRoot: root}
+	if got, err := adapter.Transcript(r, "unused"); err != nil || got != path {
+		t.Fatalf("transcript=%s err=%v", got, err)
+	}
+	setString(r.AdapterData, "sessionID", "missing")
+	if _, err := adapter.Transcript(r, "unused"); err == nil {
+		t.Fatal("missing transcript was reported as found")
+	}
+	adapter.ProjectsRoot = filepath.Join(root, "missing")
+	if _, err := adapter.Transcript(r, "unused"); err == nil {
+		t.Fatal("unreadable projects root was reported as found")
 	}
 }

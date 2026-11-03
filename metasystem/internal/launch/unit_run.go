@@ -72,7 +72,17 @@ type UnitRunRecord struct {
 	Mutation  *identity.Ref  `json:"mutation,omitempty"`
 }
 
+type RefMove struct {
+	Ref    string `json:"ref"`
+	Before string `json:"before,omitempty"`
+	After  string `json:"after,omitempty"`
+	Step   string `json:"step"`
+}
+
 type UnitRound struct {
+	RefMoves         []RefMove          `json:"refMoves,omitempty"`
+	ProofRefsNoted   bool               `json:"proofRefsNoted,omitempty"`
+	InputsChanged    string             `json:"inputsChanged,omitempty"`
 	Result           *RoundResult       `json:"result,omitempty"`
 	GapMessage       string             `json:"gapMessage,omitempty"`
 	BuildLines       int64              `json:"buildLines,omitempty"`
@@ -132,6 +142,8 @@ type UnitStep struct {
 	RetryReason string              `json:"retryReason,omitempty"`
 	RetryLaunch string              `json:"retryLaunch,omitempty"`
 	Deadline    bool                `json:"deadline,omitempty"`
+	Unadmitted  string              `json:"unadmitted,omitempty"`
+	Holds       int                 `json:"holds,omitempty"`
 	LaunchIDs   []string            `json:"launchIds,omitempty"`
 	Retained    *StartSpec          `json:"retained,omitempty"`
 	Before      *repositorySnapshot `json:"before,omitempty"`
@@ -141,6 +153,16 @@ type UnitStep struct {
 	Flakes      []string            `json:"flakes,omitempty"`
 	Red         string              `json:"red,omitempty"`
 	RedCause    *loopstop.Cause     `json:"redCause,omitempty"`
+}
+
+// HoldFinding names what a hold asks a person to retry: the failed launch,
+// or this step's N-th refused admission of its candidate. Every refusal asks
+// its own question, and the act that answers it closes only that one.
+func (step UnitStep) HoldFinding() string {
+	if step.Unadmitted != "" {
+		return fmt.Sprintf("%s#%d", step.Unadmitted, step.Holds)
+	}
+	return step.LaunchID
 }
 
 type UnitRequest struct{ Plan, Resume, FollowUp string }
@@ -606,7 +628,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	commands := proofCommands(plan)
 	beforeProof, err := runner.savedRepositorySnapshot(round.Directory, "proof-before.json", plan.Worktree)
 	if IsCode(err, "UNIT_TREE_CHANGED") {
-		return runner.treeMoved(record, round)
+		return runner.treeMoved(record, round, strings.TrimPrefix(err.Error(), "the check's inputs changed during the step: "))
 	}
 	if err != nil {
 		return UnitResult{}, err
@@ -639,14 +661,19 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	}
 	afterProof, err := runner.savedRepositorySnapshot(round.Directory, "proof-after.json", plan.Worktree)
 	if IsCode(err, "UNIT_TREE_CHANGED") {
-		return runner.treeMoved(record, round)
+		return runner.treeMoved(record, round, strings.TrimPrefix(err.Error(), "the check's inputs changed during the step: "))
 	}
 	if err != nil {
 		return UnitResult{}, err
 	}
+	if !round.ProofRefsNoted {
+		noteRefMoves(round, "proof:"+commands[0].Name, beforeProof, afterProof)
+		round.ProofRefsNoted = true
+	}
 	var moved []string
-	if beforeProof != afterProof {
-		moved = append(moved, "worktree")
+	round.InputsChanged = inputNames(beforeProof, afterProof)
+	if round.InputsChanged != "" {
+		moved = append(moved, round.InputsChanged)
 	}
 	for _, step := range round.Steps[buildCount:] {
 		moved = append(moved, step.Moved...)
@@ -682,7 +709,11 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 	}
 	if len(moved) != 0 {
-		if err := runner.skipAfter(record, round, readStart, "proof-wrote:"+strings.Join(moved, ",")); err != nil {
+		names := round.InputsChanged
+		if names == "" {
+			names = strings.Join(moved, ",")
+		}
+		if err := runner.skipAfter(record, round, readStart, "proof-wrote:"+names); err != nil {
 			return UnitResult{}, err
 		}
 		return runner.finish(record, round, "proof-wrote")
@@ -697,14 +728,31 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if err != nil {
 		return UnitResult{}, err
 	}
-	if packet != "" && plan.HasRead() {
+	if plan.HasRead() && (packet != "" || len(round.RefMoves) > 0) {
 		brief, err := os.ReadFile(plan.Read.Brief)
 		if err != nil {
 			return UnitResult{}, err
 		}
-		brief = []byte(strings.Replace(string(brief), "Not this read. A follow-up round of this unit is read again by the unit runner with this brief.", "Check the follow-up packet below before reading new changes.", 1))
+		text := string(brief)
+		if packet != "" {
+			text = strings.Replace(text, "Not this read. A follow-up round of this unit is read again by the unit runner with this brief.", "Check the follow-up packet below before reading new changes.", 1) + packet
+		}
+		if len(round.RefMoves) > 0 {
+			var moves []string
+			for _, move := range round.RefMoves {
+				before, after := fmt.Sprintf("%.10s", move.Before), fmt.Sprintf("%.10s", move.After)
+				if before == "" {
+					before = "created"
+				}
+				if after == "" {
+					after = "deleted"
+				}
+				moves = append(moves, move.Ref+" "+before+" to "+after)
+			}
+			text += "\n\nWhile the checks ran, these refs moved; the check reads none of them: " + strings.Join(moves, "; ") + ".\n"
+		}
 		path := filepath.Join(round.Directory, "read-brief.md")
-		if _, err := atomicfile.WriteText(path, string(brief)+packet, runner.root()); err != nil {
+		if _, err := atomicfile.WriteText(path, text, runner.root()); err != nil {
 			return UnitResult{}, err
 		}
 		sequence.spec.Brief = path
@@ -723,8 +771,8 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if err != nil {
 		return UnitResult{}, err
 	}
-	if afterRead != afterProof {
-		return runner.treeMoved(record, round)
+	if names := inputNames(afterProof, afterRead); names != "" {
+		return runner.treeMoved(record, round, names)
 	}
 	return runner.finish(record, round, outcome)
 }
@@ -1017,7 +1065,7 @@ func (runner *UnitRunner) finish(record *UnitRunRecord, round *UnitRound, outcom
 	if round.Cause == "" {
 		round.Cause = roundCause(round.Steps)
 	}
-	if strings.HasPrefix(outcome, "build-") || strings.HasPrefix(outcome, "proof-") || !slices.ContainsFunc(round.Steps, func(step UnitStep) bool { return strings.HasPrefix(step.Name, "read") }) {
+	if strings.HasPrefix(outcome, "build-") || strings.HasPrefix(outcome, "proof-") || outcome == "read-failed" && round.Cause == "environment" || !slices.ContainsFunc(round.Steps, func(step UnitStep) bool { return strings.HasPrefix(step.Name, "read") }) {
 		round.Material = -1
 	} else {
 		if err := runner.collectRoundRead(record, round); err != nil {
@@ -1213,7 +1261,6 @@ func (snapshot repositorySnapshot) changed(after repositorySnapshot) []string {
 		before, after string
 	}{
 		{"head", snapshot.Head, after.Head},
-		{"refs", snapshot.Refs, after.Refs},
 		{"index", snapshot.Index, after.Index},
 		{"tree", snapshot.Tree, after.Tree},
 	} {
@@ -1222,6 +1269,87 @@ func (snapshot repositorySnapshot) changed(after repositorySnapshot) []string {
 		}
 	}
 	return changed
+}
+
+func noteRefMoves(round *UnitRound, step string, before, after repositorySnapshot) {
+	refs := func(snapshot repositorySnapshot) map[string]string {
+		result := map[string]string{}
+		for _, line := range strings.Split(snapshot.Refs, "\n") {
+			if fields := strings.Fields(line); len(fields) == 2 {
+				result[fields[0]] = fields[1]
+			}
+		}
+		return result
+	}
+	left, right := refs(before), refs(after)
+	for ref := range left {
+		if _, exists := right[ref]; !exists {
+			right[ref] = ""
+		}
+	}
+	var names []string
+	for ref, after := range right {
+		if left[ref] != after {
+			names = append(names, ref)
+		}
+	}
+	sort.Strings(names)
+	for _, ref := range names {
+		index := slices.IndexFunc(round.RefMoves, func(move RefMove) bool { return move.Ref == ref })
+		if index < 0 {
+			round.RefMoves = append(round.RefMoves, RefMove{Ref: ref, Before: left[ref], After: right[ref], Step: step})
+		} else {
+			round.RefMoves[index].After, round.RefMoves[index].Step = right[ref], step
+		}
+	}
+}
+
+func inputNames(before, after repositorySnapshot) string {
+	var names []string
+	for _, changed := range before.changed(after) {
+		switch changed {
+		case "head":
+			names = append(names, fmt.Sprintf("the goal branch head (%.10s to %.10s)", strings.TrimSpace(before.Head), strings.TrimSpace(after.Head)))
+		case "index":
+			names = append(names, "the worktree's staged state")
+		case "tree":
+			entries := func(raw string) map[string]string {
+				result := map[string]string{}
+				fields := strings.Split(raw, "\x00")
+				for i := 0; i+1 < len(fields); {
+					count := 1
+					if status := strings.Fields(fields[i]); len(status) == 5 && strings.ContainsAny(status[4][:1], "RC") {
+						count = 2
+					}
+					end := min(i+1+count, len(fields))
+					for _, path := range fields[i+1 : end] {
+						result[path] = strings.Join(fields[i:end], "\x00")
+					}
+					i = end
+				}
+				return result
+			}
+			left, right := entries(before.Tree), entries(after.Tree)
+			var paths []string
+			for path, entry := range right {
+				if left[path] != entry {
+					paths = append(paths, path)
+				}
+				delete(left, path)
+			}
+			for path := range left {
+				paths = append(paths, path)
+			}
+			sort.Strings(paths)
+			for _, path := range paths[:min(5, len(paths))] {
+				names = append(names, "worktree file "+path)
+			}
+			if len(paths) > 5 {
+				names = append(names, fmt.Sprintf("and %d more", len(paths)-5))
+			}
+		}
+	}
+	return strings.Join(names, ", ")
 }
 
 func (runner *UnitRunner) savedRepositorySnapshot(directory, name, worktree string) (repositorySnapshot, error) {
@@ -1235,9 +1363,10 @@ func (runner *UnitRunner) savedRepositorySnapshot(directory, name, worktree stri
 		if err := json.Unmarshal(data, &prior); err != nil {
 			return repositorySnapshot{}, err
 		}
-		if prior != snapshot {
-			return repositorySnapshot{}, coded("UNIT_TREE_CHANGED", "", errors.New("the worktree changed while this command was waiting"))
+		if names := inputNames(prior, snapshot); names != "" {
+			return repositorySnapshot{}, coded("UNIT_TREE_CHANGED", "", errors.New("the check's inputs changed during the step: "+names))
 		}
+		return prior, nil
 	} else if !os.IsNotExist(readErr) {
 		return repositorySnapshot{}, readErr
 	}
@@ -1269,10 +1398,8 @@ func (runner *UnitRunner) snapshotWorktree(worktree string, sharedRefs bool) (re
 	if err != nil {
 		return repositorySnapshot{}, err
 	}
-	// Only the refs a proof could write are compared: local branches, tags,
-	// notes and the stash. Remote-tracking refs and the engine's own
-	// refs/metasystem/ namespace move while a proof runs (the presence
-	// publisher and the goal ledger's fetch), and a proof writes neither.
+	// Local branches, tags, notes and the stash are retained as observations.
+	// Remote-tracking refs and engine bookkeeping are outside this observation.
 	var refs []byte
 	if sharedRefs {
 		refs, err = git.Run(root, nil, "for-each-ref", "--format=%(refname) %(objectname)", "refs/heads", "refs/tags", "refs/notes", "refs/stash")

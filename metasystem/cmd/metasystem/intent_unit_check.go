@@ -124,6 +124,13 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 				if briefErr != nil {
 					context.BriefSHA256 = ""
 				}
+				executable := inv.owners.processes.executable
+				if executable == nil {
+					executable = os.Executable
+				}
+				if path, err := executable(); err == nil {
+					plan.Check.Environment = commandenv.EngineEnvironmentInDirectory(plan.Check.Environment, filepath.Dir(path))
+				}
 				execution, exits, err = plan.Check.Run(filepath.Join(strings.TrimSpace(string(top)), relative), records, context)
 			}
 		}

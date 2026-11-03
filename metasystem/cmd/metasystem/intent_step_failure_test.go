@@ -248,6 +248,20 @@ func TestIntentMovedTreeRetryUsesCurrentSnapshot(t *testing.T) {
 			if r.Rounds[0].Result == nil || r.Rounds[0].Result.Parent != originalHead {
 				t.Fatalf("retry rewrote the builder's parent: %+v", r.Rounds[0].Result)
 			}
+			// The class leads with the red's own words when the classifier wrote
+			// them on the step (a-red-is-classified-once), else with the failed
+			// step's name and reason; read through JSON so both shapes compile.
+			head := step.Name + ": " + step.Reason
+			var red struct {
+				Red string `json:"red"`
+			}
+			if encoded, err := json.Marshal(step); err == nil && json.Unmarshal(encoded, &red) == nil && red.Red != "" {
+				head = red.Red
+			}
+			class := r.Rounds[0].Stop.Class
+			if !strings.Contains(class, "the goal branch head ("+originalHead[:10]+" to moved-head)") || !strings.Contains(class, "the check's inputs changed during the checks:") || !pass && !strings.HasPrefix(class, head+"; ") {
+				t.Fatalf("retry lost the named input or failed step: %s", class)
+			}
 			data, err := os.ReadFile(filepath.Join(r.Rounds[0].Directory, "proof-before.json"))
 			var retained struct {
 				Head string `json:"head"`
@@ -277,8 +291,37 @@ func TestIntentUnreadableRetainedInputHoldsUnknown(t *testing.T) {
 	b.manager.Supervisor = failureSupervisor{bed: b, unreadable: true}
 	code, result := failedCommandBuild(t, b)
 	r := failedCommandRecord(t, b, result)
-	if code != 1 || r.State != "awaiting-judgement" || r.Rounds[0].Cause != "unclassified" || r.Rounds[0].Stop == nil || len(p.commands) != 0 || len(b.starter.launched()) != 1 {
-		t.Fatalf("unreadable input lost its unknown hold: %d %+v", code, r)
+	if code != 1 || r.State != "awaiting-judgement" || r.Rounds[0].Cause != "environment" || r.Rounds[0].Stop == nil || r.Rounds[0].Steps[1].Unadmitted != r.ID+"-r1-s2-retry" || len(p.commands) != 0 || len(b.starter.launched()) != 1 {
+		t.Fatalf("unreadable input lost its environment hold: %d %+v", code, r)
+	}
+}
+
+// Every refused admission of a step's candidate is a hold of its own (U1c1
+// read 2, F-1 and F-2): the person's retry act closes the question it answers
+// and the next refusal asks again, instead of reusing the first hold's key.
+func TestARefusedRetryAsksItsOwnQuestion(t *testing.T) {
+	t.Parallel()
+	b, _ := failedCommandBed(t, 0)
+	b.manager.Supervisor = failureSupervisor{bed: b, unreadable: true}
+	code, result := failedCommandBuild(t, b)
+	r := failedCommandRecord(t, b, result)
+	candidate := r.ID + "-r1-s2-retry"
+	questions, damaged := channel.WalkOpenQuestions(b.root())
+	if code != 1 || result.Next == nil || len(damaged) != 0 || len(questions) != 1 || questions[0].UnitStop == nil || questions[0].UnitStop.Finding != candidate+"#1" || r.Rounds[0].Steps[1].Holds != 1 {
+		t.Fatalf("the first refused admission is not asked by its candidate: %d %+v %+v", code, questions, r.Rounds[0].Steps[1])
+	}
+	// The retained input is still unreadable: the person's retry is refused again.
+	args := replaceWord(replaceWord(result.Next.Argv[1:], "TEXT", "start again"), "NAME", "Wido")
+	_, again, _ := b.work(args...)
+	r = failedCommandRecord(t, b, again)
+	step := r.Rounds[0].Steps[1]
+	if step.State != launch.StepFailed || step.Unadmitted != candidate || step.Holds != 2 || step.RetryLaunch != candidate+"#1" || r.Rounds[0].Stop == nil {
+		t.Fatalf("the second refusal is not a hold of its own: %+v", step)
+	}
+	first, err := channel.ReadQuestion(b.root(), questions[0].ID)
+	open, damaged := channel.WalkOpenQuestions(b.root())
+	if err != nil || first.State != "closed" || len(damaged) != 0 || len(open) != 1 || open[0].ID == questions[0].ID || open[0].UnitStop == nil || open[0].UnitStop.Finding != candidate+"#2" {
+		t.Fatalf("the second refusal asked no question of its own: first=%s open=%+v", first.State, open)
 	}
 }
 

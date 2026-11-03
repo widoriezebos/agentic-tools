@@ -1,0 +1,41 @@
+{
+  "coveredUnits": [
+    "U1b"
+  ],
+  "schemaVersion": 1,
+  "goal": "a-check-guards-its-own-inputs",
+  "unit": "U1b",
+  "subject": {
+    "commit": "c3d2afcb9ccd6a917e82dad7f2c7c31ca505ccf0",
+    "parent": "78e2b8a25946702aa6f2d9498ec20996a16254a9",
+    "tree": "8bb4b47449666268e8c28420c1c3037888a2cd82",
+    "patchDigest": "7c4084059d6432d4b93ef0a40f00279d0ae7898b39a7ca89ea338c69a1ca897f",
+    "unitDigest": "4ccf9cf69ff0b5e75ad17434b65ec1624ef87e55faabb9a7919fe6f718975543"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-220e68de2a00048da23af722",
+    "round": 1,
+    "closureSha256": "4e89c44080180ff5d53bf172753f7e2ce316c76a0df72f61e3e9aca46472947b"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "8bb4b47449666268e8c28420c1c3037888a2cd82",
+    "runId": "check-182128012"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "78e2b8a25946702aa6f2d9498ec20996a16254a9",
+      "digest": "f98d5f5a59afd170a294bd74485ee7af6b09579573043934324201db487bfed0"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/launch/unit_test.go",
+      "readerWord": "reviewed by critic root code-critic-220e68de2a00048da23af722"
+    }
+  ],
+  "sha256": "7bbda11c4328c13ea99c03e5cfe57e8b29375bf41f5f10d1cd7cb373e950af75"
+}

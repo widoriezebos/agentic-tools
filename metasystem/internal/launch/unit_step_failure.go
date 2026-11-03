@@ -2,12 +2,14 @@ package launch
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
@@ -72,6 +74,45 @@ func (driver stepDriver) retainStep(index int, spec StartSpec) (StartSpec, error
 		}
 		*path = target
 	}
+	if step.Name == "proof:unit-check" {
+		data, err := os.ReadFile(spec.Brief)
+		var brief PlainBrief
+		if err == nil {
+			err = json.Unmarshal(data, &brief)
+		}
+		if err != nil {
+			return spec, err
+		}
+		if len(brief.Argv) > 0 && filepath.IsAbs(brief.Argv[0]) {
+			if info, err := os.Stat(brief.Argv[0]); err == nil && info.Mode().IsRegular() {
+				target := filepath.Join(directory, "bin", "metasystem")
+				if err := os.MkdirAll(filepath.Dir(target), 0700); err != nil {
+					return spec, err
+				}
+				if _, err := os.Lstat(target); err != nil {
+					if !os.IsNotExist(err) {
+						return spec, err
+					}
+					if err := os.Link(brief.Argv[0], target); err != nil && !os.IsExist(err) {
+						if !errors.Is(err, syscall.EXDEV) {
+							return spec, err
+						}
+						data, err := os.ReadFile(brief.Argv[0])
+						if err != nil {
+							return spec, err
+						}
+						if _, err := atomicfile.WriteFile(target, data, 0755, ""); err != nil {
+							return spec, err
+						}
+					}
+				}
+				brief.Argv[0] = target
+				if err := writeUnitJSON(spec.Brief, brief, ""); err != nil {
+					return spec, err
+				}
+			}
+		}
+	}
 	step.Retained = &spec
 	return spec, driver.save()
 }
@@ -82,8 +123,11 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 		after, err := driver.snapshot(step.Retained.WorkingDirectory)
 		if err != nil {
 			step.State, step.Cause, step.Reason = StepFailed, "unclassified", err.Error()
-		} else if step.Moved = step.Before.changed(after); len(step.Moved) > 0 {
-			step.State, step.Cause, step.Reason = StepFailed, "environment", "the tree moved during the step"
+		} else {
+			noteRefMoves(driver.round, step.Name, *step.Before, after)
+			if step.Moved = step.Before.changed(after); len(step.Moved) > 0 {
+				step.State, step.Cause, step.Reason = StepFailed, "environment", "the check's inputs changed during the step: "+inputNames(*step.Before, after)
+			}
 		}
 		step.Before = nil
 		if err := driver.save(); err != nil {
@@ -93,7 +137,7 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 	// The machine retries a provider refusal or a unit check's proof.deadline
 	// once; any other deadline waits for a person.
 	machine := step.Name == "proof:unit-check" && step.Deadline && step.Cause == "environment"
-	if step.State != StepFailed || step.Cause != "environment" || len(step.LaunchIDs) >= 2 || step.Deadline && !machine {
+	if step.State != StepFailed || step.Cause != "environment" || step.Unadmitted != "" || len(step.LaunchIDs) >= 2 || step.Deadline && !machine {
 		return false, nil
 	}
 	if machine {
@@ -170,6 +214,13 @@ func (runner *UnitRunner) holdFailedStep(record *UnitRunRecord, round *UnitRound
 			break
 		}
 	}
+	if round.InputsChanged != "" {
+		if round.Stop.Class == "the failed step needs a person's decision" {
+			round.Stop.Class = "proof: the check's inputs changed during the checks: " + round.InputsChanged
+		} else {
+			round.Stop.Class += "; the check's inputs changed during the checks: " + round.InputsChanged
+		}
+	}
 	return runner.saveDecision(record, round)
 }
 
@@ -200,8 +251,8 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 	for index := range round.Steps {
 		step := &round.Steps[index]
 		// A replay answers the same hold: the step is no longer failed, or the
-		// retry was recorded for its current launch. A new hold is retried again.
-		if step.RetryBy == person && step.RetryReason == reason && (step.State != StepFailed || step.RetryLaunch == step.LaunchID) {
+		// retry was recorded for its current hold. A new hold is retried again.
+		if step.RetryBy == person && step.RetryReason == reason && (step.State != StepFailed || step.RetryLaunch == step.HoldFinding()) {
 			return result, nil
 		}
 		if step.State != StepFailed {
@@ -224,7 +275,8 @@ func (runner *UnitRunner) RetryFailedStep(id, person, reason string, recordImpac
 				return result, err
 			}
 		}
-		step.RetryBy, step.RetryReason, step.RetryLaunch = person, reason, step.LaunchID
+		round.ProofRefsNoted = false
+		step.RetryBy, step.RetryReason, step.RetryLaunch = person, reason, step.HoldFinding()
 		step.State, step.Reason, step.Cause, step.FinishedAt = StepPending, "", "", ""
 		step.Before, step.Moved, step.Deadline = nil, nil, false
 		step.Alone, step.Comparison, step.RedCause = nil, nil, nil

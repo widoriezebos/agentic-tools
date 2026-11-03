@@ -241,8 +241,17 @@ func TestIntentReadVerdictFromRetainedFindings(t *testing.T) {
 	findings = ""
 	code, result, _ = bed.work(append([]string{"work", "build", bed.id, "silent", "--brief", brief, "--lines", "5"}, workCheck...)...)
 	data = resultData(t, result)
-	if code != 0 || data["outcome"] != "read-failed" || data["readClean"] != false {
+	if code != 1 || result.Outcome != intentRefused || data["outcome"] != "read-failed" || data["readClean"] != false || !strings.Contains(result.Summary, "stopped environment: read: the reader") {
 		t.Fatalf("reader without findings: code=%d %+v", code, result)
+	}
+	record, err = (&launch.UnitRunner{Root: bed.unitRoot}).Status(data["run"].(string))
+	if err != nil {
+		t.Fatal(err)
+	}
+	steps := record.Rounds[len(record.Rounds)-1].Steps
+	step := steps[len(steps)-1]
+	if step.Kind != "read" || step.State != launch.StepFailed || step.Cause != "environment" || len(step.LaunchIDs) != 2 || !strings.HasSuffix(step.LaunchID, "-retry") || !strings.Contains(result.Summary, "the reader "+step.LaunchID+" ended") {
+		t.Fatalf("silent reader did not stop after one retry: %+v; summary=%s", step, result.Summary)
 	}
 }
 

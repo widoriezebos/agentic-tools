@@ -33,10 +33,10 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 			if asString(record["jobId"]) != id || asString(record["unitRun"]) != run || asString(record["goalId"]) != goal || uint64(rev) != revision || int(n) != round || minutes != cap {
 				return fmt.Errorf("the physical launch %s already belongs to a different reservation", id)
 			}
-			if TerminalStatus(asString(record["status"])) {
+			joined = !TerminalStatus(asString(record["status"]))
+			if !joined && (record["unitExecuted"] != false || record["unitEnvironment"] != true) {
 				return fmt.Errorf("the physical launch %s already ended; a retry needs a new launch identity", id)
 			}
-			joined = true
 		}
 		if err != nil && !os.IsNotExist(err) {
 			return err

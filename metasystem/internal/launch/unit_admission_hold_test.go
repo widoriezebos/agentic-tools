@@ -30,7 +30,7 @@ func TestUnitBuildAdmissionRefusalKeepsStartingStep(t *testing.T) {
 			for range 2 {
 				_, err := driver.startStep(0, StartSpec{Kind: "build"})
 				step := round.Steps[0]
-				if !IsCode(err, code) || step.State != StepStarting || step.FinishedAt != "" || step.Cause != "" || round.Outcome != "" || len(step.LaunchIDs) != 1 {
+				if !IsCode(err, code) || step.State != StepStarting || step.FinishedAt != "" || step.Cause != "" || round.Outcome != "" || len(step.LaunchIDs) != 0 || step.LaunchID != "held-build" {
 					t.Fatalf("admission became a failed execution: step=%+v round=%+v error=%v", step, round, err)
 				}
 			}
