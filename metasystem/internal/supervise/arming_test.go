@@ -31,6 +31,25 @@ type armingComponentProbe struct {
 
 type armingProbeFunc func(int64) (identity.Exact, identity.Liveness, error)
 
+// Every helper a supervise test starts carries this binary's key, so the exit
+// scan fails a run that leaves one and the custodian ends them when it dies.
+type helperCustody struct {
+	key  identity.FixtureKey
+	word string
+}
+
+var armingHelpers helperCustody
+
+func (c helperCustody) env(base []string) []string {
+	return append(slices.Clone(base), c.word)
+}
+
+func mintArmingHelperKey() error {
+	key, word, err := testenv.SetupFixtureTag("supervise-helpers")
+	armingHelpers = helperCustody{key: key, word: word}
+	return err
+}
+
 func (f armingProbeFunc) Probe(pid int64) (identity.Exact, identity.Liveness, error) {
 	return f(pid)
 }
@@ -60,6 +79,7 @@ func newOwnedHeldProcess(t *testing.T, newSession bool, arguments ...string) *ow
 	}
 	commandArguments := append([]string{"-c", "printf 'ready\\n' >&4; IFS= read -r _ <&3", "arming-held-process"}, arguments...)
 	command := exec.Command("sh", commandArguments...)
+	command.Env = armingHelpers.env(os.Environ())
 	command.ExtraFiles = []*os.File{releaseReader, readyWriter}
 	if newSession {
 		command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
@@ -156,7 +176,7 @@ func TestMain(m *testing.M) {
 			}
 		}
 	}
-	os.Exit(testenv.Main(m))
+	os.Exit(testenv.MainWithSetup(m, mintArmingHelperKey))
 }
 
 // takeoverComponentReadyFlag asks a component helper to report, on
@@ -173,6 +193,12 @@ func signalTakeoverComponentReady() {
 }
 
 func armingOwnerHelper(args []string) error {
+	word := ""
+	for _, argument := range args {
+		if strings.HasPrefix(argument, identity.FixtureOwnerEnv+"=") {
+			word = argument
+		}
+	}
 	root := processArgument(args, "--repo")
 	tag := processArgument(args, "--tag")
 	fingerprint := processArgument(args, "--fingerprint")
@@ -182,6 +208,9 @@ func armingOwnerHelper(args []string) error {
 	if err != nil {
 		return err
 	}
+	if word == "" {
+		return errors.New("arming owner helper has no fixture custody word")
+	}
 	checkout := &DiskCheckout{
 		Root: root, Self: exact.Ref(), SelfTag: tag, IntervalSec: interval,
 		Fingerprint: fingerprint, WatcherCap: watcherCap,
@@ -190,7 +219,7 @@ func armingOwnerHelper(args []string) error {
 	held := make([]Held, 0, len(productionComponentSet))
 	for _, component := range productionComponentSet {
 		componentTag := tag + "-" + string(component) + "-1"
-		ref, err := ownerfixture.Component("--takeover-component-helper", componentTag, takeoverComponentReadyFlag)
+		ref, err := ownerfixture.Component("--takeover-component-helper", componentTag, takeoverComponentReadyFlag, word)
 		if err != nil {
 			return err
 		}
@@ -222,7 +251,10 @@ func armingOwnerHelper(args []string) error {
 }
 
 func armingOwnerCommand(args ...string) (*exec.Cmd, error) {
-	return ownerfixture.Command("--arming-owner-helper", args...)
+	if armingHelpers.word == "" {
+		return nil, errors.New("arming helper custody was not initialized by TestMain setup")
+	}
+	return ownerfixture.Command("--arming-owner-helper", append(slices.Clone(args), armingHelpers.word)...)
 }
 
 func armingOptions(root string) EnsureOptions {
@@ -367,11 +399,26 @@ func appendPreviousOwnerRelaunched(t *testing.T, path, checkoutPath string, owne
 func reapArmingOwnerProcesses(t *testing.T) {
 	t.Helper()
 	prior := releaseLaunchedOwner
+	var owners []chan struct{}
 	releaseLaunchedOwner = func(command *exec.Cmd) error {
-		go func() { _ = command.Wait() }()
+		done := make(chan struct{})
+		owners = append(owners, done)
+		go func() { _ = command.Wait(); close(done) }()
 		return nil
 	}
-	t.Cleanup(func() { releaseLaunchedOwner = prior })
+	t.Cleanup(func() {
+		defer func() { releaseLaunchedOwner = prior }()
+		testenv.Await(t, "every arming owner to be reaped", func() bool {
+			for _, done := range owners {
+				select {
+				case <-done:
+				default:
+					return false
+				}
+			}
+			return true
+		})
+	})
 }
 
 func fakeArmingOwnerLiveness(t *testing.T, states ...identity.Liveness) {
@@ -1370,6 +1417,7 @@ func TestDeadOwnerTakeoverSweepsPrePublicationWatcher(t *testing.T) {
 		"supervise", "component", "--component", "watcher", "--tag", watcherTag, "--generation", "1", "--repo", root,
 	}
 	componentCommand := exec.Command(os.Args[0], componentArgs...)
+	componentCommand.Env = armingHelpers.env(os.Environ())
 	componentCommand.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	// On Linux, Start returns once the exec has passed its point of no
 	// return, but /proc/<pid>/cmdline stays empty until the new image has
@@ -1886,6 +1934,7 @@ func TestLiveOwnerWithoutPublishedGenerationRefusesRecoveryJoin(t *testing.T) {
 	registryPath := isolatedArmingRegistry(t)
 	ownerTag := "metasystem-supervision-owner-test-unpublished"
 	command := exec.Command(os.Args[0], "-test.run=^TestTakeoverComponentHelper$", "--", "--takeover-component-helper", ownerTag, takeoverComponentReadyFlag)
+	command.Env = armingHelpers.env(os.Environ())
 	command.SysProcAttr = &syscall.SysProcAttr{Setsid: true}
 	// The owner's tag is read from its argv: it starts once its image runs.
 	if err := testexec.StartReady(command); err != nil {

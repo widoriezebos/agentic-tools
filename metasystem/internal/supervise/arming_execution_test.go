@@ -13,6 +13,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin/testdata/pinfixture"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 )
 
 func armingExecutionChild(t *testing.T) bool {
@@ -77,6 +78,29 @@ func TestEnsureArmedJudgesTheOwnerAndComponentsByExecution(t *testing.T) {
 }
 
 func prepareExecutionOwner(t *testing.T) (EnsureOptions, EnsureResult) {
+	t.Cleanup(func() {
+		survivors, err := identity.FixtureSurvivors(armingHelpers.key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, survivor := range survivors {
+			testenv.Await(t, "an exiting arming helper to end", func() bool {
+				exact, state, err := (identity.KernelProber{}).Probe(survivor.Ref.Pid)
+				if err != nil || state == identity.Unknown {
+					t.Errorf("re-probe helper %d: state=%v err=%v", survivor.Ref.Pid, state, err)
+					return true
+				}
+				if state == identity.Dead || !identity.SameIdentity(exact, survivor.Ref) || exact.Zombie {
+					return true
+				}
+				if exact.Exiting {
+					return false
+				}
+				t.Errorf("a helper outlived its test: pid=%d arguments=%q", survivor.Ref.Pid, survivor.Argv)
+				return true
+			})
+		}
+	})
 	t.Helper()
 	reapArmingOwnerProcesses(t)
 	if err := os.Setenv("METASYSTEM_SUPERVISION_REGISTRY_HOME", t.TempDir()); err != nil {
@@ -199,6 +223,8 @@ func TestArmingReadsComponentsAfterTheReadinessWait(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// Shutdown stops what the state file records, so put the watcher back first.
+	t.Cleanup(func() { _ = os.WriteFile(path, data, 0o600) })
 	var document stateDocument
 	if err = json.Unmarshal(data, &document); err != nil {
 		t.Fatal(err)
