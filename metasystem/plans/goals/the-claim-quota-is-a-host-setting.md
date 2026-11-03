@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 22
+- Sequence: 6
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="decision 124 and 125 (a1 in Wido name, 2026-11-01): a hard quota of one serialised two ready redesigns behind one build while the host carried two rounds; a person claim from the pane was the stopgap."
 - Tier: 2
 - Intent: The one-claim-per-machine rule becomes the host setting host.claims (default 1, bounds 1 to 6), set only by a person at the enrolled terminal; one quota unit is an independent goal or one arc, counted the same way in the claim path and the ledger validation; the steward names every holder; a person is never refused by it.
 - Origin: human
 - Next step: Build U1a from the accepted page plans/designs/the-claim-quota-is-a-host-setting.md: the setting, its resolver, the quota unit in both owners, the steward argument; then U1b.
 - OpenedAt: 2026-11-01T14:36:23Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -28,4 +28,5 @@ History:
 - 2026-11-03T08:15:01Z QFMZT767WV3XKT15NETPKXYVP7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-round-ends-without-its-caller,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-round-ends-without-its-caller from=1:19 to=1:20 requested-sequence=3
 - 2026-11-03T08:15:11Z VSJ94CHHYXSDDSJHT44NA2KXSJ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-remedy-names-who-acts,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-unit-stop-asks-its-steward-first from=1:20 to=1:21 requested-sequence=4
 - 2026-11-03T08:15:21Z AW4ABSD56Z44AVC3EHENE4XHTZ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-remedy-names-who-acts,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-remedy-names-who-acts from=1:21 to=1:22 requested-sequence=5
-Integrity: sha256=c439e47eb0ae21df61143c33f1d87aca29cfd60ba0c461487d60fb61fced95cb
+- 2026-11-03T08:15:30Z 2W7GJ4B1T8FPC8T0Q7VV4CHGVA-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=the-claim-quota-is-a-host-setting from=1:22 to=1:6 requested-sequence=6
+Integrity: sha256=3d69484b0fc6abf5c030f652f8f9b430f5df8984ad17ff272b7f4db20be9d796
