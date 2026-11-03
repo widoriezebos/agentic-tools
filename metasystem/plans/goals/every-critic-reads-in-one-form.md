@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 15
+- Sequence: 16
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="A machinery change on the read and attestation path every unit uses; designed and critiqued before it is built."
 - Tier: 2
 - Intent: every code critic gets the v6 return form and a unit with several package reads promotes as one read: landability comes from the validated critic closure, zero-material is enforced only for directly promoted unit reads (attest.go:1250), a v6 return without a subject keeps its ID normalisation so register and decisions IDs agree (finding_register.go:311), and a v6 collection is tested through the real attestation owner, including an out-of-scope and an accepted-risk material finding on the --changes then --dispositions route.
 - Origin: main
 - Next step: the steward cuts one design and brief from a-read-with-notes-is-collected-brief.md (F1, Astra round 1 R1-1 and R1-2, revision 1's D2, D3 and T2-T3 in its .before-astra-r1 copy), one Astra round, then builds on m1e after a-read-with-notes-is-collected lands.
 - OpenedAt: 2026-10-25T22:21:05Z
-- Revision: 33
+- Revision: 34
 - BlockedBy: a-read-with-notes-is-collected
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
@@ -51,4 +51,5 @@ History:
 - 2026-11-03T08:15:30Z 2W7GJ4B1T8FPC8T0Q7VV4CHGVA-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=the-claim-quota-is-a-host-setting from=1:12 to=1:13 requested-sequence=6
 - 2026-11-03T08:15:40Z DVZ9E3PGATBPPJPWAN2GAN2ZSF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-tap-is-answered-at-once from=1:13 to=1:14 requested-sequence=7
 - 2026-11-03T08:15:50Z DBS543PJYMY494VRFWSPSM54F1-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-hand-in-stands-on-main from=1:14 to=1:15 requested-sequence=8
-Integrity: sha256=5a74c316dec7529790a5c1c9a62678f76b7d3ac65d5c4dec9627f5665682afb0
+- 2026-11-03T08:15:59Z 2Z28P73XDGQX5YQEQZMA5GVQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=one-question-per-refused-admission from=1:15 to=1:16 requested-sequence=9
+Integrity: sha256=c81d5941ab2dbd2837db530e40a4e6f3ad02697b090243768488e670e071c1be

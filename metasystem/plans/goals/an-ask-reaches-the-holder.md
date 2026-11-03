@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 11
+- Sequence: 12
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="A wider caller test for the delivery marker and one routed row; no act, no authority; a fault is a message marked or left unmarked, seen in agent inbox --all"
 - Tier: 2
 - Intent: Whoever holds a seat's lease as its main, a pane session under a grant included, marks the seat's inbox delivered when it reads it, and an ask past its deadline is the first thing on the holder's page and a health row routed to the holder (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D8; goal G6)
@@ -14,7 +14,7 @@ Open read items (fix unit 20261102t164341-402fe74aaa-r3-s3): 3
 - ReadItem: id=20261102t164341-402fe74aaa-r3-s3-3 read=20261102t164341-402fe74aaa-r3-s3 state=open addedAt=2026-11-03T07:15:41Z changedAt=- material=false closingReference="" text="Unit U1's proof command is /usr/bin/true and exercises nothing itself; the frozen unit check and the read's reruns and mutations carried the proof."
 - OpenedAt: 2026-10-30T08:55:55Z
 - FirstClaimAt: 2026-11-02T15:35:19Z
-- Revision: 21
+- Revision: 22
 - BlockedBy: the-steward-sees
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
@@ -46,4 +46,5 @@ History:
 - 2026-11-03T08:15:30Z 2W7GJ4B1T8FPC8T0Q7VV4CHGVA-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=the-claim-quota-is-a-host-setting from=1:8 to=1:9 requested-sequence=6
 - 2026-11-03T08:15:40Z DVZ9E3PGATBPPJPWAN2GAN2ZSF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-tap-is-answered-at-once from=1:9 to=1:10 requested-sequence=7
 - 2026-11-03T08:15:50Z DBS543PJYMY494VRFWSPSM54F1-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-hand-in-stands-on-main from=1:10 to=1:11 requested-sequence=8
-Integrity: sha256=fb504e398512199f82aaa1c4b49cc69034db3dc3456e6eaf2fedd9a63451c7ff
+- 2026-11-03T08:15:59Z 2Z28P73XDGQX5YQEQZMA5GVQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=one-question-per-refused-admission from=1:11 to=1:12 requested-sequence=9
+Integrity: sha256=3b6e437c01fd8bd711619a1b9f503685c9fc0bd84e667a64294b7016dc6a6ddf

@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 24
+- Sequence: 25
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="lane push path; a wrong fold pushes an unproven code change (bounded by the trunk check); every landing is exposed; recurs on every records move during a proof"
 - Tier: 2
 - Intent: The lane push folds a records-only move of main into a proven batch without a second proof: when every commit main gained since the batch base is records-only by the classifier of a-records-only-move-keeps-mains-green, the merged tree is pushed on the batch proof (or after the cheap check that classifier already prescribes); the-steward-sees stood an hour green at 03:55-06:32 on 2026-11-01 for one goal-edit commit (finding 460)
@@ -10,7 +10,7 @@
 - DesignGate: off
 - Next step: Build without a design from finding 460: the push path reuses the records-only classifier; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:40:58Z
-- Revision: 14
+- Revision: 15
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -32,4 +32,5 @@ History:
 - 2026-11-03T08:15:01Z QFMZT767WV3XKT15NETPKXYVP7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-round-ends-without-its-caller,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-round-ends-without-its-caller from=1:21 to=1:22 requested-sequence=3
 - 2026-11-03T08:15:11Z VSJ94CHHYXSDDSJHT44NA2KXSJ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-remedy-names-who-acts,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-unit-stop-asks-its-steward-first from=1:22 to=1:23 requested-sequence=4
 - 2026-11-03T08:15:21Z AW4ABSD56Z44AVC3EHENE4XHTZ-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-push-folds-a-records-only-move,a-red-is-classified-once,a-remedy-names-who-acts,a-slow-ledger-read-is-a-wait,a-tap-is-answered-at-once,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-claim-quota-is-a-host-setting,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-remedy-names-who-acts from=1:23 to=1:24 requested-sequence=5
-Integrity: sha256=d3f11694aa8e3e8b0b241f5117c32e70cc148b01b84dd0529c899cc2e0f13f61
+- 2026-11-03T08:15:59Z 2Z28P73XDGQX5YQEQZMA5GVQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=one-question-per-refused-admission from=1:24 to=1:25 requested-sequence=9
+Integrity: sha256=fa45efbe3878481087181e0cdfa5d8c246b502df249960f32b8b5d5de3838661
