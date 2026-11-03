@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 29
+- Sequence: 30
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="finding 474 (2026-11-01, a1): two checks of the-steward-decides U2b1a were stopped by the steward own records commit and goal opens; step.moved was refs; the stopped retry differed only in refs/heads/main."
 - Tier: 2
 - Intent: A unit check guards only what it reads: the goal branch head, the worktree index and its bytes; a move of main, a ledger act or another goal refs during the check is a recorded fact on the round, never a stop; a changed input in the worktree still fails as environment naming the file.
@@ -10,7 +10,7 @@
 - Next step: Accept the design page (drafted, Astra read it once) at the next boundary; then build U1 from it.
 - OpenedAt: 2026-11-01T16:24:47Z
 - FirstClaimAt: 2026-11-02T05:18:48Z
-- Revision: 21
+- Revision: 22
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -42,4 +42,5 @@ History:
 - 2026-11-03T08:16:27Z 0HTM2ANR6E48JD84EZBW3Y5N58-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-lane-returns-on-its-own-proof from=1:26 to=1:27 requested-sequence=12
 - 2026-11-03T08:16:36Z KNJT1Y8ZGS48YK3V4W8YRGEE8F-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-push-folds-a-records-only-move from=1:27 to=1:28 requested-sequence=13
 - 2026-11-03T08:16:46Z T6G4XH3TS99621GYYNEF0SR1VS-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-note-to-a-concluded-goal-is-not-sent,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-note-to-a-concluded-goal-is-not-sent from=1:28 to=1:29 requested-sequence=14
-Integrity: sha256=5b34d1fad1a5218400bf3a8c32b4bea3f5fec743dd4fe1e1321971f89c8de22b
+- 2026-11-03T08:16:55Z BB53V9WGGFR2D8JRE19Z2EP5YC-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-done-goals-branch-is-swept,a-flake-is-not-a-red-3,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-health-record-outlives-a-role-change,a-persons-channel-carries-only-acts-and-deliveries,a-red-is-classified-once,a-seat-pauses-at-its-spend-line,a-slow-ledger-read-is-a-wait,a-steward-tick-costs-seconds,a-test-helper-dies-with-its-test,a-unit-check-runs-the-audits,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,flake-fix-missionrunner-committed-ledger-tamper-cleanup,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-unit-check-runs-the-audits from=1:29 to=1:30 requested-sequence=15
+Integrity: sha256=5d1cb8bfcb2be1381ddf9c824970ac4e752a454e06d226f72f73ec4c4dc717e2
