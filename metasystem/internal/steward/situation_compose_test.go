@@ -577,3 +577,85 @@ func TestTheSummariesCountInWords(t *testing.T) {
 		}
 	}
 }
+
+func TestTheRoutedRowIsItsOwnersFirstThing(t *testing.T) {
+	t.Parallel()
+	root, home, laneHome := situationQuotaBed(t), t.TempDir(), situationLaneHome(t)
+	record, _, err := lane.Read(laneHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := situationNow
+	id := now.UTC().Format(time.RFC3339Nano)
+	route := plain.Intervention{At: id, Row: "routed", Subject: "overdue-goal held-h", Occurrence: id}
+	if err := plain.RecordIntervention(record.Install, route); err != nil {
+		t.Fatal(err)
+	}
+	src := composeSources(t, root, home, &now)
+	src.LaneHome = func() (string, error) { return laneHome, nil }
+	src.LaneStatus = composeLane(t, record.Install, func() (int, int, error) { return 0, 0, nil }, lane.OwnerView{State: lane.OwnerRunning})
+	src.ClaimLaneState = claimQuotaLane(t, root, map[string]string{"held-h": "waiting"})
+	composePublish(t, home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "m1e"}, Text: "Ready?"}, now.Add(-time.Minute))
+	read := func() SituationRecord {
+		t.Helper()
+		page, err := SituationPage(root, func(time.Time) Situation { return ReadSituation(root, src) }, now, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+	page := read()
+	first := page.Composition.First
+	if first.Kind != "row" || first.Subject != "overdue-goal held-h" || !slices.Contains(page.Situation.Next.Claimed, "held-h") {
+		t.Fatalf("the owner's routed row did not come first: %+v %+v", first, page.Situation.Next)
+	}
+	for _, want := range []string{"--row overdue-goal", "--subject held-h", "--occurrence " + id, "--dispose wait", "--trigger TEXT", "--until TIME", "--text TEXT", "--rejected TEXT"} {
+		if !strings.Contains(first.Command, want) {
+			t.Fatalf("command lacks %q: %s", want, first.Command)
+		}
+	}
+	if !strings.Contains(first.Why, "routed "+now.Format("15:04")) || !strings.Contains(first.Why, "asks the person at "+now.Add(30*time.Minute).Format("15:04")) || !slices.Contains(page.Composition.Wake, "routed|overdue-goal|held-h|"+id+"|unhandled") || !slices.ContainsFunc(page.Composition.Deadlines, now.Add(30*time.Minute).Equal) {
+		t.Fatalf("route's reason, wake or deadline missing: %+v", page.Composition)
+	}
+	d := humanauthority.Decision{ID: "handled", At: now.Add(time.Minute), Disposition: &humanauthority.Disposition{Row: "overdue-goal", Subject: "held-h", Occurrence: id, Kind: "wait", WaitUntil: now.Add(time.Hour)}}
+	if err := humanauthority.AppendDecision(home, d); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 25; i++ {
+		if err := humanauthority.AppendDecision(home, humanauthority.Decision{ID: fmt.Sprint(i), At: now.Add(2 * time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now = now.Add(5 * time.Minute)
+	handled := read()
+	if handled.Composition.First.Kind != "ask" || handled.Composition.Digest == page.Composition.Digest || !slices.Contains(handled.Composition.Wake, "routed|overdue-goal|held-h|"+id+"|wait") || !slices.ContainsFunc(handled.Composition.Deadlines, d.Disposition.WaitUntil.Equal) {
+		t.Fatalf("handled route behind last twenty decisions lost: %+v", handled.Composition)
+	}
+	now = now.Add(time.Hour)
+	if expired := read(); expired.Composition.First.Kind != "row" || !slices.Contains(expired.Composition.Wake, "routed|overdue-goal|held-h|"+id+"|due") {
+		t.Fatalf("expired wait did not rearm row: %+v", expired.Composition)
+	}
+	now = now.Add(time.Minute)
+	asked := humanauthority.Decision{ID: "asked", At: now, Disposition: &humanauthority.Disposition{Row: "overdue-goal", Subject: "held-h", Occurrence: id, Kind: "ask"}}
+	if err := humanauthority.AppendDecision(home, asked); err != nil {
+		t.Fatal(err)
+	}
+	// An ask is a disposition for this occurrence (D3): the row is no first
+	// thing while the person's answer is awaited; otherwise the steward ladder
+	// restarts on the same row (U4a read 2, F-1).
+	if afterAsk := read(); afterAsk.Composition.First.Kind == "row" || !slices.Contains(afterAsk.Composition.Wake, "routed|overdue-goal|held-h|"+id+"|ask") {
+		t.Fatalf("an asked route stayed the first thing: %+v", afterAsk.Composition)
+	}
+	route.Row = "cleared"
+	if err := plain.RecordIntervention(record.Install, route); err != nil {
+		t.Fatal(err)
+	}
+	route.Row, route.Subject = "routed", "overdue-goal other-seat-goal"
+	if err := plain.RecordIntervention(record.Install, route); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if foreign := read(); foreign.Composition.First.Kind != "ask" {
+		t.Fatalf("another seat's row selected: %+v", foreign.Composition.First)
+	}
+}

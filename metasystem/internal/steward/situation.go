@@ -72,6 +72,8 @@ type Situation struct {
 	Alerts    map[string][]AlertEpisode
 	// RedLine is how goal next says this seat's first owned red.
 	RedLine string
+
+	Dispositions []humanauthority.Decision `json:",omitempty"`
 }
 
 // HostProcess is one test process on the host: its kind by argv, the
@@ -424,7 +426,8 @@ func (s *Situation) readQuestions(root string) {
 
 // readAuthority keeps the grants live at the read from the read's one
 // ledger, the attorney log's last 20 lines, the host's last 20 decisions
-// and the last 10 rulings.
+// and the last 10 rulings. Dispositions retain the newest decision for each
+// occurrence from the whole host log.
 func (s *Situation) readAuthority(root string, src SituationSources, now time.Time) {
 	var problems []string
 	if reason := s.Unavailable["ledger"]; reason != "" {
@@ -455,7 +458,22 @@ func (s *Situation) readAuthority(root string, src SituationSources, now time.Ti
 	if bad > 0 {
 		problems = append(problems, fmt.Sprintf("the decision log: %d undecodable lines", bad))
 	}
+	latest := map[[3]string]humanauthority.Decision{}
+	for _, d := range decisions {
+		if p := d.Disposition; p != nil {
+			key := [3]string{p.Row, p.Subject, p.Occurrence}
+			if old, found := latest[key]; !found || !d.At.Before(old.At) {
+				latest[key] = d
+			}
+		}
+	}
+	for _, d := range latest {
+		s.Dispositions = append(s.Dispositions, d)
+	}
 	s.Decisions = decisions[max(0, len(decisions)-20):]
+	slices.SortFunc(s.Dispositions, func(a, b humanauthority.Decision) int {
+		return strings.Compare(a.Disposition.Row+"\n"+a.Disposition.Subject+"\n"+a.Disposition.Occurrence, b.Disposition.Row+"\n"+b.Disposition.Subject+"\n"+b.Disposition.Occurrence)
+	})
 	register, err := rulings.Read(root)
 	if err != nil {
 		problems = append(problems, "the rulings: "+err.Error())

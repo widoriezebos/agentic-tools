@@ -11,6 +11,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 )
@@ -27,6 +28,7 @@ type Health struct {
 	FlakeGoalStates     map[string]string    `json:"flake_goal_states,omitempty"`
 	Report              string               `json:"report,omitempty"`
 	ReportPath          string               `json:"-"`
+	Routed              []Occurrence         `json:"routed,omitempty"`
 	Interventions       []Intervention       `json:"interventions,omitempty"`
 	Refusals            []Intervention       `json:"refusals,omitempty"`
 	PersonActs          []PersonAct          `json:"person_acts,omitempty"`
@@ -53,6 +55,37 @@ type Health struct {
 	AbandonedResolution string           `json:"abandoned_resolution,omitempty"`
 	LastProof           *Result          `json:"last_proof,omitempty"`
 }
+
+// Occurrence is one cannot-heal condition, from its route until it clears.
+type Occurrence struct {
+	Row, Subject, ID string
+	Since            time.Time
+}
+
+// DispositionState follows the newest decision for this exact occurrence.
+func (o Occurrence) DispositionState(decisions []humanauthority.Decision, now time.Time) string {
+	var newest *humanauthority.Decision
+	for i := range decisions {
+		d := &decisions[i]
+		if p := d.Disposition; p != nil && p.Row == o.Row && p.Subject == o.Subject && p.Occurrence == o.ID && (newest == nil || !d.At.Before(newest.At)) {
+			newest = d
+		}
+	}
+	if newest != nil {
+		p := newest.Disposition
+		if p.Kind == humanauthority.DisposeAsk {
+			return "ask"
+		}
+		if p.Kind == humanauthority.DisposeWait && p.WaitUntil.After(now) {
+			return "wait"
+		}
+		if p.Kind == humanauthority.DisposeAct && humanauthority.ActHandled(newest.Outcome) {
+			return "handled"
+		}
+	}
+	return "unhandled"
+}
+
 type PersonAct struct {
 	Verb    string   `json:"verb"`
 	At      string   `json:"at"`
@@ -272,6 +305,13 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		return nil, err
 	}
 	for i, entry := range interventions {
+		if entry.Row == "routed" {
+			row, subject, _ := strings.Cut(entry.Subject, " ")
+			since, _ := time.Parse(time.RFC3339Nano, entry.At)
+			h.Routed = append(h.Routed, Occurrence{Row: row, Subject: subject, ID: entry.Occurrence, Since: since})
+		} else if entry.Row == "cleared" {
+			h.Routed = slices.DeleteFunc(h.Routed, func(o Occurrence) bool { return o.Row+" "+o.Subject == entry.Subject && o.ID == entry.Occurrence })
+		}
 		if entry.Row == "steward-act-failed" && !slices.ContainsFunc(interventions[i+1:], func(p Intervention) bool { return p.Row == entry.Subject }) {
 			h.Drift = append(h.Drift, Fired{Row: "steward-act-failed", Subject: entry.Subject, Act: landingstate.Phrase("stopped-acting-on") + entry.Subject + ": " + entry.What + "; asked once"})
 		}
@@ -281,6 +321,9 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		at, err := time.Parse(time.RFC3339Nano, entry.At)
 		if err == nil && !at.After(now) && now.Sub(at) < time.Hour {
 			h.recentActs[[2]string{entry.Row, entry.Subject}] = true
+			if entry.Row == "silent-agent" {
+				h.recentActs[[2]string{entry.Row, "landing-agent"}] = true
+			}
 		}
 		if entry.Row == "person-refused" && err == nil && !at.After(now) && now.Sub(at) < 24*time.Hour {
 			h.Refusals = append(h.Refusals, entry)
@@ -681,24 +724,26 @@ func (h Health) Rows() []Fired {
 			fire("question-open", q.ID, &q.Minutes, q.WaitsFor)
 		}
 	}
-	cannotHeal := func(row, subject string) {
-		if !h.recentActs[[2]string{row, subject}] {
-			fire("cannot-heal", row+" "+subject, nil, "the lane cannot heal this; one question to the person")
+	for _, o := range h.cannotHeal() {
+		if !h.recentActs[[2]string{o.Row, o.Subject}] {
+			fire("cannot-heal", o.Row+" "+o.Subject, nil, "the lane cannot heal this; one question to the person")
 		}
 	}
+
+	return rows
+}
+
+// cannotHeal reads conditions before the one-hour act bound.
+func (h Health) cannotHeal() (conditions []Occurrence) {
 	for _, g := range h.Goals {
 		if g.Overdue && g.Minutes != nil && *g.Minutes > 120 && (g.State == StateWaiting || g.State == "proving") {
-			cannotHeal("overdue-goal", g.Goal)
+			conditions = append(conditions, Occurrence{Row: "overdue-goal", Subject: g.Goal})
 		}
 	}
 	if h.Agent.Silent && h.Agent.Minutes != nil && *h.Agent.Minutes > 80 {
-		for _, row := range rows {
-			if row.Row == "silent-agent" {
-				cannotHeal(row.Row, row.Subject)
-			}
-		}
+		conditions = append(conditions, Occurrence{Row: "silent-agent", Subject: "landing-agent"})
 	}
-	return rows
+	return conditions
 }
 func (h Health) Line() (line string) {
 	if h.ObservationProblem != "" {

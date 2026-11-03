@@ -678,9 +678,14 @@ func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) 
 		handoff = "Nobody sits at this terminal: your process ends when your turn ends.\nEvery background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `metasystem work wait` (bounded by --timeout) and carry on. At the completed unit boundary, write your lessons note in your runtime's configured context.handoff.note-directory, then run `metasystem session handoff --root <installation> --note <that note> --no-delegates`. Read `metasystem session handoff --status --root <installation> --json` until this session's completed boundary carries that handoff nonce; then repeat the same handoff command to confirm durable binding. The steward persists that binding before ending your session. End your turn once the binding is durable. If capture or binding fails, remain alive, report the exact error, repair its cause and retry the same handoff. Otherwise end only when blocked on a person's answer you asked with `metasystem question ask`, or nothing is claimable.\n"
 	}
 	if selection.Kind == "steward" {
+		held := strings.Join(selection.SeatHeld, ", ")
+		if held == "" {
+			held = "none"
+		}
+		handoff = "End your turn only when no act of yours is left; the next tick continues from the situation page.\n"
 		return fmt.Sprintf("# Seat stewardship\n\nYou are this seat's steward. The steward started you for %s %s.\n"+
 			"Follow the seat-steward skill. Read `metasystem system situation` first.\n"+
-			"Held claims: %s. They are not yours to take.\n\n", selection.Kind, selection.Subject, strings.Join(selection.SeatHeld, ", ")) + handoff + strings.Join(facts, "")
+			"Held claims: %s. They are not yours to take.\n\n", selection.Kind, selection.Subject, held) + handoff + strings.Join(facts, "")
 	}
 	return fmt.Sprintf("# Seat session\n\n"+
 		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork one unit through its completed outcome and collected, published read%s.\n\n"+

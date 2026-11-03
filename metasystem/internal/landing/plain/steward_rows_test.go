@@ -3,6 +3,7 @@ package plain
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -540,6 +541,12 @@ func TestLandingStewardAsksOnceWhenTheLaneCannotHeal(t *testing.T) {
 				}
 				return
 			}
+			delay := 31 * time.Minute
+			if scenario == "silent" {
+				delay = 61 * time.Minute
+			}
+			run = b.step(now.Add(delay))
+			qs = questions()
 			words := "more than 120 minutes"
 			tried := "tried: nothing: the row has no act of its own"
 			if scenario == "silent" {
@@ -548,6 +555,9 @@ func TestLandingStewardAsksOnceWhenTheLaneCannotHeal(t *testing.T) {
 			}
 			if len(qs) != 1 || count() != 1 || !strings.Contains(qs[0].Plain.Decision, words) || qs[0].Plain.IfNothing != "the lane keeps reporting it; this question is withdrawn when the situation ends" || qs[0].Facts[2] != tried {
 				t.Fatalf("cannot-heal did not ask with evidence: %+v run=%+v count=%d", qs, run, count())
+			}
+			if qs[0].State != "open" {
+				t.Fatalf("the step that asked withdrew its own question: %+v run=%+v", qs[0], run)
 			}
 			if scenario == "landed" || scenario == "old-question" {
 				git := b.seams.Git
@@ -568,9 +578,13 @@ func TestLandingStewardAsksOnceWhenTheLaneCannotHeal(t *testing.T) {
 				}
 				return
 			}
-			run = b.step(bedNow.Add(61 * time.Minute))
-			if count() != 1 || len(questions()) != 1 || !strings.Contains(run.Line, "bounded: asked once for this situation") {
-				t.Fatalf("same situation asked twice: %+v count=%d questions=%+v", run, count(), questions())
+			again := 61 * time.Minute
+			if scenario == "silent" {
+				again = 121 * time.Minute
+			}
+			run = b.step(bedNow.Add(again))
+			if count() != 1 || len(questions()) != 1 || questions()[0].State != "open" || !strings.Contains(run.Line, "bounded: asked once for this occurrence") {
+				t.Fatalf("same situation asked twice or its question closed: %+v count=%d questions=%+v", run, count(), questions())
 			}
 			b.seams.Now = func() time.Time { return bedNow.Add(70 * time.Minute) }
 			if _, err := channel.Withdraw(b.install, qs[0].ID, "person closed it at minute 70", nil, channel.DestinationConfig{}); err != nil {
@@ -579,6 +593,174 @@ func TestLandingStewardAsksOnceWhenTheLaneCannotHeal(t *testing.T) {
 			b.step(bedNow.Add(131 * time.Minute))
 			if count() != 1 || len(questions()) != 1 || questions()[0].State != "closed" {
 				t.Fatalf("person's closed question was asked again: count=%d questions=%+v", count(), questions())
+			}
+		})
+	}
+}
+
+// routedQuestions observes the channel records and the full intervention log.
+func routedQuestions(t *testing.T, b *stewardBed) ([]channel.Question, []Intervention) {
+	t.Helper()
+	qs, bad := channel.WalkQuestions(b.install)
+	history, err := readLines[Intervention](interventionsPath(b.install))
+	if len(bad) != 0 || err != nil {
+		t.Fatalf("read route and questions: %v %v", bad, err)
+	}
+	return qs, history
+}
+
+func TestACannotHealRowIsRoutedBeforeItIsAsked(t *testing.T) {
+	t.Parallel()
+	for _, elsewhere := range []bool{false, true} {
+		t.Run(fmt.Sprint(elsewhere), func(t *testing.T) {
+			t.Parallel()
+			b := newStewardBed(t)
+			b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)})
+			calls := 0
+			b.seams.Steward.Decisions = func(home string) ([]humanauthority.Decision, int, error) {
+				calls++
+				return humanauthority.ReadDecisions(home)
+			}
+			run := b.step(bedNow)
+			qs, history := routedQuestions(t, b)
+			id := bedNow.UTC().Format(time.RFC3339Nano)
+			if len(qs) != 0 || len(history) != 1 || history[0].Row != "routed" || history[0].Subject != "overdue-goal g" || history[0].Occurrence != id || history[0].At != id || !strings.Contains(run.Line, "routed to its owner; asks at "+bedNow.Add(30*time.Minute).Local().Format("15:04")) {
+				t.Fatalf("route before question: %+v %+v %s", qs, history, run.Line)
+			}
+			if elsewhere {
+				d := humanauthority.Decision{At: bedNow.Add(5 * time.Minute), Disposition: &humanauthority.Disposition{Row: "other", Subject: "g", Occurrence: "elsewhere", Kind: "wait", WaitUntil: bedNow.Add(time.Hour)}}
+				if err := humanauthority.AppendDecision(b.home, d); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b.step(bedNow.Add(29 * time.Minute))
+			if qs, _ := routedQuestions(t, b); len(qs) != 0 {
+				t.Fatal("asked before thirty minutes")
+			}
+			b.step(bedNow.Add(31 * time.Minute))
+			b.step(bedNow.Add(40 * time.Minute))
+			qs, history = routedQuestions(t, b)
+			var facts stewardQuestion
+			if len(qs) != 1 || json.Unmarshal([]byte(strings.TrimPrefix(qs[0].Facts[1], "lane steward: ")), &facts) != nil || facts.Occurrence != id || facts.Row != "overdue-goal" || facts.Subject != "g" || calls != 4 {
+				t.Fatalf("question lost occurrence or repeated reads: %+v %+v calls=%d", qs, history, calls)
+			}
+		})
+	}
+	t.Run("silent count is evidence", func(t *testing.T) {
+		t.Parallel()
+		b := newStewardBed(t)
+		b.seams.Steward.Owner = func(string) (lane.OwnerProbe, error) {
+			return lane.OwnerProbe{Alive: true, Since: bedNow.Add(-81 * time.Minute)}, nil
+		}
+		stamp := bedNow.Format(time.RFC3339Nano)
+		b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: stamp})
+		b.step(bedNow)
+		b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: stamp}, Line{Goal: "h", SHA: "tip", At: stamp})
+		b.step(bedNow.Add(5 * time.Minute))
+		_, history := routedQuestions(t, b)
+		routes := 0
+		for _, entry := range history {
+			if entry.Row == "cleared" {
+				t.Fatalf("count change cleared silence: %+v", history)
+			}
+			if entry.Row == "routed" {
+				routes++
+				if entry.Subject != "silent-agent landing-agent" {
+					t.Fatalf("unstable silent key: %+v", entry)
+				}
+			}
+		}
+		if routes != 1 {
+			t.Fatalf("silence routed %d times: %+v", routes, history)
+		}
+	})
+}
+
+func TestADispositionDecidesTheQuestion(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"wait", "refused", "confirmed", "partial", "unchanged", "ask", "newest", "cleared", "unreadable"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			b := newStewardBed(t)
+			waiting := Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)}
+			b.lines("queue.jsonl", waiting)
+			b.step(bedNow)
+			id := bedNow.UTC().Format(time.RFC3339Nano)
+			if kind == "unreadable" {
+				if err := os.MkdirAll(humanauthority.DecisionLogPath(b.home), 0700); err != nil {
+					t.Fatal(err)
+				}
+			} else if kind != "cleared" {
+				d := humanauthority.Decision{At: bedNow.Add(5 * time.Minute), Outcome: kind, Disposition: &humanauthority.Disposition{Row: "overdue-goal", Subject: "g", Occurrence: id, Kind: "act"}}
+				if kind == "wait" || kind == "ask" {
+					d.Disposition.Kind = kind
+					d.Disposition.WaitUntil = bedNow.Add(60 * time.Minute)
+				}
+				if err := humanauthority.AppendDecision(b.home, d); err != nil {
+					t.Fatal(err)
+				}
+				if kind == "newest" {
+					older := d
+					older.At, older.Outcome = bedNow.Add(time.Minute), "confirmed"
+					if err := humanauthority.AppendDecision(b.home, older); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			b.step(bedNow.Add(5 * time.Minute))
+			want := 0
+			if kind == "ask" {
+				want = 1
+			}
+			if qs, _ := routedQuestions(t, b); len(qs) != want {
+				t.Fatalf("%s at five minutes: %+v", kind, qs)
+			}
+			b.step(bedNow.Add(31 * time.Minute))
+			want = 1
+			if kind == "wait" || kind == "confirmed" || kind == "partial" || kind == "unchanged" {
+				want = 0
+			}
+			if qs, _ := routedQuestions(t, b); len(qs) != want {
+				t.Fatalf("%s at thirty-one minutes: %+v", kind, qs)
+			}
+			if kind == "wait" {
+				b.step(bedNow.Add(61 * time.Minute))
+				if qs, _ := routedQuestions(t, b); len(qs) != 1 {
+					t.Fatal("expired wait suppressed question")
+				}
+			}
+			if kind == "confirmed" || kind == "partial" || kind == "unchanged" {
+				b.step(bedNow.Add(90 * time.Minute))
+				if qs, _ := routedQuestions(t, b); len(qs) != 0 {
+					t.Fatal("handled act asked")
+				}
+			}
+			if kind == "cleared" {
+				b.lines("queue.jsonl")
+				b.step(bedNow.Add(40 * time.Minute))
+				b.lines("queue.jsonl", waiting)
+				b.step(bedNow.Add(50 * time.Minute))
+				b.step(bedNow.Add(79 * time.Minute))
+				qs, history := routedQuestions(t, b)
+				routed, cleared := 0, 0
+				for _, entry := range history {
+					if entry.Row == "routed" {
+						routed++
+					}
+					if entry.Row == "cleared" {
+						cleared++
+						if entry.Occurrence != id {
+							t.Fatal("cleared wrong occurrence")
+						}
+					}
+				}
+				if len(qs) != 1 || routed != 2 || cleared != 1 {
+					t.Fatalf("new occurrence was not routed afresh: %+v %+v", qs, history)
+				}
+				b.step(bedNow.Add(81 * time.Minute))
+				if qs, _ := routedQuestions(t, b); len(qs) != 2 {
+					t.Fatalf("new occurrence did not ask: %+v", qs)
+				}
 			}
 		})
 	}

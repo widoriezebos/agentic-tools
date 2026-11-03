@@ -34,7 +34,7 @@ type Composition struct {
 	Deadlines []time.Time
 }
 
-// FirstThing is what this seat does first. Kind is ask, red, continue,
+// FirstThing is what this seat does first. Kind is row, ask, red, continue,
 // claim or wait, or unknown when a part the rule needs could not be read.
 type FirstThing struct{ Kind, Subject, Why, Command string }
 
@@ -96,7 +96,7 @@ func (s Situation) askLine(ask SituationAsk) string {
 	return fmt.Sprintf("from %s to %s, asked %s, %s", root.From.Machine, to, env.Ago(root.At), due)
 }
 
-// firstThing is the first of: an outstanding ask, a red this seat owns, the
+// firstThing is the first of: a routed row, an outstanding ask, an owned red, the
 // claim to continue, a goal to claim; else wait. A part the rule needs that
 // failed is named, and never read as nothing to do.
 func (s Situation) firstThing() FirstThing {
@@ -107,7 +107,9 @@ func (s Situation) firstThing() FirstThing {
 		}
 	}
 	first := FirstThing{Kind: "wait", Why: "nothing; wait"}
-	if asks := s.outstanding(); len(asks) > 0 {
+	if row := s.routedFirst(); row != nil {
+		first = *row
+	} else if asks := s.outstanding(); len(asks) > 0 {
 		first = FirstThing{Kind: "ask", Subject: asks[0].Thread.ID, Why: "an ask " + s.askLine(asks[0]), Command: "metasystem agent inbox"}
 	} else if len(s.Next.TrunkRedOwned) > 0 {
 		red := s.Next.TrunkRedOwned[0]
@@ -123,6 +125,24 @@ func (s Situation) firstThing() FirstThing {
 		first.Why += "; " + strings.Join(missing, "; ")
 	}
 	return first
+}
+
+func (s Situation) routedFirst() *FirstThing {
+	if s.Lane.Health == nil {
+		return nil
+	}
+	for _, o := range s.Lane.Health.Routed {
+		state := o.DispositionState(s.Dispositions, s.At)
+		// An ask is a disposition for this occurrence too (D3): the person's
+		// answer moves it, not another steward session (U4a read 2, F-1).
+		if o.Row == "silent-agent" || !slices.Contains(s.seatGoals(), o.Subject) || state == "wait" || state == "ask" || state == "handled" {
+			continue
+		}
+		return &FirstThing{Kind: "row", Subject: o.Row + " " + o.Subject,
+			Why:     fmt.Sprintf("the lane cannot heal %s %s (routed %s; asks the person at %s unless disposed)", o.Row, o.Subject, o.Since.In(s.At.Location()).Format("15:04"), o.Since.Add(30*time.Minute).In(s.At.Location()).Format("15:04")),
+			Command: fmt.Sprintf("metasystem decision record --row %s --subject %s --occurrence %s --dispose wait --trigger TEXT --until TIME --text TEXT --rejected TEXT", o.Row, o.Subject, o.ID)}
+	}
+	return nil
 }
 
 // wake are the situation's semantic facts and the deadlines that change one.
@@ -145,6 +165,19 @@ func (s Situation) wake() (lines []string, deadlines []time.Time) {
 		add("proof|%s|%s", proof.Attempt, proof.State)
 	}
 	if h := s.Lane.Health; h != nil {
+		for _, o := range h.Routed {
+			state := o.DispositionState(s.Dispositions, s.At)
+			if state == "unhandled" && !s.At.Before(o.Since.Add(30*time.Minute)) {
+				state = "due"
+			}
+			add("routed|%s|%s|%s|%s", o.Row, o.Subject, o.ID, state)
+			later(o.Since.Add(30 * time.Minute))
+		}
+		for _, d := range s.Dispositions {
+			if d.Disposition.Kind == humanauthority.DisposeWait {
+				later(d.Disposition.WaitUntil)
+			}
+		}
 		for _, row := range h.Rows() {
 			add("row|%s|%s", row.Row, row.Subject)
 		}
