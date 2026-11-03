@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 28
+- Sequence: 13
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="lane push path; a wrong fold pushes an unproven code change (bounded by the trunk check); every landing is exposed; recurs on every records move during a proof"
 - Tier: 2
 - Intent: The lane push folds a records-only move of main into a proven batch without a second proof: when every commit main gained since the batch base is records-only by the classifier of a-records-only-move-keeps-mains-green, the merged tree is pushed on the batch proof (or after the cheap check that classifier already prescribes); the-steward-sees stood an hour green at 03:55-06:32 on 2026-11-01 for one goal-edit commit (finding 460)
@@ -10,7 +10,7 @@
 - DesignGate: off
 - Next step: Build without a design from finding 460: the push path reuses the records-only classifier; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:40:58Z
-- Revision: 18
+- Revision: 19
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -36,4 +36,5 @@ History:
 - 2026-11-03T08:16:09Z RRB4SDRDZ4RPYP1NYYW4GQETRF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-lane-row-carries-its-act from=1:25 to=1:26 requested-sequence=10
 - 2026-11-03T08:16:18Z AVYNC7EDAHD6ADSWJ62WCHCQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-real-act-is-not-barren from=1:26 to=1:27 requested-sequence=11
 - 2026-11-03T08:16:27Z 0HTM2ANR6E48JD84EZBW3Y5N58-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-lane-returns-on-its-own-proof from=1:27 to=1:28 requested-sequence=12
-Integrity: sha256=e0930c932bd12c5077d117a44521dfb8a5a668844d54c68d600b4d3f877c5b44
+- 2026-11-03T08:16:36Z KNJT1Y8ZGS48YK3V4W8YRGEE8F-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-push-folds-a-records-only-move from=1:28 to=1:13 requested-sequence=13
+Integrity: sha256=139ae842e1964dfee478d150cbf77c9f2b2191eae274d01ef4cb55dfd650ebf2

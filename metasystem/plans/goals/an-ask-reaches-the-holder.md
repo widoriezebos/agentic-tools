@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 15
+- Sequence: 16
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="A wider caller test for the delivery marker and one routed row; no act, no authority; a fault is a message marked or left unmarked, seen in agent inbox --all"
 - Tier: 2
 - Intent: Whoever holds a seat's lease as its main, a pane session under a grant included, marks the seat's inbox delivered when it reads it, and an ask past its deadline is the first thing on the holder's page and a health row routed to the holder (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D8; goal G6)
@@ -14,7 +14,7 @@ Open read items (fix unit 20261102t164341-402fe74aaa-r3-s3): 3
 - ReadItem: id=20261102t164341-402fe74aaa-r3-s3-3 read=20261102t164341-402fe74aaa-r3-s3 state=open addedAt=2026-11-03T07:15:41Z changedAt=- material=false closingReference="" text="Unit U1's proof command is /usr/bin/true and exercises nothing itself; the frozen unit check and the read's reruns and mutations carried the proof."
 - OpenedAt: 2026-10-30T08:55:55Z
 - FirstClaimAt: 2026-11-02T15:35:19Z
-- Revision: 25
+- Revision: 26
 - BlockedBy: the-steward-sees
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
@@ -50,4 +50,5 @@ History:
 - 2026-11-03T08:16:09Z RRB4SDRDZ4RPYP1NYYW4GQETRF-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-lane-row-carries-its-act from=1:12 to=1:13 requested-sequence=10
 - 2026-11-03T08:16:18Z AVYNC7EDAHD6ADSWJ62WCHCQZ7-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-real-act-is-not-barren from=1:13 to=1:14 requested-sequence=11
 - 2026-11-03T08:16:27Z 0HTM2ANR6E48JD84EZBW3Y5N58-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-lane-returns-on-its-own-proof,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-lane-returns-on-its-own-proof from=1:14 to=1:15 requested-sequence=12
-Integrity: sha256=e47763d310d0f3f392dcfd22094f84eff345213907e89799a68da7be9e59d8c9
+- 2026-11-03T08:16:36Z KNJT1Y8ZGS48YK3V4W8YRGEE8F-m1e-40fad4f2 set-priority actor=human:Wido targets=a-check-guards-its-own-inputs,a-continuation-job-may-write-the-stewards-state,a-goal-the-steward-opens-is-approved,a-push-folds-a-records-only-move,a-red-is-classified-once,a-slow-ledger-read-is-a-wait,a-test-helper-dies-with-its-test,an-accepted-design-is-a-record,an-ask-reaches-the-holder,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,revive-starts-the-seat-clean,seat-engines-follow-the-deployed-engine,the-elapsed-clock-excludes-waits,the-lanes-proof-goes-first,the-ui-bundle-builds-again reason=priority-order subject=a-push-folds-a-records-only-move from=1:15 to=1:16 requested-sequence=13
+Integrity: sha256=a61d859b75eb2e87cbb1e0e9c752b779a905d0861cf30778b3e98dfa8b40d8f9
