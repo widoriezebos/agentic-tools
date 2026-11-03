@@ -13,7 +13,7 @@ Open read items (fix unit U1-20261103t153753-b332dea426-r1-s3): 1
 - ReadItem: id=astra-brief-r1-1 read=astra-brief-r1 state=moved addedAt=2026-11-03T15:26:46Z changedAt=2026-11-03T16:33:13Z material=true closingReference="every-detached-test-helper-is-in-custody" text="R-4 residue of U1 (brief V6, Astra brief round 1 finding 4): the detached-helper audit's allowance (about 40 test files, 52 detached launches outside fixture custody, internal/up's owner helpers, ownerfixture.Component callers without a fixture word) moves to follow-up goal every-detached-test-helper-is-in-custody, which m1e is asked to open (a seat opens only blockers, R-93-m1e); close this note with --moved once it is open"
 - OpenedAt: 2026-10-30T08:56:49Z
 - FirstClaimAt: 2026-11-03T14:27:04Z
-- Revision: 29
+- Revision: 30
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -53,4 +53,5 @@ History:
 - 2026-11-03T16:33:13Z YT4Z7G6TW7JMD603BJR6SS9N2D-ui-78aafdc1 read-items-close actor=human:Wido targets=a-test-helper-dies-with-its-test,every-detached-test-helper-is-in-custody displaced=ui+steward-seat@2026-11-03T14:27:04Z
 - 2026-11-03T16:35:04Z NRS8N8Q063WAQYJ4W827Q6ZNFB-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=a-test-helper-dies-with-its-test
 - 2026-11-03T20:10:19Z JFPRBH8MXFE84G6FSHW6WNKQPG-ui-71c5cb39 slice-start actor=ui+steward-seat targets=a-test-helper-dies-with-its-test
-Integrity: sha256=2e2182145a59934d75adb0dffb7265424cbf421b7a6984865ebe6f7b10b2aa71
+- 2026-11-03T22:55:42Z 61BC0GXVXPQE4ZXGK1M13XRTG2-ui-71c5cb39 landed actor=ui+steward-seat targets=a-test-helper-dies-with-its-test reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 362.9 min: hand-in to merge 300.1, cheap gate not run, fix round 57.1, push unknown
+Integrity: sha256=e4506e0c8a4c4c447c490f8b4dfbd03331aa71078c4f159bbd350895a2bc1090
