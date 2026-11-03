@@ -13,12 +13,13 @@ Open read items (fix unit U1-20261103t153753-b332dea426-r1-s3): 1
 - ReadItem: id=astra-brief-r1-1 read=astra-brief-r1 state=moved addedAt=2026-11-03T15:26:46Z changedAt=2026-11-03T16:33:13Z material=true closingReference="every-detached-test-helper-is-in-custody" text="R-4 residue of U1 (brief V6, Astra brief round 1 finding 4): the detached-helper audit's allowance (about 40 test files, 52 detached launches outside fixture custody, internal/up's owner helpers, ownerfixture.Component callers without a fixture word) moves to follow-up goal every-detached-test-helper-is-in-custody, which m1e is asked to open (a seat opens only blockers, R-93-m1e); close this note with --moved once it is open"
 - OpenedAt: 2026-10-30T08:56:49Z
 - FirstClaimAt: 2026-11-03T14:27:04Z
-- Revision: 28
+- Revision: 29
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=RX12A4ATMRJW3RGBWPF3C5N7EW-m1e-afd9d95a minutes=1200 reviewRounds=20 goalRevision=3
 - Approved: by=human:Wido at=2026-10-30T08:57:16Z revision=4 opid=RX12A4ATMRJW3RGBWPF3C5N7EW-m1e-afd9d95a authority=proven digest=11f73186431cb9287b89ba703253502bfc2817a46cf004dd3aad420e7cb3826c episode=4
+- Sliced: machine=ui lineage=steward-seat revision=25 at=2026-11-03T20:10:19Z
 - Claimed: machine=ui lineage=steward-seat at=2026-11-03T14:27:04Z areas="null" areas-source="01M65TB73G4MP10FSPZ8GJNCW4@33eee8bb9d39c4374f2185c45854fa4c9a8b1cda01cc8869d4aac40d014778f5" areas-known=false areas-warnings="[\"areas unknown for goal a-test-helper-dies-with-its-test in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/the-steward-sees-and-acts.md\",\"areas unknown for goal a-check-guards-its-own-inputs\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-steward-acts\",\"areas unknown for goal a-check-guards-its-own-inputs\"]" revision=25 accountingRevision=25 episodeAt=2026-11-03T14:27:04Z episodeRevision=25
 - StopCapability: generation=25 revision=25 machine=ui claimEpoch=11 fenceEpoch=0
 
@@ -51,4 +52,5 @@ History:
 - 2026-11-03T15:26:46Z 76V3XAEFP99P7EFH47ZAKTR8KH-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=a-test-helper-dies-with-its-test
 - 2026-11-03T16:33:13Z YT4Z7G6TW7JMD603BJR6SS9N2D-ui-78aafdc1 read-items-close actor=human:Wido targets=a-test-helper-dies-with-its-test,every-detached-test-helper-is-in-custody displaced=ui+steward-seat@2026-11-03T14:27:04Z
 - 2026-11-03T16:35:04Z NRS8N8Q063WAQYJ4W827Q6ZNFB-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=a-test-helper-dies-with-its-test
-Integrity: sha256=20d4717400b2a692a8caef994e6f03ce9dc887f9dcfd468d754a9c484280a654
+- 2026-11-03T20:10:19Z JFPRBH8MXFE84G6FSHW6WNKQPG-ui-71c5cb39 slice-start actor=ui+steward-seat targets=a-test-helper-dies-with-its-test
+Integrity: sha256=2e2182145a59934d75adb0dffb7265424cbf421b7a6984865ebe6f7b10b2aa71
