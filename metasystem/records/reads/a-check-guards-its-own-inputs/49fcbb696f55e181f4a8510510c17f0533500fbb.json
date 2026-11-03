@@ -1,0 +1,70 @@
+{
+  "coveredUnits": [
+    "U1c1"
+  ],
+  "schemaVersion": 1,
+  "goal": "a-check-guards-its-own-inputs",
+  "unit": "U1c1",
+  "subject": {
+    "commit": "49fcbb696f55e181f4a8510510c17f0533500fbb",
+    "parent": "2abff3a079d90d6a906c52d10004b1210d5a88ce",
+    "tree": "db55c8287344fa6595d9922709a41d01788412e5",
+    "patchDigest": "8977b6c2797dffe1a53cddb119a78a8709852eb5d7dccc45282b508dd0ac7e4e",
+    "unitDigest": "f3280ed166c0feb55f1f5a6651c81d994f015d441b3365daa1c0f4d4dde10623"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-bf927a2914fce49b801761ff",
+    "round": 1,
+    "closureSha256": "78019d81ac1d2f9a828a60ccf7284fe4cdf995ae31f3d7ff7e10df78ed7a033e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "db55c8287344fa6595d9922709a41d01788412e5",
+    "runId": "check-361656145"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "78e2b8a25946702aa6f2d9498ec20996a16254a9",
+      "digest": "f98d5f5a59afd170a294bd74485ee7af6b09579573043934324201db487bfed0"
+    },
+    {
+      "kind": "read",
+      "commit": "2abff3a079d90d6a906c52d10004b1210d5a88ce",
+      "digest": "9c207dc1bff81fd7a675f5e61202b96811459d4ab5449228428e95469bad7c0b"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_step_failure_test.go",
+      "readerWord": "reviewed by critic root code-critic-bf927a2914fce49b801761ff"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_retry_test.go",
+      "readerWord": "reviewed by critic root code-critic-bf927a2914fce49b801761ff"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-bf927a2914fce49b801761ff"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-bf927a2914fce49b801761ff"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_admission_hold_test.go",
+      "readerWord": "reviewed by critic root code-critic-bf927a2914fce49b801761ff"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_check_host_test.go",
+      "readerWord": "reviewed by critic root code-critic-bf927a2914fce49b801761ff"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_test.go",
+      "readerWord": "reviewed by critic root code-critic-bf927a2914fce49b801761ff"
+    }
+  ],
+  "sha256": "df62a4cb0fd1f86e8cbf030650d355a9a952be38127733addbd56f33787fbc39"
+}
