@@ -8,10 +8,12 @@
 - Intent: A helper process a test starts is in the existing fixture custody and ends when its test binary dies, and a source audit refuses a test that starts a child any other way (finding 444; design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D6; goal G4)
 - Origin: main
 - Next step: On ui's machine route after the-lanes-proof-goes-first: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first trace the six supervise.test helpers of finding 444 to the launch that bypassed custody (supervise/arming_test.go:1367); one unit, about 80 production lines plus the audit test: helper launches through testenv.SetupFixtureTag or testutil.Fixture
+Open read items (fix unit U1-20261103t153753-b332dea426-r1-s3): 1
+- ReadItem: id=U1-20261103t153753-b332dea426-r1-s3-1 read=U1-20261103t153753-b332dea426-r1-s3 state=open addedAt=2026-11-03T16:35:04Z changedAt=- material=false closingReference="" text="LOW (read r1-s3 finding 1): helperCustody.env in internal/supervise/arming_test.go only appends the fixture word, while testutil.ProcessFixture.Env (internal/testutil/fixture.go:169-174) first strips an inherited METASYSTEM_FIXTURE_OWNER word; if supervise.test ever runs under an outer fixture word, the held shells and the two raw helpers carry the outer key first and this binary's exit scan would not report them (the outer custody still ends them). Fix: strip prior FixtureOwnerEnv entries before appending; fits every-detached-test-helper-is-in-custody"
 - ReadItem: id=astra-brief-r1-1 read=astra-brief-r1 state=moved addedAt=2026-11-03T15:26:46Z changedAt=2026-11-03T16:33:13Z material=true closingReference="every-detached-test-helper-is-in-custody" text="R-4 residue of U1 (brief V6, Astra brief round 1 finding 4): the detached-helper audit's allowance (about 40 test files, 52 detached launches outside fixture custody, internal/up's owner helpers, ownerfixture.Component callers without a fixture word) moves to follow-up goal every-detached-test-helper-is-in-custody, which m1e is asked to open (a seat opens only blockers, R-93-m1e); close this note with --moved once it is open"
 - OpenedAt: 2026-10-30T08:56:49Z
 - FirstClaimAt: 2026-11-03T14:27:04Z
-- Revision: 27
+- Revision: 28
 - Pinned: ui
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -48,4 +50,5 @@ History:
 - 2026-11-03T14:27:04Z 22Z8AG3TY4BSWN114BWXJHA8EZ-ui-71c5cb39 claim actor=ui+steward-seat targets=a-test-helper-dies-with-its-test reason=areas unknown for goal a-test-helper-dies-with-its-test in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/the-steward-sees-and-acts.md; areas unknown for goal a-check-guards-its-own-inputs; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-steward-acts; areas unknown for goal a-check-guards-its-own-inputs
 - 2026-11-03T15:26:46Z 76V3XAEFP99P7EFH47ZAKTR8KH-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=a-test-helper-dies-with-its-test
 - 2026-11-03T16:33:13Z YT4Z7G6TW7JMD603BJR6SS9N2D-ui-78aafdc1 read-items-close actor=human:Wido targets=a-test-helper-dies-with-its-test,every-detached-test-helper-is-in-custody displaced=ui+steward-seat@2026-11-03T14:27:04Z
-Integrity: sha256=b8d4e516c9f878bd62ad22996ce813f85ca5622aa1f71ea7ae8c9da4d8f16e92
+- 2026-11-03T16:35:04Z NRS8N8Q063WAQYJ4W827Q6ZNFB-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=a-test-helper-dies-with-its-test
+Integrity: sha256=20d4717400b2a692a8caef994e6f03ce9dc887f9dcfd468d754a9c484280a654

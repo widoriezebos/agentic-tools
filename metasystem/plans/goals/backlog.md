@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 219
+- Revision: 220
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -291,4 +291,5 @@ History:
 - 2026-11-01T07:17:57Z WMFTJ6HZKF3SXSH20QTSY1FXNY-ui-71c5cb39 ack actor=ui+steward-seat targets=a-round-survives-a-restart displaced=ui+steward-seat@2026-10-31T20:45:01Z ack
 - 2026-11-02T13:24:40Z 9KDREP9H29TQYZ6C7ZP0WVNYSS-ui-71c5cb39 ack actor=ui+steward-seat targets=a-round-survives-a-restart displaced=ui+steward-seat@2026-11-01T05:47:18Z ack
 - 2026-11-03T10:04:03Z 6JJSNGN6N17J7GJ0DNWAT00MY4-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=a-red-is-classified-once displaced=m1e+main-1792389436-6018-51cc28@2026-11-01T14:10:08Z ack
-Integrity: sha256=6ec03c2d06a992ee5648e31b87f7568fdb48a3d38f3b205f52bfc767e7eb7acf
+- 2026-11-03T16:35:04Z NRS8N8Q063WAQYJ4W827Q6ZNFB-ui-71c5cb39 ack actor=ui+steward-seat targets=a-test-helper-dies-with-its-test displaced=ui+steward-seat@2026-11-03T14:27:04Z ack
+Integrity: sha256=38bbc628220692d67300e7a39d140350bfc8efd6f1cd21dccf066b362d39d15c
