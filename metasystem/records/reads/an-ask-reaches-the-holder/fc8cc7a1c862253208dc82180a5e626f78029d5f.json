@@ -1,0 +1,88 @@
+{
+  "canonicalRead": {
+    "id": "20261102t164341-402fe74aaa-r3-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "an-ask-reaches-the-holder",
+      "reviewedProjectTree": "ddfad414c0f55d1f27b4f21c609b229d98f6d240aae4adf98b982c6af4a5c858",
+      "diffDigest": "ddfad414c0f55d1f27b4f21c609b229d98f6d240aae4adf98b982c6af4a5c858"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261102t164341-402fe74aaa-r3-s3:1",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "A lease holder that runs agent inbox from inside a goal worktree still marks nothing, because the path it selects is the worktree's own installation, where no session is announced.",
+        "evidence": "agentHolds(inv, seat.path) classifies at the installation agentPath selects. own_engine.go:43 says a worktree's agent session is announced at its serving checkout. The behaviour is unchanged from before the unit, and it fails safe: no mark, the note is printed, and the tool gate still marks.",
+        "where": "metasystem/cmd/metasystem/intent_agent.go",
+        "change": "None for this unit; the brief chose the command's own selected path. Candidate for the later list if holders read from goal worktrees.",
+        "relation": "same-rule-as 1"
+      },
+      {
+        "id": "20261102t164341-402fe74aaa-r3-s3:2",
+        "class": "regression",
+        "severity": "low",
+        "material": false,
+        "claim": "The own-engine and person checks now classify at the installation, so a corrupt lease or announcement file there gives an empty class where the Git top gave DELEGATE or HUMAN.",
+        "evidence": "agentCaller returns agentClassification(inv, checkout).Class, and an error gives the zero result, as brief section 6 prescribes. On success, the MAIN or DELEGATE answer the callers test is unchanged or moves from DELEGATE to MAIN, and both accept either. The inbox fails safe. It needs a corrupt file to happen.",
+        "where": "metasystem/cmd/metasystem/intent_agent.go",
+        "change": "None; the behaviour is the brief's.",
+        "relation": "same-rule-as 3"
+      },
+      {
+        "id": "20261102t164341-402fe74aaa-r3-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The unit's proof command, /usr/bin/true, exercises nothing itself (checklist item 2).",
+        "evidence": "The changed behaviour is exercised by the frozen unit check (check-458317463 passed; T1 and T2 selected; internal/steward run whole) and by this read's reruns and two overlay mutations, both caught: the word kept after a reply, and a mark on --all.",
+        "where": "metasystem/cmd/metasystem/intent_agent_state_root_test.go",
+        "change": "None for this diff.",
+        "relation": "same-rule-as 4"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261102t164341-402fe74aaa-r3-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "5d9d1183b436e91f074d81b931125d52c1f9bab6438c21a1252fad6e0e7b04c2",
+  "schemaVersion": 1,
+  "goal": "an-ask-reaches-the-holder",
+  "unit": "U1",
+  "subject": {
+    "commit": "fc8cc7a1c862253208dc82180a5e626f78029d5f",
+    "parent": "d73a6816af45fd055d47ec4da00a82542825f4f0",
+    "tree": "b9a21833e4cf10f20c425799beae8707786e9732",
+    "patchDigest": "ddfad414c0f55d1f27b4f21c609b229d98f6d240aae4adf98b982c6af4a5c858",
+    "unitDigest": "49d33de99ea98c00073b1e1feada4dcb9513fae110c01eadf509373bec96b9bf"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261102t164341-402fe74aaa-r3-s3",
+    "closureSha256": "4b000e572f9216b6e453af863488126fe573e9b27e69427d1fdb956db4771df5"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "b9a21833e4cf10f20c425799beae8707786e9732",
+    "runId": "goal-read-gate-20261103t071209z-369729a86146414b"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_agent_state_root_test.go",
+      "readerWord": "reviewed by unit read 20261102t164341-402fe74aaa-r3-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_agent_test.go",
+      "readerWord": "reviewed by unit read 20261102t164341-402fe74aaa-r3-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_compose_test.go",
+      "readerWord": "reviewed by unit read 20261102t164341-402fe74aaa-r3-s3"
+    }
+  ],
+  "sha256": "fd57c1abc7d8e18d20fddbbf27b5cc9e5b155a7c51f8812d83ebe43ffaeb8de6"
+}
