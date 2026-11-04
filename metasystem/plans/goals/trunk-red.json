@@ -7507,11 +7507,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261104T004017.131343000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-04T01:25:55Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-04T06:46:21Z",
+        "attempt": "20261104T055644.228325000Z",
+        "baseCommit": "681c153d08f76b3b80f8b19992de4437efc0487d",
+        "how": "green",
+        "opid": "WDQ2GKD6NEYM8ATGRTNS51KYAA-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
