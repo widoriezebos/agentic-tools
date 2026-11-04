@@ -1,0 +1,47 @@
+{
+  "coveredUnits": [
+    "U1a"
+  ],
+  "schemaVersion": 1,
+  "goal": "the-lanes-proof-goes-first",
+  "unit": "U1a",
+  "subject": {
+    "commit": "339cfca99be5bd17307da4ffd7ef7bbe4b707d0b",
+    "parent": "0934ed36618ce54460ed7fcf01841403442d0401",
+    "tree": "c8b6ca93f76edacab5d91318f050b5502d7348e0",
+    "patchDigest": "bd8dc2f8a412a72f093a76238f91910593cffd1d87ad824357e2d60f21d87a77",
+    "unitDigest": "ac0144876bd2d4141a2aa155dc00d53e3531cd829c0a0c602d981f0fe997d13d"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-2ece03b6c6583f0da98c1e29",
+    "round": 1,
+    "closureSha256": "5231e898888a7593c108bc6af57f43d93511d3e0298fcbe4bd92a715a5717af6"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "c8b6ca93f76edacab5d91318f050b5502d7348e0",
+    "runId": "goal-read-gate-20261104t114318z-f84df3d335a2f0a1"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/engine_inventory_test.go",
+      "readerWord": "reviewed by critic root code-critic-2ece03b6c6583f0da98c1e29"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_test_run_owner_test.go",
+      "readerWord": "reviewed by critic root code-critic-2ece03b6c6583f0da98c1e29"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/proof_run_test.go",
+      "readerWord": "reviewed by critic root code-critic-2ece03b6c6583f0da98c1e29"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/test_test.go",
+      "readerWord": "reviewed by critic root code-critic-2ece03b6c6583f0da98c1e29"
+    }
+  ],
+  "sha256": "fc33ef66c9cff01336807359cd354c37495745d87d8473e31c165d9b56e5c5a1"
+}
