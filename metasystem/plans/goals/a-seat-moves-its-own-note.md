@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 from the brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-seat-moves-its-own-note-U1-brief.md after one Astra round, on m1e's build lane; carry check and read; the lane lands it
 - OpenedAt: 2026-11-04T02:36:24Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - NormApproval: approvedRef=EQ98TREJ727AM9WNM65EDEQZC1-m1e-5bed5da6 minutes=600 reviewRounds=6 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-04T02:36:24Z Q8RZCHYZ5SMJ16NJZH2CG04ZV8-m1e-5bed5da6 open actor=human:Wido targets=a-seat-moves-its-own-note
 - 2026-11-04T02:36:35Z EQ98TREJ727AM9WNM65EDEQZC1-m1e-5bed5da6 approve actor=human:Wido targets=a-seat-moves-its-own-note
-Integrity: sha256=2df37e9b5ac1eac3247c2577166f8ee6d7b0a079fda795ea64afa7d3d0b90f11
+- 2026-11-04T02:36:46Z CCV8GV7RH12VG86NT4P5D447VN-m1e-5bed5da6 set-pin actor=human:Wido targets=a-seat-moves-its-own-note
+Integrity: sha256=775e61b77fae0f6b9da5bb6457ff5b4009692dee6ead2765366ebed8500f03ff
