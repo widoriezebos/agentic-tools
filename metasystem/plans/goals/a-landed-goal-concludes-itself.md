@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1a (the declaration at hand-in), U1b1 (selection), U1b2 (dispatch, --last) then U2 (the words) from the accepted page plans/designs/a-landed-goal-concludes-itself.md with briefs cut by opus-designer (BRIEF-CHECKLIST, one Astra round each); carry check and read after each; the lane lands them
 - OpenedAt: 2026-11-04T02:27:46Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=900 activeJobLimit=1 reviewRoundLimit=8
 - BudgetExceptions: 0
 - NormApproval: approvedRef=2K6WP28CJYQWDJMRGKBB5WDTVW-m1e-413c5c59 minutes=900 reviewRounds=8 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-04T02:27:46Z E8GJ2GR5MQJBTVDJ6EE7RE2XJ4-m1e-413c5c59 open actor=human:Wido targets=a-landed-goal-concludes-itself
 - 2026-11-04T02:27:59Z 2K6WP28CJYQWDJMRGKBB5WDTVW-m1e-413c5c59 approve actor=human:Wido targets=a-landed-goal-concludes-itself
-Integrity: sha256=d6fb38c24098a516c977e46dbf859d512b540e4469fce1d1c99d6401242a0ad0
+- 2026-11-04T02:28:10Z B1A02JZG62EXHZTGFKWGE4XCH8-m1e-413c5c59 set-pin actor=human:Wido targets=a-landed-goal-concludes-itself
+Integrity: sha256=e69b8bd67eb3f7da1ce76efe9fb76171958d13f31849c96bf12f992fe3cc3620
