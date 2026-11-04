@@ -133,9 +133,7 @@ func (s Situation) routedFirst() *FirstThing {
 	}
 	for _, o := range s.Lane.Health.Routed {
 		state := o.DispositionState(s.Dispositions, s.At)
-		// An ask is a disposition for this occurrence too (D3): the person's
-		// answer moves it, not another steward session (U4a read 2, F-1).
-		if o.Row == "silent-agent" || !slices.Contains(s.seatGoals(), o.Subject) || state == "wait" || state == "ask" || state == "handled" {
+		if o.Answered != "" || (o.Row == "silent-agent" && !s.coordinator || o.Row != "silent-agent" && !slices.Contains(s.seatGoals(), o.Subject)) || state == "wait" || state == "ask" || state == "handled" {
 			continue
 		}
 		return &FirstThing{Kind: "row", Subject: o.Row + " " + o.Subject,
@@ -167,6 +165,9 @@ func (s Situation) wake() (lines []string, deadlines []time.Time) {
 	if h := s.Lane.Health; h != nil {
 		for _, o := range h.Routed {
 			state := o.DispositionState(s.Dispositions, s.At)
+			if o.Answered != "" {
+				state = "answered: " + o.Answered
+			}
 			if state == "unhandled" && !s.At.Before(o.Since.Add(30*time.Minute)) {
 				state = "due"
 			}
@@ -326,6 +327,11 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 	}
 	lane = append(lane, hold)
 	if s.Lane.Health != nil {
+		for _, o := range s.Lane.Health.Routed {
+			if o.Answered != "" {
+				lane = append(lane, o.Row+" "+o.Subject+": answered: "+o.Answered)
+			}
+		}
 		for _, row := range s.Lane.Health.Rows() {
 			rows = append(rows, fmt.Sprintf("%s on %s: %s", row.Row, row.Subject, row.Act))
 		}

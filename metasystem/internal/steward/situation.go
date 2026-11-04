@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
@@ -72,6 +73,8 @@ type Situation struct {
 	Alerts    map[string][]AlertEpisode
 	// RedLine is how goal next says this seat's first owned red.
 	RedLine string
+
+	coordinator bool
 
 	Dispositions []humanauthority.Decision `json:",omitempty"`
 }
@@ -555,6 +558,9 @@ func (s *Situation) readLedger(root, machine string, ledger *healthLedger, now t
 	}
 	if err == nil {
 		s.Ledger = ledger.projection
+		if s.Ledger.Tree.Root != nil {
+			s.coordinator = brain.Read(root, s.Ledger.Tree.Root.Identity).State == brain.Declared
+		}
 		s.Next, err = goal.Next(ledger.projection, machine)
 	}
 	if err != nil {

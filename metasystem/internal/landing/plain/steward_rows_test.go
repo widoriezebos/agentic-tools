@@ -1,6 +1,7 @@
 package plain
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +13,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -761,6 +764,255 @@ func TestADispositionDecidesTheQuestion(t *testing.T) {
 				if qs, _ := routedQuestions(t, b); len(qs) != 2 {
 					t.Fatalf("new occurrence did not ask: %+v", qs)
 				}
+			}
+		})
+	}
+}
+
+// settleLaneAnswer starts at the channel's authenticated answer checkpoint;
+// its production settlement path records and closes the goal-less answer.
+func settleLaneAnswer(t *testing.T, b *stewardBed, q channel.Question, at time.Time) {
+	t.Helper()
+	q.Answer = &channel.Answer{Text: "keep waiting", Phase: "matched", At: at, Machine: "landing"}
+	data, err := json.Marshal(q)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(b.install, "artifacts/agents/channel/questions", q.ID+".json"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := channel.SettleReplies(context.Background(), channel.PollConfig{RepoRoot: b.install, Now: at}, func(string) (goal.Endpoint, error) { return goal.Endpoint{}, errors.New("no ledger read needed") }); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func interventionCount(history []Intervention, row string) (count int) {
+	for _, p := range history {
+		if p.Row == row {
+			count++
+		}
+	}
+	return count
+}
+
+func TestAnAnsweredOccurrenceNeverAsksAgain(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"steady", "restart", "silent"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			b := newStewardBed(t)
+			waiting := Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)}
+			if scenario == "silent" {
+				waiting.At = bedNow.Format(time.RFC3339Nano)
+				b.seams.Steward.Owner = func(string) (lane.OwnerProbe, error) {
+					return lane.OwnerProbe{Alive: true, Since: bedNow.Add(-81 * time.Minute)}, nil
+				}
+			}
+			b.lines("queue.jsonl", waiting)
+			b.step(bedNow)
+			b.step(bedNow.Add(31 * time.Minute))
+			qs, _ := routedQuestions(t, b)
+			if len(qs) != 1 {
+				t.Fatalf("initial question: %+v", qs)
+			}
+			settleLaneAnswer(t, b, qs[0], bedNow.Add(time.Hour))
+			if scenario == "silent" {
+				b.lines("queue.jsonl", waiting, Line{Goal: "h", SHA: "tip", At: waiting.At})
+			}
+			if scenario != "restart" {
+				b.step(bedNow.Add(61 * time.Minute))
+			}
+			minutesToStep := []int{151, 240, 600, 900, 1500, 1591}
+			if scenario == "silent" {
+				minutesToStep = []int{70}
+			}
+			for _, minutes := range minutesToStep {
+				b.step(bedNow.Add(time.Duration(minutes) * time.Minute))
+			}
+			qs, history := routedQuestions(t, b)
+			if len(qs) != 1 || interventionCount(history, "asked-closed") != 1 {
+				t.Fatalf("answer rearmed or not reconciled: %+v %+v", qs, history)
+			}
+			for _, p := range history {
+				if p.Row == "asked-closed" && (p.What != "keep waiting" || p.Occurrence != bedNow.UTC().Format(time.RFC3339Nano)) {
+					t.Fatalf("answer lost: %+v", p)
+				}
+				if scenario == "silent" && p.Row == "cleared" {
+					t.Fatalf("queue count cleared silence: %+v", history)
+				}
+			}
+			if scenario == "silent" {
+				return
+			}
+			b.lines("queue.jsonl")
+			b.step(bedNow.Add(1600 * time.Minute))
+			b.lines("queue.jsonl", waiting)
+			b.step(bedNow.Add(1601 * time.Minute))
+			b.step(bedNow.Add(1632 * time.Minute))
+			if qs, _ := routedQuestions(t, b); len(qs) != 2 {
+				t.Fatalf("new occurrence not asked: %+v", qs)
+			}
+		})
+	}
+}
+
+func TestAMachineWithdrawalRearmsTheFailSafe(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"wait", "act"} {
+		t.Run(kind, func(t *testing.T) {
+			t.Parallel()
+			b := newStewardBed(t)
+			b.seams.Steward.Route = func(Intervention) error { return nil }
+			b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)})
+			b.step(bedNow)
+			b.step(bedNow.Add(31 * time.Minute))
+			d := humanauthority.Decision{At: bedNow.Add(36 * time.Minute), Outcome: "confirmed", Disposition: &humanauthority.Disposition{Row: "overdue-goal", Subject: "g", Occurrence: bedNow.UTC().Format(time.RFC3339Nano), Kind: kind, WaitUntil: bedNow.Add(90 * time.Minute)}}
+			if err := humanauthority.AppendDecision(b.home, d); err != nil {
+				t.Fatal(err)
+			}
+			b.step(bedNow.Add(37 * time.Minute))
+			qs, history := routedQuestions(t, b)
+			if len(qs) != 1 || qs[0].State != "closed" || interventionCount(history, "withdrawn") != 1 || interventionCount(history, "asked-closed") != 0 {
+				t.Fatalf("machine withdrawal: %+v %+v", qs, history)
+			}
+			if kind == "act" {
+				d.At, d.Outcome = bedNow.Add(89*time.Minute), "refused"
+				if err := humanauthority.AppendDecision(b.home, d); err != nil {
+					t.Fatal(err)
+				}
+			}
+			b.step(bedNow.Add(91 * time.Minute))
+			qs, _ = routedQuestions(t, b)
+			if len(qs) != 2 {
+				t.Fatalf("machine withdrawal did not rearm: %+v", qs)
+			}
+			for _, q := range qs {
+				if q.State == "open" {
+					if _, err := channel.Withdraw(b.install, q.ID, "noise: the proof was running", nil, channel.DestinationConfig{}, bedNow.Add(92*time.Minute)); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			b.step(bedNow.Add(93 * time.Minute))
+			b.step(bedNow.Add(26 * time.Hour))
+			qs, history = routedQuestions(t, b)
+			if len(qs) != 2 || interventionCount(history, "asked-closed") != 1 || interventionCount(history, "judgment-withdrawn") != 1 {
+				t.Fatalf("person withdrawal not final: %+v %+v", qs, history)
+			}
+			for _, p := range history {
+				if p.Row == "asked-closed" || p.Row == "judgment-withdrawn" {
+					if p.What != "noise: the proof was running" {
+						t.Fatalf("withdrawal reason lost: %+v", p)
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestAWithdrawnAskRouteFailureDoesNotStopRows(t *testing.T) {
+	t.Parallel()
+	b := newStewardBed(t)
+	b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)})
+	b.step(bedNow)
+	b.step(bedNow.Add(31 * time.Minute))
+	qs, _ := routedQuestions(t, b)
+	if len(qs) != 1 {
+		t.Fatalf("initial question: %+v", qs)
+	}
+	q := qs[0]
+	if _, err := channel.Withdraw(b.install, q.ID, "noise: proof running", nil, channel.DestinationConfig{}, bedNow.Add(32*time.Minute)); err != nil {
+		t.Fatal(err)
+	}
+	routes := 0
+	b.seams.Steward.Route = func(Intervention) error {
+		routes++
+		return errors.New("board refuses the message")
+	}
+	b.incidents()
+	before := len(b.calls)
+	run, err := StewardStep(b.home, bedNow.Add(33*time.Minute), b.seams)
+	if len(b.calls) != before+1 || b.calls[before] != "trunk" || interventionCount(run.Interventions, "unproven-incidents") != 1 {
+		t.Fatalf("route failure stopped the firing row: %+v calls=%v err=%v", run, b.calls, err)
+	}
+	fact := "Steward question " + q.ID + " could not be routed: board refuses the message."
+	if err != nil || routes != 1 || strings.Count(run.Line, fact) != 1 || interventionCount(run.Interventions, "judgment-route-failed") != 1 {
+		t.Fatalf("route failure not named once: %+v routes=%d err=%v", run, routes, err)
+	}
+	run = b.step(bedNow.Add(34 * time.Minute))
+	_, history := routedQuestions(t, b)
+	if routes != 1 || strings.Contains(run.Line, fact) || interventionCount(run.Interventions, "judgment-route-failed") != 0 || interventionCount(history, "judgment-route-failed") != 1 || interventionCount(history, "asked-closed") != 1 || interventionCount(history, "judgment-withdrawn") != 0 {
+		t.Fatalf("route failure repeated or closure lost: %+v history=%+v routes=%d", run, history, routes)
+	}
+	for _, p := range history {
+		if p.Row == "judgment-route-failed" && (p.Outcome != q.ID || p.What != fact) {
+			t.Fatalf("failure lost question or cause: %+v", p)
+		}
+	}
+}
+
+func TestAWithdrawnAskIsDesignInputOnce(t *testing.T) {
+	t.Parallel()
+	for _, declared := range []bool{false, true} {
+		t.Run(fmt.Sprint(declared), func(t *testing.T) {
+			t.Parallel()
+			b := newStewardBed(t)
+			registry, coordinator := filepath.Dir(b.home), t.TempDir()
+			const ledger = "01ARZ3NDEKTSV4RRFFQ69G5FAV"
+			if declared {
+				if _, err := brain.Declare(brain.DeclareOptions{StateRoot: coordinator, RegistryHome: registry, LedgerIdentity: ledger, Machine: "coordinator", DeclaredBy: "Wido", Now: bedNow}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			git := b.seams.Git
+			b.seams.Git = func(dir string, args ...string) (string, error) {
+				if len(args) == 2 && args[0] == "show" && args[1] == goal.AcceptedRef+":./plans/goals/backlog.md" {
+					return string(goal.RenderRoot(&goal.RootRecord{Identity: ledger, FormatVersion: "1", SyncMode: goal.SyncLocal, Revision: 1})), nil
+				}
+				return git(dir, args...)
+			}
+			waiting := Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)}
+			b.lines("queue.jsonl", waiting)
+			b.step(bedNow)
+			b.step(bedNow.Add(31 * time.Minute))
+			qs, _ := routedQuestions(t, b)
+			if len(qs) != 1 {
+				t.Fatalf("initial question: %+v", qs)
+			}
+			if _, err := channel.Withdraw(b.install, qs[0].ID, "noise: proof running", nil, channel.DestinationConfig{}, bedNow.Add(32*time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			b.step(bedNow.Add(33 * time.Minute))
+			b.step(bedNow.Add(34 * time.Minute))
+			messages, err := board.Threads(b.home)
+			want := 0
+			if declared {
+				want = 1
+			}
+			_, history := routedQuestions(t, b)
+			if err != nil || len(messages) != want || interventionCount(history, "judgment-withdrawn") != 1 {
+				t.Fatalf("design input: %+v %v history=%+v", messages, err, history)
+			}
+			if declared {
+				m := messages[0].Root
+				if m.From.Machine != "landing" || m.To.Machine != "coordinator" || m.Kind != board.KindAsk || !strings.Contains(m.PeerText(), "overdue-goal g: noise: proof running") || !strings.Contains(m.PeerText(), "no act is asked") {
+					t.Fatalf("wrong design route: %+v", m)
+				}
+				// A repeated publication after a lost local marker is the same ask.
+				if err := stewardRoute(b.home, ledger, "landing", Intervention{Row: "overdue-goal", Subject: "g", Occurrence: bedNow.UTC().Format(time.RFC3339Nano), What: "changed reason"}, bedNow.Add(time.Hour)); err != nil {
+					t.Fatal(err)
+				}
+				if threads, _ := board.Threads(b.home); len(threads) != 1 {
+					t.Fatal("duplicate design input")
+				}
+			}
+			b.lines("queue.jsonl")
+			b.step(bedNow.Add(35 * time.Minute))
+			b.lines("queue.jsonl", waiting)
+			b.step(bedNow.Add(36 * time.Minute))
+			b.step(bedNow.Add(67 * time.Minute))
+			if qs, _ := routedQuestions(t, b); len(qs) != 2 {
+				t.Fatalf("withdrawal suppressed new occurrence: %+v", qs)
 			}
 		})
 	}

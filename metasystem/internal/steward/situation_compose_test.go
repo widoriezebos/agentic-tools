@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -657,5 +659,65 @@ func TestTheRoutedRowIsItsOwnersFirstThing(t *testing.T) {
 	now = now.Add(time.Second)
 	if foreign := read(); foreign.Composition.First.Kind != "ask" {
 		t.Fatalf("another seat's row selected: %+v", foreign.Composition.First)
+	}
+}
+
+func TestAnAnsweredRowIsShownNotFirst(t *testing.T) {
+	t.Parallel()
+	root, home, laneHome := situationQuotaBed(t), t.TempDir(), situationLaneHome(t)
+	record, _, err := lane.Read(laneHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := situationNow
+	id := now.UTC().Format(time.RFC3339Nano)
+	src := composeSources(t, root, home, &now)
+	projections := 0
+	src.Project = countedProject(&projections)
+	src.LaneHome = func() (string, error) { return laneHome, nil }
+	src.LaneStatus = composeLane(t, record.Install, func() (int, int, error) { return 0, 0, nil }, lane.OwnerView{State: lane.OwnerRunning})
+	for _, entry := range []plain.Intervention{{At: id, Row: "routed", Subject: "overdue-goal held-h", Occurrence: id}, {At: id, Row: "asked-closed", Subject: "overdue-goal held-h", Occurrence: id, What: "keep waiting"}} {
+		if err := plain.RecordIntervention(record.Install, entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func() SituationRecord {
+		t.Helper()
+		now = now.Add(time.Second)
+		p, err := SituationPage(root, func(time.Time) Situation { return ReadSituation(root, src) }, now, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	p := read()
+	words, err := json.Marshal(p.Composition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown := false
+	for _, part := range p.Composition.Parts {
+		if part.Name == "lane" {
+			shown = strings.Contains(strings.Join(part.Summary, "\n"), "answered: keep waiting")
+		}
+	}
+	if !shown || p.Composition.First.Kind == "row" || !strings.Contains(string(words), "answered: keep waiting") || p.Situation.Lane.Health.Routed[0].Answered != "keep waiting" {
+		t.Fatalf("answered row not shown or still first: %s", words)
+	}
+	if err := plain.RecordIntervention(record.Install, plain.Intervention{At: id, Row: "routed", Subject: "silent-agent landing-agent", Occurrence: id}); err != nil {
+		t.Fatal(err)
+	}
+	if first := read().Composition.First; first.Kind == "row" {
+		t.Fatalf("goal-less row owned without declaration: %+v", first)
+	}
+	ledger := p.Situation.Ledger.Tree.Root.Identity
+	if _, err := brain.Declare(brain.DeclareOptions{StateRoot: root, RegistryHome: t.TempDir(), LedgerIdentity: ledger, Machine: "m1e", DeclaredBy: "Wido", Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	if first := read().Composition.First; first.Kind != "row" || first.Subject != "silent-agent landing-agent" {
+		t.Fatalf("coordinator did not own goal-less row: %+v", first)
+	}
+	if projections != 3 {
+		t.Fatalf("read %d ledger projections, want three fresh situation reads", projections)
 	}
 }

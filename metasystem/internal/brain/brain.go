@@ -258,6 +258,22 @@ func PointerPath(registryHome, ledgerIdentity string) string {
 	return filepath.Join(registryHome, ".metasystem", "brain", ledgerIdentity)
 }
 
+// HostCoordinator follows the host pointer and validates its checkout's declaration.
+func HostCoordinator(registryHome, ledgerIdentity string) (ReadResult, string) {
+	data, err := os.ReadFile(PointerPath(registryHome, ledgerIdentity))
+	if os.IsNotExist(err) {
+		return ReadResult{State: Undeclared}, ""
+	}
+	if err != nil {
+		return corrupt("unreadable host pointer: " + err.Error()), ""
+	}
+	checkout := strings.TrimSpace(string(data))
+	if !filepath.IsAbs(checkout) {
+		return corrupt("the coordinator checkout must be an absolute path"), ""
+	}
+	return Read(checkout, ledgerIdentity), checkout
+}
+
 type DeclareOptions struct {
 	StateRoot      string
 	RegistryHome   string

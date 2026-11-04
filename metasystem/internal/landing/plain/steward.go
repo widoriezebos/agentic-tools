@@ -1,6 +1,7 @@
 package plain
 
 import (
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,6 +10,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
@@ -26,6 +29,7 @@ type Intervention struct {
 }
 
 type StewardEffects struct {
+	Route        func(Intervention) error
 	Decisions    func(string) ([]humanauthority.Decision, int, error)
 	FlakeFix     func(goal.FlakeFact, goal.FlakeFix, time.Time) (goal.FlakeFact, error)
 	UsageStore   *launch.Store
@@ -159,6 +163,118 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 	}
 	status.Health.Routed = conditions
 	rows := status.Health.Rows()
+	if effects.Route == nil {
+		effects.Route = func(entry Intervention) error {
+			data, readErr := seams.git(record.Install, "show", goal.AcceptedRef+":./plans/goals/backlog.md")
+			ledger, _ := goal.ParseRoot([]byte(data))
+			if readErr != nil || ledger == nil {
+				return nil
+			}
+			machine, err := seams.Machine(record.Install)
+			if err != nil {
+				return err
+			}
+			return stewardRoute(home, ledger.Identity, machine, entry, now)
+		}
+	}
+	questions, _ := channel.WalkQuestions(record.Install)
+	for _, q := range questions {
+		if len(q.Facts) < 2 || !strings.HasPrefix(q.Facts[1], "lane steward: ") {
+			continue
+		}
+		if seams.Machine == nil {
+			return run, errors.Join(err, errors.New("the lane computer's name cannot be read"))
+		}
+		machine, readErr := seams.Machine(record.Install)
+		if readErr != nil {
+			return run, errors.Join(err, readErr)
+		}
+		if q.Machine != machine {
+			continue
+		}
+		var situation stewardQuestion
+		if json.Unmarshal([]byte(strings.TrimPrefix(q.Facts[1], "lane steward: ")), &situation) != nil || situation.Row == "" {
+			lines = append(lines, "steward question "+q.ID+" unreadable")
+			continue
+		}
+		occurrence := Occurrence{Row: situation.Row, Subject: situation.Subject, ID: situation.Occurrence}
+		settled := func(row string) bool {
+			return slices.ContainsFunc(history, func(p Intervention) bool { return p.Row == row && p.Outcome == q.ID })
+		}
+		recordQuestion := func(row, text string) error {
+			entry := Intervention{At: now.UTC().Format(time.RFC3339Nano), Row: row, Subject: situation.Row + " " + situation.Subject, Occurrence: situation.Occurrence, What: text, Outcome: q.ID}
+			if err := RecordIntervention(record.Install, entry); err != nil {
+				return err
+			}
+			history, run.Interventions = append(history, entry), append(run.Interventions, entry)
+			return nil
+		}
+		if situation.Occurrence != "" && (q.State != "open" || q.Answer != nil) {
+			if q.Answer == nil && settled("withdrawn") {
+				continue
+			}
+			text := q.ClosedBecause
+			if q.Answer != nil {
+				text = q.Answer.Text
+			}
+			if !settled("asked-closed") {
+				if err := recordQuestion("asked-closed", text); err != nil {
+					return run, err
+				}
+			}
+			if q.Answer == nil && text != "" && !settled("judgment-withdrawn") && !settled("judgment-route-failed") {
+				entry := Intervention{Row: situation.Row, Subject: situation.Subject, Occurrence: situation.Occurrence, What: text}
+				if routeErr := effects.Route(entry); routeErr != nil {
+					fact := "Steward question " + q.ID + " could not be routed: " + routeErr.Error() + "."
+					err = errors.Join(err, recordQuestion("judgment-route-failed", fact))
+					lines = append(lines, fact)
+					continue
+				}
+				if err := recordQuestion("judgment-withdrawn", text); err != nil {
+					return run, err
+				}
+			}
+			continue
+		}
+		if q.State != "open" {
+			continue
+		}
+		firing := slices.ContainsFunc(rows, func(r Fired) bool {
+			return r.Row == situation.Row && (situation.Subject == "" || situation.Row == "silent-agent" || r.Subject == situation.Subject)
+		})
+		if situation.Occurrence != "" {
+			firing = slices.ContainsFunc(conditions, func(o Occurrence) bool {
+				return o.Row == situation.Row && o.Subject == situation.Subject && o.ID == situation.Occurrence
+			})
+		}
+		after := []humanauthority.Decision{}
+		for _, d := range decisions {
+			if d.At.After(q.OpenedAt) {
+				after = append(after, d)
+			}
+		}
+		state := occurrence.DispositionState(after, now)
+		if firing && (situation.Occurrence == "" || state != "wait" && state != "handled") {
+			continue
+		}
+		because := "the situation ended: " + situation.Row + " no longer fires"
+		if firing {
+			because = "the owner handled this occurrence: " + state
+		}
+		withdrawErr := withLock(record.Install, func() error {
+			return transitionWrite(record.Install, "questions", "withdraw", now, "", func() error {
+				_, err := channel.Withdraw(record.Install, q.ID, because, nil, channel.DestinationConfig{}, now)
+				return err
+			}, seams)
+		})
+		err = errors.Join(err, withdrawErr)
+		if withdrawErr == nil {
+			if situation.Occurrence != "" {
+				err = errors.Join(err, recordQuestion("withdrawn", because))
+			}
+			lines = append(lines, "steward question "+q.ID+": "+because)
+		}
+	}
 	for _, row := range rows {
 		act := row.Row == "cannot-heal" || row.Row == "own-red-held" || row.Row == "person-act-no-effect" || row.Row == "stale-question" || row.Row == "unproven-incidents" || row.Row == "silent-agent" || row.Row == "suspected-contention" || stewardFlakeReady(status.Health, row)
 		reason := "report only"
@@ -185,6 +301,13 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 					reason = "routed to its owner; asks at " + occurrence.Since.Add(30*time.Minute).Local().Format("15:04")
 				}
 			}
+		}
+		if reason == "" && row.Row == "cannot-heal" && slices.ContainsFunc(questions, func(q channel.Question) bool {
+			return q.State == "open" && !slices.ContainsFunc(history, func(p Intervention) bool { return p.Row == "withdrawn" && p.Outcome == q.ID }) && slices.ContainsFunc(history, func(p Intervention) bool {
+				return p.Row == "cannot-heal" && p.Occurrence == occurrence.ID && p.Subject == row.Subject && p.Outcome == "asked "+q.ID
+			})
+		}) {
+			reason = "bounded: asked once for this occurrence"
 		}
 		var attempts []Intervention
 		var defect *Intervention
@@ -229,10 +352,10 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		}
 		for _, previous := range history {
 			at, parseErr := time.Parse(time.RFC3339Nano, previous.At)
-			if reason == "" && row.Row == "cannot-heal" && previous.Row == row.Row && previous.Subject == row.Subject && previous.Occurrence == occurrence.ID && strings.HasPrefix(previous.Outcome, "asked ") {
+			if reason == "" && row.Row == "cannot-heal" && previous.Row == "asked-closed" && previous.Subject == row.Subject && previous.Occurrence == occurrence.ID {
 				reason = "bounded: asked once for this occurrence"
 			}
-			if act && (row.Row != "cannot-heal" || previous.Occurrence == occurrence.ID) && reason == "" && !retry && !strings.HasPrefix(previous.Outcome, "held: ") && previous.Row == row.Row && previous.Subject == row.Subject && (parseErr != nil || now.Sub(at) < time.Hour) {
+			if act && row.Row != "cannot-heal" && reason == "" && !retry && !strings.HasPrefix(previous.Outcome, "held: ") && previous.Row == row.Row && previous.Subject == row.Subject && (parseErr != nil || now.Sub(at) < time.Hour) {
 				reason = "bounded: already acted within 60 minutes"
 			}
 		}
@@ -324,46 +447,6 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 			break
 		}
 	}
-	questions, _ := channel.WalkQuestions(record.Install)
-	for _, q := range questions {
-		if q.State != "open" || len(q.Facts) < 2 || !strings.HasPrefix(q.Facts[1], "lane steward: ") {
-			continue
-		}
-		if seams.Machine == nil {
-			return run, errors.Join(err, errors.New("the lane computer's name cannot be read"))
-		}
-		machine, readErr := seams.Machine(record.Install)
-		if readErr != nil {
-			return run, errors.Join(err, readErr)
-		}
-		if q.Machine != machine {
-			continue
-		}
-		var situation stewardQuestion
-		if json.Unmarshal([]byte(strings.TrimPrefix(q.Facts[1], "lane steward: ")), &situation) != nil || situation.Row == "" {
-			lines = append(lines, "steward question "+q.ID+" unreadable")
-			continue
-		}
-		// The silent agent is one situation whatever its row says about the
-		// queue: the row's subject is evidence ("with 2 goals waiting"), the
-		// question's subject is the fixed occurrence "landing-agent" (U4a).
-		if slices.ContainsFunc(rows, func(r Fired) bool {
-			return r.Row == situation.Row && (situation.Subject == "" || situation.Row == "silent-agent" || r.Subject == situation.Subject)
-		}) {
-			continue
-		}
-		because := "the situation ended: " + situation.Row + " no longer fires"
-		withdrawErr := withLock(record.Install, func() error {
-			return transitionWrite(record.Install, "questions", "withdraw", now, "", func() error {
-				_, err := channel.Withdraw(record.Install, q.ID, because, nil, channel.DestinationConfig{})
-				return err
-			}, seams)
-		})
-		err = errors.Join(err, withdrawErr)
-		if withdrawErr == nil {
-			lines = append(lines, "steward question "+q.ID+": "+because)
-		}
-	}
 	store := launch.Store{}
 	if effects.UsageStore != nil {
 		store = *effects.UsageStore
@@ -436,4 +519,18 @@ func stewardTrunk(install, checkout string, seams ProveSeams) (string, error) {
 		return stewardAlreadyProven, nil
 	}
 	return landingstate.Phrase("proving-main-2") + running.Attempt, err
+}
+
+func stewardRoute(home, ledger, machine string, entry Intervention, now time.Time) error {
+	coordinator, _ := brain.HostCoordinator(filepath.Dir(home), ledger)
+	if coordinator.State != brain.Declared {
+		return nil
+	}
+	id := fmt.Sprintf("%x", sha256.Sum256([]byte(entry.Row+"\n"+entry.Subject+"\n"+entry.Occurrence)))
+	_, err := board.Publish(home, board.Request{ID: id, Kind: board.KindAsk, From: board.Sender{Machine: machine, Lineage: lane.AgentLineage}, To: board.Address{Machine: coordinator.Record.Machine},
+		Text: "A lane question was withdrawn as noise: " + entry.Row + " " + entry.Subject + ": " + entry.What + ". Design input for its predicate; no act is asked."}, now)
+	if errors.Is(err, board.ErrIDTaken) {
+		return nil
+	}
+	return err
 }

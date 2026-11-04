@@ -60,6 +60,7 @@ type Health struct {
 type Occurrence struct {
 	Row, Subject, ID string
 	Since            time.Time
+	Answered         string `json:",omitempty"`
 }
 
 // DispositionState follows the newest decision for this exact occurrence.
@@ -309,6 +310,15 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			row, subject, _ := strings.Cut(entry.Subject, " ")
 			since, _ := time.Parse(time.RFC3339Nano, entry.At)
 			h.Routed = append(h.Routed, Occurrence{Row: row, Subject: subject, ID: entry.Occurrence, Since: since})
+		} else if entry.Row == "asked-closed" {
+			for j := range h.Routed {
+				if o := &h.Routed[j]; o.Row+" "+o.Subject == entry.Subject && o.ID == entry.Occurrence {
+					o.Answered = entry.What
+					if o.Answered == "" {
+						o.Answered = "withdrawn"
+					}
+				}
+			}
 		} else if entry.Row == "cleared" {
 			h.Routed = slices.DeleteFunc(h.Routed, func(o Occurrence) bool { return o.Row+" "+o.Subject == entry.Subject && o.ID == entry.Occurrence })
 		}
@@ -321,9 +331,6 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 		at, err := time.Parse(time.RFC3339Nano, entry.At)
 		if err == nil && !at.After(now) && now.Sub(at) < time.Hour {
 			h.recentActs[[2]string{entry.Row, entry.Subject}] = true
-			if entry.Row == "silent-agent" {
-				h.recentActs[[2]string{entry.Row, "landing-agent"}] = true
-			}
 		}
 		if entry.Row == "person-refused" && err == nil && !at.After(now) && now.Sub(at) < 24*time.Hour {
 			h.Refusals = append(h.Refusals, entry)
@@ -725,7 +732,7 @@ func (h Health) Rows() []Fired {
 		}
 	}
 	for _, o := range h.cannotHeal() {
-		if !h.recentActs[[2]string{o.Row, o.Subject}] {
+		if o.Row == "silent-agent" || !h.recentActs[[2]string{o.Row, o.Subject}] {
 			fire("cannot-heal", o.Row+" "+o.Subject, nil, "the lane cannot heal this; one question to the person")
 		}
 	}
