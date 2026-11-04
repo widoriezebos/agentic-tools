@@ -1,0 +1,60 @@
+{
+  "coveredUnits": [
+    "U4c1"
+  ],
+  "schemaVersion": 1,
+  "goal": "the-steward-acts",
+  "unit": "U4c1",
+  "subject": {
+    "commit": "8f12c26abe58745e03276bbf67f37104aa4d0824",
+    "parent": "b57509d9d90b9ebebcdae49ed79e6592d0cfc4b5",
+    "tree": "86ad9f0b25aa9c46cb4f1fa17ca3d1445b0ba710",
+    "patchDigest": "3aa0a427be0347b96870a8e759425c63fc1ca85873337f4cc495f9748cae09e9",
+    "unitDigest": "a85eca45573ed6be4ab1ca12d2f06be61496dc1cbc16a7b1fb457055c414c444"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-fe9d6d369cebc8fd1d1956f3",
+    "round": 1,
+    "closureSha256": "6e806383459ae134ece76ec2f2dfacd5c40beaadee81e76b1ab20d7fd7bab9b7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "86ad9f0b25aa9c46cb4f1fa17ca3d1445b0ba710",
+    "runId": "check-2479597460"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "650d304d7449d8cddc7c79005681768ce72fe43f",
+      "digest": "0c0681575244f78a76f71cedaf4630c9d3c72651980f250d126da6d3f9f1a3dc"
+    },
+    {
+      "kind": "read",
+      "commit": "8804d92e0992488604b68d645fcb8555ba9f0dfd",
+      "digest": "3cf82391d2a17245a407ed62b116aee205cb6289cef68a546f8f4e6f3d707b9a"
+    },
+    {
+      "kind": "read",
+      "commit": "7cfe5a558e954e7811e9a4cea3ffe97d6bf119c3",
+      "digest": "b724cd69838e230af16c2b1712f758f955fb9ce8378118435dff8a838cf27f18"
+    },
+    {
+      "kind": "read",
+      "commit": "b57509d9d90b9ebebcdae49ed79e6592d0cfc4b5",
+      "digest": "4ca6b82cef7df48de7df07e9b92c3bb00ead28bef841987fc5c63451b68bcaaa"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/claim_quota_test.go",
+      "readerWord": "reviewed by critic root code-critic-fe9d6d369cebc8fd1d1956f3"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_compose_test.go",
+      "readerWord": "reviewed by critic root code-critic-fe9d6d369cebc8fd1d1956f3"
+    }
+  ],
+  "sha256": "234853e15d9655f19b4c5e88a8eeee91e1f735e3bdde4a5d24ab5e9a48d9fa5c"
+}
