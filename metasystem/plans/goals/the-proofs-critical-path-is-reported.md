@@ -7,8 +7,9 @@
 - Origin: human
 - Next step: After the-proofs-critical-path-is-short lands and its N=1 against N=4 measurement is written: cut briefs U2, U3, U4 (--last) from the page sections the follow-up owns, one Astra round each, build on m1e; one hand-in
 - OpenedAt: 2026-11-04T13:04:07Z
-- Revision: 2
+- Revision: 3
 - BlockedBy: the-proofs-critical-path-is-short
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=900 activeJobLimit=1 reviewRoundLimit=8
 - BudgetExceptions: 0
 - NormApproval: approvedRef=QD0S19850JHB9P25T21X2NYZRC-m1e-f29a911f minutes=900 reviewRounds=8 goalRevision=1
@@ -18,4 +19,5 @@
 History:
 - 2026-11-04T13:04:07Z P83ACVJM1MVG4QWF667E2AZQSS-m1e-f29a911f open actor=human:Wido targets=the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short
 - 2026-11-04T13:04:28Z QD0S19850JHB9P25T21X2NYZRC-m1e-f29a911f approve actor=human:Wido targets=the-proofs-critical-path-is-reported
-Integrity: sha256=6a2c556abed6171a4067ce90e51cb4f024140541c76a6dc807687124cf53d56e
+- 2026-11-04T13:04:39Z H4B5P18Q8KABQYWKJW64FZMD4Q-m1e-f29a911f set-pin actor=human:Wido targets=the-proofs-critical-path-is-reported
+Integrity: sha256=c7ffcc012dd6be903bda33998cdba8b88554fd22d1081ab2041e5936fa672959
