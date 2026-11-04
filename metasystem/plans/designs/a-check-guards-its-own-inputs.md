@@ -3,7 +3,7 @@
 - Kind: design
 - Id: a-check-guards-its-own-inputs
 - Status: accepted
-- Goals: a-check-guards-its-own-inputs, a-green-unit-is-always-committable
+- Goals: a-check-guards-its-own-inputs a-green-unit-is-always-committable
 - Critique: closed at round 3 (Astra, direct reads designs/check-guard-critique-1.findings.md, -2 and -3; 3+2+3 material and 3+3+3 minor accepted, folded in revisions 2 to 5)
 
 Revision 7, 2026-11-03 (a1 in Wido's name, decision 183): D8 gains two sentences: a wait code keeps the step starting with its unlisted candidate (brief revision 6, V1; the first commit read of U1c1 refuted its F-2 on that point), and an error the before hook returns, a budget refusal or an interruption, returns to the caller as before the design (V2 and P9; the same read's F-1 asked for a hold there, correction 2 built it, and its own carry check showed four contracts it broke, so correction 3 reversed it); and D10 (U1c2a and U1c2b) moves to the split follow-up goal a-green-unit-is-always-committable, built from this page and the brief's U1c2 section, so that U1a, U1b and U1c1 land now.
