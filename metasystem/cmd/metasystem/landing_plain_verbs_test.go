@@ -22,6 +22,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
 
+const plainVerbFakeRuntime = "metasystem.runtimes=fake\nlaunch.build.model.fake=fixture\nlaunch.read.model.fake=fixture\nlaunch.critique.model.fake=fixture\nlaunch.design.model.fake=fixture\n"
+
 // plainVerbBed is a computer whose registered landing lane is a real
 // nested checkout (Git toplevel != installation) of a bare origin, with a
 // stand-in proof command. Its lane home is a run-scoped registry home, so a
@@ -52,7 +54,7 @@ func newPlainVerbBed(t *testing.T) *plainVerbBed {
 	}
 	bed.git(t, base, "init", "--quiet", "-b", "main", bed.checkout)
 	for path, text := range map[string]string{
-		filepath.Join(bed.installation, "metasystem.conf"): "metasystem.template=true\n",
+		filepath.Join(bed.installation, "metasystem.conf"): "metasystem.template=true\n" + plainVerbFakeRuntime,
 		filepath.Join(bed.checkout, ".gitignore"):          "metasystem/artifacts/\nmetasystem/bin/\nmetasystem/metasystem.conf.local\n",
 	} {
 		if err := os.WriteFile(path, []byte(text), 0o644); err != nil {
@@ -73,7 +75,8 @@ func newPlainVerbBed(t *testing.T) *plainVerbBed {
 	bed.owners.landing.plainProve.Executable = os.Executable
 	bed.owners.landing.plainProve.Launch = func(argv []string, dir, log string) (int64, error) {
 		return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: argv, Dir: dir, Log: log,
-			Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry}})
+			Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry,
+				"METASYSTEM_PROOF_ADMISSION_TEST_DIR=" + filepath.Join(base, "admission"), "METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT=" + bed.installation}})
 	}
 	bed.realLaunch = bed.owners.landing.plainProve.Launch
 	writeLaneFixtureEngine(t, bed.installation)
@@ -108,6 +111,9 @@ func (bed *plainVerbBed) setCommand(t *testing.T, command string) {
 // Main's fixture changes arrive through a main merge, keeping hand-in commits pinned.
 func (bed *plainVerbBed) advanceMain(t *testing.T, path, text string) {
 	t.Helper()
+	if path == "metasystem/metasystem.conf" && !strings.Contains(text, "metasystem.runtimes=") {
+		text += plainVerbFakeRuntime
+	}
 	writer := filepath.Join(t.TempDir(), "main-writer")
 	bed.git(t, filepath.Dir(bed.checkout), "clone", "--quiet", bed.origin, writer)
 	if err := os.WriteFile(filepath.Join(writer, path), []byte(text), 0644); err != nil {
@@ -166,6 +172,7 @@ func (bed *plainVerbBed) run(t *testing.T, words ...string) (int, string) {
 	}
 	var stdout, stderr bytes.Buffer
 	owners := bed.owners
+	owners.landing.plainProve = withoutLaneRoom(owners.landing.plainProve)
 	if words[1] == "prove" && slices.Contains(words, "--wait") && !slices.Contains(words, "--attempt") {
 		if owners.landing.plainProve.Command != nil || owners.landing.plainProve.Launch != nil && reflect.ValueOf(owners.landing.plainProve.Launch).Pointer() != reflect.ValueOf(bed.realLaunch).Pointer() {
 			if owners.landing.plainProve.Launch != nil && reflect.ValueOf(owners.landing.plainProve.Launch).Pointer() == reflect.ValueOf(bed.realLaunch).Pointer() {
@@ -217,7 +224,8 @@ func (bed *plainVerbBed) detachedEngine(t *testing.T) plain.ProveSeams {
 	seams := plain.ProveSeams{Executable: func() (string, error) { return executable, nil },
 		Launch: func(argv []string, dir, log string) (int64, error) {
 			return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: argv, Dir: dir, Log: log,
-				Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry, engineChildExited + "=" + bed.exited}})
+				Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry, engineChildExited + "=" + bed.exited,
+					"METASYSTEM_PROOF_ADMISSION_TEST_DIR=" + filepath.Join(filepath.Dir(bed.checkout), "admission"), "METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT=" + bed.installation}})
 		}}
 	bed.realLaunch = seams.Launch
 	return seams

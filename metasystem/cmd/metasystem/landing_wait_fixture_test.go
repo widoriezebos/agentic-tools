@@ -12,6 +12,7 @@ import (
 // claims the saved admission through the public handler after Start unlocks.
 func proofWaitFixtureOwners(t *testing.T, owners intentOwners, install, cwd string) intentOwners {
 	t.Helper()
+	owners.landing.plainProve = withoutLaneRoom(owners.landing.plainProve)
 	launch := owners.landing.plainProve.Launch
 	completed := false
 	owners.landing.plainProve.Alive = func(running plain.Running) bool {

@@ -90,6 +90,7 @@ func (b *resolveVerbFixture) run(t *testing.T, cwd string, words ...string) (int
 	}
 	var stdout, stderr bytes.Buffer
 	owners := b.owners
+	owners.landing.plainProve = withoutLaneRoom(owners.landing.plainProve)
 	if words[0] == "prove" && slices.Contains(words, "--wait") && !slices.Contains(words, "--attempt") {
 		owners = proofWaitFixtureOwners(t, owners, b.install, cwd)
 	}
