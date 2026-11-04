@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1a (the budget-stop resolver through both tick compositions) then U1b (the health words and the list line, --last) from the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/an-alert-ends-with-its-situation-U1-brief.md on m1e's build lane; carry check and read after each; the lane lands them
 - OpenedAt: 2026-11-04T02:29:25Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - NormApproval: approvedRef=5JTHJHQGAWV9AV86BK89M2JC5A-m1e-cf718d97 minutes=600 reviewRounds=6 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-04T02:29:25Z DWAD2JV6D5TAGGVX84WF9W9G9J-m1e-cf718d97 open actor=human:Wido targets=an-alert-ends-with-its-situation
 - 2026-11-04T02:29:55Z 5JTHJHQGAWV9AV86BK89M2JC5A-m1e-cf718d97 approve actor=human:Wido targets=an-alert-ends-with-its-situation
-Integrity: sha256=025a2a7f0f625387f9b0b66743d92bc911ba96d684ab2c87684f00f1889d697d
+- 2026-11-04T02:30:04Z 155QNTD21YKG4EN3G1VGEWGWTN-m1e-cf718d97 set-pin actor=human:Wido targets=an-alert-ends-with-its-situation
+Integrity: sha256=74511f011f0bdde3b1666748214764fdfb46d91b1ee395c04700aa270b163fa0
