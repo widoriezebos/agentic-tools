@@ -342,11 +342,38 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 
 	var program, order, goals, facts []string
 	for _, block := range s.Quota {
+		if block.Ended {
+			cause := "ready work no longer waits"
+			file := live[block.Held]
+			switch {
+			case file == nil || file.State == goal.StateDone || file.State == goal.StateAbandoned:
+				cause = "concluded"
+			case file.Claimed == nil || file.State != goal.StateClaimed:
+				cause = "released"
+			case file.Landing != nil || file.Claimed.HandedOver != (goal.HandedOver{}):
+				cause = "handed in"
+			case file.Claimed.Machine != s.Machine:
+				cause = "claimed by another machine"
+			}
+			program = append(program, "the occurrence ended: "+block.Held+" "+cause)
+			continue
+		}
 		waits := fmt.Sprintf("%d ready goals wait", len(block.Ready))
 		if len(block.Ready) == 1 {
 			waits = "1 ready goal waits"
 		}
-		program = append(program, fmt.Sprintf("%s behind this seat's claim on %s; next: %s", waits, block.Held, block.Command))
+		occurrence := ""
+		if !block.Since.IsZero() {
+			occurrence = " since " + block.Since.In(env.Zone).Format("15:04") + "; not yet asked"
+			if ask := block.Ask; ask != nil && ask.Thread.Root != nil {
+				state := ask.State
+				if state == board.ThreadReplied {
+					state = "answered " + ask.Since.In(env.Zone).Format("15:04")
+				}
+				occurrence = " since " + block.Since.In(env.Zone).Format("15:04") + "; asked " + ask.Thread.Root.At.In(env.Zone).Format("15:04") + ", " + state
+			}
+		}
+		program = append(program, fmt.Sprintf("%s behind this seat's claim on %s%s; next: %s", waits, block.Held, occurrence, block.Command))
 	}
 	for index, id := range s.Order {
 		if file := live[id]; file != nil {

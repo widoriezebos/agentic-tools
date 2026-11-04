@@ -316,11 +316,6 @@ func SeatNoProgressCount(records []SeatRecord, goalID, approvalOpid string) int 
 	return count
 }
 
-// StewardNoProgressCount counts only this subject's occurrence.
-func StewardNoProgressCount(records []SeatRecord, subject, occurrence string) int {
-	return StewardNoProgressCountSince(records, subject, occurrence, time.Time{})
-}
-
 // StewardNoProgressCountSince counts only this subject's occurrence, and only
 // records started after a person's clearance (since zero counts them all).
 func StewardNoProgressCountSince(records []SeatRecord, subject, occurrence string, since time.Time) int {

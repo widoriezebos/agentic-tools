@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -26,6 +27,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot/stateroottest"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/steward"
 )
 
 // connectionBed is a physical Git repository (the work bed's goal ledger
@@ -502,6 +504,92 @@ func (c *connectionBed) adapterFixture() string {
 // real public land are delivery's (TestIntentCloseWholeOwner and its land
 // fixtures) and are not claimed by this test. Landing is observed through
 // the landing admission reader on the published branch only.
+func TestNoReleaseIsProposedBetweenCollectionAndPublication(t *testing.T) {
+	c := newConnectionBed(t)
+	held := c.goalFile(c.id)
+	ready := *held
+	ready.Id, ready.State, ready.Claimed, ready.StopCapability = "ready-next", goal.StateApproved, nil, nil
+	ready.Priority, ready.Sequence = 1, 1
+	c.addGoal(&ready)
+	connectionGit(t, c.root(), "config", "metasystem.goal.machine", held.Claimed.Machine)
+	connectionGit(t, c.root(), "config", "goal.sync-remote", "local")
+	connectionGit(t, c.root(), "config", "metasystem.steward.notify-command", "true")
+	connectionGit(t, c.root(), "add", "-A")
+	connectionGit(t, c.root(), "commit", "-qm", "ready work behind the holder")
+	connectionGit(t, c.root(), "update-ref", goal.AcceptedRef, "HEAD")
+	connectionGit(t, c.root(), "push", "-q", "origin", "main")
+	c.edits = map[string]string{"connect.txt": "the built result\n"}
+	code, built := c.do(append([]string{"work", "build", c.id, "connect", "--last", "--brief", c.brief("brief.md", "Build it.\n"), "--lines", "10"}, workCheck...)...)
+	if code != 0 || built.Outcome != intentConfirmed {
+		t.Fatalf("build: %d %+v", code, built)
+	}
+	run := resultData(t, built)["run"].(string)
+	if _, result := c.do("work", "review", "run:"+run); result.Outcome != intentInProgress {
+		t.Fatalf("start review: %+v", result)
+	}
+	commit := c.runRecord(run).Subjects[0].Commit
+	c.writeCritic(c.worktree, "crit1", commit, "completed", true)
+	owners := c.connectionOwners()
+	inv := &intentInvocation{cwd: c.root(), owners: owners}
+	if problem := inv.selectRoot(); problem != nil {
+		t.Fatal(problem.Summary)
+	}
+	units, home := stewardUnitStages(owners), t.TempDir()
+	now := c.manager.Now()
+	self := identity.Exact{Pid: int64(os.Getpid()), StartedAt: now}
+	prober := fixtureLifetimeProber(func(pid int64) (identity.Exact, identity.Liveness, error) {
+		if pid == self.Pid {
+			return self, identity.Alive, nil
+		}
+		return (seatTickProber{}).Probe(pid)
+	})
+	pass := func(want int) {
+		t.Helper()
+		result, err := steward.RunTick(c.root(), steward.TickConfig{Now: now, AskHome: home, Units: units,
+			WorkStateRoot: t.TempDir(), ProviderHome: t.TempDir(), Prober: prober,
+			ClaimLaneState: func(string, string, string) (string, error) { return "", nil }}, seatTickCensus{})
+		if err != nil || result.Health.Stopped {
+			t.Fatalf("quota tick: %+v %v", result, err)
+		}
+		threads, err := board.Threads(home)
+		if err != nil || len(threads) != want {
+			t.Fatalf("quota asks: %+v %v, want %d", threads, err, want)
+		}
+		now = now.Add(time.Minute)
+	}
+	runner, observed := inv.unitRunner(), 0
+	err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		wait := review.Wait
+		review.Wait = func(publish func() error) error {
+			stages, err := units(c.root(), c.id)
+			if err != nil || len(stages) != 1 {
+				t.Fatalf("unit stages: %+v %v", stages, err)
+			}
+			if !strings.HasPrefix(stages[0].Stage, "reviewed; its read is collected but not yet published") {
+				return wait(publish)
+			}
+			observed++
+			pass(0)
+			if err := wait(publish); err != nil {
+				return err
+			}
+			stages, err = units(c.root(), c.id)
+			if err != nil || !strings.HasPrefix(stages[0].Stage, "reviewed; its read is collected and published") {
+				t.Fatalf("published stage: %+v %v", stages, err)
+			}
+			pass(1)
+			return nil
+		}
+		if result := inv.reviewUnitRound(runner, nil, review, retain); result.Outcome != intentConfirmed {
+			t.Fatalf("review: %+v", result)
+		}
+		return nil
+	})
+	if err != nil || observed != 1 {
+		t.Fatalf("collection/publication boundary observed %d times: %v", observed, err)
+	}
+}
+
 func TestIntentBuiltUnitToLanding(t *testing.T) {
 	c := newConnectionBedWith(t, func(file *goal.GoalFile) {
 		workApprovedBox(file)

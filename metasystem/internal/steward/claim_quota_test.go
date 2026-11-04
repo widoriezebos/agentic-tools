@@ -348,7 +348,171 @@ func claimQuotaCompleted(t *testing.T, root string, cfg TickConfig) TickResult {
 func claimQuotaAskText(ready, held, command string) string {
 	return "1 ready goal at priority 1 waits for this machine's one claim, which your goal " + held +
 		" holds; the first is " + ready + ". Next: " + command + ", then metasystem goal claim " + ready +
-		". Reply in this thread to keep the claim; nothing is asked again while this blocking lasts."
+		". The claim stays until you hand in or release; a reply is not needed."
+}
+
+func TestNoReleaseIsProposedForWorkInFlight(t *testing.T) {
+	t.Parallel()
+	root := claimQuotaTickBed(t, map[string][]byte{"artifacts/agents/jobs/job-held.json": []byte(`{"jobId":"job-held","goalId":"held-h","status":"running"}`)},
+		claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
+	home, stage := t.TempDir(), "reviewed; its read is collected and published (attestation abc)"
+	cfg := TickConfig{Now: claimQuotaClock, ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home,
+		Units: func(gotRoot, id string) ([]UnitStage, error) {
+			if gotRoot != root || id != "held-h" {
+				t.Fatalf("units for %s in %s", id, gotRoot)
+			}
+			return []UnitStage{{Unit: "build", Stage: stage}, {Unit: "old", Stage: "transferred; its destinations remain required"}}, nil
+		}}
+	check := func(want int) {
+		t.Helper()
+		claimQuotaTickWith(t, root, cfg)
+		if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != want {
+			t.Fatalf("stage %q: %d asks, want %d", stage, len(asks), want)
+		}
+		if open, err := readClaimQuotaOccurrences(root); err != nil || len(open) != 1 {
+			t.Fatalf("the blocking occurrence must stay open: %v %v", open, err)
+		}
+		cfg.Now = cfg.Now.Add(time.Minute)
+	}
+	for range 3 {
+		check(0)
+	}
+	if err := os.WriteFile(filepath.Join(root, "artifacts/agents/jobs/job-held.json"), []byte(`{"jobId":"job-held","goalId":"held-h","status":"completed"}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	for _, pending := range []string{"built, ready for review", "starting", "running", "stopped (proof-red), needs a revision", "review refused: unavailable", "committed and under independent examination", "reviewed; its read is collected but not yet published (attestation abc)"} {
+		stage = pending
+		check(0)
+	}
+	stage = "reviewed; its read is collected and published (attestation abc)"
+	check(1)
+	check(1)
+}
+
+func TestAnEndedOccurrenceClosesItsAsk(t *testing.T) {
+	t.Parallel()
+	for _, cause := range []string{"released", "handed in", "concluded", "abandoned", "released then concluded", "ready work gone", "answered"} {
+		t.Run(cause, func(t *testing.T) {
+			t.Parallel()
+			held, ready := claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e")
+			root := claimQuotaTickBed(t, nil, held, ready)
+			home := t.TempDir()
+			cfg := TickConfig{Now: claimQuotaClock, ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home}
+			claimQuotaTickWith(t, root, cfg)
+			ask := claimQuotaAsks(t, home, "held-h")[0]
+			if err := board.Mark(ask, "m1e", "coordinator", "inbox", cfg.Now); err != nil {
+				t.Fatal(err)
+			}
+			conclude := func() {
+				held.State, held.Conclude, held.Claimed, held.StopCapability = goal.StateDone, "Finished.", nil, nil
+				claimQuotaAccept(t, root, held)
+			}
+			reason := cause
+			switch cause {
+			case "released", "released then concluded":
+				held.State, held.Claimed, held.StopCapability = goal.StateApproved, nil, nil
+				reason = "released"
+			case "concluded":
+				held.State, held.Conclude, held.Claimed, held.StopCapability = goal.StateDone, "Finished.", nil, nil
+			case "abandoned":
+				held.State, held.Conclude, held.Claimed, held.StopCapability = goal.StateAbandoned, "", nil, nil
+				held.Revision++
+				held.Abandoned = &goal.AbandonRecord{By: "human:Wido", At: cfg.Now.Format(time.RFC3339), Revision: held.Revision,
+					Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC2", "m1e", "coordinator"), Because: "The work is no longer needed."}
+				held.History = append(held.History, goal.HistoryLine{At: held.Abandoned.At, Verb: "abandon", Actor: held.Abandoned.By,
+					Opid: held.Abandoned.Opid, Targets: []string{held.Id}, Keep: -1, Reason: held.Abandoned.Because})
+				reason = "concluded"
+			case "handed in":
+				held.Landing = &goal.LandingRecord{At: cfg.Now.Format(time.RFC3339), Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC2", "m1e", "coordinator")}
+			case "ready work gone":
+				ready.State, ready.Conclude = goal.StateDone, "Finished elsewhere."
+				reason = "ready work no longer waits"
+			case "answered":
+				composePublish(t, home, board.Request{Kind: board.KindReply, From: board.Sender{Machine: "m1e", Lineage: "coordinator"},
+					To: board.Address{Machine: "m1e"}, Thread: ask.ID, Text: "no release"}, cfg.Now.Add(time.Minute))
+			}
+			claimQuotaAccept(t, root, held, ready)
+			states := map[string]string{}
+			if cause == "handed in" {
+				states[held.Id] = "waiting"
+			}
+			check := func() {
+				t.Helper()
+				threads, err := board.Threads(home)
+				if err != nil || len(threads) != 1 {
+					t.Fatalf("ask threads: %+v %v", threads, err)
+				}
+				thread := threads[0]
+				for _, message := range thread.Messages {
+					if message.To.Goal == held.Id && message.ID != ask.ID {
+						t.Errorf("ending the occurrence sent a new goal message: %s", message.PeerText())
+					}
+				}
+				if cause == "answered" {
+					if state, _ := thread.State(cfg.Now); state != board.ThreadReplied || len(thread.Messages) != 2 || thread.Messages[1].PeerText() != "no release" {
+						t.Fatalf("the holder's answer was replaced: %+v", thread)
+					}
+					return
+				}
+				if open, err := readClaimQuotaOccurrences(root); err != nil || len(open) != 0 {
+					t.Fatalf("the occurrence did not end: %v %v", open, err)
+				}
+				records, err := seatJSONLines(claimQuotaOccurrencePath(root))
+				if err != nil || len(records) != 2 || records[1]["end"] != claimQuotaClock.Add(time.Minute).Format(time.RFC3339Nano) {
+					t.Fatalf("the occurrence's end record: %+v %v", records, err)
+				}
+				src := composeSources(t, root, home, &cfg.Now)
+				src.ClaimLaneState = cfg.ClaimLaneState
+				page := Compose(readSituation(t, root, src))
+				if page.First.Kind == "ask" {
+					t.Errorf("the ended ask remains the holder's first thing: %+v", page.First)
+				}
+				var program []string
+				for _, part := range page.Parts {
+					if part.Name == "program" {
+						program = append(program, part.Summary...)
+					}
+				}
+				if !slices.Contains(program, "the occurrence ended: held-h "+reason) {
+					t.Errorf("the program does not name the end and its reason: %q", program)
+				}
+			}
+			for i := 1; i <= 6; i++ {
+				cfg.Now = claimQuotaClock.Add(time.Duration(i) * time.Minute)
+				cfg.ClaimLaneState = claimQuotaLane(t, root, states)
+				if _, role := claimQuotaTickWith(t, root, cfg); cause != "answered" && role.Status != HealthAlive {
+					t.Fatalf("the ended occurrence's quota verdict: %+v", role)
+				}
+				check()
+				if cause == "released then concluded" && i == 1 {
+					conclude()
+					reason = "concluded"
+				}
+			}
+			if cause == "answered" {
+				return
+			}
+			if held.State != goal.StateAbandoned && held.State != goal.StateDone {
+				conclude()
+			}
+			owners := func() (board.Ownership, error) {
+				return board.Ownership{Concluded: map[string]string{held.Id: string(held.State)}}, nil
+			}
+			// The first read closes goal messages; the second sees any resulting seat note.
+			for range 2 {
+				inbox, err := board.Pending(home, "m1e", owners, cfg.Now)
+				if err != nil {
+					t.Fatal(err)
+				}
+				inbox.Release()
+				for _, message := range inbox.Messages {
+					if strings.Contains(board.Render(message, cfg.Now, time.UTC), "was not delivered") {
+						t.Errorf("the seat received a failed-delivery note: %s", message.PeerText())
+					}
+				}
+			}
+		})
+	}
 }
 
 func TestTheHolderIsAskedOncePerBlockingOccurrence(t *testing.T) {

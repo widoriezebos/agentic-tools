@@ -107,9 +107,12 @@ type SituationDesign struct {
 // ClaimQuotaBlock is one holding goal, the ready goals its claim holds back
 // in the program's order, and the step that frees the claim.
 type ClaimQuotaBlock struct {
+	Ended   bool
 	Held    string
 	Ready   []string
 	Command string
+	Since   time.Time
+	Ask     *SituationAsk
 }
 
 // SituationAsk is one thread of this seat or its goals: its state at the
@@ -199,9 +202,9 @@ func ReadSituation(root string, src SituationSources) Situation {
 			s.Unavailable[part] = s.Unavailable["ledger"]
 		}
 	} else {
+		s.readAsks(src, now)
 		s.readQuota(root, ledger)
 		s.readFacts(root, src, ledger, now)
-		s.readAsks(src, now)
 	}
 	s.readHost(root, src, now)
 	err = errors.New("no reader")
@@ -644,6 +647,11 @@ func (s *Situation) readQuota(root string, ledger *healthLedger) {
 	if verdict.Status == HealthUnknown {
 		s.Unavailable["quota"] = verdict.Reason
 	}
+	ended := map[string]string{}
+	open, err := readClaimQuotaOccurrences(root, ended)
+	if err != nil {
+		s.Unavailable["quota"] = err.Error()
+	}
 	for _, fact := range verdict.RemedyFacts {
 		if verdict.Status != HealthDead || fact.Cause != CauseClaimQuota {
 			continue
@@ -654,7 +662,27 @@ func (s *Situation) readQuota(root string, ledger *healthLedger) {
 		}
 		s.Quota[at].Ready = append(s.Quota[at].Ready, fact.Ready)
 	}
-	for _, block := range s.Quota {
+	s.Asks = slices.DeleteFunc(s.Asks, func(ask SituationAsk) bool { return ended[ask.Thread.ID] != "" })
+	for _, held := range ended {
+		if open[held] != "" || ledger.projection.Tree == nil || slices.ContainsFunc(s.Quota, func(block ClaimQuotaBlock) bool { return block.Held == held }) {
+			continue
+		}
+		s.Quota = append(s.Quota, ClaimQuotaBlock{Held: held, Ended: true})
+	}
+	slices.SortFunc(s.Quota, func(a, b ClaimQuotaBlock) int { return strings.Compare(a.Held, b.Held) })
+	for index := range s.Quota {
+		block := &s.Quota[index]
 		slices.SortStableFunc(block.Ready, func(a, b string) int { return slices.Index(s.Order, a) - slices.Index(s.Order, b) })
+		if start := open[block.Held]; start != "" {
+			block.Since, err = time.Parse(time.RFC3339Nano, start)
+			if err != nil {
+				s.Unavailable["quota"] = err.Error()
+			}
+			for i := range s.Asks {
+				if s.Asks[i].Thread.ID == claimQuotaAskID(block.Held, start) {
+					block.Ask = &s.Asks[i]
+				}
+			}
+		}
 	}
 }

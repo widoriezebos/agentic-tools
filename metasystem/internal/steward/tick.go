@@ -765,7 +765,7 @@ func tickHealthEvaluator(cfg TickConfig) healthRoleEvaluator {
 // work, on both of the tick's paths and under the helm.
 func tickHealthAsk(cfg TickConfig) func(string, HealthVerdict, time.Time) error {
 	return func(repoRoot string, health HealthVerdict, now time.Time) error {
-		return askClaimQuotaHolders(health, repoRoot, cfg.AskHome, goal.ResolveMachine, now)
+		return askClaimQuotaHolders(health, repoRoot, cfg.AskHome, goal.ResolveMachine, now, cfg.Units)
 	}
 }
 

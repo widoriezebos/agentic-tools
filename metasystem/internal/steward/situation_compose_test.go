@@ -422,13 +422,18 @@ func TestTheWakeExcludesPresentation(t *testing.T) {
 
 func TestTheProgramPartSaysTheQuotaOnce(t *testing.T) {
 	t.Parallel()
+	home := t.TempDir()
+	now := situationNow.In(time.FixedZone("CEST", 2*60*60))
 	program := func(root string, states map[string]string) []string {
 		t.Helper()
-		now := situationNow
-		src := composeSources(t, root, t.TempDir(), &now)
+		src := composeSources(t, root, home, &now)
 		src.ClaimLaneState = claimQuotaLane(t, root, states)
 		var lines []string
-		for _, part := range Compose(readSituation(t, root, src)).Parts {
+		page, err := SituationPage(root, func(time.Time) Situation { return readSituation(t, root, src) }, now, -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, part := range page.Composition.Parts {
 			if part.Name == "program" {
 				for _, line := range part.Summary {
 					if strings.Contains(line, "behind this seat's claim") {
@@ -441,11 +446,28 @@ func TestTheProgramPartSaysTheQuotaOnce(t *testing.T) {
 	}
 	release := "metasystem goal release held-h --reason TEXT"
 	root := situationQuotaBed(t)
-	if lines, want := program(root, nil), "3 ready goals wait behind this seat's claim on held-h; next: "+release; !slices.Equal(lines, []string{want}) {
+	cfg := TickConfig{Now: now.Add(-12 * time.Minute), ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home,
+		Units: func(string, string) ([]UnitStage, error) { return []UnitStage{{Stage: "running"}}, nil }}
+	claimQuotaTickWith(t, root, cfg)
+	since := cfg.Now.In(now.Location()).Format("15:04")
+	if lines, want := program(root, nil), "3 ready goals wait behind this seat's claim on held-h since "+since+"; not yet asked; next: "+release; !slices.Equal(lines, []string{want}) {
+		t.Fatalf("the deferred occurrence: %q, want %q", lines, want)
+	}
+	cfg.Now, cfg.Units = now.Add(-7*time.Minute), nil
+	claimQuotaTickWith(t, root, cfg)
+	asked := cfg.Now.In(now.Location()).Format("15:04")
+	if lines, want := program(root, nil), "3 ready goals wait behind this seat's claim on held-h since "+since+"; asked "+asked+", open; next: "+release; !slices.Equal(lines, []string{want}) {
 		t.Fatalf("three ready goals behind one claim: %q, want one line %q", lines, want)
 	}
+	ask := claimQuotaAsks(t, home, "held-h")[0]
+	composePublish(t, home, board.Request{Kind: board.KindReply, From: board.Sender{Machine: "m1e"}, To: board.Address{Machine: "m1e"},
+		Thread: ask.ID, Text: "no release"}, now.Add(-2*time.Minute))
+	if lines, want := program(root, nil), "3 ready goals wait behind this seat's claim on held-h since "+since+"; asked "+asked+", answered "+now.Add(-2*time.Minute).Format("15:04")+"; next: "+release; !slices.Equal(lines, []string{want}) {
+		t.Fatalf("the answered occurrence: %q, want %q", lines, want)
+	}
 	one := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
-	if lines, want := program(one, nil), "1 ready goal waits behind this seat's claim on held-h; next: "+release; !slices.Equal(lines, []string{want}) {
+	claimQuotaTickWith(t, one, TickConfig{Now: now, ClaimLaneState: claimQuotaLane(t, one, nil), AskHome: home})
+	if lines, want := program(one, nil), "1 ready goal waits behind this seat's claim on held-h since "+now.Format("15:04")+"; asked "+now.Format("15:04")+", open; next: "+release; !slices.Equal(lines, []string{want}) {
 		t.Fatalf("one ready goal: %q, want %q", lines, want)
 	}
 	if lines := program(root, map[string]string{"held-h": "waiting"}); len(lines) != 0 {

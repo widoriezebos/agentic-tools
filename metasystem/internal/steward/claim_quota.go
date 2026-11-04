@@ -114,7 +114,7 @@ func claimQuotaOccurrencePath(root string) string {
 	return filepath.Join(filepath.Dir(askedReceipts(root)), "claim-quota.jsonl")
 }
 
-func readClaimQuotaOccurrences(root string) (map[string]string, error) {
+func readClaimQuotaOccurrences(root string, ended ...map[string]string) (map[string]string, error) {
 	data, err := os.ReadFile(claimQuotaOccurrencePath(root))
 	if err != nil && !os.IsNotExist(err) {
 		return nil, err
@@ -126,6 +126,9 @@ func readClaimQuotaOccurrences(root string) (map[string]string, error) {
 			return nil, err
 		}
 		if entry.End != "" {
+			if len(ended) > 0 {
+				ended[0][claimQuotaAskID(entry.Held, open[entry.Held])] = entry.Held
+			}
 			delete(open, entry.Held)
 		} else {
 			open[entry.Held] = entry.Start
@@ -147,9 +150,35 @@ func appendClaimQuotaOccurrence(root string, entry claimQuotaOccurrence) error {
 	return errors.Join(err, file.Close())
 }
 
+func claimQuotaAskID(held, start string) string {
+	return "steward-" + signalDigest("claim-quota\n" + held + "\n" + start)[:24]
+}
+
+func claimQuotaInFlight(root, held string, units func(string, string) ([]UnitStage, error)) (bool, error) {
+	jobs, err := goal.NonTerminalGoalJobs(root, held)
+	if err != nil || len(jobs) > 0 || units == nil {
+		return err != nil || len(jobs) > 0, err
+	}
+	stages, err := units(root, held)
+	if err != nil {
+		return true, err
+	}
+	for _, unit := range stages {
+		if !strings.HasPrefix(unit.Stage, "reviewed; its read is collected and published") &&
+			!strings.HasPrefix(unit.Stage, "stopped:") && !strings.HasPrefix(unit.Stage, "transferred") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 // askClaimQuotaHolders keeps one ask per holding goal's observed blocking
 // interval. Unknown or stopped observations leave those intervals untouched.
-func askClaimQuotaHolders(health HealthVerdict, repoRoot, home string, machine func(string) (string, error), now time.Time) error {
+func askClaimQuotaHolders(health HealthVerdict, repoRoot, home string, machine func(string) (string, error), now time.Time, unitReaders ...func(string, string) ([]UnitStage, error)) error {
+	var units func(string, string) ([]UnitStage, error)
+	if len(unitReaders) > 0 {
+		units = unitReaders[0]
+	}
 	if health.Stopped {
 		return nil
 	}
@@ -177,12 +206,13 @@ func askClaimQuotaHolders(health HealthVerdict, repoRoot, home string, machine f
 		return err
 	}
 	name := ""
-	if len(groups) > 0 {
+	var ledger *healthLedger
+	if len(groups)+len(open) > 0 {
 		name, err = machine(repoRoot)
 		if err != nil {
 			return err
 		}
-		ledger := newHealthLedger(repoRoot, now).read()
+		ledger = newHealthLedger(repoRoot, now).read()
 		if ledger.endpointErr != nil || ledger.projectionErr != nil {
 			return errors.Join(ledger.endpointErr, ledger.projectionErr)
 		}
@@ -195,6 +225,9 @@ func askClaimQuotaHolders(health HealthVerdict, repoRoot, home string, machine f
 				delete(groups, held)
 			}
 		}
+	}
+	if len(groups)+len(open) == 0 {
+		return nil
 	}
 	stamp := now.UTC().Format(time.RFC3339Nano)
 	for held := range open {
@@ -223,12 +256,16 @@ func askClaimQuotaHolders(health HealthVerdict, repoRoot, home string, machine f
 				return err
 			}
 		}
+		if busy, err := claimQuotaInFlight(repoRoot, held, units); busy || err != nil {
+			asks = append(asks, err)
+			continue
+		}
 		noun, verb := "ready goals", "wait"
 		if len(facts) == 1 {
 			noun, verb = "ready goal", "waits"
 		}
 		first := facts[0]
-		text := fmt.Sprintf("%d %s at priority 1 %s for this machine's one claim, which your goal %s holds; the first is %s. Next: %s, then metasystem goal claim %s. Reply in this thread to keep the claim; nothing is asked again while this blocking lasts.", len(facts), noun, verb, held, first.Ready, first.Command, first.Ready)
+		text := fmt.Sprintf("%d %s at priority 1 %s for this machine's one claim, which your goal %s holds; the first is %s. Next: %s, then metasystem goal claim %s. The claim stays until you hand in or release; a reply is not needed.", len(facts), noun, verb, held, first.Ready, first.Command, first.Ready)
 		asks = append(asks, askOnce(askedReceipts(repoRoot), home, board.Sender{Machine: name}, board.Address{Goal: held},
 			"claim-quota\n"+held+"\n"+start, text, now))
 	}

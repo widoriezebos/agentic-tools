@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testprovider"
 )
 
@@ -532,7 +533,7 @@ func TestAPersonReviveLiftsTheStewardStop(t *testing.T) {
 func personRevivesTheSteward(t *testing.T, b *seatBed, state string) error {
 	t.Helper()
 	bin := filepath.Join(b.root, "fixture-engine")
-	if err := os.WriteFile(bin, []byte("fixture engine"), 0o755); err != nil {
+	if err := testexec.WriteFile(bin, []byte("fixture engine"), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	digest, err := installDigest(bin)
