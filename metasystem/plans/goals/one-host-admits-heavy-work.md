@@ -7,8 +7,9 @@
 - Origin: human
 - Next step: After the-lanes-proof-goes-first lands whole: build U1a (the slot, the review path, --now, the sandbox refusal, 122 lines) then U1b (the rebase and amended-review paths, --last, 20 lines) from the FINAL brief briefs/one-host-admits-heavy-work-U1-brief.md (revision 4, two Astra rounds) on m1e build lane; carry check and read after each; one hand-in; a1 drops the hand lock after it runs on m1e, ui and the lane engines
 - OpenedAt: 2026-11-04T02:44:33Z
-- Revision: 2
+- Revision: 3
 - BlockedBy: the-lanes-proof-goes-first
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=900 activeJobLimit=1 reviewRoundLimit=8
 - BudgetExceptions: 0
 - NormApproval: approvedRef=XX7P4BV34ECNEEDR3DZ8XYHCJ7-m1e-0e389f5a minutes=900 reviewRounds=8 goalRevision=1
@@ -18,4 +19,5 @@
 History:
 - 2026-11-04T02:44:33Z Q9HN4TYK4XKS9GZGV0VG8FZYQS-m1e-0e389f5a open actor=human:Wido targets=one-host-admits-heavy-work,the-lanes-proof-goes-first
 - 2026-11-04T02:44:44Z XX7P4BV34ECNEEDR3DZ8XYHCJ7-m1e-0e389f5a approve actor=human:Wido targets=one-host-admits-heavy-work
-Integrity: sha256=9cd8486fcd86fbc00fdded826dcdd27045ef6a58670713700c706abc6aab4cdc
+- 2026-11-04T02:44:54Z B09AKXV55FQ3YH5R4XA5759JQN-m1e-0e389f5a set-pin actor=human:Wido targets=one-host-admits-heavy-work
+Integrity: sha256=07cdb12062a4299be2a9fd17345cdff17924b1d8e4b93b3b439d53278b213af1
