@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 7
+- Sequence: 8
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="finding 484 (2026-11-02): a clean fresh read of a-red U1a2a finished 16 minutes after work review returned and was never booked; the-steward-decides U2b1c round 2 ended the same way the evening before; each cost a correction round."
 - Tier: 2
 - Intent: A unit round ends without its caller: the launch store is the truth of a step; one booking operation runs on every resume, revise and review and from the read own supervisor, the round finishes through the ordinary path, and no ended launch shows as a running job.
 - Origin: human
 - Next step: Build U1 then U2 (--last) from the accepted page plans/designs/a-round-ends-without-its-caller.md with its FINAL brief; work review between parts; one hand-in.
 - OpenedAt: 2026-11-02T08:22:04Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=8 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=8
 - BudgetExceptions: 0
@@ -26,4 +26,5 @@ History:
 - 2026-11-04T02:37:45Z WAGNB9RRG28GC9WP6HCAYV42T5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-check-runs-the-audits,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-unit-check-runs-the-audits from=1:4 to=1:5 requested-sequence=2
 - 2026-11-04T02:38:16Z JAH3RVM5EXAGV1EQ87E7DN0HSG-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-push-folds-a-records-only-move from=1:5 to=1:6 requested-sequence=3
 - 2026-11-04T02:38:33Z XVFRH32XXVG3HFTPD2GDKGQXA5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-selected-batch-is-proving from=1:6 to=1:7 requested-sequence=4
-Integrity: sha256=5974ec5c85ceecfef7f1c9eaf30e1ed00c78f45e9b02ec3f9c41067a7972695e
+- 2026-11-04T02:38:46Z RJRCDDWKPJHXD1S8DZM5TDTHV0-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-return-names-the-failing-test from=1:7 to=1:8 requested-sequence=5
+Integrity: sha256=429e6c76f97fa7284dbf6ba78fca538c13fdea790ec8e5096fb59f380bb9e938

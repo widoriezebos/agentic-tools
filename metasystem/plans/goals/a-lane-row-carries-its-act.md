@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 14
+- Sequence: 15
 - Risk: severity=1 novelty=1 exposure=2 accumulation=2 basis="lane steward rows; a wrong act is a lane verb the lane already owns; every lane stall is exposed; recurs every overdue goal"
 - Tier: 2
 - Intent: Every lane-steward row that asks a person carries one act or does not ask: the overdue-goal and cannot-heal rows name the lane act that moves the goal (prove, push, run, return) and only a row with a real decision reaches a person (2026-11-01 04:02 the lane asked Wido with "tried: nothing: the row has no act of its own")
@@ -10,7 +10,7 @@
 - DesignGate: off
 - Next step: Build without a design from the lane-steward design: the row table gains acts; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:43:22Z
-- Revision: 20
+- Revision: 21
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -38,4 +38,5 @@ History:
 - 2026-11-04T02:37:45Z WAGNB9RRG28GC9WP6HCAYV42T5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-check-runs-the-audits,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-unit-check-runs-the-audits from=1:11 to=1:12 requested-sequence=2
 - 2026-11-04T02:38:16Z JAH3RVM5EXAGV1EQ87E7DN0HSG-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-push-folds-a-records-only-move from=1:12 to=1:13 requested-sequence=3
 - 2026-11-04T02:38:33Z XVFRH32XXVG3HFTPD2GDKGQXA5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-selected-batch-is-proving from=1:13 to=1:14 requested-sequence=4
-Integrity: sha256=495e979f97bcb7e21fca2284ca06ff497b084761194a1a26791416747fa389dd
+- 2026-11-04T02:38:46Z RJRCDDWKPJHXD1S8DZM5TDTHV0-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-return-names-the-failing-test from=1:14 to=1:15 requested-sequence=5
+Integrity: sha256=69fbbe7eaef70dea8f9fd12e7a1984a1c7e0edb842ea4aab7e62f6886abad99a

@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 8
+- Sequence: 9
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="findings 479, 490 and 491 (2026-11-01/02): three unit stops asked the person Continue or Stop here for mechanical causes (a credential change, a load flake outside the unit, a gap); Wido: that should not have been a question to me."
 - Tier: 2
 - Intent: A unit stop asks its steward first: one table decides from the stop record whether the steward acts inside the goal box in Wido name with a decision record (environment retried once, own reds and gaps to the correction round, size under the stop line continued) or the person is asked at the box edge, on a value question or after 30 unhandled minutes, with the five-line frame; the person may overrule in the thread at any time.
 - Origin: human
 - Next step: Build U1 (the steward may act on a stop) beside a-red U1; U2 and U3 (--last) after the-steward-acts U4a; from the accepted page plans/designs/a-unit-stop-asks-its-steward-first.md with its FINAL brief; work review between parts; one hand-in.
 - OpenedAt: 2026-11-02T10:24:39Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
@@ -26,4 +26,5 @@ History:
 - 2026-11-04T02:37:45Z WAGNB9RRG28GC9WP6HCAYV42T5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-check-runs-the-audits,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-unit-check-runs-the-audits from=1:5 to=1:6 requested-sequence=2
 - 2026-11-04T02:38:16Z JAH3RVM5EXAGV1EQ87E7DN0HSG-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-push-folds-a-records-only-move from=1:6 to=1:7 requested-sequence=3
 - 2026-11-04T02:38:33Z XVFRH32XXVG3HFTPD2GDKGQXA5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-selected-batch-is-proving from=1:7 to=1:8 requested-sequence=4
-Integrity: sha256=ecdf098c2cfa18e8010525221757108f6b28754ce5eadc769008c4aa2aa9e42e
+- 2026-11-04T02:38:46Z RJRCDDWKPJHXD1S8DZM5TDTHV0-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-return-names-the-failing-test from=1:8 to=1:9 requested-sequence=5
+Integrity: sha256=1a992d6430cc9978321fa9ebad86214a4d3133ab84be69d7180b37e4b5e38746

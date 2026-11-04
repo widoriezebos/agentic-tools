@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 11
+- Sequence: 12
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="finding 479 (2026-11-01): Wido tapped Continue at 21:29 and heard nothing; the tap was applied at 21:39 by the next steward tick after the stop had been closed by hand; the ui question of 07:26 stood all day."
 - Tier: 2
 - Intent: A tap on a Telegram button is acknowledged within seconds and applied by the machine that asked, which tells the person what happened; one receiver per bot; the steward tick reads the inbox instead of polling; a late tap on a settled question says who settled it and when.
 - Origin: human
 - Next step: Build U1 (one receiver per bot and the notice lock) from the accepted page plans/designs/a-tap-is-answered-at-once.md; then U2 the poller, U3 the inbox pass, U4 the owner applies at once.
 - OpenedAt: 2026-11-01T21:58:02Z
-- Revision: 15
+- Revision: 16
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -32,4 +32,5 @@ History:
 - 2026-11-04T02:37:45Z WAGNB9RRG28GC9WP6HCAYV42T5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-check-runs-the-audits,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-unit-check-runs-the-audits from=1:8 to=1:9 requested-sequence=2
 - 2026-11-04T02:38:16Z JAH3RVM5EXAGV1EQ87E7DN0HSG-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-push-folds-a-records-only-move from=1:9 to=1:10 requested-sequence=3
 - 2026-11-04T02:38:33Z XVFRH32XXVG3HFTPD2GDKGQXA5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-selected-batch-is-proving from=1:10 to=1:11 requested-sequence=4
-Integrity: sha256=9738de091b8f3e284a5af9abd5b69d5d394d4ea9e999c7a6be16198c6416e0d6
+- 2026-11-04T02:38:46Z RJRCDDWKPJHXD1S8DZM5TDTHV0-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-return-names-the-failing-test from=1:11 to=1:12 requested-sequence=5
+Integrity: sha256=eed3db6daf4945e5a7368f3a45b0dff28ce769390ecccfb69a63a1a69871395d

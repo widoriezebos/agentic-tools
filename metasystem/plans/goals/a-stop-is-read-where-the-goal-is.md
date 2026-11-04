@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 5
+- Sequence: 6
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="The stop batch is read where its writer recorded it; the completeness proof is unchanged; a fault refuses a lift as today"
 - Tier: 2
 - Intent: A budget stop one seat's steward recorded for another seat's claim is read where the stop's writer recorded it, so `goal resume` and `goal budget` lift it from the holding seat (finding 440; design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D12; goal G8)
 - Origin: main
 - Next step: On m1e's build lane beside the-steward-sees (small; it unsticks budgets on the helm seat): opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first read the stop writers and choose the shared goals root or the writer's checkout named on the fence; one unit, about 30 production lines: dispatch/stop.go:426-428, goal/stop.go:295-297
 - OpenedAt: 2026-10-30T08:31:03Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -27,4 +27,5 @@ History:
 - 2026-11-04T02:37:45Z WAGNB9RRG28GC9WP6HCAYV42T5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-check-runs-the-audits,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-unit-check-runs-the-audits from=1:2 to=1:3 requested-sequence=2
 - 2026-11-04T02:38:16Z JAH3RVM5EXAGV1EQ87E7DN0HSG-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-push-folds-a-records-only-move from=1:3 to=1:4 requested-sequence=3
 - 2026-11-04T02:38:33Z XVFRH32XXVG3HFTPD2GDKGQXA5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-selected-batch-is-proving from=1:4 to=1:5 requested-sequence=4
-Integrity: sha256=36a940a261e7f6265bdbe6d3b3d4f3bb9efae6dc23dde2052b9bb136746230f6
+- 2026-11-04T02:38:46Z RJRCDDWKPJHXD1S8DZM5TDTHV0-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-return-names-the-failing-test from=1:5 to=1:6 requested-sequence=5
+Integrity: sha256=7f3de029c65b57f67f0ddfe9599985b5d9e56efb36628289cde0e22aa948eae6

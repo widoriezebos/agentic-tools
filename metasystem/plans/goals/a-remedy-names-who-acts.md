@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 9
+- Sequence: 10
 - Risk: severity=2 novelty=1 exposure=3 accumulation=2 basis="findings 480, 481 and 487 (2026-11-01/02): remedies named but not owned stood for hours; a public system start can steal the cap-authority lock (today 06:14 recovery-partial); the health line names a person before the machine is spent."
 - Tier: 2
 - Intent: Every row of the steward remedy table says who acts, machine or person, with the same final words on every surface; hook-freshness names its evidence producer, not system start; the decision readers show machine authorship; the cap-authority owner lock is held by native process identity so a person own system start cannot lose it to a second start or a clock step.
 - Origin: human
 - Next step: Build U1 (the lock knows its holder) then U2 (--last, every row says who acts) from the accepted page plans/designs/a-remedy-names-who-acts.md with its FINAL brief; work review between parts; one hand-in.
 - OpenedAt: 2026-11-02T09:01:53Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
@@ -27,4 +27,5 @@ History:
 - 2026-11-04T02:37:45Z WAGNB9RRG28GC9WP6HCAYV42T5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-check-runs-the-audits,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-unit-check-runs-the-audits from=1:6 to=1:7 requested-sequence=2
 - 2026-11-04T02:38:16Z JAH3RVM5EXAGV1EQ87E7DN0HSG-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-push-folds-a-records-only-move from=1:7 to=1:8 requested-sequence=3
 - 2026-11-04T02:38:33Z XVFRH32XXVG3HFTPD2GDKGQXA5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-selected-batch-is-proving from=1:8 to=1:9 requested-sequence=4
-Integrity: sha256=8278247886c2e5c6a9a7a2777306d49a7c18551fa02bec9bfaea8d2796c1ad7c
+- 2026-11-04T02:38:46Z RJRCDDWKPJHXD1S8DZM5TDTHV0-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-return-names-the-failing-test from=1:9 to=1:10 requested-sequence=5
+Integrity: sha256=a3df312db88d8f6d701c5834f36b1864f1b33b43195b36ec50fc825dedd79fdd

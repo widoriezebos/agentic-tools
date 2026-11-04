@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 6
+- Sequence: 7
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Starts the existing seat session for stewardship work on a complete census and routes lane rows to it once per occurrence; a fault is a session the revival cap ends or one question too many, seen at once"
 - Tier: 2
 - Intent: Every seat with the seat runtime on keeps one steward agent (today's seat session with the steward skill), started through the seat ladder on a complete census, that disposes of every lane row routed to it with handled state and progress taken from the act's real outcome, asks a person at most once per row occurrence once the person has disposed of it (a machine withdrawal re-arms the fail-safe), and the claim quota asks the current holder once per observed blocking interval (finding 448) (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D1, D3, D10, D13's ask; goal G2b)
@@ -10,7 +10,7 @@
 - Next step: On m1e's build lane after the-steward-decides lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); U3a first, the ladder with the census for stewardship work, outstanding asks with or without a deadline included (about 100 production lines: steward/seat_ladder.go PlanSeat and its counter, seat_start.go seatDecision and the recheck, tick.go's census); then U3b progress from the child's outcome, the brief and the steward skill (about 50 plus the skill), U4a occurrences and routing (about 90), U4b the fail-safe, the answered occurrence and a machine withdrawal that re-arms it (about 100), U4c the claim quota once per observed blocking interval (about 70, --last)
 - OpenedAt: 2026-10-30T08:49:32Z
 - FirstClaimAt: 2026-11-02T08:14:40Z
-- Revision: 16
+- Revision: 17
 - BlockedBy: the-steward-decides
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
@@ -39,4 +39,5 @@ History:
 - 2026-11-04T02:37:45Z WAGNB9RRG28GC9WP6HCAYV42T5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-check-runs-the-audits,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-unit-check-runs-the-audits from=1:3 to=1:4 requested-sequence=2
 - 2026-11-04T02:38:16Z JAH3RVM5EXAGV1EQ87E7DN0HSG-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-landed-goal-concludes-itself,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-push-folds-a-records-only-move,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-push-folds-a-records-only-move from=1:4 to=1:5 requested-sequence=3
 - 2026-11-04T02:38:33Z XVFRH32XXVG3HFTPD2GDKGQXA5-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-round-ends-without-its-caller,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-selected-batch-is-proving from=1:5 to=1:6 requested-sequence=4
-Integrity: sha256=d130f370f1436e6b170ab608c593c0e71abed575ec8ba8218c0391f427232e16
+- 2026-11-04T02:38:46Z RJRCDDWKPJHXD1S8DZM5TDTHV0-m1e-a9b28364 set-priority actor=human:Wido targets=a-hand-in-stands-on-main,a-lane-row-carries-its-act,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-stop-is-read-where-the-goal-is,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,one-question-per-refused-admission,the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=a-return-names-the-failing-test from=1:6 to=1:7 requested-sequence=5
+Integrity: sha256=bb128ee048b6b82b6aad3c850a452ba186cd19a3ec8bb81e9bf86276499d1949
