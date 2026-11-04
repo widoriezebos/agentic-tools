@@ -3,6 +3,7 @@ package steward
 import (
 	"bytes"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -14,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/helm"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stopfence"
 )
 
 var claimQuotaClock = time.Date(2026, 8, 24, 9, 0, 0, 0, time.UTC)
@@ -344,17 +346,24 @@ func claimQuotaCompleted(t *testing.T, root string, cfg TickConfig) TickResult {
 }
 
 func claimQuotaAskText(ready, held, command string) string {
-	return "Goal " + ready + " is ready at priority 1 and waits for this machine's one claim, which your goal " + held +
-		" holds. Next: " + command + ", then metasystem goal claim " + ready + "."
+	return "1 ready goal at priority 1 waits for this machine's one claim, which your goal " + held +
+		" holds; the first is " + ready + ". Next: " + command + ", then metasystem goal claim " + ready +
+		". Reply in this thread to keep the claim; nothing is asked again while this blocking lasts."
 }
 
-func TestTheHolderIsAskedOncePerPairThroughTheTick(t *testing.T) {
+func TestTheHolderIsAskedOncePerBlockingOccurrence(t *testing.T) {
 	t.Parallel()
 	release := "metasystem goal release held-h --reason TEXT"
 
-	t.Run("one ask per pair, kept past the board's sweep", func(t *testing.T) {
+	t.Run("one ask per occurrence, kept past the board's sweep", func(t *testing.T) {
 		t.Parallel()
-		root := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
+		goals := []*goal.GoalFile{claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e")}
+		for i := 9; i > 0; i-- {
+			ready := claimQuotaReady(fmt.Sprintf("ready-%d", i), 1, "m1e")
+			ready.Sequence = uint64(i + 1)
+			goals = append(goals, ready)
+		}
+		root := claimQuotaTickBed(t, nil, goals...)
 		home := filepath.Join(t.TempDir(), ".metasystem")
 		lane := claimQuotaLane(t, root, nil)
 		cfg := TickConfig{Now: claimQuotaClock, ClaimLaneState: lane, AskHome: home}
@@ -362,8 +371,16 @@ func TestTheHolderIsAskedOncePerPairThroughTheTick(t *testing.T) {
 			t.Fatalf("the first tick's claim-quota = %+v", role)
 		}
 		asks := claimQuotaAsks(t, home, "held-h")
-		if len(asks) != 1 || asks[0].PeerText() != claimQuotaAskText("ready-r", "held-h", release) || asks[0].From.Machine != "m1e" {
-			t.Fatalf("the holder's mailbox holds %d asks, want one naming the ready goal, the claim and the release: %+v", len(asks), asks)
+		want := strings.Replace(claimQuotaAskText("ready-r", "held-h", release), "1 ready goal at priority 1 waits", "10 ready goals at priority 1 wait", 1)
+		if len(asks) != 1 || asks[0].PeerText() != want || asks[0].From.Machine != "m1e" {
+			t.Fatalf("want one ask naming ten goals and the first in program order: %+v", asks)
+		}
+		for i := 1; i < 6; i++ {
+			cfg.Now = claimQuotaClock.Add(time.Duration(i) * time.Minute)
+			claimQuotaTickWith(t, root, cfg)
+		}
+		if records, err := seatJSONLines(filepath.Join(root, "artifacts/agents/steward/claim-quota.jsonl")); err != nil || len(records) != 1 || records[0]["start"] == nil {
+			t.Fatalf("want one occurrence start: %+v %v", records, err)
 		}
 		if receipts := claimQuotaReceipts(t, root); len(receipts) != 1 {
 			t.Fatalf("the steward kept %d receipts, want 1: %v", len(receipts), receipts)
@@ -406,18 +423,73 @@ func TestTheHolderIsAskedOncePerPairThroughTheTick(t *testing.T) {
 			t.Fatalf("the swept pair was asked again: %+v", asks)
 		}
 
-		// A second ready priority-1 goal behind the same claim is a new pair.
+		// More ready work belongs to the same blocking interval.
 		second := claimQuotaReady("ready-s", 1, "m1e")
 		second.Sequence = 2
 		claimQuotaAccept(t, root, second)
 		cfg.Now, cfg.ClaimLaneState = claimQuotaClock.Add(4*time.Hour), claimQuotaLane(t, root, nil)
 		claimQuotaTickWith(t, root, cfg)
 		asks = claimQuotaAsks(t, home, "held-h")
-		if len(asks) != 1 || asks[0].PeerText() != claimQuotaAskText("ready-s", "held-h", release) {
-			t.Fatalf("the new pair got %d asks, want one for ready-s: %+v", len(asks), asks)
+		if len(asks) != 0 {
+			t.Fatalf("more ready work asked the same holder again: %+v", asks)
 		}
-		if receipts := claimQuotaReceipts(t, root); len(receipts) != 2 {
-			t.Fatalf("the steward kept %d receipts, want 2: %v", len(receipts), receipts)
+		if receipts := claimQuotaReceipts(t, root); len(receipts) != 1 {
+			t.Fatalf("the steward kept %d receipts, want 1: %v", len(receipts), receipts)
+		}
+		held := claimQuotaHeld("held-h")
+		held.State, held.Conclude, held.Claimed, held.StopCapability = goal.StateDone, "Finished.", nil, nil
+		claimQuotaAccept(t, root, held)
+		cfg.Now, cfg.ClaimLaneState = cfg.Now.Add(time.Minute), claimQuotaLane(t, root, nil)
+		claimQuotaTickWith(t, root, cfg)
+		if records, err := seatJSONLines(filepath.Join(root, "artifacts/agents/steward/claim-quota.jsonl")); err != nil || len(records) != 2 || records[1]["end"] == nil {
+			t.Fatalf("conclusion did not end the occurrence: %+v %v", records, err)
+		}
+		claimQuotaAccept(t, root, claimQuotaHeld("held-k"))
+		cfg.Now, cfg.ClaimLaneState = cfg.Now.Add(time.Minute), claimQuotaLane(t, root, nil)
+		claimQuotaTickWith(t, root, cfg)
+		if asks := claimQuotaAsks(t, home, "held-k"); len(asks) != 1 {
+			t.Fatalf("new holder: %+v", asks)
+		}
+		threads, err = board.Threads(home)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, thread := range threads {
+			for _, message := range thread.Messages {
+				if message.To.Machine != "" {
+					t.Fatalf("unexpected note to the asker: %+v", message)
+				}
+			}
+		}
+
+	})
+
+	t.Run("the current ledger overrules stale facts", func(t *testing.T) {
+		t.Parallel()
+		for _, state := range []string{"released", "concluded", "another machine"} {
+			root := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
+			home := t.TempDir()
+			cfg := TickConfig{Now: claimQuotaClock, ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home}
+			health, _ := claimQuotaTickWith(t, root, cfg)
+			held := claimQuotaHeld("held-h")
+			switch state {
+			case "released":
+				held.State, held.Claimed, held.StopCapability = goal.StateApproved, nil, nil
+			case "concluded":
+				held.State, held.Conclude, held.Claimed, held.StopCapability = goal.StateDone, "Finished.", nil, nil
+			case "another machine":
+				held.Claimed.Machine, held.StopCapability.Machine = "m1x", "m1x"
+			}
+			claimQuotaAccept(t, root, held)
+			if err := tickHealthAsk(cfg)(root, health, cfg.Now.Add(time.Minute)); err != nil {
+				t.Fatal(err)
+			}
+			if asks := claimQuotaAsks(t, home, "held-h"); len(asks) != 1 {
+				t.Fatalf("%s: stale facts asked: %+v", state, asks)
+			}
+			if records, err := seatJSONLines(filepath.Join(root, "artifacts/agents/steward/claim-quota.jsonl")); err != nil || len(records) != 2 || records[1]["end"] == nil {
+				t.Fatalf("%s: stale facts kept the occurrence: %+v %v", state, records, err)
+			}
 		}
 	})
 
@@ -740,5 +812,69 @@ func TestTheDeferredHealthCarriesTheAsk(t *testing.T) {
 	asks := claimQuotaAsks(t, home, "held-h")
 	if len(asks) != 1 || asks[0].PeerText() != claimQuotaAskText("ready-r", "held-h", "metasystem goal release held-h --reason TEXT") {
 		t.Fatalf("the deferred health sent %d asks: %+v", len(asks), asks)
+	}
+}
+
+func TestABlockingOccurrenceIsTheObservedInterval(t *testing.T) {
+	t.Parallel()
+	held := claimQuotaHeld("held-h")
+	root := claimQuotaTickBed(t, nil, held, claimQuotaReady("ready-r", 1, "m1e"))
+	home := t.TempDir()
+	cfg := TickConfig{Now: claimQuotaClock, ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home}
+	claimQuotaTickWith(t, root, cfg)
+	path := filepath.Join(root, "artifacts/agents/steward/claim-quota.jsonl")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.Now = cfg.Now.Add(time.Minute)
+	cfg.ClaimLaneState = func(string, string, string) (string, error) { return "", errors.New("lane unreadable") }
+	if _, role := claimQuotaTickWith(t, root, cfg); role.Status != HealthUnknown {
+		t.Fatalf("unreadable lane: %+v", role)
+	}
+	cfg.ClaimLaneState = claimQuotaLane(t, root, nil)
+	closeProcessFence(t, root, 4)
+	cfg.Now = cfg.Now.Add(time.Minute)
+	claimQuotaCompleted(t, root, cfg)
+	after, err := os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) || len(claimQuotaAsks(t, home, "held-h")) != 1 {
+		t.Fatalf("unknown or stopped observation changed the occurrence: %s %v", after, err)
+	}
+	if err := stopfence.Write(root, stopfence.Record{State: stopfence.StateOpen, Phase: stopfence.PhaseArmed, Generation: 5}); err != nil {
+		t.Fatal(err)
+	}
+	cfg.Now = cfg.Now.Add(time.Minute)
+	claimQuotaTickWith(t, root, cfg)
+	after, err = os.ReadFile(path)
+	if err != nil || !bytes.Equal(before, after) {
+		t.Fatalf("recovery restarted the interval: %s %v", after, err)
+	}
+	for i, state := range []string{"waiting", "returned", "returned"} {
+		if i == 2 {
+			held.Claimed.EpisodeAt, held.Claimed.EpisodeRevision = held.Claimed.At, held.Claimed.Revision
+			held.Revision++
+			held.Claimed.Revision++
+			held.Claimed.AccountingRevision = held.Revision
+			held.Claimed.At = cfg.Now.Add(time.Minute).UTC().Format(time.RFC3339Nano)
+			held.History = append(held.History, goal.HistoryLine{At: held.Claimed.At, Verb: "set-budget", Actor: "m1e+coordinator", Targets: []string{held.Id}, Keep: -1,
+				Opid: goal.Opid("01ARZ3NDEKTSV4RRFFQ69G5FC3", "m1e", "coordinator")})
+			held.StopCapability.Revision++
+			held.StopCapability.Generation++
+			claimQuotaAccept(t, root, held)
+		}
+		cfg.Now = cfg.Now.Add(time.Minute)
+		cfg.ClaimLaneState = claimQuotaLane(t, root, map[string]string{"held-h": state})
+		health, role := claimQuotaTickWith(t, root, cfg)
+		want := HealthDead
+		if state == "waiting" {
+			want = HealthAlive
+		}
+		if health.Stopped || role.Status != want {
+			t.Fatalf("%s after rebinding=%t: stopped=%t role=%+v", state, i == 2, health.Stopped, role)
+		}
+	}
+	records, err := seatJSONLines(path)
+	if err != nil || len(records) != 3 || records[1]["end"] == nil || records[2]["start"] == nil || records[0]["start"] == records[2]["start"] || len(claimQuotaAsks(t, home, "held-h")) != 2 {
+		t.Fatalf("waiting, returned and rebinding: %+v %v", records, err)
 	}
 }

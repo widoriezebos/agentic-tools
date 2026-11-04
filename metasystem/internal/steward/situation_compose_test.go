@@ -147,8 +147,10 @@ func TestTheFirstThingIsTheOldestOutstandingAsk(t *testing.T) {
 			quota[ask.ID] = true
 		}
 	}
-	if len(quota) != 3 {
-		t.Fatalf("the quota writer asked %v, want three asks", quota)
+	// One held claim is one situation: the writer asks the holder once per
+	// observed blocking occurrence, not once per ready goal (U4c1, finding 508).
+	if len(quota) != 1 {
+		t.Fatalf("the quota writer asked %v, want one ask for the blocking occurrence", quota)
 	}
 
 	now := situationNow
