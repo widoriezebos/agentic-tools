@@ -74,6 +74,33 @@ func TestTestRunRearmsOnALandedEngine(t *testing.T) {
 	}
 }
 
+func TestATestRunIsManagedBeforeItsFirstAcquisition(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(t.TempDir(), "host-admission")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", directory)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+	marker := filepath.Join(directory, fmt.Sprintf("managed-%d.json", os.Getpid()))
+	previous := prepareTestingForCommand
+	defer func() { prepareTestingForCommand = previous }()
+	called, managed := false, false
+	prepareTestingForCommand = func(testrun.SelectionRequest) (testrun.Preparation, error) {
+		called = true
+		_, err := os.Stat(marker)
+		managed = err == nil
+		return testrun.Preparation{}, errors.New("stop at the first acquisition's preparation seam")
+	}
+	status := runTestRunWith(testRunInvocation{stdout: io.Discard, stderr: io.Discard}, []string{"--root", root, "--purpose", "diagnostic"})
+	if status != 1 || !called || !managed {
+		t.Fatalf("first preparation: status=%d called=%t managed=%t", status, called, managed)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("managed marker survived return: %v", err)
+	}
+}
+
 func TestTestingCommandAdmissionSamplesAfterPreparationAndAtForcedFallback(t *testing.T) {
 	t.Parallel()
 	semanticCommandStarted := time.Date(2030, 1, 2, 3, 4, 5, 0, time.UTC)
