@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1a (an act says its own result) then U1b (the plain wording of the saved claim, --last) from the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-verb-says-its-own-result-U1-brief.md on m1e's build lane; carry check and read after each; the lane lands them
 - OpenedAt: 2026-11-04T02:14:01Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - NormApproval: approvedRef=VEFH0KPP4WE4Q8D4NCZ24M3H0G-m1e-b283f595 minutes=600 reviewRounds=6 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-04T02:14:01Z N5MZS4HWEYKDYHG1HQDKAZRR0K-m1e-b283f595 open actor=human:Wido targets=a-verb-says-its-own-result
 - 2026-11-04T02:14:25Z VEFH0KPP4WE4Q8D4NCZ24M3H0G-m1e-b283f595 approve actor=human:Wido targets=a-verb-says-its-own-result
-Integrity: sha256=c001d44dcc0e3945192990758a20187613e5ba28dc8a4957620c5fb082a2e878
+- 2026-11-04T02:14:56Z HMJDEDAXTDRW4986NAPXABAAQE-m1e-b283f595 set-pin actor=human:Wido targets=a-verb-says-its-own-result
+Integrity: sha256=ca18422a0deb9f81e132e3bf1f0b22427f13ac17fd8d2decd746516ecc2609ae
