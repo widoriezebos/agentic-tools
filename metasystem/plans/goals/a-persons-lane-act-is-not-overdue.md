@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 from the brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-persons-lane-act-is-not-overdue-U1-brief.md after one Astra round, on m1e's build lane; carry check and read; the lane lands it
 - OpenedAt: 2026-11-04T02:35:52Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - NormApproval: approvedRef=GFVATQ2AC45G89HXBY47NX3QGQ-m1e-5bed5da6 minutes=600 reviewRounds=6 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-04T02:35:52Z E9NHQ52CQ4BWZY6B614ADD6PQZ-m1e-5bed5da6 open actor=human:Wido targets=a-persons-lane-act-is-not-overdue
 - 2026-11-04T02:36:03Z GFVATQ2AC45G89HXBY47NX3QGQ-m1e-5bed5da6 approve actor=human:Wido targets=a-persons-lane-act-is-not-overdue
-Integrity: sha256=cfbc2be9cad03825cc8ae484446a375c5efdae3b8290ac6b20c928e70bb212f2
+- 2026-11-04T02:36:14Z EGE8JG38Q7GWT3CQYNKAGJHHRP-m1e-5bed5da6 set-pin actor=human:Wido targets=a-persons-lane-act-is-not-overdue
+Integrity: sha256=3da07dd2effaf39c5394f0f7e03735d80d853ee4813d13aacc926cbd68bb9e54
