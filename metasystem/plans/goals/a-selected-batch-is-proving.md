@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 from the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-selected-batch-is-proving-U1-brief.md on m1e's build lane (work build --work U1 --brief FILE); carry check and read follow; the lane lands it
 - OpenedAt: 2026-11-04T02:12:21Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - NormApproval: approvedRef=CJHK0MAJ5NNS9SMZ50306QEJ3H-m1e-b283f595 minutes=600 reviewRounds=6 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-04T02:12:21Z TDKC0436WYYSGA7YQEC8VGJFTF-m1e-b283f595 open actor=human:Wido targets=a-selected-batch-is-proving
 - 2026-11-04T02:12:32Z CJHK0MAJ5NNS9SMZ50306QEJ3H-m1e-b283f595 approve actor=human:Wido targets=a-selected-batch-is-proving
-Integrity: sha256=40219f843912725eb0db65adc75347991438ad1f55c97c6514e935f7f3d3df16
+- 2026-11-04T02:12:43Z PZZ8CBZ403JR3VJSA4SS17HKP6-m1e-b283f595 set-pin actor=human:Wido targets=a-selected-batch-is-proving
+Integrity: sha256=89b5129bbbd9b671e8f9bfa407842c1577b820316831dd39673802b1da002ad3
