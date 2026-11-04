@@ -234,7 +234,7 @@ func TestLandingFlakeRefusalAndInheritedReason(t *testing.T) {
 			if err := os.WriteFile(filepath.Join(plain.Dir(b.install), "results.jsonl"), append(data, '\n'), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			b.owners.landing.plainProve = plain.ProveSeams{Now: func() time.Time { return laneTestNow }, NewID: func() string { return "inherited" }, Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }, Git: func(_ string, args ...string) (string, error) {
+			b.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture, Now: func() time.Time { return laneTestNow }, NewID: func() string { return "inherited" }, Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }, Git: func(_ string, args ...string) (string, error) {
 				switch strings.Join(args, " ") {
 				case "symbolic-ref --quiet --short HEAD":
 					return "main", nil

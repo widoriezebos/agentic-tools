@@ -55,6 +55,7 @@ func newDrainVerbBed(t *testing.T) *drainVerbBed {
 	})
 	falseState := replayFalseState(t)
 	effects := plain.ProveSeams{
+		Room:       noRoomForVerbFixture,
 		Executable: func() (string, error) { return "fixture-engine", nil },
 		Launch:     func([]string, string, string) (int64, error) { b.trunkLaunches++; return int64(os.Getpid()), nil },
 		Incidents:  func(string, string, string) ([]goal.TrunkRedEntry, error) { return b.incidents, nil }, Now: func() time.Time { return laneTestNow }, Alive: func(r plain.Running) bool { return r.Pid == 42 || r.Pid == int64(os.Getpid()) }, Git: func(_ string, args ...string) (string, error) {

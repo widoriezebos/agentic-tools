@@ -88,7 +88,7 @@ func finishCancel(install string, running Running, result Result, effects ...Pro
 }
 
 func (s ProveSeams) launchCheck(command *exec.Cmd, log string, done chan<- error) error {
-	launch := gaterun.DetachedLaunch{Argv: command.Args, Dir: command.Dir, Env: command.Env, Log: log, Completed: done}
+	launch := gaterun.DetachedLaunch{Argv: command.Args, Dir: command.Dir, Env: command.Env, ExtraFiles: command.ExtraFiles, Log: log, Completed: done}
 	if s.checkInstall == "" {
 		_, err := gaterun.LaunchDetached(launch)
 		return err

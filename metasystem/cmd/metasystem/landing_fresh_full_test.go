@@ -43,7 +43,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 	now := laneTestNow
 	calls, fetches, worktrees, id := 0, 0, 0, 0
 	red := false
-	b.owners.landing.plainProve = plain.ProveSeams{
+	b.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture,
 		Now: func() time.Time { return now }, NewID: func() string { id++; return fmt.Sprintf("trunk-%d", id) },
 		Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) {
 			data := register.repo.commit("main").files["plans/goals/trunk-red.json"]

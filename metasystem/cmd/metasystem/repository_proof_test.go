@@ -78,7 +78,7 @@ func TestRepositoryLandingProofRunsHostSuiteAndReports(t *testing.T) {
 		t.Fatal(err)
 	}
 	tools, binary := repositoryProofTools(t)
-	b.owners.landing.plainProve = plain.ProveSeams{Now: func() time.Time { return laneTestNow }, Git: func(_ string, args ...string) (string, error) {
+	b.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture, Now: func() time.Time { return laneTestNow }, Git: func(_ string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
 		case "rev-parse --verify HEAD^{commit}":
 			return "head", nil

@@ -50,6 +50,7 @@ func shadowCorrectionVerbBed(t *testing.T) *shadowCorrectionBed {
 	data, err := json.Marshal(lane.Record{Root: root, Install: install, CustodyEpoch: 1, RegisteredBy: "Wido", At: laneTestNow.Format(time.RFC3339Nano)})
 	helmMust(t, err)
 	helmMust(t, os.WriteFile(lane.RecordPath(home), data, 0600))
+	b.plainProve.Room = noRoomForVerbFixture
 	b.plainProve.Git = func(_ string, args ...string) (string, error) {
 		if listed, ok := landingFixtureParents(args, b.parents); ok {
 			return listed, nil
