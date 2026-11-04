@@ -10,17 +10,17 @@
 - Next step: On m1e's build lane after the-steward-decides lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); U3a first, the ladder with the census for stewardship work, outstanding asks with or without a deadline included (about 100 production lines: steward/seat_ladder.go PlanSeat and its counter, seat_start.go seatDecision and the recheck, tick.go's census); then U3b progress from the child's outcome, the brief and the steward skill (about 50 plus the skill), U4a occurrences and routing (about 90), U4b the fail-safe, the answered occurrence and a machine withdrawal that re-arms it (about 100), U4c the claim quota once per observed blocking interval (about 70, --last)
 - OpenedAt: 2026-10-30T08:49:32Z
 - FirstClaimAt: 2026-11-02T08:14:40Z
-- Revision: 29
+- Revision: 30
 - BlockedBy: the-steward-decides
 - Pinned: m1e
-- Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- NormApproval: approvedRef=99MYZXVGWZE8GQCYTPW7W5RAK3-m1e-afd9d95a minutes=2400 reviewRounds=20 goalRevision=3
-- Approved: by=human:Wido at=2026-10-30T08:51:37Z revision=4 opid=99MYZXVGWZE8GQCYTPW7W5RAK3-m1e-afd9d95a authority=proven digest=bae19763d47874a1955352f4b7dbe5bbaabbd67592484a4f7212258ee2ae4118 episode=4
+- Budget: elapsedLimit=8d attemptLimit=14 reservedJobMinutesLimit=3000 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- NormApproval: approvedRef=699RFXPYCJCY3M401P3Q4JTARM-m1e-67e308c0 minutes=3000 reviewRounds=20 goalRevision=29
+- Approved: by=human:Wido at=2026-11-04T02:43:12Z revision=30 opid=699RFXPYCJCY3M401P3Q4JTARM-m1e-67e308c0 authority=proven digest=45b493fe6d7a16804b9bf0fd0eea5686e8a7da7cc3d6e72fbca567fdf089e99a episode=30
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=10 at=2026-11-02T14:55:41Z
 - AcceptedRisk: finding=F-1 chain=code-critic-00f75d9da20064c08a802445 by=Wido opid=M7R87WQ2SNB5W84TY0HFDPQVYN-m1e-a056a4d3
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-02T08:14:40Z by=human:Wido areas="null" areas-source="01M65TB73G4MP10FSPZ8GJNCW4@33eee8bb9d39c4374f2185c45854fa4c9a8b1cda01cc8869d4aac40d014778f5" areas-known=false areas-warnings="[\"areas unknown for goal the-steward-acts in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-steward-sees-and-acts.md\",\"areas unknown for goal a-check-guards-its-own-inputs\",\"areas unknown for goal a-red-is-classified-once\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"machine m1e already claims a-check-guards-its-own-inputs, a-red-is-classified-once, and a machine holds one claim at a time\\nrun: metasystem goal release a-check-guards-its-own-inputs --reason TEXT, then metasystem goal claim the-steward-acts\"]" revision=10 accountingRevision=10 episodeAt=2026-11-02T08:14:40Z episodeRevision=10
-- StopCapability: generation=10 revision=10 machine=m1e claimEpoch=10 fenceEpoch=0
+- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-04T02:43:12Z by=human:Wido areas="null" areas-source="01M65TB73G4MP10FSPZ8GJNCW4@33eee8bb9d39c4374f2185c45854fa4c9a8b1cda01cc8869d4aac40d014778f5" areas-known=false areas-warnings="[\"areas unknown for goal the-steward-acts in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-steward-sees-and-acts.md\",\"areas unknown for goal a-check-guards-its-own-inputs\",\"areas unknown for goal a-red-is-classified-once\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"machine m1e already claims a-check-guards-its-own-inputs, a-red-is-classified-once, and a machine holds one claim at a time\\nrun: metasystem goal release a-check-guards-its-own-inputs --reason TEXT, then metasystem goal claim the-steward-acts\"]" revision=30 accountingRevision=30 episodeAt=2026-11-02T08:14:40Z episodeRevision=10
+- StopCapability: generation=30 revision=30 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-10-30T08:49:32Z 74E2ZZWJ275Y4DN55F51R6R78Y-m1e-afd9d95a open actor=human:Wido targets=the-steward-acts,the-steward-decides
@@ -52,4 +52,5 @@ History:
 - 2026-11-04T02:41:06Z 517J053QY45H1GV29ZJK3EVTE7-m1e-a9b28364 set-priority actor=human:Wido targets=a-remedy-names-who-acts,the-steward-acts reason=priority-order subject=a-remedy-names-who-acts from=1:16 to=1:17 requested-sequence=16
 - 2026-11-04T02:41:18Z PK70TX1FRVWRX3ATHVKJXVSG13-m1e-a9b28364 set-priority actor=human:Wido targets=the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=the-claim-quota-is-a-host-setting from=1:17 to=1:18 requested-sequence=17
 - 2026-11-04T02:41:30Z 8MPQBFHYG78XBV5XCKS23DD9RY-m1e-a9b28364 set-priority actor=human:Wido targets=a-tap-is-answered-at-once,the-steward-acts reason=priority-order subject=a-tap-is-answered-at-once from=1:18 to=1:19 requested-sequence=18
-Integrity: sha256=936a37837548e3f4204b1b17a84f357063d35055d1cb92f77dd9d10e976145b2
+- 2026-11-04T02:43:12Z 699RFXPYCJCY3M401P3Q4JTARM-m1e-67e308c0 set-budget actor=human:Wido targets=the-steward-acts displaced=m1e+main-1792389436-6018-51cc28@2026-11-02T08:14:40Z
+Integrity: sha256=f4d389b81bf28fba35fd8cad8b033a72939472e4f47641c60d012f5d26fc7022
