@@ -58,6 +58,10 @@ func TestTestPlanReArmsOnALandedEngine(t *testing.T) {
 }
 
 func TestTestRunRearmsOnALandedEngine(t *testing.T) {
+	root := t.TempDir()
+	writeTestingFixtureFile(t, filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "host-admission"))
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
 	previous := prepareTestingForCommand
 	defer func() { prepareTestingForCommand = previous }()
 	called, rearm := 0, false
@@ -67,10 +71,37 @@ func TestTestRunRearmsOnALandedEngine(t *testing.T) {
 		return testrun.Preparation{}, errors.New("stop after observing preparation")
 	}
 	status, _, _ := runOnOwnStreams(func(stdout, stderr io.Writer) int {
-		return runTestRun([]string{"--root", t.TempDir(), "--purpose", "diagnostic"}, stdout, stderr)
+		return runTestRun([]string{"--root", root, "--purpose", "diagnostic"}, stdout, stderr)
 	})
 	if status != 1 || called != 1 || !rearm {
 		t.Fatalf("outer test run did not enter landed re-arm: status=%d calls=%d rearm=%t", status, called, rearm)
+	}
+}
+
+func TestATestRunIsManagedBeforeItsFirstAcquisition(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.runtimes=fake\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	directory := filepath.Join(t.TempDir(), "host-admission")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", directory)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
+	marker := filepath.Join(directory, fmt.Sprintf("managed-%d.json", os.Getpid()))
+	previous := prepareTestingForCommand
+	defer func() { prepareTestingForCommand = previous }()
+	called, managed := false, false
+	prepareTestingForCommand = func(testrun.SelectionRequest) (testrun.Preparation, error) {
+		called = true
+		_, err := os.Stat(marker)
+		managed = err == nil
+		return testrun.Preparation{}, errors.New("stop at the first acquisition's preparation seam")
+	}
+	status := runTestRunWith(testRunInvocation{stdout: io.Discard, stderr: io.Discard}, []string{"--root", root, "--purpose", "diagnostic"})
+	if status != 1 || !called || !managed {
+		t.Fatalf("first preparation: status=%d called=%t managed=%t", status, called, managed)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("managed marker survived return: %v", err)
 	}
 }
 
