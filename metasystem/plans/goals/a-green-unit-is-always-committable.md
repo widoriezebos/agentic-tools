@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1c2a (the restore) then U1c2b (--last; the record and the words) from the page D10 and the FINAL brief section U1c2 of agentic-tools-evidence/lane-test-20261009/briefs/a-check-guards-its-own-inputs-U1-brief.md (Astra rounds closed, decision 156); work review between parts; one hand-in.
 - OpenedAt: 2026-11-04T01:25:27Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-04T01:25:38Z revision=2 opid=5FCN07DPVQ0BE3F50JVBNJ0JD4-m1e-262937c7 authority=proven digest=42bd31aee07335a959c19548a9663fed6076a42f22641bb75ae4dc1225df0cb1 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-04T01:25:27Z 54E1GGMFVR5HPB9MG4SGJ543D9-m1e-262937c7 open actor=human:Wido targets=a-green-unit-is-always-committable
 - 2026-11-04T01:25:38Z 5FCN07DPVQ0BE3F50JVBNJ0JD4-m1e-262937c7 approve actor=human:Wido targets=a-green-unit-is-always-committable
-Integrity: sha256=e69b874f8f2698bf89ccc20dc62872ddb6f9303eb726b8965db9cd3e6744f682
+- 2026-11-04T01:25:48Z KWKPKZZRZNVKK4AB9W2Q9J08BC-m1e-262937c7 set-pin actor=human:Wido targets=a-green-unit-is-always-committable
+Integrity: sha256=05dfff945e306b0962c8450684aecd61d92d3518d838003244a5b1cfc51ba908
