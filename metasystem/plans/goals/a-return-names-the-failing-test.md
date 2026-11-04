@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1a (identity mapping and repeat selection) then U1b (words and rendered status, --last) from the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-return-names-the-failing-test-U1-brief.md on m1e's build lane; carry check and read after each; the lane lands them
 - OpenedAt: 2026-11-04T02:13:09Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-04T02:13:19Z revision=2 opid=YJS8AS0N1J2P54QE9QY066DB3E-m1e-b283f595 authority=proven digest=dd624c87661555ffd36aff90ebdf8907684f4d5205e83577aa4f94b22320598d episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-04T02:13:09Z KPYMS3YXT3RMVJY3E4X8RPH48Q-m1e-b283f595 open actor=human:Wido targets=a-return-names-the-failing-test
 - 2026-11-04T02:13:19Z YJS8AS0N1J2P54QE9QY066DB3E-m1e-b283f595 approve actor=human:Wido targets=a-return-names-the-failing-test
-Integrity: sha256=88dc729631cbc0731ce7583b4930008faa392d9966716fb7dfab38381d7c0d8a
+- 2026-11-04T02:13:30Z 72JAKA7V0M44WHHBZVXA5PQSQR-m1e-b283f595 set-pin actor=human:Wido targets=a-return-names-the-failing-test
+Integrity: sha256=07becf2ebea96e5f9e9e64f0d020904a0baea57542d9fe29023f96682a6420ff
