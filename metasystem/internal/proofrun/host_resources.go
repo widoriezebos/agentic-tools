@@ -664,6 +664,142 @@ func AcquireHostResources(ctx context.Context, controlRoot, confPath, class stri
 
 type hostResourceWaitObserverKey struct{}
 
+// HostPriorityLane names the lane check in host admission.
+const HostPriorityLane = "lane"
+const hostPriorityRun = "run"
+
+type hostPriorityKey struct{}
+
+// WithLaneCheckPriority lets the lane's waiting check take the next heavy slot.
+func WithLaneCheckPriority(ctx context.Context) context.Context {
+	return context.WithValue(ctx, hostPriorityKey{}, HostPriorityLane)
+}
+
+func holdWaitMarker(directory, priority string) (*os.File, error) {
+	var nonce [16]byte
+	if _, err := rand.Read(nonce[:]); err != nil {
+		return nil, err
+	}
+	path := filepath.Join(directory, "wait-"+priority+"-"+hex.EncodeToString(nonce[:]))
+	file, acquired, err := tryHostFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("create the test run's wait marker: %w", err)
+	}
+	if !acquired {
+		return nil, fmt.Errorf("create the test run's wait marker: %s is already held", path)
+	}
+	owner, err := CurrentProcessIdentity(nil)
+	if err == nil {
+		err = json.NewEncoder(file).Encode(owner)
+	}
+	if err != nil {
+		_ = os.Remove(file.Name())
+		_ = releaseHostProbe(file)
+		return nil, err
+	}
+	return file, nil
+}
+
+func heldByAnother(path string) (bool, error) {
+	file, err := os.Open(path)
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	defer file.Close()
+	if err := validateHostLockFile(path, file); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, err
+	}
+	if err := syscall.Flock(int(file.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		if err == syscall.EWOULDBLOCK || err == syscall.EAGAIN {
+			return true, nil
+		}
+		return false, err
+	}
+	return false, syscall.Flock(int(file.Fd()), syscall.LOCK_UN)
+}
+
+func laneCheckWaiting(directory string, own *os.File) (bool, error) {
+	paths, err := filepath.Glob(filepath.Join(directory, "wait-*"))
+	waiting := false
+	for _, path := range paths {
+		if own != nil && path == own.Name() {
+			continue
+		}
+		held, probeErr := heldByAnother(path)
+		if probeErr != nil {
+			return false, probeErr
+		}
+		if !held {
+			if removeErr := os.Remove(path); removeErr != nil && !os.IsNotExist(removeErr) {
+				return false, removeErr
+			}
+		} else if strings.HasPrefix(filepath.Base(path), "wait-"+HostPriorityLane+"-") {
+			waiting = true
+		}
+	}
+	return waiting, err
+}
+
+func nestedUnderLeaseHolder(readers loadReaders, directory string, probe func(string) (bool, error)) (bool, error) {
+	paths, err := filepath.Glob(filepath.Join(directory, "lease-heavy-*"))
+	if err != nil {
+		return false, err
+	}
+	var owners []ProcessIdentity
+	for _, path := range paths {
+		held, err := probe(path)
+		if err != nil {
+			return false, err
+		}
+		if !held {
+			continue
+		}
+		file, err := os.Open(path)
+		if os.IsNotExist(err) {
+			continue
+		}
+		if err != nil {
+			return false, err
+		}
+		record, _, err := readHostLeaseRecord(file)
+		_ = file.Close()
+		if err != nil {
+			// Outside admission.lock a claim may still be empty. An ancestor's
+			// lease is fully written before it can launch this process.
+			continue
+		}
+		if record.Slot != "" {
+			owners = append(owners, record.Owner)
+		}
+	}
+	seen := map[int64]bool{int64(os.Getpid()): true}
+	for pid := int64(os.Getpid()); len(owners) > 0; {
+		parent, known := readers.processes.Parent(pid)
+		if !known || parent <= 0 || seen[parent] {
+			return false, nil
+		}
+		seen[parent], pid = true, parent
+		for _, owner := range owners {
+			if owner.Pid == parent {
+				exact, state, err := readers.prober.Probe(parent)
+				if err == nil && state == identity.Alive && identity.Compare(exact, owner.Ref()).Matches {
+					return true, nil
+				}
+			}
+		}
+	}
+	return false, nil
+}
+
 // WithHostResourceWaitObserver adds a callback for the first failed resource
 // scan after this context is attached. Nested callbacks run in attachment
 // order. Each reports at most once per acquisition, after releasing the
@@ -748,6 +884,24 @@ func acquireHostResourcesWith(ctx context.Context, readers loadReaders, director
 		}
 		return borrowHostResources(readers, directory, parent, class, resources)
 	}
+	nested := false
+	if class == "heavy" {
+		nested, err = nestedUnderLeaseHolder(readers, directory, heldByAnother)
+		if err != nil {
+			return nil, err
+		}
+	}
+	priority := hostPriorityRun
+	if ctx.Value(hostPriorityKey{}) == HostPriorityLane {
+		priority = HostPriorityLane
+	}
+	var waitMarker *os.File
+	defer func() {
+		if waitMarker != nil {
+			_ = os.Remove(waitMarker.Name())
+			_ = releaseHostProbe(waitMarker)
+		}
+	}()
 	cores := hostload.Read(time.Now().UTC()).Cores
 	if cores < 1 {
 		cores = runtime.NumCPU()
@@ -779,6 +933,14 @@ func acquireHostResourcesWith(ctx context.Context, readers loadReaders, director
 		}
 		files := make([]*os.File, 0, len(resources)+1)
 		available := true
+		if class == "heavy" && !nested && priority != HostPriorityLane {
+			waiting, waitErr := laneCheckWaiting(directory, waitMarker)
+			if waitErr != nil {
+				_ = releaseHostProbe(guard)
+				return nil, waitErr
+			}
+			available = !waiting
+		}
 		for _, resource := range resources {
 			if dirtyNamed[filepath.Base(hostResourcePath(directory, resource))] {
 				available = false
@@ -800,7 +962,7 @@ func acquireHostResourcesWith(ctx context.Context, readers loadReaders, director
 			}
 			files = append(files, file)
 		}
-		if available && class == "heavy" && capacity.Max > 0 {
+		if available && class == "heavy" && !nested && capacity.Max > 0 {
 			legacy, known, censusErr := resourceLegacyLauncherCount(readers, controlRoot, options)
 			active, countErr := activeHostResourceSlots(directory)
 			if countErr != nil || censusErr != nil || !known {
@@ -906,6 +1068,14 @@ func acquireHostResourcesWith(ctx context.Context, readers loadReaders, director
 				closeHostFiles(files)
 				_ = releaseHostProbe(guard)
 				return nil, syncErr
+			}
+		}
+		if !available && class == "heavy" && !nested && waitMarker == nil {
+			waitMarker, err = holdWaitMarker(directory, priority)
+			if err != nil {
+				closeHostFiles(files)
+				_ = releaseHostProbe(guard)
+				return nil, err
 			}
 		}
 		_ = releaseHostProbe(guard)

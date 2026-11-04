@@ -670,6 +670,12 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 	if status != 0 {
 		return status
 	}
+	unmark, markErr := proofrun.MarkManagedProofProcess()
+	if markErr != nil {
+		invocation.fail("metasystem test run: mark host admission process:", markErr)
+		return proofrun.ExitAdmissionRefused
+	}
+	defer unmark()
 	request.LandedRearm = true
 	request.RequireWorkerCapabilities = true
 	request.CallerPID = invocation.callerPID
@@ -731,12 +737,6 @@ func runTestRunWith(invocation testRunInvocation, args []string) (exit int) {
 		prepared.WorkerCapabilitiesChecked, prepared.WorkerScratchPolicies = true, workerCapabilities.ScratchEnvironmentPolicies
 		prepared.WorkerResultSchemas = workerCapabilities.TestResultSchemaVersions
 	}
-	unmark, markErr := proofrun.MarkManagedProofProcess()
-	if markErr != nil {
-		invocation.fail("metasystem test run: mark host admission process:", markErr)
-		return proofrun.ExitAdmissionRefused
-	}
-	defer unmark()
 	buildContext, cancelBuild := context.WithCancel(scratchContext)
 	engineIO := candidateengine.Native()
 	engineIO.Notes = invocation.stderr
