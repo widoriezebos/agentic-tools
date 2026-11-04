@@ -371,6 +371,9 @@ func acquireHostGuard(ctx context.Context, directory string, check func() error)
 		if err != nil || acquired {
 			return file, err
 		}
+		if ctx.Value(hostSingleTryKey{}) != nil {
+			return nil, errNoRoomNow
+		}
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -1066,6 +1069,11 @@ func acquireHostResourcesWith(ctx context.Context, readers loadReaders, director
 				_ = releaseHostProbe(guard)
 				return nil, syncErr
 			}
+		}
+		if !available && ctx.Value(hostSingleTryKey{}) != nil {
+			closeHostFiles(files)
+			_ = releaseHostProbe(guard)
+			return nil, errNoRoomNow
 		}
 		if !available && class == "heavy" && !nested && waitMarker == nil {
 			waitMarker, err = holdWaitMarker(directory, priority)

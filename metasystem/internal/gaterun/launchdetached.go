@@ -16,6 +16,8 @@ type DetachedLaunch struct {
 	Log  string
 	// Env adds KEY=VALUE entries to the inherited environment.
 	Env []string
+	// ExtraFiles retain the caller's resource custody in the child.
+	ExtraFiles []*os.File
 	// Completed receives the reaped exit when a caller waits for this launch.
 	Completed chan<- error
 	// Started records the identity before the child can be reaped.
@@ -58,6 +60,7 @@ func LaunchDetached(launch DetachedLaunch) (int64, error) {
 	command := exec.Command(launch.Argv[0], launch.Argv[1:]...)
 	command.Stdin, command.Stdout, command.Stderr = devNull, logFile, logFile
 	command.Dir = launch.Dir
+	command.ExtraFiles = launch.ExtraFiles
 	if len(launch.Env) > 0 {
 		command.Env = append(os.Environ(), launch.Env...)
 	}

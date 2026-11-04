@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -69,10 +71,11 @@ func newPlainVerbBed(t *testing.T) *plainVerbBed {
 	bed.main = bed.git(t, bed.checkout, "rev-parse", "HEAD")
 	registerLane(t, bed.home, bed.checkout, "Wido", laneTestNow)
 	bed.owners = bed.laneVerbBed.owners()
+	bed.owners.landing.plainProve.Room = noRoomForVerbFixture
 	bed.owners.resolver = stateroot.NewResolver(stateroot.RepositoryTop, os.Executable)
 	bed.owners.landing.plainProve.Executable = os.Executable
 	bed.owners.landing.plainProve.Launch = func(argv []string, dir, log string) (int64, error) {
-		return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: argv, Dir: dir, Log: log,
+		return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: append([]string{argv[0], "fixture-plain-verb-prove"}, argv[1:]...), Dir: dir, Log: log,
 			Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry}})
 	}
 	bed.realLaunch = bed.owners.landing.plainProve.Launch
@@ -214,9 +217,9 @@ func (bed *plainVerbBed) detachedEngine(t *testing.T) plain.ProveSeams {
 	if err := syscall.Mkfifo(bed.exited, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	seams := plain.ProveSeams{Executable: func() (string, error) { return executable, nil },
+	seams := plain.ProveSeams{Room: noRoomForVerbFixture, Executable: func() (string, error) { return executable, nil },
 		Launch: func(argv []string, dir, log string) (int64, error) {
-			return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: argv, Dir: dir, Log: log,
+			return gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: append([]string{argv[0], "fixture-plain-verb-prove"}, argv[1:]...), Dir: dir, Log: log,
 				Env: []string{"GO_WANT_BATCH_E2E_COMMAND=1", "METASYSTEM_SUPERVISION_REGISTRY_HOME=" + bed.registry, engineChildExited + "=" + bed.exited}})
 		}}
 	bed.realLaunch = seams.Launch
@@ -362,7 +365,7 @@ func TestPlainLaneProveStartsDetachedOnce(t *testing.T) {
 	}
 	bed.setCommand(t, "true")
 	var launched [][]string
-	bed.owners.landing.plainProve = plain.ProveSeams{
+	bed.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture,
 		Now:        func() time.Time { return laneTestNow },
 		Executable: func() (string, error) { return "/engine/metasystem", nil },
 		Launch: func(argv []string, dir, _ string) (int64, error) {
@@ -409,7 +412,23 @@ func TestPlainLaneProveStartsDetachedOnce(t *testing.T) {
 	}
 }
 
+// These beds use ordinary-runtime roots, so proofrun.LaneCheckRoom's fake-runtime rule does not cover them.
+// Their Room keeps proveSeams from reserving the host's real admission.
+func noRoomForVerbFixture(string, bool, io.Writer) (func(*exec.Cmd), func()) {
+	return func(*exec.Cmd) {}, func() {}
+}
+
 func init() {
+	testHelperCommands["fixture-plain-verb-prove"] = func(args []string) int {
+		defer func() { _ = diskstore.ReleaseProcessScratch(context.Background()) }()
+		command, rest, ok := resolveIntentArgv(args)
+		if !ok {
+			return 2
+		}
+		owners := defaultIntentOwners()
+		owners.landing.plainProve.Room = noRoomForVerbFixture
+		return runIntent(command, rest, os.Stdout, os.Stderr, owners)
+	}
 	registerIdempotency("landing resolve", idemStateful, "the tree is already resolved: success, nothing written", witnessLandingResolveRepeat)
 	registerIdempotency("landing prove", idemStateful, "the same tree's proof runs: success, nothing started", witnessLandingProveRepeat)
 	registerIdempotency("landing push", idemStateful, "main already is the proven HEAD: success, nothing pushed", witnessLandingPushRepeat)
@@ -424,7 +443,7 @@ func witnessLandingProveRepeat(t *testing.T) {
 	bed := newPlainVerbBed(t)
 	bed.setCommand(t, "true")
 	launches := 0
-	bed.owners.landing.plainProve = plain.ProveSeams{Executable: func() (string, error) { return "/fixture/metasystem", nil },
+	bed.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture, Executable: func() (string, error) { return "/fixture/metasystem", nil },
 		Launch: func([]string, string, string) (int64, error) { launches++; return int64(os.Getpid()), nil }}
 	if code, text := bed.run(t, "landing", "prove"); code != 0 || !strings.Contains(text, "proving ") {
 		t.Fatalf("first landing prove = %d\n%s", code, text)
@@ -488,7 +507,7 @@ func TestPlainLaneProveIgnoresTheLaneCheckoutsChanges(t *testing.T) {
 	bed := newPlainVerbBed(t)
 	bed.setCommand(t, "test ! -e fix.txt")
 	launched := 0
-	bed.owners.landing.plainProve = plain.ProveSeams{Executable: func() (string, error) { return "/engine/metasystem", nil },
+	bed.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture, Executable: func() (string, error) { return "/engine/metasystem", nil },
 		Launch: func([]string, string, string) (int64, error) {
 			launched++
 			return int64(os.Getpid()), nil
@@ -538,7 +557,7 @@ func TestPlainLaneProveReportsAKnownGreenAtOnce(t *testing.T) {
 		t.Fatalf("prove --wait = %d\n%s", code, text)
 	}
 	var launched [][]string
-	bed.owners.landing.plainProve = plain.ProveSeams{
+	bed.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture,
 		Executable: func() (string, error) { return "/engine/metasystem", nil },
 		Launch: func(argv []string, _, _ string) (int64, error) {
 			launched = append(launched, argv)
@@ -558,7 +577,7 @@ func TestPlainLaneProveRefusesAnUncommittedFullDeclaration(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(bed.installation, "metasystem.conf"), []byte("metasystem.template=true\nproof.full=true\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	bed.owners.landing.plainProve = plain.ProveSeams{
+	bed.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture,
 		Executable: func() (string, error) { t.Fatal("an undeclared command reached the launcher"); return "", nil },
 		Command:    func(*exec.Cmd) error { t.Fatal("an undeclared command ran"); return nil },
 	}
@@ -579,7 +598,7 @@ func TestPlainLaneProveKeepsTheDetachedCommitsDeclaration(t *testing.T) {
 	t.Parallel()
 	bed := newPlainVerbBed(t)
 	bed.setCommand(t, "true")
-	bed.owners.landing.plainProve = plain.ProveSeams{
+	bed.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture,
 		Executable: func() (string, error) { return "/engine/metasystem", nil },
 		Launch:     func([]string, string, string) (int64, error) { return int64(os.Getpid()), nil },
 	}

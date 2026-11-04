@@ -26,7 +26,7 @@ func TestLandingProveRunsCommittedFullAndSettingsShowExplainsIgnoredLocal(t *tes
 	if err := os.WriteFile(conf+".local", []byte("proof.full=exit 9\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	b.owners.landing.plainProve = plain.ProveSeams{Now: func() time.Time { return laneTestNow }, Git: func(_ string, args ...string) (string, error) {
+	b.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture, Now: func() time.Time { return laneTestNow }, Git: func(_ string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
 		case "rev-parse --verify HEAD^{commit}":
 			return "head", nil

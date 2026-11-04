@@ -51,6 +51,7 @@ func newResolveVerbFixture(t *testing.T) *resolveVerbFixture {
 		t.Fatal(err)
 	}
 	b.owners = (&laneVerbBed{home: b.home}).owners()
+	b.owners.landing.plainProve.Room = noRoomForVerbFixture
 	notAncestor := replayFalseState(t)
 	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
 		if listed, ok := landingFixtureParents(args, map[string][]string{"head": nil}); ok {

@@ -105,7 +105,7 @@ func TestLandingKeeperProvesMovedMainBeforeExceptionGitAdapter(t *testing.T) {
 			owners := incidentRecorderFixture(t, register, "lane-machine")
 			b.owners.landing.mainEndpoint, b.owners.landing.machine = owners.mainEndpoint, owners.machine
 			b.owners.landing.now = func() time.Time { return laneTestNow }
-			seams := plain.ProveSeams{Now: func() time.Time { return laneTestNow }, BudgetHome: b.home,
+			seams := plain.ProveSeams{Room: noRoomForVerbFixture, Now: func() time.Time { return laneTestNow }, BudgetHome: b.home,
 				Lane: func() (lane.Record, error) { r, _, err := lane.Read(b.home); return r, err },
 				Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) {
 					es, problems := goal.ParseTrunkRed(register.repo.commit(register.repo.canonical).files["plans/goals/trunk-red.json"])

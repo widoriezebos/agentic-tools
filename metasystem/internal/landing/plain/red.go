@@ -176,6 +176,12 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 		}
 	}
 	seams.checkInstall, seams.checkAttempt = install, running.Attempt
+	var roomLog io.Writer = io.Discard
+	if log, logErr := os.OpenFile(result.Log, os.O_WRONLY|os.O_APPEND, 0o600); logErr == nil {
+		defer log.Close()
+		roomLog = log
+	}
+	defer reserveLane(&seams, install, seams.Person != nil, roomLog)()
 	result = continueRed(seams, install, checkout, command, dir, original, decision, io.Discard, result, Result{}, func(red, prior Result) Result {
 		if seams.Gate {
 			return replayGate(seams, install, checkout, command, original, red, prior)

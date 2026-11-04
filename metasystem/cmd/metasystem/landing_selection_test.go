@@ -64,7 +64,7 @@ func newSelectionBed(t *testing.T) *selectionBed {
 	b.owners.processes.question = channel.ReadQuestion
 	b.owners.policies.Registry = func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{Lane: b.lane}, b.policyErr }
 	falseState := replayFalseState(t)
-	seams := plain.ProveSeams{Now: func() time.Time { return b.now }, NewID: func() string { b.ids++; return fmt.Sprintf("batch-%d", b.ids) },
+	seams := plain.ProveSeams{Room: noRoomForVerbFixture, Now: func() time.Time { return b.now }, NewID: func() string { b.ids++; return fmt.Sprintf("batch-%d", b.ids) },
 		Executable: func() (string, error) { return "fixture-engine", nil },
 		Launch:     func([]string, string, string) (int64, error) { b.trunkLaunches++; return int64(os.Getpid()), nil },
 		Alive:      func(r plain.Running) bool { return r.Pid == int64(os.Getpid()) },

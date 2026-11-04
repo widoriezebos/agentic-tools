@@ -342,7 +342,7 @@ func TestAPushRecordedOnceAfterALostResponse(t *testing.T) {
 				}
 				projections := 0
 				readingShadow := false
-				seams := plain.ProveSeams{Now: func() time.Time { return laneTestNow }, Policy: func(string) (plain.PolicyValue, error) { return plain.PolicyValue{Value: "auto"}, nil }, Git: func(_ string, args ...string) (string, error) {
+				seams := plain.ProveSeams{Room: noRoomForVerbFixture, Now: func() time.Time { return laneTestNow }, Policy: func(string) (plain.PolicyValue, error) { return plain.PolicyValue{Value: "auto"}, nil }, Git: func(_ string, args ...string) (string, error) {
 					switch {
 					case args[0] == "symbolic-ref":
 						return "main", nil

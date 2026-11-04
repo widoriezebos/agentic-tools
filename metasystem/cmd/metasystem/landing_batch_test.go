@@ -56,6 +56,7 @@ func newBatchVerbBed(t *testing.T, policy string) *batchVerbBed {
 		return "", false
 	}
 	b.owners.landing.plainProve = plain.ProveSeams{
+		Room:       noRoomForVerbFixture,
 		Now:        func() time.Time { return b.now },
 		NewID:      func() string { b.ids++; return fmt.Sprintf("selection-or-proof-%d", b.ids) },
 		Executable: func() (string, error) { return "/fixture/engine", nil },

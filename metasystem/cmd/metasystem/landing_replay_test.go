@@ -42,6 +42,7 @@ func newReplayVerbBed(t *testing.T) *replayVerbBed {
 	falseState := replayFalseState(t)
 	id := 0
 	b.owners.landing.plainProve = plain.ProveSeams{
+		Room:  noRoomForVerbFixture,
 		Now:   func() time.Time { return laneTestNow },
 		NewID: func() string { id++; return fmt.Sprintf("proof-%d", id) },
 		Judge: func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) { return nil, nil },
