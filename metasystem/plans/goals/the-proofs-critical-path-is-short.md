@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 (load-banded N per package admission, recorded; per-launch CPU and start time) from the accepted page plans/designs/the-proofs-critical-path-is-short.md with a brief cut by opus-designer (BRIEF-CHECKLIST, one Astra round); then compare N=1 and N>1 on the same candidate before U2 (the readout), U3 (the order) and U4 (the load-fragile record, --last)
 - OpenedAt: 2026-11-04T12:24:04Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=900 activeJobLimit=1 reviewRoundLimit=8
 - BudgetExceptions: 0
 - NormApproval: approvedRef=86HVGS2F301N417835YG5HTZXE-m1e-1789f780 minutes=900 reviewRounds=8 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-04T12:24:04Z 5A5EWYPYZN1JK179BQPYKCJJJV-m1e-1789f780 open actor=human:Wido targets=the-proofs-critical-path-is-short
 - 2026-11-04T12:24:16Z 86HVGS2F301N417835YG5HTZXE-m1e-1789f780 approve actor=human:Wido targets=the-proofs-critical-path-is-short
-Integrity: sha256=5610e1828f4efb0947605436f6dfd47306e63fce33bb35d96f857c12c72b422d
+- 2026-11-04T12:24:29Z 7SEJX8TGCS6DHSP071336E5706-m1e-1789f780 set-pin actor=human:Wido targets=the-proofs-critical-path-is-short
+Integrity: sha256=08bc03d89e89e0a4978702351658cde9cec30265aaea4007b8ad4e5c6b29c08c
