@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 18
+- Sequence: 19
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="Starts the existing seat session for stewardship work on a complete census and routes lane rows to it once per occurrence; a fault is a session the revival cap ends or one question too many, seen at once"
 - Tier: 2
 - Intent: Every seat with the seat runtime on keeps one steward agent (today's seat session with the steward skill), started through the seat ladder on a complete census, that disposes of every lane row routed to it with handled state and progress taken from the act's real outcome, asks a person at most once per row occurrence once the person has disposed of it (a machine withdrawal re-arms the fail-safe), and the claim quota asks the current holder once per observed blocking interval (finding 448) (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D1, D3, D10, D13's ask; goal G2b)
@@ -10,7 +10,7 @@
 - Next step: On m1e's build lane after the-steward-decides lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); U3a first, the ladder with the census for stewardship work, outstanding asks with or without a deadline included (about 100 production lines: steward/seat_ladder.go PlanSeat and its counter, seat_start.go seatDecision and the recheck, tick.go's census); then U3b progress from the child's outcome, the brief and the steward skill (about 50 plus the skill), U4a occurrences and routing (about 90), U4b the fail-safe, the answered occurrence and a machine withdrawal that re-arms it (about 100), U4c the claim quota once per observed blocking interval (about 70, --last)
 - OpenedAt: 2026-10-30T08:49:32Z
 - FirstClaimAt: 2026-11-02T08:14:40Z
-- Revision: 28
+- Revision: 29
 - BlockedBy: the-steward-decides
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
@@ -51,4 +51,5 @@ History:
 - 2026-11-04T02:40:54Z H1EV757DB771PSAFMQHG326ZNT-m1e-a9b28364 set-priority actor=human:Wido targets=a-unit-stop-asks-its-steward-first,the-steward-acts reason=priority-order subject=a-unit-stop-asks-its-steward-first from=1:15 to=1:16 requested-sequence=15
 - 2026-11-04T02:41:06Z 517J053QY45H1GV29ZJK3EVTE7-m1e-a9b28364 set-priority actor=human:Wido targets=a-remedy-names-who-acts,the-steward-acts reason=priority-order subject=a-remedy-names-who-acts from=1:16 to=1:17 requested-sequence=16
 - 2026-11-04T02:41:18Z PK70TX1FRVWRX3ATHVKJXVSG13-m1e-a9b28364 set-priority actor=human:Wido targets=the-claim-quota-is-a-host-setting,the-steward-acts reason=priority-order subject=the-claim-quota-is-a-host-setting from=1:17 to=1:18 requested-sequence=17
-Integrity: sha256=2eeefb16aa00312c3846ce68296a486974c476660f72e3e4cfdbbfa82fd48280
+- 2026-11-04T02:41:30Z 8MPQBFHYG78XBV5XCKS23DD9RY-m1e-a9b28364 set-priority actor=human:Wido targets=a-tap-is-answered-at-once,the-steward-acts reason=priority-order subject=a-tap-is-answered-at-once from=1:18 to=1:19 requested-sequence=18
+Integrity: sha256=936a37837548e3f4204b1b17a84f357063d35055d1cb92f77dd9d10e976145b2
