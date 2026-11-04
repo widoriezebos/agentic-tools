@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 13
+- Sequence: 14
 - Risk: severity=1 novelty=1 exposure=2 accumulation=1 basis="One row's elapsed-time rule reads records the lane already writes; a wrong exclusion delays one question, never an act; under 110 production lines"
 - Tier: 1
 - Intent: The landing lane's steward does not ask a person about a goal that waited because of recorded lane acts (a person's stop or give-back, the lane's return, a restart for a newcomer, a red being classified): the overdue-goal row counts only uncovered waiting time and names the recorded acts that explain the rest
 - Origin: human
 - Next step: Build U1 from the brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-persons-lane-act-is-not-overdue-U1-brief.md after one Astra round, on m1e's build lane; carry check and read; the lane lands it
 - OpenedAt: 2026-11-04T02:35:52Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
@@ -25,4 +25,5 @@ History:
 - 2026-11-04T08:57:40Z 6NTTEK6WZVEN79Z1QBX82R03WF-m1e-4e46c5d5 set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-landed-goal-concludes-itself,a-persons-lane-act-is-not-overdue,a-push-folds-a-records-only-move,a-remedy-names-who-acts,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-round-ends-without-its-caller,a-seat-moves-its-own-note,a-selected-batch-is-proving,a-stop-is-read-where-the-goal-is,a-unit-stop-asks-its-steward-first,a-verb-says-its-own-result,an-alert-ends-with-its-situation,one-host-admits-heavy-work,the-claim-quota-is-a-host-setting reason=priority-order subject=the-claim-quota-is-a-host-setting from=1:10 to=1:11 requested-sequence=3
 - 2026-11-04T08:58:43Z ZTDBZPZQYGCKKNE8JQZN0BZ1XK-m1e-4e46c5d5 set-priority actor=human:Wido targets=a-landed-goal-concludes-itself,a-persons-lane-act-is-not-overdue,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-selected-batch-is-proving,a-verb-says-its-own-result,an-alert-ends-with-its-situation reason=priority-order subject=a-landed-goal-concludes-itself from=1:11 to=1:12 requested-sequence=6
 - 2026-11-04T08:59:42Z KBVC4YWH7Y4YP2GTPJWC9SWX3E-m1e-4e46c5d5 set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-persons-lane-act-is-not-overdue reason=priority-order subject=a-done-goals-branch-is-swept from=1:12 to=1:13 requested-sequence=12
-Integrity: sha256=2a27b6fcfe0eb79c60d03a3449c651636865e393c08fa1dfba3776f897ab689d
+- 2026-11-04T09:00:01Z M5D0ZF7CP6XS98Y18PSTM3P9JK-m1e-4e46c5d5 set-priority actor=human:Wido targets=a-persons-lane-act-is-not-overdue,a-seat-moves-its-own-note reason=priority-order subject=a-seat-moves-its-own-note from=1:13 to=1:14 requested-sequence=13
+Integrity: sha256=661d17604d8104ab020f67b3e43c342004a58908df6163ddcf9456f334765b24
