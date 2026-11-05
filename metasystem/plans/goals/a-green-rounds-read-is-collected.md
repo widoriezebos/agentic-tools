@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: opus-designer cuts the briefs for U1a, U1b, U2a, U2b, U2c from the accepted page (one Astra round each; Read each round: yes); build on m1e in that order, U1a and U2a may run as the same brief's parts; hand in through the lane
 - OpenedAt: 2026-11-05T18:58:16Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1500 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=PE35RASMC1QHN502W8Q37JX1YM-m1e-97f06c0d minutes=1500 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-05T18:58:16Z F7VVFB865CJXR4XY8VJ2V1Q1NX-m1e-97f06c0d open actor=human:Wido targets=a-green-rounds-read-is-collected
 - 2026-11-05T18:58:59Z PE35RASMC1QHN502W8Q37JX1YM-m1e-97f06c0d approve actor=human:Wido targets=a-green-rounds-read-is-collected
-Integrity: sha256=6ee8c01a080825870907b637e7065c5cc8edda5be4ceecb9b0dacec9c61b9710
+- 2026-11-05T18:59:10Z G4B543DN33TN0JZTCR7ED9NT7X-m1e-97f06c0d set-pin actor=human:Wido targets=a-green-rounds-read-is-collected
+Integrity: sha256=552a0fc08d94eaf4bb429f59b3cfec5d5727e12f458806c89a282d68fbaa2d7b
