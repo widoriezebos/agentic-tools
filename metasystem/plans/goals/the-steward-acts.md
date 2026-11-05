@@ -10,20 +10,20 @@
 - Next step: On m1e's build lane after the-steward-decides lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); U3a first, the ladder with the census for stewardship work, outstanding asks with or without a deadline included (about 100 production lines: steward/seat_ladder.go PlanSeat and its counter, seat_start.go seatDecision and the recheck, tick.go's census); then U3b progress from the child's outcome, the brief and the steward skill (about 50 plus the skill), U4a occurrences and routing (about 90), U4b the fail-safe, the answered occurrence and a machine withdrawal that re-arms it (about 100), U4c the claim quota once per observed blocking interval (about 70, --last); ASKED W1XKN7KC74WV65CXCWPSE62VHC (other): the-steward-acts was returned with 'resolution job cannot resolve', but the resolver did resolve it. Should the seat hand in the same tip again, or rebase?
 - OpenedAt: 2026-10-30T08:49:32Z
 - FirstClaimAt: 2026-11-02T08:14:40Z
-- Revision: 37
+- Revision: 38
 - BlockedBy: the-steward-decides
 - Pinned: m1e
-- Budget: elapsedLimit=8d attemptLimit=14 reservedJobMinutesLimit=3000 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 1
-- NormApproval: approvedRef=699RFXPYCJCY3M401P3Q4JTARM-m1e-67e308c0 minutes=3000 reviewRounds=20 goalRevision=29
-- Approved: by=human:Wido at=2026-11-04T02:43:12Z revision=30 opid=699RFXPYCJCY3M401P3Q4JTARM-m1e-67e308c0 authority=proven digest=45b493fe6d7a16804b9bf0fd0eea5686e8a7da7cc3d6e72fbca567fdf089e99a episode=30
+- Budget: elapsedLimit=12d attemptLimit=16 reservedJobMinutesLimit=3600 activeJobLimit=1 reviewRoundLimit=24
+- BudgetExceptions: 2
+- NormApproval: approvedRef=FJDRGAZGTXYXDJSXQRSYWB8K37-m1e-2a56212a minutes=3600 reviewRounds=24 goalRevision=37
+- Approved: by=human:Wido at=2026-11-05T11:08:11Z revision=38 opid=FJDRGAZGTXYXDJSXQRSYWB8K37-m1e-2a56212a authority=proven digest=15d1d8f03812048b78aa595b0e6eb35e80b9266b3319a51b71b80a9acc9ce7d4 episode=38
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=10 at=2026-11-02T14:55:41Z
 - AcceptedRisk: finding=F-1 chain=code-critic-00f75d9da20064c08a802445 by=Wido opid=M7R87WQ2SNB5W84TY0HFDPQVYN-m1e-a056a4d3
 - AcceptedRisk: finding=F-1 chain=code-critic-a5fa12eacb37a14d7f7924b0 by=Wido opid=020QF6DFWF5QVQ7GNEEVSPMTYG-m1e-111b5921
 - AcceptedRisk: finding=F-1 chain=code-critic-9471e65178a857dc8d480ddf by=Wido opid=THXMV1EZVBZZ9HX64XHJ0GA9Z2-m1e-ba5f08d7
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-04T02:43:12Z by=human:Wido areas="null" areas-source="01M65TB73G4MP10FSPZ8GJNCW4@33eee8bb9d39c4374f2185c45854fa4c9a8b1cda01cc8869d4aac40d014778f5" areas-known=false areas-warnings="[\"areas unknown for goal the-steward-acts in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-steward-sees-and-acts.md\",\"areas unknown for goal a-check-guards-its-own-inputs\",\"areas unknown for goal a-red-is-classified-once\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"machine m1e already claims a-check-guards-its-own-inputs, a-red-is-classified-once, and a machine holds one claim at a time\\nrun: metasystem goal release a-check-guards-its-own-inputs --reason TEXT, then metasystem goal claim the-steward-acts\"]" revision=30 accountingRevision=30 episodeAt=2026-11-02T08:14:40Z episodeRevision=10
+- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-05T11:08:11Z by=human:Wido areas="null" areas-source="01M65TB73G4MP10FSPZ8GJNCW4@33eee8bb9d39c4374f2185c45854fa4c9a8b1cda01cc8869d4aac40d014778f5" areas-known=false areas-warnings="[\"areas unknown for goal the-steward-acts in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-steward-sees-and-acts.md\",\"areas unknown for goal a-check-guards-its-own-inputs\",\"areas unknown for goal a-red-is-classified-once\",\"areas unknown for goal a-round-survives-a-restart\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"machine m1e already claims a-check-guards-its-own-inputs, a-red-is-classified-once, and a machine holds one claim at a time\\nrun: metasystem goal release a-check-guards-its-own-inputs --reason TEXT, then metasystem goal claim the-steward-acts\"]" revision=38 accountingRevision=38 episodeAt=2026-11-02T08:14:40Z episodeRevision=10
 - Landing: at=2026-11-04T15:34:28Z opid=J2SJX5SNMTZ0GGWTZX9MT395Y2-m1e-cc2e8fc8
-- StopCapability: generation=30 revision=30 machine=m1e claimEpoch=10 fenceEpoch=0
+- StopCapability: generation=38 revision=38 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-10-30T08:49:32Z 74E2ZZWJ275Y4DN55F51R6R78Y-m1e-afd9d95a open actor=human:Wido targets=the-steward-acts,the-steward-decides
@@ -63,4 +63,5 @@ History:
 - 2026-11-04T15:34:28Z J2SJX5SNMTZ0GGWTZX9MT395Y2-m1e-cc2e8fc8 land-ready actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-acts
 - 2026-11-04T18:50:54Z THXMV1EZVBZZ9HX64XHJ0GA9Z2-m1e-ba5f08d7 accept-risk actor=human:Wido targets=the-steward-acts reason=accepted by a1 in Wido's name under his unit stop rule (two corrections, the design change of decision 198 and the lane-return fix are spent on U4c2): the in-flight gate of the claim-quota ask treats a dropped unit or a reads-waived commit as busy, so such a holder is not asked; it never acts wrongly and the situation page shows 'not yet asked'. Follow-up goal a-settled-unit-is-not-in-flight at the next docs boundary. (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-steward-acts/metasystem)
 - 2026-11-04T20:50:54Z PKY32KX39WES6ZYJ80XDFH9XBP-landing-41ad7d6c ask actor=landing+landing-agent targets=the-steward-acts
-Integrity: sha256=8dfa240445e4f68c641d888adb6165ab7c0d744746aad77a3121041aeb597905
+- 2026-11-05T11:08:11Z FJDRGAZGTXYXDJSXQRSYWB8K37-m1e-2a56212a set-budget actor=human:Wido targets=the-steward-acts displaced=m1e+main-1792389436-6018-51cc28@2026-11-04T02:43:12Z
+Integrity: sha256=94efa781a1cd248915e7d185f4047cfd980eb1a0b30858b78bec947dcd72c940
