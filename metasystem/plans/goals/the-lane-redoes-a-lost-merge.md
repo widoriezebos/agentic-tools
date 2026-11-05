@@ -7,8 +7,9 @@
 - Origin: human
 - Next step: opus-designer cuts seven briefs (U3a, U3b1, U3b2, U4a1, U4a2, U4b1, U4b2) from the accepted page; builds after the-lane-collects-its-resolution lands
 - OpenedAt: 2026-11-05T18:58:37Z
-- Revision: 2
+- Revision: 3
 - BlockedBy: the-lane-collects-its-resolution
+- Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=12 reservedJobMinutesLimit=1800 activeJobLimit=1 reviewRoundLimit=24
 - BudgetExceptions: 0
 - NormApproval: approvedRef=7KSZWMY9F1PWHSQFFQ3C33B2EM-m1e-97f06c0d minutes=1800 reviewRounds=24 goalRevision=1
@@ -18,4 +19,5 @@
 History:
 - 2026-11-05T18:58:37Z NZMBXY6WZ9Q7HRA8XW88DG80YJ-m1e-97f06c0d open actor=human:Wido targets=the-lane-redoes-a-lost-merge,the-lane-collects-its-resolution
 - 2026-11-05T19:00:22Z 7KSZWMY9F1PWHSQFFQ3C33B2EM-m1e-97f06c0d approve actor=human:Wido targets=the-lane-redoes-a-lost-merge
-Integrity: sha256=a07522ea5811707db5bd3c99cf2342aba7760570d5b0b09a4f5123c16f078f67
+- 2026-11-05T19:00:33Z GEKJW0HF28EE5RFKCPADMW4SBY-m1e-97f06c0d set-pin actor=human:Wido targets=the-lane-redoes-a-lost-merge
+Integrity: sha256=369428b665ec868fef9ca27814e66df0a1927c1ee296bf52c81638436dc5194c
