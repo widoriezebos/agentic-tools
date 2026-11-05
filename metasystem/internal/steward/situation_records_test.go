@@ -22,6 +22,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
@@ -71,6 +72,7 @@ func situationHostSources(t *testing.T, registryPath string) SituationSources {
 		},
 		Processes: identity.FixedProcessTable{}, Argv: func(int64) ([]string, bool) { return nil, false },
 		Cwd: func(int64) (string, bool) { return "", false }, Prober: deadProber{},
+		Admission:  func() (proofrun.HostAdmission, error) { return proofrun.HostAdmission{}, nil },
 		Registry:   func() (string, error) { return registryPath, nil },
 		Executions: func(string) map[string]enginepin.Execution { return map[string]enginepin.Execution{} }}
 }
@@ -81,7 +83,7 @@ func withEmptyHost(t *testing.T, src SituationSources) SituationSources {
 	t.Helper()
 	host := situationHostSources(t, filepath.Join(t.TempDir(), "absent-registry.jsonl"))
 	src.Load, src.Processes, src.Argv, src.Cwd = host.Load, host.Processes, host.Argv, host.Cwd
-	src.Prober, src.Registry, src.Executions = host.Prober, host.Registry, host.Executions
+	src.Prober, src.Registry, src.Executions, src.Admission = host.Prober, host.Registry, host.Executions, host.Admission
 	return src
 }
 
@@ -99,7 +101,7 @@ func readSituation(t *testing.T, root string, src SituationSources) Situation {
 // kernelHostSources names the host sources left nil.
 func kernelHostSources(src SituationSources) (nils []string) {
 	for name, isNil := range map[string]bool{"Load": src.Load == nil, "Processes": src.Processes == nil, "Argv": src.Argv == nil,
-		"Cwd": src.Cwd == nil, "Prober": src.Prober == nil, "Registry": src.Registry == nil, "Executions": src.Executions == nil} {
+		"Cwd": src.Cwd == nil, "Prober": src.Prober == nil, "Registry": src.Registry == nil, "Executions": src.Executions == nil, "Admission": src.Admission == nil} {
 		if isNil {
 			nils = append(nils, name)
 		}
@@ -490,5 +492,43 @@ func TestTheSituationReadsTheCritiqueStateOnce(t *testing.T) {
 	}
 	if reads != 1 || !slices.Equal(rounds, []int64{0, 2, 0}) {
 		t.Fatalf("the critique state was read %d times for designs with rounds %v, want once for the three designs' rounds 0, 2 and 0", reads, rounds)
+	}
+}
+
+func TestABypassRequiresNoIdentityMatchedStrictAncestor(t *testing.T) {
+	t.Parallel()
+	started := situationNow
+	owner := proofrun.ProcessIdentity{Pid: 101, PidStartedAtMicro: started.UnixMicro()}
+	for _, row := range []struct {
+		name     string
+		parent   int64
+		recorded proofrun.ProcessIdentity
+		bypass   bool
+	}{
+		{"parent holds", 101, owner, false},
+		{"self holds", 0, proofrun.ProcessIdentity{Pid: 100, PidStartedAtMicro: started.UnixMicro()}, true},
+		{"pid reused", 101, proofrun.ProcessIdentity{Pid: 101, PidStartedAtMicro: started.Add(-time.Second).UnixMicro()}, true},
+		{"parent cycle", 100, owner, true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			root := t.TempDir()
+			src := situationHostSources(t, situationRegistry(t, root))
+			src.Admission = func() (proofrun.HostAdmission, error) {
+				return proofrun.HostAdmission{Held: []proofrun.HostAdmissionHeld{{Owner: row.recorded, Slot: "0"}}}, nil
+			}
+			src.Processes = identity.FixedProcessTable{{Pid: 100, Parent: row.parent}, {Pid: 101, Parent: 100}}
+			src.Argv = func(pid int64) ([]string, bool) {
+				if pid == 100 {
+					return []string{"go", "test"}, true
+				}
+				return nil, false
+			}
+			src.Cwd = func(int64) (string, bool) { return root, true }
+			src.Prober = &situationProber{starts: map[int64]time.Time{100: started, 101: started}, calls: map[int64]int{}}
+			s := readSituation(t, root, src)
+			if len(s.Processes) != 1 || s.Processes[0].Bypass != row.bypass {
+				t.Fatalf("processes = %+v, want bypass %t", s.Processes, row.bypass)
+			}
+		})
 	}
 }

@@ -106,6 +106,8 @@ func TestTheAdmissionReadCreatesNothingAndListsOnlyHeldMarkers(t *testing.T) {
 	if after := admissionDirectorySnapshot(t, directory); !reflect.DeepEqual(before, after) {
 		t.Fatalf("read changed names, contents, sizes or modification times: before=%v after=%v", before, after)
 	}
+	zombie := exact
+	zombie.Zombie = true
 	reused := exact
 	if reused.StartTicks != 0 {
 		reused.StartTicks++
@@ -119,6 +121,7 @@ func TestTheAdmissionReadCreatesNothingAndListsOnlyHeldMarkers(t *testing.T) {
 		ended bool
 	}{
 		{"ended owner", identity.Dead, identity.Exact{}, true},
+		{"zombie owner", identity.Alive, zombie, true},
 		{"reused pid", identity.Alive, reused, true},
 		{"unknown owner", identity.Unknown, identity.Exact{}, false},
 	} {

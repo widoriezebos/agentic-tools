@@ -1,8 +1,8 @@
 package steward
 
-// The situation is one read of what this seat's steward needs: the lane and
-// its current hold, the ledger and the program's order, and the claim quota
-// read live. A reader that fails makes its part unavailable and the rest
+// The situation is one read of what this seat's steward needs: the lane,
+// the host's test admission, the ledger and the program's order, and the
+// claim quota read live. A reader that fails makes its part unavailable and the rest
 // still read. Nothing here writes.
 
 import (
@@ -29,6 +29,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/rulings"
@@ -36,14 +37,12 @@ import (
 
 // Situation is one read's parts. GoalFacts are the seat brief's facts of
 // each goal this seat holds. Unavailable names each part whose reader failed
-// (lane, hold, ledger, waiting, quota, facts, asks, host, engine, launches,
+// (lane, ledger, waiting, quota, facts, asks, host, admission, engine, launches,
 // designs, questions, authority, alerts) with the reason.
 type Situation struct {
-	At      time.Time
-	Machine string
-	Lane    plain.Status
-	// Hold is the lane's current proof-beside-builds hold; nil is none.
-	Hold        *plain.ContentionHold
+	At          time.Time
+	Machine     string
+	Lane        plain.Status
 	Ledger      goal.Projection `json:"-"`
 	Next        goal.NextVerdict
 	Order       []string
@@ -57,6 +56,7 @@ type Situation struct {
 	// LaneInstall is the registered lane's installation; empty is none.
 	LaneInstall    string
 	Load           hostload.Sample
+	Admission      proofrun.HostAdmission
 	Processes      []HostProcess
 	Executions     map[string]enginepin.Execution
 	Holders        []SeatHolder
@@ -74,7 +74,8 @@ type Situation struct {
 	// RedLine is how goal next says this seat's first owned red.
 	RedLine string
 
-	coordinator bool
+	coordinator       bool
+	admissionCommands map[int64]string
 
 	Dispositions []humanauthority.Decision `json:",omitempty"`
 }
@@ -86,6 +87,7 @@ type HostProcess struct {
 	Pid                       int64
 	Kind, Checkout, Workspace string
 	Started                   time.Time
+	Bypass                    bool
 }
 
 // SeatHolder is who holds an armed checkout's lease; Unavailable is this
@@ -148,6 +150,7 @@ type SituationSources struct {
 	Cwd        func(int64) (string, bool)
 	Prober     identity.Prober
 	Registry   func() (string, error)
+	Admission  func() (proofrun.HostAdmission, error)
 	Executions func(root string) map[string]enginepin.Execution
 	// Holder reads an armed checkout's lease and Launches the launches as
 	// the launch verbs see them; nil leaves the part unavailable.
@@ -225,6 +228,9 @@ func ReadSituation(root string, src SituationSources) Situation {
 // withHostReaders gives each nil host read the kernel's or the host
 // registry's own reader.
 func withHostReaders(src SituationSources) SituationSources {
+	if src.Admission == nil {
+		src.Admission = proofrun.ReadHostAdmission
+	}
 	if src.Load == nil {
 		src.Load = hostload.Read
 	}
@@ -255,6 +261,24 @@ func withHostReaders(src SituationSources) SituationSources {
 func (s *Situation) readHost(root string, src SituationSources, now time.Time) {
 	s.Load = src.Load(now)
 	s.Executions = src.Executions(root)
+	var admissionErr error
+	s.Admission, admissionErr = src.Admission()
+	if admissionErr != nil {
+		s.Unavailable["admission"] = admissionErr.Error()
+	}
+	s.admissionCommands = map[int64]string{}
+	command := func(owner proofrun.ProcessIdentity) {
+		argv, _ := src.Argv(owner.Pid)
+		s.admissionCommands[owner.Pid] = strings.Join(argv[:min(3, len(argv))], " ")
+	}
+	for _, held := range s.Admission.Held {
+		if !held.OwnerEnded {
+			command(held.Owner)
+		}
+	}
+	for _, waiter := range s.Admission.Waiting {
+		command(waiter.Owner)
+	}
 	path, err := src.Registry()
 	var checkouts []registry.HostCheckout
 	if err == nil {
@@ -306,11 +330,31 @@ func (s *Situation) readProcesses(src SituationSources, checkouts []registry.Hos
 				process.Checkout, process.Workspace = checkout.Path, workspaceUnder(checkout.Path, cwd)
 			}
 		}
+		if process.Kind == "go test" && process.Checkout != "elsewhere" && s.Unavailable["admission"] == "" {
+			process.Bypass = !s.slotHoldingAncestor(pid, src)
+		}
 		s.Processes = append(s.Processes, process)
 	}
 	slices.SortFunc(s.Processes, func(a, b HostProcess) int {
 		return cmp.Or(strings.Compare(a.Checkout, b.Checkout), cmp.Compare(a.Pid, b.Pid))
 	})
+}
+
+// slotHoldingAncestor joins a strict ancestor to a held slot by its identity.
+func (s Situation) slotHoldingAncestor(pid int64, src SituationSources) bool {
+	seen := map[int64]bool{pid: true}
+	for {
+		parent, ok := src.Processes.Parent(pid)
+		if !ok || parent <= 0 || seen[parent] {
+			return false
+		}
+		seen[parent], pid = true, parent
+		for _, held := range s.Admission.Held {
+			if held.Owner.Pid == parent && identity.LiveRef(src.Prober, held.Owner.Ref()) == identity.Alive {
+				return true
+			}
+		}
+	}
 }
 
 // testProcessKind names a go test, a test binary or a go-build process by
@@ -515,8 +559,7 @@ func (s *Situation) readAlerts(root string) {
 	}
 }
 
-// readLane reads the lane's status and its current hold at the read's clock
-// and through the given observation, so the two agree. Unknown is held.
+// readLane reads the lane's status at the read's clock.
 func (s *Situation) readLane(src SituationSources, now time.Time) {
 	home, err := src.LaneHome()
 	record, registered := lane.Record{}, false
@@ -527,7 +570,7 @@ func (s *Situation) readLane(src SituationSources, now time.Time) {
 		err = errors.New("no landing lane is registered on this host")
 	}
 	if err != nil {
-		s.Unavailable["lane"], s.Unavailable["hold"] = err.Error(), err.Error()
+		s.Unavailable["lane"] = err.Error()
 		return
 	}
 	s.LaneInstall = record.Install
@@ -535,18 +578,6 @@ func (s *Situation) readLane(src SituationSources, now time.Time) {
 		s.Unavailable["lane"] = "no reader"
 	} else {
 		s.Lane = src.LaneStatus(home, now)
-	}
-	// The hold reads an unobservable host as held; its reason is kept here.
-	seams, observed := plain.ProveSeams{Now: func() time.Time { return now }}, error(nil)
-	if src.HostWork != nil {
-		seams.HostWork = func() (int, int, error) { b, c, err := src.HostWork(); observed = err; return b, c, err }
-	}
-	hold, held, err := plain.CurrentHold(record.Install, seams)
-	if held || err != nil {
-		s.Hold = &hold
-	}
-	if err = errors.Join(err, observed); err != nil && s.Hold != nil {
-		s.Unavailable["hold"] = "unknown: " + err.Error()
 	}
 }
 

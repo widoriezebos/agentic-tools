@@ -13,19 +13,21 @@ import (
 
 // HostAdmission is a read-only snapshot of test slot holders and waiters.
 type HostAdmission struct {
-	Held       []hostAdmissionHeld
-	Waiting    []hostAdmissionWaiting
+	Held       []HostAdmissionHeld
+	Waiting    []HostAdmissionWaiting
 	Unreadable int
 }
 
-type hostAdmissionHeld struct {
+// HostAdmissionHeld is one slot whose descriptor remains held.
+type HostAdmissionHeld struct {
 	Owner      ProcessIdentity
 	Slot       string
 	Priority   string
 	OwnerEnded bool
 }
 
-type hostAdmissionWaiting struct {
+// HostAdmissionWaiting is one acquisition waiting for test capacity.
+type HostAdmissionWaiting struct {
 	Owner    ProcessIdentity
 	Priority string
 	Since    time.Time
@@ -94,12 +96,12 @@ func readHostAdmission(path func() (string, bool, error), prober identity.Prober
 		}
 		if lease {
 			if record.Slot != "" {
-				view.Held = append(view.Held, hostAdmissionHeld{Owner: record.Owner, Slot: record.Slot,
-					Priority: record.Priority, OwnerEnded: identity.AliveRef(prober, record.Owner.Ref()) == identity.Dead})
+				view.Held = append(view.Held, HostAdmissionHeld{Owner: record.Owner, Slot: record.Slot,
+					Priority: record.Priority, OwnerEnded: identity.LiveRef(prober, record.Owner.Ref()) == identity.Dead})
 			}
 		} else {
 			priority, _, _ := strings.Cut(strings.TrimPrefix(name, "wait-"), "-")
-			view.Waiting = append(view.Waiting, hostAdmissionWaiting{Owner: owner, Priority: priority, Since: since})
+			view.Waiting = append(view.Waiting, HostAdmissionWaiting{Owner: owner, Priority: priority, Since: since})
 		}
 	}
 	return view, nil

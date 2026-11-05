@@ -128,7 +128,7 @@ func TestTheWaitWakesOnlyOnWhatMatters(t *testing.T) {
 		}
 		// One read per stale page: at the start and every two and a half
 		// minutes; the polls between are file reads.
-		if b.reads != 5 || !slices.Contains(page.Wake, "hold|main") {
+		if b.reads != 5 || slices.ContainsFunc(page.Wake, func(line string) bool { return strings.HasPrefix(line, "hold|") }) {
 			t.Fatalf("the wait read the situation %d times, want 5; the page's wake %v", b.reads, page.Wake)
 		}
 
@@ -176,12 +176,12 @@ func TestTheWaitWakesOnlyOnWhatMatters(t *testing.T) {
 				t.Error(err)
 			}
 			b.held(at)
-		}, func(*waitBed) string { return "changed: hold|main" }},
+		}, func(*waitBed) string { return "changed: row|proof-beside-builds|main" }},
 		{"the build completed", true, func(b *waitBed, _ time.Time) {
 			if _, err := b.store.Update("host-build", func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
 				t.Error(err)
 			}
-		}, func(*waitBed) string { return "changed: hold|none" }},
+		}, func(*waitBed) string { return "changed: launch|host-build|completed" }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
