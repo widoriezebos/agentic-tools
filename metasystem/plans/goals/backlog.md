@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 221
+- Revision: 222
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -293,4 +293,5 @@ History:
 - 2026-11-03T10:04:03Z 6JJSNGN6N17J7GJ0DNWAT00MY4-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=a-red-is-classified-once displaced=m1e+main-1792389436-6018-51cc28@2026-11-01T14:10:08Z ack
 - 2026-11-03T16:35:04Z NRS8N8Q063WAQYJ4W827Q6ZNFB-ui-71c5cb39 ack actor=ui+steward-seat targets=a-test-helper-dies-with-its-test displaced=ui+steward-seat@2026-11-03T14:27:04Z ack
 - 2026-11-04T15:34:28Z J2SJX5SNMTZ0GGWTZX9MT395Y2-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-acts displaced=m1e+main-1792389436-6018-51cc28@2026-11-02T08:14:40Z ack
-Integrity: sha256=990851389b3e0a6a204a33b89660b862d14dd2d5808e79b526b570510691877a
+- 2026-11-05T10:23:00Z B1SX2A4KZ8YNHH9PWMF79PBBFK-ui-71c5cb39 ack actor=ui+steward-seat targets=the-lanes-proof-goes-first displaced=ui+steward-seat@2026-11-03T23:09:36Z ack
+Integrity: sha256=b7b1e9979e443152c18e20f7361ed297b87ea06a833d5dd98b54349d9878df72
