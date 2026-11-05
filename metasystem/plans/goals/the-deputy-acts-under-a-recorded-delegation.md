@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: opus-designer cuts the briefs for U1a, U1b1, U1b2, U2a1, U2a2, U2b, U3a, U3b from the accepted page (one Astra round each); build on m1e after a-green-rounds-read-is-collected and the-lane-collects-its-resolution; hand in through the lane
 - OpenedAt: 2026-11-05T19:05:34Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=12 reservedJobMinutesLimit=1800 activeJobLimit=1 reviewRoundLimit=24
 - BudgetExceptions: 0
 - NormApproval: approvedRef=0YK2FHD7Z11KS2FT11T5RREMC4-m1e-6f736ba0 minutes=1800 reviewRounds=24 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-05T19:05:34Z VPD3QJA0Q2V1YSXQFYC1A553BB-m1e-6f736ba0 open actor=human:Wido targets=the-deputy-acts-under-a-recorded-delegation
 - 2026-11-05T19:05:48Z 0YK2FHD7Z11KS2FT11T5RREMC4-m1e-6f736ba0 approve actor=human:Wido targets=the-deputy-acts-under-a-recorded-delegation
-Integrity: sha256=fc2c1115743d33cffd3a812e66f8a8037804ecbb62ad68898af9309bd4c31f70
+- 2026-11-05T19:05:59Z X58E1YQSTDNK3FVV5W5PQ6MHCX-m1e-6f736ba0 set-pin actor=human:Wido targets=the-deputy-acts-under-a-recorded-delegation
+Integrity: sha256=64877ab3f01fcfa56c3b4f56d60909fac282c2319f1fc9ee38fc2e086a7a1624
