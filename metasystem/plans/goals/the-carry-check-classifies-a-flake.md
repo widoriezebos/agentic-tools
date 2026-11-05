@@ -8,7 +8,8 @@
 - DesignGate: off
 - Next step: Build without a design from finding 542: cmd/metasystem/intent_carry_check.go applies the unit run's red classification (internal/launch/unit_attribution.go, loopstop.ClassifyRed) to the retained check's result before it refuses; one unit; brief by the seat
 - OpenedAt: 2026-11-05T23:53:26Z
-- Revision: 3
+- Revision: 4
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-05T23:58:16Z revision=3 opid=F9XH43A3JPNNB4CJRWCHFDA7ZC-m1e-721b8823 authority=proven digest=044b20e6a6ea34e1a8b74cbf12267fc0e587edf5908520e9c39369d9f7b8883a episode=3
@@ -17,4 +18,5 @@ History:
 - 2026-11-05T23:53:26Z AFBXA72ACKH65MS88B83DX2DPE-m1e-721b8823 open actor=human:Wido targets=the-carry-check-classifies-a-flake
 - 2026-11-05T23:55:43Z JDGH8M5VDYNP5X7CYSY2PRR6FS-m1e-721b8823 edit actor=human:Wido targets=the-carry-check-classifies-a-flake reason=Allowed: build-without-design why=Allowed: build-without-design. A one-unit fix from a recorded finding (542) that reuses the unit run's classifier; the brief names the finding, the owner files and the tests; the lane proof and the read gate it (decision 111c) impact=This lets goal the-carry-check-classifies-a-flake be built and landed without an accepted, reviewed design. The risk: nobody checks the approach before code is written, so a wrong one is found only in code review or after it lands. It holds for every later build and landing of the-carry-check-classifies-a-flake until withdrawn. To undo: metasystem goal disallow the-carry-check-classifies-a-flake build-without-design
 - 2026-11-05T23:58:16Z F9XH43A3JPNNB4CJRWCHFDA7ZC-m1e-721b8823 approve actor=human:Wido targets=the-carry-check-classifies-a-flake
-Integrity: sha256=82250a88c76e4f96e0d31fe1ee661e6283cea41ffd68085f6df76e74f32e1929
+- 2026-11-05T23:59:53Z 1NFE48JX81S9KXA32V7VYKBX0S-m1e-721b8823 set-pin actor=human:Wido targets=the-carry-check-classifies-a-flake
+Integrity: sha256=50bf69800c791e3a1b8389e968f36ccba10a703b0461bfea571c4329697092e7
