@@ -1,0 +1,39 @@
+{
+  "coveredUnits": [
+    "U1c2a"
+  ],
+  "schemaVersion": 1,
+  "goal": "a-green-unit-is-always-committable",
+  "unit": "U1c2a",
+  "subject": {
+    "commit": "96cb23ea97d5f094a4844971999e42a8a70c3370",
+    "parent": "f3a5db89f0828ca3fec491a58d8cb0f0806374dc",
+    "tree": "4ae49af0698a9c6bc32e1b28ac97d4b0f70e8348",
+    "patchDigest": "a073bb13eb67f553cf17166a1fcf8ad3eae88c3e1d6ff094b9551c56b9faa6b6",
+    "unitDigest": "27f4000278aca2e0c11af71d62af333df8e6125cdbf6b16437ca9422d839f71f"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-861497ca76c65c62520537f2",
+    "round": 1,
+    "closureSha256": "0341b66a97244d0b5b381a3ff8dadccdc40db4e993df84c3ec574225e0194532"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "4ae49af0698a9c6bc32e1b28ac97d4b0f70e8348",
+    "runId": "check-2444195349"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-861497ca76c65c62520537f2"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_test.go",
+      "readerWord": "reviewed by critic root code-critic-861497ca76c65c62520537f2"
+    }
+  ],
+  "sha256": "d99fff333adc418acb6b96d4421f1c2679783399e72edc81048f89031478436c"
+}
