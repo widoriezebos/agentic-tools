@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: One unit, about 15 production lines in internal/steward/claim_quota.go (claimQuotaInFlight) plus the settled stages as expect-an-ask cases of TestNoReleaseIsProposedForWorkInFlight; brief cut from D13 of the-steward-sees-and-acts and finding 522; one Astra round; built beside the-claim-quota-is-a-host-setting on m1e
 - OpenedAt: 2026-11-05T13:38:39Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - NormApproval: approvedRef=97AV3AE4NWERSAVYEHKPJ89RB4-m1e-c921266c minutes=600 reviewRounds=6 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-05T13:38:39Z Y8E6KYQP71XS778WQHX1WR82HV-m1e-c921266c open actor=human:Wido targets=a-settled-unit-is-not-in-flight
 - 2026-11-05T13:38:58Z 97AV3AE4NWERSAVYEHKPJ89RB4-m1e-c921266c approve actor=human:Wido targets=a-settled-unit-is-not-in-flight
-Integrity: sha256=da3e6e15355d354c37c35d3cc91eeb0cd9b1c70c386e2f69592167b4f0b59b7b
+- 2026-11-05T13:39:16Z ZZT7WVM2P4JVS2T96XMS85WC00-m1e-c921266c set-pin actor=human:Wido targets=a-settled-unit-is-not-in-flight
+Integrity: sha256=842701bfc61f8d4e6f81611cf9d98dec9f6d7abb769683b5e6d1de620f4ea6ab
