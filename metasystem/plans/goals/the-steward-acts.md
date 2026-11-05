@@ -10,7 +10,7 @@
 - Next step: On m1e's build lane after the-steward-decides lands: opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); U3a first, the ladder with the census for stewardship work, outstanding asks with or without a deadline included (about 100 production lines: steward/seat_ladder.go PlanSeat and its counter, seat_start.go seatDecision and the recheck, tick.go's census); then U3b progress from the child's outcome, the brief and the steward skill (about 50 plus the skill), U4a occurrences and routing (about 90), U4b the fail-safe, the answered occurrence and a machine withdrawal that re-arms it (about 100), U4c the claim quota once per observed blocking interval (about 70, --last); ASKED W1XKN7KC74WV65CXCWPSE62VHC (other): the-steward-acts was returned with 'resolution job cannot resolve', but the resolver did resolve it. Should the seat hand in the same tip again, or rebase?
 - OpenedAt: 2026-10-30T08:49:32Z
 - FirstClaimAt: 2026-11-02T08:14:40Z
-- Revision: 38
+- Revision: 39
 - BlockedBy: the-steward-decides
 - Pinned: m1e
 - Budget: elapsedLimit=12d attemptLimit=16 reservedJobMinutesLimit=3600 activeJobLimit=1 reviewRoundLimit=24
@@ -64,4 +64,5 @@ History:
 - 2026-11-04T18:50:54Z THXMV1EZVBZZ9HX64XHJ0GA9Z2-m1e-ba5f08d7 accept-risk actor=human:Wido targets=the-steward-acts reason=accepted by a1 in Wido's name under his unit stop rule (two corrections, the design change of decision 198 and the lane-return fix are spent on U4c2): the in-flight gate of the claim-quota ask treats a dropped unit or a reads-waived commit as busy, so such a holder is not asked; it never acts wrongly and the situation page shows 'not yet asked'. Follow-up goal a-settled-unit-is-not-in-flight at the next docs boundary. (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-steward-acts/metasystem)
 - 2026-11-04T20:50:54Z PKY32KX39WES6ZYJ80XDFH9XBP-landing-41ad7d6c ask actor=landing+landing-agent targets=the-steward-acts
 - 2026-11-05T11:08:11Z FJDRGAZGTXYXDJSXQRSYWB8K37-m1e-2a56212a set-budget actor=human:Wido targets=the-steward-acts displaced=m1e+main-1792389436-6018-51cc28@2026-11-04T02:43:12Z
-Integrity: sha256=94efa781a1cd248915e7d185f4047cfd980eb1a0b30858b78bec947dcd72c940
+- 2026-11-05T13:35:40Z CC7H1KE5D0K6E1FDSSEAV9D7TY-m1e-cc2e8fc8 landed actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-acts reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 1311.0 min: hand-in to merge 1240.3, cheap gate not run, fix round 105.9, fix round 23.9, fix round 749.2, push unknown
+Integrity: sha256=9c10031b893a0f850ab9bc70ed51bf806ccc8ab9ac75dc055d42b7bd7b6830d9
