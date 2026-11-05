@@ -42,6 +42,8 @@ type connectionBed struct {
 	origin, worktree string
 	mu               sync.Mutex
 	edits            map[string]string
+	buildHook        func(string)
+	observeStaged    func(string)
 	proofWrites      bool
 	readFails        bool
 	followUps        []string
@@ -133,6 +135,9 @@ func (c *connectionBed) StartSupervisor(id, state string) (identity.Ref, error) 
 		for path, content := range c.edits {
 			os.MkdirAll(filepath.Dir(filepath.Join(record.WorkingDirectory, path)), 0o700)
 			os.WriteFile(filepath.Join(record.WorkingDirectory, path), []byte(content), 0o644)
+		}
+		if c.buildHook != nil {
+			c.buildHook(record.WorkingDirectory)
 		}
 	case "proof":
 		if c.proofWrites {
@@ -259,6 +264,9 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		transport:  connectionTransport{c},
 		rebaseGate: func(string) (string, error) { return "fixture-static-green", nil },
 		commit: func(request branch.CommitRequest) (string, error) {
+			if c.observeStaged != nil {
+				c.observeStaged(worktree)
+			}
 			commit, err := branch.CommitStaged(request)
 			c.mu.Lock()
 			defer c.mu.Unlock()
@@ -1427,5 +1435,129 @@ func TestCleanReadIsPromotedWithTrimmedVerdict(t *testing.T) {
 	report = []byte("VERDICT: fix first\r\nVERDICT: land \r\n")
 	if bundle, reason := unitReadPromotion(review, subject, 7, build, read, report, raw); bundle != nil || !strings.Contains(reason, "VERDICT:") {
 		t.Fatalf("first verdict bundle=%+v reason=%s", bundle, reason)
+	}
+}
+
+func TestAnExcludedFileTheBuilderTouchedIsPutBack(t *testing.T) {
+	for _, shape := range []string{"modified", "staged", "plan", "repair"} {
+		t.Run(shape, func(t *testing.T) {
+			c := newConnectionBed(t)
+			path := "metasystem/memory/receipts.log"
+			if branch.PathClass(path) != branch.ClassExcluded {
+				t.Fatalf("receipt is not excluded: %s", path)
+			}
+			basePath := filepath.Join(c.root(), path)
+			if err := os.MkdirAll(filepath.Dir(basePath), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(basePath, []byte("base\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			connectionGit(t, c.root(), "add", "--", path)
+			connectionGit(t, c.root(), "commit", "-qm", "tracked receipt")
+			connectionGit(t, c.root(), "push", "-q", "origin", "main")
+			c.edits = map[string]string{"connect.txt": "built\n", path: "base\nbuilder\n"}
+			if shape == "plan" {
+				c.edits["metasystem/plans/designs/x.md"] = "plan\n"
+			}
+			c.buildHook = func(repo string) {
+				if shape == "staged" {
+					connectionGit(t, repo, "add", "--", path)
+				}
+				if shape == "repair" {
+					if err := os.Remove(filepath.Join(repo, path)); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.Mkdir(filepath.Join(repo, path), 0700); err != nil {
+						t.Fatal(err)
+					}
+					if err := os.WriteFile(filepath.Join(repo, path, "notes"), []byte("only copy\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			code, built := c.do(append([]string{"work", "build", c.id, "connect", "--brief", c.brief("brief.md", "Build it.\n"), "--lines", "10"}, workCheck...)...)
+			run, ok := resultData(t, built)["run"].(string)
+			if !ok {
+				t.Fatalf("build did not record its run: %d %+v", code, built)
+			}
+			record := c.runRecord(run)
+			if shape == "repair" {
+				if record.Rounds[0].Outcome != "build-failed" {
+					t.Fatalf("folder was not held: %+v", record.Rounds[0])
+				}
+				_, status := c.do("work", "status", c.id, "--work", "connect")
+				want := []string{"metasystem", "work", "review", c.id, "--work", "connect", "--reason", "TEXT", "--by", "NAME"}
+				if built.Next == nil || !slices.Equal(built.Next.Argv, want) {
+					t.Fatalf("excluded stop recovery: %+v", built.Next)
+				}
+				if status.Next == nil || !slices.Equal(status.Next.Argv, want) || status.Next.Reason != "a person reruns the retained failed step after repairing its environment" {
+					t.Fatalf("excluded hold recovery: %+v", status.Next)
+				}
+				if err := os.Remove(filepath.Join(c.worktree, path, "notes")); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Remove(filepath.Join(c.worktree, path)); err != nil {
+					t.Fatal(err)
+				}
+				connectionGit(t, c.worktree, "checkout", "HEAD", "--", path)
+				c.buildHook = nil
+				c.edits["connect.txt"] = "rebuilt after repair\n"
+				code, built = c.do("work", "review", c.id, "--work", "connect", "--reason", "restored the receipt", "--by", "Wido")
+				record = c.runRecord(run)
+				if len(record.Rounds) != 1 {
+					t.Fatalf("retry did not retain the round: %d %+v", code, built)
+				}
+			}
+			data, err := os.ReadFile(filepath.Join(c.worktree, path))
+			if err != nil || string(data) != "base\n" {
+				t.Fatalf("receipt was not put back before review: %q %v", data, err)
+			}
+			round := record.Rounds[len(record.Rounds)-1]
+			if round.Outcome != "green" {
+				t.Fatalf("restored build: %d %+v", code, built)
+			}
+			if !slices.Equal(round.ExcludedDropped, []string{path}) || !round.ExcludedRestored {
+				t.Fatalf("restored receipt record: %+v", round)
+			}
+			archive := filepath.Join(round.Directory, "excluded")
+			copy, err := os.ReadFile(filepath.Join(archive, "files/0"))
+			if err != nil || string(copy) != "base\nbuilder\n" {
+				t.Fatalf("kept receipt: %q %v", copy, err)
+			}
+			var manifest []struct {
+				Path   string
+				New    bool
+				SHA256 string
+			}
+			manifestBytes, err := os.ReadFile(filepath.Join(archive, "excluded.json"))
+			if err != nil || json.Unmarshal(manifestBytes, &manifest) != nil || len(manifest) != 1 || manifest[0].Path != path || manifest[0].New || manifest[0].SHA256 == "" {
+				t.Fatalf("modified receipt manifest: %s %v", manifestBytes, err)
+			}
+			patch, err := os.ReadFile(filepath.Join(round.Directory, "result.patch"))
+			if err != nil || !bytes.Contains(patch, []byte("b/connect.txt")) || bytes.Contains(patch, []byte(path)) {
+				t.Fatalf("frozen patch includes receipt or loses unit: %s %v", patch, err)
+			}
+			staged := false
+			c.observeStaged = func(repo string) {
+				staged = true
+				if got := connectionGit(t, repo, "diff", "--cached", "--name-only"); shape != "plan" && got != "connect.txt" {
+					t.Fatalf("review staged %q", got)
+				}
+			}
+			code, reviewed := c.do("work", "review", "run:"+run)
+			if shape == "plan" {
+				if c.commits != 0 || code == 0 || !strings.Contains(strings.Join(reviewed.Details, " ")+reviewed.Summary, "a build may not change metasystem/plans/designs/x.md (a plan file)") {
+					t.Fatalf("plan edit not refused: %+v commits=%d", reviewed, c.commits)
+				}
+				return
+			}
+			if !staged || c.commits != 1 {
+				t.Fatalf("review did not stage and commit once: %+v staged=%t commits=%d", reviewed, staged, c.commits)
+			}
+			if got := connectionGit(t, c.worktree, "diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"); got != "connect.txt" {
+				t.Fatalf("commit included %q", got)
+			}
+		})
 	}
 }

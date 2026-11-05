@@ -144,6 +144,114 @@ func (s *workStarter) launched() []string {
 	return append([]string(nil), s.kinds...)
 }
 
+type excludedCheckoutGit struct{ failed bool }
+
+func (g *excludedCheckoutGit) Run(dir string, env []string, args ...string) ([]byte, error) {
+	if !g.failed && slices.Contains(args, "checkout") {
+		g.failed = true
+		return nil, errors.New("fixture checkout failed")
+	}
+	return (launch.OSGitRunner{}).Run(dir, env, args...)
+}
+
+func TestTheExcludedDifferencesAreNamed(t *testing.T) {
+	t.Parallel()
+	for _, pending := range []bool{false, true} {
+		t.Run(fmt.Sprintf("pending=%t", pending), func(t *testing.T) {
+			t.Parallel()
+			b := realOutcomeBed(t)
+			path := "metasystem/memory/receipts.log"
+			file := filepath.Join(b.worktree, path)
+			if err := os.MkdirAll(filepath.Dir(file), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(file, []byte("base\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			gitRun := func(args ...string) string {
+				out, err := (launch.OSGitRunner{}).Run(b.worktree, []string{"GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"}, args...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				return strings.TrimSpace(string(out))
+			}
+			gitRun("add", path)
+			gitRun("-c", "user.name=Fixture", "-c", "user.email=fixture@example.invalid", "-c", "commit.gpgsign=false", "commit", "-qm", "receipt base")
+			b.head = gitRun("rev-parse", "HEAD")
+			hook, git := b.workOwnersHook, &excludedCheckoutGit{}
+			b.workOwnersHook = func(o *intentWorkOwners) {
+				hook(o)
+				units := o.units
+				o.units = func(layout stateroot.Layout) *launch.UnitRunner {
+					runner := units(layout)
+					if pending {
+						runner.Git = git
+					}
+					return runner
+				}
+			}
+			b.manager.Supervisor = outcomeStarter{bed: b, build: func() {
+				for name, body := range map[string]string{file: "base\nbuilder\n", filepath.Join(b.worktree, "unit.go"): "built\n"} {
+					if err := os.WriteFile(name, []byte(body), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}}
+			code, built, _ := b.work(append([]string{"work", "build", b.id, "notices", "--brief", b.brief("build.md", "Read each round: yes\nBuild it.\n"), "--lines", "20"}, workCheck...)...)
+			data := resultData(t, built)
+			if !reflect.DeepEqual(data["excludedDropped"], []any{path}) || data["excludedArchive"] != filepath.Join(data["directory"].(string), "excluded") {
+				t.Fatalf("excluded differences missing from hand-in: code=%d paths=%v archive=%v", code, data["excludedDropped"], data["excludedArchive"])
+			}
+			run := "run:" + data["run"].(string)
+			status := func() string {
+				command, rest, _ := resolveIntentArgv([]string{"work", "status", run})
+				var stdout, stderr bytes.Buffer
+				owners := b.workOwners()
+				owners.processes.launches = func() *launch.Manager { return b.manager }
+				if code := runIntentIn(command, rest, &stdout, &stderr, b.root(), owners); code != 0 {
+					t.Fatalf("status: %d %s %s", code, &stdout, &stderr)
+				}
+				return stdout.String()
+			}
+			if pending {
+				words := status()
+				if code != 1 || !strings.Contains(words, "; excluded files kept, restore pending: "+path) || strings.Contains(words, "excluded files put back") {
+					t.Fatalf("failed restore reported as complete: %d %+v", code, words)
+				}
+				code, built, _ = b.work("work", "wait", run)
+				data = resultData(t, built)
+			}
+			words := status()
+			if code != 0 || data["outcome"] != "green" || !strings.Contains(words, "round 1: green; excluded files put back: "+path) {
+				t.Fatalf("completed restore not named: code=%d outcome=%v status=%s", code, data["outcome"], words)
+			}
+			steps := data["steps"].([]any)
+			readStep := steps[len(steps)-1].(map[string]any)
+			if readStep["name"] != "read" {
+				t.Fatalf("round did not run its read: %v", readStep["name"])
+			}
+			read, err := b.manager.Store.Read(readStep["launchId"].(string))
+			var brief string
+			if err != nil || json.Unmarshal(read.AdapterData["brief"], &brief) != nil {
+				t.Fatalf("read launch brief could not be read: %v", err)
+			}
+			paragraph := "The worktree held excluded differences from the branch in engine-written files; the engine kept them in " + data["excludedArchive"].(string) + "/ and put them back before the check, so they are not part of this change: " + path + "."
+			if !bytes.Contains(mustRead(t, brief), []byte(paragraph)) {
+				t.Fatalf("round-one read omitted excluded differences: %s", brief)
+			}
+			lines := strings.Split(string(mustRead(t, filepath.Join(data["directory"].(string), "checked-build.md"))), "\n")
+			if len(lines) < 2 || !strings.HasPrefix(lines[1], "Do not change these files; the engine puts them back: ") {
+				t.Fatalf("builder preface omitted exclusions: %q", lines)
+			}
+			for _, excluded := range []string{path, "metasystem/records/reads/", "metasystem/records/narrator-digest.log", "metasystem/records/goals", "metasystem/records/counselor", "metasystem/plans/goals", "metasystem/plans/goals.md", "metasystem/plans/goals-accepted.json"} {
+				if !strings.Contains(lines[1], excluded) {
+					t.Fatalf("builder preface omitted %s: %s", excluded, lines[1])
+				}
+			}
+		})
+	}
+}
+
 func workProcessRef(pid int64) identity.Ref { return identity.Ref{Pid: pid, StartedAtSec: pid} }
 
 type workAdapter struct{}
@@ -922,7 +1030,7 @@ func TestIntentGeneratedUnitPlan(t *testing.T) {
 			t.Fatalf("read brief lacks %q:\n%s", want, readBrief)
 		}
 	}
-	if !strings.HasPrefix(string(buildBrief), "The engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to "+filepath.Dir(plan.Build.Brief)+"/check-*/output.log while it runs.\n\n") || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
+	if !strings.HasPrefix(string(buildBrief), "The engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to "+filepath.Dir(plan.Build.Brief)+"/check-*/output.log while it runs.\nDo not change these files; the engine puts them back: ") || !strings.HasSuffix(string(buildBrief), "Read each round: yes\nBuild the unit.\n") {
 		t.Fatalf("build brief:\n%s", buildBrief)
 	}
 	if !strings.Contains(string(buildBrief), "- Check: the engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to this round's check-*/output.log, named on the brief's first line.\n") || strings.Contains(string(buildBrief), "run the frozen command") {

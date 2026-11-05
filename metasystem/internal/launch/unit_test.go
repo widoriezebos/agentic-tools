@@ -2426,3 +2426,268 @@ func TestClaudeTranscriptNamesTheRecordedSession(t *testing.T) {
 		t.Fatal("unreadable projects root was reported as found")
 	}
 }
+
+func excludedUnitFixture(t *testing.T) (unitFixture, string) {
+	t.Helper()
+	f, repo := newGitUnitFixture(t)
+	for _, path := range []string{"metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log", ".gitignore"} {
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(repo, path)), 0700); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, filepath.Join(repo, path), "base\n")
+	}
+	writeFile(t, filepath.Join(repo, ".gitignore"), "*.ignored\n")
+	runGit(t, repo, "add", "-A")
+	runGit(t, repo, "commit", "-qm", "engine files")
+	setUnitPlanWorktree(t, &f, repo)
+	f.runner.Excluded = func(path string) bool {
+		return strings.HasPrefix(path, "metasystem/memory/") || path == "metasystem/records/narrator-digest.log" || strings.HasPrefix(path, "metasystem/records/reads/") || strings.HasPrefix(path, "metasystem/records/goals/")
+	}
+	f.starter.readVerdict = "land"
+	return f, repo
+}
+
+func excludedBytes(t *testing.T, path string) string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
+}
+
+func excludedTree(t *testing.T, repo string) map[string]string {
+	t.Helper()
+	files := map[string]string{"HEAD": runGit(t, repo, "rev-parse", "HEAD"), "INDEX": runGit(t, repo, "ls-files", "--stage")}
+	err := filepath.WalkDir(repo, func(path string, entry fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if entry.Name() == ".git" {
+			return filepath.SkipDir
+		}
+		if !entry.IsDir() {
+			files[strings.TrimPrefix(path, repo)] = excludedBytes(t, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return files
+}
+
+func TestANewEngineWrittenFileIsMovedAside(t *testing.T) {
+	t.Parallel()
+	f, repo := excludedUnitFixture(t)
+	path := "metasystem/records/reads/x"
+	f.starter.onBuild = func(Record) error {
+		writeFile(t, filepath.Join(repo, "built"), "implemented\n")
+		if err := os.MkdirAll(filepath.Dir(filepath.Join(repo, path)), 0700); err != nil {
+			return err
+		}
+		return os.WriteFile(filepath.Join(repo, path), []byte("reader bytes\n"), 0600)
+	}
+	result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	round := result.Record.Rounds[0]
+	if _, err := os.Lstat(filepath.Join(repo, path)); !os.IsNotExist(err) {
+		t.Fatalf("engine file remains in the worktree: %v", err)
+	}
+	if !slices.Equal(round.ExcludedDropped, []string{path}) || !round.ExcludedRestored {
+		t.Fatalf("moved file record: %+v", round)
+	}
+	archive := filepath.Join(round.Directory, "excluded")
+	if got := excludedBytes(t, filepath.Join(archive, "files/0")); got != "reader bytes\n" {
+		t.Fatalf("kept bytes = %q", got)
+	}
+	var manifest []struct {
+		Path   string
+		New    bool
+		SHA256 string
+	}
+	if err := json.Unmarshal([]byte(excludedBytes(t, filepath.Join(archive, "excluded.json"))), &manifest); err != nil {
+		t.Fatal(err)
+	}
+	if len(manifest) != 1 || manifest[0].Path != path || !manifest[0].New || manifest[0].SHA256 != digestHex([]byte("reader bytes\n")) {
+		t.Fatalf("new file manifest: %+v", manifest)
+	}
+	patch := excludedBytes(t, filepath.Join(round.Directory, "result.patch"))
+	if round.Outcome != "green" || !strings.Contains(patch, "b/built") || strings.Contains(patch, path) || runGit(t, repo, "ls-files", "--", path) != "" {
+		t.Fatalf("new file leaked into result: %+v %s", round, patch)
+	}
+}
+
+func TestAnUnusualShapeStopsTheRoundAndChangesNothing(t *testing.T) {
+	t.Parallel()
+	for _, staged := range []bool{false, true} {
+		t.Run(fmt.Sprintf("staged-new=%t", staged), func(t *testing.T) {
+			t.Parallel()
+			f, repo := excludedUnitFixture(t)
+			path := "metasystem/memory/receipts.log"
+			if staged {
+				path = "metasystem/records/reads/x"
+			}
+			var before map[string]string
+			f.starter.onBuild = func(Record) error {
+				writeFile(t, filepath.Join(repo, "built"), "implemented\n")
+				writeFile(t, filepath.Join(repo, "metasystem/records/narrator-digest.log"), "base\nbuilder\n")
+				if staged {
+					if err := os.MkdirAll(filepath.Dir(filepath.Join(repo, path)), 0700); err != nil {
+						return err
+					}
+					writeFile(t, filepath.Join(repo, path), "new\n")
+					runGit(t, repo, "add", "--", path)
+				} else {
+					if err := os.Remove(filepath.Join(repo, path)); err != nil {
+						return err
+					}
+					if err := os.MkdirAll(filepath.Join(repo, path), 0700); err != nil {
+						return err
+					}
+					writeFile(t, filepath.Join(repo, path, "notes.ignored"), "only copy\n")
+				}
+				before = excludedTree(t, repo)
+				return nil
+			}
+			result, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := result.Record.Rounds[0]
+			want := "the build left " + path + ", an engine-written path, in a shape other than a changed or new plain file; the engine restores plain files only; restore it to the branch's version or move it out of the worktree, then run work review with --reason and --by to retry"
+			if round.Outcome != "build-failed" || round.Cause != "environment" || round.Steps[0].Reason != want || round.Stop == nil || !strings.Contains(round.Stop.Class, want) {
+				t.Fatalf("unusual file was not held by name: %+v", round)
+			}
+			if after := excludedTree(t, repo); !reflect.DeepEqual(before, after) {
+				t.Fatalf("shape stop changed worktree: before=%v after=%v", before, after)
+			}
+			if _, err := os.Stat(filepath.Join(round.Directory, "excluded")); !os.IsNotExist(err) {
+				t.Fatalf("shape stop created an archive: %v", err)
+			}
+			if !slices.Equal(f.starter.order, []string{"build"}) {
+				t.Fatalf("shape stop launched proof: %v", f.starter.order)
+			}
+		})
+	}
+}
+
+type excludedFailGit struct{ checkouts int }
+
+func (git *excludedFailGit) Run(dir string, env []string, args ...string) ([]byte, error) {
+	if slices.Contains(args, "checkout") {
+		git.checkouts++
+		if git.checkouts == 2 {
+			return nil, errors.New("fixture second checkout failed")
+		}
+	}
+	return (OSGitRunner{}).Run(dir, env, args...)
+}
+
+func TestARepeatFinishesFromTheManifest(t *testing.T) {
+	t.Parallel()
+	for _, change := range []string{"none", "edited", "outside", "copy-moved-back", "duplicate-new"} {
+		t.Run(change, func(t *testing.T) {
+			t.Parallel()
+			f, repo := excludedUnitFixture(t)
+			firstPath, secondPath := "metasystem/memory/receipts.log", "metasystem/records/narrator-digest.log"
+			newPath := "metasystem/records/goals/a.json"
+			f.starter.onBuild = func(Record) error {
+				writeFile(t, filepath.Join(repo, "built"), "implemented\n")
+				for _, path := range []string{firstPath, secondPath} {
+					writeFile(t, filepath.Join(repo, path), "base\nbuilder\n")
+				}
+				if change == "duplicate-new" {
+					if err := os.MkdirAll(filepath.Dir(filepath.Join(repo, newPath)), 0700); err != nil {
+						return err
+					}
+					writeFile(t, filepath.Join(repo, newPath), "new bytes\n")
+				}
+				return nil
+			}
+			f.runner.Git = &excludedFailGit{}
+			first, err := f.runner.Advance(UnitRequest{Plan: f.plan})
+			if err == nil || !strings.Contains(err.Error(), "fixture second checkout failed") {
+				t.Fatalf("second checkout did not fail: %+v %v", first, err)
+			}
+			round := first.Record.Rounds[0]
+			wantDropped := []string{firstPath, secondPath}
+			if change == "duplicate-new" {
+				wantDropped = []string{firstPath, newPath, secondPath}
+			}
+			saved, saveErr := f.runner.Status(first.Record.ID)
+			if saveErr != nil || !slices.Equal(saved.Rounds[0].ExcludedDropped, wantDropped) || saved.Rounds[0].ExcludedRestored {
+				t.Fatalf("restore failure lost the pending manifest paths: %+v %v", saved, saveErr)
+			}
+			archive := filepath.Join(round.Directory, "excluded")
+			manifest := excludedBytes(t, filepath.Join(archive, "excluded.json"))
+			copies := []string{excludedBytes(t, filepath.Join(archive, "files/0")), excludedBytes(t, filepath.Join(archive, "files/1"))}
+			if change == "duplicate-new" {
+				copies = append(copies, excludedBytes(t, filepath.Join(archive, "files/2")))
+			}
+			if copies[0] != "base\nbuilder\n" || excludedBytes(t, filepath.Join(repo, firstPath)) != "base\n" {
+				t.Fatal("failure did not follow the first restore and its kept copy")
+			}
+			path := secondPath
+			switch change {
+			case "edited":
+				writeFile(t, filepath.Join(repo, path), "base\nbuilder\nperson\n")
+			case "outside":
+				path = "metasystem/records/reads/z"
+				if err := os.MkdirAll(filepath.Dir(filepath.Join(repo, path)), 0700); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, filepath.Join(repo, path), "person\n")
+			case "copy-moved-back":
+				path = firstPath
+				if err := os.Rename(filepath.Join(archive, "files/0"), filepath.Join(repo, path)); err != nil {
+					t.Fatal(err)
+				}
+			case "duplicate-new":
+				path = newPath
+				writeFile(t, filepath.Join(repo, path), copies[1])
+			}
+			before := excludedTree(t, repo)
+			again, err := f.runner.Advance(UnitRequest{Resume: first.Record.ID})
+			if err != nil {
+				t.Fatal(err)
+			}
+			last := again.Record.Rounds[0]
+			if !slices.Equal(last.ExcludedDropped, wantDropped) || last.ExcludedRestored != (change == "none") {
+				t.Fatalf("repeat lost the manifest paths or restore state: %+v", last)
+			}
+			if excludedBytes(t, filepath.Join(archive, "excluded.json")) != manifest {
+				t.Fatal("repeat rewrote the manifest")
+			}
+			if change != "none" {
+				want := "the worktree's " + path + " changed after the engine kept the build's engine-written files in " + archive + "/; restore it to the branch's version, then run work review with --reason and --by to retry"
+				if last.Outcome != "build-failed" || last.Cause != "environment" || last.Stop == nil || last.Steps[0].Reason != want {
+					t.Fatalf("repeat did not hold the changed path: %+v", last)
+				}
+				if !reflect.DeepEqual(before, excludedTree(t, repo)) {
+					t.Fatal("repeat overwrote the person's bytes")
+				}
+				if change == "duplicate-new" && excludedBytes(t, filepath.Join(archive, "files/1")) != copies[1] {
+					t.Fatal("repeat replaced the kept file")
+				}
+				return
+			}
+			for n, copy := range copies {
+				if excludedBytes(t, filepath.Join(archive, "files", strconv.Itoa(n))) != copy {
+					t.Fatal("repeat rewrote a kept copy")
+				}
+			}
+			for _, path := range []string{firstPath, secondPath} {
+				if excludedBytes(t, filepath.Join(repo, path)) != "base\n" {
+					t.Fatalf("repeat did not restore %s", path)
+				}
+			}
+			patch := excludedBytes(t, filepath.Join(round.Directory, "result.patch"))
+			if last.Outcome != "green" || !strings.Contains(patch, "b/built") || strings.Contains(patch, "metasystem/") {
+				t.Fatalf("repeat frozen result: %+v %s", last, patch)
+			}
+		})
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
@@ -71,7 +72,11 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 	plan.Check = check
 	plan.Proof = []launch.ProofCommand{{Name: "unit-check", Dir: check.Directory, Argv: []string{executable, "test", "run", "--unit-run", run, "--repo", inv.layout.InstallationRoot.Path()}, Env: check.Environment}}
 	publish := func() error {
-		if _, err := atomicfile.WriteText(plan.Build.Brief, fmt.Sprintf("The engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to %s/check-*/output.log while it runs.\n\n%s", directory, brief), directory); err != nil {
+		exclusions := []string{"metasystem/records/reads/"}
+		for _, path := range landing.WorkspaceExclusions() {
+			exclusions = append(exclusions, "metasystem/"+path)
+		}
+		if _, err := atomicfile.WriteText(plan.Build.Brief, fmt.Sprintf("The engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to %s/check-*/output.log while it runs.\nDo not change these files; the engine puts them back: %s.\n\n%s", directory, strings.Join(exclusions, ", "), brief), directory); err != nil {
 			return err
 		}
 		data, err := json.Marshal(plan)

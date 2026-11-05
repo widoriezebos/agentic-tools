@@ -540,6 +540,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		}
 		return findings, nil
 	}
+	runner.Excluded = func(path string) bool { return branch.PathClass(path) == branch.ClassExcluded }
 	runner.BeforeModelLaunch = func(record launch.UnitRunRecord, spec launch.StartSpec) error {
 		settings := runner.Manager.Settings
 		if len(settings.Values) == 0 {
@@ -1760,6 +1761,9 @@ func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]a
 	}
 	round := record.Rounds[len(record.Rounds)-1]
 	data["stop"], data["reads"], data["unknownRetries"] = round.Stop, round.Reads, round.UnknownRetries
+	if len(round.ExcludedDropped) > 0 {
+		data["excludedDropped"], data["excludedArchive"] = round.ExcludedDropped, filepath.Join(round.Directory, "excluded")
+	}
 	data["round"], data["outcome"], data["steps"], data["directory"] = round.Number, round.Outcome, round.Steps, round.Directory
 	path := filepath.Join(round.Directory, "plan.json")
 	if _, err := os.Stat(path); err == nil {

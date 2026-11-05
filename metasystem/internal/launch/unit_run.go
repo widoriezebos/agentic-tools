@@ -80,6 +80,9 @@ type RefMove struct {
 }
 
 type UnitRound struct {
+	ExcludedDropped  []string           `json:"excludedDropped,omitempty"`
+	ExcludedRestored bool               `json:"excludedRestored,omitempty"`
+	ExcludedStop     bool               `json:"excludedStop,omitempty"`
 	RefMoves         []RefMove          `json:"refMoves,omitempty"`
 	ProofRefsNoted   bool               `json:"proofRefsNoted,omitempty"`
 	InputsChanged    string             `json:"inputsChanged,omitempty"`
@@ -190,6 +193,8 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
+	// Excluded names engine-written paths to put back before freezing a build; nil keeps everything.
+	Excluded      func(string) bool
 	AdmitDetached func(UnitPlan) bool
 	Actor         string
 	FreezeCheck   func(UnitPlan, string) (UnitPlan, error)
@@ -592,6 +597,18 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			return runner.finish(record, round, outcome)
 		}
 	}
+	if round.Result == nil && runner.Excluded != nil {
+		reason, err := runner.restoreExcluded(record, round, plan.Worktree)
+		if err != nil {
+			return UnitResult{Record: *record, Round: round.Number}, err
+		}
+		if reason != "" {
+			step := &round.Steps[buildCount-1]
+			step.State, step.Cause, step.Reason = StepFailed, "environment", reason
+			round.ExcludedStop = true
+			return runner.finish(record, round, "build-failed")
+		}
+	}
 	if held, err := runner.freezeBuildOutcome(record, round, plan, buildCount); err != nil || held {
 		return UnitResult{Record: *record, Round: round.Number}, err
 	}
@@ -728,7 +745,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if err != nil {
 		return UnitResult{}, err
 	}
-	if plan.HasRead() && (packet != "" || len(round.RefMoves) > 0) {
+	if plan.HasRead() && (packet != "" || len(round.RefMoves) > 0 || len(round.ExcludedDropped) > 0) {
 		brief, err := os.ReadFile(plan.Read.Brief)
 		if err != nil {
 			return UnitResult{}, err
@@ -750,6 +767,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 				moves = append(moves, move.Ref+" "+before+" to "+after)
 			}
 			text += "\n\nWhile the checks ran, these refs moved; the check reads none of them: " + strings.Join(moves, "; ") + ".\n"
+		}
+		if len(round.ExcludedDropped) > 0 {
+			text += "\n\nThe worktree held excluded differences from the branch in engine-written files; the engine kept them in " + filepath.Join(round.Directory, "excluded") + "/ and put them back before the check, so they are not part of this change: " + strings.Join(round.ExcludedDropped, ", ") + ".\n"
 		}
 		path := filepath.Join(round.Directory, "read-brief.md")
 		if _, err := atomicfile.WriteText(path, text, runner.root()); err != nil {
