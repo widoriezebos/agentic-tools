@@ -234,6 +234,52 @@ the reference failure died of designing against an assumed one.
 **Receipts** record what shipped; **handoff notes** in `plans/` claim
 and transfer streams of work.
 
+## The seat's actors and their four contracts
+
+One seat runs supervision (owner, watcher, reaper, runner: the
+liveness watcher), the steward helper (rows, a two-act ladder, then one
+ask: watcher, dispatch and narrator), a seat session for a claimed goal,
+builders and critics under verbs, the landing lane's keeper and agent,
+and a person from an enrolled terminal or the channel. The paper's roles
+map onto them (`paper/07-roles-from-first-principles.md`), and the
+separations hold at the actions: acceptance refuses what no examination
+covers and release refuses what acceptance did not pass, whoever asks.
+Four contracts bind how they act together.
+
+**One record, read by all.** Every status line, next step and remedy
+is computed from the facts the verb checks when the act is attempted.
+An ask has one id across checkouts and is closed by its act. A view
+that lags main says so and gives no advice from stale claims.
+
+**The next act is runnable by its reader, or it is one ask and the end
+of the turn.** A refusal names one act the reader can run: for an agent
+a verb with the engine's own limit, for a person a person verb. An
+agent does that act once; refused again or pointed at a person, it asks
+once per occurrence and ends its turn. No agent chooses a number to
+wait on, repairs or rebuilds the engine it runs under, or retries past a
+count.
+
+**Waits belong to the engine.** A job, a lane state, an admission or an
+answer is waited on by a verb or by the keeper, never by an agent's
+sleep loop. A seat session that must wait ends its turn and is woken.
+
+**Roles are held by actors the engine recognises.** The custodian's
+acts complete without a person when the facts are present (a green
+round's read is collected; the lane finishes its own resolution); values
+stay with the responsible authority; the person-class mechanical acts
+are exercised under a recorded delegation (source, scope classes,
+conditions, expiry, appeal) by a deputy, each act carrying the
+delegation and reported by the narrator.
+
+The designs that carry these: a-green-rounds-read-is-collected,
+the-lane-finishes-its-own-resolution,
+the-deputy-acts-under-a-recorded-delegation,
+the-elapsed-clock-excludes-waits, the-lanes-proof-goes-first,
+one-host-admits-heavy-work, a-verb-says-its-own-result and
+a-question-reminds-and-anyone-can-ask. The long form with the metrics
+and the order of work is in the evidence folder,
+`designs/the-seats-actors-and-their-contracts.md`.
+
 ## Cross-references
 
 `docs/glossary.md` (terms), `docs/patience.md` (the patience program),
