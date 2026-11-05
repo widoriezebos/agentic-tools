@@ -1,0 +1,82 @@
+{
+  "coveredUnits": [
+    "U1a",
+    "U1b",
+    "U2b"
+  ],
+  "schemaVersion": 1,
+  "goal": "the-lanes-proof-goes-first",
+  "unit": "U2b",
+  "subject": {
+    "commit": "807ba5a8d2c496b9af350f5ca66e077aff6a2044",
+    "parent": "e76e1252d34f4a2ae6d477cb0c9acafb38bee32f",
+    "tree": "5ce7c92e02991a7c476b723ab070b768c7791fa1",
+    "patchDigest": "995314fd36ec9a4ddec1c013760d9aa42b08211d2f8696bf04f9d03f25718f55",
+    "unitDigest": "6716687bef5b4e918c83420e6ce477f5d873652694eccbf22363c558cf7730d4"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-fc462a4f500ff47656969362",
+    "round": 1,
+    "closureSha256": "3058fcadfc04dcaf8a8255d76405debc1fc5e62ebfb0d57da60b789b1fdad6d8"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "5ce7c92e02991a7c476b723ab070b768c7791fa1",
+    "runId": "goal-read-gate-20261105t192847z-ea771e133ad23e5a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "f02892c8d24583b0580302dc96cde78013b7e73d",
+      "digest": "11edfd30d5684943907d9102aba83a127d076435838cb0595e28f506d2603cde"
+    },
+    {
+      "kind": "read",
+      "commit": "abde32647fe44c6039cf2b738b860488f7ae3578",
+      "digest": "bb95f01a614edc088185b1a38478db692e187e26a60d65fa0d801fefe76d82c9"
+    },
+    {
+      "kind": "read",
+      "commit": "04a3a37b45f1f41291172f85b601e3a5ceb0be10",
+      "digest": "da3fc7fb50a811a196ec34e5a0204a59fc9d8f0cd9f0ba78990b21724812640d"
+    },
+    {
+      "kind": "read",
+      "commit": "e76e1252d34f4a2ae6d477cb0c9acafb38bee32f",
+      "digest": "4d85432d342eacea32edef30f19fa0ec73df7c675415da19071b58810e97c91b"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/situation_sources_test.go",
+      "readerWord": "reviewed by critic root code-critic-fc462a4f500ff47656969362"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/system-situation.json",
+      "readerWord": "reviewed by critic root code-critic-fc462a4f500ff47656969362"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/testdata/layout/system-situation.txt",
+      "readerWord": "reviewed by critic root code-critic-fc462a4f500ff47656969362"
+    },
+    {
+      "path": "metasystem/internal/proofrun/host_admission_read_test.go",
+      "readerWord": "reviewed by critic root code-critic-fc462a4f500ff47656969362"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_compose_test.go",
+      "readerWord": "reviewed by critic root code-critic-fc462a4f500ff47656969362"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_records_test.go",
+      "readerWord": "reviewed by critic root code-critic-fc462a4f500ff47656969362"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_wait_test.go",
+      "readerWord": "reviewed by critic root code-critic-fc462a4f500ff47656969362"
+    }
+  ],
+  "sha256": "086db84a897266ee49f0848677c87369b7ffab7fe7ab87d17583d9a3729cbc83"
+}
