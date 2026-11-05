@@ -3,7 +3,7 @@
 - Kind: design
 - Id: the-lane-redoes-a-lost-merge
 - Status: accepted
-- Goals: a-green-rounds-read-is-collected
+- Goals: the-lane-redoes-a-lost-merge
 
 Accepted 2026-11-05 by a1 in Wido's name (decision 202, the seat contracts program at priority 1): the redo half of the joint page the-lane-finishes-its-own-resolution; after the split, Astra's round 3 (4 material, 1 minor; verdict build after the folds) was folded in full. This page serves contract 3 of the seat's actors-and-contracts model (waits belong to the engine: the keeper owns the capacity wait and the redo of a lost merge, both counted); the decisions of section 4 (two redos per goal and tip; six refusals, then the person's merge build; admission clears the wait; the 11-05 cause a hypothesis) are a1's in Wido's name; Wido may overrule with one line. It builds after the-lane-collects-its-resolution.
 
