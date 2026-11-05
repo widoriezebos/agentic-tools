@@ -1,0 +1,97 @@
+{
+  "coveredUnits": [
+    "U1b"
+  ],
+  "schemaVersion": 1,
+  "goal": "the-lanes-proof-goes-first",
+  "unit": "U1b",
+  "subject": {
+    "commit": "9e5f5ef5b21fda22ab08e8b4f25aa5b26546b17a",
+    "parent": "94780f016636c9bc9e27f747f03d7f59a791fe25",
+    "tree": "39664f270558a6c6316d653fda287acac8e1b216",
+    "patchDigest": "b959d8c68888e088d77a18f26e156f8800fe85c9f81e800e110b3c2a88448fee",
+    "unitDigest": "e248c34d5948460bb2a3640eaf8c08680f7bb91e1d3957c449106264ce3099c9"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-20ef6424bec2dff2d4f85d51",
+    "round": 2,
+    "closureSha256": "09d099f75bc4540180984385699479abab810635a8d8445a1d9b0a8955768e75"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "39664f270558a6c6316d653fda287acac8e1b216",
+    "runId": "goal-read-gate-20261105t000229z-6fec94ecd4b8517b"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "94780f016636c9bc9e27f747f03d7f59a791fe25",
+      "digest": "11edfd30d5684943907d9102aba83a127d076435838cb0595e28f506d2603cde"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_landing_resolve_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_batch_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_cause_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_classify_log_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_clock_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_drain_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_flake_wiring_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_fresh_full_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_plain_verbs_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_proof_settings_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_recovery_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_replay_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_selection_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_shadow_after1_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/repository_proof_test.go",
+      "readerWord": "reviewed by critic root code-critic-20ef6424bec2dff2d4f85d51"
+    }
+  ],
+  "sha256": "aed782ff9761ceb1a7005f14c93aac57721d1c68a80757396f510ddec90202e3"
+}
