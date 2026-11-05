@@ -10,12 +10,13 @@
 - Next step: Build U1c2a (the restore) then U1c2b (--last; the record and the words) from the page D10 and the FINAL brief section U1c2 of agentic-tools-evidence/lane-test-20261009/briefs/a-check-guards-its-own-inputs-U1-brief.md (Astra rounds closed, decision 156); work review between parts; one hand-in.; ANSWERED PKYD1673KXRE28T6X63KH54T56: One more day
 - OpenedAt: 2026-11-04T01:25:27Z
 - FirstClaimAt: 2026-11-04T15:34:28Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
 - Budget: elapsedLimit=10d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=10
 - BudgetExceptions: 2
 - NormApproval: approvedRef=JSWYS4KHVAEF5FN3T5V6WXNMCC-m1e-4b3917e3 minutes=1200 reviewRounds=10 goalRevision=8
 - Approved: by=human:Wido at=2026-11-05T17:13:48Z revision=9 opid=JSWYS4KHVAEF5FN3T5V6WXNMCC-m1e-4b3917e3 authority=proven digest=eeca15ca1d5f150d04fb764be975b4edd70431c709b84afc7976dec8acd874c1 episode=9
+- Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=9 at=2026-11-05T17:15:32Z
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-05T17:13:48Z areas="null" areas-source="a-check-guards-its-own-inputs@fe4b645b7ecc783492d51100e6609b7e71ac1406fba032b1c7a3f046e8b1bd5a" areas-known=false areas-warnings="[\"areas unknown for goal a-green-unit-is-always-committable in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/a-check-guards-its-own-inputs.md\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal the-lanes-proof-goes-first\",\"areas unknown for goal the-steward-acts\",\"areas unknown for goal the-steward-acts\"]" revision=9 accountingRevision=9 episodeAt=2026-11-04T15:34:28Z episodeRevision=5
 - StopCapability: generation=9 revision=9 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -29,4 +30,5 @@ History:
 - 2026-11-05T07:16:41Z 75DGR51J3YZ8EZDCZ364FAQKZZ-landing-76faa029 answer actor=human:wido targets=a-green-unit-is-always-committable authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1433/1434 channelStep=1793863001 question=PKYD1673KXRE28T6X63KH54T56 reason=One more day
 - 2026-11-05T07:21:30Z RP10V6CRHTMQ2899N55G20NGMN-landing-76faa029 set-budget actor=human:Wido targets=a-green-unit-is-always-committable displaced=m1e+main-1792389436-6018-51cc28@2026-11-04T15:34:28Z resumed=stop-a-green-unit-is-always-committable-r5-f1 authorityOutcome=VERIFIED_CHANNEL_ANSWER channelProvider=telegram channelUser=1365582 channelRef=1433/1434 channelStep=1793863001 channelContext=PKYD1673KXRE28T6X63KH54T56
 - 2026-11-05T17:13:48Z JSWYS4KHVAEF5FN3T5V6WXNMCC-m1e-4b3917e3 set-budget actor=human:Wido targets=a-green-unit-is-always-committable displaced=m1e+main-1792389436-6018-51cc28@2026-11-05T07:21:30Z
-Integrity: sha256=7edc604b4e1069db336ba2f30c83ed3e41237179622d65671449eda096bf535c
+- 2026-11-05T17:15:32Z 4QZ661HT7NRZTX07HYZNA20QA7-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-green-unit-is-always-committable
+Integrity: sha256=df478b85252dd9f9b3147a2cad67028ecba3439de1b46bf8464908741b243444
