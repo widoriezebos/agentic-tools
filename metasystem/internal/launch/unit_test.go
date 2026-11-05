@@ -2496,6 +2496,9 @@ func TestANewEngineWrittenFileIsMovedAside(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(repo, path)); !os.IsNotExist(err) {
 		t.Fatalf("engine file remains in the worktree: %v", err)
 	}
+	if !slices.Equal(round.ExcludedDropped, []string{path}) || !round.ExcludedRestored {
+		t.Fatalf("moved file record: %+v", round)
+	}
 	archive := filepath.Join(round.Directory, "excluded")
 	if got := excludedBytes(t, filepath.Join(archive, "files/0")); got != "reader bytes\n" {
 		t.Fatalf("kept bytes = %q", got)
@@ -2554,7 +2557,7 @@ func TestAnUnusualShapeStopsTheRoundAndChangesNothing(t *testing.T) {
 				t.Fatal(err)
 			}
 			round := result.Record.Rounds[0]
-			want := "the build left " + path + ", an engine-written path, in a shape other than a changed or new plain file; the engine restores plain files only; restore it to the branch's version or move it out of the worktree, then run work revise for a fresh round"
+			want := "the build left " + path + ", an engine-written path, in a shape other than a changed or new plain file; the engine restores plain files only; restore it to the branch's version or move it out of the worktree, then run work review with --reason and --by to retry"
 			if round.Outcome != "build-failed" || round.Cause != "environment" || round.Steps[0].Reason != want || round.Stop == nil || !strings.Contains(round.Stop.Class, want) {
 				t.Fatalf("unusual file was not held by name: %+v", round)
 			}
@@ -2610,6 +2613,14 @@ func TestARepeatFinishesFromTheManifest(t *testing.T) {
 				t.Fatalf("second checkout did not fail: %+v %v", first, err)
 			}
 			round := first.Record.Rounds[0]
+			wantDropped := []string{firstPath, secondPath}
+			if change == "duplicate-new" {
+				wantDropped = []string{firstPath, newPath, secondPath}
+			}
+			saved, saveErr := f.runner.Status(first.Record.ID)
+			if saveErr != nil || !slices.Equal(saved.Rounds[0].ExcludedDropped, wantDropped) || saved.Rounds[0].ExcludedRestored {
+				t.Fatalf("restore failure lost the pending manifest paths: %+v %v", saved, saveErr)
+			}
 			archive := filepath.Join(round.Directory, "excluded")
 			manifest := excludedBytes(t, filepath.Join(archive, "excluded.json"))
 			copies := []string{excludedBytes(t, filepath.Join(archive, "files/0")), excludedBytes(t, filepath.Join(archive, "files/1"))}
@@ -2644,11 +2655,14 @@ func TestARepeatFinishesFromTheManifest(t *testing.T) {
 				t.Fatal(err)
 			}
 			last := again.Record.Rounds[0]
+			if !slices.Equal(last.ExcludedDropped, wantDropped) || last.ExcludedRestored != (change == "none") {
+				t.Fatalf("repeat lost the manifest paths or restore state: %+v", last)
+			}
 			if excludedBytes(t, filepath.Join(archive, "excluded.json")) != manifest {
 				t.Fatal("repeat rewrote the manifest")
 			}
 			if change != "none" {
-				want := "the worktree's " + path + " changed after the engine kept the build's engine-written files in " + archive + "/; restore it to the branch's version, then run work revise for a fresh round"
+				want := "the worktree's " + path + " changed after the engine kept the build's engine-written files in " + archive + "/; restore it to the branch's version, then run work review with --reason and --by to retry"
 				if last.Outcome != "build-failed" || last.Cause != "environment" || last.Stop == nil || last.Steps[0].Reason != want {
 					t.Fatalf("repeat did not hold the changed path: %+v", last)
 				}

@@ -17,7 +17,7 @@ type excludedFile struct {
 	SHA256 string `json:"sha256"`
 }
 
-func (runner *UnitRunner) restoreExcluded(round *UnitRound, worktree string) (string, error) {
+func (runner *UnitRunner) restoreExcluded(record *UnitRunRecord, round *UnitRound, worktree string) (string, error) {
 	archive := filepath.Join(round.Directory, "excluded")
 	manifestPath := filepath.Join(archive, "excluded.json")
 	var manifest []excludedFile
@@ -66,7 +66,7 @@ func (runner *UnitRunner) restoreExcluded(round *UnitRound, worktree string) (st
 		for _, path := range paths {
 			entry := current[path]
 			if entry.SHA256 == "" {
-				return "the build left " + path + ", an engine-written path, in a shape other than a changed or new plain file; the engine restores plain files only; restore it to the branch's version or move it out of the worktree, then run work revise for a fresh round", nil
+				return "the build left " + path + ", an engine-written path, in a shape other than a changed or new plain file; the engine restores plain files only; restore it to the branch's version or move it out of the worktree, then run work review with --reason and --by to retry", nil
 			}
 			manifest = append(manifest, entry)
 		}
@@ -92,8 +92,15 @@ func (runner *UnitRunner) restoreExcluded(round *UnitRound, worktree string) (st
 			return "", err
 		}
 	}
+	round.ExcludedDropped = nil
+	for _, entry := range manifest {
+		round.ExcludedDropped = append(round.ExcludedDropped, entry.Path)
+	}
+	if err := runner.save(*record); err != nil {
+		return "", err
+	}
 	repeatStop := func(path string) (string, error) {
-		return "the worktree's " + path + " changed after the engine kept the build's engine-written files in " + archive + "/; restore it to the branch's version, then run work revise for a fresh round", nil
+		return "the worktree's " + path + " changed after the engine kept the build's engine-written files in " + archive + "/; restore it to the branch's version, then run work review with --reason and --by to retry", nil
 	}
 	for _, path := range paths {
 		n := slices.IndexFunc(manifest, func(entry excludedFile) bool { return entry.Path == path })
@@ -121,9 +128,6 @@ func (runner *UnitRunner) restoreExcluded(round *UnitRound, worktree string) (st
 	}
 	for n, entry := range manifest {
 		if entry.New {
-			if _, err := runner.git().Run(worktree, nil, "--literal-pathspecs", "rm", "--cached", "--ignore-unmatch", "--quiet", "--", entry.Path); err != nil {
-				return "", err
-			}
 			if _, differing := current[entry.Path]; differing {
 				if err := os.Rename(filepath.Join(worktree, entry.Path), filepath.Join(archive, "files", fmt.Sprint(n))); err != nil {
 					return "", err
@@ -135,6 +139,7 @@ func (runner *UnitRunner) restoreExcluded(round *UnitRound, worktree string) (st
 			}
 		}
 	}
+	round.ExcludedRestored = true
 	return "", nil
 }
 

@@ -80,6 +80,8 @@ type RefMove struct {
 }
 
 type UnitRound struct {
+	ExcludedDropped  []string           `json:"excludedDropped,omitempty"`
+	ExcludedRestored bool               `json:"excludedRestored,omitempty"`
 	ExcludedStop     bool               `json:"excludedStop,omitempty"`
 	RefMoves         []RefMove          `json:"refMoves,omitempty"`
 	ProofRefsNoted   bool               `json:"proofRefsNoted,omitempty"`
@@ -596,7 +598,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 		}
 	}
 	if round.Result == nil && runner.Excluded != nil {
-		reason, err := runner.restoreExcluded(round, plan.Worktree)
+		reason, err := runner.restoreExcluded(record, round, plan.Worktree)
 		if err != nil {
 			return UnitResult{Record: *record, Round: round.Number}, err
 		}
@@ -743,7 +745,7 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 	if err != nil {
 		return UnitResult{}, err
 	}
-	if plan.HasRead() && (packet != "" || len(round.RefMoves) > 0) {
+	if plan.HasRead() && (packet != "" || len(round.RefMoves) > 0 || len(round.ExcludedDropped) > 0) {
 		brief, err := os.ReadFile(plan.Read.Brief)
 		if err != nil {
 			return UnitResult{}, err
@@ -765,6 +767,9 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 				moves = append(moves, move.Ref+" "+before+" to "+after)
 			}
 			text += "\n\nWhile the checks ran, these refs moved; the check reads none of them: " + strings.Join(moves, "; ") + ".\n"
+		}
+		if len(round.ExcludedDropped) > 0 {
+			text += "\n\nThe worktree held excluded differences from the branch in engine-written files; the engine kept them in " + filepath.Join(round.Directory, "excluded") + "/ and put them back before the check, so they are not part of this change: " + strings.Join(round.ExcludedDropped, ", ") + ".\n"
 		}
 		path := filepath.Join(round.Directory, "read-brief.md")
 		if _, err := atomicfile.WriteText(path, text, runner.root()); err != nil {

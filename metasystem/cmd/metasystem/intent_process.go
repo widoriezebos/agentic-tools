@@ -1302,6 +1302,13 @@ func runIntentWorkStatus(inv *intentInvocation) int {
 		lines := report.Lines
 		for _, round := range record.Rounds {
 			line := fmt.Sprintf("round %d: %s", round.Number, round.Outcome)
+			if len(round.ExcludedDropped) > 0 {
+				state := "; excluded files kept, restore pending: "
+				if round.ExcludedRestored {
+					state = "; excluded files put back: "
+				}
+				line += state + strings.Join(round.ExcludedDropped, ", ")
+			}
 			if round.Cause != "" {
 				line += " cause=" + round.Cause
 			}

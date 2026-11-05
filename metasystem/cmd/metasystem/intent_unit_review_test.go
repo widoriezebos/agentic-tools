@@ -1487,8 +1487,11 @@ func TestAnExcludedFileTheBuilderTouchedIsPutBack(t *testing.T) {
 					t.Fatalf("folder was not held: %+v", record.Rounds[0])
 				}
 				_, status := c.do("work", "status", c.id, "--work", "connect")
-				want := []string{"metasystem", "work", "revise", c.id, "--work", "connect", "--after", "1", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"}
-				if status.Next == nil || !slices.Equal(status.Next.Argv, want) || status.Next.Reason != "a person restores the named engine-written path, then a fresh round builds the unit again" {
+				want := []string{"metasystem", "work", "review", c.id, "--work", "connect", "--reason", "TEXT", "--by", "NAME"}
+				if built.Next == nil || !slices.Equal(built.Next.Argv, want) {
+					t.Fatalf("excluded stop recovery: %+v", built.Next)
+				}
+				if status.Next == nil || !slices.Equal(status.Next.Argv, want) || status.Next.Reason != "a person reruns the retained failed step after repairing its environment" {
 					t.Fatalf("excluded hold recovery: %+v", status.Next)
 				}
 				if err := os.Remove(filepath.Join(c.worktree, path, "notes")); err != nil {
@@ -1500,10 +1503,10 @@ func TestAnExcludedFileTheBuilderTouchedIsPutBack(t *testing.T) {
 				connectionGit(t, c.worktree, "checkout", "HEAD", "--", path)
 				c.buildHook = nil
 				c.edits["connect.txt"] = "rebuilt after repair\n"
-				code, built = c.do("work", "revise", c.id, "--work", "connect", "--after", "1", "--brief", c.brief("repair.md", "Build after the person's repair.\n"), "--reason", "restored the receipt", "--by", "Wido")
+				code, built = c.do("work", "review", c.id, "--work", "connect", "--reason", "restored the receipt", "--by", "Wido")
 				record = c.runRecord(run)
-				if len(record.Rounds) != 2 {
-					t.Fatalf("revise did not start a fresh round: %d %+v", code, built)
+				if len(record.Rounds) != 1 {
+					t.Fatalf("retry did not retain the round: %d %+v", code, built)
 				}
 			}
 			data, err := os.ReadFile(filepath.Join(c.worktree, path))
@@ -1513,6 +1516,9 @@ func TestAnExcludedFileTheBuilderTouchedIsPutBack(t *testing.T) {
 			round := record.Rounds[len(record.Rounds)-1]
 			if round.Outcome != "green" {
 				t.Fatalf("restored build: %d %+v", code, built)
+			}
+			if !slices.Equal(round.ExcludedDropped, []string{path}) || !round.ExcludedRestored {
+				t.Fatalf("restored receipt record: %+v", round)
 			}
 			archive := filepath.Join(round.Directory, "excluded")
 			copy, err := os.ReadFile(filepath.Join(archive, "files/0"))
