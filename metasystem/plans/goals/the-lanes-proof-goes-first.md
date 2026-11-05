@@ -7,7 +7,7 @@
 - Tier: 2
 - Intent: The lane's proof reserves in the existing host admission ahead of builds and checks instead of being held beside them, the proof-beside-builds hold retires, and agent-run tests go through `test run` with a bare `go test` under a checkout shown as a bypass (design plans/designs/the-steward-sees-and-acts.md (id 01M65TB73G4MP10FSPZ8GJNCW4, revision 4, accepted) D5; goal G3)
 - Origin: main
-- Next step: On ui's machine route after a-round-survives-a-restart and the sibling page's G3, and after the-steward-sees (it retires that goal's U0 hold): opus-designer cuts the brief from the accepted page (BRIEF-CHECKLIST with item 17, Read each round: yes, one Astra round, the reverse-dependent packages run whole); first verify whether proof/full.sh already runs through test run; one unit, about 90 production lines: proofrun/host_resources.go reservation priority, landing/plain/proof_admission.go hold retired, the bypass line in the situation's host part; ASKED 72B2FYZXANNC27E3R2XNC6C4KM (other): U1b of the-lanes-proof-goes-first needs your one act to start its correction round. Its first build was green. Its read and the second critic both found one real defect: a test wrote a test slot into this Mac's live admission folder. The fix is written. The engine cannot collect the second critic's result, so it refuses the seat's correction and its retry. m1e did not answer within an hour.
+- Next step: U1a and U1b are published on goal/the-lanes-proof-goes-first (U1b unit 9e5f5ef5b, read 25a898a2f, material 0, 2026-11-05 11:21; question 72B2FYZX closed by Wido's revise and stop). Next: build U2a from the FINAL revision 3 brief (~/agentic-tools-evidence/lane-test-20261009/briefs/the-lanes-proof-goes-first-U1-brief.md), then U2b and U3 (--last). The cmd ratchet goes to 502 for U2b and 503 for U3. Name goal note code-critic-20ef6424 N-1 (a binary-wide admission namespace for cmd/metasystem test beds) in the U2 brief. Run the carry check and reads only when landing status reads idle twice, 90 s apart.
 Open read items (fix unit astra-brief-r1): 4
 - ReadItem: id=astra-brief-r1-1 read=astra-brief-r1 state=open addedAt=2026-11-04T01:39:05Z changedAt=- material=false closingReference="" text="Later: end a lost prover's check group with an identity-checked group stop (R-79-m2); checkState records lost-process without ending it (internal/landing/plain/prove.go:415-439). Source: dispositions designs/lanes-proof-u1-brief-r1-dispositions.md, finding 2."
 - ReadItem: id=astra-brief-r1-2 read=astra-brief-r1 state=open addedAt=2026-11-04T01:39:05Z changedAt=- material=false closingReference="" text="Later: a test helper that inherits the lane's slot descriptor keeps the slot held after its check (Go children inherit). U2's page shows it by pid. Prevention belongs with every-detached-test-helper-is-in-custody."
@@ -19,7 +19,7 @@ Open read items (fix unit code-critic-2ece03b6): 1
 - ReadItem: id=code-critic-2ece03b6-1 read=code-critic-2ece03b6 state=open addedAt=2026-11-04T12:07:49Z changedAt=- material=false closingReference="" text="Later (U1a read N-1): the ancestry scan's unguarded lock probe can make one concurrent guarded scan skip a crashed owner's dirty lease, so one acquisition may go one over the cap for that scan. Fix: probe only records whose owner is a live ancestor (internal/proofrun/host_resources.go nestedUnderLeaseHolder)."
 - OpenedAt: 2026-10-30T08:54:36Z
 - FirstClaimAt: 2026-11-03T23:09:36Z
-- Revision: 48
+- Revision: 49
 - BlockedBy: the-steward-sees
 - Pinned: ui
 - Budget: elapsedLimit=6d attemptLimit=16 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=30
@@ -79,4 +79,5 @@ History:
 - 2026-11-04T17:05:06Z 2BD9ADGDY2BJR8Y3R24HPN8N0F-ui-71c5cb39 ask actor=ui+steward-seat targets=the-lanes-proof-goes-first
 - 2026-11-04T18:06:58Z YYF0T3MQ136CX796QA7WQCS91A-ui-b3e8b371 set-budget actor=human:Wido targets=the-lanes-proof-goes-first displaced=ui+steward-seat@2026-11-03T23:09:36Z
 - 2026-11-05T10:23:00Z B1SX2A4KZ8YNHH9PWMF79PBBFK-ui-71c5cb39 read-items-add actor=ui+steward-seat targets=the-lanes-proof-goes-first
-Integrity: sha256=ae9c4ba43a31efa407a54ac13cc5c46afc40cb605f916696178d190ef7cd9213
+- 2026-11-05T10:23:18Z 863E9KP8Y27ZJKPE42R5ZSM16T-ui-71c5cb39 edit actor=ui+steward-seat targets=the-lanes-proof-goes-first
+Integrity: sha256=082acbeab8796b40b0cf3b3fb0760d6956b273c3934f9074d7cccb7433dedc9d
