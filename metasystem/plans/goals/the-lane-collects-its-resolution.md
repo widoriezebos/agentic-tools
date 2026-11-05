@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: opus-designer cuts the briefs for U1a, U1b, U2, U6 and the skill text U5 from the accepted page (one Astra round each); build on m1e after a-green-rounds-read-is-collected; hand in through the lane
 - OpenedAt: 2026-11-05T18:58:27Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1500 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=P1KPV91SDT34BQW9XEDEX6KF84-m1e-97f06c0d minutes=1500 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-05T18:58:27Z WS4WG2EYDDZKRECTV3JPMZZAJ5-m1e-97f06c0d open actor=human:Wido targets=the-lane-collects-its-resolution
 - 2026-11-05T18:59:38Z P1KPV91SDT34BQW9XEDEX6KF84-m1e-97f06c0d approve actor=human:Wido targets=the-lane-collects-its-resolution
-Integrity: sha256=2301885e517ab6c62b4dfa7c6915ceddeab130aaa9f66edd14d960bcd4990ed6
+- 2026-11-05T18:59:53Z GSVKBHC369RHYH0NTKT6V824WG-m1e-97f06c0d set-pin actor=human:Wido targets=the-lane-collects-its-resolution
+Integrity: sha256=b58a4a0ab00ffd296c86e7668905ca6190384db4656788bda105523dea779248
