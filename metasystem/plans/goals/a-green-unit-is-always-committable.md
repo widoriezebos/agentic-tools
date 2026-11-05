@@ -10,7 +10,7 @@
 - Next step: Build U1c2a (the restore) then U1c2b (--last; the record and the words) from the page D10 and the FINAL brief section U1c2 of agentic-tools-evidence/lane-test-20261009/briefs/a-check-guards-its-own-inputs-U1-brief.md (Astra rounds closed, decision 156); work review between parts; one hand-in.; ANSWERED PKYD1673KXRE28T6X63KH54T56: One more day
 - OpenedAt: 2026-11-04T01:25:27Z
 - FirstClaimAt: 2026-11-04T15:34:28Z
-- Revision: 10
+- Revision: 11
 - Pinned: m1e
 - Budget: elapsedLimit=10d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=10
 - BudgetExceptions: 2
@@ -31,4 +31,5 @@ History:
 - 2026-11-05T07:21:30Z RP10V6CRHTMQ2899N55G20NGMN-landing-76faa029 set-budget actor=human:Wido targets=a-green-unit-is-always-committable displaced=m1e+main-1792389436-6018-51cc28@2026-11-04T15:34:28Z resumed=stop-a-green-unit-is-always-committable-r5-f1 authorityOutcome=VERIFIED_CHANNEL_ANSWER channelProvider=telegram channelUser=1365582 channelRef=1433/1434 channelStep=1793863001 channelContext=PKYD1673KXRE28T6X63KH54T56
 - 2026-11-05T17:13:48Z JSWYS4KHVAEF5FN3T5V6WXNMCC-m1e-4b3917e3 set-budget actor=human:Wido targets=a-green-unit-is-always-committable displaced=m1e+main-1792389436-6018-51cc28@2026-11-05T07:21:30Z
 - 2026-11-05T17:15:32Z 4QZ661HT7NRZTX07HYZNA20QA7-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-green-unit-is-always-committable
-Integrity: sha256=df478b85252dd9f9b3147a2cad67028ecba3439de1b46bf8464908741b243444
+- 2026-11-05T23:46:27Z Q4F1R6KM23Y4P5TM9G884HPRHK-m1e-cc2e8fc8 landed actor=m1e+main-1792389436-6018-51cc28 targets=a-green-unit-is-always-committable reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 93.0 min: hand-in to merge 93.6, cheap gate not run, push unknown
+Integrity: sha256=b581bf88e3e78697ded62330b1218354ab5cd201636ac4705e19e7724d04fda1

@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 223
+- Revision: 224
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -296,4 +296,5 @@ History:
 - 2026-11-05T10:23:00Z B1SX2A4KZ8YNHH9PWMF79PBBFK-ui-71c5cb39 ack actor=ui+steward-seat targets=the-lanes-proof-goes-first displaced=ui+steward-seat@2026-11-03T23:09:36Z ack
 - 2026-11-05T13:35:40Z CC7H1KE5D0K6E1FDSSEAV9D7TY-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=a-green-unit-is-always-committable displaced=m1e+main-1792389436-6018-51cc28@2026-11-04T15:34:28Z ack
 - 2026-11-05T13:35:40Z CC7H1KE5D0K6E1FDSSEAV9D7TY-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-steward-acts displaced=m1e+main-1792389436-6018-51cc28@2026-11-04T02:43:12Z ack
-Integrity: sha256=6a13957dc403e5048d8941ca24931c867b7f6c430b6a30ab23b306974abfce32
+- 2026-11-05T23:46:27Z Q4F1R6KM23Y4P5TM9G884HPRHK-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=a-green-unit-is-always-committable displaced=m1e+main-1792389436-6018-51cc28@2026-11-05T07:21:30Z ack
+Integrity: sha256=e5204be06291e5edd73d87dee6c4c2b7f282be04e39fabe5b013d061c38129e1
