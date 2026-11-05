@@ -540,6 +540,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		}
 		return findings, nil
 	}
+	runner.Excluded = func(path string) bool { return branch.PathClass(path) == branch.ClassExcluded }
 	runner.BeforeModelLaunch = func(record launch.UnitRunRecord, spec launch.StartSpec) error {
 		settings := runner.Manager.Settings
 		if len(settings.Values) == 0 {

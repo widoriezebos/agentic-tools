@@ -80,6 +80,7 @@ type RefMove struct {
 }
 
 type UnitRound struct {
+	ExcludedStop     bool               `json:"excludedStop,omitempty"`
 	RefMoves         []RefMove          `json:"refMoves,omitempty"`
 	ProofRefsNoted   bool               `json:"proofRefsNoted,omitempty"`
 	InputsChanged    string             `json:"inputsChanged,omitempty"`
@@ -190,6 +191,8 @@ func (OSGitRunner) Run(directory string, environment []string, args ...string) (
 }
 
 type UnitRunner struct {
+	// Excluded names engine-written paths to put back before freezing a build; nil keeps everything.
+	Excluded      func(string) bool
 	AdmitDetached func(UnitPlan) bool
 	Actor         string
 	FreezeCheck   func(UnitPlan, string) (UnitPlan, error)
@@ -590,6 +593,18 @@ func (runner *UnitRunner) advanceRunning(record *UnitRunRecord, plan UnitPlan, d
 			}
 			runner.countFailedBuild(round, plan, index+1)
 			return runner.finish(record, round, outcome)
+		}
+	}
+	if round.Result == nil && runner.Excluded != nil {
+		reason, err := runner.restoreExcluded(round, plan.Worktree)
+		if err != nil {
+			return UnitResult{Record: *record, Round: round.Number}, err
+		}
+		if reason != "" {
+			step := &round.Steps[buildCount-1]
+			step.State, step.Cause, step.Reason = StepFailed, "environment", reason
+			round.ExcludedStop = true
+			return runner.finish(record, round, "build-failed")
 		}
 	}
 	if held, err := runner.freezeBuildOutcome(record, round, plan, buildCount); err != nil || held {

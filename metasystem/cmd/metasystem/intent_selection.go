@@ -468,6 +468,9 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 	switch {
 	case work.Record != nil && len(work.Record.Rounds) > 0 && work.Record.Rounds[len(work.Record.Rounds)-1].Stop != nil && work.Record.Rounds[len(work.Record.Rounds)-1].Stop.Loop == "unit-build" && lastOutcome(work) != "build-size" && lastOutcome(work) != "build-gap":
 		round := work.Record.Rounds[len(work.Record.Rounds)-1]
+		if round.ExcludedStop {
+			return inv.workArgv(*work.Record, "revise", "--after", fmt.Sprint(workAttempt(work)), "--brief", "FILE", "--reason", "TEXT", "--by", "NAME"), "a person restores the named engine-written path, then a fresh round builds the unit again"
+		}
 		if round.Cause == "environment" || round.Cause == "deadline" || round.Cause == "main" {
 			why := "a person reruns the retained failed step after repairing its environment"
 			if round.Cause == "main" {
