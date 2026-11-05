@@ -50,6 +50,7 @@ type hostLeaseRecord struct {
 	Owner     ProcessIdentity `json:"owner"`
 	Class     string          `json:"class"`
 	Slot      string          `json:"slot,omitempty"`
+	Priority  string          `json:"priority,omitempty"`
 	Resources []string        `json:"resources"`
 	Cleared   bool            `json:"cleared"`
 	// The richer lease (engine-owns-disk-lifetimes 3.5; still schema 1,
@@ -178,12 +179,45 @@ func hostAdmissionDirectory() (string, error) {
 // configured as the binary's directory: empty selects the fixture
 // namespace a test environment names, else the host's own.
 func hostAdmissionDirectoryFrom(configured string) (string, error) {
+	path, err := resolveHostAdmissionPath(configured)
+	if err != nil {
+		return "", err
+	}
+	if configured == "" && os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") == "" {
+		if err := secureHostAdmissionDirectory(filepath.Dir(path), 0o755); err != nil {
+			return "", err
+		}
+	}
+	if err := secureHostAdmissionDirectory(path, 0o700); err != nil {
+		return "", err
+	}
+	return path, nil
+}
+
+func hostAdmissionPath() (string, bool, error) {
+	return hostAdmissionPathFrom(hostAdmissionDirectoryForTest)
+}
+
+func hostAdmissionPathFrom(configured string) (string, bool, error) {
+	path, err := resolveHostAdmissionPath(configured)
+	if err != nil {
+		return "", false, err
+	}
+	if _, err := os.Lstat(path); os.IsNotExist(err) {
+		return path, false, nil
+	} else if err != nil {
+		return "", false, err
+	}
+	return path, true, validateHostAdmissionDirectory(path, 0o700)
+}
+
+func resolveHostAdmissionPath(configured string) (string, error) {
 	path := configured
 	if path == "" && os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") != "" {
 		// The request owner checks canonical ancestors before creating the
 		// directory, so a temporary symlink cannot redirect fixture admission
 		// into production storage.
-		return hostAdmissionDirectoryForRequest(os.Getenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT"),
+		return hostAdmissionPathForRequest(os.Getenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT"),
 			os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR"))
 	}
 	if path == "" {
@@ -192,13 +226,7 @@ func hostAdmissionDirectoryFrom(configured string) (string, error) {
 			return "", fmt.Errorf("the host's test-run admission directory cannot be found: %v", err)
 		}
 		owner := filepath.Join(account.HomeDir, ".metasystem")
-		if err := secureHostAdmissionDirectory(owner, 0o755); err != nil {
-			return "", err
-		}
 		path = filepath.Join(owner, "proof-admission")
-	}
-	if err := secureHostAdmissionDirectory(path, 0o700); err != nil {
-		return "", err
 	}
 	return path, nil
 }
@@ -207,6 +235,14 @@ func hostAdmissionDirectoryForRequest(controlRoot, selected string) (string, err
 	if selected == "" {
 		return hostAdmissionDirectory()
 	}
+	path, err := hostAdmissionPathForRequest(controlRoot, selected)
+	if err != nil {
+		return "", err
+	}
+	return path, secureHostAdmissionDirectory(path, 0o700)
+}
+
+func hostAdmissionPathForRequest(controlRoot, selected string) (string, error) {
 	// The host's temporary roots, never this process's TMPDIR: an engine
 	// child runs with a process-scratch TMPDIR and must accept the directory
 	// its parent selected (Part B U1b-2, DL2-15).
@@ -243,9 +279,6 @@ func hostAdmissionDirectoryForRequest(controlRoot, selected string) (string, err
 	if !temporary || !filepath.IsAbs(selected) || !fixtureauth.FixtureModeRoot(controlRoot) {
 		return "", fmt.Errorf("a test's admission directory must be temporary and under a fake runtime")
 	}
-	if err := secureHostAdmissionDirectory(selected, 0o700); err != nil {
-		return "", err
-	}
 	return selected, nil
 }
 
@@ -271,6 +304,10 @@ func secureHostAdmissionDirectory(path string, maximum os.FileMode) error {
 	if err := os.MkdirAll(path, 0o700); err != nil {
 		return err
 	}
+	return validateHostAdmissionDirectory(path, maximum)
+}
+
+func validateHostAdmissionDirectory(path string, maximum os.FileMode) error {
 	info, err := os.Lstat(path)
 	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
 		return fmt.Errorf("the host's test-run admission path is not a directory: %v", err)
@@ -1035,6 +1072,9 @@ func acquireHostResourcesWith(ctx context.Context, readers loadReaders, director
 			fixtureOwner := owner
 			record := hostLeaseRecord{Schema: 1, Owner: owner, Class: class, Slot: slot, Resources: claimed, Cleared: false,
 				FixtureOwner: &fixtureOwner, ConfPath: absoluteConf}
+			if class == "heavy" && priority == HostPriorityLane {
+				record.Priority = HostPriorityLane
+			}
 			// The custody record exists before the claim: a richer lease
 			// without one reads as unknown, never as "no custodians".
 			if custodyErr := createLeaseCustody(marker.Name()); custodyErr != nil {
