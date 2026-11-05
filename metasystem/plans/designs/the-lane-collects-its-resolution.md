@@ -3,7 +3,7 @@
 - Kind: design
 - Id: the-lane-collects-its-resolution
 - Status: accepted
-- Goals: the-lane-collects-its-resolution
+- Goals: a-green-rounds-read-is-collected
 
 Accepted 2026-11-05 by a1 in Wido's name (decision 202, the seat contracts program at priority 1): the collection half of the joint page the-lane-finishes-its-own-resolution, whose Astra rounds 1 and 2 (7 material and 1 minor each) were folded in full; the split put the keeper-owned wait and the redo of a lost merge on their own page, the-lane-redoes-a-lost-merge, blocked by this one. This page serves contracts 1 and 2 of the seat's actors-and-contracts model (one record read by all; the next act runnable by its reader) and takes D7 in Wido's name under R-142 and R-143; Wido may overrule with one line.
 
