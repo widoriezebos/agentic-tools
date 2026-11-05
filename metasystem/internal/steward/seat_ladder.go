@@ -46,12 +46,23 @@ type SeatReady struct {
 
 // SeatWorld is what the seat ladder selects from.
 type SeatWorld struct {
-	Held  []SeatHeld
-	Ready []SeatReady
+	Held    []SeatHeld
+	Ready   []SeatReady
+	Steward *SeatSteward
+	// StewardClearedAt is the time of a person's steward-stop clearance for
+	// this root (zero when none): steward records started at or before it do
+	// not count toward the no-progress cap, so the person's revive takes effect.
+	StewardClearedAt time.Time
 }
+
+// SeatSteward names the situation's first stewardship task.
+type SeatSteward struct{ Kind, Subject, Occurrence string }
 
 // SeatSelection is the goal a seat start names and what its record keeps.
 type SeatSelection struct {
+	Kind         string   `json:"kind,omitempty"`
+	Subject      string   `json:"subject,omitempty"`
+	Occurrence   string   `json:"occurrence,omitempty"`
 	Goal         string   `json:"goal"`
 	Held         bool     `json:"held"`
 	ApprovalOpid string   `json:"approvalOpid"`
@@ -164,7 +175,8 @@ func gateWait(file *goal.GoalFile, settings goal.GateSettings, now time.Time) st
 // the start, then the first ready goal free of a human word and not capped.
 // owned is the proven-death branch of owned work, where the tick calls it only
 // when the seat lineage holds a claim; with no due step it names the wait.
-func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool) (Decision, *SeatSelection) {
+func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool, stewardOnly ...bool) (Decision, *SeatSelection) {
+	goalsAllowed := len(stewardOnly) == 0 || !stewardOnly[0]
 	verdict := VerdictIdleBacklogDead
 	if owned {
 		verdict = VerdictStalledDead
@@ -175,6 +187,9 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 	for i := range world.Held {
 		held := world.Held[i]
 		if held.Lineage != SeatLineage {
+			if world.Steward != nil {
+				selection.SeatHeld = append(selection.SeatHeld, held.Goal)
+			}
 			foreign = append(foreign, held.Goal)
 			continue
 		}
@@ -193,12 +208,22 @@ func PlanSeat(world SeatWorld, records []SeatRecord, maxRevivals int, owned bool
 	for _, ready := range world.Ready {
 		selection.Ready = append(selection.Ready, ready.Goal)
 	}
-	if candidate != nil {
+	if candidate != nil && goalsAllowed {
 		if count := SeatNoProgressCount(records, candidate.Goal, candidate.ApprovalOpid); count >= maxRevivals {
 			return seatCapped(verdict, candidate.Goal, count), nil
 		}
 		selection.Goal, selection.Held, selection.ApprovalOpid = candidate.Goal, true, candidate.ApprovalOpid
 		return Decision{verdict, ActRevive, fmt.Sprintf("this seat's main is dead holding %s; starting its successor", candidate.Goal)}, &selection
+	}
+	if task := world.Steward; task != nil {
+		if count := StewardNoProgressCountSince(records, task.Subject, task.Occurrence, world.StewardClearedAt); count >= maxRevivals {
+			return Decision{verdict, ActNotify, fmt.Sprintf("%d seats ended without progress on %s; no steward starts for this occurrence", count, task.Subject)}, nil
+		}
+		selection.Kind, selection.Subject, selection.Occurrence = "steward", task.Subject, task.Occurrence
+		return Decision{verdict, ActRevive, fmt.Sprintf("starting this seat's steward for %s %s", task.Kind, task.Subject)}, &selection
+	}
+	if !goalsAllowed {
+		return Decision{verdict, ActNone, "no stewardship work"}, nil
 	}
 	// A working claim that waits keeps the seat's one working claim: a
 	// successor could take no other goal beside it (SOL-A-01).
@@ -289,4 +314,20 @@ func SeatNoProgressCount(records []SeatRecord, goalID, approvalOpid string) int 
 		}
 	}
 	return count
+}
+
+// StewardNoProgressCountSince counts only this subject's occurrence, and only
+// records started after a person's clearance (since zero counts them all).
+func StewardNoProgressCountSince(records []SeatRecord, subject, occurrence string, since time.Time) int {
+	var matching []SeatRecord
+	for _, record := range records {
+		if record.Kind != "steward" || record.Subject != subject || record.Occurrence != occurrence {
+			continue
+		}
+		if !since.IsZero() && !seatTime(record.StartedAt).After(since) {
+			continue
+		}
+		matching = append(matching, record)
+	}
+	return SeatNoProgressCount(matching, "", "")
 }

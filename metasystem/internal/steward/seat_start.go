@@ -91,6 +91,9 @@ type SeatRecovery struct {
 
 // SeatRecord is one seat start under artifacts/agents/steward/seats.
 type SeatRecord struct {
+	Kind         string            `json:"kind,omitempty"`
+	Subject      string            `json:"subject,omitempty"`
+	Occurrence   string            `json:"occurrence,omitempty"`
 	RecoveryOf   *SeatRecovery     `json:"recoveryOf,omitempty"`
 	Schema       int               `json:"schema"`
 	LaunchID     string            `json:"launchId"`
@@ -207,6 +210,13 @@ func defaultSeatDependencies(launcher SeatLauncher) seatDependencies {
 			}
 			return board.Threads(home)
 		},
+		Decisions: func() ([]humanauthority.Decision, int, error) {
+			home, err := board.Home()
+			if err != nil {
+				return nil, 0, err
+			}
+			return humanauthority.ReadDecisions(home)
+		},
 		Machine: goal.ResolveMachine,
 		OpenQuestions: func(root string) []goal.OpenQuestion {
 			stateRoot, err := goal.ResolveStateRoot(root)
@@ -262,17 +272,18 @@ func gitGoalTips(root string, goals []string) (map[string]string, error) {
 // seatTickState is what the tick's seat pass read before its decision: the
 // unreaped seat launch, if any, and every seat record after the reap.
 type seatTickState struct {
+	Steward  *SeatSteward
 	Unreaped string
 	Records  []SeatRecord
 	Err      error
 }
 
-// reapSeatLaunches closes every seat record whose launch has ended (D-retry):
+// reapSeatLaunches closes every seat record whose launch has ended:
 // a provider-limit ending retries once at the reset edge before feeding the
 // outage mark, and never counts; otherwise
 // the seat made progress when a recorded goal branch tip moved or appeared,
-// or when the seat lineage wrote land-ready or done on this machine since the
-// seat started.
+// or when the seat lineage wrote land-ready, done, a handled decision or a
+// reply on this machine since the seat started.
 func reapSeatLaunches(repoRoot string, dependencies seatDependencies, now time.Time) seatTickState {
 	records, err := readSeatRecords(repoRoot)
 	if err != nil {
@@ -346,8 +357,8 @@ func reapSeatLaunches(repoRoot string, dependencies seatDependencies, now time.T
 	return state
 }
 
-// seatProgress is D-retry's retained work advance for one ended seat. Claim,
-// release, park and every other history line are not progress.
+// seatProgress reads retained work advance for one ended seat. Claim,
+// release, park and read receipts are not progress.
 func seatProgress(repoRoot string, record SeatRecord, projection goal.Projection, dependencies seatDependencies) (bool, string, error) {
 	goals := make([]string, 0, len(record.Tips))
 	for id := range record.Tips {
@@ -364,7 +375,35 @@ func seatProgress(repoRoot string, record SeatRecord, projection goal.Projection
 		}
 	}
 	started, err := time.Parse(time.RFC3339Nano, record.StartedAt)
-	if err != nil || projection.Tree == nil {
+	if err != nil {
+		return false, "", nil
+	}
+	if dependencies.Decisions != nil {
+		decisions, _, err := dependencies.Decisions()
+		if err != nil {
+			return false, "", err
+		}
+		for _, d := range decisions {
+			if d.Machine == record.Machine && d.Lineage == SeatLineage && !d.At.Before(started) &&
+				(humanauthority.ActHandled(d.Outcome) || d.Disposition != nil && (d.Disposition.Kind == humanauthority.DisposeWait || d.Disposition.Kind == humanauthority.DisposeAsk)) {
+				return true, "handled decision " + d.ID, nil
+			}
+		}
+	}
+	if dependencies.Threads != nil {
+		threads, err := dependencies.Threads()
+		if err != nil {
+			return false, "", err
+		}
+		for _, thread := range threads {
+			for _, m := range thread.Messages {
+				if m.Kind == board.KindReply && m.From.Machine == record.Machine && m.From.Lineage == SeatLineage && !m.At.Before(started) {
+					return true, "reply " + m.ID, nil
+				}
+			}
+		}
+	}
+	if projection.Tree == nil {
 		return false, "", nil
 	}
 	actor := record.Machine + "+" + SeatLineage
@@ -399,11 +438,32 @@ func decideSeat(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Clai
 	return seatDecision(repoRoot, cfg, work, shared, workers, providerCheck, dependencies, state)
 }
 
+func stewardshipWork(root string, dependencies seatDependencies, now time.Time) *SeatSteward {
+	if dependencies.Situation == nil {
+		return nil
+	}
+	page, err := dependencies.Situation(root, now)
+	if err != nil {
+		return nil
+	}
+	first := page.Composition.First
+	if first.Kind != "row" && first.Kind != "ask" && first.Kind != "red" {
+		return nil
+	}
+	task := &SeatSteward{Kind: first.Kind, Subject: first.Subject}
+	// Routed rows name their occurrence in the page's disposition command.
+	if _, rest, found := strings.Cut(first.Command, "--occurrence "); found {
+		task.Occurrence, _, _ = strings.Cut(rest, " ")
+	}
+	return task
+}
+
 // seatDecision owns the start guards for both the tick and its health reading.
 func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.ClaimableBudgetedWork, workers Workers, providerCheck func(string, error) (outage.Mark, bool),
 	dependencies seatDependencies, state seatTickState) (Decision, *SeatSelection, bool) {
 	owned := work == WorkOwned || work == WorkWaiting
-	if work != WorkClaimable && !owned {
+	stewardOnly := work != WorkClaimable && !owned
+	if work == WorkDegraded || stewardOnly && state.Steward == nil {
 		return Decision{}, nil, false
 	}
 	// A seat is opt-in per seat and the landing lane never starts one
@@ -420,7 +480,7 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	}
 	doubt := !workers.CensusComplete || workers.Untracked > 0 || workers.Unprovable > 0
 	if owned {
-		if workers.Live > 0 || doubt || !holdsUnderSeatLineage(shared) {
+		if workers.Live > 0 || doubt || state.Steward == nil && !holdsUnderSeatLineage(shared) {
 			return Decision{}, nil, false
 		}
 	}
@@ -448,7 +508,8 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 		shared.MarkAskedOpen(dependencies.OpenQuestions(repoRoot))
 	}
 	world := SeatWorldFrom(shared, live, settings, tips, now)
-	if work != WorkWaiting && owned && !seatStepDue(world) && holdsForeign(world) {
+	world.Steward = state.Steward
+	if state.Steward == nil && work != WorkWaiting && owned && !seatStepDue(world) && holdsForeign(world) {
 		return Decision{}, nil, false
 	}
 	verdict := VerdictIdleBacklogDead
@@ -486,7 +547,10 @@ func seatDecision(repoRoot string, cfg TickConfig, work OpenWork, shared goal.Cl
 	if _, err := settleEndedContinuation(repoRoot, &ev); err != nil {
 		return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
 	}
-	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned)
+	if mark := ev.StewardStopCleared; mark != nil && mark.Root == canonicalPath(repoRoot) {
+		world.StewardClearedAt = mark.At
+	}
+	d, selection := PlanSeat(world, state.Records, cfg.MaxRevivals, owned, stewardOnly)
 	if d.Action == ActRevive && selection != nil {
 		if _, reason, err := abnormalRestartState(repoRoot, ev, now, selection); err != nil {
 			return Decision{VerdictDegraded, ActNotify, err.Error()}, nil, true
@@ -628,6 +692,16 @@ func seatBrief(selection SeatSelection, automaticHandoff bool, facts ...string) 
 		boundary = "; stop advancing at that boundary"
 		handoff = "Nobody sits at this terminal: your process ends when your turn ends.\nEvery background job you started ends with it. Never end a turn to wait for a job, a critique, a test run or a reply; wait inside the turn with `metasystem work wait` (bounded by --timeout) and carry on. At the completed unit boundary, write your lessons note in your runtime's configured context.handoff.note-directory, then run `metasystem session handoff --root <installation> --note <that note> --no-delegates`. Read `metasystem session handoff --status --root <installation> --json` until this session's completed boundary carries that handoff nonce; then repeat the same handoff command to confirm durable binding. The steward persists that binding before ending your session. End your turn once the binding is durable. If capture or binding fails, remain alive, report the exact error, repair its cause and retry the same handoff. Otherwise end only when blocked on a person's answer you asked with `metasystem question ask`, or nothing is claimable.\n"
 	}
+	if selection.Kind == "steward" {
+		held := strings.Join(selection.SeatHeld, ", ")
+		if held == "" {
+			held = "none"
+		}
+		handoff = "End your turn only when no act of yours is left; the next tick continues from the situation page.\n"
+		return fmt.Sprintf("# Seat stewardship\n\nYou are this seat's steward. The steward started you for %s %s.\n"+
+			"Follow the seat-steward skill. Read `metasystem system situation` first.\n"+
+			"Held claims: %s. They are not yours to take.\n\n", selection.Kind, selection.Subject, held) + handoff + strings.Join(facts, "")
+	}
 	return fmt.Sprintf("# Seat session\n\n"+
 		"You are this seat's session: `metasystem goal claim %s` takes or continues this work.\nWork one unit through its completed outcome and collected, published read%s.\n\n"+
 		"The steward started you for goal %s: %s.\n\n",
@@ -641,9 +715,13 @@ type SeatRevivalClosed struct {
 	Continuation      string
 	ContinuationLive  bool
 	ContinuationJob   string
+	steward           bool
 }
 
 func (c SeatRevivalClosed) Error() string {
+	if c.steward {
+		return fmt.Sprintf("steward launch %s %s; the steward stop is lifted by your word; the steward's next tick selects again", c.Launch, c.Why)
+	}
 	line := "this seat has no launch on record"
 	if c.Launch != "" {
 		line = fmt.Sprintf("launch %s on %s is closed by your word: %s", c.Launch, c.Goal, c.Why)
@@ -716,7 +794,7 @@ func settleEndedContinuation(root string, ev *Evidence) (bool, error) {
 	return changed, nil
 }
 
-func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string) error {
+func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string, dependencies seatDependencies) error {
 	ev, err := LoadEvidence(EvidencePath(repoRoot))
 	if err != nil {
 		return err
@@ -738,6 +816,15 @@ func closeUnboundLaunch(repoRoot string, last *SeatRecord, why string) error {
 	}
 	if last != nil {
 		closed.Launch, closed.Goal = last.LaunchID, last.Goal
+		if last.Kind == "steward" && (last.LaunchState == "completed" || last.LaunchState == "failed" || last.LaunchState == "cancelled" || last.LaunchState == "missing") {
+			enrollment, err := humanauthority.ReadEnrollment(repoRoot)
+			if err != nil {
+				return err
+			}
+			ev.StewardStopCleared = &StewardStopCleared{At: dependencies.Now().UTC(), Root: canonicalPath(repoRoot), By: enrollment.Human}
+			closed.Cleared = true
+			closed.steward = true
+		}
 	}
 	if closed.Cleared {
 		ev.Abnormal, ev.AbnormalCount = [2]AbnormalRestart{}, 0
@@ -755,7 +842,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if !person && helm.Active(repoRoot).Active {
 		return SeatRecord{}, nil
 	}
-	if !person && selection.Goal == "" {
+	if !person && selection.Goal == "" && selection.Kind != "steward" {
 		return SeatRecord{}, errors.New("a seat start names its goal")
 	}
 	arbitration, err := AcquireArbitration(repoRoot)
@@ -798,7 +885,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return SeatRecord{}, fmt.Errorf("the seat's enrollment cannot be verified: %w", err)
 		}
 		if len(records) == 0 {
-			return SeatRecord{}, closeUnboundLaunch(repoRoot, nil, "")
+			return SeatRecord{}, closeUnboundLaunch(repoRoot, nil, "", dependencies)
 		}
 		last := records[len(records)-1]
 		state, err := dependencies.Launcher.SeatLaunch(last.LaunchID)
@@ -818,9 +905,18 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		if last.LaunchID != after {
 			return SeatRecord{}, fmt.Errorf("failed launch %s is stale; current seat launch is %s", after, last.LaunchID)
 		}
+		if last.Kind == "steward" && (!state.Found || state.Terminal) {
+			last.LaunchState = state.State
+			why := "ended " + state.State
+			if !state.Found {
+				last.LaunchState, why = "missing", "record is missing"
+			}
+			return SeatRecord{}, closeUnboundLaunch(repoRoot, &last, why, dependencies)
+		}
 		if state.Found && (!state.Terminal || state.State != "failed" && state.State != "cancelled") {
 			if state.Terminal {
-				return SeatRecord{}, closeUnboundLaunch(repoRoot, &last, "it ended "+state.State+", not failed")
+				last.LaunchState = state.State
+				return SeatRecord{}, closeUnboundLaunch(repoRoot, &last, "it ended "+state.State+", not failed", dependencies)
 			}
 			return SeatRecord{}, errors.New("the current seat launch is not a confirmed failed launch; no replacement starts")
 		}
@@ -842,7 +938,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		}
 		file, held := work.OwnedClaim(last.Goal)
 		if !held || claimLineage(file) != SeatLineage || file.Approved == nil || approvalOpid(file) != last.ApprovalOpid {
-			return SeatRecord{}, closeUnboundLaunch(repoRoot, &last, last.Goal+" is no longer held by this seat under that approval")
+			return SeatRecord{}, closeUnboundLaunch(repoRoot, &last, last.Goal+" is no longer held by this seat under that approval", dependencies)
 		}
 		if busy, reason, _ := seatBusyReader(dependencies.WorkStateRoot, 0)(repoRoot, work, dependencies.Now()); busy {
 			return SeatRecord{}, errors.New(reason)
@@ -869,7 +965,8 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		if err != nil {
 			return SeatRecord{}, fmt.Errorf("no seat starts for %s: its grounds cannot be read again: %w", selection.Goal, err)
 		}
-		if d.Action != ActRevive || now == nil || now.Goal != selection.Goal || now.Held != selection.Held {
+		if d.Action != ActRevive || now == nil || now.Goal != selection.Goal || now.Held != selection.Held ||
+			now.Kind != selection.Kind || now.Subject != selection.Subject || now.Occurrence != selection.Occurrence {
 			return SeatRecord{}, fmt.Errorf("no seat starts for %s: its grounds changed since the tick: %s", selection.Goal, d.Reason)
 		}
 	}
@@ -916,7 +1013,10 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 	if err != nil || machine == "" {
 		machine = "this machine"
 	}
-	goals := append(append([]string{selection.Goal}, selection.Ready...), selection.SeatHeld...)
+	goals := append(append([]string{}, selection.Ready...), selection.SeatHeld...)
+	if selection.Goal != "" {
+		goals = append([]string{selection.Goal}, goals...)
+	}
 	read, err := dependencies.Tips(repoRoot, goals)
 	tipsError := err
 	tips := map[string]string{}
@@ -936,6 +1036,7 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 		return SeatRecord{}, err
 	}
 	record := SeatRecord{RecoveryOf: recovery, Schema: 1, LaunchID: id, Goal: selection.Goal, Held: selection.Held, ApprovalOpid: selection.ApprovalOpid,
+		Kind: selection.Kind, Subject: selection.Subject, Occurrence: selection.Occurrence,
 		Machine: machine, Tips: tips, StartedAt: dependencies.Now().UTC().Format(seatStartedAtLayout)}
 	for i := len(records) - 1; i >= 0; i-- {
 		if records[i].Goal == selection.Goal {
@@ -978,6 +1079,9 @@ func startSeatWithDependencies(repoRoot string, selection SeatSelection, depende
 			return record, err
 		}
 	}
+	if selection.Kind == "steward" {
+		return record, nil
+	}
 	if err := QueueNotification(repoRoot, PendingNotification{
 		Nonce: "seat-start-" + id,
 		Message: fmt.Sprintf("steward: started seat %s on %s for %s; `metasystem work stop %s` ends it, `metasystem helm take` keeps the steward from starting another",
@@ -1008,6 +1112,7 @@ type seatDependencies struct {
 	Refusals     func() ([]launch.Refusal, error)
 	Launches     func() ([]launch.Record, error)
 	Threads      func() ([]board.Thread, error)
+	Decisions    func() ([]humanauthority.Decision, int, error)
 	Project      func(root string, now time.Time) (goal.Projection, error)
 	Tips         func(root string, goals []string) (map[string]string, error)
 	Machine      func(root string) (string, error)
@@ -1030,6 +1135,14 @@ type seatDependencies struct {
 // census, the outage mark and the ladder over the ledger read now. The
 // records are the seat records the start just read, none unreaped.
 func seatRecheck(repoRoot string, cfg TickConfig, census WorkerCensus, openWork openWorkDependencies, records []SeatRecord) (Decision, *SeatSelection, error) {
+	if cfg.Situation != nil && openWork.Seat != nil {
+		fresh := *openWork.Seat
+		fresh.Situation = func(root string, now time.Time) (SituationRecord, error) {
+			s := cfg.Situation(root, now)
+			return SituationRecord{Situation: s, Composition: Compose(s)}, nil
+		}
+		openWork.Seat = &fresh
+	}
 	providerCheck := func(runtime string, err error) (outage.Mark, bool) {
 		if err != nil {
 			return providerOutageFrom(outage.Providers{}, err, runtime, cfg.now(), nil)
@@ -1127,9 +1240,12 @@ func pageFacts(root string, selection SeatSelection, machine string, tips map[st
 	if d.Situation != nil {
 		record, err = d.Situation(root, d.Now())
 	}
-	facts := record.Situation.GoalFacts[selection.Goal]
-	if facts == "" {
-		facts = seatFacts(root, selection, machine, tips, d)
+	facts := ""
+	if selection.Kind != "steward" {
+		facts = record.Situation.GoalFacts[selection.Goal]
+		if facts == "" {
+			facts = seatFacts(root, selection, machine, tips, d)
+		}
 	}
 	if err != nil {
 		return facts

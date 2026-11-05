@@ -596,6 +596,11 @@ func runTickAfterCustodial(repoRoot string, cfg TickConfig, census WorkerCensus,
 		if cfg.GoalProjection != nil {
 			seat.Project = cfg.GoalProjection
 		}
+		if cfg.Situation != nil {
+			seat.Situation = func(root string, now time.Time) (SituationRecord, error) {
+				return SituationPage(root, func(at time.Time) Situation { return cfg.Situation(root, at) }, now, SituationFresh)
+			}
+		}
 		dependencies.openWork.Seat = &seat
 	}
 	machine := "this machine"
@@ -794,7 +799,7 @@ func tickHealthEvaluator(cfg TickConfig) healthRoleEvaluator {
 // work, on both of the tick's paths and under the helm.
 func tickHealthAsk(cfg TickConfig) func(string, HealthVerdict, time.Time) error {
 	return func(repoRoot string, health HealthVerdict, now time.Time) error {
-		return askClaimQuotaHolders(health, repoRoot, cfg.AskHome, goal.ResolveMachine, now)
+		return askClaimQuotaHolders(health, repoRoot, cfg.AskHome, goal.ResolveMachine, now, cfg.Units)
 	}
 }
 
@@ -986,7 +991,10 @@ func decideNowWithSeat(repoRoot string, cfg TickConfig, census WorkerCensus, ev 
 	}
 
 	workers := Workers{}
-	if work == WorkOwned || work == WorkClaimable || work == WorkWaiting {
+	if dependencies.Seat != nil && seat != nil {
+		seat.Steward = stewardshipWork(repoRoot, *dependencies.Seat, cfg.now())
+	}
+	if work == WorkOwned || work == WorkClaimable || work == WorkWaiting || seat != nil && seat.Steward != nil {
 		w, err := census.Workers(repoRoot)
 		if err != nil {
 			// An unreadable census can never prove death.

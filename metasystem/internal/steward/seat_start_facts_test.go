@@ -205,3 +205,46 @@ func TestTheSeatBriefCarriesThePage(t *testing.T) {
 		}
 	})
 }
+
+func TestAStewardSessionsBriefIsItsPage(t *testing.T) {
+	t.Parallel()
+	for _, page := range []bool{true, false} {
+		t.Run(fmt.Sprint(page), func(t *testing.T) {
+			t.Parallel()
+			b, _ := stewardshipBed(t, seatClaimedGoal("held", SeatLineage))
+			b.page = func(string, time.Time) (SituationRecord, error) {
+				if !page {
+					return SituationRecord{}, errors.New("page unreadable")
+				}
+				return SituationRecord{Composition: Composition{ReadAt: b.now, Parts: []SituationPart{{Name: "asks", Summary: []string{"1 ask waits: subject"}}, {Name: "lane", Summary: []string{"the lane is proving"}}}},
+					Situation: Situation{GoalFacts: map[string]string{"": "Next step unavailable"}}}, nil
+			}
+			held, heldWords := []string{"held"}, "Held claims: held."
+			if !page {
+				held, heldWords = nil, "Held claims: none."
+			}
+			record, err := startSeatWithDependencies(b.root, SeatSelection{Kind: "steward", Subject: "subject", SeatHeld: held}, *b.seatDependencies())
+			if err != nil || record.LaunchID == "" {
+				t.Fatalf("steward start: %+v %v", record, err)
+			}
+			data, err := os.ReadFile(b.launcher.starts[0].Brief)
+			if err != nil {
+				t.Fatal(err)
+			}
+			brief := string(data)
+			for _, want := range []string{"You are this seat's steward.", "The steward started you for steward subject.", "seat-steward", "metasystem system situation", heldWords, "not yours to take", "End your turn only when no act of yours is left; the next tick continues from the situation page."} {
+				if !strings.Contains(brief, want) {
+					t.Fatalf("brief missing %q:\n%s", want, brief)
+				}
+			}
+			if page && (!strings.Contains(brief, "1 ask waits: subject") || !strings.Contains(brief, "the lane is proving")) {
+				t.Fatalf("brief missing page summaries:\n%s", brief)
+			}
+			for _, unwanted := range []string{"goal claim", "for goal :", "Next step unavailable", "Goal record:", "repeat the same handoff command"} {
+				if strings.Contains(brief, unwanted) {
+					t.Fatalf("brief contains %q:\n%s", unwanted, brief)
+				}
+			}
+		})
+	}
+}

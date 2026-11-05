@@ -1,0 +1,45 @@
+{
+  "coveredUnits": [
+    "U3b"
+  ],
+  "schemaVersion": 1,
+  "goal": "the-steward-acts",
+  "unit": "U3b",
+  "subject": {
+    "commit": "0db20f05445d98e99dd4a3a24988e1888687baa9",
+    "parent": "650d304d7449d8cddc7c79005681768ce72fe43f",
+    "tree": "cda86cdf2e4de395b5e6867d2383468c16c57fbf",
+    "patchDigest": "67222873587a15d1f758f2544e2ff67e40aa731f7bdb61d02428ccc38576ab8d",
+    "unitDigest": "ea8372b71d51a4b56b08ecde152397886e848a789740139f2c56dcd92e7e345e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-93f5efefc745330b0d244d6c",
+    "round": 1,
+    "closureSha256": "79ea7199cfbac7cb7f62303f19d9b5c03cf184e7099ee4f450b3285672d417ec"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "cda86cdf2e4de395b5e6867d2383468c16c57fbf",
+    "runId": "check-944592092"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "650d304d7449d8cddc7c79005681768ce72fe43f",
+      "digest": "0c0681575244f78a76f71cedaf4630c9d3c72651980f250d126da6d3f9f1a3dc"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/seat_ladder_test.go",
+      "readerWord": "reviewed by critic root code-critic-93f5efefc745330b0d244d6c"
+    },
+    {
+      "path": "metasystem/internal/steward/seat_start_facts_test.go",
+      "readerWord": "reviewed by critic root code-critic-93f5efefc745330b0d244d6c"
+    }
+  ],
+  "sha256": "2efc35781ed8a661de8a4f5a69734e49a1e324ee4aa2fecf235bf70feef071d5"
+}

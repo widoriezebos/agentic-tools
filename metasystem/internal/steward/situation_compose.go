@@ -34,7 +34,7 @@ type Composition struct {
 	Deadlines []time.Time
 }
 
-// FirstThing is what this seat does first. Kind is ask, red, continue,
+// FirstThing is what this seat does first. Kind is row, ask, red, continue,
 // claim or wait, or unknown when a part the rule needs could not be read.
 type FirstThing struct{ Kind, Subject, Why, Command string }
 
@@ -103,7 +103,7 @@ func (s Situation) askLine(ask SituationAsk) string {
 	return fmt.Sprintf("from %s to %s, asked %s, %s", root.From.Machine, to, env.Ago(root.At), due)
 }
 
-// firstThing is the first of: an outstanding ask, a red this seat owns, the
+// firstThing is the first of: a routed row, an outstanding ask, an owned red, the
 // claim to continue, a goal to claim; else wait. A part the rule needs that
 // failed is named, and never read as nothing to do.
 func (s Situation) firstThing() FirstThing {
@@ -114,7 +114,9 @@ func (s Situation) firstThing() FirstThing {
 		}
 	}
 	first := FirstThing{Kind: "wait", Why: "nothing; wait"}
-	if asks := s.outstanding(); len(asks) > 0 {
+	if row := s.routedFirst(); row != nil {
+		first = *row
+	} else if asks := s.outstanding(); len(asks) > 0 {
 		first = FirstThing{Kind: "ask", Subject: asks[0].Thread.ID, Why: "an ask " + s.askLine(asks[0]), Command: "metasystem agent inbox"}
 	} else if len(s.Next.TrunkRedOwned) > 0 {
 		red := s.Next.TrunkRedOwned[0]
@@ -130,6 +132,22 @@ func (s Situation) firstThing() FirstThing {
 		first.Why += "; " + strings.Join(missing, "; ")
 	}
 	return first
+}
+
+func (s Situation) routedFirst() *FirstThing {
+	if s.Lane.Health == nil {
+		return nil
+	}
+	for _, o := range s.Lane.Health.Routed {
+		state := o.DispositionState(s.Dispositions, s.At)
+		if o.Answered != "" || (o.Row == "silent-agent" && !s.coordinator || o.Row != "silent-agent" && !slices.Contains(s.seatGoals(), o.Subject)) || state == "wait" || state == "ask" || state == "handled" {
+			continue
+		}
+		return &FirstThing{Kind: "row", Subject: o.Row + " " + o.Subject,
+			Why:     fmt.Sprintf("the lane cannot heal %s %s (routed %s; asks the person at %s unless disposed)", o.Row, o.Subject, o.Since.In(s.At.Location()).Format("15:04"), o.Since.Add(30*time.Minute).In(s.At.Location()).Format("15:04")),
+			Command: fmt.Sprintf("metasystem decision record --row %s --subject %s --occurrence %s --dispose wait --trigger TEXT --until TIME --text TEXT --rejected TEXT", o.Row, o.Subject, o.ID)}
+	}
+	return nil
 }
 
 // wake are the situation's semantic facts and the deadlines that change one.
@@ -152,6 +170,22 @@ func (s Situation) wake() (lines []string, deadlines []time.Time) {
 		add("proof|%s|%s", proof.Attempt, proof.State)
 	}
 	if h := s.Lane.Health; h != nil {
+		for _, o := range h.Routed {
+			state := o.DispositionState(s.Dispositions, s.At)
+			if o.Answered != "" {
+				state = "answered: " + o.Answered
+			}
+			if state == "unhandled" && !s.At.Before(o.Since.Add(30*time.Minute)) {
+				state = "due"
+			}
+			add("routed|%s|%s|%s|%s", o.Row, o.Subject, o.ID, state)
+			later(o.Since.Add(30 * time.Minute))
+		}
+		for _, d := range s.Dispositions {
+			if d.Disposition.Kind == humanauthority.DisposeWait {
+				later(d.Disposition.WaitUntil)
+			}
+		}
 		for _, row := range h.Rows() {
 			add("row|%s|%s", row.Row, row.Subject)
 		}
@@ -300,6 +334,11 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 	}
 	lane = append(lane, hold)
 	if s.Lane.Health != nil {
+		for _, o := range s.Lane.Health.Routed {
+			if o.Answered != "" {
+				lane = append(lane, o.Row+" "+o.Subject+": answered: "+o.Answered)
+			}
+		}
 		for _, row := range s.Lane.Health.Rows() {
 			rows = append(rows, fmt.Sprintf("%s on %s: %s", row.Row, row.Subject, row.Act))
 		}
@@ -310,11 +349,38 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 
 	var program, order, goals, facts []string
 	for _, block := range s.Quota {
+		if block.Ended {
+			cause := "ready work no longer waits"
+			file := live[block.Held]
+			switch {
+			case file == nil || file.State == goal.StateDone || file.State == goal.StateAbandoned:
+				cause = "concluded"
+			case file.Claimed == nil || file.State != goal.StateClaimed:
+				cause = "released"
+			case file.Landing != nil || file.Claimed.HandedOver != (goal.HandedOver{}):
+				cause = "handed in"
+			case file.Claimed.Machine != s.Machine:
+				cause = "claimed by another machine"
+			}
+			program = append(program, "the occurrence ended: "+block.Held+" "+cause)
+			continue
+		}
 		waits := fmt.Sprintf("%d ready goals wait", len(block.Ready))
 		if len(block.Ready) == 1 {
 			waits = "1 ready goal waits"
 		}
-		program = append(program, fmt.Sprintf("%s behind this seat's claim on %s; next: %s", waits, block.Held, block.Command))
+		occurrence := ""
+		if !block.Since.IsZero() {
+			occurrence = " since " + block.Since.In(env.Zone).Format("15:04") + "; not yet asked"
+			if ask := block.Ask; ask != nil && ask.Thread.Root != nil {
+				state := ask.State
+				if state == board.ThreadReplied {
+					state = "answered " + ask.Since.In(env.Zone).Format("15:04")
+				}
+				occurrence = " since " + block.Since.In(env.Zone).Format("15:04") + "; asked " + ask.Thread.Root.At.In(env.Zone).Format("15:04") + ", " + state
+			}
+		}
+		program = append(program, fmt.Sprintf("%s behind this seat's claim on %s%s; next: %s", waits, block.Held, occurrence, block.Command))
 	}
 	for index, id := range s.Order {
 		if file := live[id]; file != nil {

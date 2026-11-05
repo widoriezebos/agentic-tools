@@ -741,7 +741,7 @@ func closeAt(repo, id, because string, p Provider, d DestinationConfig, at time.
 	if q.UnitStop != nil && len(successfulAct) > 0 {
 		q.UnitStop.ClosedBy = successfulAct[0]
 	}
-	if LaneStopCommand(q) != "" || q.Recovery != nil || q.Contract {
+	if LaneStopCommand(q) != "" || q.Recovery != nil || q.Contract || slices.ContainsFunc(q.Facts, func(f string) bool { return strings.HasPrefix(f, "lane steward: ") }) {
 		q.ClosedBecause = because
 		if q.Recovery != nil {
 			q.Facts = append(q.Facts, because)

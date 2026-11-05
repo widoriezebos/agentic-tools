@@ -1,7 +1,11 @@
 package steward
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"time"
@@ -49,7 +53,12 @@ func checkClaimQuotaWith(repoRoot, runRoot string, ledger *healthLedger) RoleVer
 		return unreadable(err)
 	}
 	tree := ledger.projection.Tree
-	laneState := func(id, main string) (string, error) { return ledger.laneState(repoRoot, id, main) }
+	var laneErr error
+	laneState := func(id, main string) (string, error) {
+		state, err := ledger.laneState(repoRoot, id, main)
+		laneErr = errors.Join(laneErr, err)
+		return state, err
+	}
 	var parts, pairs []string
 	var facts []RemedyFact
 	for _, id := range next.Ready {
@@ -64,6 +73,9 @@ func checkClaimQuotaWith(repoRoot, runRoot string, ledger *healthLedger) RoleVer
 		parts = append(parts, id+" (priority 1) is ready but "+block.Held+" holds this machine's one claim; "+block.Held+" "+
 			claimActivity(runRoot, block.Held)+"; next: "+block.Command+", then metasystem goal claim "+id)
 		pairs = append(pairs, id+">"+block.Held)
+	}
+	if laneErr != nil {
+		return unreadable(laneErr)
 	}
 	if len(facts) == 0 {
 		return roleAlive(RoleClaimQuota, "no ready priority-1 goal waits behind this machine's claim")
@@ -92,36 +104,170 @@ func claimActivity(runRoot, held string) string {
 	return "has no job and no open question"
 }
 
-// askClaimQuotaHolders asks the goal that holds a blocking claim, once per
-// (ready, held) pair, to free it. With nothing blocked, or health stopped, it
-// reads neither the machine nor the board; an empty home is the host's board.
-func askClaimQuotaHolders(health HealthVerdict, repoRoot, home string, machine func(string) (string, error), now time.Time) error {
-	var facts []RemedyFact
-	for _, role := range health.Roles {
-		if !health.Stopped && role.Role == RoleClaimQuota && role.Status == HealthDead {
-			for _, fact := range role.RemedyFacts {
-				if fact.Cause == CauseClaimQuota {
-					facts = append(facts, fact)
-				}
+type claimQuotaOccurrence struct {
+	Held  string `json:"held"`
+	Start string `json:"start,omitempty"`
+	End   string `json:"end,omitempty"`
+}
+
+func claimQuotaOccurrencePath(root string) string {
+	return filepath.Join(filepath.Dir(askedReceipts(root)), "claim-quota.jsonl")
+}
+
+func readClaimQuotaOccurrences(root string, ended ...map[string]string) (map[string]string, error) {
+	data, err := os.ReadFile(claimQuotaOccurrencePath(root))
+	if err != nil && !os.IsNotExist(err) {
+		return nil, err
+	}
+	open := map[string]string{}
+	for _, line := range strings.FieldsFunc(string(data), func(r rune) bool { return r == '\n' }) {
+		var entry claimQuotaOccurrence
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			return nil, err
+		}
+		if entry.End != "" {
+			if len(ended) > 0 {
+				ended[0][claimQuotaAskID(entry.Held, open[entry.Held])] = entry.Held
 			}
+			delete(open, entry.Held)
+		} else {
+			open[entry.Held] = entry.Start
 		}
 	}
-	if len(facts) == 0 {
-		return nil
+	return open, nil
+}
+
+func appendClaimQuotaOccurrence(root string, entry claimQuotaOccurrence) error {
+	path := claimQuotaOccurrencePath(root)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return err
 	}
-	name, err := machine(repoRoot)
-	if err == nil && home == "" {
-		home, err = board.Home()
-	}
+	file, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return err
 	}
+	err = json.NewEncoder(file).Encode(entry)
+	return errors.Join(err, file.Close())
+}
+
+func claimQuotaAskID(held, start string) string {
+	return "steward-" + signalDigest("claim-quota\n" + held + "\n" + start)[:24]
+}
+
+func claimQuotaInFlight(root, held string, units func(string, string) ([]UnitStage, error)) (bool, error) {
+	jobs, err := goal.NonTerminalGoalJobs(root, held)
+	if err != nil || len(jobs) > 0 || units == nil {
+		return err != nil || len(jobs) > 0, err
+	}
+	stages, err := units(root, held)
+	if err != nil {
+		return true, err
+	}
+	for _, unit := range stages {
+		if !strings.HasPrefix(unit.Stage, "reviewed; its read is collected and published") &&
+			!strings.HasPrefix(unit.Stage, "stopped:") && !strings.HasPrefix(unit.Stage, "transferred") {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// askClaimQuotaHolders keeps one ask per holding goal's observed blocking
+// interval. Unknown or stopped observations leave those intervals untouched.
+func askClaimQuotaHolders(health HealthVerdict, repoRoot, home string, machine func(string) (string, error), now time.Time, unitReaders ...func(string, string) ([]UnitStage, error)) error {
+	var units func(string, string) ([]UnitStage, error)
+	if len(unitReaders) > 0 {
+		units = unitReaders[0]
+	}
+	if health.Stopped {
+		return nil
+	}
+	groups := map[string][]RemedyFact{}
+	observed := false
+	for _, role := range health.Roles {
+		if role.Role != RoleClaimQuota {
+			continue
+		}
+		if role.Status != HealthAlive && role.Status != HealthDead {
+			return nil
+		}
+		observed = true
+		for _, fact := range role.RemedyFacts {
+			if fact.Cause == CauseClaimQuota {
+				groups[fact.Goal] = append(groups[fact.Goal], fact)
+			}
+		}
+	}
+	if !observed {
+		return nil
+	}
+	open, err := readClaimQuotaOccurrences(repoRoot)
+	if err != nil {
+		return err
+	}
+	name := ""
+	var ledger *healthLedger
+	if len(groups)+len(open) > 0 {
+		name, err = machine(repoRoot)
+		if err != nil {
+			return err
+		}
+		ledger = newHealthLedger(repoRoot, now).read()
+		if ledger.endpointErr != nil || ledger.projectionErr != nil {
+			return errors.Join(ledger.endpointErr, ledger.projectionErr)
+		}
+		if !ledger.newWorld {
+			return nil
+		}
+		for held := range groups {
+			file := ledger.projection.Tree.Live[held]
+			if file == nil || file.State != goal.StateClaimed || file.Claimed == nil || file.Claimed.Machine != name || file.Claimed.HandedOver != (goal.HandedOver{}) {
+				delete(groups, held)
+			}
+		}
+	}
+	if len(groups)+len(open) == 0 {
+		return nil
+	}
+	stamp := now.UTC().Format(time.RFC3339Nano)
+	for held := range open {
+		if len(groups[held]) == 0 {
+			if err := appendClaimQuotaOccurrence(repoRoot, claimQuotaOccurrence{Held: held, End: stamp}); err != nil {
+				return err
+			}
+			delete(open, held)
+		}
+	}
+	if len(groups) == 0 {
+		return nil
+	}
+	if home == "" {
+		home, err = board.Home()
+		if err != nil {
+			return err
+		}
+	}
 	var asks []error
-	for _, fact := range facts {
-		text := "Goal " + fact.Ready + " is ready at priority 1 and waits for this machine's one claim, which your goal " + fact.Goal +
-			" holds. Next: " + fact.Command + ", then metasystem goal claim " + fact.Ready + "."
-		asks = append(asks, askOnce(askedReceipts(repoRoot), home, board.Sender{Machine: name}, board.Address{Goal: fact.Goal},
-			"claim-quota\n"+fact.Ready+"\n"+fact.Goal, text, now))
+	for held, facts := range groups {
+		start := open[held]
+		if start == "" {
+			start = stamp
+			if err := appendClaimQuotaOccurrence(repoRoot, claimQuotaOccurrence{Held: held, Start: start}); err != nil {
+				return err
+			}
+		}
+		if busy, err := claimQuotaInFlight(repoRoot, held, units); busy || err != nil {
+			asks = append(asks, err)
+			continue
+		}
+		noun, verb := "ready goals", "wait"
+		if len(facts) == 1 {
+			noun, verb = "ready goal", "waits"
+		}
+		first := facts[0]
+		text := fmt.Sprintf("%d %s at priority 1 %s for this machine's one claim, which your goal %s holds; the first is %s. Next: %s, then metasystem goal claim %s. The claim stays until you hand in or release; a reply is not needed.", len(facts), noun, verb, held, first.Ready, first.Command, first.Ready)
+		asks = append(asks, askOnce(askedReceipts(repoRoot), home, board.Sender{Machine: name}, board.Address{Goal: held},
+			"claim-quota\n"+held+"\n"+start, text, now))
 	}
 	return errors.Join(asks...)
 }

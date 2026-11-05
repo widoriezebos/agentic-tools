@@ -1,6 +1,7 @@
 package steward
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -209,8 +211,10 @@ func TestTheFirstThingIsTheOldestOutstandingAsk(t *testing.T) {
 			quota[ask.ID] = true
 		}
 	}
-	if len(quota) != 3 {
-		t.Fatalf("the quota writer asked %v, want three asks", quota)
+	// One held claim is one situation: the writer asks the holder once per
+	// observed blocking occurrence, not once per ready goal (U4c1, finding 508).
+	if len(quota) != 1 {
+		t.Fatalf("the quota writer asked %v, want one ask for the blocking occurrence", quota)
 	}
 
 	now := situationNow
@@ -482,13 +486,18 @@ func TestTheWakeExcludesPresentation(t *testing.T) {
 
 func TestTheProgramPartSaysTheQuotaOnce(t *testing.T) {
 	t.Parallel()
+	home := t.TempDir()
+	now := situationNow.In(time.FixedZone("CEST", 2*60*60))
 	program := func(root string, states map[string]string) []string {
 		t.Helper()
-		now := situationNow
-		src := composeSources(t, root, t.TempDir(), &now)
+		src := composeSources(t, root, home, &now)
 		src.ClaimLaneState = claimQuotaLane(t, root, states)
 		var lines []string
-		for _, part := range Compose(readSituation(t, root, src)).Parts {
+		page, err := SituationPage(root, func(time.Time) Situation { return readSituation(t, root, src) }, now, -1)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, part := range page.Composition.Parts {
 			if part.Name == "program" {
 				for _, line := range part.Summary {
 					if strings.Contains(line, "behind this seat's claim") {
@@ -501,11 +510,28 @@ func TestTheProgramPartSaysTheQuotaOnce(t *testing.T) {
 	}
 	release := "metasystem goal release held-h --reason TEXT"
 	root := situationQuotaBed(t)
-	if lines, want := program(root, nil), "3 ready goals wait behind this seat's claim on held-h; next: "+release; !slices.Equal(lines, []string{want}) {
+	cfg := TickConfig{Now: now.Add(-12 * time.Minute), ClaimLaneState: claimQuotaLane(t, root, nil), AskHome: home,
+		Units: func(string, string) ([]UnitStage, error) { return []UnitStage{{Stage: "running"}}, nil }}
+	claimQuotaTickWith(t, root, cfg)
+	since := cfg.Now.In(now.Location()).Format("15:04")
+	if lines, want := program(root, nil), "3 ready goals wait behind this seat's claim on held-h since "+since+"; not yet asked; next: "+release; !slices.Equal(lines, []string{want}) {
+		t.Fatalf("the deferred occurrence: %q, want %q", lines, want)
+	}
+	cfg.Now, cfg.Units = now.Add(-7*time.Minute), nil
+	claimQuotaTickWith(t, root, cfg)
+	asked := cfg.Now.In(now.Location()).Format("15:04")
+	if lines, want := program(root, nil), "3 ready goals wait behind this seat's claim on held-h since "+since+"; asked "+asked+", open; next: "+release; !slices.Equal(lines, []string{want}) {
 		t.Fatalf("three ready goals behind one claim: %q, want one line %q", lines, want)
 	}
+	ask := claimQuotaAsks(t, home, "held-h")[0]
+	composePublish(t, home, board.Request{Kind: board.KindReply, From: board.Sender{Machine: "m1e"}, To: board.Address{Machine: "m1e"},
+		Thread: ask.ID, Text: "no release"}, now.Add(-2*time.Minute))
+	if lines, want := program(root, nil), "3 ready goals wait behind this seat's claim on held-h since "+since+"; asked "+asked+", answered "+now.Add(-2*time.Minute).Format("15:04")+"; next: "+release; !slices.Equal(lines, []string{want}) {
+		t.Fatalf("the answered occurrence: %q, want %q", lines, want)
+	}
 	one := claimQuotaTickBed(t, nil, claimQuotaHeld("held-h"), claimQuotaReady("ready-r", 1, "m1e"))
-	if lines, want := program(one, nil), "1 ready goal waits behind this seat's claim on held-h; next: "+release; !slices.Equal(lines, []string{want}) {
+	claimQuotaTickWith(t, one, TickConfig{Now: now, ClaimLaneState: claimQuotaLane(t, one, nil), AskHome: home})
+	if lines, want := program(one, nil), "1 ready goal waits behind this seat's claim on held-h since "+now.Format("15:04")+"; asked "+now.Format("15:04")+", open; next: "+release; !slices.Equal(lines, []string{want}) {
 		t.Fatalf("one ready goal: %q, want %q", lines, want)
 	}
 	if lines := program(root, map[string]string{"held-h": "waiting"}); len(lines) != 0 {
@@ -639,5 +665,147 @@ func TestTheSummariesCountInWords(t *testing.T) {
 				t.Fatalf("with %d of each the summaries lack %q: %q", n, line, summaries)
 			}
 		}
+	}
+}
+
+func TestTheRoutedRowIsItsOwnersFirstThing(t *testing.T) {
+	t.Parallel()
+	root, home, laneHome := situationQuotaBed(t), t.TempDir(), situationLaneHome(t)
+	record, _, err := lane.Read(laneHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := situationNow
+	id := now.UTC().Format(time.RFC3339Nano)
+	route := plain.Intervention{At: id, Row: "routed", Subject: "overdue-goal held-h", Occurrence: id}
+	if err := plain.RecordIntervention(record.Install, route); err != nil {
+		t.Fatal(err)
+	}
+	src := composeSources(t, root, home, &now)
+	src.LaneHome = func() (string, error) { return laneHome, nil }
+	src.LaneStatus = composeLane(t, record.Install, func() (int, int, error) { return 0, 0, nil }, lane.OwnerView{State: lane.OwnerRunning})
+	src.ClaimLaneState = claimQuotaLane(t, root, map[string]string{"held-h": "waiting"})
+	composePublish(t, home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "m1e"}, Text: "Ready?"}, now.Add(-time.Minute))
+	read := func() SituationRecord {
+		t.Helper()
+		page, err := SituationPage(root, func(time.Time) Situation { return ReadSituation(root, src) }, now, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return page
+	}
+	page := read()
+	first := page.Composition.First
+	if first.Kind != "row" || first.Subject != "overdue-goal held-h" || !slices.Contains(page.Situation.Next.Claimed, "held-h") {
+		t.Fatalf("the owner's routed row did not come first: %+v %+v", first, page.Situation.Next)
+	}
+	for _, want := range []string{"--row overdue-goal", "--subject held-h", "--occurrence " + id, "--dispose wait", "--trigger TEXT", "--until TIME", "--text TEXT", "--rejected TEXT"} {
+		if !strings.Contains(first.Command, want) {
+			t.Fatalf("command lacks %q: %s", want, first.Command)
+		}
+	}
+	if !strings.Contains(first.Why, "routed "+now.Format("15:04")) || !strings.Contains(first.Why, "asks the person at "+now.Add(30*time.Minute).Format("15:04")) || !slices.Contains(page.Composition.Wake, "routed|overdue-goal|held-h|"+id+"|unhandled") || !slices.ContainsFunc(page.Composition.Deadlines, now.Add(30*time.Minute).Equal) {
+		t.Fatalf("route's reason, wake or deadline missing: %+v", page.Composition)
+	}
+	d := humanauthority.Decision{ID: "handled", At: now.Add(time.Minute), Disposition: &humanauthority.Disposition{Row: "overdue-goal", Subject: "held-h", Occurrence: id, Kind: "wait", WaitUntil: now.Add(time.Hour)}}
+	if err := humanauthority.AppendDecision(home, d); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 25; i++ {
+		if err := humanauthority.AppendDecision(home, humanauthority.Decision{ID: fmt.Sprint(i), At: now.Add(2 * time.Minute)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	now = now.Add(5 * time.Minute)
+	handled := read()
+	if handled.Composition.First.Kind != "ask" || handled.Composition.Digest == page.Composition.Digest || !slices.Contains(handled.Composition.Wake, "routed|overdue-goal|held-h|"+id+"|wait") || !slices.ContainsFunc(handled.Composition.Deadlines, d.Disposition.WaitUntil.Equal) {
+		t.Fatalf("handled route behind last twenty decisions lost: %+v", handled.Composition)
+	}
+	now = now.Add(time.Hour)
+	if expired := read(); expired.Composition.First.Kind != "row" || !slices.Contains(expired.Composition.Wake, "routed|overdue-goal|held-h|"+id+"|due") {
+		t.Fatalf("expired wait did not rearm row: %+v", expired.Composition)
+	}
+	now = now.Add(time.Minute)
+	asked := humanauthority.Decision{ID: "asked", At: now, Disposition: &humanauthority.Disposition{Row: "overdue-goal", Subject: "held-h", Occurrence: id, Kind: "ask"}}
+	if err := humanauthority.AppendDecision(home, asked); err != nil {
+		t.Fatal(err)
+	}
+	// An ask is a disposition for this occurrence (D3): the row is no first
+	// thing while the person's answer is awaited; otherwise the steward ladder
+	// restarts on the same row (U4a read 2, F-1).
+	if afterAsk := read(); afterAsk.Composition.First.Kind == "row" || !slices.Contains(afterAsk.Composition.Wake, "routed|overdue-goal|held-h|"+id+"|ask") {
+		t.Fatalf("an asked route stayed the first thing: %+v", afterAsk.Composition)
+	}
+	route.Row = "cleared"
+	if err := plain.RecordIntervention(record.Install, route); err != nil {
+		t.Fatal(err)
+	}
+	route.Row, route.Subject = "routed", "overdue-goal other-seat-goal"
+	if err := plain.RecordIntervention(record.Install, route); err != nil {
+		t.Fatal(err)
+	}
+	now = now.Add(time.Second)
+	if foreign := read(); foreign.Composition.First.Kind != "ask" {
+		t.Fatalf("another seat's row selected: %+v", foreign.Composition.First)
+	}
+}
+
+func TestAnAnsweredRowIsShownNotFirst(t *testing.T) {
+	t.Parallel()
+	root, home, laneHome := situationQuotaBed(t), t.TempDir(), situationLaneHome(t)
+	record, _, err := lane.Read(laneHome)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := situationNow
+	id := now.UTC().Format(time.RFC3339Nano)
+	src := composeSources(t, root, home, &now)
+	projections := 0
+	src.Project = countedProject(&projections)
+	src.LaneHome = func() (string, error) { return laneHome, nil }
+	src.LaneStatus = composeLane(t, record.Install, func() (int, int, error) { return 0, 0, nil }, lane.OwnerView{State: lane.OwnerRunning})
+	for _, entry := range []plain.Intervention{{At: id, Row: "routed", Subject: "overdue-goal held-h", Occurrence: id}, {At: id, Row: "asked-closed", Subject: "overdue-goal held-h", Occurrence: id, What: "keep waiting"}} {
+		if err := plain.RecordIntervention(record.Install, entry); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read := func() SituationRecord {
+		t.Helper()
+		now = now.Add(time.Second)
+		p, err := SituationPage(root, func(time.Time) Situation { return ReadSituation(root, src) }, now, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	p := read()
+	words, err := json.Marshal(p.Composition)
+	if err != nil {
+		t.Fatal(err)
+	}
+	shown := false
+	for _, part := range p.Composition.Parts {
+		if part.Name == "lane" {
+			shown = strings.Contains(strings.Join(part.Summary, "\n"), "answered: keep waiting")
+		}
+	}
+	if !shown || p.Composition.First.Kind == "row" || !strings.Contains(string(words), "answered: keep waiting") || p.Situation.Lane.Health.Routed[0].Answered != "keep waiting" {
+		t.Fatalf("answered row not shown or still first: %s", words)
+	}
+	if err := plain.RecordIntervention(record.Install, plain.Intervention{At: id, Row: "routed", Subject: "silent-agent landing-agent", Occurrence: id}); err != nil {
+		t.Fatal(err)
+	}
+	if first := read().Composition.First; first.Kind == "row" {
+		t.Fatalf("goal-less row owned without declaration: %+v", first)
+	}
+	ledger := p.Situation.Ledger.Tree.Root.Identity
+	if _, err := brain.Declare(brain.DeclareOptions{StateRoot: root, RegistryHome: t.TempDir(), LedgerIdentity: ledger, Machine: "m1e", DeclaredBy: "Wido", Now: now}); err != nil {
+		t.Fatal(err)
+	}
+	if first := read().Composition.First; first.Kind != "row" || first.Subject != "silent-agent landing-agent" {
+		t.Fatalf("coordinator did not own goal-less row: %+v", first)
+	}
+	if projections != 3 {
+		t.Fatalf("read %d ledger projections, want three fresh situation reads", projections)
 	}
 }

@@ -175,7 +175,7 @@ func TestContinuationCloseRefusesUnreadableEvidence(t *testing.T) {
 			if err := SaveEvidence(root, EvidencePath(root), before); err != nil {
 				t.Fatal(err)
 			}
-			err := closeUnboundLaunch(root, nil, "")
+			err := closeUnboundLaunch(root, nil, "", seatDependencies{})
 			saved, readErr := LoadEvidence(EvidencePath(root))
 			if readErr != nil {
 				t.Fatal(readErr)

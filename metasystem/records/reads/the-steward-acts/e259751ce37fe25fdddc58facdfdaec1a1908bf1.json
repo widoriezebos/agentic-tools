@@ -1,0 +1,69 @@
+{
+  "coveredUnits": [
+    "U4c2"
+  ],
+  "schemaVersion": 1,
+  "goal": "the-steward-acts",
+  "unit": "U4c2",
+  "subject": {
+    "commit": "e259751ce37fe25fdddc58facdfdaec1a1908bf1",
+    "parent": "077a4346792921cc31c725dd8a43571e154242fc",
+    "tree": "1a4e25834c2c2a590c8c10bb8e34c190c0167e91",
+    "patchDigest": "68710164f15a03baae6ae845cc5eab65e5086fef015f7db7a875b345a1155962",
+    "unitDigest": "63c24757892928f3504702c510eec108e31f969c2f0ce504aaa2e616effaee83"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-9471e65178a857dc8d480ddf",
+    "round": 1,
+    "closureSha256": "9465b38886a1f20e4c2ecbbdd2c0f6f1aa539416c6a69a6e4cbbb930450b0793"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "1a4e25834c2c2a590c8c10bb8e34c190c0167e91",
+    "runId": "check-4062166746"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "650d304d7449d8cddc7c79005681768ce72fe43f",
+      "digest": "0c0681575244f78a76f71cedaf4630c9d3c72651980f250d126da6d3f9f1a3dc"
+    },
+    {
+      "kind": "read",
+      "commit": "8804d92e0992488604b68d645fcb8555ba9f0dfd",
+      "digest": "3cf82391d2a17245a407ed62b116aee205cb6289cef68a546f8f4e6f3d707b9a"
+    },
+    {
+      "kind": "read",
+      "commit": "7cfe5a558e954e7811e9a4cea3ffe97d6bf119c3",
+      "digest": "b724cd69838e230af16c2b1712f758f955fb9ce8378118435dff8a838cf27f18"
+    },
+    {
+      "kind": "read",
+      "commit": "b57509d9d90b9ebebcdae49ed79e6592d0cfc4b5",
+      "digest": "4ca6b82cef7df48de7df07e9b92c3bb00ead28bef841987fc5c63451b68bcaaa"
+    },
+    {
+      "kind": "read",
+      "commit": "077a4346792921cc31c725dd8a43571e154242fc",
+      "digest": "bc4e00d353d320856291944c59a66f33981d5cf123a43392f6590a23c982be36"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-9471e65178a857dc8d480ddf"
+    },
+    {
+      "path": "metasystem/internal/steward/claim_quota_test.go",
+      "readerWord": "reviewed by critic root code-critic-9471e65178a857dc8d480ddf"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_compose_test.go",
+      "readerWord": "reviewed by critic root code-critic-9471e65178a857dc8d480ddf"
+    }
+  ],
+  "sha256": "92006c1a6ec87637ceec1e85bb9559668b1f7b95ccfa4935300eebc08175f1ab"
+}

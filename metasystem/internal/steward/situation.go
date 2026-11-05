@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/enginepin"
@@ -72,6 +73,10 @@ type Situation struct {
 	Alerts    map[string][]AlertEpisode
 	// RedLine is how goal next says this seat's first owned red.
 	RedLine string
+
+	coordinator bool
+
+	Dispositions []humanauthority.Decision `json:",omitempty"`
 }
 
 // HostProcess is one test process on the host: its kind by argv, the
@@ -102,9 +107,12 @@ type SituationDesign struct {
 // ClaimQuotaBlock is one holding goal, the ready goals its claim holds back
 // in the program's order, and the step that frees the claim.
 type ClaimQuotaBlock struct {
+	Ended   bool
 	Held    string
 	Ready   []string
 	Command string
+	Since   time.Time
+	Ask     *SituationAsk
 }
 
 // SituationAsk is one thread of this seat or its goals: its state at the
@@ -195,9 +203,9 @@ func ReadSituation(root string, src SituationSources) Situation {
 			s.Unavailable[part] = s.Unavailable["ledger"]
 		}
 	} else {
+		s.readAsks(src, now)
 		s.readQuota(root, ledger)
 		s.readFacts(root, src, ledger, now)
-		s.readAsks(src, now)
 	}
 	s.readHost(root, src, now)
 	err = errors.New("no reader")
@@ -425,7 +433,8 @@ func (s *Situation) readQuestions(root string) {
 
 // readAuthority keeps the grants live at the read from the read's one
 // ledger, the attorney log's last 20 lines, the host's last 20 decisions
-// and the last 10 rulings.
+// and the last 10 rulings. Dispositions retain the newest decision for each
+// occurrence from the whole host log.
 func (s *Situation) readAuthority(root string, src SituationSources, now time.Time) {
 	var problems []string
 	if reason := s.Unavailable["ledger"]; reason != "" {
@@ -456,7 +465,22 @@ func (s *Situation) readAuthority(root string, src SituationSources, now time.Ti
 	if bad > 0 {
 		problems = append(problems, fmt.Sprintf("the decision log: %d undecodable lines", bad))
 	}
+	latest := map[[3]string]humanauthority.Decision{}
+	for _, d := range decisions {
+		if p := d.Disposition; p != nil {
+			key := [3]string{p.Row, p.Subject, p.Occurrence}
+			if old, found := latest[key]; !found || !d.At.Before(old.At) {
+				latest[key] = d
+			}
+		}
+	}
+	for _, d := range latest {
+		s.Dispositions = append(s.Dispositions, d)
+	}
 	s.Decisions = decisions[max(0, len(decisions)-20):]
+	slices.SortFunc(s.Dispositions, func(a, b humanauthority.Decision) int {
+		return strings.Compare(a.Disposition.Row+"\n"+a.Disposition.Subject+"\n"+a.Disposition.Occurrence, b.Disposition.Row+"\n"+b.Disposition.Subject+"\n"+b.Disposition.Occurrence)
+	})
 	register, err := rulings.Read(root)
 	if err != nil {
 		problems = append(problems, "the rulings: "+err.Error())
@@ -538,6 +562,9 @@ func (s *Situation) readLedger(root, machine string, ledger *healthLedger, now t
 	}
 	if err == nil {
 		s.Ledger = ledger.projection
+		if s.Ledger.Tree.Root != nil {
+			s.coordinator = brain.Read(root, s.Ledger.Tree.Root.Identity).State == brain.Declared
+		}
 		s.Next, err = goal.Next(ledger.projection, machine)
 	}
 	if err != nil {
@@ -622,6 +649,11 @@ func (s *Situation) readQuota(root string, ledger *healthLedger) {
 	if verdict.Status == HealthUnknown {
 		s.Unavailable["quota"] = verdict.Reason
 	}
+	ended := map[string]string{}
+	open, err := readClaimQuotaOccurrences(root, ended)
+	if err != nil {
+		s.Unavailable["quota"] = err.Error()
+	}
 	for _, fact := range verdict.RemedyFacts {
 		if verdict.Status != HealthDead || fact.Cause != CauseClaimQuota {
 			continue
@@ -632,7 +664,27 @@ func (s *Situation) readQuota(root string, ledger *healthLedger) {
 		}
 		s.Quota[at].Ready = append(s.Quota[at].Ready, fact.Ready)
 	}
-	for _, block := range s.Quota {
+	s.Asks = slices.DeleteFunc(s.Asks, func(ask SituationAsk) bool { return ended[ask.Thread.ID] != "" })
+	for _, held := range ended {
+		if open[held] != "" || ledger.projection.Tree == nil || slices.ContainsFunc(s.Quota, func(block ClaimQuotaBlock) bool { return block.Held == held }) {
+			continue
+		}
+		s.Quota = append(s.Quota, ClaimQuotaBlock{Held: held, Ended: true})
+	}
+	slices.SortFunc(s.Quota, func(a, b ClaimQuotaBlock) int { return strings.Compare(a.Held, b.Held) })
+	for index := range s.Quota {
+		block := &s.Quota[index]
 		slices.SortStableFunc(block.Ready, func(a, b string) int { return slices.Index(s.Order, a) - slices.Index(s.Order, b) })
+		if start := open[block.Held]; start != "" {
+			block.Since, err = time.Parse(time.RFC3339Nano, start)
+			if err != nil {
+				s.Unavailable["quota"] = err.Error()
+			}
+			for i := range s.Asks {
+				if s.Asks[i].Thread.ID == claimQuotaAskID(block.Held, start) {
+					block.Ask = &s.Asks[i]
+				}
+			}
+		}
 	}
 }

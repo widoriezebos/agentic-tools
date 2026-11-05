@@ -1,0 +1,35 @@
+{
+  "coveredUnits": [
+    "U3a"
+  ],
+  "schemaVersion": 1,
+  "goal": "the-steward-acts",
+  "unit": "U3a",
+  "subject": {
+    "commit": "f8811e870ccb0d33bb9810c0c8b931e19f62ed5a",
+    "parent": "1b49762de072f4d407a111f35ed803fa119b54d8",
+    "tree": "7b1accb80f0a6a0e24a5775b46f2dda8302421e5",
+    "patchDigest": "2e342a997d6d63481493736d9648bcd99f39411293c5e82e18b4643342fd76a7",
+    "unitDigest": "12349316ee2a6e31d1e8c8dbe1230f66dd12c3cbeb2c6e70f09c293a25d2110b"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-00f75d9da20064c08a802445",
+    "round": 1,
+    "closureSha256": "85ed25f37fb9a3dd634023acbc5a3cbc7662d719c4f5a54563c8dbd5426af431"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "7b1accb80f0a6a0e24a5775b46f2dda8302421e5",
+    "runId": "check-1691947095"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/steward/seat_ladder_test.go",
+      "readerWord": "reviewed by critic root code-critic-00f75d9da20064c08a802445"
+    }
+  ],
+  "sha256": "2a3ae1f617f9149a619bc1402f008fead8484de080423343d81bb4c79158f19a"
+}
