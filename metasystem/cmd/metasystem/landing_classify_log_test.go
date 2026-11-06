@@ -55,7 +55,7 @@ func TestLandingClassifyRecoversSavedLogWithoutFailedSet(t *testing.T) {
 				t.Fatal("saved record already contains a failed set")
 			}
 			judged := false
-			b.owners.landing.plainProve = plain.ProveSeams{
+			b.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture,
 				Git: func(_ string, args ...string) (string, error) {
 					switch strings.Join(args, " ") {
 					case "show main:metasystem/metasystem.conf":

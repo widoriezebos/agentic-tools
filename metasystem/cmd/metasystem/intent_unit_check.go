@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -13,11 +15,13 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
 
@@ -125,9 +129,9 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 					records = round
 				}
 				body, briefErr := os.ReadFile(brief)
-				context := launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: record.Goal, Run: record.ID, Round: filepath.Base(round), Role: role, BriefSHA256: fmt.Sprintf("%x", sha256.Sum256(body))}, Parent: parent, Now: inv.unitRunner().Manager.Now}
+				checkContext := launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: record.Goal, Run: record.ID, Round: filepath.Base(round), Role: role, BriefSHA256: fmt.Sprintf("%x", sha256.Sum256(body))}, Parent: parent, Now: inv.unitRunner().Manager.Now}
 				if briefErr != nil {
-					context.BriefSHA256 = ""
+					checkContext.BriefSHA256 = ""
 				}
 				executable := inv.owners.processes.executable
 				if executable == nil {
@@ -136,7 +140,30 @@ func runIntentUnitCheck(inv *intentInvocation) int {
 				if path, err := executable(); err == nil {
 					plan.Check.Environment = commandenv.EngineEnvironmentInDirectory(plan.Check.Environment, filepath.Dir(path))
 				}
-				execution, exits, err = plan.Check.Run(filepath.Join(strings.TrimSpace(string(top)), relative), records, context)
+				install := inv.layout.InstallationRoot.Path()
+				var lease *proofrun.HostResourceLease
+				unmark := func() {}
+				if os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR") != "" || !fixtureauth.FixtureModeRoot(install) {
+					var admissionErr error
+					unmark, admissionErr = proofrun.MarkManagedProofProcess()
+					if admissionErr == nil {
+						ctx := proofrun.WithHostResourceWaitObserver(context.Background(), func() {
+							fmt.Fprintln(inv.stderr, "unit check: waiting for room on this host to run tests")
+						})
+						lease, admissionErr = proofrun.AcquireHostResources(ctx, install, filepath.Join(install, "metasystem.conf"), "heavy", nil)
+						checkContext.Attach = func(cmd *exec.Cmd) { proofrun.AttachHostResourceLease(proofrun.WithHostResourceLease(ctx, lease), cmd) }
+					} else {
+						unmark = func() {}
+					}
+					if admissionErr != nil {
+						fmt.Fprintf(inv.stderr, "unit check: the host's test admission could not be read (%v); the check runs without a slot\n", admissionErr)
+					}
+				}
+				execution, exits, err = plan.Check.Run(filepath.Join(strings.TrimSpace(string(top)), relative), records, checkContext)
+				if lease != nil {
+					_ = lease.Close()
+				}
+				unmark()
 			}
 		}
 	}

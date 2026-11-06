@@ -5,8 +5,7 @@ First thing
 
 Lane
   the lane is unread
-  hold: none
-  unavailable: lane: this host has no home for the lane; hold: this host has no home for the lane
+  unavailable: lane: this host has no home for the lane
 
 Ledger
   claimed none; landing none; fenced none; 0 ready, 0 blocked
@@ -34,7 +33,7 @@ Questions
   0 questions: none
 
 Host
-  load 0.00; 0 test processes: none
+  load 0.00; test slots: 0 held, 0 waiting; 0 test processes: none; 0 bypass
 
 Engine
   none

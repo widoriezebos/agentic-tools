@@ -176,7 +176,10 @@ type FlakeRecorded struct {
 
 // ProveSeams are a proof's effects.
 type ProveSeams struct {
-	// HostWork observes host builds and unit checks; nil leaves proof starts unheld.
+	// Room reserves once and attaches the reservation to every check command.
+	Room func(install string, person bool, log io.Writer) (attach func(*exec.Cmd), release func())
+	held *laneHold
+	// HostWork observes host builds and unit checks for the running check's health row.
 	HostWork           func() (builds, checks int, err error)
 	Executions         func(string) map[string]enginepin.Execution
 	contractCache      map[string]string
@@ -276,6 +279,17 @@ type ProveSeams struct {
 	// selected under the lane lock, including a detached attempt's commit.
 	CommandForCommit     func(commit string) (string, error)
 	GateCommandForCommit func(commit string) (string, error)
+}
+
+type laneHold struct{ attach func(*exec.Cmd) }
+
+func reserveLane(seams *ProveSeams, install string, person bool, log io.Writer) func() {
+	if seams.held != nil || seams.Room == nil {
+		return func() {}
+	}
+	attach, release := seams.Room(install, person, log)
+	seams.held = &laneHold{attach: attach}
+	return release
 }
 
 func (s ProveSeams) git(dir string, args ...string) (string, error) {
@@ -1230,6 +1244,9 @@ func runCheck(seams ProveSeams, install, dir, command string, running Running, o
 		return checkReport{kind: "not-run"}, environmentErr
 	}
 	shell.Env = environment
+	if seams.held != nil {
+		seams.held.attach(shell)
+	}
 	shell.Stdout, shell.Stderr = log, log
 	run := seams.Command
 	if run == nil {
@@ -1297,6 +1314,7 @@ func runCheck(seams ProveSeams, install, dir, command string, running Running, o
 // this process proves (it holds running.json), so every worktree under
 // proofTrees is a leftover.
 func proveInWorktree(seams ProveSeams, install, checkout, command string, running Running, decision *scopeDecision, output io.Writer, observed *proofOutput, result, previous Result) Result {
+	defer reserveLane(&seams, install, running.Person != nil, output)()
 	git := seams.git
 	trees := proofTrees(install)
 	if !seams.gateBaseline {

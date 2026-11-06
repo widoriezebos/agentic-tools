@@ -23,6 +23,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
 // composePublish publishes one board message at the time given.
@@ -300,7 +301,22 @@ func composeLane(t *testing.T, laneInstall string, hostWork func() (int, int, er
 		if err != nil {
 			t.Fatal(err)
 		}
-		return plain.ReadStatus(home, record, lane.View{Root: &record.Root, Owner: owner}, plain.ProveSeams{Now: func() time.Time { return at }, HostWork: hostWork})
+		return plain.ReadStatus(home, record, lane.View{Root: &record.Root, Owner: owner}, plain.ProveSeams{Now: func() time.Time { return at }, HostWork: hostWork, Alive: func(r plain.Running) bool { return r.Attempt == "page-check" }})
+	}
+}
+
+// composeRunningCheck records the live check whose host-work row the page reads.
+func composeRunningCheck(t *testing.T, install string, at time.Time) {
+	t.Helper()
+	data, err := json.Marshal(plain.Running{Attempt: "page-check", Pid: 42, Since: at.Format(time.RFC3339Nano)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(plain.Dir(install), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(install), "running.json"), data, 0600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -316,13 +332,7 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 	}
 	manager := &launch.Manager{Store: store}
 	laneStatus := composeLane(t, laneInstall, manager.HostWork, lane.OwnerView{State: "running"})
-	held := func(at time.Time) {
-		t.Helper()
-		if err := plain.RecordIntervention(laneInstall, plain.Intervention{At: at.Format(time.RFC3339Nano), Row: "proof-beside-builds", Subject: "main", Outcome: "held: 1 builds and 0 unit checks run"}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	held(situationNow.Add(-10 * time.Minute))
+	composeRunningCheck(t, laneInstall, situationNow.Add(-10*time.Minute))
 	// A pause an hour old fires a row whose minutes advance.
 	if _, err := lane.SetPauseBecause(laneHome, "Wido", "a test pause", situationNow.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
@@ -374,7 +384,7 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 	if c1.Digest == "" || c1.Digest != c2.Digest || !slices.Equal(c1.Wake, c2.Wake) {
 		t.Fatalf("a new load sample, process start and lane minutes woke:\n%v\n%v", c1.Wake, c2.Wake)
 	}
-	for _, want := range []string{"hold|main", "row|proof-beside-builds|main"} {
+	for _, want := range []string{"row|proof-beside-builds|page-check"} {
 		if !slices.Contains(c2.Wake, want) {
 			t.Fatalf("the wake lacks %q: %v", want, c2.Wake)
 		}
@@ -398,8 +408,8 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 	}
 	ask := composePublish(t, home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "m1e"}, Text: "Is it built?", Deadline: 15 * time.Minute}, now)
 	_, c := step("a new ask")
-	if want := []time.Time{*ask.DeadlineAt, situationNow.Add(20 * time.Minute)}; !slices.EqualFunc(c.Deadlines, want, time.Time.Equal) {
-		t.Fatalf("deadlines = %v, want the ask's and the hold's %v", c.Deadlines, want)
+	if want := []time.Time{*ask.DeadlineAt}; !slices.EqualFunc(c.Deadlines, want, time.Time.Equal) {
+		t.Fatalf("deadlines = %v, want the ask's %v", c.Deadlines, want)
 	}
 	now = ask.DeadlineAt.Add(time.Minute)
 	if _, c = step("the ask's deadline"); !slices.Contains(c.Wake, "ask|"+ask.ID+"|expired") {
@@ -410,15 +420,14 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 	if _, err := store.Update("host-build", func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if _, c = step("the build completed"); !slices.Contains(c.Wake, "hold|none") || slices.Contains(c.Wake, "row|proof-beside-builds|main") {
-		t.Fatalf("the build ended: %v, want no hold and no row", c.Wake)
+	if _, c = step("the build completed"); slices.Contains(c.Wake, "row|proof-beside-builds|page-check") {
+		t.Fatalf("the build ended: %v, want no row", c.Wake)
 	}
 	if err := store.Create(launch.Record{ID: "host-build-2", Kind: "build", State: launch.Running}); err != nil {
 		t.Fatal(err)
 	}
-	held(now)
-	if _, c = step("a held line"); !slices.Contains(c.Wake, "hold|main") || !slices.Contains(c.Wake, "row|proof-beside-builds|main") {
-		t.Fatalf("a held line: %v, want the hold and its row", c.Wake)
+	if _, c = step("a build beside the running check"); !slices.Contains(c.Wake, "row|proof-beside-builds|page-check") {
+		t.Fatalf("a build beside the running check: %v, want its row", c.Wake)
 	}
 	if _, err := store.Update("read-2", func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
 		t.Fatal(err)
@@ -807,5 +816,38 @@ func TestAnAnsweredRowIsShownNotFirst(t *testing.T) {
 	}
 	if projections != 3 {
 		t.Fatalf("read %d ledger projections, want three fresh situation reads", projections)
+	}
+}
+
+func TestTheHostPartNamesAdmissionAndKeepsItOutOfWakeFields(t *testing.T) {
+	t.Parallel()
+	src := situationHostSources(t, situationRegistry(t, t.TempDir()))
+	src.Admission = func() (proofrun.HostAdmission, error) {
+		return proofrun.HostAdmission{
+			Held:    []proofrun.HostAdmissionHeld{{Owner: proofrun.ProcessIdentity{Pid: 101}, Slot: "0"}, {Owner: proofrun.ProcessIdentity{Pid: 102}, Slot: "1", OwnerEnded: true}},
+			Waiting: []proofrun.HostAdmissionWaiting{{Owner: proofrun.ProcessIdentity{Pid: 201}, Priority: "run"}, {Owner: proofrun.ProcessIdentity{Pid: 202}, Priority: proofrun.HostPriorityLane}, {Owner: proofrun.ProcessIdentity{Pid: 203}, Priority: "run"}},
+		}, nil
+	}
+	src.Argv = func(pid int64) ([]string, bool) {
+		if pid == 102 {
+			t.Fatal("an ended owner's argv was read")
+		}
+		return []string{"metasystem", "test", "run", "--goal", "g"}, true
+	}
+	s := readSituation(t, t.TempDir(), src)
+	c := Compose(s)
+	var detail []string
+	for _, part := range c.Parts {
+		if part.Name == "host" {
+			detail = part.Detail
+		}
+	}
+	want := []string{"pid 101 holds a test slot: metasystem test run", "pid 102 (ended) holds a test slot: a process that inherited it still runs", "pid 202 waits for a test slot: the lane's check", "pid 201 waits for a test slot: metasystem test run", "pid 203 waits for a test slot: metasystem test run"}
+	if !slices.Equal(detail, want) {
+		t.Fatalf("host detail = %q, want %q", detail, want)
+	}
+	s.Admission = proofrun.HostAdmission{}
+	if next := Compose(s); next.Digest != c.Digest || !slices.EqualFunc(next.Deadlines, c.Deadlines, time.Time.Equal) {
+		t.Fatalf("admission woke the page: %v vs %v", c.Wake, next.Wake)
 	}
 }

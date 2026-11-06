@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
 
@@ -222,12 +223,6 @@ func (s Situation) wake() (lines []string, deadlines []time.Time) {
 			cross(p.Running, 1.5**p.Median)
 		}
 	}
-	hold := "none"
-	if s.Hold != nil {
-		hold = s.Hold.Subject
-		later(s.Hold.Until)
-	}
-	add("hold|%s", hold)
 	if s.Ledger.Tree != nil {
 		for id, file := range s.Ledger.Tree.Live {
 			machine := ""
@@ -328,11 +323,6 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 	if proof := s.Lane.RunningProof; proof != nil {
 		lane = append(lane, "proof "+proof.Attempt+" is "+proof.State)
 	}
-	hold := "hold: none"
-	if s.Hold != nil {
-		hold = "hold: " + s.Hold.Subject + ", " + s.Hold.Outcome + ", " + env.Until(s.Hold.Until)
-	}
-	lane = append(lane, hold)
 	if s.Lane.Health != nil {
 		for _, o := range s.Lane.Health.Routed {
 			if o.Answered != "" {
@@ -343,7 +333,7 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 			rows = append(rows, fmt.Sprintf("%s on %s: %s", row.Row, row.Subject, row.Act))
 		}
 	}
-	add("lane", []string{"lane", "hold"}, lane, rows)
+	add("lane", []string{"lane"}, lane, rows)
 	add("ledger", []string{"ledger", "waiting"}, []string{fmt.Sprintf("claimed %s; landing %s; fenced %s; %d ready, %d blocked",
 		names(s.Next.Claimed), names(s.Next.Landing), names(s.Next.Fenced), len(s.Next.Ready), len(s.Next.Blocked))}, slices.Concat(s.ClaimLines, s.Waiting))
 
@@ -434,15 +424,45 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 	add("questions", []string{"questions"}, []string{several(len(questions), "question", "questions") + ": " + counts(states)}, questions)
 
 	byCheckout, processes := map[string]int{}, []string(nil)
+	for _, held := range s.Admission.Held {
+		words := s.admissionWords(held.Owner, held.Priority)
+		pid := fmt.Sprintf("pid %d", held.Owner.Pid)
+		if held.OwnerEnded {
+			pid += " (ended)"
+			words = "a process that inherited it still runs"
+		}
+		processes = append(processes, pid+" holds a test slot: "+words)
+	}
+	waiting := slices.Clone(s.Admission.Waiting)
+	slices.SortStableFunc(waiting, func(a, b proofrun.HostAdmissionWaiting) int {
+		if a.Priority == b.Priority {
+			return 0
+		}
+		if a.Priority == proofrun.HostPriorityLane {
+			return -1
+		}
+		if b.Priority == proofrun.HostPriorityLane {
+			return 1
+		}
+		return 0
+	})
+	for _, waiter := range waiting {
+		processes = append(processes, fmt.Sprintf("pid %d waits for a test slot: %s", waiter.Owner.Pid, s.admissionWords(waiter.Owner, waiter.Priority)))
+	}
+	bypasses := 0
 	for _, process := range s.Processes {
 		byCheckout[process.Checkout]++
 		processes = append(processes, fmt.Sprintf("pid %d %s in %s, started %s", process.Pid, process.Kind, strings.TrimSpace(process.Checkout+" "+process.Workspace), env.Ago(process.Started)))
+		if process.Bypass {
+			bypasses++
+			processes[len(processes)-1] += ", bypass: no parent holds a test slot"
+		}
 	}
 	load := "load unread"
 	if s.Load.Available {
 		load = fmt.Sprintf("load %.2f", s.Load.Load1m)
 	}
-	add("host", []string{"host"}, []string{fmt.Sprintf("%s; %d test processes: %s", load, len(s.Processes), counts(byCheckout))}, processes)
+	add("host", []string{"host", "admission"}, []string{fmt.Sprintf("%s; test slots: %d held, %d waiting; %d test processes: %s; %d bypass", load, len(s.Admission.Held), len(waiting), len(s.Processes), counts(byCheckout), bypasses)}, processes)
 	var roles, holders []string
 	for _, role := range slices.Sorted(maps.Keys(s.Executions)) {
 		roles = append(roles, fmt.Sprintf("%s generation %d", role, s.Executions[role].Generation))
@@ -485,6 +505,14 @@ func (s Situation) parts(first FirstThing) []SituationPart {
 	}
 	add("alerts", []string{"alerts"}, []string{several(len(alerts), "open alert", "open alerts")}, alerts)
 	return parts
+}
+
+// admissionWords names the lane or the command read for the process.
+func (s Situation) admissionWords(owner proofrun.ProcessIdentity, priority string) string {
+	if priority == proofrun.HostPriorityLane {
+		return "the lane's check"
+	}
+	return s.admissionCommands[owner.Pid]
 }
 
 // names are ids joined, or none.

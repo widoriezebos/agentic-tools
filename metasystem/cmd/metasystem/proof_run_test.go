@@ -2530,11 +2530,19 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 		"METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT="+root)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", admissionDir)
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", root)
-	holder, err := proofrun.AcquireHostResources(context.Background(), root, conf, "heavy", nil)
+	// A native slot without a parent-owned lease represents unrelated work:
+	// the launcher must wait for capacity rather than borrow an ancestor's slot.
+	if err := os.MkdirAll(admissionDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	holder, err := os.OpenFile(filepath.Join(admissionDir, "slot-00"), os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer holder.Close()
+	if err := syscall.Flock(int(holder.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
+		t.Fatal(err)
+	}
 	// The observer must see a completed failed scan, with both the guard and
 	// partially acquired named resource released before it runs.
 	probeContext, cancelProbe := context.WithCancel(t.Context())
@@ -2603,9 +2611,6 @@ func TestProofRunLegacyPublicLaunchUsesAndClearsHostPhase(t *testing.T) {
 	}
 	if _, err := os.Stat(childOutput); !os.IsNotExist(err) {
 		t.Fatalf("legacy child ran while host slot held: %v", err)
-	}
-	if err := proofrun.MarkHostResourcesClean(holder.Files()); err != nil {
-		t.Fatal(err)
 	}
 	if err := holder.Close(); err != nil {
 		t.Fatal(err)

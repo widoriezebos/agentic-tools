@@ -22,8 +22,9 @@ import (
 // no engine child
 // (which, in a test, would be this test binary) runs.
 func TestIntentTestRunRunsTheTestingRunnerInThisProcess(t *testing.T) {
-	t.Parallel()
 	b := newIntentBed(t, false, nil)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "host-admission"))
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", b.root())
 	conf := filepath.Join(b.root(), "metasystem.conf")
 	data, err := os.ReadFile(conf)
 	if err != nil && !os.IsNotExist(err) {

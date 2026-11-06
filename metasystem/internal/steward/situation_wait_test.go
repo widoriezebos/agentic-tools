@@ -3,6 +3,7 @@ package steward
 import (
 	"context"
 	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -13,12 +14,11 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
-// waitBed is the wake bed read through the shared page: with hold, a build
-// runs and the lane holds a proof beside it; an ask to this seat is due at
+// waitBed is the wake bed read through the shared page: with a build, the
+// running check reports it; an ask to this seat is due at
 // the deadline given. Every read samples a new load and a new process start.
 type waitBed struct {
 	t                   *testing.T
@@ -30,16 +30,19 @@ type waitBed struct {
 	sleeps, reads       int
 }
 
-func newWaitBed(t *testing.T, hold bool, deadline time.Duration) *waitBed {
+func newWaitBed(t *testing.T, build bool, deadline time.Duration) *waitBed {
 	t.Helper()
 	root, laneHome, laneInstall := situationRecordsBed(t)
 	b := &waitBed{t: t, root: root, home: t.TempDir(), install: laneInstall, store: launch.Store{Root: filepath.Join(t.TempDir(), "launch")}, clock: situationNow}
-	if hold {
+	if err := os.MkdirAll(b.store.Root, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if build {
 		if err := b.store.Create(launch.Record{ID: "host-build", Kind: "build", State: launch.Running}); err != nil {
 			t.Fatal(err)
 		}
-		b.held(situationNow)
 	}
+	composeRunningCheck(t, laneInstall, situationNow)
 	b.ask = composePublish(t, b.home, board.Request{Kind: board.KindAsk, From: board.Sender{Machine: "m1x"}, To: board.Address{Machine: "m1e"}, Text: "Is it built?", Deadline: deadline}, situationNow)
 	manager := &launch.Manager{Store: b.store}
 	prober := &situationProber{starts: map[int64]time.Time{}, calls: map[int64]int{}}
@@ -60,14 +63,6 @@ func newWaitBed(t *testing.T, hold bool, deadline time.Duration) *waitBed {
 	b.src.BoardHome = func() (string, error) { return b.home, nil }
 	b.src.Launches = manager.EffectiveList
 	return b
-}
-
-// held writes the lane's held line, as its runner does.
-func (b *waitBed) held(at time.Time) {
-	b.t.Helper()
-	if err := plain.RecordIntervention(b.install, plain.Intervention{At: at.Format(time.RFC3339Nano), Row: "proof-beside-builds", Subject: "main", Outcome: "held: 1 builds and 0 unit checks run"}); err != nil {
-		b.t.Fatal(err)
-	}
 }
 
 // page is the waiter's page: the shared page within fresh, read at at.
@@ -128,7 +123,7 @@ func TestTheWaitWakesOnlyOnWhatMatters(t *testing.T) {
 		}
 		// One read per stale page: at the start and every two and a half
 		// minutes; the polls between are file reads.
-		if b.reads != 5 || !slices.Contains(page.Wake, "hold|main") {
+		if b.reads != 5 || slices.ContainsFunc(page.Wake, func(line string) bool { return strings.HasPrefix(line, "hold|") }) {
 			t.Fatalf("the wait read the situation %d times, want 5; the page's wake %v", b.reads, page.Wake)
 		}
 
@@ -161,7 +156,7 @@ func TestTheWaitWakesOnlyOnWhatMatters(t *testing.T) {
 
 	for _, c := range []struct {
 		name  string
-		hold  bool
+		build bool
 		event func(b *waitBed, at time.Time)
 		want  func(b *waitBed) string
 	}{
@@ -171,21 +166,20 @@ func TestTheWaitWakesOnlyOnWhatMatters(t *testing.T) {
 		{"a reply", true, func(b *waitBed, at time.Time) {
 			composePublish(t, b.home, board.Request{Kind: board.KindReply, From: board.Sender{Machine: "m1e"}, To: board.Address{Machine: "m1x"}, Thread: b.ask.ID, Text: "Yes."}, at)
 		}, func(b *waitBed) string { return "changed: ask|" + b.ask.ID + "|" + board.ThreadReplied }},
-		{"a held line", false, func(b *waitBed, at time.Time) {
+		{"a build beside the running check", false, func(b *waitBed, at time.Time) {
 			if err := b.store.Create(launch.Record{ID: "host-build-2", Kind: "build", State: launch.Running}); err != nil {
 				t.Error(err)
 			}
-			b.held(at)
-		}, func(*waitBed) string { return "changed: hold|main" }},
+		}, func(*waitBed) string { return "changed: row|proof-beside-builds|page-check" }},
 		{"the build completed", true, func(b *waitBed, _ time.Time) {
 			if _, err := b.store.Update("host-build", func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
 				t.Error(err)
 			}
-		}, func(*waitBed) string { return "changed: hold|none" }},
+		}, func(*waitBed) string { return "changed: launch|host-build|completed" }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			t.Parallel()
-			b := newWaitBed(t, c.hold, due)
+			b := newWaitBed(t, c.build, due)
 			events := 0
 			_, reason, err := b.wait(10*time.Minute, once(situationNow.Add(3*time.Minute), func(at time.Time) { events++; c.event(b, at) }))
 			if err != nil || reason != c.want(b) || events != 1 || b.clock.After(situationNow.Add(5*time.Minute)) {

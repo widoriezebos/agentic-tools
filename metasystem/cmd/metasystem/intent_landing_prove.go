@@ -12,6 +12,7 @@ import (
 	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/gaterun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
@@ -120,6 +122,11 @@ func (inv *intentInvocation) lanePaused(admitted laneAdmitted, what string) *int
 // started detached.
 func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
 	seams := landingExecutionSeams(batchDepthSeams(owners.plainProve))
+	if seams.Room == nil {
+		seams.Room = func(install string, person bool, log io.Writer) (func(*exec.Cmd), func()) {
+			return proofrun.LaneCheckRoom(install, person, log)
+		}
+	}
 	if seams.Executable == nil {
 		seams.Executable = os.Executable
 	}

@@ -33,11 +33,10 @@ exit 0
         {
           "Name": "lane",
           "Summary": [
-            "the lane is unread",
-            "hold: none"
+            "the lane is unread"
           ],
           "Detail": null,
-          "Unavailable": "lane: this host has no home for the lane; hold: this host has no home for the lane"
+          "Unavailable": "lane: this host has no home for the lane"
         },
         {
           "Name": "ledger",
@@ -100,7 +99,7 @@ exit 0
         {
           "Name": "host",
           "Summary": [
-            "load 0.00; 0 test processes: none"
+            "load 0.00; test slots: 0 held, 0 waiting; 0 test processes: none; 0 bypass"
           ],
           "Detail": null,
           "Unavailable": ""
@@ -132,16 +131,14 @@ exit 0
         }
       ],
       "Wake": [
-        "hold|none",
         "lane|",
         "launch|build-1|completed",
         "unavailable|authority",
         "unavailable|facts",
-        "unavailable|hold",
         "unavailable|lane",
         "unavailable|ledger"
       ],
-      "Digest": "bcce9d654c6881f7b0b9d24fabd96632fe48f87477eac839fad51bc4c9479301",
+      "Digest": "ffaa025ccdbbbb07d583b8f8a1eedb9442016af3ce08908e82b94e6d870a0475",
       "Deadlines": null
     },
     "situation": {
@@ -175,7 +172,6 @@ exit 0
         "last_push": null,
         "problems": null
       },
-      "Hold": null,
       "Next": {
         "Claimed": null,
         "Fenced": null,
@@ -196,7 +192,6 @@ exit 0
       "Unavailable": {
         "authority": "grants: the bootstrap ledger has no claims",
         "facts": "the bootstrap ledger has no claims",
-        "hold": "this host has no home for the lane",
         "lane": "this host has no home for the lane",
         "ledger": "the bootstrap ledger has no claims"
       },
@@ -208,6 +203,11 @@ exit 0
         "load15m": 0,
         "cores": 0,
         "available": true
+      },
+      "Admission": {
+        "Held": null,
+        "Waiting": null,
+        "Unreadable": 0
       },
       "Processes": null,
       "Executions": {},
