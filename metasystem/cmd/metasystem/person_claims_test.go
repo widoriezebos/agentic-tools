@@ -15,6 +15,7 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
@@ -365,7 +366,7 @@ func TestPersonClaimPublicReservationAndAllAdoption(t *testing.T) {
 			t.Fatalf("epoch zero entered shared work binding: %v", err)
 		}
 	}
-	if warnings := strings.Join(bed.goalFile(second.Id).Claimed.Warnings, ";"); !strings.Contains(warnings, "overlaps goal "+bedGoal) || !strings.Contains(warnings, "already claims") {
+	if warnings := strings.Join(bed.goalFile(second.Id).Claimed.Warnings, ";"); !strings.Contains(warnings, "overlaps goal "+bedGoal) || !strings.Contains(warnings, "also holds") {
 		t.Fatalf("person's area/quota advice was not persisted: %q", warnings)
 	}
 	reserved := map[string]*goal.GoalFile{bedGoal: bed.goalFile(bedGoal), second.Id: bed.goalFile(second.Id)}
@@ -387,6 +388,48 @@ func TestPersonClaimPublicReservationAndAllAdoption(t *testing.T) {
 	result = adoptPersonGoals(t, bed, owners, launch.SeatOwnerLineage, 8)
 	if result.Pending || len(result.Goals) != 2 || result.Goals[0].Outcome != "current" || result.Goals[1].Outcome != "current" || bed.publications() != publications {
 		t.Fatalf("repeat adoption wrote another episode: %+v", result)
+	}
+}
+
+func TestPersonClaimQuotaAdviceSaysTheBlockerOutcome(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"held", "landed", "returned", "slot"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			bed, owners, lane := claimLaneBed(t)
+			id, want := "second-goal", "machine mac-cli also holds "+bedGoal
+			if scenario != "held" {
+				queueClaimGoal(t, lane.install, bedGoal)
+				first := bed.goalFile(bedGoal)
+				first.Landing = &goal.LandingRecord{At: first.Claimed.At, Opid: first.History[len(first.History)-1].Opid}
+				bed.addGoal(first)
+				switch scenario {
+				case "landed":
+					owners.delivery.laneContains = func(string, string) (bool, error) { return true, nil }
+					want = bedGoal + " landed on main and is still claimed on machine mac-cli"
+				case "returned":
+					if _, _, err := plain.ReturnProven(lane.install, bedGoal, "unclassified", "needs correction", true, "fixture", time.Date(2026, 10, 6, 10, 0, 0, 0, time.UTC), plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "fixture"}}); err != nil {
+						t.Fatal(err)
+					}
+					want = bedGoal + " was returned by the landing lane and is still claimed on machine mac-cli"
+				case "slot":
+					reservePersonGoal(t, bed, owners, id)
+					queueClaimGoal(t, lane.install, id)
+					id, want = "third-goal", "machine mac-cli has second-goal waiting to land"
+				}
+			}
+			reservePersonGoal(t, bed, owners, id)
+			warnings := strings.Join(bed.goalFile(id).Claimed.Warnings, "; ")
+			if !strings.Contains(warnings, want) {
+				t.Fatalf("quota outcome missing: want %q; got %q", want, warnings)
+			}
+			for _, forbidden := range []string{"already claims", "one claim at a time", "before", "run:", "conclude"} {
+				if strings.Contains(warnings, forbidden) {
+					t.Fatalf("quota advice instructs: %q", warnings)
+				}
+			}
+			t.Logf("saved warnings: %s", warnings)
+		})
 	}
 }
 

@@ -60,15 +60,23 @@ func (shown goalShown) view(page *textui.Page) {
 		facts = append(facts, "stopped by its budget")
 	}
 	page.Headline(headline, facts...)
-	if file.Claimed != nil && (file.Claimed.Source != "" || file.Claimed.Known || len(file.Claimed.Warnings) > 0) {
+	if file.State == goal.StateClaimed && file.Claimed != nil && (file.Claimed.Source != "" || file.Claimed.Known || len(file.Claimed.Warnings) > 0) {
 		areas := page.Section("Edit areas", "")
 		if file.Claimed.Known {
 			areas.Text(strings.Join(file.Claimed.Areas, ", "))
 		} else {
-			areas.Text("areas unknown for goal " + file.Id)
-		}
-		for _, warning := range file.Claimed.Warnings {
-			areas.Text(warning)
+			reason := "the claim recorded no reason"
+			for _, warning := range file.Claimed.Warnings {
+				if tail, ok := strings.CutPrefix(warning, "areas unknown for goal "+file.Id); ok && (tail == "" || tail[0] == ':' || tail[0] == ' ') {
+					reason = strings.TrimLeft(tail, ": ")
+					break
+				}
+			}
+			at := file.Claimed.At
+			if parsed, err := time.Parse(time.RFC3339, at); err == nil {
+				at = env.Time(parsed)
+			}
+			areas.Text("areas unknown since the claim at " + at + ": " + reason + "; overlap with other claims is not checked for it; the claim keeps what it read, and the next claim of this goal reads the design again")
 		}
 	}
 	if page.Verbose() {

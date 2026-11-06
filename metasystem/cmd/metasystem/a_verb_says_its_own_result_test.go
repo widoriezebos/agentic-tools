@@ -1,13 +1,101 @@
 package main
 
 import (
+	"io"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/textui"
 )
+
+func TestGoalShowSaysTheSavedClaimsAreas(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"missing", "malformed", "unreadable", "known", "known empty", "no reason", "no metadata"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			bed, owners, _ := claimAreasBed(t)
+			id := "second-goal"
+			if scenario == "malformed" {
+				claimAreaDesign(t, bed, id, "bad[")
+			}
+			if scenario == "known" || scenario == "known empty" {
+				areas := "metasystem/owned/**"
+				if scenario == "known empty" {
+					areas = "[]"
+				}
+				claimAreaDesign(t, bed, id, areas)
+			}
+			code, result := bed.runJSON(owners, "goal", "claim", id)
+			if code != 0 || result.Outcome != intentConfirmed || bed.goalFile(id).Claimed == nil {
+				t.Fatalf("claim: exit=%d result=%+v", code, result)
+			}
+			file := bed.goalFile(id)
+			reason := "the claim recorded no reason"
+			if len(file.Claimed.Warnings) > 0 {
+				reason = strings.TrimLeft(strings.TrimPrefix(file.Claimed.Warnings[0], "areas unknown for goal "+id), ": ")
+			}
+			if scenario == "unreadable" {
+				reason = "in design /x/d.md: open /x/d.md: permission denied"
+				file.Claimed.AreaSnapshot = goal.AreaSnapshot{Warnings: []string{"areas unknown for goal " + id + " " + reason}}
+			}
+			if scenario == "no reason" {
+				reason = "the claim recorded no reason"
+				file.Claimed.AreaSnapshot = goal.AreaSnapshot{Source: "saved-design"}
+			}
+			other := "areas unknown for goal " + id + "-other: saved-other-reason"
+			quota := "machine mac-cli also holds saved-held"
+			file.Claimed.Warnings = append(file.Claimed.Warnings, other, quota)
+			if scenario == "no metadata" {
+				file.Claimed.AreaSnapshot = goal.AreaSnapshot{}
+			}
+			bed.addGoal(file)
+			now, err := owners.commandNow(bed.root())
+			if err != nil {
+				t.Fatal(err)
+			}
+			env := layoutEnv(t, now, "", bed.root())
+			owners.textEnv = func(io.Writer) textui.Env { return env }
+			at, err := time.Parse(time.RFC3339, file.Claimed.At)
+			if err != nil {
+				t.Fatal(err)
+			}
+			before := bed.publications()
+			for _, verbose := range []bool{false, true} {
+				args := []string{"goal", "show", id}
+				if verbose {
+					args = append(args, "--verbose")
+				}
+				code, output, stderr := bed.run(owners, args...)
+				if code != 0 || bed.publications() != before {
+					t.Fatalf("show: exit=%d output=%s stderr=%s", code, output, stderr)
+				}
+				text := strings.Join(strings.Fields(output), " ")
+				if strings.Contains(text, other) || strings.Contains(text, quota) {
+					t.Fatalf("show repeated another saved warning: %s", output)
+				}
+				if scenario == "no metadata" {
+					if strings.Contains(text, "Edit areas") {
+						t.Fatalf("claim without metadata has an areas section: %s", output)
+					}
+				} else if file.Claimed.Known {
+					if strings.Count(output, "\nEdit areas\n") != 1 || strings.Contains(text, "areas unknown") || scenario == "known" && !strings.Contains(text, "metasystem/owned/**") {
+						t.Fatalf("known areas not shown: %s", output)
+					}
+				} else {
+					want := "areas unknown since the claim at " + env.Time(at) + ": " + reason + "; overlap with other claims is not checked for it; the claim keeps what it read, and the next claim of this goal reads the design again"
+					if strings.Count(text, "areas unknown") != 1 || !strings.Contains(text, want) || scenario == "malformed" && strings.Contains(text, "no accepted design") {
+						t.Fatalf("show did not explain the saved areas: want %q; got %s", want, output)
+					}
+				}
+				t.Logf("%v: %s", args, text)
+			}
+		})
+	}
+}
 
 func TestAnActSaysOnlyItsOwnResult(t *testing.T) {
 	t.Parallel()
