@@ -11,7 +11,7 @@
 - Next step: Build without a design from finding 459: the unit check selects the audit tests with the impacted packages; one unit; brief by the seat
 - OpenedAt: 2026-11-01T06:41:16Z
 - FirstClaimAt: 2026-11-06T00:01:47Z
-- Revision: 34
+- Revision: 35
 - Pinned: m1e
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -57,4 +57,5 @@ History:
 - 2026-11-06T00:01:47Z 474RCGYPBRHFQK3T7XGS6A6W9Z-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-unit-check-runs-the-audits reason=areas unknown for goal a-unit-check-runs-the-audits: no accepted design declares areas; areas unknown for goal lane-first-run-fixes; areas unknown for goal lane-recovers-and-pauses; areas unknown for goal the-lanes-proof-goes-first
 - 2026-11-06T02:02:16Z 4QRM0TNV444M8PQJCK0VVJKSET-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-unit-check-runs-the-audits
 - 2026-11-06T02:31:26Z VDVFSGRK43N00QH23YSYEME7XS-m1e-e57a9b5c accept-risk actor=human:Wido targets=a-unit-check-runs-the-audits reason=The finding is right and the fix is in U2, the goal's last unit, which builds next on this commit: the four module-walking audits move into the audit group with a guard and the group's inputs (brief revision 4); U2's read verifies it and the obligation is discharged with the test that proves it. Nothing in U1 is wrong; landing U1 alone would leave the gap that exists on main today. (proven at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem, read at /Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-unit-check-runs-the-audits/metasystem)
-Integrity: sha256=fc3815a95638852c1538722465cd0152a1bbd9dae6c73e57040462653049ede6
+- 2026-11-06T11:51:32Z 7AN7PA0NKBDEWY9TD66BMGZF0Q-m1e-cc2e8fc8 landed actor=m1e+main-1792389436-6018-51cc28 targets=a-unit-check-runs-the-audits reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 395.1 min: hand-in to merge 395.7, cheap gate not run, fix round 114.2, push unknown
+Integrity: sha256=f424ce694551454cae5e0b098fd062903879eba86ea0ad7a3830587c930ce25e
