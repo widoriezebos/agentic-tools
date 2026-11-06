@@ -127,7 +127,7 @@ func reconcileUnitStopQuestions(root string) error {
 	if err != nil {
 		return err
 	}
-	questions, unreadable := WalkOpenQuestions(root)
+	questions, unreadable := WalkQuestions(root)
 	if len(unreadable) > 0 {
 		return fmt.Errorf("unit question reconciliation cannot read %s", strings.Join(unreadable, "; "))
 	}
@@ -142,7 +142,7 @@ func reconcileUnitStopQuestions(root string) error {
 		}
 		for _, q := range questions {
 			stop := q.UnitStop
-			if stop == nil || q.Goal != act.Goal || stop.Loop != act.Loop || stop.Subject != act.Subject {
+			if (q.State != "open" && q.State != "answered") || stop == nil || q.Goal != act.Goal || stop.Loop != act.Loop || stop.Subject != act.Subject {
 				continue
 			}
 			if act.Kind == "work-drop" && (stop.Attempt != act.Attempt || !slices.Contains(stop.AcceptableActs, act.Kind) || !slices.Contains(act.Findings, stop.Finding)) {
