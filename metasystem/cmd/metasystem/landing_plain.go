@@ -213,6 +213,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	}
 	var exceptionSeams plain.ProveSeams
 	exceptionWarnings := []string{}
+	var overlapWarnings []string
 	if inv.laneException != nil {
 		record, seams, incidents, problem, readErr := inv.handInTrunkInputs()
 		if problem != nil {
@@ -264,6 +265,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 					return intentResult{Outcome: intentRefused, code: 1, Summary: message, next: inv.sameCommand(), nextReason: "after the blocking goal lands or is dropped, hands this branch in again"}
 				}
 				warnings = append(warnings, message)
+				overlapWarnings = append(overlapWarnings, message)
 			}
 			line.Warnings = warnings
 		}
@@ -371,7 +373,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 	if line.Again && seen && previous.SHA == sha && previous.State == plain.StateReturned {
 		summary += "; re-queued after a return that needed no change"
 	}
-	if warnings := append(line.Warnings, exceptionWarnings...); len(warnings) > 0 {
+	if warnings := append(overlapWarnings, exceptionWarnings...); len(warnings) > 0 {
 		summary += "; warning: " + strings.Join(warnings, "; ")
 	}
 	outcome := intentConfirmed
@@ -382,7 +384,7 @@ func (inv *intentInvocation) handIn(targets []intentTarget, install, goalID, sha
 		outcome = intentUnchanged
 	}
 	return intentResult{Targets: targets, Outcome: outcome, Data: map[string]any{"route": "lane", "queue": entry},
-		Details: details,
+		Details: details, handedBefore: seen,
 		Summary: summary,
 		next:    inv.sameCommand(), nextReason: landingstate.Phrase("shows-whether-it-waits-landed-or-was-returned")}
 }

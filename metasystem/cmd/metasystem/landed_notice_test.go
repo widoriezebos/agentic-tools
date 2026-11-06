@@ -12,6 +12,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -205,6 +206,26 @@ func TestWorkLandWithoutDeliveredHintsAndStillHandsIn(t *testing.T) {
 	}
 	if !strings.Contains(result.Summary, "no sentence") || result.Next == nil || !strings.Contains(strings.Join(result.Next.Argv, " "), "work land standing-validation --delivered") {
 		t.Fatalf("the hint: %+v", result)
+	}
+}
+
+func TestWorkLandSaysTheDeliveredHintOnce(t *testing.T) {
+	t.Parallel()
+	bed, state, install := plainLaneBedWith(t, true, "critic-root", "critic-root")
+	code, first := bed.do("work", "land", bedGoal)
+	expectOutcome(t, "first hand-in", code, first, intentConfirmed)
+	if !strings.Contains(first.Summary, "no sentence") || first.Next == nil || !slices.Contains(first.Next.Argv, "--delivered") {
+		t.Fatalf("first hand-in has no hint: %+v", first)
+	}
+	state.status.BranchTip = strings.Repeat("3", 40)
+	code, second := bed.do("work", "land", bedGoal)
+	expectOutcome(t, "second hand-in", code, second, intentConfirmed)
+	entry, seen, err := plain.Latest(install, bedGoal)
+	if err != nil || !seen || entry.SHA != state.status.BranchTip || entry.State != plain.StateWaiting {
+		t.Fatalf("second commit not waiting: entry=%+v seen=%t err=%v", entry, seen, err)
+	}
+	if strings.Contains(second.Summary, "no sentence") || second.Next != nil && slices.Contains(second.Next.Argv, "--delivered") {
+		t.Fatalf("second hand-in repeats the hint: %+v", second)
 	}
 }
 

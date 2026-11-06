@@ -862,6 +862,8 @@ type intentResult struct {
 	Details     []string `json:"details,omitempty"`
 	problems    []string
 	refusalCode string
+	// handedBefore keeps the delivered hint at the goal's first hand-in.
+	handedBefore bool
 
 	text       []string
 	next       []string

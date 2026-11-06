@@ -154,7 +154,7 @@ func ClaimAreas(tree *TreeGoals, endpoint Endpoint, tip, id string, candidate Ar
 			warnings = append(warnings, "areas unknown for goal "+other+": "+err.Error())
 		}
 		if !snapshot.Known {
-			warnings = append(warnings, "areas unknown for goal "+other)
+			// That goal's own goal show explains its unknown areas.
 			return nil
 		}
 		if !candidate.Known {

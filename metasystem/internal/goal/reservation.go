@@ -61,8 +61,16 @@ func reservationWarnings(t *TreeGoals, r VerbRequest, f *GoalFile, tip string) [
 			warnings = append(warnings, "goal "+f.Id+" is blocked by unfinished goal "+dep)
 		}
 	}
-	if _, err := claimQuotaRefusal(t, r, f.Id, tip, false); err != nil {
-		warnings = append(warnings, err.Error())
+	block := ClaimQuotaBlocker(t, f.Id, r.Actor.Machine, tip, r.ClaimLaneState)
+	switch block.Outcome {
+	case "held":
+		warnings = append(warnings, "machine "+r.Actor.Machine+" also holds "+block.Held)
+	case "landed":
+		warnings = append(warnings, block.Held+" landed on main and is still claimed on machine "+r.Actor.Machine)
+	case "returned":
+		warnings = append(warnings, block.Held+" was returned by the landing lane and is still claimed on machine "+r.Actor.Machine)
+	case "slot":
+		warnings = append(warnings, "machine "+r.Actor.Machine+" has "+block.Held+" waiting to land")
 	}
 	return warnings
 }

@@ -711,7 +711,7 @@ func goalDoneView(summary string) func(*textui.Page) {
 }
 
 // afterGoalAct reads the goal back after a confirmed act.
-func (inv *intentInvocation) afterGoalAct(id, act string) intentResult {
+func (inv *intentInvocation) afterGoalAct(id, act string, opid ...string) intentResult {
 	projection, now, problem := inv.projection()
 	if problem != nil {
 		return intentResult{Summary: act + " confirmed for " + id + "; the ledger could not be read back: " + problem.Summary}
@@ -732,8 +732,21 @@ func (inv *intentInvocation) afterGoalAct(id, act string) intentResult {
 	if view.Box != "" {
 		summary += " under " + view.Box
 	}
-	if file.Claimed != nil && len(file.Claimed.Warnings) > 0 {
-		summary += "; " + strings.Join(file.Claimed.Warnings, "; ")
+	if len(opid) > 0 && opid[0] != "" {
+		for _, claimedID := range sortedLiveIDs(projection) {
+			claimed := projection.Tree.Live[claimedID]
+			if claimed.Claimed == nil || !slices.ContainsFunc(claimed.History, func(row goal.HistoryLine) bool {
+				return row.Opid == opid[0] && (row.Verb == "claim" || row.Verb == "steal")
+			}) {
+				continue
+			}
+			for _, warning := range claimed.Claimed.Warnings {
+				if claimedID != id {
+					warning = "goal " + claimedID + ": " + warning
+				}
+				summary += "; " + warning
+			}
+		}
 	}
 	shown := goalShown{file: file, budget: view}
 	return intentResult{Summary: summary, text: view.lines(), Details: details,
