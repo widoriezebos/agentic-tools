@@ -127,7 +127,7 @@ func TestReviseRefusesUndecidedFindings(t *testing.T) {
 				t.Fatal(err)
 			}
 			if source == "committed" {
-				path := filepath.Join(t.TempDir(), "return.json")
+				path := dispatchReturn(t, "critic")
 				writeFile(t, path, structuredUnitReturn(2, "regression", "code.go"))
 				if err := fixture.runner.ReviewSubject(first.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
 					return retain(UnitSubject{Round: 1, DiffDigest: review.DiffDigest, Examination: "critic", ExaminationRound: 1, ExaminationReturnPath: path})
@@ -339,10 +339,11 @@ func checkDivergenceAdmissions(t *testing.T, counts []int, relation, source stri
 					t.Fatal(err)
 				}
 				if source == "committed" || source == "mixed" && index == 1 {
-					path := filepath.Join(t.TempDir(), "return.json")
+					examination := fmt.Sprintf("critic-%d", index)
+					path := dispatchReturn(t, examination)
 					writeFile(t, path, structuredUnitReturn(material, fixture.starter.readClass, fixture.starter.readWhere))
 					if err := fixture.runner.ReviewSubject(result.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
-						return retain(UnitSubject{Round: index + 1, DiffDigest: review.DiffDigest, Examination: fmt.Sprintf("critic-%d", index), ExaminationRound: 1, ExaminationReturnPath: path})
+						return retain(UnitSubject{Round: index + 1, DiffDigest: review.DiffDigest, Examination: examination, ExaminationRound: 1, ExaminationReturnPath: path})
 					}); err != nil {
 						t.Fatal(err)
 					}

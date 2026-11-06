@@ -1037,9 +1037,6 @@ func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
 	inv := &intentInvocation{owners: owners, layout: layout, cwd: w.root(), stateRoot: w.root(), input: intentInput{values: map[string][]string{}},
 		reviewWork: &reviewWorkContext{goal: w.id, work: "cap", attempt: 1}}
 	runner := inv.unitRunner()
-	if runner.ExaminationRoot == b.install {
-		t.Fatal("the runner's installation must differ from the critic store")
-	}
 	err = runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 		subject := launch.UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest, Commit: strings.Repeat("c", 40)}
 		inv.reviewWork.subject, inv.reviewWork.retain = &subject, retain

@@ -23,7 +23,10 @@ func processPublishedSubject(t *testing.T, bed *workBed, run string) string {
 	t.Helper()
 	runner := &launch.UnitRunner{Root: bed.unitRoot, Manager: bed.manager, Git: workGit{bed}}
 	commit := "subject-" + run
-	returnPath := filepath.Join(t.TempDir(), "return.json")
+	returnPath := filepath.Join(t.TempDir(), "artifacts", "agents", "fixture-examination", "rounds", "1", "return.json")
+	if err := os.MkdirAll(filepath.Dir(returnPath), 0700); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(returnPath, []byte(`{"findings":[],"verdictMaterialCount":0}`), 0600); err != nil {
 		t.Fatal(err)
 	}

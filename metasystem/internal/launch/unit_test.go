@@ -1793,6 +1793,16 @@ func repositoryDigest(t *testing.T, repo string) string {
 	return fmt.Sprintf("%x", digest.Sum(nil))
 }
 
+// dispatchReturn is where a dispatch examination's round 1 return lands.
+func dispatchReturn(t *testing.T, examination string) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "artifacts", "agents", examination, "rounds", "1", "return.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
@@ -1989,9 +1999,8 @@ func TestCapNamesTheSplitForAnUncommittedUnit(t *testing.T) {
 				record.Subjects = []UnitSubject{{Round: 2, Commit: "commit"}}
 			}
 			if test.examination != "" {
-				fixture.runner.ExaminationRoot = t.TempDir()
 				record.Subjects[0].Examination, record.Subjects[0].ExaminationRound = "critic", 1
-				path := filepath.Join(fixture.runner.ExaminationRoot, "artifacts", "agents", "critic", "rounds", "1", "return.json")
+				path := filepath.Join(t.TempDir(), "artifacts", "agents", "critic", "rounds", "1", "return.json")
 				record.Subjects[0].ExaminationReturnPath = path
 				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 					t.Fatal(err)

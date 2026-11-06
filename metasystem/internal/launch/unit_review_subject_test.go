@@ -11,6 +11,8 @@ import (
 	"slices"
 	"strings"
 	"testing"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
 
 const reviewDiff = "diff --git a/code.go b/code.go\nindex 1111111..2222222 100644\n--- a/code.go\n+++ b/code.go\n@@ -1 +1 @@\n-one\n+two\n"
@@ -18,7 +20,6 @@ const reviewDiff = "diff --git a/code.go b/code.go\nindex 1111111..2222222 10064
 func TestReviewSubjectMaterialUsesRetainedReturnPath(t *testing.T) {
 	t.Parallel()
 	fixture := newUnitFixture(t, reviewDiff)
-	fixture.runner.ExaminationRoot = t.TempDir()
 	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 	if err != nil {
 		t.Fatal(err)
@@ -31,7 +32,7 @@ func TestReviewSubjectMaterialUsesRetainedReturnPath(t *testing.T) {
 		writeFile(t, path, content)
 		return path
 	}
-	returnAt(fixture.runner.ExaminationRoot, structuredUnitReturn(2, "regression", "wrong.go"))
+	returnAt(t.TempDir(), structuredUnitReturn(2, "regression", "wrong.go"))
 	path := returnAt(t.TempDir(), structuredUnitReturn(1, "regression", "code.go"))
 	err = fixture.runner.ReviewSubject(result.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
 		return retain(UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest,
@@ -56,7 +57,6 @@ func TestReviewSubjectMissingReturnRetainsUnknownRound(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			fixture := newUnitFixture(t, reviewDiff)
-			fixture.runner.ExaminationRoot = t.TempDir()
 			result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
 			if err != nil {
 				t.Fatal(err)
@@ -83,10 +83,190 @@ func TestReviewSubjectMissingReturnRetainsUnknownRound(t *testing.T) {
 				t.Fatalf("missing findings must remain an environment failure: counted=%d environment=%d", counted, environment)
 			}
 			round := record.Rounds[0]
-			if round.Stop == nil || round.Stop.Decision != "stop" || !strings.HasPrefix(round.Stop.Handoff, "stopped ") || len(round.Reads) != 0 {
+			if round.Stop == nil || round.Stop.Decision != "stop" || !strings.HasPrefix(round.Stop.Handoff, "stopped ") || !reflect.DeepEqual(round.Reads, result.Record.Rounds[0].Reads) {
 				t.Fatalf("the count failure must remain a stopped unknown read: %+v", round)
 			}
 		})
+	}
+}
+
+func TestALaunchReadIsCollectedFromItsOwnLaunch(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, reviewDiff)
+	fixture.starter.readVerdict = "land"
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := result.Record.Rounds[0].Reads
+	read := want[0]
+	launch, err := fixture.manager.Store.Read(read.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	path, diffPath := read.Output, readString(launch.AdapterData, "readDiff")
+	evidence, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	diff, err := os.ReadFile(diffPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	fixture.runner.ExaminationRead = func(string, string) (readsubject.Read, error) {
+		calls++
+		return readsubject.Read{}, errors.New("no dispatch job for this launch")
+	}
+	record := result.Record
+	reset := func() {
+		round := &record.Rounds[0]
+		round.Reads, round.Material = nil, -1
+		round.Stop.Decision, round.Stop.Handoff = "stop", "stopped unavailable-stop-inputs"
+		if err := fixture.runner.save(record); err != nil {
+			t.Fatal(err)
+		}
+	}
+	reset()
+	subject := UnitSubject{Round: 1, Examination: read.ID, ExaminationReturnPath: path, DiffDigest: read.Subject.DiffDigest}
+	err = fixture.runner.ReviewSubject(record.ID, func(_ UnitReview, retain func(UnitSubject) error) error {
+		check := func(handoff string, material int) {
+			t.Helper()
+			if err := retain(subject); err != nil {
+				t.Fatal(err)
+			}
+			record, err = fixture.runner.Status(record.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := record.Rounds[0]
+			if !reflect.DeepEqual(round.Reads, want) || round.Stop.Handoff != handoff || round.Material != material || calls != 0 || handoff == "" && round.Stop.Decision != "close" {
+				t.Fatalf("launch collection: reads=%+v stop=%+v material=%d dispatch calls=%d", round.Reads, round.Stop, round.Material, calls)
+			}
+		}
+		check("", 0)
+		if _, err := fixture.manager.Store.Update(read.ID, func(r *Record) error { r.Read = nil; return nil }); err != nil {
+			t.Fatal(err)
+		}
+		for _, file := range []string{path, diffPath} {
+			if err := os.Remove(file); err != nil {
+				t.Fatal(err)
+			}
+		}
+		subject.StagedTree = "staged"
+		check("", 0)
+		subject.Commit = "commit"
+		check("", 0)
+		subject.Published = "published"
+		check("", 0)
+		subject.DiffDigest = "another diff"
+		check("stopped unavailable-stop-inputs", -1)
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, string(evidence))
+	writeFile(t, diffPath, string(diff))
+	subject.DiffDigest = read.Subject.DiffDigest
+	record.Subjects[0] = subject
+	reset()
+	if err := fixture.runner.ReviewSubject(record.ID, func(_ UnitReview, retain func(UnitSubject) error) error { return retain(subject) }); err != nil {
+		t.Fatal(err)
+	}
+	record, err = fixture.runner.Status(record.ID)
+	if err != nil || !reflect.DeepEqual(record.Rounds[0].Reads, want) || record.Rounds[0].Stop.Decision != "close" || calls != 0 {
+		t.Fatalf("committed launch collection: %+v err=%v dispatch calls=%d", record, err, calls)
+	}
+	record.State = "cancelled"
+	if err := fixture.runner.save(record); err != nil {
+		t.Fatal(err)
+	}
+	runPath := filepath.Join(fixture.runner.runDir(record.ID), "run.json")
+	before, err := os.ReadFile(runPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = fixture.runner.ReviewSubject(record.ID, reviewNotCalled(t))
+	after, readErr := os.ReadFile(runPath)
+	if err == nil || !strings.Contains(ErrorDetail(err), "state=cancelled") || readErr != nil || string(before) != string(after) || calls != 0 {
+		t.Fatalf("cancelled review: err=%v read=%v dispatch calls=%d changed=%t", err, readErr, calls, string(before) != string(after))
+	}
+}
+
+func TestAFailedCollectionKeepsTheRoundsRead(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, reviewDiff)
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(t.TempDir(), "artifacts", "agents", "critic", "rounds", "1", "return.json")
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	writeFile(t, path, "{}")
+	calls := 0
+	fixture.runner.ExaminationRead = func(string, string) (readsubject.Read, error) {
+		calls++
+		return readsubject.Read{}, errors.New("dispatch evidence is unavailable")
+	}
+	if err := fixture.runner.ReviewSubject(result.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
+		return retain(UnitSubject{Round: 1, DiffDigest: review.DiffDigest, Examination: "critic", ExaminationRound: 1, ExaminationReturnPath: path})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	record, err := fixture.runner.Status(result.Record.ID)
+	if err != nil || calls != 1 || record.Rounds[0].Stop.Handoff != "stopped unavailable-stop-inputs" || record.Rounds[0].Material != -1 || !reflect.DeepEqual(record.Rounds[0].Reads, result.Record.Rounds[0].Reads) {
+		t.Fatalf("failed collection: %+v err=%v dispatch calls=%d", record, err, calls)
+	}
+}
+
+func TestADispatchReadIsReadAtItsDecodedRoot(t *testing.T) {
+	t.Parallel()
+	fixture := newUnitFixture(t, reviewDiff)
+	result, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root := t.TempDir()
+	path := filepath.Join(root, "artifacts", "agents", "J", "rounds", "2", "return.json")
+	read, err := readsubject.Collect("J-r2", readsubject.ReadSubject{Kind: readsubject.SubjectCommit}, "engine", "model", path, []byte(structuredUnitReturn(1, "regression", "code.go")), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	calls := 0
+	fixture.runner.ExaminationRead = func(gotRoot, id string) (readsubject.Read, error) {
+		calls++
+		if gotRoot != root || id != "J-r2" {
+			t.Fatalf("dispatch collection root=%q id=%q", gotRoot, id)
+		}
+		return read, nil
+	}
+	for _, row := range []struct {
+		path, examination string
+		round             int64
+		wantCalls         int
+	}{
+		{path, "J", 2, 1},
+		{path, "J", 3, 0},
+		{path, "K", 2, 0},
+		{filepath.Join(root, "elsewhere", "return.json"), "J", 2, 0},
+	} {
+		if err := os.MkdirAll(filepath.Dir(row.path), 0o700); err != nil {
+			t.Fatal(err)
+		}
+		writeFile(t, row.path, "{}")
+		calls = 0
+		if err := fixture.runner.ReviewSubject(result.Record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
+			return retain(UnitSubject{Round: 1, DiffDigest: review.DiffDigest, Examination: row.examination, ExaminationRound: row.round, ExaminationJob: "J-r2", ExaminationReturnPath: row.path})
+		}); err != nil {
+			t.Fatal(err)
+		}
+		record, err := fixture.runner.Status(result.Record.ID)
+		if err != nil || calls != row.wantCalls || row.wantCalls == 1 && record.Rounds[0].Material != 1 || row.wantCalls == 0 && (record.Rounds[0].Material != -1 || record.Rounds[0].Stop.Handoff != "stopped unavailable-stop-inputs") {
+			t.Fatalf("dispatch path=%s examination=%s round=%d: %+v err=%v calls=%d", row.path, row.examination, row.round, record, err, calls)
+		}
 	}
 }
 

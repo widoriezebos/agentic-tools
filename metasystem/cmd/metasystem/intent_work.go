@@ -512,7 +512,6 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 	if inv.input.has("check") {
 		runner.ReviewPolicy = func() (string, error) { return "person", nil }
 	}
-	runner.ExaminationRoot = inv.layout.InstallationRoot.Path()
 	runner.ExaminationRead = dispatchcore.CollectExamination
 	runner.CriticCustody = inv.criticCustody
 	runner.InheritedFindings = func(id, unit string) ([]readsubject.Finding, error) {
