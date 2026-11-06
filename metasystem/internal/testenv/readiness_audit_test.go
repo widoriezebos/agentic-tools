@@ -1,4 +1,4 @@
-package applaunch
+package testenv
 
 import (
 	"fmt"

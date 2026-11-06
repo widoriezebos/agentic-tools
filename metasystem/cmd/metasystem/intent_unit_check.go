@@ -33,7 +33,22 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 	laneFix := inv.connection().laneFix(inv.layout.InstallationRoot.Path(), plan.Worktree, plan.Goal)
 	laneCheck := laneFix != nil && slices.Equal(inv.input.values["check"], []string{"metasystem test impact"})
 	if laneCheck {
-		check.Cheap, check.Audits, check.Minutes = "metasystem test impact --check", "true", 15
+		git := func(root string, args ...string) (string, error) {
+			content, err := inv.work().git(root, args...)
+			return strings.TrimSpace(string(content)), err
+		}
+		installation := filepath.Join(plan.Worktree, inv.layout.InstallationRel)
+		audits, err := landingProofCommand(installation, plan.Worktree, "HEAD", "proof.audits", git)
+		if err != nil {
+			content, readErr := git(plan.Worktree, "show", "HEAD:"+filepath.ToSlash(filepath.Join(inv.layout.InstallationRel, "metasystem.conf")))
+			_, present, lookupErr := config.CommittedContentLookup(content, "proof.audits")
+			if readErr != nil || lookupErr != nil || present {
+				return plan, err
+			}
+			audits = "true"
+			fmt.Fprintln(inv.stderr, "no audits declared in the committed configuration; this check runs without audits")
+		}
+		check.Cheap, check.Audits, check.Minutes = "metasystem test impact --check", audits, 15
 	} else if inv.input.has("check") {
 		if laneFix != nil {
 			if _, _, problem := inv.actingAs("work build manual check", plan.Goal, actorHuman); problem != nil {

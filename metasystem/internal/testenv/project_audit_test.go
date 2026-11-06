@@ -1,4 +1,4 @@
-package goal
+package testenv
 
 import (
 	"go/ast"
