@@ -455,6 +455,10 @@ func (ownerProcess) CustodyGroups(record map[string]any) ([]int64, error) {
 	})
 }
 
+func (ownerProcess) CustodyDeath(root string) dispatch.CustodyDeathDependencies {
+	return dispatch.CustodyDeathDependencies{MatchesTag: dispatchproc.PositionedJobTagAt(root)}
+}
+
 func (ownerProcess) StartedAt(pid int64) (int64, error) {
 	exact, state, err := identity.KernelProber{}.Probe(pid)
 	if err != nil {

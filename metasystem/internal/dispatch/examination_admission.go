@@ -11,12 +11,12 @@ import (
 // ReservedUnknownExaminationRetry checks the exact completed examination
 // whose owner reserved the chain's single fresh read. The exemption belongs
 // to that examination, never to an arbitrary follow-up in the chain.
-func ReservedUnknownExaminationRetry(repoRoot, jobID string) error {
-	_, err := reservedUnknownExaminationRetry(repoRoot, jobID)
+func ReservedUnknownExaminationRetry(repoRoot, jobID string, custody CustodyDeathDependencies) error {
+	_, err := reservedUnknownExaminationRetry(repoRoot, jobID, custody)
 	return err
 }
 
-func reservedUnknownExaminationRetry(repoRoot, jobID string) (map[string]any, error) {
+func reservedUnknownExaminationRetry(repoRoot, jobID string, custody CustodyDeathDependencies) (map[string]any, error) {
 	state := loadCritiqueState(repoRoot)
 	prior := state.records[jobID]
 	root := state.records[state.chainRoot(jobID)]
@@ -31,22 +31,41 @@ func reservedUnknownExaminationRetry(repoRoot, jobID string) (map[string]any, er
 	if _, err := CollectExamination(repoRoot, jobID); err == nil {
 		return nil, fmt.Errorf("the reserved source has readable stop inputs and must be decided")
 	}
-	if prior["pid"] != nil && asString(prior["groupDeathProvenAt"]) == "" &&
-		ProveCustodyDeath(repoRoot, prior, CustodyDeathDependencies{}).Outcome != CustodyDeathProven {
-		return nil, fmt.Errorf("the reserved source examination is not proven quiescent")
+	if prior["pid"] != nil && asString(prior["groupDeathProvenAt"]) == "" {
+		if death := ProveCustodyDeath(repoRoot, prior, custody); death.Outcome != CustodyDeathProven {
+			return nil, quiescenceRefusal("the reserved source examination", prior, death)
+		}
 	}
 	return prior, nil
+}
+
+// quiescenceRefusal names the process and group to end. No metasystem
+// command ends them: a stop of a completed job changes nothing.
+func quiescenceRefusal(subject string, record map[string]any, death CustodyDeathResult) error {
+	pgid, grouped := numInt(record["pgid"])
+	grouped = grouped && pgid > 1
+	if death.Outcome == CustodyDeathAlive && death.Process != nil {
+		end := fmt.Sprintf("end process %d", death.Process.Pid)
+		if grouped {
+			end += fmt.Sprintf(" and its process group %d", pgid)
+		}
+		return fmt.Errorf("%s is not proven quiescent: the examination's process %d is still running (%s);\n%s, then retry", subject, death.Process.Pid, death.Reason, end)
+	}
+	if grouped {
+		return fmt.Errorf("%s is not proven quiescent (%s); if its process group %d still runs, end it, then retry", subject, death.Reason, pgid)
+	}
+	return fmt.Errorf("%s is not proven quiescent (%s)", subject, death.Reason)
 }
 
 // EvaluateUnknownExaminationRetryAdmission retains the exact goal fence,
 // claim clock, active-job ceiling and hazard checks while admitting the
 // reserved read without another work attempt or minute reservation.
 func EvaluateUnknownExaminationRetryAdmission(repoRoot, jobID, id string, revision, proposedCap uint64,
-	now time.Time, reads ProofAdmissionReads, hazards ...HazardClass) (GoalRevisionAdmission, error) {
+	now time.Time, reads ProofAdmissionReads, custody CustodyDeathDependencies, hazards ...HazardClass) (GoalRevisionAdmission, error) {
 	if err := reads.Validate(); err != nil {
 		return GoalRevisionAdmission{}, err
 	}
-	prior, err := reservedUnknownExaminationRetry(repoRoot, jobID)
+	prior, err := reservedUnknownExaminationRetry(repoRoot, jobID, custody)
 	if err != nil {
 		return GoalRevisionAdmission{}, err
 	}
@@ -60,12 +79,12 @@ func EvaluateUnknownExaminationRetryAdmission(repoRoot, jobID, id string, revisi
 
 // EvaluateGoalAdmissionForUnknownExaminationRetry preserves every other
 // claimed goal's admission and the retry goal's clock and active-job limits.
-func EvaluateGoalAdmissionForUnknownExaminationRetry(repoRoot, stopLineage, jobID string, now time.Time) (GoalAdmissionVerdict, error) {
-	return evaluateGoalAdmissionForUnknownExaminationRetryWithReads(repoRoot, stopLineage, jobID, now, concreteGoalAdmissionReads())
+func EvaluateGoalAdmissionForUnknownExaminationRetry(repoRoot, stopLineage, jobID string, now time.Time, custody CustodyDeathDependencies) (GoalAdmissionVerdict, error) {
+	return evaluateGoalAdmissionForUnknownExaminationRetryWithReads(repoRoot, stopLineage, jobID, now, concreteGoalAdmissionReads(), custody)
 }
 
-func evaluateGoalAdmissionForUnknownExaminationRetryWithReads(repoRoot, stopLineage, jobID string, now time.Time, reads goalAdmissionReads) (GoalAdmissionVerdict, error) {
-	prior, err := reservedUnknownExaminationRetry(repoRoot, jobID)
+func evaluateGoalAdmissionForUnknownExaminationRetryWithReads(repoRoot, stopLineage, jobID string, now time.Time, reads goalAdmissionReads, custody CustodyDeathDependencies) (GoalAdmissionVerdict, error) {
+	prior, err := reservedUnknownExaminationRetry(repoRoot, jobID, custody)
 	if err != nil {
 		return GoalAdmissionVerdict{}, err
 	}

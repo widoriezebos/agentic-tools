@@ -12,7 +12,6 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatchproc"
 )
 
 var followUpRoundPattern = regexp.MustCompile(`^([2-9]|[1-9][0-9]+)$`)
@@ -200,7 +199,7 @@ func (s *session) followUp(args []string) error {
 	}
 	s.dieChild = child
 	if fieldOr(rootRecord, "unknownExaminationRetryFrom") == fieldOr(latest, "jobId") {
-		if err := dispatch.ReservedUnknownExaminationRetry(s.root, fieldOr(latest, "jobId")); err != nil {
+		if err := dispatch.ReservedUnknownExaminationRetry(s.root, fieldOr(latest, "jobId"), s.l.ports.Process.CustodyDeath(s.root)); err != nil {
 			return s.die(1, err.Error())
 		}
 		s.unknownExaminationRetrySource = fieldOr(latest, "jobId")
@@ -672,7 +671,7 @@ func (s *session) examinationRetry(latest string) error {
 	if err != nil {
 		return err
 	}
-	return dispatch.ExaminationRetryAdmissibleWith(s.root, record, dispatch.CustodyDeathDependencies{MatchesTag: dispatchproc.PositionedJobTagAt(s.root)})
+	return dispatch.ExaminationRetryAdmissibleWith(s.root, record, s.l.ports.Process.CustodyDeath(s.root))
 }
 
 // inferredLaunchMode is the launch mode of a record that predates the

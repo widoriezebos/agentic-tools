@@ -56,7 +56,7 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 		}
 		if latest["pid"] != nil && asString(latest["groupDeathProvenAt"]) == "" {
 			if death := ProveCustodyDeath(repoRoot, latest, custody); death.Outcome != CustodyDeathProven {
-				return fmt.Errorf("completed examination round %d is not proven quiescent", round)
+				return quiescenceRefusal(fmt.Sprintf("completed examination round %d", round), latest, death)
 			}
 		}
 		return nil
@@ -67,7 +67,7 @@ func examinationRetryAdmissible(repoRoot string, latest map[string]any, custody 
 		// Without the reaper's recorded group-death proof, the custody owner
 		// must prove the recorded processes dead now.
 		if death := ProveCustodyDeath(repoRoot, latest, custody); death.Outcome != CustodyDeathProven {
-			return fmt.Errorf("examination round %d may still be running, so it is not retried (%s: %s)", round, death.Outcome, death.Reason)
+			return fmt.Errorf("examination round %d may still be running, so it is not retried (%w)", round, quiescenceRefusal(fmt.Sprintf("examination round %d", round), latest, death))
 		}
 	}
 	root := asString(latest["jobId"])
