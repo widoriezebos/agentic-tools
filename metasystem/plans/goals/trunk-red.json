@@ -7969,6 +7969,136 @@
         "by": "Wido",
         "why": "Host environment of the new MacBook lane, not main: its first proof (batch 20261106T123014 on e01523581) ran without the pinned Go toolchain and static tools (Little Snitch blocked Go's downloads) and under XProtect scanning of every file write; main containing e01523581 proved green in this Mac's full proof at 16:48 and its fast-static-build green at 19:48 and 19:54 (findings 550, 551). The MacBook lane is paused until its host is fixed."
       }
+    },
+    {
+      "testUnit": "metasystem/cmd/metasystem",
+      "testName": "TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress",
+      "id": "flake:5ee5869e1e5c3ad2037aa1c6ad9ed9e3b22130f7bef7b44629acba76fcdf7d33",
+      "identity": "flake:5ee5869e1e5c3ad2037aa1c6ad9ed9e3b22130f7bef7b44629acba76fcdf7d33",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261106T184337.381193000Z",
+          "batch": "",
+          "baseCommit": "42f4afb32f66dea887b7bdaec47ea7867a6a9efb",
+          "baseTree": "5fc3cf15a8ff9589d71b74b6ee523d2ba6462650",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z.log",
+          "logDigest": "",
+          "seenAt": "2026-11-06T22:05:28Z",
+          "opid": "667A77B33FEB676434ED4B5FA5-landing-m1f-41ad7d6c",
+          "tree": "5fc3cf15a8ff9589d71b74b6ee523d2ba6462650",
+          "rerun": {
+            "attempt": "20261106T184337.381193000Z-repeat-1",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z-repeat-1.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z-repeat-1.log.5ee5869e1e5c3ad2037aa1c6ad9ed9e3b22130f7bef7b44629acba76fcdf7d33.output",
+              "digest": "b24d4cd8bba5e961a87efaf5c26bf147b3a64299167e27601f51cc49fe0d2f01",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z.log.5ee5869e1e5c3ad2037aa1c6ad9ed9e3b22130f7bef7b44629acba76fcdf7d33.output",
+            "digest": "bb0cc614523ea1180c39b4c089085e745229694fa7632bd3058268c21612cd5a",
+            "outcome": "fail"
+          },
+          "load": 2.435546875,
+          "repeat": "alone"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-11-06T22:05:28Z",
+      "closed": null,
+      "class": "flake"
+    },
+    {
+      "testUnit": "metasystem/cmd/metasystem",
+      "testName": "TestGitAdapterGoManifestInventoryMatchesNativeGoList",
+      "id": "flake:7db9c3a8d41516de940117aa3705608e5a330f14fe5d1f8927aa17dc9dcc8ce3",
+      "identity": "flake:7db9c3a8d41516de940117aa3705608e5a330f14fe5d1f8927aa17dc9dcc8ce3",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestGitAdapterGoManifestInventoryMatchesNativeGoList",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261106T184337.381193000Z",
+          "batch": "",
+          "baseCommit": "42f4afb32f66dea887b7bdaec47ea7867a6a9efb",
+          "baseTree": "5fc3cf15a8ff9589d71b74b6ee523d2ba6462650",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z.log",
+          "logDigest": "",
+          "seenAt": "2026-11-06T22:05:28Z",
+          "opid": "667A77B33FEB676434ED4B5FA5-landing-m1f-41ad7d6c",
+          "tree": "5fc3cf15a8ff9589d71b74b6ee523d2ba6462650",
+          "rerun": {
+            "attempt": "20261106T184337.381193000Z-repeat-1",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z-repeat-1.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z-repeat-1.log.7db9c3a8d41516de940117aa3705608e5a330f14fe5d1f8927aa17dc9dcc8ce3.output",
+              "digest": "bd8811adcd54ce6d7550226150c58948d7efa5dde3cc5949ed8642c9e41f4230",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T184337.381193000Z.log.7db9c3a8d41516de940117aa3705608e5a330f14fe5d1f8927aa17dc9dcc8ce3.output",
+            "digest": "b7ee9a798a51d3df32db629ddd02086f09d8ed4a7c93624bbc008cb281972c05",
+            "outcome": "fail"
+          },
+          "load": 2.435546875,
+          "repeat": "alone"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-11-06T22:05:28Z",
+      "closed": null,
+      "class": "flake"
     }
   ],
   "cadence": {
