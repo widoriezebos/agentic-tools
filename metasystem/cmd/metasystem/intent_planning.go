@@ -1407,7 +1407,9 @@ func (inv *intentInvocation) claimGoalAs(id, box string, projection goal.Project
 	if arc {
 		args = append(args, "--arc", id)
 	}
-	return inv.goalAct(id, "claim", inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	var opid string
+	return inv.ownerCall(inv.targets(id), inv.syncOwner("claim", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		opid = goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 		req.ClaimLaneState = laneState
 		req.ClaimAreaReaders = inv.claimAreaReaders()
 		budget, err := f.budgetTuple(false)
@@ -1422,7 +1424,7 @@ func (inv *intentInvocation) claimGoalAs(id, box string, projection goal.Project
 			return goal.ClaimArc(req, f.id, budgets...)
 		}
 		return goal.Claim(req, f.id, budgets...)
-	}, "id"))
+	}, "id"), func() intentResult { return inv.afterGoalAct(id, "claim", opid) })
 }
 
 // acquireClaim claims one named goal for this session exactly as claim G
@@ -1482,9 +1484,11 @@ func (inv *intentInvocation) takeOver() int {
 		}
 	}
 	args := append([]string{"--root", inv.stateRoot, "--id", id}, actor...)
-	return inv.render(inv.goalAct(id, "take over", inv.syncOwner("steal", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+	var opid string
+	return inv.render(inv.ownerCall(inv.targets(id), inv.syncOwner("steal", args, proof, false, func(req goal.VerbRequest, f *syncFlags) (goal.PublishResult, error) {
+		opid = goal.Opid(req.Ulid, req.Actor.Machine, req.Actor.Lineage)
 		return goal.StealWithReason(req, f.id, reason)
-	}, "id")))
+	}, "id"), func() intentResult { return inv.afterGoalAct(id, "take over", opid) }))
 }
 
 func runIntentRelease(inv *intentInvocation) int {

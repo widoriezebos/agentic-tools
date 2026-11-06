@@ -2090,6 +2090,9 @@ func (inv *intentInvocation) deliveredRefusal() *intentResult {
 // into its plain hint: line 1 says the channel will stay silent, line 2 is
 // the same command with --delivered.
 func (inv *intentInvocation) deliveredHint(goalID string, result intentResult) intentResult {
+	if result.handedBefore {
+		return result
+	}
 	if inv.input.has("delivered") || result.Outcome != intentConfirmed {
 		return result
 	}

@@ -144,9 +144,14 @@ func TestGoalClaimAreasAdmission(t *testing.T) {
 				t.Fatalf("claim: exit=%d result=%+v", code, result)
 			}
 			file := bed.goalFile("second-goal")
-			unknown := strings.Contains(test.name, "unknown") || strings.Contains(test.name, "malformed")
+			unknown := test.name == "candidate unknown" || test.name == "malformed candidate"
 			if unknown && (!strings.Contains(result.Summary, "areas unknown") || !strings.Contains(file.History[len(file.History)-1].Reason, "areas unknown")) {
 				t.Fatalf("warning not published: %+v %+v", result, file.Claimed)
+			}
+			if test.name == "legacy unknown" || test.name == "pinned unknown" || test.name == "malformed blocker" {
+				if strings.Contains(result.Summary, "areas unknown for goal "+bedGoal) || strings.Contains(file.History[len(file.History)-1].Reason, "areas unknown for goal "+bedGoal) {
+					t.Fatalf("claim reported another goal's unknown areas: %+v %+v", result, file.Claimed)
+				}
 			}
 			if test.second != "" && !strings.Contains(test.name, "malformed candidate") && (!file.Claimed.Known || !strings.Contains(file.Claimed.Source, "design-second-goal@")) {
 				t.Fatalf("snapshot not pinned: %+v", file.Claimed)
