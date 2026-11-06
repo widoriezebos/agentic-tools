@@ -8144,6 +8144,136 @@
       ],
       "opened": "2026-11-06T22:05:45Z",
       "closed": null
+    },
+    {
+      "testUnit": "metasystem/internal/steward",
+      "testName": "TestTheHolderIsAskedOncePerBlockingOccurrence/the_current_ledger_overrules_stale_facts",
+      "id": "flake:9906a7942ded5e5231b8165c92c88cbc613c65b5a0e5a87b836bc5758cc82973",
+      "identity": "flake:9906a7942ded5e5231b8165c92c88cbc613c65b5a0e5a87b836bc5758cc82973",
+      "group": "metasystem/internal/steward",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z.log",
+          "classname": "metasystem/internal/steward",
+          "name": "TestTheHolderIsAskedOncePerBlockingOccurrence/the_current_ledger_overrules_stale_facts",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261106T215027.052499000Z",
+          "batch": "",
+          "baseCommit": "f2b2c13c184f44fe55e6d9ccab4fffd1a52c6f47",
+          "baseTree": "1eb7023caa7672e610f3913dc014d609580c62b2",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z.log",
+          "logDigest": "",
+          "seenAt": "2026-11-06T22:54:02Z",
+          "opid": "37C4EED5FB8F5E0A93602A71B5-landing-41ad7d6c",
+          "tree": "1eb7023caa7672e610f3913dc014d609580c62b2",
+          "rerun": {
+            "attempt": "20261106T215027.052499000Z-repeat-1",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z-repeat-1.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z-repeat-1.log.9906a7942ded5e5231b8165c92c88cbc613c65b5a0e5a87b836bc5758cc82973.output",
+              "digest": "975d7ef80e9132aa4e50f3c39f1b24f5f6d5e4a2ba85591699efd87d22f08cc1",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z.log.9906a7942ded5e5231b8165c92c88cbc613c65b5a0e5a87b836bc5758cc82973.output",
+            "digest": "d6e022494b74c2807eee3e3fc7cbe93d2eb6086fc144070ff44cd85e9f9f29d9",
+            "outcome": "fail"
+          },
+          "load": 10.7802734375,
+          "repeat": "alone"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-11-06T22:54:02Z",
+      "closed": null,
+      "class": "flake"
+    },
+    {
+      "testUnit": "metasystem/internal/steward",
+      "testName": "TestTheHolderIsAskedOncePerBlockingOccurrence",
+      "id": "flake:cad236316cf84f94034d80dc87bd71801564fec891229cc4f50f0ae5119d937d",
+      "identity": "flake:cad236316cf84f94034d80dc87bd71801564fec891229cc4f50f0ae5119d937d",
+      "group": "metasystem/internal/steward",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z.log",
+          "classname": "metasystem/internal/steward",
+          "name": "TestTheHolderIsAskedOncePerBlockingOccurrence",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261106T215027.052499000Z",
+          "batch": "",
+          "baseCommit": "f2b2c13c184f44fe55e6d9ccab4fffd1a52c6f47",
+          "baseTree": "1eb7023caa7672e610f3913dc014d609580c62b2",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z.log",
+          "logDigest": "",
+          "seenAt": "2026-11-06T22:54:02Z",
+          "opid": "37C4EED5FB8F5E0A93602A71B5-landing-41ad7d6c",
+          "tree": "1eb7023caa7672e610f3913dc014d609580c62b2",
+          "rerun": {
+            "attempt": "20261106T215027.052499000Z-repeat-1",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z-repeat-1.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z-repeat-1.log.cad236316cf84f94034d80dc87bd71801564fec891229cc4f50f0ae5119d937d.output",
+              "digest": "40d3507e85c4fcb77388004619642212c2b6a4a97709c7885f973c41e9d27ba7",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261106T215027.052499000Z.log.cad236316cf84f94034d80dc87bd71801564fec891229cc4f50f0ae5119d937d.output",
+            "digest": "d1fed54e54326c61cf1f30ebfc43a3e77bd2279c08645bad03f3bc0f8f32f181",
+            "outcome": "fail"
+          },
+          "load": 10.7802734375,
+          "repeat": "alone"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-11-06T22:54:02Z",
+      "closed": null,
+      "class": "flake"
     }
   ],
   "cadence": {
