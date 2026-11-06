@@ -11,14 +11,14 @@
 - Next step: Build without a design from finding 542: cmd/metasystem/intent_carry_check.go applies the unit run's red classification (internal/launch/unit_attribution.go, loopstop.ClassifyRed) to the retained check's result before it refuses; one unit; brief by the seat; ASKED D1CVZHNFJPETBSBP65GAMG6CWA (budget-above-norm): Your Raise reply could not change the box: my earlier question lacked the reply line the engine needs, my mistake. To give the carry-check flake goal 8 hours (one working day), reply with the line below.; ANSWERED 7RPTCAQZPF6WTQDHBC7PQ3ZJHV: Raise
 - OpenedAt: 2026-11-05T23:53:26Z
 - FirstClaimAt: 2026-11-06T12:31:04Z
-- Revision: 11
+- Revision: 12
 - Pinned: m1f
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
-- BudgetExceptions: 0
-- Approved: by=human:Wido at=2026-11-05T23:58:16Z revision=3 opid=F9XH43A3JPNNB4CJRWCHFDA7ZC-m1e-721b8823 authority=proven digest=044b20e6a6ea34e1a8b74cbf12267fc0e587edf5908520e9c39369d9f7b8883a episode=3
-- Claimed: machine=m1f lineage=steward-seat at=2026-11-06T12:31:04Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-carry-check-classifies-a-flake: no accepted design declares areas\",\"areas unknown for goal a-green-rounds-read-is-collected\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal rosters-are-configuration-items\",\"areas unknown for goal the-elapsed-clock-excludes-waits\"]" revision=8 accountingRevision=8 episodeAt=2026-11-06T12:31:04Z episodeRevision=8
-- StopCapability: generation=8 revision=8 machine=m1f claimEpoch=1 fenceEpoch=1
-- StopFence: stopId=stop-the-carry-check-classifies-a-flake-r8-f1 revision=8 epoch=1 capabilityGeneration=8 closedAt=2026-11-06T18:37:38Z reason=ELAPSED_LIMIT
+- Budget: elapsedLimit=2d attemptLimit=6 reservedJobMinutesLimit=1440 activeJobLimit=1 reviewRoundLimit=20
+- BudgetExceptions: 1
+- NormApproval: approvedRef=R7XR7R6C04C5M18TNF44H5E7E8-m1e-e41f634f minutes=1440 reviewRounds=20 goalRevision=11
+- Approved: by=human:Wido at=2026-11-06T20:02:30Z revision=12 opid=R7XR7R6C04C5M18TNF44H5E7E8-m1e-e41f634f authority=proven digest=157780ae98cd83ca61e30ad0f751f09445fc01f3bdd183ad27f70ee4a3c79b43 episode=12
+- Claimed: machine=m1f lineage=steward-seat at=2026-11-06T20:02:30Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-carry-check-classifies-a-flake: no accepted design declares areas\",\"areas unknown for goal a-green-rounds-read-is-collected\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-recovers-and-pauses\",\"areas unknown for goal rosters-are-configuration-items\",\"areas unknown for goal the-elapsed-clock-excludes-waits\"]" revision=12 accountingRevision=12 episodeAt=2026-11-06T12:31:04Z episodeRevision=8
+- StopCapability: generation=12 revision=12 machine=m1f claimEpoch=1 fenceEpoch=0
 
 History:
 - 2026-11-05T23:53:26Z AFBXA72ACKH65MS88B83DX2DPE-m1e-721b8823 open actor=human:Wido targets=the-carry-check-classifies-a-flake
@@ -32,4 +32,5 @@ History:
 - 2026-11-06T17:32:22Z Z1MNEYKT7KRKP05NFW6NXA3AJT-m1f-71c5cb39 ask actor=m1f+steward-seat targets=the-carry-check-classifies-a-flake
 - 2026-11-06T17:08:03Z HA4VY893PC191SJCHSTY647QRC-m1f-71c5cb39 answer actor=human:wido targets=the-carry-check-classifies-a-flake authorityOutcome=AUTHENTICATED_CHANNEL_WORD channelProvider=telegram channelUser=1365582 channelRef=1454/1455 channelStep=1793984883 question=7RPTCAQZPF6WTQDHBC7PQ3ZJHV reason=Raise
 - 2026-11-06T18:37:38Z KW2022HE8N3Y6N63GD3SJ36DQK-m1f-43182c96 breach-stop actor=m1f+goal-stop-custodian targets=the-carry-check-classifies-a-flake
-Integrity: sha256=1473aae20dac76f14304b87a2279694a60ac3d1bd05f3431fc5cbcebe16043a6
+- 2026-11-06T20:02:30Z R7XR7R6C04C5M18TNF44H5E7E8-m1e-e41f634f set-budget actor=human:Wido targets=the-carry-check-classifies-a-flake displaced=m1f+steward-seat@2026-11-06T12:31:04Z resumed=stop-the-carry-check-classifies-a-flake-r8-f1
+Integrity: sha256=8d399a2dbd2e4b397e46b958bad7854da29dc16d46632d8baee8df01a42a075c
