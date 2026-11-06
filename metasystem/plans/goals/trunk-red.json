@@ -7907,11 +7907,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261106T123014.122008000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-06T18:43:17Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-06T20:28:41Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "HBX588D4N6GVZ34ZPT974D4PFZ-m1e-283e9636",
+        "by": "Wido",
+        "why": "Host environment of the new MacBook lane, not main: its first proof (batch 20261106T123014 on e01523581) ran without the pinned Go toolchain and static tools (Little Snitch blocked Go's downloads) and under XProtect scanning of every file write; main containing e01523581 proved green in this Mac's full proof at 16:48 and its fast-static-build green at 19:48 and 19:54 (findings 550, 551). The MacBook lane is paused until its host is fixed."
+      }
     },
     {
       "id": "red:metasystem/cmd/metasystem:TestWorkCommitRealLaneFixImpactPlanGitAdapter",
