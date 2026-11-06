@@ -36,6 +36,7 @@ type laneFixBed struct {
 	registered lane.Record
 	registry   string
 	hookTrace  string
+	lastStderr string
 	owners     intentOwners
 }
 
@@ -60,8 +61,23 @@ func newLaneFixBed(t *testing.T) *laneFixBed {
 
 func newLaneFixBedWith(t *testing.T, amend func(*goal.GoalFile)) *laneFixBed {
 	t.Helper()
+	return newLaneFixBedWithAudits(t, amend, "proof.audits=true\n")
+}
+
+func newLaneFixBedWithAudits(t *testing.T, amend func(*goal.GoalFile), declaration string) *laneFixBed {
+	t.Helper()
 	c := &connectionBed{workBed: newWorkBedWith(t, amend), t: t, edits: map[string]string{"code.go": "package fixture\n"}}
 	root := c.root()
+	conf := filepath.Join(root, "metasystem.conf")
+	content, err := os.ReadFile(conf)
+	helmMust(t, err)
+	var kept []string
+	for _, line := range strings.Split(string(content), "\n") {
+		if !strings.HasPrefix(line, "proof.audits=") {
+			kept = append(kept, line)
+		}
+	}
+	helmMust(t, os.WriteFile(conf, []byte(strings.Join(kept, "\n")+"\n"+declaration), 0600))
 	connectionGit(t, root, "init", "-q", "-b", "main")
 	connectionGit(t, root, "config", "user.name", "Fixture")
 	connectionGit(t, root, "config", "user.email", "fixture@example.invalid")
@@ -244,6 +260,7 @@ func (b *laneFixBed) run(args ...string) (int, intentResult) {
 	}
 	var stdout, stderr bytes.Buffer
 	code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, b.root(), b.owners)
+	b.lastStderr = stderr.String()
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		b.t.Fatalf("result %v: %s; stderr %s", err, &stdout, &stderr)
@@ -340,6 +357,98 @@ func TestLaneFixBuildAndReviewBatchCustody(t *testing.T) {
 	}
 	if retries != 2 {
 		t.Fatalf("retry calls: %d", retries)
+	}
+}
+
+func TestLaneFixRunsTheCommittedAudits(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name, declaration, want string
+		refused                 bool
+	}{
+		{name: "failing audit", declaration: "proof.audits=exit 5\n", want: "exit 5"},
+		{name: "empty declaration", declaration: "proof.audits=\n", refused: true},
+		{name: "duplicate declaration", declaration: "proof.audits=true\nproof.audits=exit 5\n", refused: true},
+		{name: "adopted project without audits", want: "true"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			b := newLaneFixBedWithAudits(t, workApprovedBox, row.declaration)
+			// Working bytes cannot replace the declaration frozen from HEAD.
+			conf := filepath.Join(b.root(), "metasystem.conf")
+			content, err := os.ReadFile(conf)
+			helmMust(t, err)
+			content = bytes.ReplaceAll(content, []byte("proof.audits=exit 5"), []byte("proof.audits=true"))
+			helmMust(t, os.WriteFile(conf, content, 0600))
+			code, built := b.run("work", "build", b.id, "--work", b.fixUnit(), "--brief", b.brief("fix.md", "Repair the fixture.\n"), "--lines", "2", "--check", "metasystem test impact")
+			runs, err := b.owners.work.units(stateroot.Layout{}).NamedWork(b.root(), b.id)
+			helmMust(t, err)
+			if row.refused {
+				if code == 0 || !strings.Contains(built.Summary, "proof.audits") {
+					t.Fatalf("invalid audits accepted: %d %s", code, built.Summary)
+				}
+				for _, run := range runs {
+					for _, round := range run.Record.Rounds {
+						if _, err := os.Stat(filepath.Join(round.Directory, "plan.json")); !os.IsNotExist(err) {
+							t.Fatalf("plan published before audit admission: %v", err)
+						}
+					}
+				}
+				return
+			}
+			if code != 0 || len(runs) != 1 {
+				t.Fatalf("build: %d %s runs=%d", code, built.Summary, len(runs))
+			}
+			if row.declaration == "" && !strings.Contains(b.lastStderr, "no audits declared") {
+				t.Fatalf("the absent declaration was not explained: %s", b.lastStderr)
+			}
+			plan, err := launch.ReadUnitPlan(filepath.Join(runs[0].Record.Rounds[0].Directory, "plan.json"))
+			if err != nil || plan.Check == nil || plan.Check.Audits != row.want || plan.Check.Cheap != "metasystem test impact --check" {
+				t.Fatalf("committed audits were not frozen from HEAD: error=%v", err)
+			}
+			check := *plan.Check
+			check.Cheap = "true"
+			_, exits, err := check.Run(b.root(), t.TempDir(), launch.CheckContext{})
+			if len(exits) != 2 || exits[1].Name != "audits" {
+				t.Fatalf("audit step missing: %+v error=%v", exits, err)
+			}
+			if row.want == "exit 5" && (err == nil || exits[1].Exit != 5) || row.want == "true" && (err != nil || exits[1].Exit != 0) {
+				t.Fatalf("audit result: %+v error=%v", exits, err)
+			}
+		})
+	}
+}
+
+// Git supplies the comment-only change; the live contract must select the
+// module walkers even when the changed package is absent from their group.
+func TestLaneFixSelectsModuleWalkingAuditsForCommentChangesGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{"internal/steward/alert_episode.go", "scripts/check.sh"} {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			helmMust(t, err)
+			module := filepath.Join(root, "metasystem")
+			helmMust(t, os.Rename(impactAdapterBed(t), module))
+			data, err := os.ReadFile("../../testing.json")
+			helmMust(t, err)
+			impactWrite(t, module, "testing.json", string(data))
+			impactWrite(t, module, "metasystem.conf", "metasystem.template=true\ntesting.contract=testing.json\n")
+			source, comment := "package probe\n", "// probe: evidence.root\n"
+			if strings.HasSuffix(path, ".sh") {
+				source, comment = "#!/bin/sh\n", "# probe: evidence.root\n"
+			}
+			impactWrite(t, module, path, source)
+			connectionGit(t, root, "init", "-q", "-b", "main")
+			connectionGit(t, root, "add", ".")
+			connectionGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "base")
+			base := connectionGit(t, root, "rev-parse", "HEAD")
+			impactWrite(t, module, path, source+comment)
+			code, out, problem := impactPublic(t, module, "--base", base, "--plan")
+			if code != 0 || !strings.Contains(out, "selection: test-environment-standard\n") {
+				t.Fatalf("comment-only change missed the module audits: exit=%d output=%s stderr=%s", code, out, problem)
+			}
+		})
 	}
 }
 

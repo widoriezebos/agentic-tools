@@ -477,7 +477,7 @@ func TestWorkCommitShippedImpactDeclarationGitAdapter(t *testing.T) {
 	if declaration != "metasystem test impact" {
 		t.Fatalf("shipped cheap proof = %q", declaration)
 	}
-	impactWrite(t, c.worktree, "metasystem.conf", "testing.contract=testing.json\nlanding.impact-max-share=100\nproof.cheap="+declaration+"\n")
+	impactWrite(t, c.worktree, "metasystem.conf", "testing.contract=testing.json\nlanding.impact-max-share=100\nproof.cheap="+declaration+"\nproof.audits=true\n")
 	connectionGit(t, c.worktree, "add", ".")
 	connectionGit(t, c.worktree, "commit", "-qm", "goal "+c.id+" units settings\n\nGoal-Unit: "+c.id+"/settings")
 	parent := connectionGit(t, c.worktree, "rev-parse", "HEAD")

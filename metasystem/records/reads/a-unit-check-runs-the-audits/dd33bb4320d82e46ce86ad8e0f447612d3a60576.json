@@ -1,0 +1,69 @@
+{
+  "coveredUnits": [
+    "U2"
+  ],
+  "schemaVersion": 1,
+  "goal": "a-unit-check-runs-the-audits",
+  "unit": "U2",
+  "subject": {
+    "commit": "dd33bb4320d82e46ce86ad8e0f447612d3a60576",
+    "parent": "6902420d731e158359f0831d66e4b4e5c1290f8a",
+    "tree": "db986f3050fb42ba957738b069e9314dc27f481c",
+    "patchDigest": "a32ae323b5f0f89b3d98b4fa44e4c86f32d85d87e5671d9519745c0a86b792e3",
+    "unitDigest": "192125a7411514356f1c2b594c890676b0a2e769c8e0b3b942162737f7b3c950"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-248cc4e774cd03fae3a2a555",
+    "round": 1,
+    "closureSha256": "c5f82294406058ca946a5be5cac197280ff7757f102388a59b5694ab2e9f36b3"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "db986f3050fb42ba957738b069e9314dc27f481c",
+    "runId": "check-1465429170"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "6902420d731e158359f0831d66e4b4e5c1290f8a",
+      "digest": "ef7604fad7d4b649b3afeac353c84a4a45bea152a1e80e781739ef83c31864b9"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_lane_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-248cc4e774cd03fae3a2a555"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_read_publication_2_test.go",
+      "readerWord": "reviewed by critic root code-critic-248cc4e774cd03fae3a2a555"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_work_commit_path_test.go",
+      "readerWord": "reviewed by critic root code-critic-248cc4e774cd03fae3a2a555"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_check_skip_test.go",
+      "readerWord": "reviewed by critic root code-critic-248cc4e774cd03fae3a2a555"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/work_commit_impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-248cc4e774cd03fae3a2a555"
+    },
+    {
+      "path": "metasystem/internal/config/evidenceroot_owner_test.go",
+      "readerWord": "reviewed by critic root code-critic-248cc4e774cd03fae3a2a555"
+    },
+    {
+      "path": "metasystem/internal/hooks/degraded_stop_forms_test.go",
+      "readerWord": "reviewed by critic root code-critic-248cc4e774cd03fae3a2a555"
+    },
+    {
+      "path": "metasystem/internal/landing/lane/owner_gone_audit_test.go",
+      "readerWord": "reviewed by critic root code-critic-248cc4e774cd03fae3a2a555"
+    }
+  ],
+  "sha256": "d618e7aa84cc65f37450c08744e5736d9ca9eedeb78218b06f93fed822f835ec"
+}

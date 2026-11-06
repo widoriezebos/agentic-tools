@@ -1,0 +1,51 @@
+{
+  "coveredUnits": [
+    "U1"
+  ],
+  "schemaVersion": 1,
+  "goal": "a-unit-check-runs-the-audits",
+  "unit": "U1",
+  "subject": {
+    "commit": "6c1bb506445c7520f75993fd957e8236a7594e12",
+    "parent": "414940ebac488b7009655c2ffe444e2ec73cdd56",
+    "tree": "a72155ca079e67397b8cb893380a7c6183b63025",
+    "patchDigest": "f1bbe45569b9968b035e90f56e3ded077a7dc0712ee3a9b7c1a601d8993ede3d",
+    "unitDigest": "3799d441b2cbd65dd530a4ff17c8601c39ed51c04ce41ccd4add43267692b9cd"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-bb8d1b532c5f94a03b8497e2",
+    "round": 1,
+    "closureSha256": "5f7ed4cbd295dc8502306298ebe4c319904075fa1a68aa76c9962de6dd0cc6be"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "a72155ca079e67397b8cb893380a7c6183b63025",
+    "runId": "check-2221718540"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_lane_fix_test.go",
+      "readerWord": "reviewed by critic root code-critic-bb8d1b532c5f94a03b8497e2"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_depth_test.go",
+      "readerWord": "reviewed by critic root code-critic-bb8d1b532c5f94a03b8497e2"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/test_impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-bb8d1b532c5f94a03b8497e2"
+    },
+    {
+      "path": "metasystem/internal/applaunch/readiness_audit_test.go",
+      "readerWord": "reviewed by critic root code-critic-bb8d1b532c5f94a03b8497e2"
+    },
+    {
+      "path": "metasystem/internal/goal/project_audit_test.go",
+      "readerWord": "reviewed by critic root code-critic-bb8d1b532c5f94a03b8497e2"
+    }
+  ],
+  "sha256": "d915181a47e635c81cb0efee859fd0be0e28ba901c547886164ad3d89ff75382"
+}

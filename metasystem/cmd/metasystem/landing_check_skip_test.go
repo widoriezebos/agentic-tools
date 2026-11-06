@@ -270,7 +270,7 @@ func TestWorkCommitLaneFixCheckGitAdapter(t *testing.T) {
 			data, err = json.Marshal(contract)
 			helmMust(t, err)
 			impactWrite(t, c.worktree, "testing.json", string(data))
-			impactWrite(t, c.worktree, "metasystem.conf", "testing.contract=testing.json\nproof.cheap=metasystem test impact\nlanding.impact-max-share=1\n")
+			impactWrite(t, c.worktree, "metasystem.conf", "testing.contract=testing.json\nproof.cheap=metasystem test impact\nproof.audits=true\nlanding.impact-max-share=1\n")
 			connectionGit(t, c.worktree, "add", ".")
 			connectionGit(t, c.worktree, "commit", "-qm", "goal "+c.id+" units settings\n\nGoal-Unit: "+c.id+"/settings")
 			parent := connectionGit(t, c.worktree, "rev-parse", "HEAD")

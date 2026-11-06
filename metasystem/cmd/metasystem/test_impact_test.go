@@ -78,6 +78,103 @@ func impactPublic(t *testing.T, root string, args ...string) (int, string, strin
 	return code, stdout.String(), stderr.String()
 }
 
+func impactAuditGitAdapterBed(t *testing.T) (string, string) {
+	t.Helper()
+	root := impactAdapterBed(t)
+	data, err := os.ReadFile(filepath.Join(root, "testing.json"))
+	helmMust(t, err)
+	var contract testpolicy.Contract
+	helmMust(t, json.Unmarshal(data, &contract))
+	audits := contract.Groups[0]
+	audits.ID, audits.Inputs = "audits", []string{"cmd/**", "internal/**", "proof/**"}
+	audits.Argv = []string{"/bin/sh", "-c", "! grep -rq AUDIT-VIOLATION proof internal"}
+	docs := audits
+	docs.ID, docs.Inputs = "docs-audit", []string{"docs/**"}
+	whole := testpolicy.Group{ID: "whole-cmd", Kind: "unit", Adapter: "go", CWD: ".", Phase: "acceptance", EnvironmentMode: "inherit",
+		Inputs: []string{"internal/**"}, Platforms: []string{"any"}, TargetMS: 1000, Packages: []string{"cmd/metasystem"}, Tests: json.RawMessage(`"all"`)}
+	template := whole
+	template.ID, template.Inputs, template.Packages, template.PackageSelection = "go-affected", []string{"docs/**"}, nil, "changed-and-consumers"
+	static := contract.Groups[0]
+	static.ID, static.Phase, static.Kind, static.Inputs = "fast-static-build", "admission", "static", []string{"outside/**"}
+	contract.Groups = append(contract.Groups, audits, docs, whole, template, static)
+	contract.Always.Standard = append(contract.Always.Standard, audits.ID, docs.ID, whole.ID, static.ID)
+	helmMust(t, contract.Validate())
+	data, err = json.Marshal(contract)
+	helmMust(t, err)
+	impactWrite(t, root, "testing.json", string(data))
+	impactWrite(t, root, "metasystem.conf", "testing.contract=testing.json\nlanding.impact-max-share=1\n")
+	impactWrite(t, root, "proof/main.go", "package proof\nconst Value = true\n")
+	impactWrite(t, root, "proof/main_test.go", "package proof\nimport \"testing\"\nfunc TestProof(t *testing.T) { t.Parallel(); _ = Value }\n")
+	impactWrite(t, root, "docs/guide.md", "Guide.\n")
+	testingFixtureGit(t, root, "init", "-q", "-b", "main")
+	testingFixtureGit(t, root, "add", ".")
+	testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "audit inputs")
+	return root, strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
+}
+
+// Git supplies the changed paths; the public plan must retain each audit's own inputs.
+func TestTestImpactSelectsTheAlwaysStandardAuditsGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		path, source string
+		want         []string
+	}{
+		{"internal/launch/value.go", "package launch\nconst Value = true // edited\n", []string{"canary", "audits", "internal/launch"}},
+		{"docs/guide.md", "Edited guide.\n", []string{"canary", "docs-audit"}},
+		{"proof/main.go", "package proof\nconst Value = true // edited\n", []string{"canary", "audits", "proof=TestProof"}},
+	} {
+		t.Run(row.path, func(t *testing.T) {
+			t.Parallel()
+			root, base := impactAuditGitAdapterBed(t)
+			impactWrite(t, root, row.path, row.source)
+			code, out, problem := impactPublic(t, root, "--base", base, "--plan", "--json")
+			result, err := verbresult.Read([]byte(out), "test impact", code, problem)
+			var plan plain.ImpactPlan
+			if code != 0 || err != nil || result.DecodeData(&plan) != nil || !slices.Equal(plan.Selections, row.want) {
+				t.Fatalf("audit selection exit=%d plan=%+v want=%v error=%v out=%s problem=%s", code, plan, row.want, err, out, problem)
+			}
+		})
+	}
+}
+
+// A successful static build cannot stand for an audit of changed repository bytes.
+func TestTestImpactRunsAFailingAuditThroughTheStaticFallbackGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{"internal/launch/value.go", "proof/main.go", "green"} {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			root, base := impactAuditGitAdapterBed(t)
+			if path == "proof/main.go" {
+				impactWrite(t, root, path, "package proof\nconst Value = true // AUDIT-VIOLATION\n")
+			} else {
+				marker := "edited"
+				if path != "green" {
+					marker = "AUDIT-VIOLATION"
+				}
+				impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = true // "+marker+"\n")
+			}
+			testingFixtureGit(t, root, "add", ".")
+			code, out, problem := impactPublic(t, root, "--base", base, "--check")
+			color := "red"
+			if path == "green" {
+				color = "green"
+			}
+			if (code == 0) != (path == "green") || !strings.Contains(out, "landing group audits "+color) || !strings.Contains(out, "+ audit groups audits") {
+				t.Fatalf("static fallback exit=%d out=%s problem=%s", code, out, problem)
+			}
+			if path == "green" {
+				data, err := os.ReadFile(filepath.Join(plain.Dir(root), "repair-check.json"))
+				helmMust(t, err)
+				var checked repairCheck
+				helmMust(t, json.Unmarshal(data, &checked))
+				if checked.Form != "static-only: selection not cheap + audit groups audits" {
+					t.Fatalf("static fallback form: %q", checked.Form)
+				}
+			}
+		})
+	}
+}
+
 func TestTestImpactSkipsTestsThisHostCannotBuildGitAdapter(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"plan", "run", "free"} {
@@ -251,7 +348,7 @@ func TestTestImpactSecondHalfPlanGitAdapter(t *testing.T) {
 			groups = append(groups, pkg)
 		}
 	}
-	if !slices.Equal(groups, []string{"policy-canary", "adapter-canary", "command-interface-smoke"}) || !slices.Equal(whole, []string{"metasystem/internal/goal", "metasystem/internal/landing/plain", "metasystem/internal/steward"}) || cmdCount == 0 || cmdCount > 300 {
+	if !slices.Equal(groups, []string{"policy-canary", "adapter-canary", "command-interface-smoke", "test-environment-standard", "shipped-installation-standard", "runtime-contract-standard"}) || !slices.Equal(whole, []string{"metasystem/internal/goal", "metasystem/internal/landing/plain", "metasystem/internal/steward"}) || cmdCount == 0 || cmdCount > 300 {
 		t.Fatalf("second half %s: groups=%v whole=%v cmd tests=%d plan=%+v", saved.Commit, groups, whole, cmdCount, plan)
 	}
 	t.Logf("second half: %d command tests; %d named tests; %d selections; groups=%v; whole=%v", cmdCount, namedCount, len(plan.Selections), groups, whole)

@@ -170,7 +170,9 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 			return 1
 		}
 		wanted := map[string]bool{}
+		reads := map[string]bool{}
 		for _, group := range affected.Groups {
+			reads[group.Group.ID] = len(group.Paths) > 0
 			for _, path := range group.Paths {
 				if !slices.Contains(affected.TemplateCovered, path) {
 					wanted[group.Group.ID] = true
@@ -181,12 +183,13 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 	groups:
 		for _, group := range contract.Groups {
 			canary := slices.Contains(contract.Always.Canary, group.ID)
-			if strings.HasPrefix(group.ID, "section/") || !canary && (group.Phase == "acceptance" || !wanted[group.ID]) {
+			audit := auditGroup(contract, group) && reads[group.ID]
+			if strings.HasPrefix(group.ID, "section/") || !canary && !audit && (group.Phase == "acceptance" || !wanted[group.ID]) {
 				continue
 			}
 			for _, input := range group.Inputs {
 				pattern, _ := pathpattern.Parse(input)
-				if pattern.Covers(prefix + "cmd") {
+				if !audit && pattern.Covers(prefix+"cmd") {
 					continue groups
 				}
 			}
@@ -244,10 +247,18 @@ func runTestImpactSelection(args []string, stdout, stderr io.Writer, only string
 			return 1
 		}
 		if !cheap {
-			ids = []string{"fast-static-build"}
+			audits := slices.DeleteFunc(slices.Clone(ids), func(id string) bool {
+				index := slices.IndexFunc(contract.Groups, func(group testpolicy.Group) bool { return group.ID == id })
+				return index < 0 || !auditGroup(contract, contract.Groups[index])
+			})
+			ids = append([]string{"fast-static-build"}, audits...)
 			output.Check = "static-only"
 			identity.Form = "static-only: selection not cheap"
 			identity.Reason = fmt.Sprintf("check: fast-static-build only; impact would cover %d%% of %d packages; not cheap: static gate only; the batch proof covers the tree", share, full)
+			if len(audits) > 0 {
+				suffix := " + audit groups " + strings.Join(audits, ",")
+				identity.Form, identity.Reason = identity.Form+suffix, identity.Reason+suffix
+			}
 		} else {
 			output.Check = "impact"
 			identity.Form, err = impactSelectionForm(installation, contract, ids, units)
@@ -303,6 +314,12 @@ func landingOnly() (string, bool) {
 	return only, strings.TrimSpace(only) != ""
 }
 
+func auditGroup(contract testpolicy.Contract, group testpolicy.Group) bool {
+	return group.Phase == "acceptance" && slices.Contains(contract.Always.Standard, group.ID) && !slices.ContainsFunc(group.Packages, func(pkg string) bool {
+		return strings.TrimPrefix(strings.TrimPrefix(pkg, "./"), "metasystem/") == "cmd/metasystem"
+	})
+}
+
 func impactDepth(plan string, contract testpolicy.Contract, full map[string]bool, limit int) (int, bool) {
 	selected := map[string]bool{}
 	addPackage := func(pkg string) {
@@ -329,6 +346,9 @@ func impactDepth(plan string, contract testpolicy.Contract, full map[string]bool
 			continue
 		}
 		group := contract.Groups[index]
+		if auditGroup(contract, group) {
+			continue
+		}
 		if group.Adapter != "go" {
 			selected["group/"+group.ID] = true
 			continue
@@ -496,6 +516,7 @@ type repairCheck struct {
 	Form               string
 	DurationMS         int64
 	Minutes            float64
+	AuditMinutes       float64
 }
 
 func repairCheckIdentity(install, base string) (repairCheck, error) {

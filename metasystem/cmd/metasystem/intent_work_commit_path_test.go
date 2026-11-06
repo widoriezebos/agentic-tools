@@ -21,7 +21,7 @@ func TestWorkCommitFindsRunningEngineWithoutCallerPathGitAdapter(t *testing.T) {
 	}
 	if *workCommitPathStage == "run" {
 		c, owners := readPublicationAdapterBed(t)
-		writeUnitCarryFile(t, filepath.Join(c.worktree, "metasystem.conf"), "proof.cheap=metasystem -test.run=^TestWorkCommitFindsRunningEngineWithoutCallerPathGitAdapter$ -test.timeout=30m -work-commit-path-stage=report\n")
+		writeUnitCarryFile(t, filepath.Join(c.worktree, "metasystem.conf"), "proof.cheap=metasystem -test.run=^TestWorkCommitFindsRunningEngineWithoutCallerPathGitAdapter$ -test.timeout=30m -work-commit-path-stage=report\nproof.audits=true\n")
 		connectionGit(t, c.worktree, "add", "metasystem.conf")
 		connectionGit(t, c.worktree, "commit", "-qm", "goal "+c.id+" units settings\n\nGoal-Unit: "+c.id+"/settings")
 		writeUnitCarryFile(t, filepath.Join(c.worktree, "hand.txt"), "hand change\n")

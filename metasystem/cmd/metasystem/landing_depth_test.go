@@ -380,6 +380,19 @@ func TestLandingDepthMeasureExcludesNonGoCanaries(t *testing.T) {
 	t.Logf("everything: share=%d%% cheap=%v", share, cheap)
 }
 
+func TestImpactDepthDoesNotCountAlwaysStandardAudits(t *testing.T) {
+	t.Parallel()
+	contract := testpolicy.Contract{Groups: []testpolicy.Group{
+		{ID: "audits", Adapter: "go", Phase: "acceptance", Packages: []string{"internal/testenv"}},
+	}}
+	contract.Always.Standard = []string{"audits"}
+	full := map[string]bool{"internal/testenv": true, "internal/launch": true}
+	share, cheap := impactDepth("selection: audits\nselection: internal/launch=TestValue\n", contract, full, 60)
+	if share != 50 || !cheap {
+		t.Fatalf("audits changed depth: share=%d cheap=%v; want 50 true", share, cheap)
+	}
+}
+
 func TestLandingDepthNamedCommandReasonWithRealCanaries(t *testing.T) {
 	t.Parallel()
 	contract, err := testpolicy.Load(filepath.Join("..", "..", "testing.json"))

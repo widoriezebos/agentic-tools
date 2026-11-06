@@ -179,10 +179,10 @@ func exerciseDeclarationInversePublicRevert(t *testing.T, scenarios []string) {
 				f.content = strings.Replace(latest, "proof.cheap=printf cheap", "proof.cheap=printf third", 1)
 			}
 			if scenario == "inherited-mixed" {
-				f.content = strings.Replace(latest, "proof.audits=true", "proof.audits=false", 1)
-				original.AfterDeclaration.Values[1] = "false"
-				original.AfterDeclaration.Content = strings.Replace(after, "proof.audits=true", "proof.audits=false", 1)
-				original.InheritedDeclaration = &processchange.Declaration{Values: [4]string{"true", "false", "15", "true"}}
+				f.content = strings.Replace(latest, "proof.audits=true", "proof.audits=printf audits", 1)
+				original.AfterDeclaration.Values[1] = "printf audits"
+				original.AfterDeclaration.Content = strings.Replace(after, "proof.audits=true", "proof.audits=printf audits", 1)
+				original.InheritedDeclaration = &processchange.Declaration{Values: [4]string{"true", "printf audits", "15", "true"}}
 			}
 			if scenario == "inherited" {
 				original.InheritedDeclaration = original.AfterDeclaration
@@ -399,7 +399,7 @@ func exerciseDeclarationInversePublicRevert(t *testing.T, scenarios []string) {
 					t.Fatalf("final newline changed: %d %q", code, f.content)
 				}
 			} else if scenario == "inherited-mixed" {
-				if code != 0 || f.content != strings.Replace(strings.Replace(latest, "proof.cheap=printf cheap", "proof.cheap=true", 1), "proof.audits=true", "proof.audits=false", 1) {
+				if code != 0 || f.content != strings.Replace(strings.Replace(latest, "proof.cheap=printf cheap", "proof.cheap=true", 1), "proof.audits=true", "proof.audits=printf audits", 1) {
 					t.Fatalf("inherited declaration reversed: %d %q", code, f.content)
 				}
 			} else if scenario == "delta-replay" || scenario == "missing" || scenario == "explicit-conflict" || scenario == "corrupt-baseline" {
