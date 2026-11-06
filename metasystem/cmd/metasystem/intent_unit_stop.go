@@ -25,9 +25,10 @@ func freshUnitReadDue(round launch.UnitRound, subject *launch.UnitSubject) bool 
 	if round.Stop == nil || !collectableStop(round.Stop.Handoff) || round.ReadModel == "" || subject != nil && subject.Commit != "" {
 		return false
 	}
-	if round.UnknownRetries == 0 {
-		return true
-	}
+	return round.UnknownRetries == 0 || freshUnitReadActive(round)
+}
+
+func freshUnitReadActive(round launch.UnitRound) bool {
 	for index := len(round.Steps) - 1; index >= 0; index-- {
 		step := round.Steps[index]
 		if step.Name == launch.FreshReadStep {
@@ -35,6 +36,10 @@ func freshUnitReadDue(round launch.UnitRound, subject *launch.UnitSubject) bool 
 		}
 	}
 	return false
+}
+
+func unitReadsFailedTwice(round launch.UnitRound) bool {
+	return round.Stop != nil && collectableStop(round.Stop.Handoff) && round.UnknownRetries >= 1 && !freshUnitReadActive(round)
 }
 
 // reviewStoppedUnit applies the collected decision before a correction brief
@@ -87,7 +92,10 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 			inv.freshReadDue = true
 			return &intentResult{Targets: targets, Outcome: intentInProgress, Data: data}
 		}
-		if round.UnknownRetries == 0 && stop.Handoff != "stopped unreadable-policy" {
+		if unitReadsFailedTwice(round) {
+			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: fmt.Sprintf("the read of attempt %d could not be collected twice; the unit stays stopped", round.Number), next: inv.publicArgv("work", "stop", unitRunPrefix+record.ID), nextReason: "ends this run; a person decides what follows"}
+		}
+		if work.subject != nil && work.subject.Commit != "" && round.UnknownRetries == 0 && stop.Handoff != "stopped unreadable-policy" {
 			// The committed critic retry owner permits one examination of the
 			// same subject. Its executions do not add a unit round.
 			data["retry"] = 1

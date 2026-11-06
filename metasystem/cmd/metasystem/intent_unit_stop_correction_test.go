@@ -74,6 +74,102 @@ func (s *reviewReadStarter) StartSupervisor(id, state string) (identity.Ref, err
 	return s.stopReadStarter.StartSupervisor(id, state)
 }
 
+func TestAnEnvironmentReadStopNamesOneAct(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"pending", "failed-pending", "failed-unbound", "failed-committed", "unused-committed", "cancelled"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			b := newStopWorkBed(t)
+			s := &reviewReadStarter{stopReadStarter: &stopReadStarter{bed: b, reads: [][]readsubject.Finding{{}}}}
+			b.manager.Supervisor = s
+			run, _, _ := stopBuild(t, b, "auto")
+			runner := &launch.UnitRunner{Root: b.unitRoot, Manager: b.manager, Git: workGit{b}, ReviewPolicy: func() (string, error) { return "auto", nil }}
+			record := retainUncollectedUnitRead(t, runner, run, true)
+			round := &record.Rounds[0]
+			round.Stop.Handoff = "stopped unreadable-read"
+			if strings.HasPrefix(mode, "failed-") {
+				round.UnknownRetries = 1
+			}
+			if strings.Contains(mode, "committed") {
+				record.Subjects[0].Commit = strings.Repeat("c", 40)
+			}
+			if mode == "failed-unbound" {
+				record.Subjects = nil
+			}
+			path := filepath.Join(b.unitRoot, run, "run.json")
+			transferWriteJSON(t, path, record)
+			if mode == "cancelled" {
+				owners := b.workOwners()
+				now, err := owners.commandNow(b.root())
+				if err != nil {
+					t.Fatal(err)
+				}
+				owners.prove = enrolledPersonProver(t, b.root(), now)
+				if code, result := transferPublic(t, b, owners, "work", "stop", "run:"+run); code != 0 {
+					t.Fatalf("cancel: %d %s", code, result.Summary)
+				}
+			}
+			calls := len(b.starter.launched())
+			_, status, _ := stopPublic(t, b, "auto", "work", "status", b.id, "--work", "stopped")
+			t.Logf("work status %s --work stopped: %s; next=%+v", b.id, status.Summary, status.Next)
+			review := []string{"metasystem", "work", "review", b.id, "--work", "stopped"}
+			stop := []string{"metasystem", "work", "stop", "run:" + run}
+			if mode == "cancelled" {
+				if !strings.Contains(status.Summary, "cancelled; new work starts under another name") || status.Next != nil && slices.Contains(status.Next.Argv, "review") || len(b.starter.launched()) != calls {
+					t.Fatalf("cancelled status: %+v", status)
+				}
+				return
+			}
+			want := "could not be collected (unreadable-read); the next review collects it again: " + shellCommand(review)
+			if strings.HasPrefix(mode, "failed-") {
+				want = "could not be collected twice; " + shellCommand(stop) + " ends this run"
+			} else if mode == "unused-committed" {
+				want = "stopped: unknown read inputs; stopped unreadable-read"
+			}
+			if !strings.Contains(status.Summary, want) {
+				t.Fatalf("status lost its act: want %q, got %s", want, status.Summary)
+			}
+			args := review[1:]
+			if strings.Contains(mode, "committed") {
+				args = append(slices.Clone(args), "--dispositions", b.brief("decisions.md", deliveryDispositionsHeader))
+			}
+			if mode == "pending" {
+				s.hold, b.starter.hold = true, "read"
+				for index := 0; index < 2; index++ {
+					_, result, _ := stopPublic(t, b, "auto", args...)
+					t.Logf("%s: %s; next=%+v", shellCommand(review), result.Summary, result.Next)
+					after, err := runner.Status(run)
+					if err != nil {
+						t.Fatal(err)
+					}
+					steps := after.Rounds[0].Steps
+					fresh := steps[len(steps)-1]
+					if result.Outcome != intentInProgress || result.Summary != "the fresh read of attempt 1 is running" || result.Next == nil || !slices.Equal(result.Next.Argv, review) || fresh.Name != launch.FreshReadStep || fresh.State != launch.StepRunning || len(fresh.LaunchIDs) != 1 || len(b.starter.launched()) != calls+1 {
+						t.Fatalf("fresh read did not name one review with one execution: %+v step=%+v", result, fresh)
+					}
+				}
+				_, running, _ := stopPublic(t, b, "auto", "work", "status", b.id, "--work", "stopped")
+				if !strings.Contains(running.Summary, "the next review collects it again") || running.Next == nil || !slices.Equal(running.Next.Argv, review) {
+					t.Fatalf("running read lost its review act: %+v", running)
+				}
+				return
+			}
+			_, result, _ := stopPublic(t, b, "auto", args...)
+			t.Logf("%s: %s; next=%+v", shellCommand(review), result.Summary, result.Next)
+			if mode == "unused-committed" {
+				if result.Next == nil || !slices.Contains(result.Next.Argv, "--retry") {
+					t.Fatalf("committed read lost its unused retry: %+v", result)
+				}
+			} else if result.Outcome != intentRefused || result.Summary != "the read of attempt 1 could not be collected twice; the unit stays stopped" || result.Next == nil || !slices.Equal(result.Next.Argv, stop) || result.Next.Reason != "ends this run; a person decides what follows" || status.Next == nil || !slices.Equal(status.Next.Argv, stop) || strings.Contains(status.Summary, "work revise") {
+				t.Fatalf("twice-failed read lost its stop act: status=%+v review=%+v", status, result)
+			}
+			if len(b.starter.launched()) != calls {
+				t.Fatal("review started another read")
+			}
+		})
+	}
+}
+
 func TestAnUncollectableReadIsReadOnceMoreByTheMachine(t *testing.T) {
 	t.Parallel()
 	for _, mode := range []string{"fresh", "held", "invalid", "committed"} {
@@ -111,7 +207,7 @@ func TestAnUncollectableReadIsReadOnceMoreByTheMachine(t *testing.T) {
 				t.Fatal(err)
 			}
 			if mode == "invalid" || mode == "committed" {
-				if len(b.starter.launched()) != calls || after.Rounds[0].Stop.Decision != "stop" || result.Next == nil || !slices.Contains(result.Next.Argv, "--retry") {
+				if len(b.starter.launched()) != calls || after.Rounds[0].Stop.Decision != "stop" || result.Next == nil || slices.Contains(result.Next.Argv, "--retry") != (mode == "committed") || mode == "invalid" && !slices.Contains(result.Next.Argv, "revise") {
 					t.Fatalf("non-recoverable read changed: stop=%+v %s", after.Rounds[0].Stop, result.Summary)
 				}
 				return

@@ -89,6 +89,12 @@ func workStage(work launch.NamedWork, readers ...func(string, string, string) (b
 			return "transferred; its destinations remain required"
 		}
 		if round.Stop != nil && round.Stop.Decision == "stop" {
+			if unitReadsFailedTwice(round) {
+				return fmt.Sprintf("the read of attempt %d could not be collected twice; metasystem work stop run:%s ends this run", round.Number, work.Record.ID)
+			}
+			if freshUnitReadDue(round, currentSubject(work)) {
+				return fmt.Sprintf("the read of attempt %d could not be collected (%s); the next review collects it again: %s", round.Number, strings.TrimPrefix(round.Stop.Handoff, "stopped "), shellCommand([]string{"metasystem", "work", "review", work.Record.Goal, "--work", work.Unit}))
+			}
 			return "stopped: " + round.Stop.Class + "; " + round.Stop.Handoff
 		}
 		outcome = round.Outcome
@@ -454,6 +460,15 @@ func (inv *intentInvocation) workContinuation(id string, work launch.NamedWork, 
 		}
 		path := filepath.Join(work.Record.Rounds[len(work.Record.Rounds)-1].Directory, "stop-dispositions.md")
 		return inv.workArgv(*work.Record, "review", "--dispositions", path), "continues the retained drop and repairs its matching questions"
+	}
+	if work.Record != nil && len(work.Record.Rounds) > 0 {
+		round := work.Record.Rounds[len(work.Record.Rounds)-1]
+		if unitReadsFailedTwice(round) {
+			return inv.publicArgv("work", "stop", unitRunPrefix+work.Record.ID), "ends this run; a person decides what follows"
+		}
+		if freshUnitReadDue(round, currentSubject(work)) {
+			return inv.workArgv(*work.Record, "review"), "collects the read again"
+		}
 	}
 	read := branch.BranchReadResult{}
 	gapPerson := work.Record != nil && work.Record.MaxRounds > 0 && workAttempt(work) >= work.Record.MaxRounds

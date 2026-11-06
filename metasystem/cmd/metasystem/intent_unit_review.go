@@ -113,8 +113,16 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	if err == nil && inv.freshReadDue {
 		inv.freshReadDue = false
 		fresh, freshErr := runner.RetryUnknownRead(run)
-		if freshErr != nil || fresh.Capped {
+		if freshErr != nil {
 			return inv.unitOutcome(runner, fresh, freshErr, targets, inv.workArgv(current, "wait"))
+		}
+		if fresh.Capped {
+			yielded := inv.unitOutcome(runner, fresh, nil, targets, inv.workArgv(current, "wait"))
+			if yielded.Outcome == intentInProgress {
+				yielded.Summary = fmt.Sprintf("the fresh read of attempt %d is running", len(fresh.Record.Rounds))
+				yielded.next, yielded.nextReason = inv.workArgv(current, "review"), "collects the fresh read once it finishes"
+			}
+			return yielded
 		}
 		err = runner.ReviewSubject(run, bind)
 	}
@@ -275,6 +283,9 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		if freshUnitReadDue(review.Round, nil) {
 			inv.freshReadDue = true
 			return intentResult{Targets: targets, Outcome: intentInProgress, Data: unitData(record, runner.Manager)}
+		}
+		if unitReadsFailedTwice(review.Round) {
+			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: unitData(record, runner.Manager), Summary: fmt.Sprintf("the read of attempt %d could not be collected twice; the unit stays stopped", review.Round.Number), next: inv.publicArgv("work", "stop", unitRunPrefix+record.ID), nextReason: "ends this run; a person decides what follows"}
 		}
 		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: unitData(record, runner.Manager), Summary: "the fresh examination still has unknown inputs; " + review.Round.Stop.Handoff + " holds this unit", next: inv.workArgv(record, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
 	}
