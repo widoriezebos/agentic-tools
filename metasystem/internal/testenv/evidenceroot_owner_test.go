@@ -1,4 +1,4 @@
-package config
+package testenv
 
 import (
 	"io/fs"

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/processchange"
@@ -23,7 +25,7 @@ func intentWorkCommitCommand() intentCommand {
 		usage:    []string{"metasystem work commit G --work U [--amend]"},
 		examples: []string{"metasystem work commit verbs-match-intent --work discovery"}, maxArgs: 1, accepts: []string{refGoal},
 		flags:   []intentFlag{{name: "work", value: "U", usage: "the unit whose staged changes are committed"}, {name: "amend", usage: "correct the existing unit, preserving later work"}},
-		details: []string{"Uses the current goal worktree's staged changes, supplies its Goal-Unit trailer and runs the static and committed cheap checks on the commit candidate. Publish and read it with work review --commit SHA --goal G."},
+		details: []string{"Uses the current goal worktree's staged changes, supplies its Goal-Unit trailer and runs the static, committed cheap and declared audit checks on the commit candidate. Publish and read it with work review --commit SHA --goal G."},
 		run:     runIntentWorkCommit}
 }
 
@@ -123,6 +125,10 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 						}
 						checked, err = conn.commitCheck(installation, parent)
 						if err != nil {
+							var audit *committedAuditFailure
+							if errors.As(err, &audit) {
+								return fmt.Errorf("the declared audits failed; nothing was committed: %w", err)
+							}
 							return fmt.Errorf("the cheap check failed; nothing was committed: %w", err)
 						}
 						afterHead, after, err := bound.WorktreeResult(candidate)
@@ -176,11 +182,16 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 		}
 		return inv.render(intentResult{Outcome: intentConfirmed, Summary: "the declaration delta was published; its intervention hold is resolved", Data: act})
 	}
-	return inv.render(intentResult{Targets: inv.targets(id), Outcome: intentConfirmed, Summary: fmt.Sprintf("committed the staged work as %s; %s (%.2f minutes)", shortSHA(commit), checked.Form, checked.Minutes),
+	return inv.render(intentResult{Targets: inv.targets(id), Outcome: intentConfirmed, Summary: fmt.Sprintf("committed the staged work as %s; %s (cheap %.2f minutes, audits %.2f minutes)", shortSHA(commit), checked.Form, checked.Minutes, checked.AuditMinutes),
 		Data: map[string]any{"commit": commit, "work": inv.input.text("work")}, next: inv.publicArgv("work", "review", "--commit", commit, "--goal", id), nextReason: "publishes its independent read"})
 }
 
-// committedWorkCheck preserves the project's cheap-check declaration for the unit's parent.
+type committedAuditFailure struct{ err error }
+
+func (failure *committedAuditFailure) Error() string { return failure.err.Error() }
+func (failure *committedAuditFailure) Unwrap() error { return failure.err }
+
+// committedWorkCheck runs the project's check declarations from the unit's parent.
 func committedWorkCheck(directory, base string, stdout, stderr io.Writer) (repairCheck, error) {
 	top, err := goalBranchGit(directory, "rev-parse", "--show-toplevel")
 	if err != nil {
@@ -190,23 +201,50 @@ func committedWorkCheck(directory, base string, stdout, stderr io.Writer) (repai
 	if err != nil {
 		return repairCheck{}, err
 	}
-	words := shellWords(command)
-	if len(words) >= 3 && words[0] == "metasystem" && words[1] == "test" && words[2] == "impact" {
-		return committedImpactCheck(directory, base, stdout, stderr, words[3:]...)
-	}
-	checked, err := repairCheckIdentity(directory, base)
+	audits, err := landingProofCommand(directory, top, base, "proof.audits", goalBranchGit)
 	if err != nil {
-		return repairCheck{}, err
+		path, pathErr := filepath.Rel(top, filepath.Join(directory, "metasystem.conf"))
+		content, readErr := goalBranchGit(top, "show", base+":"+filepath.ToSlash(path))
+		_, present, lookupErr := config.CommittedContentLookup(content, "proof.audits")
+		if pathErr != nil || readErr != nil || lookupErr != nil || present {
+			return repairCheck{}, &committedAuditFailure{err}
+		}
+		audits = "true"
+		fmt.Fprintln(stderr, "no audits declared in the committed configuration; this check runs without audits")
 	}
-	proof := exec.Command("/bin/sh", "-c", command)
+	words := shellWords(command)
+	var checked repairCheck
+	if len(words) >= 3 && words[0] == "metasystem" && words[1] == "test" && words[2] == "impact" {
+		checked, err = committedImpactCheck(directory, base, stdout, stderr, words[3:]...)
+	} else {
+		checked, err = repairCheckIdentity(directory, base)
+		if err == nil {
+			proof := exec.Command("/bin/sh", "-c", command)
+			proof.Env = append(commandenv.EngineEnvironment(proof.Environ()), "LANDING_PROOF_BASE="+base)
+			proof.Dir, proof.Stdout, proof.Stderr = directory, stdout, stderr
+			started := time.Now()
+			err = proof.Run()
+			checked.Form, checked.Reason = "declared: "+command, "declared cheap check"
+			checked.DurationMS, checked.Minutes = time.Since(started).Milliseconds(), time.Since(started).Minutes()
+		}
+	}
+	if err != nil {
+		return checked, err
+	}
+	proof := exec.Command("/bin/sh", "-c", audits)
 	proof.Env = append(commandenv.EngineEnvironment(proof.Environ()), "LANDING_PROOF_BASE="+base)
 	proof.Dir, proof.Stdout, proof.Stderr = directory, stdout, stderr
 	started := time.Now()
-	if err := proof.Run(); err != nil {
-		return repairCheck{}, err
+	err = proof.Run()
+	checked.AuditMinutes = time.Since(started).Minutes()
+	if audits == "true" {
+		checked.Form += " + no audits"
+	} else {
+		checked.Form += " + audits"
 	}
-	checked.Form, checked.Reason = "declared: "+command, "declared cheap check"
-	checked.DurationMS, checked.Minutes = time.Since(started).Milliseconds(), time.Since(started).Minutes()
+	if err != nil {
+		return checked, &committedAuditFailure{err}
+	}
 	return checked, nil
 }
 

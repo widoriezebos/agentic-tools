@@ -1,4 +1,4 @@
-package lane
+package testenv
 
 import (
 	"io/fs"
@@ -27,7 +27,7 @@ var retiredOwnerNames = []string{
 // the module names one of its entry points or its lineage.
 func TestTheOldBatchOwnerIsGone(t *testing.T) {
 	t.Parallel()
-	module, err := filepath.Abs(filepath.Join("..", "..", ".."))
+	module, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}

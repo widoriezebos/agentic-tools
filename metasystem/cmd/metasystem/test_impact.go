@@ -516,6 +516,7 @@ type repairCheck struct {
 	Form               string
 	DurationMS         int64
 	Minutes            float64
+	AuditMinutes       float64
 }
 
 func repairCheckIdentity(install, base string) (repairCheck, error) {

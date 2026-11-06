@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -56,7 +57,7 @@ func TestWorkCommitUnitImpactGitAdapter(t *testing.T) {
 				}
 				helmMust(t, testexec.WriteFile(filepath.Join(c.worktree, "check.sh"), []byte("#!/bin/sh\nprintf '%s' \"$LANDING_PROOF_BASE\" > "+shellCommand([]string{marker})+"\nexit "+exit+"\n"), 0700))
 			}
-			impactWrite(t, c.worktree, "metasystem.conf", fmt.Sprintf("testing.contract=testing.json\nproof.cheap=%s\nlanding.impact-max-share=%d\n", command, limit))
+			impactWrite(t, c.worktree, "metasystem.conf", fmt.Sprintf("testing.contract=testing.json\nproof.cheap=%s\nproof.audits=true\nlanding.impact-max-share=%d\n", command, limit))
 			pkg := "cmd/tool"
 			if mode == "cmd-named" {
 				pkg = "cmd/metasystem"
@@ -129,7 +130,7 @@ func TestWorkCommitUnitImpactGitAdapter(t *testing.T) {
 			if mode == "declared" {
 				form = "declared: ./check.sh"
 			}
-			if checked.Form != form || checked.Minutes <= 0 || checked.DurationMS <= 0 || checked.Base != parent || checked.Tree == "" {
+			if checked.Form != form+" + no audits" || checked.Minutes <= 0 || checked.DurationMS <= 0 || checked.Base != parent || checked.Tree == "" {
 				t.Fatalf("check record: %+v", checked)
 			}
 			t.Logf("%s: exit=%d %s; %.4f minutes", mode, code, checked.Form, checked.Minutes)
@@ -223,5 +224,91 @@ func TestWorkCommitImpactCheckKeepsRecordedValuesGitAdapter(t *testing.T) {
 	got, err := committedImpactCheck(root, base, &output, &output)
 	if err != nil || got != checked || !strings.Contains(output.String(), "check reused from the job") {
 		t.Fatalf("check recomputed recorded values: got=%+v want=%+v err=%v output=%s", got, checked, err, output.String())
+	}
+}
+
+// Real Git binds the declarations and the reused check to the candidate's parent.
+func TestWorkCommitRunsTheDeclaredAuditsGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{"impact", "declared", "reused"} {
+		for _, declaration := range []string{"proof.audits=exit 3\n", "proof.audits=true\n", "proof.audits=\n", "proof.audits=true\nproof.audits=exit 3\n", ""} {
+			t.Run(path+"/"+declaration, func(t *testing.T) {
+				t.Parallel()
+				root, _ := impactGitAdapterBed(t)
+				root, err := filepath.EvalSymlinks(root)
+				helmMust(t, err)
+				cheap := "metasystem test impact"
+				if path == "declared" {
+					cheap = "./check.sh"
+					mark := "test -n \"$LANDING_PROOF_BASE\" && test -z \"$LANDING_ONLY\"\n"
+					helmMust(t, testexec.WriteFile(filepath.Join(root, "check.sh"), []byte("#!/bin/sh\n"+mark), 0700))
+				}
+				impactWrite(t, root, "metasystem.conf", "testing.contract=testing.json\nlanding.impact-max-share=100\nproof.cheap="+cheap+"\n"+declaration)
+				connectionGit(t, root, "add", ".")
+				connectionGit(t, root, "commit", "-qm", "declarations")
+				base := connectionGit(t, root, "rev-parse", "HEAD")
+				impactWrite(t, root, "internal/launch/value.go", "package launch\nconst Value = true // unit\n")
+				connectionGit(t, root, "add", ".")
+				if path == "reused" {
+					checked, err := repairCheckIdentity(root, base)
+					helmMust(t, err)
+					checked.Form, checked.Minutes = "impact: saved", 2.05
+					_, err = repairCheckCache(root, checked, true)
+					helmMust(t, err)
+				}
+				// Working configuration cannot replace the committed audit command.
+				impactWrite(t, root, "metasystem.conf", "testing.contract=testing.json\nlanding.impact-max-share=100\nproof.cheap="+cheap+"\nproof.audits=true\n")
+				var output bytes.Buffer
+				checked, err := committedWorkCheck(root, base, &output, &output)
+				if declaration == "proof.audits=true\n" || declaration == "" {
+					if err != nil || checked.AuditMinutes < 0 || !strings.HasSuffix(checked.Form, " + no audits") {
+						t.Fatalf("passing audits: %+v error=%v output=%s", checked, err, output.String())
+					}
+					if declaration == "" && !strings.Contains(output.String(), "no audits declared") {
+						t.Fatalf("absent adopted declaration was not explained: %s", output.String())
+					}
+				} else {
+					var failure *committedAuditFailure
+					want := "proof.audits"
+					if declaration == "proof.audits=exit 3\n" {
+						want = "exit status 3"
+					}
+					if !errors.As(err, &failure) || !strings.Contains(err.Error(), want) {
+						t.Fatalf("audit failure: %+v error=%v output=%s", checked, err, output.String())
+					}
+				}
+				if path == "reused" && (declaration == "" || declaration == "proof.audits=true\n" || declaration == "proof.audits=exit 3\n") && (!strings.Contains(output.String(), "check reused from the job") || checked.Minutes != 2.05) {
+					t.Fatalf("cheap check was not reused: %+v output=%s", checked, output.String())
+				}
+			})
+		}
+	}
+}
+
+// The public commit boundary must leave the branch unchanged on an audit failure.
+func TestWorkCommitReportsTheDeclaredAuditsGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, audits := range []string{"exit 3", "test -n \"$LANDING_PROOF_BASE\" && test -z \"$LANDING_ONLY\""} {
+		t.Run(audits, func(t *testing.T) {
+			t.Parallel()
+			c, owners := readPublicationAdapterBed(t)
+			marker := filepath.Join(t.TempDir(), "audit-ran")
+			impactWrite(t, c.worktree, "metasystem.conf", "proof.cheap=true\nproof.audits="+audits+" && touch "+shellCommand([]string{marker})+"\n")
+			connectionGit(t, c.worktree, "add", ".")
+			connectionGit(t, c.worktree, "commit", "-qm", "goal "+c.id+" units settings\n\nGoal-Unit: "+c.id+"/settings")
+			parent := connectionGit(t, c.worktree, "rev-parse", "HEAD")
+			impactWrite(t, c.worktree, "hand.txt", "unit\n")
+			connectionGit(t, c.worktree, "add", "hand.txt")
+			owners.connection.rebaseGate = func(string) (string, error) { return "static-green", nil }
+			owners.connection.commitCheck = nil
+			code, result := c.runJSON(owners, "work", "commit", c.id, "--work", "hand")
+			if audits == "exit 3" {
+				if code == 0 || !strings.HasPrefix(result.Summary, "the declared audits failed; nothing was committed") || connectionGit(t, c.worktree, "rev-parse", "HEAD") != parent || c.commits != 0 {
+					t.Fatalf("audit red committed or mislabeled: exit=%d %+v", code, result)
+				}
+			} else if _, err := os.Stat(marker); code != 0 || err != nil || !strings.Contains(result.Summary, "(cheap ") || !strings.Contains(result.Summary, " minutes, audits ") || c.commits != 1 {
+				t.Fatalf("audit success: exit=%d %+v marker=%v", code, result, err)
+			}
+		})
 	}
 }

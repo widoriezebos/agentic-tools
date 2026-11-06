@@ -419,6 +419,39 @@ func TestLaneFixRunsTheCommittedAudits(t *testing.T) {
 	}
 }
 
+// Git supplies the comment-only change; the live contract must select the
+// module walkers even when the changed package is absent from their group.
+func TestLaneFixSelectsModuleWalkingAuditsForCommentChangesGitAdapter(t *testing.T) {
+	t.Parallel()
+	for _, path := range []string{"internal/steward/alert_episode.go", "scripts/check.sh"} {
+		t.Run(path, func(t *testing.T) {
+			t.Parallel()
+			root, err := filepath.EvalSymlinks(t.TempDir())
+			helmMust(t, err)
+			module := filepath.Join(root, "metasystem")
+			helmMust(t, os.Rename(impactAdapterBed(t), module))
+			data, err := os.ReadFile("../../testing.json")
+			helmMust(t, err)
+			impactWrite(t, module, "testing.json", string(data))
+			impactWrite(t, module, "metasystem.conf", "metasystem.template=true\ntesting.contract=testing.json\n")
+			source, comment := "package probe\n", "// probe: evidence.root\n"
+			if strings.HasSuffix(path, ".sh") {
+				source, comment = "#!/bin/sh\n", "# probe: evidence.root\n"
+			}
+			impactWrite(t, module, path, source)
+			connectionGit(t, root, "init", "-q", "-b", "main")
+			connectionGit(t, root, "add", ".")
+			connectionGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "base")
+			base := connectionGit(t, root, "rev-parse", "HEAD")
+			impactWrite(t, module, path, source+comment)
+			code, out, problem := impactPublic(t, module, "--base", base, "--plan")
+			if code != 0 || !strings.Contains(out, "selection: test-environment-standard\n") {
+				t.Fatalf("comment-only change missed the module audits: exit=%d output=%s stderr=%s", code, out, problem)
+			}
+		})
+	}
+}
+
 func TestLaneFixCustodyRejectsOutsidersAndStaleAttempts(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"non-member", "seat", "stale attempt", "attached branch"} {
