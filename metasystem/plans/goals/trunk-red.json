@@ -8139,11 +8139,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261106T184337.381193000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-06T22:05:45Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-06T23:02:48Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "6WV334JVH9ZVBZC0W4ZTRMC045-m1e-d1dcb11e",
+        "by": "Wido",
+        "why": "Host environment of the new MacBook lane, not main: its first proof (batch 20261106T123014 on e01523581) ran without the pinned Go toolchain and static tools (Little Snitch blocked Go's downloads) and under XProtect scanning of every file write; main containing e01523581 proved green in this Mac's full proof at 16:48 and its fast-static-build green at 19:48 and 19:54 (findings 550, 551). The MacBook lane is paused until its host is fixed."
+      }
     },
     {
       "testUnit": "metasystem/internal/steward",
