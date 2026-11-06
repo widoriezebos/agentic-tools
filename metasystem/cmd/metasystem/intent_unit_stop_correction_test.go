@@ -15,9 +15,181 @@ import (
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
 )
+
+func retainUncollectedUnitRead(t *testing.T, runner *launch.UnitRunner, run string, lost bool) launch.UnitRunRecord {
+	t.Helper()
+	if err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+		read := review.Round.Reads[len(review.Round.Reads)-1]
+		return retain(launch.UnitSubject{Round: review.Round.Number, Operation: run + "-pending", ExpectedParent: review.Head,
+			DiffDigest: review.DiffDigest, Examination: read.ID, ExaminationRound: int64(review.Round.Number), ExaminationReturnPath: read.Output})
+	}); err != nil {
+		t.Fatal(err)
+	}
+	record, err := runner.Status(run)
+	if err != nil {
+		t.Fatal(err)
+	}
+	round := &record.Rounds[len(record.Rounds)-1]
+	if lost {
+		read := round.Reads[len(round.Reads)-1]
+		execution, err := runner.Manager.Store.Read(read.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, output := range execution.Outputs {
+			if filepath.Ext(output.Path) == ".json" {
+				if err := os.Remove(output.Path); err != nil && !os.IsNotExist(err) {
+					t.Fatal(err)
+				}
+			}
+		}
+		if _, err := runner.Manager.Store.Update(read.ID, func(r *launch.Record) error { r.Read = nil; return nil }); err != nil {
+			t.Fatal(err)
+		}
+	}
+	round.Reads, round.Material = nil, -1
+	round.Stop.Decision, round.Stop.Class, round.Stop.Handoff = "stop", "unknown read inputs", "stopped unavailable-stop-inputs"
+	round.Stop.Measure.Name, round.Stop.Measure.Now = "", nil
+	transferWriteJSON(t, filepath.Join(runner.Root, run, "run.json"), record)
+	return record
+}
+
+type reviewReadStarter struct {
+	*stopReadStarter
+	hold bool
+}
+
+func (s *reviewReadStarter) StartSupervisor(id, state string) (identity.Ref, error) {
+	record, err := s.bed.manager.Store.Read(id)
+	if err != nil {
+		return identity.Ref{}, err
+	}
+	if s.hold && record.Kind == "read" {
+		return s.bed.starter.StartSupervisor(id, state)
+	}
+	return s.stopReadStarter.StartSupervisor(id, state)
+}
+
+func TestAnUncollectableReadIsReadOnceMoreByTheMachine(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"fresh", "held", "invalid", "committed"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			b := newStopWorkBed(t)
+			findings := []readsubject.Finding{}
+			if mode == "invalid" {
+				finding := stopFinding("regression", "a.go")
+				finding.Resolves = "unknown"
+				findings = append(findings, finding)
+			}
+			s := &reviewReadStarter{stopReadStarter: &stopReadStarter{bed: b, reads: [][]readsubject.Finding{findings, {}}}}
+			b.manager.Supervisor = s
+			run, record, _ := stopBuild(t, b, "auto")
+			runner := &launch.UnitRunner{Root: b.unitRoot, Manager: b.manager, Git: workGit{b}, ReviewPolicy: func() (string, error) { return "auto", nil }}
+			if mode != "invalid" {
+				record = retainUncollectedUnitRead(t, runner, run, true)
+			}
+			if mode == "committed" {
+				record.Subjects[0].Commit = strings.Repeat("c", 40)
+				transferWriteJSON(t, filepath.Join(b.unitRoot, run, "run.json"), record)
+			}
+			if mode == "held" {
+				s.hold, b.starter.hold = true, "read"
+			}
+			calls := len(b.starter.launched())
+			args := []string{"work", "review", b.id, "--work", "stopped"}
+			if mode == "committed" {
+				args = append(args, "--dispositions", b.brief("decisions.md", deliveryDispositionsHeader))
+			}
+			_, result, _ := stopPublic(t, b, "auto", args...)
+			after, err := runner.Status(run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if mode == "invalid" || mode == "committed" {
+				if len(b.starter.launched()) != calls || after.Rounds[0].Stop.Decision != "stop" || result.Next == nil || !slices.Contains(result.Next.Argv, "--retry") {
+					t.Fatalf("non-recoverable read changed: stop=%+v %s", after.Rounds[0].Stop, result.Summary)
+				}
+				return
+			}
+			round := after.Rounds[0]
+			fresh := round.Steps[len(round.Steps)-1]
+			if fresh.Name != launch.FreshReadStep || len(fresh.LaunchIDs) != 1 || len(b.starter.launched()) != calls+1 || round.UnknownRetries != 1 || result.Next != nil && slices.Contains(result.Next.Argv, "--retry") {
+				t.Fatalf("fresh read did not run once: name=%s state=%s retries=%d launches=%v %s", fresh.Name, fresh.State, round.UnknownRetries, fresh.LaunchIDs, result.Summary)
+			}
+			if mode == "held" {
+				if fresh.State != launch.StepRunning || result.Outcome != intentInProgress {
+					t.Fatalf("held read: state=%s %s", fresh.State, result.Summary)
+				}
+				_, joined, _ := stopPublic(t, b, "auto", "work", "review", b.id, "--work", "stopped")
+				if joined.Outcome != intentInProgress || len(b.starter.launched()) != calls+1 || joined.Next != nil && slices.Contains(joined.Next.Argv, "--retry") {
+					t.Fatalf("joining the read did not stay in progress with one process: %s", joined.Summary)
+				}
+				state, err := b.manager.Store.StateDir(fresh.LaunchID)
+				if err != nil {
+					t.Fatal(err)
+				}
+				path, report := filepath.Join(state, "return.json"), filepath.Join(state, "report.md")
+				transferWriteJSON(t, path, map[string]any{"findings": []any{}, "verdictMaterialCount": 0})
+				if err := os.WriteFile(report, []byte("VERDICT: LAND\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := b.manager.Store.Update(fresh.LaunchID, func(r *launch.Record) error {
+					code, yes := 0, true
+					r.State, r.ExitCode, r.VerdictCounts, r.Measurement.Verdict = launch.Completed, &code, &yes, "LAND"
+					r.FinishedAt = b.manager.Now().UTC().Format(time.RFC3339Nano)
+					r.Outputs = []launch.Output{{Path: path}, {Path: report}}
+					return nil
+				}); err != nil {
+					t.Fatal(err)
+				}
+				s.hold, b.starter.hold = false, ""
+				stopPublic(t, b, "auto", "work", "review", b.id, "--work", "stopped")
+				after, err = runner.Status(run)
+				if err != nil {
+					t.Fatal(err)
+				}
+			}
+			round = after.Rounds[0]
+			fresh = round.Steps[len(round.Steps)-1]
+			if round.Stop.Decision != "close" || after.Subjects[0].Examination != fresh.LaunchID || after.Subjects[0].ExaminationJob != "" || len(fresh.LaunchIDs) != 1 || len(b.starter.launched()) != calls+1 {
+				t.Fatalf("fresh read did not decide and bind the pending subject: stop=%+v subjects=%+v", round.Stop, after.Subjects)
+			}
+		})
+	}
+}
+
+func TestACancelledRunIsNotRecovered(t *testing.T) {
+	t.Parallel()
+	b := newStopWorkBed(t)
+	b.manager.Supervisor = &stopReadStarter{bed: b, reads: [][]readsubject.Finding{{}}}
+	run, record, _ := stopBuild(t, b, "auto")
+	record.Rounds[0].Reads, record.Rounds[0].Material = nil, -1
+	record.Rounds[0].Stop.Decision, record.Rounds[0].Stop.Handoff = "stop", "stopped unavailable-stop-inputs"
+	transferWriteJSON(t, filepath.Join(b.unitRoot, run, "run.json"), record)
+	owners := b.workOwners()
+	now, err := owners.commandNow(b.root())
+	if err != nil {
+		t.Fatal(err)
+	}
+	owners.prove = enrolledPersonProver(t, b.root(), now)
+	if code, result := transferPublic(t, b, owners, "work", "stop", "run:"+run); code != 0 {
+		t.Fatalf("cancel: %d %s", code, result.Summary)
+	}
+	path := filepath.Join(b.unitRoot, run, "run.json")
+	before := mustRead(t, path)
+	calls := len(b.starter.launched())
+	for _, args := range [][]string{{"work", "review", "run:" + run}, {"work", "review", b.id, "--work", "stopped"}} {
+		code, result, _ := stopPublic(t, b, "auto", args...)
+		if code == 0 || result.Summary != "this run was cancelled; new work starts under another name" || !bytes.Equal(before, mustRead(t, path)) || len(b.starter.launched()) != calls {
+			t.Fatalf("cancelled review changed the run: %d %s", code, result.Summary)
+		}
+	}
+}
 
 func TestIntentContinuingUnitRefusesDropAndSplitBeforeRetention(t *testing.T) {
 	t.Parallel()

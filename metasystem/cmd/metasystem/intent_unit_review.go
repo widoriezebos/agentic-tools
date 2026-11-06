@@ -43,7 +43,11 @@ func retriesBuilder(round launch.UnitRound) bool {
 func (inv *intentInvocation) reviewUnit(run string) intentResult {
 	targets := []intentTarget{{Kind: "unit", ID: run}}
 	runner := inv.unitRunner()
-	if current, err := runner.Status(run); err == nil && len(current.Rounds) > 0 {
+	current, err := runner.Status(run)
+	if err == nil && current.State == "cancelled" {
+		return inv.cancelledWorkResult(current.Goal)
+	}
+	if err == nil && len(current.Rounds) > 0 {
 		round := current.Rounds[len(current.Rounds)-1]
 		retryRequested := round.Stop != nil && round.Stop.Loop == "unit-build" && (round.Cause == "environment" || round.Cause == "deadline" || round.Cause == "main")
 		for _, step := range round.Steps {
@@ -99,25 +103,21 @@ func (inv *intentInvocation) reviewUnit(run string) intentResult {
 			resumed, err = runner.Continue(launch.UnitRequest{Resume: run})
 			return inv.unitOutcome(runner, resumed, err, targets, inv.workArgv(current, "wait"))
 		}
-		if round.Stop != nil && strings.HasPrefix(round.Stop.Handoff, "stopped ") && round.Stop.Handoff != "stopped unreadable-policy" && len(current.Subjects) == 0 && round.ReadModel != "" {
-			if round.UnknownRetries == 0 {
-				fresh, err := runner.RetryUnknownRead(run)
-				if err != nil || fresh.Capped {
-					return inv.unitOutcome(runner, fresh, err, targets, inv.workArgv(current, "wait"))
-				}
-				current = fresh.Record
-				round = current.Rounds[len(current.Rounds)-1]
-			}
-			if round.Stop != nil && strings.HasPrefix(round.Stop.Handoff, "stopped ") {
-				return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: unitData(current, runner.Manager), Summary: "the fresh examination still has unknown inputs; " + round.Stop.Handoff + " holds this unit", next: inv.workArgv(current, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
-			}
-		}
 	}
 	var result intentResult
-	err := runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
+	bind := func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 		result = inv.reviewUnitRound(runner, targets, review, retain)
 		return nil
-	})
+	}
+	err = runner.ReviewSubject(run, bind)
+	if err == nil && inv.freshReadDue {
+		inv.freshReadDue = false
+		fresh, freshErr := runner.RetryUnknownRead(run)
+		if freshErr != nil || fresh.Capped {
+			return inv.unitOutcome(runner, fresh, freshErr, targets, inv.workArgv(current, "wait"))
+		}
+		err = runner.ReviewSubject(run, bind)
+	}
 	if err == nil {
 		return result
 	}
@@ -246,18 +246,42 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		}
 		return endpointTip, nil
 	}
+	if inv.reviewWork == nil {
+		retry, _ := strconv.ParseInt(inv.input.text("retry"), 10, 64)
+		inv.reviewWork = &reviewWorkContext{goal: goalID, work: unit, run: record.ID, retry: retry}
+	}
 	subject := review.Subject
 	if subject == nil && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" && len(review.Round.Reads) > 0 {
 		read := review.Round.Reads[len(review.Round.Reads)-1]
 		subject = &launch.UnitSubject{Round: review.Round.Number, Operation: record.ID + "-pending", ExpectedParent: review.Head, DiffDigest: review.DiffDigest, Examination: read.ID, ExaminationRound: int64(review.Round.Number), ExaminationReturnPath: read.Output}
+	}
+	if subject != nil && subject.Commit == "" && subject.Operation == record.ID+"-pending" && len(review.Round.Reads) > 0 {
+		read := review.Round.Reads[len(review.Round.Reads)-1]
+		rebound := *subject
+		if read.ID != subject.Examination {
+			rebound.Examination, rebound.ExaminationReturnPath, rebound.ExaminationJob = read.ID, read.Output, ""
+		}
+		subject = &rebound
 		if err := retain(*subject); err != nil {
 			return refuse(retry, "retains the stopped patch review", "the stopped review could not be retained", "%v", err)
 		}
 	}
+	if subject == nil && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" {
+		if review.Round.Stop.Handoff == "stopped unreadable-policy" {
+			_, policyErr := runner.ReviewPolicy()
+			repair, reason := inv.reviewPolicyRepair(policyErr)
+			return refuse(repair, reason, "review.stop cannot be read; "+shellCommand(repair)+"; the unit stays stopped", "%s", record.PolicyError)
+		}
+		if freshUnitReadDue(review.Round, nil) {
+			inv.freshReadDue = true
+			return intentResult{Targets: targets, Outcome: intentInProgress, Data: unitData(record, runner.Manager)}
+		}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: unitData(record, runner.Manager), Summary: "the fresh examination still has unknown inputs; " + review.Round.Stop.Handoff + " holds this unit", next: inv.workArgv(record, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
+	}
 	if inv.reviewWork != nil && subject != nil {
 		inv.reviewWork.run, inv.reviewWork.attempt, inv.reviewWork.subject, inv.reviewWork.retain, inv.reviewWork.review = record.ID, review.Round.Number, subject, retain, &review
 		// The stop arm needs a decisions file: a bare --retry of a stopped unit must reach its fresh examination.
-		if subject.Drop != nil || subject.Commit == "" && subject.Examination != "" || inv.input.has("dispositions") && subject.Examination != "" && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" {
+		if subject.Drop != nil || subject.Commit == "" && (subject.Examination != "" || review.Round.Stop != nil && review.Round.Stop.Decision == "stop") || inv.input.has("dispositions") && subject.Examination != "" && review.Round.Stop != nil && review.Round.Stop.Decision == "stop" {
 			if stopped := inv.reviewStoppedUnit(targets, install, subject.Examination, subject.ExaminationReturnPath, inv.reviewWork); stopped != nil {
 				return *stopped
 			}
@@ -516,10 +540,6 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 	}
 	if install != original.Path() {
 		args = append(args, "--selected-installation", original.Path())
-	}
-	if inv.reviewWork == nil {
-		retry, _ := strconv.ParseInt(inv.input.text("retry"), 10, 64)
-		inv.reviewWork = &reviewWorkContext{goal: goalID, work: unit, run: record.ID, retry: retry}
 	}
 	if inv.reviewWork != nil {
 		inv.reviewWork.attempt, inv.reviewWork.retain, inv.reviewWork.subject = review.Round.Number, retain, subject
