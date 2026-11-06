@@ -1,0 +1,85 @@
+{
+  "coveredUnits": [
+    "U3"
+  ],
+  "schemaVersion": 1,
+  "goal": "the-lanes-proof-goes-first",
+  "unit": "U3",
+  "subject": {
+    "commit": "19ba2063c06831653cb0202729f01081697fee84",
+    "parent": "09800ec0c15a614d3e09805b7d4c6334a4f32067",
+    "tree": "2bf421d7fc39933b1e7d092a6265686abb7f08d0",
+    "patchDigest": "319b7abe8597ce90d328a01a02861ff3f6a455c61fa449ec3dd47ee2a2e44dbd",
+    "unitDigest": "1e47203a3de97f7cc2b3b81d900d99137d2306c81af5d1535ce3e4f5b8628083"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-ce37fcbdd2781a4563dbfa5b",
+    "round": 1,
+    "closureSha256": "5e8b535c140b64b5a1016b762f0aaee66410b9e24f7ff6bb460e4c9db9bdc27d"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "2bf421d7fc39933b1e7d092a6265686abb7f08d0",
+    "runId": "goal-read-gate-20261106t040147z-56ca5197b495240b"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "f02892c8d24583b0580302dc96cde78013b7e73d",
+      "digest": "11edfd30d5684943907d9102aba83a127d076435838cb0595e28f506d2603cde"
+    },
+    {
+      "kind": "read",
+      "commit": "abde32647fe44c6039cf2b738b860488f7ae3578",
+      "digest": "bb95f01a614edc088185b1a38478db692e187e26a60d65fa0d801fefe76d82c9"
+    },
+    {
+      "kind": "read",
+      "commit": "04a3a37b45f1f41291172f85b601e3a5ceb0be10",
+      "digest": "da3fc7fb50a811a196ec34e5a0204a59fc9d8f0cd9f0ba78990b21724812640d"
+    },
+    {
+      "kind": "read",
+      "commit": "e76e1252d34f4a2ae6d477cb0c9acafb38bee32f",
+      "digest": "4d85432d342eacea32edef30f19fa0ec73df7c675415da19071b58810e97c91b"
+    },
+    {
+      "kind": "read",
+      "commit": "09800ec0c15a614d3e09805b7d4c6334a4f32067",
+      "digest": "2a948228858d1ddbf51bde20bd8bae076eebef36de2be9136b0c4ab4c0489264"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_check_test.go",
+      "readerWord": "reviewed by critic root code-critic-ce37fcbdd2781a4563dbfa5b"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_contention_test.go",
+      "readerWord": "reviewed by critic root code-critic-ce37fcbdd2781a4563dbfa5b"
+    },
+    {
+      "path": "metasystem/internal/landing/batchowner/lane_status_test.go",
+      "readerWord": "reviewed by critic root code-critic-ce37fcbdd2781a4563dbfa5b"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/hold_state_test.go",
+      "readerWord": "reviewed by critic root code-critic-ce37fcbdd2781a4563dbfa5b"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/steward_rows_test.go",
+      "readerWord": "reviewed by critic root code-critic-ce37fcbdd2781a4563dbfa5b"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_compose_test.go",
+      "readerWord": "reviewed by critic root code-critic-ce37fcbdd2781a4563dbfa5b"
+    },
+    {
+      "path": "metasystem/internal/steward/situation_wait_test.go",
+      "readerWord": "reviewed by critic root code-critic-ce37fcbdd2781a4563dbfa5b"
+    }
+  ],
+  "sha256": "d35c36d27ef694e0a012d468b7bd9181614efc98d5e2e8ce5afe13d235c36df9"
+}
