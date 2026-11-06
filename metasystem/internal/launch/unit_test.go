@@ -1969,6 +1969,108 @@ func TestUnknownReadDoesNotConsumeCorrectionRound(t *testing.T) {
 	}
 }
 
+func TestAFreshReadRunsOnceAndIsJoined(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"failed", "joined", "cancelled"} {
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			fixture := newUnitFixture(t, "", "branch", "round")
+			fixture.starter.skipStructured = true
+			first, err := fixture.runner.Advance(UnitRequest{Plan: fixture.plan})
+			if err != nil {
+				t.Fatal(err)
+			}
+			started := len(fixture.starter.ids)
+			if mode == "cancelled" {
+				first.Record.State = "cancelled"
+				if err := fixture.runner.save(first.Record); err != nil {
+					t.Fatal(err)
+				}
+				path := filepath.Join(fixture.runner.runDir(first.Record.ID), "run.json")
+				before, err := os.ReadFile(path)
+				if err != nil {
+					t.Fatal(err)
+				}
+				result, err := fixture.runner.RetryUnknownRead(first.Record.ID)
+				if !IsCode(err, "UNIT_CANCELLED") || result.Record.Rounds[0].UnknownRetries != 0 || len(result.Record.Rounds[0].Steps) != len(first.Record.Rounds[0].Steps) {
+					t.Fatalf("cancelled retry changed the round: %+v, %v", result, err)
+				}
+				after, err := os.ReadFile(path)
+				if err != nil || string(before) != string(after) || len(fixture.starter.ids) != started {
+					t.Fatalf("cancelled retry wrote state or started a launch: %v", err)
+				}
+				return
+			}
+			if mode == "failed" {
+				fixture.starter.failKind, fixture.starter.failCause = "read", "environment"
+			} else {
+				fixture.starter.holdKind, fixture.starter.skipStructured = "read", false
+			}
+			fresh, err := fixture.runner.RetryUnknownRead(first.Record.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			step := stepNamed(t, fresh.Record.Rounds[0], "read:fresh")
+			if len(step.LaunchIDs) != 1 || len(fixture.starter.ids) != started+1 || fresh.Record.Rounds[0].UnknownRetries != 1 {
+				t.Fatalf("fresh read executed more than once: step=%+v starts=%d", step, len(fixture.starter.ids)-started)
+			}
+			if mode == "failed" {
+				if step.State != StepFailed || fresh.Capped || fresh.Record.Rounds[0].Stop == nil || !strings.HasPrefix(fresh.Record.Rounds[0].Stop.Handoff, "stopped ") {
+					t.Fatalf("failed fresh read did not stay stopped: %+v", fresh)
+				}
+				return
+			}
+			if !fresh.Capped || step.State != StepRunning {
+				t.Fatalf("held fresh read did not yield: %+v", fresh)
+			}
+			retryPath := filepath.Join(fresh.Record.Rounds[0].Directory, "unknown-retry.json")
+			retryBefore, err := os.ReadFile(retryPath)
+			if err != nil {
+				t.Fatal(err)
+			}
+			joined, err := fixture.runner.RetryUnknownRead(first.Record.ID)
+			if err != nil || !joined.Capped || !reflect.DeepEqual(joined.Record.Rounds[0].Steps, fresh.Record.Rounds[0].Steps) || joined.Record.Rounds[0].UnknownRetries != 1 {
+				t.Fatalf("held read was not joined: %+v, %v", joined, err)
+			}
+			retryAfter, err := os.ReadFile(retryPath)
+			if err != nil || string(retryBefore) != string(retryAfter) || len(fixture.starter.ids) != started+1 {
+				t.Fatalf("join rewrote the retry or started another launch: %v", err)
+			}
+			launch, err := fixture.manager.Store.Read(step.LaunchID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			paths, err := declaredOutputPaths(launch)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range paths {
+				if filepath.Base(path) == "return.json" {
+					if err := os.WriteFile(path, []byte(structuredUnitReturn(0, "regression", "code.go")), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+			}
+			if _, err := fixture.manager.Store.Update(step.LaunchID, func(record *Record) error {
+				yes, code := true, 0
+				record.State, record.ExitCode, record.VerdictCounts, record.Measurement.Verdict = Completed, &code, &yes, "land"
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+			fixture.starter.holdKind = ""
+			collected, err := fixture.runner.RetryUnknownRead(first.Record.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			round := collected.Record.Rounds[0]
+			if round.Stop == nil || round.Stop.Decision != "close" || len(round.Reads) != 1 || round.Reads[0].ID != step.LaunchID || len(stepNamed(t, round, "read:fresh").LaunchIDs) != 1 || len(fixture.starter.ids) != started+1 || round.UnknownRetries != 1 {
+				t.Fatalf("completed fresh read was not collected once: %+v", collected)
+			}
+		})
+	}
+}
+
 func TestCapNamesTheSplitForAnUncommittedUnit(t *testing.T) {
 	t.Parallel()
 	for _, test := range []struct {

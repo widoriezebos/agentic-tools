@@ -3,6 +3,7 @@ package launch
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -384,25 +385,38 @@ func (runner *UnitRunner) RetryUnknownRead(id string) (UnitResult, error) {
 	if err != nil {
 		return UnitResult{}, err
 	}
+	if record.State == "cancelled" {
+		return UnitResult{Record: record}, coded("UNIT_CANCELLED", "run="+id, errors.New("this run was cancelled; build new work under another name"))
+	}
 	if len(record.Rounds) == 0 {
 		return UnitResult{}, fmt.Errorf("no read to retry")
 	}
 	round := &record.Rounds[len(record.Rounds)-1]
-	if round.Stop == nil || !strings.HasPrefix(round.Stop.Handoff, "stopped ") || round.UnknownRetries >= 1 {
+	fresh := -1
+	for index, step := range round.Steps {
+		if step.Name == FreshReadStep {
+			fresh = index
+		}
+	}
+	joining := round.UnknownRetries >= 1 && fresh >= 0 && (round.Steps[fresh].State == StepPending || round.Steps[fresh].State == StepStarting || round.Steps[fresh].State == StepRunning)
+	if round.Stop == nil || !strings.HasPrefix(round.Stop.Handoff, "stopped ") || round.UnknownRetries >= 1 && !joining {
 		return UnitResult{Record: record}, coded("UNIT_STOPPED", "", fmt.Errorf("the fresh examination allowance is spent; the unit stays stopped"))
 	}
 	plan, err := readUnitPlan(record.Plan, record.PlanDirectory)
 	if err != nil {
 		return UnitResult{}, err
 	}
-	round.UnknownRetries++
-	round.Reads = nil
-	for index := range round.Steps {
-		if strings.HasPrefix(round.Steps[index].Name, "read") {
-			round.Steps[index].Name = "unknown:" + round.Steps[index].Name
+	if round.UnknownRetries == 0 {
+		round.UnknownRetries++
+		round.Reads = nil
+		for index := range round.Steps {
+			if strings.HasPrefix(round.Steps[index].Name, "read") {
+				round.Steps[index].Name = "unknown:" + round.Steps[index].Name
+			}
 		}
+		round.Steps = append(round.Steps, UnitStep{Name: FreshReadStep, State: StepPending, Model: round.ReadModel, Mode: "whole"})
+		fresh = len(round.Steps) - 1
 	}
-	round.Steps = append(round.Steps, UnitStep{Name: "read:fresh", State: StepPending, Model: round.ReadModel, Mode: "whole"})
 	original := ""
 	for _, step := range round.Steps {
 		if strings.HasPrefix(step.Name, "unknown:read") {
@@ -412,18 +426,25 @@ func (runner *UnitRunner) RetryUnknownRead(id string) (UnitResult, error) {
 	}
 	retry := loopstop.Stop{Loop: "retry", Subject: original, Attempt: 1, Budget: 1, Decision: "continue", At: runner.Manager.Now().UTC().Format(time.RFC3339Nano)}
 	retryBytes, _ := json.Marshal(retry)
-	if _, err := atomicfile.WriteFile(filepath.Join(round.Directory, "unknown-retry.json"), retryBytes, 0o600, runner.root()); err != nil {
-		return UnitResult{}, err
-	}
-	if err := runner.saveDecision(&record, round); err != nil {
-		return UnitResult{}, err
+	if !joining {
+		if _, err := atomicfile.WriteFile(filepath.Join(round.Directory, "unknown-retry.json"), retryBytes, 0o600, runner.root()); err != nil {
+			return UnitResult{}, err
+		}
+		if err := runner.saveDecision(&record, round); err != nil {
+			return UnitResult{}, err
+		}
 	}
 	sequence := runner.readSequence(&record, round, plan, nil, filepath.Join(round.Directory, "worktree.diff"))
-	spec, err := sequence.stepSpec(round.Steps[len(round.Steps)-1])
+	var spec StartSpec
+	if retained := round.Steps[fresh].Retained; retained != nil {
+		spec = *retained
+	} else {
+		spec, err = sequence.stepSpec(round.Steps[fresh])
+	}
 	if err != nil {
 		return UnitResult{Record: record}, err
 	}
-	capped, err := sequence.driver.advanceStep(len(round.Steps)-1, spec, runner.Manager.Now().Add(DefaultWaitTimeout))
+	capped, err := sequence.driver.advanceStep(fresh, spec, runner.Manager.Now().Add(DefaultWaitTimeout))
 	if err != nil || capped {
 		return UnitResult{Record: record, Capped: capped}, err
 	}

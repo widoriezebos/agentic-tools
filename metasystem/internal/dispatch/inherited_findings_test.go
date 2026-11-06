@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -58,17 +59,24 @@ func TestInheritedV6ResolutionFoldsAndClosesFromPublishedEvidence(t *testing.T) 
 				t.Fatal(err)
 			}
 			if outcome, err := advanceWithFacts(t, repo, root, job, declaredPaths(repo, commit, evidence.Where), declaredTree(repo, commit, tree)); err != nil {
-				if mutation != "valid" {
+				if mutation != "valid" && mutation != "unknown" {
 					return
 				}
 				t.Fatalf("valid inherited resolution: %s,%v", outcome, err)
-			} else if mutation != "valid" {
+			} else if mutation != "valid" && mutation != "unknown" {
 				t.Fatalf("%s inherited evidence admitted", mutation)
 			}
 			record = readJSONFile(t, rootPath)
 			register, err := decodeFindingRegister(record[findingRegisterField])
 			if err != nil {
 				t.Fatal(err)
+			}
+			if mutation == "unknown" {
+				inherited, err := inheritedObligations(record["inheritedFindings"])
+				if err != nil || len(register) != 0 || !reflect.DeepEqual(inherited, []goal.ReviewObligation{obligation}) {
+					t.Fatalf("advisory note changed inherited evidence: register=%+v inherited=%+v err=%v", register, inherited, err)
+				}
+				return
 			}
 			if len(register) != 1 || register[0].FindingID != evidence.ID || register[0].Status != "resolved" || register[0].Class != evidence.Class || register[0].Where != evidence.Where {
 				t.Fatalf("original identity or evidence discarded: %+v", register)

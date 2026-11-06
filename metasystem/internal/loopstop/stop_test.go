@@ -45,6 +45,32 @@ func TestUnitStopDecisionOrdersEvidenceBeforeContinuation(t *testing.T) {
 	}
 }
 
+func TestANotesUnknownReferenceIsAdvisory(t *testing.T) {
+	t.Parallel()
+	prior := readsubject.Finding{ID: "prior:1", Class: "scope", Where: "source.go", Material: true}
+	for _, row := range []struct {
+		name, resolves, class, where, want string
+		material                           bool
+	}{
+		{"unknown note", "absent:1", "scope", "source.go", "close", false},
+		{"different class", prior.ID, "regression", "source.go", "stop", false},
+		{"different file", prior.ID, "scope", "another.go", "stop", false},
+		{"unknown material", "absent:1", "scope", "source.go", "stop", true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			read := readsubject.Read{Findings: []readsubject.Finding{{Resolves: row.resolves, Class: row.class, Where: row.where, Material: row.material}}}
+			if row.material {
+				read.Material = 1
+			}
+			decision := Decide(Input{Stop: Stop{Loop: "unit-round", Attempt: 1, Budget: 3}, Prior: []readsubject.Read{{Findings: []readsubject.Finding{prior}}}, Read: &read, Policy: "auto"})
+			if decision.Decision != row.want || row.want == "stop" && decision.Handoff != "stopped invalid-resolves" {
+				t.Fatalf("reference decision: %+v", decision)
+			}
+		})
+	}
+}
+
 func TestUnitCleanReadResolvesPublishedInheritedFinding(t *testing.T) {
 	t.Parallel()
 	original := readsubject.Finding{ID: "source-read:1", Class: "scope", Where: "source.go", Material: true}

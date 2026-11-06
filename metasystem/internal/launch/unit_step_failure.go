@@ -17,6 +17,8 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/outage"
 )
 
+const FreshReadStep = "read:fresh"
+
 func (result UnitResult) BuildResultSummary() string {
 	if len(result.Record.Rounds) == 0 {
 		return ""
@@ -137,7 +139,7 @@ func (driver stepDriver) retryFailedStep(index int, deadline time.Time) (bool, e
 	// The machine retries a provider refusal or a unit check's proof.deadline
 	// once; any other deadline waits for a person.
 	machine := step.Name == "proof:unit-check" && step.Deadline && step.Cause == "environment"
-	if step.State != StepFailed || step.Cause != "environment" || step.Unadmitted != "" || len(step.LaunchIDs) >= 2 || step.Deadline && !machine {
+	if step.State != StepFailed || step.Cause != "environment" || step.Unadmitted != "" || len(step.LaunchIDs) >= 2 || step.Deadline && !machine || step.Name == FreshReadStep {
 		return false, nil
 	}
 	if machine {

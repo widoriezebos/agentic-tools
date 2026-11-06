@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -178,8 +179,36 @@ func TestCritiqueRegisterResolutionValidatesOriginalEvidence(t *testing.T) {
 				if err != nil || got[0].Status != "resolved" {
 					t.Fatalf("valid coverage = %+v,%v", got, err)
 				}
+			} else if mutation == "unknown" {
+				if err != nil || !reflect.DeepEqual(got, []registerFinding{prior}) {
+					t.Fatalf("advisory note changed prior evidence: %+v,%v", got, err)
+				}
 			} else if err == nil {
 				t.Fatalf("%s cleared different prior evidence", mutation)
+			}
+		})
+	}
+}
+
+func TestANotesUnknownReferenceIsAdvisory(t *testing.T) {
+	t.Parallel()
+	prior := closeFinding("original:1", "invariant", "", "gap", "bounded")
+	prior.Class, prior.Where = "scope", "source.go"
+	for _, row := range []struct{ name, resolves, where string }{
+		{"unknown note", "absent:1", "source.go"},
+		{"contradictory note", prior.FindingID, "another.go"},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			finding := registerFindingValue("next:1", false, "The reader retained the evidence.")
+			finding["resolves"], finding["class"], finding["where"] = row.resolves, "scope", row.where
+			got, _, admitted, err := foldCritiqueFindingsVersioned([]registerFinding{prior}, "code-critic", "next", []any{finding}, []any{}, 6, critiqueSubject{legacy: true}, 2)
+			if row.resolves == prior.FindingID {
+				if err == nil {
+					t.Fatal("note referring to another file was admitted")
+				}
+			} else if err != nil || admitted != 0 || !reflect.DeepEqual(got, []registerFinding{prior}) {
+				t.Fatalf("advisory note changed prior evidence: %+v, admitted=%d, %v", got, admitted, err)
 			}
 		})
 	}
