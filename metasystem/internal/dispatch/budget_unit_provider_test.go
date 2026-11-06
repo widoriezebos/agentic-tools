@@ -27,7 +27,7 @@ func TestProviderClockRequiresLocalStartOnlyWithModelWork(t *testing.T) {
 			if model {
 				dependencies = append(dependencies, clockDependency{at: start, until: start.Add(time.Minute), runtime: "claude-headless"})
 			}
-			spans, err := providerWaits(home, "bounded", start, start.Add(time.Hour), dependencies)
+			spans, _, err := providerWaits(home, "bounded", start, start.Add(time.Hour), dependencies)
 			if model {
 				if err == nil || !strings.Contains(err.Error(), "local work dependency time") {
 					t.Fatalf("unknown local start allowed model pause subtraction: spans=%v err=%v", spans, err)

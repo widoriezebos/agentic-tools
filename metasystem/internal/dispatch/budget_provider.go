@@ -16,6 +16,7 @@ type clockDependency struct {
 	at, until      time.Time
 	runtime        string
 	providerFailed bool
+	executed       bool
 }
 
 // A failed job remains dependent only when its retained provider evidence
@@ -43,14 +44,14 @@ func jobProviderFailure(repoRoot, jobID string, record map[string]any) bool {
 
 // providerWaits follows retained work, never the checkout's current roster.
 // Starting local work or another provider's work ends the previous dependency.
-func providerWaits(home, goalID string, start, now time.Time, dependencies []clockDependency) (spans []outage.Span, err error) {
+func providerWaits(home, goalID string, start, now time.Time, dependencies []clockDependency) (spans []outage.Span, work []clockDependency, err error) {
 	store := launch.Store{}
 	if home != "" {
 		store.Root = filepath.Join(home, "launch")
 	}
 	records, err := store.List()
 	if err != nil {
-		return nil, fmt.Errorf("launch dependency history is unreadable: %w", err)
+		return nil, nil, fmt.Errorf("launch dependency history is unreadable: %w", err)
 	}
 	for _, record := range records {
 		if record.Goal != goalID {
@@ -58,35 +59,35 @@ func providerWaits(home, goalID string, start, now time.Time, dependencies []clo
 		}
 		at, err := time.Parse(time.RFC3339Nano, record.StartedAt)
 		if err != nil {
-			return nil, fmt.Errorf("launch %s dependency time is unreadable", record.ID)
+			return nil, nil, fmt.Errorf("launch %s dependency time is unreadable", record.ID)
 		}
 		until, endErr := time.Parse(time.RFC3339Nano, record.FinishedAt)
 		if record.State.Terminal() && (endErr != nil || until.Before(at)) {
-			return nil, fmt.Errorf("launch %s execution end is unreadable", record.ID)
+			return nil, nil, fmt.Errorf("launch %s execution end is unreadable", record.ID)
 		}
 		if !record.State.Terminal() {
 			until = now
 		}
-		dependencies = append(dependencies, clockDependency{at: at, until: until, runtime: record.Adapter,
+		dependencies = append(dependencies, clockDependency{at: at, until: until, runtime: record.Adapter, executed: true,
 			providerFailed: record.State == launch.Failed && record.Cause == outage.ProviderLimit})
 	}
 	sort.Slice(dependencies, func(i, j int) bool { return dependencies[i].at.Before(dependencies[j].at) })
 	if !slices.ContainsFunc(dependencies, func(d clockDependency) bool { return d.runtime != "local" && d.runtime != "plain-exec" }) {
-		return nil, nil
+		return nil, dependencies, nil
 	}
 	if slices.ContainsFunc(dependencies, func(d clockDependency) bool { return d.at.IsZero() }) {
-		return nil, fmt.Errorf("local work dependency time is unreadable")
+		return nil, nil, fmt.Errorf("local work dependency time is unreadable")
 	}
 	providers, err := outage.ReadProviders(home)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for i, dependency := range dependencies {
 		end := now
 		if i+1 < len(dependencies) {
 			end = dependencies[i+1].at
 			if end.Equal(dependency.at) && outage.Provider(dependency.runtime) != outage.Provider(dependencies[i+1].runtime) {
-				return nil, fmt.Errorf("simultaneous work has an unknown provider dependency")
+				return nil, nil, fmt.Errorf("simultaneous work has an unknown provider dependency")
 			}
 		}
 		// Execution's end releases the dependency unless the provider stopped it.
@@ -110,9 +111,9 @@ func providerWaits(home, goalID string, start, now time.Time, dependencies []clo
 		}
 		waiting, err := providers.Waiting(dependency.runtime, from, end)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		spans = append(spans, waiting...)
 	}
-	return spans, nil
+	return spans, dependencies, nil
 }

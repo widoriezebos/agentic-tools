@@ -6,6 +6,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -82,6 +83,8 @@ type BudgetProjection struct {
 	CodeCritiques           uint64
 	Elapsed                 time.Duration
 	Wait                    time.Duration `json:"-"`
+	PersonWaitSince         time.Time     `json:"-"`
+	PersonPaused            time.Duration `json:"-"`
 	ElapsedGracePercent     uint64
 	ElapsedBreachLimit      time.Duration
 	ElapsedState            ElapsedBudgetState
@@ -426,6 +429,8 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if recordGoal != file.Id {
 			continue
 		}
+		status, startedAt := asString(record["status"]), asString(record["startedAt"])
+		executed := status == "running" || startedAt != ""
 		// A unit reservation charges its physical launch; that launch record
 		// owns the runtime and provider dependency, not this accounting row.
 		if asString(record["unitRun"]) == "" {
@@ -438,12 +443,12 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				if !TerminalStatus(asString(record["status"])) {
 					until = now
 				}
-				dependencies = append(dependencies, clockDependency{at: at, runtime: asString(record["runtime"]), until: until,
+				dependencies = append(dependencies, clockDependency{at: at, runtime: asString(record["runtime"]), until: until, executed: executed,
 					providerFailed: jobProviderFailure(repoRoot, strings.TrimSuffix(entry.Name(), ".json"), record)})
 			} else if asString(record["runtime"]) == "local" || asString(record["runtime"]) == "plain-exec" {
 				// Local accounting does not need a provider clock. An unknown
 				// start must still prevent subtracting another job's outage.
-				dependencies = append(dependencies, clockDependency{runtime: asString(record["runtime"])})
+				dependencies = append(dependencies, clockDependency{runtime: asString(record["runtime"]), executed: executed})
 			} else {
 				return unknownBudget(file.Id, revision, logicalPath, "job dependency time is unreadable")
 			}
@@ -489,13 +494,12 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if !ok || capMinutes == 0 {
 			return unknownBudget(file.Id, revision, logicalPath, "the authoritative reservation has no positive capMin")
 		}
-		status := lens.Status()
 		if status != "pending-setup" && status != "pending" && status != "running" && !TerminalStatus(status) {
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("status %q is outside the reservation lifecycle", status))
 		}
 		// Only a job that ran ends the wait: one in setup or still pending has
 		// not, and neither has one that ended with no start.
-		if startedAt := asString(record["startedAt"]); status == "running" || (TerminalStatus(status) && startedAt != "") {
+		if executed {
 			wait.observe(startedAt, asString(record["endedAt"]), status == "running")
 		}
 		consumes := consumptionMember(recordGoal, recordRevision, file.Id, consumptionKey)
@@ -677,7 +681,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				if attempt.Terminal == nil {
 					until = now
 				}
-				dependencies = append(dependencies, clockDependency{at: launchedAt, runtime: "local", until: until})
+				dependencies = append(dependencies, clockDependency{at: launchedAt, runtime: "local", until: until, executed: true})
 			}
 		}
 		consumes := consumptionMember(attempt.AccountedGoal(), attempt.AccountedRevision(), file.Id, consumptionKey)
@@ -780,7 +784,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			wait.observe(attempt.StartedAt, attempt.EndedAt, false)
 			if at, err := time.Parse(time.RFC3339Nano, attempt.StartedAt); err == nil {
 				until, _ := time.Parse(time.RFC3339Nano, attempt.EndedAt)
-				dependencies = append(dependencies, clockDependency{at: at, runtime: "local", until: until})
+				dependencies = append(dependencies, clockDependency{at: at, runtime: "local", until: until, executed: true})
 			}
 		}
 		if !consumptionMember(file.Id, state.GoalRevision, file.Id, consumptionKey) {
@@ -946,10 +950,24 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				providerStart = claimedAt
 			}
 		}
-		spans, err := providerWaits(home, file.Id, providerStart, now, dependencies)
+		spans, deps, err := providerWaits(home, file.Id, providerStart, now, dependencies)
 		if err != nil {
 			return unknownBudget(file.Id, revision, "provider/launch history", err.Error())
 		}
+		// Keep the beginning of an open wait before executed work splits it.
+		person, problems := personWaits(repoRoot, file.Id, providerStart, now, nil)
+		for _, span := range person {
+			if span.End.Equal(now) && (projection.PersonWaitSince.IsZero() || span.Start.Before(projection.PersonWaitSince)) {
+				projection.PersonWaitSince = span.Start
+			}
+		}
+		person = cutPersonWork(person, now, deps)
+		if !slices.ContainsFunc(person, func(span outage.Span) bool { return span.End.Equal(now) }) {
+			projection.PersonWaitSince = time.Time{}
+		}
+		projection.PersonPaused = outage.Paused(person)
+		projection.Problems = append(projection.Problems, problems...)
+		spans = append(spans, person...)
 		spans = append(spans, projection.Spans...)
 		if wait != nil && len(projection.Spans) > 0 {
 			wait.observe(projection.Spans[0].Start.Format(time.RFC3339), "", true)

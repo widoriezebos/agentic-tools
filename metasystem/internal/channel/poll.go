@@ -301,6 +301,7 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 		}
 		a.Phase = "closed"
 		q.State = "closed"
+		q.ClosedAt = c.Now.UTC()
 		if err := writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
 			return err
 		}
