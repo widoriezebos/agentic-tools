@@ -1,0 +1,55 @@
+{
+  "coveredUnits": [
+    "U1a"
+  ],
+  "schemaVersion": 1,
+  "goal": "a-green-rounds-read-is-collected",
+  "unit": "U1a",
+  "subject": {
+    "commit": "3409e47df23e34ce27c758f54b620f8235dc737b",
+    "parent": "e015235817d111956e1360d79e9ff014de04ad15",
+    "tree": "ccaaf8bcf0335d9d603bc9eaa3b0a5f89482821b",
+    "patchDigest": "579e5d91385ede13710e5f93f89852038b62231d2506a3f6d395f923db28bf0b",
+    "unitDigest": "fc997a23b6bb5b03c902f5a277d1f290baabe38d4a1e5439a0f63b4d379bd052"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-93d0c27a9ef562653d45a68c",
+    "round": 1,
+    "closureSha256": "caa71fabc1755427cee819317f4990f3b7c59a08de64133f7c4ed7925cdff602"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "ccaaf8bcf0335d9d603bc9eaa3b0a5f89482821b",
+    "runId": "check-1551498172"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_process_cost_test.go",
+      "readerWord": "reviewed by critic root code-critic-93d0c27a9ef562653d45a68c"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-93d0c27a9ef562653d45a68c"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_review_subject_test.go",
+      "readerWord": "reviewed by critic root code-critic-93d0c27a9ef562653d45a68c"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_revise_test.go",
+      "readerWord": "reviewed by critic root code-critic-93d0c27a9ef562653d45a68c"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_stop_accounting_test.go",
+      "readerWord": "reviewed by critic root code-critic-93d0c27a9ef562653d45a68c"
+    },
+    {
+      "path": "metasystem/internal/launch/unit_test.go",
+      "readerWord": "reviewed by critic root code-critic-93d0c27a9ef562653d45a68c"
+    }
+  ],
+  "sha256": "7fd82f80571e775ddd842c2d860bd0a7fcd0403bfd8960560ce730836573d1cc"
+}
