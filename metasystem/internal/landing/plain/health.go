@@ -336,9 +336,6 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			h.Refusals = append(h.Refusals, entry)
 		}
 	}
-	if hold, held, _ := currentHold(interventions, now, seams.HostWork); held {
-		h.Drift = append(h.Drift, Fired{Row: "proof-beside-builds", Subject: Short(hold.Subject), Act: hold.Outcome})
-	}
 	if r := status.RunningProof; r != nil && r.State == "running" && seams.HostWork != nil {
 		builds, checks, err := seams.HostWork()
 		act := fmt.Sprintf(landingstate.Phrase("d-builds-and-d-unit-checks-run-beside"), builds, checks, r.Attempt)

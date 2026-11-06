@@ -17,8 +17,10 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/testenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
 )
@@ -27,6 +29,7 @@ type declaredCheckStarter struct {
 	bed         *workBed
 	t           *testing.T
 	engine      string
+	stderr      bytes.Buffer
 	results     []intentResult
 	calls       []int
 	beforeBuild func()
@@ -65,7 +68,7 @@ func (s *declaredCheckStarter) StartSupervisor(id, state string) (identity.Ref, 
 		run := regexp.MustCompile(`-r[0-9]+-s[0-9]+$`).ReplaceAllString(record.ID, "")
 		// Candidate settings and a later tip must not choose this round's checks.
 		s.bed.head = "candidate-commit"
-		if err := os.WriteFile(filepath.Join(s.bed.worktree, "metasystem.conf"), []byte("proof.cheap=true\nproof.audits=true\nproof.deadline=1\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(s.bed.worktree, "metasystem.conf"), []byte("metasystem.runtimes=fake\nproof.cheap=true\nproof.audits=true\nproof.deadline=1\n"), 0600); err != nil {
 			s.t.Fatal(err)
 		}
 		args = []string{"test", "run", "--unit-run", run}
@@ -86,7 +89,7 @@ func (s *declaredCheckStarter) StartSupervisor(id, state string) (identity.Ref, 
 		if s.beforeCheck != nil {
 			defer s.beforeCheck(record)()
 		}
-		code, result := declaredCheckAtEngine(s.t, s.bed, directory, record.Kind, s.engine, args...)
+		code, result := declaredCheckAtEngineWithStderr(s.t, s.bed, directory, record.Kind, s.engine, &s.stderr, args...)
 		s.results, s.calls = append(s.results, result), append(s.calls, code)
 		if record.Kind == "proof" {
 			s.bed.starter.fail["proof"] = code != 0
@@ -370,6 +373,22 @@ func declaredCheckAt(t *testing.T, b *workBed, directory, kind string, args ...s
 
 func declaredCheckAtEngine(t *testing.T, b *workBed, directory, kind, engine string, args ...string) (int, intentResult) {
 	t.Helper()
+	return declaredCheckAtEngineWithStderr(t, b, directory, kind, engine, io.Discard, args...)
+}
+
+func declaredCheckAtEngineWithStderr(t *testing.T, b *workBed, directory, kind, engine string, output io.Writer, args ...string) (int, intentResult) {
+	t.Helper()
+	// Every checkout this executor owns is a fake runtime, including a
+	// worktree that has not run the fixture's builder.
+	for _, root := range []string{b.root(), b.worktree} {
+		conf := filepath.Join(root, "metasystem.conf")
+		body, err := os.ReadFile(conf)
+		if err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		lines := slices.DeleteFunc(strings.Split(string(body), "\n"), func(line string) bool { return strings.HasPrefix(line, "metasystem.runtimes=") })
+		writeTestingFixtureFile(t, conf, []byte(strings.Join(append(lines, "metasystem.runtimes=fake", ""), "\n")), 0600)
+	}
 	command, rest, ok := resolveIntentArgv(args)
 	if !ok {
 		t.Fatalf("no public command %q", args)
@@ -401,6 +420,7 @@ func declaredCheckAtEngine(t *testing.T, b *workBed, directory, kind, engine str
 		return git(root, args...)
 	}
 	code := runIntentIn(command, append([]string{"--json"}, rest...), &stdout, &stderr, directory, owners)
+	_, _ = output.Write(stderr.Bytes())
 	var result intentResult
 	if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
 		t.Fatalf("result: %s stderr=%s: %v", stdout.String(), stderr.String(), err)
@@ -733,5 +753,85 @@ func TestIntentDeclaredCheckEmitsFailureOutputForAttribution(t *testing.T) {
 	exits := resultData(t, result)["exits"].([]any)
 	if len(exits) != 2 || exits[0].(map[string]any)["exit"] != float64(7) || exits[1].(map[string]any)["exit"] != float64(0) {
 		t.Fatalf("command exits were lost: %+v", result)
+	}
+}
+
+func TestTheUnitCheckWaitsBehindTheLanesCheckAndHandsOnItsSlot(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "cheap-ran")
+	command := "test -e /dev/fd/3 && case $METASYSTEM_PROOF_RESOURCE_FDS in 3@*) ;; *) exit 19;; esac"
+	body := "proof.cheap=" + command + " && touch " + shellCommand([]string{marker}) + "\nproof.audits=" + command + "\nproof.deadline=15\n"
+	b := declaredCheckBed(t, body)
+	writeTestingFixtureFile(t, filepath.Join(b.root(), "metasystem.conf"), []byte("metasystem.runtimes=fake\n"+proofrun.AdmissionCapKey+"=1\n"), 0600)
+	directory := filepath.Join(b.root(), "admission")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", directory)
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", b.root())
+	starter := &declaredCheckStarter{bed: b, t: t}
+	starter.beforeCheck = func(launch.Record) func() {
+		_ = os.Remove(marker)
+		holder, err := proofrun.AcquireHostResources(proofrun.WithLaneCheckPriority(t.Context()), b.root(), filepath.Join(b.root(), "metasystem.conf"), "heavy", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		checkEnded, joined, observed := make(chan struct{}), make(chan struct{}), make(chan error, 1)
+		go func() {
+			defer close(joined)
+			defer holder.Close()
+			var waiting bool
+			err := testenv.AwaitError(t, "unit check's wait-run marker or completed check", func() bool {
+				markers, _ := filepath.Glob(filepath.Join(directory, "wait-run-*"))
+				waiting = len(markers) == 1
+				select {
+				case <-checkEnded:
+					return true
+				default:
+					return waiting
+				}
+			})
+			if err == nil && !waiting {
+				err = errors.New("check returned before publishing its wait-run marker")
+			}
+			if err == nil {
+				_, err = os.Stat(filepath.Join(directory, fmt.Sprintf("managed-%d.json", os.Getpid())))
+			}
+			if _, statErr := os.Stat(marker); err == nil && !os.IsNotExist(statErr) {
+				err = fmt.Errorf("cheap command ran before the slot was free: %v", statErr)
+			}
+			observed <- err
+		}()
+		return func() {
+			close(checkEnded)
+			if err := <-observed; err != nil {
+				t.Error(err)
+			}
+			<-joined
+			if _, err := os.Stat(filepath.Join(directory, fmt.Sprintf("managed-%d.json", os.Getpid()))); !os.IsNotExist(err) {
+				t.Errorf("unit check kept its managed mark after return: %v", err)
+			}
+		}
+	}
+	b.manager.Supervisor = starter
+	code, built, _ := b.work("work", "build", b.id, "slot", "--brief", b.brief("slot.md", "Build the check admission.\n"), "--lines", "100")
+	if code != 0 || !slices.Equal(starter.calls, []int{0, 0}) || len(starter.results) != 2 {
+		t.Fatalf("unit round did not finish both checks: %d %+v calls=%v stderr=%s", code, built, starter.calls, starter.stderr.String())
+	}
+	if strings.Count(starter.stderr.String(), "unit check: waiting for room on this host to run tests") != 2 {
+		t.Fatalf("unit checks did not say they waited: %s", starter.stderr.String())
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("cheap command did not run: %v", err)
+	}
+
+	// A corrupt lease fails admission; both frozen commands still run.
+	writeTestingFixtureFile(t, filepath.Join(directory, "lease-heavy-broken"), []byte("{"), 0600)
+	failOpen := declaredCheckBed(t, "proof.cheap=printf cheap\nproof.audits=printf audits\nproof.deadline=15\n")
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", failOpen.root())
+	openStarter := &declaredCheckStarter{bed: failOpen, t: t}
+	failOpen.manager.Supervisor = openStarter
+	code, built, _ = failOpen.work("work", "build", failOpen.id, "unreadable", "--brief", failOpen.brief("unreadable.md", "Build.\n"), "--lines", "100")
+	if code != 0 || !slices.Equal(openStarter.calls, []int{0, 0}) || strings.Count(openStarter.stderr.String(), "the check runs without a slot") != 2 {
+		t.Fatalf("admission error stopped the check: %d %+v calls=%v stderr=%s", code, built, openStarter.calls, openStarter.stderr.String())
+	}
+	if _, err := os.Stat(filepath.Join(directory, fmt.Sprintf("managed-%d.json", os.Getpid()))); !os.IsNotExist(err) {
+		t.Fatalf("admission failure kept the managed mark: %v", err)
 	}
 }

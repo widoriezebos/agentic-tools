@@ -179,7 +179,7 @@ type ProveSeams struct {
 	// Room reserves once and attaches the reservation to every check command.
 	Room func(install string, person bool, log io.Writer) (attach func(*exec.Cmd), release func())
 	held *laneHold
-	// HostWork observes host builds and unit checks; nil leaves proof starts unheld.
+	// HostWork observes host builds and unit checks for the running check's health row.
 	HostWork           func() (builds, checks int, err error)
 	Executions         func(string) map[string]enginepin.Execution
 	contractCache      map[string]string

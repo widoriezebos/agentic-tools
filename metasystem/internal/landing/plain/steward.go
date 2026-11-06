@@ -122,10 +122,6 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 	if err != nil {
 		return run, err
 	}
-	hold, contentionHeld, holdErr := CurrentHold(record.Install, seams)
-	if holdErr != nil {
-		return run, holdErr
-	}
 	if effects.Decisions == nil {
 		effects.Decisions = humanauthority.ReadDecisions
 	}
@@ -286,9 +282,6 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		}
 		if row.Row == "suspected-contention" && status.TrunkProof != nil && status.TrunkProof.Commit == main {
 			reason = "bounded: current main already proved"
-		}
-		if contentionHeld && (row.Row == "stale-question" || row.Row == "unproven-incidents" || row.Row == "suspected-contention") {
-			reason = landingstate.Phrase("bounded-the-proof-start-is-held-beside-builds") + hold.Until.Local().Format("15:04 MST")
 		}
 		var occurrence Occurrence
 		if row.Row == "cannot-heal" {
@@ -511,10 +504,6 @@ func stewardTrunk(install, checkout string, seams ProveSeams) (string, error) {
 		return stewardAlreadyProven, nil
 	}
 	running, already, err := Start(install, checkout, seams)
-	var refusal *Refusal
-	if errors.As(err, &refusal) && refusal.Code == "LANE_PROOF_CONTENTION" {
-		return "held: " + refusal.Reason, nil
-	}
 	if err == nil && already && running.Reused != nil {
 		return stewardAlreadyProven, nil
 	}

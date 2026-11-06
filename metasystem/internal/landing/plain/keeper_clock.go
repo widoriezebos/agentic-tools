@@ -18,7 +18,6 @@ type clockWake struct {
 	RetryAt   time.Time `json:"retry-at,omitempty"`
 	Credit    string    `json:"credit"`
 	Attempted bool      `json:"attempted"`
-	Held      bool      `json:"held,omitempty"`
 	Batch     string    `json:"batch,omitempty"`
 	Gate      string    `json:"gate,omitempty"`
 	Push      string    `json:"push,omitempty"`
@@ -93,15 +92,7 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 		state = clockWake{At: state.At, Reason: "clock check skipped; main's full check is current"}
 		return "", prepare(record)
 	}
-	ended := false
-	if state.Held {
-		_, held, err := CurrentHold(install, seams)
-		if err != nil {
-			return "", err
-		}
-		ended = !held
-	}
-	if ended || state.Credit != last.String() || !state.RetryAt.IsZero() && !seams.now().Before(state.RetryAt) {
+	if state.Credit != last.String() || !state.RetryAt.IsZero() && !seams.now().Before(state.RetryAt) {
 		state = clockWake{Credit: last.String()}
 	}
 	if !state.RetryAt.IsZero() {
@@ -202,14 +193,6 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 	if err != nil {
 		state.Reason = "clock due; main's check could not start: " + err.Error()
 		state.RetryAt = seams.now().Add(every)
-		var refusal *Refusal
-		if errors.As(err, &refusal) && refusal.Code == "LANE_PROOF_CONTENTION" {
-			hold, _, readErr := CurrentHold(install, seams)
-			if readErr != nil {
-				return "", readErr
-			}
-			state.RetryAt, state.Held = hold.Until, true
-		}
 		return "", prepare(record)
 	}
 	return state.Reason, err

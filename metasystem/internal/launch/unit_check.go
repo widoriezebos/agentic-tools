@@ -52,6 +52,7 @@ type CheckExecution struct {
 type CheckContext struct {
 	CheckExecution
 	Parent string
+	Attach func(*exec.Cmd)
 	Now    func() time.Time
 	// After is the check's timer; nil is time.After.
 	After func(time.Duration) <-chan time.Time
@@ -122,6 +123,9 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 		process.Dir, process.Env = directory, slices.Clone(check.Environment)
 		if command.name == "cheap" && check.Base != "" {
 			process.Env = append(slices.Clone(process.Env), "LANDING_PROOF_BASE="+check.Base)
+		}
+		if context.Attach != nil {
+			context.Attach(process)
 		}
 		_, _ = fmt.Fprintf(log, "== %s: %s\n", command.name, command.text)
 		output := newOutputProgress(log)

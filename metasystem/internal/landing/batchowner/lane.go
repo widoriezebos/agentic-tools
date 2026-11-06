@@ -32,7 +32,7 @@ import (
 var LandingLaneHome = board.Home
 
 // LandingLaneHostWork is the host's launch store counted as the launch verbs'
-// manager counts it: the observation the keeper's hold reads.
+// manager counts it: the observation the running check's live health row reads.
 var LandingLaneHostWork = (&launch.Manager{Prober: identity.KernelProber{}}).HostWork
 
 // LandingLaneSeams are the reads a lane resolution makes beyond the lane

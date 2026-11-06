@@ -2,24 +2,26 @@ package batchowner
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 var laneStatusNow = time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
 
-// The board reads the lane's hold through the host's observation: it shows
-// the hold while a build runs and drops it once the build's launch record
-// completes, well inside the hold's deadline. It sets the package's lane home
-// and writes to the store TestMain's observation counts, so it runs alone.
-func TestTheBoardReadsTheLanesCurrentHold(t *testing.T) {
+// The board reports a build beside the lane's running check and drops the
+// row when the build completes. It sets the package's lane home and writes
+// to the store TestMain's observation counts, so it runs alone.
+func TestTheBoardShowsTheLiveRowBesideARunningCheck(t *testing.T) {
 	home, checkout := t.TempDir(), laneStatusCheckout(t)
 	record := lane.Record{Root: checkout, Install: filepath.Join(checkout, "metasystem"), CustodyEpoch: 1, RegisteredBy: "Wido"}
 	data, err := json.Marshal(record)
@@ -32,8 +34,24 @@ func TestTheBoardReadsTheLanesCurrentHold(t *testing.T) {
 	if err := os.WriteFile(lane.RecordPath(home), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	if err := plain.RecordIntervention(record.Install, plain.Intervention{At: laneStatusNow.Add(-10 * time.Minute).Format(time.RFC3339Nano),
-		Row: "proof-beside-builds", Subject: "main", Outcome: "held: 1 builds and 0 unit checks run"}); err != nil {
+	pid := int64(os.Getpid())
+	exact, live, err := identity.KernelProber{}.Probe(pid)
+	if err != nil || live != identity.Alive {
+		t.Fatalf("the test process cannot be probed: live=%v error=%v", live, err)
+	}
+	process, err := identity.EncodeRef(exact.Ref())
+	if err != nil {
+		t.Fatal(err)
+	}
+	const attempt = "board-check"
+	data, err = json.Marshal(plain.Running{Attempt: attempt, Pid: pid, Process: process, Since: laneStatusNow.Format(time.RFC3339Nano)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(plain.Dir(record.Install), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(record.Install), "running.json"), data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 	store := boardLaunchStore
@@ -44,35 +62,37 @@ func TestTheBoardReadsTheLanesCurrentHold(t *testing.T) {
 	t.Cleanup(func() { LandingLaneHome = home0 })
 	LandingLaneHome = func() (string, error) { return home, nil }
 
-	held := func(now time.Time) bool {
+	assertRows := func(now time.Time, want int) {
 		t.Helper()
 		source := HostBoardSource(t.TempDir())
 		if source == nil {
 			t.Fatal("the board has no source")
 		}
 		status := source.Lane(now)
-		if status.Health == nil {
-			t.Fatalf("the board's lane has no health: problems=%v", status.Problems)
-		}
 		if len(status.Problems) > 0 {
 			t.Fatalf("the board's lane cannot be read: %v", status.Problems)
 		}
+		if status.Health == nil {
+			t.Fatal("the board's lane has no health")
+		}
+		rows := 0
 		for _, row := range status.Health.Drift {
 			if row.Row == "proof-beside-builds" {
-				return true
+				rows++
+				if act := fmt.Sprintf(landingstate.Phrase("d-builds-and-d-unit-checks-run-beside"), 1, 0, attempt); row.Act != act {
+					t.Fatalf("the board's live row says %q, want %q", row.Act, act)
+				}
 			}
 		}
-		return false
+		if rows != want {
+			t.Fatalf("the board has %d live rows beside the running check, want %d", rows, want)
+		}
 	}
-	if !held(laneStatusNow) {
-		t.Fatal("the board omits the hold while the build runs")
-	}
+	assertRows(laneStatusNow, 1)
 	if _, err := store.Update("host-build", func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if held(laneStatusNow.Add(time.Minute)) {
-		t.Fatal("the board shows the hold after the build completed, inside the deadline")
-	}
+	assertRows(laneStatusNow.Add(time.Minute), 0)
 }
 
 // laneStatusCheckout is a landing checkout the lane's own Git reads: a

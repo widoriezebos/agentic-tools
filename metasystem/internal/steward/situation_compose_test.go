@@ -301,7 +301,22 @@ func composeLane(t *testing.T, laneInstall string, hostWork func() (int, int, er
 		if err != nil {
 			t.Fatal(err)
 		}
-		return plain.ReadStatus(home, record, lane.View{Root: &record.Root, Owner: owner}, plain.ProveSeams{Now: func() time.Time { return at }, HostWork: hostWork})
+		return plain.ReadStatus(home, record, lane.View{Root: &record.Root, Owner: owner}, plain.ProveSeams{Now: func() time.Time { return at }, HostWork: hostWork, Alive: func(r plain.Running) bool { return r.Attempt == "page-check" }})
+	}
+}
+
+// composeRunningCheck records the live check whose host-work row the page reads.
+func composeRunningCheck(t *testing.T, install string, at time.Time) {
+	t.Helper()
+	data, err := json.Marshal(plain.Running{Attempt: "page-check", Pid: 42, Since: at.Format(time.RFC3339Nano)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(plain.Dir(install), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(plain.Dir(install), "running.json"), data, 0600); err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -317,13 +332,7 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 	}
 	manager := &launch.Manager{Store: store}
 	laneStatus := composeLane(t, laneInstall, manager.HostWork, lane.OwnerView{State: "running"})
-	held := func(at time.Time) {
-		t.Helper()
-		if err := plain.RecordIntervention(laneInstall, plain.Intervention{At: at.Format(time.RFC3339Nano), Row: "proof-beside-builds", Subject: "main", Outcome: "held: 1 builds and 0 unit checks run"}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	held(situationNow.Add(-10 * time.Minute))
+	composeRunningCheck(t, laneInstall, situationNow.Add(-10*time.Minute))
 	// A pause an hour old fires a row whose minutes advance.
 	if _, err := lane.SetPauseBecause(laneHome, "Wido", "a test pause", situationNow.Add(-time.Hour)); err != nil {
 		t.Fatal(err)
@@ -375,7 +384,7 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 	if c1.Digest == "" || c1.Digest != c2.Digest || !slices.Equal(c1.Wake, c2.Wake) {
 		t.Fatalf("a new load sample, process start and lane minutes woke:\n%v\n%v", c1.Wake, c2.Wake)
 	}
-	for _, want := range []string{"row|proof-beside-builds|main"} {
+	for _, want := range []string{"row|proof-beside-builds|page-check"} {
 		if !slices.Contains(c2.Wake, want) {
 			t.Fatalf("the wake lacks %q: %v", want, c2.Wake)
 		}
@@ -411,15 +420,14 @@ func TestTheWakeFieldsChangeOnlyOnSemanticEvents(t *testing.T) {
 	if _, err := store.Update("host-build", func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
 		t.Fatal(err)
 	}
-	if _, c = step("the build completed"); slices.Contains(c.Wake, "row|proof-beside-builds|main") {
+	if _, c = step("the build completed"); slices.Contains(c.Wake, "row|proof-beside-builds|page-check") {
 		t.Fatalf("the build ended: %v, want no row", c.Wake)
 	}
 	if err := store.Create(launch.Record{ID: "host-build-2", Kind: "build", State: launch.Running}); err != nil {
 		t.Fatal(err)
 	}
-	held(now)
-	if _, c = step("a held line"); !slices.Contains(c.Wake, "row|proof-beside-builds|main") {
-		t.Fatalf("a held line: %v, want its row", c.Wake)
+	if _, c = step("a build beside the running check"); !slices.Contains(c.Wake, "row|proof-beside-builds|page-check") {
+		t.Fatalf("a build beside the running check: %v, want its row", c.Wake)
 	}
 	if _, err := store.Update("read-2", func(r *launch.Record) error { r.State = launch.Completed; return nil }); err != nil {
 		t.Fatal(err)
