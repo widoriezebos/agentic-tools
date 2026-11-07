@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Brief by the designer from the readiness amendment of host-setup-from-scratch; one or two units
 - OpenedAt: 2026-11-07T19:51:27Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1f
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-07T19:52:20Z revision=2 opid=HKPGQKREGCDPGVN25KQK8YSS5C-m1e-170920ec authority=proven digest=ecc4a4ea0c73419d81980c5150d5e8488035a64de714421328a37b8cad0eda45 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-07T19:51:27Z J1V7QH005JTS46Y7TA45DHYKJC-m1e-170920ec open actor=human:Wido targets=a-host-is-ready-before-it-joins
 - 2026-11-07T19:52:20Z HKPGQKREGCDPGVN25KQK8YSS5C-m1e-170920ec approve actor=human:Wido targets=a-host-is-ready-before-it-joins
-Integrity: sha256=0e5980d1905c107f16294b4a55737f856fce3861e56a27d65d41571bcbcb1496
+- 2026-11-07T19:52:59Z ZTCGC31GSRD66X50R41QJVAMP6-m1e-170920ec set-pin actor=human:Wido targets=a-host-is-ready-before-it-joins
+Integrity: sha256=abaff75af3f21230fa678d84aa13abe48ce64a45793715d231cf283757218ada
