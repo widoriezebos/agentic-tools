@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 33
+- Sequence: 34
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Reporting and ordering of the proof own launches under the same slot admission; a wrong order lengthens a proof, a wrong readout misleads a reader; the load-fragile record names a test, never a seat; about 75 plus 74 plus 66 production lines"
 - Tier: 2
 - Intent: The proof reports its critical path and runs it first: the readout of accumulated work, the longest launch and the elapsed span (U2), one dispatcher that admits the heaviest ready launch by weight from the last full proof (U3), and a red seen only in parallel recorded as failed in parallel and passed alone with the failing launch effective N (U4); the split follow-up of the-proofs-critical-path-is-short (decision 197)
 - Origin: human
 - Next step: After the-proofs-critical-path-is-short lands and its N=1 against N=4 measurement is written: cut briefs U2, U3, U4 (--last) from the page sections the follow-up owns, one Astra round each, build on m1e; one hand-in
 - OpenedAt: 2026-11-04T13:04:07Z
-- Revision: 42
+- Revision: 43
 - BlockedBy: the-proofs-critical-path-is-short
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=900 activeJobLimit=1 reviewRoundLimit=8
@@ -61,4 +61,5 @@ History:
 - 2026-11-07T20:08:48Z T2G3T2GSEE0QWKM1K3ZYDNAS91-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-returned-member-leaves-the-batch from=1:30 to=1:31 requested-sequence=24
 - 2026-11-07T20:11:55Z 0ZV1QASZVR1NAEV7MBBETQB18J-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-landed-goal-concludes-itself from=1:31 to=1:32 requested-sequence=25
 - 2026-11-07T20:13:38Z 3X4NN9H83PB23HKCJ8YKAXSY78-m1e-170920ec set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-persons-lane-act-is-not-overdue,a-return-names-the-failing-test,a-seat-moves-its-own-note,a-start-that-never-launched-is-collected,a-stop-is-read-where-the-goal-is,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-stop-is-read-where-the-goal-is from=1:32 to=1:33 requested-sequence=26
-Integrity: sha256=d53b24c019d48e4255c140dc659289369dfba084d6e9668e97bd72e178fd668d
+- 2026-11-07T20:15:08Z RP1NKGVNEQS5F45X0HMW5GJEQY-m1e-170920ec set-priority actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state,a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-persons-lane-act-is-not-overdue,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-seat-moves-its-own-note,a-slow-ledger-read-is-a-wait,a-start-that-never-launched-is-collected,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,seat-engines-follow-the-deployed-engine,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short,the-ui-bundle-builds-again reason=priority-order subject=attempts-are-bounded-per-unit from=1:33 to=1:34 requested-sequence=27
+Integrity: sha256=0734ead631c749f8157a1fb09fee341c6ac517759001592e1441baed32630704

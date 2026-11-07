@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 28
+- Sequence: 29
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="The named replay runs the parent test instead of the whole package and the return reason carries the facts the lane already has; a wrong mapping falls back to today's whole-unit replay; a wrong sentence misleads a reader; about 32 plus 60 production lines"
 - Tier: 2
 - Intent: A failing subtest maps to its top-level test for the lane's named replay and repeat selection, and a returned goal's reason names the failing test, the package that passed on the tree before it and the merge it failed on, in words, never the identity-validation or replay protocol text (finding 510)
 - Origin: human
 - Next step: Build U1a (identity mapping and repeat selection) then U1b (words and rendered status, --last) from the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-return-names-the-failing-test-U1-brief.md on m1e's build lane; carry check and read after each; the lane lands them
 - OpenedAt: 2026-11-04T02:13:09Z
-- Revision: 52
+- Revision: 53
 - Pinned: ui
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
@@ -68,4 +68,5 @@ History:
 - 2026-11-07T20:08:48Z T2G3T2GSEE0QWKM1K3ZYDNAS91-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-returned-member-leaves-the-batch from=1:25 to=1:26 requested-sequence=24
 - 2026-11-07T20:11:55Z 0ZV1QASZVR1NAEV7MBBETQB18J-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-landed-goal-concludes-itself from=1:26 to=1:27 requested-sequence=25
 - 2026-11-07T20:13:38Z 3X4NN9H83PB23HKCJ8YKAXSY78-m1e-170920ec set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-persons-lane-act-is-not-overdue,a-return-names-the-failing-test,a-seat-moves-its-own-note,a-start-that-never-launched-is-collected,a-stop-is-read-where-the-goal-is,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-stop-is-read-where-the-goal-is from=1:27 to=1:28 requested-sequence=26
-Integrity: sha256=34182254b1017d2353287417441b90fb9f498f44df1141fab553878ddb5a0928
+- 2026-11-07T20:15:08Z RP1NKGVNEQS5F45X0HMW5GJEQY-m1e-170920ec set-priority actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state,a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-persons-lane-act-is-not-overdue,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-seat-moves-its-own-note,a-slow-ledger-read-is-a-wait,a-start-that-never-launched-is-collected,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,seat-engines-follow-the-deployed-engine,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short,the-ui-bundle-builds-again reason=priority-order subject=attempts-are-bounded-per-unit from=1:28 to=1:29 requested-sequence=27
+Integrity: sha256=e1ecaa262f6ed0a66f4e28b9cb179aea3e10c5af8830092dea7bac41b7c7767f
