@@ -13,6 +13,120 @@ import (
 	"time"
 )
 
+// Git's index, unstaged bytes and merge parents are the collection's observable result.
+func TestACollectionIgnoresOnlyCoordinationOutsideTheMerge(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name         string
+		paths        []string
+		goalNarrator bool
+		nilPolicy    bool
+		refused      bool
+	}{
+		{name: "shared records", paths: []string{"records/narrator-digest.log", "memory/receipts.log"}},
+		{name: "review record", paths: []string{"records/reads/x.json"}, refused: true},
+		{name: "merged coordination", paths: []string{"records/narrator-digest.log"}, goalNarrator: true, refused: true},
+		{name: "product edit", paths: []string{"out/other"}, refused: true},
+		{name: "no policy", paths: []string{"records/narrator-digest.log", "memory/receipts.log"}, nilPolicy: true, refused: true},
+		{name: "coordination directory", paths: []string{"plans/goals/x.md"}},
+		{name: "directory lookalike", paths: []string{"plans/goalsX/x.md"}, refused: true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			b := newResolveGitAdapterFixture(t, false)
+			b.mustGit("merge", "--abort")
+			b.mustGit("checkout", "--detach", b.mustGit("merge-base", "main", "goal"))
+			write := func(path, content string) {
+				t.Helper()
+				path = filepath.Join(b.install, path)
+				if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			for _, path := range []string{"records/narrator-digest.log", "memory/receipts.log", "records/reads/x.json", "out/other", "plans/goals/x.md", "plans/goalsX/x.md"} {
+				write(path, "base\n")
+			}
+			b.mustGit("add", ".")
+			b.mustGit("commit", "--quiet", "-m", "coordination base")
+			base := b.mustGit("rev-parse", "HEAD")
+			b.mustGit("checkout", "-B", "goal")
+			write("out/conflict", "goal\n")
+			if row.goalNarrator {
+				write("records/narrator-digest.log", "goal record\n")
+			}
+			b.mustGit("commit", "--quiet", "-am", "goal")
+			tip := b.mustGit("rev-parse", "HEAD")
+			b.mustGit("checkout", "-B", "main", base)
+			write("out/conflict", "main\n")
+			b.mustGit("commit", "--quiet", "-am", "main")
+			main := b.mustGit("rev-parse", "HEAD")
+			b.mustGit("update-ref", "refs/remotes/origin/main", main)
+			if _, err := b.seams.Git(b.checkout, "merge", "--no-commit", "goal"); err == nil {
+				t.Fatal("fixture did not conflict")
+			}
+			if err := os.Remove(queuePath(b.install)); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := HandIn(b.install, Line{At: bedNow.Format(time.RFC3339), Goal: "goal", SHA: tip}); err != nil {
+				t.Fatal(err)
+			}
+			b.contract.Generated, b.seams.AsSeat = nil, true
+			if out, err := b.resolve(); err != nil || out.Outcome != "resolving" {
+				t.Fatalf("take conflict: %+v %v", out, err)
+			}
+			fix, err := ReadFix(b.install)
+			if err != nil || fix == nil {
+				t.Fatalf("fix: %+v %v", fix, err)
+			}
+			write("out/conflict", "main\ngoal\n")
+			b.mustGit("add", "metasystem/out/conflict")
+			if !row.nilPolicy {
+				b.seams.Coordination = []string{"memory/receipts.log", "records/narrator-digest.log", "plans/goals", "plans/goals-accepted.json", "plans/goals.md", "records/counselor", "records/goals"}
+			}
+			for _, path := range row.paths {
+				write(path, "unstaged coordination or edit\n")
+			}
+			b.seams.Run = func(_ []string, _ string, _ *os.File, started func(int64) error) error { return started(0) }
+			err = CompleteMerge(b.home, b.install, b.checkout, fix, "metasystem test impact", b.seams)
+			if row.refused {
+				if !errors.Is(err, ErrUnstaged) {
+					t.Fatalf("collection should refuse unstaged edits: %v", err)
+				}
+				for _, path := range row.paths {
+					if !strings.Contains(err.Error(), "metasystem/"+path) {
+						t.Fatalf("refusal omitted %s: %v", path, err)
+					}
+				}
+				if got := b.mustGit("rev-parse", "HEAD"); got != main {
+					t.Fatalf("refused collection moved HEAD: %s", got)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("collect shared coordination: %v", err)
+				}
+				if got := b.mustGit("show", "-s", "--format=%P", "HEAD"); got != main+" "+tip {
+					t.Fatalf("merge parents=%s", got)
+				}
+			}
+			dirty := nulPaths(b.mustGit("diff", "--name-only", "-z", "--"))
+			if len(dirty) != len(row.paths) {
+				t.Fatalf("unstaged paths=%q; want %q", dirty, row.paths)
+			}
+			for _, path := range row.paths {
+				if data, err := os.ReadFile(filepath.Join(b.install, path)); err != nil || string(data) != "unstaged coordination or edit\n" {
+					t.Fatalf("unstaged %s=%q: %v", path, data, err)
+				}
+				if !row.refused && b.mustGit("show", "HEAD:metasystem/"+path) != "base" {
+					t.Fatalf("collection committed unstaged %s", path)
+				}
+			}
+		})
+	}
+}
+
 // Git's pending merge, parent topology and hook admission cannot be proved by a Git stub.
 func TestGitAdapterSeatMergeCompletesAndProves(t *testing.T) {
 	t.Parallel()

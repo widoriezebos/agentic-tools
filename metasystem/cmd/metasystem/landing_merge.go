@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
@@ -90,7 +91,9 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 			if job.State != launch.Completed {
 				err = errors.New("resolution job " + fix.Job + " cannot resolve: " + job.Reason)
 			} else {
-				err = plain.CompleteMerge(home, root, checkout, fix, "metasystem test impact --check", inv.landing().plainResolve)
+				seams := inv.landing().plainResolve
+				seams.Coordination = landing.WorkspaceExclusions()
+				err = plain.CompleteMerge(home, root, checkout, fix, "metasystem test impact --check", seams)
 			}
 		}
 		if fix.State == "reviewing" || fix.State == "resolved" {

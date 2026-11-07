@@ -20,6 +20,8 @@ import (
 // ErrResolveEdits protects checkout edits from a merge abort.
 var ErrResolveEdits = errors.New("the lane checkout has changes outside the recorded merge; nothing was changed")
 
+var ErrUnstaged = errors.New("the check left unstaged changes")
+
 const CodeResolveEdits = "LANE_RESOLVE_EDITS"
 
 // ResolveSeams keeps Git and command execution local to a resolution.
@@ -28,6 +30,10 @@ type ResolveSeams struct {
 	Git   func(dir string, args ...string) (string, error)
 	Run   func(argv []string, dir string, log *os.File, started func(int64) error) error
 	Now   func() time.Time
+
+	// Coordination are installation-relative paths written as shared
+	// coordination state; a lane commit leaves them uncommitted. Nil ignores none.
+	Coordination []string
 
 	AsSeat       bool
 	regenerating *Fix
@@ -496,6 +502,28 @@ func installationPrefix(install, checkout string) (string, error) {
 	return filepath.ToSlash(rel) + "/", nil
 }
 
+// coordinationOnly returns the paths a lane commit still refuses: all of
+// paths except those under a coordination entry that the merge does not
+// touch. Entries are installation-relative; prefix makes them
+// checkout-relative. An empty policy ignores nothing.
+func coordinationOnly(prefix string, policy, mergePaths, paths []string) []string {
+	var left []string
+	for _, path := range paths {
+		coordination := false
+		for _, entry := range policy {
+			entry = prefix + entry
+			if (path == entry || strings.HasPrefix(path, entry+"/")) && !slices.Contains(mergePaths, path) {
+				coordination = true
+				break
+			}
+		}
+		if !coordination {
+			left = append(left, path)
+		}
+	}
+	return left
+}
+
 func nulPaths(list string) []string {
 	return strings.FieldsFunc(list, func(r rune) bool { return r == 0 })
 }
@@ -628,8 +656,30 @@ func commitResolvedMerge(home, install, checkout string, fix *Fix, check string,
 		if err := os.WriteFile(filepath.Join(Dir(install), "fixes", fix.Attempt+".patch"), []byte(patch), 0o600); err != nil {
 			return err
 		}
-		if _, err := git("diff", "--quiet", "--"); err != nil {
-			return errors.New("the check left unstaged changes; nothing was committed")
+		listed, err := git("diff", "--name-only", "-z", "--")
+		if err != nil {
+			return err
+		}
+		if paths := nulPaths(listed); len(paths) > 0 {
+			base, err := git("merge-base", "HEAD", "MERGE_HEAD")
+			if err != nil {
+				return fmt.Errorf("the merge base can't be read; nothing was committed: %w", err)
+			}
+			goal, err := git("diff", "--name-only", "-z", "--no-renames", strings.TrimSpace(base), "MERGE_HEAD", "--")
+			if err != nil {
+				return fmt.Errorf("the merge base can't be read; nothing was committed: %w", err)
+			}
+			mergePaths := nulPaths(goal)
+			for _, path := range fix.Paths {
+				mergePaths = append(mergePaths, path.Path)
+			}
+			prefix, err := installationPrefix(install, checkout)
+			if err != nil {
+				return err
+			}
+			if left := coordinationOnly(prefix, seams.Coordination, mergePaths, paths); len(left) > 0 {
+				return fmt.Errorf("%w in %s; nothing was committed", ErrUnstaged, strings.Join(left, ", "))
+			}
 		}
 		messagePath, err := git("rev-parse", "--path-format=absolute", "--git-path", "MERGE_MSG")
 		if err != nil {
