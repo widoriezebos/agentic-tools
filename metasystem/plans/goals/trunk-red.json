@@ -8105,7 +8105,15 @@
       },
       "holds": [],
       "opened": "2026-11-06T22:05:28Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-07T15:52:18Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "NXKZAPPMBH2PZMRZ5T0E2ZNFM5-m1e-9f79adc8",
+        "by": "Wido",
+        "why": "TestGitAdapterGoManifestInventoryMatchesNativeGoList on the MacBook lane proof 20261106T184337: git worktree add of 8079 files exceeded the 300 s local exec bound (host I/O), passed on repeat in 11.5 s; the host environment, no code defect. Decision 217"
+      },
       "class": "flake"
     },
     {
