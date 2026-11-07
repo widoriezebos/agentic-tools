@@ -659,7 +659,7 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if err != nil {
 			return nil, false, err
 		}
-		failed, complete := plain.CheckReport(data)
+		failed, units, complete := checkRedUnits(data, record.WorkingDirectory)
 		if len(failed) == 0 {
 			return nil, complete, nil
 		}
@@ -667,18 +667,15 @@ func (inv *intentInvocation) unitRunner() *launch.UnitRunner {
 		if err != nil {
 			return nil, complete, err
 		}
-		contract, _ := testpolicy.Load(filepath.Join(record.WorkingDirectory, "testing.json"))
 		judgements, err := judge(strings.TrimSpace(string(root)), "HEAD", failed)
-		var units []loopstop.RedUnit
-		for _, unit := range failed {
-			names := plain.NamedUnitTests(unit, contract)
-			red := loopstop.RedUnit{Unit: unit.Unit, Tests: names, Registered: make([]string, len(names))}
-			if err == nil && judgements[unit.Unit].Known {
-				for i, test := range names {
-					red.Registered[i] = goal.FlakeIdentity(unit.Unit, test)
+		for i, red := range units {
+			red.Registered = make([]string, len(red.Tests))
+			if err == nil && judgements[red.Unit].Known {
+				for j, test := range red.Tests {
+					red.Registered[j] = goal.FlakeIdentity(red.Unit, test)
 				}
 			}
-			units = append(units, red)
+			units[i] = red
 		}
 		return units, complete, nil
 	}
@@ -3043,4 +3040,19 @@ func (inv *intentInvocation) checkDirectPersonProof(act string, recordRefusal bo
 		*target = proof
 	}
 	return nil
+}
+
+// checkRedUnits reads a check report's failures as red units, each naming
+// only the Go tests the directory's contract can select within its package.
+func checkRedUnits(report []byte, directory string) ([]plain.FailedUnit, []loopstop.RedUnit, bool) {
+	failed, complete := plain.CheckReport(report)
+	if len(failed) == 0 {
+		return nil, nil, complete
+	}
+	contract, _ := testpolicy.Load(filepath.Join(directory, "testing.json"))
+	units := make([]loopstop.RedUnit, 0, len(failed))
+	for _, unit := range failed {
+		units = append(units, loopstop.RedUnit{Unit: unit.Unit, Tests: plain.NamedUnitTests(unit, contract)})
+	}
+	return failed, units, complete
 }

@@ -86,13 +86,35 @@ func (output *outputProgress) Write(data []byte) (int, error) {
 }
 
 func (check UnitCheck) Run(directory, records string, context CheckContext) (string, []CheckExit, error) {
+	return check.execute(directory, records, nil, context)
+}
+
+// RunAlone reruns only the cheap command, with the selectors that name its
+// failed tests, as a retained execution of its own.
+func (check UnitCheck) RunAlone(directory, records string, selectors []string, context CheckContext) (string, CheckExit, error) {
+	if len(selectors) == 0 {
+		return "", CheckExit{}, errors.New("the alone rerun names no test")
+	}
+	execution, exits, err := check.execute(directory, records, selectors, context)
+	if len(exits) != 1 {
+		return execution, CheckExit{}, errors.Join(err, errors.New("the alone rerun has no exit"))
+	}
+	return execution, exits[0], err
+}
+
+// execute runs both commands, or the cheap command alone when selectors name tests.
+func (check UnitCheck) execute(directory, records string, selectors []string, context CheckContext) (string, []CheckExit, error) {
 	if check.Cheap == "" || check.Audits == "" || check.Minutes <= 0 || check.Directory == "" || check.Environment == nil {
 		return "", nil, errors.New("the frozen unit check is incomplete")
 	}
 	if err := os.MkdirAll(records, 0700); err != nil {
 		return "", nil, err
 	}
-	execution, err := os.MkdirTemp(records, "check-")
+	commands, prefix := []struct{ name, text string }{{"cheap", check.Cheap}, {"audits", check.Audits}}, "check-"
+	if selectors != nil {
+		commands, prefix = commands[:1], "alone-"
+	}
+	execution, err := os.MkdirTemp(records, prefix)
 	if err != nil {
 		return "", nil, err
 	}
@@ -118,11 +140,14 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 	}
 	var exits []CheckExit
 	var failures []error
-	for _, command := range []struct{ name, text string }{{"cheap", check.Cheap}, {"audits", check.Audits}} {
+	for _, command := range commands {
 		process := exec.Command("/bin/sh", "-c", command.text)
 		process.Dir, process.Env = directory, slices.Clone(check.Environment)
 		if command.name == "cheap" && check.Base != "" {
 			process.Env = append(slices.Clone(process.Env), "LANDING_PROOF_BASE="+check.Base)
+		}
+		if selectors != nil {
+			process.Env = childEnvironment(process.Env, selectors)
 		}
 		if context.Attach != nil {
 			context.Attach(process)
@@ -171,6 +196,7 @@ func (check UnitCheck) Run(directory, records string, context CheckContext) (str
 		Directory   string      `json:"runDirectory"`
 		Check       UnitCheck   `json:"check"`
 		Exits       []CheckExit `json:"exits"`
-	}{filepath.Base(execution), directory, check, exits}, execution)
+		Selectors   []string    `json:"selectors,omitempty"`
+	}{filepath.Base(execution), directory, check, exits, selectors}, execution)
 	return execution, exits, errors.Join(append(failures, err)...)
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/commandenv"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/loopstop"
 )
 
 // carrySubjectCheck freezes declarations from the detached subject before
@@ -92,6 +94,7 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 	}
 	gatePath := filepath.Join(records, "gate.json")
 	var execution, latest string
+	var flake *branch.CheckFlake
 	var newest time.Time
 	entries, _ := os.ReadDir(records)
 	for _, entry := range entries {
@@ -132,7 +135,9 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 					rerun = append(rerun, "--act", check.ProcessAct)
 				}
 				if !inv.input.switched("rerun") {
-					return branch.GateObservation{}, fmt.Errorf("the retained subject check failed\nrun: %s", shellCommand(rerun))
+					if flake = inv.carryFlake(check, goalID, subject.Commit, records, latest, prior.Exits); flake == nil {
+						return branch.GateObservation{}, fmt.Errorf("the retained subject check failed\nrun: %s", shellCommand(rerun))
+					}
 				}
 			}
 			if !inv.input.switched("rerun") {
@@ -141,7 +146,16 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		}
 	}
 	if execution == "" {
-		execution, _, err = check.Run(directory, records, launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: goalID, Run: subject.Commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now})
+		var exits []launch.CheckExit
+		execution, exits, err = check.Run(directory, records, launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: goalID, Run: subject.Commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now})
+		if err != nil && execution != "" {
+			// A retained result means only the commands failed.
+			if _, problem := os.Stat(filepath.Join(execution, "result.json")); problem == nil {
+				if flake = inv.carryFlake(check, goalID, subject.Commit, records, execution, exits); flake != nil {
+					err = nil
+				}
+			}
+		}
 	}
 	if err != nil {
 		return branch.GateObservation{}, err
@@ -166,10 +180,12 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		ExecutionID string             `json:"executionId"`
 		Check       launch.UnitCheck   `json:"check"`
 		Exits       []launch.CheckExit `json:"exits"`
+		Flake       *branch.CheckFlake `json:"flake,omitempty"`
 	}
 	if err := json.Unmarshal(evidence, &retained); err != nil {
 		return branch.GateObservation{}, err
 	}
+	retained.Flake = flake
 	// The execution retains the environment locally; a committed read carries
 	// only the declared commands and their observed exits.
 	retained.Check.Environment = []string{}
@@ -188,4 +204,85 @@ func (inv *intentInvocation) carrySubjectCheck(directory string, subject branch.
 		}
 	}
 	return gate, err
+}
+
+// carryFlake classifies a red execution of the frozen check as the unit run
+// does: a red the alone rerun of its named tests clears is a flake; anything
+// else refuses. A completed rerun of the execution is reused, not repeated.
+func (inv *intentInvocation) carryFlake(check launch.UnitCheck, goalID, commit, records, execution string, exits []launch.CheckExit) *branch.CheckFlake {
+	if len(exits) != 2 {
+		return nil
+	}
+	evidence := loopstop.RedEvidence{Goal: goalID}
+	for _, exit := range exits {
+		if exit.Exit == 0 && exit.Error == "" {
+			continue
+		}
+		var units []loopstop.RedUnit
+		// Only a cheap command that ended by itself with a complete report names its tests.
+		if exit.Name == "cheap" && exit.Exit > 0 {
+			if _, named, complete := checkRedUnits([]byte(exit.Output), check.Directory); complete {
+				units = named
+			}
+		}
+		if len(units) == 0 {
+			units = []loopstop.RedUnit{{Unit: "section/" + exit.Name}}
+		}
+		evidence.Failed = append(evidence.Failed, units...)
+	}
+	verdict := loopstop.ClassifyRed(evidence)
+	if verdict.Next != "alone" || slices.ContainsFunc(evidence.Failed, func(unit loopstop.RedUnit) bool { return len(unit.Tests) == 0 }) {
+		return nil
+	}
+	// Reruns stay beside, not among, the subject's executions: no directory
+	// of theirs is named like one.
+	reruns := filepath.Join(records, "alone", "of-"+filepath.Base(execution))
+	completed := func(path string) (launch.CheckExit, bool) {
+		var result struct {
+			Selectors []string           `json:"selectors"`
+			Exits     []launch.CheckExit `json:"exits"`
+		}
+		data, err := os.ReadFile(filepath.Join(path, "result.json"))
+		if err != nil || json.Unmarshal(data, &result) != nil || len(result.Exits) != 1 || !slices.Equal(result.Selectors, verdict.Selectors) {
+			return launch.CheckExit{}, false
+		}
+		return result.Exits[0], true
+	}
+	alone, fresh := "", false
+	var exit launch.CheckExit
+	entries, _ := os.ReadDir(reruns)
+	for _, entry := range entries {
+		if !entry.IsDir() || !strings.HasPrefix(entry.Name(), "alone-") {
+			continue
+		}
+		if found, ok := completed(filepath.Join(reruns, entry.Name())); ok {
+			alone, exit = filepath.Join(reruns, entry.Name()), found
+			break
+		}
+	}
+	if alone == "" {
+		var ok bool
+		alone, _, _ = check.RunAlone(check.Directory, reruns, verdict.Selectors, launch.CheckContext{CheckExecution: launch.CheckExecution{Goal: goalID, Run: commit, Role: "carry"}, Now: inv.unitRunner().Manager.Now})
+		if alone == "" {
+			return nil
+		}
+		if exit, ok = completed(alone); !ok {
+			return nil
+		}
+		fresh = true
+	}
+	run := loopstop.RedRun{Attempted: true, Exited: exit.Exit >= 0, Launch: filepath.Base(alone), Selectors: verdict.Selectors}
+	if run.Exited {
+		_, run.Failed, run.Complete = checkRedUnits([]byte(exit.Output), check.Directory)
+	}
+	run.Passed = run.Exited && exit.Exit == 0 && run.Complete && len(run.Failed) == 0
+	evidence.Alone = run
+	verdict = loopstop.ClassifyRed(evidence)
+	if verdict.Cause == nil || verdict.Cause.Kind != "flake" {
+		return nil
+	}
+	if fresh {
+		fmt.Fprintf(inv.stderr, "warning: %s\n", verdict.Words)
+	}
+	return &branch.CheckFlake{Cause: verdict.Cause.Kind, Flakes: verdict.Flaked, Red: verdict.Words, Alone: run.Launch, Selectors: run.Selectors, AloneExit: exit}
 }

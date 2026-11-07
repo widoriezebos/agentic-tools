@@ -15,10 +15,18 @@ import (
 
 func carryRecoveryBed(t *testing.T) (*workBed, intentOwners, []string, string) {
 	t.Helper()
+	return carryCheckBed(t, func(marker string) string {
+		return "#!/bin/sh\nprintf checked\nif test -f '" + marker + "'; then exit 9; fi\n"
+	})
+}
+
+// carryCheckBed admits the cheap command the script writes; it may read the marker.
+func carryCheckBed(t *testing.T, script func(marker string) string) (*workBed, intentOwners, []string, string) {
+	t.Helper()
 	b, owners, _ := rebaseIntentBed(t)
 	marker := filepath.Join(t.TempDir(), "fail")
-	script := filepath.Join(t.TempDir(), "check")
-	if err := testexec.WriteFile(script, []byte("#!/bin/sh\nprintf checked\nif test -f '"+marker+"'; then exit 9; fi\n"), 0700); err != nil {
+	path := filepath.Join(t.TempDir(), "check")
+	if err := testexec.WriteFile(path, []byte(script(marker)), 0700); err != nil {
 		t.Fatal(err)
 	}
 	subject := branch.AttestationSubject{Commit: strings.Repeat("a", 40), Tree: strings.Repeat("b", 40), Parent: "seed"}
@@ -35,7 +43,7 @@ func carryRecoveryBed(t *testing.T) (*workBed, intentOwners, []string, string) {
 		case args[0] == "rev-parse" && strings.HasSuffix(args[1], "^{tree}"):
 			return []byte(subject.Tree), nil
 		case args[0] == "show" && strings.HasSuffix(args[1], ":metasystem.conf"):
-			cheap := script
+			cheap := path
 			if strings.HasPrefix(args[1], "seed:") {
 				cheap = "printf seed"
 			}
