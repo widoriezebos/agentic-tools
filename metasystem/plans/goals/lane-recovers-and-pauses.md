@@ -5,10 +5,10 @@
 - Tier: 3
 - Intent: The landing lane recovers from every scenario by a human verb (resume the goal in the lane or retract it), a goal's elapsed clock stops while it waits in the lane, the lane owns its fix rounds, and the merge read covers only the resolution
 - Origin: main
-- Next step: Design plans/designs/lane-recovers-and-pauses.md (Astra critique to material zero), then U2 lane fix rounds + landing fix, U1 clock pause, U3 resolution-only read, U4 landing retract + verbs in every status line; each unit rehearsed before landing
+- Next step: Design plans/designs/lane-recovers-and-pauses.md (Astra critique to material zero), then U2 lane fix rounds + landing fix, U1 clock pause, U3 resolution-only read, U4 landing retract + verbs in every status line; each unit rehearsed before landing Fixes analysis 2026-11-07: U2b (landing fix) is retired, since work land G again is the person recovery. The lane recovery audit (design :34, :57) stays as this goal last unit; do not conclude before it lands.
 - OpenedAt: 2026-10-11T06:10:01Z
 - FirstClaimAt: 2026-10-11T09:06:38Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-10-11T13:07:13Z revision=5 opid=4CC8B0B00AK2GR0A4WJE5HV5JS-m1e-9c08b0e5 authority=proven digest=c2d55699fef18a2173b0198e9e4a6c663c0a36696f0de306bc176df09ea95a0b episode=5
@@ -24,4 +24,5 @@ History:
 - 2026-10-11T09:11:41Z EANW4N83PH43E3YKDEYGKA80GE-m1e-f456f182 slice-start actor=m1e+main-1790454088-93948-21671b targets=lane-recovers-and-pauses
 - 2026-10-11T13:07:13Z 4CC8B0B00AK2GR0A4WJE5HV5JS-m1e-9c08b0e5 set-budget actor=human:Wido targets=lane-recovers-and-pauses displaced=m1e+main-1790454088-93948-21671b@2026-10-11T09:06:38Z
 - 2026-10-12T21:09:50Z 7CCXJJD3QY2YF2Z3V0SG42PJ76-m1e-43182c96 breach-stop actor=m1e+goal-stop-custodian targets=lane-recovers-and-pauses
-Integrity: sha256=887fe02a5b9308f084d13a5e029de7a7e8727384253e51d0a00a5008dd438109
+- 2026-11-07T09:56:30Z JCSPVJVHWE3C9B928PAE52V1X5-m1e-1dae276b edit actor=human:Wido targets=lane-recovers-and-pauses displaced=m1e+main-1790454088-93948-21671b@2026-10-11T13:07:13Z
+Integrity: sha256=f557cc547ecd9c0c6f3dc0af01d18d184c10bb349a3b1059043aeda5381c1627
