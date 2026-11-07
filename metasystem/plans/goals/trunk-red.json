@@ -11039,11 +11039,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261107T154055.637178000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-07T19:17:09Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-07T19:24:22Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "TT7GJNZ841SQHTZQ63WQX3G237-m1e-69a770f5",
+        "by": "Wido",
+        "why": "MacBook lane proof 20261107T154055 (3.5 h, host at a quarter of this Mac speed): git update-ref HEAD failed with a ref lock in the test bed (work_commit_impact_test.go:151) under the host I/O load; the same proof hit the 300 s exec bound in TestGitAdapterGoManifestInventoryMatchesNativeGoList (433 s, 10 s on repeat) and a 95-minute TestFrozenPublicVersionOneCorpus run (250 s on repeat); host environment, no code defect (decision 225; the MacBook lane stays paused until main is green and incidents are host-scoped)"
+      }
     }
   ],
   "cadence": {
