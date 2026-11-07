@@ -1,20 +1,19 @@
 # lane-first-run-fixes
 
-- State: claimed
+- State: done
 - Risk: severity=3 novelty=2 exposure=3 accumulation=2 basis="Lane code on every landing (exposure 3); a wrong proof partition can pass a red (severity 3); the mechanisms exist, the first run measured them (novelty 2); five small units (accumulation 2)"
 - Tier: 3
 - Intent: The landing lane evolves from its first real run (2026-10-09): the proof shards only the big package and runs every other package once (trunk proof under 25 min, was 61), landing status names a red trunk and the next act, hand-in remedies succeed when followed, the steward starts on an observed event, and the lane passes its proof context explicitly
 - Origin: main
 - Next step: Design from plans/lane-first-run-fixes-design-brief.md (units at most 250 production lines, smallest change); evidence agentic-tools-evidence/lane-test-20261009/findings.md
+- Concluded: Items 1-6 and u8 landed (u1, u1b, u1c, u2-u4, u3b, u5, u5b, u5c, u5d, u6; u8 as hot-fix bb109dfa32); units 9-11 moved to lane-housekeeping-2; u7 (2e53ec4cb8) is covered on main by lane-batching U5 and lane-recovers-and-pauses U3 (finding 559), its two wording items carried to lane-housekeeping-2. Decision 215 in Wido name.
 - OpenedAt: 2026-10-09T16:05:22Z
 - FirstClaimAt: 2026-10-11T09:06:10Z
-- Revision: 6
+- Revision: 7
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-11T06:04:01Z revision=2 opid=ZB1B9KZMY39Y28QK7SXHJNWN6D-m1e-c6925449 authority=proven digest=cdc6b7c7e5680cbfaa1b22198d7b8e7e983112ee50eecf24da73a0b64631f681 episode=2
 - Sliced: machine=m1e lineage=main-1790454088-93948-21671b revision=3 at=2026-10-11T10:14:51Z
-- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-11-07T15:01:45Z by=human:Wido revision=6 accountingRevision=6 episodeAt=2026-11-07T15:01:45Z episodeRevision=6
-- StopCapability: generation=6 revision=6 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-09T16:05:22Z N4ZZKKPS26GB43CTMTWENZMQX4-m1e-718ba0eb open actor=human:Wido targets=lane-first-run-fixes
@@ -23,4 +22,5 @@ History:
 - 2026-10-11T10:14:51Z MYA6525EDMESBW4WW8YV2QREAM-m1e-f456f182 slice-start actor=m1e+main-1790454088-93948-21671b targets=lane-first-run-fixes
 - 2026-10-12T21:09:42Z 6831EXGJCTMJQHNMKJTGWFCW4Y-m1e-43182c96 breach-stop actor=m1e+goal-stop-custodian targets=lane-first-run-fixes
 - 2026-11-07T15:01:45Z FF72AF9G387E94D8SKJ0FT9SPJ-m1e-5a3e856b resume actor=human:Wido targets=lane-first-run-fixes reason=cleared stop fence stop-lane-first-run-fixes-r3-f1: ELAPSED_LIMIT
-Integrity: sha256=555c62817377020ddcf7c1ad20da53a0e1f02f4619392e4452963096dbdcb428
+- 2026-11-07T15:01:57Z QGZBJV39RWX3KW24X4F2HRWPTY-m1e-5a3e856b done actor=human:Wido targets=lane-first-run-fixes displaced=m1e+main-1790454088-93948-21671b@2026-11-07T15:01:45Z
+Integrity: sha256=c3e336b9c8306d15668aed6b80652cbeb165d1f149801c387343d72e01c2ff55
