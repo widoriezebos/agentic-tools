@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 31
+- Sequence: 32
 - Risk: severity=2 novelty=3 exposure=2 accumulation=2 basis="Seven units of 56 to 108 production lines in the keeper, the steward and the lane's fix records; a redo is counted and refused past two; every wait is counted; tested through the real keeper from a barren hold"
 - Tier: 3
 - Intent: The landing lane's keeper owns the wait after a launch refused for capacity (one counted wait, cleared on admission) and redoes a lost merge of the selected tip itself (persisted abandonment, settled writers, no outside edits, two redos per goal and tip), so neither needs a person (design plans/designs/the-lane-redoes-a-lost-merge.md, accepted after its third Astra round; contract 3 of /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-seats-actors-and-their-contracts.md)
 - Origin: human
 - Next step: opus-designer cuts seven briefs (U3a, U3b1, U3b2, U4a1, U4a2, U4b1, U4b2) from the accepted page; builds after the-lane-collects-its-resolution lands
 - OpenedAt: 2026-11-05T18:58:37Z
-- Revision: 38
+- Revision: 39
 - BlockedBy: the-lane-collects-its-resolution
 - Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=12 reservedJobMinutesLimit=1800 activeJobLimit=1 reviewRoundLimit=24
@@ -57,4 +57,5 @@ History:
 - 2026-11-07T20:11:55Z 0ZV1QASZVR1NAEV7MBBETQB18J-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-landed-goal-concludes-itself from=1:28 to=1:29 requested-sequence=25
 - 2026-11-07T20:13:38Z 3X4NN9H83PB23HKCJ8YKAXSY78-m1e-170920ec set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-persons-lane-act-is-not-overdue,a-return-names-the-failing-test,a-seat-moves-its-own-note,a-start-that-never-launched-is-collected,a-stop-is-read-where-the-goal-is,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-stop-is-read-where-the-goal-is from=1:29 to=1:30 requested-sequence=26
 - 2026-11-07T20:15:08Z RP1NKGVNEQS5F45X0HMW5GJEQY-m1e-170920ec set-priority actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state,a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-persons-lane-act-is-not-overdue,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-seat-moves-its-own-note,a-slow-ledger-read-is-a-wait,a-start-that-never-launched-is-collected,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,seat-engines-follow-the-deployed-engine,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short,the-ui-bundle-builds-again reason=priority-order subject=attempts-are-bounded-per-unit from=1:30 to=1:31 requested-sequence=27
-Integrity: sha256=f2b48e6735b67bddd3ed66954d090c57df00c64b92e4d3fd2bea51e204db7d40
+- 2026-11-07T20:17:01Z BHHSW19YS19KGZQGNZ6MJHDSR3-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge reason=priority-order subject=the-deputy-acts-under-a-recorded-delegation from=1:31 to=1:32 requested-sequence=28
+Integrity: sha256=2c09d9b6320de517656ebdd03303ebec330ea2fe476409814e95e67337688f6d
