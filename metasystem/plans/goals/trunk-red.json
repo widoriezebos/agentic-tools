@@ -10824,12 +10824,12 @@
         }
       ],
       "owner": {
-        "machine": "",
-        "since": "",
-        "how": "",
-        "by": ""
+        "machine": "ui",
+        "since": "2026-11-07T18:57:15Z",
+        "how": "hand",
+        "by": "Wido"
       },
-      "fixGoal": "",
+      "fixGoal": "a-test-owns-its-ledger-fixture",
       "fixBranch": {
         "name": "",
         "commit": "",
