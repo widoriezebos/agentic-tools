@@ -8280,6 +8280,51 @@
       "opened": "2026-11-06T22:54:02Z",
       "closed": null,
       "class": "flake"
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestLegacyProofLaunchRealLauncherRequiresLiveReporter",
+      "identity": "red:metasystem/cmd/metasystem:TestLegacyProofLaunchRealLauncherRequiresLiveReporter",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T003326.252525000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestLegacyProofLaunchRealLauncherRequiresLiveReporter",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261107T003326.252525000Z-replay-1",
+          "batch": "20261107T003326.252525000Z-replay-1",
+          "baseCommit": "a3e32e19759e7bf503f6eca6ee074df2c0578ff3",
+          "baseTree": "886a33689a9129291147c824320600690d387d11",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T003326.252525000Z-replay-1.log",
+          "logDigest": "b2a8d00327da68d0838d4c41659ff7b4fdea9de160056a7a4aa3a240542fb25c",
+          "seenAt": "2026-11-07T02:16:05Z",
+          "opid": "V6KRK2KA5KGR7DJN5FMWCXS430-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261107T003326.252525000Z-replay-1"
+      ],
+      "opened": "2026-11-07T02:16:05Z",
+      "closed": null
     }
   ],
   "cadence": {
