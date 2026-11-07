@@ -8320,11 +8320,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261107T003326.252525000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-11-07T02:16:05Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-07T03:23:28Z",
+        "attempt": "20261107T023353.348374000Z",
+        "baseCommit": "19f6276cde0a70f1a046ed440db5922603a0c651",
+        "how": "green",
+        "opid": "YM26P7CPH2TZCPZXS6EN35C3R0-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
