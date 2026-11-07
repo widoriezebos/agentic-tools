@@ -5,12 +5,14 @@
 - Tier: 2
 - Intent: TestFleetHostViewPublicMachineList asserts exactly 1 host lease, but the engine closes the slot before the marker (internal/proofrun/host_resources.go:160-171, :1030, :1052), so the second proof can skip a still-locked cleared marker (:487-509) and leave 2 cleared markers; the test asserts every lease cleared (assertHostAdmissionClean(t, admission, 0) at cmd/metasystem/fleet_host_view_test.go:249) and Close releases the marker before the slot
 - Origin: human
+- DesignGate: off
 - Next step: Build without a design from the Explore evidence of 2026-11-07: the assertion change and the Close order; about 10 lines
 - OpenedAt: 2026-11-07T15:56:58Z
-- Revision: 1
+- Revision: 2
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 
 History:
 - 2026-11-07T15:56:58Z K9Q0BFPX89DHE68QTFRX18PNGD-m1e-9f79adc8 open actor=human:Wido targets=the-fleet-serialization-proof-asserts-cleared-leases
-Integrity: sha256=944d17cf4f60ea6245d34ef617c129ce5320917ac223ff4bdd7b01d70dec4866
+- 2026-11-07T15:57:09Z EAFRTHGMQN9FBWB45KKGYXMG8M-m1e-9f79adc8 edit actor=human:Wido targets=the-fleet-serialization-proof-asserts-cleared-leases reason=Allowed: build-without-design why=Allowed: build-without-design. A one-unit repair from a read root cause impact=This lets goal the-fleet-serialization-proof-asserts-cleared-leases be built and landed without an accepted, reviewed design. The risk: nobody checks the approach before code is written, so a wrong one is found only in code review or after it lands. It holds for every later build and landing of the-fleet-serialization-proof-asserts-cleared-leases until withdrawn. To undo: metasystem goal disallow the-fleet-serialization-proof-asserts-cleared-leases build-without-design
+Integrity: sha256=5e53e0def654148f5c80967aaa24a2f1861ea7b0abf18d4ebca9e6a19672468a
