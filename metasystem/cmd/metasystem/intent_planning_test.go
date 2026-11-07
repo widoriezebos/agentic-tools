@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -594,5 +595,52 @@ func TestIntentPlanningNotesAuthority(t *testing.T) {
 	code, result = bed.runJSON(bed.owners(), "goal", "notes", bedGoal, "--read", "r3", "--add", "the owner's own note")
 	if code != 0 || result.Outcome != intentConfirmed || len(notes(bed.goalFile(bedGoal))) != 2 {
 		t.Fatalf("the owning agent's note = %d %+v", code, result)
+	}
+}
+
+func TestIntentPlanningNotesMoveOntoAnApprovedFollowUp(t *testing.T) {
+	t.Parallel()
+	bed := newIntentBed(t, false, nil)
+	bed.lineage = "m1"
+	code, result := bed.runJSON(bed.owners(), "goal", "notes", bedGoal, "--read", "r3", "--add", "the owner's own note")
+	if code != 0 || result.Outcome != intentConfirmed {
+		t.Fatalf("add own note = %d %+v", code, result)
+	}
+	held := bed.goalFile(bedGoal)
+	follow := queuedIntentGoal("follow-up", held.Tier)
+	follow.State, follow.Blocked = goal.StateParked, []string{bedGoal}
+	follow.Parked = &goal.ParkRecord{By: "human:Wido", At: follow.OpenedAt, Blocker: bedGoal, Because: "Waits for " + bedGoal + "."}
+	follow.Risk, follow.Budget = held.Risk, held.Budget
+	approval := *held.Approved
+	event := held.History[approval.Revision-1]
+	event.Targets = []string{follow.Id}
+	follow.History = append(follow.History, event)
+	follow.Revision = uint64(len(follow.History))
+	approval.Revision, approval.EpisodeRevision = follow.Revision, follow.Revision
+	approval.Digest = goal.ApprovalDigest(follow.Intent, follow.Tier, *follow.Budget, follow.Risk)
+	follow.Approved = &approval
+	bed.addGoal(follow)
+	before := bed.goalFile("follow-up")
+	if before.Approved == nil {
+		t.Fatal("follow-up approval did not survive projection")
+	}
+	publications := bed.publications()
+	args := []string{"goal", "notes", bedGoal, "--close", "r3-1", "--moved", "follow-up"}
+	code, result = bed.runJSON(bed.owners(), args...)
+	after := bed.goalFile("follow-up")
+	if code != 0 || result.Outcome != intentConfirmed || bed.publications() != publications+1 {
+		t.Fatalf("move = %d %+v; publications %d", code, result, bed.publications())
+	}
+	if len(after.ReadItems) != 1 || after.ReadItems[0].State != goal.ReadItemOpen || after.ReadItems[0].Text != "the owner's own note (moved from "+bedGoal+")" || !reflect.DeepEqual(after.Approved, before.Approved) || after.State != goal.StateParked || !reflect.DeepEqual(after.Parked, before.Parked) {
+		t.Fatalf("move lost note, approval or park: %+v", after)
+	}
+	held = bed.goalFile(bedGoal)
+	last := held.History[len(held.History)-1]
+	if last.Actor != "mac-cli+m1" || last.Displaced != "" || held.ReadItems[0].State != goal.ReadItemMoved || held.ReadItems[0].ClosingReference != "follow-up" {
+		t.Fatalf("move was not the owning seat's close: %+v %+v", last, held.ReadItems)
+	}
+	code, result = bed.runJSON(bed.owners(), args...)
+	if code != 0 || result.Outcome != intentUnchanged || bed.publications() != publications+1 || len(bed.goalFile("follow-up").ReadItems) != 1 {
+		t.Fatalf("repeat = %d %+v; publications %d", code, result, bed.publications())
 	}
 }
