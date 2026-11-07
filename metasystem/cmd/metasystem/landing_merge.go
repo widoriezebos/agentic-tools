@@ -80,7 +80,7 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 				if err = os.WriteFile(fix.Brief, brief, 0600); err == nil {
 					err = plain.LaunchResolution(root, fix, inv.landing().now(), "landing", func() (string, error) {
 						var launchErr error
-						job, launchErr = runner.Manager.Start(launch.StartSpec{ID: id, Kind: "build", Goal: fix.Goal, Tag: fix.Units[0], WorkingDirectory: checkout, Brief: fix.Brief, UnitsPage: fix.Brief, Units: fix.Units})
+						job, launchErr = runner.Manager.Start(launch.StartSpec{ID: id, Kind: "build", Goal: fix.Goal, Tag: fix.Units[0], WorkingDirectory: checkout, Brief: fix.Brief, UnitsPage: fix.Brief, Units: fix.Units, LaneMerge: true})
 						return job.ID, launchErr
 					})
 				}
@@ -245,6 +245,9 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 		}
 		if fix.State == "resolved" {
 			result.next, result.nextReason = inv.publicArgv("work", "review", fix.Goal, "--work", fix.Units[0]), "repeats the read of the committed merge"
+		}
+		if fix.State == "resolving" && (launch.IsCode(err, "LAUNCH_BUILD_CAPACITY") || launch.IsCode(err, "LAUNCH_BUILD_PERSON")) {
+			result.next, result.nextReason = inv.sameCommand(), "starts the resolution job once the host admits it"
 		}
 	}
 	return inv.render(result), true

@@ -108,20 +108,25 @@ func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
 	if !buildKind {
 		facts = fmt.Sprintf("load=%g limit=%s host.load-max=%s", snapshot.Load.Load1m, raw, raw)
 	}
-	refuse := func(code, why string) error {
-		return coded(code, facts, fmt.Errorf("%s (%s); %s", why, facts, humanauthority.PersonActRemedy("the original work build command")))
+	refuseBuild := func(code, cause, why string) error {
+		facts := facts + " cause=" + cause
+		remedy := humanauthority.PersonActRemedy("the original work build command")
+		if spec.LaneMerge {
+			remedy = laneRemedy(cause, raw, snapshot.Errors)
+		}
+		return coded(code, facts, fmt.Errorf("%s (%s); %s", why, facts, remedy))
 	}
 	if buildKind && policy.Value == "person" {
-		return refuse("LAUNCH_BUILD_PERSON", "host.builds=person requires the person's exact build act; ask through a question")
+		return refuseBuild("LAUNCH_BUILD_PERSON", "person-policy", "host.builds=person requires the person's exact build act; ask through a question")
 	}
 	if err != nil || parseErr != nil || math.IsNaN(limit) || math.IsInf(limit, 0) || limit <= 0 {
-		return refuse("LAUNCH_BUILD_CAPACITY", "host.load-max must declare a positive finite load limit")
+		return refuseBuild("LAUNCH_BUILD_CAPACITY", "invalid-limit", "host.load-max must declare a positive finite load limit")
 	}
 	if !snapshot.OwnerKnown || !snapshot.BuildsKnown || !snapshot.Load.Available || math.IsNaN(snapshot.Load.Load1m) || math.IsInf(snapshot.Load.Load1m, 0) || snapshot.Load.Load1m < 0 {
-		return refuse("LAUNCH_BUILD_CAPACITY", "current host capacity is unknown: "+strings.Join(snapshot.Errors, "; "))
+		return refuseBuild("LAUNCH_BUILD_CAPACITY", "unknown-capacity", "current host capacity is unknown: "+strings.Join(snapshot.Errors, "; "))
 	}
 	if snapshot.Load.Load1m >= limit {
-		return refuse("LAUNCH_BUILD_CAPACITY", "current host load meets or exceeds host.load-max")
+		return refuseBuild("LAUNCH_BUILD_CAPACITY", "overload", "current host load meets or exceeds host.load-max")
 	}
 	if buildKind && policy.Value != "auto" {
 		goals := map[string]bool{}
@@ -139,8 +144,25 @@ func (m *Manager) createAdmitted(spec StartSpec, record Record) error {
 		goals[key] = true
 		cap, _ := new(big.Int).SetString(policy.Value, 10)
 		if cap.Cmp(big.NewInt(int64(len(goals)))) < 0 {
-			return refuse("LAUNCH_BUILD_CAPACITY", "distinct active build goals reach the host.builds cap")
+			return refuseBuild("LAUNCH_BUILD_CAPACITY", "build-cap", "distinct active build goals reach the host.builds cap")
 		}
 	}
 	return m.Store.Create(record)
+}
+
+func laneRemedy(cause, limit string, errs []string) string {
+	switch cause {
+	case "overload":
+		return "the lane waits until the host's one-minute load is below " + limit + " and retries this same command"
+	case "build-cap":
+		return "the lane waits for a build place and retries this same command"
+	case "unknown-capacity":
+		return "the lane retries when host capacity can be read: " + strings.Join(errs, "; ")
+	case "person-policy":
+		return "host.builds=person: " + humanauthority.PersonActRemedy("this same work build command")
+	case "invalid-limit":
+		return "a person declares a positive host.load-max: " + humanauthority.PersonActRemedy("metasystem settings set host.load-max N")
+	default:
+		return humanauthority.PersonActRemedy("the original work build command")
+	}
 }

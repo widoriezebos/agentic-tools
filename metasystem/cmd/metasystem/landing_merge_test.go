@@ -14,7 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -22,6 +24,108 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
+
+func TestARefusedLaneLaunchNamesTheSameCommand(t *testing.T) {
+	t.Parallel()
+	for _, policy := range []string{"auto", "person"} {
+		t.Run(policy, func(t *testing.T) {
+			t.Parallel()
+			b := newWorkBed(t)
+			layout, err := b.owners().resolver.ResolveLayout(b.root())
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, checkout := layout.InstallationRoot.Path(), layout.GitRoot
+			pid := int64(os.Getpid())
+			exact, _, err := (identity.KernelProber{}).Probe(pid)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := lease.AnnounceWithPair(root, "merge-session", pid, exact.StartedAt.Unix(), exact.StartTicks, exact.BootID, "merge-session", "metasystem", lane.AgentLineage); err != nil {
+				t.Fatal(err)
+			}
+			if holder, err := lease.RequireHolder(root, pid, nil); err != nil || !holder.Holder {
+				t.Fatalf("holder=%+v %v", holder, err)
+			}
+			home := t.TempDir()
+			data, err := json.Marshal(lane.Record{Root: checkout, Install: root, CustodyEpoch: 1})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(lane.RecordPath(home)), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(lane.RecordPath(home), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			b.manager.CapacityHome = home
+			b.manager.CapacitySources.Load = func(at time.Time) hostload.Sample {
+				return hostload.Sample{At: at.Format(time.RFC3339Nano), Available: true, Load1m: 30}
+			}
+			conf := filepath.Join(root, "metasystem.conf")
+			original, err := os.ReadFile(conf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(conf, append(original, []byte("\nhost.builds="+policy+"\nhost.load-max=24\n")...), 0600); err != nil {
+				t.Fatal(err)
+			}
+			fix := &plain.Fix{Goal: b.id, Units: []string{"lane-merge-1"}, Commit: "batch", Tip: "member", State: "resolving", Attempt: "merge-attempt", Paths: []conflict.Path{{Path: "source.go", Class: conflict.Builder}}}
+			if err := plain.WriteFix(root, fix); err != nil {
+				t.Fatal(err)
+			}
+			brief := b.brief("merge.md", "| Unit | Lines |\n| --- | --- |\n| lane-merge-1 | 5 |\nResolve both sides.\n")
+			owners := b.workOwners()
+			owners.lookupEnv = func(string) (string, bool) { return "", false }
+			owners.policies.Registry = func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{}, nil }
+			owners.landing.home = func() (string, error) { return home, nil }
+			owners.landing.now = b.manager.Now
+			owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
+				if dir == checkout && strings.Join(args, " ") == "rev-parse --verify MERGE_HEAD^{commit}" {
+					return "member", nil
+				}
+				t.Fatalf("unexpected merge call in %s: %v", dir, args)
+				return "", nil
+			}
+			command, _ := findIntentAction("work", "build")
+			cause, remedy := "cause=overload", "the lane waits until the host's one-minute load is below 24 and retries this same command"
+			if policy == "person" {
+				cause, remedy = "cause=person-policy", "this same work build command"
+			}
+			for _, mode := range []string{"--json", "--verbose"} {
+				args := []string{mode, b.id, "--work", "lane-merge-1", "--brief", brief, "--check", "metasystem test impact"}
+				var stdout, stderr bytes.Buffer
+				if code := runIntentIn(command, args, &stdout, &stderr, checkout, owners); code != 1 {
+					t.Fatalf("build exit=%d: %s%s", code, stdout.String(), stderr.String())
+				}
+				if mode == "--json" {
+					var result intentResult
+					if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+						t.Fatal(err)
+					}
+					if result.Next == nil || !slices.Equal(result.Next.Argv, append([]string{"metasystem", "work", "build"}, args...)) || result.Next.Reason != "starts the resolution job once the host admits it" {
+						t.Fatalf("refused launch lost its build command: %+v", result.Next)
+					}
+					if !strings.Contains(result.Summary, cause) || !strings.Contains(result.Summary, remedy) {
+						t.Fatalf("summary lost its cause or remedy: %s", result.Summary)
+					}
+				}
+				output := strings.Join(strings.Fields(stdout.String()+stderr.String()), " ")
+				if !strings.Contains(output, cause) || !strings.Contains(output, remedy) || policy == "auto" && strings.Contains(output, "enrolls it once") {
+					t.Fatalf("refusal lost its cause or remedy: %s", output)
+				}
+				t.Logf("%s: %s", mode, output)
+			}
+			fix, err = plain.ReadFix(root)
+			if err != nil || fix == nil || fix.Job != "" || fix.Launch == nil || !strings.Contains(fix.Launch.Error, cause) {
+				t.Fatalf("refused launch record=%+v: %v", fix, err)
+			}
+			if records, err := b.manager.List(); err != nil || len(records) != 0 || len(b.starter.launched()) != 0 {
+				t.Fatalf("refused launch created jobs: %+v: %v", records, err)
+			}
+		})
+	}
+}
 
 func TestARefusedCollectionNamesTheSameCommand(t *testing.T) {
 	t.Parallel()
