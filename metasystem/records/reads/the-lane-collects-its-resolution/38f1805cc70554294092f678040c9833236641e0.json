@@ -1,0 +1,101 @@
+{
+  "canonicalRead": {
+    "id": "20261107t135303-f7f548cd76-r2-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-lane-collects-its-resolution",
+      "reviewedProjectTree": "65c1f9d705f273df355cd5db29ec650d888b9aaefcd3942faa14e1f76ca39ad5",
+      "diffDigest": "65c1f9d705f273df355cd5db29ec650d888b9aaefcd3942faa14e1f76ca39ad5"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261107t135303-f7f548cd76-r2-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "A lane LAUNCH_BUILD_PERSON refusal gives the capacity reason 'starts the resolution job once the host admits it', but under host.builds=person the host never admits an agent's build.",
+        "evidence": "landing_merge.go:249-251 sets one nextReason for both codes; hostcapacity.go:83-85 admits only a person's act; the summary carries the person-policy remedy and the next argv is the same command, as D2 and B4 require.",
+        "where": "metasystem/cmd/metasystem/landing_merge.go",
+        "change": "Optionally give LAUNCH_BUILD_PERSON its own reason, for example 'a person runs this same command from an enrolled terminal', and update T3b's person row.",
+        "relation": "messages are human-readable and true for their cause"
+      },
+      {
+        "id": "20261107t135303-f7f548cd76-r2-s3:2",
+        "class": "weakened-test",
+        "severity": "low",
+        "material": false,
+        "claim": "T3's unknown-capacity row checks that a pre-rewording phrase is absent, so that negative check can never fail.",
+        "evidence": "hostcapacity_lane_test.go:25 absent 'waits until the one-minute load is below'; the overload text is now 'waits until the host's one-minute load is below'. The row's exact positive remedy assertion still fails under a remap.",
+        "where": "metasystem/internal/launch/hostcapacity_lane_test.go",
+        "change": "Change the absent string to 'one-minute load is below'."
+      },
+      {
+        "id": "20261107t135303-f7f548cd76-r2-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "laneRemedy has no doc comment, and the closure name refuseBuild also covers host-gated non-build launches.",
+        "evidence": "hostcapacity.go:111 and :153",
+        "where": "metasystem/internal/launch/hostcapacity.go",
+        "change": "Optionally add a one-line doc comment and keep the brief's name refuse.",
+        "relation": "code reads like the surrounding code"
+      },
+      {
+        "id": "20261107t135303-f7f548cd76-r2-s3:4",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The unknown-capacity refusal repeats the snapshot errors in both why and remedy, and ends after 'can be read: ' when there are no errors.",
+        "evidence": "hostcapacity.go:124 and the unknown-capacity arm of laneRemedy, as specified by the brief's B3.",
+        "where": "metasystem/internal/launch/hostcapacity.go",
+        "change": "None required; it follows the brief.",
+        "relation": "messages are human-readable"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261107t135303-f7f548cd76-r2-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "d677243b2c15633f5c748101d8518ce51b251b8f1b83a3c0ec55de6fb665b7c6",
+  "schemaVersion": 1,
+  "goal": "the-lane-collects-its-resolution",
+  "unit": "U1b",
+  "subject": {
+    "commit": "38f1805cc70554294092f678040c9833236641e0",
+    "parent": "ad536b503cd318746bd535d28c934895ac062f88",
+    "tree": "0227d15e1eb6071c82b5c9a197cb93cbaf0d7f30",
+    "patchDigest": "65c1f9d705f273df355cd5db29ec650d888b9aaefcd3942faa14e1f76ca39ad5",
+    "unitDigest": "2adad01fe17207e7c6a7bf7916c8b6091e2348b10416e7681fb49c28ef020de6"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261107t135303-f7f548cd76-r2-s3",
+    "closureSha256": "337154965c2133f0749b2314cc86097a9e8e92b5a467a521dd9e2c474d739d34"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0227d15e1eb6071c82b5c9a197cb93cbaf0d7f30",
+    "runId": "goal-read-gate-20261107t161420z-299708e1c47687dc"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "7df11b99b992341e0745e5a1d445ae0d27afec9a",
+      "digest": "6a482e041007a4255c995d35fa44a19109154876a434bb713841fb9e5f0355e9"
+    },
+    {
+      "kind": "read",
+      "commit": "ad536b503cd318746bd535d28c934895ac062f88",
+      "digest": "dc02b7461148993d841ddfb941c819528416a23dbcc24f807633e8ae36da03a3"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_merge_test.go",
+      "readerWord": "reviewed by unit read 20261107t135303-f7f548cd76-r2-s3"
+    }
+  ],
+  "sha256": "b862ebfc13448f9740eac2871549dc993ea8d5648b072cfd0277a51a988b410a"
+}
