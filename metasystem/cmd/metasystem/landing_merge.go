@@ -50,6 +50,7 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 	}
 	runner := inv.unitRunner()
 	result := intentResult{Outcome: intentConfirmed, Data: fix, Summary: landingstate.Phrase("resolving-conflicts-of") + fix.Goal, next: inv.sameCommand(), nextReason: "collects this same job"}
+	collecting := false
 	if inv.command.action == "build" {
 		if !inv.input.has("brief") || len(inv.input.values["check"]) != 1 || inv.input.text("check") != "metasystem test impact" {
 			return inv.render(landingLaneFailure(nil, "a lane merge requires a brief and --check 'metasystem test impact'", nil)), true
@@ -91,6 +92,7 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 			if job.State != launch.Completed {
 				err = errors.New("resolution job " + fix.Job + " cannot resolve: " + job.Reason)
 			} else {
+				collecting = true
 				seams := inv.landing().plainResolve
 				seams.Coordination = landing.WorkspaceExclusions()
 				err = plain.CompleteMerge(home, root, checkout, fix, "metasystem test impact --check", seams)
@@ -237,9 +239,12 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 	}
 	if err != nil {
 		result.Outcome, result.code, result.Summary = intentFailed, 1, err.Error()
-		result.next = inv.publicArgv("landing", "resolve")
+		result.next, result.nextReason = inv.publicArgv("landing", "resolve"), "returns the goal with its paths"
+		if fix.State == "resolving" && collecting {
+			result.next, result.nextReason = inv.sameCommand(), "collects this same job once the cause above is gone"
+		}
 		if fix.State == "resolved" {
-			result.next = inv.publicArgv("work", "review", fix.Goal, "--work", fix.Units[0])
+			result.next, result.nextReason = inv.publicArgv("work", "review", fix.Goal, "--work", fix.Units[0]), "repeats the read of the committed merge"
 		}
 	}
 	return inv.render(result), true
