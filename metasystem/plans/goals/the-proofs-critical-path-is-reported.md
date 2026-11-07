@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 31
+- Sequence: 32
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="Reporting and ordering of the proof own launches under the same slot admission; a wrong order lengthens a proof, a wrong readout misleads a reader; the load-fragile record names a test, never a seat; about 75 plus 74 plus 66 production lines"
 - Tier: 2
 - Intent: The proof reports its critical path and runs it first: the readout of accumulated work, the longest launch and the elapsed span (U2), one dispatcher that admits the heaviest ready launch by weight from the last full proof (U3), and a red seen only in parallel recorded as failed in parallel and passed alone with the failing launch effective N (U4); the split follow-up of the-proofs-critical-path-is-short (decision 197)
 - Origin: human
 - Next step: After the-proofs-critical-path-is-short lands and its N=1 against N=4 measurement is written: cut briefs U2, U3, U4 (--last) from the page sections the follow-up owns, one Astra round each, build on m1e; one hand-in
 - OpenedAt: 2026-11-04T13:04:07Z
-- Revision: 40
+- Revision: 41
 - BlockedBy: the-proofs-critical-path-is-short
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=900 activeJobLimit=1 reviewRoundLimit=8
@@ -59,4 +59,5 @@ History:
 - 2026-11-07T19:59:58Z 4RSXPA677CF543ZBH6VNFF652P-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-return-names-the-failing-test,a-settled-unit-is-not-in-flight,a-start-that-never-launched-is-collected,one-host-admits-heavy-work,the-claim-quota-is-a-host-setting,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=one-host-admits-heavy-work from=1:28 to=1:29 requested-sequence=20
 - 2026-11-07T20:06:00Z TXHDRQGFFKJVXK19M0QY4Q5Y8W-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-selected-batch-is-proving,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-selected-batch-is-proving from=1:29 to=1:30 requested-sequence=23
 - 2026-11-07T20:08:48Z T2G3T2GSEE0QWKM1K3ZYDNAS91-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-returned-member-leaves-the-batch from=1:30 to=1:31 requested-sequence=24
-Integrity: sha256=f98c4e48b9966e9a304043b2db2d0bbbaa20f015c5c92f3c34b60ff3ba4ac5f5
+- 2026-11-07T20:11:55Z 0ZV1QASZVR1NAEV7MBBETQB18J-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-landed-goal-concludes-itself from=1:31 to=1:32 requested-sequence=25
+Integrity: sha256=66993a7d9ad9ae133690774c51cf39523e23570164ce46d96032c0da6fd77bb5

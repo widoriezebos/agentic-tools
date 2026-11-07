@@ -2,14 +2,14 @@
 
 - State: parked
 - Priority: 1
-- Sequence: 28
+- Sequence: 29
 - Risk: severity=2 novelty=3 exposure=2 accumulation=2 basis="Seven units of 56 to 108 production lines in the keeper, the steward and the lane's fix records; a redo is counted and refused past two; every wait is counted; tested through the real keeper from a barren hold"
 - Tier: 3
 - Intent: The landing lane's keeper owns the wait after a launch refused for capacity (one counted wait, cleared on admission) and redoes a lost merge of the selected tip itself (persisted abandonment, settled writers, no outside edits, two redos per goal and tip), so neither needs a person (design plans/designs/the-lane-redoes-a-lost-merge.md, accepted after its third Astra round; contract 3 of /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-seats-actors-and-their-contracts.md)
 - Origin: human
 - Next step: opus-designer cuts seven briefs (U3a, U3b1, U3b2, U4a1, U4a2, U4b1, U4b2) from the accepted page; builds after the-lane-collects-its-resolution lands
 - OpenedAt: 2026-11-05T18:58:37Z
-- Revision: 35
+- Revision: 36
 - BlockedBy: the-lane-collects-its-resolution
 - Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=12 reservedJobMinutesLimit=1800 activeJobLimit=1 reviewRoundLimit=24
@@ -54,4 +54,5 @@ History:
 - 2026-11-07T20:04:44Z 2GA3C3W48M7ATW6PEBYAHXZ5Z6-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-return-names-the-failing-test,a-settled-unit-is-not-in-flight,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge reason=priority-order subject=a-settled-unit-is-not-in-flight from=1:25 to=1:26 requested-sequence=22
 - 2026-11-07T20:06:00Z TXHDRQGFFKJVXK19M0QY4Q5Y8W-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-selected-batch-is-proving,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-selected-batch-is-proving from=1:26 to=1:27 requested-sequence=23
 - 2026-11-07T20:08:48Z T2G3T2GSEE0QWKM1K3ZYDNAS91-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-returned-member-leaves-the-batch from=1:27 to=1:28 requested-sequence=24
-Integrity: sha256=41d51b75a949d09d5adc05d04e9fbab82619d384116274fac94ba0e6f5a694e7
+- 2026-11-07T20:11:55Z 0ZV1QASZVR1NAEV7MBBETQB18J-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-landed-goal-concludes-itself from=1:28 to=1:29 requested-sequence=25
+Integrity: sha256=d1a26b7866cf147e6fd89ba8f794c3a18148cf90691665f5a5a6cc86ddd44ef3

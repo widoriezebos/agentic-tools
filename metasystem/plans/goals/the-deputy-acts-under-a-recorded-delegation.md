@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 29
+- Sequence: 30
 - Risk: severity=2 novelty=3 exposure=2 accumulation=2 basis="Eight units of 45 to 98 production lines on the grant, the decision record, three verbs and the steward report; every act is recorded and overrulable; nothing in the classes accepts, examines or builds a candidate"
 - Tier: 3
 - Intent: The person-class mechanical acts a steward session has been typing into Wido's pane run under the engine's recorded power-of-attorney grant: lane recovery of the engine's own barren hold, a budget's one-more-day, releasing a green round's run; each act recorded with the grant and its reason, overrulable by one line, reported daily; value rulings stay with the person (design plans/designs/the-deputy-acts-under-a-recorded-delegation.md, accepted after three Astra rounds; contract 4 of /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-seats-actors-and-their-contracts.md)
 - Origin: human
 - Next step: opus-designer cuts the briefs for U1a, U1b1, U1b2, U2a1, U2a2, U2b, U3a, U3b from the accepted page (one Astra round each); build on m1e after a-green-rounds-read-is-collected and the-lane-collects-its-resolution; hand in through the lane
 - OpenedAt: 2026-11-05T19:05:34Z
-- Revision: 36
+- Revision: 37
 - Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=12 reservedJobMinutesLimit=1800 activeJobLimit=1 reviewRoundLimit=24
 - BudgetExceptions: 0
@@ -53,4 +53,5 @@ History:
 - 2026-11-07T20:04:44Z 2GA3C3W48M7ATW6PEBYAHXZ5Z6-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-return-names-the-failing-test,a-settled-unit-is-not-in-flight,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge reason=priority-order subject=a-settled-unit-is-not-in-flight from=1:26 to=1:27 requested-sequence=22
 - 2026-11-07T20:06:00Z TXHDRQGFFKJVXK19M0QY4Q5Y8W-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-selected-batch-is-proving,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-selected-batch-is-proving from=1:27 to=1:28 requested-sequence=23
 - 2026-11-07T20:08:48Z T2G3T2GSEE0QWKM1K3ZYDNAS91-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-returned-member-leaves-the-batch from=1:28 to=1:29 requested-sequence=24
-Integrity: sha256=01cc7e57910681d3e49208a20c62d21a6f69b10c57e5c2c43cde55713bee30bf
+- 2026-11-07T20:11:55Z 0ZV1QASZVR1NAEV7MBBETQB18J-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-landed-goal-concludes-itself from=1:29 to=1:30 requested-sequence=25
+Integrity: sha256=cc6de9355e55fc9798afe3c7855274b87493b2321953eb93a8f1f55aad9c91d8
