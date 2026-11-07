@@ -1,6 +1,6 @@
 # host-health-role
 
-- State: queued
+- State: approved
 - Priority: 3
 - Sequence: 3
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A new steward role that reads the process list and alerts on named limits; it acts on nothing, but wrong limits cry wolf to the person or miss a sick machine; runs on every tick of every seat"
@@ -9,9 +9,11 @@
 - Origin: main
 - Next step: Next: fold the 7 critique findings into a second revision of the design as the fold brief lays out, reusing the existing load reader. Done when: the revised design passes one critique round with no serious findings and is ready to build with a test fed the recorded 2026-09-02 snapshot.
 - OpenedAt: 2026-09-02T16:28:16Z
-- Revision: 23
+- Revision: 24
 - Labels: robustness
+- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- Approved: by=human:Wido at=2026-11-07T09:58:29Z revision=24 opid=VF4YQ52E70028GTREYP0SZCQGG-m1e-1dae276b authority=proven digest=79bca31732d8e0b6df89ef94f6124fae2e7401245da136bd749f1aa2d687627c episode=24
 - Sliced: machine=m1 lineage=main-1788333680-2840-7f79f4 revision=3 at=2026-09-02T18:19:20Z
 
 History:
@@ -38,4 +40,5 @@ History:
 - 2026-10-02T20:51:33Z 1B1FBYZC2QCD6GECK3T6QB4188-m1e-9c612d71 abandon actor=human:Wido targets=verbs-match-intent,defect-analysis-gate,steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:5 to=3:4
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:4 to=3:3
 - 2026-10-03T11:14:38Z SHX7E11KS82Q4RMWB2121PC1K7-m1e-718ba0eb edit actor=human:Wido targets=host-health-role
-Integrity: sha256=d951ef9653ba3962c45db15a5b08c5fe20759e082ec16d6338a6496a51f58ad7
+- 2026-11-07T09:58:29Z VF4YQ52E70028GTREYP0SZCQGG-m1e-1dae276b approve actor=human:Wido targets=host-health-role
+Integrity: sha256=7f0f1df5386d6eb9c40740f66821139a4554cd11974ddc5de0ea9c840a8f081f
