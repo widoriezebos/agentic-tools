@@ -3720,7 +3720,7 @@ func TestLegacyProofLaunchRealLauncherRequiresLiveReporter(t *testing.T) {
 		t.Fatal(err)
 	}
 	conf := filepath.Join(root, "metasystem.conf")
-	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.runtimes=codex\n")
+	writeReceiptFixture(t, root, "metasystem.conf", "metasystem.runtimes=codex\nproof.admission.top-level-max=0\n")
 	// Host resources are isolated by a separate synthetic authority root;
 	// the launch root itself is migrated and has a real runtime declaration.
 	authority := t.TempDir()

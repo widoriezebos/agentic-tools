@@ -220,6 +220,10 @@ func resolveHostAdmissionPath(configured string) (string, error) {
 		return hostAdmissionPathForRequest(os.Getenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT"),
 			os.Getenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR"))
 	}
+	return resolveHostOwnAdmissionPath(path)
+}
+
+func resolveHostOwnAdmissionPath(path string) (string, error) {
 	if path == "" {
 		account, err := user.Current()
 		if err != nil || account.HomeDir == "" {
@@ -1164,9 +1168,12 @@ func MarkManagedProofProcess() (func(), error) {
 	return func() { _ = os.Remove(path) }, nil
 }
 
-func managedProofProcess(exact identity.Exact) bool {
-	directory, err := hostAdmissionDirectory()
-	if err != nil {
+func managedProofProcess(exact identity.Exact, selected string) bool {
+	return managedProofProcessIn(selected, exact)
+}
+
+func managedProofProcessIn(directory string, exact identity.Exact) bool {
+	if directory == "" {
 		return false
 	}
 	data, err := os.ReadFile(filepath.Join(directory, fmt.Sprintf("managed-%d.json", exact.Pid)))
