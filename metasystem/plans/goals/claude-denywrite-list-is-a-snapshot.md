@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 6
+- Sequence: 5
 - Risk: severity=2 novelty=2 exposure=2 accumulation=1 basis="severity 2: a delegate could write another job's worktree or a git lock during its round; novelty 2: needs either a worktree relocation or a sandbox rule not yet probed; exposure 2: every claude delegate round on a busy seat; accumulation 1: nothing compounds"
 - Tier: 2
 - Intent: What: The Claude helper's sandbox blocks writes to places it must not touch, including places created after the helper started, and its network setting means what it says. Why: The block list is computed once, at start. A folder or git file created later next to the helper's worktree stays writable for the rest of the round. And when network access is meant to be allowed, the settings actually block all traffic. Pros: Closes a real sandbox gap and a misleading setting. Cons: Matters only while Claude helpers are started through this adapter; the fix may mean moving worktrees or a different sandbox rule.
 - Origin: main
 - Next step: Next: First check whether Claude helpers are still started through internal/adapter/claude.go; if not, park this goal. If they are, probe whether the helper can write to a folder created after it started, and whether "network allowed" really lets traffic out; fix both and pin them in internal/adapter/runtime_test.go. Done when: a test shows a folder created after start is refused and the network setting behaves as recorded.
 - OpenedAt: 2026-09-06T22:18:37Z
-- Revision: 44
+- Revision: 45
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=2
 - BudgetExceptions: 0
 
@@ -58,4 +58,5 @@ History:
 - 2026-10-02T20:58:56Z 3MD4VWSHJWZBYCZE3DFZ6Y77Z2-m1e-9c612d71 abandon actor=human:Wido targets=steward-owned-execution,same-process-succession,host-health-role,stop-message-truth,hook-demands-what-landing-forbids,answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:9 to=3:8
 - 2026-10-02T20:59:01Z B1DABV0NMMSA5H10M06C6544XX-m1e-9c612d71 abandon actor=human:Wido targets=answer-archive,uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,human-carried-landing,standing-validation,watchdog-kill-observation-gap,registry-design-names-selection-rows,continuous-self-improvement,incident-proposal-drafting,counselor,paid-proof-authorization,metasystem-way-patterns,cross-repo-guardrails,app-guardrail-custody,app-doctrine,app-guardrail-program,integration-branch,ledger-authentication,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:8 to=3:7
 - 2026-10-03T12:31:10Z VD633MC9VCNZGH5C1D3E4KRFJ3-m1e-718ba0eb abandon actor=human:Wido targets=uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:7 to=3:6
-Integrity: sha256=d0b7130d5bca06f2755d0e2964fe09397a362612f06d2c99a9f6f06302f8ada7
+- 2026-11-07T09:58:38Z RR2DXEVK4Q68P3ZGKY3XB60HPB-m1e-1dae276b set-priority actor=human:Wido targets=asks-clear-on-their-effect,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,hook-demands-what-landing-forbids,host-health-role,set-priority-treats-an-oversize-sequence-as-last,stop-message-truth,watchdog-kill-observation-gap reason=priority-order subject=host-health-role from=3:6 to=3:5 requested-sequence=append
+Integrity: sha256=235f130ca48af709b6beaa94e33618077337d972b3d5c837206dc0fa50c05f1a
