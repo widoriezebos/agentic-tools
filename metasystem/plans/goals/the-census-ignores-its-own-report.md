@@ -10,7 +10,8 @@
 - DesignGate: off
 - Next step: Build without a design from finding 557: leave disk.json out of recordedProcesses (or ignore a bare pid without a start in scan); a test with a gap list as the only record resolves the process; owned processes with pidStartedAt stay protected; about 20 lines
 - OpenedAt: 2026-11-07T15:03:04Z
-- Revision: 4
+- Revision: 5
+- Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-07T15:03:23Z revision=3 opid=SA7Q7VJ6FFEWR9RKNSPHX8RHE2-m1e-5a3e856b authority=proven digest=b89bcd6787f39c3ba11d25abac638a70addf329779883b5948eb578b2e58e0b0 episode=3
@@ -20,4 +21,5 @@ History:
 - 2026-11-07T15:03:14Z BHC4954VPF0BXWV7Q6EHP20YW0-m1e-5a3e856b edit actor=human:Wido targets=the-census-ignores-its-own-report reason=Allowed: build-without-design why=Allowed: build-without-design. One unit from a recorded finding (557) whose root cause is read; deletion stays fail-closed for owned processes impact=This lets goal the-census-ignores-its-own-report be built and landed without an accepted, reviewed design. The risk: nobody checks the approach before code is written, so a wrong one is found only in code review or after it lands. It holds for every later build and landing of the-census-ignores-its-own-report until withdrawn. To undo: metasystem goal disallow the-census-ignores-its-own-report build-without-design
 - 2026-11-07T15:03:23Z SA7Q7VJ6FFEWR9RKNSPHX8RHE2-m1e-5a3e856b approve actor=human:Wido targets=the-census-ignores-its-own-report
 - 2026-11-07T15:03:34Z H3XXE50PWRSF8GB85WSFKB6104-m1e-5a3e856b set-priority actor=human:Wido targets=the-census-ignores-its-own-report reason=priority-order subject=the-census-ignores-its-own-report from=unranked to=1:125 requested-sequence=append
-Integrity: sha256=b622f51910c9c863955e4318c7fb0a854b3527c3139de2d1e8c22cb3a0e0c288
+- 2026-11-07T15:49:12Z TRDF38XAFX15HBFQCFH2K013Q5-m1e-9f79adc8 set-pin actor=human:Wido targets=the-census-ignores-its-own-report
+Integrity: sha256=58550b1f0a040573704832885fa31e0c975d52260d75d84c1bf3d001732a5673
