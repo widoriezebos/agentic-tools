@@ -14,8 +14,9 @@ Open read items (fix unit 20261026t155532-b7ec017dff-r3-s3): 6
 - ReadItem: id=20261026t155532-b7ec017dff-r3-s3-5 read=20261026t155532-b7ec017dff-r3-s3 state=open addedAt=2026-10-27T14:36:51Z changedAt=- material=false closingReference="" text="F5 (U6c r3-s3, not material): the missing-store hold repeats its words ('the launch store cannot be read: the launch store <root> cannot be read: ...'); proof_admission.go:89 prefixes, hostcapacity.go:39/:43 wrap again. Fix: use readErr.Error() alone. (moved from lane-steward)"
 - ReadItem: id=20261026t155532-b7ec017dff-r3-s3-6 read=20261026t155532-b7ec017dff-r3-s3 state=open addedAt=2026-10-27T14:36:58Z changedAt=- material=false closingReference="" text="F6 (U6c r3-s3, not material, brief-specified): the keeper hold and steward bound last the full 30 minutes even when the host goes quiet earlier, and drain.go:261 runs the hold before ReadDrain, so an idle-timer proof drain would suppress is first recorded as held. For a later amendment. (moved from lane-steward)"
 - OpenedAt: 2026-10-26T10:06:51Z
-- Revision: 10
+- Revision: 11
 - BlockedBy: the-impact-check-selects-only-tests-this-host-can-run
+- Pinned: m1f
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-07T19:55:32Z revision=10 opid=74ZH01YQG98YVMA57WDJ6BQECP-m1e-170920ec authority=proven digest=35d562c14730b521e3cea2a188e953975f83df64e7914e457647aeb4007aa009 episode=10
@@ -31,4 +32,5 @@ History:
 - 2026-10-29T12:11:29Z Y4K7QABPKJXYDKQB5Y8V1YQBY3-ui-71c5cb39 unpark actor=ui+steward-seat targets=lane-steward-2 reason=blocker the-impact-check-selects-only-tests-this-host-can-run is done; the park lifts
 - 2026-11-07T19:54:39Z BT3BZV0NMRDTA0FTP9GW6KVGS6-m1e-170920ec edit actor=human:Wido targets=lane-steward-2
 - 2026-11-07T19:55:32Z 74ZH01YQG98YVMA57WDJ6BQECP-m1e-170920ec approve actor=human:Wido targets=lane-steward-2
-Integrity: sha256=c52e6f0351691def889d23d43742b997c7d6c0221f5b35c7716be195e64c3c97
+- 2026-11-07T19:57:22Z 0ZHYXYRA6CVTTQ1KWX5TCBWDE1-m1e-170920ec set-pin actor=human:Wido targets=lane-steward-2
+Integrity: sha256=28bd80bf0f24203fc399c9898c8d355fc53e259ce980e6e0468760d27e639675
