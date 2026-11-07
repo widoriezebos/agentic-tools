@@ -2,14 +2,14 @@
 
 - State: queued
 - Priority: 3
-- Sequence: 10
+- Sequence: 9
 - Risk: severity=1 novelty=2 exposure=1 accumulation=1 basis="Advisory only: it never blocks and never edits; a wrong sitting costs reading time; the review sitting is a new kind of record on top of the existing accepted-risk register"
 - Tier: 2
 - Intent: What: The counselor is an advisory role that watches the gap between what the app is becoming and what its checks actually cover, and tells the person in short briefs and review sittings; it never blocks anything and never edits anything itself. Built so far: the drift brief from existing records, its delivery on a schedule, and a register of accepted risks grouped by kind. Left: the review sitting itself, and noticing problems while work is in progress. Why: Risks we knowingly accept, and drift between effort and result, pile up unseen unless something collects them and puts them in front of a person. Pros: Recurring risk patterns get a regular, structured look instead of being noticed by accident. Cons: More reports for the person to read, and advice nobody acts on is wasted effort.
 - Origin: human
 - Next step: Next: Build the review sitting on top of the accepted-risk register: for each risk class, ask why it happened (five whys), whether the pattern applies elsewhere, and whether it applies to the counselor itself; then build in-progress noticings as a separate step. Done when: Running a sitting produces a written sitting record that covers every class in the register with those three questions answered.
 - OpenedAt: 2026-08-24T13:49:17Z
-- Revision: 116
+- Revision: 117
 - Arc: app-guardrail-program
 - Budget: elapsedLimit=9d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=2 reviewRoundLimit=3
 - BudgetExceptions: 0
@@ -131,4 +131,5 @@ History:
 - 2026-10-03T11:14:14Z BM7N8FZWA3H0VX5J7CCXFE8H7W-m1e-718ba0eb edit actor=human:Wido targets=counselor
 - 2026-10-03T12:31:10Z VD633MC9VCNZGH5C1D3E4KRFJ3-m1e-718ba0eb abandon actor=human:Wido targets=uncapped-delegate-fanout,claude-denywrite-list-is-a-snapshot,claude-delegate-scratch-cleanup,seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:12 to=3:11
 - 2026-10-03T12:31:20Z 5HMJ2H776JZJY8J16YYBEBY6D3-m1e-718ba0eb abandon actor=human:Wido targets=seam-declaration-convergence,watchdog-kill-observation-gap,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,set-priority-treats-an-oversize-sequence-as-last reason=priority-order from=3:11 to=3:10
-Integrity: sha256=e3efd035d0becbcf8c17b84f71888189def8999fcef1c7c4a2df0d46ea520fce
+- 2026-11-07T09:58:38Z RR2DXEVK4Q68P3ZGKY3XB60HPB-m1e-1dae276b set-priority actor=human:Wido targets=asks-clear-on-their-effect,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,hook-demands-what-landing-forbids,host-health-role,set-priority-treats-an-oversize-sequence-as-last,stop-message-truth,watchdog-kill-observation-gap reason=priority-order subject=host-health-role from=3:10 to=3:9 requested-sequence=append
+Integrity: sha256=b916cae8bfdea40be5c2e1f1c300c0488fed904f50cb0205663b1741be3c40d9
