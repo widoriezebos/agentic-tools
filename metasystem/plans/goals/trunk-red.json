@@ -7031,12 +7031,12 @@
         }
       ],
       "owner": {
-        "machine": "",
-        "since": "",
-        "how": "",
-        "by": ""
+        "machine": "m1f",
+        "since": "2026-11-07T15:56:48Z",
+        "how": "hand",
+        "by": "Wido"
       },
-      "fixGoal": "",
+      "fixGoal": "a-scratch-cleanup-test-drains-like-production",
       "fixBranch": {
         "name": "",
         "commit": "",
