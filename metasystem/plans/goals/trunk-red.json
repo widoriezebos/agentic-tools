@@ -7290,7 +7290,15 @@
       },
       "holds": [],
       "opened": "2026-10-28T04:50:35Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-07T15:52:09Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "6WV5HYYM5DBWSPD6DF3ZZ4D83X-m1e-9f79adc8",
+        "by": "Wido",
+        "why": "TestAnAdapterLeftByADeadRunHoldsTheDeployUntilPaused: fixed by e7ee0dc071 (gated bed: b.fifo, gatedChild, release); 40 green proofs since, 0 fails (20261103T061901 to 20261107T113341). Decision 217 in Wido name"
+      },
       "class": "flake"
     },
     {
