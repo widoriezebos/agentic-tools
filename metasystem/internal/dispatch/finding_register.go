@@ -1742,10 +1742,10 @@ func foldCritiqueFindingsVersioned(register []registerFinding, role, roundJob st
 		}
 		if resolvedID := asString(finding["resolves"]); resolvedID != "" {
 			priorIndex, present := byID[resolvedID]
-			if !present || advanced[priorIndex].Class != asString(finding["class"]) || advanced[priorIndex].Where != asString(finding["where"]) {
+			if !present && material || present && (advanced[priorIndex].Class != asString(finding["class"]) || advanced[priorIndex].Where != asString(finding["where"])) {
 				return nil, nil, 0, fmt.Errorf("finding %s resolves unknown or different prior evidence %s", id, resolvedID)
 			}
-			if !material {
+			if present && !material {
 				advanced[priorIndex].Status, advanced[priorIndex].Resolution = "resolved", "withdrawn"
 			}
 		}

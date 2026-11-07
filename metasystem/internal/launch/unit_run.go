@@ -204,9 +204,7 @@ type UnitRunner struct {
 	Manager       *Manager
 	Git           GitRunner
 	Root          string
-	// ExaminationRoot is the caller's installation; each examination carries its own return path.
-	ExaminationRoot string
-	AfterWrite      func(UnitRunRecord) error
+	AfterWrite    func(UnitRunRecord) error
 	// BeforeModelLaunch, when set, is asked before each new build, proof or read
 	// launch of any run it advances (new, resumed, follow-up or waited);
 	// its refusal starts nothing.

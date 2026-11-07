@@ -96,6 +96,9 @@ func Decide(in Input) Stop {
 	for _, f := range in.Read.Findings {
 		if f.Resolves != "" {
 			prior, ok := known[f.Resolves]
+			if !ok && !f.Material {
+				continue
+			}
 			if !ok || prior.Class != f.Class || prior.Where != f.Where {
 				s.Class = "invalid prior finding reference"
 				s.Handoff = "stopped invalid-resolves"

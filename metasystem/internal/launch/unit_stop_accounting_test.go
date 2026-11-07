@@ -3,7 +3,6 @@ package launch
 import (
 	"errors"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
@@ -26,7 +25,7 @@ func TestUnitCollectedReadCountsDespiteDecisionEvidenceFailure(t *testing.T) {
 			if err := runner.save(record); err != nil {
 				t.Fatal(err)
 			}
-			path := filepath.Join(t.TempDir(), "return.json")
+			path := dispatchReturn(t, "first")
 			writeFile(t, path, structuredUnitReturn(2, "regression", "first.go"))
 			if failure == "policy" {
 				runner.ReviewPolicy = func() (string, error) { return "", errors.New("policy temporarily unavailable") }
@@ -68,6 +67,7 @@ func TestUnitCollectedReadCountsDespiteDecisionEvidenceFailure(t *testing.T) {
 			if _, err := runner.Advance(UnitRequest{Resume: record.ID, FollowUp: writeFollowUp(t)}); err != nil {
 				t.Fatal(err)
 			}
+			path = dispatchReturn(t, "second")
 			writeFile(t, path, structuredUnitReturn(1, "scope", "second.go"))
 			if err := runner.ReviewSubject(record.ID, func(review UnitReview, retain func(UnitSubject) error) error {
 				return retain(UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest,

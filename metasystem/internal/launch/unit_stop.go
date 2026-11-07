@@ -3,6 +3,7 @@ package launch
 import (
 	"crypto/sha256"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -86,6 +87,21 @@ func collectLaunchRead(record Record, stateDir string) (readsubject.Read, error)
 	}
 	subject := readsubject.ReadSubject{Kind: readsubject.SubjectLive, ImplementerRoot: record.Goal, ReviewedProjectTree: fmt.Sprintf("%x", sha256.Sum256(diff)), DiffDigest: fmt.Sprintf("%x", sha256.Sum256(diff))}
 	return readsubject.Collect(record.ID, subject, readString(record.AdapterData, "engine"), readString(record.AdapterData, "model"), output, data, record.Measurement.Verdict)
+}
+
+func (runner *UnitRunner) launchRead(launch Record) (*readsubject.Read, error) {
+	if launch.Measurement.Compactions > 0 || launch.VerdictCounts != nil && !*launch.VerdictCounts {
+		return nil, nil
+	}
+	if launch.Read != nil || launch.State != Completed {
+		return launch.Read, nil
+	}
+	stateDir, err := runner.Manager.Store.StateDir(launch.ID)
+	if err != nil {
+		return nil, err
+	}
+	read, err := collectLaunchRead(launch, stateDir)
+	return &read, err
 }
 
 func (runner *UnitRunner) collectRoundRead(record *UnitRunRecord, round *UnitRound) error {
@@ -296,16 +312,39 @@ func (runner *UnitRunner) allowCorrection(record UnitRunRecord) error {
 // CollectExamination runs under ReviewSubject's owner lock, retaining the
 // exact committed examination and its decision together with the subject.
 func (runner *UnitRunner) CollectExamination(record *UnitRunRecord, round *UnitRound, subject UnitSubject) error {
-	round.Reads = nil
+	id := choose(subject.ExaminationJob, subject.Examination)
+	for _, read := range round.Reads {
+		if read.ID == id && read.Subject.Kind == readsubject.SubjectLive {
+			unknown := ""
+			if read.Subject.DiffDigest != subject.DiffDigest {
+				unknown = "unavailable-stop-inputs"
+			}
+			return runner.decideRound(record, round, unknown)
+		}
+	}
+	if runner.Manager != nil {
+		if launch, err := runner.Manager.Store.Read(subject.Examination); err == nil && launch.Kind == "read" {
+			read, err := runner.launchRead(launch)
+			if err != nil || read == nil || read.Subject.DiffDigest != subject.DiffDigest {
+				return runner.decideRound(record, round, "unavailable-stop-inputs")
+			}
+			round.Reads = []readsubject.Read{*read}
+			return runner.decideRound(record, round, "")
+		}
+	}
 	data, err := os.ReadFile(subject.ExaminationReturnPath)
 	unknown := ""
 	if err == nil {
+		root, ok := dispatchReturnRoot(subject.ExaminationReturnPath, subject.Examination, subject.ExaminationRound)
+		if !ok {
+			return runner.decideRound(record, round, "unavailable-stop-inputs")
+		}
 		var read readsubject.Read
 		var readErr error
 		if runner.ExaminationRead != nil {
-			read, readErr = runner.ExaminationRead(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(filepath.Dir(subject.ExaminationReturnPath)))))), choose(subject.ExaminationJob, subject.Examination))
+			read, readErr = runner.ExaminationRead(root, id)
 		} else {
-			read, readErr = readsubject.Collect(choose(subject.ExaminationJob, subject.Examination), readsubject.ReadSubject{Kind: readsubject.SubjectCommit, Commit: subject.Commit, Tree: subject.StagedTree, DiffDigest: subject.DiffDigest}, "retained-examination", round.ReadModel, subject.ExaminationReturnPath, data, "")
+			read, readErr = readsubject.Collect(id, readsubject.ReadSubject{Kind: readsubject.SubjectCommit, Commit: subject.Commit, Tree: subject.StagedTree, DiffDigest: subject.DiffDigest}, "retained-examination", round.ReadModel, subject.ExaminationReturnPath, data, "")
 		}
 		if readErr == nil {
 			round.Reads = []readsubject.Read{read}
@@ -316,6 +355,16 @@ func (runner *UnitRunner) CollectExamination(record *UnitRunRecord, round *UnitR
 		unknown = "unreadable-read"
 	}
 	return runner.decideRound(record, round, unknown)
+}
+
+func dispatchReturnRoot(path, examination string, round int64) (string, bool) {
+	path = filepath.Clean(path)
+	root := path
+	for range 6 {
+		root = filepath.Dir(root)
+	}
+	return root, examination != "" && !strings.ContainsRune(examination, filepath.Separator) && round >= 1 &&
+		path == filepath.Join(root, "artifacts", "agents", examination, "rounds", strconv.FormatInt(round, 10), "return.json")
 }
 
 // RetryUnknownRead permits one new transport execution in the same attempt.
@@ -336,25 +385,38 @@ func (runner *UnitRunner) RetryUnknownRead(id string) (UnitResult, error) {
 	if err != nil {
 		return UnitResult{}, err
 	}
+	if record.State == "cancelled" {
+		return UnitResult{Record: record}, coded("UNIT_CANCELLED", "run="+id, errors.New("this run was cancelled; build new work under another name"))
+	}
 	if len(record.Rounds) == 0 {
 		return UnitResult{}, fmt.Errorf("no read to retry")
 	}
 	round := &record.Rounds[len(record.Rounds)-1]
-	if round.Stop == nil || !strings.HasPrefix(round.Stop.Handoff, "stopped ") || round.UnknownRetries >= 1 {
+	fresh := -1
+	for index, step := range round.Steps {
+		if step.Name == FreshReadStep {
+			fresh = index
+		}
+	}
+	joining := round.UnknownRetries >= 1 && fresh >= 0 && (round.Steps[fresh].State == StepPending || round.Steps[fresh].State == StepStarting || round.Steps[fresh].State == StepRunning)
+	if round.Stop == nil || !strings.HasPrefix(round.Stop.Handoff, "stopped ") || round.UnknownRetries >= 1 && !joining {
 		return UnitResult{Record: record}, coded("UNIT_STOPPED", "", fmt.Errorf("the fresh examination allowance is spent; the unit stays stopped"))
 	}
 	plan, err := readUnitPlan(record.Plan, record.PlanDirectory)
 	if err != nil {
 		return UnitResult{}, err
 	}
-	round.UnknownRetries++
-	round.Reads = nil
-	for index := range round.Steps {
-		if strings.HasPrefix(round.Steps[index].Name, "read") {
-			round.Steps[index].Name = "unknown:" + round.Steps[index].Name
+	if round.UnknownRetries == 0 {
+		round.UnknownRetries++
+		round.Reads = nil
+		for index := range round.Steps {
+			if strings.HasPrefix(round.Steps[index].Name, "read") {
+				round.Steps[index].Name = "unknown:" + round.Steps[index].Name
+			}
 		}
+		round.Steps = append(round.Steps, UnitStep{Name: FreshReadStep, State: StepPending, Model: round.ReadModel, Mode: "whole"})
+		fresh = len(round.Steps) - 1
 	}
-	round.Steps = append(round.Steps, UnitStep{Name: "read:fresh", State: StepPending, Model: round.ReadModel, Mode: "whole"})
 	original := ""
 	for _, step := range round.Steps {
 		if strings.HasPrefix(step.Name, "unknown:read") {
@@ -364,18 +426,25 @@ func (runner *UnitRunner) RetryUnknownRead(id string) (UnitResult, error) {
 	}
 	retry := loopstop.Stop{Loop: "retry", Subject: original, Attempt: 1, Budget: 1, Decision: "continue", At: runner.Manager.Now().UTC().Format(time.RFC3339Nano)}
 	retryBytes, _ := json.Marshal(retry)
-	if _, err := atomicfile.WriteFile(filepath.Join(round.Directory, "unknown-retry.json"), retryBytes, 0o600, runner.root()); err != nil {
-		return UnitResult{}, err
-	}
-	if err := runner.saveDecision(&record, round); err != nil {
-		return UnitResult{}, err
+	if !joining {
+		if _, err := atomicfile.WriteFile(filepath.Join(round.Directory, "unknown-retry.json"), retryBytes, 0o600, runner.root()); err != nil {
+			return UnitResult{}, err
+		}
+		if err := runner.saveDecision(&record, round); err != nil {
+			return UnitResult{}, err
+		}
 	}
 	sequence := runner.readSequence(&record, round, plan, nil, filepath.Join(round.Directory, "worktree.diff"))
-	spec, err := sequence.stepSpec(round.Steps[len(round.Steps)-1])
+	var spec StartSpec
+	if retained := round.Steps[fresh].Retained; retained != nil {
+		spec = *retained
+	} else {
+		spec, err = sequence.stepSpec(round.Steps[fresh])
+	}
 	if err != nil {
 		return UnitResult{Record: record}, err
 	}
-	capped, err := sequence.driver.advanceStep(len(round.Steps)-1, spec, runner.Manager.Now().Add(DefaultWaitTimeout))
+	capped, err := sequence.driver.advanceStep(fresh, spec, runner.Manager.Now().Add(DefaultWaitTimeout))
 	if err != nil || capped {
 		return UnitResult{Record: record, Capped: capped}, err
 	}

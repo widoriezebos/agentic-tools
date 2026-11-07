@@ -19,6 +19,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/board"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/census"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -323,10 +324,15 @@ func (c *connectionBed) connectionOwners() intentOwners {
 			if err != nil || !present {
 				return branch.BranchReadResult{}, 1, fmt.Errorf("origin has no goal/%s: %v", goalID, err)
 			}
+			var unitRead []byte
+			if path := flagValue(args, "--unit-read"); path != "" {
+				unitRead = mustRead(c.t, path)
+			}
 			result, err := branch.RunBranchRead(branch.BranchReadRequest{Repo: install, Remote: "origin",
 				EndpointTip: c.endpointTip(), BranchTip: tip, GoalID: goalID, UnitCommit: flagValue(args, "--unit"),
 				Collect: slices.Contains(args, "--collect"), Join: slices.Contains(args, "--join"), BriefPath: flagValue(args, "--brief"), Selected: flagValue(args, "--selected-installation"),
 				BuildBriefSHA256: flagValue(args, "--build-brief-sha256"),
+				UnitRead:         unitRead,
 				CheckClaim:       func() error { return nil },
 				Gate:             func(string) (string, error) { return "gate-run-1", nil },
 				Delegate:         delegate,
@@ -359,6 +365,206 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		},
 	}
 	return owners
+}
+
+type reviewConnectionStarter struct {
+	bed *connectionBed
+	// calls counts model starts; publication checks run without a model.
+	calls    int
+	refuse   bool
+	findings []readsubject.Finding
+}
+
+func (s *reviewConnectionStarter) StartSupervisor(id, state string) (identity.Ref, error) {
+	record, err := s.bed.manager.Store.Read(id)
+	if err != nil {
+		return identity.Ref{}, err
+	}
+	if record.Kind != "proof" {
+		s.calls++
+		if s.refuse {
+			return identity.Ref{}, errors.New("no model launch is admitted")
+		}
+	}
+	ref, err := s.bed.StartSupervisor(id, state)
+	if err != nil {
+		return ref, err
+	}
+	record, err = s.bed.manager.Store.Read(id)
+	if err != nil {
+		return ref, err
+	}
+	if record.Kind == "read" && s.findings != nil {
+		count := 0
+		for _, finding := range s.findings {
+			if finding.Material {
+				count++
+			}
+		}
+		transferWriteJSON(s.bed.t, filepath.Join(state, "return.json"), map[string]any{"findings": s.findings, "verdictMaterialCount": count})
+		verdict := "VERDICT: land"
+		if count > 0 {
+			verdict = fmt.Sprintf("VERDICT: REVISE material=%d", count)
+		}
+		if err := os.WriteFile(filepath.Join(state, "report.md"), []byte(verdict+"\n"), 0600); err != nil {
+			return ref, err
+		}
+		_, err = s.bed.manager.Store.Update(id, func(r *launch.Record) error { r.Measurement.Verdict = verdict; return nil })
+	}
+	if record.Kind == "read" && err == nil {
+		if s.findings == nil {
+			if err := os.WriteFile(filepath.Join(state, "report.md"), []byte("VERDICT: land\n"), 0600); err != nil {
+				return ref, err
+			}
+			if _, err := s.bed.manager.Store.Update(id, func(r *launch.Record) error { r.Measurement.Verdict = "VERDICT: land"; return nil }); err != nil {
+				return ref, err
+			}
+		}
+		var diffPath, model string
+		if err := json.Unmarshal(record.AdapterData["readDiff"], &diffPath); err != nil {
+			return ref, err
+		}
+		if err := json.Unmarshal(record.AdapterData["model"], &model); err != nil {
+			return ref, err
+		}
+		digest := launch.UnitResultDigest(string(mustRead(s.bed.t, diffPath)))
+		path := filepath.Join(state, "return.json")
+		read, collectErr := readsubject.Collect(id, readsubject.ReadSubject{Kind: readsubject.SubjectLive, DiffDigest: digest, ReviewedProjectTree: digest}, "fixture-engine", model, path, mustRead(s.bed.t, path), "")
+		if collectErr != nil {
+			return ref, collectErr
+		}
+		_, err = s.bed.manager.Store.Update(id, func(r *launch.Record) error { r.Read = &read; return nil })
+	}
+	return ref, err
+}
+
+// Real Git proves the retained read reaches amendment and publication.
+func TestAGreenRoundWhoseReadWasNotCollectedClosesWithoutAPerson(t *testing.T) {
+	c := newConnectionBedWith(t, func(file *goal.GoalFile) {
+		workApprovedBox(file)
+		file.Budget.AttemptLimit = 5
+		file.Budget.ReviewRoundLimit = 6
+		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
+	})
+	for index, value := range c.manager.Settings.Values {
+		if value.Key == launch.UnitCountedRoundsKey {
+			c.manager.Settings.Values[index].Value = "6"
+		}
+	}
+	s := &reviewConnectionStarter{bed: c}
+	c.manager.Supervisor = s
+	c.edits = map[string]string{"round.txt": "first result\n"}
+	brief := c.brief("green.md", "Read each round: yes\nBuild the unit.\n")
+	code, built := c.do(append([]string{"work", "build", c.id, "green", "--brief", brief, "--lines", "10"}, workCheck...)...)
+	if code != 0 {
+		t.Fatalf("first build: %d %s", code, built.Summary)
+	}
+	run := resultData(t, built)["run"].(string)
+	// Keep the first unit's publication, without an attestation that the
+	// later amendment would have to remove from the cumulative read diff.
+	c.skipRead = true
+	if code, result := c.do("work", "review", c.id, "--work", "green"); c.commits != 1 || c.runRecord(run).Subjects[0].Published == "" {
+		t.Fatalf("first review: %d %s", code, result.Summary)
+	}
+	c.skipRead = false
+	c.workOwnersHook = func(work *intentWorkOwners) {
+		work.resolveModel = func(_, _, model string) (string, error) { return model, nil }
+	}
+	c.edits["round.txt"] = "second result\n"
+	code, result := c.do("work", "revise", c.id, "--work", "green", "--after", "1", "--brief", brief, "--reason", "correct the first result", "--by", "Wido")
+	if code != 0 || len(c.runRecord(run).Rounds) != 2 {
+		t.Fatalf("second round: %d %s", code, result.Summary)
+	}
+	// The connected bed's declared check completes inside its attestation
+	// owner, so retain the failed check state directly in this fixture.
+	record := c.runRecord(run)
+	red := &record.Rounds[1]
+	red.Outcome, red.Reads, red.Material, red.Stop = "proof-red", nil, -1, nil
+	red.Steps = red.Steps[:2]
+	red.Steps[1].State, red.Steps[1].Reason = launch.StepFailed, "fixture-red"
+	transferWriteJSON(t, filepath.Join(c.unitRoot, run, "run.json"), record)
+	c.edits["round.txt"] = "third result\n"
+	s.findings = []readsubject.Finding{{Class: "scope", Where: "round.txt", Severity: "low", Claim: "An advisory note", Evidence: "round.txt:1", Change: "Consider the name", Resolves: "r1-s3-1"}}
+	code, result = c.do("work", "revise", c.id, "--work", "green", "--after", "2", "--brief", brief, "--reason", "correct the failed check", "--by", "Wido")
+	if code != 0 || len(c.runRecord(run).Rounds) != 3 || c.runRecord(run).Rounds[2].Stop.Decision != "close" {
+		t.Fatalf("third round: %d %s", code, result.Summary)
+	}
+	runner := &launch.UnitRunner{Root: c.unitRoot, Manager: c.manager, Git: launch.OSGitRunner{}, ReviewPolicy: func() (string, error) { return "auto", nil }}
+	retainUncollectedUnitRead(t, runner, run, false)
+	s.refuse = true
+	c.dispatcher = func(*connectionBed, string) func(string, string, string, string, string) (string, error) {
+		return func(string, string, string, string, string) (string, error) {
+			s.calls++
+			return "", errors.New("no critic launch is admitted")
+		}
+	}
+	calls, commits := s.calls, c.commits
+	code, result = c.do("work", "review", c.id, "--work", "green")
+	after := c.runRecord(run)
+	subject := after.Subjects[len(after.Subjects)-1]
+	questions, unreadable := channel.WalkQuestions(c.root())
+	overrides, err := filepath.Glob(filepath.Join(c.root(), "artifacts", "agents", "channel", "unit-stop-overrides", "*.json"))
+	committed := c.unitCommits("goal/" + c.id)
+	if code != 0 || after.Rounds[2].Stop.Decision != "close" || after.Rounds[2].UnknownRetries != 0 || c.commits != commits+1 || subject.Commit == "" || subject.Published == "" || s.calls != calls || len(committed) != 2 || !slices.ContainsFunc(committed, func(line string) bool { return strings.HasPrefix(line, subject.Commit+" ") }) || len(questions) != 0 || len(unreadable) != 0 || err != nil {
+		t.Fatalf("uncollected green round: %d %s promotion=%v stop=%+v subject=%+v calls=%d questions=%+v unreadable=%v err=%v", code, result.Summary, resultData(t, result)["readNotPromoted"], after.Rounds[2].Stop, subject, s.calls-calls, questions, unreadable, err)
+	}
+	for _, path := range overrides {
+		if bytes.Contains(mustRead(t, path), []byte("work-review-retry")) {
+			t.Fatal("review asked for a person retry")
+		}
+	}
+	if result.Next != nil && slices.Contains(result.Next.Argv, "--by") {
+		t.Fatalf("review asks for person proof: %s", result.Summary)
+	}
+	t.Logf("public review collected round 3, committed %s and published %s with zero model launches", subject.Commit, subject.Published)
+}
+
+// Real Git exposes a stopped review that stages or commits before returning.
+func TestAStoppedDecisionIsNeverCommittedOnEitherForm(t *testing.T) {
+	for _, mode := range []string{"invalid", "spent", "policy", "retained"} {
+		t.Run(mode, func(t *testing.T) {
+			c := newConnectionBed(t)
+			s := &reviewConnectionStarter{bed: c}
+			if mode == "invalid" {
+				finding := stopFinding("regression", "round.txt")
+				finding.Resolves = "unknown"
+				s.findings = []readsubject.Finding{finding}
+			}
+			c.manager.Supervisor = s
+			c.edits = map[string]string{"round.txt": "stopped result\n"}
+			code, built := c.do(append([]string{"work", "build", c.id, "stopped", "--brief", c.brief("stopped.md", "Read each round: yes\nBuild it.\n"), "--lines", "10"}, workCheck...)...)
+			if code != 0 {
+				t.Fatalf("build: %d %s", code, built.Summary)
+			}
+			run := resultData(t, built)["run"].(string)
+			record := c.runRecord(run)
+			if mode != "invalid" {
+				if mode == "retained" {
+					record.Subjects = []launch.UnitSubject{{Round: 1, Operation: run + "-retained", DiffDigest: record.Rounds[0].Reads[0].Subject.DiffDigest}}
+				}
+				round := &record.Rounds[0]
+				round.Reads, round.Material, round.UnknownRetries = nil, -1, 1
+				round.Stop.Decision, round.Stop.Handoff = "stop", "stopped unavailable-stop-inputs"
+				if mode == "policy" {
+					round.Stop.Handoff = "stopped unreadable-policy"
+					if err := os.WriteFile(filepath.Join(c.root(), "metasystem.conf.local"), []byte("review.stop=corrupt\n"), 0600); err != nil {
+						t.Fatal(err)
+					}
+				}
+				transferWriteJSON(t, filepath.Join(c.unitRoot, run, "run.json"), record)
+			}
+			commits, calls := c.commits, s.calls
+			for _, args := range [][]string{{"work", "review", "run:" + run}, {"work", "review", c.id, "--work", "stopped"}} {
+				code, result := c.do(args...)
+				if code == 0 || c.commits != commits || s.calls != calls || connectionGit(t, c.worktree, "diff", "--cached", "--name-only") != "" || c.runRecord(run).Rounds[0].Stop.Decision != "stop" {
+					t.Fatalf("stopped decision staged or committed: %d %s", code, result.Summary)
+				}
+				if mode == "policy" && (result.Next == nil || !slices.Contains(result.Next.Argv, "review.stop") || !strings.Contains(result.Summary, "metasystem settings set review.stop")) {
+					t.Fatalf("policy stop has no settings repair: %s", result.Summary)
+				}
+			}
+		})
+	}
 }
 
 // criticDispatch is the fake model dispatch of the committed critic: it
@@ -1037,9 +1243,6 @@ func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
 	inv := &intentInvocation{owners: owners, layout: layout, cwd: w.root(), stateRoot: w.root(), input: intentInput{values: map[string][]string{}},
 		reviewWork: &reviewWorkContext{goal: w.id, work: "cap", attempt: 1}}
 	runner := inv.unitRunner()
-	if runner.ExaminationRoot == b.install {
-		t.Fatal("the runner's installation must differ from the critic store")
-	}
 	err = runner.ReviewSubject(run, func(review launch.UnitReview, retain func(launch.UnitSubject) error) error {
 		subject := launch.UnitSubject{Round: review.Round.Number, DiffDigest: review.DiffDigest, Commit: strings.Repeat("c", 40)}
 		inv.reviewWork.subject, inv.reviewWork.retain = &subject, retain

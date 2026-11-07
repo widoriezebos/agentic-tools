@@ -650,7 +650,8 @@ type intentInvocation struct {
 	// work proceed despite another reservation awaiting adoption.
 	claimPreparation *up.Result
 	// reviewWork is set while review G examines one work item's subject.
-	reviewWork *reviewWorkContext
+	reviewWork   *reviewWorkContext
+	freshReadDue bool
 	// inferredChain is the one examination root inferred from the goal's
 	// work records, when the caller named none.
 	inferredChain string

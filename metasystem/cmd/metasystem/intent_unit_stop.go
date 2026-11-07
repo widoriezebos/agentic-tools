@@ -17,6 +17,31 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/validate"
 )
 
+func collectableStop(handoff string) bool {
+	return handoff == "stopped unavailable-stop-inputs" || handoff == "stopped unreadable-read" || handoff == "stopped unreadable-inherited-findings"
+}
+
+func freshUnitReadDue(round launch.UnitRound, subject *launch.UnitSubject) bool {
+	if round.Stop == nil || !collectableStop(round.Stop.Handoff) || round.ReadModel == "" || subject != nil && subject.Commit != "" {
+		return false
+	}
+	return round.UnknownRetries == 0 || freshUnitReadActive(round)
+}
+
+func freshUnitReadActive(round launch.UnitRound) bool {
+	for index := len(round.Steps) - 1; index >= 0; index-- {
+		step := round.Steps[index]
+		if step.Name == launch.FreshReadStep {
+			return step.State == launch.StepPending || step.State == launch.StepStarting || step.State == launch.StepRunning
+		}
+	}
+	return false
+}
+
+func unitReadsFailedTwice(round launch.UnitRound) bool {
+	return round.Stop != nil && collectableStop(round.Stop.Handoff) && round.UnknownRetries >= 1 && !freshUnitReadActive(round)
+}
+
 // reviewStoppedUnit applies the collected decision before a correction brief
 // or another examination can be composed. Transfers publish completion debt
 // before closing the source examination.
@@ -39,7 +64,7 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 	}
 	// A read an older engine could not collect is read again from the same
 	// retained return before a fresh examination is offered.
-	if !personDrop && stop != nil && (stop.Handoff == "stopped unreadable-policy" || stop.Handoff == "stopped unreadable-inherited-findings" || stop.Handoff == "stopped unavailable-stop-inputs") && work.subject != nil {
+	if !personDrop && stop != nil && (stop.Handoff == "stopped unreadable-policy" || collectableStop(stop.Handoff)) && work.subject != nil {
 		if err := work.retain(*work.subject); err != nil {
 			return &intentResult{Outcome: intentFailed, code: 1, Summary: "the review decision could not be retained", Details: []string{err.Error()}, next: inv.workArgv(record, "review")}
 		}
@@ -63,7 +88,14 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 			next:    repair, nextReason: reason, Details: []string{record.PolicyError}}
 	}
 	if !personDrop && strings.HasPrefix(stop.Handoff, "stopped ") {
-		if round.UnknownRetries == 0 && stop.Handoff != "stopped unreadable-policy" {
+		if freshUnitReadDue(round, work.subject) {
+			inv.freshReadDue = true
+			return &intentResult{Targets: targets, Outcome: intentInProgress, Data: data}
+		}
+		if unitReadsFailedTwice(round) {
+			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: fmt.Sprintf("the read of attempt %d could not be collected twice; the unit stays stopped", round.Number), next: inv.publicArgv("work", "stop", unitRunPrefix+record.ID), nextReason: "ends this run; a person decides what follows"}
+		}
+		if work.subject != nil && work.subject.Commit != "" && round.UnknownRetries == 0 && stop.Handoff != "stopped unreadable-policy" {
 			// The committed critic retry owner permits one examination of the
 			// same subject. Its executions do not add a unit round.
 			data["retry"] = 1

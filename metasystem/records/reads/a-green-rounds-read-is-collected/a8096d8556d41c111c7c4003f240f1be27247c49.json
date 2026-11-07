@@ -1,0 +1,55 @@
+{
+  "coveredUnits": [
+    "U2b"
+  ],
+  "schemaVersion": 1,
+  "goal": "a-green-rounds-read-is-collected",
+  "unit": "U2b",
+  "subject": {
+    "commit": "a8096d8556d41c111c7c4003f240f1be27247c49",
+    "parent": "f1e443d9761d5c350d3e9a3b00b7cb34a6f62d77",
+    "tree": "cfb64a17cac964e35238538d6d757be11e775c3a",
+    "patchDigest": "7ea60843d2fde5202f7fb4a34735df064b819e9ae0be9b658f04ef432df1ee40",
+    "unitDigest": "06a32e4f036b26452cbe9eef6fb85a2d5645a1e489e0b1d1745b9213fa0ce3e6"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-a8d69b9794e0272accd94ce4",
+    "round": 1,
+    "closureSha256": "817af4058e24e41293ab286f6bbf5859e647e6ac3dcdf16e5fa424044e373620"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "cfb64a17cac964e35238538d6d757be11e775c3a",
+    "runId": "check-1073530557"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "8e88582c0f1e3224f9d1c6cb0afca8f5ba1d9aad",
+      "digest": "00508a03e0bdd270ed67c8cd1000cb00d775221d722601bcf3ded430bc990aba"
+    },
+    {
+      "kind": "read",
+      "commit": "920f243c4b21efd8070bb59f71c53dfa2e55bdea",
+      "digest": "5aa28873568e7f81b1a604f70417e850a347e2608074e8061fa2db4dbc4c194f"
+    },
+    {
+      "kind": "read",
+      "commit": "f1e443d9761d5c350d3e9a3b00b7cb34a6f62d77",
+      "digest": "634ccc7907041544fedaf57a6a708cb18f1837b1b05311085e725fa7ab1f8bf0"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-a8d69b9794e0272accd94ce4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_stop_correction_test.go",
+      "readerWord": "reviewed by critic root code-critic-a8d69b9794e0272accd94ce4"
+    }
+  ],
+  "sha256": "cab35983d9e6e40738b8eb0452cec6624f3eccc07444a17bce40d7151ff601c8"
+}

@@ -302,6 +302,7 @@ type Process struct {
 	Immortal       map[int64]bool
 	Starts         map[int64]int64
 	CustodyTargets func(map[string]any) ([]int64, error)
+	Custody        *dispatch.CustodyDeathDependencies
 	Signals        []string
 	// ClaimProcessesFunc answers the claim owner's process reading; nil
 	// reads the real process table (and Root's fixture table), which the
@@ -378,6 +379,13 @@ func (f *Process) CustodyGroups(record map[string]any) ([]int64, error) {
 	// Every recorded custody process leads its own group in the scripted
 	// table: the owner derives the targets, the table answers the groups.
 	return dispatch.CustodyGroupTargets(record, func(pid int64) (int64, error) { return pid, nil })
+}
+
+func (f *Process) CustodyDeath(root string) dispatch.CustodyDeathDependencies {
+	if f.Custody != nil {
+		return *f.Custody
+	}
+	return dispatch.CustodyDeathDependencies{MatchesTag: dispatchproc.PositionedJobTagAt(root)}
 }
 
 func (f *Process) StartedAt(pid int64) (int64, error) {

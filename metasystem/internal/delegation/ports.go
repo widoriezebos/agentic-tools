@@ -168,6 +168,8 @@ type ProcessOps interface {
 	SignalGroup(pgid int64, sig Signal) error
 	// CustodyGroups lists a record's custody process-group kill targets.
 	CustodyGroups(record map[string]any) ([]int64, error)
+	// CustodyDeath supplies the custody proof's process reads for a job store root.
+	CustodyDeath(root string) dispatch.CustodyDeathDependencies
 	// StartedAt is a live pid's kernel start second (identity.KernelProber).
 	StartedAt(pid int64) (int64, error)
 	// ClaimProcesses is the process-table reading the claim state machine

@@ -1,6 +1,6 @@
 {
   "packages": {
-    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 401,
+    "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem": 403,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/acp": 60,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/adapter": 162,
     "github.com/widoriezebos/agentic-tools/metasystem/internal/atif": 7,
@@ -169,6 +169,16 @@
       "package": "github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun",
       "test": "TestScratchEnvironmentRealGoWorkload",
       "reason": "runs its own go child while the scratch writer is open and then proves the lock free, so forks cannot be excluded; a parallel test's fork would hold a copy of the writer description until it execs"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestAGreenRoundWhoseReadWasNotCollectedClosesWithoutAPerson",
+      "reason": "uses the connected review bed, which sets process-wide Git environment variables with t.Setenv"
+    },
+    {
+      "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",
+      "test": "TestAStoppedDecisionIsNeverCommittedOnEitherForm",
+      "reason": "uses the connected review bed, which sets process-wide Git environment variables with t.Setenv"
     },
     {
       "package": "github.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem",

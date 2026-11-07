@@ -101,7 +101,7 @@ func (s *session) requireGoalAdmission() error {
 	}
 	var verdict dispatch.GoalAdmissionVerdict
 	if s.unknownExaminationRetrySource != "" {
-		verdict, err = dispatch.EvaluateGoalAdmissionForUnknownExaminationRetry(s.root, s.env.OwnerLineage, s.unknownExaminationRetrySource, now)
+		verdict, err = dispatch.EvaluateGoalAdmissionForUnknownExaminationRetry(s.root, s.env.OwnerLineage, s.unknownExaminationRetrySource, now, s.l.ports.Process.CustodyDeath(s.root))
 	} else {
 		verdict, err = dispatch.EvaluateGoalAdmission(s.root, s.env.OwnerLineage, now)
 	}
@@ -223,7 +223,7 @@ func (s *session) requireGoalRevisionAdmission(subj *subject, proposed int64, di
 		}
 		if s.unknownExaminationRetrySource != "" {
 			return dispatch.EvaluateUnknownExaminationRetryAdmission(s.root, s.unknownExaminationRetrySource, subj.goal, subj.goalRevision,
-				uint64(proposed), now, dispatch.ConcreteProofAdmissionReads(), dispatch.HazardClass(subj.destructiveReach))
+				uint64(proposed), now, dispatch.ConcreteProofAdmissionReads(), s.l.ports.Process.CustodyDeath(s.root), dispatch.HazardClass(subj.destructiveReach))
 		}
 		return dispatch.EvaluateGoalRevisionAdmissionForDispatchWithReads(s.root, subj.goal, subj.goalRevision, uint64(proposed), now,
 			subj.role, dispatchMode, dispatch.ConcreteProofAdmissionReads(), dispatch.HazardClass(subj.destructiveReach))
