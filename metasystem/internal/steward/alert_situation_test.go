@@ -4,6 +4,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -166,5 +167,40 @@ func situationStopEpisode(b *healthBed, id string) AlertEpisode {
 		Schema: 1, EpisodeID: "alert-old-" + id, Digest: evidenceDigest(id),
 		Owner: breachStopAlertOwner, ScopeID: id, Message: "Goal " + id + " was stopped: it spent its budget.",
 		OpenedAt: b.base.Add(-time.Hour), Attempts: []AlertAttempt{}, TransportResult: TransportSubmitted,
+	}
+}
+
+func TestStandingHealthAlertSaysItsFindingInWords(t *testing.T) {
+	t.Parallel()
+	b := newHealthBed(t, EnrollmentFixture, "")
+	b.lookPath = func(string) (string, error) { return "/fixture/runtime", nil }
+	b.writeFile("metasystem.conf", []byte("metasystem.runtimes=codex\ncapability.snapshot-max-age-days=30\n"))
+	// Notification starts when the existing automatic repair allowance ends.
+	for observation := 1; observation < healthFailureLimit; observation++ {
+		b.health(b.base.Add(time.Duration(observation) * time.Millisecond))
+	}
+	first := b.tick(b.base.Add(5 * time.Millisecond))
+	b.writeFile("metasystem.conf", []byte("metasystem.runtimes=claude\ncapability.snapshot-max-age-days=30\n"))
+	at := b.base.Add(6 * time.Millisecond)
+	second := b.tick(at)
+	if first.FindingDigest != second.FindingDigest || !strings.Contains(first.Line(), "missing or stale capability snapshots: codex") ||
+		!strings.Contains(second.Line(), "missing or stale capability snapshots: claude") {
+		t.Fatalf("ticks must keep the finding but change its reason: first=%s second=%s", first.Line(), second.Line())
+	}
+	episodes := b.episodes()
+	if len(episodes) != 1 {
+		t.Fatalf("standing finding has %d episodes, want 1", len(episodes))
+	}
+	episode := episodes[0]
+	if episode.Message != "Runtime capability checks are missing or outdated" || strings.ContainsAny(episode.Message, "=\n") {
+		t.Fatalf("health alert does not say its finding in words: %q", episode.Message)
+	}
+	if len(episode.Evidence) != 1 || !strings.Contains(episode.Evidence[0].Fact, "capability-snapshots=dead") ||
+		!strings.Contains(episode.Evidence[0].Fact, "missing or stale capability snapshots: claude") ||
+		episode.Evidence[0].Record != HealthRecordPath(b.root) || episode.Evidence[0].At != at.Format(time.RFC3339Nano) {
+		t.Fatalf("health evidence did not refresh on the second pass: %+v", episode.Evidence)
+	}
+	if len(episode.Attempts) != 1 {
+		t.Fatalf("unchanged finding submitted %d attempts, want 1", len(episode.Attempts))
 	}
 }

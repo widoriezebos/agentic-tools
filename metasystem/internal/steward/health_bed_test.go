@@ -424,7 +424,7 @@ func TestHealthBedFixtureNotification(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !regexp.MustCompile(`(?m)^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z HEALTH unhealthy`).Match(data) {
+	if !regexp.MustCompile(`(?m)^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z The steward runner check is not passing`).Match(data) {
 		t.Fatalf("fixture notification log omitted its UTC timestamp or alert: %q", data)
 	}
 	if _, err := os.Stat(b.sink); !os.IsNotExist(err) {
@@ -441,7 +441,7 @@ func healthBedNotifications(t *testing.T, path string) int {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return strings.Count(string(data), "HEALTH unhealthy")
+	return strings.Count(string(data), "The steward runner check is not passing")
 }
 
 // runHealthBedAlertEpisode is the shared escalation walk of the alert-episode

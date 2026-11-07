@@ -433,6 +433,31 @@ func migrateHeldHealthNotifications(repoRoot string, episodes *[]AlertEpisode, n
 	return nil
 }
 
+var healthPlain = map[HealthRole]string{
+	RoleCapabilitySnapshots: "Runtime capability checks are missing or outdated",
+}
+
+func plainHealthMessage(roles []RoleVerdict) string {
+	var messages []string
+	for _, role := range roles {
+		if role.Status == HealthAlive || role.Standing || (role.Status == HealthDead && isDutyRole(role.Role)) {
+			continue
+		}
+		message := healthPlain[role.Role]
+		if message == "" {
+			message = "The " + strings.ReplaceAll(string(role.Role), "-", " ") + " check is not passing"
+		}
+		messages = append(messages, message)
+	}
+	if len(messages) == 0 {
+		return ""
+	}
+	if len(messages) > 1 {
+		return fmt.Sprintf("%s, and %d more checks", messages[0], len(messages)-1)
+	}
+	return messages[0]
+}
+
 func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message string, now time.Time, f noticeFunnel, deliver func(string, string) error) (AlertEpisode, error) {
 	active := health
 	active.Roles = nil
@@ -441,7 +466,9 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 			active.Roles = append(active.Roles, role)
 		}
 	}
-	if len(active.Roles) != len(health.Roles) {
+	if plain := plainHealthMessage(active.Roles); plain != "" {
+		message = plain
+	} else if len(active.Roles) != len(health.Roles) {
 		// Narration keeps every diagnostic; the health notice carries only
 		// findings that have not moved to a standing-defect episode.
 		message = active.Line()
@@ -559,6 +586,8 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 			return AlertEpisode{}, err
 		}
 	}
+	episode.Message = message
+	episode.Evidence = []AlertEvidence{{Record: HealthRecordPath(repoRoot), At: now.Format(time.RFC3339Nano), Fact: active.Line()}}
 	if episode.Cleared {
 		episode.Cleared = false
 		episode.ClearedAt = time.Time{}

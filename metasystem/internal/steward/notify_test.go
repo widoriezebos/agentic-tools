@@ -327,13 +327,17 @@ func TestLegacyHeldHealthNotificationMigratesIntoAnEpisode(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: digest}
+	health := HealthVerdict{Aggregate: "unhealthy", FindingDigest: digest,
+		Roles: []RoleVerdict{{Role: RoleRepoWatcher, Status: HealthDead, Reason: "legacy watcher finding"}}}
 	episode, err := f.alert(health, "HEALTH unhealthy — legacy watcher finding", now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if episode.Digest != digest || episode.Message != "HEALTH unhealthy — legacy watcher finding" || episode.TransportResult != TransportPending {
+	if episode.Digest != digest || episode.Message != "The repo watcher check is not passing" || episode.TransportResult != TransportPending {
 		t.Fatalf("legacy notification did not become silent episode history: %+v", episode)
+	}
+	if len(episode.Evidence) != 1 || !strings.Contains(episode.Evidence[0].Fact, "repo-watcher=dead") {
+		t.Fatalf("legacy notification did not take the current health evidence: %+v", episode.Evidence)
 	}
 	pending, err := PendingNotifications(root)
 	if err != nil || len(pending) != 1 || pending[0].Nonce != "unrelated" {
