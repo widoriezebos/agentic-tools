@@ -5,9 +5,9 @@
 - Tier: 2
 - Intent: The landing lane and the hand-in path lose the frictions measured on 2026-10-11: every check runs detached from any terminal, the replay and the commit-time check run only what a change can affect, one ledger transaction per trunk result, the engine runs its commands under its own PATH, and the hand-in accepts a tip read naming its units
 - Origin: main
-- Next step: Units from plans/lane-housekeeping-2-design-brief.md built in parallel (u1 detached checks and u5 one trunk transaction are building now); machinery reads; land
+- Next step: Units from plans/lane-housekeeping-2-design-brief.md built in parallel (u1 detached checks and u5 one trunk transaction are building now); machinery reads; land From lane-first-run-fixes u7 (finding 559; the behaviour landed via lane-batching U5 and lane-recovers U3): the status headline while a trunk proof runs ("main X red; its trunk proof runs since HH:MM; wait", status.go) and the skill sentence "when running_proof.trunk is running, end your turn without asking".
 - OpenedAt: 2026-10-11T14:58:19Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=5KGCSYVHZWG7T40Z4D68JV49PP-m1e-f456f182 minutes=1200 reviewRounds=20 goalRevision=1
@@ -18,4 +18,5 @@ History:
 - 2026-10-11T14:58:19Z FXW1CQ4T46RBXTVVEXAE9DVAE8-m1e-f456f182 open actor=human:Wido targets=lane-housekeeping-2
 - 2026-10-11T14:58:27Z 5KGCSYVHZWG7T40Z4D68JV49PP-m1e-f456f182 approve actor=human:Wido targets=lane-housekeeping-2
 - 2026-10-23T22:32:45Z R6KE7VCJ7VG9X1BCRC7D7KV193-m1e-cca12454 park actor=human:Wido targets=lane-housekeeping-2 reason=parked in Wido's name (decision 47e, plan-use-for-real 0.5): the ledger holds only goals that can start now; resume when its turn comes
-Integrity: sha256=49a287892d4624a750544425a3d2a3da0e30d2a5faa0a0a9a71f8f177e29d55f
+- 2026-11-07T15:01:28Z 99X0WQXBBM5HTJ3PTKQWECHYKW-m1e-5a3e856b edit actor=human:Wido targets=lane-housekeeping-2
+Integrity: sha256=0c74bbb520e405514e90d234bf81ab4b0f710002336906bccd788ae48c129db8
