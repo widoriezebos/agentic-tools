@@ -5,12 +5,14 @@
 - Tier: 3
 - Intent: Main red: TestLegacyProofLaunchRealLauncherRequiresLiveReporter deadlocks inside every lane proof that runs cmd/metasystem whole (finding 553). Its nested legacy launch counts real proof launchers on the host (hostLauncherCensus via countProofLaunchers, internal/proofrun/attemptload.go:343) while its managed-marker filter (managedProofProcess, host_resources.go:1167-1178) reads the test admission folder, so every real launcher counts as a competitor and the child waits forever (no per-test deadline). Fix the census to read managed markers where real launchers write them, set the test bed admission cap to 0 at proof_run_test.go:3722, and pin it with TestLegacyProofLaunchIgnoresAnUnrelatedLauncher
 - Origin: human
+- DesignGate: off
 - Next step: Build without a design from finding 553 (root cause in its note): one unit; the engine census fix, the one-line test bed fix, the decoy-launcher test; brief by the seat
 - OpenedAt: 2026-11-07T05:03:39Z
-- Revision: 1
+- Revision: 2
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 
 History:
 - 2026-11-07T05:03:39Z CPAP6KKN374N8C80RS90EPZX52-m1e-88b0c4a5 open actor=human:Wido targets=a-fixture-launch-counts-only-real-competitors
-Integrity: sha256=9ccf317da0434035369df70acb7014ea4c4002d6ae77fad7cd2dc38604398b4c
+- 2026-11-07T05:04:47Z ZQ1Z5QTNJ50A4QNKH0PK9ADV6V-m1e-88b0c4a5 edit actor=human:Wido targets=a-fixture-launch-counts-only-real-competitors reason=Allowed: build-without-design why=Allowed: build-without-design. A main-red fix of one unit from a recorded finding (553) whose root cause is read; the lane proof and the read gate it impact=This lets goal a-fixture-launch-counts-only-real-competitors be built and landed without an accepted, reviewed design. The risk: nobody checks the approach before code is written, so a wrong one is found only in code review or after it lands. It holds for every later build and landing of a-fixture-launch-counts-only-real-competitors until withdrawn. To undo: metasystem goal disallow a-fixture-launch-counts-only-real-competitors build-without-design
+Integrity: sha256=c5f74eb08e6bbe051372ff53981c11ccf99f8488e0e6593587f2fd143a1eb982
