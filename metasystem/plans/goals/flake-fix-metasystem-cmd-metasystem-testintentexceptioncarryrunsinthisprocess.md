@@ -7,8 +7,8 @@
 - Origin: main
 - Next step: reproduce under -count=20 -p 4 with the package in a workspace at origin/main; find what writes into the bed git directory after the test body (a detached land child or git background maintenance, finding 449); fix the bed, prove 20 of 20 green, hand in through the lane; m1e, after the-steward-sees U0 Fixes analysis 2026-11-07 (Astra r2): diagnose first. Three incidents share the TempDir RemoveAll .git signature (TestSevenDayMainOneEpisode, TestTheHolderIsAskedOncePerBlockingOccurrence and its subtest). Trace each fixture effective git config (seatGit sets GIT_CONFIG_GLOBAL=/dev/null, seatpresence_test.go:332) and any detached child; repair at the owner of the writer. Root (Explore 2026-11-07 16:1x): detached automatic git maintenance (git 2.54 default, geometric) after the production fetch at internal/pattern/trunk.go:46 and after fixture commits writes commit-graphs and info into the bed .git after the test ends; GIT_CONFIG_GLOBAL=/dev/null does not disable it. Fix per bed, repo-local right after init: git config --local maintenance.auto false and gc.auto 0 in internal/pattern bed_test.go:41 (newBed), internal/steward seatpresence_tick_test.go:35 (gitRepoWithCurrentGoal) and seatpresence_test.go:322 (seatEnroll). Claims the three TempDir incidents.
 - OpenedAt: 2026-10-30T08:57:40Z
-- Revision: 5
-- Pinned: m1e
+- Revision: 6
+- Pinned: m1f
 - Budget: elapsedLimit=1h attemptLimit=3 reservedJobMinutesLimit=360 activeJobLimit=1 reviewRoundLimit=0
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-10-30T08:57:49Z revision=2 opid=F60JJ95ZA4J3FN2Z4CEYX9JVE2-m1e-afd9d95a authority=proven digest=c8367920c6bd7f7008352afdcfc2bf6dc12b28a5303ff28d71b23c8e5f9278d6 episode=2
@@ -19,4 +19,5 @@ History:
 - 2026-10-30T08:57:57Z 4QHQ1A4SHJ7F6705WXK077KNQ5-m1e-afd9d95a set-pin actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess
 - 2026-11-07T09:56:21Z N9S4QNMX92Y6ZDGG65FW320P2X-m1e-1dae276b edit actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess
 - 2026-11-07T15:57:58Z RKVJM6XT5RR863279Z3PQDDQR5-m1e-9f79adc8 edit actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess
-Integrity: sha256=05d1b41dda947db0445fd268eb9da0c9fa461bf20a14243c3b74092ec296271f
+- 2026-11-07T15:58:40Z SCBF1Y56N2EC81463HH14ND0J7-m1e-9f79adc8 set-pin actor=human:Wido targets=flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess
+Integrity: sha256=41c50835478b43876aa54424cd47c1b15b55493098ff1bd46a23629296c47660
