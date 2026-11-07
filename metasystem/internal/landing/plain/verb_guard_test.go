@@ -17,7 +17,7 @@ func TestResolutionLaunchFailureHasNoJobAndStatusNamesItsTime(t *testing.T) {
 	t.Parallel()
 	b := newStatusBed(t)
 	fix := &Fix{Attempt: "resolution", State: "resolving", Goal: "A", Commit: "main", Tip: "tip", Units: []string{"merge-A"}, Paths: []conflict.Path{{Path: "code.go"}}}
-	err := LaunchResolution(b.install, fix, bedNow, "agent", func() (string, error) {
+	err := LaunchResolution(b.install, fix, bedNow, LaunchRecord{By: "agent"}, func() (string, bool, error) { return "", false, nil }, func() (string, error) {
 		saved, err := FixForAttempt(b.install, fix.Attempt)
 		if err != nil || saved.Job != "" || saved.Launch == nil || saved.Launch.At != bedNow.Format(time.RFC3339Nano) || saved.Launch.Attempt != fix.Attempt {
 			t.Fatalf("request missing before launch: %+v %v", saved, err)
@@ -225,7 +225,7 @@ func TestResolutionAdoptionKeepsLaunchIdentityAndStart(t *testing.T) {
 	t.Parallel()
 	b := newStatusBed(t)
 	fix := &Fix{Attempt: "resolution", State: "resolving", Launch: &LaunchRecord{Job: "job-id"}}
-	if err := LaunchResolution(b.install, fix, bedNow, "landing", func() (string, error) {
+	if err := LaunchResolution(b.install, fix, bedNow, LaunchRecord{By: "landing"}, func() (string, bool, error) { return "", false, nil }, func() (string, error) {
 		saved, err := FixForAttempt(b.install, fix.Attempt)
 		if err != nil || saved.Launch == nil || saved.Launch.Job != "job-id" || saved.Launch.Attempt != fix.Attempt || saved.Job != "" {
 			t.Fatalf("request identity: %+v %v", saved, err)
@@ -235,7 +235,7 @@ func TestResolutionAdoptionKeepsLaunchIdentityAndStart(t *testing.T) {
 		t.Fatal(err)
 	}
 	fix.Job = ""
-	if err := LaunchResolution(b.install, fix, bedNow.Add(time.Hour), "landing", func() (string, error) { return "job-id", nil }); err != nil {
+	if err := LaunchResolution(b.install, fix, bedNow.Add(time.Hour), LaunchRecord{By: "landing"}, func() (string, bool, error) { return "", false, nil }, func() (string, error) { return "job-id", nil }); err != nil {
 		t.Fatal(err)
 	}
 	saved, err := FixForAttempt(b.install, fix.Attempt)
