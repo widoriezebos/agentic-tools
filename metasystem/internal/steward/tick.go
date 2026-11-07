@@ -531,11 +531,12 @@ func defaultTickContinuationDependencies(cfg TickConfig) tickContinuationDepende
 		resolveMachine: goal.ResolveMachine,
 		resolveLayout:  stateroot.ResolveLayout,
 		health: tickHealthDependencies{
-			evaluate: tickHealthEvaluator(cfg),
-			ask:      tickHealthAsk(cfg),
-			now:      tickHealthNow,
-			deliver:  deliver,
-			lane:     hostLaneSilence,
+			evaluate:    tickHealthEvaluator(cfg),
+			ask:         tickHealthAsk(cfg),
+			now:         tickHealthNow,
+			deliver:     deliver,
+			lane:        hostLaneSilence,
+			ledgerStops: seatDependenciesForConfig(cfg).Project,
 		},
 	}
 }
@@ -771,7 +772,11 @@ func decideTickWithDependencies(repoRoot string, cfg TickConfig, census WorkerCe
 // health observation, one durable narration line, and a queued alert whenever
 // the observation's dead or persistent-unknown boundary requires one.
 func completeTickHealthWithConfig(repoRoot string, result *TickResult, generation int, process identity.Ref, cfg TickConfig) error {
-	return completeTickHealthWithDependencies(repoRoot, result, generation, process, cfg.Now, tickHealthDependencies{
+	return completeTickHealthWithDependencies(repoRoot, result, generation, process, cfg.Now, tickHealthConfigDependencies(cfg))
+}
+
+func tickHealthConfigDependencies(cfg TickConfig) tickHealthDependencies {
+	return tickHealthDependencies{
 		evaluate:     tickHealthEvaluator(cfg),
 		ask:          tickHealthAsk(cfg),
 		now:          tickHealthNow,
@@ -782,7 +787,8 @@ func completeTickHealthWithConfig(repoRoot string, result *TickResult, generatio
 		examineLedger: func(root string, now time.Time) error {
 			return examineLedgerMoveWithRepositoryAndWriter(root, now, defaultLedgerAttentionRepository(), atomicfile.WriteText)
 		},
-	})
+		ledgerStops: seatDependenciesForConfig(cfg).Project,
+	}
 }
 
 // tickHealthEvaluator is the tick's health evaluation, on both of its paths:
@@ -817,6 +823,8 @@ type tickHealthDependencies struct {
 	examineLedger func(string, time.Time) error
 	// ask runs after the standing-defect filer; nil asks nothing.
 	ask func(string, HealthVerdict, time.Time) error
+	// ledgerStops reads the goals for retained budget-stop alerts; nil reads nothing.
+	ledgerStops func(string, time.Time) (goal.Projection, error)
 }
 
 func completeTickHealthWithDependencies(repoRoot string, result *TickResult, generation int, process identity.Ref, now time.Time, dependencies tickHealthDependencies) error {
@@ -871,6 +879,14 @@ func completeTickHealthWithDependencies(repoRoot string, result *TickResult, gen
 	}
 	if err := updateSpendEpisodesWith(repoRoot, health.Spend, healthNow(), funnel, dependencies.deliver); err != nil {
 		return fmt.Errorf("update spend alert episodes: %w", err)
+	}
+	if dependencies.ledgerStops != nil {
+		at := healthNow()
+		if err := resolveEndedBreachStops(repoRoot, func() (goal.Projection, error) {
+			return dependencies.ledgerStops(repoRoot, at)
+		}, at); err != nil {
+			fmt.Fprintf(os.Stderr, "old budget-stop alerts not ended: %v\n", err)
+		}
 	}
 	if dependencies.lane != nil {
 		at := healthNow()

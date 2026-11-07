@@ -110,6 +110,9 @@ func TestHealthAlertConditionChanges(t *testing.T) {
 			}
 			want := first
 			switch name {
+			case "same condition":
+				want.Message = "The watcher is stale."
+				want.Evidence = []AlertEvidence{{Record: HealthRecordPath(f.root), At: at.Format(time.RFC3339Nano), Fact: health.Line()}}
 			case "different condition", "resolved but open":
 				if !want.Resolved {
 					want.Resolved, want.ResolvedAt = true, at

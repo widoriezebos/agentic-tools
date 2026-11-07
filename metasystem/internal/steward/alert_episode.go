@@ -13,6 +13,7 @@ import (
 
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -54,6 +55,9 @@ type AlertInvoker struct {
 }
 
 const seatIdleAlertOwner = "seat-idle"
+
+// breachStopAlertOwner identifies retained budget-stop records; new stops use questions.
+const breachStopAlertOwner = "breach-stop"
 
 // SeatIdleIncident is the durable refusal fact written when a seat reaches
 // the bounded Stop refusal and hands work to the steward.
@@ -229,6 +233,50 @@ func AlertEpisodes(repoRoot string) ([]AlertEpisode, error) {
 	return loadAlertEpisodesUnlocked(repoRoot)
 }
 
+func resolveEndedBreachStops(repoRoot string, read func() (goal.Projection, error), now time.Time) error {
+	held, err := lockAlerts(repoRoot, lock.Exclusive)
+	if err != nil {
+		return err
+	}
+	defer unlockAlerts(held)
+	episodes, err := loadAlertEpisodesUnlocked(repoRoot)
+	if err != nil || !slices.ContainsFunc(episodes, openBreachStop) {
+		return err
+	}
+	projection, err := read()
+	if err != nil {
+		return err
+	}
+	for _, episode := range episodes {
+		if code := breachStopEnded(projection.Tree, episode.ScopeID); openBreachStop(episode) && code != "" {
+			episode.Resolved, episode.ResolvedAt = true, now.UTC()
+			episode.Cleared, episode.ClearedAt, episode.ClosedBy = true, now.UTC(), code
+			if err := saveAlertEpisode(repoRoot, episode); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func openBreachStop(e AlertEpisode) bool { return e.Owner == breachStopAlertOwner && !e.Cleared }
+
+func breachStopEnded(tree *goal.TreeGoals, id string) string {
+	if tree == nil {
+		return ""
+	}
+	if file, ok := tree.Archived(id); ok {
+		if file.State == goal.StateDone {
+			return "goal-done"
+		}
+		return "goal-abandoned"
+	}
+	if file, ok := tree.Live[id]; ok && !file.IsFencedClaim() {
+		return "goal-not-stopped"
+	}
+	return ""
+}
+
 func nextEpisodeID(digest string, episodes []AlertEpisode) string {
 	prefix := digest[:16]
 	for sequence := 1; ; sequence++ {
@@ -385,6 +433,31 @@ func migrateHeldHealthNotifications(repoRoot string, episodes *[]AlertEpisode, n
 	return nil
 }
 
+var healthPlain = map[HealthRole]string{
+	RoleCapabilitySnapshots: "Runtime capability checks are missing or outdated",
+}
+
+func plainHealthMessage(roles []RoleVerdict) string {
+	var messages []string
+	for _, role := range roles {
+		if role.Status == HealthAlive || role.Standing || (role.Status == HealthDead && isDutyRole(role.Role)) {
+			continue
+		}
+		message := healthPlain[role.Role]
+		if message == "" {
+			message = "The " + strings.ReplaceAll(string(role.Role), "-", " ") + " check is not passing"
+		}
+		messages = append(messages, message)
+	}
+	if len(messages) == 0 {
+		return ""
+	}
+	if len(messages) > 1 {
+		return fmt.Sprintf("%s, and %d more checks", messages[0], len(messages)-1)
+	}
+	return messages[0]
+}
+
 func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message string, now time.Time, f noticeFunnel, deliver func(string, string) error) (AlertEpisode, error) {
 	active := health
 	active.Roles = nil
@@ -393,7 +466,9 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 			active.Roles = append(active.Roles, role)
 		}
 	}
-	if len(active.Roles) != len(health.Roles) {
+	if plain := plainHealthMessage(active.Roles); plain != "" {
+		message = plain
+	} else if len(active.Roles) != len(health.Roles) {
 		// Narration keeps every diagnostic; the health notice carries only
 		// findings that have not moved to a standing-defect episode.
 		message = active.Line()
@@ -511,6 +586,8 @@ func updateAlertEpisodesWith(repoRoot string, health HealthVerdict, message stri
 			return AlertEpisode{}, err
 		}
 	}
+	episode.Message = message
+	episode.Evidence = []AlertEvidence{{Record: HealthRecordPath(repoRoot), At: now.Format(time.RFC3339Nano), Fact: active.Line()}}
 	if episode.Cleared {
 		episode.Cleared = false
 		episode.ClearedAt = time.Time{}

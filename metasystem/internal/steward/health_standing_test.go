@@ -271,8 +271,9 @@ func TestStandingSiblingKeepsHealthNoticeForSiblingOnly(t *testing.T) {
 			continue
 		}
 		healthNotices++
-		if episode.Digest != fifth.FindingDigest || strings.Contains(episode.Message, string(role.Role)+"=dead") ||
-			!strings.Contains(episode.Message, string(sibling.Role)+"=dead") {
+		if episode.Digest != fifth.FindingDigest || episode.Message != "The steward runner check is not passing" ||
+			len(episode.Evidence) != 1 || strings.Contains(episode.Evidence[0].Fact, string(role.Role)+"=dead") ||
+			!strings.Contains(episode.Evidence[0].Fact, string(sibling.Role)+"=dead") {
 			t.Fatalf("the remaining health notice includes the standing failure: %+v", episode)
 		}
 	}

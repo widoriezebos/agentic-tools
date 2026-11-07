@@ -143,6 +143,60 @@ func TestIntentAlertListOmitsClosedHealthEpisodes(t *testing.T) {
 	}
 }
 
+func TestAlertListCountsAlertsThatEndedByThemselves(t *testing.T) {
+	t.Parallel()
+	base := realpath.Resolve(t.TempDir())
+	bed := alertBed{home: filepath.Join(base, "home"), seat: filepath.Join(base, "seat")}
+	root := bed.store(bed.seat)
+	dir := filepath.Join(root, "artifacts", "agents", "steward", "alerts")
+	helmMust(t, os.MkdirAll(filepath.Join(bed.seat, ".git"), 0o755), os.MkdirAll(dir, 0o755),
+		os.WriteFile(filepath.Join(root, "metasystem.conf"), []byte("metasystem.template=true\n"), 0o644))
+	for _, tc := range []struct {
+		id     string
+		age    time.Duration
+		person bool
+	}{
+		{"inside", 24*time.Hour - time.Second, false},
+		{"boundary", 24 * time.Hour, false},
+		{"future", -time.Minute, false},
+		{"person", time.Hour, true},
+		{"open", 0, false},
+	} {
+		episode := steward.AlertEpisode{Schema: 1, EpisodeID: "alert-" + tc.id, Digest: strings.Repeat("a", 64),
+			Message: "The goal spent its budget.", OpenedAt: alertTestNow.Add(-48 * time.Hour),
+			Attempts: []steward.AlertAttempt{}, TransportResult: steward.TransportSubmitted}
+		if tc.id != "open" {
+			episode.Resolved, episode.Cleared = true, true
+			episode.ResolvedAt, episode.ClearedAt = alertTestNow.Add(-tc.age), alertTestNow.Add(-tc.age)
+			episode.ClosedBy = "goal-done"
+		}
+		if tc.person {
+			episode.ClearedBy = &steward.AlertInvoker{Pid: 4242, PidStartedAt: 77}
+		}
+		data, err := json.Marshal(episode)
+		helmMust(t, err)
+		helmMust(t, os.WriteFile(filepath.Join(dir, episode.EpisodeID+".json"), data, 0o644))
+	}
+	code, stdout, stderr := bed.run(t, bed.seat, "alert", "list")
+	if code != 0 || strings.Split(stdout, "\n")[0] != "1 open alert; 1 ended by itself in the last 24 hours" || strings.Contains(stdout, "here/alert-inside") {
+		t.Fatalf("alert list = %d %q %q", code, stdout, stderr)
+	}
+	code, stdout, stderr = bed.run(t, bed.seat, "alert", "list", "--all")
+	if code != 0 || strings.Split(stdout, "\n")[0] != "1 open alert; 5 listed with the cleared ones" ||
+		!strings.Contains(stdout, "here/alert-inside  The goal spent its budget. (ended because the goal finished)") || strings.Contains(stdout, "goal-done") ||
+		!strings.Contains(stdout, "here/alert-person  The goal spent its budget. (cleared)") {
+		t.Fatalf("alert list --all = %d %q %q", code, stdout, stderr)
+	}
+	code, stdout, stderr = bed.run(t, bed.seat, "alert", "list", "--json")
+	if code != 0 || !strings.Contains(stdout, `"ended": 1`) || len(alertIDs(t, stdout)) != 1 {
+		t.Fatalf("alert list --json = %d %q %q", code, stdout, stderr)
+	}
+	code, stdout, stderr = bed.run(t, bed.seat, "alert", "list", "--all", "--json")
+	if code != 0 || !strings.Contains(stdout, `"closedBy": "goal-done"`) || len(alertIDs(t, stdout)) != 5 {
+		t.Fatalf("alert list --all --json = %d %q %q", code, stdout, stderr)
+	}
+}
+
 // From a seat's checkout the alert verbs read the seat's own store and the
 // host lane's, list each open alert in two lines under its qualified id,
 // and acknowledge and clear the lane's alert; a repeat succeeds and changes

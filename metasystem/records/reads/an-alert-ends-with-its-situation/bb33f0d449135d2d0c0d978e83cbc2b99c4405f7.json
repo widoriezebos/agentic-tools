@@ -1,0 +1,117 @@
+{
+  "canonicalRead": {
+    "id": "20261107t033158-8df7132bca-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "an-alert-ends-with-its-situation",
+      "reviewedProjectTree": "c1b5c4d098869387ec0b9510a5f6d1d92058a9332efb84b1f13bc6d9cb1a766f",
+      "diffDigest": "c1b5c4d098869387ec0b9510a5f6d1d92058a9332efb84b1f13bc6d9cb1a766f"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261107t033158-8df7132bca-r1-s3:1",
+        "class": "missing-reader",
+        "severity": "low",
+        "material": false,
+        "claim": "D2 makes health alert messages plain words, so the browser's notification filter ForAPerson, which hides only lines starting with \"HEALTH \", now shows health alerts in the notification history, stream and unread count; its comment saying the steward journals the raw verdict as the health alert message is now false.",
+        "evidence": "internal/ui/notifications/notifications.go:288-304 rawHealthVerdict and ForAPerson; internal/steward/alert_episode.go:466-472 and :589 set the plain message that submitEpisode journals.",
+        "where": "internal/ui/notifications/notifications.go",
+        "change": "Confirm with the steward that the browser should show plain health alerts, and update the rawHealthVerdict and ForAPerson comment.",
+        "relation": "new"
+      },
+      {
+        "id": "20261107t033158-8df7132bca-r1-s3:2",
+        "class": "false-premise",
+        "severity": "low",
+        "material": false,
+        "claim": "The brief says stopped verdicts keep the caller's message, but healthStopped keeps role statuses, so a stopped verdict with a dead role gets a plain sentence instead of 'HEALTH STOPPED ...'.",
+        "evidence": "internal/steward/health.go:570-608 keeps the roles on a stopped verdict; plainHealthMessage counts dead roles. Reachable only when a tick is already running as the fence closes (runner.go:90 and :290 refuse ticks; tick.go:409 helm early return). ShouldAlert is false, so nothing is sent, and the evidence keeps the full line.",
+        "where": "internal/steward/alert_episode.go",
+        "change": "None required. Optionally keep the caller's message when health.Stopped is set.",
+        "relation": "new"
+      },
+      {
+        "id": "20261107t033158-8df7132bca-r1-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "Health episode evidence time uses now.Format, not now.UTC().Format, so it can carry a local offset while standing-defect evidence and every other time in the function are in UTC.",
+        "evidence": "internal/steward/alert_episode.go:590 compared with health.go:1091; tick.go:833-837 healthNow returns dependencies.now() when the tick's now is zero; the helm pass passes cfg.now().",
+        "where": "internal/steward/alert_episode.go",
+        "change": "Use now.UTC().Format(time.RFC3339Nano).",
+        "relation": "rule: alert evidence times are written in UTC, like the standing-defect evidence (health.go:1091)"
+      },
+      {
+        "id": "20261107t033158-8df7132bca-r1-s3:4",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The plural ended-count summary and the multi-role '\u003cfirst\u003e, and N more checks' sentence have no committed test, and N=1 reads '1 more checks'.",
+        "evidence": "cmd/metasystem/intent_alert.go:189-190; internal/steward/alert_episode.go:455-457; the builder checked the plural only through a rebuilt binary (runtime-list-plural.stdout).",
+        "where": "cmd/metasystem/intent_alert.go",
+        "change": "Optional: add a plural case to test 4 and a two-role case to test 3, and say '1 more check' when N is 1.",
+        "relation": "rule: every line a person reads has a committed test of its words"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261107t033158-8df7132bca-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "e2237373a8bf6d695fc46b402b56f3b9a0cfb996f3dbebb31a65cb19ab4a1cec",
+  "schemaVersion": 1,
+  "goal": "an-alert-ends-with-its-situation",
+  "unit": "U1b",
+  "subject": {
+    "commit": "bb33f0d449135d2d0c0d978e83cbc2b99c4405f7",
+    "parent": "5a57957b51cf9c3d4cdbbc06c40a475ebd527d59",
+    "tree": "b57e555c71cc365b4a5a834fe323f362fdf3400e",
+    "patchDigest": "c1b5c4d098869387ec0b9510a5f6d1d92058a9332efb84b1f13bc6d9cb1a766f",
+    "unitDigest": "5e1b118e3be0b420c21696b6fc12a92ff792df88809e15f7ed69c10a1d63e756"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261107t033158-8df7132bca-r1-s3",
+    "closureSha256": "4c2a1adf6b6eb7c1cf29a2261a72872596fe4a8d54ffdfa976c858ca4078783e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "b57e555c71cc365b4a5a834fe323f362fdf3400e",
+    "runId": "goal-read-gate-20261107t045227z-cd7b3232c828f581"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "5a57957b51cf9c3d4cdbbc06c40a475ebd527d59",
+      "digest": "bc03acb40b621dd4b4a49f9bd93a691161bcc5a8e990e20ffc408c3ab65c5a9e"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_alert_test.go",
+      "readerWord": "reviewed by unit read 20261107t033158-8df7132bca-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/alert_clear_test.go",
+      "readerWord": "reviewed by unit read 20261107t033158-8df7132bca-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/alert_situation_test.go",
+      "readerWord": "reviewed by unit read 20261107t033158-8df7132bca-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/health_bed_test.go",
+      "readerWord": "reviewed by unit read 20261107t033158-8df7132bca-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/health_standing_test.go",
+      "readerWord": "reviewed by unit read 20261107t033158-8df7132bca-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/notify_test.go",
+      "readerWord": "reviewed by unit read 20261107t033158-8df7132bca-r1-s3"
+    }
+  ],
+  "sha256": "c7eb7c7992e6b92b7e47f28d10e926d006c8f9191a2ea7c17fce01e771b36f84"
+}

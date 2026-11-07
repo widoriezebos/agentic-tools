@@ -145,6 +145,8 @@ func runIntentAlertList(inv *intentInvocation) int {
 		return inv.render(*problem)
 	}
 	all := inv.input.switched("all")
+	now := inv.alerts().now()
+	ended := 0
 	listed := []listedAlert{}
 	var lines, details []string
 	var unreadable []string
@@ -156,6 +158,10 @@ func runIntentAlertList(inv *intentInvocation) int {
 			continue
 		}
 		for _, episode := range episodes {
+			age := now.Sub(episode.ClearedAt)
+			if episode.Cleared && episode.ClearedBy == nil && age >= 0 && age < 24*time.Hour {
+				ended++
+			}
 			if episode.Cleared && !all {
 				continue
 			}
@@ -175,9 +181,13 @@ func runIntentAlertList(inv *intentInvocation) int {
 		}
 	}
 	result := intentResult{Outcome: intentConfirmed, Summary: alertCount(open), text: lines, Details: details,
-		Data: map[string]any{"alerts": listed}}
+		Data: map[string]any{"alerts": listed, "ended": ended}}
 	if all {
 		result.Summary += fmt.Sprintf("; %d listed with the cleared ones", len(listed))
+	} else if ended == 1 {
+		result.Summary += "; 1 ended by itself in the last 24 hours"
+	} else if ended > 1 {
+		result.Summary += fmt.Sprintf("; %d ended by themselves in the last 24 hours", ended)
 	}
 	if len(unreadable) > 0 {
 		result.Outcome, result.code = intentFailed, 1
@@ -197,11 +207,20 @@ func alertCount(open int) string {
 	return fmt.Sprintf("%d open alerts", open)
 }
 
+var alertEndWords = map[string]string{
+	"goal-done":         "ended because the goal finished",
+	"goal-abandoned":    "ended because the goal was abandoned",
+	"goal-not-stopped":  "ended because the goal is no longer stopped",
+	"condition-changed": "ended because the finding changed",
+}
+
 // alertSituation is an episode's line 1: its plain situation, and why it
 // neither grows nor clears when it stands still.
 func alertSituation(episode steward.AlertEpisode) string {
 	line, _, _ := strings.Cut(episode.Message, "\n")
 	switch {
+	case episode.Cleared && episode.ClearedBy == nil:
+		line += " (" + alertOr(alertEndWords[episode.ClosedBy], "ended by itself") + ")"
 	case episode.Cleared:
 		line += " (cleared)"
 	case episode.Standing == steward.StandingHeld:
