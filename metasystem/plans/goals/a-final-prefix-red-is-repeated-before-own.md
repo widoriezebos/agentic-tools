@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 25
+- Sequence: 26
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="an engine defect in one owner, found by the 2026-11-07 fixes analysis and its two Astra rounds; the unit check and the lane proof gate it"
 - Tier: 2
 - Intent: The lane repeats each failing test alone on the merge tree before it returns a goal as own (final-prefix shortcut, internal/landing/plain/replay.go:398-405; journal 2026-11-07 06:42)
@@ -10,7 +10,7 @@
 - DesignGate: off
 - Next step: Build without a design from N4 and section 7 of /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/analysis-fixes-2026-11-07.md: per-identity repeat selection, a retained repeat identity beyond the one-repeat-per-tree guard, mixed-result publication; test one reproducing and one passing failure; about 120 lines, split seam selection then publication; after a-return-names-the-failing-test U1a
 - OpenedAt: 2026-11-07T09:51:15Z
-- Revision: 28
+- Revision: 29
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -45,4 +45,5 @@ History:
 - 2026-11-07T19:59:58Z 4RSXPA677CF543ZBH6VNFF652P-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-return-names-the-failing-test,a-settled-unit-is-not-in-flight,a-start-that-never-launched-is-collected,one-host-admits-heavy-work,the-claim-quota-is-a-host-setting,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=one-host-admits-heavy-work from=1:22 to=1:23 requested-sequence=20
 - 2026-11-07T20:02:25Z YMD72MR06YCN3ZE9K60MEKJFZ4-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-claim-quota-is-a-host-setting,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge reason=priority-order subject=the-claim-quota-is-a-host-setting from=1:23 to=1:24 requested-sequence=21
 - 2026-11-07T20:04:44Z 2GA3C3W48M7ATW6PEBYAHXZ5Z6-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-return-names-the-failing-test,a-settled-unit-is-not-in-flight,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge reason=priority-order subject=a-settled-unit-is-not-in-flight from=1:24 to=1:25 requested-sequence=22
-Integrity: sha256=67311bb1e63992e21c90236507f19bc78663a315afd3ffe980e4320734826ab9
+- 2026-11-07T20:06:00Z TXHDRQGFFKJVXK19M0QY4Q5Y8W-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-selected-batch-is-proving,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-selected-batch-is-proving from=1:25 to=1:26 requested-sequence=23
+Integrity: sha256=1d139b165630438037b30f4b9ca953cd497c115b8749a0093073d8619c3671dd
