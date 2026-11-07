@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 2
-- Sequence: 23
+- Sequence: 22
 - Risk: severity=1 novelty=1 exposure=1 accumulation=1 basis="A small refinement of the unit check's test selection; a miss runs fewer tests, never more harm than today."
 - Tier: 1
 - Intent: The unit check's impact selection notices a change to a field of an embedded struct: when an embedded struct's field changes, the selection adds the embedding type's name as a changed symbol, so the tests that reference that type run. Today such a change adds no symbol and those tests are skipped (read note N-2 of the-impact-check-runs-what-changed).
 - Origin: main
 - Next step: Split from the-impact-check-runs-what-changed at its goal done (read note N-2). Small: one design paragraph and one unit under 125 lines; needs Wido's approval before a seat takes it.
 - OpenedAt: 2026-10-26T04:00:28Z
-- Revision: 3
+- Revision: 4
 - Budget: elapsedLimit=5d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=DRDPT7FRZRX9XRYV781ZTG2JJ6-m1e-acb921fd minutes=2400 reviewRounds=20 goalRevision=1
@@ -19,4 +19,5 @@ History:
 - 2026-10-26T04:00:28Z 7HN0FJDE4TGTJBA5D10309KNE8-m1e-386083e0 open actor=human:Wido targets=an-embedded-field-change-selects-its-type
 - 2026-10-26T07:13:03Z DRDPT7FRZRX9XRYV781ZTG2JJ6-m1e-acb921fd approve actor=human:Wido targets=an-embedded-field-change-selects-its-type
 - 2026-10-26T07:16:02Z MNTTVFRDJ0BXSHA2WQ9CK0Y0V9-m1e-acb921fd set-priority actor=human:Wido targets=an-embedded-field-change-selects-its-type reason=priority-order subject=an-embedded-field-change-selects-its-type from=unranked to=2:23 requested-sequence=append
-Integrity: sha256=940c08404732e76d0746544f98150301d35ba74204222dfb76bc73ffc8148249
+- 2026-11-07T09:59:05Z GYNN2V5E6J8TWNXR2NW3DA5NN7-m1e-97dd8283 abandon actor=human:Wido targets=human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,mechanical-chains-at-tier-two-and-three-close-and-land,seats-claim-disjoint-areas,build-caches-and-agent-sessions-have-owners,an-embedded-field-change-selects-its-type,the-box-clock-counts-only-the-goals-own-work,an-environment-red-stays-on-its-host,the-decision-log-serves-every-host,host-health-role reason=priority-order from=2:23 to=2:22
+Integrity: sha256=dc8a105c3bbf6fd7bf70346420fa55b669dc519d9d8180f3b8b8b9bad63f7d49

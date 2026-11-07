@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 2
-- Sequence: 27
+- Sequence: 26
 - Risk: severity=2 novelty=2 exposure=2 accumulation=2 basis="A new steward role that reads the process list and alerts on named limits; it acts on nothing, but wrong limits cry wolf to the person or miss a sick machine; runs on every tick of every seat"
 - Tier: 2
 - Intent: What: The steward watches the machine itself: load, swap use and the top CPU and memory users, against named limits. When a limit is crossed it raises an alert naming the process, whether it is ours, and the fix; otherwise it stays quiet. Why: on 2026-09-02 a macOS file-indexing service had run at full CPU with 17 GB of memory for 17 days, swap was 94 percent full and 488 leaked test processes had piled up, and nothing noticed. Already done: a first design and its critique with 7 findings; a small reader of load averages exists. Pros: machine trouble surfaces in minutes, not weeks. Cons: limits need tuning or it cries wolf, and reading the process list costs a little on each tick.
 - Origin: main
 - Next step: Next: fold the 7 critique findings into a second revision of the design as the fold brief lays out, reusing the existing load reader. Done when: the revised design passes one critique round with no serious findings and is ready to build with a test fed the recorded 2026-09-02 snapshot.
 - OpenedAt: 2026-09-02T16:28:16Z
-- Revision: 25
+- Revision: 26
 - Labels: robustness
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -42,4 +42,5 @@ History:
 - 2026-10-03T11:14:38Z SHX7E11KS82Q4RMWB2121PC1K7-m1e-718ba0eb edit actor=human:Wido targets=host-health-role
 - 2026-11-07T09:58:29Z VF4YQ52E70028GTREYP0SZCQGG-m1e-1dae276b approve actor=human:Wido targets=host-health-role
 - 2026-11-07T09:58:38Z RR2DXEVK4Q68P3ZGKY3XB60HPB-m1e-1dae276b set-priority actor=human:Wido targets=asks-clear-on-their-effect,claude-delegate-scratch-cleanup,claude-denywrite-list-is-a-snapshot,continuous-self-improvement,counselor,design-prohibition-is-role-scoped,hook-demands-what-landing-forbids,host-health-role,set-priority-treats-an-oversize-sequence-as-last,stop-message-truth,watchdog-kill-observation-gap reason=priority-order subject=host-health-role from=3:3 to=2:27 requested-sequence=append
-Integrity: sha256=e64979733122bcb07b70e5488e0b3d2fe0e8d852fbd157573fa3aa5e14c044c5
+- 2026-11-07T09:59:05Z GYNN2V5E6J8TWNXR2NW3DA5NN7-m1e-97dd8283 abandon actor=human:Wido targets=human-wait-does-not-consume-goal-budget,new-elapsed-budgets-use-explicit-hours,steward-revivals-leave-the-receipt-stream,runtime-limit-is-not-a-protocol-error,one-goal-act-one-ledger-commit,human-break-glass-commit-keeps-the-ledger-valid,mechanical-chains-at-tier-two-and-three-close-and-land,seats-claim-disjoint-areas,build-caches-and-agent-sessions-have-owners,an-embedded-field-change-selects-its-type,the-box-clock-counts-only-the-goals-own-work,an-environment-red-stays-on-its-host,the-decision-log-serves-every-host,host-health-role reason=priority-order from=2:27 to=2:26
+Integrity: sha256=0c100321e1e2c230d4d83a8d4d6447e332a27b7050a32ae521f4e86fbe411d97
