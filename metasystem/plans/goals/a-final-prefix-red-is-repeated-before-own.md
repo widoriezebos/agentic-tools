@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 31
+- Sequence: 32
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="an engine defect in one owner, found by the 2026-11-07 fixes analysis and its two Astra rounds; the unit check and the lane proof gate it"
 - Tier: 2
 - Intent: The lane repeats each failing test alone on the merge tree before it returns a goal as own (final-prefix shortcut, internal/landing/plain/replay.go:398-405; journal 2026-11-07 06:42)
@@ -10,7 +10,7 @@
 - DesignGate: off
 - Next step: Build without a design from N4 and section 7 of /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/analysis-fixes-2026-11-07.md: per-identity repeat selection, a retained repeat identity beyond the one-repeat-per-tree guard, mixed-result publication; test one reproducing and one passing failure; about 120 lines, split seam selection then publication; after a-return-names-the-failing-test U1a
 - OpenedAt: 2026-11-07T09:51:15Z
-- Revision: 34
+- Revision: 35
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -51,4 +51,5 @@ History:
 - 2026-11-07T20:13:38Z 3X4NN9H83PB23HKCJ8YKAXSY78-m1e-170920ec set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-persons-lane-act-is-not-overdue,a-return-names-the-failing-test,a-seat-moves-its-own-note,a-start-that-never-launched-is-collected,a-stop-is-read-where-the-goal-is,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-stop-is-read-where-the-goal-is from=1:28 to=1:29 requested-sequence=26
 - 2026-11-07T20:15:08Z RP1NKGVNEQS5F45X0HMW5GJEQY-m1e-170920ec set-priority actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state,a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-persons-lane-act-is-not-overdue,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-seat-moves-its-own-note,a-slow-ledger-read-is-a-wait,a-start-that-never-launched-is-collected,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,seat-engines-follow-the-deployed-engine,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short,the-ui-bundle-builds-again reason=priority-order subject=attempts-are-bounded-per-unit from=1:29 to=1:30 requested-sequence=27
 - 2026-11-07T20:17:01Z BHHSW19YS19KGZQGNZ6MJHDSR3-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge reason=priority-order subject=the-deputy-acts-under-a-recorded-delegation from=1:30 to=1:31 requested-sequence=28
-Integrity: sha256=211374f467b6b842f0a5c9f58430e1048c012906bf54f20a9ead13c39478c02e
+- 2026-11-07T20:18:19Z 7K6179Z9N108YT7AYMQE6QRVN0-m1e-170920ec set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-hand-in-stands-on-main,a-persons-lane-act-is-not-overdue,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-seat-moves-its-own-note,a-start-that-never-launched-is-collected,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-hand-in-stands-on-main from=1:31 to=1:32 requested-sequence=29
+Integrity: sha256=a510ebac34a78e316ea3af53ccf16ed5715fc196bddcf2056864df16c1b5cc47

@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 30
+- Sequence: 31
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="The named replay runs the parent test instead of the whole package and the return reason carries the facts the lane already has; a wrong mapping falls back to today's whole-unit replay; a wrong sentence misleads a reader; about 32 plus 60 production lines"
 - Tier: 2
 - Intent: A failing subtest maps to its top-level test for the lane's named replay and repeat selection, and a returned goal's reason names the failing test, the package that passed on the tree before it and the merge it failed on, in words, never the identity-validation or replay protocol text (finding 510)
 - Origin: human
 - Next step: Build U1a (identity mapping and repeat selection) then U1b (words and rendered status, --last) from the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-return-names-the-failing-test-U1-brief.md on m1e's build lane; carry check and read after each; the lane lands them
 - OpenedAt: 2026-11-04T02:13:09Z
-- Revision: 54
+- Revision: 55
 - Pinned: ui
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
@@ -70,4 +70,5 @@ History:
 - 2026-11-07T20:13:38Z 3X4NN9H83PB23HKCJ8YKAXSY78-m1e-170920ec set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-persons-lane-act-is-not-overdue,a-return-names-the-failing-test,a-seat-moves-its-own-note,a-start-that-never-launched-is-collected,a-stop-is-read-where-the-goal-is,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-stop-is-read-where-the-goal-is from=1:27 to=1:28 requested-sequence=26
 - 2026-11-07T20:15:08Z RP1NKGVNEQS5F45X0HMW5GJEQY-m1e-170920ec set-priority actor=human:Wido targets=a-continuation-job-may-write-the-stewards-state,a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-folded-design-finding-is-re-read,a-goal-the-steward-opens-is-approved,a-hand-in-stands-on-main,a-lane-returns-on-its-own-proof,a-lane-row-carries-its-act,a-note-to-a-concluded-goal-is-not-sent,a-persons-lane-act-is-not-overdue,a-real-act-is-not-barren,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-seat-moves-its-own-note,a-slow-ledger-read-is-a-wait,a-start-that-never-launched-is-collected,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,an-accepted-design-is-a-record,attempts-are-bounded-per-unit,every-critic-reads-in-one-form,one-question-per-refused-admission,seat-engines-follow-the-deployed-engine,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short,the-ui-bundle-builds-again reason=priority-order subject=attempts-are-bounded-per-unit from=1:28 to=1:29 requested-sequence=27
 - 2026-11-07T20:17:01Z BHHSW19YS19KGZQGNZ6MJHDSR3-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge reason=priority-order subject=the-deputy-acts-under-a-recorded-delegation from=1:29 to=1:30 requested-sequence=28
-Integrity: sha256=4155b9eb517bb6691f50ba481d66b1979bf043bdb37a269f08bd00828f857c82
+- 2026-11-07T20:18:19Z 7K6179Z9N108YT7AYMQE6QRVN0-m1e-170920ec set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-hand-in-stands-on-main,a-persons-lane-act-is-not-overdue,a-remedy-names-who-acts,a-return-names-the-failing-test,a-round-ends-without-its-caller,a-seat-moves-its-own-note,a-start-that-never-launched-is-collected,a-tap-is-answered-at-once,a-unit-stop-asks-its-steward-first,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-hand-in-stands-on-main from=1:30 to=1:31 requested-sequence=29
+Integrity: sha256=e42c5ac9bd6ba28342a941e1eec7eae5f6a56f8e8ee3cc82ee53b0afc139b6aa
