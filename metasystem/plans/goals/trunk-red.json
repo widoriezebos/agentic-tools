@@ -8008,6 +8008,7 @@
       }
     },
     {
+      "fixOpenedAt": "2026-11-07T22:39:19Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress",
       "id": "flake:5ee5869e1e5c3ad2037aa1c6ad9ed9e3b22130f7bef7b44629acba76fcdf7d33",
@@ -8090,7 +8091,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testauthenticatedouterproofkeepsitsnestedworkloadoutofo-6b1c9eda",
       "fixBranch": {
         "name": "",
         "commit": "",
