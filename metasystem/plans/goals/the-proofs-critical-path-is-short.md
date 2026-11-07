@@ -2,14 +2,14 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 31
+- Sequence: 32
 - Risk: severity=2 novelty=2 exposure=3 accumulation=2 basis="Tests that declare t.Parallel run in parallel for the first time in a proof; a race shows as a red that passes alone and is recorded as such; N falls to 1 when the host is busy or the load unreadable; nothing lands on main differently; about 82 production lines in U1"
 - Tier: 2
 - Intent: The landing lane full proof ends in about the time of its slowest package: parallel-safe tests run in parallel inside a package with N chosen at each package admission from a live load sample under a host cap, serial tests stay serial, every launch records its effective N, CPU and start time, the proof reports its critical path, and a red seen only in parallel is recorded as failed in parallel and passed alone (measured 2026-11-04: 49 min wall, 683 summed package minutes, -parallel=1 everywhere)
 - Origin: human
 - Next step: Build U1 (load-banded N per package admission, recorded; per-launch CPU and start time) from the accepted page plans/designs/the-proofs-critical-path-is-short.md with a brief cut by opus-designer (BRIEF-CHECKLIST, one Astra round); then compare N=1 and N>1 on the same candidate before U2 (the readout), U3 (the order) and U4 (the load-fragile record, --last)
 - OpenedAt: 2026-11-04T12:24:04Z
-- Revision: 41
+- Revision: 42
 - Pinned: m1e
 - Budget: elapsedLimit=2d attemptLimit=8 reservedJobMinutesLimit=900 activeJobLimit=1 reviewRoundLimit=8
 - BudgetExceptions: 0
@@ -58,4 +58,5 @@ History:
 - 2026-11-07T20:06:00Z TXHDRQGFFKJVXK19M0QY4Q5Y8W-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-selected-batch-is-proving,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-selected-batch-is-proving from=1:28 to=1:29 requested-sequence=23
 - 2026-11-07T20:08:48Z T2G3T2GSEE0QWKM1K3ZYDNAS91-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-returned-member-leaves-the-batch from=1:29 to=1:30 requested-sequence=24
 - 2026-11-07T20:11:55Z 0ZV1QASZVR1NAEV7MBBETQB18J-m1e-170920ec set-priority actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own,a-landed-goal-concludes-itself,a-return-names-the-failing-test,a-start-that-never-launched-is-collected,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-landed-goal-concludes-itself from=1:30 to=1:31 requested-sequence=25
-Integrity: sha256=5eac84279c6c9414945c91803d7363d2ed369d1d749160e7a3acd1689efafad0
+- 2026-11-07T20:13:38Z 3X4NN9H83PB23HKCJ8YKAXSY78-m1e-170920ec set-priority actor=human:Wido targets=a-done-goals-branch-is-swept,a-final-prefix-red-is-repeated-before-own,a-persons-lane-act-is-not-overdue,a-return-names-the-failing-test,a-seat-moves-its-own-note,a-start-that-never-launched-is-collected,a-stop-is-read-where-the-goal-is,the-deputy-acts-under-a-recorded-delegation,the-lane-redoes-a-lost-merge,the-proofs-critical-path-is-reported,the-proofs-critical-path-is-short reason=priority-order subject=a-stop-is-read-where-the-goal-is from=1:31 to=1:32 requested-sequence=26
+Integrity: sha256=f0f01c7e2327c80f5b3215d79363a9f23ef6a4ba9ab6996cab3a7b0ef557247c
