@@ -10795,6 +10795,51 @@
         "by": "",
         "why": ""
       }
+    },
+    {
+      "id": "red:metasystem/cmd/metasystem:TestLandingMainMoveRealContractPlanGitAdapter",
+      "identity": "red:metasystem/cmd/metasystem:TestLandingMainMoveRealContractPlanGitAdapter",
+      "group": "metasystem/cmd/metasystem",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T172258.964911000Z-replay-1.log",
+          "classname": "metasystem/cmd/metasystem",
+          "name": "TestLandingMainMoveRealContractPlanGitAdapter",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261107T172258.964911000Z-replay-1",
+          "batch": "20261107T172258.964911000Z-replay-1",
+          "baseCommit": "9544a44fded13ff59c0c689e3fdd76c67b4d1169",
+          "baseTree": "7acd45f5a54ecade4a258236c8011a5e7778c5a7",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T172258.964911000Z-replay-1.log",
+          "logDigest": "494b1237cc2f2bec69b190e25dd3f8fcf7a51f0c6534cb4f7ce251722fe47b18",
+          "seenAt": "2026-11-07T18:48:38Z",
+          "opid": "XMPPJ3KK4NGQ9SRZQP7MMRP9AT-landing-41ad7d6c"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [
+        "20261107T172258.964911000Z-replay-1"
+      ],
+      "opened": "2026-11-07T18:48:38Z",
+      "closed": null
     }
   ],
   "cadence": {
