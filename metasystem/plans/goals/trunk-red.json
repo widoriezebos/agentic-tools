@@ -8103,6 +8103,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-07T22:39:19Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestGitAdapterGoManifestInventoryMatchesNativeGoList",
       "id": "flake:7db9c3a8d41516de940117aa3705608e5a330f14fe5d1f8927aa17dc9dcc8ce3",
@@ -8156,7 +8157,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testgitadaptergomanifestinventorymatchesnativegolist",
       "fixBranch": {
         "name": "",
         "commit": "",
@@ -10966,6 +10967,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-07T22:39:19Z",
       "testUnit": "metasystem/cmd/metasystem",
       "testName": "TestGitAdapterGoManifestInventoryMatchesNativeGoList",
       "id": "flake:7db9c3a8d41516de940117aa3705608e5a330f14fe5d1f8927aa17dc9dcc8ce3-2",
@@ -11019,7 +11021,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-cmd-metasystem-testgitadaptergomanifestinventorymatchesnativegolist",
       "fixBranch": {
         "name": "",
         "commit": "",
