@@ -3,6 +3,7 @@ package proofrun
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -126,6 +127,7 @@ func TestHostResourceCapacityWaitsWithoutOwningSlot(t *testing.T) {
 		checkHostCapacityWaitObservesCallerFence(t, ctx)
 	})
 	t.Run("fixture_namespace_census_skips_other_fixture_launchers", checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers)
+	t.Run("legacy_launch_ignores_an_unrelated_launcher", checkLegacyLaunchIgnoresAnUnrelatedLauncher)
 	t.Run("fixture_census_authority", func(t *testing.T) {
 		fakeRoot, realRoot := t.TempDir(), t.TempDir()
 		for _, fixture := range []struct{ root, mode string }{{fakeRoot, "fake"}, {realRoot, "real"}} {
@@ -826,6 +828,144 @@ func checkFixtureNamespaceCensusSkipsOtherFixtureLaunchers(t *testing.T) {
 	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", "")
 	if count, known, err := resourceLegacyLauncherCount(readers, ownRoot, nil); err != nil || !known || count != 5 {
 		t.Fatalf("a fixture root outside a selected namespace counted %d known=%t err=%v, want all 5", count, known, err)
+	}
+}
+
+func checkLegacyLaunchIgnoresAnUnrelatedLauncher(t *testing.T) {
+	root, authority := t.TempDir(), t.TempDir()
+	for _, fixture := range []struct{ root, mode string }{{root, "codex"}, {authority, "fake"}} {
+		if err := os.WriteFile(filepath.Join(fixture.root, "metasystem.conf"), []byte("metasystem.runtimes="+fixture.mode+"\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	decoy := identity.Exact{Pid: 681913, StartedAt: time.Date(2026, 11, 7, 4, 0, 0, 0, time.UTC),
+		Argv: []string{"/fixture/bin/metasystem", "test", "run", "--root", root}, ArgvKnown: true}
+	readers := deterministicTestLoadReaders()
+	readers.launchers, readers.fixtureNamespaceLaunchers = nil, nil
+	readers.prober = &censusProber{processes: map[int64]identity.Exact{decoy.Pid: decoy}, calls: map[int64]int{}}
+	readers.processes = identity.FixedProcessTable{{Pid: decoy.Pid, Group: decoy.Pid, Parent: 1}}
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_TEST_DIR", filepath.Join(t.TempDir(), "host-admission"))
+	t.Setenv("METASYSTEM_PROOF_ADMISSION_FIXTURE_ROOT", authority)
+	admission, err := hostAdmissionDirectory()
+	if err != nil {
+		t.Fatal(err)
+	}
+	host := t.TempDir()
+	if err := os.Chmod(host, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	readers.hostOwnAdmission = host
+	writeMarker := func(directory string, exact identity.Exact) string {
+		t.Helper()
+		data, err := json.Marshal(processIdentity(exact, 0))
+		if err != nil {
+			t.Fatal(err)
+		}
+		marker := filepath.Join(directory, fmt.Sprintf("managed-%d.json", exact.Pid))
+		if err := os.WriteFile(marker, data, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = os.Remove(marker) })
+		return marker
+	}
+	checkCount := func(label, sampleRoot string, want int) {
+		t.Helper()
+		if count, known, err := resourceLegacyLauncherCount(readers, sampleRoot, nil); err != nil || !known || count != want {
+			t.Fatalf("%s: legacy launcher census = %d known=%t err=%v, want %d", label, count, known, err, want)
+		}
+	}
+	marker := writeMarker(host, decoy)
+	checkCount("a: real root, host-managed decoy", root, 0)
+	checkCount("b: fixture root, host-managed real decoy", authority, 0)
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	checkCount("b: fixture root, unmanaged real decoy", authority, 1)
+	writeMarker(host, decoy)
+
+	conf := filepath.Join(root, "admission.conf")
+	if err := os.WriteFile(conf, []byte(AdmissionCapKey+"=1\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	waited := false
+	ctx := WithHostResourceWaitObserver(t.Context(), func() { waited = true })
+	lease, err := acquireHostResourcesWith(ctx, readers, admission, root, conf, "heavy", nil, func() error {
+		if waited {
+			return errors.New("the test namespace waited on a host-managed launcher")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaseFiles := lease.Files()
+	t.Cleanup(func() {
+		if err := lease.Close(); err != nil {
+			t.Error(err)
+		}
+		for _, file := range leaseFiles {
+			if strings.HasPrefix(filepath.Base(file.Name()), "lease-heavy-") {
+				if err := os.Remove(file.Name()); err != nil {
+					t.Error(err)
+				}
+			}
+		}
+	})
+	if waited {
+		t.Fatal("c: host resources waited on a host-managed launcher")
+	}
+	if err := MarkHostResourcesClean(lease.Files()); err != nil {
+		t.Fatal(err)
+	}
+	if err := lease.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Remove(marker); err != nil {
+		t.Fatal(err)
+	}
+	checkCount("d: missing marker", root, 1)
+	stale := decoy
+	stale.StartedAt = stale.StartedAt.Add(-time.Hour)
+	writeMarker(host, stale)
+	checkCount("d: stale marker", root, 1)
+	writeMarker(host, decoy)
+	if err := os.Chmod(host, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(host, 0o700) })
+	checkCount("d: untrusted host directory", root, 1)
+	if err := os.Chmod(host, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	readers.hostOwnAdmission = ""
+	selectedMarker := writeMarker(admission, decoy)
+	checkCount("e: selected directory's managed decoy", root, 0)
+	if err := os.Remove(selectedMarker); err != nil {
+		t.Fatal(err)
+	}
+
+	readers.hostOwnAdmission = host
+	lane, testBinary, self, sibling := decoy, decoy.Pid+1, decoy.Pid+2, decoy
+	lane.Argv = []string{"/fixture/bin/metasystem", "proof-run", "launch", "--root", root}
+	sibling.Pid = decoy.Pid + 3
+	sibling.Argv = []string{"/fixture/bin/metasystem", "proof-run", "launch", "--root", authority}
+	own := lane
+	own.Pid = self
+	testProcess := identity.Exact{Pid: testBinary, StartedAt: decoy.StartedAt, Argv: []string{"/fixture/proofrun.test"}, ArgvKnown: true}
+	writeMarker(host, lane)
+	readers.prober = &censusProber{processes: map[int64]identity.Exact{lane.Pid: lane, testBinary: testProcess, self: own, sibling.Pid: sibling}, calls: map[int64]int{}}
+	readers.processes = identity.FixedProcessTable{
+		{Pid: lane.Pid, Group: lane.Pid, Parent: 1},
+		{Pid: testBinary, Group: lane.Pid, Parent: lane.Pid},
+		{Pid: self, Group: lane.Pid, Parent: testBinary},
+		{Pid: sibling.Pid, Group: lane.Pid, Parent: testBinary},
+	}
+	if count, known := countProofLaunchers(readers, self); !known || count != 0 {
+		t.Fatalf("f: launchers beneath the host-managed ancestor counted = %d known=%t, want 0", count, known)
+	}
+	if nested, known := nestedProofLauncher(readers, self); !known || !nested {
+		t.Fatalf("f: launch beneath the host-managed ancestor nested=%t known=%t, want true, true", nested, known)
 	}
 }
 

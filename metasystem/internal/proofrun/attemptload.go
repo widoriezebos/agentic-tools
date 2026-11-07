@@ -58,6 +58,9 @@ type loadReaders struct {
 	// processes is the process table the launcher census reads every pid
 	// and each pid's parent from: the kernel's in production.
 	processes identity.ProcessTable
+	// hostOwnAdmission overrides the host's own marker directory for this call.
+	// Empty uses the binary's host admission directory.
+	hostOwnAdmission string
 
 	// fixtureNamespaceLaunchers is the census an engine inside a selected
 	// fixture admission namespace reads: every launcher launchers counts
@@ -325,6 +328,7 @@ func familyHostSlots(readers loadReaders, directory string, self int64) int {
 type processRow struct {
 	pid, parent int64
 	launcher    bool
+	hostManaged bool
 	argv        []string
 }
 
@@ -338,8 +342,11 @@ type processRow struct {
 // namespace cannot see: while it waits for capacity it is a managed process
 // there and an unmanaged launcher here. Counting it made concurrent fixture
 // namespaces (the scenarios of one bed, or beds on two seats) wait on each
-// other's waiting launchers forever. Real launchers still count, so a
-// fixture never masks production load.
+// other's waiting launchers forever. Real launchers still count unless the
+// host's own namespace marks them managed. Its slots count those managed
+// launchers, and a test namespace does not share those slots. Counting them
+// again here can make a test wait on host work that is waiting for the test.
+// A host-managed launcher still anchors the launchers beneath it (finding 553).
 func hostLauncherCensus(readers loadReaders, root string, self int64) (int, bool) {
 	if _, selected, err := FixtureHostAdmissionDirectory(root); err == nil && selected {
 		return readers.fixtureNamespaceLauncherCount(self)
@@ -355,7 +362,13 @@ func countProofLaunchers(readers loadReaders, self int64) (int, bool) {
 	if !known {
 		return 0, false
 	}
-	return len(topLevelLauncherRows(rows, self)), true
+	count := 0
+	for _, row := range topLevelLauncherRows(rows, self) {
+		if !row.hostManaged {
+			count++
+		}
+	}
+	return count, true
 }
 
 // countProofLaunchersOutsideFixtures is countProofLaunchers without the
@@ -367,7 +380,7 @@ func countProofLaunchersOutsideFixtures(readers loadReaders, self int64) (int, b
 	}
 	count := 0
 	for _, row := range topLevelLauncherRows(rows, self) {
-		if !fixtureLauncherArgv(row.argv) {
+		if !row.hostManaged && !fixtureLauncherArgv(row.argv) {
 			count++
 		}
 	}
@@ -402,6 +415,14 @@ func readProcessRows(readers loadReaders) ([]processRow, bool) {
 	if err != nil {
 		return nil, false
 	}
+	selected, _ := hostAdmissionDirectory()
+	host := readers.hostOwnAdmission
+	if host == "" {
+		host, _ = resolveHostOwnAdmissionPath(hostAdmissionDirectoryForTest)
+	}
+	if host == selected || validateHostAdmissionDirectory(host, 0o700) != nil {
+		host = ""
+	}
 	rows := make([]processRow, 0, len(pids))
 	for _, pid := range pids {
 		row := processRow{pid: pid}
@@ -410,9 +431,10 @@ func readProcessRows(readers loadReaders) ([]processRow, bool) {
 		}
 		exact, state, err := readers.prober.Probe(pid)
 		if err == nil && state == identity.Alive && exact.ArgvKnown && isProofLauncherArgv(exact.Argv) &&
-			!managedProofProcess(exact) {
+			!managedProofProcess(exact, selected) {
 			row.launcher = true
 			row.argv = exact.Argv
+			row.hostManaged = managedProofProcessIn(host, exact)
 		}
 		rows = append(rows, row)
 	}
