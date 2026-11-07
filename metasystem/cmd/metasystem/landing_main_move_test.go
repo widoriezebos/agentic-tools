@@ -24,14 +24,17 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/verbresult"
 )
 
-// Planning runs the real CLI against the shipped contract and copied ledger
-// pages. Git supplies the exact candidate tree and installation prefix.
+// Planning runs the real CLI against the shipped contract and the main-move
+// fixture's ledger pages. Git supplies the exact tree and installation prefix.
 func TestLandingMainMoveRealContractPlanGitAdapter(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
 	install := filepath.Join(root, "metasystem")
-	for _, path := range []string{"testing.json", "go.mod", "plans/README.md", "plans/goals/backlog.md", "plans/goals/lane-first-run-fixes.md", "plans/goals/lane-rehearsal-before-landing.md"} {
+	for _, path := range []string{"testing.json", "go.mod", "plans/README.md"} {
 		writeTestingFixtureFile(t, filepath.Join(install, path), mustReadTestingFixtureFile(t, filepath.Join("..", "..", path)), 0600)
+	}
+	for _, name := range []string{"backlog.md", "lane-first-run-fixes.md", "lane-rehearsal-before-landing.md"} {
+		writeTestingFixtureFile(t, filepath.Join(install, "plans", "goals", name), mustReadTestingFixtureFile(t, filepath.Join("..", "..", "internal", "landing", "plain", "testdata", "main-move", name)), 0600)
 	}
 	writeTestingFixtureFile(t, filepath.Join(install, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0600)
 	testingFixtureGit(t, root, "init", "-q", "-b", "main")
