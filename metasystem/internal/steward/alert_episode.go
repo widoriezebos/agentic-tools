@@ -13,6 +13,7 @@ import (
 
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 )
 
@@ -54,6 +55,9 @@ type AlertInvoker struct {
 }
 
 const seatIdleAlertOwner = "seat-idle"
+
+// breachStopAlertOwner identifies retained budget-stop records; new stops use questions.
+const breachStopAlertOwner = "breach-stop"
 
 // SeatIdleIncident is the durable refusal fact written when a seat reaches
 // the bounded Stop refusal and hands work to the steward.
@@ -227,6 +231,50 @@ func AlertEpisodes(repoRoot string) ([]AlertEpisode, error) {
 	}
 	defer unlockAlerts(lock)
 	return loadAlertEpisodesUnlocked(repoRoot)
+}
+
+func resolveEndedBreachStops(repoRoot string, read func() (goal.Projection, error), now time.Time) error {
+	held, err := lockAlerts(repoRoot, lock.Exclusive)
+	if err != nil {
+		return err
+	}
+	defer unlockAlerts(held)
+	episodes, err := loadAlertEpisodesUnlocked(repoRoot)
+	if err != nil || !slices.ContainsFunc(episodes, openBreachStop) {
+		return err
+	}
+	projection, err := read()
+	if err != nil {
+		return err
+	}
+	for _, episode := range episodes {
+		if code := breachStopEnded(projection.Tree, episode.ScopeID); openBreachStop(episode) && code != "" {
+			episode.Resolved, episode.ResolvedAt = true, now.UTC()
+			episode.Cleared, episode.ClearedAt, episode.ClosedBy = true, now.UTC(), code
+			if err := saveAlertEpisode(repoRoot, episode); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func openBreachStop(e AlertEpisode) bool { return e.Owner == breachStopAlertOwner && !e.Cleared }
+
+func breachStopEnded(tree *goal.TreeGoals, id string) string {
+	if tree == nil {
+		return ""
+	}
+	if file, ok := tree.Archived(id); ok {
+		if file.State == goal.StateDone {
+			return "goal-done"
+		}
+		return "goal-abandoned"
+	}
+	if file, ok := tree.Live[id]; ok && !file.IsFencedClaim() {
+		return "goal-not-stopped"
+	}
+	return ""
 }
 
 func nextEpisodeID(digest string, episodes []AlertEpisode) string {
