@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Design page the-lane-batches-goals-and-proves-once (revision 3; Astra rounds 1 and 2 folded); units in order U1a full before push, U2 cadence off and no ordinary restart, U1b and U1c removals, the records-reuse unit, U3 named command selections, U4a readiness calculation, U4b activation after Wido adopts the gathering defaults; briefs by the seat from the page; each unit under 250 production lines
 - OpenedAt: 2026-11-08T04:49:32Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-08T04:49:43Z revision=2 opid=0W2N7HK638WKA35X9CTG11S9ZP-m1e-66a68d91 authority=proven digest=edaf4a828b55bed8ec333615896318ea31a9651daa58c0c8fa3866f6ec823e19 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-08T04:49:32Z DR0XC887QFWAF6SGCTCQQG7M0E-m1e-66a68d91 open actor=human:Wido targets=the-lane-batches-goals-and-proves-once
 - 2026-11-08T04:49:43Z 0W2N7HK638WKA35X9CTG11S9ZP-m1e-66a68d91 approve actor=human:Wido targets=the-lane-batches-goals-and-proves-once
-Integrity: sha256=ffb61f42bbfabd262712050b00752413b3e3e24b6e4e8e1d04befacc989272ae
+- 2026-11-08T04:49:55Z WG895T2E9S6R59QGWVC231RVJ5-m1e-66a68d91 set-pin actor=human:Wido targets=the-lane-batches-goals-and-proves-once
+Integrity: sha256=64b6441578d6d176f06c50bc5709d63f712084c5f83878b93cd109dc240b1b5d
