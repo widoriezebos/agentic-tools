@@ -1,0 +1,84 @@
+{
+  "canonicalRead": {
+    "id": "20261108t070747-a879a66b71-r2-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-lane-collects-its-resolution",
+      "reviewedProjectTree": "df5be9c4cd522af56100b80d7d7fe04e66cb6987105510c7113444f2b171d9b6",
+      "diffDigest": "df5be9c4cd522af56100b80d7d7fe04e66cb6987105510c7113444f2b171d9b6"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261108t070747-a879a66b71-r2-s3:1",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "E4's sentence calls the job \"the lane's build job\", though case 4 calls the same job \"the resolution job\". It also turns the brief's \"ends your turn, with no loop\" into \"ends your turn: no loop\", which the round-1 audit correction did not require.",
+        "evidence": "SKILL.md:168 says \"collection refusal does not mean the lane's build job cannot resolve\". Lines 160, 166, 182 and 184 say \"resolution job\", and line 182 is the cannot-resolve case the sentence means to rule out. The meaning and the 29-word length are kept, and the word count is 2998.",
+        "where": "metasystem/skills/landing-agent/SKILL.md",
+        "change": "Optionally write \"collection refusal does not mean the resolution job cannot resolve\". The audit already accepts \"resolution job\" at line 166, and the word count stays the same.",
+        "relation": "new"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261108t070747-a879a66b71-r2-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "1c53093b54ea3b19a00d2ea987296a519c4411c8a7b7a401481adfeda55dfe3f",
+  "schemaVersion": 1,
+  "goal": "the-lane-collects-its-resolution",
+  "unit": "U5",
+  "subject": {
+    "commit": "bdf6e2202c46acb08be9b0f93cb49323048afae2",
+    "parent": "787809b9ee1626eef87934bfc6ef9f4ab6f29053",
+    "tree": "03dc922b3d705b4e70232afc0e9e65aeb02c8434",
+    "patchDigest": "df5be9c4cd522af56100b80d7d7fe04e66cb6987105510c7113444f2b171d9b6",
+    "unitDigest": "6d69fce01a9ed0d044e92be657cf318fdc419d2fc55be1daf73366bff7e96f7e"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261108t070747-a879a66b71-r2-s3",
+    "closureSha256": "d912f0b0b45a312c15aaaec1cbd755be9204be18c2787994e0f09a0784ad5fdb"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "03dc922b3d705b4e70232afc0e9e65aeb02c8434",
+    "runId": "goal-read-gate-20261108t081305z-e863ad602632c499"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "7df11b99b992341e0745e5a1d445ae0d27afec9a",
+      "digest": "6a482e041007a4255c995d35fa44a19109154876a434bb713841fb9e5f0355e9"
+    },
+    {
+      "kind": "read",
+      "commit": "ad536b503cd318746bd535d28c934895ac062f88",
+      "digest": "dc02b7461148993d841ddfb941c819528416a23dbcc24f807633e8ae36da03a3"
+    },
+    {
+      "kind": "read",
+      "commit": "c1dd99f18ddc65f2cd5dee8de6a4f11b4e4f0f90",
+      "digest": "74c1483f04baa6a858e3f6961d1b1f5759b2bc8b5050266c9ab013c141cac916"
+    },
+    {
+      "kind": "read",
+      "commit": "a1e4ea467a71cc039e2b080c5c357f38d950b110",
+      "digest": "4026ed83d13e61d822882018f6f790cc1743640e6a4758454cfe35c2a7d3d103"
+    },
+    {
+      "kind": "read",
+      "commit": "461f4a113607f3e63df5617342a500698b94e059",
+      "digest": "c35c2fe477a698371f2efbd7ee37aa41460072fa27b704edad0833645bc4fba6"
+    },
+    {
+      "kind": "read",
+      "commit": "787809b9ee1626eef87934bfc6ef9f4ab6f29053",
+      "digest": "2382696da7e79db22ada7dfe1010704391a3f24c316d5503066de146ad85e2e6"
+    }
+  ],
+  "testsChanged": null,
+  "sha256": "b664154f6180bb855a55b5734ef7bbe496e634966b8b8d843e61fa0a9a71da25"
+}
