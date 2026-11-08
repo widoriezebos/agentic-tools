@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-lane-finishes-what-it-starts",
+  "unit": "U1a",
+  "subject": {
+    "commit": "3f452c2d3496675ae89997e5f923fad99f245364",
+    "parent": "8f53d45962647920015615e2a7b8ba08b2caa15a",
+    "tree": "bb3bdff00d766f1a4e7deb1a618a74798e825a45",
+    "patchDigest": "a00f20232bd47fe9351b85e9da424f2a93413700298c97d6bf79a08ecefb508c",
+    "unitDigest": "ea8e91e5f080f138bb90bf2a5c4a19bdeca744508ae647aad7611addd4d423c7"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-91346a215d6b7e2210b45558",
+    "round": 1,
+    "closureSha256": "8debe4569d04ac3b172465a13fb06f9b1cb83531ea6fba4428e7f7fd26f1cfa7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "bb3bdff00d766f1a4e7deb1a618a74798e825a45",
+    "runId": "goal-read-gate-20261108t125640z-453d1a835141e5b6"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_gate_reuse_test.go",
+      "readerWord": "reviewed by critic root code-critic-91346a215d6b7e2210b45558"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/keeper_clock_test.go",
+      "readerWord": "reviewed by critic root code-critic-91346a215d6b7e2210b45558"
+    }
+  ],
+  "sha256": "5456b36e0c7e4d4420422c1f837b5ed790ccc6e6d89b104f8e28dc4191ee9498"
+}
