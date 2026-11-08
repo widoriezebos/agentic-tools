@@ -96,7 +96,7 @@ func utcStamp(value string) bool {
 	return err == nil && parsed.Location() == time.UTC && strings.HasSuffix(value, "Z")
 }
 
-func authorizeReadItemChange(f *GoalFile, r VerbRequest, verb string) (string, error) {
+func authorizeReadItemChange(f *GoalFile, r VerbRequest, verb, parkedMissing string) (string, error) {
 	// Changing another pair's claimed goal or a parked goal is a person's act,
 	// and the person is proven, not merely named.
 	if f.State == StateClaimed && !ownPair(f.Claimed, r.Actor) {
@@ -106,8 +106,7 @@ func authorizeReadItemChange(f *GoalFile, r VerbRequest, verb string) (string, e
 		}
 	}
 	if f.State == StateParked {
-		missing := fmt.Sprintf("goal %s is parked; editing a parked goal is a human act", f.Id)
-		if err := r.requireHuman(humanAuthorityRow{Verb: verb, Name: "read items on a parked goal", Missing: missing}, humanauthority.GradeTerminal); err != nil {
+		if err := r.requireHuman(humanAuthorityRow{Verb: verb, Name: "read items on a parked goal", Missing: parkedMissing}, humanauthority.GradeTerminal); err != nil {
 			return "", err
 		}
 	}
@@ -115,6 +114,18 @@ func authorizeReadItemChange(f *GoalFile, r VerbRequest, verb string) (string, e
 		return pairMarker(f.Claimed), nil
 	}
 	return "", nil
+}
+
+func movedNoteAdmitted(source, target *GoalFile, actor Actor) bool {
+	if source.State != StateClaimed || !ownPair(source.Claimed, actor) || target.State != StateParked {
+		return false
+	}
+	for _, blocker := range target.Blocked {
+		if blocker == source.Id {
+			return true
+		}
+	}
+	return false
 }
 
 func nextReadItemID(items []ReadItem, label string) string {
@@ -165,7 +176,7 @@ func AddReadItems(r VerbRequest, id, label string, texts []string, materiality .
 			if opidLanded(file, r) {
 				return nil, AlreadyApplied{}
 			}
-			displaced, err := authorizeReadItemChange(file, r, "read-items add")
+			displaced, err := authorizeReadItemChange(file, r, "read-items add", fmt.Sprintf("Goal %s is parked; only a person can add a note to it.", id))
 			if err != nil {
 				return nil, err
 			}
@@ -263,7 +274,7 @@ func closeReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure, re
 			if opidLanded(file, r) {
 				return nil, AlreadyApplied{}
 			}
-			displaced, err := authorizeReadItemChange(file, r, "read-items close")
+			displaced, err := authorizeReadItemChange(file, r, "read-items close", fmt.Sprintf("Goal %s is parked; only a person can close its notes.", id))
 			if err != nil {
 				return nil, err
 			}
@@ -296,9 +307,17 @@ func closeReadItem(r VerbRequest, id, itemID string, closure ReadItemClosure, re
 				if target == nil {
 					return nil, fmt.Errorf("move target %s is not an open goal", reference)
 				}
-				targetDisplaced, authErr := authorizeReadItemChange(target, r, "read-items close")
-				if authErr != nil {
-					return nil, authErr
+				targetDisplaced := ""
+				if !movedNoteAdmitted(file, target, r.Actor) {
+					missing := fmt.Sprintf("Goal %s is parked; only a person can move this note there.", reference)
+					if file.State == StateClaimed && ownPair(file.Claimed, r.Actor) {
+						missing = fmt.Sprintf("Goal %s does not wait for %s; only a person can move this note there.", reference, id)
+					}
+					var authErr error
+					targetDisplaced, authErr = authorizeReadItemChange(target, r, "read-items close", missing)
+					if authErr != nil {
+						return nil, authErr
+					}
 				}
 				original := file.ReadItems[index]
 				target.ReadItems = append(target.ReadItems, ReadItem{ID: nextReadItemID(target.ReadItems, original.Read), Read: original.Read, Text: original.Text + " (moved from " + id + ")", Material: original.Material, State: ReadItemOpen, AddedAt: r.stamp()})
