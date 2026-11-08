@@ -11082,6 +11082,152 @@
         "by": "Wido",
         "why": "MacBook lane proof 20261107T154055 (3.5 h, host at a quarter of this Mac speed): git update-ref HEAD failed with a ref lock in the test bed (work_commit_impact_test.go:151) under the host I/O load; the same proof hit the 300 s exec bound in TestGitAdapterGoManifestInventoryMatchesNativeGoList (433 s, 10 s on repeat) and a 95-minute TestFrozenPublicVersionOneCorpus run (250 s on repeat); host environment, no code defect (decision 225; the MacBook lane stays paused until main is green and incidents are host-scoped)"
       }
+    },
+    {
+      "testUnit": "metasystem/internal/steward",
+      "testName": "TestAnEndedOccurrenceClosesItsAsk",
+      "id": "flake:3253da547fdd1044d564437a4d4323f9f1240fc22ebd99ac3beb08b35839cc72",
+      "identity": "flake:3253da547fdd1044d564437a4d4323f9f1240fc22ebd99ac3beb08b35839cc72",
+      "group": "metasystem/internal/steward",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T230215.206874000Z.log",
+          "classname": "metasystem/internal/steward",
+          "name": "TestAnEndedOccurrenceClosesItsAsk",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261107T230215.206874000Z",
+          "batch": "",
+          "baseCommit": "61e90325b50acb8e2ee7e61581a8e228485c113d",
+          "baseTree": "44982db599d401a1e9afd618f5bd12e25459835b",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T230215.206874000Z.log",
+          "logDigest": "",
+          "seenAt": "2026-11-08T02:17:22Z",
+          "opid": "10C4A0A1F9A22E3C1C27D03E2F-landing-41ad7d6c",
+          "where": "tip",
+          "tree": "44982db599d401a1e9afd618f5bd12e25459835b",
+          "rerun": {
+            "attempt": "20261108T012806.084684000Z",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261108T012806.084684000Z.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261108T012806.084684000Z.log.3253da547fdd1044d564437a4d4323f9f1240fc22ebd99ac3beb08b35839cc72.output",
+              "digest": "d6daa1471ca8da385f98adb6888dcd2bfcc67bd7d545d4134d1801253a02cae6",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T230215.206874000Z.log.3253da547fdd1044d564437a4d4323f9f1240fc22ebd99ac3beb08b35839cc72.output",
+            "digest": "4c615091a9b8a4f4e889b1e7d104e3d0016b463f80c5ab3aba83a6e8660f2e19",
+            "outcome": "fail"
+          },
+          "load": 5.70947265625,
+          "surfaces": [
+            "context-budget",
+            "governed-cadence",
+            "runtime-custody",
+            "seat-presence",
+            "supervision-fixture"
+          ],
+          "repeat": "whole"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-11-08T02:17:22Z",
+      "closed": null,
+      "class": "flake"
+    },
+    {
+      "testUnit": "metasystem/internal/steward",
+      "testName": "TestAnEndedOccurrenceClosesItsAsk/ready_work_gone",
+      "id": "flake:49da15e436720f92a35695cca00481a4a6a874b3e06779ff02e6d7f48a02b4a3",
+      "identity": "flake:49da15e436720f92a35695cca00481a4a6a874b3e06779ff02e6d7f48a02b4a3",
+      "group": "metasystem/internal/steward",
+      "status": "failed",
+      "failures": [
+        {
+          "report": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T230215.206874000Z.log",
+          "classname": "metasystem/internal/steward",
+          "name": "TestAnEndedOccurrenceClosesItsAsk/ready_work_gone",
+          "status": "failed",
+          "reason": ""
+        }
+      ],
+      "notRunReason": "",
+      "sightings": [
+        {
+          "attempt": "20261107T230215.206874000Z",
+          "batch": "",
+          "baseCommit": "61e90325b50acb8e2ee7e61581a8e228485c113d",
+          "baseTree": "44982db599d401a1e9afd618f5bd12e25459835b",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T230215.206874000Z.log",
+          "logDigest": "",
+          "seenAt": "2026-11-08T02:17:22Z",
+          "opid": "10C4A0A1F9A22E3C1C27D03E2F-landing-41ad7d6c",
+          "where": "tip",
+          "tree": "44982db599d401a1e9afd618f5bd12e25459835b",
+          "rerun": {
+            "attempt": "20261108T012806.084684000Z",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261108T012806.084684000Z.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261108T012806.084684000Z.log.49da15e436720f92a35695cca00481a4a6a874b3e06779ff02e6d7f48a02b4a3.output",
+              "digest": "49c122e1c87f07e6a01564f6d80cc5f7541636d9f4a98624c83ede439ac0bb33",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261107T230215.206874000Z.log.49da15e436720f92a35695cca00481a4a6a874b3e06779ff02e6d7f48a02b4a3.output",
+            "digest": "32bdd2960b4aa4f2780410f98a00f03d1a54b0b1423c7a22036cb72d2b792628",
+            "outcome": "fail"
+          },
+          "load": 5.70947265625,
+          "surfaces": [
+            "context-budget",
+            "governed-cadence",
+            "runtime-custody",
+            "seat-presence",
+            "supervision-fixture"
+          ],
+          "repeat": "whole"
+        }
+      ],
+      "owner": {
+        "machine": "",
+        "since": "",
+        "how": "",
+        "by": ""
+      },
+      "fixGoal": "",
+      "fixBranch": {
+        "name": "",
+        "commit": "",
+        "state": ""
+      },
+      "holds": [],
+      "opened": "2026-11-08T02:17:22Z",
+      "closed": null,
+      "class": "flake"
     }
   ],
   "cadence": {
