@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 from the design page (D3 c): the classified unreadable-read stop on both collectors, the retry only for transport causes, the examination journey rows; brief: the page.
 - OpenedAt: 2026-11-08T20:38:54Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-08T20:40:59Z revision=2 opid=E9XDENEE9SXSWZJZ264479J3JD-m1e-34255095 authority=proven digest=bb0d4291f9af11004f48fe9e827e03467e2019ef4f18641ff13d3f069056f84f episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-08T20:38:54Z S8DJKD95Z3WPF9JDD4MWNW4WVH-m1e-34255095 open actor=human:Wido targets=the-unit-route-runs-on-the-real-layout
 - 2026-11-08T20:40:59Z E9XDENEE9SXSWZJZ264479J3JD-m1e-34255095 approve actor=human:Wido targets=the-unit-route-runs-on-the-real-layout
-Integrity: sha256=0ffaeed70d6b93dd527f43aedc8005d1d21bf5631836db4dbc43fd63b5cb9502
+- 2026-11-08T20:43:44Z R9AFMAGFS3CYVMZ4G1X10P8H4F-m1e-34255095 set-pin actor=human:Wido targets=the-unit-route-runs-on-the-real-layout
+Integrity: sha256=71dc4de27565b7e8361956b551a950802d6c89fd0068f57d69c9ba5d2c8a2dff
