@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -77,9 +78,71 @@ func codeMoved(install, checkout, from, to string, seams ProveSeams) (bool, erro
 	return paths != "" && !recordsOnlyPaths(install, checkout, strings.Split(paths, "\n")), nil
 }
 
+func acceptableGate(gate Result) bool {
+	return gate.Result == Green || gate.Result == Skipped && gate.Static == Green
+}
+
+// batchNextStep observes unfinished work on the current batch subject.
+func batchNextStep(install, checkout string, seams ProveSeams) (bool, error) {
+	batch, err := ReadBatch(install)
+	if err != nil || batch == nil || batch.State == BatchClosed || batch.Lane.Root != checkout {
+		return false, err
+	}
+	commit, tree, err := head(seams.git, checkout)
+	if err != nil {
+		return false, err
+	}
+	for _, member := range batch.Members {
+		merged, err := checkoutGit(checkout, seams).contains(commit, member.SHA)
+		if err != nil || !merged {
+			return !merged && err == nil, err
+		}
+	}
+	gate, candidate, err := batchProofProgress(install, batch, commit, tree)
+	if err != nil {
+		return false, err
+	}
+	if candidate.Result != "" {
+		if candidate.Result != Green {
+			return false, nil
+		}
+		push, ok, err := LastPush(install)
+		return !ok || push.Tree != candidate.Tree, err
+	}
+	return acceptableGate(gate), nil
+}
+
+// batchProofProgress binds gate and candidate results to the checkout and members.
+func batchProofProgress(install string, batch *Batch, commit, tree string) (gate, candidate Result, err error) {
+	matches := func(result Result) bool {
+		return !result.Trunk && batch != nil && result.BatchID == batch.ID && result.Commit == commit && result.Tree == tree && slices.Equal(result.BatchMembers, batch.Members)
+	}
+	results, err := Results(install)
+	if err != nil {
+		return gate, candidate, err
+	}
+	for i := len(results) - 1; i >= 0; i-- {
+		if matches(results[i]) && (results[i].Result == Green || results[i].Result == Red) {
+			candidate = results[i]
+			break
+		}
+	}
+	last, ok, err := LastGate(install)
+	if ok && matches(last) {
+		gate = last
+	}
+	return gate, candidate, err
+}
+
 // RecoverMovedMain uses the same detached trunk admission as landing prove.
 // It runs before question synchronization, so a stale exception cannot gate it.
 func RecoverMovedMain(install, checkout string, seams ProveSeams) error {
+	if seams.BatchMayContinue != nil && seams.BatchMayContinue() {
+		next, err := batchNextStep(install, checkout, seams)
+		if err != nil || next {
+			return err
+		}
+	}
 	if err := seams.fetchMain(checkout); err != nil {
 		return err
 	}

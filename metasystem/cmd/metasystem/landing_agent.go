@@ -289,7 +289,8 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 		}
 	}
 
-	return lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, seams),
+	var keeper lane.AgentKeeper
+	keeper = lane.AgentKeeper{Home: home, Now: agent.now, Self: self, Sources: plain.KeeperWake(home, seams),
 		Refresh: func(now time.Time) {
 			readonly := seams
 			readonly.AgentProbe = agent.probe
@@ -338,6 +339,18 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			effects.Now = agent.now
 			_, drainErr := plain.AdvanceDrain(record.Install, record.Root, effects)
 			proof := (laneVerbOwners{plainProve: seams}).proveSeams(record.Install)
+			proof.BatchMayContinue = func() bool {
+				state, err := lane.ReadAgentState(home)
+				if err != nil || state.Barren >= 2 {
+					return false
+				}
+				for _, hold := range append([]func(string) (string, error){keeper.ProviderHold}, keeper.Holds[1:]...) {
+					if reason, err := hold(record.Root); err != nil || reason != "" {
+						return false
+					}
+				}
+				return true
+			}
 			proof.CommandForCommit = func(commit string) (string, error) {
 				return landingProofCommand(record.Install, record.Root, commit, proveCommandKey, proof.Git)
 			}
@@ -406,6 +419,7 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			waiting, err := plain.Pending(install, checkout, seams)
 			return len(waiting), err
 		}}
+	return keeper
 }
 
 // probe reads whether a landing agent runs on this computer, its process

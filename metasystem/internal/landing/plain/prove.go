@@ -218,6 +218,8 @@ type ProveSeams struct {
 	Pause func() (lane.Pause, bool)
 	// TimerHeld suppresses periodic trunk checks while a fence stands.
 	TimerHeld func() bool
+	// BatchMayContinue says the keeper can still run the batch's next step.
+	BatchMayContinue func() bool
 	// Policy resolves only the policy requested at its effect boundary.
 	Policy func(string) (PolicyValue, error)
 	// Lane reads the host registration again before a selection or admission.

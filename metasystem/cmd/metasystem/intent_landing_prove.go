@@ -405,7 +405,9 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 	}
 	words := provedWords(result.Commit, result.Tree)
 	if result.Result == plain.Skipped {
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: words + ": " + result.Reason})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result,
+			Summary: words + " skipped the cheap gate (" + result.Reason + "); the batch still needs landing prove before landing push",
+			next:    inv.publicArgv("landing", "prove"), nextReason: "after the last recorded member is merged"})
 	}
 	if result.Result == plain.Green {
 		if result.Trunk {
@@ -424,10 +426,13 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 			return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, view: landingDone(summary, result.Log)})
 		}
 		summary := words + " is proven green" + landingRedReason(result.Reason) + "; landing push may put it on main"
+		var next []string
+		nextReason := ""
 		if seams.Gate {
 			summary = words + " passed the cheap gate" + landingRedReason(result.Reason) + "; the batch still needs landing prove before landing push"
+			next, nextReason = inv.publicArgv("landing", "prove"), "after the last recorded member is merged"
 		}
-		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, view: landingDone(summary, result.Log)})
+		return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Data: result, Summary: summary, next: next, nextReason: nextReason, view: landingDone(summary, result.Log)})
 	}
 	return inv.render(intentResult{Outcome: intentFailed, code: 1, Targets: targets, Data: result,
 		Summary: words + " is proven red" + landingRedReason(result.Reason) + "; its log is " + result.Log,
