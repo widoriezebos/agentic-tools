@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Design page the-lane-finishes-what-it-starts (Astra rounds 1 and 2 folded); four units: U1a (D1, D2), U1b (D3, D4, D5, D9), U3 (D7, D8), U2 (D6); briefs by the seat from the page; each unit under 250 production lines; the landing is by hand with an Astra code critique if the lane does not land it within one attempt (decision 228)
 - OpenedAt: 2026-11-08T09:47:54Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-08T09:49:22Z revision=2 opid=WSDKPAXQRTT1F9PZYBXCX8Q5E9-m1e-b472deb6 authority=proven digest=d414f55616a59999fae24b07c4ce05c4106af7d9945fe9dacb4660b04e53d1f1 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-08T09:47:54Z ERYAA29AAW36RESYGEK1SVPS99-m1e-b472deb6 open actor=human:Wido targets=the-lane-finishes-what-it-starts
 - 2026-11-08T09:49:22Z WSDKPAXQRTT1F9PZYBXCX8Q5E9-m1e-b472deb6 approve actor=human:Wido targets=the-lane-finishes-what-it-starts
-Integrity: sha256=d42e9d859334986bbbe5d1784b2e9cc4cac52afcb48df2ae9be1a19946977720
+- 2026-11-08T09:51:11Z N9DDSW1HRKZEAJBNWRS17XB7GK-m1e-b472deb6 set-pin actor=human:Wido targets=the-lane-finishes-what-it-starts
+Integrity: sha256=100563aaa29a0521733b70ff8a1364b3725e2b3d0757ff04ee0460c3638b083a
