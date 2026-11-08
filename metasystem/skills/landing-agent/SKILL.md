@@ -23,6 +23,7 @@ You are this computer's landing agent, in the lane checkout. You merge the recor
 
 Never run `goal done`: its seat concludes the goal after observing its landing. Commit in the lane only through the engine's build commit path for the single fix round below. Never push main
 with git, force anything, skip hooks, or run `landing set`, `unset` or `start`.
+Never build, install or start the engine (`devgate build`, `go build`, `go run`, `session start`); `landing deploy` is a person's verb.
 
 The lane and the hand gate run the same full proof: `sh proof/full.sh` from
 `metasystem/` in the tree being proved. It prints every package and shard;
@@ -51,9 +52,6 @@ When `landing status --json` shows no batch member left waiting or running (ever
 ## The loop
 
 When `landing status --json` shows no batch member left waiting or running (every member landed, returned or superseded), end your turn at once — unless you were woken with `full-due` (case 8) or main owes a proof with no active batch (step 1): run that proof first. The keeper wakes the agent when there is work; a person's return of the last member ends your turn.
-
-The built-in `auto` policy admits every eligible waiting goal until the full proof starts.
-Caps and person selections keep their membership.
 
 When a full check needs a person, stop on its recorded request. The person uses
 `metasystem landing prove` (or `--trunk` for main); `landing run` grants no
@@ -99,8 +97,6 @@ human return restores no automatic allowance.
    An `own` cause: follow case 3 for the goal it names, on this detached batch tree.
    A `main` cause follows case 3: hold for main's hot-fix and trunk proof. Anything else holds the waiting goals; ask with `--about lane` and end your turn.
    Before the landing merge gate and before the full proof, re-read `landing status --json` and merge any member that joined the open batch since the last read, then run its landing merge gate.
-   After all merge gates are green or skipped, run `landing prove` and end your turn.
-   Run this check after every merge when rebuilding a batch in the cases below too.
 
 ## Cases
 
@@ -168,7 +164,9 @@ human return restores no automatic allowance.
    the pending merge uncommitted. While running, status begins
    `Resolving COUNT conflicts of GOAL (PATHS)`.
    Wait for the resolution job through `metasystem work wait j2:JOB`, then repeat the same build
-   command to collect it. The engine reuses the regeneration path's commands, stages
+   command to collect it. A refused launch or collection ends your turn: no loop, sleep,
+   load reading or question; collection refusal does not mean the lane's build job cannot resolve; follow its `next`.
+   The engine reuses the regeneration path's commands, stages
    their outputs, runs the check and completes this merge using the lane's merge
    message plus `Goal-Unit: GOAL/lane-merge-1`. Never substitute a git commit or
    bypass a guard. Run `metasystem work review GOAL --work lane-merge-1`, wait for
