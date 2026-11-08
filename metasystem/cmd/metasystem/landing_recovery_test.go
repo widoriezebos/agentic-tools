@@ -106,6 +106,12 @@ func TestLandingKeeperProvesMovedMainBeforeExceptionGitAdapter(t *testing.T) {
 			b.owners.landing.mainEndpoint, b.owners.landing.machine = owners.mainEndpoint, owners.machine
 			b.owners.landing.now = func() time.Time { return laneTestNow }
 			seams := plain.ProveSeams{Room: noRoomForVerbFixture, Now: func() time.Time { return laneTestNow }, BudgetHome: b.home,
+				Git: func(dir string, args ...string) (string, error) {
+					if dir == register.root() && strings.Join(args, " ") == "rev-parse --verify --quiet "+goal.LocalLedgerBranch+"^{commit}" {
+						return register.repo.canonical, nil
+					}
+					return plain.Git(dir, args...)
+				},
 				Lane: func() (lane.Record, error) { r, _, err := lane.Read(b.home); return r, err },
 				Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) {
 					es, problems := goal.ParseTrunkRed(register.repo.commit(register.repo.canonical).files["plans/goals/trunk-red.json"])

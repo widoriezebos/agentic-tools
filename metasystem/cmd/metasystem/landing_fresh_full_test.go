@@ -62,6 +62,8 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 				return listed, nil
 			}
 			switch strings.Join(args, " ") {
+			case "rev-parse --verify --quiet " + goal.LocalLedgerBranch + "^{commit}":
+				return register.repo.canonical, nil
 			case "symbolic-ref --quiet --short HEAD":
 				return "main", nil
 			case "rev-parse --verify MERGE_HEAD^{commit}":

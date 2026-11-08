@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/project"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -81,45 +82,102 @@ func confirmedIncidentWrite(result goal.PublishResult, err error) error {
 }
 
 func (owners laneVerbOwners) clearLandingIncidents(installation string, proof plain.Result) error {
-	if proof.Result != plain.Green || proof.Scope != "full" || proof.FullTree != proof.Tree || proof.FullAt != proof.At || strings.HasPrefix(proof.Reason, "inherits green from tree ") {
+	full := proof.Scope == "full" && proof.FullTree == proof.Tree && proof.FullAt == proof.At
+	if !proof.Executed() || proof.Result != plain.Green || !(full || proof.Trunk && proof.Scope == "scoped") {
 		return nil
 	}
 	r, err := owners.incidentRequest(installation)
 	if err != nil {
 		return err
 	}
-	var files map[string][]byte
-	if r.Endpoint.Repository != nil {
-		files, err = r.Endpoint.Repository.Files(proof.Commit, "plans/goals/trunk-red.json")
-	} else {
-		files, err = goal.ReadCommitGoals(r.Endpoint.Root, proof.Commit)
+	seams := owners.proveSeams(installation)
+	read := func(commit string) ([]goal.TrunkRedEntry, error) {
+		if r.Endpoint.Repository != nil {
+			files, err := r.Endpoint.Repository.Files(commit, "plans/goals/trunk-red.json")
+			if err != nil {
+				return nil, err
+			}
+			if data, present := files["plans/goals/trunk-red.json"]; present {
+				entries, problems := goal.ParseTrunkRed(data)
+				if len(problems) > 0 {
+					return nil, fmt.Errorf("main's incident register cannot be read: %v", problems)
+				}
+				return entries, nil
+			}
+			return nil, nil
+		}
+		checkout, err := seams.Git(r.Endpoint.Root, "rev-parse", "--show-toplevel")
+		if err != nil {
+			return nil, err
+		}
+		return plain.ReadIncidents(installation, strings.TrimSpace(checkout), commit, seams.Git)
 	}
+	entries, err := read(proof.Commit)
+	if err != nil || len(entries) == 0 {
+		return err
+	}
+	currentRef := "refs/remotes/origin/main"
+	if r.Endpoint.LocalMode() {
+		currentRef = goal.LocalLedgerBranch
+	}
+	main, err := seams.Git(r.Endpoint.Root, "rev-parse", "--verify", "--quiet", currentRef+"^{commit}")
 	if err != nil {
 		return err
 	}
-	data, present := files["plans/goals/trunk-red.json"]
-	if !present {
-		return nil
-	}
-	entries, problems := goal.ParseTrunkRed(data)
-	if len(problems) > 0 {
-		return fmt.Errorf("main's incident register cannot be read: %v", problems)
+	closed := map[string]bool{}
+	if main = strings.TrimSpace(main); main != proof.Commit {
+		current, err := read(main)
+		if err != nil {
+			return err
+		}
+		for _, entry := range current {
+			if entry.Closed != nil {
+				closed[entry.ID] = true
+			}
+		}
 	}
 	clear := owners.clearMain
 	if clear == nil {
 		clear = goal.ClearTrunkReds
 	}
 	var clears []goal.TrunkRedClearArgs
+	applicable := func(tip string) error {
+		if tip == proof.Commit {
+			return nil
+		}
+		if full {
+			main, err := seams.Git(installation, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(main) == proof.Commit {
+				return nil
+			}
+		}
+		checkout, err := seams.Git(r.Endpoint.Root, "rev-parse", "--show-toplevel")
+		if err != nil {
+			return err
+		}
+		applies, err := plain.ProofStillApplies(installation, strings.TrimSpace(checkout), proof.Commit, tip, seams)
+		if err == nil && !applies {
+			err = goal.Coded("TRUNK_RED_PROOF_STALE", fmt.Errorf("the green no longer applies to main; run metasystem landing prove"))
+		}
+		return err
+	}
 	for _, entry := range entries {
-		if entry.Closed != nil || !strings.HasPrefix(entry.Identity, "red:") || entry.EntryClass() != goal.TrunkRedClassTrunkRed {
+		if entry.Closed != nil || closed[entry.ID] || !strings.HasPrefix(entry.Identity, "red:") || entry.EntryClass() != goal.TrunkRedClassTrunkRed || !full && !slices.Contains(proof.Ran, entry.Group) {
 			continue
 		}
-		clears = append(clears, goal.TrunkRedClearArgs{Entry: entry.ID, Attempt: proof.Attempt, BaseCommit: proof.Commit, BaseTree: proof.Tree, Group: entry.Group, ExpectedEntry: entry, Executed: true})
+		clears = append(clears, goal.TrunkRedClearArgs{Entry: entry.ID, Attempt: proof.Attempt, BaseCommit: proof.Commit, BaseTree: proof.Tree, Group: entry.Group, ExpectedEntry: entry, Executed: true, Applicable: applicable})
 	}
 	if len(clears) == 0 {
 		return nil
 	}
 	result, err := clear(r, clears)
+	if result.Code == "TRUNK_RED_PROOF_STALE" || goal.RefusalCode(err) == "TRUNK_RED_PROOF_STALE" {
+		fmt.Fprintln(os.Stderr, "the green no longer applies to main; run metasystem landing prove")
+		return nil
+	}
 	if err := confirmedIncidentWrite(result, err); err != nil {
 		return err
 	}

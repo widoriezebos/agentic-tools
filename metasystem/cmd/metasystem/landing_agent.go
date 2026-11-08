@@ -65,6 +65,7 @@ func landingLaneCheckout(home func() (string, error)) func() (launch.LaneCheckou
 type landingAgent struct {
 	// proofEffects are the lane Git and process boundaries; zero uses the host.
 	proofEffects plain.ProveSeams
+	mainEndpoint func(string) (goal.Endpoint, error)
 	home         string
 	manager      func() *launch.Manager
 	// settings are the launch settings of the installation at a state root.
@@ -77,7 +78,7 @@ type landingAgent struct {
 }
 
 func newLandingAgent() landingAgent {
-	return landingAgent{manager: func() *launch.Manager { return launchManager() }, settings: installationSettings, now: time.Now, nonce: landingNonce, machine: goal.ResolveMachine}
+	return landingAgent{manager: func() *launch.Manager { return launchManager() }, settings: installationSettings, now: time.Now, nonce: landingNonce, machine: goal.ResolveMachine, mainEndpoint: mainPublicationEndpoint}
 }
 
 func landingNonce() (string, error) {
@@ -338,7 +339,8 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 			effects := agent.proofEffects
 			effects.Now = agent.now
 			_, drainErr := plain.AdvanceDrain(record.Install, record.Root, effects)
-			proof := (laneVerbOwners{plainProve: seams}).proveSeams(record.Install)
+			owners := laneVerbOwners{plainProve: seams, machine: machine, now: agent.now, mainEndpoint: agent.mainEndpoint}
+			proof := owners.proveSeams(record.Install)
 			proof.BatchMayContinue = func() bool {
 				state, err := lane.ReadAgentState(home)
 				if err != nil || state.Barren >= 2 {
@@ -358,7 +360,15 @@ func newLandingAgentKeeper(self, home string, agent landingAgent) lane.AgentKeep
 				return err
 			}
 			recoveryErr := plain.RecoverMovedMain(record.Install, record.Root, proof)
-			drainErr = errors.Join(drainErr, recoveryErr, readErr)
+			var reconcileErr error
+			if agent.mainEndpoint != nil {
+				var greens []plain.Result
+				greens, reconcileErr = plain.MainGreenToReconcile(record.Install, record.Root, proof)
+				for _, green := range greens {
+					reconcileErr = errors.Join(reconcileErr, owners.clearLandingIncidents(record.Install, green))
+				}
+			}
+			drainErr = errors.Join(drainErr, recoveryErr, readErr, reconcileErr)
 			questionErr := plain.SyncPolicyQuestion(record.Install, machine, agent.now(), seams)
 			if questionErr != nil {
 				questionErr = fmt.Errorf("synchronize the lane's stop question in %s: %w; repair that question source and observe the lane again", plain.Dir(record.Install), questionErr)

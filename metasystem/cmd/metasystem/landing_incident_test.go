@@ -50,6 +50,8 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 	lane.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
 		joined := strings.Join(args, " ")
 		switch {
+		case joined == "rev-parse --verify --quiet "+goal.LocalLedgerBranch+"^{commit}":
+			return register.repo.canonical, nil
 		case joined == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}" || joined == "rev-parse --verify origin/main^{commit}":
 			return mainCommit, nil
 		case joined == "rev-parse --verify "+mainCommit+"^{tree}":

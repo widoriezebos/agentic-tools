@@ -18,6 +18,7 @@ import (
 // dependencies whose behavior a fixture controls.
 func newTestLandingAgent(configure func(*landingAgent)) landingAgent {
 	agent := newLandingAgent()
+	agent.mainEndpoint = nil
 	configure(&agent)
 	return agent
 }
