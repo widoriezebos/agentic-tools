@@ -198,8 +198,8 @@ human return restores no automatic allowance.
    On `main_move.kind: code`, check out the new main, merge the same recorded batch members,
    and run `landing prove --gate --wait` and read `last_gate`: green or skipped continues to
    `landing prove`; none means the merge gate has not run for this merge. When other files moved and
-   the batch's full proof is under an hour old, this proof runs only the test groups that read
-   what main gained; push when the proof at the batch's depth is green. An inherited or scoped green older than an hour
+   only records changed since the batch's full proof, this proof runs only the test groups that read
+   what main gained; push when the proof at the batch's depth is green. A code change since that full proof
    needs a full proof. A refused record merge follows this same rebuild path.
    Lines that began waiting after sealing are not added: proven work is pushed first, and
    they are the next batch.

@@ -69,7 +69,7 @@ func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T
 				if name == "legacy push" {
 					proof.Scope = ""
 				}
-				due = name != "full push"
+				due = name != "full push" && name != "scoped push" && name != "inherited push"
 			}
 			var records []string
 			if name != "never" {

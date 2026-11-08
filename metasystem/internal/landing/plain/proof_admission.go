@@ -102,7 +102,7 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 // An empty scope leaves the existing scoped-proof selector in charge.
 func BatchProofDepth(install, checkout string, running Running, seams ProveSeams) (string, string) {
 	previous, found, _ := resultFor(seams.resultsPath(install), running.Tree)
-	if reason, _ := overdueBatch(install, running.BatchID, seams); reason != "" {
+	if reason, since := overdueBatch(install, running.BatchID, seams); reason != "" && !batchFullSince(install, running.BatchID, since) {
 		return "full", reason
 	}
 	if found && strings.HasPrefix(previous.ScopeReason, "full check pending:") {

@@ -13,6 +13,55 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 )
 
+func newFoldProofBed(t *testing.T, name string, mainAt time.Time, cadence string) (*bed, string, string, Result) {
+	t.Helper()
+	b := newBed(t)
+	if cadence != "" {
+		seed := filepath.Join(b.root, "seed")
+		b.write(filepath.Join(seed, "metasystem/metasystem.conf"), "metasystem.template=true\nproof.trunk-every="+cadence+"\n")
+		b.git(seed, "add", "metasystem/metasystem.conf")
+		b.git(seed, "commit", "-qm", "set the daily check interval")
+		b.git(seed, "push", "--quiet", "origin", "main")
+		b.git(b.checkout, "pull", "--quiet", "--ff-only")
+	}
+	mainCommit, mainTree := b.git(b.checkout, "rev-parse", "HEAD"), b.git(b.checkout, "rev-parse", "HEAD^{tree}")
+	sha := b.seat("seat-a", "goal-a")
+	b.handIn("seat-a", "goal-a", sha)
+	proven := b.merge("goal-a")
+	provenTree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
+	var batch Batch
+	if err := json.Unmarshal(mainMoveFixture(t, "batch.json"), &batch); err != nil {
+		t.Fatal(err)
+	}
+	batch.Lane.Root, batch.Lane.Install = b.checkout, b.install
+	batch.Base, batch.State = b.originMain(), BatchRunning
+	batch.Members = []GoalSHA{{Goal: "goal-a", SHA: sha}}
+	if err := writeBatch(b.install, &batch); err != nil {
+		t.Fatal(err)
+	}
+	var fixture Result
+	if err := json.Unmarshal(mainMoveFixture(t, "results.jsonl"), &fixture); err != nil {
+		t.Fatal(err)
+	}
+	at := bedNow.Format(time.RFC3339)
+	mainTime := mainAt.Format(time.RFC3339)
+	// Main's own full check sets its clock.
+	trunk := fixture
+	trunk.Trunk, trunk.Commit, trunk.Tree, trunk.FullTree, trunk.At, trunk.FullAt, trunk.Attempt, trunk.Goals = true, mainCommit, mainTree, mainTree, mainTime, mainTime, "main-full", nil
+	result := fixture
+	result.Trunk, result.Commit, result.Tree, result.FullTree, result.At, result.FullAt, result.Attempt = false, proven, provenTree, provenTree, at, at, "batch-full"
+	result.BatchID, result.BatchMembers, result.Goals = batch.ID, batch.Members, batch.Members
+	if name == "a scoped batch" {
+		result.Scope, result.Base, result.FullTree = "scoped", mainTree, mainTree
+	}
+	for _, row := range []Result{trunk, result} {
+		if err := appendLine(resultsPath(b.install), row); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return b, proven, provenTree, result
+}
+
 // Real Git merges main's records into the proven batch and publishes the
 // fold, as landing push does; main's keeper then observes the pushed tree.
 func TestAFoldOfGoalPagesKeepsTheBatchsGreen(t *testing.T) {
@@ -20,41 +69,8 @@ func TestAFoldOfGoalPagesKeepsTheBatchsGreen(t *testing.T) {
 	for _, name := range []string{"goal pages", "a scoped batch", "a design page", "a page that does not parse", "the folded tree is red", "a refused publication"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			b := newBed(t)
-			mainCommit, mainTree := b.git(b.checkout, "rev-parse", "HEAD"), b.git(b.checkout, "rev-parse", "HEAD^{tree}")
-			sha := b.seat("seat-a", "goal-a")
-			b.handIn("seat-a", "goal-a", sha)
-			proven := b.merge("goal-a")
-			provenTree := b.git(b.checkout, "rev-parse", "HEAD^{tree}")
-			var batch Batch
-			if err := json.Unmarshal(mainMoveFixture(t, "batch.json"), &batch); err != nil {
-				t.Fatal(err)
-			}
-			batch.Lane.Root, batch.Lane.Install = b.checkout, b.install
-			batch.Base, batch.State = b.originMain(), BatchRunning
-			batch.Members = []GoalSHA{{Goal: "goal-a", SHA: sha}}
-			if err := writeBatch(b.install, &batch); err != nil {
-				t.Fatal(err)
-			}
-			var fixture Result
-			if err := json.Unmarshal(mainMoveFixture(t, "results.jsonl"), &fixture); err != nil {
-				t.Fatal(err)
-			}
+			b, proven, provenTree, result := newFoldProofBed(t, name, bedNow, "")
 			at := bedNow.Format(time.RFC3339)
-			// Main's own full check sets its four-hour clock.
-			trunk := fixture
-			trunk.Trunk, trunk.Commit, trunk.Tree, trunk.FullTree, trunk.At, trunk.FullAt, trunk.Attempt, trunk.Goals = true, mainCommit, mainTree, mainTree, at, at, "main-full", nil
-			result := fixture
-			result.Trunk, result.Commit, result.Tree, result.FullTree, result.At, result.FullAt, result.Attempt = false, proven, provenTree, provenTree, at, at, "batch-full"
-			result.BatchID, result.BatchMembers, result.Goals = batch.ID, batch.Members, batch.Members
-			if name == "a scoped batch" {
-				result.Scope, result.Base, result.FullTree = "scoped", mainTree, mainTree
-			}
-			for _, row := range []Result{trunk, result} {
-				if err := appendLine(resultsPath(b.install), row); err != nil {
-					t.Fatal(err)
-				}
-			}
 			seed := filepath.Join(b.root, "seed")
 			var folded []string
 			for _, id := range []string{"lane-first-run-fixes", "lane-rehearsal-before-landing"} {
@@ -175,4 +191,57 @@ func TestAFoldOfGoalPagesKeepsTheBatchsGreen(t *testing.T) {
 			}
 		})
 	}
+}
+
+// Real Git publishes a fold and lets the keeper observe the inherited full time.
+func TestInheritedFoldPushPaysTheDailyClock(t *testing.T) {
+	t.Parallel()
+	b, _, _, full := newFoldProofBed(t, "goal pages", bedNow.Add(-25*time.Hour), "24h")
+	seed := filepath.Join(b.root, "seed")
+	path := filepath.Join(seed, "metasystem/plans/goals/lane-first-run-fixes.md")
+	b.write(path, string(mainMoveFixture(t, "lane-first-run-fixes.md")))
+	b.git(seed, "add", "-A")
+	b.git(seed, "commit", "-qm", "advance goal page")
+	b.git(seed, "push", "--quiet", "origin", "main")
+	pushAt := bedNow.Add(time.Minute)
+	if due, err := fullProofDue(b.install, pushAt); err != nil || !due {
+		t.Fatalf("unpublished batch paid clock: due=%v %v", due, err)
+	}
+	out, err := PushChecked(b.install, b.checkout, pushAt, nil)
+	if err != nil || !out.Changed || b.originMain() != out.Commit {
+		t.Fatalf("fold push: %+v %v", out, err)
+	}
+	proof, ok, err := ResultFor(b.install, out.Tree)
+	if err != nil || !ok || proof.Scope != "inherited" || proof.FullTree != full.FullTree || proof.FullAt != full.FullAt {
+		t.Fatalf("inherited coverage: %+v %v", proof, err)
+	}
+	last, every, err := fullProofClock(b.install)
+	if err != nil || !last.Equal(bedNow) || every != 24*time.Hour {
+		t.Fatalf("credited full time=%s every=%s: %v; want %s", last, every, err, bedNow)
+	}
+	for _, row := range []struct {
+		at  time.Time
+		due bool
+	}{{pushAt.Add(time.Minute), false}, {bedNow.Add(24*time.Hour - time.Second), false}, {bedNow.Add(24 * time.Hour), true}} {
+		if due, err := fullProofDue(b.install, row.at); err != nil || due != row.due {
+			t.Fatalf("daily clock at %s: due=%v %v; want %v", row.at, due, err, row.due)
+		}
+	}
+	observedAt := pushAt.Add(time.Minute)
+	reasons, err := wakeReasons(b.install, false, time.Time{}, observedAt)
+	if err != nil || slices.Contains(reasons, WakeFullDue) {
+		t.Fatalf("inherited push left full due: %v %v", reasons, err)
+	}
+	launches := 0
+	seams := ProveSeams{Now: func() time.Time { return observedAt },
+		Executable: func() (string, error) { return "fixture-engine", nil },
+		Incidents:  func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil },
+		Launch: func([]string, string, string) (int64, error) {
+			launches++
+			return 0, errors.New("the test counts the launch")
+		}}
+	if err := RecoverMovedMain(b.install, b.checkout, seams); err != nil || launches != 0 {
+		t.Fatalf("keeper after inherited push: launches=%d %v", launches, err)
+	}
+	t.Logf("inherited push credited %s; daily boundary holds; keeper launched no check", last)
 }

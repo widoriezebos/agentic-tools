@@ -154,6 +154,11 @@ func fullProofClock(install string) (time.Time, time.Duration, error) {
 		if proof.Result == Green && !proof.didNotRun() && proof.Scope == "full" && full && pushedAt.After(last) {
 			last = pushedAt
 		}
+		if proof.Result == Green && !proof.didNotRun() && (proof.Scope == "scoped" || proof.Scope == "inherited") && len(proof.Unproved) == 0 && proof.FullTree != "" {
+			if at, err := time.Parse(time.RFC3339, proof.FullAt); err == nil && at.After(last) {
+				last = at
+			}
+		}
 	}
 	return last, every, nil
 }

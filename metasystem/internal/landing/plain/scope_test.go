@@ -280,9 +280,9 @@ func TestARecordsOnlyBatchIsProvedScopedOnMainsGreen(t *testing.T) {
 	}
 }
 
-func TestARecordsOnlyBatchWithoutARecentGreenIsFull(t *testing.T) {
+func TestARecordsOnlyBatchWithoutAUsableMainGreenIsFull(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"missing", "one hour old", "stale", "scoped", "red", "unreadable time", "not on main"} {
+	for _, name := range []string{"missing", "future time", "scoped", "red", "unreadable time", "not on main"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newScopeBed(t)
@@ -293,10 +293,8 @@ func TestARecordsOnlyBatchWithoutARecentGreenIsFull(t *testing.T) {
 				t.Fatal(err)
 			}
 			switch name {
-			case "one hour old":
-				b.base.At = bedNow.Add(-time.Hour).Format(time.RFC3339)
-			case "stale":
-				b.base.At = bedNow.Add(-61 * time.Minute).Format(time.RFC3339)
+			case "future time":
+				b.base.At = bedNow.Add(time.Minute).Format(time.RFC3339)
 			case "scoped":
 				b.base.Scope = "scoped"
 			case "red":
@@ -309,8 +307,8 @@ func TestARecordsOnlyBatchWithoutARecentGreenIsFull(t *testing.T) {
 				b.save(t, b.base)
 			}
 			result := b.run(t)
-			if result.Result != Green || result.Scope != "full" || result.Base != "" || (name != "red" && !strings.Contains(result.ScopeReason, "no full green on main under an hour")) || result.FullTree != result.Tree || result.FullAt != result.At || len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "full" {
-				t.Fatalf("records without a recent green: %+v, calls %d", result, len(b.calls))
+			if result.Result != Green || result.Scope != "full" || result.Base != "" || (name != "red" && !strings.Contains(result.ScopeReason, "records-only batch has no full green on main")) || result.FullTree != result.Tree || result.FullAt != result.At || len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "full" {
+				t.Fatalf("records without a usable main green: %+v, calls %d", result, len(b.calls))
 			}
 		})
 	}
@@ -335,9 +333,9 @@ func TestABatchWithACodePathKeepsItsFullFirstProof(t *testing.T) {
 	}
 }
 
-func TestAScopedChainOlderThanAnHourIsFull(t *testing.T) {
+func TestAScopedChainKeepsItsFullWithNoHour(t *testing.T) {
 	t.Parallel()
-	for _, age := range []time.Duration{time.Hour, 61 * time.Minute} {
+	for _, age := range []time.Duration{time.Hour, 61 * time.Minute, 25 * time.Hour, -time.Minute} {
 		t.Run(age.String(), func(t *testing.T) {
 			t.Parallel()
 			b := newScopeBed(t)
@@ -345,12 +343,86 @@ func TestAScopedChainOlderThanAnHourIsFull(t *testing.T) {
 			b.base.FullAt = bedNow.Add(-age).Format(time.RFC3339)
 			b.save(t, b.base)
 			result := b.run(t)
-			if age > time.Hour {
-				if result.Scope != "full" || !strings.Contains(result.ScopeReason, "1h1m0s") {
-					t.Fatalf("old full proof: %+v", result)
+			if age < 0 {
+				if result.Scope != "full" || result.ScopeReason != "the batch's full check time is later than now" {
+					t.Fatalf("future full check: %+v", result)
 				}
-			} else if result.Scope != "scoped" {
-				t.Fatalf("one-hour boundary: %+v", result)
+			} else if result.Scope != "scoped" || result.FullAt != b.base.FullAt {
+				t.Fatalf("full coverage at age %s: %+v", age, result)
+			}
+		})
+	}
+}
+
+func TestBatchRecordsRefreshAfterAnHourKeepsFullCoverage(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"records refresh", "an executable change after the hour", "a changed environment", "a later unresolved red", "records-only on main's full green two hours old", "a full time later than now"} {
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b := newScopeBed(t)
+			fullAt := b.base.FullAt
+			at, err := time.Parse(time.RFC3339, fullAt)
+			if err != nil {
+				t.Fatal(err)
+			}
+			b.seams.Now = func() time.Time { return at.Add(2 * time.Hour) }
+			wantScope, wantReason := "scoped", "the batch's full check holds; only groups whose inputs cover changed paths run"
+			switch name {
+			case "an executable change after the hour":
+				b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "metasystem/internal/app.go"
+				for _, i := range []int{0, 2} {
+					b.contract.Groups[i].Inputs = append(b.contract.Groups[i].Inputs, "metasystem/internal/**")
+				}
+				b.setContract(t)
+				wantScope, wantReason = "full", "an executable input changed: metasystem/internal/app.go"
+			case "a changed environment":
+				b.seams.Command = func(cmd *exec.Cmd) error {
+					b.calls = append(b.calls, cmd)
+					fmt.Fprintln(cmd.Stdout, "landing environment new toolchain")
+					fmt.Fprintln(cmd.Stdout, "landing group plans passed 12\nlanding group shared passed 34\nLANDING-CHECKED\t0")
+					return nil
+				}
+				wantScope, wantReason = "full", "full check pending: the proof environment changed"
+			case "a later unresolved red", "records-only on main's full green two hours old":
+				b.git.batches[b.base.Commit] = ""
+				b.git.onMain = map[string]bool{b.base.Commit: true}
+				b.git.changed[[2]string{"origin/main", b.git.tree}] = "metasystem/plans/page.md"
+				wantReason = "main moved by records only; 2 checks run, the rest holds from the " + at.Local().Format("15:04") + " check"
+				if name == "a later unresolved red" {
+					red := b.base
+					red.Result, red.At = Red, at.Add(time.Minute).Format(time.RFC3339)
+					b.save(t, red)
+					wantScope, wantReason = "full", "a later failed check still needs resolution"
+				}
+			case "a full time later than now":
+				b.base.FullAt = at.Add(2*time.Hour + time.Minute).Format(time.RFC3339)
+				b.save(t, b.base)
+				wantScope, wantReason = "full", "the batch's full check time is later than now"
+			}
+			if name == "a changed environment" {
+				b.seams.Policy = func(string) (PolicyValue, error) { return PolicyValue{Value: "person"}, nil }
+				held, err := Run(b.install, b.checkout, "proof-command", "", b.output, b.seams)
+				var refusal *Refusal
+				if !errors.As(err, &refusal) || refusal.Code != "LANE_PROOF_PERSON" || held.Result != Held || held.ScopeReason != wantReason || len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "scoped" {
+					t.Fatalf("changed environment did not require full: %+v %v; calls=%d", held, err, len(b.calls))
+				}
+				b.seams.Policy = func(string) (PolicyValue, error) { return PolicyValue{Value: "auto"}, nil }
+				b.seams.NewID = func() string { return "environment-full" }
+			}
+			result := b.run(t)
+			if result.Result != Green || result.Scope != wantScope || result.ScopeReason != wantReason {
+				t.Fatalf("records refresh: %+v; want %s: %s", result, wantScope, wantReason)
+			}
+			if wantScope == "scoped" {
+				if result.FullTree != b.base.FullTree || result.FullAt != fullAt || len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "scoped" {
+					t.Fatalf("full coverage was not kept: %+v; calls=%d", result, len(b.calls))
+				}
+			} else if name == "a changed environment" {
+				if len(b.calls) != 2 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "scoped" || commandEnv(b.calls[1], "LANDING_PROOF_SCOPE") != "full" {
+					t.Fatalf("environment did not rerun full: calls=%d", len(b.calls))
+				}
+			} else if len(b.calls) != 1 || commandEnv(b.calls[0], "LANDING_PROOF_SCOPE") != "full" {
+				t.Fatalf("full command did not run: calls=%d", len(b.calls))
 			}
 		})
 	}
