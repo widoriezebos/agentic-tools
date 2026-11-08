@@ -5,6 +5,7 @@
 - Status: accepted
 - Critique: Astra round 1b (2026-10-10 16:05) 5 material: F1 scoped provenance, F2 static at impact depth, F3 gate base, F4 cadence under a busy queue, F5 skipped-gate control flow; all folded into D1a, D1b, D3, D4, D6. Round 2 (16:22) 2 material: ancestry across depth classes (folded into D5), ruling R-3 conflict (resolved by R-149-m1e, Wido's decision of 15:25-15:30, recorded in memory/rulings.md and docs/collaboration.md). Round 3 (16:27) 2 material: gate reuse without the static group (D4), baseline failure hidden by a HEAD filter (D3: Requested vs Attributed); sharding explanation corrected. Round 4 (16:31, narrowed to D1b/D3/D4): material 0; accepted.
 - Goals: lane-proves-at-the-batch-risk
+- Amended 2026-11-07 by the-lane-batches-goals-and-proves-once (decision 222, Wido): an executable batch has full green evidence before push (D1a's impact-only push fixture retired, its provenance kept); D2a's command-selection clause is replaced for every consumer (seat, resolution, gate), its share and canary accounting kept; D6's idle full-proof cadence is off by default (proof.trunk-every, off or at least 24h); R-149-m1e amended by R-150-m1e.
 - Requested: by Wido on 2026-10-10 15:30 ("since we're working on the lane, we should build this right now"), after the first lane round on the repaired main
 
 ## Problem (measured, finding 57/58 of the lane test)
