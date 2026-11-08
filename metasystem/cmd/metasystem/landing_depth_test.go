@@ -66,17 +66,17 @@ func depthGoals(t *testing.T, b *replayVerbBed, tiers ...int) {
 func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
-		name                string
-		tiers               []int
-		plan, scope, reason string
+		name  string
+		tiers []int
+		plan  string
 	}{
-		{"below", []int{2, 2}, "selection: internal/launch\n", "impact", "tiers 2,2; 12% of 8 packages"},
-		{"at tier", []int{2, 3}, "", "full", "tier 3: full"},
-		{"above tier", []int{3, 3}, "", "full", "tier 3: full"},
-		{"share", []int{2, 2}, "selection: internal/a\nselection: internal/b\nselection: internal/launch\nselection: internal/goal/branch\nselection: cmd/metasystem=TestProcess\n", "full", "impact would cover 62% of 8 packages: full"},
-		{"cmd", []int{2, 2}, "selection: cmd/metasystem\n", "full", "change selects cmd/metasystem: full"},
-		{"cmd named only", []int{2, 2}, "selection: cmd/metasystem=TestProcess\n", "full", "change selects cmd/metasystem: full"},
-		{"cmd named", []int{2, 2}, "selection: cmd/metasystem=TestProcess\nselection: internal/goal/branch\n", "full", "change selects cmd/metasystem: full"},
+		{"below", []int{2, 2}, "selection: internal/launch\n"},
+		{"at tier", []int{2, 3}, ""},
+		{"above tier", []int{3, 3}, ""},
+		{"share", []int{2, 2}, "selection: internal/a\nselection: internal/b\nselection: internal/launch\nselection: internal/goal/branch\nselection: cmd/metasystem=TestProcess\n"},
+		{"cmd", []int{2, 2}, "selection: cmd/metasystem\n"},
+		{"cmd named only", []int{2, 2}, "selection: cmd/metasystem=TestProcess\n"},
+		{"cmd named", []int{2, 2}, "selection: cmd/metasystem=TestProcess\nselection: internal/goal/branch\n"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -141,14 +141,10 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 					writeImpactPlanResult(t, command, "plan: base main\n"+row.plan)
 					return nil
 				}
-				if got := commandEnv(command, "LANDING_PROOF_SCOPE"); got != row.scope {
+				if got := commandEnv(command, "LANDING_PROOF_SCOPE"); got != "full" {
 					t.Fatalf("scope=%s", got)
 				}
-				want := "full-fixture"
-				if row.scope == "impact" {
-					want = "cheap-fixture"
-				}
-				if command.Args[2] != want {
+				if command.Args[2] != "full-fixture" {
 					t.Fatalf("command=%v", command.Args)
 				}
 				fmt.Fprint(command.Stdout, "landing environment fixture toolchain\nlanding group fast-static-build green 1\nLANDING-CHECKED\t0\n")
@@ -156,27 +152,31 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 			}
 			code, out := b.run(t, b.root, "prove", "--wait", "--json")
 			var report struct{ Data plain.Result }
-			if err := json.Unmarshal([]byte(out), &report); err != nil || code != 0 || report.Data.Scope != row.scope || report.Data.ScopeReason != row.reason {
+			const reason = "no green proof of this batch yet"
+			if err := json.Unmarshal([]byte(out), &report); err != nil || code != 0 || report.Data.Scope != "full" || report.Data.ScopeReason != reason {
 				t.Fatalf("code=%d report=%s err=%v", code, out, err)
 			}
-			if row.tiers[0] == 2 && row.tiers[1] == 2 && len(depthTrees) == 0 {
-				t.Fatal("the batch depth selection did not create its checkout")
+			if len(depthTrees) != 0 {
+				t.Fatalf("batch depth selection created checkouts: %v", depthTrees)
 			}
 			for _, tree := range depthTrees {
 				if _, err := os.Stat(tree); !os.IsNotExist(err) {
 					t.Fatalf("depth checkout was not removed: path=%s error=%v", tree, err)
 				}
 			}
-			if len(report.Data.Executions) != 1 || report.Data.Executions[0].DepthScope != row.scope || report.Data.Executions[0].DepthBase != "main" {
+			if len(report.Data.Executions) != 1 || report.Data.Executions[0].DepthScope != "full" || report.Data.Executions[0].DepthBase != "main" {
 				t.Fatalf("batch depth decision was not retained: %+v", report.Data.Executions)
 			}
 			code, out = b.run(t, b.root, "status")
-			want := "proving at " + row.scope + " depth: " + row.reason
+			want := "proving at full depth: " + reason
 			if code != 0 || !strings.Contains(out, want) || !strings.Contains(out, "wall time") || report.Data.Minutes == nil {
 				t.Fatalf("status missing %q: %s", want, out)
 			}
 			t.Log(want)
-			if row.scope == "impact" {
+			if row.name == "below" {
+				b.owners.landing.mainEndpoint = func(string) (goal.Endpoint, error) {
+					return goal.Endpoint{Root: b.root, Repository: emptyTransitionLedger{}}, nil
+				}
 				previous := b.owners.landing.plainProve.Git
 				pushed := false
 				b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
@@ -191,7 +191,7 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 				}
 				code, out = b.run(t, b.root, "push", "--json")
 				if code != 0 || !pushed {
-					t.Fatalf("automatic impact green refused: %d %s", code, out)
+					t.Fatalf("full green refused: %d %s", code, out)
 				}
 			}
 		})
@@ -225,7 +225,7 @@ func TestLandingStatusBatchDepthInFlight(t *testing.T) {
 		t.Fatalf("start=%d %s", code, out)
 	}
 	code, out = b.run(t, b.root, "status")
-	if code != 0 || !strings.Contains(out, "proving at full depth: tier 3: full") {
+	if code != 0 || !strings.Contains(out, "proving at full depth: no green proof of this batch yet") {
 		t.Fatalf("running status=%d %s", code, out)
 	}
 }

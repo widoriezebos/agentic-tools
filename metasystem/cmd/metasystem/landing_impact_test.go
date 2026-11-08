@@ -14,7 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 )
 
-func TestLandingProveImpactOwnProvenanceAndPush(t *testing.T) {
+func TestLandingProveImpactOwnProvenanceNeverLands(t *testing.T) {
 	t.Parallel()
 	b := newMergeGateBed(t)
 	b.prepareBatch(t)
@@ -43,6 +43,9 @@ func TestLandingProveImpactOwnProvenanceAndPush(t *testing.T) {
 	if r.Result != plain.Green || r.Scope != "impact" || r.Base != "main-tree" || r.BaseCommit != "main" || r.PlanHash != fmt.Sprintf("%x", sha256.Sum256([]byte(plan))) || r.Environment != "fixture toolchain" || r.FullAt != "" || r.FullTree != "" || r.CountedFull || plans != 1 || proofs != 1 {
 		t.Fatalf("impact provenance: %+v; plans=%d proofs=%d", r, plans, proofs)
 	}
+	if len(r.Executions) != 1 || r.Executions[0].DepthScope != "full" || r.Executions[0].DepthBase != "main" || r.Executions[0].Reason != "the batch proves full before its push; explicit impact check does not satisfy the push at decided full depth" {
+		t.Fatalf("explicit impact depth: %+v", r.Executions)
+	}
 	history, err := plain.Results(b.install)
 	if err != nil || len(history) != 2 || !history[0].Trunk || history[1].Attempt != r.Attempt {
 		t.Fatalf("first proof inherited history: %+v %v", history, err)
@@ -67,7 +70,7 @@ func TestLandingProveImpactOwnProvenanceAndPush(t *testing.T) {
 		return git(dir, args...)
 	}
 	code, out = b.run(t, b.root, "push", "--json")
-	if code != 0 || !pushed {
+	if code != 1 || pushed || !strings.Contains(out, "an impact check never lands a batch") {
 		t.Fatalf("first impact push: exit=%d pushed=%v %s", code, pushed, out)
 	}
 }
