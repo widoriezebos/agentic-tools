@@ -18,6 +18,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/conflict"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
@@ -28,6 +29,134 @@ import (
 
 func TestAPersonsMergeBuildIsToldItsImpactAndJoinsTheLane(t *testing.T) {
 	t.Parallel()
+	for _, row := range []struct {
+		name, reason      string
+		unknown, unproven bool
+		review            bool
+	}{
+		{name: "person", reason: "  Wido unblocks the lane  "},
+		{name: "no reason"},
+		{name: "blank reason", reason: "   "},
+		{name: "unknown load", unknown: true},
+		{name: "unproven caller", unproven: true},
+		{name: "person review", review: true},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			b := newWorkBed(t)
+			layout, err := b.owners().resolver.ResolveLayout(b.root())
+			if err != nil {
+				t.Fatal(err)
+			}
+			root, checkout := layout.InstallationRoot.Path(), layout.GitRoot
+			home := t.TempDir()
+			registered := lane.Record{Root: checkout, Install: root, CustodyEpoch: 1}
+			data, err := json.Marshal(registered)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.MkdirAll(filepath.Dir(lane.RecordPath(home)), 0700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(lane.RecordPath(home), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			b.manager.CapacityHome = home
+			b.manager.CapacitySources.Load = func(at time.Time) hostload.Sample {
+				return hostload.Sample{At: at.Format(time.RFC3339Nano), Available: !row.unknown, Load1m: 30, Detail: "synthetic load read"}
+			}
+			conf := filepath.Join(root, "metasystem.conf")
+			original, err := os.ReadFile(conf)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(conf, append(original, []byte("\nhost.builds=person\nhost.load-max=24\n")...), 0600); err != nil {
+				t.Fatal(err)
+			}
+			fix := &plain.Fix{Goal: b.id, Units: []string{"lane-merge-1"}, Commit: "batch", Tip: "member", State: "resolving", Attempt: "merge-attempt", Paths: []conflict.Path{{Path: "source.go", Class: conflict.Builder}}}
+			if err := plain.WriteFix(root, fix, plain.ProveSeams{Now: b.manager.Now}); err != nil {
+				t.Fatal(err)
+			}
+			brief := b.brief("merge.md", "| Unit | Lines |\n| --- | --- |\n| lane-merge-1 | 5 |\nResolve both sides.\n")
+			owners := b.workOwners()
+			owners.lookupEnv = func(string) (string, bool) { return "", false }
+			owners.policies.Registry = func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{}, nil }
+			owners.commandNow = func(string) (time.Time, error) { return b.manager.Now(), nil }
+			owners.prove = enrolledPersonProver(t, root, b.manager.Now())
+			if row.unproven {
+				owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+					return humanauthority.Proof{}, humanauthority.Refused(humanauthority.OutcomeNotEnrolled, nil)
+				}
+			}
+			owners.landing.home = func() (string, error) { return home, nil }
+			owners.landing.now = b.manager.Now
+			owners.landing.plainResolve.Git = func(dir string, args ...string) (string, error) {
+				if dir == checkout && strings.Join(args, " ") == "rev-parse --verify MERGE_HEAD^{commit}" {
+					return "member", nil
+				}
+				t.Fatalf("unexpected merge call in %s: %v", dir, args)
+				return "", nil
+			}
+			var stdout, stderr bytes.Buffer
+			b.starter.hold = "build"
+			printedAtStart := -1
+			b.manager.Supervisor = supervisorStart(func(id, stateDir string) (identity.Ref, error) {
+				printedAtStart = stderr.Len()
+				return b.starter.StartSupervisor(id, stateDir)
+			})
+			action := "build"
+			if row.review {
+				action = "review"
+			}
+			command, _ := findIntentAction("work", action)
+			args := []string{"--json", b.id, "--work", "lane-merge-1", "--brief", brief}
+			if row.reason != "" {
+				args = append(args, "--reason", row.reason)
+			}
+			if !row.review {
+				args = append(args, "--check", "metasystem test impact")
+			}
+			code := runIntentIn(command, args, &stdout, &stderr, checkout, owners)
+			var result intentResult
+			if err := json.Unmarshal(stdout.Bytes(), &result); err != nil {
+				t.Fatalf("command did not return JSON: %s: %v", &stdout, err)
+			}
+			if row.unproven || row.review {
+				if code != 1 || !strings.Contains(result.Summary, "only the lane's current session or an enrolled person builds its merge") || len(b.starter.launched()) != 0 || strings.Contains(stderr.String(), "Builds the lane's merge") {
+					t.Fatalf("unauthorized command exit=%d: %s%s; starts=%v", code, &stdout, &stderr, b.starter.launched())
+				}
+				if row.unproven && (result.Next == nil || !slices.Equal(result.Next.Argv[:min(3, len(result.Next.Argv))], []string{"metasystem", "system", "enroll"})) {
+					t.Fatalf("refusal lost its enroll remedy: %+v", result.Next)
+				}
+				return
+			}
+			load := "30"
+			if row.unknown {
+				load = "unknown"
+			}
+			impact := fmt.Sprintf("Builds the lane's merge of %s now, past the load limit (load %s of 24).\nThe lane agent collects it; other builds join it.\nUndo: metasystem landing give-back %s --reason TEXT.", b.id, load, b.id)
+			if code != 0 || stderr.String() != impact+"\n" || printedAtStart < len(impact)+1 || !slices.Equal(b.starter.launched(), []string{"build"}) {
+				t.Fatalf("person build exit=%d: %s%s; output bytes at start=%d; starts=%v", code, &stdout, &stderr, printedAtStart, b.starter.launched())
+			}
+			saved, err := plain.FixForAttempt(root, fix.Attempt)
+			if err != nil || saved == nil || saved.Job == "" || saved.Launch == nil || saved.Launch.Person == nil {
+				t.Fatalf("person build was not recorded: %+v: %v", saved, err)
+			}
+			enrolled, err := humanauthority.ReadEnrollment(root)
+			if err != nil {
+				t.Fatal(err)
+			}
+			person := saved.Launch.Person
+			reason := strings.TrimSpace(row.reason)
+			if reason == "" {
+				reason = "no reason given"
+			}
+			if saved.Launch.By != "Wido" || saved.Launch.Reason != reason || saved.Launch.Impact != impact || person.Kind != "merge-build" || person.Person != "Wido" || person.Root != root || !person.CheckedAt.Equal(b.manager.Now()) || person.Destination != registered || person.TerminalGeneration != enrolled.Generation || person.TerminalRef != enrolled.TerminalRef {
+				t.Fatalf("person build lost its provenance, reason or impact: %+v person=%+v", saved.Launch, person)
+			}
+			t.Logf("one build started after impact; person, reason %q and exact impact recorded", reason)
+		})
+	}
 	for _, concurrent := range []bool{false, true} {
 		name := "lost job id"
 		if concurrent {

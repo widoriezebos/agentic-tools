@@ -56,6 +56,19 @@ func (m *Manager) HostWork() (builds, checks int, err error) {
 	return builds, checks, err
 }
 
+// HostLoad is the one-minute load, or "unknown", and the host.load-max this
+// manager admits builds against.
+func (m *Manager) HostLoad() (string, string) {
+	params := m.BuildPolicy
+	params.Key, params.Policy = "host.load-max", nil
+	raw, _, _ := config.Get(params)
+	sample := hostcapacity.Read(m.CapacityHome, m, m.Now(), m.CapacitySources).Load
+	if !sample.Available {
+		return "unknown", raw
+	}
+	return fmt.Sprintf("%g", sample.Load1m), raw
+}
+
 // createAdmitted keeps the current observation and Starting reservation under
 // one host-wide lock. The lock is released before a supervisor can start.
 func (m *Manager) createAdmitted(spec StartSpec, record Record) error {

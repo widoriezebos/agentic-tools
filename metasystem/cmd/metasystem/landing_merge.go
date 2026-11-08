@@ -39,8 +39,21 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 	if problem != nil {
 		return inv.render(*problem), true
 	}
-	if registered.Install != root || registered.Root != checkout || !landingFixActor(root, int64(os.Getpid())) {
+	if registered.Install != root || registered.Root != checkout {
 		return inv.render(landingLaneFailure(nil, "only the lane's current session builds its merge", nil)), true
+	}
+	var person *plain.ActProvenance
+	if !landingFixActor(root, int64(os.Getpid())) {
+		observed, problem := inv.landingPersonCheck("build the lane's merge", registered.Root)
+		if problem != nil || inv.command.action != "build" {
+			refused := landingLaneFailure(nil, "only the lane's current session or an enrolled person builds its merge", nil)
+			if problem != nil {
+				refused.Details = []string{problem.Summary}
+				refused.next, refused.nextReason = problem.next, problem.nextReason
+			}
+			return inv.render(refused), true
+		}
+		person = &plain.ActProvenance{Kind: "merge-build", Person: observed.Name, Root: observed.Root, CheckedAt: observed.At.UTC(), TerminalGeneration: observed.Proof.TerminalGeneration, TerminalRef: observed.Proof.TerminalRef, Destination: registered}
 	}
 	if err := plain.RefreshMerge(root, checkout, fix, plain.ProveSeams{Git: inv.landing().plainResolve.Git}); err != nil {
 		return inv.render(landingLaneFailure(nil, err.Error(), nil)), true
@@ -68,7 +81,18 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 			fix.Launch = &plain.LaunchRecord{Attempt: fix.Attempt, Job: id}
 			fix.Brief = filepath.Join(plain.Dir(root), "fixes", fix.Attempt+".build.md")
 			brief = append(brief, []byte("\nBefore returning, stage the resolution and run: "+shellCommand([]string{"env", "LANDING_PROOF_BASE=" + fix.Commit, "metasystem", "test", "impact", "--check"})+"\n")...)
-			err = plain.LaunchResolution(root, fix, inv.landing().now(), plain.LaunchRecord{By: "landing"}, func() (string, bool, error) {
+			request, actor := plain.LaunchRecord{By: "landing"}, ""
+			if person != nil {
+				load, limit := runner.Manager.HostLoad()
+				impact := fmt.Sprintf("Builds the lane's merge of %s now, past the load limit (load %s of %s).\nThe lane agent collects it; other builds join it.\nUndo: metasystem landing give-back %s --reason TEXT.", fix.Goal, load, limit, fix.Goal)
+				fmt.Fprintln(inv.stderr, impact)
+				reason := strings.TrimSpace(inv.input.text("reason"))
+				if reason == "" {
+					reason = "no reason given"
+				}
+				request, actor = plain.LaunchRecord{By: person.Person, Person: person, Reason: reason, Impact: impact}, "person"
+			}
+			err = plain.LaunchResolution(root, fix, inv.landing().now(), request, func() (string, bool, error) {
 				existing, statusErr := runner.Manager.Status(id)
 				if errors.Is(statusErr, os.ErrNotExist) {
 					return "", false, nil
@@ -78,7 +102,7 @@ func laneMergeWork(inv *intentInvocation) (int, bool) {
 				if err := os.WriteFile(fix.Brief, brief, 0600); err != nil {
 					return "", err
 				}
-				started, launchErr := runner.Manager.Start(launch.StartSpec{ID: id, Kind: "build", Goal: fix.Goal, Tag: fix.Units[0], WorkingDirectory: checkout, Brief: fix.Brief, UnitsPage: fix.Brief, Units: fix.Units, LaneMerge: true})
+				started, launchErr := runner.Manager.Start(launch.StartSpec{ID: id, Kind: "build", Actor: actor, Goal: fix.Goal, Tag: fix.Units[0], WorkingDirectory: checkout, Brief: fix.Brief, UnitsPage: fix.Brief, Units: fix.Units, LaneMerge: true})
 				return started.ID, launchErr
 			})
 			if err == nil {
