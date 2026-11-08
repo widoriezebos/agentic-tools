@@ -33,6 +33,8 @@ func gitRepoWithCurrentGoal(t *testing.T) string {
 		}
 	}
 	run("init", "-q")
+	run("config", "maintenance.auto", "false")
+	run("config", "gc.auto", "0")
 	run("config", "metasystem.steward.notify-command", "true")
 	if err := os.MkdirAll(filepath.Join(root, "plans"), 0o755); err != nil {
 		t.Fatal(err)

@@ -70,6 +70,8 @@ type StartSpec struct {
 	FenceRoot string
 	// HostGated makes a launch that is no build wait for host load as a build does; it never takes a host.builds place.
 	HostGated bool
+	// LaneMerge marks the lane's own merge build; its admission refusals name the lane's remedy.
+	LaneMerge bool
 }
 type Manager struct {
 	BuildPolicy      config.GetParams

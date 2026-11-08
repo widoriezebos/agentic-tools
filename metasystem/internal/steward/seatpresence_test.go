@@ -321,6 +321,8 @@ func TestTheSeatPresenceRoleIsInTheClosedSchema(t *testing.T) {
 func seatEnroll(t *testing.T, root, machine string) {
 	t.Helper()
 	seatGit(t, root, "init", "-q", "-b", "main")
+	seatGit(t, root, "config", "maintenance.auto", "false")
+	seatGit(t, root, "config", "gc.auto", "0")
 	seatGit(t, root, "config", "user.name", "fixture")
 	seatGit(t, root, "config", "user.email", "fixture@example.invalid")
 	seatGit(t, root, "config", "metasystem.goal.machine", machine)

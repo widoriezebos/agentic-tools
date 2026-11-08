@@ -24,6 +24,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hooks"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lease"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/report"
@@ -1569,6 +1570,7 @@ func (o *pendingWaitHookOwners) HealthPreview(string, roots.Installation) (strin
 // test process is the fake agent that owns the session.
 func pendingWaitHookEnvironment(now, ownerLineage string) map[string]string {
 	environment := map[string]string{
+		launch.KindEnv:                        "",
 		"METASYSTEM_OWNER_LINEAGE":            ownerLineage,
 		"METASYSTEM_HOOK_DELEGATE_STATE_ROOT": "", "METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT": "", "METASYSTEM_HOOK_DELEGATE_JOB": "",
 		"METASYSTEM_BIN": "", "METASYSTEM_FAKE_PROCESS_IDENTITY_FILE": "", "METASYSTEM_CENSUS_PROCESS_FILE": "",

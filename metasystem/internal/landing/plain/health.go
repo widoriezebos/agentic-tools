@@ -256,6 +256,10 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 			progressed = at
 		}
 	}
+	// A person's give-back that left no batch member is its own effect.
+	if personAct.Verb == "landing give-back" && (batch == nil || len(batch.Members) == 0) && progressed.Before(acted) {
+		progressed = acted
+	}
 	// An act with no effect yet fires at five minutes; until then it waits.
 	if minutes := now.Sub(acted).Minutes(); !acted.IsZero() && progressed.Before(acted) && status.Raw.Agent.Barren > 0 {
 		personAct.Minutes, h.PendingAct = &minutes, &personAct

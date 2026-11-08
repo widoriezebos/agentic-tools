@@ -1,0 +1,78 @@
+{
+  "canonicalRead": {
+    "id": "20261107t161448-aafbfbec7c-r4-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-lane-collects-its-resolution",
+      "reviewedProjectTree": "1242d440c134198b0f1ae7c497290614f15490b5a827e5f3ef60ebd86a2dde5b",
+      "diffDigest": "1242d440c134198b0f1ae7c497290614f15490b5a827e5f3ef60ebd86a2dde5b"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [],
+    "output": "/Users/wido/.metasystem/launch/20261107t161448-aafbfbec7c-r4-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "26649823e4581196dc7aa131235ba9db9bbb901346650389a93d418a5ecfb7f6",
+  "schemaVersion": 1,
+  "goal": "the-lane-collects-its-resolution",
+  "unit": "U2a",
+  "subject": {
+    "commit": "c0886a50654b8d327876dbac49736dcd21e81a7b",
+    "parent": "c1dd99f18ddc65f2cd5dee8de6a4f11b4e4f0f90",
+    "tree": "fb7e4ed1154e69f7bbaf8d32a2774f955b637ad0",
+    "patchDigest": "1242d440c134198b0f1ae7c497290614f15490b5a827e5f3ef60ebd86a2dde5b",
+    "unitDigest": "c8c8d440c8ff02417c753a4de5b7cf2d9b0e1ef2f8c1c2adbcda9303f865c35b"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261107t161448-aafbfbec7c-r4-s3",
+    "closureSha256": "c1b09eb73e69c79343fbbe22bf6c33b43688956cf24a80f1fadf9d381093d195"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "fb7e4ed1154e69f7bbaf8d32a2774f955b637ad0",
+    "runId": "goal-read-gate-20261107t221352z-2d9052dac4029749"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "7df11b99b992341e0745e5a1d445ae0d27afec9a",
+      "digest": "6a482e041007a4255c995d35fa44a19109154876a434bb713841fb9e5f0355e9"
+    },
+    {
+      "kind": "read",
+      "commit": "ad536b503cd318746bd535d28c934895ac062f88",
+      "digest": "dc02b7461148993d841ddfb941c819528416a23dbcc24f807633e8ae36da03a3"
+    },
+    {
+      "kind": "read",
+      "commit": "c1dd99f18ddc65f2cd5dee8de6a4f11b4e4f0f90",
+      "digest": "74c1483f04baa6a858e3f6961d1b1f5759b2bc8b5050266c9ab013c141cac916"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_merge_test.go",
+      "readerWord": "reviewed by unit read 20261107t161448-aafbfbec7c-r4-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/wait_verb_test.go",
+      "readerWord": "reviewed by unit read 20261107t161448-aafbfbec7c-r4-s3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/verb_guard_test.go",
+      "readerWord": "reviewed by unit read 20261107t161448-aafbfbec7c-r4-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/seatpresence_test.go",
+      "readerWord": "reviewed by unit read 20261107t161448-aafbfbec7c-r4-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/seatpresence_tick_test.go",
+      "readerWord": "reviewed by unit read 20261107t161448-aafbfbec7c-r4-s3"
+    }
+  ],
+  "sha256": "a09ea29815454c89341e8861f1e0b00d563ad24b25049036b2118f55c6e6f007"
+}

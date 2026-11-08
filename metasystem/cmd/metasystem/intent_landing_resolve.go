@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
@@ -41,6 +42,7 @@ func runIntentLandingResolve(inv *intentInvocation, admitted laneAdmitted) int {
 		return inv.render(landingLaneFailure(targets, "the lane installation cannot be placed", err))
 	}
 	seams := admitted.owners.plainResolve
+	seams.Coordination = landing.WorkspaceExclusions()
 	seams.AsSeat = inv.input.switched("as-seat")
 	seams.Proof = inv.laneBatchSeams(admitted.home, admitted.record, admitted.owners.proveSeams(admitted.installation))
 	if observed, problem := inv.landingPersonCheck("request this regeneration", admitted.record.Root); problem == nil {
