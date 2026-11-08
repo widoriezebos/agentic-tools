@@ -8099,7 +8099,15 @@
       },
       "holds": [],
       "opened": "2026-11-06T22:05:28Z",
-      "closed": null,
+      "closed": {
+        "at": "2026-11-08T04:47:37Z",
+        "attempt": "",
+        "baseCommit": "",
+        "how": "hand",
+        "opid": "Q20E2MWQJ0AX32KFFFS328RP80-m1e-078e43ac",
+        "by": "Wido",
+        "why": "TestAuthenticatedOuterProofKeepsItsNestedWorkloadOutOfOuterProgress on the MacBook lane proof 20261106T184337: git worktree add of 8079 files exceeded the 300 s local exec bound (host I/O), passed on repeat in 20.8 s; the host environment, no code defect. Decision 217"
+      },
       "class": "flake"
     },
     {
