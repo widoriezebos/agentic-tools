@@ -460,6 +460,9 @@ func TestADiedProofHoldsNothing(t *testing.T) {
 func TestWakeReasonsAreQueuedAndProofFinished(t *testing.T) {
 	t.Parallel()
 	b := newBed(t)
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.trunk-every=24h\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	reasons := func(launch time.Time) string {
 		t.Helper()
 		got, err := WakeReasons(b.install, b.checkout, launch, bedNow)

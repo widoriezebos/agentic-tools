@@ -105,8 +105,11 @@ func TestSelectBatchDepthClasses(t *testing.T) {
 func TestFullDueBatchDepthAndClock(t *testing.T) {
 	t.Parallel()
 	b := newScopeBed(t)
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	old := b.base
-	old.Trunk, old.At = true, bedNow.Add(-5*time.Hour).Format(time.RFC3339)
+	old.Trunk, old.At = true, bedNow.Add(-25*time.Hour).Format(time.RFC3339)
 	old.FullAt = old.At
 	b.save(t, old)
 	batch := &Batch{ID: "cheap", DepthClass: "cheap", State: BatchRunning, Base: "main", CreatedAt: bedNow.Format(time.RFC3339), Lane: lane.Record{Root: b.checkout, Install: b.install, CustodyEpoch: 1}, Members: []GoalSHA{{Goal: "g", SHA: "sha"}}}
@@ -316,7 +319,7 @@ func TestSelectBatchDepthNeedsNoAncestrySplit(t *testing.T) {
 func TestFullDueBatchFreshGreenWithinSelectionSecond(t *testing.T) {
 	t.Parallel()
 	install := t.TempDir()
-	if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=4h\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=24h\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	batch := &Batch{ID: "batch", Base: "main", State: BatchRunning, CreatedAt: bedNow.Add(500 * time.Millisecond).Format(time.RFC3339Nano), Lane: lane.Record{Root: install, Install: install, CustodyEpoch: 1}}

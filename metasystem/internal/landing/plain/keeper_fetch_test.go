@@ -21,7 +21,7 @@ func TestKeeperFetchesMissingHandInBeforeReadingIt(t *testing.T) {
 		t.Run(map[bool]string{true: "only on origin", false: "nowhere"}[onOrigin], func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
-			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=1h\n"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=24h\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			if _, _, err := HandIn(install, Line{Goal: "next", SHA: "tip"}); err != nil {
@@ -98,7 +98,7 @@ func TestHandInFetchFailureIsRetainedWithoutStatusRetries(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
-			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=1h\n"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=24h\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			if _, _, err := HandIn(install, Line{Goal: "next", SHA: "tip"}); err != nil {

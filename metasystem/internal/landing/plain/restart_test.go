@@ -101,21 +101,28 @@ func restartBed(t *testing.T, minutes int, red bool) (string, *Batch, Running, P
 func TestRestartSelectionAndWaitReasons(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name       string
-		minutes    int
-		red, prior bool
-		wait       string
+		name               string
+		minutes            int
+		red, prior, person bool
+		wait               string
 	}{
-		{name: "young", minutes: 12},
-		{name: "late", minutes: 31, wait: "proof at 31.0 of 44.0 min, past the restart point"},
-		{name: "halfway", minutes: 22, wait: "proof at 22.0 of 44.0 min, past the restart point"},
-		{name: "already restarted", minutes: 12, prior: true, wait: "this batch already restarted"},
+		{name: "young", minutes: 12, wait: "the batch's full check has started; it joins the next batch"},
+		{name: "late", minutes: 31, wait: "the batch's full check has started; it joins the next batch"},
+		{name: "halfway", minutes: 22, wait: "the batch's full check has started; it joins the next batch"},
+		{name: "already restarted", minutes: 12, prior: true, wait: "the batch's full check has started; it joins the next batch"},
+		{name: "person-owned", minutes: 12, person: true},
 		{name: "main red", minutes: 40, red: true},
 		{name: "main red after restart", minutes: 40, red: true, prior: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			install, batch, running, seams, ended := restartBed(t, tc.minutes, tc.red)
+			if tc.person {
+				running.Person = &ActProvenance{Person: "Wido"}
+				if err := writeRunning(install, running); err != nil {
+					t.Fatal(err)
+				}
+			}
 			if tc.prior {
 				batch.Restarts = []Restart{{Goal: "earlier", Expected: 44, Elapsed: 12, At: running.Since}}
 				if err := writeBatch(install, batch); err != nil {
@@ -125,6 +132,15 @@ func TestRestartSelectionAndWaitReasons(t *testing.T) {
 			selected, err := SelectBatch(install, install, batch.Lane, seams)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if tc.person {
+				if *ended != 0 || selected.Open || !slices.Equal(selected.Members, batch.Members) {
+					t.Fatalf("person proof changed: %+v ended=%d", selected, *ended)
+				}
+				if _, err := os.Stat(cancelPath(install, running.Attempt)); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("person proof cancelled: %v", err)
+				}
+				return
 			}
 			if tc.wait != "" {
 				if *ended != 0 || selected.Open || len(selected.Members) != 1 || len(selected.Waiting) != 1 || selected.Waiting[0] != "shared-state-in-the-ledger waits: "+tc.wait {
@@ -341,7 +357,7 @@ func TestCancellationWinsOverCompletingRedProof(t *testing.T) {
 
 func TestRestartEndsRealDetachedIdentity(t *testing.T) {
 	t.Parallel()
-	install, batch, running, seams, _ := restartBed(t, 12, false)
+	install, batch, running, seams, _ := restartBed(t, 12, true)
 	done := make(chan error, 1)
 	pid, err := gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: []string{"/bin/sleep", "600"}, Completed: done})
 	if err != nil {
@@ -400,7 +416,7 @@ func TestRestartExpectedMinutesDefaultAndMedian(t *testing.T) {
 // Saved lane records exercise the restart against its recorded queue and history.
 func TestRestartSavedLaneRecords(t *testing.T) {
 	t.Parallel()
-	install, batch, _, seams, ended := restartBed(t, 12, false)
+	install, batch, _, seams, ended := restartBed(t, 12, true)
 	selected, err := SelectBatch(install, install, batch.Lane, seams)
 	if err != nil || *ended != 1 || len(selected.Restarts) != 1 || selected.Restarts[0].Expected != 44 {
 		t.Fatalf("real shapes restart %+v %v", selected, err)
@@ -409,7 +425,7 @@ func TestRestartSavedLaneRecords(t *testing.T) {
 
 func TestRestartSecondArrivalWaitsAfterActualRestart(t *testing.T) {
 	t.Parallel()
-	install, batch, running, seams, ended := restartBed(t, 12, false)
+	install, batch, running, seams, ended := restartBed(t, 12, true)
 	first, err := SelectBatch(install, install, batch.Lane, seams)
 	if err != nil {
 		t.Fatal(err)
@@ -426,8 +442,9 @@ func TestRestartSecondArrivalWaitsAfterActualRestart(t *testing.T) {
 		t.Fatal(err)
 	}
 	seams.Alive = func(Running) bool { return true }
+	seams.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) { return nil, nil }
 	next, err := SelectBatch(install, install, batch.Lane, seams)
-	if err != nil || *ended != 1 || len(next.Restarts) != 1 || len(next.Members) != 2 || !slices.Contains(next.Waiting, "third waits: this batch already restarted") {
+	if err != nil || *ended != 1 || len(next.Restarts) != 1 || len(next.Members) != 2 || !slices.Contains(next.Waiting, "third waits: the batch's full check has started; it joins the next batch") {
 		t.Fatalf("second arrival %+v ended=%d error=%v", next, *ended, err)
 	}
 }
@@ -437,7 +454,7 @@ func TestRestartCancellationFailuresKeepTheBatchRecoverable(t *testing.T) {
 	for _, name := range []string{"cancel write", "signal", "malformed cancel", "scoped proof", "missing wrapper identity"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			install, batch, running, seams, ended := restartBed(t, 12, false)
+			install, batch, running, seams, ended := restartBed(t, 12, true)
 			switch name {
 			case "missing wrapper identity":
 				running.Process = ""
@@ -533,11 +550,11 @@ func TestRestartOnlyAnIncidentsFixPreempts(t *testing.T) {
 		minutes                  int
 		prior                    bool
 	}{
-		{name: "unrelated young", fix: "another", minutes: 10},
-		{name: "unrelated late", fix: "another", minutes: 40, wait: "proof at 40.0 of 44.0 min, past the restart point"},
-		{name: "unrelated after restart", fix: "another", minutes: 10, prior: true, wait: "this batch already restarted"},
+		{name: "unrelated young", fix: "another", minutes: 10, wait: "the batch's full check has started; it joins the next batch"},
+		{name: "unrelated late", fix: "another", minutes: 40, wait: "the batch's full check has started; it joins the next batch"},
+		{name: "unrelated after restart", fix: "another", minutes: 10, prior: true, wait: "the batch's full check has started; it joins the next batch"},
 		{name: "fix proving", fix: "lane-rehearsal-before-landing", minutes: 10, wait: "the fix of main is proving"},
-		{name: "different incident binding", fix: "shared-state-in-the-ledger", binding: "another", minutes: 40, wait: "proof at 40.0 of 44.0 min, past the restart point"},
+		{name: "different incident binding", fix: "shared-state-in-the-ledger", binding: "another", minutes: 40, wait: "the batch's full check has started; it joins the next batch"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -587,7 +604,7 @@ func TestRestartOnlyAnIncidentsFixPreempts(t *testing.T) {
 
 func TestRestartStopsTheWholeDetachedCheckBeforeReopening(t *testing.T) {
 	t.Parallel()
-	install, batch, running, seams, _ := restartBed(t, 12, false)
+	install, batch, running, seams, _ := restartBed(t, 12, true)
 	wrapperDone := make(chan error, 1)
 	wrapper, err := gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: []string{"/bin/sleep", "600"}, Completed: wrapperDone})
 	if err != nil {
@@ -666,7 +683,7 @@ func TestRestartProofWorker(t *testing.T) {
 
 func TestRestartCannotReopenUntilTerminationIsConfirmed(t *testing.T) {
 	t.Parallel()
-	install, batch, running, seams, _ := restartBed(t, 12, false)
+	install, batch, running, seams, _ := restartBed(t, 12, true)
 	done := make(chan error, 1)
 	wrapper, err := gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: []string{"/bin/sleep", "600"}, Completed: done})
 	if err != nil {
@@ -765,7 +782,7 @@ func TestRestartCannotLaunchAfterCancellationOrLossOfOwnership(t *testing.T) {
 
 func TestRestartBeforeTheCommandLaunches(t *testing.T) {
 	t.Parallel()
-	install, batch, running, seams, _ := restartBed(t, 12, false)
+	install, batch, running, seams, _ := restartBed(t, 12, true)
 	done := make(chan error, 1)
 	pid, err := gaterun.LaunchDetached(gaterun.DetachedLaunch{Argv: []string{"/bin/sleep", "600"}, Completed: done})
 	if err != nil {
@@ -846,7 +863,7 @@ func TestRestartCancelledWrapperLeavesWorktreeForConfirmedCleanup(t *testing.T) 
 
 func TestRestartCancelledTreeCanBeProvenAgainAfterReturn(t *testing.T) {
 	t.Parallel()
-	install, batch, running, seams, _ := restartBed(t, 12, false)
+	install, batch, running, seams, _ := restartBed(t, 12, true)
 	if _, err := SelectBatch(install, install, batch.Lane, seams); err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -27,7 +28,7 @@ func TestLandingKeeperStandingRedReachesDetachedRun(t *testing.T) {
 			helmMust(t, os.MkdirAll(filepath.Join(b.lane, "bin"), 0700))
 			helmMust(t, os.Symlink("/usr/bin/true", filepath.Join(b.lane, "bin", "metasystem")))
 			helmMust(t, os.Remove(filepath.Join(plain.Dir(b.lane), "queue.jsonl")))
-			helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=4h\n"), 0600))
+			helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600))
 			contract := testpolicy.Contract{SchemaVersion: 2, ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"}, Surfaces: []testpolicy.Surface{{ID: "fixture", Paths: []string{"records/**", "src/**"}, Standard: []string{"broken"}}}, Unknown: []string{"broken"}}
 			for _, id := range []string{"broken", "shared", "unrelated"} {
 				contract.Groups = append(contract.Groups, testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".", Phase: "acceptance", EnvironmentMode: "inherit", Inputs: []string{"records/" + id + "/**"}, Platforms: []string{"any"}, TargetMS: 1, Argv: []string{"fixture"}, Format: "exit-status"})
@@ -181,7 +182,18 @@ func TestLandingKeeperStandingRedReachesDetachedRun(t *testing.T) {
 			}
 			if mode == "hourly debt" {
 				b.now = b.now.Add(time.Hour)
+				reasons, err := plain.WakeReasons(b.lane, b.lane, time.Time{}, b.now, seams)
+				helmMust(t, err)
+				if slices.Contains(reasons, plain.WakeFullDue) {
+					t.Fatalf("hourly debt woke clock: %v", reasons)
+				}
 				hold, err := keeper.Clock(b.record, func(lane.Record) error { return nil })
+				helmMust(t, err)
+				if hold != "" || launches != 1 {
+					t.Fatalf("hourly debt launched a check: hold=%q launches=%d", hold, launches)
+				}
+				b.now = b.now.Add(23 * time.Hour)
+				hold, err = keeper.Clock(b.record, func(lane.Record) error { return nil })
 				helmMust(t, err)
 				if !strings.Contains(hold, "hourly debt") {
 					t.Fatalf("keeper clock did not request its hourly check: %s", hold)

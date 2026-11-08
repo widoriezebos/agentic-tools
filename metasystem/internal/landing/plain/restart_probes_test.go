@@ -10,7 +10,7 @@ import (
 
 func TestRestartCancelledTreeMayBeProvenAgain(t *testing.T) {
 	t.Parallel()
-	install, batch, running, seams, ended := restartBed(t, 12, false)
+	install, batch, running, seams, ended := restartBed(t, 12, true)
 	if _, err := SelectBatch(install, install, batch.Lane, seams); err != nil || *ended != 1 {
 		t.Fatalf("restart did not happen: %v %d", err, *ended)
 	}
@@ -41,7 +41,7 @@ func liveRef(t *testing.T, args ...string) (*exec.Cmd, string) {
 
 func TestRestartFinishedCommandNeverWedgesTheLane(t *testing.T) {
 	t.Parallel()
-	install, batch, running, seams, ended := restartBed(t, 12, false)
+	install, batch, running, seams, ended := restartBed(t, 12, true)
 	wrapper, wref := liveRef(t, "/bin/sleep", "600")
 	t.Cleanup(func() { _ = wrapper.Process.Kill(); _, _ = wrapper.Process.Wait() })
 	cmd, cref := liveRef(t, "/bin/sleep", "600")

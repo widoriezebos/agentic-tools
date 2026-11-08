@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"slices"
 	"testing"
 	"time"
 )
@@ -79,8 +80,13 @@ func TestAScopedPushOwesAFullProofWithinTheHour(t *testing.T) {
 			} else {
 				got, err = WakeReasons(install, install, bedNow, bedNow)
 			}
-			if err != nil || !reflect.DeepEqual(got, each.want) {
-				t.Fatalf("wake reasons = %v, want %v: %v", got, each.want, err)
+			wantDebt := slices.Contains(each.want, WakeFullDue)
+			if debt, err := proofDebt(install, bedNow, true); err != nil || debt != wantDebt {
+				t.Fatalf("debt=%v want=%v err=%v", debt, wantDebt, err)
+			}
+			want := slices.DeleteFunc(slices.Clone(each.want), func(reason string) bool { return reason == WakeFullDue })
+			if err != nil || !reflect.DeepEqual(got, want) {
+				t.Fatalf("wake reasons = %v, want %v: %v", got, want, err)
 			}
 			// An older scoped push cannot make a newer full push owe proof.
 			writePushRecords(t, install, Pushed{Tree: "not-scoped", At: bedNow.Format(time.RFC3339)})
@@ -98,7 +104,7 @@ func TestWakeReasonsSuppressTimerUnderStandingFence(t *testing.T) {
 		t.Run(map[bool]string{false: "open", true: "held"}[held], func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
-			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=1h\n"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=24h\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			reasons, err := WakeReasons(install, install, time.Time{}, bedNow, ProveSeams{TimerHeld: func() bool { return held }})

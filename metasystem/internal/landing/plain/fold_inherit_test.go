@@ -159,7 +159,7 @@ func TestAFoldOfGoalPagesKeepsTheBatchsGreen(t *testing.T) {
 				t.Fatalf("observation at 30m: launches=%d %v", launches, err)
 			}
 			err = observe(61 * time.Minute)
-			due, dueErr := scopedProofDue(b.install, bedNow.Add(61*time.Minute))
+			due, dueErr := proofDebt(b.install, bedNow.Add(61*time.Minute), false)
 			if name == "a scoped batch" {
 				if !due || dueErr != nil || launches != 1 {
 					t.Fatalf("a fold of a scoped green: due=%v launches=%d %v %v", due, launches, dueErr, err)

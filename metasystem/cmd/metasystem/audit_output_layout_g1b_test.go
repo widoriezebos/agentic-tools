@@ -143,6 +143,13 @@ func landingLayoutBed(kind int) func(t *testing.T) layoutBed {
 		alive := kind != landingLayoutNone
 		if kind != landingLayoutNone {
 			registerLane(t, home, landing, "Wido", now.Add(-2*time.Hour))
+			record, _, err := lane.Read(home)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(filepath.Join(record.Install, "metasystem.conf"), []byte("proof.trunk-every=24h\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
 		}
 		if kind == landingLayoutPaused {
 			if _, err := lane.SetPause(home, "Wido", now.Add(-30*time.Minute)); err != nil {

@@ -116,7 +116,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 	b.owners.landing.view = func(home string) lane.View {
 		return lane.BuildView(lane.ViewSources{Home: home, Now: now, Owner: b.owners.landing.probe, Ready: b.owners.landing.ready, Wake: lane.WakeSources{Reasons: func(string) ([]string, error) { return plain.WakeReasons(b.install, b.root, time.Time{}, now) }}})
 	}
-	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.trunk-every=2h\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("proof.trunk-every=24h\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	status := func(due bool) {
@@ -129,7 +129,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 	}
 	// Same tree, previous green and then previous red: neither authorizes reuse or refuses this check.
 	for _, previous := range []string{plain.Green, plain.Red} {
-		writeCauseProof(t, b.install, "results.jsonl", plain.Result{Tree: "main-tree", Commit: "main", Result: previous, Scope: "full", FullTree: "main-tree", At: now.Add(-3 * time.Hour).Format(time.RFC3339), FullAt: now.Add(-3 * time.Hour).Format(time.RFC3339), Trunk: true})
+		writeCauseProof(t, b.install, "results.jsonl", plain.Result{Tree: "main-tree", Commit: "main", Result: previous, Scope: "full", FullTree: "main-tree", At: now.Add(-25 * time.Hour).Format(time.RFC3339), FullAt: now.Add(-25 * time.Hour).Format(time.RFC3339), Trunk: true})
 		status(true)
 		before := calls
 		red = true
@@ -162,7 +162,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 		if code != 0 || calls != before+1 {
 			t.Fatalf("green reused: %d %s calls=%d", code, out, calls)
 		}
-		now = now.Add(2 * time.Hour)
+		now = now.Add(24 * time.Hour)
 		status(true)
 	}
 	if fetches != 6 || worktrees != 6 {

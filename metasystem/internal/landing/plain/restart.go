@@ -3,7 +3,6 @@ package plain
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	landingstate "github.com/widoriezebos/agentic-tools/metasystem/internal/landing/state"
 	"os"
 	"os/exec"
@@ -214,7 +213,7 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 	if err != nil {
 		return err
 	}
-	commonWhy, ordinaryWhy := "", ""
+	commonWhy, ordinaryWhy := "", "the batch's full check has started; it joins the next batch"
 	switch {
 	case batch.Person != nil:
 		commonWhy = "this batch was selected by " + batch.Person.Person
@@ -222,11 +221,6 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 		commonWhy = landingstate.Phrase("the-fix-of-main-is-proving")
 	case classifying && cancel == nil:
 		commonWhy = "a red is being classified; the newcomer waits"
-	}
-	if len(batch.Restarts) > 0 {
-		ordinaryWhy = "this batch already restarted"
-	} else if *elapsed >= expected/2 {
-		ordinaryWhy = "proof at " + proofMinutes(*elapsed, expected) + ", past the restart point"
 	}
 	var newcomers []GoalSHA
 	for _, e := range entries {
@@ -284,10 +278,6 @@ func restartBatchLocked(install, checkout, main string, batch *Batch, s ProveSea
 		return err
 	}
 	return finishCancel(install, running, *cancel, s)
-}
-
-func proofMinutes(elapsed, expected float64) string {
-	return fmt.Sprintf("%.1f of %.1f min", elapsed, expected)
 }
 
 func comparableProofs(results []Result, scope string) []Result {
