@@ -4,6 +4,7 @@
 - Id: the-lane-batches-goals-and-proves-once
 - Status: accepted
 - Goals: the-lane-batches-goals-and-proves-once
+- Amended: 2026-11-08 by a1 for Wido; unit U3 was built as U3b after its first run was stopped (finding 569); the row keeps its content
 - Critique: round 1 (Astra, designs/astra-batches-r1.log; 8 material; build after the folds) folded in revision 2; round 2 (designs/astra-batches-r2.log; 7 material; build after the folds) folded in revision 3
 
 Accepted 2026-11-07 by a1 in Wido's name (decisions 222, 224, 226): the strategy is his, in his words: batch up multiple features that test only what they touch each, then one full suite when landing. The gathering defaults (2 goals or 3 hours) are proposed; U4b activates them only on his adoption (R-36-m3).
@@ -203,7 +204,7 @@ Order (Astra r2, ordering conclusion): U1a first. Then U2, the first measurable 
 | U1a | D1 | 44 | 88 |
 | U2 | D5, D6 | 47 | 94 |
 | U5 | D8 records reuse | 16 | 32 |
-| U3 | D2 | 12 | 24 |
+| U3b | D2 | 12 | 24 |
 | U1b | D1 cleanup | 102 | 204 |
 | U1c | D8 tier floor, D7 docs | 49 | 98 |
 | U4a | D3 readiness, no setting | 90 | 180 |
