@@ -83,8 +83,25 @@ func batchGreenReusable(install, batchID string, result Result, seams ProveSeams
 		return true
 	}
 	if reason, since := overdueBatch(install, batchID, seams); reason != "" {
-		at, err := time.Parse(time.RFC3339, result.FullAt)
-		return err == nil && !at.Before(since.Truncate(time.Second)) && result.Scope == "full" && result.FullTree != ""
+		return fullSince(result, since)
 	}
 	return true
+}
+
+func fullSince(result Result, since time.Time) bool {
+	at, err := time.Parse(time.RFC3339, result.FullAt)
+	return result.FullTree != "" && err == nil && !at.Before(since.Truncate(time.Second))
+}
+
+func batchFullSince(install, batchID string, since time.Time) bool {
+	results, err := Results(install)
+	if err != nil {
+		return false
+	}
+	for _, result := range results {
+		if result.BatchID == batchID && result.Result == Green && !result.didNotRun() && fullSince(result, since) {
+			return true
+		}
+	}
+	return false
 }
