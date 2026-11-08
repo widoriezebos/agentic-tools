@@ -124,7 +124,7 @@ func TestWorkCommitUnitImpactGitAdapter(t *testing.T) {
 			var checked repairCheck
 			helmMust(t, json.Unmarshal(data, &checked))
 			form := "static-only: selection not cheap"
-			if mode == "cheap" || mode == "cheap-flags" {
+			if mode == "cheap" || mode == "cheap-flags" || mode == "cmd-named" {
 				form = "impact: 1 tests of 1 packages + groups canary"
 			}
 			if mode == "declared" {
@@ -195,9 +195,12 @@ func TestWorkCommitRealLaneFixImpactPlanGitAdapter(t *testing.T) {
 	if !named || names == "" {
 		t.Fatalf("lane fix %s did not select named command tests: %s", saved.Commit, selected)
 	}
-	if plan.Check != "static-only" {
-		t.Fatalf("command selection was cheap: %+v", plan)
+	share, cheap, full, reason, err := impactCost(module, module, plan.Text(), contract)
+	helmMust(t, err)
+	if plan.Check != "impact" || !cheap {
+		t.Fatalf("named command selection was not cheap: share=%d full=%d reason=%q plan=%+v", share, full, reason, plan)
 	}
+	t.Logf("real lane fix share: %d%% of %d packages", share, full)
 	// The form is the actual selection size, not the real contract's command-family group.
 	if len(contract.Groups) < 20 {
 		t.Fatal("live contract was not loaded")

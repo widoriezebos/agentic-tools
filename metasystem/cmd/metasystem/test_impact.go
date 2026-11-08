@@ -322,12 +322,16 @@ func auditGroup(contract testpolicy.Contract, group testpolicy.Group) bool {
 
 func impactDepth(plan string, contract testpolicy.Contract, full map[string]bool, limit int) (int, bool) {
 	selected := map[string]bool{}
-	addPackage := func(pkg string) {
+	whole := false
+	addPackage := func(pkg string, named bool) {
 		pkg = strings.TrimPrefix(strings.TrimPrefix(strings.TrimPrefix(pkg, "metasystem/"), "unit/"), "./")
 		prefix, recursive := strings.CutSuffix(pkg, "/...")
 		for key := range full {
 			if !strings.HasPrefix(key, "group/") && (key == pkg || pkg == "..." || recursive && (key == prefix || strings.HasPrefix(key, prefix+"/"))) {
 				selected[key] = true
+				if !named && key == "cmd/metasystem" {
+					whole = true
+				}
 			}
 		}
 	}
@@ -342,7 +346,7 @@ func impactDepth(plan string, contract testpolicy.Contract, full map[string]bool
 		}
 		index := slices.IndexFunc(contract.Groups, func(group testpolicy.Group) bool { return selection == group.ID })
 		if index < 0 {
-			addPackage(unit)
+			addPackage(unit, named)
 			continue
 		}
 		group := contract.Groups[index]
@@ -354,17 +358,17 @@ func impactDepth(plan string, contract testpolicy.Contract, full map[string]bool
 			continue
 		}
 		if group.PackageSelection != "" {
-			addPackage("...")
+			addPackage("...", false)
 		}
 		for _, pkg := range group.Packages {
-			addPackage(pkg)
+			addPackage(pkg, false)
 		}
 	}
 	if len(full) == 0 {
 		return 100, false
 	}
 	share := len(selected) * 100 / len(full)
-	return share, !selected["cmd/metasystem"] && len(selected)*100 < limit*len(full)
+	return share, !whole && len(selected)*100 < limit*len(full)
 }
 
 func depthSetting(install, key string) (int, error) {
@@ -409,7 +413,7 @@ func impactCost(install, module, plan string, contract testpolicy.Contract) (int
 	share, cheap := impactDepth(plan, contract, packages, limit)
 	reason := ""
 	if err == nil && full > 0 && !cheap && share < limit {
-		reason = "change selects cmd/metasystem: full"
+		reason = "change selects cmd/metasystem whole; the batch check covers it"
 	}
 	return share, cheap, full, reason, err
 }

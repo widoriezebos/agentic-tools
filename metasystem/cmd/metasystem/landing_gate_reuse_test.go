@@ -432,16 +432,16 @@ func TestSkillLandingAgentGateStatesAndBatchDepth(t *testing.T) {
 	}
 }
 
-func TestLandingGateNamedCommandFullReason(t *testing.T) {
+func TestLandingGateWholeCommandReason(t *testing.T) {
 	t.Parallel()
 	b := newMergeGateBed(t)
 	b.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, int, string, error) {
-		return 0, false, 169, "change selects cmd/metasystem: full", nil
+		return 0, false, 169, "change selects cmd/metasystem whole; the batch check covers it", nil
 	}
 	result := gateResult(t, b, 0)
 	status := gateStatus(t, b)
 	for _, got := range []plain.Result{result, status} {
-		if got.Result != plain.Skipped || got.Static != plain.Green || got.Reason != "change selects cmd/metasystem: full" {
+		if got.Result != plain.Skipped || got.Static != plain.Green || got.Reason != "change selects cmd/metasystem whole; the batch check covers it" {
 			t.Fatalf("command selection reason missing: %+v", got)
 		}
 	}

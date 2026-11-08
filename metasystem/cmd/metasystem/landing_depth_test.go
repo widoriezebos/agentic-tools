@@ -27,7 +27,10 @@ func TestLandingProveDepthShareBoundary(t *testing.T) {
 		{"at threshold", "selection: internal/a\n", 50, false},
 		{"above", "selection: internal/a\nselection: internal/b\nselection: internal/c\n", 60, false},
 		{"command whole", "selection: metasystem/cmd/metasystem\n", 20, false},
-		{"command named", "selection: metasystem/cmd/metasystem=TestA\n", 20, false},
+		{"command named", "selection: metasystem/cmd/metasystem=TestA\n", 20, true},
+		{"command group", "selection: command-tests\n", 20, false},
+		{"command recursive", "selection: cmd/...\n", 20, false},
+		{"command mixed", "selection: cmd/metasystem=TestA\nselection: cmd/metasystem\n", 20, false},
 		{"named and static", "selection: fast-static-build\nselection: internal/a=TestA\n", 40, true},
 		{"duplicate", "selection: internal/a\nselection: internal/a\n", 20, true},
 	} {
@@ -38,7 +41,12 @@ func TestLandingProveDepthShareBoundary(t *testing.T) {
 				full = 2
 			}
 			contract := testpolicy.Contract{Groups: []testpolicy.Group{{ID: "fast-static-build", Adapter: "command"}}}
-			share, cheap := impactDepth(row.plan, contract, depthTestMeasure(full, row.plan), 50)
+			measure := depthTestMeasure(full, row.plan)
+			if strings.HasPrefix(row.name, "command") {
+				measure = depthTestMeasure(full, "selection: cmd/metasystem\n")
+			}
+			contract.Groups = append(contract.Groups, testpolicy.Group{ID: "command-tests", Adapter: "go", Packages: []string{"./cmd/metasystem"}, Tests: json.RawMessage(`["TestA"]`)})
+			share, cheap := impactDepth(row.plan, contract, measure, 50)
 			if share != row.share || cheap != row.cheap {
 				t.Fatalf("share=%d cheap=%v", share, cheap)
 			}
@@ -250,7 +258,7 @@ func TestLandingDepthCountsEverySelectedPackage(t *testing.T) {
 		share      int
 		cheap      bool
 	}{
-		{"process changes", "selection: cmd/metasystem=TestProcess,TestDeclaration\nselection: internal/goal/branch\nselection: internal/goal\n", 2, false},
+		{"process changes", "selection: cmd/metasystem=TestProcess,TestDeclaration\nselection: internal/goal/branch\nselection: internal/goal\n", 2, true},
 		{"two small packages", "selection: internal/a=TestA\nselection: internal/b\n", 1, true},
 		{"same package twice", "selection: internal/a=TestA\nselection: internal/a=TestB\nselection: internal/a\n", 0, true},
 	} {
@@ -345,7 +353,7 @@ func TestLandingDepthRealCanariesDoNotDecideCheapness(t *testing.T) {
 		cheap      bool
 	}{
 		{"two small packages plus canaries", small + canaries, 1, true},
-		{"process changes plus canaries", pcc + canaries, 2, false},
+		{"process changes plus canaries", pcc + canaries, 2, true},
 		{"everything", everything, 100, false},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -400,17 +408,28 @@ func TestLandingDepthNamedCommandReasonWithRealCanaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := impactAdapterBed(t)
-	plan := "selection: cmd/metasystem=TestProcess\n"
-	for _, canary := range contract.Always.Canary {
-		plan += "selection: " + canary + "\n"
-	}
 	module, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	share, cheap, full, reason, err := impactCost(root, module, plan, contract)
-	if err != nil || cheap || reason != "change selects cmd/metasystem: full" {
-		t.Fatalf("share=%d cheap=%v full=%d reason=%q error=%v", share, cheap, full, reason, err)
+	for _, row := range []struct {
+		name, selection, reason string
+		cheap                   bool
+	}{
+		{"named", "cmd/metasystem=TestProcess", "", true},
+		{"whole", "cmd/metasystem", "change selects cmd/metasystem whole; the batch check covers it", false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			plan := "selection: " + row.selection + "\n"
+			for _, canary := range contract.Always.Canary {
+				plan += "selection: " + canary + "\n"
+			}
+			share, cheap, full, reason, err := impactCost(root, module, plan, contract)
+			if err != nil || cheap != row.cheap || reason != row.reason {
+				t.Fatalf("share=%d cheap=%v full=%d reason=%q error=%v", share, cheap, full, reason, err)
+			}
+			t.Logf("%d%% of %d packages; %s", share, full, reason)
+		})
 	}
-	t.Logf("%d%% of %d packages; %s", share, full, reason)
 }
