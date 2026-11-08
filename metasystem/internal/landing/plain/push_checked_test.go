@@ -2,8 +2,81 @@ package plain
 
 import (
 	"errors"
+	"os/exec"
+	"reflect"
+	"strings"
 	"testing"
+	"time"
+
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 )
+
+func TestBatchPushNeedsAFullGreen(t *testing.T) {
+	t.Parallel()
+	for _, scope := range []string{"impact", "full"} {
+		t.Run(scope, func(t *testing.T) {
+			t.Parallel()
+			b := newScopeBed(t)
+			batch := &Batch{ID: "batch", Base: "main", State: BatchRunning, Members: []GoalSHA{{Goal: "g", SHA: "member"}},
+				Lane: lane.Record{Root: b.checkout, Install: b.install, CustodyEpoch: 1}}
+			if _, _, err := HandIn(b.install, Line{Goal: "g", SHA: "member", At: bedNow.Format(time.RFC3339)}); err != nil {
+				t.Fatal(err)
+			}
+			if err := writeBatch(b.install, batch); err != nil {
+				t.Fatal(err)
+			}
+			result := Result{Commit: b.git.commit, Tree: b.git.tree, Result: Green, Scope: scope, At: bedNow.Format(time.RFC3339),
+				BatchID: batch.ID, BatchMembers: batch.Members, BaseCommit: batch.Base,
+				Executions: []ExecutionAdmission{{DepthScope: scope, DepthBase: batch.Base, BatchID: batch.ID, Tree: b.git.tree}}}
+			if scope == "full" {
+				result.FullTree, result.FullAt = result.Tree, result.At
+			}
+			b.save(t, result)
+			pushed := false
+			notAncestor := exec.Command("/usr/bin/false").Run()
+			b.seams.Git = func(dir string, args ...string) (string, error) {
+				switch args[0] {
+				case "fetch", "cat-file":
+					return "", nil
+				case "rev-parse":
+					if args[2] == "refs/remotes/origin/main^{commit}" {
+						return batch.Base, nil
+					}
+				case "merge-base":
+					if args[3] == b.git.commit && (args[2] == batch.Base || args[2] == "member") {
+						return "", nil
+					}
+					return "", notAncestor
+				case "rev-list":
+					if args[1] == "--first-parent" {
+						return b.git.commit + " main member", nil
+					}
+				case "show":
+					if strings.Join(args, " ") == "show -s --format=%cI HEAD" {
+						return result.At, nil
+					}
+				case "push":
+					want := []string{"push", "--quiet", "--force-with-lease=refs/heads/main:main", "origin", b.git.commit + ":refs/heads/main"}
+					if !reflect.DeepEqual(args, want) {
+						t.Fatalf("push args=%v, want %v", args, want)
+					}
+					pushed = true
+					return "", nil
+				}
+				return b.git.run(dir, args...)
+			}
+			outcome, err := PushChecked(b.install, b.checkout, bedNow, nil, b.seams)
+			if scope == "impact" {
+				var refusal *Refusal
+				if !errors.As(err, &refusal) || refusal.Code != CodeUnproven || refusal.Reason != "an impact check never lands a batch; the batch needs a full check" || refusal.Next != "metasystem landing prove" || pushed || outcome.Changed {
+					t.Fatalf("impact push: %+v %v pushed=%v", outcome, err, pushed)
+				}
+			} else if err != nil || !pushed || !outcome.Changed {
+				t.Fatalf("full push: %+v %v pushed=%v", outcome, err, pushed)
+			}
+		})
+	}
+}
 
 // This adapter test uses real Git to observe the fetched main and publication;
 // a stub cannot prove that the callback's refusal leaves the remote unchanged.

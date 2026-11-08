@@ -76,13 +76,6 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 	if depth == "full" && seams.DepthScope == "" && !seams.Impact {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: depth, ScopeReason: reason}}
 	}
-	if depth == "impact" && seams.DepthScope == "" && !seams.Impact {
-		d := impactScope(install, checkout, seams)
-		if !strings.HasPrefix(d.ScopeReason, "impact proof error:") {
-			d.ScopeReason = reason
-		}
-		return d
-	}
 	if seams.DepthScope != "" {
 		d := scopeDecision{scopeRecord: scopeRecord{Scope: depth, ScopeReason: reason}}
 		if seams.Impact {
@@ -121,13 +114,17 @@ func BatchProofDepth(install, checkout string, running Running, seams ProveSeams
 	if seams.DepthScope != "" {
 		return seams.DepthScope, seams.DepthReason
 	}
-	if !seams.Impact && seams.BatchDepth != nil && decideScope(install, checkout, running, seams).Scope == "scoped" {
+	if running.BatchID == "" {
 		return "", ""
 	}
-	if running.BatchID != "" && seams.BatchDepth != nil {
-		return seams.BatchDepth(install, checkout, running)
+	if !seams.Impact {
+		decision := decideScope(install, checkout, running, seams)
+		if decision.Scope == "scoped" {
+			return "", ""
+		}
+		return "full", decision.ScopeReason
 	}
-	return "", ""
+	return "full", "the batch proves full before its push"
 }
 
 // admitExecutionLocked reads policy for each whole execution, with the
