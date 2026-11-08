@@ -2,7 +2,7 @@
 
 - State: approved
 - Priority: 1
-- Sequence: 17
+- Sequence: 6
 - Risk: severity=2 novelty=1 exposure=1 accumulation=1 basis="a test-bed repair of one test from a read root cause (Explore 2026-11-07 16:1x); no production change; the unit check and the lane proof gate it"
 - Tier: 2
 - Intent: TestScratchCleanupDrainIsBoundedForALiveWriter fails on a fork copy of the writer lock: its second Cleanup uses the single-probe scratchDrain{} (internal/proofrun/scratch_test.go:384) while production retries for 2 s (defaultScratchDrain, scratch.go:160, :600); the test waits the copy out on an injected clock (R-104) the way production does; no production change
@@ -10,7 +10,7 @@
 - DesignGate: off
 - Next step: Build without a design from the Explore evidence of 2026-11-07: replace the single probe with a bounded drain on the test clock; one test; about 15 lines Astra r2 (week review): release() already waits for the child (scratch_test.go:304), and a fake clock cannot release a real OS lock (scratch.go:604). Trace the surviving holder of the lock first, then assert timing with an injected probe on the artificial clock (R-104); keep any real-process wiring proof separate and generously bounded.
 - OpenedAt: 2026-11-07T15:52:27Z
-- Revision: 19
+- Revision: 20
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -36,4 +36,5 @@ History:
 - 2026-11-08T14:02:34Z NMG1KTJHEJM6XNK4PGK83BWBJ0-m1e-471da7b1 set-priority actor=human:Wido targets=a-batch-gate-is-accepted-for-its-tree,a-boundary-waits-only-on-its-own-questions,a-flake-has-an-owner-from-its-first-sighting,a-hand-in-stands-on-main,a-host-is-ready-before-it-joins,a-landed-goal-concludes-itself,a-publication-refuses-only-what-it-adds,a-push-folds-a-records-only-move,a-retained-read-brief-keeps-its-context,a-returned-member-leaves-the-batch,a-round-ends-without-its-caller,a-scratch-cleanup-test-drains-like-production,a-selected-batch-is-proving,a-settled-unit-is-not-in-flight,a-spent-box-asks-before-it-blocks,a-stop-is-read-where-the-goal-is,a-unit-check-runs-the-importers-too,a-unit-name-is-one-word-everywhere,a-unit-reservation-carries-its-deadline,a-unit-stop-asks-its-steward-first,attempts-are-bounded-per-unit,flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,lane-steward-2,one-host-admits-heavy-work,red-names-what-failed,replies-reach-the-asking-seat-2,the-census-ignores-its-own-report,the-claim-quota-is-a-host-setting,the-deputy-acts-under-a-recorded-delegation,the-fleet-serialization-proof-asserts-cleared-leases,the-lane-batches-goals-and-proves-once,the-size-hold-stops-at-the-production-ceiling reason=priority-order subject=a-spent-box-asks-before-it-blocks from=1:15 to=1:16 requested-sequence=4
 - 2026-11-08T14:03:40Z W1FW8HCXFPXTW59FHE9RGYD331-m1e-471da7b1 set-priority actor=human:Wido targets=a-batch-gate-is-accepted-for-its-tree,a-boundary-waits-only-on-its-own-questions,a-publication-refuses-only-what-it-adds,a-push-folds-a-records-only-move,a-retained-read-brief-keeps-its-context,a-scratch-cleanup-test-drains-like-production,a-unit-reservation-carries-its-deadline,flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,replies-reach-the-asking-seat-2,the-census-ignores-its-own-report,the-fleet-serialization-proof-asserts-cleared-leases,the-lane-batches-goals-and-proves-once,the-size-hold-stops-at-the-production-ceiling reason=priority-order subject=replies-reach-the-asking-seat-2 from=1:16 to=1:17 requested-sequence=5
 - 2026-11-08T20:32:22Z VTANEE45TN435TZZH86RMHTBTZ-m1e-aa023aa7 set-pin actor=human:Wido targets=a-scratch-cleanup-test-drains-like-production
-Integrity: sha256=2a55c8a77e2db27743a5d74251e32bb433e8ba173ef539eb8212c6d6f7fba379
+- 2026-11-08T20:32:32Z AH6610D2YHBR5W9A72V6E5Q4RP-m1e-aa023aa7 set-priority actor=human:Wido targets=a-batch-gate-is-accepted-for-its-tree,a-boundary-waits-only-on-its-own-questions,a-publication-refuses-only-what-it-adds,a-push-folds-a-records-only-move,a-retained-read-brief-keeps-its-context,a-scratch-cleanup-test-drains-like-production,a-unit-reservation-carries-its-deadline,flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,the-census-ignores-its-own-report,the-lane-batches-goals-and-proves-once,the-size-hold-stops-at-the-production-ceiling reason=priority-order subject=a-scratch-cleanup-test-drains-like-production from=1:17 to=1:6 requested-sequence=6
+Integrity: sha256=dd8b6b21b1b14fc56212582e44de449bee458ae19d052b695aa924066f1e3194
