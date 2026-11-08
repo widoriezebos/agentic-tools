@@ -668,8 +668,8 @@ func validateWithRunner(confPath, repoRoot string, runner gitRunner) (tiersAbsen
 	}
 	// The batch lane's pipeline durations and stage list (D14, R22).
 	if raw, present := values["proof.trunk-every"]; present {
-		if parsed, parseErr := time.ParseDuration(raw); parseErr != nil || parsed <= 0 {
-			add("proof.trunk-every must be a positive duration, got %s", pyRepr(raw))
+		if _, valid := TrunkEvery(raw); !valid {
+			add("proof.trunk-every must be off or a duration of at least 24h, got %s", pyRepr(raw))
 		}
 	}
 	if raw, present := values["provider.recovery-alert-after"]; present {
@@ -1076,4 +1076,16 @@ func externalRuntime(confPath, runtime string) (admitted bool, hint string) {
 		return false, reason
 	}
 	return true, ""
+}
+
+// TrunkEvery reads the optional cadence of main's fresh full check.
+func TrunkEvery(raw string) (time.Duration, bool) {
+	if raw == "off" {
+		return 0, true
+	}
+	every, err := time.ParseDuration(raw)
+	if err != nil || every < 24*time.Hour {
+		return 0, false
+	}
+	return every, true
 }

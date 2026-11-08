@@ -389,7 +389,7 @@ func TestStandingFailureResolution(t *testing.T) {
 func TestStandingRedPreservesHourlyDebtAcrossTwoMoves(t *testing.T) {
 	t.Parallel()
 	b := newStandingBed(t, false)
-	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=4h\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	first := b.detached(t)
@@ -404,9 +404,13 @@ func TestStandingRedPreservesHourlyDebtAcrossTwoMoves(t *testing.T) {
 	}
 	b.seams.Now = func() time.Time { return bedNow.Add(time.Hour) }
 	b.seams.NewID = func() string { return "hourly" }
-	if due, err := scopedProofDue(b.install, b.seams.now()); err != nil || !due {
+	if due, err := proofDebt(b.install, b.seams.now(), false); err != nil || !due {
 		t.Fatalf("no green lost hourly debt %v %v", due, err)
 	}
+	if due, err := fullProofDue(b.install, b.seams.now()); err != nil || due {
+		t.Fatalf("hourly debt woke clock: %v %v", due, err)
+	}
+	b.seams.Now = func() time.Time { return bedNow.Add(24 * time.Hour) }
 	b.fail = "plans"
 	hold, err := KeeperClock(lane.Record{Root: b.checkout, Install: b.install, CustodyEpoch: 1}, func(lane.Record) error { return nil }, b.seams)
 	if err != nil || !strings.Contains(hold, "hourly debt") {
@@ -425,7 +429,7 @@ func TestStandingRedPreservesHourlyDebtAcrossTwoMoves(t *testing.T) {
 	if err != nil || !r.CountedFull || r.Result != Red {
 		t.Fatalf("full red %+v %v", r, err)
 	}
-	due, err := scopedProofDue(b.install, b.seams.now())
+	due, err := proofDebt(b.install, b.seams.now(), false)
 	if err != nil || due {
 		t.Fatalf("executed counted red did not discharge debt: %v %v", due, err)
 	}
@@ -495,7 +499,7 @@ func TestStandingRedDebtRequiresExecutedTrunkCheck(t *testing.T) {
 				paid.CountedFull = false
 			}
 			b.save(t, paid)
-			due, err := scopedProofDue(b.install, bedNow.Add(time.Hour))
+			due, err := proofDebt(b.install, bedNow.Add(time.Hour), false)
 			if err != nil || due != (mode != "trunk red" && mode != "trunk green") {
 				t.Fatalf("debt paid by %s: due=%v %v", mode, due, err)
 			}
@@ -511,7 +515,7 @@ func TestStandingRedCountedCandidateDoesNotPayScopedPushDebt(t *testing.T) {
 	b.save(t, scoped)
 	writePushRecords(t, b.install, Pushed{Tree: scoped.Tree, At: scoped.At})
 	b.save(t, Result{Attempt: "candidate-red", Tree: "candidate-tree", Scope: "full", Result: Red, CountedFull: true, Cause: &Cause{Kind: "main"}, At: bedNow.Add(55 * time.Minute).Format(time.RFC3339)})
-	due, err := scopedProofDue(b.install, bedNow.Add(time.Hour))
+	due, err := proofDebt(b.install, bedNow.Add(time.Hour), false)
 	if err != nil || !due {
 		t.Fatalf("candidate red paid main's scoped-push debt: %v %v", due, err)
 	}

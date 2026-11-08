@@ -142,6 +142,8 @@ func TestLandingSelectDepthClassStatus(t *testing.T) {
 func TestLandingFullDueBatchAdapterProofPushClock(t *testing.T) {
 	t.Parallel()
 	b := newBatchVerbBed(t, "auto")
+	b.configuration = strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=24h")
+	b.policy(t, "auto")
 	sha := b.seat(t, "low")
 	b.owners.landing.plainProve.GoalTier = func(string, string) (uint8, error) { return 1, nil }
 	b.owners.landing.plainProve.BatchDepth = func(string, string, plain.Running) (string, string) { return "impact", "low tier" }
@@ -185,6 +187,8 @@ func TestLandingFullDueLedgerRefreshAdapterRunsFullAndPaysClock(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newBatchVerbBed(t, "auto")
+			b.configuration = strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=24h")
+			b.policy(t, "auto")
 			// The detached child is claimed in this process through its saved attempt.
 			b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) { b.launches++; return int64(os.Getpid()), nil }
 			b.owners.landing.now = func() time.Time { return b.now }
@@ -390,14 +394,14 @@ func TestLandingScopedLedgerRefreshAdapterRunsAffectedChecksAndKeepsClock(t *tes
 					t.Fatalf("full due at %s: %v %v, want %v", at, reasons, err, want)
 				}
 			}
-			// A short interval distinguishes the original credit from a scoped publication's time.
-			helmMust(t, os.WriteFile(filepath.Join(b.installation, "metasystem.conf"), []byte(strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=30m")), 0600))
-			assertDue(originAt.Add(29*time.Minute), false)
-			assertDue(originAt.Add(31*time.Minute), true)
+			// The daily interval retains the original full credit across a scoped publication.
+			helmMust(t, os.WriteFile(filepath.Join(b.installation, "metasystem.conf"), []byte(strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=24h")), 0600))
+			assertDue(originAt.Add(24*time.Hour-time.Second), false)
+			assertDue(originAt.Add(24*time.Hour), true)
 			b.policy(t, "auto")
 			assertDue(originAt.Add(59*time.Minute), false)
-			// Main's own records check keeps its full green; a scoped push owes.
-			assertDue(originAt.Add(time.Hour+time.Second), !keeperRoute)
+			// The hourly debt does not wake the independent full-check clock.
+			assertDue(originAt.Add(time.Hour+time.Second), false)
 			t.Logf("%s; executed prerequisite and ledger; unaffected retained; original full tree/time and clock retained", scoped.ScopeReason)
 		})
 	}

@@ -190,7 +190,7 @@ func TestWakeTimerHonorsMaintenanceAndDrain(t *testing.T) {
 		t.Run(fence, func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
-			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("metasystem.template=true\nproof.trunk-every=1h\n"), 0o600); err != nil {
+			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("metasystem.template=true\nproof.trunk-every=24h\n"), 0o600); err != nil {
 				t.Fatal(err)
 			}
 			if fence == "drain" || fence == "both" {

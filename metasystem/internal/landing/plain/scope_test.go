@@ -270,8 +270,11 @@ func TestARecordsOnlyBatchIsProvedScopedOnMainsGreen(t *testing.T) {
 				t.Fatalf("records-only scope record: %+v", record)
 			}
 			writePushRecords(t, b.install, Pushed{Tree: result.Tree, At: bedNow.Format(time.RFC3339)})
-			if due, err := fullProofDue(b.install, bedNow.Add(51*time.Minute)); err != nil || !due {
+			if due, err := proofDebt(b.install, bedNow.Add(51*time.Minute), false); err != nil || !due {
 				t.Fatalf("records-only push owes no full proof: %v, %v", due, err)
+			}
+			if due, err := fullProofDue(b.install, bedNow.Add(51*time.Minute)); err != nil || due {
+				t.Fatalf("records debt woke clock: %v %v", due, err)
 			}
 		})
 	}
@@ -615,8 +618,11 @@ func TestALedgerInheritanceKeepsScopeAndOwesItsFullProof(t *testing.T) {
 			writePushRecords(t, b.install, Pushed{Tree: inherited.Tree, At: bedNow.Format(time.RFC3339)})
 			now := bedNow.Add(51 * time.Minute)
 			b.seams.Now = func() time.Time { return now }
-			if reasons, err := WakeReasons(b.install, b.checkout, bedNow, now); err != nil || !reflect.DeepEqual(reasons, []string{WakeFullDue}) {
-				t.Fatalf("idle inherited push did not wake: %v %v", reasons, err)
+			if reasons, err := WakeReasons(b.install, b.checkout, bedNow, now); err != nil || len(reasons) != 0 {
+				t.Fatalf("idle inherited push raised a clock wake: %v %v", reasons, err)
+			}
+			if due, err := proofDebt(b.install, now, false); err != nil || !due {
+				t.Fatalf("inherited push debt lost: %v %v", due, err)
 			}
 			if _, ok, err := Settled(b.install, b.checkout, b.seams); err != nil || ok {
 				t.Fatalf("aged inherited proof settled: %v %v", ok, err)
@@ -634,8 +640,11 @@ func TestALedgerInheritanceKeepsScopeAndOwesItsFullProof(t *testing.T) {
 			if err != nil || paid.Result != Green || paid.Scope != "full" || paid.FullTree != paid.Tree || paid.FullAt != now.Format(time.RFC3339) || len(b.calls) != 3 || commandEnv(b.calls[2], "LANDING_PROOF_SCOPE") != "full" {
 				t.Fatalf("owed full proof: %+v %v, calls %d", paid, err, len(b.calls))
 			}
-			if reasons, err := WakeReasons(b.install, b.checkout, bedNow, now); err != nil || !reflect.DeepEqual(reasons, []string{WakeFullDue}) {
-				t.Fatalf("batch proof paid the hourly debt but must still wake main's independent clock: %v %v", reasons, err)
+			if reasons, err := WakeReasons(b.install, b.checkout, bedNow, now); err != nil || len(reasons) != 0 {
+				t.Fatalf("completed batch proof woke the disabled clock: %v %v", reasons, err)
+			}
+			if due, err := proofDebt(b.install, now, false); err != nil || due {
+				t.Fatalf("full batch proof did not pay the debt: %v %v", due, err)
 			}
 		})
 	}

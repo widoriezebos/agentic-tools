@@ -133,7 +133,7 @@ func TestStandingRedDebtRetainsCandidateRepairProtection(t *testing.T) {
 	t.Parallel()
 	b := newStandingBed(t, false)
 	_ = b.detached(t)
-	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=4h\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
 	checkpoint := Running{Attempt: "candidate", Commit: "candidate", Tree: "candidate-tree", Checkpoint: true}
@@ -141,7 +141,7 @@ func TestStandingRedDebtRetainsCandidateRepairProtection(t *testing.T) {
 	if err := writeRunning(b.install, checkpoint); err != nil {
 		t.Fatal(err)
 	}
-	b.seams.Now = func() time.Time { return bedNow.Add(time.Hour) }
+	b.seams.Now = func() time.Time { return bedNow.Add(24 * time.Hour) }
 	subjectReads := 0
 	git := b.seams.Git
 	b.seams.Git = func(dir string, args ...string) (string, error) {
@@ -242,9 +242,10 @@ func TestStandingRedNamedPrerequisiteRepeats(t *testing.T) {
 func TestStandingRedCadenceStillRequestsFull(t *testing.T) {
 	t.Parallel()
 	b := newStandingBed(t, false)
-	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=1m\n"), 0600); err != nil {
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
 		t.Fatal(err)
 	}
+	b.seams.Now = func() time.Time { return bedNow.Add(24 * time.Hour) }
 	_, err := KeeperClock(lane.Record{Root: b.checkout, Install: b.install, CustodyEpoch: 1}, func(lane.Record) error { return nil }, b.seams)
 	if err != nil {
 		t.Fatal(err)

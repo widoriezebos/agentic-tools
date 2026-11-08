@@ -488,3 +488,36 @@ func TestLandingBatchShowsOnlyWaitingQueueEntries(t *testing.T) {
 		t.Fatalf("exit %d: %s", code, out)
 	}
 }
+
+func TestPersonActDuringAFullProofStaysPending(t *testing.T) {
+	t.Parallel()
+	b, original := batchVerbFixture(t, "running")
+	path := filepath.Join(plain.Dir(b.lane), "running.json")
+	before, err := os.ReadFile(path)
+	helmMust(t, err)
+	ended := 0
+	b.owners.landing.plainProve.EndProof = func(plain.Running) error { ended++; return nil }
+	for _, words := range [][]string{{"landing", "batch", "reopen", "--with", "shared-state-in-the-ledger"}, {"landing", "restart"}} {
+		code, out := b.run(t, b.seat, words...)
+		batch := b.batch(t)
+		act := batch.Actions[len(batch.Actions)-1]
+		if code != 0 || !act.Pending || act.Impact != "recorded; nothing acts on it until the proof ends — run reopen again then" {
+			t.Fatalf("pending act: exit %d %s act=%+v", code, out, act)
+		}
+		after, err := os.ReadFile(path)
+		helmMust(t, err)
+		if string(before) != string(after) || act.Attempt != "proof" || ended != 0 {
+			t.Fatalf("act changed live attempt: before=%s after=%s ended=%d", before, after, ended)
+		}
+		if _, err := os.Stat(filepath.Join(plain.Dir(b.lane), "proofs", "proof.cancel.json")); !errors.Is(err, os.ErrNotExist) {
+			t.Fatalf("pending act wrote cancel: %v", err)
+		}
+	}
+	b.owners.landing.plainProve.Alive = func(plain.Running) bool { return false }
+	writeQuestionFixture(t, filepath.Join(plain.Dir(b.lane), "results.jsonl"), plain.Result{Attempt: "proof", BatchID: original.ID, Tree: "tree", Commit: "main", Scope: "full", Result: plain.Green, At: b.now.Format(time.RFC3339)})
+	code, out := b.run(t, b.seat, "landing", "batch", "reopen", "--with", "shared-state-in-the-ledger")
+	batch := b.batch(t)
+	if code != 0 || batch.Actions[len(batch.Actions)-1].Pending || !slices.ContainsFunc(batch.Members, func(m plain.GoalSHA) bool { return m.Goal == "shared-state-in-the-ledger" }) {
+		t.Fatalf("ended proof reopen: exit %d %s batch=%+v", code, out, batch)
+	}
+}

@@ -14,6 +14,9 @@ import (
 func retiredHoldBed(t *testing.T) *stewardBed {
 	t.Helper()
 	b := newStewardBed(t)
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	b.incidents()
 	b.seams.Steward.Trunk = nil
 	b.seams.Trunk, b.seams.Fresh = true, true

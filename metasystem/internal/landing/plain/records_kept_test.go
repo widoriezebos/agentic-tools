@@ -2,8 +2,9 @@ package plain
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
-	"strings"
 	"testing"
 	"time"
 )
@@ -14,6 +15,9 @@ import (
 func newRecordsMoveBed(t *testing.T) *flakeMoveBed {
 	t.Helper()
 	b := newFlakeMoveBed(t)
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	for _, tree := range []string{"b", "c"} {
 		b.trees[tree] = map[string]string{}
 		for path, data := range b.trees["a"] {
@@ -52,21 +56,9 @@ func (b *flakeMoveBed) proven(t *testing.T, tree string, owedSince time.Time) {
 	}
 }
 
-func (b *flakeMoveBed) clockReason(t *testing.T) string {
-	t.Helper()
-	state, err := readClock(b.install)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return state.Reason
-}
-
 func TestARecordsOnlyMoveKeepsMainsFullGreen(t *testing.T) {
 	t.Parallel()
 	kept := fmt.Sprintf("main moved by records only; 2 checks run, the rest holds from the %s check", bedNow.Local().Format("15:04"))
-	debt := func(at time.Time) string {
-		return "the hourly debt of the " + at.Local().Format("15:04") + " check is due"
-	}
 	// designMove runs main's first records move through the keeper and holds
 	// main's green past the hour; it leaves the bed at 1h+1s with one launch.
 	designMove := func(t *testing.T, b *flakeMoveBed) {
@@ -84,19 +76,19 @@ func TestARecordsOnlyMoveKeepsMainsFullGreen(t *testing.T) {
 		t.Parallel()
 		b := newRecordsMoveBed(t)
 		designMove(t, b)
-		if due, err := scopedProofDue(b.install, b.at); err != nil || !due {
+		if due, err := proofDebt(b.install, b.at, false); err != nil || !due {
 			t.Fatalf("the shared hourly debt is gone after main's records check: %v %v", due, err)
 		}
 		d := proofScope(b.install, b.checkout, Running{BatchID: "cheap", Commit: "commit-candidate", Tree: "tree-candidate"}, b.seams)
-		if d.Scope != "full" || !strings.HasPrefix(d.ScopeReason, "full proof overdue since") {
+		if d.Scope != "full" || d.ScopeReason != "no green proof of this batch yet" {
 			t.Fatalf("a cheap batch after main's records check: %+v", d.scopeRecord)
 		}
 		b.at = bedNow.Add(3*time.Hour + 59*time.Minute)
 		b.checkWake(t, 1, false)
 		b.at = bedNow.Add(4 * time.Hour)
-		b.checkWake(t, 2, true)
-		if last := b.argv[len(b.argv)-1]; !slices.Contains(last, "--trunk") || !slices.Contains(last, "--fresh") {
-			t.Fatalf("four-hour launch argv=%v", last)
+		b.checkWake(t, 1, false)
+		if due, err := fullProofDue(b.install, bedNow.Add(time.Hour+time.Second)); err != nil || due {
+			t.Fatalf("disabled cadence due=%v err=%v", due, err)
 		}
 	})
 	t.Run("a second records move after the hour", func(t *testing.T) {
@@ -133,13 +125,13 @@ func TestARecordsOnlyMoveKeepsMainsFullGreen(t *testing.T) {
 		owed := bedNow.Add(5 * time.Minute)
 		b.proven(t, "b", owed)
 		b.at = owed.Add(61 * time.Minute)
-		b.checkWake(t, 2, true)
+		b.checkWake(t, 1, false)
 		reasons, err := WakeReasons(b.install, b.checkout, time.Time{}, b.at, b.seams)
-		if err != nil || !slices.Contains(reasons, WakeFullDue) {
-			t.Fatalf("a standing debt was kept: reasons=%v error=%v", reasons, err)
+		if err != nil || slices.Contains(reasons, WakeFullDue) {
+			t.Fatalf("standing debt woke the disabled clock: reasons=%v error=%v", reasons, err)
 		}
-		if last := b.argv[len(b.argv)-1]; !slices.Contains(last, "--fresh") || b.clockReason(t) != debt(owed) {
-			t.Fatalf("the keeper did not pay the standing debt: argv=%v clock=%q", last, b.clockReason(t))
+		if due, err := proofDebt(b.install, b.at, true); err != nil || !due {
+			t.Fatalf("standing debt lost: %v %v", due, err)
 		}
 	})
 	t.Run("a scoped push, then main's records check", func(t *testing.T) {
@@ -155,9 +147,23 @@ func TestARecordsOnlyMoveKeepsMainsFullGreen(t *testing.T) {
 		b.checkWake(t, 1, false)
 		b.proven(t, "c", time.Time{})
 		b.at = bedNow.Add(61 * time.Minute)
-		b.checkWake(t, 2, true)
-		if last := b.argv[len(b.argv)-1]; !slices.Contains(last, "--fresh") || b.clockReason(t) != debt(bedNow) {
-			t.Fatalf("main's records check hid the push's debt: argv=%v clock=%q", last, b.clockReason(t))
+		b.checkWake(t, 1, false)
+		if due, err := proofDebt(b.install, b.at, true); err != nil || !due {
+			t.Fatalf("push debt lost: %v %v", due, err)
+		}
+	})
+	t.Run("daily check", func(t *testing.T) {
+		t.Parallel()
+		b := newRecordsMoveBed(t)
+		if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
+			t.Fatal(err)
+		}
+		b.at = bedNow.Add(24*time.Hour - time.Second)
+		b.checkWake(t, 0, false)
+		b.at = bedNow.Add(24 * time.Hour)
+		b.checkWake(t, 1, true)
+		if last := b.argv[len(b.argv)-1]; !slices.Contains(last, "--trunk") || !slices.Contains(last, "--fresh") {
+			t.Fatalf("daily argv=%v", last)
 		}
 	})
 }

@@ -350,10 +350,10 @@ func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 					}
 					b.at = bedNow.Add(5 * time.Hour)
 					if _, ok := applicableMainProof(b.install, b.checkout, r.Commit, r.Tree, b.seams, true); !ok {
-						t.Fatal("applicableMainProof refused four-hour-old inheritance")
+						t.Fatal("applicableMainProof refused daily-old inheritance")
 					}
 					if !r.fullCurrent(b.at) {
-						t.Fatal("fullCurrent refused four-hour-old inheritance")
+						t.Fatal("fullCurrent refused daily-old inheritance")
 					}
 					return
 				}
@@ -386,11 +386,11 @@ func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 				}
 				b.checkWake(t, 1, false)
 				b.inherited(t, "c", 1)
-				for _, age := range []time.Duration{time.Hour + time.Second, 3*time.Hour + 59*time.Minute} {
+				for _, age := range []time.Duration{time.Hour + time.Second, 23*time.Hour + 59*time.Minute} {
 					b.at = bedNow.Add(age)
 					b.checkWake(t, 1, false)
 				}
-				b.at = bedNow.Add(4 * time.Hour)
+				b.at = bedNow.Add(24 * time.Hour)
 				b.checkWake(t, 2, true)
 				return
 			}
@@ -404,7 +404,10 @@ func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 				b.checkWake(t, 0, false)
 				b.inherited(t, "c", 1)
 				b.at = bedNow.Add(time.Hour + time.Second)
-				b.checkWake(t, 1, true)
+				b.checkWake(t, 0, false)
+				if due, err := proofDebt(b.install, b.at, true); err != nil || !due {
+					t.Fatalf("push debt lost: %v %v", due, err)
+				}
 				return
 			}
 			if name == "u4-marker-row" {
@@ -413,7 +416,7 @@ func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 			}
 			accepted := slices.Contains([]string{"goal-edit", "design-edit-flake-fix", "flake-record", "stacked", "did-not-run-red", "legacy-inheritance-evidence", "later-red-after-inheritance"}, name)
 			if !accepted {
-				b.checkWake(t, 1, name == "legacy-row")
+				b.checkWake(t, 1, false)
 				if name != "future-marked-row" {
 					b.inherited(t, "b", 0)
 				}
@@ -457,17 +460,17 @@ func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 				b.checkWake(t, 0, false)
 				b.inherited(t, "c", 1)
 			}
-			for _, age := range []time.Duration{time.Hour + time.Second, 3*time.Hour + 59*time.Minute} {
+			for _, age := range []time.Duration{time.Hour + time.Second, 23*time.Hour + 59*time.Minute} {
 				b.at = bedNow.Add(age)
 				b.checkWake(t, 0, false)
 			}
 			b.restart()
 			b.checkWake(t, 0, false)
 			b.inherited(t, b.main, 1)
-			b.at = bedNow.Add(4 * time.Hour)
+			b.at = bedNow.Add(24 * time.Hour)
 			b.checkWake(t, 1, true)
 			if len(b.argv) != 1 || !slices.Contains(b.argv[0], "--trunk") || !slices.Contains(b.argv[0], "--fresh") {
-				t.Fatalf("four-hour launch argv=%v", b.argv)
+				t.Fatalf("daily launch argv=%v", b.argv)
 			}
 		})
 	}
