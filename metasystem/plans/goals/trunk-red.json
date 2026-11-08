@@ -10895,11 +10895,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261107T172258.964911000Z-replay-1"
-      ],
+      "holds": [],
       "opened": "2026-11-07T18:48:38Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-08T03:24:30Z",
+        "attempt": "20261108T023525.277165000Z",
+        "baseCommit": "498c8b24012ac8fafdef33315beec9d2759efd2c",
+        "how": "green",
+        "opid": "ZQ0QKJ5EPBD8VNBFJCG1R4GES2-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     },
     {
       "testUnit": "metasystem/cmd/metasystem",
