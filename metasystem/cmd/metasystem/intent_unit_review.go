@@ -408,7 +408,12 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 					BeforeCommit: func(dir, parent, tree string) error {
 						if parent != review.Head || subject.Amends != "" || subject.GateSnapshot != nil {
 							if subject.Amends != "" {
-								if _, err := conn.rebaseGate(dir); err != nil {
+								installation, err := candidateInstallation(install, dir)
+								if err != nil {
+									gateErr = err
+									return err
+								}
+								if _, err := conn.rebaseGate(installation); err != nil {
 									gateErr = err
 									return err
 								}

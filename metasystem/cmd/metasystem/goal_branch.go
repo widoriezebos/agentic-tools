@@ -785,6 +785,17 @@ func goalBranchPublishReadWithDeadline(root, goalID, unit string, deadline func(
 		GoalID: goalID, UnitCommit: commit, CheckClaim: goalBranchClaimCheck(root, goalID, endpoint)})
 }
 
+// candidateInstallation is the installation inside a scratch candidate tree:
+// the candidate's top plus the prefix of repo's installation, so the static
+// gate runs where the candidate's go.mod is.
+func candidateInstallation(repo, candidate string) (string, error) {
+	prefix, err := goalBranchGit(repo, "rev-parse", "--show-prefix")
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(candidate, strings.TrimSpace(prefix)), nil
+}
+
 // goalBranchStaticArgv runs the worktree's own static gate, trimmed.
 func goalBranchStaticArgv(proofPath string) []string {
 	return []string{"go", "run", "-trimpath", "./cmd/devgate", "static", "--proof-out", proofPath}

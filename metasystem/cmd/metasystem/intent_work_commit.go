@@ -107,11 +107,10 @@ func runIntentWorkCommit(inv *intentInvocation) int {
 				commit, err = publish(branch.CommitRequest{Repo: root, Remote: endpoint.Remote, EndpointTip: base, GoalID: id,
 					Unit: unit, FrozenPatch: patch, OpID: operation, Kind: branch.Unit, Amend: inv.input.switched("amend"), CheckClaim: check, Transport: conn.transport,
 					BeforeCommit: func(candidate, parent, tree string) error {
-						prefix, err := goalBranchGit(root, "rev-parse", "--show-prefix")
+						installation, err := candidateInstallation(root, candidate)
 						if err != nil {
 							return err
 						}
-						installation := filepath.Join(candidate, prefix)
 						beforeHead, before, err := bound.WorktreeResult(candidate)
 						if err != nil {
 							return err
