@@ -36,7 +36,7 @@
       ]
     },
     "code-critic": {
-      "artifactMember": "Return schema version 4 supersedes the role file version. Every rigor row requires artifact as <path>, NEW <path>, or <old>=><new>, with paths beginning metasystem/.",
+      "artifactMember": "Return schema version 6 supersedes the role file version. Every rigor row requires artifact as <path>, NEW <path>, or <old>=><new>, with paths beginning metasystem/.",
       "sources": [
         {"slot": "role-instructions", "path": "protocol:roles/code-critic.md"},
         {"slot": "required-skill", "path": "skills/code-critique/SKILL.md"},

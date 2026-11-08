@@ -41,6 +41,20 @@ func exitCodeOf(err error, otherwise int) int {
 // answers it with its usage text and status 2, as the shell adapters did.
 var errPrepare = errors.New("supervision could not be prepared")
 
+// returnSchemaVersion is the return schema a role is handed. The unit stop
+// collects a code critic's material findings, and only version 6 carries
+// their class, where and change (finding 570); the other critic roles keep
+// version 4, which people read.
+func returnSchemaVersion(role string) int {
+	switch role {
+	case "code-critic":
+		return 6
+	case "design-critic", "warden":
+		return 4
+	}
+	return 2
+}
+
 // Supervision is one delegate round's state: the paths the round writes and
 // the handshake facts the lifecycle decides on.
 type Supervision struct {
@@ -229,11 +243,7 @@ func (s *Supervision) prepare(args []string) error {
 	s.heartbeat = filepath.Join(s.d.agents(), "hb", s.job)
 	s.effective = filepath.Join(s.roundDir, "effective-permissions.json")
 	role, _ := field(s.record, "role")
-	schemaVersion := 2
-	switch role {
-	case "design-critic", "code-critic", "warden":
-		schemaVersion = 4
-	}
+	schemaVersion := returnSchemaVersion(role)
 	s.schema = filepath.Join(s.roundDir, fmt.Sprintf("return-schema.v%d.json", schemaVersion))
 	if err := returnschema.Materialize(role, schemaVersion, s.schema); err != nil {
 		fmt.Fprintln(s.d.Stderr, err)
