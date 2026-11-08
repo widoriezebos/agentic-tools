@@ -7,7 +7,8 @@
 - Origin: human
 - Next step: Build U1 from the design page (D5a): the step-end snapshot after restoration, the comparison at step and round start, the stop class and evidence; brief: the page.
 - OpenedAt: 2026-11-08T20:51:22Z
-- Revision: 2
+- Revision: 3
+- Pinned: m1e
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-08T20:54:28Z revision=2 opid=4VYBB8F43KXDR8DG56SCSJ9304-m1e-34255095 authority=proven digest=4b1ee8975bf8f3b0f133f90854aab9a383e41d68ce0b60e3cb7cf4afb7769907 episode=2
@@ -15,4 +16,5 @@
 History:
 - 2026-11-08T20:51:22Z DHVYGG4CCEB4VHXH4XBHN9A29S-m1e-34255095 open actor=human:Wido targets=a-run-holds-its-worktree
 - 2026-11-08T20:54:28Z 4VYBB8F43KXDR8DG56SCSJ9304-m1e-34255095 approve actor=human:Wido targets=a-run-holds-its-worktree
-Integrity: sha256=fca7957c530332993cbd77468b85f33b342ae8eeef89fab02cd295893f4f3699
+- 2026-11-08T20:56:59Z 9FF56M5PKNB7J5EC71MEQ5YPWH-m1e-34255095 set-pin actor=human:Wido targets=a-run-holds-its-worktree
+Integrity: sha256=019eba316266592f16dabbca4234a8f371605613ef2c9a0094c26395374ca576
