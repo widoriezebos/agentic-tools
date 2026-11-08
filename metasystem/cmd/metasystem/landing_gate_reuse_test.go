@@ -377,16 +377,21 @@ func TestLandingProveReusesGateOnlyAtBatchBaseWithStaticAndEnvironment(t *testin
 				if code != 0 || proof.Data.Result != plain.Green || proof.Data.Scope != "impact" || proof.Data.BaseCommit != "main" || proof.Data.Environment != gate.Environment || proof.Data.Reason != "proven by attempt "+gate.Attempt || len(b.runs) != runsBefore {
 					t.Fatalf("not reused: exit=%d %+v runs=%v output=%s", code, proof.Data, b.runs, out)
 				}
+				if len(proof.Data.Executions) != 1 || proof.Data.Executions[0].DepthScope != "full" || proof.Data.Executions[0].DepthBase != "main" || proof.Data.Executions[0].Reason != "the batch proves full before its push; explicit impact check does not satisfy the push at decided full depth" {
+					t.Fatalf("reused impact depth: %+v", proof.Data.Executions)
+				}
 				git := b.owners.landing.plainProve.Git
+				pushed := false
 				b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
 					if args[0] == "push" {
+						pushed = true
 						return "", nil
 					}
 					return git(dir, args...)
 				}
 
-				if code, out := b.run(t, b.root, "push", "--json"); code != 0 {
-					t.Fatalf("reused impact proof refused push: exit=%d %s", code, out)
+				if code, out := b.run(t, b.root, "push", "--json"); code != 1 || pushed || !strings.Contains(out, "an impact check never lands a batch") {
+					t.Fatalf("reused impact push: exit=%d pushed=%v %s", code, pushed, out)
 				}
 
 			} else {

@@ -174,8 +174,65 @@ func TestFullDueBatchDepthAndClock(t *testing.T) {
 		t.Fatalf("pushed full did not pay clock: %v %v", due, err)
 	}
 	d = proofScope(b.install, b.checkout, running, b.seams)
-	if d.Scope != "impact" || d.ScopeReason != "low tier" || depthCalls != 1 {
+	if d.Scope != "full" || depthCalls != 0 {
 		t.Fatalf("paid clock did not release ordinary depth: %+v calls=%d", d, depthCalls)
+	}
+}
+
+func TestBatchProofDepthIsFullForEveryExecutableBatch(t *testing.T) {
+	t.Parallel()
+	b := newScopeBed(t)
+	trunk := b.base
+	trunk.Trunk, trunk.Commit, trunk.Tree, trunk.FullTree = true, "main", "main-tree", "main-tree"
+	b.save(t, trunk)
+	batch := &Batch{ID: "batch", Base: "main", State: BatchRunning, CreatedAt: bedNow.Format(time.RFC3339),
+		Lane: lane.Record{Root: b.checkout, Install: b.install, CustodyEpoch: 1}}
+	if err := writeBatch(b.install, batch); err != nil {
+		t.Fatal(err)
+	}
+	b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "scripts/check.sh"
+	running := Running{BatchID: batch.ID, Commit: b.git.commit, Tree: b.git.tree}
+	depthCalls := 0
+	b.seams.BatchDepth = func(string, string, Running) (string, string) {
+		depthCalls++
+		return "impact", "low tier"
+	}
+	want := "an executable input changed: scripts/check.sh"
+	depth, reason := BatchProofDepth(b.install, b.checkout, running, b.seams)
+	if depth != "full" || reason != want || depthCalls != 0 {
+		t.Fatalf("batch depth: %q %q calls=%d", depth, reason, depthCalls)
+	}
+	decision := proofScope(b.install, b.checkout, running, b.seams)
+	if decision.Scope != "full" || decision.ScopeReason != want || depthCalls != 0 {
+		t.Fatalf("executable batch: %+v calls=%d", decision, depthCalls)
+	}
+	b.seams.Impact = true
+	depth, reason = BatchProofDepth(b.install, b.checkout, running, b.seams)
+	if depth != "full" || reason != "the batch proves full before its push" || depthCalls != 0 {
+		t.Fatalf("explicit impact depth: %q %q calls=%d", depth, reason, depthCalls)
+	}
+}
+
+func TestBatchProofDepthKeepsRecordsOnlyInheritance(t *testing.T) {
+	t.Parallel()
+	b := newScopeBed(t)
+	trunk := b.base
+	trunk.Trunk, trunk.Commit, trunk.Tree, trunk.FullTree = true, "main", "main-tree", "main-tree"
+	b.save(t, trunk)
+	batch := &Batch{ID: "batch", Base: "main", State: BatchRunning, CreatedAt: bedNow.Format(time.RFC3339),
+		Lane: lane.Record{Root: b.checkout, Install: b.install, CustodyEpoch: 1}}
+	if err := writeBatch(b.install, batch); err != nil {
+		t.Fatal(err)
+	}
+	b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "metasystem/plans/goals/goal-a.md"
+	running := Running{BatchID: batch.ID, Commit: b.git.commit, Tree: b.git.tree}
+	depth, reason := BatchProofDepth(b.install, b.checkout, running, b.seams)
+	if depth != "" || reason != "" {
+		t.Fatalf("records-only depth: %q %q", depth, reason)
+	}
+	decision := proofScope(b.install, b.checkout, running, b.seams)
+	if decision.Scope != "scoped" || decision.base.FullTree != b.base.FullTree || decision.Base != b.base.Tree {
+		t.Fatalf("records-only inheritance: %+v", decision)
 	}
 }
 

@@ -47,7 +47,7 @@ func TestLandingPushRejectsImpactWhenBatchDecidedFull(t *testing.T) {
 		return git(dir, args...)
 	}
 	code, out = b.run(t, b.root, "push")
-	if code != 1 || pushed || !strings.Contains(out, "decided full depth") || !strings.Contains(out, "metasystem landing prove") || strings.Contains(out, "--impact") {
+	if code != 1 || pushed || !strings.Contains(out, "an impact check never lands a batch") || !strings.Contains(out, "metasystem landing prove") || strings.Contains(out, "--impact") {
 		t.Fatalf("full decision bypassed: %d %s pushed=%v", code, out, pushed)
 	}
 	if len(report.Data.Executions) != 1 || !strings.Contains(report.Data.Executions[0].Reason, "does not satisfy the push") {

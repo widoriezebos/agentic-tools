@@ -314,9 +314,8 @@ func runIntentLandingProve(inv *intentInvocation, admitted laneAdmitted) int {
 				return inv.render(proofRefusal(err))
 			}
 			scope, reason := plain.BatchProofDepth(admitted.installation, checkout, plain.Running{Commit: commit, Tree: tree, BatchID: batch.ID}, seams)
-			if scope == "full" || scope == "impact" {
+			if scope == "full" {
 				seams.DepthScope, seams.DepthReason = scope, reason
-				seams.Impact = seams.Impact || scope == "impact"
 			}
 		}
 	}
