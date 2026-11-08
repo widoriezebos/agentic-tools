@@ -1,0 +1,103 @@
+{
+  "canonicalRead": {
+    "id": "20261108t123334-f1c0040234-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-lane-batches-goals-and-proves-once",
+      "reviewedProjectTree": "1545ce28f43ae57e3b2903fc710cfa4c566e2aae1767c76c409b5def4aa3ba5c",
+      "diffDigest": "1545ce28f43ae57e3b2903fc710cfa4c566e2aae1767c76c409b5def4aa3ba5c"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261108t123334-f1c0040234-r1-s3:1",
+        "class": "false-premise",
+        "severity": "low",
+        "material": false,
+        "claim": "Seat decision S1 assumes the overdue time is later than main's last credited check. After a scoped push that is false: U5 credits the push at its FullAt F, and overdueBatch's retained adjustment then always sets since to F+1h. A records-only batch resting on a later main full L (L \u003e= F+1h), or a batch whose own full predates the real due time, therefore escapes the overdue full force.",
+        "evidence": "depth.go:58-74: since = last+every, lowered to the last scoped push's FullAt+1h. wake.go:157-161 makes last \u003e= F, so the adjustment always applies when the last push was scoped. batchFullSince (depth.go:97-107) and batchGreenReusable (depth.go:85-86) compare only FullAt \u003e= since. A records-only batch's scoped result carries main's full FullAt (S1, scope.go:525-527). No executable change lands unchecked (the executable-path guard in decideScope holds). The push credits the older FullAt, so the clock stays due and the keeper pays it; the waiver limits itself.",
+        "where": "metasystem/internal/landing/plain/depth.go",
+        "change": "Later list: drop the scoped-push adjustment of since, which is moot now that scoped pushes are credited, or require the batch's own executed full in batchFullSince. The brief marks the adjustment must-not-edit for U5.",
+        "relation": "new"
+      },
+      {
+        "id": "20261108t123334-f1c0040234-r1-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "No test fails when batchFullSince ignores the overdue time: the BatchProofDepth refusal for a batch whose executed full predates the overdue time is unexercised.",
+        "evidence": "Overlay mutation MA (fullSince(result, time.Time{}) in batchFullSince) passed all of internal/landing/plain (ok 181.979s) and cmd/metasystem -run '^(TestLandingFullDue|TestKeeper|TestLandingScoped|TestLandingSelect|TestRecoverMovedMain|TestLandingKeeper)' (ok 239.559s). Mutation MB (BatchID filter dropped) is caught by TestFullDueBatchDepthAndClock.",
+        "where": "metasystem/internal/landing/plain/depth.go",
+        "change": "Optionally add a row with an executed full of the batch from before since and the clock due, expecting 'full proof overdue since ...'.",
+        "relation": "each refusal branch of a new predicate has a test that fails without it"
+      },
+      {
+        "id": "20261108t123334-f1c0040234-r1-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes now also asserts that scoped and inherited pushes pay the clock, so its name is partly stale.",
+        "evidence": "fresh_full_test.go:72: due = name != \"full push\" \u0026\u0026 name != \"scoped push\" \u0026\u0026 name != \"inherited push\"",
+        "where": "metasystem/internal/landing/plain/fresh_full_test.go",
+        "change": "Optional rename, under the same rule as S6.",
+        "relation": "a test's name states the rule it asserts"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261108t123334-f1c0040234-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "483971d940d3a05f99b7911fe0e8824a760db3d0013a5cac5ee08e8275ab1fef",
+  "schemaVersion": 1,
+  "goal": "the-lane-batches-goals-and-proves-once",
+  "unit": "U5",
+  "subject": {
+    "commit": "85478c9d8dde4d78c271eee42d9949ded39e3ce6",
+    "parent": "bad533cde69831737b5ce8c3366989a1a32ae664",
+    "tree": "1f53cf481763ddff631aa8c5eaa448ef53a02c89",
+    "patchDigest": "1545ce28f43ae57e3b2903fc710cfa4c566e2aae1767c76c409b5def4aa3ba5c",
+    "unitDigest": "657cd807643b7f0d84073746c55faa214ee7298d80535f489706d2d1ae265bcc"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261108t123334-f1c0040234-r1-s3",
+    "closureSha256": "30779fa80783d5a8ea363022d57ebb5756970e6d8c16fb48cf8b0b9f391d1c86"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "1f53cf481763ddff631aa8c5eaa448ef53a02c89",
+    "runId": "goal-read-gate-20261108t143737z-d2a53dc29db0cf57"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "eb6aa9f461941e43c49d049d1f2156e6a84c1aed",
+      "digest": "2a30d82c1d4e3ad1d473928fdd5364f432ddaabd0dd7e37fa29b38bf94bcb3db"
+    },
+    {
+      "kind": "read",
+      "commit": "bad533cde69831737b5ce8c3366989a1a32ae664",
+      "digest": "c2d96a6b8befaf343e21e4cf4812b20baca7ec00c376dc250246ed04929d6ac2"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_depth_class_test.go",
+      "readerWord": "reviewed by unit read 20261108t123334-f1c0040234-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/fold_inherit_test.go",
+      "readerWord": "reviewed by unit read 20261108t123334-f1c0040234-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/fresh_full_test.go",
+      "readerWord": "reviewed by unit read 20261108t123334-f1c0040234-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/scope_test.go",
+      "readerWord": "reviewed by unit read 20261108t123334-f1c0040234-r1-s3"
+    }
+  ],
+  "sha256": "2576e2a9298e6e71b2d709eb799c7b45c7275c9475a84561ee298a46d2b2ea1e"
+}
