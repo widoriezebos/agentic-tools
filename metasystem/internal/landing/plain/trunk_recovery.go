@@ -78,6 +78,88 @@ func codeMoved(install, checkout, from, to string, seams ProveSeams) (bool, erro
 	return paths != "" && !recordsOnlyPaths(install, checkout, strings.Split(paths, "\n")), nil
 }
 
+// ProofStillApplies accepts the proved commit and descendants changing only records.
+func ProofStillApplies(install, checkout, commit, tip string, seams ProveSeams) (bool, error) {
+	if commit == tip {
+		return true, nil
+	}
+	inside, err := checkoutGit(checkout, seams).contains(tip, commit)
+	if err != nil || !inside {
+		return false, err
+	}
+	moved, err := codeMoved(install, checkout, commit, tip, seams)
+	return !moved && err == nil, err
+}
+
+// Executed distinguishes original check results from inherited coverage.
+func (r Result) Executed() bool {
+	return (r.Result == Green || r.Result == Red) && !r.didNotRun() && r.Scope != "inherited" && !strings.HasPrefix(r.Reason, "inherits green from tree ")
+}
+
+func newestExecutedEnvironment(results []Result) string {
+	for i := len(results) - 1; i >= 0; i-- {
+		if results[i].Executed() {
+			return results[i].Environment
+		}
+	}
+	return ""
+}
+
+func examinedMainTree(install, checkout, commit, tree string, seams ProveSeams) bool {
+	results, damaged, err := countedLines[Result](resultsPath(install))
+	if err != nil || damaged != 0 {
+		return false
+	}
+	environment := newestExecutedEnvironment(results)
+	for i := len(results) - 1; i >= 0; i-- {
+		r := results[i]
+		if !r.Executed() || !r.Trunk || r.Commit != commit || r.Tree != tree {
+			continue
+		}
+		if r.ClassificationPending || environment == "" || r.Environment != environment {
+			return false
+		}
+		if r.Result == Red && r.Cause != nil && r.Cause.Kind == "main" {
+			incidents, err := seams.incidents(install, checkout, commit)
+			return err == nil && len(r.incidentIDs(incidents)) > 0
+		}
+		return true
+	}
+	return false
+}
+
+// MainGreenToReconcile returns original executed greens that still apply to main.
+// A published batch proof remains evidence across records-only descendants.
+func MainGreenToReconcile(install, checkout string, seams ProveSeams) ([]Result, error) {
+	results, err := Results(install)
+	if err != nil {
+		return nil, err
+	}
+	environment := newestExecutedEnvironment(results)
+	if environment == "" {
+		return nil, nil
+	}
+	main, err := checkoutGit(checkout, seams).main()
+	if err != nil {
+		return nil, err
+	}
+	var greens []Result
+	for i := len(results) - 1; i >= 0; i-- {
+		r := results[i]
+		if !r.Executed() || r.Result != Green || r.ClassificationPending || r.Environment == "" || r.Environment != environment || !(r.Trunk && r.Scope == "scoped" || r.Scope == "full" && r.FullTree == r.Tree && r.FullAt == r.At) {
+			continue
+		}
+		applies, err := ProofStillApplies(install, checkout, r.Commit, main, seams)
+		if err != nil {
+			return nil, err
+		}
+		if applies {
+			greens = append(greens, r)
+		}
+	}
+	return greens, nil
+}
+
 func acceptableGate(gate Result) bool {
 	return gate.Result == Green || gate.Result == Skipped && gate.Static == Green
 }
@@ -146,7 +228,7 @@ func RecoverMovedMain(install, checkout string, seams ProveSeams) error {
 	if err := seams.fetchMain(checkout); err != nil {
 		return err
 	}
-	seams.Trunk, seams.Gate, seams.Impact = true, false, false
+	seams.Trunk, seams.Gate, seams.Impact, seams.Recovery = true, false, false, true
 	main, tree, err := seams.subject(checkout)
 	if err != nil {
 		return err
@@ -158,6 +240,10 @@ func RecoverMovedMain(install, checkout string, seams ProveSeams) error {
 		return nil
 	}
 	running, already, err := Start(install, checkout, seams)
+	var examined *Examined
+	if errors.As(err, &examined) {
+		return nil
+	}
 	if seams.RecoveryStarted != nil {
 		seams.RecoveryStarted(running, already)
 	}

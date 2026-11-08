@@ -406,6 +406,9 @@ func requestForEntry(e Endpoint, entry Entry, parkChecks ...func(string, string)
 		return trunkRedOwnRequest(r, TrunkRedOwnArgs{Entry: target, Goal: in.Args["goal"], Branch: in.Args["branch"],
 			BranchCommit: in.Args["branchCommit"], To: in.Args["to"], By: in.Args["by"]}), nil
 	case "trunk-red-clear":
+		if in.Args["applicable"] == "required" {
+			return PublishRequest{}, fmt.Errorf("this incident clear waits for the lane's next check of main")
+		}
 		if encoded, batch := in.Args["clears"]; batch {
 			var args []TrunkRedClearArgs
 			if err := json.Unmarshal([]byte(encoded), &args); err != nil || len(args) == 0 {

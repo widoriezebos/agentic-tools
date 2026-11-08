@@ -235,6 +235,8 @@ type ProveSeams struct {
 	FetchDeadline func(time.Duration) <-chan time.Time
 	// Trunk selects origin/main for a fresh full check.
 	Trunk bool
+	// Recovery avoids repeating an executed check without granting coverage.
+	Recovery bool
 	// ImpactCost applies the configured cheapness rule and names a command-selection full check.
 	ImpactCost func(dir, plan string) (share int, cheap bool, full int, reason string, err error)
 	// Gate selects the cheap merge check and its separate result register.
@@ -379,6 +381,11 @@ func (*NoRepeat) Error() string {
 	return "this code failed its check and gets no other; the waiting goals hold"
 }
 
+// Examined means recovery already ran this main subject in the current environment.
+type Examined struct{}
+
+func (*Examined) Error() string { return "main's current tree has already been examined" }
+
 // checkState clears completed records and records dead checks under the lane lock.
 // The attempt running in this process must not be marked dead.
 func checkState(install, checkout, attempt string, seams ProveSeams) (Running, bool, bool, error) {
@@ -467,12 +474,32 @@ func (s ProveSeams) checkBound(install, tree string) (Result, bool, error) {
 		err = redContinuationLocked(install, result, s)
 	}
 	if err == nil && found && result.Result != Green && result.Result != Held && result.Result != Skipped && result.Result != "cancelled" && result.Repeat != "allowed" && s.Person == nil {
-		err = &NoRepeat{}
+		if !laterBatchException(install, result) {
+			err = &NoRepeat{}
+		}
 	}
 	if err != nil && s.Person != nil {
 		return Result{}, false, nil
 	}
 	return result, found, err
+}
+
+func laterBatchException(install string, result Result) bool {
+	batch, err := ReadBatch(install)
+	at, timeErr := time.Parse(time.RFC3339Nano, result.At)
+	if err != nil || timeErr != nil || batch == nil || batch.State == BatchClosed {
+		return false
+	}
+	entries, err := Entries(install)
+	if err != nil {
+		return false
+	}
+	for _, entry := range entries {
+		if entry.State == StateWaiting && slices.Contains(batch.Members, GoalSHA{Goal: entry.Goal, SHA: entry.SHA}) && entry.Exception != nil && entry.Exception.Person != nil && entry.Exception.Person.CheckedAt.After(at) {
+			return true
+		}
+	}
+	return false
 }
 
 // ReadRunning is the proof recorded running and whether its process runs;
@@ -595,6 +622,9 @@ func Start(install, checkout string, seams ProveSeams) (Running, bool, error) {
 				if result, ok := applicableMainProof(install, checkout, commit, tree, seams, true); ok {
 					started, already = Running{Trunk: true, Attempt: result.Attempt, Tree: result.Tree, Commit: result.Commit, Log: result.Log, Since: result.At, Reused: &result}, true
 					return nil
+				}
+				if seams.Recovery && examinedMainTree(install, checkout, commit, tree, seams) {
+					return &Examined{}
 				}
 			}
 			prior, found, err := resultFor(seams.resultsPath(install), tree)
