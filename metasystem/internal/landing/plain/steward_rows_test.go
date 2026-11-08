@@ -132,6 +132,57 @@ func TestLandingStewardPersonActWithoutEffect(t *testing.T) {
 	}
 }
 
+func TestAGiveBackThatEmptiesTheBatchHasTakenEffect(t *testing.T) {
+	t.Parallel()
+	for _, scenario := range []string{"empty", "absent", "member-left"} {
+		t.Run(scenario, func(t *testing.T) {
+			t.Parallel()
+			b := newStewardBed(t)
+			b.seams.Steward.Owner = func(string) (lane.OwnerProbe, error) { return lane.OwnerProbe{Alive: true}, nil }
+			person := &ActProvenance{Kind: "return", Person: "Wido", CheckedAt: bedNow, Root: b.checkout, TerminalGeneration: 1, TerminalRef: humanauthority.ProcessRef{PID: 42}, Destination: b.record}
+			b.lines("queue.jsonl", Line{Goal: "g", SHA: "sha", At: bedNow.Format(time.RFC3339Nano), Outcome: StateReturned, Cause: &Cause{Kind: "unclassified", Name: "Wido"}, ReturnOrigin: &ReturnOrigin{Person: person}})
+			if scenario != "absent" {
+				batch := &Batch{ID: "given-back", Lane: b.record, Base: "main", State: BatchPrepared}
+				if scenario == "member-left" {
+					batch.Members = []GoalSHA{{Goal: "other", SHA: "other-sha"}}
+				}
+				if err := writeBatch(b.install, batch, b.seams); err != nil {
+					t.Fatal(err)
+				}
+			}
+			data, err := json.Marshal(lane.AgentState{Barren: 2})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(lane.AgentStatePath(b.home), data, 0600); err != nil {
+				t.Fatal(err)
+			}
+			read := func(now time.Time) *Health {
+				b.seams.Now = func() time.Time { return now }
+				status := ReadStatus(b.home, b.record, b.view, b.seams)
+				if status.Health == nil || len(status.Problems) != 0 {
+					t.Fatalf("health unreadable: %v", status.Problems)
+				}
+				return status.Health
+			}
+			want := scenario == "member-left"
+			pending := read(bedNow.Add(4 * time.Minute)).PendingAct
+			run := b.step(bedNow.Add(6 * time.Minute))
+			h := read(bedNow.Add(6 * time.Minute))
+			row := healthRow(h, "person-act-no-effect")
+			if (row != nil) != want || h.PendingAct != nil || len(run.Interventions) != map[bool]int{true: 1, false: 0}[want] || len(b.calls) != 0 {
+				t.Fatalf("give-back effect: row=%+v pending=%+v run=%+v calls=%v", row, h.PendingAct, run, b.calls)
+			}
+			if want && (run.Interventions[0].Row != "person-refused" || run.Interventions[0].Why != "person-act-no-effect") {
+				t.Fatalf("wrong give-back intervention: %+v", run.Interventions[0])
+			}
+			if (pending != nil) != want {
+				t.Fatalf("pending give-back before five minutes: %+v, want pending: %t", pending, want)
+			}
+		})
+	}
+}
+
 func TestLandingStewardReturnsOwnRedAsTheLane(t *testing.T) {
 	t.Parallel()
 	for _, kind := range []string{"own", "main", "flake", "wrong-goal", "wrong-sha", "newer-green", "gate"} {
