@@ -290,6 +290,10 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 			if reason == "" && state != "ask" {
 				if state == "wait" || state == "handled" {
 					reason = "handled: " + state
+				} else if slices.ContainsFunc(history, func(p Intervention) bool {
+					return p.Row == row.Row && p.Subject == row.Subject && p.Occurrence == occurrence.ID && p.How == "notice" && p.Outcome == "noticed"
+				}) {
+					reason = "bounded: noticed once for this occurrence"
 				} else if now.Before(occurrence.Since.Add(30 * time.Minute)) {
 					reason = "routed to its owner; asks at " + occurrence.Since.Add(30*time.Minute).Local().Format("15:04")
 				}
@@ -373,6 +377,11 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 				}
 			}
 			entry.How, entry.Occurrence = "one question to the person", occurrence.ID
+			if tried == "nothing: the row has no act of its own" && occurrence.DispositionState(decisions, now) != "ask" {
+				entry.What = decision
+				entry.How, entry.Outcome = "notice", "noticed"
+				break
+			}
 			entry.Outcome, actErr = stewardAsk(record, seams, now, "cannot-heal", underlying, subject, occurrence.ID, decision, "the lane keeps reporting it; this question is withdrawn when the situation ends", tried)
 		case "own-red-held":
 			red := status.Health.OwnRed[slices.IndexFunc(status.Health.OwnRed, func(r OwnRed) bool { return r.Goal == row.Subject })]

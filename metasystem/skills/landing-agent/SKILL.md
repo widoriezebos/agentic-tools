@@ -210,16 +210,16 @@ human return restores no automatic allowance.
    `metasystem landing prove`; none means the merge gate has not run for this merge.
    End your turn; push when the proof at the batch's depth is green.
 6. **Lane paused** (`paused`, or a verb says the lane is stopped): read status again. Continue only your matching `admitted-batch`; a later pause removes that admission, so stop. Never clear the pause or select other work.
-7. **The check stopped or ran no test** (`running_proof.state` is `died`, or `last_proof` is
-   red with `last_proof.repeat` set to `allowed` and no `last_proof.failed`): run
-   `metasystem landing prove` once more (use `metasystem landing prove --trunk` when
-   `last_proof.trunk` is set) and end your turn. A refusal or a second such red holds
-   the waiting goals; end your turn and say what stopped in your final message.
-8. **Full proof owed** (woken with `full-due` and no line you may merge: nothing waits,
-   or every waiting line is held): run `metasystem landing prove --trunk` and end your turn.
-   A green clears main's incidents and needs no push; a red is recorded as main's incident.
+7. **The check stopped or ran no test** (`running_proof.state: died`, or red `last_proof`
+   with `last_proof.repeat: allowed` and no `last_proof.failed`): run
+   `metasystem landing prove` once more (`metasystem landing prove --trunk` when
+   `last_proof.trunk` is set), then end your turn. A refusal or second such red holds
+   waiting goals; end your turn and report what stopped in your final message.
+8. **Full proof owed** (woken with `full-due` and no mergeable line): run
+   `metasystem landing prove --trunk` and end your turn.
+   Green clears main's incidents without pushing; red records main's incident.
 9. **Blocked outside cases 1-8:** ask with `--about lane`, then end your turn; the keeper holds you
-   until it is answered.
+   until it is answered. Only your own lane question holds you, never a lane steward's.
 
 Never end your turn with a `waiting` member of your recorded batch you could act on: push it, return it, or have a
 proof running, or hold on the cause the proof records.
