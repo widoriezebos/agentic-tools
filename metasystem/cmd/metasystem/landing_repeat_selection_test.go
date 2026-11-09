@@ -15,7 +15,8 @@ import (
 func TestLandingUnselectableRedStillRecordsMainIncident(t *testing.T) {
 	t.Parallel()
 	for _, trunk := range []bool{true, false} {
-		for _, names := range []string{"TestP(did not report)", "TestP/subtest", "TestMain", "TestValid TestP(did not report)"} {
+		// A subtest maps to its top-level test and is selectable, as covered by internal/landing/plain's named-replay tests.
+		for _, names := range []string{"TestP(did not report)", "TestMain", "TestValid TestP(did not report)"} {
 			t.Run(fmt.Sprintf("trunk=%t/%s", trunk, names), func(t *testing.T) {
 				t.Parallel()
 				b, register, _ := incidentProveFixture(t, false)
