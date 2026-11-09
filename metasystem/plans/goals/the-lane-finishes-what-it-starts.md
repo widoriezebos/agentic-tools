@@ -10,15 +10,15 @@
 - Next step: Design page the-lane-finishes-what-it-starts (Astra rounds 1 and 2 folded); four units: U1a (D1, D2), U1b (D3, D4, D5, D9), U3 (D7, D8), U2 (D6); briefs by the seat from the page; each unit under 250 production lines; the landing is by hand with an Astra code critique if the lane does not land it within one attempt (decision 228)
 - OpenedAt: 2026-11-08T09:47:54Z
 - FirstClaimAt: 2026-11-08T09:53:33Z
-- Revision: 8
+- Revision: 9
 - Pinned: m1e
-- Budget: elapsedLimit=3d attemptLimit=40 reservedJobMinutesLimit=4000 activeJobLimit=2 reviewRoundLimit=30
-- BudgetExceptions: 2
-- NormApproval: approvedRef=BJY6C2WB3KHHSN9TCCBBNT17VZ-m1e-a565995d minutes=4000 reviewRounds=30 goalRevision=7
-- Approved: by=human:Wido at=2026-11-09T02:31:28Z revision=8 opid=BJY6C2WB3KHHSN9TCCBBNT17VZ-m1e-a565995d authority=proven digest=7db43302cdf0aa74db79c3c1d3f5c03ece73cf36fd25884c5e2970e557a102ae episode=8
+- Budget: elapsedLimit=4d attemptLimit=40 reservedJobMinutesLimit=4000 activeJobLimit=2 reviewRoundLimit=30
+- BudgetExceptions: 3
+- NormApproval: approvedRef=CKJ7TZ89JNQJGTNVEXB4PKV971-m1e-054d531a minutes=4000 reviewRounds=30 goalRevision=8
+- Approved: by=human:Wido at=2026-11-09T06:58:48Z revision=9 opid=CKJ7TZ89JNQJGTNVEXB4PKV971-m1e-054d531a authority=proven digest=d1f362f0bf193d803a84f3debbdc13ed4e82c6dc17e17b9cea156aa5fc5cb630 episode=9
 - Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=5 at=2026-11-08T12:56:46Z
-- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-09T02:31:28Z areas="null" areas-source="the-lane-finishes-what-it-starts@6376919b7bada94633538614ef2b68e5368102ac04f4a533873abdb2d987ddf2" areas-known=false areas-warnings="[\"areas unknown for goal the-lane-finishes-what-it-starts in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-lane-finishes-what-it-starts.md\"]" revision=8 accountingRevision=8 episodeAt=2026-11-08T09:53:33Z episodeRevision=5
-- StopCapability: generation=8 revision=8 machine=m1e claimEpoch=10 fenceEpoch=0
+- Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-09T06:58:48Z areas="null" areas-source="the-lane-finishes-what-it-starts@6376919b7bada94633538614ef2b68e5368102ac04f4a533873abdb2d987ddf2" areas-known=false areas-warnings="[\"areas unknown for goal the-lane-finishes-what-it-starts in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/the-lane-finishes-what-it-starts.md\"]" revision=9 accountingRevision=9 episodeAt=2026-11-08T09:53:33Z episodeRevision=5
+- StopCapability: generation=9 revision=9 machine=m1e claimEpoch=10 fenceEpoch=0
 
 History:
 - 2026-11-08T09:47:54Z ERYAA29AAW36RESYGEK1SVPS99-m1e-b472deb6 open actor=human:Wido targets=the-lane-finishes-what-it-starts
@@ -29,4 +29,5 @@ History:
 - 2026-11-08T12:56:46Z T6W2V8JRCE4N8YFGA92GW015A4-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-finishes-what-it-starts
 - 2026-11-08T21:26:32Z WFE6G186W15KJBSNN1BCD3C196-m1e-8a218aa8 set-budget actor=human:Wido targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-08T09:53:33Z
 - 2026-11-09T02:31:28Z BJY6C2WB3KHHSN9TCCBBNT17VZ-m1e-a565995d set-budget actor=human:Wido targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-08T21:26:32Z
-Integrity: sha256=3b03239eba1c26f97440e05e0035465caf3a8f6b95fdedd9bc3f8b0299089a7a
+- 2026-11-09T06:58:48Z CKJ7TZ89JNQJGTNVEXB4PKV971-m1e-054d531a set-budget actor=human:Wido targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T02:31:28Z
+Integrity: sha256=25e3c9646b06d4fe4dce993af4780b819f6ce59fc7ac04d9556a791686f106d8
