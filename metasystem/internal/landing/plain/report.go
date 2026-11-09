@@ -55,7 +55,11 @@ func CheckReport(data []byte) ([]FailedUnit, bool) {
 }
 
 // NamedUnitTests returns Go test names that can be selected within a package.
+// Subtests are rejected to preserve the work round's exact flake register keys.
 func NamedUnitTests(unit FailedUnit, contract testpolicy.Contract) []string {
+	if slices.ContainsFunc(unit.Tests, func(name string) bool { return strings.Contains(name, "/") }) {
+		return nil
+	}
 	names, _ := namedUnitTests(unit, contract)
 	return names
 }

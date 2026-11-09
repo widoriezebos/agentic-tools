@@ -280,18 +280,28 @@ func repeatRed(seams ProveSeams, install, checkout, command, dir string, running
 	return green
 }
 
-// namedUnitTests selects only top-level Go tests in package units. Groups keep
-// their whole command, and an invalid identity keeps every test in its unit.
+func topLevelTest(name string) (string, bool) {
+	name, _, _ = strings.Cut(name, "/")
+	return name, token.IsIdentifier(name) && strings.HasPrefix(name, "Test") && name != "TestMain"
+}
+
+// namedUnitTests maps package failures to distinct top-level Go tests. Groups
+// keep their whole command, and an invalid identity keeps every test in its unit.
 func namedUnitTests(unit FailedUnit, contract testpolicy.Contract) ([]string, bool) {
 	if len(unit.Tests) == 0 || !strings.Contains(unit.Unit, "/") || strings.HasPrefix(unit.Unit, "section/") || slices.ContainsFunc(contract.Groups, func(group testpolicy.Group) bool { return group.ID == unit.Unit }) {
 		return nil, false
 	}
-	if slices.ContainsFunc(unit.Tests, func(name string) bool {
-		return !token.IsIdentifier(name) || !strings.HasPrefix(name, "Test") || name == "TestMain"
-	}) {
-		return nil, true
+	var names []string
+	for _, test := range unit.Tests {
+		name, valid := topLevelTest(test)
+		if !valid {
+			return nil, true
+		}
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
 	}
-	return unit.Tests, false
+	return names, false
 }
 
 // replayTree is a prefix of the check's subject, oldest first. Main is true
@@ -400,7 +410,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			if prefix.Main {
 				result.Cause.Kind, result.Cause.Name = "main", mainFailureIdentity(result.Failed)
 			} else if prefix.Goal.Goal != "" {
-				result.Cause.Kind, result.Cause.Goal, result.Cause.SHA = "own", prefix.Goal.Goal, prefix.Goal.SHA
+				attributeOwn(result.Cause, trees, i, nil)
 			}
 			return result
 		}
@@ -420,6 +430,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			dir = filepath.Join(tree, rel)
 		}
 		failed, complete := false, true
+		var replayFailed []FailedUnit
 		var mainChecks []Result
 		recordingMain := i == 0 && prefix.Main && prefix.Tree != running.Tree && seams.RecordMain != nil
 		units := make([]string, len(result.Failed))
@@ -478,6 +489,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			closeErr := file.Close()
 			complete = done && closeErr == nil
 			failed = complete && len(report.failed) > 0
+			replayFailed = report.failed
 			if result.Replay != "" {
 				result.Replay += "; "
 			}
@@ -527,7 +539,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 		}
 		if failed {
 			if i > 0 && prefix.Goal.Goal != "" {
-				result.Cause.Kind, result.Cause.Goal, result.Cause.SHA = "own", prefix.Goal.Goal, prefix.Goal.SHA
+				attributeOwn(result.Cause, trees, i, replayFailed)
 			}
 			return result
 		}
@@ -536,6 +548,19 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 		result.Repeat = "allowed"
 	}
 	return result
+}
+
+func attributeOwn(c *Cause, trees []replayTree, i int, failed []FailedUnit) {
+	c.Kind, c.Goal, c.SHA = "own", trees[i].Goal.Goal, trees[i].Goal.SHA
+	if i > 0 {
+		c.PassedOn = trees[i-1].Commit
+		for _, tree := range trees[1:i] {
+			c.After = append(c.After, tree.Goal.Goal)
+		}
+	}
+	if failed != nil {
+		c.FailedOn = failingTests(failed)
+	}
 }
 
 // Recording an incident preserves the proof's verdict and repeat allowance.

@@ -185,7 +185,7 @@ func TestAGiveBackThatEmptiesTheBatchHasTakenEffect(t *testing.T) {
 
 func TestLandingStewardReturnsOwnRedAsTheLane(t *testing.T) {
 	t.Parallel()
-	for _, kind := range []string{"own", "main", "flake", "wrong-goal", "wrong-sha", "newer-green", "gate"} {
+	for _, kind := range []string{"own", "own-words", "own-empty", "own-invalid", "main", "flake", "wrong-goal", "wrong-sha", "newer-green", "gate"} {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			b := newStewardBed(t)
@@ -199,6 +199,20 @@ func TestLandingStewardReturnsOwnRedAsTheLane(t *testing.T) {
 				return git(dir, args...)
 			}
 			cause := &Cause{Kind: kind, Goal: "g", SHA: "sha", Tests: []string{"TestOwn"}, Evidence: "named test red on g", Name: "original"}
+			wantReason := "TestOwn failed on g (sha); the lane did not compare it with main"
+			if kind == "own-words" {
+				cause.Kind, cause.PassedOn = "own", "main-sha"
+				cause.Tests = []string{"metasystem/cmd/x TestOwn", "metasystem/cmd/x TestOwn/sub"}
+				wantReason = "TestOwn (metasystem/cmd/x) failed on the merge of g (sha) with main; metasystem/cmd/x passed on main at main-sha"
+			}
+			if kind == "own-empty" {
+				cause.Kind, cause.Tests = "own", nil
+				wantReason = "the lane's check failed on g (sha); the lane did not compare it with main"
+			}
+			if kind == "own-invalid" {
+				cause.Kind, cause.Tests = "own", []string{"metasystem/cmd/x TestMain/sub"}
+				wantReason = "metasystem/cmd/x failed on g (sha); the lane did not compare it with main"
+			}
 			if kind == "wrong-goal" {
 				cause.Kind, cause.Goal = "own", "other"
 			}
@@ -222,12 +236,12 @@ func TestLandingStewardReturnsOwnRedAsTheLane(t *testing.T) {
 			b.lines("stops.jsonl", Stop{Loop: "lane-proof", Subject: "g", Decision: "stop", Handoff: "return g own", At: proof.At, ProofAttempt: proof.Attempt})
 			run, stepErr := StewardStep(b.home, bedNow, b.seams)
 			entry, ok, err := Latest(b.install, "g")
-			want := kind == "own" || kind == "gate"
+			want := strings.HasPrefix(kind, "own") || kind == "gate"
 			if stepErr != nil || err != nil || !ok || (entry.State == StateReturned) != want || len(run.Interventions) != map[bool]int{true: 1, false: 0}[want] {
 				t.Fatalf("own return: entry=%+v run=%+v err=%v stepErr=%v", entry, run, err, stepErr)
 			}
-			if want && (entry.Reason != replay || !reflect.DeepEqual(entry.Cause, cause) || run.Interventions[0].Outcome != "returned g") {
-				t.Fatalf("lane changed the proven cause or replay: entry=%+v cause=%+v run=%+v", entry, cause, run)
+			if want && (entry.Reason != wantReason || !reflect.DeepEqual(entry.Cause, cause) || run.Interventions[0].Outcome != "returned g" || !strings.Contains(run.Interventions[0].What, wantReason)) {
+				t.Fatalf("lane changed the proven cause or return words: entry=%+v cause=%+v run=%+v", entry, cause, run)
 			}
 			questions, _ := channel.WalkQuestions(b.install)
 			if len(questions) != 0 || len(b.calls) != 0 {

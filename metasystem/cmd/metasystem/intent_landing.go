@@ -619,7 +619,7 @@ func withPlainLane(view func(*textui.Page), data landingStatusData, install stri
 			}
 			if entry.State == plain.StateReturned || entry.Reason != "" {
 				state += ": " + entry.Reason
-				if entry.Cause != nil {
+				if entry.Cause != nil && entry.Cause.Kind != "own" {
 					state += "; cause: " + entry.Cause.Kind
 				}
 			}
