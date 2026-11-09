@@ -11,7 +11,7 @@
 - Next step: Hand in (the one hand-in): U1 is published on origin/goal/a-push-folds-a-records-only-move as unit 5f531a2c14 and read 6f70eb1936 (claude-opus-5-5, AGREE, 0 material, verdict land; run 20261109t155426-04f89ee31a). From the ui checkout's metasystem folder, when the lane is idle: ./bin/metasystem work land a-push-folds-a-records-only-move --delivered TEXT. Then goal done after it lands. Later list, non-material: no test drives a name-status line without a tab or a T status (goalRecordsBetween refuses both by reading); the trunkRedPath clause in goal.ConcludedIn cannot fire after the .md cut.
 - OpenedAt: 2026-11-01T06:40:58Z
 - FirstClaimAt: 2026-11-09T15:49:46Z
-- Revision: 68
+- Revision: 69
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -90,4 +90,5 @@ History:
 - 2026-11-09T15:49:46Z K3R62E4RK9RXRBEPCWFA432GJC-ui-71c5cb39 claim actor=ui+steward-seat targets=a-push-folds-a-records-only-move reason=areas unknown for goal a-push-folds-a-records-only-move in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/the-lane-proves-only-what-is-new.md
 - 2026-11-09T18:13:23Z ES7BP4ETG8CRVDPX6ED0KDF5RW-ui-71c5cb39 edit actor=ui+steward-seat targets=a-push-folds-a-records-only-move
 - 2026-11-09T18:33:32Z 7H9CY66ZQBWXS6SFP0Z39BBQB8-ui-71c5cb39 land-ready actor=ui+steward-seat targets=a-push-folds-a-records-only-move
-Integrity: sha256=c9dcd9543b1b236bbdc69a2cfedf441127a3b8a78eb9713f99e92b629a7380ca
+- 2026-11-09T23:11:21Z ZCCEVSQGA839FG6DQDK9N0V0ZM-ui-71c5cb39 landed actor=ui+steward-seat targets=a-push-folds-a-records-only-move reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 434.4 min: hand-in to merge 435.0, cheap gate not run,  proof 4.0 (static unknown, shards unknown), fix round 10.6, fix round 235.0, push 95.4, unknown: scope of 20261109T212811.383245000Z
+Integrity: sha256=9ee679bac6595d319424ca6bbe8a938f5cff6888a5157a8107fbfab873acbc07
