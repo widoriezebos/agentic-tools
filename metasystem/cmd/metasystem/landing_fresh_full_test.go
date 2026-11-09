@@ -43,6 +43,7 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 	now := laneTestNow
 	calls, fetches, worktrees, id := 0, 0, 0, 0
 	red := false
+	ledgerCheckout := filepath.Join(t.TempDir(), "ledger")
 	b.owners.landing.plainProve = plain.ProveSeams{Room: noRoomForVerbFixture,
 		Now: func() time.Time { return now }, NewID: func() string { id++; return fmt.Sprintf("trunk-%d", id) },
 		Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) {
@@ -57,11 +58,26 @@ func TestLandingTrunkAlwaysRunsFreshFullAndClearsIncidents(t *testing.T) {
 			return entries, nil
 		},
 		Judge: func(string, string, []plain.FailedUnit) (map[string]plain.UnitJudgement, error) { return nil, nil },
-		Git: func(_ string, args ...string) (string, error) {
+		Git: func(dir string, args ...string) (string, error) {
 			if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil}); ok {
 				return listed, nil
 			}
+			// The incident ledger names main "main" while its records publish
+			// new tips with the same code: the clear's applicability check (D5 c)
+			// sees the captured tip descend from the proved commit with no path
+			// changed, read in the ledger's checkout.
+			if dir == ledgerCheckout {
+				switch joined := strings.Join(args, " "); joined {
+				case "cat-file -e main^{commit}", "cat-file -e " + register.repo.canonical + "^{commit}",
+					"merge-base --is-ancestor main " + register.repo.canonical,
+					"diff --name-only --no-renames main " + register.repo.canonical:
+					return "", nil
+				}
+				t.Fatalf("unstubbed ledger Git: %v", args)
+			}
 			switch strings.Join(args, " ") {
+			case "rev-parse --show-toplevel":
+				return ledgerCheckout, nil
 			case "rev-parse --verify --quiet " + goal.LocalLedgerBranch + "^{commit}":
 				return register.repo.canonical, nil
 			case "symbolic-ref --quiet --short HEAD":

@@ -201,7 +201,11 @@ func TestLandingKeeperProvesMovedMainBeforeExceptionGitAdapter(t *testing.T) {
 				}
 				return
 			}
-			register.repo.commits[b.main] = register.repo.commit(register.repo.canonical)
+			// The proved commit is main's tip: the ledger's main is b.main, so
+			// the clear's captured tip is the proved commit (D5 c).
+			proved := register.repo.commit(register.repo.canonical)
+			proved.parent = register.repo.canonical
+			register.repo.commits[b.main], register.repo.canonical = proved, b.main
 			if scenario == "red" {
 				writeCauseProof(t, b.installation, "results.jsonl", plain.Result{Trunk: true, Commit: b.main, Tree: running.Tree, Result: plain.Red, At: laneTestNow.Format(time.RFC3339), Cause: &plain.Cause{Kind: "main"}})
 				helmMust(t, os.Remove(filepath.Join(plain.Dir(b.installation), "running.json")))

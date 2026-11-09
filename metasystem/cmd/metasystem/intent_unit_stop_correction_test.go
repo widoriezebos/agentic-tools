@@ -756,31 +756,30 @@ func stoppedReadWithNotes(t *testing.T, material bool) (*workBed, intentOwners, 
 
 // TestWorkReviewCollectsAStoppedReadWithNotes: a round an older engine
 // stopped because its v4 critic wrote only notes is collected again from the
-// same return on the next review, closes, and asks for the notes' decisions,
-// without a new build or examination. A v4 material row still stops.
+// same return on the next review and, its findings all non-material, decides
+// them itself as noted and goes to the close (the-lane-finishes-what-it-starts
+// D7), without a new build or examination. A v4 material row still stops.
 func TestWorkReviewCollectsAStoppedReadWithNotes(t *testing.T) {
 	t.Parallel()
 	bed, owners, runner, run, fresh := stoppedReadWithNotes(t, false)
 	launches := bed.starter.launched()
+	// The bed's fixture commit has no git checkout for the close owner, so
+	// the notes' decisions are asserted up to the close.
 	code, result := bed.runJSON(owners, "work", "review", bed.id, "--work", "u1")
-	template, _ := resultData(t, result)["template"].(string)
-	if code != 1 || result.Outcome != intentInProgress || !strings.Contains(result.Summary, "found 1 finding(s)") || template == "" || result.Next == nil ||
-		!slices.Contains(result.Next.Argv, "--dispositions") || slices.Contains(result.Next.Argv, "--retry") || resultData(t, result)["retry"] != nil {
+	if code != 1 || !strings.HasPrefix(result.Summary, "the examination finished, but the review's completion is pending") ||
+		resultData(t, result)["retry"] != nil {
 		t.Fatalf("the stopped read was not collected again: exit=%d result=%+v", code, result)
+	}
+	binding, _ := resultData(t, result)["binding"].(string)
+	decisions := string(mustRead(t, filepath.Join(bed.worktree, "artifacts", "agents", "old-critic", "rounds", "1", "decisions.md")))
+	if binding == "" || !strings.Contains(decisions, binding) || !strings.Contains(decisions, "| N-1 | noted | not material per the read |") || strings.Contains(decisions, "DECIDE") {
+		t.Fatalf("the notes were not decided as noted under the read's binding: binding=%q\n%s", binding, decisions)
 	}
 	record, err := runner.Status(run)
 	round := record.Rounds[len(record.Rounds)-1]
 	if err != nil || round.Stop == nil || round.Stop.Decision != "close" || round.Material != 0 || len(round.Reads) != 1 ||
 		len(round.Reads[0].Findings) != 1 || round.Reads[0].Findings[0].Material || *fresh != 0 || !slices.Equal(launches, bed.starter.launched()) {
 		t.Fatalf("the collected round: %+v %+v %v fresh=%d", round, round.Stop, err, *fresh)
-	}
-	// The bed's fixture commit has no git checkout for the close owner, so
-	// the notes' decisions are asserted up to the close.
-	decisions := strings.ReplaceAll(string(mustRead(t, template)), "DECIDE", "noted")
-	code, result = bed.runJSON(owners, "work", "review", bed.id, "--work", "u1", "--dispositions", bed.brief("noted.md", decisions))
-	if code != 1 || !strings.HasPrefix(result.Summary, "the examination finished, but the review's completion is pending") ||
-		string(mustRead(t, template)) != decisions || *fresh != 0 || !slices.Equal(launches, bed.starter.launched()) {
-		t.Fatalf("the noted decisions did not reach the close: exit=%d result=%+v fresh=%d", code, result, *fresh)
 	}
 	// A v4 material row still has no stop evidence: one fresh examination.
 	bed, owners, runner, run, _ = stoppedReadWithNotes(t, true)
