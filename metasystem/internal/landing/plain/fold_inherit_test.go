@@ -3,6 +3,7 @@ package plain
 import (
 	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"reflect"
 	"slices"
@@ -21,6 +22,14 @@ func newFoldProofBed(t *testing.T, name string, mainAt time.Time, cadence string
 		b.write(filepath.Join(seed, "metasystem/metasystem.conf"), "metasystem.template=true\nproof.trunk-every="+cadence+"\n")
 		b.git(seed, "add", "metasystem/metasystem.conf")
 		b.git(seed, "commit", "-qm", "set the daily check interval")
+		b.git(seed, "push", "--quiet", "origin", "main")
+		b.git(b.checkout, "pull", "--quiet", "--ff-only")
+	}
+	if name == "a conclusion from main" || name == "an unexplained deletion" {
+		seed := filepath.Join(b.root, "seed")
+		b.write(filepath.Join(seed, "metasystem/plans/goals/lane-first-run-fixes.md"), string(mainMoveFixture(t, "lane-first-run-fixes.md")))
+		b.git(seed, "add", "-A")
+		b.git(seed, "commit", "-qm", "seed the live goal")
 		b.git(seed, "push", "--quiet", "origin", "main")
 		b.git(b.checkout, "pull", "--quiet", "--ff-only")
 	}
@@ -66,27 +75,46 @@ func newFoldProofBed(t *testing.T, name string, mainAt time.Time, cadence string
 // fold, as landing push does; main's keeper then observes the pushed tree.
 func TestAFoldOfGoalPagesKeepsTheBatchsGreen(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"goal pages", "a scoped batch", "a design page", "a page that does not parse", "the folded tree is red", "a refused publication"} {
+	for _, name := range []string{"goal pages", "a conclusion from main", "an unexplained deletion", "a scoped batch", "a design page", "a page that does not parse", "the folded tree is red", "a refused publication"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b, proven, provenTree, result := newFoldProofBed(t, name, bedNow, "")
 			at := bedNow.Format(time.RFC3339)
 			seed := filepath.Join(b.root, "seed")
 			var folded []string
-			for _, id := range []string{"lane-first-run-fixes", "lane-rehearsal-before-landing"} {
+			for _, id := range []string{"lane-rehearsal-before-landing", "lane-first-run-fixes"} {
 				data := mainMoveFixture(t, id+".md")
 				if _, problems := goal.ParseFile(data); len(problems) != 0 {
 					t.Fatalf("fixture %s: %v", id, problems)
 				}
 				path := "metasystem/plans/goals/" + id + ".md"
 				switch {
+				case (name == "a conclusion from main" || name == "an unexplained deletion") && id == "lane-first-run-fixes":
+					if err := os.Remove(filepath.Join(seed, path)); err != nil {
+						t.Fatal(err)
+					}
+					if name == "an unexplained deletion" {
+						path = ""
+						break
+					}
+					f, _ := goal.ParseFile(data)
+					f.State, f.Conclude = goal.StateDone, "Shipped."
+					f.Claimed, f.StopCapability, f.StopFence = nil, nil, nil
+					f.Revision++
+					f.History = append(f.History, goal.HistoryLine{At: at, Opid: f.History[0].Opid, Actor: "lane+lin-1", Verb: "done", Targets: []string{f.Id}, Keep: -1})
+					path, data = "metasystem/records/goals/"+id+".md", goal.RenderFile(f)
+					if _, problems := goal.ParseFile(data); len(problems) != 0 {
+						t.Fatalf("invalid concluded fixture: %v", problems)
+					}
 				case name == "a design page":
 					path, data = "metasystem/plans/designs/x.md", []byte("A design, "+id+".\n")
 				case name == "a page that does not parse":
 					text, _, _ := strings.Cut(string(data), "Integrity: ")
 					data = []byte(text)
 				}
-				b.write(filepath.Join(seed, path), string(data))
+				if path != "" {
+					b.write(filepath.Join(seed, path), string(data))
+				}
 				b.git(seed, "add", "-A")
 				b.git(seed, "commit", "-qm", "goal slice-start "+id)
 				folded = append(folded, b.git(seed, "rev-parse", "HEAD"))
@@ -107,7 +135,7 @@ func TestAFoldOfGoalPagesKeepsTheBatchsGreen(t *testing.T) {
 			}
 			var refusal *Refusal
 			switch name {
-			case "a design page", "a page that does not parse", "the folded tree is red":
+			case "a design page", "a page that does not parse", "the folded tree is red", "an unexplained deletion":
 				out, err := PushChecked(b.install, b.checkout, bedNow, nil)
 				want := CodeUnproven
 				if name == "the folded tree is red" {
