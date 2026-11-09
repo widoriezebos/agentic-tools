@@ -1,0 +1,62 @@
+{
+  "coveredUnits": [
+    "U1c"
+  ],
+  "canonicalRead": {
+    "engine": "906878dc3972982790e2de561dcdd60883bc43f3",
+    "findings": [],
+    "id": "code-critic-81ef829c7720a1ad68cf8bd9",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-return-names-the-failing-test/metasystem/artifacts/agents/code-critic-81ef829c7720a1ad68cf8bd9/rounds/1/return.md",
+    "subject": {
+      "commit": "53d26b26e768aaceec80862b1009ba37e7282087",
+      "diffDigest": "303086e2c057c893d3e96e4bbf5facfaa412704540f95b10f65e7fa6bb715569",
+      "kind": "commit",
+      "parent": "916a0bf4cd7927c2f666e34033b3d63ae15d6ea1",
+      "tree": "1315f742943deea4432862cea34e0d83d32c8769"
+    }
+  },
+  "readDigest": "9ef5194d764ef5efb8057fa846fa443e9efd5be9ce06239e21688a1f8a6e14ad",
+  "schemaVersion": 1,
+  "goal": "a-return-names-the-failing-test",
+  "unit": "U1c",
+  "subject": {
+    "commit": "53d26b26e768aaceec80862b1009ba37e7282087",
+    "parent": "916a0bf4cd7927c2f666e34033b3d63ae15d6ea1",
+    "tree": "1315f742943deea4432862cea34e0d83d32c8769",
+    "patchDigest": "303086e2c057c893d3e96e4bbf5facfaa412704540f95b10f65e7fa6bb715569",
+    "unitDigest": "3cf8e3afb769059ab67d404d99e47a8e953c25cb5df660907c0ec6b76be42361"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-81ef829c7720a1ad68cf8bd9",
+    "round": 1,
+    "closureSha256": "7b86c0e4bda548c730c38bb39b4a8b94ebd2a662da9527fa229d10e961b6d2ec"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "1315f742943deea4432862cea34e0d83d32c8769",
+    "runId": "goal-read-gate-20261109t212633z-cd8d5d41a1cd0eea"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "408d12c125aa18d18c735131a1f846d139757cf3",
+      "digest": "b25884942d051072ef10fb1b587da1e8d938f61d0d593cffceca0072f46dd36d"
+    },
+    {
+      "kind": "read",
+      "commit": "916a0bf4cd7927c2f666e34033b3d63ae15d6ea1",
+      "digest": "e0d98bf8a7b7ac1cf34262ecd6c982f86aa56886b9859f9c746784d6c86890a2"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_repeat_selection_test.go",
+      "readerWord": "reviewed by critic root code-critic-81ef829c7720a1ad68cf8bd9"
+    }
+  ],
+  "sha256": "8a1fc668e34773caa736872beb8331cf20beea373a3b25f725a504e224cb384c"
+}
