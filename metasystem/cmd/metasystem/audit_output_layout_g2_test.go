@@ -43,6 +43,8 @@ func goalLayoutBed(t *testing.T) layoutBed {
 		file.Priority, file.Sequence = 1, 1
 		file.NextStep = "Push 17 landed the batch lane; confirm the ledger tip after the next sync. Then close the goal."
 	})
+	// Occupancy preserves the elapsed value in the goal output specimens.
+	goalBudgetSeat(t, b.root(), b.goalFile(bedGoal))
 	template := *b.goalFile(bedGoal)
 	// Claimed and approved goals copy the bed's claimed goal, whose claim,
 	// approval and budget records agree with its history.
@@ -88,6 +90,8 @@ func goalLayoutBed(t *testing.T) layoutBed {
 // goalStoppedLayoutBed is the bed's goal stopped by its elapsed budget.
 func goalStoppedLayoutBed(t *testing.T) layoutBed {
 	b := newIntentBed(t, true, nil)
+	// The stopped specimen has worked through its elapsed limit.
+	goalBudgetSeat(t, b.root(), b.goalFile(bedGoal))
 	root := realpath.Resolve(b.root())
 	return layoutBed{owners: b.owners(), cwd: b.root(), replace: layoutPaths(b.root(), root, "/Users/wido/GitHub/agentic-tools-m1e")}
 }

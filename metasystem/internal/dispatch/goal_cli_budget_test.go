@@ -112,6 +112,8 @@ func (bed *gcliBudgetBed) claimApproved(id, next string, budget goal.Budget, at 
 	bed.confirm("approve "+id, result, err)
 	result, err = goal.Claim(bed.request(at, false), id)
 	bed.confirm("claim "+id, result, err)
+	// Seat occupancy supplies the work that exhausts this box.
+	writeBudgetSeat(bed.t, bed.root, id, at.Format(time.RFC3339Nano))
 }
 
 func (bed *gcliBudgetBed) accepted(id string) string {

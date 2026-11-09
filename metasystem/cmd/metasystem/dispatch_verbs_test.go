@@ -312,6 +312,8 @@ func TestGoalExtendBudgetRefusesSeamsThatAreNotExtendable(t *testing.T) {
 		root := repository.root
 		repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
 			file.StopCapability = &goal.StopCapability{Generation: 2, Revision: 2, Machine: "mac-cli", ClaimEpoch: 1}
+			// Occupancy supplies the live elapsed breach.
+			goalBudgetSeat(t, root, file)
 			file.Budget.ElapsedLimit = "1h"
 			file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 		})

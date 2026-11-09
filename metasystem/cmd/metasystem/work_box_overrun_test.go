@@ -40,6 +40,8 @@ func TestUnitPastItsBoxGetsItsCheckAndRead(t *testing.T) {
 		file.Budget.ElapsedLimit = "1h"
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})
+	// The seat keeps working as its build crosses the box.
+	goalBudgetSeat(t, bed.root(), bed.goalFile(bed.id))
 	clock := &workClock{now: bed.manager.Now()}
 	claim, err := time.Parse(time.RFC3339, bed.goalFile(bed.id).Claimed.At)
 	if err != nil {

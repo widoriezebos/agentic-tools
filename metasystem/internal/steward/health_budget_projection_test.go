@@ -22,6 +22,12 @@ func budgetHealthProjectionBed(t *testing.T, now time.Time, goals map[string]*go
 	files := map[string][]byte{"plans/goals/backlog.md": goal.RenderRoot(record)}
 	for id, file := range goals {
 		files["plans/goals/"+id+".md"] = goal.RenderFile(file)
+		// Occupancy supplies the elapsed admission and breach evidence.
+		if file.Claimed != nil {
+			if err := writeSeatRecord(root, SeatRecord{Schema: 1, LaunchID: "budget-" + id, Goal: id, StartedAt: file.Claimed.At}); err != nil {
+				t.Fatal(err)
+			}
+		}
 	}
 	for relative, data := range files {
 		path := filepath.Join(root, filepath.FromSlash(relative))

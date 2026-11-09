@@ -13,7 +13,7 @@ import (
 // ReserveUnitLaunch binds a physical execution to its goal revision and unit
 // round before it starts. Repeating the same admission joins that reservation.
 // A retry is its own attempt, not part of the round's counted one.
-func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap int64, now time.Time, retry bool) error {
+func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap int64, now time.Time, retry bool, homes ...string) error {
 	if file == nil || file.Claimed == nil {
 		return fmt.Errorf("the unit launch has no claimed goal")
 	}
@@ -42,7 +42,7 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		projection := ProjectBudget(root, file, now)
+		projection := ProjectBudget(root, file, now, homes...)
 		remedy := fmt.Sprintf("a person sets its budget: metasystem goal budget %s BOX", goal)
 		if projection.Status != BudgetKnown {
 			return refusal.New("BUDGET_UNKNOWN", "record="+projection.Unknown.Record+" reason="+projection.Unknown.Reason,

@@ -22,6 +22,8 @@ func channelWaitBed(t *testing.T) (string, string, *goal.GoalFile, time.Time) {
 		Claimed:  &goal.ClaimRecord{Machine: "bed-m1", Lineage: "coordinator", At: start.Format(time.RFC3339), Revision: 1},
 		Approved: &goal.ApprovalRecord{Revision: 1}, History: []goal.HistoryLine{{At: start.Format(time.RFC3339)}},
 		Budget: &goal.Budget{ElapsedLimit: "8h", AttemptLimit: 2, ReservedJobMinutesLimit: 75, ActiveJobLimit: 1}}
+	// Seat occupancy spends outside the person wait without ending it.
+	testchannel.Save(t, filepath.Join(root, "artifacts/agents/steward/seats/seat.json"), map[string]any{"goal": file.Id, "launchId": "seat", "startedAt": start.Format(time.RFC3339Nano)})
 	return root, testprovider.Register(t, root), file, start
 }
 

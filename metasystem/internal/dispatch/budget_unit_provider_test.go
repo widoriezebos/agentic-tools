@@ -61,8 +61,9 @@ func TestBudgetUnitReservationUsesPhysicalLaunchProvider(t *testing.T) {
 	if _, err := outage.Observe(home, "claude", "fixture-model", "overloaded", "529", "fixture", end); err != nil {
 		t.Fatal(err)
 	}
+	// The environment minute cuts occupancy in addition to the provider pause.
 	projection := ProjectBudget(root, file, now, home)
-	if projection.Status != BudgetKnown || projection.Wait != 4*time.Minute || projection.Elapsed != 11*time.Minute {
+	if projection.Status != BudgetKnown || projection.Wait != 4*time.Minute || projection.Elapsed != 10*time.Minute {
 		t.Fatalf("physical provider pause was duplicated or lost: %+v", projection)
 	}
 	if projection.Attempts != 0 || projection.ReservedJobMinutes != 0 {

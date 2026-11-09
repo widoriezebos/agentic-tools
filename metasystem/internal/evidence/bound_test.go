@@ -30,6 +30,10 @@ func newBoundBed(t *testing.T) *boundBed {
 		t.Fatal(err)
 	}
 	bed := &boundBed{root: filepath.Join(base, "evidence"), gitRoot: filepath.Join(base, "checkout"), home: filepath.Join(base, "home", ".metasystem")}
+	// The fixture needs distinct lower- and upper-case segment spellings.
+	for !strings.ContainsAny(diskstore.Segment(bed.gitRoot), "abcdef") {
+		bed.gitRoot += "-case"
+	}
 	bed.installation = filepath.Join(bed.gitRoot, "metasystem")
 	for _, dir := range []string{filepath.Join(bed.gitRoot, ".git"), filepath.Join(bed.installation, "artifacts", "agents", "jobs"), bed.root, bed.home} {
 		if err := os.MkdirAll(dir, 0o755); err != nil {

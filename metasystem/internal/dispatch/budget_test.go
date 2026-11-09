@@ -43,6 +43,8 @@ func budgetProjectionRoot(t *testing.T) string {
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Seat occupancy keeps the pause and elapsed-limit beds working throughout.
+	writeBudgetSeat(t, root, "bounded", "2026-08-28T08:00:00Z")
 	return root
 }
 
@@ -1144,27 +1146,35 @@ func TestBudgetAdmissionRefusalNamesSetupRefusalReleaseRule(t *testing.T) {
 func TestIdleSecondsComeOffTheElapsedClockAfterTheDischargeStart(t *testing.T) {
 	root := budgetProjectionRoot(t)
 	// The episode began at 08:00, a consumed discharge at 08:30 advanced the
-	// start, the pair was away for half an hour and re-claimed at 09:00: at
-	// 10:30 the clock reads two hours less the idle half hour.
+	// start, and occupancy resumed with the claim at 09:00: at 10:30 the
+	// clock counts only the seat's hour and a half.
 	dischargeAt := time.Date(2026, 8, 28, 8, 30, 0, 0, time.UTC)
 	writeConsumedBudgetProof(t, root, "green-discharge", 3, 5, dischargeAt)
 	file := reclaimedBudgetGoal()
+	// Occupancy resumes at the latest claim; the gap has no work.
+	writeBudgetSeat(t, root, file.Id, file.Claimed.At)
 	file.Claimed.IdleSeconds = 1800
 	file.Obligation = &goal.GovernedObligation{Revision: 5}
 	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 30, 0, 0, time.UTC))
 	if projection.Status != BudgetKnown || !projection.StartedAt.Equal(dischargeAt) || projection.Elapsed != 90*time.Minute {
-		t.Fatalf("idle seconds did not compose with the discharge-advanced start: %+v", projection)
+		t.Fatalf("the empty gap spent time after the discharge-advanced start: %+v", projection)
 	}
-	// Without a discharge the idle seconds come off the episode origin.
+	// Without a discharge, occupancy still starts at the latest claim.
 	plain := raisedEpisodeGoal(6, 0)
 	plain.Claimed.IdleSeconds = 3600
-	projection = ProjectBudget(budgetProjectionRoot(t), plain, time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC))
-	if projection.Status != BudgetKnown || projection.Elapsed != 4*time.Hour || projection.ElapsedState != AdmissionClosedElapsed {
-		t.Fatalf("idle seconds did not come off the episode clock: %+v", projection)
+	plainRoot := budgetProjectionRoot(t)
+	writeBudgetSeat(t, plainRoot, plain.Id, plain.Claimed.At)
+	projection = ProjectBudget(plainRoot, plain, time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC))
+	if projection.Status != BudgetKnown || projection.ElapsedLegacy || projection.Elapsed != 3*time.Hour+20*time.Minute || projection.ElapsedState != "" {
+		t.Fatalf("work before the latest claim was invented: %+v", projection)
 	}
-	// The clock never reads below zero.
+	// A window without work spends nothing, regardless of recorded idle seconds.
 	plain.Claimed.IdleSeconds = 24 * 3600
-	projection = ProjectBudget(budgetProjectionRoot(t), plain, time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC))
+	emptyRoot := t.TempDir()
+	if err := os.WriteFile(filepath.Join(emptyRoot, "metasystem.conf"), nil, 0600); err != nil {
+		t.Fatal(err)
+	}
+	projection = ProjectBudget(emptyRoot, plain, time.Date(2026, 8, 28, 13, 0, 0, 0, time.UTC))
 	if projection.Status != BudgetKnown || projection.Elapsed != 0 {
 		t.Fatalf("idle seconds drove the clock negative: %+v", projection)
 	}
@@ -1186,12 +1196,14 @@ func reclaimedBudgetGoal() *goal.GoalFile {
 
 func TestReclaimedGoalCountsThePreReleaseAttemptAndKeepsTheDischargeStart(t *testing.T) {
 	root := budgetProjectionRoot(t)
+	// Occupancy resumes at the latest claim; the gap has no work.
+	writeBudgetSeat(t, root, "bounded", reclaimedBudgetGoal().Claimed.At)
 	// One attempt ran before the release, under the accounting revision.
 	writeBudgetJob(t, root, "before-release", "reserve-before", 3, 30, "completed", budgetJobLife{
 		startedAt: "2026-08-28T08:05:00Z", endedAt: "2026-08-28T08:15:00Z", pid: 4242,
 	})
 	plain := ProjectBudget(root, reclaimedBudgetGoal(), time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC))
-	if plain.Status != BudgetKnown || plain.Attempts != 1 || plain.StartedAt.Format(time.RFC3339) != "2026-08-28T08:00:00Z" || plain.Elapsed != 2*time.Hour+20*time.Minute {
+	if plain.Status != BudgetKnown || plain.Attempts != 1 || plain.StartedAt.Format(time.RFC3339) != "2026-08-28T08:00:00Z" || plain.Elapsed != 2*time.Hour+10*time.Minute {
 		t.Fatalf("the re-claimed goal lost its earlier attempt or its idle gap: %+v", plain)
 	}
 	// A discharge consumed in the earlier hold advances the start (and, as
@@ -1202,7 +1214,7 @@ func TestReclaimedGoalCountsThePreReleaseAttemptAndKeepsTheDischargeStart(t *tes
 	discharged := reclaimedBudgetGoal()
 	discharged.Obligation = &goal.GovernedObligation{Revision: 5}
 	projection := ProjectBudget(root, discharged, time.Date(2026, 8, 28, 11, 0, 0, 0, time.UTC))
-	if projection.Status != BudgetKnown || !projection.StartedAt.Equal(dischargeAt) || projection.Elapsed != 2*time.Hour+10*time.Minute {
+	if projection.Status != BudgetKnown || !projection.StartedAt.Equal(dischargeAt) || projection.Elapsed != 2*time.Hour+5*time.Minute {
 		t.Fatalf("the discharge-advanced start and the idle gap did not compose: %+v", projection)
 	}
 }
@@ -1324,14 +1336,15 @@ func TestTheGoalsOwnJobEndsTheWait(t *testing.T) {
 
 func TestIdleCountsForAClaimNeverReleased(t *testing.T) {
 	t.Parallel()
-	// The budget starts exactly at the claim; the idle half hour recorded on
-	// it still comes off the clock.
+	// The seat starts half an hour after the claim. The gap has no work.
 	file := budgetGoal()
 	file.Claimed.IdleSeconds = 1800
-	projection := ProjectBudget(budgetProjectionRoot(t), file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
+	root := budgetProjectionRoot(t)
+	writeBudgetSeat(t, root, file.Id, "2026-08-28T08:30:00Z")
+	projection := ProjectBudget(root, file, time.Date(2026, 8, 28, 10, 0, 0, 0, time.UTC))
 	if projection.Status != BudgetKnown || !projection.StartedAt.Equal(time.Date(2026, 8, 28, 8, 0, 0, 0, time.UTC)) ||
 		projection.Elapsed != 90*time.Minute {
-		t.Fatalf("the idle of a claim never released was dropped: %+v", projection)
+		t.Fatalf("the empty gap before the seat started spent time: %+v", projection)
 	}
 }
 

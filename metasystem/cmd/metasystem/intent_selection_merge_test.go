@@ -15,6 +15,8 @@ func TestGoalStatusRetainsBudgetAndProcessReport(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			bed := newWorkBed(t)
+			// Occupancy supplies the visible claim elapsed time.
+			goalBudgetSeat(t, bed.root(), bed.goalFile(bed.id))
 			if built {
 				if code, result, output := processEvidenceBuild(bed); code != 0 {
 					t.Fatalf("build: %d %+v %s", code, result, output)

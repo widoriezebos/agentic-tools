@@ -607,6 +607,8 @@ func TestCandidateCannotEscapeAuthorityElapsedLimit(t *testing.T) {
 	repository, now := proofAdmissionExtensionFixture(t)
 	root := repository.root
 	repository.amend(t, "standing-validation", func(file *goal.GoalFile) {
+		// Occupancy exhausts the authority box before the candidate starts.
+		goalBudgetSeat(t, root, file)
 		file.Budget.ElapsedLimit = "1m"
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, *file.Budget, file.Risk)
 	})

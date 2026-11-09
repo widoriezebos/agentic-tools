@@ -343,6 +343,7 @@ func TestRecordCASRefusesCritiqueOwnerWrite(t *testing.T) {
 	setupPending(t, root, "job-a")
 
 	for field, value := range map[string]any{
+		"elapsedOverrunMin":         15,
 		"findingRegister":           []any{},
 		"findingRegisterRound":      1,
 		"reviewRoundLimit":          3,
