@@ -8,14 +8,13 @@
 - Next step: Design plans/designs/lane-recovers-and-pauses.md (Astra critique to material zero), then U2 lane fix rounds + landing fix, U1 clock pause, U3 resolution-only read, U4 landing retract + verbs in every status line; each unit rehearsed before landing Fixes analysis 2026-11-07: U2b (landing fix) is retired, since work land G again is the person recovery. The lane recovery audit (design :34, :57) stays as this goal last unit; do not conclude before it lands. Week review (Astra r2 finding 6): the lane recovery audit stays this goal last unit; the goal is not concluded before it lands; m1e builds it after the redo. Week review (Astra r2 finding 6): the lane recovery audit stays this goal last unit; the goal is not concluded before it lands; m1e builds it after the redo.
 - OpenedAt: 2026-10-11T06:10:01Z
 - FirstClaimAt: 2026-10-11T09:06:38Z
-- Revision: 9
+- Revision: 10
 - Budget: elapsedLimit=3d attemptLimit=10 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
 - Approved: by=human:Wido at=2026-10-11T13:07:13Z revision=5 opid=4CC8B0B00AK2GR0A4WJE5HV5JS-m1e-9c08b0e5 authority=proven digest=c2d55699fef18a2173b0198e9e4a6c663c0a36696f0de306bc176df09ea95a0b episode=5
 - Sliced: machine=m1e lineage=main-1790454088-93948-21671b revision=3 at=2026-10-11T09:11:41Z
-- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-10-11T13:07:13Z by=human:Wido areas="null" areas-source="01M4MSA883YK2CM2W2BXXFCT5H@b69a47f3886f076edaa276996a26d921021700070c58cc9d77b04f606c1e37ce" areas-known=false areas-warnings="[\"areas unknown for goal lane-recovers-and-pauses in design /Users/wido/LocalStorage/GitHub/agentic-tools-m1e/metasystem/plans/designs/lane-recovers-and-pauses.md\",\"areas unknown for goal lane-first-run-fixes\",\"areas unknown for goal lane-rehearsal-before-landing\",\"areas unknown for goal process-changes-cover-declarations-and-interventions\",\"areas unknown for goal shared-state-in-the-ledger\",\"goal process-changes-cover-declarations-and-interventions was returned by the landing lane; it still counts as a held claim\\nrun: metasystem work land process-changes-cover-declarations-and-interventions  (shows the return)\"]" revision=5 accountingRevision=5 episodeAt=2026-10-11T09:06:38Z episodeRevision=3
-- StopCapability: generation=5 revision=5 machine=m1e claimEpoch=9 fenceEpoch=1
-- StopFence: stopId=stop-lane-recovers-and-pauses-r5-f1 revision=5 epoch=1 capabilityGeneration=5 closedAt=2026-10-12T21:09:50Z reason=ELAPSED_LIMIT
+- Claimed: machine=m1e lineage=main-1790454088-93948-21671b at=2026-11-09T12:54:38Z by=human:Wido revision=10 accountingRevision=10 episodeAt=2026-11-09T12:54:38Z episodeRevision=10
+- StopCapability: generation=10 revision=10 machine=m1e claimEpoch=9 fenceEpoch=0
 
 History:
 - 2026-10-11T06:10:01Z M998RMD4CHPGAYQM8XCPV5NVDY-m1e-f456f182 open actor=human:Wido targets=lane-recovers-and-pauses
@@ -27,4 +26,5 @@ History:
 - 2026-11-07T09:56:30Z JCSPVJVHWE3C9B928PAE52V1X5-m1e-1dae276b edit actor=human:Wido targets=lane-recovers-and-pauses displaced=m1e+main-1790454088-93948-21671b@2026-10-11T13:07:13Z
 - 2026-11-08T03:28:29Z 9EHFPYSWNBX4F61AM7PZ3E1455-m1e-cfc044a5 edit actor=human:Wido targets=lane-recovers-and-pauses displaced=m1e+main-1790454088-93948-21671b@2026-10-11T13:07:13Z
 - 2026-11-08T04:44:59Z C3CQKCGF9KR4QJPBDKRDY5S0GE-m1e-c743db87 edit actor=human:Wido targets=lane-recovers-and-pauses displaced=m1e+main-1790454088-93948-21671b@2026-10-11T13:07:13Z
-Integrity: sha256=be55940d5ef140e89b1432a328cd9ce92bcf546d2af29c7efb643c0dcf5e462b
+- 2026-11-09T12:54:38Z FPC49MHS8F9G5DAW4A5ZYDMTKM-m1e-9f59c70b resume actor=human:Wido targets=lane-recovers-and-pauses reason=cleared stop fence stop-lane-recovers-and-pauses-r5-f1: ELAPSED_LIMIT
+Integrity: sha256=27167cbc5ef293db04b07a73ff5bca9b09cb4340d85529e1e113130943c72653
