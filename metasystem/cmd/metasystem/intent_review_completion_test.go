@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/delegation/fake"
 	dispatchcore "github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/branch"
@@ -307,6 +309,7 @@ func TestIntentGoalReviewEmptyJoinRealClose(t *testing.T) {
 	if !strings.Contains(string(generated), "attempt=1 subject="+subject+" examination=crit9 round=1") {
 		t.Fatalf("the generated join is bound: %q", generated)
 	}
+	t.Run("notes-only decisions", func(t *testing.T) { testNotesOnlyReview(t, false) })
 }
 
 // TestIntentReviewAcceptedRiskException: an accepted material finding closes
@@ -415,5 +418,133 @@ func TestGoalDoneChecksAuthorityForSelectedInstallation(t *testing.T) {
 	code, result := b.runJSON(owners, "goal", "done", bedGoal, "--repo", installation, "--reason", "Review complete", "--by", "Wido")
 	if code != 1 || !projected || !strings.Contains(result.Summary, "goal list can't be found") {
 		t.Fatalf("the installation's proven person was refused before projection: %d %+v projected=%t", code, result, projected)
+	}
+}
+
+func TestStandaloneCommitReviewKeepsItsBinding(t *testing.T) {
+	t.Parallel()
+	testNotesOnlyReview(t, true)
+}
+
+func testNotesOnlyReview(t *testing.T, standalone bool) {
+	t.Helper()
+	for _, mode := range []string{"missing", "template", "stale", "partial", "material and note", "empty existing", "unbound", "explicit unbound", "explicit bound", "explicit stale"} {
+		t.Run(mode, func(t *testing.T) {
+			b := newDeliveryBedWith(t, nil, true)
+			subject := strings.Repeat("a", 40)
+			b.publicationSubject(subject)
+			realCloseOwner(t, b, func(ports *delegation.Ports) {
+				ports.Clock = &fake.Clock{Current: syncRequestTestNow}
+				ports.Git = &fake.Git{Log: &fake.Log{}, Responses: map[string]fake.GitResponse{
+					"*|rev-parse --show-toplevel": {Stdout: b.root()},
+				}}
+			})
+			b.writeFile(filepath.Join(b.install, "artifacts", "agents", "capabilities", "close.json"), `{"ok":true}`)
+			b.writeFile(filepath.Join(b.install, "metasystem.conf"), string(mustRead(t, filepath.Join(b.install, "metasystem.conf")))+"\nevidence.root="+t.TempDir()+"\n")
+			b.writeJob(map[string]any{"jobId": "crit9", "role": "code-critic", "status": "completed", "round": 1,
+				"destructiveReach": "DESIGN-BEARING", "dispatchMode": "fresh", "sessionId": "crit9-session", "endedAt": "2026-09-25T11:00:00Z",
+				"capabilitySnapshot": "artifacts/agents/capabilities/close.json", "parentJob": nil, "findingRegister": []any{}})
+			returnPath := filepath.Join(b.install, "artifacts", "agents", "crit9", "rounds", "1", "return.json")
+			findings := []intentFinding{{ID: "crit9:1", Title: "a note"}, {ID: "crit9:2", Title: "another note"}}
+			if mode == "empty existing" {
+				findings = []intentFinding{}
+			} else if mode == "material and note" {
+				findings[1].Material = true
+			}
+			b.writeJSON(returnPath, map[string]any{"jobId": "crit9", "round": 1, "findings": findings, "verdict": "reviewed"})
+			digest, _, _ := reviewReturnDigest(returnPath)
+			binding := reviewBinding{Goal: bedGoal, Subject: subject, Examination: "crit9", Round: 1, Return: digest}
+			if !standalone {
+				binding.Work, binding.Attempt = "main", 1
+			}
+			path := filepath.Join(filepath.Dir(returnPath), "decisions.md")
+			template := decisionsDocument(binding, findings)
+			var saved string
+			switch mode {
+			case "template", "empty existing":
+				saved = template
+			case "stale", "explicit stale":
+				other := binding
+				other.Return = strings.Repeat("0", 64)
+				saved = strings.ReplaceAll(decisionsDocument(other, findings), "| DECIDE | | |", "| noted | a person's observation | none |")
+			case "partial":
+				saved = strings.Replace(template, "| crit9:1 | DECIDE | | |", "| crit9:1 | noted | a person's decision | |", 1)
+			case "unbound", "explicit unbound":
+				saved = deliveryDispositionsHeader + "| crit9:1 | noted | a person's observation | none |\n| crit9:2 | noted | another observation | none |\n"
+			case "explicit bound":
+				saved = strings.ReplaceAll(template, "| DECIDE | | |", "| noted | a person's observation | none |")
+			}
+			if saved != "" {
+				b.writeFile(path, saved)
+			}
+			collected, published := 0, 0
+			b.owners.branchRead = func(args []string) (branch.BranchReadResult, int, error) {
+				if slices.Contains(args, "--collect") {
+					collected++
+					return branch.BranchReadResult{State: "collected", RootJob: "crit9", AttestationCommit: "attest"}, 0, nil
+				}
+				return branch.BranchReadResult{State: "closed", RootJob: "crit9"}, 0, nil
+			}
+			b.owners.publishRead = func(string, string, string) (branch.PublishReadResult, error) {
+				published++
+				return branch.PublishReadResult{State: "pushed", Attestation: "attest"}, nil
+			}
+			values := map[string][]string{}
+			args := []string{"work", "review", "--commit", subject, "--goal", bedGoal}
+			if strings.HasPrefix(mode, "explicit ") {
+				values["dispositions"] = []string{path}
+				args = append(args, "--dispositions", path)
+			}
+			var result intentResult
+			if standalone {
+				_, result = b.do(args...)
+			} else {
+				owners := b.intentBed.owners()
+				owners.delivery = b.owners
+				layout, err := stateroot.NewResolver(fakeTop(b.root()), noExecutable).ResolveLayout(b.root())
+				if err != nil {
+					t.Fatal(err)
+				}
+				inv := &intentInvocation{owners: owners, layout: layout, cwd: b.root(), stateRoot: b.root(), input: intentInput{values: values}, reviewWork: &reviewWorkContext{goal: bedGoal, work: "main", attempt: 1}}
+				result.Outcome = intentConfirmed
+				if pending := inv.closeWorkReview(nil, b.install, subject, "crit9"); pending != nil {
+					result = *pending
+				}
+			}
+			want := intentConfirmed
+			if mode == "stale" || mode == "partial" || mode == "unbound" || mode == "explicit stale" || mode == "explicit unbound" && !standalone {
+				want = intentRefused
+			} else if mode == "material and note" {
+				want = intentInProgress
+			}
+			wantCloses := 0
+			if want == intentConfirmed {
+				wantCloses = 1
+			}
+			if result.Outcome != want || len(b.calls) != wantCloses {
+				t.Fatalf("review = %+v; want %s, close calls=%v", result, want, b.calls)
+			}
+			content := mustRead(t, path)
+			if saved != "" && mode != "template" && string(content) != saved {
+				t.Fatal("existing decisions were overwritten")
+			}
+			if want == intentConfirmed {
+				if standalone && (collected != 1 || published != 1) || b.job("crit9")["mirror"] == nil {
+					t.Fatalf("the review did not close and publish: %+v collected=%d published=%d", result, collected, published)
+				}
+				if mode != "explicit unbound" {
+					if bound, err := readReviewBinding(content); err != nil || bound != binding {
+						t.Fatalf("the examination's identity changed: %+v %v", bound, err)
+					}
+				}
+				for _, finding := range findings {
+					if (mode == "missing" || mode == "template") && !strings.Contains(string(content), "| "+finding.ID+" | noted | not material per the read |") {
+						t.Fatalf("the note was not decided: %s", content)
+					}
+				}
+			} else if collected != 0 || published != 0 {
+				t.Fatalf("refused decisions were published: %+v", result)
+			}
+		})
 	}
 }

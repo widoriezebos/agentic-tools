@@ -222,7 +222,7 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 	c, owners, b, do, dispositions, job, finish := j.c, j.owners, j.b, j.do, j.dispositions, j.job, j.finish
 	_ = owners
 	// reviewed takes run through review unit, the fake model's completion,
-	// the printed close run by the real owner, and the collecting review.
+	// and automatic close, collection and publication by the real owners.
 	reviewed := func(run string, extra ...string) (critic, commit string) {
 		t.Helper()
 		code, result := do(append([]string{"work", "review", "run:" + run}, extra...)...)
@@ -231,19 +231,14 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 		}
 		critic, commit = "crit"+strconv.Itoa(len(c.delegates)), c.delegates[len(c.delegates)-1]
 		finish(c.worktree, critic, commit)
+		publications, reads, closes, commits := c.publications, c.commitReads, len(b.calls), c.commits
 		code, result = do(append([]string{"work", "review", "run:" + run}, extra...)...)
-		route := ""
-		if result.Next != nil {
-			route = shellCommand(result.Next.Argv)
+		if code != 0 || result.Outcome != intentConfirmed || result.Summary != "the review is complete and published" ||
+			c.publications != publications+1 || c.commitReads != reads+1 || len(b.calls) != closes+1 || c.commits != commits {
+			t.Fatalf("a notes-only critic closes, collects and publishes once: code=%d %+v", code, result)
 		}
-		if result.Outcome != "in-progress" || !strings.Contains(route, "work review run:"+run) || !strings.Contains(route, "--dispositions "+resultData(t, result)["template"].(string)) ||
-			strings.Contains(route, "metasystem close") {
-			t.Fatalf("an unclosed critic must print its public decision route: code=%d %+v", code, result)
-		}
-		calls := len(b.calls)
-		if code, result = do("work", "finish", "j2:"+critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || result.Outcome != intentConfirmed {
-			t.Fatalf("close %s: code=%d %+v calls=%v", critic, code, result, b.calls[calls:])
-		}
+		built := c.runRecord(run)
+		c.assertNoteDecisions(reviewBinding{Goal: c.id, Work: built.Unit, Attempt: built.Rounds[len(built.Rounds)-1].Number, Subject: commit, Examination: critic, Round: 1}, "F1")
 		record := job(c.worktree, critic)
 		if record["chainClosed"] != true || record["runnerClosed"] != nil || record["closure"] == nil {
 			t.Fatalf("the real close owner must stamp %s closed: %v", critic, record)
@@ -251,13 +246,12 @@ func TestIntentConnectedJourneyRealClose(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(c.worktree, "artifacts", "agents", "locks", critic+".d")); !os.IsNotExist(err) {
 			t.Fatalf("close left %s's lock behind", critic)
 		}
-		calls = len(b.calls)
-		if code, result = do("work", "finish", "j2:"+critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || len(b.calls) != calls {
+		calls := len(b.calls)
+		if code, result = do("work", "finish", "j2:"+critic, "--repo", c.worktree, "--dispositions", dispositions); code != 0 || len(b.calls) != calls || c.commitReads != reads+1 || c.commits != commits || c.publications != publications+1 {
 			t.Fatalf("a repeated close must change nothing: code=%d %+v calls=%v", code, result, b.calls[calls:])
 		}
-		publications := c.publications
-		if code, result = do(append([]string{"work", "review", "run:" + run}, extra...)...); code != 0 || result.Outcome != intentConfirmed || c.publications != publications+1 {
-			t.Fatalf("collect %s: code=%d %+v", run, code, result)
+		if code, result = do(append([]string{"work", "review", "run:" + run}, extra...)...); code != 0 || result.Outcome != intentUnchanged || c.publications != publications+1 || c.commitReads != reads+1 || len(b.calls) != calls || c.commits != commits {
+			t.Fatalf("a repeated review rejoins the published read %s: code=%d %+v", run, code, result)
 		}
 		return critic, commit
 	}

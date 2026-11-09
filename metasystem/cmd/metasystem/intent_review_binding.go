@@ -52,7 +52,7 @@ type reviewBinding struct {
 	Return      string
 }
 
-var reviewBindingLine = regexp.MustCompile(`(?m)^Review binding: goal=(\S+) work=(\S+) attempt=(\d+) subject=([0-9a-f]+) examination=(\S+) round=(\d+) return=([0-9a-f]{64})\s*$`)
+var reviewBindingLine = regexp.MustCompile(`(?m)^Review binding: goal=(\S+) work=(\S*) attempt=(\d+) subject=([0-9a-f]+) examination=(\S+) round=(\d+) return=([0-9a-f]{64})\s*$`)
 
 // line is the binding as the decisions file carries it: a machine line
 // reviewBindingLine parses back, one key=value field per bound fact.
@@ -91,6 +91,60 @@ func decisionsDocument(binding reviewBinding, findings []intentFinding) string {
 		text.WriteString(fmt.Sprintf("| %s | DECIDE | | |\n", finding.ID))
 	}
 	return text.String()
+}
+
+// notesOnlyDecisions fills only a missing or untouched template. A person's
+// decisions, including an incomplete file, still pass through the close checks.
+func notesOnlyDecisions(binding reviewBinding, findings []intentFinding, generated string) (string, error) {
+	if len(findings) == 0 {
+		return "", nil
+	}
+	for _, finding := range findings {
+		if finding.Material {
+			return "", nil
+		}
+	}
+	template := decisionsDocument(binding, findings)
+	content, err := os.ReadFile(generated)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", err
+	}
+	if err != nil || string(content) == template {
+		for _, finding := range findings {
+			template = strings.Replace(template, fmt.Sprintf("| %s | DECIDE | | |", finding.ID), fmt.Sprintf("| %s | noted | not material per the read | |", finding.ID), 1)
+		}
+		if err := os.WriteFile(generated, []byte(template), 0o600); err != nil {
+			return "", err
+		}
+	}
+	return generated, nil
+}
+
+func (inv *intentInvocation) checkReviewBinding(targets []intentTarget, path, generated string, binding reviewBinding, findings []intentFinding, again []string) ([]byte, *intentResult) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: fileProblem("decisions file", path, err) + "; nothing was closed",
+			next: again, nextReason: "once --dispositions names a readable file"}
+	}
+	// Explicit commit decisions may omit the binding; named work requires it.
+	if inv.reviewWork == nil && inv.input.has("dispositions") && !strings.Contains(string(content), "Review binding:") {
+		return content, nil
+	}
+	bound, err := readReviewBinding(content)
+	var boundTo []string
+	if err == nil && bound != binding {
+		err = errors.New("the decisions file answers another review, not the current one")
+		boundTo = append(boundTo, fmt.Sprintf("it answers examination %s round %d of attempt %d (subject %s), not the current examination %s round %d of attempt %d (subject %s)",
+			bound.Examination, bound.Round, bound.Attempt, shortSHA(bound.Subject), binding.Examination, binding.Round, binding.Attempt, shortSHA(binding.Subject)))
+	}
+	if err != nil {
+		if _, statErr := os.Stat(generated); errors.Is(statErr, os.ErrNotExist) {
+			_ = os.WriteFile(generated, []byte(decisionsDocument(binding, findings)), 0o600)
+		}
+		return nil, &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Summary: err.Error() + "; nothing was closed",
+			next: append(again, "--dispositions", generated), nextReason: "after deciding the current findings in " + generated, Details: boundTo}
+	}
+	return content, nil
 }
 
 func reviewReturnDigest(path string) (string, []byte, error) {
@@ -184,6 +238,19 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 		path = generated
 	}
 	if path == "" {
+		path, err = notesOnlyDecisions(binding, findings, generated)
+		if err == nil && len(findings) == 0 {
+			if _, err = os.Stat(generated); errors.Is(err, os.ErrNotExist) {
+				err = os.WriteFile(generated, []byte(decisionsDocument(binding, nil)), 0o600)
+			}
+			path = generated
+		}
+		if err != nil {
+			return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: "the review's decisions file can't be prepared",
+				next: again, Details: []string{err.Error()}}
+		}
+	}
+	if path == "" {
 		if len(findings) > 0 {
 			if _, err := os.Stat(generated); err != nil {
 				if err := os.WriteFile(generated, []byte(decisionsDocument(binding, findings)), 0o600); err != nil {
@@ -204,30 +271,11 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 				Summary: fmt.Sprintf("the review of work %s found %d finding(s) (%s); it completes once you decide them", work.work, len(findings), verdict),
 				next:    append(again, "--dispositions", generated), nextReason: "after deciding every finding in " + generated}
 		}
-		if err := os.WriteFile(generated, []byte(decisionsDocument(binding, nil)), 0o600); err != nil {
-			return &intentResult{Targets: targets, Outcome: intentFailed, code: 1, Data: data, Summary: "the review's empty decisions file can't be written",
-				next: again, nextReason: "try again; --verbose shows the cause", Details: []string{err.Error()}}
-		}
-		path = generated
 	} else {
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: fileProblem("decisions file", path, err) + "; nothing was closed",
-				next: again, nextReason: "once --dispositions names a readable file"}
-		}
-		bound, err := readReviewBinding(content)
-		var boundTo []string
-		if err == nil && bound != binding {
-			err = errors.New("the decisions file answers another review of this work, not the current one")
-			boundTo = append(boundTo, fmt.Sprintf("it answers examination %s round %d of attempt %d (subject %s), not the current examination %s round %d of attempt %d (subject %s)",
-				bound.Examination, bound.Round, bound.Attempt, shortSHA(bound.Subject), rootJob, round, work.attempt, shortSHA(commit)))
-		}
-		if err != nil {
-			if _, statErr := os.Stat(generated); statErr != nil {
-				_ = os.WriteFile(generated, []byte(decisionsDocument(binding, findings)), 0o600)
-			}
-			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: err.Error() + "; nothing was closed",
-				next: append(again, "--dispositions", generated), nextReason: "after deciding the current findings in " + generated, Details: boundTo}
+		content, refused := inv.checkReviewBinding(targets, path, generated, binding, findings, again)
+		if refused != nil {
+			refused.Data = data
+			return refused
 		}
 		decisions, violations := validate.Dispositions(path)
 		if len(violations) > 0 {
@@ -237,11 +285,13 @@ func (inv *intentInvocation) closeWorkReview(targets []intentTarget, root, commi
 		// A person's accepted risk, recorded on the goal by its owner for
 		// this finding of this examination, is the only lawful exception.
 		risks := map[string]bool{}
-		if projection, _, problem := inv.projection(); problem == nil {
-			if file, _ := goalRecord(projection, work.goal); file != nil {
-				for _, risk := range file.AcceptedRisks {
-					if risk.Chain == rootJob {
-						risks[risk.Finding] = true
+		if len(findings) > 0 {
+			if projection, _, problem := inv.projection(); problem == nil {
+				if file, _ := goalRecord(projection, work.goal); file != nil {
+					for _, risk := range file.AcceptedRisks {
+						if risk.Chain == rootJob {
+							risks[risk.Finding] = true
+						}
 					}
 				}
 			}

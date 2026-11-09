@@ -1237,47 +1237,37 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 				// continuation is the retry, never a decisions file.
 				return *waiting
 			}
-			if inv.reviewWork == nil && inv.input.has("dispositions") {
-				// An explicitly named commit's review closes with the author's
-				// decisions through the whole close owner, then collects below.
-				// A work's newest attempt records the examination first.
-				inv.commitExamination(store, goalID, unit, result.RootJob)
-				closer, refused := inv.closerAt(targets, store)
-				if refused != nil {
-					return *refused
+			if inv.reviewWork == nil {
+				binding, findings, template, ok := inv.commitExamination(store, goalID, unit, result.RootJob)
+				if !ok {
+					return *waiting
 				}
-				closed := closer.closeChain(result.RootJob)
-				if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
-					closed.Targets = append(targets, closed.Targets...)
-					closed.Summary = "the examination finished, but its close did not complete: " + closed.Summary
-					inv.riskRemedy(&closed, store, goalID, result.RootJob,
-						append(inv.canonicalReviewArgv(targets, goalID, unit), "--dispositions", inv.input.text("dispositions")))
-					return closed
+				join := inv.flagPath("dispositions")
+				if join == "" {
+					var prepareErr error
+					join, prepareErr = notesOnlyDecisions(binding, findings, template)
+					if prepareErr != nil {
+						return intentResult{Targets: targets, Outcome: intentFailed, code: 1, Summary: "the review's decisions file can't be prepared", Details: []string{prepareErr.Error()}, next: inv.sameCommand()}
+					}
+					if len(findings) == 0 {
+						join, _ = inv.cleanExaminationJoin(store, goalID, unit, result.RootJob)
+					}
 				}
-			} else if inv.reviewWork == nil {
-				join, clean := inv.cleanExaminationJoin(store, goalID, unit, result.RootJob)
-				if !clean {
+				if join == "" {
 					waiting.next = append(inv.canonicalReviewArgv(targets, goalID, unit), "--dispositions", "FILE")
 					waiting.nextReason = "FILE decides every finding of " + result.RootJob
-					// The decisions template names the findings, as the work
-					// form's does, bound to the work when the commit is a
-					// work's newest attempt.
-					if binding, findings, template, ok := inv.commitExamination(store, goalID, unit, result.RootJob); ok && len(findings) > 0 {
-						if _, err := os.Stat(template); err != nil {
-							err = os.WriteFile(template, []byte(decisionsDocument(binding, findings)), 0o600)
-							ok = err == nil
-						}
-						if ok {
-							waiting.nextReason = "FILE decides every finding of " + result.RootJob + "; start from " + template
-							if data, _ := waiting.Data.(map[string]any); data != nil {
-								data["template"] = template
-							}
-						}
+					if _, err := os.Stat(template); errors.Is(err, os.ErrNotExist) {
+						_ = os.WriteFile(template, []byte(decisionsDocument(binding, findings)), 0o600)
+					}
+					waiting.nextReason += "; start from " + template
+					if data, _ := waiting.Data.(map[string]any); data != nil {
+						data["template"] = template
 					}
 					return *waiting
 				}
-				// A completed examination with no findings has nothing to
-				// decide: its empty join closes through the whole close owner.
+				if _, refused := inv.checkReviewBinding(targets, join, template, binding, findings, inv.canonicalReviewArgv(targets, goalID, unit)); refused != nil {
+					return *refused
+				}
 				closer, refused := inv.closerAt(targets, store)
 				if refused != nil {
 					return *refused
@@ -1286,8 +1276,12 @@ func (inv *intentInvocation) commitReviewChecked(targets []intentTarget, root, g
 				closed := closer.closeChain(result.RootJob)
 				if closed.Outcome != intentConfirmed && closed.Outcome != intentUnchanged {
 					closed.Targets = append(targets, closed.Targets...)
-					closed.Summary = "the examination finished clean, but its close did not complete: " + closed.Summary
-					inv.riskRemedy(&closed, store, goalID, result.RootJob, inv.canonicalReviewArgv(targets, goalID, unit))
+					closed.Summary = "the examination finished, but its close did not complete: " + closed.Summary
+					again := inv.canonicalReviewArgv(targets, goalID, unit)
+					if inv.input.has("dispositions") {
+						again = append(again, "--dispositions", inv.input.text("dispositions"))
+					}
+					inv.riskRemedy(&closed, store, goalID, result.RootJob, again)
 					return closed
 				}
 			} else {
@@ -1464,24 +1458,17 @@ func (inv *intentInvocation) commitExamination(store, goalID, commit, rootJob st
 }
 
 func (inv *intentInvocation) cleanExaminationJoin(root, goalID, unit, rootJob string) (string, bool) {
-	newest, err := inv.newestRoundAt(root, rootJob)
-	if err != nil || recordText(newest, "status") != "completed" {
+	binding, findings, join, ok := inv.commitExamination(root, goalID, unit, rootJob)
+	if !ok || len(findings) != 0 {
 		return "", false
 	}
-	round := recordRound(newest)
-	returnPath := inv.returnPathAt(root, rootJob, round)
-	digest, _, readErr := reviewReturnDigest(returnPath)
-	findings, _, parseErr := readIntentFindings(returnPath)
-	if readErr != nil || parseErr != nil || len(findings) != 0 {
-		return "", false
+	if _, err := os.Stat(join); errors.Is(err, os.ErrNotExist) {
+		if err := os.WriteFile(join, []byte(decisionsDocument(binding, nil)), 0o600); err != nil {
+			return "", false
+		}
 	}
-	join := filepath.Join(filepath.Dir(returnPath), "decisions.md")
-	if _, err := os.Stat(join); err == nil {
-		return join, true
-	}
-	binding := reviewBinding{Goal: goalID, Subject: unit, Examination: rootJob, Round: round, Return: digest}
-	if err := os.WriteFile(join, []byte(decisionsDocument(binding, nil)), 0o600); err != nil {
-		return "", false
+	if _, refused := inv.checkReviewBinding(nil, join, join, binding, findings, inv.canonicalReviewArgv(nil, goalID, unit)); refused != nil {
+		return join, false
 	}
 	return join, true
 }
