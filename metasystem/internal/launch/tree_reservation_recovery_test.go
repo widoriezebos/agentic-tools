@@ -154,3 +154,99 @@ func TestGateTreeFinishedUnknownMutationKeepsUnreadableCustody(t *testing.T) {
 		})
 	}
 }
+
+func TestAReleasedRebaseLeavesNoOwner(t *testing.T) {
+	t.Parallel()
+	for _, child := range []bool{false, true} {
+		t.Run(map[bool]string{false: "alone", true: "child retained"}[child], func(t *testing.T) {
+			r, record, path := recoveryReservation(t, "completed", identity.Dead)
+			release, err := r.ReserveMutation(record.Worktree, "goal", "rebase")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if child {
+				if err := r.treeLocked(record.Worktree, func(path string, owner *treeReservation) error {
+					owner.Children = []string{"retained-child"}
+					return writeUnitJSON(path, owner, r.root())
+				}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := release(); err != nil {
+				t.Fatal(err)
+			}
+			_, err = os.Stat(path)
+			if child && err != nil || !child && !errors.Is(err, os.ErrNotExist) {
+				t.Fatalf("reservation with child=%t: %v", child, err)
+			}
+			if err := r.treeLocked(record.Worktree, func(_ string, owner *treeReservation) error {
+				if !child && owner.Run != "" {
+					t.Fatalf("released owner remains: %+v", owner)
+				}
+				return nil
+			}); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestStopPassesAnExistingFinishedMutationOwner(t *testing.T) {
+	t.Parallel()
+	for _, mode := range []string{"dead", "live", "unknown", "surviving child"} {
+		t.Run(mode, func(t *testing.T) {
+			live := identity.Dead
+			if mode == "live" {
+				live = identity.Alive
+			} else if mode == "unknown" {
+				live = identity.Unknown
+			}
+			r, owner, path := recoveryReservation(t, "completed", live)
+			r.CriticCustody = func(UnitRunRecord, bool) (bool, error) { return true, nil }
+			if mode == "surviving child" {
+				child, err := newID(r.Manager.Now())
+				if err != nil {
+					t.Fatal(err)
+				}
+				ref := identity.Ref{Pid: 10, StartedAtSec: 10}
+				if err := r.Manager.Store.Create(Record{ID: child, State: Completed, Child: &ref}); err != nil {
+					t.Fatal(err)
+				}
+				owner.Rounds = []UnitRound{{Steps: []UnitStep{{LaunchID: child}}}}
+				if err := writeUnitJSON(filepath.Join(r.runDir(owner.ID), "run.json"), owner, r.root()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			id, err := newID(r.Manager.Now())
+			if err != nil {
+				t.Fatal(err)
+			}
+			unit := UnitRunRecord{ID: id, Worktree: owner.Worktree, State: "awaiting-judgement"}
+			if err := writeUnitJSON(filepath.Join(r.runDir(id), "run.json"), unit, r.root()); err != nil {
+				t.Fatal(err)
+			}
+			stopped, err := r.CancelRun(id)
+			if mode == "dead" {
+				if err != nil || stopped.State != "cancelled" {
+					t.Fatalf("finished owner blocked stop: %+v %v", stopped, err)
+				}
+				if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
+					t.Fatalf("reservation remains: %v", err)
+				}
+			} else {
+				if err == nil || stopped.State == "cancelled" {
+					t.Fatalf("unproven custody released: %+v %v", stopped, err)
+				}
+				if mode == "surviving child" && !strings.Contains(err.Error(), "pid 10, start 10") {
+					t.Fatalf("surviving child not named: %v", err)
+				}
+				if _, err := os.Stat(path); err != nil {
+					t.Fatalf("reservation disappeared: %v", err)
+				}
+				if err := r.GateTree(owner.Worktree, "", nil); err == nil {
+					t.Fatal("GateTree released unproven custody")
+				}
+			}
+		})
+	}
+}
