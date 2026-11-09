@@ -1,0 +1,59 @@
+{
+  "canonicalRead": {
+    "engine": "4b1ec85607b0f459d0fa40f6e9acaa8c389bb8e5",
+    "findings": [],
+    "id": "code-critic-5d7c58be834dab02c43faefc",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-lane-finishes-what-it-starts/metasystem/artifacts/agents/code-critic-5d7c58be834dab02c43faefc/rounds/1/return.md",
+    "subject": {
+      "commit": "45c70693f9869851e044824cb38e73ed1bba3a67",
+      "diffDigest": "013d2f9e2ddbda8058b8b69059d0bacbbda7bed285b4d5125455d5fea3a7f8c7",
+      "kind": "commit",
+      "parent": "c5ba743607c4c86ecc4283d9ef4d8f7fc01cf534",
+      "tree": "3b508f796c0cda347bc53012c89f76552fd7ef64"
+    }
+  },
+  "readDigest": "41d3db49070d7958f1f06089415fc1dd9babf3b8f3ee3a487c8894a16cb616a7",
+  "schemaVersion": 1,
+  "goal": "the-lane-finishes-what-it-starts",
+  "unit": "U8",
+  "subject": {
+    "commit": "45c70693f9869851e044824cb38e73ed1bba3a67",
+    "parent": "c5ba743607c4c86ecc4283d9ef4d8f7fc01cf534",
+    "tree": "3b508f796c0cda347bc53012c89f76552fd7ef64",
+    "patchDigest": "013d2f9e2ddbda8058b8b69059d0bacbbda7bed285b4d5125455d5fea3a7f8c7",
+    "unitDigest": "b96dd0a62dbc4b2b7fe4a145f2ecd724e7d89d3b2c4d18f8e63a6ada13a09e23"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-5d7c58be834dab02c43faefc",
+    "round": 1,
+    "closureSha256": "7cbbeefe08d643b4e3bfb6e85de2da812cce2a9654716717f6269aac14ccf497"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "3b508f796c0cda347bc53012c89f76552fd7ef64",
+    "runId": "goal-read-gate-20261109t044149z-8a5fdf200bb44993"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "1884aca80be27e54428459215ed9f158dbb2f7bd",
+      "digest": "64e6dcd0688f65e84d29237721e517a934583631ca8d49d2a394d9ab36417dac"
+    },
+    {
+      "kind": "read",
+      "commit": "c5ba743607c4c86ecc4283d9ef4d8f7fc01cf534",
+      "digest": "e6ce9931bcb665bd195ad7aec484ed7bbb9a37b386da2c34c8aec546aafd5715"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/launch/tree_reservation_recovery_test.go",
+      "readerWord": "reviewed by critic root code-critic-5d7c58be834dab02c43faefc"
+    }
+  ],
+  "sha256": "d62c6cfc219248457b1a4e640ba812e912799920acb0c5b93fd607c52d29c646"
+}
