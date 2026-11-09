@@ -7,10 +7,10 @@
 - Tier: 2
 - Intent: The box clock counts only time the goal itself works, not admission waits or hours with no session and no job (P25; three box acts a day)
 - Origin: human
-- Next step: Design accepted (1d8990766). U1 (D10, the current unit finishes past its box) published 2026-11-09 05:4x: unit 519863e17, read 0cb01e374, material 0. Next: the seat cuts the U2 brief (D1-D4, D6, D8: elapsed is the goal's own work, seats as occupancy) from the page, builds it from metasystem/ without --check; then U3 with --last (the engine does not read the page's Units table). Later list: register elapsedOverrunMin in record.go dedicatedMetadataFields (U1 read note 1).
+- Next step: Design accepted (1d8990766). U1 (D10) published (unit 519863e17, read 0cb01e374). U2 (D1-D4, D6, D8: elapsed is the goal's own work, seats as occupancy) published 2026-11-09 07:0x: unit 9a73e8b33, read 0b24170ff, material 0; brief briefs/the-box-clock-counts-only-the-goals-own-work-U2-brief.md. Next: the seat cuts the U3 brief (D5, D9: test slot waits recorded in waits.jsonl and credited per execution; the status line) from the page, builds it from metasystem/ without --check and WITH --last (the engine does not read the page's Units table); seam to a U4 only if U3 passes 125 counted (seat-launch wait read). Then one hand-in. Later list: U2 read notes 1-6 (none material): ReserveUnitLaunch homes param and admission BudgetHome are test-only seams; evidence bound_test flake fix rode along; a *.json directory in the seat dir falls back.
 - OpenedAt: 2026-11-07T09:53:35Z
 - FirstClaimAt: 2026-11-09T01:24:51Z
-- Revision: 11
+- Revision: 12
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -31,4 +31,5 @@ History:
 - 2026-11-09T01:24:51Z AT9NXBR2YRV0D4RXH6KEPAZXH2-ui-71c5cb39 claim actor=ui+steward-seat targets=the-box-clock-counts-only-the-goals-own-work reason=areas unknown for goal the-box-clock-counts-only-the-goals-own-work in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/the-box-clock-counts-only-the-goals-own-work.md
 - 2026-11-09T04:43:22Z KEJ2YRGQSF7Q03T1NPCNDR16DM-ui-71c5cb39 edit actor=ui+steward-seat targets=the-box-clock-counts-only-the-goals-own-work
 - 2026-11-09T04:46:10Z ZD51TG461A7WA2RQGPVXR2D9CM-ui-770be346 set-budget actor=human:Wido targets=the-box-clock-counts-only-the-goals-own-work displaced=ui+steward-seat@2026-11-09T01:24:51Z
-Integrity: sha256=9d6ace0cdc6bdbbc139217c02f951189cafbd9abd93646649018af0606cfaefe
+- 2026-11-09T06:58:02Z 9BTFSRGJJYVYDGN4TKYEG7NMDN-ui-71c5cb39 edit actor=ui+steward-seat targets=the-box-clock-counts-only-the-goals-own-work
+Integrity: sha256=1d2307c5dcb29a52bb5fc732a6ed638b08c7945a30d6890d0218b5872d2bb689

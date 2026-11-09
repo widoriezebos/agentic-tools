@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 228
+- Revision: 229
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -302,4 +302,5 @@ History:
 - 2026-11-06T12:31:04Z 01CJ3HK7M1EE0C2Q8Q6XXG3NDM-m1f-71c5cb39 ack actor=m1f+steward-seat targets=lane-reproves-only-what-a-change-can-affect displaced=m1f+steward-seat@2026-10-05T02:26:11Z ack
 - 2026-11-08T09:53:33Z ET78NJ1CSBXBEG4PA2ZD5JY7D6-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-collects-its-resolution displaced=m1e+main-1792389436-6018-51cc28@2026-11-07T12:34:41Z ack
 - 2026-11-08T15:30:05Z P08DRX90D3FG4MZG41TW5ENV3A-ui-71c5cb39 ack actor=ui+steward-seat targets=the-lane-batches-goals-and-proves-once displaced=ui+steward-seat@2026-11-08T04:53:17Z ack
-Integrity: sha256=b6c85d5fd3341476992fb1415c3736feaedd5e464aa77e4fecada45952e78914
+- 2026-11-09T06:58:02Z 9BTFSRGJJYVYDGN4TKYEG7NMDN-ui-71c5cb39 ack actor=ui+steward-seat targets=the-box-clock-counts-only-the-goals-own-work displaced=ui+steward-seat@2026-11-09T01:24:51Z ack
+Integrity: sha256=6458e49215212fe851c7c78d337cf1929138b98887ba111895be217b417accbc
