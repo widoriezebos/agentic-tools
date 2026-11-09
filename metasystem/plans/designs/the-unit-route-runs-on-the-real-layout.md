@@ -4,6 +4,7 @@
 - Id: the-unit-route-runs-on-the-real-layout
 - Status: accepted
 - Goals: the-unit-route-runs-on-the-real-layout
+- Amended: 2026-11-09 by a1 for Wido; D5 (finding 574) and D6 (finding 576) with units U5 and U6 after Astra read of 02:12
 - Critique: round 1 (Astra, designs/astra-unit-route-gaps.log; 6 material) folded in revision 2 of designs/unit-route-gaps-2026-11-08.md; round 2 (designs/astra-unit-route-gaps-r2.log; 1 material, D5b only) folded in revision 3; converged (decision 234)
 
 Accepted 2026-11-08 by a1 in Wido's name (Wido 20:0x: "analyze the causes, then design fixes and get these critiqued by Astra").
@@ -24,6 +25,10 @@ Four defects of the unit route surfaced today, each by a live unit that stalled 
 
 **D4 (571 and the layout) The journeys run nested.** The connection bed gains a layout parameter (the move of `readPublicationAdapterBed`: the installation under `<repo>/metasystem`, the Git top at `<repo>`, the resolver answering the top). Four journeys run on both layouts through one table: the amend publication (TestIntentBuiltUnitToLanding's amend half), stop and rebuild (D2), the examination with a material finding (D3), and the check folder (D1). The bed's gate stub (cmd/metasystem/intent_unit_review_test.go:266) today ignores its directory and always passes, so the amend row records the directory the gate was called with and asserts its base name is the installation. The other sixteen journeys stay flat. Acceptance: the four pass nested on the fixed tree; reverting the 571 hot-fix fails the amend row nested and passes it flat.
 
+**D5 (574) A later unit never strands an earlier read.** Astra's read (designs/astra-unit-route-blockers.log): the amend-only carry condition (cmd/metasystem/intent_unit_review.go:515) is one half; the branch already holds carried attestations for earlier units made before the appended one, and a rebased subject may lack an attestation for its rebased commit; published reads bypass the stale-head check (:992). The unit-review publication reconciles a rebased subject with an existing valid attestation on the branch and resumes a missing carry through the branch-read owner (internal/goal/branch/read.go, rebase.go), so `work review G --work U` of an earlier unit publishes after a later unit was appended. Enabling the carry on append alone, or accepting any same-goal descendant of the read's tip, is not enough. Acceptance: rebase, an interrupted carry, an appended unit, then repeat publication of each earlier unit; a changed reviewed content is still rejected. Mutation: skipping the attestation reconciliation leaves "the worktree changed after the read".
+
+**D6 (576) A round's check admission is its own act.** The process-act selection keeps the previous round's act while advancing the operation to the new round, so the declaration resume refuses it (internal/processchange/check.go:208-212), the repair reselects the same act and fails the field match (:125-128), and the remedy builder (cmd/metasystem/intent_process_check.go:77) prints a form the run continuation rejects. The admission of round N selects or mints an act scoped to (goal, unit, operation of round N); the repair form it prints is the one `work build run:ID` accepts (no --work, no --brief); a person's carry-check act never becomes a later round's selected act. Neither retiring a predecessor act nor inheriting round 1's full-suite exception is the route. Acceptance: round 1 admitted with a person repair; round 2's check admits without a repair; where a repair is needed, the printed form runs as printed; a carry-check act of another unit is never selected. Mutation: keeping the previous act leaves "the admitted declaration act is unavailable".
+
 ## Units
 
 | Unit | Production lines | Total lines | Last | Content |
@@ -32,9 +37,11 @@ Four defects of the unit route surfaced today, each by a live unit that stalled 
 | U2 | 90 | 230 | no | D1: runner and manual directories; the acceptance table on both layouts |
 | U3 | 130 | 280 | no | D2: release of a cancelled name, narrow adoption; seam: the release first, the adoption second |
 | U4 | 60 | 240 | yes | D4: the layout parameter and the four nested rows; the gate stub records its directory |
+| U5 | 110 | 260 | no | D5: attestation reconciliation and resumed carry on the publication path; the rebase-carry-append journey |
+| U6 | 90 | 220 | yes | D6: round-scoped admission act and the continuation-compatible remedy |
 
 Estimates run double; a unit whose first round measures over 180 production lines splits at its seam. Every test runs on injected clocks (R-104-m1e); no test runs the Go toolchain outside the slot; no background loops; no `rm` on a variable path.
 
 ## Order
 
-U1 first (priority one's remaining committed reads go through it), then U2, U3, U4. Pinned m1e behind the-lane-finishes-what-it-starts.
+U1 first; U5 (574) before U6 (576) once U1-U4 are in, because 574 blocks the batching goal hand-in. U1 first (priority one's remaining committed reads go through it), then U2, U3, U4. Pinned m1e behind the-lane-finishes-what-it-starts.
