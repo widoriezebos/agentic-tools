@@ -92,6 +92,10 @@ func TestReplayParsesRealRedAndUsesItsNamedSelection(t *testing.T) {
 	if calls != 2 || result.Replay != "named replay green on main: whole-unit replay ran; replay: whole unit metasystem/internal/landing/plain" || result.Cause.Kind != "own" || result.Cause.Goal != record.Id {
 		t.Fatalf("real red classification=%+v cause=%+v calls=%d", result, result.Cause, calls)
 	}
+	wantWords := "TestReadStatusTrunkRedWaitsForRunningTrunkProof (metasystem/internal/landing/plain) failed on the merge of lane-first-run-fixes (a4004d908e8a) with main; metasystem/internal/landing/plain passed on main at commit"
+	if words := returnWords(*result.Cause); words != wantWords {
+		t.Fatalf("return words=%q, want %q", words, wantWords)
+	}
 	log, err := os.ReadFile(filepath.Join(Dir(b.install), "proofs/named-replay-1.log"))
 	if err != nil || !strings.Contains(string(log), "landing planned 1\n") || !strings.Contains(string(log), "landing dropped "+red.Failed[0].Tests[0]) || !strings.Contains(string(log), `"Test":"TestBase"`) || strings.Contains(string(log), "LANDING-FAILED") {
 		t.Fatalf("real red plan=%s err=%v", log, err)
@@ -239,5 +243,61 @@ func TestReplayKeepsFallbackFormAcrossPrefixes(t *testing.T) {
 	result := classifyReplay(b.seams, b.install, b.checkout, "fixture", Running{Attempt: "prefixes", Trunk: true}, red, Result{}, trees)
 	if calls != 3 || result.Cause.Kind != "own" || result.Cause.Goal != "g" || !strings.Contains(result.Replay, "named replay green on main: whole-unit replay ran") || !strings.Contains(result.Replay, "replay: 1 named tests of metasystem/internal/p") {
 		t.Fatalf("result=%+v cause=%+v calls=%d", result, result.Cause, calls)
+	}
+}
+
+func TestReplayWordsNameWhereEachRedFailed(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, goal, words string
+	}{
+		{"earlier merge", "g1", "TestA (metasystem/internal/p) failed on the merge of g1 (sha-g1) with main; metasystem/internal/p passed on main at commit"},
+		{"final merge", "g2", "TestA (metasystem/internal/p), TestB (metasystem/internal/p) failed on the merge of g2 (sha-g2) with main and g1; metasystem/internal/p passed on main and g1 at merge-g1"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b := newRepeatBed(t)
+			if err := os.MkdirAll(filepath.Join(Dir(b.install), "proofs"), 0755); err != nil {
+				t.Fatal(err)
+			}
+			git := b.seams.Git
+			b.seams.Git = func(dir string, args ...string) (string, error) {
+				if strings.Join(args, " ") == "rev-parse --verify merge-g1^{tree}" {
+					return "merge-tree", nil
+				}
+				return git(dir, args...)
+			}
+			calls := 0
+			b.seams.Command = func(cmd *exec.Cmd) error {
+				calls++
+				if commit := commandEnv(cmd, "LANDING_COMMIT"); commit != "commit" && commit != "merge-g1" {
+					t.Fatalf("unexpected replay on %q", commit)
+				}
+				if commandEnv(cmd, "LANDING_ONLY") != "metasystem/internal/p" {
+					t.Fatalf("unexpected replay unit: %q", commandEnv(cmd, "LANDING_ONLY"))
+				}
+				if commandEnv(cmd, "LANDING_COMMIT") == "merge-g1" && tc.name == "earlier merge" {
+					fmt.Fprint(cmd.Stdout, "LANDING-FAILED\tmetasystem/internal/p\tTestA\nLANDING-CHECKED\t1\n")
+					return fmt.Errorf("red")
+				}
+				fmt.Fprint(cmd.Stdout, "LANDING-CHECKED\t0\n")
+				return nil
+			}
+			finalTests := []string{"metasystem/internal/p TestA", "metasystem/internal/p TestB"}
+			red := Result{Result: Red, Failed: []FailedUnit{{Unit: "metasystem/internal/p", Tests: []string{"TestA", "TestB"}}}, Cause: &Cause{Kind: "unclassified", Tests: finalTests}}
+			trees := []replayTree{
+				{Running: Running{Commit: "commit"}, Main: true},
+				{Running: Running{Commit: "merge-g1"}, Goal: GoalSHA{Goal: "g1", SHA: "sha-g1"}},
+				{Running: Running{Commit: "tip"}, Goal: GoalSHA{Goal: "g2", SHA: "sha-g2"}},
+			}
+			result := classifyReplay(b.seams, b.install, b.checkout, "fixture", Running{Attempt: "words", Trunk: true, Commit: "tip"}, red, Result{}, trees)
+			wantCalls := 4
+			if tc.name == "earlier merge" {
+				wantCalls = 3
+			}
+			if calls != wantCalls || result.Cause.Kind != "own" || result.Cause.Goal != tc.goal || !reflect.DeepEqual(result.Cause.Tests, finalTests) || returnWords(*result.Cause) != tc.words {
+				t.Fatalf("result=%+v cause=%+v words=%q calls=%d, want goal=%s words=%q calls=%d", result, result.Cause, returnWords(*result.Cause), calls, tc.goal, tc.words, wantCalls)
+			}
+		})
 	}
 }

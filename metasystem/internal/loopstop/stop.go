@@ -16,6 +16,10 @@ type Cause struct {
 	Name     string   `json:"name,omitempty"`
 	Tests    []string `json:"tests,omitempty"`
 	Evidence string   `json:"evidence,omitempty"`
+	// Own attribution keeps the preceding green tree and the replay's failures.
+	PassedOn string   `json:"passed-on,omitempty"`
+	After    []string `json:"after,omitempty"`
+	FailedOn []string `json:"failed-on,omitempty"`
 }
 
 func (c Cause) Valid() bool {

@@ -251,6 +251,13 @@ func TestLandingStatusReadsCauseAndNamesOtherGoal(t *testing.T) {
 	}
 	proof := plain.Result{Result: plain.Red, At: laneTestNow.Format(time.RFC3339), Goals: goals, Cause: &plain.Cause{Kind: "own", Goal: "culprit", SHA: "culprit-sha"}}
 	writeCauseProof(t, b.install, "results.jsonl", proof)
+	if _, _, err := plain.HandIn(b.install, plain.Line{At: laneTestNow.Format(time.RFC3339), Goal: "lone", SHA: "lone-sha"}); err != nil {
+		t.Fatal(err)
+	}
+	words := "TestLone (metasystem/cmd/x) failed on lone (lone-sha); the lane did not compare it with main"
+	if _, changed, err := plain.ReturnProven(b.install, "lone", "own", words, true, "Wido", laneTestNow, plain.ProveSeams{BudgetHome: t.TempDir(), Person: &plain.ActProvenance{Kind: "return", Person: "Wido"}}); err != nil || !changed {
+		t.Fatalf("return lone: changed=%t err=%v", changed, err)
+	}
 	b.owners.landing.plainProve.Git = func(_ string, args ...string) (string, error) {
 		if listed, ok := landingFixtureParents(args, map[string][]string{"main": nil}); ok {
 			return listed, nil
@@ -263,7 +270,7 @@ func TestLandingStatusReadsCauseAndNamesOtherGoal(t *testing.T) {
 		}
 		return "", fmt.Errorf("unexpected stub Git: %v", args)
 	}
-	if code, output := b.run(t, b.root, "status", "--verbose"); code != 0 || !strings.Contains(output, "cause: other culprit") {
+	if code, output := b.run(t, b.root, "status", "--verbose"); code != 0 || !strings.Contains(output, "cause: other culprit") || !strings.Contains(strings.Join(strings.Fields(output), " "), ": "+words) || strings.Contains(output, "cause: own") {
 		t.Fatalf("batch mate's cause: %d %s", code, output)
 	}
 	code, output := b.run(t, b.root, "status", "--json")

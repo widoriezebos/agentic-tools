@@ -38,6 +38,39 @@ func failingTests(failed []FailedUnit) []string {
 	return tests
 }
 
+func returnWords(c Cause) string {
+	tests := c.FailedOn
+	if len(tests) == 0 {
+		tests = c.Tests
+	}
+	var failures, units []string
+	for _, identity := range tests {
+		unit, test, _ := strings.Cut(identity, " ")
+		name := unit
+		if top, valid := topLevelTest(test); valid {
+			name = top + " (" + unit + ")"
+		}
+		if !slices.Contains(failures, name) {
+			failures = append(failures, name)
+		}
+		if !slices.Contains(units, unit) {
+			units = append(units, unit)
+		}
+	}
+	if len(failures) == 0 {
+		failures, units = []string{"the lane's check"}, []string{"the lane's check"}
+	}
+	what, where := strings.Join(failures, ", "), c.Goal+" ("+Short(c.SHA)+")"
+	if c.PassedOn == "" {
+		return what + " failed on " + where + "; the lane did not compare it with main"
+	}
+	base := "main"
+	if len(c.After) > 0 {
+		base += " and " + strings.Join(c.After, ", ")
+	}
+	return what + " failed on the merge of " + where + " with " + base + "; " + strings.Join(units, ", ") + " passed on " + base + " at " + Short(c.PassedOn)
+}
+
 // ReturnRefused explains why the newest proof cannot return this hand-in.
 type ReturnRefused struct {
 	Goal  string

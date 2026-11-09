@@ -290,11 +290,7 @@ func buildHealth(status Status, batch *Batch, pause lane.Pause, abandoned string
 				return nil, err
 			}
 			if c := proof.Cause; ok && waiting.State == StateWaiting && proof.Result == Red && c != nil && c.Kind == "own" && c.Goal == g && c.SHA == waiting.SHA {
-				replay := stop.Replay
-				if replay == "" {
-					replay = proof.Replay
-				}
-				h.OwnRed = append(h.OwnRed, OwnRed{Goal: g, SHA: waiting.SHA, Replay: replay})
+				h.OwnRed = append(h.OwnRed, OwnRed{Goal: g, SHA: waiting.SHA, Replay: returnWords(*c)})
 			}
 		}
 		if landingstate.StopOwner(landingstate.StopFacts{Recorded: true, Loop: stop.Loop}).Word == landingstate.Loop {

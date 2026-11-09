@@ -410,7 +410,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			if prefix.Main {
 				result.Cause.Kind, result.Cause.Name = "main", mainFailureIdentity(result.Failed)
 			} else if prefix.Goal.Goal != "" {
-				result.Cause.Kind, result.Cause.Goal, result.Cause.SHA = "own", prefix.Goal.Goal, prefix.Goal.SHA
+				attributeOwn(result.Cause, trees, i, nil)
 			}
 			return result
 		}
@@ -430,6 +430,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			dir = filepath.Join(tree, rel)
 		}
 		failed, complete := false, true
+		var replayFailed []FailedUnit
 		var mainChecks []Result
 		recordingMain := i == 0 && prefix.Main && prefix.Tree != running.Tree && seams.RecordMain != nil
 		units := make([]string, len(result.Failed))
@@ -488,6 +489,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 			closeErr := file.Close()
 			complete = done && closeErr == nil
 			failed = complete && len(report.failed) > 0
+			replayFailed = report.failed
 			if result.Replay != "" {
 				result.Replay += "; "
 			}
@@ -537,7 +539,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 		}
 		if failed {
 			if i > 0 && prefix.Goal.Goal != "" {
-				result.Cause.Kind, result.Cause.Goal, result.Cause.SHA = "own", prefix.Goal.Goal, prefix.Goal.SHA
+				attributeOwn(result.Cause, trees, i, replayFailed)
 			}
 			return result
 		}
@@ -546,6 +548,19 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 		result.Repeat = "allowed"
 	}
 	return result
+}
+
+func attributeOwn(c *Cause, trees []replayTree, i int, failed []FailedUnit) {
+	c.Kind, c.Goal, c.SHA = "own", trees[i].Goal.Goal, trees[i].Goal.SHA
+	if i > 0 {
+		c.PassedOn = trees[i-1].Commit
+		for _, tree := range trees[1:i] {
+			c.After = append(c.After, tree.Goal.Goal)
+		}
+	}
+	if failed != nil {
+		c.FailedOn = failingTests(failed)
+	}
 }
 
 // Recording an incident preserves the proof's verdict and repeat allowance.
