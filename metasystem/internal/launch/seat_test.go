@@ -138,18 +138,36 @@ func TestLaunchEnvironmentNamesItsKind(t *testing.T) {
 	if got, set := environmentValue(buildProcesses.command.Environment, KindEnv); !set || got != "build" {
 		t.Fatalf("build environment %s = %q set=%t; environment=%q", KindEnv, got, set, buildProcesses.command.Environment)
 	}
-	child := childEnvironment([]string{"PATH=/fixture/bin", KindEnv + "=seat"}, buildProcesses.command.Environment)
+	buildState, err := build.Store.StateDir("build-kind")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, set := environmentValue(buildProcesses.command.Environment, StateEnv); !set || got != buildState {
+		t.Fatalf("build state = %q set=%t, want %q", got, set, buildState)
+	}
+	child := childEnvironment([]string{"PATH=/fixture/bin", KindEnv + "=seat", StateEnv + "=/parent/seat"}, buildProcesses.command.Environment)
 	if got := slices.DeleteFunc(slices.Clone(child), func(entry string) bool { return !strings.HasPrefix(entry, KindEnv+"=") }); !slices.Equal(got, []string{KindEnv + "=build"}) {
 		t.Fatalf("a build child of a seat carries %q", got)
 	}
 
+	if got := slices.DeleteFunc(slices.Clone(child), func(entry string) bool { return !strings.HasPrefix(entry, StateEnv+"=") }); !slices.Equal(got, []string{StateEnv + "=" + buildState}) {
+		t.Fatalf("child launch state = %q", got)
+	}
 	seat, seatProcesses, _, _ := manager(t)
 	seat.Adapters = map[string]Adapter{"claude-headless": ClaudeHeadless{Binary: "/fixture/bin/claude"}}
 	seat.Supervisor = supervisingStarter(t, seat)
 	seat.Settings = seatOn()
 	checkout := t.TempDir()
-	if _, err := seat.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, FenceRoot: checkout, Brief: seatBrief(t), Tag: "n0nce"}); err != nil {
+	record, err := seat.Start(StartSpec{Kind: "seat", WorkingDirectory: checkout, FenceRoot: checkout, Brief: seatBrief(t), Tag: "n0nce"})
+	if err != nil {
 		t.Fatal(err)
+	}
+	seatState, err := seat.Store.StateDir(record.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, set := environmentValue(seatProcesses.command.Environment, StateEnv); !set || got != seatState {
+		t.Fatalf("seat state = %q set=%t, want %q", got, set, seatState)
 	}
 	if got, set := environmentValue(seatProcesses.command.Environment, KindEnv); !set || got != "seat" {
 		t.Fatalf("seat environment %s = %q set=%t; environment=%q", KindEnv, got, set, seatProcesses.command.Environment)

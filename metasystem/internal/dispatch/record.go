@@ -109,6 +109,7 @@ var dedicatedMetadataFields = map[string]bool{
 	"unitUnaccounted":           true,
 	"unitEnvironment":           true,
 	"unitRetryAttempt":          true,
+	"elapsedOverrunMin":         true,
 	"unitExecuted":              true,
 	"findingRegister":           true,
 	"findingRegisterRound":      true,

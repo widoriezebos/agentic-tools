@@ -60,6 +60,7 @@ var inheritedControlNames = []string{
 	"METASYSTEM_HARNESS_ROOT",
 	"METASYSTEM_HOOK_DELEGATE_INSTALLATION_ROOT",
 	"METASYSTEM_HOOK_DELEGATE_STATE_ROOT",
+	"METASYSTEM_LAUNCH_STATE",
 	// The lane agent and the seats export their lineage to what they start; a
 	// test judges lineage only when it sets one (three leaks of this class).
 	"METASYSTEM_OWNER_LINEAGE",

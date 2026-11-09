@@ -431,6 +431,8 @@ func TestCleanupKeepsTheRecordThatEndedAStandingWait(t *testing.T) {
 			{At: "2026-08-10T11:00:00Z", Opid: "01ARZ3NDEKTSV4RRFFQ69G5FAY-bed-m1-00000003", Verb: "set-budget", Actor: "bed-m1+coordinator", Targets: []string{"marked"}, Keep: -1},
 		},
 	}
+	// Occupancy spends outside the wait; the retained job still ends it.
+	writeFile(t, filepath.Join(root, "artifacts/agents/steward/seats/seat.json"), `{"goal":"marked","launchId":"seat","startedAt":"2026-08-10T09:00:00Z"}`)
 	unmarked := *marked
 	unmarked.Landing = nil
 	endpointFor := func(file *goal.GoalFile) *goal.Endpoint {

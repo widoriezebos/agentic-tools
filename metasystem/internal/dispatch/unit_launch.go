@@ -3,6 +3,7 @@ package dispatch
 import (
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -12,7 +13,7 @@ import (
 // ReserveUnitLaunch binds a physical execution to its goal revision and unit
 // round before it starts. Repeating the same admission joins that reservation.
 // A retry is its own attempt, not part of the round's counted one.
-func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap int64, now time.Time, retry bool) error {
+func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap int64, now time.Time, retry bool, homes ...string) error {
 	if file == nil || file.Claimed == nil {
 		return fmt.Errorf("the unit launch has no claimed goal")
 	}
@@ -41,7 +42,7 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
-		projection := ProjectBudget(root, file, now)
+		projection := ProjectBudget(root, file, now, homes...)
 		remedy := fmt.Sprintf("a person sets its budget: metasystem goal budget %s BOX", goal)
 		if projection.Status != BudgetKnown {
 			return refusal.New("BUDGET_UNKNOWN", "record="+projection.Unknown.Record+" reason="+projection.Unknown.Reason,
@@ -65,6 +66,11 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 		}
 		breaches := budgetAdmissionBreaches(admission)
 		breaches = append(breaches, projection.Breaches...)
+		beforeElapsedWaiver := len(breaches)
+		if projection.unitRunsExecuted[run] {
+			breaches = slices.DeleteFunc(breaches, func(b BudgetBreach) bool { return b.Field == "elapsedLimit" })
+		}
+		elapsedWaived := len(breaches) < beforeElapsedWaiver
 		if admission.ReservedJobMinutes < admission.Limits.ReservedJobMinutesLimit && uint64(cap) > admission.Limits.ReservedJobMinutesLimit-admission.ReservedJobMinutes {
 			breaches = append(breaches, BudgetBreach{Field: "reservedJobMinutesLimit", Used: fmt.Sprintf("%d+%d proposed", admission.ReservedJobMinutes, cap), Limit: fmt.Sprint(admission.Limits.ReservedJobMinutesLimit)})
 		}
@@ -78,6 +84,9 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 		reservation := map[string]any{"jobId": id, "operationId": "unit-launch:" + id, "unitRun": run, "unitRound": round,
 			"goalId": goal, "goalRevision": revision, "machineId": file.Claimed.Machine, "claimEpoch": file.StopCapability.ClaimEpoch,
 			"capMin": cap, "status": "pending", "createdAt": now.UTC().Format(time.RFC3339Nano)}
+		if elapsedWaived {
+			reservation["elapsedOverrunMin"] = int64(max(0, projection.Elapsed-projection.Limits.ElapsedDuration()) / time.Minute)
+		}
 		if retry {
 			reservation["unitRetryAttempt"] = true
 		}

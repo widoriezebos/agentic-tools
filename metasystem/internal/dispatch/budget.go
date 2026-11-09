@@ -67,6 +67,7 @@ type BudgetBreach struct {
 type BudgetProjection struct {
 	goal.LaneBudgetRecord
 	unitAttempts            map[string]bool
+	unitRunsExecuted        map[string]bool
 	Status                  BudgetProjectionStatus
 	GoalID                  string
 	GoalRevision            uint64
@@ -85,6 +86,11 @@ type BudgetProjection struct {
 	Wait                    time.Duration `json:"-"`
 	PersonWaitSince         time.Time     `json:"-"`
 	PersonPaused            time.Duration `json:"-"`
+	SlotWaitSince           time.Time     `json:"-"`
+	SlotWaited              time.Duration `json:"-"`
+	ElapsedOverrunMinutes   uint64        `json:"-"`
+	ElapsedOverrunRun       string        `json:"-"`
+	ElapsedLegacy           bool          `json:"-"`
 	ElapsedGracePercent     uint64
 	ElapsedBreachLimit      time.Duration
 	ElapsedState            ElapsedBudgetState
@@ -399,9 +405,12 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	}
 	sort.Slice(entries, func(i, j int) bool { return entries[i].Name() < entries[j].Name() })
 	var dependencies []clockDependency
+	environment := make(map[string]bool)
+	var elapsedFallback string
 	operations := make(map[string]string)
 	unitAttempts := make(map[string]bool)
 	projection.unitAttempts = unitAttempts
+	projection.unitRunsExecuted = make(map[string]bool)
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -443,12 +452,12 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				if !TerminalStatus(asString(record["status"])) {
 					until = now
 				}
-				dependencies = append(dependencies, clockDependency{at: at, runtime: asString(record["runtime"]), until: until, executed: executed,
+				dependencies = append(dependencies, clockDependency{id: strings.TrimSuffix(entry.Name(), ".json"), at: at, runtime: asString(record["runtime"]), until: until, executed: executed,
 					providerFailed: jobProviderFailure(repoRoot, strings.TrimSuffix(entry.Name(), ".json"), record)})
 			} else if asString(record["runtime"]) == "local" || asString(record["runtime"]) == "plain-exec" {
 				// Local accounting does not need a provider clock. An unknown
 				// start must still prevent subtracting another job's outage.
-				dependencies = append(dependencies, clockDependency{runtime: asString(record["runtime"]), executed: executed})
+				dependencies = append(dependencies, clockDependency{id: strings.TrimSuffix(entry.Name(), ".json"), runtime: asString(record["runtime"]), executed: executed})
 			} else {
 				return unknownBudget(file.Id, revision, logicalPath, "job dependency time is unreadable")
 			}
@@ -467,6 +476,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("operationId %q duplicates %s", operationID, first))
 		}
 		operations[operationID] = logicalPath
+		if asString(record["unitRun"]) != "" && TerminalStatus(status) && record["unitEnvironment"] == true {
+			environment[jobID] = true
+		}
 		if record["unitUnaccounted"] == true && asString(record["unitRun"]) != "" && operationID == "unit-launch:"+jobID && TerminalStatus(lens.Status()) {
 			continue
 		}
@@ -540,13 +552,21 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			if !typed || runID == "" || !roundOK || round < 1 || operationID != "unit-launch:"+jobID {
 				return unknownBudget(file.Id, revision, logicalPath, "the unit reservation has an unreadable execution identity")
 			}
+			reservationExecuted := executed
 			if TerminalStatus(status) {
-				if _, typed := record["unitExecuted"].(bool); !typed {
+				var typed bool
+				if reservationExecuted, typed = record["unitExecuted"].(bool); !typed {
 					return unknownBudget(file.Id, revision, logicalPath, "the terminal unit reservation has unreadable execution evidence")
 				}
-				if record["unitExecuted"] == false {
-					continue
-				}
+			}
+			if reservationExecuted {
+				projection.unitRunsExecuted[runID] = true
+			}
+			if minutes, ok := numInt(record["elapsedOverrunMin"]); ok && minutes > 0 && uint64(minutes) > projection.ElapsedOverrunMinutes {
+				projection.ElapsedOverrunMinutes, projection.ElapsedOverrunRun = uint64(minutes), runID
+			}
+			if TerminalStatus(status) && !reservationExecuted {
+				continue
 			}
 			// A retry is an attempt of its own, counted even when its
 			// environment stop excludes its minutes.
@@ -817,6 +837,13 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if governed.GoalRevision > revision {
 			return unknownBudget(file.Id, revision, logicalPath, fmt.Sprintf("goalRevision %d is later than accepted goal revision %d", governed.GoalRevision, revision))
 		}
+		if !run.Terminal(record.Status) {
+			if startedAt, err := time.Parse(time.RFC3339Nano, record.StartedAt); err == nil {
+				dependencies = append(dependencies, clockDependency{at: startedAt, runtime: "local", until: now, executed: true})
+			} else if elapsedFallback == "" {
+				elapsedFallback = fmt.Sprintf("governed run %s has no readable startedAt", record.RunId)
+			}
+		}
 		consumes := consumptionMember(record.GoalId, governed.GoalRevision, file.Id, consumptionKey)
 		authorizes := (authorityLens || working) && (working || governed.GoalRevision >= accountingRevision)
 		if !consumes && !authorizes {
@@ -954,6 +981,8 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if err != nil {
 			return unknownBudget(file.Id, revision, "provider/launch history", err.Error())
 		}
+		deps, slotWaits, openSince, slotProblems := netSlotWaits(home, deps, now)
+		projection.Problems = append(projection.Problems, slotProblems...)
 		// Keep the beginning of an open wait before executed work splits it.
 		person, problems := personWaits(repoRoot, file.Id, providerStart, now, nil)
 		for _, span := range person {
@@ -984,6 +1013,24 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		}
 		projection.Wait = outage.Paused(spans)
 		projection.Elapsed = max(projection.Elapsed-projection.Wait, 0)
+		if authorityLens {
+			elapsed, reason, seatSince, seatProblems := ownWorkElapsed(repoRoot, home, file.Id, budgetStartedAt, now, deps, slices.Clone(spans), slotWaits, environment)
+			projection.Problems = append(projection.Problems, seatProblems...)
+			openSince = earliestSlotWait(openSince, seatSince)
+			if elapsedFallback != "" {
+				reason = elapsedFallback
+			}
+			if reason != "" {
+				projection.ElapsedLegacy = true
+				projection.Problems = append(projection.Problems, "elapsed counts wall time less pauses: "+reason)
+			} else {
+				projection.Elapsed = elapsed
+				projection.SlotWaitSince = openSince
+				if !openSince.IsZero() {
+					projection.SlotWaited = now.Sub(openSince)
+				}
+			}
+		}
 	}
 	if authorityLens {
 		return finishBudgetProjection(projection)

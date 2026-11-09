@@ -76,6 +76,8 @@ func TestFleetCompletedWorkDoesNotPause(t *testing.T) {
 				t.Parallel()
 				var file *goal.GoalFile
 				bed := newWorkBedWith(t, func(f *goal.GoalFile) { f.Obligation = nil; file = f })
+				// Occupancy spends outside provider pauses without releasing them.
+				goalBudgetSeat(t, bed.root(), file)
 				start, err := time.Parse(time.RFC3339, file.Claimed.At)
 				if err != nil {
 					t.Fatal(err)
@@ -148,6 +150,9 @@ func TestFleetProviderWaitWithPastIdleIsKnown(t *testing.T) {
 					f.Landing = &goal.LandingRecord{At: start.Add(7 * time.Minute).Format(time.RFC3339), Opid: f.History[len(f.History)-1].Opid}
 				}
 			})
+			// Occupancy covers each hold and leaves the release-to-claim gap empty.
+			goalBudgetSeat(t, bed.root(), file)
+			fleetWriteJSON(t, filepath.Join(bed.root(), "artifacts/agents/steward/seats/before-release.json"), steward.SeatRecord{Schema: 1, LaunchID: "before-release", Goal: file.Id, StartedAt: start.Format(time.RFC3339Nano), ReapedAt: start.Add(4 * time.Minute).Format(time.RFC3339Nano)})
 			home := testprovider.Register(t, bed.root())
 			fleetWriteJSON(t, filepath.Join(bed.root(), "artifacts", "agents", "jobs", "running.json"), map[string]any{
 				"jobId": "running", "operationId": "running", "goalId": bed.id, "goalRevision": file.Claimed.Revision,
@@ -254,6 +259,8 @@ func TestFleetProviderPausePublicStatus(t *testing.T) {
 					f.Landing = &goal.LandingRecord{At: at.Add(4 * time.Minute).Format(time.RFC3339), Opid: f.History[1].Opid}
 				}
 			})
+			// Occupancy supplies work outside the pauses this bed exercises.
+			goalBudgetSeat(t, bed.root(), file)
 			start, err := time.Parse(time.RFC3339, file.Claimed.At)
 			if err != nil {
 				t.Fatal(err)

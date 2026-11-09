@@ -146,7 +146,7 @@ func evaluateGoalAdmissionWithReads(repoRoot, stopLineage string, now time.Time,
 		if file.IsFencedClaim() || file.IsLandingClaim() {
 			continue
 		}
-		budget := ProjectBudget(repoRoot, file, now)
+		budget := ProjectBudget(repoRoot, file, now, reads.BudgetHome)
 		if budget.Status == BudgetUnknown {
 			verdict.Refusals = append(verdict.Refusals, GoalAdmissionRefusal{
 				GoalID: id, GoalRevision: file.Claimed.Revision, Unknown: budget.Unknown,

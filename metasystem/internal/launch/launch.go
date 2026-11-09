@@ -29,6 +29,9 @@ const DefaultWaitTimeout = 240 * time.Second
 // inherited.
 const KindEnv = "METASYSTEM_LAUNCH_KIND"
 
+// StateEnv names each launched session's own state directory variable.
+const StateEnv = "METASYSTEM_LAUNCH_STATE"
+
 var errLaunchCancelledBeforeChild = errors.New("launch cancelled before child start")
 
 type Command struct {
@@ -402,7 +405,7 @@ func (m *Manager) Supervise(id string) (Record, error) {
 	if err != nil {
 		return m.failCause(id, "command: "+err.Error(), nil)
 	}
-	command.Environment = append(command.Environment, KindEnv+"="+record.Kind)
+	command.Environment = append(command.Environment, KindEnv+"="+record.Kind, StateEnv+"="+stateDir)
 	var fenceClaim *stopfence.Claim
 	var fenceGeneration int64
 	var fenceRoot string

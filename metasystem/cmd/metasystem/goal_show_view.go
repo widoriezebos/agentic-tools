@@ -195,6 +195,12 @@ func (shown goalShown) budgetSection(page *textui.Page) {
 	if words := projection.PersonWords(); words != "" {
 		section.Text(words)
 	}
+	if words := projection.SlotWords(); words != "" {
+		section.Text(words)
+	}
+	if words := projection.OverrunWords(); words != "" {
+		section.Text(words)
+	}
 	elapsed := []textui.Span{textui.Plain(textui.Duration(projection.Elapsed.Round(time.Minute)) + " of " + limits.ElapsedLimit)}
 	switch projection.ElapsedState {
 	case dispatchcore.ElapsedBreach:

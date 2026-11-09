@@ -304,6 +304,8 @@ func gcliForgivingOpenStop(t *testing.T, bed *goalCLIBed, id, ulid string) strin
 	if file.State != goal.StateClaimed || file.Claimed == nil || file.StopCapability == nil {
 		t.Fatalf("goal %s has no claimed revision for its breach-stop: %+v", id, file)
 	}
+	// This stop bed keeps a seat working through the elapsed limit.
+	goalBudgetSeat(t, bed.root, file)
 	now := bed.clock()
 	if projection := dispatchcore.ProjectBudget(bed.root, file, now); projection.ElapsedState != dispatchcore.ElapsedBreach {
 		t.Fatalf("goal %s has no elapsed breach at %s: %+v", id, now, projection)

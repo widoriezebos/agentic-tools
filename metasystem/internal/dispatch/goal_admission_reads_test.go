@@ -106,7 +106,7 @@ func (bed *goalAdmissionBed) accept(t *testing.T) {
 	bed.repository = &strictAdmissionRepository{files: files, committed: bed.repository.committed}
 }
 
-func newGoalAdmissionBed(t *testing.T, claimRevision uint64) *goalAdmissionBed {
+func newGoalAdmissionBed(t *testing.T, claimRevision uint64, noSeat ...bool) *goalAdmissionBed {
 	t.Helper()
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "metasystem.conf"), nil, 0o644); err != nil {
@@ -146,6 +146,10 @@ func newGoalAdmissionBed(t *testing.T, claimRevision uint64) *goalAdmissionBed {
 		}
 	}
 	write("plans/goals/bounded.md", goal.RenderFile(file))
+	// Seat occupancy spends the claim's window without ending its pauses.
+	if len(noSeat) == 0 || !noSeat[0] {
+		writeBudgetSeat(t, root, file.Id, file.Claimed.At)
+	}
 	repository := &strictAdmissionRepository{committed: time.Date(2026, 8, 28, 9, 0, 0, 0, time.UTC)}
 	bed := &goalAdmissionBed{root: root, repository: repository}
 	bed.reads = goalAdmissionReads{

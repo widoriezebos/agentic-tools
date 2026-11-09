@@ -60,6 +60,8 @@ func TestElapsedOriginRaiseCanary(t *testing.T) {
 	if result, err := goal.Claim(request("01J5X00000000000000000E002", t0), "elapsed-canary"); err != nil || result.Outcome != goal.OutcomeConfirmed {
 		t.Fatalf("claim: %+v %v", result, err)
 	}
+	// The seat keeps working while the person raises the box.
+	writeBudgetSeat(t, root, "elapsed-canary", t0.Format(time.RFC3339Nano))
 	raised := initial
 	raised.ElapsedLimit = "6h"
 	human = request("01J5X00000000000000000E003", t0.Add(3*time.Hour))

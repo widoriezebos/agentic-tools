@@ -132,6 +132,17 @@ func failedCommandRecord(t *testing.T, b *workBed, result intentResult) launch.U
 	return r
 }
 
+func commandInputEnvironment(environment []string) (inputs, states []string) {
+	for _, entry := range environment {
+		if value, ok := strings.CutPrefix(entry, launch.StateEnv+"="); ok {
+			states = append(states, value)
+		} else {
+			inputs = append(inputs, entry)
+		}
+	}
+	return
+}
+
 func TestIntentDeniedStepRetriesOnceWithoutRebuilding(t *testing.T) {
 	t.Parallel()
 	b, p := failedCommandBed(t, 2)
@@ -142,7 +153,9 @@ func TestIntentDeniedStepRetriesOnceWithoutRebuilding(t *testing.T) {
 		t.Fatalf("denied command rebuilt or lost its stop: %d %+v executions=%d builds=%v", code, r, len(p.commands), b.starter.launched())
 	}
 	first, retry := p.commands[0], p.commands[1]
-	if first.Program != retry.Program || !slices.Equal(first.Args, retry.Args) || first.Directory != retry.Directory || !slices.Equal(first.Environment, retry.Environment) || first.LogPath == retry.LogPath {
+	firstEnv, firstState := commandInputEnvironment(first.Environment)
+	retryEnv, retryState := commandInputEnvironment(retry.Environment)
+	if first.Program != retry.Program || !slices.Equal(first.Args, retry.Args) || first.Directory != retry.Directory || !slices.Equal(firstEnv, retryEnv) || len(firstState) != 1 || len(retryState) != 1 || firstState[0] == retryState[0] || first.LogPath == retry.LogPath {
 		t.Fatalf("retry changed inputs or reused output: %+v %+v", first, retry)
 	}
 	step := r.Rounds[0].Steps[1]
@@ -391,7 +404,10 @@ func TestIntentEnvironmentPersonActRerunsRetainedStep(t *testing.T) {
 		}
 	}
 	first, last := p.commands[0], p.commands[2]
-	if first.Program != last.Program || !slices.Equal(first.Args, last.Args) || first.Directory != last.Directory || !slices.Equal(first.Environment, last.Environment) || first.LogPath == last.LogPath || p.commands[1].LogPath == last.LogPath {
+	firstEnv, firstState := commandInputEnvironment(first.Environment)
+	_, retryState := commandInputEnvironment(p.commands[1].Environment)
+	lastEnv, lastState := commandInputEnvironment(last.Environment)
+	if first.Program != last.Program || !slices.Equal(first.Args, last.Args) || first.Directory != last.Directory || !slices.Equal(firstEnv, lastEnv) || len(firstState) != 1 || len(retryState) != 1 || len(lastState) != 1 || firstState[0] == lastState[0] || retryState[0] == lastState[0] || first.LogPath == last.LogPath || p.commands[1].LogPath == last.LogPath {
 		t.Fatalf("person retry changed inputs or reused output: %+v %+v", first, last)
 	}
 	step := after.Rounds[0].Steps[1]

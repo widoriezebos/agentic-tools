@@ -784,6 +784,8 @@ func TestLaneFixLapsedGoalBoxAdmitsCommittedReadRealDispatch(t *testing.T) {
 		file.Budget = &box
 		file.Approved.Digest = goal.ApprovalDigest(file.Intent, file.Tier, box, file.Risk)
 	})
+	// Occupancy supplies the elapsed breach while the repair is built.
+	goalBudgetSeat(t, b.root(), b.goalFile(b.id))
 	brief := b.brief("fix.md", "Repair the fixture.\n")
 	if code, result := b.run("work", "build", b.id, "--work", b.fixUnit(), "--brief", brief, "--lines", "2", "--check", "metasystem test impact"); code != 0 {
 		t.Fatalf("build: %d %s", code, result.Summary)
