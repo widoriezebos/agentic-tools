@@ -8,10 +8,10 @@
 - Intent: The lane push folds a records-only move of main into a proven batch without a second proof: when every commit main gained since the batch base is records-only by the classifier of a-records-only-move-keeps-mains-green, the merged tree is pushed on the batch proof (or after the cheap check that classifier already prescribes); the-steward-sees stood an hour green at 03:55-06:32 on 2026-11-01 for one goal-edit commit (finding 460)
 - Origin: human
 - DesignGate: off
-- Next step: Build U1 (the only unit, --last) from D1 of plans/designs/the-lane-proves-only-what-is-new.md (accepted 2026-11-09; it replaces the order of decision 226: D1 changes only the classifier, internal/goal/goalmove.go and goalRecordsBetween in internal/landing/plain/trunk_recovery.go:228-250, which no batching unit touches): GoalRecordPath accepts records/goals/<id>.md; goalRecordsBetween reads the changed paths with their status and admits a deleted plans/goals/<id>.md only when the same move adds or changes records/goals/<id>.md that parses as that goal; every other deletion refuses. Tests as the page names them (goalmove_test.go, flake_inherit_test.go goal-done and three refusals with the fake answering the status query, fold_inherit_test.go). About 40 production lines.
+- Next step: Hand in (the one hand-in): U1 is published on origin/goal/a-push-folds-a-records-only-move as unit 5f531a2c14 and read 6f70eb1936 (claude-opus-5-5, AGREE, 0 material, verdict land; run 20261109t155426-04f89ee31a). From the ui checkout's metasystem folder, when the lane is idle: ./bin/metasystem work land a-push-folds-a-records-only-move --delivered TEXT. Then goal done after it lands. Later list, non-material: no test drives a name-status line without a tab or a T status (goalRecordsBetween refuses both by reading); the trunkRedPath clause in goal.ConcludedIn cannot fire after the .md cut.
 - OpenedAt: 2026-11-01T06:40:58Z
 - FirstClaimAt: 2026-11-09T15:49:46Z
-- Revision: 66
+- Revision: 67
 - Pinned: ui
 - Budget: elapsedLimit=5d attemptLimit=24 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -87,4 +87,5 @@ History:
 - 2026-11-09T09:40:49Z H1Z7D8WT0A7DSQHSPPKGQZC2JD-m1e-61b61415 edit actor=human:Wido targets=a-push-folds-a-records-only-move
 - 2026-11-09T09:41:11Z 7NDAGAP6476BPAQCM365JPHTG1-m1e-61b61415 set-priority actor=human:Wido targets=a-push-folds-a-records-only-move,a-run-holds-its-worktree,a-scratch-cleanup-test-drains-like-production,a-spent-box-asks-before-it-blocks,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,replies-reach-the-asking-seat-2,the-box-clock-counts-only-the-goals-own-work,the-carry-check-classifies-a-flake,the-lane-batches-goals-and-proves-once,the-lane-finishes-what-it-starts,the-unit-route-runs-on-the-real-layout reason=priority-order subject=a-push-folds-a-records-only-move from=1:11 to=1:1 requested-sequence=1
 - 2026-11-09T15:49:46Z K3R62E4RK9RXRBEPCWFA432GJC-ui-71c5cb39 claim actor=ui+steward-seat targets=a-push-folds-a-records-only-move reason=areas unknown for goal a-push-folds-a-records-only-move in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/the-lane-proves-only-what-is-new.md
-Integrity: sha256=206da4e1c7cd49c632bee74a20a7ab92a0589442289d4a3ba1a061b4ad4a89d4
+- 2026-11-09T18:13:23Z ES7BP4ETG8CRVDPX6ED0KDF5RW-ui-71c5cb39 edit actor=ui+steward-seat targets=a-push-folds-a-records-only-move
+Integrity: sha256=1805ecabd0876cf063187d6ec8c4645b93b537b446decb8c1483e7e15335c3a1
