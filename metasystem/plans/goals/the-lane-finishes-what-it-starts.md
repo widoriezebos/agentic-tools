@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 1
+- Sequence: 2
 - Risk: severity=3 novelty=1 exposure=3 accumulation=1 basis="it changes when the lane proves, closes incidents and asks; every landing depends on it; the unit checks and one full suite before the push gate it"
 - Tier: 3
 - Intent: The lane finishes what it starts without a person: a Skipped gate names its next step and the keeper proves a merged batch whose gate settled; recovery does not re-prove an examined tree nor race a batch; a repeat refusal does not stop the agent on a re-handed tree that carries a person exception; a scoped green of the failing group closes a group red; a row with no act is a notice, never a question that holds the push; a read with only non-material notes publishes itself; a rebase hands the worktree custody back. Last night: two land-anyways, three person proves, three withdrawn questions, a 35-minute stall with main red, a static red kept open through ten green runs, ten repeated proofs of two trees (findings 563-567; root causes designs/lane-gaps-root-causes-2026-11-08.md)
@@ -10,7 +10,7 @@
 - Next step: Design page the-lane-finishes-what-it-starts (Astra rounds 1 and 2 folded); four units: U1a (D1, D2), U1b (D3, D4, D5, D9), U3 (D7, D8), U2 (D6); briefs by the seat from the page; each unit under 250 production lines; the landing is by hand with an Astra code critique if the lane does not land it within one attempt (decision 228)
 - OpenedAt: 2026-11-08T09:47:54Z
 - FirstClaimAt: 2026-11-08T09:53:33Z
-- Revision: 9
+- Revision: 10
 - Pinned: m1e
 - Budget: elapsedLimit=4d attemptLimit=40 reservedJobMinutesLimit=4000 activeJobLimit=2 reviewRoundLimit=30
 - BudgetExceptions: 3
@@ -30,4 +30,5 @@ History:
 - 2026-11-08T21:26:32Z WFE6G186W15KJBSNN1BCD3C196-m1e-8a218aa8 set-budget actor=human:Wido targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-08T09:53:33Z
 - 2026-11-09T02:31:28Z BJY6C2WB3KHHSN9TCCBBNT17VZ-m1e-a565995d set-budget actor=human:Wido targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-08T21:26:32Z
 - 2026-11-09T06:58:48Z CKJ7TZ89JNQJGTNVEXB4PKV971-m1e-054d531a set-budget actor=human:Wido targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T02:31:28Z
-Integrity: sha256=25e3c9646b06d4fe4dce993af4780b819f6ce59fc7ac04d9556a791686f106d8
+- 2026-11-09T09:41:11Z 7NDAGAP6476BPAQCM365JPHTG1-m1e-61b61415 set-priority actor=human:Wido targets=a-push-folds-a-records-only-move,a-run-holds-its-worktree,a-scratch-cleanup-test-drains-like-production,a-spent-box-asks-before-it-blocks,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,replies-reach-the-asking-seat-2,the-box-clock-counts-only-the-goals-own-work,the-carry-check-classifies-a-flake,the-lane-batches-goals-and-proves-once,the-lane-finishes-what-it-starts,the-unit-route-runs-on-the-real-layout reason=priority-order subject=a-push-folds-a-records-only-move from=1:1 to=1:2 requested-sequence=1
+Integrity: sha256=fb976180c5f6a98ae21b18bf55d963290ee5440f1ad686a9f79262ea6b693550

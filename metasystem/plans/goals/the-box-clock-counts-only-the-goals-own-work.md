@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 5
+- Sequence: 6
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="an engine defect in one owner, found by the 2026-11-07 fixes analysis and its two Astra rounds; the unit check and the lane proof gate it"
 - Tier: 2
 - Intent: The box clock counts only time the goal itself works, not admission waits or hours with no session and no job (P25; three box acts a day)
@@ -10,7 +10,7 @@
 - Next step: Design accepted (1d8990766). U1 (D10) published (unit 519863e17, read 0cb01e374). U2 (D1-D4, D6, D8) published (unit 9a73e8b33, read 0b24170ff). U3 (D5, D9: test slot waits in waits.jsonl, credited per execution; the status line), the last unit, building since 2026-11-09 08:3x with --last from briefs/the-box-clock-counts-only-the-goals-own-work-U3-brief.md (120 production lines; no U4 seam, under the page's 125 line). Next: work wait G --work U3, then work review publishes, then one hand-in (work land --delivered). Later list: U2 read notes 1-4 and 6 (none material): ReserveUnitLaunch homes param and admission BudgetHome are test-only seams; evidence bound_test flake fix rode along; idle-bed seat starts; migrated beds do not assert ElapsedLegacy. Note 5 folds into U3.
 - OpenedAt: 2026-11-07T09:53:35Z
 - FirstClaimAt: 2026-11-09T01:24:51Z
-- Revision: 13
+- Revision: 14
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -33,4 +33,5 @@ History:
 - 2026-11-09T04:46:10Z ZD51TG461A7WA2RQGPVXR2D9CM-ui-770be346 set-budget actor=human:Wido targets=the-box-clock-counts-only-the-goals-own-work displaced=ui+steward-seat@2026-11-09T01:24:51Z
 - 2026-11-09T06:58:02Z 9BTFSRGJJYVYDGN4TKYEG7NMDN-ui-71c5cb39 edit actor=ui+steward-seat targets=the-box-clock-counts-only-the-goals-own-work
 - 2026-11-09T07:32:23Z AG7E26G1K8MP9H85G3A5207D8J-ui-71c5cb39 edit actor=ui+steward-seat targets=the-box-clock-counts-only-the-goals-own-work
-Integrity: sha256=af524b91bed85c243a31b6dc25c5417027ab4816a6121c0af27add6cc88a4a1e
+- 2026-11-09T09:41:11Z 7NDAGAP6476BPAQCM365JPHTG1-m1e-61b61415 set-priority actor=human:Wido targets=a-push-folds-a-records-only-move,a-run-holds-its-worktree,a-scratch-cleanup-test-drains-like-production,a-spent-box-asks-before-it-blocks,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,replies-reach-the-asking-seat-2,the-box-clock-counts-only-the-goals-own-work,the-carry-check-classifies-a-flake,the-lane-batches-goals-and-proves-once,the-lane-finishes-what-it-starts,the-unit-route-runs-on-the-real-layout reason=priority-order subject=a-push-folds-a-records-only-move from=1:5 to=1:6 requested-sequence=1
+Integrity: sha256=d08ada59e8edea01222ee86dccdb331a99a64c737ed1a6c9038d09fe13268365
