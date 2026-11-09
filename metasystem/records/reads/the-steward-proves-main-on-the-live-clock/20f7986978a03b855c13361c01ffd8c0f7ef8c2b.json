@@ -1,0 +1,64 @@
+{
+  "canonicalRead": {
+    "id": "20261109t184720-34612ffa73-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-steward-proves-main-on-the-live-clock",
+      "reviewedProjectTree": "6bfe6f5abc5f78f35c25bb07035c1ca1d2fc9eb6c81c0e670a27766964e9f9a6",
+      "diffDigest": "6bfe6f5abc5f78f35c25bb07035c1ca1d2fc9eb6c81c0e670a27766964e9f9a6"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261109t184720-34612ffa73-r1-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "No test fails when only the default stewardTrunk gets the given-clock copy and an injected Steward.Trunk keeps the frozen seams; S3 is held by reading only.",
+        "evidence": "The builder's mutation (d) passed all 48 selected plain tests (mutation-d.log). Both trunks share the single call at steward.go:434, so they cannot diverge today. The brief allows reporting this and moving it to the later list.",
+        "where": "metasystem/internal/landing/plain/steward_clock_test.go",
+        "change": "Later list: one StewardStep test with an injected trunk that asserts its seams.now() equals the given clock, not the frozen one.",
+        "relation": "new; rule: the brief's S3 (both trunks receive the copy) is pinned by a test"
+      },
+      {
+        "id": "20261109t184720-34612ffa73-r1-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The production path (nil given clock, so the trunk reads the real clock) is not exercised by a test; it is held by reading prove.go:306-311.",
+        "evidence": "givenNow is copied unchanged and ProveSeams.now() falls back to time.Now().UTC(). The steward.go consumers of Intervention.Outcome (lines 199, 295, 304-305, 324-334, 356, 377) and steward_report.go:111 do not join a proof's attempt id to the intervention's At by equality, so the few seconds between them have no effect.",
+        "where": "metasystem/internal/landing/plain/steward.go",
+        "change": "None required.",
+        "relation": "new; rule: the brief's S2 (a nil given clock stays nil)"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261109t184720-34612ffa73-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "51340e92174bbd3c3e1bdfe26bf8034d85b3f26f5ec08ef01ce5b93052d0ca38",
+  "schemaVersion": 1,
+  "goal": "the-steward-proves-main-on-the-live-clock",
+  "unit": "U1",
+  "subject": {
+    "commit": "20f7986978a03b855c13361c01ffd8c0f7ef8c2b",
+    "parent": "0ddc764742c4c58c42d5ec1ec9776209acad3403",
+    "tree": "47422ba203e9e40c3abfc463d528c8dd45cc66fb",
+    "patchDigest": "6bfe6f5abc5f78f35c25bb07035c1ca1d2fc9eb6c81c0e670a27766964e9f9a6",
+    "unitDigest": "22830f4dbc946bf01e4386464cfc73815b47276a914e5be3eee1942d8240c9ba"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261109t184720-34612ffa73-r1-s3",
+    "closureSha256": "6a8faa98a0cad5b29c281a89ff989a0c6fa655c7b1db3491e0d0795ef7ecb9bb"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "47422ba203e9e40c3abfc463d528c8dd45cc66fb",
+    "runId": "goal-read-gate-20261109t211626z-660f2adee9a1002e"
+  },
+  "folds": null,
+  "testsChanged": null,
+  "sha256": "689128ecc1675cfef07d45d8abac3657de65bd187ea52ec02149be8a9f4a8037"
+}
