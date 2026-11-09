@@ -1,0 +1,56 @@
+{
+  "canonicalRead": {
+    "engine": "e4fb6e6c4b81b77aaea150022eeea4e773e77593",
+    "findings": [],
+    "id": "code-critic-68f82270ec2490948daaf8be",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-return-names-the-failing-test/metasystem/artifacts/agents/code-critic-68f82270ec2490948daaf8be/rounds/1/return.md",
+    "subject": {
+      "commit": "45af3bf13282f03f99574cbc55cc3fc4bf24e64d",
+      "diffDigest": "28b9ffba7fe562cb1d68e900ea7fbb7e56f7a751bbd95a862f83fab65decc9d0",
+      "kind": "commit",
+      "parent": "942972887ddd99763669cde19628c1faa2572e1a",
+      "tree": "826ff498b8652a66f7e35102724fa6f1383b6438"
+    }
+  },
+  "readDigest": "9b3f49987a977c3ff9b5553727aa52179fb4654e907b7b2ec4b125edfdb03675",
+  "schemaVersion": 1,
+  "goal": "a-return-names-the-failing-test",
+  "unit": "U1a",
+  "subject": {
+    "commit": "45af3bf13282f03f99574cbc55cc3fc4bf24e64d",
+    "parent": "942972887ddd99763669cde19628c1faa2572e1a",
+    "tree": "826ff498b8652a66f7e35102724fa6f1383b6438",
+    "patchDigest": "28b9ffba7fe562cb1d68e900ea7fbb7e56f7a751bbd95a862f83fab65decc9d0",
+    "unitDigest": "7e85e91d42cc07d1f77da0bac892bb6d72ea4f0b86ab6b23e334e65bfa24c70c"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-68f82270ec2490948daaf8be",
+    "round": 1,
+    "closureSha256": "78f81c1e19e90f2a083b7e43fce660f7beba0a0e074165892da9cb102d1a8ca6"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "826ff498b8652a66f7e35102724fa6f1383b6438",
+    "runId": "goal-read-gate-20261109t142203z-43bed3164fdc8671"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/landing/plain/named_replay_test.go",
+      "readerWord": "reviewed by critic root code-critic-68f82270ec2490948daaf8be"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/repeat_attribution_test.go",
+      "readerWord": "reviewed by critic root code-critic-68f82270ec2490948daaf8be"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/repeat_selection_test.go",
+      "readerWord": "reviewed by critic root code-critic-68f82270ec2490948daaf8be"
+    }
+  ],
+  "sha256": "c8a511130bbcc788f7387485faf87fb69e4b654cdbc67522378a66160b7e2356"
+}
