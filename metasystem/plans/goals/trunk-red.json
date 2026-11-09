@@ -11318,6 +11318,35 @@
           },
           "load": 7.53271484375,
           "repeat": "alone"
+        },
+        {
+          "attempt": "20261109T075723.792714000Z",
+          "batch": "",
+          "baseCommit": "0dd33c4c09e58c4ab5a6dc194d7ab11a156caa89",
+          "baseTree": "27ead07e83a0c9569a5309da52d7d7a3f3426f93",
+          "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261109T075723.792714000Z.log",
+          "logDigest": "",
+          "seenAt": "2026-11-09T09:14:46Z",
+          "opid": "D29F930ED5D94D4253E7A641C3-landing-41ad7d6c",
+          "tree": "27ead07e83a0c9569a5309da52d7d7a3f3426f93",
+          "rerun": {
+            "attempt": "20261109T075723.792714000Z-repeat-2",
+            "logPath": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261109T075723.792714000Z-repeat-2.log",
+            "logDigest": "",
+            "sample": "",
+            "output": {
+              "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261109T075723.792714000Z-repeat-2.log.5d7b765e12ac63e8919e3821f0138a5378e7b8a996c63417286f715c2566d488.output",
+              "digest": "85b695c1ce786cc93a6c32069b1a64cc93dc108c44199f8cdd6e8e1a117624e0",
+              "outcome": "pass"
+            }
+          },
+          "output": {
+            "path": "/Users/wido/LocalStorage/GitHub/agentic-tools-landing/metasystem/artifacts/agents/landing/proofs/20261109T075723.792714000Z.log.5d7b765e12ac63e8919e3821f0138a5378e7b8a996c63417286f715c2566d488.output",
+            "digest": "d6776f53c375f28b7bcec46cc0c97bc3f72e97b994f03c5992947486535e1f27",
+            "outcome": "fail"
+          },
+          "load": 9.23974609375,
+          "repeat": "alone"
         }
       ],
       "owner": {
