@@ -4,8 +4,7 @@
 - Id: the-lane-finishes-what-it-starts
 - Status: accepted
 - Goals: the-lane-finishes-what-it-starts
-- Critique: closed at round 2 on 0 material findings (a1 for Wido)
-- Critique: round 1 (Astra, designs/astra-finishes-r1.log; 7 material) folded in revision 2; round 2 (designs/astra-finishes-r2.log; 5 material) folded in revision 3
+- Critique: round 1 (Astra, designs/astra-finishes-r1.log; 7 material) folded in revision 2; round 2 (designs/astra-finishes-r2.log; 5 material) folded in revision 3; closed at round 2 on 0 material findings (a1 for Wido)
 
 Accepted 2026-11-08 by a1 in Wido's name (decision 228: priority one; the machine may be bypassed to land it).
 
