@@ -1,0 +1,76 @@
+{
+  "canonicalRead": {
+    "engine": "f4834c582a14cf6bd41f337165bc7119292de1b9",
+    "findings": [],
+    "id": "code-critic-3244e54845f8f8235c8ae2bc",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-lane-finishes-what-it-starts/metasystem/artifacts/agents/code-critic-3244e54845f8f8235c8ae2bc/rounds/1/return.md",
+    "subject": {
+      "commit": "6eee5850545825c609ccf523273878f90e451c74",
+      "diffDigest": "d7744f7402806687ef800a3bda27ba2d851d17886727e01e25b7add113855ff0",
+      "kind": "commit",
+      "parent": "abe55d0a4a7b195d478abc1f098d0241cadfeb50",
+      "tree": "99a0d65fb0e1f25e1ac3338da218e80d8fd3a472"
+    }
+  },
+  "readDigest": "d5c0ac846c919ec3947038df5e7f881a93ac1586eedbb1ad3f0244a57fce8eab",
+  "schemaVersion": 1,
+  "goal": "the-lane-finishes-what-it-starts",
+  "unit": "U7",
+  "subject": {
+    "commit": "6eee5850545825c609ccf523273878f90e451c74",
+    "parent": "abe55d0a4a7b195d478abc1f098d0241cadfeb50",
+    "tree": "99a0d65fb0e1f25e1ac3338da218e80d8fd3a472",
+    "patchDigest": "d7744f7402806687ef800a3bda27ba2d851d17886727e01e25b7add113855ff0",
+    "unitDigest": "9260ff1389314e4df204edc10f6152202cf9afd346cec41d50af2fbd0006eb0e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-3244e54845f8f8235c8ae2bc",
+    "round": 1,
+    "closureSha256": "39a5b26c136d8388e0b3ca52daa3c70220b6071154229a185450fe2d14232d17"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "99a0d65fb0e1f25e1ac3338da218e80d8fd3a472",
+    "runId": "goal-read-gate-20261109t054441z-e4fcfcd43a053ca8"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "1884aca80be27e54428459215ed9f158dbb2f7bd",
+      "digest": "64e6dcd0688f65e84d29237721e517a934583631ca8d49d2a394d9ab36417dac"
+    },
+    {
+      "kind": "read",
+      "commit": "c5ba743607c4c86ecc4283d9ef4d8f7fc01cf534",
+      "digest": "e6ce9931bcb665bd195ad7aec484ed7bbb9a37b386da2c34c8aec546aafd5715"
+    },
+    {
+      "kind": "read",
+      "commit": "abe55d0a4a7b195d478abc1f098d0241cadfeb50",
+      "digest": "12a64411d4d9a77cd744d002f4fcd6a4bf10a0bed44a26f3ba55e5cb2c2f4057"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_connected_journey_test.go",
+      "readerWord": "reviewed by critic root code-critic-3244e54845f8f8235c8ae2bc"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_manual_submit_test.go",
+      "readerWord": "reviewed by critic root code-critic-3244e54845f8f8235c8ae2bc"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_review_completion_test.go",
+      "readerWord": "reviewed by critic root code-critic-3244e54845f8f8235c8ae2bc"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_review_test.go",
+      "readerWord": "reviewed by critic root code-critic-3244e54845f8f8235c8ae2bc"
+    }
+  ],
+  "sha256": "54fc15b34386841ca0fd4cd71f57a05f29f0e518f461c282029c50108c24ad59"
+}
