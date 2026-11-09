@@ -11577,11 +11577,17 @@
         "commit": "",
         "state": ""
       },
-      "holds": [
-        "20261109T011529.573281000Z"
-      ],
+      "holds": [],
       "opened": "2026-11-09T01:25:18Z",
-      "closed": null
+      "closed": {
+        "at": "2026-11-09T02:56:38Z",
+        "attempt": "20261109T015948.643826000Z",
+        "baseCommit": "4b1ec85607b0f459d0fa40f6e9acaa8c389bb8e5",
+        "how": "green",
+        "opid": "1094N6JFGCJ5XEHFSSEAPPMFYN-landing-41ad7d6c",
+        "by": "",
+        "why": ""
+      }
     }
   ],
   "cadence": {
