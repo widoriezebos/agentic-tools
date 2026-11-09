@@ -10,11 +10,12 @@
 - Next step: Build U1a (identity mapping and repeat selection) then U1b (words and rendered status, --last) from the FINAL brief /Users/wido/agentic-tools-evidence/lane-test-20261009/briefs/a-return-names-the-failing-test-U1-brief.md on m1e's build lane; carry check and read after each; the lane lands them Addition 2026-11-09 (design the-lane-proves-only-what-is-new, Astra finding 4): U1a also updates TestTrunkRepeatKeepsWhatOnlyTheRepeatSaw, case new-subtest-in-whole-repeat (internal/landing/plain/repeat_attribution_test.go:101), whose expected selector becomes TestA1; its assertion stays. The brief file carries the addition. Any seat may build this goal.
 - OpenedAt: 2026-11-04T02:13:09Z
 - FirstClaimAt: 2026-11-09T12:08:13Z
-- Revision: 74
+- Revision: 75
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=600 activeJobLimit=1 reviewRoundLimit=6
 - BudgetExceptions: 0
 - Approved: by=human:Wido at=2026-11-04T02:13:19Z revision=2 opid=YJS8AS0N1J2P54QE9QY066DB3E-m1e-b283f595 authority=proven digest=dd624c87661555ffd36aff90ebdf8907684f4d5205e83577aa4f94b22320598d episode=2
+- Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=74 at=2026-11-09T14:22:10Z
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-09T12:08:13Z areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal a-return-names-the-failing-test: no accepted design declares areas\"]" revision=74 accountingRevision=74 episodeAt=2026-11-09T12:08:13Z episodeRevision=74
 - StopCapability: generation=74 revision=74 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -93,4 +94,5 @@ History:
 - 2026-11-09T09:41:21Z T7SGPNHP4BWSM1MTGRQZPR8G57-m1e-61b61415 set-priority actor=human:Wido targets=a-batch-gate-is-accepted-for-its-tree,a-boundary-waits-only-on-its-own-questions,a-flake-has-an-owner-from-its-first-sighting,a-hand-in-stands-on-main,a-host-is-ready-before-it-joins,a-landed-goal-concludes-itself,a-publication-refuses-only-what-it-adds,a-retained-read-brief-keeps-its-context,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-round-ends-without-its-caller,a-run-holds-its-worktree,a-scratch-cleanup-test-drains-like-production,a-selected-batch-is-proving,a-settled-unit-is-not-in-flight,a-spent-box-asks-before-it-blocks,a-start-that-never-launched-is-collected,a-stop-is-read-where-the-goal-is,a-unit-check-runs-the-importers-too,a-unit-name-is-one-word-everywhere,a-unit-reservation-carries-its-deadline,a-unit-stop-asks-its-steward-first,attempts-are-bounded-per-unit,flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,lane-steward-2,one-host-admits-heavy-work,red-names-what-failed,replies-reach-the-asking-seat-2,seat-engines-follow-the-deployed-engine,the-box-clock-counts-only-the-goals-own-work,the-carry-check-classifies-a-flake,the-census-ignores-its-own-report,the-claim-quota-is-a-host-setting,the-deputy-acts-under-a-recorded-delegation,the-fleet-serialization-proof-asserts-cleared-leases,the-lane-batches-goals-and-proves-once,the-lane-finishes-what-it-starts,the-size-hold-stops-at-the-production-ceiling,the-unit-route-runs-on-the-real-layout reason=priority-order subject=a-return-names-the-failing-test from=1:42 to=1:2 requested-sequence=2
 - 2026-11-09T11:59:24Z 6Z2XQ6RR40GGGZEPT6AP5G4E9W-m1e-f63bccd3 set-pin actor=human:Wido targets=a-return-names-the-failing-test
 - 2026-11-09T12:08:13Z 0AG2SQ7BAGKH973YHR706RSA2X-m1e-cc2e8fc8 claim actor=m1e+main-1792389436-6018-51cc28 targets=a-return-names-the-failing-test reason=areas unknown for goal a-return-names-the-failing-test: no accepted design declares areas
-Integrity: sha256=3ef829ea34ddf935d7e68816a695d4367e32a3aacde16740532b9b40d20ecda0
+- 2026-11-09T14:22:10Z SVBSMV3YXASPF3F932Y8W7D2ZA-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=a-return-names-the-failing-test
+Integrity: sha256=723817c3c9d25ea955887a131759424d4d8442f7e458d85955fd67cf9812b680
