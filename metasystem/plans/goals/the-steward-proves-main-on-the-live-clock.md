@@ -10,7 +10,7 @@
 - Next step: Hand in (the one hand-in): U1 is published on origin/goal/the-steward-proves-main-on-the-live-clock as unit 20f7986978 and read 445086cf22 (claude-opus-5-5, 0 material, verdict land; run 20261109t184720-34612ffa73; T1 reproduced proof #28 on the old wiring: a full proof with 'main has no full green to keep'). From the ui checkout's metasystem folder, when the lane is idle: ./bin/metasystem work land the-steward-proves-main-on-the-live-clock --delivered TEXT. Then goal done after it lands. Later list, non-material: no test pins that an injected Steward.Trunk receives the given clock (mutation d survived; held by the one shared call site); the nil given clock of production is held by reading ProveSeams.now().
 - OpenedAt: 2026-11-09T09:30:08Z
 - FirstClaimAt: 2026-11-09T18:33:32Z
-- Revision: 6
+- Revision: 7
 - Pinned: ui
 - Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
@@ -25,4 +25,5 @@ History:
 - 2026-11-09T12:03:20Z 15M8C7W14MDRT7RT7JGHJ9J0N5-m1e-f63bccd3 set-pin actor=human:Wido targets=the-steward-proves-main-on-the-live-clock
 - 2026-11-09T18:33:32Z 7H9CY66ZQBWXS6SFP0Z39BBQB8-ui-71c5cb39 claim actor=ui+steward-seat targets=the-steward-proves-main-on-the-live-clock reason=areas unknown for goal the-steward-proves-main-on-the-live-clock in design /Users/wido/LocalStorage/GitHub/agentic-tools-ui/metasystem/plans/designs/the-lane-proves-only-what-is-new.md
 - 2026-11-09T21:17:51Z 6BF3ADG2FT20VB5E1B9107EBN8-ui-71c5cb39 edit actor=ui+steward-seat targets=the-steward-proves-main-on-the-live-clock
-Integrity: sha256=d9194c7d052bc23951945f17086e97110e14c5189f54f68657b788145815db14
+- 2026-11-09T23:11:09Z 78NEDVDM0FA7KE2DSPNVQD54W5-ui-71c5cb39 landed actor=ui+steward-seat targets=the-steward-proves-main-on-the-live-clock reason=landed under landing.review.auto-after=4h, tier 2 below human-from-tier=4; landing took 434.4 min: hand-in to merge 435.0, cheap gate not run,  proof 4.0 (static unknown, shards unknown), fix round 10.6, fix round 235.0, push 95.4, unknown: scope of 20261109T212811.383245000Z
+Integrity: sha256=709404d2f6e31df33de0f2872595a12894b7f78a2abd73d4f49a525f04c8221a
