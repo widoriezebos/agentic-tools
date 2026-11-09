@@ -77,6 +77,7 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 		return run, err
 	}
 	defer held.Release()
+	givenNow := seams.Now
 	seams.Now = func() time.Time { return now }
 	seams.ReadOnly = true
 	effects := StewardEffects{}
@@ -426,7 +427,11 @@ func stewardStep(home string, now time.Time, seams ProveSeams) (run StewardRun, 
 				if trunk == nil {
 					trunk = stewardTrunk
 				}
-				entry.Outcome, actErr = trunk(record.Install, record.Root, seams)
+				// The proof of main reads the clock when it decides: a full green
+				// written while the step waited is a fact the decision must see.
+				trunkSeams := seams
+				trunkSeams.Now = givenNow
+				entry.Outcome, actErr = trunk(record.Install, record.Root, trunkSeams)
 				proofRunning = actErr == nil && entry.Outcome != stewardAlreadyProven
 				if actErr == nil && !proofRunning && row.Row != "stale-question" {
 					lines = append(lines, row.Row+": "+entry.Outcome)
