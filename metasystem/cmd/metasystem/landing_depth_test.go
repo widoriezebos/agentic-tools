@@ -27,7 +27,10 @@ func TestLandingProveDepthShareBoundary(t *testing.T) {
 		{"at threshold", "selection: internal/a\n", 50, false},
 		{"above", "selection: internal/a\nselection: internal/b\nselection: internal/c\n", 60, false},
 		{"command whole", "selection: metasystem/cmd/metasystem\n", 20, false},
-		{"command named", "selection: metasystem/cmd/metasystem=TestA\n", 20, false},
+		{"command named", "selection: metasystem/cmd/metasystem=TestA\n", 20, true},
+		{"command group", "selection: command-tests\n", 20, false},
+		{"command recursive", "selection: cmd/...\n", 20, false},
+		{"command mixed", "selection: cmd/metasystem=TestA\nselection: cmd/metasystem\n", 20, false},
 		{"named and static", "selection: fast-static-build\nselection: internal/a=TestA\n", 40, true},
 		{"duplicate", "selection: internal/a\nselection: internal/a\n", 20, true},
 	} {
@@ -38,7 +41,12 @@ func TestLandingProveDepthShareBoundary(t *testing.T) {
 				full = 2
 			}
 			contract := testpolicy.Contract{Groups: []testpolicy.Group{{ID: "fast-static-build", Adapter: "command"}}}
-			share, cheap := impactDepth(row.plan, contract, depthTestMeasure(full, row.plan), 50)
+			measure := depthTestMeasure(full, row.plan)
+			if strings.HasPrefix(row.name, "command") {
+				measure = depthTestMeasure(full, "selection: cmd/metasystem\n")
+			}
+			contract.Groups = append(contract.Groups, testpolicy.Group{ID: "command-tests", Adapter: "go", Packages: []string{"./cmd/metasystem"}, Tests: json.RawMessage(`["TestA"]`)})
+			share, cheap := impactDepth(row.plan, contract, measure, 50)
 			if share != row.share || cheap != row.cheap {
 				t.Fatalf("share=%d cheap=%v", share, cheap)
 			}
@@ -66,17 +74,17 @@ func depthGoals(t *testing.T, b *replayVerbBed, tiers ...int) {
 func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 	t.Parallel()
 	for _, row := range []struct {
-		name                string
-		tiers               []int
-		plan, scope, reason string
+		name  string
+		tiers []int
+		plan  string
 	}{
-		{"below", []int{2, 2}, "selection: internal/launch\n", "impact", "tiers 2,2; 12% of 8 packages"},
-		{"at tier", []int{2, 3}, "", "full", "tier 3: full"},
-		{"above tier", []int{3, 3}, "", "full", "tier 3: full"},
-		{"share", []int{2, 2}, "selection: internal/a\nselection: internal/b\nselection: internal/launch\nselection: internal/goal/branch\nselection: cmd/metasystem=TestProcess\n", "full", "impact would cover 62% of 8 packages: full"},
-		{"cmd", []int{2, 2}, "selection: cmd/metasystem\n", "full", "change selects cmd/metasystem: full"},
-		{"cmd named only", []int{2, 2}, "selection: cmd/metasystem=TestProcess\n", "full", "change selects cmd/metasystem: full"},
-		{"cmd named", []int{2, 2}, "selection: cmd/metasystem=TestProcess\nselection: internal/goal/branch\n", "full", "change selects cmd/metasystem: full"},
+		{"below", []int{2, 2}, "selection: internal/launch\n"},
+		{"at tier", []int{2, 3}, ""},
+		{"above tier", []int{3, 3}, ""},
+		{"share", []int{2, 2}, "selection: internal/a\nselection: internal/b\nselection: internal/launch\nselection: internal/goal/branch\nselection: cmd/metasystem=TestProcess\n"},
+		{"cmd", []int{2, 2}, "selection: cmd/metasystem\n"},
+		{"cmd named only", []int{2, 2}, "selection: cmd/metasystem=TestProcess\n"},
+		{"cmd named", []int{2, 2}, "selection: cmd/metasystem=TestProcess\nselection: internal/goal/branch\n"},
 	} {
 		t.Run(row.name, func(t *testing.T) {
 			t.Parallel()
@@ -141,14 +149,10 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 					writeImpactPlanResult(t, command, "plan: base main\n"+row.plan)
 					return nil
 				}
-				if got := commandEnv(command, "LANDING_PROOF_SCOPE"); got != row.scope {
+				if got := commandEnv(command, "LANDING_PROOF_SCOPE"); got != "full" {
 					t.Fatalf("scope=%s", got)
 				}
-				want := "full-fixture"
-				if row.scope == "impact" {
-					want = "cheap-fixture"
-				}
-				if command.Args[2] != want {
+				if command.Args[2] != "full-fixture" {
 					t.Fatalf("command=%v", command.Args)
 				}
 				fmt.Fprint(command.Stdout, "landing environment fixture toolchain\nlanding group fast-static-build green 1\nLANDING-CHECKED\t0\n")
@@ -156,27 +160,31 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 			}
 			code, out := b.run(t, b.root, "prove", "--wait", "--json")
 			var report struct{ Data plain.Result }
-			if err := json.Unmarshal([]byte(out), &report); err != nil || code != 0 || report.Data.Scope != row.scope || report.Data.ScopeReason != row.reason {
+			const reason = "no green proof of this batch yet"
+			if err := json.Unmarshal([]byte(out), &report); err != nil || code != 0 || report.Data.Scope != "full" || report.Data.ScopeReason != reason {
 				t.Fatalf("code=%d report=%s err=%v", code, out, err)
 			}
-			if row.tiers[0] == 2 && row.tiers[1] == 2 && len(depthTrees) == 0 {
-				t.Fatal("the batch depth selection did not create its checkout")
+			if len(depthTrees) != 0 {
+				t.Fatalf("batch depth selection created checkouts: %v", depthTrees)
 			}
 			for _, tree := range depthTrees {
 				if _, err := os.Stat(tree); !os.IsNotExist(err) {
 					t.Fatalf("depth checkout was not removed: path=%s error=%v", tree, err)
 				}
 			}
-			if len(report.Data.Executions) != 1 || report.Data.Executions[0].DepthScope != row.scope || report.Data.Executions[0].DepthBase != "main" {
+			if len(report.Data.Executions) != 1 || report.Data.Executions[0].DepthScope != "full" || report.Data.Executions[0].DepthBase != "main" {
 				t.Fatalf("batch depth decision was not retained: %+v", report.Data.Executions)
 			}
 			code, out = b.run(t, b.root, "status")
-			want := "proving at " + row.scope + " depth: " + row.reason
+			want := "proving at full depth: " + reason
 			if code != 0 || !strings.Contains(out, want) || !strings.Contains(out, "wall time") || report.Data.Minutes == nil {
 				t.Fatalf("status missing %q: %s", want, out)
 			}
 			t.Log(want)
-			if row.scope == "impact" {
+			if row.name == "below" {
+				b.owners.landing.mainEndpoint = func(string) (goal.Endpoint, error) {
+					return goal.Endpoint{Root: b.root, Repository: emptyTransitionLedger{}}, nil
+				}
 				previous := b.owners.landing.plainProve.Git
 				pushed := false
 				b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
@@ -191,7 +199,7 @@ func TestLandingProveBatchDepthReasonsAndStatus(t *testing.T) {
 				}
 				code, out = b.run(t, b.root, "push", "--json")
 				if code != 0 || !pushed {
-					t.Fatalf("automatic impact green refused: %d %s", code, out)
+					t.Fatalf("full green refused: %d %s", code, out)
 				}
 			}
 		})
@@ -225,7 +233,7 @@ func TestLandingStatusBatchDepthInFlight(t *testing.T) {
 		t.Fatalf("start=%d %s", code, out)
 	}
 	code, out = b.run(t, b.root, "status")
-	if code != 0 || !strings.Contains(out, "proving at full depth: tier 3: full") {
+	if code != 0 || !strings.Contains(out, "proving at full depth: no green proof of this batch yet") {
 		t.Fatalf("running status=%d %s", code, out)
 	}
 }
@@ -250,7 +258,7 @@ func TestLandingDepthCountsEverySelectedPackage(t *testing.T) {
 		share      int
 		cheap      bool
 	}{
-		{"process changes", "selection: cmd/metasystem=TestProcess,TestDeclaration\nselection: internal/goal/branch\nselection: internal/goal\n", 2, false},
+		{"process changes", "selection: cmd/metasystem=TestProcess,TestDeclaration\nselection: internal/goal/branch\nselection: internal/goal\n", 2, true},
 		{"two small packages", "selection: internal/a=TestA\nselection: internal/b\n", 1, true},
 		{"same package twice", "selection: internal/a=TestA\nselection: internal/a=TestB\nselection: internal/a\n", 0, true},
 	} {
@@ -345,7 +353,7 @@ func TestLandingDepthRealCanariesDoNotDecideCheapness(t *testing.T) {
 		cheap      bool
 	}{
 		{"two small packages plus canaries", small + canaries, 1, true},
-		{"process changes plus canaries", pcc + canaries, 2, false},
+		{"process changes plus canaries", pcc + canaries, 2, true},
 		{"everything", everything, 100, false},
 	} {
 		t.Run(row.name, func(t *testing.T) {
@@ -400,17 +408,28 @@ func TestLandingDepthNamedCommandReasonWithRealCanaries(t *testing.T) {
 		t.Fatal(err)
 	}
 	root := impactAdapterBed(t)
-	plan := "selection: cmd/metasystem=TestProcess\n"
-	for _, canary := range contract.Always.Canary {
-		plan += "selection: " + canary + "\n"
-	}
 	module, err := filepath.Abs(filepath.Join("..", ".."))
 	if err != nil {
 		t.Fatal(err)
 	}
-	share, cheap, full, reason, err := impactCost(root, module, plan, contract)
-	if err != nil || cheap || reason != "change selects cmd/metasystem: full" {
-		t.Fatalf("share=%d cheap=%v full=%d reason=%q error=%v", share, cheap, full, reason, err)
+	for _, row := range []struct {
+		name, selection, reason string
+		cheap                   bool
+	}{
+		{"named", "cmd/metasystem=TestProcess", "", true},
+		{"whole", "cmd/metasystem", "change selects cmd/metasystem whole; the batch check covers it", false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			plan := "selection: " + row.selection + "\n"
+			for _, canary := range contract.Always.Canary {
+				plan += "selection: " + canary + "\n"
+			}
+			share, cheap, full, reason, err := impactCost(root, module, plan, contract)
+			if err != nil || cheap != row.cheap || reason != row.reason {
+				t.Fatalf("share=%d cheap=%v full=%d reason=%q error=%v", share, cheap, full, reason, err)
+			}
+			t.Logf("%d%% of %d packages; %s", share, full, reason)
+		})
 	}
-	t.Logf("%d%% of %d packages; %s", share, full, reason)
 }

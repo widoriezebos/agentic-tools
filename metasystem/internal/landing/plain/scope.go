@@ -66,9 +66,9 @@ func scopeContract(checkout, ref string, seams ProveSeams) (string, error) {
 	return data, err
 }
 
-// decideScope keeps main's full green across records until main's clock runs,
-// and a batch's for at most an hour. Any unreadable selection fact widens the
-// proof to full; no language rule lives here.
+// decideScope keeps a full green across records-only moves: main's until main's
+// clock runs, and a batch's own with no hour. Any unreadable selection fact widens
+// the check to full; no language rule lives here.
 func decideScope(install, checkout string, running Running, seams ProveSeams) scopeDecision {
 	d := scopeDecision{scopeRecord: scopeRecord{Scope: "full", ScopeReason: "no green proof of this batch yet"}}
 	results, damaged, err := countedLines[Result](resultsPath(install))
@@ -110,7 +110,7 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 			}
 		}
 		recordsOnly = true
-		d.ScopeReason = "records-only batch has no full green on main under an hour old"
+		d.ScopeReason = "records-only batch has no full green on main"
 		if running.Trunk {
 			d.ScopeReason = "main has no full green to keep"
 		}
@@ -138,7 +138,7 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 				continue
 			}
 			at, err := time.Parse(time.RFC3339, candidate.FullAt)
-			hourBound := !running.Trunk || d.standing != nil
+			hourBound := d.standing != nil
 			if age := seams.now().Sub(at); err != nil || age < 0 || age >= time.Hour && hourBound {
 				break
 			}
@@ -155,8 +155,8 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		d.ScopeReason = "the batch's full proof time cannot be read"
 		return d
 	}
-	if age := seams.now().Sub(fullAt); (age < 0 || age > time.Hour && !running.Trunk) && d.standing == nil {
-		d.ScopeReason = fmt.Sprintf("the batch's full proof is %s old, more than one hour", age.Round(time.Second))
+	if age := seams.now().Sub(fullAt); age < 0 && d.standing == nil {
+		d.ScopeReason = "the batch's full check time is later than now"
 		return d
 	}
 	from := d.base.Tree
@@ -252,7 +252,7 @@ func decideScope(install, checkout string, running Running, seams ProveSeams) sc
 		if d.standing != nil {
 			return finishStandingScope(install, checkout, running, d, seams)
 		}
-		d.ScopeReason = "the batch's full proof is under an hour old; only groups whose inputs cover changed paths run"
+		d.ScopeReason = "the batch's full check holds; only groups whose inputs cover changed paths run"
 		if recordsOnly {
 			plan, err := testpolicy.WithPrerequisiteClosure(d.contract, testpolicy.Plan{SelectedGroups: d.groupIDs(), Stages: []testpolicy.Stage{{ID: "affected", Groups: d.groupIDs()}}})
 			if err != nil {

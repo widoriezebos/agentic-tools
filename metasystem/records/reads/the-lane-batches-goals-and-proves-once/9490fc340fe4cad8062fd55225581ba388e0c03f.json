@@ -1,0 +1,100 @@
+{
+  "canonicalRead": {
+    "id": "20261108t171034-2d0c6dc39c-r2-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "the-lane-batches-goals-and-proves-once",
+      "reviewedProjectTree": "e6eb4e8de3ed7a5e2c6ada5cae096d7a59d414373fe0b0049b929e4b129679f6",
+      "diffDigest": "e6eb4e8de3ed7a5e2c6ada5cae096d7a59d414373fe0b0049b929e4b129679f6"
+    },
+    "engine": "go\tgo1.27.2\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261108t171034-2d0c6dc39c-r2-s3:1",
+        "class": "faked-seam",
+        "severity": "low",
+        "material": false,
+        "claim": "The gate named row's evidence that the executed selection carries the named test is written by the test's own fake, not observed from production.",
+        "evidence": "commandSelectionGate's b.fail runs go test -run with the row's own selection variable, then overwrites b.runs[len(b.runs)-1] with commit+\":\"+selection. The assertion b.runs == [merge-a:selection, merge-b:selection] checks that value. Production records commit: with an empty LANDING_ONLY. The gate's proof command environment carries only LANDING_PROOF_SCOPE, LANDING_PROOF_BASE and LANDING_PROOF_GROUPS (internal/landing/plain/prove.go:1239-1241), and the real proof command recomputes the selection. The verdict itself (Green at depth impact, or Skipped with the exact reason) is production output, and overlay mutations M1, M2 and M3 each fail the gate rows.",
+        "where": "metasystem/cmd/metasystem/landing_command_selection_test.go",
+        "change": "Keep b.runs as production recorded it. Assert on the cheap run's cmd.Env that LANDING_PROOF_SCOPE is the impact scope and LANDING_PROOF_BASE is the parent commit. Reword the comment to say the proof command recomputes the selection.",
+        "relation": "new"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261108t171034-2d0c6dc39c-r2-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "f344da48c44c863ff510c235f44f6e3d8fdddc5a15c8de3514f51e03a89f8ba9",
+  "schemaVersion": 1,
+  "goal": "the-lane-batches-goals-and-proves-once",
+  "unit": "U3b",
+  "subject": {
+    "commit": "9490fc340fe4cad8062fd55225581ba388e0c03f",
+    "parent": "d6bd3828f15a20198b4d41177d3ebe12aaa68443",
+    "tree": "8ad8996ce106fe2c83a51517928cfc24f2b93b08",
+    "patchDigest": "e6eb4e8de3ed7a5e2c6ada5cae096d7a59d414373fe0b0049b929e4b129679f6",
+    "unitDigest": "f503fd93986ea9547b4a78b75476ec00600b5dee424c6cdf606ec88355a043c1"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261108t171034-2d0c6dc39c-r2-s3",
+    "closureSha256": "ba6eb9a8eb1efe4ad8116fe133183c98806bd579ae085f2c678b8a47d6aa5d21"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "8ad8996ce106fe2c83a51517928cfc24f2b93b08",
+    "runId": "goal-read-gate-20261108t200541z-bc373784260135e8"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "7bf3ec0eb900c74e8f956fc954e89c11203d25c8",
+      "digest": "2a30d82c1d4e3ad1d473928fdd5364f432ddaabd0dd7e37fa29b38bf94bcb3db"
+    },
+    {
+      "kind": "read",
+      "commit": "fcfa341f375d21d7201783992896fc868d376c4c",
+      "digest": "c2d96a6b8befaf343e21e4cf4812b20baca7ec00c376dc250246ed04929d6ac2"
+    },
+    {
+      "kind": "read",
+      "commit": "6edeb9a71773762591e26c09813ab147016c23b3",
+      "digest": "41b65ff0da871584788940567ff4cf04c4e95dae012ae16775df380f38205716"
+    },
+    {
+      "kind": "read",
+      "commit": "dddef165179fb4f691b142da879945bfeac53f89",
+      "digest": "47020525f7b8be5a3ab6b3fa284dfcf0ff58461ba59a5c9a4cb7793661818be7"
+    },
+    {
+      "kind": "read",
+      "commit": "d6bd3828f15a20198b4d41177d3ebe12aaa68443",
+      "digest": "c3703e04f554bd5d616a9ac36b787d5088aeb5e40ba5d6c44dfef22033e20766"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_check_skip_test.go",
+      "readerWord": "reviewed by unit read 20261108t171034-2d0c6dc39c-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_check_test.go",
+      "readerWord": "reviewed by unit read 20261108t171034-2d0c6dc39c-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_depth_test.go",
+      "readerWord": "reviewed by unit read 20261108t171034-2d0c6dc39c-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_gate_reuse_test.go",
+      "readerWord": "reviewed by unit read 20261108t171034-2d0c6dc39c-r2-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/work_commit_impact_test.go",
+      "readerWord": "reviewed by unit read 20261108t171034-2d0c6dc39c-r2-s3"
+    }
+  ],
+  "sha256": "9c8e71c1596ba77fe3f46c647acfdee5730c702b73c39818690670d1e4d30713"
+}

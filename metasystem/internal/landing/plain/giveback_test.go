@@ -14,7 +14,7 @@ import (
 
 func TestLandingGiveBackCancellationRecovery(t *testing.T) {
 	t.Parallel()
-	install, batch, _, seams, ended := restartBed(t, 10, false)
+	install, batch, _, seams, ended := restartBed(t, 10, true)
 	member := batch.Members[0]
 	person := ActProvenance{Person: "Wido", CheckedAt: restartNow}
 	stop := seams.EndProof
@@ -89,7 +89,7 @@ func TestLandingLandAnywayPushRecord(t *testing.T) {
 
 func TestLandingGiveBackPersonProofCompletion(t *testing.T) {
 	t.Parallel()
-	install, batch, running, seams, ended := restartBed(t, 10, false)
+	install, batch, running, seams, ended := restartBed(t, 10, true)
 	running.Person = &ActProvenance{Person: "Wido"}
 	if err := writeRunning(install, running); err != nil {
 		t.Fatal(err)
@@ -132,7 +132,7 @@ func TestLandingGiveBackSupersededPersonProof(t *testing.T) {
 	for _, changed := range []string{"new-hand-in", "removed-member"} {
 		t.Run(changed, func(t *testing.T) {
 			t.Parallel()
-			install, batch, running, seams, ended := restartBed(t, 10, false)
+			install, batch, running, seams, ended := restartBed(t, 10, true)
 			running.Person = &ActProvenance{Person: "Wido"}
 			if err := writeRunning(install, running); err != nil {
 				t.Fatal(err)

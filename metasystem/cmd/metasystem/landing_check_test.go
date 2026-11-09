@@ -174,6 +174,7 @@ func TestLandingCheckFixRecordsEveryOutcomeGitAdapter(t *testing.T) {
 			}
 			impactWrite(t, root, "testing.json", string(data))
 			impactWrite(t, root, ".gitignore", "artifacts/\n")
+			impactWrite(t, root, "metasystem.conf", "testing.contract=testing.json\nlanding.impact-max-share=1\n")
 			impactWrite(t, root, "cmd/metasystem/main_test.go", "package main\nimport \"testing\"\nfunc TestBehavior(t *testing.T) { t.Parallel() }\n")
 			testingFixtureGit(t, root, "add", ".")
 			impactWrite(t, root, "stage-me.txt", "unstaged\n")

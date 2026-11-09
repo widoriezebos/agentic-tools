@@ -142,6 +142,8 @@ func TestLandingSelectDepthClassStatus(t *testing.T) {
 func TestLandingFullDueBatchAdapterProofPushClock(t *testing.T) {
 	t.Parallel()
 	b := newBatchVerbBed(t, "auto")
+	b.configuration = strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=24h")
+	b.policy(t, "auto")
 	sha := b.seat(t, "low")
 	b.owners.landing.plainProve.GoalTier = func(string, string) (uint8, error) { return 1, nil }
 	b.owners.landing.plainProve.BatchDepth = func(string, string, plain.Running) (string, string) { return "impact", "low tier" }
@@ -174,20 +176,93 @@ func TestLandingFullDueBatchAdapterProofPushClock(t *testing.T) {
 	t.Logf("observed depth: %s; reason: %s; full-due cleared after push", proof.Scope, proof.ScopeReason)
 }
 
+type ledgerRefreshBed struct {
+	*batchVerbBed
+	groupsTrace                   string
+	contractReads, fullExecutions int
+}
+
+func newLedgerRefreshBed(t *testing.T) *ledgerRefreshBed {
+	t.Helper()
+	b := &ledgerRefreshBed{batchVerbBed: newBatchVerbBed(t, "auto")}
+	// The detached child is claimed in this process through its saved attempt.
+	b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) { b.launches++; return int64(os.Getpid()), nil }
+	b.owners.landing.now = func() time.Time { return b.now }
+	b.groupsTrace = filepath.Join(t.TempDir(), "groups")
+	contract := testpolicy.Contract{SchemaVersion: testpolicy.ExecutionContractSchemaVersion,
+		ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
+		Surfaces:    []testpolicy.Surface{{ID: "fixture", Paths: []string{"metasystem/**"}, Standard: []string{"ledger"}}}, Unknown: []string{"ledger"}}
+	for _, id := range []string{"prerequisite", "ledger", "unaffected"} {
+		input := "metasystem/internal/**"
+		var requires []string
+		if id == "ledger" {
+			input, requires = "metasystem/plans/**", []string{"prerequisite"}
+		}
+		contract.Groups = append(contract.Groups, testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".", Phase: "acceptance", EnvironmentMode: "inherit", Inputs: []string{input}, Platforms: []string{"any"}, TargetMS: 1, Requires: requires,
+			Argv: []string{"/bin/sh", "-c", `printf '%s\n' "$0" >> "$LANDING_GROUP_TRACE"`, id}, Format: "exit-status"})
+	}
+	encoded, err := json.Marshal(contract)
+	helmMust(t, err)
+	writeTestingFixtureFile(t, filepath.Join(b.installation, "testing.json"), encoded, 0600)
+	b.configuration += "testing.contract=testing.json\n"
+	b.policy(t, "auto")
+	b.git(t, b.checkout, "add", "metasystem/testing.json", "metasystem/metasystem.conf")
+	b.git(t, b.checkout, "commit", "-qm", "declare synthetic ledger checks")
+	b.git(t, b.checkout, "push", "--quiet", "origin", "main")
+	b.main = b.git(t, b.checkout, "rev-parse", "HEAD")
+	b.owners.landing.plainProve.GoalTier = func(string, string) (uint8, error) { return 3, nil }
+	b.owners.landing.plainProve.Closure = func(string, string, string) (adapter.Closure, error) { return adapter.Closure{}, nil }
+	b.owners.landing.plainProve.Git = func(root string, args ...string) (string, error) {
+		if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/testing.json") {
+			b.contractReads++
+		}
+		return plain.Git(root, args...)
+	}
+	previous := b.owners.landing.plainProve.Command
+	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+		if commandEnv(cmd, "LANDING_PROOF_SCOPE") == "full" {
+			b.fullExecutions++
+		}
+		if err := previous(cmd); err != nil {
+			return err
+		}
+		committed, err := testpolicy.Load(filepath.Join(cmd.Dir, "testing.json"))
+		if err != nil {
+			return err
+		}
+		ids := strings.Fields(commandEnv(cmd, "LANDING_PROOF_GROUPS"))
+		if commandEnv(cmd, "LANDING_PROOF_SCOPE") == "full" {
+			ids = []string{"ledger", "unaffected"}
+		}
+		results, err := proofrun.RunNamedGroups(context.Background(), cmd.Dir, committed, ids, append(cmd.Env, "LANDING_GROUP_TRACE="+b.groupsTrace))
+		if err != nil {
+			return err
+		}
+		fmt.Fprintln(cmd.Stdout, "landing environment fixture-toolchain")
+		for _, result := range results {
+			fmt.Fprintf(cmd.Stdout, "landing group %s %s %d\n", result.ID, result.Status, result.DurationMS)
+			if result.Status != "green" {
+				return fmt.Errorf("group %s: %v %s", result.ID, result.Reasons, result.Output)
+			}
+		}
+		return nil
+	}
+	return b
+}
+
 // Real Git proves an unpublished batch green leaves the trunk clock overdue.
-func TestLandingFullDueLedgerRefreshAdapterRunsFullAndPaysClock(t *testing.T) {
+func TestLandingFullDueLedgerRefreshKeepsFullCoverageAndPaysClock(t *testing.T) {
 	t.Parallel()
 	for _, wait := range []bool{false, true} {
-		name := "background attempt executes full"
+		name := "background attempt refreshes affected checks"
 		if wait {
-			name = "wait executes full"
+			name = "wait refreshes affected checks"
 		}
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
-			b := newBatchVerbBed(t, "auto")
-			// The detached child is claimed in this process through its saved attempt.
-			b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) { b.launches++; return int64(os.Getpid()), nil }
-			b.owners.landing.now = func() time.Time { return b.now }
+			b := newLedgerRefreshBed(t)
+			b.configuration = strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=24h")
+			b.policy(t, "auto")
 			b.owners.landing.plainProve.Alive = func(r plain.Running) bool { return r.Pid == int64(os.Getpid()) || r.Pid == int64(os.Getppid()) }
 			sha := b.seat(t, "low")
 			b.owners.landing.plainProve.GoalTier = func(string, string) (uint8, error) { return 1, nil }
@@ -198,7 +273,7 @@ func TestLandingFullDueLedgerRefreshAdapterRunsFullAndPaysClock(t *testing.T) {
 			b.assemble(t, sha)
 			b.success(t, "landing", "prove", "--wait")
 			full, ok, err := plain.LastResult(b.installation)
-			if err != nil || !ok || full.Scope != "full" || b.executions(t) != 1 {
+			if err != nil || !ok || full.Scope != "full" || full.ScopeReason != "full proof overdue since "+b.now.Local().Format("15:04") || b.executions(t) != 1 || b.fullExecutions != 1 {
 				t.Fatalf("initial full proof: %+v %v", full, err)
 			}
 			b.now = b.now.Add(time.Minute)
@@ -229,8 +304,13 @@ func TestLandingFullDueLedgerRefreshAdapterRunsFullAndPaysClock(t *testing.T) {
 				b.success(t, "landing", "prove", "--wait", "--attempt", running.Attempt)
 			}
 			refreshed, ok, err := plain.LastResult(b.installation)
-			if err != nil || !ok || refreshed.Result != plain.Green || refreshed.Scope != "full" || refreshed.FullTree != refreshed.Tree || refreshed.FullAt != refreshed.At || refreshed.Tree == full.Tree || refreshed.ScopeReason != "full proof overdue since "+laneTestNow.Local().Format("15:04") || b.executions(t) != 2 || b.launches != 2 {
-				t.Fatalf("overdue refresh did not execute full: %+v %v; executions=%d launches=%d", refreshed, err, b.executions(t), b.launches)
+			if err != nil || !ok || refreshed.Result != plain.Green || refreshed.Scope != "scoped" || refreshed.FullTree != full.FullTree || refreshed.FullAt != full.FullAt || refreshed.Tree == full.Tree || refreshed.ScopeReason != "the batch's full check holds; only groups whose inputs cover changed paths run" || !slices.Equal(refreshed.Ran, []string{"prerequisite", "ledger"}) || b.fullExecutions != 1 || b.executions(t) != 2 || b.launches != 2 {
+				t.Fatalf("overdue refresh did not keep full coverage: %+v %v; executions=%d launches=%d", refreshed, err, b.executions(t), b.launches)
+			}
+			b.success(t, "landing", "prove", "--wait")
+			reused, ok, err := plain.LastResult(b.installation)
+			if err != nil || !ok || reused.Attempt != refreshed.Attempt || b.executions(t) != 2 || b.launches != 2 || b.fullExecutions != 1 {
+				t.Fatalf("scoped green was not reused: %+v %v; executions=%d launches=%d full=%d", reused, err, b.executions(t), b.launches, b.fullExecutions)
 			}
 			reasons, err := plain.WakeReasons(b.installation, b.checkout, time.Time{}, b.now, b.owners.landing.plainProve)
 			if err != nil || !slices.Contains(reasons, plain.WakeFullDue) {
@@ -243,9 +323,20 @@ func TestLandingFullDueLedgerRefreshAdapterRunsFullAndPaysClock(t *testing.T) {
 			}
 			reasons, err = plain.WakeReasons(b.installation, b.checkout, time.Time{}, b.now, b.owners.landing.plainProve)
 			if err != nil || slices.Contains(reasons, plain.WakeFullDue) {
-				t.Fatalf("pushed refreshed full did not pay clock: %v %v", reasons, err)
+				t.Fatalf("pushed scoped green did not pay clock: %v %v", reasons, err)
 			}
-			t.Logf("%s: overdue ledger refresh ran full; publication cleared full-due", name)
+			fullAt, err := time.Parse(time.RFC3339, full.FullAt)
+			helmMust(t, err)
+			for _, row := range []struct {
+				after time.Duration
+				due   bool
+			}{{24*time.Hour - time.Second, false}, {24 * time.Hour, true}} {
+				reasons, err := plain.WakeReasons(b.installation, b.checkout, time.Time{}, fullAt.Add(row.after), b.owners.landing.plainProve)
+				if err != nil || slices.Contains(reasons, plain.WakeFullDue) != row.due {
+					t.Fatalf("full due at full time + %s: %v %v; want %v", row.after, reasons, err, row.due)
+				}
+			}
+			t.Logf("%s: one full execution; ledger refresh ran prerequisite and ledger; scoped green reused; publication credited original full time", name)
 		})
 	}
 }
@@ -257,69 +348,9 @@ func TestLandingScopedLedgerRefreshAdapterRunsAffectedChecksAndKeepsClock(t *tes
 	for _, route := range []string{"existing batch through landing prove", "records baseline through keeper observation"} {
 		t.Run(route, func(t *testing.T) {
 			t.Parallel()
-			b := newBatchVerbBed(t, "auto")
-			// The detached child is claimed in this process through its saved attempt.
-			b.owners.landing.plainProve.Launch = func([]string, string, string) (int64, error) { b.launches++; return int64(os.Getpid()), nil }
-			b.owners.landing.now = func() time.Time { return b.now }
+			b := newLedgerRefreshBed(t)
 			originAt := b.now
-			groupsTrace := filepath.Join(t.TempDir(), "groups")
-			contract := testpolicy.Contract{SchemaVersion: testpolicy.ExecutionContractSchemaVersion,
-				ProjectRisk: testpolicy.ProjectRisk{Severity: 1, Exposure: 1, Reversibility: "revert", Detection: "immediate", Recovery: "bounded"},
-				Surfaces:    []testpolicy.Surface{{ID: "fixture", Paths: []string{"metasystem/**"}, Standard: []string{"ledger"}}}, Unknown: []string{"ledger"}}
-			for _, id := range []string{"prerequisite", "ledger", "unaffected"} {
-				input := "metasystem/internal/**"
-				var requires []string
-				if id == "ledger" {
-					input, requires = "metasystem/plans/**", []string{"prerequisite"}
-				}
-				contract.Groups = append(contract.Groups, testpolicy.Group{ID: id, Kind: "unit", Adapter: "command", CWD: ".", Phase: "acceptance", EnvironmentMode: "inherit", Inputs: []string{input}, Platforms: []string{"any"}, TargetMS: 1, Requires: requires,
-					Argv: []string{"/bin/sh", "-c", `printf '%s\n' "$0" >> "$LANDING_GROUP_TRACE"`, id}, Format: "exit-status"})
-			}
-			encoded, err := json.Marshal(contract)
-			helmMust(t, err)
-			writeTestingFixtureFile(t, filepath.Join(b.installation, "testing.json"), encoded, 0600)
-			b.configuration += "testing.contract=testing.json\n"
-			b.policy(t, "auto")
-			b.git(t, b.checkout, "add", "metasystem/testing.json", "metasystem/metasystem.conf")
-			b.git(t, b.checkout, "commit", "-qm", "declare synthetic ledger checks")
-			b.git(t, b.checkout, "push", "--quiet", "origin", "main")
-			b.main = b.git(t, b.checkout, "rev-parse", "HEAD")
 			seedCurrentTrunkClock(t, b.installation, originAt)
-			b.owners.landing.plainProve.GoalTier = func(string, string) (uint8, error) { return 3, nil }
-			b.owners.landing.plainProve.Closure = func(string, string, string) (adapter.Closure, error) { return adapter.Closure{}, nil }
-			contractReads := 0
-			b.owners.landing.plainProve.Git = func(root string, args ...string) (string, error) {
-				if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/testing.json") {
-					contractReads++
-				}
-				return plain.Git(root, args...)
-			}
-			previous := b.owners.landing.plainProve.Command
-			b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
-				if err := previous(cmd); err != nil {
-					return err
-				}
-				committed, err := testpolicy.Load(filepath.Join(cmd.Dir, "testing.json"))
-				if err != nil {
-					return err
-				}
-				ids := strings.Fields(commandEnv(cmd, "LANDING_PROOF_GROUPS"))
-				if commandEnv(cmd, "LANDING_PROOF_SCOPE") == "full" {
-					ids = []string{"ledger", "unaffected"}
-				}
-				results, err := proofrun.RunNamedGroups(context.Background(), cmd.Dir, committed, ids, append(cmd.Env, "LANDING_GROUP_TRACE="+groupsTrace))
-				if err != nil {
-					return err
-				}
-				fmt.Fprintln(cmd.Stdout, "landing environment fixture-toolchain")
-				for _, result := range results {
-					fmt.Fprintf(cmd.Stdout, "landing group %s %s %d\n", result.ID, result.Status, result.DurationMS)
-					if result.Status != "green" {
-						return fmt.Errorf("group %s: %v %s", result.ID, result.Reasons, result.Output)
-					}
-				}
-				return nil
-			}
 			sha := b.seat(t, "low")
 			b.success(t, "landing", "run")
 			b.assemble(t, sha)
@@ -340,7 +371,7 @@ func TestLandingScopedLedgerRefreshAdapterRunsAffectedChecksAndKeepsClock(t *tes
 			b.git(t, writer, "add", path)
 			b.git(t, writer, "commit", "-qm", "advance synthetic goal ledger")
 			b.git(t, writer, "push", "--quiet", "origin", "HEAD:main")
-			wantReason := "the batch's full proof is under an hour old; only groups whose inputs cover changed paths run"
+			wantReason := "the batch's full check holds; only groups whose inputs cover changed paths run"
 			if keeperRoute {
 				seams := b.owners.landing.plainProve
 				seams.Alive = func(r plain.Running) bool { return r.Pid == int64(os.Getpid()) || r.Pid == int64(os.Getppid()) }
@@ -368,14 +399,14 @@ func TestLandingScopedLedgerRefreshAdapterRunsAffectedChecksAndKeepsClock(t *tes
 				b.git(t, b.checkout, "merge", "--quiet", "--no-ff", "--no-edit", "origin/main")
 				b.success(t, "landing", "prove", "--wait")
 			}
-			if contractReads != 1 {
-				t.Fatalf("one admission read the committed testing contract %d times, want 1", contractReads)
+			if b.contractReads != 1 {
+				t.Fatalf("one admission read the committed testing contract %d times, want 1", b.contractReads)
 			}
 			scoped, ok, err := plain.LastResult(b.installation)
 			if err != nil || !ok || scoped.Result != plain.Green || scoped.Scope != "scoped" || scoped.ScopeReason != wantReason || scoped.FullTree != full.FullTree || scoped.FullAt != full.FullAt || scoped.Tree == full.Tree || b.executions(t) != 2 || b.launches != 2 || !slices.Equal(scoped.Ran, []string{"prerequisite", "ledger"}) {
 				t.Fatalf("scoped refresh: %+v %v; executions=%d launches=%d", scoped, err, b.executions(t), b.launches)
 			}
-			data, err := os.ReadFile(groupsTrace)
+			data, err := os.ReadFile(b.groupsTrace)
 			helmMust(t, err)
 			if got := strings.Fields(string(data)); !slices.Equal(got, []string{"prerequisite", "ledger", "unaffected", "prerequisite", "ledger"}) {
 				t.Fatalf("executed groups: %v", got)
@@ -390,14 +421,14 @@ func TestLandingScopedLedgerRefreshAdapterRunsAffectedChecksAndKeepsClock(t *tes
 					t.Fatalf("full due at %s: %v %v, want %v", at, reasons, err, want)
 				}
 			}
-			// A short interval distinguishes the original credit from a scoped publication's time.
-			helmMust(t, os.WriteFile(filepath.Join(b.installation, "metasystem.conf"), []byte(strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=30m")), 0600))
-			assertDue(originAt.Add(29*time.Minute), false)
-			assertDue(originAt.Add(31*time.Minute), true)
+			// The daily interval retains the original full credit across a scoped publication.
+			helmMust(t, os.WriteFile(filepath.Join(b.installation, "metasystem.conf"), []byte(strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=24h")), 0600))
+			assertDue(originAt.Add(24*time.Hour-time.Second), false)
+			assertDue(originAt.Add(24*time.Hour), true)
 			b.policy(t, "auto")
 			assertDue(originAt.Add(59*time.Minute), false)
-			// Main's own records check keeps its full green; a scoped push owes.
-			assertDue(originAt.Add(time.Hour+time.Second), !keeperRoute)
+			// The hourly debt does not wake the independent full-check clock.
+			assertDue(originAt.Add(time.Hour+time.Second), false)
 			t.Logf("%s; executed prerequisite and ledger; unaffected retained; original full tree/time and clock retained", scoped.ScopeReason)
 		})
 	}

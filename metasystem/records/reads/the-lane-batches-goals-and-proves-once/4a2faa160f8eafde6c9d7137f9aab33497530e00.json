@@ -1,0 +1,142 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-lane-batches-goals-and-proves-once",
+  "unit": "U2",
+  "subject": {
+    "commit": "4a2faa160f8eafde6c9d7137f9aab33497530e00",
+    "parent": "eb6aa9f461941e43c49d049d1f2156e6a84c1aed",
+    "tree": "2d6d4de4842ce498c7ac4d50ecb3021bbbd2560f",
+    "patchDigest": "e96f5f5f5ebb65528cd00ef96c18ff34aa6e6d931623257390fd9ad89b9e3561",
+    "unitDigest": "fa5c17a20b61c3f257a765f7f6ed174d51a6b74bdae8737215dd2f6c2e13065f"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-f9ac5f0076be39c0b532803f",
+    "round": 1,
+    "closureSha256": "a52aa30e3fe1a6ba6f91a9ff47eba128840a2482f0ab3d09a7cd8fc55401e49b"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "2d6d4de4842ce498c7ac4d50ecb3021bbbd2560f",
+    "runId": "goal-read-gate-20261108t115604z-80ed2887af9baaf5"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "eb6aa9f461941e43c49d049d1f2156e6a84c1aed",
+      "digest": "2a30d82c1d4e3ad1d473928fdd5364f432ddaabd0dd7e37fa29b38bf94bcb3db"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/audit_output_layout_g1b_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_batch_verbs_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_depth_class_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_fresh_full_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_keeper_clock_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_selection_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_standing_red_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/config/trunk_proof_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/changed_main_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/depth_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/flake_inherit_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/fold_inherit_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/fresh_full_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/giveback_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/hold_retired_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/keeper_clock_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/keeper_fetch_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/merge_main_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/nonrun_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/plain_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/records_kept_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/restart_probes_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/restart_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/scope_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/standing_routes_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/standing_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/wake_test.go",
+      "readerWord": "reviewed by critic root code-critic-f9ac5f0076be39c0b532803f"
+    }
+  ],
+  "sha256": "632546ecb888b55868e418d54d0f64653d63b25a83c25e9c0f70a62120e669df"
+}

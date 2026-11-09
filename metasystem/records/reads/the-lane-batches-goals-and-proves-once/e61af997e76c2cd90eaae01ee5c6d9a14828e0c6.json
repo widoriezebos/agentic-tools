@@ -1,0 +1,52 @@
+{
+  "schemaVersion": 1,
+  "goal": "the-lane-batches-goals-and-proves-once",
+  "unit": "U1a",
+  "subject": {
+    "commit": "e61af997e76c2cd90eaae01ee5c6d9a14828e0c6",
+    "parent": "35f90f2994549fcf90fac74bcef7f8e9c76b6adc",
+    "tree": "aa12d8a9e3c82212153af0a68607b35a6ef769b5",
+    "patchDigest": "33b7c0862e25481c77298c47c035ca2a524de99fa839577095562df47fdd20a3",
+    "unitDigest": "d1f36fde7d986873bf50f097175eae67bda4755767987c84dd154ea431b4afd8"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-ef2039e6d881ae41ed4c6d68",
+    "round": 1,
+    "closureSha256": "5996070bd6cb2234a42656ea38d444942af3feae5377a2c02ea60e7891f25308"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "aa12d8a9e3c82212153af0a68607b35a6ef769b5",
+    "runId": "goal-read-gate-20261108t081248z-72250039132b82a6"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_depth_correction_test.go",
+      "readerWord": "reviewed by critic root code-critic-ef2039e6d881ae41ed4c6d68"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_depth_test.go",
+      "readerWord": "reviewed by critic root code-critic-ef2039e6d881ae41ed4c6d68"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_gate_reuse_test.go",
+      "readerWord": "reviewed by critic root code-critic-ef2039e6d881ae41ed4c6d68"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_impact_test.go",
+      "readerWord": "reviewed by critic root code-critic-ef2039e6d881ae41ed4c6d68"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/depth_test.go",
+      "readerWord": "reviewed by critic root code-critic-ef2039e6d881ae41ed4c6d68"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/push_checked_test.go",
+      "readerWord": "reviewed by critic root code-critic-ef2039e6d881ae41ed4c6d68"
+    }
+  ],
+  "sha256": "eedef9a188bf82bd8983dceaaee41eea9a27b90459e9179fa694572efa189f84"
+}

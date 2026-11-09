@@ -76,13 +76,6 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 	if depth == "full" && seams.DepthScope == "" && !seams.Impact {
 		return scopeDecision{scopeRecord: scopeRecord{Scope: depth, ScopeReason: reason}}
 	}
-	if depth == "impact" && seams.DepthScope == "" && !seams.Impact {
-		d := impactScope(install, checkout, seams)
-		if !strings.HasPrefix(d.ScopeReason, "impact proof error:") {
-			d.ScopeReason = reason
-		}
-		return d
-	}
 	if seams.DepthScope != "" {
 		d := scopeDecision{scopeRecord: scopeRecord{Scope: depth, ScopeReason: reason}}
 		if seams.Impact {
@@ -108,11 +101,8 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 // BatchProofDepth chooses cadence and affected checks before the batch policy.
 // An empty scope leaves the existing scoped-proof selector in charge.
 func BatchProofDepth(install, checkout string, running Running, seams ProveSeams) (string, string) {
-	if batch, err := ReadBatch(install); err == nil && batch != nil && batch.ID == running.BatchID && batch.ClockFull {
-		return "full", "main's clock is due; this batch needs a full check"
-	}
 	previous, found, _ := resultFor(seams.resultsPath(install), running.Tree)
-	if reason, _ := overdueBatch(install, running.BatchID, seams); reason != "" {
+	if reason, since := overdueBatch(install, running.BatchID, seams); reason != "" && !batchFullSince(install, running.BatchID, since) {
 		return "full", reason
 	}
 	if found && strings.HasPrefix(previous.ScopeReason, "full check pending:") {
@@ -121,13 +111,17 @@ func BatchProofDepth(install, checkout string, running Running, seams ProveSeams
 	if seams.DepthScope != "" {
 		return seams.DepthScope, seams.DepthReason
 	}
-	if !seams.Impact && seams.BatchDepth != nil && decideScope(install, checkout, running, seams).Scope == "scoped" {
+	if running.BatchID == "" {
 		return "", ""
 	}
-	if running.BatchID != "" && seams.BatchDepth != nil {
-		return seams.BatchDepth(install, checkout, running)
+	if !seams.Impact {
+		decision := decideScope(install, checkout, running, seams)
+		if decision.Scope == "scoped" {
+			return "", ""
+		}
+		return "full", decision.ScopeReason
 	}
-	return "", ""
+	return "full", "the batch proves full before its push"
 }
 
 // admitExecutionLocked reads policy for each whole execution, with the

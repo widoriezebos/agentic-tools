@@ -24,7 +24,7 @@ import (
 // Git supplies the comparison tree and the real adapter selects the changed tests.
 func TestLandingCheckCheapOrSkipGitAdapter(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"over-share", "cheap", "cmd-named", "static-red", "missing-static"} {
+	for _, mode := range []string{"over-share", "cheap", "cmd-named", "cmd-whole", "static-red", "missing-static"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			root, _ := impactGitAdapterBed(t)
@@ -46,17 +46,20 @@ func TestLandingCheckCheapOrSkipGitAdapter(t *testing.T) {
 			helmMust(t, err)
 			impactWrite(t, root, "testing.json", string(data))
 			limit := 25
-			if mode == "cheap" || mode == "cmd-named" {
+			if mode == "cheap" || mode == "cmd-named" || mode == "cmd-whole" {
 				limit = 100
 			}
 			impactWrite(t, root, "metasystem.conf", fmt.Sprintf("testing.contract=testing.json\nlanding.impact-max-share=%d\n", limit))
 			impactWrite(t, root, ".gitignore", "artifacts/\nstatic-ran\nselection-ran\n")
 			impactWrite(t, root, "cmd/metasystem/main_test.go", "package main\nimport \"testing\"\nfunc TestCmd(t *testing.T) { t.Parallel() }\n")
+			if mode == "cmd-whole" {
+				impactWrite(t, root, "cmd/metasystem/selected_test.go", "package main\nimport (\"testing\"; \"os\")\nfunc TestSelection(t *testing.T) { t.Parallel(); _ = os.WriteFile(\"selection-ran\", nil, 0600); t.Fatal(\"expensive selection ran\") }\n")
+			}
 			testingFixtureGit(t, root, "add", ".")
 			testingFixtureGit(t, root, "-c", "user.name=fixture", "-c", "user.email=fixture@example.invalid", "commit", "-qm", "check contract")
 			base := strings.TrimSpace(testingFixtureGit(t, root, "rev-parse", "HEAD"))
 			pkg := "internal/launch"
-			if mode == "cmd-named" {
+			if mode == "cmd-named" || mode == "cmd-whole" {
 				pkg = "cmd/metasystem"
 			}
 			packageName := "launch"
@@ -64,10 +67,15 @@ func TestLandingCheckCheapOrSkipGitAdapter(t *testing.T) {
 				packageName = "main"
 			}
 			failure := "t.Fatal(\"expensive selection ran\")"
-			if mode == "cheap" {
+			if mode == "cheap" || mode == "cmd-named" {
 				failure = ""
 			}
-			impactWrite(t, root, pkg+"/selected_test.go", "package "+packageName+"\nimport (\"testing\"; \"os\")\nfunc TestSelection(t *testing.T) { t.Parallel(); if err := os.WriteFile(\"selection-ran\", []byte(\"ran\"), 0600); err != nil { t.Fatal(err) }; "+failure+" }\n")
+			if mode != "cmd-whole" {
+				impactWrite(t, root, pkg+"/selected_test.go", "package "+packageName+"\nimport (\"testing\"; \"os\")\nfunc TestSelection(t *testing.T) { t.Parallel(); if err := os.WriteFile(\"selection-ran\", []byte(\"ran\"), 0600); err != nil { t.Fatal(err) }; "+failure+" }\n")
+			}
+			if mode == "cmd-whole" {
+				impactWrite(t, root, pkg+"/unreferenced.go", "package main\nconst Unreferenced = true\n")
+			}
 			testingFixtureGit(t, root, "add", ".")
 			data, err = os.ReadFile("testdata/landing-check/merge-fix.json")
 			helmMust(t, err)
@@ -81,7 +89,7 @@ func TestLandingCheckCheapOrSkipGitAdapter(t *testing.T) {
 				Check string `json:"check"`
 			}
 			want := "static-only"
-			if mode == "cheap" {
+			if mode == "cheap" || mode == "cmd-named" {
 				want = "impact"
 			}
 			if err != nil || code != 0 || json.Unmarshal(result.Data, &plan) != nil || plan.Check != want {
@@ -95,7 +103,7 @@ func TestLandingCheckCheapOrSkipGitAdapter(t *testing.T) {
 			if mode == "static-red" || mode == "missing-static" {
 				wantCode, want = 1, plain.Red
 			}
-			if mode == "cheap" {
+			if mode == "cheap" || mode == "cmd-named" {
 				want = plain.Green
 			}
 			if code != wantCode {
@@ -106,7 +114,7 @@ func TestLandingCheckCheapOrSkipGitAdapter(t *testing.T) {
 				t.Fatalf("fix check: %+v error=%v", recorded, err)
 			}
 			_, err = os.Stat(filepath.Join(root, pkg, "selection-ran"))
-			if mode == "cheap" {
+			if mode == "cheap" || mode == "cmd-named" {
 				helmMust(t, err)
 			} else if !os.IsNotExist(err) || strings.Contains(out, "landing group unit/") {
 				t.Fatalf("expensive selection executed: error=%v out=%s", err, out)
@@ -201,7 +209,10 @@ func TestLandingCheckRealContractLedgerAndPlanGitAdapter(t *testing.T) {
 		unit, names, ok := strings.Cut(s, "=")
 		return ok && strings.HasSuffix(unit, "cmd/metasystem") && slices.Contains(strings.Split(names, ","), "TestLaneSpeedProbe")
 	})
-	if plan.Check != "static-only" || !probe {
+	share, cheap, full, reason, err := impactCost(module, module, plan.Text(), contract)
+	helmMust(t, err)
+	t.Logf("real probe share: %d%% of %d packages; %s", share, full, reason)
+	if plan.Check != "impact" || !cheap || !probe {
 		t.Fatalf("real plan: check=%q selections=%v", plan.Check, plan.Selections)
 	}
 	form, err := impactSelectionForm(module, contract, plan.Selections, nil)

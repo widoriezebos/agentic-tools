@@ -35,7 +35,7 @@ const (
 // WakeReasons are why the landing agent would run now: WakeQueued while a
 // hand-in is pending (Pending), and WakeProofFinished besides when a result
 // line ended after lastLaunch (zero: never launched). WakeFullDue also wakes
-// an idle lane when a scoped push's full proof is more than an hour old.
+// an idle lane when its configured full-check cadence is due.
 // When incidents alone hold all waiting lines, one fetch refreshes main
 // before the keeper decides. A failed fetch leaves the lines held and is
 // reported by landing status through the wake's unread sources.
@@ -82,7 +82,7 @@ func wakeReasons(install string, queued bool, lastLaunch, now time.Time, timerHe
 	if len(timerHeld) > 0 && timerHeld[0] || drain != nil || drainErr != nil {
 		return reasons, nil
 	}
-	due, err := keeperFullProofDue(install, now)
+	due, err := fullProofDue(install, now)
 	if err != nil {
 		return nil, err
 	}
@@ -92,33 +92,35 @@ func wakeReasons(install string, queued bool, lastLaunch, now time.Time, timerHe
 	return reasons, nil
 }
 
-// fullProofDue preserves the hourly debt and checks main's independent clock.
+// fullProofDue checks main's independent clock.
 func fullProofDue(install string, now time.Time) (bool, error) {
-	return clockDue(install, now, scopedProofDue)
+	return clockDue(install, now)
 }
 
-// keeperFullProofDue is fullProofDue with the keeper's own debt.
-func keeperFullProofDue(install string, now time.Time) (bool, error) {
-	return clockDue(install, now, keeperProofDebt)
-}
-
-func clockDue(install string, now time.Time, debt func(string, time.Time) (bool, error)) (bool, error) {
-	due, err := debt(install, now)
-	if err != nil || due {
-		return due, err
-	}
+func clockDue(install string, now time.Time) (bool, error) {
 	last, every, err := fullProofClock(install)
-	return last.IsZero() || now.Sub(last) >= every, err
+	if err != nil || every == 0 {
+		return false, err
+	}
+	return last.IsZero() || now.Sub(last) >= every, nil
+}
+
+func trunkCadence(install string) (every time.Duration, problem string, err error) {
+	raw, _, err := config.Get(config.GetParams{Key: "proof.trunk-every", ConfPath: filepath.Join(install, "metasystem.conf")})
+	if err != nil {
+		return 0, "", err
+	}
+	every, valid := config.TrunkEvery(raw)
+	if !valid {
+		return 0, fmt.Sprintf("%s is %q; it takes off or at least 24h", "proof.trunk-every", raw), nil
+	}
+	return every, "", nil
 }
 
 func fullProofClock(install string) (time.Time, time.Duration, error) {
-	raw, _, err := config.Get(config.GetParams{Key: "proof.trunk-every", ConfPath: filepath.Join(install, "metasystem.conf")})
-	if err != nil {
+	every, _, err := trunkCadence(install)
+	if err != nil || every == 0 {
 		return time.Time{}, 0, err
-	}
-	every, err := time.ParseDuration(raw)
-	if err != nil || every <= 0 {
-		return time.Time{}, 0, fmt.Errorf("main's full check interval must be a positive duration; %s is %q", "proof.trunk-every", raw)
 	}
 	results, err := Results(install)
 	if err != nil {
@@ -152,15 +154,13 @@ func fullProofClock(install string) (time.Time, time.Duration, error) {
 		if proof.Result == Green && !proof.didNotRun() && proof.Scope == "full" && full && pushedAt.After(last) {
 			last = pushedAt
 		}
+		if proof.Result == Green && !proof.didNotRun() && (proof.Scope == "scoped" || proof.Scope == "inherited") && len(proof.Unproved) == 0 && proof.FullTree != "" {
+			if at, err := time.Parse(time.RFC3339, proof.FullAt); err == nil && at.After(last) {
+				last = at
+			}
+		}
 	}
 	return last, every, nil
-}
-
-// scopedProofDue keeps the original execution deadline for main or the newest push.
-// Main needs a later full trunk check, including a completed red. A scoped
-// push can also use an executed full green batch proof.
-func scopedProofDue(install string, now time.Time) (bool, error) {
-	return proofDebt(install, now, false)
 }
 
 // keeperProofDebt is the debt the keeper pays: main's own records check keeps

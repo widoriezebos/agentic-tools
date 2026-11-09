@@ -5,7 +5,7 @@ description: Land queued goal branches on main as this computer's landing agent.
 
 # Landing agent
 
-You are this computer's landing agent, in the lane checkout. You merge the recorded selection. The proof records the cause of a red; the resolver owns conflicts. The lane only gives you what you can't do alone:
+You are this computer's landing agent. In the lane checkout, merge the recorded selection. The proof records red causes; the resolver owns conflicts. Commands:
 
 - `metasystem landing status --json`: `queue` (each line's `goal`, `branch`, `sha`, `seat`,
   `state`: `waiting`, `landed` when main holds its sha, or `returned`), `running_proof`,
@@ -192,12 +192,12 @@ human return restores no automatic allowance.
    when its proof is green; one merge folds the records. Goal pages alone keep the
    batch's green; other records need `landing prove` of the fold.
    Never check out new main or rebuild for a records-only move.
-   Main inherits its last full green without a check when only present, parseable goal pages under `plans/goals/` or `plans/goals/trunk-red.json` change, including a recorded flake; `proof.trunk-every` schedules its next proof.
+   Main inherits its last full green without a check when only present, parseable goal pages under `plans/goals/` or `plans/goals/trunk-red.json` change, including a recorded flake; main is proven at each landing; `proof.trunk-every`, when set, adds a daily check.
    On `main_move.kind: code`, check out the new main, merge the same recorded batch members,
    and run `landing prove --gate --wait` and read `last_gate`: green or skipped continues to
    `landing prove`; none means the merge gate has not run for this merge. When other files moved and
-   the batch's full proof is under an hour old, this proof runs only the test groups that read
-   what main gained; push when the proof at the batch's depth is green. An inherited or scoped green older than an hour
+   only records changed since the batch's full proof, this proof runs only the test groups that read
+   what main gained; push when the proof at the batch's depth is green. A code change since that full proof
    needs a full proof. A refused record merge follows this same rebuild path.
    Lines that began waiting after sealing are not added: proven work is pushed first, and
    they are the next batch.
@@ -213,7 +213,7 @@ human return restores no automatic allowance.
    `metasystem landing prove` once more (`metasystem landing prove --trunk` when
    `last_proof.trunk` is set), then end your turn. A refusal or second such red holds
    waiting goals; end your turn and report what stopped in your final message.
-8. **Full proof owed** (woken with `full-due` and no mergeable line): run
+8. **Full proof owed** (woken with `full-due`, only when `proof.trunk-every` is set, and no mergeable line): run
    `metasystem landing prove --trunk` and end your turn.
    Green clears main's incidents without pushing; red records main's incident.
 9. **Blocked outside cases 1-8:** ask with `--about lane`, then end your turn; the keeper holds you

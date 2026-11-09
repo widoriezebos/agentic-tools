@@ -80,6 +80,17 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 		}
 		err = errors.Join(err, marshalErr)
 	}()
+	every, problem, err := trunkCadence(install)
+	if err != nil {
+		return "", err
+	}
+	if every == 0 {
+		state = clockWake{At: state.At, Reason: "automatic full check is off; main is proven at each landing"}
+		if problem != "" {
+			state.Reason += "; " + problem
+		}
+		return "", prepare(record)
+	}
 	last, every, err := fullProofClock(install)
 	if err != nil {
 		return "", err
@@ -88,7 +99,7 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 	if err != nil {
 		return "", err
 	}
-	if !debt && !last.IsZero() && seams.now().Sub(last) < every {
+	if !last.IsZero() && seams.now().Sub(last) < every {
 		state = clockWake{At: state.At, Reason: "clock check skipped; main's full check is current"}
 		return "", prepare(record)
 	}
@@ -127,19 +138,6 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 		}
 		if selectionErr == nil && batch != nil && batch.State != BatchClosed {
 			state.Batch = batch.ID
-			if err := withLock(install, func() error {
-				current, err := ReadBatch(install)
-				if err != nil {
-					return err
-				}
-				if current == nil || current.ID != batch.ID {
-					return errors.New("the clock's selected batch changed")
-				}
-				current.ClockFull = true
-				return writeBatch(install, current, seams)
-			}); err != nil {
-				return "", err
-			}
 			state.Reason = "clock due; batch " + batch.ID + " gets its full check first"
 			prepared = true
 		}

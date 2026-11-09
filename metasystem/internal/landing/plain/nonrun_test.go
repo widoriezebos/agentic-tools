@@ -21,7 +21,7 @@ import (
 func assertUnrunMain(t *testing.T, install, checkout string, proof Result) Status {
 	t.Helper()
 	if _, err := os.Stat(filepath.Join(install, "metasystem.conf")); os.IsNotExist(err) {
-		if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=1h\n"), 0600); err != nil {
+		if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=24h\n"), 0600); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -66,6 +66,9 @@ func TestNonRunReportsNeverAuthorizeProof(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/exit-%d", scope, exit), func(t *testing.T) {
 				t.Parallel()
 				b := newScopeBed(t)
+				if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
 				if scope != "scoped" {
 					b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "metasystem/code.go"
 				}
@@ -161,7 +164,7 @@ func TestFullClockCreditsOnlyCompletedMainChecks(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
-			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=1h\n"), 0600); err != nil {
+			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every=24h\n"), 0600); err != nil {
 				t.Fatal(err)
 			}
 			proof := Result{Attempt: "proof", Trunk: true, Scope: "full", Commit: "main", Result: Green, At: bedNow.Format(time.RFC3339)}
@@ -232,7 +235,7 @@ func TestKeeperRetriesNonRunWithinExistingAllowance(t *testing.T) {
 		t.Fatalf("spent allowance started a third proof: %d", b.trunks)
 	}
 	clock, err := readClock(b.install)
-	if err != nil || !clock.RetryAt.Equal(bedNow.Add(4*time.Hour)) {
+	if err != nil || !clock.RetryAt.Equal(bedNow.Add(24*time.Hour)) {
 		t.Fatalf("refusal backoff: %+v %v", clock, err)
 	}
 	status = assertUnrunMain(t, b.install, b.checkout, second)
@@ -263,7 +266,7 @@ func TestKeeperNonRunLaunchRefusalKeepsRecordedBackoff(t *testing.T) {
 			}
 			b.wake(t)
 			clock, err := readClock(b.install)
-			if err != nil || !clock.RetryAt.Equal(bedNow.Add(4*time.Hour)) || launches != 1 {
+			if err != nil || !clock.RetryAt.Equal(bedNow.Add(24*time.Hour)) || launches != 1 {
 				t.Fatalf("launch refusal clock: %+v %v launches=%d", clock, err, launches)
 			}
 			expected := proof
@@ -277,7 +280,7 @@ func TestKeeperNonRunLaunchRefusalKeepsRecordedBackoff(t *testing.T) {
 			if launches != 1 {
 				t.Fatal("refusal retried before its interval")
 			}
-			b.seams.Now = func() time.Time { return bedNow.Add(4 * time.Hour) }
+			b.seams.Now = func() time.Time { return bedNow.Add(24 * time.Hour) }
 			b.keeper.Now = b.seams.Now
 			b.wake(t)
 			if launches != 2 {

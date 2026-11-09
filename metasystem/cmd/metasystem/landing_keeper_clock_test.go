@@ -17,10 +17,15 @@ import (
 
 func TestLandingKeeperClockWiringAndVerboseReason(t *testing.T) {
 	t.Parallel()
-	for _, policy := range []string{"auto", "person", "paused during admission"} {
+	for _, policy := range []string{"auto", "person", "paused during admission", "off"} {
 		t.Run(policy, func(t *testing.T) {
 			t.Parallel()
 			b := newSelectionBed(t)
+			if policy == "off" {
+				helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("proof.full=fixture-proof\n"), 0600))
+			} else {
+				helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("proof.full=fixture-proof\nproof.trunk-every=24h\n"), 0600))
+			}
 			helmMust(t, os.Remove(filepath.Join(plain.Dir(b.lane), "results.jsonl")))
 			seams := b.owners.landing.plainProve
 			git := seams.Git
@@ -38,6 +43,9 @@ func TestLandingKeeperClockWiringAndVerboseReason(t *testing.T) {
 				value := "auto"
 				if key == "landing.batch" {
 					value = policy
+					if policy == "off" {
+						value = "auto"
+					}
 					if policy == "paused during admission" {
 						value = "person"
 					}
@@ -70,6 +78,10 @@ func TestLandingKeeperClockWiringAndVerboseReason(t *testing.T) {
 				if trunks != 0 || agents != 0 || !strings.Contains(plain.ClockReason(b.lane), "clock check permission changed") {
 					t.Fatalf("late pause did not fence the clock: %+v", run)
 				}
+			} else if policy == "off" {
+				if trunks != 0 || agents != 1 || !strings.Contains(plain.ClockReason(b.lane), "automatic full check is off") {
+					t.Fatalf("off clock: %+v trunks=%d", run, trunks)
+				}
 			} else if policy == "person" {
 				if trunks != 1 || agents != 0 || run.Outcome != lane.AgentHeld {
 					t.Fatalf("person selection fallback: %+v trunks=%d agents=%d", run, trunks, agents)
@@ -80,7 +92,7 @@ func TestLandingKeeperClockWiringAndVerboseReason(t *testing.T) {
 				}
 			} else {
 				batch, err := plain.ReadBatch(b.lane)
-				if err != nil || batch == nil || !batch.ClockFull || trunks != 0 || agents != 1 {
+				if err != nil || batch == nil || trunks != 0 || agents != 1 {
 					t.Fatalf("batch priority: %+v %v %+v", batch, err, run)
 				}
 			}

@@ -378,16 +378,21 @@ func TestLandingProveReusesGateOnlyAtBatchBaseWithStaticAndEnvironment(t *testin
 				if code != 0 || proof.Data.Result != plain.Green || proof.Data.Scope != "impact" || proof.Data.BaseCommit != "main" || proof.Data.Environment != gate.Environment || proof.Data.Reason != "proven by attempt "+gate.Attempt || len(b.runs) != runsBefore {
 					t.Fatalf("not reused: exit=%d %+v runs=%v output=%s", code, proof.Data, b.runs, out)
 				}
+				if len(proof.Data.Executions) != 1 || proof.Data.Executions[0].DepthScope != "full" || proof.Data.Executions[0].DepthBase != "main" || proof.Data.Executions[0].Reason != "the batch proves full before its push; explicit impact check does not satisfy the push at decided full depth" {
+					t.Fatalf("reused impact depth: %+v", proof.Data.Executions)
+				}
 				git := b.owners.landing.plainProve.Git
+				pushed := false
 				b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
 					if args[0] == "push" {
+						pushed = true
 						return "", nil
 					}
 					return git(dir, args...)
 				}
 
-				if code, out := b.run(t, b.root, "push", "--json"); code != 0 {
-					t.Fatalf("reused impact proof refused push: exit=%d %s", code, out)
+				if code, out := b.run(t, b.root, "push", "--json"); code != 1 || pushed || !strings.Contains(out, "an impact check never lands a batch") {
+					t.Fatalf("reused impact push: exit=%d pushed=%v %s", code, pushed, out)
 				}
 
 			} else {
@@ -428,16 +433,16 @@ func TestSkillLandingAgentGateStatesAndBatchDepth(t *testing.T) {
 	}
 }
 
-func TestLandingGateNamedCommandFullReason(t *testing.T) {
+func TestLandingGateWholeCommandReason(t *testing.T) {
 	t.Parallel()
 	b := newMergeGateBed(t)
 	b.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, int, string, error) {
-		return 0, false, 169, "change selects cmd/metasystem: full", nil
+		return 0, false, 169, "change selects cmd/metasystem whole; the batch check covers it", nil
 	}
 	result := gateResult(t, b, 0)
 	status := gateStatus(t, b)
 	for _, got := range []plain.Result{result, status} {
-		if got.Result != plain.Skipped || got.Static != plain.Green || got.Reason != "change selects cmd/metasystem: full" {
+		if got.Result != plain.Skipped || got.Static != plain.Green || got.Reason != "change selects cmd/metasystem whole; the batch check covers it" {
 			t.Fatalf("command selection reason missing: %+v", got)
 		}
 	}

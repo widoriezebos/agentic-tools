@@ -28,6 +28,9 @@ type keeperClockBed struct {
 func newKeeperClockBed(t *testing.T) *keeperClockBed {
 	t.Helper()
 	b := &keeperClockBed{scopeBed: newScopeBed(t)}
+	if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.Remove(resultsPath(b.install)); err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +117,7 @@ func TestKeeperClockCandidatePushOpportunity(t *testing.T) {
 			b := newKeeperClockBed(t)
 			b.wake(t)
 			selected, err := ReadBatch(b.install)
-			if err != nil || !selected.ClockFull || b.agents != 1 || b.trunks != 0 {
+			if err != nil || b.agents != 1 || b.trunks != 0 {
 				t.Fatalf("prepare first: %+v %v agents=%d trunks=%d", selected, err, b.agents, b.trunks)
 			}
 			depth, _ := BatchProofDepth(b.install, b.checkout, Running{BatchID: selected.ID, Tree: "candidate"}, b.seams)
@@ -356,7 +359,7 @@ func TestKeeperClockRunningTrunkThenHandIn(t *testing.T) {
 	}
 	b.wake(t)
 	selected, err := ReadBatch(b.install)
-	if err != nil || selected.ClockFull || b.agents != 1 || b.selections != 2 {
+	if err != nil || b.agents != 1 || b.selections != 2 {
 		t.Fatalf("batch after trunk: %+v %v", selected, err)
 	}
 	if due, err := fullProofDue(b.install, bedNow); err != nil || due {
@@ -434,7 +437,7 @@ func TestKeeperClockAdmitsFullCandidateAndCreditsPush(t *testing.T) {
 		t.Fatalf("candidate admission: %+v %v %v", running, already, err)
 	}
 	selected, err := ReadBatch(b.install)
-	if err != nil || selected.Open || selected.SealedAt == "" || !selected.ClockFull {
+	if err != nil || selected.Open || selected.SealedAt == "" {
 		t.Fatalf("admitted batch not sealed at full depth: %+v %v", selected, err)
 	}
 	b.wake(t)
@@ -482,20 +485,6 @@ func TestKeeperClockRefusedSealedCandidateFallsBack(t *testing.T) {
 	}
 }
 
-func TestKeeperClockFullDepthMarkSurvivesLaterCredit(t *testing.T) {
-	t.Parallel()
-	b := newKeeperClockBed(t)
-	b.wake(t)
-	if err := appendLine(resultsPath(b.install), Result{Trunk: true, Result: Green, At: bedNow.Format(time.RFC3339)}, b.seams); err != nil {
-		t.Fatal(err)
-	}
-	b.seams.BatchDepth = func(string, string, Running) (string, string) { return "impact", "low-tier work" }
-	depth, _ := BatchProofDepth(b.install, b.checkout, Running{BatchID: b.batch.ID, Tree: "candidate"}, b.seams)
-	if depth != "full" {
-		t.Fatalf("batch recomputed away its recorded full depth: %s", depth)
-	}
-}
-
 func TestKeeperClockRefusalDoesNotFreezeLane(t *testing.T) {
 	t.Parallel()
 	for _, refusal := range []string{"environment", "budget", "unready fix", "target changed"} {
@@ -538,7 +527,7 @@ func TestKeeperClockRefusalDoesNotFreezeLane(t *testing.T) {
 			if err := os.Remove(batchPath(b.install)); err != nil {
 				t.Fatal(err)
 			}
-			now = bedNow.Add(4 * time.Hour)
+			now = bedNow.Add(24 * time.Hour)
 			b.wake(t)
 			if b.trunkReads <= reads {
 				t.Fatal("next cadence did not retry the fallback")

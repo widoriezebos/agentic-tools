@@ -77,9 +77,10 @@ func TestChangedMainAdmissionPinsAffectedChecks(t *testing.T) {
 			var already bool
 			var err error
 			if mode == "cadence" {
-				if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=5m\n"), 0600); err != nil {
+				if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
 					t.Fatal(err)
 				}
+				b.seams.Now = func() time.Time { return bedNow.Add(24 * time.Hour) }
 				b.base.Trunk = true
 				b.save(t, b.base)
 				_, err = KeeperClock(lane.Record{Root: b.checkout, Install: b.install, CustodyEpoch: 1}, func(lane.Record) error { return nil }, b.seams)
@@ -224,6 +225,9 @@ func TestScopedTrunkClockCreditAndOriginalDebt(t *testing.T) {
 		t.Run(kind, func(t *testing.T) {
 			t.Parallel()
 			b := newScopeBed(t)
+			if err := os.WriteFile(filepath.Join(b.install, "metasystem.conf"), []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
 			b.base.Trunk = true
 			b.save(t, b.base)
 			r := Result{Trunk: true, Commit: "main", Tree: "main-tree", Scope: "scoped", Result: Green, At: bedNow.Format(time.RFC3339), FullTree: b.base.Tree, FullAt: b.base.At}
@@ -267,7 +271,7 @@ func TestScopedTrunkClockCreditAndOriginalDebt(t *testing.T) {
 					next.At = bedNow.Add(offset).Format(time.RFC3339)
 					next.Tree = fmt.Sprint(offset)
 					b.save(t, next)
-					due, err := scopedProofDue(b.install, bedNow.Add(offset))
+					due, err := proofDebt(b.install, bedNow.Add(offset), false)
 					if err != nil || due != (offset > 50*time.Minute) {
 						t.Fatalf("original debt at %s=%v %v", offset, due, err)
 					}
@@ -277,7 +281,7 @@ func TestScopedTrunkClockCreditAndOriginalDebt(t *testing.T) {
 					nonrun.CountedFull = false
 					nonrun.Cause = &Cause{Kind: "environment"}
 					b.save(t, nonrun)
-					if after, err := scopedProofDue(b.install, bedNow.Add(offset)); err != nil || after != due {
+					if after, err := proofDebt(b.install, bedNow.Add(offset), false); err != nil || after != due {
 						t.Fatalf("non-run cleared debt: %v %v", after, err)
 					}
 				}

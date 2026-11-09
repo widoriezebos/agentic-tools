@@ -640,7 +640,8 @@ func TestLandingSelectionBarrenWithoutEligibleGoalsOffersTrunkProof(t *testing.T
 		t.Run(subject, func(t *testing.T) {
 			t.Parallel()
 			b := newSelectionBed(t)
-			b.now = b.now.Add(5 * time.Hour)
+			helmMust(t, os.WriteFile(filepath.Join(b.lane, "metasystem.conf"), []byte("landing.batch=person\nproof.trunk-every=24h\nproof.full=fixture-proof\n"), 0600))
+			b.now = b.now.Add(28 * time.Hour)
 			if subject == "all waiting lines held" {
 				b.owners.landing.plainProve.Incidents = func(string, string, string) ([]goal.TrunkRedEntry, error) {
 					return []goal.TrunkRedEntry{{Identity: "red-main"}}, nil

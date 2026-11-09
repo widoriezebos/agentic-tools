@@ -17,9 +17,9 @@ func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			install := t.TempDir()
-			interval := "4h"
+			interval := "48h"
 			if name == "custom interval" {
-				interval = "30m"
+				interval = "24h"
 			}
 			if name == "invalid interval" {
 				interval = "bad"
@@ -30,7 +30,7 @@ func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T
 			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("proof.trunk-every="+interval+"\n"), 0o644); err != nil {
 				t.Fatal(err)
 			}
-			at := bedNow.Add(-time.Hour)
+			at := bedNow.Add(-24 * time.Hour)
 			proof := Result{Tree: "tree", Commit: "main", Result: Green, Scope: "full", At: at.Format(time.RFC3339), FullTree: "tree", FullAt: at.Format(time.RFC3339)}
 			due := true
 			pushed := false
@@ -41,13 +41,13 @@ func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T
 					proof.Result, proof.CountedFull, proof.Cause = Red, true, &Cause{Kind: "main"}
 				}
 				if name == "expired trunk" {
-					proof.At = bedNow.Add(-4 * time.Hour).Format(time.RFC3339)
+					proof.At = bedNow.Add(-48 * time.Hour).Format(time.RFC3339)
 				}
 				due = name == "expired trunk" || name == "custom interval"
 			case "full push", "expired full push", "scoped push", "inherited push", "inherited full push", "expired inherited full push", "legacy push", "newer red at push", "old push newer full":
 				pushed = true
 				if name == "expired full push" {
-					proof.At = bedNow.Add(-4 * time.Hour).Format(time.RFC3339)
+					proof.At = bedNow.Add(-48 * time.Hour).Format(time.RFC3339)
 					proof.FullAt = proof.At
 				}
 				if name == "scoped push" {
@@ -69,7 +69,7 @@ func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T
 				if name == "legacy push" {
 					proof.Scope = ""
 				}
-				due = name != "full push"
+				due = name != "full push" && name != "scoped push" && name != "inherited push"
 			}
 			var records []string
 			if name != "never" {
@@ -89,14 +89,14 @@ func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T
 			if pushed {
 				at := proof.At
 				if name == "old push newer full" {
-					at = bedNow.Add(-5 * time.Hour).Format(time.RFC3339)
+					at = bedNow.Add(-49 * time.Hour).Format(time.RFC3339)
 				}
 				writePushRecords(t, install, Pushed{Tree: proof.Tree, At: at})
 			}
 			got, err := fullProofDue(install, bedNow)
 			if name == "invalid interval" || name == "zero interval" {
-				if err == nil || !strings.Contains(err.Error(), "proof.trunk-every") {
-					t.Fatalf("invalid duration: %v", err)
+				if err != nil || got {
+					t.Fatalf("disabled interval: due=%v err=%v", got, err)
 				}
 				return
 			}
