@@ -5,12 +5,10 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy/adapter"
@@ -54,59 +52,6 @@ func TestLandingPushRejectsImpactWhenBatchDecidedFull(t *testing.T) {
 		t.Fatalf("explicit impact did not record its limitation: %+v", report.Data.Executions)
 	}
 	t.Log(out)
-}
-
-func TestLandingDepthTierlessGoalRequiresFull(t *testing.T) {
-	t.Parallel()
-	b := newMergeGateBed(t)
-	b.prepareBatch(t)
-	depthGoals(t, b, 3, 2)
-	path := filepath.Join(b.install, "plans", "goals", "a.md")
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	file, problems := goal.ParseFile(data)
-	if len(problems) > 0 {
-		t.Fatal(problems)
-	}
-	file.Tier = 0
-	data = goal.RenderFile(file)
-	if strings.Contains(string(data), "- Tier:") {
-		t.Fatalf("fixture still has Tier: %s", data)
-	}
-	if err := os.WriteFile(path, data, 0600); err != nil {
-		t.Fatal(err)
-	}
-	// Give the lower-tier path a cheap plan, so a zero-tier regression selects impact.
-	fixture := impactAdapterBed(t)
-	contract, err := os.ReadFile(filepath.Join(fixture, "testing.json"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	git := b.owners.landing.plainProve.Git
-	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
-		value, err := git(dir, args...)
-		if len(args) > 1 && args[0] == "worktree" && args[1] == "add" {
-			install := filepath.Join(args[3], "metasystem")
-			if err := os.WriteFile(filepath.Join(install, "metasystem.conf"), []byte("testing.contract=testing.json\n"), 0600); err != nil {
-				t.Fatal(err)
-			}
-			if err := os.WriteFile(filepath.Join(install, "testing.json"), contract, 0600); err != nil {
-				t.Fatal(err)
-			}
-		}
-		return value, err
-	}
-	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
-		writeImpactPlanResult(t, cmd, "plan: base main\nselection: internal/a=TestA\n")
-		return nil
-	}
-	impact, reason := batchDepth(b.install, b.root, b.head, b.owners.landing.plainProve)
-	if impact || reason != "tier 3 (unset): full" {
-		t.Fatalf("tierless depth: impact=%v reason=%q", impact, reason)
-	}
-	t.Log(reason)
 }
 
 func TestLandingProveBackgroundHonoursScopedAdmissionWithoutDepthDecision(t *testing.T) {

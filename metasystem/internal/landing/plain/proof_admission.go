@@ -98,8 +98,10 @@ func proofScope(install, checkout string, running Running, seams ProveSeams) sco
 	return decideScope(install, checkout, running, seams)
 }
 
-// BatchProofDepth chooses cadence and affected checks before the batch policy.
-// An empty scope leaves the existing scoped-proof selector in charge.
+// BatchProofDepth decides a batch proof's depth: full while main's check is overdue
+// and the batch has run no full check since it fell due, full while a full check is
+// pending, and full for every batch whose change is not records only. An empty
+// scope leaves a records-only batch to the scoped selector.
 func BatchProofDepth(install, checkout string, running Running, seams ProveSeams) (string, string) {
 	previous, found, _ := resultFor(seams.resultsPath(install), running.Tree)
 	if reason, since := overdueBatch(install, running.BatchID, seams); reason != "" && !batchFullSince(install, running.BatchID, since) {

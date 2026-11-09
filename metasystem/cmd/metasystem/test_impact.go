@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/atomicfile"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"go/ast"
 	"go/build"
 	"go/parser"
@@ -19,7 +18,6 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
-	"github.com/widoriezebos/agentic-tools/metasystem/internal/diskstore"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/batch/goadapter"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/pathpattern"
@@ -416,103 +414,6 @@ func impactCost(install, module, plan string, contract testpolicy.Contract) (int
 		reason = "change selects cmd/metasystem whole; the batch check covers it"
 	}
 	return share, cheap, full, reason, err
-}
-
-func batchDepthSeams(seams plain.ProveSeams) plain.ProveSeams {
-	if seams.BatchDepth == nil {
-		seams.BatchDepth = func(install, checkout string, running plain.Running) (string, string) {
-			impact, reason := batchDepth(install, checkout, running.Commit, seams)
-			if reason == "" {
-				return "", ""
-			}
-			if impact {
-				return "impact", reason
-			}
-			return "full", reason
-		}
-	}
-	return seams
-}
-
-func batchDepth(install, checkout, commit string, seams plain.ProveSeams) (bool, string) {
-	batch, err := plain.ReadBatch(install)
-	if err != nil || batch == nil || batch.State == plain.BatchClosed {
-		return false, ""
-	}
-	fallback := func(err error) (bool, string) {
-		if os.IsNotExist(err) {
-			return false, ""
-		}
-		return false, "depth cannot be selected: " + err.Error() + "; full"
-	}
-	threshold, err := depthSetting(install, "landing.full-from-tier")
-	if err != nil {
-		return fallback(err)
-	}
-	tiers := []string{}
-	highest := 0
-	unset := false
-	for _, member := range batch.Members {
-		data, err := os.ReadFile(filepath.Join(install, "plans", "goals", member.Goal+".md"))
-		if err != nil {
-			return fallback(err)
-		}
-		file, problems := goal.ParseFile(data)
-		if len(problems) > 0 {
-			return fallback(fmt.Errorf("goal %s is invalid: %v", member.Goal, problems))
-		}
-		tier := int(goal.GateTier(file))
-		tiers = append(tiers, strconv.Itoa(tier))
-		highest = max(highest, tier)
-		unset = unset || file.Tier == 0
-	}
-	if highest >= threshold {
-		if unset && highest == 3 {
-			return false, "tier 3 (unset): full"
-		}
-		return false, fmt.Sprintf("tier %d: full", highest)
-	}
-	git := seams.Git
-	if git == nil {
-		git = plain.Git
-	}
-	scratch, err := diskstore.ProcessScratch()
-	if err != nil {
-		return fallback(err)
-	}
-	tree, err := os.MkdirTemp(scratch, "metasystem-depth-")
-	if err != nil {
-		return fallback(err)
-	}
-	defer os.RemoveAll(tree)
-	if _, err = git(checkout, "worktree", "add", "--detach", tree, commit); err != nil {
-		return fallback(err)
-	}
-	defer git(checkout, "worktree", "remove", "--force", tree)
-	relative, err := filepath.Rel(checkout, install)
-	if err != nil {
-		return fallback(err)
-	}
-	dir := filepath.Join(tree, relative)
-	_, contract, _, err := testrun.LoadContract(dir)
-	if err != nil {
-		return fallback(err)
-	}
-	plan, err := plain.ReadImpactPlan(seams, dir, batch.Base, "impact")
-	if err != nil {
-		return fallback(err)
-	}
-	share, cheap, full, reason, err := impactCost(install, dir, plan, contract)
-	if err != nil {
-		return fallback(err)
-	}
-	if !cheap {
-		if reason != "" {
-			return false, reason
-		}
-		return false, fmt.Sprintf("impact would cover %d%% of %d packages: full", share, full)
-	}
-	return true, fmt.Sprintf("tiers %s; %d%% of %d packages", strings.Join(tiers, ","), share, full)
 }
 
 type repairCheck struct {

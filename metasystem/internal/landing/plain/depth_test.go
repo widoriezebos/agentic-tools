@@ -117,16 +117,14 @@ func TestFullDueBatchDepthAndClock(t *testing.T) {
 		t.Fatal(err)
 	}
 	running := Running{BatchID: batch.ID, Commit: b.git.commit, Tree: b.git.tree}
-	depthCalls := 0
-	b.seams.BatchDepth = func(string, string, Running) (string, string) { depthCalls++; return "impact", "low tier" }
 	reasons, err := wakeReasons(b.install, true, time.Time{}, bedNow)
 	if err != nil || !slices.Contains(reasons, WakeFullDue) {
 		t.Fatalf("wake: %v %v", reasons, err)
 	}
 	want := "full proof overdue since " + bedNow.Add(-time.Hour).Local().Format("15:04")
 	d := proofScope(b.install, b.checkout, running, b.seams)
-	if d.Scope != "full" || d.ScopeReason != want || depthCalls != 0 {
-		t.Fatalf("overdue decision: %+v calls=%d", d, depthCalls)
+	if d.Scope != "full" || d.ScopeReason != want {
+		t.Fatalf("overdue decision: %+v", d)
 	}
 	if _, _, err := HandIn(b.install, Line{Goal: "g", SHA: "sha"}); err != nil {
 		t.Fatal(err)
@@ -177,8 +175,63 @@ func TestFullDueBatchDepthAndClock(t *testing.T) {
 		t.Fatalf("pushed full did not pay clock: %v %v", due, err)
 	}
 	d = proofScope(b.install, b.checkout, running, b.seams)
-	if d.Scope != "full" || depthCalls != 0 {
-		t.Fatalf("paid clock did not release ordinary depth: %+v calls=%d", d, depthCalls)
+	if d.Scope != "full" || d.ScopeReason != "the tree comparison names no changed paths" {
+		t.Fatalf("paid clock: %+v", d)
+	}
+}
+
+func TestBatchProofDepthForcesFullWhenTheBatchsFullPredatesTheDueTime(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name, batchID string
+		fullAt        time.Time
+		force         bool
+	}{
+		{"the batch's full before the due time", "batch", bedNow.Add(-24 * time.Hour), true},
+		{"the batch's full after the due time", "batch", bedNow.Add(-time.Hour), false},
+		{"another batch's full after the due time", "another-batch", bedNow.Add(-time.Hour), true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			b := newScopeBed(t)
+			conf := filepath.Join(b.install, "metasystem.conf")
+			if err := os.WriteFile(conf, []byte("testing.contract=testing.json\nproof.trunk-every=24h\n"), 0600); err != nil {
+				t.Fatal(err)
+			}
+			fullAt := bedNow.Add(-26 * time.Hour)
+			if err := os.WriteFile(resultsPath(b.install), nil, 0600); err != nil {
+				t.Fatal(err)
+			}
+			b.base.At, b.base.FullAt = fullAt.Format(time.RFC3339), fullAt.Format(time.RFC3339)
+			b.save(t, b.base)
+			scoped := Result{Tree: "pushed-tree", Commit: "pushed-commit", Scope: "scoped", Result: Green,
+				FullTree: b.base.FullTree, FullAt: fullAt.Format(time.RFC3339), At: bedNow.Add(-3 * time.Hour).Format(time.RFC3339)}
+			b.save(t, scoped)
+			writePushRecords(t, b.install, Pushed{Tree: scoped.Tree, At: scoped.At})
+			batch := &Batch{ID: "batch", Base: "main", State: BatchRunning, CreatedAt: bedNow.Format(time.RFC3339),
+				Lane: lane.Record{Root: b.checkout, Install: b.install, CustodyEpoch: 1}}
+			if err := writeBatch(b.install, batch); err != nil {
+				t.Fatal(err)
+			}
+			b.save(t, Result{BatchID: tc.batchID, Tree: "batch-full-tree", Commit: "batch-full-commit", Scope: "full", Result: Green,
+				FullTree: "batch-full-tree", FullAt: tc.fullAt.Format(time.RFC3339), At: tc.fullAt.Format(time.RFC3339)})
+			running := Running{BatchID: batch.ID, Commit: b.git.commit, Tree: b.git.tree}
+			depth, reason := BatchProofDepth(b.install, b.checkout, running, b.seams)
+			if tc.force {
+				want := "full proof overdue since " + fullAt.Add(24*time.Hour).Local().Format("15:04")
+				if depth != "full" || reason != want {
+					t.Fatalf("overdue depth: %q %q, want full %q", depth, reason, want)
+				}
+			} else {
+				if err := os.WriteFile(conf, []byte("testing.contract=testing.json\n"), 0600); err != nil {
+					t.Fatal(err)
+				}
+				ordinaryDepth, ordinaryReason := BatchProofDepth(b.install, b.checkout, running, b.seams)
+				if ordinaryDepth != "" || ordinaryReason != "" || depth != ordinaryDepth || reason != ordinaryReason {
+					t.Fatalf("paid batch clock: %q %q, without clock %q %q", depth, reason, ordinaryDepth, ordinaryReason)
+				}
+			}
+		})
 	}
 }
 
@@ -195,24 +248,19 @@ func TestBatchProofDepthIsFullForEveryExecutableBatch(t *testing.T) {
 	}
 	b.git.changed[[2]string{b.base.Tree, b.git.tree}] = "scripts/check.sh"
 	running := Running{BatchID: batch.ID, Commit: b.git.commit, Tree: b.git.tree}
-	depthCalls := 0
-	b.seams.BatchDepth = func(string, string, Running) (string, string) {
-		depthCalls++
-		return "impact", "low tier"
-	}
 	want := "an executable input changed: scripts/check.sh"
 	depth, reason := BatchProofDepth(b.install, b.checkout, running, b.seams)
-	if depth != "full" || reason != want || depthCalls != 0 {
-		t.Fatalf("batch depth: %q %q calls=%d", depth, reason, depthCalls)
+	if depth != "full" || reason != want {
+		t.Fatalf("batch depth: %q %q", depth, reason)
 	}
 	decision := proofScope(b.install, b.checkout, running, b.seams)
-	if decision.Scope != "full" || decision.ScopeReason != want || depthCalls != 0 {
-		t.Fatalf("executable batch: %+v calls=%d", decision, depthCalls)
+	if decision.Scope != "full" || decision.ScopeReason != want {
+		t.Fatalf("executable batch: %+v", decision)
 	}
 	b.seams.Impact = true
 	depth, reason = BatchProofDepth(b.install, b.checkout, running, b.seams)
-	if depth != "full" || reason != "the batch proves full before its push" || depthCalls != 0 {
-		t.Fatalf("explicit impact depth: %q %q calls=%d", depth, reason, depthCalls)
+	if depth != "full" || reason != "the batch proves full before its push" {
+		t.Fatalf("explicit impact depth: %q %q", depth, reason)
 	}
 }
 

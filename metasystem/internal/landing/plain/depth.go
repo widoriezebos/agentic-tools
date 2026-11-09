@@ -65,13 +65,6 @@ func overdueBatch(install, batchID string, seams ProveSeams) (string, time.Time)
 			}
 		}
 	}
-	if push, ok, _ := LastPush(install); ok {
-		if proof, ok, _ := ResultFor(install, push.Tree); ok && proof.Scope == "scoped" {
-			if at, err := time.Parse(time.RFC3339, proof.FullAt); err == nil && at.Add(time.Hour).Before(since) {
-				since = at.Add(time.Hour)
-			}
-		}
-	}
 	return "full proof overdue since " + since.Local().Format("15:04"), since
 }
 

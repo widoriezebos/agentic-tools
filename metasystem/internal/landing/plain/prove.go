@@ -203,8 +203,6 @@ type ProveSeams struct {
 	BudgetHome string
 	// GoalTier reads a waiting member's tier; nil reads its goal file.
 	GoalTier func(install, goal string) (uint8, error)
-	// BatchDepth chooses the ordinary batch scope and reason before cadence applies.
-	BatchDepth func(install, checkout string, running Running) (scope, reason string)
 	// Machine reads the lane computer's existing nickname.
 	Machine          func(string) (string, error)
 	ClassificationOf string
@@ -1234,11 +1232,15 @@ func runCheck(seams ProveSeams, install, dir, command string, running Running, o
 	if base == "" {
 		base = decision.Base
 	}
+	scope := decision.Scope
+	if scope == "gate" {
+		scope = "impact"
+	}
 	shell := exec.Command("/bin/sh", "-c", command)
 	shell.Dir = dir
 	env := []string{"LANDING_TREE=" + running.Tree, "LANDING_COMMIT=" + running.Commit, "LANDING_ONLY=" + only,
 		"LANDING_ONLY_TESTS=" + strings.Join(tests, " "),
-		"LANDING_PROOF_SCOPE=" + decision.Scope, "LANDING_PROOF_BASE=" + base, "LANDING_PROOF_GROUPS=" + strings.Join(decision.groupIDs(), " ")}
+		"LANDING_PROOF_SCOPE=" + scope, "LANDING_PROOF_BASE=" + base, "LANDING_PROOF_GROUPS=" + strings.Join(decision.groupIDs(), " ")}
 	environment, environmentErr := commandenv.InstallationEnvironment(append(os.Environ(), env...), install)
 	if environmentErr != nil {
 		return checkReport{kind: "not-run"}, environmentErr

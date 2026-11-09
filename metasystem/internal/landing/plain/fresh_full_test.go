@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestTrunkClockCountsOnlyCompletedTrunkChecksAndFreshFullPushes(t *testing.T) {
+func TestTrunkClockCountsCompletedTrunkChecksAndPushedFullCoverage(t *testing.T) {
 	t.Parallel()
 	for _, name := range []string{"never", "green trunk", "red trunk", "expired trunk", "full push", "expired full push", "unpublished full", "scoped push", "inherited push", "inherited full push", "expired inherited full push", "legacy push", "newer red at push", "old push newer full", "custom interval", "invalid interval", "zero interval"} {
 		t.Run(name, func(t *testing.T) {

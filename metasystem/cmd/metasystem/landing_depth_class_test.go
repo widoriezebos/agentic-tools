@@ -146,7 +146,6 @@ func TestLandingFullDueBatchAdapterProofPushClock(t *testing.T) {
 	b.policy(t, "auto")
 	sha := b.seat(t, "low")
 	b.owners.landing.plainProve.GoalTier = func(string, string) (uint8, error) { return 1, nil }
-	b.owners.landing.plainProve.BatchDepth = func(string, string, plain.Running) (string, string) { return "impact", "low tier" }
 	b.success(t, "landing", "run")
 	batch := b.batch(t)
 	if batch.DepthClass != "cheap" {
@@ -266,9 +265,6 @@ func TestLandingFullDueLedgerRefreshKeepsFullCoverageAndPaysClock(t *testing.T) 
 			b.owners.landing.plainProve.Alive = func(r plain.Running) bool { return r.Pid == int64(os.Getpid()) || r.Pid == int64(os.Getppid()) }
 			sha := b.seat(t, "low")
 			b.owners.landing.plainProve.GoalTier = func(string, string) (uint8, error) { return 1, nil }
-			if b.owners.landing.proveSeams(b.installation).BatchDepth == nil {
-				t.Fatal("production proof has no batch depth policy")
-			}
 			b.success(t, "landing", "run")
 			b.assemble(t, sha)
 			b.success(t, "landing", "prove", "--wait")
@@ -418,11 +414,12 @@ func TestLandingScopedLedgerRefreshAdapterRunsAffectedChecksAndKeepsClock(t *tes
 				t.Helper()
 				reasons, err := plain.WakeReasons(b.installation, b.checkout, time.Time{}, at, b.owners.landing.plainProve)
 				if err != nil || slices.Contains(reasons, plain.WakeFullDue) != want {
-					t.Fatalf("full due at %s: %v %v, want %v", at, reasons, err, want)
+					t.Errorf("full due at %s: %v %v, want %v", at, reasons, err, want)
 				}
 			}
 			// The daily interval retains the original full credit across a scoped publication.
-			helmMust(t, os.WriteFile(filepath.Join(b.installation, "metasystem.conf"), []byte(strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=24h")), 0600))
+			b.configuration = strings.ReplaceAll(b.configuration, "proof.trunk-every=10h", "proof.trunk-every=24h")
+			helmMust(t, os.WriteFile(filepath.Join(b.installation, "metasystem.conf"), []byte(b.configuration), 0600))
 			assertDue(originAt.Add(24*time.Hour-time.Second), false)
 			assertDue(originAt.Add(24*time.Hour), true)
 			b.policy(t, "auto")

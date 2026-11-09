@@ -110,7 +110,7 @@ func TestRestartSelectionAndWaitReasons(t *testing.T) {
 		{name: "late", minutes: 31, wait: "the batch's full check has started; it joins the next batch"},
 		{name: "halfway", minutes: 22, wait: "the batch's full check has started; it joins the next batch"},
 		{name: "already restarted", minutes: 12, prior: true, wait: "the batch's full check has started; it joins the next batch"},
-		{name: "person-owned", minutes: 12, person: true},
+		{name: "person-owned", minutes: 12, person: true, red: true},
 		{name: "main red", minutes: 40, red: true},
 		{name: "main red after restart", minutes: 40, red: true, prior: true},
 	} {

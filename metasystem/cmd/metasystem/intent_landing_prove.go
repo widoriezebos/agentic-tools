@@ -121,7 +121,7 @@ func (inv *intentInvocation) lanePaused(admitted laneAdmitted, what string) *int
 // proveSeams are landing prove's effects: the test's, else this engine
 // started detached.
 func (owners laneVerbOwners) proveSeams(installation string) plain.ProveSeams {
-	seams := landingExecutionSeams(batchDepthSeams(owners.plainProve))
+	seams := landingExecutionSeams(owners.plainProve)
 	if seams.Room == nil {
 		seams.Room = func(install string, person bool, log io.Writer) (func(*exec.Cmd), func()) {
 			return proofrun.LaneCheckRoom(install, person, log)
@@ -159,7 +159,7 @@ func landingProveCommand() intentCommand {
 			"A current green is reported at once so landing push can follow in the same turn. Changed record inputs run their affected checks; main and a batch keep their last full check while only records change. After record or ledger changes under a proven batch, the check runs only the groups whose declared inputs cover what main gained.",
 			"Asked again while that tree is being proven, it starts nothing; while another tree is, it is refused. The result is kept for that exact tree in results.jsonl, which landing push reads.",
 			"--gate runs committed proof.cheap after a merge, first recording a green baseline of its first parent, with that tree as LANDING_PROOF_BASE. Its result and one repeat per tree are kept in gates.jsonl; a green gate never authorizes landing push. --wait starts the same background check and waits for its saved result. A recorded selection may continue through its standing pause; a direct person may request one check while it stays stopped.",
-			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full check. When the batch decided full depth, an explicit impact green does not satisfy landing push.",
+			"--impact runs proof.cheap against the recorded batch base with fast-static-build first, and records its plan hash and environment without inheriting a full check. An impact green never satisfies landing push; the batch needs a full check.",
 			"--fresh bypasses saved and inherited green proofs and runs the requested check again, including the baseline for --gate. A full proof runs in full, and the result records fresh.",
 			"--trunk checks main when it lacks applicable proof; with --fresh, a new full check. --gate and --trunk cannot be used together."},
 		flags: []intentFlag{{name: "fresh", usage: "run the requested check again without reusing a saved proof"}, {name: "impact", usage: "prove the batch with static checks and impact tests"}, {name: "trunk", usage: "checks main when it lacks applicable proof; with --fresh, a new full check"}, {name: "gate", usage: "check the last merge with proof.cheap"}, {name: "wait", usage: "wait for the detached check's result"},

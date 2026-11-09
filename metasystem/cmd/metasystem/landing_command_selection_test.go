@@ -131,7 +131,7 @@ func commandSelectionGate(t *testing.T, selection string, whole bool) {
 		return out, err
 	}
 	command := b.owners.landing.plainProve.Command
-	var static []string
+	var static, scopes, bases []string
 	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
 		if len(cmd.Args) > 1 && cmd.Args[1] == "test" {
 			writeImpactPlanResult(t, cmd, "plan: base fixture\nselection: "+selection+"\n")
@@ -146,6 +146,8 @@ func commandSelectionGate(t *testing.T, selection string, whole bool) {
 		if only != "" {
 			t.Fatalf("unexpected replay: %q", only)
 		}
+		scopes = append(scopes, commandEnv(cmd, "LANDING_PROOF_SCOPE"))
+		bases = append(bases, commandEnv(cmd, "LANDING_PROOF_BASE"))
 		// The command seam runs only the fixture tests named by its plan.
 		pkg, names, named := strings.Cut(selection, "=")
 		check := testenv.Go("test", "./"+pkg, "-count=1")
@@ -164,10 +166,10 @@ func commandSelectionGate(t *testing.T, selection string, whole bool) {
 	}
 	result := gateResult(t, b, 0)
 	if whole {
-		if result.Result != plain.Skipped || result.Static != plain.Green || result.Reason != "change selects cmd/metasystem whole; the batch check covers it" || len(b.runs) != 0 || !slices.Equal(static, []string{"merge-b"}) {
-			t.Fatalf("whole gate: %+v static=%v runs=%v", result, static, b.runs)
+		if result.Result != plain.Skipped || result.Static != plain.Green || result.Reason != "change selects cmd/metasystem whole; the batch check covers it" || len(b.runs) != 0 || len(scopes) != 0 || len(bases) != 0 || !slices.Equal(static, []string{"merge-b"}) {
+			t.Fatalf("whole gate: %+v static=%v runs=%v scopes=%v bases=%v", result, static, b.runs, scopes, bases)
 		}
-	} else if result.Result != plain.Green || result.Depth != "impact" || result.Static != plain.Green || !slices.Equal(b.runs, []string{"merge-a:" + selection, "merge-b:" + selection}) || !slices.Equal(static, []string{"merge-b", "merge-a"}) {
-		t.Fatalf("named gate: %+v static=%v runs=%v", result, static, b.runs)
+	} else if result.Result != plain.Green || result.Depth != "impact" || result.Static != plain.Green || !slices.Equal(b.runs, []string{"merge-a:" + selection, "merge-b:" + selection}) || !slices.Equal(static, []string{"merge-b", "merge-a"}) || !slices.Equal(scopes, []string{"impact", "impact"}) || !slices.Equal(bases, []string{"merge-a", "merge-a"}) {
+		t.Fatalf("named gate: %+v static=%v runs=%v scopes=%v bases=%v", result, static, b.runs, scopes, bases)
 	}
 }
