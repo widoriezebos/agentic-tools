@@ -11273,6 +11273,7 @@
       "class": "flake"
     },
     {
+      "fixOpenedAt": "2026-11-09T09:16:55Z",
       "testUnit": "metasystem/internal/launch",
       "testName": "TestLaneFixLaunchDeadlineRealProcess",
       "id": "flake:5d7b765e12ac63e8919e3821f0138a5378e7b8a996c63417286f715c2566d488",
@@ -11355,7 +11356,7 @@
         "how": "",
         "by": ""
       },
-      "fixGoal": "",
+      "fixGoal": "flake-fix-metasystem-internal-launch-testlanefixlaunchdeadlinerealprocess",
       "fixBranch": {
         "name": "",
         "commit": "",
