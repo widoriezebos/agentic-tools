@@ -145,31 +145,32 @@ func KeeperClock(record lane.Record, prepare func(lane.Record) error, seams Prov
 		}
 	}
 	if state.Batch != "" {
-		results, err := Results(install)
+		batch, err := ReadBatch(install)
 		if err != nil {
 			return "", err
 		}
-		var candidate Result
-		for _, result := range results {
-			if !result.Trunk && result.BatchID == state.Batch {
-				candidate = result
-			}
+		if batch == nil || batch.ID != state.Batch || batch.State == BatchClosed {
+			batch = nil
+		}
+		commit, tree, err := head(seams.git, checkout)
+		if err != nil {
+			return "", err
+		}
+		gate, candidate, err := batchProofProgress(install, batch, commit, tree)
+		if err != nil {
+			return "", err
 		}
 		if candidate.Result == Green && state.Push != candidate.Attempt+candidate.At {
 			state.Push = candidate.Attempt + candidate.At
 			state.Reason = "clock due; batch " + state.Batch + " gets one wake to push its green full check"
 			return "", nil
 		}
-		gate, ok, err := LastGate(install)
-		if err != nil {
-			return "", err
-		}
-		if candidate.Result == "" && ok && gate.BatchID == state.Batch && gate.Result == Green && state.Gate != gate.Attempt+gate.At {
+		if candidate.Result == "" && acceptableGate(gate) && state.Gate != gate.Attempt+gate.At {
 			state.Gate = gate.Attempt + gate.At
 			state.Reason = "clock due; the batch's gate passed, its full check goes next"
 			return "", nil
 		}
-		if prepared && candidate.Result == "" && (!ok || gate.BatchID != state.Batch) {
+		if prepared && candidate.Result == "" && gate.Result == "" {
 			return "", nil
 		}
 	}

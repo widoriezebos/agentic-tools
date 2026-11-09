@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -442,5 +443,37 @@ func TestLandingGateNamedCommandFullReason(t *testing.T) {
 	}
 	if len(b.runs) != 0 {
 		t.Fatalf("not-cheap gate ran tests: %v", b.runs)
+	}
+}
+
+func TestASkippedGateNamesTheBatchProveNext(t *testing.T) {
+	t.Parallel()
+	for _, verdict := range []string{plain.Skipped, plain.Green} {
+		t.Run(verdict, func(t *testing.T) {
+			t.Parallel()
+			b := newMergeGateBed(t)
+			b.fail = func(*exec.Cmd, string) (string, error) { return "LANDING-CHECKED\t0\n", nil }
+			if verdict == plain.Skipped {
+				b.owners.landing.plainProve.ImpactCost = func(string, string) (int, bool, int, string, error) {
+					return 0, false, 169, "change selects cmd/metasystem: full", nil
+				}
+			}
+			b.prepareBatch(t)
+			code, out := b.run(t, b.root, "prove", "--gate", "--wait", "--json")
+			var result intentResult
+			if err := json.Unmarshal([]byte(out), &result); err != nil || code != 0 {
+				t.Fatalf("gate: %d %s (%v)", code, out, err)
+			}
+			if result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "landing", "prove"}) || result.Next.Reason != "after the last recorded member is merged" {
+				t.Fatalf("gate's next step: %+v", result.Next)
+			}
+			words := "passed the cheap gate"
+			if verdict == plain.Skipped {
+				words = "skipped the cheap gate (change selects cmd/metasystem: full)"
+			}
+			if !strings.Contains(result.Summary, words) || !strings.Contains(result.Summary, "the batch still needs landing prove before landing push") {
+				t.Fatalf("gate summary: %s", result.Summary)
+			}
+		})
 	}
 }

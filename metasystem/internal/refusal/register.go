@@ -149,6 +149,7 @@ var Rows = []Row{
 	{Code: "TRUNK_RED_UNKNOWN", Owner: "internal/goal", Site: "trunkred.go#applyTrunkRedClear", Shape: Question, H1: StandingInput},
 	{Code: "TRUNK_RED_CLOSED", Owner: "internal/goal", Site: "trunkred.go#applyTrunkRedClear", Shape: Question, H1: StandingInput},
 	{Code: "TRUNK_RED_CHANGED", Owner: "internal/goal", Site: "trunkred.go#applyTrunkRedClear", Shape: Question, H1: StandingInput},
+	{Code: "TRUNK_RED_PROOF_STALE", Owner: "cmd/metasystem", Site: "intent_landing_incident.go#laneVerbOwners.clearLandingIncidents", Shape: Question, H1: StandingGuide, Forward: "landing prove"},
 	{Code: "TRUNK_RED_FIX_GOAL_UNKNOWN", Owner: "internal/goal", Site: "trunkred.go#trunkRedOwnRequest", Shape: Question, H1: StandingInput},
 	{Code: "TRUNK_RED_OWNED_ELSEWHERE", Owner: "internal/goal", Site: "trunkred.go#trunkRedOwnRequest", Shape: Agent, Override: "incident claim --by", Commands: 1},
 	{Code: "TRUNK_RED_FLAKE_NEEDS_MAIN", Owner: "internal/goal", Site: "trunkred.go#validateTrunkRedRecordClass", Shape: Question, H1: StandingInput},

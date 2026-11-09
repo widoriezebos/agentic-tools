@@ -50,6 +50,8 @@ func incidentProveFixture(t *testing.T, unchanged bool) (*replayVerbBed, *intent
 	lane.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
 		joined := strings.Join(args, " ")
 		switch {
+		case joined == "rev-parse --verify --quiet "+goal.LocalLedgerBranch+"^{commit}":
+			return register.repo.canonical, nil
 		case joined == "rev-parse --verify --quiet refs/remotes/origin/main^{commit}" || joined == "rev-parse --verify origin/main^{commit}":
 			return mainCommit, nil
 		case joined == "rev-parse --verify "+mainCommit+"^{tree}":
@@ -518,7 +520,15 @@ func TestIncidentLandingPushClearsOnlyNewestFreshFullGreen(t *testing.T) {
 			if name == "bad register" {
 				pushed.files["plans/goals/trunk-red.json"] = []byte("not JSON")
 			}
+			// The push made "head" main: the incident clear's captured ledger
+			// tip is the proved commit itself (D5 c binds every clear to it).
+			// A missing or unreadable register stops before any clear, and the
+			// old tip keeps the list readable for the assertion below.
+			pushed.parent = b.repo.canonical
 			b.repo.commits["head"] = pushed
+			if name != "without register" && name != "bad register" {
+				b.repo.canonical = "head"
+			}
 			if name == "old accepted" {
 				b.repo.accepted = oldAccepted
 			}

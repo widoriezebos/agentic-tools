@@ -229,7 +229,7 @@ func (runner *UnitRunner) treeQuiescent(owner treeReservation) (released, ended 
 	if record.Mutation != nil {
 		ended = identity.LiveRef(runner.Manager.Prober, *record.Mutation) == identity.Dead
 		childrenEnded := runner.treeChildrenEnded(owner.Children)
-		return (record.State != "running" || ended) && childrenEnded, ended && childrenEnded
+		return ended && childrenEnded, ended && childrenEnded
 	}
 	closed := record.State == "cancelled"
 	if len(record.Rounds) > 0 {
@@ -265,7 +265,7 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 		return record, &TreeWaitingError{Run: id, Mutation: record.Mutation}
 	}
 	var children []string
-	err = runner.treeLocked(record.Worktree, func(_ string, owner *treeReservation) error {
+	err = runner.treeLocked(record.Worktree, func(path string, owner *treeReservation) error {
 		held, err := runner.lock(id)
 		if err != nil {
 			return err
@@ -276,7 +276,17 @@ func (runner *UnitRunner) CancelRun(id string) (UnitRunRecord, error) {
 			return err
 		}
 		if owner.Run != "" && owner.Run != id && record.State != "cancelled" {
-			return errors.New("another run owns the worktree; this run cannot release it")
+			if released, ended := runner.treeQuiescent(*owner); !released {
+				children := owner.Children
+				if other, err := runner.read(owner.Run); err == nil {
+					children = unitChildren(other, children)
+				}
+				return runner.childCustodyError(children, &TreeWaitingError{Run: owner.Run, CanCancel: ended})
+			}
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+			*owner = treeReservation{Worktree: owner.Worktree}
 		}
 		if owner.Run == id {
 			children = append([]string(nil), owner.Children...)
@@ -516,12 +526,21 @@ func (runner *UnitRunner) ReserveMutation(worktree, goal, operation string) (fun
 	}
 	runner.mutation = id
 	return func() error {
-		err := runner.treeLocked(worktree, func(_ string, owner *treeReservation) error {
+		err := runner.treeLocked(worktree, func(path string, owner *treeReservation) error {
 			if owner.Run != id {
 				return errors.New("the branch operation no longer owns the worktree")
 			}
 			record.State = "completed"
-			return writeUnitJSON(filepath.Join(runner.runDir(id), "run.json"), record, runner.root())
+			if err := writeUnitJSON(filepath.Join(runner.runDir(id), "run.json"), record, runner.root()); err != nil {
+				return err
+			}
+			if len(owner.Children) == 0 {
+				if err := os.Remove(path); err != nil {
+					return err
+				}
+				*owner = treeReservation{Worktree: owner.Worktree}
+			}
+			return nil
 		})
 		return err
 	}, nil
@@ -532,7 +551,8 @@ func (runner *UnitRunner) MutationFinished(record UnitRunRecord) (bool, error) {
 	finished := false
 	err := runner.treeLocked(record.Worktree, func(_ string, owner *treeReservation) error {
 		if owner.Run == record.ID {
-			finished, _ = runner.treeQuiescent(*owner)
+			ended := record.State != "running" || identity.LiveRef(runner.Manager.Prober, *record.Mutation) == identity.Dead
+			finished = ended && runner.treeChildrenEnded(unitChildren(record, owner.Children))
 		} else {
 			finished = record.State != "running" || identity.LiveRef(runner.Manager.Prober, *record.Mutation) == identity.Dead
 		}

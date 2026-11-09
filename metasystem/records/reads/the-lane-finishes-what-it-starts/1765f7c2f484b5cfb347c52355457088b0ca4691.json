@@ -1,0 +1,78 @@
+{
+  "canonicalRead": {
+    "engine": "8af5f3ea56d5a6229d837c8d870a9527a8780481",
+    "findings": [
+      {
+        "change": "None required. If it ever shows up, read the closed state from the publication's captured tip instead of the tracking ref.",
+        "claim": "The new check reads 'is this incident already closed' from the installation root's copy of origin/main. If a different clone closed the incident and this root has not fetched since, that copy is stale. The lane would then start one more ledger transaction that changes nothing, and would keep doing so until a fetch or push refreshes the ref.",
+        "class": "other",
+        "evidence": "intent_landing_incident.go reads refs/remotes/origin/main in r.Endpoint.Root. Incident clears from the lane and from person-run proves both publish through this same endpoint, and their push refreshes that ref. No path was traced in which another root closes this register's incidents while this root never fetches. Noted: no reproduction or traced path.",
+        "id": "code-critic-3d237972dca4c6fe5ffb71a4:1",
+        "material": false,
+        "relation": "code-critique Layer 2 admission rule (no reproduction or traced path)",
+        "severity": "low",
+        "where": "metasystem/cmd/metasystem/intent_landing_incident.go"
+      }
+    ],
+    "id": "code-critic-3d237972dca4c6fe5ffb71a4",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-lane-finishes-what-it-starts/metasystem/artifacts/agents/code-critic-3d237972dca4c6fe5ffb71a4/rounds/1/return.md",
+    "subject": {
+      "commit": "1765f7c2f484b5cfb347c52355457088b0ca4691",
+      "diffDigest": "2c65115ee4817e41acc025cc4505cce197336c846c6d42f0898acd241a57d652",
+      "kind": "commit",
+      "parent": "1884aca80be27e54428459215ed9f158dbb2f7bd",
+      "tree": "3d84eb0f5a41adef33f8d5ccc076afda034d1164"
+    }
+  },
+  "readDigest": "97893db41b82df51bc32223d7e1adf261b5cd72b070caf378d9ea2fa456d497a",
+  "schemaVersion": 1,
+  "goal": "the-lane-finishes-what-it-starts",
+  "unit": "U1b",
+  "subject": {
+    "commit": "1765f7c2f484b5cfb347c52355457088b0ca4691",
+    "parent": "1884aca80be27e54428459215ed9f158dbb2f7bd",
+    "tree": "3d84eb0f5a41adef33f8d5ccc076afda034d1164",
+    "patchDigest": "2c65115ee4817e41acc025cc4505cce197336c846c6d42f0898acd241a57d652",
+    "unitDigest": "c48bc234d3bfc3950b87bde050818e3d55af11ffbece33a3f08738d77b29c4a5"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-3d237972dca4c6fe5ffb71a4",
+    "round": 1,
+    "closureSha256": "a7eb3bedf93a61e666c05c7ed319fce6461b44351c26376f3c7bb9c8cff26dc7"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "3d84eb0f5a41adef33f8d5ccc076afda034d1164",
+    "runId": "goal-read-gate-20261108t224039z-7c2b79b7e1b09c8a"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "1884aca80be27e54428459215ed9f158dbb2f7bd",
+      "digest": "64e6dcd0688f65e84d29237721e517a934583631ca8d49d2a394d9ab36417dac"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_agent_test.go",
+      "readerWord": "reviewed by critic root code-critic-3d237972dca4c6fe5ffb71a4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_fresh_full_test.go",
+      "readerWord": "reviewed by critic root code-critic-3d237972dca4c6fe5ffb71a4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_incident_test.go",
+      "readerWord": "reviewed by critic root code-critic-3d237972dca4c6fe5ffb71a4"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_recovery_test.go",
+      "readerWord": "reviewed by critic root code-critic-3d237972dca4c6fe5ffb71a4"
+    }
+  ],
+  "sha256": "66fd84a75e77cdb68876d773ce76fda762bb74bc73329c5041f01ba7d63229b5"
+}

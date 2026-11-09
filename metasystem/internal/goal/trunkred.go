@@ -772,8 +772,10 @@ type TrunkRedClearArgs struct {
 	BranchMerged  bool          `json:"branchMerged"`
 	ExpectedEntry TrunkRedEntry `json:"expectedEntry"`
 	// Executed and FixCommit count a pass toward closing a flake or hang entry.
-	Executed      bool   `json:"executed,omitempty"`
-	FixCommit     string `json:"fixCommit,omitempty"`
+	Executed  bool   `json:"executed,omitempty"`
+	FixCommit string `json:"fixCommit,omitempty"`
+	// Applicable rechecks proof validity on each captured publication tip.
+	Applicable    func(tip string) error `json:"-"`
 	legacyUnbound bool
 }
 
@@ -785,6 +787,9 @@ func ClearTrunkRed(r VerbRequest, args TrunkRedClearArgs) (PublishResult, error)
 func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest {
 	intentArgs := map[string]string{"entry": args.Entry, "attempt": args.Attempt, "baseCommit": args.BaseCommit,
 		"baseTree": args.BaseTree, "group": args.Group, "branchMerged": strconv.FormatBool(args.BranchMerged)}
+	if args.Applicable != nil {
+		intentArgs["applicable"] = "required"
+	}
 	if args.Executed || args.FixCommit != "" {
 		intentArgs["executed"], intentArgs["fixCommit"] = strconv.FormatBool(args.Executed), args.FixCommit
 	}
@@ -807,7 +812,7 @@ func trunkRedClearRequest(r VerbRequest, args TrunkRedClearArgs) PublishRequest 
 			if err != nil {
 				return nil, err
 			}
-			return trunkRedChanges(tree, applyTrunkRedClear(tree, r, args))
+			return trunkRedChanges(tree, applyTrunkRedClear(tree, r, args, tip))
 		},
 		Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) },
 	}
@@ -828,6 +833,12 @@ func ClearTrunkReds(r VerbRequest, args []TrunkRedClearArgs) (PublishResult, err
 
 func trunkRedClearBatchRequest(r VerbRequest, args []TrunkRedClearArgs) PublishRequest {
 	encoded, _ := json.Marshal(args)
+	intentArgs := map[string]string{"clears": string(encoded)}
+	for _, entry := range args {
+		if entry.Applicable != nil {
+			intentArgs["applicable"] = "required"
+		}
+	}
 	incidents := "incidents"
 	if len(args) == 1 {
 		incidents = "incident"
@@ -838,7 +849,7 @@ func trunkRedClearBatchRequest(r VerbRequest, args []TrunkRedClearArgs) PublishR
 	}
 	return PublishRequest{
 		Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage,
-		Intent:  Intent{Verb: "trunk-red-clear", Targets: targets, Args: map[string]string{"clears": string(encoded)}},
+		Intent:  Intent{Verb: "trunk-red-clear", Targets: targets, Args: intentArgs},
 		Message: fmt.Sprintf("trunk-red clear %s: %d %s", args[0].Attempt, len(args), incidents),
 		Mutate: func(tip string) ([]Change, error) {
 			tree, err := loadTreeFor(r.Endpoint, tip)
@@ -852,7 +863,7 @@ func trunkRedClearBatchRequest(r VerbRequest, args []TrunkRedClearArgs) PublishR
 				if current != nil && current.Closed != nil {
 					continue
 				}
-				err := applyTrunkRedClear(tree, r, entry)
+				err := applyTrunkRedClear(tree, r, entry, tip)
 				var already AlreadyApplied
 				if errors.As(err, &already) {
 					continue
@@ -871,7 +882,7 @@ func trunkRedClearBatchRequest(r VerbRequest, args []TrunkRedClearArgs) PublishR
 	}
 }
 
-func applyTrunkRedClear(tree *TreeGoals, r VerbRequest, args TrunkRedClearArgs) error {
+func applyTrunkRedClear(tree *TreeGoals, r VerbRequest, args TrunkRedClearArgs, tip string) error {
 	var expectedEntry []byte
 	if !args.legacyUnbound {
 		expectedEntry, _ = json.Marshal(args.ExpectedEntry)
@@ -893,6 +904,11 @@ func applyTrunkRedClear(tree *TreeGoals, r VerbRequest, args TrunkRedClearArgs) 
 		currentEntry, _ := json.Marshal(entry)
 		if !bytes.Equal(currentEntry, expectedEntry) {
 			return coded("TRUNK_RED_CHANGED", fmt.Errorf("incident %s changed while it was being cleared; try again", args.Entry))
+		}
+	}
+	if args.Applicable != nil {
+		if err := args.Applicable(tip); err != nil {
+			return err
 		}
 	}
 	if entry.EntryClass() != TrunkRedClassTrunkRed {

@@ -75,19 +75,17 @@ func TestIntentManualWorkDelivery(t *testing.T) {
 
 	critic := "crit" + strconv.Itoa(len(c.delegates))
 	j.finish(c.worktree, critic, commit)
+	publications, closes := c.publications, len(j.b.calls)
 	code, result = do(submit...)
-	if result.Outcome != intentInProgress || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "review "+c.id+" --work main --dispositions FILE") ||
-		len(c.delegates) != delegates+1 {
-		t.Fatalf("the finished examination prints the public decision route and rejoins the version: code=%d %+v", code, result)
-	}
-	publications := c.publications
-	code, result = do(append(slices.Clone(submit), "--dispositions", j.dispositions)...)
-	if code != 0 || result.Outcome != intentConfirmed || c.publications != publications+1 || j.job(c.worktree, critic)["chainClosed"] != true ||
+	if code != 0 || result.Outcome != intentConfirmed || result.Summary != "the review is complete and published" ||
+		c.publications != publications+1 || c.commits != 1 || c.commitReads != 1 || len(j.b.calls) != closes+1 || len(c.delegates) != delegates+1 || j.job(c.worktree, critic)["chainClosed"] != true ||
 		result.Next == nil || !slices.Equal(result.Next.Argv[1:], []string{"work", "land", c.id}) {
-		t.Fatalf("the decisions close, collect and publish the read: code=%d %+v", code, result)
+		t.Fatalf("the notes-only examination closes, collects and publishes the read: code=%d %+v", code, result)
 	}
+	c.assertNoteDecisions(reviewBinding{Goal: c.id, Subject: commit, Examination: critic, Round: 1}, "F1")
 	code, result = do(submit...)
-	if code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) || resultData(t, result)["action"] != "rejoined" || len(c.delegates) != delegates+1 {
+	if code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) || resultData(t, result)["action"] != "rejoined" || len(c.delegates) != delegates+1 ||
+		c.publications != publications+1 || c.commits != 1 || c.commitReads != 1 || len(j.b.calls) != closes+1 {
 		t.Fatalf("a repeat rejoins the delivered version: code=%d %+v", code, result)
 	}
 	if status := c.landAdmission(); status.Prefix != 1 || len(status.Units) != 1 || status.Units[0].Commit != commit {
@@ -691,7 +689,7 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 	j := newJourneyBed(t)
 	c, root := j.c, j.c.root()
 	brief := filepath.Join(t.TempDir(), "brief.md")
-	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
+	os.WriteFile(brief, []byte("Hand-written work.\nScope: alpha.txt only.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "alpha.txt"), []byte("alpha\n"), 0o644)
 	_, submitted := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
 	if submitted.Outcome != intentInProgress {
@@ -751,14 +749,21 @@ func TestManualReviewFailedExaminationRetries(t *testing.T) {
 	if retried.Next == nil || !slices.Equal(retried.Next.Argv, wantNext) {
 		t.Fatalf("the retried request's continuation: %+v", retried.Next)
 	}
-	// Round 2 completes (the model is the fixture's) with one finding; the
+	// Round 2 completes with a material finding so the retry's decision
+	// continuation is exercised; notes alone would publish automatically. The
 	// printed continuation asks for its decision, and the decided review is
 	// closed by the whole close owner, collected and published.
 	alphaCommit, _ := resultData(t, submitted)["commit"].(string)
-	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{journeyCleanFinding()})
+	finding := journeyCleanFinding()
+	finding.Material = true
+	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{finding})
 	code, decide := manualDo(t, j, root, retried.Next.Argv[1:]...)
 	if decide.Outcome != intentInProgress || decide.Next == nil || !strings.Contains(shellCommand(decide.Next.Argv), "review "+c.id+" --work alpha --dispositions FILE") || strings.Contains(shellCommand(decide.Next.Argv), "--retry") {
 		t.Fatalf("the completed retried round: code=%d %+v", code, decide)
+	}
+	template := resultData(t, decide)["template"].(string)
+	if err := os.WriteFile(j.dispositions, []byte(strings.Replace(string(mustRead(t, template)), "| F1 | DECIDE | | |", "| F1 | out-of-scope | the brief's scope is alpha.txt; connect.txt is outside this submission | none |", 1)), 0o600); err != nil {
+		t.Fatal(err)
 	}
 	decided := append(slices.Clone(printed(decide)), j.dispositions)
 	decided = slices.DeleteFunc(decided, func(word string) bool { return word == "FILE" })
@@ -802,7 +807,7 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 	j := newJourneyBed(t)
 	c, root := j.c, j.c.root()
 	brief := filepath.Join(t.TempDir(), "brief.md")
-	os.WriteFile(brief, []byte("Hand-written work.\n"), 0o600)
+	os.WriteFile(brief, []byte("Hand-written work.\nScope: alpha.txt only.\n"), 0o600)
 	os.WriteFile(filepath.Join(root, "alpha.txt"), []byte("alpha\n"), 0o644)
 	_, submitted := manualDo(t, j, root, "work", "review", c.id, "--changes", "--brief", brief, "--work", "alpha")
 	alphaCommit, _ := resultData(t, submitted)["commit"].(string)
@@ -842,8 +847,16 @@ func TestManualReviewProtocolFailureNeedsAcceptedRisk(t *testing.T) {
 	if _, retried := manualDo(t, j, root, printed(shellCommand(failed.Next.Argv), "metasystem work review")...); len(c.followUps) != 1 || retried.Next == nil {
 		t.Fatalf("the retry: %+v followUps=%v", retried, c.followUps)
 	}
-	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{journeyCleanFinding()})
+	// A material finding keeps this test on the explicit decision route
+	// before it exercises the failed round's separate accepted-risk guard.
+	finding := journeyCleanFinding()
+	finding.Material = true
+	j.finishRound(c.worktree, critic, critic+"-r2", alphaCommit, 2, []any{finding})
 	_, decide := manualDo(t, j, root, "work", "review", c.id, "--work", "alpha")
+	template := resultData(t, decide)["template"].(string)
+	if err := os.WriteFile(j.dispositions, []byte(strings.Replace(string(mustRead(t, template)), "| F1 | DECIDE | | |", "| F1 | out-of-scope | the brief's scope is alpha.txt; connect.txt is outside this submission | none |", 1)), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	decided := slices.DeleteFunc(printed(shellCommand(decide.Next.Argv), "metasystem work review"), func(word string) bool { return word == "FILE" })
 	decided = append(decided, j.dispositions)
 	publications, reads := c.publications, c.commitReads

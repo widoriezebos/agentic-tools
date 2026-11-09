@@ -38,6 +38,10 @@ func newKeeperClockBed(t *testing.T) *keeperClockBed {
 	original := b.seams.Git
 	b.seams.Git = func(dir string, args ...string) (string, error) {
 		switch strings.Join(args, " ") {
+		case "rev-parse --verify HEAD^{commit}":
+			return "candidate-commit", nil
+		case "rev-parse --verify HEAD^{tree}":
+			return "candidate", nil
 		case "rev-parse --verify origin/main^{commit}":
 			b.trunkReads++
 			return "main", nil
@@ -95,7 +99,7 @@ func (b *keeperClockBed) wake(t *testing.T) lane.AgentRun {
 }
 func (b *keeperClockBed) candidate(t *testing.T, verdict string) Result {
 	t.Helper()
-	r := Result{BatchID: b.batch.ID, Tree: "candidate", Commit: "candidate-commit", Attempt: "20261001T220000.000000000Z", Result: verdict, Scope: "full", At: bedNow.Format(time.RFC3339), FullTree: "candidate", FullAt: bedNow.Format(time.RFC3339)}
+	r := Result{BatchID: b.batch.ID, BatchMembers: b.batch.Members, Tree: "candidate", Commit: "candidate-commit", Attempt: "20261001T220000.000000000Z", Result: verdict, Scope: "full", At: bedNow.Format(time.RFC3339), FullTree: "candidate", FullAt: bedNow.Format(time.RFC3339)}
 	if err := appendLine(resultsPath(b.install), r, b.seams); err != nil {
 		t.Fatal(err)
 	}
@@ -134,7 +138,7 @@ func TestKeeperClockCandidatePushOpportunity(t *testing.T) {
 					t.Fatal(err)
 				}
 				if gate {
-					if err := appendLine(gatesPath(b.install), Result{BatchID: b.batch.ID, Result: Green, Attempt: "gate", At: bedNow.Format(time.RFC3339)}, b.seams); err != nil {
+					if err := appendLine(gatesPath(b.install), Result{BatchID: b.batch.ID, BatchMembers: b.batch.Members, Commit: "candidate-commit", Tree: "candidate", Result: Green, Attempt: "gate", At: bedNow.Format(time.RFC3339)}, b.seams); err != nil {
 						t.Fatal(err)
 					}
 					b.wake(t)
@@ -160,6 +164,34 @@ func TestKeeperClockCandidatePushOpportunity(t *testing.T) {
 			}
 			if !pushed && b.selections != 3 {
 				t.Fatalf("retried batch selection: %d", b.selections)
+			}
+		})
+	}
+}
+
+func TestASkippedGateWithGreenStaticGetsItsWake(t *testing.T) {
+	t.Parallel()
+	for _, gate := range []Result{{Result: Skipped, Static: Green}, {Result: Skipped, Static: Red}, {Result: Red, Static: Green}} {
+		t.Run(gate.Result+" static "+gate.Static, func(t *testing.T) {
+			t.Parallel()
+			b := newKeeperClockBed(t)
+			b.wake(t)
+			gate.BatchID, gate.Attempt, gate.At = b.batch.ID, "gate", bedNow.Format(time.RFC3339)
+			gate.BatchMembers, gate.Commit, gate.Tree = b.batch.Members, "candidate-commit", "candidate"
+			if err := appendLine(gatesPath(b.install), gate, b.seams); err != nil {
+				t.Fatal(err)
+			}
+			b.wake(t)
+			if gate.Result == Skipped && gate.Static == Green {
+				if b.agents != 2 || b.trunks != 0 {
+					t.Fatalf("skipped gate lost its proof wake: agents=%d trunks=%d", b.agents, b.trunks)
+				}
+				b.wake(t)
+				if b.agents != 2 || b.trunks != 1 {
+					t.Fatal("gate wake was not bounded to one")
+				}
+			} else if b.agents != 1 || b.trunks != 1 {
+				t.Fatalf("unacceptable gate did not fall back: agents=%d trunks=%d", b.agents, b.trunks)
 			}
 		})
 	}
@@ -288,7 +320,7 @@ func TestKeeperClockSelectionFallbackOnce(t *testing.T) {
 			}
 			b.wake(t)
 			if name == "gate red" {
-				if err := appendLine(gatesPath(b.install), Result{BatchID: b.batch.ID, Result: Red, Attempt: "gate", At: bedNow.Format(time.RFC3339)}, b.seams); err != nil {
+				if err := appendLine(gatesPath(b.install), Result{BatchID: b.batch.ID, BatchMembers: b.batch.Members, Commit: "candidate-commit", Tree: "candidate", Result: Red, Attempt: "gate", At: bedNow.Format(time.RFC3339)}, b.seams); err != nil {
 					t.Fatal(err)
 				}
 				b.wake(t)
@@ -361,6 +393,12 @@ func preparedClockCandidate(t *testing.T) *keeperClockBed {
 				return b.git.commit + " main sha", nil
 			}
 		case "rev-parse":
+			if args[len(args)-1] == "HEAD^{commit}" {
+				return b.git.commit, nil
+			}
+			if args[len(args)-1] == "HEAD^{tree}" {
+				return b.git.tree, nil
+			}
 			if args[len(args)-1] == "refs/remotes/origin/main^{commit}" {
 				return "main", nil
 			}

@@ -106,6 +106,12 @@ func TestLandingKeeperProvesMovedMainBeforeExceptionGitAdapter(t *testing.T) {
 			b.owners.landing.mainEndpoint, b.owners.landing.machine = owners.mainEndpoint, owners.machine
 			b.owners.landing.now = func() time.Time { return laneTestNow }
 			seams := plain.ProveSeams{Room: noRoomForVerbFixture, Now: func() time.Time { return laneTestNow }, BudgetHome: b.home,
+				Git: func(dir string, args ...string) (string, error) {
+					if dir == register.root() && strings.Join(args, " ") == "rev-parse --verify --quiet "+goal.LocalLedgerBranch+"^{commit}" {
+						return register.repo.canonical, nil
+					}
+					return plain.Git(dir, args...)
+				},
 				Lane: func() (lane.Record, error) { r, _, err := lane.Read(b.home); return r, err },
 				Incidents: func(string, string, string) ([]goal.TrunkRedEntry, error) {
 					es, problems := goal.ParseTrunkRed(register.repo.commit(register.repo.canonical).files["plans/goals/trunk-red.json"])
@@ -195,7 +201,11 @@ func TestLandingKeeperProvesMovedMainBeforeExceptionGitAdapter(t *testing.T) {
 				}
 				return
 			}
-			register.repo.commits[b.main] = register.repo.commit(register.repo.canonical)
+			// The proved commit is main's tip: the ledger's main is b.main, so
+			// the clear's captured tip is the proved commit (D5 c).
+			proved := register.repo.commit(register.repo.canonical)
+			proved.parent = register.repo.canonical
+			register.repo.commits[b.main], register.repo.canonical = proved, b.main
 			if scenario == "red" {
 				writeCauseProof(t, b.installation, "results.jsonl", plain.Result{Trunk: true, Commit: b.main, Tree: running.Tree, Result: plain.Red, At: laneTestNow.Format(time.RFC3339), Cause: &plain.Cause{Kind: "main"}})
 				helmMust(t, os.Remove(filepath.Join(plain.Dir(b.installation), "running.json")))

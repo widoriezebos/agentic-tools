@@ -37,6 +37,7 @@ type HandInInput struct{ WaitNext, WaitFix bool }
 type QuestionInput struct {
 	FirstLine string
 	Policy    bool
+	Steward   bool
 }
 type MeasuredFact struct {
 	Subject, Word, Reason string
@@ -246,6 +247,9 @@ func Describe(r Record, inputs RenderInputs) Description {
 			since = SinceText(q.Since, "question")
 		}
 		line := fmt.Sprintf(Words[WordKey{"question", "current"}].Phrase, q.ID, since)
+		if inputs.Questions[q.ID].Steward {
+			line = "the lane steward asked a person: question " + q.ID + " " + since
+		}
 		first := inputs.Questions[q.ID].FirstLine
 		if !inputs.Questions[q.ID].Policy {
 			if at := strings.IndexAny(first, ".?!"); at >= 0 {
@@ -258,7 +262,11 @@ func Describe(r Record, inputs RenderInputs) Description {
 		if !inputs.Questions[q.ID].Policy {
 			line += "; metasystem question show channel:" + q.ID + "; withdraw: metasystem question withdraw channel:" + q.ID + " --reason TEXT"
 		}
-		d.Questions = append(d.Questions, line)
+		if inputs.Questions[q.ID].Steward {
+			d.Steward = append(d.Steward, line+"; the landing agent does not wait on it")
+		} else {
+			d.Questions = append(d.Questions, line)
+		}
 	}
 	if key.Section == "agent" {
 		if inputs.Waiting && (key.Word == "idle" || key.Word == "ended") {
@@ -338,7 +346,7 @@ func Describe(r Record, inputs RenderInputs) Description {
 			d.HealthFacts[section] = append(d.HealthFacts[section], line)
 		}
 	}
-	d.Steward = append([]string{d.Headline}, d.Facts...)
+	d.Steward = append(append([]string{d.Headline}, d.Facts...), d.Steward...)
 	if d.Verb != "none" {
 		d.Remedies = append(d.Remedies, "metasystem "+d.Verb)
 	}

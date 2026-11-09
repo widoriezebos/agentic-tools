@@ -457,6 +457,9 @@ func TestLandingStewardAsksOnceWhenTheLaneCannotHeal(t *testing.T) {
 				}
 				return
 			}
+			if scenario != "silent" {
+				b.askOccurrence(bedNow, bedNow.Add(30*time.Minute))
+			}
 			delay := 31 * time.Minute
 			if scenario == "silent" {
 				delay = 61 * time.Minute
@@ -525,6 +528,40 @@ func routedQuestions(t *testing.T, b *stewardBed) ([]channel.Question, []Interve
 	return qs, history
 }
 
+func (b *stewardBed) askOccurrence(since, at time.Time) {
+	b.t.Helper()
+	d := humanauthority.Decision{At: at, Disposition: &humanauthority.Disposition{Row: "overdue-goal", Subject: "g", Occurrence: since.UTC().Format(time.RFC3339Nano), Kind: "ask"}}
+	if err := humanauthority.AppendDecision(b.home, d); err != nil {
+		b.t.Fatal(err)
+	}
+}
+
+func TestANoActRowIsANoticeNotAQuestion(t *testing.T) {
+	t.Parallel()
+	b := newStewardBed(t)
+	b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)})
+	b.step(bedNow)
+	run := b.step(bedNow.Add(31 * time.Minute))
+	qs, history := routedQuestions(t, b)
+	if len(qs) != 0 || interventionCount(history, "cannot-heal") != 1 {
+		t.Fatalf("no-act row asked: %+v history=%+v", qs, history)
+	}
+	notice := history[len(history)-1]
+	if notice.How != "notice" || notice.Outcome != "noticed" || notice.Occurrence != bedNow.UTC().Format(time.RFC3339Nano) {
+		t.Fatalf("notice lost occurrence: %+v run=%+v", notice, run)
+	}
+	run = b.step(bedNow.Add(32 * time.Minute))
+	if len(run.Interventions) != 0 || !strings.Contains(run.Line, "noticed once for this occurrence") {
+		t.Fatalf("notice repeated: %+v", run)
+	}
+	b.askOccurrence(bedNow, bedNow.Add(33*time.Minute))
+	b.step(bedNow.Add(34 * time.Minute))
+	qs, _ = routedQuestions(t, b)
+	if len(qs) != 1 || qs[0].State != "open" {
+		t.Fatalf("explicit ask was suppressed: %+v", qs)
+	}
+}
+
 func TestACannotHealRowIsRoutedBeforeItIsAsked(t *testing.T) {
 	t.Parallel()
 	for _, elsewhere := range []bool{false, true} {
@@ -553,6 +590,7 @@ func TestACannotHealRowIsRoutedBeforeItIsAsked(t *testing.T) {
 			if qs, _ := routedQuestions(t, b); len(qs) != 0 {
 				t.Fatal("asked before thirty minutes")
 			}
+			b.askOccurrence(bedNow, bedNow.Add(30*time.Minute))
 			b.step(bedNow.Add(31 * time.Minute))
 			b.step(bedNow.Add(40 * time.Minute))
 			qs, history = routedQuestions(t, b)
@@ -632,17 +670,13 @@ func TestADispositionDecidesTheQuestion(t *testing.T) {
 				t.Fatalf("%s at five minutes: %+v", kind, qs)
 			}
 			b.step(bedNow.Add(31 * time.Minute))
-			want = 1
-			if kind == "wait" || kind == "confirmed" || kind == "partial" || kind == "unchanged" {
-				want = 0
-			}
 			if qs, _ := routedQuestions(t, b); len(qs) != want {
 				t.Fatalf("%s at thirty-one minutes: %+v", kind, qs)
 			}
 			if kind == "wait" {
 				b.step(bedNow.Add(61 * time.Minute))
-				if qs, _ := routedQuestions(t, b); len(qs) != 1 {
-					t.Fatal("expired wait suppressed question")
+				if qs, history := routedQuestions(t, b); len(qs) != 0 || interventionCount(history, "cannot-heal") != 1 {
+					t.Fatal("expired wait did not produce one notice")
 				}
 			}
 			if kind == "confirmed" || kind == "partial" || kind == "unchanged" {
@@ -670,12 +704,12 @@ func TestADispositionDecidesTheQuestion(t *testing.T) {
 						}
 					}
 				}
-				if len(qs) != 1 || routed != 2 || cleared != 1 {
+				if len(qs) != 0 || routed != 2 || cleared != 1 {
 					t.Fatalf("new occurrence was not routed afresh: %+v %+v", qs, history)
 				}
 				b.step(bedNow.Add(81 * time.Minute))
-				if qs, _ := routedQuestions(t, b); len(qs) != 2 {
-					t.Fatalf("new occurrence did not ask: %+v", qs)
+				if qs, history := routedQuestions(t, b); len(qs) != 0 || interventionCount(history, "cannot-heal") != 2 {
+					t.Fatalf("new occurrence did not get its own notice: %+v %+v", qs, history)
 				}
 			}
 		})
@@ -723,6 +757,9 @@ func TestAnAnsweredOccurrenceNeverAsksAgain(t *testing.T) {
 			}
 			b.lines("queue.jsonl", waiting)
 			b.step(bedNow)
+			if scenario != "silent" {
+				b.askOccurrence(bedNow, bedNow.Add(30*time.Minute))
+			}
 			b.step(bedNow.Add(31 * time.Minute))
 			qs, _ := routedQuestions(t, b)
 			if len(qs) != 1 {
@@ -761,6 +798,7 @@ func TestAnAnsweredOccurrenceNeverAsksAgain(t *testing.T) {
 			b.step(bedNow.Add(1600 * time.Minute))
 			b.lines("queue.jsonl", waiting)
 			b.step(bedNow.Add(1601 * time.Minute))
+			b.askOccurrence(bedNow.Add(1601*time.Minute), bedNow.Add(1631*time.Minute))
 			b.step(bedNow.Add(1632 * time.Minute))
 			if qs, _ := routedQuestions(t, b); len(qs) != 2 {
 				t.Fatalf("new occurrence not asked: %+v", qs)
@@ -778,6 +816,7 @@ func TestAMachineWithdrawalRearmsTheFailSafe(t *testing.T) {
 			b.seams.Steward.Route = func(Intervention) error { return nil }
 			b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)})
 			b.step(bedNow)
+			b.askOccurrence(bedNow, bedNow.Add(30*time.Minute))
 			b.step(bedNow.Add(31 * time.Minute))
 			d := humanauthority.Decision{At: bedNow.Add(36 * time.Minute), Outcome: "confirmed", Disposition: &humanauthority.Disposition{Row: "overdue-goal", Subject: "g", Occurrence: bedNow.UTC().Format(time.RFC3339Nano), Kind: kind, WaitUntil: bedNow.Add(90 * time.Minute)}}
 			if err := humanauthority.AppendDecision(b.home, d); err != nil {
@@ -794,6 +833,7 @@ func TestAMachineWithdrawalRearmsTheFailSafe(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
+			b.askOccurrence(bedNow, bedNow.Add(90*time.Minute))
 			b.step(bedNow.Add(91 * time.Minute))
 			qs, _ = routedQuestions(t, b)
 			if len(qs) != 2 {
@@ -828,6 +868,7 @@ func TestAWithdrawnAskRouteFailureDoesNotStopRows(t *testing.T) {
 	b := newStewardBed(t)
 	b.lines("queue.jsonl", Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)})
 	b.step(bedNow)
+	b.askOccurrence(bedNow, bedNow.Add(30*time.Minute))
 	b.step(bedNow.Add(31 * time.Minute))
 	qs, _ := routedQuestions(t, b)
 	if len(qs) != 1 {
@@ -887,6 +928,7 @@ func TestAWithdrawnAskIsDesignInputOnce(t *testing.T) {
 			waiting := Line{Goal: "g", SHA: "tip", At: bedNow.Add(-121 * time.Minute).Format(time.RFC3339Nano)}
 			b.lines("queue.jsonl", waiting)
 			b.step(bedNow)
+			b.askOccurrence(bedNow, bedNow.Add(30*time.Minute))
 			b.step(bedNow.Add(31 * time.Minute))
 			qs, _ := routedQuestions(t, b)
 			if len(qs) != 1 {
@@ -923,6 +965,7 @@ func TestAWithdrawnAskIsDesignInputOnce(t *testing.T) {
 			b.step(bedNow.Add(35 * time.Minute))
 			b.lines("queue.jsonl", waiting)
 			b.step(bedNow.Add(36 * time.Minute))
+			b.askOccurrence(bedNow.Add(36*time.Minute), bedNow.Add(66*time.Minute))
 			b.step(bedNow.Add(67 * time.Minute))
 			if qs, _ := routedQuestions(t, b); len(qs) != 2 {
 				t.Fatalf("withdrawal suppressed new occurrence: %+v", qs)

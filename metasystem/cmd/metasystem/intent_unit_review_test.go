@@ -627,6 +627,28 @@ func (c *connectionBed) writeJSON(path string, value any) {
 	}
 }
 
+func (c *connectionBed) assertNoteDecisions(want reviewBinding, findingIDs ...string) {
+	c.t.Helper()
+	round := filepath.Join(c.worktree, "artifacts", "agents", want.Examination, "rounds", strconv.FormatInt(want.Round, 10))
+	digest, _, err := reviewReturnDigest(filepath.Join(round, "return.json"))
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	want.Return = digest
+	content := mustRead(c.t, filepath.Join(round, "decisions.md"))
+	if got, err := readReviewBinding(content); err != nil || got != want {
+		c.t.Fatalf("the generated decisions must keep the examination's binding: got=%+v want=%+v err=%v", got, want, err)
+	}
+	if strings.Count(string(content), "| noted |") != len(findingIDs) {
+		c.t.Fatalf("the generated decisions must note each finding exactly once: %s", content)
+	}
+	for _, id := range findingIDs {
+		if strings.Count(string(content), "| "+id+" | noted | not material per the read | |") != 1 {
+			c.t.Fatalf("the generated decisions must explain note %s: %s", id, content)
+		}
+	}
+}
+
 // closeOwner is the whole close owner (the delegate lifecycle's close): it stamps the
 // chain's closure after the public close joined the dispositions.
 func (c *connectionBed) closeOwner(process intentProcess) intentProcessResult {
@@ -898,18 +920,9 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 		t.Fatalf("a running critic is waited on, never dispatched again: %+v", result)
 	}
 
-	// Finished but unclosed: the author's close is named, nothing collected.
+	// A notes-only read closes and collects automatically, including when
+	// collection must recover from a lost save and a failed publication.
 	c.writeCritic(install, "crit1", first, "completed", false)
-	_, result = c.do("work", "review", "run:"+run)
-	if result.Outcome != intentInProgress || result.Next == nil || !strings.Contains(shellCommand(result.Next.Argv), "work review run:"+run+" --dispositions "+resultData(t, result)["template"].(string)) ||
-		len(c.unitCommits("goal/"+c.id)) != 1 || c.commitReads != 0 {
-		t.Fatalf("unclosed critic: %+v", result)
-	}
-	code, result = c.do("work", "finish", "j2:crit1", "--dispositions", c.dispositions(), "--repo", install)
-	if code != 0 || result.Outcome != intentConfirmed || len(c.closes) != 1 {
-		t.Fatalf("public close (fake whole owner): code=%d %+v", code, result)
-	}
-
 	// Collection installs the Goal-Read but its record save is lost; the
 	// retry adopts that exact read, publication then fails once, and the
 	// next retry publishes: one attestation, one critic, one collection.
@@ -925,9 +938,14 @@ func TestIntentBuiltUnitToLanding(t *testing.T) {
 	}
 	attestation := resultData(t, result)["attestation"].(string)
 	code, result = c.do("work", "review", "run:"+run)
-	if code != 0 || (result.Outcome != intentConfirmed && result.Outcome != intentUnchanged) || resultData(t, result)["attestation"] != attestation ||
-		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", c.id}) || len(c.delegates) != 1 || c.commitReads != 1 {
+	if code != 0 || result.Outcome != intentConfirmed || result.Summary != "the review is complete and published" || resultData(t, result)["attestation"] != attestation ||
+		result.Next == nil || !slices.Equal(result.Next.Argv, []string{"metasystem", "work", "land", c.id}) || len(c.delegates) != 1 || c.commits != 1 || c.commitReads != 1 || len(c.closes) != 1 {
 		t.Fatalf("published read: code=%d %+v", code, result)
+	}
+	c.assertNoteDecisions(reviewBinding{Goal: c.id, Work: "connect", Attempt: 1, Subject: first, Examination: "crit1", Round: 1}, "F1")
+	code, result = c.do("work", "finish", "j2:crit1", "--dispositions", c.dispositions(), "--repo", install)
+	if code != 0 || result.Outcome != intentUnchanged || len(c.closes) != 1 || c.commits != 1 || c.commitReads != 1 {
+		t.Fatalf("a public close after automatic publication is idempotent: code=%d %+v", code, result)
 	}
 	if commits := c.unitCommits("goal/" + c.id); len(commits) != 2 {
 		t.Fatalf("one unit and exactly one Goal-Read: %v", commits)
