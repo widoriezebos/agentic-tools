@@ -3,7 +3,7 @@
 - Kind: design
 - Id: the-lane-proves-only-what-is-new
 - Status: accepted
-- Goals: a-push-folds-a-records-only-move, the-steward-proves-main-on-the-live-clock
+- Goals: a-push-folds-a-records-only-move the-steward-proves-main-on-the-live-clock
 - Critique: round 1 (Astra, designs/astra-lane-proves-new-design.r1.findings.md; 5 material) folded in revision 3; round 2 (designs/astra-lane-proves-new-design.r2.findings.md; 0 material, "DESIGN STANDS") notes folded in revision 4; closed
 
 Accepted 2026-11-09 by a1 in Wido's name. Drafted for Wido (Wido 08:38: "run the analysis … design the solution(s) … get this defined as goal(s) and get this implemented with prio 1 before anything else"). Revision 2: repackaged after the analysis closed (its round 3: do not bundle what can land apart; use the goals that exist). Revision 3: Astra design round 1 folded (five material findings): D1 handles the archive move as a deletion plus an addition; the classification of a replay red on main is taken out (it would have removed the proof that clears a transient main red, with nothing in its place); the brief of item 2 gains a test; decision 226's order is replaced for item 1. Revision 4: Astra design round 2 found nothing material; its notes are folded (the estimate of D1, the call site of D2, the conclusion that still costs a check, the test fixtures).
