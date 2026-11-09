@@ -198,6 +198,11 @@ func (runner *UnitRunner) ReviewSubject(id string, bind func(review UnitReview, 
 		// The declared-check instructions are part of the brief the builder
 		// received; review uses the same complete brief and its digest.
 		review.BuildBrief = frozen.Build.Brief
+		if retained := launchFrozenBrief(round, round.BuildBriefSHA256); retained != "" {
+			// A declaration repair rewrites the checked brief after launch;
+			// the review reads the copy the builder received (finding 575).
+			review.BuildBrief = retained
+		}
 	} else if frozenErr != nil && !errors.Is(frozenErr, os.ErrNotExist) {
 		return coded("UNIT_REVIEW_NOT_READY", "run="+id, fmt.Errorf("the frozen plan of attempt %d cannot be read: %v", round.Number, frozenErr))
 	}
@@ -309,6 +314,19 @@ func UnitResultPaths(result string) ([]string, error) {
 		index += 1 + count
 	}
 	return paths, nil
+}
+
+// launchFrozenBrief is the build step's retained brief when its digest is
+// the one recorded at launch; "" when no retained copy carries that digest.
+func launchFrozenBrief(round UnitRound, want string) string {
+	if want == "" || len(round.Steps) == 0 || round.Steps[0].Retained == nil || round.Steps[0].Retained.Brief == "" {
+		return ""
+	}
+	data, err := os.ReadFile(round.Steps[0].Retained.Brief)
+	if err != nil || digestHex(data) != want {
+		return ""
+	}
+	return round.Steps[0].Retained.Brief
 }
 
 func digestHex(data []byte) string {

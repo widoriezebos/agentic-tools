@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -24,6 +25,28 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
 )
+
+// enginePrefaceStart opens the two lines the engine puts in front of every
+// unit brief it checks. A repair re-reads the written brief, so the preface
+// is stripped before it is written again (finding 575: a doubled preface
+// changed the brief's digest and the committed critic refused to start).
+const enginePrefaceStart = "The engine runs the frozen unit check after your turn;"
+
+// enginePreface is the engine's two-line preface and its blank line.
+func enginePreface(directory string, exclusions []string) string {
+	return fmt.Sprintf("%s do not run it yourself. Its output streams to %s/check-*/output.log while it runs.\nDo not change these files; the engine puts them back: %s.\n\n", enginePrefaceStart, directory, strings.Join(exclusions, ", "))
+}
+
+// withoutEnginePreface returns the brief without the complete engine
+// preface it already carries, repeated or not, so the preface is written
+// exactly once. Only the exact preface is stripped: a brief that merely opens
+// with the same words keeps every byte.
+func withoutEnginePreface(brief []byte, preface string) []byte {
+	for len(preface) > 0 && bytes.HasPrefix(brief, []byte(preface)) {
+		brief = brief[len(preface):]
+	}
+	return brief
+}
 
 func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory string) (launch.UnitPlan, error) {
 	if problem := inv.selectLayoutRoot(); problem != nil {
@@ -95,7 +118,7 @@ func (inv *intentInvocation) resolveUnitCheck(plan launch.UnitPlan, directory st
 		for _, path := range landing.WorkspaceExclusions() {
 			exclusions = append(exclusions, "metasystem/"+path)
 		}
-		if _, err := atomicfile.WriteText(plan.Build.Brief, fmt.Sprintf("The engine runs the frozen unit check after your turn; do not run it yourself. Its output streams to %s/check-*/output.log while it runs.\nDo not change these files; the engine puts them back: %s.\n\n%s", directory, strings.Join(exclusions, ", "), brief), directory); err != nil {
+		if _, err := atomicfile.WriteText(plan.Build.Brief, enginePreface(directory, exclusions)+string(withoutEnginePreface(brief, enginePreface(directory, exclusions))), directory); err != nil {
 			return err
 		}
 		data, err := json.Marshal(plan)
