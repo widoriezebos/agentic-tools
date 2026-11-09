@@ -100,7 +100,7 @@ func newAttributionBed(t *testing.T, mode string) *attributionBed {
 		}
 		wantTests := strings.Join(b.first[index].Tests, " ")
 		if mode == "new-subtest-in-whole-repeat" && only == "u/a" {
-			wantTests = ""
+			wantTests = "TestA1"
 		}
 		if got := commandEnv(cmd, "LANDING_ONLY_TESTS"); got != wantTests {
 			t.Fatalf("repeat tests %q, want %v", got, b.first[index].Tests)

@@ -20,7 +20,7 @@ func TestRepeatUsesOnlySelectablePackageTests(t *testing.T) {
 	}{
 		{"package", "metasystem/internal/p", []string{"TestP", "TestOther"}, "TestP TestOther"},
 		{"missing report", "metasystem/internal/p", []string{"TestP(did not report)"}, ""},
-		{"subtest", "metasystem/internal/p", []string{"TestP/child"}, ""},
+		{"subtest", "metasystem/internal/p", []string{"TestP/child"}, "TestP"},
 		{"main", "metasystem/internal/p", []string{"TestMain"}, ""},
 		{"mixed", "metasystem/internal/p", []string{"TestP", "TestOther(did not report)"}, ""},
 		{"non-test", "metasystem/internal/p", []string{"ExampleP"}, ""},

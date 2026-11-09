@@ -280,18 +280,28 @@ func repeatRed(seams ProveSeams, install, checkout, command, dir string, running
 	return green
 }
 
-// namedUnitTests selects only top-level Go tests in package units. Groups keep
-// their whole command, and an invalid identity keeps every test in its unit.
+func topLevelTest(name string) (string, bool) {
+	name, _, _ = strings.Cut(name, "/")
+	return name, token.IsIdentifier(name) && strings.HasPrefix(name, "Test") && name != "TestMain"
+}
+
+// namedUnitTests maps package failures to distinct top-level Go tests. Groups
+// keep their whole command, and an invalid identity keeps every test in its unit.
 func namedUnitTests(unit FailedUnit, contract testpolicy.Contract) ([]string, bool) {
 	if len(unit.Tests) == 0 || !strings.Contains(unit.Unit, "/") || strings.HasPrefix(unit.Unit, "section/") || slices.ContainsFunc(contract.Groups, func(group testpolicy.Group) bool { return group.ID == unit.Unit }) {
 		return nil, false
 	}
-	if slices.ContainsFunc(unit.Tests, func(name string) bool {
-		return !token.IsIdentifier(name) || !strings.HasPrefix(name, "Test") || name == "TestMain"
-	}) {
-		return nil, true
+	var names []string
+	for _, test := range unit.Tests {
+		name, valid := topLevelTest(test)
+		if !valid {
+			return nil, true
+		}
+		if !slices.Contains(names, name) {
+			names = append(names, name)
+		}
 	}
-	return unit.Tests, false
+	return names, false
 }
 
 // replayTree is a prefix of the check's subject, oldest first. Main is true

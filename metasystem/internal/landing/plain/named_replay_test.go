@@ -110,7 +110,8 @@ func TestReplayFallsBackBeforeAttributingNamedResults(t *testing.T) {
 		{"green main", "metasystem/internal/p", "TestP", "named replay green on main: whole-unit replay ran", "red", 2},
 		{"green goal", "metasystem/internal/p", "TestP", "named replay green on prefix: whole-unit replay ran", "red", 2},
 		{"missing token", "metasystem/internal/p", "TestP(did not report)", "named replay invalid test identity: whole unit", "red", 1},
-		{"subtest", "metasystem/internal/p", "TestP/subtest", "named replay invalid test identity: whole unit", "red", 1},
+		{"test main subtest", "metasystem/internal/p", "TestMain/sub", "named replay invalid test identity: whole unit", "red", 1},
+		{"subtest", "metasystem/internal/p", "TestP,TestP/subtest", "replay: 1 named tests of metasystem/internal/p", "red", 1},
 		{"command group", "fast-static-build", "TestP", "replay: whole unit fast-static-build", "red", 1},
 		{"go group", "go-batchtest", "TestP", "replay: whole unit go-batchtest", "red", 1},
 		{"section group", "section/go-engine-gate", "TestP", "replay: whole unit section/go-engine-gate", "red", 1},
@@ -150,14 +151,17 @@ func TestReplayFallsBackBeforeAttributingNamedResults(t *testing.T) {
 				}
 				named := commandEnv(cmd, "LANDING_ONLY_TESTS") != ""
 				if named {
-					if calls != 1 || tc.calls == 1 && tc.name != "named red" {
+					if commandEnv(cmd, "LANDING_ONLY_TESTS") != "TestP" {
+						t.Fatalf("named replay selector=%q", commandEnv(cmd, "LANDING_ONLY_TESTS"))
+					}
+					if calls != 1 || tc.calls == 1 && tc.name != "named red" && tc.name != "subtest" {
 						t.Fatalf("invalid named replay")
 					}
 					if tc.name == "incomplete" || tc.name == "whole incomplete" {
 						fmt.Fprint(cmd.Stdout, "LANDING-NOT-RUN\tenvironment\n")
 						return fmt.Errorf("lost")
 					}
-					if tc.name != "named red" {
+					if tc.name != "named red" && tc.name != "subtest" {
 						fmt.Fprint(cmd.Stdout, "LANDING-CHECKED\t0\n")
 						return nil
 					}
@@ -177,7 +181,7 @@ func TestReplayFallsBackBeforeAttributingNamedResults(t *testing.T) {
 			}
 			var incidents []Result
 			b.seams.RecordMain = func(checks []Result) error { incidents = append(incidents, checks...); return nil }
-			red := Result{Result: Red, Failed: []FailedUnit{{Unit: tc.unit, Tests: []string{tc.test}}}, Cause: &Cause{Kind: "unclassified"}}
+			red := Result{Result: Red, Failed: []FailedUnit{{Unit: tc.unit, Tests: strings.Split(tc.test, ",")}}, Cause: &Cause{Kind: "unclassified"}}
 			prefix := replayTree{Running: Running{Commit: "commit"}, Main: tc.name != "green goal", Goal: GoalSHA{Goal: "g", SHA: "sha-g"}}
 			result := classifyReplay(b.seams, b.install, b.checkout, "fixture", Running{Attempt: "fallback", Trunk: true}, red, Result{}, []replayTree{prefix})
 			want := "main"
