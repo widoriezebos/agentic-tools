@@ -1,0 +1,85 @@
+{
+  "canonicalRead": {
+    "engine": "f4834c582a14cf6bd41f337165bc7119292de1b9",
+    "findings": [
+      {
+        "change": "Optionally assert one 'notice' intervention for those kinds as well. Not required.",
+        "claim": "In the rewritten disposition test, the 'cleared', 'unreadable' and 'newest' cases now only check that no question is asked at thirty-one minutes. They do not check that a notice was recorded for those cases.",
+        "class": "other",
+        "evidence": "steward_rows_test.go around 614-622: at thirty-one minutes the test expects 0 questions for every kind except 'ask'. The notice itself is checked in TestANoActRowIsANoticeNotAQuestion and in the 'wait' branch (interventionCount == 1), so the behavior is covered elsewhere. This is optional extra rigor and does not stop the change from working or being safe.",
+        "id": "code-critic-4e46cb8b8ac1494f92f226a3:1",
+        "material": false,
+        "relation": "R-124: rigor the slice's first use does not need goes to the 'later, when it hurts' list",
+        "severity": "low",
+        "where": "metasystem/internal/landing/plain/steward_rows_test.go"
+      }
+    ],
+    "id": "code-critic-4e46cb8b8ac1494f92f226a3",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-the-lane-finishes-what-it-starts/metasystem/artifacts/agents/code-critic-4e46cb8b8ac1494f92f226a3/rounds/1/return.md",
+    "subject": {
+      "commit": "c48988bf14b0c28a992a2fbb74ceb35c06da04fa",
+      "diffDigest": "6705fe5926cef2c7a42da739c620dede0b30f81edf38c8357e46a42afe07c615",
+      "kind": "commit",
+      "parent": "ab49d8d51f6214baefddebb4b87c6435315b1e32",
+      "tree": "adaa124b159e81d1a9c2f7d9154e35e0c219bb19"
+    }
+  },
+  "readDigest": "3ba747120e81f10bc568929cdfe609d01e742dba21f8ac1842a19701b1ad37d5",
+  "schemaVersion": 1,
+  "goal": "the-lane-finishes-what-it-starts",
+  "unit": "U2",
+  "subject": {
+    "commit": "c48988bf14b0c28a992a2fbb74ceb35c06da04fa",
+    "parent": "ab49d8d51f6214baefddebb4b87c6435315b1e32",
+    "tree": "adaa124b159e81d1a9c2f7d9154e35e0c219bb19",
+    "patchDigest": "6705fe5926cef2c7a42da739c620dede0b30f81edf38c8357e46a42afe07c615",
+    "unitDigest": "f71af7ac200e0bb21b65ae60a17f352f91033e4985c05d1cceaef1fd8a6c197e"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-4e46cb8b8ac1494f92f226a3",
+    "round": 1,
+    "closureSha256": "bf1fef48da1b53fb491f6c0447c3207007fb619d833b6db0abc32991437de629"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "adaa124b159e81d1a9c2f7d9154e35e0c219bb19",
+    "runId": "goal-read-gate-20261109t070037z-de1bd6a9928a37a0"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "1884aca80be27e54428459215ed9f158dbb2f7bd",
+      "digest": "64e6dcd0688f65e84d29237721e517a934583631ca8d49d2a394d9ab36417dac"
+    },
+    {
+      "kind": "read",
+      "commit": "c5ba743607c4c86ecc4283d9ef4d8f7fc01cf534",
+      "digest": "e6ce9931bcb665bd195ad7aec484ed7bbb9a37b386da2c34c8aec546aafd5715"
+    },
+    {
+      "kind": "read",
+      "commit": "abe55d0a4a7b195d478abc1f098d0241cadfeb50",
+      "digest": "12a64411d4d9a77cd744d002f4fcd6a4bf10a0bed44a26f3ba55e5cb2c2f4057"
+    },
+    {
+      "kind": "read",
+      "commit": "ab49d8d51f6214baefddebb4b87c6435315b1e32",
+      "digest": "40392fdf9df59bb01d8ddeb970b08637e3f0d55f3c2ef5b9274b0c7111477369"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/landing/plain/question_status_test.go",
+      "readerWord": "reviewed by critic root code-critic-4e46cb8b8ac1494f92f226a3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/steward_rows_test.go",
+      "readerWord": "reviewed by critic root code-critic-4e46cb8b8ac1494f92f226a3"
+    }
+  ],
+  "sha256": "78f6e2d849c4cbcadf185f035af92f34de6d69adab347d3e899ae4d4e87e3bc2"
+}
