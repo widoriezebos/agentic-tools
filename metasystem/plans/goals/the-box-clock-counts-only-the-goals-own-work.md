@@ -2,7 +2,7 @@
 
 - State: claimed
 - Priority: 1
-- Sequence: 6
+- Sequence: 7
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="an engine defect in one owner, found by the 2026-11-07 fixes analysis and its two Astra rounds; the unit check and the lane proof gate it"
 - Tier: 2
 - Intent: The box clock counts only time the goal itself works, not admission waits or hours with no session and no job (P25; three box acts a day)
@@ -10,7 +10,7 @@
 - Next step: Design accepted (1d8990766). U1 (D10) published (unit 519863e17, read 0cb01e374). U2 (D1-D4, D6, D8) published (unit 9a73e8b33, read 0b24170ff). U3 (D5, D9: test slot waits in waits.jsonl, credited per execution; the status line), the last unit, building since 2026-11-09 08:3x with --last from briefs/the-box-clock-counts-only-the-goals-own-work-U3-brief.md (120 production lines; no U4 seam, under the page's 125 line). Next: work wait G --work U3, then work review publishes, then one hand-in (work land --delivered). Later list: U2 read notes 1-4 and 6 (none material): ReserveUnitLaunch homes param and admission BudgetHome are test-only seams; evidence bound_test flake fix rode along; idle-bed seat starts; migrated beds do not assert ElapsedLegacy. Note 5 folds into U3.
 - OpenedAt: 2026-11-07T09:53:35Z
 - FirstClaimAt: 2026-11-09T01:24:51Z
-- Revision: 14
+- Revision: 15
 - Pinned: ui
 - Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 1
@@ -34,4 +34,5 @@ History:
 - 2026-11-09T06:58:02Z 9BTFSRGJJYVYDGN4TKYEG7NMDN-ui-71c5cb39 edit actor=ui+steward-seat targets=the-box-clock-counts-only-the-goals-own-work
 - 2026-11-09T07:32:23Z AG7E26G1K8MP9H85G3A5207D8J-ui-71c5cb39 edit actor=ui+steward-seat targets=the-box-clock-counts-only-the-goals-own-work
 - 2026-11-09T09:41:11Z 7NDAGAP6476BPAQCM365JPHTG1-m1e-61b61415 set-priority actor=human:Wido targets=a-push-folds-a-records-only-move,a-run-holds-its-worktree,a-scratch-cleanup-test-drains-like-production,a-spent-box-asks-before-it-blocks,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,replies-reach-the-asking-seat-2,the-box-clock-counts-only-the-goals-own-work,the-carry-check-classifies-a-flake,the-lane-batches-goals-and-proves-once,the-lane-finishes-what-it-starts,the-unit-route-runs-on-the-real-layout reason=priority-order subject=a-push-folds-a-records-only-move from=1:5 to=1:6 requested-sequence=1
-Integrity: sha256=d08ada59e8edea01222ee86dccdb331a99a64c737ed1a6c9038d09fe13268365
+- 2026-11-09T09:41:21Z T7SGPNHP4BWSM1MTGRQZPR8G57-m1e-61b61415 set-priority actor=human:Wido targets=a-batch-gate-is-accepted-for-its-tree,a-boundary-waits-only-on-its-own-questions,a-flake-has-an-owner-from-its-first-sighting,a-hand-in-stands-on-main,a-host-is-ready-before-it-joins,a-landed-goal-concludes-itself,a-publication-refuses-only-what-it-adds,a-retained-read-brief-keeps-its-context,a-return-names-the-failing-test,a-returned-member-leaves-the-batch,a-round-ends-without-its-caller,a-run-holds-its-worktree,a-scratch-cleanup-test-drains-like-production,a-selected-batch-is-proving,a-settled-unit-is-not-in-flight,a-spent-box-asks-before-it-blocks,a-start-that-never-launched-is-collected,a-stop-is-read-where-the-goal-is,a-unit-check-runs-the-importers-too,a-unit-name-is-one-word-everywhere,a-unit-reservation-carries-its-deadline,a-unit-stop-asks-its-steward-first,attempts-are-bounded-per-unit,flake-fix-metasystem-cmd-metasystem-testintentexceptioncarryrunsinthisprocess,flake-fix-metasystem-cmd-metasystem-testpendingwaitfromchildshell,flake-fix-metasystem-cmd-metasystem-testproviderrecoveryaskpubliclifecycle,lane-steward-2,one-host-admits-heavy-work,red-names-what-failed,replies-reach-the-asking-seat-2,seat-engines-follow-the-deployed-engine,the-box-clock-counts-only-the-goals-own-work,the-carry-check-classifies-a-flake,the-census-ignores-its-own-report,the-claim-quota-is-a-host-setting,the-deputy-acts-under-a-recorded-delegation,the-fleet-serialization-proof-asserts-cleared-leases,the-lane-batches-goals-and-proves-once,the-lane-finishes-what-it-starts,the-size-hold-stops-at-the-production-ceiling,the-unit-route-runs-on-the-real-layout reason=priority-order subject=a-return-names-the-failing-test from=1:6 to=1:7 requested-sequence=2
+Integrity: sha256=d2214c8d25884f29425657c4d853dfdabb12cb74be9fefde99729178cd3128f8
