@@ -133,6 +133,47 @@ func TestAScopedGreenClosesOnlyItsGroupsRedWhileItApplies(t *testing.T) {
 			}
 		})
 	}
+	// A full proof is bound to the publication's captured tip, never to a
+	// local tracking ref that still names the proved commit (the whole-branch
+	// read's first finding): executable changes past the proof keep the
+	// incident open.
+	t.Run("full proof, stale tracking ref, executable tip", func(t *testing.T) {
+		b := newIntentBed(t, false, nil)
+		owners, proof, _ := scopedIncidentFixture(t, b)
+		proof.Scope, proof.FullTree, proof.FullAt = "full", proof.Tree, proof.At
+		owners.plainProve.Git = func(_ string, args ...string) (string, error) {
+			switch args[0] {
+			case "rev-parse":
+				if args[len(args)-1] == "refs/remotes/origin/main^{commit}" || args[len(args)-1] == goal.LocalLedgerBranch+"^{commit}" {
+					return proof.Commit, nil
+				}
+				return b.root(), nil
+			case "cat-file", "merge-base":
+				return "", nil
+			case "diff":
+				return "internal/code.go", nil
+			default:
+				return "", fmt.Errorf("unexpected Git read %v", args)
+			}
+		}
+		commit, err := b.repo.Build("move", proof.Commit, []goal.Change{{Path: "internal/code.go", Content: []byte("moved")}}, "move main")
+		helmMust(t, err)
+		_, err = b.repo.Publish(proof.Commit, commit)
+		helmMust(t, err)
+		before := b.repo.publications
+		if err := owners.clearLandingIncidents(b.root(), proof); err != nil {
+			t.Fatalf("clear refusal: %v", err)
+		}
+		entries, problems := goal.ParseTrunkRed(b.repo.commit(b.repo.canonical).files["plans/goals/trunk-red.json"])
+		for _, entry := range entries {
+			if entry.Closed != nil {
+				t.Fatalf("a full proof closed an incident past executable changes: %+v", entry)
+			}
+		}
+		if len(problems) != 0 || b.repo.publications != before {
+			t.Fatalf("publications=%d problems=%v", b.repo.publications-before, problems)
+		}
+	})
 }
 
 func TestAFailedClearIsReconciledWithoutARerun(t *testing.T) {

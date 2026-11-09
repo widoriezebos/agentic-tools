@@ -145,15 +145,6 @@ func (owners laneVerbOwners) clearLandingIncidents(installation string, proof pl
 		if tip == proof.Commit {
 			return nil
 		}
-		if full {
-			main, err := seams.Git(installation, "rev-parse", "--verify", "--quiet", "refs/remotes/origin/main^{commit}")
-			if err != nil {
-				return err
-			}
-			if strings.TrimSpace(main) == proof.Commit {
-				return nil
-			}
-		}
 		checkout, err := seams.Git(r.Endpoint.Root, "rev-parse", "--show-toplevel")
 		if err != nil {
 			return err

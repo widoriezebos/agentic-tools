@@ -97,10 +97,10 @@ human return restores no automatic allowance.
    None: the merge gate has not run for this merge; run `landing prove --gate --wait`. Red with `repeat: allowed`: run
    `metasystem landing prove --gate --wait` once more.
    An `own` cause: follow case 3 for the goal it names, on this detached batch tree.
-   A `main` cause follows case 3: hold for main's hot-fix and trunk proof. Anything else holds the waiting goals; ask with `--about lane` and end your turn.
+   A `main` cause follows case 3: hold for main's hot-fix and trunk proof. A `last_proof` `main` cause older than the landing merge gate is not this batch's. Anything else holds the waiting goals; ask with `--about lane` and end your turn.
    Before the landing merge gate and before the full proof, re-read `landing status --json` and merge any member that joined the open batch since the last read, then run its landing merge gate.
    After all merge gates are green or skipped, run `landing prove` and end your turn.
-   Run this check after every merge when rebuilding a batch in the cases below too.
+   Run this check after every merge when rebuilding a batch in the cases below.
 
 ## Cases
 
