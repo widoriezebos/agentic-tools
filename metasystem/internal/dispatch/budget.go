@@ -86,6 +86,8 @@ type BudgetProjection struct {
 	Wait                    time.Duration `json:"-"`
 	PersonWaitSince         time.Time     `json:"-"`
 	PersonPaused            time.Duration `json:"-"`
+	SlotWaitSince           time.Time     `json:"-"`
+	SlotWaited              time.Duration `json:"-"`
 	ElapsedOverrunMinutes   uint64        `json:"-"`
 	ElapsedOverrunRun       string        `json:"-"`
 	ElapsedLegacy           bool          `json:"-"`
@@ -979,6 +981,8 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		if err != nil {
 			return unknownBudget(file.Id, revision, "provider/launch history", err.Error())
 		}
+		deps, slotWaits, openSince, slotProblems := netSlotWaits(home, deps, now)
+		projection.Problems = append(projection.Problems, slotProblems...)
 		// Keep the beginning of an open wait before executed work splits it.
 		person, problems := personWaits(repoRoot, file.Id, providerStart, now, nil)
 		for _, span := range person {
@@ -1010,7 +1014,9 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 		projection.Wait = outage.Paused(spans)
 		projection.Elapsed = max(projection.Elapsed-projection.Wait, 0)
 		if authorityLens {
-			elapsed, reason := ownWorkElapsed(repoRoot, home, file.Id, budgetStartedAt, now, deps, slices.Clone(spans), environment)
+			elapsed, reason, seatSince, seatProblems := ownWorkElapsed(repoRoot, home, file.Id, budgetStartedAt, now, deps, slices.Clone(spans), slotWaits, environment)
+			projection.Problems = append(projection.Problems, seatProblems...)
+			openSince = earliestSlotWait(openSince, seatSince)
 			if elapsedFallback != "" {
 				reason = elapsedFallback
 			}
@@ -1019,6 +1025,10 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 				projection.Problems = append(projection.Problems, "elapsed counts wall time less pauses: "+reason)
 			} else {
 				projection.Elapsed = elapsed
+				projection.SlotWaitSince = openSince
+				if !openSince.IsZero() {
+					projection.SlotWaited = now.Sub(openSince)
+				}
 			}
 		}
 	}

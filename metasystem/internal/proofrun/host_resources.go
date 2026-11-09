@@ -25,6 +25,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/fixtureauth"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 )
 
 const inheritedHostResourceFDs = "METASYSTEM_PROOF_RESOURCE_FDS"
@@ -895,6 +896,7 @@ func AcquireHostResourcesWithWaitCheck(ctx context.Context, controlRoot, confPat
 	if err != nil {
 		return nil, err
 	}
+	ctx = withSlotWaitRecord(ctx, os.Getenv(launch.StateEnv), time.Now)
 	return acquireHostResourcesIn(ctx, directory, controlRoot, confPath, class, exclusive, check)
 }
 
@@ -939,6 +941,7 @@ func acquireHostResourcesWith(ctx context.Context, readers loadReaders, director
 	var waitMarker *os.File
 	defer func() {
 		if waitMarker != nil {
+			recordSlotWait(ctx, "end", waitMarker)
 			_ = os.Remove(waitMarker.Name())
 			_ = releaseHostProbe(waitMarker)
 		}
@@ -1126,6 +1129,7 @@ func acquireHostResourcesWith(ctx context.Context, readers loadReaders, director
 				_ = releaseHostProbe(guard)
 				return nil, err
 			}
+			recordSlotWait(ctx, "start", waitMarker)
 		}
 		_ = releaseHostProbe(guard)
 		if available {

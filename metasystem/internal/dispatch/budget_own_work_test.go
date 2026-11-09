@@ -343,7 +343,10 @@ func TestOwnWorkSeatFailuresKeepTheLegacyClock(t *testing.T) {
 				}
 				want = "seat directory"
 			case "record":
-				if err := os.MkdirAll(path, 0700); err != nil {
+				if err := os.MkdirAll(filepath.Dir(path), 0700); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(path, []byte("{"), 0600); err != nil {
 					t.Fatal(err)
 				}
 			case "startedAt":

@@ -195,6 +195,9 @@ func (shown goalShown) budgetSection(page *textui.Page) {
 	if words := projection.PersonWords(); words != "" {
 		section.Text(words)
 	}
+	if words := projection.SlotWords(); words != "" {
+		section.Text(words)
+	}
 	if words := projection.OverrunWords(); words != "" {
 		section.Text(words)
 	}

@@ -308,6 +308,9 @@ func (view intentBudgetView) lines() []string {
 	if words := projection.PersonWords(); words != "" {
 		lines = append(lines, words)
 	}
+	if words := projection.SlotWords(); words != "" {
+		lines = append(lines, words)
+	}
 	if words := projection.OverrunWords(); words != "" {
 		lines = append(lines, words)
 	}

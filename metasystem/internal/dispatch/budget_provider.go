@@ -18,6 +18,8 @@ type clockDependency struct {
 	runtime        string
 	providerFailed bool
 	executed       bool
+	launch         bool
+	running        bool
 }
 
 // A failed job remains dependent only when its retained provider evidence
@@ -69,7 +71,7 @@ func providerWaits(home, goalID string, start, now time.Time, dependencies []clo
 		if !record.State.Terminal() {
 			until = now
 		}
-		dependencies = append(dependencies, clockDependency{id: record.ID, at: at, until: until, runtime: record.Adapter, executed: true,
+		dependencies = append(dependencies, clockDependency{id: record.ID, at: at, until: until, runtime: record.Adapter, executed: true, launch: true, running: !record.State.Terminal(),
 			providerFailed: record.State == launch.Failed && record.Cause == outage.ProviderLimit})
 	}
 	sort.Slice(dependencies, func(i, j int) bool { return dependencies[i].at.Before(dependencies[j].at) })

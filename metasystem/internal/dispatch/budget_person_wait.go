@@ -18,6 +18,13 @@ func (p BudgetProjection) PersonWords() string {
 	return fmt.Sprintf("waiting for a person since %s, clock paused (%.1fh so far)", p.PersonWaitSince.Local().Format("15:04"), p.PersonPaused.Hours())
 }
 
+func (p BudgetProjection) SlotWords() string {
+	if p.SlotWaitSince.IsZero() {
+		return ""
+	}
+	return fmt.Sprintf("waiting for a test slot since %s, clock paused (%.1fh so far)", p.SlotWaitSince.Local().Format("15:04"), p.SlotWaited.Hours())
+}
+
 func (p BudgetProjection) OverrunWords() string {
 	if p.ElapsedOverrunRun == "" || p.ElapsedState == "" {
 		return ""

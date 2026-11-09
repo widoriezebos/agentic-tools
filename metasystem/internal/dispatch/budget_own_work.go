@@ -16,14 +16,14 @@ import (
 
 // ownWorkElapsed counts execution and seat occupancy outside the existing pauses.
 // Optional evidence failures retain the complete wall-time clock at the caller.
-func ownWorkElapsed(repoRoot, home, goalID string, start, now time.Time, work []clockDependency, pauses []outage.Span, environment map[string]bool) (time.Duration, string) {
-	var spans, excluded []outage.Span
+func ownWorkElapsed(repoRoot, home, goalID string, start, now time.Time, work []clockDependency, pauses, slotWaits []outage.Span, environment map[string]bool) (elapsed time.Duration, reason string, openSince time.Time, problems []string) {
+	var spans, excluded, seated []outage.Span
 	for _, d := range work {
 		if !d.executed {
 			continue
 		}
 		if d.at.IsZero() {
-			return 0, fmt.Sprintf("job %s (%s) has no readable start", d.id, d.runtime)
+			return 0, fmt.Sprintf("job %s (%s) has no readable start", d.id, d.runtime), openSince, problems
 		}
 		until := d.until
 		if until.IsZero() {
@@ -39,14 +39,14 @@ func ownWorkElapsed(repoRoot, home, goalID string, start, now time.Time, work []
 	seats := filepath.Join(repoRoot, "artifacts", "agents", "steward", "seats")
 	entries, err := os.ReadDir(seats)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return 0, "seat directory is unreadable: " + err.Error()
+		return 0, "seat directory is unreadable: " + err.Error(), openSince, problems
 	}
 	store := launch.Store{}
 	if home != "" {
 		store.Root = filepath.Join(home, "launch")
 	}
 	for _, entry := range entries {
-		if !strings.HasSuffix(entry.Name(), ".json") {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
 			continue
 		}
 		var seat struct {
@@ -57,54 +57,41 @@ func ownWorkElapsed(repoRoot, home, goalID string, start, now time.Time, work []
 		}
 		data, err := os.ReadFile(filepath.Join(seats, entry.Name()))
 		if err != nil || json.Unmarshal(data, &seat) != nil {
-			return 0, "seat record " + entry.Name() + " is unreadable"
+			return 0, "seat record " + entry.Name() + " is unreadable", openSince, problems
 		}
 		if seat.Goal != goalID {
 			continue
 		}
 		from, err := time.Parse(time.RFC3339Nano, seat.StartedAt)
 		if err != nil {
-			return 0, "seat record " + entry.Name() + " has no readable startedAt"
+			return 0, "seat record " + entry.Name() + " has no readable startedAt", openSince, problems
 		}
 		until := now
 		if seat.ReapedAt != "" {
 			until, err = time.Parse(time.RFC3339Nano, seat.ReapedAt)
 			if err != nil {
-				return 0, "seat record " + entry.Name() + " has no readable reapedAt"
+				return 0, "seat record " + entry.Name() + " has no readable reapedAt", openSince, problems
 			}
 		}
 		record, err := store.Read(seat.LaunchID)
 		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			return 0, fmt.Sprintf("seat record %s launch %s is unreadable: %v", entry.Name(), seat.LaunchID, err)
+			return 0, fmt.Sprintf("seat record %s launch %s is unreadable: %v", entry.Name(), seat.LaunchID, err), openSince, problems
 		}
 		if err == nil && record.State.Terminal() {
 			until, err = time.Parse(time.RFC3339Nano, record.FinishedAt)
 			if err != nil {
-				return 0, fmt.Sprintf("seat record %s launch %s has no readable finishedAt", entry.Name(), seat.LaunchID)
+				return 0, fmt.Sprintf("seat record %s launch %s has no readable finishedAt", entry.Name(), seat.LaunchID), openSince, problems
 			}
 		}
-		occupancy := []outage.Span{{Start: from, End: until}}
-		for _, cut := range excluded {
-			var remaining []outage.Span
-			for _, span := range occupancy {
-				if !cut.End.After(cut.Start) || !cut.End.After(span.Start) || !cut.Start.Before(span.End) {
-					remaining = append(remaining, span)
-					continue
-				}
-				if cut.Start.After(span.Start) {
-					remaining = append(remaining, outage.Span{Start: span.Start, End: cut.Start})
-				}
-				if cut.End.Before(span.End) {
-					remaining = append(remaining, outage.Span{Start: cut.End, End: span.End})
-				}
-			}
-			occupancy = remaining
-		}
-		spans = append(spans, occupancy...)
+		credited, since, issues := creditedSlotWaits(store, seat.LaunchID, from, until, seat.ReapedAt == "" && !record.State.Terminal(), now)
+		slotWaits, problems = append(slotWaits, credited...), append(problems, issues...)
+		openSince = earliestSlotWait(openSince, since)
+		seated = append(seated, outage.Span{Start: from, End: until})
 	}
+	spans = append(spans, cutWorkSpans(seated, append(excluded, slotWaits...))...)
 	spans = clipOwnWork(spans, start, now)
 	pauses = clipOwnWork(pauses, start, now)
-	return max(0, outage.Paused(append(spans, pauses...))-outage.Paused(pauses)), ""
+	return max(0, outage.Paused(append(spans, pauses...))-outage.Paused(pauses)), "", openSince, problems
 }
 
 func clipOwnWork(spans []outage.Span, start, now time.Time) []outage.Span {
