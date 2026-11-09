@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 229
+- Revision: 230
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -303,4 +303,8 @@ History:
 - 2026-11-08T09:53:33Z ET78NJ1CSBXBEG4PA2ZD5JY7D6-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-collects-its-resolution displaced=m1e+main-1792389436-6018-51cc28@2026-11-07T12:34:41Z ack
 - 2026-11-08T15:30:05Z P08DRX90D3FG4MZG41TW5ENV3A-ui-71c5cb39 ack actor=ui+steward-seat targets=the-lane-batches-goals-and-proves-once displaced=ui+steward-seat@2026-11-08T04:53:17Z ack
 - 2026-11-09T06:58:02Z 9BTFSRGJJYVYDGN4TKYEG7NMDN-ui-71c5cb39 ack actor=ui+steward-seat targets=the-box-clock-counts-only-the-goals-own-work displaced=ui+steward-seat@2026-11-09T01:24:51Z ack
-Integrity: sha256=6458e49215212fe851c7c78d337cf1929138b98887ba111895be217b417accbc
+- 2026-11-09T12:08:13Z 0AG2SQ7BAGKH973YHR706RSA2X-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-08T09:53:33Z ack
+- 2026-11-09T12:08:13Z 0AG2SQ7BAGKH973YHR706RSA2X-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-08T21:26:32Z ack
+- 2026-11-09T12:08:13Z 0AG2SQ7BAGKH973YHR706RSA2X-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T02:31:28Z ack
+- 2026-11-09T12:08:13Z 0AG2SQ7BAGKH973YHR706RSA2X-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T06:58:48Z ack
+Integrity: sha256=82999e65080a7abb6336f814d1d3144f500dbe45bf9459fc986a283cba882104
