@@ -372,17 +372,28 @@ func inheritFlakeRecords(install, checkout, commit, tree string, seams ProveSeam
 }
 
 // goalRecordsBetween says every path changed from one tree to the next is a
-// goal page or the incident register, present in the new tree and read
-// without problems by the ledger. Only the new tree is read.
+// goal page or the incident register, read without problems by the ledger.
+// A deletion counts only as a goal's conclusion with its record in the same move.
+// Only the new tree is read.
 func goalRecordsBetween(install, checkout, from, to string, seams ProveSeams) bool {
-	changed, err := seams.git(checkout, "diff", "--name-only", "--no-renames", from, to)
-	paths := strings.Split(strings.TrimSpace(changed), "\n")
+	changed, err := seams.git(checkout, "diff", "--name-status", "--no-renames", from, to)
+	var paths, statuses, deleted []string
+	for _, line := range strings.Split(strings.TrimSpace(changed), "\n") {
+		if line == "" {
+			continue
+		}
+		status, path, ok := strings.Cut(line, "\t")
+		if !ok {
+			return false
+		}
+		paths, statuses = append(paths, path), append(statuses, status)
+	}
 	prefix, relErr := filepath.Rel(checkout, install)
 	if err != nil || relErr != nil || strings.TrimSpace(changed) == "" || !recordsOnlyPaths(install, checkout, paths) {
 		return false
 	}
 	after := map[string][]byte{}
-	for _, path := range paths {
+	for i, path := range paths {
 		name, inside := strings.CutPrefix(path, filepath.ToSlash(prefix)+"/")
 		if prefix == "." {
 			name, inside = path, true
@@ -390,11 +401,24 @@ func goalRecordsBetween(install, checkout, from, to string, seams ProveSeams) bo
 		if !inside || !goal.GoalRecordPath(name) {
 			return false
 		}
+		switch statuses[i] {
+		case "D":
+			deleted = append(deleted, name)
+			continue
+		case "A", "M":
+		default:
+			return false
+		}
 		now, err := seams.git(checkout, "show", to+":"+path)
 		if err != nil {
 			return false
 		}
 		after[name] = []byte(now)
+	}
+	for _, name := range deleted {
+		if !goal.ConcludedIn(name, after) {
+			return false
+		}
 	}
 	return goal.GoalRecordsOnly(after)
 }

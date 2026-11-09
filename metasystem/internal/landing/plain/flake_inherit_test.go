@@ -84,19 +84,19 @@ func newFlakeMoveBed(t *testing.T) *flakeMoveBed {
 			}
 			return "", nil
 		}
-		if len(args) == 5 && args[0] == "diff" {
+		if len(args) == 5 && args[0] == "diff" && (args[1] == "--name-only" || args[1] == "--name-status") && args[2] == "--no-renames" {
 			from, to := strings.TrimPrefix(args[3], "tree-"), strings.TrimPrefix(args[4], "tree-")
 			if from == "origin/main" {
 				from = b.main
 			}
 			paths := map[string]bool{}
 			for path, old := range b.trees[from] {
-				if b.trees[to][path] != old {
+				if data, ok := b.trees[to][path]; !ok || data != old {
 					paths[path] = true
 				}
 			}
 			for path, data := range b.trees[to] {
-				if b.trees[from][path] != data {
+				if old, ok := b.trees[from][path]; !ok || old != data {
 					paths[path] = true
 				}
 			}
@@ -105,6 +105,17 @@ func newFlakeMoveBed(t *testing.T) *flakeMoveBed {
 				changed = append(changed, path)
 			}
 			sort.Strings(changed)
+			if args[1] == "--name-status" {
+				for i, path := range changed {
+					status := "M"
+					if _, ok := b.trees[to][path]; !ok {
+						status = "D"
+					} else if _, ok := b.trees[from][path]; !ok {
+						status = "A"
+					}
+					changed[i] = status + "\t" + path
+				}
+			}
 			return strings.Join(changed, "\n"), nil
 		}
 		if len(args) == 2 && args[0] == "show" {
@@ -180,16 +191,16 @@ func (b *flakeMoveBed) checkWake(t *testing.T, launches int, due bool) {
 
 func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 	t.Parallel()
-	cases := []string{"goal-edit", "goal-done", "goal-edit-beside-design-edit", "goal-edit-beside-testing-contract", "unparseable-page", "design-page-then-goal-record", "u4-marker-row", "flake-record", "stacked", "design-edit-flake-fix", "code-change", "later-red", "did-not-run-red", "unreadable", "person", "person-scoped-then-flake", "newer-environment", "missing-environment", "legacy-inheritance-evidence", "scoped-push-then-flake", "missing-full-at", "malformed-full-at", "future-full-at", "future-marked-row", "helpers-refuse-future", "legacy-row", "flake-after-design-edit", "later-red-after-inheritance"}
+	cases := []string{"goal-edit", "goal-done", "goal-done-without-record", "goal-done-with-another-record", "goal-done-record-names-another-goal", "goal-done-beside-design-deletion", "goal-edit-beside-design-edit", "goal-edit-beside-testing-contract", "unparseable-page", "design-page-then-goal-record", "u4-marker-row", "flake-record", "stacked", "design-edit-flake-fix", "code-change", "later-red", "did-not-run-red", "unreadable", "person", "person-scoped-then-flake", "newer-environment", "missing-environment", "legacy-inheritance-evidence", "scoped-push-then-flake", "missing-full-at", "malformed-full-at", "future-full-at", "future-marked-row", "helpers-refuse-future", "legacy-row", "flake-after-design-edit", "later-red-after-inheritance"}
 	for _, name := range cases {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			b := newFlakeMoveBed(t)
 			b.move("b", 5*time.Minute)
 			switch name {
-			case "goal-edit", "goal-done", "goal-edit-beside-design-edit", "goal-edit-beside-testing-contract", "unparseable-page", "design-page-then-goal-record":
+			case "goal-edit", "goal-done", "goal-done-without-record", "goal-done-with-another-record", "goal-done-record-names-another-goal", "goal-done-beside-design-deletion", "goal-edit-beside-design-edit", "goal-edit-beside-testing-contract", "unparseable-page", "design-page-then-goal-record":
 				path := "metasystem/plans/goals/tests-observe-only-what-they-inject-2.md"
-				if name == "goal-done" {
+				if strings.HasPrefix(name, "goal-done") {
 					neighbour, problems := goal.ParseFile([]byte(b.trees["a"][path]))
 					if len(problems) != 0 {
 						t.Fatal(problems)
@@ -209,7 +220,7 @@ func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 					f.Intent = "Repair the ordinary goal."
 					f.Revision++
 					f.History = append(f.History, goal.HistoryLine{At: b.at.Format(time.RFC3339), Opid: f.History[0].Opid, Actor: "lane+lin-1", Verb: "edit", Targets: []string{f.Id}, Keep: -1})
-					if name == "goal-done" {
+					if strings.HasPrefix(name, "goal-done") {
 						neighbour := *f
 						neighbour.Id = "neighbour"
 						neighbour.History = slices.Clone(f.History)
@@ -219,7 +230,26 @@ func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 						b.trees[tree]["metasystem/plans/goals/neighbour.md"] = strings.TrimSpace(string(goal.RenderFile(&neighbour)))
 						f.State, f.Conclude = goal.StateDone, "Shipped."
 						f.History[len(f.History)-1].Verb = "done"
-						b.trees[tree]["metasystem/records/goals/"+f.Id+".md"] = strings.TrimSpace(string(goal.RenderFile(f)))
+						record := "metasystem/records/goals/" + f.Id + ".md"
+						switch name {
+						case "goal-done-without-record":
+							record = ""
+						case "goal-done-with-another-record", "goal-done-record-names-another-goal":
+							f.Id = neighbour.Id
+							for i := range f.History {
+								f.History[i].Targets = []string{f.Id}
+							}
+							if name == "goal-done-with-another-record" {
+								record = "metasystem/records/goals/" + f.Id + ".md"
+							}
+						}
+						if record != "" {
+							data := goal.RenderFile(f)
+							if _, problems := goal.ParseFile(data); len(problems) != 0 {
+								t.Fatalf("invalid concluded fixture: %v", problems)
+							}
+							b.trees[tree][record] = strings.TrimSpace(string(data))
+						}
 						delete(b.trees[tree], path)
 						continue
 					}
@@ -232,6 +262,16 @@ func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 					}
 					if name == "unparseable-page" {
 						b.trees[tree][path] = "not a goal page"
+					}
+				}
+				if name == "goal-done-beside-design-deletion" {
+					b.trees["a"]["metasystem/plans/designs/x.md"] = "A design."
+					git := b.seams.Git
+					b.seams.Git = func(dir string, args ...string) (string, error) {
+						if len(args) == 2 && args[0] == "show" && strings.HasSuffix(args[1], ":metasystem/plans/goals/neighbour.md") {
+							t.Fatal("read a goal page before refusing the deleted design")
+						}
+						return git(dir, args...)
 					}
 				}
 				if name == "design-page-then-goal-record" {
@@ -414,7 +454,7 @@ func TestFlakeRecordMoveKeepsMainsFullGreen(t *testing.T) {
 				b.checkWake(t, 0, false)
 				return
 			}
-			accepted := slices.Contains([]string{"goal-edit", "design-edit-flake-fix", "flake-record", "stacked", "did-not-run-red", "legacy-inheritance-evidence", "later-red-after-inheritance"}, name)
+			accepted := slices.Contains([]string{"goal-edit", "goal-done", "design-edit-flake-fix", "flake-record", "stacked", "did-not-run-red", "legacy-inheritance-evidence", "later-red-after-inheritance"}, name)
 			if !accepted {
 				b.checkWake(t, 1, false)
 				if name != "future-marked-row" {

@@ -7,7 +7,7 @@ import (
 
 func TestGoalRecordsOnly(t *testing.T) {
 	t.Parallel()
-	for _, name := range []string{"goal-edit", "register-closure", "subfolder", "design-page", "testing-contract", "archive", "backlog", "unparseable-page", "unparseable-register", "empty"} {
+	for _, name := range []string{"goal-edit", "register-closure", "subfolder", "design-page", "testing-contract", "archive", "archive that does not parse", "backlog", "unparseable-page", "unparseable-register", "empty"} {
 		t.Run(name, func(t *testing.T) {
 			t.Parallel()
 			after := map[string][]byte{}
@@ -49,6 +49,9 @@ func TestGoalRecordsOnly(t *testing.T) {
 				after["testing.json"] = after[livePath("ordinary-goal")]
 			case "archive":
 				after["records/goals/x.md"] = bytes.TrimSpace(RenderFile(vGoal("x", StateDone)))
+				want = true
+			case "archive that does not parse":
+				after["records/goals/x.md"] = []byte("not a goal page")
 			case "backlog":
 				after["plans/goals/backlog.md"] = []byte("# Backlog\n\nA list of goals.")
 			case "unparseable-page":
@@ -71,6 +74,10 @@ func TestGoalRecordPathNamesOnlyTheRegisterAndGoalPages(t *testing.T) {
 		"plans/goals/trunk-red.json":          true,
 		"plans/goals/a-flake-is-not-a-red.md": true,
 		"plans/goals/backlog.md":              true,
+		"records/goals/x.md":                  true,
+		"records/reads/x.md":                  false,
+		"records/goals/x.txt":                 false,
+		"records/goals/sub/x.md":              false,
 		"plans/goals/notes.txt":               false,
 		"plans/designs/fixture.md":            false,
 		"testing.json":                        false,
@@ -78,5 +85,37 @@ func TestGoalRecordPathNamesOnlyTheRegisterAndGoalPages(t *testing.T) {
 		if got := GoalRecordPath(name); got != want {
 			t.Errorf("GoalRecordPath(%q) = %v, want %v", name, got, want)
 		}
+	}
+}
+
+func TestConcludedInRequiresTheSameGoalsRecord(t *testing.T) {
+	t.Parallel()
+	x, y := RenderFile(vGoal("x", StateDone)), RenderFile(vGoal("y", StateDone))
+	for _, data := range [][]byte{x, y} {
+		if _, problems := ParseFile(data); len(problems) != 0 {
+			t.Fatalf("invalid concluded fixture: %v", problems)
+		}
+	}
+	for _, test := range []struct {
+		name, deleted string
+		after         map[string][]byte
+		want          bool
+	}{
+		{"conclusion", "plans/goals/x.md", map[string][]byte{"records/goals/x.md": x}, true},
+		{"no record", "plans/goals/x.md", nil, false},
+		{"another record", "plans/goals/x.md", map[string][]byte{"records/goals/y.md": y}, false},
+		{"another identity", "plans/goals/x.md", map[string][]byte{"records/goals/x.md": y}, false},
+		{"unparseable record", "plans/goals/x.md", map[string][]byte{"records/goals/x.md": []byte("not a goal page")}, false},
+		{"register", "plans/goals/trunk-red.json", map[string][]byte{"records/goals/trunk-red.json": x}, false},
+		{"legacy archive", "plans/goals/done/x.md", map[string][]byte{"records/goals/done/x.md": x}, false},
+		{"empty id", "plans/goals/.md", map[string][]byte{"records/goals/.md": x}, false},
+		{"design", "plans/designs/x.md", map[string][]byte{"records/goals/x.md": x}, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ConcludedIn(test.deleted, test.after); got != test.want {
+				t.Fatalf("ConcludedIn(%q) = %v, want %v", test.deleted, got, test.want)
+			}
+		})
 	}
 }
