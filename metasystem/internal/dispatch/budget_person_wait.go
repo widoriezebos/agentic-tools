@@ -18,6 +18,13 @@ func (p BudgetProjection) PersonWords() string {
 	return fmt.Sprintf("waiting for a person since %s, clock paused (%.1fh so far)", p.PersonWaitSince.Local().Format("15:04"), p.PersonPaused.Hours())
 }
 
+func (p BudgetProjection) OverrunWords() string {
+	if p.ElapsedOverrunRun == "" || p.ElapsedState == "" {
+		return ""
+	}
+	return fmt.Sprintf("past its box by %dm for run %s", p.ElapsedOverrunMinutes, p.ElapsedOverrunRun)
+}
+
 // Dispatch reads the channel's record without importing its command layer,
 // which depends on dispatch. Unbounded records leave time on the clock.
 func personWaits(repoRoot, goalID string, from, now time.Time, work []clockDependency) (spans []outage.Span, problems []string) {

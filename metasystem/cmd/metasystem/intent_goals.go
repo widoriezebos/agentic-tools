@@ -308,6 +308,9 @@ func (view intentBudgetView) lines() []string {
 	if words := projection.PersonWords(); words != "" {
 		lines = append(lines, words)
 	}
+	if words := projection.OverrunWords(); words != "" {
+		lines = append(lines, words)
+	}
 	lines = append(lines, fmt.Sprintf("spent: elapsed %s of %s, attempts %d of %d, job minutes %d of %d reserved, active jobs %d of %d",
 		projection.Elapsed.Round(time.Minute), limits.ElapsedLimit, projection.Attempts, limits.AttemptLimit,
 		projection.ReservedJobMinutes, limits.ReservedJobMinutesLimit, projection.ActiveJobs, limits.ActiveJobLimit))

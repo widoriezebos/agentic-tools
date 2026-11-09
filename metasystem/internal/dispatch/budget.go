@@ -67,6 +67,7 @@ type BudgetBreach struct {
 type BudgetProjection struct {
 	goal.LaneBudgetRecord
 	unitAttempts            map[string]bool
+	unitRunsExecuted        map[string]bool
 	Status                  BudgetProjectionStatus
 	GoalID                  string
 	GoalRevision            uint64
@@ -85,6 +86,8 @@ type BudgetProjection struct {
 	Wait                    time.Duration `json:"-"`
 	PersonWaitSince         time.Time     `json:"-"`
 	PersonPaused            time.Duration `json:"-"`
+	ElapsedOverrunMinutes   uint64        `json:"-"`
+	ElapsedOverrunRun       string        `json:"-"`
 	ElapsedGracePercent     uint64
 	ElapsedBreachLimit      time.Duration
 	ElapsedState            ElapsedBudgetState
@@ -402,6 +405,7 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 	operations := make(map[string]string)
 	unitAttempts := make(map[string]bool)
 	projection.unitAttempts = unitAttempts
+	projection.unitRunsExecuted = make(map[string]bool)
 	for _, entry := range entries {
 		if !strings.HasSuffix(entry.Name(), ".json") {
 			continue
@@ -540,13 +544,21 @@ func projectBudgetWithoutRun(repoRoot string, file *goal.GoalFile, now time.Time
 			if !typed || runID == "" || !roundOK || round < 1 || operationID != "unit-launch:"+jobID {
 				return unknownBudget(file.Id, revision, logicalPath, "the unit reservation has an unreadable execution identity")
 			}
+			reservationExecuted := executed
 			if TerminalStatus(status) {
-				if _, typed := record["unitExecuted"].(bool); !typed {
+				var typed bool
+				if reservationExecuted, typed = record["unitExecuted"].(bool); !typed {
 					return unknownBudget(file.Id, revision, logicalPath, "the terminal unit reservation has unreadable execution evidence")
 				}
-				if record["unitExecuted"] == false {
-					continue
-				}
+			}
+			if reservationExecuted {
+				projection.unitRunsExecuted[runID] = true
+			}
+			if minutes, ok := numInt(record["elapsedOverrunMin"]); ok && minutes > 0 && uint64(minutes) > projection.ElapsedOverrunMinutes {
+				projection.ElapsedOverrunMinutes, projection.ElapsedOverrunRun = uint64(minutes), runID
+			}
+			if TerminalStatus(status) && !reservationExecuted {
+				continue
 			}
 			// A retry is an attempt of its own, counted even when its
 			// environment stop excludes its minutes.

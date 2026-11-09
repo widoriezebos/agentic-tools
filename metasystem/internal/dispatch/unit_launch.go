@@ -3,6 +3,7 @@ package dispatch
 import (
 	"fmt"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
@@ -65,6 +66,11 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 		}
 		breaches := budgetAdmissionBreaches(admission)
 		breaches = append(breaches, projection.Breaches...)
+		beforeElapsedWaiver := len(breaches)
+		if projection.unitRunsExecuted[run] {
+			breaches = slices.DeleteFunc(breaches, func(b BudgetBreach) bool { return b.Field == "elapsedLimit" })
+		}
+		elapsedWaived := len(breaches) < beforeElapsedWaiver
 		if admission.ReservedJobMinutes < admission.Limits.ReservedJobMinutesLimit && uint64(cap) > admission.Limits.ReservedJobMinutesLimit-admission.ReservedJobMinutes {
 			breaches = append(breaches, BudgetBreach{Field: "reservedJobMinutesLimit", Used: fmt.Sprintf("%d+%d proposed", admission.ReservedJobMinutes, cap), Limit: fmt.Sprint(admission.Limits.ReservedJobMinutesLimit)})
 		}
@@ -78,6 +84,9 @@ func ReserveUnitLaunch(root, id, run string, file *goal.GoalFile, round int, cap
 		reservation := map[string]any{"jobId": id, "operationId": "unit-launch:" + id, "unitRun": run, "unitRound": round,
 			"goalId": goal, "goalRevision": revision, "machineId": file.Claimed.Machine, "claimEpoch": file.StopCapability.ClaimEpoch,
 			"capMin": cap, "status": "pending", "createdAt": now.UTC().Format(time.RFC3339Nano)}
+		if elapsedWaived {
+			reservation["elapsedOverrunMin"] = int64(max(0, projection.Elapsed-projection.Limits.ElapsedDuration()) / time.Minute)
+		}
 		if retry {
 			reservation["unitRetryAttempt"] = true
 		}
