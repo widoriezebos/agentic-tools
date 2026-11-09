@@ -1,0 +1,74 @@
+{
+  "canonicalRead": {
+    "engine": "906878dc3972982790e2de561dcdd60883bc43f3",
+    "findings": [
+      {
+        "change": "None required. If it ever matters, mention the flake in the words.",
+        "claim": "When main's replay first goes red and then passes on the flake repeat, the loop moves on. If a later merge then fails, the sentence says the package 'passed on main' without saying it only passed on the repeat. This is a wording detail. The unit works and is safe without changing it.",
+        "class": "other",
+        "evidence": "replay.go: on the main tree, repeatRed sets failed=false when the repeat passes, and the loop continues. attributeOwn later sets PassedOn = trees[0].Commit. No reproduction was run, because this is about how the sentence reads, not a defect.",
+        "id": "code-critic-d8ad533f738d2f936900eca3:1",
+        "material": false,
+        "relation": "R-124-m1u (material only if the slice does not work or is not safe)",
+        "severity": "low",
+        "where": "metasystem/internal/landing/plain/cause.go"
+      }
+    ],
+    "id": "code-critic-d8ad533f738d2f936900eca3",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-return-names-the-failing-test/metasystem/artifacts/agents/code-critic-d8ad533f738d2f936900eca3/rounds/1/return.md",
+    "subject": {
+      "commit": "bfac00f286ebf9761fa466a7707fa13281f9d3df",
+      "diffDigest": "7c77f13dfae66ad8a062375e2c4c2654df564cd1e5de818be4cede95bad2faf7",
+      "kind": "commit",
+      "parent": "408d12c125aa18d18c735131a1f846d139757cf3",
+      "tree": "707ffaa6baec3f6cb093113667ed4ea213e4b1f2"
+    }
+  },
+  "readDigest": "1e4464feeef3b66bd43241ea9f2d0dec87d8ca65ba80d9e16ba044b922e1012e",
+  "schemaVersion": 1,
+  "goal": "a-return-names-the-failing-test",
+  "unit": "U1b",
+  "subject": {
+    "commit": "bfac00f286ebf9761fa466a7707fa13281f9d3df",
+    "parent": "408d12c125aa18d18c735131a1f846d139757cf3",
+    "tree": "707ffaa6baec3f6cb093113667ed4ea213e4b1f2",
+    "patchDigest": "7c77f13dfae66ad8a062375e2c4c2654df564cd1e5de818be4cede95bad2faf7",
+    "unitDigest": "971ca988c24ca85f30ebc9938f29e5c78705d96a7bb9fd3b3bd4d1bd0e2075be"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d8ad533f738d2f936900eca3",
+    "round": 1,
+    "closureSha256": "13ca1c4b49ccc7773f4eddf9c43e8e8d1d3c8cfbffa73fdeb26f2544346f50b4"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "707ffaa6baec3f6cb093113667ed4ea213e4b1f2",
+    "runId": "goal-read-gate-20261109t154957z-9d6cefd8f62543e8"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "408d12c125aa18d18c735131a1f846d139757cf3",
+      "digest": "b25884942d051072ef10fb1b587da1e8d938f61d0d593cffceca0072f46dd36d"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_cause_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8ad533f738d2f936900eca3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/named_replay_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8ad533f738d2f936900eca3"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/steward_rows_test.go",
+      "readerWord": "reviewed by critic root code-critic-d8ad533f738d2f936900eca3"
+    }
+  ],
+  "sha256": "35dacc92cd22111b5cbf61a684c6f33826df63dfcb3422f816482a04e0e6b1c9"
+}
