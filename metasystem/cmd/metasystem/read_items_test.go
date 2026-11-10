@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/metrics"
 )
@@ -125,6 +126,43 @@ func TestGoalShowAndNextPrintOpenReadItemFixUnit(t *testing.T) {
 	})
 	if nextCode != 0 || nextErr != "" || !strings.Contains(next, "continue your claimed goal: standing-validation\nOpen read items (fix unit critic): 1\n- critic-1: Name the boundary.\n") {
 		t.Fatalf("goal next omitted block after selection: code=%d output=%q stderr=%q", nextCode, next, nextErr)
+	}
+}
+
+func TestGoalNextNamesASpentBoxFirst(t *testing.T) {
+	t.Parallel()
+	fixture := newReadItemCommandFixture(t)
+	resolve := fixture.dependencies.endpoint
+	fixture.dependencies.endpoint = func(root string) (goal.Endpoint, error) {
+		endpoint, err := resolve(root)
+		endpoint.Repository = freshCommandRepository{Repository: endpoint.Repository, attempts: new(int)}
+		return endpoint, err
+	}
+	fixture.dependencies.laneHome = func() (string, error) { return "", fmt.Errorf("lane home unavailable") }
+	root := fixture.repository.root
+	next := func(stdout, stderr io.Writer) int {
+		return runGoalNextWithInputs([]string{"--root", root, "--machine", "mac-cli"}, withStreams(fixture.dependencies, stdout, stderr), fixture.repository.commandNow(fixture.now), stdout, stderr)
+	}
+	code, before, stderr := runOnOwnStreams(next)
+	if code != 0 || stderr != "" || !strings.HasPrefix(before, "lane line unreadable:") || strings.Contains(before, "waits for your box") {
+		t.Fatalf("next without a question: code=%d output=%q stderr=%q", code, before, stderr)
+	}
+	stateRoot, err := goal.ResolveStateRoot(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+	q := spentBoxQuestion(t, stateRoot, fixture.projection().Tree.Live["standing-validation"])
+	code, output, stderr := runOnOwnStreams(next)
+	want := q.Goal + " waits for your box: question " + q.ID + "\n"
+	if code != 0 || stderr != "" || output != want+before {
+		t.Fatalf("next did not put the box question first: code=%d output=%q want=%q stderr=%q", code, output, want+before, stderr)
+	}
+	if err := channel.Retire(stateRoot, q.ID, "the box changed", fixture.now); err != nil {
+		t.Fatal(err)
+	}
+	code, output, stderr = runOnOwnStreams(next)
+	if code != 0 || stderr != "" || output != before {
+		t.Fatalf("next after retirement changed: code=%d output=%q want=%q stderr=%q", code, output, before, stderr)
 	}
 }
 

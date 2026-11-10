@@ -159,3 +159,16 @@ func TestIntentUnitComparisonBudgetHoldResumesAfterPersonBudget(t *testing.T) {
 		t.Fatalf("resumed comparison was not settled: %+v", projection)
 	}
 }
+
+func TestIntentUnitBudgetRefusalNamesTheSpentBoxQuestion(t *testing.T) {
+	t.Parallel()
+	bed, args := comparisonAccountingBed(t, 121)
+	q := spentBoxQuestion(t, bed.root(), bed.goalFile(bed.id))
+	code, refused, _ := bed.work(args...)
+	if code != 1 || refused.Next == nil || !slices.Equal(refused.Next.Argv, []string{"metasystem", "goal", "budget", bed.id, "BOX"}) || !strings.Contains(resultWords(refused), "BUDGET_REFUSED") {
+		t.Fatalf("budget refusal lost its remedy: code=%d summary=%q next=%+v", code, refused.Summary, refused.Next)
+	}
+	if !strings.Contains(refused.Next.Reason, q.ID) || !slices.Contains(refused.Targets, intentTarget{Kind: "question", ID: q.ID}) {
+		t.Fatalf("budget refusal omitted question %s: next=%+v targets=%+v", q.ID, refused.Next, refused.Targets)
+	}
+}

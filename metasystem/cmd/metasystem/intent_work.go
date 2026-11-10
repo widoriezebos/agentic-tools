@@ -1596,8 +1596,17 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 				next: inv.publicArgv("work", "build", record.Goal, "--work", "declaration-repair", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME", "--check", "COMMAND"), nextReason: "a person supplies the repair's exact check without reading the broken declaration"}
 		case launch.IsCode(err, "BUDGET_REFUSED") || launch.IsCode(err, "BUDGET_UNKNOWN"):
 			goalID := targetID(targets, "goal", record.Goal)
+			nextReason := "a person sets the goal's budget; unreadable spending records also need repair"
+			open, _ := channel.WalkOpenQuestions(inv.layout.InstallationRoot.Path())
+			for _, q := range open {
+				if q.Goal == goalID && q.Decision != nil && q.Decision.Kind == channel.SpentBoxDecision {
+					targets = append(targets, intentTarget{Kind: "question", ID: q.ID})
+					nextReason = "a person sets the goal's budget; question " + q.ID + " already asks for it in the channel"
+					break
+				}
+			}
 			return intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain, Details: details,
-				Data: unitData(record, runner.Manager), next: inv.publicArgv("goal", "budget", goalID, "BOX"), nextReason: "a person sets the goal's budget; unreadable spending records also need repair"}
+				Data: unitData(record, runner.Manager), next: inv.publicArgv("goal", "budget", goalID, "BOX"), nextReason: nextReason}
 		case launch.IsCode(err, "UNIT_STOPPED"):
 			if len(record.Rounds) > 0 && (record.Rounds[len(record.Rounds)-1].Outcome == "build-gap" || record.Rounds[len(record.Rounds)-1].Stop != nil && record.Rounds[len(record.Rounds)-1].Stop.Loop == "unit-build") {
 				next, _ := inv.workContinuation(record.Goal, launch.NamedWork{Unit: record.Unit, Record: &record}, true)

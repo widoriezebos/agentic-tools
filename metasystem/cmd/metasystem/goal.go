@@ -468,6 +468,14 @@ func runGoalNextWithInputs(args []string, dependencies syncRequestDependencies, 
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
+	if questionRoot, err := goal.ResolveStateRoot(*root); err == nil {
+		open, _ := channel.WalkOpenQuestions(questionRoot)
+		for _, q := range open {
+			if q.Decision != nil && q.Decision.Kind == channel.SpentBoxDecision {
+				fmt.Fprintf(stdout, "%s waits for your box: question %s\n", q.Goal, q.ID)
+			}
+		}
+	}
 	homeReader := dependencies.laneHome
 	if homeReader == nil {
 		homeReader = board.Home
