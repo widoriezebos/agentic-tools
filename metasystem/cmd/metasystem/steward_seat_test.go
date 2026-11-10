@@ -402,3 +402,57 @@ func TestSeatGuardsReadEveryLaneRecordFormat(t *testing.T) {
 	}
 	check("no record after landing unset", false)
 }
+
+// Git's porcelain output is the workspace adapter's evidence, including
+// untracked files; real Git here verifies the status flags it receives.
+func TestStewardGoalWorkspaceSaysUncommittedChanges(t *testing.T) {
+	t.Parallel()
+	for _, row := range []struct {
+		name         string
+		exists, want bool
+	}{
+		{"clean", true, false}, {"tracked change", true, true}, {"untracked only", true, true}, {"no worktree", false, false},
+	} {
+		t.Run(row.name, func(t *testing.T) {
+			t.Parallel()
+			bed := newIntentBed(t, false, nil)
+			root := bed.root()
+			connectionGit(t, root, "init", "-q", "-b", "main")
+			connectionGit(t, root, "config", "user.name", "Workspace test")
+			connectionGit(t, root, "config", "user.email", "workspace@example.invalid")
+			write := func(name, text string) {
+				if err := os.WriteFile(filepath.Join(root, name), []byte(text), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			}
+			write(".gitignore", "*\n!.gitignore\n!tracked.txt\n!new.txt\n")
+			write("tracked.txt", "original\n")
+			connectionGit(t, root, "add", ".gitignore", "tracked.txt")
+			connectionGit(t, root, "commit", "-qm", "clean goal workspace")
+			if row.exists {
+				connectionGit(t, root, "checkout", "-qb", "goal/"+bedGoal)
+			}
+			if row.name == "tracked change" {
+				write("tracked.txt", "changed\n")
+			}
+			if row.name == "untracked only" {
+				write("new.txt", "new work\n")
+			}
+			owners := bed.owners()
+			owners.work.git = func(root string, args ...string) ([]byte, error) {
+				command := exec.Command("git", args...)
+				command.Dir = root
+				return command.CombinedOutput()
+			}
+			var cfg steward.TickConfig
+			wireStewardSeat(&cfg, owners)
+			if cfg.Workspace == nil {
+				t.Fatal("workspace reader is not wired")
+			}
+			got, err := cfg.Workspace(root, bedGoal)
+			if err != nil || got != row.want {
+				t.Fatalf("workspace=%v %v want %v", got, err, row.want)
+			}
+		})
+	}
+}

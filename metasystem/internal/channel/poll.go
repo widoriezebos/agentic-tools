@@ -359,8 +359,8 @@ func settleChoice(ctx context.Context, c PollConfig, q *Question) error {
 		switch attempt.Outcome {
 		case "started":
 			attempt.Outcome = "acted"
-			did := map[string]string{"Collect it": "The finished round of %s is collected and goes on", "Retry": "The failed step of \"%s\" started again", "Accept the size": "The checks of \"%s\" went on", "One more day": "\"%s\" has one more working day and goes on", "Revive it": "I revived the seat for %s", "Approve it again": "Seats start again for %s"}[label]
-			if limit, _, _ := strings.Cut(envelope.Data.Budget.Box, "/"); label == "One more day" && limit != "" {
+			did := map[string]string{"Collect it": "The finished round of %s is collected and goes on", "Retry": "The failed step of \"%s\" started again", "Accept the size": "The checks of \"%s\" went on", "One more day": "\"%s\" has one more working day and goes on", "Raise the box": "\"%s\" has a bigger time box", "Revive it": "I revived the seat for %s", "Approve it again": "Seats start again for %s"}[label]
+			if limit, _, _ := strings.Cut(envelope.Data.Budget.Box, "/"); (label == "One more day" || label == "Raise the box") && limit != "" {
 				did += " (its time box is now " + limit + ")"
 			}
 			line = fmt.Sprintf("%s it is. "+cmp.Or(did, "The builder's next round of \"%s\" started")+" at %s. If it stops again, I ask here. Undo: %s.", label, QuestionSubject(*q), c.Now.Local().Format("15:04"), strings.TrimSuffix(undo, "."))

@@ -181,3 +181,56 @@ func TestOneMoreDayForAGoalAlreadyGoingOnSettlesIt(t *testing.T) {
 		t.Fatalf("the settled question stays open: %+v %v", closed, err)
 	}
 }
+
+// spentBoxQuestion mirrors the steward's complete-box proposal.
+func spentBoxQuestion(t *testing.T, root string, file *goal.GoalFile) channel.Question {
+	t.Helper()
+	raised := *file.Budget
+	raised.ElapsedLimit = goalbudget.FormatWorkingDuration(raised.ElapsedDuration() + 16*time.Hour)
+	q, err := channel.Ask(channel.AskRequest{RepoRoot: root, Goal: file.Id, Kind: "stop", Contract: true, Now: boxStop, Recommendation: "Raise the box",
+		Decision: &channel.Decision{Kind: channel.SpentBoxDecision, Subject: file.Id, State: dispatchcore.SpentBoxState(file, boxStop)},
+		Facts:    []string{"box spent: " + file.Budget.ElapsedLimit, "undo after Raise the box: metasystem goal budget " + file.Id + " " + goalbudget.FormatBox(*file.Budget)},
+		Plain:    &channel.Plain{Decision: "Goal " + strings.ReplaceAll(file.Id, "-", " ") + " has used its " + file.Budget.ElapsedLimit + " box; nothing new starts.", IfNothing: "the goal stands until you raise its box or release it."},
+		Options: []channel.Option{
+			{Label: "Raise the box", Consequence: "its time box becomes " + raised.ElapsedLimit + ", two more working days; the other limits stay and may still block work. Undo: goal budget back to " + file.Budget.ElapsedLimit + ".", Act: []string{"metasystem", "goal", "budget", file.Id, goalbudget.FormatBox(raised)}},
+			{Label: "Leave it", Consequence: "nothing new starts; running work may still spend. This question stays open, so you can still raise the box."},
+		}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return q
+}
+
+func TestChannelRaiseTheBoxActsAndClosesItsQuestion(t *testing.T) {
+	t.Parallel()
+	t.Run("the chosen act", func(t *testing.T) {
+		t.Parallel()
+		bed := newIntentBed(t, false, func(file *goal.GoalFile) {
+			file.StopCapability = &goal.StopCapability{Generation: file.Claimed.Revision, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, ClaimEpoch: 1}
+		})
+		channelFor(t, bed.root())
+		before := bed.goalFile(bedGoal)
+		q := recordChoice(t, bed.root(), spentBoxQuestion(t, bed.root(), before), func(q *channel.Question) { q.Answer.Text, q.Answer.Lineage = "raise the box", "steward" })
+		raised := *before.Budget
+		raised.ElapsedLimit = goalbudget.FormatWorkingDuration(raised.ElapsedDuration() + 16*time.Hour)
+		code, result := boxAnswer(t, bed, q.ID, "goal", "budget", bedGoal, goalbudget.FormatBox(raised))
+		file := bed.goalFile(bedGoal)
+		last := file.History[len(file.History)-1]
+		if state, _ := answerState(t, result); code != 0 || state != "started" || *file.Budget != raised || last.Actor != "human:Wido" || last.AuthorityOutcome != goal.AuthorityOutcomeVerifiedChannelAnswer || last.ChannelContext != q.ID {
+			t.Fatalf("raise=%d %+v box %+v history %+v", code, result, file.Budget, last)
+		}
+		if closed, err := channel.ReadQuestion(bed.root(), q.ID); err != nil || closed.State != "closed" {
+			t.Fatalf("question stays open: %+v %v", closed, err)
+		}
+	})
+	t.Run("an unrelated act keeps it", func(t *testing.T) {
+		t.Parallel()
+		bed := newIntentBed(t, false, nil)
+		q := spentBoxQuestion(t, bed.root(), bed.goalFile(bedGoal))
+		code, result := bed.runJSON(bed.owners(), "goal", "pin", bedGoal, "mac-cli")
+		open, err := channel.ReadQuestion(bed.root(), q.ID)
+		if code != 0 || err != nil || open.State != "open" || !open.RetiredAt.IsZero() {
+			t.Fatalf("pin closed question: %d %+v %+v %v", code, result, open, err)
+		}
+	})
+}

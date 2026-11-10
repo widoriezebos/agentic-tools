@@ -707,3 +707,87 @@ func TestAProofThatDischargesAfterTheMarkEndsTheWait(t *testing.T) {
 		})
 	}
 }
+
+func (bed *goalMutationBed) spent(now time.Time) ([]SpentBox, error) {
+	return findAdmissionClosedWithReads(bed.root, now, bed.reads)
+}
+
+func TestFindAdmissionClosedListsOnlyTheClosedBand(t *testing.T) {
+	t.Parallel()
+	t.Run("the closed band", func(t *testing.T) {
+		t.Parallel()
+		bed := newGoalMutationBed(t)
+		under := time.Date(2026, 8, 28, 16, 59, 59, 0, time.UTC)
+		between := under.Add(time.Second)
+		boundary := time.Date(2026, 8, 28, 21, 0, 0, 0, time.UTC)
+		for _, at := range []time.Time{under, between, boundary} {
+			boxes, err := bed.spent(at)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if at != between {
+				if len(boxes) != 0 {
+					t.Fatalf("outside band: %+v", boxes)
+				}
+				continue
+			}
+			file := bed.parsedAcceptedGoal(t, "bounded")
+			if len(boxes) != 1 || boxes[0].GoalID != "bounded" || boxes[0].Machine != file.Claimed.Machine || boxes[0].Budget != *file.Budget || boxes[0].State != SpentBoxState(file, at) || boxes[0].Elapsed < file.Budget.ElapsedDuration() {
+				t.Fatalf("closed band: %+v", boxes)
+			}
+		}
+		if _, err := bed.stop("bounded", 2, boundary); err != nil {
+			t.Fatal(err)
+		}
+		if boxes, err := bed.spent(boundary); err != nil || len(boxes) != 0 {
+			t.Fatalf("fenced: %+v %v", boxes, err)
+		}
+	})
+	t.Run("the standing state", func(t *testing.T) {
+		t.Parallel()
+		bed := newGoalMutationBed(t)
+		at := time.Date(2026, 8, 28, 17, 0, 0, 0, time.UTC)
+		file := bed.parsedAcceptedGoal(t, "bounded")
+		for _, row := range []struct {
+			name  string
+			alter func(*goal.GoalFile)
+			empty bool
+		}{
+			{"unclaimed", func(f *goal.GoalFile) { f.State = goal.StateApproved }, true},
+			{"no claim", func(f *goal.GoalFile) { f.Claimed = nil }, true},
+			{"no budget", func(f *goal.GoalFile) { f.Budget = nil }, true},
+			{"landed", func(f *goal.GoalFile) {
+				f.Landing = &goal.LandingRecord{At: at.Add(-time.Hour).Format(time.RFC3339), Opid: "hand-in"}
+				f.History = append(f.History, goal.HistoryLine{Verb: goal.LandedVerb, At: at.Format(time.RFC3339)})
+			}, true},
+			{"episode", func(f *goal.GoalFile) { f.Claimed.EpisodeAt = "2026-08-28T08:00:00Z" }, false},
+			{"claim time", func(f *goal.GoalFile) { f.Claimed.EpisodeAt = "" }, false},
+		} {
+			t.Run(row.name, func(t *testing.T) {
+				t.Parallel()
+				f := *file
+				claim := *file.Claimed
+				f.Claimed = &claim
+				f.History = append([]goal.HistoryLine(nil), file.History...)
+				row.alter(&f)
+				state := SpentBoxState(&f, at)
+				if row.empty {
+					if state != "" {
+						t.Fatalf("state=%q", state)
+					}
+					return
+				}
+				start := f.Claimed.EpisodeAt
+				if start == "" {
+					start = f.Claimed.At
+				}
+				if !strings.HasSuffix(state, " from "+start) {
+					t.Fatalf("state=%q", state)
+				}
+			})
+		}
+		if state := SpentBoxState(nil, at); state != "" {
+			t.Fatalf("nil state=%q", state)
+		}
+	})
+}

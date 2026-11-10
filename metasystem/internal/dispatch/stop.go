@@ -16,6 +16,7 @@ import (
 
 	"errors"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalrevision"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
@@ -386,6 +387,63 @@ type StopRoute struct {
 	// person's question; a fenced route counts nothing.
 	Budget  *goal.Budget
 	Elapsed time.Duration
+}
+
+// SpentBox is a claimed goal whose elapsed box is spent, before its breach
+// limit: nothing new starts and nothing stops.
+type SpentBox struct {
+	GoalID, State, Machine string
+	Budget                 goal.Budget
+	Elapsed                time.Duration
+}
+
+// SpentBoxState identifies the standing box and the claim episode it measures.
+func SpentBoxState(file *goal.GoalFile, now time.Time) string {
+	if file == nil || file.State != goal.StateClaimed || file.Claimed == nil || file.Budget == nil || goal.ReadGate(file, goal.GateSettings{}, now).Landed {
+		return ""
+	}
+	start := file.Claimed.EpisodeAt
+	if start == "" {
+		start = file.Claimed.At
+	}
+	return goalbudget.FormatBox(*file.Budget) + " from " + start
+}
+
+// FindAdmissionClosed reads spent boxes without changing goals or routing stops.
+func FindAdmissionClosed(root string, now time.Time) ([]SpentBox, error) {
+	return findAdmissionClosedWithReads(root, now, concreteGoalAdmissionReads())
+}
+
+func findAdmissionClosedWithReads(root string, now time.Time, reads goalAdmissionReads) ([]SpentBox, error) {
+	if !reads.NewWorld(root) {
+		return nil, nil
+	}
+	endpoint, err := reads.ResolveEndpoint(root)
+	if err != nil {
+		return nil, err
+	}
+	projection, err := goal.Project(endpoint, false, now)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]string, 0, len(projection.Tree.Live))
+	for id := range projection.Tree.Live {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	var boxes []SpentBox
+	for _, id := range ids {
+		file := projection.Tree.Live[id]
+		state := SpentBoxState(file, now)
+		if file.StopFence != nil || state == "" {
+			continue
+		}
+		budget := ProjectBudget(root, file, now, reads.BudgetHome)
+		if budget.Status == BudgetKnown && budget.ElapsedState == AdmissionClosedElapsed {
+			boxes = append(boxes, SpentBox{GoalID: id, State: state, Machine: file.Claimed.Machine, Budget: *file.Budget, Elapsed: budget.Elapsed})
+		}
+	}
+	return boxes, nil
 }
 
 // FindBreachStops supplies the steward's heal-before-notify routes.

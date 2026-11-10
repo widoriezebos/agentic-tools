@@ -187,6 +187,7 @@ func wireStewardSeat(config *steward.TickConfig, supplied ...intentOwners) {
 		owners = supplied[0]
 	}
 	config.Units = stewardUnitStages(owners)
+	config.Workspace = stewardGoalWorkspace(owners)
 	config.ClaimLaneState = stewardClaimLaneState(owners)
 	config.Situation = func(root string, now time.Time) steward.Situation {
 		src := owners.situation
@@ -254,6 +255,24 @@ func stewardUnitStages(owners intentOwners) func(string, string) ([]steward.Unit
 			return nil, errors.New(problem.Summary)
 		}
 		return units, nil
+	}
+}
+
+func stewardGoalWorkspace(owners intentOwners) func(string, string) (bool, error) {
+	return func(root, id string) (bool, error) {
+		inv := &intentInvocation{cwd: root, owners: owners}
+		if problem := inv.selectRoot(); problem != nil {
+			return false, errors.New(problem.Summary)
+		}
+		worktree, problem := inv.goalWorktree(id)
+		if problem != nil {
+			if problem.Outcome == intentRefused {
+				return false, nil
+			}
+			return false, errors.New(problem.Summary)
+		}
+		output, err := inv.work().git(worktree, "status", "--porcelain")
+		return strings.TrimSpace(string(output)) != "", err
 	}
 }
 

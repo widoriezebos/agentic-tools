@@ -101,6 +101,8 @@ type TickConfig struct {
 	Seat SeatLauncher
 	// Units reads the same unit stages as the public status verb.
 	Units func(root, goalID string) ([]UnitStage, error)
+	// Workspace says whether the goal's worktree holds uncommitted changes; nil means none.
+	Workspace func(root, goalID string) (bool, error)
 	// ClaimLaneState reads a held goal's hand-in on the landing lane, as the
 	// claim does; nil evaluates no claim quota.
 	ClaimLaneState func(root, goalID, main string) (string, error)
@@ -310,8 +312,8 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// A seat at the helm is the person's: the tick publishes presence,
 	// completes its attempt as HELM and decides nothing. The check sits
 	// after the attempt exists and before the completion defer, so no full
-	// health or narration runs; helmTick runs three report passes instead:
-	// the patterns, the claim quota, and the duties that run at the helm.
+	// health or narration runs; helmTick runs report passes instead:
+	// the patterns, the spent-box question, the claim quota, and the helm duties.
 	if state := helm.Active(repoRoot); state.Active {
 		return helmTick(repoRoot, cfg, generation, selfExact.Ref(), tickAttempt.AttemptSeq, state)
 	}
@@ -354,6 +356,7 @@ func RunTick(repoRoot string, cfg TickConfig, census WorkerCensus) (result TickR
 	// machinery history only; a failure remains visible to the ordinary health
 	// breaker, which is the sole escalation owner.
 	goalStops := custodialBreachStops(repoRoot, cfg, dispatch.FindBreachStops)
+	recordDuty(repoRoot, "spent-box-question", askSpentBoxes(repoRoot, cfg, dispatch.FindAdmissionClosed), cfg.now())
 	governedRefreshFailures := refreshGovernedObligations(repoRoot, cfg.now())
 	if len(governedRefreshFailures) > 0 {
 		return degradedTick(repoRoot, degradedGovernedObligations, "governed-obligation observation failed: "+strings.Join(governedRefreshFailures, "; "))
@@ -377,8 +380,8 @@ const VerdictHelm Verdict = "helm"
 // helmTick is the whole tick of a seat at the helm: presence is still
 // published (the fleet sees the seat alive) and the tick attempt completes
 // with outcome HELM. No breach stop, reap, ledger attention, decision or
-// narration runs. It runs three report passes: the patterns, the claim quota
-// and the duties that run at the helm. It may send the pattern pass's
+// narration runs. It runs report passes: the patterns, the spent-box question,
+// the claim quota and the duties that run at the helm. It may send the pattern pass's
 // notices, the claim-quota alert and ask, and a standing duty defect.
 func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.Ref, attemptSeq int64, state helm.State) (TickResult, error) {
 	reason := "human at the helm: " + state.By
@@ -395,6 +398,7 @@ func helmTick(repoRoot string, cfg TickConfig, generation int, process identity.
 	if patternErr := runPatterns(repoRoot, cfg); patternErr != nil && presenceErr == nil {
 		presenceErr = patternErr
 	}
+	recordDuty(repoRoot, "spent-box-question", askSpentBoxes(repoRoot, cfg, dispatch.FindAdmissionClosed), cfg.now())
 	if quotaErr := helmHealthPass(repoRoot, cfg); quotaErr != nil && presenceErr == nil {
 		presenceErr = quotaErr
 	}
