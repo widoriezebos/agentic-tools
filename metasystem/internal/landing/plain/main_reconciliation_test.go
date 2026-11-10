@@ -175,9 +175,21 @@ func TestTrunkRecoveryRechecksAnExaminedProofUnderTheLock(t *testing.T) {
 	}
 	paused, resume, done := make(chan struct{}), make(chan struct{}), make(chan error, 1)
 	recovery := b.seams
-	recovery.TimerHeld = func() bool { close(paused); <-resume; return false }
+	enteringStart := false
+	recovery.TimerHeld = func() bool { enteringStart = true; return false }
+	recovery.Git = func(dir string, args ...string) (string, error) {
+		// Start reads its subject before taking the admission lock. Finish
+		// the proof here, after recovery's outside-lock decisions have run.
+		if enteringStart && strings.Join(args, " ") == "rev-parse --verify origin/main^{commit}" {
+			enteringStart = false
+			close(paused)
+			<-resume
+		}
+		return b.seams.Git(dir, args...)
+	}
 	callbacks := 0
-	recovery.RecoveryStarted = func(Running, bool) { callbacks++ }
+	var recovered Running
+	recovery.RecoveryStarted = func(r Running, _ bool) { callbacks++; recovered = r }
 	go func() { done <- RecoverMovedMain(b.install, b.checkout, recovery) }()
 	<-paused
 	defer func() {
@@ -197,7 +209,7 @@ func TestTrunkRecoveryRechecksAnExaminedProofUnderTheLock(t *testing.T) {
 	}
 	close(resume)
 	resume = nil
-	if err := <-done; err != nil || *launches != 1 || callbacks != 0 {
-		t.Fatalf("recovery relaunched or reused examined evidence: launches=%d callbacks=%d %v", *launches, callbacks, err)
+	if err := <-done; err != nil || *launches != 1 || callbacks != 0 || recovered.Reused != nil {
+		t.Fatalf("recovery relaunched or reused examined evidence: launches=%d callbacks=%d reused=%+v %v", *launches, callbacks, recovered.Reused, err)
 	}
 }
