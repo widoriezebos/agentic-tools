@@ -1,0 +1,48 @@
+{
+  "canonicalRead": {
+    "engine": "ceb177f24e4f4c226e7060b6ce070e4fb59a8226",
+    "findings": [],
+    "id": "code-critic-5f1c0d6ff87b2bde3bfcbc1f",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-tests-observe-only-what-they-inject-2/metasystem/artifacts/agents/code-critic-5f1c0d6ff87b2bde3bfcbc1f/rounds/1/return.md",
+    "subject": {
+      "commit": "389466a2a16d699b2130aca0d06ed0e7bf46568c",
+      "diffDigest": "995d83ceb22f8edc43755a51b0d64b5466dc60c572708d84ed6474e27bd519fd",
+      "kind": "commit",
+      "parent": "b90349c1e550cd6c02c8d2a5ef178e72668d90b8",
+      "tree": "84bd002397e63d233fcaa7627cee68ec5bd852ec"
+    }
+  },
+  "readDigest": "2b612c89fdcd7e05396c7afc806496c324a003c4a34e37d27ab592c61ba4042f",
+  "schemaVersion": 1,
+  "goal": "tests-observe-only-what-they-inject-2",
+  "unit": "Uterm",
+  "subject": {
+    "commit": "389466a2a16d699b2130aca0d06ed0e7bf46568c",
+    "parent": "b90349c1e550cd6c02c8d2a5ef178e72668d90b8",
+    "tree": "84bd002397e63d233fcaa7627cee68ec5bd852ec",
+    "patchDigest": "995d83ceb22f8edc43755a51b0d64b5466dc60c572708d84ed6474e27bd519fd",
+    "unitDigest": "7f956fa6705a98225831955a30ba0e54e632d711b12bf86e4e67772382af7418"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-5f1c0d6ff87b2bde3bfcbc1f",
+    "round": 1,
+    "closureSha256": "058b99d3bdf9ec9bb22413e2cc0a854a0c3dba5c9439536bfa985e643241762a"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "84bd002397e63d233fcaa7627cee68ec5bd852ec",
+    "runId": "goal-read-gate-20261110t192210z-47d45cab6b0528e9"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_authority_positive_test.go",
+      "readerWord": "reviewed by critic root code-critic-5f1c0d6ff87b2bde3bfcbc1f"
+    }
+  ],
+  "sha256": "7b80eb7690b40df3c46b69fc4f2dce9054e3fdd4afbbaf01d6e03c2d7641e5ef"
+}
