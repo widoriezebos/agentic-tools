@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 233
+- Revision: 234
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -310,4 +310,9 @@ History:
 - 2026-11-09T23:25:36Z N42HQ5D51N065AR86Q9ZFQ74BD-m1e-cc2e8fc8 ack actor=human:Wido targets=a-return-names-the-failing-test displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T12:08:13Z ack
 - 2026-11-10T09:39:51Z 5JY9DYQ1QTF2FF63JK7C94VSNA-m1e-cc2e8fc8 ack actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T23:25:36Z ack
 - 2026-11-10T16:13:44Z 68Z1CTVY6WKWA3WG11E9BKBMXC-ui-71c5cb39 ack actor=ui+steward-seat targets=replies-reach-the-asking-seat-2 displaced=ui+steward-seat@2026-11-10T06:53:58Z ack
-Integrity: sha256=7452e305911169ed60fb6ba0ac80568d39fad3d7d0f700bc3ac955b14595ffc4
+- 2026-11-10T17:14:15Z 7D4PC7BS5E3FE7N780N1WJH9MJ-m1e-cc2e8fc8 ack actor=human:Wido targets=the-lane-finishes-tests-its-page-names displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T11:37:19Z ack
+- 2026-11-10T17:14:15Z 7D4PC7BS5E3FE7N780N1WJH9MJ-m1e-cc2e8fc8 ack actor=human:Wido targets=the-lane-finishes-tests-its-page-names displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T11:38:36Z ack
+- 2026-11-10T17:14:15Z 7D4PC7BS5E3FE7N780N1WJH9MJ-m1e-cc2e8fc8 ack actor=human:Wido targets=the-lane-finishes-tests-its-page-names displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T15:17:18Z ack
+- 2026-11-10T17:14:15Z 7D4PC7BS5E3FE7N780N1WJH9MJ-m1e-cc2e8fc8 ack actor=human:Wido targets=the-lane-finishes-tests-its-page-names displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T15:22:58Z ack
+- 2026-11-10T17:14:15Z 7D4PC7BS5E3FE7N780N1WJH9MJ-m1e-cc2e8fc8 ack actor=human:Wido targets=a-correction-lands-from-the-checkout-top displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T09:39:51Z ack
+Integrity: sha256=0896dd737a34987bb5bde658c9c4f5b47ec3e948e0f26b31f76cc322386aa674
