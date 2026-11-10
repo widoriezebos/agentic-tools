@@ -14,6 +14,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/plain"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -189,6 +190,62 @@ func TestLandingReplayMainFlakeDoesNotHideOwnFailure(t *testing.T) {
 	}
 	if check.Cause == nil || check.Cause.Kind != "own" || check.Cause.Goal != "b" || register.repo.canonical == before || len(flakes) != 1 || flakes[0].Where != "main" || flakes[0].Load != 3.5 || len(b.runs) != 4+len(unit.Tests) {
 		t.Fatalf("own red lost to replay flake: %+v cause=%+v flakes=%+v runs=%v", check, check.Cause, flakes, b.runs)
+	}
+}
+
+func TestLandingOwnRepeatRegistersEachPassingTestOfOnePackage(t *testing.T) {
+	t.Parallel()
+	b, register, _ := incidentProveFixture(t, false)
+	record := b.owners.landing.landingFlakeRecorder(b.install)
+	proofs := t.TempDir()
+	log := filepath.Join(proofs, "x.log")
+	names := []string{"TestB", "TestC"}
+	helmMust(t, os.WriteFile(log, []byte(mainRepeatEvents("u/p", names, "fail")), 0600))
+	outputs, err := repoproof.TestEvidence(log, "u/p", names, "fail")
+	helmMust(t, err)
+	var records []plain.FlakeRecord
+	for i, name := range names {
+		attempt := fmt.Sprintf("x-own-%d", i+2)
+		repeatLog := filepath.Join(proofs, attempt+".log")
+		helmMust(t, os.WriteFile(repeatLog, []byte(mainRepeatEvents("u/p", []string{name}, "pass")), 0600))
+		passed, err := repoproof.TestEvidence(repeatLog, "u/p", []string{name}, "pass")
+		helmMust(t, err)
+		records = append(records, plain.FlakeRecord{FailedUnit: plain.FailedUnit{Unit: "u/p", Tests: []string{name}},
+			Commit: "tip", Tree: "tip-tree", Attempt: "x", Log: log, Where: "tip", Repeat: "alone", Load: 2.75,
+			RepeatAttempt: attempt, RepeatLog: repeatLog, OpKey: attempt,
+			Outputs: map[string]repoproof.TestOutput{name: outputs[name]}, RepeatOutputs: passed})
+	}
+	for round := 0; round < 2; round++ {
+		for _, f := range records {
+			recorded, err := record(f)
+			helmMust(t, err)
+			if recorded.Seen != 1 {
+				t.Fatalf("repeat added a sighting: %+v", recorded)
+			}
+		}
+		entries, problems := goal.ParseTrunkRed(register.repo.commit(register.repo.canonical).files["plans/goals/trunk-red.json"])
+		if len(problems) != 0 {
+			t.Fatal(problems)
+		}
+		facts := goal.FlakeFacts(entries)
+		if len(facts) != 2 {
+			t.Fatalf("passing tests shared one recording operation: %+v", facts)
+		}
+		for _, f := range records {
+			found := false
+			for _, fact := range facts {
+				if fact.TestUnit != f.Unit || fact.TestName != f.Tests[0] {
+					continue
+				}
+				found = true
+				if len(fact.Sightings) != 1 || fact.Sightings[0].Attempt != "x" || fact.Sightings[0].Rerun == nil || fact.Sightings[0].Rerun.Attempt != f.RepeatAttempt {
+					t.Fatalf("record lost its original attempt or repeat: %+v", fact)
+				}
+			}
+			if !found {
+				t.Fatalf("missing passing test %s: %+v", f.Tests[0], facts)
+			}
+		}
 	}
 }
 

@@ -164,6 +164,7 @@ type UnitJudgement struct {
 type FlakeRecord struct {
 	FailedUnit
 	Commit, Tree, Attempt, Log, Where string
+	OpKey                             string `json:"opKey,omitempty"`
 	Load                              float64
 	Repeat, RepeatAttempt, RepeatLog  string
 	Outputs, RepeatOutputs            map[string]repoproof.TestOutput

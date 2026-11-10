@@ -617,6 +617,7 @@ func repeatBeforeOwn(seams ProveSeams, install, checkout, command, dir string, r
 	contract, _ := testpolicy.Load(filepath.Join(dir, "testing.json"))
 	episode := result
 	episode.Cause, episode.Failed, episode.RepeatPassed, episode.RepeatComplete = &Cause{}, nil, nil, false
+	episode.Flakes, episode.FlakePublished = nil, false
 	for _, unit := range result.Failed {
 		names, _ := namedUnitTests(unit, contract)
 		for _, name := range names {
@@ -644,7 +645,37 @@ func repeatBeforeOwn(seams ProveSeams, install, checkout, command, dir string, r
 		}
 	}
 	attributeOwn(result.Cause, trees, i, failedOn)
-	result.Cause.PassedAlone = failingTests(episode.RepeatPassed)
+	if len(episode.RepeatPassed) > 0 && !episode.FlakePublished && seams.Judge != nil {
+		judgements, err := seams.Judge(checkout, running.Commit, episode.RepeatPassed)
+		if err == nil {
+			var flakes []FailedUnit
+			for _, unit := range episode.RepeatPassed {
+				if judgement, found := judgements[unit.Unit]; found && !judgement.Affected {
+					unit.Surfaces = judgement.Surfaces
+					flakes = append(flakes, unit)
+				}
+			}
+			if len(flakes) > 0 {
+				episode = publishAloneFlakes(seams, result, episode, flakes)
+				episode.FlakePublished = true
+				if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), episode, seams) }); err != nil {
+					episode.Reason += "; the repeat publication could not be recorded: " + err.Error()
+				}
+			}
+		}
+	}
+	result.Flakes = slices.DeleteFunc(slices.Clone(result.Flakes), func(f FlakeRecord) bool {
+		return f.Attempt == result.Attempt && f.Tree == result.Tree && f.OpKey != ""
+	})
+	result.Flakes = append(result.Flakes, episode.Flakes...)
+	result.Reason = episode.Reason
+	result.Cause.PassedAlone = failingTests(withoutFlakes(episode.RepeatPassed, episode.Flakes, result.Attempt))
+	if len(result.Cause.FailedOn) == 0 && len(result.Cause.PassedAlone) == 0 {
+		result.Cause = &Cause{Kind: "flake", Name: strings.Join(result.Cause.Tests, ", "), Tests: result.Cause.Tests, Evidence: result.Cause.Evidence}
+		if previous.Result == "" {
+			result.Repeat = "allowed"
+		}
+	}
 	return result
 }
 

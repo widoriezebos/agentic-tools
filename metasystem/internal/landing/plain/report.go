@@ -243,6 +243,50 @@ func publishRepeatFlakes(seams ProveSeams, red Result, repeats []Running, report
 	return red
 }
 
+// publishAloneFlakes records unaffected identities using both the suite and repeat evidence.
+func publishAloneFlakes(seams ProveSeams, red, episode Result, passed []FailedUnit) Result {
+	for _, unit := range passed {
+		i := slices.IndexFunc(episode.Failed, func(f FailedUnit) bool { return f.Unit == unit.Unit && slices.Equal(f.Tests, unit.Tests) })
+		repeat := episode.FlakeRepeats[i]
+		f := FlakeRecord{FailedUnit: unit, Commit: red.Commit, Tree: red.Tree, Attempt: red.Attempt, Log: red.Log, Load: red.Load,
+			Where: "tip", Repeat: "alone", RepeatAttempt: repeat.Attempt, RepeatLog: repeat.Log, OpKey: repeat.Attempt,
+			Outputs: map[string]repoproof.TestOutput{}}
+		var tests []string
+		for _, failed := range red.Failed {
+			if failed.Unit == unit.Unit {
+				tests = append(tests, failed.Tests...)
+			}
+		}
+		first, err := repoproof.TestEvidence(red.Log, unit.Unit, tests, "fail")
+		if err == nil {
+			f.RepeatOutputs, err = repoproof.TestEvidence(repeat.Log, unit.Unit, unit.Tests, "pass")
+		}
+		var recorded FlakeRecorded
+		if err == nil {
+			for _, test := range unit.Tests {
+				f.Outputs[test] = first[test]
+			}
+			if seams.RecordFlake == nil {
+				err = fmt.Errorf("no flaky test recorder is available")
+			} else {
+				recorded, err = seams.RecordFlake(f)
+			}
+		}
+		if err != nil {
+			episode.Reason += "; the flaky tests of " + unit.Unit + " could not be recorded: " + err.Error()
+			continue
+		}
+		episode.Flakes = append(episode.Flakes, f)
+		seen := "once"
+		if recorded.Seen != 1 {
+			seen = fmt.Sprintf("%d times", recorded.Seen)
+		}
+		what, _ := failureWords(failingTests([]FailedUnit{unit}))
+		episode.Reason += fmt.Sprintf("; %s failed in the suite, passed alone on the merge; seen %s; goal %s fixes it", what, seen, recorded.Goal)
+	}
+	return episode
+}
+
 // withoutFlakes leaves out of failed the tests a published flake of attempt names.
 func withoutFlakes(failed []FailedUnit, flakes []FlakeRecord, attempt string) []FailedUnit {
 	var kept []FailedUnit
