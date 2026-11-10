@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 231
+- Revision: 232
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -308,4 +308,5 @@ History:
 - 2026-11-09T12:08:13Z 0AG2SQ7BAGKH973YHR706RSA2X-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T02:31:28Z ack
 - 2026-11-09T12:08:13Z 0AG2SQ7BAGKH973YHR706RSA2X-m1e-cc2e8fc8 ack actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-finishes-what-it-starts displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T06:58:48Z ack
 - 2026-11-09T23:25:36Z N42HQ5D51N065AR86Q9ZFQ74BD-m1e-cc2e8fc8 ack actor=human:Wido targets=a-return-names-the-failing-test displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T12:08:13Z ack
-Integrity: sha256=fc579b17a0b955ce53d2872197e3d036c760a8abe512fba084bb5d627ac6676b
+- 2026-11-10T09:39:51Z 5JY9DYQ1QTF2FF63JK7C94VSNA-m1e-cc2e8fc8 ack actor=human:Wido targets=a-final-prefix-red-is-repeated-before-own displaced=m1e+main-1792389436-6018-51cc28@2026-11-09T23:25:36Z ack
+Integrity: sha256=a425fff9ae8481984bcfae27524a7d00140761f60cb7da67f9af9c268f0548c0
