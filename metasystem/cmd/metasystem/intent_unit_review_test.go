@@ -1289,6 +1289,72 @@ func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
 	}
 }
 
+func TestWorkReviewCollectsExaminationStop(t *testing.T) {
+	for _, shape := range []string{"version-6", "version-4", "malformed-json"} {
+		t.Run(shape, func(t *testing.T) {
+			c := newConnectionBed(t)
+			c.edits = map[string]string{"connect.txt": "the built result\n"}
+			brief := c.brief("brief.md", "Build the connection.\n")
+			code, built := c.do(append([]string{"work", "build", c.id, "--work", "connect", "--brief", brief, "--lines", "5"}, workCheck...)...)
+			if code != 0 {
+				t.Fatalf("build: %d %+v", code, built)
+			}
+			run := resultData(t, built)["run"].(string)
+			_, pending := c.do("work", "review", c.id, "--work", "connect")
+			if pending.Outcome != intentInProgress || len(c.delegates) != 1 {
+				t.Fatalf("start examination: %+v", pending)
+			}
+			commit := c.delegates[0]
+			c.writeCritic(c.worktree, "crit1", commit, "completed", false)
+			dir := filepath.Join(c.worktree, "artifacts", "agents", "crit1", "rounds", "1")
+			path := filepath.Join(dir, "return.json")
+			var returned map[string]any
+			if err := json.Unmarshal(mustRead(t, path), &returned); err != nil {
+				t.Fatal(err)
+			}
+			finding := map[string]any{"id": "F1", "severity": "high", "material": true, "claim": "The required behavior is missing", "evidence": "connect.txt:1"}
+			returned["schemaVersion"], returned["verdictMaterialCount"], returned["findings"] = 4, 1, []any{finding}
+			if shape == "version-6" {
+				returned["schemaVersion"] = 6
+				finding["class"], finding["where"], finding["change"] = "regression", "connect.txt", "Preserve the required behavior"
+				returned["rigor"] = []any{map[string]any{"findingId": "F1", "rigorClass": "bounded", "artifact": "connect.txt"}}
+			}
+			c.writeJSON(path, returned)
+			if shape == "malformed-json" {
+				if err := os.WriteFile(path, []byte("{"), 0o600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(filepath.Join(dir, "return.md"), []byte("VERDICT: REVISE material=1\n"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			code, result := c.do("work", "review", c.id, "--work", "connect")
+			round := c.runRecord(run).Rounds[0]
+			if shape == "version-6" {
+				if round.Stop == nil || round.Stop.Class != "new material findings" || round.Material != 1 || len(round.Reads) != 1 || result.Next == nil {
+					t.Fatalf("material examination: %+v %+v", result, round)
+				}
+				template := resultData(t, result)["template"].(string)
+				if err := os.WriteFile(template, []byte(strings.ReplaceAll(string(mustRead(t, template)), "DECIDE", "accepted")), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				_, result = c.do("work", "review", c.id, "--work", "connect", "--dispositions", template)
+				if result.Next == nil || !slices.Contains(result.Next.Argv, "revise") {
+					t.Fatalf("material examination did not offer a correction: %+v", result)
+				}
+			} else if code == 0 || round.Stop == nil || round.Stop.Handoff != "stopped unreadable-read" || !strings.HasPrefix(round.Stop.Class, "the read cannot be read:") || round.Stop.Evidence != path || round.Material != -1 || len(round.Reads) != 0 || result.Next != nil && slices.Contains(result.Next.Argv, "--retry") {
+				t.Fatalf("unreadable examination lost its cause or offered a retry: %+v %+v", result, round)
+			}
+			if shape == "version-4" && !strings.Contains(round.Stop.Class, "schema version 4") {
+				t.Fatalf("legacy return did not name its schema: %+v", round.Stop)
+			}
+			if len(c.delegates) != 1 || len(c.followUps) != 0 || c.commitReads != 0 || c.publications != 0 {
+				t.Fatalf("the examination started another critic or published an unclean read: delegates=%v followUps=%v reads=%d publications=%d", c.delegates, c.followUps, c.commitReads, c.publications)
+			}
+		})
+	}
+}
+
 func promotionFacts() (launch.UnitReview, launch.UnitSubject, launch.Record, launch.Record, []byte, []byte) {
 	yes := true
 	review := launch.UnitReview{Record: launch.UnitRunRecord{ID: "unit-run-a", Goal: "goal-a"}, Base: "base", BuildBrief: "brief",

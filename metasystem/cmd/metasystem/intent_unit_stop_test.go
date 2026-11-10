@@ -86,6 +86,11 @@ func (s *stopReadStarter) StartSupervisor(id, state string) (identity.Ref, error
 	if err := os.WriteFile(path, data, 0600); err != nil {
 		return ref, err
 	}
+	if s.corrupt == "missing-return" {
+		if err := os.Remove(path); err != nil {
+			return ref, err
+		}
+	}
 	verdict := "LAND"
 	if count > 0 {
 		verdict = fmt.Sprintf("material=%d", count)
@@ -278,7 +283,7 @@ func TestIntentUnitReviewPolicyStopsAutonomousEffects(t *testing.T) {
 
 func TestIntentUnitUnknownReadRetriesOnceWithoutAnotherAttempt(t *testing.T) {
 	t.Parallel()
-	for _, corrupt := range []string{"missing-class", "prose-disagrees"} {
+	for _, corrupt := range []string{"missing-return"} {
 		t.Run(corrupt, func(t *testing.T) {
 			t.Parallel()
 			b := newStopWorkBed(t)
@@ -287,6 +292,9 @@ func TestIntentUnitUnknownReadRetriesOnceWithoutAnotherAttempt(t *testing.T) {
 			run, before, brief := stopBuild(t, b, "auto")
 			if before.Rounds[0].Stop == nil || !strings.HasPrefix(before.Rounds[0].Stop.Handoff, "stopped ") || len(before.Rounds[0].Reads) != 0 || before.Rounds[0].Material != -1 {
 				t.Fatalf("corrupt read became known: %+v", before)
+			}
+			if before.Rounds[0].Stop.Class != "unknown read inputs" {
+				t.Fatalf("missing return was not classified as transport: %+v", before.Rounds[0].Stop)
 			}
 			launches := len(b.starter.launched())
 			code, result, _ := stopPublic(t, b, "auto", "work", "review", b.id, "--work", "stopped")
@@ -330,6 +338,32 @@ func TestIntentUnitUnknownReadRetriesOnceWithoutAnotherAttempt(t *testing.T) {
 			code, result, stderr := stopPublic(t, b, "auto", "work", "revise", b.id, "--work", "stopped", "--brief", brief, "--reason", "Correct explicitly despite unreadable advisory evidence", "--by", "Wido")
 			if code != 0 || !strings.Contains(stderr, "Impact:") || len(b.starter.launched()) <= launches {
 				t.Fatalf("unknown advisory evidence refused the person: %d %+v %q", code, result, stderr)
+			}
+		})
+	}
+}
+
+func TestIntentUnitMalformedReadStaysStopped(t *testing.T) {
+	t.Parallel()
+	for _, corrupt := range []string{"missing-class", "prose-disagrees"} {
+		t.Run(corrupt, func(t *testing.T) {
+			t.Parallel()
+			b := newStopWorkBed(t)
+			s := &stopReadStarter{bed: b, reads: [][]readsubject.Finding{{stopFinding("regression", "a.go")}}, corrupt: corrupt}
+			b.manager.Supervisor = s
+			run, before, _ := stopBuild(t, b, "auto")
+			stop := before.Rounds[0].Stop
+			if stop == nil || stop.Decision != "stop" || stop.Handoff != "stopped unreadable-read" || !strings.HasPrefix(stop.Class, "the read cannot be read:") || filepath.Base(stop.Evidence) != "return.json" || before.Rounds[0].Material != -1 {
+				t.Fatalf("malformed read lost its cause or return: %+v", before.Rounds[0])
+			}
+			if _, err := os.Stat(stop.Evidence); err != nil {
+				t.Fatal(err)
+			}
+			launches := len(b.starter.launched())
+			code, result, _ := stopPublic(t, b, "auto", "work", "review", b.id, "--work", "stopped")
+			after, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+			if code == 0 || err != nil || s.next != 1 || len(b.starter.launched()) != launches || after.Rounds[0].UnknownRetries != 0 || !strings.Contains(result.Summary, stop.Class) || result.Next != nil && strings.Contains(strings.Join(result.Next.Argv, " "), "--retry") {
+				t.Fatalf("malformed read offered another examination: %+v record=%+v err=%v", result, after, err)
 			}
 		})
 	}

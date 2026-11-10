@@ -287,7 +287,7 @@ func (inv *intentInvocation) reviewUnitRound(runner *launch.UnitRunner, targets 
 		if unitReadsFailedTwice(review.Round) {
 			return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: unitData(record, runner.Manager), Summary: fmt.Sprintf("the read of attempt %d could not be collected twice; the unit stays stopped", review.Round.Number), next: inv.publicArgv("work", "stop", unitRunPrefix+record.ID), nextReason: "ends this run; a person decides what follows"}
 		}
-		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: unitData(record, runner.Manager), Summary: "the fresh examination still has unknown inputs; " + review.Round.Stop.Handoff + " holds this unit", next: inv.workArgv(record, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
+		return intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: unitData(record, runner.Manager), Summary: "the unit is stopped: " + review.Round.Stop.Class + "; " + review.Round.Stop.Handoff, Details: []string{review.Round.Stop.Evidence}, next: inv.workArgv(record, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
 	}
 	if inv.reviewWork != nil && subject != nil {
 		inv.reviewWork.run, inv.reviewWork.attempt, inv.reviewWork.subject, inv.reviewWork.retain, inv.reviewWork.review = record.ID, review.Round.Number, subject, retain, &review

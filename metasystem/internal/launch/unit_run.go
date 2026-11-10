@@ -1519,7 +1519,9 @@ func readOutputs(manager *Manager, round UnitRound) []string {
 		if strings.HasPrefix(step.Name, "read") && step.LaunchID != "" {
 			if record, err := manager.Store.Read(step.LaunchID); err == nil {
 				for _, output := range record.Outputs {
-					paths = append(paths, output.Path)
+					if _, err := os.Stat(output.Path); !os.IsNotExist(err) {
+						paths = append(paths, output.Path)
+					}
 				}
 			}
 		}

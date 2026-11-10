@@ -21,8 +21,12 @@ func collectableStop(handoff string) bool {
 	return handoff == "stopped unavailable-stop-inputs" || handoff == "stopped unreadable-read" || handoff == "stopped unreadable-inherited-findings"
 }
 
+func retryableUnitRead(round launch.UnitRound) bool {
+	return round.Stop != nil && (round.Stop.Handoff == "stopped unavailable-stop-inputs" || round.Stop.Handoff == "stopped unreadable-read") && !strings.HasPrefix(round.Stop.Class, "the read cannot be read:")
+}
+
 func freshUnitReadDue(round launch.UnitRound, subject *launch.UnitSubject) bool {
-	if round.Stop == nil || !collectableStop(round.Stop.Handoff) || round.ReadModel == "" || subject != nil && subject.Commit != "" {
+	if !retryableUnitRead(round) || round.ReadModel == "" || subject != nil && subject.Commit != "" {
 		return false
 	}
 	return round.UnknownRetries == 0 || freshUnitReadActive(round)
@@ -39,7 +43,7 @@ func freshUnitReadActive(round launch.UnitRound) bool {
 }
 
 func unitReadsFailedTwice(round launch.UnitRound) bool {
-	return round.Stop != nil && collectableStop(round.Stop.Handoff) && round.UnknownRetries >= 1 && !freshUnitReadActive(round)
+	return retryableUnitRead(round) && round.UnknownRetries >= 1 && !freshUnitReadActive(round)
 }
 
 // reviewStoppedUnit applies the collected decision before a correction brief
@@ -95,7 +99,7 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 		if unitReadsFailedTwice(round) {
 			return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: fmt.Sprintf("the read of attempt %d could not be collected twice; the unit stays stopped", round.Number), next: inv.publicArgv("work", "stop", unitRunPrefix+record.ID), nextReason: "ends this run; a person decides what follows"}
 		}
-		if work.subject != nil && work.subject.Commit != "" && round.UnknownRetries == 0 && stop.Handoff != "stopped unreadable-policy" {
+		if work.subject != nil && work.subject.Commit != "" && round.UnknownRetries == 0 && retryableUnitRead(round) {
 			// The committed critic retry owner permits one examination of the
 			// same subject. Its executions do not add a unit round.
 			data["retry"] = 1
@@ -104,7 +108,7 @@ func (inv *intentInvocation) reviewStoppedUnit(targets []intentTarget, root, rev
 			}
 			return &intentResult{Targets: targets, Outcome: intentInProgress, code: 1, Data: data, Summary: "the read's stop inputs are unknown; one fresh examination is available", next: append(again, "--retry", strconv.FormatInt(work.subject.ExaminationRound, 10)), nextReason: "examines this subject once without another build"}
 		}
-		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: "the unit is stopped: " + stop.Handoff, next: inv.workArgv(record, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
+		return &intentResult{Targets: targets, Outcome: intentRefused, code: 1, Data: data, Summary: "the unit is stopped: " + stop.Class + "; " + stop.Handoff, Details: []string{stop.Evidence}, next: inv.workArgv(record, "revise", "--brief", "FILE", "--reason", "TEXT", "--by", "NAME")}
 	}
 	if stop.Decision == "close" {
 		if err := channel.RecordUnitStopAct(inv.layout.InstallationRoot.Path(), channel.UnitStopAct{ID: fmt.Sprintf("%s:close:%d", record.ID, stop.Attempt), Goal: record.Goal, Loop: stop.Loop, Subject: stop.Subject, Attempt: stop.Attempt, Kind: "work-review", Reason: "clean read", At: inv.unitStopNow(), UnitClosed: true}); err != nil {
