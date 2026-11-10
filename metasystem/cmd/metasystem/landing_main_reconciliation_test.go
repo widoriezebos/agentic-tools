@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -133,6 +134,76 @@ func TestAScopedGreenClosesOnlyItsGroupsRedWhileItApplies(t *testing.T) {
 			}
 		})
 	}
+	t.Run("pending flake with one counted pass", func(t *testing.T) {
+		b := newIntentBed(t, false, nil)
+		owners, proof, checks := scopedIncidentFixture(t, b)
+		request, err := owners.incidentRequest(b.root())
+		helmMust(t, err)
+		const flakeIdentity = "red:fast-static-build:TestFlakyStatic"
+		result, err := goal.RecordTrunkRed(request, goal.TrunkRedRecordArgs{
+			Batch: "flake-batch", Attempt: "flake-red", BaseCommit: proof.Commit, BaseTree: proof.Tree, SeenAt: proof.At,
+			Class: goal.TrunkRedClassPendingFlake, Where: "tip", Tree: proof.Tree,
+			Rerun: &goal.TrunkRedRerun{Attempt: "flake-repeat", LogPath: checks[0].Log},
+			Groups: []goal.TrunkRedRecordGroup{{
+				Identity: flakeIdentity, Group: "fast-static-build", Status: "failed", LogPath: checks[0].Log,
+				Failures: []goal.TrunkRedFailure{{Report: checks[0].Log, Classname: "fast-static-build", Name: "TestFlakyStatic", Status: "failed"}},
+			}},
+		})
+		helmMust(t, confirmedIncidentWrite(result, err))
+		read := func() []goal.TrunkRedEntry {
+			t.Helper()
+			entries, problems := goal.ParseTrunkRed(b.repo.commit(b.repo.canonical).files["plans/goals/trunk-red.json"])
+			if len(problems) != 0 || len(entries) != 3 {
+				t.Fatalf("expected two trunk reds and a flake: entries=%+v problems=%v", entries, problems)
+			}
+			return entries
+		}
+		entries := read()
+		index := slices.IndexFunc(entries, func(entry goal.TrunkRedEntry) bool { return entry.Class == goal.TrunkRedClassPendingFlake })
+		if index < 0 || entries[index].Identity != flakeIdentity || !slices.Contains(proof.Ran, entries[index].Group) {
+			t.Fatalf("expected a pending flake with a red identity in the scoped proof's group: %+v", entries)
+		}
+		flake := entries[index]
+		request, err = owners.incidentRequest(b.root())
+		helmMust(t, err)
+		// The flake's writer counts executed passes after a fix; the lane's
+		// trunk-red clear must preserve that evidence and leave the flake open.
+		result, err = goal.ClearTrunkRed(request, goal.TrunkRedClearArgs{
+			Entry: flake.ID, Group: flake.Group, ExpectedEntry: flake, Executed: true,
+			Attempt: proof.Attempt, BaseCommit: proof.Commit, BaseTree: proof.Tree, FixCommit: proof.Commit,
+		})
+		helmMust(t, confirmedIncidentWrite(result, err))
+		entries = read()
+		proof.Commit = b.repo.canonical
+		owners.plainProve.Git = func(_ string, args ...string) (string, error) {
+			if strings.Join(args, " ") == "rev-parse --verify --quiet "+goal.LocalLedgerBranch+"^{commit}" {
+				return b.repo.canonical, nil
+			}
+			return "", fmt.Errorf("unexpected Git read %v", args)
+		}
+		before := b.repo.publications
+		helmMust(t, owners.clearLandingIncidents(b.root(), proof))
+		for _, entry := range read() {
+			prior := entries[slices.IndexFunc(entries, func(prior goal.TrunkRedEntry) bool { return prior.ID == entry.ID })]
+			switch {
+			case entry.Class == goal.TrunkRedClassPendingFlake:
+				if entry.Closed != nil || entry.FixProof == nil || len(entry.FixProof.Passes) != 1 || entry.FixProof.Passes[0].Attempt != proof.Attempt || !reflect.DeepEqual(entry, prior) {
+					t.Fatalf("the scoped trunk green must preserve the flake's one counted pass without closing it: %+v", entry)
+				}
+			case entry.Group == "fast-static-build":
+				if entry.Closed == nil || entry.Closed.Attempt != proof.Attempt || entry.Closed.BaseCommit != proof.Commit {
+					t.Fatalf("the scoped green must close its group's trunk red: %+v", entry)
+				}
+			case entry.Group == "cmd-metasystem":
+				if !reflect.DeepEqual(entry, prior) {
+					t.Fatalf("the scoped green changed a group it did not run: %+v", entry)
+				}
+			}
+		}
+		if b.repo.publications != before+1 {
+			t.Fatalf("the scoped green must publish exactly one trunk-red clear: got %d", b.repo.publications-before)
+		}
+	})
 	// A full proof is bound to the publication's captured tip, never to a
 	// local tracking ref that still names the proved commit (the whole-branch
 	// read's first finding): executable changes past the proof keep the
