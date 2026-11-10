@@ -1555,6 +1555,7 @@ func (b unitBinding) readBrief(template []byte, buildBrief string) string {
 // wrote it, and only VERDICT: land is a clean read. A capped wait is work
 // still in progress with the command that continues it.
 func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launch.UnitResult, err error, targets []intentTarget, again []string) intentResult {
+	inv.closePersonActs(runner, result.Record)
 	var held *processCheckHeld
 	if errors.As(err, &held) {
 		return intentResult{Outcome: intentRefused, code: 1, Summary: held.Error(), Data: held.act, next: held.remedy, nextReason: "run this at your enrolled terminal"}
@@ -1577,8 +1578,14 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 			held := intentResult{Outcome: intentRefused, Targets: targets, code: 1, Summary: plain + waits, Details: details,
 				next: again, nextReason: humanauthority.PersonActRemedy(shellCommand(again)) + "; settings stay in force"}
 			if launch.IsCode(err, "LAUNCH_BUILD_PERSON") {
+				var act *channel.PersonAct
+				if g, w := targetID(targets, "goal", record.Goal), targetID(targets, "work", record.Unit); len(again) > 2 && g != "" && w != "" {
+					if verb := again[1] + " " + again[2]; verb == "work build" || verb == "work revise" {
+						act = &channel.PersonAct{Verb: verb, Goal: g, Work: w}
+					}
+				}
 				q, warnings, code, askErr := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), channelAskInput{Goal: targetID(targets, "goal", record.Goal), Kind: "other",
-					Act: shellCommand(again), IfNothing: "the build waits",
+					Act: shellCommand(again), PersonAct: act, IfNothing: "the build waits",
 					Facts: []string{"Start this build at your enrolled terminal?", plain, shellCommand(again)}, Options: []string{"start: run the exact build command at your enrolled terminal", "wait: leave this build waiting"}})
 				held.text, held.code = warnings, max(code, 1)
 				if askErr != nil {
@@ -1586,8 +1593,8 @@ func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launc
 				}
 				if q.ID != "" {
 					held.Targets = append(held.Targets, intentTarget{Kind: "question", ID: q.ID})
-					held.next = inv.publicArgv("question", "wait", "channel:"+q.ID)
-					held.nextReason = "wait for the person's answer; only their direct build command bypasses admission"
+					held.next = inv.publicArgv("question", "show", "channel:"+q.ID)
+					held.nextReason = "shows the act it waits for; that act closes it, a reply does not"
 				}
 			}
 			return held
@@ -1858,6 +1865,7 @@ func runIntentReviseRun(inv *intentInvocation, run string) int {
 			return inv.render(intentResult{Outcome: intentFailed, code: 1, Summary: "the correction brief cannot be read", Details: []string{err.Error()}, next: inv.sameCommand(), nextReason: "uses the corrected brief path"})
 		}
 		result, err := runner.Revise(launch.UnitRevisionRequest{Run: run, Brief: bytes, Person: person, Reason: reason, Impact: impact})
+		inv.revisedAttempt = result.Revision.Attempt
 		if result.Revision.Attempt > 0 && len(result.Revision.Findings) > 0 && len(current.Rounds) > 0 {
 			stop := current.Rounds[len(current.Rounds)-1].Stop
 			if stop != nil {

@@ -361,6 +361,7 @@ func processIntentCommands() []intentCommand {
 				intentTargetFlag,
 				{name: "question", value: "TEXT", usage: "the question, the first line the person reads"},
 				{name: "if-nothing", value: "TEXT", usage: "what happens if you do nothing"},
+				{name: "act", value: "COMMAND", usage: "the person's work build or work revise this question asks for; its success closes the question, a reply does not"},
 				fileFlag("question", "read the question from FILE"),
 				{name: "about", value: "lane|machine", usage: "with no goal: what the question is about"},
 				{name: "option", value: "TEXT", repeat: true, usage: "one answer, as 'label: consequence' (repeatable)"},
@@ -1610,6 +1611,31 @@ func runIntentAsk(inv *intentInvocation) int {
 			Summary: "a carry question needs --wants in its exact shape, so nothing was asked",
 			next:    inv.retryWith([]string{"wants"}, "--wants", "carry workspace=SHA goal="+id+" past=NAME"), nextReason: "the workspace's 40-character commit, and who it carries past"})
 	}
+	if inv.input.has("act") {
+		words := shellWords(inv.input.text("act"))
+		var act *channel.PersonAct
+		if len(words) >= 4 && words[0] == "metasystem" {
+			command, found := findIntentAction(words[1], words[2])
+			args, problem := parseIntentArgs(command, words[3:])
+			if found && problem == nil && (command.name == "work build" || command.name == "work revise") && len(args.args) > 0 && args.args[0] == id && id != "" {
+				work := args.text("work")
+				if len(args.args) == 2 && (work == "" || work == args.args[1]) {
+					work = args.args[1]
+				} else if len(args.args) != 1 {
+					work = ""
+				}
+				if work != "" && kind == "other" && !inv.input.has("wants") {
+					act = &channel.PersonAct{Verb: command.name, Goal: id, Work: work}
+				}
+			}
+		}
+		if act == nil {
+			return inv.render(intentResult{Outcome: intentRefused, code: 2, Targets: askTargets,
+				Summary: "--act takes this goal's work build or work revise, on an ordinary question; nothing was asked",
+				next:    inv.retryWith([]string{"act"}, "--act", shellCommand(inv.publicArgv("work", "revise", id, "--work", "NAME", "--brief", "FILE", "--by", "NAME"))), nextReason: "the command the person runs"})
+		}
+		in.Act, in.PersonAct = inv.input.text("act"), act
+	}
 	q, warnings, code, err := inv.owners.processes.ask(inv.layout.InstallationRoot.Path(), in)
 	if err != nil && q.ID == "" {
 		return inv.render(intentResult{Outcome: intentRefused, code: max(code, 1), Targets: askTargets, Summary: err.Error() + "; nothing was asked", text: warnings,
@@ -1630,13 +1656,17 @@ func runIntentAsk(inv *intentInvocation) int {
 	data := map[string]any{"question": q, "delivery": delivery, "replyInstructions": channel.ReplyInstructionsAt(inv.stateRoot, q)}
 	lines := append(warnings, "delivery: "+delivery)
 	wait := inv.publicArgv("question", "wait", "channel:"+q.ID)
+	waitReason := "wait for the authenticated answer"
+	if q.PersonAct != nil {
+		wait, waitReason = inv.publicArgv("question", "show", "channel:"+q.ID), "shows the act it waits for; that act closes it, a reply does not"
+	}
 	poll := inv.publicArgv("question", "retry", q.ID)
 	if errors.Is(err, errQuestionAlreadyOpen) {
 		// The same question already stands open (R-129-ui): success, and
 		// nothing was written, posted or published again.
 		repeat := intentResult{Outcome: intentUnchanged, Targets: targets, text: lines, Data: data,
 			Summary: "question " + q.ID + " is already open for " + subject + " with this text and these options (" + delivery + "); nothing was asked again",
-			next:    wait, nextReason: "wait for the authenticated answer"}
+			next:    wait, nextReason: waitReason}
 		if pending && q.Undelivered > 0 {
 			repeat.next, repeat.nextReason = poll, "delivers exactly this stored question once more"
 		}
@@ -1658,7 +1688,7 @@ func runIntentAsk(inv *intentInvocation) int {
 	}
 	lines = append(lines, "the person answers in the channel thread: "+channel.ReplyInstructionsAt(inv.stateRoot, q))
 	return inv.render(intentResult{Outcome: intentConfirmed, Targets: targets, Summary: "asked " + q.ID + " and " + delivery, text: lines,
-		next: wait, nextReason: "wait for the authenticated answer", Data: data})
+		next: wait, nextReason: waitReason, Data: data})
 }
 
 // answerMission records a person's answer through the mission owner, which

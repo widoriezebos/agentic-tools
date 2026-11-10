@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -15,10 +16,12 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/config"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/humanauthority"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/landing/lane"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/launch"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/lock"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/readsubject"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 )
 
 func TestFleetBuildPublicAdmission(t *testing.T) {
@@ -562,4 +565,381 @@ func fleetWorkJSON(t *testing.T, bed *workBed, owners intentOwners, argv ...stri
 	}
 	bed.recordReadDirs(result)
 	return code, result
+}
+
+// personActSupervisor retains process evidence for builds that its delegate starts.
+type personActSupervisor struct {
+	bed      *workBed
+	delegate launch.SupervisorStarter
+	fail     bool
+	onBuild  func()
+}
+
+func (s *personActSupervisor) StartSupervisor(id, state string) (identity.Ref, error) {
+	record, err := s.bed.manager.Store.Read(id)
+	if err != nil {
+		return identity.Ref{}, err
+	}
+	if record.Kind == "build" && s.fail {
+		return identity.Ref{}, errors.New("build supervisor unavailable")
+	}
+	ref, err := s.delegate.StartSupervisor(id, state)
+	if err == nil && record.Kind == "build" {
+		_, err = s.bed.manager.Store.Update(id, func(r *launch.Record) error {
+			child := workProcessRef(30)
+			r.Child, r.ProcessGroup = &child, &child
+			return nil
+		})
+		if s.onBuild != nil {
+			s.onBuild()
+		}
+	}
+	return ref, err
+}
+
+func TestAPersonActQuestionClosesOnItsAct(t *testing.T) {
+	t.Parallel()
+	setup := func(t *testing.T) (*workBed, intentOwners, *personActSupervisor) {
+		t.Helper()
+		b := newWorkBed(t)
+		if err := os.MkdirAll(filepath.Join(b.root(), ".git"), 0700); err != nil {
+			t.Fatal(err)
+		}
+		registerLane(t, b.manager.CapacityHome, t.TempDir(), "Wido", b.manager.Now())
+		owners := b.workOwners()
+		owners.lookupEnv = func(string) (string, bool) { return "", false }
+		owners.policies.Registry = func(string) (config.PolicyRegistry, error) { return config.PolicyRegistry{}, nil }
+		owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
+			return humanauthority.Proof{}, errors.New("agent process")
+		}
+		owners.processes.question = channel.ReadQuestion
+		owners.processes.ask = func(root string, in channelAskInput) (channel.Question, []string, int, error) {
+			return askChannelQuestionVia(root, in, channelAskSurface{
+				identity: func(string) (string, string, error) { return "fixture-machine", "fixture-lineage", nil },
+				load:     func(string) (phase.Loaded, error) { return phase.Loaded{}, nil },
+				cursor:   func(string) (string, bool, error) { return "", false, nil },
+			})
+		}
+		s := &personActSupervisor{bed: b, delegate: b.starter}
+		b.manager.Supervisor = s
+		return b, owners, s
+	}
+	policy := func(t *testing.T, b *workBed, text string) {
+		t.Helper()
+		path := filepath.Join(b.root(), "metasystem.conf")
+		data, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(data, []byte("\n"+text)...), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ask := func(t *testing.T, b *workBed, o intentOwners, act string) channel.Question {
+		t.Helper()
+		_, r := fleetWorkJSON(t, b, o, "question", "ask", b.id, "--question", "Start this work?", "--option", "run: start it", "--option", "wait: nothing runs", "--act", act)
+		id := targetID(r.Targets, "question", "")
+		q, err := channel.ReadQuestion(b.root(), id)
+		if err != nil {
+			t.Fatalf("ask: %+v %v", r, err)
+		}
+		return q
+	}
+	question := func(t *testing.T, b *workBed, id, state, verb, work string) channel.Question {
+		t.Helper()
+		q, err := channel.ReadQuestion(b.root(), id)
+		want := channel.PersonAct{Verb: verb, Goal: b.id, Work: work}
+		if err != nil || q.State != state || q.PersonAct == nil || *q.PersonAct != want {
+			t.Fatalf("question: %+v %v want %s %+v", q, err, state, want)
+		}
+		if state == "closed" && q.ClosedBecause != "the act it asked for ran (metasystem "+verb+")" {
+			t.Fatal(q.ClosedBecause)
+		}
+		return q
+	}
+	runRecord := func(t *testing.T, b *workBed, r intentResult) launch.UnitRunRecord {
+		t.Helper()
+		run := ""
+		if data, ok := r.Data.(map[string]any); ok {
+			run, _ = data["run"].(string)
+		}
+		if run == "" {
+			entries, err := os.ReadDir(b.unitRoot)
+			if err != nil {
+				t.Fatal(err)
+			}
+			for _, entry := range entries {
+				if !entry.IsDir() {
+					continue
+				}
+				record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(entry.Name())
+				if err == nil && record.Goal == b.id && record.Unit == targetID(r.Targets, "work", record.Unit) {
+					if run != "" {
+						t.Fatalf("ambiguous run: %+v", r)
+					}
+					run = record.ID
+				}
+			}
+		}
+		if run == "" {
+			t.Fatalf("no run: %+v", r)
+		}
+		record, err := (&launch.UnitRunner{Root: b.unitRoot}).Status(run)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return record
+	}
+	started := func(t *testing.T, b *workBed, r launch.UnitRunRecord, index int) {
+		t.Helper()
+		step := r.Rounds[index].Steps[0]
+		launchRecord, err := b.manager.Store.Read(step.LaunchID)
+		if err != nil || step.Unadmitted != "" || !slices.Contains(step.LaunchIDs, step.LaunchID) || launchRecord.Child == nil {
+			t.Fatalf("build not started: %+v %+v %v", step, launchRecord, err)
+		}
+	}
+	seed := func(t *testing.T, b *workBed, o intentOwners, s *personActSupervisor) (intentResult, string) {
+		t.Helper()
+		s.delegate = &stopReadStarter{bed: b, reads: [][]readsubject.Finding{{stopFinding("regression", "unit.go")}}}
+		o.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+		brief := b.brief("first.md", "Read each round: yes\nBuild this unit.\n")
+		code, built := fleetWorkJSON(t, b, o, "work", "build", b.id, "correction", "--brief", brief, "--lines", "5")
+		if code != 0 {
+			t.Fatalf("seed build: %d %+v", code, built)
+		}
+		record := runRecord(t, b, built)
+		if len(record.Rounds) != 1 || record.Rounds[0].Stop == nil || record.Rounds[0].Stop.Decision != "continue" {
+			t.Fatalf("seed: %+v", record)
+		}
+		started(t, b, record, 0)
+		correction := b.brief("correction.md", "Read each round: yes\nCorrect this unit.\n\n## Decisions on round 1\n| Finding | Decision | Evidence |\n| --- | --- | --- |\n| "+record.Rounds[0].Reads[0].Findings[0].ID+" | fixed | unit.go:1 |\n")
+		return built, correction
+	}
+	t.Run("the person's build closes the build question", func(t *testing.T) {
+		t.Parallel()
+		b, o, _ := setup(t)
+		policy(t, b, "host.builds=person\n")
+		brief := b.brief("build.md", "Build this work.\n")
+		argv := []string{"work", "build", b.id, "--work", "U", "--brief", brief, "--lines", "5"}
+		code, r := fleetWorkJSON(t, b, o, argv...)
+		id := targetID(r.Targets, "question", "")
+		if code != 1 || r.Outcome != intentRefused || r.Next == nil || !slices.Equal(r.Next.Argv, []string{"metasystem", "question", "show", "channel:" + id}) {
+			t.Fatalf("refusal: %d %+v", code, r)
+		}
+		q := question(t, b, id, "open", "work build", "U")
+		if q.Plain == nil || !strings.HasPrefix(q.Plain.Act, "metasystem work build ") || !strings.Contains(q.Plain.Act, "--work U --brief build.md --lines 5") {
+			t.Fatalf("act: %+v", q.Plain)
+		}
+		before := questionFiles(t, b.root())
+		if code, r := fleetWorkJSON(t, b, o, argv...); code != 1 || targetID(r.Targets, "question", "") != id || !sameFiles(before, questionFiles(t, b.root())) {
+			t.Fatalf("repeat: %d %+v", code, r)
+		}
+		o.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+		code, r = fleetWorkJSON(t, b, o, argv...)
+		if code != 0 {
+			t.Fatalf("person build: %d %+v", code, r)
+		}
+		started(t, b, runRecord(t, b, r), 0)
+		q = question(t, b, id, "closed", "work build", "U")
+		at, err := o.commandNow(b.root())
+		if err != nil || !q.ClosedAt.Equal(at) {
+			t.Fatalf("close time: %s %s %v", q.ClosedAt, at, err)
+		}
+		open := channel.GoalOpenQuestions(b.root())
+		if len(open) != 0 {
+			t.Fatalf("open: %+v", open)
+		}
+		code, r = fleetWorkJSON(t, b, o, "question", "show", "channel:"+id)
+		if code != 0 || r.Summary != "channel question "+id+": the act it asked for ran (metasystem work build)" {
+			t.Fatalf("show: %d %+v", code, r)
+		}
+	})
+	t.Run("a refused wait asks an unbound question", func(t *testing.T) {
+		t.Parallel()
+		b, o, _ := setup(t)
+		policy(t, b, "host.builds=person\n")
+		brief := b.brief("build.md", "Build this work.\n")
+		code, r := fleetWorkJSON(t, b, o, "work", "build", b.id, "--work", "U", "--brief", brief, "--lines", "5")
+		if code != 1 || r.Outcome != intentRefused {
+			t.Fatalf("build refusal: %d %+v", code, r)
+		}
+		q1 := question(t, b, targetID(r.Targets, "question", ""), "open", "work build", "U")
+		code, r = fleetWorkJSON(t, b, o, "work", "wait", b.id, "--work", "U")
+		if code != 1 || r.Outcome != intentRefused {
+			t.Fatalf("wait refusal: %d %+v", code, r)
+		}
+		questions, unreadable := channel.WalkQuestions(b.root())
+		if len(unreadable) != 0 {
+			t.Fatal(unreadable)
+		}
+		for _, q := range questions {
+			if q.PersonAct != nil && q.PersonAct.Verb == "work wait" {
+				t.Fatalf("wait cannot close its bound question: %+v", q)
+			}
+		}
+		q, err := channel.ReadQuestion(b.root(), targetID(r.Targets, "question", ""))
+		if err != nil || q.State != "open" || (q.PersonAct != nil && q.ID != q1.ID) {
+			t.Fatalf("wait question: %+v %v", q, err)
+		}
+		instructions := channel.ReplyInstructions(q)
+		if strings.Contains(instructions, "work wait") && strings.Contains(instructions, "its success closes this question") {
+			t.Fatalf("wait promises closure it cannot perform: %s", instructions)
+		}
+	})
+	t.Run("the seat's ask closes on the person's revise", func(t *testing.T) {
+		t.Parallel()
+		b, o, s := setup(t)
+		_, brief := seed(t, b, o, s)
+		act := shellCommand([]string{"metasystem", "work", "revise", b.id, "--work", "correction", "--after", "1", "--brief", brief, "--reason", "the read and the critic agree", "--by", "Wido"})
+		q := ask(t, b, o, act)
+		question(t, b, q.ID, "open", "work revise", "correction")
+		before := questionFiles(t, b.root())
+		_, r := fleetWorkJSON(t, b, o, "question", "ask", b.id, "--question", "Start this work?", "--option", "run: start it", "--option", "wait: nothing runs", "--act", act)
+		if r.Outcome != intentUnchanged || !sameFiles(before, questionFiles(t, b.root())) || r.Next == nil || !slices.Equal(r.Next.Argv, []string{"metasystem", "question", "show", "channel:" + q.ID}) {
+			t.Fatalf("repeat: %+v", r)
+		}
+		o.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+		code, r := fleetWorkJSON(t, b, o, "work", "revise", b.id, "--work", "correction", "--brief", brief)
+		if code != 0 {
+			t.Fatalf("revise: %d %+v", code, r)
+		}
+		started(t, b, runRecord(t, b, r), 1)
+		question(t, b, q.ID, "closed", "work revise", "correction")
+	})
+	t.Run("another act or work leaves it open", func(t *testing.T) {
+		t.Parallel()
+		b, o, _ := setup(t)
+		brief := b.brief("build.md", "Build the work.\n")
+		q1 := ask(t, b, o, "metasystem work revise "+b.id+" --work U --brief "+brief)
+		q2 := ask(t, b, o, "metasystem work build "+b.id+" --work other --brief "+brief)
+		o.prove = enrolledPersonProver(t, b.root(), b.manager.Now())
+		code, r := fleetWorkJSON(t, b, o, "work", "build", b.id, "--work", "U", "--brief", brief, "--lines", "5")
+		if code != 0 {
+			t.Fatalf("build: %d %+v", code, r)
+		}
+		question(t, b, q1.ID, "open", "work revise", "U")
+		question(t, b, q2.ID, "open", "work build", "other")
+		releaseFleetBuild(t, b, r)
+		code, r = fleetWorkJSON(t, b, o, "work", "build", b.id, "--work", "other", "--brief", brief, "--lines", "5")
+		if code != 0 {
+			t.Fatalf("other: %d %+v", code, r)
+		}
+		question(t, b, q1.ID, "open", "work revise", "U")
+		question(t, b, q2.ID, "closed", "work build", "other")
+	})
+	t.Run("an act the engine cannot bind is refused", func(t *testing.T) {
+		t.Parallel()
+		b, o, _ := setup(t)
+		for _, row := range []struct {
+			act   string
+			extra []string
+		}{
+			{act: "metasystem work wait " + b.id + " --work U"},
+			{act: "metasystem work build other-goal --work U --brief B"},
+			{act: "metasystem work revise " + b.id + " --brief B"},
+			{act: "metasystem work build " + b.id + " --work U --brief B", extra: []string{"--kind", "stop", "--budget", "1d/10/720m/1/3"}},
+			{act: "work build " + b.id + " --work U --brief B"},
+			{act: "metasystem work build " + b.id + " --work U --brief B", extra: []string{"--wants", "token"}},
+		} {
+			argv := append([]string{"question", "ask", b.id, "--question", "Start it?", "--option", "run: start", "--act", row.act}, row.extra...)
+			code, r := fleetWorkJSON(t, b, o, argv...)
+			if code != 2 || r.Outcome != intentRefused || r.Summary != "--act takes this goal's work build or work revise, on an ordinary question; nothing was asked" || len(questionFiles(t, b.root())) != 0 {
+				t.Fatalf("%s: %d %+v", row.act, code, r)
+			}
+		}
+	})
+	t.Run("a failed process start keeps it open", func(t *testing.T) {
+		t.Parallel()
+		b, o, s := setup(t)
+		policy(t, b, "host.builds=auto\n")
+		s.fail = true
+		brief := b.brief("build.md", "Build the work.\n")
+		q := ask(t, b, o, "metasystem work build "+b.id+" --work U --brief "+brief)
+		_, r := fleetWorkJSON(t, b, o, "work", "build", b.id, "--work", "U", "--brief", brief, "--lines", "5")
+		record := runRecord(t, b, r)
+		step := record.Rounds[0].Steps[0]
+		l, err := b.manager.Store.Read(step.LaunchID)
+		if err != nil || step.Unadmitted != "" || !slices.Contains(step.LaunchIDs, step.LaunchID) || l.State != launch.Failed || !strings.HasPrefix(l.Reason, "supervisor-start: ") || l.Child != nil {
+			t.Fatalf("failed start: %+v %+v %v", step, l, err)
+		}
+		question(t, b, q.ID, "open", "work build", "U")
+	})
+	t.Run("a start refused before a record keeps it open", func(t *testing.T) {
+		t.Parallel()
+		b, o, _ := setup(t)
+		policy(t, b, "host.builds=auto\n")
+		brief := filepath.Join(b.root(), "missing.md")
+		q := ask(t, b, o, "metasystem work build "+b.id+" --work U --brief "+brief)
+		code, r := fleetWorkJSON(t, b, o, "work", "build", b.id, "--work", "U", "--brief", brief, "--lines", "5")
+		if code == 0 || len(b.starter.launched()) != 0 {
+			t.Fatalf("missing brief launched: %d %+v", code, r)
+		}
+		if r.Data != nil {
+			t.Fatalf("unexpected run: %+v", r)
+		}
+		question(t, b, q.ID, "open", "work build", "U")
+		t.Log("The public entry refuses the missing brief before creating a run; the unadmitted step route is pinned by the existing launch tests.")
+	})
+	t.Run("a started build whose check is refused closes it", func(t *testing.T) {
+		t.Parallel()
+		b, o, s := setup(t)
+		policy(t, b, "host.builds=auto\nhost.load-max=8\n")
+		load := 0.0
+		b.manager.CapacitySources.Load = func(time.Time) hostload.Sample { return hostload.Sample{Available: true, Load1m: load} }
+		s.onBuild = func() { load = 9 }
+		brief := b.brief("build.md", "Build the work.\n")
+		q := ask(t, b, o, "metasystem work build "+b.id+" --work U --brief "+brief)
+		code, r := fleetWorkJSON(t, b, o, "work", "build", b.id, "--work", "U", "--brief", brief, "--lines", "5")
+		if code != 1 || r.Outcome != intentRefused || !strings.HasSuffix(r.Summary, "the unit check waits for the host") {
+			t.Fatalf("check: %d %+v", code, r)
+		}
+		record := runRecord(t, b, r)
+		started(t, b, record, 0)
+		if !slices.ContainsFunc(record.Rounds[0].Steps, func(step launch.UnitStep) bool { return step.Kind == "attest" && step.State == launch.StepStarting }) {
+			t.Fatal("check was not waiting")
+		}
+		question(t, b, q.ID, "closed", "work build", "U")
+	})
+	for _, refused := range []bool{true, false} {
+		name := "a started correction whose check is refused closes it"
+		if refused {
+			name = "a refused correction keeps it open"
+		}
+		t.Run(name, func(t *testing.T) {
+			t.Parallel()
+			b, o, s := setup(t)
+			built, brief := seed(t, b, o, s)
+			q := ask(t, b, o, "metasystem work revise "+b.id+" --work correction --after 1 --brief "+brief)
+			if refused {
+				units := o.work.units
+				o.work.units = func(layout stateroot.Layout) *launch.UnitRunner {
+					r := units(layout)
+					r.ReviewPolicy = func() (string, error) { return "person", nil }
+					return r
+				}
+			} else {
+				policy(t, b, "host.builds=auto\nhost.load-max=8\n")
+				load := 0.0
+				b.manager.CapacitySources.Load = func(time.Time) hostload.Sample { return hostload.Sample{Available: true, Load1m: load} }
+				s.onBuild = func() { load = 9 }
+			}
+			code, r := fleetWorkJSON(t, b, o, "work", "revise", b.id, "--work", "correction", "--after", "1", "--brief", brief)
+			if code != 1 || r.Outcome != intentRefused {
+				t.Fatalf("correction: %d %+v", code, r)
+			}
+			if refused {
+				if record := runRecord(t, b, built); len(record.Rounds) != 1 {
+					t.Fatalf("correction started: %+v", record)
+				}
+				question(t, b, q.ID, "open", "work revise", "correction")
+			} else {
+				record := runRecord(t, b, r)
+				started(t, b, record, 1)
+				if !strings.HasSuffix(r.Summary, "the unit check waits for the host") || !slices.ContainsFunc(record.Rounds[1].Steps, func(step launch.UnitStep) bool { return step.Kind == "attest" && step.State == launch.StepStarting }) {
+					t.Fatalf("correction check did not wait for the host: %+v", r)
+				}
+				question(t, b, q.ID, "closed", "work revise", "correction")
+			}
+		})
+	}
 }

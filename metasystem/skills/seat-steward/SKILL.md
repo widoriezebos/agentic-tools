@@ -27,6 +27,8 @@ The held claims listed in your seat brief stay with their holders. They are evid
 
    The commands `metasystem landing resume` and `metasystem machine revive` are a person's acts. When one is needed, name the exact command and its impact in an ask; your mandate and grant do not turn them into your own acts. Keep the row's disposition honest about what is waiting for that person. Preserve an established stop until the component that owns it records the authorized recovery.
 
+   When the person's act is a `work build` or `work revise` of a goal's work, ask with `metasystem question ask GOAL --act 'COMMAND'`: that act's success closes the question, and a reply does not.
+
 ## Wait and communicate
 
 4. Wait with `metasystem system situation --wait`, supplying the bounded duration the verb expects. After the wait returns, read the current page and handle the first thing it reports. The page wakes on meaningful changes and deadlines; rising ages and load samples alone are not a reason to repeat messages or acts. Never end your turn with a first thing left. If work is waiting on a child or a reply, stay inside your turn using the bounded wait appropriate to that work, then carry on from the observed result. Follow the brief's durable handoff at its context boundary.

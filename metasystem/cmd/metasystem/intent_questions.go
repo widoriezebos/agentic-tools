@@ -157,7 +157,7 @@ func (inv *intentInvocation) questionView(q questionRef) intentResult {
 		case c.Answer != nil && (c.State != "closed" || c.ClosedBecause == "" || c.Contract && (c.Answer.Phase == "accepted" || c.Answer.Phase == "acted")):
 			result.Summary = "question " + c.ID + " " + channel.AnswerSummary(c)
 			headline = result.Summary
-		case c.State == "closed" && (channel.LaneStopCommand(c) != "" || c.Recovery != nil) && c.ClosedBecause != "":
+		case c.State == "closed" && (channel.LaneStopCommand(c) != "" || c.Recovery != nil || c.PersonAct != nil) && c.ClosedBecause != "":
 			result.Summary = fmt.Sprintf("channel question %s: %s", c.ID, c.ClosedBecause)
 			headline = result.Summary
 		case c.State == "closed" && c.Contract && c.UnitStop != nil && c.UnitStop.ClosedBy != "" && !c.ClosedAt.IsZero():

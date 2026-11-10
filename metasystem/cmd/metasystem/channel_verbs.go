@@ -179,6 +179,7 @@ func channelStatus(checkout string, postNow bool, stdout, stderr io.Writer, reso
 // "label: consequence".
 type channelAskInput struct {
 	Act, IfNothing string
+	PersonAct      *channel.PersonAct
 	// About is what a question without a goal is about: lane or machine.
 	Goal, About, Kind, Recommendation, Wants string
 	Facts, Options                           []string
@@ -246,7 +247,7 @@ func askChannelQuestionVia(root string, in channelAskInput, surface channelAskSu
 	if len(in.Facts) > 0 {
 		plain = &channel.Plain{Decision: in.Facts[0], Act: in.Act, IfNothing: in.IfNothing}
 	}
-	q, existing, e := channel.AskOrFind(channel.AskRequest{Plain: plain, Context: ctx, RepoRoot: root, Goal: in.Goal, About: in.About, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
+	q, existing, e := channel.AskOrFind(channel.AskRequest{Plain: plain, PersonAct: in.PersonAct, Context: ctx, RepoRoot: root, Goal: in.Goal, About: in.About, Kind: in.Kind, Machine: machine, Lineage: lineage, Facts: in.Facts, Options: opts, Recommendation: in.Recommendation, Wants: in.Wants, Budget: in.Budget, Provider: l.Provider, Destination: l.Destination, Now: now, LedgerCursor: ledgerCursor})
 	if e != nil {
 		return q, warnings, 1, e
 	}

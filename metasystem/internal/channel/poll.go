@@ -151,7 +151,7 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 		threads = append(threads, MessageRef{ID: status.Ref.ID, ThreadID: statusRoot})
 	}
 	for _, q := range questions {
-		if (q.State == "open" || recentlyActed(q, c.Now)) && q.Thread != nil {
+		if (q.State == "open" || recentlyActed(q, c.Now) || recentlyClosed(q, c.Now)) && q.Thread != nil {
 			threads = append(threads, MessageRef{ID: q.Thread.ID, ThreadID: threadRoot(*q.Thread)})
 		}
 	}
@@ -304,7 +304,7 @@ func advanceAnswerWithEndpoint(ctx context.Context, c PollConfig, q *Question, r
 			}
 			return settleChoice(ctx, c, q)
 		}
-		if q.UnitStop != nil || LaneStopCommand(*q) != "" {
+		if q.UnitStop != nil || q.PersonAct != nil || LaneStopCommand(*q) != "" {
 			return nil
 		}
 		a.Phase = "closed"
@@ -432,6 +432,6 @@ func unfinishedAnswer(q Question) bool {
 		return q.Answer.Phase == "matched" || q.Answer.Phase == "recorded"
 	}
 	return q.Answer != nil && q.Answer.Phase != "closed" &&
-		!((q.Answer.Phase == "recorded" || q.Answer.Phase == "receipted") && (q.UnitStop != nil || LaneStopCommand(q) != "")) &&
+		!((q.Answer.Phase == "recorded" || q.Answer.Phase == "receipted") && (q.UnitStop != nil || q.PersonAct != nil || LaneStopCommand(q) != "")) &&
 		q.ProcessAct == "" && q.Recovery == nil
 }

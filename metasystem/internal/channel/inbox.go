@@ -626,7 +626,7 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 	}
 	open := 0
 	for _, q := range questions {
-		if q.State == "open" && (q.Answer == nil || q.Contract && q.Answer.Phase == "accepted") || recentlyActed(q, c.Now) {
+		if q.State == "open" && (q.Answer == nil || q.Contract && q.Answer.Phase == "accepted") || recentlyActed(q, c.Now) || recentlyClosed(q, c.Now) {
 			open++
 		}
 	}
@@ -679,6 +679,7 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 			replyTo := *in.ReplyTo
 			threaded := false
 			var contract *Question
+			var settled *Question
 			for i := range questions {
 				q := &questions[i]
 				if q.Thread != nil && (replyTo == q.Thread.ID || replyTo == threadRoot(*q.Thread) || slices.Contains(q.Notices, replyTo)) {
@@ -688,8 +689,18 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 					}
 					if q.Contract {
 						contract = q
+					} else if recentlyClosed(*q, c.Now) {
+						settled = q
 					}
 				}
+			}
+			received, _ := time.Parse(channelRecordTime, in.ReceivedAt)
+			if match == nil && contract == nil && settled != nil && (settled.PersonAct != nil || received.After(settled.ClosedAt.Truncate(time.Second))) {
+				copy := *settled
+				if copy.PersonAct == nil {
+					copy.ClosedBecause = ""
+				}
+				contract = &copy
 			}
 			if contract != nil {
 				chosen, line := contractReply(c, *contract, in.Text)
@@ -798,6 +809,11 @@ func recentlyActed(q Question, now time.Time) bool {
 	return q.Contract && n > 0 && q.Attempts[n-1].Outcome == "acted" && now.Before(q.Attempts[n-1].At.Add(24*time.Hour))
 }
 
+// recentlyClosed keeps replies to a question's thread readable for a day after it closes.
+func recentlyClosed(q Question, now time.Time) bool {
+	return q.State == "closed" && q.Thread != nil && now.Before(q.ClosedAt.Add(24*time.Hour))
+}
+
 // chosenOption is the option whose label the reply is, ignoring case.
 func chosenOption(q Question, text string) *Option {
 	for i := range q.Options {
@@ -850,7 +866,7 @@ func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.Channe
 	}
 	q.Answer = &Answer{Machine: c.Machine, Lineage: c.Lineage, Provider: in.Provider, Text: in.Text, UserID: in.UserID, Ref: ref, At: sent, Step: *in.Step, ULID: ulid, Opid: opid, ApprovalULID: approvalULID, Phase: "matched"}
 	q.State = "answered"
-	if LaneStopCommand(*q) != "" || q.Contract {
+	if LaneStopCommand(*q) != "" || q.PersonAct != nil || q.Contract {
 		q.State = "open"
 	}
 	if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {

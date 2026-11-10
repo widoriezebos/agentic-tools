@@ -136,6 +136,39 @@ func recordUnitStopActForReview(root, id, review, finding, reason string, at tim
 	return nil
 }
 
+// closePersonActs closes questions only when this act's own build process started.
+func (inv *intentInvocation) closePersonActs(runner *launch.UnitRunner, record launch.UnitRunRecord) {
+	if runner == nil || runner.Manager == nil || record.Goal == "" || record.Unit == "" || len(record.Rounds) == 0 {
+		return
+	}
+	round := record.Rounds[len(record.Rounds)-1]
+	switch inv.command.name {
+	case "work revise":
+		index := slices.IndexFunc(record.Rounds, func(r launch.UnitRound) bool { return r.Number == inv.revisedAttempt })
+		if inv.revisedAttempt == 0 || index < 0 {
+			return
+		}
+		round = record.Rounds[index]
+	case "work build":
+	default:
+		return
+	}
+	if len(round.Steps) == 0 {
+		return
+	}
+	step := round.Steps[0]
+	if step.Name != "build" || step.LaunchID == "" || !slices.Contains(step.LaunchIDs, step.LaunchID) || step.Unadmitted != "" {
+		return
+	}
+	started, err := runner.Manager.Store.Read(step.LaunchID)
+	if err != nil || started.Child == nil {
+		return
+	}
+	if inv.resolveLayout() == nil {
+		inv.actCloseErr = channel.ClosePersonActs(inv.layout.InstallationRoot.Path(), channel.PersonAct{Verb: inv.command.name, Goal: record.Goal, Work: record.Unit}, inv.unitStopNow())
+	}
+}
+
 func unitStopActor(actor []string) string {
 	for i, v := range actor {
 		if v == "--by" && i+1 < len(actor) {
