@@ -40,9 +40,35 @@ func failingTests(failed []FailedUnit) []string {
 
 func returnWords(c Cause) string {
 	tests := c.FailedOn
-	if len(tests) == 0 {
+	if len(tests) == 0 && len(c.PassedAlone) == 0 {
 		tests = c.Tests
 	}
+	onlyPassed := len(tests) == 0 && len(c.PassedAlone) > 0
+	if onlyPassed {
+		tests = c.PassedAlone
+	}
+	what, units := failureWords(tests)
+	where := c.Goal + " (" + Short(c.SHA) + ")"
+	if c.PassedOn == "" {
+		return what + " failed on " + where + "; the lane did not compare it with main"
+	}
+	base := "main"
+	if len(c.After) > 0 {
+		base += " and " + strings.Join(c.After, ", ")
+	}
+	ending := "; " + units + " passed on " + base + " at " + Short(c.PassedOn)
+	if onlyPassed {
+		return what + " failed in the suite on the merge of " + where + " with " + base + " and passed alone there" + ending
+	}
+	words := what + " failed on the merge of " + where + " with " + base + ending
+	if len(c.PassedAlone) > 0 {
+		passed, _ := failureWords(c.PassedAlone)
+		words += "; " + passed + " failed in the suite and passed alone on the merge"
+	}
+	return words
+}
+
+func failureWords(tests []string) (string, string) {
 	var failures, units []string
 	for _, identity := range tests {
 		unit, test, _ := strings.Cut(identity, " ")
@@ -60,15 +86,7 @@ func returnWords(c Cause) string {
 	if len(failures) == 0 {
 		failures, units = []string{"the lane's check"}, []string{"the lane's check"}
 	}
-	what, where := strings.Join(failures, ", "), c.Goal+" ("+Short(c.SHA)+")"
-	if c.PassedOn == "" {
-		return what + " failed on " + where + "; the lane did not compare it with main"
-	}
-	base := "main"
-	if len(c.After) > 0 {
-		base += " and " + strings.Join(c.After, ", ")
-	}
-	return what + " failed on the merge of " + where + " with " + base + "; " + strings.Join(units, ", ") + " passed on " + base + " at " + Short(c.PassedOn)
+	return strings.Join(failures, ", "), strings.Join(units, ", ")
 }
 
 // ReturnRefused explains why the newest proof cannot return this hand-in.

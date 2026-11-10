@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/hostload"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/repoproof"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testpolicy"
 )
 
@@ -119,7 +120,7 @@ func continueExecutedRed(seams ProveSeams, install, checkout, command, dir strin
 		if !slices.ContainsFunc(result.Failed, func(unit FailedUnit) bool { return len(unit.Tests) > 0 }) {
 			return replay(result, previous)
 		}
-		repeated := repeatRed(seams, install, checkout, command, dir, running, decision, result, true)
+		repeated := repeatRed(seams, install, checkout, command, dir, running, decision, result, repeatMain)
 		if repeated.Result == Red && repeated.Cause.Kind == "unclassified" {
 			return replay(repeated, previous)
 		}
@@ -141,16 +142,24 @@ func continueExecutedRed(seams ProveSeams, install, checkout, command, dir strin
 	if !known || previous.Result != "" {
 		return replay(result, previous)
 	}
-	repeated := repeatRed(seams, install, checkout, command, dir, running, decision, result, false)
+	repeated := repeatRed(seams, install, checkout, command, dir, running, decision, result, repeatBatch)
 	if len(repeated.FlakeRepeats) == 0 {
 		return replay(repeated, previous)
 	}
 	return repeated
 }
 
-// repeatRed spends one repeat in the same worktree before a red is attributed.
+type repeatMode int
+
+const (
+	repeatBatch repeatMode = iota
+	repeatMain
+	repeatOwn
+)
+
+// repeatRed retains own episodes by attempt and tree without spending a proof repeat.
 // Main checks bind the allowance to the attempt; batch checks bind it to the tree.
-func repeatRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, result Result, main bool) Result {
+func repeatRed(seams ProveSeams, install, checkout, command, dir string, running Running, decision scopeDecision, result Result, mode repeatMode) Result {
 	result = seams.retainOutcomes(install, checkout, result)
 	retain := func(r Result) Result { return decision.carryStanding(r, &proofOutput{outcomes: r.Outcomes}) }
 	ordinary, ordinaryRepeat := *result.Cause, result.Repeat
@@ -159,10 +168,16 @@ func repeatRed(seams ProveSeams, install, checkout, command, dir string, running
 	for i := range result.Failed {
 		repeat := running
 		repeat.Attempt = fmt.Sprintf("%s-repeat-%d", running.Attempt, i+1)
+		if mode == repeatOwn {
+			repeat.Attempt = fmt.Sprintf("%s-own-%d", running.Attempt, i+1)
+		}
 		repeat.Log = filepath.Join(Dir(install), "proofs", repeat.Attempt+".log")
 		result.FlakeRepeats[i] = repeat
 	}
 	result.Repeat = "started"
+	if mode == repeatOwn {
+		result.Repeat = "own"
+	}
 	result.Cause.Kind = "flake"
 	result.Cause.Name = strings.Join(result.Cause.Tests, ", ")
 	if err := withLock(install, func() error {
@@ -172,17 +187,21 @@ func repeatRed(seams ProveSeams, install, checkout, command, dir string, running
 		}
 		for i := len(history) - 1; i >= 0; i-- {
 			prior := history[i]
-			if main && prior.Attempt == result.Attempt && (prior.Repeat == "started" || prior.FlakePublished) {
+			own := mode == repeatOwn && prior.Attempt == result.Attempt && prior.Tree == result.Tree && prior.Repeat == "own"
+			main := mode == repeatMain && prior.Repeat != "own" && prior.Attempt == result.Attempt && (prior.Repeat == "started" || prior.FlakePublished)
+			if own || main {
 				prior.Failed = slices.DeleteFunc(slices.Clone(prior.Failed), func(f FailedUnit) bool { return f.Inherited })
 				retained = &prior
 				return &NoRepeat{}
 			}
-			if !main && prior.Repeat == "started" && prior.Tree == result.Tree {
+			if mode == repeatBatch && prior.Repeat == "started" && prior.Tree == result.Tree {
 				return &NoRepeat{}
 			}
 		}
-		if err := recordProofStop(install, result, seams); err != nil {
-			return err
+		if mode != repeatOwn {
+			if err := recordProofStop(install, result, seams); err != nil {
+				return err
+			}
 		}
 		return appendLine(seams.resultsPath(install), retain(result), seams)
 	}); err != nil {
@@ -235,27 +254,38 @@ func repeatRed(seams ProveSeams, install, checkout, command, dir string, running
 		}
 		repeat.Minutes = elapsedMinutes(repeat.Since, seams.now().UTC().Format(time.RFC3339))
 		repeats[i] = repeat
+		if mode == repeatOwn && err == nil {
+			if _, evidenceErr := repoproof.TestEvidence(repeat.Log, unit.Unit, unit.Tests, "pass"); evidenceErr == nil {
+				result.RepeatPassed = append(result.RepeatPassed, unit)
+			}
+		}
 		if err != nil {
 			result.Cause.Kind = "unclassified"
 			var exit *exec.ExitError
-			if report.kind != "complete" || main && (len(report.failed) == 0 || errors.As(err, &exit) && !exit.Exited()) {
+			if report.kind != "complete" || mode == repeatMain && (len(report.failed) == 0 || errors.As(err, &exit) && !exit.Exited()) {
 				uncertain = true
 				result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
 			}
 			failures = append(failures, unit.Unit+": "+err.Error())
 		}
 	}
+	if mode == repeatOwn {
+		if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), retain(result), seams) }); err != nil {
+			result.Reason += "; the repeat's outcome could not be recorded: " + err.Error()
+		}
+		return result
+	}
 	if len(failures) > 0 {
 		if uncertain {
 			result.Cause.Kind, result.Cause.Name = "environment", "lost-process"
 		}
 		result.Reason = strings.Join(failures, "; ")
-		if main {
+		if mode == repeatMain {
 			result = publishRepeatFlakes(seams, result, repeats, reports)
 		} else {
 			result = recordFlakes(seams, result, result, "alone", repeats)
 		}
-		if main {
+		if mode == repeatMain {
 			if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), retain(result), seams) }); err != nil {
 				result.Cause.Kind = "flake"
 				result.Reason += "; " + err.Error()
@@ -271,7 +301,7 @@ func repeatRed(seams ProveSeams, install, checkout, command, dir string, running
 	green := result
 	green.Result, green.Repeat, green.Failed, green.Load, green.Reason, green.Cause = Green, "", nil, 0, "", nil
 	green = recordFlakes(seams, result, green, "alone", repeats)
-	if main {
+	if mode == repeatMain {
 		if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), retain(green)) }); err != nil {
 			result.Reason = "the repeat publication could not be recorded: " + err.Error()
 			return result
@@ -395,7 +425,7 @@ func replayBase(checkout, tip, main string, seams ProveSeams) (string, error) {
 }
 
 // classifyReplay attributes only a complete isolated failure after a complete
-// isolated green. It neither turns the full red green nor spends a repeat.
+// isolated green. Own repeats neither turn the full red green nor spend its allowance.
 func classifyReplay(seams ProveSeams, install, checkout, command string, running Running, result, previous Result, trees []replayTree) Result {
 	result.Replay = ""
 	for i, prefix := range trees {
@@ -405,29 +435,49 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 				return result
 			}
 		}
+		final := prefix.Commit == running.Commit && !prefix.Main && prefix.Goal.Goal != ""
 		if prefix.Commit == running.Commit {
 			result.Cause.Evidence = result.Log
 			if prefix.Main {
 				result.Cause.Kind, result.Cause.Name = "main", mainFailureIdentity(result.Failed)
-			} else if prefix.Goal.Goal != "" {
-				attributeOwn(result.Cause, trees, i, nil)
 			}
-			return result
+			if !final {
+				return result
+			}
+			if !slices.ContainsFunc(result.Failed, func(unit FailedUnit) bool {
+				names, _ := namedUnitTests(unit, testpolicy.Contract{})
+				return len(names) > 0
+			}) {
+				attributeOwn(result.Cause, trees, i, nil)
+				return result
+			}
 		}
 		prefix.BatchID, prefix.BatchMembers = running.BatchID, running.BatchMembers
 		prefix.Attempt = fmt.Sprintf("%s-replay-%d", running.Attempt, i+1)
 		var err error
-		prefix.Tree, err = seams.git(checkout, "rev-parse", "--verify", prefix.Commit+"^{tree}")
+		prefix.Tree = running.Tree
+		if !final {
+			prefix.Tree, err = seams.git(checkout, "rev-parse", "--verify", prefix.Commit+"^{tree}")
+		}
 		if err != nil {
 			return result
 		}
 		tree := filepath.Join(proofTrees(install), prefix.Attempt)
 		if _, err := seams.git(checkout, "worktree", "add", "--detach", tree, prefix.Commit); err != nil {
+			if final {
+				attributeOwn(result.Cause, trees, i, nil)
+				result.Reason += "; the merge's tests could not be repeated alone: " + err.Error()
+			}
 			return result
 		}
 		dir := tree
 		if rel, err := filepath.Rel(checkout, install); err == nil && rel != "." && !strings.HasPrefix(rel, "..") {
 			dir = filepath.Join(tree, rel)
+		}
+		if final {
+			result = repeatBeforeOwn(seams, install, checkout, command, dir, running, result, previous, trees, i)
+			_, _ = seams.git(checkout, "worktree", "remove", "--force", tree)
+			return result
 		}
 		failed, complete := false, true
 		var replayFailed []FailedUnit
@@ -507,7 +557,7 @@ func classifyReplay(seams ProveSeams, install, checkout, command string, running
 				}
 				if slices.ContainsFunc(report.failed, func(unit FailedUnit) bool { return len(unit.Tests) > 0 }) {
 					prefix.Trunk = true
-					check = repeatRed(seams, install, checkout, command, dir, prefix.Running, scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, check, true)
+					check = repeatRed(seams, install, checkout, command, dir, prefix.Running, scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, check, repeatMain)
 					failed = check.Result == Red
 					complete = !failed || check.Cause.Kind == "unclassified"
 				}
@@ -561,6 +611,73 @@ func attributeOwn(c *Cause, trees []replayTree, i int, failed []FailedUnit) {
 	if failed != nil {
 		c.FailedOn = failingTests(failed)
 	}
+}
+
+func repeatBeforeOwn(seams ProveSeams, install, checkout, command, dir string, running Running, result, previous Result, trees []replayTree, i int) Result {
+	contract, _ := testpolicy.Load(filepath.Join(dir, "testing.json"))
+	episode := result
+	episode.ClassificationPending = true
+	episode.Cause, episode.Failed, episode.RepeatPassed, episode.RepeatComplete = &Cause{}, nil, nil, false
+	episode.Flakes, episode.FlakePublished = nil, false
+	for _, unit := range result.Failed {
+		names, _ := namedUnitTests(unit, contract)
+		for _, name := range names {
+			identity := unit
+			identity.Tests = slices.DeleteFunc(slices.Clone(unit.Tests), func(test string) bool {
+				top, _ := topLevelTest(test)
+				return top != name
+			})
+			episode.Failed = append(episode.Failed, identity)
+		}
+	}
+	if len(episode.Failed) == 0 {
+		attributeOwn(result.Cause, trees, i, nil)
+		return result
+	}
+	episode = repeatRed(seams, install, checkout, command, dir, running, scopeDecision{scopeRecord: scopeRecord{Scope: "full"}}, episode, repeatOwn)
+	failedOn := make([]FailedUnit, 0, len(result.Failed))
+	for _, unit := range result.Failed {
+		tests := slices.DeleteFunc(slices.Clone(unit.Tests), func(test string) bool {
+			return failedIn(episode.RepeatPassed, unit.Unit, test)
+		})
+		if len(unit.Tests) == 0 || len(tests) > 0 {
+			unit.Tests = tests
+			failedOn = append(failedOn, unit)
+		}
+	}
+	attributeOwn(result.Cause, trees, i, failedOn)
+	if len(episode.RepeatPassed) > 0 && !episode.FlakePublished && seams.Judge != nil {
+		judgements, err := seams.Judge(checkout, running.Commit, episode.RepeatPassed)
+		if err == nil {
+			var flakes []FailedUnit
+			for _, unit := range episode.RepeatPassed {
+				if judgement, found := judgements[unit.Unit]; found && !judgement.Affected {
+					unit.Surfaces = judgement.Surfaces
+					flakes = append(flakes, unit)
+				}
+			}
+			if len(flakes) > 0 {
+				episode = publishAloneFlakes(seams, result, episode, flakes)
+				episode.FlakePublished = true
+				if err := withLock(install, func() error { return appendLine(seams.resultsPath(install), episode, seams) }); err != nil {
+					episode.Reason += "; the repeat publication could not be recorded: " + err.Error()
+				}
+			}
+		}
+	}
+	result.Flakes = slices.DeleteFunc(slices.Clone(result.Flakes), func(f FlakeRecord) bool {
+		return f.Attempt == result.Attempt && f.Tree == result.Tree && f.OpKey != ""
+	})
+	result.Flakes = append(result.Flakes, episode.Flakes...)
+	result.Reason = episode.Reason
+	result.Cause.PassedAlone = failingTests(withoutFlakes(episode.RepeatPassed, episode.Flakes, result.Attempt))
+	if len(result.Cause.FailedOn) == 0 && len(result.Cause.PassedAlone) == 0 {
+		result.Cause = &Cause{Kind: "flake", Name: strings.Join(result.Cause.Tests, ", "), Tests: result.Cause.Tests, Evidence: result.Cause.Evidence}
+		if previous.Result == "" {
+			result.Repeat = "allowed"
+		}
+	}
+	return result
 }
 
 // Recording an incident preserves the proof's verdict and repeat allowance.

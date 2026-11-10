@@ -94,6 +94,7 @@ type Result struct {
 	FlakePublished        bool                 `json:"flake-published,omitempty"`
 	Flakes                []FlakeRecord        `json:"flakes,omitempty"`
 	RepeatFailed          []FailedUnit         `json:"repeat-failed,omitempty"`
+	RepeatPassed          []FailedUnit         `json:"repeat-passed,omitempty"`
 	ClassificationOf      string               `json:"classification-of,omitempty"`
 	NextFull              *Result              `json:"next-full,omitempty"`
 	ClassificationPolicy  PolicyValue          `json:"classification-policy,omitempty,omitzero"`
@@ -163,6 +164,7 @@ type UnitJudgement struct {
 type FlakeRecord struct {
 	FailedUnit
 	Commit, Tree, Attempt, Log, Where string
+	OpKey                             string `json:"opKey,omitempty"`
 	Load                              float64
 	Repeat, RepeatAttempt, RepeatLog  string
 	Outputs, RepeatOutputs            map[string]repoproof.TestOutput
