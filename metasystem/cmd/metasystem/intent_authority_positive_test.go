@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -15,6 +17,7 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/brain"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal/ownercall"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/identity"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/stateroot"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/testexec"
 )
@@ -109,6 +112,46 @@ func materializeLocalLedger(t *testing.T, root string) {
 	}
 }
 
+// negativeTerminalFixture states every terminal fact the classifier may
+// consult, so a terminal on the host cannot admit the negative control.
+func negativeTerminalFixture(t *testing.T) string {
+	t.Helper()
+	entries := map[string]map[string]bool{}
+	seen := map[int64]bool{}
+	for pid, ok := int64(os.Getpid()), true; ok && pid > 0 && !seen[pid]; pid, ok = identity.ParentPid(pid) {
+		seen[pid] = true
+		entries[fmt.Sprint(pid)] = map[string]bool{"terminal": false}
+	}
+	return writeTemp(t, t.TempDir(), "no-terminal-table.json", entries)
+}
+
+func TestPersonGateNegativeFixtureWinsOverControllingTerminal(t *testing.T) {
+	if os.Getenv("GO_WANT_PERSON_GATE_TERMINAL_CHILD") == "1" {
+		if has, ok := identity.ControllingTerminal(int64(os.Getpid()), nil); !ok || !has {
+			t.Fatal("the negative control needs a kernel-confirmed controlling terminal")
+		}
+		t.Run("coordinator", TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner)
+		return
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// script gives the public control a real controlling terminal, even
+	// when the test runner itself is headless.
+	selector := "-test.run=^" + t.Name() + "$"
+	args := []string{"-q", "/dev/null", executable, selector, "-test.v", "-test.timeout=2m"}
+	if runtime.GOOS == "linux" {
+		args = []string{"-q", "-e", "-c", shellQuote(executable) + " " + shellQuote(selector) + " -test.v -test.timeout=2m", "/dev/null"}
+	}
+	command := exec.Command("script", args...)
+	command.Env = append(os.Environ(), "GO_WANT_PERSON_GATE_TERMINAL_CHILD=1")
+	output, err := command.CombinedOutput()
+	if err != nil || !bytes.Contains(output, []byte("--- PASS: "+t.Name()+" ")) {
+		t.Fatalf("negative public control under a controlling terminal: %v\n%s", err, output)
+	}
+}
+
 // TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner:
 // settings coordinator --declare, bare and --withdraw call the real brain
 // owner in this process (design 6.2). The owner classifies the supplied
@@ -164,19 +207,15 @@ func TestIntentCoordinatorGitAdapterDeclaresAndWithdrawsThroughTheBrainOwner(t *
 		t.Fatalf("undeclared read: %d %+v %v", code, result, calls)
 	}
 
-	// Control: without the terminal fact the same owner, argv
+	// Control: with negative terminal facts the same owner, argv
 	// and root refuse on authority alone and declare nothing.
 	humanTable := os.Getenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE")
-	agentTable := filepath.Join(t.TempDir(), "no-terminal-table.json")
-	if err := os.WriteFile(agentTable, []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", agentTable)
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", negativeTerminalFixture(t))
 	code, result := run("--declare", "--by", "Wido")
 	lastOwner(0)
 	if result.Outcome != intentRefused || code == 0 || result.Summary != "brain declare is a human act; run it from an agent-free terminal" ||
 		brain.Read(root, ledger).State != brain.Undeclared {
-		t.Fatalf("declare without the terminal fact: %d %+v", code, result)
+		t.Fatalf("declare with negative terminal facts: %d %+v", code, result)
 	}
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", humanTable)
 	calls = nil
@@ -463,7 +502,7 @@ func TestIntentRepairGoalsGitAdapterUpgradesOnlyTheReviewedDigest(t *testing.T) 
 // inside a declared coordinator checkout the repair owner carries a named
 // person's word only from a person at a terminal. The declaration is the
 // real brain owner's record; the terminal fact is the existing fixture
-// table in an exact fake-runtime root. Without that fact the owner refuses
+// table in an exact fake-runtime root. With negative facts the owner refuses
 // the adapter's argv and moves nothing; with it the owner accepts the
 // rewound remote history, moving only the accepted ref.
 func TestIntentRepairGoalsGitAdapterAcceptsRemoteHistoryInADeclaredCoordinator(t *testing.T) {
@@ -499,16 +538,12 @@ func TestIntentRepairGoalsGitAdapterAcceptsRemoteHistoryInADeclaredCoordinator(t
 	goalSyncMutationGit(t, root, "update-ref", goal.AcceptedRef, later)
 	goalSyncMutationGit(t, upstream, "update-ref", "refs/heads/main", base)
 
-	emptyTable := filepath.Join(t.TempDir(), "no-terminal-table.json")
-	if err := os.WriteFile(emptyTable, []byte(`{}`), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", emptyTable)
+	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", negativeTerminalFixture(t))
 	var calls [][]string
 	code, result := runIntentRealOwner(t, root, &calls, "goal", "sync", "--accept-remote-history", "--by", "Wido")
 	if result.Outcome != intentRefused || code == 0 || !strings.Contains(result.Summary, "which never acts in a person's name for goal repair") ||
 		goalSyncMutationGit(t, root, "rev-parse", goal.AcceptedRef) != later {
-		t.Fatalf("declared coordinator, no terminal fact: %d %+v", code, result)
+		t.Fatalf("declared coordinator, negative terminal facts: %d %+v", code, result)
 	}
 
 	t.Setenv("METASYSTEM_FAKE_PROCESS_IDENTITY_FILE", humanTable)
