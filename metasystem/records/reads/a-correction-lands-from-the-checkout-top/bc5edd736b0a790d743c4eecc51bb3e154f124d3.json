@@ -1,0 +1,60 @@
+{
+  "canonicalRead": {
+    "engine": "57e3290f4cf5789631c400415261d40f3ea43285",
+    "findings": [
+      {
+        "change": "None needed. Optionally, the brief or report could say 'the nested/installation row' instead of 'nested rows'.",
+        "claim": "The correction brief says mutation 1 (running the index commands at the installation folder) turns the 'nested rows' red, plural. Only the nested/installation row turns red; nested/top stays green. That is expected, because the caller dimension is now the folder passed to the code: in the nested/top row that folder already is the top, so the old behaviour is correct there. The mutation is still caught, so this is a wording mismatch in the brief, not a weaker test.",
+        "class": "other",
+        "evidence": "Round 1 mutation run in a scratch copy: nested/installation fails at commit_amend_adapter_test.go:57; nested/top passes.",
+        "id": "code-critic-abbb2b858f1f7f02b3c4951b-r2:1",
+        "material": false,
+        "relation": "correction brief mutation wording",
+        "severity": "low",
+        "where": "metasystem/internal/goal/branch/commit_amend_adapter_test.go"
+      }
+    ],
+    "id": "code-critic-abbb2b858f1f7f02b3c4951b-r2",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-correction-lands-from-the-checkout-top/metasystem/artifacts/agents/code-critic-abbb2b858f1f7f02b3c4951b/rounds/2/return.md",
+    "subject": {
+      "commit": "bc5edd736b0a790d743c4eecc51bb3e154f124d3",
+      "diffDigest": "8584e9c46d917bce25b099a2df2ad2a7e36929f02f9d635ad1e2316e50fd9998",
+      "kind": "commit",
+      "parent": "4a2df44509c8f14991c25f7fa0f396b4b0751c1f",
+      "tree": "0b8fdd7c735160f581a4b1fdca79a29775473c88"
+    }
+  },
+  "readDigest": "06ffdf50ac02615f3e323b209d4b8ef63e6f4f045a8bd88b7a11b6e88eb7896f",
+  "schemaVersion": 1,
+  "goal": "a-correction-lands-from-the-checkout-top",
+  "unit": "U1",
+  "subject": {
+    "commit": "bc5edd736b0a790d743c4eecc51bb3e154f124d3",
+    "parent": "4a2df44509c8f14991c25f7fa0f396b4b0751c1f",
+    "tree": "0b8fdd7c735160f581a4b1fdca79a29775473c88",
+    "patchDigest": "8584e9c46d917bce25b099a2df2ad2a7e36929f02f9d635ad1e2316e50fd9998",
+    "unitDigest": "23df664e16e89a8818dec04dc416501014b0978960ac74969f19f271e398771c"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-abbb2b858f1f7f02b3c4951b",
+    "round": 2,
+    "closureSha256": "182fe359b9ba807bebf3ffb0db4abafc4fa472ed6d71866558b712605db61aef"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "0b8fdd7c735160f581a4b1fdca79a29775473c88",
+    "runId": "goal-read-gate-20261110t105638z-6200a9dd5adc84ff"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/goal/branch/commit_amend_policy_test.go",
+      "readerWord": "reviewed by critic root code-critic-abbb2b858f1f7f02b3c4951b"
+    }
+  ],
+  "sha256": "aa880dbcbca58312a293e4ff26c42cc74c168cbad1581483757c08f6d7456df8"
+}
