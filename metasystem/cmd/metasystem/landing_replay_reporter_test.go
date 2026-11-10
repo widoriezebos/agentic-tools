@@ -235,7 +235,7 @@ func TestARedProofIsToldFromMainsWithOneReplayRun(t *testing.T) {
 			b.mainFailures, b.failures = nil, b.failures[1:]
 			b.runs = nil
 			fixed := b.prove(t)
-			if fixed.Cause.Kind != "own" || fixed.Cause.Goal != "g" || len(fixed.Cause.Tests) != 3 || len(b.runs) != 3 || !strings.HasPrefix(b.runs[1], "main-fixed:") {
+			if fixed.Cause.Kind != "own" || fixed.Cause.Goal != "g" || len(fixed.Cause.Tests) != 3 || len(b.runs) != 4 || !strings.HasPrefix(b.runs[1], "main-fixed:") {
 				t.Fatalf("fixed main attribution: %+v runs=%v", fixed, b.runs)
 			}
 			if code, out := b.run(t, b.root, "return", "g", "--cause", "own"); code != 0 {
@@ -409,6 +409,9 @@ func TestLandingReplayNamesFiveTestsAndRecordsTheForm(t *testing.T) {
 				want := ""
 				if commandEnv(cmd, "LANDING_ONLY") != "" && len(b.runs) == 1 {
 					want = strings.Join(names, " ")
+				}
+				if named && len(b.runs) >= 3 && commandEnv(cmd, "LANDING_COMMIT") == b.head {
+					want = names[len(b.runs)-3]
 				}
 				if got := commandEnv(cmd, "LANDING_ONLY_TESTS"); got != want {
 					t.Fatalf("replay names=%q want=%q", got, want)

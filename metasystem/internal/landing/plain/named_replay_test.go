@@ -80,7 +80,7 @@ func TestReplayParsesRealRedAndUsesItsNamedSelection(t *testing.T) {
 		if calls == 2 {
 			want = ""
 		}
-		if calls > 2 || commandEnv(cmd, "LANDING_ONLY") != red.Failed[0].Unit || commandEnv(cmd, "LANDING_ONLY_TESTS") != want {
+		if calls > 3 || commandEnv(cmd, "LANDING_ONLY") != red.Failed[0].Unit || commandEnv(cmd, "LANDING_ONLY_TESTS") != want {
 			t.Fatalf("replay call %d unit=%q names=%q", calls, commandEnv(cmd, "LANDING_ONLY"), commandEnv(cmd, "LANDING_ONLY_TESTS"))
 		}
 		child := exec.Command(reporter, "--host")
@@ -89,7 +89,7 @@ func TestReplayParsesRealRedAndUsesItsNamedSelection(t *testing.T) {
 		return child.Run()
 	}
 	result := classifyReplay(b.seams, b.install, b.checkout, "fixture", Running{Attempt: "named", Trunk: true, Commit: red.Commit}, red, Result{}, []replayTree{{Running: Running{Commit: "commit"}, Main: true}, {Running: Running{Commit: red.Commit}, Goal: red.BatchMembers[0]}})
-	if calls != 2 || result.Replay != "named replay green on main: whole-unit replay ran; replay: whole unit metasystem/internal/landing/plain" || result.Cause.Kind != "own" || result.Cause.Goal != record.Id {
+	if calls != 3 || result.Replay != "named replay green on main: whole-unit replay ran; replay: whole unit metasystem/internal/landing/plain" || result.Cause.Kind != "own" || result.Cause.Goal != record.Id {
 		t.Fatalf("real red classification=%+v cause=%+v calls=%d", result, result.Cause, calls)
 	}
 	wantWords := "TestReadStatusTrunkRedWaitsForRunningTrunkProof (metasystem/internal/landing/plain) failed on the merge of lane-first-run-fixes (a4004d908e8a) with main; metasystem/internal/landing/plain passed on main at commit"
@@ -270,7 +270,7 @@ func TestReplayWordsNameWhereEachRedFailed(t *testing.T) {
 			calls := 0
 			b.seams.Command = func(cmd *exec.Cmd) error {
 				calls++
-				if commit := commandEnv(cmd, "LANDING_COMMIT"); commit != "commit" && commit != "merge-g1" {
+				if commit := commandEnv(cmd, "LANDING_COMMIT"); commit != "commit" && commit != "merge-g1" && commit != "tip" {
 					t.Fatalf("unexpected replay on %q", commit)
 				}
 				if commandEnv(cmd, "LANDING_ONLY") != "metasystem/internal/p" {
@@ -291,7 +291,7 @@ func TestReplayWordsNameWhereEachRedFailed(t *testing.T) {
 				{Running: Running{Commit: "tip"}, Goal: GoalSHA{Goal: "g2", SHA: "sha-g2"}},
 			}
 			result := classifyReplay(b.seams, b.install, b.checkout, "fixture", Running{Attempt: "words", Trunk: true, Commit: "tip"}, red, Result{}, trees)
-			wantCalls := 4
+			wantCalls := 6
 			if tc.name == "earlier merge" {
 				wantCalls = 3
 			}

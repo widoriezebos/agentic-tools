@@ -187,7 +187,7 @@ func TestLandingReplayMainFlakeDoesNotHideOwnFailure(t *testing.T) {
 	if isolated != 1 {
 		t.Fatalf("isolated flake outcome missing: %+v", results)
 	}
-	if check.Cause == nil || check.Cause.Kind != "own" || check.Cause.Goal != "b" || register.repo.canonical == before || len(flakes) != 1 || flakes[0].Where != "main" || flakes[0].Load != 3.5 || len(b.runs) != 4 {
+	if check.Cause == nil || check.Cause.Kind != "own" || check.Cause.Goal != "b" || register.repo.canonical == before || len(flakes) != 1 || flakes[0].Where != "main" || flakes[0].Load != 3.5 || len(b.runs) != 4+len(unit.Tests) {
 		t.Fatalf("own red lost to replay flake: %+v cause=%+v flakes=%+v runs=%v", check, check.Cause, flakes, b.runs)
 	}
 }

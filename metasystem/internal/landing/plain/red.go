@@ -68,7 +68,7 @@ func ClassifyAttempt(install, checkout, attempt string, seams ProveSeams) (resul
 				return err
 			}
 			for _, r := range results {
-				if r.Attempt == attempt && r.Result == Red {
+				if r.Attempt == attempt && r.Result == Red && r.Repeat != "own" {
 					result, seams.Gate, seams.Trunk, found = r, gate, r.Trunk, true
 				}
 			}
