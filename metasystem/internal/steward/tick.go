@@ -215,6 +215,7 @@ type TickResult struct {
 type BreachStopReport struct {
 	GoalID   string `json:"goalId"`
 	Revision uint64 `json:"revision"`
+	Machine  string `json:"machine,omitempty"`
 	StopID   string `json:"stopId,omitempty"`
 	State    string `json:"state"`
 	Detail   string `json:"detail,omitempty"`
@@ -245,7 +246,7 @@ func runBreachStopCustodianWithScanner(repoRoot string, now time.Time,
 	}
 	reports := make([]BreachStopReport, 0, len(routes))
 	for _, route := range routes {
-		report := BreachStopReport{GoalID: route.GoalID, Revision: route.Revision, StopID: route.StopID, Reason: route.Reason, Budget: route.Budget, Elapsed: route.Elapsed}
+		report := BreachStopReport{GoalID: route.GoalID, Revision: route.Revision, Machine: route.Machine, StopID: route.StopID, Reason: route.Reason, Budget: route.Budget, Elapsed: route.Elapsed}
 		if route.Condition == dispatch.StopRouteIndeterminate {
 			report.State, report.Detail = "INDETERMINATE", route.Failure
 			reports = append(reports, report)

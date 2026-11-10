@@ -14,6 +14,25 @@ import (
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/proofrun"
 )
 
+func TestBreachRoutesNameTheClaimsMachine(t *testing.T) {
+	t.Parallel()
+	bed := newGoalMutationBed(t)
+	machine := bed.parsedAcceptedGoal(t, "bounded").Claimed.Machine
+	atGraceBoundary := time.Date(2026, 8, 28, 21, 0, 0, 0, time.UTC)
+	routes, err := bed.stops(atGraceBoundary)
+	if err != nil || len(routes) != 1 || routes[0].Machine != machine {
+		t.Fatalf("breach routes = %+v, %v; want claim machine %q", routes, err, machine)
+	}
+	batch, err := bed.stop("bounded", 2, atGraceBoundary.Add(time.Second))
+	if err != nil || batch.State != goal.StopBatchOpen {
+		t.Fatalf("stop did not leave an open batch: %+v %v", batch, err)
+	}
+	routes, err = bed.stops(atGraceBoundary.Add(time.Second))
+	if err != nil || len(routes) != 1 || routes[0].StopID != batch.StopID || routes[0].Machine != machine {
+		t.Fatalf("fenced routes = %+v, %v; want claim machine %q", routes, err, machine)
+	}
+}
+
 func TestElapsedBudgetThreeBandsAndBreachStopFixedPoint(t *testing.T) {
 	bed := newGoalMutationBed(t)
 	root := bed.root

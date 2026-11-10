@@ -374,6 +374,8 @@ const (
 )
 
 type StopRoute struct {
+	// Machine is the claim's machine; only its steward asks the stop's question.
+	Machine   string
 	GoalID    string
 	Revision  uint64
 	StopID    string
@@ -429,7 +431,7 @@ func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionRea
 				continue
 			}
 			route := StopRoute{
-				GoalID: id, Revision: file.Claimed.Revision, StopID: file.StopFence.StopID,
+				GoalID: id, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, StopID: file.StopFence.StopID,
 				Reason: file.StopFence.Reason, Condition: StopRouteBreach, Budget: file.Budget,
 			}
 			if readErr != nil && !os.IsNotExist(readErr) {
@@ -448,7 +450,7 @@ func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionRea
 		budget := ProjectBudget(root, file, now, reads.BudgetHome)
 		if budget.Status != BudgetKnown {
 			routes = append(routes, StopRoute{
-				GoalID: id, Revision: file.Claimed.Revision, Condition: StopRouteIndeterminate,
+				GoalID: id, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, Condition: StopRouteIndeterminate,
 				Failure: fmt.Sprintf("BUDGET_UNKNOWN record=%s reason=%s", budget.Unknown.Record, budget.Unknown.Reason),
 			})
 			continue
@@ -458,7 +460,7 @@ func findBreachStopsWithReads(root string, now time.Time, reads goalAdmissionRea
 			continue
 		}
 		route := StopRoute{
-			GoalID: id, Revision: file.Claimed.Revision, Reason: reason, Condition: StopRouteBreach, Budget: file.Budget, Elapsed: budget.Elapsed,
+			GoalID: id, Revision: file.Claimed.Revision, Machine: file.Claimed.Machine, Reason: reason, Condition: StopRouteBreach, Budget: file.Budget, Elapsed: budget.Elapsed,
 		}
 		if file.StopCapability == nil {
 			route.Condition = StopRouteIndeterminate

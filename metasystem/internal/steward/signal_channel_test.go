@@ -217,6 +217,58 @@ func breachFixtureConfig(stops *int) TickConfig {
 // breachBox is the stopped goal's box in the breach tests.
 var breachBox = goal.Budget{ElapsedLimit: "5d", AttemptLimit: 12, ReservedJobMinutesLimit: 2400, ActiveJobLimit: 1, ReviewRoundLimit: 20}
 
+func TestTheStopQuestionIsAskedOnlyOnTheClaimsMachine(t *testing.T) {
+	t.Parallel()
+	for _, machine := range []string{"m1e", "ui"} {
+		t.Run(machine, func(t *testing.T) {
+			t.Parallel()
+			fixture := newUnservedChannelFixture(t)
+			conf, err := os.ReadFile(filepath.Join(fixture.root, "metasystem.conf"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			seat, err := json.Marshal(map[string]string{"launchId": "seat-held-b", "goal": "held-b",
+				"startedAt": claimQuotaClock.Add(-8 * time.Hour).Format(time.RFC3339), "reapedAt": claimQuotaClock.Format(time.RFC3339)})
+			if err != nil {
+				t.Fatal(err)
+			}
+			fixture.root = claimQuotaTickBed(t, map[string][]byte{
+				"metasystem.conf": conf, "artifacts/agents/steward/seats/held-b.json": seat,
+			}, claimQuotaHeld("held-b"))
+			if machine == "ui" {
+				seatGit(t, fixture.root, "config", "metasystem.goal.machine", machine)
+			}
+			fixture.serve(t)
+			stops := 0
+			result, err := RunTick(fixture.root, TickConfig{Now: claimQuotaClock, BreachStop: func(id string, revision uint64) (string, error) {
+				stops++
+				if id != "held-b" || revision != 3 {
+					t.Errorf("stop = %s revision %d, want held-b revision 3", id, revision)
+				}
+				return "stopped", nil
+			}}, fakeCensus{})
+			if err != nil || stops != 1 || len(result.GoalStops) != 1 || result.GoalStops[0].State != "COMPLETE" {
+				t.Fatalf("tick stopped %d times: %+v %v", stops, result.GoalStops, err)
+			}
+			if machine == "m1e" {
+				asked, unreadable := channel.WalkOpenQuestions(fixture.root)
+				if len(unreadable) != 0 || len(asked) != 1 || asked[0].Goal != "held-b" || asked[0].Decision == nil || asked[0].Decision.Kind != "breach-stop" {
+					t.Fatalf("claim machine's questions = %+v, unreadable = %v", asked, unreadable)
+				}
+			} else {
+				asked, unreadable := channel.WalkQuestions(fixture.root)
+				if len(unreadable) != 0 || len(asked) != 0 {
+					t.Fatalf("another machine's questions = %+v, unreadable = %v", asked, unreadable)
+				}
+				duties, err := loadDuties(fixture.root)
+				if err != nil || duties["breach-stop-notice"].Error != "" {
+					t.Fatalf("another machine's notice duty = %+v, %v", duties["breach-stop-notice"], err)
+				}
+			}
+		})
+	}
+}
+
 func TestBreachStopAsksOncePerGoalRevision(t *testing.T) {
 	t.Parallel()
 	fixture := newChannelFixture(t)

@@ -18,6 +18,7 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 )
 
@@ -104,8 +105,10 @@ func spendNotice(crossing SpendCrossing) string {
 // channel configured the tick report is all. The channel duty's poll posts
 // the question in the same pass, and again after a failed post. It also says
 // whether it attempted a notice: a pass with nothing to ask attempts none.
+// Only the steward of the claim's machine asks.
 func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Time) (bool, error) {
 	var problems []error
+	var machine string
 	attempted := false
 	for _, report := range reports {
 		if report.State != "COMPLETE" || report.GoalID == "" {
@@ -113,6 +116,18 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 		}
 		if !loadSignalChannel(repoRoot).configured {
 			return false, nil
+		}
+		if report.Machine != "" {
+			if machine == "" {
+				var err error
+				machine, err = goal.ResolveMachine(repoRoot)
+				if err != nil {
+					return true, err
+				}
+			}
+			if report.Machine != machine {
+				continue
+			}
 		}
 		attempted = true
 		if report.Budget == nil {
