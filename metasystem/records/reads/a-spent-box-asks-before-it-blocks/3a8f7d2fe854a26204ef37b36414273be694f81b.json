@@ -1,0 +1,106 @@
+{
+  "canonicalRead": {
+    "id": "20261110t040321-13fed1f423-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "a-spent-box-asks-before-it-blocks",
+      "reviewedProjectTree": "724c9494842a8ed43f4a09a5cc632a5867d3116ccb3f64bd72065d136baa04d6",
+      "diffDigest": "724c9494842a8ed43f4a09a5cc632a5867d3116ccb3f64bd72065d136baa04d6"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261110t040321-13fed1f423-r1-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "Neither T6 nor T7 pins the goal and decision-kind filters of the new pointers; dropping them leaves both tests green.",
+        "evidence": "A go test -overlay mutation (m2) rewrote intent_work.go:1602 to 'if q.Decision != nil || q.Goal == goalID' and goal.go:474 to 'if q.Decision != nil || q.Goal != \"\"'. TestIntentUnitBudgetRefusalNamesTheSpentBoxQuestion and TestGoalNextNamesASpentBoxFirst both PASS. Each test seeds exactly one question, for its own goal and of the spent-box kind.",
+        "where": "metasystem/cmd/metasystem/intent_work.go",
+        "change": "In T6 and T7, also seed another goal's spent-box question or this goal's breach-stop question, and assert that the refusal and goal next do not name it. Sibling place: metasystem/cmd/metasystem/goal.go:474.",
+        "relation": "new; rule: a pointer's filters are pinned by a test that seeds a non-matching question (test coverage below the R-124 materiality line)"
+      },
+      {
+        "id": "20261110t040321-13fed1f423-r1-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "When admission refuses with BUDGET_UNKNOWN while a spent-box question is open, the reason drops 'unreadable spending records also need repair'.",
+        "evidence": "intent_work.go:1599-1607 replaces nextReason for both codes once the question is found. Raising the box does not repair unreadable spending records.",
+        "where": "metasystem/cmd/metasystem/intent_work.go",
+        "change": "Later list: keep the repair clause when the code is BUDGET_UNKNOWN. The brief prescribes the current text, so this is not a fix for this unit.",
+        "relation": "new; rule: brief step 10's reason text is shared by BUDGET_REFUSED and BUDGET_UNKNOWN"
+      },
+      {
+        "id": "20261110t040321-13fed1f423-r1-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The refusal reads InstallationRoot.Path() and goal next reads ResolveStateRoot(--root). In an adopted installation beneath its application's Git root, those are different directories.",
+        "evidence": "stateroot.go:183-192 returns the repository top for an installation that is not in template mode; project.go:364-385. Both roots are the ones the brief names, and afterGoalAct already uses InstallationRoot for the same store (intent_goals.go:734, :740). In this template checkout both resolve to \u003ccheckout\u003e/metasystem. Both pointers also ignore WalkOpenQuestions' unreadable list.",
+        "where": "metasystem/cmd/metasystem/goal.go",
+        "change": "Later list: read the channel store through one resolved root in the steward, afterGoalAct, the refusal and goal next.",
+        "relation": "new; rule: the channel store root is one root for the asker and every reader"
+      },
+      {
+        "id": "20261110t040321-13fed1f423-r1-s3:4",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The seat launch stores goal next's first line as record.Orientation, which is now the box line when the clone's store holds an open spent-box question.",
+        "evidence": "internal/seat/launch/sequence.go:673-677 sets firstLine(printed). The lane line already took that place before this change, and a fresh clone's channel store is empty.",
+        "where": "metasystem/internal/seat/launch/sequence.go",
+        "change": "None needed.",
+        "relation": "new; rule: consumers of goal next's first line"
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261110t040321-13fed1f423-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "c30f0f6c67c493b530b94ef706885eee6578e03f078f5607cf6976e061c34d79",
+  "schemaVersion": 1,
+  "goal": "a-spent-box-asks-before-it-blocks",
+  "unit": "U1c",
+  "subject": {
+    "commit": "3a8f7d2fe854a26204ef37b36414273be694f81b",
+    "parent": "13d8b1498d16b3d85b632de6745f4608ea64f43e",
+    "tree": "6494a28543f3d73aa5374c94fd248cd3e289f7f8",
+    "patchDigest": "724c9494842a8ed43f4a09a5cc632a5867d3116ccb3f64bd72065d136baa04d6",
+    "unitDigest": "b653332db574cda46071520e5392e17d67bf402361ad9433dafc1f3ae28f5f40"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261110t040321-13fed1f423-r1-s3",
+    "closureSha256": "ef41c5d6c56dfdf8482308fb65851e069aba74d0c7c07a7cec6d7dea832479be"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "6494a28543f3d73aa5374c94fd248cd3e289f7f8",
+    "runId": "goal-read-gate-20261110t051742z-c23c0e67a9499c67"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "e03caf6f5baaf9bacdf18aa8689c94a8c40c7664",
+      "digest": "587d87e10487bea474ccf2ec9026baeb9a44a17a073943816fd02c746e8f5db0"
+    },
+    {
+      "kind": "read",
+      "commit": "13d8b1498d16b3d85b632de6745f4608ea64f43e",
+      "digest": "60ee1edb831a17a3d1b50f5647e30c484a352106c15f9795a8dc86942f8f9ce8"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/intent_unit_comparison_accounting_test.go",
+      "readerWord": "reviewed by unit read 20261110t040321-13fed1f423-r1-s3"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/read_items_test.go",
+      "readerWord": "reviewed by unit read 20261110t040321-13fed1f423-r1-s3"
+    }
+  ],
+  "sha256": "6a6ae6ace4b2a34f0bb030142c3561a755d9dc464ffad837dde88e0dcec80da7"
+}

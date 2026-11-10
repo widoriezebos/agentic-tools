@@ -194,3 +194,20 @@ func CloseGoalStopQuestions(root, goalID, because string, at time.Time) error {
 	}
 	return nil
 }
+
+// SpentBoxDecision is the decision kind for a goal's spent-box question.
+const SpentBoxDecision = "budget-admission"
+
+// RetireSpentBoxQuestions frees questions whose box or claim no longer stands.
+// An empty keep retires them all; nothing is posted.
+func RetireSpentBoxQuestions(root, goalID, keep, because string, at time.Time) error {
+	open, _ := WalkOpenQuestions(root)
+	for _, q := range open {
+		if q.Goal == goalID && q.Decision != nil && q.Decision.Kind == SpentBoxDecision && (keep == "" || q.Decision.State != keep) {
+			if err := Retire(root, q.ID, because, at); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}

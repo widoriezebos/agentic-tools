@@ -1502,3 +1502,53 @@ func TestReportShowsLandingClaimInNextUpBlock(t *testing.T) {
 		t.Fatalf("landing claim was not visible in the Next up block:\n%s", text)
 	}
 }
+
+func TestRetireSpentBoxQuestionsKeepsTheStandingState(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	at := time.Date(2026, 9, 1, 10, 0, 0, 0, time.UTC)
+	request := func(id, kind, state string) AskRequest {
+		return AskRequest{RepoRoot: root, Goal: id, Kind: "stop", Now: at.Add(-time.Hour), Decision: &Decision{Kind: kind, Subject: id, State: state}, Facts: []string{"box spent"}, Options: []Option{{Label: "Leave it", Consequence: "nothing new starts"}}}
+	}
+	ask := func(id, kind, state string) Question {
+		q, err := Ask(request(id, kind, state))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return q
+	}
+	a, b, stop, h := ask("g", SpentBoxDecision, "A"), ask("g", SpentBoxDecision, "B"), ask("g", "breach-stop", "A"), ask("h", SpentBoxDecision, "A")
+	retire := func(keep string) {
+		if err := RetireSpentBoxQuestions(root, "g", keep, "box changed", at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	retire("B")
+	retired, err := ReadQuestion(root, a.ID)
+	if err != nil || !retired.ClosedAt.Equal(at) || !retired.RetiredAt.Equal(at) || retired.State != "closed" {
+		t.Fatalf("retirement=%+v %v", retired, err)
+	}
+	if open, _ := ReadQuestion(root, b.ID); open.State != "open" {
+		t.Fatalf("standing question closed: %+v", open)
+	}
+	retire("")
+	retire("")
+	if kept, _ := ReadQuestion(root, a.ID); !kept.ClosedAt.Equal(retired.ClosedAt) || !kept.RetiredAt.Equal(retired.RetiredAt) {
+		t.Fatalf("repeated retirement changed it: %+v", kept)
+	}
+	if q, _ := ReadQuestion(root, b.ID); q.State != "closed" || !q.RetiredAt.Equal(at) {
+		t.Fatalf("empty keep=%+v", q)
+	}
+	if err := CloseGoalStopQuestions(root, "h", "unrelated act", at); err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []Question{stop, h} {
+		if got, _ := ReadQuestion(root, q.ID); got.State != "open" {
+			t.Fatalf("unrelated question retired: %+v", got)
+		}
+	}
+	fresh, found, err := AskOrFind(request("g", SpentBoxDecision, "A"))
+	if err != nil || found || fresh.ID == a.ID || fresh.State != "open" {
+		t.Fatalf("retired key stayed held: %+v found=%v %v", fresh, found, err)
+	}
+}

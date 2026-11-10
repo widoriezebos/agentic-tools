@@ -735,6 +735,12 @@ func (inv *intentInvocation) afterGoalAct(id, act string, opid ...string) intent
 			details = append(details, "the goal's budget question could not be closed: "+err.Error())
 		}
 	}
+	// The projection above reads the goal as the act left it.
+	if inv.resolveLayout() == nil {
+		if err := channel.RetireSpentBoxQuestions(inv.layout.InstallationRoot.Path(), id, dispatchcore.SpentBoxState(projection.Tree.Live[id], now), act+" at "+now.Local().Format("15:04"), now); err != nil {
+			details = append(details, "the goal's budget question could not be closed: "+err.Error())
+		}
+	}
 	if view.Box != "" {
 		summary += " under " + view.Box
 	}

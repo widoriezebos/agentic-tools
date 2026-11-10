@@ -18,6 +18,8 @@ import (
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/channel"
 	channelphase "github.com/widoriezebos/agentic-tools/metasystem/internal/channel/phase"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/dispatch"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goalbudget"
 )
 
@@ -104,8 +106,10 @@ func spendNotice(crossing SpendCrossing) string {
 // channel configured the tick report is all. The channel duty's poll posts
 // the question in the same pass, and again after a failed post. It also says
 // whether it attempted a notice: a pass with nothing to ask attempts none.
+// Only the steward of the claim's machine asks.
 func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Time) (bool, error) {
 	var problems []error
+	var machine string
 	attempted := false
 	for _, report := range reports {
 		if report.State != "COMPLETE" || report.GoalID == "" {
@@ -114,6 +118,18 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 		if !loadSignalChannel(repoRoot).configured {
 			return false, nil
 		}
+		if report.Machine != "" {
+			if machine == "" {
+				var err error
+				machine, err = goal.ResolveMachine(repoRoot)
+				if err != nil {
+					return true, err
+				}
+			}
+			if report.Machine != machine {
+				continue
+			}
+		}
 		attempted = true
 		if report.Budget == nil {
 			problems = append(problems, fmt.Errorf("goal %s stopped with no box to ask about", report.GoalID))
@@ -121,6 +137,9 @@ func noticeBreachStops(repoRoot string, reports []BreachStopReport, now time.Tim
 		}
 		_, _, err := channel.AskOrFind(breachStopAsk(repoRoot, report, now))
 		problems = append(problems, err)
+		if err == nil {
+			problems = append(problems, channel.RetireSpentBoxQuestions(repoRoot, report.GoalID, "", "the goal stopped at its box at "+now.Local().Format("15:04")+"; the stop's question asks now", now))
+		}
 	}
 	return attempted, errors.Join(problems...)
 }
@@ -153,4 +172,94 @@ func reportBreachStopNotices(repoRoot string, reports []BreachStopReport, now ti
 	if attempted, err := noticeBreachStops(repoRoot, reports, now); attempted {
 		recordDuty(repoRoot, "breach-stop-notice", err, now)
 	}
+}
+
+// askSpentBoxes asks only on the claim's machine and retires superseded boxes.
+func askSpentBoxes(repoRoot string, cfg TickConfig, find func(string, time.Time) ([]dispatch.SpentBox, error)) error {
+	now := cfg.now()
+	open, _ := channel.WalkOpenQuestions(repoRoot)
+	goals := map[string]bool{}
+	for _, q := range open {
+		if q.Decision != nil && q.Decision.Kind == channel.SpentBoxDecision {
+			goals[q.Goal] = true
+		}
+	}
+	var boxes []dispatch.SpentBox
+	if loadSignalChannel(repoRoot).configured {
+		var err error
+		boxes, err = find(repoRoot, now)
+		if err != nil {
+			return err
+		}
+	}
+	if len(boxes) == 0 && len(goals) == 0 {
+		return nil
+	}
+	machine, err := goal.ResolveMachine(repoRoot)
+	if err != nil {
+		return err
+	}
+	var problems []error
+	for _, box := range boxes {
+		if box.Machine != machine {
+			continue
+		}
+		_, _, err := channel.AskOrFind(spentBoxAsk(repoRoot, box, builtWorkWaiting(repoRoot, cfg, box.GoalID), now))
+		problems = append(problems, err)
+	}
+	if len(goals) > 0 {
+		ledger := newHealthLedger(repoRoot, now).read()
+		if !ledger.newWorld || ledger.endpointErr != nil || ledger.projectionErr != nil {
+			return errors.Join(append(problems, ledger.endpointErr, ledger.projectionErr)...)
+		}
+		for id := range goals {
+			keep := ""
+			if file := ledger.projection.Tree.Live[id]; file != nil && file.Claimed != nil && file.Claimed.Machine == machine {
+				keep = dispatch.SpentBoxState(file, now)
+			}
+			problems = append(problems, channel.RetireSpentBoxQuestions(repoRoot, id, keep, "the goal's box, claim or landing changed by "+now.Local().Format("15:04"), now))
+		}
+	}
+	return errors.Join(problems...)
+}
+
+func spentBoxAsk(repoRoot string, box dispatch.SpentBox, waiting bool, now time.Time) channel.AskRequest {
+	raised := box.Budget
+	raised.ElapsedLimit = goalbudget.FormatWorkingDuration(box.Budget.ElapsedDuration() + 16*time.Hour)
+	decision := "Goal " + strings.ReplaceAll(box.GoalID, "-", " ") + " has used its " + box.Budget.ElapsedLimit + " box; nothing new starts."
+	if waiting {
+		decision += " It has built work waiting."
+	}
+	return channel.AskRequest{RepoRoot: repoRoot, Goal: box.GoalID, Kind: "stop", Contract: true, Now: now, Recommendation: "Raise the box",
+		Decision: &channel.Decision{Kind: channel.SpentBoxDecision, Subject: box.GoalID, State: box.State},
+		Facts: []string{fmt.Sprintf("box spent: %s of %s used (%s)", goalbudget.FormatWorkingDuration(box.Elapsed), box.Budget.ElapsedLimit, box.State),
+			"undo after Raise the box: metasystem goal budget " + box.GoalID + " " + goalbudget.FormatBox(box.Budget)},
+		Plain: &channel.Plain{Decision: decision, IfNothing: "the goal stands until you raise its box or release it."},
+		Options: []channel.Option{
+			{Label: "Raise the box", Consequence: "its time box becomes " + raised.ElapsedLimit + ", two more working days; the other limits stay and may still block work. Undo: goal budget back to " + box.Budget.ElapsedLimit + ".",
+				Act: []string{"metasystem", "goal", "budget", box.GoalID, goalbudget.FormatBox(raised)}},
+			{Label: "Leave it", Consequence: "nothing new starts; running work may still spend. This question stays open, so you can still raise the box."},
+		}}
+}
+
+// These stages come from the public unit reader in cmd/metasystem/intent_selection.go.
+var builtWorkStages = []string{"built, ready for review", "committed", "reviewed; its read is collected but not yet published", "review refused", "the read of attempt"}
+
+func builtWorkWaiting(root string, cfg TickConfig, id string) bool {
+	if cfg.Units != nil {
+		if units, err := cfg.Units(root, id); err == nil {
+			for _, unit := range units {
+				for _, prefix := range builtWorkStages {
+					if strings.HasPrefix(unit.Stage, prefix) {
+						return true
+					}
+				}
+			}
+		}
+	}
+	if cfg.Workspace != nil {
+		waiting, err := cfg.Workspace(root, id)
+		return err == nil && waiting
+	}
+	return false
 }

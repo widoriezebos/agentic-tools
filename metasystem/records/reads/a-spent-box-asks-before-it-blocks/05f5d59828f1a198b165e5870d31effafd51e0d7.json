@@ -1,0 +1,94 @@
+{
+  "canonicalRead": {
+    "id": "20261109t235830-25cf583773-r1-s3",
+    "subject": {
+      "kind": "live",
+      "implementerRoot": "a-spent-box-asks-before-it-blocks",
+      "reviewedProjectTree": "d54a61adcbc8ee57fe64945299bfec127b444eca8dd31dc8d468398794213bb5",
+      "diffDigest": "d54a61adcbc8ee57fe64945299bfec127b444eca8dd31dc8d468398794213bb5"
+    },
+    "engine": "go\tgo1.27.3\npath\tgithub.com/widoriezebos/agentic-tools/metasystem/cmd/metasystem\nmod\tgithub.com/widoriezebos/agentic-tools/metasystem\t(devel)\t\ndep\tgithub.com/pelletier/go-toml/v2\tv2.4.3\th1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=\ndep\tgithub.com/yuin/goldmark\tv1.8.6\th1:d0VcaP1sx9GkFVkoW+KtggpGi2KZ965i14b0+bDQST4=\ndep\tgolang.org/x/sys\tv0.47.0\th1:o7XGOvZQCADBQQ4Y7VNq2dRWQR7JmOUW8Kxx4ZsNgWs=\nbuild\t-buildmode=exe\nbuild\t-compiler=gc\nbuild\t-trimpath=true\nbuild\tCGO_ENABLED=0\nbuild\tGOARCH=arm64\nbuild\tGOOS=darwin\nbuild\tGOARM64=v8.0\n",
+    "model": "claude-opus-5-5",
+    "material": 0,
+    "findings": [
+      {
+        "id": "20261109t235830-25cf583773-r1-s3:1",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The resolve-failure branch of noticeBreachStops (return true, err when goal.ResolveMachine fails) has no test.",
+        "evidence": "No test in the diff runs a COMPLETE report with a machine on a checkout without metasystem.goal.machine; the brief lists no such test.",
+        "where": "metasystem/internal/steward/signal_channel.go",
+        "change": "Optional: a no-machine-name bed whose tick records the ResolveMachine error on the breach-stop-notice duty.",
+        "relation": "new: an error path the brief specifies carries a test"
+      },
+      {
+        "id": "20261109t235830-25cf583773-r1-s3:2",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "A resolve failure returns early, dropping problems from earlier no-machine reports and skipping later ones in the same pass.",
+        "evidence": "signal_channel.go: return true, err inside the loop. Reachable only when one pass mixes reports with and without a machine; production scanner routes always carry the claim's machine (S2).",
+        "where": "metasystem/internal/steward/signal_channel.go",
+        "change": "None needed now; resolve once before the loop if mixed reports ever occur.",
+        "relation": "new: a pass error keeps the pass's other outcomes"
+      },
+      {
+        "id": "20261109t235830-25cf583773-r1-s3:3",
+        "class": "other",
+        "severity": "low",
+        "material": false,
+        "claim": "The Machine field on the unknown-budget (INDETERMINATE) route literal is not asserted by any test.",
+        "evidence": "TestBreachRoutesNameTheClaimsMachine covers the breach and fenced routes only; INDETERMINATE reports are never asked, so there is no behavioral consequence.",
+        "where": "metasystem/internal/dispatch/stop.go",
+        "change": "None needed.",
+        "relation": "new: every changed literal is pinned by a test"
+      },
+      {
+        "id": "20261109t235830-25cf583773-r1-s3:4",
+        "class": "scope",
+        "severity": "low",
+        "material": false,
+        "claim": "The new steward test writes a reaped seat record for held-b that the brief does not name.",
+        "evidence": "signal_channel_test.go TestTheStopQuestionIsAskedOnlyOnTheClaimsMachine writes artifacts/agents/steward/seats/held-b.json into the bed's temp checkout.",
+        "where": "metasystem/internal/steward/signal_channel_test.go",
+        "change": "None needed; fixture inside the temp checkout."
+      }
+    ],
+    "output": "/Users/wido/.metasystem/launch/20261109t235830-25cf583773-r1-s3/outputs/read-findings.md.json"
+  },
+  "readDigest": "72e869798a5a591c81e657f0effe5b94d3103181e01be8ab4010c1aa3c6dcbce",
+  "schemaVersion": 1,
+  "goal": "a-spent-box-asks-before-it-blocks",
+  "unit": "U1a",
+  "subject": {
+    "commit": "05f5d59828f1a198b165e5870d31effafd51e0d7",
+    "parent": "854cff56f7a548bd6c6c5adf1eb0e20b96fc059f",
+    "tree": "d61e88d02abb0974703ea74a0f763490cd64b702",
+    "patchDigest": "d54a61adcbc8ee57fe64945299bfec127b444eca8dd31dc8d468398794213bb5",
+    "unitDigest": "e1476f8330fcd352af999a65877ed4b3cde4d8c9aa299a13a39264352646811c"
+  },
+  "source": {
+    "kind": "unit-read",
+    "readLaunch": "20261109t235830-25cf583773-r1-s3",
+    "closureSha256": "199a35c0b94a2557aa7989da337ead172f6521adbe6b35ecf2ecf294eb8c831e"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "d61e88d02abb0974703ea74a0f763490cd64b702",
+    "runId": "goal-read-gate-20261110t010341z-dab93b366a44f559"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/internal/dispatch/stop_test.go",
+      "readerWord": "reviewed by unit read 20261109t235830-25cf583773-r1-s3"
+    },
+    {
+      "path": "metasystem/internal/steward/signal_channel_test.go",
+      "readerWord": "reviewed by unit read 20261109t235830-25cf583773-r1-s3"
+    }
+  ],
+  "sha256": "ae1e77798f37016b8c22d065887ffb52d75db0e85f3cad5e4d003d714024cc16"
+}
