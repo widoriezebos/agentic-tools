@@ -616,6 +616,7 @@ func attributeOwn(c *Cause, trees []replayTree, i int, failed []FailedUnit) {
 func repeatBeforeOwn(seams ProveSeams, install, checkout, command, dir string, running Running, result, previous Result, trees []replayTree, i int) Result {
 	contract, _ := testpolicy.Load(filepath.Join(dir, "testing.json"))
 	episode := result
+	episode.ClassificationPending = true
 	episode.Cause, episode.Failed, episode.RepeatPassed, episode.RepeatComplete = &Cause{}, nil, nil, false
 	episode.Flakes, episode.FlakePublished = nil, false
 	for _, unit := range result.Failed {

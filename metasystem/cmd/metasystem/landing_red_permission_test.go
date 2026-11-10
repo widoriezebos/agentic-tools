@@ -70,6 +70,33 @@ func redPermissionBed(t *testing.T, retainedRepeat ...bool) (*batchVerbBed, plai
 	return b, result
 }
 
+// Classification adds one named repeat on the saved merge. Its other isolated
+// commands replay the parent; only a command without a selector is a full.
+func observeOwnClassification(t *testing.T, b *batchVerbBed, red plain.Result) func(int) {
+	t.Helper()
+	own, ownAt, full := 0, 0, 0
+	command := b.owners.landing.plainProve.Command
+	b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
+		only := commandEnv(cmd, "LANDING_ONLY")
+		if only == "" {
+			full++
+		} else if commandEnv(cmd, "LANDING_COMMIT") == red.Commit {
+			if only != "u/a" || commandEnv(cmd, "LANDING_ONLY_TESTS") != "TestA" {
+				t.Fatalf("own repeat must name the saved failed test: unit=%q tests=%q", only, commandEnv(cmd, "LANDING_ONLY_TESTS"))
+			}
+			own++
+			ownAt = b.executions(t) + 1
+		}
+		return command(cmd)
+	}
+	return func(wantFull int) {
+		t.Helper()
+		if own != 1 || ownAt != 4 || full != wantFull {
+			t.Fatalf("classification commands: named own repeats=%d want=1; own command=%d want=4; fulls=%d want=%d", own, ownAt, full, wantFull)
+		}
+	}
+}
+
 func TestLandingClassifiedRedAgentProveDoesNotReopenRequest(t *testing.T) {
 	t.Parallel()
 	b, red := redPermissionBed(t)
@@ -181,6 +208,7 @@ func TestLandingRedPermissionAuthorityMatrix(t *testing.T) {
 				return observed, proofErr
 			}
 			before := b.executions(t)
+			assertCommands := observeOwnClassification(t, b, red)
 			history, err := os.ReadFile(filepath.Join(plain.Dir(b.installation), "queue.jsonl"))
 			helmMust(t, err)
 			fake.machinery = true
@@ -225,22 +253,24 @@ func TestLandingRedPermissionAuthorityMatrix(t *testing.T) {
 			}
 			if act == "classification" {
 				result, _, err := plain.LastResult(b.installation)
-				if err != nil || result.ClassificationPending || result.ClassificationPerson == nil || result.ClassificationPerson.Root != root || result.Cause.Kind != "own" || result.Cause.Goal != "a" || b.executions(t) != before+2 {
+				if err != nil || result.ClassificationPending || result.ClassificationPerson == nil || result.ClassificationPerson.Root != root || result.Cause.Kind != "own" || result.Cause.Goal != "a" || b.executions(t) != before+3 {
 					t.Fatalf("classified subject: %+v %v count=%d", result, err, b.executions(t))
 				}
+				assertCommands(0)
 				entry, _, _ := plain.Latest(b.installation, "a")
 				if entry.State != plain.StateWaiting {
 					t.Fatal("classification authorized return")
 				}
 				// A restart can repeat attribution, but cannot use the full admission.
 				b.success(t, words...)
-				if b.executions(t) != before+4 {
+				if b.executions(t) != before+5 {
 					t.Fatal("classification replay did not remain isolated")
 				}
+				assertCommands(0)
 				b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
 					return humanauthority.Proof{}, errors.New("agent")
 				}
-				if code, text := b.run(t, "landing", "prove", "--wait"); code == 0 || !strings.Contains(text, "gets no other") || b.executions(t) != before+4 {
+				if code, text := b.run(t, "landing", "prove", "--wait"); code == 0 || !strings.Contains(text, "gets no other") || b.executions(t) != before+5 {
 					t.Fatalf("classification lent full permission: %d %s", code, text)
 				}
 			} else {
@@ -468,14 +498,16 @@ func TestLandingReturnNewFailureClassAndNonShrinkingSet(t *testing.T) {
 func TestLandingClassifyRetainsFullBudget(t *testing.T) {
 	t.Parallel()
 	b, red := redPermissionBed(t, true)
+	assertCommands := observeOwnClassification(t, b, red)
 	script := filepath.Join(filepath.Dir(b.checkout), "check")
 	body := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$LANDING_COMMIT\" \"$LANDING_TREE\" \"$LANDING_PROOF_SCOPE\" >> " + shellCommand([]string{b.trace}) + "\nif [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\nprintf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n"
 	helmMust(t, testexec.WriteFile(script, []byte(body), 0755))
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
 	classified, _, err := plain.LastResult(b.installation)
-	if err != nil || !classified.ClassificationPending || b.executions(t) != 4 || len(classified.Executions) != 1 || classified.Person == nil {
+	if err != nil || !classified.ClassificationPending || b.executions(t) != 5 || len(classified.Executions) != 1 || classified.Person == nil {
 		t.Fatalf("classification did not admit exactly its next full: %+v %v count=%d", classified, err, b.executions(t))
 	}
+	assertCommands(1)
 	before := b.executions(t)
 	b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
 		return humanauthority.Proof{}, errors.New("agent")
@@ -728,7 +760,7 @@ func TestLandingGeneratedConflictPersonStopsBeforeReturn(t *testing.T) {
 
 func TestLandingRedSavedBeforeAutomaticReplay(t *testing.T) {
 	t.Parallel()
-	b, _ := redPermissionBed(t)
+	b, red := redPermissionBed(t)
 	b.configuration = strings.ReplaceAll(b.configuration, "landing.on-red=person", "landing.on-red=auto")
 	b.policy(t, "auto")
 	helmMust(t, os.Remove(filepath.Join(plain.Dir(b.installation), "results.jsonl")), os.Remove(b.trace))
@@ -743,12 +775,14 @@ func TestLandingRedSavedBeforeAutomaticReplay(t *testing.T) {
 		}
 		return cmd.Run()
 	}
+	assertCommands := observeOwnClassification(t, b, red)
 	if code, text := b.run(t, "landing", "prove", "--wait"); code == 0 {
 		t.Fatalf("own red unexpectedly passed: %s", text)
 	}
-	if observed != 2 || b.executions(t) != 3 {
+	if observed != 3 || b.executions(t) != 4 {
 		t.Fatalf("automatic attribution execution count=%d observations=%d", b.executions(t), observed)
 	}
+	assertCommands(1)
 	result, _, err := plain.LastResult(b.installation)
 	if err != nil || result.ClassificationPending || result.Cause.Kind != "own" {
 		t.Fatalf("automatic attribution: %+v %v", result, err)
@@ -758,18 +792,21 @@ func TestLandingRedSavedBeforeAutomaticReplay(t *testing.T) {
 func TestLandingClassifyCannotRepeatIncompleteFull(t *testing.T) {
 	t.Parallel()
 	b, red := redPermissionBed(t, true)
+	assertCommands := observeOwnClassification(t, b, red)
 	script := filepath.Join(filepath.Dir(b.checkout), "check")
 	body := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$LANDING_COMMIT\" \"$LANDING_TREE\" \"$LANDING_PROOF_SCOPE\" >> " + shellCommand([]string{b.trace}) + "\nif [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\nprintf 'LANDING-NOT-RUN\\tdisk full\\n'; exit 2\n"
 	helmMust(t, testexec.WriteFile(script, []byte(body), 0755))
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
 	next, _, err := plain.LastResult(b.installation)
-	if err != nil || next.ClassificationOf != red.Attempt || next.CountedFull || b.executions(t) != 4 {
+	if err != nil || next.ClassificationOf != red.Attempt || next.CountedFull || b.executions(t) != 5 {
 		t.Fatalf("incomplete full admission: %+v %v count=%d", next, err, b.executions(t))
 	}
+	assertCommands(1)
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
-	if b.executions(t) != 6 {
+	if b.executions(t) != 7 {
 		t.Fatalf("restart repeated the spent full admission: count=%d", b.executions(t))
 	}
+	assertCommands(1)
 }
 
 // A killed full command has admission evidence but no result yet. Classification
@@ -778,8 +815,8 @@ func TestLandingClassifyCannotRepeatLostFull(t *testing.T) {
 	t.Parallel()
 	b, red := redPermissionBed(t, true)
 	path := filepath.Join(plain.Dir(b.installation), "results.jsonl")
-	before, err := os.ReadFile(path)
-	helmMust(t, err)
+	var before []byte
+	var err error
 	script := filepath.Join(filepath.Dir(b.checkout), "check")
 	body := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$LANDING_COMMIT\" \"$LANDING_TREE\" \"$LANDING_PROOF_SCOPE\" >> " + shellCommand([]string{b.trace}) + "\nif [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\nprintf 'LANDING-NOT-RUN\\tdisk full\\n'; exit 2\n"
 	helmMust(t, testexec.WriteFile(script, []byte(body), 0755))
@@ -791,10 +828,14 @@ func TestLandingClassifyCannotRepeatLostFull(t *testing.T) {
 			if err != nil || !recorded || execution.ClassificationOf != red.Attempt {
 				t.Fatalf("next full has no pinned classification admission: %+v %v", execution, err)
 			}
+			before, err = os.ReadFile(path)
+			helmMust(t, err)
 		}
 		return cmd.Run()
 	}
+	assertCommands := observeOwnClassification(t, b, red)
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
+	assertCommands(1)
 	// Reconstruct interruption after the command claimed admission but before
 	// it could append its result; use the injected process observation.
 	helmMust(t, os.WriteFile(path, before, 0600))
@@ -802,9 +843,10 @@ func TestLandingClassifyCannotRepeatLostFull(t *testing.T) {
 	helmMust(t, err, os.WriteFile(filepath.Join(plain.Dir(b.installation), "running.json"), raw, 0600))
 	b.owners.landing.plainProve.Alive = func(plain.Running) bool { return false }
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
-	if b.executions(t) != 6 {
+	if b.executions(t) != 7 {
 		t.Fatalf("restart repeated a lost full execution: count=%d", b.executions(t))
 	}
+	assertCommands(1)
 	observations, err := plain.Results(b.installation)
 	helmMust(t, err)
 	recovered := false
@@ -822,6 +864,7 @@ func TestLandingClassifyHistoricalRedCannotAdmitReplacement(t *testing.T) {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			b, red := redPermissionBed(t, mode == "all-green")
+			assertCommands := observeOwnClassification(t, b, red)
 			replacement := b.seat(t, "replacement")
 			b.git(t, b.checkout, "fetch", "--quiet", "origin", "goal/replacement")
 			_, _, err := plain.HandIn(b.installation, plain.Line{At: laneTestNow.UTC().Format("2006-01-02T15:04:05Z07:00"), Goal: "a", SHA: replacement})
@@ -835,9 +878,10 @@ func TestLandingClassifyHistoricalRedCannotAdmitReplacement(t *testing.T) {
 			}
 			b.success(t, "landing", "prove", "--classify", red.Attempt)
 			result, _, err := plain.LastResult(b.installation)
-			if err != nil || result.Attempt != red.Attempt || result.Commit != red.Commit || result.Tree != red.Tree || result.ClassificationPerson == nil || b.executions(t) != 3 {
+			if err != nil || result.Attempt != red.Attempt || result.Commit != red.Commit || result.Tree != red.Tree || result.ClassificationPerson == nil || b.executions(t) != 4 {
 				t.Fatalf("historical red changed its subject or executed replacement: %+v %v count=%d", result, err, b.executions(t))
 			}
+			assertCommands(0)
 			if mode == "own" && (result.Cause.Kind != "own" || result.Cause.SHA != red.Goals[0].SHA) {
 				t.Fatalf("historical red was not attributed: %+v", result)
 			}
@@ -851,9 +895,10 @@ func TestLandingClassifyHistoricalRedCannotAdmitReplacement(t *testing.T) {
 				t.Fatalf("old attribution returned replacement: %s", text)
 			}
 			entry, _, err := plain.Latest(b.installation, "a")
-			if err != nil || entry.State != plain.StateWaiting || entry.SHA != replacement || b.executions(t) != 3 {
+			if err != nil || entry.State != plain.StateWaiting || entry.SHA != replacement || b.executions(t) != 4 {
 				t.Fatalf("replacement changed: %+v %v", entry, err)
 			}
+			assertCommands(0)
 		})
 	}
 }
@@ -938,12 +983,13 @@ func TestLandingClassifyTrunkRefreshCannotAdmitReplacement(t *testing.T) {
 func TestLandingClassifyRechecksBudgetAtFullAdmission(t *testing.T) {
 	t.Parallel()
 	b, red := redPermissionBed(t, true)
+	assertCommands := observeOwnClassification(t, b, red)
 	script := filepath.Join(filepath.Dir(b.checkout), "check")
 	body := "#!/bin/sh\nprintf '%s|%s|%s\\n' \"$LANDING_COMMIT\" \"$LANDING_TREE\" \"$LANDING_PROOF_SCOPE\" >> " + shellCommand([]string{b.trace}) + "\nif [ -n \"$LANDING_ONLY\" ]; then printf 'LANDING-CHECKED\\t0\\n'; exit 0; fi\nprintf 'LANDING-FAILED\\tu/a\\tTestA\\nLANDING-CHECKED\\t1\\n'; exit 1\n"
 	helmMust(t, testexec.WriteFile(script, []byte(body), 0755))
 	intervened := false
 	b.owners.landing.plainProve.Git = func(dir string, args ...string) (string, error) {
-		if !intervened && strings.Join(args, " ") == "rev-parse --verify HEAD^{commit}" && b.executions(t) == 3 {
+		if !intervened && strings.Join(args, " ") == "rev-parse --verify HEAD^{commit}" && b.executions(t) == 4 {
 			_, recorded, _, err := plain.ReadRunning(b.installation, b.owners.landing.plainProve)
 			helmMust(t, err)
 			if !recorded {
@@ -964,9 +1010,10 @@ func TestLandingClassifyRechecksBudgetAtFullAdmission(t *testing.T) {
 		return plain.Git(dir, args...)
 	}
 	b.success(t, "landing", "prove", "--classify", red.Attempt)
-	if !intervened || b.executions(t) != 3 {
+	if !intervened || b.executions(t) != 4 {
 		t.Fatalf("classification bypassed budget at fresh admission: intervened=%v count=%d", intervened, b.executions(t))
 	}
+	assertCommands(0)
 	stops, err := plain.OpenStops(b.installation)
 	helmMust(t, err)
 	needed := false

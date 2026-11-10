@@ -86,6 +86,11 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 			parent := b.git(t, b.checkout, "rev-parse", "HEAD^1")
 			merge := b.git(t, b.checkout, "rev-parse", "HEAD")
 			var replays []string
+			selectors := [][2]string{{"u/first=TestFirst u/second=TestSecond", "TestFirst TestSecond"}, {"u/first", "TestFirst"}}
+			if cause == "own" {
+				selectors = [][2]string{{"u/first=TestFirst u/second=TestSecond", "TestFirst TestSecond"}, {"u/first u/second", ""}, {"u/first", "TestFirst"}, {"u/second", "TestSecond"}}
+			}
+			fullCommands := 0
 			b.owners.landing.plainProve.Command = func(cmd *exec.Cmd) error {
 				env := func(key string) string {
 					for _, v := range cmd.Env {
@@ -96,12 +101,15 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 					return ""
 				}
 				if only := env("LANDING_ONLY"); only != "" {
-					// The replay names the failed tests per unit; a named replay that is green on main re-runs the whole units once before attributing (lane-speed U2, LS-03).
-					// A red found on main is repeated per failed unit before it becomes an incident (lane-batching D8), so a run naming one failed unit is also allowed.
-					if got := strings.Fields(only); !reflect.DeepEqual(got, []string{"u/first=TestFirst", "u/second=TestSecond"}) && !reflect.DeepEqual(got, []string{"u/first", "u/second"}) && !reflect.DeepEqual(got, []string{"u/first=TestFirst"}) && !reflect.DeepEqual(got, []string{"u/first"}) {
-						t.Fatalf("replay units=%v; want the failed units or one of them", got)
+					// A green named parent replay confirms the whole units; each
+					// own repeat selects one failed test separately on the merge.
+					got := [2]string{only, env("LANDING_ONLY_TESTS")}
+					if len(replays) >= len(selectors) || got != selectors[len(replays)] {
+						t.Fatalf("replay %d selectors=%q; want sequence %q", len(replays)+1, got, selectors)
 					}
 					replays = append(replays, env("LANDING_COMMIT"))
+				} else {
+					fullCommands++
 				}
 				if env("LANDING_COMMIT") == merge {
 					fmt.Fprint(cmd.Stdout, "LANDING-FAILED\tu/first\tTestFirst\nLANDING-FAILED\tu/second\tTestSecond\nLANDING-CHECKED\t2\n")
@@ -118,6 +126,9 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 			proof, ok, err := plain.LastResult(b.installation)
 			if code != 1 || err != nil || !ok || proof.Cause == nil || proof.Cause.Kind != cause {
 				t.Fatalf("proof=%+v replays=%v exit=%d %s err=%v", proof, replays, code, text, err)
+			}
+			if fullCommands != 1 {
+				t.Fatalf("classification full commands=%d; want only the original full", fullCommands)
 			}
 			// Return is an agent act: a person can intentionally return other causes.
 			b.owners.prove = func(string, int64, humanauthority.Reader, string, string, time.Time) (humanauthority.Proof, error) {
@@ -196,9 +207,9 @@ func TestOneGoalPerBatchLandsReturnsEveryRedAndReturnsAConflict(t *testing.T) {
 			idemSameTree(t, "clean resolve repeat", before, idemTreeDigest(t, plain.Dir(b.installation)))
 			t.Run("parentReplay", func(t *testing.T) {
 				t.Parallel()
-				// A main-side red attributes after one named run; a goal-side red confirms the main prefix green with a whole-unit run after the named one (LS-03): two runs, both on the parent.
-				// main: the named replay and the D8 repeat of the red unit; own: the named replay and the LS-03 whole-unit confirmation. Two runs on the parent either way.
-				want := []string{parent, parent}
+				// The parent passes named and whole-unit replays, then each
+				// failed identity repeats alone on the final merge.
+				want := []string{parent, parent, merge, merge}
 				if !reflect.DeepEqual(replays, want) {
 					t.Fatalf("replay runs=%v; want %v", replays, want)
 				}
