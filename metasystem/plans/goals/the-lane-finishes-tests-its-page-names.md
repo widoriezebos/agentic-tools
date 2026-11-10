@@ -10,12 +10,13 @@
 - Next step: One unit, tests only, from the page of the-lane-finishes-what-it-starts (test rows at its lines 170-178) and designs/astra-finishes-impl-review.findings.md findings 2, 3 and 4; each test runs through the production composition with injected clocks; name the mutation that fails each.
 - OpenedAt: 2026-11-09T11:55:57Z
 - FirstClaimAt: 2026-11-10T11:37:19Z
-- Revision: 15
+- Revision: 16
 - Pinned: m1e
 - Budget: elapsedLimit=1d attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 3
 - NormApproval: approvedRef=3JN6P8Z5AKEW4JP0CF1ZRED4XJ-m1e-930160dc minutes=720 reviewRounds=20 goalRevision=13
 - Approved: by=human:Wido at=2026-11-10T15:25:52Z revision=15 opid=VVWFHX6MZFGRKTCWZR03EH9WJR-m1e-930160dc authority=raise=VVWFHX6MZFGRKTCWZR03EH9WJR-m1e-930160dc digest=f3cf2b778523b643b2a87a1df48e897d1a0901c664841cbfb2109452a4deb62d episode=14
+- Sliced: machine=m1e lineage=main-1792389436-6018-51cc28 revision=15 at=2026-11-10T15:28:07Z
 - Claimed: machine=m1e lineage=main-1792389436-6018-51cc28 at=2026-11-10T15:22:58Z by=human:Wido areas="[]" areas-source="" areas-known=false areas-warnings="[\"areas unknown for goal the-lane-finishes-tests-its-page-names: no accepted design declares areas\"]" revision=15 accountingRevision=14 episodeAt=2026-11-10T11:37:19Z episodeRevision=10
 - StopCapability: generation=15 revision=15 machine=m1e claimEpoch=10 fenceEpoch=0
 
@@ -35,4 +36,5 @@ History:
 - 2026-11-10T15:17:18Z TWW21RVW1YMA5MQW3PX9C37TB7-m1e-bfb73197 set-budget actor=human:Wido targets=the-lane-finishes-tests-its-page-names displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T11:38:36Z
 - 2026-11-10T15:22:58Z 3JN6P8Z5AKEW4JP0CF1ZRED4XJ-m1e-930160dc set-budget actor=human:Wido targets=the-lane-finishes-tests-its-page-names displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T15:17:18Z
 - 2026-11-10T15:25:52Z VVWFHX6MZFGRKTCWZR03EH9WJR-m1e-930160dc edit actor=human:Wido targets=the-lane-finishes-tests-its-page-names displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T15:22:58Z reason=Misclassified: from=1 to=2 evidence=root:20261110t114002-ade858803b-r3-s1
-Integrity: sha256=9881e61cfd649201d91651009a93ee34fc574f63c4e42c9c6ac9ac95b560e50f
+- 2026-11-10T15:28:07Z P1W4D4SFCZ4EX4FBCQM60114XR-m1e-cc2e8fc8 slice-start actor=m1e+main-1792389436-6018-51cc28 targets=the-lane-finishes-tests-its-page-names
+Integrity: sha256=63ec24311fb5a1cd851ee0b76ef241d6608af285cfe4d8d1d1aa91315776ef99
