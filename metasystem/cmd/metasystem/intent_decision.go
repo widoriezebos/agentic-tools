@@ -164,6 +164,9 @@ func runIntentDecisionRecord(inv *intentInvocation) int {
 	if denied != nil {
 		return inv.render(*denied)
 	}
+	if command.name == "question withdraw" {
+		process.env = append(process.env, "METASYSTEM_DECISION_ID="+id)
+	}
 	envelope := inv.delivery().ownerEnvelope
 	if envelope == nil {
 		envelope = runIntentOwnerEnvelope

@@ -340,6 +340,9 @@ func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, 
 	}
 	nextPoll := time.Time{}
 	poll := func(ctx context.Context) error {
+		if current, err := channel.ReadQuestion(*root, q.ID); err == nil && current.Withdrawal != nil {
+			return errChannelQuestionWithdrawn
+		}
 		pollAt := time.Now()
 		if *pollSeconds == 0 || (!nextPoll.IsZero() && pollAt.Before(nextPoll)) {
 			return errChannelPollNotDue
@@ -369,6 +372,9 @@ func channelWaitWith(callerPID int64, lineage string, stdout, stderr io.Writer, 
 		waitArgs = append(waitArgs, "--timeout", (24 * time.Hour).String())
 	}
 	code := channelWaitCommand(waitArgs, poll, callerPID, stdout, stderr)
+	if code == metarun.ExitRed {
+		fmt.Fprintf(stderr, "question %s was withdrawn, so no answer will come\nrun: metasystem question show channel:%s\n", q.ID, q.ID)
+	}
 	if code == 0 {
 		answered, readErr := channel.ReadQuestion(*root, q.ID)
 		if readErr != nil || answered.Answer == nil {

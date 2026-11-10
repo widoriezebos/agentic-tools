@@ -84,14 +84,27 @@ func RetryDelivery(ctx context.Context, repo, id string, p Provider, d Destinati
 // poll never both write the question. The question keeps the caller's
 // clock, when given, as its closing time.
 func Withdraw(repo, id, because string, p Provider, d DestinationConfig, at ...time.Time) (Question, error) {
+	return WithdrawFor(repo, id, Withdrawal{Reason: because}, p, d, at...)
+}
+
+// WithdrawFor keeps a withdrawal record only for the withdrawal that closes a question.
+func WithdrawFor(repo, id string, w Withdrawal, p Provider, d DestinationConfig, at ...time.Time) (Question, error) {
+	w.At = append(at, time.Now())[0].UTC()
 	var q Question
 	err := withPollLock(repo, func() error {
-		if err := closeAt(repo, id, because, p, d, append(at, time.Now())[0]); err != nil {
+		before, err := ReadQuestion(repo, id)
+		if err != nil {
 			return err
 		}
-		var err error
+		if err := closeAt(repo, id, w.Reason, p, d, w.At); err != nil {
+			return err
+		}
 		q, err = ReadQuestion(repo, id)
-		return err
+		if err != nil || before.State == "closed" {
+			return err
+		}
+		q.Withdrawal = &w
+		return writeJSON(questionPath(repo, id), q)
 	})
 	return q, err
 }

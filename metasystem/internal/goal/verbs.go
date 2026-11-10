@@ -100,6 +100,38 @@ func Asked(r VerbRequest, id, qid, kind, firstFact string) (PublishResult, error
 	}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }})
 }
 
+// Withdrawn marks a goal's Next step once with a withdrawn question and its reason, as Asked marks the ask.
+func Withdrawn(r VerbRequest, id, qid, reason string) (PublishResult, error) {
+	marker := "WITHDRAWN " + qid + ": " + strings.Join(strings.Fields(reason), " ")
+	historyReason := "question " + qid
+	return Publish(r.Endpoint, PublishRequest{Opid: r.opid(), Machine: r.Actor.Machine, Lineage: r.Actor.Lineage, Intent: Intent{Verb: "withdraw-question", Targets: []string{id}}, Message: "goal withdraw-question " + id, Mutate: func(tip string) ([]Change, error) {
+		t, err := loadTreeFor(r.Endpoint, tip)
+		if err != nil {
+			return nil, err
+		}
+		f := t.Live[id]
+		if f == nil {
+			return nil, AlreadyHolds{Reason: "goal " + id + " is no longer open"}
+		}
+		if opidLanded(f, r) {
+			return nil, AlreadyApplied{}
+		}
+		for _, h := range f.History {
+			if h.Verb == "withdraw-question" && h.Reason == historyReason {
+				return nil, AlreadyHolds{Reason: "goal " + id + " already shows this withdrawal"}
+			}
+		}
+		if strings.TrimSpace(f.NextStep) == "" {
+			f.NextStep = marker
+		} else {
+			f.NextStep += "; " + marker
+		}
+		touch(f, r, "withdraw-question", []string{id})
+		f.History[len(f.History)-1].Reason = historyReason
+		return []Change{{Path: livePath(id), Content: RenderFile(f)}}, nil
+	}, Validate: func(commit string) error { return validateCommitFor(r.Endpoint, commit) }})
+}
+
 func AuthenticatedChannelApproval(repoRoot, goalID, opid, strictToken string, now time.Time) (governance.RecordedChannelAuthority, error) {
 	ep, err := ResolveEndpoint(repoRoot)
 	if err != nil {

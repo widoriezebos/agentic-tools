@@ -98,6 +98,52 @@ func TestAskedAppendsTheAskedMarkerOnce(t *testing.T) {
 	}
 }
 
+func TestWithdrawnTellsTheGoalOnce(t *testing.T) {
+	t.Parallel()
+	for _, initial := range []string{"", "Start here."} {
+		t.Run(initial, func(t *testing.T) {
+			t.Parallel()
+			ep, _ := fakeGoalEndpoint(t)
+			if result, err := Open(verbReqFor(ep, "01J5X0000000000000000000D0", "mac-a"), "asked", "Ask something.", "main", initial); err != nil || result.Outcome != OutcomeConfirmed {
+				t.Fatalf("open: %+v %v", result, err)
+			}
+			req := verbReqFor(ep, "01J5X0000000000000000000D1", "mac-a")
+			for i := 0; i < 2; i++ {
+				if result, err := Withdrawn(req, "asked", "question-a", "decided PAGE:\n  the row"); err != nil || result.Outcome != OutcomeConfirmed {
+					t.Fatalf("withdrawn %d: %+v %v", i, result, err)
+				}
+			}
+			if result, err := Withdrawn(verbReqFor(ep, "01J5X0000000000000000000D2", "mac-a"), "asked", "question-a", "noise"); err != nil || !result.Unchanged || result.Detail != "goal asked already shows this withdrawal" {
+				t.Fatalf("repeat: %+v %v", result, err)
+			}
+			projection, err := projectFetched(ep, req.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			f := projection.Tree.Live["asked"]
+			want := "WITHDRAWN question-a: decided PAGE: the row"
+			if initial != "" {
+				want = initial + "; " + want
+			}
+			count := 0
+			for _, h := range f.History {
+				if h.Verb == "withdraw-question" {
+					count++
+					if h.Reason != "question question-a" || !reflect.DeepEqual(h.Targets, []string{"asked"}) || h.At != req.Now.UTC().Format(time.RFC3339) {
+						t.Fatalf("history: %+v", h)
+					}
+				}
+			}
+			if f.NextStep != want || count != 1 {
+				t.Fatalf("next=%q history=%d", f.NextStep, count)
+			}
+			if result, err := Withdrawn(verbReqFor(ep, "01J5X0000000000000000000D3", "mac-a"), "missing", "question-a", "reason"); err != nil || !result.Unchanged || result.Detail != "goal missing is no longer open" {
+				t.Fatalf("missing: %+v %v", result, err)
+			}
+		})
+	}
+}
+
 func TestAnswerRecordsAuthenticatedChannelWordOnce(t *testing.T) {
 	t.Parallel()
 	endpoint, _ := fakeGoalEndpoint(t)

@@ -71,6 +71,13 @@ type PersonAct struct {
 	Work string `json:"work"`
 }
 
+// Withdrawal keeps why and when a question was withdrawn, and the decision whose act withdrew it.
+type Withdrawal struct {
+	Reason   string    `json:"reason"`
+	At       time.Time `json:"at"`
+	Decision string    `json:"decision,omitempty"`
+}
+
 type Question struct {
 	// Text is the post, stored before its first attempt; every attempt posts it.
 	Text      string           `json:"text,omitempty"`
@@ -108,8 +115,9 @@ type Question struct {
 	Attempts       []Attempt         `json:"attempts,omitempty"`
 	// Notices are the executor's own posts in the thread; a reply to one is
 	// a reply to the question.
-	Notices  []string  `json:"notices,omitempty"`
-	ClosedAt time.Time `json:"closedAt,omitzero"`
+	Notices    []string    `json:"notices,omitempty"`
+	ClosedAt   time.Time   `json:"closedAt,omitzero"`
+	Withdrawal *Withdrawal `json:"withdrawal,omitempty"`
 }
 
 type AskRequest struct {
