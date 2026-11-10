@@ -6,7 +6,7 @@
 - MigrationEpoch: 2026-08-20T00:00:00Z
 - ManifestDigest: d82032bee818c2d82e6a95e6f1b75347499b88ee8b68c4d20a0f3c94d00ba320
 - MigrationMode: manifest
-- Revision: 234
+- Revision: 235
 - ApprovalGate: since=2026-09-03T14:16:24Z opid=JY54AQT8101VK9353WT9FQYGA9-m0-c5dbf036
 - FleetEnrollment: at=2026-09-06T06:37:21Z machine=m1 generation=1 opid=CMNCRETKYCB18MFZNYFSZJPXQY-m1-a4f8999f
 
@@ -315,4 +315,5 @@ History:
 - 2026-11-10T17:14:15Z 7D4PC7BS5E3FE7N780N1WJH9MJ-m1e-cc2e8fc8 ack actor=human:Wido targets=the-lane-finishes-tests-its-page-names displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T15:17:18Z ack
 - 2026-11-10T17:14:15Z 7D4PC7BS5E3FE7N780N1WJH9MJ-m1e-cc2e8fc8 ack actor=human:Wido targets=the-lane-finishes-tests-its-page-names displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T15:22:58Z ack
 - 2026-11-10T17:14:15Z 7D4PC7BS5E3FE7N780N1WJH9MJ-m1e-cc2e8fc8 ack actor=human:Wido targets=a-correction-lands-from-the-checkout-top displaced=m1e+main-1792389436-6018-51cc28@2026-11-10T09:39:51Z ack
-Integrity: sha256=0896dd737a34987bb5bde658c9c4f5b47ec3e948e0f26b31f76cc322386aa674
+- 2026-11-10T21:57:38Z VGTS9MPVHBERWW0TMCYHKNTQHB-ui-71c5cb39 ack actor=ui+steward-seat targets=replies-reach-the-asking-seat-2 displaced=ui+steward-seat@2026-11-10T12:37:49Z ack
+Integrity: sha256=bf2230aee2b74df21b8bc9bff72a7a718d7a973fbb4a7a4c3f230eb96cc0c156
