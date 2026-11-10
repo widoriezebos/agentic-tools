@@ -29,6 +29,8 @@ type PollConfig struct {
 	FailurePoint                                                                   func(string) error
 	// RunAct runs a chosen option's act in the repository; nil runs the engine.
 	RunAct func(ctx context.Context, dir string, argv []string) ([]byte, error)
+	// HostSeats returns the installation roots of this host's seats; nil reads the host registry.
+	HostSeats func() ([]string, error)
 	// answerCodeOff is channel.human.answer-code=off, read once per poll.
 	answerCodeOff bool
 	// validateInbox replaces the inbox commit validation in tests.
@@ -49,6 +51,9 @@ type PollResult struct {
 }
 
 const channelPollInterval = 2 * time.Minute
+
+// One steward cycle, ten minutes by default, and five minutes for a slow tick.
+const unmatchedReplyWait = 15 * time.Minute
 
 type pollEndpointResolver func(string) (goal.Endpoint, error)
 
@@ -166,6 +171,9 @@ func runPoll(ctx context.Context, c PollConfig, resolveEndpoint pollEndpointReso
 		receiveErr = receiveToInbox(ctx, c, threads, endpoint, &result)
 	}
 	err = matchInbox(ctx, c, status, statusRoot, endpoint, resolveEndpoint, &result)
+	if receive && c.receiveConfigured() {
+		err = errors.Join(err, tellUnmatchedReplies(ctx, c, &result))
+	}
 	return result, errors.Join(publicationErrors, receiveErr, err)
 }
 

@@ -14,6 +14,8 @@ import (
 	"time"
 
 	"github.com/widoriezebos/agentic-tools/metasystem/internal/goal"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/realpath"
+	"github.com/widoriezebos/agentic-tools/metasystem/internal/registry"
 )
 
 // The ledger inbox (Decision 8, step 1 of the fleet channel gateway): every
@@ -247,7 +249,10 @@ func commitInbound(ctx context.Context, c PollConfig, ep goal.Endpoint, in Inbou
 		return false, err
 	}
 	if written.Outcome == "verified" {
-		return true, dropNotice(notices, key)
+		if err := dropNotice(notices, key); err != nil {
+			return true, err
+		}
+		return true, awaitReply(c, key, written, in.ThreadID)
 	}
 	if err := fail(c, "inbox-notice-pending"); err != nil {
 		return false, err
@@ -360,8 +365,140 @@ type pendingNotice struct {
 }
 
 type noticeLedger struct {
-	Pending []pendingNotice `json:"pending"`
-	Posted  []string        `json:"posted"`
+	Pending  []pendingNotice `json:"pending"`
+	Posted   []string        `json:"posted"`
+	Awaiting []awaitingReply `json:"awaiting,omitempty"`
+}
+
+// awaitingReply is a verified reply this installation committed, waiting to see whether a seat takes it.
+type awaitingReply struct {
+	Record     string    `json:"record"`
+	Text       string    `json:"text"`
+	SentAt     string    `json:"sentAt"`
+	ReceivedAt time.Time `json:"receivedAt"`
+	ReplyTo    string    `json:"replyTo,omitempty"`
+	ThreadID   string    `json:"threadID,omitempty"`
+}
+
+func awaitReply(c PollConfig, record string, in goal.ChannelInbound, threadID string) error {
+	path := noticesPath(c)
+	ledger, err := readNotices(path)
+	if err != nil {
+		return err
+	}
+	for _, reply := range ledger.Awaiting {
+		if reply.Record == record {
+			return nil
+		}
+	}
+	reply := awaitingReply{Record: record, Text: in.Text, SentAt: in.SentAt, ReceivedAt: c.Now, ThreadID: threadID}
+	if in.ReplyTo != nil {
+		reply.ReplyTo = *in.ReplyTo
+	}
+	ledger.Awaiting = append(ledger.Awaiting, reply)
+	return writeJSON(path, ledger)
+}
+
+// tellUnmatchedReplies tells a reply no host seat took after giving each seat time to match it.
+func tellUnmatchedReplies(ctx context.Context, c PollConfig, result *PollResult) error {
+	path := noticesPath(c)
+	ledger, err := readNotices(path)
+	if err != nil || !slices.ContainsFunc(ledger.Awaiting, func(r awaitingReply) bool { return !c.Now.Before(r.ReceivedAt.Add(unmatchedReplyWait)) }) {
+		return err
+	}
+	roots, err := hostRoots(c)
+	if err != nil {
+		return err
+	}
+	handled, statusPosts := map[string]bool{}, map[string]bool{}
+	var open []Question
+	for _, root := range roots {
+		for record := range readHandled(filepath.Join(channelRoot(root), c.Destination, "inbox-handled.json")) {
+			handled[record] = true
+		}
+		questions, _ := WalkOpenQuestions(root)
+		open = append(open, questions...)
+		status := LoadStatusState(root)
+		if status.GoalID != "" && threadRoot(status.Ref) != "" {
+			statusPosts[threadRoot(status.Ref)] = true
+			if status.Ref.ID != "" {
+				statusPosts[status.Ref.ID] = true
+			}
+		}
+	}
+	kept := ledger.Awaiting[:0]
+	for _, reply := range ledger.Awaiting {
+		if c.Now.Before(reply.ReceivedAt.Add(unmatchedReplyWait)) || !handled[reply.Record] && statusPosts[reply.ReplyTo] {
+			kept = append(kept, reply)
+			continue
+		}
+		if !handled[reply.Record] {
+			ledger.Pending = append(ledger.Pending, pendingNotice{Record: "unmatched:" + reply.Record, Text: unmatchedNotice(reply, open), ReplyTo: reply.ReplyTo, ThreadID: reply.ThreadID})
+		}
+	}
+	ledger.Awaiting = kept
+	if err := writeJSON(path, ledger); err != nil {
+		return err
+	}
+	return flushNotices(ctx, c, result)
+}
+
+func hostRoots(c PollConfig) ([]string, error) {
+	var seats []string
+	var err error
+	if c.HostSeats != nil {
+		seats, err = c.HostSeats()
+	} else {
+		var path string
+		path, err = registry.DefaultPath()
+		if err == nil {
+			seats, err = registry.ArmedCheckouts(path)
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	var roots []string
+	for _, root := range append([]string{c.RepoRoot}, seats...) {
+		if _, err := os.Stat(root); errors.Is(err, os.ErrNotExist) {
+			continue
+		} else if err != nil {
+			return nil, err
+		}
+		root = realpath.Resolve(root)
+		if !slices.Contains(roots, root) {
+			roots = append(roots, root)
+		}
+	}
+	return roots, nil
+}
+
+func unmatchedNotice(reply awaitingReply, open []Question) string {
+	sent, _ := time.Parse(time.RFC3339, reply.SentAt)
+	line := fmt.Sprintf("I could not match your reply '%s' (%s) to an open question.", reply.Text, sent.Local().Format("15:04"))
+	if len(open) == 0 {
+		return line + " No question is open now; nothing waits for your reply."
+	}
+	sort.SliceStable(open, func(i, j int) bool { return open[i].OpenedAt.Before(open[j].OpenedAt) })
+	line += "\nThe questions open now:"
+	for _, q := range open {
+		line += fmt.Sprintf("\n- %s, asked %s", unmatchedSubject(q), q.OpenedAt.Local().Format("15:04"))
+	}
+	return line + "\nTo answer one, reply in its own thread."
+}
+
+func unmatchedSubject(q Question) string {
+	subject := QuestionSubject(q)
+	switch {
+	case q.Goal != "":
+		return "goal " + subject
+	case q.About == "lane":
+		return "the landing lane"
+	case subject == "the machine "+q.Machine:
+		return "this computer"
+	default:
+		return subject
+	}
 }
 
 func noticesPath(c PollConfig) string {
@@ -602,7 +739,11 @@ func matchInbox(ctx context.Context, c PollConfig, status StatusState, statusRoo
 		if match == nil {
 			continue
 		}
-		if err := recordMatch(ctx, c, match, in, resolveEndpoint); err != nil {
+		mark := func() error {
+			handled[record.path] = true
+			return writeJSON(handledPath, sortedHandled(handled))
+		}
+		if err := recordMatch(ctx, c, match, in, resolveEndpoint, mark); err != nil {
 			publicationErrors = errors.Join(publicationErrors, &ReplyPublicationError{Question: strings.Join(match.Facts, " "), Err: err})
 			continue
 		}
@@ -674,9 +815,8 @@ func threadRoot(ref MessageRef) string {
 	return ref.ID
 }
 
-// recordMatch records a verified inbox record as the question's answer exactly
-// as the poll always has, then advances it to the goal ledger.
-func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.ChannelInbound, resolveEndpoint pollEndpointResolver) error {
+// recordMatch marks the reply handled once its answer is recorded, then advances it to the goal ledger.
+func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.ChannelInbound, resolveEndpoint pollEndpointResolver, mark func() error) error {
 	ulid, err := goal.NewOperationULID()
 	if err != nil {
 		return err
@@ -714,6 +854,9 @@ func recordMatch(ctx context.Context, c PollConfig, q *Question, in *goal.Channe
 		q.State = "open"
 	}
 	if err = writeJSON(questionPath(c.RepoRoot, q.ID), q); err != nil {
+		return err
+	}
+	if err = mark(); err != nil {
 		return err
 	}
 	if err = fail(c, "matched"); err != nil {
