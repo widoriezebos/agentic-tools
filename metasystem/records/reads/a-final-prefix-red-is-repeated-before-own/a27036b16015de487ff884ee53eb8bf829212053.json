@@ -1,0 +1,95 @@
+{
+  "canonicalRead": {
+    "engine": "62edcd20ed84a3f885a0ddc7bf0e489862da05e9",
+    "findings": [
+      {
+        "change": "Optional, later: readers of the newest row of a tree could skip rows with Repeat 'own', or the own rows could keep ClassificationPending set.",
+        "claim": "While an own episode runs, or after a crash in the middle of one, the newest row for the merged tree in the proof results file is the own episode row. That row is red, its cause kind is 'flake' with an empty name, and it is not marked pending classification, so it stands in for the pending red. Readers that take the newest row of a tree (status, health, the batch-restart check) describe that row and not the red under classification.",
+        "class": "other",
+        "evidence": "replay.go:177-207 appends the own start row with result.Repeat 'own' and Cause.Kind 'flake'. continueExecutedRed (replay.go:105) clears ClassificationPending before the episode. resultFor (prove.go:1172-1182) and restart.go:186 read the newest row of the tree, so classifying is false while the episode runs. No wrong verdict follows: ClassifyAttempt still finds the pending red that observeRed saved first (replay.go:67-80), a person can still classify or return the goal, and the batch repeat's 'started' rows already behave the same way. No traced harmful outcome, so this does not block the commit.",
+        "id": "code-critic-e67b9efdbfb3e63e9b92e509:1",
+        "material": false,
+        "relation": "code-critique Layer 2: a finding without a reproduction or traced path is recorded as noted",
+        "severity": "low",
+        "where": "metasystem/internal/landing/plain/replay.go"
+      },
+      {
+        "change": "None needed for this unit.",
+        "claim": "If the merge was not compared with main (PassedOn is empty), returnWords drops the 'passed alone' fact. With only passed-alone tests, those tests are described as simply having failed on the goal.",
+        "class": "other",
+        "evidence": "cause.go:52-55 returns early with '... failed on X; the lane did not compare it with main' before the passed-alone clauses. On the final-merge path PassedOn is always set, because the main tree comes first and the final tree has index i \u003e 0 (attributeOwn, replay.go:603-611). The text cannot be reached in this unit's flow.",
+        "id": "code-critic-e67b9efdbfb3e63e9b92e509:2",
+        "material": false,
+        "relation": "code-critique Layer 2: a finding without a reproduction or traced path is recorded as noted",
+        "severity": "low",
+        "where": "metasystem/internal/landing/plain/cause.go"
+      }
+    ],
+    "id": "code-critic-e67b9efdbfb3e63e9b92e509",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-final-prefix-red-is-repeated-before-own/metasystem/artifacts/agents/code-critic-e67b9efdbfb3e63e9b92e509/rounds/1/return.md",
+    "subject": {
+      "commit": "a27036b16015de487ff884ee53eb8bf829212053",
+      "diffDigest": "85b6d55f0fad9aa54a98be848ae5dcb67a1037bd6d592b1ba7bee58ddd8f1c18",
+      "kind": "commit",
+      "parent": "854cff56f7a548bd6c6c5adf1eb0e20b96fc059f",
+      "tree": "e6bbf4bebd7c680c51b49b46314c4c5dd21754dc"
+    }
+  },
+  "readDigest": "da0894d2f607d3d78bec522e5a3cd41e1ee90660172b2802c8bebcb65c1ea491",
+  "schemaVersion": 1,
+  "goal": "a-final-prefix-red-is-repeated-before-own",
+  "unit": "U1",
+  "subject": {
+    "commit": "a27036b16015de487ff884ee53eb8bf829212053",
+    "parent": "854cff56f7a548bd6c6c5adf1eb0e20b96fc059f",
+    "tree": "e6bbf4bebd7c680c51b49b46314c4c5dd21754dc",
+    "patchDigest": "85b6d55f0fad9aa54a98be848ae5dcb67a1037bd6d592b1ba7bee58ddd8f1c18",
+    "unitDigest": "e72dfcdf936d66310ca051de7c1f78a5fe78b8bbae5e01f7cc4a0a5ff2f4196f"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-e67b9efdbfb3e63e9b92e509",
+    "round": 1,
+    "closureSha256": "0367854ad545d16d19d99789c96fa3be8da88bd67bf6a54c4fa1af072289e8ec"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "e6bbf4bebd7c680c51b49b46314c4c5dd21754dc",
+    "runId": "goal-read-gate-20261110t002740z-7affe783f72b4056"
+  },
+  "folds": null,
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_main_repeat_test.go",
+      "readerWord": "reviewed by critic root code-critic-e67b9efdbfb3e63e9b92e509"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_merge_gate_test.go",
+      "readerWord": "reviewed by critic root code-critic-e67b9efdbfb3e63e9b92e509"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_replay_reporter_test.go",
+      "readerWord": "reviewed by critic root code-critic-e67b9efdbfb3e63e9b92e509"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_replay_test.go",
+      "readerWord": "reviewed by critic root code-critic-e67b9efdbfb3e63e9b92e509"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/main_repeat_test.go",
+      "readerWord": "reviewed by critic root code-critic-e67b9efdbfb3e63e9b92e509"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/named_replay_test.go",
+      "readerWord": "reviewed by critic root code-critic-e67b9efdbfb3e63e9b92e509"
+    },
+    {
+      "path": "metasystem/internal/landing/plain/repeat_selection_test.go",
+      "readerWord": "reviewed by critic root code-critic-e67b9efdbfb3e63e9b92e509"
+    }
+  ],
+  "sha256": "d4058d1129e8a4831b977829e08038656773452faad3cdc5e5b6265fb1890d6b"
+}
