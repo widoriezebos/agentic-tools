@@ -1,0 +1,66 @@
+{
+  "coveredUnits": [
+    "U3"
+  ],
+  "canonicalRead": {
+    "engine": "62edcd20ed84a3f885a0ddc7bf0e489862da05e9",
+    "findings": [],
+    "id": "code-critic-d7465b9694245c1769ad42e6",
+    "material": 0,
+    "model": "claude-opus-5-5",
+    "output": "/Users/wido/LocalStorage/GitHub/agentic-tools-m1e-a-final-prefix-red-is-repeated-before-own/metasystem/artifacts/agents/code-critic-d7465b9694245c1769ad42e6/rounds/1/return.md",
+    "subject": {
+      "commit": "46dff3217279cc79b04f37c83d536340d0326993",
+      "diffDigest": "fd5cdfbfd6e73933a54334abe0a19d53567a662cb8b789a6df291ac3b3a58cdc",
+      "kind": "commit",
+      "parent": "b491501a310b50e957a0e81cf6e8015b2f57363c",
+      "tree": "9e1a3094ef17f602dec8b97912ccaf317dec2440"
+    }
+  },
+  "readDigest": "b290790f6d75af9c96ed9ac8ad982c998ef315aa57534cb7a4960ee4311904af",
+  "schemaVersion": 1,
+  "goal": "a-final-prefix-red-is-repeated-before-own",
+  "unit": "U3",
+  "subject": {
+    "commit": "46dff3217279cc79b04f37c83d536340d0326993",
+    "parent": "b491501a310b50e957a0e81cf6e8015b2f57363c",
+    "tree": "9e1a3094ef17f602dec8b97912ccaf317dec2440",
+    "patchDigest": "fd5cdfbfd6e73933a54334abe0a19d53567a662cb8b789a6df291ac3b3a58cdc",
+    "unitDigest": "4c840df224378908ce48aee63befd26b07668dc0c072fb18e5ce213149e22ae5"
+  },
+  "source": {
+    "kind": "critic-root",
+    "rootJob": "code-critic-d7465b9694245c1769ad42e6",
+    "round": 1,
+    "closureSha256": "03846f25728e9dee2d8ef08db0ebb99c1157710ce969a68383273f2840919fce"
+  },
+  "verdict": "LAND",
+  "gate": {
+    "kind": "go-gate-fast",
+    "tree": "9e1a3094ef17f602dec8b97912ccaf317dec2440",
+    "runId": "goal-read-gate-20261110t060633z-686191dfe876f3f3"
+  },
+  "folds": [
+    {
+      "kind": "read",
+      "commit": "a91e3bb087794fc18808b9adfcdf9f7b179c0e32",
+      "digest": "4701a4e68e3b65379f3b2cedb2c6a59350d73ac949f74d9d553aad38ea67578b"
+    },
+    {
+      "kind": "read",
+      "commit": "b491501a310b50e957a0e81cf6e8015b2f57363c",
+      "digest": "13beae18cab92d1edccfaabf9a77de9bda7e9314a5fca844275d8fba56aac1cf"
+    }
+  ],
+  "testsChanged": [
+    {
+      "path": "metasystem/cmd/metasystem/landing_pipeline_test.go",
+      "readerWord": "reviewed by critic root code-critic-d7465b9694245c1769ad42e6"
+    },
+    {
+      "path": "metasystem/cmd/metasystem/landing_red_permission_test.go",
+      "readerWord": "reviewed by critic root code-critic-d7465b9694245c1769ad42e6"
+    }
+  ],
+  "sha256": "cb04491ea1b3501034dd3fbb9ac45fb28fb7e920b716dfd81fd4eb2050f36508"
+}
