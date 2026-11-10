@@ -635,20 +635,24 @@ func treeWithoutPaths(repo, tree string, paths []string) (string, error) {
 	if len(paths) == 0 {
 		return tree, nil
 	}
+	top, err := (gittree.Workspace{Dir: repo}).TopLevel()
+	if err != nil {
+		return "", err
+	}
 	scratch, done, err := diskstore.ScratchDir("goal-branch-tree-*")
 	if err != nil {
 		return "", err
 	}
 	defer done()
 	env := []string{"GIT_INDEX_FILE=" + filepath.Join(scratch, "index")}
-	if _, err := gitInputEnv(repo, env, nil, "read-tree", tree); err != nil {
+	if _, err := gitInputEnv(top, env, nil, "read-tree", tree); err != nil {
 		return "", err
 	}
 	args := append([]string{"update-index", "--force-remove", "--"}, paths...)
-	if _, err := gitInputEnv(repo, env, nil, args...); err != nil {
+	if _, err := gitInputEnv(top, env, nil, args...); err != nil {
 		return "", err
 	}
-	out, err := gitInputEnv(repo, env, nil, "write-tree")
+	out, err := gitInputEnv(top, env, nil, "write-tree")
 	return strings.TrimSpace(string(out)), err
 }
 

@@ -527,16 +527,27 @@ func TestAmendDroppingReadStillChecksReplayedTree(t *testing.T) {
 	f := newAmendFixture(t)
 	path := "metasystem/records/reads/goal-a/" + policyLocal + ".json"
 	f.write(path, "{}")
-	f.suffix = []string{amendRead}
+	f.suffix = []string{amendRead, amendTail}
 	f.kinds[amendRead] = KindInfo{Kind: Read, CommitID: policyLocal}
+	f.kinds[amendTail] = KindInfo{Kind: Unit, Unit: "u2", Units: []string{"u2"}}
 	f.entries[amendRead] = []Entry{{Path: path}}
 	f.omitted = []string{path}
 	f.omittedTree = policyIndex
-	f.tree = "injected-tree"
 	before := f.state
-	calls := callPrefix(amendCalls(false, amendRead), "range-new")
+	calls := callPrefix(amendCalls(false, f.suffix...), "range-new")
 	f.expect(append(calls, "close")...)
-	_, e := f.run(f.amendRequest("amend-tree-check"))
+	req := f.amendRequest("amend-tree-check")
+	f.prepare(req.Amend)
+	r := f.repository()
+	replay := r.effects.Replay
+	r.effects.Replay = func(dir, commit string) error {
+		if err := replay(dir, commit); err != nil {
+			return err
+		}
+		f.tree = "replayed-executable-tree"
+		return nil
+	}
+	_, e := commitStaged(req, r)
 	requireCode(t, e, RangeCode)
 	if !strings.Contains(e.Error(), "doesn't hold what was staged") {
 		t.Fatal(e)
