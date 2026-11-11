@@ -382,6 +382,13 @@ func runLoopWithDependencies(repoRoot string, census WorkerCensus, revive func()
 		// post-tick act, whatever the tick's outcome: a take that lands during
 		// the tick holds this pass, and the tick's decision stays on disk for
 		// the first tick after return (HM-7, HM-13).
+		if cfg.FollowDeployedEngine != nil {
+			if replaced, _, followErr := cfg.FollowDeployedEngine(); followErr != nil {
+				_ = NoteRearmFailure(top, followErr, deps.Now())
+			} else if replaced {
+				return nil
+			}
+		}
 		if helm.Active(top).Active {
 			keeping.run()
 			if stopped := wait(keeping); stopped {
@@ -713,6 +720,9 @@ func humanMintDecision(mintedBy, word, reviewBy, enrollment string) mintDecision
 func ReArmRebuiltEngine(repoRoot, installationRoot, invokingBinary string) (ReArmOutcome, error) {
 	return reArmRebuiltEngineWithDeps(defaultRearmResolverDeps(), repoRoot, installationRoot, invokingBinary)
 }
+
+// DeployedEngine names the bytes the project's active deployment authorizes.
+type DeployedEngine struct{ Commit, Artifact, Digest string }
 
 func reArmRebuiltEngineWithDeps(deps rearmResolverDeps, repoRoot, installationRoot, invokingBinary string, clocks ...func() time.Time) (ReArmOutcome, error) {
 	now := time.Now
