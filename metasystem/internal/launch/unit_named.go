@@ -27,11 +27,14 @@ type namedUnitEntry struct {
 	Digest   string `json:"digest"`
 	Run      string `json:"run"`
 	State    string `json:"state"`
+
+	StoppedRun string `json:"stoppedRun,omitempty"`
 }
 
 const (
 	namedReserved = "reserved"
 	namedRecorded = "recorded"
+	namedReleased = "released"
 )
 
 // AdvanceNamed runs the unit a plan names, or continues the run that plan
@@ -40,6 +43,7 @@ const (
 // because a changed unit is a follow-up or a new unit name. The run id is
 // reserved before the run record or any launch exists, so an interrupted
 // first call is finished by the next one instead of starting a second run.
+// A cancelled run with no live custody releases its name for a fresh run.
 // Everything after the reservation is Advance resuming that run, so a run
 // awaiting judgement stays there until an explicit follow-up.
 //
@@ -149,7 +153,8 @@ type UnitOptions struct {
 // keep the base they were made from, and a different request is refused
 // with that run's id before anything is written. Only a unit with no run
 // yet calls prepare, which writes the plan into the unit's input directory
-// and returns its path.
+// and returns its path. A cancelled run releases its retained inputs before
+// a fresh request is prepared.
 func (runner *UnitRunner) AdvancePrepared(worktree, goal, unit string, request []byte, options UnitOptions, prepare func(directory string) (string, error)) (UnitResult, error) {
 	if runner.Manager == nil {
 		return UnitResult{}, errors.New("unit launch manager is unavailable")
@@ -178,7 +183,7 @@ func (runner *UnitRunner) AdvancePrepared(worktree, goal, unit string, request [
 	directory := filepath.Join(runner.root(), ".inputs", key)
 	requestPath := filepath.Join(directory, "request.json")
 	planPath := filepath.Join(directory, "plan.json")
-	entry, found, err := runner.readNamed(key)
+	entry, found, err := runner.buildNamed(key, UnitPlan{Worktree: real, Goal: goal, Unit: unit})
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -217,7 +222,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 	if err != nil {
 		return UnitResult{}, planInvalid("plan", err)
 	}
-	entry, found, err := runner.readNamed(key)
+	entry, found, err := runner.buildNamed(key, named)
 	if err != nil {
 		return UnitResult{}, err
 	}
@@ -286,7 +291,7 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 		if err != nil {
 			return UnitResult{}, err
 		}
-		entry = namedUnitEntry{Worktree: worktree, Goal: plan.Goal, Unit: plan.Unit, Digest: digest, Run: id, State: namedReserved}
+		entry = namedUnitEntry{Worktree: worktree, Goal: plan.Goal, Unit: plan.Unit, Digest: digest, Run: id, State: namedReserved, StoppedRun: entry.Run}
 		if err := runner.writeNamed(key, entry); err != nil {
 			return UnitResult{}, err
 		}
@@ -314,6 +319,13 @@ func (runner *UnitRunner) advanceNamedLocked(named UnitPlan, worktree, key strin
 	}
 	if recorded, pathErr := filepath.EvalSymlinks(record.Worktree); pathErr != nil || recorded != worktree || record.Goal != plan.Goal || record.Unit != plan.Unit || record.ID != entry.Run {
 		return UnitResult{}, coded("UNIT_NAMED_ENTRY_CORRUPT", unitFacts(plan.Unit, plan.Goal, "run="+entry.Run), fmt.Errorf("the record of unit %s points at a run of another unit", plan.Unit))
+	}
+	if entry.StoppedRun != "" && record.StoppedRun == "" {
+		record.StoppedRun = entry.StoppedRun
+		record.Notes = append(record.Notes, fmt.Sprintf("unit %s of run %s was stopped; this build starts run %s", plan.Unit, entry.StoppedRun, entry.Run))
+		if err := runner.save(record); err != nil {
+			return UnitResult{}, err
+		}
 	}
 	if entry.State != namedRecorded {
 		entry.State = namedRecorded

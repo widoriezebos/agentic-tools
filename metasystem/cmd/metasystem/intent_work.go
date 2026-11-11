@@ -1550,7 +1550,13 @@ func (b unitBinding) readBrief(template []byte, buildBrief string) string {
 // of a build, green or red; the read's verdict is reported as the reader
 // wrote it, and only VERDICT: land is a clean read. A capped wait is work
 // still in progress with the command that continues it.
-func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launch.UnitResult, err error, targets []intentTarget, again []string) intentResult {
+func (inv *intentInvocation) unitOutcome(runner *launch.UnitRunner, result launch.UnitResult, err error, targets []intentTarget, again []string) (out intentResult) {
+	defer func() {
+		out.text = append(slices.Clone(result.Record.Notes), out.text...)
+		if len(result.Record.Rounds) > 0 && result.Record.Rounds[0].StartingResult != "" {
+			out.text = append(out.text, result.Record.Rounds[0].StartingResult)
+		}
+	}()
 	var held *processCheckHeld
 	if errors.As(err, &held) {
 		return intentResult{Outcome: intentRefused, code: 1, Summary: held.Error(), Data: held.act, next: held.remedy, nextReason: "run this at your enrolled terminal"}
@@ -1760,10 +1766,16 @@ func (inv *intentInvocation) workArgv(record launch.UnitRunRecord, verb string, 
 func unitData(record launch.UnitRunRecord, manager *launch.Manager) map[string]any {
 	data := map[string]any{"run": record.ID, "unit": record.Unit, "goal": record.Goal, "state": record.State, "worktree": record.Worktree,
 		"base": record.Base, "plan": record.Plan, "maxRounds": record.MaxRounds, "buildModel": record.BuildModel, "buildEffort": record.BuildEffort}
+	if len(record.Notes) > 0 {
+		data["notes"] = record.Notes
+	}
 	if len(record.Rounds) == 0 {
 		return data
 	}
 	round := record.Rounds[len(record.Rounds)-1]
+	if round.StartingResult != "" {
+		data["startingResult"] = round.StartingResult
+	}
 	data["stop"], data["reads"], data["unknownRetries"] = round.Stop, round.Reads, round.UnknownRetries
 	if len(round.ExcludedDropped) > 0 {
 		data["excludedDropped"], data["excludedArchive"] = round.ExcludedDropped, filepath.Join(round.Directory, "excluded")
