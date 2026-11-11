@@ -21,21 +21,9 @@ import (
 // The goal ledger, model, clock and process observations stay synthetic.
 func readPublicationAdapterBed(t *testing.T, subdirectory ...string) (*connectionBed, intentOwners) {
 	t.Helper()
-	c := &connectionBed{workBed: newWorkBed(t), t: t, edits: map[string]string{}}
+	c := connectionBedLayout(t, workApprovedBox, subdirectory...)
 	root := c.root()
-	top := root
-	if len(subdirectory) > 0 {
-		top = filepath.Join(t.TempDir(), "repo")
-		root = filepath.Join(top, subdirectory[0])
-		if err := os.MkdirAll(top, 0700); err != nil {
-			t.Fatal(err)
-		}
-		if err := os.Rename(c.root(), root); err != nil {
-			t.Fatal(err)
-		}
-		c.facts.root = root
-	}
-	connectionGit(t, top, "init", "-q", "-b", "main")
+	connectionGit(t, c.primary, "init", "-q", "-b", "main")
 	connectionGit(t, root, "config", "user.name", "Fixture")
 	connectionGit(t, root, "config", "user.email", "fixture@example.invalid")
 	writeUnitCarryFile(t, filepath.Join(root, ".gitignore"), "artifacts/\n")
@@ -44,9 +32,6 @@ func readPublicationAdapterBed(t *testing.T, subdirectory ...string) (*connectio
 		t.Fatal(err)
 	}
 	writeUnitCarryFile(t, filepath.Join(root, "metasystem.conf"), string(conf)+"\nproof.cheap=true\n")
-	if top != root {
-		writeUnitCarryFile(t, filepath.Join(root, "metasystem.conf"), string(conf)+"\nmetasystem.template=true\nproof.cheap=true\n")
-	}
 	connectionGit(t, root, "add", "-A")
 	connectionGit(t, root, "commit", "-qm", "fixture base")
 	c.origin = filepath.Join(t.TempDir(), "origin.git")
@@ -57,11 +42,6 @@ func readPublicationAdapterBed(t *testing.T, subdirectory ...string) (*connectio
 	connectionGit(t, root, "worktree", "add", "-qb", "goal/"+c.id, c.worktree, "main")
 	c.manager.Supervisor = c
 	owners := c.connectionOwners()
-	if top != root {
-		owners.resolver = stateroot.NewResolver(func(path string) (string, error) {
-			return goalBranchGit(path, "rev-parse", "--show-toplevel")
-		}, noExecutable)
-	}
 	// The command edge resolves abbreviated commits before calling the branch owner.
 	read := owners.delivery.branchRead
 	owners.delivery.branchRead = func(args []string) (branch.BranchReadResult, int, error) {

@@ -58,11 +58,12 @@ type connectionBed struct {
 	failCloses       int
 	claimLost        bool
 	// isolate, when set, wraps the real adapter-configuration isolation.
-	isolate      func(real func(string, string) error, source, destination string) error
-	loseReadSave bool
-	commitReads  int
-	publications int
-	reads        [][]string
+	isolate         func(real func(string, string) error, source, destination string) error
+	loseReadSave    bool
+	commitReads     int
+	publications    int
+	reads           [][]string
+	gateDirectories []string
 	// dispatcher, when set, replaces the fake critic dispatch; refusal is
 	// what it reports while a cause of refusal is in place, and briefs the
 	// briefs of the critics it started.
@@ -88,18 +89,54 @@ func connectionGit(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(output))
 }
 
-func newConnectionBed(t *testing.T) *connectionBed {
+func forUnitLayouts(t *testing.T, journey func(*testing.T, string)) {
 	t.Helper()
-	return newConnectionBedWith(t, workApprovedBox)
+	for _, installation := range []string{".", "metasystem"} {
+		t.Run(installation, func(t *testing.T) { journey(t, installation) })
+	}
+}
+
+func newConnectionBed(t *testing.T, subdirectory ...string) *connectionBed {
+	t.Helper()
+	return newConnectionBedWith(t, workApprovedBox, subdirectory...)
+}
+
+func connectionBedLayout(t *testing.T, amend func(*goal.GoalFile), subdirectory ...string) *connectionBed {
+	t.Helper()
+	c := &connectionBed{workBed: newWorkBedWith(t, amend), t: t, edits: map[string]string{}}
+	c.primary = c.root()
+	if len(subdirectory) > 0 && subdirectory[0] != "." {
+		c.primary = filepath.Join(t.TempDir(), "repo")
+		root := filepath.Join(c.primary, subdirectory[0])
+		if err := os.MkdirAll(filepath.Dir(root), 0700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Rename(c.root(), root); err != nil {
+			t.Fatal(err)
+		}
+		c.facts.root = root
+		conf := filepath.Join(root, "metasystem.conf")
+		writeTestingFixtureFile(t, conf, append(mustRead(t, conf), []byte("\nmetasystem.template=true\n")...), 0600)
+	}
+	return c
+}
+
+func (c *connectionBed) workInstallation() string {
+	c.t.Helper()
+	relative, err := filepath.Rel(chooseUnitValue(c.primary, c.root()), c.root())
+	if err != nil {
+		c.t.Fatal(err)
+	}
+	return filepath.Join(c.worktree, relative)
 }
 
 // newConnectionBedWith is the connection bed with its goal record shaped by
 // amend.
-func newConnectionBedWith(t *testing.T, amend func(*goal.GoalFile)) *connectionBed {
+func newConnectionBedWith(t *testing.T, amend func(*goal.GoalFile), subdirectory ...string) *connectionBed {
 	t.Helper()
-	c := &connectionBed{workBed: newWorkBedWith(t, amend), t: t, edits: map[string]string{}}
+	c := connectionBedLayout(t, amend, subdirectory...)
 	root := c.root()
-	connectionGit(t, root, "init", "-q", "-b", "main")
+	connectionGit(t, c.primary, "init", "-q", "-b", "main")
 	connectionGit(t, root, "config", "user.name", "Fixture")
 	connectionGit(t, root, "config", "user.email", "fixture@example.invalid")
 	os.WriteFile(filepath.Join(root, ".gitignore"), []byte("artifacts/\n.claude/settings.local.json\nmetasystem.conf.local\n"), 0o600)
@@ -118,8 +155,8 @@ func newConnectionBedWith(t *testing.T, amend func(*goal.GoalFile)) *connectionB
 	connectionGit(t, filepath.Dir(c.origin), "init", "-q", "--bare", "-b", "main", c.origin)
 	connectionGit(t, root, "remote", "add", "origin", c.origin)
 	connectionGit(t, root, "push", "-q", "origin", "main")
-	resolved, _ := filepath.EvalSymlinks(filepath.Dir(root))
-	c.worktree = filepath.Join(resolved, filepath.Base(root)+"-"+c.id)
+	resolved, _ := filepath.EvalSymlinks(filepath.Dir(c.primary))
+	c.worktree = filepath.Join(resolved, filepath.Base(c.primary)+"-"+c.id)
 	c.manager.Supervisor = c
 	return c
 }
@@ -217,17 +254,18 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		TaggedScan: func(string) census.TaggedProcessCensus { return census.TaggedProcessCensus{} },
 	}
 	root, worktree := c.root(), c.worktree
+	workInstallation := c.workInstallation()
 	// The linked worktree shares the primary's accepted ledger and clock.
 	// Read commands may select either installation while their records stay local.
 	endpoint, commandNow := owners.dependencies.endpoint, owners.commandNow
 	owners.dependencies.endpoint = func(installation string) (goal.Endpoint, error) {
-		if sameCanonicalPath(installation, worktree) {
+		if sameCanonicalPath(installation, workInstallation) {
 			return endpoint(root)
 		}
 		return endpoint(installation)
 	}
 	owners.commandNow = func(stateRoot string) (time.Time, error) {
-		if sameCanonicalPath(stateRoot, worktree) {
+		if sameCanonicalPath(stateRoot, workInstallation) {
 			return commandNow(root)
 		}
 		return commandNow(stateRoot)
@@ -236,7 +274,7 @@ func (c *connectionBed) connectionOwners() intentOwners {
 		if withinPath(path, worktree) {
 			return worktree, nil
 		}
-		return fakeTop(root)(path)
+		return fakeTop(chooseUnitValue(c.primary, root))(path)
 	}, noExecutable)
 	owners.work.git = nil
 	owners.work.units = func(stateroot.Layout) *launch.UnitRunner {
@@ -260,8 +298,11 @@ func (c *connectionBed) connectionOwners() intentOwners {
 			c.mu.Unlock()
 			return commit()
 		},
-		transport:  connectionTransport{c},
-		rebaseGate: func(string) (string, error) { return "fixture-static-green", nil },
+		transport: connectionTransport{c},
+		rebaseGate: func(directory string) (string, error) {
+			c.gateDirectories = append(c.gateDirectories, directory)
+			return "fixture-static-green", nil
+		},
 		commit: func(request branch.CommitRequest) (string, error) {
 			if c.observeStaged != nil {
 				c.observeStaged(worktree)
@@ -830,6 +871,7 @@ func TestNoReleaseIsProposedBetweenCollectionAndPublication(t *testing.T) {
 }
 
 func TestIntentBuiltUnitToLanding(t *testing.T) {
+	t.Run("amend-layouts", testIntentUnitAmendPublicationGitAdapter)
 	c := newConnectionBedWith(t, func(file *goal.GoalFile) {
 		workApprovedBox(file)
 		// This journey builds four units and corrects one of them.
@@ -1288,9 +1330,13 @@ func TestWorkReviewRetainsMaterialFromGoalWorktree(t *testing.T) {
 }
 
 func TestWorkReviewCollectsExaminationStop(t *testing.T) {
+	forUnitLayouts(t, testWorkReviewCollectsExaminationStop)
+}
+
+func testWorkReviewCollectsExaminationStop(t *testing.T, installation string) {
 	for _, shape := range []string{"version-6", "version-4", "malformed-json"} {
 		t.Run(shape, func(t *testing.T) {
-			c := newConnectionBed(t)
+			c := newConnectionBed(t, installation)
 			c.edits = map[string]string{"connect.txt": "the built result\n"}
 			brief := c.brief("brief.md", "Build the connection.\n")
 			code, built := c.do(append([]string{"work", "build", c.id, "--work", "connect", "--brief", brief, "--lines", "5"}, workCheck...)...)
@@ -1303,8 +1349,8 @@ func TestWorkReviewCollectsExaminationStop(t *testing.T) {
 				t.Fatalf("start examination: %+v", pending)
 			}
 			commit := c.delegates[0]
-			c.writeCritic(c.worktree, "crit1", commit, "completed", false)
-			dir := filepath.Join(c.worktree, "artifacts", "agents", "crit1", "rounds", "1")
+			c.writeCritic(c.workInstallation(), "crit1", commit, "completed", false)
+			dir := filepath.Join(c.workInstallation(), "artifacts", "agents", "crit1", "rounds", "1")
 			path := filepath.Join(dir, "return.json")
 			var returned map[string]any
 			if err := json.Unmarshal(mustRead(t, path), &returned); err != nil {

@@ -16,11 +16,11 @@ import (
 
 func TestIntentUnitCheckDirectoriesAcrossRounds(t *testing.T) {
 	t.Parallel()
-	for _, installation := range []string{".", "metasystem"} {
+	forUnitLayouts(t, func(t *testing.T, installation string) {
 		for _, manual := range []bool{false, true} {
-			name := installation + "/declared"
+			name := "declared"
 			if manual {
-				name = installation + "/manual"
+				name = "manual"
 			}
 			t.Run(name, func(t *testing.T) {
 				t.Parallel()
@@ -128,5 +128,5 @@ func TestIntentUnitCheckDirectoriesAcrossRounds(t *testing.T) {
 				}
 			})
 		}
-	}
+	})
 }

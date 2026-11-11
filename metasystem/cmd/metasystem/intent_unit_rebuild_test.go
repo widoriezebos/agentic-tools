@@ -13,10 +13,14 @@ import (
 // committed, and that unrelated bytes never become the idle builder's work.
 func TestIntentStoppedUnitRebuildGitAdapter(t *testing.T) {
 	t.Parallel()
+	forUnitLayouts(t, testIntentStoppedUnitRebuildGitAdapter)
+}
+
+func testIntentStoppedUnitRebuildGitAdapter(t *testing.T, installation string) {
 	for _, dirt := range []bool{false, true} {
 		t.Run(fmt.Sprintf("unrelated-dirt=%t", dirt), func(t *testing.T) {
 			t.Parallel()
-			c := newConnectionBed(t)
+			c := newConnectionBed(t, installation)
 			owners := c.connectionOwners()
 			owners.prove = enrolledPersonProver(t, c.root(), c.manager.Now())
 			build := func(brief string) (int, intentResult) {
