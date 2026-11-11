@@ -76,6 +76,15 @@ func unitCarryIntentBed(t *testing.T, amended bool) (*workBed, intentOwners, str
 	return b, owners, run, runner
 }
 
+// holdUnitCarryCheckout stages the bed's checkout holder and an empty review
+// carry: every first publication carries reviews under the commit token
+// (design D5), and the token admits only the checkout's holder.
+func holdUnitCarryCheckout(t *testing.T, b *workBed, owners *intentOwners) {
+	t.Helper()
+	announceFixtureHolder(t, b.worktree, "m1")
+	owners.connection.carry = func(branch.CarryRequest) (branch.CarryResult, error) { return branch.CarryResult{}, nil }
+}
+
 func TestUnitReviewAmendCarriesReviews(t *testing.T) {
 	t.Parallel()
 	b, owners, run, _ := unitCarryIntentBed(t, true)
