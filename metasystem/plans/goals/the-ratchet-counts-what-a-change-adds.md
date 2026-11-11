@@ -1,16 +1,19 @@
 # the-ratchet-counts-what-a-change-adds
 
-- State: queued
+- State: approved
 - Risk: severity=2 novelty=1 exposure=2 accumulation=1 basis="A stricter gate on every check path; base transport must not degrade to absolute-only silently; the lane proves it."
 - Tier: 2
 - Intent: The parallel ratchet refuses every newly non-exempt serial test a change adds against its own base (set difference, each tree's exemptions), carried through unit check, publication, work commit and lane, keeping the absolute ceiling as a backstop (root cause 5).
 - Origin: main
 - Next step: Build D4-U1 (175) then D4-U2 (85, --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (D4).
 - OpenedAt: 2026-11-11T18:06:56Z
-- Revision: 1
-- Budget: elapsedLimit=4h attemptLimit=6 reservedJobMinutesLimit=720 activeJobLimit=1 reviewRoundLimit=20
+- Revision: 2
+- Budget: elapsedLimit=2d attemptLimit=12 reservedJobMinutesLimit=2400 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
+- NormApproval: approvedRef=W8WX8AA51M4A4CGBWPVBM314FB-m1e-8792c7ee minutes=2400 reviewRounds=20 goalRevision=1
+- Approved: by=human:Wido at=2026-11-11T18:08:53Z revision=2 opid=W8WX8AA51M4A4CGBWPVBM314FB-m1e-8792c7ee authority=proven digest=587bbbbe590807baf327594ccf34221a7837e26f25d125b7c638e8277872200f episode=2
 
 History:
 - 2026-11-11T18:06:56Z TQ9Y47FDZDPX002SWANQ52V0A4-m1e-8792c7ee open actor=human:Wido targets=the-ratchet-counts-what-a-change-adds
-Integrity: sha256=72de763aaaede0267756e559d2ffd79307d1bbcb549e6e1dd79a19744cbba7ea
+- 2026-11-11T18:08:53Z W8WX8AA51M4A4CGBWPVBM314FB-m1e-8792c7ee approve actor=human:Wido targets=the-ratchet-counts-what-a-change-adds
+Integrity: sha256=0bf1b351f789c3687247f8ad9478bb9151aca2b605bec868c951850166c2b0d6
