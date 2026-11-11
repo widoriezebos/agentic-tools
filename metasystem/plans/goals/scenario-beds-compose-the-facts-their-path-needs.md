@@ -7,7 +7,8 @@
 - Origin: main
 - Next step: Build D3-U1 (test-only, --last) from /Users/wido/agentic-tools-evidence/lane-test-20261009/designs/the-unit-check-is-the-publication-check.r5.md (revision 5 section: reduced D3; per-instance Git isolation deferred).
 - OpenedAt: 2026-11-11T18:11:43Z
-- Revision: 2
+- Revision: 3
+- Pinned: ui
 - Budget: elapsedLimit=1d attemptLimit=8 reservedJobMinutesLimit=1200 activeJobLimit=1 reviewRoundLimit=20
 - BudgetExceptions: 0
 - NormApproval: approvedRef=BRWB9ZBJ8E7N54VQQEXTK3R6HV-m1e-8792c7ee minutes=1200 reviewRounds=20 goalRevision=1
@@ -16,4 +17,5 @@
 History:
 - 2026-11-11T18:11:43Z 3AY6FQVBTD8E2SRP1HYR4SM6M6-m1e-8792c7ee open actor=human:Wido targets=scenario-beds-compose-the-facts-their-path-needs
 - 2026-11-11T18:12:04Z BRWB9ZBJ8E7N54VQQEXTK3R6HV-m1e-8792c7ee approve actor=human:Wido targets=scenario-beds-compose-the-facts-their-path-needs
-Integrity: sha256=7d915a53a7079fe7c7eae708d7b4af1e11b36ca6c43afde01c5922cc85923476
+- 2026-11-11T18:12:19Z TT19HFAYHV8XQF57S9SV6PQNBQ-m1e-8792c7ee set-pin actor=human:Wido targets=scenario-beds-compose-the-facts-their-path-needs
+Integrity: sha256=232eea3c2017e0b5f013156d211d2b99af4f97d65d71982a844a6e8142164072
